@@ -2054,6 +2054,16 @@ void BotManager::UpdateBots(uint32_t diff)
         m_perfPassCount = 0;
         m_perfElapsedMs = 0;
     }
+
+    // Cumulative action-count snapshot every 5 minutes of tick time. The dump
+    // itself gates on AiPlayerbot.ActionCountsLog, so the off path is one
+    // branch plus an integer add per tick.
+    m_actionCountsElapsedMs += diff;
+    if (m_actionCountsElapsedMs >= 5 * 60 * 1000)
+    {
+        m_actionCountsElapsedMs = 0;
+        ai::botdiag::DumpActionCounts();
+    }
 }
 
 void BotManager::OnWorldUpdate(uint32_t diff)

@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
+#include "playerbot/ReadyRebuffPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "GenericTriggers.h"
 #include "playerbot/LootObjectStack.h"
@@ -29,6 +30,20 @@ bool LowManaTrigger::IsActive()
 bool MediumManaTrigger::IsActive()
 {
     return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.mediumMana;
+}
+
+bool HealerLowManaTrigger::IsActive()
+{
+    // Pure donor check (HealthTriggers.cpp:25-32): the "healer low mana"
+    // value picks the lowest-mana alive group healer; fire while that
+    // healer sits below the low-mana line. No Innervate guards here: those
+    // live in the druid action (spell known/ready, range, aura), so shaman
+    // Mana Tide rows and future batteries can share this trigger.
+    Unit* target = GetTarget();
+    if (!target || !target->GetMaxPower(POWER_MANA))
+        return false;
+
+    return ai->GetManaPercent(*target) < sPlayerbotAIConfig.lowMana;
 }
 
 bool HighManaTrigger::IsActive()
@@ -76,6 +91,14 @@ bool ComboPointsAvailableTrigger::IsActive()
 
 bool LoseAggroTrigger::IsActive()
 {
+    // Players have no threat list: against an enemy player `has aggro` is
+    // always false, so without this guard the trigger is spuriously active
+    // in PvP and taunt-grade rows would outbid real interrupts for zero
+    // effect (donor GenericTriggers.cpp guards the same way).
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (target && target->IsPlayer())
+        return false;
+
     if(!AI_VALUE2(bool, "has aggro", "current target"))
     {
         // Check if the aggro has been taken by another tank
@@ -807,6 +830,28 @@ bool IsNotBehindTargetTrigger::IsActive()
     return target && !AI_VALUE2(bool, "behind", "current target");
 }
 
+bool RearFlankNeededTrigger::IsActive()
+{
+    // Front-arc-only (no tail clause): set-behind's destination is the
+    // exact rear, and firing there would ping-pong flank→rear→flank
+    // against the higher-priority flank row every tick. Tanks holding the
+    // mob keep the tank-face path, never flank off it. Explicit holds
+    // (stay/wait-for-attack) veto; settled-behind bots hold position.
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !target->IsCreature() || !sServerFacade.IsAlive(target))
+        return false;
+    if (target->GetVictim() && target->GetVictim()->getObjectGuid() == bot->getObjectGuid())
+        return false;
+    if (ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT))
+        return false;
+    if (bot->GetDistance(target) > 15.0f)
+        return false;
+    if (AI_VALUE2(bool, "behind", "current target"))
+        return false;
+    return target->HasInArc(bot, 2.0f * (float)M_PI / 2.0f);
+}
+
 bool IsNotFacingTargetTrigger::IsActive()
 {
     return !AI_VALUE2(bool, "facing", "current target");
@@ -814,8 +859,10 @@ bool IsNotFacingTargetTrigger::IsActive()
 
 bool TankFaceNeededTrigger::IsActive()
 {
-    // Scope: real-player-master parties only. Pool bots keep old behaviour.
-    if (!ai->HasRealPlayerMaster())
+    // Scope is strategy membership ("tank face" on tank kits), not the
+    // master: any tank with the strategy faces held mobs away, pool/raid
+    // tanks included. Non-tanks never carry the strategy.
+    if (!ai->HasStrategy("tank face", BotState::BOT_STATE_COMBAT))
         return false;
     if (!ai->IsTank(bot))
         return false;
@@ -1360,6 +1407,29 @@ bool AtWarTrigger::IsActive()
     }
 
     return false;
+}
+
+// Deferred ready-check confirm is waiting (SOC-S5). Cheap first: config
+// gate and anchor read only; no aura scans. The due verdict itself
+// (grace/cap/casting) lives in the action's isUseful, so this trigger only
+// says "a confirm is held". An anchor held past cap + slack (e.g. through
+// combat, when this trigger stays quiet) is a dead check: clear it here so
+// no stale confirm goes out when combat ends minutes later.
+bool ForceRebuffPendingTrigger::IsActive()
+{
+    if (!sPlayerbotAIConfig.forceRebuffOnReadyCheck || bot->IsInCombat())
+        return false;
+
+    time_t anchor = context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Get();
+    if (anchor == time_t(0))
+        return false;
+
+    if (time(0) - anchor > ai::ReadyRebuffCapSec() + ai::ReadyRebuffExpirySlackSec())
+    {
+        context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time_t(0));
+        return false;
+    }
+    return true;
 }
 
 // One-shot per pet identity (E01): ported from mod-playerbots NewPetTrigger,
