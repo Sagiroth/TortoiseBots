@@ -22,7 +22,9 @@ bool AnubrekhanChooseTargetAction::Execute(Event& event)
         if (unit->GetEntry() == 15956)
             boss = unit;
         else if (unit->GetEntry() == 16573 &&
-            (!weakest || unit->GetHealthPct() < weakest->GetHealthPct()))
+            (!weakest ||
+             100.0f * unit->GetHealth() / unit->GetMaxHealth() <
+                 100.0f * weakest->GetHealth() / weakest->GetMaxHealth()))
             weakest = unit;
     }
 
