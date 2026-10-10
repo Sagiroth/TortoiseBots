@@ -5644,19 +5644,32 @@ stays in `CastMeleeAoeSpellAction::isUseful`),
 `ai/playerbot/strategy/mage/FrostMageStrategy.cpp`
 (`FrostMageAoeStrategy`: new `ranged light aoe` → `cone of cold` row at
 HIGH, below blizzard/flamestrike medium-aoe rows),
-`ai/playerbot/strategy/mage/MageStrategy.cpp`
-(`MageAoeStrategy::InitCombatTriggers`: new `melee medium aoe` →
-`arcane explosion` row at HIGH, so all specs — not just arcane — answer
-a pack standing on the mage), `docs/classes/mage.md` (doc line).
+`docs/classes/mage.md` (doc line).
+
+The first version of this PR also added a `melee medium aoe` →
+`arcane explosion` row on the base `MageAoeStrategy` (all specs). That
+row is REMOVED: review caught that it has no donor source (zero
+`xplosion` hits in the donor mage AI; the cited guard block covers
+cone/dragon's-breath/blast-wave, and the "omni, range-only" guard is
+blast wave's, not arcane explosion's). Donor mages never cast arcane
+explosion — the all-specs behaviour was invented scope. Arcane keeps its
+pre-existing single-enemy `enemy too close for spell` → `arcane
+explosion` row (`ArcaneMageStrategy.cpp:128`), which this PR does not
+touch. The remaining cone work (facing `isUseful` + frost `ranged light
+aoe` row) is donor-sourced and stays.
 
 Copied / ported / reimplemented: reimplemented in the live list-based
-style. Deviations from the donor, all deliberate: (a) no new facing
-guard on arcane explosion — it is omni, and the base already gates
-≤10yd; (b) frost cone fires on our `ranged light aoe` (2 attackers in
-sight) while the 10yd + facing `isUseful` does the real gating, per the
-report's accepted v1 semantics; (c) cone action stays registered under
-its existing name — only the guard is new, so the frost-nova fallback
-node (`MageStrategy.cpp:26`) is untouched.
+style. Deviations from the donor, all deliberate: (a) [REMOVED with the
+explosion row — see above]; (b) frost cone fires on our `ranged light
+aoe` (2 attackers in sight) while the 10yd + facing `isUseful` does the
+real gating, per the report's accepted v1 semantics; (c) cone action
+stays registered under its existing name — only the guard is new, so
+the frost-nova fallback node (`MageStrategy.cpp:26`) is untouched.
+Finding 2 (cone/explosion tie starving the cone) is moot: with the
+explosion row gone there is no tie — cone at HIGH sits above the
+`ACTION_NORMAL + 1` nukes and the flamestrike row shares HIGH but pushes
+later, so first-pushed-wins orders cone first (donor: cone 21 above
+flamestrike/blizzard on the same light/medium pair).
 
 Reason: cone of cold was registered but had zero trigger rows anywhere,
 and arcane explosion only fired for arcane bots — solo frost/fire bots

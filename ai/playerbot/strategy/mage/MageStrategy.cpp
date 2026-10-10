@@ -194,12 +194,6 @@ void MageRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
 void MageAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     AoeStrategy::InitCombatTriggers(triggers);
-    // All specs train Arcane Explosion (1449 rank 1 @14): point-blank
-    // answer when the pack is on top of the mage. Omni spell, so the
-    // base 10yd range gate is the only guard needed.
-    triggers.push_back(new TriggerNode(
-        "melee medium aoe",
-        NextAction::array(0, new NextAction("arcane explosion", ACTION_HIGH), NULL)));
 }
 
 void MageAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
