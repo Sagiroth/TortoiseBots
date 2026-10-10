@@ -6595,3 +6595,55 @@ Source files (module, modified): none — full revert to pre-PR behaviour.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
+
+## Druid parity DRU-8: resto healer-dps rows in the wired restoration strategy — 2026-10-09
+Feature: `DruidOffdpsStrategy::InitCombatTriggers` rewritten priest-style
+(`healer should attack` gate — already mana-gates via
+`HealerShouldAttackTrigger(checkMana=true)` — with FF/IS/MF/SF/Wrath at
+ACTION_DEFAULT+0.5..0.2, so every heal outbids every nuke) + `offdps`
+placeholder creator + `OffdpsSituationStrategyFactoryInternal`
+(`offdps pve/pvp/raid` -> existing orphaned `DruidOffdps*Strategy`
+classes) + factory registration in the druid context constructor +
+`{"offdps"}` update-strat entries in all three
+`UpdateDruid{Pve,Pvp,Raid}StrategiesAction`s (copy of the priest entries).
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Druid/Strategy/GenericDruidStrategy.cpp:151-158`
+(`healer should attack` -> cancel-tree + moonfire/wrath/starfire 5.x) +
+priest `PriestStrategy.cpp:616-650` (gating shape) +
+`PriestAiObjectContext.cpp:26,109-118` (placeholder + situation factory
++ constructor registration). Deviations, deliberate: no `cancel tree
+form` action was added (the report's M-sized sub-task proved
+unnecessary) — every dps action already carries the caster-form
+prerequisite node and `CastCasterFormAction::isUseful` covers tree of
+life, so Tree exits through the normal shift. No `no mana` fallback row
+either (priest wands; druids have no wand — an OOM wrath cast is
+impossible, so the row would only queue failures). Default OFF (opt-in
+`+offdps` via the existing `.bot strategy` mechanism, matches priest).
+
+Reason: druid parity report DRU-8 — wired resto had no healer-dps rows;
+priest/shaman/paladin all have new-style healer-dps.
+
+Source files (module, modified):
+`ai/playerbot/strategy/druid/DruidStrategy.cpp`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`ai/playerbot/strategy/druid/DruidActions.h` +
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Moonfire/Wrath/Starfire/Faerie
+Fire/Insect Swarm trainer-taught, creators pre-registered.
+
+Local validation: `bash tools/verify_all.sh` (wiring check:
+live-missing=0); `git diff --check`. No live test (no live test per
+parity brief); build via build-commit.sh.
+
+## Review fixes (2026-10-10, PR #610 CHANGES_REQUESTED)
+Both blocking findings verified real in code and fixed:
+- Finding 1 (no tree-form exit): confirmed — zero ActionNode creators cover ff/is/mf/wrath, and the only starfire node is balance-spec-gated. My "caster-form prerequisite" comment was wrong. Fixed: `caster form` (instant RemoveShapeshift exit) rides as the first alternative in the offdps row, nukes as fallbacks — donor shape (cancel 5.4 > nukes).
+- Finding 2 (exit/re-enter livelock): confirmed — tree re-entry at HIGH would win every tick after the exit. Fixed with the donor's `no healer dps strategy` gate: new `NoOffdpsTrigger` (`!HasStrategy("offdps", COMBAT)`) + `tree form and no offdps` TwoTriggers combo on the Tree row; offdps rows stay on plain `healer should attack` (strategy membership is the opt-in gate).
+- Non-blocking: nuke order corrected to donor (wrath above starfire); insect swarm + faerie fire dropped (donor healer-dps is MF/Wrath/SF; IS is a balance talent most restos lack); doc corrected (auto-added for random bots like priest holy, not opt-in); solo-OOM claim dropped (gate returns true groupless — harmless fallthrough to melee default).
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).

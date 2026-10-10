@@ -127,3 +127,8 @@ bool OocRebirthTrigger::IsTargetValid(Unit* target)
     }
     return ShouldCastOocRebirth(state);
 }
+
+bool NoOffdpsTrigger::IsActive()
+{
+    return !ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT);
+}
