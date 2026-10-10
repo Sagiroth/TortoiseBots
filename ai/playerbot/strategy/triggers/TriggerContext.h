@@ -19,6 +19,7 @@
 #include "BlackwingLairDungeonTriggers.h"
 #include "NaxxramasDungeonTriggers.h"
 #include "EmeraldSanctumDungeonTriggers.h"
+#include "ClassicRaidDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
 #include "SapphironDungeonTriggers.h"
 #include "WorldBuffTravelTriggers.h"
@@ -301,6 +302,12 @@ namespace ai
             creators["leave naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasLeaveDungeonTrigger(ai); };
             creators["enter blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairEnterDungeonTrigger(ai); };
             creators["leave blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairLeaveDungeonTrigger(ai); };
+            creators["enter zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubEnterDungeonTrigger(ai); };
+            creators["leave zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubLeaveDungeonTrigger(ai); };
+            creators["enter ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajEnterDungeonTrigger(ai); };
+            creators["leave ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajLeaveDungeonTrigger(ai); };
+            creators["enter ahn'qiraj temple"] = [](PlayerbotAI* ai) { return new AhnqirajTempleEnterDungeonTrigger(ai); };
+            creators["leave ahn'qiraj temple"] = [](PlayerbotAI* ai) { return new AhnqirajTempleLeaveDungeonTrigger(ai); };
             creators["enter emerald sanctum"] = [](PlayerbotAI* ai) { return new EmeraldSanctumEnterDungeonTrigger(ai); };
             creators["leave emerald sanctum"] = [](PlayerbotAI* ai) { return new EmeraldSanctumLeaveDungeonTrigger(ai); };
             creators["enter lower karazhan"] = [](PlayerbotAI* ai) { return new LowerKarazhanEnterDungeonTrigger(ai); };

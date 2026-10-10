@@ -51,6 +51,7 @@
 #include "RtiValue.h"
 #include "PositionValue.h"
 #include "ThreatValues.h"
+#include "RaidTargetValues.h"
 #include "DuelTargetValue.h"
 #include "InvalidTargetValue.h"
 #include "EnemyPlayerValue.h"
@@ -235,6 +236,9 @@ namespace ai
             creators["my threat"] = [](PlayerbotAI* ai) { return new MyThreatValue(ai); };
             creators["tank threat"] = [](PlayerbotAI* ai) { return new TankThreatValue(ai); };
             creators["threat"] = [](PlayerbotAI* ai) { return new ThreatValue(ai); };
+            creators["neglect threat"] = [](PlayerbotAI* ai) { return new NeglectThreatValue(ai); };
+            creators["find target"] = [](PlayerbotAI* ai) { return new FindTargetByNameValue(ai); };
+            creators["boss target"] = [](PlayerbotAI* ai) { return new BossTargetValue(ai); };
 
             creators["incoming damage"] = [](PlayerbotAI* ai) { return new IncomingDamageValue(ai); };
             creators["balance"] = [](PlayerbotAI* ai) { return new BalancePercentValue(ai); };
