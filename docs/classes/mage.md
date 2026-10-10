@@ -38,7 +38,7 @@ Mages provide premier ranged spell DPS, the game's most reliable crowd control (
 - Casts *Fireball* as main nuke and *Fire Blast* on the move or for finishing blows.
 
 ### 3. Arcane Mage
-- Channels *Arcane Missiles* with mana management.
+- Opens with *Arcane Rupture* (damage that strengthens missiles for 8s; recast on its cooldown), then channels *Arcane Missiles* while the buff holds, with mana management.
 - Uses *Presence of Mind* for instant cast nukes.
 
 ---

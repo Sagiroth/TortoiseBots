@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/ArcaneRupturePolicy.h"
 #include "playerbot/HotStreakPolicy.h"
 #include "MageTriggers.h"
 #include "MageActions.h"
@@ -164,6 +165,25 @@ bool EvocationChannelCheckTrigger::IsActive()
     return false;
 }
 
+bool ArcaneRuptureTrigger::IsActive()
+{
+    // Cheap gates first: known spell, then the self-buff aura check.
+    if (!ai->HasSpell("arcane rupture"))
+        return false;
+    // 15s category cooldown (category 1013) outlives the 8s self buff, so
+    // without a readiness gate the trigger would sit active-but-uncastable
+    // most of each cycle. ColdSnapTrigger in this file is the precedent.
+    uint32 ruptureId = AI_VALUE2(uint32, "spell id", "arcane rupture");
+    if (!ruptureId || !sServerFacade.IsSpellReady(bot, ruptureId))
+        return false;
+    // Rupture targets an enemy; refuse without a live one.
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !target->IsAlive())
+        return false;
+    ArcaneRuptureState state{false, true, false};
+    state.hasRuptureBuff = ai->HasAura(52502, bot) || ai->HasAura(52588, bot);
+    return ShouldCastArcaneRupture(state);
+}
 bool BlizzardChannelCheckTrigger::IsActive()
 {
     if (Spell* spell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))

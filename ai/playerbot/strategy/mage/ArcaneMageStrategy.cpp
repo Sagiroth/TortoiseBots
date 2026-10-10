@@ -31,6 +31,12 @@ NextAction** ArcaneMageStrategy::GetDefaultCombatActions()
 void ArcaneMageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     MageStrategy::InitCombatTriggers(triggers);
+
+    // MAG-5: rupture (damage + self buff) while the missiles buff is down;
+    // the arcane-missiles default owns the GCD while buffed.
+    triggers.push_back(new TriggerNode(
+        "arcane rupture",
+        NextAction::array(0, new NextAction("arcane rupture", ACTION_NORMAL + 1), NULL)));
 }
 
 void ArcaneMageStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

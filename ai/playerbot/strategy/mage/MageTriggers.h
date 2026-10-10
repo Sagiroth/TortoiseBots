@@ -132,6 +132,15 @@ namespace ai
         PresenceOfMindTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "presence of mind") {}
     };
 
+    // MAG-5: rupture self buff (52502/52588) absent — cast rupture so the
+    // missiles that follow hit +19%. See ArcaneRupturePolicy.h.
+    class ArcaneRuptureTrigger : public Trigger
+    {
+    public:
+        ArcaneRuptureTrigger(PlayerbotAI* ai) : Trigger(ai, "arcane rupture") {}
+        bool IsActive() override;
+    };
+
     HAS_AURA_TRIGGER(PresenceOfMindAuraTrigger, "presence of mind");
 
     // Turtle fire talent Hot Streak (51927/51928): crits stack a cast-time
