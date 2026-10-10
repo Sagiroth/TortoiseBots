@@ -304,6 +304,13 @@ void FireMageCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "enemy ten yards",
         NextAction::array(0, new NextAction("blast wave", ACTION_INTERRUPT), NULL)));
+
+    // MAG-7: victim-gated close-range variant (donor: fire "enemy too
+    // close for spell" → blast-wave-class answer). Fires when the mob is
+    // on the bot itself, even where the generic 10yd row would not.
+    triggers.push_back(new TriggerNode(
+        "enemy too close for spell",
+        NextAction::array(0, new NextAction("blast wave", ACTION_INTERRUPT - 1), NULL)));
 }
 
 void FireMageCcStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
