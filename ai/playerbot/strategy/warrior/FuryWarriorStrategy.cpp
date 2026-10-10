@@ -18,6 +18,8 @@ public:
     }
 
 private:
+    ACTION_NODE_A(charge, "charge", "intercept");
+
     ACTION_NODE_A(pummel, "pummel", "intercept");
 
     ACTION_NODE_A(sunder_armor, "sunder armor", "melee");
