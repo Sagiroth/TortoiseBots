@@ -35,7 +35,7 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
 ### 2. Mana Management: Life Tap
 - Affliction also casts *Dark Pact* on low mana, so *Life Tap* is not the only mana tool.
 - Warlocks dynamically cast *Life Tap* to convert surplus health into mana.
-- Safety check: *Life Tap* fires when mana is at/below the medium-mana line (default 40) and health exceeds the low-health line (default 50); tapping early keeps dots rolling instead of wanding the second half of the fight. No incoming-damage check exists.
+- Safety check: both bands need health above the low-health line (default 50). The urgent band fires at/below the medium-mana line (default 40) in combat and between pulls; the top-up band (below 85% mana) only pre-taps between pulls — never in combat, where any trigger row would outrank the shadow-bolt default (engine pushes defaults at relevance-200) and tap instead of nuking. Out of combat it eats first (both bands stay quiet while a food/drink aura is up) and taps once the meal ends, so no sit/stand ping-pong, so the bot enters the fight near-full mana. Affliction still prefers *Dark Pact* on low mana. No incoming-damage check exists.
 
 ---
 

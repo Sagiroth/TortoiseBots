@@ -1,5 +1,6 @@
 # Changelog
 
+- Warlocks top up mana with Life Tap between pulls — below 85% mana with safe health the bot pre-taps out of combat (after eating, so no sit/stand ping-pong) and enters the pull near-full mana; in combat only the urgent low-mana tap fires, since any low-priority combat row would outrank the shadow-bolt default and tap instead of nuking. The health floor is unchanged.
 - Warlocks use weapon stones again — Affliction and Demonology create and equip Spellstones, Destruction creates and equips its Firestone (only into an empty off-hand, never swapping out real gear).
 - Warlock Immolate now spreads to extra attackers instead of only the main target — Demonology and Destruction keep it up at spec level, all specs spread it with the aoe strategy on.
 - Warlock DoTs spread to extra attackers even with the aoe strategy off — Affliction keeps Corruption and Siphon Life up at spec level, Demonology keeps Corruption up, at low priority under the main rotation and mana recovery.

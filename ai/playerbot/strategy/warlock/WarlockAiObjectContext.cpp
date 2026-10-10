@@ -233,6 +233,7 @@ namespace ai
                 creators["curse of exhaustion on snare target"] = [](PlayerbotAI* ai) { return new CurseOfExhaustionSnareTrigger(ai); };
                 creators["inferno"] = [](PlayerbotAI* ai) { return new InfernoTrigger(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new LifeTapTrigger(ai); };
+                creators["life tap top-up"] = [](PlayerbotAI* ai) { return new LifeTapTopUpTrigger(ai); };
                 creators["drain soul"] = [](PlayerbotAI* ai) { return new DrainSoulTrigger(ai); };
                 creators["health funnel"] = [](PlayerbotAI* ai) { return new HealthFunnelTrigger(ai); };
                 creators["no soul shard"] = [](PlayerbotAI* ai) { return new NoSoulShardTrigger(ai); };

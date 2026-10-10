@@ -4653,6 +4653,32 @@ DungeonMultipliers.h/.cpp` (RazorgoreOffTankMultiplier: first living tank
 by member-slot order holds via tank-assist veto), registrations
 (`TriggerContext.h`, `ActionContext.h`, `StrategyContext.h`),
 `tools/test_razorgore_policy.cpp` (new standalone test) +
+## Warlock Life Tap top-up + out-of-combat pre-tap (WAR-5) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/WarlockTriggers.cpp:92-103` (`LifeTapTrigger`:
+mana<85 with health above `LowHealth`), per-spec
+`src/Ai/Class/Warlock/Strategy/*WarlockStrategy.cpp:101-117` (`life tap`
+filler at 5.1),
+`src/Ai/Class/Warlock/Strategy/GenericWarlockStrategy.cpp:23-30`
+(`low mana` emergency tap at 95.0),
+`src/Ai/Class/Warlock/Strategy/GenericWarlockNonCombatStrategy.cpp:93`
+(NC pre-tap at 23.0).
+
+Source files (module, modified): `runtime/WarlockTapPolicy.h` (new pure
+two-band rule: urgent at mana<=mediumMana, top-up below 85, both gated on
+health above lowHealth),
+`ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp}` (existing
+`LifeTapTrigger` routes through the policy urgent band; new
+`LifeTapTopUpTrigger` for the 85% band),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (registered
+`life tap top-up`),
+`ai/playerbot/strategy/warlock/WarlockStrategy.cpp` (out-of-combat pre-tap
+rows at NORMAL-1 for both bands; no combat filler — any trigger row beats
+the relevance-200 default nuke),
+`tools/test_warlock_tap_policy.cpp` (new standalone test, wired into
+`tools/verify_all.sh`) + `docs/classes/warlock.md`, `CHANGELOG.md` (doc
+lines).
 ## Druid parity DRU-7: Thorns on the party tank first — 2026-10-09
 Feature: new `ThornsOnTankTrigger` (`BuffOnTankTrigger` on "thorns",
 fire-shield conflict skip mirroring `ThornsOnPartyTrigger`) + new
@@ -7108,6 +7134,23 @@ suppresses the default),
 lines).
 
 Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) no `low mana` emergency row — ours already
+taps at mana<=mediumMana (default 40, stricter than donor `low mana`
+15%) at NORMAL+2, kept as the urgent band; (b) no combat top-up row — the
+donor's 5.1 filler sits under its nuke, but here defaults are pushed at
+relevance-200 so any trigger row would preempt the shadow-bolt default
+and tap instead of nuking; the top-up band pre-taps out of combat only;
+(c) the health floor stays ours (`lowHealth` default 50, stricter than
+donor 45); (d) no glyph-buff row (WotLK glyph, no 1.18.1 spell); (e)
+Affliction Dark Pact on low mana untouched and still wins the emergency.
+
+Reason: warlock bots entered every pull at whatever mana the last fight
+left and spent the second half wanding; donor tops up between pulls, so
+ours pre-taps out of combat to enter near-full.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: bot enters pull near-full mana.
 the donor, all deliberate: (a) the donor's WotLK conflict lists (Ebon
 Plague, Earth and Moon, Vindication) do not exist in 1.18.1 — the rule
 here is the vanilla one-curse-per-target gate on the 7-curse family,
