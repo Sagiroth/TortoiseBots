@@ -194,6 +194,12 @@ void MageRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
 void MageAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     AoeStrategy::InitCombatTriggers(triggers);
+
+    // Pack thinned mid-channel: stop blizzard and go back to single
+    // target. Mirrors the donor row and our icicles/evocation cancels.
+    triggers.push_back(new TriggerNode(
+        "blizzard channel check",
+        NextAction::array(0, new NextAction("cancel channel", ACTION_HIGH + 3), NULL)));
 }
 
 void MageAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

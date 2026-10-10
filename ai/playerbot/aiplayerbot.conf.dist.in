@@ -764,6 +764,9 @@ AiPlayerbot.AutoPickReward = yes
 # Default: 0 (disabled)
 AiPlayerbot.AutoEquipUpgradeLoot = 1
 
+# An upgrade must beat the old item's stat weight by this factor to count (mod-playerbots parity, default 1.1: a +10% win swaps, an epsilon gain does not). 1.0 restores any-gain swaps.
+AiPlayerbot.EquipUpgradeThreshold = 1.1
+
 # Sync quests with player (Bots will complete quests the moment you hand them in. Bots will ignore looting quest items.)
 # Default: 0 (disabled)
 AiPlayerbot.SyncQuestWithPlayer = 0
@@ -1630,6 +1633,10 @@ AiPlayerbot.JumpHeightLimit = 60
 AiPlayerbot.JumpWithPlayer = 0
 # Add rpg jump strategy in BG
 AiPlayerbot.JumpInBg = 0
+# Hold the ready-check confirm until buffs settle (grace) or a 30 s cap fires,
+# instead of answering ready and buffing through the pull. Off by default;
+# the readiness text report is immediate either way.
+AiPlayerbot.ForceRebuffOnReadyCheck = 0
 
 # Use jump if can not find a proper path to follow, if possible
 AiPlayerbot.JumpFollow = 1

@@ -1,18 +1,9 @@
 #include "playerbot/playerbot.h"
 #include "PriestMultipliers.h"
 #include "ShadowPriestStrategy.h"
+#include "ShadowPriestStrategyActionNodeFactory.h"
 
 using namespace ai;
-
-class ShadowPriestStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>
-{
-public:
-    ShadowPriestStrategyActionNodeFactory()
-    {
-    }
-
-private:
-};
 
 ShadowPriestStrategy::ShadowPriestStrategy(PlayerbotAI* ai) : PriestStrategy(ai)
 {
@@ -59,6 +50,12 @@ void ShadowPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "silence",
         NextAction::array(0, new NextAction("silence", ACTION_INTERRUPT), NULL)));
+
+    // mod-playerbots parity (PRI-9): enemy-healer silence belongs to the base
+    // shadow kit, not behind the +cc toggle (the cc kit keeps its own copy).
+    triggers.push_back(new TriggerNode(
+        "silence on enemy healer",
+        NextAction::array(0, new NextAction("silence on enemy healer", ACTION_INTERRUPT), NULL)));
 
     // Inner Focus → Mind Blast: pre-buff for guaranteed Mind Blast crit
     // when mana is low. The crit triggers Spirit Tap (+100% Spirit + 50%
@@ -181,6 +178,13 @@ void ShadowPriestAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
     triggers.push_back(new TriggerNode(
         "shadow word: pain on attacker",
         NextAction::array(0, new NextAction("shadow word: pain on attacker", ACTION_HIGH + 1), NULL)));
+
+    // mod-playerbots parity (PRI-3): Devouring Plague is the 1.12 second DoT
+    // (no Vampiric Touch in vanilla) spread across attackers. Undead-only via
+    // the trigger's HasSpell gate; no extra mana guard, matching the donor.
+    triggers.push_back(new TriggerNode(
+        "devouring plague on attacker",
+        NextAction::array(0, new NextAction("devouring plague on attacker", ACTION_HIGH), NULL)));
 }
 
 void ShadowPriestAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

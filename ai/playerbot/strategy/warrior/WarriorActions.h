@@ -161,10 +161,33 @@ namespace ai
                 }
             }
 
+            // DPS warriors sunder only when no tank warrior is in the group
+            // (donor CastSunderArmorAction::isUseful): with a real tank the
+            // stack is their job and DPS rage is better spent on damage.
+            if (!isTank)
+            {
+                Group* group = bot->GetGroup();
+                if (group)
+                {
+                    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+                    {
+                        Player* member = ref->GetSource();
+                        if (!member || member == bot || !member->IsAlive() || !member->IsInWorld() ||
+                            member->GetMapId() != bot->GetMapId())
+                            continue;
+
+                        if (member->GetClass() == CLASS_WARRIOR && ai->IsTank(member, false))
+                            return false;
+                    }
+                }
+            }
             if (isTank && !target->IsPlayer())
                 return true;
 
-            return !ai->HasAura("sunder armor", target, true);
+            // Stack to 5, then only refresh an expiring stack (donor
+            // CastSunderArmorAction::isUseful: stack < 5 or <=6s left).
+            Aura* aura = ai->GetAura("sunder armor", target, false);
+            return !aura || aura->GetStackAmount() < 5 || aura->GetAuraDuration() <= 6000;
         }
     };
 
