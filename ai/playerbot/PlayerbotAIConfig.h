@@ -311,6 +311,10 @@ public:
     // crosses level 5+ mobs; a beginner may still reach its own camp vendor, so the
     // trip is capped to this radius instead (and to the starting-zone level band).
     float lowLevelVendorMaxDistance = 600.0f;
+    // Per-visit microseconds a travel-destination pick may spend scanning
+    // candidates before yielding to the next visit (issue #642). 0 = no
+    // slicing (the whole pick runs in one visit, the old behavior).
+    uint32 travelPickBudgetUs = 4000;
     // Bot-only green/blue drop boost. Masterless pool bots roll each quality-2/3
     // entry of a creature's loot template one extra time per kill, at
     // (multiplier - 1) x the entry's DB chance, so the expected number of

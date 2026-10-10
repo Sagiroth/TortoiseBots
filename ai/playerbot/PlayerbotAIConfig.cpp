@@ -422,6 +422,7 @@ bool PlayerbotAIConfig::Initialize()
     lowLevelVendorBatchMinCount = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.LowLevelVendorBatchMinCount", 3));
     lowLevelVendorBatchMinBagSpace = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.LowLevelVendorBatchMinBagSpace", 25));
     lowLevelVendorMaxDistance = config.GetFloatDefault("AiPlayerbot.LowLevelVendorMaxDistance", 600.0f);
+    travelPickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.TravelPickBudgetUs", 4000);
     botLootRateUncommon = config.GetFloatDefault("AiPlayerbot.BotLootRateUncommon", 1.0f);
     botLootRateRare = config.GetFloatDefault("AiPlayerbot.BotLootRateRare", 1.0f);
     randomBotLftEnabled = config.GetBoolDefault("AiPlayerbot.RandomBotLftEnabled", true);
