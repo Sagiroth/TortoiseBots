@@ -79,6 +79,13 @@
 ### Dungeon & Instances
 - Bots that miss the dungeon entrance — or rez outside after a wipe — now get summoned to their player once both are grouped, the bot is set to follow, and the player is inside an instance; no more bots stranded on the wrong map. [#665](https://github.com/Sagiroth/TortoiseBots/pull/665)
 
+### Looking For Group & Roles
+
+- Shadow priests no longer get slotted into dungeons as the healer, fixing cases where they'd be picked as a healer role but keep casting shadow spells for the whole run. [#664](https://github.com/Sagiroth/TortoiseBots/pull/664)
+- LFT role checks no longer trust bots that have spent zero talent points: a level 10+ priest with no talents spent was defaulting to holy and reading as a healer, so freshly levelled pool bots could be grabbed mid-gap before their talents were applied. [#664](https://github.com/Sagiroth/TortoiseBots/pull/664)
+- With role borrowing off, untalented bots are now skipped during fills and logged as `spec unknown (no talents spent yet)` in the fill's skip log, making it obvious why a bot was passed over. [#664](https://github.com/Sagiroth/TortoiseBots/pull/664)
+- With role borrowing enabled, nothing changes — existing borrow behavior is preserved. [#664](https://github.com/Sagiroth/TortoiseBots/pull/664)
+
 ## 2026-10-09
 
 ### Observability & Engine
