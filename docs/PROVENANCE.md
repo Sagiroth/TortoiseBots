@@ -4557,11 +4557,12 @@ check; no live in-game test.
 ## Warrior WAR-1: DPS sunder with no tank warrior (2026-10-09)
 
 Feature: arms/fury combat lists gain a bottom-rung `sunder armor` row
-(NORMAL+1, below every damage spender), and `CastSunderArmorAction::isUseful`
-now returns false for non-tanks while a tank warrior (any group member of
-class warrior that `IsTank`) shares their map and is alive in-world. A DPS
-warrior in a tankless group keeps the 5-stack up; with a tank warrior
-present it spends rage on damage instead. Tank behavior unchanged.
+(NORMAL-1, below rend/intercept and every damage spender), and
+`CastSunderArmorAction::isUseful` now returns false for non-tanks while a
+tank warrior (any group member of class warrior that `IsTank`) shares
+their map and is alive in-world. A DPS warrior in a tankless group keeps
+the 5-stack up (stacking, then refreshing an expiring stack); with a tank
+warrior present it spends rage on damage instead.
 
 Source repository: `mod-playerbots/mod-playerbots`
 
@@ -4574,15 +4575,26 @@ Source files:
 - `src/Ai/Class/Warrior/Strategy/ArmsWarriorStrategy.cpp:83` (sunder default +0.05)
 
 Copied / ported / independently reimplemented: reimplemented in place
-(`WarriorActions.h`, `ArmsWarriorStrategy.cpp`, `FuryWarriorStrategy.cpp`,
-all `ai/playerbot/strategy/warrior/`). Deviations from the donor, all
-deliberate: (a) donor's 6s-refresh clause is covered by our existing
-trigger-side 5-stack stop + action-side aura-expiry re-arm (report
-verified: equivalent); (b) donor returns false for non-tanks with no group
-at all — ours still sunders ungrouped (a solo DPS warrior benefits from
-the armor reduction, and no tank exists to defer to); (c) row placed
-bottom-ladder NORMAL+1 in both specs (donor: bottom filler above melee in
-both defaults).
+(`WarriorActions.h`, `WarriorTriggers.cpp`, `ArmsWarriorStrategy.cpp`,
+`FuryWarriorStrategy.cpp`, all `ai/playerbot/strategy/warrior/`).
+Deviations from the donor, all deliberate: (a) donor returns false for
+non-tanks with no group at all — ours still sunders ungrouped (a solo DPS
+warrior benefits from the armor reduction, and no tank exists to defer
+to); (b) row at NORMAL-1 rather than donor DEFAULT+0.x — same bottom
+shape (above nothing but melee-idle) in our NORMAL/HIGH ladder; the
+original NORMAL+1 wrongly tied heroic strike and beat rend; (c) the
+group-tank scan stays inline in `isUseful` (donor-identical): it is a
+bounded in-memory walk (≤40 refs, class gate first so `IsTank` runs only
+for warriors) evaluated only while the stack is incomplete — no cached
+group-role value exists and none is warranted; (d) `sunder armor` →
+`melee` fallback nodes added to both DPS factories (prot pattern), so a
+failed sunder falls through to auto-attack.
+
+Review fixes: (1) ported the donor 6s-expiry refresh to both trigger
+(5-stack re-arms at <=6s) and action (`!aura || stack<5 || <=6s`) — the
+old trigger-side `>=5 → false` let full stacks fall off entirely (also
+affected tanks; pre-existing, fixed here); (2) priority NORMAL+1 →
+NORMAL-1 per above.
 
 Reason: WAR-1 in the warrior parity sweep: zero sunder rows in Arms/Fury
 meant tankless groups never got the armor-reduction stack.

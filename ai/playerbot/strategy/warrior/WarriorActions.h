@@ -176,7 +176,10 @@ namespace ai
             if (isTank && !target->IsPlayer())
                 return true;
 
-            return !ai->HasAura("sunder armor", target, true);
+            // Stack to 5, then only refresh an expiring stack (donor
+            // CastSunderArmorAction::isUseful: stack < 5 or <=6s left).
+            Aura* aura = ai->GetAura("sunder armor", target, false);
+            return !aura || aura->GetStackAmount() < 5 || aura->GetAuraDuration() <= 6000;
         }
     };
 
