@@ -59,7 +59,7 @@ namespace ai
 	{
 	public:
         NearestDamagingTrapsValue(PlayerbotAI* ai) :
-            ObjectGuidListCalculatedValue(ai, "nearest damaging traps") {}
+            ObjectGuidListCalculatedValue(ai, "nearest damaging traps", 2) {}
 
     protected:
         virtual std::list<ObjectGuid> Calculate() override;

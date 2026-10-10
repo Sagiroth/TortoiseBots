@@ -2303,8 +2303,12 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
         count = MeleeAoeCandidates(tanking, offsets);
     else
         count = RangedAoeCandidates(offsets);
-    float const angleToTarget = target ? bot->GetAngle(target) : bot->GetAngle(hazardCenter.getX(), hazardCenter.getY());
     float const angleFromHazard = hazardCenter.GetAngleTo(WorldPosition(bot));
+    // No target (opened on the bot, target died mid-tick): donor tries only
+    // straight away from the hazard — never toward it. Without a target the
+    // offset-0 slot would head into the zone center with no band check to
+    // reject it.
+    float const angleToTarget = target ? bot->GetAngle(target) : angleFromHazard;
     const WorldPosition botPos(bot);
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
     uint32 const nowMs = WorldTimer::getMSTime();
@@ -2332,13 +2336,13 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
             cand.setZ(cand.GetHeight());
             if (target && strict)
             {
-                // Reach-relative: center-to-center minus the target's combat
-                // reach (donor shape) — on large mobs/bosses the reach is
-                // 10-20 yd, and raw center distance would fail every melee
-                // landing and misplace ranged ones.
+                // Reach-relative (donor shape: raw target reach, not the
+                // melee-range helper with its +1.33/min-5.0 padding) — on
+                // large mobs/bosses the reach is 10-20 yd, and raw center
+                // distance would fail every melee landing.
                 float landing = sqrtf((cand.getX() - target->GetPositionX()) * (cand.getX() - target->GetPositionX()) +
                     (cand.getY() - target->GetPositionY()) * (cand.getY() - target->GetPositionY()));
-                float const distFromReach = std::max(0.0f, landing - target->GetCombatReach(bot, false, 0.0f));
+                float const distFromReach = std::max(0.0f, landing - target->GetCombatReach());
                 if (melee)
                 {
                     if (!MeleeAoeLandingInRange(distFromReach, sPlayerbotAIConfig.tooCloseDistance))

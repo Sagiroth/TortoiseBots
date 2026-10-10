@@ -109,6 +109,7 @@ namespace ai
             creators["melee very high aoe"] = [](PlayerbotAI* ai) { return new MeleeVeryHighAoeTrigger(ai); };
 
             creators["has area debuff"] = [](PlayerbotAI* ai) { return new HasAreaDebuffTrigger(ai); };
+            creators["aoe threat nearby"] = [](PlayerbotAI* ai) { return new AoeThreatNearbyTrigger(ai); };
             creators["has aura"] = [](PlayerbotAI* ai) { return new HasAuraTrigger(ai); };
 
             creators["potion cooldown"] = [](PlayerbotAI* ai) { return new PotionCooldownTrigger(ai); };

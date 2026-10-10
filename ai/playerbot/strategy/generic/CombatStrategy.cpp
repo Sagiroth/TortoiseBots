@@ -60,27 +60,17 @@ float AvoidAoeStrategyMultiplier::GetValue(Action* action)
     return 1.0f;
 }
 
-NextAction** AvoidAoeStrategy::GetDefaultCombatActions()
-{
-    // Donor shape: "avoid aoe" is a default action, not a trigger row, so
-    // all three sensors (dynobj aura, damaging trap, trigger NPC) are
-    // evaluated every tick via isUseful — not only after the debuff lands.
-    return NextAction::array(0, new NextAction("avoid aoe", ACTION_EMERGENCY + 5), NULL);
-}
-
-NextAction** AvoidAoeStrategy::GetDefaultReactionActions()
-{
-    return NextAction::array(0, new NextAction("avoid aoe", ACTION_EMERGENCY + 5), NULL);
-}
-
 void AvoidAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    // Reactive fallback only: the strafe runs as a default action above
-    // (self-gated, all three sensors), so a failed strafe still blind-flees
-    // rather than standing in the zone.
+    // Proactive strafe-to-safety: "aoe threat nearby" fires on any of the
+    // three sensors (dynobj aura, damaging trap, trigger NPC — none of
+    // which the old "has area debuff" row could see), so the bot steps out
+    // BEFORE the debuff lands. The strafe self-gates via isUseful; the
+    // reactive flee stays as the fallback when no strafe landing validates.
     triggers.push_back(new TriggerNode(
-        "has area debuff",
-        NextAction::array(0, new NextAction("flee", ACTION_EMERGENCY + 4), NULL)));
+        "aoe threat nearby",
+        NextAction::array(0, new NextAction("avoid aoe", ACTION_EMERGENCY + 5),
+            new NextAction("flee", ACTION_EMERGENCY + 4), NULL)));
 }
 
 void AvoidAoeStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)

@@ -4606,3 +4606,35 @@ Non-blocking "direct context lookup" — FIXED: `AI_VALUE` macro like the
 rest of the module. Non-blocking "NearestDynamicObjects empty stub" —
 ACKNOWLEDGED: sensor case 1 degrades gracefully (documented); core grid
 visitor is a host-side gap, not this PR.
+
+## Review fixes round 2 (2026-10-10, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (default actions never evaluated — REAL, fixed differently
+than suggested): verified in code that `ReactionEngine::FindReaction`
+calls only `ProcessTriggers()` (never `PushDefaultActions()`), and
+`avoid aoe` is only on the reaction engine (not the combat engine), so
+the reviewer's `getDefaultActions` fix would also be dead. Instead added
+a real `aoe threat nearby` trigger (dynobj aura OR damaging traps OR
+trigger NPCs, all value-cached) and pointed the strategy row at it, with
+`avoid aoe` first and reactive `flee` as fallback. Removed the dead
+`GetDefault*Actions` overrides.
+
+Blocking 2 (no-target fallback steps toward the hazard — REAL, fixed):
+with no target the offset-0 slot headed at the zone center with the band
+check skipped. Now the heading base falls back to away-from-hazard (donor
+else-branch shape).
+
+Prior blocking #4 follow-up (melee-range helper over-subtracts — REAL,
+fixed): landing now subtracts raw `target->GetCombatReach()`.
+
+Non-blocking "donor melee strict needs IsWithinMeleeRange" —
+ACKNOWLEDGED, not fixed: the port band-rejects whenever a target exists
+even out of melee range. Donor-faithful would skip the band check when
+already out of range; left for playtesting.
+
+Non-blocking "no AutoAvoidAoe/owner gate" — ACKNOWLEDGED, deliberate:
+enabled for all bots per the feature brief (reaction engine
+membership). No config gate added.
+
+Non-blocking "trap scan interval" — FIXED: `NearestDamagingTrapsValue`
+now checkInterval 2 (1 s cadence, like `possible triggers`).
