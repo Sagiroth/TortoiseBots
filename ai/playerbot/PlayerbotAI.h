@@ -871,6 +871,7 @@ protected:
 	Player* bot;
 	Player* master;
 	uint8 m_forcedRole = 0;
+	time_t m_dungeonCatchUpAt = 0;
 	// GUID-shadow of `master` so we can verify the pointer is still
 	// alive each tick without dereferencing it. Set in SetMaster().
 	// Used by RevalidateMasterPointer() at the top of UpdateAI.

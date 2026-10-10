@@ -45,6 +45,7 @@
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "../../runtime/AutoToolsKitPolicy.h"
+#include "../../behavior/PlayerConvenience.h"
 #include "Movement/spline/MoveSplineInitArgs.h"
 #include "Movement/spline/MoveSpline.h"
 #include "Maps/InstanceData.h"
@@ -3261,6 +3262,21 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
         }
         else if (aiInternalUpdateDelay < 1000)
             bot->SetStandState(UNIT_STAND_STATE_STAND);
+
+        // Issue #644: following bots often miss the dungeon entrance, and a
+        // bot cannot path to a master on another map, so it would wait outside
+        // forever (first entry, or after reviving outside from a wipe).
+        // Bring it in like the summon on leaving a dungeon brings it out.
+        if (group && group == master->GetGroup() && master->GetMap()->IsDungeon() &&
+            bot->GetMapId() != master->GetMapId() && HasActivePlayerMaster() &&
+            HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) &&
+            time(nullptr) >= m_dungeonCatchUpAt)
+        {
+            m_dungeonCatchUpAt = time(nullptr) + 20;
+            if (TortoiseBots::PlayerConvenience::Instance().RequestSummon(master, bot))
+                sLog.outString("TortoiseBots: bringing bot %s into the dungeon after master %s",
+                    bot->GetName(), master->GetName());
+        }
 
         if (!group && sRandomBotFacade.IsFreeBot(bot) && !IsRealPlayer())
         {
