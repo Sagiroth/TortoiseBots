@@ -2299,15 +2299,22 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
     if (target && target->GetVictim() == bot &&
         !target->HasAuraType(SPELL_AURA_MOD_ROOT) && !target->HasAuraType(SPELL_AURA_MOD_STUN))
         tanking = true;
-    if (melee)
+    if (!target)
+    {
+        // Donor shape: with no target a single away-from-hazard candidate.
+        // The full anchored list would step into the zone (the ranged PI
+        // slot heads away+PI = toward the center, and open-ground LOS/path
+        // lets it through with no band check to reject it).
+        offsets[0] = 0.0f;
+        count = 1;
+    }
+    else if (melee)
         count = MeleeAoeCandidates(tanking, offsets);
     else
         count = RangedAoeCandidates(offsets);
     float const angleFromHazard = hazardCenter.GetAngleTo(WorldPosition(bot));
-    // No target (opened on the bot, target died mid-tick): donor tries only
-    // straight away from the hazard — never toward it. Without a target the
-    // offset-0 slot would head into the zone center with no band check to
-    // reject it.
+    // No target (opened on the bot, target died mid-tick): the single
+    // candidate above heads straight away from the hazard — never toward it.
     float const angleToTarget = target ? bot->GetAngle(target) : angleFromHazard;
     const WorldPosition botPos(bot);
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
