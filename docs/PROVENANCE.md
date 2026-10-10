@@ -4526,6 +4526,16 @@ expires; ~20% of all stall time sits in WORK.
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
 
+## Druid parity DRU-7: Thorns on the party tank first — 2026-10-09
+Feature: new `ThornsOnTankTrigger` (`BuffOnTankTrigger` on "thorns",
+fire-shield conflict skip mirroring `ThornsOnPartyTrigger`) + new
+`CastThornsOnTankAction` (`BuffOnTankAction`, targets "party tank without
+aura", with an explicit `getName()` override returning "thorns on tank"
+— the base reports spell+" on party", which would collide with the party
+blanket in queue dedup and failure backoff) + non-combat row `thorns on
+tank` at ACTION_NORMAL+3 in `DruidBuffStrategy`, above the party blanket
+at +2 (same BuffOnTank shape as priest PRI-1 `fear ward on tank`,
+verified on the PRI-1 branch).
 ## Warrior WAR-2 + WAR-6: shield-slam proc row and 40-rage gate (2026-10-09)
 
 Feature: (WAR-2) new `improved shield slam proc` trigger fires `shield
@@ -4848,6 +4858,17 @@ Source repository: `mod-playerbots` @ `79bd4281` (local checkout
 `../playerbots-references/mod-playerbots`).
 
 Source files (donor, reference only):
+`src/Ai/Class/Druid/Strategy/GenericDruidNonCombatStrategy.cpp:198-200`
+(`thorns on main tank` 11.0 above `thorns` 10.0). Deviations, deliberate:
+donor names say "main tank" on `BuffOnMainTankTrigger`; ours says "tank"
+on the local `BuffOnTankTrigger` (same "party tank without aura" value,
+cf. PRI-1). The report's "refresh-via-recast may need cancel aura
+support" proved unnecessary: the without-aura value only targets a tank
+lacking Thorns, so expiry re-fires the row naturally. No addon change:
+the main-tank pick already exists via the role button.
+
+Reason: druid parity report DRU-7 — Thorns fell out of the tank's
+rotation once the party row was satisfied.
 `src/Ai/Class/Druid/Strategy/RestoDruidStrategy.cpp:37-43` (critical ->
 `nature's swiftness` 58.0, `nature's swiftness active` -> `healing touch
 on party` 55.0) + `src/Ai/Class/Shaman/ShamanAiObjectContext.cpp:286-288`
@@ -5248,6 +5269,13 @@ healer; innervate rows were balance/resto self-only.
 Source files (module, modified):
 `ai/playerbot/strategy/druid/DruidTriggers.h`,
 `ai/playerbot/strategy/druid/DruidTriggers.cpp`,
+`ai/playerbot/strategy/druid/DruidActions.h`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`ai/playerbot/strategy/druid/DruidStrategy.cpp` +
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Thorns ranks trainer-taught.
 `ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
 `ai/playerbot/strategy/druid/DpsFeralDruidStrategy.cpp` +
 `docs/classes/druid.md` (behaviour lines). The old flat
@@ -5294,6 +5322,17 @@ spell_template; trigger/action creators registered in the druid context.
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
 
+## Review fixes round 2 (2026-10-10, PR #590 CHANGES_REQUESTED)
+Blocking finding verified real and fixed: new `thorns on tank` action
+had no ActionNode — `Engine::CreateActionNode` falls back to a bare node
+with NULL prerequisites, so a shapeshifted druid fails the cast via
+`GetErrorAtShapeshiftedCast` and the tank row never beats the blanket
+for shifted druids. Fixed: `thorns_on_tank` caster-form node in
+`DruidStrategyActionNodeFactory` (same shape as every sibling buff row).
+Non-blocking: check interval matched to sibling/donor 4; MotW-vs-thorns
+ordering kept (tank-first is the feature); early-refresh overlap left as
+harmless (reviewer agrees).
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
 ## Review fixes (2026-10-09, PR #582 CHANGES_REQUESTED)
 Blocking finding verified real and fixed: without an absolute-HP gate,
 the execute row (CP>=1 at +6) eats every combo point on any sub-25%
