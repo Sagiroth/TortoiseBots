@@ -495,6 +495,11 @@ public:
     // log files (logs/bots/<name>_acc<id>_<timestamp>.log) are emitted. Default
     // off so production servers don't pay disk I/O / branch overhead.
     bool enableActionLog;
+    // Opt-in aggregate counter of executed bot actions (Engine OK/FAILED/
+    // IMPOSSIBLE outcomes keyed by bot class + action name), dumped every 5
+    // minutes to logs/action_counts.csv. Default off so production servers
+    // pay one branch per executed action and nothing else.
+    bool actionCountsLog;
     // Filename (relative to LogsDir) for the bot subsystem log. When set,
     // all sLog calls from bot .cpp files are redirected there instead of
     // writing to the main server log. Default: "bots.log". Empty = disabled.
@@ -591,6 +596,10 @@ public:
 
     std::string autoPickReward;
     bool autoEquipUpgradeLoot;
+    // Equip-upgrade score threshold (AG-1): a new item must beat the old
+    // stat weight by this factor to count as an upgrade. Stops epsilon
+    // swap churn across audits. 1.0 restores any-gain swaps.
+    float equipUpgradeThreshold = 1.1f;
     bool syncQuestWithPlayer;
     bool syncQuestForPlayer;
     std::string autoTrainSpells;
@@ -630,6 +639,11 @@ public:
 
     bool jumpInBg;
     bool jumpWithPlayer;
+    // Ready-check rebuff defer (SOC-S5). Off by default: when on, a bot that
+    // gets a ready check out of combat reports status immediately but holds
+    // the confirm until buffs settle (grace) or a hard cap fires, instead of
+    // answering ready and buffing through the pull.
+    bool forceRebuffOnReadyCheck = false;
     bool jumpFollow;
     bool jumpChase;
     bool useKnockback;

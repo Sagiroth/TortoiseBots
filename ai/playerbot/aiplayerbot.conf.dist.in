@@ -620,6 +620,13 @@ AiPlayerbot.InviteChat = 1
 # reads a thread-local "last phase" tag set by SC_PHASE when this is on.
 # AiPlayerbot.EnableActionLog = 0
 
+# Aggregate counter of executed bot actions for live measurement on large
+# realms: every 5 minutes a cumulative snapshot (utc_time,class,action,
+# ok_count,fail_count) is appended to logs/action_counts.csv. Off in
+# production; turn on for a measurement window, then diff two snapshots with
+# tools/action_counts_report.py to see the top actions per class.
+AiPlayerbot.ActionCountsLog = 0
+
 # Redirect all bot subsystem log output to a dedicated file so the main
 # server.log stays clean. Path is relative to the server's LogsDir setting.
 #
@@ -771,6 +778,9 @@ AiPlayerbot.AutoPickReward = yes
 # Bots equip upgrades (Bots will equip any item obtained from looting or a quest if they are upgrades)
 # Default: 0 (disabled)
 AiPlayerbot.AutoEquipUpgradeLoot = 1
+
+# An upgrade must beat the old item's stat weight by this factor to count (mod-playerbots parity, default 1.1: a +10% win swaps, an epsilon gain does not). 1.0 restores any-gain swaps.
+AiPlayerbot.EquipUpgradeThreshold = 1.1
 
 # Sync quests with player (Bots will complete quests the moment you hand them in. Bots will ignore looting quest items.)
 # Default: 0 (disabled)
@@ -1638,6 +1648,10 @@ AiPlayerbot.JumpHeightLimit = 60
 AiPlayerbot.JumpWithPlayer = 0
 # Add rpg jump strategy in BG
 AiPlayerbot.JumpInBg = 0
+# Hold the ready-check confirm until buffs settle (grace) or a 30 s cap fires,
+# instead of answering ready and buffing through the pull. Off by default;
+# the readiness text report is immediate either way.
+AiPlayerbot.ForceRebuffOnReadyCheck = 0
 
 # Use jump if can not find a proper path to follow, if possible
 AiPlayerbot.JumpFollow = 1

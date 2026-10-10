@@ -218,4 +218,69 @@ namespace ai
             return !gos.empty();
         }
     };
+
+    class ChromaggusEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        ChromaggusEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable chromaggus fight strategy", "+chromaggus") {}
+    };
+
+    class ChromaggusDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        ChromaggusDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable chromaggus fight strategy", "-chromaggus") {}
+    };
+
+    // Brood Affliction: Bronze cleanse. Hourglass Sand (19183) casts
+    // Hourglass Sand (23645) on use; the qualifier pins the exact item so
+    // no other "sand" item can sneak in. Bots loot the sand off Chromaggus
+    // trash like any other drop, so no loot change is needed.
+    class UseHourglassSandAction : public UseItemIdAction
+    {
+    public:
+        UseHourglassSandAction(PlayerbotAI* ai) : UseItemIdAction(ai, "use hourglass sand") { qualifier = "{19183}"; }
+    };
+
+    class BroodlordEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        BroodlordEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable broodlord fight strategy", "+broodlord") {}
+    };
+
+    class BroodlordDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        BroodlordDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable broodlord fight strategy", "-broodlord") {}
+    };
+
+    class NefarianEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        NefarianEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable nefarian fight strategy", "+nefarian") {}
+    };
+
+    class NefarianDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        NefarianDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable nefarian fight strategy", "-nefarian") {}
+    };
+
+    class BroodlordMoveAwayAction : public MoveAwayFromCreature
+    {
+    public:
+        // Donor BROODLORD_SAFE_DISTANCE: ranged holds 18y (Blast Wave).
+        BroodlordMoveAwayAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "move away from broodlord", 12017, 18.0f) {}
+    };
+
+    class VaelEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        VaelEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable vael fight strategy", "+vael") {}
+    };
+
+    class VaelDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        VaelDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable vael fight strategy", "-vael") {}
+    };
 }

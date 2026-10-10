@@ -37,12 +37,8 @@ void RacialsStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
         NextAction::array(0, new NextAction("shadowmeld", 71.0f), NULL)));*/
 
     triggers.push_back(new TriggerNode(
-        "berserking",
-        NextAction::array(0, new NextAction("berserking", 58.0f), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "blood fury",
-        NextAction::array(0, new NextAction("blood fury", 71.0f), NULL)));
+        "generic boost",
+        NextAction::array(0, new NextAction("berserking", 58.0f), new NextAction("blood fury", 71.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
         "stoneform",

@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/triggers/GenericTriggers.h"
+#include "playerbot/BattleShoutPolicy.h"
 
 namespace ai
 {
@@ -16,7 +17,22 @@ namespace ai
     CAN_CAST_TRIGGER(RevengeAvailableTrigger, "revenge");
     CAN_CAST_TRIGGER(OverpowerAvailableTrigger, "overpower");
     BUFF_TRIGGER_A(BloodrageBuffTrigger, "bloodrage");
-    HAS_AURA_TRIGGER(SwordAndBoardTrigger, "sword and board");
+    // Turtle Improved Shield Slam proc (51596/51597, +35%/+70% slam damage
+    // on melee-ability hit): same slot as the donor's Sword-and-Board row,
+    // but matched by spell id, not name — the permanent talent (51598/51599)
+    // shares the "Improved Shield Slam" name and would keep a name trigger
+    // active forever. Proc aura is 1 charge (procCharges=1), so firing slam
+    // immediately consumes the bonus before it expires.
+    class ImprovedShieldSlamProcTrigger : public Trigger
+    {
+    public:
+        ImprovedShieldSlamProcTrigger(PlayerbotAI* ai) : Trigger(ai, "improved shield slam proc") {}
+
+        bool IsActive() override
+        {
+            return ai->HasAura(51596, bot) || ai->HasAura(51597, bot);
+        }
+    };
     SNARE_TRIGGER(ConcussionBlowTrigger, "concussion blow");
     SNARE_TRIGGER(HamstringTrigger, "hamstring");
     SNARE_TRIGGER(MockingBlowTrigger, "mocking blow");
@@ -49,6 +65,35 @@ namespace ai
             for (uint32 id : battleShoutIds)
             {
                 if (bot->HasAura(id))
+                    return false;
+            }
+
+            // Skip Battle Shout when a stronger Blessing of Might is up (donor
+            // BattleShoutTrigger compares AP values). Tables + rule live in
+            // BattleShoutPolicy.h (unit-tested). Own AP scaled by Improved
+            // Battle Shout talent (donor COMMANDING_PRESENCE_RANKS are these
+            // same Vanilla ids); highest learned rank wins. Spellbook check
+            // (not aura): passive talent auras may not be visible.
+            static const uint32 impBattleShoutRanks[] = { 12318, 12857, 12858, 12860, 12861 };
+            float talentBonus = 0.0f;
+            for (int rank = 4; rank >= 0; --rank)
+            {
+                if (bot->HasSpell(impBattleShoutRanks[rank]))
+                {
+                    talentBonus = ImprovedBattleShoutBonus(impBattleShoutRanks[rank]);
+                    break;
+                }
+            }
+            int32 shoutAp = EffectiveBattleShoutAp(
+                BattleShoutAttackPower(AI_VALUE2(uint32, "spell id", "battle shout")), talentBonus);
+            if (Aura* might = ai->GetAura("blessing of might", bot))
+            {
+                if (!ShouldBattleShout(shoutAp, true, BlessingOfMightAttackPower(might->GetSpellProto()->Id)))
+                    return false;
+            }
+            if (Aura* greaterMight = ai->GetAura("greater blessing of might", bot))
+            {
+                if (!ShouldBattleShout(shoutAp, true, BlessingOfMightAttackPower(greaterMight->GetSpellProto()->Id)))
                     return false;
             }
             return true;

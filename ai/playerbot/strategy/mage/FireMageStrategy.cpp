@@ -48,6 +48,10 @@ void FireMageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("scorch", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "hot streak",
+        NextAction::array(0, new NextAction("pyroblast", ACTION_HIGH + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "pyroblast",
         NextAction::array(0, new NextAction("pyroblast", ACTION_NORMAL + 1), NULL)));
 
@@ -146,6 +150,12 @@ void FireMageRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
 void FireMageAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     MageAoeStrategy::InitCombatTriggers(triggers);
+
+    // MAG-2: own flamestrike burning under the pack — channel blizzard on
+    // top (donor: blizzard-on-active 24 above flamestrike 23).
+    triggers.push_back(new TriggerNode(
+        "flamestrike window",
+        NextAction::array(0, new NextAction("blizzard", ACTION_HIGH + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "ranged medium aoe",
