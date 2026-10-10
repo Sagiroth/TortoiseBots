@@ -545,6 +545,8 @@ bool PlayerbotAIConfig::Initialize()
     randomBotBgEnabled = config.GetBoolDefault("AiPlayerbot.RandomBotBgEnabled", true);
     randomBotBgQueueInterval = config.GetIntDefault("AiPlayerbot.RandomBotBgQueueInterval", 30000);
     randomBotBgMaxQueuePerInterval = config.GetIntDefault("AiPlayerbot.RandomBotBgMaxQueuePerInterval", 1);
+    randomBotBgAutonomous = config.GetBoolDefault("AiPlayerbot.RandomBotBgAutonomous", true);
+    randomBotBgAutonomousMaxInstances = config.GetIntDefault("AiPlayerbot.RandomBotBgAutonomousMaxInstances", 1);
 
     sLog.outString("Loading Race/Class probabilities");
 

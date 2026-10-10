@@ -158,7 +158,14 @@ Organic buyer (issue #405, no buyer teleport): the synthetic buyer bids only wit
 ### Battleground Auto-Queue
 * Config: **`AiPlayerbot.RandomBotBgEnabled = 1`** (on by default; set `0` to opt out)
 * Monitors PvP queues for **Warsong Gulch (WSG)**, **Arathi Basin (AB)**, and **Alterac Valley (AV)**.
-* When real players queue up, random bots queue to balance faction team sizes and launch the battleground, allowing you to play active PvP battlegrounds even on low-population private servers. Random bots only queue while a real human waits in the queue — never autonomously.
+* When real players queue up, random bots queue to balance faction team sizes and launch the battleground, allowing you to play active PvP battlegrounds even on low-population private servers. Random bots only queue while a real human waits in the queue — unless you opt into autonomous bot-only matches below.
+
+### Autonomous Bot-Only Matches (on by default; set `0` to opt out)
+* Config: **`AiPlayerbot.RandomBotBgAutonomous = 1`** (on by default; set `0` to opt out) + `AiPlayerbot.RandomBotBgAutonomousMaxInstances = 1` (cap for an average PC: one 10v10 at a time).
+* When nobody is queued, pool bots start their own Warsong Gulch in the most populated level bracket so they have matches of their own. Human demand always wins: the seeder only runs when no real player is waiting in any queue (invited/in-match humans don't count), so new seeds stop as soon as someone queues.
+* Seeds are solo bots only (grouped bots stay out). Batches of 1 accumulate each tick until both sides reach 10v10;
+  a still-forming match keeps absorbing queued seeds, so only a full 10v10 instance stops new seeds. Cap is per bracket (default 1).
+  Requires `AiPlayerbot.RandomBotBgEnabled = 1` (the seeder runs inside the backfill tick).
 
 ### Battlegrounds With Your Own Party Bots
 * Queue at the battlemaster with **Join as Group**: the core group-join check passes headless bot members like any player (same team, in world, level bracket, no deserter), so your party — you plus your own managed bots — enters the queue together. **WSG and AB** support group joins; **AV rejects group joins in the core**, so queue AV solo alongside your bots instead.
