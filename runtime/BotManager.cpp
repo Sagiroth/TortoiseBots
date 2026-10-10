@@ -1958,7 +1958,10 @@ void BotManager::UpdateBots(uint32_t diff)
             // dead sweep then ran at its cap every 30 s with ~165 corpses
             // queued and some lay dead 12+ min (Oct 2026, 2000 bots).
             ::Player* p = sObjectAccessor.FindPlayer(it->second.record.characterGuid);
-            if (p && (p->IsInCombat() || !p->IsAlive()))
+            // Battleground bots too: a match is constant movement and objective
+            // changes, and one visit every few seconds left them standing at
+            // their spawn (Oct 2026).
+            if (p && (p->IsInCombat() || !p->IsAlive() || p->InBattleGround()))
             {
                 updateOneBot(guidLow);
                 if (combatBudgetUs > 0)

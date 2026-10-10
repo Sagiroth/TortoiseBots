@@ -54,6 +54,7 @@ struct BotTelemetrySnapshot
     uint32 aiVisits = 0;       // AI updates since login
     uint32 aiAgeMs = 0;        // ms since the last AI update
     std::string pvp;           // "bg" inside a battleground, "queue" when queued, else empty
+    std::string pvpWhere;      // battleground name, or the queued battleground names
 };
 
 // ObservabilityEmitter sends non-blocking loopback UDP telemetry to the

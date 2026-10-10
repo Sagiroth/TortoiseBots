@@ -130,6 +130,8 @@
 
   // One colour per macro state, shared by the Activity census, the roster
   // state badges and the map markers so "dead" is never three colours.
+  const BG_SHORT = { 'Warsong Gulch': 'WSG', 'Arathi Basin': 'AB', 'Alterac Valley': 'AV' };
+
   const STATE_COLORS = {
     combat: '#f85149', moving: '#58a6ff', busy: '#d29922', stalled: '#e3852a',
     resting: '#2ea043', idle: '#9aa4b2', dead: '#8b949e'
@@ -1930,10 +1932,13 @@
     if (el.metricBotsOnline) el.metricBotsOnline.textContent = s.online ? s.bots : 0;
     if (el.metricHumansOnline) el.metricHumansOnline.textContent = s.online ? s.humans : 0;
     if (el.metricPvp) {
-      const inBg = s.online ? state.bots.filter(b => b.pvp === 'bg').length : 0;
+      const inBg = s.online ? state.bots.filter(b => b.pvp === 'bg') : [];
       const queued = s.online ? state.bots.filter(b => b.pvp === 'queue').length : 0;
-      el.metricPvp.textContent = inBg;
-      if (el.metricPvpSub) el.metricPvpSub.textContent = `${queued} queued`;
+      const perBg = {};
+      inBg.forEach(b => { const n = BG_SHORT[b.pvp_bg] || b.pvp_bg || '?'; perBg[n] = (perBg[n] || 0) + 1; });
+      const where = Object.entries(perBg).sort((a, b) => b[1] - a[1]).map(([n, c]) => `${n} ${c}`);
+      el.metricPvp.textContent = inBg.length;
+      if (el.metricPvpSub) el.metricPvpSub.textContent = where.concat(`${queued} queued`).join(' · ');
     }
     if (el.metricUptime) el.metricUptime.textContent = s.online ? `up ${formatUptime(s.uptime)}` : 'offline';
     if (el.metricTick) {
@@ -2227,7 +2232,8 @@
     zone: {
       label: 'Zone',
       sort: r => (r.live ? getZoneName(r.live.zone, r.live.map).toLowerCase() : ''),
-      cell: r => (r.live ? `<span class="mono">${esc(getZoneName(r.live.zone, r.live.map))}</span>` : DASH)
+      cell: r => (r.live ? `<span class="mono">${esc(getZoneName(r.live.zone, r.live.map))}</span>` +
+        (r.live.pvp === 'queue' && r.live.pvp_bg ? ` <span class="cell-muted">· queued for ${esc(r.live.pvp_bg)}</span>` : '') : DASH)
     },
     xp: {
       label: 'XP',
