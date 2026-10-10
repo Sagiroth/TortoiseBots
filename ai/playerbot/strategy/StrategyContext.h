@@ -58,6 +58,7 @@
 #include "generic/ClassicRaidDungeonStrategies.h"
 #include "generic/KarazhanCryptDungeonStrategies.h"
 #include "generic/GluthDungeonStrategies.h"
+#include "generic/ThaddiusDungeonStrategies.h"
 #include "generic/KelthuzadDungeonStrategies.h"
 #include "generic/GrobbulusDungeonStrategies.h"
 #include "generic/LoathebDungeonStrategies.h"
@@ -196,6 +197,7 @@ namespace ai
             creators["vael"] = [](PlayerbotAI* ai) { return new VaelFightStrategy(ai); };
             creators["four horseman"] = [](PlayerbotAI* ai) { return new FourHorsemanFightStrategy(ai); };
             creators["gluth"] = [](PlayerbotAI* ai) { return new GluthFightStrategy(ai); };
+            creators["thaddius"] = [](PlayerbotAI* ai) { return new ThaddiusFightStrategy(ai); };
             creators["kel'thuzad"] = [](PlayerbotAI* ai) { return new KelthuzadFightStrategy(ai); };
             creators["grobbulus"] = [](PlayerbotAI* ai) { return new GrobbulusFightStrategy(ai); };
             creators["loatheb"] = [](PlayerbotAI* ai) { return new LoathebFightStrategy(ai); };
