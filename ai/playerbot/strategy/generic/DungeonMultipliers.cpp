@@ -5,6 +5,11 @@
 #include "DungeonMultipliers.h"
 #include "playerbot/strategy/actions/DungeonActions.h"
 #include "playerbot/strategy/actions/ReachTargetActions.h"
+#include "playerbot/strategy/actions/ChooseTargetActions.h"
+#include "playerbot/strategy/AiObjectContext.h"
+#include "playerbot/GroupMembers.h"
+#include "playerbot/ServerFacade.h"
+#include "playerbot/RazorgorePolicy.h"
 #include "playerbot/GeddonInfernoPolicy.h"
 
 using namespace ai;
@@ -59,6 +64,84 @@ float GarrAoeOffMultiplier::GetValue(Action* action)
     // is both under- and over-inclusive here.
     bool actionIsAoe = IsGarrSuppressedAoeAction(action->getName());
     if (ShouldSuppressGarrAoe(garrAlive, botIsDps, actionIsAoe))
+        return 0.0f;
+    return 1.0f;
+}
+
+float RazorgoreOffTankMultiplier::GetValue(Action* action)
+{
+    if (!action)
+        return 1.0f;
+    // Only TankAssistAction is ever vetoed: skip every scan for the ~99%
+    // of other actions (donor's egg-phase veto is TankAssistAction-only;
+    // its post-egg TankFaceAction veto is deliberately not ported — no
+    // TankFaceAction exists in this codebase).
+    if (dynamic_cast<TankAssistAction*>(action) == nullptr)
+        return 1.0f;
+    if (!ai->HasStrategy("razorgore", BotState::BOT_STATE_COMBAT))
+        return 1.0f;
+    if (!ai->IsTank(bot))
+        return 1.0f;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    // Explicit player orders win: never veto a tank-assist carrying an
+    // explicit target (TankTargetValue returns explicit first).
+    if (!AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty())
+        return 1.0f;
+    const std::list<ObjectGuid>& attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    Unit* boss = nullptr;
+    for (const ObjectGuid& attackerGuid : attackers)
+    {
+        Unit* attacker = ai->GetUnit(attackerGuid);
+        if (attacker && attacker->GetEntry() == kRazorgoreEntry && sServerFacade.IsAlive(attacker))
+        {
+            boss = attacker;
+            break;
+        }
+    }
+    if (!boss)
+        return 1.0f;
+    // Donor's victim guard (BWLMultipliers.cpp:32): the off-tank must still
+    // ACQUIRE the boss — veto only once it holds something.
+    if (bot->GetVictim() == nullptr)
+        return 1.0f;
+    // Real egg check (donor AreRazorgoreEggsAlive): cached "nearest game
+    // objects" value, entry 177807. Veto lifts when the eggs die.
+    bool eggsAlive = false;
+    const std::list<ObjectGuid> nearestGos = AI_VALUE(std::list<ObjectGuid>, "nearest game objects");
+    for (const ObjectGuid& goGuid : nearestGos)
+    {
+        GameObject* go = ai->GetGameObject(goGuid);
+        if (go && go->GetEntry() == kBlackDragonEggEntry)
+        {
+            eggsAlive = true;
+            break;
+        }
+    }
+    // Off-tank = first living tank of the group by member-slot order (no
+    // main/assist-tank distinction exists yet; Golemagg will add it).
+    // While eggs live the off-tank holds the boss: veto tank-assist
+    // retargets so adds don't pull it off.
+    bool botIsOffTank = false;
+    if (Group* group = bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (!member || !sServerFacade.IsAlive(member))
+                continue;
+            // Same-map only: an out-of-instance tank must not win slot 0.
+            if (member->GetMapId() != bot->GetMapId())
+                continue;
+            if (!ai->IsTank(member))
+                continue;
+            botIsOffTank = (member == bot);
+            break;
+        }
+    }
+    else
+    {
+        botIsOffTank = true;
+    }
+    if (ShouldHoldRazorgore(eggsAlive, botIsOffTank))
         return 0.0f;
     return 1.0f;
 }

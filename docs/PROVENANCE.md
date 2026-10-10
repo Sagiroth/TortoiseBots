@@ -4622,6 +4622,36 @@ Local validation: `bash tools/verify_all.sh` (all suites incl. the new
 policy test pass); `git diff --check`. Creature entries 12057/12264
 verified against tw_world. Build via build-commit.sh pending; live in-game
 check pending.
+## Razorgore cone escape + off-tank hold (raid1 item 5) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/BWL/BWLTriggers.cpp:34-39` (NotMindControlled: boss lacks
+Possess 19832), `src/Ai/Raid/BWL/BWLActions.cpp:59-106` (AvoidAoe: victim
+holds; in-cone within 15y steps behind — melee 3y, ranged 15y; ranged
+outside cone but close backs off for War Stomp), `:108-138` (MarkBoss:
+off-tank moons boss while eggs live), `src/Ai/Raid/BWL/
+BWLMultipliers.cpp:20-41` (off-tank tank-assist veto while eggs live;
+non-victim tanks skip Cleave-facing after), `src/Ai/Raid/BWL/
+BWLHelpers.h:21,40` (Possess aura, egg GO 177807), `:58-59` geometry
+constants (15y cone radius, 180-degree arc, 15y ranged, 3y melee).
+
+Source files (module, modified): `ai/playerbot/RazorgorePolicy.h` (new
+pure rule: ids, geometry, phase/escape/back-off/hold predicates),
+`ai/playerbot/strategy/triggers/BlackwingLairDungeonTriggers.h`
+(RazorgoreStart/EndFightTrigger on entry 12435, header-inline
+RazorgoreConeTrigger with victim + Possess gates, header-inline
+RazorgoreRangedTrigger), `ai/playerbot/strategy/actions/
+BlackwingLairDungeonActions.h` (enable/disable actions,
+RazorgoreEscapeConeAction + RazorgoreBackOffAction: MoveAwayFromCreature
+12435/15y), `ai/playerbot/strategy/generic/
+BlackwingLairDungeonStrategies.h/.cpp` (`razorgore` fight strategy: cone
+reaction EMERGENCY+5, ranged back-off EMERGENCY+4, potion node, end-fight
+cleanup, RazorgoreOffTankMultiplier), `ai/playerbot/strategy/generic/
+DungeonMultipliers.h/.cpp` (RazorgoreOffTankMultiplier: first living tank
+by member-slot order holds via tank-assist veto), registrations
+(`TriggerContext.h`, `ActionContext.h`, `StrategyContext.h`),
+`tools/test_razorgore_policy.cpp` (new standalone test) +
 ## Druid parity DRU-7: Thorns on the party tank first — 2026-10-09
 Feature: new `ThornsOnTankTrigger` (`BuffOnTankTrigger` on "thorns",
 fire-shield conflict skip mirroring `ThornsOnPartyTrigger`) + new
@@ -4728,6 +4758,53 @@ are not the victim), registrations (`TriggerContext.h`,
 line).
 
 Copied / ported / reimplemented: reimplemented in our per-boss fight
+strategy idiom. Deviations from the donor, all deliberate: (a) no orb MC
+— bots never touch the orb, that stays a player job (same as donor
+intent); (b) no moon-mark action: our generic `mark rti` covers marking
+and the off-tank hold is enforced by the multiplier, so the extra mark
+action would be ceremony; (c) off-tank = first living tank by member-slot
+order via LiveGroupMembers (no IsAssistTankOfIndex exists; Golemagg will
+revisit tank roles); (d) egg-liveness falls back to hold-the-boss when no
+egg data is reachable — the safe side; (e) cone escape reuses
+MoveAwayFromCreature's hazard-aware search instead of the donor's
+incremental step + fuzz (same observable: out of the cone, behind boss).
+
+Reason: raid1 gap BWL-RAZORGORE: no tactics at all — raid stood in Cleave
+and War Stomp, nobody held the boss for the egg phase.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Entries 12435/19832/177807
+verified against tw_world. Build via build-commit.sh pending; live
+in-game check pending.
+
+## Review fixes: real egg check, victim guard, behind-boss escape, engage arm (PR #616) — 2026-10-10
+
+All three blocking findings verified real and fixed; non-blocking 1/3/4
+also applied (2 noted below).
+
+(a) `eggsAlive` hardcoded true + missing post-egg Cleave branch: the
+multiplier now reads the cached `nearest game objects` value for entry
+177807 (donor AreRazorgoreEggsAlive) — the veto lifts when eggs die.
+Post-egg the action no-ops and normal selection resumes (no separate
+Cleave branch; no `TankFaceAction` exists in this codebase).
+(b) Missing victim guard + no engage path: veto now returns 1.0 while the
+off-tank holds nothing (donor `bot->GetVictim() != nullptr` guard), and a
+new tank-only `razorgore engage` node attacks Razorgore while eggs live
+(the MarkBoss attack arm; moon mark stays dropped, generic mark rti
+covers marking). Post-egg the action no-ops and normal selection resumes.
+(c) Escape actions were radial MoveAway flees landing ~17y out (melee
+uptime destroyed): new custom `RazorgoreEscapeConeAction::Execute`
+implements the donor behind-boss math (orientation + PI + fuzz, melee 3y
+/ ranged 15y, LOS-checked). Non-blocking: direct `boss->HasAura(19832)`
+(donor/core shape, skips the hostile-unit filter question), TankAssist
+early-out hoisting + same-map election guard, production literals routed
+through policy constants. Non-blocking 2 NOT separately fixed — the
+TankAssist early-out at the top subsumes it (scans only run for vetoed
+actions).
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the policy
+test pass); `git diff --check`. Build via build-commit.sh pending; live
+in-game check pending.
 strategy idiom. Deviations from the donor, all deliberate: (a) no
 resist-aura triggers here (separate raid1 item 8); (b) Nefarian positioning
 is already covered by the universal dragon flank (Nefarian is in the flank

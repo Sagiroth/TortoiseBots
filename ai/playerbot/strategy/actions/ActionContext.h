@@ -397,6 +397,11 @@ namespace ai
             creators["enable chromaggus fight strategy"] = [](PlayerbotAI* ai) { return new ChromaggusEnableFightStrategyAction(ai); };
             creators["disable chromaggus fight strategy"] = [](PlayerbotAI* ai) { return new ChromaggusDisableFightStrategyAction(ai); };
             creators["use hourglass sand"] = [](PlayerbotAI* ai) { return new UseHourglassSandAction(ai); };
+            creators["enable razorgore fight strategy"] = [](PlayerbotAI* ai) { return new RazorgoreEnableFightStrategyAction(ai); };
+            creators["disable razorgore fight strategy"] = [](PlayerbotAI* ai) { return new RazorgoreDisableFightStrategyAction(ai); };
+            creators["escape razorgore cone"] = [](PlayerbotAI* ai) { return new RazorgoreEscapeConeAction(ai); };
+            creators["back off razorgore"] = [](PlayerbotAI* ai) { return new RazorgoreBackOffAction(ai); };
+            creators["razorgore engage"] = [](PlayerbotAI* ai) { return new RazorgoreEngageAction(ai); };
             creators["enable broodlord fight strategy"] = [](PlayerbotAI* ai) { return new BroodlordEnableFightStrategyAction(ai); };
             creators["disable broodlord fight strategy"] = [](PlayerbotAI* ai) { return new BroodlordDisableFightStrategyAction(ai); };
             creators["move away from broodlord"] = [](PlayerbotAI* ai) { return new BroodlordMoveAwayAction(ai); };

@@ -17,6 +17,18 @@ namespace ai
         virtual float GetValue(Action* action) override;
     };
 
+    // Razorgore off-tank hold (mod-playerbots parity): while eggs live,
+    // the designated off-tank keeps the boss and never follows tank-assist
+    // retargets.
+    class RazorgoreOffTankMultiplier : public Multiplier
+    {
+    public:
+        RazorgoreOffTankMultiplier(PlayerbotAI* ai) : Multiplier(ai, "razorgore off tank") {}
+
+    public:
+        virtual float GetValue(Action* action) override;
+    };
+
     class PreventMoveAwayFromCreatureOnReachToCastMultiplier : public Multiplier
     {
     public:

@@ -370,6 +370,11 @@ namespace ai
             creators["start chromaggus fight"] = [](PlayerbotAI* ai) { return new ChromaggusStartFightTrigger(ai); };
             creators["end chromaggus fight"] = [](PlayerbotAI* ai) { return new ChromaggusEndFightTrigger(ai); };
             creators["chromaggus bronze affliction"] = [](PlayerbotAI* ai) { return new ChromaggusBronzeAfflictionTrigger(ai); };
+            creators["start razorgore fight"] = [](PlayerbotAI* ai) { return new RazorgoreStartFightTrigger(ai); };
+            creators["end razorgore fight"] = [](PlayerbotAI* ai) { return new RazorgoreEndFightTrigger(ai); };
+            creators["razorgore cone"] = [](PlayerbotAI* ai) { return new RazorgoreConeTrigger(ai); };
+            creators["razorgore engage"] = [](PlayerbotAI* ai) { return new RazorgoreEngageTrigger(ai); };
+            creators["razorgore ranged"] = [](PlayerbotAI* ai) { return new RazorgoreRangedTrigger(ai); };
             creators["start broodlord fight"] = [](PlayerbotAI* ai) { return new BroodlordStartFightTrigger(ai); };
             creators["end broodlord fight"] = [](PlayerbotAI* ai) { return new BroodlordEndFightTrigger(ai); };
             creators["broodlord ranged"] = [](PlayerbotAI* ai) { return new BroodlordRangedTrigger(ai); };
