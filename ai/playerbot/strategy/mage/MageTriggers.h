@@ -193,6 +193,17 @@ namespace ai
         bool IsActive() override;
     };
 
+    // MAG-2: own flamestrike cast started <=6s ago and the pack is still
+    // grouped — channel blizzard on the burning ground (window counts from
+    // cast start, not impact). See FlamestrikeWindowPolicy.h
+    // (the donor's dynobj check cannot port: no aura→dynobj link here).
+    class FlamestrikeWindowTrigger : public Trigger
+    {
+    public:
+        FlamestrikeWindowTrigger(PlayerbotAI* ai) : Trigger(ai, "flamestrike window") {}
+        bool IsActive() override;
+    };
+
     class BlizzardChannelCheckTrigger : public Trigger
     {
     public:

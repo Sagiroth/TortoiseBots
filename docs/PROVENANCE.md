@@ -6069,6 +6069,56 @@ rows in `GenericDruidStrategy.cpp:60,121-123` predate this PR (dead file,
 untouched — the "port removed" note in the summary referred to the
 never-merged `PredatorsSwiftnessTrigger`, not those rows); leftover brief
 text deleted from this entry.
+
+## Mage flamestrike to blizzard sequencing (MAG-2) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/Strategy/GenericMageStrategy.cpp:182-186,196,202-205`
+(`medium aoe` → flamestrike 23 then blizzard 22; `flamestrike active and
+medium aoe` → blizzard 24),
+`src/Ai/Class/Mage/MageTriggers.cpp:107-124` (`FlamestrikeNearbyTrigger`:
+own flamestrike DynamicObject within 30yd).
+
+Source files (module, modified):
+`ai/playerbot/FlamestrikeWindowPolicy.h` (new pure rule:
+`ShouldBlizzardAfterFlamestrike` fires when the last cast was a
+flamestrike castable rank id 2120/2121/8422/8423/10215/10216 (3s cast in
+1.12; not the 2124-line trainer Learn spells) within the last 6s after
+cast start
+and the pack is still grouped),
+`tools/test_flamestrike_window_policy.cpp` (new standalone test, 15
+checks) + `tools/verify_all.sh` (registered),
+`ai/playerbot/strategy/mage/MageTriggers.h/.cpp` (new
+`FlamestrikeWindowTrigger : Trigger` reading `last spell cast` into the
+policy, then confirming the pack via the live `ranged medium aoe`
+trigger — cheap cast-id/time gates run before the density scan),
+`ai/playerbot/strategy/mage/MageAiObjectContext.cpp` (registered
+`flamestrike window`), `FrostMageStrategy.cpp` /
+`FireMageStrategy.cpp` / `ArcaneMageStrategy.cpp` (each AoE strategy:
+`flamestrike window` → blizzard at HIGH+2 FIRST, then the existing
+medium-aoe rows), `docs/classes/mage.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in the live list-based
+style. Deviations from the donor, all deliberate: (a) the donor's
+"flamestrike active" check (own dynobj within 30yd via
+`Aura::GetDynobjOwner`) cannot port — this core has no aura→dynobj link
+and our `NearestDynamicObjects` value is an empty stub (no dynobj grid
+searcher), so the port tracks "I cast flamestrike ≤6s ago" via the
+already-maintained `last spell cast` value instead; (b) donor ordering
+(blizzard-on-active 24 > flamestrike 23 > blizzard 22) preserved as
+HIGH+2 > HIGH+1 > HIGH; (c) arcane gains the pair too (donor sequences
+it for arcane; both spells trained by all specs); the fire
+`fire spells locked` fallback blizzard is untouched (different case).
+
+Reason: bots cast flamestrike OR blizzard as independent same-trigger
+rows (engine picks the first available) — never stacking
+flamestrike under the pack and channeling blizzard on top. Real AoE DPS
+loss.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: 3+ mob pack,
+flamestrike lands, blizzard follows while the pack holds.
 | Elemental earth-shock execute discipline (SHM-4) | `mod-playerbots` `src/Ai/Class/Shaman/ShamanTriggers.cpp:50-64` (`EarthShockExecuteTrigger`: <25% AND <1500hp) + `Strategy/ElementalShamanStrategy.cpp:58-65` (execute node 5.5) @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanTriggers.h` (new `EarthShockExecuteTrigger`), `ShamanAiObjectContext.cpp` (creator), `ElementalShamanStrategy.cpp` (`shock` row -> `earth shock execute` at same ACTION_NORMAL), `ShamanEarthShockPolicy.h` + `tools/test_shaman_earth_shock_policy.cpp` | Ported verbatim thresholds via `GetHealthPercent()` + absolute `GetHealth() < 1500` (house idiom; donor divides manually). Ele only; enhancement keeps ungated `shock` (melee threat tool); interrupt triggers untouched. Spell: Earth Shock 8042+ (existing action, verified) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
 ## Review fixes (2026-10-09, PR #615 CHANGES_REQUESTED)
 All three blocking findings verified real in code and fixed:
