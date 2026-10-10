@@ -3,6 +3,7 @@
 #include "WarlockTriggers.h"
 #include "WarlockActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "../../../runtime/HealthFunnelPolicy.h"
 #include "../../../runtime/WarlockPetPolicy.h"
 
 using namespace ai;
@@ -415,4 +416,24 @@ bool PowerOverwhelmingTrigger::IsActive()
 
     Unit* target = GetTarget();
     return target && target->IsAlive();
+}
+
+// PET-6: cheap-first — pet presence, then the policy gate on scalar health
+// reads. Spell knowledge/cooldown/range stay in the action's isPossible.
+bool HealthFunnelTrigger::IsActive()
+{
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    if (!pet)
+        return false;
+    TortoiseBots::HealthFunnelGateInputs gate;
+    gate.hasPet = true;
+    gate.petAlive = pet->IsAlive();
+    if (!gate.petAlive)
+        return false;
+    gate.petHealth = AI_VALUE2(uint8, "health", "pet target");
+    if (gate.petHealth >= 50)
+        return false;
+    gate.ownerHealth = AI_VALUE2(uint8, "health", "self target");
+    gate.ownerInCombat = bot->IsInCombat();
+    return TortoiseBots::CanCastHealthFunnel(gate);
 }
