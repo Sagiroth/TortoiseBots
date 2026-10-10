@@ -162,12 +162,38 @@ namespace ai
         virtual bool Calculate() override;
     };
 
+    // "Is any destination of this purpose in reach still active" walks every
+    // destination in a window of up to 10000 yd and asks each IsActive. The
+    // values below re-ask every 2 s per bot, which made it one of the costliest
+    // parts of a bot turn, while the answer moves slowly (nodes respawn,
+    // trainers stay put, the bot walks). Keep it for kTtlSec.
+    struct TravelProbeCache
+    {
+        static constexpr time_t kTtlSec = 30;
+        time_t at = 0;
+        bool result = false;
+
+        template <typename Probe>
+        bool Get(Probe probe)
+        {
+            time_t const now = time(nullptr);
+            if (!at || now - at >= kTtlSec)
+            {
+                result = probe();
+                at = now;
+            }
+            return result;
+        }
+    };
+
     class NeedTravelPurposeValue : public BoolCalculatedValue, public Qualified
     {
     public:
         NeedTravelPurposeValue(PlayerbotAI* ai, std::string name = "need travel purpose", int checkInterval = 5) : BoolCalculatedValue(ai, name, checkInterval), Qualified() {};
 
         virtual bool Calculate() override;
+    private:
+        TravelProbeCache activeNodeProbe;
     };
 
     class ShouldTravelNamedValue : public BoolCalculatedValue, public Qualified
@@ -176,6 +202,8 @@ namespace ai
         ShouldTravelNamedValue(PlayerbotAI* ai, std::string name = "should travel named", int checkInterval = 5) : BoolCalculatedValue(ai, name, checkInterval), Qualified() {};
 
         virtual bool Calculate() override;
+    private:
+        TravelProbeCache activeTrainerProbe;
     };
 
     class ShouldLeaveOutgrownZoneValue : public BoolCalculatedValue

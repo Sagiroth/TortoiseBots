@@ -19,6 +19,26 @@ namespace ai
         virtual ~TrainableSpellMapValue() override { delete value; }
     };
 
+    // Everything Player::GetTrainerSpellState reads from the bot: level,
+    // known spells, skill values and free profession points. While it stays
+    // the same, so does the trainable set, and the scan over every trainer
+    // spell in the world (thousands of GetTrainerSpellState calls, re-run
+    // every 2 s per bot) can return the last result instead.
+    struct TrainerStateSignature
+    {
+        uint32 level = 0;
+        uint32 knownSpells = 0;
+        uint32 freeProfessionPoints = 0;
+        uint64 skills = 0;
+
+        static TrainerStateSignature Of(Player* bot);
+        bool operator==(TrainerStateSignature const& other) const
+        {
+            return level == other.level && knownSpells == other.knownSpells &&
+                freeProfessionPoints == other.freeProfessionPoints && skills == other.skills;
+        }
+    };
+
     class TrainableSpellsValue : public CalculatedValue<std::vector< TrainerSpell const*>>, public Qualified
     {
     public:
@@ -27,6 +47,9 @@ namespace ai
         virtual std::vector<TrainerSpell const*> Calculate() override;
 
         virtual std::string Format() override;
+    private:
+        bool calculated = false;
+        TrainerStateSignature signature;
     };
 
     class AvailableTrainersValue : public CalculatedValue<std::vector<int32>>, public Qualified
@@ -35,6 +58,9 @@ namespace ai
         AvailableTrainersValue(PlayerbotAI* ai, std::string name = "available trainers", int checkInterval = 5) : CalculatedValue<std::vector<int32>>(ai, name, checkInterval), Qualified() {}
 
         virtual std::vector<int32> Calculate() override;
+    private:
+        bool calculated = false;
+        TrainerStateSignature signature;
     };
 
     class TrainCostValue : public Uint32CalculatedValue, public Qualified
