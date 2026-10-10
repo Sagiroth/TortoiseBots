@@ -5896,6 +5896,57 @@ All three blocking findings verified real in code and fixed:
 - Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
 - Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
 verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+
+## Mage Improved Scorch shared-slot gate ABANDONED (MAG-8) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/MageTriggers.cpp:126-146`
+(`ImprovedScorchTrigger::IsActive` skips scorch while the target carries
+Shadow Vulnerability 17794-17800, Winter's Chill 12579, or Fire
+Vulnerability 22959).
+
+Decision: deliberately NOT ported (review PR #647 finding 2). In this
+core the exclusivity premise is false: mage `MOD_ATTACKER_SPELL_CRIT_CHANCE`
+auras explicitly return `false` from `_IsExclusiveSpellAura`
+(`tortoise-wow/src/game/Spells/SpellAuras.cpp`, "Winter's Chill /
+Improved Scorch" comment), cross-family pairs return `false` from
+`IsNoStackSpellDueToSpell` (`SpellMgr.cpp`), and there is no mage↔warlock
+no-stack rule linking 12579/22959/17794-17800 — Chill and Fire
+Vulnerability coexist rather than overwrite. Worse, the debuffs benefit
+different schools (DB: Chill aura 179/frost misc 16, Fire Vuln aura
+87/misc 4, Shadow Vuln aura 87/misc 32), so holding scorch on Chill or
+Shadow Vulnerability is a group-DPS loss, not a save. The original MAG-8
+code (exclusive-debuff gate on `NoImprovedScorchDebuffTrigger`,
+`docs/classes/mage.md` line) is reverted by this review-fix commit.
+Code and doc are back to the pre-PR state; no behaviour change ships.
+
+## Review fixes (2026-10-10, PR #647 CHANGES_REQUESTED)
+All three blocking findings verified real in code and fixed by
+abandoning the port (no live test needed — nothing ships):
+- Finding 1 (ungated `no fire vulnerability` still scorches over Chill
+via `ACTION_NORMAL+2`): confirmed — `MageTriggers.h` `NoFireVulnerabilityTrigger`
+returns true with no Chill/ShadowVuln check. Fixed by the revert: both
+triggers are back to pre-PR behaviour, so the claimed hold no longer
+exists and there is nothing left to bypass.
+- Finding 2 (no shared exclusive slot in this core): confirmed verbatim —
+`_IsExclusiveSpellAura` returns `false` for mage 179 auras,
+`SpellMgr.cpp:1275-1279` returns `false` for cross-family pairs, no
+mage↔warlock rule. This is the reason for abandonment (see above).
+- Finding 3 (gated trigger dead: `DebuffTrigger("improved scorch")`
+never fires): confirmed — `ChatHelper::PopulateSpellNameList` builds
+`SpellIds("improved scorch")` from DB spell names, and no spell is named
+exactly that (castable is "Scorch", debuff is "Fire Vulnerability";
+talent ranks are "Fire Vulnerability", DB attributes 448 = passive).
+`SpellIdValue` then filters passive talents, so `HasSpell` is always
+false. Fixed by the revert: the dead gate is gone with the rest.
+- Non-blocking notes folded in: `ai->HasAura(uint32)` vs donor
+`target->HasAura` parity gap and the donor null/dead-target guard are
+moot (no shipped gate); the "refresh trigger untouched" deviation note
+is superseded by this abandonment record.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK).
+
 ## Healer-low-mana value + trigger (HEAL-2/MANA-2) — 2026-10-10
 
 Donor: mod-playerbots @ `79bd4281` (local checkout
