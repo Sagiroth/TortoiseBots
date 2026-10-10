@@ -255,11 +255,13 @@ bool PlayerbotAIConfig::Initialize()
     poolTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.PoolTickBudgetUs", 10000);
     if (poolTickBudgetUs > 0 && poolTickBudgetUs < 1000) poolTickBudgetUs = 1000;
     if (poolTickBudgetUs > 100000) poolTickBudgetUs = 100000;
-    poolBudgetWhenTickOverMs = (uint32)config.GetIntDefault("AiPlayerbot.PoolBudgetWhenTickOverMs", 150);
+    poolBudgetWhenTickOverMs = (uint32)config.GetIntDefault("AiPlayerbot.PoolBudgetWhenTickOverMs", 0);
     if (poolBudgetWhenTickOverMs > 10000) poolBudgetWhenTickOverMs = 10000;
     combatTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.CombatTickBudgetUs", 15000);
     if (combatTickBudgetUs > 0 && combatTickBudgetUs < 1000) combatTickBudgetUs = 1000;
     if (combatTickBudgetUs > 100000) combatTickBudgetUs = 100000;
+    targetWorldTickMs = (uint32)config.GetIntDefault("AiPlayerbot.TargetWorldTickMs", 50);
+    if (targetWorldTickMs > 1000) targetWorldTickMs = 1000;
 
     // Issue #84: donor Shyalya defaults (base 250ms doubling to 2s cap,
     // 30s TTL, 64 entries). Zero base/max disables the backoff entirely.

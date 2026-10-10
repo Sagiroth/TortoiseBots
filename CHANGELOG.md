@@ -58,6 +58,7 @@
 - Behavior ported from mod-playerbots where 1.12 spells allow it. [#553](https://github.com/Sagiroth/TortoiseBots/pull/553)
 
 ### Stability & Performance
+- The server stays responsive on weaker PCs without manual tuning — the bot tick budget now adjusts itself each tick to hold the world tick near 50 ms (new `AiPlayerbot.TargetWorldTickMs`), backing off on slow machines and reclaiming the full speed on fast ones; the `BOTPERF` line shows the effective budgets.
 - Fewer stuck bots. [#553](https://github.com/Sagiroth/TortoiseBots/pull/553)
 - AI performance improvements. [#553](https://github.com/Sagiroth/TortoiseBots/pull/553)
 

@@ -162,18 +162,20 @@ The pool is only throttled when the server is already struggling. On an average 
 
 | Setting | Default | What It Does |
 | :--- | :---: | :--- |
-| `AiPlayerbot.PoolTickBudgetUs` | `10000` | Microseconds of module work per tick for the pool pass, once the gate below opens. `0` removes the budget entirely (the pool always runs its full pass). Values below `1000` are raised to `1000`; `100000` is the ceiling. |
-| `AiPlayerbot.PoolBudgetWhenTickOverMs` | `150` | The gate: the budget applies only while the previous world tick took longer than this. `0` applies it on every tick. A tick at or below the value keeps the unbudgeted, full pool pass. |
+| `AiPlayerbot.PoolTickBudgetUs` | `10000` | Ceiling for the pool pass: microseconds of module work per tick. `0` removes the budget entirely (the pool always runs its full pass). Values below `1000` are raised to `1000`; `100000` is the ceiling. |
+| `AiPlayerbot.PoolBudgetWhenTickOverMs` | `0` | The gate: the budget applies only while the previous world tick took longer than this. `0` applies it on every tick — the default, because the self-tuning budget below reclaims the full ceiling on a healthy server by itself. |
+| `AiPlayerbot.TargetWorldTickMs` | `50` | Self-tuning tick budget: each tick the controller moves the effective pool/combat budgets from the measured previous world tick so the tick stays near this target (over it: shrink fast; under it: creep back; hold steady inside a small deadband). No hardware detection — a fast PC keeps the full ceilings, a weak one backs off on its own. `0` disables the controller (fixed budgets, the old behavior). |
 
-Tuning: raise `PoolTickBudgetUs` (e.g. `25000`–`50000`) if pool bots feel sluggish while the tick is long; lower it if player-owned bots still lag. The budget is checked between bots, so a pass can overshoot by one bot's work. With 500 bots on a slow machine every choice means *someone* waits — the gate only decides whether it is the player's party or the pool.
+Tuning: on a healthy server you should not need to touch anything — the controller keeps the full ceilings while ticks stay under the target. If pool bots feel sluggish while the tick is long, raise `PoolTickBudgetUs` (e.g. `25000`–`50000`); if the world tick itself will not come down, lower `TargetWorldTickMs`. The budget is checked between bots, so a pass can overshoot by one bot's work. Player-owned bots always run first and unbudgeted, whatever the budgets say.
 
 With AI enabled (`AiPlayerbot.Enabled = 1`), the module reports the pass once per ~30 s of world-tick time at `TortoiseBots.LogLevel = 1` or higher (default `2`):
 
 ```
-TortoiseBots: BOTPERF passUs=812 playerBots=5 ownedBots=5 masterBots=0 poolBots=495 poolProcessed=4 budgetHit=1 maxUs=9820 ticks=62
+TortoiseBots: BOTPERF passUs=812 playerBots=5 ownedBots=5 masterBots=0 poolBots=495 poolProcessed=4 budgetHit=1 maxUs=9820 ticks=62 poolBudgetUs=10000 combatBudgetUs=15000
 ```
 
-`passUs` is the average `UpdateBots` cost in the window in microseconds (`maxUs` the worst), `playerBots` the unbudgeted candidate count, split into `ownedBots` (owner's account) and `masterBots` (live player master), `poolBots` the pool candidate count, `poolProcessed` the pool slots the rotation advanced past (a record that was unusable that tick still counts), and `budgetHit` `1` when the budget cut that pass short. Read it like this: `budgetHit=1` with a small `passUs` is the throttle working; `budgetHit=1` and `poolProcessed=1` means the budget is too tight for the pool size (raise it); a low `passUs` while ticks are still multi-second says the module pass is not what stretches the tick. A `playerBots` far above the real player's party (check `ownedBots` + `masterBots`) means a classification bug, not a busy player.
+
+`passUs` is the average `UpdateBots` cost in the window in microseconds (`maxUs` the worst), `playerBots` the unbudgeted candidate count, split into `ownedBots` (owner's account) and `masterBots` (live player master), `poolBots` the pool candidate count, `poolProcessed` the pool slots the rotation advanced past (a record that was unusable that tick still counts), `budgetHit` `1` when the budget cut that pass short, and `poolBudgetUs`/`combatBudgetUs` the effective budgets the controller chose for the next pass (equal to the configured ceilings when the server is healthy). Read it like this: `budgetHit=1` with a small `passUs` is the throttle working; `budgetHit=1` and `poolProcessed=1` means the budget is too tight for the pool size (raise it); a low `passUs` while ticks are still multi-second says the module pass is not what stretches the tick.
 
 ### Server settings for many bots (`mangosd.conf`)
 

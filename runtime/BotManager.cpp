@@ -1776,6 +1776,22 @@ void BotManager::UpdateBots(uint32_t diff)
     // world tick this pass owns.
     auto const passStart = std::chrono::steady_clock::now();
 
+    // Self-tuning tick budget: feed the measured previous world tick (diff)
+    // before the passes read their budgets. Re-sync when the operator's
+    // target or ceilings change (restart-only keys). When the controller is
+    // off (target 0) it holds the ceilings, which is the old static path.
+    if (sPlayerbotAIConfig.targetWorldTickMs != m_adaptiveTargetMs ||
+        sPlayerbotAIConfig.poolTickBudgetUs != m_adaptivePoolCeilingUs ||
+        sPlayerbotAIConfig.combatTickBudgetUs != m_adaptiveCombatCeilingUs)
+    {
+        m_adaptiveTargetMs = sPlayerbotAIConfig.targetWorldTickMs;
+        m_adaptivePoolCeilingUs = sPlayerbotAIConfig.poolTickBudgetUs;
+        m_adaptiveCombatCeilingUs = sPlayerbotAIConfig.combatTickBudgetUs;
+        m_adaptiveBudget = AdaptiveBudget(m_adaptiveTargetMs,
+            static_cast<uint32_t>(m_adaptivePoolCeilingUs), static_cast<uint32_t>(m_adaptiveCombatCeilingUs));
+    }
+    m_adaptiveBudget.Update(diff);
+
     // Guard: AI updates below can request (their own or another bot's) removal.
     // RemoveBot defers the session stop while this is set; the queue drains
     // after the loop, when no PlayerbotAI Update remains on the stack.
@@ -1931,7 +1947,7 @@ void BotManager::UpdateBots(uint32_t diff)
     // A bot in combat gets prioritized ticks so it can heal, flee, attack, etc.
     // If there are many bots in combat, we cap Pass 2 to combatTickBudgetUs
     // using a round-robin cursor to ensure all combat bots get fair CPU time across ticks.
-    uint64_t const combatBudgetUs = sPlayerbotAIConfig.combatTickBudgetUs;
+    uint64_t const combatBudgetUs = m_adaptiveBudget.CombatUs();
     uint64_t const combatStartUs = (combatBudgetUs > 0) ?
         static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count()) : 0;
@@ -1979,7 +1995,7 @@ void BotManager::UpdateBots(uint32_t diff)
     // the rotation reaches them; correctness first, the rotation stays fair.
     uint32_t const playerBots = static_cast<uint32_t>(playerGuids.size());
     uint32_t const poolBots = m_poolRotation.Size();
-    uint64_t budgetUs = sPlayerbotAIConfig.poolTickBudgetUs;
+    uint64_t budgetUs = m_adaptiveBudget.PoolUs();
     uint32 const gateMs = sPlayerbotAIConfig.poolBudgetWhenTickOverMs;
     bool const budgetActive = budgetUs > 0 && (gateMs == 0 || diff > gateMs);
 
@@ -2045,10 +2061,12 @@ void BotManager::UpdateBots(uint32_t diff)
     m_perfElapsedMs += diff;
     if (m_perfElapsedMs >= 30000)
     {
-        TB_LOG_BASIC("TortoiseBots: BOTPERF passUs=%llu playerBots=%u ownedBots=%u masterBots=%u poolBots=%u poolProcessed=%u followUps=%u budgetHit=%u maxUs=%llu ticks=%u",
+        TB_LOG_BASIC("TortoiseBots: BOTPERF passUs=%llu playerBots=%u ownedBots=%u masterBots=%u poolBots=%u poolProcessed=%u followUps=%u budgetHit=%u maxUs=%llu ticks=%u poolBudgetUs=%llu combatBudgetUs=%llu",
             static_cast<unsigned long long>(m_perfPassUsSum / m_perfPassCount),
             playerBots, ownedAccountBots, masterBots, poolBots, poolProcessed, followUpsServed, budgetHit ? 1u : 0u,
-            static_cast<unsigned long long>(m_perfPassUsMax), m_perfPassCount);
+            static_cast<unsigned long long>(m_perfPassUsMax), m_perfPassCount,
+            static_cast<unsigned long long>(m_adaptiveBudget.PoolUs()),
+            static_cast<unsigned long long>(m_adaptiveBudget.CombatUs()));
         m_perfPassUsSum = 0;
         m_perfPassUsMax = 0;
         m_perfPassCount = 0;

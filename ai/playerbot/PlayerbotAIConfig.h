@@ -583,6 +583,11 @@ public:
     uint32 poolTickBudgetUs = 10000;
     uint32 poolBudgetWhenTickOverMs = 150;
     uint32 combatTickBudgetUs = 15000;
+    // Self-tuning tick budget: when nonzero, a controller moves the effective
+    // pool/combat budgets each tick from the measured previous world tick so
+    // the tick stays near this target (over -> shrink, under -> grow, held
+    // inside a small deadband). 0 disables the controller (static budgets).
+    uint32 targetWorldTickMs = 50;
     // Issue #84: bounded failure backoff tuning. Zero base/max disables.
     uint32 failedActionRetryBaseMs;
     uint32 failedActionRetryMaxMs;
