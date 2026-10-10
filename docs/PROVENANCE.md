@@ -4695,6 +4695,84 @@ Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
 
+## Onyxia Deep Breath safe-zone dodging (raid1 item 7) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/Ony/OnyTriggers.cpp` (OnyxiaDeepBreathTrigger: boss
+CURRENT_GENERIC_SPELL id in the 8 breath ids),
+`src/Ai/Raid/Ony/OnyActions.h:52-93` (MoveToSafeZone: nearest of 2 safe
+zones per breath direction + already-safe early-out + AttackStop/CastStop
+first), `src/Ai/Raid/Ony/OnyStrategy.cpp:21-23` (trigger wiring at
+ACTION_RAID).
+
+Source files (module, modified): `ai/playerbot/OnyxiaBreathPolicy.h`
+(new pure rule: 8 breath ids, axis pairing, 5y hold radius),
+`ai/playerbot/strategy/triggers/OnyxiasLairDungeonTriggers.h`
+(header-inline OnyxiaDeepBreathTrigger reading the boss current-target
+generic-spell cast, gated on the `onyxia` fight strategy),
+`ai/playerbot/strategy/actions/OnyxiasLairDungeonActions.h/.cpp`
+(OnyxiaBreathSafeZoneAction: nearest zone of the matching donor pair,
+already-inside hold, cast-stop first, MoveTo with reaction flag),
+`ai/playerbot/strategy/generic/OnyxiasLairDungeonStrategies.cpp`
+(reaction wired at ACTION_EMERGENCY+5 above the generic flank),
+registrations (`TriggerContext.h`, `ActionContext.h`),
+`tools/test_onyxia_breath_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc
+line).
+
+Copied / ported / reimplemented: reimplemented in our Onyxia fight
+strategy idiom. Deviations from the donor, all deliberate: (a) no
+fallback-center zone (donor default arm): an unknown spell id fails the
+trigger instead of walking the raid to mid-room — unreachable in practice
+since the trigger gates the action on the same 8 ids; (b) priority
+EMERGENCY+5 above the universal flank (donor runs both at raid priority):
+cast-triggered lane dodge beats cone geometry while a breath casts; (c)
+z taken from the donor spot table (lava-side heights differ per spot).
+
+Reason: raid1 gap ONY-BREATH: the flank trigger escapes front/rear cones
+but never dodged the breath lanes — the actual phase-2 killer.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. All 8 breath ids verified against
+tw_world (all named Breath). Donor safe-zone coords used as-is; Turtle map
+validation still wants eyes in a live Onyxia run (flagged in the report).
+Build via build-commit.sh pending; live in-game check pending.
+
+## Review fixes: attacker-scan boss lookup + stopped-targetless breath detection (PR #628) — 2026-10-10
+
+Both blocking findings verified real against the core script
+(`boss_onyxia.cpp` DoMovement + `Spell.cpp:3641`) and fixed:
+
+(a) Boss via `current target` missed every whelp tank, melee, and healer
+in phase 2 (their targets are whelps/friendlies, never Onyxia). Both the
+trigger and the action now resolve Onyxia via the attacker-list scan for
+entry 10184 (the StartBossFightTrigger pattern) — every bot reacts
+regardless of its own target.
+
+(b) `GetCurrentSpell(CURRENT_GENERIC_SPELL)` is ALWAYS null during Deep
+Breath: the core casts the directional spells TRIGGERED
+(`boss_onyxia.cpp:522`), and triggered non-channeled spells never populate
+the caster's spell slot (`Spell.cpp:3641`). No core seam was added (module
+stays decoupled): detection now reads the breath window's observable
+side-effects — Hover aura up + stopped (no motion during the 5s window)
++ cleared target guid (DoMovement faces the destination and clears target
+before the cast). Grounded phases always hold a victim and keep moving,
+so false positives need hover + stopped + targetless together. The lane
+axis comes from boss facing (core faces the destination pre-cast) via the
+new testable `BreathAxisFromFacing` (8 eighths → donor's 4 lane pairs);
+the spell-id table stays for documentation. Also dropped the redundant
+`isPossible` double-CanMove (non-blocking 1).
+
+Risk noted: facing maps to the lane only if the core's pre-cast facing
+matches the breath travel direction; if live behavior shows otherwise
+(e.g. facing snaps back mid-window), fall back to reacting to the
+EMOTE_BREATH script text (-1249004) as the reviewer suggested. Safe-spot
+coords still want live Turtle validation (non-blocking 2, unchanged).
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the updated
+policy test with facing-mapping coverage pass); `git diff --check`.
+Build via build-commit.sh pending; live in-game check pending.
 ## Warlock Firestone / Spellstone create+equip (WAR-4) — 2026-10-09
 
 Donor: mod-playerbots (`79bd4281`):
