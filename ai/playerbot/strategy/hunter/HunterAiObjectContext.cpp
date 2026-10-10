@@ -190,8 +190,10 @@ namespace ai
             {
                 creators["no stings"] = [](PlayerbotAI* ai) { return new HunterNoStingsActiveTrigger(ai); };
                 creators["hunters pet dead"] = [](PlayerbotAI* ai) { return new HuntersPetDeadTrigger(ai); };
+                creators["safe to revive pet"] = [](PlayerbotAI* ai) { return new SafeToRevivePetTrigger(ai); };
                 creators["hunters pet low health"] = [](PlayerbotAI* ai) { return new HuntersPetLowHealthTrigger(ai); };
                 creators["pet has aggro"] = [](PlayerbotAI* ai) { return new PetHasAggroTrigger(ai); };
+                creators["hunters pet medium health"] = [](PlayerbotAI* ai) { return new HuntersPetMediumHealthTrigger(ai); };
                 creators["hunter's mark"] = [](PlayerbotAI* ai) { return new HuntersMarkTrigger(ai); };
                 creators["freezing trap"] = [](PlayerbotAI* ai) { return new FreezingTrapTrigger(ai); };
                 creators["frost trap"] = [](PlayerbotAI* ai) { return new FrostTrapTrigger(ai); };

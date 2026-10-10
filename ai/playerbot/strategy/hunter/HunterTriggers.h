@@ -50,10 +50,16 @@ namespace ai
     BEGIN_TRIGGER(HuntersPetDeadTrigger, Trigger)
     END_TRIGGER()
 
+    BEGIN_TRIGGER(SafeToRevivePetTrigger, Trigger)
+    END_TRIGGER()
+
     BEGIN_TRIGGER(HuntersPetLowHealthTrigger, Trigger)
     END_TRIGGER()
 
     BEGIN_TRIGGER(PetHasAggroTrigger, Trigger)
+    END_TRIGGER()
+
+    BEGIN_TRIGGER(HuntersPetMediumHealthTrigger, Trigger)
     END_TRIGGER()
 
     class HuntersMarkTrigger : public DebuffTrigger
@@ -423,6 +429,11 @@ private:
         }
     };
 
+    // PET-5 (donor NoPetTrigger shape): purely petless + unmounted. The old
+    // local addition gated this on Call Pet being unavailable, which starved
+    // both call-pet nodes exactly when a dismissed pet waited to be called.
+    // Ordering is by relevance now: instant Call Pet outranks the 20s Tame
+    // wherever castable; Tame stays for the genuine no-call-pet case.
     class HunterNoPet : public Trigger
     {
     public:
@@ -430,15 +441,8 @@ private:
         virtual bool IsActive() override
         {
             if (AI_VALUE2(bool, "mounted", "self target"))
-            return false;
-
-            if (bot->GetPetGuid())
-            return false;
-
-            if (ai->CanCastSpell("call pet", bot, 0))
-            return false;
-
-            return ai->CanCastSpell("tame beast", bot, 0);
+                return false;
+            return !bot->GetPetGuid();
         }
     };
 

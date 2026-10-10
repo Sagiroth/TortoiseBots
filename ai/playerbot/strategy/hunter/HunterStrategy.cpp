@@ -112,9 +112,12 @@ void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("raptor strike", ACTION_NORMAL + 1),
                              new NextAction("wing clip", ACTION_NORMAL), NULL)));
 
+    // PET-5: last resort below the HunterPetStrategy "call pet" node — the
+    // engine falls through to this only when Call Pet is impossible
+    // (unknown, on cooldown). Instant call strictly dominates the 20s tame.
     triggers.push_back(new TriggerNode(
         "no pet",
-        NextAction::array(0, new NextAction("tame beast", ACTION_EMERGENCY), NULL)));
+        NextAction::array(0, new NextAction("tame beast", ACTION_NORMAL), NULL)));
 }
 
 void HunterStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -132,9 +135,11 @@ void HunterStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         new NextAction("say::no ammo", ACTION_NORMAL),
         NULL)));
 
+    // PET-5: same last-resort demotion as the combat node above — the
+    // HunterPetStrategy "call pet" (NORMAL+2) node wins wherever castable.
     triggers.push_back(new TriggerNode(
         "no pet",
-        NextAction::array(0, new NextAction("tame beast", ACTION_EMERGENCY), NULL)));
+        NextAction::array(0, new NextAction("tame beast", ACTION_NORMAL), NULL)));
 }
 
 void HunterStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
@@ -587,6 +592,22 @@ void HunterPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "pet has aggro",
         NextAction::array(0, new NextAction("cower", ACTION_HIGH), NULL)));
+
+    // PET-4: medium band below the low node so low wins under 40.
+    triggers.push_back(new TriggerNode(
+        "hunters pet medium health",
+        NextAction::array(0, new NextAction("mend pet", ACTION_HIGH - 1), NULL)));
+
+    // PET-5: mid-fight recovery. Call Pet is near-instant and safe to try
+    // whenever petless; Revive is a 10s channel so it only fires with no
+    // attackers on the bot (checked inside the trigger).
+    triggers.push_back(new TriggerNode(
+        "no pet",
+        NextAction::array(0, new NextAction("call pet", ACTION_NORMAL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "safe to revive pet",
+        NextAction::array(0, new NextAction("revive pet", ACTION_NORMAL), NULL)));
 }
 
 void HunterPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -602,6 +623,11 @@ void HunterPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "hunters pet low health",
         NextAction::array(0, new NextAction("mend pet", ACTION_NORMAL + 1), NULL)));
+
+    // PET-4: medium band below the low node so low wins under 40.
+    triggers.push_back(new TriggerNode(
+        "hunters pet medium health",
+        NextAction::array(0, new NextAction("mend pet", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "hunters pet dead",

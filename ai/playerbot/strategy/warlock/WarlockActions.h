@@ -3,10 +3,14 @@
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/UseItemAction.h"
 #include "playerbot/AoeFearPolicy.h"
+#include "../../../runtime/DevourMagicPolicy.h"
+#include "../../../runtime/HealthFunnelPolicy.h"
+#include "../../../runtime/SeductionPolicy.h"
 
 namespace ai
 {
 	SNARE_ACTION(CastDeathCoilSnareAction, "death coil");
+	SNARE_ACTION(CastCurseOfExhaustionSnareAction, "curse of exhaustion");
 	ENEMY_HEALER_ACTION(CastDeathCoilOnHealerAction, "death coil");
 	SPELL_ACTION(CastDeathCoilAction, "death coil");
     BUFF_ACTION(CastShadowWardAction, "shadow ward");
@@ -22,6 +26,18 @@ namespace ai
 	public:
 		CastDemonArmorAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "demon armor") {}
 	};
+
+    class CastUnendingBreathAction : public CastBuffSpellAction
+    {
+    public:
+        CastUnendingBreathAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "unending breath") {}
+    };
+
+    class CastUnendingBreathOnPartyAction : public BuffOnPartyAction
+    {
+    public:
+        CastUnendingBreathOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "unending breath") {}
+    };
 
     BEGIN_RANGED_SPELL_ACTION(CastShadowBoltAction, "shadow bolt")
     END_SPELL_ACTION()
@@ -158,6 +174,31 @@ namespace ai
 		}
 	};
 
+    // PET-6: Health Funnel channels owner health into the demon. Owner-cast
+    // (the warlock knows the spell, the pet doesn't) on the pet target.
+    // The policy gate repeats here for the evaluation-to-execution gap: the
+    // trigger may have fired ticks ago while the owner dropped below the
+    // drain floor since.
+    class CastHealthFunnelAction : public CastSpellAction
+    {
+    public:
+        CastHealthFunnelAction(PlayerbotAI* ai) : CastSpellAction(ai, "health funnel") {}
+        std::string GetTargetName() override { return "pet target"; }
+        bool isUseful() override
+        {
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            if (!pet)
+                return false;
+            TortoiseBots::HealthFunnelGateInputs gate;
+            gate.hasPet = true;
+            gate.petAlive = pet->IsAlive();
+            gate.petHealth = AI_VALUE2(uint8, "health", "pet target");
+            gate.ownerHealth = AI_VALUE2(uint8, "health", "self target");
+            gate.ownerInCombat = bot->IsInCombat();
+            return TortoiseBots::CanCastHealthFunnel(gate) && CastSpellAction::isUseful();
+        }
+    };
+
     class CastCurseOfExhaustionAction : public CastRangedDebuffSpellAction
     {
     public:
@@ -283,6 +324,53 @@ namespace ai
     {
     public:
         CastSpellLockAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "spell lock") {}
+    };
+
+    class CastDevourMagicPurgeAction : public CastPetSpellAction
+    {
+    public:
+        CastDevourMagicPurgeAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "devour magic") {}
+        std::string getName() override { return "devour magic purge"; }
+        bool isPossible() override
+        {
+            // Actions are cached singletons: the ctor-resolved spellId stays
+            // 0 when no Felhunter is out at first creation (and goes stale
+            // across rank upgrades), which would fail the pet HasSpell check
+            // forever. Refresh before the base checks.
+            SetSpellName("devour magic", "spell id", true);
+            return CastPetSpellAction::isPossible();
+        }
+        bool isUseful() override
+        {
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            TortoiseBots::DevourMagicGateInputs gate;
+            gate.hasPet = pet != nullptr;
+            gate.currentPetEntry = pet ? pet->GetEntry() : 0;
+            return TortoiseBots::CanCastDevourMagic(gate) && CastPetSpellAction::isUseful();
+        }
+    };
+
+    class CastDevourMagicCleanseAction : public CastPetSpellAction
+    {
+    public:
+        CastDevourMagicCleanseAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "devour magic") {}
+        std::string GetTargetName() override { return "party member to dispel"; }
+        std::string GetTargetQualifier() override { return std::to_string(DISPEL_MAGIC); }
+        std::string getName() override { return "devour magic cleanse"; }
+        bool isPossible() override
+        {
+            // Same cached-singleton refresh as the purge action above.
+            SetSpellName("devour magic", "spell id", true);
+            return CastPetSpellAction::isPossible();
+        }
+        bool isUseful() override
+        {
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            TortoiseBots::DevourMagicGateInputs gate;
+            gate.hasPet = pet != nullptr;
+            gate.currentPetEntry = pet ? pet->GetEntry() : 0;
+            return TortoiseBots::CanCastDevourMagic(gate) && CastPetSpellAction::isUseful();
+        }
     };
 
     class CastSpellLockOnEnemyHealerAction : public CastPetSpellAction
@@ -416,6 +504,29 @@ namespace ai
         std::string GetTargetName() override { return "self target"; }
         };
 
+    // Equips a bag firestone into an empty off-hand (WAR-4). Not a
+    // UseSpellItemAction: UseItemInternal refuses equippable items sitting
+    // in bags, and firestones have no on-use spell anyway (on-equip aura).
+    class EquipFirestoneAction : public Action
+    {
+    public:
+        EquipFirestoneAction(PlayerbotAI* ai) : Action(ai, "firestone") {}
+        bool Execute(Event& event) override;
+    };
+
+    // Equips a bag spellstone into an empty off-hand (WAR-4), same vanilla
+    // off-hand semantics as firestone: the stone's equip aura (Increased
+    // Critical Spell) then applies, and its on-use dispel/absorb stays
+    // available through normal use once worn. Never a weapon temp-enchant:
+    // the on-use spell targets the caster, and UseItemInternal refuses
+    // equippable items sitting in bags.
+    class EquipSpellstoneAction : public Action
+    {
+    public:
+        EquipSpellstoneAction(PlayerbotAI* ai) : Action(ai, "spellstone") {}
+        bool Execute(Event& event) override;
+    };
+
 	class CastCreateFirestoneAction : public CastSpellAction
 	{
 	public:
@@ -457,6 +568,62 @@ namespace ai
         }
     };
 
+    // PET-2: succubus Seduction as warlock CC for humanoids. Pet-cast (range
+    // and cooldown resolve against the demon) with the CC shape: target is
+    // the assigned "cc target" and the CC flags mark it for CC discipline.
+    // No positioning: isPossible fails while the succubus is out of range,
+    // so this only fires when she is already near the mark (owner CC covers
+    // the rest). Break-protection comes free — "seduction" is in the
+    // breakable-CC list, so pet attacks hold fire once the aura lands.
+    class CastSeductionOnCcAction : public CastPetSpellAction
+    {
+    public:
+        CastSeductionOnCcAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "seduction") {}
+        std::string GetTargetName() override { return "cc target"; }
+        std::string GetTargetQualifier() override { return GetSpellName(); }
+        std::string getName() override { return "seduction on cc"; }
+        bool IsCrowdControlAction() const override { return true; }
+        std::string GetCrowdControlSpellName() const override { return GetSpellName(); }
+        // CC, not DPS: banish/fear are THREAT_NONE so the threat multiplier
+        // never zeroes them — seduction must match or it fails exactly when
+        // the warlock is under pressure.
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_NONE; }
+        bool isPossible() override
+        {
+            // Succubus out on a humanoid mark — the only type the core lets
+            // Seduction land on. Firing elsewhere wastes the succubus GCD.
+            // Cached-singleton refresh (see the devour actions): the
+            // ctor-resolved spellId stays 0 when no succubus is out at first
+            // creation, which would fail the pet HasSpell check forever.
+            Unit* target = GetTarget();
+            // A dotted mark breaks on the first tick and re-seduces forever:
+            // refuse it like the free-pick and auto-CC choosers already do.
+            if (target && target->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE))
+                return false;
+            TortoiseBots::SeductionGateInputs gate;
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            gate.hasPet = pet != nullptr;
+            gate.currentPetEntry = pet ? pet->GetEntry() : 0;
+            gate.targetIsPlayer = target && target->IsPlayer();
+            gate.targetCreatureType = target ? target->GetCreatureType() : 0;
+            if (!TortoiseBots::CanCastSeduction(gate))
+                return false;
+            SetSpellName("seduction", "spell id", true);
+            return CastPetSpellAction::isPossible();
+        }
+        bool isUseful() override
+        {
+            Unit* target = GetTarget();
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            TortoiseBots::SeductionGateInputs gate;
+            gate.hasPet = pet != nullptr;
+            gate.currentPetEntry = pet ? pet->GetEntry() : 0;
+            gate.targetIsPlayer = target && target->IsPlayer();
+            gate.targetCreatureType = target ? target->GetCreatureType() : 0;
+            return TortoiseBots::CanCastSeduction(gate) && CastPetSpellAction::isUseful();
+        }
+    };
+
     class CastRainOfFireAction : public CastSpellAction
     {
     public:
@@ -474,6 +641,12 @@ namespace ai
     {
     public:
         CastImmolateAction(PlayerbotAI* ai) : CastRangedDebuffSpellAction(ai, "immolate") {}
+    };
+
+    class CastImmolateOnAttackerAction : public CastRangedDebuffSpellOnAttackerAction
+    {
+    public:
+        CastImmolateOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "immolate") {}
     };
 
     class CastConflagrateAction : public CastSpellAction

@@ -1,4 +1,5 @@
 
+#include "playerbot/ResistAuraPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "DungeonTriggers.h"
@@ -393,6 +394,7 @@ bool IsRaidDragonEntry(uint32 entry)
         case 11981: // Flamegor
         case 11983: // Firemaw
         case 11583: // Nefarian
+        case 13020: // Vaelastrasz the Corrupt
         case 60748: // Solnius (Emerald Sanctum, Acid Breath 24839)
             return true;
         default:
@@ -410,10 +412,16 @@ bool DragonBreathRiskTrigger::IsActive()
         return false;
     if (!IsRaidDragonEntry(target->GetEntry()))
         return false;
-    // Tanks hold the head; the trigger tells non-tanks to flank. Tank
-    // positioning itself is an explicit .bot raid tankface command.
+    // The head-holding tank stays; everyone else flanks — including
+    // off-tanks that are not the victim (Firemaw/Ebonroc/Flamegor spare
+    // tanks, mod-playerbots parity). Tank positioning itself is an
+    // explicit .bot raid tankface command.
     if (ai->IsTank(bot))
-        return false;
+    {
+        Unit* victim = target->GetVictim();
+        if (!victim || victim->getObjectGuid() == bot->getObjectGuid())
+            return false;
+    }
     const float dist = bot->GetDistance(target);
     if (dist > sPlayerbotAIConfig.spellDistance + 10.0f)
         return false;
@@ -463,6 +471,161 @@ bool RaidSpreadNeededTrigger::IsActive()
         if (member->GetMapId() != bot->GetMapId())
             continue;
         if (sServerFacade.getDistance2d(bot, member) < 10.0f)
+            return true;
+    }
+    return false;
+}
+
+
+namespace
+{
+    // Any explicitly ordered aura beats automation: the trigger stays out
+    // of the way however the player set it (combat or non-combat engine).
+    bool HasManualAuraOverride(PlayerbotAI* ai)
+    {
+        static const char* const kManualAuras[] =
+        {
+            "aura devotion", "aura retribution", "aura concentration", "aura sanctity",
+            "aura shadow", "aura frost", "aura fire", "aura crusader"
+        };
+        for (const char* aura : kManualAuras)
+        {
+            if (ai->HasStrategy(aura, BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy(aura, BotState::BOT_STATE_NON_COMBAT))
+                return true;
+        }
+        return false;
+    }
+} // namespace
+
+bool BossWantsFireAuraTrigger::IsActive()
+{
+    // Cheap class gate first: filters out most of the raid.
+    if (bot->GetClass() != CLASS_PALADIN)
+        return false;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+    // An untrained aura can never be cast: without this the trigger fires
+    // every 5s and the swap action fails (ACTION_LOOP churn).
+    if (!ai->HasSpell("fire resistance aura"))
+        return false;
+    // Already on the wanted path: the rfire upkeep trigger maintains it.
+    if (ai->HasStrategy("rfire", BotState::BOT_STATE_COMBAT))
+        return false;
+    // Don't fight an explicit player order: any manually set aura stays.
+    if (HasManualAuraOverride(ai))
+        return false;
+    const bool hasFireAura = ai->HasAura("fire resistance aura", bot);
+    // One paladin per raid covers the aura: the first alive paladin swaps,
+    // the rest keep devotion/concentration/etc.
+    Group* group = bot->GetGroup();
+    if (!group || !group->isRaidGroup())
+        return false;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetClass() == CLASS_PALADIN)
+        {
+            if (member != bot)
+                return false;
+            break;
+        }
+    }
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    bool wantFire = false;
+    for (const ObjectGuid& attackerGuid : attackers)
+    {
+        Unit* attacker = ai->GetUnit(attackerGuid);
+        if (!attacker || !sServerFacade.IsAlive(attacker))
+            continue;
+        if (IsFireAuraBoss(attacker->GetEntry()))
+        {
+            wantFire = true;
+            break;
+        }
+    }
+    return ShouldSwapResistAura(wantFire, false, hasFireAura, false);
+}
+
+bool BossWantsShadowAuraTrigger::IsActive()
+{
+    if (bot->GetClass() != CLASS_PALADIN)
+        return false;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+    // An untrained aura can never be cast: without this the trigger fires
+    // every 5s and the swap action fails (ACTION_LOOP churn).
+    if (!ai->HasSpell("shadow resistance aura"))
+        return false;
+    // Already on the wanted path: the rshadow upkeep trigger maintains it.
+    if (ai->HasStrategy("rshadow", BotState::BOT_STATE_COMBAT))
+        return false;
+    // Don't fight an explicit player order: any manually set aura stays.
+    if (HasManualAuraOverride(ai))
+        return false;
+    const bool hasShadowAura = ai->HasAura("shadow resistance aura", bot);
+    // One paladin per raid covers the aura: the first alive paladin swaps,
+    // the rest keep devotion/concentration/etc.
+    Group* group = bot->GetGroup();
+    if (!group || !group->isRaidGroup())
+        return false;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetClass() == CLASS_PALADIN)
+        {
+            if (member != bot)
+                return false;
+            break;
+        }
+    }
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    bool wantShadow = false;
+    for (const ObjectGuid& attackerGuid : attackers)
+    {
+        Unit* attacker = ai->GetUnit(attackerGuid);
+        if (!attacker || !sServerFacade.IsAlive(attacker))
+            continue;
+        if (IsShadowAuraBoss(attacker->GetEntry()))
+        {
+            wantShadow = true;
+            break;
+        }
+    }
+    return ShouldSwapResistAura(false, wantShadow, false, hasShadowAura);
+}
+
+bool SpreadNeededTrigger::IsActive()
+{
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+    // Opt-in spread: combat-only, hold orders veto. Ownership and
+    // ranged-only never gate — the strategy on the bot is the consent.
+    // Tanks never spread (see RaidSpreadAction: dragging the boss).
+    if (ai->IsTank(bot))
+        return false;
+    if (!ShouldOptInSpread(sServerFacade.IsInCombat(bot),
+        ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("guard", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
+        return false;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    float const radius = SpreadRadius(AI_VALUE(float, "spread distance"), ai->IsRanged(bot));
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetMapId() != bot->GetMapId())
+            continue;
+        if (sServerFacade.getDistance2d(bot, member) < radius)
             return true;
     }
     return false;

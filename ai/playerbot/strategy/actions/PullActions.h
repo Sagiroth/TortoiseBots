@@ -77,6 +77,18 @@ namespace ai
         bool Execute(Event& event) override;
     };
 
+    // Review PR #603: the chat `end pull` hatch must not run PullEndAction's
+    // failure branch when no pull is running — with the `pull` strategy
+    // present but idle, the strategy pointer is non-null, the target is
+    // null, and the else branch would wipe a live fight target, zero the
+    // party's wait windows and reset the pet. Gate on a started pull.
+    class EndPullAction : public PullEndAction
+    {
+    public:
+        EndPullAction(PlayerbotAI* ai) : PullEndAction(ai, "end pull") {}
+        bool isUseful() override;
+    };
+
     // Release a pull hold: drops the wait window, and with it our anchor copy
     // ("pull hold") and the stay it owns - never a stay the player placed
     // (that drops the hold marker first). Fires from the per-bot "pull hold

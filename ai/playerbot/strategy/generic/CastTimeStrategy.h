@@ -21,7 +21,7 @@ namespace ai
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "cast time"; } //Must equal iternal name
         virtual std::string GetHelpDescription() {
-            return "This strategy will make bots less likely to cast long casttime spells when the target is at critical health.";
+            return "This strategy will make bots less likely to start a cast the target will not live to see (cast time vs remaining lifetime).";
         }
         virtual std::vector<std::string> GetRelatedStrategies() { return { }; }
 #endif
