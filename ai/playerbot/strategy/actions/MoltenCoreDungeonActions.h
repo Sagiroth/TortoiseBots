@@ -62,6 +62,13 @@ namespace ai
         GeddonMoveAwayAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "move away from geddon", 12056, 20.0f) {}
     };
 
+    // Living Bomb (20475, 10yd): groupmates step away from the carrier.
+    class GeddonMoveAwayFromLivingBombAction : public MoveAwayFromPlayerWithDebuff
+    {
+    public:
+        GeddonMoveAwayFromLivingBombAction(PlayerbotAI* ai) : MoveAwayFromPlayerWithDebuff(ai, "move away from living bomb", 20475, 10.0f) {}
+    };
+
     class MoveToMCRuneAction : public MoveToAction
     {
     public:

@@ -4570,6 +4570,7 @@ Reason: the friendly flag carrier died undefended (guard node commented
 out, trigger unwired), and bots walked back to death spots or stood on
 stale objectives with no forced re-pick.
 | Pet taunt situation toggle: Growl/Torment autocast off with a real tank (PET-3) + Cower threat-drop when stood down (PET-8b) | New behavior (neither `mod-playerbots` nor the module toggled taunts by situation; donor sweep enables all non-denylisted autocast per `Ai/Base/Actions/PetsAction.cpp:23-47`) | `runtime/PetTauntPolicy.h` (pure `ShouldPetTaunt` + taunt/cower rank sets) + `tools/test_pet_taunt_policy.cpp`; `ai/playerbot/strategy/actions/GenericActions.{h,cpp}` (`IsPetTauntAllowed` group/tank read, dynamic sweep denylist); `strategy/warlock/WarlockActions.h` (Torment peel comment only, ungated); `strategy/hunter/Hunter{Triggers,Actions}.h`, `HunterTriggers.cpp`, `HunterStrategy.cpp`, `HunterAiObjectContext.cpp` (`pet has aggro` trigger + `cower` pet-cast action + combat node) | Reimplemented in place: solo/tankless-group keeps taunts on (pet is the tank), grouped-with-tank turns Growl/Torment autocast off within one sweep tick while the ordered Torment peel still rescues the owner (victim==bot only, cannot steal from the tank); hunter orders Cower while the pet holds aggro anyway (autocast stays off). Explicit `.bot pet autocast` orders still win for owned/hired pets (sweep never runs there) | `bash tools/verify_all.sh`; `python3 tools/verify_action_trigger_wiring.py` (0 live-missing); standalone `test_pet_taunt_policy` (17 checks); `git diff --check`. Compile via shared builder; no live in-game test |
+| Thaddius fight (Naxx): fake-death-guarded phase detection, nearest-pet burn, even-HP DPS gate, platform transition, polarity sides | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Thaddius.cpp`, `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Thaddius rows), `src/Ai/Raid/Naxx/NaxxTriggers.h` (ThaddiusPhase*), `src/Ai/Raid/Naxx/NaxxBossHelper.h` (ThaddiusBossHelper), `src/Ai/Raid/Naxx/NaxxMultipliers.cpp` (ThaddiusGenericMultiplier) | Reimplemented trigger-driven; transition walks off the edge via engine pathing (donor JumpTo not ported — needs live check) | Vanilla kit identical (charges 28059/62/84/85/659/660, Polarity Shift 28089; core boss_thaddius.cpp fake-death confirmed) | `bash tools/verify_all.sh` + `tools/test_thaddius_polarity_policy.cpp`; build-commit + no live test |
 | Succubus Seduction as warlock CC for humanoids (PET-2) | New behavior (donor has no seduction AI; only the breakable-CC aura entry). CC flow follows the live `HasCcTargetTrigger` / `banish on cc` shape | `ai/playerbot/strategy/warlock/WarlockTriggers.h` (`SeductionTrigger`), `WarlockActions.h` (`CastSeductionOnCcAction : CastPetSpellAction` with CC target + CC flags, succubus/humanoid gate via `runtime/SeductionPolicy.h`, cached-spellId refresh), `WarlockStrategy.cpp` (`WarlockCcStrategy` node below fear at ACTION_INTERRUPT), `WarlockAiObjectContext.cpp` (2 creators), `runtime/SeductionPolicy.h` + `tools/test_seduction_policy.cpp` | Reimplemented: pet-cast instead of owner-cast (no reach prerequisite; range resolves demon→mark, so she must already be near). Break-protection via existing breakable-CC list + `CanPetAttack` gates | `bash tools/verify_all.sh`; wiring 0 live-missing; standalone `test_seduction_policy` (9 checks); `git diff --check`. Compile via shared builder; no live in-game test |
 | Kel'Thuzad fight (Naxx): role-split add priorities, center gather, phase-2 ring/tank spots, fissure flee, Detonate Mana runout | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Kelthuzad.cpp`, `src/Ai/Raid/Naxx/NaxxBossHelper.h` (KelthuzadBossHelper), `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (KT rows) | Reimplemented trigger-driven; phase via NOT_SELECTABLE (vanilla) not NON_ATTACKABLE; Detonate 27819 added to universal bomb runout; p1 totem/pet suppression omitted; donor debuff-on-attacker + phase-2 Blizzard/Frost Nova suppression legs omitted (no local equivalent: local debuff-on-attacker actions do not retarget current target; no WotLK shackle mechanic) | IDs verified in tw_world (15990, 16427/28/29/41, 16129, 27808/10/19/12, 28408); center verified vs core pullPortal | `bash tools/verify_all.sh` + `tools/test_kelthuzad_adds_policy.cpp`; build-commit + no live test |
 | Grobbulus fight (Naxx): ranged behind-boss carriers, poison-cloud step-out | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Grobbulus.cpp`, `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Grobbulus rows) | Reimplemented trigger-driven; ranged-carrier row raised to reaction level (EMERGENCY+7 over universal runout, else starved); cloud step-out synthesized from generic hazard mechanics (donor's cloud trigger is the MT rotation, omitted: no MT concept, needs live ring coords); return-to-center omitted (reach-to-attack covers) | Kit verified in tw_world + core boss_grobbulus.cpp (15931, 28169, 28240, cloud 15933) | `bash tools/verify_all.sh` + `tools/test_grobbulus_cloud_policy.cpp`; build-commit + no live test |
@@ -7557,3 +7558,85 @@ Focus 14751, PW:S all in 1.18.1 data).
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`.
 Build via build-commit.sh. No live test.
+
+## Move away from debuffed player primitive + Geddon Living Bomb spacing (POS-4) — 2026-10-09
+
+Feature: generic spell-id parametrised `MoveAwayFromPlayerWithDebuff`
+action + `TooCloseToPlayerWithDebuffTrigger` (donor
+`MoveAwayFromPlayerWithDebuffAction` / `TooCloseToPlayerWithDebuffTrigger`
+shape). Anyone standing within the blast radius of a debuffed groupmate
+steps out via an 8-direction x 3yd safety-score search; the carrier itself
+is never counted (its escape stays `raid bomb runout`). Pure 2D geometry
+lives in `ai/playerbot/DebuffSpreadPolicy.h`, tested by
+`tools/test_debuff_spread_policy.cpp` (wired into `verify_all.sh`). First
+consumer: `geddon` fight strategy (start/end triggers on Geddon entry
+12056, `geddon living bomb near` 20475/10yd →
+`move away from living bomb`, ACTION_MOVE + 8).
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Base/Actions/MovementActions.cpp` (`MoveAwayFromPlayerWithDebuffAction::Execute`: 8-dir x range+5yd safety-score search)
+- `src/Ai/Base/Trigger/RangeTriggers.cpp` (`TooCloseToPlayerWithDebuffTrigger::TooCloseToPlayerWithDebuff`: group aura scan within range)
+- `src/Ai/Base/Actions/MovementActions.h` / `src/Ai/Base/Trigger/RangeTriggers.h` (declarations)
+
+Source files (module, modified): `ai/playerbot/DebuffSpreadPolicy.h` (new),
+`ai/playerbot/strategy/actions/DungeonActions.{h,cpp}` (generic base),
+`ai/playerbot/strategy/triggers/DungeonTriggers.{h,cpp}` (generic gate),
+`ai/playerbot/strategy/actions/MoltenCoreDungeonActions.h` (Geddon subclass),
+`ai/playerbot/strategy/triggers/MoltenCoreDungeonTriggers.h` (Geddon start/end/proximity),
+`ai/playerbot/strategy/generic/MoltenCoreDungeonStrategies.{h,cpp}` (`geddon` strategy),
+`ai/playerbot/strategy/{actions/ActionContext.h,triggers/TriggerContext.h,strategy/StrategyContext.h}` (registration),
+`tools/test_debuff_spread_policy.cpp` + `tools/verify_all.sh` (new standalone test),
+`docs/guides/dungeon-tactics.md` (doc line).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) self never counts as a
+carrier (donor scans the whole group including self) — the carrier-side
+path here is the existing `raid bomb debuff` runout and counting self
+would fight it for the same move; (b) candidates validate through the
+existing `FindStep` (LoS + path + unpulled-hostile aggro guard) instead of
+the donor's LoS-only check; (c) trigger checks distance before the aura
+call (cheap gate first, no per-tick waste); (d) wired into one boss-fight
+strategy (Geddon) rather than global raid scripts — other bosses follow as
+data, not code. `TooFarFromPlayerWithAuraTrigger` not ported (no consumer).
+
+Reason: nobody moved away FROM a Geddon bomb carrier — only the carrier
+ran out, so the raid still ate the blast when anyone stood next to them.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test); `git
+diff --check` clean. Build via build-commit.sh (see PR summary); no live
+in-game check.
+
+## Review fixes (2026-10-09, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (deleted `dragon tank face away` registration — REAL, fixed):
+my edit had dropped the line; `.bot action raid tankface` would have
+gone UNKNOWN. Restored next to `raid spread`.
+
+Blocking 2 (`ACTION_MOVE + 8` loses to heals — REAL, fixed): Geddon row
+raised to `ACTION_EMERGENCY + 5` (survival tier, below the carrier's own
+runout at +6), so healers step out instead of casting through the blast.
+
+Non-blocking "untested policy helpers" — FIXED by wiring: the trigger
+gate now calls `NeedsDebuffSpread` (the action already used
+`IsDebuffSafePoint` + the step/overshoot constants). `DebuffEscapeClearance`
+stays test-only by design (production iterates live `Player*` carriers;
+the helper takes plain anchors) — documented in the header.
+
+Non-blocking "raid status omits geddon" — FIXED: added to the list.
+
+Non-blocking "10yd blast unverified" — ACKNOWLEDGED, not fixed: spell
+radius not in scripts; needs an in-game Geddon check that 10yd clears
+the detonation.
+
+Non-blocking "tank steps out, drags boss" — ACKNOWLEDGED, not fixed:
+the Geddon row moves everyone including the holding tank (unlike
+Magmadar's ranged/heal-only row). Left for the live check; a
+victim==bot exemption is the fallback if it drags.
+
+Non-blocking "donor Geddon never used this primitive" — ACKNOWLEDGED:
+donor consumers are RS/Ulduar; the Geddon application is novel. Noted.

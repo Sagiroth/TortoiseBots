@@ -21,6 +21,7 @@
 #include "EmeraldSanctumDungeonTriggers.h"
 #include "ClassicRaidDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
+#include "ThaddiusDungeonTriggers.h"
 #include "KelthuzadDungeonTriggers.h"
 #include "GrobbulusDungeonTriggers.h"
 #include "LoathebDungeonTriggers.h"
@@ -364,6 +365,7 @@ namespace ai
             creators["golemagg tank hold"] = [](PlayerbotAI* ai) { return new GolemaggTankHoldTrigger(ai); };
             creators["start geddon fight"] = [](PlayerbotAI* ai) { return new GeddonStartFightTrigger(ai); };
             creators["end geddon fight"] = [](PlayerbotAI* ai) { return new GeddonEndFightTrigger(ai); };
+            creators["geddon living bomb near"] = [](PlayerbotAI* ai) { return new GeddonLivingBombProximityTrigger(ai); };
             creators["geddon inferno"] = [](PlayerbotAI* ai) { return new GeddonInfernoTrigger(ai); };
 
             creators["fire protection potion ready"] = [](PlayerbotAI* ai) { return new FireProtectionPotionReadyTrigger(ai); };
@@ -398,6 +400,11 @@ namespace ai
             creators["end ossirian fight"] = [](PlayerbotAI* ai) { return new OssirianEndFightTrigger(ai); };
             creators["ossirian crystal run"] = [](PlayerbotAI* ai) { return new OssirianCrystalRunTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
+            creators["start thaddius fight"] = [](PlayerbotAI* ai) { return new ThaddiusStartFightTrigger(ai); };
+            creators["end thaddius fight"] = [](PlayerbotAI* ai) { return new ThaddiusEndFightTrigger(ai); };
+            creators["thaddius phase pet"] = [](PlayerbotAI* ai) { return new ThaddiusPhasePetTrigger(ai); };
+            creators["thaddius phase transition"] = [](PlayerbotAI* ai) { return new ThaddiusPhaseTransitionTrigger(ai); };
+            creators["thaddius phase thaddius"] = [](PlayerbotAI* ai) { return new ThaddiusPhaseThaddiusTrigger(ai); };
             creators["start kel'thuzad fight"] = [](PlayerbotAI* ai) { return new KelthuzadStartFightTrigger(ai); };
             creators["end kel'thuzad fight"] = [](PlayerbotAI* ai) { return new KelthuzadEndFightTrigger(ai); };
             creators["kel'thuzad phase one"] = [](PlayerbotAI* ai) { return new KelthuzadPhaseOneTrigger(ai); };
