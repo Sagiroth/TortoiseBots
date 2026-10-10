@@ -35,8 +35,41 @@ namespace ai
         }
     }
 
+    // Facing-to-axis: the core faces the breath destination, so boss
+    // orientation selects the lane pair. 8 compass eighths fold into 4
+    // axes (opposite directions share safe zones, as in the donor table).
+    inline int BreathAxisFromFacing(float facing)
+    {
+        // 8 compass eighths → the donor's 4 lane pairs. Cardinal breaths
+        // take the cardinal axis; diagonal breaths take their diagonal.
+        const float kTwoPi = 6.2831853072f;
+        const float kEighth = 0.7853981634f; // PI/4
+        while (facing < 0.0f)
+            facing += kTwoPi;
+        while (facing >= kTwoPi)
+            facing -= kTwoPi;
+        int eighth = (int)(facing / kEighth + 0.5f) % 8;
+        switch (eighth)
+        {
+            case 0: // N
+            case 4: // S
+                return 0;
+            case 2: // E
+            case 6: // W
+                return 1;
+            case 3: // SE
+            case 7: // NW
+                return 2;
+            case 5: // SW
+            case 1: // NE
+            default:
+                return 3;
+        }
+    }
+
     // Safe-zone pair per breath direction (donor coords, Onyxia's lair map).
     // Pair index: 0 = N-S axis, 1 = E-W axis, 2 = SE-NW axis, 3 = SW-NE axis.
+    // Kept for documentation/tests; production maps facing via above.
     inline int BreathAxisIndex(std::uint32_t spellId)
     {
         switch (spellId)

@@ -4597,3 +4597,38 @@ policy test pass); `git diff --check`. All 8 breath ids verified against
 tw_world (all named Breath). Donor safe-zone coords used as-is; Turtle map
 validation still wants eyes in a live Onyxia run (flagged in the report).
 Build via build-commit.sh pending; live in-game check pending.
+
+## Review fixes: attacker-scan boss lookup + stopped-targetless breath detection (PR #628) — 2026-10-10
+
+Both blocking findings verified real against the core script
+(`boss_onyxia.cpp` DoMovement + `Spell.cpp:3641`) and fixed:
+
+(a) Boss via `current target` missed every whelp tank, melee, and healer
+in phase 2 (their targets are whelps/friendlies, never Onyxia). Both the
+trigger and the action now resolve Onyxia via the attacker-list scan for
+entry 10184 (the StartBossFightTrigger pattern) — every bot reacts
+regardless of its own target.
+
+(b) `GetCurrentSpell(CURRENT_GENERIC_SPELL)` is ALWAYS null during Deep
+Breath: the core casts the directional spells TRIGGERED
+(`boss_onyxia.cpp:522`), and triggered non-channeled spells never populate
+the caster's spell slot (`Spell.cpp:3641`). No core seam was added (module
+stays decoupled): detection now reads the breath window's observable
+side-effects — Hover aura up + stopped (no motion during the 5s window)
++ cleared target guid (DoMovement faces the destination and clears target
+before the cast). Grounded phases always hold a victim and keep moving,
+so false positives need hover + stopped + targetless together. The lane
+axis comes from boss facing (core faces the destination pre-cast) via the
+new testable `BreathAxisFromFacing` (8 eighths → donor's 4 lane pairs);
+the spell-id table stays for documentation. Also dropped the redundant
+`isPossible` double-CanMove (non-blocking 1).
+
+Risk noted: facing maps to the lane only if the core's pre-cast facing
+matches the breath travel direction; if live behavior shows otherwise
+(e.g. facing snaps back mid-window), fall back to reacting to the
+EMOTE_BREATH script text (-1249004) as the reviewer suggested. Safe-spot
+coords still want live Turtle validation (non-blocking 2, unchanged).
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the updated
+policy test with facing-mapping coverage pass); `git diff --check`.
+Build via build-commit.sh pending; live in-game check pending.

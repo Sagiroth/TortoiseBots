@@ -23,18 +23,25 @@ BreathSafeSpot const kBreathSafeSpots[4][2] =
 bool OnyxiaBreathSafeZoneAction::Execute(Event& event)
 {
     (void)event;
-    Unit* target = AI_VALUE(Unit*, "current target");
-    if (!target || !sServerFacade.IsAlive(target) || target->GetEntry() != kOnyxiaEntry)
+    // Boss via the attacker scan (works for whelp tanks/melee/healers
+    // whose own target is not Onyxia). Axis from boss facing: the core
+    // faces the breath destination before clearing target, so facing maps
+    // to the breath lane (N-S axis 0, E-W 1, SE-NW 2, SW-NE 3).
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    Unit* boss = nullptr;
+    for (const ObjectGuid& attackerGuid : attackers)
+    {
+        Unit* attacker = ai->GetUnit(attackerGuid);
+        if (attacker && attacker->GetEntry() == kOnyxiaEntry && sServerFacade.IsAlive(attacker))
+        {
+            boss = attacker;
+            break;
+        }
+    }
+    if (!boss)
         return false;
-    Spell* currentSpell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-    if (!currentSpell || !currentSpell->m_spellInfo)
-        return false;
-    uint32 spellId = currentSpell->m_spellInfo->Id;
-    if (!IsOnyxiaBreathSpell(spellId))
-        return false;
-    int axis = BreathAxisIndex(spellId);
-    if (axis < 0)
-        return false;
+    int axis = BreathAxisFromFacing(boss->GetOrientation());
     // Nearest of the pair; hold when already inside (donor early-out).
     BreathSafeSpot const* best = nullptr;
     float bestDist = FLT_MAX;
