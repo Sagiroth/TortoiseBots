@@ -5812,6 +5812,43 @@ Local validation: `bash tools/verify_all.sh` (wiring audit covers the
 new names); `git diff --check`; shared-builder compile via
 `build-commit.sh` (BUILD OK); live in-game check pending: ordered bot
 slows a fleeing mob, untriggered bot unchanged.
+## Trinket usage filters (CD-1) — 2026-10-10
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Base/Actions/GenericSpellActions.cpp:509-663`
+(`UseTrinketAction`: positive-only, aura-or-mana-restore-only, mana gates,
+tank-defensive health gate, mixed-trigger exclusion, per-item +
+per-category cooldown maps), `:81-115` (effect classifiers
+IsManaRestore/IsManaEfficiency/IsDefensiveTankEffect).
+
+Source files (module, modified): `ai/playerbot/TrinketUsePolicy.h` (new
+pure rule) + `tools/test_trinket_use_policy.cpp` (new test),
+`ai/playerbot/strategy/actions/UseTrinketAction.{h,cpp}` (filters +
+cooldown memory), `tools/verify_all.sh` (test list).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) 1.12 category mapping via `Effect[]` /
+`EffectApplyAuraName[]` / `EffectMiscValue[]` (donor
+SpellEffectInfo/ApplyAuraName/MiscValue) + `SPELL_SCHOOL_MASK_NORMAL`;
+no rating-mask branch (no CombatRating enum on this core — resistance /
+health / dodge / parry / block / damage-taken-taken cover 1.12 tank
+trinkets); (b) per-item + per-category memory keyed on
+(itemEntry, spellId) / category from the 1.12 `_ItemSpell` struct, using
+the outer `IsSpellReady` check in `ItemCountValue.cpp:35-67` as before;
+(c) no mixed-trigger exclusion (WotLK item-template concern, no 1.12
+equivalent); (d) efficiency-only trinkets never fire (donor
+aura-or-restore-only gate — kept as `None` classification rather than a
+separate efficiency gate). No context/strategy/addon change — the `often`
+rows now pick a filtered trinket instead of first-ready.
+
+Reason: support parity gap CD-1 (high/M): trinkets fired blind (first
+ready ON_USE wins), wasting mana restores at full mana and defensives at
+full health.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test, 23 checks, pass); `git diff --check`. Build via
+build-commit.sh pending; live in-game check pending.
 | Mend pet at medium health (PET-4) | `mod-playerbots` @ `79bd4281` `src/Ai/Class/Hunter/Strategy/GenericHunterStrategy.cpp:72-73` (`hunters pet medium health` below MediumHealth 70 → mend pet 22.0 combat / 60.0 NC) + `GenericHunterNonCombatStrategy.cpp:33` | `ai/playerbot/strategy/hunter/HunterTriggers.{h,cpp}` (`HuntersPetMediumHealthTrigger` below `sPlayerbotAIConfig.mediumHealth`), `HunterStrategy.cpp` (combat mend at ACTION_HIGH-1 below low's ACTION_HIGH; NC at ACTION_NORMAL below low's NORMAL+1), `HunterAiObjectContext.cpp` (creator) | Reimplemented in live strategy priorities (donor 22/21/60 maps onto our ACTION_HIGH-1/HIGH + NORMAL/NORMAL+1); low band still wins below 40 | `bash tools/verify_all.sh`; `python3 tools/verify_action_trigger_wiring.py` (0 live-missing); `git diff --check`. Compile via shared builder; no live in-game test |
 | Combat call pet + safe combat revive, tame demoted (PET-5) | Transferable extension of donor NC-only `no pet` → `call pet` / `hunters pet dead` → `revive pet` (`GenericHunterNonCombatStrategy.cpp:29,34`); donor has no combat call/revive | `HunterStrategy.cpp` (combat `no pet` → `call pet` NORMAL+1, `safe to revive pet` → `revive pet` NORMAL; both combat+NC `tame beast` demoted EMERGENCY → NORMAL so instant call wins wherever castable and the engine falls through to tame only when call is impossible), `HunterTriggers.{h,cpp}` (`SafeToRevivePetTrigger` wired to `runtime/PetRevivePolicy.h`; `HunterNoPet` simplified to donor `NoPetTrigger` shape — petless + unmounted — so the call nodes are reachable for dismissed pets), `HunterAiObjectContext.cpp` (creator), `runtime/PetRevivePolicy.h` + `tools/test_pet_revive_policy.cpp` | Reimplemented: donor never called/revived in combat; revive gated on zero attackers (10s channel safety). Tame demotion via relevance fallback instead of a trigger spell gate | `bash tools/verify_all.sh`; wiring 0 live-missing; standalone `test_pet_revive_policy` (5 checks); `git diff --check`. Compile via shared builder; no live in-game test |
 | Chain-heal group trigger verification + Fire Nova Totem drop gate (SHM-7/SHM-9) | Donor `CastFireNovaAction::isUseful` (`mod-playerbots` `ShamanActions.cpp:28-41`: fire-totem + 8y gate) is WotLK-3.3.0+ mechanics — 1.12 Fire Nova is a totem DROP (1535 line, detonates after 4s), not a pulse of a down totem, so the donor gate is NOT ported (it would refuse every drop). Ported as a placement gate instead @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanActions.h` (`CastFireNovaAction::isUseful`: bot-to-target <= 10y + policy call), `ShamanFireGatePolicy.h` + `tools/test_shaman_fire_gate_policy.cpp` | Chain heal: verified already wired — live `medium aoe heal -> chain heal` at ACTION_MEDIUM_HEAL matches priest/druid shape, no new trigger; donor `group heal setting` exists only in dead ports. Fire Nova: 10y placement gate (totem lands at our feet); manual `totem fire nova` and magma->nova continuer unaffected (no existing-totem requirement). Spells: Fire Nova Totem 1535 line / Fire Nova pulse 8350 line (verified in tw_world.spell_template; action resolves via spellbook to the trained drop) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
