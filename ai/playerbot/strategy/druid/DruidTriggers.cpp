@@ -76,6 +76,7 @@ bool FerociousBiteTimeTrigger::IsActive()
     // no such spell in 1.18.1.)
     Aura* rip = ai->GetAura("rip", target, true);
     return !rip || rip->GetAuraDuration() > 10000;
+}
 
 bool OocRebirthTrigger::IsTargetValid(Unit* target)
 {
