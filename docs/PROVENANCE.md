@@ -5627,3 +5627,41 @@ All three blocking findings verified real in code and fixed:
 - Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
 - Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
 verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+
+## Mage close-range AoE: cone of cold + arcane explosion rows with guards (MAG-6) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/Strategy/GenericMageStrategy.cpp:206` (frost `light
+aoe` → cone of cold 21), `src/Ai/Class/Mage/MageActions.cpp:81-109`
+(cone/facing + 10yd `isUseful` guards; arcane explosion omni,
+range-only).
+
+Source files (module, modified):
+`ai/playerbot/strategy/mage/MageActions.h`
+(`CastConeOfColdAction::isUseful` now also requires
+`AI_VALUE2(bool, "facing", "current target")`; the 10yd range gate
+stays in `CastMeleeAoeSpellAction::isUseful`),
+`ai/playerbot/strategy/mage/FrostMageStrategy.cpp`
+(`FrostMageAoeStrategy`: new `ranged light aoe` → `cone of cold` row at
+HIGH, below blizzard/flamestrike medium-aoe rows),
+`ai/playerbot/strategy/mage/MageStrategy.cpp`
+(`MageAoeStrategy::InitCombatTriggers`: new `melee medium aoe` →
+`arcane explosion` row at HIGH, so all specs — not just arcane — answer
+a pack standing on the mage), `docs/classes/mage.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in the live list-based
+style. Deviations from the donor, all deliberate: (a) no new facing
+guard on arcane explosion — it is omni, and the base already gates
+≤10yd; (b) frost cone fires on our `ranged light aoe` (2 attackers in
+sight) while the 10yd + facing `isUseful` does the real gating, per the
+report's accepted v1 semantics; (c) cone action stays registered under
+its existing name — only the guard is new, so the frost-nova fallback
+node (`MageStrategy.cpp:26`) is untouched.
+
+Reason: cone of cold was registered but had zero trigger rows anywhere,
+and arcane explosion only fired for arcane bots — solo frost/fire bots
+with 2 mobs chewing on them never used either.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: 2-mob pack at melee range, cone fires while facing.
