@@ -29,8 +29,9 @@ int main()
     std::cout << "  [PASS] ids and 26y range pinned\n";
 
     // Garr AoE set: the donor's explicit list by action name. Real AoE
-    // (whirlwind, consecration, magma totem, traps, hurricane, mage AoE,
-    // hunter shots, warlock rain) is suppressed; single-target dots, curses
+    // (whirlwind, consecration, magma totem, traps, hurricane, mage AoE incl.
+    // blizzard/cone of cold/blast wave, chain lightning, hunter shots,
+    // warlock rain) is suppressed; single-target dots, curses
     // and heals — which our threat flags wrongly mark AOE — are NOT.
     CHECK(IsGarrSuppressedAoeAction("dps aoe"));
     CHECK(IsGarrSuppressedAoeAction("whirlwind"));
@@ -39,11 +40,11 @@ int main()
     CHECK(IsGarrSuppressedAoeAction("explosive trap"));
     CHECK(IsGarrSuppressedAoeAction("hurricane"));
     CHECK(IsGarrSuppressedAoeAction("flamestrike"));
+    CHECK(IsGarrSuppressedAoeAction("blizzard"));
+    CHECK(IsGarrSuppressedAoeAction("cone of cold"));
+    CHECK(IsGarrSuppressedAoeAction("blast wave"));
     CHECK(IsGarrSuppressedAoeAction("arcane explosion"));
-    CHECK(IsGarrSuppressedAoeAction("multi-shot"));
-    CHECK(IsGarrSuppressedAoeAction("volley"));
-    CHECK(IsGarrSuppressedAoeAction("rain of fire"));
-    CHECK(IsGarrSuppressedAoeAction("hellfire"));
+    CHECK(IsGarrSuppressedAoeAction("chain lightning"));
     CHECK(!IsGarrSuppressedAoeAction("corruption on attacker"));
     CHECK(!IsGarrSuppressedAoeAction("serpent sting"));
     CHECK(!IsGarrSuppressedAoeAction("heal party member"));

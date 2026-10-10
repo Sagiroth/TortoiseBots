@@ -100,7 +100,7 @@ namespace ai
             if (!ai->IsRanged(bot))
                 return false;
             AiObjectContext* context = ai->GetAiObjectContext();
-            const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+            const std::list<ObjectGuid>& attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
             for (const ObjectGuid& attackerGuid : attackers)
             {
                 Unit* attacker = ai->GetUnit(attackerGuid);

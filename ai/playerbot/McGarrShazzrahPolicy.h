@@ -24,11 +24,13 @@ namespace ai
 
     // Garr: DPS-bot AoE suppressed while Garr lives. The donor names its
     // AoE set explicitly (DpsAoeAction + Consecration/Starfall/Whirlwind/
-    // Magma Totem/Explosive Trap/Death and Decay + any AOE-threat cast);
-    // here the caller passes the action NAME and we match the same set,
-    // because our threat flags do not mark real AoE (Whirlwind etc. return
-    // SINGLE/NONE) while wrongly flagging heals and single-target dots as
-    // AOE. Name-matching keeps the policy free of Action-type coupling.
+    // Magma Totem/Explosive Trap/Death and Decay + any AOE-threat cast, which
+    // covers its mage AoE (Blizzard/Cone of Cold/Blast Wave) and Shaman Chain
+    // Lightning); here the caller passes the action NAME and we match the
+    // same set, because our threat flags do not mark real AoE (Whirlwind
+    // etc. return SINGLE/NONE) while wrongly flagging heals and
+    // single-target dots as AOE. Name-matching keeps the policy free of
+    // Action-type coupling. (multi-shot/arcane explosion go beyond donor.)
     inline bool IsGarrSuppressedAoeAction(const std::string& actionName)
     {
         return actionName == "dps aoe" ||
@@ -38,11 +40,14 @@ namespace ai
                actionName == "explosive trap" ||
                actionName == "hurricane" ||
                actionName == "flamestrike" ||
+               actionName == "blizzard" ||
+               actionName == "cone of cold" ||
+               actionName == "blast wave" ||
                actionName == "arcane explosion" ||
+               actionName == "chain lightning" ||
                actionName == "multi-shot" ||
                actionName == "volley" ||
-               actionName == "rain of fire" ||
-               actionName == "hellfire";
+               actionName == "rain of fire";
     }
 
     inline bool ShouldSuppressGarrAoe(bool garrAlive, bool botIsDps, bool actionIsAoe)
