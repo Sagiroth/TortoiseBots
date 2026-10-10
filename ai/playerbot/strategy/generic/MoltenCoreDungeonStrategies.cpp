@@ -10,6 +10,10 @@ void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "start magmadar fight",
         NextAction::array(0, new NextAction("enable magmadar fight strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start geddon fight",
+        NextAction::array(0, new NextAction("enable geddon fight strategy", 100.0f), NULL)));
 }
 
 void MoltenCoreDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -27,6 +31,19 @@ void MoltenCoreDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "fire protection potion ready",
         NextAction::array(0, new NextAction("fire protection potion", 100.0f), NULL)));
+}
+
+void MoltenCoreDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    // Dungeon-wide (not on the geddon fight strategy): the Living Bomb
+    // carrier keeps approach suppression after Geddon dies and combat
+    // ends — mirrors the donor's RaidMcStrategy registration.
+    multipliers.push_back(new GeddonInfernoMultiplier(ai));
+}
+
+void MoltenCoreDungeonStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new GeddonInfernoMultiplier(ai));
 }
 
 void MagmadarFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -73,3 +90,34 @@ void MagmadarFightStrategy::InitCombatMultipliers(std::list<Multiplier*>& multip
         multipliers.push_back(new PreventMoveAwayFromCreatureOnReachToCastMultiplier(ai));
     }
 }
+
+void GeddonFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "fire protection potion ready",
+        NextAction::array(0, new NextAction("fire protection potion", 100.0f), NULL)));
+}
+
+void GeddonFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end geddon fight",
+        NextAction::array(0, new NextAction("disable geddon fight strategy", 100.0f), NULL)));
+}
+
+void GeddonFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end geddon fight",
+        NextAction::array(0, new NextAction("disable geddon fight strategy", 100.0f), NULL)));
+}
+
+void GeddonFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "geddon inferno",
+        NextAction::array(0, new NextAction("move away from geddon", ACTION_EMERGENCY + 5), NULL)));
+}
+
+// No InitCombatMultipliers here: the multiplier lives on the dungeon-wide
+// "molten core" strategy so bomb carriers stay covered after the fight.

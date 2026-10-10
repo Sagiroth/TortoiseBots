@@ -140,6 +140,19 @@ namespace ai
         bool IsActive() override;
     };
 
+    // Opt-in combat spread gate ("spread" strategy): fires when another
+    // live groupmate is inside the spread radius. Unlike the pool-only
+    // raid-spread gate above, ownership and ranged-only never gate — the
+    // player asked for spacing. Combat-only, hold orders veto.
+    class SpreadNeededTrigger : public Trigger
+    {
+    public:
+        SpreadNeededTrigger(PlayerbotAI* ai, std::string name = "spread needed", int checkInterval = 2)
+        : Trigger(ai, name, checkInterval) {}
+        std::string GetTargetName() override { return "self target"; }
+        bool IsActive() override;
+    };
+
     class CloseToGameObjectHazardTrigger : public CloseToHazardTrigger
     {
     public:
