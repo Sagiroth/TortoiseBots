@@ -147,6 +147,7 @@ namespace ai
 
     class ManaShieldTrigger : public BuffTrigger
     {
+    public:
         ManaShieldTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "mana shield", 5) {}
         virtual bool IsActive() override;
     };
