@@ -24,6 +24,10 @@ const (
 	notableQuality = 2
 	// flesh-skinning skill id (SKILL_SKINNING in SharedDefines.h).
 	skillSkinning = 393
+	// activityForgetAfter drops the counters of a bot neither the roster nor
+	// an event has shown for this long: a pool reset deletes its characters,
+	// and their counters must not pile up in memory and in the state file.
+	activityForgetAfter = 3 * 24 * time.Hour
 )
 
 // botActivityState is the mutable per-bot accumulator. The exported counters
@@ -40,6 +44,8 @@ type botActivityState struct {
 	deadAt    time.Time
 	lastLevel uint32
 	openQuest map[uint32]bool
+	// lastSeen is the unix time of the bot's last roster entry or event.
+	lastSeen int64
 }
 
 // LootFilter selects rows from the pool-wide loot feed. Zero values mean "no
@@ -91,6 +97,7 @@ func (s *Store) applyBotEventLocked(ev model.BotEvent, now time.Time) {
 		a.counters.FirstSeen = now.Unix()
 		s.activity[ev.GUID] = a
 	}
+	a.lastSeen = now.Unix()
 	if ev.Bot != "" {
 		a.name = ev.Bot
 	}
@@ -254,6 +261,7 @@ func (s *Store) observeLevelsLocked(bots []model.BotSnapshot, now time.Time) {
 			a.counters.FirstSeen = now.Unix()
 			s.activity[b.GUID] = a
 		}
+		a.lastSeen = now.Unix()
 		if b.Name != "" {
 			a.name = b.Name
 		}
@@ -275,6 +283,23 @@ func (s *Store) observeLevelsLocked(bots []model.BotSnapshot, now time.Time) {
 		s.levelFeed = append(s.levelFeed, model.ActivityLevelItem{At: now.Unix(), TimeStr: stampTime(now.Unix()), Bot: a.name, GUID: b.GUID, Class: a.class, Level: b.Level})
 		if len(s.levelFeed) > levelFeedLimit {
 			s.levelFeed = append([]model.ActivityLevelItem(nil), s.levelFeed[len(s.levelFeed)-levelFeedLimit:]...)
+		}
+	}
+	s.forgetGoneBotsLocked(now)
+}
+
+// forgetGoneBotsLocked drops bots unseen for activityForgetAfter. It runs at
+// most once an hour, and the first run waits an hour after a restore so the
+// pool has logged back in before anyone counts as gone.
+func (s *Store) forgetGoneBotsLocked(now time.Time) {
+	if now.Sub(s.activityForgotAt) < time.Hour {
+		return
+	}
+	s.activityForgotAt = now
+	cutoff := now.Add(-activityForgetAfter).Unix()
+	for guid, a := range s.activity {
+		if a.lastSeen < cutoff {
+			delete(s.activity, guid)
 		}
 	}
 }
