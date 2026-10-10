@@ -4,20 +4,15 @@
 
 // Warlock Life Tap top-up rule (WAR-5, mod-playerbots parity): the donor
 // taps whenever mana drops below 85% with health above its low-health
-// line, as a low-priority filler (relevance 5.1) and out-of-combat pre-tap,
-// while keeping an urgent band for near-empty mana. Ours only fired at
-// mana<=mediumMana (default 40), so a warlock entered every pull at whatever
-// mana the last fight left and spent the second half wanding.
-//
-// Two bands, both gated on health above the low-health line:
-//   - TapUrgent:  mana <= mediumMana (the live combat row, NORMAL+2).
-//   - TapTopUp:   mana < 85 (filler NORMAL-1 combat / NORMAL non-combat),
-//                 never preempting dot upkeep or the urgent row.
-// The rule is a pure function of mana/health percents plus the two config
-// lines and is unit-tested on its own
-// (tools/test_warlock_tap_policy.cpp). The health floor stays ours
-// (lowHealth, default 50 — stricter than the donor's 45). Affliction's
-// Dark Pact on low mana is untouched and still wins the emergency.
+// line. Ours keeps that band as an out-of-combat pre-tap only: a combat
+// filler is impossible in our engine (defaults are pushed at
+// relevance-200, so any trigger row preempts the nuke), while the urgent
+// band (mana<=mediumMana) stays live in combat. The health floor stays
+// ours (lowHealth, default 50 — stricter than the donor's 45).
+// Affliction's Dark Pact on low mana is untouched and still wins the
+// emergency. The rule is a pure function of mana/health percents plus the
+// two config lines and is unit-tested on its own
+// (tools/test_warlock_tap_policy.cpp).
 
 namespace TortoiseBots
 {

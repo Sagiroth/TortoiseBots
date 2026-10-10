@@ -220,8 +220,9 @@ namespace ai
     };
 
     // Donor-parity top-up band (WAR-5): mana below 85% with safe health,
-    // queued as low-priority filler in combat and pre-tap out of combat.
-    // The urgent band stays on LifeTapTrigger (mana <= mediumMana).
+    // queued as a pre-tap out of combat only. Never a combat row: engine
+    // defaults land at relevance-200, so any combat row would preempt the
+    // nuke. The urgent band stays on LifeTapTrigger (mana <= mediumMana).
     class LifeTapTopUpTrigger : public Trigger
     {
     public:

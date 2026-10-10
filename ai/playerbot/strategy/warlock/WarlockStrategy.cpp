@@ -54,12 +54,11 @@ void WarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "life tap",
         NextAction::array(0, new NextAction("life tap", ACTION_NORMAL + 2), NULL)));
 
-    // Donor-parity filler (WAR-5): mana below 85% with safe health taps at
-    // 0.9, under the shadow-bolt default (IDLE=1) and every upkeep row, so it
-    // only fires when no nuke is queued — never preempting the main nuke.
-    triggers.push_back(new TriggerNode(
-        "life tap top-up",
-        NextAction::array(0, new NextAction("life tap", 0.9f), NULL)));
+    // No combat filler for the 85% top-up band (review pr-593): engine
+    // defaults are pushed at relevance-200 ("shadow bolt" IDLE=1 lands at
+    // -199), so any trigger row would preempt the nuke and tap instead of
+    // casting on every tick mana sits at 41-84. The urgent band above is the
+    // only combat tap; the top-up band pre-taps out of combat only.
 
     triggers.push_back(new TriggerNode(
         "no mana",

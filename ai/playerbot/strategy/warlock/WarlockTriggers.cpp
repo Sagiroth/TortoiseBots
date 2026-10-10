@@ -70,9 +70,9 @@ bool CorruptionOnAttackerTrigger::IsActive()
 
 // Out-of-combat tap discipline (review pr-593): the OOC rows beat food/drink
 // on relevance (9 > 6), so an ungated tap stands the bot up mid-meal and
-// ping-pongs sit/stand/tap. Between pulls the bot taps first, then eats to
-// full: while a food or drink aura is up both tap bands stay quiet via the
-// policy isEating flag (combat rows pass in-combat, flag ignored there).
+// ping-pongs sit/stand/tap. Between pulls the bot eats first, then taps:
+// while a food or drink aura is up both tap bands stay quiet via the
+// policy isEating flag (combat passes in-combat, flag ignored there).
 static bool WarlockTapEating(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();

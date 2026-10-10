@@ -4546,8 +4546,9 @@ health above lowHealth),
 `LifeTapTopUpTrigger` for the 85% band),
 `ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (registered
 `life tap top-up`),
-`ai/playerbot/strategy/warlock/WarlockStrategy.cpp` (combat filler row at
-NORMAL-1 under dot upkeep, non-combat pre-tap row at NORMAL),
+`ai/playerbot/strategy/warlock/WarlockStrategy.cpp` (out-of-combat pre-tap
+rows at NORMAL-1 for both bands; no combat filler — any trigger row beats
+the relevance-200 default nuke),
 `tools/test_warlock_tap_policy.cpp` (new standalone test, wired into
 ## Warrior WAR-2 + WAR-6: shield-slam proc row and 40-rage gate (2026-10-09)
 
