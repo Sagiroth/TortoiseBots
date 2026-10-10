@@ -115,6 +115,9 @@
 - Dropped the redundant "queued for" note in the zone column, since the new badge covers it. [#670](https://github.com/Sagiroth/TortoiseBots/pull/670)
 - Bumped the asset cache version so browsers pick up the new page immediately. [#670](https://github.com/Sagiroth/TortoiseBots/pull/670)
 
+### Combat & AI
+- Bot turn scheduling is now a single fair queue (`runtime/BotTurnScheduler.h`, covered by `tools/test_bot_turn_scheduler.cpp`) instead of three competing lanes — combat, travel follow-up, and round-robin rotation — so bots are re-queued based on their own AI state rather than burning turns on bots with nothing to do. On a 1000-bot test realm this ends the old skew where dead bots got ~195 turns/min and fighting bots ~64 while questing bots got ~11 (one every 4s), and walking bots no longer wait a full lap. [#671](https://github.com/Sagiroth/TortoiseBots/pull/671)
+
 ## 2026-10-09
 
 ### Observability & Engine
