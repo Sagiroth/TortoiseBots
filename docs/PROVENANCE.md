@@ -5031,3 +5031,34 @@ missed kick and a charge GCD while the healer took hits.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
 test (per task constraints).
+## Equip-upgrade score threshold (AG-1, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/PlayerbotAIConfig.cpp:716` (`EquipUpgradeThreshold = 1.1f`),
+`src/Ai/Base/Value/ItemUsageValue.cpp:308`
+(`itemScore > oldScore * threshold`).
+
+Source files (module, modified): `ai/playerbot/EquipThresholdPolicy.h`
+(new pure better verdict: strictly above old * threshold),
+`ai/playerbot/strategy/values/ItemUsageValue.cpp` (isBetter score arm
+routed through the policy),
+`ai/playerbot/PlayerbotAIConfig.{h,cpp}` +
+`ai/playerbot/aiplayerbot.conf.dist.in` (new
+`AiPlayerbot.EquipUpgradeThreshold = 1.1`, default 1.1),
+`tools/test_equip_threshold_policy.cpp` (new standalone test),
+`tools/verify_all.sh` (register test) +
+`docs/guides/configuration-tuning.md`, `CHANGELOG.md` (doc lines).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) the threshold applies only to the
+`isBetter` score arm - exact ties still fall through to the sheet /
+quality / item-level tiebreaks, and spec-transition, broken-gear, forced,
+and zero-weight-first-stats swaps return above untouched; (b) 1.0 restores
+any-gain swaps for operators who want them.
+
+Reason: bots swapped gear on any epsilon stat-weight gain, churning swaps
+across audits for nothing.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test +
+wiring check); `git diff --check`; shared-builder compile check; no live
+in-game test.
