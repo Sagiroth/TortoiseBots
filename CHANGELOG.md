@@ -9,6 +9,7 @@
 
 ### Bots & Behavior
 - Masterless bots stop accepting quests they cannot finish alone — over-level, elite/dungeon and group-suggested quests are refused at the giver instead of being picked up and dropped later. Grouped bots that can fight bosses and player-owned bots are unchanged.
+- Tanks stop stealing the main tank's marked target — an off-tank now leaves a skull held by another tank alone and picks up loose adds instead. (For tanks with automatic marking enabled, raid icons are no longer set while travelling or idle — marking now happens in combat, without outranking defensive cooldowns.)
 - Bots pick the better quest reward when two are equally usable — tied rewards are now broken by stat weight for the bot instead of taking whatever the vendor lists first.
 - Whispering a bot `pull back` now works like `pull` — it pulls your target; whispering `attackers` now answers with who is attacking instead of staying silent.
 - Rogue bots now pick locked boxes mid-trade — when a trader parks a lockbox in the do-not-trade slot, a rogue bot unlocks it instead of letting the trade complete around it. Whispering a rogue `unlock traded item` forces it manually.
