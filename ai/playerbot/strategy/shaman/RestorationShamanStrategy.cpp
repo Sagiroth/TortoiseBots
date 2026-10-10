@@ -367,6 +367,10 @@ void RestorationShamanTotemsStrategy::InitCombatTriggers(std::list<TriggerNode*>
         NextAction::array(0, new NextAction("healing stream totem", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "stoneclaw panic",
+        NextAction::array(0, new NextAction("stoneclaw totem", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "earth totem",
         NextAction::array(0, new NextAction("strength of earth totem", ACTION_HIGH), NULL)));
 
