@@ -184,13 +184,14 @@ TortoiseBots: BOTPERF passUs=812 playerBots=5 ownedBots=5 masterBots=0 poolBots=
 
 ### Server settings for many bots (`mangosd.conf`)
 
-Hundreds of always-active bots keep most of both continents busy, which the core's defaults don't expect. Three core settings matter most:
+Hundreds of always-active bots keep most of both continents busy, which the core's defaults don't expect. These core settings matter most:
 
 | Setting | Recommended | Why |
 | :--- | :---: | :--- |
 | `CleanupTerrain` | `0` | The core frees unused terrain every 60 s; bots re-enter it seconds later and the reload stalls the map tick. With 500 bots, slow (>200 ms) map ticks dropped from 126 to 20 per 10 minutes. Memory stays bounded by the continents' terrain (~2 GB extracted). Keep `1` on low-RAM machines. |
 | `PlayerSave.Interval` | `300000` | The 60 s default saves every bot in the same minute; 5 min removes that write wave. A crash loses at most this much progress. |
 | `DynamicRespawn.MaxReductionRate` / `DynamicRespawn.MinRespawnTime` | `0.75` / `15` | Speed up respawns where many players/bots crowd: the core shortens spawn timers near groups of players (defaults cap the cut at `0.25` and never below `25` s). On bot-heavy servers raise the cap and lower the floor so starter valleys and grind fields keep up with a crowded pool. Core defaults are `0.25` / `25`; the rest of the `DynamicRespawn.*` block stays at its defaults. |
+| `LootsLogFile` / `CharLogFile` | `""` | To the core a bot is a player, so every bot loot and every bot login lands in `loot.log` / `char.log`. With 1000 bots `loot.log` gains about 450,000 lines (~50 MB) a day, and neither file is ever rotated. An empty file name turns the file off. |
 
 ---
 
@@ -247,6 +248,10 @@ TortoiseBots.LogLevel = 2
 | `3` | Debug | Per-tick and per-packet traces. High volume — intended for short diagnostic sessions, not left on. |
 
 Errors (`sLog.outError`) are always written regardless of this setting. The level is re-read on `.reload config`, so it can be raised or lowered without a server restart.
+
+### Bot CSV files (`AiPlayerbot.AllowedLogFiles`)
+
+The bot CSV logs are off by default, because on a busy realm they grow without limit. To diagnose something, list the files you need (comma separated) in `aiplayerbot.conf`, for example `AiPlayerbot.AllowedLogFiles = bot_events.csv,deaths.csv`. Docs that mention a row in `bot_events.csv` assume that file is listed.
 
 This setting is separate from the strategy AI's own action trace, which stays gated behind the `debug`/`debug action` bot strategies (`.bot strategy +debug`) rather than a server-wide config key.
 
