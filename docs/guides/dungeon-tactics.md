@@ -113,6 +113,7 @@ Entering a raid map auto-enables the `dungeon` transition engine, which swaps in
 - **Spread memory:** a bot that spreads remembers its last two step-out headings and picks a different vector next time (within ~45 degrees is skipped). Ordinary flees do not use this veto: kiting casters need to keep stepping straight away from the mob.
 
 Encounter notes: MC runes douse via `.bot action raid douse` (Eternal Quintessence 22754 first, Aqual 17333 fallback); Onyxia phase 2 swaps bots to `shoot` + spread while airborne; BWL rogues disarm suppression devices (wired in both combat and non-combat states); Vaelastrasz Burning Adrenaline carriers flee from clean bots (victims cluster, the tank holds), with tail-sweep recovery and ranged cast-range bias; 4H mark carriers (3+ stacks) rotate out via hazard move.
+Encounter notes: MC runes douse via `.bot action raid douse` (Eternal Quintessence 22754 first, Aqual 17333 fallback); Onyxia phase 2 swaps bots to `shoot` + spread while airborne; BWL rogues disarm suppression devices (wired in both combat and non-combat states); 4H mark carriers (3+ stacks) rotate out via hazard move; Sapphiron air phase hides behind iceblocked players (lethal priority, above heals) and blizzards are stepped out of; ground positioning is unchanged (no flank: rear is the tail cone).
 
 ## 7. Custom Turtle Raids (Emerald Sanctum / Lower Karazhan / Karazhan Crypt)
 

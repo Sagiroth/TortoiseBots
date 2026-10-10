@@ -55,6 +55,7 @@
 #include "generic/EmeraldSanctumDungeonStrategies.h"
 #include "generic/LowerKarazhanDungeonStrategies.h"
 #include "generic/KarazhanCryptDungeonStrategies.h"
+#include "generic/SapphironDungeonStrategies.h"
 
 namespace ai
 {
@@ -171,6 +172,7 @@ namespace ai
             creators["suppression room"] = [](PlayerbotAI* ai) { return new SuppressionRoomStrategy(ai); };
             creators["vael"] = [](PlayerbotAI* ai) { return new VaelFightStrategy(ai); };
             creators["four horseman"] = [](PlayerbotAI* ai) { return new FourHorsemanFightStrategy(ai); };
+            creators["sapphiron"] = [](PlayerbotAI* ai) { return new SapphironFightStrategy(ai); };
             creators["solnius"] = [](PlayerbotAI* ai) { return new SolniusFightStrategy(ai); };
             creators["araxxna"] = [](PlayerbotAI* ai) { return new AraxxnaFightStrategy(ai); };
             creators["moroes"] = [](PlayerbotAI* ai) { return new MoroesFightStrategy(ai); };
