@@ -80,4 +80,35 @@ namespace ai
         // Eternal Quintessence (22754): exalted-Hydraxian upgrade, same use.
         DouseMCRuneActionEternal(PlayerbotAI* ai) : UseItemIdAction(ai, "douse mc rune eternal") { qualifier = "{22754,entry filter::{gos close,mc runes}}"; }
     };
+
+    class GarrEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        GarrEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable garr fight strategy", "+garr") {}
+    };
+
+    class GarrDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        GarrDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable garr fight strategy", "-garr") {}
+    };
+
+    class ShazzrahEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        ShazzrahEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable shazzrah fight strategy", "+shazzrah") {}
+    };
+
+    class ShazzrahDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        ShazzrahDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable shazzrah fight strategy", "-shazzrah") {}
+    };
+
+    class ShazzrahMoveAwayAction : public MoveAwayFromCreature
+    {
+    public:
+        // Donor ARCANE_EXPLOSION_DISTANCE: ranged holds 26y.
+        ShazzrahMoveAwayAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "move away from shazzrah", 12264, 26.0f) {}
+    };
 }

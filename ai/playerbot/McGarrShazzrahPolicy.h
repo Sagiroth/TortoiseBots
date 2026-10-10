@@ -1,0 +1,69 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+
+// Pure decision rules for the cheap MC per-boss bundle (mod-playerbots
+// parity, raid1 batch item 3): Garr AoE-off + Shazzrah 26y range.
+// Donor: mod-playerbots @ 79bd4281, src/Ai/Raid/MC/MCMultipliers.cpp:26-53
+// (GarrDisableDpsAoeMultiplier: DpsAoeAction + a named AoE-spell list +
+// any ACTION_THREAT_AOE cast while Garr lives) + MCTriggers.cpp:27-37
+// (McShazzrahRangedTrigger: ranged inside ARCANE_EXPLOSION_DISTANCE) +
+// MCActions.cpp:51-60 (step out to exactly 26y) + MCHelpers.h:38 (26y).
+// No core includes: callers translate game state into plain inputs so the
+// rules stay testable in tools/test_mc_garr_shazzrah_policy.cpp.
+
+namespace ai
+{
+    // Garr 12057, Shazzrah 12264 (1.18.1 verified).
+    constexpr std::uint32_t kGarrEntry = 12057;
+    constexpr std::uint32_t kShazzrahEntry = 12264;
+
+    // Donor ARCANE_EXPLOSION_DISTANCE: ranged steps out to exactly 26y.
+    constexpr float kShazzrahRangeDistance = 26.0f;
+
+    // Garr: DPS-bot AoE suppressed while Garr lives. The donor names its
+    // AoE set explicitly (DpsAoeAction + Consecration/Starfall/Whirlwind/
+    // Magma Totem/Explosive Trap/Death and Decay + any AOE-threat cast, which
+    // covers its mage AoE (Blizzard/Cone of Cold/Blast Wave) and Shaman Chain
+    // Lightning); here the caller passes the action NAME and we match the
+    // same set, because our threat flags do not mark real AoE (Whirlwind
+    // etc. return SINGLE/NONE) while wrongly flagging heals and
+    // single-target dots as AOE. Name-matching keeps the policy free of
+    // Action-type coupling. (multi-shot/arcane explosion go beyond donor.)
+    inline bool IsGarrSuppressedAoeAction(const std::string& actionName)
+    {
+        return actionName == "dps aoe" ||
+               actionName == "consecration" ||
+               actionName == "whirlwind" ||
+               actionName == "magma totem" ||
+               actionName == "explosive trap" ||
+               actionName == "hurricane" ||
+               actionName == "flamestrike" ||
+               actionName == "blizzard" ||
+               actionName == "cone of cold" ||
+               actionName == "blast wave" ||
+               actionName == "arcane explosion" ||
+               actionName == "chain lightning" ||
+               actionName == "multi-shot" ||
+               actionName == "volley" ||
+               actionName == "rain of fire";
+    }
+
+    inline bool ShouldSuppressGarrAoe(bool garrAlive, bool botIsDps, bool actionIsAoe)
+    {
+        return garrAlive && botIsDps && actionIsAoe;
+    }
+
+    // Shazzrah: ranged bots inside 26y step out; everyone else holds.
+    // (The donor gates on IsRanged only, not healer — mirror that.)
+    inline bool ShouldLeaveShazzrahRange(bool botIsRanged, bool insideRange)
+    {
+        return botIsRanged && insideRange;
+    }
+
+    inline bool IsShazzrahMoveAction(const std::string& actionName)
+    {
+        return actionName == "move away from shazzrah";
+    }
+}

@@ -4530,6 +4530,56 @@ Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 | Succubus Seduction as warlock CC for humanoids (PET-2) | New behavior (donor has no seduction AI; only the breakable-CC aura entry). CC flow follows the live `HasCcTargetTrigger` / `banish on cc` shape | `ai/playerbot/strategy/warlock/WarlockTriggers.h` (`SeductionTrigger`), `WarlockActions.h` (`CastSeductionOnCcAction : CastPetSpellAction` with CC target + CC flags, succubus/humanoid gate via `runtime/SeductionPolicy.h`, cached-spellId refresh), `WarlockStrategy.cpp` (`WarlockCcStrategy` node below fear at ACTION_INTERRUPT), `WarlockAiObjectContext.cpp` (2 creators), `runtime/SeductionPolicy.h` + `tools/test_seduction_policy.cpp` | Reimplemented: pet-cast instead of owner-cast (no reach prerequisite; range resolves demon→mark, so she must already be near). Break-protection via existing breakable-CC list + `CanPetAttack` gates | `bash tools/verify_all.sh`; wiring 0 live-missing; standalone `test_seduction_policy` (9 checks); `git diff --check`. Compile via shared builder; no live in-game test |
 | Kel'Thuzad fight (Naxx): role-split add priorities, center gather, phase-2 ring/tank spots, fissure flee, Detonate Mana runout | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Kelthuzad.cpp`, `src/Ai/Raid/Naxx/NaxxBossHelper.h` (KelthuzadBossHelper), `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (KT rows) | Reimplemented trigger-driven; phase via NOT_SELECTABLE (vanilla) not NON_ATTACKABLE; Detonate 27819 added to universal bomb runout; p1 totem/pet suppression omitted; donor debuff-on-attacker + phase-2 Blizzard/Frost Nova suppression legs omitted (no local equivalent: local debuff-on-attacker actions do not retarget current target; no WotLK shackle mechanic) | IDs verified in tw_world (15990, 16427/28/29/41, 16129, 27808/10/19/12, 28408); center verified vs core pullPortal | `bash tools/verify_all.sh` + `tools/test_kelthuzad_adds_policy.cpp`; build-commit + no live test |
 
+## MC Garr AoE-off + Shazzrah 26y range (raid1 item 3) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/MC/MCMultipliers.cpp:26-53` (GarrDisableDpsAoeMultiplier:
+DpsAoeAction + named AoE-spell list + any ACTION_THREAT_AOE cast while Garr
+lives), `src/Ai/Raid/MC/MCTriggers.cpp:27-37` (McShazzrahRangedTrigger:
+ranged inside ARCANE_EXPLOSION_DISTANCE), `src/Ai/Raid/MC/MCActions.cpp:51-60`
+(step out to exactly 26y), `src/Ai/Raid/MC/MCHelpers.h:38` (26y constant),
+`src/Ai/Raid/MC/MCStrategy.cpp` (trigger wiring).
+
+Source files (module, modified): `ai/playerbot/McGarrShazzrahPolicy.h`
+(new pure rule: ids, 26y, Garr-suppress + Shazzrah-leave predicates),
+`ai/playerbot/strategy/triggers/MoltenCoreDungeonTriggers.h`
+(Garr/ShazzrahStart+EndFightTrigger on entries 12057/12264,
+header-inline ShazzrahRangedTrigger: ranged + within 26y + live fight),
+`ai/playerbot/strategy/actions/MoltenCoreDungeonActions.h`
+(Garr/ShazzrahEnable+DisableFightStrategyAction, ShazzrahMoveAwayAction:
+MoveAwayFromCreature 12264/26y), `ai/playerbot/strategy/generic/
+MoltenCoreDungeonStrategies.h/.cpp` (`garr` fight strategy with
+GarrAoeOffMultiplier; `shazzrah` fight strategy with a ranged 26y reaction
+at ACTION_EMERGENCY+5; start triggers on `molten core`; end-fight
+cleanup), `ai/playerbot/strategy/generic/DungeonMultipliers.h/.cpp`
+(GarrAoeOffMultiplier), `ai/playerbot/strategy/triggers/TriggerContext.h`,
+`ai/playerbot/strategy/actions/ActionContext.h`,
+`ai/playerbot/strategy/StrategyContext.h` (registrations),
+`tools/test_mc_garr_shazzrah_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in our per-boss fight
+strategy idiom (mirror the Magmadar pattern). Deviations from the donor,
+all deliberate: (a) no per-boss multiplier plumbing in the generic raid
+strategy — each fight strategy carries its own multiplier, so Garr's
+AoE-off cannot leak into other fights; (b) DPS = neither tank nor heal via
+our role API (no IsDps exists); the donor's named AoE-spell list is
+matched by action NAME (threat flags under-mark our real AoE and
+over-mark heals + single-target dots, so type matching is wrong both
+ways); (c) the Shazzrah reaction node is queued only for ranged/heal bots
+at strategy level (melee never sees the trigger). Note: the veto is
+unconditional while Garr lives — the addon's manual AoE switch does NOT
+override it on this fight (single-target discipline is the mechanic).
+
+Reason: raid1 gaps MC-GARR-AOE + MC-SHAZZRAH: stray AoE broke Garr
+Firesworn control (banish-safe single-target), and ranged ate Arcane
+Explosion at 26y.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Creature entries 12057/12264
+verified against tw_world. Build via build-commit.sh pending; live in-game
+check pending.
 ## Druid parity DRU-7: Thorns on the party tank first — 2026-10-09
 Feature: new `ThornsOnTankTrigger` (`BuffOnTankTrigger` on "thorns",
 fire-shield conflict skip mirroring `ThornsOnPartyTrigger`) + new

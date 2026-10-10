@@ -343,6 +343,11 @@ namespace ai
             creators["magmadar lava bomb"] = [](PlayerbotAI* ai) { return new MagmadarLavaBombTrigger(ai); };
             creators["magmadar too close"] = [](PlayerbotAI* ai) { return new MagmadarTooCloseTrigger(ai); };
 
+            creators["start garr fight"] = [](PlayerbotAI* ai) { return new GarrStartFightTrigger(ai); };
+            creators["end garr fight"] = [](PlayerbotAI* ai) { return new GarrEndFightTrigger(ai); };
+            creators["start shazzrah fight"] = [](PlayerbotAI* ai) { return new ShazzrahStartFightTrigger(ai); };
+            creators["end shazzrah fight"] = [](PlayerbotAI* ai) { return new ShazzrahEndFightTrigger(ai); };
+            creators["shazzrah ranged"] = [](PlayerbotAI* ai) { return new ShazzrahRangedTrigger(ai); };
             creators["start geddon fight"] = [](PlayerbotAI* ai) { return new GeddonStartFightTrigger(ai); };
             creators["end geddon fight"] = [](PlayerbotAI* ai) { return new GeddonEndFightTrigger(ai); };
             creators["geddon inferno"] = [](PlayerbotAI* ai) { return new GeddonInfernoTrigger(ai); };

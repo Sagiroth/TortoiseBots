@@ -367,6 +367,11 @@ namespace ai
             creators["disable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarDisableFightStrategyAction(ai); };
             creators["move away from magmadar"] = [](PlayerbotAI* ai) { return new MagmadarMoveAwayAction(ai); };
 
+            creators["enable garr fight strategy"] = [](PlayerbotAI* ai) { return new GarrEnableFightStrategyAction(ai); };
+            creators["disable garr fight strategy"] = [](PlayerbotAI* ai) { return new GarrDisableFightStrategyAction(ai); };
+            creators["enable shazzrah fight strategy"] = [](PlayerbotAI* ai) { return new ShazzrahEnableFightStrategyAction(ai); };
+            creators["disable shazzrah fight strategy"] = [](PlayerbotAI* ai) { return new ShazzrahDisableFightStrategyAction(ai); };
+            creators["move away from shazzrah"] = [](PlayerbotAI* ai) { return new ShazzrahMoveAwayAction(ai); };
             creators["enable geddon fight strategy"] = [](PlayerbotAI* ai) { return new GeddonEnableFightStrategyAction(ai); };
             creators["disable geddon fight strategy"] = [](PlayerbotAI* ai) { return new GeddonDisableFightStrategyAction(ai); };
             creators["move away from geddon"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayAction(ai); };
