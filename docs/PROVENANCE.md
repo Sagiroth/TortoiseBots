@@ -5729,3 +5729,40 @@ Local validation: `bash tools/verify_all.sh` (wiring audit covers the
 new names); `git diff --check`; shared-builder compile via
 `build-commit.sh` (BUILD OK); live in-game check pending: ordered bot
 slows a fleeing mob, untriggered bot unchanged.
+## Trinket usage filters (CD-1) — 2026-10-10
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Base/Actions/GenericSpellActions.cpp:509-663`
+(`UseTrinketAction`: positive-only, aura-or-mana-restore-only, mana gates,
+tank-defensive health gate, mixed-trigger exclusion, per-item +
+per-category cooldown maps), `:81-115` (effect classifiers
+IsManaRestore/IsManaEfficiency/IsDefensiveTankEffect).
+
+Source files (module, modified): `ai/playerbot/TrinketUsePolicy.h` (new
+pure rule) + `tools/test_trinket_use_policy.cpp` (new test),
+`ai/playerbot/strategy/actions/UseTrinketAction.{h,cpp}` (filters +
+cooldown memory), `tools/verify_all.sh` (test list).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) 1.12 category mapping via `Effect[]` /
+`EffectApplyAuraName[]` / `EffectMiscValue[]` (donor
+SpellEffectInfo/ApplyAuraName/MiscValue) + `SPELL_SCHOOL_MASK_NORMAL`;
+no rating-mask branch (no CombatRating enum on this core — resistance /
+health / dodge / parry / block / damage-taken-taken cover 1.12 tank
+trinkets); (b) per-item + per-category memory keyed on
+(itemEntry, spellId) / category from the 1.12 `_ItemSpell` struct, using
+the outer `IsSpellReady` check in `ItemCountValue.cpp:35-67` as before;
+(c) no mixed-trigger exclusion (WotLK item-template concern, no 1.12
+equivalent); (d) efficiency-only trinkets never fire (donor
+aura-or-restore-only gate — kept as `None` classification rather than a
+separate efficiency gate). No context/strategy/addon change — the `often`
+rows now pick a filtered trinket instead of first-ready.
+
+Reason: support parity gap CD-1 (high/M): trinkets fired blind (first
+ready ON_USE wins), wasting mana restores at full mana and defensives at
+full health.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test, 23 checks, pass); `git diff --check`. Build via
+build-commit.sh pending; live in-game check pending.
