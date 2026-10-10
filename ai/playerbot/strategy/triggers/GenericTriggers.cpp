@@ -822,8 +822,10 @@ bool IsNotFacingTargetTrigger::IsActive()
 
 bool TankFaceNeededTrigger::IsActive()
 {
-    // Scope: real-player-master parties only. Pool bots keep old behaviour.
-    if (!ai->HasRealPlayerMaster())
+    // Scope is strategy membership ("tank face" on tank kits), not the
+    // master: any tank with the strategy faces held mobs away, pool/raid
+    // tanks included. Non-tanks never carry the strategy.
+    if (!ai->HasStrategy("tank face", BotState::BOT_STATE_COMBAT))
         return false;
     if (!ai->IsTank(bot))
         return false;

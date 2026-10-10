@@ -4768,6 +4768,17 @@ spender row (HIGH band), the interrupt rows, and the out-of-melee charge
 path; below EMERGENCY defensives. A mob peeling onto a non-tank member
 gets taunted back within a GCD instead of waiting behind shield slam,
 interrupts, and charge movement.
+## Tank-face as a real strategy for any tank (POS-6) — 2026-10-09
+
+Feature: `TankFaceStrategy` (`tank face`), donor `TankFaceStrategy` shape.
+The old `tank face needed` → `tank face away` row moves off the shared
+`close` strategy onto its own strategy; the trigger's `HasRealPlayerMaster`
+gate becomes strategy membership, so pool/raid tanks face held mobs away
+from the party too. `AiFactory` adds `tank face` to the warrior-protection,
+paladin-protection, and druid-tank-feral kits (donor factory shape:
+`IsTank → +tank face`). Stay/wait-for-attack exemptions kept; the geometry
+(average party angle ±108°, nearest side, LoS/terrain, 90° hysteresis) is
+unchanged. `TankFaceAwayAction` itself is untouched.
 
 Source repository: `mod-playerbots/mod-playerbots`
 
@@ -4968,6 +4979,27 @@ the helper into the existing sidesteps only).
 
 Reason: tank sidesteps and rear approaches could alternate headings every
 tick when two triggers disagreed, jittering instead of settling.
+- `src/Ai/Base/Strategy/CombatStrategy.cpp` (`TankFaceStrategy`: triggerless, default action `tank face` at ACTION_MOVE)
+- `src/Ai/Base/Strategy/CombatStrategy.h` (declaration)
+- `src/Bot/Factory/AiFactory.cpp` (`IsTank → +tank face`)
+
+Source files (module, modified):
+`ai/playerbot/strategy/generic/MeleeCombatStrategy.{h,cpp}` (new strategy,
+row moved off `close`), `ai/playerbot/strategy/StrategyContext.h`
+(registration), `ai/playerbot/strategy/triggers/GenericTriggers.cpp`
+(membership gate), `ai/playerbot/AiFactory.cpp` (3 tank kits),
+`docs/concepts/bot-mechanics-and-quirks.md` (doc row).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) the row keeps its trigger
+(`tank face needed`) instead of going fully triggerless — the trigger
+carries the hysteresis math and the stay/wait exemptions the donor lacks;
+(b) priority stays ACTION_MOVE (donor shape) rather than the old
+ACTION_MOVE + 5; (c) no `recently flee info` consult yet (POS-7
+generalizes the helper later).
+
+Reason: pool/raid tanks never faced mobs away — cleaves hit the party
+whenever no real-player master led the group.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check` clean.
 Build via build-commit.sh (see PR summary); no live in-game check.
@@ -5132,3 +5164,25 @@ unchanged); `git diff --check`; shared-builder compile via
 `build-commit.sh` (BUILD OK); live in-game check pending: aoe-off
 multi-pull dots each attacker, mana stays out of the urgent band.
 | Resto shaman healer-dps (SHM-1) | `mod-playerbots` `src/Ai/Class/Shaman/Strategy/RestoShamanStrategy.cpp:57-64` (`healer should attack` flame shock / lightning bolt / chain lightning) @ `79bd4281`, priest `PriestOffdpsStrategy` (`PriestStrategy.cpp:616-645`) as the live pattern | `ai/playerbot/strategy/shaman/ShamanStrategy.{h,cpp}` (new `ShamanOffdpsStrategy` + pve/pvp/raid), `ShamanAiObjectContext.cpp` (`offdps` placeholder + `OffdpsSituationStrategyFactoryInternal` + registration), `ShamanActions.h` (update-strats nodes), `ShamanHealerDpsPolicy.h` + `tools/test_shaman_healer_dps_policy.cpp` | Ported minus lava burst (WotLK-only): `healer should attack` flame shock +0.2 / lightning bolt default, `ranged medium aoe and healer should attack` chain lightning +0.3. Fills the dangling `offdps` name `AiFactory.cpp` already adds for resto when `enableOffSpecStrategies` is on. Spells: Flame Shock 8050, Lightning Bolt 403, Chain Lightning 421 (all verified in tw_world.spell_template) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+## Review fixes (2026-10-09, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (solo ungrouped feral-tank override — REAL, fixed): the
+solo→tank flip row now adds `tank face` alongside `tank assist`/`close`,
+so a druid flipped before joining a group faces mobs away.
+
+Blocking 2 (BG feral-tank override — REAL, fixed): the BG tanking row now
+adds `tank face`, closing the pool-BG-tank hole.
+
+Non-blocking "triggerless comment" — FIXED: comment now says trigger row
+(kept for hysteresis + stay/wait exemptions), matching code and
+PROVENANCE.
+
+Non-blocking "party-angle distance filter" — ACKNOWLEDGED, not fixed:
+donor filters to ranged within sight; ours averages all live
+same-map members. Pre-existing, amplified by raid scope. Needs a live
+raid check or a distance filter — left for playtesting.
+
+Non-blocking "off-spec forced tanks" — ACKNOWLEDGED, not fixed: arms/ret
+with forced tank role never get the `tank face` kit (old code fired via
+`close` + `IsTank`). Donor misses these too and the case is rare; noting
+the regression for a follow-up.
