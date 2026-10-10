@@ -66,9 +66,10 @@ static bool WarlockOocTapAllowed(PlayerbotAI* ai)
 {
     if (ai->GetBot()->IsInCombat())
         return true;
-    if (ai->GetAiObjectContext()->GetValue<bool>("should eat")->Get())
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (context->GetValue<bool>("should eat")->Get())
         return false;
-    return AI_VALUE2(uint8, "health", "self target") >= (uint8)sPlayerbotAIConfig.mediumHealth;
+    return context->GetValue<uint8>("health", "self target")->Get() >= (uint8)sPlayerbotAIConfig.mediumHealth;
 }
 
 bool LifeTapTrigger::IsActive()
