@@ -7160,3 +7160,47 @@ and a GCD shouting over a stronger might.
 
 Local validation: `bash tools/verify_all.sh` (incl. new policy test);
 `git diff --check`. No live test (per task constraints).
+
+## Priest parity healer damage: PRI-2 default offdps (PRI-6 mana burn rejected) — 2026-10-09
+Feature: discipline bots now ship with the `offdps` strategy on by
+default instead of `offheal` (AiFactory, inside the existing
+`enableOffSpecStrategies` gate — matching every other heal spec:
+paladin holy, shaman resto, druid resto all get `offdps` only); holy
+keeps its base `offdps`. The player can `-offdps` per bot. The `healer
+should attack` mana and nobody-hurt gates are unchanged, so healers
+still heal first. Mana Burn stays unwired: the donor's `low mana` burn
+row lives in its solo-only DPS spec (never in the grouped-healer kit),
+and the ladder entry was dead code (comfortable-mana trigger vs
+below-half-mana action gate).
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Priest/Strategy/GenericPriestStrategy.cpp:74-89`
+(`PriestHealerDpsStrategy`: SWP/holy-fire/smite/mind-blast/shoot ladder,
+no low-mana row) +
+`src/Ai/Class/Priest/Strategy/HolyPriestStrategy.cpp:32-76`
+(`HolyDpsPriestStrategy`: smite/mana-burn/starshards defaults + low-mana
+burn row — solo-only spec per donor AiFactory.cpp:433, never grouped).
+Deviations, deliberate: no new `holy dps` strategy name — the local
+`offdps` ladder (SWP/holy-fire/smite/starshards/mind-blast, Holy Nova
+for Mind Sear) already carries the grouped-healer kit behind the tested
+healer gate; this PR only moves disc onto it. Mana Burn deliberately
+left unwired (see Feature).
+
+Reason: priest parity report PRI-2 — default disc bots dealt zero
+damage when nobody needed healing (holy already had base `offdps`;
+disc's `offheal` was the anomaly). PRI-6 Mana Burn rejected on review:
+no grouped-healer donor precedent, contradicts the mana-conservation
+design, and the action gate made the ladder entry dead code.
+
+Source files (module, modified): `ai/playerbot/AiFactory.cpp` +
+`docs/classes/priest.md` (off-spec section). (`PriestStrategy.cpp` mana-burn
+wiring added then removed on review — no net diff.)
+
+Copied / ported / reimplemented: reimplemented in place. No new spells
+(Mana Burn 8129+ in 1.18.1 data).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`.
+Build via build-commit.sh. No live test.
