@@ -311,7 +311,7 @@ bool BuffTrigger::IsActive()
     if (!bot->IsInCombat())
     {
         AiObjectContext* rebuffContext = ai->GetAiObjectContext();
-        uint32 beginMs = rebuffContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get();
+        uint32 beginMs = rebuffContext->GetValue<int32>("manual int", "force rebuff begin ms")->Get();
         uint32 nowMs = WorldTimer::getMSTime();
         if (beginMs && ai::ForceRebuffPending(beginMs, nowMs))
         {
@@ -1262,7 +1262,7 @@ bool GreaterBuffOnPartyTrigger::IsActive()
     if (!bot->IsInCombat())
     {
         AiObjectContext* rebuffContext = ai->GetAiObjectContext();
-        uint32 beginMs = rebuffContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get();
+        uint32 beginMs = rebuffContext->GetValue<int32>("manual int", "force rebuff begin ms")->Get();
         uint32 nowMs = WorldTimer::getMSTime();
         if (beginMs && ai::ForceRebuffPending(beginMs, nowMs))
             return ai::ForceRebuffBelowTarget(lower != nullptr, lower ? lower->GetAuraDuration() : 0,

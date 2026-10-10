@@ -100,7 +100,7 @@ float ForceRebuffBuffFirstMultiplier::GetValue(Action* action)
     AiObjectContext* rebuffContext = ai->GetAiObjectContext();
     if (!rebuffContext)
         return 1.0f;
-    uint32 beginMs = rebuffContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get();
+    uint32 beginMs = rebuffContext->GetValue<int32>("manual int", "force rebuff begin ms")->Get();
     if (!beginMs || !ai::ForceRebuffPending(beginMs, WorldTimer::getMSTime()))
         return 1.0f;
 

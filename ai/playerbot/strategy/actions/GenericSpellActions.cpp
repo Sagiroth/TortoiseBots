@@ -411,7 +411,7 @@ bool CastAuraSpellAction::isUseful()
     if (aura && !bot->IsInCombat())
     {
         AiObjectContext* rebuffContext = ai->GetAiObjectContext();
-        uint32 beginMs = rebuffContext ? rebuffContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get() : 0;
+        uint32 beginMs = rebuffContext ? rebuffContext->GetValue<int32>("manual int", "force rebuff begin ms")->Get() : 0;
         uint32 nowMs = WorldTimer::getMSTime();
         if (beginMs && ai::ForceRebuffPending(beginMs, nowMs) &&
             ai::ForceRebuffBelowTarget(true, aura->GetAuraDuration(),
@@ -580,7 +580,7 @@ bool CastBuffSpellAction::Execute(Event& event)
     // outside any pass).
     if (!bot->IsInCombat())
     {
-        uint32 beginMs = context->GetValue<uint32>("manual int", "force rebuff begin ms")->Get();
+        uint32 beginMs = context->GetValue<int32>("manual int", "force rebuff begin ms")->Get();
         if (beginMs && ai::ForceRebuffPending(beginMs, WorldTimer::getMSTime()))
             context->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(true);
     }

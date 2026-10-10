@@ -902,7 +902,7 @@ void Engine::ProcessTriggers(bool minimal)
             // IsActive gate (OOC + pending); the tick-start roll clears it.
             if (trigger->IsBuffTrigger() && !trigger->IsDebuffTrigger() && ai->GetBot() && !ai->GetBot()->IsInCombat())
             {
-                uint32 beginMs = aiObjectContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get();
+                uint32 beginMs = aiObjectContext->GetValue<int32>("manual int", "force rebuff begin ms")->Get();
                 if (beginMs && ai::ForceRebuffPending(beginMs, WorldTimer::getMSTime()))
                     aiObjectContext->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(true);
             }

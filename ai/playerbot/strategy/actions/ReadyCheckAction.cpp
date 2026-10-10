@@ -175,7 +175,7 @@ bool ReadyCheckAction::Execute(Event& event)
         // the pre-existing SOC-S5 defer.
         if (ai->HasStrategy("force rebuff", BotState::BOT_STATE_NON_COMBAT))
         {
-            context->GetValue<uint32>("manual int", "force rebuff begin ms")->Set(WorldTimer::getMSTime());
+            context->GetValue<int32>("manual int", "force rebuff begin ms")->Set(WorldTimer::getMSTime());
             context->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(false);
             context->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(false);
         }
@@ -293,7 +293,7 @@ bool ForceRebuffAction::Execute(Event& /*event*/)
     if (bot->IsInCombat() || !ai->HasStrategy("force rebuff", BotState::BOT_STATE_NON_COMBAT))
         return false;
 
-    context->GetValue<uint32>("manual int", "force rebuff begin ms")->Set(WorldTimer::getMSTime());
+    context->GetValue<int32>("manual int", "force rebuff begin ms")->Set(WorldTimer::getMSTime());
     context->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(false);
     context->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(false);
     return true;

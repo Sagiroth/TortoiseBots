@@ -16,7 +16,7 @@ bool Trigger::BypassIntervalForRebuff()
     AiObjectContext* rebuffContext = ai->GetAiObjectContext();
     if (!rebuffContext)
         return false;
-    uint32 beginMs = rebuffContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get();
+    uint32 beginMs = rebuffContext->GetValue<int32>("manual int", "force rebuff begin ms")->Get();
     return beginMs && ai::ForceRebuffPending(beginMs, WorldTimer::getMSTime());
 }
 

@@ -48,7 +48,7 @@ public:
             if (aura && !ai->GetBot()->IsInCombat())
             {
                 AiObjectContext* rebuffContext = ai->GetAiObjectContext();
-                uint32 beginMs = rebuffContext ? rebuffContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get() : 0;
+                uint32 beginMs = rebuffContext ? rebuffContext->GetValue<int32>("manual int", "force rebuff begin ms")->Get() : 0;
                 uint32 nowMs = WorldTimer::getMSTime();
                 if (beginMs && ai::ForceRebuffPending(beginMs, nowMs) &&
                     ai::ForceRebuffBelowTarget(true, aura->GetAuraDuration(),
