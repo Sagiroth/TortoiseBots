@@ -4,6 +4,7 @@
 #include "PartyMemberToHeal.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
+#include "ObjectAccessor.h"
 
 using namespace ai;
 
@@ -350,6 +351,34 @@ Unit* PartyMemberToProtect::Calculate()
     return needProtect[0];
 }
 
+Unit* HealerLowMana::Calculate()
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return nullptr;
+
+    Unit* lowestHealer = nullptr;
+    float lowestPct = 100.0f;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !ai->IsSafe(member) || !ai->IsHeal(member))
+            continue;
+        if (member->GetMapId() != bot->GetMapId() || !sServerFacade.IsAlive(member))
+            continue;
+        uint32 maxMana = member->GetMaxPower(POWER_MANA);
+        if (!maxMana)
+            continue;
+        float pct = (static_cast<float>(member->GetPower(POWER_MANA)) / maxMana) * 100.0f;
+        if (pct < lowestPct)
+        {
+            lowestPct = pct;
+            lowestHealer = member;
+        }
+    }
+
+    return lowestHealer;
+}
+
 Unit* PartyMemberToRemoveRoots::Calculate()
 {
     Unit* target = nullptr;
@@ -376,4 +405,30 @@ Unit* PartyMemberToRemoveRoots::Calculate()
     }
 
     return target;
+}
+
+Unit* PartyMemberMainTankValue::Calculate()
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return PlayerbotAI::IsTank(bot) ? bot : NULL;
+
+    // Explicit raid main-tank flag first (donor GetMainTankGuid; core owns
+    // the flag via Group::GetMainTankGuid, raid-only by design).
+    ObjectGuid mainTankGuid = group->GetMainTankGuid();
+    if (!mainTankGuid.IsEmpty())
+    {
+        if (Player* mainTank = ObjectAccessor::FindPlayer(mainTankGuid))
+            if (mainTank->IsAlive() && ai->IsSafe(mainTank))
+                return mainTank;
+    }
+
+    // Else the first live tank in slot order (donor fallback).
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (member && member->IsAlive() && ai->IsSafe(member) && PlayerbotAI::IsTank(member))
+            return member;
+    }
+
+    return NULL;
 }

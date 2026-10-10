@@ -1,5 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/GroupBuffPolicy.h"
+#include "playerbot/ForceRebuffPolicy.h"
+
 #include "PartyMemberWithoutAuraValue.h"
 
 #include "playerbot/ServerFacade.h"
@@ -38,6 +40,21 @@ public:
             // picked and the buff is topped up before it drops. Short auras
             // only match on fall-off, as before.
             Aura* aura = ai->GetAura(*i, unit);
+            // Force-rebuff pass (donor BuffBelowRefreshTarget party-member
+            // site): while a rebuff window is pending OOC, an expiring LONG
+            // buff counts as missing so the member is selectable and the
+            // margin block in BuffTrigger is reachable. Outside the window
+            // the normal refresh rule below applies.
+            if (aura && !ai->GetBot()->IsInCombat())
+            {
+                AiObjectContext* rebuffContext = ai->GetAiObjectContext();
+                uint32 beginMs = rebuffContext ? rebuffContext->GetValue<int32>("manual int", "force rebuff begin ms")->Get() : 0;
+                uint32 nowMs = WorldTimer::getMSTime();
+                if (beginMs && ai::ForceRebuffPending(beginMs, nowMs) &&
+                    ai::ForceRebuffBelowTarget(true, aura->GetAuraDuration(),
+                        aura->GetAuraMaxDuration(), beginMs, nowMs))
+                    continue;
+            }
             if (ai::BuffNeedsRefresh(aura != nullptr, aura ? aura->GetAuraDuration() : 0,
                 aura ? aura->GetAuraMaxDuration() : 0))
                 continue;

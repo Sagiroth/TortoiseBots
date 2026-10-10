@@ -172,6 +172,7 @@ namespace ai
                 creators["devouring plague"] = [](PlayerbotAI* ai) { return new DevouringPlagueTrigger(ai); };
                 creators["shadow word: pain"] = [](PlayerbotAI* ai) { return new PowerWordPainTrigger(ai); };
                 creators["shadow word: pain on attacker"] = [](PlayerbotAI* ai) { return new PowerWordPainOnAttackerTrigger(ai); };
+                creators["devouring plague on attacker"] = [](PlayerbotAI* ai) { return new DevouringPlagueOnAttackerTrigger(ai); };
                 creators["dispel magic"] = [](PlayerbotAI* ai) { return new DispelMagicTrigger(ai); };
                 creators["dispel magic on party"] = [](PlayerbotAI* ai) { return new DispelMagicPartyMemberTrigger(ai); };
                 creators["cure disease"] = [](PlayerbotAI* ai) { return new CureDiseaseTrigger(ai); };
@@ -185,6 +186,7 @@ namespace ai
                 creators["shadowform"] = [](PlayerbotAI* ai) { return new ShadowformTrigger(ai); };
                 creators["power infusion"] = [](PlayerbotAI* ai) { return new PowerInfusionTrigger(ai); };
                 creators["inner focus"] = [](PlayerbotAI* ai) { return new InnerFocusTrigger(ai); };
+                creators["inner focus for heal"] = [](PlayerbotAI* ai) { return new InnerFocusForHealTrigger(ai); };
                 creators["ascendance"] = [](PlayerbotAI* ai) { return new AscendanceTrigger(ai); };
                 creators["shadow protection"] = [](PlayerbotAI* ai) { return new ShadowProtectionTrigger(ai); };
                 creators["shadow protection on party"] = [](PlayerbotAI* ai) { return new ShadowProtectionOnPartyTrigger(ai); };
@@ -198,6 +200,7 @@ namespace ai
                 creators["shadowguard"] = [](PlayerbotAI* ai) { return new ShadowguardTrigger(ai); };
                 creators["starshards"] = [](PlayerbotAI* ai) { return new StarshardsTrigger(ai); };
                 creators["fear ward"] = [](PlayerbotAI* ai) { return new FearWardTrigger(ai); };
+                creators["fear ward on tank"] = [](PlayerbotAI* ai) { return new FearWardOnTankTrigger(ai); };
                 creators["feedback"] = [](PlayerbotAI* ai) { return new FeedbackTrigger(ai); };
                 // Tortoise Shadow redesign awareness:
                 creators["spirit tap buff"] = [](PlayerbotAI* ai) { return new SpiritTapBuffTrigger(ai); };
@@ -221,6 +224,7 @@ namespace ai
                 creators["ascendance"] = [](PlayerbotAI* ai) { return new CastAscendanceAction(ai); };
                 creators["shadow word: pain"] = [](PlayerbotAI* ai) { return new CastPowerWordPainAction(ai); };
                 creators["shadow word: pain on attacker"] = [](PlayerbotAI* ai) { return new CastPowerWordPainOnAttackerAction(ai); };
+                creators["devouring plague on attacker"] = [](PlayerbotAI* ai) { return new CastDevouringPlagueOnAttackerAction(ai); };
                 creators["devouring plague"] = [](PlayerbotAI* ai) { return new CastDevouringPlagueAction(ai); };
                 creators["mind flay"] = [](PlayerbotAI* ai) { return new CastMindFlayAction(ai); };
                 creators["discipline fire"] = [](PlayerbotAI* ai) { return new CastHolyFireAction(ai); };
@@ -275,6 +279,7 @@ namespace ai
                 creators["shadowguard"] = [](PlayerbotAI* ai) { return new CastShadowguardAction(ai); };
                 creators["desperate prayer"] = [](PlayerbotAI* ai) { return new CastDesperatePrayerAction(ai); };
                 creators["fear ward"] = [](PlayerbotAI* ai) { return new CastFearWardAction(ai); };
+                creators["fear ward on tank"] = [](PlayerbotAI* ai) { return new CastFearWardOnTankAction(ai); };
                 creators["starshards"] = [](PlayerbotAI* ai) { return new CastStarshardsAction(ai); };
                 creators["elune's grace"] = [](PlayerbotAI* ai) { return new CastElunesGraceAction(ai); };
                 creators["feedback"] = [](PlayerbotAI* ai) { return new CastFeedbackAction(ai); };

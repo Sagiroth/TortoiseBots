@@ -16,7 +16,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 ## Supported Specs & Roles
 
 - **Protection (Tank):** Operates primarily in **Defensive Stance**. Prioritizes threat generation via *Sunder Armor*, *Revenge*, *Shield Slam*, and *Taunt*.
-- **Arms (Melee DPS):** Uses two-handed weapons in **Battle Stance** or **Berserker Stance**. Centers on *Mortal Strike*, *Overpower* on dodges, and *Sweeping Strikes* for cleaving packs.
+- **Arms (Melee DPS):** Uses two-handed weapons, pinned to **Battle Stance** (dancing to Berserker for *Whirlwind* only). Centers on *Mortal Strike*, *Overpower* on dodges, and *Sweeping Strikes* for cleaving packs.
 - **Fury (Melee DPS):** Dual-wields in **Berserker Stance**. Drives high rage spend into *Bloodthirst*, *Whirlwind*, and *Execute*.
 
 ---
@@ -27,20 +27,26 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 1. **Pull & Engagement:** Charges on enemy-out-of-melee, then swaps to Defensive Stance (no Battle Stance prep in code).
 2. **Threat Generation:**
    - Keeps *Shield Block* active on cooldown to enable *Revenge*.
-   - Stacks *Sunder Armor* to a full 5-stack, then stops (re-applies only to refresh, never to over-stack; no spreading to secondary mobs; AoE threat is *Challenging Shout*).
+   - Stacks *Sunder Armor* to a full 5-stack, then stops (re-applies only to refresh an expiring stack; sunder yields to Shield Slam only once 40+ rage makes slam live).
+   - *Shield Slam* fires on the Improved Shield Slam proc (+35%/+70% damage charge) above the rage ladder but below taunt/shield block, otherwise at 40+ rage — after the sunder stack is complete and *Revenge* has had its GCD.
    - *Thunder Clap* fires on spare rage (40+) as extra threat, since the AoE toggle the base tree gates it behind is normally off in party pulls.
 3. **Emergency Mitigation:**
+   - *Shield Wall* fires early at low health (default 20-50%) so damage is blunted before it becomes lethal.
+   - *Last Stand* (12975, per game data) is held for the critical-health trigger (default 20) only.
+   - *Taunt* fires on the current target whenever it peels onto any non-tank member (not just healers/casters).
    - *Last Stand* (12975, per game data) triggers on the critical-health trigger (default 20).
    - *Shield Wall* triggers under severe incoming damage.
    - *Taunt* fires on the current target whenever it peels onto any non-tank member (not just healers/casters).
+   - *Intervene* charges to a focused party member taking melee hits.
+   - *Taunt* fires whenever the current target peels onto any non-tank member (not just healers/casters), outranking DPS spenders and interrupts.
 
 ### 2. Arms / Fury (DPS)
 1. **Opener:** *Charge* from range when available.
 2. **Rage Spenders:**
    - *Overpower* is wired for Arms (and via the Protection stance-dance); Fury has no Overpower wiring, and the dodge window is core spell data.
-   - *Mortal Strike* (Arms) or *Bloodthirst* (Fury) on cooldown, plus the instant-*Slam* proc, *Rend* upkeep, and the *Master Strike* weapon nuke.
+   - *Mortal Strike* (Arms) or *Bloodthirst* (Fury) on cooldown, plus the instant-*Slam* proc, *Rend* upkeep, and the *Master Strike* weapon nuke. With no tank warrior in the group, DPS warriors keep *Sunder Armor* stacked (bottom of the ladder); with a tank warrior present they leave it to the tank.
    - *Whirlwind* is used on cooldown above 20% target health; 2+ nearby targets only raises its priority.
-   - Cooldowns: Fury fires *Death Wish* and *Recklessness* as boosts; Arms fires *Recklessness* (*Death Wish* exists in Arms only as a fallback alternative on the berserker-rage node).
+   - Cooldowns: both specs fire *Death Wish* and *Recklessness* as boosts, plus *Retaliation* while near full health (70-90%) — all behind the boost toggle.
 3. **Execute Phase:** Below 20% enemy health, *Execute* becomes highest priority, consuming all available rage.
 
 ---
@@ -58,7 +64,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 ## Utility & Interrupts
 
 - **Interrupts:** Protection: *Shield Bash* (+enemy-healer row) · Fury: *Pummel* (auto-Berserker) · Arms/Fury base: *Pummel* first, *Shield Bash* as the no-stance-dance fallback (both at ACTION_INTERRUPT, plus enemy-healer rows). Pummel stance-dances via its berserker-stance node; shield bash has no stance gate, so one of the two always fires without per-cast dancing.
-- **Shouts:** Automatically maintains *Battle Shout* on party members (all specs); only Protection wires *Demoralizing Shout*. *Intimidating Shout* (AoE fear) never fires inside a dungeon or raid, or for a bot grouped with a real player (a feared mob pulls neighbouring packs); outdoors with no master to disrupt, a critical-health bot may still shout to make space.
+- **Shouts:** Automatically maintains *Battle Shout* on party members (all specs) — skipped while an equal-or-stronger *Blessing of Might* is up, since shouting over it wastes rage for zero gain; only Protection wires *Demoralizing Shout*. *Intimidating Shout* (AoE fear) never fires inside a dungeon or raid, or for a bot grouped with a real player (a feared mob pulls neighbouring packs); outdoors with no master to disrupt, a critical-health bot may still shout to make space.
 
 ---
 

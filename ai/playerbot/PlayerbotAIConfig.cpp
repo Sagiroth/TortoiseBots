@@ -243,6 +243,7 @@ bool PlayerbotAIConfig::Initialize()
     jumpHSpeed = config.GetFloatDefault("AiPlayerbot.JumpHSpeed", 7.0f);
     jumpInBg = config.GetBoolDefault("AiPlayerbot.JumpInBg", false);
     jumpWithPlayer = config.GetBoolDefault("AiPlayerbot.JumpWithPlayer", false);
+    forceRebuffOnReadyCheck = config.GetBoolDefault("AiPlayerbot.ForceRebuffOnReadyCheck", false);
     jumpFollow = config.GetBoolDefault("AiPlayerbot.JumpFollow", true);
     jumpChase = config.GetBoolDefault("AiPlayerbot.JumpChase", true);
     useKnockback = config.GetBoolDefault("AiPlayerbot.UseKnockback", true);
@@ -255,11 +256,13 @@ bool PlayerbotAIConfig::Initialize()
     poolTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.PoolTickBudgetUs", 10000);
     if (poolTickBudgetUs > 0 && poolTickBudgetUs < 1000) poolTickBudgetUs = 1000;
     if (poolTickBudgetUs > 100000) poolTickBudgetUs = 100000;
-    poolBudgetWhenTickOverMs = (uint32)config.GetIntDefault("AiPlayerbot.PoolBudgetWhenTickOverMs", 150);
+    poolBudgetWhenTickOverMs = (uint32)config.GetIntDefault("AiPlayerbot.PoolBudgetWhenTickOverMs", 0);
     if (poolBudgetWhenTickOverMs > 10000) poolBudgetWhenTickOverMs = 10000;
     combatTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.CombatTickBudgetUs", 15000);
     if (combatTickBudgetUs > 0 && combatTickBudgetUs < 1000) combatTickBudgetUs = 1000;
     if (combatTickBudgetUs > 100000) combatTickBudgetUs = 100000;
+    targetWorldTickMs = (uint32)config.GetIntDefault("AiPlayerbot.TargetWorldTickMs", 50);
+    if (targetWorldTickMs > 1000) targetWorldTickMs = 1000;
 
     // Issue #84: donor Shyalya defaults (base 250ms doubling to 2s cap,
     // 30s TTL, 64 entries). Zero base/max disables the backoff entirely.
@@ -282,9 +285,9 @@ bool PlayerbotAIConfig::Initialize()
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.ImmuneSpellIds", "19428"), immuneSpellIds);
 
     botAutologin = BotAutoLogin(config.GetIntDefault("AiPlayerbot.BotAutologin", 0));
-    randomBotAutologin = config.GetBoolDefault("AiPlayerbot.RandomBotAutologin", false);
-    minRandomBots = config.GetIntDefault("AiPlayerbot.MinRandomBots", 0);
-    maxRandomBots = config.GetIntDefault("AiPlayerbot.MaxRandomBots", 0);
+    randomBotAutologin = config.GetBoolDefault("AiPlayerbot.RandomBotAutologin", true);
+    minRandomBots = config.GetIntDefault("AiPlayerbot.MinRandomBots", 500);
+    maxRandomBots = config.GetIntDefault("AiPlayerbot.MaxRandomBots", 500);
     randomBotUpdateInterval = config.GetIntDefault("AiPlayerbot.RandomBotUpdateInterval", 500);
     randomBotTimedLogout = config.GetBoolDefault("AiPlayerbot.RandomBotTimedLogout", true);
     randomBotTimedOffline = config.GetBoolDefault("AiPlayerbot.RandomBotTimedOffline", false);
@@ -401,7 +404,7 @@ bool PlayerbotAIConfig::Initialize()
     summonAtInnkeepersEnabled = config.GetBoolDefault("AiPlayerbot.SummonAtInnkeepersEnabled", true);
     randomBotMaxLevel = config.GetIntDefault("AiPlayerbot.RandomBotMaxLevel", 60);
     randomBotLoginAtStartup = config.GetBoolDefault("AiPlayerbot.RandomBotLoginAtStartup", false);
-    randomBotAutoCreate = config.GetBoolDefault("AiPlayerbot.RandomBotAutoCreate", false);
+    randomBotAutoCreate = config.GetBoolDefault("AiPlayerbot.RandomBotAutoCreate", true);
     enableRandomTeleports = config.GetBoolDefault("AiPlayerbot.EnableRandomTeleports", true);
     randomBotEvenStartZones = config.GetBoolDefault("AiPlayerbot.RandomBotEvenStartZones", true);
     allowIsolatedCustomStartingZones = config.GetBoolDefault("AiPlayerbot.AllowIsolatedCustomStartingZones", false);
@@ -420,6 +423,7 @@ bool PlayerbotAIConfig::Initialize()
     lowLevelVendorBatchMinCount = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.LowLevelVendorBatchMinCount", 3));
     lowLevelVendorBatchMinBagSpace = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.LowLevelVendorBatchMinBagSpace", 25));
     lowLevelVendorMaxDistance = config.GetFloatDefault("AiPlayerbot.LowLevelVendorMaxDistance", 600.0f);
+    travelPickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.TravelPickBudgetUs", 4000);
     botLootRateUncommon = config.GetFloatDefault("AiPlayerbot.BotLootRateUncommon", 1.0f);
     botLootRateRare = config.GetFloatDefault("AiPlayerbot.BotLootRateRare", 1.0f);
     randomBotLftEnabled = config.GetBoolDefault("AiPlayerbot.RandomBotLftEnabled", true);
@@ -544,6 +548,8 @@ bool PlayerbotAIConfig::Initialize()
     randomBotBgEnabled = config.GetBoolDefault("AiPlayerbot.RandomBotBgEnabled", true);
     randomBotBgQueueInterval = config.GetIntDefault("AiPlayerbot.RandomBotBgQueueInterval", 30000);
     randomBotBgMaxQueuePerInterval = config.GetIntDefault("AiPlayerbot.RandomBotBgMaxQueuePerInterval", 1);
+    randomBotBgAutonomous = config.GetBoolDefault("AiPlayerbot.RandomBotBgAutonomous", true);
+    randomBotBgAutonomousMaxInstances = config.GetIntDefault("AiPlayerbot.RandomBotBgAutonomousMaxInstances", 1);
 
     sLog.outString("Loading Race/Class probabilities");
 
@@ -749,6 +755,7 @@ bool PlayerbotAIConfig::Initialize()
     observabilityPort = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.ObservabilityPort", 0));
     observabilityHost = config.GetStringDefault("AiPlayerbot.ObservabilityHost", "");
     enableActionLog = config.GetBoolDefault("AiPlayerbot.EnableActionLog", false);
+    actionCountsLog = config.GetBoolDefault("AiPlayerbot.ActionCountsLog", false);
     botLogFile = config.GetStringDefault("AiPlayerbot.BotLogFile", "bots.log");
     {
         std::string logsDir = sConfig.GetStringDefault("LogsDir", "");
@@ -845,6 +852,7 @@ bool PlayerbotAIConfig::Initialize()
     //SPP automation
     autoPickReward = config.GetStringDefault("AiPlayerbot.AutoPickReward", "yes");
     autoEquipUpgradeLoot = config.GetBoolDefault("AiPlayerbot.AutoEquipUpgradeLoot", true);
+    equipUpgradeThreshold = config.GetFloatDefault("AiPlayerbot.EquipUpgradeThreshold", 1.1f);
     syncQuestWithPlayer = config.GetBoolDefault("AiPlayerbot.SyncQuestWithPlayer", false);
     syncQuestForPlayer = config.GetBoolDefault("AiPlayerbot.SyncQuestForPlayer", false);
     autoTrainSpells = config.GetStringDefault("AiPlayerbot.AutoTrainSpells", "yes");

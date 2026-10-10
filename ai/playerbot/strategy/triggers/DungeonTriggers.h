@@ -103,6 +103,45 @@ namespace ai
         bool IsActive() override;
     };
 
+    // Per-boss resist auras (mod-playerbots parity, fight-agnostic):
+    // while ANY attacker matches the fire/shadow boss list, paladins swap
+    // to the matching resistance aura. Paladin-gated first (cheap class
+    // check filters out most of the raid, mirroring the donor), then a
+    // bounded attacker-list scan for boss entries — no world scan.
+    class BossWantsFireAuraTrigger : public Trigger
+    {
+    public:
+        BossWantsFireAuraTrigger(PlayerbotAI* ai, std::string name = "boss wants fire aura", int checkInterval = 5)
+        : Trigger(ai, name, checkInterval) {}
+        bool IsActive() override;
+    };
+
+    class BossWantsShadowAuraTrigger : public Trigger
+    {
+    public:
+        BossWantsShadowAuraTrigger(PlayerbotAI* ai, std::string name = "boss wants shadow aura", int checkInterval = 5)
+        : Trigger(ai, name, checkInterval) {}
+        bool IsActive() override;
+    };
+
+    // Generic too-close-to-debuffed-player gate (donor
+    // TooCloseToPlayerWithDebuffTrigger shape): fires when a groupmate
+    // carrying spellId is inside range. The bot itself never counts (its
+    // own bomb is the carrier-side "raid bomb debuff" path).
+    class TooCloseToPlayerWithDebuffTrigger : public Trigger
+    {
+    public:
+        TooCloseToPlayerWithDebuffTrigger(PlayerbotAI* ai, std::string name, uint32 spellId, float range)
+        : Trigger(ai, name, 1)
+        , spellId(spellId)
+        , range(range) {}
+        bool IsActive() override;
+
+    private:
+        uint32 spellId;
+        float range;
+    };
+
     // Legacy 4H mark threshold alert. ReactionStrategy routes this to the
     // generic hazard escape; it does not rotate targets, assign tanks, or
     // ensure that moving away is safe. Marks: 28832-28835.
@@ -135,6 +174,19 @@ namespace ai
     {
     public:
         RaidSpreadNeededTrigger(PlayerbotAI* ai, std::string name = "raid spread needed", int checkInterval = 2)
+        : Trigger(ai, name, checkInterval) {}
+        std::string GetTargetName() override { return "self target"; }
+        bool IsActive() override;
+    };
+
+    // Opt-in combat spread gate ("spread" strategy): fires when another
+    // live groupmate is inside the spread radius. Unlike the pool-only
+    // raid-spread gate above, ownership and ranged-only never gate — the
+    // player asked for spacing. Combat-only, hold orders veto.
+    class SpreadNeededTrigger : public Trigger
+    {
+    public:
+        SpreadNeededTrigger(PlayerbotAI* ai, std::string name = "spread needed", int checkInterval = 2)
         : Trigger(ai, name, checkInterval) {}
         std::string GetTargetName() override { return "self target"; }
         bool IsActive() override;

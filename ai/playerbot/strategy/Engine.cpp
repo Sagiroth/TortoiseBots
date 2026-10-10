@@ -7,6 +7,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 // #include "playerbot/PerformanceMonitor.h" // E2E green
 #include "playerbot/BotActionLog.h"
+#include "playerbot/ForceRebuffPolicy.h"
 #include "../../../runtime/ObservabilityEmitter.h"
 
 #ifdef BUILD_ELUNA
@@ -280,6 +281,11 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
     time_t currentTime = time(0);
     aiObjectContext->Update();
+    // Force-rebuff cycle roll (donor RollBuffPendingCycle): the per-tick
+    // "buff proposed / buff pending" flags clear at tick start so each tick
+    // re-derives them from its own trigger evaluations and casts.
+    aiObjectContext->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(false);
+    aiObjectContext->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(false);
     ProcessTriggers(minimal);
     PushDefaultActions();
 
@@ -453,6 +459,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         if (actionExecuted)
                         {
                             LogAction("A:%s - OK src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                            botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), true);
                             ClearActionFailures(action, event);
                             MultiplyAndPush(actionNode->getContinuers(), 0, false, event, "cont");
                             lastRelevance = relevance;
@@ -462,6 +469,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         else
                         {
                             LogAction("A:%s - FAILED src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                            botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), false);
                             RecordFailure(action, event, ACTION_RESULT_FAILED);
                             MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
                         }
@@ -491,6 +499,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                             }
                         }
                         LogAction("A:%s - IMPOSSIBLE src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                        botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), false);
                         RecordFailure(action, event, ACTION_RESULT_IMPOSSIBLE);
                         MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
                     }
@@ -692,10 +701,12 @@ ActionResult Engine::ExecuteAction(const std::string& name, Event& event)
 
                     MultiplyAndPush(action->getContinuers(), 0.0f, false, event, "default");
                     actionResult = executionResult ? ACTION_RESULT_OK : ACTION_RESULT_FAILED;
+                    botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), executionResult);
                 }
                 else
                 {
                     actionResult = ACTION_RESULT_IMPOSSIBLE;
+                    botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), false);
                 }
             }
             else
@@ -882,6 +893,19 @@ void Engine::ProcessTriggers(bool minimal)
             if (!event)
                 continue;
 
+            // Force-rebuff mark on fire (donor Engine.cpp:488-489): a buff
+            // trigger that produced an event this tick counts as proposed
+            // buff work. BuffTrigger::IsActive deliberately does NOT mark —
+            // subclasses add post-gates (greater-aura vetoes) after it that
+            // can still refuse, and a mark there would veto heals / hold the
+            // ready reply with no work queued. Window read mirrors the
+            // IsActive gate (OOC + pending); the tick-start roll clears it.
+            if (trigger->IsBuffTrigger() && !trigger->IsDebuffTrigger() && ai->GetBot() && !ai->GetBot()->IsInCombat())
+            {
+                uint32 beginMs = aiObjectContext->GetValue<int32>("manual int", "force rebuff begin ms")->Get();
+                if (beginMs && ai::ForceRebuffPending(beginMs, WorldTimer::getMSTime()))
+                    aiObjectContext->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(true);
+            }
             MultiplyAndPush(node->getHandlers(), 0.0f, false, event, "trigger");
             LogAction("T:%s src=%s", trigger->getName().c_str(), event.getSource().c_str());
         }

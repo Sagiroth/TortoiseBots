@@ -94,7 +94,7 @@ A common issue with bot realms is a whole pool stuck at level 1 while you level 
 
 * Bots level up normally from their seed through grinding, questing, and XP.
 * The same class gates a pool bot as a player: a hunter owns no pet below level 10 (*Tame Beast*, spell 1515). A level-1 hunter in a fresh pool is pet-less, gets a random level-appropriate pet when it reaches 10, and a pool hunter logging in below 10 gives up a pet an older pool seeded for it. Player-owned, hired and adopted hunters keep theirs.
-* New random bots are spread evenly across the six racial starting zones (`AiPlayerbot.RandomBotEvenStartZones = 1`): auto-create picks a valid race from the least-populated start zone (counted once per creation batch, level-1 pool characters), and goblin/high-elf relocation from isolated custom starts lands on the least-populated standard start of the bot's faction instead of always Valley of Trials / Northshire. Set `0` for the old behaviour (uniform random race, old relocation targets).
+* New random bots are spread evenly across the six racial starting zones (`AiPlayerbot.RandomBotEvenStartZones = 1`): auto-create picks a valid race from the least-populated start zone (counted once per creation batch, pool characters below level 10, so bots that level during a big creation run still count). Goblins count toward Durotar and high elves toward Elwynn, and their relocation from the isolated custom starts always lands in Valley of Trials / Northshire, so each bot plays in the zone it was counted for. Set `0` for the old behaviour (uniform random race).
 
 ---
 
@@ -158,7 +158,14 @@ Organic buyer (issue #405, no buyer teleport): the synthetic buyer bids only wit
 ### Battleground Auto-Queue
 * Config: **`AiPlayerbot.RandomBotBgEnabled = 1`** (on by default; set `0` to opt out)
 * Monitors PvP queues for **Warsong Gulch (WSG)**, **Arathi Basin (AB)**, and **Alterac Valley (AV)**.
-* When real players queue up, random bots queue to balance faction team sizes and launch the battleground, allowing you to play active PvP battlegrounds even on low-population private servers. Random bots only queue while a real human waits in the queue — never autonomously.
+* When real players queue up, random bots queue to balance faction team sizes and launch the battleground, allowing you to play active PvP battlegrounds even on low-population private servers. Random bots only queue while a real human waits in the queue — unless you opt into autonomous bot-only matches below.
+
+### Autonomous Bot-Only Matches (on by default; set `0` to opt out)
+* Config: **`AiPlayerbot.RandomBotBgAutonomous = 1`** (on by default; set `0` to opt out) + `AiPlayerbot.RandomBotBgAutonomousMaxInstances = 1` (cap for an average PC: one 10v10 at a time).
+* When nobody is queued, pool bots start their own Warsong Gulch in the most populated level bracket so they have matches of their own. Human demand always wins: the seeder only runs when no real player is waiting in any queue (invited/in-match humans don't count), so new seeds stop as soon as someone queues.
+* Seeds are solo bots only (grouped bots stay out). Batches of 1 accumulate each tick until both sides reach 10v10;
+  a still-forming match keeps absorbing queued seeds, so only a full 10v10 instance stops new seeds. Cap is per bracket (default 1).
+  Requires `AiPlayerbot.RandomBotBgEnabled = 1` (the seeder runs inside the backfill tick).
 
 ### Battlegrounds With Your Own Party Bots
 * Queue at the battlemaster with **Join as Group**: the core group-join check passes headless bot members like any player (same team, in world, level bracket, no deserter), so your party — you plus your own managed bots — enters the queue together. **WSG and AB** support group joins; **AV rejects group joins in the core**, so queue AV solo alongside your bots instead.
@@ -169,7 +176,7 @@ Organic buyer (issue #405, no buyer teleport): the synthetic buyer bids only wit
 
 ## 7. Recommended Living World Configuration
 
-To enable a full living world on your server, ensure these toggles are set in `conf/aiplayerbot.conf`:
+A full living world is on by default (500 random bots, sized for an average PC or a Steam Deck). These are the toggles in `conf/aiplayerbot.conf` that control it:
 
 ```ini
 # Master bot toggle
@@ -178,8 +185,8 @@ AiPlayerbot.Enabled = 1
 # Random bot population pool
 AiPlayerbot.RandomBotAutologin = 1
 AiPlayerbot.RandomBotAutoCreate = 1
-AiPlayerbot.MinRandomBots = 60
-AiPlayerbot.MaxRandomBots = 150
+AiPlayerbot.MinRandomBots = 500
+AiPlayerbot.MaxRandomBots = 500
 
 # Fresh-bot level seed (verified 10–15 test pool). A seeded bot learns its
 # class spells up to the seed level once; later levels are trained at a trainer.

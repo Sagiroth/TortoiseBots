@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "HunterTriggers.h"
+#include "../../../runtime/PetRevivePolicy.h"
 #include "HunterActions.h"
 
 using namespace ai;
@@ -22,10 +23,51 @@ bool HuntersPetDeadTrigger::IsActive()
     return AI_VALUE(bool, "pet dead") && !AI_VALUE2(bool, "mounted", "self target");
 }
 
+// PET-5: dead pet plus nobody hitting the bot — the 10s Revive channel only
+// starts when it won't be interrupted on the first tick. Cheap-first: pet
+// state and attacker count are scalar reads; mounted last.
+bool SafeToRevivePetTrigger::IsActive()
+{
+    TortoiseBots::PetReviveGateInputs gate;
+    gate.petDead = AI_VALUE(bool, "pet dead");
+    if (!gate.petDead)
+        return false;
+    gate.attackerCount = AI_VALUE(uint8, "my attacker count");
+    if (gate.attackerCount > 0)
+        return false;
+    gate.mounted = AI_VALUE2(bool, "mounted", "self target");
+    return TortoiseBots::CanRevivePetNow(gate);
+}
+
 bool HuntersPetLowHealthTrigger::IsActive()
 {
     Unit* pet = AI_VALUE(Unit*, "pet target");
     return pet && AI_VALUE2(uint8, "health", "pet target") < 40 &&
+        !AI_VALUE2(bool, "dead", "pet target") && !AI_VALUE2(bool, "mounted", "self target");
+}
+
+// PET-3/PET-8b: fires while the pet holds the enemy's attention AND pet
+// taunts are stood down (grouped with a real tank). Cheap-first: the
+// victim check and group check run before the member walk inside the
+// helper, so solo hunters never pay for the scan.
+bool PetHasAggroTrigger::IsActive()
+{
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    if (!pet || !pet->IsAlive())
+        return false;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || target->GetVictim() != pet)
+        return false;
+    return bot->GetGroup() && !ai::IsPetTauntAllowed(ai, bot);
+}
+
+// PET-4 (donor GenericHunterStrategy.cpp:72-73): the medium band below
+// MediumHealth (70) — heals chip damage before it becomes the low band.
+// Overlaps low below 40; the low node outranks it so low wins there.
+bool HuntersPetMediumHealthTrigger::IsActive()
+{
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    return pet && AI_VALUE2(uint8, "health", "pet target") < sPlayerbotAIConfig.mediumHealth &&
         !AI_VALUE2(bool, "dead", "pet target") && !AI_VALUE2(bool, "mounted", "self target");
 }
 

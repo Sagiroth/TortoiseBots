@@ -17,8 +17,8 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/GrindSpotPolicy.h"
 #include "playerbot/TravelRepickPolicy.h"
-#include "Transports/Transport.h"
-#include "playerbot/strategy/generic/CombatStrategy.h"
+#include "playerbot/AvoidAoePolicy.h"
+#include "Database/DBCStores.h"
 
 using namespace ai;
 
@@ -2165,6 +2165,238 @@ bool FleeAction::Execute(Event& event)
     return Flee(AI_VALUE(Unit*, "current target"));
 }
 
+bool AvoidAoeAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    float radius = 0.0f;
+    WorldPosition center;
+    // Cheap sensor first (dynobj scan the value already caches); the GO
+    // and trigger scans run only when no aura already marks the bot.
+    if (AvoidAuraWithDynamicObj(radius, center))
+        return true;
+    if (AvoidDamagingTrap(radius, center))
+        return true;
+    return AvoidTriggerNpc(radius, center);
+}
+
+bool AvoidAoeAction::Execute(Event& event)
+{
+    (void)event;
+    float radius = 0.0f;
+    WorldPosition center;
+    if (!AvoidAuraWithDynamicObj(radius, center) &&
+        !AvoidDamagingTrap(radius, center) &&
+        !AvoidTriggerNpc(radius, center))
+        return false;
+    return StrafeToSafety(center, radius);
+}
+
+bool AvoidAoeAction::AvoidAuraWithDynamicObj(float& outRadius, WorldPosition& outCenter)
+{
+    if (!AI_VALUE2(bool, "has area debuff", "self target"))
+        return false;
+    // The value checks "self target"; re-scan the cached dynobj list for
+    // the aura actually affecting the bot to recover its radius.
+    std::list<ObjectGuid> const& dynobjs = AI_VALUE(std::list<ObjectGuid>, "nearest dynamic objects no los");
+    for (ObjectGuid const& guid : dynobjs)
+    {
+        DynamicObject* dyn = bot->GetMap()->GetDynamicObject(guid);
+        if (!dyn || !dyn->IsInWorld())
+            continue;
+        SpellEntry const* spellProto = sServerFacade.LookupSpellInfo(dyn->GetSpellId());
+        if (!spellProto || spellProto->IsPositiveEffect(dyn->GetEffIndex()))
+            continue;
+        if (!dyn->IsAffecting(bot))
+            continue;
+        float radius = dyn->GetRadius();
+        if (!IsAvoidableAoeRadius(radius))
+            continue;
+        if (bot->GetDistance(dyn) > radius)
+            continue;
+        outRadius = radius;
+        outCenter = WorldPosition(dyn->GetMapId(), dyn->GetPositionX(), dyn->GetPositionY(), dyn->GetPositionZ());
+        return true;
+    }
+    return false;
+}
+
+bool AvoidAoeAction::AvoidDamagingTrap(float& outRadius, WorldPosition& outCenter)
+{
+    std::list<ObjectGuid> const& traps = AI_VALUE(std::list<ObjectGuid>, "nearest damaging traps");
+    for (ObjectGuid const& guid : traps)
+    {
+        GameObject* go = ai->GetGameObject(guid);
+        if (!go || !go->IsInWorld())
+            continue;
+        GameObjectInfo const* goInfo = go->GetGOInfo();
+        if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_TRAP)
+            continue;
+        // 1.12 trap GOs carry an activation radius (no diameter field);
+        // same shape as the environmental-trap react radius nearby.
+        float radius = (float)goInfo->trap.radius + go->GetCombatReach();
+        if (!IsAvoidableAoeRadius(radius))
+            continue;
+        if (bot->GetDistance(go) > radius)
+            continue;
+        outRadius = radius;
+        outCenter = WorldPosition(go->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
+        return true;
+    }
+    return false;
+}
+
+bool AvoidAoeAction::AvoidTriggerNpc(float& outRadius, WorldPosition& outCenter)
+{
+    std::list<ObjectGuid> const& triggers = AI_VALUE(std::list<ObjectGuid>, "possible triggers");
+    for (ObjectGuid const& guid : triggers)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || !unit->IsInWorld() || !sServerFacade.IsAlive(unit))
+            continue;
+        Unit::AuraList const& periodic = unit->GetAurasByType(SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+        for (Unit::AuraList::const_iterator it = periodic.begin(); it != periodic.end(); ++it)
+        {
+            Aura* aura = *it;
+            if (!aura)
+                continue;
+            SpellEntry const* spellProto = aura->GetSpellProto();
+            if (!spellProto)
+                continue;
+            SpellEntry const* triggerProto = sServerFacade.LookupSpellInfo(
+                spellProto->EffectTriggerSpell[aura->GetEffIndex()]);
+            if (!triggerProto)
+                continue;
+            for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
+            {
+                if (triggerProto->Effect[i] != SPELL_EFFECT_SCHOOL_DAMAGE)
+                    continue;
+                SpellRadiusEntry const* radiusEntry = sSpellRadiusStore.LookupEntry(triggerProto->EffectRadiusIndex[i]);
+                float radius = radiusEntry ? radiusEntry->Radius : 0.0f;
+                if (!IsAvoidableAoeRadius(radius))
+                    continue;
+                if (bot->GetDistance(unit) > radius)
+                    continue;
+                outRadius = radius;
+                outCenter = WorldPosition(unit->GetMapId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float radius)
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    float const step = AoeEscapeStep(radius, sPlayerbotAIConfig.fleeDistance);
+    // Ordered offsets (policy): strafes off the target first, straight
+    // lines after; straight landings must stay in the combat band.
+    float offsets[5] = {};
+    int count = 0;
+    bool const melee = ai->IsMelee(bot);
+    bool tanking = false;
+    if (target && target->GetVictim() == bot &&
+        !target->HasAuraType(SPELL_AURA_MOD_ROOT) && !target->HasAuraType(SPELL_AURA_MOD_STUN))
+        tanking = true;
+    if (!target)
+    {
+        // Donor shape: with no target a single away-from-hazard candidate.
+        // The full anchored list would step into the zone (the ranged PI
+        // slot heads away+PI = toward the center, and open-ground LOS/path
+        // lets it through with no band check to reject it).
+        offsets[0] = 0.0f;
+        count = 1;
+    }
+    else if (melee)
+        count = MeleeAoeCandidates(tanking, offsets);
+    else
+        count = RangedAoeCandidates(offsets);
+    float const angleFromHazard = hazardCenter.GetAngleTo(WorldPosition(bot));
+    // No target (opened on the bot, target died mid-tick): the single
+    // candidate above heads straight away from the hazard — never toward it.
+    float const angleToTarget = target ? bot->GetAngle(target) : angleFromHazard;
+    const WorldPosition botPos(bot);
+    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+    uint32 const nowMs = WorldTimer::getMSTime();
+    lastMove.fleeFailures.Observe(target ? target->GetObjectGuid().GetRawValue() : 0,
+        bot->GetMapId(), target ? sServerFacade.getDistance2d(bot, target) : 0.0f, nowMs, bot->movespline->GetId());
+    // Unpulled-hostile guard (mirrors the FindStep aggro sense used by the
+    // bomb/spread step-outs: FindStep itself lives in DungeonActions.cpp):
+    // one cached "possible targets" read, no scan per candidate.
+    std::list<ObjectGuid> const& possibleTargets = AI_VALUE(std::list<ObjectGuid>, "possible targets");
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        bool const vetoSecondPass = (pass == 1);
+        for (int i = 0; i < count; ++i)
+        {
+            // Last slot anchors away-from-hazard; the rest anchor the target.
+            // Strict = the toward-target re-approach guard only (melee index
+            // 2, ranged toward/away/hazard slots): strafes and tank-fallback
+            // escapes never band-reject, so a tank can always leave a zone
+            // wider than the cast band.
+            bool const hazardAnchored = (i == count - 1) && count > 3;
+            float heading = hazardAnchored ? angleFromHazard : angleToTarget + offsets[i];
+            bool strict = melee ? (i == 2)
+                : (offsets[i] == 0.0f || offsets[i] > 3.14f || hazardAnchored);
+            WorldPosition cand = botPos + WorldPosition(0, step * cos(heading), step * sin(heading), 1.0f);
+            cand.setZ(cand.GetHeight());
+            if (target && strict)
+            {
+                // Reach-relative (donor shape: raw target reach, not the
+                // melee-range helper with its +1.33/min-5.0 padding) — on
+                // large mobs/bosses the reach is 10-20 yd, and raw center
+                // distance would fail every melee landing.
+                float landing = sqrtf((cand.getX() - target->GetPositionX()) * (cand.getX() - target->GetPositionX()) +
+                    (cand.getY() - target->GetPositionY()) * (cand.getY() - target->GetPositionY()));
+                float const distFromReach = std::max(0.0f, landing - target->GetCombatReach());
+                if (melee)
+                {
+                    if (!MeleeAoeLandingInRange(distFromReach, sPlayerbotAIConfig.tooCloseDistance))
+                        continue;
+                }
+                else if (!RangedAoeLandingInRange(distFromReach, sPlayerbotAIConfig.tooCloseDistance, sPlayerbotAIConfig.spellDistance))
+                    continue;
+            }
+            if (!vetoSecondPass)
+            {
+                float checkHeading = botPos.GetAngleTo(cand);
+                if (!lastMove.fleeFailures.IsHeadingFree(checkHeading, nowMs))
+                    continue;
+            }
+            WorldPosition out = cand;
+            if (!bot->IsWithinLOS(out.getX(), out.getY(), out.getZ() + bot->GetCollisionHeight()))
+                continue;
+            if (!botPos.canPathTo(out, bot))
+                continue;
+            bool nearUnpulled = false;
+            for (ObjectGuid const& guid : possibleTargets)
+            {
+                Unit* unit = ai->GetUnit(guid);
+                if (!unit || !sServerFacade.IsAlive(unit) || unit == bot)
+                    continue;
+                if (unit->GetVictim())
+                    continue;
+                if (sServerFacade.IsDistanceLessThan(sServerFacade.getDistance2d(unit, out.getX(), out.getY()),
+                    sPlayerbotAIConfig.aggroDistance))
+                {
+                    nearUnpulled = true;
+                    break;
+                }
+            }
+            if (nearUnpulled)
+                continue;
+            if (!MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true))
+                continue;
+            lastMove.fleeFailures.BeginAttempt(target ? target->GetObjectGuid().GetRawValue() : 0,
+                bot->GetMapId(), botPos.GetAngleTo(out),
+                target ? sServerFacade.getDistance2d(bot, target) : 0.0f, nowMs, bot->movespline->GetId());
+            return true;
+        }
+    }
+    return false;
+}
+
 bool FleeWithPetAction::Execute(Event& event)
 {
     Pet* pet = bot->GetPet();
@@ -2399,6 +2631,59 @@ bool SetBehindTargetAction::isPossible()
     return false;
 }
 
+bool RearFlankAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !target->IsCreature() || !sServerFacade.IsAlive(target))
+        return false;
+    // Front-arc-only (mirrors the trigger): the tail clause would re-fire
+    // at set-behind's exact-rear destination and ping-pong every tick.
+    // (1.12 HasInArc takes the target first, arc second.)
+    return target->HasInArc(bot, 2.0f * (float)M_PI / 2.0f);
+}
+
+bool RearFlankAction::isPossible()
+{
+    if (!MovementAction::isPossible() || !ai->CanMove())
+        return false;
+    // Tank guard (mirrors SetBehindTargetAction::isPossible): an aggro flip
+    // between trigger poll and Execute must not walk a tank off its mob.
+    Unit* target = AI_VALUE(Unit*, "current target");
+    return !target || !(target->GetVictim() && target->GetVictim()->getObjectGuid() == bot->getObjectGuid());
+}
+
+bool RearFlankAction::Execute(Event& event)
+{
+    (void)event;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !sServerFacade.IsAlive(target))
+        return false;
+    // Donor shape: nearest of +-frand(90, 120)-degree polar offsets at
+    // meleeRange x 0.5. The sidestep lands on a flank, never through the
+    // frontal cone to the exact rear point.
+    float facing = target->GetOrientation();
+    float flankAngle = frand((float)M_PI / 2.0f, 2.0f * (float)M_PI / 3.0f);
+    float baseDist = bot->GetCombatReach(target, true, 0.0f) * 0.5f;
+    float leftX = target->getPositionX() + cosf(facing + flankAngle) * baseDist;
+    float leftY = target->getPositionY() + sinf(facing + flankAngle) * baseDist;
+    float rightX = target->getPositionX() + cosf(facing - flankAngle) * baseDist;
+    float rightY = target->getPositionY() + sinf(facing - flankAngle) * baseDist;
+    float dxl = leftX - bot->getPositionX(), dyl = leftY - bot->getPositionY();
+    float dxr = rightX - bot->getPositionX(), dyr = rightY - bot->getPositionY();
+    float destX = (dxl * dxl + dyl * dyl) < (dxr * dxr + dyr * dyr) ? leftX : rightX;
+    float destY = (dxl * dxl + dyl * dyl) < (dxr * dxr + dyr * dyr) ? leftY : rightY;
+    float destZ = target->getPositionZ();
+    bot->UpdateGroundPositionZ(destX, destY, destZ);
+    float ox, oy, oz;
+    target->GetPosition(ox, oy, oz);
+    target->GetMap()->GetLosHitPosition(ox, oy, oz + bot->GetCollisionHeight(), destX, destY, destZ, -0.5f);
+    if (!target->IsWithinLOS(destX, destY, destZ + bot->GetCollisionHeight(), true))
+        return false;
+    return MoveTo(bot->GetMapId(), destX, destY, destZ);
+}
+
 bool TankFaceAwayAction::Execute(Event& event)
 {
     (void)event;
@@ -2427,7 +2712,9 @@ bool TankFaceAwayAction::Execute(Event& event)
     float averageAngle = atan2(sumY, sumX);
     // Donor TankFaceAction destinations: averageAngle +- 3*PI/5 puts the
     // ranged clump behind the tank, outside the frontal cone, while staying
-    // in melee. Nearest of the two wins.
+    // in melee. Nearest of the two wins. The 90-degree trigger window is
+    // the anti-oscillation: after the sidestep the tank sits ~108 degrees
+    // off, outside the fire window, so it holds instead of ping-ponging.
     const float dist = std::max(sServerFacade.getDistance2d(bot, target), 3.0f);
     const float sides[] = { averageAngle + 3.0f * M_PI / 5.0f, averageAngle - 3.0f * M_PI / 5.0f };
     float bestX = 0.0f, bestY = 0.0f, bestZ = 0.0f, bestDist = FLT_MAX;

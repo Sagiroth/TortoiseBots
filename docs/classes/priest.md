@@ -26,16 +26,18 @@ Priests are the quintessential healers of Vanilla WoW, boasting an extensive hea
 The bot selects healing spells from static health bands (defaults: Critical 20 / Low 50 / Medium 70 / Almost-Full 90):
 
 ```text
-Ally Health < 20% (critical) ──► PW:Shield + Flash Heal (Holy)
-Ally Health 20%-50% (low)    ──► PW:Shield + Heal / Lesser Heal (Holy; Greater Heal in Discipline/off-spec ladders)
-Ally Health 50%-70% (medium) ──► Heal / Lesser Heal
-Ally Health 70%-90% (almost) ──► Renew
+Ally Health < 20% (critical) ──► PW:Shield + Flash Heal
+Ally Health 20%-50% (low)    ──► PW:Shield + Flash Heal + Greater Heal + Heal / Lesser Heal
+Ally Health 50%-70% (medium) ──► Greater Heal + Heal / Lesser Heal (Discipline shields first)
+Ally Health 70%-90% (almost) ──► Renew (Discipline shields first)
 Multiple Injured              ──► Prayer of Healing (Party AoE heal)
 ```
+Group heals fire on headcount, not fixed pairs: at least 5 party members within 30 yards, then 3 hurt in a 5-man scaling up to 15 hurt in a full raid (medium band for Prayer of Healing, almost-full band for shields).
 *Desperate Prayer* is a self-only emergency heal and never lands on allies. A heal is never skipped for mana reasons on a target at or below the low-health line: danger always outbids efficiency. Above the medium line the bot refuses oversized or merely average-efficiency heals (a 50%-bar *Heal* on an 85% target waits for a cheaper window), and while its own mana sits below the medium-mana line it refuses mana-hungry heals (*Flash Heal*) in favor of efficient ones (*Renew*, *Power Word: Shield*). Tanks count the expected heal at two-thirds (bigger bars).
+*Desperate Prayer* is a self-only emergency heal and never lands on allies. At medium mana or below with someone hurt, Holy and Discipline pre-cast *Inner Focus* after shielding so the next direct heal crits (3 min cooldown per DBC data, so it only fires when a heal target exists; shields can't crit, hence the shield-first order). Discipline also heals out of combat now (shield-first ladder plus *Renew*); previously it only moved to hurt members. A heal is never skipped for mana reasons on a target at or below the low-health line: danger always outbids efficiency. Above the medium line the bot refuses oversized or merely average-efficiency heals (a 50%-bar *Heal* on an 85% target waits for a cheaper window), and while its own mana sits below the medium-mana line it refuses mana-hungry heals (*Flash Heal*) in favor of efficient ones (*Renew*, *Power Word: Shield*). Tanks count the expected heal at two-thirds (bigger bars).
 
 ### Healer Off-Spec Damage & Wand
-A grouped Holy priest only damages while **nobody in the party is below 90% health** and its mana is comfortable (85% reserve on easy pulls, 65% on normal ones, the medium-mana line on hard ones). Then it uses *Shadow Word: Pain*, *Holy Fire*, *Smite*, *Starshards* or *Mind Blast* at the lowest priority, so every heal outbids it, and *Holy Nova* when a pack stands in melee range. When the party is healthy but mana is not, it wands the target instead. A solo priest damages freely.
+Holy and Discipline bots deal off-spec damage by default (the `offdps` strategy ships on; turn it off per bot with `.bot strategy -offdps`). A grouped healer only damages while **nobody in the party is below 90% health** and its mana is comfortable (85% reserve on easy pulls, 65% on normal ones, the medium-mana line on hard ones). Then it uses *Shadow Word: Pain*, *Holy Fire*, *Smite*, *Starshards* or *Mind Blast* at the lowest priority, so every heal outbids it, and *Holy Nova* when a pack stands in melee range. When the party is healthy but mana is not, it wands the target instead. A solo priest damages freely.
 
 ### Power Word: Shield & Weakened Soul Refusal
 The bot checks for the *Weakened Soul* debuff (6788) before attempting *Power Word: Shield*. If the target already has Weakened Soul, the shield is skipped in favor of a direct heal, preventing wasted cast attempts.
@@ -48,10 +50,10 @@ Climbing toward the top of the threat table without holding aggro fires *Fade* a
 
 1. Activates and maintains *Shadowform*.
 2. Casts *Vampiric Embrace* to siphon damage into party healing.
-3. Applies and maintains *Shadow Word: Pain*.
+3. Applies and maintains *Shadow Word: Pain* (spread across attackers when AoE is on, plus *Devouring Plague* on attackers for undead priests).
 4. Casts *Mind Blast* on cooldown.
-5. Channels *Mind Flay* as the primary filler.
-6. Casts *Silence* to interrupt dangerous enemy casters.
+5. Channels *Mind Flay* as the primary filler, falling back to *Smite* then the wand when mana runs dry.
+6. Casts *Silence* to interrupt dangerous enemy casters, preferring enemy healers.
 
 ---
 
@@ -69,6 +71,7 @@ Climbing toward the top of the threat table without holding aggro fires *Fade* a
 - **Party Buffs:** Maintains *Power Word: Fortitude* (Stamina), *Divine Spirit* (Spirit), and *Shadow Protection*. Once known, the group versions (*Prayer of Fortitude*, *Prayer of Spirit*, *Prayer of Shadow Protection*) replace the per-member single-target casts once known, trained and stocked and at least three same-map members lack both auras, and the bot picks a member that still lacks both. Buffs expiring within 15 s count as missing, so they are refreshed before they drop (issue #468). Single-target *Power Word: Fortitude* and *Divine Spirit* are also allowed in combat at the lowest priority, so a priest following a master who chain-pulls still buffs the party in the quiet moments of a fight. Out of combat the bot also casts *Resurrection* (removing *Shadowform* first) and…
 - **Buff scheduling:** Out of combat, catching up to the master runs below the party buffs, so a pending buff whose target is in range wins the tick and follow resumes next tick (far behind, the buff target is out of range and follow still wins). Upkeep buffs wait for 40% mana (70% for charge buffs like *Inner Fire*); with a real player master the floors drop to 20%/40% — the master watches the bar, and heals keep their own reserve. A failed buff attempt no longer starts the retry window or the duplicate-cast claim; only a cast that actually starts does.
 - **Dispels:** Proactively uses *Dispel Magic* on self and allies (to clear magic debuffs), and *Cure Disease* on diseased allies. The enemy-target dispel action is registered but has no trigger, so the bot never offensively dispels.
+- **Fear Ward:** In combat the bot wards the party tank first — the tank row outranks the generic ward by relevance, so the tank keeps fear immunity in fear dungeons instead of the bot warding itself. Re-wards after the ward is consumed once the 30 s cooldown is ready.
 - **Crowd Control:**
   - Casts *Shackle Undead* when assigned CC on Undead targets.
   - *Psychic Scream* (AoE fear) is PvP-only: it is never cast in PvE groups, and never inside a dungeon or raid (a feared mob pulls neighbouring packs). Outdoors with no master to disrupt, a surrounded bot may still scream to make space, then follows up with *Fade* (not fleeing).

@@ -485,12 +485,16 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             {
                 combatEngine->addStrategy("discipline");
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
-                    combatEngine->addStrategy("offheal");
+                    // mod-playerbots parity (PRI-2): disc healer bots deal
+                    // off-spec damage by default; the player can `-offdps`.
+                    combatEngine->addStrategy("offdps");
             }
             else if (tab == 1)
             {
                 combatEngine->addStrategy("holy");
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
+                    // mod-playerbots parity (PRI-2): holy healer bots deal
+                    // off-spec damage by default; the player can `-offdps`.
                     combatEngine->addStrategy("offdps");
             }
             else
@@ -527,7 +531,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         {
             if (tab == 2)
             {
-                combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", NULL);
+                combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", "tank face", NULL);
             }
             else if (player->GetLevel() < 30 || tab == 0)
             {
@@ -552,7 +556,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             }
             else if (tab == 2)
             {
-                combatEngine->addStrategies("restoration", "flee", "ranged", NULL);
+                combatEngine->addStrategies("restoration", "aoe", "flee", "ranged", NULL);
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
                     combatEngine->addStrategy("offdps");
             }
@@ -573,7 +577,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         {
             if (tab == 1)
             {
-                combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", NULL);
+                combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", "tank face", NULL);
 			}
             else if(tab == 0)
             {
@@ -619,7 +623,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
 
                 if (tanking)
                 {
-                    combatEngine->addStrategies("tank feral", "tank assist", "pull", "pull back", "close", NULL);
+                    combatEngine->addStrategies("tank feral", "tank assist", "pull", "pull back", "close", "tank face", NULL);
                 }
                 else
                 {
@@ -738,7 +742,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 }
                 else
                 {
-                    combatEngine->addStrategies("tank feral", "tank assist", "close", NULL);
+                    combatEngine->addStrategies("tank feral", "tank assist", "close", "tank face", NULL);
                     combatEngine->removeStrategy("dps feral");
                     combatEngine->removeStrategy("dps assist");
                     combatEngine->removeStrategy("behind");
@@ -841,7 +845,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 : (player->HasSpell(16961) || player->HasSpell(16958));
             if (bgTanking)
             {
-                combatEngine->addStrategies("tank feral", "close", NULL);
+                combatEngine->addStrategies("tank feral", "close", "tank face", NULL);
             }
             else
             {
@@ -935,7 +939,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
             }
             else if (tab == 2)
             {
-                nonCombatEngine->addStrategies("restoration", NULL);
+                nonCombatEngine->addStrategies("restoration", "aoe", NULL);
             }
             else
             {
@@ -1081,12 +1085,12 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
         if (master && master->GetSession() && master->GetSession()->HasNetworkTransport())
         {
             const char* wanderFollow = sPlayerbotAIConfig.useWanderAsDefaultFollowStrategy ? "wander" : "follow";
-            nonCombatEngine->addStrategies("racials", "nc", "food", wanderFollow, "default", "quest", "loot", "gather", "duel", "emote", "buff", "mount", NULL);
+            nonCombatEngine->addStrategies("racials", "nc", "food", wanderFollow, "default", "quest", "loot", "gather", "duel", "emote", "buff", "mount", "force rebuff", NULL);
         }
         else
         {
             const char* wanderFollow = sPlayerbotAIConfig.useWanderAsDefaultFollowStrategy ? "wander" : "follow";
-            nonCombatEngine->addStrategies("racials", "nc", "food", wanderFollow, "default", "quest", "loot", "gather", "duel", "emote", "buff", "mount", NULL);
+            nonCombatEngine->addStrategies("racials", "nc", "food", wanderFollow, "default", "quest", "loot", "gather", "duel", "emote", "buff", "mount", "force rebuff", NULL);
         }
     }
 

@@ -381,9 +381,17 @@ void PriestBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     BuffStrategy::InitCombatTriggers(triggers);
 
+    // The tank row outranks the generic row by relevance (the engine
+    // executes the highest-relevance action; list order sets no priority).
+    // The generic ward used to sit at ACTION_EMERGENCY, above even critical
+    // heals — it now rides below the tank ward as a manual-target fallback.
+    triggers.push_back(new TriggerNode(
+        "fear ward on tank",
+        NextAction::array(0, new NextAction("fear ward on tank", ACTION_HIGH + 3), NULL)));
+
     triggers.push_back(new TriggerNode(
         "fear ward",
-        NextAction::array(0, new NextAction("fear ward", ACTION_EMERGENCY), NULL)));
+        NextAction::array(0, new NextAction("fear ward", ACTION_HIGH + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "target of attacker",
@@ -509,10 +517,6 @@ void PriestBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "power infusion",
         NextAction::array(0, new NextAction("power infusion", ACTION_HIGH), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "inner focus",
-        NextAction::array(0, new NextAction("inner focus", ACTION_HIGH), NULL)));
 }
 
 void PriestBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

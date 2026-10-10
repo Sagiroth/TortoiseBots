@@ -1,7 +1,11 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
+#include "playerbot/MainTankPolicy.h"
+#include "playerbot/ServerFacade.h"
+#include "playerbot/ReadyRebuffPolicy.h"
 #include "playerbot/SurvivePolicy.h"
+#include "playerbot/ForceRebuffPolicy.h"
 #include "GenericTriggers.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -31,9 +35,28 @@ bool MediumManaTrigger::IsActive()
     return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.mediumMana;
 }
 
+bool HealerLowManaTrigger::IsActive()
+{
+    // Pure donor check (HealthTriggers.cpp:25-32): the "healer low mana"
+    // value picks the lowest-mana alive group healer; fire while that
+    // healer sits below the low-mana line. No Innervate guards here: those
+    // live in the druid action (spell known/ready, range, aura), so shaman
+    // Mana Tide rows and future batteries can share this trigger.
+    Unit* target = GetTarget();
+    if (!target || !target->GetMaxPower(POWER_MANA))
+        return false;
+
+    return ai->GetManaPercent(*target) < sPlayerbotAIConfig.lowMana;
+}
+
 bool HighManaTrigger::IsActive()
 {
     return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") < 65;
+}
+
+bool EnoughManaTrigger::IsActive()
+{
+    return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") > 65;
 }
 
 bool HealerShouldAttackTrigger::IsActive()
@@ -76,6 +99,14 @@ bool ComboPointsAvailableTrigger::IsActive()
 
 bool LoseAggroTrigger::IsActive()
 {
+    // Players have no threat list: against an enemy player `has aggro` is
+    // always false, so without this guard the trigger is spuriously active
+    // in PvP and taunt-grade rows would outbid real interrupts for zero
+    // effect (donor GenericTriggers.cpp guards the same way).
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (target && target->IsPlayer())
+        return false;
+
     if(!AI_VALUE2(bool, "has aggro", "current target"))
     {
         // Check if the aggro has been taken by another tank
@@ -270,6 +301,34 @@ bool BuffTrigger::IsActive()
     if (!target || !target->IsAlive())
         return false;
 
+    // Force-rebuff top-off pass (mod-playerbots parity, BUFF-1): while a
+    // rebuff window is pending out of combat, a LONG buff counts as missing
+    // when remaining + margin < max (donor ForceRebuff margin rule), so the
+    // pass tops it up instead of letting it drop mid-fight. Outside the
+    // window the normal refresh rule applies. Buff triggers also bypass the
+    // check interval while pending (Trigger::needCheck) so the pass
+    // evaluates every tick until the window closes.
+    if (!bot->IsInCombat())
+    {
+        AiObjectContext* rebuffContext = ai->GetAiObjectContext();
+        uint32 beginMs = rebuffContext->GetValue<int32>("manual int", "force rebuff begin ms")->Get();
+        uint32 nowMs = WorldTimer::getMSTime();
+        if (beginMs && ai::ForceRebuffPending(beginMs, nowMs))
+        {
+            Aura* aura = ai->GetAura(spell, target, checkIsOwner);
+            if (ai::ForceRebuffBelowTarget(aura != nullptr, aura ? aura->GetAuraDuration() : 0,
+                aura ? aura->GetAuraMaxDuration() : 0, beginMs, nowMs))
+            {
+                // No "proposed" mark here (donor Engine.cpp:488-489 marks only
+                // when a trigger fires): subclasses add post-gates below
+                // (greater-aura vetoes) that can still refuse, and a mark here
+                // would veto heals / hold the ready reply with no buff work.
+                // Engine::ProcessTriggers marks on fire instead.
+                return true;
+            }
+        }
+    }
+
     // Issue #468 (donor BuffBelowRefreshTarget): a LONG aura expiring inside
     // the refresh window counts as missing, so the buff is topped up on the
     // last out-of-combat tick instead of dropping mid-fight. Short combat
@@ -407,6 +466,21 @@ bool MediumThreatTrigger::IsActive()
     return false;
 }
 
+bool LowTankThreatTrigger::IsActive()
+{
+    Unit* currentTarget = AI_VALUE(Unit*, "current target");
+    if (!currentTarget || currentTarget->IsPlayer())
+        return false;
+
+    Unit* mainTank = AI_VALUE(Unit*, "main tank");
+    if (!mainTank || mainTank == bot)
+        return false;
+
+    float threat = sServerFacade.GetThreatManager(currentTarget).getThreat(bot);
+    float tankThreat = sServerFacade.GetThreatManager(currentTarget).getThreat(mainTank);
+    return LowTankThreatFires(false, threat, tankThreat);
+}
+
 bool SomeThreatTrigger::IsActive()
 {
     if (AI_VALUE2(uint8, "threat", "current target") >= 25)
@@ -487,6 +561,19 @@ bool DebuffTrigger::IsActive()
     }
 
     return false;
+}
+
+bool DebuffOnBossTrigger::IsActive()
+{
+    // No IsDungeonBoss on this core: world boss only, matching the donor
+    // world-boss arm exactly. Elites-in-dungeon would open the gate to all
+    // trash and defeat the conservation intent; dungeon-boss coverage waits
+    // on a real boss flag.
+    if (!DebuffTrigger::IsActive())
+        return false;
+    Unit* target = GetTarget();
+    Creature* creature = target ? dynamic_cast<Creature*>(target) : nullptr;
+    return creature && creature->IsWorldBoss();
 }
 
 bool DebuffTrigger::HasMaxDebuffs()
@@ -631,6 +718,21 @@ bool BoostTrigger::IsActive()
     }
 
     return false;
+}
+
+bool GenericBoostTrigger::IsActive()
+{
+    // Donor GenericBoostTrigger verdict (balance <= 50, PvP-target always)
+    // plus the local owned-bot master bypass so player-owned racials keep
+    // popping every combat the way BoostTrigger consumers always have.
+    if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT))
+        return false;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (target && target->IsPlayer())
+        return true;
+    if (ai->HasRealPlayerMaster())
+        return true;
+    return AI_VALUE(uint8, "balance") <= 50;
 }
 
 bool ItemCountTrigger::IsActive()
@@ -807,6 +909,28 @@ bool IsNotBehindTargetTrigger::IsActive()
     return target && !AI_VALUE2(bool, "behind", "current target");
 }
 
+bool RearFlankNeededTrigger::IsActive()
+{
+    // Front-arc-only (no tail clause): set-behind's destination is the
+    // exact rear, and firing there would ping-pong flank→rear→flank
+    // against the higher-priority flank row every tick. Tanks holding the
+    // mob keep the tank-face path, never flank off it. Explicit holds
+    // (stay/wait-for-attack) veto; settled-behind bots hold position.
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !target->IsCreature() || !sServerFacade.IsAlive(target))
+        return false;
+    if (target->GetVictim() && target->GetVictim()->getObjectGuid() == bot->getObjectGuid())
+        return false;
+    if (ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT))
+        return false;
+    if (bot->GetDistance(target) > 15.0f)
+        return false;
+    if (AI_VALUE2(bool, "behind", "current target"))
+        return false;
+    return target->HasInArc(bot, 2.0f * (float)M_PI / 2.0f);
+}
+
 bool IsNotFacingTargetTrigger::IsActive()
 {
     return !AI_VALUE2(bool, "facing", "current target");
@@ -814,8 +938,10 @@ bool IsNotFacingTargetTrigger::IsActive()
 
 bool TankFaceNeededTrigger::IsActive()
 {
-    // Scope: real-player-master parties only. Pool bots keep old behaviour.
-    if (!ai->HasRealPlayerMaster())
+    // Scope is strategy membership ("tank face" on tank kits), not the
+    // master: any tank with the strategy faces held mobs away, pool/raid
+    // tanks included. Non-tanks never carry the strategy.
+    if (!ai->HasStrategy("tank face", BotState::BOT_STATE_COMBAT))
         return false;
     if (!ai->IsTank(bot))
         return false;
@@ -1038,6 +1164,19 @@ bool HasAreaDebuffTrigger::IsActive()
     return AI_VALUE2(bool, "has area debuff", "self target");
 }
 
+bool AoeThreatNearbyTrigger::IsActive()
+{
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+    // Any one sensor firing is enough; each read is value-cached (dynobj
+    // aura check, 15yd trap scan, 15yd trigger scan).
+    if (AI_VALUE2(bool, "has area debuff", "self target"))
+        return true;
+    if (!AI_VALUE(std::list<ObjectGuid>, "nearest damaging traps").empty())
+        return true;
+    return !AI_VALUE(std::list<ObjectGuid>, "possible triggers").empty();
+}
+
 bool ReturnToStayPositionTrigger::IsActive()
 {
     PositionEntry stayPosition = AI_VALUE(PositionMap&, "position")["stay"];
@@ -1108,9 +1247,27 @@ bool GreaterBuffOnPartyTrigger::IsActive()
     // Issue #468: the group buff only pays off while the member lacks the
     // lower single-target buff too - unless that LONG one is expiring inside
     // the refresh window, in which case the group cast tops up both at once.
+    // Force-rebuff pass: while a rebuff window is pending OOC, the LOWER
+    // aura uses the window margin rule, not the 15 s refresh rule. The
+    // predicate ("party member without aura" margin site) already selects a
+    // member whose single is below margin; without this the trigger rejects
+    // that member (single still above 15 s) while the single trigger is
+    // blocked by group presence, so Prayer/GOTW/AB never top off in-window.
+    // Donor has no greater trigger (upgrades at cast time via
+    // UpgradeToGroupIfAppropriate); locally both levels exist, so the lower
+    // check must match the margin rule that selected the member.
     if (lowerSpell.empty())
         return true;
     Aura* lower = ai->GetAura(lowerSpell, target, checkIsOwner);
+    if (!bot->IsInCombat())
+    {
+        AiObjectContext* rebuffContext = ai->GetAiObjectContext();
+        uint32 beginMs = rebuffContext->GetValue<int32>("manual int", "force rebuff begin ms")->Get();
+        uint32 nowMs = WorldTimer::getMSTime();
+        if (beginMs && ai::ForceRebuffPending(beginMs, nowMs))
+            return ai::ForceRebuffBelowTarget(lower != nullptr, lower ? lower->GetAuraDuration() : 0,
+                lower ? lower->GetAuraMaxDuration() : 0, beginMs, nowMs);
+    }
     return ai::BuffNeedsRefresh(lower != nullptr, lower ? lower->GetAuraDuration() : 0,
         lower ? lower->GetAuraMaxDuration() : 0);
 }
@@ -1362,6 +1519,29 @@ bool AtWarTrigger::IsActive()
     return false;
 }
 
+// Deferred ready-check confirm is waiting (SOC-S5). Cheap first: config
+// gate and anchor read only; no aura scans. The due verdict itself
+// (grace/cap/casting) lives in the action's isUseful, so this trigger only
+// says "a confirm is held". An anchor held past cap + slack (e.g. through
+// combat, when this trigger stays quiet) is a dead check: clear it here so
+// no stale confirm goes out when combat ends minutes later.
+bool ForceRebuffPendingTrigger::IsActive()
+{
+    if (!sPlayerbotAIConfig.forceRebuffOnReadyCheck || bot->IsInCombat())
+        return false;
+
+    time_t anchor = context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Get();
+    if (anchor == time_t(0))
+        return false;
+
+    if (time(0) - anchor > ai::ReadyRebuffCapSec() + ai::ReadyRebuffExpirySlackSec())
+    {
+        context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time_t(0));
+        return false;
+    }
+    return true;
+}
+
 // One-shot per pet identity (E01): ported from mod-playerbots NewPetTrigger,
 // adapted to this core (only GetPet() exists — no GetGuardianPet, grep
 // verified). Fires once per main-pet GUID change; an empty slot resets the
@@ -1392,6 +1572,11 @@ bool PetAttackTrigger::IsActive()
     Pet* pet = bot->GetPet();
     Unit* target = AI_VALUE(Unit*, "current target");
     if (!AttackAction::CanPetAttack(ai, pet, target))
+        return false;
+
+    // A channeling pet holds its spell (e.g. the succubus's Seduction):
+    // re-ordering it to the DPS target moves it and breaks the channel.
+    if (pet->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
         return false;
 
     if (pet->GetVictim() == target && pet->GetCharmInfo() && pet->GetCharmInfo()->IsCommandAttack())

@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "BlackwingLairDungeonStrategies.h"
+#include "DungeonMultipliers.h"
 
 using namespace ai;
 
@@ -8,6 +9,179 @@ void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "suppression device close",
         NextAction::array(0, new NextAction("disarm suppression device", 80.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start razorgore fight",
+        NextAction::array(0, new NextAction("enable razorgore fight strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "boss wants fire aura",
+        NextAction::array(0, new NextAction("swap fire resistance aura", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "boss wants shadow aura",
+        NextAction::array(0, new NextAction("swap shadow resistance aura", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start chromaggus fight",
+        NextAction::array(0, new NextAction("enable chromaggus fight strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start broodlord fight",
+        NextAction::array(0, new NextAction("enable broodlord fight strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start nefarian fight",
+        NextAction::array(0, new NextAction("enable nefarian fight strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start vael fight",
+        NextAction::array(0, new NextAction("enable vael fight strategy", 100.0f), NULL)));
+}
+
+void ChromaggusFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "chromaggus bronze affliction",
+        NextAction::array(0, new NextAction("use hourglass sand", ACTION_EMERGENCY + 5), NULL)));
+}
+
+void ChromaggusFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end chromaggus fight",
+        NextAction::array(0, new NextAction("disable chromaggus fight strategy", 100.0f), NULL)));
+}
+
+void ChromaggusFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end chromaggus fight",
+        NextAction::array(0, new NextAction("disable chromaggus fight strategy", 100.0f), NULL)));
+}
+
+void RazorgoreFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "fire protection potion ready",
+        NextAction::array(0, new NextAction("fire protection potion", 100.0f), NULL)));
+
+    // Off-tank engage (donor MarkBoss attack arm): tanks attack Razorgore
+    // while eggs live so the boss is held from the pull. Non-tanks never
+    // see this node; the victim guard + egg check live in the action.
+    if (ai->IsTank(ai->GetBot()))
+    {
+        triggers.push_back(new TriggerNode(
+            "razorgore engage",
+            NextAction::array(0, new NextAction("razorgore engage", 60.0f), NULL)));
+    }
+}
+
+void RazorgoreFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end razorgore fight",
+        NextAction::array(0, new NextAction("disable razorgore fight strategy", 100.0f), NULL)));
+}
+
+void RazorgoreFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end razorgore fight",
+        NextAction::array(0, new NextAction("disable razorgore fight strategy", 100.0f), NULL)));
+}
+
+void RazorgoreFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "razorgore cone",
+        NextAction::array(0, new NextAction("escape razorgore cone", ACTION_EMERGENCY + 5), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "razorgore ranged",
+        NextAction::array(0, new NextAction("back off razorgore", ACTION_EMERGENCY + 4), NULL)));
+}
+
+void RazorgoreFightStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new RazorgoreOffTankMultiplier(ai));
+}
+
+void BroodlordFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    Player* bot = ai->GetBot();
+    if (ai->IsRanged(bot) || ai->IsHeal(bot))
+    {
+        triggers.push_back(new TriggerNode(
+            "broodlord ranged",
+            NextAction::array(0, new NextAction("move away from broodlord", ACTION_EMERGENCY + 5), NULL)));
+    }
+}
+
+void BroodlordFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end broodlord fight",
+        NextAction::array(0, new NextAction("disable broodlord fight strategy", 100.0f), NULL)));
+}
+
+void BroodlordFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end broodlord fight",
+        NextAction::array(0, new NextAction("disable broodlord fight strategy", 100.0f), NULL)));
+}
+
+void NefarianFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "nefarian wild magic",
+        NextAction::array(0, new NextAction("ice block", ACTION_EMERGENCY + 5), NULL)));
+}
+
+void NefarianFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end nefarian fight",
+        NextAction::array(0, new NextAction("disable nefarian fight strategy", 100.0f), NULL)));
+}
+
+void NefarianFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end nefarian fight",
+        NextAction::array(0, new NextAction("disable nefarian fight strategy", 100.0f), NULL)));
+}
+
+void VaelFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "fire protection potion ready",
+        NextAction::array(0, new NextAction("fire protection potion", 100.0f), NULL)));
+}
+
+void VaelFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end vael fight",
+        NextAction::array(0, new NextAction("disable vael fight strategy", 100.0f), NULL)));
+}
+
+void VaelFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end vael fight",
+        NextAction::array(0, new NextAction("disable vael fight strategy", 100.0f), NULL)));
+}
+
+void VaelFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    // Outranks the universal bomb runout (EMERGENCY+6): repulsion flee
+    // with victim hold replaces the blind anchor-flee while +vael lives.
+    triggers.push_back(new TriggerNode(
+        "raid bomb debuff",
+        NextAction::array(0, new NextAction("vael adrenaline flee", ACTION_EMERGENCY + 7), NULL)));
+
 }
 
 void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "ReadyCheckAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/ReadyRebuffPolicy.h"
 #include "playerbot/ServerFacade.h"
 
 using namespace ai;
@@ -143,19 +144,63 @@ bool ReadyCheckAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     WorldPacket p = event.GetPacket();
-    ObjectGuid player;
-    p.rpos(0);
     if (!p.empty())
     {
+        // Member answer forwarded to the raid leader (1.12 server sends
+        // these with the member GUID + state): not a new check. Keep the
+        // old path - ignore our own echo, otherwise answer immediately.
+        ObjectGuid player;
+        p.rpos(0);
         p >> player;
         if (player == bot->getObjectGuid())
             return false;
+    }
+    else if (p.getOpcode() == MSG_RAID_READY_CHECK && sPlayerbotAIConfig.forceRebuffOnReadyCheck && !bot->IsInCombat())
+    {
+        // Defer the confirm until buffs settle (SOC-S5): only a real
+        // incoming check (1.12 request broadcast: this opcode with an empty
+        // payload) holds. Manual "ready" whispers arrive with a default
+        // opcode-0 packet, so they fall through to the immediate answer
+        // below - an explicit order answers now, and it also clears any
+        // pending anchor, so no second confirm goes out. Report status now,
+        // stamp the anchor, and let the "force rebuff pending" trigger send
+        // the confirm via "ready reply".
+        ReportReadiness(requester);
+        context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time(0));
+        // Force-rebuff entry (donor ForceRebuffOnReadyCheck, strategy-gated
+        // like the donor's Begin()): the 2-min OOC top-off window opens only
+        // for bots with the "force rebuff" strategy, so `.bot nc -force
+        // rebuff` disables the top-off, the per-tick bypass, and the reply
+        // hold. The anchor stamp above stays ungated so opted-out bots keep
+        // the pre-existing SOC-S5 defer.
+        if (ai->HasStrategy("force rebuff", BotState::BOT_STATE_NON_COMBAT))
+        {
+            context->GetValue<int32>("manual int", "force rebuff begin ms")->Set(WorldTimer::getMSTime());
+            context->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(false);
+            context->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(false);
+        }
+        return true;
     }
 
 	return ReadyCheck(requester);
 }
 
 bool ReadyCheckAction::ReadyCheck(Player* requester)
+{
+    ReportReadiness(requester);
+
+    SendReadyConfirm();
+
+    ai->ChangeStrategy("-ready check", BotState::BOT_STATE_NON_COMBAT);
+
+    // A manual finish answers an already-open check: clear any deferred
+    // anchor so the pending trigger cannot send a second confirm.
+    context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time_t(0));
+
+    return true;
+}
+
+void ReadyCheckAction::ReportReadiness(Player* requester)
 {
     if (ReadyChecker::checkers.empty())
     {
@@ -170,6 +215,9 @@ bool ReadyCheckAction::ReadyCheck(Player* requester)
         ReadyChecker::checkers.push_back(new ManaPotionChecker("mana potion", "Mpot"));
     }
 
+    // Diagnostics first (donor ReportReadinessToMaster shape): hunter ammo /
+    // pet warnings must fire on the deferred path too, which never reaches
+    // ReadyCheck.
     bool result = true;
     for (std::list<ReadyChecker*>::iterator i = ReadyChecker::checkers.begin(); i != ReadyChecker::checkers.end(); ++i)
     {
@@ -199,18 +247,64 @@ bool ReadyCheckAction::ReadyCheck(Player* requester)
     }
 
     ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+}
 
+void ReadyCheckAction::SendReadyConfirm()
+{
     WorldPacket packet(MSG_RAID_READY_CHECK);
     packet << uint8(1);
     bot->GetSession()->HandleRaidReadyCheckOpcode(packet);
-
-    ai->ChangeStrategy("-ready check", BotState::BOT_STATE_NON_COMBAT);
-
-    return true;
 }
 
 bool FinishReadyCheckAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     return ReadyCheck(requester);
+}
+
+bool ReadyReplyAction::isUseful()
+{
+    if (!sPlayerbotAIConfig.forceRebuffOnReadyCheck || bot->IsInCombat())
+        return false;
+
+    time_t anchor = context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Get();
+    if (anchor == time_t(0))
+        return false;
+
+    // Force-rebuff gate (donor ReadyReply gating): hold the confirm while a
+    // buff cast landed this cycle, one is mid-cast, or a buff trigger fired
+    // this tick ("proposed", covering inter-cast gaps where neither pending
+    // nor casting is set for chained instants). Past the hard cap the due
+    // verdict replies regardless. The 30 s cap still bounds the hold.
+    bool buffWorking = context->GetValue<bool>("manual bool", "force rebuff buff pending")->Get();
+    bool proposed = context->GetValue<bool>("manual bool", "force rebuff buff proposed")->Get();
+    bool isCasting = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL) != nullptr ||
+        bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL) != nullptr;
+    if ((buffWorking || proposed || isCasting) && !ai::ReadyRebuffPastCap(anchor, time(0)))
+        return false;
+    return ai::ReadyRebuffDue(anchor, time(0), isCasting);
+}
+
+bool ForceRebuffAction::Execute(Event& /*event*/)
+{
+    // Manual "rebuff" command (donor ForceRebuffAction): open the 2-min OOC
+    // top-off window with no ready check to answer. Strategy-gated like the
+    // donor (needs the "force rebuff" strategy) and OOC-only.
+    if (bot->IsInCombat() || !ai->HasStrategy("force rebuff", BotState::BOT_STATE_NON_COMBAT))
+        return false;
+
+    context->GetValue<int32>("manual int", "force rebuff begin ms")->Set(WorldTimer::getMSTime());
+    context->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(false);
+    context->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(false);
+    return true;
+}
+
+bool ReadyReplyAction::Execute(Event& /*event*/)
+{
+    SendReadyConfirm();
+
+    context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time_t(0));
+
+    ai->ChangeStrategy("-ready check", BotState::BOT_STATE_NON_COMBAT);
+    return true;
 }

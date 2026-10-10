@@ -52,6 +52,7 @@ These settings dramatically enhance the solo or small-group experience with owne
 | `AiPlayerbot.GenerateItemCaches` | `1` | **`1`** | **First-Boot Gear Caches:** Builds the `ai_playerbot_equip_cache` and `ai_playerbot_rnditem_cache` tables once, while they are empty, and loads them from the database afterwards. Leave it on for a fresh install — with empty caches bots only fill empty slots from loot and never judge an upgrade. |
 | `AiPlayerbot.RandomGearBlacklist` | `` (empty) | `` (empty) | **Gear Exclusion List:** Item IDs never picked by random gear (seed/hire/upgrade). Comma-separated, e.g. `12345,67890`. |
 | `AiPlayerbot.AutoEquipUpgradeLoot` | `1` | **`1`** | **Equip Loot Upgrades:** Bots equip upgrades obtained from looting or quests. |
+| `AiPlayerbot.EquipUpgradeThreshold` | `1.1` | **`1.1`** | **Upgrade margin (mod-playerbots parity):** an upgrade must beat the old item's stat weight by this factor to count — a +10% win swaps, an epsilon gain does not. `1.0` restores any-gain swaps. Exact ties still fall through to the sheet/quality/item-level tiebreaks. |
 | `AiPlayerbot.AutoPickReward` | `yes` | **`yes`** | **Quest Reward Pick:** Bots pick the first useful quest reward automatically (`no` = list all, `ask` = pick useful and list if multiple). |
 | `AiPlayerbot.AutoPickTalents` | `full` | **`full`** | **Auto Talents:** Bots pick talent points based on current spec. |
 | `AiPlayerbot.AutoTrainSpells` | `yes` | **`yes`** | **Auto Train:** Bots train all available spells at trainers while they have the money. |
@@ -61,6 +62,7 @@ These settings dramatically enhance the solo or small-group experience with owne
 | `AiPlayerbot.RandomGearAllowReputation` | `0` | **`0`** | **Seed Rep Gear:** Allow reputation-gated gear (item/quest/vendor/recipe rep) on fresh/hired bots. |
 | `AiPlayerbot.RandomGearAllowPvP` | `0` | **`0`** | **Seed PvP Gear:** Allow PvP gear (honor rank, NO_DISENCHANT rewards) on fresh/hired bots. |
 | `AiPlayerbot.RandomGearSeedEpicChance` | `0.02` | **`0.02`** | **Seed World-Epic Chance:** Per-slot chance a fresh seed rolls a rare loot-attested BoE world epic instead of the green/blue band; falls back to the band when the slot has none. |
+| `AiPlayerbot.ForceRebuffOnReadyCheck` | `0` | `0` | **Rebuff before ready (mod-playerbots parity):** a bot that gets a ready check out of combat reports its status immediately but holds the confirm until its buffs settle (8 s grace once not casting) or a 30 s cap fires — instead of answering ready and buffing through the pull. Off by default; needs restart. |
 
 The spec weights these caches are scored with come from the `ai_playerbot_weightscales` and `ai_playerbot_weightscale_data` tables, seeded by `data/sql/world/20260916090001_world.sql`. If bots wear wrong-slot gear from their bags but never swap an upgrade in, that dataset is empty — re-apply the migration and restart.
 ---
@@ -71,9 +73,9 @@ These flags control the behavior of autonomous random bots roaming the world:
 
 | Setting | Default | Recommended | What It Does |
 | :--- | :---: | :---: | :--- |
-| `AiPlayerbot.RandomBotAutologin` | `0` | **`1`** | Automatically logs in random bots (characters on managed pool accounts) at server startup. |
-| `AiPlayerbot.RandomBotAutoCreate` | `0` | **`1`** | Automatically creates new bot accounts/characters if the active pool is below `MinRandomBots`. Required by `RandomBotPoolReset`: a reset is refused without it, so the pool is never left empty. |
-| `AiPlayerbot.MinRandomBots` / `MaxRandomBots` | `0` | `50` / `150` | Sets the minimum and maximum active random bot population. |
+| `AiPlayerbot.RandomBotAutologin` | `1` | `1` | Automatically logs in random bots (characters on managed pool accounts) at server startup. |
+| `AiPlayerbot.RandomBotAutoCreate` | `1` | `1` | Automatically creates new bot accounts/characters if the active pool is below `MinRandomBots`. Required by `RandomBotPoolReset`: a reset is refused without it, so the pool is never left empty. |
+| `AiPlayerbot.MinRandomBots` / `MaxRandomBots` | `500` / `500` | `500` / `500` | Sets the minimum and maximum active random bot population. The default is sized for an average PC or a Steam Deck; raise both on a bigger machine. |
 | `AiPlayerbot.RandomBotPoolReset` | `off` | `off` (production) | **Managed pool rebuild:** `off` never resets, `once:<token>` rebuilds the pool on the next server start when `<token>` has not been applied yet, `always` rebuilds on every start (**development only**, destroys all bot progression). Needs `RandomBotAutoCreate = 1`. See [Resetting the managed bot pool](living-world.md#resetting-the-managed-bot-pool). |
 | `AiPlayerbot.RandomBotAccountPrefix` | `RNDBOT` | `RNDBOT` | Prefix used to *name* new pool accounts and to list legacy accounts for adoption at the server console. It never authorizes ownership: only accounts registered in `tortoise_bots_pool_account` are managed pool accounts. |
 | `AiPlayerbot.RandomBotStartLevelMin` / `Max` | `1` / `60` | `1` / `60` | **Fresh-Bot Level Seed:** A newly created pool bot gets a random level in this range once, on its first login, before its skills, professions and starter gear are seeded, so a fresh pool has bots at every level instead of all walking up from 1. Narrow it for test pools (e.g. `10` / `15`); set both to `1` for the historic level-1 start. |
@@ -106,6 +108,7 @@ These flags control the behavior of autonomous random bots roaming the world:
 | `AiPlayerbot.RandomBotEvenStartZones` | `1` | `1` | Spreads new random bots evenly across the six racial starting zones: auto-create picks a valid race from the least-populated start zone (counted once per creation batch, level-1 pool characters) and isolated-custom-zone normalization sends the bot to the least-populated standard start of its faction (core `playercreateinfo` spawns). `0` keeps the old behaviour: uniform random race, goblins to Valley of Trials, high elves to Northshire. |
 | `AiPlayerbot.VendorBatchMinCount` / `VendorBatchMinBagSpace` | `8` / `60` | `8` / `60` | Vendor trip batch rule (#339) for bots at level 5+: a bot walks to a vendor once its vendor-usable stock holds at least this many items while the bags are at least this percent full, or covers the money missing for its next trainable class rank. The batch half stands on its own — a bot with nothing left to train (a fresh level 1 has no green class rank yet) still sells its loot instead of hoarding it. |
 | `AiPlayerbot.LowLevelVendorBatchMinCount` / `LowLevelVendorBatchMinBagSpace` | `3` / `25` | `3` / `25` | Same batch rule for bots below level 5, which carry one or two greys: `8` items / `60`% bags never fired for a starting pool, so it never sold anything. |
+| `AiPlayerbot.TravelPickBudgetUs` | `4000` | `4000` | Microseconds a travel-destination pick may scan candidates per bot visit before yielding to the next visit (the pick resumes where it stopped and accepts the same target, just spread across visits). Bounds the worst-case single-bot update so one slow pick no longer lands whole in a world tick. `0` runs the whole pick in one visit. Needs a restart.
 | `AiPlayerbot.LowLevelVendorMaxDistance` | `600` | `600` | Yards. All RPG travel stays blocked below level 5 (the path to any NPC usually crosses level 5+ mobs); a random masterless bot below level 5 may still reach its own camp vendor, capped to this radius and to the starting-zone level band (area level <= bot level + 5). `0` disables beginner vendor trips. The vendor travel purpose searches without the RPG destination pre-filter (the same way the named trainer errand does), so this radius is enforced at the partition gate; `Vendor` travel choices and `SellAction` rows in `bot_events.csv` count the effect, and `SellErrandFailed` (an errand sale that sold nothing, with the reason) and `VendorTripNoTarget` (a `Vendor` destination search that came up empty) … |
 | `AiPlayerbot.BotLootRateUncommon` / `BotLootRateRare` | `1.0` / `1.0` | owner-tuned | Bot-only drop-rate boost for green (uncommon) and blue (rare) items. Masterless random pool bots roll each quality-2/3 entry of a creature's loot template one extra time per kill at `(multiplier - 1) x` the entry's DB chance, gated by the chance of every reference row on the path, so the expected greens/blues per kill are roughly `multiplier x` the normal rate. Quest-only drops and quest starters are never boosted, unique items already held at `max_count` are skipped, and entries of other qualities are untouched (a creature that never drops greens gains nothing). Players and hired/alt bots keep the server's own rates, and loot rolled for a group is never touched. Each hit logs a `BotLootBonus` row (creature name, `quality:itemId:itemName`) to `bot_events.csv`. `1.0` = off. |
 | `AiPlayerbot.HireEnabled` | `1` | `1` | Master switch for on-demand companion hiring (`.bot hire` + `<Mercenary Hire>` inn recruiters). |
@@ -134,6 +137,7 @@ All autonomous services are fully bounded. LFT autofill and battleground auto-qu
 | :--- | :---: | :--- |
 | `AiPlayerbot.RandomBotLftEnabled = 1` | `1` | **LFT Dungeon Autofill (on by default; set `0` to opt out):** When real players queue for Looking-For-Trouble dungeons and wait for missing roles (e.g. Tank or Healer), eligible bots fill the vacant slots. Fill is demand-driven only — bots never queue without a waiting human. Your own party bots queue with you and auto-accept the dungeon offer (works with the switch on or off); after the group forms the party walks to the portal together, so `.bot summon` stragglers — there is no automatic teleport. |
 | `AiPlayerbot.AhMarketEnabled = 1` | `0` | **Living Auction House:** Bots post gathered trade goods and bind-on-equip gear on the Auction House, and bid on/buyout items using real player pricing models. |
+| `AiPlayerbot.RandomBotBgAutonomous = 1` | `1` | **Autonomous Bot-Only Matches (on by default; set `0` to opt out):** Pool bots start their own Warsong Gulch (10v10, most populated ready bracket, max 1 concurrent full instance per bracket) when no human is queued. Batches accumulate each tick until both sides fill; a still-forming match keeps absorbing queued seeds, so only a full instance stops new seeds. Requires `AiPlayerbot.RandomBotBgEnabled = 1`. |
 | `AiPlayerbot.RandomBotBgEnabled = 1` | `1` | **Battleground Auto-Queue (on by default):** Injects random bots into Warsong Gulch, Arathi Basin, and Alterac Valley when human players queue. Set `0` to opt out. Your own party bots queue with you via Join as Group (WSG/AB; AV is solo-only in the core) and auto-accept the invite regardless of this toggle. |
 
 ---
@@ -158,22 +162,24 @@ The module's AI pass runs at the end of every world tick, so a bot a real player
 
 Everything else is the pool, including characters on `RNDBOT` pool accounts that carry a master from a bot-only group, a stale `PlayerMaster` lease, or `random = false` after a restart. Those flags are not ownership signals: bot-only groups hand their members a bot master and a lease (`PlayerbotAI::GetGroupMaster` → `BotManager::BindBotMaster`), which once misclassified ~40 % of a 500-bot pool (212 bots) as player-owned and kept them unbudgeted.
 
-The pool is only throttled when the server is already struggling. On an average PC with a small pool the ticks are short, both keys stay out of the way, and the pool gets exactly the pass it always got.
+The pool runs under a per-tick time budget; on a healthy server the self-tuning controller below keeps the effective budgets at their ceilings, so the pool gets the full pass. When ticks run long the controller shrinks the budgets and the rotation carries the remainder to later ticks.
 
 | Setting | Default | What It Does |
 | :--- | :---: | :--- |
-| `AiPlayerbot.PoolTickBudgetUs` | `10000` | Microseconds of module work per tick for the pool pass, once the gate below opens. `0` removes the budget entirely (the pool always runs its full pass). Values below `1000` are raised to `1000`; `100000` is the ceiling. |
-| `AiPlayerbot.PoolBudgetWhenTickOverMs` | `150` | The gate: the budget applies only while the previous world tick took longer than this. `0` applies it on every tick. A tick at or below the value keeps the unbudgeted, full pool pass. |
+| `AiPlayerbot.PoolTickBudgetUs` | `10000` | Ceiling for the pool pass: microseconds of module work per tick. `0` removes the budget entirely (the pool always runs its full pass). Values below `1000` are raised to `1000`; `100000` is the ceiling. |
+| `AiPlayerbot.PoolBudgetWhenTickOverMs` | `0` | The gate: the budget applies only while the previous world tick took longer than this. `0` applies it on every tick — the default, because the self-tuning budget below reclaims the full ceiling on a healthy server by itself. |
+| `AiPlayerbot.TargetWorldTickMs` | `50` | Self-tuning tick budget: each tick the controller moves the effective pool/combat budgets from the measured previous world tick so the tick stays near this target (over target + 10 ms: shrink fast; at or under: creep back +1 ms/tick; the world thread pads healthy ticks to ~50 ms, so reclaim keeps the full ceilings on a healthy server). No hardware detection — a fast PC keeps the full ceilings, a weak one backs off on its own. `0` disables the controller (static ceilings; also set `PoolBudgetWhenTickOverMs=150` to restore the old gate). |
 
-Tuning: raise `PoolTickBudgetUs` (e.g. `25000`–`50000`) if pool bots feel sluggish while the tick is long; lower it if player-owned bots still lag. The budget is checked between bots, so a pass can overshoot by one bot's work. With 500 bots on a slow machine every choice means *someone* waits — the gate only decides whether it is the player's party or the pool.
+Tuning: on a healthy server you should not need to touch anything — the controller keeps the full ceilings while ticks stay under the target. If pool bots feel sluggish while the tick is long, raise `PoolTickBudgetUs` (e.g. `25000`–`50000`); if the world tick itself will not come down, lower `TargetWorldTickMs`. The budget is checked between bots, so a pass can overshoot by one bot's work. Player-owned bots always run first and unbudgeted, whatever the budgets say.
 
 With AI enabled (`AiPlayerbot.Enabled = 1`), the module reports the pass once per ~30 s of world-tick time at `TortoiseBots.LogLevel = 1` or higher (default `2`):
 
 ```
-TortoiseBots: BOTPERF passUs=812 playerBots=5 ownedBots=5 masterBots=0 poolBots=495 poolProcessed=4 budgetHit=1 maxUs=9820 ticks=62
+TortoiseBots: BOTPERF passUs=812 playerBots=5 ownedBots=5 masterBots=0 poolBots=495 poolProcessed=4 budgetHit=1 maxUs=9820 ticks=62 poolBudgetUs=10000 combatBudgetUs=15000
 ```
 
-`passUs` is the average `UpdateBots` cost in the window in microseconds (`maxUs` the worst), `playerBots` the unbudgeted candidate count, split into `ownedBots` (owner's account) and `masterBots` (live player master), `poolBots` the pool candidate count, `poolProcessed` the pool slots the rotation advanced past (a record that was unusable that tick still counts), and `budgetHit` `1` when the budget cut that pass short. Read it like this: `budgetHit=1` with a small `passUs` is the throttle working; `budgetHit=1` and `poolProcessed=1` means the budget is too tight for the pool size (raise it); a low `passUs` while ticks are still multi-second says the module pass is not what stretches the tick. A `playerBots` far above the real player's party (check `ownedBots` + `masterBots`) means a classification bug, not a busy player.
+
+`passUs` is the average `UpdateBots` cost in the window in microseconds (`maxUs` the worst), `playerBots` the unbudgeted candidate count, split into `ownedBots` (owner's account) and `masterBots` (live player master), `poolBots` the pool candidate count, `poolProcessed` the pool slots the rotation advanced past (a record that was unusable that tick still counts), `budgetHit` `1` when the budget cut that pass short, and `poolBudgetUs`/`combatBudgetUs` the effective budgets the pass just ran under (equal to the configured ceilings when the server is healthy). Read it like this: `budgetHit=1` with a small `passUs` is the throttle working; `budgetHit=1` and `poolProcessed=1` means the budget is too tight for the pool size (raise it); a low `passUs…
 
 ### Server settings for many bots (`mangosd.conf`)
 
@@ -242,6 +248,25 @@ TortoiseBots.LogLevel = 2
 Errors (`sLog.outError`) are always written regardless of this setting. The level is re-read on `.reload config`, so it can be raised or lowered without a server restart.
 
 This setting is separate from the strategy AI's own action trace, which stays gated behind the `debug`/`debug action` bot strategies (`.bot strategy +debug`) rather than a server-wide config key.
+
+### Action counts (live rotation measurement)
+
+| Setting | Default | What It Does |
+| :--- | :---: | :--- |
+| `AiPlayerbot.ActionCountsLog` | `0` | When `1`, every executed bot action is counted by bot class id and action name (class `1` with `shield slam` is a warrior's Shield Slam; the report script prints class names), split into ok vs failed/impossible outcomes. Every 5 minutes a cumulative snapshot (`utc_time,class,action,ok_count,fail_count`) is appended to `logs/action_counts.csv`, next to `bot_events.csv`. `0` costs one branch per executed action and nothing else. Needs a restart. |
+
+Turn it on for a measurement window on a busy realm, then copy the live file twice a while apart and diff the copies to see what each class actually spends its time doing:
+
+```
+cp logs/action_counts.csv /tmp/actions_early.csv
+# ... wait 30+ minutes ...
+cp logs/action_counts.csv /tmp/actions_late.csv
+python3 tools/action_counts_report.py /tmp/actions_early.csv /tmp/actions_late.csv --top 10
+```
+
+A copy taken mid-dump can tear (the 5-minute append is not atomic): copy twice back-to-back and compare the two before trusting one — identical files mean a clean copy.
+
+The report prints the top actions per class between the two snapshots with the ok share, so dead or failing actions (low ok share) stand out. Counters are cumulative since server start; comparing snapshots from different runs is meaningless.
 
 ---
 

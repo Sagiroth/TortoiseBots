@@ -200,10 +200,11 @@ The core listener is generic; it does not call a PlayerBots singleton.
 
 Inside that pass (`BotManager::UpdateBots`) bots under a real player are
 updated first and without a budget, then the random pool follows in a
-resumable round-robin rotation; the pool's per-tick time budget only engages
-once the previous world tick ran longer than
-`AiPlayerbot.PoolBudgetWhenTickOverMs`
-(see [docs/guides/configuration-tuning.md](guides/configuration-tuning.md)).
+resumable round-robin rotation; the pool's per-tick time budget engages
+while the previous world tick ran longer than
+`AiPlayerbot.PoolBudgetWhenTickOverMs` (0 = every tick, the default — the
+self-tuning `AiPlayerbot.TargetWorldTickMs` controller then reclaims the
+full ceilings on healthy ticks; see [docs/guides/configuration-tuning.md](guides/configuration-tuning.md)).
 "Under a real player" means a live master with a network session, or a
 character on an account the pool does not own (`runtime/PlayerBotClassification.h`);
 the `random` flag and the `PlayerMaster` lease are not ownership signals.
@@ -596,7 +597,7 @@ No per-tick AH/DB scan or new AH-specific core seam is required.
 `RandomBotService` discovers the characters of **registered managed pool
 accounts** (character-database table `tortoise_bots_pool_account`, seeded by
 `data/sql/character/20260924120000_char.sql`); with
-`AiPlayerbot.RandomBotAutoCreate=1` (default `0`, one character per
+`AiPlayerbot.RandomBotAutoCreate=1` (default `1`, one character per
 `RandomBotUpdateInterval`, world-thread) it creates the bounded deficit toward
 `MinRandomBots`/`MaxRandomBots` through `AccountMgr::CreateAccount` (random
 12-character alphanumeric password, hashed and never logged) and the generic

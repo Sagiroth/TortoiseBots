@@ -455,9 +455,8 @@ void RandomBotService::StartZoneCountsForBatch(uint32_t batch)
     // on the world thread: the old characters-table SELECT blocked inside
     // SSL_read at 2000 bots. Level comes from the cached candidate (kept
     // current while online in Update), race from the load row; characters
-    // levelled past 1 or deleted after load drift the count until the next
-    // restart reload, which only biases the even-spread pick, never blocks
-    // creation.
+    // deleted after load drift the count until the next restart reload,
+    // which only biases the even-spread pick, never blocks creation.
     if (m_startZoneBatch == batch && batch != 0)
         return;
     m_startZoneBatch = batch;
@@ -467,7 +466,7 @@ void RandomBotService::StartZoneCountsForBatch(uint32_t batch)
         count = 0;
     for (Candidate const& candidate : m_candidates)
     {
-        if (candidate.level != 1)
+        if (!CountsTowardStartZone(candidate.level))
             continue;
         int zone = StartZoneIndexForRace(candidate.race);
         if (zone >= 0 && zone < int(kStartZoneCount))

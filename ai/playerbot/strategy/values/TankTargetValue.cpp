@@ -3,6 +3,7 @@
 #include "TankTargetValue.h"
 #include "PossibleAttackTargetsValue.h"
 #include "playerbot/ServerFacade.h"
+#include "../../../../runtime/PlayerbotAIStorage.h"
 
 using namespace ai;
 
@@ -10,8 +11,7 @@ using namespace ai;
 // bucket attackers by GetIntervalLevel instead of a flat lowest-threat
 // tournament. Loose mobs (nothing held) come first so adds get picked up;
 // held mobs rank by melee reach, then lowest threat, so the tank finishes
-// what it holds instead of ping-ponging. Multi-tank / explicit-MT plumbing
-// is skipped: single-tank groups only. CC skips stay.
+// what it holds instead of ping-ponging. CC skips stay.
 class FindTankTargetSmartStrategy : public FindNonCcTargetStrategy
 {
 public:
@@ -53,6 +53,11 @@ public:
 
         // Among mobs the tank already holds, stay on the current one; lowest
         // threat only orders the others, so two held mobs never ping-pong.
+        // (Review PR #573: the 2-tank MT/OT split does not belong here — it
+        // gated after the interval check, so it never picked up adds, and it
+        // keyed on the fallback MT instead of the explicit raid flag. The
+        // LD-5 conditional-RTI gate already keeps the off-tank off the MT's
+        // skull; re-add an explicit-only, stickiness-first split if needed.)
         Unit* current = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
         if (oldUnit == current)
             return false;
@@ -109,8 +114,31 @@ Unit* TankTargetValue::Calculate()
     if (Unit* explicitTarget = GetExplicitAttackTarget())
         return explicitTarget;
 
-    Unit* rti = RtiTargetValue::Calculate();
-    if (rti) return rti;
+    // mod-playerbots conditional tank RTI (LD-5, TankTargetValue.cpp:110-131):
+    // take the marked target only when its victim is a non-tank (peel for
+    // them) or a tank bot with a different RTI setting (else it is the other
+    // tank's mob — leave it for them). Otherwise fall through to the smart
+    // tournament instead of peeling the main tank's skull.
+    if (Unit* rti = RtiTargetValue::Calculate())
+    {
+        Unit* victim = rti->GetVictim();
+        if (victim && victim != bot)
+        {
+            if (Player* victimPlayer = dynamic_cast<Player*>(victim))
+            {
+                if (!ai->IsTank(victimPlayer))
+                    return rti;
+                PlayerbotAI* victimAi = PlayerbotAIStorage::Instance().GetAI(victimPlayer);
+                std::string myRti = ai->GetAiObjectContext()->GetValue<std::string>("rti")->Get();
+                if (!victimAi || victimAi->GetAiObjectContext()->GetValue<std::string>("rti")->Get() != myRti)
+                    return rti;
+            }
+            else
+                return rti;
+        }
+        else if (!victim)
+            return rti;
+    }
 
     FindTankTargetSmartStrategy strategy(ai);
     return FindTarget(&strategy);

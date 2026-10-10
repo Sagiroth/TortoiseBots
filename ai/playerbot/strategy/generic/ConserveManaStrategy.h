@@ -39,4 +39,28 @@ namespace ai
     private:
         void InitCombatMultipliers(std::list<Multiplier*> &multipliers) override;
     };
+
+    // Force-rebuff pass strategy (mod-playerbots parity, BUFF-1/BUFF-2):
+    // while a rebuff window is pending out of combat, heals yield to buffs
+    // (donor ForceRebuffBuffFirst multiplier) so the pass is not stretched
+    // by interleaved heals. Registered in StrategyContext, on by default in
+    // the non-combat set; disable with `.bot nc -force rebuff`.
+    class ForceRebuffBuffFirstMultiplier : public Multiplier
+    {
+    public:
+        ForceRebuffBuffFirstMultiplier(PlayerbotAI* ai) : Multiplier(ai, "force rebuff buff first") {}
+
+    public:
+        virtual float GetValue(Action* action) override;
+    };
+
+    class ForceRebuffStrategy : public Strategy
+    {
+    public:
+        ForceRebuffStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "force rebuff"; }
+
+    private:
+        void InitNonCombatMultipliers(std::list<Multiplier*> &multipliers) override;
+    };
 }

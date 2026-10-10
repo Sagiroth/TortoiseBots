@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "ItemUsageValue.h"
 #include "CraftValues.h"
+#include "playerbot/EquipThresholdPolicy.h"
 #include "MountValues.h"
 #include "AmmoCheatPolicy.h"
 #include "BudgetValues.h"
@@ -1100,7 +1101,10 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
 
     //Compare items based on item level, quality.
     bool isBetter = false;
-    if (statWeight > oldStatWeight)
+    // Upgrade needs a clear score win (AG-1): epsilon gains churn swaps
+    // across audits for nothing. Exact ties fall through to the tiebreaks
+    // below; spec-transition, broken-gear and forced swaps return above.
+    if (ai::EquipUpgradeBetter(statWeight, oldStatWeight, sPlayerbotAIConfig.equipUpgradeThreshold))
         isBetter = true;
     else if (weightsTied && sheetValue != oldSheetValue)
         isBetter = sheetValue > oldSheetValue;

@@ -1,13 +1,37 @@
 # Changelog
 
+- Warlocks top up mana with Life Tap between pulls — below 85% mana with safe health the bot pre-taps out of combat (after eating, so no sit/stand ping-pong) and enters the pull near-full mana; in combat only the urgent low-mana tap fires, since any low-priority combat row would outrank the shadow-bolt default and tap instead of nuking. The health floor is unchanged.
+- Warlocks use weapon stones again — Affliction and Demonology create and equip Spellstones, Destruction creates and equips its Firestone (only into an empty off-hand, never swapping out real gear).
+- Warlock Immolate now spreads to extra attackers instead of only the main target — Demonology and Destruction keep it up at spec level, all specs spread it with the aoe strategy on.
+- Warlock DoTs spread to extra attackers even with the aoe strategy off — Affliction keeps Corruption and Siphon Life up at spec level, Demonology keeps Corruption up, at low priority under the main rotation and mana recovery.
+- Warlocks cast Unending Breath on themselves and the party while swimming instead of never casting it.
+- Warlocks can snare runners with Curse of Exhaustion — order `.bot strategy +curse exhaustion` and the bot slows fleeing or chasing targets instead of only the main target.
+
+- Destruction warlocks open with Curse of the Elements instead of Curse of Agony (Curse of Agony until it is trained), and warlock bots no longer recast a curse anyone already holds — manual curse orders still override.
+
 ### Bots & Behavior
+- Grouped bots now know who the main tank is — the bot reads the raid main-tank flag (falling back to the first live tank) for a low-tank-threat signal that fires when someone climbs past half the main tank's threat, for future raid tactics to use. Tank target picks and thorns order are unchanged.
+- Warsong Gulch bots now guard their own flag carrier and re-pick objectives after dying — a bot near a friendly carrier sticks with them instead of leaving them undefended, a death drops the stale objective so the post-rez pick starts fresh, and a once-a-minute watchdog stops and re-picks for bots walking toward outdated spots (never mid-fight, never off the flag carrier).
+- Casters stop wasting casts on nearly-dead mobs — in groups of four or more, casters now prefer targets with 5-30 seconds of life left (nearly-dead ones rank second, never ignored), rogues and cat druids stick to their combo target, and every damage dealer switches to a freshly marked skull at once while leaving the crowd-controlled moon alone.
+- Grouped bots keep their groups tidy — a bot stranded on another map (or impossibly far on the same one) leaves the group instead of holding a dead slot.
+- Bots can now burn one target without breaking crowd control — telling a bot `co +focus` (off by default) stops all area damage and off-target debuffs, so sheep and sap survive the fight.
+- Masterless bots stop accepting quests they cannot finish alone — over-level, elite/dungeon and group-suggested quests are refused at the giver instead of being picked up and dropped later. Grouped bots that can fight bosses and player-owned bots are unchanged.
+- Tanks stop stealing the main tank's marked target — an off-tank now leaves a skull held by another tank alone and picks up loose adds instead. (For tanks with automatic marking enabled, raid icons are no longer set while travelling or idle — marking now happens in combat, without outranking defensive cooldowns.)
+- Bots pick the better quest reward when two are equally usable — tied rewards are now broken by stat weight for the bot instead of taking whatever the vendor lists first.
+- Whispering a bot `pull back` now works like `pull` — it pulls your target; whispering `attackers` now answers with who is attacking instead of staying silent.
+- Rogue bots now pick locked boxes mid-trade — when a trader parks a lockbox in the do-not-trade slot, a rogue bot unlocks it instead of letting the trade complete around it. Whispering a rogue `unlock traded item` forces it manually.
+- Bots stop swapping gear for tiny gains — an upgrade must now beat the old item by 10% of stat weight (`AiPlayerbot.EquipUpgradeThreshold`, mod-playerbots parity) instead of swapping on any epsilon difference. Set it to `1.0` for the old any-gain behavior.
+- Bots can now finish buffing before answering a ready check — with `AiPlayerbot.ForceRebuffOnReadyCheck = 1`, a bot that gets a ready check out of combat reports its status right away but holds the confirm until its buffs settle (or 30 seconds pass), instead of answering ready and buffing through the pull. Off by default.
+- A stuck pull can now be called off — whispering the tank `end pull` drops the wedged pull target and sends the tank back to following you, instead of standing until the timeout fires.
+- Casters no longer start long casts on dying mobs — a spell whose cast time outlasts the target's remaining life is now held back at any health level, not just near death, so fewer casts fizzle on corpses.
+- Dual-wield bots now hand their old main-hand weapon to the off hand — after a main-hand upgrade lands, the displaced weapon moves to the off hand when it fits there and beats what is equipped, instead of sitting in the bags.
 - Bots no longer get stuck on the Deeprun Tram — wandering bots could be routed through the tram between Stormwind and Ironforge but cannot ride the train, so they stood on the platform for good; their routes now go overland, and any bot already stranded there is moved out through the nearest station exit.
 - Bots stranded on islands without travel routes (Lapidis Isle) no longer stand at the shore forever — after three destinations in a row fail from the same spot they are moved to the nearest travel route instead of an island graveyard they would just walk back from.
 - Druids no longer freeze in place re-applying their strategies — balance, restoration and bear druids carrying the stealth strategy kept trying to add a stealth variant that does not exist for their spec, which took up every turn they should have spent moving.
 - Bots now take quests from quest boards ("Wanted!" posters) — they used to walk to the board and stand there for minutes, because only quest-giving characters were handled.
 - Bots now buy quest items that are sold by vendors (Rhapsody Malt, Coarse Thread) instead of standing next to the vendor waiting to loot them.
 - Gathering bots now get off their mount at the herb or ore node — they could stop a few yards short of it still mounted and wait there for minutes, because gathering does not start while mounted.
-- Bots move on from areas with nothing for them — a wandering bot (level 10+) whose last two searches for a grinding spot came back empty now heads for a zone that fits its level, the same way it leaves a zone it has outgrown; and a wandering bot with every errand on hold checks for a new one every 15 seconds instead of once a minute.
+- Bots move on from areas with nothing for them — a wandering bot (level 10+) whose last two searches for a grinding spot came back empty now heads for a zone that fits its level, the same way it leaves a zone it has outgrown; and a wandering bot with every errand on hold checks for a new one every 5 seconds instead of once a minute, taking a short walk in between (unless it is about to hand in a quest nearby).
 - Bots with nothing to do take a short walk instead of standing — a wandering bot whose every search for a destination comes back empty now walks 20-50 yards to a random reachable spot (never into a guarded enemy town), so new mobs come into view and its next search starts from somewhere else.
 - Bots fighting in place no longer count as stalled — a bot that fought or gained experience in the last minute (camping a spawn between pulls) now shows as busy instead of stalled, so the stalled count only means standing with a destination and getting nowhere.
 - Bots stop looping on a quest giver with nothing for them — a masterless pool bot that arrives at a giver whose menu never offers the quest (wrong chain step, already taken, accept rules) now leaves that giver and quest alone for 30 minutes after the second wasted visit, so the next pick goes elsewhere instead of walking back forever; owned bots are unchanged.
@@ -32,6 +56,8 @@
 - Gather (mining/herbalism) picks skip spots off the world mesh too — the same one-query pick-time sieve grind got, after 51 of 65 mining move-failures probed `nopath` the same way.
 - GMs with the chat badge on can command bots again — `/p wander`, whispering a bot `attackers` and other chat commands used to be silently ignored. [#550](https://github.com/Sagiroth/TortoiseBots/issues/550)
 - Grouped bots now jump in when a mob attacks anyone standing with them — previously they kept following until told to attack, because they copied each other's empty "nothing attacking us" lists instead of checking for themselves. [#549](https://github.com/Sagiroth/TortoiseBots/issues/549)
+- A fresh level-1 pool is now actually spread evenly over the starting zones — bots that reached level 2-3 while the pool was still being created stopped counting toward their zone, so the zones where bots level fastest kept getting more (Dun Morogh ended up with twice its share), and high elves were sent to Dun Morogh or Teldrassil instead of Elwynn where they had been counted.
+- Wandering bots no longer stand around after picking a camp or explore errand — the activity they rolled was refused again by a second dice roll (half or nine times in ten), and nothing else was allowed until the choice expired; the roll now decides alone. Your own and hired bots are unchanged.
 
 ## 2026-10-09
 
@@ -58,6 +84,8 @@
 - Behavior ported from mod-playerbots where 1.12 spells allow it. [#553](https://github.com/Sagiroth/TortoiseBots/pull/553)
 
 ### Stability & Performance
+- The server stays responsive on weaker PCs without manual tuning — the bot tick budget now adjusts itself each tick to hold the world tick near 50 ms (new `AiPlayerbot.TargetWorldTickMs`), backing off on slow machines and reclaiming the full speed on fast ones; the `BOTPERF` line shows the effective budgets.
+- No more multi-second single-bot updates from travel picks — a destination pick now scans at most ~4 ms per visit (new `AiPlayerbot.TravelPickBudgetUs`) and resumes on the next visit, accepting the same target, so the world tick stays smooth on weaker PCs.
 - Fewer stuck bots. [#553](https://github.com/Sagiroth/TortoiseBots/pull/553)
 - AI performance improvements. [#553](https://github.com/Sagiroth/TortoiseBots/pull/553)
 

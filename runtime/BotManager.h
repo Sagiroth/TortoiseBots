@@ -8,6 +8,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectGuid.h"
 #include "PoolPassRotation.h"
+#include "AdaptiveBudget.h"
 #ifndef MANGOS_OBJECT_GUID_H
 // Lens/build fallback — core header not on analyzer include path.
 enum { HIGHGUID_PLAYER = 0 };
@@ -234,11 +235,21 @@ private:
     std::vector<uint32_t> m_followUps;
     // Cursor for budgeted Pass 2 (combat bots) round-robin iteration.
     uint32_t m_combatCursor = 0;
+    // Self-tuning tick budget: fed the measured world tick each pass, hands
+    // back the effective pool/combat budgets. Lazily re-synced when the
+    // operator's target or ceilings change (restart-only keys, so once).
+    AdaptiveBudget m_adaptiveBudget{50, 10000, 15000};
+    uint32_t m_adaptiveTargetMs = 50;
+    uint64_t m_adaptivePoolCeilingUs = 10000;
+    uint64_t m_adaptiveCombatCeilingUs = 15000;
     // BOTPERF window: UpdateBots pass cost accumulated over ~30 s of tick time.
     uint64_t m_perfPassUsSum = 0;
     uint64_t m_perfPassUsMax = 0;
     uint32_t m_perfPassCount = 0;
     uint32_t m_perfElapsedMs = 0;
+    // Action-count snapshot cadence: cumulative per-(class, action) CSV dump
+    // every 5 minutes of tick time (AiPlayerbot.ActionCountsLog only).
+    uint32_t m_actionCountsElapsedMs = 0;
     bool m_autoTestEnabled = false;
     uint32_t m_autoTestAccount = 0;
 // pi-lens-ignore: clang:unknown_typename

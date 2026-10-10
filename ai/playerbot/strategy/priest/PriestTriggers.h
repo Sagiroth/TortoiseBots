@@ -7,6 +7,7 @@ namespace ai
     DEBUFF_TRIGGER(HolyFireTrigger, "holy fire");
     DEBUFF_TRIGGER(PowerWordPainTrigger, "shadow word: pain");
     DEBUFF_ENEMY_TRIGGER(PowerWordPainOnAttackerTrigger, "shadow word: pain");
+    DEBUFF_ENEMY_TRIGGER(DevouringPlagueOnAttackerTrigger, "devouring plague");
     DEBUFF_TRIGGER(VampiricEmbraceTrigger, "vampiric embrace");
     CURE_TRIGGER(DispelMagicTrigger, "dispel magic", DISPEL_MAGIC);
     CURE_PARTY_TRIGGER(DispelMagicPartyMemberTrigger, "dispel magic", DISPEL_MAGIC);
@@ -15,6 +16,18 @@ namespace ai
     BUFF_TRIGGER_A(InnerFireTrigger, "inner fire");
     BUFF_TRIGGER_A(ShadowformTrigger, "shadowform");
     BUFF_TRIGGER(InnerFocusTrigger, "inner focus");
+
+    // mod-playerbots parity (PRI-7): Inner Focus pre-cast when mana is low
+    // and a heal target exists. Self-gated on the trained spell, the
+    // cooldown, medium-or-lower mana and a medium-or-worse heal target, so
+    // untalented bots and cooling-down bots never queue an impossible cast.
+    class InnerFocusForHealTrigger : public Trigger
+    {
+    public:
+        InnerFocusForHealTrigger(PlayerbotAI* ai) : Trigger(ai, "inner focus for heal") {}
+        bool IsActive() override;
+    };
+
     BUFF_TRIGGER(AscendanceTrigger, "ascendance");
     CC_TRIGGER(ShackleUndeadTrigger, "shackle undead");
     INTERRUPT_TRIGGER(SilenceTrigger, "silence");
@@ -97,6 +110,18 @@ namespace ai
     public:
         PowerInfusionTrigger(PlayerbotAI* ai) : SpellTargetTrigger(ai, "power infusion", "boost targets", true, true) {}
         std::string GetTargetName() override { return "self target"; }
+    };
+
+    // mod-playerbots parity (FearWardOnMainTankTrigger): ward the tank first
+    // in combat instead of only whoever lacks the buff. The cooldown guard
+    // mirrors the donor: Fear Ward has a 30 s cooldown and the BuffTrigger
+    // base never checks it, so without the guard the trigger spins (and the
+    // cast fails) every tick while the tank's ward is consumed.
+    class FearWardOnTankTrigger : public BuffOnTankTrigger
+    {
+    public:
+        FearWardOnTankTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "fear ward") {}
+        bool IsActive() override;
     };
 
     class FearWardTrigger : public SpellTargetTrigger

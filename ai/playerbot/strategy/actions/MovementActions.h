@@ -104,6 +104,26 @@ namespace ai
         float distance;
     };
 
+    // Proactive AoE avoidance (donor AvoidAoeAction shape): three sensors —
+    // dynobj aura affecting the bot, damaging trap GO in range, trigger NPC
+    // in range — then a strafe-first step-out that stays in combat range
+    // (melee strafes off the target, ranged strafes inside the cast band).
+    // Self-gates via isUseful; the strategy row is a triggerless default.
+    class AvoidAoeAction : public MovementAction
+    {
+    public:
+        AvoidAoeAction(PlayerbotAI* ai) : MovementAction(ai, "avoid aoe") {}
+        virtual bool Execute(Event& event) override;
+        virtual bool isUseful() override;
+        virtual bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+
+    private:
+        bool AvoidAuraWithDynamicObj(float& outRadius, WorldPosition& outCenter);
+        bool AvoidDamagingTrap(float& outRadius, WorldPosition& outCenter);
+        bool AvoidTriggerNpc(float& outRadius, WorldPosition& outCenter);
+        bool StrafeToSafety(const WorldPosition& hazardCenter, float radius);
+    };
+
     class FleeWithPetAction : public MovementAction
     {
     public:
@@ -156,6 +176,20 @@ namespace ai
     {
     public:
         SetBehindTargetAction(PlayerbotAI* ai) : MovementAction(ai, "set behind") {}
+        virtual bool Execute(Event& event) override;
+        virtual bool isUseful() override;
+        virtual bool isPossible() override;
+    };
+
+    // Generic rear-flank (mod-playerbots RearFlankAction shape): a melee
+    // bot in the mob's frontal arc or tail cone sidesteps to the nearer
+    // flank instead of walking straight through the cleave to the exact
+    // rear point. Set-behind keeps the final rear point; this owns the
+    // approach. Dragon raid geometry untouched (entry-gated, tighter cones).
+    class RearFlankAction : public MovementAction
+    {
+    public:
+        RearFlankAction(PlayerbotAI* ai) : MovementAction(ai, "rear flank") {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
         virtual bool isPossible() override;

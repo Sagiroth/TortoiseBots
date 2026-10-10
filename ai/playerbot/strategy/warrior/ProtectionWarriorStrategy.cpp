@@ -43,13 +43,17 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 {
     WarriorStrategy::InitCombatTriggers(triggers);
 
+    // Staggered defensives (donor TankWarriorStrategy): Shield Wall fires
+    // early at low health (20-50%), Last Stand only at critical (<20%).
+    // Stacking both at critical wastes Wall's 30-min cooldown on fights
+    // Last Stand alone would survive.
     triggers.push_back(new TriggerNode(
-        "critical health",
-        NextAction::array(0, new NextAction("last stand", ACTION_EMERGENCY + 2), NULL)));
+        "low health",
+        NextAction::array(0, new NextAction("shield wall", ACTION_MEDIUM_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "critical health",
-        NextAction::array(0, new NextAction("shield wall", ACTION_EMERGENCY + 1), NULL)));
+        NextAction::array(0, new NextAction("last stand", ACTION_EMERGENCY + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "has blessing of salvation",
@@ -71,9 +75,23 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "intercept and rage",
         NextAction::array(0, new NextAction("intercept", ACTION_MOVE + 5), NULL)));
 
+    // Intervene a focused party member (donor TankWarriorStrategy fires at
+    // EMERGENCY): Intervene 45595 is a real learnable 1.18.1 spell
+    // (Defensive-locked, taught by 47277), and the trigger/action/PROTECT
+    // targeting were already registered — only this row was missing.
+    triggers.push_back(new TriggerNode(
+        "protect party member",
+        NextAction::array(0, new NextAction("intervene", ACTION_EMERGENCY), NULL)));
+
+    // Lost aggro (donor TankWarriorStrategy: taunt at INTERRUPT+1): a mob
+    // peeling onto a non-tank member outranks DPS spenders and interrupts —
+    // a missed kick costs damage, a missed taunt costs the healer.
+    // Sits below EMERGENCY defensives, above pummel/shield-bash
+    // (ACTION_INTERRUPT), every DPS row (HIGH band) and the out-of-melee
+    // charge path (MOVE+7).
     triggers.push_back(new TriggerNode(
         "lose aggro",
-        NextAction::array(0, new NextAction("taunt", ACTION_MOVE + 4), NULL)));
+        NextAction::array(0, new NextAction("taunt", ACTION_INTERRUPT + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "taunt on snare target",
@@ -103,8 +121,21 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "revenge",
         NextAction::array(0, new NextAction("revenge", ACTION_HIGH + 3), NULL)));
 
+    // Turtle Improved Shield Slam proc (donor's Sword-and-Board slot): a
+    // +35%/+70% slam charge outranks the rage ladder but not tank
+    // correctness — taunt (41) and shield block (tied 25, block listed
+    // earlier wins ties) stay above it, matching the donor's taunt/block
+    // above proc order. Still above baseline slam (24)/revenge/sunder.
     triggers.push_back(new TriggerNode(
-        "light rage available",
+        "improved shield slam proc",
+        NextAction::array(0, new NextAction("shield slam", ACTION_HIGH + 5), NULL)));
+
+    // Shield Slam at medium rage (donor TankWarriorStrategy gates at 40):
+    // at 20 rage slam fired before the sunder stack was complete and stole
+    // the GCD from revenge (5 rage, proc-gated). Thunder clap stays below
+    // at HIGH+1 (matches donor slam+2/devastate+1/clap+1 shape).
+    triggers.push_back(new TriggerNode(
+        "medium rage available",
         NextAction::array(0, new NextAction("shield slam", ACTION_HIGH + 4), NULL)));
 
     triggers.push_back(new TriggerNode(

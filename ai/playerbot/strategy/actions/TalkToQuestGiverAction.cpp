@@ -2,6 +2,8 @@
 
 #include "playerbot/playerbot.h"
 #include "TalkToQuestGiverAction.h"
+#include "playerbot/QuestRewardPolicy.h"
+#include "playerbot/RandomItemMgr.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/QuestValues.h"
 #include "playerbot/strategy/values/GuildValues.h"
@@ -238,10 +240,23 @@ void TalkToQuestGiverAction::RewardMultipleItem(Player* requester, Quest const* 
         (questRewardOption == QuestRewardOptionType::QUEST_REWARD_CONFIG_DRIVEN && sPlayerbotAIConfig.autoPickReward == "yes") ||
         questRewardOption == QuestRewardOptionType::QUEST_REWARD_OPTION_AUTO
     ) {
-        //Pick the first item of the best rewards.
+        //Pick the best-scored item of the best rewards (AG-3/RPG-A1): usage
+        // ties are broken by live stat weight instead of vendor order.
         bestIds = BestRewards(quest);
-        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(quest->RewChoiceItemId[*bestIds.begin()]);
-        if(proto)
+        uint32 rewardIndex = *bestIds.begin();
+        uint32 rewardScore = 0;
+        if (bestIds.size() > 1)
+        {
+            std::vector<std::pair<uint32, uint32>> scored;
+            for (uint32 id : bestIds)
+                scored.emplace_back(id, sRandomItemMgr.GetLiveStatWeight(bot, quest->RewChoiceItemId[id]));
+            rewardIndex = ai::QuestRewardTiebreak(scored);
+            for (auto const& candidate : scored)
+                if (candidate.first == rewardIndex)
+                    rewardScore = candidate.second;
+        }
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(quest->RewChoiceItemId[rewardIndex]);
+        if (proto)
         {
             args["%item"] = chat->formatItem(proto);
             out = BOT_TEXT2("quest_status_complete_single_reward", args);
@@ -249,8 +264,9 @@ void TalkToQuestGiverAction::RewardMultipleItem(Player* requester, Quest const* 
             BroadcastHelper::BroadcastQuestTurnedIn(ai, bot, quest);
         }
 
-        bot->RewardQuest(quest, *bestIds.begin(), questGiver, true);
-        sPlayerbotAIConfig.logEvent(ai, "QuestRewarded", quest->GetTitle(), std::to_string(quest->GetQuestId()));
+        bot->RewardQuest(quest, rewardIndex, questGiver, true);
+        sPlayerbotAIConfig.logEvent(ai, "QuestRewarded", quest->GetTitle(),
+            std::to_string(quest->GetQuestId()) + (bestIds.size() > 1 ? " score " + std::to_string(rewardScore) : ""));
     }
     else if ((questRewardOption == QuestRewardOptionType::QUEST_REWARD_CONFIG_DRIVEN && sPlayerbotAIConfig.autoPickReward == "no") ||
              questRewardOption == QuestRewardOptionType::QUEST_REWARD_OPTION_LIST

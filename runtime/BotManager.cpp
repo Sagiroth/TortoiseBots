@@ -917,37 +917,20 @@ void BotManager::OnPlayerLogin(::Player* player)
     PlayerbotFactory::EnsureSkillRewardedSpells(player);
 
     // Normalize Goblin and High Elf (and any random bot in custom isolated
-    // starting zones lacking navmesh/transport to mainland) to standard faction starting zones.
-    // With RandomBotEvenStartZones the destination is the least-populated
-    // standard start of the bot's faction (one bounded characters-table count
-    // per normalization); otherwise goblins go to Valley of Trials and high
-    // elves to Northshire as before.
+    // starting zones lacking navmesh/transport to mainland) to standard faction
+    // starting zones: Valley of Trials and Northshire. RandomBotEvenStartZones
+    // counts goblins toward Durotar and high elves toward Elwynn when it picks
+    // the race, so landing them anywhere else unbalanced the spread it made
+    // (live 2026-10-09: the high elves sent to Dun Morogh/Teldrassil left
+    // Elwynn with humans only).
     if (record.random && !sPlayerbotAIConfig.allowIsolatedCustomStartingZones)
     {
         uint32 zoneId = player->GetZoneId();
         uint32 areaId = player->GetAreaId();
         if (PlayerbotAIConfig::IsIsolatedCustomZone(zoneId) || PlayerbotAIConfig::IsIsolatedCustomZone(areaId))
         {
-            StartZoneSpawn const* spawn = nullptr;
             bool horde = player->GetTeam() == HORDE;
-            if (sPlayerbotAIConfig.randomBotEvenStartZones)
-            {
-                uint32_t counts[kStartZoneCount] = {};
-                std::unique_ptr<QueryResult> rows(CharacterDatabase.PQuery(
-                    "SELECT `race` FROM `characters` WHERE `deleteDate` IS NULL AND `level` = 1"));
-                if (rows)
-                {
-                    do
-                    {
-                        int zone = StartZoneIndexForRace(rows->Fetch()[0].GetUInt32());
-                        if (zone >= 0 && zone < int(kStartZoneCount))
-                            ++counts[zone];
-                    } while (rows->NextRow());
-                }
-                spawn = &kStartZoneSpawns[LeastPopulatedStartZone(counts, horde)];
-            }
-            else
-                spawn = horde ? &kStartZoneSpawns[0] : &kStartZoneSpawns[3];
+            StartZoneSpawn const* spawn = horde ? &kStartZoneSpawns[0] : &kStartZoneSpawns[3];
             player->TeleportTo(spawn->map, spawn->x, spawn->y, spawn->z, spawn->o);
             player->SetHomebindToLocation(WorldLocation(spawn->map, spawn->x, spawn->y, spawn->z, spawn->o), spawn->area);
             player->SaveToDB();
@@ -1776,6 +1759,22 @@ void BotManager::UpdateBots(uint32_t diff)
     // world tick this pass owns.
     auto const passStart = std::chrono::steady_clock::now();
 
+    // Self-tuning tick budget: feed the measured previous world tick (diff)
+    // before the passes read their budgets. Re-sync when the operator's
+    // target or ceilings change (restart-only keys). When the controller is
+    // off (target 0) it holds the ceilings, which is the old static path.
+    if (sPlayerbotAIConfig.targetWorldTickMs != m_adaptiveTargetMs ||
+        sPlayerbotAIConfig.poolTickBudgetUs != m_adaptivePoolCeilingUs ||
+        sPlayerbotAIConfig.combatTickBudgetUs != m_adaptiveCombatCeilingUs)
+    {
+        m_adaptiveTargetMs = sPlayerbotAIConfig.targetWorldTickMs;
+        m_adaptivePoolCeilingUs = sPlayerbotAIConfig.poolTickBudgetUs;
+        m_adaptiveCombatCeilingUs = sPlayerbotAIConfig.combatTickBudgetUs;
+        m_adaptiveBudget = AdaptiveBudget(m_adaptiveTargetMs,
+            static_cast<uint32_t>(m_adaptivePoolCeilingUs), static_cast<uint32_t>(m_adaptiveCombatCeilingUs));
+    }
+    m_adaptiveBudget.Update(diff);
+
     // Guard: AI updates below can request (their own or another bot's) removal.
     // RemoveBot defers the session stop while this is set; the queue drains
     // after the loop, when no PlayerbotAI Update remains on the stack.
@@ -1931,7 +1930,7 @@ void BotManager::UpdateBots(uint32_t diff)
     // A bot in combat gets prioritized ticks so it can heal, flee, attack, etc.
     // If there are many bots in combat, we cap Pass 2 to combatTickBudgetUs
     // using a round-robin cursor to ensure all combat bots get fair CPU time across ticks.
-    uint64_t const combatBudgetUs = sPlayerbotAIConfig.combatTickBudgetUs;
+    uint64_t const combatBudgetUs = m_adaptiveBudget.CombatUs();
     uint64_t const combatStartUs = (combatBudgetUs > 0) ?
         static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count()) : 0;
@@ -1979,7 +1978,7 @@ void BotManager::UpdateBots(uint32_t diff)
     // the rotation reaches them; correctness first, the rotation stays fair.
     uint32_t const playerBots = static_cast<uint32_t>(playerGuids.size());
     uint32_t const poolBots = m_poolRotation.Size();
-    uint64_t budgetUs = sPlayerbotAIConfig.poolTickBudgetUs;
+    uint64_t budgetUs = m_adaptiveBudget.PoolUs();
     uint32 const gateMs = sPlayerbotAIConfig.poolBudgetWhenTickOverMs;
     bool const budgetActive = budgetUs > 0 && (gateMs == 0 || diff > gateMs);
 
@@ -2045,14 +2044,26 @@ void BotManager::UpdateBots(uint32_t diff)
     m_perfElapsedMs += diff;
     if (m_perfElapsedMs >= 30000)
     {
-        TB_LOG_BASIC("TortoiseBots: BOTPERF passUs=%llu playerBots=%u ownedBots=%u masterBots=%u poolBots=%u poolProcessed=%u followUps=%u budgetHit=%u maxUs=%llu ticks=%u",
+        TB_LOG_BASIC("TortoiseBots: BOTPERF passUs=%llu playerBots=%u ownedBots=%u masterBots=%u poolBots=%u poolProcessed=%u followUps=%u budgetHit=%u maxUs=%llu ticks=%u poolBudgetUs=%llu combatBudgetUs=%llu",
             static_cast<unsigned long long>(m_perfPassUsSum / m_perfPassCount),
             playerBots, ownedAccountBots, masterBots, poolBots, poolProcessed, followUpsServed, budgetHit ? 1u : 0u,
-            static_cast<unsigned long long>(m_perfPassUsMax), m_perfPassCount);
+            static_cast<unsigned long long>(m_perfPassUsMax), m_perfPassCount,
+            static_cast<unsigned long long>(m_adaptiveBudget.PoolUs()),
+            static_cast<unsigned long long>(m_adaptiveBudget.CombatUs()));
         m_perfPassUsSum = 0;
         m_perfPassUsMax = 0;
         m_perfPassCount = 0;
         m_perfElapsedMs = 0;
+    }
+
+    // Cumulative action-count snapshot every 5 minutes of tick time. The dump
+    // itself gates on AiPlayerbot.ActionCountsLog, so the off path is one
+    // branch plus an integer add per tick.
+    m_actionCountsElapsedMs += diff;
+    if (m_actionCountsElapsedMs >= 5 * 60 * 1000)
+    {
+        m_actionCountsElapsedMs = 0;
+        ai::botdiag::DumpActionCounts();
     }
 }
 

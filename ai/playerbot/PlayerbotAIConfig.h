@@ -311,6 +311,10 @@ public:
     // crosses level 5+ mobs; a beginner may still reach its own camp vendor, so the
     // trip is capped to this radius instead (and to the starting-zone level band).
     float lowLevelVendorMaxDistance = 600.0f;
+    // Per-visit microseconds a travel-destination pick may spend scanning
+    // candidates before yielding to the next visit (issue #642). 0 = no
+    // slicing (the whole pick runs in one visit, the old behavior).
+    uint32 travelPickBudgetUs = 4000;
     // Bot-only green/blue drop boost. Masterless pool bots roll each quality-2/3
     // entry of a creature's loot template one extra time per kill, at
     // (multiplier - 1) x the entry's DB chance, so the expected number of
@@ -495,6 +499,11 @@ public:
     // log files (logs/bots/<name>_acc<id>_<timestamp>.log) are emitted. Default
     // off so production servers don't pay disk I/O / branch overhead.
     bool enableActionLog;
+    // Opt-in aggregate counter of executed bot actions (Engine OK/FAILED/
+    // IMPOSSIBLE outcomes keyed by bot class + action name), dumped every 5
+    // minutes to logs/action_counts.csv. Default off so production servers
+    // pay one branch per executed action and nothing else.
+    bool actionCountsLog;
     // Filename (relative to LogsDir) for the bot subsystem log. When set,
     // all sLog calls from bot .cpp files are redirected there instead of
     // writing to the main server log. Default: "bots.log". Empty = disabled.
@@ -578,11 +587,18 @@ public:
     // real player always run first and unbudgeted, the random pool runs after
     // them from a round-robin cursor. The budget below applies to the pool
     // pass only, and only while the previous world tick ran longer than
-    // poolBudgetWhenTickOverMs, so a healthy server never notices it.
+    // poolBudgetWhenTickOverMs (0 = every tick; pair with a nonzero target
+    // below so healthy ticks reclaim the ceiling).
     // Microseconds of module work per tick; 0 disables the budget entirely.
     uint32 poolTickBudgetUs = 10000;
-    uint32 poolBudgetWhenTickOverMs = 150;
+    uint32 poolBudgetWhenTickOverMs = 0;
     uint32 combatTickBudgetUs = 15000;
+    // Self-tuning tick budget: when nonzero, a controller moves the effective
+    // pool/combat budgets each tick from the measured previous world tick so
+    // the tick stays near this target (above target + 10 ms -> shrink, at or
+    // below -> reclaim toward the ceilings). 0 disables the controller
+    // (static budgets).
+    uint32 targetWorldTickMs = 50;
     // Issue #84: bounded failure backoff tuning. Zero base/max disables.
     uint32 failedActionRetryBaseMs;
     uint32 failedActionRetryMaxMs;
@@ -591,6 +607,10 @@ public:
 
     std::string autoPickReward;
     bool autoEquipUpgradeLoot;
+    // Equip-upgrade score threshold (AG-1): a new item must beat the old
+    // stat weight by this factor to count as an upgrade. Stops epsilon
+    // swap churn across audits. 1.0 restores any-gain swaps.
+    float equipUpgradeThreshold = 1.1f;
     bool syncQuestWithPlayer;
     bool syncQuestForPlayer;
     std::string autoTrainSpells;
@@ -620,13 +640,21 @@ public:
     // bracket/state/deserter/taxi/combat/queue checks, native handler
     // ownership/invites/queue updates via HandleBattlemasterJoinOpcode (guid
     // 1337 bypass) + SMSG_BATTLEFIELD_STATUS/BGStatusAction invite path.
-    // No second queue/thread/arena/vehicle/expansion or DB tick scans.
     bool randomBotBgEnabled = true;
     uint32 randomBotBgQueueInterval = 30000;
     uint32 randomBotBgMaxQueuePerInterval = 1;
+    // Autonomous bot-only WSG (default on). Seeds one 10v10 in the most
+    // populated bracket, capped at one concurrent instance (average PC).
+    bool randomBotBgAutonomous = true;
+    uint32 randomBotBgAutonomousMaxInstances = 1;
 
     bool jumpInBg;
     bool jumpWithPlayer;
+    // Ready-check rebuff defer (SOC-S5). Off by default: when on, a bot that
+    // gets a ready check out of combat reports status immediately but holds
+    // the confirm until buffs settle (grace) or a hard cap fires, instead of
+    // answering ready and buffing through the pull.
+    bool forceRebuffOnReadyCheck = false;
     bool jumpFollow;
     bool jumpChase;
     bool useKnockback;
