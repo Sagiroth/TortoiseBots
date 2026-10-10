@@ -65,7 +65,7 @@ namespace ai
         // The candidate order is never re-sorted, so a resumed pick accepts
         // the same target as an uninterrupted scan.
         ai::TravelPickOutcome SetBestTargetSliced(Player* requester, TravelTarget* target,
-            PartitionedTravelList& travelPartitions, TravelPickScan& scan,
+            PartitionedTravelList& travelPartitions, bool onlyActive, TravelPickScan& scan,
             uint64_t budgetUs, std::chrono::steady_clock::time_point visitStart);
         // Why the last SetBestTarget refused every point ("inactive=4,area=2"), for the TravelSearchEmpty row.
         std::string lastRejectReasons;

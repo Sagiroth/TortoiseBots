@@ -228,6 +228,42 @@ namespace
     }
 }
 
+// Sliced-pick resume state (issue #642). One pick can span visits: the first
+// visit stores the destination list the future handed over (shallow copy of
+// TravelMgr-owned pointers, stable across visits) plus the scan cursor, and
+// later visits resume from the cursor instead of re-walking evaluated
+// candidates. Keyed by bot; a new request (fresh future), a moved bot, or a
+// stale entry drops it and the pick restarts or parks.
+namespace
+{
+    // Per-candidate verdict for fast-forward: only terminal rejections are
+    // cached (accept completes the scan, so it is never replayed).
+    constexpr uint8_t PICK_VERDICT_REJECT = 1;
+
+    struct TravelPickResume
+    {
+        PartitionedTravelList list;
+        ChooseTravelTargetAction::TravelPickScan scan;
+        uint32_t botMap = 0;
+        int32_t cellX = 0;
+        int32_t cellY = 0;
+        std::string purpose;
+        time_t storedAt = 0;
+    };
+
+    std::mutex sTravelPickMutex;
+    std::unordered_map<uint32_t, TravelPickResume> sTravelPickScans;
+    constexpr time_t TRAVEL_PICK_RESUME_TTL = 5 * 60;
+
+    void SweepTravelPickScans(time_t now)
+    {
+        for (auto it = sTravelPickScans.begin(); it != sTravelPickScans.end();)
+            it = (now - it->second.storedAt > TRAVEL_PICK_RESUME_TTL) ? sTravelPickScans.erase(it) : std::next(it);
+        if (sTravelPickScans.size() > 512)
+            sTravelPickScans.clear();
+    }
+}
+
 bool ChooseTravelTargetAction::Execute(Event& event)
 {
     TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
@@ -1003,42 +1039,6 @@ static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string&
     }
     cache[key.str()] = { ok, ok ? std::string() : blocker, now + 300 };
     return ok;
-}
-
-// Sliced-pick resume state (issue #642). One pick can span visits: the first
-// visit stores the destination list the future handed over (shallow copy of
-// TravelMgr-owned pointers, stable across visits) plus the scan cursor, and
-// later visits resume from the cursor instead of re-walking evaluated
-// candidates. Keyed by bot; a new request (fresh future), a moved bot, or a
-// stale entry drops it and the pick restarts or parks.
-namespace
-{
-    // Per-candidate verdict for fast-forward: only terminal rejections are
-    // cached (accept completes the scan, so it is never replayed).
-    constexpr uint8_t PICK_VERDICT_REJECT = 1;
-
-    struct TravelPickResume
-    {
-        PartitionedTravelList list;
-        ChooseTravelTargetAction::TravelPickScan scan;
-        uint32_t botMap = 0;
-        int32_t cellX = 0;
-        int32_t cellY = 0;
-        std::string purpose;
-        time_t storedAt = 0;
-    };
-
-    std::mutex sTravelPickMutex;
-    std::unordered_map<uint32_t, TravelPickResume> sTravelPickScans;
-    constexpr time_t TRAVEL_PICK_RESUME_TTL = 5 * 60;
-
-    void SweepTravelPickScans(time_t now)
-    {
-        for (auto it = sTravelPickScans.begin(); it != sTravelPickScans.end();)
-            it = (now - it->second.storedAt > TRAVEL_PICK_RESUME_TTL) ? sTravelPickScans.erase(it) : std::next(it);
-        if (sTravelPickScans.size() > 512)
-            sTravelPickScans.clear();
-    }
 }
 
 bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* target, PartitionedTravelList& partitionedList, bool onlyActive)
