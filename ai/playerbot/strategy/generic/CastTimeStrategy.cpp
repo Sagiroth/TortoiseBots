@@ -16,11 +16,12 @@ float CastTimeMultiplier::GetValue(Action* action)
     if (action->GetTarget() != AI_VALUE(Unit*, "current target"))
         return 1.0f;
 
-    // mod-playerbots CastTimeMultiplier (LD-7): veto a cast the target will
-    // not live to see — cast time vs health / estimated group dps. The old
-    // HP% + cast-time ladder only fired below critical health, so a 3 s cast
-    // on a 500-HP mob at full health still started and fizzled on a corpse.
-    // Lifetime covers the old gate: low HP means short lifetime.
+    // mod-playerbots CastTimeMultiplier (LD-7): deprioritize a cast the target
+    // will not live to see — cast time vs health / estimated group dps. The
+    // old HP% + cast-time ladder only fired below critical health, so a 3 s
+    // cast on a 500-HP mob at full health still started and fizzled on a
+    // corpse. (Low HP usually means short lifetime, but a low-% boss still
+    // has a long one — review PR #596 — so this is not a strict superset.)
     if (dynamic_cast<CastSpellAction*>(action))
     {
         uint32 spellId = AI_VALUE2(uint32, "spell id", name);
@@ -41,7 +42,7 @@ float CastTimeMultiplier::GetValue(Action* action)
         }
 
         Unit* target = action->GetTarget();
-        if (!target || !target->IsAlive())
+        if (!target || !target->IsAlive() || !target->IsInWorld())
             return 1.0f;
 
         float groupDps = AI_VALUE(float, "estimated group dps");
