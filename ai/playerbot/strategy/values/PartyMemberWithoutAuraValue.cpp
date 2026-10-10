@@ -45,7 +45,7 @@ public:
             // buff counts as missing so the member is selectable and the
             // margin block in BuffTrigger is reachable. Outside the window
             // the normal refresh rule below applies.
-            if (aura && !bot->IsInCombat())
+            if (aura && !ai->GetBot()->IsInCombat())
             {
                 AiObjectContext* rebuffContext = ai->GetAiObjectContext();
                 uint32 beginMs = rebuffContext ? rebuffContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get() : 0;
