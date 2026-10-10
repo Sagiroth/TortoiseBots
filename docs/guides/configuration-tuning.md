@@ -52,6 +52,7 @@ These settings dramatically enhance the solo or small-group experience with owne
 | `AiPlayerbot.GenerateItemCaches` | `1` | **`1`** | **First-Boot Gear Caches:** Builds the `ai_playerbot_equip_cache` and `ai_playerbot_rnditem_cache` tables once, while they are empty, and loads them from the database afterwards. Leave it on for a fresh install — with empty caches bots only fill empty slots from loot and never judge an upgrade. |
 | `AiPlayerbot.RandomGearBlacklist` | `` (empty) | `` (empty) | **Gear Exclusion List:** Item IDs never picked by random gear (seed/hire/upgrade). Comma-separated, e.g. `12345,67890`. |
 | `AiPlayerbot.AutoEquipUpgradeLoot` | `1` | **`1`** | **Equip Loot Upgrades:** Bots equip upgrades obtained from looting or quests. |
+| `AiPlayerbot.EquipUpgradeThreshold` | `1.1` | **`1.1`** | **Upgrade margin (mod-playerbots parity):** an upgrade must beat the old item's stat weight by this factor to count — a +10% win swaps, an epsilon gain does not. `1.0` restores any-gain swaps. Exact ties still fall through to the sheet/quality/item-level tiebreaks. |
 | `AiPlayerbot.AutoPickReward` | `yes` | **`yes`** | **Quest Reward Pick:** Bots pick the first useful quest reward automatically (`no` = list all, `ask` = pick useful and list if multiple). |
 | `AiPlayerbot.AutoPickTalents` | `full` | **`full`** | **Auto Talents:** Bots pick talent points based on current spec. |
 | `AiPlayerbot.AutoTrainSpells` | `yes` | **`yes`** | **Auto Train:** Bots train all available spells at trainers while they have the money. |
@@ -61,6 +62,7 @@ These settings dramatically enhance the solo or small-group experience with owne
 | `AiPlayerbot.RandomGearAllowReputation` | `0` | **`0`** | **Seed Rep Gear:** Allow reputation-gated gear (item/quest/vendor/recipe rep) on fresh/hired bots. |
 | `AiPlayerbot.RandomGearAllowPvP` | `0` | **`0`** | **Seed PvP Gear:** Allow PvP gear (honor rank, NO_DISENCHANT rewards) on fresh/hired bots. |
 | `AiPlayerbot.RandomGearSeedEpicChance` | `0.02` | **`0.02`** | **Seed World-Epic Chance:** Per-slot chance a fresh seed rolls a rare loot-attested BoE world epic instead of the green/blue band; falls back to the band when the slot has none. |
+| `AiPlayerbot.ForceRebuffOnReadyCheck` | `0` | `0` | **Rebuff before ready (mod-playerbots parity):** a bot that gets a ready check out of combat reports its status immediately but holds the confirm until its buffs settle (8 s grace once not casting) or a 30 s cap fires — instead of answering ready and buffing through the pull. Off by default; needs restart. |
 
 The spec weights these caches are scored with come from the `ai_playerbot_weightscales` and `ai_playerbot_weightscale_data` tables, seeded by `data/sql/world/20260916090001_world.sql`. If bots wear wrong-slot gear from their bags but never swap an upgrade in, that dataset is empty — re-apply the migration and restart.
 ---
@@ -242,6 +244,25 @@ TortoiseBots.LogLevel = 2
 Errors (`sLog.outError`) are always written regardless of this setting. The level is re-read on `.reload config`, so it can be raised or lowered without a server restart.
 
 This setting is separate from the strategy AI's own action trace, which stays gated behind the `debug`/`debug action` bot strategies (`.bot strategy +debug`) rather than a server-wide config key.
+
+### Action counts (live rotation measurement)
+
+| Setting | Default | What It Does |
+| :--- | :---: | :--- |
+| `AiPlayerbot.ActionCountsLog` | `0` | When `1`, every executed bot action is counted by bot class id and action name (class `1` with `shield slam` is a warrior's Shield Slam; the report script prints class names), split into ok vs failed/impossible outcomes. Every 5 minutes a cumulative snapshot (`utc_time,class,action,ok_count,fail_count`) is appended to `logs/action_counts.csv`, next to `bot_events.csv`. `0` costs one branch per executed action and nothing else. Needs a restart. |
+
+Turn it on for a measurement window on a busy realm, then copy the live file twice a while apart and diff the copies to see what each class actually spends its time doing:
+
+```
+cp logs/action_counts.csv /tmp/actions_early.csv
+# ... wait 30+ minutes ...
+cp logs/action_counts.csv /tmp/actions_late.csv
+python3 tools/action_counts_report.py /tmp/actions_early.csv /tmp/actions_late.csv --top 10
+```
+
+A copy taken mid-dump can tear (the 5-minute append is not atomic): copy twice back-to-back and compare the two before trusting one — identical files mean a clean copy.
+
+The report prints the top actions per class between the two snapshots with the ok share, so dead or failing actions (low ok share) stand out. Counters are cumulative since server start; comparing snapshots from different runs is meaningless.
 
 ---
 

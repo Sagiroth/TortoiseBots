@@ -19,8 +19,9 @@ void RestoShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericShamanStrategy::InitTriggers(triggers);
 
-    // Totem Triggers
-    triggers.push_back(new TriggerNode("call of the elements", { NextAction("call of the elements", 60.0f) }));
+    // Totem Triggers (no `call of the ...`: those WotLK bar spells have no
+    // 1.18.1 rows; only Totemic Recall refunds mana, queued live in
+    // ShamanStrategy::InitNonCombatTriggers)
     triggers.push_back(new TriggerNode("low health", { NextAction("stoneclaw totem", 40.0f) }));
     triggers.push_back(new TriggerNode("medium mana", { NextAction("mana tide totem", ACTION_HIGH + 5) }));
     triggers.push_back(new TriggerNode("water shield", { NextAction("water shield", ACTION_HIGH) }));

@@ -258,6 +258,21 @@ namespace ai
         std::string actionName;
     };
 
+    // Manual Curse of Exhaustion (WAR-7): unlike WarlockManualCurseStrategy
+    // it targets the snare target, never the current target, so it must not
+    // append " on attacker" rows (that would build the unregistered
+    // "curse of exhaustion on snare target on attacker" name).
+    class WarlockCurseOfExhaustionStrategy : public Strategy
+    {
+    public:
+        WarlockCurseOfExhaustionStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+
+        std::string getName() override { return "curse exhaustion"; }
+
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+
     class WarlockManualCurseStrategy : public Strategy
     {
     public:
