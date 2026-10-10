@@ -8,32 +8,67 @@
 
 using namespace ai;
 
+namespace
+{
+    Unit* FindGluthBoss(PlayerbotAI* ai)
+    {
+        const std::list<ObjectGuid> attackers =
+            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
+        for (const ObjectGuid& guid : attackers)
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (unit && unit->IsAlive() && unit->GetEntry() == 15932)
+                return unit;
+        }
+        const std::list<ObjectGuid> targets =
+            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
+        for (const ObjectGuid& guid : targets)
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (unit && unit->IsAlive() && unit->GetEntry() == 15932)
+                return unit;
+        }
+        return nullptr;
+    }
+}
+
 bool GluthChooseTargetAction::Execute(Event& event)
 {
     if (PlayerbotAI::IsTank(bot))
         return false;
 
-    Unit* boss = nullptr;
-    Unit* execute = nullptr;
+    // Explicit master orders win over the fight choreography.
+    ObjectGuid explicitGuid = AI_VALUE(ObjectGuid, "explicit attack target");
+    if (!explicitGuid.IsEmpty())
+        return false;
 
-    const std::list<ObjectGuid> targets =
-        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
-    for (const ObjectGuid& guid : targets)
+    Unit* boss = FindGluthBoss(ai);
+
+    // One 30yd sweep for execute-range chow. Chow must come from the
+    // world, not the cached target lists: post-Decimate chow MoveFollow
+    // Gluth without aggroing DPS, so they never appear there.
+    Unit* execute = nullptr;
+    std::list<Unit*> nearby;
+    MaNGOS::AllCreaturesOfEntryInRange check(bot, 16360, 30.0f);
+    MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(nearby, check);
+    Cell::VisitAllObjects(bot, searcher, 30.0f);
+    for (Unit* unit : nearby)
     {
-        Unit* unit = ai->GetUnit(guid);
         if (!unit || !unit->IsAlive())
             continue;
-        if (unit->GetEntry() == 15932)
-            boss = unit;
-        else if (unit->GetEntry() == 16360)
-        {
-            const float pct = 100.0f * unit->GetHealth() / unit->GetMaxHealth();
-            if (IsGluthChowExecute(pct) && bot->GetDistance(unit) <= 30.0f &&
-                (!execute || bot->GetDistance(unit) < bot->GetDistance(execute)))
-                execute = unit;
-        }
+        const float pct = 100.0f * unit->GetHealth() / unit->GetMaxHealth();
+        if (!IsGluthChowExecute(pct))
+            continue;
+        // Donor picks the chow closest to the main tank (boss position —
+        // the tank holds Gluth): kill what reaches him first.
+        const float anchorDist = boss ? unit->GetDistance(boss) : bot->GetDistance(unit);
+        const float bestDist = !execute ? -1.0f : (boss ? execute->GetDistance(boss) : bot->GetDistance(execute));
+        if (!execute || anchorDist < bestDist)
+            execute = unit;
     }
 
+    // Runs continuously while chow are up, so the target swaps back to
+    // the boss naturally when nothing qualifies (donor wiring).
     Unit* want = execute ? execute : boss;
     if (!want)
         return false;

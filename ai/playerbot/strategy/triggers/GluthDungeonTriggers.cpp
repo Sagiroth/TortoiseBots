@@ -1,51 +1,39 @@
 #include "playerbot/playerbot.h"
 #include "GluthDungeonTriggers.h"
 #include "playerbot/GluthKitePolicy.h"
-#include "Maps/GridNotifiers.h"
-#include "Maps/GridNotifiersImpl.h"
-#include "Maps/CellImpl.h"
 
 using namespace ai;
-
-namespace
-{
-    Unit* FindGluth(PlayerbotAI* ai, Player* bot)
-    {
-        const std::list<ObjectGuid> attackers =
-            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
-        for (const ObjectGuid& guid : attackers)
-        {
-            Unit* unit = ai->GetUnit(guid);
-            if (unit && unit->GetEntry() == 15932)
-                return unit;
-        }
-        std::list<Unit*> nearby;
-        MaNGOS::AllCreaturesOfEntryInRange check(bot, 15932, 100.0f);
-        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(nearby, check);
-        Cell::VisitAllObjects(bot, searcher, 100.0f);
-        for (Unit* unit : nearby)
-        {
-            if (unit && unit->IsAlive())
-                return unit;
-        }
-        return nullptr;
-    }
-}
 
 bool GluthMortalWoundSwapTrigger::IsActive()
 {
     if (!PlayerbotAI::IsTank(bot))
         return false;
 
-    Unit* target = GetTarget();
-    if (!target || target->GetEntry() != 15932)
+    // Find Gluth through the encounter, not the bot's current target:
+    // the off-tank may be targeting chow (or nothing) when the swap is
+    // needed, and must still answer it.
+    Unit* gluth = nullptr;
+    const std::list<ObjectGuid> attackers =
+        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
+    for (const ObjectGuid& guid : attackers)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (unit && unit->IsAlive() && unit->GetEntry() == 15932)
+        {
+            gluth = unit;
+            break;
+        }
+    }
+    if (!gluth)
         return false;
 
-    Unit* victim = target->GetVictim();
+    Unit* victim = gluth->GetVictim();
     if (!victim || victim == bot)
         return false;
+    // Any player victim counts — including a human main tank, who never
+    // registers as a bot-tank but still stacks wounds that need swapping.
     Player* victimPlayer = dynamic_cast<Player*>(victim);
-    if (!victimPlayer || !PlayerbotAI::IsTank(victimPlayer))
+    if (!victimPlayer)
         return false;
 
     Aura* wound = ai->GetAura(25646, victim);
@@ -58,16 +46,15 @@ bool GluthChowUpTrigger::IsActive()
     if (PlayerbotAI::IsTank(bot))
         return false;
 
-    std::list<Unit*> nearby;
-    MaNGOS::AllCreaturesOfEntryInRange check(bot, 16360, 30.0f);
-    MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(nearby, check);
-    Cell::VisitAllObjects(bot, searcher, 30.0f);
-    for (Unit* unit : nearby)
+    // Cheap cached check only: any chow on the shared target lists. The
+    // chooser (fired by this trigger) does the single precise sweep and
+    // reverts to boss when nothing qualifies.
+    const std::list<ObjectGuid> targets =
+        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
+    for (const ObjectGuid& guid : targets)
     {
-        if (!unit || !unit->IsAlive())
-            continue;
-        const float pct = 100.0f * unit->GetHealth() / unit->GetMaxHealth();
-        if (IsGluthChowExecute(pct))
+        Unit* unit = ai->GetUnit(guid);
+        if (unit && unit->IsAlive() && unit->GetEntry() == 16360)
             return true;
     }
     return false;
