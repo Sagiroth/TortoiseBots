@@ -149,7 +149,7 @@ namespace ai
                 creators["curse weakness"] = [](PlayerbotAI* ai) { return new WarlockManualCurseStrategy(ai, "curse weakness", "curse of weakness", "curse of weakness"); };
                 creators["curse tongues"] = [](PlayerbotAI* ai) { return new WarlockManualCurseStrategy(ai, "curse tongues", "curse of tongues", "curse of tongues"); };
                 creators["curse shadow"] = [](PlayerbotAI* ai) { return new WarlockManualCurseStrategy(ai, "curse shadow", "curse of shadow", "curse of shadow"); };
-                creators["curse exhaustion"] = [](PlayerbotAI* ai) { return new WarlockManualCurseStrategy(ai, "curse exhaustion", "curse of exhaustion on snare target", "curse of exhaustion on snare target"); };
+                creators["curse exhaustion"] = [](PlayerbotAI* ai) { return new WarlockCurseOfExhaustionStrategy(ai); };
             }
         };
 

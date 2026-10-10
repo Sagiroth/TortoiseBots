@@ -111,7 +111,8 @@ bool NoCurseTrigger::IsActive()
 		!ai->HasSpell("curse of shadow") &&
 		!ai->HasSpell("curse of the elements") &&
 		!ai->HasSpell("curse of weakness") &&
-		!ai->HasSpell("curse of tongues"))
+		!ai->HasSpell("curse of tongues") &&
+		!ai->HasSpell("curse of exhaustion"))
 		return false;
 
 	Unit* target = GetTarget();
@@ -123,7 +124,8 @@ bool NoCurseTrigger::IsActive()
 			   !ai->HasAura("curse of shadow", target, false, true) &&
 			   !ai->HasAura("curse of the elements", target, false, true) &&
 			   !ai->HasAura("curse of weakness", target, false, true) &&
-			   !ai->HasAura("curse of tongues", target, false, true);
+			   !ai->HasAura("curse of tongues", target, false, true) &&
+			   !ai->HasAura("curse of exhaustion", target, false, true);
 	}
 
 	return false;
@@ -137,7 +139,8 @@ bool NoCurseOnAttackerTrigger::IsActive()
 		!ai->HasSpell("curse of shadow") &&
 		!ai->HasSpell("curse of the elements") &&
 		!ai->HasSpell("curse of weakness") &&
-		!ai->HasSpell("curse of tongues"))
+		!ai->HasSpell("curse of tongues") &&
+		!ai->HasSpell("curse of exhaustion"))
 		return false;
 
     std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
@@ -153,7 +156,8 @@ bool NoCurseOnAttackerTrigger::IsActive()
 				!ai->HasAura("curse of shadow", attacker, false, true) &&
 				!ai->HasAura("curse of the elements", attacker, false, true) &&
 				!ai->HasAura("curse of weakness", attacker, false, true) &&
-				!ai->HasAura("curse of tongues", attacker, false, true))
+				!ai->HasAura("curse of tongues", attacker, false, true) &&
+				!ai->HasAura("curse of exhaustion", attacker, false, true))
 			{
 				return true;
 			}

@@ -540,6 +540,13 @@ void WarlockManualPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tr
         NextAction::array(0, new NextAction("initialize pet", ACTION_NORMAL + 1), NULL)));
 }
 
+void WarlockCurseOfExhaustionStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "curse of exhaustion on snare target",
+        NextAction::array(0, new NextAction("curse of exhaustion on snare target", ACTION_HIGH), NULL)));
+}
+
 void WarlockManualCurseStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     if (ai->HasStrategy("aoe", BotState::BOT_STATE_COMBAT))
