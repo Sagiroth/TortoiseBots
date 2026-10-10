@@ -2313,29 +2313,38 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
     // Unpulled-hostile guard (mirrors the FindStep aggro sense used by the
     // bomb/spread step-outs: FindStep itself lives in DungeonActions.cpp):
     // one cached "possible targets" read, no scan per candidate.
-    std::list<ObjectGuid> const& possibleTargets =
-        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("possible targets")->Get();
+    std::list<ObjectGuid> const& possibleTargets = AI_VALUE(std::list<ObjectGuid>, "possible targets");
     for (int pass = 0; pass < 2; ++pass)
     {
         bool const vetoSecondPass = (pass == 1);
         for (int i = 0; i < count; ++i)
         {
             // Last slot anchors away-from-hazard; the rest anchor the target.
+            // Strict = the toward-target re-approach guard only (melee index
+            // 2, ranged toward/away/hazard slots): strafes and tank-fallback
+            // escapes never band-reject, so a tank can always leave a zone
+            // wider than the cast band.
             bool const hazardAnchored = (i == count - 1) && count > 3;
             float heading = hazardAnchored ? angleFromHazard : angleToTarget + offsets[i];
-            bool const strict = (offsets[i] == 0.0f || offsets[i] > 3.14f || hazardAnchored);
+            bool strict = melee ? (i == 2)
+                : (offsets[i] == 0.0f || offsets[i] > 3.14f || hazardAnchored);
             WorldPosition cand = botPos + WorldPosition(0, step * cos(heading), step * sin(heading), 1.0f);
             cand.setZ(cand.GetHeight());
             if (target && strict)
             {
+                // Reach-relative: center-to-center minus the target's combat
+                // reach (donor shape) — on large mobs/bosses the reach is
+                // 10-20 yd, and raw center distance would fail every melee
+                // landing and misplace ranged ones.
                 float landing = sqrtf((cand.getX() - target->GetPositionX()) * (cand.getX() - target->GetPositionX()) +
                     (cand.getY() - target->GetPositionY()) * (cand.getY() - target->GetPositionY()));
+                float const distFromReach = std::max(0.0f, landing - target->GetCombatReach(bot, false, 0.0f));
                 if (melee)
                 {
-                    if (!MeleeAoeLandingInRange(landing, sPlayerbotAIConfig.tooCloseDistance))
+                    if (!MeleeAoeLandingInRange(distFromReach, sPlayerbotAIConfig.tooCloseDistance))
                         continue;
                 }
-                else if (!RangedAoeLandingInRange(landing, sPlayerbotAIConfig.tooCloseDistance, sPlayerbotAIConfig.spellDistance))
+                else if (!RangedAoeLandingInRange(distFromReach, sPlayerbotAIConfig.tooCloseDistance, sPlayerbotAIConfig.spellDistance))
                     continue;
             }
             if (!vetoSecondPass)

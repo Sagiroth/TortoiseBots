@@ -39,16 +39,20 @@ namespace ai
     constexpr int kAoeCandidatesMelee = 3;
     constexpr int kAoeCandidatesMeleeTanking = 5;
 
+    // Donor BestPositionForMeleeToFlee order: left/right strafe (non-strict),
+    // toward the target (strict — re-approach guard), then, when the target
+    // is on the bot, away from the target and away from the hazard (both
+    // non-strict fallbacks so a tank can always leave a wide zone).
     inline int MeleeAoeCandidates(bool tanking, float* out)
     {
         float const half = 1.5707963268f; // PI/2
         out[0] = half;
         out[1] = -half;
-        out[2] = 3.1415926536f;
+        out[2] = 0.0f; // toward target (strict)
         if (!tanking)
             return kAoeCandidatesMelee;
-        out[3] = 0.0f;
-        out[4] = 3.1415926536f; // away-from-hazard slot (caller anchors it)
+        out[3] = 3.1415926536f; // away from target (fallback, non-strict)
+        out[4] = 3.1415926536f; // away from hazard (fallback, non-strict)
         return kAoeCandidatesMeleeTanking;
     }
 

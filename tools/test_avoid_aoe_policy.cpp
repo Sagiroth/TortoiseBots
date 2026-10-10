@@ -31,15 +31,16 @@ int main()
     CHECK(kMaxAoeAvoidRadiusYd == 15.0f);
     std::cout << "  [PASS] radius cap gates all three sensor cases\n";
 
-    // Melee order: strafes first, straight away third; tanking appends
-    // the two fallbacks.
+    // Melee order (donor): strafes first, toward-target third (strict);
+    // tanking appends away-from-target and away-from-hazard fallbacks.
     {
         float out[5] = {};
         CHECK(MeleeAoeCandidates(false, out) == 3);
         CHECK(out[0] > 1.57f && out[0] < 1.58f);
         CHECK(out[1] < -1.57f && out[1] > -1.58f);
-        CHECK(out[2] > 3.14f && out[2] < 3.15f);
+        CHECK(out[2] == 0.0f);
         CHECK(MeleeAoeCandidates(true, out) == 5);
+        CHECK(out[3] > 3.14f && out[4] > 3.14f);
     }
     std::cout << "  [PASS] melee strafe-first order\n";
 

@@ -4580,3 +4580,29 @@ and fled blindly — often toward the tank inside the same void zone.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test); `git
 diff --check` clean. Build via build-commit.sh (see PR summary); no live
 in-game check.
+
+## Review fixes (2026-10-10, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (deleted `nearest dynamic objects no los` registration — REAL,
+fixed): my sensor registration edit had dropped the line; both the new
+`AvoidAuraWithDynamicObj` and the existing `HasAreaDebuffValue` read that
+key. Restored alongside the new `nearest damaging traps` entry.
+
+Blocking 2 (strafe gated behind reactive trigger — REAL, fixed): `avoid
+aoe` now runs as a combat + reaction default action (donor shape,
+self-gated via `isUseful` over all three sensors every tick); the `has
+area debuff` row keeps only the reactive `flee` fallback.
+
+Blocking 3 (inverted melee candidates + strict tank lockout — REAL,
+fixed): melee order is now strafe/strafe/toward-target(strict) with
+away-from-target and away-from-hazard as non-strict tanking fallbacks;
+strict rule is index-based for melee. Test updated to donor order.
+
+Blocking 4 (raw center distance vs reach — REAL, fixed): landing now
+subtracts `target->GetCombatReach(bot, false, 0.0f)` before the band
+tests, so large mobs/bosses don't fail every strict landing.
+
+Non-blocking "direct context lookup" — FIXED: `AI_VALUE` macro like the
+rest of the module. Non-blocking "NearestDynamicObjects empty stub" —
+ACKNOWLEDGED: sensor case 1 degrades gracefully (documented); core grid
+visitor is a host-side gap, not this PR.
