@@ -176,7 +176,7 @@ Organic buyer (issue #405, no buyer teleport): the synthetic buyer bids only wit
 
 ## 7. Recommended Living World Configuration
 
-To enable a full living world on your server, ensure these toggles are set in `conf/aiplayerbot.conf`:
+A full living world is on by default (500 random bots, sized for an average PC or a Steam Deck). These are the toggles in `conf/aiplayerbot.conf` that control it:
 
 ```ini
 # Master bot toggle
@@ -185,8 +185,8 @@ AiPlayerbot.Enabled = 1
 # Random bot population pool
 AiPlayerbot.RandomBotAutologin = 1
 AiPlayerbot.RandomBotAutoCreate = 1
-AiPlayerbot.MinRandomBots = 60
-AiPlayerbot.MaxRandomBots = 150
+AiPlayerbot.MinRandomBots = 500
+AiPlayerbot.MaxRandomBots = 500
 
 # Fresh-bot level seed (verified 10–15 test pool). A seeded bot learns its
 # class spells up to the seed level once; later levels are trained at a trainer.
