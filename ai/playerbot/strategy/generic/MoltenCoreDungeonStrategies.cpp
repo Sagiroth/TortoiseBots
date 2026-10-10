@@ -207,6 +207,12 @@ void GeddonFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "fire protection potion ready",
         NextAction::array(0, new NextAction("fire protection potion", 100.0f), NULL)));
+
+    // Survival tier (below the carrier's own runout at +6): healers must
+    // step out instead of casting through the blast.
+    triggers.push_back(new TriggerNode(
+        "geddon living bomb near",
+        NextAction::array(0, new NextAction("move away from living bomb", ACTION_EMERGENCY + 5), NULL)));
 }
 
 void GeddonFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

@@ -26,14 +26,15 @@ Priests are the quintessential healers of Vanilla WoW, boasting an extensive hea
 The bot selects healing spells from static health bands (defaults: Critical 20 / Low 50 / Medium 70 / Almost-Full 90):
 
 ```text
-Ally Health < 20% (critical) ──► PW:Shield + Flash Heal (Holy)
-Ally Health 20%-50% (low)    ──► PW:Shield + Heal / Lesser Heal (Holy; Greater Heal in Discipline/off-spec ladders)
-Ally Health 50%-70% (medium) ──► Heal / Lesser Heal
-Ally Health 70%-90% (almost) ──► Renew
+Ally Health < 20% (critical) ──► PW:Shield + Flash Heal
+Ally Health 20%-50% (low)    ──► PW:Shield + Flash Heal + Greater Heal + Heal / Lesser Heal
+Ally Health 50%-70% (medium) ──► Greater Heal + Heal / Lesser Heal (Discipline shields first)
+Ally Health 70%-90% (almost) ──► Renew (Discipline shields first)
 Multiple Injured              ──► Prayer of Healing (Party AoE heal)
 ```
 Group heals fire on headcount, not fixed pairs: at least 5 party members within 30 yards, then 3 hurt in a 5-man scaling up to 15 hurt in a full raid (medium band for Prayer of Healing, almost-full band for shields).
 *Desperate Prayer* is a self-only emergency heal and never lands on allies. A heal is never skipped for mana reasons on a target at or below the low-health line: danger always outbids efficiency. Above the medium line the bot refuses oversized or merely average-efficiency heals (a 50%-bar *Heal* on an 85% target waits for a cheaper window), and while its own mana sits below the medium-mana line it refuses mana-hungry heals (*Flash Heal*) in favor of efficient ones (*Renew*, *Power Word: Shield*). Tanks count the expected heal at two-thirds (bigger bars).
+*Desperate Prayer* is a self-only emergency heal and never lands on allies. At medium mana or below with someone hurt, Holy and Discipline pre-cast *Inner Focus* after shielding so the next direct heal crits (3 min cooldown per DBC data, so it only fires when a heal target exists; shields can't crit, hence the shield-first order). Discipline also heals out of combat now (shield-first ladder plus *Renew*); previously it only moved to hurt members. A heal is never skipped for mana reasons on a target at or below the low-health line: danger always outbids efficiency. Above the medium line the bot refuses oversized or merely average-efficiency heals (a 50%-bar *Heal* on an 85% target waits for a cheaper window), and while its own mana sits below the medium-mana line it refuses mana-hungry heals (*Flash Heal*) in favor of efficient ones (*Renew*, *Power Word: Shield*). Tanks count the expected heal at two-thirds (bigger bars).
 
 ### Healer Off-Spec Damage & Wand
 Holy and Discipline bots deal off-spec damage by default (the `offdps` strategy ships on; turn it off per bot with `.bot strategy -offdps`). A grouped healer only damages while **nobody in the party is below 90% health** and its mana is comfortable (85% reserve on easy pulls, 65% on normal ones, the medium-mana line on hard ones). Then it uses *Shadow Word: Pain*, *Holy Fire*, *Smite*, *Starshards* or *Mind Blast* at the lowest priority, so every heal outbids it, and *Holy Nova* when a pack stands in melee range. When the party is healthy but mana is not, it wands the target instead. A solo priest damages freely.

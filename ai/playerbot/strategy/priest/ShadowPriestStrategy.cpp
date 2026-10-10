@@ -59,7 +59,7 @@ void ShadowPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     // Inner Focus → Mind Blast: pre-buff for guaranteed Mind Blast crit
     // when mana is low. The crit triggers Spirit Tap (+100% Spirit + 50%
-    // mana regen while casting for ~30 sec). 5-min CD on Inner Focus.
+    // mana regen while casting for ~30 sec). 3-min CD on Inner Focus.
     triggers.push_back(new TriggerNode(
         "inner focus",
         NextAction::array(0, new NextAction("inner focus", ACTION_HIGH + 1), NULL)));

@@ -9,6 +9,7 @@
 #include "playerbot/strategy/values/HazardsValue.h"
 #include "playerbot/strategy/actions/MovementActions.h"
 #include "playerbot/CombatSpreadPolicy.h"
+#include "playerbot/DebuffSpreadPolicy.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
@@ -362,6 +363,29 @@ bool RaidBombDebuffTrigger::IsActive()
     for (uint32 spellId : bombSpells)
     {
         if (ai->HasAura(spellId, bot))
+            return true;
+    }
+    return false;
+}
+
+bool TooCloseToPlayerWithDebuffTrigger::IsActive()
+{
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    // Cheap scan first (aura check is the expensive call): skip anyone
+    // outside the blast radius or off-map before testing the debuff.
+    // Self never counts: the carrier's own bomb is the "raid bomb debuff"
+    // path, not this one.
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetMapId() != bot->GetMapId())
+            continue;
+        if (NeedsDebuffSpread(sServerFacade.getDistance2d(bot, member), range) && ai->HasAura(spellId, member))
             return true;
     }
     return false;
