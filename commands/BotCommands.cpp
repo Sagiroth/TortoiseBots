@@ -3302,8 +3302,8 @@ static bool HandleRaidAction(ChatHandler* handler, BotCommandContext const& cont
             std::string active;
             for (char const* strategy : { "molten core", "onyxia's lair", "blackwing lair", "naxxramas",
                                           "zul'gurub", "ruins of ahn'qiraj", "ahn'qiraj temple",
-                                          "onyxia", "magmadar", "suppression room", "four horseman", "thaddius", "sapphiron",
-                                          "heigan", "anub'rekhan", "kel'thuzad",
+                                          "onyxia", "magmadar", "suppression room", "four horseman", "sapphiron",
+                                          "heigan", "anub'rekhan", "gluth", "thaddius", "kel'thuzad",
                                           "grobbulus",
                                           "loatheb",
                                           "ossirian",

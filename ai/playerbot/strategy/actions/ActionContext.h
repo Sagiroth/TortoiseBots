@@ -82,6 +82,7 @@
 #include "LowerKarazhanDungeonActions.h"
 #include "ClassicRaidDungeonActions.h"
 #include "KarazhanCryptDungeonActions.h"
+#include "GluthDungeonActions.h"
 #include "ThaddiusDungeonActions.h"
 #include "KelthuzadDungeonActions.h"
 #include "GrobbulusDungeonActions.h"
@@ -425,6 +426,10 @@ namespace ai
 
             creators["enable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanEnableFightStrategyAction(ai); };
             creators["disable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanDisableFightStrategyAction(ai); };
+            creators["enable gluth fight strategy"] = [](PlayerbotAI* ai) { return new GluthEnableFightStrategyAction(ai); };
+            creators["disable gluth fight strategy"] = [](PlayerbotAI* ai) { return new GluthDisableFightStrategyAction(ai); };
+            creators["gluth choose target"] = [](PlayerbotAI* ai) { return new GluthChooseTargetAction(ai); };
+            creators["gluth taunt swap"] = [](PlayerbotAI* ai) { return new GluthTauntSwapAction(ai); };
             creators["enable thaddius fight strategy"] = [](PlayerbotAI* ai) { return new ThaddiusEnableFightStrategyAction(ai); };
             creators["disable thaddius fight strategy"] = [](PlayerbotAI* ai) { return new ThaddiusDisableFightStrategyAction(ai); };
             creators["thaddius attack nearest pet"] = [](PlayerbotAI* ai) { return new ThaddiusAttackNearestPetAction(ai); };

@@ -21,6 +21,7 @@
 #include "EmeraldSanctumDungeonTriggers.h"
 #include "ClassicRaidDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
+#include "GluthDungeonTriggers.h"
 #include "ThaddiusDungeonTriggers.h"
 #include "KelthuzadDungeonTriggers.h"
 #include "GrobbulusDungeonTriggers.h"
@@ -400,6 +401,10 @@ namespace ai
             creators["end ossirian fight"] = [](PlayerbotAI* ai) { return new OssirianEndFightTrigger(ai); };
             creators["ossirian crystal run"] = [](PlayerbotAI* ai) { return new OssirianCrystalRunTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
+            creators["start gluth fight"] = [](PlayerbotAI* ai) { return new GluthStartFightTrigger(ai); };
+            creators["end gluth fight"] = [](PlayerbotAI* ai) { return new GluthEndFightTrigger(ai); };
+            creators["gluth mortal wound swap"] = [](PlayerbotAI* ai) { return new GluthMortalWoundSwapTrigger(ai); };
+            creators["gluth"] = [](PlayerbotAI* ai) { return new GluthTrigger(ai); };
             creators["start thaddius fight"] = [](PlayerbotAI* ai) { return new ThaddiusStartFightTrigger(ai); };
             creators["end thaddius fight"] = [](PlayerbotAI* ai) { return new ThaddiusEndFightTrigger(ai); };
             creators["thaddius phase pet"] = [](PlayerbotAI* ai) { return new ThaddiusPhasePetTrigger(ai); };
