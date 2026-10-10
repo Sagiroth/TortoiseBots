@@ -35,7 +35,7 @@ namespace ai
     class OssirianCrystalRunTrigger : public Trigger
     {
     public:
-        OssirianCrystalRunTrigger(PlayerbotAI* ai, std::string name = "ossirian crystal run", int checkInterval = 5)
+        OssirianCrystalRunTrigger(PlayerbotAI* ai, std::string name = "ossirian crystal run", int checkInterval = 1)
             : Trigger(ai, name, checkInterval) {}
         bool IsActive() override;
     };

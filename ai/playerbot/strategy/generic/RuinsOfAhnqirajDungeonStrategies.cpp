@@ -20,7 +20,7 @@ void OssirianFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
 {
     triggers.push_back(new TriggerNode(
         "ossirian crystal run",
-        NextAction::array(0, new NextAction("use ossirian crystal", ACTION_HIGH + 5), NULL)));
+        NextAction::array(0, new NextAction("use ossirian crystal", 80.0f), NULL)));
 }
 
 void OssirianFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
