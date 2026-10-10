@@ -136,7 +136,8 @@
   function pvpBadge(live) {
     if (!live || !live.pvp) return '';
     const name = live.pvp_bg || 'battleground';
-    const short = BG_SHORT[live.pvp_bg] || live.pvp_bg || '?';
+    // A bot may queue for several battlegrounds: "Warsong Gulch, Arathi Basin" -> "WSG, AB".
+    const short = (live.pvp_bg || '').split(', ').filter(Boolean).map(n => BG_SHORT[n] || n).join(', ') || '?';
     return live.pvp === 'bg'
       ? `<span class="badge badge-pvp" title="In battleground: ${esc(name)}">PvP · ${esc(short)}</span>`
       : `<span class="badge badge-info" title="Queued for: ${esc(name)}">Queue · ${esc(short)}</span>`;
