@@ -280,6 +280,11 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
     time_t currentTime = time(0);
     aiObjectContext->Update();
+    // Force-rebuff cycle roll (donor RollBuffPendingCycle): the per-tick
+    // "buff proposed / buff pending" flags clear at tick start so each tick
+    // re-derives them from its own trigger evaluations and casts.
+    aiObjectContext->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(false);
+    aiObjectContext->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(false);
     ProcessTriggers(minimal);
     PushDefaultActions();
 

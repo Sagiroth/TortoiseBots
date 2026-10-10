@@ -557,6 +557,11 @@ bool CastBuffSpellAction::Execute(Event& event)
     if (!CastSpellAction::Execute(event))
         return false;
 
+    // Force-rebuff pass (donor NoteBuffWork): a buff cast that actually
+    // starts marks work this cycle so the ready-check gate holds the
+    // confirm while casts are still landing. Failed casts mark nothing.
+    if (!bot->IsInCombat())
+        context->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(true);
     if (target)
     {
         lastAttemptTarget = target->getObjectGuid();

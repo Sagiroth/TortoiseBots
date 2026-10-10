@@ -7,6 +7,19 @@
 
 using namespace ai;
 
+#include "playerbot/ForceRebuffPolicy.h"
+
+bool Trigger::BypassIntervalForRebuff()
+{
+    if (!ai || !bot || bot->IsInCombat())
+        return false;
+    AiObjectContext* rebuffContext = ai->GetAiObjectContext();
+    if (!rebuffContext)
+        return false;
+    uint32 beginMs = rebuffContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get();
+    return beginMs && ai::ForceRebuffPending(beginMs, WorldTimer::getMSTime());
+}
+
 TriggerNode::TriggerNode(std::string name, std::initializer_list<NextAction> handlers)
     : name(std::move(name)), trigger(NULL), handlers(NextAction::array(handlers))
 {

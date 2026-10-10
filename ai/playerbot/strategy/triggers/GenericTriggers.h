@@ -327,6 +327,7 @@ namespace ai
     public:
 		virtual std::string GetTargetName() override { return "self target"; }
         virtual bool IsActive() override;
+        virtual bool IsBuffTrigger() const override { return true; }
 
     protected:
         bool checkIsOwner;

@@ -33,4 +33,14 @@ namespace ai
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
     };
+
+    // Manual "rebuff" command (donor ForceRebuffAction): opens the 2-min
+    // OOC top-off window with no ready check to answer. Defined in
+    // ReadyCheckAction.cpp.
+    class ForceRebuffAction : public Action
+    {
+    public:
+        ForceRebuffAction(PlayerbotAI* ai) : Action(ai, "force rebuff") {}
+        virtual bool Execute(Event& event) override;
+    };
 }

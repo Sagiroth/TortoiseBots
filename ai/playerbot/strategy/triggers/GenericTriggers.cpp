@@ -3,6 +3,7 @@
 #include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/ReadyRebuffPolicy.h"
 #include "playerbot/SurvivePolicy.h"
+#include "playerbot/ForceRebuffPolicy.h"
 #include "GenericTriggers.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -278,6 +279,30 @@ bool BuffTrigger::IsActive()
     Unit* target = GetTarget();
     if (!target || !target->IsAlive())
         return false;
+
+    // Force-rebuff top-off pass (mod-playerbots parity, BUFF-1): while a
+    // rebuff window is pending out of combat, a LONG buff counts as missing
+    // when remaining + margin < max (donor ForceRebuff margin rule), so the
+    // pass tops it up instead of letting it drop mid-fight. Outside the
+    // window the normal refresh rule applies. Buff triggers also bypass the
+    // check interval while pending (Trigger::needCheck) so the pass
+    // evaluates every tick until the window closes.
+    if (!bot->IsInCombat())
+    {
+        AiObjectContext* rebuffContext = ai->GetAiObjectContext();
+        uint32 beginMs = rebuffContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get();
+        uint32 nowMs = WorldTimer::getMSTime();
+        if (beginMs && ai::ForceRebuffPending(beginMs, nowMs))
+        {
+            Aura* aura = ai->GetAura(spell, target, checkIsOwner);
+            if (ai::ForceRebuffBelowTarget(aura != nullptr, aura ? aura->GetAuraDuration() : 0,
+                aura ? aura->GetAuraMaxDuration() : 0, beginMs, nowMs))
+            {
+                rebuffContext->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(true);
+                return true;
+            }
+        }
+    }
 
     // Issue #468 (donor BuffBelowRefreshTarget): a LONG aura expiring inside
     // the refresh window counts as missing, so the buff is topped up on the

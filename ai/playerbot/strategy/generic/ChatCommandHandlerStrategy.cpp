@@ -113,6 +113,7 @@ ChatCommandHandlerStrategy::ChatCommandHandlerStrategy(PlayerbotAI* ai) : PassTr
     supported.push_back("faction");
     supported.push_back("set value");
     supported.push_back("speak");
+    supported.push_back("rebuff");
 }
 
 void ChatCommandHandlerStrategy::InitReactionTriggers(std::list<TriggerNode*> &triggers)
@@ -320,4 +321,8 @@ void ChatCommandHandlerStrategy::InitReactionTriggers(std::list<TriggerNode*> &t
     triggers.push_back(new TriggerNode(
         "ready",
         NextAction::array(0, new NextAction("ready check", relevance), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "rebuff",
+        NextAction::array(0, new NextAction("force rebuff", relevance), NULL)));
 }

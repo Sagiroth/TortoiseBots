@@ -61,4 +61,14 @@ namespace ai
             return false;
         return !isCasting;
     }
+
+    // Past the hard cap: the reply fires even mid-cast so the check can
+    // never wedge on a chained cast sequence.
+    inline bool ReadyRebuffPastCap(std::int64_t anchorTime, std::int64_t now,
+        std::int64_t capSec = ReadyRebuffCapSec())
+    {
+        if (anchorTime == 0)
+            return false;
+        return now - anchorTime >= capSec;
+    }
 }

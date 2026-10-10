@@ -167,6 +167,12 @@ bool ReadyCheckAction::Execute(Event& event)
         // the confirm via "ready reply".
         ReportReadiness(requester);
         context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time(0));
+        // Force-rebuff entry (donor ForceRebuffOnReadyCheck): open the 2-min
+        // OOC top-off window alongside the deferred confirm. Buff triggers
+        // bypass their interval and use the margin rule until it closes.
+        context->GetValue<uint32>("manual int", "force rebuff begin ms")->Set(WorldTimer::getMSTime());
+        context->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(false);
+        context->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(false);
         return true;
     }
 
@@ -259,9 +265,29 @@ bool ReadyReplyAction::isUseful()
     if (anchor == time_t(0))
         return false;
 
+    // Force-rebuff gate (donor ReadyReply gating): hold the confirm while a
+    // buff cast landed this cycle or one is mid-cast — the pass is still
+    // working. Past the hard cap the due verdict replies regardless.
+    bool buffWorking = context->GetValue<bool>("manual bool", "force rebuff buff pending")->Get();
     bool isCasting = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL) != nullptr ||
         bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL) != nullptr;
+    if ((buffWorking || isCasting) && !ai::ReadyRebuffPastCap(anchor, time(0)))
+        return false;
     return ai::ReadyRebuffDue(anchor, time(0), isCasting);
+}
+
+bool ForceRebuffAction::Execute(Event& /*event*/)
+{
+    // Manual "rebuff" command (donor ForceRebuffAction): open the 2-min OOC
+    // top-off window with no ready check to answer. Strategy-gated like the
+    // donor (needs the "force rebuff" strategy) and OOC-only.
+    if (bot->IsInCombat() || !ai->HasStrategy("force rebuff", BotState::BOT_STATE_NON_COMBAT))
+        return false;
+
+    context->GetValue<uint32>("manual int", "force rebuff begin ms")->Set(WorldTimer::getMSTime());
+    context->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(false);
+    context->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(false);
+    return true;
 }
 
 bool ReadyReplyAction::Execute(Event& /*event*/)
