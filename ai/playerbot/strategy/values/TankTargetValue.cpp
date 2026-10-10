@@ -3,6 +3,7 @@
 #include "TankTargetValue.h"
 #include "PossibleAttackTargetsValue.h"
 #include "playerbot/ServerFacade.h"
+#include "../../../../runtime/PlayerbotAIStorage.h"
 
 using namespace ai;
 
