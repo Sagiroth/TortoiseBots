@@ -450,6 +450,11 @@ void WarlockPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "devour magic cleanse",
         NextAction::array(0, new NextAction("devour magic cleanse", ACTION_DISPEL), NULL)));
+    // PET-6: sustain the demon mid-fight. Below the interrupt kit and the
+    // pet attack — keeping the pet alive never outranks using it.
+    triggers.push_back(new TriggerNode(
+        "health funnel",
+        NextAction::array(0, new NextAction("health funnel", ACTION_NORMAL + 1), NULL)));
 }
 
 void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

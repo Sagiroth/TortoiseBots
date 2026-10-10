@@ -3,6 +3,7 @@
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 #include "ShamanStoneclawPolicy.h"
 #include "ShamanEarthShockPolicy.h"
+#include "ShamanRecallPolicy.h"
 
 namespace ai
 {
@@ -22,20 +23,41 @@ namespace ai
 
         virtual bool IsActive() override
         {
-            // Avoid removing any of the big cooldown totems.
-            return AI_VALUE(bool, "have any totem")
-                && !AI_VALUE2(bool, "has totem", "mana tide totem");
-        }
-    };
-
-    class TotemsAreNotSummonedTrigger : public Trigger
-    {
-    public:
-        TotemsAreNotSummonedTrigger(PlayerbotAI* ai) : Trigger(ai, "no totems summoned", 5) {}
-
-        virtual bool IsActive() override
-        {
-            return !AI_VALUE(bool, "have any totem");
+            // Out-of-combat mana refund (mod-playerbots parity SHM-5):
+            // recall only when the bot and no group member is fighting.
+            // Never recall mana tide: destroying the cooldown totem wastes
+            // it for pennies. (No fire-elemental totem action exists in
+            // 1.18.1, so there is nothing else to spare.)
+            // Owner-scoped values: recall refunds only OUR totems, so a
+            // teammate's tide must not veto us and strangers' totems must
+            // not trigger us. Gate lives in ShamanRecallPolicy.h so the unit
+            // test pins this exact logic.
+            bool hasSpell = ai->HasSpell("totemic recall");
+            bool anyOwn = AI_VALUE(bool, "have any own totem");
+            bool tideOwn = AI_VALUE2(bool, "has own totem", "mana tide totem");
+            bool botCombat = bot->IsInCombat();
+            bool memberCombat = false;
+            Group* group = bot->GetGroup();
+            if (!botCombat && group)
+            {
+                for (Player* member : LiveGroupMembers(group))
+                {
+                    if (!member || member == bot)
+                        continue;
+                    if (member->IsInCombat())
+                    {
+                        memberCombat = true;
+                        break;
+                    }
+                    Pet* pet = member->GetPet();
+                    if (pet && pet->IsInCombat())
+                    {
+                        memberCombat = true;
+                        break;
+                    }
+                }
+            }
+            return TotemicRecallShouldFire(hasSpell, anyOwn, tideOwn, botCombat, memberCombat);
         }
     };
 

@@ -394,4 +394,12 @@ namespace ai
         PowerOverwhelmingTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "power overwhelming") {}
         bool IsActive() override;
     };
+
+    // PET-6: demon below half while the owner can afford the drain.
+    class HealthFunnelTrigger : public Trigger
+    {
+    public:
+        HealthFunnelTrigger(PlayerbotAI* ai) : Trigger(ai, "health funnel") {}
+        bool IsActive() override;
+    };
 }
