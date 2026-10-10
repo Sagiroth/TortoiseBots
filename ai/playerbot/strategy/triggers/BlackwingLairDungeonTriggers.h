@@ -1,5 +1,6 @@
 #pragma once
 #include "DungeonTriggers.h"
+#include "playerbot/RazorgorePolicy.h"
 #include "GenericTriggers.h"
 
 namespace ai
@@ -48,15 +49,15 @@ namespace ai
             for (const ObjectGuid& attackerGuid : attackers)
             {
                 Unit* attacker = ai->GetUnit(attackerGuid);
-                if (!attacker || attacker->GetEntry() != 12435)
+                if (!attacker || attacker->GetEntry() != kRazorgoreEntry)
                     continue;
                 // Controlled phase (orb): the controller drives; raid holds.
-                if (ai->HasAura(19832, attacker))
+                if (attacker->HasAura(kPossessSpellId))
                     return false;
                 // The victim holds — moving rotates the boss into the raid.
                 if (attacker->GetVictim() && attacker->GetVictim()->getObjectGuid() == bot->getObjectGuid())
                     return false;
-                if (bot->GetDistance2d(attacker) > 15.0f)
+                if (bot->GetDistance2d(attacker) > kRazorgoreConeRadius)
                     return false;
                 return attacker->HasInArc(bot, M_PI_F);
             }
@@ -66,6 +67,38 @@ namespace ai
 
     // Ranged War Stomp spacing: ranged non-victims outside the cone but
     // inside 15y back off (mod-playerbots parity).
+    // Off-tank engage gate: tanks in a live uncontrolled fight (the
+    // action itself checks eggs-live + boss presence).
+    class RazorgoreEngageTrigger : public Trigger
+    {
+    public:
+        RazorgoreEngageTrigger(PlayerbotAI* ai, std::string name = "razorgore engage", int checkInterval = 3)
+        : Trigger(ai, name, checkInterval) {}
+
+        bool IsActive() override
+        {
+            if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+                return false;
+            if (!ai->HasStrategy("razorgore", BotState::BOT_STATE_COMBAT))
+                return false;
+            if (!ai->IsTank(bot))
+                return false;
+            AiObjectContext* context = ai->GetAiObjectContext();
+            const std::list<ObjectGuid>& attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+            for (const ObjectGuid& attackerGuid : attackers)
+            {
+                Unit* attacker = ai->GetUnit(attackerGuid);
+                if (!attacker || attacker->GetEntry() != kRazorgoreEntry)
+                    continue;
+                // Controlled phase (orb): the controller drives; raid holds.
+                if (attacker->HasAura(kPossessSpellId))
+                    return false;
+                return true;
+            }
+            return false;
+        }
+    };
+
     class RazorgoreRangedTrigger : public Trigger
     {
     public:
@@ -85,13 +118,13 @@ namespace ai
             for (const ObjectGuid& attackerGuid : attackers)
             {
                 Unit* attacker = ai->GetUnit(attackerGuid);
-                if (!attacker || attacker->GetEntry() != 12435)
+                if (!attacker || attacker->GetEntry() != kRazorgoreEntry)
                     continue;
-                if (ai->HasAura(19832, attacker))
+                if (attacker->HasAura(kPossessSpellId))
                     return false;
                 if (attacker->GetVictim() && attacker->GetVictim()->getObjectGuid() == bot->getObjectGuid())
                     return false;
-                if (bot->GetDistance2d(attacker) > 15.0f)
+                if (bot->GetDistance2d(attacker) > kRazorgoreConeRadius)
                     return false;
                 return !attacker->HasInArc(bot, M_PI_F);
             }

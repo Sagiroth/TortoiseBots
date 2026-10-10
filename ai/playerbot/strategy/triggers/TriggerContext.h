@@ -333,6 +333,7 @@ namespace ai
             creators["start razorgore fight"] = [](PlayerbotAI* ai) { return new RazorgoreStartFightTrigger(ai); };
             creators["end razorgore fight"] = [](PlayerbotAI* ai) { return new RazorgoreEndFightTrigger(ai); };
             creators["razorgore cone"] = [](PlayerbotAI* ai) { return new RazorgoreConeTrigger(ai); };
+            creators["razorgore engage"] = [](PlayerbotAI* ai) { return new RazorgoreEngageTrigger(ai); };
             creators["razorgore ranged"] = [](PlayerbotAI* ai) { return new RazorgoreRangedTrigger(ai); };
 
 

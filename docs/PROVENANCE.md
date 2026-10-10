@@ -4575,3 +4575,32 @@ Local validation: `bash tools/verify_all.sh` (all suites incl. the new
 policy test pass); `git diff --check`. Entries 12435/19832/177807
 verified against tw_world. Build via build-commit.sh pending; live
 in-game check pending.
+
+## Review fixes: real egg check, victim guard, behind-boss escape, engage arm (PR #616) — 2026-10-10
+
+All three blocking findings verified real and fixed; non-blocking 1/3/4
+also applied (2 noted below).
+
+(a) `eggsAlive` hardcoded true + missing post-egg Cleave branch: the
+multiplier now reads the cached `nearest game objects` value for entry
+177807 (donor AreRazorgoreEggsAlive) — the veto lifts when eggs die.
+Header comment corrected (no post-egg Cleave branch exists; tanks return
+to normal selection, which the universal flank covers).
+(b) Missing victim guard + no engage path: veto now returns 1.0 while the
+off-tank holds nothing (donor `bot->GetVictim() != nullptr` guard), and a
+new tank-only `razorgore engage` node attacks Razorgore while eggs live
+(the MarkBoss attack arm; moon mark stays dropped, generic mark rti
+covers marking). Post-egg the action no-ops and normal selection resumes.
+(c) Escape actions were radial MoveAway flees landing ~17y out (melee
+uptime destroyed): new custom `RazorgoreEscapeConeAction::Execute`
+implements the donor behind-boss math (orientation + PI + fuzz, melee 3y
+/ ranged 15y, LOS-checked). Non-blocking: direct `boss->HasAura(19832)`
+(donor/core shape, skips the hostile-unit filter question), TankAssist
+early-out hoisting + same-map election guard, production literals routed
+through policy constants. Non-blocking 2 NOT separately fixed — the
+TankAssist early-out at the top subsumes it (scans only run for vetoed
+actions).
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the policy
+test pass); `git diff --check`. Build via build-commit.sh pending; live
+in-game check pending.

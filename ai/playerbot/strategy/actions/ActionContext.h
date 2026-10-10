@@ -367,6 +367,7 @@ namespace ai
             creators["disable razorgore fight strategy"] = [](PlayerbotAI* ai) { return new RazorgoreDisableFightStrategyAction(ai); };
             creators["escape razorgore cone"] = [](PlayerbotAI* ai) { return new RazorgoreEscapeConeAction(ai); };
             creators["back off razorgore"] = [](PlayerbotAI* ai) { return new RazorgoreBackOffAction(ai); };
+            creators["razorgore engage"] = [](PlayerbotAI* ai) { return new RazorgoreEngageAction(ai); };
 
             creators["enable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanEnableFightStrategyAction(ai); };
             creators["disable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanDisableFightStrategyAction(ai); };

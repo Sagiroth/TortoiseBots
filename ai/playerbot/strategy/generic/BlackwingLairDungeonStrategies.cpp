@@ -20,6 +20,16 @@ void RazorgoreFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigger
     triggers.push_back(new TriggerNode(
         "fire protection potion ready",
         NextAction::array(0, new NextAction("fire protection potion", 100.0f), NULL)));
+
+    // Off-tank engage (donor MarkBoss attack arm): tanks attack Razorgore
+    // while eggs live so the boss is held from the pull. Non-tanks never
+    // see this node; the victim guard + egg check live in the action.
+    if (ai->IsTank(ai->GetBot()))
+    {
+        triggers.push_back(new TriggerNode(
+            "razorgore engage",
+            NextAction::array(0, new NextAction("razorgore engage", 60.0f), NULL)));
+    }
 }
 
 void RazorgoreFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
