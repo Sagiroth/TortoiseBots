@@ -4677,3 +4677,32 @@ Local validation: `bash tools/verify_all.sh` (incl. wiring check:
 live-missing=0); `git diff --check`; shared-builder compile check; no live
 in-game test.
 | Felhunter Devour Magic purge + cleanse (PET-1) | `mod-playerbots` @ `79bd4281` `src/Ai/Class/Warlock/WarlockTriggers.h:161-171` (`DevourMagicPurgeTrigger`/`DevourMagicCleanseTrigger`), `src/Ai/Class/Warlock/WarlockActions.h:192-205` (`CastDevourMagicPurgeAction`/`CastDevourMagicCleanseAction`), `src/Ai/Class/Warlock/Strategy/GenericWarlockStrategy.cpp:63-78` (purge/cleanse nodes at 50.0) | `ai/playerbot/strategy/warlock/WarlockTriggers.h` (two trigger classes), `WarlockActions.h` (`CastDevourMagicPurgeAction` on current target + `CastDevourMagicCleanseAction` on party dispel target, both Felhunter-gated in `isUseful`), `WarlockStrategy.cpp` (`WarlockPetStrategy::InitCombatTriggers`: purge at ACTION_DISPEL+1, cleanse at ACTION_DISPEL), `WarlockAiObjectContext.cpp` (4 creators), `runtime/DevourMagicPolicy.h` + `tools/test_devour_magic_policy.cpp` | Reimplemented as pet-cast actions (donor casts through the owner; ours routes via `CastPetSpellAction` so range/cooldown resolve against the demon) wired into the live pet strategy all specs inherit; donor node priority 50.0 maps to ACTION_DISPEL+1/+0 | `bash tools/verify_all.sh`; `python3 tools/verify_action_trigger_wiring.py` (0 live-missing); standalone `test_devour_magic_policy` (5 checks); `git diff --check`. Compile via shared builder; no live in-game test |
+## Warrior WAR-4: staggered tank defensives (2026-10-09)
+
+Feature: protection warrior *Shield Wall* moved from `critical health`
+(<20%, ACTION_EMERGENCY+1) to `low health` (20-50%, ACTION_MEDIUM_HEAL);
+*Last Stand* stays at critical (ACTION_EMERGENCY+2). The two no longer
+fire stacked at the same moment — Wall blunts damage early, Last Stand is
+held for genuinely lethal moments, and Wall's 30-min cooldown is not spent
+on fights Last Stand alone would survive.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:233-249` (shield wall at low health MEDIUM_HEAL; last stand at critical EMERGENCY)
+
+Copied / ported / independently reimplemented: reimplemented in place in
+`ProtectionWarriorStrategy.cpp` (`ai/playerbot/strategy/warrior/`).
+Deviations from the donor, all deliberate: (a) no Enraged Regeneration at
+critical — no such player spell row exists in 1.18.1; (b) Wall's existing
+BUFF_ACTION aura check prevents re-firing while already up, so Wall firing
+early at low health cannot consume it twice at critical.
+
+Reason: WAR-4 in the warrior parity sweep: both cooldowns fired stacked
+below 20%, wasting the longer-cooldown Wall.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).
