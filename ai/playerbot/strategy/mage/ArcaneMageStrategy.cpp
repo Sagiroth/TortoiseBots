@@ -124,6 +124,16 @@ void ArcaneMageAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
 {
     MageAoeStrategy::InitCombatTriggers(triggers);
 
+    // MAG-2: donor sequences flamestrike->blizzard for arcane as well;
+    // both spells are trained by every spec.
+    triggers.push_back(new TriggerNode(
+        "flamestrike window",
+        NextAction::array(0, new NextAction("blizzard", ACTION_HIGH + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "ranged medium aoe",
+        NextAction::array(0, new NextAction("flamestrike", ACTION_HIGH + 1), NULL)));
+
     triggers.push_back(new TriggerNode(
         "enemy too close for spell",
         NextAction::array(0, new NextAction("arcane explosion", ACTION_HIGH), NULL)));

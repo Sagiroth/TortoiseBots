@@ -1,5 +1,7 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/FlamestrikeWindowPolicy.h"
+#include "playerbot/strategy/values/LastSpellCastValue.h"
 #include "MageTriggers.h"
 #include "MageActions.h"
 
@@ -140,4 +142,24 @@ bool EvocationChannelCheckTrigger::IsActive()
         }
     }
     return false;
+}
+
+bool FlamestrikeWindowTrigger::IsActive()
+{
+    // Cheap checks first: last cast must be our flamestrike, then the
+    // pack-density scan. Mirrors donor ordering (blizzard-on-active above
+    // the plain medium-aoe rows); the pack check reuses the medium-aoe
+    // trigger so CC interlock and density stay identical.
+    LastSpellCast& lastSpell = AI_VALUE(LastSpellCast&, "last spell cast");
+    FlamestrikeWindowState state{lastSpell.id, lastSpell.time, time(0), false};
+    if (!IsFlamestrikeCastId(state.lastCastSpellId))
+        return false;
+    if (state.now < state.lastCastTime)
+        return false;
+    if ((state.now - state.lastCastTime) > FLAMESTRIKE_WINDOW_SECONDS)
+        return false;
+
+    Trigger* mediumAoe = ai->GetAiObjectContext()->GetTrigger("ranged medium aoe");
+    state.packStillGrouped = mediumAoe && mediumAoe->IsActive();
+    return ShouldBlizzardAfterFlamestrike(state);
 }

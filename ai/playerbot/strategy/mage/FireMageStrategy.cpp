@@ -147,6 +147,12 @@ void FireMageAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     MageAoeStrategy::InitCombatTriggers(triggers);
 
+    // MAG-2: own flamestrike burning under the pack — channel blizzard on
+    // top (donor: blizzard-on-active 24 above flamestrike 23).
+    triggers.push_back(new TriggerNode(
+        "flamestrike window",
+        NextAction::array(0, new NextAction("blizzard", ACTION_HIGH + 2), NULL)));
+
     triggers.push_back(new TriggerNode(
         "ranged medium aoe",
         NextAction::array(0, new NextAction("flamestrike", ACTION_HIGH + 1), NULL)));

@@ -5660,3 +5660,51 @@ Local validation: `bash tools/verify_all.sh` (wiring audit covers the
 four new names); `git diff --check`; shared-builder compile via
 `build-commit.sh` (BUILD OK); live in-game check pending: swim with a
 warlock bot, self + party gain the buff, nothing fires on land.
+
+## Mage flamestrike to blizzard sequencing (MAG-2) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/Strategy/GenericMageStrategy.cpp:182-186,196,202-205`
+(`medium aoe` → flamestrike 23 then blizzard 22; `flamestrike active and
+medium aoe` → blizzard 24),
+`src/Ai/Class/Mage/MageTriggers.cpp:107-124` (`FlamestrikeNearbyTrigger`:
+own flamestrike DynamicObject within 30yd).
+
+Source files (module, modified):
+`ai/playerbot/FlamestrikeWindowPolicy.h` (new pure rule:
+`ShouldBlizzardAfterFlamestrike` fires when the last cast was a
+flamestrike cast id 2124/2125/8425/8426/10217/10218 within the last 6s
+and the pack is still grouped),
+`tools/test_flamestrike_window_policy.cpp` (new standalone test, 15
+checks) + `tools/verify_all.sh` (registered),
+`ai/playerbot/strategy/mage/MageTriggers.h/.cpp` (new
+`FlamestrikeWindowTrigger : Trigger` reading `last spell cast` into the
+policy, then confirming the pack via the live `ranged medium aoe`
+trigger — cheap cast-id/time gates run before the density scan),
+`ai/playerbot/strategy/mage/MageAiObjectContext.cpp` (registered
+`flamestrike window`), `FrostMageStrategy.cpp` /
+`FireMageStrategy.cpp` / `ArcaneMageStrategy.cpp` (each AoE strategy:
+`flamestrike window` → blizzard at HIGH+2 FIRST, then the existing
+medium-aoe rows), `docs/classes/mage.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in the live list-based
+style. Deviations from the donor, all deliberate: (a) the donor's
+"flamestrike active" check (own dynobj within 30yd via
+`Aura::GetDynobjOwner`) cannot port — this core has no aura→dynobj link
+and our `NearestDynamicObjects` value is an empty stub (no dynobj grid
+searcher), so the port tracks "I cast flamestrike ≤6s ago" via the
+already-maintained `last spell cast` value instead; (b) donor ordering
+(blizzard-on-active 24 > flamestrike 23 > blizzard 22) preserved as
+HIGH+2 > HIGH+1 > HIGH; (c) arcane gains the pair too (donor sequences
+it for arcane; both spells trained by all specs); the fire
+`fire spells locked` fallback blizzard is untouched (different case).
+
+Reason: bots cast flamestrike OR blizzard as independent same-trigger
+rows (engine picks the first available) — never stacking the instant
+flamestrike under the pack and channeling blizzard on top. Real AoE DPS
+loss.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: 3+ mob pack,
+flamestrike lands, blizzard follows while the pack holds.
