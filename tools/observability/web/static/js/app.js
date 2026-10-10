@@ -4113,6 +4113,7 @@
       // post-restart snapshot is discarded as stale while gauges look alive.
       state.snapshotSeq = 0;
       if (el.consoleRate) el.consoleRate.innerHTML = '● connected';
+      updateHealthBanner();
       appendConsoleLog(new Date().toLocaleTimeString(), 'ws', 'Connected to live telemetry stream.');
     };
 
