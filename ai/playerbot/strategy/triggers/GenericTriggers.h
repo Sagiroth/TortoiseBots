@@ -502,6 +502,17 @@ namespace ai
         virtual std::string getName() override { return spell + " on attacker"; }
     };
 
+    // Boss-gated debuff conservation (mod-playerbots parity, CD-3, Base
+    // trigger only): fires when the current target wants this debuff AND is
+    // a dungeon/raid boss, so expensive debuffs are saved for bosses. Class
+    // debuff wiring stays untouched in this PR.
+    class DebuffOnBossTrigger : public DebuffTrigger
+    {
+    public:
+        DebuffOnBossTrigger(PlayerbotAI* ai, std::string spell) : DebuffTrigger(ai, spell) {}
+        virtual bool IsActive() override;
+    };
+
 	class BoostTrigger : public BuffTrigger
 	{
 	public:
@@ -511,6 +522,18 @@ namespace ai
 	protected:
 		float balance;
 	};
+
+    // Difficulty-gated cooldown trigger (mod-playerbots parity, CD-2):
+    // fires in combat when the fight is hard enough (balance <= 50, i.e.
+    // not a trivial pull) or always against a PvP target. Rewires only the
+    // generic racial/trinket rows; per-class BoostTrigger consumers keep
+    // their own gates.
+    class GenericBoostTrigger : public Trigger
+    {
+    public:
+        GenericBoostTrigger(PlayerbotAI* ai) : Trigger(ai, "generic boost", 3) {}
+        virtual bool IsActive() override;
+    };
 
     class RandomTrigger : public Trigger
     {
@@ -618,7 +641,7 @@ namespace ai
     class HighManaTrigger : public Trigger
     {
     public:
-        HighManaTrigger(PlayerbotAI* ai) : Trigger(ai, "high mana") {}
+        HighManaTrigger(PlayerbotAI* ai, std::string name = "high mana") : Trigger(ai, name) {}
 
         virtual bool IsActive() override;
     };
@@ -1121,10 +1144,43 @@ namespace ai
 
         virtual bool IsActive() override
         {
-            return bot->HasAuraType(SPELL_AURA_MOD_FEAR);
-            return bot->HasAuraType(SPELL_AURA_MOD_STUN);
-            return bot->HasAuraType(SPELL_AURA_MOD_CHARM);
-            return bot->HasAuraType(SPELL_AURA_MOD_CONFUSE);
+            // Was 4 sequential returns (only fear ever fired): fold into one.
+            // Covers fear/charm/stun/confuse via aura types plus sleep/sap
+            // via mechanic scan (StoneformTrigger idiom) — WotF breaks all.
+            if (bot->HasAuraType(SPELL_AURA_MOD_FEAR) ||
+                bot->HasAuraType(SPELL_AURA_MOD_CHARM) ||
+                bot->HasAuraType(SPELL_AURA_MOD_STUN) ||
+                bot->HasAuraType(SPELL_AURA_MOD_CONFUSE))
+                return true;
+            uint32 sleepSapMask = (1 << (MECHANIC_SLEEP - 1)) | (1 << (MECHANIC_SAPPED - 1));
+            for (auto itr : bot->GetSpellAuraHolderMap())
+            {
+                if (itr.second->HasMechanicMask(sleepSapMask))
+                    return true;
+            }
+            return false;
+        }
+    };
+
+    // Lift-CC cooldown gate (mod-playerbots parity, SUPD-2): fires while
+    // feared, slept or sapped so warrior Berserker Rage rows light up. The
+    // two warrior strategy rows already push this name — no creator existed.
+    class FearSleepSapTrigger : public Trigger
+    {
+    public:
+        FearSleepSapTrigger(PlayerbotAI* ai) : Trigger(ai, "fear sleep sap") {}
+
+        bool IsActive() override
+        {
+            if (bot->HasAuraType(SPELL_AURA_MOD_FEAR))
+                return true;
+            uint32 sleepSapMask = (1 << (MECHANIC_SLEEP - 1)) | (1 << (MECHANIC_SAPPED - 1));
+            for (auto itr : bot->GetSpellAuraHolderMap())
+            {
+                if (itr.second->HasMechanicMask(sleepSapMask))
+                    return true;
+            }
+            return false;
         }
     };
 

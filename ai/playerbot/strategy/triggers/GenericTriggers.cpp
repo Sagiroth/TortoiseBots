@@ -498,6 +498,20 @@ bool DebuffTrigger::IsActive()
     return false;
 }
 
+bool DebuffOnBossTrigger::IsActive()
+{
+    if (!DebuffTrigger::IsActive())
+        return false;
+    Unit* target = GetTarget();
+    Creature* creature = target ? dynamic_cast<Creature*>(target) : nullptr;
+    if (!creature)
+        return false;
+    if (creature->IsWorldBoss())
+        return true;
+    Map* map = creature->GetMap();
+    return creature->IsElite() && map && (map->IsDungeon() || map->IsRaid());
+}
+
 bool DebuffTrigger::HasMaxDebuffs()
 {
     Unit* target = GetTarget();
@@ -640,6 +654,16 @@ bool BoostTrigger::IsActive()
     }
 
     return false;
+}
+
+bool GenericBoostTrigger::IsActive()
+{
+    if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT))
+        return false;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (target && target->IsPlayer())
+        return true;
+    return AI_VALUE(uint8, "balance") <= 50;
 }
 
 bool ItemCountTrigger::IsActive()

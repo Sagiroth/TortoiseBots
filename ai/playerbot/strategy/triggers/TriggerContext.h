@@ -55,6 +55,7 @@ namespace ai
             creators["low mana"] = [](PlayerbotAI* ai) { return new LowManaTrigger(ai); };
             creators["medium mana"] = [](PlayerbotAI* ai) { return new MediumManaTrigger(ai); };
             creators["high mana"] = [](PlayerbotAI* ai) { return new HighManaTrigger(ai); };
+            creators["enough mana"] = [](PlayerbotAI* ai) { return new HighManaTrigger(ai, "enough mana"); };
             creators["almost full mana"] = [](PlayerbotAI* ai) { return new AlmostFullManaTrigger(ai); };
             creators["healer should attack"] = [](PlayerbotAI* ai) { return new HealerShouldAttackTrigger(ai); };
             creators["healer should wand"] = [](PlayerbotAI* ai) { return new HealerShouldAttackTrigger(ai, "healer should wand", false); };
@@ -284,8 +285,10 @@ namespace ai
             // racials
             creators["berserking"] = [](PlayerbotAI* ai) { return new BerserkingTrigger(ai); };
             creators["blood fury"] = [](PlayerbotAI* ai) { return new BloodFuryTrigger(ai); };
+            creators["generic boost"] = [](PlayerbotAI* ai) { return new GenericBoostTrigger(ai); };
             creators["cannibalize"] = [](PlayerbotAI* ai) { return new CannibalizeTrigger(ai); };
             creators["will of the forsaken"] = [](PlayerbotAI* ai) { return new WOtFTrigger(ai); };
+            creators["fear sleep sap"] = [](PlayerbotAI* ai) { return new FearSleepSapTrigger(ai); };
             creators["stoneform"] = [](PlayerbotAI* ai) { return new StoneformTrigger(ai); };
             creators["shadowmeld"] = [](PlayerbotAI* ai) { return new ShadowmeldTrigger(ai); };
             creators["mana tap"] = [](PlayerbotAI* ai) { return new ManaTapTrigger(ai); };
