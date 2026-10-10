@@ -103,20 +103,61 @@ void PlayerbotFactory::MakeComplete()
     bot->SaveToDB();
 }
 
+// The world DB name differs per install (tw_world, i1_world, t4_world, ...);
+// a hard-coded literal fails with MySQL error 1142 on any other name. Read it
+// from WorldDatabase.Info, the same string mangosd uses (the 5th token).
+static std::string const& WorldDatabaseName()
+{
+    static std::string const name = []() -> std::string
+    {
+        std::string const info = sConfig.GetStringDefault("WorldDatabase.Info", "");
+        Tokens const tokens = StrSplit(info, ";");
+        if (tokens.size() < 5)
+            return std::string();
+
+        std::string const& db = tokens[4];
+        if (db.empty())
+            return std::string();
+
+        for (char const c : db)
+        {
+            bool const ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                (c >= '0' && c <= '9') || c == '_' || c == '$';
+            if (!ok)
+                return std::string();
+        }
+        return db;
+    }();
+    return name;
+}
+
 void PlayerbotFactory::PruneDuplicateEquipRows()
 {
     if (!bot)
         return;
 
     uint32 guid = bot->GetGUIDLow();
-    CharacterDatabase.PExecute(
-        "DELETE ci FROM character_inventory ci WHERE ci.guid = %u AND ci.bag = 0 "
-        "AND ci.slot IN (4,6,7,15,16,17) "
-        "AND ci.item NOT IN (SELECT item FROM (SELECT x.item, "
-        "ROW_NUMBER() OVER (PARTITION BY x.slot ORDER BY it.item_level DESC, it.Quality DESC, x.item DESC) rn "
-        "FROM character_inventory x JOIN tw_world.item_template it ON it.entry = x.item_template "
-        "WHERE x.guid = %u AND x.bag = 0 AND x.slot IN (4,6,7,15,16,17)) t WHERE t.rn = 1)",
-        guid, guid);
+    std::string const& worldDb = WorldDatabaseName();
+    if (worldDb.empty())
+    {
+        static bool warned = false;
+        if (!warned)
+        {
+            warned = true;
+            sLog.outError("PruneDuplicateEquipRows: cannot read a valid world DB name from WorldDatabase.Info, skipping duplicate equip prune");
+        }
+    }
+    else
+    {
+        CharacterDatabase.PExecute(
+            "DELETE ci FROM character_inventory ci WHERE ci.guid = %u AND ci.bag = 0 "
+            "AND ci.slot IN (4,6,7,15,16,17) "
+            "AND ci.item NOT IN (SELECT item FROM (SELECT x.item, "
+            "ROW_NUMBER() OVER (PARTITION BY x.slot ORDER BY it.item_level DESC, it.Quality DESC, x.item DESC) rn "
+            "FROM character_inventory x JOIN `%s`.item_template it ON it.entry = x.item_template "
+            "WHERE x.guid = %u AND x.bag = 0 AND x.slot IN (4,6,7,15,16,17)) t WHERE t.rn = 1)",
+            guid, worldDb.c_str(), guid);
+    }
     CharacterDatabase.PExecute(
         "DELETE ii FROM item_instance ii LEFT JOIN character_inventory ci ON ci.item = ii.guid "
         "WHERE ci.item IS NULL AND ii.owner_guid = %u",
