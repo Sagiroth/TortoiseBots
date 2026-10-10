@@ -6,7 +6,9 @@ using namespace ai;
 
 bool GluthMortalWoundSwapTrigger::IsActive()
 {
-    if (!PlayerbotAI::IsTank(bot))
+    // Explicit master orders win over the fight choreography (same
+    // guard as the chooser: a player-ordered tank holds its orders).
+    if (!AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty())
         return false;
 
     // Find Gluth through the encounter, not the bot's current target:

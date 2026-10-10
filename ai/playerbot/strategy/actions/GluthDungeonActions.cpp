@@ -88,12 +88,14 @@ bool GluthTauntSwapAction::Execute(Event& event)
 
     // Class-correct taunt: these actions are always registered in the
     // class AiObjectContext (unlike the legacy "taunt spell" node alias).
+    // No paladin branch: WotLK-era taunts (Hand of Reckoning /
+    // Righteous Defense) do not exist in 1.12, so paladin tanks sit
+    // the swap out.
     const char* taunt = nullptr;
     switch (bot->GetClass())
     {
         case CLASS_WARRIOR: taunt = "taunt"; break;
         case CLASS_DRUID: taunt = "growl"; break;
-        case CLASS_PALADIN: taunt = "hand of reckoning"; break;
         default: return false;
     }
     if (!ai->CanCastSpell(taunt, gluth))

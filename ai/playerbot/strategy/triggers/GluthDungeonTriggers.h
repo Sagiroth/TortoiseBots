@@ -15,15 +15,17 @@ namespace ai
         GluthEndFightTrigger(PlayerbotAI* ai) : EndBossFightTrigger(ai, "end gluth fight", "gluth", 15932) {}
     };
 
-    // Swap trigger: this bot tanks Gluth's target slot (current target is
-    // Gluth) while another tank holds him with 5+ Mortal Wound (25646)
-    // stacks. Fires on the off-tank only.
+    // Swap trigger: fires on the off-tank only, when another player
+    // (bot or human) tanks Gluth with 5+ Mortal Wound (25646) stacks.
+    // Gluth is resolved through the encounter, not the bot's current
+    // target - the off-tank may hold chow (or nothing) when the swap
+    // fires. Target name stays default ("self target"): the trigger
+    // resolves Gluth itself and the action casts on it directly.
     class GluthMortalWoundSwapTrigger : public Trigger
     {
     public:
         GluthMortalWoundSwapTrigger(PlayerbotAI* ai, std::string name = "gluth mortal wound swap", int checkInterval = 1)
             : Trigger(ai, name, checkInterval) {}
-        std::string GetTargetName() override { return "current target"; }
         bool IsActive() override;
     };
 

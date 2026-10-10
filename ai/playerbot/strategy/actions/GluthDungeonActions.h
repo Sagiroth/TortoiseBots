@@ -29,11 +29,12 @@ public:
 
 // Mortal-wound taunt swap (mod-playerbots parity:
 // GluthMainTankMortalWoundTrigger + "taunt spell" row). Casts the
-// class-correct taunt directly: the "taunt spell" ActionNode alias only
-// exists in legacy class strategies that never run (live specs use
-// placeholder strategies), so naming it would silently fail for every
-// tank. Targets Gluth found through the encounter, not the bot's
-// current target — the off-tank may be holding chow when the swap fires.
+// class-correct taunt directly (warrior "taunt", druid "growl"): the
+// "taunt spell" ActionNode alias only exists in legacy class strategies
+// that never run, so naming it would silently fail for every tank.
+// No paladin branch (no 1.12 taunt). Targets Gluth found through the
+// encounter, not the bot's current target — the off-tank may hold chow
+// when the swap fires.
 class GluthTauntSwapAction : public Action
 {
 public:
