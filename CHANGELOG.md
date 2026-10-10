@@ -1,6 +1,6 @@
 # Changelog
 
-- Destruction warlocks open with Curse of the Elements instead of Curse of Agony, and warlock bots no longer overwrite another warlock's curse with their default — one curse per target, manual curse orders still override.
+- Destruction warlocks open with Curse of the Elements instead of Curse of Agony (Curse of Agony until it is trained), and warlock bots no longer recast a curse anyone already holds — manual curse orders still override.
 
 ### Bots & Behavior
 - Bots no longer get stuck on the Deeprun Tram — wandering bots could be routed through the tram between Stormwind and Ironforge but cannot ride the train, so they stood on the platform for good; their routes now go overland, and any bot already stranded there is moved out through the nearest station exit.
