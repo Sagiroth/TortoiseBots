@@ -260,6 +260,16 @@ void WarlockBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigger
         "soulstone",
         NextAction::array(0, new NextAction("soulstone", ACTION_NORMAL + 1), NULL)));
 
+    // Swim-gated water breathing (WAR-6, donor parity): only fires while
+    // the bot swims, self first, then the party.
+    triggers.push_back(new TriggerNode(
+        "unending breath",
+        NextAction::array(0, new NextAction("unending breath", ACTION_NORMAL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "unending breath on party",
+        NextAction::array(0, new NextAction("unending breath on party", ACTION_NORMAL), NULL)));
+
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("apply oil", ACTION_NORMAL), NULL)));

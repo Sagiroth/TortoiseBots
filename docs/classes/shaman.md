@@ -17,7 +17,7 @@ Shamans bring unparalleled group utility through totem sets, elemental shocks, w
 
 - **Restoration (Healer):** Premier multi-target healer utilizing *Chain Heal*, *Healing Wave*, *Lesser Healing Wave*, and *Mana Tide Totem*. When nobody needs healing and mana is comfortable, casts *Flame Shock* / *Lightning Bolt* (*Chain Lightning* into packs) at the lowest relevance so every heal wins first — the same healer-dps pattern priests use.
 - **Enhancement (Melee DPS):** Dual-wielding or two-handed melee powerhouse utilizing *Windfury*, *Stormstrike*, and shocks.
-- **Elemental (Ranged DPS):** Nature and fire caster driving high burst through *Lightning Bolt*, *Chain Lightning*, and *Elemental Mastery*.
+- **Elemental (Ranged DPS):** Nature and fire caster driving high burst through *Lightning Bolt*, *Chain Lightning*, and *Elemental Mastery*. *Earth Shock* is saved as an execute (target below 25% health and 1500 hp) so the shared shock cooldown and boss debuff slots are not wasted on healthy targets; interrupts still fire anytime.
 
 ---
 
@@ -26,9 +26,12 @@ Shamans bring unparalleled group utility through totem sets, elemental shocks, w
 Shamans automatically drop and maintain fixed per-spec 4-element totem sets (other totems are selectable via manual `totem ...` strategies):
 
 - **Earth Totem:** *Strength of Earth Totem* (automatic; *Stoneskin Totem* as fallback). Solo bots at low health drop *Stoneclaw Totem* as a panic button instead (taunts attackers off the bot); grouped bots keep the spec totem unless ordered `totem earth stoneclaw`. *Tremor Totem* is manual-only.
+- **Earth Totem:** *Strength of Earth Totem* (automatic; *Stoneskin Totem* as fallback). Reacts to fear/charm with *Tremor Totem* (any party member feared or charmed) and to runners with *Earthbind Totem* (fleeing target or snared party member) — only while the earth slot is empty.
 - **Fire Totem:** *Searing Totem* (single target), *Magma Totem* / *Fire Nova Totem* (AoE packs).
-- **Water Totem:** *Mana Spring Totem* or *Healing Stream Totem* (automatic per spec). *Poison Cleansing Totem* is manual-only.
-- **Air Totem:** *Windfury Totem* (automatic; *Grace of Air Totem* for Enhancement), *Grounding Totem* as fallback.
+- **Water Totem:** *Mana Spring Totem* or *Healing Stream Totem* (automatic per spec). Reacts to party poison/disease with *Poison/Disease Cleansing Totem* (one trigger per debuff type) — only while the water slot is empty.
+- **Air Totem:** *Windfury Totem* (automatic; *Grace of Air Totem* for Enhancement), *Grounding Totem* as fallback. Reacts to enemy casts aimed at the party with *Grounding Totem* — only while the air slot is empty.
+
+Reactive swaps never fight an explicit order: any manual `totem <slot> <which>` strategy for that slot disables the matching swap, and a dropped totem quiets its trigger (no flapping).
 
 ---
 

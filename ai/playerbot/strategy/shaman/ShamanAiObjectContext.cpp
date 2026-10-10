@@ -271,6 +271,7 @@ namespace ai
                 creators["water breathing on party"] = [](PlayerbotAI* ai) { return new WaterBreathingOnPartyTrigger(ai); };
                 creators["water walking on party"] = [](PlayerbotAI* ai) { return new WaterWalkingOnPartyTrigger(ai); };
                 creators["shock"] = [](PlayerbotAI* ai) { return new ShockTrigger(ai); };
+                creators["earth shock execute"] = [](PlayerbotAI* ai) { return new EarthShockExecuteTrigger(ai); };
                 creators["flame shock upkeep"] = [](PlayerbotAI* ai) { return new FlameShockTrigger(ai); };
                 creators["earth shock interrupt"] = [](PlayerbotAI* ai) { return new EarthShockInterruptSpellTrigger(ai); };
                 creators["earth shock on enemy healer"] = [](PlayerbotAI* ai) { return new EarthShockInterruptEnemyHealerSpellTrigger(ai); };
@@ -284,6 +285,11 @@ namespace ai
                 creators["fire totem aoe"] = [](PlayerbotAI* ai) { return new FireTotemAoeTrigger(ai); };
                 creators["earth totem"] = [](PlayerbotAI* ai) { return new EarthTotemTrigger(ai); };
                 creators["stoneclaw panic"] = [](PlayerbotAI* ai) { return new StoneclawPanicTrigger(ai); };
+                creators["tremor totem reactive"] = [](PlayerbotAI* ai) { return new TremorTotemReactiveTrigger(ai); };
+                creators["earthbind totem reactive"] = [](PlayerbotAI* ai) { return new EarthbindTotemReactiveTrigger(ai); };
+                creators["grounding totem reactive"] = [](PlayerbotAI* ai) { return new GroundingTotemReactiveTrigger(ai); };
+                creators["poison cleansing totem reactive"] = [](PlayerbotAI* ai) { return new PoisonCleansingTotemReactiveTrigger(ai); };
+                creators["disease cleansing totem reactive"] = [](PlayerbotAI* ai) { return new DiseaseCleansingTotemReactiveTrigger(ai); };
                 creators["water totem"] = [](PlayerbotAI* ai) { return new WaterTotemTrigger(ai); };
                 creators["air totem"] = [](PlayerbotAI* ai) { return new AirTotemTrigger(ai); };
                 creators["call of the elements"] = [](PlayerbotAI* ai) { return new TotemsAreNotSummonedTrigger(ai); };
