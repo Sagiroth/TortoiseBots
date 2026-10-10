@@ -615,6 +615,18 @@ namespace ai
 		virtual bool IsActive() override;
 	};
 
+    // A group healer is running dry (mod-playerbots parity): fires when the
+    // lowest-mana healer (the "healer low mana" value) drops below the low
+    // mana line. Other agents' innervate / mana-tide rows target this.
+    class HealerLowManaTrigger : public Trigger
+    {
+    public:
+        HealerLowManaTrigger(PlayerbotAI* ai) : Trigger(ai, "healer low mana") {}
+
+        virtual std::string GetTargetName() override { return "healer low mana"; }
+        virtual bool IsActive() override;
+    };
+
     class HighManaTrigger : public Trigger
     {
     public:

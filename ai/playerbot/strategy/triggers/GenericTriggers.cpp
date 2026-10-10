@@ -32,6 +32,15 @@ bool MediumManaTrigger::IsActive()
     return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.mediumMana;
 }
 
+bool HealerLowManaTrigger::IsActive()
+{
+    Unit* target = GetTarget();
+    if (!target || !target->GetMaxPower(POWER_MANA))
+        return false;
+
+    return ai->GetManaPercent(*target) < sPlayerbotAIConfig.lowMana;
+}
+
 bool HighManaTrigger::IsActive()
 {
     return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") < 65;

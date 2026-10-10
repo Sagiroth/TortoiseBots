@@ -5627,3 +5627,36 @@ All three blocking findings verified real in code and fixed:
 - Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
 - Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
 verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+## Healer-low-mana value + trigger (HEAL-2/MANA-2) — 2026-10-10
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Base/Value/PartyMemberToHeal.cpp:138-162` + `.h:41-48`
+(`HealerLowMana`: lowest-mana alive group healer, skips self),
+`src/Ai/Base/Trigger/HealthTriggers.cpp:25-32` + `.h:146-153`
+(`HealerLowManaTrigger`: target mana below LowMana),
+`src/Ai/Base/ValueContext.h:136/455` + `src/Ai/Base/TriggerContext.h:69,396`
+(registrations under the exact name `"healer low mana"`).
+
+Source files (module, modified): `ai/playerbot/strategy/values/
+PartyMemberToHeal.h/.cpp` (new `HealerLowMana` value),
+`ai/playerbot/strategy/triggers/GenericTriggers.h/.cpp` (new
+`HealerLowManaTrigger`), `ai/playerbot/strategy/values/ValueContext.h` +
+`ai/playerbot/strategy/triggers/TriggerContext.h` (registrations).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) iteration via `LiveGroupMembers`
+(ObjectAccessor resolution, never a stale GroupReference pointer);
+(b) mana percent via `GetPower`/`GetMaxPower` with a zero-max guard
+(non-mana healers skipped) matching our neighbouring druid picker;
+(c) value ships with no strategy consumers yet — other agents' class-side
+innervate / mana-tide rows target it next; the druid's existing
+innervate picker stays as-is in this PR.
+
+Reason: support parity gap HEAL-2/MANA-2 (med/S-M): no generic
+lowest-healer-mana routing existed, so mana batteries could only target
+self.
+
+Local validation: `bash tools/verify_all.sh` (all suites pass);
+`git diff --check`. Build via build-commit.sh pending; live in-game check
+pending.
