@@ -4531,6 +4531,56 @@ Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 | Succubus Seduction as warlock CC for humanoids (PET-2) | New behavior (donor has no seduction AI; only the breakable-CC aura entry). CC flow follows the live `HasCcTargetTrigger` / `banish on cc` shape | `ai/playerbot/strategy/warlock/WarlockTriggers.h` (`SeductionTrigger`), `WarlockActions.h` (`CastSeductionOnCcAction : CastPetSpellAction` with CC target + CC flags, succubus/humanoid gate via `runtime/SeductionPolicy.h`, cached-spellId refresh), `WarlockStrategy.cpp` (`WarlockCcStrategy` node below fear at ACTION_INTERRUPT), `WarlockAiObjectContext.cpp` (2 creators), `runtime/SeductionPolicy.h` + `tools/test_seduction_policy.cpp` | Reimplemented: pet-cast instead of owner-cast (no reach prerequisite; range resolves demon→mark, so she must already be near). Break-protection via existing breakable-CC list + `CanPetAttack` gates | `bash tools/verify_all.sh`; wiring 0 live-missing; standalone `test_seduction_policy` (9 checks); `git diff --check`. Compile via shared builder; no live in-game test |
 | Kel'Thuzad fight (Naxx): role-split add priorities, center gather, phase-2 ring/tank spots, fissure flee, Detonate Mana runout | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Kelthuzad.cpp`, `src/Ai/Raid/Naxx/NaxxBossHelper.h` (KelthuzadBossHelper), `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (KT rows) | Reimplemented trigger-driven; phase via NOT_SELECTABLE (vanilla) not NON_ATTACKABLE; Detonate 27819 added to universal bomb runout; p1 totem/pet suppression omitted; donor debuff-on-attacker + phase-2 Blizzard/Frost Nova suppression legs omitted (no local equivalent: local debuff-on-attacker actions do not retarget current target; no WotLK shackle mechanic) | IDs verified in tw_world (15990, 16427/28/29/41, 16129, 27808/10/19/12, 28408); center verified vs core pullPortal | `bash tools/verify_all.sh` + `tools/test_kelthuzad_adds_policy.cpp`; build-commit + no live test |
 
+## MC Garr AoE-off + Shazzrah 26y range (raid1 item 3) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/MC/MCMultipliers.cpp:26-53` (GarrDisableDpsAoeMultiplier:
+DpsAoeAction + named AoE-spell list + any ACTION_THREAT_AOE cast while Garr
+lives), `src/Ai/Raid/MC/MCTriggers.cpp:27-37` (McShazzrahRangedTrigger:
+ranged inside ARCANE_EXPLOSION_DISTANCE), `src/Ai/Raid/MC/MCActions.cpp:51-60`
+(step out to exactly 26y), `src/Ai/Raid/MC/MCHelpers.h:38` (26y constant),
+`src/Ai/Raid/MC/MCStrategy.cpp` (trigger wiring).
+
+Source files (module, modified): `ai/playerbot/McGarrShazzrahPolicy.h`
+(new pure rule: ids, 26y, Garr-suppress + Shazzrah-leave predicates),
+`ai/playerbot/strategy/triggers/MoltenCoreDungeonTriggers.h`
+(Garr/ShazzrahStart+EndFightTrigger on entries 12057/12264,
+header-inline ShazzrahRangedTrigger: ranged + within 26y + live fight),
+`ai/playerbot/strategy/actions/MoltenCoreDungeonActions.h`
+(Garr/ShazzrahEnable+DisableFightStrategyAction, ShazzrahMoveAwayAction:
+MoveAwayFromCreature 12264/26y), `ai/playerbot/strategy/generic/
+MoltenCoreDungeonStrategies.h/.cpp` (`garr` fight strategy with
+GarrAoeOffMultiplier; `shazzrah` fight strategy with a ranged 26y reaction
+at ACTION_EMERGENCY+5; start triggers on `molten core`; end-fight
+cleanup), `ai/playerbot/strategy/generic/DungeonMultipliers.h/.cpp`
+(GarrAoeOffMultiplier), `ai/playerbot/strategy/triggers/TriggerContext.h`,
+`ai/playerbot/strategy/actions/ActionContext.h`,
+`ai/playerbot/strategy/StrategyContext.h` (registrations),
+`tools/test_mc_garr_shazzrah_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in our per-boss fight
+strategy idiom (mirror the Magmadar pattern). Deviations from the donor,
+all deliberate: (a) no per-boss multiplier plumbing in the generic raid
+strategy — each fight strategy carries its own multiplier, so Garr's
+AoE-off cannot leak into other fights; (b) DPS = neither tank nor heal via
+our role API (no IsDps exists); the donor's named AoE-spell list is
+matched by action NAME (threat flags under-mark our real AoE and
+over-mark heals + single-target dots, so type matching is wrong both
+ways); (c) the Shazzrah reaction node is queued only for ranged/heal bots
+at strategy level (melee never sees the trigger). Note: the veto is
+unconditional while Garr lives — the addon's manual AoE switch does NOT
+override it on this fight (single-target discipline is the mechanic).
+
+Reason: raid1 gaps MC-GARR-AOE + MC-SHAZZRAH: stray AoE broke Garr
+Firesworn control (banish-safe single-target), and ranged ate Arcane
+Explosion at 26y.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Creature entries 12057/12264
+verified against tw_world. Build via build-commit.sh pending; live in-game
+check pending.
 ## Druid parity DRU-7: Thorns on the party tank first — 2026-10-09
 Feature: new `ThornsOnTankTrigger` (`BuffOnTankTrigger` on "thorns",
 fire-shield conflict skip mirroring `ThornsOnPartyTrigger`) + new
@@ -4581,6 +4631,30 @@ HIGH+4 above thunder clap (HIGH+1) and revenge/sunder ordering intact, and
 the tank sunder veto now defers to slam only when slam's medium-rage row
 is actually live (cooldown-only `IsSpellReady` used to veto sunder through
 the whole 15-39 band where slam couldn't fire).
+## Chromaggus Hourglass Sand cleanse (raid1 item 2) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/BWL/BWLTriggers.cpp:87-90` (BwlAfflictionBronzeTrigger: self
+has SPELL_BROOD_AFFLICTION_BRONZE 23170), `src/Ai/Raid/BWL/BWLActions.cpp`
+(BwlUseHourglassSandAction: cast SPELL_HOURGLASS_SAND 23645 on self),
+`src/Ai/Raid/BWL/BWLStrategy.cpp` (trigger wiring), `src/Ai/Raid/BWL/
+BWLHelpers.h:27-28` (spell ids).
+
+Source files (module, modified): `ai/playerbot/ChromaggusSandPolicy.h`
+(new pure rule: ids), `ai/playerbot/strategy/triggers/
+BlackwingLairDungeonTriggers.h` (ChromaggusStart/EndFightTrigger on entry
+14020, ChromaggusBronzeAfflictionTrigger: self aura 23170, header-inline
+like the suppression triggers), `ai/playerbot/strategy/actions/
+BlackwingLairDungeonActions.h` (ChromaggusEnable/DisableFightStrategyAction,
+UseHourglassSandAction: UseItemIdAction qualifier {19183}),
+`ai/playerbot/strategy/generic/BlackwingLairDungeonStrategies.h/.cpp`
+(`chromaggus` fight strategy: bronze reaction at ACTION_EMERGENCY+5,
+end-fight cleanup, start trigger on the `blackwing lair` strategy),
+`ai/playerbot/strategy/triggers/TriggerContext.h`,
+`ai/playerbot/strategy/actions/ActionContext.h`,
+`ai/playerbot/strategy/StrategyContext.h` (registrations),
+`tools/test_chromaggus_sand_policy.cpp` (new standalone test) +
 ## BWL bundle 1: Broodlord range, drake off-tank flank, Vael flank entry, Nef mage Ice Block (raid1 item 4) — 2026-10-09
 
 Donor: mod-playerbots @ `79bd4281` (local checkout
@@ -5915,6 +5989,22 @@ combat node, end-fight cleanup, GeddonInfernoMultiplier),
 
 Copied / ported / reimplemented: reimplemented in our per-boss fight
 strategy idiom (StartBossFightTrigger + enable/disable actions, mirror the
+Magmadar/Geddon pattern). Deviations from the donor, all deliberate: (a)
+the donor casts spell 23645 directly; here the bot uses the Hourglass Sand
+item (19183, exact-qualifier UseItemIdAction) so no-cast-without-item is
+impossible — a bot with no sand simply fails the action usefully; (b) no
+loot change: bots already loot the sand off Chromaggus trash like any other
+drop, and the item stacks to 200; (c) Bronze id 23170 used directly (bot
+self-aura, no boss lookup needed).
+
+Reason: raid1 gap BWL-CHROMAGGUS: nothing cleansed the Bronze slow; one DB
+lookup away per the report.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Spell ids 23170/23645, item 19183
+(casts 23645, stack 200), creature 14020 verified against tw_world — note
+the report's classic-21171 item guess was wrong for 1.18.1. Build via
+build-commit.sh pending; live in-game check pending.
 Magmadar pattern). Deviations from the donor, all deliberate: (a) the
 donor blocks movement via per-action type checks (MovementAction,
 CastReachTargetSpellAction); here the multiplier first type-gates on the
@@ -5977,6 +6067,43 @@ All three blocking findings verified real in code and fixed:
 - Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
 - Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
 verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+## Group-AoE-heal gates (HEAL-1 + HEAL-4) — 2026-10-10
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Base/Trigger/HealthTriggers.cpp:34-50` + `.h:195-206`
+(`AoeInGroupTrigger`: hurt threshold scales with near-group count),
+`src/Ai/Base/TriggerContext.h:165-166,283-289` (creators
+`"group heal setting"` -> almost-full band, `"medium group heal setting"`
+-> medium band), `src/Ai/Base/Value/AoeHealValues.cpp:24-25`
+(`"almost full"` qualifier branch).
+
+Source files (module, modified): `ai/playerbot/GroupHealPolicy.h` (new
+pure rule: donor scaling table + below-5 refusal),
+`ai/playerbot/strategy/triggers/HealthTriggers.h/.cpp` (new
+`AoeInGroupTrigger`; near count on the 30y heal radius via
+`LiveGroupMembers`), `ai/playerbot/strategy/values/AoeHealValues.cpp`
+(`"almost full"` branch), `ai/playerbot/strategy/triggers/TriggerContext.h`
+(registrations: `"group heal setting"`, `"medium group heal setting"`,
+`"almost full aoe heal"` — folds HEAL-4), `tools/test_group_heal_policy.cpp`
+(new standalone test) + `tools/verify_all.sh` (test list),
+`docs/classes/{priest,druid,paladin,shaman}.md` (doc lines).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) near count uses the 30y heal radius our
+`AoeHealValue` scans (donor uses sight distance) so a far-away raid
+subgroup cannot arm the gate; (b) iteration via `LiveGroupMembers`
+(ObjectAccessor resolution, never a stale GroupReference pointer — see
+`ai/playerbot/GroupMembers.h`); (c) no strategy edits — the 6 dead nodes
+(resto druid tranquility, heal paladin holy light, heal priest
+shield/prayer, resto shaman chain heal x2) light up unchanged.
+
+Reason: support parity gap HEAL-1 (high/S): the 6 TriggerNodes dangled
+(engine skips null creators) so group-wide heals never fired.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Build via build-commit.sh pending;
+live in-game check pending.
 
 ## Mage Improved Scorch shared-slot gate ABANDONED (MAG-8) — 2026-10-10
 
@@ -6642,6 +6769,12 @@ Local validation: `bash tools/verify_all.sh`; `git diff --check`;
 shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
 check pending: 2-mob pack at melee range, cone fires while facing.
 
+## Review fixes (2026-10-10, PR #648 CHANGES_REQUESTED)
+Both blocking findings verified real in code and fixed:
+- Finding 1 (dead strategies): confirmed — the 6 nodes sat in forward-ported donor-hierarchy classes (`RestoDruid`/`DruidTranquility`, `HealPaladin`, `HealPriest`, `RestoShaman`, `ShamanNonCombat`, plus the `GenericDruid` combat-rez host) with zero `new` sites and no strategy creators, while live bots run the new placeholder→pve/pvp/raid hierarchy. Fixed: the group-heal nodes now live in the equipped AOE strategies (`RestorationDruidAoe`, `HolyPaladinAoe`, `HolyPriestAoe` + `DisciplinePriestAoe`, `RestorationShamanAoe` — all auto-equipped via the spec update actions), and the 12 dead donor-hierarchy files are deleted (incl. the old feral `Feral`/`Cat`/`Bear` bases, unreferenced outside themselves).
+- Finding 2 (`chain heal on party` has no action creator): confirmed — only an ActionNode alternative name, not a creator. Fixed: the live shaman node uses registered `NextAction("chain heal", ...)` (`CastChainHealAction`, `CastAoeHealSpellAction`-based, party-targeting).
+Non-blocking notes: all four accepted as-is (90 almost-full band is pre-existing local config; `almost full aoe heal` registered-but-unreferenced matches donor; second O(n) group scan negligible; subgroup filter currently group-equality no-op). Also corrected the earlier claim: the trigger/value/policy infra from the first commit is unchanged and now feeds live rows.
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
 ## Mage threat dump NOT ported: Lesser Invisibility unobtainable (MAG-4) — 2026-10-10
 
 Donor: mod-playerbots (`79bd4281`)
