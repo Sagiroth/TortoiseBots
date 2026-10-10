@@ -527,7 +527,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         {
             if (tab == 2)
             {
-                combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", NULL);
+                combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", "tank face", NULL);
             }
             else if (player->GetLevel() < 30 || tab == 0)
             {
@@ -573,7 +573,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         {
             if (tab == 1)
             {
-                combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", NULL);
+                combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", "tank face", NULL);
 			}
             else if(tab == 0)
             {
@@ -619,7 +619,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
 
                 if (tanking)
                 {
-                    combatEngine->addStrategies("tank feral", "tank assist", "pull", "pull back", "close", NULL);
+                    combatEngine->addStrategies("tank feral", "tank assist", "pull", "pull back", "close", "tank face", NULL);
                 }
                 else
                 {
@@ -738,7 +738,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 }
                 else
                 {
-                    combatEngine->addStrategies("tank feral", "tank assist", "close", NULL);
+                    combatEngine->addStrategies("tank feral", "tank assist", "close", "tank face", NULL);
                     combatEngine->removeStrategy("dps feral");
                     combatEngine->removeStrategy("dps assist");
                     combatEngine->removeStrategy("behind");
@@ -841,7 +841,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 : (player->HasSpell(16961) || player->HasSpell(16958));
             if (bgTanking)
             {
-                combatEngine->addStrategies("tank feral", "close", NULL);
+                combatEngine->addStrategies("tank feral", "close", "tank face", NULL);
             }
             else
             {

@@ -44,6 +44,7 @@
 #include "LastSpellCastValue.h"
 #include "ChatValue.h"
 #include "HasTotemValue.h"
+#include "HasOwnTotemValue.h"
 #include "HaveAnyTotemValue.h"
 #include "LeastHpTargetValue.h"
 #include "AoeHealValues.h"
@@ -51,6 +52,7 @@
 #include "RtiValue.h"
 #include "PositionValue.h"
 #include "ThreatValues.h"
+#include "RaidTargetValues.h"
 #include "DuelTargetValue.h"
 #include "InvalidTargetValue.h"
 #include "EnemyPlayerValue.h"
@@ -221,7 +223,9 @@ namespace ai
             creators["last potion used time"] = [](PlayerbotAI* ai) { return new LastPotionUsedTimeValue(ai); };
             creators["chat"] = [](PlayerbotAI* ai) { return new ChatValue(ai); };
             creators["has totem"] = [](PlayerbotAI* ai) { return new HasTotemValue(ai); };
+            creators["has own totem"] = [](PlayerbotAI* ai) { return new HasOwnTotemValue(ai); };
             creators["have any totem"] = [](PlayerbotAI* ai) { return new HaveAnyTotemValue(ai); };
+            creators["have any own totem"] = [](PlayerbotAI* ai) { return new HaveAnyOwnTotemValue(ai); };
 
             creators["aoe heal"] = [](PlayerbotAI* ai) { return new AoeHealValue(ai); };
 
@@ -235,6 +239,9 @@ namespace ai
             creators["my threat"] = [](PlayerbotAI* ai) { return new MyThreatValue(ai); };
             creators["tank threat"] = [](PlayerbotAI* ai) { return new TankThreatValue(ai); };
             creators["threat"] = [](PlayerbotAI* ai) { return new ThreatValue(ai); };
+            creators["neglect threat"] = [](PlayerbotAI* ai) { return new NeglectThreatValue(ai); };
+            creators["find target"] = [](PlayerbotAI* ai) { return new FindTargetByNameValue(ai); };
+            creators["boss target"] = [](PlayerbotAI* ai) { return new BossTargetValue(ai); };
 
             creators["incoming damage"] = [](PlayerbotAI* ai) { return new IncomingDamageValue(ai); };
             creators["balance"] = [](PlayerbotAI* ai) { return new BalancePercentValue(ai); };
@@ -277,6 +284,7 @@ namespace ai
             creators["already seen players"] = [](PlayerbotAI* ai) { return new AlreadySeenPlayersValue(ai); };
             creators["group"] = [](PlayerbotAI* ai) { return new IsInGroupValue(ai); };
             creators["range"] = [](PlayerbotAI* ai) { return new RangeValue(ai); };
+            creators["spread distance"] = [](PlayerbotAI* ai) { return new SpreadDistanceValue(ai); };
             creators["inside target"] = [](PlayerbotAI* ai) { return new InsideTargetValue(ai); };
             creators["party member without item"] = [](PlayerbotAI* ai) { return new PartyMemberWithoutItemValue(ai); };
             creators["party member without food"] = [](PlayerbotAI* ai) { return new PartyMemberWithoutFoodValue(ai); };

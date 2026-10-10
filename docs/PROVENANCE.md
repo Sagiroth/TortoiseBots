@@ -4524,6 +4524,53 @@ expires; ~20% of all stall time sits in WORK.
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
 
+## BWL bundle 1: Broodlord range, drake off-tank flank, Vael flank entry, Nef mage Ice Block (raid1 item 4) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/BWL/BWLTriggers.cpp:59-71` (BwlBroodlordRangedTooCloseTrigger:
+ranged non-victim within BROODLORD_SAFE_DISTANCE), `:102-106`
+(BwlNefarianWildMagicTrigger: mage + SPELL_WILD_MAGIC 23410),
+`src/Ai/Raid/BWL/BWLActions.cpp:269-278` (step out to exactly 18y),
+`src/Ai/Raid/BWL/BWLStrategy.cpp:38-47,54-55` (drake rear flank, ice block
+wiring), `src/Ai/Raid/BWL/BWLHelpers.h:55` (18y constant).
+
+Source files (module, modified): `ai/playerbot/BwlBundle1Policy.h` (new
+pure rule: ids, 18y, leave/flank/ice-block predicates),
+`ai/playerbot/strategy/triggers/BlackwingLairDungeonTriggers.h`
+(Broodlord/NefarianStart+EndFightTrigger on entries 12017/11583,
+header-inline BroodlordRangedTrigger with victim hold, header-inline
+NefarianWildMagicTrigger: mage + self aura 23410),
+`ai/playerbot/strategy/actions/BlackwingLairDungeonActions.h`
+(enable/disable actions, BroodlordMoveAwayAction 12017/18y),
+`ai/playerbot/strategy/generic/BlackwingLairDungeonStrategies.h/.cpp`
+(`broodlord` fight strategy with ranged 18y reaction; `nefarian` fight
+strategy with mage Ice Block reaction reusing the existing `ice block`
+action; start triggers; end-fight cleanup),
+`ai/playerbot/strategy/triggers/DungeonTriggers.cpp` (Vaelastrasz 13020
+added to IsRaidDragonEntry; DragonBreathRiskTrigger fires for tanks that
+are not the victim), registrations (`TriggerContext.h`,
+`ActionContext.h`, `StrategyContext.h`),
+`tools/test_bwl_bundle1_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc
+line).
+
+Copied / ported / reimplemented: reimplemented in our per-boss fight
+strategy idiom. Deviations from the donor, all deliberate: (a) no
+resist-aura triggers here (separate raid1 item 8); (b) Nefarian positioning
+is already covered by the universal dragon flank (Nefarian is in the flank
+list), so only the Wild Magic class call is new; (c) the drake change is a
+one-condition edit on the shared trigger, so Onyxia/Nefarian/Solnius gain
+off-tank flanking too — same geometry, no per-boss special case.
+
+Reason: raid1 gaps BWL-BROODLORD (ranged ate Blast Wave), BWL-DRAKES
+(off-tanks stood in breath), BWL-VAEL (13020 missing from flank list),
+BWL-NEFARIAN-WILDMAGIC (mages never Ice Blocked).
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Entries 12017/13020/11583 and spell
+23410 verified against tw_world. Build via build-commit.sh pending; live
+in-game check pending.
 ## Quest-reward score tiebreak (AG-3/RPG-A1, 2026-10-09)
 
 Donor: mod-playerbots (`79bd4281`):
@@ -4550,7 +4597,1440 @@ scoring when there is nothing to break).
 
 Reason: two EQUIP rewards tied on usage and the bot took the first in
 vendor order, compounding into wrong picks over levels.
+## Rogue lockbox in trade (AG-5 + AG-9, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Actions/TradeStatusExtendedAction.cpp:14-80` (parse
+extended-trade packet; locked NONTRADED slot + rogue -> unlock),
+`src/Ai/Base/Strategy/WorldPacketHandlerStrategy` wiring (`:37`),
+`src/Ai/Base/Trigger/ChatTriggerContext.h:163` + supported `:176`
+(manual unlock chat trigger).
+
+Source files (module, modified): `ai/playerbot/TradeLockboxPolicy.h` (new
+pure usefulness gate),
+`ai/playerbot/strategy/actions/UnlockTradedItemAction.{h,cpp}`
+(isUseful gate via the policy),
+`ai/playerbot/PlayerbotAI.cpp` (SMSG_TRADE_STATUS_EXTENDED packet
+handler), `ai/playerbot/strategy/triggers/WorldPacketTriggerContext.h`
+(trigger creator),
+`ai/playerbot/strategy/generic/WorldPacketHandlerStrategy.cpp`
+(extended-update -> unlock node),
+`ai/playerbot/strategy/triggers/ChatTriggerContext.h` +
+`ai/playerbot/strategy/generic/ChatCommandHandlerStrategy.cpp` (AG-9
+manual whisper trigger), `tools/test_trade_lockbox_policy.cpp` (new
+standalone test), `tools/verify_all.sh` (register test) +
+`CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) no packet parsing - the 1.12 extended
+layout differs from the donor's WotLK parse (no gem fields), and the
+unlock action already reads the box from TradeData, so the packet only
+wakes the action; (b) the usefulness gate the donor lacks (rogue + locked
+box present): trade updates arrive on every window change, so an ungated
+action would chat errors every tick for non-rogues; fine checks (skill,
+spell, level) stay in Execute, which still tells when it runs; (c) the
+existing thorough unlock action (skill-vs-lock, pick cast, tells) is
+reused, not the donor's DoSpecificAction stub.
+
+Reason: the unlock action existed but never fired - rogues let trades
+complete around locked boxes.
 
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
+
+## Paladin resist aura auto-swap per boss (raid1 item 8) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`): per-boss resist actions under
+`src/Ai/Base/Actions` (add paladin resist strategy + cast the aura now),
+`src/Ai/Base/Trigger/BossAuraTriggers.cpp:13-25,169-185` (paladin-gated,
+boss-alive, aura-missing checks), `src/Ai/Raid/MC/MCStrategy.cpp`
+(Lucifron/Gehennas/Majordomo shadow; Magmadar/Garr/Geddon/Sulfuron/
+Golemagg/Ragnaros fire), `src/Ai/Raid/BWL/BWLStrategy.cpp`
+(Razorgore/Vael/Broodlord/Firemaw/Flamegor fire).
+
+Source files (module, modified): `ai/playerbot/ResistAuraPolicy.h` (new
+pure rule: fire list 11982/12057/12056/12098/11988/11502/12435/13020/
+12017/11983/11981, shadow list 12118/12259/12018, swap-when-missing +
+action routing), `ai/playerbot/strategy/triggers/DungeonTriggers.h/.cpp`
+(fight-agnostic BossWantsFire/ShadowAuraTrigger: paladin gate, manual-aura
+override guard, aura-missing guard, bounded attacker entry scan),
+`ai/playerbot/strategy/actions/DungeonActions.h/.cpp`
+(SwapFire/ShadowResistanceAuraAction: +aura strategy then cast now),
+wired into `molten core` + `blackwing lair` combat triggers at
+ACTION_HIGH+1, registrations (`TriggerContext.h`, `ActionContext.h`),
+`tools/test_resist_aura_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc
+line).
+
+Copied / ported / reimplemented: reimplemented fight-agnostic — one pair
+of triggers reads boss entries off the attacker list instead of the
+donor's per-boss trigger/action zoo (9 MC + 5 BWL nodes). All 14 entries
+verified in tw_world (report's 12118/12098/11988/12017 queries resolve).
+Deviations from the donor, all deliberate: (a) single PR for MC+BWL per
+the report sketch; (b) manual `aura fire/shadow/frost` strategies suppress
+the auto-swap (player control first — explicit orders beat automation);
+(c) 5s check interval (resist fights are slow; no per-tick attacker
+scans); (d) no frost/nature handling (no donor MC/BWL frost boss; hunter
+nature aspect out of scope).
+
+Reason: raid1 gap MC-AURA/BWL: aura actions existed but were manual-only
+— paladins kept whatever aura was last set through fire/shadow bosses.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Build via build-commit.sh pending;
+live in-game check pending.
+## Warrior WAR-8: tank Intervene on focused party member (2026-10-09)
+
+Feature: `ProtectionWarriorStrategy` gains `protect party member` →
+`intervene` at ACTION_EMERGENCY, plus the `intervene` → `defensive stance`
+prerequisite node in the live base-warrior factory (it existed only in the
+commented-out census block). Verified real first: Intervene 45595 is
+Defensive-locked in `spell_template` and taught by 47277 (26 trainer
+rows) — a genuine learnable 1.18.1 player spell, so the row was added.
+## Druid parity DRU-2: Nature's Swiftness -> instant Healing Touch chain — 2026-10-09
+Feature: new `NaturesSwiftnessActiveTrigger` (`HasAuraTrigger` on
+"nature's swiftness", true while the buff sits on the bot) + `TwoTriggers`
+combo `nature's swiftness heal` (active + party member critical health) +
+two combat rows in `RestorationDruidStrategy`: pop `nature's swiftness` at
+ACTION_CRITICAL_HEAL+1 on party-member-critical (below the instant
+Swiftmend ladder, so no 3 min cooldown burns first), spend with
+`healing touch on party` at ACTION_CRITICAL_HEAL+3 (above the ladder, so
+the buff never idles).
+## Priest parity shadow kit: PRI-14 fallback chain + PRI-3 DP spread + PRI-9 healer silence — 2026-10-09
+Feature: (1) `ShadowPriestStrategy` now uses the existing
+`ShadowPriestStrategyActionNodeFactory.h` (mind blast to mind flay to
+smite to shoot fallbacks) instead of the empty local factory class that
+shadowed it — an out-of-mana shadow bot wands instead of idling, and a
+pre-Mind-Flay lowbie smites. (2) AoE kit spreads `devouring plague on
+attacker` below the SW:P spread (Devouring Plague is the 1.12 second
+DoT; vanilla has no Vampiric Touch). (3) Base shadow kit silences enemy
+healers (the row used to need the `+cc` toggle; the cc kit keeps its own
+copy).
+## Druid parity DRU-4: Omen of Clarity clearcasting consumption — 2026-10-09
+Feature: two combat rows, no new triggers or actions (both registered,
+verified by the wiring check). Cat (`DpsFeralDruidStrategy`):
+`clearcasting` -> `shred` at ACTION_NORMAL+6, above the bite/rip/builder
+ladder and strictly above the faerie-fire row at +5 (queue ties keep the
+first-pushed basket, so the proc must outrank the debuff refresh).
+Restoration: `clearcasting` -> `rejuvenation on party` at
+ACTION_LIGHT_HEAL+3, above the normal HoT rows.
+## Druid parity DRU-5: Ferocious Bite execute + Rip-guard timing — 2026-10-09
+Feature: new `FerociousBiteExecuteTrigger` (CP>=1 + target alive + target
+HP%<25, with a `HasSpell("ferocious bite")` guard) + new
+`FerociousBiteTimeTrigger` (CP5 + target Rip absent or >10 s left via
+`ai->GetAura("rip", target, true)->GetAuraDuration()`) + two combat rows
+in `DpsFeralDruidStrategy` replacing the flat CP5 row: execute-bite at
+ACTION_NORMAL+6 (top finisher, strictly above the faerie-fire row at +5 —
+ties keep the first-pushed basket), timed bite at ACTION_NORMAL+3 (below
+the pve rip row at +4). Finisher order: execute > rip > timed bite.
+## Priest parity PRI-1: Fear Ward on the party tank in combat — 2026-10-09
+Feature: new `FearWardOnTankTrigger` (`BuffOnTankTrigger` on "fear ward",
+cooldown-guarded like the donor) + `CastFearWardOnTankAction`
+(`BuffOnTankAction`, targets "party tank without aura", `getName`
+overridden to the registered name) + combat row `fear ward on tank` at
+ACTION_HIGH+3 in `PriestBuffStrategy`, outranking the generic `fear ward`
+row (demoted from ACTION_EMERGENCY to ACTION_HIGH+2) by relevance — the
+engine executes the highest-relevance action, so the tank is warded first
+and the generic row stays as a manual-target fallback.
+## Druid parity DRU-1: out-of-combat Rebirth when no living resurrector — 2026-10-09
+Feature: new `OocRebirthTrigger` (`RebirthTrigger` + living
+priest/paladin/shaman group scan, cheap class check first, then the base
+cooldown/spellbook/target checks) + non-combat row `ooc rebirth` ->
+`rebirth` at ACTION_EMERGENCY in `DruidStrategy` (base, so all four wired
+specs + leveling inherit) + pure rule `ShouldCastOocRebirth` in new
+`ai/playerbot/OocRebirthPolicy.h` + `tools/test_ooc_rebirth_policy.cpp`
+(6 checks, registered in `tools/verify_all.sh`).
+## Druid parity DRU-3: feral/cat Innervate on the group healer — 2026-10-09
+Feature: new local `HealerLowManaTrigger` (named exactly "healer low
+mana", true while a living same-map party healer sits below the LowMana
+line — mirror of the scan in `CastInnervateAction::GetTarget`) + combat
+row `healer low mana` -> `innervate` at ACTION_HIGH-1 in
+`DpsFeralDruidStrategy` (below Cower, above the rotation) + `innervate`
+caster-form node in the cat action-node factory (was missing — balance
+and resto each define their own; without it the cat casts from form and
+fails). No new action: the existing `innervate` action already targets
+the lowest-mana party healer with manual `.bot boost` winning.
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Druid/Strategy/RestoDruidStrategy.cpp:37-43` (critical ->
+`nature's swiftness` 58.0, `nature's swiftness active` -> `healing touch
+on party` 55.0) + `src/Ai/Class/Shaman/ShamanAiObjectContext.cpp:286-288`
+(the `ancestral swiftness active` + `TwoTriggers` pairing pattern copied
+here). Deviations, deliberate: donor pop row outranks its whole heal
+ladder; ours sits below Swiftmend (instant already, cheaper than a 3 min
+cooldown) — same shape, cheaper ordering for vanilla cooldowns.
+
+Reason: druid parity report DRU-2 — we cast NS as a bare buff with no
+spend row; the donor's core resto save was never rewired.
+
+Source files (module, modified):
+`ai/playerbot/strategy/druid/DruidTriggers.h`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`src/Ai/Class/Druid/Strategy/CatDruidStrategy.cpp:165-171`
+(`clearcasting` -> `shred` 24.5, above rip 23.5) +
+`src/Ai/Class/Druid/Strategy/RestoDruidStrategy.cpp:45-46`
+(`clearcasting` -> free HoT 13.0). Deviations, deliberate: donor resto
+spends the proc on Lifebloom-on-tank, which does not exist in 1.18.1 —
+ours spends it on party Rejuvenation. The cat-swipe AoE combo row was
+skipped (no `TwoTriggers` combo registered for it; single-target spend
+covers the proc).
+
+Reason: druid parity report DRU-4 — the `clearcasting` trigger was
+registered but zero wired rows referenced it.
+
+Source files (module, modified):
+`ai/playerbot/strategy/druid/DpsFeralDruidStrategy.cpp`,
+`ai/playerbot/strategy/druid/RestorationDruidStrategy.cpp` +
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells or actions: Nature's Swiftness 17116 and
+Healing Touch ranks verified in spell_template; both trigger and action
+creators already registered.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.
+`src/Ai/Class/Priest/Strategy/ShadowPriestStrategyActionNodeFactory.h`
+(fallback chain) +
+`src/Ai/Class/Priest/Strategy/ShadowPriestStrategy.cpp:72-106`
+(second-DoT spread) + `:54-70` (always-on silence rows). Deviations,
+deliberate: VT mapped to Devouring Plague 2944+ (undead racial, gated by
+the trigger's HasSpell check); no Shadow Word: Death (no 1.18.1 spell
+row — report PRI-4).
+
+Reason: priest parity report PRI-14/PRI-3/PRI-9 — dead fallback chain,
+single-DoT AoE, healer silence behind a toggle.
+
+Source files (module, modified):
+`ai/playerbot/strategy/priest/ShadowPriestStrategy.cpp`,
+`ai/playerbot/strategy/priest/PriestTriggers.h`,
+`ai/playerbot/strategy/priest/PriestActions.h`,
+`ai/playerbot/strategy/priest/PriestAiObjectContext.cpp` +
+`docs/classes/priest.md` (rotation lines).
+
+Copied / ported / reimplemented: reimplemented in place. No new spells
+(SW:P 589+, Devouring Plague 2944+, Silence 15487 in 1.18.1 data).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`.
+Build via build-commit.sh. No live test.
+strategy idiom. No new spells: Omen of Clarity 16864 / Clearcasting
+16870 verified in spell_template.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.
+## Chat `pull back` alias + `attackers` wiring fix (SOC-C2/SOC-C4, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Strategy/ChatCommandHandlerStrategy.cpp:72` (`pull back` ->
+`pull my target`), `:68` (`attackers` -> `tell attackers`).
+
+Source files (module, modified): `ai/playerbot/strategy/generic/ChatCommandHandlerStrategy.cpp`
+(new `pull back` -> `pull my target` node; `attackers` node now points at
+the existing `tell attackers` action instead of the nonexistent `attackers`
+action), `ai/playerbot/strategy/triggers/ChatTriggerContext.h` (new
+`pull back` trigger creator) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place (two trigger-node
+lines + one creator line). No deviations: same alias target and same action
+name as the donor. The `pull back` tank auto-pull strategy name is
+unaffected - chat dispatch resolves whisper text against trigger creators,
+not strategy names.
+
+Reason: whispering a bot `pull back` resolved no trigger (only `pull` and
+`pull rti` existed); whispering `attackers` matched the trigger but queued
+an action with no creator, so the bot stayed silent.
+
+Local validation: `bash tools/verify_all.sh` (incl. wiring check:
+live-missing=0); `git diff --check`; shared-builder compile check; no live
+in-game test.
+| Felhunter Devour Magic purge + cleanse (PET-1) | `mod-playerbots` @ `79bd4281` `src/Ai/Class/Warlock/WarlockTriggers.h:161-171` (`DevourMagicPurgeTrigger`/`DevourMagicCleanseTrigger`), `src/Ai/Class/Warlock/WarlockActions.h:192-205` (`CastDevourMagicPurgeAction`/`CastDevourMagicCleanseAction`), `src/Ai/Class/Warlock/Strategy/GenericWarlockStrategy.cpp:63-78` (purge/cleanse nodes at 50.0) | `ai/playerbot/strategy/warlock/WarlockTriggers.h` (two trigger classes), `WarlockActions.h` (`CastDevourMagicPurgeAction` on current target + `CastDevourMagicCleanseAction` on party dispel target, both Felhunter-gated in `isUseful`), `WarlockStrategy.cpp` (`WarlockPetStrategy::InitCombatTriggers`: purge at ACTION_DISPEL+1, cleanse at ACTION_DISPEL), `WarlockAiObjectContext.cpp` (4 creators), `runtime/DevourMagicPolicy.h` + `tools/test_devour_magic_policy.cpp` | Reimplemented as pet-cast actions (donor casts through the owner; ours routes via `CastPetSpellAction` so range/cooldown resolve against the demon) wired into the live pet strategy all specs inherit; donor node priority 50.0 maps to ACTION_DISPEL+1/+0 | `bash tools/verify_all.sh`; `python3 tools/verify_action_trigger_wiring.py` (0 live-missing); standalone `test_devour_magic_policy` (5 checks); `git diff --check`. Compile via shared builder; no live in-game test |
+## Warrior WAR-4: staggered tank defensives (2026-10-09)
+
+Feature: protection warrior *Shield Wall* moved from `critical health`
+(<20%, ACTION_EMERGENCY+1) to `low health` (20-50%, ACTION_MEDIUM_HEAL);
+*Last Stand* stays at critical (ACTION_EMERGENCY+2). The two no longer
+fire stacked at the same moment — Wall blunts damage early, Last Stand is
+held for genuinely lethal moments, and Wall's 30-min cooldown is not spent
+on fights Last Stand alone would survive.
+
+## Warrior WAR-5: arms battle-stance pin (2026-10-09)
+
+Feature: `ArmsWarriorBuffStrategy` combat pin swapped from `berserker
+stance` to `battle stance` (ACTION_NORMAL). Charge, Overpower, Mocking
+Blow, Sweeping Strikes, and Retaliation are all Battle-locked in 1.18.1
+and never fired from the old berserker pin; Whirlwind keeps its
+arms-scoped berserker prerequisite node so it still dances out and back.
+
+## Warrior WAR-10: arms/fury boost rows (2026-10-09)
+
+Feature: `ArmsWarriorBoostStrategy` gains `death wish` (HIGH) and `almost
+full health` → `retaliation` (HIGH) rows; `FuryWarriorBoostStrategy` gains
+`almost full health` → `retaliation` (HIGH) alongside its existing death
+wish / recklessness rows. Retaliation fires at 70-90% hp — winning fights
+where the counterattack shield punishes melee adds. All behind the default
+`boost` strategy (player-togglable), protection boost stays empty.
+## Shared flee-heading anti-oscillation memory (POS-7) — 2026-10-09
+
+Feature: the existing `FleeFailureMemory` (donor `CheckLastFlee` shape:
+45-degree same-heading veto, 5 s window, observed-failures-only) is now
+consulted by the two combat sidesteps that previously consulted nothing.
+`TankFaceAwayAction` vetoes sidestep headings remembered as failures
+(anchored on the held mob) with a two-pass fallback so the cache can never
+block every route; `SetBehindTargetAction` diverts to its flank-angle
+fallback when the direct rear point repeats a failed heading. Both record
+(`BeginAttempt`) and observe like the flee/spread paths. `FleeManager`
+(plain flee) and `RaidSpreadAction` (spread) already consult — no change
+there. No new value plumbing: all state lives on `LastMovement` as before.
+## Warrior WAR-3: lost-aggro taunt priority (2026-10-09)
+
+Feature: protection warrior `lose aggro` now fires `taunt` at
+ACTION_INTERRUPT+1 (41) instead of ACTION_MOVE+4 (34) — above every DPS
+spender row (HIGH band), the interrupt rows, and the out-of-melee charge
+path; below EMERGENCY defensives. A mob peeling onto a non-tank member
+gets taunted back within a GCD instead of waiting behind shield slam,
+interrupts, and charge movement.
+## Tank-face as a real strategy for any tank (POS-6) — 2026-10-09
+
+Feature: `TankFaceStrategy` (`tank face`), donor `TankFaceStrategy` shape.
+The old `tank face needed` → `tank face away` row moves off the shared
+`close` strategy onto its own strategy; the trigger's `HasRealPlayerMaster`
+gate becomes strategy membership, so pool/raid tanks face held mobs away
+from the party too. `AiFactory` adds `tank face` to the warrior-protection,
+paladin-protection, and druid-tank-feral kits (donor factory shape:
+`IsTank → +tank face`). Stay/wait-for-attack exemptions kept; the geometry
+(average party angle ±108°, nearest side, LoS/terrain, 90° hysteresis) is
+unchanged. `TankFaceAwayAction` itself is untouched.
+## Opt-in combat spread for owned/hired bots and melee (POS-3) — 2026-10-09
+
+Feature: `SpreadStrategy` (`spread`, donor `formation` shape) + `spread
+distance` manual value (donor `disperse distance` shape: -1 unset, 5yd
+ranged / 2yd melee defaults) + `SpreadNeededTrigger` (`spread needed`) +
+`.bot behavior <scope> spread on|off` (BehaviorToggles table, persisted,
+reported in TBM:BOTSTATE automatically). `RaidSpreadAction` generalizes:
+with `spread` on, owned/hired bots and melee are eligible and the manual
+knob (or role default) is the "too close" radius; the legacy pool-only
+path (ranged, 10yd, owner-exempt) is byte-identical when off. Combat-only
+and hold orders (stay/follow/wait-for-attack/grind) veto in both paths.
+Pure gate/radius rules extend `ai/playerbot/CombatSpreadPolicy.h`
+(`ShouldOptInSpread`, `SpreadRadius`), tested by
+`tools/test_spread_toggle_policy.cpp` (wired into `verify_all.sh`).
+Default: nobody (opt-in); no factory change. The legacy pool path is
+near-identical when off except the action now also requires ranged (aligns
+with the trigger; Onyxia P2 direct dispatch no longer spreads pool
+melee). The action returns true on a step (consumes the tick, displaces
+only filler DPS at ACTION_NORMAL) where the donor always returns false.
+## Generic rear-flank for melee (POS-1) — 2026-10-09
+
+Feature: `RearFlankAction` (`rear flank`) + `RearFlankNeededTrigger`
+(`rear flank needed`), donor `RearFlankAction` shape. A melee bot standing
+in the mob's frontal arc (2x90 degrees) or tail cone (outside 2PI-120
+degrees) sidesteps to the nearer of +-frand(90, 120)-degree polar offsets
+at half melee range instead of walking straight through the cleave to the
+exact rear point. Wired flank-first on the `behind` strategy
+(`ACTION_HIGH + 1`, above `set behind` at `ACTION_HIGH`); every melee DPS
+kit with `behind` gets it with no factory change. Tanks holding the mob
+never flank (trigger excludes victim == bot, keeps the tank-face path);
+dragon raid geometry untouched. Pure angle math in
+`ai/playerbot/RearFlankPolicy.h`, tested by
+`tools/test_rear_flank_policy.cpp` (wired into `verify_all.sh`).
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:322-329` (protect party member → intervene at EMERGENCY)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`ProtectionWarriorStrategy.cpp`, `WarriorStrategy.cpp`,
+`ai/playerbot/strategy/warrior/`). Deviations from the donor: none in
+behavior — same trigger, same priority. The trigger (`protect party
+member` → `party member to protect` value), the PROTECT action, and both
+context registrations already existed; only the strategy row and the live
+stance node were missing.
+
+Reason: WAR-8 in the warrior parity sweep: full Intervene infrastructure
+with zero live consumers.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:233-249` (shield wall at low health MEDIUM_HEAL; last stand at critical EMERGENCY)
+
+Copied / ported / independently reimplemented: reimplemented in place in
+`ProtectionWarriorStrategy.cpp` (`ai/playerbot/strategy/warrior/`).
+Deviations from the donor, all deliberate: (a) no Enraged Regeneration at
+critical — no such player spell row exists in 1.18.1; (b) Wall's existing
+BUFF_ACTION aura check prevents re-firing while already up, so Wall firing
+early at low health cannot consume it twice at critical.
+
+Reason: WAR-4 in the warrior parity sweep: both cooldowns fired stacked
+below 20%, wasting the longer-cooldown Wall.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).
+
+## Accept-time solo-capability gate (RPG-A2, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:573-588`
+(IsQuestCapableDoing: refuse questLevel > level+3, type != 0,
+suggestedPlayers >= 2).
+
+Source files (module, modified): `ai/playerbot/QuestLogPolicy.h` (new
+pure QuestAcceptSoloCapable rule, same numbers as the drop triage minus
+drop-only clauses), `ai/playerbot/strategy/actions/AcceptQuestAction.cpp`
+(gate in WouldAcceptQuest for masterless random bots),
+`tools/test_quest_log_triage_policy.cpp` (extended with accept-gate
+cases; already registered in verify_all) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) grouped-and-able bots (can fight boss: 4+
+following members, same value the travel pick gate uses) keep
+elite/dungeon/group quests - the donor has no carve-out because its random
+bots never group for this path; (b) pool bots below 10 keep the stricter
++1 taker-fit already in WouldAcceptQuest; (c) repeatable/seasonal refusal
+not ported (no 1.12 seasonal API; `rpg repeat quest` is an explicit
+feature); (d) owned/hired bots follow the player, unchanged.
+
+Reason: nearby NPCs and travel could accept elite/group quests the
+nearly-full log triage would later drop - refused at accept instead.
+
+Local validation: `bash tools/verify_all.sh` (incl. extended triage test
++ wiring check live-missing=0); `git diff --check`; shared-builder
+compile check; no live in-game test.
+- `src/Ai/Class/Warrior/Strategy/ArmsWarriorStrategy.cpp:100-107` (battle stance pin at HIGH+10)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`ArmsWarriorStrategy.cpp`, `ai/playerbot/strategy/warrior/`).
+Deviations from the donor, all deliberate: (a) pin at NORMAL, not HIGH —
+the buff spec is additive with combat and a HIGH pin would fight
+Whirlwind's berserker node every tick; NORMAL still beats no other stance
+row in the buff spec so the pin holds; (b) no new stance-prerequisite
+nodes in the live factory — sweeping strikes already has its arms-scoped
+battle node, charge falls back to reach melee, and the pin itself puts
+overpower/mocking/retaliation in the right stance by default; (c) the AoE
+sweeping-strikes multipliers keep managing the pack stance choice
+unchanged.
+
+Reason: WAR-5 in the warrior parity sweep: arms bots sat in berserker and
+five Battle-locked abilities never fired.
+- `src/Ai/Class/Warrior/Strategy/ArmsWarriorStrategy.cpp:217-224` (death wish HIGH+2)
+- `src/Ai/Class/Warrior/Strategy/ArmsWarriorStrategy.cpp:244-251` (retaliation at almost-full-health EMERGENCY+1)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`ArmsWarriorStrategy.cpp`, `FuryWarriorStrategy.cpp`,
+`ai/playerbot/strategy/warrior/`). Deviations from the donor, all
+deliberate: (a) rows at HIGH, not HIGH+2/EMERGENCY+1 — they sit alongside
+the existing HIGH recklessness/death-wish siblings and the boost spec is
+already gated; EMERGENCY would outbid real survival reactions; (b) no
+retaliation stance node in the live factory — it fires from battle stance,
+which the WAR-5 pin holds (soft dependency; without that PR the row waits
+for battle rather than dancing); (c) no enraged-regen row — no such player
+spell in 1.18.1.
+
+Reason: WAR-10 in the warrior parity sweep: arms boost had recklessness
+only (death wish just a fallback alternative), and neither spec gated
+retaliation on the winning-health band.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).
+
+## Vaelastrasz BA refinement: victim hold + repulsion flee (raid1 item 6) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/BWL/BWLActions.cpp:142-265` (VaelastraszMoveAway: victim
+holds while boss lives; weighted-repulsion flee from non-BA bots within
+20y; BA carriers cluster; tail-sweep recovery past 30y; ranged past 25y
+blends toward the boss), `src/Ai/Raid/BWL/BWLMultipliers.cpp:64-89`
+(BA carriers: only the BA move runs, charge blocked), `src/Ai/Raid/BWL/
+BWLStrategy.cpp:26-32` (rear-flank + BA runout wiring), donor constants
+20y/30y/25y repulsion/recovery/bias.
+
+Source files (module, modified): `ai/playerbot/VaelPolicy.h` (new pure
+rule: repulsion/cluster/recovery/bias/victim-hold predicates),
+`ai/playerbot/strategy/actions/DungeonActions.h/.cpp`
+(VaelBurningAdrenalineFleeAction: victim hold, 20y weighted repulsion
+ignoring BA carriers while boss lives, 30y tail-sweep recovery, 25y
+ranged bias, 3y donor incremental steps via FindStep),
+`ai/playerbot/strategy/generic/BlackwingLairDungeonStrategies.h/.cpp`
+(`vael` fight strategy: bomb trigger re-queued to the flee at
+EMERGENCY+7 above the universal runout, potion node, end-fight cleanup,
+start trigger), `ai/playerbot/strategy/triggers/
+BlackwingLairDungeonTriggers.h` (VaelStart/EndFightTrigger on entry
+13020), `ai/playerbot/strategy/actions/BlackwingLairDungeonActions.h`
+(enable/disable actions), registrations (`TriggerContext.h`,
+`ActionContext.h`, `StrategyContext.h`), `tools/test_vael_policy.cpp`
+(new standalone test) + `tools/verify_all.sh` (test list),
+`docs/guides/dungeon-tactics.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in our fight-strategy
+idiom on top of the universal bomb trigger. Deviations from the donor,
+all deliberate: (a) no new trigger — the universal `raid bomb debuff`
+already fires on all three BA ids, so `vael` only re-queues it to the
+smarter flee at higher priority; outside Vael the generic anchor-flee
+runs unchanged; (b) no BA movement-lock multiplier: the donor blocks all
+other movement once far from clean bots, but our flee re-fires each tick
+until the aura expires and FindStep rejects bad landings, so a lock adds
+ceremony without observable gain; (c) ranged LOS is inherited from
+FindStep's own LOS check rather than the donor's two-pass LOS/no-LOS
+search; (d) the 25y bias blends by snapping to the boss heading only when
+fleeing away from it (avoids oscillation from weighted averaging).
+
+Reason: raid1 gap BWL-VAEL (b): the universal runout flees blindly from
+the anchor with no victim exemption and no BA clustering — the tank ran
+and victims scattered into the clean raid.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. BA ids 18173/23478/23620 already
+covered by the universal trigger; Vael 13020 in the flank list from the
+BWL bundle PR. Build via build-commit.sh pending; live in-game check
+pending.
+`src/Ai/Class/Druid/DruidTriggers.h:368-420`
+(`FerociousBiteTimeTrigger` with rip/roar duration reads,
+`FerociousBiteExecuteTrigger` with CP/HP% gates) +
+`src/Ai/Class/Druid/Strategy/CatDruidStrategy.cpp:158-178` (execute 24.0
+> rip 23.5 > timed 22.5). Deviations, deliberate: donor savage-roar
+clause dropped (no such spell in 1.18.1); donor absolute <20k-HP clause
+dropped (tuned for WotLK pools — vanilla pools make HP% alone the right
+execute gate).
+
+Reason: druid parity report DRU-5 — flat CP5 bite fired regardless of
+rip/bite windows, clipping Rip refreshes and missing executes.
+`src/Ai/Class/Druid/Strategy/CatDruidStrategy.cpp:100-106`
+(`healer low mana` -> `innervate on healer` 35.0). Deviations,
+deliberate: per the parity coordination note this was implemented with a
+LOCAL trigger because the shared `healer low mana` value/trigger
+(parity/heal-2) is not on the integration branch yet — the local trigger
+uses the exact shared name, so when that lands this trigger is deleted
+and the cat row needs no change. No pvp/raid exclusion either (donor
+ports sometimes scope this to pve; a thirsty healer needs Innervate in
+any bracket).
+
+Reason: druid parity report DRU-3 — feral drained nothing back to the
+healer; innervate rows were balance/resto self-only.
+
+Source files (module, modified):
+`ai/playerbot/strategy/druid/DruidTriggers.h`,
+`ai/playerbot/strategy/druid/DruidTriggers.cpp`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`ai/playerbot/strategy/druid/DpsFeralDruidStrategy.cpp` +
+`docs/classes/druid.md` (behaviour lines). The old flat
+`FerociousBiteTrigger` creator stays registered (harmless, no live rows
+reference it anymore).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells or actions: Ferocious Bite / Rip ranks
+trainer-taught, creators pre-registered.
+`src/Ai/Class/Druid/Strategy/GenericDruidNonCombatStrategy.cpp:116`
+(`party member dead` -> `revive`, via the generic `PartyMemberDeadTrigger`)
+`src/Ai/Class/Priest/Strategy/...` + paladin/shaman equivalents for the
+ACTION_EMERGENCY non-combat row shape (`PaladinStrategy.cpp:95-97` etc).
+Deviations, deliberate and verified against live `tw_world`: the donor's
+`revive` spell does not exist as a druid-taught spell in 1.18.1 — report
+claim "Revive 2435" is wrong (2435 = Numbing Strike here); the only
+`Revive` row (24341) is a Zul'Gurub boss spell (boss_mandokir.cpp) with no
+trainer or skill-line entry, while druid trainers teach Rebirth
+(20484+, skill class_mask 1024 = druid). So the port casts Rebirth out of
+combat instead of a non-existent Revive, and gates it on no living
+priest/paladin/shaman in the group (their normal rez is always
+preferred). Combat rebirth rows are untouched.
+
+Reason: druid parity report DRU-1 — wired specs never resurrected out of
+combat; every other healer class has the non-combat row.
+
+Source files (module, modified): `ai/playerbot/OocRebirthPolicy.h` (new),
+`ai/playerbot/strategy/druid/DruidTriggers.h`,
+`ai/playerbot/strategy/druid/DruidTriggers.cpp`,
+`ai/playerbot/strategy/druid/DruidStrategy.cpp`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`tools/test_ooc_rebirth_policy.cpp` (new), `tools/verify_all.sh` +
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Rebirth 20484/20739/20742/20747/20748
+verified in spell_template (family 7, druid skill line).
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Innervate 29166 verified in
+spell_template; trigger/action creators registered in the druid context.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.
+
+## Review fixes (2026-10-09, PR #582 CHANGES_REQUESTED)
+Blocking finding verified real and fixed: without an absolute-HP gate,
+the execute row (CP>=1 at +6) eats every combo point on any sub-25%
+target before Rip (CP>=3 at +4) can refresh — confirmed by trigger/row
+priorities, so Rip would fall off for the whole execute phase on bosses.
+Fixed with the donor's absolute gate scaled to vanilla: fire only when
+remaining HP < 4000 (donor: < 20000; WotLK top-rank bite hits roughly an
+order of magnitude harder than vanilla ranks, verified via
+spell_template bite values). Bosses keep Rip; trash and near-dead
+targets still eat early bites.
+Non-blocking raid note (no rip row in raid kit): pre-existing gap,
+unchanged by this PR (pre-PR flat CP5 bite behaved the same there);
+left for a follow-up, not widening this diff.
+verify_all.sh PASSED, build-commit.sh BUILD OK (commit pending push to same branch).
+- `src/Ai/Base/Actions/MovementActions.cpp` (`MovementAction::CheckLastFlee`; consults in avoid-aoe `FleePosition`, tank-face, set-behind)
+
+Source files (module, modified):
+`ai/playerbot/strategy/actions/MovementActions.cpp`
+(`TankFaceAwayAction::Execute`, `SetBehindTargetAction::Execute`),
+`docs/concepts/bot-mechanics-and-quirks.md` (doc line).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) failures are observed
+outcomes (2 yd rule), not dispatches — a successful heading stays
+repeatable, where the donor vetoes any recent flee heading; (b) two-pass
+fallback (vetoed headings allowed on the second pass) so the memory can
+never strand the bot; (c) tank-face and set-behind share the `fleeFailures`
+instance anchored per-target, no new `LastMovement` fields; (d) the
+`AvoidAoeAction::FleePosition` consumer arrives with POS-2 (this PR wires
+the helper into the existing sidesteps only).
+
+Reason: tank sidesteps and rear approaches could alternate headings every
+tick when two triggers disagreed, jittering instead of settling.
+- `src/Ai/Base/Strategy/CombatStrategy.cpp` (`TankFaceStrategy`: triggerless, default action `tank face` at ACTION_MOVE)
+- `src/Ai/Base/Strategy/CombatStrategy.h` (declaration)
+- `src/Bot/Factory/AiFactory.cpp` (`IsTank → +tank face`)
+
+Source files (module, modified):
+`ai/playerbot/strategy/generic/MeleeCombatStrategy.{h,cpp}` (new strategy,
+row moved off `close`), `ai/playerbot/strategy/StrategyContext.h`
+(registration), `ai/playerbot/strategy/triggers/GenericTriggers.cpp`
+(membership gate), `ai/playerbot/AiFactory.cpp` (3 tank kits),
+`docs/concepts/bot-mechanics-and-quirks.md` (doc row).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) the row keeps its trigger
+(`tank face needed`) instead of going fully triggerless — the trigger
+carries the hysteresis math and the stay/wait exemptions the donor lacks;
+(b) priority stays ACTION_MOVE (donor shape) rather than the old
+ACTION_MOVE + 5; (c) no `recently flee info` consult yet (POS-7
+generalizes the helper later).
+
+Reason: pool/raid tanks never faced mobs away — cleaves hit the party
+whenever no real-player master led the group.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check` clean.
+Build via build-commit.sh (see PR summary); no live in-game check.
+
+## Review fixes (2026-10-09, reviewer muse-1.3 max)
+
+Blocking 1 (failure-memory success rule vs sidesteps — REAL, fixed by
+revert): tank sidesteps preserve radius and rear approaches stay in melee
+by construction, so a successful sidestep never gains the 2 yd the
+`fleeFailures` success rule needs; the per-tick global observer would
+record it as a failure after 3 s and veto the heading for genuine flees
+too. Removed both consults (`SetBehindTargetAction` rear veto +
+`BeginAttempt`, `TankFaceAwayAction` two-pass veto + `Observe` +
+`BeginAttempt`); both actions are byte-identical to pre-PR behaviour plus
+a comment naming the 90-degree trigger window as the anti-oscillation.
+
+Blocking 2 (3 s rule cannot damp per-tick ping-pong — REAL, same fix):
+alternating L/R sidesteps restart `BeginAttempt`'s pending clock each
+dispatch, so no failure is ever recorded. Reverted rather than adding a
+new dispatch-time veto: per the report, the trigger's 90-degree
+hysteresis window (fires only while the mob's front points at the party
+side; the tank lands ~108 degrees off, outside the window) is the
+dampener, and no live jitter has been observed. If a live test shows
+alternation, the fix is a sidestep re-dispatch throttle, not the failure
+memory.
+
+Blocking 3 (stale-anchor consult order — MOOT after revert): the rear
+`IsHeadingFree` check before any `Observe` is gone with the consult
+itself. No fix needed.
+
+Non-blocking "reversal veto" wording — ACCEPTED: the code vetoes the same
+heading as the failure while the donor vetoes its reverse
+(`info.angle + PI`). Reworded the PROVENANCE entry and memory doc row to
+"same-heading veto".
+
+Non-blocking "hold instead of second pass" — MOOT after revert (no
+second pass remains).
+
+Non-blocking "no live jitter test" — ACKNOWLEDGED: still no live test;
+needs an in-game sidestep-alternation check before merge.
+| Sapphiron fight (Naxx): hover-based air detection, iceblock hide, blizzard step-out, ground flank | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Sapphiron.cpp`, `src/Ai/Raid/Naxx/NaxxBossHelper.h` (SapphironBossHelper), `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Sapphiron rows) | Reimplemented trigger-driven; air detection via MOVEFLAG_HOVER not IsFlying (vanilla SetFly commented out); blizzard avoid via NPC 16474 grid step-out (no dynobj dependency) | IDs verified in tw_world (15989, 28522, 28534/28547, 16474, 181247); core boss_sapphiron.cpp hover + icebolt/blizzard confirmed | `bash tools/verify_all.sh` + `tools/test_sapphiron_ice_policy.cpp`; build-commit + no live test (hide timing wants a live run) |
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:217-232` (`lose aggro` -> taunt at ACTION_INTERRUPT+1)
+
+Copied / ported / independently reimplemented: reimplemented in place in
+the live list-based engine (`ProtectionWarriorStrategy.cpp`,
+`ai/playerbot/strategy/warrior/`). Deviations from the donor, all
+deliberate: (a) no heroic-throw fallback chain — Heroic Throw has no
+1.18.1 player spell row, and the existing `taunt` -> `battle shout taunt`
+fallback node already covers taunt failure; (b) the `lose aggro` trigger
+itself (`GenericTriggers.cpp`, `ai->IsTank` check + non-tank-victim gate)
+is kept as-is — no `main tank` value or LowTankThreat wiring since that
+LD-8 branch is not on the integration branch yet — plus a player-target
+guard the bump made load-bearing (players have no threat list; without it
+the trigger is spuriously active in PvP and the 41-priority taunt would
+outbid real interrupts for zero effect); (c) `taunt on snare target` stays
+at ACTION_MOVE (different target: adds, not the lost-aggro mob).
+
+Reason: WAR-3 in the warrior parity sweep: the tank's taunt sat below
+interrupts and the intercept/charge path, so a peeled mob waited behind a
+missed kick and a charge GCD while the healer took hits.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).
+## Equip-upgrade score threshold (AG-1, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/PlayerbotAIConfig.cpp:716` (`EquipUpgradeThreshold = 1.1f`),
+`src/Ai/Base/Value/ItemUsageValue.cpp:308`
+(`itemScore > oldScore * threshold`).
+
+Source files (module, modified): `ai/playerbot/EquipThresholdPolicy.h`
+(new pure better verdict: strictly above old * threshold),
+`ai/playerbot/strategy/values/ItemUsageValue.cpp` (isBetter score arm
+routed through the policy),
+`ai/playerbot/PlayerbotAIConfig.{h,cpp}` +
+`ai/playerbot/aiplayerbot.conf.dist.in` (new
+`AiPlayerbot.EquipUpgradeThreshold = 1.1`, default 1.1),
+`tools/test_equip_threshold_policy.cpp` (new standalone test),
+## Ready-check rebuff defer (SOC-S5, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Actions/ReadyCheckAction.cpp:160-182` (defer reply when
+ForceRebuffOnReadyCheck + force-rebuff strategy; ReportReadiness +
+SendReadyConfirm split), `:252-276` (ForceRebuffAction + ReadyReplyAction),
+`src/Bot/ForceRebuff.{h,cpp}` (pending window, GCD/cycle guards, buff-first
+multiplier), `src/Ai/Base/Trigger/GenericTriggers.cpp:720`
+(ForceRebuffPendingTrigger), `src/Ai/Base/StrategyContext.h:164-165`
+(force-rebuff strategy registration).
+
+Source files (module, modified): `ai/playerbot/ReadyRebuffPolicy.h` (new
+pure rule: 8 s grace once not casting, 30 s hard cap that always replies),
+`ai/playerbot/strategy/actions/ReadyCheckAction.{h,cpp}` (defer branch on a
+real ready-check packet when the key is on and out of combat; ReadyCheck
+split into ReportReadiness + SendReadyConfirm; new ReadyReplyAction),
+`ai/playerbot/strategy/triggers/GenericTriggers.{h,cpp}` (new
+ForceRebuffPendingTrigger: anchor set, cheap first),
+`ai/playerbot/strategy/triggers/TriggerContext.h`,
+`ai/playerbot/strategy/actions/WorldPacketActionContext.h`,
+`ai/playerbot/strategy/generic/WorldPacketHandlerStrategy.cpp` (pending ->
+ready-reply node on the always-present default strategy),
+`ai/playerbot/PlayerbotAIConfig.{h,cpp}` +
+`ai/playerbot/aiplayerbot.conf.dist.in` (new
+`AiPlayerbot.ForceRebuffOnReadyCheck = 0`, default off),
+`tools/test_ready_rebuff_policy.cpp` (new standalone test),
+`tools/verify_all.sh` (register test) +
+`docs/guides/configuration-tuning.md`, `CHANGELOG.md` (doc lines).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) the threshold applies only to the
+`isBetter` score arm - exact ties still fall through to the sheet /
+quality / item-level tiebreaks, and spec-transition, broken-gear, forced,
+and zero-weight-first-stats swaps return above untouched; (b) 1.0 restores
+any-gain swaps for operators who want them.
+
+Reason: bots swapped gear on any epsilon stat-weight gain, churning swaps
+across audits for nothing.
+the donor, all deliberate: (a) no force-rebuff strategy, buff-cycle hooks,
+or heal-suppression multiplier - buffs flow through the normal per-tick
+engine during the hold, only the confirm packet is delayed; (b) the pending
+state is a per-bot "manual time" anchor value, not a PlayerbotAI member, so
+no AI header change; (c) the reply can never wedge: past the 30 s cap the
+action replies even mid-cast (the donor window can expire unanswered), and
+the finish path clears the anchor so no double confirm goes out; (d) manual
+"ready" whispers (empty packet) and in-combat checks answer immediately.
+
+Reason: bots answered ready instantly and then buffed through the pull; the
+raid saw ready while the bot was still casting.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test +
+wiring check); `git diff --check`; shared-builder compile check; no live
+in-game test.
+## Warlock Immolate spreading (WAR-2) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/Strategy/DemonologyWarlockStrategy.cpp:58-81`
+(`immolate on attacker` 19.0 + `immolate` 17.5),
+`WarlockTriggers.h:202-207` + `WarlockActions.h:287-296`
+(`DebuffOnAttacker` pair).
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/WarlockTriggers.h`
+(`ImmolateOnAttackerTrigger : DebuffOnAttackerTrigger`),
+`ai/playerbot/strategy/warlock/WarlockActions.h`
+(`CastImmolateOnAttackerAction : CastRangedDebuffSpellOnAttackerAction`),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (registered
+both names), `ai/playerbot/strategy/warlock/WarlockStrategy.cpp`
+(`WarlockAoeStrategy` row at HIGH-1 next to corruption on attacker),
+`ai/playerbot/strategy/warlock/DemonologyWarlockStrategy.cpp` +
+`DestructionWarlockStrategy.cpp` (spec-level row at NORMAL) +
+`docs/classes/warlock.md`, `CHANGELOG.md` (doc lines).
+
+Copied / ported / reimplemented: reimplemented as an exact mirror of
+the live corruption on-attacker pair — no new policy header (nothing to
+decide beyond the shared `DebuffOnAttacker` + 16-cap guard). Deviations
+from the donor, all deliberate: (a) no ≤20% target-health gate on the
+spreader (the corruption spreader has none either — the gate lives on
+the single-target trigger only); (b) affliction spreads via the aoe row
+only, keeping its single-target Agony/Siphon economy untouched.
+
+Reason: demo/destro bots dotted one mob while adds beat on them; donor
+spreads Immolate at spec level.
+
+Local validation: `bash tools/verify_all.sh` (wiring audit covers the two
+new names); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: 2+ attackers
+each gain immolate, single-target rotation unchanged.
+## Warlock spec-level DoT spreading (WAR-10) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/Strategy/AfflictionWarlockStrategy.cpp:32-48` +
+`DemonologyWarlockStrategy.cpp:49-65` +
+`GenericWarlockStrategy.cpp:142-160` (corruption/UA/agony on attacker at
+spec level, independent of aoe).
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/AfflictionWarlockStrategy.cpp`
+(`corruption on attacker` + `siphon life on attacker` at NORMAL),
+`ai/playerbot/strategy/warlock/DemonologyWarlockStrategy.cpp`
+(`corruption on attacker` at NORMAL) + `docs/classes/warlock.md`,
+`CHANGELOG.md` (doc lines). No new triggers/actions — the on-attacker
+pairs and the `WarlockAoeStrategy` HIGH-1 rows already exist.
+
+Copied / ported / reimplemented: reimplemented as priority layering.
+Deviations from the donor, all deliberate: (a) the aoe HIGH-1 rows stay
+— spec NORMAL rows are a fallback when aoe is off (aoe is default-on, so
+this only bites when the player disables it); (b) NORMAL sits below
+single-target upkeep (NORMAL+1/2), urgent tap and Dark Pact, above filler
+tap — spreading never starves the main rotation or mana recovery (the
+mana sanity); (c) no Unstable Affliction (WotLK-only); agony spread stays
+aoe-gated in the base curses strategy; (d) destruction gets no row here —
+its spreader is immolate, which is WAR-2's unmerged row; immolate-on-aoe
+composes with this when both land.
+
+Reason: with aoe toggled off, multi-mob pulls dotted one target while
+adds beat on the bot; donor spreads at spec level regardless.
+
+Local validation: `bash tools/verify_all.sh` (no new names — wiring
+unchanged); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: aoe-off
+multi-pull dots each attacker, mana stays out of the urgent band.
+| Resto shaman healer-dps (SHM-1) | `mod-playerbots` `src/Ai/Class/Shaman/Strategy/RestoShamanStrategy.cpp:57-64` (`healer should attack` flame shock / lightning bolt / chain lightning) @ `79bd4281`, priest `PriestOffdpsStrategy` (`PriestStrategy.cpp:616-645`) as the live pattern | `ai/playerbot/strategy/shaman/ShamanStrategy.{h,cpp}` (new `ShamanOffdpsStrategy` + pve/pvp/raid), `ShamanAiObjectContext.cpp` (`offdps` placeholder + `OffdpsSituationStrategyFactoryInternal` + registration), `ShamanActions.h` (update-strats nodes), `ShamanHealerDpsPolicy.h` + `tools/test_shaman_healer_dps_policy.cpp` | Ported minus lava burst (WotLK-only): `healer should attack` flame shock +0.2 / lightning bolt default, `ranged medium aoe and healer should attack` chain lightning +0.3. Fills the dangling `offdps` name `AiFactory.cpp` already adds for resto when `enableOffSpecStrategies` is on. Spells: Flame Shock 8050, Lightning Bolt 403, Chain Lightning 421 (all verified in tw_world.spell_template) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+## Review fixes (2026-10-09, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (solo ungrouped feral-tank override — REAL, fixed): the
+solo→tank flip row now adds `tank face` alongside `tank assist`/`close`,
+so a druid flipped before joining a group faces mobs away.
+
+Blocking 2 (BG feral-tank override — REAL, fixed): the BG tanking row now
+adds `tank face`, closing the pool-BG-tank hole.
+
+Non-blocking "triggerless comment" — FIXED: comment now says trigger row
+(kept for hysteresis + stay/wait exemptions), matching code and
+PROVENANCE.
+
+Non-blocking "party-angle distance filter" — ACKNOWLEDGED, not fixed:
+donor filters to ranged within sight; ours averages all live
+same-map members. Pre-existing, amplified by raid scope. Needs a live
+raid check or a distance filter — left for playtesting.
+
+Non-blocking "off-spec forced tanks" — ACKNOWLEDGED, not fixed: arms/ret
+with forced tank role never get the `tank face` kit (old code fired via
+`close` + `IsTank`). Donor misses these too and the case is rare; noting
+the regression for a follow-up.
+- `src/Ai/Base/Actions/MovementActions.cpp` (`CombatFormationMoveAction::Execute`: disperse-distance step-out; `DisperseSetAction::Execute`: enable/reset 5yd ranged / 2yd melee, disable, +-1yd)
+- `src/Ai/Base/Actions/MovementActions.h` (`DEFAULT_DISPERSE_DISTANCE_RANGED/MELEE`)
+
+Source files (module, modified): `ai/playerbot/CombatSpreadPolicy.h`
+(rules), `ai/playerbot/strategy/values/RangeValues.{h,cpp}` (`spread
+distance` value), `ai/playerbot/strategy/values/ValueContext.h`
+(registration), `ai/playerbot/strategy/generic/CombatStrategy.{h,cpp}`
+(`spread` strategy), `ai/playerbot/strategy/StrategyContext.h`
+(registration), `ai/playerbot/strategy/triggers/DungeonTriggers.{h,cpp}`
+(`spread needed` gate), `ai/playerbot/strategy/triggers/TriggerContext.h`
+(registration), `ai/playerbot/strategy/actions/DungeonActions.cpp`
+(action generalization + tank veto + radius-scaled step),
+`ai/playerbot/strategy/actions/SpreadDistanceAction.{h,cpp}` (new knob
+writer) + `ChatActionContext.h` (registration),
+`commands/BotCommands.cpp` (behavior toggle +
+usage), `tools/test_spread_toggle_policy.cpp` + `tools/verify_all.sh`
+(new standalone test), `docs/guides/player-controls.md`,
+`docs/guides/dungeon-tactics.md` (doc lines).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) no `disperse set` chat
+increments — the knob is a persisted value, the toggle is `.bot behavior`;
+(b) hold-order vetoes kept even when opted in (owner "explicit orders beat
+automation"; stay/guard/wait-for-attack gate in combat, follow/grind params are
+near-dead NON_COMBAT checks kept for symmetry); (c) step-out reuses the existing failure-memory + FindStep
+path (LoS/path/aggro-checked) instead of the donor's blind flee; (d) melee
+at 2yd only when the player opts in (default stacking unchanged).
+
+Reason: a player's own raid clumped on chain-cleave bosses — spread was
+pool-bot-only and ranged-only.
+- `src/Ai/Base/Actions/MovementActions.cpp` (`RearFlankAction::isUseful` + `::Execute`: front/tail arc checks, polar offsets at meleeRange x 0.5, nearest side)
+- `src/Ai/Base/Actions/MovementActions.h` (declaration: 90-degree min / 120-degree max cone constants)
+
+Source files (module, modified): `ai/playerbot/RearFlankPolicy.h` (new),
+`ai/playerbot/strategy/actions/MovementActions.{h,cpp}` (action),
+`ai/playerbot/strategy/triggers/GenericTriggers.{h,cpp}` (trigger),
+`ai/playerbot/strategy/{actions/ActionContext.h,triggers/TriggerContext.h}`
+(registration), `ai/playerbot/strategy/generic/MeleeCombatStrategy.cpp`
+(flank-first rows), `tools/test_rear_flank_policy.cpp` +
+`tools/verify_all.sh` (new standalone test),
+`docs/concepts/bot-mechanics-and-quirks.md` (doc row).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) destination validates
+through LoS-hit + `IsWithinLOS` mirroring `SetBehindTargetAction` (the
+donor moves blind); (b) trigger excludes the tank-held case so tank-face
+keeps owning it; (c) `BossRearFlankAction` per-boss overrides not ported
+(no per-boss raid scripts in generic scope); (d) no anti-oscillation
+consult yet (POS-7 generalizes the helper later).
+
+Reason: melee DPS walked directly through frontal cleaves/tail cones to
+reach the exact rear point, eating avoidable damage on any mob.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test); `git
+diff --check` clean. Build via build-commit.sh (see PR summary); no live
+in-game check.
+
+## Review fixes (2026-10-09, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (dead `spread distance` knob — REAL, fixed): added
+`SpreadDistanceAction` (`spread distance` chat action, RangeAction
+mirror: `<yards>` set, `?` read, `off`/`reset` reset to role default),
+registered in `ChatActionContext.h`. `RESET_AI_VALUE` restores the -1.0
+default, so the manual branch of `SpreadRadius` is now reachable.
+
+Blocking 2 (12yd step vs 2yd/5yd radii ping-pong — REAL, fixed): step is
+now `min(radius + 1, hazardEvasionDistance)` (donor shape: 3yd melee /
+6yd ranged steps), so a melee pair 1.5yd apart steps 3yd, not 12yd out
+of melee range.
+
+Blocking 3 (no tank exemption — REAL, fixed): `IsTank` veto in both the
+`SpreadNeededTrigger` gate and the `RaidSpreadAction` opt-in block, so
+`.bot behavior party spread on` can no longer drag the boss through the
+raid. Tanks keep the legacy stacking behavior.
+
+Non-blocking "follow/grind dead checks" — ACCEPTED with the reviewer's
+prescribed fix (document, don't widen): `ShouldOptInSpread` comment now
+notes follow/grind are NON_COMBAT-only so those params are near-dead;
+stay/guard/wait-for-attack do the real combat veto work. PR
+description/provenance/docs claims corrected to stay/guard.
+
+Non-blocking "legacy path not byte-identical" — ACKNOWLEDGED, intent
+confirmed: the added `IsRanged` check in the non-opt-in `Execute` path
+aligns the action with the trigger (Onyxia P2 direct dispatch no longer
+spreads pool melee). PROVENANCE claim corrected.
+
+Non-blocking "default action comment" — FIXED (one trigger row, not
+triggerless).
+
+Non-blocking "returns true vs donor returns false" — RECORDED in
+deviations: at ACTION_NORMAL this only displaces filler DPS.
+
+Non-blocking "guard missing" — FIXED: `guard` added to both opt-in
+gates (guard sits on COMBAT, unlike follow/grind).
+| Shaman Stoneclaw panic totem at low health (SHM-3) | `mod-playerbots` `src/Ai/Class/Shaman/Strategy/ElementalShamanStrategy.cpp:38-45` + `RestoShamanStrategy.cpp:22` (`low health -> stoneclaw totem` 40.0) + `ShamanActions.cpp:48-52` (solo-only isUseful) @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanTriggers.h` (new `StoneclawPanicTrigger`), `ShamanAiObjectContext.cpp` (creator), `ElementalShamanStrategy.cpp` + `RestorationShamanStrategy.cpp` (totems combat rows), `ShamanStoneclawPolicy.h` + `tools/test_shaman_stoneclaw_policy.cpp` | Reimplemented in live classic style: new `stoneclaw panic` trigger (self health <= LowHealth 50, stoneclaw not down, solo-only unless manual `totem earth stoneclaw` ordered) queued at ACTION_HIGH above the fixed earth-totem rows in ele + resto totems strategies. Donor 40.0 numeric priority maps to ACTION_HIGH in our enum. Spells: Stoneclaw ranks 5730/6390/6391/6392/10427/10428 (existing `CastStoneclawTotemAction`, verified in 1.18.1). Deviations: enhancement excluded (melee totem set stays; scope per report ele+resto) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+`src/Ai/Class/Priest/PriestTriggers.h:94` +
+`src/Ai/Class/Priest/PriestTriggers.cpp:35-42`
+(`FearWardOnMainTankTrigger::IsActive` with spell-cooldown guard) +
+`src/Ai/Class/Priest/PriestActions.h:247` (`CastFearWardOnMainTankAction`
+on `BuffOnMainTankAction`) +
+`src/Ai/Class/Priest/Strategy/GenericPriestStrategy.cpp:25-26`
+(row at ACTION_HIGH+3). Deviations, deliberate: donor names say "main
+tank" on `BuffOnMainTankTrigger`; ours says "tank" on the local
+`BuffOnTankTrigger` (same "party tank without aura" value, cf. shaman
+`earth shield on party tank`) — no new value needed.
+
+Reason: priest parity report PRI-1 — biggest tank-survival gap in fear
+dungeons; we only buffed whoever lacked Fear Ward.
+
+Source files (module, modified):
+`ai/playerbot/strategy/priest/PriestTriggers.h`,
+`ai/playerbot/strategy/priest/PriestTriggers.cpp`,
+`ai/playerbot/strategy/priest/PriestActions.h`,
+`ai/playerbot/strategy/priest/PriestAiObjectContext.cpp`,
+`ai/playerbot/strategy/priest/PriestStrategy.cpp` +
+`docs/classes/priest.md` (behaviour line).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Fear Ward 6346/19337 verified in
+spell_template.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.
+Blocking 1 (flank↔set-behind oscillation — REAL, fixed): the tail-cone
+clause fired at set-behind's exact-rear destination while flank outranks
+it with a freshly re-rolled random angle every tick. Dropped the `inRear`
+clause from both the trigger and `isUseful`: generic flank is now
+front-arc-only (vanilla trash has no tail swipes); the full donor
+front+tail shape is reserved for boss/dragon contexts. Belt and braces:
+the trigger also returns false when `behind` is already true.
+
+Blocking 2 (explicit holds lose — REAL, fixed): stay/wait-for-attack
+exemptions added to `RearFlankNeededTrigger` (mirrors
+`TankFaceNeededTrigger`); `isUseful` gates stay via
+`MovementAction::isUseful` as before.
+
+Blocking 3 (tank guard trigger-only — REAL, fixed): victim==bot guard
+added to `RearFlankAction::isPossible` (mirrors
+`SetBehindTargetAction::isPossible`), so an aggro flip between trigger
+poll and Execute cannot walk a tank off its mob.
+
+Non-blocking "dead policy header" — FIXED by aligning, not deleting:
+`NeedsRearFlank` is now front-arc-only (tail param documented
+ignored); the test pins the front-only expectations. (Production still
+inlines `HasInArc` for the hot path — the header pins the geometry
+contract, including the 90° exclusivity `HasInArc`'s inclusivity would
+otherwise drift from.)
+
+Non-blocking "generic scope vs donor per-boss" — ACKNOWLEDGED, partially
+addressed: front-arc-only already narrows the blast radius to mobs whose
+front actually matters; no elite/boss gate added (cleave exists on
+non-elite trash too, e.g. SM/RFK). Left for playtesting.
+
+Non-blocking "dragon interplay" — ACKNOWLEDGED, not verified live:
+reaction-engine `dragon flank` (entry-gated dragons, EMERGENCY+4) vs
+combat-engine `rear flank` (half melee range). Different ranges/engines;
+arbitration needs a live dragon check before merge.
+
+Non-blocking "LOS-fail no fallback" — ACKNOWLEDGED, not fixed: returns
+false, retries next tick with a re-rolled angle. Same shape as before;
+minor spin risk on LOS-blocked geometry, left for playtesting.
+| Raid-tactics framework: classic-raid auto-enable rows (ZG 309 / AQ20 509 / AQ40 531), name-based `find target` / `boss target` lookup, per-fight `neglect threat` suppression (read-once flag, ThreatMultiplier bypass) | `mod-playerbots` | `79bd4281` | `src/Ai/Base/Value/ThreatValues.h` (NeglectThreatResetValue), `src/Ai/Base/Strategy/ThreatStrategy.cpp` (neglect-threat bypass), `src/Ai/Base/Value/TargetValue.{h,cpp}` (FindTargetValue/BossTargetValue), `src/Ai/Bot/PlayerbotAI.cpp` (ApplyInstanceStrategies map rows), `src/Ai/Raid/Naxx/NaxxMultipliers.cpp` (per-boss suppress pattern) | Reimplemented: trigger-driven enter/leave rows (kept, extended), grid+attackers name lookup, ManualSet read-once flag | Unblocks AQ20/Naxx per-boss tactics ports | `bash tools/verify_all.sh` + `tools/test_raid_framework_policy.cpp`; build-commit + no live test |
+## Baron Geddon Inferno runout (raid1 item 1) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/MC/MCTriggers.cpp` (McBaronGeddonInfernoTrigger: boss has
+SPELL_INFERNO 19695), `src/Ai/Raid/MC/MCActions.cpp:34-49`
+(McMoveFromBaronGeddonAction: everyone runs INFERNO_DISTANCE 20y out,
+stops casts first), `src/Ai/Raid/MC/MCMultipliers.cpp`
+(BaronGeddonAbilityMultiplier: only the runout moves while Inferno or
+Living Bomb is up), `src/Ai/Raid/MC/MCStrategy.cpp:45-47` (trigger wiring).
+
+Source files (module, modified): `ai/playerbot/GeddonInfernoPolicy.h`
+(new pure rule: ids, 20y distance, trigger/multiplier predicates),
+`ai/playerbot/strategy/triggers/MoltenCoreDungeonTriggers.h/.cpp`
+(GeddonStart/EndFightTrigger on entry 12056, GeddonInfernoTrigger: aura
+19695 on Geddon + within 20y), `ai/playerbot/strategy/actions/
+MoltenCoreDungeonActions.h` (GeddonEnable/DisableFightStrategyAction,
+GeddonMoveAwayAction: MoveAwayFromCreature 12056/20y),
+`ai/playerbot/strategy/generic/MoltenCoreDungeonStrategies.h/.cpp`
+(`geddon` fight strategy: inferno reaction at ACTION_EMERGENCY+5, potion
+combat node, end-fight cleanup, GeddonInfernoMultiplier),
+`ai/playerbot/strategy/generic/DungeonMultipliers.h/.cpp`
+(GeddonInfernoMultiplier declaration + implementation),
+`ai/playerbot/strategy/triggers/TriggerContext.h`,
+`ai/playerbot/strategy/actions/ActionContext.h`,
+`ai/playerbot/strategy/StrategyContext.h` (registrations),
+`tools/test_geddon_inferno_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in our per-boss fight
+strategy idiom (StartBossFightTrigger + enable/disable actions, mirror the
+Magmadar pattern). Deviations from the donor, all deliberate: (a) the
+donor blocks movement via per-action type checks (MovementAction,
+CastReachTargetSpellAction); here the multiplier first type-gates on the
+same two action families via dynamic_cast (heals/DPS/consumables always
+pass), then name-matches so only `move away from geddon` and the
+universal `raid bomb runout` pass — same observable behavior without donor
+class coupling; (b) the trigger is
+range-gated (fires only within 20y) so already-safe bots do not attempt a
+failing move each tick; (c) Living Bomb needs no new code — the universal
+`raid bomb debuff` runout already covers spell 20475; (d) no cast-stop in
+the trigger/action — MoveAwayFromCreature movement already interrupts via
+the movement path, and the multiplier prevents re-approach casts from
+queuing while Inferno burns.
+
+Reason: raid1 gap MC-GEDDON-INFERNO: Living Bomb was covered universally
+but nothing moved bots out of the 20y Inferno pulse.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Spell ids 19695/20475 and creature
+12056 verified against tw_world. Build via build-commit.sh pending; live
+in-game check pending.
+
+## Review fixes: Geddon multiplier movement-gate + dungeon-wide registration (PR #568) — 2026-10-09
+
+Review verdict on the Inferno runout PR was CHANGES_REQUESTED with two
+blocking findings; both verified real against the donor
+(`src/Ai/Raid/MC/MCMultipliers.cpp:55-66`,
+`src/Ai/Raid/MC/MCStrategy.cpp:101-106`) and fixed:
+
+(a) The multiplier vetoed EVERY action by name while Inferno burned or a
+bomb was carried — healers at 30y could not heal, ranged did zero DPS, and
+the fight's own fire-protection potion was vetoed by its own strategy. The
+donor only vetoes MovementAction (except the two runouts) plus
+CastReachTargetSpellAction. Fixed: `GeddonInfernoMultiplier::GetValue`
+returns 1.0 immediately for non-movement/non-reach actions (also skipping
+the attacker/aura scan for ~90% of evaluated actions), and
+`ShouldBlockGeddonMove` takes an `actionMovesOrReaches` gate computed via
+dynamic_cast at the call site so the policy stays unit-testable.
+
+(b) The multiplier lived on the ephemeral `geddon` fight strategy, so the
+post-death Living Bomb carrier lost approach suppression when `-geddon`
+removed the strategy. The donor registers on the dungeon-wide MC strategy.
+Fixed: multiplier moved to `MoltenCoreDungeonStrategy::
+InitCombatMultipliers` + `InitNonCombatMultipliers`; the `geddon` fight
+strategy keeps only triggers (Inferno reaction, potion, end-fight
+cleanup). The non-combat registration covers the out-of-combat bomb case.
+
+Non-blocking findings also addressed: the multiplier scan is now gated
+behind the movement check (finding 1), and the policy test asserts
+non-movement immunes (`greater heal`, `flash heal`, `renew`, `shoot`,
+`fire protection potion`, `tank assist` with Inferno + bomb — all pass).
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the updated
+policy test pass); `git diff --check`. Build via build-commit.sh pending;
+live in-game check pending.
+## Review fixes (2026-10-09, PR #567 CHANGES_REQUESTED)
+All three blocking findings verified real in code and fixed:
+- Finding 1 (cross-map priest veto deadlocks the corpse): confirmed — the scan had no map/range check while `PartyMemberValue::Check` requires same map + sight. Fixed: scan now skips members off-map or beyond sightDistance of the corpse (reviewer's shape, cf. ReleaseSpiritAction precedent).
+- Finding 2 (explicit `revive target` orders vetoed): confirmed — `SpellTargetTrigger::IsActive` validates manual targets through the same `IsTargetValid`. Fixed: non-empty manual `revive targets` bypasses the gate (player control first).
+- Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
+- Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+## Warlock Unending Breath on swimmers (WAR-6) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/Strategy/GenericWarlockNonCombatStrategy.cpp:89-90`
+(self 12.0 + party 11.0), `WarlockTriggers.h:37-50` +
+`WarlockTriggers.cpp:67-75` (swim-gated buff + on-party pair).
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp}` (new
+`UnendingBreathTrigger : BuffTrigger` + `UnendingBreathOnPartyTrigger :
+BuffOnPartyTrigger`, both swim-gated),
+`ai/playerbot/strategy/warlock/WarlockActions.h`
+(`CastUnendingBreathAction : CastBuffSpellAction` +
+`CastUnendingBreathOnPartyAction : BuffOnPartyAction`),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (registered
+all four names), `ai/playerbot/strategy/warlock/WarlockStrategy.cpp`
+(`WarlockBuffStrategy` NC rows at NORMAL+1/NORMAL) +
+`docs/classes/warlock.md` (the old upkeep claim is now true),
+`CHANGELOG.md` (doc lines).
+
+Copied / ported / reimplemented: reimplemented in the live list-engine
+tree following the shaman Water Breathing idiom (`ShamanTriggers.h`,
+`ShamanNonCombatStrategy.cpp:91-95`) — the forward-ported
+`GenericWarlockNonCombatStrategy` rows were dead (file registered
+nowhere). Unending Breath 5697 verified in `tw_world.spell_template`.
+
+Reason: doc claimed upkeep the bot never performed; donor buffs self +
+party while swimming.
+
+Local validation: `bash tools/verify_all.sh` (wiring audit covers the
+four new names); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: swim with a
+warlock bot, self + party gain the buff, nothing fires on land.
+| Elemental earth-shock execute discipline (SHM-4) | `mod-playerbots` `src/Ai/Class/Shaman/ShamanTriggers.cpp:50-64` (`EarthShockExecuteTrigger`: <25% AND <1500hp) + `Strategy/ElementalShamanStrategy.cpp:58-65` (execute node 5.5) @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanTriggers.h` (new `EarthShockExecuteTrigger`), `ShamanAiObjectContext.cpp` (creator), `ElementalShamanStrategy.cpp` (`shock` row -> `earth shock execute` at same ACTION_NORMAL), `ShamanEarthShockPolicy.h` + `tools/test_shaman_earth_shock_policy.cpp` | Ported verbatim thresholds via `GetHealthPercent()` + absolute `GetHealth() < 1500` (house idiom; donor divides manually). Ele only; enhancement keeps ungated `shock` (melee threat tool); interrupt triggers untouched. Spell: Earth Shock 8042+ (existing action, verified) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+## Review fixes (2026-10-09, PR #615 CHANGES_REQUESTED)
+All three blocking findings verified real in code and fixed:
+- Finding 1 (fires with Innervate unknown/on cooldown, shift-then-fail churn): confirmed — Engine runs the caster-form prereq before isPossible. Fixed: spell-id + IsSpellReady gate at the top of IsActive (mirrors SpellTargetTrigger::IsSpellReady).
+- Finding 2 (no skip for already-Innervated healers): confirmed — action's auraCheck refuses them while the trigger stays true. Fixed: HasAura("innervate") skip in the loop.
+- Finding 3 (no range gate, action has no reach): confirmed — CastInnervateAction targets "self target" so no reach prereq is added. Fixed: GetSpellRange gate in the loop (sightDistance covered by the tighter spell-range check).
+- Non-blocking: relevance below cower kept deliberately (threat-drop first is safer for a cat; ~1 tick delay); checkInterval raised to 2 for the per-tick talent scan; manual `.bot boost` row added (`innervate` trigger watches "boost targets" — player control first); name-collision delete-on-merge already recorded in the entry above.
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+| Shaman reactive situational totems (SHM-2: tremor vs fear/charm, grounding vs party-aimed casts, poison/disease cleansing vs party debuffs, earthbind vs runners) | New automation (not a donor port — verified: mod-playerbots picks situational totems manually per fight via per-slot strategies, `ShamanAiObjectContext.cpp:67-68`, plus slot-maintenance `NoXxxTotemTrigger`s `ShamanTriggers.cpp:413-447`; donor dungeon code carries `TODO: tremor totem`). Reuses donor `CastCleansingTotemAction::isUseful` shape (`ShamanActions.cpp:43-46`, no clobber) @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanTriggers.h` (new `TremorTotemReactiveTrigger`, `GroundingTotemReactiveTrigger`, `Poison/DiseaseCleansingTotemReactiveTrigger`, `EarthbindTotemReactiveTrigger`), `ShamanAiObjectContext.cpp` (creators), `Elemental/Enhancement/RestorationShamanStrategy.cpp` (totems combat rows), `ShamanSituationalTotemPolicy.h` + `tools/test_shaman_situational_totem_policy.cpp` | Split poison/disease triggers firing the registered `poison/disease cleansing totem` actions (1.12 has no `Cleansing Totem` spell). Tremor covers fear+charm auras only (effect 8146 dispels charm/fear/sleep, never confuse); no any-cast pre-drop. Grounding only when the in-flight cast targets us/party (`GetTargetGuid`, DeflectSpellTrigger pattern). Earthbind covers UNIT_STAT_FLEEING|CONFUSED + snared party member; cleansing reuses the cure path HasAuraToDispel scan. Spells: Tremor 8143, Grounding 8177, Earthbind 2484, Poison Cleansing 8166, Disease Cleansing 8170 (all verified in tw_world.spell_template) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+## Warlock Curse of Exhaustion snare strategy (WAR-7) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/Strategy/GenericWarlockStrategy.cpp:194-208`
+(CoE toggle strategy at 29.0, disabled by default),
+`WarlockAiObjectContext.cpp:110,183`, `WarlockTriggers.h:257-262`.
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/WarlockTriggers.h`
+(`SNARE_TRIGGER(CurseOfExhaustionSnareTrigger)` — the shared snare
+target already picks fleeing/chasing/kiting attackers),
+`ai/playerbot/strategy/warlock/WarlockActions.h`
+(`SNARE_ACTION(CastCurseOfExhaustionSnareAction)`),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (registered
+both `curse of exhaustion on snare target` names + the manual `curse
+exhaustion` strategy) + `docs/classes/warlock.md`, `CHANGELOG.md` (doc
+lines). The PvP `enemy ten yards` hardcode and the plain
+`CastCurseOfExhaustionAction` are untouched.
+
+Copied / ported / reimplemented: reimplemented in the death-coil snare
+idiom. Deviations from the donor, all deliberate: (a) donor fires on the
+current target; ours fires on the snare target (runners/chasers, not the
+tank's mob) — the feature asked for kiting, and the value already
+excludes rooted/stunned targets; (b) off by default like the donor (new
+automation behind a toggle); order `.bot strategy +curse exhaustion`.
+
+Reason: the action existed but no trigger or strategy ever queued it, so
+bots never slowed runners outside the affliction-PvP hardcode.
+
+Local validation: `bash tools/verify_all.sh` (wiring audit covers the
+new names); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: ordered bot
+slows a fleeing mob, untriggered bot unchanged.
+| Mend pet at medium health (PET-4) | `mod-playerbots` @ `79bd4281` `src/Ai/Class/Hunter/Strategy/GenericHunterStrategy.cpp:72-73` (`hunters pet medium health` below MediumHealth 70 → mend pet 22.0 combat / 60.0 NC) + `GenericHunterNonCombatStrategy.cpp:33` | `ai/playerbot/strategy/hunter/HunterTriggers.{h,cpp}` (`HuntersPetMediumHealthTrigger` below `sPlayerbotAIConfig.mediumHealth`), `HunterStrategy.cpp` (combat mend at ACTION_HIGH-1 below low's ACTION_HIGH; NC at ACTION_NORMAL below low's NORMAL+1), `HunterAiObjectContext.cpp` (creator) | Reimplemented in live strategy priorities (donor 22/21/60 maps onto our ACTION_HIGH-1/HIGH + NORMAL/NORMAL+1); low band still wins below 40 | `bash tools/verify_all.sh`; `python3 tools/verify_action_trigger_wiring.py` (0 live-missing); `git diff --check`. Compile via shared builder; no live in-game test |
+| Combat call pet + safe combat revive, tame demoted (PET-5) | Transferable extension of donor NC-only `no pet` → `call pet` / `hunters pet dead` → `revive pet` (`GenericHunterNonCombatStrategy.cpp:29,34`); donor has no combat call/revive | `HunterStrategy.cpp` (combat `no pet` → `call pet` NORMAL+1, `safe to revive pet` → `revive pet` NORMAL; both combat+NC `tame beast` demoted EMERGENCY → NORMAL so instant call wins wherever castable and the engine falls through to tame only when call is impossible), `HunterTriggers.{h,cpp}` (`SafeToRevivePetTrigger` wired to `runtime/PetRevivePolicy.h`; `HunterNoPet` simplified to donor `NoPetTrigger` shape — petless + unmounted — so the call nodes are reachable for dismissed pets), `HunterAiObjectContext.cpp` (creator), `runtime/PetRevivePolicy.h` + `tools/test_pet_revive_policy.cpp` | Reimplemented: donor never called/revived in combat; revive gated on zero attackers (10s channel safety). Tame demotion via relevance fallback instead of a trigger spell gate | `bash tools/verify_all.sh`; wiring 0 live-missing; standalone `test_pet_revive_policy` (5 checks); `git diff --check`. Compile via shared builder; no live in-game test |
+| Chain-heal group trigger verification + Fire Nova Totem drop gate (SHM-7/SHM-9) | Donor `CastFireNovaAction::isUseful` (`mod-playerbots` `ShamanActions.cpp:28-41`: fire-totem + 8y gate) is WotLK-3.3.0+ mechanics — 1.12 Fire Nova is a totem DROP (1535 line, detonates after 4s), not a pulse of a down totem, so the donor gate is NOT ported (it would refuse every drop). Ported as a placement gate instead @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanActions.h` (`CastFireNovaAction::isUseful`: bot-to-target <= 10y + policy call), `ShamanFireGatePolicy.h` + `tools/test_shaman_fire_gate_policy.cpp` | Chain heal: verified already wired — live `medium aoe heal -> chain heal` at ACTION_MEDIUM_HEAL matches priest/druid shape, no new trigger; donor `group heal setting` exists only in dead ports. Fire Nova: 10y placement gate (totem lands at our feet); manual `totem fire nova` and magma->nova continuer unaffected (no existing-totem requirement). Spells: Fire Nova Totem 1535 line / Fire Nova pulse 8350 line (verified in tw_world.spell_template; action resolves via spellbook to the trained drop) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+| Totemic Recall out of combat + dead Call-spell cleanup (SHM-5) | `mod-playerbots` `src/Ai/Class/Shaman/ShamanTriggers.cpp:187-262` (`TotemicRecallTrigger`: dungeon boss guard, group combat guard, mana-tide/fire-ele sparing) + `Strategy/ShamanNonCombatStrategy.cpp:88` @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanStrategy.cpp` (non-combat `totemic recall` row), `ShamanTriggers.h` (`ReadyToRemoveTotemsTrigger` hardened + `TotemsAreNotSummonedTrigger` removed as orphan), `ShamanActions.h` (3 `CastCallOfThe...` classes deleted), `ShamanAiObjectContext.cpp` (6 dead creators removed), `ShamanRecallPolicy.h` + `tools/test_shaman_recall_policy.cpp` | Reimplemented in live classic style: trigger requires the spell trained + any OWN totem down (new owner-scoped `have any own totem` / `has own totem` values — recall refunds only ours, so strangers' totems never trigger and a teammate's tide never vetoes), vetoes bot/group-member/pet combat, queued at ACTION_NORMAL below rez/heal. Deviations: no dungeon boss-encounter check (no InstanceScript hook in triggers; group combat covers live fights); fire-ele sparing dropped (no fire-elemental totem action in 1.18.1). Base stays `CastBuffSpellAction`: Turtle recall costs 0 mana (verified powerType 0, manaCost 0), so the mana-floor veto cannot block the refund. Cleanup: `Call of the Elements/Ancestors/Spirits` return zero rows in tw_world.spell_template (verified) — deleted 3 action classes + 6 creators that could only log cast failures. Spells: Totemic Recall 45513/47340 (Turtle custom, verified) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+
+## Mage blizzard channel cancel when the pack thins (MAG-3) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/MageTriggers.h:293-304` +
+`MageTriggers.cpp:148-170` (`BlizzardChannelCheckTrigger`: channel id
+in {10, 6141, 8427, 10185, 10186, 10187, 27085, 42938, 42939} and
+`attacker count` < 2),
+`src/Ai/Class/Mage/Strategy/GenericMageStrategy.cpp:175` (→ `cancel
+channel` 26.0), `MageAiObjectContext.cpp:123` (registration).
+
+Source files (module, modified):
+`ai/playerbot/strategy/mage/MageTriggers.h/.cpp` (new
+`BlizzardChannelCheckTrigger`, cloned off the live
+`IciclesChannelCheckTrigger` shape: current channeled spell id in the
+per-rank channel set {10, 6141, 8427, 10185, 10186, 10187} — rank-1
+effect 10 plus our rank rows 6141/8427/10185-87, all verified in
+`tw_world.spell_template`, matching the donor's WotLK-extended list
+minus the three WotLK-only ranks — and `attacker count` < 2),
+`ai/playerbot/strategy/mage/MageAiObjectContext.cpp` (registered
+`blizzard channel check`),
+`ai/playerbot/strategy/mage/MageStrategy.cpp`
+(`MageAoeStrategy::InitCombatTriggers`: → `cancel channel` at HIGH+3,
+one place covering all specs), `docs/classes/mage.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) the row lives on the live list-based base
+`MageAoeStrategy`, not the dead vector-API `GenericMageStrategy.cpp:149`
+forward-port (PROVENANCE already records that file as unregistered dead
+code — left untouched); (b) only the six 1.18.1 channel ids, no
+27085/42938/42939 which have no 1.18.1 rank rows; (c) priority HIGH+3
+matches our icicles cancel row rather than donor's flat 26.0.
+
+Deviations from the donor, continued: (d) the trigger reads the
+registered group-wide `attackers count` (plural), NOT the donor's singular
+`attacker count` — the singular name is unregistered here and `AI_VALUE`
+null-derefs on it (`ValueMacros.h:8`, `GetValue` returns NULL for unknown
+names). Do not "fix" this back to the donor spelling. The same latent
+wrong name in `EstimatedLifetimeValue.cpp:26` (dead code, value never
+registered/used) was fixed to the plural alongside so nobody copies it.
+
+Reason: bots channeled the full blizzard into one leftover mob while the
+rest of the pack was dead — wasted channel time.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: blizzard stops early as the pack drops below two.
+
+## Mage Hot Streak proc to hurried Pyroblast (MAG-1) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/Strategy/FireMageStrategy.cpp:51-58` (`hot streak` →
+`pyroblast` 25.0), `src/Ai/Class/Mage/MageTriggers.h:81-85`
+(`HotStreakTrigger : HasAuraTrigger("hot streak")`),
+`src/Ai/Class/Mage/MageAiObjectContext.cpp:99` (trigger registration).
+
+Source files (module, modified):
+`ai/playerbot/HotStreakPolicy.h` (new pure rule:
+`ShouldCastHotStreakPyroblast` fires only for proc auras 51930/51931 at
+full 5 stacks), `tools/test_hot_streak_policy.cpp` (new standalone test,
+17 checks) + `tools/verify_all.sh` (registered),
+`ai/playerbot/strategy/mage/MageTriggers.h/.cpp` (new `HotStreakTrigger :
+Trigger` with a custom `IsActive()` reading the proc IDs via
+`ai->GetAura` into the policy — deliberately NOT a name-based
+`HAS_AURA_TRIGGER`), `ai/playerbot/strategy/mage/MageAiObjectContext.cpp`
+(registered `hot streak`; the `presence of mind aura` registration is
+kept), `ai/playerbot/strategy/mage/FireMageStrategy.cpp`
+(`FireMageStrategy::InitCombatTriggers` row: `hot streak` → `pyroblast`
+at HIGH+2), `docs/classes/mage.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in the live list-based
+style (donor uses the newer vector/NextAction-float API). Deviations
+from the donor, all deliberate: (a) fire-only wiring (Hot Streak is a
+fire-tier-4 talent, 51927/51928; proc auras 51930/51931) — donor also
+wires it on frostfire, which has no 1.18.1 equivalent; (b) priority
+HIGH+2 instead of donor's flat 25.0 — ties with the base execute row
+(`target critical health` → fire blast, also 22) but `Queue::Peek` uses
+strict `>`, so the earlier-pushed base row wins ties deterministically
+and the execute keeps priority, which is the intended winner; (c) the
+donor's name-based aura check does NOT port: Turtle's proc is a stacking
+cast-time reduction (-1001ms/stack, 5 stacks ≈ instant on the 6s
+Pyroblast), not WotLK's binary instant, and the passive talent auras
+51927/51928 share the "Hot Streak" name — so the trigger gates on full
+proc stacks instead of any presence.
+
+Reason: every fire mage with the Turtle Hot Streak talent procced free
+faster Pyroblasts that bots silently ignored — the highest-value mage
+gap in the parity report.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: talented fire
+bot hardcasts normally at low stacks, hurries Pyroblast at full stacks.
+
+## Review fixes (2026-10-10, PR #646 CHANGES_REQUESTED)
+Both blocking findings verified real in code and fixed:
+- Finding 1 (deleted PoM-aura trigger orphaned two live consumer rows):
+confirmed — the first version replaced the `PresenceOfMindAuraTrigger`
+declaration and its registration instead of adding alongside, which
+would have silently no-op'd the `presence of mind aura` → pyroblast /
+frostbolt rows (`Engine.cpp:866-867` skips unregistered triggers) while
+arcane kept casting PoM. Fixed: PoM declaration + registration restored
+(diff now shows pure additions on those lines); Hot Streak is an
+additional trigger/row.
+- Finding 2 (name-based check matches the permanent talent auras):
+confirmed — 51927/51928 share SpellName "Hot Streak" (attributes 464
+incl. passive) with the procs, and with non-empty `SpellIds("hot
+streak")` the `HasAura` name path matches by ID list, so the trigger
+meant "talent learned", not "proc up". Also confirmed the deeper point:
+Turtle's proc is per-stack cast-time reduction (effect 107, -1001ms per
+stack, 5 stacks, 1 charge), not an instant — firing on any presence
+would spend a 1-stack proc. Fixed: custom `IsActive()` checks proc IDs
+51930/51931 only (via `ai->GetAura`, bypassing the name path entirely)
+and the new `HotStreakPolicy.h` rule requires full 5 stacks (17-check
+standalone test).
+- Non-blocking: Cold Snap doc line restored (behavior never changed);
+HIGH+2 tie resolves to the execute row winning (verified `Queue::Peek`
+strict-`>`); doc now says "hurries" not "free/instant" (no mana
+reduction in the tooltip); live in-game check still pending.
+| Health Funnel demon sustain (PET-6) | New behavior (neither `mod-playerbots` nor the module funneled; vanilla spell verified in `tw_world.spell_template`: 755/3698-3707/11693-11698/16569) | `runtime/HealthFunnelPolicy.h` (`CanCastHealthFunnel`: pet <50% + owner >60% + combat) + `tools/test_health_funnel_policy.cpp`; `ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp}` (`HealthFunnelTrigger`), `WarlockActions.h` (`CastHealthFunnelAction : CastSpellAction` on pet target, policy gate repeated for the evaluation gap), `WarlockStrategy.cpp` (`WarlockPetStrategy` combat node at ACTION_NORMAL+1), `WarlockAiObjectContext.cpp` (2 creators) | Reimplemented in place: owner-cast (warlock knows the spell, demon doesn't), combat-only v1, all demons eligible, below interrupt kit/pet attack | `bash tools/verify_all.sh`; wiring 0 live-missing; standalone `test_health_funnel_policy` (9 checks); `git diff --check`. Compile via shared builder; no live in-game test |
+| Heigan safety dance (Naxx): Plague-Cloud-anchored per-bot clock, 4s-first/3s-cadence section walk on core sect spots, ranged platform hold | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Heigan.cpp`, `src/Ai/Raid/Naxx/NaxxBossHelper.h` (HeiganBossHelper), `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Heigan rows) | Reimplemented with re-derived vanilla constants (dance 45s/4s/3s vs donor 45s/7s/4s; core sect coords vs donor WotLK waypoints; no shared clock — per-bot aura clock) | Core boss_heigan.cpp: dance 90s cycle, erupt 15s/10s fight + 4s/3s dance, section cycle 0-1-2-3-2-1 confirmed; Plague Cloud duration 45s verified in SpellDuration.dbc | `bash tools/verify_all.sh` + `tools/test_heigan_dance_policy.cpp`; build-commit + no live test (playtest gate: first dance timing) |
+
+## Warrior WAR-1: DPS sunder with no tank warrior (2026-10-09)
+
+Feature: arms/fury combat lists gain a bottom-rung `sunder armor` row
+(NORMAL-1, below rend/intercept and every damage spender), and
+`CastSunderArmorAction::isUseful` now returns false for non-tanks while a
+tank warrior (any group member of class warrior that `IsTank`) shares
+their map and is alive in-world. A DPS warrior in a tankless group keeps
+the 5-stack up (stacking, then refreshing an expiring stack); with a tank
+warrior present it spends rage on damage instead.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Warrior/WarriorActions.cpp:48-73` (`CastSunderArmorAction::isUseful` group tank-warrior check, 5-stack/refresh logic)
+- `src/Ai/Class/Warrior/Strategy/FuryWarriorStrategy.cpp:72` (sunder default +0.3)
+- `src/Ai/Class/Warrior/Strategy/ArmsWarriorStrategy.cpp:83` (sunder default +0.05)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`WarriorActions.h`, `WarriorTriggers.cpp`, `ArmsWarriorStrategy.cpp`,
+`FuryWarriorStrategy.cpp`, all `ai/playerbot/strategy/warrior/`).
+Deviations from the donor, all deliberate: (a) donor returns false for
+non-tanks with no group at all — ours still sunders ungrouped (a solo DPS
+warrior benefits from the armor reduction, and no tank exists to defer
+to); (b) row at NORMAL-1 rather than donor DEFAULT+0.x — same bottom
+shape (above nothing but melee-idle) in our NORMAL/HIGH ladder; the
+original NORMAL+1 wrongly tied heroic strike and beat rend; (c) the
+group-tank scan stays inline in `isUseful` (donor-identical): it is a
+bounded in-memory walk (≤40 refs, class gate first so `IsTank` runs only
+for warriors) evaluated only while the stack is incomplete — no cached
+group-role value exists and none is warranted; (d) `sunder armor` →
+`melee` fallback nodes added to both DPS factories (prot pattern), so a
+failed sunder falls through to auto-attack.
+
+Review fixes: (1) ported the donor 6s-expiry refresh to both trigger
+(5-stack re-arms at <=6s) and action (`!aura || stack<5 || <=6s`) — the
+old trigger-side `>=5 → false` let full stacks fall off entirely (also
+affected tanks; pre-existing, fixed here); (2) priority NORMAL+1 →
+NORMAL-1 per above.
+
+Reason: WAR-1 in the warrior parity sweep: zero sunder rows in Arms/Fury
+meant tankless groups never got the armor-reduction stack.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).
+| Anub'Rekhan fight (Naxx): adds-first targeting, swarm center-collapse, flee suppression | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Anubrekhan.cpp`, `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Anub rows), `src/Ai/Raid/Naxx/NaxxMultipliers.cpp` (AnubrekhanGenericMultiplier) | Reimplemented trigger-driven; MT kite ring omitted (needs live waypoints) | Kit verified in tw_world + core boss_anubrekhan.cpp (15956, guard 16573, 28785, 28783) | `bash tools/verify_all.sh` + `tools/test_anubrekhan_swarm_policy.cpp`; build-commit + no live test |
+
+## Mage close-range AoE: cone of cold + arcane explosion rows with guards (MAG-6) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/Strategy/GenericMageStrategy.cpp:206` (frost `light
+aoe` → cone of cold 21), `src/Ai/Class/Mage/MageActions.cpp:81-109`
+(cone/facing + 10yd `isUseful` guards; arcane explosion omni,
+range-only).
+
+Source files (module, modified):
+`ai/playerbot/strategy/mage/MageActions.h`
+(`CastConeOfColdAction::isUseful` now also requires
+`AI_VALUE2(bool, "facing", "current target")`; the 10yd range gate
+stays in `CastMeleeAoeSpellAction::isUseful`),
+`ai/playerbot/strategy/mage/FrostMageStrategy.cpp`
+(`FrostMageAoeStrategy`: new `ranged light aoe` → `cone of cold` row at
+HIGH, below blizzard/flamestrike medium-aoe rows),
+`docs/classes/mage.md` (doc line).
+
+The first version of this PR also added a `melee medium aoe` →
+`arcane explosion` row on the base `MageAoeStrategy` (all specs). That
+row is REMOVED: review caught that it has no donor source (zero
+`xplosion` hits in the donor mage AI; the cited guard block covers
+cone/dragon's-breath/blast-wave, and the "omni, range-only" guard is
+blast wave's, not arcane explosion's). Donor mages never cast arcane
+explosion — the all-specs behaviour was invented scope. Arcane keeps its
+pre-existing single-enemy `enemy too close for spell` → `arcane
+explosion` row (`ArcaneMageStrategy.cpp:128`), which this PR does not
+touch. The remaining cone work (facing `isUseful` + frost `ranged light
+aoe` row) is donor-sourced and stays.
+
+Copied / ported / reimplemented: reimplemented in the live list-based
+style. Deviations from the donor, all deliberate: (a) [REMOVED with the
+explosion row — see above]; (b) frost cone fires on our `ranged light
+aoe` (2 attackers in sight) while the 10yd + facing `isUseful` does the
+real gating, per the report's accepted v1 semantics; (c) cone action
+stays registered under its existing name — only the guard is new, so
+the frost-nova fallback node (`MageStrategy.cpp:26`) is untouched.
+Finding 2 (cone/explosion tie starving the cone) is moot: with the
+explosion row gone there is no tie — cone at HIGH sits above the
+`ACTION_NORMAL + 1` nukes and the flamestrike row shares HIGH but pushes
+later, so first-pushed-wins orders cone first (donor: cone 21 above
+flamestrike/blizzard on the same light/medium pair).
+
+Reason: cone of cold was registered but had zero trigger rows anywhere,
+and arcane explosion only fired for arcane bots — solo frost/fire bots
+with 2 mobs chewing on them never used either.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: 2-mob pack at melee range, cone fires while facing.
+
+## Mage threat dump NOT ported: Lesser Invisibility unobtainable (MAG-4) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`)
+`src/Ai/Class/Mage/Strategy/GenericMageStrategy.cpp:96-97` (`high
+threat` → mirror image, `medium threat` → invisibility).
+
+Decision: WONTFIX (dead code removed instead). Availability check in
+`tw_world`, all negative:
+- `npc_trainer` (38,037 rows): zero rows teach Lesser Invisibility (66),
+Invisibility (885), or the trigger-teacher spells 515/886/1202/1237
+(which would grant 66/885 via effect-36).
+- Tomes of Lesser Invisibility (item 1002) / Invisibility (item 4160):
+zero `npc_vendor` rows, zero `creature_loot_template` /
+`gameobject_loot_template` / `fishing_loot_template` rows, zero
+`quest_template` item/spell rewards (`RewSpell`/`RewSpellCast`/`RewItem*`
+all empty for these ids). No obtain path exists in 1.18.1.
+- Mirror Image (the donor's high-threat answer) likewise has no
+player-learnable 1.18.1 form.
+
+Source files (module, modified):
+`ai/playerbot/strategy/mage/MageActions.h` (deleted
+`CastLesserInvisibilityAction`, 6 lines),
+`ai/playerbot/strategy/mage/MageAiObjectContext.cpp` (deleted the
+`lesser invisibility` registration, 1 line). Zero references to
+`lesser invisibility` remain in `ai/`. No strategy rows ever referenced
+it (the donor's `medium threat` → invisibility row was never ported),
+so no trigger wiring changes. `ThreatMultiplier` (zeroes DPS at high
+threat) stays the only mage threat response.
+
+Reason: the registered-but-never-triggered action was dead weight
+promising a spell no bot can ever learn; wiring a trigger to it would
+produce an every-fight failing cast.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); no live test
+(nothing behaviourally changes — the action never fired).

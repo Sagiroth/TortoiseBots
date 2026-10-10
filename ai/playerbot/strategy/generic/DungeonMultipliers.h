@@ -14,4 +14,16 @@ namespace ai
     public:
         virtual float GetValue(Action* action) override;
     };
+
+    // Baron Geddon Inferno (mod-playerbots parity): while Geddon carries
+    // the Inferno aura (or the bot carries Living Bomb), only the two
+    // survival runouts may move the bot.
+    class GeddonInfernoMultiplier : public Multiplier
+    {
+    public:
+        GeddonInfernoMultiplier(PlayerbotAI* ai) : Multiplier(ai, "geddon inferno") {}
+
+    public:
+        virtual float GetValue(Action* action) override;
+    };
 }

@@ -41,6 +41,18 @@ bool AcceptAllQuestsAction::WouldAcceptQuest(PlayerbotAI* ai, Player* bot, Quest
         sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster()))
         return false;
 
+    // Solo-capability gate (RPG-A2): a masterless random bot refuses at
+    // accept the over-level / elite / group quests the log triage would
+    // later drop, so nearby givers and travel cannot pick up a quest the
+    // log pass deletes. Grouped-and-able bots (can fight boss) keep them;
+    // owned/hired bots follow the player. Donor mod-playerbots
+    // IsQuestCapableDoing, same +3 / type / suggested numbers.
+    if (sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster() &&
+        !ai::QuestAcceptSoloCapable((int)quest->GetQuestLevel(), bot->GetLevel(),
+            quest->GetType(), quest->GetSuggestedPlayers(),
+            AI_VALUE(bool, "can fight boss")))
+        return false;
+
     // Accept/drop churn: banned quests (CLUCK!, inactive templates) never,
     // war-effort item turn-ins never for upkeep bots (same predicate the
     // clean action drops with, so accept and drop cannot drift).
