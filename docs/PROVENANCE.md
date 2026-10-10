@@ -5902,3 +5902,4 @@ meant tankless groups never got the armor-reduction stack.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
 test (per task constraints).
+| Anub'Rekhan fight (Naxx): adds-first targeting, swarm center-collapse, flee suppression | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Anubrekhan.cpp`, `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Anub rows), `src/Ai/Raid/Naxx/NaxxMultipliers.cpp` (AnubrekhanGenericMultiplier) | Reimplemented trigger-driven; MT kite ring omitted (needs live waypoints) | Kit verified in tw_world + core boss_anubrekhan.cpp (15956, guard 16573, 28785, 28783) | `bash tools/verify_all.sh` + `tools/test_anubrekhan_swarm_policy.cpp`; build-commit + no live test |

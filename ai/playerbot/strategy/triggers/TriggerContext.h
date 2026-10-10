@@ -23,6 +23,7 @@
 #include "LowerKarazhanDungeonTriggers.h"
 #include "SapphironDungeonTriggers.h"
 #include "HeiganDungeonTriggers.h"
+#include "AnubrekhanDungeonTriggers.h"
 #include "WorldBuffTravelTriggers.h"
 
 namespace ai
@@ -366,6 +367,10 @@ namespace ai
             creators["end heigan fight"] = [](PlayerbotAI* ai) { return new HeiganEndFightTrigger(ai); };
             creators["heigan dance"] = [](PlayerbotAI* ai) { return new HeiganDanceTrigger(ai); };
             creators["heigan platform hold"] = [](PlayerbotAI* ai) { return new HeiganPlatformHoldTrigger(ai); };
+            creators["start anub'rekhan fight"] = [](PlayerbotAI* ai) { return new AnubrekhanStartFightTrigger(ai); };
+            creators["end anub'rekhan fight"] = [](PlayerbotAI* ai) { return new AnubrekhanEndFightTrigger(ai); };
+            creators["anub'rekhan adds"] = [](PlayerbotAI* ai) { return new AnubrekhanAddsTrigger(ai); };
+            creators["anub'rekhan swarm"] = [](PlayerbotAI* ai) { return new AnubrekhanSwarmTrigger(ai); };
             creators["void zone too close"] = [](PlayerbotAI* ai) { return new FourHorsemanVoidZoneTrigger(ai); };
             creators["start solnius fight"] = [](PlayerbotAI* ai) { return new SolniusStartFightTrigger(ai); };
             creators["end solnius fight"] = [](PlayerbotAI* ai) { return new SolniusEndFightTrigger(ai); };
