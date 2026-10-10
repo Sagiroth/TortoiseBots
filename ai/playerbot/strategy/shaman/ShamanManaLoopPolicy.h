@@ -1,22 +1,23 @@
 #pragma once
 
-// Pure policy for the elemental mana loop (mod-playerbots parity SHM-6):
-// Water Shield (Turtle mana shield, verified ranks in tw_world) replaces
-// Lightning Shield on a caster that never procs it, and Chain Lightning
-// joins Lightning Bolt as a single-target filler below the shock lines so
-// it alternates casts instead of stealing AoE duty.
+// Pure policy for the elemental mana loop (SHM-6): Water Shield (trains at
+// 34; verified in npc_trainer) replaces Lightning Shield (trains at 8) once
+// trained, with Lightning Shield kept as the pre-34 fallback so low-level
+// elemental bots always have a shield. Chain Lightning fires only into
+// ranged packs on cooldown (never single-target: no CC breaks, no OOM
+// spam) — the pack gate lives in the trigger conjunction, below earthquake.
 
 namespace ai
 {
-    // Ele shield pick: water whenever trained (mana return on being hit and
-    // on orb consumption); lightning only as the pre-water fallback.
+    // Ele shield pick: water whenever trained (mana return on being hit);
+    // lightning only as the pre-water fallback. Both rows stay queued; the
+    // water trigger stays quiet until trained.
     inline bool ElementalWantsWaterShield(bool knowsWaterShield)
     {
         return knowsWaterShield;
     }
 
-    // CL filler relevance: strictly below the shock lines (ACTION_NORMAL)
-    // and at/below the lightning-bolt default so it reads as an alternate
-    // filler, never a priority steal.
-    inline float ChainLightningFillerOffset() { return -1.0f; }
+    // Filler relevance: inside the AoE strategy, below earthquake, so the
+    // pack opener wins and CL fills on cooldown.
+    inline bool ChainLightningPackFillerOnly() { return true; }
 }

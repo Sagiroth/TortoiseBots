@@ -52,9 +52,6 @@ void ElementalShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
     triggers.push_back(new TriggerNode(
         "shock",
         NextAction::array(0, new NextAction("earth shock", ACTION_NORMAL), NULL)));
-    triggers.push_back(new TriggerNode(
-        "chain lightning filler",
-        NextAction::array(0, new NextAction("chain lightning", ACTION_NORMAL - 1), NULL)));
 }
 
 void ElementalShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -163,6 +160,13 @@ void ElementalShamanAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
     triggers.push_back(new TriggerNode(
         "ranged medium aoe",
         NextAction::array(0, new NextAction("earthquake", ACTION_HIGH + 1), NULL)));
+
+    // Cooldown-ready Chain Lightning as pack filler below earthquake: the
+    // trigger already requires a 3+ ranged pack, so this never fires
+    // single-target (no CC breaks, no OOM spam).
+    triggers.push_back(new TriggerNode(
+        "chain lightning filler",
+        NextAction::array(0, new NextAction("chain lightning", ACTION_HIGH - 1), NULL)));
 }
 
 void ElementalShamanAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -372,6 +376,13 @@ void ElementalShamanBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& tr
     triggers.push_back(new TriggerNode(
         "water shield",
         NextAction::array(0, new NextAction("water shield", ACTION_NORMAL), NULL)));
+
+    // Pre-34 fallback: Water Shield trains at 34, Lightning Shield at 8.
+    // The water trigger stays quiet until trained, so low-level ele keeps
+    // a shield instead of none.
+    triggers.push_back(new TriggerNode(
+        "lightning shield",
+        NextAction::array(0, new NextAction("lightning shield", ACTION_NORMAL - 1), NULL)));
 }
 
 void ElementalShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -381,6 +392,11 @@ void ElementalShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>&
     triggers.push_back(new TriggerNode(
         "water shield",
         NextAction::array(0, new NextAction("water shield", ACTION_NORMAL), NULL)));
+
+    // Pre-34 fallback, same as combat.
+    triggers.push_back(new TriggerNode(
+        "lightning shield",
+        NextAction::array(0, new NextAction("lightning shield", ACTION_NORMAL - 1), NULL)));
 }
 
 void ElementalShamanBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

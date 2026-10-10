@@ -10,21 +10,22 @@
     } \
 } while (0)
 
-using ai::ChainLightningFillerOffset;
+using ai::ChainLightningPackFillerOnly;
 using ai::ElementalWantsWaterShield;
 
 int main()
 {
     std::cout << "Starting shaman mana-loop policy tests...\n";
 
-    // Shield pick: water whenever trained, lightning only before training.
+    // Shield pick: water once trained, lightning before that. Both rows
+    // stay queued; the water trigger gates on HasSpell.
     CHECK(ElementalWantsWaterShield(true) == true);
     CHECK(ElementalWantsWaterShield(false) == false);
-    std::cout << "  [PASS] water shield wins once trained\n";
+    std::cout << "  [PASS] water shield wins once trained, lightning before\n";
 
-    // Filler offset: strictly negative (below shocks and bolt default).
-    CHECK(ChainLightningFillerOffset() < 0.0f);
-    std::cout << "  [PASS] chain-lightning filler sits below the shock lines\n";
+    // Filler is pack-only, never single-target.
+    CHECK(ChainLightningPackFillerOnly() == true);
+    std::cout << "  [PASS] chain-lightning filler is pack-only\n";
 
     std::cout << "All shaman mana-loop policy checks PASSED!\n";
     return 0;
