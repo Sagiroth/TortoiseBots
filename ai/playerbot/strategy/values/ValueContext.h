@@ -143,6 +143,7 @@ namespace ai
             creators["attacker without aura"] = [](PlayerbotAI* ai) { return new AttackerWithoutAuraTargetValue(ai); };
             creators["party member to heal"] = [](PlayerbotAI* ai) { return new PartyMemberToHeal(ai); };
             creators["party member to resurrect"] = [](PlayerbotAI* ai) { return new PartyMemberToResurrect(ai); };
+            creators["combat party member to resurrect"] = [](PlayerbotAI* ai) { return new PartyMemberToResurrect(ai, "combat party member to resurrect"); };
             creators["party member to soulstone"] = [](PlayerbotAI* ai) { return new PartyMemberToSoulstone(ai); };
             creators["current target"] = [](PlayerbotAI* ai) { return new CurrentTargetValue(ai); };
             creators["self target"] = [](PlayerbotAI* ai) { return new SelfTargetValue(ai); };

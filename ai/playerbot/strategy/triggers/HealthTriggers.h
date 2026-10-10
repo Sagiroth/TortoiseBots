@@ -125,6 +125,18 @@ namespace ai
 		virtual bool IsActive() override;
 	};
 
+    // Combat resurrection gate (mod-playerbots parity): same dead-member
+    // scan as the out-of-combat "resurrect" trigger, but named for the
+    // combat engine so druid Rebirth rows fire mid-fight. Lights up the
+    // "combat party member dead" nodes in GenericDruidStrategy.
+    class CombatPartyMemberDeadTrigger : public Trigger
+    {
+    public:
+        CombatPartyMemberDeadTrigger(PlayerbotAI* ai) : Trigger(ai, "combat party member to resurrect", 1) {}
+        virtual std::string GetTargetName() override { return "combat party member to resurrect"; }
+        virtual bool IsActive() override;
+    };
+
     class DeadTrigger : public Trigger
     {
     public:

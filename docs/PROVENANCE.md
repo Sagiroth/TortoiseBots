@@ -5660,3 +5660,36 @@ Local validation: `bash tools/verify_all.sh` (wiring audit covers the
 four new names); `git diff --check`; shared-builder compile via
 `build-commit.sh` (BUILD OK); live in-game check pending: swim with a
 warlock bot, self + party gain the buff, nothing fires on land.
+## Combat resurrection trigger + value (RES-1) — 2026-10-10
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Base/Trigger/HealthTriggers.h:164-170` + `.cpp:19`
+(`CombatPartyMemberDeadTrigger`: same predicate as the OOC trigger,
+target `combat party member to resurrect`, interval 1),
+`src/Ai/Base/TriggerContext.h:136` (creator `"combat party member dead"`),
+`src/Ai/Class/Druid/DruidAiObjectContext.cpp:129,187`
+(`"predator's swiftness and combat party member dead"` TwoTriggers),
+`src/Ai/Class/Druid/DruidTriggers.h:68-72` (`PredatorsSwiftnessTrigger`).
+
+Source files (module, modified): `ai/playerbot/strategy/triggers/
+HealthTriggers.h/.cpp` (new `CombatPartyMemberDeadTrigger`),
+`ai/playerbot/strategy/triggers/TriggerContext.h` (creator),
+`ai/playerbot/strategy/values/ValueContext.h` (`"combat party member to
+resurrect"` value alias, same `PartyMemberToResurrect` scan),
+`ai/playerbot/strategy/druid/DruidTriggers.h` (new
+`PredatorsSwiftnessTrigger`) + `DruidAiObjectContext.cpp` (creators),
+`docs/classes/druid.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented. No strategy edits — the
+dangling `GenericDruidStrategy.cpp:60-69` rebirth nodes (incl. the
+predator's-swiftness instant row) light up unchanged. Range handling stays
+with the existing reach-to-rez action per the deliberate RES-3 decision
+(no range filter in the value).
+
+Reason: support parity gap RES-1 (high/S): combat Rebirth never fired —
+the consumers existed but no trigger creator fed them.
+
+Local validation: `bash tools/verify_all.sh` (all suites pass);
+`git diff --check`. Rebirth 2011 verified in the report. Build via
+build-commit.sh pending; live in-game check pending.
