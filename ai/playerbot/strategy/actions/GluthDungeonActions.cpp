@@ -116,3 +116,4 @@ bool GluthTauntSwapAction::Execute(Event& event)
     if (!ai->CanCastSpell(taunt, gluth))
         return false;
     return ai->CastSpell(taunt, gluth);
+}
