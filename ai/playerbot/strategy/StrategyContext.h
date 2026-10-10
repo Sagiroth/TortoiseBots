@@ -57,6 +57,7 @@
 #include "generic/ClassicRaidDungeonStrategies.h"
 #include "generic/KarazhanCryptDungeonStrategies.h"
 #include "generic/SapphironDungeonStrategies.h"
+#include "generic/HeiganDungeonStrategies.h"
 
 namespace ai
 {
@@ -182,6 +183,7 @@ namespace ai
             creators["vael"] = [](PlayerbotAI* ai) { return new VaelFightStrategy(ai); };
             creators["four horseman"] = [](PlayerbotAI* ai) { return new FourHorsemanFightStrategy(ai); };
             creators["sapphiron"] = [](PlayerbotAI* ai) { return new SapphironFightStrategy(ai); };
+            creators["heigan"] = [](PlayerbotAI* ai) { return new HeiganFightStrategy(ai); };
             creators["solnius"] = [](PlayerbotAI* ai) { return new SolniusFightStrategy(ai); };
             creators["araxxna"] = [](PlayerbotAI* ai) { return new AraxxnaFightStrategy(ai); };
             creators["moroes"] = [](PlayerbotAI* ai) { return new MoroesFightStrategy(ai); };
