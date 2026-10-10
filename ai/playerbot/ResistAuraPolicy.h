@@ -63,6 +63,9 @@ namespace ai
         return false;
     }
 
+    // Kept in sync with the swap actions (DungeonActions.cpp): fire wins on
+    // conflict (a boss is never both). Used by the actions so trigger and
+    // action route through one rule instead of duplicating the spell names.
     inline std::string WantedResistAuraAction(bool wantFire, bool wantShadow)
     {
         if (wantFire)

@@ -113,7 +113,6 @@ namespace ai
     public:
         BossWantsFireAuraTrigger(PlayerbotAI* ai, std::string name = "boss wants fire aura", int checkInterval = 5)
         : Trigger(ai, name, checkInterval) {}
-        std::string GetTargetName() override { return "self target"; }
         bool IsActive() override;
     };
 
@@ -122,7 +121,6 @@ namespace ai
     public:
         BossWantsShadowAuraTrigger(PlayerbotAI* ai, std::string name = "boss wants shadow aura", int checkInterval = 5)
         : Trigger(ai, name, checkInterval) {}
-        std::string GetTargetName() override { return "self target"; }
         bool IsActive() override;
     };
 

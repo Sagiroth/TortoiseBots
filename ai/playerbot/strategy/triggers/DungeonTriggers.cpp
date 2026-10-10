@@ -1,4 +1,5 @@
 
+#include "playerbot/ResistAuraPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "DungeonTriggers.h"
@@ -468,7 +469,27 @@ bool RaidSpreadNeededTrigger::IsActive()
     return false;
 }
 
-#include "playerbot/ResistAuraPolicy.h"
+
+namespace
+{
+    // Any explicitly ordered aura beats automation: the trigger stays out
+    // of the way however the player set it (combat or non-combat engine).
+    bool HasManualAuraOverride(PlayerbotAI* ai)
+    {
+        static const char* const kManualAuras[] =
+        {
+            "aura devotion", "aura retribution", "aura concentration", "aura sanctity",
+            "aura shadow", "aura frost", "aura fire", "aura crusader"
+        };
+        for (const char* aura : kManualAuras)
+        {
+            if (ai->HasStrategy(aura, BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy(aura, BotState::BOT_STATE_NON_COMBAT))
+                return true;
+        }
+        return false;
+    }
+} // namespace
 
 bool BossWantsFireAuraTrigger::IsActive()
 {
@@ -477,25 +498,48 @@ bool BossWantsFireAuraTrigger::IsActive()
         return false;
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
         return false;
-    // Don't fight an explicit player order: a manually set aura stays.
-    if (ai->HasStrategy("aura fire", BotState::BOT_STATE_COMBAT) ||
-        ai->HasStrategy("aura shadow", BotState::BOT_STATE_COMBAT) ||
-        ai->HasStrategy("aura frost", BotState::BOT_STATE_COMBAT))
+    // An untrained aura can never be cast: without this the trigger fires
+    // every 5s and the swap action fails (ACTION_LOOP churn).
+    if (!ai->HasSpell("fire resistance aura"))
         return false;
-    // Already covered: no re-cast churn each tick.
-    if (ai->HasAura("fire resistance aura", bot))
+    // Already on the wanted path: the rfire upkeep trigger maintains it.
+    if (ai->HasStrategy("rfire", BotState::BOT_STATE_COMBAT))
         return false;
+    // Don't fight an explicit player order: any manually set aura stays.
+    if (HasManualAuraOverride(ai))
+        return false;
+    const bool hasFireAura = ai->HasAura("fire resistance aura", bot);
+    // One paladin per raid covers the aura: the first alive paladin swaps,
+    // the rest keep devotion/concentration/etc.
+    Group* group = bot->GetGroup();
+    if (!group || !group->isRaidGroup())
+        return false;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetClass() == CLASS_PALADIN)
+        {
+            if (member != bot)
+                return false;
+            break;
+        }
+    }
     AiObjectContext* context = ai->GetAiObjectContext();
     const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    bool wantFire = false;
     for (const ObjectGuid& attackerGuid : attackers)
     {
         Unit* attacker = ai->GetUnit(attackerGuid);
         if (!attacker || !sServerFacade.IsAlive(attacker))
             continue;
         if (IsFireAuraBoss(attacker->GetEntry()))
-            return true;
+        {
+            wantFire = true;
+            break;
+        }
     }
-    return false;
+    return ShouldSwapResistAura(wantFire, false, hasFireAura, false);
 }
 
 bool BossWantsShadowAuraTrigger::IsActive()
@@ -504,21 +548,46 @@ bool BossWantsShadowAuraTrigger::IsActive()
         return false;
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
         return false;
-    if (ai->HasStrategy("aura fire", BotState::BOT_STATE_COMBAT) ||
-        ai->HasStrategy("aura shadow", BotState::BOT_STATE_COMBAT) ||
-        ai->HasStrategy("aura frost", BotState::BOT_STATE_COMBAT))
+    // An untrained aura can never be cast: without this the trigger fires
+    // every 5s and the swap action fails (ACTION_LOOP churn).
+    if (!ai->HasSpell("shadow resistance aura"))
         return false;
-    if (ai->HasAura("shadow resistance aura", bot))
+    // Already on the wanted path: the rshadow upkeep trigger maintains it.
+    if (ai->HasStrategy("rshadow", BotState::BOT_STATE_COMBAT))
         return false;
+    // Don't fight an explicit player order: any manually set aura stays.
+    if (HasManualAuraOverride(ai))
+        return false;
+    const bool hasShadowAura = ai->HasAura("shadow resistance aura", bot);
+    // One paladin per raid covers the aura: the first alive paladin swaps,
+    // the rest keep devotion/concentration/etc.
+    Group* group = bot->GetGroup();
+    if (!group || !group->isRaidGroup())
+        return false;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetClass() == CLASS_PALADIN)
+        {
+            if (member != bot)
+                return false;
+            break;
+        }
+    }
     AiObjectContext* context = ai->GetAiObjectContext();
     const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    bool wantShadow = false;
     for (const ObjectGuid& attackerGuid : attackers)
     {
         Unit* attacker = ai->GetUnit(attackerGuid);
         if (!attacker || !sServerFacade.IsAlive(attacker))
             continue;
         if (IsShadowAuraBoss(attacker->GetEntry()))
-            return true;
+        {
+            wantShadow = true;
+            break;
+        }
     }
-    return false;
+    return ShouldSwapResistAura(false, wantShadow, false, hasShadowAura);
 }

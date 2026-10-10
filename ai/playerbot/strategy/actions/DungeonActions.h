@@ -1,7 +1,7 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
-#include "ChangeStrategyAction.h"
 #include "MovementActions.h"
+#include "playerbot/ResistAuraPolicy.h"
 #include "playerbot/strategy/values/HazardsValue.h"
 
 namespace ai
@@ -79,20 +79,22 @@ namespace ai
     };
 
     // Resist-aura auto-swap (mod-playerbots parity): switch the
-    // paladin to the matching resistance-aura strategy and cast it now.
-    // Manual "aura fire/shadow/frost" strategies stay as player overrides
-    // (the triggers refuse to fire while any is set).
-    class SwapFireResistanceAuraAction : public ChangeAllStrategyAction
+    // paladin to the matching resistance upkeep strategy (combat only,
+    // like the donor) and cast it now. Inherit plain Action, not
+    // ChangeAllStrategyAction: the manual "aura fire/shadow/..." strategies
+    // only maintain auras out of combat, and persisting the swap into the
+    // non-combat engine would overwrite the player's resting aura.
+    class SwapFireResistanceAuraAction : public Action
     {
     public:
-        SwapFireResistanceAuraAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "swap fire resistance aura", "+aura fire") {}
+        SwapFireResistanceAuraAction(PlayerbotAI* ai) : Action(ai, "swap fire resistance aura") {}
         bool Execute(Event& event) override;
     };
 
-    class SwapShadowResistanceAuraAction : public ChangeAllStrategyAction
+    class SwapShadowResistanceAuraAction : public Action
     {
     public:
-        SwapShadowResistanceAuraAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "swap shadow resistance aura", "+aura shadow") {}
+        SwapShadowResistanceAuraAction(PlayerbotAI* ai) : Action(ai, "swap shadow resistance aura") {}
         bool Execute(Event& event) override;
     };
 

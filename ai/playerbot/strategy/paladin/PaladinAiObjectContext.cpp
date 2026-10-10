@@ -3,6 +3,7 @@
 #include "PaladinTriggers.h"
 #include "PaladinAiObjectContext.h"
 #include "playerbot/strategy/NamedObjectContext.h"
+#include "PaladinBuffStrategies.h"
 #include "HolyPaladinStrategy.h"
 #include "ProtectionPaladinStrategy.h"
 #include "RetributionPaladinStrategy.h"
@@ -166,6 +167,8 @@ namespace ai
                 creators["aura fire"] = [](PlayerbotAI* ai) { return new PaladinManualAuraStrategy(ai, "aura fire", "fire resistance aura", "fire resistance aura"); };
                 creators["aura crusader"] = [](PlayerbotAI* ai) { return new PaladinManualAuraStrategy(ai, "aura crusader", "crusader aura", "crusader aura"); };
                 creators["aura sanctity"] = [](PlayerbotAI* ai) { return new PaladinManualAuraStrategy(ai, "aura sanctity", "sanctity aura", "sanctity aura"); };
+                creators["rfire"] = [](PlayerbotAI* ai) { return new PaladinFireResistanceStrategy(ai); };
+                creators["rshadow"] = [](PlayerbotAI* ai) { return new PaladinShadowResistanceStrategy(ai); };
             }
         };
 

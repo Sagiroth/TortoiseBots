@@ -496,14 +496,14 @@ bool MoveAwayFromCreature::IsHazardNearby(const WorldPosition& point, const std:
 }
 bool SwapFireResistanceAuraAction::Execute(Event& event)
 {
-    // Strategy first (so the aura persists via the strategy trigger),
-    // then cast it now like the donor's DoSpecificAction.
-    ChangeAllStrategyAction::Execute(event);
-    return ai->DoSpecificAction("fire resistance aura", event, true);
+    // Combat engine only (donor parity): the rfire strategy's upkeep
+    // trigger then maintains the aura for the rest of the fight.
+    ai->ChangeStrategy("+rfire", BotState::BOT_STATE_COMBAT);
+    return ai->DoSpecificAction(WantedResistAuraAction(true, false), event, true);
 }
 
 bool SwapShadowResistanceAuraAction::Execute(Event& event)
 {
-    ChangeAllStrategyAction::Execute(event);
-    return ai->DoSpecificAction("shadow resistance aura", event, true);
+    ai->ChangeStrategy("+rshadow", BotState::BOT_STATE_COMBAT);
+    return ai->DoSpecificAction(WantedResistAuraAction(false, true), event, true);
 }
