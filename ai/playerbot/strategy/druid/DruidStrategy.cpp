@@ -108,6 +108,14 @@ void DruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 void DruidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitNonCombatTriggers(triggers);
+
+    // mod-playerbots parity (DRU-1): out-of-combat resurrection for all
+    // druid specs (base strategy, like the paladin/priest/shaman rows).
+    // Vanilla druids have no normal resurrect — the trigger only fires
+    // Rebirth when no living priest/paladin/shaman can rez instead.
+    triggers.push_back(new TriggerNode(
+        "ooc rebirth",
+        NextAction::array(0, new NextAction("rebirth", ACTION_EMERGENCY), NULL)));
 }
 
 void DruidStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)

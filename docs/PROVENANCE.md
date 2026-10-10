@@ -4635,6 +4635,14 @@ ACTION_HIGH+3 in `PriestBuffStrategy`, outranking the generic `fear ward`
 row (demoted from ACTION_EMERGENCY to ACTION_HIGH+2) by relevance — the
 engine executes the highest-relevance action, so the tank is warded first
 and the generic row stays as a manual-target fallback.
+## Druid parity DRU-1: out-of-combat Rebirth when no living resurrector — 2026-10-09
+Feature: new `OocRebirthTrigger` (`RebirthTrigger` + living
+priest/paladin/shaman group scan, cheap class check first, then the base
+cooldown/spellbook/target checks) + non-combat row `ooc rebirth` ->
+`rebirth` at ACTION_EMERGENCY in `DruidStrategy` (base, so all four wired
+specs + leveling inherit) + pure rule `ShouldCastOocRebirth` in new
+`ai/playerbot/OocRebirthPolicy.h` + `tools/test_ooc_rebirth_policy.cpp`
+(6 checks, registered in `tools/verify_all.sh`).
 
 Source repository: `mod-playerbots` @ `79bd4281` (local checkout
 `../playerbots-references/mod-playerbots`).
@@ -4984,6 +4992,34 @@ reference it anymore).
 Copied / ported / reimplemented: reimplemented in place in the live
 strategy idiom. No new spells or actions: Ferocious Bite / Rip ranks
 trainer-taught, creators pre-registered.
+`src/Ai/Class/Druid/Strategy/GenericDruidNonCombatStrategy.cpp:116`
+(`party member dead` -> `revive`, via the generic `PartyMemberDeadTrigger`)
+`src/Ai/Class/Priest/Strategy/...` + paladin/shaman equivalents for the
+ACTION_EMERGENCY non-combat row shape (`PaladinStrategy.cpp:95-97` etc).
+Deviations, deliberate and verified against live `tw_world`: the donor's
+`revive` spell does not exist as a druid-taught spell in 1.18.1 — report
+claim "Revive 2435" is wrong (2435 = Numbing Strike here); the only
+`Revive` row (24341) is a Zul'Gurub boss spell (boss_mandokir.cpp) with no
+trainer or skill-line entry, while druid trainers teach Rebirth
+(20484+, skill class_mask 1024 = druid). So the port casts Rebirth out of
+combat instead of a non-existent Revive, and gates it on no living
+priest/paladin/shaman in the group (their normal rez is always
+preferred). Combat rebirth rows are untouched.
+
+Reason: druid parity report DRU-1 — wired specs never resurrected out of
+combat; every other healer class has the non-combat row.
+
+Source files (module, modified): `ai/playerbot/OocRebirthPolicy.h` (new),
+`ai/playerbot/strategy/druid/DruidTriggers.h`,
+`ai/playerbot/strategy/druid/DruidTriggers.cpp`,
+`ai/playerbot/strategy/druid/DruidStrategy.cpp`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`tools/test_ooc_rebirth_policy.cpp` (new), `tools/verify_all.sh` +
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Rebirth 20484/20739/20742/20747/20748
+verified in spell_template (family 7, druid skill line).
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
@@ -5513,3 +5549,10 @@ non-movement immunes (`greater heal`, `flash heal`, `renew`, `shoot`,
 Local validation: `bash tools/verify_all.sh` (all suites incl. the updated
 policy test pass); `git diff --check`. Build via build-commit.sh pending;
 live in-game check pending.
+## Review fixes (2026-10-09, PR #567 CHANGES_REQUESTED)
+All three blocking findings verified real in code and fixed:
+- Finding 1 (cross-map priest veto deadlocks the corpse): confirmed — the scan had no map/range check while `PartyMemberValue::Check` requires same map + sight. Fixed: scan now skips members off-map or beyond sightDistance of the corpse (reviewer's shape, cf. ReleaseSpiritAction precedent).
+- Finding 2 (explicit `revive target` orders vetoed): confirmed — `SpellTargetTrigger::IsActive` validates manual targets through the same `IsTargetValid`. Fixed: non-empty manual `revive targets` bypasses the gate (player control first).
+- Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
+- Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).

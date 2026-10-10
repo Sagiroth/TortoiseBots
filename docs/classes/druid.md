@@ -64,6 +64,8 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
   - Casts *Bash* (Bear) as an interrupt (also wired against enemy healers).
 - **Combat Resurrection:**
   - Uses *Rebirth* (Battle Rez) on the first dead party member mid-fight (no tank/healer priority).
+- **Out-of-Combat Resurrection:**
+  - Burns *Rebirth* on a dead party member out of combat only when no living priest, paladin or shaman is in the group — their normal resurrection is always preferred over the 30 min battle rez. (Vanilla druids have no normal resurrect; the only *Revive* row in game data is a boss spell, not a trainable druid spell.)
 - **Innervate:**
   - Casts *Innervate* on the lowest-mana party healer below the `AiPlayerbot.LowMana` threshold (default 15%), falling back to self when solo or healers are healthy. Manual `.bot boost` assignments win over automation. Shifts to caster form first (required by Turtle 1.18.1 shapeshift rules).
 - **Barkskin:**
