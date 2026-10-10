@@ -4526,6 +4526,17 @@ expires; ~20% of all stall time sits in WORK.
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
 
+## Warrior WAR-2 + WAR-6: shield-slam proc row and 40-rage gate (2026-10-09)
+
+Feature: (WAR-2) new `improved shield slam proc` trigger fires `shield
+slam` at HIGH+5 — above the rage ladder, below taunt (41) and tied with
+shield block (block listed earlier wins ties), matching the donor's
+taunt/block-above-proc order; (WAR-6) the baseline `shield slam` row moved
+from `light rage available` (20+) to `medium rage available` (40+), keeping
+HIGH+4 above thunder clap (HIGH+1) and revenge/sunder ordering intact, and
+the tank sunder veto now defers to slam only when slam's medium-rage row
+is actually live (cooldown-only `IsSpellReady` used to veto sunder through
+the whole 15-39 band where slam couldn't fire).
 ## BWL bundle 1: Broodlord range, drake off-tank flank, Vael flank entry, Nef mage Ice Block (raid1 item 4) — 2026-10-09
 
 Donor: mod-playerbots @ `79bd4281` (local checkout
@@ -4947,6 +4958,44 @@ Source commit: `79bd4281` (local
 `playerbots-references/mod-playerbots` checkout).
 
 Source files:
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:299-305` (proc slam at INTERRUPT)
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:184-192` (slam at medium rage HIGH+2)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`ProtectionWarriorStrategy.cpp`, `WarriorTriggers.h`,
+`WarriorAiObjectContext.cpp`, all `ai/playerbot/strategy/warrior/`).
+Deviations from the donor, all deliberate: (a) no "Sword and Board" aura
+name exists in 1.18.1 — Turtle's Improved Shield Slam talent
+(51598/51599, PROC_FLAG 0x10 = melee-ability hit procs the 1-charge
++35%/+70% damage aura 51596/51597) fills the slot, matched by spell id
+(`ai->HasAura(51596/51597, bot)`) because the permanent talent shares the
+"Improved Shield Slam" name and would keep a name trigger active forever;
+(b) the dead `SwordAndBoardTrigger` class (`HAS_AURA "sword and board"`,
+unregistered since it could never fire) is deleted — the dead
+new-architecture `TankWarriorStrategy.cpp:224` reference is left alone
+(never instantiated); (c) WAR-7's briefed "challenging shout medium→high"
+is NOT done: donor `high aoe` is 4+ enemies/8yd while ours fires at
+`melee medium aoe` (3+/5yd) with the `aoe` strategy default-on for
+warriors — moving to 6+ would make tanks shout LESS than the donor, a
+regression, and the report's "opt-in toggle" premise is wrong
+(`AiFactory.cpp` adds `aoe` by default). Challenging shout stays where it
+is.
+
+Reason: WAR-2/WAR-6 in the warrior parity sweep: the talented proc never
+fired slam, and 20-rage slam starved the sunder stack and revenge GCDs.
+
+Review fixes: (1) proc row INTERRUPT → HIGH+5 — the taunt half of the
+finding is stale (merged PR #598 already puts taunt at 41, above the old
+proc 40 = donor order), but the shield-block half was real (donor block
+41 > proc 40), so proc now ties block with block winning ties; (2) sunder
+veto rage-aware per above. Not changed: baseline stays HIGH+4 above
+revenge/sunder (1-GCD vs donor tie; keeps proc>baseline ordering), dead
+`TankWarriorStrategy.cpp:224` reference untouched (dead file, churn), proc
+ids 51596/51597 verified in live `spell_template` (100% chance, 1 charge;
+only the separate proc_event row is DBC-side).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).
 - `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:322-329` (protect party member → intervene at EMERGENCY)
 
 Copied / ported / independently reimplemented: reimplemented in place
