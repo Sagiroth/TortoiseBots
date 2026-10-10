@@ -24,12 +24,13 @@ static int checks = 0;
     } \
 } while (0)
 
-static WarlockTapInputs Tap(bool knows, uint8_t mana, uint8_t health)
+static WarlockTapInputs Tap(bool knows, uint8_t mana, uint8_t health, bool eating = false)
 {
     WarlockTapInputs inputs;
     inputs.knowsLifeTap = knows;
     inputs.manaPct = mana;
     inputs.healthPct = health;
+    inputs.isEating = eating;
     return inputs;
 }
 
@@ -71,6 +72,18 @@ static void TestUntrainedLeftAlone()
     CHECK(DecideWarlockTap(Tap(false, 60, 80)) == WarlockTapDecision::LeaveAlone);
 }
 
+// Mid-meal out of combat: both bands stay quiet so the 9-relevance tap row
+// never stands the bot up and resets its food/drink regen (review pr-593).
+// In combat the flag is ignored — eating never applies there.
+static void TestEatingLeftAloneOutOfCombat()
+{
+    CHECK(DecideWarlockTap(Tap(true, 20, 80, true), false) == WarlockTapDecision::LeaveAlone);
+    CHECK(DecideWarlockTap(Tap(true, 60, 80, true), false) == WarlockTapDecision::LeaveAlone);
+    CHECK(DecideWarlockTap(Tap(true, 20, 80, true), true) == WarlockTapDecision::TapUrgent);
+    CHECK(DecideWarlockTap(Tap(true, 60, 80, true), true) == WarlockTapDecision::TapTopUp);
+    CHECK(DecideWarlockTap(Tap(true, 60, 80, false), false) == WarlockTapDecision::TapTopUp);
+}
+
 // Pin the donor top-up line so a stray edit faces this test.
 static void TestConstants()
 {
@@ -90,6 +103,8 @@ int main()
     std::printf("  [PASS] low health never taps\n");
     TestUntrainedLeftAlone();
     std::printf("  [PASS] untrained left alone\n");
+    TestEatingLeftAloneOutOfCombat();
+    std::printf("  [PASS] mid-meal left alone out of combat\n");
     TestConstants();
     std::printf("  [PASS] constants\n");
     std::printf("All warlock tap policy checks PASSED (%d assertions)!\n", checks);

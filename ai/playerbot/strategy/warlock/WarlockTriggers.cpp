@@ -68,19 +68,26 @@ bool CorruptionOnAttackerTrigger::IsActive()
     return DebuffOnAttackerTrigger::IsActive();
 }
 
-// Out-of-combat tap discipline (review pr-593 round 2): the OOC rows beat
-// food/drink on relevance, so an ungated tap stands the bot up mid-meal and
-// ping-pongs sit/stand/tap. Between pulls the bot eats first, then taps:
-// while it should eat, and while health is below the medium line, both tap
-// bands stay quiet (combat rows are unaffected — eating never applies there).
-static bool WarlockOocTapAllowed(PlayerbotAI* ai)
+// Out-of-combat tap discipline (review pr-593): the OOC rows beat food/drink
+// on relevance (9 > 6), so an ungated tap stands the bot up mid-meal and
+// ping-pongs sit/stand/tap. Between pulls the bot taps first, then eats to
+// full: while a food or drink aura is up both tap bands stay quiet via the
+// policy isEating flag (combat rows pass in-combat, flag ignored there).
+static bool WarlockTapEating(PlayerbotAI* ai)
 {
-    if (ai->GetBot()->IsInCombat())
-        return true;
+    Player* bot = ai->GetBot();
+    return ai->HasAura("food", bot) || ai->HasAura("drink", bot);
+}
+
+static void FillWarlockTapInputs(PlayerbotAI* ai, TortoiseBots::WarlockTapInputs& inputs)
+{
+    inputs.knowsLifeTap = ai->HasSpell("life tap");
     AiObjectContext* context = ai->GetAiObjectContext();
-    if (context->GetValue<bool>("should eat")->Get())
-        return false;
-    return context->GetValue<uint8>("health", "self target")->Get() >= (uint8)sPlayerbotAIConfig.mediumHealth;
+    inputs.manaPct = AI_VALUE2(uint8, "mana", "self target");
+    inputs.healthPct = AI_VALUE2(uint8, "health", "self target");
+    inputs.mediumMana = (uint8)sPlayerbotAIConfig.mediumMana;
+    inputs.lowHealth = (uint8)sPlayerbotAIConfig.lowHealth;
+    inputs.isEating = !ai->GetBot()->IsInCombat() && WarlockTapEating(ai);
 }
 
 bool LifeTapTrigger::IsActive()
@@ -90,27 +97,15 @@ bool LifeTapTrigger::IsActive()
     // The health floor below keeps the tap safe; the relevance bump in
     // WarlockStrategy puts it above the dot upkeep it feeds.
     TortoiseBots::WarlockTapInputs inputs;
-    inputs.knowsLifeTap = ai->HasSpell("life tap");
-    inputs.manaPct = AI_VALUE2(uint8, "mana", "self target");
-    inputs.healthPct = AI_VALUE2(uint8, "health", "self target");
-    inputs.mediumMana = (uint8)sPlayerbotAIConfig.mediumMana;
-    inputs.lowHealth = (uint8)sPlayerbotAIConfig.lowHealth;
-    if (!WarlockOocTapAllowed(ai))
-        return false;
-    return TortoiseBots::DecideWarlockTap(inputs) == TortoiseBots::WarlockTapDecision::TapUrgent;
+    FillWarlockTapInputs(ai, inputs);
+    return TortoiseBots::DecideWarlockTap(inputs, ai->GetBot()->IsInCombat()) == TortoiseBots::WarlockTapDecision::TapUrgent;
 }
 
 bool LifeTapTopUpTrigger::IsActive()
 {
     TortoiseBots::WarlockTapInputs inputs;
-    inputs.knowsLifeTap = ai->HasSpell("life tap");
-    inputs.manaPct = AI_VALUE2(uint8, "mana", "self target");
-    inputs.healthPct = AI_VALUE2(uint8, "health", "self target");
-    inputs.mediumMana = (uint8)sPlayerbotAIConfig.mediumMana;
-    inputs.lowHealth = (uint8)sPlayerbotAIConfig.lowHealth;
-    if (!WarlockOocTapAllowed(ai))
-        return false;
-    return TortoiseBots::DecideWarlockTap(inputs) == TortoiseBots::WarlockTapDecision::TapTopUp;
+    FillWarlockTapInputs(ai, inputs);
+    return TortoiseBots::DecideWarlockTap(inputs, ai->GetBot()->IsInCombat()) == TortoiseBots::WarlockTapDecision::TapTopUp;
 }
 
 bool DrainSoulTrigger::IsActive()
