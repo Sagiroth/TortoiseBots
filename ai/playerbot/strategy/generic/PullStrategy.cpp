@@ -81,6 +81,12 @@ std::string PullStrategy::GetPullActionName() const
 {
     std::string modPullActionName = pullActionName;
 
+    // A plain pull command is a melee engagement: the tank walks in on its own
+    // and builds threat while the party waits out the join delay. Only a
+    // pullback (and the tank's own automatic pulls) open from range.
+    if (commandActive && !commandPullback)
+        return "reach pull";
+
     // Select the faerie fire based on druid strategy
     if (ai->GetBot()->GetClass() == CLASS_DRUID)
     {
@@ -115,6 +121,23 @@ std::string PullStrategy::GetPullActionName() const
                 default: break;
             }
             if (!trained)
+                return "reach pull";
+
+            // The skill alone does not let the bot shoot. The cast resolves the
+            // shoot spell by name against the bot's own spellbook, and a bot that
+            // owns the weapon skill without the spell (skills are written
+            // directly, no trainer visit) fails CanCastSpell on every tick, so
+            // the pull would stand still until its timeout.
+            std::string weaponShoot = "shoot";
+            switch (proto->SubClass)
+            {
+                case ITEM_SUBCLASS_WEAPON_GUN: weaponShoot = "shoot gun"; break;
+                case ITEM_SUBCLASS_WEAPON_BOW: weaponShoot = "shoot bow"; break;
+                case ITEM_SUBCLASS_WEAPON_CROSSBOW: weaponShoot = "shoot crossbow"; break;
+                case ITEM_SUBCLASS_WEAPON_THROWN: weaponShoot = "throw"; break;
+                default: break;
+            }
+            if (!ai->HasSpell(weaponShoot))
                 return "reach pull";
 
             if (proto->SubClass != ITEM_SUBCLASS_WEAPON_THROWN && proto->SubClass != ITEM_SUBCLASS_WEAPON_WAND)
