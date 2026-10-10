@@ -26,6 +26,18 @@ public:
     bool Execute(Event& event) override;
 };
 
+// Spore hold (donor LoathebGenericMultiplier, assist leg): once a bot
+// has switched onto its spore, the 60-bid assists/AoE would yank it back
+// to the boss the next tick and the keep-away flee would step it off the
+// 1yd spore. Tanks also ignore tank-assist while Loatheb is on threat so
+// a loose spore never drags the main tank off the boss.
+class LoathebSporeHoldMultiplier : public Multiplier
+{
+public:
+    LoathebSporeHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "loatheb spore hold") {}
+    float GetValue(Action* action) override;
+};
+
 // Tank / ranged anchors (donor coords, same map geometry).
 class LoathebPositionAction : public MovementAction
 {
