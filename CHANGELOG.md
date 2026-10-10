@@ -145,6 +145,14 @@
 - Live `bot_events.csv` / `deaths.csv` stay plain text, but every hour (and at server start) they roll into `<name>_<date>_<time>.csv.gz` named after close time — packed on a background thread so the world tick never pays for it, with packs past retention deleted. [#676](https://github.com/Sagiroth/TortoiseBots/pull/676)
 - Server restarts no longer overwrite the previous log: the old file is packed instead of lost, keeping history intact across reboots. [#676](https://github.com/Sagiroth/TortoiseBots/pull/676)
 
+### Dashboard & Tooling
+
+- The Bots search box now doubles as a filter bar: `lvl:50-60` (level range), `ilvl:>40` (average item level), `zone:tanaris` / `target:wolf` / `state:stalled` (text match), and any column such as `gold:<10`, `hp:<30`, `xp:>90`, `kills:>100`, `deaths:0`. Numeric fields accept `N`, `A-B`, `>N`, `>=N`, `<N` and `<=N`; all terms must match, plain words still hit name/class/spec, the search stacks with the state and class chips, and the box tooltip lists the available fields. [#678](https://github.com/Sagiroth/TortoiseBots/pull/678)
+
+### Combat & AI
+
+- Default `AiPlayerbot.TargetWorldTickMs` bumped from 50 ms to 100 ms: on large bot pools the old budget was already eaten by the world tick, so the regulator throttled bots to the floor — 9-50 s waits for a turn, stalled movement, and deaths with no reaction. Bots now get their turns roughly twice as often while player-side lag stays well under ~200 ms; lower the value in `aiplayerbot.conf` for snappier ping, or set it to `0` to disable the regulator entirely. [#677](https://github.com/Sagiroth/TortoiseBots/pull/677)
+
 ## 2026-10-09
 
 ### Observability & Engine
