@@ -22,6 +22,7 @@
 #include "ClassicRaidDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
 #include "KelthuzadDungeonTriggers.h"
+#include "GrobbulusDungeonTriggers.h"
 #include "SapphironDungeonTriggers.h"
 #include "HeiganDungeonTriggers.h"
 #include "AnubrekhanDungeonTriggers.h"
@@ -385,6 +386,10 @@ namespace ai
             creators["kel'thuzad adds"] = [](PlayerbotAI* ai) { return new KelthuzadAddsTrigger(ai); };
             creators["kel'thuzad phase two"] = [](PlayerbotAI* ai) { return new KelthuzadPhaseTwoTrigger(ai); };
             creators["kel'thuzad fissure"] = [](PlayerbotAI* ai) { return new KelthuzadFissureTrigger(ai); };
+            creators["start grobbulus fight"] = [](PlayerbotAI* ai) { return new GrobbulusStartFightTrigger(ai); };
+            creators["end grobbulus fight"] = [](PlayerbotAI* ai) { return new GrobbulusEndFightTrigger(ai); };
+            creators["grobbulus injection ranged"] = [](PlayerbotAI* ai) { return new GrobbulusInjectionRangedTrigger(ai); };
+            creators["grobbulus cloud"] = [](PlayerbotAI* ai) { return new GrobbulusCloudTrigger(ai); };
             creators["start sapphiron fight"] = [](PlayerbotAI* ai) { return new SapphironStartFightTrigger(ai); };
             creators["end sapphiron fight"] = [](PlayerbotAI* ai) { return new SapphironEndFightTrigger(ai); };
             creators["sapphiron air hide"] = [](PlayerbotAI* ai) { return new SapphironAirTrigger(ai); };

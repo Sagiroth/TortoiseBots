@@ -16,6 +16,10 @@ void NaxxramasDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
 		NextAction::array(0, new NextAction("enable kel'thuzad fight strategy", 100.0f), NULL)));
 
 	triggers.push_back(new TriggerNode(
+		"start grobbulus fight",
+		NextAction::array(0, new NextAction("enable grobbulus fight strategy", 100.0f), NULL)));
+
+	triggers.push_back(new TriggerNode(
 		"start sapphiron fight",
 		NextAction::array(0, new NextAction("enable sapphiron fight strategy", 100.0f), NULL)));
 
