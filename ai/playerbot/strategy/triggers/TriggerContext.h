@@ -21,6 +21,7 @@
 #include "EmeraldSanctumDungeonTriggers.h"
 #include "ClassicRaidDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
+#include "KelthuzadDungeonTriggers.h"
 #include "SapphironDungeonTriggers.h"
 #include "HeiganDungeonTriggers.h"
 #include "AnubrekhanDungeonTriggers.h"
@@ -366,6 +367,12 @@ namespace ai
 
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
+            creators["start kel'thuzad fight"] = [](PlayerbotAI* ai) { return new KelthuzadStartFightTrigger(ai); };
+            creators["end kel'thuzad fight"] = [](PlayerbotAI* ai) { return new KelthuzadEndFightTrigger(ai); };
+            creators["kel'thuzad phase one"] = [](PlayerbotAI* ai) { return new KelthuzadPhaseOneTrigger(ai); };
+            creators["kel'thuzad adds"] = [](PlayerbotAI* ai) { return new KelthuzadAddsTrigger(ai); };
+            creators["kel'thuzad phase two"] = [](PlayerbotAI* ai) { return new KelthuzadPhaseTwoTrigger(ai); };
+            creators["kel'thuzad fissure"] = [](PlayerbotAI* ai) { return new KelthuzadFissureTrigger(ai); };
             creators["start sapphiron fight"] = [](PlayerbotAI* ai) { return new SapphironStartFightTrigger(ai); };
             creators["end sapphiron fight"] = [](PlayerbotAI* ai) { return new SapphironEndFightTrigger(ai); };
             creators["sapphiron air hide"] = [](PlayerbotAI* ai) { return new SapphironAirTrigger(ai); };
