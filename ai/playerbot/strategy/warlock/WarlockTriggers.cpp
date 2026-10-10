@@ -57,6 +57,20 @@ bool CorruptionOnAttackerTrigger::IsActive()
     return DebuffOnAttackerTrigger::IsActive();
 }
 
+// Out-of-combat tap discipline (review pr-593 round 2): the OOC rows beat
+// food/drink on relevance, so an ungated tap stands the bot up mid-meal and
+// ping-pongs sit/stand/tap. Between pulls the bot eats first, then taps:
+// while it should eat, and while health is below the medium line, both tap
+// bands stay quiet (combat rows are unaffected — eating never applies there).
+static bool WarlockOocTapAllowed(PlayerbotAI* ai)
+{
+    if (ai->GetBot()->IsInCombat())
+        return true;
+    if (AI_VALUE(bool, "should eat"))
+        return false;
+    return AI_VALUE2(uint8, "health", "self target") >= (uint8)sPlayerbotAIConfig.mediumHealth;
+}
+
 bool LifeTapTrigger::IsActive()
 {
     // Tap early (medium-mana line, default 40) instead of at 15%: a warlock
@@ -69,6 +83,8 @@ bool LifeTapTrigger::IsActive()
     inputs.healthPct = AI_VALUE2(uint8, "health", "self target");
     inputs.mediumMana = (uint8)sPlayerbotAIConfig.mediumMana;
     inputs.lowHealth = (uint8)sPlayerbotAIConfig.lowHealth;
+    if (!WarlockOocTapAllowed(ai))
+        return false;
     return TortoiseBots::DecideWarlockTap(inputs) == TortoiseBots::WarlockTapDecision::TapUrgent;
 }
 
@@ -80,6 +96,8 @@ bool LifeTapTopUpTrigger::IsActive()
     inputs.healthPct = AI_VALUE2(uint8, "health", "self target");
     inputs.mediumMana = (uint8)sPlayerbotAIConfig.mediumMana;
     inputs.lowHealth = (uint8)sPlayerbotAIConfig.lowHealth;
+    if (!WarlockOocTapAllowed(ai))
+        return false;
     return TortoiseBots::DecideWarlockTap(inputs) == TortoiseBots::WarlockTapDecision::TapTopUp;
 }
 
