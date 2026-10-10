@@ -51,22 +51,21 @@ namespace ai
         int eighth = (int)(facing / kEighth + 0.5f) % 8;
         switch (eighth)
         {
-            case 0: // N
-            case 4: // S
+            case 0: // N (+X)
+            case 4: // S (-X)
                 return 0;
-            case 2: // E
-            case 6: // W
+            case 2: // W (+Y)
+            case 6: // E (-Y)
                 return 1;
-            case 3: // SE
-            case 7: // NW
-                return 2;
-            case 5: // SW
-            case 1: // NE
-            default:
+            case 3: // SW
+            case 7: // NE
                 return 3;
+            case 5: // SE
+            case 1: // NW
+            default:
+                return 2;
         }
     }
-
     // Safe-zone pair per breath direction (donor coords, Onyxia's lair map).
     // Pair index: 0 = N-S axis, 1 = E-W axis, 2 = SE-NW axis, 3 = SW-NE axis.
     // Kept for documentation/tests; production maps facing via above.

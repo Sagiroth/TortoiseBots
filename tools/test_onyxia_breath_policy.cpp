@@ -50,15 +50,16 @@ int main()
     CHECK(BreathAxisIndex(18392) == -1);
     std::cout << "  [PASS] axis pairing correct\n";
 
-    // Facing maps to lane axes (N=0, E=PI/2→1, SE→2, SW→3).
+    // Facing maps to lane axes. Angles are atan2(dy,dx): 0=N(+X), PI/2=W(+Y).
+    // Diagonals: eighth 3 (SW) + 7 (NE) -> axis 3; eighth 5 (SE) + 1 (NW) -> axis 2.
     CHECK(BreathAxisFromFacing(0.0f) == 0);
     CHECK(BreathAxisFromFacing(3.1415926536f) == 0);
     CHECK(BreathAxisFromFacing(1.5707963268f) == 1);
     CHECK(BreathAxisFromFacing(4.7123889804f) == 1);
-    CHECK(BreathAxisFromFacing(2.3561944902f) == 2);
-    CHECK(BreathAxisFromFacing(5.4977871438f) == 2);
-    CHECK(BreathAxisFromFacing(3.9269908170f) == 3);
-    CHECK(BreathAxisFromFacing(0.7853981634f) == 3);
+    CHECK(BreathAxisFromFacing(2.3561944902f) == 3);
+    CHECK(BreathAxisFromFacing(5.4977871438f) == 3);
+    CHECK(BreathAxisFromFacing(3.9269908170f) == 2);
+    CHECK(BreathAxisFromFacing(0.7853981634f) == 2);
     CHECK(BreathAxisFromFacing(6.2831853072f) == 0);
     std::cout << "  [PASS] facing-to-axis mapping\n";
 
