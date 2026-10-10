@@ -5,6 +5,8 @@
 - Warlocks cast Unending Breath on themselves and the party while swimming instead of never casting it.
 - Warlocks can snare runners with Curse of Exhaustion — order `.bot strategy +curse exhaustion` and the bot slows fleeing or chasing targets instead of only the main target.
 
+- Destruction warlocks open with Curse of the Elements instead of Curse of Agony (Curse of Agony until it is trained), and warlock bots no longer recast a curse anyone already holds — manual curse orders still override.
+
 ### Bots & Behavior
 - Masterless bots stop accepting quests they cannot finish alone — over-level, elite/dungeon and group-suggested quests are refused at the giver instead of being picked up and dropped later. Grouped bots that can fight bosses and player-owned bots are unchanged.
 - Bots pick the better quest reward when two are equally usable — tied rewards are now broken by stat weight for the bot instead of taking whatever the vendor lists first.
