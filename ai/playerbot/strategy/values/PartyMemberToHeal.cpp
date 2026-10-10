@@ -415,7 +415,8 @@ Unit* PartyMemberMainTankValue::Calculate()
 
     // Explicit raid main-tank flag first (donor GetMainTankGuid; core owns
     // the flag via Group::GetMainTankGuid, raid-only by design).
-    if (ObjectGuid mainTankGuid = group->GetMainTankGuid())
+    ObjectGuid mainTankGuid = group->GetMainTankGuid();
+    if (!mainTankGuid.IsEmpty())
     {
         if (Player* mainTank = ObjectAccessor::FindPlayer(mainTankGuid))
             if (mainTank->IsAlive() && ai->IsSafe(mainTank))

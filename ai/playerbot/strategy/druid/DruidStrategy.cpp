@@ -402,12 +402,11 @@ void DruidBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         "thorns on party",
         NextAction::array(0, new NextAction("thorns on party", ACTION_NORMAL + 2), NULL)));
 
-    // HEAL-3/LD-8 (donor BuffOnMainTank): MT thorns below the party scan to
-    // match donor order (mark 13 > thorns-MT 11) — the scan already covers
-    // the MT, this row only pins the leftovers.
-    triggers.push_back(new TriggerNode(
-        "thorns on main tank",
-        NextAction::array(0, new NextAction("thorns on main tank", ACTION_NORMAL + 1), NULL)));
+    // No "thorns on main tank" row here on purpose (review PR #573): the
+    // tank-first row above already covers the MT whenever it lacks thorns,
+    // so an MT row below it would only fire as a fallback or on a distant
+    // MT the tank scan correctly ignores (the MT value has no range/LOS
+    // gate). The trigger/action stay registered for future tactics.
 
     triggers.push_back(new TriggerNode(
         "mark of the wild",
