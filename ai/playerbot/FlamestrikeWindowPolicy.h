@@ -4,7 +4,7 @@
 #include <ctime>
 
 // Pure decision rule for the mage flamestrike -> blizzard sequencing port
-// (MAG-2): mod-playerbots stacks an instant flamestrike under the pack and
+// (MAG-2): mod-playerbots stacks a flamestrike under the pack and
 // then channels blizzard on top of the burning ground
 // (`GenericMageStrategy.cpp:182-186,196,202-205`: `medium aoe` ->
 // flamestrike 23 then blizzard 22, plus `flamestrike active and medium
@@ -27,18 +27,19 @@
 
 namespace ai
 {
-    // Flamestrike cast spell ids (the cast, not the 2120-line effects):
-    // 2124/2125 rank 1-2, 8425/8426 rank 3-4, 10217/10218 rank 5-6.
+    // Flamestrike castable ranks 1-6 (3s cast in 1.12; NOT the 2124-line
+    // trainer Learn spells, which resolve through EffectTriggerSpell to
+    // these and never appear as a cast id):
     inline bool IsFlamestrikeCastId(std::uint32_t spellId)
     {
-        return spellId == 2124 || spellId == 2125 || spellId == 8425 ||
-               spellId == 8426 || spellId == 10217 || spellId == 10218;
+        return spellId == 2120 || spellId == 2121 || spellId == 8422 ||
+               spellId == 8423 || spellId == 10215 || spellId == 10216;
     }
 
     struct FlamestrikeWindowState
     {
         std::uint32_t lastCastSpellId;   // `last spell cast` value: spell just cast
-        time_t lastCastTime;      // `last spell cast` value: when it landed
+        time_t lastCastTime;      // `last spell cast` value: when casting started (set at prepare)
         time_t now;               // current time
         bool packStillGrouped;    // the medium-aoe trigger still holds
     };

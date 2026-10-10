@@ -26,8 +26,8 @@ static int checks = 0;
 
 static FlamestrikeWindowState Base()
 {
-    // Flamestrike rank 1 cast 2s ago, pack still grouped.
-    return FlamestrikeWindowState{2124, 1000, 1002, true};
+    // Flamestrike rank 1 (cast id 2120) cast 2s ago, pack still grouped.
+    return FlamestrikeWindowState{2120, 1000, 1002, true};
 }
 
 int main()
@@ -36,23 +36,23 @@ int main()
     CHECK(ShouldBlizzardAfterFlamestrike(Base()));
 
     // Every flamestrike rank opens the window.
-    for (std::uint32_t id : std::vector<std::uint32_t>{2125u, 8425u, 8426u, 10217u, 10218u})
+    for (std::uint32_t id : std::vector<std::uint32_t>{2121u, 8422u, 8423u, 10215u, 10216u})
         CHECK(ShouldBlizzardAfterFlamestrike(FlamestrikeWindowState{id, 1000, 1002, true}));
 
     // Non-flamestrike last cast (fireball 133, frostbolt 116, blizzard
-    // 1196, effect id 2120): no follow-up.
-    for (std::uint32_t id : std::vector<std::uint32_t>{133u, 116u, 1196u, 2120u, 0u})
+    // 1196, trainer Learn id 2124): no follow-up.
+    for (std::uint32_t id : std::vector<std::uint32_t>{133u, 116u, 1196u, 2124u, 0u})
         CHECK(!ShouldBlizzardAfterFlamestrike(FlamestrikeWindowState{id, 1000, 1002, true}));
 
     // Window edge: exactly 6s still counts, 7s does not.
-    CHECK(ShouldBlizzardAfterFlamestrike(FlamestrikeWindowState{2124, 1000, 1006, true}));
-    CHECK(!ShouldBlizzardAfterFlamestrike(FlamestrikeWindowState{2124, 1000, 1007, true}));
+    CHECK(ShouldBlizzardAfterFlamestrike(FlamestrikeWindowState{2120, 1000, 1006, true}));
+    CHECK(!ShouldBlizzardAfterFlamestrike(FlamestrikeWindowState{2120, 1000, 1007, true}));
 
     // Pack scattered since the cast: single-target logic owns the fight.
-    CHECK(!ShouldBlizzardAfterFlamestrike(FlamestrikeWindowState{2124, 1000, 1002, false}));
+    CHECK(!ShouldBlizzardAfterFlamestrike(FlamestrikeWindowState{2120, 1000, 1002, false}));
 
     // Clock skew (cast timestamp in the future): quiet, never fires.
-    CHECK(!ShouldBlizzardAfterFlamestrike(FlamestrikeWindowState{2124, 1005, 1000, true}));
+    CHECK(!ShouldBlizzardAfterFlamestrike(FlamestrikeWindowState{2120, 1005, 1000, true}));
 
     std::printf("flamestrike window policy: %d checks passed\n", checks);
     return 0;

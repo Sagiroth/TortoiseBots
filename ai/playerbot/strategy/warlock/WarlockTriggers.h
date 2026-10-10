@@ -64,6 +64,7 @@ namespace ai
     INTERRUPT_TRIGGER(DeathCoilInterruptTrigger, "death coil");
     INTERRUPT_HEALER_TRIGGER(DeathCoilInterruptTHealerTrigger, "death coil");
     SNARE_TRIGGER(DeathCoilSnareTrigger, "death coil");
+    SNARE_TRIGGER(CurseOfExhaustionSnareTrigger, "curse of exhaustion");
 
     class CorruptionOnAttackerTrigger : public DebuffOnAttackerTrigger
     {
@@ -391,6 +392,14 @@ namespace ai
     {
     public:
         PowerOverwhelmingTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "power overwhelming") {}
+        bool IsActive() override;
+    };
+
+    // PET-6: demon below half while the owner can afford the drain.
+    class HealthFunnelTrigger : public Trigger
+    {
+    public:
+        HealthFunnelTrigger(PlayerbotAI* ai) : Trigger(ai, "health funnel") {}
         bool IsActive() override;
     };
 }

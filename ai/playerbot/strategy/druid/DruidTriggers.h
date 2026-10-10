@@ -442,6 +442,7 @@ namespace ai
         }
     };
 
+
     class ClearcastingTrigger : public HasAuraTrigger
     {
     public:

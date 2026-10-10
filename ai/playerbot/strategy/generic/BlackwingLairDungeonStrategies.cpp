@@ -10,6 +10,14 @@ void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
         NextAction::array(0, new NextAction("disarm suppression device", 80.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "boss wants fire aura",
+        NextAction::array(0, new NextAction("swap fire resistance aura", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "boss wants shadow aura",
+        NextAction::array(0, new NextAction("swap shadow resistance aura", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "start broodlord fight",
         NextAction::array(0, new NextAction("enable broodlord fight strategy", 100.0f), NULL)));
 
@@ -96,6 +104,7 @@ void VaelFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "raid bomb debuff",
         NextAction::array(0, new NextAction("vael adrenaline flee", ACTION_EMERGENCY + 7), NULL)));
+
 }
 
 void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

@@ -134,6 +134,17 @@ namespace ai
 
     HAS_AURA_TRIGGER(PresenceOfMindAuraTrigger, "presence of mind");
 
+    // Turtle fire talent Hot Streak (51927/51928): crits stack a cast-time
+    // reduction aura for the next Pyroblast (proc 51930/51931). The talent
+    // auras share the "Hot Streak" name, so this MUST NOT be a name-based
+    // HasAuraTrigger — see HotStreakTrigger::IsActive in MageTriggers.cpp.
+    class HotStreakTrigger : public Trigger
+    {
+    public:
+        HotStreakTrigger(PlayerbotAI* ai) : Trigger(ai, "hot streak") {}
+        bool IsActive() override;
+    };
+
     class ManaShieldTrigger : public BuffTrigger
     {
     public:
@@ -173,13 +184,21 @@ namespace ai
         bool IsActive() override;
     };
 
-    // MAG-2: own flamestrike just landed and the pack is still grouped —
-    // channel blizzard on the burning ground. See FlamestrikeWindowPolicy.h
+    // MAG-2: own flamestrike cast started <=6s ago and the pack is still
+    // grouped — channel blizzard on the burning ground (window counts from
+    // cast start, not impact). See FlamestrikeWindowPolicy.h
     // (the donor's dynobj check cannot port: no aura→dynobj link here).
     class FlamestrikeWindowTrigger : public Trigger
     {
     public:
         FlamestrikeWindowTrigger(PlayerbotAI* ai) : Trigger(ai, "flamestrike window") {}
+        bool IsActive() override;
+    };
+
+    class BlizzardChannelCheckTrigger : public Trigger
+    {
+    public:
+        BlizzardChannelCheckTrigger(PlayerbotAI* ai) : Trigger(ai, "blizzard channel check") {}
         bool IsActive() override;
     };
 

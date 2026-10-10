@@ -348,7 +348,27 @@ void DestructionWarlockPetRaidStrategy::InitNonCombatTriggers(std::list<TriggerN
 
 void DestructionWarlockCursesStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    WarlockCursesStrategy::InitCombatTriggers(triggers);
+    // Spec-aware default (WAR-3, donor parity): destruction opens Curse of
+    // the Elements for its fire damage. The CoE-specific triggers skip when
+    // anyone already holds CoE (same-curse, no churn) but still fire past a
+    // groupmate's Agony (different curses stack per-caster in this core).
+    // Below CoE (trained at 32) fall back to the base Agony rows.
+    if (!ai->HasSpell("curse of the elements"))
+    {
+        WarlockCursesStrategy::InitCombatTriggers(triggers);
+        return;
+    }
+
+    if (ai->HasStrategy("aoe", BotState::BOT_STATE_COMBAT))
+    {
+        triggers.push_back(new TriggerNode(
+            "curse of the elements on attacker",
+            NextAction::array(0, new NextAction("curse of the elements on attacker", ACTION_HIGH - 1), NULL)));
+    }
+
+    triggers.push_back(new TriggerNode(
+        "curse of the elements",
+        NextAction::array(0, new NextAction("curse of the elements", ACTION_NORMAL + 2), NULL)));
 }
 
 void DestructionWarlockCursesPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

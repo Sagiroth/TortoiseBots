@@ -525,6 +525,20 @@ bool MoveAwayFromCreature::IsHazardNearby(const WorldPosition& point, const std:
 
     return false;
 }
+bool SwapFireResistanceAuraAction::Execute(Event& event)
+{
+    // Combat engine only (donor parity): the rfire strategy's upkeep
+    // trigger then maintains the aura for the rest of the fight.
+    ai->ChangeStrategy("+rfire", BotState::BOT_STATE_COMBAT);
+    return ai->DoSpecificAction(WantedResistAuraAction(true, false), event, true);
+}
+
+bool SwapShadowResistanceAuraAction::Execute(Event& event)
+{
+    ai->ChangeStrategy("+rshadow", BotState::BOT_STATE_COMBAT);
+    return ai->DoSpecificAction(WantedResistAuraAction(false, true), event, true);
+}
+
 bool VaelBurningAdrenalineFleeAction::Execute(Event& event)
 {
     (void)event;

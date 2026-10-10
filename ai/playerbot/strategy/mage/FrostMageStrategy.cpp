@@ -126,12 +126,16 @@ void FrostMageAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("blizzard", ACTION_HIGH + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "ranged medium aoe",
-        NextAction::array(0, new NextAction("blizzard", ACTION_HIGH + 1), NULL)));
+        "ranged light aoe",
+        NextAction::array(0, new NextAction("cone of cold", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "ranged medium aoe",
-        NextAction::array(0, new NextAction("flamestrike", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("flamestrike", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "ranged medium aoe",
+        NextAction::array(0, new NextAction("blizzard", ACTION_HIGH), NULL)));
 }
 
 void FrostMageAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

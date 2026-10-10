@@ -27,7 +27,8 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 1. **Pull & Engagement:** Charges on enemy-out-of-melee, then swaps to Defensive Stance (no Battle Stance prep in code).
 2. **Threat Generation:**
    - Keeps *Shield Block* active on cooldown to enable *Revenge*.
-   - Stacks *Sunder Armor* to a full 5-stack, then stops (re-applies only to refresh, never to over-stack; no spreading to secondary mobs; AoE threat is *Challenging Shout*).
+   - Stacks *Sunder Armor* to a full 5-stack, then stops (re-applies only to refresh an expiring stack; sunder yields to Shield Slam only once 40+ rage makes slam live).
+   - *Shield Slam* fires on the Improved Shield Slam proc (+35%/+70% damage charge) above the rage ladder but below taunt/shield block, otherwise at 40+ rage — after the sunder stack is complete and *Revenge* has had its GCD.
    - *Thunder Clap* fires on spare rage (40+) as extra threat, since the AoE toggle the base tree gates it behind is normally off in party pulls.
 3. **Emergency Mitigation:**
    - *Shield Wall* fires early at low health (default 20-50%) so damage is blunted before it becomes lethal.
@@ -43,7 +44,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 1. **Opener:** *Charge* from range when available.
 2. **Rage Spenders:**
    - *Overpower* is wired for Arms (and via the Protection stance-dance); Fury has no Overpower wiring, and the dodge window is core spell data.
-   - *Mortal Strike* (Arms) or *Bloodthirst* (Fury) on cooldown, plus the instant-*Slam* proc, *Rend* upkeep, and the *Master Strike* weapon nuke.
+   - *Mortal Strike* (Arms) or *Bloodthirst* (Fury) on cooldown, plus the instant-*Slam* proc, *Rend* upkeep, and the *Master Strike* weapon nuke. With no tank warrior in the group, DPS warriors keep *Sunder Armor* stacked (bottom of the ladder); with a tank warrior present they leave it to the tank.
    - *Whirlwind* is used on cooldown above 20% target health; 2+ nearby targets only raises its priority.
    - Cooldowns: both specs fire *Death Wish* and *Recklessness* as boosts, plus *Retaliation* while near full health (70-90%) — all behind the boost toggle.
 3. **Execute Phase:** Below 20% enemy health, *Execute* becomes highest priority, consuming all available rage.

@@ -28,9 +28,12 @@ Mages provide premier ranged spell DPS, the game's most reliable crowd control (
 - If enemies reach melee range, casts *Frost Nova* and *Blink* to reset distance.
   - Skips *Frost Nova* when the target is already frozen or immune to the freeze, so the GCD goes to damage.
 - Uses *Blizzard* and *Flamestrike* on grouped enemies — *Flamestrike* first, then *Blizzard* channeled on the burning ground while the pack holds (*Cone of Cold* on light AoE; *Arcane Explosion* point-blank for Arcane; *Blast Wave* for Fire).
+- Uses *Blizzard* and *Flamestrike* on grouped enemies (*Cone of Cold* on light AoE; *Arcane Explosion* point-blank for Arcane; *Blast Wave* for Fire), and stops the *Blizzard* channel early when the pack thins below two attackers.
+- Uses *Blizzard* and *Flamestrike* on grouped enemies, and *Cone of Cold* on close pairs (only while facing the target; *Blast Wave* for Fire).
 - Uses *Cold Snap* once any Frost cooldown (Frost Nova, Cone of Cold, Ice Barrier, Ice Block, Frost Ward) is spent.
 
 ### 2. Fire Mage
+- Hurries a *Pyroblast* once *Hot Streak* reaches full stacks (highest-priority nuke).
 - Refreshes *Pyroblast* in combat and consumes *Presence of Mind* with it.
 - Weaves *Scorch* casts to maintain the *Improved Scorch* fire vulnerability.
 - Casts *Fireball* as main nuke and *Fire Blast* on the move or for finishing blows.
@@ -60,6 +63,7 @@ Mages provide premier ranged spell DPS, the game's most reliable crowd control (
 - **Interrupts:** Casts *Counterspell* immediately when an enemy begins casting a dangerous spell, locking out that spell school for up to 10 seconds.
 - **Food & Drink Conjuration:** Automatically conjures food and water out of combat, sharing stacks with party members who need mana or health.
 - **Mana Gem Priority:** Consumes the strongest gem in bags first (Ruby → Citrine → Jade → Agate) so low-level gems are never wasted ahead of raid gems.
+- **Mana Gem Timing:** Burns the gem early in the fight (below 40% mana, in combat only) so the mana lands while it still matters; *Evocation* stays the below-15% rescue.
 - **Buffs:** Maintains *Arcane Intellect* on all mana-using party members (upgrading to *Arcane Brilliance* once known, trained and stocked, once at least three same-map members lack both auras, outbidding the single-target cast). Buffs expiring within 15 s count as missing, so they are refreshed before they drop (issue #468) and self *Mage Armor* / *Ice Armor*. Single-target *Arcane Intellect* is also allowed in combat at the lowest priority, so a mage following a master who chain-pulls still buffs the party in the quiet moments of a fight. Casts *Mana Shield* at low health and *Ice Block* at critical health. With several mages in one party, a short shared *buff claim* keeps them from duplicating each other: while one mage's cast is in flight the others stand down and wait for the aura instead of casting the same buff on the same member (issue #378).
 - **Buff scheduling:** Out of combat, catching up to the master runs below the party buffs (a pending buff in range wins the tick, follow resumes next). Upkeep buffs wait for 40% mana, 20% with a real player master. A failed buff attempt no longer starts the retry window or the duplicate-cast claim; only a cast that actually starts does.
 - **Curses:** Uses *Remove Lesser Curse* on party members affected by debilitating curses.

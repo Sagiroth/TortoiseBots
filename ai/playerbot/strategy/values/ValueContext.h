@@ -44,6 +44,7 @@
 #include "LastSpellCastValue.h"
 #include "ChatValue.h"
 #include "HasTotemValue.h"
+#include "HasOwnTotemValue.h"
 #include "HaveAnyTotemValue.h"
 #include "LeastHpTargetValue.h"
 #include "AoeHealValues.h"
@@ -52,6 +53,7 @@
 #include "PositionValue.h"
 #include "ThreatValues.h"
 #include "RaidTargetValues.h"
+#include "EstimatedLifetimeValue.h"
 #include "DuelTargetValue.h"
 #include "InvalidTargetValue.h"
 #include "EnemyPlayerValue.h"
@@ -142,6 +144,7 @@ namespace ai
             creators["party member without my aura"] = [](PlayerbotAI* ai) { return new PartyMemberWithoutMyAuraValue(ai); };
             creators["attacker without aura"] = [](PlayerbotAI* ai) { return new AttackerWithoutAuraTargetValue(ai); };
             creators["party member to heal"] = [](PlayerbotAI* ai) { return new PartyMemberToHeal(ai); };
+            creators["healer low mana"] = [](PlayerbotAI* ai) { return new HealerLowMana(ai); };
             creators["party member to resurrect"] = [](PlayerbotAI* ai) { return new PartyMemberToResurrect(ai); };
             creators["party member to soulstone"] = [](PlayerbotAI* ai) { return new PartyMemberToSoulstone(ai); };
             creators["current target"] = [](PlayerbotAI* ai) { return new CurrentTargetValue(ai); };
@@ -222,7 +225,9 @@ namespace ai
             creators["last potion used time"] = [](PlayerbotAI* ai) { return new LastPotionUsedTimeValue(ai); };
             creators["chat"] = [](PlayerbotAI* ai) { return new ChatValue(ai); };
             creators["has totem"] = [](PlayerbotAI* ai) { return new HasTotemValue(ai); };
+            creators["has own totem"] = [](PlayerbotAI* ai) { return new HasOwnTotemValue(ai); };
             creators["have any totem"] = [](PlayerbotAI* ai) { return new HaveAnyTotemValue(ai); };
+            creators["have any own totem"] = [](PlayerbotAI* ai) { return new HaveAnyOwnTotemValue(ai); };
 
             creators["aoe heal"] = [](PlayerbotAI* ai) { return new AoeHealValue(ai); };
 
@@ -239,6 +244,8 @@ namespace ai
             creators["neglect threat"] = [](PlayerbotAI* ai) { return new NeglectThreatValue(ai); };
             creators["find target"] = [](PlayerbotAI* ai) { return new FindTargetByNameValue(ai); };
             creators["boss target"] = [](PlayerbotAI* ai) { return new BossTargetValue(ai); };
+            creators["estimated lifetime"] = [](PlayerbotAI* ai) { return new EstimatedLifetimeValue(ai); };
+            creators["estimated group dps"] = [](PlayerbotAI* ai) { return new EstimatedGroupDpsValue(ai); };
 
             creators["incoming damage"] = [](PlayerbotAI* ai) { return new IncomingDamageValue(ai); };
             creators["balance"] = [](PlayerbotAI* ai) { return new BalancePercentValue(ai); };

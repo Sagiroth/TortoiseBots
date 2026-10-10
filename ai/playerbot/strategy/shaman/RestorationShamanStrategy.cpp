@@ -359,6 +359,10 @@ void RestorationShamanTotemsStrategy::InitCombatTriggers(std::list<TriggerNode*>
     ShamanTotemsStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "grounding totem reactive",
+        NextAction::array(0, new NextAction("grounding totem", ACTION_HIGH + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "air totem",
         NextAction::array(0, new NextAction("windfury totem", ACTION_HIGH + 1), NULL)));
 
@@ -369,6 +373,22 @@ void RestorationShamanTotemsStrategy::InitCombatTriggers(std::list<TriggerNode*>
     triggers.push_back(new TriggerNode(
         "stoneclaw panic",
         NextAction::array(0, new NextAction("stoneclaw totem", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "poison cleansing totem reactive",
+        NextAction::array(0, new NextAction("poison cleansing totem", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "disease cleansing totem reactive",
+        NextAction::array(0, new NextAction("disease cleansing totem", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "tremor totem reactive",
+        NextAction::array(0, new NextAction("tremor totem", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "earthbind totem reactive",
+        NextAction::array(0, new NextAction("earthbind totem", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "earth totem",
