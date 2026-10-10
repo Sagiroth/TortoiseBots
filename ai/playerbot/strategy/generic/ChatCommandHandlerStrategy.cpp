@@ -91,6 +91,7 @@ ChatCommandHandlerStrategy::ChatCommandHandlerStrategy(PlayerbotAI* ai) : PassTr
     supported.push_back("range");
     supported.push_back("ra");
     supported.push_back("give leader");
+    supported.push_back("unlock traded item");
     supported.push_back("cheat");
     supported.push_back("guild invite");
     supported.push_back("guild join");
@@ -209,6 +210,10 @@ void ChatCommandHandlerStrategy::InitReactionTriggers(std::list<TriggerNode*> &t
         NextAction::array(0, new NextAction("pull my target", relevance), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "pull back",
+        NextAction::array(0, new NextAction("pull my target", relevance), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "pull rti",
         NextAction::array(0, new NextAction("pull rti target", relevance), NULL)));
 
@@ -310,7 +315,7 @@ void ChatCommandHandlerStrategy::InitReactionTriggers(std::list<TriggerNode*> &t
 
     triggers.push_back(new TriggerNode(
         "attackers",
-        NextAction::array(0, new NextAction("attackers", relevance), NULL)));
+        NextAction::array(0, new NextAction("tell attackers", relevance), NULL)));
 
     triggers.push_back(new TriggerNode(
         "ready",

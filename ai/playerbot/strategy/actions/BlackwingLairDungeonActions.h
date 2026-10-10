@@ -249,4 +249,16 @@ namespace ai
         // Donor BROODLORD_SAFE_DISTANCE: ranged holds 18y (Blast Wave).
         BroodlordMoveAwayAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "move away from broodlord", 12017, 18.0f) {}
     };
+
+    class VaelEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        VaelEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable vael fight strategy", "+vael") {}
+    };
+
+    class VaelDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        VaelDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable vael fight strategy", "-vael") {}
+    };
 }

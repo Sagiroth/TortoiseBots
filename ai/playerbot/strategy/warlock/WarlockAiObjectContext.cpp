@@ -218,6 +218,7 @@ namespace ai
                 creators["fear"] = [](PlayerbotAI* ai) { return new FearTrigger(ai); };
                 creators["fear pvp"] = [](PlayerbotAI* ai) { return new FearPvpTrigger(ai); };
                 creators["immolate"] = [](PlayerbotAI* ai) { return new ImmolateTrigger(ai); };
+                creators["immolate on attacker"] = [](PlayerbotAI* ai) { return new ImmolateOnAttackerTrigger(ai); };
                 creators["amplify curse"] = [](PlayerbotAI* ai) { return new AmplifyCurseTrigger(ai); };
                 creators["siphon life"] = [](PlayerbotAI* ai) { return new SiphonLifeTrigger(ai); };
                 creators["siphon life on attacker"] = [](PlayerbotAI* ai) { return new SiphonLifeOnAttackerTrigger(ai); };
@@ -241,6 +242,8 @@ namespace ai
                 creators["spell lock"] = [](PlayerbotAI* ai) { return new SpellLockTrigger(ai); };
                 creators["spell lock enemy healer"] = [](PlayerbotAI* ai) { return new SpellLockEnemyHealerTrigger(ai); };
                 creators["spell lock on enemy healer"] = [](PlayerbotAI* ai) { return new SpellLockEnemyHealerTrigger(ai); };
+                creators["devour magic purge"] = [](PlayerbotAI* ai) { return new DevourMagicPurgeTrigger(ai); };
+                creators["devour magic cleanse"] = [](PlayerbotAI* ai) { return new DevourMagicCleanseTrigger(ai); };
                 creators["soulstone"] = [](PlayerbotAI* ai) { return new SoulstoneTrigger(ai); };
                 creators["soul link"] = [](PlayerbotAI* ai) { return new SoulLinkTrigger(ai); };
                 creators["shadow ward"] = [](PlayerbotAI* ai) { return new ShadowWardTrigger(ai); };
@@ -269,6 +272,7 @@ namespace ai
                 creators["summon imp"] = [](PlayerbotAI* ai) { return new CastSummonImpAction(ai); };
                 creators["summon inferno"] = [](PlayerbotAI* ai) { return new CastSummonInfernoAction(ai); };
                 creators["immolate"] = [](PlayerbotAI* ai) { return new CastImmolateAction(ai); };
+                creators["immolate on attacker"] = [](PlayerbotAI* ai) { return new CastImmolateOnAttackerAction(ai); };
                 creators["corruption"] = [](PlayerbotAI* ai) { return new CastCorruptionAction(ai); };
                 creators["corruption on attacker"] = [](PlayerbotAI* ai) { return new CastCorruptionOnAttackerAction(ai); };
                 creators["siphon life"] = [](PlayerbotAI* ai) { return new CastSiphonLifeAction(ai); };
@@ -324,6 +328,8 @@ namespace ai
                 creators["soulstone"] = [](PlayerbotAI* ai) { return new CastSoulstoneAction(ai); };
                 creators["shadow ward"] = [](PlayerbotAI* ai) { return new CastShadowWardAction(ai); };
                 creators["torment"] = [](PlayerbotAI* ai) { return new CastTormentAction(ai); };
+                creators["devour magic purge"] = [](PlayerbotAI* ai) { return new CastDevourMagicPurgeAction(ai); };
+                creators["devour magic cleanse"] = [](PlayerbotAI* ai) { return new CastDevourMagicCleanseAction(ai); };
                 creators["blood pact"] = [](PlayerbotAI* ai) { return new CastBloodPactAction(ai); };
                 creators["firebolt"] = [](PlayerbotAI* ai) { return new CastFireboltAction(ai); };
             }

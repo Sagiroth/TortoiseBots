@@ -76,6 +76,14 @@ bool ComboPointsAvailableTrigger::IsActive()
 
 bool LoseAggroTrigger::IsActive()
 {
+    // Players have no threat list: against an enemy player `has aggro` is
+    // always false, so without this guard the trigger is spuriously active
+    // in PvP and taunt-grade rows would outbid real interrupts for zero
+    // effect (donor GenericTriggers.cpp guards the same way).
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (target && target->IsPlayer())
+        return false;
+
     if(!AI_VALUE2(bool, "has aggro", "current target"))
     {
         // Check if the aggro has been taken by another tank
@@ -814,8 +822,10 @@ bool IsNotFacingTargetTrigger::IsActive()
 
 bool TankFaceNeededTrigger::IsActive()
 {
-    // Scope: real-player-master parties only. Pool bots keep old behaviour.
-    if (!ai->HasRealPlayerMaster())
+    // Scope is strategy membership ("tank face" on tank kits), not the
+    // master: any tank with the strategy faces held mobs away, pool/raid
+    // tanks included. Non-tanks never carry the strategy.
+    if (!ai->HasStrategy("tank face", BotState::BOT_STATE_COMBAT))
         return false;
     if (!ai->IsTank(bot))
         return false;

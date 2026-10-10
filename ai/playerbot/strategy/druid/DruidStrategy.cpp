@@ -16,6 +16,7 @@ public:
         creators["rejuvenation"] = &rejuvenation;
         creators["rejuvenation on party"] = &rejuvenation_on_party;
         creators["rebirth"] = &rebirth;
+        creators["nature's swiftness"] = &natures_swiftness;
         creators["abolish poison"] = &abolish_poison;
         creators["abolish poison on party"] = &abolish_poison_on_party;
         creators["remove curse"] = &remove_curse;
@@ -63,6 +64,8 @@ private:
     ACTION_NODE_P(hibernate_on_cc, "hibernate on cc", "caster form");
 
     ACTION_NODE_P(rebirth, "rebirth", "caster form");
+
+    ACTION_NODE_P(natures_swiftness, "nature's swiftness", "caster form");
 
     ACTION_NODE_P(regrowth, "regrowth", "caster form");
 

@@ -90,6 +90,18 @@ namespace ai
         }
     };
 
+    class VaelStartFightTrigger : public StartBossFightTrigger
+    {
+    public:
+        VaelStartFightTrigger(PlayerbotAI* ai) : StartBossFightTrigger(ai, "start vael fight", "vael", 13020) {}
+    };
+
+    class VaelEndFightTrigger : public EndBossFightTrigger
+    {
+    public:
+        VaelEndFightTrigger(PlayerbotAI* ai) : EndBossFightTrigger(ai, "end vael fight", "vael", 13020) {}
+    };
+
     class SuppressionDeviceNeedStealthTrigger : public Trigger
     {
     public:

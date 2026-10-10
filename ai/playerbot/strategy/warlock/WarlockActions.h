@@ -3,6 +3,7 @@
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/UseItemAction.h"
 #include "playerbot/AoeFearPolicy.h"
+#include "../../../runtime/DevourMagicPolicy.h"
 
 namespace ai
 {
@@ -285,6 +286,53 @@ namespace ai
         CastSpellLockAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "spell lock") {}
     };
 
+    class CastDevourMagicPurgeAction : public CastPetSpellAction
+    {
+    public:
+        CastDevourMagicPurgeAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "devour magic") {}
+        std::string getName() override { return "devour magic purge"; }
+        bool isPossible() override
+        {
+            // Actions are cached singletons: the ctor-resolved spellId stays
+            // 0 when no Felhunter is out at first creation (and goes stale
+            // across rank upgrades), which would fail the pet HasSpell check
+            // forever. Refresh before the base checks.
+            SetSpellName("devour magic", "spell id", true);
+            return CastPetSpellAction::isPossible();
+        }
+        bool isUseful() override
+        {
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            TortoiseBots::DevourMagicGateInputs gate;
+            gate.hasPet = pet != nullptr;
+            gate.currentPetEntry = pet ? pet->GetEntry() : 0;
+            return TortoiseBots::CanCastDevourMagic(gate) && CastPetSpellAction::isUseful();
+        }
+    };
+
+    class CastDevourMagicCleanseAction : public CastPetSpellAction
+    {
+    public:
+        CastDevourMagicCleanseAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "devour magic") {}
+        std::string GetTargetName() override { return "party member to dispel"; }
+        std::string GetTargetQualifier() override { return std::to_string(DISPEL_MAGIC); }
+        std::string getName() override { return "devour magic cleanse"; }
+        bool isPossible() override
+        {
+            // Same cached-singleton refresh as the purge action above.
+            SetSpellName("devour magic", "spell id", true);
+            return CastPetSpellAction::isPossible();
+        }
+        bool isUseful() override
+        {
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            TortoiseBots::DevourMagicGateInputs gate;
+            gate.hasPet = pet != nullptr;
+            gate.currentPetEntry = pet ? pet->GetEntry() : 0;
+            return TortoiseBots::CanCastDevourMagic(gate) && CastPetSpellAction::isUseful();
+        }
+    };
+
     class CastSpellLockOnEnemyHealerAction : public CastPetSpellAction
     {
     public:
@@ -471,6 +519,12 @@ namespace ai
     {
     public:
         CastImmolateAction(PlayerbotAI* ai) : CastRangedDebuffSpellAction(ai, "immolate") {}
+    };
+
+    class CastImmolateOnAttackerAction : public CastRangedDebuffSpellOnAttackerAction
+    {
+    public:
+        CastImmolateOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "immolate") {}
     };
 
     class CastConflagrateAction : public CastSpellAction

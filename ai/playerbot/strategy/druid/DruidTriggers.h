@@ -232,6 +232,15 @@ namespace ai
         NaturesSwiftnessTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "nature's swiftness") {}
     };
 
+    // mod-playerbots parity (DRU-2): true while the Nature's Swiftness buff
+    // sits on the bot, so the emergency instant-Healing-Touch row can spend
+    // it immediately. Mirrors shaman AncestralSwiftnessAuraTrigger.
+    class NaturesSwiftnessActiveTrigger : public HasAuraTrigger
+    {
+    public:
+        NaturesSwiftnessActiveTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "nature's swiftness") {}
+    };
+
     class EnrageTrigger : public BuffTrigger
     {
     public:
@@ -358,6 +367,31 @@ namespace ai
     {
     public:
         FerociousBiteTrigger(PlayerbotAI* ai) : ComboPointsAvailableTrigger(ai, 5) {}
+    };
+
+    // mod-playerbots parity (DRU-5): Ferocious Bite execute window — a
+    // dying target dies to bite before Rip ticks out. Port of donor
+    // FerociousBiteExecuteTrigger minus the WotLK clauses (no savage roar
+    // in 1.18.1; the raw <20k-HP clause scaled to a plain HP% gate —
+    // vanilla health pools make an absolute gate meaningless). Defined in
+    // DruidTriggers.cpp.
+    class FerociousBiteExecuteTrigger : public Trigger
+    {
+    public:
+        FerociousBiteExecuteTrigger(PlayerbotAI* ai) : Trigger(ai, "ferocious bite execute") {}
+        bool IsActive() override;
+    };
+
+    // mod-playerbots parity (DRU-5): Ferocious Bite timing window — at 5
+    // combo points bite only when Rip is absent or healthy (>10 s left),
+    // so bite never clips a Rip refresh. Port of donor
+    // FerociousBiteTimeTrigger minus the savage-roar clause (no such spell
+    // in 1.18.1). Defined in DruidTriggers.cpp.
+    class FerociousBiteTimeTrigger : public Trigger
+    {
+    public:
+        FerociousBiteTimeTrigger(PlayerbotAI* ai) : Trigger(ai, "ferocious bite time") {}
+        bool IsActive() override;
     };
 
     BOOST_TRIGGER(BerserkTrigger, "berserk");

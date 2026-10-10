@@ -16,7 +16,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 ## Supported Specs & Roles
 
 - **Protection (Tank):** Operates primarily in **Defensive Stance**. Prioritizes threat generation via *Sunder Armor*, *Revenge*, *Shield Slam*, and *Taunt*.
-- **Arms (Melee DPS):** Uses two-handed weapons in **Battle Stance** or **Berserker Stance**. Centers on *Mortal Strike*, *Overpower* on dodges, and *Sweeping Strikes* for cleaving packs.
+- **Arms (Melee DPS):** Uses two-handed weapons, pinned to **Battle Stance** (dancing to Berserker for *Whirlwind* only). Centers on *Mortal Strike*, *Overpower* on dodges, and *Sweeping Strikes* for cleaving packs.
 - **Fury (Melee DPS):** Dual-wields in **Berserker Stance**. Drives high rage spend into *Bloodthirst*, *Whirlwind*, and *Execute*.
 
 ---
@@ -30,9 +30,12 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
    - Stacks *Sunder Armor* to a full 5-stack, then stops (re-applies only to refresh, never to over-stack; no spreading to secondary mobs; AoE threat is *Challenging Shout*).
    - *Thunder Clap* fires on spare rage (40+) as extra threat, since the AoE toggle the base tree gates it behind is normally off in party pulls.
 3. **Emergency Mitigation:**
+   - *Shield Wall* fires early at low health (default 20-50%) so damage is blunted before it becomes lethal.
+   - *Last Stand* (12975, per game data) is held for the critical-health trigger (default 20) only.
+   - *Taunt* fires on the current target whenever it peels onto any non-tank member (not just healers/casters).
    - *Last Stand* (12975, per game data) triggers on the critical-health trigger (default 20).
    - *Shield Wall* triggers under severe incoming damage.
-   - *Taunt* fires on the current target whenever it peels onto any non-tank member (not just healers/casters).
+   - *Taunt* fires whenever the current target peels onto any non-tank member (not just healers/casters), outranking DPS spenders and interrupts.
 
 ### 2. Arms / Fury (DPS)
 1. **Opener:** *Charge* from range when available.
@@ -40,7 +43,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
    - *Overpower* is wired for Arms (and via the Protection stance-dance); Fury has no Overpower wiring, and the dodge window is core spell data.
    - *Mortal Strike* (Arms) or *Bloodthirst* (Fury) on cooldown, plus the instant-*Slam* proc, *Rend* upkeep, and the *Master Strike* weapon nuke.
    - *Whirlwind* is used on cooldown above 20% target health; 2+ nearby targets only raises its priority.
-   - Cooldowns: Fury fires *Death Wish* and *Recklessness* as boosts; Arms fires *Recklessness* (*Death Wish* exists in Arms only as a fallback alternative on the berserker-rage node).
+   - Cooldowns: both specs fire *Death Wish* and *Recklessness* as boosts, plus *Retaliation* while near full health (70-90%) — all behind the boost toggle.
 3. **Execute Phase:** Below 20% enemy health, *Execute* becomes highest priority, consuming all available rage.
 
 ---

@@ -474,3 +474,35 @@ bool RaidSpreadNeededTrigger::IsActive()
     }
     return false;
 }
+
+bool SpreadNeededTrigger::IsActive()
+{
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+    // Opt-in spread: combat-only, hold orders veto. Ownership and
+    // ranged-only never gate — the strategy on the bot is the consent.
+    // Tanks never spread (see RaidSpreadAction: dragging the boss).
+    if (ai->IsTank(bot))
+        return false;
+    if (!ShouldOptInSpread(sServerFacade.IsInCombat(bot),
+        ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("guard", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
+        return false;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    float const radius = SpreadRadius(AI_VALUE(float, "spread distance"), ai->IsRanged(bot));
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetMapId() != bot->GetMapId())
+            continue;
+        if (sServerFacade.getDistance2d(bot, member) < radius)
+            return true;
+    }
+    return false;
+}
