@@ -59,6 +59,23 @@
 - A fresh level-1 pool is now actually spread evenly over the starting zones — bots that reached level 2-3 while the pool was still being created stopped counting toward their zone, so the zones where bots level fastest kept getting more (Dun Morogh ended up with twice its share), and high elves were sent to Dun Morogh or Teldrassil instead of Elwynn where they had been counted.
 - Wandering bots no longer stand around after picking a camp or explore errand — the activity they rolled was refused again by a second dice roll (half or nine times in ten), and nothing else was allowed until the choice expired; the roll now decides alone. Your own and hired bots are unchanged.
 
+## 2026-10-10
+
+### Combat & AI
+- Bots now fight, heal, tank and buff closer to mod-playerbots parity, so group and solo play feels noticeably less scripted. [#663](https://github.com/Sagiroth/TortoiseBots/pull/663)
+- Rotation and cooldown fixes across every class: warrior tank defensives and taunts, druid Innervate/Rebirth/Clearcasting, mage procs and AoE, shaman situational totems, warlock curses/dots/stones, priest Fear Ward and shadow chain. [#663](https://github.com/Sagiroth/TortoiseBots/pull/663)
+
+### Pets
+- Hunter and warlock pets only taunt when there's no tank, so they stop yanking aggro off the actual tank. [#663](https://github.com/Sagiroth/TortoiseBots/pull/663)
+
+### Raids & Encounters
+- Bots use raid tactics closer to the reference implementation when handling raid bosses. [#663](https://github.com/Sagiroth/TortoiseBots/pull/663)
+
+### Performance & Defaults
+- Smoother server performance under bot load, with the default bot count raised to 500. [#663](https://github.com/Sagiroth/TortoiseBots/pull/663)
+
+---
+
 ## 2026-10-09
 
 ### Observability & Engine
