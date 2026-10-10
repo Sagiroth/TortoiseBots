@@ -30,6 +30,7 @@ namespace ai
                 creators["cure"] = [](PlayerbotAI* ai) { return new CurePlaceholderStrategy(ai); };
                 creators["powershift"] = [](PlayerbotAI* ai) { return new DpsFeralDruidPowershiftStrategy(ai); };
                 creators["offheal"] = [](PlayerbotAI* ai) { return new OffhealPlaceholderStrategy(ai); };
+                creators["offdps"] = [](PlayerbotAI* ai) { return new OffdpsPlaceholderStrategy(ai); };
             }
         };
 
@@ -101,6 +102,19 @@ namespace ai
                 creators["offheal pve"] = [](PlayerbotAI* ai) { return new DruidOffhealPveStrategy(ai); };
                 creators["offheal pvp"] = [](PlayerbotAI* ai) { return new DruidOffhealPvpStrategy(ai); };
                 creators["offheal raid"] = [](PlayerbotAI* ai) { return new DruidOffhealRaidStrategy(ai); };
+            }
+        };
+
+        // mod-playerbots parity (DRU-8): the DruidOffdps* strategies exist
+        // but were never registered — wire them like priest offdps.
+        class OffdpsSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            OffdpsSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["offdps pve"] = [](PlayerbotAI* ai) { return new DruidOffdpsPveStrategy(ai); };
+                creators["offdps pvp"] = [](PlayerbotAI* ai) { return new DruidOffdpsPvpStrategy(ai); };
+                creators["offdps raid"] = [](PlayerbotAI* ai) { return new DruidOffdpsRaidStrategy(ai); };
             }
         };
 
@@ -203,6 +217,7 @@ namespace ai
                 creators["omen of clarity"] = [](PlayerbotAI* ai) { return new OmenOfClarityTrigger(ai); };
                 creators["thorns"] = [](PlayerbotAI* ai) { return new ThornsTrigger(ai); };
                 creators["thorns on party"] = [](PlayerbotAI* ai) { return new ThornsOnPartyTrigger(ai); };
+                creators["thorns on tank"] = [](PlayerbotAI* ai) { return new ThornsOnTankTrigger(ai); };
                 creators["bash"] = [](PlayerbotAI* ai) { return new BashInterruptSpellTrigger(ai); };
                 creators["faerie fire (feral)"] = [](PlayerbotAI* ai) { return new FaerieFireFeralTrigger(ai); };
                 creators["faerie fire"] = [](PlayerbotAI* ai) { return new FaerieFireTrigger(ai); };
@@ -229,12 +244,17 @@ namespace ai
                 creators["cat form"] = [](PlayerbotAI* ai) { return new CatFormTrigger(ai); };
                 creators["in feral form"] = [](PlayerbotAI* ai) { return new InFeralFormTrigger(ai); };
                 creators["tree form"] = [](PlayerbotAI* ai) { return new TreeFormTrigger(ai); };
+                creators["no offdps"] = [](PlayerbotAI* ai) { return new NoOffdpsTrigger(ai); };
+                creators["tree form and no offdps"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "tree form", "no offdps"); };
                 creators["moonkin form"] = [](PlayerbotAI* ai) { return new MoonkinFormTrigger(ai); };
                 creators["arcane eclipse"] = [](PlayerbotAI* ai) { return new HasArcaneEclipseTrigger(ai); };
                 creators["nature eclipse"] = [](PlayerbotAI* ai) { return new HasNatureEclipseTrigger(ai); };
                 creators["bash on enemy healer"] = [](PlayerbotAI* ai) { return new BashInterruptEnemyHealerSpellTrigger(ai); };
                 creators["nature's swiftness"] = [](PlayerbotAI* ai) { return new NaturesSwiftnessTrigger(ai); };
+                creators["nature's swiftness active"] = [](PlayerbotAI* ai) { return new NaturesSwiftnessActiveTrigger(ai); };
                 creators["ferocious bite"] = [](PlayerbotAI* ai) { return new FerociousBiteTrigger(ai); };
+                creators["ferocious bite execute"] = [](PlayerbotAI* ai) { return new FerociousBiteExecuteTrigger(ai); };
+                creators["ferocious bite time"] = [](PlayerbotAI* ai) { return new FerociousBiteTimeTrigger(ai); };
                 creators["claw"] = [](PlayerbotAI* ai) { return new SpellCanBeCastedTrigger(ai, "claw"); };
                 creators["rip"] = [](PlayerbotAI* ai) { return new RipTrigger(ai, 3); };
                 creators["enrage"] = [](PlayerbotAI* ai) { return new EnrageTrigger(ai); };
@@ -244,6 +264,7 @@ namespace ai
                 creators["stealth"] = [](PlayerbotAI* ai) { return new StealthTrigger(ai); };
                 creators["powershift"] = [](PlayerbotAI* ai) { return new PowershiftTrigger(ai); };
                 creators["rebirth"] = [](PlayerbotAI* ai) { return new RebirthTrigger(ai); };
+                creators["ooc rebirth"] = [](PlayerbotAI* ai) { return new OocRebirthTrigger(ai); };
                 creators["innervate"] = [](PlayerbotAI* ai) { return new InnervateTrigger(ai); };
                 creators["berserk"] = [](PlayerbotAI* ai) { return new BerserkTrigger(ai); };
                 creators["clearcasting"] = [](PlayerbotAI* ai) { return new ClearcastingTrigger(ai); };
@@ -292,6 +313,7 @@ namespace ai
                 creators["rip"] = [](PlayerbotAI* ai) { return new CastRipAction(ai); };
                 creators["cower"] = [](PlayerbotAI* ai) { return new CastCowerAction(ai); };
                 creators["thorns"] = [](PlayerbotAI* ai) { return new CastThornsAction(ai); };
+                creators["thorns on tank"] = [](PlayerbotAI* ai) { return new CastThornsOnTankAction(ai); };
                 creators["thorns on party"] = [](PlayerbotAI* ai) { return new CastThornsOnPartyAction(ai); };
                 creators["cure poison"] = [](PlayerbotAI* ai) { return new CastCurePoisonAction(ai); };
                 creators["cure poison on party"] = [](PlayerbotAI* ai) { return new CastCurePoisonOnPartyAction(ai); };
@@ -346,6 +368,7 @@ DruidAiObjectContext::DruidAiObjectContext(PlayerbotAI* ai) : AiObjectContext(ai
     strategyContexts.Add(new ai::druid::CureSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::druid::BuffSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::druid::OffhealSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::druid::OffdpsSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::druid::BoostSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::druid::CcSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::druid::StealthSituationStrategyFactoryInternal());

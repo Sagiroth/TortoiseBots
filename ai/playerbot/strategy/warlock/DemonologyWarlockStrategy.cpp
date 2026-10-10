@@ -38,8 +38,18 @@ void DemonologyWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         NextAction::array(0, new NextAction("immolate", ACTION_NORMAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "immolate on attacker",
+        NextAction::array(0, new NextAction("immolate on attacker", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "power overwhelming",
         NextAction::array(0, new NextAction("power overwhelming", ACTION_NORMAL + 3), NULL)));
+
+    // Spec-level DoT spreading (WAR-10, donor parity): corruption rides at
+    // NORMAL with the aoe strategy off; the aoe HIGH-1 row wins when on.
+    triggers.push_back(new TriggerNode(
+        "corruption on attacker",
+        NextAction::array(0, new NextAction("corruption on attacker", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "no pet",
@@ -192,6 +202,16 @@ void DemonologyWarlockBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*
     triggers.push_back(new TriggerNode(
         "soul link",
         NextAction::array(0, new NextAction("soul link", ACTION_NORMAL), NULL)));
+
+    // Spellstone upkeep (WAR-4, donor parity): create + equip, see the
+    // affliction note on shard cost and the empty-off-hand gates.
+    triggers.push_back(new TriggerNode(
+        "no spellstone",
+        NextAction::array(0, new NextAction("create spellstone", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "spellstone",
+        NextAction::array(0, new NextAction("spellstone", ACTION_NORMAL), NULL)));
 }
 
 void DemonologyWarlockBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
