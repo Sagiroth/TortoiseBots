@@ -4617,6 +4617,15 @@ ladder and strictly above the faerie-fire row at +5 (queue ties keep the
 first-pushed basket, so the proc must outrank the debuff refresh).
 Restoration: `clearcasting` -> `rejuvenation on party` at
 ACTION_LIGHT_HEAL+3, above the normal HoT rows.
+## Druid parity DRU-5: Ferocious Bite execute + Rip-guard timing — 2026-10-09
+Feature: new `FerociousBiteExecuteTrigger` (CP>=1 + target alive + target
+HP%<25, with a `HasSpell("ferocious bite")` guard) + new
+`FerociousBiteTimeTrigger` (CP5 + target Rip absent or >10 s left via
+`ai->GetAura("rip", target, true)->GetAuraDuration()`) + two combat rows
+in `DpsFeralDruidStrategy` replacing the flat CP5 row: execute-bite at
+ACTION_NORMAL+6 (top finisher, strictly above the faerie-fire row at +5 —
+ties keep the first-pushed basket), timed bite at ACTION_NORMAL+3 (below
+the pve rip row at +4). Finisher order: execute > rip > timed bite.
 
 Source repository: `mod-playerbots` @ `79bd4281` (local checkout
 `../playerbots-references/mod-playerbots`).
@@ -4878,3 +4887,45 @@ policy test pass); `git diff --check`. BA ids 18173/23478/23620 already
 covered by the universal trigger; Vael 13020 in the flank list from the
 BWL bundle PR. Build via build-commit.sh pending; live in-game check
 pending.
+`src/Ai/Class/Druid/DruidTriggers.h:368-420`
+(`FerociousBiteTimeTrigger` with rip/roar duration reads,
+`FerociousBiteExecuteTrigger` with CP/HP% gates) +
+`src/Ai/Class/Druid/Strategy/CatDruidStrategy.cpp:158-178` (execute 24.0
+> rip 23.5 > timed 22.5). Deviations, deliberate: donor savage-roar
+clause dropped (no such spell in 1.18.1); donor absolute <20k-HP clause
+dropped (tuned for WotLK pools — vanilla pools make HP% alone the right
+execute gate).
+
+Reason: druid parity report DRU-5 — flat CP5 bite fired regardless of
+rip/bite windows, clipping Rip refreshes and missing executes.
+
+Source files (module, modified):
+`ai/playerbot/strategy/druid/DruidTriggers.h`,
+`ai/playerbot/strategy/druid/DruidTriggers.cpp`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`ai/playerbot/strategy/druid/DpsFeralDruidStrategy.cpp` +
+`docs/classes/druid.md` (behaviour lines). The old flat
+`FerociousBiteTrigger` creator stays registered (harmless, no live rows
+reference it anymore).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells or actions: Ferocious Bite / Rip ranks
+trainer-taught, creators pre-registered.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.
+
+## Review fixes (2026-10-09, PR #582 CHANGES_REQUESTED)
+Blocking finding verified real and fixed: without an absolute-HP gate,
+the execute row (CP>=1 at +6) eats every combo point on any sub-25%
+target before Rip (CP>=3 at +4) can refresh — confirmed by trigger/row
+priorities, so Rip would fall off for the whole execute phase on bosses.
+Fixed with the donor's absolute gate scaled to vanilla: fire only when
+remaining HP < 4000 (donor: < 20000; WotLK top-rank bite hits roughly an
+order of magnitude harder than vanilla ranks, verified via
+spell_template bite values). Bosses keep Rip; trash and near-dead
+targets still eat early bites.
+Non-blocking raid note (no rip row in raid kit): pre-existing gap,
+unchanged by this PR (pre-PR flat CP5 bite behaved the same there);
+left for a follow-up, not widening this diff.
+verify_all.sh PASSED, build-commit.sh BUILD OK (commit pending push to same branch).
