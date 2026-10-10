@@ -2303,7 +2303,7 @@ PlayerbotAI::BotCommandAuthTier PlayerbotAI::AuthTierForCommand(std::string cons
         word == "who" || word == "where" || word == "wts" || word == "stats" ||
         word == "c" || word == "items" || word == "inv" || word == "inventory" ||
         word == "spells" || word == "hire" ||
-        word == "emote" || word == "help" || word == "warning" || word == "ready" ||
+        word == "emote" || word == "help" || word == "warning" || word == "ready" || word == "rebuff" ||
         word == "queue" || word == "los" ||
         word == "wait" || word == "jump")
         return BotCommandAuthTier::Tactical;

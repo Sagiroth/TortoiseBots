@@ -7,6 +7,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 // #include "playerbot/PerformanceMonitor.h" // E2E green
 #include "playerbot/BotActionLog.h"
+#include "playerbot/ForceRebuffPolicy.h"
 #include "../../../runtime/ObservabilityEmitter.h"
 
 #ifdef BUILD_ELUNA
@@ -892,6 +893,19 @@ void Engine::ProcessTriggers(bool minimal)
             if (!event)
                 continue;
 
+            // Force-rebuff mark on fire (donor Engine.cpp:488-489): a buff
+            // trigger that produced an event this tick counts as proposed
+            // buff work. BuffTrigger::IsActive deliberately does NOT mark —
+            // subclasses add post-gates (greater-aura vetoes) after it that
+            // can still refuse, and a mark there would veto heals / hold the
+            // ready reply with no work queued. Window read mirrors the
+            // IsActive gate (OOC + pending); the tick-start roll clears it.
+            if (trigger->IsBuffTrigger() && !trigger->IsDebuffTrigger() && ai->GetBot() && !ai->GetBot()->IsInCombat())
+            {
+                uint32 beginMs = aiObjectContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get();
+                if (beginMs && ai::ForceRebuffPending(beginMs, WorldTimer::getMSTime()))
+                    aiObjectContext->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(true);
+            }
             MultiplyAndPush(node->getHandlers(), 0.0f, false, event, "trigger");
             LogAction("T:%s src=%s", trigger->getName().c_str(), event.getSource().c_str());
         }

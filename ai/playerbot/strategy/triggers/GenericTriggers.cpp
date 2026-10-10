@@ -317,7 +317,11 @@ bool BuffTrigger::IsActive()
             if (ai::ForceRebuffBelowTarget(aura != nullptr, aura ? aura->GetAuraDuration() : 0,
                 aura ? aura->GetAuraMaxDuration() : 0, beginMs, nowMs))
             {
-                rebuffContext->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(true);
+                // No "proposed" mark here (donor Engine.cpp:488-489 marks only
+                // when a trigger fires): subclasses add post-gates below
+                // (greater-aura vetoes) that can still refuse, and a mark here
+                // would veto heals / hold the ready reply with no buff work.
+                // Engine::ProcessTriggers marks on fire instead.
                 return true;
             }
         }
@@ -1226,9 +1230,27 @@ bool GreaterBuffOnPartyTrigger::IsActive()
     // Issue #468: the group buff only pays off while the member lacks the
     // lower single-target buff too - unless that LONG one is expiring inside
     // the refresh window, in which case the group cast tops up both at once.
+    // Force-rebuff pass: while a rebuff window is pending OOC, the LOWER
+    // aura uses the window margin rule, not the 15 s refresh rule. The
+    // predicate ("party member without aura" margin site) already selects a
+    // member whose single is below margin; without this the trigger rejects
+    // that member (single still above 15 s) while the single trigger is
+    // blocked by group presence, so Prayer/GOTW/AB never top off in-window.
+    // Donor has no greater trigger (upgrades at cast time via
+    // UpgradeToGroupIfAppropriate); locally both levels exist, so the lower
+    // check must match the margin rule that selected the member.
     if (lowerSpell.empty())
         return true;
     Aura* lower = ai->GetAura(lowerSpell, target, checkIsOwner);
+    if (!bot->IsInCombat())
+    {
+        AiObjectContext* rebuffContext = ai->GetAiObjectContext();
+        uint32 beginMs = rebuffContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get();
+        uint32 nowMs = WorldTimer::getMSTime();
+        if (beginMs && ai::ForceRebuffPending(beginMs, nowMs))
+            return ai::ForceRebuffBelowTarget(lower != nullptr, lower ? lower->GetAuraDuration() : 0,
+                lower ? lower->GetAuraMaxDuration() : 0, beginMs, nowMs);
+    }
     return ai::BuffNeedsRefresh(lower != nullptr, lower ? lower->GetAuraDuration() : 0,
         lower ? lower->GetAuraMaxDuration() : 0);
 }
