@@ -4638,6 +4638,48 @@ Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
 
+## Paladin resist aura auto-swap per boss (raid1 item 8) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`): per-boss resist actions under
+`src/Ai/Base/Actions` (add paladin resist strategy + cast the aura now),
+`src/Ai/Base/Trigger/BossAuraTriggers.cpp:13-25,169-185` (paladin-gated,
+boss-alive, aura-missing checks), `src/Ai/Raid/MC/MCStrategy.cpp`
+(Lucifron/Gehennas/Majordomo shadow; Magmadar/Garr/Geddon/Sulfuron/
+Golemagg/Ragnaros fire), `src/Ai/Raid/BWL/BWLStrategy.cpp`
+(Razorgore/Vael/Broodlord/Firemaw/Flamegor fire).
+
+Source files (module, modified): `ai/playerbot/ResistAuraPolicy.h` (new
+pure rule: fire list 11982/12057/12056/12098/11988/11502/12435/13020/
+12017/11983/11981, shadow list 12118/12259/12018, swap-when-missing +
+action routing), `ai/playerbot/strategy/triggers/DungeonTriggers.h/.cpp`
+(fight-agnostic BossWantsFire/ShadowAuraTrigger: paladin gate, manual-aura
+override guard, aura-missing guard, bounded attacker entry scan),
+`ai/playerbot/strategy/actions/DungeonActions.h/.cpp`
+(SwapFire/ShadowResistanceAuraAction: +aura strategy then cast now),
+wired into `molten core` + `blackwing lair` combat triggers at
+ACTION_HIGH+1, registrations (`TriggerContext.h`, `ActionContext.h`),
+`tools/test_resist_aura_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc
+line).
+
+Copied / ported / reimplemented: reimplemented fight-agnostic — one pair
+of triggers reads boss entries off the attacker list instead of the
+donor's per-boss trigger/action zoo (9 MC + 5 BWL nodes). All 14 entries
+verified in tw_world (report's 12118/12098/11988/12017 queries resolve).
+Deviations from the donor, all deliberate: (a) single PR for MC+BWL per
+the report sketch; (b) manual `aura fire/shadow/frost` strategies suppress
+the auto-swap (player control first — explicit orders beat automation);
+(c) 5s check interval (resist fights are slow; no per-tick attacker
+scans); (d) no frost/nature handling (no donor MC/BWL frost boss; hunter
+nature aspect out of scope).
+
+Reason: raid1 gap MC-AURA/BWL: aura actions existed but were manual-only
+— paladins kept whatever aura was last set through fire/shadow bosses.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Build via build-commit.sh pending;
+live in-game check pending.
 ## Warrior WAR-8: tank Intervene on focused party member (2026-10-09)
 
 Feature: `ProtectionWarriorStrategy` gains `protect party member` →
