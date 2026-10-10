@@ -53,6 +53,7 @@
 #include "PositionValue.h"
 #include "ThreatValues.h"
 #include "RaidTargetValues.h"
+#include "EstimatedLifetimeValue.h"
 #include "DuelTargetValue.h"
 #include "InvalidTargetValue.h"
 #include "EnemyPlayerValue.h"
@@ -242,6 +243,8 @@ namespace ai
             creators["neglect threat"] = [](PlayerbotAI* ai) { return new NeglectThreatValue(ai); };
             creators["find target"] = [](PlayerbotAI* ai) { return new FindTargetByNameValue(ai); };
             creators["boss target"] = [](PlayerbotAI* ai) { return new BossTargetValue(ai); };
+            creators["estimated lifetime"] = [](PlayerbotAI* ai) { return new EstimatedLifetimeValue(ai); };
+            creators["estimated group dps"] = [](PlayerbotAI* ai) { return new EstimatedGroupDpsValue(ai); };
 
             creators["incoming damage"] = [](PlayerbotAI* ai) { return new IncomingDamageValue(ai); };
             creators["balance"] = [](PlayerbotAI* ai) { return new BalancePercentValue(ai); };
