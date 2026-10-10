@@ -4719,6 +4719,24 @@ far-away clause only binds when bot grouping is enabled
 (RandomBotGroupNearby) - otherwise the action is already useful further up.
 
 Reason: cross-map/straggler bots held dead groups.
+## Proactive AoE avoidance with strafe-to-safety (POS-2) — 2026-10-09
+
+Feature: `AvoidAoeAction` (`avoid aoe`, donor `AvoidAoeAction` shape) with
+three sensors — dynobj aura affecting the bot, `nearest damaging traps`
+(ownerless damage-trap GOs, donor `NearestTrapWithDamageValue` shape),
+`possible triggers` (hostile not-selectable units with a periodic-trigger
+→ school-damage aura, donor `PossibleTriggersValue` shape) — then a
+strafe-first step-out that stays in combat range (donor
+`BestPositionForMeleeToFlee` / `BestPositionForRangedToFlee` shape):
+melee strafes ±90° off the target, ranged strafes inside the
+TooClose..Spell band; straight-line landings band-checked; 15yd radius
+cap (`MaxAoeAvoidRadius`); flee-heading memory vetoes failed directions
+(POS-7) with a two-pass fallback. `AvoidAoeStrategy` now runs `avoid aoe`
+at ACTION_EMERGENCY + 5 with the old reactive `flee` as the fallback at
++4; the cast-suppression multiplier is untouched. Pure ordering/band
+rules in `ai/playerbot/AvoidAoePolicy.h`, tested by
+`tools/test_avoid_aoe_policy.cpp` (wired into `verify_all.sh`). Reaction
+engine membership unchanged (everyone).
 ## Warrior WAR-2 + WAR-6: shield-slam proc row and 40-rage gate (2026-10-09)
 
 Feature: (WAR-2) new `improved shield slam proc` trigger fires `shield
@@ -5480,6 +5498,34 @@ Source commit: `79bd4281` (local
 `playerbots-references/mod-playerbots` checkout).
 
 Source files:
+- `src/Ai/Base/Actions/MovementActions.cpp` (`AvoidAoeAction::isUseful`/`Execute`, `AvoidAuraWithDynamicObj`, `AvoidGameObjectWithDamage`, `AvoidUnitWithDamageAura`, `BestPositionForMeleeToFlee`, `BestPositionForRangedToFlee`, `FleePosition`)
+- `src/Ai/Base/Actions/MovementActions.h` (declarations)
+- `src/Ai/Base/Value/PossibleTargetsValue.cpp` (`PossibleTriggersValue`)
+- `src/Ai/Base/Value/NearestGameObjects.cpp` (`NearestTrapWithDamageValue`)
+
+Source files (module, modified): `ai/playerbot/AvoidAoePolicy.h` (new),
+`ai/playerbot/strategy/actions/MovementActions.{h,cpp}` (action),
+`ai/playerbot/strategy/actions/ActionContext.h` (registration),
+`ai/playerbot/strategy/values/PossibleTargetsValue.{h,cpp}` (trigger
+sensor), `ai/playerbot/strategy/values/NearestGameObjects.{h,cpp}` (trap
+sensor), `ai/playerbot/strategy/values/ValueContext.h` (registrations),
+`ai/playerbot/strategy/generic/CombatStrategy.cpp` (strategy rewiring),
+`tools/test_avoid_aoe_policy.cpp` + `tools/verify_all.sh` (new standalone
+test), `docs/guides/dungeon-tactics.md` (doc line).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) 1.12 aura APIs
+(`GetAurasByType`, `EffectTriggerSpell[]`, `sSpellRadiusStore`) instead of
+AzerothCore `AuraEffect` lists; (b) candidates validate through `FindStep`
+(LoS + path + unpulled-hostile aggro guard) instead of the donor's
+collision-only check; (c) no `bot->Say` avoidance spam and no spell
+whitelist config (no stack-mechanic false positives observed — add if
+needed); (d) reactive `flee` kept as the fallback when no strafe landing
+validates; (e) 1000 ms donor throttle replaced by the existing
+flee-failure observation windows.
+
+Reason: AoE avoidance was reactive-only (fired after the debuff landed)
+and fled blindly — often toward the tank inside the same void zone.
 - `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:299-305` (proc slam at INTERRUPT)
 - `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:184-192` (slam at medium rage HIGH+2)
 
@@ -6090,6 +6136,63 @@ Local validation: `bash tools/verify_all.sh` (incl. new policy test); `git
 diff --check` clean. Build via build-commit.sh (see PR summary); no live
 in-game check.
 
+## Review fixes (2026-10-10, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (deleted `nearest dynamic objects no los` registration — REAL,
+fixed): my sensor registration edit had dropped the line; both the new
+`AvoidAuraWithDynamicObj` and the existing `HasAreaDebuffValue` read that
+key. Restored alongside the new `nearest damaging traps` entry.
+
+Blocking 2 (strafe gated behind reactive trigger — REAL, fixed): `avoid
+aoe` now runs as a combat + reaction default action (donor shape,
+self-gated via `isUseful` over all three sensors every tick); the `has
+area debuff` row keeps only the reactive `flee` fallback.
+
+Blocking 3 (inverted melee candidates + strict tank lockout — REAL,
+fixed): melee order is now strafe/strafe/toward-target(strict) with
+away-from-target and away-from-hazard as non-strict tanking fallbacks;
+strict rule is index-based for melee. Test updated to donor order.
+
+Blocking 4 (raw center distance vs reach — REAL, fixed): landing now
+subtracts `target->GetCombatReach(bot, false, 0.0f)` before the band
+tests, so large mobs/bosses don't fail every strict landing.
+
+Non-blocking "direct context lookup" — FIXED: `AI_VALUE` macro like the
+rest of the module. Non-blocking "NearestDynamicObjects empty stub" —
+ACKNOWLEDGED: sensor case 1 degrades gracefully (documented); core grid
+visitor is a host-side gap, not this PR.
+
+## Review fixes round 2 (2026-10-10, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (default actions never evaluated — REAL, fixed differently
+than suggested): verified in code that `ReactionEngine::FindReaction`
+calls only `ProcessTriggers()` (never `PushDefaultActions()`), and
+`avoid aoe` is only on the reaction engine (not the combat engine), so
+the reviewer's `getDefaultActions` fix would also be dead. Instead added
+a real `aoe threat nearby` trigger (dynobj aura OR damaging traps OR
+trigger NPCs, all value-cached) and pointed the strategy row at it, with
+`avoid aoe` first and reactive `flee` as fallback. Removed the dead
+`GetDefault*Actions` overrides.
+
+Blocking 2 (no-target fallback steps toward the hazard — REAL, fixed):
+with no target the offset-0 slot headed at the zone center with the band
+check skipped. Now the heading base falls back to away-from-hazard (donor
+else-branch shape).
+
+Prior blocking #4 follow-up (melee-range helper over-subtracts — REAL,
+fixed): landing now subtracts raw `target->GetCombatReach()`.
+
+Non-blocking "donor melee strict needs IsWithinMeleeRange" —
+ACKNOWLEDGED, not fixed: the port band-rejects whenever a target exists
+even out of melee range. Donor-faithful would skip the band check when
+already out of range; left for playtesting.
+
+Non-blocking "no AutoAvoidAoe/owner gate" — ACKNOWLEDGED, deliberate:
+enabled for all bots per the feature brief (reaction engine
+membership). No config gate added.
+
+Non-blocking "trap scan interval" — FIXED: `NearestDamagingTrapsValue`
+now checkInterval 2 (1 s cadence, like `possible triggers`).
 ## Review fixes (2026-10-09, reviewer muse-1.3 max, CHANGES_REQUESTED)
 
 Blocking 1 (dead `spread distance` knob — REAL, fixed): added

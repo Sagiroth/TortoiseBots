@@ -128,6 +128,7 @@ namespace ai
             creators["reach party member for totem"] = [](PlayerbotAI* ai) { return new ReachPartyMemberForTotemAction(ai); };
             creators["flee"] = [](PlayerbotAI* ai) { return new FleeAction(ai); };
             creators["flee with pet"] = [](PlayerbotAI* ai) { return new FleeWithPetAction(ai); };
+            creators["avoid aoe"] = [](PlayerbotAI* ai) { return new AvoidAoeAction(ai); };
             creators["wait for attack keep safe distance"] = [](PlayerbotAI* ai) { return new WaitForAttackKeepSafeDistanceAction(ai); };
             creators["shoot"] = [](PlayerbotAI* ai) { return new CastShootAction(ai); };
             creators["whipper root tuber"] = [](PlayerbotAI* ai) { return new UseWhipperRootTuberAction(ai); };

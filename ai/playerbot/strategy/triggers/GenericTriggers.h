@@ -1119,6 +1119,17 @@ namespace ai
         virtual bool IsActive() override;
     };
 
+    // Proactive AoE gate: fires when any of the three strafe sensors sees
+    // danger — dynobj aura on the bot, damaging trap in range, trigger NPC
+    // in range. Mirrors AvoidAoeAction::isUseful so the trigger row and
+    // the action agree; the sensor reads are value-cached.
+    class AoeThreatNearbyTrigger : public Trigger
+    {
+    public:
+        AoeThreatNearbyTrigger(PlayerbotAI* ai) : Trigger(ai, "aoe threat nearby", 1) {}
+        virtual bool IsActive() override;
+    };
+
     // racials
 
     class BerserkingTrigger : public BoostTrigger
