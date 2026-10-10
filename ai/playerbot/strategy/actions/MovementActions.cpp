@@ -2399,6 +2399,59 @@ bool SetBehindTargetAction::isPossible()
     return false;
 }
 
+bool RearFlankAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !target->IsCreature() || !sServerFacade.IsAlive(target))
+        return false;
+    // Front-arc-only (mirrors the trigger): the tail clause would re-fire
+    // at set-behind's exact-rear destination and ping-pong every tick.
+    // (1.12 HasInArc takes the target first, arc second.)
+    return target->HasInArc(bot, 2.0f * (float)M_PI / 2.0f);
+}
+
+bool RearFlankAction::isPossible()
+{
+    if (!MovementAction::isPossible() || !ai->CanMove())
+        return false;
+    // Tank guard (mirrors SetBehindTargetAction::isPossible): an aggro flip
+    // between trigger poll and Execute must not walk a tank off its mob.
+    Unit* target = AI_VALUE(Unit*, "current target");
+    return !target || !(target->GetVictim() && target->GetVictim()->getObjectGuid() == bot->getObjectGuid());
+}
+
+bool RearFlankAction::Execute(Event& event)
+{
+    (void)event;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !sServerFacade.IsAlive(target))
+        return false;
+    // Donor shape: nearest of +-frand(90, 120)-degree polar offsets at
+    // meleeRange x 0.5. The sidestep lands on a flank, never through the
+    // frontal cone to the exact rear point.
+    float facing = target->GetOrientation();
+    float flankAngle = frand((float)M_PI / 2.0f, 2.0f * (float)M_PI / 3.0f);
+    float baseDist = bot->GetCombatReach(target, true, 0.0f) * 0.5f;
+    float leftX = target->getPositionX() + cosf(facing + flankAngle) * baseDist;
+    float leftY = target->getPositionY() + sinf(facing + flankAngle) * baseDist;
+    float rightX = target->getPositionX() + cosf(facing - flankAngle) * baseDist;
+    float rightY = target->getPositionY() + sinf(facing - flankAngle) * baseDist;
+    float dxl = leftX - bot->getPositionX(), dyl = leftY - bot->getPositionY();
+    float dxr = rightX - bot->getPositionX(), dyr = rightY - bot->getPositionY();
+    float destX = (dxl * dxl + dyl * dyl) < (dxr * dxr + dyr * dyr) ? leftX : rightX;
+    float destY = (dxl * dxl + dyl * dyl) < (dxr * dxr + dyr * dyr) ? leftY : rightY;
+    float destZ = target->getPositionZ();
+    bot->UpdateGroundPositionZ(destX, destY, destZ);
+    float ox, oy, oz;
+    target->GetPosition(ox, oy, oz);
+    target->GetMap()->GetLosHitPosition(ox, oy, oz + bot->GetCollisionHeight(), destX, destY, destZ, -0.5f);
+    if (!target->IsWithinLOS(destX, destY, destZ + bot->GetCollisionHeight(), true))
+        return false;
+    return MoveTo(bot->GetMapId(), destX, destY, destZ);
+}
+
 bool TankFaceAwayAction::Execute(Event& event)
 {
     (void)event;

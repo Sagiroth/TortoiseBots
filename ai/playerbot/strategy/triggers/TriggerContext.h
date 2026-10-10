@@ -147,6 +147,7 @@ namespace ai
             creators["critical health no master"] = [](PlayerbotAI* ai) { return new CriticalHealthNoMasterTrigger(ai); };
             creators["behind target"] = [](PlayerbotAI* ai) { return new IsBehindTargetTrigger(ai); };
             creators["not behind target"] = [](PlayerbotAI* ai) { return new IsNotBehindTargetTrigger(ai); };
+            creators["rear flank needed"] = [](PlayerbotAI* ai) { return new RearFlankNeededTrigger(ai); };
             creators["not facing target"] = [](PlayerbotAI* ai) { return new IsNotFacingTargetTrigger(ai); };
             creators["tank face needed"] = [](PlayerbotAI* ai) { return new TankFaceNeededTrigger(ai); };
             creators["far from master"] = [](PlayerbotAI* ai) { return new FarFromMasterTrigger(ai); };

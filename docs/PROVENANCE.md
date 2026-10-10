@@ -4807,6 +4807,20 @@ near-identical when off except the action now also requires ranged (aligns
 with the trigger; Onyxia P2 direct dispatch no longer spreads pool
 melee). The action returns true on a step (consumes the tick, displaces
 only filler DPS at ACTION_NORMAL) where the donor always returns false.
+## Generic rear-flank for melee (POS-1) — 2026-10-09
+
+Feature: `RearFlankAction` (`rear flank`) + `RearFlankNeededTrigger`
+(`rear flank needed`), donor `RearFlankAction` shape. A melee bot standing
+in the mob's frontal arc (2x90 degrees) or tail cone (outside 2PI-120
+degrees) sidesteps to the nearer of +-frand(90, 120)-degree polar offsets
+at half melee range instead of walking straight through the cleave to the
+exact rear point. Wired flank-first on the `behind` strategy
+(`ACTION_HIGH + 1`, above `set behind` at `ACTION_HIGH`); every melee DPS
+kit with `behind` gets it with no factory change. Tanks holding the mob
+never flank (trigger excludes victim == bot, keeps the tank-face path);
+dragon raid geometry untouched. Pure angle math in
+`ai/playerbot/RearFlankPolicy.h`, tested by
+`tools/test_rear_flank_policy.cpp` (wired into `verify_all.sh`).
 
 Source repository: `mod-playerbots/mod-playerbots`
 
@@ -5281,6 +5295,28 @@ at 2yd only when the player opts in (default stacking unchanged).
 
 Reason: a player's own raid clumped on chain-cleave bosses — spread was
 pool-bot-only and ranged-only.
+- `src/Ai/Base/Actions/MovementActions.cpp` (`RearFlankAction::isUseful` + `::Execute`: front/tail arc checks, polar offsets at meleeRange x 0.5, nearest side)
+- `src/Ai/Base/Actions/MovementActions.h` (declaration: 90-degree min / 120-degree max cone constants)
+
+Source files (module, modified): `ai/playerbot/RearFlankPolicy.h` (new),
+`ai/playerbot/strategy/actions/MovementActions.{h,cpp}` (action),
+`ai/playerbot/strategy/triggers/GenericTriggers.{h,cpp}` (trigger),
+`ai/playerbot/strategy/{actions/ActionContext.h,triggers/TriggerContext.h}`
+(registration), `ai/playerbot/strategy/generic/MeleeCombatStrategy.cpp`
+(flank-first rows), `tools/test_rear_flank_policy.cpp` +
+`tools/verify_all.sh` (new standalone test),
+`docs/concepts/bot-mechanics-and-quirks.md` (doc row).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) destination validates
+through LoS-hit + `IsWithinLOS` mirroring `SetBehindTargetAction` (the
+donor moves blind); (b) trigger excludes the tank-held case so tank-face
+keeps owning it; (c) `BossRearFlankAction` per-boss overrides not ported
+(no per-boss raid scripts in generic scope); (d) no anti-oscillation
+consult yet (POS-7 generalizes the helper later).
+
+Reason: melee DPS walked directly through frontal cleaves/tail cones to
+reach the exact rear point, eating avoidable damage on any mob.
 
 Local validation: `bash tools/verify_all.sh` (incl. new policy test); `git
 diff --check` clean. Build via build-commit.sh (see PR summary); no live
@@ -5352,3 +5388,41 @@ spell_template.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
+Blocking 1 (flank↔set-behind oscillation — REAL, fixed): the tail-cone
+clause fired at set-behind's exact-rear destination while flank outranks
+it with a freshly re-rolled random angle every tick. Dropped the `inRear`
+clause from both the trigger and `isUseful`: generic flank is now
+front-arc-only (vanilla trash has no tail swipes); the full donor
+front+tail shape is reserved for boss/dragon contexts. Belt and braces:
+the trigger also returns false when `behind` is already true.
+
+Blocking 2 (explicit holds lose — REAL, fixed): stay/wait-for-attack
+exemptions added to `RearFlankNeededTrigger` (mirrors
+`TankFaceNeededTrigger`); `isUseful` gates stay via
+`MovementAction::isUseful` as before.
+
+Blocking 3 (tank guard trigger-only — REAL, fixed): victim==bot guard
+added to `RearFlankAction::isPossible` (mirrors
+`SetBehindTargetAction::isPossible`), so an aggro flip between trigger
+poll and Execute cannot walk a tank off its mob.
+
+Non-blocking "dead policy header" — FIXED by aligning, not deleting:
+`NeedsRearFlank` is now front-arc-only (tail param documented
+ignored); the test pins the front-only expectations. (Production still
+inlines `HasInArc` for the hot path — the header pins the geometry
+contract, including the 90° exclusivity `HasInArc`'s inclusivity would
+otherwise drift from.)
+
+Non-blocking "generic scope vs donor per-boss" — ACKNOWLEDGED, partially
+addressed: front-arc-only already narrows the blast radius to mobs whose
+front actually matters; no elite/boss gate added (cleave exists on
+non-elite trash too, e.g. SM/RFK). Left for playtesting.
+
+Non-blocking "dragon interplay" — ACKNOWLEDGED, not verified live:
+reaction-engine `dragon flank` (entry-gated dragons, EMERGENCY+4) vs
+combat-engine `rear flank` (half melee range). Different ranges/engines;
+arbitration needs a live dragon check before merge.
+
+Non-blocking "LOS-fail no fallback" — ACKNOWLEDGED, not fixed: returns
+false, retries next tick with a re-rolled angle. Same shape as before;
+minor spin risk on LOS-blocked geometry, left for playtesting.
