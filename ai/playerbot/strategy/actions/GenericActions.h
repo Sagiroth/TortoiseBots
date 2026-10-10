@@ -171,6 +171,11 @@ namespace ai
         bool isPossible() override;
     };
 
+    // PET-3: live input gathering for runtime/PetTauntPolicy.h. True while
+    // the pet may taunt: solo, or grouped with no member filling the tank
+    // role. Cheap-first: ungrouped bots skip the member walk entirely.
+    bool IsPetTauntAllowed(PlayerbotAI* ai, Player* bot);
+
     class SetPetStanceAction : public Action
     {
     public:

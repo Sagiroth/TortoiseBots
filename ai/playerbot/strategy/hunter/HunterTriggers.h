@@ -56,6 +56,9 @@ namespace ai
     BEGIN_TRIGGER(HuntersPetLowHealthTrigger, Trigger)
     END_TRIGGER()
 
+    BEGIN_TRIGGER(PetHasAggroTrigger, Trigger)
+    END_TRIGGER()
+
     BEGIN_TRIGGER(HuntersPetMediumHealthTrigger, Trigger)
     END_TRIGGER()
 

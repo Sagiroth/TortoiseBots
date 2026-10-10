@@ -392,6 +392,9 @@ namespace ai
         {
             Unit* target = GetTarget();
             Unit* pet = AI_VALUE(Unit*, "pet target");
+            // Ordered peel only: the "has aggro" trigger requires victim ==
+            // bot, so this rescues the owner bot -> pet and can never steal
+            // from the tank (who by definition does not hold the mob).
             return target && pet && target->GetVictim() != pet;
         }
     };
