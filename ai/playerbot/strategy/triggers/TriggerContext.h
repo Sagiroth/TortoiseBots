@@ -55,6 +55,7 @@ namespace ai
 
             creators["no mana"] = [](PlayerbotAI* ai) { return new NoManaTrigger(ai); };
             creators["low mana"] = [](PlayerbotAI* ai) { return new LowManaTrigger(ai); };
+            creators["healer low mana"] = [](PlayerbotAI* ai) { return new HealerLowManaTrigger(ai); };
             creators["medium mana"] = [](PlayerbotAI* ai) { return new MediumManaTrigger(ai); };
             creators["high mana"] = [](PlayerbotAI* ai) { return new HighManaTrigger(ai); };
             creators["almost full mana"] = [](PlayerbotAI* ai) { return new AlmostFullManaTrigger(ai); };
@@ -325,7 +326,10 @@ namespace ai
             creators["four horsemen mark"] = [](PlayerbotAI* ai) { return new FourHorsemenMarkTrigger(ai); };
             creators["dragon breath risk"] = [](PlayerbotAI* ai) { return new DragonBreathRiskTrigger(ai); };
             creators["raid spread needed"] = [](PlayerbotAI* ai) { return new RaidSpreadNeededTrigger(ai); };
+            creators["boss wants fire aura"] = [](PlayerbotAI* ai) { return new BossWantsFireAuraTrigger(ai); };
+            creators["boss wants shadow aura"] = [](PlayerbotAI* ai) { return new BossWantsShadowAuraTrigger(ai); };
             creators["spread needed"] = [](PlayerbotAI* ai) { return new SpreadNeededTrigger(ai); };
+
             creators["start onyxia fight"] = [](PlayerbotAI* ai) { return new OnyxiaStartFightTrigger(ai); };
             creators["end onyxia fight"] = [](PlayerbotAI* ai) { return new OnyxiaEndFightTrigger(ai); };
             creators["onyxia airborne"] = [](PlayerbotAI* ai) { return new OnyxiaAirborneTrigger(ai); };

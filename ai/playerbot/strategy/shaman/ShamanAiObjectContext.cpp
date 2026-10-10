@@ -266,6 +266,7 @@ namespace ai
                 creators["shaman weapon"] = [](PlayerbotAI* ai) { return new ShamanWeaponTrigger(ai); };
                 creators["water shield"] = [](PlayerbotAI* ai) { return new WaterShieldTrigger(ai); };
                 creators["lightning shield"] = [](PlayerbotAI* ai) { return new LightningShieldTrigger(ai); };
+                creators["lightning shield fallback"] = [](PlayerbotAI* ai) { return new ElementalLightningShieldFallbackTrigger(ai); };
                 creators["water breathing"] = [](PlayerbotAI* ai) { return new WaterBreathingTrigger(ai); };
                 creators["water walking"] = [](PlayerbotAI* ai) { return new WaterWalkingTrigger(ai); };
                 creators["water breathing on party"] = [](PlayerbotAI* ai) { return new WaterBreathingOnPartyTrigger(ai); };

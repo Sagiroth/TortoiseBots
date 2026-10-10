@@ -68,8 +68,11 @@ void MageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "blink back",
         NextAction::array(0, new NextAction("blink", ACTION_HIGH + 5), NULL)));
 
+    // MAG-9: burn the gem EARLY (medium mana, <40%) so it returns mana
+    // while the fight still needs it; evocation stays the <15% rescue.
+    // (Donor burns its gem below 65%; medium avoids waste in short fights.)
     triggers.push_back(new TriggerNode(
-        "low mana",
+        "medium mana",
         NextAction::array(0, new NextAction("mana gem", ACTION_HIGH + 4), NULL)));
 
     triggers.push_back(new TriggerNode(

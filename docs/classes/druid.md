@@ -74,6 +74,7 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
 - **Party Buffs:**
   - Maintains *Mark of the Wild* (armor, stats, resistances) and *Thorns* (reflective nature damage) on party members, upgrading *Mark of the Wild* to *Gift of the Wild* once known, trained and stocked (the group version outbids the single-target cast once at least three same-map members lack both auras, and only targets a member that lacks both). Buffs expiring within 15 s count as missing, so they are refreshed before they drop (issue #468). Single-target *Mark of the Wild* is also allowed in combat at the lowest priority, so a druid following a master who chain-pulls still buffs the party in the quiet moments of a fight. With several druids in one party, a short shared *buff claim* keeps them from duplicating each other: while one druid's cast is in flight the others stand down and wait for the aura instead of casting the same buff on the same member (issue #378).
   - Out of combat, catching up to the master runs below the party buffs (a pending buff in range wins the tick, follow resumes next). Upkeep buffs wait for 40% mana, 20% with a real player master. A failed buff attempt no longer starts the retry window or the duplicate-cast claim; only a cast that actually starts does.
+- **Thorns on the tank first:** the tank gets *Thorns* before the party blanket rotation reaches them (skipped while Fire Shield sits on the tank — the two don't stack).
 
 ---
 

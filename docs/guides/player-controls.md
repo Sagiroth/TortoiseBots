@@ -117,6 +117,7 @@ Direct command shortcuts that operate on your targeted bot or all party bots:
 | `.bot attack` | `<Name>` | Orders one owned bot to attack your current hostile target (party-wide: `.bot action attack`). |
 | `.bot interrupt` | `<Name>` | Orders one owned bot to interrupt your current target's cast (party-wide: `.bot action interrupt`). |
 | `.bot pullback` | `[Name]` | Dispatches pullback maneuver on the specified bot or designated tank. |
+| `end pull` (whisper) | None | Aborts a pull that already started: the tank drops the pull target and goes back to following you instead of waiting out the 15-second timeout. Does nothing when no pull is running. Whisper it to the pulling tank when a pull evades or gets wedged. |
 | `.bot strategy` | `<+|-|~strategy> [Name]` | Applies a strategy change to the selected bot, named bot, or all owned party bots (e.g. `.bot strategy +loot`, `.bot strategy -passive`). Also available per-bot via whispers (`co`, `nc`) or `.bot command <BotName> <change>`. |
 | AoE fear toggle | `co +aoe fear` / `co -aoe fear` | Priest Psychic Scream, warlock Howl of Terror and warrior Intimidating Shout are off by default inside dungeons/raids and while the bot is grouped with a player, because a feared mob pulls the next pack. `co +aoe fear` allows them again for that bot. To block a single spell anywhere, use the skip-spell list (`ss`). |
 | `.bot formation` | `<arrow\|queue\|near\|line\|circle\|shield>` | Sets the geometric follow formation around the party leader. |

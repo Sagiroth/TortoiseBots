@@ -103,6 +103,27 @@ namespace ai
         bool IsActive() override;
     };
 
+    // Per-boss resist auras (mod-playerbots parity, fight-agnostic):
+    // while ANY attacker matches the fire/shadow boss list, paladins swap
+    // to the matching resistance aura. Paladin-gated first (cheap class
+    // check filters out most of the raid, mirroring the donor), then a
+    // bounded attacker-list scan for boss entries — no world scan.
+    class BossWantsFireAuraTrigger : public Trigger
+    {
+    public:
+        BossWantsFireAuraTrigger(PlayerbotAI* ai, std::string name = "boss wants fire aura", int checkInterval = 5)
+        : Trigger(ai, name, checkInterval) {}
+        bool IsActive() override;
+    };
+
+    class BossWantsShadowAuraTrigger : public Trigger
+    {
+    public:
+        BossWantsShadowAuraTrigger(PlayerbotAI* ai, std::string name = "boss wants shadow aura", int checkInterval = 5)
+        : Trigger(ai, name, checkInterval) {}
+        bool IsActive() override;
+    };
+
     // Legacy 4H mark threshold alert. ReactionStrategy routes this to the
     // generic hazard escape; it does not rotate targets, assign tanks, or
     // ensure that moving away is safe. Marks: 28832-28835.

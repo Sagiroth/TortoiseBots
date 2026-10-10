@@ -158,6 +158,10 @@ namespace ai
             creators["pull action"] = [](PlayerbotAI* ai) { return new PullAction(ai); };
             creators["return to pull position"] = [](PlayerbotAI* ai) { return new ReturnToPullPositionAction(ai); };
             creators["pull end"] = [](PlayerbotAI* ai) { return new PullEndAction(ai); };
+            // mod-playerbots `end pull` escape hatch (LD-9): abort a stuck pull
+            // via the same bookkeeping as the state machine's own pull end.
+            // Guarded subclass (review PR #603): no-op unless a pull started.
+            creators["end pull"] = [](PlayerbotAI* ai) { return new EndPullAction(ai); };
             creators["release pull hold"] = [](PlayerbotAI* ai) { return new ReleasePullHoldAction(ai); };
             creators["emote"] = [](PlayerbotAI* ai) { return new EmoteAction(ai); };
             creators["talk"] = [](PlayerbotAI* ai) { return new TalkAction(ai); };
@@ -370,6 +374,8 @@ namespace ai
             creators["vael adrenaline flee"] = [](PlayerbotAI* ai) { return new VaelBurningAdrenalineFleeAction(ai); };
             creators["dragon flank"] = [](PlayerbotAI* ai) { return new DragonFlankAction(ai); };
             creators["raid spread"] = [](PlayerbotAI* ai) { return new RaidSpreadAction(ai); };
+            creators["swap fire resistance aura"] = [](PlayerbotAI* ai) { return new SwapFireResistanceAuraAction(ai); };
+            creators["swap shadow resistance aura"] = [](PlayerbotAI* ai) { return new SwapShadowResistanceAuraAction(ai); };
             creators["dragon tank face away"] = [](PlayerbotAI* ai) { return new DragonTankFaceAwayAction(ai); };
             creators["move to mc rune"] = [](PlayerbotAI* ai) { return new MoveToMCRuneAction(ai); };
             creators["douse mc rune aqual"] = [](PlayerbotAI* ai) { return new DouseMCRuneActionAqual(ai); };
