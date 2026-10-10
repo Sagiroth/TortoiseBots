@@ -3,6 +3,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/ChangeStrategyAction.h"
+#include "ShamanFireGatePolicy.h"
 
 namespace ai
 {
@@ -315,6 +316,18 @@ namespace ai
     {
     public:
         CastFireNovaAction(PlayerbotAI* ai) : CastSpellAction(ai, "fire nova") {}
+        virtual bool isUseful() override
+        {
+            // 1.12 Fire Nova is a totem DROP (not a pulse of an existing
+            // totem): refuse to place it when the target is out of
+            // detonation range of the drop point, like the magma melee
+            // gate. Gate lives in ShamanFireGatePolicy.h so the unit test
+            // pins this exact logic.
+            Unit* target = AI_VALUE(Unit*, "current target");
+            if (!target)
+                return false;
+            return FireNovaDropShouldFire(bot->GetDistance(target)) && CastSpellAction::isUseful();
+        }
     };
 
 	class CastAncestralSpiritAction : public ResurrectPartyMemberAction
@@ -463,24 +476,6 @@ namespace ai
         CastEarthShieldOnPartyTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "earth shield") {}
     };
 
-    class CastCallOfTheElements : public CastBuffSpellAction
-    {
-    public:
-        CastCallOfTheElements(PlayerbotAI* ai) : CastBuffSpellAction(ai, "call of the elements") {}
-    };
-
-    class CastCallOfTheAncestors : public CastBuffSpellAction
-    {
-    public:
-        CastCallOfTheAncestors(PlayerbotAI* ai) : CastBuffSpellAction(ai, "call of the ancestors") {}
-    };
-
-    class CastCallOfTheSpirits : public CastBuffSpellAction
-    {
-    public:
-        CastCallOfTheSpirits(PlayerbotAI* ai) : CastBuffSpellAction(ai, "call of the spirits") {}
-    };
-
     class CastTotemicRecall : public CastBuffSpellAction
     {
     public:
@@ -593,6 +588,10 @@ namespace ai
             strategiesRequired = { "offheal" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offheal pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offheal pve", strategiesRequired);
+
+            strategiesRequired = { "offdps" };
+            strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offdps pve", strategiesRequired);
+            strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offdps pve", strategiesRequired);
         }
     };
 
@@ -694,6 +693,10 @@ namespace ai
             strategiesRequired = { "offheal" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offheal pvp", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offheal pvp", strategiesRequired);
+
+            strategiesRequired = { "offdps" };
+            strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offdps pvp", strategiesRequired);
+            strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offdps pvp", strategiesRequired);
         }
     };
 
@@ -795,6 +798,10 @@ namespace ai
             strategiesRequired = { "offheal" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offheal raid", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offheal raid", strategiesRequired);
+
+            strategiesRequired = { "offdps" };
+            strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offdps raid", strategiesRequired);
+            strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offdps raid", strategiesRequired);
         }
     };
 }

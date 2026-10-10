@@ -68,8 +68,11 @@ void MageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "blink back",
         NextAction::array(0, new NextAction("blink", ACTION_HIGH + 5), NULL)));
 
+    // MAG-9: burn the gem EARLY (medium mana, <40%) so it returns mana
+    // while the fight still needs it; evocation stays the <15% rescue.
+    // (Donor burns its gem below 65%; medium avoids waste in short fights.)
     triggers.push_back(new TriggerNode(
-        "low mana",
+        "medium mana",
         NextAction::array(0, new NextAction("mana gem", ACTION_HIGH + 4), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -194,6 +197,12 @@ void MageRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
 void MageAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     AoeStrategy::InitCombatTriggers(triggers);
+
+    // Pack thinned mid-channel: stop blizzard and go back to single
+    // target. Mirrors the donor row and our icicles/evocation cancels.
+    triggers.push_back(new TriggerNode(
+        "blizzard channel check",
+        NextAction::array(0, new NextAction("cancel channel", ACTION_HIGH + 3), NULL)));
 }
 
 void MageAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
