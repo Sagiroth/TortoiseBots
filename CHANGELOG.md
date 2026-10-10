@@ -123,6 +123,10 @@
 - Bot AI no longer re-walks every trainer spell in the world just to recompute trainable spells and available trainers; results are cached until something the check actually reads changes (level, known spell count, skill value/bonus, free profession points). Big drop in per-bot AI cost on large realms. [#672](https://github.com/Sagiroth/TortoiseBots/pull/672)
 - Active-destination probes (`NeedTravelPurposeValue` for gather errands and `ShouldTravelNamedValue`) stop re-running their scans every 2 seconds per bot, cutting wasted world-thread time on travel decision logic. [#672](https://github.com/Sagiroth/TortoiseBots/pull/672)
 
+### Observability & Engine
+- Bot CSV diagnostics are now off by default: `AiPlayerbot.AllowedLogFiles` ships empty instead of `bot_events.csv,deaths.csv`, so fresh installs stop silently writing forever-growing files (`deaths.csv` alone hit 60 MB on one realm). Add only the files you need while investigating. [#673](https://github.com/Sagiroth/TortoiseBots/pull/673)
+- Dashboard activity counters (loot, quests, money per bot) are now pruned when bots are deleted, so pool resets no longer leak dead characters into memory and `activity-state.json` (one realm was tracking 6,800 bots for a 1,000-bot pool). [#673](https://github.com/Sagiroth/TortoiseBots/pull/673)
+
 ## 2026-10-09
 
 ### Observability & Engine
