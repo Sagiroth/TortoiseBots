@@ -2,6 +2,7 @@
 #include "LoathebDungeonActions.h"
 #include "playerbot/LoathebSporesPolicy.h"
 #include "AttackAction.h"
+#include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
@@ -42,8 +43,17 @@ bool LoathebChooseTargetAction::Execute(Event& event)
         }
     }
 
+    // Explicit master orders win: a bot told to hit something else
+    // keeps its target. (Stay/follow need no guard here — killing the
+    // spore underfoot moves nobody.)
+    ObjectGuid explicitGuid = AI_VALUE(ObjectGuid, "explicit attack target");
+    if (!explicitGuid.IsEmpty())
+        return false;
+
     Unit* want = spore ? spore : boss;
     if (!want)
+        return false;
+    if (!PossibleAttackTargetsValue::IsValid(want, bot))
         return false;
     if (AI_VALUE(Unit*, "current target") == want)
         return false;
@@ -52,8 +62,14 @@ bool LoathebChooseTargetAction::Execute(Event& event)
 
 bool LoathebPositionAction::Execute(Event& event)
 {
+    // Never path to Naxx coords from another map if the strategy is
+    // forced on outside.
+    if (bot->GetMapId() != 533)
+        return false;
     if (PlayerbotAI::IsTank(bot))
     {
+        if (!AI_VALUE2(bool, "has aggro", "current target"))
+            return false;
         if (bot->GetDistance2d(2877.57f, -3967.00f) < 3.0f)
             return false;
         return MoveTo(bot->GetMapId(), 2877.57f, -3967.00f, bot->GetPositionZ());
