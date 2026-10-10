@@ -31,6 +31,20 @@ namespace ai
         virtual Unit* Calculate() override;
     };
 
+    // Lowest-mana alive group healer (mod-playerbots parity): other agents'
+    // innervate / mana-tide rows target this. Skips self (the caster's own
+    // mana is covered by the plain low/medium mana triggers) and non-mana
+    // users.
+    class HealerLowMana : public PartyMemberValue
+    {
+    public:
+        HealerLowMana(PlayerbotAI* ai, std::string name = "healer low mana") :
+            PartyMemberValue(ai, name) {}
+
+    protected:
+        virtual Unit* Calculate() override;
+    };
+
     class PartyMemberToRemoveRoots : public PartyMemberValue
     {
     public:

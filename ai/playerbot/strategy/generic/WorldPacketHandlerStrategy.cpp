@@ -81,6 +81,14 @@ void WorldPacketHandlerStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &
         "trade status",
         NextAction::array(0, new NextAction("accept trade", relevance), new NextAction("equip upgrades", relevance), NULL)));
 
+    // Rogue lockbox in trade (AG-5): the extended update carries the trade
+    // window contents; when the trader parks a locked box in the
+    // do-not-trade slot, a rogue bot picks it. The action gates on rogue +
+    // locked box present, so this is inert for everyone else.
+    triggers.push_back(new TriggerNode(
+        "trade status extended",
+        NextAction::array(0, new NextAction("unlock traded item", relevance), NULL)));
+
     triggers.push_back(new TriggerNode(
         "area trigger",
         NextAction::array(0, new NextAction("reach area trigger", relevance), NULL)));
@@ -103,6 +111,15 @@ void WorldPacketHandlerStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &
     triggers.push_back(new TriggerNode(
         "ready check finished",
         NextAction::array(0, new NextAction("finish ready check", relevance), NULL)));
+
+    // Deferred ready-check confirm (SOC-S5): the trigger only fires while a
+    // confirm is held, and the action replies once buffs settle or the cap
+    // hits. Inert unless AiPlayerbot.ForceRebuffOnReadyCheck is on. Relevance
+    // sits below party buffs (donor: 6.0f) so remaining buffs win the queue
+    // over the reply once the grace window opens.
+    triggers.push_back(new TriggerNode(
+        "force rebuff pending",
+        NextAction::array(0, new NextAction("ready reply", 6.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
         "often",

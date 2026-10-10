@@ -29,6 +29,29 @@ namespace ai
         MagmadarEndFightTrigger(PlayerbotAI* ai) : EndBossFightTrigger(ai, "end magmadar fight", "magmadar", 11982) {}
     };
 
+    class GeddonStartFightTrigger : public StartBossFightTrigger
+    {
+    public:
+        GeddonStartFightTrigger(PlayerbotAI* ai) : StartBossFightTrigger(ai, "start geddon fight", "geddon", 12056) {}
+    };
+
+    class GeddonEndFightTrigger : public EndBossFightTrigger
+    {
+    public:
+        GeddonEndFightTrigger(PlayerbotAI* ai) : EndBossFightTrigger(ai, "end geddon fight", "geddon", 12056) {}
+    };
+
+    // Baron Geddon Inferno: while Geddon carries the Inferno aura (19695)
+    // everyone runs 20y out (mod-playerbots parity). Living Bomb needs no
+    // trigger: the universal "raid bomb debuff" runout already covers it.
+    class GeddonInfernoTrigger : public Trigger
+    {
+    public:
+        GeddonInfernoTrigger(PlayerbotAI* ai, std::string name = "geddon inferno", int checkInterval = 1)
+        : Trigger(ai, name, checkInterval) {}
+        bool IsActive() override;
+    };
+
     class MagmadarLavaBombTrigger : public CloseToGameObjectHazardTrigger
     {
     public:

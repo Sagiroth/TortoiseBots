@@ -19,7 +19,11 @@
 #include "BlackwingLairDungeonTriggers.h"
 #include "NaxxramasDungeonTriggers.h"
 #include "EmeraldSanctumDungeonTriggers.h"
+#include "ClassicRaidDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
+#include "SapphironDungeonTriggers.h"
+#include "HeiganDungeonTriggers.h"
+#include "AnubrekhanDungeonTriggers.h"
 #include "WorldBuffTravelTriggers.h"
 
 namespace ai
@@ -51,6 +55,7 @@ namespace ai
 
             creators["no mana"] = [](PlayerbotAI* ai) { return new NoManaTrigger(ai); };
             creators["low mana"] = [](PlayerbotAI* ai) { return new LowManaTrigger(ai); };
+            creators["healer low mana"] = [](PlayerbotAI* ai) { return new HealerLowManaTrigger(ai); };
             creators["medium mana"] = [](PlayerbotAI* ai) { return new MediumManaTrigger(ai); };
             creators["high mana"] = [](PlayerbotAI* ai) { return new HighManaTrigger(ai); };
             creators["almost full mana"] = [](PlayerbotAI* ai) { return new AlmostFullManaTrigger(ai); };
@@ -146,6 +151,7 @@ namespace ai
             creators["critical health no master"] = [](PlayerbotAI* ai) { return new CriticalHealthNoMasterTrigger(ai); };
             creators["behind target"] = [](PlayerbotAI* ai) { return new IsBehindTargetTrigger(ai); };
             creators["not behind target"] = [](PlayerbotAI* ai) { return new IsNotBehindTargetTrigger(ai); };
+            creators["rear flank needed"] = [](PlayerbotAI* ai) { return new RearFlankNeededTrigger(ai); };
             creators["not facing target"] = [](PlayerbotAI* ai) { return new IsNotFacingTargetTrigger(ai); };
             creators["tank face needed"] = [](PlayerbotAI* ai) { return new TankFaceNeededTrigger(ai); };
             creators["far from master"] = [](PlayerbotAI* ai) { return new FarFromMasterTrigger(ai); };
@@ -205,6 +211,7 @@ namespace ai
             creators["dispel enrage"] = [](PlayerbotAI* ai) { return new DispelEnrageOnTargetTrigger(ai); };
             creators["has poison debuff"] = [](PlayerbotAI* ai) { return new HasPoisonDebuffTrigger(ai); };
             creators["at war"] = [](PlayerbotAI* ai) { return new AtWarTrigger(ai); };
+            creators["force rebuff pending"] = [](PlayerbotAI* ai) { return new ForceRebuffPendingTrigger(ai); };
             creators["quest log nearly full"] = [](PlayerbotAI* ai) { return new QuestLogNearlyFullTrigger(ai); };
 
             creators["mounted"] = [](PlayerbotAI* ai) { return new IsMountedTrigger(ai); };
@@ -298,6 +305,12 @@ namespace ai
             creators["leave naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasLeaveDungeonTrigger(ai); };
             creators["enter blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairEnterDungeonTrigger(ai); };
             creators["leave blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairLeaveDungeonTrigger(ai); };
+            creators["enter zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubEnterDungeonTrigger(ai); };
+            creators["leave zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubLeaveDungeonTrigger(ai); };
+            creators["enter ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajEnterDungeonTrigger(ai); };
+            creators["leave ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajLeaveDungeonTrigger(ai); };
+            creators["enter ahn'qiraj temple"] = [](PlayerbotAI* ai) { return new AhnqirajTempleEnterDungeonTrigger(ai); };
+            creators["leave ahn'qiraj temple"] = [](PlayerbotAI* ai) { return new AhnqirajTempleLeaveDungeonTrigger(ai); };
             creators["enter emerald sanctum"] = [](PlayerbotAI* ai) { return new EmeraldSanctumEnterDungeonTrigger(ai); };
             creators["leave emerald sanctum"] = [](PlayerbotAI* ai) { return new EmeraldSanctumLeaveDungeonTrigger(ai); };
             creators["enter lower karazhan"] = [](PlayerbotAI* ai) { return new LowerKarazhanEnterDungeonTrigger(ai); };
@@ -310,6 +323,10 @@ namespace ai
             creators["four horsemen mark"] = [](PlayerbotAI* ai) { return new FourHorsemenMarkTrigger(ai); };
             creators["dragon breath risk"] = [](PlayerbotAI* ai) { return new DragonBreathRiskTrigger(ai); };
             creators["raid spread needed"] = [](PlayerbotAI* ai) { return new RaidSpreadNeededTrigger(ai); };
+            creators["boss wants fire aura"] = [](PlayerbotAI* ai) { return new BossWantsFireAuraTrigger(ai); };
+            creators["boss wants shadow aura"] = [](PlayerbotAI* ai) { return new BossWantsShadowAuraTrigger(ai); };
+            creators["spread needed"] = [](PlayerbotAI* ai) { return new SpreadNeededTrigger(ai); };
+
             creators["start onyxia fight"] = [](PlayerbotAI* ai) { return new OnyxiaStartFightTrigger(ai); };
             creators["end onyxia fight"] = [](PlayerbotAI* ai) { return new OnyxiaEndFightTrigger(ai); };
             creators["onyxia airborne"] = [](PlayerbotAI* ai) { return new OnyxiaAirborneTrigger(ai); };
@@ -326,6 +343,9 @@ namespace ai
             creators["golemagg splash"] = [](PlayerbotAI* ai) { return new GolemaggSplashTrigger(ai); };
             creators["golemagg healer"] = [](PlayerbotAI* ai) { return new GolemaggHealerTrigger(ai); };
             creators["golemagg tank hold"] = [](PlayerbotAI* ai) { return new GolemaggTankHoldTrigger(ai); };
+            creators["start geddon fight"] = [](PlayerbotAI* ai) { return new GeddonStartFightTrigger(ai); };
+            creators["end geddon fight"] = [](PlayerbotAI* ai) { return new GeddonEndFightTrigger(ai); };
+            creators["geddon inferno"] = [](PlayerbotAI* ai) { return new GeddonInfernoTrigger(ai); };
 
             creators["fire protection potion ready"] = [](PlayerbotAI* ai) { return new FireProtectionPotionReadyTrigger(ai); };
 
@@ -336,9 +356,30 @@ namespace ai
             creators["suppression device in sight"] = [](PlayerbotAI* ai) { return new SuppressionDeviceInSightTrigger(ai); };
             creators["suppression device close"] = [](PlayerbotAI* ai) { return new SuppressionDeviceCloseTrigger(ai); };
 
+            creators["start broodlord fight"] = [](PlayerbotAI* ai) { return new BroodlordStartFightTrigger(ai); };
+            creators["end broodlord fight"] = [](PlayerbotAI* ai) { return new BroodlordEndFightTrigger(ai); };
+            creators["broodlord ranged"] = [](PlayerbotAI* ai) { return new BroodlordRangedTrigger(ai); };
+            creators["start nefarian fight"] = [](PlayerbotAI* ai) { return new NefarianStartFightTrigger(ai); };
+            creators["end nefarian fight"] = [](PlayerbotAI* ai) { return new NefarianEndFightTrigger(ai); };
+            creators["nefarian wild magic"] = [](PlayerbotAI* ai) { return new NefarianWildMagicTrigger(ai); };
+            creators["start vael fight"] = [](PlayerbotAI* ai) { return new VaelStartFightTrigger(ai); };
+            creators["end vael fight"] = [](PlayerbotAI* ai) { return new VaelEndFightTrigger(ai); };
+
 
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
+            creators["start sapphiron fight"] = [](PlayerbotAI* ai) { return new SapphironStartFightTrigger(ai); };
+            creators["end sapphiron fight"] = [](PlayerbotAI* ai) { return new SapphironEndFightTrigger(ai); };
+            creators["sapphiron air hide"] = [](PlayerbotAI* ai) { return new SapphironAirTrigger(ai); };
+            creators["sapphiron blizzard"] = [](PlayerbotAI* ai) { return new SapphironBlizzardTrigger(ai); };
+            creators["start heigan fight"] = [](PlayerbotAI* ai) { return new HeiganStartFightTrigger(ai); };
+            creators["end heigan fight"] = [](PlayerbotAI* ai) { return new HeiganEndFightTrigger(ai); };
+            creators["heigan dance"] = [](PlayerbotAI* ai) { return new HeiganDanceTrigger(ai); };
+            creators["heigan platform hold"] = [](PlayerbotAI* ai) { return new HeiganPlatformHoldTrigger(ai); };
+            creators["start anub'rekhan fight"] = [](PlayerbotAI* ai) { return new AnubrekhanStartFightTrigger(ai); };
+            creators["end anub'rekhan fight"] = [](PlayerbotAI* ai) { return new AnubrekhanEndFightTrigger(ai); };
+            creators["anub'rekhan adds"] = [](PlayerbotAI* ai) { return new AnubrekhanAddsTrigger(ai); };
+            creators["anub'rekhan swarm"] = [](PlayerbotAI* ai) { return new AnubrekhanSwarmTrigger(ai); };
             creators["void zone too close"] = [](PlayerbotAI* ai) { return new FourHorsemanVoidZoneTrigger(ai); };
             creators["start solnius fight"] = [](PlayerbotAI* ai) { return new SolniusStartFightTrigger(ai); };
             creators["end solnius fight"] = [](PlayerbotAI* ai) { return new SolniusEndFightTrigger(ai); };
