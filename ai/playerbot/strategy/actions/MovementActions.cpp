@@ -2427,7 +2427,9 @@ bool TankFaceAwayAction::Execute(Event& event)
     float averageAngle = atan2(sumY, sumX);
     // Donor TankFaceAction destinations: averageAngle +- 3*PI/5 puts the
     // ranged clump behind the tank, outside the frontal cone, while staying
-    // in melee. Nearest of the two wins.
+    // in melee. Nearest of the two wins. The 90-degree trigger window is
+    // the anti-oscillation: after the sidestep the tank sits ~108 degrees
+    // off, outside the fire window, so it holds instead of ping-ponging.
     const float dist = std::max(sServerFacade.getDistance2d(bot, target), 3.0f);
     const float sides[] = { averageAngle + 3.0f * M_PI / 5.0f, averageAngle - 3.0f * M_PI / 5.0f };
     float bestX = 0.0f, bestY = 0.0f, bestZ = 0.0f, bestDist = FLT_MAX;

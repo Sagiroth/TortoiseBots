@@ -4748,6 +4748,18 @@ full health` → `retaliation` (HIGH) rows; `FuryWarriorBoostStrategy` gains
 wish / recklessness rows. Retaliation fires at 70-90% hp — winning fights
 where the counterattack shield punishes melee adds. All behind the default
 `boost` strategy (player-togglable), protection boost stays empty.
+## Shared flee-heading anti-oscillation memory (POS-7) — 2026-10-09
+
+Feature: the existing `FleeFailureMemory` (donor `CheckLastFlee` shape:
+45-degree same-heading veto, 5 s window, observed-failures-only) is now
+consulted by the two combat sidesteps that previously consulted nothing.
+`TankFaceAwayAction` vetoes sidestep headings remembered as failures
+(anchored on the held mob) with a two-pass fallback so the cache can never
+block every route; `SetBehindTargetAction` diverts to its flank-angle
+fallback when the direct rear point repeats a failed heading. Both record
+(`BeginAttempt`) and observe like the flee/spread paths. `FleeManager`
+(plain flee) and `RaidSpreadAction` (spread) already consult — no change
+there. No new value plumbing: all state lives on `LastMovement` as before.
 
 Source repository: `mod-playerbots/mod-playerbots`
 
@@ -4929,3 +4941,62 @@ Non-blocking raid note (no rip row in raid kit): pre-existing gap,
 unchanged by this PR (pre-PR flat CP5 bite behaved the same there);
 left for a follow-up, not widening this diff.
 verify_all.sh PASSED, build-commit.sh BUILD OK (commit pending push to same branch).
+- `src/Ai/Base/Actions/MovementActions.cpp` (`MovementAction::CheckLastFlee`; consults in avoid-aoe `FleePosition`, tank-face, set-behind)
+
+Source files (module, modified):
+`ai/playerbot/strategy/actions/MovementActions.cpp`
+(`TankFaceAwayAction::Execute`, `SetBehindTargetAction::Execute`),
+`docs/concepts/bot-mechanics-and-quirks.md` (doc line).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) failures are observed
+outcomes (2 yd rule), not dispatches — a successful heading stays
+repeatable, where the donor vetoes any recent flee heading; (b) two-pass
+fallback (vetoed headings allowed on the second pass) so the memory can
+never strand the bot; (c) tank-face and set-behind share the `fleeFailures`
+instance anchored per-target, no new `LastMovement` fields; (d) the
+`AvoidAoeAction::FleePosition` consumer arrives with POS-2 (this PR wires
+the helper into the existing sidesteps only).
+
+Reason: tank sidesteps and rear approaches could alternate headings every
+tick when two triggers disagreed, jittering instead of settling.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check` clean.
+Build via build-commit.sh (see PR summary); no live in-game check.
+
+## Review fixes (2026-10-09, reviewer muse-1.3 max)
+
+Blocking 1 (failure-memory success rule vs sidesteps — REAL, fixed by
+revert): tank sidesteps preserve radius and rear approaches stay in melee
+by construction, so a successful sidestep never gains the 2 yd the
+`fleeFailures` success rule needs; the per-tick global observer would
+record it as a failure after 3 s and veto the heading for genuine flees
+too. Removed both consults (`SetBehindTargetAction` rear veto +
+`BeginAttempt`, `TankFaceAwayAction` two-pass veto + `Observe` +
+`BeginAttempt`); both actions are byte-identical to pre-PR behaviour plus
+a comment naming the 90-degree trigger window as the anti-oscillation.
+
+Blocking 2 (3 s rule cannot damp per-tick ping-pong — REAL, same fix):
+alternating L/R sidesteps restart `BeginAttempt`'s pending clock each
+dispatch, so no failure is ever recorded. Reverted rather than adding a
+new dispatch-time veto: per the report, the trigger's 90-degree
+hysteresis window (fires only while the mob's front points at the party
+side; the tank lands ~108 degrees off, outside the window) is the
+dampener, and no live jitter has been observed. If a live test shows
+alternation, the fix is a sidestep re-dispatch throttle, not the failure
+memory.
+
+Blocking 3 (stale-anchor consult order — MOOT after revert): the rear
+`IsHeadingFree` check before any `Observe` is gone with the consult
+itself. No fix needed.
+
+Non-blocking "reversal veto" wording — ACCEPTED: the code vetoes the same
+heading as the failure while the donor vetoes its reverse
+(`info.angle + PI`). Reworded the PROVENANCE entry and memory doc row to
+"same-heading veto".
+
+Non-blocking "hold instead of second pass" — MOOT after revert (no
+second pass remains).
+
+Non-blocking "no live jitter test" — ACKNOWLEDGED: still no live test;
+needs an in-game sidestep-alternation check before merge.
