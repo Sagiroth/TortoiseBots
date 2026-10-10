@@ -258,7 +258,7 @@ namespace ai
                 creators["mend pet"] = [](PlayerbotAI* ai) { return new CastMendPetAction(ai); };
                 creators["revive pet"] = [](PlayerbotAI* ai) { return new CastRevivePetAction(ai); };
                 creators["call pet"] = [](PlayerbotAI* ai) { return new CastCallPetAction(ai); };
-                creators["cower"] = [](PlayerbotAI* ai) { return new CastCowerAction(ai); };
+                creators["cower"] = [](PlayerbotAI* ai) { return new CastPetCowerAction(ai); };
                 creators["rapid fire"] = [](PlayerbotAI* ai) { return new CastRapidFireAction(ai); };
                 creators["boost"] = [](PlayerbotAI* ai) { return new CastRapidFireAction(ai); };
                 creators["readiness"] = [](PlayerbotAI* ai) { return new CastReadinessAction(ai); };

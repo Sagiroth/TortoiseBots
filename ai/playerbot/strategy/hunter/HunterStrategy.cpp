@@ -582,9 +582,11 @@ void HunterPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     // PET-8b: the trigger already requires taunts stood down (grouped with
     // a real tank), so this only fires when the pet stole aggro anyway.
+    // Urgent like mend: a pet tanking in a dungeon needs dropping now, not
+    // after the DPS rotation.
     triggers.push_back(new TriggerNode(
         "pet has aggro",
-        NextAction::array(0, new NextAction("cower", ACTION_NORMAL), NULL)));
+        NextAction::array(0, new NextAction("cower", ACTION_HIGH), NULL)));
 }
 
 void HunterPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

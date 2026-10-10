@@ -138,32 +138,42 @@ bool InitializePetAction::Execute(Event& event)
         // drive the missing-rank check, so this teaches exactly what
         // isUseful named: top rank per line + singles, skipping ids with no
         // SpellEntry (unteachable) and pinning autocast.
+        // PET-3: the teach tick pins autocast per spell; taunt spells follow
+        // the same situation read as the sweep so a fresh rank doesn't flip
+        // Growl/Torment back on under a live tank until the next sweep.
+        bool const tauntAllowed = ai::IsPetTauntAllowed(ai, bot);
+        auto autocastDefault = [tauntAllowed](uint32 spellId)
+        {
+            if (TortoiseBots::IsPetTauntSpell(spellId) && !tauntAllowed)
+                return false;
+            return TortoiseBots::ShouldPetSpellAutocastDefault(spellId);
+        };
         if (bot->GetClass() == CLASS_HUNTER)
         {
             CreatureInfo const* petInfo = sObjectMgr.GetCreatureTemplate(pet->GetEntry());
             uint32 beastFamily = petInfo ? petInfo->beast_family : 0;
             TortoiseBots::ForEachHunterWantedSpell(beastFamily, pet->GetLevel(),
-                [pet](TortoiseBots::PetWantedSpell wanted)
+                [pet, &autocastDefault](TortoiseBots::PetWantedSpell wanted)
             {
                 if (!sSpellMgr.GetSpellEntry(wanted.spellId))
                     return;
                 if (!pet->HasSpell(wanted.spellId))
                     pet->LearnSpell(wanted.spellId);
                 if (!wanted.passive && pet->HasSpell(wanted.spellId) && !IsPassiveSpell(wanted.spellId))
-                    pet->ToggleAutocast(wanted.spellId, TortoiseBots::ShouldPetSpellAutocastDefault(wanted.spellId));
+                    pet->ToggleAutocast(wanted.spellId, autocastDefault(wanted.spellId));
             });
         }
         else
         {
             TortoiseBots::ForEachWarlockWantedSpell(pet->GetEntry(), pet->GetLevel(),
-                [pet](TortoiseBots::PetWantedSpell wanted)
+                [pet, &autocastDefault](TortoiseBots::PetWantedSpell wanted)
             {
                 if (!sSpellMgr.GetSpellEntry(wanted.spellId))
                     return;
                 if (!pet->HasSpell(wanted.spellId))
                     pet->LearnSpell(wanted.spellId);
                 if (pet->HasSpell(wanted.spellId) && !IsPassiveSpell(wanted.spellId))
-                    pet->ToggleAutocast(wanted.spellId, TortoiseBots::ShouldPetSpellAutocastDefault(wanted.spellId));
+                    pet->ToggleAutocast(wanted.spellId, autocastDefault(wanted.spellId));
             });
         }
         return true;
@@ -558,6 +568,10 @@ bool ai::IsPetTauntAllowed(PlayerbotAI* ai, Player* bot)
     for (Player* member : LiveGroupMembers(bot->GetGroup()))
     {
         if (!member || member == bot)
+            continue;
+        // A dead tank holds nothing: the pet is the fallback until the tank
+        // is back up.
+        if (!member->IsAlive())
             continue;
         if (PlayerbotAI::IsTank(member))
         {

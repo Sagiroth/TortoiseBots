@@ -170,11 +170,12 @@ public:
 
     // PET-8b: deliberate threat drop ordered when the pet holds aggro while
     // taunts are stood down. Pet-cast (range/cooldown resolve against the
-    // pet); autocast stays off via the upkeep denylist.
-    class CastCowerAction : public CastPetSpellAction
+    // pet); autocast stays off via the upkeep denylist. Named apart from the
+    // druid cat-form CastCowerAction (same namespace, different base).
+    class CastPetCowerAction : public CastPetSpellAction
     {
     public:
-        CastCowerAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "cower") {}
+        CastPetCowerAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "cower") {}
         std::string GetTargetName() override { return "pet target"; }
     };
 
