@@ -669,8 +669,10 @@ public:
 
     std::mutex m_logMtx;
     ai::LogFileRotation logRotation;
-    // AiPlayerbot.LogFileMaxMB in bytes; 0 = no cap.
-    uint64 logFileMaxBytes = 0;
+    // AiPlayerbot.LogRetentionDays; 0 = never delete old pieces.
+    uint32 logRetentionDays = 0;
+    // Hour (unix time / 3600) each live log was opened in.
+    std::unordered_map<std::string, time_t> logHour;
 
     std::list<std::string> allowedLogFiles;
     std::list<std::string> debugFilter;
@@ -719,7 +721,8 @@ public:
     bool openLog(std::string fileName, char const* mode = "a", bool haslog = false);
     bool isLogOpen(std::string fileName) { auto it = logFiles.find(fileName); return it != logFiles.end() && it->second.second;}
     std::string logsDirPath();
-    void capLogSize(std::string const& fileName, FILE* file);
+    bool archiveLog(std::string const& path, time_t now);
+    void rotateLogHourly(std::string const& fileName, FILE* file);
     // Writes the line verbatim. Nearly every caller here hands over text it has
     // already assembled, and a percent sign anywhere in it - a bot name, a mob
     // name, an item name - used to be read as a conversion specifier. glibc
