@@ -83,6 +83,7 @@
 #include "ClassicRaidDungeonActions.h"
 #include "KarazhanCryptDungeonActions.h"
 #include "GluthDungeonActions.h"
+#include "KelthuzadDungeonActions.h"
 #include "SapphironDungeonActions.h"
 #include "HeiganDungeonActions.h"
 #include "AnubrekhanDungeonActions.h"
@@ -361,6 +362,7 @@ namespace ai
             // Dungeon Boss Actions
             creators["enable onyxia fight strategy"] = [](PlayerbotAI* ai) { return new OnyxiaEnableFightStrategyAction(ai); };
             creators["disable onyxia fight strategy"] = [](PlayerbotAI* ai) { return new OnyxiaDisableFightStrategyAction(ai); };
+            creators["onyxia breath safe zone"] = [](PlayerbotAI* ai) { return new OnyxiaBreathSafeZoneAction(ai); };
 
             creators["enable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarEnableFightStrategyAction(ai); };
             creators["disable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarDisableFightStrategyAction(ai); };
@@ -400,6 +402,10 @@ namespace ai
             creators["disable gluth fight strategy"] = [](PlayerbotAI* ai) { return new GluthDisableFightStrategyAction(ai); };
             creators["gluth choose target"] = [](PlayerbotAI* ai) { return new GluthChooseTargetAction(ai); };
             creators["gluth taunt swap"] = [](PlayerbotAI* ai) { return new GluthTauntSwapAction(ai); };
+            creators["enable kel'thuzad fight strategy"] = [](PlayerbotAI* ai) { return new KelthuzadEnableFightStrategyAction(ai); };
+            creators["disable kel'thuzad fight strategy"] = [](PlayerbotAI* ai) { return new KelthuzadDisableFightStrategyAction(ai); };
+            creators["kel'thuzad choose target"] = [](PlayerbotAI* ai) { return new KelthuzadChooseTargetAction(ai); };
+            creators["kel'thuzad position"] = [](PlayerbotAI* ai) { return new KelthuzadPositionAction(ai); };
             creators["enable sapphiron fight strategy"] = [](PlayerbotAI* ai) { return new SapphironEnableFightStrategyAction(ai); };
             creators["disable sapphiron fight strategy"] = [](PlayerbotAI* ai) { return new SapphironDisableFightStrategyAction(ai); };
             creators["sapphiron hide"] = [](PlayerbotAI* ai) { return new SapphironHideAction(ai); };

@@ -51,6 +51,11 @@ bool HighManaTrigger::IsActive()
     return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") < 65;
 }
 
+bool EnoughManaTrigger::IsActive()
+{
+    return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") > 65;
+}
+
 bool HealerShouldAttackTrigger::IsActive()
 {
     if (!bot->GetGroup())
@@ -512,6 +517,19 @@ bool DebuffTrigger::IsActive()
     return false;
 }
 
+bool DebuffOnBossTrigger::IsActive()
+{
+    // No IsDungeonBoss on this core: world boss only, matching the donor
+    // world-boss arm exactly. Elites-in-dungeon would open the gate to all
+    // trash and defeat the conservation intent; dungeon-boss coverage waits
+    // on a real boss flag.
+    if (!DebuffTrigger::IsActive())
+        return false;
+    Unit* target = GetTarget();
+    Creature* creature = target ? dynamic_cast<Creature*>(target) : nullptr;
+    return creature && creature->IsWorldBoss();
+}
+
 bool DebuffTrigger::HasMaxDebuffs()
 {
     Unit* target = GetTarget();
@@ -654,6 +672,21 @@ bool BoostTrigger::IsActive()
     }
 
     return false;
+}
+
+bool GenericBoostTrigger::IsActive()
+{
+    // Donor GenericBoostTrigger verdict (balance <= 50, PvP-target always)
+    // plus the local owned-bot master bypass so player-owned racials keep
+    // popping every combat the way BoostTrigger consumers always have.
+    if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT))
+        return false;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (target && target->IsPlayer())
+        return true;
+    if (ai->HasRealPlayerMaster())
+        return true;
+    return AI_VALUE(uint8, "balance") <= 50;
 }
 
 bool ItemCountTrigger::IsActive()
@@ -1462,6 +1495,11 @@ bool PetAttackTrigger::IsActive()
     Pet* pet = bot->GetPet();
     Unit* target = AI_VALUE(Unit*, "current target");
     if (!AttackAction::CanPetAttack(ai, pet, target))
+        return false;
+
+    // A channeling pet holds its spell (e.g. the succubus's Seduction):
+    // re-ordering it to the DPS target moves it and breaks the channel.
+    if (pet->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
         return false;
 
     if (pet->GetVictim() == target && pet->GetCharmInfo() && pet->GetCharmInfo()->IsCommandAttack())

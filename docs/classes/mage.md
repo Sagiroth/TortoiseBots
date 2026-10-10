@@ -27,6 +27,7 @@ Mages provide premier ranged spell DPS, the game's most reliable crowd control (
 - Opens at max range with *Frostbolt*.
 - If enemies reach melee range, casts *Frost Nova* and *Blink* to reset distance.
   - Skips *Frost Nova* when the target is already frozen or immune to the freeze, so the GCD goes to damage.
+- Uses *Blizzard* and *Flamestrike* on grouped enemies — *Flamestrike* first, then *Blizzard* channeled on the burning ground while the pack holds (*Cone of Cold* on light AoE; *Arcane Explosion* point-blank for Arcane; *Blast Wave* for Fire).
 - Uses *Blizzard* and *Flamestrike* on grouped enemies (*Cone of Cold* on light AoE; *Arcane Explosion* point-blank for Arcane; *Blast Wave* for Fire), and stops the *Blizzard* channel early when the pack thins below two attackers.
 - Uses *Blizzard* and *Flamestrike* on grouped enemies, and *Cone of Cold* on close pairs (only while facing the target; *Blast Wave* for Fire).
 - Uses *Cold Snap* once any Frost cooldown (Frost Nova, Cone of Cold, Ice Barrier, Ice Block, Frost Ward) is spent.
@@ -38,7 +39,7 @@ Mages provide premier ranged spell DPS, the game's most reliable crowd control (
 - Casts *Fireball* as main nuke and *Fire Blast* on the move or for finishing blows.
 
 ### 3. Arcane Mage
-- Channels *Arcane Missiles* with mana management.
+- Opens with *Arcane Rupture* (damage that strengthens missiles for 8s; recast on its cooldown), then channels *Arcane Missiles* while the buff holds, with mana management.
 - Uses *Presence of Mind* for instant cast nukes.
 
 ---
