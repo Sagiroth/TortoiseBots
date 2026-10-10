@@ -21,6 +21,19 @@ namespace ai
         std::vector<Player*> GetPartyMembers();
 	};
 
+    // mod-playerbots PartyMemberMainTankValue (LD-8): the raid/party main
+    // tank — explicit raid flag first, else the first live tank. No
+    // Misdirection/Tricks consumers exist in 1.18.1; raid tactics read it.
+    class PartyMemberMainTankValue : public PartyMemberValue
+    {
+    public:
+        PartyMemberMainTankValue(PlayerbotAI* ai, std::string name = "main tank") :
+            PartyMemberValue(ai, name) {}
+
+    protected:
+        virtual Unit* Calculate() override;
+    };
+
     class PartyMemberToProtect : public PartyMemberValue
     {
     public:

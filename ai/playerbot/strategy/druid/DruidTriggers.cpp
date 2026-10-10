@@ -37,6 +37,11 @@ bool InFeralFormTrigger::IsActive()
     return ai->HasAura("bear form", bot) || ai->HasAura("dire bear form", bot) || ai->HasAura("cat form", bot);
 }
 
+Value<Unit*>* ThornsOnMainTankTrigger::GetTargetValue()
+{
+    return context->GetValue<Unit*>("main tank");
+}
+
 bool ThornsOnTankTrigger::IsActive()
 {
     if (!BuffOnTankTrigger::IsActive())

@@ -4,6 +4,7 @@
 #include "PartyMemberToHeal.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
+#include "ObjectAccessor.h"
 
 using namespace ai;
 
@@ -404,4 +405,30 @@ Unit* PartyMemberToRemoveRoots::Calculate()
     }
 
     return target;
+}
+
+Unit* PartyMemberMainTankValue::Calculate()
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return PlayerbotAI::IsTank(bot) ? bot : NULL;
+
+    // Explicit raid main-tank flag first (donor GetMainTankGuid; core owns
+    // the flag via Group::GetMainTankGuid, raid-only by design).
+    ObjectGuid mainTankGuid = group->GetMainTankGuid();
+    if (!mainTankGuid.IsEmpty())
+    {
+        if (Player* mainTank = ObjectAccessor::FindPlayer(mainTankGuid))
+            if (mainTank->IsAlive() && ai->IsSafe(mainTank))
+                return mainTank;
+    }
+
+    // Else the first live tank in slot order (donor fallback).
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (member && member->IsAlive() && ai->IsSafe(member) && PlayerbotAI::IsTank(member))
+            return member;
+    }
+
+    return NULL;
 }

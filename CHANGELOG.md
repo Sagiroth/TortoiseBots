@@ -10,6 +10,7 @@
 - Destruction warlocks open with Curse of the Elements instead of Curse of Agony (Curse of Agony until it is trained), and warlock bots no longer recast a curse anyone already holds — manual curse orders still override.
 
 ### Bots & Behavior
+- Grouped bots now know who the main tank is — the bot reads the raid main-tank flag (falling back to the first live tank) for a low-tank-threat signal that fires when someone climbs past half the main tank's threat, for future raid tactics to use. Tank target picks and thorns order are unchanged.
 - Warsong Gulch bots now guard their own flag carrier and re-pick objectives after dying — a bot near a friendly carrier sticks with them instead of leaving them undefended, a death drops the stale objective so the post-rez pick starts fresh, and a once-a-minute watchdog stops and re-picks for bots walking toward outdated spots (never mid-fight, never off the flag carrier).
 - Casters stop wasting casts on nearly-dead mobs — in groups of four or more, casters now prefer targets with 5-30 seconds of life left (nearly-dead ones rank second, never ignored), rogues and cat druids stick to their combo target, and every damage dealer switches to a freshly marked skull at once while leaving the crowd-controlled moon alone.
 - Grouped bots keep their groups tidy — a bot stranded on another map (or impossibly far on the same one) leaves the group instead of holding a dead slot.

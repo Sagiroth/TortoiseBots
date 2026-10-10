@@ -149,6 +149,7 @@ namespace ai
             creators["healer low mana"] = [](PlayerbotAI* ai) { return new HealerLowMana(ai); };
             creators["party member to resurrect"] = [](PlayerbotAI* ai) { return new PartyMemberToResurrect(ai); };
             creators["party member to soulstone"] = [](PlayerbotAI* ai) { return new PartyMemberToSoulstone(ai); };
+            creators["main tank"] = [](PlayerbotAI* ai) { return new PartyMemberMainTankValue(ai); };
             creators["current target"] = [](PlayerbotAI* ai) { return new CurrentTargetValue(ai); };
             creators["self target"] = [](PlayerbotAI* ai) { return new SelfTargetValue(ai); };
             creators["master target"] = [](PlayerbotAI* ai) { return new MasterTargetValue(ai); };

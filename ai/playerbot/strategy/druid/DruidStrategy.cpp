@@ -24,6 +24,7 @@ public:
         creators["hibernate on cc"] = &hibernate_on_cc;
         creators["thorns"] = &thorns;
         creators["thorns on party"] = &thorns_on_party;
+        creators["thorns on main tank"] = &thorns_on_main_tank;
         creators["thorns on tank"] = &thorns_on_tank;
         creators["mark of the wild"] = &mark_of_the_wild;
         creators["mark of the wild on party"] = &mark_of_the_wild_on_party;
@@ -84,6 +85,7 @@ private:
 
     ACTION_NODE_P(thorns_on_party, "thorns on party", "caster form");
 
+    ACTION_NODE_P(thorns_on_main_tank, "thorns on main tank", "caster form");
     ACTION_NODE_P(thorns_on_tank, "thorns on tank", "caster form");
 
     ACTION_NODE_P(mark_of_the_wild, "mark of the wild", "caster form");
@@ -399,6 +401,12 @@ void DruidBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "thorns on party",
         NextAction::array(0, new NextAction("thorns on party", ACTION_NORMAL + 2), NULL)));
+
+    // No "thorns on main tank" row here on purpose (review PR #573): the
+    // tank-first row above already covers the MT whenever it lacks thorns,
+    // so an MT row below it would only fire as a fallback or on a distant
+    // MT the tank scan correctly ignores (the MT value has no range/LOS
+    // gate). The trigger/action stay registered for future tactics.
 
     triggers.push_back(new TriggerNode(
         "mark of the wild",
