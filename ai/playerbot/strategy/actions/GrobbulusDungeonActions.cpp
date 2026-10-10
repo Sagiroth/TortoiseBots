@@ -1,26 +1,28 @@
 #include "playerbot/playerbot.h"
 #include "GrobbulusDungeonActions.h"
 #include "playerbot/GrobbulusCloudPolicy.h"
-#include "Maps/GridNotifiers.h"
-#include "Maps/GridNotifiersImpl.h"
-#include "Maps/CellImpl.h"
 
 using namespace ai;
 
 bool GrobbulusGoBehindAction::Execute(Event& event)
 {
-    std::list<Unit*> nearby;
-    MaNGOS::AllCreaturesOfEntryInRange check(bot, 15931, 100.0f);
-    MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(nearby, check);
-    Cell::VisitAllObjects(bot, searcher, 100.0f);
-
-    Unit* boss = nullptr;
-    for (Unit* unit : nearby)
+    // Boss via context first (current target, then attackers) — no grid
+    // scan per movement decision. Grid fallback only for the rare case
+    // the raid fights Grobbulus but he is on no cached list.
+    Unit* boss = AI_VALUE(Unit*, "current target");
+    if (!boss || boss->GetEntry() != 15931 || !boss->IsAlive())
     {
-        if (unit && unit->IsAlive())
+        boss = nullptr;
+        const std::list<ObjectGuid> attackers =
+            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
+        for (const ObjectGuid& guid : attackers)
         {
-            boss = unit;
-            break;
+            Unit* unit = ai->GetUnit(guid);
+            if (unit && unit->IsAlive() && unit->GetEntry() == 15931)
+            {
+                boss = unit;
+                break;
+            }
         }
     }
     if (!boss)
@@ -31,5 +33,7 @@ bool GrobbulusGoBehindAction::Execute(Event& event)
         boss->GetOrientation(), x, y);
     if (bot->GetDistance2d(x, y) < 2.0f)
         return false;
-    return MoveTo(bot->GetMapId(), x, y, bot->GetPositionZ());
+    // Target the boss's floor height, not the bot's: the room behind him
+    // can sit at a different elevation.
+    return MoveTo(bot->GetMapId(), x, y, boss->GetPositionZ());
 }
