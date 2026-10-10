@@ -3303,7 +3303,7 @@ static bool HandleRaidAction(ChatHandler* handler, BotCommandContext const& cont
             for (char const* strategy : { "molten core", "onyxia's lair", "blackwing lair", "naxxramas",
                                           "zul'gurub", "ruins of ahn'qiraj", "ahn'qiraj temple",
                                           "onyxia", "magmadar", "suppression room", "four horseman", "sapphiron",
-                                          "heigan",
+                                          "heigan", "anub'rekhan",
                                           "emerald sanctum", "lower karazhan", "karazhan crypt",
                                           "solnius", "araxxna", "moroes" })
             {
