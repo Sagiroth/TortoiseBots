@@ -6,12 +6,14 @@ using namespace ai;
 void GrobbulusFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     // Poison cloud on top of the bot: step out. Tanks hold the boss
-    // through clouds (Magmadar-style role gate at registration).
+    // through clouds (Magmadar-style role gate at registration). 100
+    // matches sibling fight-hazard rows (4H void zone, Magmadar lava
+    // bomb) so a heal never outranks leaving the cloud.
     if (!PlayerbotAI::IsTank(ai->GetBot()))
     {
         triggers.push_back(new TriggerNode(
             "grobbulus cloud",
-            NextAction::array(0, new NextAction("move away from hazard", ACTION_HIGH + 1), NULL)));
+            NextAction::array(0, new NextAction("move away from hazard", 100.0f), NULL)));
     }
 }
 

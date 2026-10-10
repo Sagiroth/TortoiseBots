@@ -19,7 +19,8 @@ public:
 
 // Ranged injection carrier: move 18yd behind Grobbulus (opposite his
 // facing) so the dropped cloud lands clear of the raid and the carrier
-// keeps DPS uptime (mod-playerbots parity: GrobbulusGoBehindAction).
+// keeps DPS uptime (donor go-behind runs 24yd; mod-playerbots parity:
+// GrobbulusGoBehindAction).
 class GrobbulusGoBehindAction : public MovementAction
 {
 public:

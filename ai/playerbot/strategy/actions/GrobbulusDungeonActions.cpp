@@ -33,7 +33,8 @@ bool GrobbulusGoBehindAction::Execute(Event& event)
         boss->GetOrientation(), x, y);
     if (bot->GetDistance2d(x, y) < 2.0f)
         return false;
-    // Target the boss's floor height, not the bot's: the room behind him
-    // can sit at a different elevation.
-    return MoveTo(bot->GetMapId(), x, y, boss->GetPositionZ());
+    // Reaction context: IsReaction() idiom (sibling hazard rows) so the move
+    // issues without booking a multi-second WaitForReach that would hold
+    // the reaction and stall combat.
+    return MoveTo(bot->GetMapId(), x, y, boss->GetPositionZ(), false, IsReaction(), false, true);
 }

@@ -14,8 +14,8 @@
 namespace ai
 {
 // Ranged carrier goes behind the boss instead of just out: directly
-// opposite the boss's facing, past melee range (18yd donor distance).
-inline constexpr float kGrobbulusBehindDistance = 18.0f;
+// opposite the boss's facing, 18yd out (donor's go-behind runout is 24yd;
+// 18yd is its melee move-away distance, kept here for DPS uptime).
 // Poison cloud step-out radius (cloud ticks the clump).
 inline constexpr float kGrobbulusCloudRadius = 10.0f;
 
