@@ -32,7 +32,7 @@ void GolemaggFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
 
     triggers.push_back(new TriggerNode(
         "golemagg healer",
-        NextAction::array(0, new NextAction("golemagg healer position", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("golemagg healer position", ACTION_MOVE + 5), NULL)));
 }
 
 void GolemaggFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

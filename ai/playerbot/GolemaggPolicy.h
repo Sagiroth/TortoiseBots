@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <cstdint>
 
 // Pure decision rules for the Golemagg fight (mod-playerbots parity,
@@ -71,6 +72,26 @@ namespace ai
     inline bool ShouldExcludeRager(bool golemaggAlive)
     {
         return golemaggAlive;
+    }
+
+    // AoE name set shared with the Garr veto (duplicated here because this
+    // branch predates McGarrShazzrahPolicy.h; merge both to one home when
+    // the branches land): threat flags under-mark our real AoE and
+    // over-mark heals + single-target dots.
+    inline bool IsGolemaggSuppressedAoeAction(const std::string& actionName)
+    {
+        return actionName == "dps aoe" ||
+               actionName == "consecration" ||
+               actionName == "whirlwind" ||
+               actionName == "magma totem" ||
+               actionName == "explosive trap" ||
+               actionName == "hurricane" ||
+               actionName == "flamestrike" ||
+               actionName == "arcane explosion" ||
+               actionName == "multi-shot" ||
+               actionName == "volley" ||
+               actionName == "rain of fire" ||
+               actionName == "hellfire";
     }
 
     // Single living tank picks up everything (donor skips the role dance).

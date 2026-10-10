@@ -76,7 +76,10 @@ namespace ai
                 int stacks = splash ? (int)splash->GetStackAmount() : 0;
                 if (!ShouldBackOffSplash(false, stacks, (float)attacker->GetHealthPercent()))
                     return false;
-                return bot->IsWithinDist(attacker, 12.0f);
+                // Donor shape: strict 2D ground distance. IsWithinDist adds
+                // combat-reach padding (Golemagg is huge), which fires the
+                // trigger where the 12y move search finds nothing.
+                return bot->GetDistance2d(attacker) < kMagmaSplashBackOffDistance;
             }
             return false;
         }

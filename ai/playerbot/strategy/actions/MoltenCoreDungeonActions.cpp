@@ -14,7 +14,7 @@ bool GolemaggHealerPositionAction::Execute(Event& event)
     // Already at the midpoint: hold.
     if (bot->GetDistance2d(kHealerX, kHealerY) <= kGolemaggHealerTolerance)
         return false;
-    return MoveTo(bot->GetMapId(), kHealerX, kHealerY, kHealerZ, false, IsReaction(), false, true);
+    return MoveTo(bot->GetMapId(), kHealerX, kHealerY, kHealerZ, false, false, false, true);
 }
 
 bool GolemaggTankHoldAction::Execute(Event& event)
@@ -75,5 +75,5 @@ bool GolemaggTankHoldAction::Execute(Event& event)
         if (bot->GetDistance2d(tx, ty) <= 5.0f)
             return false;
     }
-    return MoveTo(bot->GetMapId(), tx, ty, tz, false, IsReaction(), false, true);
+    return MoveTo(bot->GetMapId(), tx, ty, tz, false, false, false, true);
 }

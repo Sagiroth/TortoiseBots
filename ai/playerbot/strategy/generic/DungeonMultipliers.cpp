@@ -92,15 +92,11 @@ float GolemaggFightMultiplier::GetValue(Action* action)
             return 0.0f;
     }
     // DPS AoE stays off for the whole fight (rager Trust + splash).
+    // Name-matched set (same list as the Garr veto): threat flags do not
+    // mark our real AoE and wrongly flag heals + single-target dots.
     if (!ai->IsTank(bot) && !ai->IsHeal(bot))
     {
-        bool actionIsAoe = dynamic_cast<DpsAoeAction*>(action) != nullptr;
-        if (!actionIsAoe)
-        {
-            if (CastSpellAction* spellAction = dynamic_cast<CastSpellAction*>(action))
-                actionIsAoe = spellAction->getThreatType() == ActionThreatType::ACTION_THREAT_AOE;
-        }
-        if (actionIsAoe && ShouldExcludeRager(true))
+        if (IsGolemaggSuppressedAoeAction(action->getName()) && ShouldExcludeRager(true))
             return 0.0f;
     }
     if (burnPhase)
@@ -108,13 +104,23 @@ float GolemaggFightMultiplier::GetValue(Action* action)
     // Ranged never melee-fallbacks onto the boss (splash stacks).
     if (ai->IsRanged(bot) && dynamic_cast<MeleeAction*>(action))
         return 0.0f;
-    // Backed-off non-tanks stay out until the whole stack expires.
+    // Backed-off non-tanks stay out until the WHOLE stack expires
+    // (donor: 30s after the last application) — not just below 20, or a
+    // 20→19 decay re-engages with 19 stacks still ticking.
     Aura* splash = ai->GetAura(kMagmaSplashSpellId, bot);
-    bool backedOff = splash && splash->GetStackAmount() >= (uint32)kMagmaSplashBackOffStacks;
-    bool engagesBoss = dynamic_cast<AttackAction*>(action) != nullptr ||
-        dynamic_cast<MeleeAction*>(action) != nullptr ||
-        dynamic_cast<CastReachTargetSpellAction*>(action) != nullptr;
-    if (!ai->IsTank(bot) && backedOff && engagesBoss)
+    bool backedOff = ShouldHoldBackOff(ai->IsTank(bot), splash != nullptr,
+        (float)boss->GetHealthPercent());
+    // Boss-only engages: adds and totems stay attackable. Reach actions
+    // ("reach melee", "reach spell") count — they are how the bot walks
+    // back into splash range.
+    Unit* currentTarget = AI_VALUE(Unit*, "current target");
+    bool targetsBoss = currentTarget && currentTarget == boss;
+    bool engagesBoss = targetsBoss &&
+        (dynamic_cast<AttackAction*>(action) != nullptr ||
+         dynamic_cast<MeleeAction*>(action) != nullptr ||
+         dynamic_cast<ReachTargetAction*>(action) != nullptr ||
+         dynamic_cast<CastReachTargetSpellAction*>(action) != nullptr);
+    if (backedOff && engagesBoss)
     {
         // The back-off move itself and the healer spot always pass.
         std::string name = action->getName();

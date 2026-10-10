@@ -4615,3 +4615,31 @@ Local validation: `bash tools/verify_all.sh` (all suites incl. the new
 policy test pass); `git diff --check`. Entries 11988/11672 and spells
 13880/20553 verified against tw_world. Build via build-commit.sh pending;
 live in-game check pending (esp. camp coords on the Turtle map).
+
+## Review fixes: Golemagg 2D range, combat MoveTo, healer priority, named AoE, any-stack lockout (PR #632) — 2026-10-10
+
+All five blocking findings verified real in code and fixed; non-blocking
+2 declined (kGolemaggEntry in the action header would need a new include
+for one literal — reverted; the literal matches the file's existing
+11982/12056 style).
+
+(a) Splash trigger used `IsWithinDist(attacker, 12.0f)` (3D + reach
+padding on a huge boss) while the 12y move search uses entry-range
+lookups: fixed to the donor shape `GetDistance2d < kMagmaSplashBackOffDistance`.
+(b) Healer/tank-hold `MoveTo(..., IsReaction(), ...)` forwarded a constant
+false from combat context: fixed to explicit `false` per the review.
+(c) Healer midpoint at ACTION_HIGH (20) lost to heals/dispels and could
+drag healers into splash via reach-to-heal: raised to ACTION_MOVE + 5 (35).
+(d) AoE veto reused the Garr threat-flag match, which under-marks real AoE
+and over-marks heals/dots (same hole as PR #587 review): now uses the
+shared `IsGarrSuppressedAoeAction` name list.
+(e) Back-off lockout fired only at 20+ stacks (19 stacks re-engaged),
+ignored non-boss targets, and missed `ReachTargetAction` (`reach melee`
+is MovementAction-based): now holds on ANY remaining stack via
+`ShouldHoldBackOff`, gates engages on `current target == boss`, and
+covers Attack/Melee/Reach/ReachSpell actions.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the
+golemagg policy test, which already pinned any-stack hold, pass); `git
+diff --check`. Build via build-commit.sh pending; live in-game check
+pending (esp. camp coords on the Turtle map).
