@@ -1368,6 +1368,17 @@ namespace ai
 
         bool IsActive() override;
     };
+
+    // Deferred ready-check confirm is waiting (SOC-S5): the confirm was
+    // held so buffs could land; fires the "ready reply" action once buffs
+    // settle or the cap hits.
+    class ForceRebuffPendingTrigger : public Trigger
+    {
+    public:
+        ForceRebuffPendingTrigger(PlayerbotAI* ai) : Trigger(ai, "force rebuff pending", 1) {}
+
+        bool IsActive() override;
+    };
     class QuestLogNearlyFullTrigger : public Trigger
     {
     public:

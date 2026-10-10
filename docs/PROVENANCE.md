@@ -5097,6 +5097,32 @@ routed through the policy),
 `ai/playerbot/aiplayerbot.conf.dist.in` (new
 `AiPlayerbot.EquipUpgradeThreshold = 1.1`, default 1.1),
 `tools/test_equip_threshold_policy.cpp` (new standalone test),
+## Ready-check rebuff defer (SOC-S5, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Actions/ReadyCheckAction.cpp:160-182` (defer reply when
+ForceRebuffOnReadyCheck + force-rebuff strategy; ReportReadiness +
+SendReadyConfirm split), `:252-276` (ForceRebuffAction + ReadyReplyAction),
+`src/Bot/ForceRebuff.{h,cpp}` (pending window, GCD/cycle guards, buff-first
+multiplier), `src/Ai/Base/Trigger/GenericTriggers.cpp:720`
+(ForceRebuffPendingTrigger), `src/Ai/Base/StrategyContext.h:164-165`
+(force-rebuff strategy registration).
+
+Source files (module, modified): `ai/playerbot/ReadyRebuffPolicy.h` (new
+pure rule: 8 s grace once not casting, 30 s hard cap that always replies),
+`ai/playerbot/strategy/actions/ReadyCheckAction.{h,cpp}` (defer branch on a
+real ready-check packet when the key is on and out of combat; ReadyCheck
+split into ReportReadiness + SendReadyConfirm; new ReadyReplyAction),
+`ai/playerbot/strategy/triggers/GenericTriggers.{h,cpp}` (new
+ForceRebuffPendingTrigger: anchor set, cheap first),
+`ai/playerbot/strategy/triggers/TriggerContext.h`,
+`ai/playerbot/strategy/actions/WorldPacketActionContext.h`,
+`ai/playerbot/strategy/generic/WorldPacketHandlerStrategy.cpp` (pending ->
+ready-reply node on the always-present default strategy),
+`ai/playerbot/PlayerbotAIConfig.{h,cpp}` +
+`ai/playerbot/aiplayerbot.conf.dist.in` (new
+`AiPlayerbot.ForceRebuffOnReadyCheck = 0`, default off),
+`tools/test_ready_rebuff_policy.cpp` (new standalone test),
 `tools/verify_all.sh` (register test) +
 `docs/guides/configuration-tuning.md`, `CHANGELOG.md` (doc lines).
 
@@ -5109,6 +5135,17 @@ any-gain swaps for operators who want them.
 
 Reason: bots swapped gear on any epsilon stat-weight gain, churning swaps
 across audits for nothing.
+the donor, all deliberate: (a) no force-rebuff strategy, buff-cycle hooks,
+or heal-suppression multiplier - buffs flow through the normal per-tick
+engine during the hold, only the confirm packet is delayed; (b) the pending
+state is a per-bot "manual time" anchor value, not a PlayerbotAI member, so
+no AI header change; (c) the reply can never wedge: past the 30 s cap the
+action replies even mid-cast (the donor window can expire unanswered), and
+the finish path clears the anchor so no double confirm goes out; (d) manual
+"ready" whispers (empty packet) and in-combat checks answer immediately.
+
+Reason: bots answered ready instantly and then buffed through the pull; the
+raid saw ready while the bot was still casting.
 
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check); `git diff --check`; shared-builder compile check; no live
