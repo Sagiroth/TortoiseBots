@@ -63,7 +63,7 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
   - Casts *Feral Charge* (Bear) as a gap-closer on any out-of-melee enemy.
   - Casts *Bash* (Bear) as an interrupt (also wired against enemy healers).
 - **Combat Resurrection:**
-  - Uses *Rebirth* (Battle Rez) on the first dead party member mid-fight (no tank/healer priority).
+  - Uses *Rebirth* (Battle Rez) on a dead party member mid-fight through the existing Balance / Feral / Restoration `rebirth` rows (no separate combat-rez gate: the donor's `combat party member dead` trigger feeds only its generic druid rows, which are dead code here). No tank/healer priority.
 - **Out-of-Combat Resurrection:**
   - Burns *Rebirth* on a dead party member out of combat only when no living priest, paladin or shaman is in the group — their normal resurrection is always preferred over the 30 min battle rez. (Vanilla druids have no normal resurrect; the only *Revive* row in game data is a boss spell, not a trainable druid spell.)
 - **Innervate:**
