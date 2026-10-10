@@ -176,6 +176,17 @@ void HolyPriestAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "medium aoe heal",
         NextAction::array(0, new NextAction("prayer of healing", ACTION_MEDIUM_HEAL), NULL)));
+
+    // Group-size-scaled gates (mod-playerbots parity, HEAL-1): shields on
+    // the almost-full band, Prayer of Healing on the medium band.
+    triggers.push_back(new TriggerNode(
+        "group heal setting",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 7), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "medium group heal setting",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_CRITICAL_HEAL + 5),
+                             new NextAction("prayer of healing", ACTION_CRITICAL_HEAL + 4), NULL)));
 }
 
 void HolyPriestAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

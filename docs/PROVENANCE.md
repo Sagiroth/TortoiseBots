@@ -5991,3 +5991,10 @@ with 2 mobs chewing on them never used either.
 Local validation: `bash tools/verify_all.sh`; `git diff --check`;
 shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
 check pending: 2-mob pack at melee range, cone fires while facing.
+
+## Review fixes (2026-10-10, PR #648 CHANGES_REQUESTED)
+Both blocking findings verified real in code and fixed:
+- Finding 1 (dead strategies): confirmed — the 6 nodes sat in forward-ported donor-hierarchy classes (`RestoDruid`/`DruidTranquility`, `HealPaladin`, `HealPriest`, `RestoShaman`, `ShamanNonCombat`, plus the `GenericDruid` combat-rez host) with zero `new` sites and no strategy creators, while live bots run the new placeholder→pve/pvp/raid hierarchy. Fixed: the group-heal nodes now live in the equipped AOE strategies (`RestorationDruidAoe`, `HolyPaladinAoe`, `HolyPriestAoe` + `DisciplinePriestAoe`, `RestorationShamanAoe` — all auto-equipped via the spec update actions), and the 12 dead donor-hierarchy files are deleted (incl. the old feral `Feral`/`Cat`/`Bear` bases, unreferenced outside themselves).
+- Finding 2 (`chain heal on party` has no action creator): confirmed — only an ActionNode alternative name, not a creator. Fixed: the live shaman node uses registered `NextAction("chain heal", ...)` (`CastChainHealAction`, `CastAoeHealSpellAction`-based, party-targeting).
+Non-blocking notes: all four accepted as-is (90 almost-full band is pre-existing local config; `almost full aoe heal` registered-but-unreferenced matches donor; second O(n) group scan negligible; subgroup filter currently group-equality no-op). Also corrected the earlier claim: the trigger/value/policy infra from the first commit is unchanged and now feeds live rows.
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
