@@ -45,7 +45,7 @@ Every ~30 s of tick time the pass logs its own cost — `TortoiseBots: BOTPERF p
 
 | Component | Responsibility | Example Class / Implementation | Relevance / Effect |
 | :--- | :--- | :--- | :--- |
-| **Strategy** | High-level posture or intent container | `FrostMageStrategy`, `HealPaladinStrategy` / `HealPriestStrategy`, `PreHealStrategy`, `PullBackStrategy` | Registers triggers, actions, and defaults |
+| **Strategy** | High-level posture or intent container | `FrostMageStrategy`, `HolyPaladinStrategy` / `HolyPriestStrategy`, `PreHealStrategy`, `PullBackStrategy` | Registers triggers, actions, and defaults |
 | **Trigger** | Context condition check | `CriticalHealthTrigger`, `LowManaTrigger`, `InterruptSpellTrigger` / `InterruptEnemyHealerTrigger` | Evaluates boolean state (`Check()` / `IsActive()`) |
 | **Action** | Concrete world interaction or spell cast | `CastFlashHealAction`, `ReachSpellAction`, `EatAction` | Returns `true` on execution success |
 | **Multiplier** | Contextual relevance adjuster | `ThreatMultiplier`, `ConserveManaMultiplier`, `FleeMultiplier` | Scales base action score (e.g. 1.5x, 0.0x) |

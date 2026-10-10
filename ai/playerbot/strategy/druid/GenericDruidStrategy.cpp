@@ -8,7 +8,6 @@
 
 #include "GenericDruidStrategy.h"
 #include "AiFactory.h"
-#include "FeralDruidStrategy.h"
 #include "Playerbots.h"
 
 class GenericDruidStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>
@@ -115,7 +114,7 @@ void DruidCcStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     }
     if (tab == DRUID_TAB_FERAL)
     {
-        if (bot->HasSpell(SPELL_CAT_FORM) && !bot->HasAura(AURA_THICK_HIDE))
+        if (bot->HasSpell(uint32(768)) && !bot->HasAura(16931))
         {
             triggers.push_back(new TriggerNode(
                 "predator's swiftness and hibernate", { NextAction("hibernate on cc", 41.0f) }));
@@ -165,7 +164,7 @@ void DruidAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         triggers.push_back(new TriggerNode("moonfire on attacker", { NextAction("moonfire on attacker", 5.1f) }));
     }
 
-    if (tab == DRUID_TAB_FERAL && bot->HasSpell(SPELL_CAT_FORM) && !bot->HasAura(AURA_THICK_HIDE))
+    if (tab == DRUID_TAB_FERAL && bot->HasSpell(uint32(768)) && !bot->HasAura(16931))
     {
         triggers.push_back(new TriggerNode("clearcasting and medium aoe", { NextAction("swipe (cat)", 25.5f) }));
         triggers.push_back(new TriggerNode("medium aoe", { NextAction("swipe (cat)", 25.0f) }));

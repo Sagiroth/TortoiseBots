@@ -1135,6 +1135,19 @@ bool HasAreaDebuffTrigger::IsActive()
     return AI_VALUE2(bool, "has area debuff", "self target");
 }
 
+bool AoeThreatNearbyTrigger::IsActive()
+{
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+    // Any one sensor firing is enough; each read is value-cached (dynobj
+    // aura check, 15yd trap scan, 15yd trigger scan).
+    if (AI_VALUE2(bool, "has area debuff", "self target"))
+        return true;
+    if (!AI_VALUE(std::list<ObjectGuid>, "nearest damaging traps").empty())
+        return true;
+    return !AI_VALUE(std::list<ObjectGuid>, "possible triggers").empty();
+}
+
 bool ReturnToStayPositionTrigger::IsActive()
 {
     PositionEntry stayPosition = AI_VALUE(PositionMap&, "position")["stay"];

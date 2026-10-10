@@ -219,6 +219,12 @@ void RestorationShamanRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& tr
 void RestorationShamanAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanAoeStrategy::InitCombatTriggers(triggers);
+
+    // Group-size-scaled gate (mod-playerbots parity, HEAL-1): Chain Heal
+    // when enough of the group is hurt at once.
+    triggers.push_back(new TriggerNode(
+        "group heal setting",
+        NextAction::array(0, new NextAction("chain heal", ACTION_MEDIUM_HEAL), NULL)));
 }
 
 void RestorationShamanAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

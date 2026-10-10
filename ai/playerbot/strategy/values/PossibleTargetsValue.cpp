@@ -146,3 +146,38 @@ bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos)
 
     return false;
 }
+
+void PossibleTriggersValue::FindUnits(std::list<Unit*> &targets)
+{
+    MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(bot, bot, range);
+    MaNGOS::UnitListSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> searcher(targets, u_check);
+    Cell::VisitAllObjects(bot, searcher, range);
+}
+
+bool PossibleTriggersValue::AcceptUnit(Unit* unit)
+{
+    if (!unit || !unit->IsInWorld() || !sServerFacade.IsAlive(unit))
+        return false;
+    // Invisible trigger NPCs cannot be selected.
+    if (!unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE))
+        return false;
+    // Periodic-trigger aura whose triggered spell deals school damage.
+    Unit::AuraList const& triggered = unit->GetAurasByType(SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+    for (Unit::AuraList::const_iterator it = triggered.begin(); it != triggered.end(); ++it)
+    {
+        Aura* aura = *it;
+        if (!aura)
+            continue;
+        SpellEntry const* spellProto = aura->GetSpellProto();
+        if (!spellProto)
+            continue;
+        uint32 triggerSpell = spellProto->EffectTriggerSpell[aura->GetEffIndex()];
+        SpellEntry const* triggerProto = sServerFacade.LookupSpellInfo(triggerSpell);
+        if (!triggerProto)
+            continue;
+        for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
+            if (triggerProto->Effect[i] == SPELL_EFFECT_SCHOOL_DAMAGE)
+                return true;
+    }
+    return false;
+}

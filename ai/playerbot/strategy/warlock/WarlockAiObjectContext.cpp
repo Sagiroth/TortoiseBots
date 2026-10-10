@@ -233,6 +233,7 @@ namespace ai
                 creators["curse of exhaustion on snare target"] = [](PlayerbotAI* ai) { return new CurseOfExhaustionSnareTrigger(ai); };
                 creators["inferno"] = [](PlayerbotAI* ai) { return new InfernoTrigger(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new LifeTapTrigger(ai); };
+                creators["life tap top-up"] = [](PlayerbotAI* ai) { return new LifeTapTopUpTrigger(ai); };
                 creators["drain soul"] = [](PlayerbotAI* ai) { return new DrainSoulTrigger(ai); };
                 creators["health funnel"] = [](PlayerbotAI* ai) { return new HealthFunnelTrigger(ai); };
                 creators["no soul shard"] = [](PlayerbotAI* ai) { return new NoSoulShardTrigger(ai); };
@@ -246,6 +247,8 @@ namespace ai
                 creators["no succubus"] = [](PlayerbotAI* ai) { return new NoSuccubusTrigger(ai); };
                 creators["no felhunter"] = [](PlayerbotAI* ai) { return new NoFelhunterTrigger(ai); };
                 creators["wrong pet"] = [](PlayerbotAI* ai) { return new WrongPetTrigger(ai); };
+                creators["suffering"] = [](PlayerbotAI* ai) { return new SufferingTrigger(ai); };
+                creators["consume shadows"] = [](PlayerbotAI* ai) { return new ConsumeShadowsTrigger(ai); };
                 creators["spell lock"] = [](PlayerbotAI* ai) { return new SpellLockTrigger(ai); };
                 creators["spell lock enemy healer"] = [](PlayerbotAI* ai) { return new SpellLockEnemyHealerTrigger(ai); };
                 creators["spell lock on enemy healer"] = [](PlayerbotAI* ai) { return new SpellLockEnemyHealerTrigger(ai); };
@@ -339,6 +342,8 @@ namespace ai
                 creators["update pvp strats"] = [](PlayerbotAI* ai) { return new UpdateWarlockPvpStrategiesAction(ai); };
                 creators["update raid strats"] = [](PlayerbotAI* ai) { return new UpdateWarlockRaidStrategiesAction(ai); };
                 creators["soulstone"] = [](PlayerbotAI* ai) { return new CastSoulstoneAction(ai); };
+                creators["suffering"] = [](PlayerbotAI* ai) { return new CastSufferingAction(ai); };
+                creators["consume shadows"] = [](PlayerbotAI* ai) { return new CastConsumeShadowsAction(ai); };
                 creators["shadow ward"] = [](PlayerbotAI* ai) { return new CastShadowWardAction(ai); };
                 creators["torment"] = [](PlayerbotAI* ai) { return new CastTormentAction(ai); };
                 creators["devour magic purge"] = [](PlayerbotAI* ai) { return new CastDevourMagicPurgeAction(ai); };

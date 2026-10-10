@@ -246,6 +246,17 @@ namespace ai
         bool IsActive() override;
     };
 
+    // Donor-parity top-up band (WAR-5): mana below 85% with safe health,
+    // queued as a pre-tap out of combat only. Never a combat row: engine
+    // defaults land at relevance-200, so any combat row would preempt the
+    // nuke. The urgent band stays on LifeTapTrigger (mana <= mediumMana).
+    class LifeTapTopUpTrigger : public Trigger
+    {
+    public:
+        LifeTapTopUpTrigger(PlayerbotAI* ai) : Trigger(ai, "life tap top-up", 2) {}
+        bool IsActive() override;
+    };
+
     class DrainSoulTrigger : public Trigger
     {
     public:
@@ -419,6 +430,22 @@ namespace ai
     {
     public:
         PowerOverwhelmingTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "power overwhelming") {}
+        bool IsActive() override;
+    };
+
+    // PET-8a: AoE taunt for a tanking Voidwalker facing a pack.
+    class SufferingTrigger : public Trigger
+    {
+    public:
+        SufferingTrigger(PlayerbotAI* ai) : Trigger(ai, "suffering") {}
+        bool IsActive() override;
+    };
+
+    // PET-8c: channeled self-heal, out of combat only.
+    class ConsumeShadowsTrigger : public Trigger
+    {
+    public:
+        ConsumeShadowsTrigger(PlayerbotAI* ai) : Trigger(ai, "consume shadows") {}
         bool IsActive() override;
     };
 

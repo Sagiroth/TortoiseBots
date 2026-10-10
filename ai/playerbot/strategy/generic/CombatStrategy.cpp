@@ -62,6 +62,18 @@ float AvoidAoeStrategyMultiplier::GetValue(Action* action)
 
 void AvoidAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // Proactive strafe-to-safety: "aoe threat nearby" fires on any of the
+    // three sensors (dynobj aura, damaging trap, trigger NPC — none of
+    // which the old "has area debuff" row could see), so the bot steps out
+    // BEFORE the debuff lands. The strafe self-gates via isUseful (bot
+    // actually inside the hazard radius). Flee is deliberately NOT listed
+    // here: the sensors scan 15yd while radii are often 5-8yd, so mere
+    // proximity would full-flee, and a useful-but-unlandable strafe would
+    // win the reaction pick every tick and starve the fallback.
+    triggers.push_back(new TriggerNode(
+        "aoe threat nearby",
+        NextAction::array(0, new NextAction("avoid aoe", ACTION_EMERGENCY + 5), NULL)));
+    // Reactive fallback: once the debuff actually lands, run out.
     triggers.push_back(new TriggerNode(
         "has area debuff",
         NextAction::array(0, new NextAction("flee", ACTION_EMERGENCY + 5), NULL)));
