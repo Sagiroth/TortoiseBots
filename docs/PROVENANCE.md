@@ -5967,6 +5967,57 @@ Local validation: `bash tools/verify_all.sh` (wiring audit covers the
 four new names); `git diff --check`; shared-builder compile via
 `build-commit.sh` (BUILD OK); live in-game check pending: swim with a
 warlock bot, self + party gain the buff, nothing fires on land.
+## Combat resurrection trigger (RES-1) — 2026-10-10 — no behaviour change
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Base/Trigger/HealthTriggers.h:164-170` + `.cpp:19`
+(`CombatPartyMemberDeadTrigger`, interval 1),
+`src/Ai/Base/TriggerContext.h:136` (creator `"combat party member dead"`),
+consumed only by the donor's `GenericDruidStrategy` combat-rez rows
+(`src/Ai/Class/Druid/Strategy/GenericDruidStrategy.cpp:67-76`).
+
+Investigation result: our combat Rebirth already fires. The live
+Balance / Feral / Restoration `"rebirth"` rows (`BalanceDruidStrategy.cpp:46`,
+`RestorationDruidStrategy.cpp:36`, `TankFeralDruidStrategy.cpp:101,142`,
+`DpsFeralDruidStrategy.cpp:79`, via `RebirthTrigger`: spell known/ready +
+dead valid target) predate this PR, and our `GenericDruidStrategy` copy of
+the donor's combat-rez rows is dead — the class is never instantiated (zero
+`new` sites, no creator in `DruidAiObjectContext.cpp:158-197`; live bots run
+the placeholder→pve/pvp/raid hierarchy). A `"combat party member dead"`
+creator would feed zero live `TriggerNode`s, so this PR adds no code: no
+new trigger, no new creator, no strategy edits. Divergences from the donor,
+all deliberate: (a) no `"combat party member to resurrect"` value alias —
+donor's trigger returns `"party member to resurrect"` with no new value
+either; (b) no `Predator's Swiftness` port — the aura has no 1.18.1
+spell-template row (checked `tw_world`: Predatory Strikes only, no
+swiftness proc), and the `"predator's swiftness ..."` rows in the dead
+`GenericDruidStrategy.cpp:60,121-123` stay untouched dead-file tech debt
+(wiring audit `DEAD_FILES`-listed, same as PR #648's HEAL-1 fix). Range
+handling stays with the existing reach-to-rez action per the deliberate
+RES-3 decision.
+
+Reason: support parity gap RES-1 (high/S) investigated and closed with no
+code change — combat Rebirth already fires mid-fight through the existing
+`"rebirth"` rows.
+
+Local validation: `bash tools/verify_all.sh` (all suites pass);
+`git diff --check`. Rebirth 2011 verified in the report. Build via
+build-commit.sh pending; live in-game check pending.
+
+## Review fixes (2026-10-10, PR #653 CHANGES_REQUESTED)
+Both blocking findings verified real in code and fixed by removing the
+no-op: (1) the `"combat party member dead"` trigger + creator fed zero
+live `TriggerNode`s (dead `GenericDruidStrategy` only) and its `IsActive`
+merely re-ran the already-live `"rebirth"` trigger — removed, no
+replacement; (2) docs now state no behaviour change (combat Rebirth
+already fired via the existing `"rebirth"` rows). Non-blocking notes
+accepted: no donor value alias added (donor has none — confirmed
+`HealthTriggers.h:168` returns `"party member to resurrect"`); Predator
+rows in `GenericDruidStrategy.cpp:60,121-123` predate this PR (dead file,
+untouched — the "port removed" note in the summary referred to the
+never-merged `PredatorsSwiftnessTrigger`, not those rows); leftover brief
+text deleted from this entry.
 | Elemental earth-shock execute discipline (SHM-4) | `mod-playerbots` `src/Ai/Class/Shaman/ShamanTriggers.cpp:50-64` (`EarthShockExecuteTrigger`: <25% AND <1500hp) + `Strategy/ElementalShamanStrategy.cpp:58-65` (execute node 5.5) @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanTriggers.h` (new `EarthShockExecuteTrigger`), `ShamanAiObjectContext.cpp` (creator), `ElementalShamanStrategy.cpp` (`shock` row -> `earth shock execute` at same ACTION_NORMAL), `ShamanEarthShockPolicy.h` + `tools/test_shaman_earth_shock_policy.cpp` | Ported verbatim thresholds via `GetHealthPercent()` + absolute `GetHealth() < 1500` (house idiom; donor divides manually). Ele only; enhancement keeps ungated `shock` (melee threat tool); interrupt triggers untouched. Spell: Earth Shock 8042+ (existing action, verified) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
 ## Review fixes (2026-10-09, PR #615 CHANGES_REQUESTED)
 All three blocking findings verified real in code and fixed:
