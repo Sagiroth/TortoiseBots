@@ -54,9 +54,10 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
 ## Demon Summons & Utility
 
 - **Pet Selection:**
-  - *Voidwalker:* The PvE/dungeon default (higher-priority summon, also the non-combat default); off-tanks and uses *Sacrifice* for emergency shields. A solo pool bot that learns *Summon Voidwalker* (level 10) and holds a Soul Shard upgrades its Imp to a Voidwalker on its own (`runtime/WarlockPetPolicy.h`); below that it keeps the Imp, a shardless bot stays quiet (no failed summon queued), and a bot whose player picked a demon manually is never overridden.
+  - *Voidwalker:* The PvE/dungeon default (higher-priority summon, also the non-combat default); off-tanks and uses *Sacrifice* for emergency shields. A solo pool bot that learns *Summon Voidwalker* (level 10) and holds a Soul Shard upgrades its Imp to a Voidwalker on its own (`runtime/WarlockPetPolicy.h`); below that it keeps the Imp, a shardless bot stays quiet (no failed summon queued), and a bot whose player picked a demon manually is never overridden. Facing 3+ mobs solo it AoE-taunts with *Suffering* (never in a real-tank group), and between pulls a hurt Voidwalker heals itself with *Consume Shadows*.
   - *Imp:* The raid pet, providing *Blood Pact* (Stamina buff).
   - *Succubus:* Provides humanoid crowd control via *Seduce*.
+  - *Felhunter:* Uses *Spell Lock* for ranged interrupts, and *Devour Magic* both ways: strips a magic buff off the current target (purge) and lifts magic off a party member (cleanse). Both fire only while a Felhunter is out.
   - *Felhunter:* Uses *Spell Lock* for ranged interrupts, and *Devour Magic* both ways: strips a magic buff off the current target (purge) and lifts magic off a party member (cleanse). Both fire only while a Felhunter is out; other demons idle those nodes safely.
 - **Out-of-combat upkeep:** The bot maintains *Demon Armor* (with *Demon Skin* as fallback) and casts *Unending Breath* on itself and the party.
   - *Felhunter:* Uses *Spell Lock* for ranged interrupts. *Devour Magic* has no registered action wiring, so the bot never casts it.

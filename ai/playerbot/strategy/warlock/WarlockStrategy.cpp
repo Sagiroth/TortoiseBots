@@ -467,6 +467,12 @@ void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "new pet",
         NextAction::array(0, new NextAction("set pet stance", ACTION_NORMAL), NULL)));
+
+    // PET-8c: hurt Voidwalker heals itself between pulls (NC-only; the
+    // channel breaks on damage so combat would waste it).
+    triggers.push_back(new TriggerNode(
+        "consume shadows",
+        NextAction::array(0, new NextAction("consume shadows", ACTION_NORMAL), NULL)));
 }
 
 void WarlockPetPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -489,6 +495,13 @@ void WarlockPetPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "has aggro",
         NextAction::array(0, new NextAction("torment", ACTION_HIGH), NULL)));
+
+    // PET-8a: AoE taunt when the Voidwalker tanks a pack solo. Same prio as
+    // the single-target peel; the triggers are mutually exclusive in
+    // practice (pack vs single) and both refuse without a live Voidwalker.
+    triggers.push_back(new TriggerNode(
+        "suffering",
+        NextAction::array(0, new NextAction("suffering", ACTION_HIGH), NULL)));
 }
 
 void WarlockPetPveStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

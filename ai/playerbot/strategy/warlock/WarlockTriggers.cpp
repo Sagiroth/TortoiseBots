@@ -2,7 +2,9 @@
 #include "playerbot/playerbot.h"
 #include "WarlockTriggers.h"
 #include "WarlockActions.h"
+#include "WarlockPetTaunt.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "../../../runtime/VoidwalkerPolicy.h"
 #include "../../../runtime/HealthFunnelPolicy.h"
 #include "../../../runtime/WarlockPetPolicy.h"
 
@@ -440,6 +442,54 @@ bool PowerOverwhelmingTrigger::IsActive()
 
     Unit* target = GetTarget();
     return target && target->IsAlive();
+}
+
+// PET-8a: cheap-first — pet presence and entry before the attacker count;
+// the PET-3 permission comes from the shared helper (group walk only while
+// grouped). Spell knowledge/cooldown stay in the action's isPossible.
+bool SufferingTrigger::IsActive()
+{
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    if (!pet)
+        return false;
+    TortoiseBots::SufferingGateInputs gate;
+    gate.hasPet = true;
+    gate.currentPetEntry = pet->GetEntry();
+    if (gate.currentPetEntry != TortoiseBots::WARLOCK_VOIDWALKER_ENTRY)
+        return false;
+    // Pack on the pet, not the owner: a tanking Voidwalker holds the mobs
+    // while the warlock stands free, so the owner's attacker set is empty
+    // exactly when Suffering is most needed.
+    gate.attackerCount = static_cast<uint8_t>(pet->GetAttackers().size());
+    if (gate.attackerCount < 3)
+        return false;
+    gate.petTauntAllowed = ai::WarlockPetTauntAllowed(ai, bot);
+    return TortoiseBots::CanCastSuffering(gate);
+}
+
+// PET-8c: cheap-first scalar reads; the channel breaks on damage so combat
+// vetoes, and mounted vetoes (can't channel while mounted anyway).
+bool ConsumeShadowsTrigger::IsActive()
+{
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    if (!pet)
+        return false;
+    TortoiseBots::ConsumeShadowsGateInputs gate;
+    gate.hasPet = true;
+    gate.currentPetEntry = pet->GetEntry();
+    if (gate.currentPetEntry != TortoiseBots::WARLOCK_VOIDWALKER_ENTRY)
+        return false;
+    gate.petAlive = pet->IsAlive();
+    if (!gate.petAlive)
+        return false;
+    if (bot->IsInCombat())
+        return false;
+    gate.petHealth = AI_VALUE2(uint8, "health", "pet target");
+    if (gate.petHealth >= 70)
+        return false;
+    gate.mounted = AI_VALUE2(bool, "mounted", "self target");
+    gate.ownerInCombat = false;
+    return TortoiseBots::CanCastConsumeShadows(gate);
 }
 
 // PET-6: cheap-first — pet presence, then the policy gate on scalar health
