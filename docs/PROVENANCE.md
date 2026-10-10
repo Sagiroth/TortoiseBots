@@ -4773,7 +4773,8 @@ false from combat context: fixed to explicit `false` per the review.
 drag healers into splash via reach-to-heal: raised to ACTION_MOVE + 5 (35).
 (d) AoE veto reused the Garr threat-flag match, which under-marks real AoE
 and over-marks heals/dots (same hole as PR #587 review): now uses the
-shared `IsGarrSuppressedAoeAction` name list.
+local `IsGolemaggSuppressedAoeAction` name list (this branch predates the
+Garr PR merge; merge both to one home when the branches land).
 (e) Back-off lockout fired only at 20+ stacks (19 stacks re-engaged),
 ignored non-boss targets, and missed `ReachTargetAction` (`reach melee`
 is MovementAction-based): now holds on ANY remaining stack via

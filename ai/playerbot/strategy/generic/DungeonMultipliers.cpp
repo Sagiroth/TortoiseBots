@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/ServerFacade.h"
 #include "DungeonMultipliers.h"
+#include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 #include "playerbot/strategy/actions/DungeonActions.h"
 #include "playerbot/strategy/actions/ReachTargetActions.h"
 #include "playerbot/strategy/actions/ChooseTargetActions.h"
@@ -69,10 +70,11 @@ float GolemaggFightMultiplier::GetValue(Action* action)
         livingTanks = 1;
     }
     // Single tank picks up everything: role-hold actions would only fight
-    // the normal target selection.
+    // the normal target selection. Type check: MoveToAction hardcodes its
+    // name to "name" (MovementActions.h), so a getName() match never fires.
     if (IsSingleLivingTank(livingTanks) && ai->IsTank(bot))
     {
-        if (dynamic_cast<MoveToAction*>(action) && action->getName() == "golemagg tank hold")
+        if (dynamic_cast<GolemaggTankHoldAction*>(action))
             return 0.0f;
     }
     // Assist tanks (non-first tanks) never follow tank-assist retargets:
@@ -106,11 +108,13 @@ float GolemaggFightMultiplier::GetValue(Action* action)
     // Ranged never melee-fallbacks onto the boss (splash stacks).
     if (ai->IsRanged(bot) && dynamic_cast<MeleeAction*>(action))
         return 0.0f;
-    // Backed-off non-tanks stay out until the WHOLE stack expires
-    // (donor: 30s after the last application) — not just below 20, or a
-    // 20→19 decay re-engages with 19 stacks still ticking.
+    // Backed-off non-tanks stay out at 20+ stacks (donor
+    // MCMultipliers.cpp:136 shape: whole-stack-expiry re-engage has no
+    // core evidence — stacking auras expire whole, so 20→19 decay never
+    // happens tick-by-tick anyway).
     Aura* splash = ai->GetAura(kMagmaSplashSpellId, bot);
-    bool backedOff = ShouldHoldBackOff(ai->IsTank(bot), splash != nullptr,
+    int splashStacks = splash ? (int)splash->GetStackAmount() : 0;
+    bool backedOff = ShouldBackOffSplash(ai->IsTank(bot), splashStacks,
         (float)boss->GetHealthPercent());
     // Boss-only engages: adds and totems stay attackable. Reach actions
     // ("reach melee", "reach spell") count — they are how the bot walks

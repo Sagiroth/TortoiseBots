@@ -9,8 +9,9 @@ namespace ai
     // Golemagg fight discipline (mod-playerbots parity): single-tank
     // groups skip the role dance; assist tanks never follow tank-assist
     // retargets; DPS AoE stays off; ranged never melee-fallbacks onto the
-    // boss; backed-off melee stay out until the splash stack expires. The
-    // burn phase (<10%) releases everything except the single-tank dance.
+    // boss; backed-off melee stay out at 20+ splash stacks. The burn phase
+    // (<10%) releases the AoE veto, the ranged melee-ban and the back-off
+    // lock; the single-tank skip and assist veto persist.
     class GolemaggFightMultiplier : public Multiplier
     {
     public:

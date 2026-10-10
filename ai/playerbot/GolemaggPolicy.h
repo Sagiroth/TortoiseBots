@@ -56,16 +56,10 @@ namespace ai
         return splashStacks >= kMagmaSplashBackOffStacks;
     }
 
-    // Back-off lock: backed-off non-tanks don't re-engage until the stack
-    // expires (donor: whole stack gone, 30s after last application).
-    inline bool ShouldHoldBackOff(bool botIsTank, bool hasAnySplash, float bossHealthPct)
-    {
-        if (botIsTank)
-            return false;
-        if (bossHealthPct <= kGolemaggBurnPct)
-            return false;
-        return hasAnySplash;
-    }
+    // (Historical: an earlier revision held non-tanks out on ANY remaining
+    // stack; the donor gates both trigger and veto at >= 20, so the lock
+    // is just ShouldBackOffSplash re-checked every tick. Kept out of the
+    // build to avoid a second convention; see ShouldBackOffSplash above.)
 
     // DPS exclusion: Core Ragers are unkillable while Golemagg lives (full
     // heal at 50%) — DPS bots leave them to the tanks.
@@ -80,7 +74,8 @@ namespace ai
     // over-mark heals + single-target dots.
     inline bool IsGolemaggSuppressedAoeAction(const std::string& actionName)
     {
-        return actionName == "dps aoe" ||
+        return actionName == "blizzard" ||
+               actionName == "dps aoe" ||
                actionName == "consecration" ||
                actionName == "whirlwind" ||
                actionName == "magma totem" ||
