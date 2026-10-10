@@ -54,6 +54,9 @@ int main()
     CHECK(ShouldSeedAutonomousBg(true, false, 0, true) == true);
     // Both teams full -> stop.
     CHECK(ShouldSeedAutonomousBg(true, false, 0, false) == false);
+    // Bracket-scoped cap: the count passed in is per-bracket now — a match in
+    // another bracket does not block this one (0 running HERE seeds).
+    CHECK(ShouldSeedAutonomousBg(true, false, 0, true, 1) == true);
     std::cout << "  [PASS] top-up continues while a team needs bots\n";
 
     // Max-instances clamp: huge/negative-wrapped values cap at 2, never uncapped.

@@ -163,7 +163,9 @@ Organic buyer (issue #405, no buyer teleport): the synthetic buyer bids only wit
 ### Autonomous Bot-Only Matches (opt-in)
 * Config: **`AiPlayerbot.RandomBotBgAutonomous = 1`** (on by default; set `0` to opt out) + `AiPlayerbot.RandomBotBgAutonomousMaxInstances = 1` (cap for an average PC: one 10v10 at a time).
 * When nobody is queued, pool bots start their own Warsong Gulch in the most populated level bracket so they have matches of their own. Human demand always wins: the seeder yields the moment a real player queues.
-* Seeds are solo bots only (grouped bots stay out) and never pile up: bots already waiting for a match to start block new seeds.
+* Seeds are solo bots only (grouped bots stay out). Batches of 1 accumulate each tick until both sides reach 10v10;
+  once the match starts forming, top-up stops and the queued seeds are absorbed. Cap is per bracket (default 1).
+  Requires `AiPlayerbot.RandomBotBgEnabled = 1` (the seeder runs inside the backfill tick).
 
 ### Battlegrounds With Your Own Party Bots
 * Queue at the battlemaster with **Join as Group**: the core group-join check passes headless bot members like any player (same team, in world, level bracket, no deserter), so your party — you plus your own managed bots — enters the queue together. **WSG and AB** support group joins; **AV rejects group joins in the core**, so queue AV solo alongside your bots instead.

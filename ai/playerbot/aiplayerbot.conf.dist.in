@@ -401,6 +401,8 @@ AiPlayerbot.AhMarketValueVendor = 1
 # average PC (20 bots on one map); clamped 0-2, raise to 2 only on a strong host.
 #AiPlayerbot.RandomBotBgAutonomous = 1
 #AiPlayerbot.RandomBotBgAutonomousMaxInstances = 1
+# Note: the seeder runs inside the backfill tick, so it also requires
+# AiPlayerbot.RandomBotBgEnabled = 1 (Autonomous=1 + BgEnabled=0 seeds nothing).
 
 # Currently has NO effect: the key is read but nothing uses it (kept for
 # config compatibility). Bot activity is controlled by

@@ -49,9 +49,10 @@ private:
     // Autonomous seeding: counts and queue helpers. Pure counting over the
     // in-memory bot snapshot and the copy-only participant snapshot.
     void UpdateAutonomousSeeding();
-    uint32_t CountRunningBotOnlyWsg() const;
+    uint32_t CountRunningBotOnlyWsg(uint32_t bracketIndex) const;
     uint32_t CountOwnedQueuedFor(uint32_t queueTypeValue, uint32_t bracketIndex) const;
-    uint32_t CountSeededForTeam(uint32_t queueTypeValue, uint32_t bracketIndex, uint32_t team) const;
+    void CountSeededForTeams(uint32_t queueTypeValue, uint32_t bracketIndex,
+        uint32_t& seededAlliance, uint32_t& seededHorde) const;
 
     bool m_initialized = false;
     uint32_t m_elapsedMs = 0;

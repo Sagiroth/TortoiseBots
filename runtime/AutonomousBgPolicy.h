@@ -46,11 +46,13 @@ namespace TortoiseBots
     }
 
     // Gate: seed this tick only when autonomous mode is on, no human demand
-    // exists (demand path owns queueing then), running bot-only instances are
-    // below the (clamped) cap, and at least one team still needs bots.
-    // Queued seeds do NOT block: batches of maxPerInterval accumulate across
-    // ticks until both teams reach target (donor-style top-up). Over-queueing
-    // is bounded by the per-team target, not by a first-seed latch.
+    // exists (demand path owns queueing then), running bot-only instances OF
+    // THIS BRACKET are below the (clamped) cap, and at least one team still
+    // needs bots. Queued seeds do NOT block: batches of maxPerInterval
+    // accumulate across ticks until both teams reach target (donor-style
+    // top-up). Once the core starts the match (either side reaches min), the
+    // forming match absorbs queued seeds and top-up stops. Over-queueing is
+    // bounded by the per-team target, not by a first-seed latch.
     inline bool ShouldSeedAutonomousBg(bool autonomousEnabled, bool hasHumanDemand,
         std::uint32_t runningBotOnlyInstances, bool anyTeamNeedsBots,
         std::uint32_t maxInstances = kAutonomousBgMaxInstances)
