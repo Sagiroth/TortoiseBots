@@ -12,10 +12,28 @@ namespace ai
 		virtual bool IsActive() override;
 	};
 
-    class SpellstoneTrigger : public BuffTrigger
+    // Vanilla off-hand semantics (WAR-4): a spellstone is a held off-hand
+    // item (inventory_type 23) with an on-equip aura, like firestone — not
+    // a weapon temp-enchant (its on-use spell targets the caster).
+    // Only equips into an EMPTY off-hand next to a one-handed main-hand.
+    // Plain Trigger (not Buff): no player spell is named "spellstone", so
+    // the BuffTrigger HasSpell gate would never pass.
+    class SpellstoneTrigger : public Trigger
     {
     public:
-        SpellstoneTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "spellstone") {}
+        SpellstoneTrigger(PlayerbotAI* ai) : Trigger(ai, "spellstone") {}
+        virtual bool IsActive() override;
+    };
+
+    // Vanilla off-hand semantics (WAR-4): a firestone is a held off-hand
+    // item (inventory_type 23) with an on-equip aura, not a consumable.
+    // Only equips into an EMPTY off-hand next to a one-handed main-hand,
+    // so it never swaps out a real off-hand, fights a staff, or loops.
+    // Plain Trigger (not Buff): no player spell is named "firestone".
+    class FirestoneTrigger : public Trigger
+    {
+    public:
+        FirestoneTrigger(PlayerbotAI* ai) : Trigger(ai, "firestone") {}
         virtual bool IsActive() override;
     };
 

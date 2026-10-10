@@ -20,7 +20,31 @@ bool DemonArmorTrigger::IsActive()
 
 bool SpellstoneTrigger::IsActive()
 {
-    return BuffTrigger::IsActive() && AI_VALUE2(uint32, "item count", getName()) > 0;
+    if (AI_VALUE2(uint32, "item count", getName()) == 0)
+        return false;
+    // Off-hand held item like firestone (not a weapon temp-enchant: the
+    // stone's on-use spell targets the caster). Same gates: never displace
+    // worn gear, and a two-handed main-hand leaves nowhere to put it.
+    if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
+        return false;
+    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    if (!mainHand || mainHand->GetProto()->InventoryType == INVTYPE_2HWEAPON)
+        return false;
+    return true;
+}
+
+bool FirestoneTrigger::IsActive()
+{
+    if (AI_VALUE2(uint32, "item count", getName()) == 0)
+        return false;
+    // Off-hand held item: never displace worn gear, and a two-handed
+    // main-hand leaves nowhere to put it (the equip would fail every tick).
+    if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
+        return false;
+    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    if (!mainHand || mainHand->GetProto()->InventoryType == INVTYPE_2HWEAPON)
+        return false;
+    return true;
 }
 
 bool UnendingBreathTrigger::IsActive()
