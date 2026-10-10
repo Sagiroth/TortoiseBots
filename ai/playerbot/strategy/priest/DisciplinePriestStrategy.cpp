@@ -31,14 +31,16 @@ void DisciplinePriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
         NextAction::array(0, new NextAction("power word: shield on party", ACTION_CRITICAL_HEAL + 1),
                              new NextAction("flash heal on party", ACTION_CRITICAL_HEAL), NULL)));
 
+    // Shields sit above Inner Focus (MEDIUM+3) so the order is shield,
+    // then Inner Focus, then the direct heal the buff applies to.
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 2),
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 4),
                              new NextAction("greater heal on party", ACTION_MEDIUM_HEAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member medium health",
-        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 1),
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 4),
                              new NextAction("greater heal on party", ACTION_MEDIUM_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(

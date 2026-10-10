@@ -39,7 +39,7 @@ void HolyPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // low-level heal/lesser ranks stay as fallbacks for untrained bots.
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 3),
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 4),
                              new NextAction("greater heal on party", ACTION_MEDIUM_HEAL + 2),
                              new NextAction("flash heal on party", ACTION_MEDIUM_HEAL + 1),
                              new NextAction("heal on party", ACTION_MEDIUM_HEAL),

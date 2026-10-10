@@ -4527,12 +4527,19 @@ Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 Feature: (1) Holy combat ladder: medium tier tries `greater heal on party`
 before heal/lesser; low tier tries flash after shield, then greater/heal/
 lesser (low-rank fallbacks kept for 13-19 dungeons). (2) Disc combat
-ladder: medium tier shields at MEDIUM+1 above greater heal; almost-full
+ladder: medium/low tiers shield at MEDIUM+4 above greater heal; almost-full
 tier shields at LIGHT+3 above renew (Weakened Soul guard already in the
-shield action). (3) Holy + disc combat: `inner focus for heal` trigger
-fires `inner focus` at MEDIUM+3 (above the heal rows so the next heal
-crits); the trigger self-gates on the trained spell, the cooldown,
-medium-or-lower mana and a medium-or-worse heal target. (4) Disc
+shield action; the party shield action runs at VERY_HIGH efficiency like
+the donor's). (3) Holy + disc combat: `inner focus for heal` trigger
+fires `inner focus` at MEDIUM+3 (above the direct heals, below the
+heal-row shields at MEDIUM+4 — shields can't crit, so the order is
+shield, then Inner Focus, then the direct heal; this inverts the donor,
+which fires on mana alone below every heal row and can spend the buff on
+nothing — deliberate: the buff must land on a real heal); the trigger
+self-gates on the trained spell, the cooldown, medium-or-lower mana and
+a medium-or-worse heal target. The old ungated boost-kit `inner focus`
+node is deleted (it fired whenever the aura was down and burned the CD
+while idle). (4) Disc
 non-combat: shield-first ladder at critical/low, direct heals at
 medium/almost-full (shields restore no HP out of combat), replacing the
 reach-only kit.
@@ -4554,11 +4561,14 @@ Source files (donor, reference only):
 (non-combat renew/greater ladder). Deviations, deliberate: donor's
 WotLK spells omitted (Penance, Prayer of Mending, Circle of Healing —
 no 1.12 equivalents); inner focus gated on trained spell + cooldown +
-mana + heal target (donor fires on mana alone; 3-min CD 14751 per DBC);
-disc non-combat uses direct heals at medium (donor never shields out of
-combat — shields restore no HP and spread Weakened Soul); disc combat
-medium tier shields at MEDIUM+1 above greater heal at MEDIUM; holy low
-tier runs greater before flash (donor order).
+mana + heal target (donor fires on mana alone below the heals; 3-min
+CD 14751 verified in Spell.dbc field 19 = 180000ms); disc non-combat uses
+direct heals at medium (donor never shields out of combat — shields
+restore no HP and spread Weakened Soul; critical/low OOC shields mirror
+module holy, acceptable local deviation, not donor parity); disc combat
+medium/low tiers shield at MEDIUM+4 above greater heal and above Inner
+Focus at MEDIUM+3; holy low tier runs greater before flash (donor order);
+party shield at VERY_HIGH efficiency matches donor PriestActions.h:73.
 
 Reason: priest parity report PRI-11/PRI-5/PRI-7/PRI-12 — holy bots cast
 Heal R4 where Greater Heal belonged, disc never shielded above low
