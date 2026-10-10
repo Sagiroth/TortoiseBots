@@ -357,6 +357,7 @@ namespace ai
             creators["move away from living bomb"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayFromLivingBombAction(ai); };
             creators["dragon flank"] = [](PlayerbotAI* ai) { return new DragonFlankAction(ai); };
             creators["raid spread"] = [](PlayerbotAI* ai) { return new RaidSpreadAction(ai); };
+            creators["dragon tank face away"] = [](PlayerbotAI* ai) { return new DragonTankFaceAwayAction(ai); };
             creators["move to mc rune"] = [](PlayerbotAI* ai) { return new MoveToMCRuneAction(ai); };
             creators["douse mc rune aqual"] = [](PlayerbotAI* ai) { return new DouseMCRuneActionAqual(ai); };
             creators["douse mc rune eternal"] = [](PlayerbotAI* ai) { return new DouseMCRuneActionEternal(ai); };

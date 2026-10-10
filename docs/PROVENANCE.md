@@ -4574,3 +4574,33 @@ ran out, so the raid still ate the blast when anyone stood next to them.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test); `git
 diff --check` clean. Build via build-commit.sh (see PR summary); no live
 in-game check.
+
+## Review fixes (2026-10-09, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (deleted `dragon tank face away` registration — REAL, fixed):
+my edit had dropped the line; `.bot action raid tankface` would have
+gone UNKNOWN. Restored next to `raid spread`.
+
+Blocking 2 (`ACTION_MOVE + 8` loses to heals — REAL, fixed): Geddon row
+raised to `ACTION_EMERGENCY + 5` (survival tier, below the carrier's own
+runout at +6), so healers step out instead of casting through the blast.
+
+Non-blocking "untested policy helpers" — FIXED by wiring: the trigger
+gate now calls `NeedsDebuffSpread` (the action already used
+`IsDebuffSafePoint` + the step/overshoot constants). `DebuffEscapeClearance`
+stays test-only by design (production iterates live `Player*` carriers;
+the helper takes plain anchors) — documented in the header.
+
+Non-blocking "raid status omits geddon" — FIXED: added to the list.
+
+Non-blocking "10yd blast unverified" — ACKNOWLEDGED, not fixed: spell
+radius not in scripts; needs an in-game Geddon check that 10yd clears
+the detonation.
+
+Non-blocking "tank steps out, drags boss" — ACKNOWLEDGED, not fixed:
+the Geddon row moves everyone including the holding tank (unlike
+Magmadar's ranged/heal-only row). Left for the live check; a
+victim==bot exemption is the fallback if it drags.
+
+Non-blocking "donor Geddon never used this primitive" — ACKNOWLEDGED:
+donor consumers are RS/Ulduar; the Geddon application is novel. Noted.

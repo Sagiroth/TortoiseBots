@@ -79,9 +79,11 @@ void MagmadarFightStrategy::InitCombatMultipliers(std::list<Multiplier*>& multip
 
 void GeddonFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // Survival tier (below the carrier's own runout at +6): healers must
+    // step out instead of casting through the blast.
     triggers.push_back(new TriggerNode(
         "geddon living bomb near",
-        NextAction::array(0, new NextAction("move away from living bomb", ACTION_MOVE + 8), NULL)));
+        NextAction::array(0, new NextAction("move away from living bomb", ACTION_EMERGENCY + 5), NULL)));
 }
 
 void GeddonFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

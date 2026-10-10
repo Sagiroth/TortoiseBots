@@ -8,6 +8,7 @@
 #include "playerbot/strategy/values/HazardsValue.h"
 #include "playerbot/strategy/actions/MovementActions.h"
 #include "playerbot/CombatSpreadPolicy.h"
+#include "playerbot/DebuffSpreadPolicy.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
@@ -382,7 +383,7 @@ bool TooCloseToPlayerWithDebuffTrigger::IsActive()
             continue;
         if (member->GetMapId() != bot->GetMapId())
             continue;
-        if (sServerFacade.getDistance2d(bot, member) < range && ai->HasAura(spellId, member))
+        if (NeedsDebuffSpread(sServerFacade.getDistance2d(bot, member), range) && ai->HasAura(spellId, member))
             return true;
     }
     return false;
