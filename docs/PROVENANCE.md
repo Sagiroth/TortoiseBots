@@ -5556,3 +5556,35 @@ All three blocking findings verified real in code and fixed:
 - Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
 - Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
 verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+
+## Mage Improved Scorch respects the shared debuff slot (MAG-8) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/MageTriggers.cpp:126-146`
+(`ImprovedScorchTrigger::IsActive` skips scorch while the target carries
+Shadow Vulnerability 17794-17800, Winter's Chill 12579, or Fire
+Vulnerability 22959).
+
+Source files (module, modified):
+`ai/playerbot/strategy/mage/MageTriggers.cpp`
+(`NoImprovedScorchDebuffTrigger::IsActive` now returns false while any
+of 12579/22959/17794/17797/17798/17799/17800 sits on the current
+target, before falling through to the existing talent +
+`DebuffTrigger::IsActive` logic), `docs/classes/mage.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) the gate lives on our existing
+`no improved scorch` trigger instead of a new trigger — same verdict,
+one fewer row; (b) spell-ID based via `ai->HasAura(uint32)` (all five
+IDs verified in `tw_world.spell_template`) instead of donor's
+`target->HasAura`, matching how our `NoFireVulnerabilityTrigger`
+already reads 22959 stacks; (c) the `no fire vulnerability` refresh
+trigger is untouched — it still tops up our own 22959 stacks.
+
+Reason: fire bots scorched straight over a frost mage's Winter's Chill
+(or a warlock's Shadow Vulnerability), knocking the stronger group
+debuff off the shared slot.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: fire + frost mage on one target, Chill stays up.

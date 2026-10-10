@@ -32,7 +32,7 @@ Mages provide premier ranged spell DPS, the game's most reliable crowd control (
 
 ### 2. Fire Mage
 - Refreshes *Pyroblast* in combat and consumes *Presence of Mind* with it.
-- Weaves *Scorch* casts to maintain the *Improved Scorch* fire vulnerability.
+- Weaves *Scorch* casts to maintain the *Improved Scorch* fire vulnerability, but holds off while the target carries *Winter's Chill*, *Shadow Vulnerability*, or a live *Fire Vulnerability* (shared debuff slot).
 - Casts *Fireball* as main nuke and *Fire Blast* on the move or for finishing blows.
 
 ### 3. Arcane Mage
