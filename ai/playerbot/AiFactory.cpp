@@ -552,7 +552,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             }
             else if (tab == 2)
             {
-                combatEngine->addStrategies("restoration", "flee", "ranged", NULL);
+                combatEngine->addStrategies("restoration", "aoe", "flee", "ranged", NULL);
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
                     combatEngine->addStrategy("offdps");
             }
@@ -935,7 +935,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
             }
             else if (tab == 2)
             {
-                nonCombatEngine->addStrategies("restoration", NULL);
+                nonCombatEngine->addStrategies("restoration", "aoe", NULL);
             }
             else
             {

@@ -15,8 +15,7 @@ Shamans bring unparalleled group utility through totem sets, elemental shocks, w
 
 ## Supported Specs & Roles
 
-- **Restoration (Healer):** Premier multi-target healer utilizing *Chain Heal*, *Healing Wave*, *Lesser Healing Wave*, and *Mana Tide Totem*. When nobody needs healing and mana is comfortable, casts *Flame Shock* / *Lightning Bolt* (*Chain Lightning* into packs) at the lowest relevance so every heal wins first — the same healer-dps pattern priests use.
-- **Restoration (Healer):** Premier multi-target healer utilizing *Chain Heal* (group-wide when the pack needs it), *Healing Wave*, *Lesser Healing Wave*, and *Mana Tide Totem*.
+- **Restoration (Healer):** Premier multi-target healer utilizing *Chain Heal*, *Healing Wave*, *Lesser Healing Wave*, and *Mana Tide Totem*. *Chain Heal* fires on headcount (5+ members within 30 yards, 3 hurt in a 5-man scaling to 15 in a raid). When nobody needs healing and mana is comfortable, casts *Flame Shock* / *Lightning Bolt* (*Chain Lightning* into packs) at the lowest relevance so every heal wins first — the same healer-dps pattern priests use.
 - **Enhancement (Melee DPS):** Dual-wielding or two-handed melee powerhouse utilizing *Windfury*, *Stormstrike*, and shocks.
 - **Elemental (Ranged DPS):** Nature and fire caster driving high burst through *Lightning Bolt*, *Chain Lightning*, and *Elemental Mastery*. *Earth Shock* is saved as an execute (target below 25% health and 1500 hp) so the shared shock cooldown and boss debuff slots are not wasted on healthy targets; interrupts still fire anytime.
 - **Elemental (Ranged DPS):** Nature and fire caster driving high burst through *Lightning Bolt*, *Chain Lightning*, and *Elemental Mastery*. Keeps *Water Shield* up once trained (*Lightning Shield* before that) and fires *Chain Lightning* on cooldown into ranged packs (never single-target).

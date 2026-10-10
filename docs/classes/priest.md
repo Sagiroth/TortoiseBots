@@ -32,6 +32,7 @@ Ally Health 50%-70% (medium) ──► Heal / Lesser Heal
 Ally Health 70%-90% (almost) ──► Renew
 Multiple Injured              ──► Prayer of Healing (Party AoE heal)
 ```
+Group heals fire on headcount, not fixed pairs: at least 5 party members within 30 yards, then 3 hurt in a 5-man scaling up to 15 hurt in a full raid (medium band for Prayer of Healing, almost-full band for shields).
 *Desperate Prayer* is a self-only emergency heal and never lands on allies. A heal is never skipped for mana reasons on a target at or below the low-health line: danger always outbids efficiency. Above the medium line the bot refuses oversized or merely average-efficiency heals (a 50%-bar *Heal* on an 85% target waits for a cheaper window), and while its own mana sits below the medium-mana line it refuses mana-hungry heals (*Flash Heal*) in favor of efficient ones (*Renew*, *Power Word: Shield*). Tanks count the expected heal at two-thirds (bigger bars).
 
 ### Healer Off-Spec Damage & Wand

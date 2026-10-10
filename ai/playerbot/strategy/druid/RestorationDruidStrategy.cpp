@@ -206,6 +206,12 @@ void RestorationDruidRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& tri
 void RestorationDruidAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     DruidAoeStrategy::InitCombatTriggers(triggers);
+
+    // Group-size-scaled gate (mod-playerbots parity, HEAL-1): fires
+    // Tranquility when enough of the group is hurt at once.
+    triggers.push_back(new TriggerNode(
+        "medium group heal setting",
+        NextAction::array(0, new NextAction("tranquility", ACTION_MEDIUM_HEAL + 2), NULL)));
 }
 
 void RestorationDruidAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

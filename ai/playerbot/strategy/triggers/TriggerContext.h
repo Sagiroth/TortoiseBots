@@ -177,6 +177,9 @@ namespace ai
             creators["critical aoe heal"] = [](PlayerbotAI* ai) { return new AoeHealTrigger(ai, "critical aoe heal", "critical", 2); };
             creators["low aoe heal"] = [](PlayerbotAI* ai) { return new AoeHealTrigger(ai, "low aoe heal", "low", 2); };
             creators["medium aoe heal"] = [](PlayerbotAI* ai) { return new AoeHealTrigger(ai, "medium aoe heal", "medium", 2); };
+            creators["almost full aoe heal"] = [](PlayerbotAI* ai) { return new AoeHealTrigger(ai, "almost full aoe heal", "almost full", 2); };
+            creators["group heal setting"] = [](PlayerbotAI* ai) { return new AoeInGroupTrigger(ai, "group heal setting", "almost full"); };
+            creators["medium group heal setting"] = [](PlayerbotAI* ai) { return new AoeInGroupTrigger(ai, "medium group heal setting", "medium"); };
             creators["invalid target"] = [](PlayerbotAI* ai) { return new InvalidTargetTrigger(ai); };
 
             creators["random bot update"] = [](PlayerbotAI* ai) { return new RandomBotUpdateTrigger(ai); };
