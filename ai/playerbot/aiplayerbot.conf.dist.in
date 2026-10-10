@@ -257,6 +257,13 @@ AiPlayerbot.LowLevelVendorBatchMinBagSpace = 25
 # Default 600.
 AiPlayerbot.LowLevelVendorMaxDistance = 600
 
+# Microseconds a travel-destination pick may spend scanning candidates per bot
+# visit before yielding to the next visit (the pick resumes where it stopped,
+# accepting the same target, just spread across visits). Bounds the worst-case
+# single-bot update so one 11 s pick no longer lands whole in a world tick.
+# 0 = no slicing (the whole pick runs in one visit). Default 4000 (4 ms).
+AiPlayerbot.TravelPickBudgetUs = 4000
+
 # Bot-only drop-rate boost for green (uncommon) and blue (rare) items. Masterless
 # random pool bots roll each quality-2/3 entry of a creature's loot template one extra
 # time per kill, at (multiplier - 1) x the entry's DB chance, so the expected number of

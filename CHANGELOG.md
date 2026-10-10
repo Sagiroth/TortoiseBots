@@ -58,6 +58,7 @@
 - Behavior ported from mod-playerbots where 1.12 spells allow it. [#553](https://github.com/Sagiroth/TortoiseBots/pull/553)
 
 ### Stability & Performance
+- No more multi-second single-bot updates from travel picks — a destination pick now scans at most ~4 ms per visit (new `AiPlayerbot.TravelPickBudgetUs`) and resumes on the next visit, accepting the same target, so the world tick stays smooth on weaker PCs.
 - Fewer stuck bots. [#553](https://github.com/Sagiroth/TortoiseBots/pull/553)
 - AI performance improvements. [#553](https://github.com/Sagiroth/TortoiseBots/pull/553)
 

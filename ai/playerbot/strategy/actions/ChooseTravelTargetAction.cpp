@@ -241,7 +241,40 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     std::string futureTravelPurposeName = GetTravelPurposeName(futureTravelPurpose);
     uint32 targetRelevance = AI_VALUE2(int, "manual int", "future travel relevance");
 
-    if (!futureDestinations->valid())
+    // Sliced pick (issue #642): a pick that yielded at the per-visit deadline
+    // resumes here. The future was consumed on the first visit, so a live
+    // resume store for this bot+purpose replaces the valid()/wait()/get()
+    // path below; anything else with an invalid future is still a dead search.
+    uint32 const botGuid = bot->GetGUIDLow();
+    WorldPosition const botPos(bot);
+    int32_t const botCellX = ai::TravelPickCellCoord(botPos.getX());
+    int32_t const botCellY = ai::TravelPickCellCoord(botPos.getY());
+    bool resuming = false;
+    {
+        std::lock_guard<std::mutex> lock(sTravelPickMutex);
+        SweepTravelPickScans(time(nullptr));
+        auto resumeIt = sTravelPickScans.find(botGuid);
+        if (resumeIt != sTravelPickScans.end() && resumeIt->second.purpose == futureTravelPurpose)
+        {
+            TravelPickResume& resume = resumeIt->second;
+            if (resume.botMap == botPos.GetMapId() && resume.cellX == botCellX && resume.cellY == botCellY)
+                resuming = true;
+            else
+            {
+                // Same search, new neighbourhood: keep the list, restart the
+                // scan (verdicts are position-dependent). The moved-too-far
+                // gate still aborts the pick when the bot truly relocated.
+                resume.scan = TravelPickScan();
+                resume.botMap = botPos.GetMapId();
+                resume.cellX = botCellX;
+                resume.cellY = botCellY;
+                resume.storedAt = time(nullptr);
+                resuming = true;
+            }
+        }
+    }
+
+    if (!resuming && !futureDestinations->valid())
     {
         // The async search produced no usable result, so there is nothing to
         // choose from. Park this purpose the way the empty-search path
@@ -267,21 +300,46 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         return false;
     }
 
-    if (futureDestinations->wait_for(std::chrono::seconds(0)) == std::future_status::timeout)
-        return false;
+    // The list under scan: fresh from the future on the first visit, the
+    // stored copy on resume visits (the future was consumed already). The
+    // copy is shallow - TravelMgr-owned destination/position pointers - so
+    // holding it costs one small allocation, not a world re-scan.
+    PartitionedTravelList scanList;
+    TravelPickScan scan;
+    if (resuming)
+    {
+        std::lock_guard<std::mutex> lock(sTravelPickMutex);
+        auto resumeIt = sTravelPickScans.find(botGuid);
+        if (resumeIt == sTravelPickScans.end() || resumeIt->second.purpose != futureTravelPurpose)
+            return false;
+        scanList = resumeIt->second.list;
+        scan = resumeIt->second.scan;
+    }
+    else
+    {
+        if (futureDestinations->wait_for(std::chrono::seconds(0)) == std::future_status::timeout)
+            return false;
 
-    PartitionedTravelList destinationList = futureDestinations->get();
+        scanList = futureDestinations->get();
 
-    travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
+        // A fresh request replaces any yielded pick: the search rebuilt the list.
+        {
+            std::lock_guard<std::mutex> lock(sTravelPickMutex);
+            sTravelPickScans.erase(botGuid);
+        }
 
-    // Spread the grind: a creature spot already worked by as many bots as it has
-    // room for drops out of this pick, and the bot takes the next candidate range
-    // instead (see TravelMgr::DropCrowdedGrindPoints). Cheap - one hash lookup per
-    // candidate, demand kept incrementally by TravelTarget, no scan over bots.
-    if (futureTravelPurpose == std::to_string((uint32)TravelDestinationPurpose::Grind))
-        sTravelMgr.DropCrowdedGrindPoints(destinationList);
+        // Spread the grind: a creature spot already worked by as many bots as it has
+        // room for drops out of this pick, and the bot takes the next candidate range
+        // instead (see TravelMgr::DropCrowdedGrindPoints). Cheap - one hash lookup per
+        // candidate, demand kept incrementally by TravelTarget, no scan over bots.
+        if (futureTravelPurpose == std::to_string((uint32)TravelDestinationPurpose::Grind))
+            sTravelMgr.DropCrowdedGrindPoints(scanList);
 
-    ai->TellDebug(ai->GetMaster(), "Got " + std::to_string(destinationList.size()) + " new destination ranges for " + futureTravelPurposeName, "debug travel");
+        ai->TellDebug(ai->GetMaster(), "Got " + std::to_string(scanList.size()) + " new destination ranges for " + futureTravelPurposeName, "debug travel");
+    }
+
+    auto const visitStart = std::chrono::steady_clock::now();
+    uint64_t const pickBudgetUs = sPlayerbotAIConfig.travelPickBudgetUs;
 
     TravelTarget newTarget = TravelTarget(ai);
 
@@ -303,7 +361,38 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         newTarget.SetRelevance(targetRelevance);
     }
 
-    if (!SetBestTarget(requester, &newTarget, destinationList))
+    ai::TravelPickOutcome const pickOutcome =
+        SetBestTargetSliced(requester, &newTarget, scanList, true, scan, pickBudgetUs, visitStart);
+
+    if (pickOutcome == ai::TravelPickOutcome::Yielded)
+    {
+        // Deadline hit: the visit ends here with the target still PREPARE so
+        // the next visit resumes from the cursor. Counts as executed (work
+        // was done, nothing failed), and the purpose must NOT park - a park
+        // would cancel the pick the next visit is about to finish.
+        {
+            std::lock_guard<std::mutex> lock(sTravelPickMutex);
+            SweepTravelPickScans(time(nullptr));
+            TravelPickResume& resume = sTravelPickScans[botGuid];
+            resume.list = scanList;
+            resume.scan = scan;
+            resume.botMap = botPos.GetMapId();
+            resume.cellX = botCellX;
+            resume.cellY = botCellY;
+            resume.purpose = futureTravelPurpose;
+            resume.storedAt = time(nullptr);
+        }
+        return true;
+    }
+
+    // Terminal either way: a fresh pick starts from the future next time.
+    travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
+    {
+        std::lock_guard<std::mutex> lock(sTravelPickMutex);
+        sTravelPickScans.erase(botGuid);
+    }
+
+    if (pickOutcome == ai::TravelPickOutcome::NotFound)
     {
         // Park this purpose (flag + timestamp; other purposes' parks are left
         // alone). Without a park the purpose re-requested (and re-searched)
@@ -347,7 +436,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         // were offered", which looks identical from the outside.
         if (sRandomBotFacade.IsPinnedBot(bot->GetGUIDLow()))
             sLog.outBasic("QUESTPROBE: %s got %u destination ranges for '%s' and picked none",
-                bot->GetName(), uint32(destinationList.size()), futureTravelPurpose.c_str());
+                bot->GetName(), uint32(scanList.size()), futureTravelPurpose.c_str());
 
         //A vendor errand has no other diagnostic: a search that never yields a
         //destination leaves the loot in the bags and produces no event at all,
@@ -360,7 +449,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         {
             SET_AI_VALUE2(time_t, "manual time", "vendor trip no target log", time(0) + 10 * MINUTE);
             sPlayerbotAIConfig.logEvent(ai, "VendorTripNoTarget",
-                std::to_string(destinationList.size()), std::to_string(bot->GetLevel()));
+                std::to_string(scanList.size()), std::to_string(bot->GetLevel()));
         }
 
         //And for the quest errand. A bot carrying a rewardable finished quest now
@@ -374,14 +463,14 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         {
             SET_AI_VALUE2(time_t, "manual time", "quest trip no target log", time(0) + 10 * MINUTE);
             sPlayerbotAIConfig.logEvent(ai, "QuestTripNoTarget",
-                std::to_string(destinationList.size()), std::to_string(bot->GetLevel()));
+                std::to_string(scanList.size()), std::to_string(bot->GetLevel()));
         }
 
         //Every purpose, not just quest and vendor: without this the idle brief's
         //Q2 ("which purposes park most, and why") is unanswerable - grind,
         //gather, trainer and camp searches park silently every minute.
         LogTravelSearchEmpty(ai, bot, purposeKey,
-            destinationList.empty() ? "empty" : "rejected[" + lastRejectReasons + "]", destinationList.size());
+            scanList.empty() ? "empty" : "rejected[" + lastRejectReasons + "]", scanList.size());
 
         WanderOnEmptyPick(ai, bot);
 
@@ -916,41 +1005,122 @@ static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string&
     return ok;
 }
 
+// Sliced-pick resume state (issue #642). One pick can span visits: the first
+// visit stores the destination list the future handed over (shallow copy of
+// TravelMgr-owned pointers, stable across visits) plus the scan cursor, and
+// later visits resume from the cursor instead of re-walking evaluated
+// candidates. Keyed by bot; a new request (fresh future), a moved bot, or a
+// stale entry drops it and the pick restarts or parks.
+namespace
+{
+    // Per-candidate verdict for fast-forward: only terminal rejections are
+    // cached (accept completes the scan, so it is never replayed).
+    constexpr uint8_t PICK_VERDICT_REJECT = 1;
+
+    struct TravelPickResume
+    {
+        PartitionedTravelList list;
+        ChooseTravelTargetAction::TravelPickScan scan;
+        uint32_t botMap = 0;
+        int32_t cellX = 0;
+        int32_t cellY = 0;
+        std::string purpose;
+        time_t storedAt = 0;
+    };
+
+    std::mutex sTravelPickMutex;
+    std::unordered_map<uint32_t, TravelPickResume> sTravelPickScans;
+    constexpr time_t TRAVEL_PICK_RESUME_TTL = 5 * 60;
+
+    void SweepTravelPickScans(time_t now)
+    {
+        for (auto it = sTravelPickScans.begin(); it != sTravelPickScans.end();)
+            it = (now - it->second.storedAt > TRAVEL_PICK_RESUME_TTL) ? sTravelPickScans.erase(it) : std::next(it);
+        if (sTravelPickScans.size() > 512)
+            sTravelPickScans.clear();
+    }
+}
+
 bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* target, PartitionedTravelList& partitionedList, bool onlyActive)
 {
-    bool distanceCheck = true;
-    std::unordered_map<TravelDestination*, bool> isActive;
-    std::map<std::string, uint32> rejects;
+    // Synchronous legacy path (group picks): no deadline, no resume state.
+    TravelPickScan scan;
+    return SetBestTargetSliced(requester, target, partitionedList, onlyActive,
+        scan, 0, std::chrono::steady_clock::now()) == ai::TravelPickOutcome::Found;
+}
+
+ai::TravelPickOutcome ChooseTravelTargetAction::SetBestTargetSliced(Player* requester, TravelTarget* target,
+    PartitionedTravelList& partitionedList, bool onlyActive, TravelPickScan& scan,
+    uint64_t budgetUs, std::chrono::steady_clock::time_point visitStart)
+{
+    std::unordered_map<TravelDestination*, bool>& isActive = scan.isActive;
+    std::map<std::string, uint32>& rejects = scan.rejects;
+    bool const slicing = budgetUs > 0;
     // One snapshot for the whole pick: PlayerTravelInfo reads ~15 AI values
     // plus group/skill/money state, and IsActive only reads from it, so a
     // per-candidate construction re-reads identical state N times per visit.
     // A single synchronous pick cannot observe a change mid-loop (no tick
     // passes, values are per-bot and this thread owns the visit), hence the
     // verdict is unchanged while the cost stops scaling with the list size.
+    // A resumed visit rebuilds it (seconds later, same pick): verdicts cached
+    // on the evaluating visit are replayed, so gates never re-run for them.
     PlayerTravelInfo const travelInfo(bot);
 
     bool hasTarget = false;
+    bool yielded = false;
+    bool movedTooFar = false;
 
-    for (auto& [partition, travelPointList] : partitionedList)
+    // Cursor-driven order: partitions in map order, points in list order,
+    // resuming exactly where the previous visit stopped. Never re-sorted, so
+    // a resumed pick accepts the same target as an uninterrupted scan.
+    auto partIt = scan.cursor.started ? partitionedList.find(scan.cursor.partitionKey) : partitionedList.begin();
+    size_t startIndex = scan.cursor.started ? scan.cursor.pointIndex : 0;
+    if (scan.cursor.started && (partIt == partitionedList.end() || startIndex >= partIt->second.size()))
+        partIt = partitionedList.end();
+    for (; partIt != partitionedList.end() && !hasTarget && !yielded; ++partIt)
     {
+        uint32 const partition = partIt->first;
+        TravelPointList& travelPointList = partIt->second;
         ai->TellDebug(requester, "Found " + std::to_string(travelPointList.size()) + " points at range " + PrintPartion(partition), "debug travel");
 
-        for (auto& [destination, position, distance] : travelPointList)
+        for (size_t pointIdx = (partition == scan.cursor.partitionKey && scan.cursor.started ? startIndex : 0);
+            pointIdx < travelPointList.size() && !hasTarget && !yielded; ++pointIdx)
         {
+            auto& [destination, position, distance] = travelPointList[pointIdx];
+            // Cursor first: every exit below (continue/break/yield) leaves it
+            // pointing at the current candidate, so the next visit resumes
+            // here instead of re-walking evaluated work.
+            scan.cursor.partitionKey = partition;
+            scan.cursor.pointIndex = pointIdx;
+            scan.cursor.started = true;
+
+            if (slicing && ai::TravelPickOverBudget(visitStart, budgetUs))
+            {
+                yielded = true;
+                break;
+            }
+
+            // Fast-forward: already rejected on an earlier visit. The reject
+            // was counted then, so replay it silently to keep the tallies and
+            // the order identical to an uninterrupted scan.
+            if (slicing && scan.verdicts.find({ destination, position }) != scan.verdicts.end())
+                continue;
+
             if (!target->IsForced() && isActive.find(destination) != isActive.end() && !isActive[destination])
                 continue;
 
-            if (distanceCheck) //Check if we have moved significantly after getting the destinations.
+            if (!scan.cursor.distanceChecked) //Check if we have moved significantly after getting the destinations.
             {
                 WorldPosition center(requester ? requester : bot);
                 if (position->distance(center) > distance * 2 && position->distance(center) > 100)
                 {
                     ai->TellDebug(requester, "We had some destinations but we moved too far since. Trying to get a new list.", "debug travel");
                     lastRejectReasons = "moved";
-                    return false;
+                    movedTooFar = true;
+                    break;
                 }
 
-                distanceCheck = false;
+                scan.cursor.distanceChecked = true;
             }
 
             if (target->IsForced() || (isActive[destination] = destination->IsActive(bot, travelInfo)))
@@ -959,10 +1129,22 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                 // the point that was actually selected.
                 if (!target->IsForced() && position)
                 {
+                    // Cheap pure-distance gate first: it needs no vmap, area
+                    // or spawn lookup, and rejects the same candidates
+                    // whatever order the gates run in (all gates are ANDed).
+                    if (bot->GetLevel() <= 5 && position->distance(bot) > 1500.0f)
+                    {
+                        ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - too far for starting level", "debug travel");
+                        ++rejects["toofar"];
+                        if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
+                        continue;
+                    }
+
                     if (position->IsEnemyHomeZoneFor(bot->GetTeam()))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - enemy home zone", "debug travel");
                         ++rejects["enemyzone"];
+                        if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
                         continue;
                     }
 
@@ -979,6 +1161,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - hostile town guards", "debug travel");
                         ++rejects["hostiletown"];
+                        if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
                         continue;
                     }
 
@@ -994,6 +1177,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - capital grind spot", "debug travel");
                         ++rejects["capital"];
+                        if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
                         continue;
                     }
 
@@ -1004,6 +1188,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - custom starting zone", "debug travel");
                         ++rejects["customzone"];
+                        if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
                         continue;
                     }
 
@@ -1021,6 +1206,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - area level too high", "debug travel");
                         ++rejects["arealevel"];
+                        if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
                         continue;
                     }
 
@@ -1028,6 +1214,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - fishing spot guarded by hostile creatures", "debug travel");
                         ++rejects["fishguard"];
+                        if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
                         continue;
                     }
 
@@ -1047,13 +1234,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - death spot avoided", "debug travel");
                         ++rejects["deathspot"];
-                        continue;
-                    }
-
-                    if (bot->GetLevel() <= 5 && position->distance(bot) > 1500.0f)
-                    {
-                        ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - too far for starting level", "debug travel");
-                        ++rejects["toofar"];
+                        if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
                         continue;
                     }
 
@@ -1081,6 +1262,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                             sPlayerbotAIConfig.log("travel_route_gate.csv", out.str().c_str());
                         }
                         ++rejects["route"];
+                        if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
                         continue;
                     }
                     // Off-mesh grind and gather points (night2 movestuck:
@@ -1101,11 +1283,23 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - off the navmesh", "debug travel");
                         ++rejects["offmesh"];
+                        if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
                         continue;
                     }
                 }
 
-                if (partition != std::prev(partitionedList.end())->first && !urand(0, 10)) //10% chance to skip to a longer partition.
+                // 10% chance to skip to a longer partition. The outcome is
+                // cached per partition while slicing so a resumed visit replays
+                // the same skip instead of re-drawing (the accept below must
+                // land on the same candidate as an uninterrupted scan).
+                bool skipPartition = false;
+                if (partition != std::prev(partitionedList.end())->first)
+                {
+                    auto rollIt = slicing ? scan.partitionSkipRolled.find(partition) : scan.partitionSkipRolled.end();
+                    skipPartition = (rollIt != scan.partitionSkipRolled.end()) ? rollIt->second : !urand(0, 10);
+                    if (slicing) scan.partitionSkipRolled[partition] = skipPartition;
+                }
+                if (skipPartition)
                 {
                     ai->TellDebug(requester, "Skipping range " + PrintPartion(partition), "debug travel");
                     break;
@@ -1120,22 +1314,29 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
             {
                 ai->TellDebug(requester, "Not active: " + destination->GetTitle() + " " + std::to_string((uint32)round(destination->DistanceTo(bot))) + "y", "debug travel");
                 ++rejects["inactive"];
+                if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
             }
 
         }
 
-        if (hasTarget)
+        if (hasTarget || movedTooFar)
             break;
     }
 
     if(hasTarget)
         ai->TellDebug(requester, "Point at " + std::to_string(uint32(target->Distance(bot))) + "y selected.", "debug travel");
 
+    if (yielded)
+        return ai::TravelPickOutcome::Yielded;
+
+    if (movedTooFar)
+        return ai::TravelPickOutcome::NotFound;
+
     lastRejectReasons.clear();
     for (auto const& [reason, count] : rejects)
         lastRejectReasons += (lastRejectReasons.empty() ? "" : ",") + reason + "=" + std::to_string(count);
 
-    return hasTarget;
+    return hasTarget ? ai::TravelPickOutcome::Found : ai::TravelPickOutcome::NotFound;
 }
 
 std::vector<std::string> split(const std::string& s, char delim);
