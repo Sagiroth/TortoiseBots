@@ -22,6 +22,9 @@
   };
 
   const OFFLINE_AFTER_MS = 10000;
+  // Grace period after page load so the banner does not flash before the
+  // first WebSocket connect and heartbeat arrive.
+  const PAGE_LOADED_AT = Date.now();
 
   // The selected tab survives a reload when the URL carries no hash: the
   // operator reloads mid-investigation and expects to land back where they
@@ -1825,6 +1828,30 @@
     });
   }
 
+  // Big warning above every tab whenever the numbers on screen are not live,
+  // so an outage never reads as "0 bots, all quiet".
+  function updateHealthBanner() {
+    const banner = document.getElementById('health-banner');
+    if (!banner) return;
+    if (Date.now() - PAGE_LOADED_AT < 6000) { banner.hidden = true; return; }
+    const snapAge = state.lastSnapshotAt ? (Date.now() - state.lastSnapshotAt) / 1000 : Infinity;
+    let level = '';
+    let html = '';
+    if (!state.wsConnected) {
+      level = 'error';
+      html = '<strong>Dashboard service unreachable.</strong> Reconnecting… Everything below is from the last update and may be out of date.';
+    } else if (!state.server.online) {
+      level = 'error';
+      html = '<strong>Game server is not responding.</strong> No heartbeat for over 10 seconds: it is down, restarting or frozen. Bot and player numbers below are not live.';
+    } else if (snapAge > 30) {
+      level = 'warn';
+      html = `<strong>Bot data is out of date.</strong> The server is running, but the bot roster has not updated for ${Number.isFinite(snapAge) ? Math.round(snapAge) + ' s' : 'a while'} (normal right after a restart or pool reset).`;
+    }
+    banner.hidden = !level;
+    banner.className = `health-banner${level === 'warn' ? ' warn' : ''}`;
+    if (level) banner.innerHTML = html;
+  }
+
   function updateSnapshotAge() {
     if (!el.snapshotAgeVal) return;
     if (!state.lastSnapshotAt) {
@@ -1909,6 +1936,7 @@
       : `worst tick ${Math.round(s.diff_worst || s.diff || 0)} ms`;
     updateSnapshotAge();
     setStatusPill();
+    updateHealthBanner();
   }
 
   // A pulsing ring around the selected bot so it is easy to spot on the map
@@ -4097,6 +4125,7 @@
     ws.onclose = () => {
       state.wsConnected = false;
       if (el.consoleRate) el.consoleRate.innerHTML = '<span style="color: #f85149;">● disconnected</span>';
+      updateHealthBanner();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(initWebSocket, 3000);
     };
@@ -4406,12 +4435,14 @@
   // based on pulse age. This is what makes server-online trustworthy.
   setInterval(() => {
     updateSnapshotAge();
+    updateHealthBanner();
     const age = state.lastHeartbeatAt ? Date.now() - state.lastHeartbeatAt : Infinity;
     if (age > OFFLINE_AFTER_MS && state.server.online) {
       state.server.online = false;
       state.server.stale = true;
       updateOverviewMetrics();
       if (state.activeTab === 'overview') renderOverviewCharts();
+      updateHealthBanner();
       appendConsoleLog(new Date().toLocaleTimeString(), 'watchdog', 'No heartbeat for 10s: marking server offline.', 'warn');
     }
   }, 3000);
