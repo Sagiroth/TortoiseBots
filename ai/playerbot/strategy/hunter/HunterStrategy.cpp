@@ -585,6 +585,14 @@ void HunterPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "hunters pet low health",
         NextAction::array(0, new NextAction("mend pet", ACTION_HIGH), NULL)));
 
+    // PET-8b: the trigger already requires taunts stood down (grouped with
+    // a real tank), so this only fires when the pet stole aggro anyway.
+    // Urgent like mend: a pet tanking in a dungeon needs dropping now, not
+    // after the DPS rotation.
+    triggers.push_back(new TriggerNode(
+        "pet has aggro",
+        NextAction::array(0, new NextAction("cower", ACTION_HIGH), NULL)));
+
     // PET-4: medium band below the low node so low wins under 40.
     triggers.push_back(new TriggerNode(
         "hunters pet medium health",

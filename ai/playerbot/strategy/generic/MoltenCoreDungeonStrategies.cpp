@@ -11,6 +11,18 @@ void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "start magmadar fight",
         NextAction::array(0, new NextAction("enable magmadar fight strategy", 100.0f), NULL)));
 
+    triggers.push_back(new TriggerNode(
+        "start garr fight",
+        NextAction::array(0, new NextAction("enable garr fight strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start shazzrah fight",
+        NextAction::array(0, new NextAction("enable shazzrah fight strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start golemagg fight",
+        NextAction::array(0, new NextAction("enable golemagg fight strategy", 100.0f), NULL)));
+
     // Paladin resist auto-swap (fight-agnostic: the trigger reads boss
     // entries off the attacker list, so no per-boss wiring is needed).
     triggers.push_back(new TriggerNode(
@@ -24,6 +36,95 @@ void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "start geddon fight",
         NextAction::array(0, new NextAction("enable geddon fight strategy", 100.0f), NULL)));
+}
+
+void GarrFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end garr fight",
+        NextAction::array(0, new NextAction("disable garr fight strategy", 100.0f), NULL)));
+}
+
+void GarrFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end garr fight",
+        NextAction::array(0, new NextAction("disable garr fight strategy", 100.0f), NULL)));
+}
+
+void GarrFightStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new GarrAoeOffMultiplier(ai));
+}
+
+void ShazzrahFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    Player* bot = ai->GetBot();
+    if (ai->IsRanged(bot) || ai->IsHeal(bot))
+    {
+        triggers.push_back(new TriggerNode(
+            "shazzrah ranged",
+            NextAction::array(0, new NextAction("move away from shazzrah", ACTION_EMERGENCY + 5), NULL)));
+    }
+}
+
+void ShazzrahFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end shazzrah fight",
+        NextAction::array(0, new NextAction("disable shazzrah fight strategy", 100.0f), NULL)));
+}
+
+void ShazzrahFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end shazzrah fight",
+        NextAction::array(0, new NextAction("disable shazzrah fight strategy", 100.0f), NULL)));
+}
+
+void GolemaggFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "fire protection potion ready",
+        NextAction::array(0, new NextAction("fire protection potion", 100.0f), NULL)));
+
+    // Tanks hold their camps while Trust is up; healers work the midpoint.
+    if (ai->IsTank(ai->GetBot()))
+    {
+        triggers.push_back(new TriggerNode(
+            "golemagg tank hold",
+            NextAction::array(0, new NextAction("golemagg tank hold", ACTION_HIGH), NULL)));
+    }
+
+    triggers.push_back(new TriggerNode(
+        "golemagg healer",
+        NextAction::array(0, new NextAction("golemagg healer position", ACTION_MOVE + 5), NULL)));
+}
+
+void GolemaggFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end golemagg fight",
+        NextAction::array(0, new NextAction("disable golemagg fight strategy", 100.0f), NULL)));
+}
+
+void GolemaggFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end golemagg fight",
+        NextAction::array(0, new NextAction("disable golemagg fight strategy", 100.0f), NULL)));
+}
+
+void GolemaggFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "golemagg splash",
+        NextAction::array(0, new NextAction("back off golemagg", ACTION_EMERGENCY + 5), NULL)));
+}
+
+void GolemaggFightStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new GolemaggFightMultiplier(ai));
 }
 
 void MoltenCoreDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

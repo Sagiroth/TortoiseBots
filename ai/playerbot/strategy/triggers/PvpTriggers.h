@@ -111,6 +111,21 @@ namespace ai
         virtual bool IsActive() override;
     };
 
+    // Periodic objective re-pick watchdog (SOC-P6): fires about once a
+    // minute inside a match so a bot walking toward stale data drops it.
+    // Donor mod-playerbots TimerBGTrigger.
+    class TimerBgTrigger : public Trigger
+    {
+    public:
+        TimerBgTrigger(PlayerbotAI* ai) : Trigger(ai, "timer bg", 1), lastCheck(0) {}
+
+    public:
+        virtual bool IsActive() override;
+
+    private:
+        time_t lastCheck;
+    };
+
     class PlayerIsInBattlegroundWithoutFlag : public Trigger
     {
     public:

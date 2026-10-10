@@ -220,6 +220,12 @@ void HolyPaladinRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers
 void HolyPaladinAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     PaladinAoeStrategy::InitCombatTriggers(triggers);
+
+    // Group-size-scaled gate (mod-playerbots parity, HEAL-1): heavy Holy
+    // Light when enough of the group is hurt at once.
+    triggers.push_back(new TriggerNode(
+        "medium group heal setting",
+        NextAction::array(0, new NextAction("holy light on party", ACTION_CRITICAL_HEAL + 5), NULL)));
 }
 
 void HolyPaladinAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

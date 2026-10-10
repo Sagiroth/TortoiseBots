@@ -102,6 +102,21 @@ bool BgEndedTrigger::IsActive()
     return false;
 }
 
+bool TimerBgTrigger::IsActive()
+{
+    if (!bot->InBattleGround())
+        return false;
+
+    time_t now = time(nullptr);
+    if (now - lastCheck >= 60)
+    {
+        lastCheck = now;
+        return true;
+    }
+
+    return false;
+}
+
 bool PlayerIsInBattlegroundWithoutFlag::IsActive()
 {
 #ifdef MANGOS

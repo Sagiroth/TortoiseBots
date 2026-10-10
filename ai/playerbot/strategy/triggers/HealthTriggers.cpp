@@ -2,6 +2,8 @@
 #include "playerbot/playerbot.h"
 #include "HealthTriggers.h"
 #include "playerbot/HealingCastPolicy.h"
+#include "playerbot/GroupHealPolicy.h"
+#include "playerbot/GroupMembers.h"
 
 using namespace ai;
 
@@ -76,6 +78,30 @@ bool DeadTrigger::IsActive()
 bool AoeHealTrigger::IsActive()
 {
     return AI_VALUE2(uint8, "aoe heal", type) >= count;
+}
+
+bool AoeInGroupTrigger::IsActive()
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+
+    // Near count on the same 30y heal radius the AoeHealValue scans, so a
+    // far-away raid subgroup cannot arm the gate for a 5-man clump.
+    // LiveGroupMembers resolves through the ObjectAccessor (never a stale
+    // GroupReference pointer), matching our other group scans.
+    uint32 nearMembers = 0;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
+            continue;
+        if (sServerFacade.getDistance2d(bot, member) > 30.0f)
+            continue;
+        ++nearMembers;
+    }
+
+    uint8 hurt = AI_VALUE2(uint8, "aoe heal", type);
+    return ShouldGroupHeal(nearMembers, hurt);
 }
 
 bool HealTargetFullHealthTrigger::IsActive()

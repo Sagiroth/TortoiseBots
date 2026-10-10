@@ -23,6 +23,11 @@ bool TravelAction::Execute(Event& event)
 
     target->CheckStatus();
 
+    // A target that just ran out reopens requests now, not after the 5 s
+    // cache of "travel target active" on top of the visit gap.
+    if (!target->IsActive())
+        RESET_AI_VALUE(bool, "travel target active");
+
     SET_AI_VALUE2(time_t, "manual time", "next travel check", time(0) + 5);
 
     // POI-stall abandon, arrival side (issue #423): the donor's 5-min
