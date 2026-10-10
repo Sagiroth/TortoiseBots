@@ -17,6 +17,7 @@ public:
         creators["heroic strike"] = &heroic_strike;
         creators["whirlwind"] = &whirlwind;
         creators["sweeping strikes"] = &sweeping_strikes;
+        creators["sunder armor"] = &sunder_armor;
     }
 
 private:
@@ -27,8 +28,9 @@ private:
     ACTION_NODE_A(piercing_howl, "piercing howl", "mocking blow");
 
     ACTION_NODE_A(mocking_blow, "mocking blow", "hamstring");
-
     ACTION_NODE_A(heroic_strike, "heroic strike", "melee");
+
+    ACTION_NODE_A(sunder_armor, "sunder armor", "melee");
 
     ACTION_NODE_A(berserker_rage_fear, "berserker rage", "death wish");
 
@@ -90,6 +92,15 @@ void ArmsWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "rend",
         NextAction::array(0, new NextAction("rend", ACTION_NORMAL), NULL)));
+
+    // No tank warrior in the group: keep the sunder stack up (donor arms
+    // default +0.05, below NORMAL). Bottom of the ladder at NORMAL-1, below
+    // rend (NORMAL) and every damage spender; the action-side group-tank
+    // check keeps this quiet when a real tank is present, and the trigger
+    // stops at a full 5-stack (re-arming only to refresh).
+    triggers.push_back(new TriggerNode(
+        "sunder armor",
+        NextAction::array(0, new NextAction("sunder armor", ACTION_NORMAL - 1), NULL)));
 }
 
 void ArmsWarriorStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -241,9 +252,15 @@ void ArmsWarriorBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 {
     WarriorBuffStrategy::InitCombatTriggers(triggers);
 
+    // Battle-stance pin (donor ArmsWarriorStrategy pins battle at HIGH+10):
+    // charge/overpower/mocking blow/sweeping strikes/retaliation are all
+    // Battle-locked, and pinning berserker broke every one of them. Whirlwind
+    // keeps its arms-scoped berserker prerequisite node, so it still dances
+    // out and back (donor accepts the same dance); the AoE multipliers keep
+    // managing the sweeping-strikes stance choice on packs.
     triggers.push_back(new TriggerNode(
-        "berserker stance",
-        NextAction::array(0, new NextAction("berserker stance", ACTION_NORMAL), NULL)));
+        "battle stance",
+        NextAction::array(0, new NextAction("battle stance", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "feared",
@@ -295,6 +312,19 @@ void ArmsWarriorBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>&
 void ArmsWarriorBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     WarriorBoostStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "death wish",
+        NextAction::array(0, new NextAction("death wish", ACTION_HIGH), NULL)));
+
+    // Retaliation while winning (donor arms fires at almost-full-health):
+    // 70-90% hp with melee attackers is when the counterattack shield earns
+    // its 30-min cooldown. Battle-locked: fires from battle stance (the
+    // WAR-5 pin holds it there; without that PR this row simply waits for
+    // battle rather than dancing).
+    triggers.push_back(new TriggerNode(
+        "almost full health",
+        NextAction::array(0, new NextAction("retaliation", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "recklessness",

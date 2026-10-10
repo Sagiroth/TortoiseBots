@@ -14,10 +14,15 @@ public:
         creators["berserker rage fear"] = &berserker_rage_fear;
         creators["piercing howl"] = &piercing_howl;
         creators["pummel"] = &pummel;
+        creators["sunder armor"] = &sunder_armor;
     }
 
 private:
     ACTION_NODE_A(charge, "charge", "intercept");
+
+    ACTION_NODE_A(pummel, "pummel", "intercept");
+
+    ACTION_NODE_A(sunder_armor, "sunder armor", "melee");
 
     ACTION_NODE_A(intercept, "intercept", "reach melee");
 
@@ -25,7 +30,6 @@ private:
 
     ACTION_NODE_A(berserker_rage_fear, "berserker rage", "death wish");
 
-    ACTION_NODE_A(pummel, "pummel", "intercept");
 };
 
 FuryWarriorStrategy::FuryWarriorStrategy(PlayerbotAI* ai) : WarriorStrategy(ai)
@@ -77,6 +81,15 @@ void FuryWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "intercept on snare target",
         NextAction::array(0, new NextAction("intercept on snare target", ACTION_NORMAL), NULL)));
+
+    // No tank warrior in the group: keep the sunder stack up (donor fury
+    // default +0.3, below NORMAL). Bottom of the ladder at NORMAL-1, below
+    // intercept (NORMAL) and every damage spender; the action-side
+    // group-tank check keeps this quiet when a real tank is present, and
+    // the trigger stops at a full 5-stack (re-arming only to refresh).
+    triggers.push_back(new TriggerNode(
+        "sunder armor",
+        NextAction::array(0, new NextAction("sunder armor", ACTION_NORMAL - 1), NULL)));
 }
 
 void FuryWarriorStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -285,6 +298,10 @@ void FuryWarriorBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
     triggers.push_back(new TriggerNode(
         "death wish",
         NextAction::array(0, new NextAction("death wish", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "almost full health",
+        NextAction::array(0, new NextAction("retaliation", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "recklessness",

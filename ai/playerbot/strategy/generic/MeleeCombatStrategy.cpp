@@ -10,13 +10,6 @@ void MeleeCombatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
         "enemy out of melee",
         NextAction::array(0, new NextAction("reach melee", ACTION_MOVE), NULL)));
 
-    // Party tank-face: the tank sidesteps so the held mob's front points
-    // away from the party. Combat-only row, trigger-scoped to
-    // real-player-master groups; pool bots never fire it.
-    triggers.push_back(new TriggerNode(
-        "tank face needed",
-        NextAction::array(0, new NextAction("tank face away", ACTION_MOVE + 5), NULL)));
-
     // No "enemy too close for melee" -> "move out of enemy contact" row: the
     // donor (mod-playerbots MeleeCombatStrategy) dropped it. Mobs keep walking
     // into the player's hitbox, so it outranked the swings and melee bots
@@ -24,8 +17,24 @@ void MeleeCombatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
     // poll: warriors dancing for ~8 s at 50% health before dying).
 }
 
+void TankFaceStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
+{
+    // Tank-face: the tank sidesteps so the held mob's front points away
+    // from the party. Strategy membership (tank kits) replaces the old
+    // real-player-master gate, so pool/raid tanks face mobs away too.
+    triggers.push_back(new TriggerNode(
+        "tank face needed",
+        NextAction::array(0, new NextAction("tank face away", ACTION_MOVE), NULL)));
+}
+
 void SetBehindCombatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
+    // Flank first: a bot in the frontal arc or tail cone sidesteps to a
+    // flank (outranks set-behind) instead of walking through the cleave to
+    // the exact rear point. Set-behind keeps the final rear point.
+    triggers.push_back(new TriggerNode(
+        "rear flank needed",
+        NextAction::array(0, new NextAction("rear flank", ACTION_HIGH + 1), NULL)));
     triggers.push_back(new TriggerNode(
         "not behind target",
         NextAction::array(0, new NextAction("set behind", ACTION_HIGH), NULL)));

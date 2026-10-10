@@ -430,6 +430,12 @@ bool PullAction::isUseful()
     return CastSpellAction::isUseful();
 }
 
+bool EndPullAction::isUseful()
+{
+    PullStrategy* strategy = PullStrategy::Get(ai);
+    return strategy && strategy->HasPullStarted();
+}
+
 bool PullEndAction::Execute(Event& event)
 {
     PullStrategy* strategy = PullStrategy::Get(ai);
