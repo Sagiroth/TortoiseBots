@@ -263,7 +263,7 @@ bool PlayerbotAIConfig::Initialize()
     combatTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.CombatTickBudgetUs", 15000);
     if (combatTickBudgetUs > 0 && combatTickBudgetUs < 1000) combatTickBudgetUs = 1000;
     if (combatTickBudgetUs > 100000) combatTickBudgetUs = 100000;
-    targetWorldTickMs = (uint32)config.GetIntDefault("AiPlayerbot.TargetWorldTickMs", 50);
+    targetWorldTickMs = (uint32)config.GetIntDefault("AiPlayerbot.TargetWorldTickMs", 100);
     if (targetWorldTickMs > 1000) targetWorldTickMs = 1000;
 
     // Issue #84: donor Shyalya defaults (base 250ms doubling to 2s cap,
