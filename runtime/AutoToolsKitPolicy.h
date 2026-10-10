@@ -51,9 +51,10 @@ inline bool RogueWantsLockpickSkill(uint32_t classId, uint32_t level)
     return classId == ROGUE_CLASS_ID && level >= THIEVES_TOOLS_REQ_LEVEL;
 }
 
+// Same gate as the skill: below the tools' own req level neither matters.
 inline bool RogueWantsThievesTools(uint32_t classId, uint32_t level)
 {
-    return classId == ROGUE_CLASS_ID && level >= THIEVES_TOOLS_REQ_LEVEL;
+    return RogueWantsLockpickSkill(classId, level);
 }
 
 // Hourglass Sand: mint one only while the bot itself carries the Bronze

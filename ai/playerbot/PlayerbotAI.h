@@ -916,6 +916,8 @@ protected:
     // Last ms clock the pool ration top-up ran; it walks the bags, so once per
     // 30 s per bot is plenty for a stack that is never eaten down.
     uint32 m_lastRationRefillMs = 0;
+    // Last ms clock the auto-tools kit ensure ran; same bag-walking reason.
+    uint32 m_lastAutoToolsKitMs = 0;
     // First tick (ms clock) the core reported alive while the engine was still DEAD;
     // 0 = not currently mismatched. Backs the 5 s alive-but-DEAD self-heal window.
     uint32 m_aliveWhileDeadSinceMs = 0;

@@ -1425,40 +1425,49 @@ bool PlayerbotAI::EnsureCheatItem(uint32 itemId, uint32 count)
     if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, count - have) != EQUIP_ERR_OK)
         return false;
     bot->StoreNewItem(dest, itemId, true, Item::GenerateItemRandomPropertyId(itemId));
-    return bot->HasItemCount(itemId, 1);
+    return bot->HasItemCount(itemId, count);
 }
 
 void PlayerbotAI::EnsureAutoToolsKit()
 {
-    // Owner rule (auto-tools kit), per-tick inside the cheat block: the bot
-    // carries what its behaviours need. Cheap checks first, one throttle
-    // for the whole pass (bag-walking ensures are rare by construction).
+    // Owner rule (auto-tools kit), inside the cheat block: the bot carries
+    // what its behaviours need. Throttled to one pass per 30 s per bot (the
+    // ensures walk the bags; nothing here drains faster than that) and
+    // map-gated before any inventory count so open-world bots never scan
+    // bags for raid-specific items.
     if (!bot || !bot->IsAlive() || !bot->IsInWorld())
         return;
     if (!HasCheat(BotCheatMask::item))
         return;
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (m_lastAutoToolsKitMs && nowMs - m_lastAutoToolsKitMs < 30 * 1000)
+        return;
+    m_lastAutoToolsKitMs = nowMs;
+    uint32 const mapId = bot->GetMapId();
     // Rogues: lockpicking at max-for-level plus Thieves' Tools in the bags,
     // so UnlockItemAction and PR #614 trade unlocks never fail on kit.
+    // Pure value: enchant/racial bonuses must not mask a low base skill.
     if (TortoiseBots::RogueWantsLockpickSkill(bot->GetClass(), bot->GetLevel()))
     {
         uint32 lockpickMax = TortoiseBots::LockpickSkillForLevel(bot->GetLevel());
-        if (bot->GetSkillValue(SKILL_LOCKPICKING) < lockpickMax)
+        if (bot->GetSkillValuePure(SKILL_LOCKPICKING) < lockpickMax)
             bot->SetSkill(SKILL_LOCKPICKING, lockpickMax, lockpickMax);
-        if (TortoiseBots::RogueWantsThievesTools(bot->GetClass(), bot->GetLevel()))
-            EnsureCheatItem(TortoiseBots::THIEVES_TOOLS_ITEM_ID, 1);
+        EnsureCheatItem(TortoiseBots::THIEVES_TOOLS_ITEM_ID, 1);
     }
     // Chromaggus Bronze (PR #578): a bot carrying the affliction gets one
     // Hourglass Sand if it holds none, then the fight strategy uses it.
     // BWL map gate keeps this off everywhere else.
-    if (bot->GetMapId() == TortoiseBots::BWL_MAP_ID &&
+    if (mapId == TortoiseBots::BWL_MAP_ID &&
         HasAura(TortoiseBots::BRONZE_AFFLICTION_SPELL_ID, bot) &&
         TortoiseBots::ShouldEnsureHourglassSand(true, bot->GetItemCount(TortoiseBots::HOURGLASS_SAND_ITEM_ID)))
     {
         EnsureCheatItem(TortoiseBots::HOURGLASS_SAND_ITEM_ID, 1);
     }
-    // MC rune douse: one Quintessence while inside Molten Core so the rune
-    // actions never silently skip for lack of the item.
-    if (TortoiseBots::ShouldEnsureQuintessence(bot->GetMapId(),
+    // MC rune douse: map gate first so open-world bots skip the bag counts;
+    // one Quintessence while inside Molten Core so the rune actions never
+    // silently skip for lack of the item.
+    if (mapId == TortoiseBots::MC_MAP_ID &&
+        TortoiseBots::ShouldEnsureQuintessence(mapId,
         bot->GetItemCount(TortoiseBots::ETERNAL_QUINTESSENCE_ITEM_ID),
         bot->GetItemCount(TortoiseBots::AQUAL_QUINTESSENCE_ITEM_ID)))
     {
