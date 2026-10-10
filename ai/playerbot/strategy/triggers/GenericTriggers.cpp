@@ -1497,6 +1497,11 @@ bool PetAttackTrigger::IsActive()
     if (!AttackAction::CanPetAttack(ai, pet, target))
         return false;
 
+    // A channeling pet holds its spell (e.g. the succubus's Seduction):
+    // re-ordering it to the DPS target moves it and breaks the channel.
+    if (pet->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+        return false;
+
     if (pet->GetVictim() == target && pet->GetCharmInfo() && pet->GetCharmInfo()->IsCommandAttack())
         return false;
 
