@@ -101,6 +101,13 @@ void DpsFeralDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
         "healer low mana",
         NextAction::array(0, new NextAction("innervate", ACTION_HIGH - 1), NULL)));
 
+    // Manual .bot boost assignments work for cats too: the innervate
+    // trigger watches "boost targets", so an explicit order fires even
+    // when no healer is low (player control beats automation).
+    triggers.push_back(new TriggerNode(
+        "innervate",
+        NextAction::array(0, new NextAction("innervate", ACTION_HIGH - 1), NULL)));
+
     triggers.push_back(new TriggerNode(
         "faerie fire (feral)",
         NextAction::array(0, new NextAction("faerie fire (feral)", ACTION_NORMAL + 5), NULL)));

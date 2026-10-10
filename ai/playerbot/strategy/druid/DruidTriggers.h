@@ -399,7 +399,7 @@ namespace ai
     class HealerLowManaTrigger : public Trigger
     {
     public:
-        HealerLowManaTrigger(PlayerbotAI* ai) : Trigger(ai, "healer low mana") {}
+        HealerLowManaTrigger(PlayerbotAI* ai) : Trigger(ai, "healer low mana", 2) {}
         bool IsActive() override;
     };
 

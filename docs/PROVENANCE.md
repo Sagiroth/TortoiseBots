@@ -4564,3 +4564,11 @@ spell_template; trigger/action creators registered in the druid context.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
+
+## Review fixes (2026-10-09, PR #615 CHANGES_REQUESTED)
+All three blocking findings verified real in code and fixed:
+- Finding 1 (fires with Innervate unknown/on cooldown, shift-then-fail churn): confirmed — Engine runs the caster-form prereq before isPossible. Fixed: spell-id + IsSpellReady gate at the top of IsActive (mirrors SpellTargetTrigger::IsSpellReady).
+- Finding 2 (no skip for already-Innervated healers): confirmed — action's auraCheck refuses them while the trigger stays true. Fixed: HasAura("innervate") skip in the loop.
+- Finding 3 (no range gate, action has no reach): confirmed — CastInnervateAction targets "self target" so no reach prereq is added. Fixed: GetSpellRange gate in the loop (sightDistance covered by the tighter spell-range check).
+- Non-blocking: relevance below cower kept deliberately (threat-drop first is safer for a cat; ~1 tick delay); checkInterval raised to 2 for the per-tick talent scan; manual `.bot boost` row added (`innervate` trigger watches "boost targets" — player control first); name-collision delete-on-merge already recorded in the entry above.
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
