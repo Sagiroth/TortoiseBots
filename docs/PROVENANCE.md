@@ -6071,6 +6071,49 @@ meant tankless groups never got the armor-reduction stack.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
 test (per task constraints).
+
+## Mage blast wave review rework (MAG-7) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`)
+`src/Ai/Class/Mage/Strategy/FireMageStrategy.cpp:60-76` (fire
+`enemy too close for spell` → dragon's breath INT+1, `enemy is close` →
+blast wave INT).
+
+What I first tried: a second row in
+`FireMageCcStrategy::InitCombatTriggers` mapping the victim-gated
+`enemy too close for spell` → `blast wave` at INTERRUPT-1 alongside the
+existing `enemy ten yards` → `blast wave` at INTERRUPT. Review showed
+the new row could never fire a cast: (1) when a live mobile mob chews
+on the mage, the trigger's "can't add distance" guard
+(`RangeTriggers.h:30-34`, victim == bot, can move, target faster than
+65% of the bot) returns false — the exact claimed case; (2) inside
+10yd both triggers fire together but `Queue.cpp:17-23` dedupes by
+action name keeping max relevance, so 39 never beats the existing 40,
+and in the 10–15yd band the 10yd-radius `CastMeleeAoeSpellAction`
+(`isUseful` distance <= radius; `isPossible` melee reach) always
+fails; (3) the donor's actual blast-wave row is `enemy is close` →
+`blast wave` (no victim gate, plain 5yd `TooCloseDistance` check),
+while the donor's `enemy too close` row maps to dragon's breath (does
+not exist in 1.18.1) and fires when victim != bot — the inverse of
+our victim gate.
+
+Fix applied: deleted the added row. The surviving behaviour is the
+pre-existing `enemy ten yards` → `blast wave` at INTERRUPT in
+`FireMageCcStrategy`, which already covers any enemy (tank-held or
+not) inside 10yd of the current target — a superset of the donor's
+5yd `enemy is close` row at the same relevance. The vector-path
+`enemy is close` → `blast wave` row in `GenericMageStrategy.cpp:143`
+is dead code (the `GenericMageStrategy`/`MageCcStrategy` vector-path
+classes are never instantiated; only the `MageStrategy.h` list-path
+hierarchies run), so no donor row was live anywhere else. Net diff
+of this PR after the fix: docs only (`docs/classes/mage.md` dupe
+line removed, this entry corrected). No behaviour change remains;
+kept as a docs/correction PR rather than closed so the dead-end is
+recorded.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check not done.
 | Anub'Rekhan fight (Naxx): adds-first targeting, swarm center-collapse, flee suppression | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Anubrekhan.cpp`, `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Anub rows), `src/Ai/Raid/Naxx/NaxxMultipliers.cpp` (AnubrekhanGenericMultiplier) | Reimplemented trigger-driven; MT kite ring omitted (needs live waypoints) | Kit verified in tw_world + core boss_anubrekhan.cpp (15956, guard 16573, 28785, 28783) | `bash tools/verify_all.sh` + `tools/test_anubrekhan_swarm_policy.cpp`; build-commit + no live test |
 
 ## Mage close-range AoE: cone of cold + arcane explosion rows with guards (MAG-6) — 2026-10-10
