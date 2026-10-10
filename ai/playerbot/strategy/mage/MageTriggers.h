@@ -132,6 +132,15 @@ namespace ai
         PresenceOfMindTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "presence of mind") {}
     };
 
+    // MAG-5: rupture self buff (52502/52588) absent — cast rupture so the
+    // missiles that follow hit +19%. See ArcaneRupturePolicy.h.
+    class ArcaneRuptureTrigger : public Trigger
+    {
+    public:
+        ArcaneRuptureTrigger(PlayerbotAI* ai) : Trigger(ai, "arcane rupture") {}
+        bool IsActive() override;
+    };
+
     HAS_AURA_TRIGGER(PresenceOfMindAuraTrigger, "presence of mind");
 
     // Turtle fire talent Hot Streak (51927/51928): crits stack a cast-time
@@ -181,6 +190,17 @@ namespace ai
     {
     public:
         EvocationChannelCheckTrigger(PlayerbotAI* ai) : Trigger(ai, "evocation channel check") {}
+        bool IsActive() override;
+    };
+
+    // MAG-2: own flamestrike cast started <=6s ago and the pack is still
+    // grouped — channel blizzard on the burning ground (window counts from
+    // cast start, not impact). See FlamestrikeWindowPolicy.h
+    // (the donor's dynobj check cannot port: no aura→dynobj link here).
+    class FlamestrikeWindowTrigger : public Trigger
+    {
+    public:
+        FlamestrikeWindowTrigger(PlayerbotAI* ai) : Trigger(ai, "flamestrike window") {}
         bool IsActive() override;
     };
 

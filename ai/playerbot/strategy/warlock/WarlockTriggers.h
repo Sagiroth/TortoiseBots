@@ -178,6 +178,15 @@ namespace ai
         BanishTrigger(PlayerbotAI* ai) : HasCcTargetTrigger(ai, "banish") {}
     };
 
+    // PET-2: succubus Seduction rides the same RTI CC flow as banish/fear
+    // (mark gating, auto-cc opt-in, spell-ready check). The succubus +
+    // humanoid gates live in the action; the trigger stays donor-shaped.
+    class SeductionTrigger : public HasCcTargetTrigger
+    {
+    public:
+        SeductionTrigger(PlayerbotAI* ai) : HasCcTargetTrigger(ai, "seduction") {}
+    };
+
     class WarlockConjuredItemTrigger : public ItemCountTrigger
     {
     public:

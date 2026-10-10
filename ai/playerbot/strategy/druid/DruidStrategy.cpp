@@ -546,21 +546,21 @@ void DruidOffdpsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     OffdpsStrategy::InitCombatTriggers(triggers);
 
+    // mod-playerbots parity (DRU-8): resto healer-dps. Only while nobody
+    // needs healing and mana is comfortable (healer should attack, which
+    // already mana-gates), at the lowest relevance so every heal outbids
+    // it. Tree of Life blocks the nukes, so the exit ("caster form",
+    // instant via RemoveShapeshift) rides as the first alternative and
+    // the nukes as fallbacks: tick N shifts out, tick N+1 the tree
+    // trigger (gated on no-offdps below) stays quiet and a nuke casts.
+    // Wrath above starfire (donor order): faster, mana-cheaper healer nuke.
     triggers.push_back(new TriggerNode(
-        "faerie fire",
-        NextAction::array(0, new NextAction("faerie fire", ACTION_NORMAL + 3), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "insect swarm",
-        NextAction::array(0, new NextAction("insect swarm", ACTION_NORMAL + 2), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "moonfire",
-        NextAction::array(0, new NextAction("moonfire", ACTION_NORMAL + 1), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "wrath",
-        NextAction::array(0, new NextAction("wrath", ACTION_NORMAL), NULL)));
+        "healer should attack",
+        NextAction::array(0,
+            new NextAction("caster form", ACTION_DEFAULT + 0.6f),
+            new NextAction("moonfire", ACTION_DEFAULT + 0.5f),
+            new NextAction("wrath", ACTION_DEFAULT + 0.4f),
+            new NextAction("starfire", ACTION_DEFAULT + 0.3f), NULL)));
 }
 
 void DruidOffdpsStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
