@@ -7,17 +7,24 @@
 // same budget lets the world tick run 200+ ms). This controller watches the
 // measured previous world tick and moves the effective pool and combat
 // budgets toward a configured tick target instead: over target it shrinks
-// multiplicatively (fast retreat when the server struggles), under target it
-// grows additively (slow reclaim, so it does not sawtooth). The effective
-// budgets are clamped to [floor, configured ceiling], so the configured
-// PoolTickBudgetUs/CombatTickBudgetUs stay the hard maximum and 0 keeps its
-// "no budget" meaning at the call site.
+// multiplicatively (fast retreat when the server struggles), at or under
+// target it grows additively (slow reclaim, so it does not sawtooth). The
+// effective budgets are clamped to [floor, configured ceiling], so the
+// configured PoolTickBudgetUs/CombatTickBudgetUs stay the hard maximum and 0
+// keeps its "no budget" meaning at the call site.
+//
+// The reclaim must cover the whole at-or-under-target range, not just
+// well-under-target readings: the world thread pads each tick with sleep to
+// a 50 ms cadence (WORLD_SLEEP_CONST in core WorldRunnable.cpp), so a
+// healthy server feeds this controller a steady ~50 ms. A hold band around
+// the target would pin a healthy server at whatever the budget last shrank
+// to instead of reclaiming the ceiling.
 //
 // Hardware-agnostic on purpose: no CPU detection, only feedback on measured
 // tick time. Oscillation is damped two ways: the tick reading is an
 // exponential moving average (one spike does not yank the budget), and the
 // grow/shrink steps are asymmetric (shrink fast, grow slow), with a deadband
-// around the target where the budget holds steady.
+// above the target below which the budget reclaims instead of shrinking.
 //
 // Pure decision logic, no AI or core types: tested on its own in
 // tools/test_adaptive_budget.cpp. World-thread only, like BotManager.
@@ -53,23 +60,24 @@ public:
         // collapse the budget for the next minutes.
         m_tickEmaMs += (static_cast<double>(tickMs) - m_tickEmaMs) / kEmaWindow;
 
-        uint32_t const deadbandLo = m_targetMs > kDeadbandMs ? m_targetMs - kDeadbandMs : 0;
-        uint32_t const deadbandHi = m_targetMs + kDeadbandMs;
-        if (m_tickEmaMs > deadbandHi)
+        uint32_t const shrinkAboveMs = m_targetMs + kDeadbandMs;
+        if (m_tickEmaMs > shrinkAboveMs)
         {
             // Over target: multiplicative retreat, so a 250 ms tick cuts much
             // harder than a 60 ms one over consecutive ticks.
             m_poolUs = ClampScaled(m_poolUs, kShrinkFactor, m_poolCeilingUs);
             m_combatUs = ClampScaled(m_combatUs, kShrinkFactor, m_combatCeilingUs);
         }
-        else if (m_tickEmaMs < deadbandLo)
+        else
         {
-            // Under target: additive reclaim, so the budget creeps back
-            // without overshooting into the next shrink.
+            // At or under target: additive reclaim, so the budget creeps back
+            // without overshooting into the next shrink. This branch must
+            // include in-target readings: a healthy world tick rests at the
+            // target cadence, and holding there would make every shrink
+            // permanent. At the ceiling the clamp makes this a no-op.
             m_poolUs = ClampAdd(m_poolUs, kGrowStepUs, m_poolCeilingUs);
             m_combatUs = ClampAdd(m_combatUs, kGrowStepUs, m_combatCeilingUs);
         }
-        // Inside the deadband: hold steady (the anti-oscillation hinge).
     }
 
     uint64_t PoolUs() const { return m_poolUs; }
@@ -81,7 +89,8 @@ public:
 private:
     // EMA window in ticks: ~8 ticks to absorb two-thirds of a step.
     static constexpr double kEmaWindow = 8.0;
-    // Deadband half-width around the target: inside it the budget holds.
+    // Deadband half-width above the target: only readings above
+    // target + deadband shrink the budget; everything at or below reclaims.
     static constexpr uint32_t kDeadbandMs = 10;
     // Shrink factor per over-target tick (x0.7: ~3 ticks to halve).
     static constexpr double kShrinkFactor = 0.7;

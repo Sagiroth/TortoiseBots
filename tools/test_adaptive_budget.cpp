@@ -2,9 +2,11 @@
 // (runtime/AdaptiveBudget.h): the feedback controller behind the per-tick
 // pool/combat budgets. Exercises the rules that must not regress — off holds
 // the ceilings, sustained over-target ticks shrink multiplicatively toward
-// the floor, sustained under-target ticks grow additively back to the
-// ceiling, the deadband holds steady (no oscillation), a single spike barely
-// moves the EMA, and the floor/ceiling clamps hold under long pressure.
+// the floor, sustained at-or-under-target ticks grow additively back to the
+// ceiling, only readings above target + deadband shrink, a healthy in-target
+// reading reclaims (never holds a shrunken budget: the world thread pads
+// healthy ticks to ~50 ms), a single spike barely moves the EMA, and the
+// floor/ceiling clamps hold under long pressure.
 //
 // Build and run:
 //   g++ -std=c++17 -Wall -Wextra tools/test_adaptive_budget.cpp -o /tmp/test_adaptive_budget
@@ -85,19 +87,30 @@ static void TestGrowIsAdditiveAndCeilings()
     CHECK(budget.CombatUs() == 100000);
 }
 
-static void TestDeadbandHoldsSteady()
+static void TestDeadbandReclaimsSteady()
 {
-    AdaptiveBudget budget(50, 10000, 15000);
+    AdaptiveBudget budget(50, 100000, 100000);
     Drive(budget, 10, 50);
-    CHECK(budget.PoolUs() == 10000);
-    // 40-60 ms sits inside the 50+-10 deadband: no movement either way.
-    Drive(budget, 45, 50);
-    CHECK(budget.PoolUs() == 10000);
-    Drive(budget, 58, 50);
-    CHECK(budget.PoolUs() == 10000);
-    // Just outside the band it moves again.
-    Drive(budget, 75, 20);
-    CHECK(budget.PoolUs() < 10000);
+    CHECK(budget.PoolUs() == 100000);
+    // Shrink first so reclaim has something to restore.
+    Drive(budget, 300, 10);
+    uint64_t const shrunk = budget.PoolUs();
+    CHECK(shrunk < 100000);
+    // A healthy in-target reading (the world thread pads healthy ticks to
+    // ~50 ms) must reclaim, not hold: holding here made every shrink
+    // permanent on a healthy server. The EMA lags, so settle it into the
+    // reclaim zone first, then pin the exact step.
+    while (budget.SmoothedTickMs() > 60.0)
+        budget.Update(50);
+    uint64_t const settled = budget.PoolUs();
+    for (int i = 0; i < 10; ++i)
+        budget.Update(50);
+    CHECK(budget.PoolUs() == settled + 10 * 1000);
+    Drive(budget, 50, 200);
+    CHECK(budget.PoolUs() == 100000);
+    // Readings above target + 10 shrink again.
+    Drive(budget, 300, 10);
+    CHECK(budget.PoolUs() < 100000);
 }
 
 static void TestSingleSpikeBarelyMovesEma()
@@ -117,40 +130,31 @@ static void TestSingleSpikeBarelyMovesEma()
     CHECK(afterSpike > 2000);
     Drive(budget, 40, 60);
     CHECK(budget.SmoothedTickMs() < 45.0);
-    // Once the EMA settles inside the band the budget holds: no snap-back,
-    // no further shrink while the reading stays in-band.
-    uint64_t const settled = budget.PoolUs();
-    Drive(budget, 40, 60);
-    CHECK(budget.PoolUs() == settled);
+    // Calm ticks reclaim toward the ceiling instead of holding the dip.
+    CHECK(budget.PoolUs() > afterSpike);
     Drive(budget, 10, 200);
-    CHECK(budget.PoolUs() > settled);
+    CHECK(budget.PoolUs() == 10000);
 }
 
-static void TestConvergesWithoutOscillation()
+static void TestHealthyTickReclaimsToCeiling()
 {
-    // Alternating either side of the deadband must settle, not sawtooth:
-    // shrink steps (x0.7 of ~10 ms) outweigh grow steps (+1 ms), so the
-    // budget ratchets down into the band and holds.
+    // A healthy tick (at the target cadence) steadily reclaims: shrink once
+    // hard, then healthy ticks must walk the budget back to the ceiling.
     AdaptiveBudget budget(50, 22000, 22000);
     Drive(budget, 10, 100);
     CHECK(budget.PoolUs() == 22000);
-    for (int i = 0; i < 60; ++i)
-    {
-        Drive(budget, 200, 2);
-        Drive(budget, 10, 4);
-    }
+    Drive(budget, 300, 5);
+    uint64_t const shrunk = budget.PoolUs();
+    CHECK(shrunk < 22000);
+    while (budget.SmoothedTickMs() > 60.0)
+        budget.Update(50);
     uint64_t const settled = budget.PoolUs();
-    // Still well below the ceiling (pressure dominated), and a further
-    // identical cycle barely moves it: converged, not oscillating.
-    CHECK(settled < 22000);
-    for (int i = 0; i < 10; ++i)
-    {
-        Drive(budget, 200, 2);
-        Drive(budget, 10, 4);
-    }
-    uint64_t const later = budget.PoolUs();
-    CHECK(later >= (settled > 3000 ? settled - 3000 : 2000));
-    CHECK(later <= settled + 3000);
+    for (int i = 0; i < 30; ++i)
+        budget.Update(50);
+    CHECK(budget.PoolUs() > settled);
+    Drive(budget, 50, 100);
+    CHECK(budget.PoolUs() == 22000);
+    CHECK(budget.CombatUs() == 22000);
 }
 
 int main()
@@ -158,9 +162,9 @@ int main()
     TestOffHoldsCeilings();
     TestShrinkIsMultiplicativeAndFloors();
     TestGrowIsAdditiveAndCeilings();
-    TestDeadbandHoldsSteady();
+    TestDeadbandReclaimsSteady();
     TestSingleSpikeBarelyMovesEma();
-    TestConvergesWithoutOscillation();
+    TestHealthyTickReclaimsToCeiling();
     std::printf("adaptive budget: all %d checks passed\n", checks);
     return 0;
 }
