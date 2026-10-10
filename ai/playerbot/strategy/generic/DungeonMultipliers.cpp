@@ -44,12 +44,16 @@ float RazorgoreOffTankMultiplier::GetValue(Action* action)
     if (!ai->IsTank(bot))
         return 1.0f;
     AiObjectContext* context = ai->GetAiObjectContext();
+    // Explicit player orders win: never veto a tank-assist carrying an
+    // explicit target (TankTargetValue returns explicit first).
+    if (!AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty())
+        return 1.0f;
     const std::list<ObjectGuid>& attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
     Unit* boss = nullptr;
     for (const ObjectGuid& attackerGuid : attackers)
     {
         Unit* attacker = ai->GetUnit(attackerGuid);
-        if (attacker && attacker->GetEntry() == kRazorgoreEntry)
+        if (attacker && attacker->GetEntry() == kRazorgoreEntry && sServerFacade.IsAlive(attacker))
         {
             boss = attacker;
             break;

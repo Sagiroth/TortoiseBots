@@ -292,6 +292,10 @@ namespace ai
         bool Execute(Event& event) override
         {
             AiObjectContext* context = ai->GetAiObjectContext();
+            // Explicit player orders win: don't re-attack the boss over a
+            // `.bot attack` on an add.
+            if (!AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty())
+                return false;
             const std::list<ObjectGuid>& attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
             Unit* boss = nullptr;
             for (const ObjectGuid& attackerGuid : attackers)

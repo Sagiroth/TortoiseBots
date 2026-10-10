@@ -4636,8 +4636,8 @@ also applied (2 noted below).
 (a) `eggsAlive` hardcoded true + missing post-egg Cleave branch: the
 multiplier now reads the cached `nearest game objects` value for entry
 177807 (donor AreRazorgoreEggsAlive) — the veto lifts when eggs die.
-Header comment corrected (no post-egg Cleave branch exists; tanks return
-to normal selection, which the universal flank covers).
+Post-egg the action no-ops and normal selection resumes (no separate
+Cleave branch; no `TankFaceAction` exists in this codebase).
 (b) Missing victim guard + no engage path: veto now returns 1.0 while the
 off-tank holds nothing (donor `bot->GetVictim() != nullptr` guard), and a
 new tank-only `razorgore engage` node attacks Razorgore while eggs live

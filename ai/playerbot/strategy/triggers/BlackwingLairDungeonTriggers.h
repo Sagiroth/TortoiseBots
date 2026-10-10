@@ -1,6 +1,7 @@
 #pragma once
 #include "DungeonTriggers.h"
 #include "playerbot/RazorgorePolicy.h"
+#include "playerbot/GroupMembers.h"
 #include "GenericTriggers.h"
 
 namespace ai
@@ -84,6 +85,35 @@ namespace ai
             if (!ai->IsTank(bot))
                 return false;
             AiObjectContext* context = ai->GetAiObjectContext();
+            // Explicit player orders win over the fight choreography
+            // (Anubrekhan precedent).
+            if (!AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty())
+                return false;
+            // Only the elected off-tank holds the boss: first living
+            // same-map tank by member-slot order (mirrors
+            // RazorgoreOffTankMultiplier; solo → true). Other tanks keep
+            // normal add pickup via tank-assist.
+            bool botIsOffTank = false;
+            if (Group* group = bot->GetGroup())
+            {
+                for (Player* member : LiveGroupMembers(group))
+                {
+                    if (!member || !sServerFacade.IsAlive(member))
+                        continue;
+                    if (member->GetMapId() != bot->GetMapId())
+                        continue;
+                    if (!ai->IsTank(member))
+                        continue;
+                    botIsOffTank = (member == bot);
+                    break;
+                }
+            }
+            else
+            {
+                botIsOffTank = true;
+            }
+            if (!botIsOffTank)
+                return false;
             const std::list<ObjectGuid>& attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
             for (const ObjectGuid& attackerGuid : attackers)
             {
