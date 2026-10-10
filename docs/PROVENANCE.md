@@ -4526,10 +4526,14 @@ Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 ## Warrior WAR-2 + WAR-6: shield-slam proc row and 40-rage gate (2026-10-09)
 
 Feature: (WAR-2) new `improved shield slam proc` trigger fires `shield
-slam` at ACTION_INTERRUPT when the Turtle Improved Shield Slam proc aura
-is up; (WAR-6) the baseline `shield slam` row moved from `light rage
-available` (20+) to `medium rage available` (40+), keeping HIGH+4 above
-thunder clap (HIGH+1) and revenge/sunder ordering intact.
+slam` at HIGH+5 — above the rage ladder, below taunt (41) and tied with
+shield block (block listed earlier wins ties), matching the donor's
+taunt/block-above-proc order; (WAR-6) the baseline `shield slam` row moved
+from `light rage available` (20+) to `medium rage available` (40+), keeping
+HIGH+4 above thunder clap (HIGH+1) and revenge/sunder ordering intact, and
+the tank sunder veto now defers to slam only when slam's medium-rage row
+is actually live (cooldown-only `IsSpellReady` used to veto sunder through
+the whole 15-39 band where slam couldn't fire).
 
 Source repository: `mod-playerbots/mod-playerbots`
 
@@ -4562,6 +4566,16 @@ is.
 
 Reason: WAR-2/WAR-6 in the warrior parity sweep: the talented proc never
 fired slam, and 20-rage slam starved the sunder stack and revenge GCDs.
+
+Review fixes: (1) proc row INTERRUPT → HIGH+5 — the taunt half of the
+finding is stale (merged PR #598 already puts taunt at 41, above the old
+proc 40 = donor order), but the shield-block half was real (donor block
+41 > proc 40), so proc now ties block with block winning ties; (2) sunder
+veto rage-aware per above. Not changed: baseline stays HIGH+4 above
+revenge/sunder (1-GCD vs donor tie; keeps proc>baseline ordering), dead
+`TankWarriorStrategy.cpp:224` reference untouched (dead file, churn), proc
+ids 51596/51597 verified in live `spell_template` (100% chance, 1 charge;
+only the separate proc_event row is DBC-side).
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
 test (per task constraints).
