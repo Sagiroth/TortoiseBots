@@ -717,6 +717,11 @@ void BattlegroundQueueService::CountSeededForTeams(uint32_t queueTypeValue, uint
     {
         if (!p || !p->InBattleGroundQueueForBattleGroundQueueType(queueType))
             continue;
+        // The queue slot stays set after entry (the core clears it only on
+        // leave), so bots already inside are counted by the in-match loop
+        // below, not here - counting both stalled top-up at ~5v5.
+        if (p->InBattleGround())
+            continue;
         if (p->GetBattleGroundBracketIdFromLevel(bgType) != BattleGroundBracketId(bracketIndex))
             continue;
         if (uint32(p->GetTeam()) == uint32(ALLIANCE))
