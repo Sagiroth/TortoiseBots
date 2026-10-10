@@ -4699,6 +4699,16 @@ cooldown/spellbook/target checks) + non-combat row `ooc rebirth` ->
 specs + leveling inherit) + pure rule `ShouldCastOocRebirth` in new
 `ai/playerbot/OocRebirthPolicy.h` + `tools/test_ooc_rebirth_policy.cpp`
 (6 checks, registered in `tools/verify_all.sh`).
+## Druid parity DRU-3: feral/cat Innervate on the group healer — 2026-10-09
+Feature: new local `HealerLowManaTrigger` (named exactly "healer low
+mana", true while a living same-map party healer sits below the LowMana
+line — mirror of the scan in `CastInnervateAction::GetTarget`) + combat
+row `healer low mana` -> `innervate` at ACTION_HIGH-1 in
+`DpsFeralDruidStrategy` (below Cower, above the rotation) + `innervate`
+caster-form node in the cat action-node factory (was missing — balance
+and resto each define their own; without it the cat casts from form and
+fails). No new action: the existing `innervate` action already targets
+the lowest-mana party healer with manual `.bot boost` winning.
 
 Source repository: `mod-playerbots` @ `79bd4281` (local checkout
 `../playerbots-references/mod-playerbots`).
@@ -5050,6 +5060,18 @@ execute gate).
 
 Reason: druid parity report DRU-5 — flat CP5 bite fired regardless of
 rip/bite windows, clipping Rip refreshes and missing executes.
+`src/Ai/Class/Druid/Strategy/CatDruidStrategy.cpp:100-106`
+(`healer low mana` -> `innervate on healer` 35.0). Deviations,
+deliberate: per the parity coordination note this was implemented with a
+LOCAL trigger because the shared `healer low mana` value/trigger
+(parity/heal-2) is not on the integration branch yet — the local trigger
+uses the exact shared name, so when that lands this trigger is deleted
+and the cat row needs no change. No pvp/raid exclusion either (donor
+ports sometimes scope this to pve; a thirsty healer needs Innervate in
+any bracket).
+
+Reason: druid parity report DRU-3 — feral drained nothing back to the
+healer; innervate rows were balance/resto self-only.
 
 Source files (module, modified):
 `ai/playerbot/strategy/druid/DruidTriggers.h`,
@@ -5091,6 +5113,11 @@ Source files (module, modified): `ai/playerbot/OocRebirthPolicy.h` (new),
 Copied / ported / reimplemented: reimplemented in place in the live
 strategy idiom. No new spells: Rebirth 20484/20739/20742/20747/20748
 verified in spell_template (family 7, druid skill line).
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Innervate 29166 verified in
+spell_template; trigger/action creators registered in the druid context.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
@@ -5661,3 +5688,10 @@ four new names); `git diff --check`; shared-builder compile via
 `build-commit.sh` (BUILD OK); live in-game check pending: swim with a
 warlock bot, self + party gain the buff, nothing fires on land.
 | Elemental earth-shock execute discipline (SHM-4) | `mod-playerbots` `src/Ai/Class/Shaman/ShamanTriggers.cpp:50-64` (`EarthShockExecuteTrigger`: <25% AND <1500hp) + `Strategy/ElementalShamanStrategy.cpp:58-65` (execute node 5.5) @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanTriggers.h` (new `EarthShockExecuteTrigger`), `ShamanAiObjectContext.cpp` (creator), `ElementalShamanStrategy.cpp` (`shock` row -> `earth shock execute` at same ACTION_NORMAL), `ShamanEarthShockPolicy.h` + `tools/test_shaman_earth_shock_policy.cpp` | Ported verbatim thresholds via `GetHealthPercent()` + absolute `GetHealth() < 1500` (house idiom; donor divides manually). Ele only; enhancement keeps ungated `shock` (melee threat tool); interrupt triggers untouched. Spell: Earth Shock 8042+ (existing action, verified) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+## Review fixes (2026-10-09, PR #615 CHANGES_REQUESTED)
+All three blocking findings verified real in code and fixed:
+- Finding 1 (fires with Innervate unknown/on cooldown, shift-then-fail churn): confirmed — Engine runs the caster-form prereq before isPossible. Fixed: spell-id + IsSpellReady gate at the top of IsActive (mirrors SpellTargetTrigger::IsSpellReady).
+- Finding 2 (no skip for already-Innervated healers): confirmed — action's auraCheck refuses them while the trigger stays true. Fixed: HasAura("innervate") skip in the loop.
+- Finding 3 (no range gate, action has no reach): confirmed — CastInnervateAction targets "self target" so no reach prereq is added. Fixed: GetSpellRange gate in the loop (sightDistance covered by the tighter spell-range check).
+- Non-blocking: relevance below cower kept deliberately (threat-drop first is safer for a cat; ~1 tick delay); checkInterval raised to 2 for the per-tick talent scan; manual `.bot boost` row added (`innervate` trigger watches "boost targets" — player control first); name-collision delete-on-merge already recorded in the entry above.
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
