@@ -4554,6 +4554,8 @@ health above lowHealth),
 rows at NORMAL-1 for both bands; no combat filler — any trigger row beats
 the relevance-200 default nuke),
 `tools/test_warlock_tap_policy.cpp` (new standalone test, wired into
+`tools/verify_all.sh`) + `docs/classes/warlock.md`, `CHANGELOG.md` (doc
+lines).
 ## Druid parity DRU-7: Thorns on the party tank first — 2026-10-09
 Feature: new `ThornsOnTankTrigger` (`BuffOnTankTrigger` on "thorns",
 fire-shield conflict skip mirroring `ThornsOnPartyTrigger`) + new
@@ -6712,21 +6714,21 @@ lines).
 Copied / ported / reimplemented: reimplemented in place. Deviations from
 the donor, all deliberate: (a) no `low mana` emergency row — ours already
 taps at mana<=mediumMana (default 40, stricter than donor `low mana`
-15%) at NORMAL+2, kept as the urgent band; (b) the top-up combat row sits
-at NORMAL-1 (donor 5.1 filler sits under everything) so mid-fight taps
-never preempt corruption/immolate refresh or shadowburn execute; (c) the
-health floor stays ours (`lowHealth` default 50, stricter than donor
-45); (d) no glyph-buff row (WotLK glyph, no 1.18.1 spell); (e)
+15%) at NORMAL+2, kept as the urgent band; (b) no combat top-up row — the
+donor's 5.1 filler sits under its nuke, but here defaults are pushed at
+relevance-200 so any trigger row would preempt the shadow-bolt default
+and tap instead of nuking; the top-up band pre-taps out of combat only;
+(c) the health floor stays ours (`lowHealth` default 50, stricter than
+donor 45); (d) no glyph-buff row (WotLK glyph, no 1.18.1 spell); (e)
 Affliction Dark Pact on low mana untouched and still wins the emergency.
 
 Reason: warlock bots entered every pull at whatever mana the last fight
-left and spent the second half wanding; donor tops up to near-full
-between pulls and fills mid-fight at low priority.
+left and spent the second half wanding; donor tops up between pulls, so
+ours pre-taps out of combat to enter near-full.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`;
 shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
-check pending: bot enters pull near-full mana, mid-fight taps don't
-preempt dots.
+check pending: bot enters pull near-full mana.
 the donor, all deliberate: (a) the donor's WotLK conflict lists (Ebon
 Plague, Earth and Moon, Vindication) do not exist in 1.18.1 — the rule
 here is the vanilla one-curse-per-target gate on the 7-curse family,

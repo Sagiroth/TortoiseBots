@@ -33,7 +33,7 @@ struct WarlockTapInputs
     uint8_t healthPct = 100;
     uint8_t mediumMana = 40;   // AiPlayerbot.MediumMana
     uint8_t lowHealth = 50;    // AiPlayerbot.LowHealth
-    // Out of combat the bot taps first, then eats to full: while a food or
+    // Out of combat the bot eats first, then taps to full: while a food or
     // drink aura is up (mid-meal) both bands stay quiet so the tap never
     // stands the bot up and resets its regen. Combat ignores the flag.
     bool isEating = false;
