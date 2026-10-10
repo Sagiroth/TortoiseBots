@@ -2,6 +2,7 @@
 #include "playerbot/PlayerbotAI.h"
 #include "DungeonActions.h"
 #include "ChangeStrategyAction.h"
+#include "playerbot/strategy/Multiplier.h"
 
 namespace ai
 {
@@ -26,6 +27,16 @@ class KelthuzadChooseTargetAction : public AttackAction
 public:
     KelthuzadChooseTargetAction(PlayerbotAI* ai) : AttackAction(ai, "kel'thuzad choose target") {}
     bool Execute(Event& event) override;
+};
+
+// Assist suppression (donor KelthuzadGenericMultiplier, assist/flee
+// legs): while the fight strategy is active the role-split chooser owns
+// targeting, not dps/tank assist or flee. Live-master bots exempt.
+class KelthuzadSuppressMultiplier : public Multiplier
+{
+public:
+    KelthuzadSuppressMultiplier(PlayerbotAI* ai) : Multiplier(ai, "kel'thuzad suppression") {}
+    float GetValue(Action* action) override;
 };
 
 // Phase-2 positioning (donor KelthuzadPositionAction, center verified vs

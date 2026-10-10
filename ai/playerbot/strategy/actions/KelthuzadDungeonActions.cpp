@@ -4,6 +4,7 @@
 #include "playerbot/GroupMembers.h"
 #include <cmath>
 #include "AttackAction.h"
+#include "ChooseTargetActions.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
@@ -13,40 +14,87 @@ using namespace ai;
 namespace
 {
     // Center verified vs core pullPortal (3716.38/-5106.78); tank anchor
-    // from the donor (same map geometry).
+    // + guardian-tank anchor from the donor (same map geometry).
     const float kKtCenterX = 3716.38f;
     const float kKtCenterY = -5106.78f;
     const float kKtTankX = 3709.19f;
     const float kKtTankY = -5104.86f;
+    const float kKtAssistTankX = 3746.05f;
+    const float kKtAssistTankY = -5112.74f;
 
-    Unit* FindEntry(PlayerbotAI* ai, Player* bot, uint32 entry)
+    // Adds only count inside 30yd of the center and within the bot's
+    // spell range (donor exclusion: alcove campers stay out).
+    bool KtCandidateUsable(PlayerbotAI* ai, Player* bot, Unit* unit)
     {
+        if (!unit || !unit->IsAlive())
+            return false;
+        if (unit->GetDistance2d(kKtCenterX, kKtCenterY) > 30.0f)
+            return false;
+        if (bot->GetDistance(unit) > ai->GetRange("spell"))
+            return false;
+        return true;
+    }
+
+    struct KtTargets
+    {
+        Unit* soldier = nullptr;
+        Unit* weaver = nullptr;
+        Unit* abom = nullptr;
+        Unit* guardian = nullptr;
+        Unit* kt = nullptr;
+    };
+
+    void KtNote(KtTargets& into, Unit* unit)
+    {
+        switch (unit->GetEntry())
+        {
+            case kKtSoldier: if (!into.soldier) into.soldier = unit; break;
+            case kKtWeaver: if (!into.weaver) into.weaver = unit; break;
+            case kKtAbom: if (!into.abom) into.abom = unit; break;
+            case kKtGuardian: if (!into.guardian) into.guardian = unit; break;
+            case kKtBoss: if (!into.kt) into.kt = unit; break;
+            default: break;
+        }
+    }
+
+    // Single pass: cached lists first, one grid sweep only for entries
+    // still missing. Dead units never mask live ones (IsAlive at every
+    // layer, including the cached loops).
+    KtTargets FindKtTargets(PlayerbotAI* ai, Player* bot)
+    {
+        KtTargets found;
         const std::list<ObjectGuid> attackers =
             ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
         for (const ObjectGuid& guid : attackers)
         {
             Unit* unit = ai->GetUnit(guid);
-            if (unit && unit->GetEntry() == entry)
-                return unit;
+            if (KtCandidateUsable(ai, bot, unit))
+                KtNote(found, unit);
         }
-        const std::list<ObjectGuid> targets =
-            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
-        for (const ObjectGuid& guid : targets)
+        if (!found.soldier || !found.weaver || !found.abom || !found.guardian || !found.kt)
         {
-            Unit* unit = ai->GetUnit(guid);
-            if (unit && unit->GetEntry() == entry)
-                return unit;
+            const std::list<ObjectGuid> targets =
+                ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
+            for (const ObjectGuid& guid : targets)
+            {
+                Unit* unit = ai->GetUnit(guid);
+                if (KtCandidateUsable(ai, bot, unit))
+                    KtNote(found, unit);
+            }
         }
-        std::list<Unit*> nearby;
-        MaNGOS::AllCreaturesOfEntryInRange check(bot, entry, 100.0f);
-        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(nearby, check);
-        Cell::VisitAllObjects(bot, searcher, 100.0f);
-        for (Unit* unit : nearby)
+        if (!found.soldier || !found.weaver || !found.abom || !found.guardian || !found.kt)
         {
-            if (unit && unit->IsAlive())
-                return unit;
+            std::list<Unit*> nearby;
+            MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck check(bot, bot, 100.0f);
+            MaNGOS::UnitListSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> searcher(nearby, check);
+            Cell::VisitAllObjects(bot, searcher, 100.0f);
+            for (Unit* unit : nearby)
+            {
+                if (KtCandidateUsable(ai, bot, unit))
+                    KtNote(found, unit);
+            }
         }
-        return nullptr;
+        return found;
     }
 }
 
@@ -55,21 +103,17 @@ bool KelthuzadChooseTargetAction::Execute(Event& event)
     const bool ranged = ai->IsRanged(bot);
     const bool tank = PlayerbotAI::IsTank(bot);
 
-    Unit* soldier = FindEntry(ai, bot, kKtSoldier);
-    Unit* weaver = FindEntry(ai, bot, kKtWeaver);
-    Unit* abom = FindEntry(ai, bot, kKtAbom);
-    Unit* guardian = FindEntry(ai, bot, kKtGuardian);
-    Unit* kt = FindEntry(ai, bot, kKtBoss);
+    KtTargets found = FindKtTargets(ai, bot);
 
     const unsigned want = KtPickTarget(ranged, tank,
-        soldier && soldier->IsAlive(), weaver && weaver->IsAlive(),
-        abom && abom->IsAlive(), guardian && guardian->IsAlive(),
-        kt && kt->IsAlive() && !kt->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE));
+        found.soldier != nullptr, found.weaver != nullptr,
+        found.abom != nullptr, found.guardian != nullptr,
+        found.kt && !found.kt->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE));
     if (!want)
         return false;
 
-    Unit* target = (want == kKtSoldier) ? soldier : (want == kKtWeaver) ? weaver :
-        (want == kKtAbom) ? abom : (want == kKtGuardian) ? guardian : kt;
+    Unit* target = (want == kKtSoldier) ? found.soldier : (want == kKtWeaver) ? found.weaver :
+        (want == kKtAbom) ? found.abom : (want == kKtGuardian) ? found.guardian : found.kt;
     if (!target)
         return false;
 
@@ -80,12 +124,15 @@ bool KelthuzadChooseTargetAction::Execute(Event& event)
 
 bool KelthuzadPositionAction::Execute(Event& event)
 {
-    Unit* kt = FindEntry(ai, bot, kKtBoss);
-    const bool phaseTwo = kt && !kt->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+    KtTargets found = FindKtTargets(ai, bot);
+    const bool phaseTwo = found.kt && !found.kt->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
 
     if (!phaseTwo)
     {
-        // Phase 1: gather center so adds meet the raid together.
+        // Phase 1: gather center only when idled (no current target), so
+        // bots are not yanked off adds mid-DPS (donor mirror).
+        if (AI_VALUE(Unit*, "current target") != nullptr)
+            return false;
         if (bot->GetDistance2d(kKtCenterX, kKtCenterY) < 3.0f)
             return false;
         return MoveTo(bot->GetMapId(), kKtCenterX, kKtCenterY, bot->GetPositionZ());
@@ -93,14 +140,28 @@ bool KelthuzadPositionAction::Execute(Event& event)
 
     if (PlayerbotAI::IsTank(bot))
     {
-        if (bot->GetDistance2d(kKtTankX, kKtTankY) < 3.0f)
-            return false;
-        return MoveTo(bot->GetMapId(), kKtTankX, kKtTankY, bot->GetPositionZ());
+        // Aggro holder takes the MT anchor; a guardian tank takes the
+        // assist anchor; other tanks stay and fight.
+        if (AI_VALUE2(bool, "has aggro", "current target"))
+        {
+            if (bot->GetDistance2d(kKtTankX, kKtTankY) < 3.0f)
+                return false;
+            return MoveTo(bot->GetMapId(), kKtTankX, kKtTankY, bot->GetPositionZ());
+        }
+        Unit* current = AI_VALUE(Unit*, "current target");
+        if (current && current->GetEntry() == kKtGuardian)
+        {
+            if (bot->GetDistance2d(kKtAssistTankX, kKtAssistTankY) < 3.0f)
+                return false;
+            return MoveTo(bot->GetMapId(), kKtAssistTankX, kKtAssistTankY, bot->GetPositionZ());
+        }
+        return false;
     }
 
     if (ai->IsRanged(bot))
     {
-        // 20yd ring around the center, spread by group slot.
+        // Rings around the center by ranged-only index: inner 20yd for
+        // the first 8, outer 32yd beyond (donor geometry).
         Group* group = bot->GetGroup();
         uint32 slot = 0;
         if (group)
@@ -109,16 +170,31 @@ bool KelthuzadPositionAction::Execute(Event& event)
             {
                 if (member == bot)
                     break;
-                ++slot;
+                if (ai->IsRanged(member))
+                    ++slot;
             }
         }
+        const float radius = (slot < 8) ? 20.0f : 32.0f;
         const float angle = float(slot % 8) * float(M_PI) / 4.0f;
-        const float x = kKtCenterX + std::cos(angle) * kKtRingRadius;
-        const float y = kKtCenterY + std::sin(angle) * kKtRingRadius;
+        const float x = kKtCenterX + std::cos(angle) * radius;
+        const float y = kKtCenterY + std::sin(angle) * radius;
         if (bot->GetDistance2d(x, y) < 3.0f)
             return false;
         return MoveTo(bot->GetMapId(), x, y, bot->GetPositionZ());
     }
 
     return false;
+}
+
+float KelthuzadSuppressMultiplier::GetValue(Action* action)
+{
+    if (!action)
+        return 1.0f;
+    // Explicit master orders win over the fight choreography.
+    if (ai->HasActivePlayerMaster())
+        return 1.0f;
+    if (dynamic_cast<DpsAssistAction*>(action) || dynamic_cast<TankAssistAction*>(action) ||
+        dynamic_cast<FleeAction*>(action))
+        return 0.0f;
+    return 1.0f;
 }

@@ -15,7 +15,7 @@ namespace
         for (const ObjectGuid& guid : attackers)
         {
             Unit* unit = ai->GetUnit(guid);
-            if (unit && unit->GetEntry() == 15990)
+            if (unit && unit->IsAlive() && unit->GetEntry() == 15990)
                 return unit;
         }
         std::list<Unit*> nearby;
@@ -52,6 +52,14 @@ namespace
 bool KelthuzadAddsTrigger::IsActive()
 {
     return AnyAddUp(ai);
+}
+
+bool KelthuzadPhaseOneTrigger::IsActive()
+{
+    Unit* kt = FindKt(ai, bot);
+    if (!kt)
+        return false;
+    return kt->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
 }
 
 bool KelthuzadPhaseTwoTrigger::IsActive()

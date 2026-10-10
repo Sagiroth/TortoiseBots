@@ -336,6 +336,7 @@ namespace ai
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
             creators["start kel'thuzad fight"] = [](PlayerbotAI* ai) { return new KelthuzadStartFightTrigger(ai); };
             creators["end kel'thuzad fight"] = [](PlayerbotAI* ai) { return new KelthuzadEndFightTrigger(ai); };
+            creators["kel'thuzad phase one"] = [](PlayerbotAI* ai) { return new KelthuzadPhaseOneTrigger(ai); };
             creators["kel'thuzad adds"] = [](PlayerbotAI* ai) { return new KelthuzadAddsTrigger(ai); };
             creators["kel'thuzad phase two"] = [](PlayerbotAI* ai) { return new KelthuzadPhaseTwoTrigger(ai); };
             creators["kel'thuzad fissure"] = [](PlayerbotAI* ai) { return new KelthuzadFissureTrigger(ai); };
