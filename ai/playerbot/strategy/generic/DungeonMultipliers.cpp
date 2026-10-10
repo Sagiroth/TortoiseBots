@@ -36,7 +36,9 @@ float RazorgoreOffTankMultiplier::GetValue(Action* action)
     if (!action)
         return 1.0f;
     // Only TankAssistAction is ever vetoed: skip every scan for the ~99%
-    // of other actions (donor vetoes TankAssistAction only, too).
+    // of other actions (donor's egg-phase veto is TankAssistAction-only;
+    // its post-egg TankFaceAction veto is deliberately not ported — no
+    // TankFaceAction exists in this codebase).
     if (dynamic_cast<TankAssistAction*>(action) == nullptr)
         return 1.0f;
     if (!ai->HasStrategy("razorgore", BotState::BOT_STATE_COMBAT))
