@@ -5,18 +5,6 @@
 
 namespace ai
 {
-class RuinsOfAhnqirajEnableDungeonStrategyAction : public ChangeAllStrategyAction
-{
-public:
-    RuinsOfAhnqirajEnableDungeonStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable ruins of ahn'qiraj strategy", "+ruins of ahn'qiraj") {}
-};
-
-class RuinsOfAhnqirajDisableDungeonStrategyAction : public ChangeAllStrategyAction
-{
-public:
-    RuinsOfAhnqirajDisableDungeonStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable ruins of ahn'qiraj strategy", "-ruins of ahn'qiraj") {}
-};
-
 class OssirianEnableFightStrategyAction : public ChangeAllStrategyAction
 {
 public:

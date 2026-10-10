@@ -329,8 +329,6 @@ namespace ai
             creators["leave lower karazhan"] = [](PlayerbotAI* ai) { return new LowerKarazhanLeaveDungeonTrigger(ai); };
             creators["enter karazhan crypt"] = [](PlayerbotAI* ai) { return new KarazhanCryptEnterDungeonTrigger(ai); };
             creators["leave karazhan crypt"] = [](PlayerbotAI* ai) { return new KarazhanCryptLeaveDungeonTrigger(ai); };
-            creators["enter ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajEnterDungeonTrigger(ai); };
-            creators["leave ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajLeaveDungeonTrigger(ai); };
 
             creators["environmental hazard nearby"] = [](PlayerbotAI* ai) { return new EnvironmentalHazardTrigger(ai); };
             creators["raid bomb debuff"] = [](PlayerbotAI* ai) { return new RaidBombDebuffTrigger(ai); };

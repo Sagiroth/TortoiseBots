@@ -37,10 +37,6 @@ void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "enter ahn'qiraj temple",
         NextAction::array(0, new NextAction("enable ahn'qiraj temple strategy", 100.0f), NULL)));
 
-    triggers.push_back(new TriggerNode(
-        "enter ruins of ahn'qiraj",
-        NextAction::array(0, new NextAction("enable ruins of ahn'qiraj strategy", 100.0f), NULL)));
-
     if (sPlayerbotAIConfig.enableCustomRaidTactics)
     {
         triggers.push_back(new TriggerNode(
@@ -115,14 +111,6 @@ void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "leave ahn'qiraj temple",
         NextAction::array(0, new NextAction("disable ahn'qiraj temple strategy", 100.0f), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "enter ruins of ahn'qiraj",
-        NextAction::array(0, new NextAction("enable ruins of ahn'qiraj strategy", 100.0f), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "leave ruins of ahn'qiraj",
-        NextAction::array(0, new NextAction("disable ruins of ahn'qiraj strategy", 100.0f), NULL)));
 
     if (sPlayerbotAIConfig.enableCustomRaidTactics)
     {

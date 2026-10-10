@@ -176,7 +176,6 @@ namespace ai
             creators["zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubDungeonStrategy(ai); };
             creators["ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajDungeonStrategy(ai); };
             creators["ahn'qiraj temple"] = [](PlayerbotAI* ai) { return new AhnqirajTempleDungeonStrategy(ai); };
-            creators["ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajDungeonStrategy(ai); };
             creators["emerald sanctum"] = [](PlayerbotAI* ai) { return new EmeraldSanctumDungeonStrategy(ai); };
             creators["lower karazhan"] = [](PlayerbotAI* ai) { return new LowerKarazhanDungeonStrategy(ai); };
             creators["karazhan crypt"] = [](PlayerbotAI* ai) { return new KarazhanCryptDungeonStrategy(ai); };

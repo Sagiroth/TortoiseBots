@@ -3,18 +3,6 @@
 
 namespace ai
 {
-    class RuinsOfAhnqirajEnterDungeonTrigger : public EnterDungeonTrigger
-    {
-    public:
-        RuinsOfAhnqirajEnterDungeonTrigger(PlayerbotAI* ai) : EnterDungeonTrigger(ai, "enter ruins of ahn'qiraj", "ruins of ahn'qiraj", 509) {}
-    };
-
-    class RuinsOfAhnqirajLeaveDungeonTrigger : public LeaveDungeonTrigger
-    {
-    public:
-        RuinsOfAhnqirajLeaveDungeonTrigger(PlayerbotAI* ai) : LeaveDungeonTrigger(ai, "leave ruins of ahn'qiraj", "ruins of ahn'qiraj", 509) {}
-    };
-
     class OssirianStartFightTrigger : public StartBossFightTrigger
     {
     public:
