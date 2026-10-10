@@ -564,8 +564,9 @@ void BattlegroundQueueService::Update(uint32_t diff)
     std::vector<HumanBgDemand> demands = GetHumanBgDemands();
     if (demands.empty())
     {
-        // No human demand: opt-in autonomous bot-only WSG seeding (default
-        // off) runs on the same cadence/budget instead of idling.
+        // No human demand: autonomous bot-only WSG seeding (default on,
+        // opt out with AiPlayerbot.RandomBotBgAutonomous = 0) runs on the
+        // same cadence/budget instead of idling.
         UpdateAutonomousSeeding();
         return;
     }

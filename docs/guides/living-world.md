@@ -162,7 +162,7 @@ Organic buyer (issue #405, no buyer teleport): the synthetic buyer bids only wit
 
 ### Autonomous Bot-Only Matches (on by default; set `0` to opt out)
 * Config: **`AiPlayerbot.RandomBotBgAutonomous = 1`** (on by default; set `0` to opt out) + `AiPlayerbot.RandomBotBgAutonomousMaxInstances = 1` (cap for an average PC: one 10v10 at a time).
-* When nobody is queued, pool bots start their own Warsong Gulch in the most populated level bracket so they have matches of their own. Human demand always wins: the seeder yields the moment a real player queues.
+* When nobody is queued, pool bots start their own Warsong Gulch in the most populated level bracket so they have matches of their own. Human demand always wins: the seeder only runs when no real player is waiting in any queue (invited/in-match humans don't count), so new seeds stop as soon as someone queues.
 * Seeds are solo bots only (grouped bots stay out). Batches of 1 accumulate each tick until both sides reach 10v10;
   once the match starts forming, top-up stops and the queued seeds are absorbed. Cap is per bracket (default 1).
   Requires `AiPlayerbot.RandomBotBgEnabled = 1` (the seeder runs inside the backfill tick).
