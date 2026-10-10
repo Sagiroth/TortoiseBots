@@ -2086,15 +2086,15 @@ bool BGTactics::wsgRoofJump()
 
 bool BGTactics::isUseful()
 {
-    // Only the forced reset needs a gate; every other bg action runs from bg
-    // strategies that are only active inside a match. The force action fires
-    // from the dead engine (DeadStrategy) and the per-map timer nodes: keep
-    // it inside the match, out of combat (a mid-fight stop would feed the
-    // enemy a standing target), and at most once a minute (per-tick resets
-    // would churn the role roll and re-path every tick while corpse-running).
+    // Only the forced reset needs a gate; every other bg action keeps the
+    // base movement contract (notably: an explicit "stay" order suppresses
+    // movement). The force action fires from the dead engine (DeadStrategy)
+    // and the per-map timer nodes: keep it inside the match, out of combat
+    // (a mid-fight stop would feed the enemy a standing target), and at most
+    // once a minute (per-tick resets would churn the role roll and re-path
+    // every tick while corpse-running).
     if (getName() != "reset objective force")
-        return true;
-
+        return MovementAction::isUseful();
     time_t anchor = context->GetValue<time_t>("manual time", ai::BgForceResetAnchorKey())->Get();
     return ai::BgForceResetUseful(bot->InBattleGround(), bot->IsInCombat(), anchor, time(0));
 }
@@ -3130,7 +3130,9 @@ bool BGTactics::protectFC()
         return false;
 
     Unit* teamFC = AI_VALUE(Unit*, "team flag carrier");
-    if (teamFC && bot->IsWithinDistInMap(teamFC, VISIBILITY_DISTANCE_SMALL))
+    // The carrier itself matches the trigger (distance 0 to self): a carrier
+    // following itself stands still. Donor guards teamFC == bot.
+    if (teamFC && teamFC != bot && bot->IsWithinDistInMap(teamFC, VISIBILITY_DISTANCE_SMALL))
         return Follow(teamFC);
 
     return false;
