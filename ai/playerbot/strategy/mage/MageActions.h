@@ -349,6 +349,16 @@ namespace ai
     public:
         UseManaGemAction(PlayerbotAI* ai) : UseItemIdAction(ai, "mana gem") {}
 
+        // MAG-9: gems are for staying in the fight, not for topping up
+        // between pulls (donor gates every rank on in-combat). Has-item is
+        // already covered by UseItemIdAction::isPossible.
+        bool isUseful() override
+        {
+            if (!UseItemIdAction::isUseful())
+                return false;
+            return AI_VALUE2(bool, "combat", "self target");
+        }
+
         uint32 GetItemId() override
         {
             uint32 itemId = 0;

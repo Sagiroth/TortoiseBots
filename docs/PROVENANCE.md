@@ -5780,3 +5780,36 @@ rest of the pack was dead — wasted channel time.
 Local validation: `bash tools/verify_all.sh`; `git diff --check`;
 shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
 check pending: blizzard stops early as the pack drops below two.
+
+## Mage mana gem timing (MAG-9) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/Strategy/GenericMageStrategy.cpp:108-120` (`high
+mana`, i.e. below 65%, → use gem 90; `low mana` → evocation 90),
+`src/Ai/Class/Mage/MageActions.cpp:31-65` (every gem rank gated on
+in-combat + has-item).
+
+Source files (module, modified):
+`ai/playerbot/strategy/mage/MageStrategy.cpp`
+(`MageStrategy::InitCombatTriggers`: `medium mana` (<40%) → `mana gem`
+at HIGH+4; `low mana` (<15%) → `evocation` at HIGH+3 unchanged),
+`ai/playerbot/strategy/mage/MageActions.h`
+(`UseManaGemAction::isUseful`: in-combat gate via
+`AI_VALUE2(bool, "combat", "self target")`; has-item stays in
+`UseItemIdAction::isPossible`), `docs/classes/mage.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) gem at medium/40% rather than donor's
+high/65% — 65% burns the gem in short fights where the mana is never
+needed (report MAG-9 recommendation); (b) single best-rank gem action
+kept (no six per-rank actions); the split ends the old competition
+where gem and evocation fired on the same <15% trigger.
+
+Reason: the gem at 15% lands too late to matter — the fight is nearly
+over or evocation is already channeling — and the ungated action could
+eat the gem topping up between pulls.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: long fight, gem consumed above 15%, evocation still the
+last resort.
