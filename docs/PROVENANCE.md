@@ -4760,6 +4760,14 @@ fallback when the direct rear point repeats a failed heading. Both record
 (`BeginAttempt`) and observe like the flee/spread paths. `FleeManager`
 (plain flee) and `RaidSpreadAction` (spread) already consult — no change
 there. No new value plumbing: all state lives on `LastMovement` as before.
+## Warrior WAR-3: lost-aggro taunt priority (2026-10-09)
+
+Feature: protection warrior `lose aggro` now fires `taunt` at
+ACTION_INTERRUPT+1 (41) instead of ACTION_MOVE+4 (34) — above every DPS
+spender row (HIGH band), the interrupt rows, and the out-of-melee charge
+path; below EMERGENCY defensives. A mob peeling onto a non-tank member
+gets taunted back within a GCD instead of waiting behind shield slam,
+interrupts, and charge movement.
 
 Source repository: `mod-playerbots/mod-playerbots`
 
@@ -5001,3 +5009,25 @@ second pass remains).
 Non-blocking "no live jitter test" — ACKNOWLEDGED: still no live test;
 needs an in-game sidestep-alternation check before merge.
 | Sapphiron fight (Naxx): hover-based air detection, iceblock hide, blizzard step-out, ground flank | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Sapphiron.cpp`, `src/Ai/Raid/Naxx/NaxxBossHelper.h` (SapphironBossHelper), `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Sapphiron rows) | Reimplemented trigger-driven; air detection via MOVEFLAG_HOVER not IsFlying (vanilla SetFly commented out); blizzard avoid via NPC 16474 grid step-out (no dynobj dependency) | IDs verified in tw_world (15989, 28522, 28534/28547, 16474, 181247); core boss_sapphiron.cpp hover + icebolt/blizzard confirmed | `bash tools/verify_all.sh` + `tools/test_sapphiron_ice_policy.cpp`; build-commit + no live test (hide timing wants a live run) |
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:217-232` (`lose aggro` -> taunt at ACTION_INTERRUPT+1)
+
+Copied / ported / independently reimplemented: reimplemented in place in
+the live list-based engine (`ProtectionWarriorStrategy.cpp`,
+`ai/playerbot/strategy/warrior/`). Deviations from the donor, all
+deliberate: (a) no heroic-throw fallback chain — Heroic Throw has no
+1.18.1 player spell row, and the existing `taunt` -> `battle shout taunt`
+fallback node already covers taunt failure; (b) the `lose aggro` trigger
+itself (`GenericTriggers.cpp`, `ai->IsTank` check + non-tank-victim gate)
+is kept as-is — no `main tank` value or LowTankThreat wiring since that
+LD-8 branch is not on the integration branch yet — plus a player-target
+guard the bump made load-bearing (players have no threat list; without it
+the trigger is spuriously active in PvP and the 41-priority taunt would
+outbid real interrupts for zero effect); (c) `taunt on snare target` stays
+at ACTION_MOVE (different target: adds, not the lost-aggro mob).
+
+Reason: WAR-3 in the warrior parity sweep: the tank's taunt sat below
+interrupts and the intercept/charge path, so a peeled mob waited behind a
+missed kick and a charge GCD while the healer took hits.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).

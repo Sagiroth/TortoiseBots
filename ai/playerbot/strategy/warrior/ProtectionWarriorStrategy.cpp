@@ -75,9 +75,15 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "intercept and rage",
         NextAction::array(0, new NextAction("intercept", ACTION_MOVE + 5), NULL)));
 
+    // Lost aggro (donor TankWarriorStrategy: taunt at INTERRUPT+1): a mob
+    // peeling onto a non-tank member outranks DPS spenders and interrupts —
+    // a missed kick costs damage, a missed taunt costs the healer.
+    // Sits below EMERGENCY defensives, above pummel/shield-bash
+    // (ACTION_INTERRUPT), every DPS row (HIGH band) and the out-of-melee
+    // charge path (MOVE+7).
     triggers.push_back(new TriggerNode(
         "lose aggro",
-        NextAction::array(0, new NextAction("taunt", ACTION_MOVE + 4), NULL)));
+        NextAction::array(0, new NextAction("taunt", ACTION_INTERRUPT + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "taunt on snare target",
