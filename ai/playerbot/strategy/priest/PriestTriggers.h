@@ -182,7 +182,11 @@ namespace ai
             if (!target || !target->IsAlive())
                 return false;
             // 15258 is the Priest Shadow Weaving debuff specifically.
-            return !ai->HasAura(15258, target);
+            // Not ai->HasAura(): its IsRealAura filter hides another
+            // priest's stack on a hostile unit until it reaches 5, so a
+            // 1-4 stack read as missing (but 5 did not). Check the target
+            // directly: any caster, any stack count.
+            return !target->HasAura(15258);
         }
     };
 }
