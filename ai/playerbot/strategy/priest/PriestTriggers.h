@@ -169,6 +169,11 @@ namespace ai
     // Trigger fires when the target is MISSING the Priest Shadow Weaving
     // debuff. Used to prioritize Mind Flay / SW:P after target swap to
     // rebuild stacks before Mind Blast burst.
+    //
+    // Only a priest with the Shadow Weaving talent can apply the debuff, so
+    // without it the trigger would fire forever and burn mana on the Mind
+    // Flay -> Smite fallback. Spellbook check on the talent ranks, same
+    // pattern as the mage Improved Scorch gate.
     class ShadowWeavingMissingTrigger : public Trigger
     {
     public:
@@ -178,6 +183,11 @@ namespace ai
 
         virtual bool IsActive() override
         {
+            // Shadow Weaving talent ranks 1-5.
+            if (!bot->HasSpell(15257) && !bot->HasSpell(15331) && !bot->HasSpell(15332) &&
+                !bot->HasSpell(15333) && !bot->HasSpell(15334))
+                return false;
+
             Unit* target = GetTarget();
             if (!target || !target->IsAlive())
                 return false;
