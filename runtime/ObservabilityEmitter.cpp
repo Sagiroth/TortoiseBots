@@ -1197,7 +1197,7 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
             // only read for its name here.
             if (Action const* last = ai->GetLastExecutedAction(ai->GetState()))
                 snap.lastAction = const_cast<Action*>(last)->getName();
-            snap.lastTrigger = ai->GetLastEvent().getSource();
+            snap.lastTrigger = ai->GetLastExecutedTrigger();
         }
         botSnapshots.push_back(snap);
     }

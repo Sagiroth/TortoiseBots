@@ -1007,6 +1007,7 @@ bool Engine::ListenAndExecute(Action* action, Event& event)
         {
             ai->SetActionDuration(action);
             lastExecutedAction = action;
+            ai->SetLastExecutedTrigger(event.getSource());
         }
     }
 
