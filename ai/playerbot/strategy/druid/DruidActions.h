@@ -248,7 +248,7 @@ namespace ai
             // speed by 20%: never worth it for Cat/Bear, which lose their
             // form bonuses while it is up. Balance/Resto stay humanoid.
             if (ai->HasAura("cat form", bot) || ai->HasAura("bear form", bot) ||
-                ai->HasAura("dire bear form", bot) || ai->HasAura("tree of life", bot))
+                ai->HasAura("dire bear form", bot) || ai->HasAura("tree of life form", bot))
                 return false;
             return CastBuffSpellAction::isUseful();
         }
@@ -368,7 +368,7 @@ namespace ai
 	class CastTreeFormAction : public CastBuffSpellAction
 	{
 	public:
-		CastTreeFormAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "tree of life") {}
+		CastTreeFormAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "tree of life form") {}
 	};
 
 	class CastMoonkinFormAction : public CastBuffSpellAction
@@ -406,7 +406,7 @@ namespace ai
 
 		virtual bool isUseful()
 		{
-			return ai->HasAnyAuraOf(GetTarget(), "dire bear form", "bear form", "cat form", "travel form", "aquatic form", "moonkin form", "tree of life", NULL);
+			return ai->HasAnyAuraOf(GetTarget(), "dire bear form", "bear form", "cat form", "travel form", "aquatic form", "moonkin form", "tree of life form", NULL);
 		}
 
 		virtual bool isPossible() { return true; }

@@ -192,8 +192,8 @@ namespace ai
     class TreeFormTrigger : public BuffTrigger
     {
     public:
-        TreeFormTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "tree of life") {}
-        virtual bool IsActive() override { return !ai->HasAura("tree of life", bot); }
+        TreeFormTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "tree of life form") {}
+        virtual bool IsActive() override { return !ai->HasAura("tree of life form", bot); }
     };
 
     class MoonkinFormTrigger : public BuffTrigger

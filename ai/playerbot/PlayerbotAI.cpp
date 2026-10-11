@@ -6881,7 +6881,7 @@ void PlayerbotAI::RemoveShapeshift()
     RemoveAura("cat form");
     RemoveAura("aquatic form");
     RemoveAura("ghost wolf");
-    RemoveAura("tree of life");
+    RemoveAura("tree of life form");
 }
 
 uint32 PlayerbotAI::GetEquipGearScore(Player* player, bool withBags, bool withBank)
