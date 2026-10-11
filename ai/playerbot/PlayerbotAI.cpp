@@ -1032,6 +1032,13 @@ void PlayerbotAI::SetActionDuration(uint32 duration)
     SetAIInternalUpdateDelay(duration);
 }
 
+std::string const& PlayerbotAI::GetLastExecutedTrigger(BotState state) const
+{
+    static std::string const empty;
+    const Engine* engine = engines[(uint8)state];
+    return engine ? engine->GetLastExecutedTrigger() : empty;
+}
+
 const Action* PlayerbotAI::GetLastExecutedAction(BotState state) const
 {
     const Engine* engine = engines[(uint8)state];

@@ -824,6 +824,8 @@ public:
     void ClearActionClock() { ResetAIInternalUpdateDelay(); }
 
     const Action* GetLastExecutedAction(BotState state) const;
+    // Trigger source of that engine's last successful action; pairs with GetLastExecutedAction (dashboard).
+    std::string const& GetLastExecutedTrigger(BotState state) const;
 
     bool IsImmuneToSpell(uint32 spellId) const;
 
@@ -857,9 +859,6 @@ public:
 
     void SetLastEvent(ai::Event& event) { lastEvent = event; }
     ai::Event& GetLastEvent() { return lastEvent; }
-    // Trigger source of the last action that succeeded; pairs with GetLastExecutedAction (dashboard).
-    void SetLastExecutedTrigger(std::string const& source) { lastExecutedTrigger = source; }
-    std::string const& GetLastExecutedTrigger() const { return lastExecutedTrigger; }
 
 #ifdef BUILD_ELUNA
     MaNGOS::unique_weak_ptr<PlayerbotAI> GetWeakPtr() const { return m_weakRef; }
@@ -933,7 +932,6 @@ protected:
     bool m_recordIncommingMessages = false;
     std::vector<std::string> m_recordedMessages;
     ai::Event lastEvent;
-    std::string lastExecutedTrigger;
     LastKillerInfo lastKiller_;
     LastKillerInfo lastDamager_; // last non-self damager (UNITHOOK_ON_DAMAGE); SoR fallback for SetLastKiller
     bool deathHandled_ = false; // this death was logged and counted; cleared when the bot is seen alive again

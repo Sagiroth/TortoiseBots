@@ -80,6 +80,7 @@ namespace ai
 		void PrintStrategies(Player* requester, const std::string& engineType);
         std::string GetLastAction() { return lastAction; }
         const Action* GetLastExecutedAction() const { return lastExecutedAction; }
+        std::string const& GetLastExecutedTrigger() const { return lastExecutedTrigger; }
 
     public:
 	    virtual bool DoNextAction(Unit*, int depth, bool minimal, bool isStunned);
@@ -145,6 +146,7 @@ namespace ai
         ActionExecutionListeners actionExecutionListeners;
         BotState state;
         Action* lastExecutedAction;
+        std::string lastExecutedTrigger; // event source of lastExecutedAction
         bool inDoNextAction = false;
         bool reinitPending = false;
         // Issue #84 state. Per-engine failure memory plus the transition
