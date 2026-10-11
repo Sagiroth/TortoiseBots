@@ -474,7 +474,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
     }
     else
     {
-        combatEngine->addStrategies("racials", "default", "duel", "pvp", NULL);
+        combatEngine->addStrategies("racials", "default", "duel", "pvp", "cast time", NULL);
     }
 
     switch (player->GetClass())

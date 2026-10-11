@@ -7643,3 +7643,6 @@ victim==bot exemption is the fallback if it drags.
 
 Non-blocking "donor Geddon never used this primitive" — ACKNOWLEDGED:
 donor consumers are RS/Ulduar; the Geddon application is novel. Noted.
+
+### Default "cast time" combat strategy (lifetime-aware cast veto)
+Feature: `CastTimeStrategy` (already ported) is now added to every non-battleground bot's combat strategies. Source: `mod-playerbots` `79bd428`, `src/Bot/Factory/AiFactory.cpp` (`addStrategiesNoInit(... "cast time" ...)` for non-battleground bots). Reimplemented in `AiFactory::AddDefaultCombatStrategies` (`ai/playerbot/AiFactory.cpp`), non-BG branch only; the BG branch keeps its existing `removeStrategy("cast time")`. Reason: nothing ever added the strategy, so the multiplier was dead code. Validation: code review + build pending; in-game pending.

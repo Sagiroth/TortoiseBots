@@ -224,6 +224,7 @@ You do not need to restart the server to adjust tactical behavior during gamepla
 ### Strategy & Stance Toggles
 Using `.bot strategy <change> [Name]` (change first, optional bot name second) or the `/tbm` addon:
 - `.bot strategy +conserve mana` / `.bot strategy -conserve mana` — Restricts casters to basic, high-efficiency spells.
+- `.bot strategy -cast time` / `.bot strategy +cast time` — On by default outside battlegrounds. While the bot's current attack target is under `AiPlayerbot.CriticalHealth` (20%), casts aimed at that target take a penalty by cast time (x0.25 from 1.0 s, x0.5 from 1.5 s, vetoed from 3.0 s), so casters stop starting long Frostbolts/Shadow Bolts on mobs about to die. Ground-targeted spells are exempt; heals aimed at party members never match the attack target and are not held back.
 - `.bot strategy +loot` / `.bot strategy -loot` — Toggles whether bots run to loot corpses after combat.
 - `.bot strategy +silent` / `.bot strategy -silent` — Silences bot chatter in party/say chat so they execute commands quietly.
 - `.bot strategy -passive` — Halts all bot attacks; bots will only follow and hold fire.
