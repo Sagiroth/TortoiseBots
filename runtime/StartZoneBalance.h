@@ -86,13 +86,6 @@ inline constexpr char const* kStartZoneRegionNames[kStartZoneCount] =
     "Durotar", "Mulgore", "Tirisfal", "Elwynn", "Dun Morogh", "Teldrassil",
 };
 
-// Horde = first three zones, Alliance = last three. Matches TeamForRace for
-// every playable race, goblin and high elf included.
-inline constexpr bool StartZoneIsAlliance(uint32_t zone)
-{
-    return zone >= kStartZoneCount / 2;
-}
-
 // Cap per zone so the six-zone total always fits uint32: the service rolls
 // the weighted pick with urand(0, total - 1) and nothing can overflow.
 inline constexpr uint32_t kStartZoneMaxWeight = 1000000;
@@ -145,14 +138,16 @@ inline int StartZoneIndexByName(char const* begin, char const* end)
 // a repeated zone keeps its last weight, each weight capped). Empty/blank
 // text is not an error: out stays all-zero and the caller keeps today's even
 // spread. Returns false on any malformed entry (missing '=', unknown zone,
-// non-numeric weight); the caller must then log once and fall back to
-// today's behaviour.
+// non-numeric weight) or when every weight is zero (nothing selectable, so
+// the caller logs and falls back to today's behaviour instead of silently
+// running the even spread on an accepted config).
 inline bool ParseStartZoneWeights(char const* text, uint32_t (&out)[kStartZoneCount])
 {
     for (uint32_t& weight : out)
         weight = 0;
     if (!text)
         return true;
+    bool sawEntry = false;
     char const* cursor = text;
     while (*cursor)
     {
@@ -193,10 +188,15 @@ inline bool ParseStartZoneWeights(char const* text, uint32_t (&out)[kStartZoneCo
                     value = kStartZoneMaxWeight;
             }
             out[zone] = value;
+            sawEntry = true;
         }
         cursor = *comma ? comma + 1 : comma;
     }
-    return true;
+    if (sawEntry)
+        for (uint32_t zone = 0; zone < kStartZoneCount; ++zone)
+            if (out[zone])
+                return true;
+    return !sawEntry;
 }
 
 // Total selectable weight over the zones that still have a valid race in the

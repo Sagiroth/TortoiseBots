@@ -414,6 +414,8 @@ bool PlayerbotAIConfig::Initialize()
     randomBotEvenStartZones = config.GetBoolDefault("AiPlayerbot.RandomBotEvenStartZones", true);
     int factionRatio = config.GetIntDefault("AiPlayerbot.RandomBotFactionRatio", 50);
     randomBotFactionRatio = uint32(factionRatio < 0 ? 0 : (factionRatio > 100 ? 100 : factionRatio));
+    if (factionRatio < 0 || factionRatio > 100)
+        sLog.outError("AiPlayerbot.RandomBotFactionRatio %d is out of range (0-100), clamping to %u", factionRatio, randomBotFactionRatio);
     randomBotStartZoneWeightsText = config.GetStringDefault("AiPlayerbot.RandomBotStartZoneWeights", "");
     randomBotStartZoneWeightsValid = false;
     for (uint32& weight : randomBotStartZoneWeights)

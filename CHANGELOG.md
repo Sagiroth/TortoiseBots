@@ -1,7 +1,5 @@
 # Changelog
 
-- Random bots take a faction side and a home zone on request — `AiPlayerbot.RandomBotFactionRatio` sets the % of new bots that are Alliance (default 50 keeps today's mix; faction is rolled first, then the start zone inside it, and the login ladder prefers whichever side sits below its share), and `AiPlayerbot.RandomBotStartZoneWeights` (e.g. `Durotar=100`) steers new level-1 bots to named starting zones instead of the even spread. Both apply to new bots only; nothing existing is moved.
-
 - Warlocks top up mana with Life Tap between pulls — below 85% mana with safe health the bot pre-taps out of combat (after eating, so no sit/stand ping-pong) and enters the pull near-full mana; in combat only the urgent low-mana tap fires, since any low-priority combat row would outrank the shadow-bolt default and tap instead of nuking. The health floor is unchanged.
 - Warlocks use weapon stones again — Affliction and Demonology create and equip Spellstones, Destruction creates and equips its Firestone (only into an empty off-hand, never swapping out real gear).
 - Warlock Immolate now spreads to extra attackers instead of only the main target — Demonology and Destruction keep it up at spec level, all specs spread it with the aoe strategy on.

@@ -606,7 +606,7 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
         if (!factionPool.empty())
             factionBase = &factionPool;
         else
-            TB_LOG_DETAIL("TortoiseBots: auto-create ratio %u has no %s race on account %u, keeping the full list",
+            TB_LOG_DEBUG("TortoiseBots: auto-create ratio %u has no %s race on account %u, keeping the full list",
                 ratio, wantAlliance ? "Alliance" : "Horde", accountId);
     }
     for (int nameAttempt = 0; nameAttempt < 5; ++nameAttempt)
@@ -618,6 +618,9 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
         if (sObjectMgr.GetPlayerGuidByName(norm))
             continue;
 
+        // Zone re-rolls per name attempt on purpose (faction does not): each
+        // attempt is an independent weighted draw, so a name collision just
+        // redraws instead of pinning a colliding name to one zone.
         std::vector<std::pair<uint8_t, uint8_t>> const* pool = factionBase;
         std::vector<std::pair<uint8_t, uint8_t>> zonePool = WeightedZoneCombos(*pool);
         if (!zonePool.empty())

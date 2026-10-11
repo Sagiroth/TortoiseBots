@@ -251,8 +251,8 @@ public:
     // back to the full account-eligible list.
     uint32 randomBotFactionRatio = 50;
     // Optional per-start-zone weights for new random bots, e.g.
-    // "Durotar=100,Elwynn=50". Empty = today's even spread. Malformed text
-    // logs once and falls back to the even spread. Parsed once at startup.
+    // "Durotar=100,Elwynn=50". Empty = today's even spread. Malformed or
+    // all-zero text logs an error and falls back to the even spread.
     std::string randomBotStartZoneWeightsText;
     uint32 randomBotStartZoneWeights[6] = {};
     bool randomBotStartZoneWeightsValid = false;

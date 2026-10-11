@@ -181,7 +181,9 @@ AiPlayerbot.RandomBotEvenStartZones = 1
 # Only new bots and the login preference below follow it; existing pool bots
 # are never deleted or moved (use RandomBotPoolReset for a hard restart).
 # Login preference: when the ratio is not 50, the level ladder prefers the
-# faction furthest below its share as bots rotate in; no forced logouts.
+# faction furthest below its share as bots rotate in; no forced logouts. It
+# applies only while the ladder is filling bands (LevelLadder=1, online below
+# target); full pools and LevelLadder=0 are unaffected.
 # e.g. 90 for a mostly-Alliance pool. Default 50.
 AiPlayerbot.RandomBotFactionRatio = 50
 
@@ -189,11 +191,11 @@ AiPlayerbot.RandomBotFactionRatio = 50
 # "Durotar=100,Elwynn=50". Names are region names (Durotar, Mulgore,
 # Tirisfal, Elwynn, Dun Morogh, Teldrassil) or spawn names (Northshire,
 # Coldridge, ...). Empty = today's even spread. A zone with weight 0 gets no
-# new bots through this pick; malformed text logs once and keeps the even
-# spread. Applies within the rolled faction above. e.g. all new bots in
-# Durotar: AiPlayerbot.RandomBotStartZoneWeights = Durotar=100. Bots seeded
-# level 10+ still scatter to level-fitting zones at first login, so weighted
-# zones only control where level-1 bots start. Default empty.
+# new bots through this pick; malformed (or all-zero) text logs an error and
+# keeps the even spread. Applies within the rolled faction above. e.g. all
+# new bots in Durotar: AiPlayerbot.RandomBotStartZoneWeights = Durotar=100.
+# Bots seeded level 10+ still scatter to level-fitting zones at first login,
+# so weighted zones only control where level-1 bots start. Default empty.
 AiPlayerbot.RandomBotStartZoneWeights =
 
 # Where a random bot without a player master comes back after a repop (the

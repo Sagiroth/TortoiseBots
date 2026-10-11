@@ -62,12 +62,6 @@ static void TestSpawnTableMatchesCorePlayercreateinfo()
     CHECK(kStartZoneSpawns[5].area == 141);
 }
 
-static void TestAllianceSplit()
-{
-    // Horde = first three zones, Alliance = last three (TeamForRace parity).
-    CHECK(!StartZoneIsAlliance(0) && !StartZoneIsAlliance(1) && !StartZoneIsAlliance(2));
-    CHECK(StartZoneIsAlliance(3) && StartZoneIsAlliance(4) && StartZoneIsAlliance(5));
-}
 
 static bool Parse(char const* text, uint32_t (&out)[kStartZoneCount])
 {
@@ -96,7 +90,7 @@ static void TestWeightParser()
     CHECK(w[0] == 5);
     CHECK(Parse("Durotar=99999999999999999999", w));
     CHECK(w[0] == kStartZoneMaxWeight);
-    // Malformed text fails so the caller falls back to the even spread.
+    // Malformed text fails so the caller logs and falls back to the even spread.
     CHECK(!Parse("Durotar", w));
     CHECK(!Parse("Durotar=", w));
     CHECK(!Parse("=100", w));
@@ -104,6 +98,10 @@ static void TestWeightParser()
     CHECK(!Parse("Durotar=abc", w));
     CHECK(!Parse("Durotar=-5", w));
     CHECK(!Parse("Durotar=10.5", w));
+    // All-zero weights are unusable, not "unset": fail so the caller logs
+    // instead of silently running the even spread on an accepted config.
+    CHECK(!Parse("Durotar=0", w));
+    CHECK(!Parse("Durotar=0,Mulgore=0,Tirisfal=0,Elwynn=0,Dun Morogh=0,Teldrassil=0", w));
 }
 
 static void TestWeightedPick()
@@ -138,7 +136,6 @@ int main()
 {
     TestRaceMapping();
     TestStartZoneLevelBand();
-    TestAllianceSplit();
     TestWeightParser();
     TestWeightedPick();
     TestSpawnTableMatchesCorePlayercreateinfo();
