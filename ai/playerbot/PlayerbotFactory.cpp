@@ -108,23 +108,21 @@ void PlayerbotFactory::MakeComplete()
 // from WorldDatabase.Info, the same string mangosd uses (the 5th token).
 static std::string const& WorldDatabaseName()
 {
+    // Resolved once (thread-safe static init); a bad value is logged here once.
     static std::string const name = []() -> std::string
     {
         std::string const info = sConfig.GetStringDefault("WorldDatabase.Info", "");
         Tokens const tokens = StrSplit(info, ";");
-        if (tokens.size() < 5)
-            return std::string();
+        std::string db = tokens.size() >= 5 ? tokens[4] : std::string();
+        db.erase(0, db.find_first_not_of(" \t"));
+        db.erase(db.find_last_not_of(" \t") + 1);
 
-        std::string const& db = tokens[4];
-        if (db.empty())
-            return std::string();
-
-        for (char const c : db)
+        // The name is quoted with backticks in the query, so only a backtick
+        // could break out of it; any other character MySQL allows is fine.
+        if (db.empty() || db.find('`') != std::string::npos)
         {
-            bool const ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-                (c >= '0' && c <= '9') || c == '_' || c == '$';
-            if (!ok)
-                return std::string();
+            sLog.outError("PruneDuplicateEquipRows: cannot read a valid world DB name from WorldDatabase.Info, skipping duplicate equip prune");
+            return std::string();
         }
         return db;
     }();
@@ -138,16 +136,7 @@ void PlayerbotFactory::PruneDuplicateEquipRows()
 
     uint32 guid = bot->GetGUIDLow();
     std::string const& worldDb = WorldDatabaseName();
-    if (worldDb.empty())
-    {
-        static bool warned = false;
-        if (!warned)
-        {
-            warned = true;
-            sLog.outError("PruneDuplicateEquipRows: cannot read a valid world DB name from WorldDatabase.Info, skipping duplicate equip prune");
-        }
-    }
-    else
+    if (!worldDb.empty())
     {
         CharacterDatabase.PExecute(
             "DELETE ci FROM character_inventory ci WHERE ci.guid = %u AND ci.bag = 0 "
