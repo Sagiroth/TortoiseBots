@@ -335,7 +335,8 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "POST_TARGETS")
       "${CMAKE_SOURCE_DIR}/src/game/Movement"
       "${CMAKE_SOURCE_DIR}/src/game/Movement/spline"
       "${CMAKE_SOURCE_DIR}/src/game/Transports"
-      "${CMAKE_SOURCE_DIR}/src/game/vmap")
+      "${CMAKE_SOURCE_DIR}/src/game/vmap"
+      "${ZLIB_INCLUDE_DIRS}")
     # TortoiseBots headers assume the compatibility precompiled header
     # (ai/botpch.h) is in scope. Honor the core's PCH option: use it when
     # precompiled headers are enabled, and force-include the same header when
