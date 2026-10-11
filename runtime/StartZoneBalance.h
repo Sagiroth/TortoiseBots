@@ -65,18 +65,6 @@ inline int StartZoneIndexForRace(uint32_t race)
     }
 }
 
-// A pool character counts toward its start zone while it is still inside the
-// starting zones' level 1-9 band. A fresh pool reaches level 2-3 within the
-// ~10 minutes creation takes, so a level-1-only count read the zones whose bots
-// level fastest as empty and kept filling them (live 2026-10-09: Dun Morogh 640
-// against 256 in Teldrassil and 334 in Elwynn of 1230 Alliance bots).
-inline constexpr uint32_t kStartZoneMaxLevel = 9;
-
-inline bool CountsTowardStartZone(uint32_t level)
-{
-    return level <= kStartZoneMaxLevel;
-}
-
 // Short region names for the six start zones, same order as kStartZoneSpawns:
 // Durotar, Mulgore, Tirisfal, Elwynn, Dun Morogh, Teldrassil. Used to parse
 // AiPlayerbot.RandomBotStartZoneWeights ("Durotar=100,Elwynn=50"); spawn

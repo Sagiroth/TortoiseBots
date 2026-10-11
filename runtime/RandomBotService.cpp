@@ -448,14 +448,13 @@ uint32_t RandomBotService::GetAccountAllowedTeam(uint32_t accountId, bool& isMix
 void RandomBotService::StartZoneCountsForBatch(uint32_t batch)
 {
     // One in-memory candidate pass per creation batch (the Update loop below
-    // runs up to 5 TryAutoCreate calls per cadence). Counts level-1 pool
-    // characters per start zone from the candidates loaded at startup plus
-    // auto-created appends; a creation inside the same batch bumps the
-    // picked zone locally, so consecutive picks see each other. No DB hit
-    // on the world thread: the old characters-table SELECT blocked inside
-    // SSL_read at 2000 bots. Level comes from the cached candidate (kept
-    // current while online in Update), race from the load row; characters
-    // deleted after load drift the count until the next restart reload,
+    // runs up to 5 TryAutoCreate calls per cadence). Counts every pool
+    // character per start zone (its race's zone, at any level) from the
+    // candidates loaded at startup plus auto-created appends; a creation
+    // inside the same batch bumps the picked zone locally, so consecutive
+    // picks see each other. No DB hit on the world thread: the old
+    // characters-table SELECT blocked inside SSL_read at 2000 bots.
+    // Characters deleted after load drift the count until the next reload,
     // which only biases the even-spread pick, never blocks creation.
     if (m_startZoneBatch == batch && batch != 0)
         return;
@@ -466,8 +465,10 @@ void RandomBotService::StartZoneCountsForBatch(uint32_t batch)
         count = 0;
     for (Candidate const& candidate : m_candidates)
     {
-        if (!CountsTowardStartZone(candidate.level))
-            continue;
+        // Any level: a level band (1-9) read an empty pool whenever bots start
+        // at 10+ or level past 9, so ties fell to zone order and Dun Morogh
+        // and Teldrassil got ~60% of the others (live 2026-10-11, 1000 bots
+        // at start levels 10-60: Alliance 431 / Horde 569).
         int zone = StartZoneIndexForRace(candidate.race);
         if (zone >= 0 && zone < int(kStartZoneCount))
             ++m_startZoneCounts[zone];

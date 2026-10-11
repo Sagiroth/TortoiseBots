@@ -41,17 +41,6 @@ static void TestRaceMapping()
     CHECK(StartZoneIndexForRace(11) == -1);
 }
 
-static void TestStartZoneLevelBand()
-{
-    // A fresh pool levels to 2-3 while creation still runs: those bots are
-    // still in their start zone and must keep counting.
-    CHECK(CountsTowardStartZone(1));
-    CHECK(CountsTowardStartZone(3));
-    CHECK(CountsTowardStartZone(9));
-    CHECK(!CountsTowardStartZone(10));
-    CHECK(!CountsTowardStartZone(60));
-}
-
 static void TestSpawnTableMatchesCorePlayercreateinfo()
 {
     CHECK(kStartZoneSpawns[0].map == 1 && kStartZoneSpawns[0].area == 14);
@@ -135,7 +124,6 @@ static void TestWeightedPick()
 int main()
 {
     TestRaceMapping();
-    TestStartZoneLevelBand();
     TestWeightParser();
     TestWeightedPick();
     TestSpawnTableMatchesCorePlayercreateinfo();
