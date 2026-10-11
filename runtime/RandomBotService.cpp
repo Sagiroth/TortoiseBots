@@ -522,6 +522,51 @@ std::vector<std::pair<uint8_t, uint8_t>> LeastPopulatedZoneCombos(
     }
     return {};
 }
+
+// Keep only the rolled faction's races (AiPlayerbot.RandomBotFactionRatio).
+// Empty when the account-eligible list has no race of that faction: the
+// caller falls back to the full list instead of blocking creation.
+std::vector<std::pair<uint8_t, uint8_t>> FactionFilteredCombos(
+    std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount, bool wantAlliance)
+{
+    std::vector<std::pair<uint8_t, uint8_t>> filtered;
+    for (auto const& pr : validForAccount)
+        if ((Player::TeamForRace(pr.first) == ALLIANCE) == wantAlliance)
+            filtered.push_back(pr);
+    return filtered;
+}
+
+// Narrow to one weighted start zone (AiPlayerbot.RandomBotStartZoneWeights)
+// within the already faction-filtered list. Empty when weights are off or
+// when no eligible zone carries weight: the caller keeps today's even or
+// uniform pick.
+std::vector<std::pair<uint8_t, uint8_t>> WeightedZoneCombos(
+    std::vector<std::pair<uint8_t, uint8_t>> const& combos)
+{
+    if (!sPlayerbotAIConfig.randomBotStartZoneWeightsValid)
+        return {};
+    bool hasRace[kStartZoneCount] = {};
+    for (auto const& pr : combos)
+    {
+        int zone = StartZoneIndexForRace(pr.first);
+        if (zone >= 0 && zone < int(kStartZoneCount))
+            hasRace[zone] = true;
+    }
+    uint32_t weights[kStartZoneCount] = {};
+    for (uint32_t zone = 0; zone < kStartZoneCount; ++zone)
+        weights[zone] = sPlayerbotAIConfig.randomBotStartZoneWeights[zone];
+    uint32_t total = StartZoneWeightedTotal(weights, hasRace);
+    if (!total)
+        return {};
+    int picked = StartZoneWeightedPick(weights, hasRace, urand(0, total - 1));
+    if (picked < 0)
+        return {};
+    std::vector<std::pair<uint8_t, uint8_t>> narrowed;
+    for (auto const& pr : combos)
+        if (StartZoneIndexForRace(pr.first) == picked)
+            narrowed.push_back(pr);
+    return narrowed;
+}
 } // namespace
 
 RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAccount(uint32_t accountId, std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount)
@@ -547,6 +592,23 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
     // team-filtered, so remaining DISABLED/PVP is likely transient server state
     // that must not permanently poison a healthy account (bounded via
     // m_charCreateErrorNextRetry).
+    // Faction is rolled once per account visit (not per name attempt), then
+    // the zone is picked inside that faction. 50 = off: the code below is
+    // byte-for-byte today's path. Empty after filtering keeps the full
+    // account-eligible list (PvP-locked accounts, unknown races).
+    std::vector<std::pair<uint8_t, uint8_t>> factionPool;
+    std::vector<std::pair<uint8_t, uint8_t>> const* factionBase = &validForAccount;
+    uint32 ratio = sPlayerbotAIConfig.randomBotFactionRatio;
+    if (ratio != 50)
+    {
+        bool wantAlliance = urand(0, 99) < ratio;
+        factionPool = FactionFilteredCombos(validForAccount, wantAlliance);
+        if (!factionPool.empty())
+            factionBase = &factionPool;
+        else
+            TB_LOG_DETAIL("TortoiseBots: auto-create ratio %u has no %s race on account %u, keeping the full list",
+                ratio, wantAlliance ? "Alliance" : "Horde", accountId);
+    }
     for (int nameAttempt = 0; nameAttempt < 5; ++nameAttempt)
     {
         std::string name = GenerateRndBotName();
@@ -556,13 +618,15 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
         if (sObjectMgr.GetPlayerGuidByName(norm))
             continue;
 
-        std::vector<std::pair<uint8_t, uint8_t>> const* pool = &validForAccount;
-        std::vector<std::pair<uint8_t, uint8_t>> evenPool;
-        if (sPlayerbotAIConfig.randomBotEvenStartZones)
+        std::vector<std::pair<uint8_t, uint8_t>> const* pool = factionBase;
+        std::vector<std::pair<uint8_t, uint8_t>> zonePool = WeightedZoneCombos(*pool);
+        if (!zonePool.empty())
+            pool = &zonePool;
+        else if (sPlayerbotAIConfig.randomBotEvenStartZones)
         {
-            evenPool = LeastPopulatedZoneCombos(validForAccount, m_startZoneCounts);
-            if (!evenPool.empty())
-                pool = &evenPool;
+            zonePool = LeastPopulatedZoneCombos(*pool, m_startZoneCounts);
+            if (!zonePool.empty())
+                pool = &zonePool;
         }
         auto pr = (*pool)[urand(0, uint32(pool->size() - 1))];
         uint8 race = pr.first;
@@ -1258,7 +1322,8 @@ void RandomBotService::LadderBuildBuckets(std::vector<std::vector<size_t>>& buck
 
 // The band with the largest shortfall that still has offline characters; once every band is
 // covered, the highest level across the bands (the overflow goes to the leaders). Inside a
-// band the highest level, at equal level the faction with fewer bots online. A level-60
+// band the highest level, at equal level the faction furthest below its configured share
+// (RandomBotFactionRatio; 50 keeps today's minority tiebreak). A level-60
 // character is only taken while its band is short (hard cap). Returns the index or -1.
 int RandomBotService::LadderPickFromBuckets(std::vector<std::vector<size_t>>& buckets, std::vector<uint32_t> const& onlinePerBand, uint32_t onlineAlliance, uint32_t onlineHorde) const
 {
@@ -1286,7 +1351,24 @@ int RandomBotService::LadderPickFromBuckets(std::vector<std::vector<size_t>>& bu
         return -1;
     std::vector<size_t>& bucket = buckets[bestBand];
     size_t pos = 0;
-    uint32_t preferred = onlineHorde < onlineAlliance ? HORDE : (onlineAlliance < onlineHorde ? ALLIANCE : 0);
+    uint32_t preferred = 0;
+    uint32 ratio = sPlayerbotAIConfig.randomBotFactionRatio;
+    if (ratio == 50)
+        preferred = onlineHorde < onlineAlliance ? HORDE : (onlineAlliance < onlineHorde ? ALLIANCE : 0);
+    else
+    {
+        // Soft preference only: log in the faction furthest below its
+        // configured share of the current online mix. No forced logouts, no
+        // deletions; the mix drifts toward the ratio as bots rotate.
+        uint32_t online = onlineAlliance + onlineHorde;
+        if (online)
+        {
+            if (onlineAlliance * 100 < ratio * online)
+                preferred = ALLIANCE;
+            else if (onlineHorde * 100 < (100 - ratio) * online)
+                preferred = HORDE;
+        }
+    }
     if (preferred)
         for (size_t k = 0; k < bucket.size() && k < 64 && m_candidates[bucket[k]].level == bestLevel; ++k)
             if (m_candidates[bucket[k]].team == preferred)

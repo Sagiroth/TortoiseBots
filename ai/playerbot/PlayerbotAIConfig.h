@@ -244,6 +244,18 @@ public:
     // behaviour (uniform random race, goblins to Valley of Trials, high
     // elves to Northshire).
     bool randomBotEvenStartZones = true;
+    // % of new random bots that are Alliance (0-100); the rest are Horde.
+    // 50 = no bias (today's behaviour). Rolls faction first, then the start
+    // zone inside that faction (weights below, else even/uniform). Narrowed
+    // by AllowTwoSide/account faction limits; empty after narrowing falls
+    // back to the full account-eligible list.
+    uint32 randomBotFactionRatio = 50;
+    // Optional per-start-zone weights for new random bots, e.g.
+    // "Durotar=100,Elwynn=50". Empty = today's even spread. Malformed text
+    // logs once and falls back to the even spread. Parsed once at startup.
+    std::string randomBotStartZoneWeightsText;
+    uint32 randomBotStartZoneWeights[6] = {};
+    bool randomBotStartZoneWeightsValid = false;
     // Whether random bots are allowed in custom isolated starting zones
     // (Blackstone Island 5536, Thalassian Highlands 5225, Alah'Thalas 2040).
     // Default false (blocked and normalized to mainland starting zones).

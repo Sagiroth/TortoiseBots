@@ -77,4 +77,153 @@ inline bool CountsTowardStartZone(uint32_t level)
     return level <= kStartZoneMaxLevel;
 }
 
+// Short region names for the six start zones, same order as kStartZoneSpawns:
+// Durotar, Mulgore, Tirisfal, Elwynn, Dun Morogh, Teldrassil. Used to parse
+// AiPlayerbot.RandomBotStartZoneWeights ("Durotar=100,Elwynn=50"); spawn
+// names ("Northshire", ...) work as aliases.
+inline constexpr char const* kStartZoneRegionNames[kStartZoneCount] =
+{
+    "Durotar", "Mulgore", "Tirisfal", "Elwynn", "Dun Morogh", "Teldrassil",
+};
+
+// Horde = first three zones, Alliance = last three. Matches TeamForRace for
+// every playable race, goblin and high elf included.
+inline constexpr bool StartZoneIsAlliance(uint32_t zone)
+{
+    return zone >= kStartZoneCount / 2;
+}
+
+// Cap per zone so the six-zone total always fits uint32: the service rolls
+// the weighted pick with urand(0, total - 1) and nothing can overflow.
+inline constexpr uint32_t kStartZoneMaxWeight = 1000000;
+
+// True when the already-normalized token matches a zone's region or spawn
+// name (normalization: lowercase, spaces/tabs/underscores/dashes dropped, so
+// "Dun Morogh", "dunmorogh" and "DUN_MOROGH" all match).
+inline bool StartZoneNameMatches(char const* token, char const* name)
+{
+    while (*name)
+    {
+        unsigned char c = static_cast<unsigned char>(*name++);
+        if (c == ' ' || c == '\t' || c == '_' || c == '-')
+            continue;
+        char lowered = char((c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c);
+        if (lowered != *token++)
+            return false;
+    }
+    return *token == '\0';
+}
+
+// Zone index for a weight-entry name, or -1 when unknown.
+inline int StartZoneIndexByName(char const* begin, char const* end)
+{
+    char token[64];
+    uint32_t len = 0;
+    for (char const* p = begin; p != end; ++p)
+    {
+        unsigned char c = static_cast<unsigned char>(*p);
+        if (c == ' ' || c == '\t' || c == '_' || c == '-')
+            continue;
+        if (len + 1 >= sizeof(token))
+            return -1;
+        token[len++] = char((c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c);
+    }
+    token[len] = '\0';
+    if (!len)
+        return -1;
+    for (uint32_t zone = 0; zone < kStartZoneCount; ++zone)
+    {
+        char const* names[2] = { kStartZoneRegionNames[zone], kStartZoneSpawns[zone].name };
+        for (char const* name : names)
+            if (StartZoneNameMatches(token, name))
+                return int(zone);
+    }
+    return -1;
+}
+
+// Parse "Durotar=100,Elwynn=50" into per-zone weights (out is zeroed first,
+// a repeated zone keeps its last weight, each weight capped). Empty/blank
+// text is not an error: out stays all-zero and the caller keeps today's even
+// spread. Returns false on any malformed entry (missing '=', unknown zone,
+// non-numeric weight); the caller must then log once and fall back to
+// today's behaviour.
+inline bool ParseStartZoneWeights(char const* text, uint32_t (&out)[kStartZoneCount])
+{
+    for (uint32_t& weight : out)
+        weight = 0;
+    if (!text)
+        return true;
+    char const* cursor = text;
+    while (*cursor)
+    {
+        char const* comma = cursor;
+        while (*comma && *comma != ',')
+            ++comma;
+        char const* nameBegin = cursor;
+        char const* nameEnd = comma;
+        while (nameBegin != nameEnd && (*nameBegin == ' ' || *nameBegin == '\t'))
+            ++nameBegin;
+        while (nameEnd != nameBegin && (nameEnd[-1] == ' ' || nameEnd[-1] == '\t'))
+            --nameEnd;
+        if (nameBegin != nameEnd)
+        {
+            char const* equals = nameBegin;
+            while (equals != nameEnd && *equals != '=')
+                ++equals;
+            char const* valueBegin = equals;
+            if (valueBegin != nameEnd && *valueBegin == '=')
+                ++valueBegin;
+            while (valueBegin != nameEnd && (*valueBegin == ' ' || *valueBegin == '\t'))
+                ++valueBegin;
+            char const* valueEnd = nameEnd;
+            while (valueEnd != valueBegin && (valueEnd[-1] == ' ' || valueEnd[-1] == '\t'))
+                --valueEnd;
+            if (equals == nameEnd || valueBegin == valueEnd)
+                return false;
+            int zone = StartZoneIndexByName(nameBegin, equals);
+            if (zone < 0)
+                return false;
+            uint32_t value = 0;
+            for (char const* p = valueBegin; p != valueEnd; ++p)
+            {
+                if (*p < '0' || *p > '9')
+                    return false;
+                value = value * 10 + uint32_t(*p - '0');
+                if (value > kStartZoneMaxWeight)
+                    value = kStartZoneMaxWeight;
+            }
+            out[zone] = value;
+        }
+        cursor = *comma ? comma + 1 : comma;
+    }
+    return true;
+}
+
+// Total selectable weight over the zones that still have a valid race in the
+// candidate list. Zero means "nothing selectable": caller falls back.
+inline uint32_t StartZoneWeightedTotal(uint32_t const (&weights)[kStartZoneCount], bool const (&hasRace)[kStartZoneCount])
+{
+    uint32_t total = 0;
+    for (uint32_t zone = 0; zone < kStartZoneCount; ++zone)
+        if (hasRace[zone])
+            total += weights[zone];
+    return total;
+}
+
+// Map a pre-rolled value in [0, total) to a zone, skipping zones without an
+// eligible race or with zero weight. Returns -1 past the end (caller falls
+// back); the caller owns the RNG.
+inline int StartZoneWeightedPick(uint32_t const (&weights)[kStartZoneCount], bool const (&hasRace)[kStartZoneCount], uint32_t roll)
+{
+    for (uint32_t zone = 0; zone < kStartZoneCount; ++zone)
+    {
+        if (!hasRace[zone] || !weights[zone])
+            continue;
+        if (roll < weights[zone])
+            return int(zone);
+        roll -= weights[zone];
+    }
+    return -1;
+}
+
 } // namespace TortoiseBots

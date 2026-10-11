@@ -15,6 +15,9 @@
 #include "../../runtime/RandomBotAccountRegistry.h"
 // logEvent forwards the activity whitelist to the telemetry daemon.
 #include "../../runtime/ObservabilityEmitter.h"
+// Faction-ratio / start-zone-weight parsing lives in the core-free
+// StartZoneBalance.h so the standalone unit test can exercise it.
+#include "../../runtime/StartZoneBalance.h"
 
 #include "playerbot/TravelMgr.h"
 
@@ -409,6 +412,22 @@ bool PlayerbotAIConfig::Initialize()
     randomBotAutoCreate = config.GetBoolDefault("AiPlayerbot.RandomBotAutoCreate", true);
     enableRandomTeleports = config.GetBoolDefault("AiPlayerbot.EnableRandomTeleports", true);
     randomBotEvenStartZones = config.GetBoolDefault("AiPlayerbot.RandomBotEvenStartZones", true);
+    int factionRatio = config.GetIntDefault("AiPlayerbot.RandomBotFactionRatio", 50);
+    randomBotFactionRatio = uint32(factionRatio < 0 ? 0 : (factionRatio > 100 ? 100 : factionRatio));
+    randomBotStartZoneWeightsText = config.GetStringDefault("AiPlayerbot.RandomBotStartZoneWeights", "");
+    randomBotStartZoneWeightsValid = false;
+    for (uint32& weight : randomBotStartZoneWeights)
+        weight = 0;
+    uint32_t zoneWeights[TortoiseBots::kStartZoneCount] = {};
+    if (!TortoiseBots::ParseStartZoneWeights(randomBotStartZoneWeightsText.c_str(), zoneWeights))
+        sLog.outError("AiPlayerbot.RandomBotStartZoneWeights '%s' is malformed, ignoring it and keeping the even start-zone spread (e.g. \"Durotar=100,Elwynn=50\")",
+            randomBotStartZoneWeightsText.c_str());
+    else
+    {
+        for (uint32 i = 0; i < TortoiseBots::kStartZoneCount; ++i)
+            randomBotStartZoneWeights[i] = zoneWeights[i];
+        randomBotStartZoneWeightsValid = true;
+    }
     allowIsolatedCustomStartingZones = config.GetBoolDefault("AiPlayerbot.AllowIsolatedCustomStartingZones", false);
     relocateHopelessDeaths = config.GetBoolDefault("AiPlayerbot.RelocateHopelessDeaths", true);
     repopAtGraveyard = config.GetBoolDefault("AiPlayerbot.RepopAtGraveyard", true);
