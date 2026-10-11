@@ -1567,38 +1567,10 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
         return areaLevels[area_id];
     }
 
-    //Get units avarage
-    FactionTemplateEntry const* humanFaction = sFactionTemplateStore.LookupEntry(1);
-    FactionTemplateEntry const* orcFaction = sFactionTemplateStore.LookupEntry(2);
-
-    for (auto& creaturePair : WorldPosition().GetCreaturesNear())
-    {
-        if (WorldPosition(creaturePair).GetArea() != area)
-            continue;
-
-        CreatureData const cData = creaturePair->second;
-        CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(cData.creature_id[0]);
-
-        if (!cInfo)
-            continue;
-
-        FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(cInfo->faction);
-        ReputationRank reactionHum = PlayerbotAI::GetFactionReaction(humanFaction, factionEntry);
-        ReputationRank reactionOrc = PlayerbotAI::GetFactionReaction(orcFaction, factionEntry);
-
-        if (reactionHum > REP_NEUTRAL || reactionOrc > REP_NEUTRAL)
-            continue;
-
-        level += cInfo->level_max;
-        cnt++;
-    }
-
-    if (cnt)
-    {
-        areaLevels[area_id] = std::max(uint32(1),level / cnt);
-        return areaLevels[area_id];
-    }
-
+    // No creature-spawn average here: GetArea() per spawn loaded the terrain
+    // under every creature in the world on the world thread (8-24 s freezes,
+    // issue #684). Areas the DBC leaves at 0 are covered by the shipped
+    // ai_playerbot_zone_level rows; anything newer falls back to its zone.
     //Use parent zone value.
     if (area->ZoneId)
     {
