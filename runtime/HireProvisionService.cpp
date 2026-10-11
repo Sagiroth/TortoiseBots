@@ -657,6 +657,11 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         // queued levelup packets were drained in ProvisionHeavy, so this is
         // the only post - and it goes out exactly once, only grouped.
         AnnounceIntro(bot, master, pending);
+        // The group join can land while the bot is still in a map transfer
+        // (not in world yet), where AnnounceIntro stays silent. Keep the
+        // entry so the next tick retries; the reunite attempt cap bounds it.
+        if (!pending.introSent)
+            return false;
         auto totalElapsedMs =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
         TB_LOG_BASIC("TortoiseBots: hired companion %s (level %u role %u) joined %s (provision %lldms, total %lldms)",
