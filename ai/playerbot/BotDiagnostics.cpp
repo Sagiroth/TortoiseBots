@@ -67,9 +67,9 @@ namespace ai { namespace botdiag {
         }
         if (snapshot.empty())
             return;
-        // First dump of the run truncates (haslog=true bypasses the allowlist,
-        // like bot_test_results.log), later dumps append. Header lives at the
-        // top because nothing else writes this file.
+        // First dump of the run truncates (haslog=true bypasses the allowlist),
+        // later dumps append. Header lives at the top because nothing else
+        // writes this file.
         static bool sHeaderWritten = false;
         if (!sHeaderWritten)
         {
