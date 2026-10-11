@@ -862,12 +862,15 @@ void ObservabilityEmitter::Update(uint32 diff)
 
         // Last-action name without the non-const getName() call: read once
         // here, reused for the activity check and the snapshot below.
-        char const* lastActionName = "";
+        // getName() returns a copy: keep it alive here, or c_str() dangles
+        // before NoteActivity and the snapshot read it.
+        std::string lastActionNameHolder;
         if (ai)
         {
             if (Action const* last = ai->GetLastExecutedAction(ai->GetState()))
-                lastActionName = const_cast<Action*>(last)->getName().c_str();
+                lastActionNameHolder = const_cast<Action*>(last)->getName();
         }
+        char const* lastActionName = lastActionNameHolder.c_str();
         // Fresh tracks start idle (unknown past), not busy: when the
         // first observation shows no activity, the 45 s clock starts
         // expired instead of granting a grace window. Active newcomers
