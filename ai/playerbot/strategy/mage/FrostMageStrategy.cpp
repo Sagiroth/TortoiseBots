@@ -141,11 +141,13 @@ void FrostMageAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "ranged light aoe",
         NextAction::array(0, new NextAction("cone of cold", ACTION_HIGH), NULL)));
 
-    // Frost uses its own AoE (Blizzard, Cone of Cold, Frost Nova). The
-    // donor's flamestrike-first row opened packs with a fire nuke before
-    // the tank held them (blizzard waits 10 s into combat, flamestrike did
-    // not), so frost no longer queues flamestrike itself; the window row
-    // above still covers a flamestrike the player orders.
+    // Donor order (flamestrike above blizzard), but flamestrike waits for
+    // the same 10 s opener gate blizzard has, so it no longer opens a pack
+    // before the tank holds it.
+    triggers.push_back(new TriggerNode(
+        "ranged medium aoe after opener",
+        NextAction::array(0, new NextAction("flamestrike", ACTION_HIGH + 1), NULL)));
+
     triggers.push_back(new TriggerNode(
         "ranged medium aoe",
         NextAction::array(0, new NextAction("blizzard", ACTION_HIGH), NULL)));
