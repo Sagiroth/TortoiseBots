@@ -150,3 +150,11 @@ bool SapCcMarkTrigger::IsActive()
 
     return true;
 }
+
+bool BladeFlurryNearCcTrigger::IsActive()
+{
+    // Aura first: only a rogue with Blade Flurry up pays for the scan.
+    if (!ai->HasAura("blade flurry", bot))
+        return false;
+    return BladeFlurryNearCc(ai, bot, CcBladeFlurryCancelRadius);
+}

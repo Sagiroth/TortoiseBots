@@ -5,6 +5,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/Action.h"
 #include "PossibleAttackTargetsValue.h"
+#include "CcMarkHoldPolicy.h"
 #include "playerbot/GroupMembers.h"
 
 using namespace ai;
@@ -25,6 +26,17 @@ public:
 
         AiObjectContext* context = ai->GetAiObjectContext();
 
+        // The assigned mark wins the whole tournament: the free-pick rules
+        // below assign `result` without looking at what it holds, so an
+        // open-world candidate checked after the mark replaced it and the
+        // CC bot sheeped another mob, or alternated, instead of its mark.
+        // One read per candidate: the value re-resolves its guid through
+        // the object accessor on every Get, and the mark is the same unit
+        // the assigned branch below compares against.
+        Unit* const assignedMark = AI_VALUE(Unit*, "rti cc target");
+        if (result && CcChooserKeepsResult(result == assignedMark))
+            return;
+
         // Never CC over another CC (generalized from the Fear mark-only
         // branch): a mob already held by someone's breakable/unbreakable aura
         // stays held. Re-CC of our own aura of the same spell still flows
@@ -36,9 +48,13 @@ public:
 
         // A bot assigned to this raid mark may still need to close distance.
         // Keep the normal legality/resource checks, but let the mature reach
-        // prerequisite handle range for that one assigned target.
+        // prerequisite handle range for that one assigned target: it stays
+        // the "cc target" out of range or sight, and the cast itself waits
+        // until "reach cc" has it in sight and inside the range margin
+        // (CastCrowdControlSpellAction::isPossible), so a 1.5 s cast is not
+        // started on a mark that can leave range before it finishes.
 
-        const bool assignedTarget = AI_VALUE(Unit*, "rti cc target") == creature;
+        const bool assignedTarget = assignedMark && assignedMark == creature;
 
         // Never a free pick on a mob the group is fighting: a sheep there is
         // broken by the next hit (Blade Flurry, a swing, a pet). Only an

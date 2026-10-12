@@ -578,6 +578,24 @@ namespace ai
         ReachSpellAction(PlayerbotAI* ai) : ReachTargetAction(ai, "reach spell", ai->GetRange("spell")) {}
     };
 
+    // Reach for a crowd-control cast: the spell's range minus
+    // CcCastRangeMargin (CcMarkHoldPolicy.h), the distance at which
+    // CastCrowdControlSpellAction starts its cast.
+    class ReachCcAction : public ReachTargetAction
+    {
+    public:
+        ReachCcAction(PlayerbotAI* ai) : ReachTargetAction(ai, "reach cc", ai->GetRange("spell")) {}
+
+        void Qualify(const std::string& qualifier) override
+        {
+            // Start from the base range on every qualify, so the margin is
+            // applied once.
+            range = ai->GetRange("spell");
+            ReachTargetAction::Qualify(qualifier);
+            range = CcCastReach(range);
+        }
+    };
+
     class ReachPullAction : public ReachTargetAction
     {
     public:

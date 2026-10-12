@@ -78,6 +78,7 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
   - Casts *Fear* only on its assigned raid CC mark, and never on a mob already under another CC (a feared mob pulls adds). There is no automatic Fear on unmarked mobs. Skips undead and mechanical marks (fear never lands on them).
   - *Howl of Terror* (AoE fear) is PvP-only; it is never cast in PvE groups, and never inside a dungeon or raid (a feared mob pulls neighbouring packs).
   - Casts *Banish* on Demons and Elementals (other marks are skipped: banish only lands on those two types).
+  - Never hits its own CC mark (the mark it can Fear or Banish) with an area spell (*Rain of Fire*, *Hellfire*, ...) while other enemies are left, because it CCs that mob next. Once only CC marks are left, AoE on them is allowed. It starts *Fear*/*Banish* only in line of sight and 5 yd inside the spell's range, and walks closer first.
   - *Seduce* (Succubus) is a CC executor for humanoid marks: with a Succubus out, the bot orders *Seduction* on its assigned CC mark (pet-cast, so range resolves against the demon — she must already be near the mark). Other types are skipped, and fear wins ties.
 
 ---
