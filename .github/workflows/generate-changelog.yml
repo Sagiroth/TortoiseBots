@@ -91,11 +91,11 @@ jobs:
       - name: Post Changelog to Discord Thread
         if: steps.generate.outputs.has_changes == 'true'
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK_URL }}
         run: |
           python3 tools/post_discord_changelog.py \
             --notes /tmp/discord_notes.md \
             --title "TortoiseBots build ${{ steps.version.outputs.build_version }}" \
             --tag "${{ steps.version.outputs.release_tag }}" \
-            --thread-id "1542647578548772954" \
+            --thread-id "1559276000293158953" \
             --username "TortoiseBots Changelog"

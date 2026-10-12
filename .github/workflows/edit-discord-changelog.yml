@@ -14,7 +14,7 @@ on:
       thread_id:
         description: "Changelog thread ID"
         required: false
-        default: "1542647578548772954"
+        default: "1559276000293158953"
 
 permissions:
   contents: read
@@ -25,7 +25,7 @@ jobs:
     steps:
       - name: Edit message
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK_URL }}
           MESSAGE_ID: ${{ inputs.message_id }}
           REMOVE_TEXT: ${{ inputs.remove_text }}
           THREAD_ID: ${{ inputs.thread_id }}

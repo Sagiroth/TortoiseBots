@@ -18,7 +18,7 @@ on:
       thread_id:
         description: "Changelog thread ID"
         required: false
-        default: "1542647578548772954"
+        default: "1559276000293158953"
 
 permissions:
   contents: read
@@ -49,7 +49,7 @@ jobs:
 
       - name: Post to Discord thread
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK_URL }}
         run: |
           python3 tools/post_discord_changelog.py \
             --notes /tmp/discord_notes.md \
