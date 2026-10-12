@@ -105,9 +105,13 @@ std::list<ObjectGuid> EnemyPlayersValue::Calculate()
             // start the fight with a PvP-flagged enemy player in range instead of
             // only hitting back. Reuses the "possible targets" scan above, so no
             // extra world scan. Never for a real player's companions, never while
-            // the bot is already fighting, never in a city.
+            // the bot is already fighting, never in a city. Only for a bot whose
+            // non-combat engine carries "pvp" (the node that opens the fight):
+            // otherwise the list would only flip IsInPvp() and the mount check
+            // (dismount next to the enemy) without any attack following.
             if (result.empty() && sPlayerbotAIConfig.worldPvpEngage && !bot->InBattleGround() &&
                 !ai->GetMaster() && !bot->IsInCombat() && bot->GetAttackers().empty() &&
+                ai->HasStrategy("pvp", BotState::BOT_STATE_NON_COMBAT) &&
                 !ai->IsInCapitalCity() && !bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_SANCTUARY) &&
                 TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()))
             {

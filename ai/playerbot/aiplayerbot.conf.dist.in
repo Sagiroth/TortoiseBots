@@ -3237,7 +3237,8 @@ AiPlayerbot.WorldPvpSeek = 2
 # target has more health) in line of sight and within 30 yd of height. Never
 # for a real player's companions, never in battlegrounds, cities, sanctuaries or
 # PvpProhibitedZoneIds, never a target 5+ levels above the bot, and the
-# recent-killer avoidance still applies.
+# recent-killer avoidance still applies. With 1 those bots also get the "pvp"
+# strategy out of combat ("-pvp" in RandomBotNonCombatStrategies removes it).
 #AiPlayerbot.WorldPvpEngage = 0
 
 # Spells every random bot will learn on randomize. Keep this list limited to

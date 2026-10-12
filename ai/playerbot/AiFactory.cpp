@@ -1558,6 +1558,18 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                 nonCombatEngine->addStrategy("maintenance");
             }
 
+            // AiPlayerbot.WorldPvpEngage: a masterless pool bot opens a fight with a
+            // PvP-flagged enemy player while out of combat. "pvp" owns the
+            // "enemy player near" -> "attack enemy player" node; it was only in the
+            // combat engine outside battlegrounds, so out of combat nothing started
+            // the fight. Added before RandomBotNonCombatStrategies so "-pvp" there
+            // still removes it.
+            if (sPlayerbotAIConfig.worldPvpEngage && !master &&
+                TortoiseBots::BotManager::Instance().IsRandomBot(player->GetObjectGuid()))
+            {
+                nonCombatEngine->addStrategy("pvp");
+            }
+
             nonCombatEngine->ChangeStrategy(CommandedSafeNonCombatStrategies(player, HireSafeNonCombatStrategies(facade, sPlayerbotAIConfig.randomBotNonCombatStrategies), &commandedListHeld));
         }
         else
