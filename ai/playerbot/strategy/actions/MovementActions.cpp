@@ -1467,9 +1467,21 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
     AI_VALUE(LastMovement&, "last movement").Set(target);
     ClearIdleState();
 
+    if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
+    {
+        Unit* currentTarget = sServerFacade.GetChaseTarget(bot);
+        // The Penqle generator intentionally keeps its requested angle and
+        // offset private. The public target/current-motion contract is enough
+        // to let the native generator continue; repeatedly replacing it while
+        // following causes jitter and defeats the follow dead-zone.
+        if (currentTarget && currentTarget->getObjectGuid() == target->getObjectGuid())
+            return false;
+    }
 
     // A follower stranded on a dungeon navmesh island (a dais the core follow
-    // cannot leave) steps down off the edge; see StepDownOffLedge.
+    // cannot leave) steps down off the edge; see StepDownOffLedge. After the
+    // follow-generator guard above: an active follow move is still closing the
+    // gap and must not be cleared for a new spline every tick.
     if (tDist > distance + 3.0f && StepDownOffLedge(target))
         return true;
 
@@ -1483,17 +1495,6 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
             if (tryJump)
                 return true;
         }
-    }
-
-    if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
-    {
-        Unit* currentTarget = sServerFacade.GetChaseTarget(bot);
-        // The Penqle generator intentionally keeps its requested angle and
-        // offset private. The public target/current-motion contract is enough
-        // to let the native generator continue; repeatedly replacing it while
-        // following causes jitter and defeats the follow dead-zone.
-        if (currentTarget && currentTarget->getObjectGuid() == target->getObjectGuid())
-            return false;
     }
 
     mm.MoveFollow(target, distance, angle);
@@ -2185,10 +2186,12 @@ bool MovementAction::StepDownOffLedge(Unit* target)
     Movement::PointsArray const& points = path.getPath();
     if (!points.empty())
     {
+        // Horizontal only: the partial end sits on the navmesh, which can be a
+        // yard above or below the bot's feet on stairs or slopes, and that Z
+        // gap alone must not read as headway (or its absence).
         float const dx = points.back().x - from.x;
         float const dy = points.back().y - from.y;
-        float const dz = points.back().z - from.z;
-        partialEndDistance = std::sqrt(dx * dx + dy * dy + dz * dz);
+        partialEndDistance = std::sqrt(dx * dx + dy * dy);
     }
 
     bool const stuck = UseLedgeStepDown(true, incomplete, partialEndDistance, beingHit);
@@ -2260,7 +2263,17 @@ bool MovementAction::StepDownOffLedge(Unit* target)
     // path-finding move would stop at the edge again): flat out over the edge
     // at the bot's own height, then down to the floor. A straight line from
     // foot to foot would cut through the platform itself. path[0] is the
-    // current position, as the core's spline expects.
+    // current position, as the core's spline expects. Both legs must have
+    // length: Launch overwrites legs[0] with the live position, so a bot that
+    // drifted onto the edge (or an edge sampled at the feet) would launch a
+    // zero-length spline and freeze in MoveIdle.
+    float const ex = choice.edge.x - from.x;
+    float const ey = choice.edge.y - from.y;
+    float const lx = choice.point.x - choice.edge.x;
+    float const ly = choice.point.y - choice.edge.y;
+    float const lz = choice.point.z - choice.edge.z;
+    if (ex * ex + ey * ey < 0.01f || lx * lx + ly * ly + lz * lz < 0.01f)
+        return false;
     std::vector<G3D::Vector3> legs;
     legs.push_back(G3D::Vector3(from.x, from.y, from.z));
     legs.push_back(G3D::Vector3(choice.edge.x, choice.edge.y, choice.edge.z));
@@ -2274,11 +2287,6 @@ bool MovementAction::StepDownOffLedge(Unit* target)
     init.SetWalk(false);
     init.Launch();
 
-    float const ex = choice.edge.x - from.x;
-    float const ey = choice.edge.y - from.y;
-    float const lx = choice.point.x - choice.edge.x;
-    float const ly = choice.point.y - choice.edge.y;
-    float const lz = choice.point.z - choice.edge.z;
     WaitForReach(std::sqrt(ex * ex + ey * ey) + std::sqrt(lx * lx + ly * ly + lz * lz));
 
     ai->TellDebug(GetMaster(), "Stepping down off a ledge towards " + std::string(target->GetName()), "debug move");

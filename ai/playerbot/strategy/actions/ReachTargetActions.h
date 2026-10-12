@@ -385,9 +385,15 @@ namespace ai
             if (!map || !target || bot->GetTransport())
                 return false;
 
-            // Cheap gate first: the open world never pays the sight ray below.
+            // Cheap gates first: the open world never pays the sight ray below,
+            // and a bot already walking its approach never pays a second path
+            // search. MoveTo relaunches the spline every call, so without this
+            // the reach re-pathed and restarted the walk on every tick.
             if (!UseRangedApproach(map->IsDungeon(), distance, ATTACK_DISTANCE))
                 return false;
+
+            if (!bot->IsStopped() && !bot->movespline->Finalized())
+                return true;
 
             if (!bot->IsWithinLOSInMap(target, true))
                 return false;
