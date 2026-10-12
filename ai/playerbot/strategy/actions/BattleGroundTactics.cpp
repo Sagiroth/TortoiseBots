@@ -2333,6 +2333,122 @@ static bool BgTeamHasRealPlayer(BattleGround* bg, Team team)
     return false;
 }
 
+// AiPlayerbot.WsgFlagRoles = 1: team-level WSG roles, adapted from
+// mod-playerbots 79bd428 BattleGroundTactics.cpp:2134-2287 (balanced team
+// strategy: ~30 % defenders, the rest attackers) with a mid/escort share
+// added. The split is by GUID rank among the team's bots, so every bot of a
+// team reaches the same split on its own; real players are not counted.
+enum WsgFlagRole : uint32
+{
+    WSG_FLAG_ROLE_ATTACKER = 0,
+    WSG_FLAG_ROLE_DEFENDER = 1,
+    WSG_FLAG_ROLE_MID      = 2
+};
+
+uint32 BGTactics::wsgFlagRole(BattleGround* bg)
+{
+    // Re-split only when the match or this team's size changes, not on every
+    // objective pick (the size is an O(1) core counter).
+    uint32 const key = ((bg->GetInstanceID() & 0xFFFF) << 16) | ((bg->GetPlayersCountByTeam(bot->GetTeam()) & 0xFF) << 8);
+    uint32 const cached = context->GetValue<uint32>("wsg flag role")->Get();
+    if (cached && (cached & 0xFFFFFF00) == key)
+        return (cached & 0xFF) - 1;
+
+    uint32 teamBots = 0;
+    uint32 rank = 0;
+    uint32 const myGuid = bot->GetGUIDLow();
+    for (auto const& itr : bg->GetPlayers())
+    {
+        if (itr.second.PlayerTeam != bot->GetTeam())
+            continue;
+
+        Player* p = sObjectMgr.GetPlayer(itr.first);
+        if (!p || !PlayerbotAIStorage::Instance().GetAI(p))
+            continue;
+
+        ++teamBots;
+        if (itr.first.GetCounter() < myGuid)
+            ++rank;
+    }
+
+    // 10 bots: 4 attackers, 3 defenders, 3 mid; 4 bots: 2/1/1; one bot attacks.
+    uint32 const attackers = std::max<uint32>(1, (teamBots * 4 + 5) / 10);
+    uint32 const defenders = (teamBots * 3 + 5) / 10;
+    uint32 role = WSG_FLAG_ROLE_MID;
+    if (rank < attackers)
+        role = WSG_FLAG_ROLE_ATTACKER;
+    else if (rank < attackers + defenders)
+        role = WSG_FLAG_ROLE_DEFENDER;
+
+    context->GetValue<uint32>("wsg flag role")->Set(key | (role + 1));
+    return role;
+}
+
+bool BGTactics::selectWsgFlagRoleObjective(BattleGround* bg, float& x, float& y, float& z)
+{
+    bool const alliance = bot->GetTeam() == ALLIANCE;
+    Unit* enemyFC = AI_VALUE(Unit*, "enemy flag carrier");
+    Unit* teamFC = AI_VALUE(Unit*, "team flag carrier");
+
+    auto chase = [&](Unit* target)
+    {
+        x = target->getPositionX();
+        y = target->getPositionY();
+        z = target->getPositionZ();
+    };
+    auto escort = [&]()
+    {
+        chase(teamFC);
+        if (sServerFacade.getDistance2d(bot, teamFC) < 50.0f)
+            Follow(teamFC);
+    };
+
+    switch (wsgFlagRole(bg))
+    {
+    case WSG_FLAG_ROLE_DEFENDER:
+        // Hunt the enemy carrier, otherwise hold the own flag room (donor
+        // rolls 33 % room / escort / mid; here the room is the whole job).
+        if (enemyFC)
+            chase(enemyFC);
+        else
+        {
+            Position const& spot = (alliance ? WS_FLAG_HIDE_ALLIANCE : WS_FLAG_HIDE_HORDE)[urand(0, 2)];
+            if (!bot->GetRandomPoint(spot.x, spot.y, spot.z, 5.0f, x, y, z))
+            {
+                x = spot.x;
+                y = spot.y;
+                z = spot.z;
+            }
+        }
+        return true;
+    case WSG_FLAG_ROLE_ATTACKER:
+        // Donor attacker: 70 % chase a visible enemy carrier, else escort our
+        // carrier, else push to the enemy flag spawn.
+        if (enemyFC && urand(0, 99) < 70)
+            chase(enemyFC);
+        else if (teamFC)
+            escort();
+        else
+        {
+            Position const& flag = alliance ? WS_FLAG_POS_HORDE : WS_FLAG_POS_ALLIANCE;
+            x = flag.x;
+            y = flag.y;
+            z = flag.z;
+        }
+        return true;
+    default:
+        // Mid: escort our carrier, chase theirs, else hold mid-field (the
+        // same patrol the toggle-off path uses).
+        if (teamFC)
+            escort();
+        else if (enemyFC)
+            chase(enemyFC);
+        else
+            bot->GetRandomPoint(1227.446f, 1476.235f, 307.484f, 150.0f, x, y, z);
+        return true;
+    }
+}
+
 bool BGTactics::selectObjective(bool reset)
 {
     BattleGround *bg = bot->GetBattleGround();
@@ -2400,6 +2516,12 @@ bool BGTactics::selectObjective(bool reset)
                 pos.Set(WS_FLAG_POS_ALLIANCE.x, WS_FLAG_POS_ALLIANCE.y, WS_FLAG_POS_ALLIANCE.z, bot->GetMapId());
             else
                 pos.Set(WS_FLAG_POS_HORDE.x, WS_FLAG_POS_HORDE.y, WS_FLAG_POS_HORDE.z, bot->GetMapId());
+        }
+        else if (sPlayerbotAIConfig.wsgFlagRoles)
+        {
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            if (selectWsgFlagRoleObjective(bg, x, y, z))
+                pos.Set(x, y, z, bot->GetMapId());
         }
         else
         {

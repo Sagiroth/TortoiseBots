@@ -355,6 +355,7 @@ namespace ai
             creators["bg type"] = [](PlayerbotAI* ai) { return new BgTypeValue(ai); };
             creators["rpg bg type"] = [](PlayerbotAI* ai) { return new RpgBgTypeValue(ai); };
             creators["bg role"] = [](PlayerbotAI* ai) { return new BgRoleValue(ai); };
+            creators["wsg flag role"] = [](PlayerbotAI* ai) { return new WsgFlagRoleValue(ai); };
             creators["bg master"] = [](PlayerbotAI* ai) { return new BgMasterValue(ai); };
             creators["enemy flag carrier"] = [](PlayerbotAI* ai) { return new FlagCarrierValue(ai, false, true); };
             creators["team flag carrier"] = [](PlayerbotAI* ai) { return new FlagCarrierValue(ai, true, true); };

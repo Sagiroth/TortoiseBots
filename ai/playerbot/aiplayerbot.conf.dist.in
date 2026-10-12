@@ -696,6 +696,16 @@ AiPlayerbot.AhMarketTimeMax = 24
 #AiPlayerbot.RandomBotBgAutonomousMaxInstances = 1
 # Note: the seeder runs inside the backfill tick, so it also requires
 # AiPlayerbot.RandomBotBgEnabled = 1 (Autonomous=1 + BgEnabled=0 seeds nothing).
+# Warsong Gulch team roles (default 0 = off). 0 keeps the current tactics:
+# bots guard/escort their own carrier or chase the enemy one, go for the
+# enemy flag only when no real player is on their team, and otherwise
+# patrol mid-field (owner request, 2026-07-27); nobody guards the own flag
+# room. 1 splits each team's bots by rank, re-split only when the match or
+# the team size changes: ~40% attackers go for the enemy flag (or chase the
+# enemy carrier / escort ours), ~30% defenders hold the own flag room and
+# chase an enemy carrier, the rest hold mid-field and escort - also when a
+# human is on the team (humans are not counted in the split).
+#AiPlayerbot.WsgFlagRoles = 0
 
 # 1 = every bot's AI is always fully active (botActiveAlone is ignored).
 # 0 = activity priorities apply: bots near/visible to a player, in combat, in

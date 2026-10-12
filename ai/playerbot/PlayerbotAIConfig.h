@@ -1160,6 +1160,10 @@ public:
     // populated bracket, capped at one concurrent instance (average PC).
     bool randomBotBgAutonomous = true;
     uint32 randomBotBgAutonomousMaxInstances = 1;
+    // WSG team roles (off by default): defenders hold the own flag room,
+    // attackers go for the enemy flag, the rest hold mid/escort - also with
+    // a human on the team. Off keeps the 2026-07-27 mid-field patrol.
+    bool wsgFlagRoles = false;
 
     bool jumpInBg;
     bool jumpWithPlayer;

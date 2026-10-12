@@ -54,6 +54,8 @@ private:
     bool SelectAvObjectiveHorde(WorldLocation& objectiveLocation);
     bool moveToStart(bool force = false);
     bool selectObjective(bool reset = false);
+    uint32 wsgFlagRole(BattleGround* bg);
+    bool selectWsgFlagRoleObjective(BattleGround* bg, float& x, float& y, float& z);
     bool moveToObjective();
     bool selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths);
     bool moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 currentPoint, bool reverse = false);
