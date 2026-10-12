@@ -32,10 +32,6 @@ namespace ai
     struct RangedApproachChoice
     {
         bool valid = false;
-        // The point is within the requested distance of the target. False only
-        // for a partial path that ends short of range: walking to its end still
-        // closes the gap, the next tick takes it from there.
-        bool inRange = false;
         ApproachPoint point;
     };
 
@@ -48,27 +44,37 @@ namespace ai
     }
 
     // The path walk replaces the core chase only where the chase fails: inside
-    // a dungeon (raids included, the core's Map::IsDungeon), with the target in
-    // sight (out of sight the reach already walks a path to the target), and
-    // for a distance beyond melee reach (a melee-reach destination passes the
-    // core's dungeon check, so melee keeps the chase and its target tracking).
-    inline bool UseRangedApproach(bool inDungeon, bool inLos, float distance, float meleeReach)
+    // a dungeon (raids included, the core's Map::IsDungeon) and for a distance
+    // beyond melee reach (a melee-reach destination passes the core's dungeon
+    // check, so melee keeps the chase and its target tracking). Both are cheap,
+    // so they come first; the caller then also requires the target in sight
+    // (out of sight the reach already walks a path to the target), which costs
+    // a vmap ray and is not paid in the open world.
+    inline bool UseRangedApproach(bool inDungeon, float distance, float meleeReach)
     {
-        return inDungeon && inLos && distance > meleeReach;
+        return inDungeon && distance > meleeReach;
     }
 
     // `path` runs from the bot (front) to the target or, for a partial path,
     // to the closest point the navmesh reaches (back). `hasLos(point)` says
-    // whether the target is visible from a point.
+    // whether the target is visible from a point. Every point chosen sees the
+    // target: the bot only gets here while it sees the target, and a point out
+    // of sight would leave it standing hidden (the next tick's out-of-sight
+    // path to the target ends where it already stands).
     //
     // - Fewer than two points, a non-positive distance, or a bot that already
     //   stands within `distance`: no choice (nothing for the path to add).
-    // - A path that ends out of range: its end, when that end is closer to the
-    //   target than the bot is; otherwise no choice.
-    // - Otherwise: walk back from the end while the previous point is within
-    //   range and sees the target. Where the walk leaves range, the point on
-    //   that segment exactly `distance` from the target is used if it sees the
-    //   target; where it loses sight, the last point that saw it is used.
+    // - The anchor is the last point of the path, scanning back from the end,
+    //   that sees the target and is closer to it than the bot. For a complete
+    //   path that is the end itself (the target's own spot); for a partial path
+    //   whose end is hidden behind a ledge or wall it is an earlier point. No
+    //   such point: no choice, and the caller falls back to the chase.
+    // - An anchor out of range is the choice: walking there closes the gap
+    //   without losing sight, the next tick takes it from there.
+    // - An anchor in range: walk back from it while the previous point is
+    //   within range and sees the target. Where the walk leaves range, the point
+    //   on that segment exactly `distance` from the target is used if it sees
+    //   the target; where it loses sight, the last point that saw it is used.
     template <typename LosFn>
     inline RangedApproachChoice SelectRangedApproachPoint(
         std::vector<ApproachPoint> const& path, ApproachPoint const& target, float distance, LosFn hasLos)
@@ -79,33 +85,29 @@ namespace ai
             return result;
 
         float const rangeSq = distance * distance;
-        ApproachPoint const& start = path.front();
-        ApproachPoint const& end = path.back();
-        float const startSq = ApproachDistanceSq(start, target);
+        float const startSq = ApproachDistanceSq(path.front(), target);
 
         if (startSq <= rangeSq)
             return result;
 
-        float const endSq = ApproachDistanceSq(end, target);
-        if (endSq > rangeSq)
-        {
-            if (endSq < startSq)
-            {
-                result.valid = true;
-                result.point = end;
-            }
-            return result;
-        }
+        std::size_t i = path.size() - 1;
+        while (i > 0 && !(ApproachDistanceSq(path[i], target) < startSq && hasLos(path[i])))
+            --i;
+
+        if (i == 0)
+            return result; // nothing closer than the bot that still sees the target
 
         result.valid = true;
-        result.inRange = true;
+        result.point = path[i];
 
-        std::size_t i = path.size() - 1;
+        if (ApproachDistanceSq(path[i], target) > rangeSq)
+            return result; // closer and in sight, but short of range
+
         while (i > 0 && ApproachDistanceSq(path[i - 1], target) <= rangeSq && hasLos(path[i - 1]))
             --i;
 
         // i > 0 always: the front is out of range. path[i] is the earliest point
-        // of the in-range, in-sight stretch at the end of the path.
+        // of the in-range, in-sight stretch ending at the anchor.
         result.point = path[i];
 
         ApproachPoint const& outside = path[i - 1];

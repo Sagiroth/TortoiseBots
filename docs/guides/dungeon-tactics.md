@@ -105,7 +105,7 @@ If your group wipes, follow this checklist to recover quickly:
 
 ### Healers and Casters Closing Range
 * Inside an instance, a healer or caster that sees its target but stands out of range walks the navmesh path towards it and stops at the first point within casting distance that still has line of sight. It used the core's chase before, which inside dungeons refuses any destination outside melee reach, so the healer stood still at the entrance while the tank fought 38 yd away.
-* When the navmesh only reaches part of the way (a raised dais, a ledge), the bot walks to the closest point the path reaches and stops there; it does not drop off ledges. Use `.bot summon <Name>` out of combat if it stays stuck.
+* When the navmesh only reaches part of the way (a raised dais, a ledge), the bot walks to the closest point on the path that still sees its target and stops there; it does not drop off ledges. Use `.bot summon <Name>` out of combat if it stays stuck.
 
 ### Elevators, Boats & Ledges
 * In complex vertical dungeons (Gnomeregan, Sunken Temple, Blackrock Spire), bots can occasionally desync when jumping down ledges or riding elevators.

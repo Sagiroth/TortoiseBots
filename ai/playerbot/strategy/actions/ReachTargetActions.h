@@ -362,12 +362,13 @@ namespace ai
         // that is not melee-reachable from the target and stands still while
         // the target is in sight (TargetedMovementGenerator), so a healer or
         // caster out of range but in sight of its target never closed the gap:
-        // in Uldaman (2026-10-12) the priest stayed at the entrance 38 yd from
-        // the fight on "reach party member to heal" (the same core rule as the
-        // pull in #389). Port of mod-playerbots ReachCombatTo: take the navmesh
+        // in Uldaman (2026-10-12) a mage stood 20 s at 35 yd on "reach spell",
+        // and a priest stayed at the entrance 38 yd from the fight on "reach
+        // party member to heal" (the same core rule as the pull in #389). Port of mod-playerbots ReachCombatTo: take the navmesh
         // path to the target (complete or partial), walk it back from the
         // target end to the first point within `distance` that still sees the
-        // target, and point-move there. False leaves the move to the chase:
+        // target (a partial path never parks the bot out of sight), and
+        // point-move there. False leaves the move to the chase:
         // outside dungeons, out of sight, within melee distance, no usable path
         // or point, a hazard at the point, or a move that does not start.
         bool MoveIntoRangeAlongPath(Unit* target, float distance)
@@ -376,7 +377,11 @@ namespace ai
             if (!map || !target || bot->GetTransport())
                 return false;
 
-            if (!UseRangedApproach(map->IsDungeon(), bot->IsWithinLOSInMap(target, true), distance, ATTACK_DISTANCE))
+            // Cheap gate first: the open world never pays the sight ray below.
+            if (!UseRangedApproach(map->IsDungeon(), distance, ATTACK_DISTANCE))
+                return false;
+
+            if (!bot->IsWithinLOSInMap(target, true))
                 return false;
 
             if (!ai->CanMove() || !ai->IsSafe(target))
@@ -413,11 +418,14 @@ namespace ai
             goal.y = targetPosition.getY();
             goal.z = targetPosition.getZ();
 
-            float const eyeHeight = bot->GetCollisionHeight();
-            auto const seesTarget = [map, &goal, eyeHeight](ApproachPoint const& point)
+            // The same heights as the core's IsWithinLOSInMap: each side at its
+            // own collision height (Unit::GetLosCheckPosition).
+            float const botHeight = bot->GetCollisionHeight();
+            float const targetHeight = target->GetCollisionHeight();
+            auto const seesTarget = [map, &goal, botHeight, targetHeight](ApproachPoint const& point)
             {
-                return map->isInLineOfSight(point.x, point.y, point.z + eyeHeight,
-                    goal.x, goal.y, goal.z + eyeHeight, true);
+                return map->isInLineOfSight(point.x, point.y, point.z + botHeight,
+                    goal.x, goal.y, goal.z + targetHeight, true);
             };
 
             RangedApproachChoice const choice = SelectRangedApproachPoint(points, goal, distance, seesTarget);
