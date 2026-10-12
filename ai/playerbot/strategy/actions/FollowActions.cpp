@@ -99,11 +99,8 @@ bool FollowAction::isUseful()
 
     // The core follow never re-checks its route: while the hold-before-pack walk
     // applies, keep the action live so it can take over from a running core follow.
-    // Standing at a hold point, step aside between route re-checks so the normal
-    // rest triggers (eat, drink) and loot can run while the bot waits.
     if (UseHoldBeforePacks(followTarget))
-        return !holdStanding ||
-            WorldTimer::getMSTimeDiff(holdStandingCheckMs, WorldTimer::getMSTime()) >= kDungeonFollowHoldRecheckMs;
+        return true;
 
     if (followTarget && bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE &&
         sServerFacade.GetChaseTarget(bot) &&
@@ -118,7 +115,11 @@ bool FollowAction::isUseful()
 bool FollowAction::UseHoldBeforePacks(Unit* followTarget)
 {
     if (!sPlayerbotAIConfig.dungeonFollowHoldBeforePacks)
+    {
+        holdGateOpen = false;
+        holdStanding = false;
         return false;
+    }
 
     bool open = followTarget && followTarget != bot && followTarget->IsPlayer() &&
         bot->IsAlive() && followTarget->IsAlive() && followTarget->GetMapId() == bot->GetMapId() &&
@@ -185,13 +186,13 @@ bool FollowAction::FollowHoldingBeforePacks(Unit* followTarget, bool& moved)
     }
     else
     {
-        // At the hold point (nothing left to walk): stand still and let the
-        // rest triggers have the bot until the next re-check (see isUseful).
+        // At the hold point (nothing left to walk): stand still and re-check the
+        // route once a second. The follow action keeps the bot while it holds;
+        // it rests through the normal out-of-combat flow once the hold ends.
         if (sServerFacade.isMoving(bot))
             ai->StopMoving();
         holdStanding = true;
-        holdStandingCheckMs = WorldTimer::getMSTime();
-        SetDuration(sPlayerbotAIConfig.reactDelay);
+        SetDuration(kDungeonFollowHoldRecheckMs);
         moved = true;
     }
 

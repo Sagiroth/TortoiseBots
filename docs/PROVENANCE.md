@@ -8846,8 +8846,12 @@ yet.
   pet, escort or other member, and joining it is acceptable.
 - M4 (fixed): gate closed while the leader is on a transport.
 - M5 (fixed): docs and template say the bot whispers its master.
-- M6 (fixed): a bot standing at a hold point steps aside between the 1 s
-  re-checks so the rest triggers (eat, drink) and loot can run.
+- M6 (dropped in fix round 2, coordinator ruling on re-review N1): the
+  step-aside that let rest triggers run between re-checks was unreachable
+  with the default `JumpFollow = 1` and had cut the standing re-check to
+  `ReactDelay`. Removed; the standing hold re-checks once a second again and
+  the bot rests only through the normal out-of-combat flow once the hold ends.
+  N3: the toggle-off path now also resets the hold state.
 - Performance: a bot standing at its hold point reads the cached creature
   list lazily; it refreshes only while walking.
 - M7 and ScriptedAI (no height gate in core `ScriptedAI::MoveInLineOfSight`):
