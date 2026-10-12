@@ -214,33 +214,17 @@ bool CanBuyValue::CanAffordVendorWeaponUpgrade(PlayerbotAI* ai)
     return VendorWeaponUpgradeAffordable(1, bot->GetMoney(), spellReserve);
 }
 
-static bool VendorNeedCountsItem(bool isAutonomous, Item* item, ItemPrototype const* proto)
-{
-    return TortoiseBots::AltBotItemCountsForVendorNeed(isAutonomous, proto->Quality, item->IsSoulBound(), item->IsEquipped());
-}
-
 bool CanSellValue::Calculate()
 {
     if (!ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT))
         return false;
 
-    AiObjectContext* context = ai->GetAiObjectContext();
-
     // The usage classifier can label an item VENDOR while its SellPrice is 0
     // (a nonzero expected-AH-price manual value opens the VENDOR/AH branch),
-    // and the sell errand then finds nothing to sell. Require at least one
-    // held item a vendor actually buys: one bag walk per 2 s cache window, the
-    // same walk SellableStockWorthAVendorTrip already does below.
-    bool const isAltBot = TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid());
-    for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
-    {
-        ItemPrototype const* proto = item ? item->GetProto() : nullptr;
-
-        if (proto && proto->SellPrice > 0 && VendorNeedCountsItem(isAltBot, item, proto))
-            return true;
-    }
-
-    return false;
+    // and the sell errand then finds nothing to sell. So "can sell" is the
+    // sale's own list (SellAction::VendorSaleStock): one bag walk per 2 s
+    // cache window, the same walk SellableStockWorthAVendorTrip does below.
+    return !SellAction::VendorSaleStock(ai).empty();
 }
 
 //Sellable stock plus either the bag-pressure valve or the existing "should
@@ -641,15 +625,15 @@ bool ai::SellableStockWorthAVendorTrip(PlayerbotAI* ai)
 
     AiObjectContext* context = ai->GetAiObjectContext();
 
+    //Count exactly what the sale will sell (SellAction::VendorSaleStock). The
+    //trip used to count VENDOR-usage items while the sale walked its own
+    //filter, and a quarter of the vendor errands on the live pool arrived with
+    //nothing to sell.
     uint32 sellValue = 0;
     uint32 sellableCount = 0;
-    bool const isAltBot = TortoiseBots::AltBotService::Instance().IsAutonomous(ai->GetBot()->GetObjectGuid());
-    for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
+    for (Item* item : SellAction::VendorSaleStock(ai))
     {
         ItemPrototype const* proto = item->GetProto();
-
-        if (!proto || !proto->SellPrice || !VendorNeedCountsItem(isAltBot, item, proto))
-            continue;
 
         sellValue += proto->SellPrice * item->GetCount();
         sellableCount += item->GetCount();
