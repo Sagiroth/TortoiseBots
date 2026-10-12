@@ -8969,3 +8969,102 @@ Reason: Uldaman's Hall of the Keepers has 17 raised daises the navmesh cuts off 
 Validation: `tools/test_ledge_step_down_policy.cpp` (gate, height band, horizontal radius, candidate order, Uldaman dais with its edge point, needs-path rule, NORMAL path off the mesh, unsafe landing per point, both legs' clear line, edge point through walls and holes, no ground / fall / climbable step / wide dais, narrow ledge, pacing with the failed-look and step caps and clock wrap); `bash tools/verify_all.sh`, `git diff --check`; `c++ -fsyntax-only` of `MovementActions.cpp` and `ReachTargetActions.cpp` against the core headers; full build pending; in-game pending (Uldaman: `.go xyz -190 66 -46 70`, summon the party onto the dais, pull the Rockchewer; bots should run off the edge and drop to the floor within a few seconds).
 
 Review fixes (2026-10-12, REVIEW-126): (1) the landing must be on the navmesh (path start within 1 / 1.5 yd) and free of magma/slime, checked per candidate; (2) the move is a two-leg spline over the lip instead of a straight foot-to-foot line through the platform, with a low (+0.5 yd) line check per leg for railings; (3) a hazard rejects only its candidate; (4) only probes without floor count towards the give-up, launched steps have their own cap of three; (5) docs say "per action" for the pacing.
+## Dungeon follow holds before unpulled packs (audit fix 127) — 2026-10-12
+
+Feature: optional `AiPlayerbot.DungeonFollowHoldBeforePacks` (default `0`).
+In a dungeon or raid, out of combat on both sides, a bot whose leader is
+more than 30 yd ahead follows with the module's `MoveTo2` instead of the
+core `MoveFollow`, so the route goes through `TravelPath::ClipPath`. With
+the new `PackHoldResult` out-parameter, `ClipPath` also ends the route
+3 yd outside the aggro radius (`Creature::GetAttackDistance(bot)`, core
+`CREATURE_Z_ATTACK_RANGE` vertical gate unless the creature flies) of the
+first unpulled hostile creature on it (alive, not in combat, no victim,
+`CanInitiateAttack`), read from the cached `possible targets` list. The
+bot holds there, whispers its master once per pack (30 s floor), and walks
+on when the pack is gone, the route clears or the leader comes back within
+25 yd (the hold re-arms beyond 30 yd). The existing melee-reach clip is unchanged and still runs first.
+
+Source repository: none — this goes **beyond mod-playerbots**. Checked
+`mod-playerbots` @ `79bd4281` (`src/Ai/Base/Actions/MovementActions.cpp`
+`Follow`/`MoveTo`, `src/Ai/Base/Actions/FollowActions.cpp`): the donor
+follows with the plain core `MoveFollow`, its `MoveTo` does not avoid
+packs, and it has no `ClipPath`; no donor code or behaviour was copied.
+
+Copied / ported / reimplemented: independently implemented in the module.
+Pure gate and geometry in `ai/playerbot/DungeonFollowHoldPolicy.h`
+(segment-sphere entry, earliest pack along the route, inward-only hold
+when already inside the margin), tested by
+`tools/test_dungeon_follow_hold_policy.cpp` (wired into
+`tools/verify_all.sh`).
+
+Source files (module, modified): `ai/playerbot/DungeonFollowHoldPolicy.h`
+(new), `ai/playerbot/TravelNode.{h,cpp}` (`PackHoldResult`,
+`ClipPath` out-parameter, `ClipBeforePack`),
+`ai/playerbot/strategy/actions/MovementActions.{h,cpp}` (`MoveTo2`
+passes it through), `ai/playerbot/strategy/actions/FollowActions.{h,cpp}`
+(gate, hold, whisper, `isUseful` takes over from a running core follow),
+`ai/playerbot/PlayerbotAIConfig.{h,cpp}` + `aiplayerbot.conf.dist.in`
+(key), docs (`configuration-tuning.md`, `dungeon-tactics.md`,
+`player-controls.md`). No core change, no new host hook.
+
+Reason: evidence in the Uldaman investigation (2026-10-12): the only
+navmesh route north from the entrance passes ~3 yd from the west-room
+pack; bots following a leader who ran or teleported ahead walked into it
+and wiped the party (VM run, WIPE 1; m910q build 4 P2).
+
+Cost: nothing when the key is `0` (one bool check in `isUseful`/`Execute`).
+When on and the gate holds, one `MoveTo2` re-check per second (the route is
+reused from `last movement` while the leader stays put) and one read of
+the cached `possible targets` value (recalculated at most once a second by
+its own cache); no extra grid search or path per creature.
+
+Local validation: `bash tools/verify_all.sh` (incl. the new policy test);
+`git diff --check`. Not compiled against the core and not tested in game
+yet.
+
+### Review fixes (2026-10-12, REVIEW-127 CHANGES REQUIRED)
+
+- I1 (fixed): the vertical gate is now tested where the route leg actually
+  enters the aggro zone (segment inside the sphere AND inside the height
+  band), so a ramp or stair leg that climbs through the pack's level holds.
+  The band is `CREATURE_Z_ATTACK_RANGE` + the creature's + the bot's bounding
+  radius, matching the core's `GetDistanceZ`. Ramp cases added to the test.
+- M1 (fixed): a core FOLLOW left running when `MoveTo2` launched nothing is
+  stopped, so it cannot carry the bot past the margin.
+- M2 (fixed): gate hysteresis, on beyond 30 yd and off within 25 yd.
+- M3 (kept, comment fixed): creatures already fighting someone else are not
+  held for; with the bot and leader out of combat that fight belongs to a
+  pet, escort or other member, and joining it is acceptable.
+- M4 (fixed): gate closed while the leader is on a transport.
+- M5 (fixed): docs and template say the bot whispers its master.
+- M6 (dropped in fix round 2, coordinator ruling on re-review N1): the
+  step-aside that let rest triggers run between re-checks was unreachable
+  with the default `JumpFollow = 1` and had cut the standing re-check to
+  `ReactDelay`. Removed; the standing hold re-checks once a second again and
+  the bot rests only through the normal out-of-combat flow once the hold ends.
+  N3: the toggle-off path now also resets the hold state.
+- Performance: a bot standing at its hold point reads the cached creature
+  list lazily; it refreshes only while walking.
+- M7 and ScriptedAI (no height gate in core `ScriptedAI::MoveInLineOfSight`):
+  listed as known limits in the PR.
+
+Local validation: `bash tools/verify_all.sh` (incl. the extended policy
+test); `git diff --check`; `g++ -fsyntax-only` of the touched module files
+against `~/tortoise-wow` headers with the module PCH (only pre-existing
+host-API mismatches reported, none in changed lines). Not built with the
+dev loop and not tested in game.
+## Healers follow out of combat; dungeon follow no longer trusts a stalled core follow — 2026-10-12
+
+Feature 1: `PartyMemberToHealOutOfSpellRangeTrigger::IsActive` (`ai/playerbot/strategy/triggers/RangeTriggers.h`) gates "reach party member to heal" with the pure `HealReachWanted` (`ai/playerbot/HealReachPolicy.h`): out of combat (the running engine is not the combat engine) the trigger fires only for a heal target below `AiPlayerbot.AlmostFullHealth`. In combat it is unchanged. The "party member to heal" value always lists tanks, even at full health, so out of combat it named the full-health tank and the trigger (wired into the non-combat strategies of holy/discipline priests, holy paladins, restoration druids and shamans at a higher priority than follow) walked the healer to the tank instead of following the leader. Inside a dungeon, in sight of the tank, the walk was the core chase, which refuses a non-melee destination there: the priest stood still.
+
+Source: mod-playerbots `79bd428`, `src/Ai/Class/Priest/Strategy/HolyPriestStrategy.cpp`, `src/Ai/Class/Shaman/Strategy/RestoShamanStrategy.cpp` and the other healer strategies wire "party member to heal out of spell range" into the `InitTriggers` of spec strategies that `AiFactory::AddDefaultCombatStrategies` (`src/Bot/Factory/AiFactory.cpp`) adds to the combat engine only. Kind: reimplemented. Deviation: the non-combat rows stay, so a member who is hurt after a fight still gets the walk; only a target at or above almost-full health is ignored out of combat.
+
+Feature 2: `FollowAction::isUseful` / `Execute` (`ai/playerbot/strategy/actions/FollowActions.cpp`) with `DungeonFollowStallWatch` (`ai/playerbot/DungeonFollowStallPolicy.h`). The follow action trusted a running core follow generator on its leader and was never asked again below 60 yd. Inside a dungeon (`Map::IsDungeon`), out of combat, the watch latches a rescue when the bot is more than 3 yd beyond its follow distance and has not moved a yard for 2 s (re-anchored while sitting, casting, rooted or after a 1 s feed gap). The rescue tries `MovementAction::StepDownOffLedge` (own pacing), then walks the navmesh route to the leader with the module's `MoveTo2` (complete or partial path), at most once per 2 s, doubling to 8 s per walk that cannot start; the normal follow runs between walks. It ends when the bot is back within range.
+
+Source: mod-playerbots `79bd428`, `src/Ai/Base/Actions/FollowActions.cpp` (`FollowAction::Execute` / `isUseful`): with the default formations (no target name) the donor follows by `MoveTo` to the formation point along a generated path and its `isUseful` is a plain distance check, so it never relies on a follow generator that may not move. Kind: reimplemented, narrower: the core follow stays the default (it tracks a moving leader smoothly) and the path walk only takes over once that follow has stood still for 2 s. The ranged-approach walk-back helper (`RangedApproachPolicy.h`) does not fit follow (it stops at casting range in sight of a target), so it is not reused.
+
+Reason: Uldaman, build 11, 2026-10-12 (`~/TortoiseBots-audit/ingame/repro-129-follow.md`, `ulda-b11-walk.md`): a holy priest of a full-health party stood 70+ s at 38-47 yd from its leader on "reach party member to heal" while the tank, mage and rogue followed; and all four bots stood 50 s at (-257, 96), the edge of a navmesh island about 4 yd above the floor (offline Detour query on the map 70 tiles: partial path, end at the bot's feet), 34-36 yd from the leader, state "moving", last action "check values". The step-down never ran because the follow action was not useful while the stalled core follow was current.
+
+Validation: `tools/test_heal_reach_policy.cpp`, `tools/test_dungeon_follow_stall_policy.cpp` (gate, 2 s stall, walking is no stall, range and release, held, feed gap, latch, walk throttle and back-off, clock wrap); `bash tools/verify_all.sh`; `git diff --check`; `c++ -fsyntax-only` of `FollowActions.cpp` and `RangeTriggers.cpp` against the core headers. Full build pending; in-game pending.
+
+Review fixes (2026-10-12, REVIEW-129): (1) the rescue yields while the bot is held (sitting, casting, rooted) even after it has latched, matching the docs; (2) five rescue walks in a row that cannot start end the rescue for 60 s, so a bot that cannot be rescued (below its leader's platform) does not plan a path every 8 s forever; catching up clears the give-up; (3) docs note that, with `DungeonFollowHoldBeforePacks` off, a rescue walk can pass an unpulled pack like far follow. Test rows added for latched-then-held, the give-up and its reset.

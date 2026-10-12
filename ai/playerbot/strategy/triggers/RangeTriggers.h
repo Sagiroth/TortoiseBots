@@ -2,6 +2,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/Trigger.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/HealReachPolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/generic/CombatStrategy.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
@@ -333,6 +334,13 @@ namespace ai
         {
             Unit* target = AI_VALUE(Unit*, GetTargetName());
             if (!target)
+                return false;
+
+            // The value names a tank even at full health. Out of combat that
+            // pulled the healer to the tank instead of following its leader
+            // (HealReachPolicy.h): only a member who needs a heal counts there.
+            if (!HealReachWanted(ai->IsStateActive(BotState::BOT_STATE_COMBAT), target->GetHealthPercent(),
+                    float(sPlayerbotAIConfig.almostFullHealth)))
                 return false;
 
             return target && (bot->GetDistance(target, SizeFactor::CombatReach) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);

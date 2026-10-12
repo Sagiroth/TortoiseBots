@@ -8,6 +8,8 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/JumpPolicy.h"
+#include "playerbot/DungeonFollowHoldPolicy.h"
+#include "playerbot/DungeonFollowStallPolicy.h"
 
 using namespace ai;
 
@@ -25,6 +27,12 @@ bool FollowAction::Execute(Event& event)
         !bot->IsMounted() && !bot->IsInCombat() &&
         sServerFacade.IsDistanceGreaterThan(sServerFacade.getDistance2d(bot, followTarget), sPlayerbotAIConfig.reactDistance))
         ai->DoSpecificAction("check mount state", Event(), true);
+
+    if (FollowHoldingBeforePacks(followTarget, moved))
+        return moved;
+
+    if (RescueStalledDungeonFollow(followTarget, moved))
+        return moved;
 
     if (ai->IsSafe(followTarget))
     {
@@ -95,11 +103,202 @@ bool FollowAction::isUseful()
         return true;
     }
 
+    // The core follow never re-checks its route: while the hold-before-pack walk
+    // applies, keep the action live so it can take over from a running core follow.
+    if (UseHoldBeforePacks(followTarget))
+        return true;
+
     if (followTarget && bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE &&
         sServerFacade.GetChaseTarget(bot) &&
         sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid())
     {
+        // A running core follow is trusted, except inside a dungeon where it
+        // can stand still for good (partial path): then the rescue takes over.
+        return ObserveDungeonFollowStall(followTarget);
+    }
+
+    return true;
+}
+
+// Feeds the dungeon stall watch; true while the rescue is on. Cheap: member
+// reads and one distance, and only inside a dungeon out of combat.
+bool FollowAction::ObserveDungeonFollowStall(Unit* followTarget)
+{
+    Map* map = bot->GetMap();
+    bool const inCombat = bot->IsInCombat() || ai->IsStateActive(BotState::BOT_STATE_COMBAT);
+    if (!followTarget || followTarget == bot || !map || !followTarget->IsPlayer() ||
+        !UseDungeonFollowWatch(map->IsDungeon(), inCombat) ||
+        !bot->IsAlive() || !followTarget->IsAlive() || !ai->IsSafe(followTarget) ||
+        bot->GetTransport() || followTarget->GetTransport() || bot->IsTaxiFlying())
+    {
+        followStallWatch.Reset();
         return false;
+    }
+
+    bool const held = bot->IsRooted() || bot->HasUnitState(UNIT_STAT_NO_FREE_MOVE) ||
+        bot->GetStandState() != UNIT_STAND_STATE_STAND || bot->IsNonMeleeSpellCasted(true, false, true);
+
+    return followStallWatch.Observe(WorldTimer::getMSTime(), bot->GetPositionX(), bot->GetPositionY(),
+        bot->GetDistance(followTarget), ai->GetRange("follow"), held);
+}
+
+// Inside a dungeon the core follow can stand still for good: with a partial
+// path (a navmesh island, a raised step the mesh does not link to the floor)
+// it stops while the leader is in sight and otherwise walks to the end of the
+// partial path, which is where the bot already stands. Uldaman 2026-10-12:
+// four bots stood 50 s at the edge of such an island, "moving" with no motion,
+// 34-36 yd from the leader. Once the watch has seen that (DungeonFollowStallPolicy.h),
+// step down off the ledge if that is the problem, else walk the navmesh path
+// to the leader with the module's MoveTo, at most once per two seconds. A
+// held bot (eating, casting, rooted) is left alone; five walks in a row that
+// cannot start end the rescue for a minute (DungeonFollowStallWatch).
+// Returns false when the normal follow should run.
+bool FollowAction::RescueStalledDungeonFollow(Unit* followTarget, bool& moved)
+{
+    if (!ObserveDungeonFollowStall(followTarget))
+        return false;
+
+    // Own clock and throttle (LedgeStepDownPolicy.h): only fires on an island edge.
+    if (StepDownOffLedge(followTarget))
+    {
+        moved = true;
+        return true;
+    }
+
+    // Between walks the normal follow runs (it does not re-issue a core
+    // follow that is already running).
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (!followStallWatch.WalkDue(nowMs))
+        return false;
+
+    // MoveTo2 walks the navmesh route, complete or partial, and clears the
+    // stalled core follow when it launches. The destination is the leader's
+    // follow spot, not the leader's feet: MoveTo2 reuses the cached route
+    // unless the destination moved 10% of the way, so feet would be re-walked
+    // every 2 s for a moving leader; the spot only moves with it.
+    WorldPosition destination(followTarget);
+    if (Formation* formation = AI_VALUE(Formation*, "formation"))
+    {
+        WorldLocation loc = formation->GetLocation();
+        if (!Formation::IsNullLocation(loc) && loc.mapId != -1)
+            destination = WorldPosition(loc);
+    }
+    moved = MoveTo2(destination);
+    followStallWatch.Walked(nowMs, moved);
+    if (moved)
+        ai->TellDebug(GetMaster(), "Core follow stood still in a dungeon - walking the path to you", "debug move");
+    return true;
+}
+
+bool FollowAction::UseHoldBeforePacks(Unit* followTarget)
+{
+    if (!sPlayerbotAIConfig.dungeonFollowHoldBeforePacks)
+    {
+        holdGateOpen = false;
+        holdStanding = false;
+        return false;
+    }
+
+    bool open = followTarget && followTarget != bot && followTarget->IsPlayer() &&
+        bot->IsAlive() && followTarget->IsAlive() && followTarget->GetMapId() == bot->GetMapId() &&
+        bot->IsInWorld() && !bot->IsBeingTeleported() && !bot->IsTaxiFlying() && !bot->GetTransport() &&
+        !followTarget->GetTransport();
+
+    // On beyond 30 yd, kept on until the leader is within 25 yd.
+    open = open && UseDungeonFollowHold(true, bot->GetMap()->IsDungeon(), bot->IsInCombat(),
+        followTarget->IsInCombat(), bot->GetDistance(followTarget), holdGateOpen);
+
+    holdGateOpen = open;
+    if (!open)
+        holdStanding = false;
+    return open;
+}
+
+// Inside a dungeon, out of combat, with the leader far ahead: walk the route to the
+// leader with the module's MoveTo (its route clip sees packs) instead of the core
+// follow (which does not), and hold just outside the aggro range of the first
+// unpulled pack on that route. Returns false when the normal follow should run.
+bool FollowAction::FollowHoldingBeforePacks(Unit* followTarget, bool& moved)
+{
+    if (!UseHoldBeforePacks(followTarget))
+    {
+        if (holdFollowActive)
+        {
+            // Back to the core follow: drop the short re-check wait set below.
+            holdFollowActive = false;
+            holdToldPack = ObjectGuid();
+            SetDuration(sPlayerbotAIConfig.reactDelay);
+        }
+        return false;
+    }
+
+    holdFollowActive = true;
+
+    PackHoldResult packHold;
+    packHold.reuseTargets = holdStanding;
+    // The destination is the leader's follow spot, not the leader's feet:
+    // MoveTo2 reuses the cached route unless the destination moved 10% of
+    // the way, so feet would re-plan every second for a moving leader.
+    WorldPosition destination(followTarget);
+    if (Formation* formation = AI_VALUE(Formation*, "formation"))
+    {
+        WorldLocation loc = formation->GetLocation();
+        if (!Formation::IsNullLocation(loc) && loc.mapId != -1)
+            destination = WorldPosition(loc);
+    }
+    moved = MoveTo2(destination, false, false, false, false, &packHold);
+
+    // MoveTo2 can return without launching a move (path collapsed, no route, a
+    // clip that left nothing). A core follow started before the gate opened would
+    // then keep walking past the margin: stop it, the module walk owns the bot now.
+    if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
+        ai->StopMoving();
+
+    if (!packHold.hold)
+    {
+        holdStanding = false;
+        holdToldPack = ObjectGuid();
+        // Re-check the route at least once a second: a pack that only comes into
+        // sight mid-walk must still stop the bot before it is in aggro range.
+        if (!moved || GetDuration() > kDungeonFollowHoldRecheckMs)
+            SetDuration(kDungeonFollowHoldRecheckMs);
+        return true;
+    }
+
+    if (moved)
+    {
+        // Walking to the hold point.
+        holdStanding = false;
+        if (GetDuration() > kDungeonFollowHoldRecheckMs)
+            SetDuration(kDungeonFollowHoldRecheckMs);
+    }
+    else
+    {
+        // At the hold point (nothing left to walk): stand still and re-check the
+        // route once a second. The follow action keeps the bot while it holds;
+        // it rests through the normal out-of-combat flow once the hold ends.
+        if (sServerFacade.isMoving(bot))
+            ai->StopMoving();
+        holdStanding = true;
+        SetDuration(kDungeonFollowHoldRecheckMs);
+        moved = true;
+    }
+
+    Unit* pack = ai->GetUnit(packHold.pack);
+    time_t const now = time(nullptr);
+    if (pack && packHold.pack != holdToldPack &&
+        (!holdToldAt || now - holdToldAt >= (time_t)kDungeonFollowHoldTellCooldownSec))
+    {
+        // Whisper the master, not party chat: only they can act on it (pull the
+        // pack or come back), and four bots saying it in party would be noise.
+        if (Player* master = GetMaster())
+        {
+            std::ostringstream out;
+            out << "Pack in the way: " << pack->GetName() << ". Waiting here - pull it or come back for me.";
+            ai->TellPlayerNoFacing(master, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
+        }
+        holdToldPack = packHold.pack;
+        holdToldAt = now;
     }
 
     return true;

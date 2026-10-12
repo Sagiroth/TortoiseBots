@@ -459,6 +459,8 @@ public:
 	bool RandombotsWalkingRPG;
 	bool RandombotsWalkingRPGInDoors;
     bool boostFollow;
+    // Dungeon follow holds short of unpulled packs when the leader is far ahead (audit fix 127).
+    bool dungeonFollowHoldBeforePacks;
     bool turnInRpg;
     bool globalSoundEffects;
     bool shareTargets;

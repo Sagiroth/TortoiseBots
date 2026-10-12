@@ -316,6 +316,20 @@ namespace ai
         bool IsWalkable() const { return isWalkable(); }
     };
 
+    // Out-parameter of TravelPath::ClipPath for the dungeon "hold before a
+    // pack" follow (AiPlayerbot.DungeonFollowHoldBeforePacks): the creature
+    // that stopped the route and where the route now ends.
+    struct PackHoldResult
+    {
+        // In: the bot stands at its hold point, so reuse the cached creature
+        // list instead of refreshing it (only walking can bring new packs in).
+        bool reuseTargets = false;
+        // Out:
+        bool hold = false;
+        ObjectGuid pack;
+        WorldPosition point;
+    };
+
     //A complete list of points the bots has to walk to or teleport to.
     class TravelPath
     {
@@ -349,10 +363,13 @@ namespace ai
         bool shouldMoveToNextPoint(WorldPosition startPos, std::vector<PathNodePoint>::iterator beg, std::vector<PathNodePoint>::iterator ed, std::vector<PathNodePoint>::iterator p, float& moveDist, float maxDist);
         bool UpcommingSpecialMovement(WorldPosition startPos, float maxDist, bool onTransport);
 
-        void ClipPath(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets);
+        // packHold non-null: also end the route just outside the aggro radius of the
+        // first unpulled hostile creature on it, and report that creature there.
+        void ClipPath(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets, PackHoldResult* packHold = nullptr);
         std::ostringstream print();
     private:
         std::vector<PathNodePoint>::iterator getNextPoint(WorldPosition startPos, float maxDist, bool onTransport);
+        void ClipBeforePack(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets, PackHoldResult& packHold);
 
         std::vector<PathNodePoint> fullPath;
     };

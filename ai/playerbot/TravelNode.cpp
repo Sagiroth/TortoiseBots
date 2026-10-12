@@ -1,6 +1,7 @@
 #include "TravelNode.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/TravelRoutePolicy.h"
+#include "playerbot/DungeonFollowHoldPolicy.h"
 
 #include <iomanip>
 #include <regex>
@@ -1137,7 +1138,7 @@ bool TravelPath::UpcommingSpecialMovement(WorldPosition startPos, float maxDist,
     return false;
 }
 
-void TravelPath::ClipPath(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets)
+void TravelPath::ClipPath(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets, PackHoldResult* packHold)
 {
     auto startP = getNextPoint(mover, 0.0f, false);
 
@@ -1222,10 +1223,114 @@ void TravelPath::ClipPath(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets)
         prevP = p;
     }
 
-    if (endP == fullPath.end())
+    if (endP != fullPath.end())
+        fullPath.erase(std::next(endP), fullPath.end());
+
+    if (packHold)
+        ClipBeforePack(ai, mover, ignoreEnemyTargets, *packHold);
+}
+
+// Dungeon "hold before a pack" follow (AiPlayerbot.DungeonFollowHoldBeforePacks):
+// end the route just outside the aggro radius (Creature::GetAttackDistance) of the
+// first unpulled hostile creature it passes. The melee-reach clip above only stops
+// a bot once it is already in the pack. Reads the cached "possible targets" list
+// (recalculated at most once a second by its own cache; the pull and step-out code
+// read the same list), so this adds no grid search of its own.
+void TravelPath::ClipBeforePack(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets, PackHoldResult& packHold)
+{
+    bool const reuseTargets = packHold.reuseTargets;
+    packHold = PackHoldResult();
+    packHold.reuseTargets = reuseTargets;
+
+    if (fullPath.empty() || ignoreEnemyTargets || !mover->IsAlive())
         return;
 
-    fullPath.erase(std::next(endP), fullPath.end());
+    if (ai->IsStateActive(BotState::BOT_STATE_COMBAT) || mover->IsInCombat())
+        return;
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+    // Standing at a hold point the resume check only needs the cached GUIDs
+    // (dead, gone or pulled shows on the units themselves); refresh the list
+    // only while walking, where a new pack can come into sight.
+    std::list<ObjectGuid> nearby = reuseTargets ? AI_VALUE_LAZY(std::list<ObjectGuid>, "possible targets")
+                                                : AI_VALUE(std::list<ObjectGuid>, "possible targets");
+    if (nearby.empty())
+        return;
+
+    std::vector<FollowHoldPack> packs;
+    std::vector<ObjectGuid> packGuids;
+    for (ObjectGuid const& guid : nearby)
+    {
+        if (!guid.IsCreature())
+            continue;
+
+        Unit* unit = ai->GetUnit(guid);
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        if (!creature || !creature->IsAlive())
+            continue;
+
+        // Already fighting someone else (a pet, an escort, another member: the
+        // gate keeps the bot and its leader out of combat). Not held for: in a
+        // dungeon such a creature also pulls a passer-by, but that fight is
+        // already on and the bot joining it is acceptable.
+        if (creature->IsInCombat() || creature->GetVictim())
+            continue;
+
+        if (!creature->IsHostileTo(mover) || !creature->CanInitiateAttack())
+            continue;
+
+        float const radius = creature->GetAttackDistance(mover);
+        if (radius <= 0.0f)
+            continue;
+
+        // Core vertical gate: GetDistanceZ(who) > CREATURE_Z_ATTACK_RANGE, where
+        // GetDistanceZ subtracts both bounding radii, so the band is 3 yd plus both.
+        float const zRange = creature->CanFly() ? 0.0f :
+            kDungeonFollowHoldZRangeYd + creature->GetObjectBoundingRadius() + mover->GetObjectBoundingRadius();
+        packs.push_back(FollowHoldPack{ creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(),
+            radius, zRange });
+        packGuids.push_back(guid);
+    }
+
+    if (packs.empty())
+        return;
+
+    // route[0] is where the bot stands; route[k] is fullPath[k - 1]. Only the
+    // walkable part counts (the clip above already ends the route at the first
+    // special node).
+    std::vector<FollowHoldPoint> route;
+    route.reserve(fullPath.size() + 1);
+    route.push_back(FollowHoldPoint{ mover->GetPositionX(), mover->GetPositionY(), mover->GetPositionZ() });
+    for (PathNodePoint const& p : fullPath)
+    {
+        if (!p.IsWalkable())
+            break;
+        route.push_back(FollowHoldPoint{ p.point.getX(), p.point.getY(), p.point.getZ() });
+    }
+
+    FollowHoldResult const hold = FindFollowHoldPoint(route.data(), route.size(), packs.data(), packs.size(),
+        kDungeonFollowHoldMarginYd);
+    if (!hold.hold)
+        return;
+
+    WorldPosition const holdPoint(mover->GetMapId(), hold.point.x, hold.point.y, hold.point.z);
+
+    packHold.hold = true;
+    packHold.pack = packGuids[hold.pack];
+    packHold.point = holdPoint;
+
+    // Keep the points before the hold segment, then end on the hold point.
+    // Already standing on it: leave nothing to walk.
+    fullPath.erase(fullPath.begin() + hold.segment, fullPath.end());
+    if (hold.segment == 0 && WorldPosition(mover).distance(holdPoint) < 1.0f)
+        return;
+
+    // The hold point can coincide with the last kept waypoint (the route turns
+    // into the radius right there); a repeated point is not a step.
+    if (!fullPath.empty() && fullPath.back().point.distance(holdPoint) < 0.5f)
+        return;
+
+    fullPath.push_back(PathNodePoint{ holdPoint, PathNodeType::NODE_PATH, 0 });
 }
 
 std::ostringstream TravelPath::print()

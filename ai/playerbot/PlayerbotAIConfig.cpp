@@ -870,6 +870,7 @@ bool PlayerbotAIConfig::Initialize()
     randomBotFormGuild = config.GetBoolDefault("AiPlayerbot.RandomBotFormGuild", true);
 
     boostFollow = config.GetBoolDefault("AiPlayerbot.BoostFollow", false);
+    dungeonFollowHoldBeforePacks = config.GetBoolDefault("AiPlayerbot.DungeonFollowHoldBeforePacks", false);
     turnInRpg = config.GetBoolDefault("AiPlayerbot.TurnInRpg", false);
     shareTargets = config.GetBoolDefault("AiPlayerbot.ShareTargets", true);
     globalSoundEffects = config.GetBoolDefault("AiPlayerbot.GlobalSoundEffects", false);

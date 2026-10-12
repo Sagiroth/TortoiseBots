@@ -918,7 +918,7 @@ Unit* MovementAction::GetMover(Player* bot)
     return bot;
 }
 
-bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react, bool noPath, bool ignoreEnemyTargets)
+bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react, bool noPath, bool ignoreEnemyTargets, PackHoldResult* packHold)
 {
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
 
@@ -1025,7 +1025,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         lastMove.setPath(movePath);
     }
 
-    movePath.ClipPath(ai, mover, ignoreEnemyTargets);
+    movePath.ClipPath(ai, mover, ignoreEnemyTargets, packHold);
 
     if(ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
     {
