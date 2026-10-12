@@ -8778,3 +8778,55 @@ covering its hold/lapse matrix. Also touches
 
 Validation: `tools/test_four_horsemen_rotation_policy.cpp` + code review;
 build pending; in-game pending.
+## Dungeon follow holds before unpulled packs (issue #127) — 2026-10-12
+
+Feature: optional `AiPlayerbot.DungeonFollowHoldBeforePacks` (default `0`).
+In a dungeon or raid, out of combat on both sides, a bot whose leader is
+more than 30 yd ahead follows with the module's `MoveTo2` instead of the
+core `MoveFollow`, so the route goes through `TravelPath::ClipPath`. With
+the new `PackHoldResult` out-parameter, `ClipPath` also ends the route
+3 yd outside the aggro radius (`Creature::GetAttackDistance(bot)`, core
+`CREATURE_Z_ATTACK_RANGE` vertical gate unless the creature flies) of the
+first unpulled hostile creature on it (alive, not in combat, no victim,
+`CanInitiateAttack`), read from the cached `possible targets` list. The
+bot holds there, whispers its master once per pack (30 s floor), and walks
+on when the pack is gone, the route clears or the leader comes back within
+30 yd. The existing melee-reach clip is unchanged and still runs first.
+
+Source repository: none — this goes **beyond mod-playerbots**. Checked
+`mod-playerbots` @ `79bd4281` (`src/Ai/Base/Actions/MovementActions.cpp`
+`Follow`/`MoveTo`, `src/Ai/Base/Actions/FollowActions.cpp`): the donor
+follows with the plain core `MoveFollow`, its `MoveTo` does not avoid
+packs, and it has no `ClipPath`; no donor code or behaviour was copied.
+
+Copied / ported / reimplemented: independently implemented in the module.
+Pure gate and geometry in `ai/playerbot/DungeonFollowHoldPolicy.h`
+(segment-sphere entry, earliest pack along the route, inward-only hold
+when already inside the margin), tested by
+`tools/test_dungeon_follow_hold_policy.cpp` (wired into
+`tools/verify_all.sh`).
+
+Source files (module, modified): `ai/playerbot/DungeonFollowHoldPolicy.h`
+(new), `ai/playerbot/TravelNode.{h,cpp}` (`PackHoldResult`,
+`ClipPath` out-parameter, `ClipBeforePack`),
+`ai/playerbot/strategy/actions/MovementActions.{h,cpp}` (`MoveTo2`
+passes it through), `ai/playerbot/strategy/actions/FollowActions.{h,cpp}`
+(gate, hold, whisper, `isUseful` takes over from a running core follow),
+`ai/playerbot/PlayerbotAIConfig.{h,cpp}` + `aiplayerbot.conf.dist.in`
+(key), docs (`configuration-tuning.md`, `dungeon-tactics.md`,
+`player-controls.md`). No core change, no new host hook.
+
+Reason: evidence in the Uldaman investigation (2026-10-12): the only
+navmesh route north from the entrance passes ~3 yd from the west-room
+pack; bots following a leader who ran or teleported ahead walked into it
+and wiped the party (VM run, WIPE 1; m910q build 4 P2).
+
+Cost: nothing when the key is `0` (one bool check in `isUseful`/`Execute`).
+When on and the gate holds, one `MoveTo2` re-check per second (the route is
+reused from `last movement` while the leader stays put) and one read of
+the cached `possible targets` value (recalculated at most once a second by
+its own cache); no extra grid search or path per creature.
+
+Local validation: `bash tools/verify_all.sh` (incl. the new policy test);
+`git diff --check`. Not compiled against the core and not tested in game
+yet.

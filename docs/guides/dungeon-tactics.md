@@ -103,6 +103,10 @@ If your group wipes, follow this checklist to recover quickly:
 3. Ghost bots will path organically back to the instance portal and zone inside.
 4. If a bot gets stuck outside the dungeon entrance, simply zone in yourself and type `.bot summon <Name>` to gather them safely at the instance threshold.
 
+### Running Ahead Past Packs
+* Bots that are far behind follow the navmesh route to you, and that route can pass right next to a pack you skipped (Uldaman: the only way north runs ~3 yd from the west-room pack). They will pull it on their own.
+* With `AiPlayerbot.DungeonFollowHoldBeforePacks = 1` (off by default), a bot more than 30 yd behind you, with nobody in combat, stops just outside the aggro range of the first unpulled pack on its route and whispers you `Pack in the way: <name>`. Pull the pack, or walk back within 30 yd and the bot follows normally again.
+
 ### Elevators, Boats & Ledges
 * In complex vertical dungeons (Gnomeregan, Sunken Temple, Blackrock Spire), bots can occasionally desync when jumping down ledges or riding elevators.
 * Always wait for bots at the bottom of elevators or after ledge drops, then click **Summon** in `/tbm` to regroup before engaging the next pack.

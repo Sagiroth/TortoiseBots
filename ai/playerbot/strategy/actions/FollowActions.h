@@ -12,6 +12,15 @@ namespace ai
 		virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
         virtual bool CanDeadFollow(Unit* target);
+
+    private:
+        // Dungeon "hold before a pack" follow (AiPlayerbot.DungeonFollowHoldBeforePacks).
+        bool UseHoldBeforePacks(Unit* followTarget);
+        bool FollowHoldingBeforePacks(Unit* followTarget, bool& moved);
+
+        bool holdFollowActive = false;
+        ObjectGuid holdToldPack;
+        time_t holdToldAt = 0;
 	};
 
 	class StopFollowAction : public MovementAction {

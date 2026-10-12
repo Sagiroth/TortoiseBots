@@ -55,7 +55,9 @@ namespace ai
 
         Unit* GetMover(Player* bot);
 
-        bool MoveTo2(const WorldPosition& endPos, bool idle = false, bool react = false, bool noPath = false, bool ignoreEnemyTargets = false);
+        // packHold non-null: the route also ends just outside the aggro radius of the first
+        // unpulled hostile creature on it (dungeon hold-before-pack follow); see ClipPath.
+        bool MoveTo2(const WorldPosition& endPos, bool idle = false, bool react = false, bool noPath = false, bool ignoreEnemyTargets = false, PackHoldResult* packHold = nullptr);
 
         bool MoveTo(uint32 mapId, float x, float y, float z, bool idle = false, bool react = false, bool noPath = false, bool ignoreEnemyTargets = false);
         bool MoveTo(Unit* target, float distance = 0.0f);
