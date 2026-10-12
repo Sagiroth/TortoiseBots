@@ -75,6 +75,7 @@ namespace ai
         // coordinates, a navmesh path, line of sight to visibleFromPosition and
         // no hazard. Shared by point moves that must not end inside geometry.
         bool IsValidPosition(const WorldPosition& position, const WorldPosition& visibleFromPosition);
+        bool IsHazardNearPosition(const WorldPosition& position, HazardPosition* outHazard = nullptr);
         bool Flee(Unit *target);
         // Pool-bot flee: one checked point step of `distance` away from
         // target (fanned to the sides), false when no spot is usable.
@@ -96,7 +97,6 @@ namespace ai
         bool ShouldReactionInterruptMovement() const override { return true; }
 
     private:
-        bool IsHazardNearPosition(const WorldPosition& position, HazardPosition* outHazard = nullptr);
         bool GeneratePathAvoidingHazards(std::vector<WorldPosition>& movePath);
     };
 

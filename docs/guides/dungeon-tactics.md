@@ -103,6 +103,10 @@ If your group wipes, follow this checklist to recover quickly:
 3. Ghost bots will path organically back to the instance portal and zone inside.
 4. If a bot gets stuck outside the dungeon entrance, simply zone in yourself and type `.bot summon <Name>` to gather them safely at the instance threshold.
 
+### Healers and Casters Closing Range
+* Inside an instance, a healer or caster that sees its target but stands out of range walks the navmesh path towards it and stops at the first point within casting distance that still has line of sight. It used the core's chase before, which inside dungeons refuses any destination outside melee reach, so the healer stood still at the entrance while the tank fought 38 yd away.
+* When the navmesh only reaches part of the way (a raised dais, a ledge), the bot walks to the closest point the path reaches and stops there; it does not drop off ledges. Use `.bot summon <Name>` out of combat if it stays stuck.
+
 ### Elevators, Boats & Ledges
 * In complex vertical dungeons (Gnomeregan, Sunken Temple, Blackrock Spire), bots can occasionally desync when jumping down ledges or riding elevators.
 * Always wait for bots at the bottom of elevators or after ledge drops, then click **Summon** in `/tbm` to regroup before engaging the next pack.

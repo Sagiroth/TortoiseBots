@@ -36,6 +36,8 @@ Refused commands answer with a short reason in chat; addon-originated requests a
 
 Hazard-avoiding chase movement keeps an idle movement generator while its detour spline runs, so the next movement update has a valid default.
 
+Inside a dungeon or raid, a ranged reach (`reach spell`, `reach party member to heal` / `to resurrect` / `for totem`) whose target is in sight walks the navmesh path towards the target and stops at the first point within casting distance that still sees it. The core's chase refuses a non-melee destination inside instances, so those bots used to stand still out of range. Melee reach and the open world keep the chase.
+
 
 The modern control plane operates on **player intent**. Instead of micromanaging each bot, you issue high-level tactical commands; the server resolves target scope and selects appropriate bot executors:
 
