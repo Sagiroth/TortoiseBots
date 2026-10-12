@@ -21,6 +21,8 @@ permissions:
 
 jobs:
   edit:
+    # Manual Discord edits: repository owner only.
+    if: github.actor == github.repository_owner
     runs-on: ubuntu-latest
     environment: release
     steps:

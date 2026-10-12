@@ -19,6 +19,9 @@ permissions:
 
 jobs:
   notify:
+    # Issue events for everyone; the manual run (it can delete a Discord
+    # message) for the repository owner only.
+    if: github.event_name == 'issues' || github.actor == github.repository_owner
     runs-on: ubuntu-latest
     environment: release
     steps:
