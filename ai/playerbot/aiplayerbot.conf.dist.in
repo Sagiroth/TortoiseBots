@@ -249,6 +249,15 @@ AiPlayerbot.RandomBotShopMounts = 0
 # combat only. Hired, guild-claimed and player-grouped bots are never touched.
 # 1 = on; 0 = off (gear only from drops, quests and vendors). Default 0.
 AiPlayerbot.PoolGearTopUpOnLevel = 0
+# Level-up money top-up (opt-in): when a masterless random pool bot reaches a
+# new level holding less than its next class-trainer visit costs (every
+# trainable class rank plus the repair/ammo/AH/guild reserves the trainer trip
+# keeps aside), it is topped up to that amount, capped at 1 gold per bot level.
+# Once per level; a bot that already has the money gets nothing. Hired,
+# guild-claimed and player-grouped bots are never paid. Each top-up writes a
+# PoolMoneyTopUp row to bot_events.csv. 1 = on; 0 = off (money only from the
+# one-time seed, loot, quests and sales). Default 0.
+AiPlayerbot.PoolMoneyTopUp = 0
 # Safety factor on the mount break-even distance: bots mount for travel/RPG
 # trips only when the remaining distance exceeds
 # 7 y/s * mount cast time / (best mount speed % / 100) * this. 0 disables
