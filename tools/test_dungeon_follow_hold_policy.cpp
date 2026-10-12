@@ -17,6 +17,7 @@ using ai::FollowHoldPoint;
 using ai::FollowHoldResult;
 using ai::kDungeonFollowHoldLeaderDistanceYd;
 using ai::kDungeonFollowHoldMarginYd;
+using ai::kDungeonFollowHoldReleaseDistanceYd;
 using ai::kDungeonFollowHoldZRangeYd;
 using ai::UseDungeonFollowHold;
 
@@ -47,6 +48,14 @@ int main()
     CHECK(!UseDungeonFollowHold(true, true, false, true, 80.0f));   // leader fighting: go help
     CHECK(!UseDungeonFollowHold(true, true, false, false, 30.0f));  // leader close: core follow
     std::cout << "  [PASS] gate: dungeon, out of combat, leader far ahead, option on\n";
+
+    // Hysteresis: on beyond 30 yd, stays on until the leader is within 25 yd.
+    CHECK(kDungeonFollowHoldReleaseDistanceYd == 25.0f);
+    CHECK(!UseDungeonFollowHold(true, true, false, false, 27.0f, false)); // not on yet: needs > 30
+    CHECK(UseDungeonFollowHold(true, true, false, false, 27.0f, true));   // already on: keeps it
+    CHECK(!UseDungeonFollowHold(true, true, false, false, 25.0f, true));  // leader came back
+    CHECK(!UseDungeonFollowHold(true, true, true, false, 80.0f, true));   // combat still closes it
+    std::cout << "  [PASS] gate hysteresis: on at 30 yd, off at 25 yd\n";
 
     const float floorZ = -48.7f;
 
@@ -116,6 +125,37 @@ int main()
         CHECK(FindFollowHoldPoint(route, 2, flyer, 1, 3.0f).hold);
     }
     std::cout << "  [PASS] other floor ignored, flyers counted\n";
+
+    // Ramp / stairs: a leg climbing from 5 yd below to 5 yd above a pack
+    // passes it at its own level. Both ends are outside the 3 yd band, but
+    // the leg is inside it where it enters the aggro radius: hold.
+    {
+        const FollowHoldPoint ramp[] = { { 0.0f, 0.0f, -5.0f }, { 60.0f, 0.0f, 5.0f } };
+        const FollowHoldPack packs[] = { { 30.0f, 0.0f, 0.0f, 15.0f, kDungeonFollowHoldZRangeYd } };
+        FollowHoldResult r = FindFollowHoldPoint(ramp, 2, packs, 1, 3.0f);
+        CHECK(r.hold);
+        CHECK(r.segment == 0);
+        CHECK(Near(Dist(r.point, packs[0]), 18.0f));
+        CHECK(std::fabs(r.point.z - packs[0].z) <= kDungeonFollowHoldZRangeYd + 0.01f);
+        CHECK(r.point.x < 30.0f);
+
+        // A steep leg that only reaches the band once it is past the
+        // sphere: the hold is where both hold, not at the sphere edge.
+        const FollowHoldPoint steep[] = { { 0.0f, 0.0f, -20.0f }, { 40.0f, 0.0f, 20.0f } };
+        const FollowHoldPack flat[] = { { 20.0f, 0.0f, 0.0f, 12.0f, 3.0f } };
+        FollowHoldResult r2 = FindFollowHoldPoint(steep, 2, flat, 1, 3.0f);
+        CHECK(r2.hold);
+        CHECK(Near(r2.point.z, -3.0f));
+
+        // Band includes both bounding radii (core GetDistanceZ): a pack 3.5 yd
+        // below a level route is outside a bare 3 yd band but inside 3 + radii.
+        const FollowHoldPoint level[] = { { 0.0f, 0.0f, 0.0f }, { 60.0f, 0.0f, 0.0f } };
+        const FollowHoldPack bare[] = { { 30.0f, 0.0f, -3.5f, 15.0f, 3.0f } };
+        CHECK(!FindFollowHoldPoint(level, 2, bare, 1, 3.0f).hold);
+        const FollowHoldPack sized[] = { { 30.0f, 0.0f, -3.5f, 15.0f, 3.0f + 0.4f + 0.4f } };
+        CHECK(FindFollowHoldPoint(level, 2, sized, 1, 3.0f).hold);
+    }
+    std::cout << "  [PASS] ramp through the pack's level holds; band includes radii\n";
 
     // Standing on the hold point (inside radius + margin): a route that goes
     // further in holds right here; a route that leads away walks on.

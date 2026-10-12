@@ -1228,7 +1228,9 @@ void TravelPath::ClipPath(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets,
 // read the same list), so this adds no grid search of its own.
 void TravelPath::ClipBeforePack(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets, PackHoldResult& packHold)
 {
+    bool const reuseTargets = packHold.reuseTargets;
     packHold = PackHoldResult();
+    packHold.reuseTargets = reuseTargets;
 
     if (fullPath.empty() || ignoreEnemyTargets || !mover->IsAlive())
         return;
@@ -1237,7 +1239,11 @@ void TravelPath::ClipBeforePack(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTa
         return;
 
     AiObjectContext* context = ai->GetAiObjectContext();
-    std::list<ObjectGuid> nearby = AI_VALUE(std::list<ObjectGuid>, "possible targets");
+    // Standing at a hold point the resume check only needs the cached GUIDs
+    // (dead, gone or pulled shows on the units themselves); refresh the list
+    // only while walking, where a new pack can come into sight.
+    std::list<ObjectGuid> nearby = reuseTargets ? AI_VALUE_LAZY(std::list<ObjectGuid>, "possible targets")
+                                                : AI_VALUE(std::list<ObjectGuid>, "possible targets");
     if (nearby.empty())
         return;
 
@@ -1253,7 +1259,10 @@ void TravelPath::ClipBeforePack(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTa
         if (!creature || !creature->IsAlive())
             continue;
 
-        // Pulled or busy: the fight is on, the combat AI owns that one.
+        // Already fighting someone else (a pet, an escort, another member: the
+        // gate keeps the bot and its leader out of combat). Not held for: in a
+        // dungeon such a creature also pulls a passer-by, but that fight is
+        // already on and the bot joining it is acceptable.
         if (creature->IsInCombat() || creature->GetVictim())
             continue;
 
@@ -1264,8 +1273,12 @@ void TravelPath::ClipBeforePack(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTa
         if (radius <= 0.0f)
             continue;
 
+        // Core vertical gate: GetDistanceZ(who) > CREATURE_Z_ATTACK_RANGE, where
+        // GetDistanceZ subtracts both bounding radii, so the band is 3 yd plus both.
+        float const zRange = creature->CanFly() ? 0.0f :
+            kDungeonFollowHoldZRangeYd + creature->GetObjectBoundingRadius() + mover->GetObjectBoundingRadius();
         packs.push_back(FollowHoldPack{ creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(),
-            radius, creature->CanFly() ? 0.0f : kDungeonFollowHoldZRangeYd });
+            radius, zRange });
         packGuids.push_back(guid);
     }
 
