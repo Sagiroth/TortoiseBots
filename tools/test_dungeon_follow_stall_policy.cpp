@@ -127,6 +127,70 @@ int main()
         std::cout << "  [PASS] walk throttle and back-off\n";
     }
 
+    // Latched, then held (sat down to eat, started a cast, rooted): the
+    // rescue stays latched but does not act until the bot is free again.
+    {
+        DungeonFollowStallWatch watch;
+        CHECK(StandStill(watch, 0, 2000, 0.0f, 0.0f, 40.0f));
+        CHECK(!watch.Observe(2100, 0.0f, 0.0f, 40.0f, kRange, true));
+        CHECK(!StandStill(watch, 2200, 12000, 0.0f, 0.0f, 40.0f, true));
+        CHECK(watch.rescuing);
+        CHECK(watch.Observe(12100, 0.0f, 0.0f, 40.0f, kRange, false));
+        std::cout << "  [PASS] latched, then held: yields while held\n";
+    }
+
+    // Five walks in a row that cannot start end the rescue for 60 s (a bot
+    // below its leader's platform); after that the watch latches afresh.
+    {
+        DungeonFollowStallWatch watch;
+        CHECK(StandStill(watch, 0, 2000, 0.0f, 0.0f, 40.0f));
+        uint32_t t = 2000;
+        for (uint32_t i = 0; i < 4; ++i)
+        {
+            CHECK(watch.WalkDue(t + watch.WalkInterval()));
+            t += watch.WalkInterval();
+            watch.Walked(t, false);
+            CHECK(watch.rescuing);
+        }
+        t += watch.WalkInterval();
+        CHECK(watch.WalkDue(t));
+        watch.Walked(t, false);
+        CHECK(!watch.rescuing);
+        CHECK(!watch.WalkDue(t));
+        uint32_t const gaveUp = t;
+        CHECK(!StandStill(watch, gaveUp + 100, gaveUp + 59900, 0.0f, 0.0f, 40.0f));
+        CHECK(!watch.WalkDue(gaveUp + 59900));
+        CHECK(!watch.Observe(gaveUp + 60000, 0.0f, 0.0f, 40.0f, kRange, false));
+        CHECK(!StandStill(watch, gaveUp + 60100, gaveUp + 61900, 0.0f, 0.0f, 40.0f));
+        CHECK(StandStill(watch, gaveUp + 62000, gaveUp + 62000, 0.0f, 0.0f, 40.0f));
+        std::cout << "  [PASS] five failed walks: give up for 60 s, then watch afresh\n";
+    }
+
+    // A started walk in between resets the failure count.
+    {
+        DungeonFollowStallWatch watch;
+        CHECK(StandStill(watch, 0, 2000, 0.0f, 0.0f, 40.0f));
+        for (uint32_t i = 0; i < 4; ++i)
+            watch.Walked(3000 + i * 10000, false);
+        watch.Walked(50000, true);
+        for (uint32_t i = 0; i < 4; ++i)
+            watch.Walked(60000 + i * 10000, false);
+        CHECK(watch.rescuing);
+        std::cout << "  [PASS] a started walk resets the failure count\n";
+    }
+
+    // Catching up during the give-up clears it at once.
+    {
+        DungeonFollowStallWatch watch;
+        CHECK(StandStill(watch, 0, 2000, 0.0f, 0.0f, 40.0f));
+        for (uint32_t i = 0; i < 5; ++i)
+            watch.Walked(3000 + i * 10000, false);
+        CHECK(watch.givenUp);
+        CHECK(!watch.Observe(50000, 0.0f, 0.0f, 6.0f, kRange, false));
+        CHECK(!watch.givenUp);
+        std::cout << "  [PASS] caught up: give-up cleared\n";
+    }
+
     // Timer wrap: the millisecond clock wraps without a false stall or a
     // stuck throttle.
     {

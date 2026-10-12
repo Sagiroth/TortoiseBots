@@ -21,7 +21,11 @@
 // becomes useful again, tries the ledge step-down, and walks the navmesh path
 // to the leader with the module's own MoveTo (as mod-playerbots' follow does
 // with a path to its formation point), at most once per two seconds, backing
-// off to eight seconds while no walk can be started.
+// off to eight seconds while no walk can be started. The rescue yields while
+// the bot is held (eating, drinking, casting, rooted), latched or not, and
+// after five walks in a row that could not start it lets go for a minute: a
+// bot below a platform its leader stands on cannot be rescued, and planning a
+// path every eight seconds for it is wasted work.
 //
 // No core includes; tested in tools/test_dungeon_follow_stall_policy.cpp.
 
@@ -48,6 +52,12 @@ namespace ai
     // ...doubling per walk that could not be started, up to this.
     constexpr uint32_t kDungeonFollowWalkMaxIntervalMs = 8000;
 
+    // This many walks in a row that could not start end the rescue...
+    constexpr uint32_t kDungeonFollowMaxFailedWalks = 5;
+
+    // ...and keep it off for this long before the watch may latch again.
+    constexpr uint32_t kDungeonFollowGiveUpMs = 60000;
+
     // Inside a dungeon (raids included) and out of combat only: in a fight the
     // reach actions own positioning, and outside dungeons the core follow does
     // not have the dungeon-only refusals.
@@ -67,18 +77,28 @@ namespace ai
         bool walked = false;
         uint32_t lastWalkMs = 0;
         uint32_t failedWalks = 0;
+        bool givenUp = false;
+        uint32_t givenUpMs = 0;
 
         void Reset() { *this = DungeonFollowStallWatch(); }
 
         // Feed the bot's position and its distance to the leader. `held` is
         // anything that keeps a bot still on purpose (sitting, casting,
-        // rooted). Returns true while the rescue is on.
+        // rooted). Returns true while the rescue is on and may act: a held
+        // bot is left alone even while the rescue stays latched.
         bool Observe(uint32_t nowMs, float x, float y, float leaderDistance, float followRange, bool held)
         {
             if (leaderDistance <= followRange + kDungeonFollowStallSlackYd)
             {
                 Reset(); // caught up: the core follow takes over again
                 return false;
+            }
+
+            if (givenUp)
+            {
+                if (nowMs - givenUpMs < kDungeonFollowGiveUpMs)
+                    return false;
+                Reset(); // a minute later: watch afresh
             }
 
             float const dx = x - anchorX;
@@ -93,7 +113,7 @@ namespace ai
                 anchorX = x;
                 anchorY = y;
                 anchorMs = nowMs;
-                return rescuing;
+                return rescuing && !held;
             }
 
             if (!rescuing && nowMs - anchorMs >= kDungeonFollowStallMs)
@@ -117,14 +137,25 @@ namespace ai
         }
 
         // A walk was planned; `started` says whether it launched a move.
+        // The fifth failure in a row ends the rescue for kDungeonFollowGiveUpMs.
         void Walked(uint32_t nowMs, bool started)
         {
             walked = true;
             lastWalkMs = nowMs;
             if (started)
+            {
                 failedWalks = 0;
-            else if (failedWalks < 8)
-                ++failedWalks;
+                return;
+            }
+
+            if (++failedWalks >= kDungeonFollowMaxFailedWalks)
+            {
+                rescuing = false;
+                walked = false;
+                failedWalks = 0;
+                givenUp = true;
+                givenUpMs = nowMs;
+            }
         }
     };
 }

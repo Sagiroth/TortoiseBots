@@ -147,7 +147,9 @@ bool FollowAction::ObserveDungeonFollowStall(Unit* followTarget)
 // four bots stood 50 s at the edge of such an island, "moving" with no motion,
 // 34-36 yd from the leader. Once the watch has seen that (DungeonFollowStallPolicy.h),
 // step down off the ledge if that is the problem, else walk the navmesh path
-// to the leader with the module's MoveTo, at most once per two seconds.
+// to the leader with the module's MoveTo, at most once per two seconds. A
+// held bot (eating, casting, rooted) is left alone; five walks in a row that
+// cannot start end the rescue for a minute (DungeonFollowStallWatch).
 // Returns false when the normal follow should run.
 bool FollowAction::RescueStalledDungeonFollow(Unit* followTarget, bool& moved)
 {
