@@ -54,7 +54,7 @@ public:
 // Araxxna swarm (core SpawnEggs): a live Skitterweb Egg (30008, hatches
 // after 20s) or hatched spider (Crawler 61206 / Darkfang 61207 / Leaper
 // 61209) near the bot means cleave them down. DPS only. Reads cached
-// values, never a grid scan of its own.
+// values; the egg proximity list is rescanned at most once per 5s.
 class AraxxnaSwarmTrigger : public Trigger
 {
 public:

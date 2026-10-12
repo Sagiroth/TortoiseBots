@@ -13,6 +13,7 @@
 #include "playerbot/policy/combat/RunnerFinishPolicy.h"
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
+#include "playerbot/strategy/triggers/EmeraldSanctumDungeonTriggers.h"
 
 using namespace ai;
 
@@ -161,6 +162,23 @@ namespace
         { return GateHoldFighters(ai, row.targetEntry, GateHoldRadius(row.windowSec)); };
         return DpsLeavesAlone(true, active, unit->GetEntry(), static_cast<int>(unit->GetHealthPercent()), countNear,
                               countFighting);
+    }
+
+    // Solnius Call of Nightmare (Emerald Sanctum, 807): while a major add
+    // lives, a DPS bot's dps target is that add (the one it already hits,
+    // else the nearest), so "dps assist" agrees with "solnius attack add"
+    // instead of resetting the bot to Solnius every tick. Cached attackers
+    // only, and only while the "solnius" fight strategy is on.
+    Unit* SolniusAddTarget(PlayerbotAI* ai, Player* bot)
+    {
+        if (bot->GetMapId() != 807 || !ai->HasStrategy("solnius", BotState::BOT_STATE_COMBAT))
+            return nullptr;
+        if (PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
+            return nullptr;
+        Unit* current = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+        if (IsSolniusAdd(current) && current->IsAlive() && !current->IsFriendlyTo(bot))
+            return current;
+        return FindSolniusAdd(ai);
     }
 
     // mod-playerbots DPS target tournament (LD-1/LD-4): lifetime buckets per
@@ -539,7 +557,10 @@ Unit* DpsTargetValue::Calculate()
     // A raid mark set aside in a creature aura keep-out falls through to
     // the next pick like the tank's victim below. A mark on a member the group holds falls through to the group's pick
     // for the same reason the tactic exists (that member has to live to the burn); an explicit attack order above is
-    // the only thing that outranks the tactic, and a mark anywhere else still wins.
+    // the only thing that outranks the tactic, and a mark anywhere else still wins.    // Solnius adds beat the tank's target and raid marks (both are Solnius).
+    if (Unit* add = SolniusAddTarget(ai, bot))
+        return add;
+
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot) && !HeldDpsTarget(ai, bot, rti) &&
         !(linked && LinkedDeathHoldsMember(linkedScan.param, linkedScan.members, rti->GetObjectGuid().GetRawValue())))

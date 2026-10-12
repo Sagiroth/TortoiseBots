@@ -6,6 +6,9 @@ using namespace ai;
 
 namespace
 {
+    // Longest an egg wave can go unseen by a bot that copies its attackers.
+    constexpr uint32 kAraxxnaEggRefreshSecs = 5;
+
     bool IsAraxxnaBrood(Unit* unit, Player* bot)
     {
         if (!unit || !sServerFacade.IsAlive(unit) || unit->IsFriendlyTo(bot))
@@ -39,12 +42,19 @@ bool AraxxnaSwarmTrigger::IsActive()
     }
 
     // Eggs fight nobody until hit, so they only show in the proximity
-    // list the attackers value already builds for this bot every refresh
-    // (same qualifier as AttackersValue::AddTargetsOf: range, no validate).
-    // LazyGet reads that cache and never starts a scan of its own.
+    // list "possible targets" (same qualifier as AttackersValue::AddTargetsOf:
+    // range, no validate). A bot that scans its own attackers refreshes that
+    // list anyway; one that copies a neighbour's attackers never does, so
+    // rescan it here at most once per kAraxxnaEggRefreshSecs (eggs take 20s
+    // to hatch) and read the cached list in between.
     const std::string qualifier = Qualified::MultiQualify(
         { std::to_string((int32)sPlayerbotAIConfig.sightDistance), std::to_string(true) }, ":");
-    for (const ObjectGuid& guid : AI_VALUE2_LAZY(std::list<ObjectGuid>, "possible targets", qualifier))
+    Value<std::list<ObjectGuid>>* nearby = context->GetValue<std::list<ObjectGuid>>("possible targets", qualifier);
+    if (!nearby)
+        return false;
+    UntypedValue* nearbyCache = dynamic_cast<UntypedValue*>(nearby);
+    const bool stale = !nearbyCache || nearbyCache->Expired(kAraxxnaEggRefreshSecs);
+    for (const ObjectGuid& guid : stale ? nearby->Get() : nearby->LazyGet())
     {
         if (IsAraxxnaBrood(ai->GetUnit(guid), bot))
             return true;
