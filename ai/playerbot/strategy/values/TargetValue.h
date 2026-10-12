@@ -57,10 +57,15 @@ namespace ai
         bool IsCcMark(Unit* attacker);
         // A CC mark the party leaves alone: a mark that is crowd-controlled,
         // has a group member's CC cast bar on it, is not fighting yet, or is
-        // in its first seconds of combat with its CC bot ready and in range.
-        // A free mark (CC missed, broke, or no CC bot) is a normal enemy.
+        // in its hold window (CcMarkHoldPolicy.h, first 10 s of combat) with
+        // its CC bot ready and in range. A free mark (CC missed, broke, no
+        // CC bot, or the window ran out) is a normal enemy.
         virtual bool IsCcTarget(Unit* attacker);
         bool IsCcProtected(Unit* unit);
+        // `player` (a bot with AI `memberAi`) can CC `unit` now: "cc" on,
+        // knows a fitting cast-time CC spell off cooldown, within spell
+        // range + 5 yd. Whether `unit` is its mark is the caller's test.
+        static bool IsCcBotReadyFor(PlayerbotAI* memberAi, Player* player, Unit* unit);
 
     };
 
@@ -77,12 +82,18 @@ namespace ai
         // fights the group: nobody targets, taunts, DoTs or splashes it (it
         // is killed last, see TargetValue::FindLastCcTarget).
         bool IsHeldCcMark(Unit* unit);
+        // This bot's own assigned CC mark ("rti cc target") that it can CC
+        // now (IsCcBotReadyFor), held or free.
+        bool IsOwnReadyCcMark(Unit* unit);
         // An enemy fighting the group within `radius` of `center` (bounding
         // radii included) that holds a damage-breakable CC, or with
-        // `includeMarks` is a held CC mark (being or about to be CC'd).
+        // `includeMarks` is a held CC mark (being or about to be CC'd), or
+        // is this bot's own ready CC mark while other enemies are left (the
+        // CC bot never splashes the mob it will sheep next).
         bool ProtectedEnemyNear(WorldObject* center, float radius, bool includeMarks);
 
     private:
+        bool OnlyMarksLeftCached();
         int onlyMarksLeft;
     };
 

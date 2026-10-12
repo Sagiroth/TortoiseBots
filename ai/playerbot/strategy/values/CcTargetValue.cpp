@@ -5,6 +5,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/Action.h"
 #include "PossibleAttackTargetsValue.h"
+#include "CcMarkHoldPolicy.h"
 #include "playerbot/GroupMembers.h"
 
 using namespace ai;
@@ -24,6 +25,13 @@ public:
         Player* bot = ai->GetBot();
 
         AiObjectContext* context = ai->GetAiObjectContext();
+
+        // The assigned mark wins the whole tournament: the free-pick rules
+        // below assign `result` without looking at what it holds, so an
+        // open-world candidate checked after the mark replaced it and the
+        // CC bot sheeped another mob, or alternated, instead of its mark.
+        if (result && CcChooserKeepsResult(result == AI_VALUE(Unit*, "rti cc target")))
+            return;
 
         // Never CC over another CC (generalized from the Fear mark-only
         // branch): a mob already held by someone's breakable/unbreakable aura

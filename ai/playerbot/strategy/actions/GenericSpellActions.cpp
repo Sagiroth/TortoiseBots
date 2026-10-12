@@ -19,7 +19,8 @@ using namespace ai;
 namespace
 {
 // True when `info` hits enemies in an area that would reach crowd control:
-// a mob in damage-breakable CC within the blast, or - for a lingering area
+// a mob in damage-breakable CC within the blast, the caster's own CC mark
+// while it will still CC it (any area spell), or - for a lingering area
 // (ground effect, channel, area DoT) that outlasts the next sheep - a held
 // CC mark. The shape comes from the spell data (both implicit targets: Frost
 // Nova and Thunder Clap name the enemy area in target B): caster-centred
@@ -363,8 +364,9 @@ bool CastSpellAction::isUseful()
         return false;
 
     // Never splash crowd control: an enemy-area spell whose blast would reach
-    // a sheeped/sapped mob (or, for a lingering area, a CC mark about to be
-    // sheeped) is not cast.
+    // a sheeped/sapped mob, the caster's own CC mark (it sheeps that mob
+    // next) or, for a lingering area, a CC mark about to be sheeped is not
+    // cast.
     if (BreaksCcInArea(ai, bot, sServerFacade.LookupSpellInfo(spellId), spellTarget))
         return false;
 
