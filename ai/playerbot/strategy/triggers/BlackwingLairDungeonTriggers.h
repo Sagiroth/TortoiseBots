@@ -270,11 +270,13 @@ namespace ai
             if (!ai->HasStrategy("nefarian", BotState::BOT_STATE_COMBAT))
                 return false;
             AiObjectContext* context = ai->GetAiObjectContext();
-            if (!ShouldNefarianKillClassCallAdd(ai->IsTank(bot), ai->IsHeal(bot),
-                    !AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty()))
-                return false;
+            // Look for an add first (cheap, nearly always empty): IsTank/IsHeal
+            // scan talents, so they only run while a class-call add exists.
             Unit* add = FindNefarianClassCallAdd(ai, bot);
             if (!add)
+                return false;
+            if (!ShouldNefarianKillClassCallAdd(ai->IsTank(bot), ai->IsHeal(bot),
+                    !AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty()))
                 return false;
             Unit* current = AI_VALUE(Unit*, "current target");
             const int currentRank = (current && sServerFacade.IsAlive(current))
