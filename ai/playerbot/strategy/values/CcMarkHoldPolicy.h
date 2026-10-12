@@ -58,4 +58,33 @@ namespace ai
     {
         return resultIsAssignedMark;
     }
+
+    // Owner decision (2026-10-12): a held mark that is not crowd-controlled
+    // yet and is hitting a healer may be TAUNTED by the tank. Taunt only (no
+    // damage, the tank keeps its main target); nothing else passes the hold.
+    // Not while a CC cast bar is on it: the taunted mob runs to the tank and
+    // can leave the caster's range or sight before the cast ends.
+    inline bool CcHeldMarkTauntAllowed(bool tankTaunt, bool crowdControlled,
+        bool ccCastBarOnIt, bool victimIsHealer)
+    {
+        return tankTaunt && !crowdControlled && !ccCastBarOnIt && victimIsHealer;
+    }
+
+    // A CC cast starts only this far inside the spell's range: the mark is
+    // fighting and moving, and a target that leaves range (or sight) during
+    // the 1.5 s cast bar makes the cast fail when it finishes. The CC reach
+    // action closes to the same distance. Short-range CC keeps its range.
+    constexpr float CcCastRangeMargin = 5.0f;
+
+    inline float CcCastReach(float maxRange)
+    {
+        return maxRange > 2.0f * CcCastRangeMargin ? maxRange - CcCastRangeMargin : maxRange;
+    }
+
+    // The CC bot may start its CC cast on the mark: in line of sight and
+    // within CcCastReach. Otherwise the reach prerequisite moves it first.
+    inline bool CcCastInReach(float distance, float maxRange, bool inLineOfSight)
+    {
+        return inLineOfSight && distance <= CcCastReach(maxRange);
+    }
 }

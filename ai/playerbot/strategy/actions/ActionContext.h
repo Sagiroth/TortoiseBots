@@ -124,6 +124,7 @@ namespace ai
             creators["switch to melee"] = [](PlayerbotAI* ai) { return new SwitchToMeleeAction(ai); };
             creators["switch to ranged"] = [](PlayerbotAI* ai) { return new SwitchToRangedAction(ai); };
             creators["reach spell"] = [](PlayerbotAI* ai) { return new ReachSpellAction(ai); };
+            creators["reach cc"] = [](PlayerbotAI* ai) { return new ReachCcAction(ai); };
             creators["reach melee"] = [](PlayerbotAI* ai) { return new ReachMeleeAction(ai); };
             creators["reach pull"] = [](PlayerbotAI* ai) { return new ReachPullAction(ai); };
             creators["reach party member to heal"] = [](PlayerbotAI* ai) { return new ReachPartyMemberToHealAction(ai); };

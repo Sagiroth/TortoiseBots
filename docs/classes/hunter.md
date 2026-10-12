@@ -70,6 +70,7 @@ Hunters excel at sustained single-target ranged DPS, pet off-tanking, snares, an
   - When a target is crowd-controlled (e.g. *Polymorph* or *Freezing Trap*), the bot's pet is prevented from attacking the CC'd mob, preventing accidental breaks.
 - **Crowd Control:**
   - Deploys *Freezing Trap* when assigned CC via `.bot action cc <mark>`.
+  - When its mark is a beast it can *Scare Beast*, it never hits that mark with an area attack (*Multi-Shot*, *Volley*, ...) while other enemies are left, because it CCs that mob next. Once only CC marks are left, AoE on them is allowed.
   - Uses *Concussive Shot* to snare fleeing targets.
 
 ---

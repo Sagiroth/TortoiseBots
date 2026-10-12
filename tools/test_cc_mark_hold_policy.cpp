@@ -97,6 +97,29 @@ int main()
     CHECK(CcChooserKeepsResult(true));
     CHECK(!CcChooserKeepsResult(false));
 
+    // Owner decision: the tank's Taunt (and nothing else) passes the hold,
+    // while the held mark is not CC'd yet, no CC cast bar is on it and it is
+    // hitting a healer.
+    CHECK(CcHeldMarkTauntAllowed(true, false, false, true));
+    CHECK(!CcHeldMarkTauntAllowed(false, false, false, true));  // not the tank's Taunt (snare, DPS, ...)
+    CHECK(!CcHeldMarkTauntAllowed(true, true, false, true));    // already sheeped
+    CHECK(!CcHeldMarkTauntAllowed(true, false, true, true));    // sheep on its way
+    CHECK(!CcHeldMarkTauntAllowed(true, false, false, false));  // hitting the tank, a DPS or nobody
+
+    // CC cast reach: Polymorph (30 yd) starts within 25 yd and in sight,
+    // so a mark moving during the 1.5 s cast stays in range. Out of sight
+    // or beyond 25 yd the reach runs first (build 11: four Polymorph starts
+    // that never finished).
+    CHECK(CcCastReach(30.0f) == 25.0f);
+    CHECK(CcCastInReach(20.0f, 30.0f, true));
+    CHECK(CcCastInReach(25.0f, 30.0f, true));
+    CHECK(!CcCastInReach(27.0f, 30.0f, true));
+    CHECK(!CcCastInReach(10.0f, 30.0f, false));
+    // Short-range CC (melee reach, 10 yd and below) keeps its full range.
+    CHECK(CcCastReach(10.0f) == 10.0f);
+    CHECK(CcCastReach(5.0f) == 5.0f);
+    CHECK(CcCastInReach(5.0f, 5.0f, true));
+
     std::printf("cc mark hold policy: %d checks passed\n", checks);
     return 0;
 }

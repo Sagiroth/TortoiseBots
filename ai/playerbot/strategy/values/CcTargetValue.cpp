@@ -44,7 +44,11 @@ public:
 
         // A bot assigned to this raid mark may still need to close distance.
         // Keep the normal legality/resource checks, but let the mature reach
-        // prerequisite handle range for that one assigned target.
+        // prerequisite handle range for that one assigned target: it stays
+        // the "cc target" out of range or sight, and the cast itself waits
+        // until "reach cc" has it in sight and inside the range margin
+        // (CastCrowdControlSpellAction::isPossible), so a 1.5 s cast is not
+        // started on a mark that can leave range before it finishes.
 
         const bool assignedTarget = AI_VALUE(Unit*, "rti cc target") == creature;
 

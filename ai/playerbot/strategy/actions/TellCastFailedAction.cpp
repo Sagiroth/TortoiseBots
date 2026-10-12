@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "TellCastFailedAction.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/values/TargetValue.h"
 
 using namespace ai;
 
@@ -39,7 +40,17 @@ bool TellCastFailedAction::Execute(Event& event)
         out << "requires weapon";
         break;
     case SPELL_FAILED_PREVENTED_BY_MECHANIC:
+    case SPELL_FAILED_INTERRUPTED:
         out << "interrupted";
+        break;
+    case SPELL_FAILED_OUT_OF_RANGE:
+        out << "out of range";
+        break;
+    case SPELL_FAILED_LINE_OF_SIGHT:
+        out << "not in line of sight";
+        break;
+    case SPELL_FAILED_MOVING:
+        out << "moving";
         break;
     default:
         out << "cannot cast";
@@ -49,7 +60,10 @@ bool TellCastFailedAction::Execute(Event& event)
             , bot
 #endif
     );
-    if (castTime >= 2000)
+    // Crowd control is reported at any cast time: a failed 1.5 s Polymorph
+    // (or an instant Sap) was silent, and the reason was the only way to
+    // see why a sheep never landed.
+    if (castTime >= 2000 || FindNonCcTargetStrategy::IsCcSpell(pSpellInfo))
         ai->TellError(requester, out.str());
     return true;
 }

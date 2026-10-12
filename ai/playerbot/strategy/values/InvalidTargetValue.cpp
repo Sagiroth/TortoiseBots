@@ -59,8 +59,8 @@ bool InvalidTargetValue::Calculate()
     const bool explicitAttackTarget = qualifier == "current target" &&
         AI_VALUE(ObjectGuid, "attack target") == target->getObjectGuid();
 
-    // A held CC mark (crowd-controlled, under a CC cast bar or in its CC
-    // grace window, while other enemies still fight the group) is nobody's
+    // A held CC mark (crowd-controlled, under a CC cast bar or in its hold
+    // window, while other enemies still fight the group) is nobody's
     // current target: a bot that took it before the mark (or picked it up
     // as a loose mob) otherwise keeps hitting, taunting and DoTing it and
     // breaks every sheep (in-game retest: sheep broke 0.07-2.4 s after landing).

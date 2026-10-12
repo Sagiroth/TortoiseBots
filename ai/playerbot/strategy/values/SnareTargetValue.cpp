@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "SnareTargetValue.h"
 #include "TargetValue.h"
+#include "CcMarkHoldPolicy.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "Movement/TargetedMovementGenerator.h"
@@ -29,11 +30,26 @@ Unit* SnareTargetValue::Calculate()
         if (!unit)
             continue;
 
-        // A held CC mark (sheeped, under the CC cast bar or in its CC grace
-        // window) is the CC bot's job: a taunt or a damaging snare on it
-        // breaks the sheep. A free mark on the healer may be taunted.
+        // A held CC mark (sheeped, under the CC cast bar or in its hold
+        // window) is the CC bot's job: a damaging snare on it breaks the
+        // sheep, and only the tank's Taunt may touch it, while it is not
+        // CC'd yet and is hitting a healer (owner decision). Taunt does no
+        // damage and does not change the tank's current target. A free
+        // mark is a normal snare/Taunt target.
         if (ccGuard.IsHeldCcMark(unit))
-            continue;
+        {
+            Unit* victim = unit->GetVictim();
+            Player* victimPlayer = victim ? victim->ToPlayer() : nullptr;
+            bool const tankTaunt = spell == "taunt" && ai->IsTank(bot);
+            if (!tankTaunt ||
+                !CcHeldMarkTauntAllowed(tankTaunt, FindNonCcTargetStrategy::IsCrowdControlled(ai, unit),
+                    ccGuard.GroupCastsCcAt(unit), victimPlayer && PlayerbotAI::IsHeal(victimPlayer)))
+                continue;
+            if (sServerFacade.getDistance2d(bot, unit) > ai->GetRange("spell"))
+                continue;
+            // Standing or chasing: the healer is being hit either way.
+            return unit;
+        }
 
         if (sServerFacade.getDistance2d(bot, unit) > ai->GetRange("spell"))
             continue;

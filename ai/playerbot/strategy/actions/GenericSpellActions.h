@@ -3,6 +3,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/HealerManaPolicy.h"
+#include "playerbot/strategy/values/CcMarkHoldPolicy.h"
 
 namespace ai
 {
@@ -552,8 +553,23 @@ namespace ai
         bool IsCrowdControlAction() const override { return true; }
         std::string GetCrowdControlSpellName() const override { return GetSpellName(); }
 
+        // The chooser keeps an assigned mark as "cc target" at any range
+        // (so the reach can run); the cast itself starts only in line of
+        // sight and CcCastRangeMargin inside the spell's range, so a mark
+        // that moves during the cast bar does not leave range or sight and
+        // fail the cast when it finishes. "reach cc" closes to that distance.
+        bool isPossible() override
+        {
+            if (!CastRangedDebuffSpellAction::isPossible())
+                return false;
+            Unit* target = GetTarget();
+            if (!target || target == bot)
+                return true;
+            return CcCastInReach(bot->GetDistance(target), range, bot->IsWithinLOSInMap(target, true));
+        }
+
     private:
-        virtual std::string GetReachActionName() override { return "reach spell"; }
+        virtual std::string GetReachActionName() override { return "reach cc"; }
         virtual std::string GetTargetName() override { return "cc target"; }
         virtual std::string GetTargetQualifier() override { return GetSpellName(); }
         virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_NONE; }

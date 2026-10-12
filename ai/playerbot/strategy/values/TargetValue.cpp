@@ -155,15 +155,36 @@ bool FindNonCcTargetStrategy::IsCrowdControlled(PlayerbotAI* ai, Unit* unit)
         sServerFacade.IsFeared(unit) || ai->HasAura("banish", unit);
 }
 
+bool FindNonCcTargetStrategy::IsCcSpell(SpellEntry const* info)
+{
+    if (!info)
+        return false;
+    uint32 const ccMask = (1 << (MECHANIC_POLYMORPH - 1)) | (1 << (MECHANIC_BANISH - 1)) |
+        (1 << (MECHANIC_FEAR - 1)) | (1 << (MECHANIC_SLEEP - 1)) | (1 << (MECHANIC_KNOCKOUT - 1)) |
+        (1 << (MECHANIC_SHACKLE - 1));
+    return (info->GetAllSpellMechanicMask() & ccMask) != 0;
+}
+
 bool FindNonCcTargetStrategy::IsCastingCcAt(Unit* caster, Unit* target)
 {
     Spell* spell = caster ? caster->GetCurrentSpell(CURRENT_GENERIC_SPELL) : nullptr;
     if (!spell || !spell->m_spellInfo || spell->m_targets.getUnitTarget() != target)
         return false;
-    uint32 const ccMask = (1 << (MECHANIC_POLYMORPH - 1)) | (1 << (MECHANIC_BANISH - 1)) |
-        (1 << (MECHANIC_FEAR - 1)) | (1 << (MECHANIC_SLEEP - 1)) | (1 << (MECHANIC_KNOCKOUT - 1)) |
-        (1 << (MECHANIC_SHACKLE - 1));
-    return (spell->m_spellInfo->GetAllSpellMechanicMask() & ccMask) != 0;
+    return IsCcSpell(spell->m_spellInfo);
+}
+
+bool CcGuard::GroupCastsCcAt(Unit* unit)
+{
+    Group* group = unit ? ai->GetBot()->GetGroup() : nullptr;
+    if (!group)
+        return unit && IsCastingCcAt(ai->GetBot(), unit);
+    for (Group::MemberSlotList::const_iterator itr = group->GetMemberSlots().begin(); itr != group->GetMemberSlots().end(); ++itr)
+    {
+        Player* player = sObjectMgr.GetPlayer(itr->guid);
+        if (player && player->GetMapId() == unit->GetMapId() && IsCastingCcAt(player, unit))
+            return true;
+    }
+    return false;
 }
 
 bool FindNonCcTargetStrategy::IsCcTarget(Unit* attacker)

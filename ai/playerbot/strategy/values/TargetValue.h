@@ -51,6 +51,9 @@ namespace ai
         static bool IsCrowdControlled(PlayerbotAI* ai, Unit* unit);
         // `caster`'s cast bar is a crowd-control spell aimed at `target`.
         static bool IsCastingCcAt(Unit* caster, Unit* target);
+        // The spell carries a crowd-control mechanic (polymorph, banish,
+        // fear, sleep, knockout/sap, shackle) on the spell or an effect.
+        static bool IsCcSpell(SpellEntry const* info);
 
     protected:
         // Moon or a bot's assigned "rti cc" mark, crowd-controlled or not.
@@ -85,6 +88,8 @@ namespace ai
         // This bot's own assigned CC mark ("rti cc target") that it can CC
         // now (IsCcBotReadyFor), held or free.
         bool IsOwnReadyCcMark(Unit* unit);
+        // A group member's cast bar is a CC spell aimed at `unit`.
+        bool GroupCastsCcAt(Unit* unit);
         // An enemy fighting the group within `radius` of `center` (bounding
         // radii included) that holds a damage-breakable CC, or with
         // `includeMarks` is a held CC mark (being or about to be CC'd), or
