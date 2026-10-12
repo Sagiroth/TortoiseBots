@@ -33,6 +33,17 @@ namespace ai
                usage == VENDOR_BUY_USAGE_BROKEN_EQUIP;
     }
 
+    // Purchases of one vendor item per visit (mod-playerbots
+    // BuyAction.cpp:94-101: 1 by default, 10 for consumables and
+    // projectiles). Expressed by stack size so reagents and trade goods a
+    // profession needs keep the 10 too; recipes and gear are bought once.
+    // The usage re-check inside the loop still stops at the needed count.
+    constexpr uint32_t VENDOR_BUY_MAX_STACKABLE_PURCHASES = 10;
+    inline uint32_t VendorBuyMaxPurchases(uint32_t maxStackSize)
+    {
+        return maxStackSize > 1 ? VENDOR_BUY_MAX_STACKABLE_PURCHASES : 1;
+    }
+
     // Donor sort rule (BuyAction.cpp:78-86): rank by weighted score, falling
     // back to item level when either side scores 0 (unweighted or
     // not-yet-usable stock). Strictly greater only, so ties keep vendor order.

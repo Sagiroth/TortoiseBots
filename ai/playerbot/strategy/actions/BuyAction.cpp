@@ -9,6 +9,7 @@
 #include "../../policy/gear/VendorWeaponUpgradePolicy.h"
 #include "../../policy/gear/VendorBuyPolicy.h"
 #include "../../policy/gear/SpecWeaponPolicy.h"
+#include "runtime/policy/provision/AmmoCheatPolicy.h"
 #include "playerbot/RandomItemMgr.h"
 #include "runtime/HireLifecycle.h"
 #include "playerbot/strategy/values/MountValues.h"
@@ -116,23 +117,6 @@ bool BuyAction::Execute(Event& event)
                 // reputation discount
                 uint32 price = uint32(floor(proto->BuyPrice * bot->GetReputationPriceDiscount(pCreature)));
 
-                auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, "IsWorthBuyingFromVendorToResellAtAH", ai);
-
-                // Pool item cheat: server-managed stock (ammo, and the quiver
-                // that only holds it) refills/is seeded without gold, so a
-                // vendor->AH flip of that stock only burns the trainer purse
-                // (live pool: 34 Small Quiver buys on priest Braegrulaer in
-                // 5 min, 19 on mage Vyrtryrg — non-hunters with no ranged
-                // kit, quiver usage NONE via the equip path). No-cheat bots
-                // (owned/hired) keep the earned flip path.
-                bool const cheatStock = proto->Class == ITEM_CLASS_QUIVER && ai->HasCheat(BotCheatMask::item);
-                // if item is worth selling to AH?
-                bool canFlipAH = !cheatStock &&
-                    ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(proto, tItem->maxcount > 0);
-
-                pmo.reset();
-
-
                 // Pool-bot weapon/shield upgrade pass: runs before the usage loop so
                 // NONE-classified vendor stock is reached too. A vendor weapon or
                 // shield the bot does not own can still be a real upgrade by the
@@ -170,7 +154,15 @@ bool BuyAction::Execute(Event& event)
                     }
                 }
 
-                for (uint32 n = 0; n < 10; ++n) //Buy 10 times or until no longer usefull/possible
+                // mod-playerbots BuyAction.cpp:94-101: one purchase per item
+                // per visit, up to 10 only for stackable stock (consumables,
+                // ammo, reagents); the usage re-check below stops earlier
+                // once the bot holds what it needs.
+                uint32 const maxPurchases = ai::VendorBuyMaxPurchases(proto->GetMaxStackSize());
+                bool const isAmmo = proto->Class == ITEM_CLASS_PROJECTILE ||
+                    (proto->Class == ITEM_CLASS_WEAPON && proto->SubClass == ITEM_SUBCLASS_WEAPON_THROWN);
+
+                for (uint32 n = 0; n < maxPurchases; ++n) //Buy until no longer usefull/possible
                 {
                     ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", tItem->item);
 
@@ -191,10 +183,10 @@ bool BuyAction::Execute(Event& event)
                         case ItemUsage::ITEM_USAGE_QUEST:
                         case ItemUsage::ITEM_USAGE_FORCE_NEED:
                         case ItemUsage::ITEM_USAGE_FORCE_GREED: moneyKey = (uint32)NeedMoneyFor::anything; break;
-                        case ItemUsage::ITEM_USAGE_AH:
-                            usageAllowed = canFlipAH;
-                            moneyKey = (uint32)NeedMoneyFor::anything;
-                            break;
+                        // ITEM_USAGE_AH is never bought: like mod-playerbots
+                        // (BuyAction.cpp:139-165, no AH case) a bot does not
+                        // buy vendor stock only to list it on the AH (live
+                        // pool: 20 copies of one recipe, 170 Strong Flux).
                         default: usageAllowed = false; break;
                     }
                     if (!usageAllowed)
@@ -216,16 +208,18 @@ bool BuyAction::Execute(Event& event)
                     if (usage == ItemUsage::ITEM_USAGE_USE && ItemUsageValue::CurrentStacks(ai, proto) >= 1)
                         break;
 
-                    // Item-cheat ammo restocks one stack per visit: the per-tick
-                    // refill tops the equipped stack back up, so the usage only
-                    // flips to KEEP once the new stack lands (CurrentStacks
-                    // counts live inventory) and without a cap the loop
-                    // converts the whole ammo purse into same-item stacks
-                    // (live pool: batches up to 10 per visit). No-cheat bots
-                    // (owned/hired) still burn ammo and keep the full
-                    // needAmmo = 8/2 restock below.
-                    if (usage == ItemUsage::ITEM_USAGE_AMMO && ai->HasCheat(BotCheatMask::item) &&
-                        ItemUsageValue::CurrentStacks(ai, proto) >= 1)
+                    // Ammo is capped by what the bot carries: an EQUIP answer
+                    // (empty ammo slot / better tier) is met from a stack
+                    // already in the bags, and the AMMO restock answer already
+                    // counts carried stacks against the 8/2 need. Item-cheat
+                    // bots, whose equipped stack refills every tick, also buy
+                    // at most one ammo stack per cooldown per bot, not per
+                    // visit (live pool: 17 Razor Arrow stacks in 2 min while
+                    // the rpg buy re-fired at the same vendor).
+                    bool const itemCheat = ai->HasCheat(BotCheatMask::item);
+                    if (isAmmo && !ai::VendorAmmoBuyAllowed(usage == ItemUsage::ITEM_USAGE_AMMO,
+                            ItemUsageValue::CurrentStacks(ai, proto), itemCheat, (int64_t)time(0),
+                            (int64_t)AI_VALUE2(time_t, "manual time", "cheat ammo buy ready")))
                         break;
 
                     // Stop buying reagents/recipes once we have 1 stack
@@ -240,6 +234,10 @@ bool BuyAction::Execute(Event& event)
                     result |= didBuy;
                     if (!didBuy)
                         break;
+
+                    if (isAmmo && itemCheat)
+                        SET_AI_VALUE2(time_t, "manual time", "cheat ammo buy ready",
+                            time(0) + ai::CHEAT_AMMO_BUY_COOLDOWN_SECONDS);
 
                     RESET_AI_VALUE2(ItemUsage, "item usage", tItem->item);
                     RESET_AI_VALUE2(std::list<Item*>, "inventory items", ChatHelper::formatItem(proto));
