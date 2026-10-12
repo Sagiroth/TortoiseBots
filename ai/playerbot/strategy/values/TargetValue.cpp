@@ -162,6 +162,11 @@ bool CcGuard::ReadyCcMarkNear(WorldObject* center, float radius)
     Group* group = ai->GetBot()->GetGroup();
     if (!center || !group)
         return false;
+    // Once only CC marks are left they are killed, not CC'd: Blade Flurry
+    // is allowed again. Checked once, before the scan (the cached answer
+    // does not change inside it).
+    if (OnlyMarksLeftCached())
+        return false;
     std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
     for (ObjectGuid const& guid : attackers)
     {
@@ -169,8 +174,6 @@ bool CcGuard::ReadyCcMarkNear(WorldObject* center, float radius)
         if (!unit || !sServerFacade.IsAlive(unit) || !center->IsWithinDistInMap(unit, radius, false) ||
             !IsCcMark(unit))
             continue;
-        if (OnlyMarksLeftCached())
-            return false;
         Group::MemberSlotList const& groupSlot = group->GetMemberSlots();
         for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
         {

@@ -30,7 +30,11 @@ public:
         // below assign `result` without looking at what it holds, so an
         // open-world candidate checked after the mark replaced it and the
         // CC bot sheeped another mob, or alternated, instead of its mark.
-        if (result && CcChooserKeepsResult(result == AI_VALUE(Unit*, "rti cc target")))
+        // One read per candidate: the value re-resolves its guid through
+        // the object accessor on every Get, and the mark is the same unit
+        // the assigned branch below compares against.
+        Unit* const assignedMark = AI_VALUE(Unit*, "rti cc target");
+        if (result && CcChooserKeepsResult(result == assignedMark))
             return;
 
         // Never CC over another CC (generalized from the Fear mark-only
@@ -50,7 +54,7 @@ public:
         // (CastCrowdControlSpellAction::isPossible), so a 1.5 s cast is not
         // started on a mark that can leave range before it finishes.
 
-        const bool assignedTarget = AI_VALUE(Unit*, "rti cc target") == creature;
+        const bool assignedTarget = assignedMark && assignedMark == creature;
 
         // Never a free pick on a mob the group is fighting: a sheep there is
         // broken by the next hit (Blade Flurry, a swing, a pet). Only an

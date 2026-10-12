@@ -24,6 +24,9 @@ Unit* SnareTargetValue::Calculate()
     std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
     Unit* target = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
     CcGuard ccGuard(ai);
+    // Only the tank's Taunt may touch a held mark (below); hoisted out of
+    // the loop (IsTank walks strategies/roles, the qualifier never changes).
+    bool const tankTaunt = spell == "taunt" && ai->IsTank(bot);
     for (std::list<ObjectGuid>::iterator i = attackers.begin(); i != attackers.end(); ++i)
     {
         Unit* unit = ai->GetUnit(*i);
@@ -35,14 +38,15 @@ Unit* SnareTargetValue::Calculate()
         // sheep, and only the tank's Taunt may touch it, while it is not
         // CC'd yet and is hitting a healer (owner decision). Taunt does no
         // damage and does not change the tank's current target. A free
-        // mark is a normal snare/Taunt target.
+        // mark is a normal snare/Taunt target. A non-Taunt spell (or a
+        // non-tank) skips it without paying for the tests below.
         if (ccGuard.IsHeldCcMark(unit))
         {
+            if (!tankTaunt)
+                continue;
             Unit* victim = unit->GetVictim();
             Player* victimPlayer = victim ? victim->ToPlayer() : nullptr;
-            bool const tankTaunt = spell == "taunt" && ai->IsTank(bot);
-            if (!tankTaunt ||
-                !CcHeldMarkTauntAllowed(tankTaunt, FindNonCcTargetStrategy::IsCrowdControlled(ai, unit),
+            if (!CcHeldMarkTauntAllowed(tankTaunt, FindNonCcTargetStrategy::IsCrowdControlled(ai, unit),
                     ccGuard.GroupCastsCcAt(unit), victimPlayer && PlayerbotAI::IsHeal(victimPlayer)))
                 continue;
             if (sServerFacade.getDistance2d(bot, unit) > ai->GetRange("spell"))

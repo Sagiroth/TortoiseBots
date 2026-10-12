@@ -565,7 +565,13 @@ namespace ai
             Unit* target = GetTarget();
             if (!target || target == bot)
                 return true;
-            return CcCastInReach(bot->GetDistance(target), range, bot->IsWithinLOSInMap(target, true));
+            // The spell's own max range, not the action's `range` field: a
+            // subclass may narrow that for targeting while the cast gate
+            // must match "reach cc", which qualifies on the spell range.
+            float spellRange;
+            if (!ai->GetSpellRange(GetSpellName(), &spellRange))
+                return true;
+            return CcCastInReach(bot->GetDistance(target), spellRange, bot->IsWithinLOSInMap(target, true));
         }
 
     private:
