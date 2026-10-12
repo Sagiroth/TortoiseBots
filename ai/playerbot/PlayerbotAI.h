@@ -824,6 +824,8 @@ public:
     void ClearActionClock() { ResetAIInternalUpdateDelay(); }
 
     const Action* GetLastExecutedAction(BotState state) const;
+    // Trigger source of that engine's last successful action; pairs with GetLastExecutedAction (dashboard).
+    std::string const& GetLastExecutedTrigger(BotState state) const;
 
     bool IsImmuneToSpell(uint32 spellId) const;
 

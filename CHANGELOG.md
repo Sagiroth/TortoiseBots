@@ -59,6 +59,32 @@
 - A fresh level-1 pool is now actually spread evenly over the starting zones — bots that reached level 2-3 while the pool was still being created stopped counting toward their zone, so the zones where bots level fastest kept getting more (Dun Morogh ended up with twice its share), and high elves were sent to Dun Morogh or Teldrassil instead of Elwynn where they had been counted.
 - Wandering bots no longer stand around after picking a camp or explore errand — the activity they rolled was refused again by a second dice roll (half or nine times in ten), and nothing else was allowed until the choice expired; the roll now decides alone. Your own and hired bots are unchanged.
 
+## 2026-10-12
+
+### Core Sync & Fixes
+- Whispering a bot to toggle loot roll feedback no longer answers with "Roll feedback enalbed." — the reply now reads "Roll feedback enabled." [#745](https://github.com/Sagiroth/TortoiseBots/pull/745)
+
+---
+
+### Combat & AI
+- Restoration druid bots now actually shift into Tree of Life Form when it's missing, keep it active instead of recasting every tick, and can drop it when they need to cast a Tree-forbidden spell or leave all forms — so the Tree heal bonus and party aura finally apply during fights. [#694](https://github.com/Sagiroth/TortoiseBots/pull/694)
+
+### Docs & Guides
+- Corrected the dungeon guide's "Standard Raid Target Icon Assignments" table: every bot's CC mark is Moon by default (not Star/Diamond/Triangle per class), and in 5-man dungeons a bot only crowd-controls its own mark — no behaviour changed, just stop marking a Star and wondering why nobody Shackles it. [#737](https://github.com/Sagiroth/TortoiseBots/pull/737)
+
+### Chat & Commands
+- GM-badged bot commands are recognized again and no longer queue insult replies; ordinary non-command GM chat keeps its flavor lines. [#752](https://github.com/Sagiroth/TortoiseBots/pull/752)
+
+### Observability & Engine
+- Dashboard "Trigger" now reflects the trigger behind the last successful action, so Trigger and Action labels stay paired; failed/skipped attempts no longer overwrite it. [#720](https://github.com/Sagiroth/TortoiseBots/pull/720)
+- Dashboard "last action" names are kept alive while read, eliminating garbage/wrong names and the rare world server crash path during observability updates. [#713](https://github.com/Sagiroth/TortoiseBots/pull/713)
+
+### Combat & AI
+
+- Shadow Weaving's "missing debuff" rule now only fires for priests that actually have the Shadow Weaving talent, so Holy/Disc priests (and untalented Shadow priests) stop spamming Mind Flay/Smite/Mind Blast and go back to healing. [#732](https://github.com/Sagiroth/TortoiseBots/pull/732)
+- Hunter bots only channel Mend Pet in combat when the pet is genuinely low **and** no shot is ready, ending the constant shot-dropping channel that ate ~10% of all hunter combat samples. [#708](https://github.com/Sagiroth/TortoiseBots/pull/708)
+- Cast-time strategy is now a default combat strategy outside battlegrounds: bots skip a Frostbolt/Shadow Bolt/etc. when the mob's estimated time-to-live is shorter than the cast, picking a faster spell or wand instead. Low-health bosses with long TTK still eat full casts. [#693](https://github.com/Sagiroth/TortoiseBots/pull/693)
+
 ## 2026-10-11
 
 ### Core Sync & Fixes

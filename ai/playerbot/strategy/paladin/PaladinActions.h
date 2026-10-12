@@ -54,7 +54,7 @@ namespace ai
 	BUFF_ACTION(CastDivineFavorAction, "divine favor");
 
 	// blessings
-	BUFF_ACTION(CastBlessingOfFreedomAction, "blessing of freedom");
+	BUFF_ACTION(CastBlessingOfFreedomAction, "hand of freedom");
 	// fury
 	BUFF_ACTION(CastRighteousFuryAction, "righteous fury");
 
@@ -635,13 +635,13 @@ namespace ai
 	class CastBlessingOfSacrificeAction : public BuffOnPartyAction
 	{
 	public:
-		CastBlessingOfSacrificeAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "blessing of sacrifice") {}
+		CastBlessingOfSacrificeAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "hand of sacrifice") {}
 	};
 
     class CastBlessingOfFreedomOnPartyAction : public CastSpellAction
     {
     public:
-		CastBlessingOfFreedomOnPartyAction(PlayerbotAI* ai) : CastSpellAction(ai, "blessing of freedom") {}
+		CastBlessingOfFreedomOnPartyAction(PlayerbotAI* ai) : CastSpellAction(ai, "hand of freedom") {}
         bool isUseful() override { return CastSpellAction::isUseful() && !ai->HasAura(GetSpellName(), GetTarget()); }
         std::string GetReachActionName() override { return "reach spell"; }
         std::string GetTargetName() override { return "party member to remove roots"; }
@@ -650,11 +650,11 @@ namespace ai
     class CastBlessingOfProtectionOnPartyAction : public CastProtectSpellAction
     {
     public:
-        CastBlessingOfProtectionOnPartyAction(PlayerbotAI* ai) : CastProtectSpellAction(ai, "blessing of protection") {}
+        CastBlessingOfProtectionOnPartyAction(PlayerbotAI* ai) : CastProtectSpellAction(ai, "hand of protection") {}
         bool isUseful() override
         {
             Unit* target = GetTarget();
-            if(target && target->IsPlayer() && !ai->IsTank((Player*)target))
+            if(target && target->IsPlayer() && !ai->IsTank((Player*)target) && !ai->HasAura("forbearance", target))
             {
                 return CastProtectSpellAction::isUseful();
             }

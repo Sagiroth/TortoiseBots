@@ -341,7 +341,7 @@ namespace ai
 
         // True for reach actions whose target is always meant to be attacked
         // (melee, pull) - false for "reach spell", which is also used to close
-        // distance on friendly targets (e.g. Blessing of Protection/Freedom).
+        // distance on friendly targets (e.g. Hand of Protection/Freedom).
         virtual bool RequiresAttackableTarget() const { return false; }
 
         virtual bool isUseful() override

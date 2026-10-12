@@ -517,7 +517,7 @@ namespace ai
     class BlessingOfSacrificeTrigger : public PartyMemberLowHealthTrigger
     {
     public:
-        BlessingOfSacrificeTrigger(PlayerbotAI* ai) : PartyMemberLowHealthTrigger(ai, "blessing of sacrifice", sPlayerbotAIConfig.criticalHealth, 0, true) {}
+        BlessingOfSacrificeTrigger(PlayerbotAI* ai) : PartyMemberLowHealthTrigger(ai, "hand of sacrifice", sPlayerbotAIConfig.criticalHealth, 0, true) {}
     };
 
 }

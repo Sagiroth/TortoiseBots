@@ -581,9 +581,14 @@ void HunterPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "pet attack",
         NextAction::array(0, new NextAction("pet attack", ACTION_HIGH + 2), NULL)));
 
+    // Mend Pet is a channel in 1.12/Turtle (spell 136 attributesEx 0x4),
+    // not the donor's instant WotLK heal-over-time, so every in-combat mend
+    // stops the shots. In combat only the low band (<40) mends, and below
+    // the rotation shots (NORMAL+1..+6) but above auto shot. The medium band
+    // tops the pet up out of combat only (InitNonCombatTriggers).
     triggers.push_back(new TriggerNode(
         "hunters pet low health",
-        NextAction::array(0, new NextAction("mend pet", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("mend pet", ACTION_NORMAL), NULL)));
 
     // PET-8b: the trigger already requires taunts stood down (grouped with
     // a real tank), so this only fires when the pet stole aggro anyway.
@@ -592,11 +597,6 @@ void HunterPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "pet has aggro",
         NextAction::array(0, new NextAction("cower", ACTION_HIGH), NULL)));
-
-    // PET-4: medium band below the low node so low wins under 40.
-    triggers.push_back(new TriggerNode(
-        "hunters pet medium health",
-        NextAction::array(0, new NextAction("mend pet", ACTION_HIGH - 1), NULL)));
 
     // PET-5: mid-fight recovery. Call Pet is near-instant and safe to try
     // whenever petless; Revive is a 10s channel so it only fires with no

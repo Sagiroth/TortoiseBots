@@ -657,6 +657,11 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         // queued levelup packets were drained in ProvisionHeavy, so this is
         // the only post - and it goes out exactly once, only grouped.
         AnnounceIntro(bot, master, pending);
+        // The group join can land while the bot is still in a map transfer
+        // (not in world yet), where AnnounceIntro stays silent. Keep the
+        // entry so the next tick retries; the reunite attempt cap bounds it.
+        if (!pending.introSent)
+            return false;
         auto totalElapsedMs =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
         TB_LOG_BASIC("TortoiseBots: hired companion %s (level %u role %u) joined %s (provision %lldms, total %lldms)",
@@ -935,7 +940,7 @@ uint32_t HireProvisionService::IntroWishlist(uint8_t classId, size_t rank)
     // Shield Block 2565, Taunt 355.
     static uint32_t const warrior[] = { 1680, 12294, 23881, 23922, 6572, 7386, 2565, 355 };
     // Paladin: Judgement 20271, Hammer of Justice 853, Divine Shield 642,
-    // Blessing of Protection 1022, Blessing of Freedom 1044, Holy Light 635.
+    // Hand of Protection 1022, Hand of Freedom 1044, Holy Light 635.
     static uint32_t const paladin[] = { 20271, 853, 642, 1022, 1044, 635 };
     // Hunter: Call Pet 883, Dismiss Pet 2641, Tame Beast 1515, Concussive
     // Shot 5116, Arcane Shot 3044, Serpent Sting 1978.
@@ -1075,7 +1080,7 @@ void HireProvisionService::AnnounceIntro(Player* bot, Player* master, PendingPro
         return;
     if (!bot->IsInSameRaidWith(master))
         return;
-    if (!ShouldAnnounceHireIntro(!pending.introSent, true, true))
+    if (!ShouldAnnounceHireIntro(pending.introSent, true, true))
         return;
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     if (!ai)

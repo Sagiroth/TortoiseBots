@@ -65,7 +65,9 @@ flowchart TD
 
 Crowd control is essential for multi-caster pulls in level 40+ dungeons.
 
-### Standard Raid Target Icon Assignments
+### Suggested Raid Target Icon Assignments
+
+Every bot starts with **Moon** as its CC mark, whatever its class. The table below is a convention for the player, not something the bots follow on their own: a Star on an undead gets no *Shackle Undead* until a priest bot owns Star. Give each CC bot its mark once with `.bot action cc <mark> [bot]` (see [Issuing CC In-Game](#issuing-cc-in-game)); the assignment is saved and survives relog. Check a bot's current mark by whispering it `rti`.
 
 | Raid Icon | Primary Class & Ability | Valid Targets | Notes |
 | :---: | :--- | :--- | :--- |
@@ -79,6 +81,7 @@ Crowd control is essential for multi-caster pulls in level 40+ dungeons.
   ```text
   .bot action cc moon
   ```
+* Until you assign marks, every bot holds **Moon**: any bot whose CC fits the Moon mob may take it, and nobody CCs a Star, Diamond or Triangle. To assign a mark before the pull without selecting a mob, name the bot (`.bot action cc star <PriestName>`) or target the bot.
 * The mark is assigned to exactly one bot (exclusive ownership); reassigning it moves ownership. When no owned bot is targeted, the server selects the capable bot with the best-fitting CC for that target (Sap before the pull, then Shackle/Banish/Hibernate/Polymorph/traps, Fear last); the same target and state always pick the same bot.
 * Dismiss with `.bot action cc clear` (targeted bot, or the whole owned party when untargeted).
 * **Dungeon rule:** inside non-raid dungeons bots CC only their assigned mark; in the open world they may CC a free pick. Bots never CC over an existing CC, and AoE triggers refuse packs holding a breakable CC.

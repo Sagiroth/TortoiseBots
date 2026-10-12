@@ -1032,6 +1032,13 @@ void PlayerbotAI::SetActionDuration(uint32 duration)
     SetAIInternalUpdateDelay(duration);
 }
 
+std::string const& PlayerbotAI::GetLastExecutedTrigger(BotState state) const
+{
+    static std::string const empty;
+    const Engine* engine = engines[(uint8)state];
+    return engine ? engine->GetLastExecutedTrigger() : empty;
+}
+
 const Action* PlayerbotAI::GetLastExecutedAction(BotState state) const
 {
     const Engine* engine = engines[(uint8)state];
@@ -2821,7 +2828,13 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                 }
 
                 MANGOS_ASSERT(!message.empty());
-                QueueChatResponse(msgtype, guid1, ObjectGuid(), message, chanName, name, isAiChat);
+                // A GM-tagged speaker arrives as `|c1049e6ff<text>|r`; strip it so the
+                // reply blocklists ("attack", "e [..]", ...) still recognise a command
+                // and the bot does not answer it with the REPLY_ADMIN_ABUSE insults.
+                std::string replyMessage = message;
+                StripGmBadgeColor(replyMessage);
+                if (!replyMessage.empty())
+                    QueueChatResponse(msgtype, guid1, ObjectGuid(), replyMessage, chanName, name, isAiChat);
                 GetAiObjectContext()->GetValue<time_t>("last said", "chat")->Set(time(0) + urand(5, 25));
 
                 return;
@@ -6881,7 +6894,7 @@ void PlayerbotAI::RemoveShapeshift()
     RemoveAura("cat form");
     RemoveAura("aquatic form");
     RemoveAura("ghost wolf");
-    RemoveAura("tree of life");
+    RemoveAura("tree of life form");
 }
 
 uint32 PlayerbotAI::GetEquipGearScore(Player* player, bool withBags, bool withBank)

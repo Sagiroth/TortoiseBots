@@ -46,6 +46,7 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
 - **Tree of Life Form (Spell ID 45705, per game data):**
   - Custom Turtle WoW Restoration talent form.
   - Grants a spirit-scaling healing modifier with a party aura and polymorph immunity at the cost of movement speed, per game data.
+  - The spell is named exactly `Tree of Life Form`; the bot resolves spells and auras by exact (case-insensitive) name with no rank stripping, so the cast, the has-aura check and the shift-out all use `tree of life form`. The shorter `tree of life` matches nothing in Turtle data.
 - **Berserk (Spell ID 45708, per game data):**
   - Custom Feral talent. Per game data it branches Bear/Dire Bear into 45709 (+20% max health) and Cat into 45710; the bot fires it as a combat boost trigger.
 - **Swiftmend HoT-Gating (Spell ID 18562):**

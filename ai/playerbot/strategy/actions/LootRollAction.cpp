@@ -111,7 +111,7 @@ bool RollAction::Execute(Event& event)
         if (!rollFeedback)
             ai->TellPlayerNoFacing(requester, "Roll feedback disabled.");
         else
-            ai->TellPlayerNoFacing(requester, "Roll feedback enalbed.");
+            ai->TellPlayerNoFacing(requester, "Roll feedback enabled.");
 
         SET_AI_VALUE2(bool, "manual bool", "roll feedback", rollFeedback);
 

@@ -226,6 +226,7 @@ You do not need to restart the server to adjust tactical behavior during gamepla
 ### Strategy & Stance Toggles
 Using `.bot strategy <change> [Name]` (change first, optional bot name second) or the `/tbm` addon:
 - `.bot strategy +conserve mana` / `.bot strategy -conserve mana` — Restricts casters to basic, high-efficiency spells.
+- `.bot strategy -cast time` / `.bot strategy +cast time` — On by default outside battlegrounds. Lifetime-aware: a cast aimed at the bot's current attack target is cut to x0.1 priority when its cast time (plus up to 3 s of channel) exceeds the target's estimated time to live, `target HP / estimated group dps` (the cached `estimated group dps` value: bot party members' level, role and gear score). Casters stop starting 3 s Frostbolts/Shadow Bolts on mobs that die first, while a boss at low health percent but with a long lifetime keeps getting full casts. Ground-targeted spells are exempt; an unknown estimate (dps 0) never vetoes. Heals aimed at party members never match the attack target and are not held back.
 - `.bot strategy +loot` / `.bot strategy -loot` — Toggles whether bots run to loot corpses after combat.
 - `.bot strategy +silent` / `.bot strategy -silent` — Silences bot chatter in party/say chat so they execute commands quietly.
 - `.bot strategy -passive` — Halts all bot attacks; bots will only follow and hold fire.
