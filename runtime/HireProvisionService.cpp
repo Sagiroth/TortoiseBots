@@ -1080,7 +1080,7 @@ void HireProvisionService::AnnounceIntro(Player* bot, Player* master, PendingPro
         return;
     if (!bot->IsInSameRaidWith(master))
         return;
-    if (!ShouldAnnounceHireIntro(!pending.introSent, true, true))
+    if (!ShouldAnnounceHireIntro(pending.introSent, true, true))
         return;
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     if (!ai)
