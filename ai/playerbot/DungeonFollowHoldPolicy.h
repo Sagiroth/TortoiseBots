@@ -1,7 +1,7 @@
 #pragma once
 
 // Pure decision rules for "hold before a pack" dungeon follow
-// (AiPlayerbot.DungeonFollowHoldBeforePacks, issue #127).
+// (AiPlayerbot.DungeonFollowHoldBeforePacks, audit fix 127).
 //
 // When the leader is far ahead inside a dungeon and nobody is fighting, a
 // following bot walks the navmesh route to the leader with the module's own

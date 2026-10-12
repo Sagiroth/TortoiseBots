@@ -563,7 +563,7 @@ AiPlayerbot.GenerateItemCaches = 1
 # Bots will mount up to catch up when far behind the master while following.
 # AiPlayerbot.BoostFollow = 0
 
-# Dungeon follow: hold before a pack (issue #127).
+# Dungeon follow: hold before a pack (audit fix 127).
 # Inside a dungeon or raid, with nobody in combat, a bot whose leader is more
 # than 30 yd ahead walks the route to the leader itself and stops just outside
 # the aggro range of the first unpulled hostile creature on that route, instead
