@@ -2213,7 +2213,8 @@ bool MovementAction::StepDownOffLedge(Unit* target)
     auto const landingSafe = [this, map](LedgePoint const& point)
     {
         GridMapLiquidData liquid{};
-        if (map->GetTerrain()->getLiquidStatus(point.x, point.y, point.z, MAP_ALL_LIQUIDS, &liquid) != LIQUID_MAP_NO_WATER &&
+        // Half a yard above the bed: a ray from exactly on it can miss its own floor (t > 0, WorldModel.cpp:75; cf. GridMap.cpp:1212).
+        if (map->GetTerrain()->getLiquidStatus(point.x, point.y, point.z + 0.5f, MAP_ALL_LIQUIDS, &liquid) != LIQUID_MAP_NO_WATER &&
             (liquid.type_flags & (MAP_LIQUID_TYPE_MAGMA | MAP_LIQUID_TYPE_SLIME)))
             return false;
         return !IsHazardNearPosition(WorldPosition(bot->GetMapId(), point.x, point.y, point.z));
