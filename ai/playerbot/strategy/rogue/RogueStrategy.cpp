@@ -70,6 +70,13 @@ void RogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitCombatTriggers(triggers);
 
+    // A running Blade Flurry copies swings onto a sheep that landed beside
+    // the rogue after the buff started: drop the buff (instant, no GCD)
+    // before the next swing. Above Kick so it is never queued behind it.
+    triggers.push_back(new TriggerNode(
+        "blade flurry near cc",
+        NextAction::array(0, new NextAction("cancel blade flurry", ACTION_INTERRUPT + 5), NULL)));
+
     triggers.push_back(new TriggerNode(
         "critical health",
         NextAction::array(0, new NextAction("blind", ACTION_EMERGENCY + 2),

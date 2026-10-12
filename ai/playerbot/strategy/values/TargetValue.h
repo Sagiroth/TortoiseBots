@@ -96,6 +96,11 @@ namespace ai
         // is this bot's own ready CC mark while other enemies are left (the
         // CC bot never splashes the mob it will sheep next).
         bool ProtectedEnemyNear(WorldObject* center, float radius, bool includeMarks);
+        // A CC mark fighting the group within `radius` of `center` whose CC
+        // bot (the group bot with it as "rti cc target") can CC it now
+        // (IsCcBotReadyFor), at any combat time, while other enemies are
+        // left. Only Blade Flurry's cancel uses it (CcCancelBladeFlurry).
+        bool ReadyCcMarkNear(WorldObject* center, float radius);
 
     private:
         bool OnlyMarksLeftCached();

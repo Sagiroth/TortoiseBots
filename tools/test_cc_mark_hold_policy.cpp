@@ -1,5 +1,6 @@
 // Standalone regression test for the CC mark hold policy: when the party
-// leaves a Moon / "rti cc" mark alone, when its own CC bot spares it with
+// leaves a Moon / "rti cc" mark alone (target picks, area spells, enemy-
+// healer interrupts, a running Blade Flurry), when its own CC bot spares it with
 // area spells, and which mob the CC chooser keeps.
 //
 // Build and run:
@@ -91,6 +92,46 @@ int main()
     CHECK(!CcOwnerSparesMark(true, true));
     CHECK(!CcOwnerSparesMark(false, false));
     CHECK(!CcOwnerSparesMark(false, true));
+
+    // Build 13 gate (Stonevault Oracle pack, Moon on one Oracle, the tank
+    // pulling the other): two party hits on the Moon mob before the first
+    // sheep at 9.8 s, i.e. inside the hold. Every enemy-area spell -
+    // instant (Thunder Clap, Arcane Explosion), chained (Cleave, Multi-Shot)
+    // or lingering - now spares a held mark, not only lingering ones.
+    CHECK(CcAreaSpellBlocked(false, true, false, false));   // held mark in blast
+    CHECK(CcAreaSpellBlocked(true, false, false, false));   // sheep in blast
+    CHECK(CcAreaSpellBlocked(false, false, true, false));   // CC bot's own mark
+    CHECK(!CcAreaSpellBlocked(false, false, true, true));   // only marks left: kill them
+    CHECK(!CcAreaSpellBlocked(false, false, false, false)); // nothing protected near
+    // A mark the hold has released (window over, nobody can CC it) is a
+    // normal enemy for area spells too: the caller passes held = false.
+    CHECK(!CcMarkHeld(Free(CcMarkHoldSeconds + 1, true)));
+    CHECK(!CcAreaSpellBlocked(false, CcMarkHeld(Free(CcMarkHoldSeconds + 1, true)), false, false));
+    CHECK(CcAreaSpellBlocked(false, CcMarkHeld(Free(5, true)), false, false));
+
+    // Interrupts on an enemy healer (Kick, Shield Bash, ...) skip a held
+    // mark: a Moon Oracle casting Healing Wave in its hold window is the CC
+    // bot's, and Kick / Shield Bash deal damage.
+    CHECK(!CcEnemyHealerPickAllowed(true));
+    CHECK(CcEnemyHealerPickAllowed(false));
+
+    // Blade Flurry procs onto any enemy within 5 yd of the rogue: a running
+    // one is cancelled while a protected enemy is in reach (build 13: the
+    // first sheep broke 3 s after it landed), never when it is not up or
+    // nothing protected is near. Start and cancel use one radius, at least
+    // the core's 5 yd proc reach.
+    CHECK(CcCancelBladeFlurry(true, true, false));
+    CHECK(!CcCancelBladeFlurry(true, false, false));
+    CHECK(!CcCancelBladeFlurry(false, true, true));
+    // Turtle Blade Flurry is a toggle that stays up from the last pull.
+    // Build 14 gate: three Blade Flurry hits on the Moon mob at 14-17 s,
+    // after the 10 s window, before the first sheep. Next to a mark whose
+    // CC bot is ready, the toggle is dropped (and not started) even when
+    // the hold window is over.
+    CHECK(!CcMarkHeld(Free(14, true)));
+    CHECK(CcCancelBladeFlurry(true, false, true));
+    CHECK(!CcCancelBladeFlurry(false, false, true));
+    CHECK(CcBladeFlurryGuardRadius >= 5.0f);
 
     // CC chooser: the assigned mark, once picked, is never replaced by a
     // later free pick; any other interim pick may still be replaced.

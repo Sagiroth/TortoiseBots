@@ -20,9 +20,9 @@ namespace
 {
 // True when `info` hits enemies in an area that would reach crowd control:
 // a mob in damage-breakable CC within the blast, the caster's own CC mark
-// while it will still CC it (any area spell), or - for a lingering area
-// (ground effect, channel, area DoT) that outlasts the next sheep - a held
-// CC mark. The shape comes from the spell data (both implicit targets: Frost
+// while it will still CC it, or a held CC mark (under a CC cast bar or in
+// its hold window) - for instant, chained and lingering areas alike. The
+// shape comes from the spell data (both implicit targets: Frost
 // Nova and Thunder Clap name the enemy area in target B): caster-centred
 // areas and cones use the caster (a cone is checked as a full circle),
 // ground/dest areas and chains the spell target. Single-target spells never
@@ -80,11 +80,10 @@ bool BreaksCcInArea(PlayerbotAI* ai, Player* bot, SpellEntry const* info, Unit* 
     if (!area)
         return false;
 
-    bool lingering = info->IsChanneledSpell() || info->HasEffect(SPELL_EFFECT_PERSISTENT_AREA_AURA) ||
-        info->HasAura(SPELL_AURA_PERIODIC_DAMAGE);
-
+    // Instant areas and chains spare a held mark too (CcAreaSpellBlocked):
+    // build 13 had the tank on the Moon mob inside its hold.
     CcGuard ccGuard(ai);
-    return ccGuard.ProtectedEnemyNear(atTarget ? static_cast<WorldObject*>(spellTarget) : bot, radius, lingering);
+    return ccGuard.ProtectedEnemyNear(atTarget ? static_cast<WorldObject*>(spellTarget) : bot, radius, true);
 }
 
 bool CanInterruptCurrentSpell(Spell const* spell)
@@ -365,8 +364,7 @@ bool CastSpellAction::isUseful()
 
     // Never splash crowd control: an enemy-area spell whose blast would reach
     // a sheeped/sapped mob, the caster's own CC mark (it sheeps that mob
-    // next) or, for a lingering area, a CC mark about to be sheeped is not
-    // cast.
+    // next) or a held CC mark (being or about to be sheeped) is not cast.
     if (BreaksCcInArea(ai, bot, sServerFacade.LookupSpellInfo(spellId), spellTarget))
         return false;
 

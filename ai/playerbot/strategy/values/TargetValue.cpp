@@ -134,15 +134,44 @@ bool CcGuard::ProtectedEnemyNear(WorldObject* center, float radius, bool include
         Unit* unit = ai->GetUnit(guid);
         if (!unit || !sServerFacade.IsAlive(unit) || !center->IsWithinDistInMap(unit, radius, false))
             continue;
-        if (PossibleAttackTargetsValue::HoldsBreakableCc(ai, unit, bot))
-            return true;
-        if (includeMarks && IsHeldCcMark(unit))
-            return true;
+        // Cheapest test first; each later one only runs when the earlier
+        // ones did not already protect the unit.
+        bool const breakable = PossibleAttackTargetsValue::HoldsBreakableCc(ai, unit, bot);
+        bool const held = !breakable && includeMarks && IsHeldCcMark(unit);
         // This bot's own mark, which it will (re)CC: never splash it, held
         // or free (build 11: the mage's own Flamestrike hit its Moon mob).
-        bool const ownMark = IsOwnReadyCcMark(unit);
-        if (ownMark && CcOwnerSparesMark(ownMark, OnlyMarksLeftCached()))
+        bool const ownMark = !breakable && !held && IsOwnReadyCcMark(unit);
+        if (CcAreaSpellBlocked(breakable, held, ownMark, ownMark && OnlyMarksLeftCached()))
             return true;
+    }
+    return false;
+}
+
+bool CcGuard::ReadyCcMarkNear(WorldObject* center, float radius)
+{
+    Group* group = ai->GetBot()->GetGroup();
+    if (!center || !group)
+        return false;
+    std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
+    for (ObjectGuid const& guid : attackers)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || !sServerFacade.IsAlive(unit) || !center->IsWithinDistInMap(unit, radius, false) ||
+            !IsCcMark(unit))
+            continue;
+        if (OnlyMarksLeftCached())
+            return false;
+        Group::MemberSlotList const& groupSlot = group->GetMemberSlots();
+        for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
+        {
+            Player* player = sObjectMgr.GetPlayer(itr->guid);
+            if (!player || !sServerFacade.IsAlive(player) || player->GetMapId() != unit->GetMapId())
+                continue;
+            PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(player);
+            if (memberAi && PAI_VALUE(Unit*, "rti cc target") == unit &&
+                IsCcBotReadyFor(memberAi, player, unit))
+                return true;
+        }
     }
     return false;
 }

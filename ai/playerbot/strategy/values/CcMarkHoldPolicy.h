@@ -52,12 +52,62 @@ namespace ai
         return ownReadyMark && !onlyCcMarksLeft;
     }
 
+    // An enemy-area spell is not cast while its blast reaches a mob in
+    // breakable CC, a held mark or (for the CC bot) its own ready mark.
+    // Instant areas and chains (Cleave, Thunder Clap, Arcane Explosion,
+    // Multi-Shot) spare a held mark too, not only lingering ones: the hold
+    // is "nobody touches it", and in the build 13 gate the tank hit the
+    // Moon mob twice inside the hold, before the first sheep (9.8 s), while
+    // it fought the pack mob next to it.
+    // The hold is short (cast bar or the first CcMarkHoldSeconds), so the
+    // area spells only wait that long.
+    inline bool CcAreaSpellBlocked(bool breakableCcInBlast, bool heldMarkInBlast,
+        bool ownReadyMarkInBlast, bool onlyCcMarksLeft)
+    {
+        return breakableCcInBlast || heldMarkInBlast ||
+            CcOwnerSparesMark(ownReadyMarkInBlast, onlyCcMarksLeft);
+    }
+
+    // Single-target picks outside the target tournaments (interrupts on an
+    // enemy healer: Kick, Shield Bash, Pummel, Counterspell, Hammer of
+    // Justice, ...) skip a held mark like the tournaments do. They read the
+    // raw attack list, so a Moon mob that heals (Stonevault Oracle: Healing
+    // Wave) could draw the rogue's Kick and the tank's Shield Bash in its hold
+    // window, and Kick and Shield Bash deal damage in vanilla.
+    inline bool CcEnemyHealerPickAllowed(bool heldMark)
+    {
+        return !heldMark;
+    }
+
+    // Blade Flurry copies each swing onto a random enemy within 5 yd of the
+    // rogue (core spell_rogue_blade_flurry), sheeped or not. On Turtle it is
+    // a toggle (spell 13877: infinite duration, 4 s cooldown), so it stays
+    // up from an earlier pull and refusing to *start* it beside a protected
+    // enemy almost never applies. A running Blade Flurry is cancelled while
+    // a protected enemy (breakable CC or a held mark) is in reach, and also
+    // next to a CC mark whose CC bot is ready to (re)sheep it, even after
+    // the hold window: the splash is not a target choice, the party still
+    // fights a free mark, only without the cleave that keeps breaking or
+    // pre-empting the sheep (build 13 gate: sheep broke 3 s after it
+    // landed; build 14 gate: three Blade Flurry hits on the Moon mob at
+    // 14-17 s, before the first sheep). Once only CC marks are left the
+    // caller passes neither, and Blade Flurry is allowed again.
+    inline bool CcCancelBladeFlurry(bool bladeFlurryUp, bool protectedEnemyInReach,
+        bool readyCcMarkInReach)
+    {
+        return bladeFlurryUp && (protectedEnemyInReach || readyCcMarkInReach);
+    }
+
     // CC target chooser: once the bot's own assigned mark is the result, a
     // later candidate (an open-world free pick) never replaces it.
     inline bool CcChooserKeepsResult(bool resultIsAssignedMark)
     {
         return resultIsAssignedMark;
     }
+
+    // Blade Flurry reach checked for start and cancel: the core's 5 yd proc
+    // radius plus drift while the buff runs.
+    constexpr float CcBladeFlurryGuardRadius = 8.0f;
 
     // Owner decision (2026-10-12): a held mark that is not crowd-controlled
     // yet and is hitting a healer may be TAUNTED by the tank. Taunt only (no

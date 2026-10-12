@@ -3,6 +3,7 @@
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/UseItemAction.h"
 #include "playerbot/strategy/values/TargetValue.h"
+#include "playerbot/strategy/values/CcMarkHoldPolicy.h"
 
 namespace ai
 {
@@ -163,13 +164,17 @@ namespace ai
 		// for its whole duration. Never start it beside a sheeped mob or a
 		// CC mark the mage is about to sheep (in-game retest: it broke the
 		// sheep within a second, again and again). 8 yd = melee reach plus
-		// some drift while the buff runs.
+		// some drift while the buff runs. Same rule as the cancel ("blade
+		// flurry near cc"), so the toggle never flaps: not next to a CC mark
+		// whose CC bot is ready either.
 		bool isUseful() override
 		{
 			if (!CastBuffSpellAction::isUseful())
 				return false;
 			CcGuard ccGuard(ai);
-			return !ccGuard.ProtectedEnemyNear(bot, 8.0f, true);
+			bool const protectedNear = ccGuard.ProtectedEnemyNear(bot, CcBladeFlurryGuardRadius, true);
+			return !CcCancelBladeFlurry(true, protectedNear,
+				!protectedNear && ccGuard.ReadyCcMarkNear(bot, CcBladeFlurryGuardRadius));
 		}
 	};
 

@@ -9,6 +9,16 @@ namespace ai
         KickInterruptSpellTrigger(PlayerbotAI* ai) : InterruptSpellTrigger(ai, "kick") {}
     };
 
+    // Blade Flurry is up and a sheeped mob, a held CC mark or a CC mark
+    // with a ready CC bot is within its reach: the next swing would copy
+    // onto it (CcCancelBladeFlurry).
+    class BladeFlurryNearCcTrigger : public Trigger
+    {
+    public:
+        BladeFlurryNearCcTrigger(PlayerbotAI* ai) : Trigger(ai, "blade flurry near cc") {}
+        bool IsActive() override;
+    };
+
     CAN_CAST_TRIGGER_A(RiposteCastTrigger, "riposte");
     CAN_CAST_TRIGGER_A(SurpriseAttackTrigger, "surprise attack");
     CAN_CAST_TRIGGER(BackstabTrigger, "backstab");
