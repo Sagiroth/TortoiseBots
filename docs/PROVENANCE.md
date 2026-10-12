@@ -8778,7 +8778,7 @@ covering its hold/lapse matrix. Also touches
 
 Validation: `tools/test_four_horsemen_rotation_policy.cpp` + code review;
 build pending; in-game pending.
-## Dungeon follow holds before unpulled packs (issue #127) — 2026-10-12
+## Dungeon follow holds before unpulled packs (audit fix 127) — 2026-10-12
 
 Feature: optional `AiPlayerbot.DungeonFollowHoldBeforePacks` (default `0`).
 In a dungeon or raid, out of combat on both sides, a bot whose leader is
