@@ -140,6 +140,17 @@ void NefarianFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "nefarian wild magic",
         NextAction::array(0, new NextAction("ice block", ACTION_EMERGENCY + 5), NULL)));
+
+    // Shaman/warlock calls: damage dealers kill the corrupted totems, then
+    // the Corrupted Infernals. Above dps assist (60); role gate in trigger.
+    triggers.push_back(new TriggerNode(
+        "nefarian class call add",
+        NextAction::array(0, new NextAction("nefarian kill class call add", 65.0f), NULL)));
+}
+
+void NefarianFightStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new NefarianClassCallMultiplier(ai));
 }
 
 void NefarianFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

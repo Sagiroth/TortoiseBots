@@ -64,4 +64,17 @@ namespace ai
     public:
         virtual float GetValue(Action* action) override;
     };
+
+    // Nefarian class calls (native, no donor): a priest carrying Corrupted
+    // Healing casts no direct heal (Renew and Power Word: Shield stay), and
+    // a damage dealer on a corrupted totem or Corrupted Infernal finishes
+    // it instead of following dps-assist back to the boss.
+    class NefarianClassCallMultiplier : public Multiplier
+    {
+    public:
+        NefarianClassCallMultiplier(PlayerbotAI* ai) : Multiplier(ai, "nefarian class call") {}
+
+    public:
+        virtual float GetValue(Action* action) override;
+    };
 }

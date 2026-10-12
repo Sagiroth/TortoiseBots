@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
 #include "DungeonActions.h"
+#include "AttackAction.h"
 #include "ChangeStrategyAction.h"
 #include "MovementActions.h"
 #include "UseItemAction.h"
@@ -8,6 +9,7 @@
 #include "playerbot/policy/raid/RazorgorePolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/AiObjectContext.h"
+#include "playerbot/strategy/triggers/BlackwingLairDungeonTriggers.h"
 
 namespace ai
 {
@@ -347,6 +349,28 @@ namespace ai
                 return false;
             Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
             return Attack(requester, boss);
+        }
+    };
+
+    // Nefarian shaman/warlock calls: attack the corrupted totem (then the
+    // Corrupted Infernal) picked by FindNefarianClassCallAdd. The trigger
+    // gates role, explicit orders and the no-bounce rank rule.
+    class NefarianKillClassCallAddAction : public AttackAction
+    {
+    public:
+        NefarianKillClassCallAddAction(PlayerbotAI* ai) : AttackAction(ai, "nefarian kill class call add") {}
+        std::string GetTargetName() override { return "current target"; }
+
+        bool Execute(Event& event) override
+        {
+            AiObjectContext* context = ai->GetAiObjectContext();
+            if (!AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty())
+                return false;
+            Unit* add = FindNefarianClassCallAdd(ai, bot);
+            if (!add)
+                return false;
+            Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+            return Attack(requester, add);
         }
     };
 

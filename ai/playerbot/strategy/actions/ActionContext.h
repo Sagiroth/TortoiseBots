@@ -480,6 +480,7 @@ namespace ai
             creators["move away from broodlord"] = [](PlayerbotAI* ai) { return new BroodlordMoveAwayAction(ai); };
             creators["enable nefarian fight strategy"] = [](PlayerbotAI* ai) { return new NefarianEnableFightStrategyAction(ai); };
             creators["disable nefarian fight strategy"] = [](PlayerbotAI* ai) { return new NefarianDisableFightStrategyAction(ai); };
+            creators["nefarian kill class call add"] = [](PlayerbotAI* ai) { return new NefarianKillClassCallAddAction(ai); };
             creators["enable vael fight strategy"] = [](PlayerbotAI* ai) { return new VaelEnableFightStrategyAction(ai); };
             creators["disable vael fight strategy"] = [](PlayerbotAI* ai) { return new VaelDisableFightStrategyAction(ai); };
 

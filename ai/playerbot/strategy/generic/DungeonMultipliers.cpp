@@ -20,6 +20,7 @@
 #include "playerbot/policy/raid/GolemaggPolicy.h"
 #include "playerbot/strategy/values/PartyMemberToHeal.h"
 #include "playerbot/policy/raid/GeddonInfernoPolicy.h"
+#include "playerbot/policy/raid/BwlBundle1Policy.h"
 
 using namespace ai;
 
@@ -265,6 +266,48 @@ float GeddonInfernoMultiplier::GetValue(Action* action)
     }
 
     if (ShouldBlockGeddonMove(actionMovesOrReaches, action->getName(), infernoActive, bombOnSelf))
+        return 0.0f;
+    return 1.0f;
+}
+
+float NefarianClassCallMultiplier::GetValue(Action* action)
+{
+    if (!action)
+        return 1.0f;
+
+    // Priest call: only while the bot carries Corrupted Healing 23401.
+    // The core (spell_item_corrupted_healing) punishes any spell with a
+    // direct heal effect; Holy Nova heals through its triggered spell, so
+    // it is named here.
+    if (bot->HasAura(kCorruptedHealingSpellId))
+    {
+        if (action->getName() == "holy nova")
+            return 0.0f;
+        if (dynamic_cast<CastHealingSpellAction*>(action))
+        {
+            // Party heal actions are named "<spell> on party".
+            std::string spell = action->getName();
+            const std::string suffix = " on party";
+            if (spell.size() > suffix.size() &&
+                spell.compare(spell.size() - suffix.size(), suffix.size(), suffix) == 0)
+                spell.erase(spell.size() - suffix.size());
+            AiObjectContext* context = ai->GetAiObjectContext();
+            const uint32 spellId = AI_VALUE2(uint32, "spell id", spell);
+            const SpellEntry* spellInfo = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
+            if (ShouldBlockCorruptedHeal(true, spellInfo && spellInfo->HasEffect(SPELL_EFFECT_HEAL)))
+                return 0.0f;
+        }
+        return 1.0f;
+    }
+
+    // Shaman/warlock call: keep a damage dealer on its class-call add.
+    if (dynamic_cast<DpsAssistAction*>(action) == nullptr)
+        return 1.0f;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (!AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty())
+        return 1.0f;
+    Unit* current = AI_VALUE(Unit*, "current target");
+    if (current && sServerFacade.IsAlive(current) && NefarianClassCallAddRank(current->GetEntry()) > 0)
         return 0.0f;
     return 1.0f;
 }

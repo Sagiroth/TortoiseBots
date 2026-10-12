@@ -452,6 +452,7 @@ namespace ai
             creators["start nefarian fight"] = [](PlayerbotAI* ai) { return new NefarianStartFightTrigger(ai); };
             creators["end nefarian fight"] = [](PlayerbotAI* ai) { return new NefarianEndFightTrigger(ai); };
             creators["nefarian wild magic"] = [](PlayerbotAI* ai) { return new NefarianWildMagicTrigger(ai); };
+            creators["nefarian class call add"] = [](PlayerbotAI* ai) { return new NefarianClassCallAddTrigger(ai); };
             creators["start vael fight"] = [](PlayerbotAI* ai) { return new VaelStartFightTrigger(ai); };
             creators["end vael fight"] = [](PlayerbotAI* ai) { return new VaelEndFightTrigger(ai); };
 
