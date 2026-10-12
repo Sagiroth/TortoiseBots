@@ -299,7 +299,7 @@ int main()
     // Pacing: stand still 2 s first, then one probe per 3 s. Three probes
     // that found no floor, or three launched steps, give up for 30 s; a probe
     // that was not stuck counts for neither. Moving or a new target restarts
-    // the stand-still clock.
+    // the stand-still clock and the caps: the counts belong to one spot.
     {
         LedgeStepDownClock clock;
         uint32_t t = 100000;
@@ -326,9 +326,12 @@ int main()
         CHECK(!clock.Due(t + 53000, 5, 0, 7));     // the bot moved: restart the stand-still clock
         CHECK(!clock.Due(t + 54000, 5, 0, 7));
         CHECK(clock.Due(t + 55000, 5, 0, 7));
+        clock.Probed(t + 55000, LedgeProbeResult::NoFloor);
+        clock.Probed(t + 58000, LedgeProbeResult::NoFloor);
+        CHECK(clock.Due(t + 61000, 5, 0, 7));      // the walk cleared the two old failures
 
-        CHECK(!clock.Due(t + 56000, 5, 0, 8));     // another target: fresh clock
-        CHECK(clock.Due(t + 58000, 5, 0, 8));
+        CHECK(!clock.Due(t + 62000, 5, 0, 8));     // another target: fresh clock
+        CHECK(clock.Due(t + 64000, 5, 0, 8));
 
         // Put back up three times (a jump strategy): the third step gives up.
         LedgeStepDownClock jumpy;

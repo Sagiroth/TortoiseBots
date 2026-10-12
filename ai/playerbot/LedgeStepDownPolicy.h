@@ -125,8 +125,8 @@ namespace ai
     // bot to `landing`: half a yard past the first ground sample (every half
     // yard) that lies kLedgeStepMinDrop or more below the bot, or straight
     // above the landing point when no sample before it does. False when a
-    // sample on the way has no ground or rises above the bot (a wall, a higher
-    // step): that way out is not a ledge.
+    // sample on the way has no ground or rises over kLedgeEdgeMaxRise above
+    // the bot (a wall, a higher step): that way out is not a ledge.
     template <typename GroundFn>
     inline bool LedgeEdgePoint(LedgePoint const& bot, LedgePoint const& landing, GroundFn groundAt, LedgePoint& edge)
     {
@@ -240,7 +240,10 @@ namespace ai
 
     // Pacing of the probe for one action of one bot, so nothing searches on
     // every tick. Times are WorldTimer milliseconds; only differences are
-    // compared, so the 49-day wrap of the clock does not matter.
+    // compared, so the 49-day wrap of the clock does not matter. The failed
+    // and launched counts belong to one circumstance (one spot, one target):
+    // the bot walking somewhere resets the caps, not just the stand-still
+    // clock, so three looks in Dalaran do not disarm a ledge in Uldaman.
     struct LedgeStepDownClock
     {
         uint64_t target = 0;
@@ -274,6 +277,9 @@ namespace ai
                 anchorX = x;
                 anchorY = y;
                 stillSinceMs = nowMs;
+                attempts = 0;
+                steps = 0;
+                givenUp = false;
                 return false;
             }
 
