@@ -37,12 +37,9 @@ namespace ai
         virtual bool AddLoot(Player* requester, ObjectGuid guid);
         virtual bool Execute(Event& event) override;
 
-        // Whisper "X is blocking Y" at most once per object per cool-down, never in a
-        // dungeon or while the bot is in combat (the refusal itself is unchanged).
+        // Whisper "X is blocking Y" once per object per master per 10 minutes across all
+        // bots, never in a dungeon or in combat (the refusal itself is unchanged).
         void TellBlocked(Player* requester, ObjectGuid objectGuid, const std::string& text);
-
-    private:
-        std::map<ObjectGuid, time_t> blockedTold;
 
     protected:
         // Set per Execute: this run is a player's explicit "loot" order (LootWindowPolicy).
