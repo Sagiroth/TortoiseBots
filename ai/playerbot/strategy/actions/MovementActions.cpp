@@ -2192,9 +2192,11 @@ bool MovementAction::StepDownOffLedge(Unit* target)
     }
 
     bool const stuck = UseLedgeStepDown(true, incomplete, partialEndDistance, beingHit);
-    ledgeStepDown.Probed(nowMs, stuck);
     if (!stuck)
+    {
+        ledgeStepDown.Probed(nowMs, LedgeProbeResult::NotStuck);
         return false;
+    }
 
     auto const groundAt = [map](float x, float y, float z, float& outZ)
     {
@@ -2206,43 +2208,77 @@ bool MovementAction::StepDownOffLedge(Unit* target)
         outZ = height;
         return true;
     };
-    auto const seenFromBot = [this](LedgePoint const& point)
+    // No lava or slime under the landing point (GetHeight returns the bed
+    // under a liquid, which can sit inside the height band) and no AoE hazard.
+    auto const landingSafe = [this, map](LedgePoint const& point)
     {
-        return bot->IsWithinLOS(point.x, point.y, point.z, true);
+        GridMapLiquidData liquid{};
+        if (map->GetTerrain()->getLiquidStatus(point.x, point.y, point.z, MAP_ALL_LIQUIDS, &liquid) != LIQUID_MAP_NO_WATER &&
+            (liquid.type_flags & (MAP_LIQUID_TYPE_MAGMA | MAP_LIQUID_TYPE_SLIME)))
+            return false;
+        return !IsHazardNearPosition(WorldPosition(bot->GetMapId(), point.x, point.y, point.z));
     };
-    auto const normalPathToTarget = [this, &goal](LedgePoint const& point)
+    // Each leg is checked low (half a yard up, so a railing or a low wall
+    // blocks it) and at eye height (so a wall or an overhang does).
+    float const eyeHeight = bot->GetCollisionHeight();
+    auto const clearLine = [map, eyeHeight](LedgePoint const& a, LedgePoint const& b)
+    {
+        return map->isInLineOfSight(a.x, a.y, a.z + 0.5f, b.x, b.y, b.z + 0.5f, true) &&
+            map->isInLineOfSight(a.x, a.y, a.z + eyeHeight, b.x, b.y, b.z + eyeHeight, true);
+    };
+    auto const pathFromLanding = [this, &goal](LedgePoint const& point)
     {
         PathFinder probe(bot);
         probe.calculate(Vector3(point.x, point.y, point.z), Vector3(goal.x, goal.y, goal.z), false);
-        return probe.getPathType() == PATHFIND_NORMAL;
+        LedgePathProbe result;
+        result.normal = probe.getPathType() == PATHFIND_NORMAL;
+        Movement::PointsArray const& steps = probe.getPath();
+        if (!steps.empty())
+        {
+            result.hasStart = true;
+            result.start.x = steps.front().x;
+            result.start.y = steps.front().y;
+            result.start.z = steps.front().z;
+        }
+        return result;
     };
 
-    LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(from, goal, groundAt, seenFromBot, normalPathToTarget);
+    LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(from, goal, groundAt, landingSafe, clearLine, pathFromLanding);
+    ledgeStepDown.Probed(nowMs, choice.valid ? LedgeProbeResult::Stepped : LedgeProbeResult::NoFloor);
     if (!choice.valid)
     {
         ai->TellDebug(GetMaster(), "Stuck on a ledge above " + std::string(target->GetName()) + " - no floor to step down to", "debug move");
         return false;
     }
 
-    WorldPosition const destination(bot->GetMapId(), choice.point.x, choice.point.y, choice.point.z);
-    if (IsHazardNearPosition(destination))
-        return false;
-
     bot->HandleEmoteState(0);
     if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
         bot->SetStandState(UNIT_STAND_STATE_STAND);
 
-    // A plain point move without MOVE_PATHFINDING: the navmesh has no link
-    // off the island, so a path-finding move would stop at the edge again.
-    // The point is in sight of the bot, so the straight line is clear.
-    MotionMaster& mm = *bot->GetMotionMaster();
-    mm.Clear();
-    mm.MovePoint(destination.GetMapId(), destination.getX(), destination.getY(), destination.getZ(), MOVE_RUN_MODE);
+    // A raw two-leg spline, no navmesh (it has no link off the island, so a
+    // path-finding move would stop at the edge again): flat out over the edge
+    // at the bot's own height, then down to the floor. A straight line from
+    // foot to foot would cut through the platform itself. path[0] is the
+    // current position, as the core's spline expects.
+    std::vector<G3D::Vector3> legs;
+    legs.push_back(G3D::Vector3(from.x, from.y, from.z));
+    legs.push_back(G3D::Vector3(choice.edge.x, choice.edge.y, choice.edge.z));
+    legs.push_back(G3D::Vector3(choice.point.x, choice.point.y, choice.point.z));
 
-    float const dx = choice.point.x - from.x;
-    float const dy = choice.point.y - from.y;
-    float const dz = choice.point.z - from.z;
-    WaitForReach(std::sqrt(dx * dx + dy * dy + dz * dz));
+    MotionMaster& mm = *bot->GetMotionMaster();
+    mm.Clear(false, true);
+    mm.MoveIdle(); // A raw spline does not restore the default movement generator.
+    Movement::MoveSplineInit init(*bot, "StepDownOffLedge");
+    init.MovebyPath(legs);
+    init.SetWalk(false);
+    init.Launch();
+
+    float const ex = choice.edge.x - from.x;
+    float const ey = choice.edge.y - from.y;
+    float const lx = choice.point.x - choice.edge.x;
+    float const ly = choice.point.y - choice.edge.y;
+    float const lz = choice.point.z - choice.edge.z;
+    WaitForReach(std::sqrt(ex * ex + ey * ey) + std::sqrt(lx * lx + ly * ly + lz * lz));
 
     ai->TellDebug(GetMaster(), "Stepping down off a ledge towards " + std::string(target->GetName()), "debug move");
     sPlayerbotAIConfig.logEvent(ai, "LedgeStepDown", target->GetName(),

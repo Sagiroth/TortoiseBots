@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <utility>
 #include <vector>
 
 #define CHECK(x) do { \
@@ -13,7 +14,11 @@
 } while (0)
 
 using ai::IsLedgeStepDownPoint;
+using ai::LedgeEdgePoint;
+using ai::LedgeLandingOnMesh;
+using ai::LedgePathProbe;
 using ai::LedgePoint;
+using ai::LedgeProbeResult;
 using ai::LedgeStepDownCandidates;
 using ai::LedgeStepDownChoice;
 using ai::LedgeStepDownClock;
@@ -52,8 +57,17 @@ int main()
 {
     std::cout << "Starting TortoiseBots ledge step-down policy tests...\n";
 
-    auto const seesAll = [](LedgePoint const&) { return true; };
-    auto const pathsAll = [](LedgePoint const&) { return true; };
+    auto const safeAll = [](LedgePoint const&) { return true; };
+    auto const clearAll = [](LedgePoint const&, LedgePoint const&) { return true; };
+    // A complete path that starts on the landing point itself.
+    auto const pathsAll = [](LedgePoint const& point)
+    {
+        LedgePathProbe probe;
+        probe.normal = true;
+        probe.hasStart = true;
+        probe.start = point;
+        return probe;
+    };
     LedgePoint const bot = P(0, 0, kDaisTop);
     LedgePoint const rockchewer = P(12, 0, kFloor);
 
@@ -99,64 +113,170 @@ int main()
 
     // The Uldaman dais: the point straight towards the Rockchewer, on the floor.
     {
-        LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, seesAll, pathsAll);
+        LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, safeAll, clearAll, pathsAll);
         CHECK(choice.valid);
         CHECK(Near(choice.point, P(8, 0, kFloor)));
+        // Out over the edge at the dais height first: the lip is at 4 yd, the
+        // edge point half a yard past the first floor sample (4.5 yd).
+        CHECK(Near(choice.edge, P(5, 0, kDaisTop)));
         std::cout << "  [PASS] dais: steps down straight towards the target\n";
     }
 
     // Needs-path rule: floor without a complete path to the target (another
     // island, a pit) is skipped; the first floor point with one is taken.
     {
-        auto const pathOnlyLeft = [](LedgePoint const& point) { return point.y > 1.0f; };
-        LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, seesAll, pathOnlyLeft);
+        auto const pathOnlyLeft = [&pathsAll](LedgePoint const& point)
+        {
+            LedgePathProbe probe = pathsAll(point);
+            probe.normal = point.y > 1.0f;
+            return probe;
+        };
+        LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, safeAll, clearAll, pathOnlyLeft);
         CHECK(choice.valid);
         CHECK(choice.point.y > 1.0f);
         CHECK(std::fabs(choice.point.z - kFloor) < 0.01f);
         float const angle = std::atan2(choice.point.y, choice.point.x);
         CHECK(std::fabs(angle - 3.14159265f / 6.0f) < 0.01f); // the +30 degree point, outer ring
 
-        auto const noPath = [](LedgePoint const&) { return false; };
-        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, seesAll, noPath).valid);
+        auto const noPath = [](LedgePoint const&) { return LedgePathProbe(); };
+        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, safeAll, clearAll, noPath).valid);
         std::cout << "  [PASS] needs a complete path from the point to the target\n";
     }
 
-    // Line of sight from the bot is required (no stepping through a wall).
+    // On the navmesh: a NORMAL path whose start the core snapped away from the
+    // point (a lava pool or a hole next to the floor, the shore polygon up to
+    // 5 yd away) does not count; the next candidate whose path starts on it
+    // does.
     {
-        auto const blindAhead = [](LedgePoint const& point) { return point.y < -1.0f; };
-        LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, blindAhead, pathsAll);
-        CHECK(choice.valid && choice.point.y < -1.0f);
+        CHECK(LedgeLandingOnMesh(P(8, 0, kFloor), P(8, 0, kFloor)));
+        CHECK(LedgeLandingOnMesh(P(8, 0, kFloor), P(8.9f, 0, kFloor + 1.4f)));
+        CHECK(!LedgeLandingOnMesh(P(8, 0, kFloor), P(9.2f, 0, kFloor)));        // snapped sideways
+        CHECK(!LedgeLandingOnMesh(P(8, 0, kFloor), P(8, 0, kFloor + 2.0f)));    // snapped up out of a pit
 
-        auto const blind = [](LedgePoint const&) { return false; };
-        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, blind, pathsAll).valid);
-        std::cout << "  [PASS] needs line of sight from the bot\n";
+        auto const snappedAhead = [](LedgePoint const& point)
+        {
+            LedgePathProbe probe;
+            probe.normal = true;
+            probe.hasStart = true;
+            probe.start = point;
+            if (point.y > -1.0f && point.y < 1.0f)
+                probe.start.x += 4.0f; // the point straight ahead is in a pool
+            return probe;
+        };
+        LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, safeAll, clearAll, snappedAhead);
+        CHECK(choice.valid);
+        CHECK(choice.point.y > 1.0f); // the +30 degree point
+
+        auto const noStart = [](LedgePoint const&)
+        {
+            LedgePathProbe probe;
+            probe.normal = true; // complete, but no points: nothing proves where it starts
+            return probe;
+        };
+        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, safeAll, clearAll, noStart).valid);
+        std::cout << "  [PASS] NORMAL path but the point is off the mesh: next candidate\n";
+    }
+
+    // Lava, slime or a hazard at a point rejects that point only.
+    {
+        auto const lavaAhead = [](LedgePoint const& point) { return !(point.y > -1.0f && point.y < 1.0f); };
+        LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, lavaAhead, clearAll, pathsAll);
+        CHECK(choice.valid);
+        CHECK(choice.point.y > 1.0f);
+
+        auto const allLava = [](LedgePoint const&) { return false; };
+        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, allLava, clearAll, pathsAll).valid);
+        std::cout << "  [PASS] unsafe landing (liquid, hazard) skips only that point\n";
+    }
+
+    // Both legs need a clear line: a railing on the way out to the edge, or
+    // something between the edge and the landing, skips that candidate.
+    {
+        std::vector<std::pair<LedgePoint, LedgePoint>> asked;
+        auto const railingAhead = [&asked](LedgePoint const& a, LedgePoint const& b)
+        {
+            asked.push_back(std::make_pair(a, b));
+            return !(b.y > -1.0f && b.y < 1.0f); // anything straight ahead is blocked
+        };
+        LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, safeAll, railingAhead, pathsAll);
+        CHECK(choice.valid && choice.point.y > 1.0f);
+        CHECK(!asked.empty());
+        CHECK(Near(asked.front().first, bot));                 // first leg starts at the bot
+        CHECK(Near(asked.front().second, P(5, 0, kDaisTop)));  // ... and ends at the edge, flat
+
+        int legs = 0;
+        auto const dropBlocked = [&legs](LedgePoint const& a, LedgePoint const&)
+        {
+            ++legs;
+            return std::fabs(a.z - kDaisTop) < 0.01f && a.x * a.x + a.y * a.y < 0.01f; // only the bot's own leg is clear
+        };
+        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, safeAll, dropBlocked, pathsAll).valid);
+        CHECK(legs > 0);
+
+        auto const blind = [](LedgePoint const&, LedgePoint const&) { return false; };
+        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, DaisGround, safeAll, blind, pathsAll).valid);
+        std::cout << "  [PASS] both legs need a clear line (railings, walls)\n";
+    }
+
+    // The edge point: flat at the bot's height, past the lip, never through
+    // rising ground or a hole on the way out.
+    {
+        LedgePoint edge;
+        CHECK(LedgeEdgePoint(bot, P(8, 0, kFloor), DaisGround, edge));
+        CHECK(Near(edge, P(5, 0, kDaisTop)));
+
+        auto const flatThenDrop = [](float x, float, float, float& outZ)
+        {
+            outZ = x < 7.9f ? kDaisTop : kFloor; // the drop only right at the landing point
+            return true;
+        };
+        CHECK(LedgeEdgePoint(bot, P(8, 0, kFloor), flatThenDrop, edge));
+        CHECK(Near(edge, P(8, 0, kDaisTop))); // straight above the landing
+
+        auto const wallOnTheWay = [](float x, float, float, float& outZ)
+        {
+            outZ = (x > 2.0f && x < 3.0f) ? kDaisTop + 2.0f : (x <= 4.0f ? kDaisTop : kFloor);
+            return true;
+        };
+        CHECK(!LedgeEdgePoint(bot, P(8, 0, kFloor), wallOnTheWay, edge));
+
+        auto const holeOnTheWay = [](float x, float, float, float& outZ)
+        {
+            if (x > 2.0f && x < 3.0f)
+                return false;
+            outZ = x <= 4.0f ? kDaisTop : kFloor;
+            return true;
+        };
+        CHECK(!LedgeEdgePoint(bot, P(8, 0, kFloor), holeOnTheWay, edge));
+        CHECK(!LedgeEdgePoint(bot, P(0.5f, 0, kFloor), DaisGround, edge)); // no way out to speak of
+        std::cout << "  [PASS] edge point: flat, past the lip, not through walls or holes\n";
     }
 
     // No ground, too deep, too shallow, or a big dais: no point.
     {
         auto const noGround = [](float, float, float, float&) { return false; };
-        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, noGround, seesAll, pathsAll).valid);
+        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, noGround, safeAll, clearAll, pathsAll).valid);
 
         auto const pit = [](float x, float y, float, float& outZ)
         {
             outZ = (std::fabs(x) <= 4.0f && std::fabs(y) <= 4.0f) ? kDaisTop : kDaisTop - 12.0f;
             return true;
         };
-        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, pit, seesAll, pathsAll).valid);
+        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, pit, safeAll, clearAll, pathsAll).valid);
 
         auto const step = [](float x, float y, float, float& outZ)
         {
             outZ = (std::fabs(x) <= 4.0f && std::fabs(y) <= 4.0f) ? kDaisTop : kDaisTop - 1.0f;
             return true;
         };
-        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, step, seesAll, pathsAll).valid);
+        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, step, safeAll, clearAll, pathsAll).valid);
 
         auto const wide = [](float x, float y, float, float& outZ)
         {
             outZ = (std::fabs(x) <= 10.0f && std::fabs(y) <= 10.0f) ? kDaisTop : kFloor;
             return true;
         };
-        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, wide, seesAll, pathsAll).valid);
+        CHECK(!SelectLedgeStepDownPoint(bot, rockchewer, wide, safeAll, clearAll, pathsAll).valid);
         std::cout << "  [PASS] no ground / a fall / a climbable step / edge out of reach: no point\n";
     }
 
@@ -169,48 +289,66 @@ int main()
             outZ = x <= 3.0f ? kDaisTop : kFloor;
             return true;
         };
-        auto const losShort = [](LedgePoint const& point) { return point.x * point.x + point.y * point.y < 30.0f; };
-        LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(bot, rockchewer, ledge, losShort, pathsAll);
+        auto const lineShort = [](LedgePoint const&, LedgePoint const& b) { return b.x * b.x + b.y * b.y < 30.0f; };
+        LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(bot, rockchewer, ledge, safeAll, lineShort, pathsAll);
         CHECK(choice.valid);
         CHECK(Near(choice.point, P(5, 0, kFloor)));
         std::cout << "  [PASS] narrow ledge: the 5 yd ring\n";
     }
 
-    // Pacing: stand still 2 s first, then one probe per 3 s, three stuck probes
-    // then 30 s of nothing; moving or a new target restarts the clock.
+    // Pacing: stand still 2 s first, then one probe per 3 s. Three probes
+    // that found no floor, or three launched steps, give up for 30 s; a probe
+    // that was not stuck counts for neither. Moving or a new target restarts
+    // the stand-still clock.
     {
         LedgeStepDownClock clock;
         uint32_t t = 100000;
         CHECK(!clock.Due(t, 0, 0, 7));             // first sight of this target
         CHECK(!clock.Due(t + 1000, 0, 0, 7));      // not standing long enough
         CHECK(clock.Due(t + 2000, 0, 0, 7));
-        clock.Probed(t + 2000, true);
+        clock.Probed(t + 2000, LedgeProbeResult::NoFloor);
         CHECK(!clock.Due(t + 3000, 0, 0, 7));      // probe interval
         CHECK(clock.Due(t + 5000, 0.5f, 0.5f, 7)); // half a yard is still standing
-        clock.Probed(t + 5000, true);
+        clock.Probed(t + 5000, LedgeProbeResult::Stepped); // a step does not count as a failed look
         CHECK(clock.Due(t + 8000, 0, 0, 7));
-        clock.Probed(t + 8000, true);              // third stuck probe: give up
-        CHECK(!clock.Due(t + 11000, 0, 0, 7));
-        CHECK(!clock.Due(t + 37000, 0, 0, 7));
-        CHECK(clock.Due(t + 38000, 0, 0, 7));      // 30 s later it tries again
-        clock.Probed(t + 38000, false);            // not stuck: does not count
-        CHECK(clock.Due(t + 41000, 0, 0, 7));
-        clock.Probed(t + 41000, true);
-        clock.Probed(t + 44000, true);
-        CHECK(clock.Due(t + 47000, 0, 0, 7));      // only two stuck since the reset
+        clock.Probed(t + 8000, LedgeProbeResult::NoFloor);
+        CHECK(clock.Due(t + 11000, 0, 0, 7));      // two failed looks only
+        clock.Probed(t + 11000, LedgeProbeResult::NoFloor); // third failed look: give up
+        CHECK(!clock.Due(t + 14000, 0, 0, 7));
+        CHECK(!clock.Due(t + 40000, 0, 0, 7));
+        CHECK(clock.Due(t + 41000, 0, 0, 7));      // 30 s later it tries again
+        clock.Probed(t + 41000, LedgeProbeResult::NotStuck); // counts for nothing
+        CHECK(clock.Due(t + 44000, 0, 0, 7));
+        clock.Probed(t + 44000, LedgeProbeResult::NoFloor);
+        clock.Probed(t + 47000, LedgeProbeResult::NoFloor);
+        CHECK(clock.Due(t + 50000, 0, 0, 7));      // only two failed since the reset
 
-        CHECK(!clock.Due(t + 50000, 5, 0, 7));     // the bot moved: restart the stand-still clock
-        CHECK(!clock.Due(t + 51000, 5, 0, 7));
-        CHECK(clock.Due(t + 52000, 5, 0, 7));
+        CHECK(!clock.Due(t + 53000, 5, 0, 7));     // the bot moved: restart the stand-still clock
+        CHECK(!clock.Due(t + 54000, 5, 0, 7));
+        CHECK(clock.Due(t + 55000, 5, 0, 7));
 
-        CHECK(!clock.Due(t + 53000, 5, 0, 8));     // another target: fresh clock
-        CHECK(clock.Due(t + 55000, 5, 0, 8));
+        CHECK(!clock.Due(t + 56000, 5, 0, 8));     // another target: fresh clock
+        CHECK(clock.Due(t + 58000, 5, 0, 8));
+
+        // Put back up three times (a jump strategy): the third step gives up.
+        LedgeStepDownClock jumpy;
+        uint32_t u = 200000;
+        CHECK(!jumpy.Due(u, 0, 0, 9));
+        CHECK(jumpy.Due(u + 2000, 0, 0, 9));
+        jumpy.Probed(u + 2000, LedgeProbeResult::Stepped);
+        CHECK(jumpy.Due(u + 5000, 0, 0, 9));
+        jumpy.Probed(u + 5000, LedgeProbeResult::Stepped);
+        CHECK(jumpy.Due(u + 8000, 0, 0, 9));
+        jumpy.Probed(u + 8000, LedgeProbeResult::Stepped);
+        CHECK(!jumpy.Due(u + 11000, 0, 0, 9));
+        CHECK(!jumpy.Due(u + 37000, 0, 0, 9));
+        CHECK(jumpy.Due(u + 38000, 0, 0, 9));
 
         LedgeStepDownClock wrap;                   // the millisecond clock wraps
         uint32_t const late = 0xFFFFFC00u;
         CHECK(!wrap.Due(late, 0, 0, 1));
         CHECK(wrap.Due(late + 2500u, 0, 0, 1));
-        std::cout << "  [PASS] pacing: stand still, interval, give-up, reset\n";
+        std::cout << "  [PASS] pacing: stand still, interval, failed-look and step caps, reset\n";
     }
 
     std::cout << "Ledge step-down policy tests: OK\n";

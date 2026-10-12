@@ -86,10 +86,11 @@ namespace ai
         void NoteFleeDispatch(Unit* target, float heading, float startDistance, uint32 nowMs);
         // Inside a dungeon, a bot stranded on a navmesh island (a raised dais
         // or ledge the mesh does not link to the floor) steps off the edge
-        // towards `target` the way a player would: a straight move, without
-        // the navmesh, to floor 2-8 yd lower that it can see and that has a
-        // complete path to the target. Paced per bot (LedgeStepDownClock);
-        // true only when that move was launched. See LedgeStepDownPolicy.h.
+        // towards `target` the way a player would: a two-leg move without the
+        // navmesh (flat over the edge, then down) to walkable floor 2-8 yd
+        // lower, clear of lava, slime and hazards, with a complete path to the
+        // target. Paced per action (LedgeStepDownClock); true only when that
+        // move was launched. See LedgeStepDownPolicy.h.
         bool StepDownOffLedge(Unit* target);
         void ClearIdleState();
         void UpdateMovementState();

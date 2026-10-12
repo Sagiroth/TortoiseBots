@@ -13,8 +13,11 @@
 // and follow stand still on such a path in sight of the target, the module's
 // MoveTo walks the yard and stops, and the bot waited out the whole fight.
 // A player simply steps off the edge, so the bot does too: it looks for floor
-// a few yards towards its target and a few yards lower, which it can see,
-// stand on and path from to the target, and moves there without the navmesh.
+// a few yards towards its target and a few yards lower that really is walkable
+// navmesh (not lava, slime or a hole next to the floor) with a complete path
+// to the target, and moves there without the navmesh in two legs: flat out
+// over the edge at its own height, then down, so it never cuts through the
+// platform it stands on.
 //
 // The geometry (candidates, height band, the order of the checks) is decided
 // here and tested on its own; the map queries are callbacks.
@@ -31,7 +34,20 @@ namespace ai
     struct LedgeStepDownChoice
     {
         bool valid = false;
-        LedgePoint point;
+        LedgePoint point; // the landing point on the floor
+        LedgePoint edge;  // out over the edge, at the bot's own height
+    };
+
+    // What the navmesh says about a path from a landing point to the target:
+    // whether it is complete (PATHFIND_NORMAL), and the point the path really
+    // starts from. The core snaps a start up to 5 yd sideways and 3 yd up to
+    // the nearest walkable polygon, so a NORMAL path alone does not prove the
+    // landing point is walkable.
+    struct LedgePathProbe
+    {
+        bool normal = false;
+        bool hasStart = false;
+        LedgePoint start;
     };
 
     // Candidate floor points lie this far from the bot horizontally: the
@@ -46,13 +62,28 @@ namespace ai
     static float const kLedgeStepMaxDrop = 8.0f;
     // The partial path makes no headway when it ends this close to the bot.
     static float const kLedgeNoHeadwayYards = 2.0f;
+    // The landing point is on the navmesh when the path from it starts this
+    // close to it (horizontally / vertically).
+    static float const kLedgeMeshSnapHorizontal = 1.0f;
+    static float const kLedgeMeshSnapVertical = 1.5f;
+    // The edge search samples the ground every half yard along the way out and
+    // steps half a yard past the first sample that is a drop, to clear the lip.
+    static float const kLedgeEdgeSampleStep = 0.5f;
+    static float const kLedgeEdgeOvershoot = 0.5f;
+    // Ground that rises more than this above the bot on the way out is a wall
+    // or a higher step, not an edge.
+    static float const kLedgeEdgeMaxRise = 1.0f;
 
-    // Probe pacing, per bot: only after the bot has stood within a yard for
-    // kLedgeStandStillMs, then at most once per kLedgeProbeIntervalMs; after
-    // kLedgeMaxAttempts stuck probes for one target, nothing for kLedgeGiveUpMs.
+    // Probe pacing, per action of a bot (reach and follow each keep a clock):
+    // only after the bot has stood within a yard for kLedgeStandStillMs, then
+    // at most once per kLedgeProbeIntervalMs. After kLedgeMaxAttempts probes
+    // that found no floor, or kLedgeMaxSteps launched steps (something keeps
+    // putting the bot back up, e.g. a jump), for one target: nothing for
+    // kLedgeGiveUpMs.
     static uint32_t const kLedgeStandStillMs = 2000;
     static uint32_t const kLedgeProbeIntervalMs = 3000;
     static uint32_t const kLedgeMaxAttempts = 3;
+    static uint32_t const kLedgeMaxSteps = 3;
     static uint32_t const kLedgeGiveUpMs = 30000;
 
     inline float LedgeHorizontalDistance(LedgePoint const& a, LedgePoint const& b)
@@ -80,6 +111,50 @@ namespace ai
 
         float const drop = bot.z - point.z;
         return drop >= kLedgeStepMinDrop && drop <= kLedgeStepMaxDrop;
+    }
+
+    // The path from the landing point starts on the point itself, not on a
+    // polygon the core snapped to from a lava pool, a slime pool or a hole.
+    inline bool LedgeLandingOnMesh(LedgePoint const& landing, LedgePoint const& pathStart)
+    {
+        return LedgeHorizontalDistance(landing, pathStart) <= kLedgeMeshSnapHorizontal &&
+            std::fabs(landing.z - pathStart.z) <= kLedgeMeshSnapVertical;
+    }
+
+    // The point out over the edge, at the bot's height, on the way from the
+    // bot to `landing`: half a yard past the first ground sample (every half
+    // yard) that lies kLedgeStepMinDrop or more below the bot, or straight
+    // above the landing point when no sample before it does. False when a
+    // sample on the way has no ground or rises above the bot (a wall, a higher
+    // step): that way out is not a ledge.
+    template <typename GroundFn>
+    inline bool LedgeEdgePoint(LedgePoint const& bot, LedgePoint const& landing, GroundFn groundAt, LedgePoint& edge)
+    {
+        float const horizontal = LedgeHorizontalDistance(bot, landing);
+        if (horizontal < 1.0f)
+            return false;
+
+        float const ux = (landing.x - bot.x) / horizontal;
+        float const uy = (landing.y - bot.y) / horizontal;
+        float edgeDistance = horizontal;
+        for (float d = kLedgeEdgeSampleStep; d < horizontal; d += kLedgeEdgeSampleStep)
+        {
+            float groundZ = 0.0f;
+            if (!groundAt(bot.x + ux * d, bot.y + uy * d, bot.z, groundZ))
+                return false;
+            if (groundZ > bot.z + kLedgeEdgeMaxRise)
+                return false;
+            if (bot.z - groundZ >= kLedgeStepMinDrop)
+            {
+                edgeDistance = std::fmin(d + kLedgeEdgeOvershoot, horizontal);
+                break;
+            }
+        }
+
+        edge.x = bot.x + ux * edgeDistance;
+        edge.y = bot.y + uy * edgeDistance;
+        edge.z = bot.z;
+        return true;
     }
 
     // Candidate (x, y) points, best first: straight towards the target, then
@@ -111,15 +186,19 @@ namespace ai
         return candidates;
     }
 
-    // The first candidate, in LedgeStepDownCandidates order, that has ground
-    // (`groundAt(x, y, z, outZ)` false = no valid height), lies in the height
-    // band, is visible from the bot (`seenFromBot(point)`) and has a complete
-    // navmesh path to the target (`normalPathToTarget(point)`). The checks run
-    // cheapest first, so the path query only runs for points that passed the
-    // rest.
-    template <typename GroundFn, typename LosFn, typename PathFn>
+    // The first candidate, in LedgeStepDownCandidates order, that passes, in
+    // this order (cheapest first, each failure moves on to the next candidate):
+    // - ground under it (`groundAt(x, y, z, outZ)`, false = no valid height),
+    // - the height band and radius (IsLedgeStepDownPoint),
+    // - a safe landing (`landingSafe(point)`: no lava, slime or hazard),
+    // - a way out over the edge (LedgeEdgePoint),
+    // - a clear line for both legs (`clearLine(a, b)`: bot to edge, edge to
+    //   landing; the caller checks low enough to catch railings),
+    // - a complete navmesh path from it to the target that starts on the point
+    //   itself (`pathFromLanding(point)` -> LedgePathProbe, LedgeLandingOnMesh).
+    template <typename GroundFn, typename SafeFn, typename LineFn, typename PathFn>
     inline LedgeStepDownChoice SelectLedgeStepDownPoint(LedgePoint const& bot, LedgePoint const& target,
-        GroundFn groundAt, LosFn seenFromBot, PathFn normalPathToTarget)
+        GroundFn groundAt, SafeFn landingSafe, LineFn clearLine, PathFn pathFromLanding)
     {
         LedgeStepDownChoice result;
         for (LedgePoint candidate : LedgeStepDownCandidates(bot, target))
@@ -131,21 +210,37 @@ namespace ai
 
             if (!IsLedgeStepDownPoint(bot, candidate))
                 continue;
-            if (!seenFromBot(candidate))
+            if (!landingSafe(candidate))
                 continue;
-            if (!normalPathToTarget(candidate))
+
+            LedgePoint edge;
+            if (!LedgeEdgePoint(bot, candidate, groundAt, edge))
+                continue;
+            if (!clearLine(bot, edge) || !clearLine(edge, candidate))
+                continue;
+
+            LedgePathProbe const probe = pathFromLanding(candidate);
+            if (!probe.normal || !probe.hasStart || !LedgeLandingOnMesh(candidate, probe.start))
                 continue;
 
             result.valid = true;
             result.point = candidate;
+            result.edge = edge;
             return result;
         }
         return result;
     }
 
-    // Per-bot pacing of the probe, so nothing searches on every tick. Times
-    // are WorldTimer milliseconds; only differences are compared, so the
-    // 49-day wrap of the clock does not matter.
+    enum class LedgeProbeResult
+    {
+        NotStuck, // the path makes headway: nothing to do
+        NoFloor,  // stuck, and no candidate passed
+        Stepped   // stuck, and a step was launched
+    };
+
+    // Pacing of the probe for one action of one bot, so nothing searches on
+    // every tick. Times are WorldTimer milliseconds; only differences are
+    // compared, so the 49-day wrap of the clock does not matter.
     struct LedgeStepDownClock
     {
         uint64_t target = 0;
@@ -155,6 +250,7 @@ namespace ai
         uint32_t lastProbeMs = 0;
         bool probed = false;
         uint32_t attempts = 0;
+        uint32_t steps = 0;
         uint32_t giveUpSinceMs = 0;
         bool givenUp = false;
 
@@ -187,6 +283,7 @@ namespace ai
                     return false;
                 givenUp = false;
                 attempts = 0;
+                steps = 0;
             }
 
             if (nowMs - stillSinceMs < kLedgeStandStillMs)
@@ -195,16 +292,19 @@ namespace ai
             return !probed || nowMs - lastProbeMs >= kLedgeProbeIntervalMs;
         }
 
-        // A probe ran. `stuck` = the path was partial with no headway, whether
-        // or not a floor point was found; those count towards the give-up.
-        void Probed(uint32_t nowMs, bool stuck)
+        // A probe ran. Only probes that found no floor count towards the
+        // give-up; launched steps have their own cap, so a bot that keeps
+        // being put back up (a jump strategy) does not step forever.
+        void Probed(uint32_t nowMs, LedgeProbeResult result)
         {
             probed = true;
             lastProbeMs = nowMs;
-            if (!stuck)
+            if (result == LedgeProbeResult::NotStuck)
                 return;
 
-            if (++attempts >= kLedgeMaxAttempts)
+            uint32_t& count = result == LedgeProbeResult::NoFloor ? attempts : steps;
+            uint32_t const limit = result == LedgeProbeResult::NoFloor ? kLedgeMaxAttempts : kLedgeMaxSteps;
+            if (++count >= limit)
             {
                 givenUp = true;
                 giveUpSinceMs = nowMs;
