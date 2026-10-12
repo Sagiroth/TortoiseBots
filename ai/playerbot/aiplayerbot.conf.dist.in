@@ -701,7 +701,7 @@ AiPlayerbot.AhMarketTimeMax = 24
 # enemy flag only when no real player is on their team, and otherwise
 # patrol mid-field (owner request, 2026-07-27); nobody guards the own flag
 # room. 1 splits each team's bots by rank, re-split only when the match or
-# the team size changes: ~40% attackers go for the enemy flag (or chase the
+# the team roster changes: ~40% attackers go for the enemy flag (or chase the
 # enemy carrier / escort ours), ~30% defenders hold the own flag room and
 # chase an enemy carrier, the rest hold mid-field and escort - also when a
 # human is on the team (humans are not counted in the split).

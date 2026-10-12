@@ -2347,12 +2347,22 @@ enum WsgFlagRole : uint32
 
 uint32 BGTactics::wsgFlagRole(BattleGround* bg)
 {
-    // Re-split only when the match or this team's size changes, not on every
-    // objective pick (the size is an O(1) core counter).
-    uint32 const key = ((bg->GetInstanceID() & 0xFFFF) << 16) | ((bg->GetPlayersCountByTeam(bot->GetTeam()) & 0xFF) << 8);
+    // Re-split only when the match or this team's roster changes, not on every
+    // objective pick. The cache key is a cheap hash of the match id and the
+    // team's member GUIDs (order independent), so swapping one member for
+    // another at the same team size also re-splits. The low two bits of the
+    // cached value hold role + 1.
+    uint32 key = (bg->GetInstanceID() + 1) * 0x9E3779B1u;
+    for (auto const& itr : bg->GetPlayers())
+    {
+        if (itr.second.PlayerTeam == bot->GetTeam())
+            key += (itr.first.GetCounter() + 1) * 0x85EBCA6Bu;
+    }
+    key &= ~3u;
+
     uint32 const cached = context->GetValue<uint32>("wsg flag role")->Get();
-    if (cached && (cached & 0xFFFFFF00) == key)
-        return (cached & 0xFF) - 1;
+    if (cached && (cached & ~3u) == key)
+        return (cached & 3) - 1;
 
     uint32 teamBots = 0;
     uint32 rank = 0;
@@ -2443,8 +2453,13 @@ bool BGTactics::selectWsgFlagRoleObjective(BattleGround* bg, float& x, float& y,
             escort();
         else if (enemyFC)
             chase(enemyFC);
-        else
-            bot->GetRandomPoint(1227.446f, 1476.235f, 307.484f, 150.0f, x, y, z);
+        else if (!bot->GetRandomPoint(1227.446f, 1476.235f, 307.484f, 150.0f, x, y, z))
+        {
+            // No random point: the fixed mid-field spot rather than (0, 0, 0).
+            x = 1227.446f;
+            y = 1476.235f;
+            z = 307.484f;
+        }
         return true;
     }
 }
