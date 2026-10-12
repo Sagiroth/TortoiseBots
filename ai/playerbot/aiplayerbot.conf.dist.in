@@ -241,6 +241,14 @@ AiPlayerbot.LevelUpMounts = 1
 # 1 = any mount, including shop and raid-drop mounts (old behaviour).
 # Player alts are never gated. Default 0.
 AiPlayerbot.RandomBotShopMounts = 0
+# Level-up gear top-up (opt-in): a masterless random pool bot that reaches a
+# new level (5 or higher) gets its empty equipment slots, and grey/white items
+# 6 or more item levels below it, filled with level- and spec-appropriate gear
+# from the same selection the fresh-bot seed uses. Green or better is never
+# replaced. Once per level (after a restart, once at the current level); out of
+# combat only. Hired, guild-claimed and player-grouped bots are never touched.
+# 1 = on; 0 = off (gear only from drops, quests and vendors). Default 0.
+AiPlayerbot.PoolGearTopUpOnLevel = 0
 # Safety factor on the mount break-even distance: bots mount for travel/RPG
 # trips only when the remaining distance exceeds
 # 7 y/s * mount cast time / (best mount speed % / 100) * this. 0 disables

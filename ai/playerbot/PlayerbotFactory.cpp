@@ -19,6 +19,7 @@
 #include "../../runtime/GearSeedQualityPolicy.h"
 #include "../../runtime/policy/provision/GearBlacklistPolicy.h"
 #include "../../runtime/PlayerAutogearPolicy.h"
+#include "../../runtime/PoolGearTopUpPolicy.h"
 #include "Database/DBCStores.h"
 
 #include "Database/SQLStorages.h"
@@ -281,6 +282,49 @@ bool PlayerbotFactory::HasAmmoInBagsFor(uint32 weaponSubClass)
     FindAmmoVisitor ammoVisitor(bot, weaponSubClass);
     ai->InventoryIterateItems(&ammoVisitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
     return !ammoVisitor.GetResult().empty();
+}
+// Pool gear top-up (AiPlayerbot.PoolGearTopUpOnLevel). Same item selection
+// as the fresh seed (incremental InitEquipment: level band, spec weights,
+// source-tier/rep/PvP gates, low-level fallback), but only over the slots
+// PoolGearTopUpSlot marks - empty, or grey/white well below the bot - so
+// earned green-or-better gear is never touched. One pass per call; the
+// caller limits it to once per level.
+uint32 PlayerbotFactory::TopUpPoolGear()
+{
+    if (!bot || !ai || bot->GetLevel() < TortoiseBots::kPoolGearTopUpMinLevel)
+        return 0;
+
+    uint32 mask = 0;
+    uint32 before[EQUIPMENT_SLOT_END] = {};
+    for (uint8 slot = 0; slot < EQUIPMENT_SLOT_END; ++slot)
+    {
+        Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        ItemPrototype const* proto = item ? item->GetProto() : nullptr;
+        before[slot] = proto ? proto->ItemId : 0;
+        // Shirt and tabard are cosmetic; the seed rolls them separately.
+        if (slot == EQUIPMENT_SLOT_BODY || slot == EQUIPMENT_SLOT_TABARD)
+            continue;
+        if (TortoiseBots::PoolGearTopUpSlot(proto != nullptr, proto ? proto->Quality : 0,
+                proto ? proto->ItemLevel : 0, bot->GetLevel()))
+            mask |= 1u << slot;
+    }
+
+    if (!mask)
+        return 0;
+
+    slotMask = mask;
+    InitEquipment(true, false);
+    slotMask = 0;
+
+    uint32 changed = 0;
+    for (uint8 slot = 0; slot < EQUIPMENT_SLOT_END; ++slot)
+    {
+        Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        uint32 now = (item && item->GetProto()) ? item->GetProto()->ItemId : 0;
+        if (now != before[slot])
+            ++changed;
+    }
+    return changed;
 }
 
 void PlayerbotFactory::LearnSeedLevelSpells()
@@ -1593,6 +1637,9 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
         // Player upgrades: shirts and tabards are cosmetic, a random swap is
         // not an upgrade, so they keep whatever they wear.
         if (playerUpgrade && (slot == EQUIPMENT_SLOT_BODY || slot == EQUIPMENT_SLOT_TABARD))
+            continue;
+        // Pool gear top-up: only the slots TopUpPoolGear picked.
+        if (slotMask && !(slotMask & (1u << slot)))
             continue;
 
         if (slot == EQUIPMENT_SLOT_TABARD)

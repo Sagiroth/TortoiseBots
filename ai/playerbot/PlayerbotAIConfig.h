@@ -298,6 +298,12 @@ public:
     // (any race can use them, except the Swift Riding Turtle) are granted and
     // chosen only when this is on. Player-owned alts are never gated. Default false.
     bool randomBotShopMounts = false;
+    // Level-up gear top-up: a masterless pool bot that dings (5+) gets its
+    // empty slots and clearly outdated grey/white items (6+ item levels below
+    // it) filled by the fresh-seed item selection, once per level. Never
+    // replaces green or better; never hired, claimed or player-led bots.
+    // Default false (opt-in).
+    bool poolGearTopUpOnLevel = false;
     // Safety factor on the mount break-even distance: bots mount for travel
     // only when the remaining trip exceeds
     // 7 y/s * castTime / (mountSpeed/100) * this. 0 disables the threshold

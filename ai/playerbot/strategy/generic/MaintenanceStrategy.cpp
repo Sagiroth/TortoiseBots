@@ -55,9 +55,13 @@ void MaintenanceStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigger
     // quest work, above 0.7-1.0f upkeep). IsActive is always true; cheapness
     // comes from EquipUpgradesAction itself: with no EQUIP/BAD_EQUIP usage in
     // the bags the visitor returns nothing and no gear is touched.
+    // Pool gear top-up (AiPlayerbot.PoolGearTopUpOnLevel) rides the same
+    // audit: a ding on a killing blow cannot change gear in combat, so the
+    // next out-of-combat audit handles the level instead. isUseful is a
+    // facade read once the level is done, so the audit stays cheap.
     triggers.push_back(new TriggerNode(
         "equipment audit",
-        NextAction::array(0, new NextAction("equip upgrades", 5.0f), NULL)));
+        NextAction::array(0, new NextAction("equip upgrades", 5.0f), new NextAction("pool gear top up", 5.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
         "random",
