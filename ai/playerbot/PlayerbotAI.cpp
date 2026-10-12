@@ -2821,7 +2821,13 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                 }
 
                 MANGOS_ASSERT(!message.empty());
-                QueueChatResponse(msgtype, guid1, ObjectGuid(), message, chanName, name, isAiChat);
+                // A GM-tagged speaker arrives as `|c1049e6ff<text>|r`; strip it so the
+                // reply blocklists ("attack", "e [..]", ...) still recognise a command
+                // and the bot does not answer it with the REPLY_ADMIN_ABUSE insults.
+                std::string replyMessage = message;
+                StripGmBadgeColor(replyMessage);
+                if (!replyMessage.empty())
+                    QueueChatResponse(msgtype, guid1, ObjectGuid(), replyMessage, chanName, name, isAiChat);
                 GetAiObjectContext()->GetValue<time_t>("last said", "chat")->Set(time(0) + urand(5, 25));
 
                 return;
