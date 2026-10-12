@@ -127,9 +127,12 @@ namespace ai
         float const a = sx * sx + sy * sy + sz * sz;
         float const b = 2.0f * (ox * sx + oy * sy + oz * sz);
         float const c = ox * ox + oy * oy + oz * oz - rangeSq;
-        float const discriminant = b * b - 4.0f * a * c;
-        if (a <= 0.0f || discriminant < 0.0f)
+        float const rawDiscriminant = b * b - 4.0f * a * c;
+        if (a <= 0.0f)
             return result;
+        // The crossing segment touches the range sphere at a tangent: float
+        // error can push the discriminant a hair below zero. Clamp, not bail.
+        float const discriminant = rawDiscriminant < 0.0f ? 0.0f : rawDiscriminant;
 
         float t = (-b - std::sqrt(discriminant)) / (2.0f * a);
         if (t < 0.0f)

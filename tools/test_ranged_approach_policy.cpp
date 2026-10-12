@@ -175,6 +175,19 @@ int main()
         std::cout << "  [PASS] partial path, end out of range and hidden: closer point in sight or none\n";
     }
 
+    // Near-tangent crossing: the segment grazes the range sphere, so the
+    // discriminant is tiny next to b*b and float error can push it below
+    // zero. Clamp, don't bail: the point lands on the sphere, not the vertex.
+    {
+        std::vector<ApproachPoint> path = { P(80, 30), P(60, 25), P(0, 25) };
+        RangedApproachChoice const choice = SelectRangedApproachPoint(path, P(0, 0), 25.0f, seesAll);
+        CHECK(choice.valid);
+        CHECK(std::fabs(Dist(choice.point, P(0, 0)) - 25.0f) < 0.05f);
+        CHECK(choice.point.x > -1.0f && choice.point.x < 1.0f);
+        std::cout << "  [PASS] near-tangent crossing: clamps, keeps the touch point\n";
+    }
+
+
     std::cout << "Ranged approach policy tests: OK\n";
     return 0;
 }
