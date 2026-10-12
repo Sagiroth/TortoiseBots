@@ -12,6 +12,7 @@
 #include "runtime/GuildOrderStore.h"
 #include "BudgetValues.h"
 #include "runtime/GuildOrderSupplyPolicy.h"
+#include "TrainerValues.h"
 #include "GuildValues.h"
 #include "Guild/GuildMgr.h"
 #include "runtime/HireLifecycle.h"
@@ -605,23 +606,13 @@ bool ShouldTravelNamedValue::Calculate()
         if (ai->HasRealPlayerMaster())
             return false;
         TrainerType trainerType = TRAINER_TYPE_CLASS;
-        NeedMoneyFor budgetType = NeedMoneyFor::spells;
 
         if (name == "trainer mount")
-        {
             trainerType = TRAINER_TYPE_MOUNTS;
-            budgetType = NeedMoneyFor::mount; //Only train mounts when you can actually buy mount
-        }
         if (name == "trainer trade")
-        {
             trainerType = TRAINER_TYPE_TRADESKILLS;
-            budgetType = NeedMoneyFor::skilltraining;
-        }
         if (name == "trainer pet")
-        {
             trainerType = TRAINER_TYPE_PETS;
-            budgetType = NeedMoneyFor::anything;
-        }
 
         if (AI_VALUE2(uint32, "train cost", trainerType) == 0) //Has nothing to train
             return false;
@@ -669,17 +660,20 @@ bool ShouldTravelNamedValue::Calculate()
         // fits the free-money budget. The old "has all money for" check demanded
         // the full batch price up front, so bots never visited until they could
         // buy everything. TrainerAction still skips individual spells that are
-        // too expensive once there.
+        // too expensive once there. Rows, price and budget are the visit's own
+        // (TrainerValues.h): "trainable spells" only holds rows the trainer will
+        // teach at this level, the price is the list price (a reputation
+        // discount only lowers it at the trainer), and the budget is
+        // TrainerSpendableMoney, so a trip only starts when the visit can pay.
         uint32 minSpellCost = UINT32_MAX;
         for (TrainerSpell const* trainable : AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", trainerType))
-            if (trainable && trainable->spellCost < minSpellCost)
-                minSpellCost = trainable->spellCost;
+            if (trainable && TrainerSpellPrice(trainable, 1.0f) < minSpellCost)
+                minSpellCost = TrainerSpellPrice(trainable, 1.0f);
 
         if (minSpellCost == UINT32_MAX)
             return false;
 
-        uint32 const freeMoney = AI_VALUE2(uint32, "free money for", (uint32)budgetType);
-        bool const canAfford = freeMoney >= minSpellCost;
+        bool const canAfford = TrainerSpendableMoney(ai, trainerType) >= minSpellCost;
 
         // One trainer journey at a time is enforced request-side
         // (RequestNamedTravelTargetAction::isAllowed): this value doubles as the

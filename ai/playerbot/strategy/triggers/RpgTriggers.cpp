@@ -11,6 +11,7 @@
 #include "../../runtime/policy/hire/HireQuestPolicy.h"
 #include "../../../runtime/AltBotService.h"
 #include "../../../runtime/DowntimeService.h"
+#include "playerbot/strategy/values/TrainerValues.h"
 using namespace ai;
 
 bool RpgTrigger::IsActive()
@@ -329,8 +330,6 @@ bool RpgTrainTrigger::IsTrainerOf(CreatureInfo const* cInfo, Player* pPlayer)
 
 bool RpgTrainTrigger::TeachesAffordableSpell(PlayerbotAI* ai, GuidPosition guidP, Player* bot)
 {
-    AiObjectContext* context = ai->GetAiObjectContext();
-
     CreatureInfo const* cInfo = guidP.GetCreatureTemplate();
 
     if (!cInfo)
@@ -350,6 +349,8 @@ bool RpgTrainTrigger::TeachesAffordableSpell(PlayerbotAI* ai, GuidPosition guidP
     Creature* trainer = guidP.GetCreature(bot->GetInstanceId());
     float fDiscountMod = trainer ? bot->GetReputationPriceDiscount(trainer) : 1.0f;
 
+    uint32 const spendable = TrainerSpendableMoney(ai, (TrainerType)cInfo->trainer_type);
+
     TrainerSpellMap trainer_spells;
     if (cSpells)
         trainer_spells.insert(cSpells->spellList.begin(), cSpells->spellList.end());
@@ -363,38 +364,13 @@ bool RpgTrainTrigger::TeachesAffordableSpell(PlayerbotAI* ai, GuidPosition guidP
         if (!tSpell)
             continue;
 
-        TrainerSpellState state = bot->GetTrainerSpellState(tSpell);
-        if (state != TRAINER_SPELL_GREEN)
+        // Same rows, price and budget as the visit (TrainerAction) and the
+        // trip decision: a row the trainer would refuse to teach at this
+        // level is not a reason to walk over.
+        if (!TrainerSpellLearnableNow(bot, tSpell))
             continue;
 
-        uint32 spellId = tSpell->spell;
-        const SpellEntry* const pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
-        if (!pSpellInfo)
-            continue;
-
-        NeedMoneyFor budgetType = NeedMoneyFor::spells;
-
-        switch (cInfo->trainer_type)
-        {
-        case TRAINER_TYPE_CLASS:
-            budgetType = NeedMoneyFor::spells;
-            break;
-        case TRAINER_TYPE_PETS:
-            budgetType = NeedMoneyFor::anything;
-            break;
-        case TRAINER_TYPE_MOUNTS:
-            budgetType = NeedMoneyFor::mount;
-            break;
-        case TRAINER_TYPE_TRADESKILLS:
-            budgetType = NeedMoneyFor::skilltraining;
-            break;
-        default:
-            budgetType = NeedMoneyFor::anything;
-            break;
-        }
-
-        uint32 cost = uint32(floor(tSpell->spellCost * fDiscountMod));
-        if (cost > AI_VALUE2(uint32, "free money for", (uint32)budgetType))
+        if (TrainerSpellPrice(tSpell, fDiscountMod) > spendable)
             continue;
 
         return true;

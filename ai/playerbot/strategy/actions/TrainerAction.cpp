@@ -4,6 +4,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/policy/gear/SpellRankPolicy.h"
+#include "playerbot/strategy/values/TrainerValues.h"
 #include "playerbot/TravelMgr.h"
 #include "../../../../runtime/policy/provision/TradeTrainerPolicy.h"
 
@@ -11,45 +12,49 @@ using namespace ai;
 
 void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, TrainerSpell const* tSpell, std::ostringstream& msg)
 {
-    if (sPlayerbotAIConfig.autoTrainSpells != "free" &&  !ai->HasCheat(BotCheatMask::gold))
-    {
-        if (AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) < cost)
-        {
-            if (cost < visitCheapestUnaffordable)
-                visitCheapestUnaffordable = cost;
-            msg << " - too expensive";
-            return;
-        }
+    bool const paid = !TrainerTrainsForFree(ai);
 
-        bot->ModifyMoney(-int32(cost));
+    if (paid && TrainerSpendableMoney(ai, visitTrainerType) < cost)
+    {
+        if (cost < visitCheapestUnaffordable)
+            visitCheapestUnaffordable = cost;
+        msg << " - too expensive";
+        return;
     }
 
     SpellEntry const* proto = sServerFacade.LookupSpellInfo(tSpell->spell);
     if (!proto)
         return;
 
-    bool learned = false;
+    // Issue #381: the visit loop only lists green rows, but a stale cached row
+    // can still teach above the bot's level; the taught spell's own level
+    // decides (shared rule in ai/playerbot/SpellRankPolicy.h). Collect what the
+    // row will teach before paying: a row that teaches nothing at this level
+    // used to take the money first (a warrior paid 1 s for Elemental Fury on
+    // every visit from level 6 on and learned nothing).
+    std::vector<uint32> taught;
     for (int j = 0; j < 3; ++j)
     {
         if (proto->Effect[j] == SPELL_EFFECT_LEARN_SPELL && proto->EffectTriggerSpell[j])
         {
-            // Issue #381: the visit loop only lists green rows, but a stale
-            // cached row can still teach above the bot's level; the taught
-            // spell's own level decides (shared rule in
-            // ai/playerbot/SpellRankPolicy.h).
             SpellEntry const* taughtInfo = sServerFacade.LookupSpellInfo(proto->EffectTriggerSpell[j]);
             if (taughtInfo && !ai::SpellRankTeachableNow(bot->GetLevel(), taughtInfo->spellLevel,
                     taughtInfo->spellLevel != 0, true))
                 continue;
-            bot->LearnSpell(proto->EffectTriggerSpell[j], false);
-            learned = true;
+            taught.push_back(proto->EffectTriggerSpell[j]);
         }
     }
     // A rank refused by the level gate above leaves nothing learned: casting
     // the teaching spell instead would re-teach the refused rank through the
-    // core, so count the visit without casting.
-    if (!learned)
+    // core, so count the visit without casting (and without charging).
+    if (taught.empty())
         return;
+
+    if (paid)
+        bot->ModifyMoney(-int32(cost));
+
+    for (uint32 taughtSpell : taught)
+        bot->LearnSpell(taughtSpell, false);
 
     ++visitLearned;
 
@@ -84,8 +89,10 @@ bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellA
         uint32 reqLevel = 0;
 
         reqLevel = tSpell->reqLevel;
-        TrainerSpellState state = bot->GetTrainerSpellState(tSpell);
-        if (state != TRAINER_SPELL_GREEN)
+        // Green and teachable at this level: the rule the trip decision and
+        // the rpg trigger use (TrainerSpellLearnableNow), so a row they did
+        // not count is neither listed nor paid for here.
+        if (!TrainerSpellLearnableNow(bot, tSpell))
             continue;
 
         // A visit must never add a 3rd primary profession. The row spell is
@@ -126,7 +133,7 @@ bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellA
         if (!spells.empty() && spells.find(tSpell->spell) == spells.end())
             continue;
 
-        uint32 cost = uint32(floor(tSpell->spellCost *  fDiscountMod));
+        uint32 cost = TrainerSpellPrice(tSpell, fDiscountMod);
         totalCost += cost;
 
         std::ostringstream out;
@@ -204,6 +211,7 @@ bool TrainerAction::Execute(Event& event)
     {
         visitCheapestUnaffordable = UINT32_MAX;
         visitLearned = 0;
+        visitTrainerType = (TrainerType)creature->GetCreatureInfo()->trainer_type;
         bool const hasTrainable = Iterate(requester, creature, &TrainerAction::Learn, spells);
         if (hasTrainable)
             context->ClearValues("item usage"); //Bot might be able to use new items.

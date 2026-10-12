@@ -10,6 +10,33 @@ namespace ai
     typedef std::unordered_map<uint32, spellTrainerMap>          trainableSpellList;
     typedef std::unordered_map<TrainerType, trainableSpellList>         trainableSpellMap;
 
+    // Trainer affordability: one rule for every reader. The trip decision
+    // ("should travel named::trainer *" and the broke-bot sell rules read the
+    // "trainable spells" list), the rpg/nearby trainer trigger
+    // (RpgTrainTrigger::TeachesAffordableSpell) and the visit itself
+    // (TrainerAction) must agree on which rows count and what they cost, or a
+    // bot walks to a trainer that then teaches it nothing (batch-8 audit:
+    // 1,020 TrainerNoMoney on 164 bots in 16 h).
+
+    // A row the visit would actually teach now: the trainer shows it green and
+    // at least one spell it teaches passes the level gate (SpellRankPolicy.h).
+    // Some green rows teach a spell above the bot's level (warrior row 1229
+    // teaches Elemental Fury, level 35, from level 6 on); they are never
+    // learnable, so they must not count as a rank to travel for or pay for.
+    bool TrainerSpellLearnableNow(Player* bot, TrainerSpell const* tSpell);
+
+    // The price the trainer charges for a row: list price times the
+    // reputation discount, rounded down like the core's buy handler.
+    uint32 TrainerSpellPrice(TrainerSpell const* tSpell, float discountMod);
+
+    // True when the visit charges nothing (AutoTrainSpells = free, gold cheat).
+    bool TrainerTrainsForFree(PlayerbotAI* ai);
+
+    // What the bot may spend at a trainer of this type: the "free money for"
+    // budget of that type (class: spells, trade: skilltraining, mount: mount,
+    // anything else: anything), or UINT32_MAX when training is free.
+    uint32 TrainerSpendableMoney(PlayerbotAI* ai, TrainerType type);
+
     class TrainableSpellMapValue : public SingleCalculatedValue<trainableSpellMap*>
     {
     public:
