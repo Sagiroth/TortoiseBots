@@ -1,7 +1,7 @@
 // Standalone regression test for the CC mark hold policy: when the party
 // leaves a Moon / "rti cc" mark alone (target picks, area spells, enemy-
 // healer interrupts, a running Blade Flurry), when its own CC bot spares it with
-// area spells, and which mob the CC chooser keeps.
+// area spells, which mob the CC chooser keeps, and when only CC marks are left.
 //
 // Build and run:
 //   g++ -std=c++17 -Wall -Wextra tools/test_cc_mark_hold_policy.cpp -o /tmp/test_cc_mark_hold_policy
@@ -171,6 +171,19 @@ int main()
     CHECK(CcCastReach(10.0f) == 10.0f);
     CHECK(CcCastReach(5.0f) == 5.0f);
     CHECK(CcCastInReach(5.0f, 5.0f, true));
+
+    // "Only CC marks left" needs a live enemy seen (audit fix 134). The
+    // caller counts every live attacker it examined, its excepted unit
+    // included, and stops at the first unmarked one.
+    CHECK(!CcOnlyMarksLeft(0, false));  // empty or stale attackers list: not "only marks"
+    CHECK(CcOnlyMarksLeft(2, false));   // two CC marks fighting, nothing else
+    CHECK(!CcOnlyMarksLeft(3, true));   // a mix: an unmarked mob is still fighting
+    // Only the excepted unit (the CC bot's own mark) is fighting: it is the
+    // last enemy, so the CC bot does not sheep it and the party kills it.
+    CHECK(CcOnlyMarksLeft(1, false));
+    // An empty list keeps the CC bot's own area spells off its ready mark
+    // and does not reopen area spells.
+    CHECK(CcAreaSpellBlocked(false, false, true, CcOnlyMarksLeft(0, false)));
 
     std::printf("cc mark hold policy: %d checks passed\n", checks);
     return 0;

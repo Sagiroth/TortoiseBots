@@ -43,6 +43,8 @@ namespace ai
         // or a bot's assigned "rti cc" mark), not counting `except`. Judged
         // from the raw "attackers" list, so a stunned, rooted, feared or
         // sheeped unmarked mob still counts as an enemy left to fight.
+        // False when no live enemy is in the list at all; a live `except`
+        // counts as one (CcOnlyMarksLeft in CcMarkHoldPolicy.h).
         bool OnlyCcMarksLeft(Unit* except = nullptr);
 
         // The unit is crowd-controlled right now: a damage-breakable CC

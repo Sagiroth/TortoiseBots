@@ -42,6 +42,20 @@ namespace ai
             state.combatSeconds <= CcMarkHoldSeconds;
     }
 
+    // "Only CC marks are left" (the party then kills the marks last, the CC
+    // bot stops re-CCing its mark, AoE is allowed again) needs at least one
+    // live enemy seen in the group's attackers list, and no unmarked one.
+    // An empty list (stale cache, or nothing fighting yet) is not "only
+    // marks left": before, it was true by default, so a CC bot could refuse
+    // its own mark and the party could open on an unpulled mark. The unit
+    // the caller excepts (the CC bot's mark it is about to CC) counts as
+    // seen but is never the unmarked enemy, so a mark that is the only enemy
+    // left still reads "only marks left": it is killed, not sheeped.
+    inline bool CcOnlyMarksLeft(int liveEnemiesSeen, bool unmarkedEnemySeen)
+    {
+        return liveEnemiesSeen > 0 && !unmarkedEnemySeen;
+    }
+
     // The CC bot's own area spells spare its mark for the whole fight while
     // it would still CC the mark (other enemies left), not only in the hold
     // window: a Flamestrike patch or Blizzard on its own mark breaks the

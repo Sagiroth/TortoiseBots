@@ -86,19 +86,28 @@ bool FindNonCcTargetStrategy::OnlyCcMarksLeft(Unit* except)
 {
     Player* bot = ai->GetBot();
     std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
+    // Live enemies seen, `except` included: an empty list is not "only marks
+    // left" (CcOnlyMarksLeft).
+    int seen = 0;
     for (ObjectGuid const& guid : attackers)
     {
         Unit* unit = ai->GetUnit(guid);
-        if (!unit || unit == except || !sServerFacade.IsAlive(unit))
+        if (!unit || !sServerFacade.IsAlive(unit))
             continue;
+        if (unit == except)
+        {
+            ++seen;
+            continue;
+        }
         // Same filter "possible attack targets" applies before its CC strip
         // (ignoreCC = true): crowd-controlled mobs stay in.
         if (!PossibleAttackTargetsValue::IsValid(unit, bot, sPlayerbotAIConfig.sightDistance, true, false))
             continue;
+        ++seen;
         if (!IsCcMark(unit))
-            return false;
+            return CcOnlyMarksLeft(seen, true);
     }
-    return true;
+    return CcOnlyMarksLeft(seen, false);
 }
 
 bool CcGuard::OnlyMarksLeftCached()
