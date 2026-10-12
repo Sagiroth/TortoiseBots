@@ -37,8 +37,18 @@ public:
     bool IsActive() override { return ai->HasAura(56508, bot); }
 };
 
-// Call of Nightmare (46079) add wave: Suppressor 61212 / Scalebane 60746 /
-// Dragonkin 60743 / Wyrmkin 60745 in aggro range means switch to adds.
+// Call of Nightmare (46079) major adds (core boss_solnius.cpp
+// majorCreatures): Dragonkin 60743 / Wyrmkin 60745 / Scalebane 60746 /
+// Suppressor 61212. Killing them closes the portals.
+bool IsSolniusAdd(Unit* unit);
+
+// Nearest live add from the bot's cached "attackers" list (the adds
+// AttackStart a raid member on spawn, so they are always there). No grid
+// scan: this runs per bot every trigger tick.
+Unit* FindSolniusAdd(PlayerbotAI* ai);
+
+// DPS bots not already on an add switch to one; tanks and healers keep
+// their jobs.
 class SolniusAddsTrigger : public Trigger
 {
 public:

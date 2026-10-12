@@ -524,6 +524,7 @@ namespace ai
             creators["move away from void zone"] = [](PlayerbotAI* ai) { return new FourHorsemanMoveAwayFromVoidZoneAction(ai); };
             creators["enable solnius fight strategy"] = [](PlayerbotAI* ai) { return new SolniusEnableFightStrategyAction(ai); };
             creators["disable solnius fight strategy"] = [](PlayerbotAI* ai) { return new SolniusDisableFightStrategyAction(ai); };
+            creators["solnius attack add"] = [](PlayerbotAI* ai) { return new SolniusAttackAddAction(ai); };
             creators["enable araxxna fight strategy"] = [](PlayerbotAI* ai) { return new AraxxnaEnableFightStrategyAction(ai); };
             creators["disable araxxna fight strategy"] = [](PlayerbotAI* ai) { return new AraxxnaDisableFightStrategyAction(ai); };
             creators["enable moroes fight strategy"] = [](PlayerbotAI* ai) { return new MoroesEnableFightStrategyAction(ai); };
