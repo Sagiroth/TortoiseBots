@@ -8830,3 +8830,31 @@ its own cache); no extra grid search or path per creature.
 Local validation: `bash tools/verify_all.sh` (incl. the new policy test);
 `git diff --check`. Not compiled against the core and not tested in game
 yet.
+
+### Review fixes (2026-10-12, REVIEW-127 CHANGES REQUIRED)
+
+- I1 (fixed): the vertical gate is now tested where the route leg actually
+  enters the aggro zone (segment inside the sphere AND inside the height
+  band), so a ramp or stair leg that climbs through the pack's level holds.
+  The band is `CREATURE_Z_ATTACK_RANGE` + the creature's + the bot's bounding
+  radius, matching the core's `GetDistanceZ`. Ramp cases added to the test.
+- M1 (fixed): a core FOLLOW left running when `MoveTo2` launched nothing is
+  stopped, so it cannot carry the bot past the margin.
+- M2 (fixed): gate hysteresis, on beyond 30 yd and off within 25 yd.
+- M3 (kept, comment fixed): creatures already fighting someone else are not
+  held for; with the bot and leader out of combat that fight belongs to a
+  pet, escort or other member, and joining it is acceptable.
+- M4 (fixed): gate closed while the leader is on a transport.
+- M5 (fixed): docs and template say the bot whispers its master.
+- M6 (fixed): a bot standing at a hold point steps aside between the 1 s
+  re-checks so the rest triggers (eat, drink) and loot can run.
+- Performance: a bot standing at its hold point reads the cached creature
+  list lazily; it refreshes only while walking.
+- M7 and ScriptedAI (no height gate in core `ScriptedAI::MoveInLineOfSight`):
+  listed as known limits in the PR.
+
+Local validation: `bash tools/verify_all.sh` (incl. the extended policy
+test); `git diff --check`; `g++ -fsyntax-only` of the touched module files
+against `~/tortoise-wow` headers with the module PCH (only pre-existing
+host-API mismatches reported, none in changed lines). Not built with the
+dev loop and not tested in game.

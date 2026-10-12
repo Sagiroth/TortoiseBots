@@ -321,6 +321,10 @@ namespace ai
     // that stopped the route and where the route now ends.
     struct PackHoldResult
     {
+        // In: the bot stands at its hold point, so reuse the cached creature
+        // list instead of refreshing it (only walking can bring new packs in).
+        bool reuseTargets = false;
+        // Out:
         bool hold = false;
         ObjectGuid pack;
         WorldPosition point;

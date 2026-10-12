@@ -99,8 +99,11 @@ bool FollowAction::isUseful()
 
     // The core follow never re-checks its route: while the hold-before-pack walk
     // applies, keep the action live so it can take over from a running core follow.
+    // Standing at a hold point, step aside between route re-checks so the normal
+    // rest triggers (eat, drink) and loot can run while the bot waits.
     if (UseHoldBeforePacks(followTarget))
-        return true;
+        return !holdStanding ||
+            WorldTimer::getMSTimeDiff(holdStandingCheckMs, WorldTimer::getMSTime()) >= kDungeonFollowHoldRecheckMs;
 
     if (followTarget && bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE &&
         sServerFacade.GetChaseTarget(bot) &&
@@ -117,15 +120,19 @@ bool FollowAction::UseHoldBeforePacks(Unit* followTarget)
     if (!sPlayerbotAIConfig.dungeonFollowHoldBeforePacks)
         return false;
 
-    if (!followTarget || followTarget == bot || !followTarget->IsPlayer())
-        return false;
+    bool open = followTarget && followTarget != bot && followTarget->IsPlayer() &&
+        bot->IsAlive() && followTarget->IsAlive() && followTarget->GetMapId() == bot->GetMapId() &&
+        bot->IsInWorld() && !bot->IsBeingTeleported() && !bot->IsTaxiFlying() && !bot->GetTransport() &&
+        !followTarget->GetTransport();
 
-    if (!bot->IsAlive() || !followTarget->IsAlive() || followTarget->GetMapId() != bot->GetMapId() ||
-        !bot->IsInWorld() || bot->IsBeingTeleported() || bot->IsTaxiFlying() || bot->GetTransport())
-        return false;
+    // On beyond 30 yd, kept on until the leader is within 25 yd.
+    open = open && UseDungeonFollowHold(true, bot->GetMap()->IsDungeon(), bot->IsInCombat(),
+        followTarget->IsInCombat(), bot->GetDistance(followTarget), holdGateOpen);
 
-    return UseDungeonFollowHold(true, bot->GetMap()->IsDungeon(), bot->IsInCombat(), followTarget->IsInCombat(),
-        bot->GetDistance(followTarget));
+    holdGateOpen = open;
+    if (!open)
+        holdStanding = false;
+    return open;
 }
 
 // Inside a dungeon, out of combat, with the leader far ahead: walk the route to the
@@ -149,23 +156,42 @@ bool FollowAction::FollowHoldingBeforePacks(Unit* followTarget, bool& moved)
     holdFollowActive = true;
 
     PackHoldResult packHold;
+    packHold.reuseTargets = holdStanding;
     moved = MoveTo2(WorldPosition(followTarget), false, false, false, false, &packHold);
 
-    // Re-check the route at least once a second: a pack that only comes into
-    // sight mid-walk must still stop the bot before it is in aggro range.
-    if (!moved || GetDuration() > kDungeonFollowHoldRecheckMs)
-        SetDuration(kDungeonFollowHoldRecheckMs);
+    // MoveTo2 can return without launching a move (path collapsed, no route, a
+    // clip that left nothing). A core follow started before the gate opened would
+    // then keep walking past the margin: stop it, the module walk owns the bot now.
+    if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
+        ai->StopMoving();
 
     if (!packHold.hold)
     {
+        holdStanding = false;
         holdToldPack = ObjectGuid();
+        // Re-check the route at least once a second: a pack that only comes into
+        // sight mid-walk must still stop the bot before it is in aggro range.
+        if (!moved || GetDuration() > kDungeonFollowHoldRecheckMs)
+            SetDuration(kDungeonFollowHoldRecheckMs);
         return true;
     }
 
-    // Already at the hold point (nothing left to walk): stand still.
-    if (!moved)
+    if (moved)
     {
-        ai->StopMoving();
+        // Walking to the hold point.
+        holdStanding = false;
+        if (GetDuration() > kDungeonFollowHoldRecheckMs)
+            SetDuration(kDungeonFollowHoldRecheckMs);
+    }
+    else
+    {
+        // At the hold point (nothing left to walk): stand still and let the
+        // rest triggers have the bot until the next re-check (see isUseful).
+        if (sServerFacade.isMoving(bot))
+            ai->StopMoving();
+        holdStanding = true;
+        holdStandingCheckMs = WorldTimer::getMSTime();
+        SetDuration(sPlayerbotAIConfig.reactDelay);
         moved = true;
     }
 
@@ -174,8 +200,8 @@ bool FollowAction::FollowHoldingBeforePacks(Unit* followTarget, bool& moved)
     if (pack && packHold.pack != holdToldPack &&
         (!holdToldAt || now - holdToldAt >= (time_t)kDungeonFollowHoldTellCooldownSec))
     {
-        // Whisper, not party chat: only the leader can act on it (pull the pack
-        // or come back), and four bots saying it in party would be noise.
+        // Whisper the master, not party chat: only they can act on it (pull the
+        // pack or come back), and four bots saying it in party would be noise.
         if (Player* master = GetMaster())
         {
             std::ostringstream out;

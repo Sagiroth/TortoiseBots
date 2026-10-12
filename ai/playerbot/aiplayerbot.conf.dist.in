@@ -567,9 +567,10 @@ AiPlayerbot.GenerateItemCaches = 1
 # Inside a dungeon or raid, with nobody in combat, a bot whose leader is more
 # than 30 yd ahead walks the route to the leader itself and stops just outside
 # the aggro range of the first unpulled hostile creature on that route, instead
-# of walking past or through it. It whispers the leader once ("pack in the
-# way") and walks on when the pack is dead or gone, the route no longer passes
-# it, or the leader comes back within 30 yd. Off by default.
+# of walking past or through it. It whispers its master once per pack ("pack in
+# the way") and may eat or drink while it waits. It walks on when the pack is
+# dead or gone or the route no longer passes it; when the leader comes back
+# within 25 yd the normal follow takes over. Off by default.
 # 0 - core follow, no pack check (Default)
 # 1 - hold before packs in dungeons and raids
 AiPlayerbot.DungeonFollowHoldBeforePacks = 0
