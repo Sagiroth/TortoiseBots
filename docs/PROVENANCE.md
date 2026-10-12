@@ -8791,7 +8791,7 @@ first unpulled hostile creature on it (alive, not in combat, no victim,
 `CanInitiateAttack`), read from the cached `possible targets` list. The
 bot holds there, whispers its master once per pack (30 s floor), and walks
 on when the pack is gone, the route clears or the leader comes back within
-30 yd. The existing melee-reach clip is unchanged and still runs first.
+25 yd (the hold re-arms beyond 30 yd). The existing melee-reach clip is unchanged and still runs first.
 
 Source repository: none — this goes **beyond mod-playerbots**. Checked
 `mod-playerbots` @ `79bd4281` (`src/Ai/Base/Actions/MovementActions.cpp`
