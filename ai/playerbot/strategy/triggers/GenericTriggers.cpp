@@ -35,6 +35,7 @@
 #include "playerbot/AvoidAoePolicy.h"
 #include "../../../../runtime/CcOrderFamily.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
+#include "playerbot/strategy/values/AttackersValue.h"
 
 #include <regex>
 
@@ -963,6 +964,40 @@ bool AoeTrigger::IsActive()
             Unit* member = ai->GetUnit(*j);
             if (member && sServerFacade.IsDistanceLessOrEqualThan(
                 sServerFacade.getDistance2d(unit, member), sPlayerbotAIConfig.aoeRadius))
+                return false;
+        }
+    }
+
+    // Idle-pack interlock: the cluster above holds only enemies already
+    // fighting the group ("attackers"), but the blast hits everything that
+    // stands in it. An idle hostile beside the cluster (the rest of a camp
+    // next to the pulled mob) would be pulled onto the caster, so hold the
+    // AoE until it joins the fight. Reads the bot's own unvalidated scan with
+    // the qualifier AttackersValue fills, so no extra grid visit.
+    std::set<ObjectGuid> fighting(attackers.begin(), attackers.end());
+    const std::vector<std::string> scanQualifiers = { std::to_string((int32)AttackersValue::GetRange()), std::to_string(true) };
+    std::list<ObjectGuid> nearby = AI_VALUE2(std::list<ObjectGuid>, "possible targets", Qualified::MultiQualify(scanQualifiers, ":"));
+    const float splash = sPlayerbotAIConfig.aoeRadius * 2.0f;
+    for (const ObjectGuid& guid : nearby)
+    {
+        if (fighting.count(guid))
+            continue;
+
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || !sServerFacade.IsAlive(unit) || sServerFacade.IsInCombat(unit))
+            continue;
+
+        if (unit->GetCreatureType() == CREATURE_TYPE_CRITTER ||
+            unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_ATTACKABLE_1) ||
+            unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNTARGETABLE) ||
+            unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNINTERACTIBLE))
+            continue;
+
+        for (const ObjectGuid& memberGuid : aoeEnemies)
+        {
+            Unit* member = ai->GetUnit(memberGuid);
+            if (member && sServerFacade.IsDistanceLessOrEqualThan(
+                sServerFacade.getDistance2d(unit, member), splash))
                 return false;
         }
     }
