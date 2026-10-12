@@ -8,6 +8,7 @@
 #include "Movement/WaypointMovementGenerator.h"
 #include "playerbot/strategy/values/HazardsValue.h"
 #include "playerbot/strategy/values/LastMovementValue.h"
+#include "playerbot/LedgeStepDownPolicy.h"
 
 namespace ai
 {
@@ -75,6 +76,7 @@ namespace ai
         // coordinates, a navmesh path, line of sight to visibleFromPosition and
         // no hazard. Shared by point moves that must not end inside geometry.
         bool IsValidPosition(const WorldPosition& position, const WorldPosition& visibleFromPosition);
+        bool IsHazardNearPosition(const WorldPosition& position, HazardPosition* outHazard = nullptr);
         bool Flee(Unit *target);
         // Pool-bot flee: one checked point step of `distance` away from
         // target (fanned to the sides), false when no spot is usable.
@@ -82,6 +84,14 @@ namespace ai
         // Flee bookkeeping after a dispatched flee move (loop count for
         // FleeMultiplier, lastFlee, failed-heading observation).
         void NoteFleeDispatch(Unit* target, float heading, float startDistance, uint32 nowMs);
+        // Inside a dungeon, a bot stranded on a navmesh island (a raised dais
+        // or ledge the mesh does not link to the floor) steps off the edge
+        // towards `target` the way a player would: a two-leg move without the
+        // navmesh (flat over the edge, then down) to walkable floor 2-8 yd
+        // lower, clear of lava, slime and hazards, with a complete path to the
+        // target. Paced per action (LedgeStepDownClock); true only when that
+        // move was launched. See LedgeStepDownPolicy.h.
+        bool StepDownOffLedge(Unit* target);
         void ClearIdleState();
         void UpdateMovementState();
 
@@ -96,8 +106,9 @@ namespace ai
         bool ShouldReactionInterruptMovement() const override { return true; }
 
     private:
-        bool IsHazardNearPosition(const WorldPosition& position, HazardPosition* outHazard = nullptr);
         bool GeneratePathAvoidingHazards(std::vector<WorldPosition>& movePath);
+
+        LedgeStepDownClock ledgeStepDown;
     };
 
     class FleeAction : public MovementAction

@@ -12,6 +12,7 @@
 #include "GenericSpellActions.h"
 #include "playerbot/PlayerbotFactory.h"
 #include "playerbot/PullFiringPolicy.h"
+#include "playerbot/RangedApproachPolicy.h"
 #include "AI/CreatureAI.h"
 #include <ctime>
 
@@ -331,6 +332,14 @@ namespace ai
                     ai->TellPlayerNoFacing(GetMaster(), out);
                 }
 
+                // Inside a dungeon a bot on a navmesh island (a raised dais the
+                // mesh does not link to the floor) has only a partial path that
+                // ends at its feet: the chase stands still and the walk below
+                // shuffles a yard. It steps down off the edge instead, for every
+                // reach (melee, spell, heal, pull); see StepDownOffLedge.
+                if (StepDownOffLedge(target))
+                    return true;
+
                 if (inLos && isFriend && (range <= ai->GetRange("follow")))
                 {
                     return MoveNear(target, chaseDist);
@@ -344,13 +353,104 @@ namespace ai
             return false;
         }
 
-        // How a reach action closes the distance to a hostile target. The
-        // default is the mature core chase; an explicit ranged pull overrides
-        // it with a point move to a firing position (see ReachPullAction and
-        // issue #389).
+        // How a reach action closes the distance to its target. The default is
+        // the mature core chase, except for a ranged reach in sight inside a
+        // dungeon, which walks the navmesh path instead (MoveIntoRangeAlongPath);
+        // an explicit ranged pull overrides it with a point move to
+        // a firing position (see ReachPullAction and issue #389).
         virtual bool MoveIntoRange(Unit* target, float distance)
         {
+            if (MoveIntoRangeAlongPath(target, distance))
+                return true;
+
             return ChaseTo(target, distance, bot->GetAngle(target));
+        }
+
+        // Inside a dungeon the core's chase generator refuses a destination
+        // that is not melee-reachable from the target and stands still while
+        // the target is in sight (TargetedMovementGenerator), so a healer or
+        // caster out of range but in sight of its target never closed the gap:
+        // in Uldaman (2026-10-12) a mage stood 20 s at 35 yd on "reach spell",
+        // and a priest stayed at the entrance 38 yd from the fight on "reach
+        // party member to heal" (the same core rule as the pull in #389). Port of mod-playerbots ReachCombatTo: take the navmesh
+        // path to the target (complete or partial), walk it back from the
+        // target end to the first point within `distance` that still sees the
+        // target (a partial path never parks the bot out of sight), and
+        // point-move there. False leaves the move to the chase:
+        // outside dungeons, out of sight, within melee distance, no usable path
+        // or point, a hazard at the point, or a move that does not start.
+        bool MoveIntoRangeAlongPath(Unit* target, float distance)
+        {
+            Map* map = bot->GetMap();
+            if (!map || !target || bot->GetTransport())
+                return false;
+
+            // Cheap gates first: the open world never pays the sight ray below,
+            // and a bot already walking its approach never pays a second path
+            // search. MoveTo relaunches the spline every call, so without this
+            // the reach re-pathed and restarted the walk on every tick.
+            if (!UseRangedApproach(map->IsDungeon(), distance, ATTACK_DISTANCE))
+                return false;
+
+            if (!bot->IsStopped() && !bot->movespline->Finalized())
+                return true;
+
+            if (!bot->IsWithinLOSInMap(target, true))
+                return false;
+
+            if (!ai->CanMove() || !ai->IsSafe(target))
+                return false;
+
+            WorldPosition const botPosition(bot);
+            WorldPosition const targetPosition(target);
+
+            // getPathStepFrom keeps PATHFIND_NORMAL and PATHFIND_INCOMPLETE and
+            // drops shortcut / no-path results, so the point is always on the
+            // navmesh the bot can walk.
+            std::vector<WorldPosition> const path = targetPosition.getPathStepFrom(botPosition, bot);
+            if (path.size() < 2)
+                return false;
+
+            std::vector<ApproachPoint> points;
+            points.reserve(path.size() + 1);
+            ApproachPoint front;
+            front.x = botPosition.getX();
+            front.y = botPosition.getY();
+            front.z = botPosition.getZ();
+            points.push_back(front);
+            for (WorldPosition const& step : path)
+            {
+                ApproachPoint point;
+                point.x = step.getX();
+                point.y = step.getY();
+                point.z = step.getZ();
+                points.push_back(point);
+            }
+
+            ApproachPoint goal;
+            goal.x = targetPosition.getX();
+            goal.y = targetPosition.getY();
+            goal.z = targetPosition.getZ();
+
+            // The same heights as the core's IsWithinLOSInMap: each side at its
+            // own collision height (Unit::GetLosCheckPosition).
+            float const botHeight = bot->GetCollisionHeight();
+            float const targetHeight = target->GetCollisionHeight();
+            auto const seesTarget = [map, &goal, botHeight, targetHeight](ApproachPoint const& point)
+            {
+                return map->isInLineOfSight(point.x, point.y, point.z + botHeight,
+                    goal.x, goal.y, goal.z + targetHeight, true);
+            };
+
+            RangedApproachChoice const choice = SelectRangedApproachPoint(points, goal, distance, seesTarget);
+            if (!choice.valid)
+                return false;
+
+            WorldPosition const destination(bot->GetMapId(), choice.point.x, choice.point.y, choice.point.z);
+            if (IsHazardNearPosition(destination))
+                return false;
+
+            return MoveTo(destination.getMapId(), destination.getX(), destination.getY(), destination.getZ());
         }
 
         // True for reach actions whose target is always meant to be attacked

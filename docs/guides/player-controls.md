@@ -36,6 +36,9 @@ Refused commands answer with a short reason in chat; addon-originated requests a
 
 Hazard-avoiding chase movement keeps an idle movement generator while its detour spline runs, so the next movement update has a valid default.
 
+Inside a dungeon or raid, a ranged reach (`reach spell`, `reach party member to heal` / `to resurrect` / `for totem`) whose target is in sight walks the navmesh path towards the target and stops at the first point within casting distance that still sees it. The core's chase refuses a non-melee destination inside instances, so those bots used to stand still out of range. Melee reach and the open world keep the chase.
+
+Inside a dungeon or raid, a bot stuck on a cut-off platform (a raised dais the navmesh does not link to the floor) steps down off the edge: when its reach or follow path is partial and ends at its feet, and no mob is hitting it in melee, it looks for floor 2-8 yd lower and about 8 yd towards its target that is walkable navmesh (not lava or slime, no hazard), is reachable over a clear edge, and has a complete path to the target. It then moves flat out over the edge and down, without pathfinding. Each reach and follow action paces its own looks: after 2 s standing still, at most every 3 s; three looks that find no floor, or three steps for the same target, stop it for 30 s. No setting; never outside instances.
 
 The modern control plane operates on **player intent**. Instead of micromanaging each bot, you issue high-level tactical commands; the server resolves target scope and selects appropriate bot executors:
 

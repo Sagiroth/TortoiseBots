@@ -103,6 +103,16 @@ If your group wipes, follow this checklist to recover quickly:
 3. Ghost bots will path organically back to the instance portal and zone inside.
 4. If a bot gets stuck outside the dungeon entrance, simply zone in yourself and type `.bot summon <Name>` to gather them safely at the instance threshold.
 
+### Healers and Casters Closing Range
+* Inside an instance, a healer or caster that sees its target but stands out of range walks the navmesh path towards it and stops at the first point within casting distance that still has line of sight. It used the core's chase before, which inside dungeons refuses any destination outside melee reach, so the healer stood still at the entrance while the tank fought 38 yd away.
+* When the navmesh only reaches part of the way, the bot walks to the closest point on the path that still sees its target. If the path ends at its feet because it stands on a cut-off platform, see *Stepping Down Off a Dais* below.
+
+### Stepping Down Off a Dais
+* Dungeon navmeshes have islands: raised daises and ledges that are not linked to the floor around them (Uldaman's Hall of the Keepers has 17, about 4 yd high). A bot that lands on one, usually after a summon or a teleport, used to stand there for the whole fight, because every path it was given ended at its own feet.
+* Inside dungeons and raids only, such a bot now steps off the edge like a player: it looks for floor about 8 yd (or 5 yd) towards its target and 2-8 yd lower. The spot must be walkable floor on the navmesh (not lava, slime or a hole), free of ground effects, reachable over the edge without a railing or wall in the way, and connected to the target by the navmesh. The bot runs flat out over the edge and drops down from there, so it never cuts through the platform. This works for every reach (melee, spells, heals, the pull) and for following you out of combat.
+* It does not step down while a mob is hitting it in melee. It waits 2 s of standing still before it looks and looks at most every 3 s (each reach and follow action keeps its own pace). After three looks that find no floor, or three steps for the same target (something keeps putting it back up), it leaves that target alone for 30 s. There is no setting; it is always on in instances and never runs in the open world.
+* It never climbs up: a bot below a target that stands on a dais does not move. If no floor point qualifies (a sheer drop over 8 yd, a wall in the way), use `.bot summon <Name>` out of combat.
+
 ### Elevators, Boats & Ledges
 * In complex vertical dungeons (Gnomeregan, Sunken Temple, Blackrock Spire), bots can occasionally desync when riding elevators or dropping off ledges.
 * Bots never jump inside dungeons or raids: the `chase jump`, `follow jump` and `rpg jump` strategies do nothing there (an explicit `jump` command from you still works) (a jump could land a bot on a raised platform with no way back down, e.g. Uldaman Hall of the Keepers). Open world is unchanged; battleground scripted routes are unaffected.
