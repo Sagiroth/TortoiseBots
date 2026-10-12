@@ -170,8 +170,18 @@ bool FollowAction::RescueStalledDungeonFollow(Unit* followTarget, bool& moved)
         return false;
 
     // MoveTo2 walks the navmesh route, complete or partial, and clears the
-    // stalled core follow when it launches.
-    moved = MoveTo2(WorldPosition(followTarget));
+    // stalled core follow when it launches. The destination is the leader's
+    // follow spot, not the leader's feet: MoveTo2 reuses the cached route
+    // unless the destination moved 10% of the way, so feet would be re-walked
+    // every 2 s for a moving leader; the spot only moves with it.
+    WorldPosition destination(followTarget);
+    if (Formation* formation = AI_VALUE(Formation*, "formation"))
+    {
+        WorldLocation loc = formation->GetLocation();
+        if (!Formation::IsNullLocation(loc) && loc.mapId != -1)
+            destination = WorldPosition(loc);
+    }
+    moved = MoveTo2(destination);
     followStallWatch.Walked(nowMs, moved);
     if (moved)
         ai->TellDebug(GetMaster(), "Core follow stood still in a dungeon - walking the path to you", "debug move");
@@ -224,7 +234,17 @@ bool FollowAction::FollowHoldingBeforePacks(Unit* followTarget, bool& moved)
 
     PackHoldResult packHold;
     packHold.reuseTargets = holdStanding;
-    moved = MoveTo2(WorldPosition(followTarget), false, false, false, false, &packHold);
+    // The destination is the leader's follow spot, not the leader's feet:
+    // MoveTo2 reuses the cached route unless the destination moved 10% of
+    // the way, so feet would re-plan every second for a moving leader.
+    WorldPosition destination(followTarget);
+    if (Formation* formation = AI_VALUE(Formation*, "formation"))
+    {
+        WorldLocation loc = formation->GetLocation();
+        if (!Formation::IsNullLocation(loc) && loc.mapId != -1)
+            destination = WorldPosition(loc);
+    }
+    moved = MoveTo2(destination, false, false, false, false, &packHold);
 
     // MoveTo2 can return without launching a move (path collapsed, no route, a
     // clip that left nothing). A core follow started before the gate opened would
