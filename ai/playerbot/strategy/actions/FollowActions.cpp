@@ -7,6 +7,7 @@
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/LootObjectStack.h"
+#include "playerbot/DungeonFollowHoldPolicy.h"
 
 using namespace ai;
 
@@ -24,6 +25,9 @@ bool FollowAction::Execute(Event& event)
         !bot->IsMounted() && !bot->IsInCombat() &&
         sServerFacade.IsDistanceGreaterThan(sServerFacade.getDistance2d(bot, followTarget), sPlayerbotAIConfig.reactDistance))
         ai->DoSpecificAction("check mount state", Event(), true);
+
+    if (FollowHoldingBeforePacks(followTarget, moved))
+        return moved;
 
     if (ai->IsSafe(followTarget))
     {
@@ -93,11 +97,93 @@ bool FollowAction::isUseful()
         return true;
     }
 
+    // The core follow never re-checks its route: while the hold-before-pack walk
+    // applies, keep the action live so it can take over from a running core follow.
+    if (UseHoldBeforePacks(followTarget))
+        return true;
+
     if (followTarget && bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE &&
         sServerFacade.GetChaseTarget(bot) &&
         sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid())
     {
         return false;
+    }
+
+    return true;
+}
+
+bool FollowAction::UseHoldBeforePacks(Unit* followTarget)
+{
+    if (!sPlayerbotAIConfig.dungeonFollowHoldBeforePacks)
+        return false;
+
+    if (!followTarget || followTarget == bot || !followTarget->IsPlayer())
+        return false;
+
+    if (!bot->IsAlive() || !followTarget->IsAlive() || followTarget->GetMapId() != bot->GetMapId() ||
+        !bot->IsInWorld() || bot->IsBeingTeleported() || bot->IsTaxiFlying() || bot->GetTransport())
+        return false;
+
+    return UseDungeonFollowHold(true, bot->GetMap()->IsDungeon(), bot->IsInCombat(), followTarget->IsInCombat(),
+        bot->GetDistance(followTarget));
+}
+
+// Inside a dungeon, out of combat, with the leader far ahead: walk the route to the
+// leader with the module's MoveTo (its route clip sees packs) instead of the core
+// follow (which does not), and hold just outside the aggro range of the first
+// unpulled pack on that route. Returns false when the normal follow should run.
+bool FollowAction::FollowHoldingBeforePacks(Unit* followTarget, bool& moved)
+{
+    if (!UseHoldBeforePacks(followTarget))
+    {
+        if (holdFollowActive)
+        {
+            // Back to the core follow: drop the short re-check wait set below.
+            holdFollowActive = false;
+            holdToldPack = ObjectGuid();
+            SetDuration(sPlayerbotAIConfig.reactDelay);
+        }
+        return false;
+    }
+
+    holdFollowActive = true;
+
+    PackHoldResult packHold;
+    moved = MoveTo2(WorldPosition(followTarget), false, false, false, false, &packHold);
+
+    // Re-check the route at least once a second: a pack that only comes into
+    // sight mid-walk must still stop the bot before it is in aggro range.
+    if (!moved || GetDuration() > kDungeonFollowHoldRecheckMs)
+        SetDuration(kDungeonFollowHoldRecheckMs);
+
+    if (!packHold.hold)
+    {
+        holdToldPack = ObjectGuid();
+        return true;
+    }
+
+    // Already at the hold point (nothing left to walk): stand still.
+    if (!moved)
+    {
+        ai->StopMoving();
+        moved = true;
+    }
+
+    Unit* pack = ai->GetUnit(packHold.pack);
+    time_t const now = time(nullptr);
+    if (pack && packHold.pack != holdToldPack &&
+        (!holdToldAt || now - holdToldAt >= (time_t)kDungeonFollowHoldTellCooldownSec))
+    {
+        // Whisper, not party chat: only the leader can act on it (pull the pack
+        // or come back), and four bots saying it in party would be noise.
+        if (Player* master = GetMaster())
+        {
+            std::ostringstream out;
+            out << "Pack in the way: " << pack->GetName() << ". Waiting here - pull it or come back for me.";
+            ai->TellPlayerNoFacing(master, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
+        }
+        holdToldPack = packHold.pack;
+        holdToldAt = now;
     }
 
     return true;
