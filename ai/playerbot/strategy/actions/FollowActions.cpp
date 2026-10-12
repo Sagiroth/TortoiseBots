@@ -8,6 +8,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/DungeonFollowHoldPolicy.h"
+#include "playerbot/DungeonFollowStallPolicy.h"
 
 using namespace ai;
 
@@ -27,6 +28,9 @@ bool FollowAction::Execute(Event& event)
         ai->DoSpecificAction("check mount state", Event(), true);
 
     if (FollowHoldingBeforePacks(followTarget, moved))
+        return moved;
+
+    if (RescueStalledDungeonFollow(followTarget, moved))
         return moved;
 
     if (ai->IsSafe(followTarget))
@@ -106,9 +110,69 @@ bool FollowAction::isUseful()
         sServerFacade.GetChaseTarget(bot) &&
         sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid())
     {
+        // A running core follow is trusted, except inside a dungeon where it
+        // can stand still for good (partial path): then the rescue takes over.
+        return ObserveDungeonFollowStall(followTarget);
+    }
+
+    return true;
+}
+
+// Feeds the dungeon stall watch; true while the rescue is on. Cheap: member
+// reads and one distance, and only inside a dungeon out of combat.
+bool FollowAction::ObserveDungeonFollowStall(Unit* followTarget)
+{
+    Map* map = bot->GetMap();
+    bool const inCombat = bot->IsInCombat() || ai->IsStateActive(BotState::BOT_STATE_COMBAT);
+    if (!followTarget || followTarget == bot || !map || !followTarget->IsPlayer() ||
+        !UseDungeonFollowWatch(map->IsDungeon(), inCombat) ||
+        !bot->IsAlive() || !followTarget->IsAlive() || !ai->IsSafe(followTarget) ||
+        bot->GetTransport() || followTarget->GetTransport() || bot->IsTaxiFlying())
+    {
+        followStallWatch.Reset();
         return false;
     }
 
+    bool const held = bot->IsRooted() || bot->HasUnitState(UNIT_STAT_NO_FREE_MOVE) ||
+        bot->GetStandState() != UNIT_STAND_STATE_STAND || bot->IsNonMeleeSpellCasted(true, false, true);
+
+    return followStallWatch.Observe(WorldTimer::getMSTime(), bot->GetPositionX(), bot->GetPositionY(),
+        bot->GetDistance(followTarget), ai->GetRange("follow"), held);
+}
+
+// Inside a dungeon the core follow can stand still for good: with a partial
+// path (a navmesh island, a raised step the mesh does not link to the floor)
+// it stops while the leader is in sight and otherwise walks to the end of the
+// partial path, which is where the bot already stands. Uldaman 2026-10-12:
+// four bots stood 50 s at the edge of such an island, "moving" with no motion,
+// 34-36 yd from the leader. Once the watch has seen that (DungeonFollowStallPolicy.h),
+// step down off the ledge if that is the problem, else walk the navmesh path
+// to the leader with the module's MoveTo, at most once per two seconds.
+// Returns false when the normal follow should run.
+bool FollowAction::RescueStalledDungeonFollow(Unit* followTarget, bool& moved)
+{
+    if (!ObserveDungeonFollowStall(followTarget))
+        return false;
+
+    // Own clock and throttle (LedgeStepDownPolicy.h): only fires on an island edge.
+    if (StepDownOffLedge(followTarget))
+    {
+        moved = true;
+        return true;
+    }
+
+    // Between walks the normal follow runs (it does not re-issue a core
+    // follow that is already running).
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (!followStallWatch.WalkDue(nowMs))
+        return false;
+
+    // MoveTo2 walks the navmesh route, complete or partial, and clears the
+    // stalled core follow when it launches.
+    moved = MoveTo2(WorldPosition(followTarget));
+    followStallWatch.Walked(nowMs, moved);
+    if (moved)
+        ai->TellDebug(GetMaster(), "Core follow stood still in a dungeon - walking the path to you", "debug move");
     return true;
 }
 

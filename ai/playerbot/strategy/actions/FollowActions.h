@@ -3,6 +3,7 @@
 
 #include "playerbot/strategy/Action.h"
 #include "MovementActions.h"
+#include "playerbot/DungeonFollowStallPolicy.h"
 
 namespace ai
 {
@@ -17,6 +18,11 @@ namespace ai
         // Dungeon "hold before a pack" follow (AiPlayerbot.DungeonFollowHoldBeforePacks).
         bool UseHoldBeforePacks(Unit* followTarget);
         bool FollowHoldingBeforePacks(Unit* followTarget, bool& moved);
+
+        // Dungeon rescue of a core follow that stands still (DungeonFollowStallPolicy.h).
+        bool ObserveDungeonFollowStall(Unit* followTarget);
+        bool RescueStalledDungeonFollow(Unit* followTarget, bool& moved);
+        DungeonFollowStallWatch followStallWatch;
 
         bool holdGateOpen = false;      // gate state, for the 30/25 yd hysteresis
         bool holdFollowActive = false;  // Execute ran the walk (reset the wait on leaving)
