@@ -75,7 +75,7 @@ void RogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // before the next swing. Above Kick so it is never queued behind it.
     triggers.push_back(new TriggerNode(
         "blade flurry near cc",
-        NextAction::array(0, new NextAction("cancel blade flurry", ACTION_INTERRUPT + 5), NULL)));
+        NextAction::array(0, new NextAction("remove blade flurry", ACTION_INTERRUPT + 5), NULL)));
 
     triggers.push_back(new TriggerNode(
         "critical health",

@@ -94,8 +94,10 @@ namespace ai
         // radii included) that holds a damage-breakable CC, or with
         // `includeMarks` is a held CC mark (being or about to be CC'd), or
         // is this bot's own ready CC mark while other enemies are left (the
-        // CC bot never splashes the mob it will sheep next).
-        bool ProtectedEnemyNear(WorldObject* center, float radius, bool includeMarks);
+        // CC bot never splashes the mob it will sheep next). `skip` (may be
+        // null) is not counted (CcGuardCountsUnit): Blade Flurry passes the
+        // rogue's own victim, which its proc never hits.
+        bool ProtectedEnemyNear(WorldObject* center, float radius, bool includeMarks, Unit* skip = nullptr);
         // A CC mark fighting the group within `radius` of `center` whose CC
         // bot (the group bot with it as "rti cc target") can CC it now
         // (IsCcBotReadyFor), at any combat time, while other enemies are

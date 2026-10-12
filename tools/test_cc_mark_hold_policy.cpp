@@ -131,7 +131,18 @@ int main()
     CHECK(!CcMarkHeld(Free(14, true)));
     CHECK(CcCancelBladeFlurry(true, false, true));
     CHECK(!CcCancelBladeFlurry(false, false, true));
-    CHECK(CcBladeFlurryGuardRadius >= 5.0f);
+    // Hysteresis: the start is blocked farther out than the cancel fires,
+    // and the cancel still covers the core's 5 yd proc reach.
+    CHECK(CcBladeFlurryCancelRadius >= 5.0f);
+    CHECK(CcBladeFlurryStartRadius > CcBladeFlurryCancelRadius);
+    // The rogue's own target in CC (its own Gouge) with nothing marked:
+    // the proc never hits the victim, so it is not counted and Blade
+    // Flurry is neither cancelled nor blocked.
+    CHECK(!CcGuardCountsUnit(true));
+    CHECK(CcGuardCountsUnit(false));
+    CHECK(!CcCancelBladeFlurry(true, CcGuardCountsUnit(true), false));
+    // A ready CC mark still counts when it is the rogue's own target.
+    CHECK(CcCancelBladeFlurry(true, CcGuardCountsUnit(true), true));
 
     // CC chooser: the assigned mark, once picked, is never replaced by a
     // later free pick; any other interim pick may still be replaced.

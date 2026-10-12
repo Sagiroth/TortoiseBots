@@ -156,6 +156,19 @@ namespace ai
 
     MELEE_DEBUFF_ACTION_R(CastBlindAction, "blind", 10.0f);
 
+	// Blade Flurry must not run within `radius` of a crowd-controlled mob,
+	// a held CC mark, or a CC mark whose CC bot is ready to (re)sheep it
+	// (CcCancelBladeFlurry). The rogue's own victim is not counted for the
+	// first two (its proc never hits the victim, CcGuardCountsUnit); the
+	// ready-mark test counts it. Start and cancel use different radii.
+	inline bool BladeFlurryNearCc(PlayerbotAI* ai, Player* bot, float radius)
+	{
+		CcGuard ccGuard(ai);
+		bool const protectedNear = ccGuard.ProtectedEnemyNear(bot, radius, true, bot->GetVictim());
+		return CcCancelBladeFlurry(true, protectedNear,
+			!protectedNear && ccGuard.ReadyCcMarkNear(bot, radius));
+	}
+
 	class CastBladeFlurryAction : public CastBuffSpellAction
 	{
 	public:
@@ -163,18 +176,15 @@ namespace ai
 		// Blade Flurry copies the rogue's swings onto a mob in melee reach
 		// for its whole duration. Never start it beside a sheeped mob or a
 		// CC mark the mage is about to sheep (in-game retest: it broke the
-		// sheep within a second, again and again). 8 yd = melee reach plus
-		// some drift while the buff runs. Same rule as the cancel ("blade
-		// flurry near cc"), so the toggle never flaps: not next to a CC mark
-		// whose CC bot is ready either.
+		// sheep within a second, again and again). Same rule as the cancel
+		// ("blade flurry near cc"), so not next to a CC mark whose CC bot is
+		// ready either, but at the larger start radius (11 yd vs 8 yd) so
+		// the toggle does not flap at the edge.
 		bool isUseful() override
 		{
 			if (!CastBuffSpellAction::isUseful())
 				return false;
-			CcGuard ccGuard(ai);
-			bool const protectedNear = ccGuard.ProtectedEnemyNear(bot, CcBladeFlurryGuardRadius, true);
-			return !CcCancelBladeFlurry(true, protectedNear,
-				!protectedNear && ccGuard.ReadyCcMarkNear(bot, CcBladeFlurryGuardRadius));
+			return !BladeFlurryNearCc(ai, bot, CcBladeFlurryStartRadius);
 		}
 	};
 

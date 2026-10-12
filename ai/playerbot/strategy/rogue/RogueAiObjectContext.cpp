@@ -264,7 +264,7 @@ namespace ai
                 creators["expose armor"] = [](PlayerbotAI* ai) { return new CastExposeArmorAction(ai); };
                 creators["kick on enemy healer"] = [](PlayerbotAI* ai) { return new CastKickOnEnemyHealerAction(ai); };
                 creators["blade flurry"] = [](PlayerbotAI* ai) { return new CastBladeFlurryAction(ai); };
-                creators["cancel blade flurry"] = [](PlayerbotAI* ai) { return new RemoveBuffAction(ai, "blade flurry"); };
+                creators["remove blade flurry"] = [](PlayerbotAI* ai) { return new RemoveBuffAction(ai, "blade flurry"); };
                 creators["adrenaline rush"] = [](PlayerbotAI* ai) { return new CastAdrenalineRushAction(ai); };
                 creators["ambush"] = [](PlayerbotAI* ai) { return new CastAmbushAction(ai); };
                 creators["stealth"] = [](PlayerbotAI* ai) { return new CastStealthAction(ai); };

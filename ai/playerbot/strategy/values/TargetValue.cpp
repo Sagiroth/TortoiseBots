@@ -123,7 +123,7 @@ bool CcGuard::IsOwnReadyCcMark(Unit* unit)
     return IsCcBotReadyFor(ai, ai->GetBot(), unit);
 }
 
-bool CcGuard::ProtectedEnemyNear(WorldObject* center, float radius, bool includeMarks)
+bool CcGuard::ProtectedEnemyNear(WorldObject* center, float radius, bool includeMarks, Unit* skip)
 {
     if (!center)
         return false;
@@ -132,7 +132,8 @@ bool CcGuard::ProtectedEnemyNear(WorldObject* center, float radius, bool include
     for (ObjectGuid const& guid : attackers)
     {
         Unit* unit = ai->GetUnit(guid);
-        if (!unit || !sServerFacade.IsAlive(unit) || !center->IsWithinDistInMap(unit, radius, false))
+        if (!unit || !CcGuardCountsUnit(unit == skip) || !sServerFacade.IsAlive(unit) ||
+            !center->IsWithinDistInMap(unit, radius, false))
             continue;
         // Cheapest test first; each later one only runs when the earlier
         // ones did not already protect the unit.
@@ -165,7 +166,8 @@ bool CcGuard::ReadyCcMarkNear(WorldObject* center, float radius)
         for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
         {
             Player* player = sObjectMgr.GetPlayer(itr->guid);
-            if (!player || !sServerFacade.IsAlive(player) || player->GetMapId() != unit->GetMapId())
+            if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) ||
+                player->GetMapId() != unit->GetMapId())
                 continue;
             PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(player);
             if (memberAi && PAI_VALUE(Unit*, "rti cc target") == unit &&

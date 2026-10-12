@@ -105,9 +105,26 @@ namespace ai
         return resultIsAssignedMark;
     }
 
-    // Blade Flurry reach checked for start and cancel: the core's 5 yd proc
-    // radius plus drift while the buff runs.
-    constexpr float CcBladeFlurryGuardRadius = 8.0f;
+    // Blade Flurry reach: a running one is cancelled within the cancel
+    // radius (the core's 5 yd proc radius plus drift while it runs), and
+    // it is not started within the larger start radius. The gap is the
+    // hysteresis: a sheep or mark sitting at the edge of the scrum, with
+    // the rogue repositioning behind its target, would otherwise cycle
+    // cancel/recast every 4 s cooldown (25 energy and a GCD each time).
+    constexpr float CcBladeFlurryCancelRadius = 8.0f;
+    constexpr float CcBladeFlurryStartRadius = 11.0f;
+
+    // The guards skip one unit the caller names. Blade Flurry names the
+    // rogue's own victim: the core proc picks its extra target from the
+    // enemies within 5 yd *other than* the victim
+    // (SelectRandomUnfriendlyTarget(victim, ...) drops it), so the
+    // rogue's own Gouge on its target must neither cancel nor block it
+    // (it did, with nothing marked, once per Gouge). A ready CC mark still
+    // counts even when it is the rogue's target (ReadyCcMarkNear).
+    inline bool CcGuardCountsUnit(bool isSkippedUnit)
+    {
+        return !isSkippedUnit;
+    }
 
     // Owner decision (2026-10-12): a held mark that is not crowd-controlled
     // yet and is hitting a healer may be TAUNTED by the tank. Taunt only (no
