@@ -5,6 +5,7 @@
 #include "MovementActions.h"
 #include "Battlegrounds/BattleGround.h"
 #include "Battlegrounds/BattleGroundMgr.h"
+#include "Battlegrounds/BattleGroundSV.h"
 #include "BattleGroundTactics.h"
 #include "float.h"
 
@@ -55,6 +56,13 @@ enum BattleBotWsgWaitSpot
 std::vector<uint32> const vFlagsAB = { 180058, 180059, 180060, 180061, 180087, 180088, 180089, 180090, 180091 };
 
 std::vector<uint32> const vFlagsWS = { GO_WS_SILVERWING_FLAG, GO_WS_WARSONG_FLAG, GO_WS_SILVERWING_FLAG_DROP, GO_WS_WARSONG_FLAG_DROP };
+// Sunnyglade Valley node banners (core BattleGroundSV.h): the Arathi banner
+// objects, one neutral entry for all three nodes.
+std::vector<uint32> const vFlagsSV = { BG_SV_OBJECTID_BANNER_0, BG_SV_OBJECTID_BANNER_A, BG_SV_OBJECTID_BANNER_CONT_A,
+                                       BG_SV_OBJECTID_BANNER_H, BG_SV_OBJECTID_BANNER_CONT_H };
+// Sunnyglade Valley and Blood Ring have no waypoint paths: the navmesh walks
+// the bot straight to its objective.
+std::vector<BattleBotPath*> const vPaths_None;
 static std::map<uint32, GameObject*> botSelectedObjectives;
 static std::map<uint32, uint32> botObjectiveSelectionTime;
 static std::map<uint32, uint32> botLastObjectiveCheckTime;
@@ -2138,13 +2146,18 @@ bool BGTactics::Execute(Event& event)
     if (bg->GetStatus() == STATUS_IN_PROGRESS && ai->HasStrategy("buff", BotState::BOT_STATE_NON_COMBAT))
         ai->ChangeStrategy("-buff", BotState::BOT_STATE_NON_COMBAT);
 
-    std::vector<BattleBotPath*> const* vPaths;
-    std::vector<uint32> const* vFlagIds;
+    std::vector<BattleBotPath*> const* vPaths = &vPaths_None;
+    std::vector<uint32> const* vFlagIds = nullptr;
 
     BattleGroundTypeId bgType = bg->GetTypeID();
 
     switch (bgType)
     {
+    case BATTLEGROUND_SV:
+    {
+        vFlagIds = &vFlagsSV;
+        break;
+    }
     case BATTLEGROUND_AB:
     {
         vPaths = &vPaths_AB;
@@ -2464,6 +2477,40 @@ bool BGTactics::selectWsgFlagRoleObjective(BattleGround* bg, float& x, float& y,
     }
 }
 
+// Sunnyglade node states (0 neutral, 1/2 contested by Alliance/Horde, 3/4
+// held by Alliance/Horde). BattleGroundSV keeps them private; read them from
+// the same world states it sends a joining client (one per node is 1).
+static bool SvNodeStates(BattleGround* bg, uint8 (&states)[BG_SV_DYNAMIC_NODES_COUNT])
+{
+    WorldPacket data;
+    uint32 count = 0;
+    bg->FillInitialWorldStates(data, count);
+
+    bool found[BG_SV_DYNAMIC_NODES_COUNT] = {};
+    data.rpos(0);
+    for (uint32 i = 0; i < count && data.rpos() + 8 <= data.size(); ++i)
+    {
+        uint32 state = 0;
+        uint32 value = 0;
+        data >> state >> value;
+        if (value != 1)
+            continue;
+        for (uint8 node = 0; node < BG_SV_DYNAMIC_NODES_COUNT; ++node)
+        {
+            if (state >= BG_SV_NodeWorldStates[node] && state <= BG_SV_NodeWorldStates[node] + BG_SV_NODE_STATUS_HORDE_OCCUPIED)
+            {
+                states[node] = uint8(state - BG_SV_NodeWorldStates[node]);
+                found[node] = true;
+            }
+        }
+    }
+
+    for (bool f : found)
+        if (!f)
+            return false;
+    return true;
+}
+
 bool BGTactics::selectObjective(bool reset)
 {
     BattleGround *bg = bot->GetBattleGround();
@@ -2753,6 +2800,77 @@ bool BGTactics::selectObjective(bool reset)
         }
         break;
     }
+    case BATTLEGROUND_SV:
+    {
+        // Sunnyglade Valley: the three nodes (two towers, Herald's point)
+        // earn sparks; once enough sparks are in, each side's general spawns
+        // and killing the enemy general wins. Defenders hold our nodes and
+        // our general, attackers take the rest and push the enemy general.
+        uint32 role = context->GetValue<uint32>("bg role")->Get();
+        bool defender = role < 3;
+        uint8 const ownIdx = bot->GetTeam() == ALLIANCE ? 0 : 1;
+        Position const* target = nullptr;
+
+        if (static_cast<BattleGroundSV*>(bg)->IsGeneralsActive())
+            target = &BG_SV_LeaderPos[defender ? ownIdx : 1 - ownIdx];
+        else
+        {
+            uint8 states[BG_SV_DYNAMIC_NODES_COUNT];
+            std::vector<Position const*> ours;
+            std::vector<Position const*> theirs;
+            if (SvNodeStates(bg, states))
+            {
+                for (uint8 node = 0; node < BG_SV_DYNAMIC_NODES_COUNT; ++node)
+                {
+                    bool own = states[node] == 1 + ownIdx || states[node] == 3 + ownIdx;
+                    (own ? ours : theirs).push_back(&BG_SV_NodePositions[node]);
+                }
+            }
+            std::vector<Position const*> const& pick = ((defender && !ours.empty()) || theirs.empty()) ? ours : theirs;
+            // Stable per bot, so the frequent re-pick does not bounce it
+            // between nodes; different bots spread over the candidates.
+            if (!pick.empty())
+                target = pick[(bot->GetGUIDLow() + role) % pick.size()];
+        }
+
+        if (target)
+        {
+            pos.Set(target->x, target->y, target->z, bg->GetMapId());
+            posMap["bg objective"] = pos;
+            return true;
+        }
+        break;
+    }
+    case BATTLEGROUND_BR:
+    {
+        // Blood Ring is a 3v3 arena with no objective: go to the nearest
+        // living enemy; the "pvp" strategy starts the fight once in sight.
+        Player* nearest = nullptr;
+        float nearestDist = FLT_MAX;
+        for (auto const& itr : bg->GetPlayers())
+        {
+            Player* enemy = sObjectMgr.GetPlayer(itr.first);
+            if (!enemy || !enemy->IsInWorld() || !enemy->IsAlive() || enemy->GetTeam() == bot->GetTeam() ||
+                enemy->GetMapId() != bot->GetMapId())
+                continue;
+            float dist = bot->GetDistance(enemy);
+            if (dist < nearestDist)
+            {
+                nearestDist = dist;
+                nearest = enemy;
+            }
+        }
+
+        if (nearest)
+        {
+            pos.Set(nearest->GetPositionX(), nearest->GetPositionY(), nearest->GetPositionZ(), bg->GetMapId());
+            posMap["bg objective"] = pos;
+            return true;
+        }
+        break;
+    }
+    default:
+        break;
     }
 
     return false;
@@ -2772,7 +2890,10 @@ bool BGTactics::moveToObjective()
     else
     {
 
-        if (sServerFacade.IsDistanceGreaterThan(sServerFacade.getDistance2d(bot, pos.x, pos.y), 100.0f))
+        // Far objectives go over the waypoint paths; the maps without paths
+        // (Sunnyglade Valley, Blood Ring) walk there over the navmesh.
+        bool const hasPaths = bgType == BATTLEGROUND_WS || bgType == BATTLEGROUND_AB || bgType == BATTLEGROUND_AV;
+        if (hasPaths && sServerFacade.IsDistanceGreaterThan(sServerFacade.getDistance2d(bot, pos.x, pos.y), 100.0f))
         {
             //ostringstream out; out << "It is too far away! " << pos.x << ", " << pos.y << ", Distance: " << sServerFacade.getDistance2d(bot, pos.x, pos.y);
             //bot->Say(out.str(), LANG_UNIVERSAL);
@@ -3112,6 +3233,15 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         flagRange = VISIBILITY_DISTANCE_TINY;
         break;
     }
+    case BATTLEGROUND_SV:
+    {
+        closeObjects = *context->GetValue<std::list<ObjectGuid> >("closest game objects static los");
+        closePlayers = *context->GetValue<std::list<ObjectGuid> >("closest friendly players");
+        flagRange = INTERACTION_DISTANCE;
+        break;
+    }
+    default:
+        return false;
     }
 
     if (closeObjects.empty())
@@ -3178,8 +3308,23 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         if (atBase && bgType == BATTLEGROUND_WS && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG)))
             continue;
 
+        // Our own Sunnyglade banner cannot be clicked (the core refuses it):
+        // casting at it would only stand the bot still for the cast.
+        if (bgType == BATTLEGROUND_SV)
+        {
+            uint32 const entry = go->GetEntry();
+            bool const ownBanner = bot->GetTeam() == ALLIANCE
+                ? (entry == BG_SV_OBJECTID_BANNER_A || entry == BG_SV_OBJECTID_BANNER_CONT_A)
+                : (entry == BG_SV_OBJECTID_BANNER_H || entry == BG_SV_OBJECTID_BANNER_CONT_H);
+            if (ownBanner)
+                continue;
+        }
+
         switch (bgType)
         {
+        case BATTLEGROUND_SV:
+        // The same Arathi banner objects and capture spell; the core's open
+        // lock effect hands the click to BattleGroundSV.
         case BATTLEGROUND_AB:
         {
             // One capture cast per bot per AB_BANNER_CAST_THROTTLE_MS. A throttled banner is skipped, so the path moves
@@ -3274,6 +3419,10 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
 
 bool BGTactics::flagTaken()
 {
+    // Only Warsong has flag carriers: anywhere else the cast below would
+    // read another battleground class as BattleGroundWS.
+    if (!bot->GetBattleGround() || bot->GetBattleGround()->GetTypeID() != BATTLEGROUND_WS)
+        return false;
     BattleGroundWS* bg = (BattleGroundWS *)bot->GetBattleGround();
     if (!bg)
         return false;
@@ -3284,6 +3433,8 @@ bool BGTactics::flagTaken()
 
 bool BGTactics::teamFlagTaken()
 {
+    if (!bot->GetBattleGround() || bot->GetBattleGround()->GetTypeID() != BATTLEGROUND_WS)
+        return false;
     BattleGroundWS* bg = (BattleGroundWS *)bot->GetBattleGround();
     if (!bg)
         return false;

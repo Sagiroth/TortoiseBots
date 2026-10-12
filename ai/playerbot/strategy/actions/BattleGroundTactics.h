@@ -42,7 +42,8 @@ public:
         {
             return "This action handles the bot's tactical movement in battlegrounds.\n"
                    "It includes pathfinding for objectives, flag handling, and strategic positioning.\n"
-                   "Supports the Vanilla WSG, AB, and AV battlegrounds with specialized waypoints.";
+                   "Supports the Vanilla WSG, AB, and AV battlegrounds with specialized waypoints,\n"
+                   "plus Turtle's Sunnyglade Valley (node capture, general push) and Blood Ring (seek the nearest enemy).";
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
