@@ -1009,6 +1009,7 @@ public:
     std::list<std::string> tradeActionExcludedPrefixes;
     float playerbotsXPrate;
     bool disableActivityPriorities;
+    bool worldPvpEngage;
     bool forceActiveWhenNearPlayer;
     bool limitCombatActivity;
     bool guildOrderAlwaysActive;

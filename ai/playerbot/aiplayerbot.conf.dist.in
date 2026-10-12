@@ -3231,6 +3231,15 @@ AiPlayerbot.WorldPvpSeek = 2
 # Minutes between re-rolls of the seek role (with jitter), never while the bot is in combat.
 #AiPlayerbot.WorldPvpSeekRerollMinutes = 30
 
+# World PvP engagement (opt-in). 0 = pool bots only hit back when a PvP-flagged
+# enemy player attacks them (current behaviour). 1 = a masterless pool bot that
+# is out of combat attacks a PvP-flagged enemy player within 40 yd (20 yd if the
+# target has more health) in line of sight and within 30 yd of height. Never
+# for a real player's companions, never in battlegrounds, cities, sanctuaries or
+# PvpProhibitedZoneIds, never a target 5+ levels above the bot, and the
+# recent-killer avoidance still applies.
+#AiPlayerbot.WorldPvpEngage = 0
+
 # Spells every random bot will learn on randomize. Keep this list limited to
 # spells present in the Vanilla/Tortoise data set. Empty by default (disabled);
 # a value is a comma separated spell id list, e.g. 3273,8386.
