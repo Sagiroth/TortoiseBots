@@ -60,33 +60,64 @@ def get_last_release_info():
     return None, None
 
 
-def get_merged_prs_since(since_iso_date=None):
-    """Retrieve merged pull requests using the gh CLI."""
+def list_merged_prs(base, limit):
+    """Merged pull requests into `base`, newest first, via the gh CLI."""
     cmd = [
         "gh", "pr", "list",
         "--state", "merged",
-        "--base", "main",
-        "--limit", "100",
-        "--json", "number,title,body,mergedAt,author,url"
+        "--base", base,
+        "--limit", str(limit),
+        "--json", "number,title,body,mergedAt,author,url,headRefName,mergeCommit"
     ]
     try:
         output = subprocess.check_output(cmd, text=True)
-        prs = json.loads(output)
+        return json.loads(output)
     except Exception as e:
-        print(f"Error fetching PRs via gh CLI: {e}", file=sys.stderr)
+        print(f"Error fetching PRs into {base} via gh CLI: {e}", file=sys.stderr)
         return []
 
-    if not since_iso_date:
-        return prs
 
-    # Filter by mergedAt > since_iso_date
-    filtered = []
-    for pr in prs:
+def is_ancestor(commit, ref):
+    return subprocess.call(["git", "merge-base", "--is-ancestor", commit, ref],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
+
+
+def get_merged_prs_since(since_iso_date=None, since_tag=None):
+    """Merged pull requests that reach main in this release.
+
+    Collaborators merge into `dev`; the owner brings dev to main with a
+    dev -> main PR (any merge method) or by pushing dev to main. Either way
+    the PRs merged into dev are what the changelog describes, so they are
+    listed one by one instead of the dev -> main PR itself:
+      * a dev PR whose merge commit is now on main but was not on the last
+        release tag (merge commit or fast-forward of dev into main);
+      * a dev PR merged before a dev -> main PR of this window and after the
+        previous one (a squashed dev -> main PR leaves no dev commits on main).
+    """
+    def in_window(pr):
         merged_at = pr.get("mergedAt")
-        if merged_at and merged_at > since_iso_date:
-            filtered.append(pr)
+        return bool(merged_at) and (not since_iso_date or merged_at > since_iso_date)
 
-    return filtered
+    main_prs = list_merged_prs("main", 100)
+    window = [pr for pr in main_prs if in_window(pr)]
+    syncs = [pr for pr in window if pr.get("headRefName") == "dev"]
+    earlier_syncs = [pr["mergedAt"] for pr in main_prs
+                     if pr.get("headRefName") == "dev" and pr.get("mergedAt") and not in_window(pr)]
+    previous_sync = max(earlier_syncs) if earlier_syncs else None
+
+    dev_prs = []
+    for pr in list_merged_prs("dev", 200):
+        merged_at = pr.get("mergedAt")
+        oid = (pr.get("mergeCommit") or {}).get("oid")
+        reached = bool(oid) and is_ancestor(oid, "HEAD") and not (since_tag and is_ancestor(oid, since_tag))
+        synced = bool(merged_at) and any(merged_at <= s["mergedAt"] for s in syncs) and \
+            (previous_sync is None or merged_at > previous_sync)
+        if reached or synced:
+            dev_prs.append(pr)
+
+    # The dev -> main PR only carries the dev PRs; keep it when none was found.
+    prs = [pr for pr in window if pr not in syncs] if dev_prs else window
+    return sorted(prs + dev_prs, key=lambda pr: pr.get("mergedAt") or "")
 
 
 def generate_summary_with_ai(prs, api_key, base_url, model):
@@ -337,7 +368,7 @@ def main():
         print(f"Summarizing requested PRs: {args.prs}")
     else:
         print(f"Checking for merged PRs since: {since_date or 'beginning'} (reference: {since_tag or 'none'})")
-        prs = get_merged_prs_since(since_date)
+        prs = get_merged_prs_since(since_date, since_tag)
 
     # Exclude any PRs that are already documented in CHANGELOG.md
     if not args.prs and os.path.exists(CHANGELOG_PATH):
