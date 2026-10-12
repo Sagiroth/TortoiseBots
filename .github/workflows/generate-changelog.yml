@@ -20,11 +20,15 @@ concurrency:
 jobs:
   changelog:
     runs-on: ubuntu-latest
+    environment: release
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Deploy key (release environment, main only): the main ruleset
+          # lets it push the changelog commit and tags; GITHUB_TOKEN cannot.
+          ssh-key: ${{ secrets.CHANGELOG_DEPLOY_KEY }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
