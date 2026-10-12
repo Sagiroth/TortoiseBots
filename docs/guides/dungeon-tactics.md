@@ -105,7 +105,13 @@ If your group wipes, follow this checklist to recover quickly:
 
 ### Healers and Casters Closing Range
 * Inside an instance, a healer or caster that sees its target but stands out of range walks the navmesh path towards it and stops at the first point within casting distance that still has line of sight. It used the core's chase before, which inside dungeons refuses any destination outside melee reach, so the healer stood still at the entrance while the tank fought 38 yd away.
-* When the navmesh only reaches part of the way (a raised dais, a ledge), the bot walks to the closest point on the path that still sees its target and stops there; it does not drop off ledges. Use `.bot summon <Name>` out of combat if it stays stuck.
+* When the navmesh only reaches part of the way, the bot walks to the closest point on the path that still sees its target. If the path ends at its feet because it stands on a cut-off platform, see *Stepping Down Off a Dais* below.
+
+### Stepping Down Off a Dais
+* Dungeon navmeshes have islands: raised daises and ledges that are not linked to the floor around them (Uldaman's Hall of the Keepers has 17, about 4 yd high). A bot that lands on one, usually after a summon or a teleport, used to stand there for the whole fight, because every path it was given ended at its own feet.
+* Inside dungeons and raids only, such a bot now steps off the edge like a player: it looks for floor about 8 yd (or 5 yd) towards its target and 2-8 yd lower, which it can see and from which the navmesh reaches the target, and runs straight there. This works for every reach (melee, spells, heals, the pull) and for following you out of combat.
+* It does not step down while a mob is hitting it in melee, it waits 2 s of standing still before it looks, looks at most every 3 s, and after three stuck looks for the same target it leaves it alone for 30 s. There is no setting; it is always on in instances and never runs in the open world.
+* It never climbs up: a bot below a target that stands on a dais does not move. If no floor point qualifies (a sheer drop over 8 yd, a wall in the way), use `.bot summon <Name>` out of combat.
 
 ### Elevators, Boats & Ledges
 * In complex vertical dungeons (Gnomeregan, Sunken Temple, Blackrock Spire), bots can occasionally desync when jumping down ledges or riding elevators.

@@ -332,6 +332,14 @@ namespace ai
                     ai->TellPlayerNoFacing(GetMaster(), out);
                 }
 
+                // Inside a dungeon a bot on a navmesh island (a raised dais the
+                // mesh does not link to the floor) has only a partial path that
+                // ends at its feet: the chase stands still and the walk below
+                // shuffles a yard. It steps down off the edge instead, for every
+                // reach (melee, spell, heal, pull); see StepDownOffLedge.
+                if (StepDownOffLedge(target))
+                    return true;
+
                 if (inLos && isFriend && (range <= ai->GetRange("follow")))
                 {
                     return MoveNear(target, chaseDist);

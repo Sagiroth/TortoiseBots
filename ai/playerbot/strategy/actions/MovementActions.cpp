@@ -1468,6 +1468,11 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
     ClearIdleState();
 
 
+    // A follower stranded on a dungeon navmesh island (a dais the core follow
+    // cannot leave) steps down off the edge; see StepDownOffLedge.
+    if (tDist > distance + 3.0f && StepDownOffLedge(target))
+        return true;
+
     // Find jump shortcut
     if (ai->HasStrategy("follow jump", BotState::BOT_STATE_NON_COMBAT) && ai->AllowActivity())
     {
@@ -2122,6 +2127,127 @@ bool MovementAction::IsHazardNearPosition(const WorldPosition& position, HazardP
     }
 
     return false;
+}
+
+bool MovementAction::StepDownOffLedge(Unit* target)
+{
+    // Dungeon navmeshes have islands: raised daises and ledges the mesh does
+    // not link to the floor (Uldaman's Hall of the Keepers has 17, about 4 yd
+    // up). A bot summoned or teleported onto one gets only a partial path to
+    // its target that ends about a yard from it; the core's chase and follow
+    // stand still on such a path in sight of the target and the reach waited
+    // out the whole fight (Uldaman VM run 2026-10-12, the party on the dais
+    // above the Rockchewer). Owner decision 2026-10-12: in dungeons only, the
+    // bot steps down off the ledge like a player does. Nothing here runs
+    // outside instances, and the probe is paced by ledgeStepDown so no bot
+    // searches on every tick.
+    if (!target || !target->IsInWorld() || target->GetMapId() != bot->GetMapId())
+        return false;
+
+    Map* map = bot->GetMap();
+    if (!map || !map->IsDungeon() || bot->GetTransport() || bot->IsTaxiFlying() || bot->IsFlying() || bot->IsInWater())
+        return false;
+
+    if (!ai->CanMove() || !ai->IsSafe(target) || bot->IsNonMeleeSpellCasted(true, false, true))
+        return false;
+
+    // Not while something is hitting the bot: stepping away would drag the
+    // fight off the tank, and a creature in melee contact is reachable anyway.
+    bool beingHit = false;
+    for (Unit* attacker : bot->GetAttackers())
+    {
+        if (attacker && attacker->IsAlive() && attacker->CanReachWithMeleeAutoAttack(bot))
+        {
+            beingHit = true;
+            break;
+        }
+    }
+    if (beingHit)
+        return false;
+
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (!ledgeStepDown.Due(nowMs, bot->GetPositionX(), bot->GetPositionY(), target->GetObjectGuid().GetRawValue()))
+        return false;
+
+    LedgePoint from;
+    from.x = bot->GetPositionX();
+    from.y = bot->GetPositionY();
+    from.z = bot->GetPositionZ();
+    LedgePoint goal;
+    goal.x = target->GetPositionX();
+    goal.y = target->GetPositionY();
+    goal.z = target->GetPositionZ();
+
+    PathFinder path(bot);
+    path.calculate(goal.x, goal.y, goal.z, false);
+    bool const incomplete = (path.getPathType() & PATHFIND_INCOMPLETE) != 0;
+    float partialEndDistance = 0.0f;
+    Movement::PointsArray const& points = path.getPath();
+    if (!points.empty())
+    {
+        float const dx = points.back().x - from.x;
+        float const dy = points.back().y - from.y;
+        float const dz = points.back().z - from.z;
+        partialEndDistance = std::sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    bool const stuck = UseLedgeStepDown(true, incomplete, partialEndDistance, beingHit);
+    ledgeStepDown.Probed(nowMs, stuck);
+    if (!stuck)
+        return false;
+
+    auto const groundAt = [map](float x, float y, float z, float& outZ)
+    {
+        if (!MaNGOS::IsValidMapCoord(x, y, z))
+            return false;
+        float const height = map->GetHeight(x, y, z + 0.5f, true, kLedgeStepMaxDrop + 2.0f);
+        if (height <= INVALID_HEIGHT)
+            return false;
+        outZ = height;
+        return true;
+    };
+    auto const seenFromBot = [this](LedgePoint const& point)
+    {
+        return bot->IsWithinLOS(point.x, point.y, point.z, true);
+    };
+    auto const normalPathToTarget = [this, &goal](LedgePoint const& point)
+    {
+        PathFinder probe(bot);
+        probe.calculate(Vector3(point.x, point.y, point.z), Vector3(goal.x, goal.y, goal.z), false);
+        return probe.getPathType() == PATHFIND_NORMAL;
+    };
+
+    LedgeStepDownChoice const choice = SelectLedgeStepDownPoint(from, goal, groundAt, seenFromBot, normalPathToTarget);
+    if (!choice.valid)
+    {
+        ai->TellDebug(GetMaster(), "Stuck on a ledge above " + std::string(target->GetName()) + " - no floor to step down to", "debug move");
+        return false;
+    }
+
+    WorldPosition const destination(bot->GetMapId(), choice.point.x, choice.point.y, choice.point.z);
+    if (IsHazardNearPosition(destination))
+        return false;
+
+    bot->HandleEmoteState(0);
+    if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
+        bot->SetStandState(UNIT_STAND_STATE_STAND);
+
+    // A plain point move without MOVE_PATHFINDING: the navmesh has no link
+    // off the island, so a path-finding move would stop at the edge again.
+    // The point is in sight of the bot, so the straight line is clear.
+    MotionMaster& mm = *bot->GetMotionMaster();
+    mm.Clear();
+    mm.MovePoint(destination.GetMapId(), destination.getX(), destination.getY(), destination.getZ(), MOVE_RUN_MODE);
+
+    float const dx = choice.point.x - from.x;
+    float const dy = choice.point.y - from.y;
+    float const dz = choice.point.z - from.z;
+    WaitForReach(std::sqrt(dx * dx + dy * dy + dz * dz));
+
+    ai->TellDebug(GetMaster(), "Stepping down off a ledge towards " + std::string(target->GetName()), "debug move");
+    sPlayerbotAIConfig.logEvent(ai, "LedgeStepDown", target->GetName(),
+        "drop=" + std::to_string((int)(from.z - choice.point.z)) + "|map=" + std::to_string(bot->GetMapId()));
+    return true;
 }
 
 bool MovementAction::GeneratePathAvoidingHazards(std::vector<WorldPosition>& movePath)

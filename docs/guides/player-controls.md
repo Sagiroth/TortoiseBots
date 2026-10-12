@@ -38,6 +38,8 @@ Hazard-avoiding chase movement keeps an idle movement generator while its detour
 
 Inside a dungeon or raid, a ranged reach (`reach spell`, `reach party member to heal` / `to resurrect` / `for totem`) whose target is in sight walks the navmesh path towards the target and stops at the first point within casting distance that still sees it. The core's chase refuses a non-melee destination inside instances, so those bots used to stand still out of range. Melee reach and the open world keep the chase.
 
+Inside a dungeon or raid, a bot stuck on a cut-off platform (a raised dais the navmesh does not link to the floor) steps down off the edge: when its reach or follow path is partial and ends at its feet, and no mob is hitting it in melee, it runs straight to floor 2-8 yd lower and about 8 yd towards its target that it can see and that has a complete path to the target. It looks after 2 s standing still, at most every 3 s, and gives up for 30 s after three stuck looks. No setting; never outside instances.
+
 
 The modern control plane operates on **player intent**. Instead of micromanaging each bot, you issue high-level tactical commands; the server resolves target scope and selects appropriate bot executors:
 
