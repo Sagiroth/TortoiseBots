@@ -37,6 +37,14 @@ void AddAllLootAction::TellBlocked(Player* requester, ObjectGuid objectGuid, con
     if (bot->GetMap()->IsDungeon() || bot->IsInCombat())
         return;
 
+    // Only a whisper that will really reach a real player is recorded: a
+    // masterless pool bot, a bot requester or a silent bot never touches the
+    // shared map, so it cannot mute the group or crowd out real entries.
+    if (!requester || PlayerbotAIStorage::Instance().GetAI(requester) ||
+        ai->HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT) ||
+        !ai->IsTellAllowed(requester) || !ai->IsSafe(requester))
+        return;
+
     // One record shared by every bot, keyed by who is told and which object:
     // the first companion to notice tells the master, the rest stay quiet,
     // and nobody repeats it for 10 minutes.
@@ -44,16 +52,29 @@ void AddAllLootAction::TellBlocked(Player* requester, ObjectGuid objectGuid, con
     static std::map<std::pair<uint64, uint64>, time_t> blockedTold;
 
     const time_t now = time(nullptr);
-    const std::pair<uint64, uint64> key(requester ? requester->GetObjectGuid().GetRawValue() : 0, objectGuid.GetRawValue());
+    const std::pair<uint64, uint64> key(requester->GetObjectGuid().GetRawValue(), objectGuid.GetRawValue());
 
-    std::lock_guard<std::mutex> lock(blockedMutex);
-    std::map<std::pair<uint64, uint64>, time_t>::iterator it = blockedTold.find(key);
-    if (it != blockedTold.end() && now - it->second < kBlockedTellCooldown)
-        return;
+    {
+        std::lock_guard<std::mutex> lock(blockedMutex);
+        std::map<std::pair<uint64, uint64>, time_t>::iterator it = blockedTold.find(key);
+        if (it != blockedTold.end() && now - it->second < kBlockedTellCooldown)
+            return;
 
-    if (blockedTold.size() > 256)
-        blockedTold.clear();
-    blockedTold[key] = now;
+        // Drop only expired records, so a live entry is never forgotten early.
+        if (blockedTold.size() > 256)
+        {
+            for (it = blockedTold.begin(); it != blockedTold.end();)
+            {
+                if (now - it->second >= kBlockedTellCooldown)
+                    it = blockedTold.erase(it);
+                else
+                    ++it;
+            }
+        }
+
+        blockedTold[key] = now;
+    }
+
     ai->TellError(requester, text);
 }
 
