@@ -26,6 +26,7 @@
 #include "strategy/actions/SayAction.h"
 #include "strategy/actions/EmoteAction.h"
 #include "strategy/values/LastSpellCastValue.h"
+#include "strategy/values/TargetValue.h"
 #include "LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
@@ -3003,6 +3004,43 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
         bot->Relocate(highestPoint.getX(), highestPoint.getY(), highestPoint.getZ());
         //bot->m_movementInfo.ChangePosition(dest_calculated.getX(), dest_calculated.getY(), dest_calculated.getZ(), bot->getOrientation());
         sLog.outDetail("%s: KNOCKBACK x: %f, y: %f, z: %f, time: %f, dist: %f, maxHeight: %f inPlace: %u, landTime: %u", bot->GetName(), dest_calculated.getX(), dest_calculated.getY(), dest_calculated.getZ(), timeToLand, distToLand, maxHeight, jumpInPlace, jumpTime);
+        return;
+    }
+    case SMSG_CAST_RESULT:
+    {
+        // Failed crowd-control casts go to the bot action log (only open
+        // with AiPlayerbot.EnableActionLog = 1), so a sheep that never lands
+        // shows why. This core sends no SMSG_SPELL_FAILURE: a cast that
+        // fails at the end of its cast bar, or is cancelled (moving,
+        // interrupted), arrives here. 1.12 layout (Spell::SendCastResult):
+        // uint32 spellId, uint8 status (0 = ok, 2 = failed), uint8 result.
+        if (botdiag::BotActionLog::GetHandle(this) && packet.size() >= 6)
+        {
+            WorldPacket p(packet);
+            p.rpos(0);
+            uint32 spellId;
+            uint8 status;
+            p >> spellId >> status;
+            if (status != 0)
+            {
+                uint8 result;
+                p >> result;
+                SpellEntry const* info = sServerFacade.LookupSpellInfo(spellId);
+                if (info && FindNonCcTargetStrategy::IsCcSpell(info))
+                {
+                    // The cast's own target, from the start of this cast.
+                    LastSpellCast const& last = aiObjectContext->GetValue<LastSpellCast&>("last spell cast")->Get();
+                    Unit* ccTarget = last.id == spellId ? GetUnit(last.target) : nullptr;
+                    botdiag::BotActionLog::Write(this, "CC_CAST_FAILED",
+                        "spell=%u result=%u targetGuid=0x%llx dist=%.1f moving=%u",
+                        spellId, (unsigned)result,
+                        ccTarget ? (unsigned long long)ccTarget->getObjectGuid().GetRawValue() : 0ULL,
+                        ccTarget ? bot->GetDistance(ccTarget) : -1.0f,
+                        sServerFacade.isMoving(bot) ? 1u : 0u);
+                }
+            }
+        }
+        botOutgoingPacketHandlers.AddPacket(packet);
         return;
     }
 	default:
