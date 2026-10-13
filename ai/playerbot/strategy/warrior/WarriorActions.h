@@ -107,7 +107,7 @@ namespace ai
         bool isUseful() override
         {
             return CastSpellOnEnemyHealerAction::isUseful() &&
-                !(sPlayerbotAIConfig.avoidCreatureAuras && PossibleTriggersValue::GapCloserIntoKeepout(ai, GetTarget()));
+                !(sPlayerbotAIConfig.avoidCreatureAuras && PossibleTriggersValue::GapCloserIntoKeepout(ai, GetSpellName(), GetTarget()));
         }
     };
 
@@ -118,7 +118,7 @@ namespace ai
         bool isUseful() override
         {
             return CastSnareSpellAction::isUseful() &&
-                !(sPlayerbotAIConfig.avoidCreatureAuras && PossibleTriggersValue::GapCloserIntoKeepout(ai, GetTarget()));
+                !(sPlayerbotAIConfig.avoidCreatureAuras && PossibleTriggersValue::GapCloserIntoKeepout(ai, GetSpellName(), GetTarget()));
         }
     };
     MELEE_ACTION(CastSlamAction, "slam");

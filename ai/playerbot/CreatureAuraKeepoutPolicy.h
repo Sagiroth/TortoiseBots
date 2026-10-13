@@ -331,4 +331,73 @@ namespace ai
     {
         return !isTank && !explicitOrder && (targetIsKeepout || landingInRing);
     }
+
+    // Review #882 round 2: the engine asks isUseful() before the stance
+    // prerequisite and before isPossible(), so a gap closer's veto ran on
+    // every tick its trigger fired ("enemy out of melee" pushes Charge every
+    // tick of a chase, and Fury falls through to Intercept). The landing
+    // lookup therefore runs only when the cast could fire this tick. Each
+    // "not ready" reason below is one isPossible() also refuses
+    // (CastSpellAction::isPossible -> PlayerbotAI::CanCastSpell ->
+    // Spell::CheckCast), so skipping the veto then never lets an unvetoed
+    // cast through: the engine sees what it sees with the option off (the
+    // cast is impossible and its alternatives are pushed).
+    // The stance is deliberately not a reason: a wrong stance is fixed by the
+    // stance prerequisite, which runs only after isUseful(). Gating on it
+    // would switch stance first and veto the charge a tick later.
+    struct CreatureAuraGapCloserReadiness
+    {
+        bool knowsSpell = false;     // "spell id" resolved and the spell entry exists
+        bool lostControl = false;    // UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL
+        bool onCooldown = false;     // the spell's own cooldown (Player::HasSpellCooldown)
+        bool powerShort = false;     // rage below the cost (Intercept 10, Feral Charge 5)
+        bool nonCombatSpell = false; // SPELL_ATTR_CANT_USED_IN_COMBAT (Charge)
+        bool inCombat = false;
+        bool rangeKnown = false;     // isPossible() tests min/max range for this spell
+        float distance = 0.0f;       // the distance isPossible() measures
+        float minRange = 0.0f;
+        float maxRange = 0.0f;       // 25 yd for Charge and Intercept
+    };
+
+    inline bool CreatureAuraGapCloserCouldFire(CreatureAuraGapCloserReadiness const& r)
+    {
+        if (!r.knowsSpell || r.lostControl || r.onCooldown || r.powerShort)
+            return false;
+        if (r.nonCombatSpell && r.inCombat)
+            return false; // Charge never fires in combat on 1.12
+        if (r.rangeKnown && !(r.distance < r.maxRange && r.distance >= r.minRange))
+            return false; // the same test as CastSpellAction::isPossible
+        return true;
+    }
+
+    // The bounded landing lookup (a grid visit around the target) is
+    // remembered per bot for its current gap-closer target for this long, so
+    // Charge and Intercept in the same tick, and the next ticks of a chase,
+    // reuse one scan. The cached 15 yd list is still read fresh every time.
+    constexpr uint32_t kCreatureAuraLandingMemoMs = 1000;
+
+    struct CreatureAuraLandingMemo
+    {
+        uint64_t targetRaw = 0;
+        uint32_t atMs = 0;
+        bool valid = false;
+        bool ringed = false;
+    };
+
+    // Unsigned difference, so the wrap of the millisecond clock does not
+    // keep an entry alive.
+    inline bool CreatureAuraLandingMemoHit(CreatureAuraLandingMemo const& memo, uint64_t targetRaw,
+        uint32_t nowMs, uint32_t ttlMs = kCreatureAuraLandingMemoMs)
+    {
+        return memo.valid && memo.targetRaw == targetRaw && uint32_t(nowMs - memo.atMs) < ttlMs;
+    }
+
+    inline void CreatureAuraLandingMemoStore(CreatureAuraLandingMemo& memo, uint64_t targetRaw,
+        uint32_t nowMs, bool ringed)
+    {
+        memo.targetRaw = targetRaw;
+        memo.atMs = nowMs;
+        memo.valid = true;
+        memo.ringed = ringed;
+    }
 } // namespace ai

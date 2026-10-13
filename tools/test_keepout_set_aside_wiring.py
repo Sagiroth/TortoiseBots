@@ -86,7 +86,8 @@ class KeepoutSetAsideWiringTest(unittest.TestCase):
         for cls_name in ("CastInterceptOnEnemyHealerAction", "CastInterceptOnSnareTargetAction"):
             self.assertNotRegex(warrior, r"_ACTION\(" + cls_name + r",")
             gated = body(warrior, "class " + cls_name, "\n    };\n")
-            self.assertIn("PossibleTriggersValue::GapCloserIntoKeepout(ai, GetTarget())", gated)
+            self.assertIn("PossibleTriggersValue::GapCloserIntoKeepout(ai, GetSpellName(), GetTarget())", gated)
+        self.assertIn("PossibleTriggersValue::GapCloserIntoKeepout(ai, GetSpellName(), ", cls)
         # The shared veto: cached list first, then a bounded lookup of listed
         # entries around the target (Charge fires past the 15 yd list).
         values = (VALUES / "PossibleTargetsValue.cpp").read_text()
@@ -102,6 +103,36 @@ class KeepoutSetAsideWiringTest(unittest.TestCase):
         for start in ("bool SetBehindTargetAction::Execute(", "bool RearFlankAction::Execute(",
                       "bool MoveOutOfCollisionAction::Execute("):
             self.assertIn("EndPointInCreatureAuraKeepout(", body(move, start, "\n}\n"), start)
+
+    def test_gap_closer_lookup_waits_for_a_castable_spell(self):
+        # Review #882 round 2: the engine asks isUseful() before the stance
+        # prerequisite and isPossible(), every tick the trigger fires. The
+        # landing checks sit behind the readiness gate, and the grid visit
+        # behind the per-bot 1 s memo.
+        values = (VALUES / "PossibleTargetsValue.cpp").read_text()
+        veto = body(values, "bool PossibleTriggersValue::GapCloserIntoKeepout(", "\n}\n")
+        gate = veto.index("if (!GapCloserCouldFire(ai, spell, target))\n        return false;")
+        self.assertLess(veto.index("if (isTank || ordered)"), gate)
+        for later in ("KeepoutFor(target)", "KeepoutRingAt(ai, lx, ly)", "CreatureAuraLandingMemoHit(",
+                      "Cell::VisitAllObjects(", "CreatureAuraLandingMemoStore("):
+            self.assertLess(gate, veto.index(later), later)
+        self.assertLess(veto.index("KeepoutRingAt(ai, lx, ly)"), veto.index("CreatureAuraLandingMemoHit("))
+        self.assertLess(veto.index("CreatureAuraLandingMemoHit("), veto.index("Cell::VisitAllObjects("))
+        self.assertLess(veto.index("Cell::VisitAllObjects("), veto.index("CreatureAuraLandingMemoStore("))
+        self.assertEqual(veto.count("Cell::VisitAllObjects("), 1)
+        # The gate mirrors isPossible's refusals and leaves the stance to the
+        # prerequisite (gating on it would switch stance, then veto).
+        ready = body(values, "bool PossibleTriggersValue::GapCloserCouldFire(", "\n}\n")
+        for probe in ('"spell id", spell', "UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL", "sServerFacade.IsSpellReady(bot, spellId)",
+                      "Spell::CalculatePowerCost(spellInfo, bot, nullptr, nullptr)", "IsNonCombatSpell()",
+                      "IsInCombat()", "ai->GetSpellRange(spell, &maxRange, &minRange)",
+                      "CreatureAuraGapCloserCouldFire(r)"):
+            self.assertIn(probe, ready)
+        self.assertNotIn("GetErrorAtShapeshiftedCast", ready)
+        self.assertNotIn("Cell::", ready)
+        header = (VALUES / "PossibleTargetsValue.h").read_text()
+        self.assertIn("CreatureAuraLandingMemo landingMemo;", header)
+        self.assertNotIn("never per tick", header)
 
 
 if __name__ == "__main__":

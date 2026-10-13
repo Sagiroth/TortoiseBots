@@ -565,6 +565,68 @@ int main()
     }
     std::cout << "  [PASS] gap closers and end points stay out of the ring (tank and order exempt)\n";
 
+    // Review #882 round 2: isUseful() runs every tick the trigger fires, so
+    // the landing lookup sits behind a readiness gate and a 1 s memo.
+    {
+        CreatureAuraGapCloserReadiness ready;
+        ready.knowsSpell = true;
+        ready.rangeKnown = true;
+        ready.distance = 20.0f;
+        ready.minRange = 8.0f;
+        ready.maxRange = 25.0f;
+        CHECK(CreatureAuraGapCloserCouldFire(ready)); // Charge from 20 yd, out of combat
+
+        CreatureAuraGapCloserReadiness r = ready;
+        r.onCooldown = true;
+        CHECK(!CreatureAuraGapCloserCouldFire(r)); // on cooldown: no lookup
+        r = ready;
+        r.distance = 30.0f;
+        CHECK(!CreatureAuraGapCloserCouldFire(r)); // past 25 yd: no lookup
+        r.distance = 25.0f;
+        CHECK(!CreatureAuraGapCloserCouldFire(r)); // max range is exclusive, as in isPossible
+        r.distance = 7.9f;
+        CHECK(!CreatureAuraGapCloserCouldFire(r)); // inside the 8 yd minimum
+        r.distance = 8.0f;
+        CHECK(CreatureAuraGapCloserCouldFire(r));
+        r = ready;
+        r.nonCombatSpell = true;
+        CHECK(CreatureAuraGapCloserCouldFire(r)); // Charge out of combat
+        r.inCombat = true;
+        CHECK(!CreatureAuraGapCloserCouldFire(r)); // Charge in combat (Arms chase): no lookup
+        r.nonCombatSpell = false;
+        CHECK(CreatureAuraGapCloserCouldFire(r)); // Intercept in combat
+        r.powerShort = true;
+        CHECK(!CreatureAuraGapCloserCouldFire(r)); // Intercept without 10 rage
+        r = ready;
+        r.lostControl = true;
+        CHECK(!CreatureAuraGapCloserCouldFire(r)); // stunned
+        r = ready;
+        r.knowsSpell = false;
+        CHECK(!CreatureAuraGapCloserCouldFire(r)); // not learned
+        r = ready;
+        r.rangeKnown = false;
+        r.distance = 40.0f;
+        CHECK(CreatureAuraGapCloserCouldFire(r)); // no range data: never skip the veto on range
+
+        // Memo: one scan per bot and target per second.
+        CreatureAuraLandingMemo memo;
+        uint64_t const mob = 0xF130000000001234ull, other = 0xF130000000005678ull;
+        CHECK(!CreatureAuraLandingMemoHit(memo, mob, 5000));               // empty
+        CreatureAuraLandingMemoStore(memo, mob, 5000, true);
+        CHECK(CreatureAuraLandingMemoHit(memo, mob, 5000) && memo.ringed); // same tick (Charge, then Intercept)
+        CHECK(CreatureAuraLandingMemoHit(memo, mob, 5000 + kCreatureAuraLandingMemoMs - 1));
+        CHECK(!CreatureAuraLandingMemoHit(memo, mob, 5000 + kCreatureAuraLandingMemoMs)); // expired: rescan
+        CHECK(!CreatureAuraLandingMemoHit(memo, other, 5100));             // another target: rescan
+        CreatureAuraLandingMemoStore(memo, other, 5100, false);
+        CHECK(CreatureAuraLandingMemoHit(memo, other, 5200) && !memo.ringed);
+        CHECK(!CreatureAuraLandingMemoHit(memo, mob, 5200));
+        // Millisecond clock wrap: the entry expires on time, it never sticks.
+        CreatureAuraLandingMemoStore(memo, mob, 0xFFFFFF00u, true);
+        CHECK(CreatureAuraLandingMemoHit(memo, mob, 0x00000010u));  // 272 ms later
+        CHECK(!CreatureAuraLandingMemoHit(memo, mob, 0x00000400u)); // 1280 ms later
+    }
+    std::cout << "  [PASS] gap-closer veto looks only when the cast could fire, one scan per second\n";
+
     std::cout << "All creature aura keep-out tests passed.\n";
     return 0;
 }

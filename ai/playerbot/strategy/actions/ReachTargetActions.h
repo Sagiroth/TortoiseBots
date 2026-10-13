@@ -549,10 +549,13 @@ namespace ai
     protected:
         // AiPlayerbot.AvoidCreatureAuras: Charge, Intercept and Feral Charge
         // jump the bot past every keep-out hold (they never go through the
-        // chase). Asked only once the cast is otherwise useful.
+        // chase). The engine asks isUseful() every tick the trigger fires, so
+        // the veto first checks the cast could fire this tick (cooldown,
+        // rage, Charge out of combat, min/max range) and only then looks at
+        // the landing.
         bool GapCloserIntoKeepout()
         {
-            return PossibleTriggersValue::GapCloserIntoKeepout(ai, AI_VALUE(Unit*, "current target"));
+            return PossibleTriggersValue::GapCloserIntoKeepout(ai, GetSpellName(), AI_VALUE(Unit*, "current target"));
         }
 
         float distance;

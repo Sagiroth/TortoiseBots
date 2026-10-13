@@ -64,14 +64,30 @@ namespace ai
         // gap closer (Charge, Intercept, Feral Charge) onto `target`
         // (CreatureAuraGapCloserVetoed): a non-tank bot without an attack
         // order on it, and the target is a listed creature or the landing
-        // lies in a ring. The landing is checked against the cached list
-        // first, then by a bounded lookup of listed creatures around the
-        // target (the cast fires from up to 25 yd, past the 15 yd list).
-        // Callers ask only when the cast is otherwise ready, never per tick.
-        static bool GapCloserIntoKeepout(PlayerbotAI* ai, Unit* target);
+        // lies in a ring. The callers ask from isUseful(), which the engine
+        // evaluates on every tick the trigger fires, so the landing checks run
+        // only when `spell` could fire this tick (GapCloserCouldFire: known,
+        // off cooldown, enough rage, Charge out of combat, within its min/max
+        // range); otherwise there is nothing to veto and isPossible() refuses
+        // the cast as it does with the option off. The landing is then checked
+        // against the cached 15 yd list, then by a bounded lookup of listed
+        // creatures around the target (the cast fires from up to 25 yd), and
+        // that lookup's result is kept for this target for
+        // kCreatureAuraLandingMemoMs (one grid visit per bot per second at most).
+        static bool GapCloserIntoKeepout(PlayerbotAI* ai, std::string const& spell, Unit* target);
+
+        // The cheap readiness test above (CreatureAuraGapCloserCouldFire).
+        // Every reason it refuses is one CastSpellAction::isPossible refuses
+        // too. Stance and form are left to the prerequisite.
+        static bool GapCloserCouldFire(PlayerbotAI* ai, std::string const& spell, Unit* target);
 
     protected:
         void FindUnits(std::list<Unit*> &targets) override;
         bool AcceptUnit(Unit* unit) override;
+
+    private:
+        // Per bot (one value per AiObjectContext): the last bounded landing
+        // lookup for a gap-closer target.
+        CreatureAuraLandingMemo landingMemo;
 	};
 }
