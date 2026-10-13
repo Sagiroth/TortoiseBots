@@ -553,10 +553,11 @@ HireRaidOutcome HireProvisionService::HireRaid(Player* requester, HireRaidReques
             std::to_string(affordable) + "). Nothing was hired.");
 
     // A party that would overflow becomes a raid now (the reply says so); with
-    // no group yet the invite path forms it and converts it at the fifth
-    // member. Counted by eventual size: members, companions still mustering
-    // and the whole plan.
-    if (group && !group->isRaidGroup() && members + mustering + result.planned > 5)
+    // no group yet StepRaidJobs converts it once the first companions have
+    // formed it, before the next hire would hit the party cap. Counted by
+    // eventual size: members, companions still mustering and the whole plan.
+    bool const raidSized = members + mustering + result.planned > 5;
+    if (group && !group->isRaidGroup() && raidSized)
     {
         if (!group->IsLeader(requester->GetObjectGuid()))
             return refuse("Only the party leader can convert it to a raid. Nothing was hired.");
@@ -576,6 +577,7 @@ HireRaidOutcome HireProvisionService::HireRaid(Player* requester, HireRaidReques
     HireRaidJob job;
     job.masterGuid = masterGuid;
     job.roster = roster;
+    job.raidSized = raidSized;
     job.progress = result;
     job.progress.started = true;
     m_raidJobs.push_back(job);
@@ -593,9 +595,17 @@ void HireProvisionService::StepRaidJobs()
     {
         HireRaidJob& job = m_raidJobs[i];
         HireRaidOutcome& out = job.progress;
-        Player* master = sObjectAccessor.FindPlayer(job.masterGuid);
-        bool online = master && master->IsInWorld() && master->GetSession() &&
-            !master->GetSession()->IsHeadless();
+        // NotInWorld lookup: a far teleport (loading screen) takes the master
+        // out of the world for a moment; the job waits for it instead of
+        // dying. Only a master that is gone (logged out) drops the job, and
+        // then there is no one left to send the summary to.
+        Player* master = sObjectAccessor.FindPlayerNotInWorld(job.masterGuid);
+        bool online = master && master->GetSession() && !master->GetSession()->IsHeadless();
+        if (online && (!master->IsInWorld() || master->IsBeingTeleportedFar()))
+        {
+            ++i;
+            continue;
+        }
         bool finished = false;
         if (!online)
         {
@@ -605,6 +615,21 @@ void HireProvisionService::StepRaidJobs()
         }
         while (online && !finished && budget > 0 && job.cursor < job.roster.size())
         {
+            // A master who started solo has no group until the first
+            // companions join; once it exists as a party, make it a raid
+            // before Hire() would refuse the sixth seat as GroupFull.
+            if (job.raidSized)
+            {
+                Group* group = master->GetGroup();
+                if (group && group->isBGGroup())
+                    group = master->GetOriginalGroup();
+                if (group && !group->isRaidGroup() && group->IsLeader(master->GetObjectGuid()))
+                {
+                    group->ConvertToRaid();
+                    out.convertedToRaid = true;
+                    ChatHandler(master).SendSysMessage("Your party became a raid.");
+                }
+            }
             --budget;
             HireRaidSlot const& slot = job.roster[job.cursor];
             HireSelection sel;

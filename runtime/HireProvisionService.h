@@ -64,7 +64,8 @@ struct HireRaidOutcome
     // player gets a closing summary plus the TBM line when the job ends.
     bool started = false;
     bool capped = false;
-    // The party was converted to a raid when the job was accepted.
+    // The party was converted to a raid (when the job was accepted, or while
+    // it ran for a master who started solo).
     bool convertedToRaid = false;
     HireStatus stopStatus = HireStatus::Ok;
     std::string message;
@@ -91,6 +92,11 @@ struct HireRaidJob
     ObjectGuid masterGuid;
     std::vector<HireRaidSlot> roster;
     size_t cursor = 0;
+    // The finished raid outgrows a party (members + mustering + plan > 5).
+    // A solo master has no group to convert when the job starts; the group
+    // forms as the first companions join and is converted before the next
+    // hire would hit the party cap.
+    bool raidSized = false;
     HireRaidOutcome progress;
 };
 
