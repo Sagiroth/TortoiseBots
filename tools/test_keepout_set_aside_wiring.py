@@ -64,6 +64,32 @@ class KeepoutSetAsideWiringTest(unittest.TestCase):
                      "void CommitExplicitAttackTarget(", "\n}\n")
         self.assertRegex(order, r'"keepout set aside"\)->Get\(\)\.erase\(guid\)')
 
+    def test_set_aside_leaves_a_trace(self):
+        # Live run 2 (2026-10-13) could not prove the set-aside fired: its
+        # only message was a debug-move whisper. One action-log row and one
+        # detail log line per set-aside, never per tick.
+        move = (ROOT / "ai/playerbot/strategy/actions/MovementActions.cpp").read_text()
+        hold = body(move, "bool MovementAction::HoldChaseOutsideKeepout(", "\n}\n")
+        self.assertIn('"KEEPOUT_SET_ASIDE"', hold)
+        self.assertIn('[BOT CHASE] %s: set aside', hold)
+
+    def test_gap_closers_and_end_points_ask_the_ring(self):
+        # Charge / Intercept / Feral Charge are CastReachTargetSpellAction.
+        reach = (ROOT / "ai/playerbot/strategy/actions/ReachTargetActions.h").read_text()
+        cls = body(reach, "class CastReachTargetSpellAction", "\n    };\n")
+        self.assertIn("GapCloserIntoKeepout()", cls)
+        self.assertIn("CreatureAuraGapCloserVetoed(", cls)
+        self.assertIn('"explicit attack target"', cls)
+        for spell in ("CastChargeAction", "CastInterceptAction"):
+            self.assertRegex((ROOT / "ai/playerbot/strategy/warrior/WarriorActions.h").read_text(),
+                             r"REACH_ACTION\(" + spell + r",")
+        self.assertIn("class CastFeralChargeBearAction : public CastReachTargetSpellAction",
+                      (ROOT / "ai/playerbot/strategy/druid/DruidActions.h").read_text())
+        move = (ROOT / "ai/playerbot/strategy/actions/MovementActions.cpp").read_text()
+        for start in ("bool SetBehindTargetAction::Execute(", "bool RearFlankAction::Execute(",
+                      "bool MoveOutOfCollisionAction::Execute("):
+            self.assertIn("EndPointInCreatureAuraKeepout(", body(move, start, "\n}\n"), start)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -502,6 +502,43 @@ int main()
     }
     std::cout << "  [PASS] tank holds a ringed mob: the set-aside is not re-picked through assist or mark\n";
 
+    // Gap closers and end points (Maraudon live run 2, 2026-10-13): a warrior
+    // DPS charged a sludge from 21 yd, past every hold, and died in its pulse.
+    {
+        CreatureAuraKeepout const& row = *FindCreatureAuraKeepout(349, 12222);
+        float const hazard = CreatureAuraHazardRadius(row); // 9 yd
+        // End points: inside the hazard ring refused, on or past it allowed.
+        CHECK(CreatureAuraEndPointBlocked(row, 0.0f));
+        CHECK(CreatureAuraEndPointBlocked(row, 2.0f));  // rear flank on the sludge
+        CHECK(CreatureAuraEndPointBlocked(row, 8.9f));
+        CHECK(!CreatureAuraEndPointBlocked(row, hazard));
+        CHECK(!CreatureAuraEndPointBlocked(row, 12.0f));
+
+        // Landing: melee reach from the target on the bot's side.
+        float lx = 0.0f, ly = 0.0f;
+        CreatureAuraGapCloserLanding(21.0f, 0.0f, 0.0f, 0.0f, 2.0f, lx, ly);
+        CHECK(std::fabs(lx - 2.0f) < 0.01f && std::fabs(ly) < 0.01f);
+        // A charge onto a mob 3 yd from a sludge (sludge at (-3, 0)) lands
+        // 5 yd from it: in the ring. A mob 15 yd from the sludge: clear.
+        CHECK(CreatureAuraEndPointBlocked(row, std::fabs(lx - (-3.0f))));
+        CHECK(!CreatureAuraEndPointBlocked(row, std::fabs(lx - (-15.0f))));
+
+        // Veto: charge onto the sludge, non-tank, no order -> vetoed.
+        CHECK(CreatureAuraGapCloserVetoed(true, true, false, false));
+        CHECK(CreatureAuraGapCloserVetoed(true, false, false, false));
+        // Charge onto a mob whose landing is in a sludge's ring -> vetoed.
+        CHECK(CreatureAuraGapCloserVetoed(false, true, false, false));
+        // Tank: allowed (it picks up mobs in the ring).
+        CHECK(!CreatureAuraGapCloserVetoed(true, true, true, false));
+        CHECK(!CreatureAuraGapCloserVetoed(false, true, true, false));
+        // Explicit attack order on that target: today's behaviour.
+        CHECK(!CreatureAuraGapCloserVetoed(true, true, false, true));
+        CHECK(!CreatureAuraGapCloserVetoed(false, true, false, true));
+        // Nothing listed nearby: allowed.
+        CHECK(!CreatureAuraGapCloserVetoed(false, false, false, false));
+    }
+    std::cout << "  [PASS] gap closers and end points stay out of the ring (tank and order exempt)\n";
+
     std::cout << "All creature aura keep-out tests passed.\n";
     return 0;
 }

@@ -96,6 +96,11 @@ namespace ai
         // off outside it instead of chasing in. True when it handled the
         // chase this tick; false to chase normally.
         bool HoldChaseOutsideKeepout(WorldObject* target, float distance);
+        // AiPlayerbot.AvoidCreatureAuras: true when a move's end point lies in
+        // a listed creature's ring (rear flank, set behind, move out of
+        // collision refuse it; the hazard registry only bends the path). A
+        // tank in combat is exempt, the player's attack target is skipped.
+        bool EndPointInCreatureAuraKeepout(float x, float y);
         bool Flee(Unit *target);
         // Pool-bot flee: one checked point step of `distance` away from
         // target (fanned to the sides), false when no spot is usable.

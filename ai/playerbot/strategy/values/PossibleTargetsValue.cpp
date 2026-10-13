@@ -197,3 +197,28 @@ CreatureAuraKeepout const* PossibleTriggersValue::KeepoutFor(Unit* unit)
         return nullptr;
     return row;
 }
+
+Unit* PossibleTriggersValue::KeepoutRingAt(PlayerbotAI* ai, float x, float y, Unit* extra)
+{
+    if (!sPlayerbotAIConfig.avoidCreatureAuras || !ai)
+        return nullptr;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    ObjectGuid const explicitTarget = context->GetValue<ObjectGuid>("explicit attack target")->Get();
+    auto ringed = [&](Unit* unit)
+    {
+        CreatureAuraKeepout const* row = KeepoutFor(unit);
+        if (!CreatureAuraKeepoutApplies(true, row, true, true, unit && unit->GetObjectGuid() == explicitTarget))
+            return false;
+        float const dx = unit->GetPositionX() - x, dy = unit->GetPositionY() - y;
+        return CreatureAuraEndPointBlocked(*row, std::sqrt(dx * dx + dy * dy));
+    };
+    if (extra && ringed(extra))
+        return extra;
+    for (ObjectGuid const& guid : context->GetValue<std::list<ObjectGuid>>("possible triggers")->Get())
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (unit && unit != extra && ringed(unit))
+            return unit;
+    }
+    return nullptr;
+}

@@ -23,6 +23,7 @@
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "playerbot/PoolFleePolicy.h"
 #include "playerbot/JumpPolicy.h"
+#include "playerbot/BotActionLog.h"
 #include "Database/DBCStores.h"
 
 using namespace ai;
@@ -1648,6 +1649,14 @@ bool MovementAction::HoldChaseOutsideKeepout(WorldObject* target, float distance
         keepoutChaseHoldTarget = ObjectGuid();
         ai->TellDebug(GetMaster(), "Setting aside " + std::string(target->GetName()) +
             " - it stands in a creature aura keep-out", "debug move");
+        // Once per set-aside (at most one per 3 s hold), never per tick: the
+        // per-bot action log (AiPlayerbot.EnableActionLog) and the detail
+        // server log, which carries the other [BOT CHASE] lines.
+        botdiag::BotActionLog::Write(ai, "KEEPOUT_SET_ASIDE", "target=%s entry=%u guid=0x%llx forMs=%u",
+            target->GetName(), target->GetEntry(), (unsigned long long)targetGuid.GetRawValue(),
+            kCreatureAuraSetAsideMs);
+        sLog.outDetail("[BOT CHASE] %s: set aside %s (entry %u) for %u ms - it stands in a creature aura keep-out",
+            bot->GetName(), target->GetName(), target->GetEntry(), kCreatureAuraSetAsideMs);
     }
     return true;
 }
@@ -1723,6 +1732,13 @@ bool MovementAction::HoldOutsideKeepout(float gx, float gy, float ax, float ay, 
     }
     engaged = ObjectGuid();
     return false;
+}
+
+bool MovementAction::EndPointInCreatureAuraKeepout(float x, float y)
+{
+    if (!sPlayerbotAIConfig.avoidCreatureAuras || CreatureAuraCombatExempt(PlayerbotAI::IsTank(bot), bot->IsInCombat()))
+        return false;
+    return PossibleTriggersValue::KeepoutRingAt(ai, x, y, AI_VALUE(Unit*, "current target")) != nullptr;
 }
 
 WorldPosition CalculatePerpendicularPoint(const WorldPosition& A, const WorldPosition& B, float offset, bool left = true)
@@ -3138,7 +3154,9 @@ bool SetBehindTargetAction::Execute(Event& event)
     target->GetMap()->GetLosHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, -0.5f);
 
     const bool isLos = target->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true);
-    bool moved = MoveTo(bot->GetMapId(), x, y, z);
+    // Creature aura keep-out: never end behind a mob inside a listed
+    // creature's ring (the hazard check only bends the path there).
+    bool moved = !EndPointInCreatureAuraKeepout(x, y) && MoveTo(bot->GetMapId(), x, y, z);
     if (!moved && !isLos)
     {
         distance = sPlayerbotAIConfig.contactDistance;
@@ -3146,7 +3164,7 @@ bool SetBehindTargetAction::Execute(Event& event)
         y = target->getPositionY() + sin(angle) * distance;
         z = target->getPositionZ();
         bot->UpdateGroundPositionZ(x, y, z);
-        moved = MoveTo(bot->GetMapId(), x, y, z);
+        moved = !EndPointInCreatureAuraKeepout(x, y) && MoveTo(bot->GetMapId(), x, y, z);
     }
 
     return moved;
@@ -3234,8 +3252,17 @@ bool RearFlankAction::Execute(Event& event)
     float rightY = target->getPositionY() + sinf(facing - flankAngle) * baseDist;
     float dxl = leftX - bot->getPositionX(), dyl = leftY - bot->getPositionY();
     float dxr = rightX - bot->getPositionX(), dyr = rightY - bot->getPositionY();
-    float destX = (dxl * dxl + dyl * dyl) < (dxr * dxr + dyr * dyr) ? leftX : rightX;
-    float destY = (dxl * dxl + dyl * dyl) < (dxr * dxr + dyr * dyr) ? leftY : rightY;
+    bool leftFirst = (dxl * dxl + dyl * dyl) < (dxr * dxr + dyr * dyr);
+    // Creature aura keep-out: a flank inside a listed creature's ring is
+    // refused; take the other flank, or stay put when both are ringed.
+    bool const leftRinged = EndPointInCreatureAuraKeepout(leftX, leftY);
+    bool const rightRinged = EndPointInCreatureAuraKeepout(rightX, rightY);
+    if (leftRinged && rightRinged)
+        return false;
+    if (leftRinged || rightRinged)
+        leftFirst = !leftRinged;
+    float destX = leftFirst ? leftX : rightX;
+    float destY = leftFirst ? leftY : rightY;
     float destZ = target->getPositionZ();
     bot->UpdateGroundPositionZ(destX, destY, destZ);
     float ox, oy, oz;
@@ -3321,6 +3348,10 @@ bool MoveOutOfCollisionAction::Execute(Event& event)
         WorldPosition randomPoint = botPos;
         if (randomPoint.GetReachableRandomPointOnGround(bot, ai->GetRange("follow")))
         {
+            // Creature aura keep-out: try another point rather than unstack
+            // into a listed creature's ring.
+            if (EndPointInCreatureAuraKeepout(randomPoint.getX(), randomPoint.getY()))
+                continue;
             return MoveTo(bot->GetMapId(), randomPoint.getX(), randomPoint.getY(), randomPoint.getZ());
         }
     }
@@ -3328,7 +3359,11 @@ bool MoveOutOfCollisionAction::Execute(Event& event)
     // old style
     float angle = M_PI * 2000 / (float)urand(1, 1000);
     float distance = ai->GetRange("follow");
-    return MoveTo(bot->GetMapId(), bot->getPositionX() + cos(angle) * distance, bot->getPositionY() + sin(angle) * distance, bot->getPositionZ());
+    float const oldX = bot->getPositionX() + cos(angle) * distance;
+    float const oldY = bot->getPositionY() + sin(angle) * distance;
+    if (EndPointInCreatureAuraKeepout(oldX, oldY))
+        return false;
+    return MoveTo(bot->GetMapId(), oldX, oldY, bot->getPositionZ());
 }
 
 bool MoveOutOfCollisionAction::isUseful()

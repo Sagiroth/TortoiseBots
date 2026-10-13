@@ -735,10 +735,14 @@ AiPlayerbot.DungeonSelfClear = 0
 # exempt in combat (they may hold mobs inside). The creature the player
 # ordered the bot to attack is never avoided by that bot. Listed today:
 # Maraudon's Creeping Sludge (12222, aura 22638 Poison Shock, 5 yd every 2 s).
-# On by default.
-# 0 - no keep-out; bots melee and walk past these creatures as before
-# 1 - stay out of listed creature auras (Default)
-AiPlayerbot.AvoidCreatureAuras = 1
+# With it on, a non-tank bot without an attack order also does not Charge,
+# Intercept or Feral Charge onto a listed creature or onto a mob standing in
+# its ring, and its flank, set-behind and unstack moves never end in the ring.
+# Off by default until a clean live re-test: a linked pack that is already
+# fighting the group is not handled well yet (two Maraudon wipes, 2026-10-13).
+# 0 - no keep-out; bots melee and walk past these creatures as before (Default)
+# 1 - stay out of listed creature auras
+AiPlayerbot.AvoidCreatureAuras = 0
 
 # Two taxi paths in the 1.18.1 client data have missing nodes, and a bot that
 # flies one crashes the world server: 355 (Shimmerstar Lake -> Valormok) and

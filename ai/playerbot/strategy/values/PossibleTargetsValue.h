@@ -53,6 +53,13 @@ namespace ai
         // per bot and stays with the callers.
         static CreatureAuraKeepout const* KeepoutFor(Unit* unit);
 
+        // The listed creature whose ring (hazard radius, centre measure)
+        // contains the point (x, y): `extra` first (a target the 15 yd list
+        // may not reach yet), then the bot's cached "possible triggers" list.
+        // The creature the player ordered this bot to attack is skipped.
+        // nullptr when none or with the toggle off. No new world scan.
+        static Unit* KeepoutRingAt(PlayerbotAI* ai, float x, float y, Unit* extra = nullptr);
+
     protected:
         void FindUnits(std::list<Unit*> &targets) override;
         bool AcceptUnit(Unit* unit) override;

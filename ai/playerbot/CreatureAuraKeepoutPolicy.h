@@ -288,4 +288,38 @@ namespace ai
     {
         return relaxed ? row.pulseRadius : row.keepoutRadius;
     }
+
+    // ---- End points and gap closers (Maraudon live run 2, 2026-10-13) -----
+    //
+    // The hazard registry only bends a path; a move whose end point lies in a
+    // ring still walks the bot in. An end point (rear flank, set behind, move
+    // out of collision, a gap closer's landing) is refused while it lies
+    // within the hazard radius of a listed creature, the ring a chase or
+    // follow end point already keeps out of.
+    inline bool CreatureAuraEndPointBlocked(CreatureAuraKeepout const& row, float creatureToPointDistance)
+    {
+        return creatureToPointDistance < CreatureAuraHazardRadius(row);
+    }
+
+    // Where a gap closer (Charge, Intercept, Feral Charge) puts the bot:
+    // `reach` from the target on the bot's side (the chase goal at that
+    // distance).
+    inline void CreatureAuraGapCloserLanding(float bx, float by, float tx, float ty, float reach,
+        float& lx, float& ly)
+    {
+        CreatureAuraChaseGoal(bx, by, tx, ty, reach, lx, ly);
+    }
+
+    // A gap closer jumps the bot past every hold: it never goes through the
+    // chase, so neither the ring nor the 3 s set-aside sees it (live: a
+    // warrior DPS charged a sludge from 21 yd and died in its pulse). A
+    // non-tank bot does not use one onto a listed creature, or onto a target
+    // whose landing lies in a ring. Tanks pick up mobs in the ring
+    // (CreatureAuraChaseExempt), and a player's attack order on that target
+    // keeps today's behaviour.
+    inline bool CreatureAuraGapCloserVetoed(bool targetIsKeepout, bool landingInRing, bool isTank,
+        bool explicitOrder)
+    {
+        return !isTank && !explicitOrder && (targetIsKeepout || landingInRing);
+    }
 } // namespace ai
