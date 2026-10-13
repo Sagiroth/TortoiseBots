@@ -380,6 +380,11 @@ public:
     // Seconds a hired companion waits on guard after its master disconnects
     // before dismissing (default 300 = 5 minutes).
     uint32 hireDisconnectGracePeriod = 300;
+    // Issue #900: `.bot hire raid`. Class spread per role (round-robin) and
+    // the named presets; both are parsed at use, the defaults live in
+    // runtime/HireRaidPolicy.h and equal the shipped template.
+    std::string hireRaidSpread;
+    std::string hireRaidPresets;
     // Issue #490: static best-in-slot sets for level-60 hires (tiers 1-7).
     // The master switch gates the static pass; tier 0 always keeps today's
     // random hire gear. A player may hire at any tier from 0 up to the

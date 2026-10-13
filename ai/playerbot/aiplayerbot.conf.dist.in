@@ -346,6 +346,17 @@ AiPlayerbot.TravelPickBudgetUs = 4000
 #AiPlayerbot.HirePartyMult4 = 4.66
 #AiPlayerbot.HireRaidFlatCostCopper = 10000
 #AiPlayerbot.HireDisconnectGracePeriod = 300
+# Issue #900: `.bot hire raid <preset|composition> [tier]` hires a whole raid
+# through the single-hire path (up to HireMaxBotsPerPlayer minus the
+# companions you already have). A role count like `3t 12h 24d` picks its
+# classes from HireRaidSpread: per role (tank, healer, dps) a comma list of
+# classes handed out round-robin; repeat a class to weight it. Classes your
+# faction cannot field are skipped. HireRaidPresets: `name=composition`
+# entries separated by `;`, run as `.bot hire raid <name> [tier]`; the
+# composition may end in a tier word (a tier typed after the name wins).
+# The values below are the values that actually run.
+#AiPlayerbot.HireRaidSpread = tank=warrior,druid,paladin;healer=priest,priest,paladin,shaman,druid;dps=mage,warlock,rogue,hunter,warrior,mage,warlock,rogue,hunter,shaman
+#AiPlayerbot.HireRaidPresets = zg=2t 4h 13d t2;aq20=2t 4h 13d t5;onyxia=3t 10h 26d t1;mc=3t 10h 26d t3;bwl=3t 10h 26d t4;aq40=3t 10h 26d t5;naxx=3t 10h 26d t6
 # Issue #490: static best-in-slot sets for level-60 hires (tiers 1-7 from
 # the tortoise_bots_hire_gear table). 0 = today's random hire gear only.
 # HireGearStartTier (0..7) is the tier every player has. Higher tiers are

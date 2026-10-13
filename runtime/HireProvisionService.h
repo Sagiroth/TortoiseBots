@@ -1,6 +1,7 @@
 #pragma once
 
 // pi-lens-ignore: clang:pp_file_not_found
+#include "HireRaidPolicy.h"
 #include "ObjectGuid.h"
 
 #include <cstdint>
@@ -52,6 +53,27 @@ struct HireOutcome
     uint32_t cost = 0;
 };
 
+// Issue #900: result of `.bot hire raid`. refused = nothing was hired because
+// a pre-check failed (message says why). Otherwise hired of planned companions
+// joined; message is empty on a full hire or names why the sequence stopped.
+// requested is the player's total, planned the part the cap leaves room for.
+struct HireRaidOutcome
+{
+    bool refused = false;
+    bool capped = false;
+    HireStatus stopStatus = HireStatus::Ok;
+    std::string message;
+    uint32_t requested = 0;
+    uint32_t planned = 0;
+    uint32_t hired = 0;
+    uint32_t tanks = 0;
+    uint32_t healers = 0;
+    uint32_t dps = 0;
+    uint8_t tier = 0;
+    uint64_t quote = 0;
+    uint64_t fee = 0;
+};
+
 // Issue #192: on-demand companion hiring. Creates a character on an RNDBOT
 // account matching the requested class/race/gender, levels it to the
 // requester, provisions talents/spells/skills/gear for the requested role,
@@ -70,6 +92,21 @@ public:
     // fromGossip skips the resting check: standing at the recruiter inside the
     // inn is proof of presence. The `.bot hire` fast path enforces it.
     HireOutcome Hire(Player* requester, HireSelection const& sel, bool fromGossip);
+
+    // Issue #900: hire the whole raid described by request (see
+    // runtime/HireRaidPolicy.h) through Hire(), one slot after the other.
+    HireRaidOutcome HireRaid(Player* requester, HireRaidRequest const& request);
+
+    // The gates every hire passes before it picks a class: in-game, enabled,
+    // pool available, account security, recruiter/HireAnywhere. False fills
+    // outcome with the status and message.
+    static bool CheckHireAllowed(Player* requester, bool fromGossip, HireOutcome& outcome);
+    // Fee for the hire that follows ownedBefore live/mustering companions, at
+    // the level and effective gear tier (one formula for Hire and HireRaid).
+    static uint32_t QuoteHireFee(uint32_t ownedBefore, uint32_t level, uint8_t gearTier);
+    // Fills a missing race (random race of the requester's faction that can be
+    // the class) and gender. False when no race of the faction fits the class.
+    static bool FillDefaultRaceGender(Player* requester, HireSelection& sel);
 
     // Completes queued provisions once the hired character is controllable,
     // then groups it with its master. Bounded: at most two provisions per tick.

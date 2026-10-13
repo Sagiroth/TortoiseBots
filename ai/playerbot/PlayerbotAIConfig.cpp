@@ -1,6 +1,7 @@
 
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/playerbot.h"
+#include "../../runtime/HireRaidPolicy.h"
 #include "../../runtime/HireUnlockPolicy.h"
 #include "../../runtime/RemoteCommanderView.h"
 #include <cerrno>
@@ -496,6 +497,26 @@ bool PlayerbotAIConfig::Initialize()
     hireDisconnectGracePeriod = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireDisconnectGracePeriod", 300));
     if (hireDisconnectGracePeriod > 3600)
         hireDisconnectGracePeriod = 3600;
+    // Issue #900: `.bot hire raid` class spread and presets. A malformed value
+    // falls back to the shipped default (fallbacks equal the template).
+    hireRaidSpread = config.GetStringDefault("AiPlayerbot.HireRaidSpread", TortoiseBots::kHireRaidSpreadDefault);
+    {
+        TortoiseBots::HireRaidSpread probe;
+        if (!TortoiseBots::ParseHireRaidSpread(hireRaidSpread, probe))
+        {
+            sLog.outError("AiPlayerbot.HireRaidSpread '%s' is malformed (tank=..;healer=..;dps=.. with class names); using the default", hireRaidSpread.c_str());
+            hireRaidSpread = TortoiseBots::kHireRaidSpreadDefault;
+        }
+    }
+    hireRaidPresets = config.GetStringDefault("AiPlayerbot.HireRaidPresets", TortoiseBots::kHireRaidPresetsDefault);
+    {
+        std::vector<TortoiseBots::HireRaidPreset> probe;
+        if (!TortoiseBots::ParseHireRaidPresets(hireRaidPresets, probe))
+        {
+            sLog.outError("AiPlayerbot.HireRaidPresets '%s' is malformed (name=composition;name=composition); using the default", hireRaidPresets.c_str());
+            hireRaidPresets = TortoiseBots::kHireRaidPresetsDefault;
+        }
+    }
     // Issue #490: static hire-gear tiers. Fallbacks equal the shipped
     // template values.
     hireGearTiersEnabled = config.GetBoolDefault("AiPlayerbot.HireGearTiersEnabled", true);

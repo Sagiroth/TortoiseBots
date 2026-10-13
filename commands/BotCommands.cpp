@@ -6,6 +6,7 @@
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/ClaimLifecycle.h"
 #include "../runtime/HireProvisionService.h"
+#include "../runtime/HireRaidPolicy.h"
 #include "../runtime/HireSpecPolicy.h"
 #include "../runtime/HireTierRequestPolicy.h"
 #include "BotCommandContext.h"
@@ -988,11 +989,63 @@ static bool HandleMatureCommand(ChatHandler* handler, char const* args)
     return true;
 }
 
+static std::string ProtocolSafe(std::string value);
+
+// Issue #900: `.bot hire raid <preset|composition> [tier]`. The grammar and
+// the roster live in runtime/HireRaidPolicy.h, the cap, quote, raid conversion
+// and the hires themselves in HireProvisionService::HireRaid. One summary line
+// for the player plus one structured line for the TBM addon:
+//   TBM:HIRE_RAID|<ok|partial|refused>|<hired>|<planned>|<tank>|<healer>|<dps>|<tier>|<feeCopper>|<reason>
+static bool HandleHireRaid(ChatHandler* handler, Player* requester, std::vector<std::string> tokens)
+{
+    // tokens[0] is "raid"; the rest is the preset or composition.
+    tokens.erase(tokens.begin());
+    std::vector<HireRaidPreset> presets;
+    if (!ParseHireRaidPresets(sPlayerbotAIConfig.hireRaidPresets, presets))
+        ParseHireRaidPresets(kHireRaidPresetsDefault, presets);
+    ExpandHireRaidPreset(presets, tokens);
+
+    HireRaidRequest request;
+    std::string error;
+    if (!ParseHireRaidSpec(tokens, request, error))
+    {
+        handler->PSendSysMessage("%s", error.c_str());
+        handler->PSendSysMessage("Usage: .bot hire raid <preset|composition> [tier], for example .bot hire raid 3t 12h 24d t6");
+        handler->PSendSysMessage("TBM:HIRE_RAID|refused|0|0|0|0|0|0|0|%s", ProtocolSafe(error).c_str());
+        return true;
+    }
+
+    HireRaidOutcome outcome = HireProvisionService::Instance().HireRaid(requester, request);
+    if (outcome.refused)
+    {
+        handler->PSendSysMessage("%s", outcome.message.c_str());
+        handler->PSendSysMessage("TBM:HIRE_RAID|refused|0|%u|0|0|0|%u|0|%s", outcome.planned,
+            static_cast<uint32>(outcome.tier), ProtocolSafe(outcome.message).c_str());
+        return true;
+    }
+
+    uint32 const fee = static_cast<uint32>(std::min<uint64_t>(outcome.fee, 0xFFFFFFFFull));
+    char const* tierName = HireTierName(outcome.tier);
+    handler->PSendSysMessage("Hired %u: %u tank / %u healer / %u dps, tier %u (%s), fee %s.%s%s",
+        outcome.hired, outcome.tanks, outcome.healers, outcome.dps, static_cast<uint32>(outcome.tier),
+        tierName ? tierName : "?", ai::ChatHelper::formatMoney(fee).c_str(),
+        outcome.capped ? " Capped by AiPlayerbot.HireMaxBotsPerPlayer." : "",
+        outcome.hired ? " Your companions are mustering." : "");
+    if (!outcome.message.empty())
+        handler->PSendSysMessage("Stopped after %u of %u: %s", outcome.hired, outcome.planned, outcome.message.c_str());
+    handler->PSendSysMessage("TBM:HIRE_RAID|%s|%u|%u|%u|%u|%u|%u|%u|%s",
+        outcome.hired == outcome.planned ? "ok" : "partial", outcome.hired, outcome.planned,
+        outcome.tanks, outcome.healers, outcome.dps, static_cast<uint32>(outcome.tier), fee,
+        ProtocolSafe(outcome.message).c_str());
+    return true;
+}
+
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename,clang:undeclared_var_use
 // Issue #192: fast-path companion hire. Same service, costs, and caps as the
 // <Mercenary Hire> gossip wizard, but only available when the server sets
 // AiPlayerbot.HireAnywhere; otherwise it points players to a recruiter. Usage:
 //   .bot hire <class> [dps|tank|healer] [race] [male|female] [tier]
+//   .bot hire raid <preset|composition> [tier]   (issue #900, see HandleHireRaid)
 // Tokens after the class may come in any order: "warrior tauren male tank",
 // "mage female frost", and "paladin protection" all parse. Bare spec words
 // (protection/arms/fury/holy/retribution/...) imply their role. The optional
@@ -1009,7 +1062,7 @@ static bool HandleHire(ChatHandler* handler, char const* args)
     std::string input = Trim(args ? args : "");
     if (input.empty())
     {
-        handler->PSendSysMessage("Usage: .bot hire <class> [dps/tank/healer] [race] [male/female] [tier]");
+        handler->PSendSysMessage("Usage: .bot hire <class> [dps/tank/healer] [race] [male/female] [tier], or .bot hire raid <preset|3t 12h 24d> [tier]");
         return true;
     }
     // Split on whitespace; class/race/gender/role/spec/tier tokens in any order.
@@ -1019,6 +1072,18 @@ static bool HandleHire(ChatHandler* handler, char const* args)
         std::string token;
         while (stream >> token)
             tokens.push_back(token);
+    }
+    {
+        std::string first = tokens.front();
+        for (char& c : first)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (first == "raid")
+        {
+            for (std::string& t : tokens)
+                for (char& c : t)
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            return HandleHireRaid(handler, requester, tokens);
+        }
     }
     HireSelection sel;
     // Tokens that are not class/race/gender/role words: resolved against the
@@ -1123,7 +1188,7 @@ static bool HandleHire(ChatHandler* handler, char const* args)
     }
     if (!sel.classId)
     {
-        handler->PSendSysMessage("Usage: .bot hire <class> [dps/tank/healer] [race] [male/female] [tier]");
+        handler->PSendSysMessage("Usage: .bot hire <class> [dps/tank/healer] [race] [male/female] [tier], or .bot hire raid <preset|3t 12h 24d> [tier]");
         return true;
     }
     // Issue #490 PR 2: a tier above the player's unlock fails fast with the
@@ -1160,28 +1225,11 @@ static bool HandleHire(ChatHandler* handler, char const* args)
         }
     }
     // Defaults: requester's faction race pool, random gender, class role.
-    if (!sel.race)
+    if (!HireProvisionService::FillDefaultRaceGender(requester, sel))
     {
-        Team team = requester->GetTeam();
-        std::vector<uint8> pool;
-        for (uint32 race = RACE_HUMAN; race <= RACE_HIGH_ELF; ++race)
-        {
-            if (Player::TeamForRace(race) != team)
-                continue;
-            // GetPlayerInfo is the authoritative class/race contract.
-            if (!sObjectMgr.GetPlayerInfo(race, sel.classId))
-                continue;
-            pool.push_back(static_cast<uint8>(race));
-        }
-        if (pool.empty())
-        {
-            handler->PSendSysMessage("No race of your faction can be that class.");
-            return true;
-        }
-        sel.race = pool[urand(0, uint32(pool.size() - 1))];
+        handler->PSendSysMessage("No race of your faction can be that class.");
+        return true;
     }
-    if (!sel.gender)
-        sel.gender = urand(0, 1) ? GENDER_FEMALE : GENDER_MALE;
     if (!sel.role)
         sel.role = HireProvisionService::DefaultRoleForClass(sel.classId);
     if (sel.classId == CLASS_DRUID && sel.specIndex < 0 && sel.role == static_cast<uint8>(ai::BOT_ROLE_DPS))

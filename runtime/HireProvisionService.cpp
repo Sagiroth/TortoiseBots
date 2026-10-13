@@ -139,20 +139,19 @@ bool HireProvisionService::ClassCanRole(uint8 classId, uint8 role)
     return false;
 }
 
-HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& sel, bool fromGossip)
+bool HireProvisionService::CheckHireAllowed(Player* requester, bool fromGossip, HireOutcome& outcome)
 {
-    HireOutcome outcome;
     if (!requester || !requester->GetSession() || !requester->IsInWorld())
     {
         outcome.status = HireStatus::Failed;
         outcome.message = "You must be in-game to hire a companion.";
-        return outcome;
+        return false;
     }
     if (!sPlayerbotAIConfig.hireEnabled)
     {
         outcome.status = HireStatus::Disabled;
         outcome.message = "Companion hiring is disabled on this server.";
-        return outcome;
+        return false;
     }
     // Issue #265: while the managed pool is being rebuilt, hiring would race
     // the deletion (its candidates are pool characters).
@@ -162,20 +161,28 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
         outcome.message = RandomBotAccountRegistry::Instance().IsValidated()
             ? "The bot pool is being rebuilt right now. Try again in a moment."
             : "The bot pool is unavailable: the managed-account registry could not be read.";
-        return outcome;
+        return false;
     }
     if (requester->GetSession()->GetSecurity() < static_cast<int>(sPlayerbotAIConfig.hireMinAccountSecurity))
     {
         outcome.status = HireStatus::NoPermission;
         outcome.message = "Your account may not hire companions.";
-        return outcome;
+        return false;
     }
     if (!fromGossip && !sPlayerbotAIConfig.hireAnywhere)
     {
         outcome.status = HireStatus::RecruiterRequired;
         outcome.message = "Companions are hired at a <Mercenary Hire> recruiter. Look for one in an inn.";
-        return outcome;
+        return false;
     }
+    return true;
+}
+
+HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& sel, bool fromGossip)
+{
+    HireOutcome outcome;
+    if (!CheckHireAllowed(requester, fromGossip, outcome))
+        return outcome;
     if (!sel.classId || !sel.race || (sel.gender != GENDER_MALE && sel.gender != GENDER_FEMALE))
     {
         outcome.status = HireStatus::InvalidChoice;
@@ -288,14 +295,7 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     }
     else
         gearTier = kHireGearTierBase;
-    HireCost::CostConfig costs;
-    costs.baseCopper = sPlayerbotAIConfig.hireBaseCostCopper;
-    costs.mult2 = sPlayerbotAIConfig.hirePartyMult2;
-    costs.mult3 = sPlayerbotAIConfig.hirePartyMult3;
-    costs.mult4 = sPlayerbotAIConfig.hirePartyMult4;
-    costs.raidFlatCopper = sPlayerbotAIConfig.hireRaidFlatCostCopper;
-    uint32_t cost = HireCostAtTier(HireCost::ForNextHire(costs, owned, level),
-        gearTier, sPlayerbotAIConfig.hireGearTierCostMult);
+    uint32_t cost = QuoteHireFee(owned, level, gearTier);
     if (requester->GetMoney() < cost)
     {
         outcome.status = HireStatus::Poor;
@@ -387,6 +387,189 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     outcome.message = std::string("Hired ") + outcome.botName + " for " +
         ai::ChatHelper::formatMoney(cost) + ". Your companion is mustering.";
     return outcome;
+}
+
+uint32_t HireProvisionService::QuoteHireFee(uint32_t ownedBefore, uint32_t level, uint8_t gearTier)
+{
+    HireCost::CostConfig costs;
+    costs.baseCopper = sPlayerbotAIConfig.hireBaseCostCopper;
+    costs.mult2 = sPlayerbotAIConfig.hirePartyMult2;
+    costs.mult3 = sPlayerbotAIConfig.hirePartyMult3;
+    costs.mult4 = sPlayerbotAIConfig.hirePartyMult4;
+    costs.raidFlatCopper = sPlayerbotAIConfig.hireRaidFlatCostCopper;
+    return HireCostAtTier(HireCost::ForNextHire(costs, ownedBefore, level),
+        gearTier, sPlayerbotAIConfig.hireGearTierCostMult);
+}
+
+bool HireProvisionService::FillDefaultRaceGender(Player* requester, HireSelection& sel)
+{
+    // Defaults: requester's faction race pool, random gender.
+    if (!sel.race)
+    {
+        Team team = requester->GetTeam();
+        std::vector<uint8> pool;
+        for (uint32 race = RACE_HUMAN; race <= RACE_HIGH_ELF; ++race)
+        {
+            if (Player::TeamForRace(race) != team)
+                continue;
+            // GetPlayerInfo is the authoritative class/race contract.
+            if (!sObjectMgr.GetPlayerInfo(race, sel.classId))
+                continue;
+            pool.push_back(static_cast<uint8>(race));
+        }
+        if (pool.empty())
+            return false;
+        sel.race = pool[urand(0, uint32(pool.size() - 1))];
+    }
+    if (!sel.gender)
+        sel.gender = urand(0, 1) ? GENDER_FEMALE : GENDER_MALE;
+    return true;
+}
+
+// Issue #900: `.bot hire raid`. Plans the whole raid, checks cap and the total
+// fee up front, converts a party to a raid when it would overflow, then runs
+// each slot through the ordinary Hire() (checks, fee, character, login queue,
+// ledger) so nothing about provisioning is duplicated. Stops at the first hire
+// that fails and reports what was hired so far.
+HireRaidOutcome HireProvisionService::HireRaid(Player* requester, HireRaidRequest const& request)
+{
+    HireRaidOutcome result;
+    result.tier = request.tier;
+    auto refuse = [&result](std::string const& why) -> HireRaidOutcome
+    {
+        result.refused = true;
+        result.message = why;
+        return result;
+    };
+
+    HireOutcome gate;
+    if (!CheckHireAllowed(requester, false, gate))
+        return refuse(gate.message);
+
+    uint32_t level = requester->GetLevel();
+    if (level < 1)
+        level = 1;
+    if (level > kMaxLevel)
+        level = kMaxLevel;
+    // Same tier rule as Hire(): validated at 60, ignored below.
+    uint8_t tier = request.tier > kHireGearTierMax ? kHireGearTierMax : request.tier;
+    if (sPlayerbotAIConfig.hireGearTiersEnabled && level == kHireGearHireLevel && tier > 0)
+    {
+        uint8_t highest = HighestUnlockedHireTierFor(requester);
+        if (tier > highest)
+            return refuse(std::string("That equipment is not unlocked yet. Your highest available tier is ") +
+                HireTierKitName(highest) + " (tier " + std::to_string(highest) + ").");
+    }
+    else
+        tier = kHireGearTierBase;
+    result.tier = tier;
+
+    uint32_t owned = CountHired(requester);
+    uint32_t maxHires = std::min<uint32_t>(sPlayerbotAIConfig.hireMaxBotsPerPlayer, kHireRaidMaxCompanions);
+    if (owned >= maxHires)
+        return refuse("You already command the maximum number of companions (" + std::to_string(owned) +
+            " of " + std::to_string(maxHires) + ").");
+    uint32_t room = maxHires - owned;
+
+    // Classes the requester's faction can field (race x class contract).
+    uint32_t classMask = 0;
+    Team team = requester->GetTeam();
+    for (uint8 classId : { kHireClassWarrior, kHireClassPaladin, kHireClassHunter, kHireClassRogue,
+        kHireClassPriest, kHireClassShaman, kHireClassMage, kHireClassWarlock, kHireClassDruid })
+    {
+        for (uint32 race = RACE_HUMAN; race <= RACE_HIGH_ELF; ++race)
+        {
+            if (Player::TeamForRace(race) == team && sObjectMgr.GetPlayerInfo(race, classId))
+            {
+                classMask |= 1u << classId;
+                break;
+            }
+        }
+    }
+    HireRaidSpread spread;
+    if (!ParseHireRaidSpread(sPlayerbotAIConfig.hireRaidSpread, spread))
+        ParseHireRaidSpread(kHireRaidSpreadDefault, spread);
+    HireRaidClassRules rules;
+    rules.canRole = &HireProvisionService::ClassCanRole;
+    rules.defaultRole = &HireProvisionService::DefaultRoleForClass;
+    std::vector<HireRaidSlot> roster;
+    std::string error;
+    if (!BuildHireRaidRoster(request, spread, classMask, rules, room, roster, result.requested, error))
+        return refuse(error);
+    result.planned = static_cast<uint32_t>(roster.size());
+    result.capped = result.planned < result.requested;
+
+    // One quote for the whole raid: hire i pays the fee at ownedBefore + i.
+    uint64_t quote = 0;
+    uint64_t running = 0;
+    uint32_t affordable = 0;
+    uint32_t money = requester->GetMoney();
+    for (uint32_t i = 0; i < result.planned; ++i)
+    {
+        uint32_t fee = QuoteHireFee(owned + i, level, tier);
+        quote += fee;
+        if (running + fee <= money && affordable == i)
+        {
+            running += fee;
+            ++affordable;
+        }
+    }
+    result.quote = quote;
+    if (quote > money)
+        return refuse("A raid of " + std::to_string(result.planned) + " companions costs " +
+            ai::ChatHelper::formatMoney(static_cast<uint32_t>(std::min<uint64_t>(quote, 0xFFFFFFFFull))) +
+            "; you have " + ai::ChatHelper::formatMoney(money) + " (enough for " +
+            std::to_string(affordable) + "). Nothing was hired.");
+
+    // A party that would overflow becomes a raid first; with no group yet the
+    // invite path forms it and converts it at the fifth member.
+    Group* group = requester->GetGroup();
+    if (group && group->isBGGroup())
+        group = requester->GetOriginalGroup();
+    if (group && !group->isRaidGroup() && owned + result.planned > 4)
+    {
+        if (!group->IsLeader(requester->GetObjectGuid()))
+            return refuse("Only the party leader can convert it to a raid. Nothing was hired.");
+        group->ConvertToRaid();
+    }
+
+    for (HireRaidSlot const& slot : roster)
+    {
+        HireSelection sel;
+        sel.classId = slot.classId;
+        sel.role = slot.role;
+        sel.gearTier = tier;
+        // Same druid defaults as `.bot hire`: bear tank, restoration healer,
+        // cat DPS.
+        if (slot.classId == CLASS_DRUID)
+            sel.specIndex = slot.role == kHireRoleTank ? 0 : slot.role == kHireRoleHealer ? 1 : 3;
+        if (!FillDefaultRaceGender(requester, sel))
+        {
+            result.stopStatus = HireStatus::InvalidChoice;
+            result.message = std::string("No race of your faction can be a ") + HireRaidClassName(slot.classId) + ".";
+            break;
+        }
+        HireOutcome one = Hire(requester, sel, false);
+        if (one.status != HireStatus::Ok)
+        {
+            result.stopStatus = one.status;
+            result.message = one.message;
+            break;
+        }
+        ++result.hired;
+        result.fee += one.cost;
+        if (slot.role == kHireRoleTank)
+            ++result.tanks;
+        else if (slot.role == kHireRoleHealer)
+            ++result.healers;
+        else
+            ++result.dps;
+    }
+    TB_LOG_DETAIL("TortoiseBots: hire raid for %s: %u of %u hired (planned %u, tier %u, fee %llu copper)%s%s",
+        requester->GetName(), result.hired, result.requested, result.planned, uint32(tier),
+        static_cast<unsigned long long>(result.fee), result.message.empty() ? "" : "; stopped: ",
+        result.message.c_str());
+    return result;
 }
 
 bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t requesterTeam, uint32_t& accountId, ObjectGuid& guid)
