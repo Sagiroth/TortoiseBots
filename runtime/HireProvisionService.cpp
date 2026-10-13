@@ -31,6 +31,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Player.h"
 #include "World.h"
+#include "Chat.h"
 #include "WorldSession.h"
 #include "WorldPacket.h"
 #include "AccountMgr.h"
@@ -62,6 +63,8 @@ namespace
 {
 constexpr uint32 kMaxLevel = 60;
 constexpr uint32 kPendingProvisionTimeoutSec = 300;
+// Issue #900: a raid hire job runs two Hire() calls every this many ms.
+constexpr uint32 kRaidStepMs = 250;
 
 std::string RandomHireName()
 {
@@ -471,6 +474,34 @@ HireRaidOutcome HireProvisionService::HireRaid(Player* requester, HireRaidReques
             " of " + std::to_string(maxHires) + ").");
     uint32_t room = maxHires - owned;
 
+    // Free raid seats: members already in the group plus this master's
+    // companions still mustering (they will take a seat when they join). A
+    // cap that leaves more room than the raid has seats would hire companions
+    // that can never join.
+    ObjectGuid masterGuid = requester->GetObjectGuid();
+    for (HireRaidJob const& running : m_raidJobs)
+        if (running.masterGuid == masterGuid)
+            return refuse("A raid hire is already running. Wait for its summary line.");
+    Group* group = requester->GetGroup();
+    if (group && group->isBGGroup())
+        group = requester->GetOriginalGroup();
+    uint32_t members = group ? group->GetMembersCount() : 1;
+    uint32_t mustering = 0;
+    for (PendingProvision const& pending : m_pending)
+    {
+        if (pending.masterGuid != masterGuid)
+            continue;
+        Player* pendingBot = sObjectAccessor.FindPlayer(pending.botGuid);
+        if (group && pendingBot && group->IsMember(pendingBot->GetObjectGuid()))
+            continue;
+        ++mustering;
+    }
+    uint32_t const raidSeats = kHireRaidMaxCompanions + 1;
+    if (members + mustering >= raidSeats)
+        return refuse("Your raid has no free seats (" + std::to_string(members + mustering) + " of " +
+            std::to_string(raidSeats) + " taken).");
+    room = std::min<uint32_t>(room, raidSeats - members - mustering);
+
     // Classes the requester's faction can field (race x class contract).
     uint32_t classMask = 0;
     Team team = requester->GetTeam();
@@ -521,55 +552,136 @@ HireRaidOutcome HireProvisionService::HireRaid(Player* requester, HireRaidReques
             "; you have " + ai::ChatHelper::formatMoney(money) + " (enough for " +
             std::to_string(affordable) + "). Nothing was hired.");
 
-    // A party that would overflow becomes a raid first; with no group yet the
-    // invite path forms it and converts it at the fifth member.
-    Group* group = requester->GetGroup();
-    if (group && group->isBGGroup())
-        group = requester->GetOriginalGroup();
-    if (group && !group->isRaidGroup() && owned + result.planned > 4)
+    // A party that would overflow becomes a raid now (the reply says so); with
+    // no group yet the invite path forms it and converts it at the fifth
+    // member. Counted by eventual size: members, companions still mustering
+    // and the whole plan.
+    if (group && !group->isRaidGroup() && members + mustering + result.planned > 5)
     {
         if (!group->IsLeader(requester->GetObjectGuid()))
             return refuse("Only the party leader can convert it to a raid. Nothing was hired.");
         group->ConvertToRaid();
+        result.convertedToRaid = true;
     }
 
     for (HireRaidSlot const& slot : roster)
     {
-        HireSelection sel;
-        sel.classId = slot.classId;
-        sel.role = slot.role;
-        sel.gearTier = tier;
-        // Same druid defaults as `.bot hire`: bear tank, restoration healer,
-        // cat DPS.
-        if (slot.classId == CLASS_DRUID)
-            sel.specIndex = slot.role == kHireRoleTank ? 0 : slot.role == kHireRoleHealer ? 1 : 3;
-        if (!FillDefaultRaceGender(requester, sel))
-        {
-            result.stopStatus = HireStatus::InvalidChoice;
-            result.message = std::string("No race of your faction can be a ") + HireRaidClassName(slot.classId) + ".";
-            break;
-        }
-        HireOutcome one = Hire(requester, sel, false);
-        if (one.status != HireStatus::Ok)
-        {
-            result.stopStatus = one.status;
-            result.message = one.message;
-            break;
-        }
-        ++result.hired;
-        result.fee += one.cost;
         if (slot.role == kHireRoleTank)
-            ++result.tanks;
+            ++result.planTanks;
         else if (slot.role == kHireRoleHealer)
-            ++result.healers;
+            ++result.planHealers;
         else
-            ++result.dps;
+            ++result.planDps;
     }
-    TB_LOG_DETAIL("TortoiseBots: hire raid for %s: %u of %u hired (planned %u, tier %u, fee %llu copper)%s%s",
-        requester->GetName(), result.hired, result.requested, result.planned, uint32(tier),
-        static_cast<unsigned long long>(result.fee), result.message.empty() ? "" : "; stopped: ",
-        result.message.c_str());
+    HireRaidJob job;
+    job.masterGuid = masterGuid;
+    job.roster = roster;
+    job.progress = result;
+    job.progress.started = true;
+    m_raidJobs.push_back(job);
+    result.started = true;
     return result;
+}
+
+// One step of every queued raid job: at most kRaidHiresPerStep Hire() calls in
+// total, so character creation and its synchronous queries are spread over
+// ticks instead of piling up inside the chat command.
+void HireProvisionService::StepRaidJobs()
+{
+    uint32_t budget = 2;
+    for (size_t i = 0; i < m_raidJobs.size() && budget > 0;)
+    {
+        HireRaidJob& job = m_raidJobs[i];
+        HireRaidOutcome& out = job.progress;
+        Player* master = sObjectAccessor.FindPlayer(job.masterGuid);
+        bool online = master && master->IsInWorld() && master->GetSession() &&
+            !master->GetSession()->IsHeadless();
+        bool finished = false;
+        if (!online)
+        {
+            sLog.outError("TortoiseBots: raid hire stopped after %u of %u: the master left the world",
+                out.hired, out.planned);
+            finished = true;
+        }
+        while (online && !finished && budget > 0 && job.cursor < job.roster.size())
+        {
+            --budget;
+            HireRaidSlot const& slot = job.roster[job.cursor];
+            HireSelection sel;
+            sel.classId = slot.classId;
+            sel.role = slot.role;
+            sel.gearTier = out.tier;
+            // Same druid defaults as `.bot hire`: bear tank, restoration
+            // healer, cat DPS.
+            if (slot.classId == CLASS_DRUID)
+                sel.specIndex = slot.role == kHireRoleTank ? 0 : slot.role == kHireRoleHealer ? 1 : 3;
+            if (!FillDefaultRaceGender(master, sel))
+            {
+                out.stopStatus = HireStatus::InvalidChoice;
+                out.message = std::string("No race of your faction can be a ") + HireRaidClassName(slot.classId) + ".";
+                finished = true;
+                break;
+            }
+            m_raidHireActive = true;
+            HireOutcome one = Hire(master, sel, false);
+            m_raidHireActive = false;
+            if (one.status != HireStatus::Ok)
+            {
+                out.stopStatus = one.status;
+                out.message = one.message;
+                finished = true;
+                break;
+            }
+            ++job.cursor;
+            ++out.hired;
+            out.fee += one.cost;
+            if (slot.role == kHireRoleTank)
+                ++out.tanks;
+            else if (slot.role == kHireRoleHealer)
+                ++out.healers;
+            else
+                ++out.dps;
+        }
+        if (job.cursor >= job.roster.size())
+            finished = true;
+        if (finished)
+        {
+            TB_LOG_DETAIL("TortoiseBots: hire raid job: %u of %u hired (planned %u, tier %u, fee %llu copper)%s%s",
+                out.hired, out.requested, out.planned, uint32(out.tier), static_cast<unsigned long long>(out.fee),
+                out.message.empty() ? "" : "; stopped: ", out.message.c_str());
+            if (online)
+                ReportRaidJob(master, out);
+            m_raidJobs.erase(m_raidJobs.begin() + i);
+            m_raidAccountHint = 0;
+        }
+        else
+            ++i;
+    }
+}
+
+// Closing summary and the structured TBM line (see docs/guides/player-controls.md).
+void HireProvisionService::ReportRaidJob(Player* master, HireRaidOutcome const& job)
+{
+    auto protocolSafe = [](std::string value)
+    {
+        for (char& c : value)
+            if (c == '|' || c == '\r' || c == '\n')
+                c = ' ';
+        return value;
+    };
+    ChatHandler chat(master);
+    uint32_t const fee = static_cast<uint32_t>(std::min<uint64_t>(job.fee, 0xFFFFFFFFull));
+    char const* tierName = HireTierName(job.tier);
+    chat.PSendSysMessage("Hired %u: %u tank / %u healer / %u dps, tier %u (%s), fee %s.%s%s",
+        job.hired, job.tanks, job.healers, job.dps, static_cast<uint32>(job.tier), tierName ? tierName : "?",
+        ai::ChatHelper::formatMoney(fee).c_str(),
+        job.capped ? " Capped by AiPlayerbot.HireMaxBotsPerPlayer or the free raid seats." : "",
+        job.hired ? " Your companions are mustering." : "");
+    if (!job.message.empty())
+        chat.PSendSysMessage("Stopped after %u of %u: %s", job.hired, job.planned, job.message.c_str());
+    chat.PSendSysMessage("TBM:HIRE_RAID|%s|%u|%u|%u|%u|%u|%u|%u|%s",
+        job.hired == job.planned ? "ok" : "partial", job.hired, job.planned, job.tanks, job.healers, job.dps,
+        static_cast<uint32>(job.tier), fee, protocolSafe(job.message).c_str());
 }
 
 bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t requesterTeam, uint32_t& accountId, ObjectGuid& guid)
@@ -642,8 +754,16 @@ bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t re
     };
 
     uint32_t chosenAccount = 0;
+    // Issue #900: a raid job reuses the account its previous slot landed on
+    // while it still has room, instead of rescanning every full pool account.
+    if (m_raidHireActive && m_raidAccountHint &&
+        std::find(accountIds.begin(), accountIds.end(), m_raidAccountHint) != accountIds.end() &&
+        accountEligible(m_raidAccountHint))
+        chosenAccount = m_raidAccountHint;
     for (uint32_t id : accountIds)
     {
+        if (chosenAccount)
+            break;
         if (accountEligible(id))
         {
             chosenAccount = id;
@@ -744,6 +864,8 @@ bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t re
         {
             accountId = chosenAccount;
             guid = outcome.guid;
+            if (m_raidHireActive)
+                m_raidAccountHint = chosenAccount;
             return true;
         }
         if (outcome.result == CHAR_CREATE_NAME_IN_USE || outcome.result == CHAR_NAME_RESERVED ||
@@ -1074,6 +1196,15 @@ void HireProvisionService::DropStalePending()
 
 void HireProvisionService::Update(uint32_t diff)
 {
+    if (!m_raidJobs.empty())
+    {
+        m_raidStepElapsedMs += diff;
+        if (m_raidStepElapsedMs >= kRaidStepMs)
+        {
+            m_raidStepElapsedMs = 0;
+            StepRaidJobs();
+        }
+    }
     m_updateElapsedMs += diff;
     if (m_updateElapsedMs < 1000)
         return;

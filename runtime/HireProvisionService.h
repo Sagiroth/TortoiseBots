@@ -60,7 +60,12 @@ struct HireOutcome
 struct HireRaidOutcome
 {
     bool refused = false;
+    // Plan accepted and queued: the hires run over the next ticks and the
+    // player gets a closing summary plus the TBM line when the job ends.
+    bool started = false;
     bool capped = false;
+    // The party was converted to a raid when the job was accepted.
+    bool convertedToRaid = false;
     HireStatus stopStatus = HireStatus::Ok;
     std::string message;
     uint32_t requested = 0;
@@ -69,9 +74,24 @@ struct HireRaidOutcome
     uint32_t tanks = 0;
     uint32_t healers = 0;
     uint32_t dps = 0;
+    // Role split of the plan (hired splits above fill in as the job runs).
+    uint32_t planTanks = 0;
+    uint32_t planHealers = 0;
+    uint32_t planDps = 0;
     uint8_t tier = 0;
     uint64_t quote = 0;
     uint64_t fee = 0;
+};
+
+// One accepted `.bot hire raid`, worked off a couple of Hire() calls at a time
+// by HireProvisionService::Update so a 39-companion raid never stalls the
+// world thread inside the chat command.
+struct HireRaidJob
+{
+    ObjectGuid masterGuid;
+    std::vector<HireRaidSlot> roster;
+    size_t cursor = 0;
+    HireRaidOutcome progress;
 };
 
 // Issue #192: on-demand companion hiring. Creates a character on an RNDBOT
@@ -95,6 +115,8 @@ public:
 
     // Issue #900: hire the whole raid described by request (see
     // runtime/HireRaidPolicy.h) through Hire(), one slot after the other.
+    // Plans, quotes and refuses synchronously; on success the job is queued
+    // (outcome.started) and Update() hires it a couple of slots per step.
     HireRaidOutcome HireRaid(Player* requester, HireRaidRequest const& request);
 
     // The gates every hire passes before it picks a class: in-game, enabled,
@@ -185,6 +207,15 @@ public:
     void DropStalePending();
 
     std::vector<PendingProvision> m_pending;
+    // Issue #900: queued raid hires, one step every kRaidStepMs.
+    std::vector<HireRaidJob> m_raidJobs;
+    uint32_t m_raidStepElapsedMs = 0;
+    // Account the previous slot of the running raid job landed on: tried
+    // first so the job does not rescan every full pool account per hire.
+    uint32_t m_raidAccountHint = 0;
+    bool m_raidHireActive = false;
+    void StepRaidJobs();
+    static void ReportRaidJob(Player* master, HireRaidOutcome const& job);
     uint32_t m_updateElapsedMs = 0;
 };
 

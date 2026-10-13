@@ -993,8 +993,9 @@ static std::string ProtocolSafe(std::string value);
 
 // Issue #900: `.bot hire raid <preset|composition> [tier]`. The grammar and
 // the roster live in runtime/HireRaidPolicy.h, the cap, quote, raid conversion
-// and the hires themselves in HireProvisionService::HireRaid. One summary line
-// for the player plus one structured line for the TBM addon:
+// and the job queue in HireProvisionService::HireRaid / StepRaidJobs. This
+// command answers refusals and a "started" line at once; the service sends the
+// closing summary and the structured line for the TBM addon when the job ends:
 //   TBM:HIRE_RAID|<ok|partial|refused>|<hired>|<planned>|<tank>|<healer>|<dps>|<tier>|<feeCopper>|<reason>
 static bool HandleHireRaid(ChatHandler* handler, Player* requester, std::vector<std::string> tokens)
 {
@@ -1024,19 +1025,17 @@ static bool HandleHireRaid(ChatHandler* handler, Player* requester, std::vector<
         return true;
     }
 
-    uint32 const fee = static_cast<uint32>(std::min<uint64_t>(outcome.fee, 0xFFFFFFFFull));
+    // Accepted: the hires run over the next seconds (HireProvisionService::
+    // StepRaidJobs) and the service sends the "Hired N: ..." summary and the
+    // TBM:HIRE_RAID line when the job ends.
+    uint32 const quote = static_cast<uint32>(std::min<uint64_t>(outcome.quote, 0xFFFFFFFFull));
     char const* tierName = HireTierName(outcome.tier);
-    handler->PSendSysMessage("Hired %u: %u tank / %u healer / %u dps, tier %u (%s), fee %s.%s%s",
-        outcome.hired, outcome.tanks, outcome.healers, outcome.dps, static_cast<uint32>(outcome.tier),
-        tierName ? tierName : "?", ai::ChatHelper::formatMoney(fee).c_str(),
-        outcome.capped ? " Capped by AiPlayerbot.HireMaxBotsPerPlayer." : "",
-        outcome.hired ? " Your companions are mustering." : "");
-    if (!outcome.message.empty())
-        handler->PSendSysMessage("Stopped after %u of %u: %s", outcome.hired, outcome.planned, outcome.message.c_str());
-    handler->PSendSysMessage("TBM:HIRE_RAID|%s|%u|%u|%u|%u|%u|%u|%u|%s",
-        outcome.hired == outcome.planned ? "ok" : "partial", outcome.hired, outcome.planned,
-        outcome.tanks, outcome.healers, outcome.dps, static_cast<uint32>(outcome.tier), fee,
-        ProtocolSafe(outcome.message).c_str());
+    handler->PSendSysMessage("Hiring %u companions: %u tank / %u healer / %u dps, tier %u (%s), total fee %s.%s%s "
+        "They arrive over the next few seconds; a summary follows.",
+        outcome.planned, outcome.planTanks, outcome.planHealers, outcome.planDps,
+        static_cast<uint32>(outcome.tier), tierName ? tierName : "?", ai::ChatHelper::formatMoney(quote).c_str(),
+        outcome.capped ? " Capped by AiPlayerbot.HireMaxBotsPerPlayer or the free raid seats." : "",
+        outcome.convertedToRaid ? " Your party became a raid." : "");
     return true;
 }
 
