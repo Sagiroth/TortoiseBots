@@ -2,6 +2,7 @@
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/AoeFearPolicy.h"
 #include "playerbot/RetaliationPolicy.h"
+#include "playerbot/strategy/values/PossibleTargetsValue.h"
 
 namespace ai
 {
@@ -97,8 +98,29 @@ namespace ai
     MELEE_ACTION(CastCleaveAction, "cleave");
     MELEE_ACTION(CastExecuteAction, "execute");
     REACH_ACTION(CastInterceptAction, "intercept", 8.0f);
-    ENEMY_HEALER_ACTION(CastInterceptOnEnemyHealerAction, "intercept");
-    SNARE_ACTION(CastInterceptOnSnareTargetAction, "intercept");
+    // Intercept on another target is a gap closer too: the same creature aura
+    // keep-out veto as CastReachTargetSpellAction (AiPlayerbot.AvoidCreatureAuras).
+    class CastInterceptOnEnemyHealerAction : public CastSpellOnEnemyHealerAction
+    {
+    public:
+        CastInterceptOnEnemyHealerAction(PlayerbotAI* ai) : CastSpellOnEnemyHealerAction(ai, "intercept") {}
+        bool isUseful() override
+        {
+            return CastSpellOnEnemyHealerAction::isUseful() &&
+                !(sPlayerbotAIConfig.avoidCreatureAuras && PossibleTriggersValue::GapCloserIntoKeepout(ai, GetTarget()));
+        }
+    };
+
+    class CastInterceptOnSnareTargetAction : public CastSnareSpellAction
+    {
+    public:
+        CastInterceptOnSnareTargetAction(PlayerbotAI* ai) : CastSnareSpellAction(ai, "intercept") {}
+        bool isUseful() override
+        {
+            return CastSnareSpellAction::isUseful() &&
+                !(sPlayerbotAIConfig.avoidCreatureAuras && PossibleTriggersValue::GapCloserIntoKeepout(ai, GetTarget()));
+        }
+    };
     MELEE_ACTION(CastSlamAction, "slam");
     BUFF_ACTION(CastBerserkerRageAction, "berserker rage");
     MELEE_ACTION(CastWhirlwindAction, "whirlwind");

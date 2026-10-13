@@ -536,6 +536,32 @@ int main()
         CHECK(!CreatureAuraGapCloserVetoed(false, true, false, true));
         // Nothing listed nearby: allowed.
         CHECK(!CreatureAuraGapCloserVetoed(false, false, false, false));
+
+        // Review #882: Charge from 20 yd onto a mob with a sludge 5 yd beyond
+        // it. The sludge is 25 yd from the bot, outside the cached 15 yd list
+        // (kMaxAoeAvoidRadiusYd); the bounded lookup around the target finds
+        // it, and the landing (2 yd short of the mob) is in its ring.
+        {
+            float const bx = 0.0f, by = 0.0f, tx = 20.0f, ty = 0.0f, sx = 25.0f, sy = 0.0f;
+            CHECK(std::hypot(sx - bx, sy - by) > kMaxAoeAvoidRadiusYd);
+            float fx = 0.0f, fy = 0.0f;
+            CreatureAuraGapCloserLanding(bx, by, tx, ty, 2.0f, fx, fy);
+            float const landingToTarget = std::hypot(fx - tx, fy - ty);
+            CHECK(std::fabs(landingToTarget - 2.0f) < 0.01f);
+            float const radius = CreatureAuraLandingSearchRadius(row, landingToTarget);
+            CHECK(std::hypot(sx - tx, sy - ty) <= radius);              // found by the lookup
+            bool const ringed = CreatureAuraEndPointBlocked(row, std::hypot(sx - fx, sy - fy)); // 7 yd
+            CHECK(ringed);
+            CHECK(CreatureAuraGapCloserVetoed(false, ringed, false, false)); // vetoed
+            // Any creature whose ring holds the landing is inside the search
+            // radius: the worst case stands just inside the hazard ring on
+            // the far side of the landing.
+            float const far = CreatureAuraHazardRadius(row) - 0.01f;
+            CHECK(std::hypot((fx - far) - tx, fy - ty) <= radius);
+            // A sludge 15 yd beyond the mob: outside its ring, allowed.
+            CHECK(!CreatureAuraEndPointBlocked(row, std::hypot(35.0f - fx, 0.0f - fy)));
+            CHECK(CreatureAuraLandingSearchRadius(row, -1.0f) == CreatureAuraHazardRadius(row));
+        }
     }
     std::cout << "  [PASS] gap closers and end points stay out of the ring (tank and order exempt)\n";
 

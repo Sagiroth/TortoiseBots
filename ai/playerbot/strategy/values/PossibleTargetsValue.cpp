@@ -222,3 +222,53 @@ Unit* PossibleTriggersValue::KeepoutRingAt(PlayerbotAI* ai, float x, float y, Un
     }
     return nullptr;
 }
+
+bool PossibleTriggersValue::GapCloserIntoKeepout(PlayerbotAI* ai, Unit* target)
+{
+    if (!sPlayerbotAIConfig.avoidCreatureAuras || !ai || !target)
+        return false;
+    Player* bot = ai->GetBot();
+    AiObjectContext* context = ai->GetAiObjectContext();
+    bool const isTank = PlayerbotAI::IsTank(bot);
+    ObjectGuid const explicitTarget = context->GetValue<ObjectGuid>("explicit attack target")->Get();
+    bool const ordered = target->GetObjectGuid() == explicitTarget;
+    if (isTank || ordered)
+        return false; // CreatureAuraGapCloserVetoed allows these; skip the lookups
+    bool const targetIsKeepout = KeepoutFor(target) != nullptr;
+    bool landingInRing = false;
+    if (!targetIsKeepout)
+    {
+        float lx = 0.0f, ly = 0.0f;
+        CreatureAuraGapCloserLanding(bot->GetPositionX(), bot->GetPositionY(),
+            target->GetPositionX(), target->GetPositionY(), bot->GetCombatReach(target, true, 0.0f), lx, ly);
+        // Fast path: the bot's cached 15 yd list.
+        landingInRing = KeepoutRingAt(ai, lx, ly) != nullptr;
+        // Bounded lookup around the target, listed entries on this map only.
+        float const ldx = lx - target->GetPositionX(), ldy = ly - target->GetPositionY();
+        float const landingToTarget = std::sqrt(ldx * ldx + ldy * ldy);
+        for (CreatureAuraKeepout const& row : kCreatureAuraKeepouts)
+        {
+            if (landingInRing)
+                break;
+            if (row.mapId != target->GetMapId())
+                continue;
+            float const radius = CreatureAuraLandingSearchRadius(row, landingToTarget);
+            std::list<Unit*> nearby;
+            MaNGOS::AllCreaturesOfEntryInRange check(target, row.creatureEntry, radius);
+            MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(nearby, check);
+            Cell::VisitAllObjects(target, searcher, radius);
+            for (Unit* unit : nearby)
+            {
+                if (!unit || unit->GetObjectGuid() == explicitTarget || !KeepoutFor(unit))
+                    continue;
+                float const dx = unit->GetPositionX() - lx, dy = unit->GetPositionY() - ly;
+                if (CreatureAuraEndPointBlocked(row, std::sqrt(dx * dx + dy * dy)))
+                {
+                    landingInRing = true;
+                    break;
+                }
+            }
+        }
+    }
+    return CreatureAuraGapCloserVetoed(targetIsKeepout, landingInRing, isTank, ordered);
+}

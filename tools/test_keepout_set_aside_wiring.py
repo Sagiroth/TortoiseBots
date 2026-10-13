@@ -78,11 +78,24 @@ class KeepoutSetAsideWiringTest(unittest.TestCase):
         reach = (ROOT / "ai/playerbot/strategy/actions/ReachTargetActions.h").read_text()
         cls = body(reach, "class CastReachTargetSpellAction", "\n    };\n")
         self.assertIn("GapCloserIntoKeepout()", cls)
-        self.assertIn("CreatureAuraGapCloserVetoed(", cls)
-        self.assertIn('"explicit attack target"', cls)
+        self.assertIn("PossibleTriggersValue::GapCloserIntoKeepout(", cls)
+        warrior = (ROOT / "ai/playerbot/strategy/warrior/WarriorActions.h").read_text()
         for spell in ("CastChargeAction", "CastInterceptAction"):
-            self.assertRegex((ROOT / "ai/playerbot/strategy/warrior/WarriorActions.h").read_text(),
-                             r"REACH_ACTION\(" + spell + r",")
+            self.assertRegex(warrior, r"REACH_ACTION\(" + spell + r",")
+        # Intercept on the enemy healer or the snare target is gated the same way.
+        for cls_name in ("CastInterceptOnEnemyHealerAction", "CastInterceptOnSnareTargetAction"):
+            self.assertNotRegex(warrior, r"_ACTION\(" + cls_name + r",")
+            gated = body(warrior, "class " + cls_name, "\n    };\n")
+            self.assertIn("PossibleTriggersValue::GapCloserIntoKeepout(ai, GetTarget())", gated)
+        # The shared veto: cached list first, then a bounded lookup of listed
+        # entries around the target (Charge fires past the 15 yd list).
+        values = (VALUES / "PossibleTargetsValue.cpp").read_text()
+        veto = body(values, "bool PossibleTriggersValue::GapCloserIntoKeepout(", "\n}\n")
+        self.assertIn('"explicit attack target"', veto)
+        self.assertIn("CreatureAuraGapCloserVetoed(", veto)
+        self.assertLess(veto.index("KeepoutRingAt(ai, lx, ly)"), veto.index("AllCreaturesOfEntryInRange"))
+        self.assertIn("Cell::VisitAllObjects(target, searcher, radius)", veto)
+        self.assertIn("CreatureAuraLandingSearchRadius(", veto)
         self.assertIn("class CastFeralChargeBearAction : public CastReachTargetSpellAction",
                       (ROOT / "ai/playerbot/strategy/druid/DruidActions.h").read_text())
         move = (ROOT / "ai/playerbot/strategy/actions/MovementActions.cpp").read_text()

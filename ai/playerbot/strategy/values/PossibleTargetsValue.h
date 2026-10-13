@@ -60,6 +60,16 @@ namespace ai
         // nullptr when none or with the toggle off. No new world scan.
         static Unit* KeepoutRingAt(PlayerbotAI* ai, float x, float y, Unit* extra = nullptr);
 
+        // AiPlayerbot.AvoidCreatureAuras: true when this bot must not use a
+        // gap closer (Charge, Intercept, Feral Charge) onto `target`
+        // (CreatureAuraGapCloserVetoed): a non-tank bot without an attack
+        // order on it, and the target is a listed creature or the landing
+        // lies in a ring. The landing is checked against the cached list
+        // first, then by a bounded lookup of listed creatures around the
+        // target (the cast fires from up to 25 yd, past the 15 yd list).
+        // Callers ask only when the cast is otherwise ready, never per tick.
+        static bool GapCloserIntoKeepout(PlayerbotAI* ai, Unit* target);
+
     protected:
         void FindUnits(std::list<Unit*> &targets) override;
         bool AcceptUnit(Unit* unit) override;

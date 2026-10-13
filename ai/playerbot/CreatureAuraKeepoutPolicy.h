@@ -317,6 +317,15 @@ namespace ai
     // whose landing lies in a ring. Tanks pick up mobs in the ring
     // (CreatureAuraChaseExempt), and a player's attack order on that target
     // keeps today's behaviour.
+    // A gap closer fires from 8-25 yd, beyond the bot's cached 15 yd list, so
+    // the landing is also checked by a bounded lookup of listed creatures
+    // around the target: every creature whose ring holds the landing stands
+    // within the hazard radius plus the landing's distance from the target.
+    inline float CreatureAuraLandingSearchRadius(CreatureAuraKeepout const& row, float landingToTarget)
+    {
+        return CreatureAuraHazardRadius(row) + (landingToTarget > 0.0f ? landingToTarget : 0.0f);
+    }
+
     inline bool CreatureAuraGapCloserVetoed(bool targetIsKeepout, bool landingInRing, bool isTank,
         bool explicitOrder)
     {

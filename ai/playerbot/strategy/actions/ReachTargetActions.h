@@ -549,23 +549,10 @@ namespace ai
     protected:
         // AiPlayerbot.AvoidCreatureAuras: Charge, Intercept and Feral Charge
         // jump the bot past every keep-out hold (they never go through the
-        // chase). A non-tank bot without an attack order on the target does
-        // not use one onto a listed creature or onto a target whose landing
-        // lies in a listed creature's ring (CreatureAuraGapCloserVetoed).
+        // chase). Asked only once the cast is otherwise useful.
         bool GapCloserIntoKeepout()
         {
-            Unit* target = AI_VALUE(Unit*, "current target");
-            if (!target)
-                return false;
-            bool const isTank = PlayerbotAI::IsTank(bot);
-            bool const ordered = target->GetObjectGuid() == AI_VALUE(ObjectGuid, "explicit attack target");
-            bool const targetIsKeepout = PossibleTriggersValue::KeepoutFor(target) != nullptr;
-            float lx = 0.0f, ly = 0.0f;
-            CreatureAuraGapCloserLanding(bot->GetPositionX(), bot->GetPositionY(),
-                target->GetPositionX(), target->GetPositionY(), bot->GetCombatReach(target, true, 0.0f), lx, ly);
-            bool const landingInRing = !targetIsKeepout &&
-                PossibleTriggersValue::KeepoutRingAt(ai, lx, ly) != nullptr;
-            return CreatureAuraGapCloserVetoed(targetIsKeepout, landingInRing, isTank, ordered);
+            return PossibleTriggersValue::GapCloserIntoKeepout(ai, AI_VALUE(Unit*, "current target"));
         }
 
         float distance;
