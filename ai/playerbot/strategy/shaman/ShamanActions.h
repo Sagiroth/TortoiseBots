@@ -445,6 +445,9 @@ namespace ai
     {
     public:
         CastChainLightningAction(PlayerbotAI* ai) : CastSpellAction(ai, "chain lightning") {}
+        // Hits every mob in the area, loose adds included: the party threat back-off
+        // checks it against the "aoe" threat (mod-playerbots types it Aoe too).
+        virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
     };
 
     class CastLightningBoltAction : public CastSpellAction

@@ -94,10 +94,18 @@ public:
 
     BEGIN_RANGED_SPELL_ACTION(CastMultiShotAction, "multi-shot")
         virtual bool isUseful() override { return HunterHasRangedAmmo(ai) && CastSpellAction::isUseful(); }
+        // Multi-Shot also hits the mobs beside the target, loose adds included:
+        // the party threat back-off checks it against the "aoe" threat. (The
+        // donor leaves it single-target; ZF hires-2 showed it splashing mobs the
+        // tank had not picked up yet.)
+        virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
     END_SPELL_ACTION()
 
     BEGIN_RANGED_SPELL_ACTION(CastVolleyAction, "volley")
         virtual bool isUseful() override { return HunterHasRangedAmmo(ai) && CastSpellAction::isUseful(); }
+        // Hits every mob in the area, loose adds included: the party threat back-off
+        // checks it against the "aoe" threat (mod-playerbots types it Aoe too).
+        virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
     END_SPELL_ACTION()
 
     BEGIN_RANGED_DEBUFF_ACTION(CastSerpentStingAction, "serpent sting")

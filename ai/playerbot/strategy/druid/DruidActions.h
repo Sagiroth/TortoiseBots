@@ -157,6 +157,9 @@ namespace ai
 	{
 	public:
 	    CastHurricaneAction(PlayerbotAI* ai) : CastSpellAction(ai, "hurricane") {}
+        // Hits every mob in the area, loose adds included: the party threat back-off
+        // checks it against the "aoe" threat (mod-playerbots types it Aoe too).
+        virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
 	};
 
 	class CastMoonfireAction : public CastRangedDebuffSpellAction

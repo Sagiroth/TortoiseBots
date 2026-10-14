@@ -69,6 +69,9 @@ namespace ai
     {
     public:
         CastFlamestrikeAction(PlayerbotAI* ai) : CastSpellAction(ai, "flamestrike") {}
+        // Hits every mob in the area, loose adds included: the party threat back-off
+        // checks it against the "aoe" threat (mod-playerbots types it Aoe too).
+        virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
     };
 
     class CastFrostNovaAction : public CastMeleeAoeSpellAction
@@ -363,12 +366,18 @@ namespace ai
     {
     public:
         CastArcaneExplosionAction(PlayerbotAI* ai) : CastMeleeAoeSpellAction(ai, "arcane explosion", 10.0f) {}
+        // Hits every mob in the area, loose adds included: the party threat back-off
+        // checks it against the "aoe" threat (mod-playerbots types it Aoe too).
+        virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
     };
 
     class CastConeOfColdAction : public CastMeleeAoeSpellAction
     {
     public:
         CastConeOfColdAction(PlayerbotAI* ai) : CastMeleeAoeSpellAction(ai, "cone of cold", 10.0f) {}
+        // Hits every mob in the area, loose adds included: the party threat back-off
+        // checks it against the "aoe" threat (mod-playerbots types it Aoe too).
+        virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
         // Donor CastConeOfColdAction::isUseful: a cone only hits what the
         // caster faces. Refuse cast while turned away so the GCD goes to a
         // nuke instead of an empty cone (range gate stays in the base).

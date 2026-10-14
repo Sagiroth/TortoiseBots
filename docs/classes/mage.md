@@ -31,6 +31,7 @@ Mages provide premier ranged spell DPS, the game's most reliable crowd control (
 - Uses *Flamestrike* on 3+ grouped enemies, then *Blizzard* channeled on the burning ground while the pack holds. *Blizzard* also goes on top of a *Flamestrike* that is still burning (the flamestrike window).
 - *Frost* adds *Cone of Cold* once 2+ enemies are attacking, only when the target is within 10 yd and in front of the mage. *Arcane* uses *Arcane Explosion* when an enemy is too close for its spells. *Fire* casts *Blast Wave* at interrupt priority when an enemy is within 10 yd.
 - Stops the *Blizzard* channel early when the pack thins below two attackers.
+- *Flamestrike*, *Blizzard*, *Cone of Cold* and *Arcane Explosion* are area spells for the party threat back-off: in a group with the `threat` strategy they wait while the mage holds 50% or more of the tank's threat on any mob it is fighting, loose adds included.
 - Uses *Cold Snap* once any Frost cooldown (Frost Nova, Cone of Cold, Ice Barrier, Ice Block, Frost Ward) is spent.
 
 ### 2. Fire Mage
