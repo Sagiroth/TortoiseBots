@@ -600,14 +600,14 @@ inline OrderTier TierForOrder(std::string const& verb)
         verb == "focus" || verb == "move" || verb == "stay" || verb == "follow" ||
         verb == "rest" || verb == "lootmethod" || verb == "state")
         return OrderTier::Tactical;
-    // revive, summon, loot, open, use and anything unknown: fail closed.
+    // revive, summon, loot, open, use, ritual and anything unknown: fail closed.
     return OrderTier::OwnerOrGm;
 }
 
 inline bool IsKnownOrder(std::string const& verb)
 {
     return TierForOrder(verb) == OrderTier::Tactical || verb == "revive" || verb == "summon" ||
-        verb == "loot" || verb == "open" || verb == "use";
+        verb == "loot" || verb == "open" || verb == "use" || verb == "ritual";
 }
 
 // enabled: AiPlayerbot.RemoteCommander. boundCommander: the requester holds a
@@ -953,6 +953,44 @@ inline bool ParseUseOrder(std::vector<std::string> const& parts, UseOrder& out)
         if (!ParseTargetSpec(parts[2], order.spec))
             return false;
         order.target = order.spec.guid;
+    }
+    out = order;
+    return true;
+}
+
+// cmd ritual <go-guid|entry:id[@x,y,z]> <bot1> <bot2> [<bot3>...]: the named bots use a
+// summoning ritual object together (Uldaman's altars need three different players).
+constexpr size_t kRitualMinBots = 2;
+constexpr size_t kRitualMaxBotNames = 5;
+
+struct RitualOrder
+{
+    TargetSpec spec;
+    std::vector<std::string> bots; // in the order typed; the first one starts the ritual
+};
+
+// Bot names compare without case (the player's name lookup does too).
+inline std::string RitualNameKey(std::string text)
+{
+    for (char& c : text)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return text;
+}
+
+inline bool ParseRitualOrder(std::vector<std::string> const& parts, RitualOrder& out)
+{
+    if (parts.size() < 1 + kRitualMinBots || parts.size() > 1 + kRitualMaxBotNames)
+        return false;
+    RitualOrder order;
+    if (!ParseTargetSpec(parts[0], order.spec))
+        return false;
+    for (size_t i = 1; i < parts.size(); ++i)
+    {
+        std::string const lower = RitualNameKey(parts[i]);
+        for (std::string const& known : order.bots)
+            if (RitualNameKey(known) == lower)
+                return false; // a bot counts once: the ritual needs different players
+        order.bots.push_back(parts[i]);
     }
     out = order;
     return true;

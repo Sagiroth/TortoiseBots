@@ -296,7 +296,7 @@ static void TestOrderGate()
     CHECK(TierForOrder("summon") == OrderTier::OwnerOrGm);
     CHECK(IsKnownOrder("revive") && IsKnownOrder("summon"));
     // The per-bot player orders move items and open things for one bot: owner or GM.
-    for (char const* verb : { "loot", "open", "use" })
+    for (char const* verb : { "loot", "open", "use", "ritual" })
     {
         CHECK(TierForOrder(verb) == OrderTier::OwnerOrGm);
         CHECK(IsKnownOrder(verb));
@@ -570,6 +570,23 @@ static void TestOrdersByEntry()
     CHECK(OwnerOrderBotName("loot", Args("entry:7 Lcwarlock 7741")) == "Lcwarlock");
 }
 
+// cmd ritual <target> <bot1> <bot2> [<bot3>...]: two to five different bots.
+static void TestParseRitualOrder()
+{
+    RitualOrder ritual;
+    CHECK(ParseRitualOrder(Args("entry:130511@-247,81,-47 Lcwarra Lcmage Lcpriest"), ritual));
+    CHECK(ritual.spec.entry == 130511 && ritual.spec.hasPoint && ritual.bots.size() == 3);
+    CHECK(ritual.bots[0] == "Lcwarra" && ritual.bots[2] == "Lcpriest");
+    CHECK(ParseRitualOrder(Args("0x20 A B"), ritual) && ritual.spec.guid == 0x20 && ritual.bots.size() == 2);
+    CHECK(ParseRitualOrder(Args("entry:7 A B C D E"), ritual) && ritual.bots.size() == 5);
+    CHECK(!ParseRitualOrder(Args("entry:7 A B C D E F"), ritual));      // more than a party
+    CHECK(!ParseRitualOrder(Args("entry:7 A"), ritual));                // a ritual needs several players
+    CHECK(!ParseRitualOrder(Args("entry:7"), ritual));
+    CHECK(!ParseRitualOrder(Args("entry:x A B C"), ritual));            // a malformed target
+    CHECK(!ParseRitualOrder(Args("entry:7 A B a"), ritual));            // the same bot twice (any case)
+    CHECK(!ParseRitualOrder(Args("A B C"), ritual));                    // the target comes first
+}
+
 static void TestStateOrder()
 {
     StateOrder state;
@@ -824,6 +841,7 @@ int main()
     TestParseLootOrder();
     TestParseOpenOrder();
     TestParseUseOrder();
+    TestParseRitualOrder();
     TestOwnerOrderBotName();
     std::printf("remote commander policy: %d checks passed\n", checks);
     return 0;

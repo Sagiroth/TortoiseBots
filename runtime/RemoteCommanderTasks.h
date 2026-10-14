@@ -73,6 +73,9 @@ constexpr char const* kCodeTimeout = "timeout";
 constexpr char const* kCodeCancelled = "cancelled";
 // A by-entry target (cmd open|loot|use entry:<id>, cmd state) with no spawned object in the search area.
 constexpr char const* kCodeNotFound = "not-found";
+// `cmd ritual`: fewer bots than the ritual needs participants / a participant stopped channeling.
+constexpr char const* kCodeNotEnough = "not-enough";
+constexpr char const* kCodeInterrupted = "interrupted";
 
 // ---------------------------------------------------------------------------
 // Standing point and budgets
@@ -123,6 +126,7 @@ enum class TaskKind : uint8_t
     Loot,
     Open,
     Use,
+    Ritual, // one member of a `cmd ritual` group: the walk is its own, the act belongs to the group (RitualState)
 };
 
 enum class TaskStage : uint8_t
@@ -153,6 +157,7 @@ inline uint32_t ActBudgetMs(TaskKind kind)
         case TaskKind::Loot: return kLootWindowMs;
         case TaskKind::Open: return kOpenEffectMs;
         case TaskKind::Use: return kUseCastMs;
+        case TaskKind::Ritual: return kLootWindowMs; // never used: the group's own clock runs the act
     }
     return kLootWindowMs;
 }
@@ -301,6 +306,225 @@ inline TaskVerdict AdvanceTask(TaskState& state, TaskFacts const& facts, uint32_
 inline bool MayRetryAct(TaskState const& state, TaskFacts const& facts)
 {
     return facts.botAvailable && state.stage == TaskStage::Act && !(facts.inCombat && state.walks);
+}
+
+// ---------------------------------------------------------------------------
+// Summoning rituals: `cmd ritual <target> <bot> <bot> [<bot>...]`
+// ---------------------------------------------------------------------------
+
+// A GAMEOBJECT_TYPE_SUMMONING_RITUAL (Uldaman's Altar of the Keepers and Altar of
+// Archaedas) is used by `reqParticipants` DIFFERENT players. What the core does
+// (GameObject::Use, GameObject::AddUniqueUse, Spell::cancel and Spell::update):
+//  - each use by a player of the same group as the first user (castersGrouped) adds
+//    that player to the object's unique users and starts the helper's animation
+//    spell, a channel that any step of more than 0.5 yd, a hit or a stun breaks;
+//    a broken channel takes the player out of the unique users again;
+//  - the use that brings the count to reqParticipants turns the object active
+//    (GO_STATE_ACTIVE) and casts the ritual spell, a short cast, at the object;
+//    the object's script reacts to it (the altars wake the Stone Keepers or
+//    Archaedas); while that cast runs the count must stay at reqParticipants;
+//  - the core has no timer of its own: an object left half used stays half used.
+// So the order has to bring all bots to the object first, let them use it one after
+// the other, and keep every one still until the object is active and the cast has run.
+//
+// The group below is the order's clock and verdict. The glue (BotCommands.cpp) reads
+// the facts off the world once per look, sends the uses and holds the bots.
+
+// Bots a ritual order may name (the bound party is at most five).
+constexpr uint32_t kRitualMaxBots = 5;
+// A use must show the bot among the object's participants within this long, else it is sent again.
+constexpr uint32_t kRitualJoinWaitMs = 2000;
+constexpr uint32_t kRitualUseTries = 2;
+// After the last bot joined the object must turn active within this long.
+constexpr uint32_t kRitualActiveMs = 4000;
+// After it turned active the bots stay this long for the ritual cast to run; it still being
+// active at the end is the success (the cast itself has no result a client could see).
+constexpr uint32_t kRitualSettleMs = 5000;
+
+enum class RitualStage : uint8_t
+{
+    Gather, // the bots walk to the object; each holds still where it arrives
+    Join,   // the bots use the object one after the other
+    Settle, // the object is active: everyone stays still until the cast has run
+};
+
+struct RitualState
+{
+    RitualStage stage = RitualStage::Gather;
+    uint32_t members = 0;       // bots ordered
+    uint32_t required = 0;      // the object's reqParticipants
+    uint32_t ceilingMs = 0;     // the whole order's hard limit
+    uint32_t elapsedMs = 0;
+    uint32_t stageMs = 0;
+    uint32_t nextUse = 0;       // the member (by index) that uses next = members confirmed so far
+    bool useSent = false;       // the use of member nextUse is under way
+    uint32_t useWaitMs = 0;
+    uint32_t useTries = 0;
+    uint32_t activeWaitMs = 0;  // since the last member joined
+};
+
+// The seconds a PENDING line promises: the slowest walk, every join (twice over: a
+// retry), the wait for the object to turn active, and the settle.
+inline uint32_t RitualBudgetMs(uint32_t slowestWalkMs, uint32_t uses)
+{
+    return slowestWalkMs + uses * kRitualJoinWaitMs * kRitualUseTries + kRitualActiveMs + kRitualSettleMs;
+}
+
+inline RitualState MakeRitual(uint32_t members, uint32_t required, uint32_t slowestWalkMs)
+{
+    RitualState state;
+    state.members = members;
+    state.required = required;
+    state.ceilingMs = RitualBudgetMs(slowestWalkMs, required);
+    return state;
+}
+
+struct RitualFacts
+{
+    bool unavailable = false;       // a member died, left the map or the party, or teleports
+    char const* walkFailCode = nullptr; // a member's walk ended in failure (its AdvanceTask verdict)
+    char const* walkFailMessage = "";
+    bool inCombat = false;          // any member
+    bool targetPresent = true;      // the object is still spawned
+    bool allReady = false;          // every member stands in range of the object, holding
+    bool nextInRange = true;        // the member to use now still stands in range
+    bool goActive = false;          // the object's state is active (the ritual's cast is sent)
+    bool nextJoined = false;        // the member to use now is among the object's participants
+    uint32_t membersJoined = 0;     // members among the participants now
+    uint32_t uniqueUsers = 0;       // all participants of the object (ours or not)
+};
+
+enum class RitualStep : uint8_t
+{
+    Wait,
+    UseNext, // the glue sends the use of member `nextUse` now
+    Succeed,
+    Fail,
+};
+
+struct RitualVerdict
+{
+    RitualStep step = RitualStep::Wait;
+    char const* code = "";
+    char const* message = "";
+};
+
+inline RitualVerdict RitualFail(char const* code, char const* message)
+{
+    RitualVerdict verdict;
+    verdict.step = RitualStep::Fail;
+    verdict.code = code;
+    verdict.message = message;
+    return verdict;
+}
+
+// The glue's use of the member was refused by the bot's own checks (already in use, out of reach):
+// counts as one try like a use that did not register.
+inline RitualVerdict RitualUseRefused(RitualState& state)
+{
+    state.useSent = false;
+    state.useWaitMs = 0;
+    if (++state.useTries >= kRitualUseTries)
+        return RitualFail(kCodeBusy, "The bot could not use the ritual object (already in use, or out of reach).");
+    return RitualVerdict();
+}
+
+// One look at a running ritual order, `diffMs` after the last.
+inline RitualVerdict AdvanceRitual(RitualState& state, RitualFacts const& facts, uint32_t diffMs)
+{
+    state.elapsedMs += diffMs;
+    state.stageMs += diffMs;
+    RitualVerdict verdict;
+    if (facts.unavailable)
+        return RitualFail(kCodeUnavailable, "A bot died, left the map or the party, or is teleporting.");
+    if (facts.walkFailCode)
+        return RitualFail(facts.walkFailCode, facts.walkFailMessage);
+    if (facts.inCombat)
+        return RitualFail(kCodeInCombat, "A bot is in combat and stopped.");
+    if (state.elapsedMs >= state.ceilingMs)
+        return RitualFail(kCodeTimeout, "The ritual did not finish in time.");
+
+    switch (state.stage)
+    {
+        case RitualStage::Gather:
+            if (!facts.targetPresent)
+                return RitualFail(kCodeInvalidTarget, "The ritual object is gone.");
+            if (facts.goActive)
+                return RitualFail(kCodeBusy, "The ritual is already in progress.");
+            if (facts.allReady)
+            {
+                state.stage = RitualStage::Join;
+                state.stageMs = 0;
+            }
+            return verdict;
+
+        case RitualStage::Join:
+            if (facts.goActive)
+            {
+                state.stage = RitualStage::Settle;
+                state.stageMs = 0;
+                return verdict;
+            }
+            if (!facts.targetPresent)
+                return RitualFail(kCodeInvalidTarget, "The ritual object is gone.");
+            // A bot that had joined is not a participant any more: it moved, was hit or stunned.
+            if (facts.membersJoined < state.nextUse)
+                return RitualFail(kCodeInterrupted, "A participant stopped channeling (it moved, was hit or stunned).");
+            if (state.useSent)
+            {
+                if (facts.nextJoined)
+                {
+                    state.useSent = false;
+                    state.useWaitMs = 0;
+                    state.useTries = 0;
+                    ++state.nextUse;
+                    return verdict;
+                }
+                state.useWaitMs += diffMs;
+                if (state.useWaitMs >= kRitualJoinWaitMs)
+                {
+                    if (state.useTries + 1 >= kRitualUseTries)
+                        return RitualFail(kCodeFailed,
+                            "A bot's use did not make it a participant (the bot must be in the same party as the first user and in reach).");
+                    ++state.useTries;
+                    state.useSent = false;
+                    state.useWaitMs = 0;
+                }
+                return verdict;
+            }
+            if (state.nextUse < state.members && state.nextUse < state.required)
+            {
+                if (!facts.nextInRange)
+                    return RitualFail(kCodeTooFar, "A bot was pushed out of reach of the ritual object.");
+                state.useSent = true;
+                state.useWaitMs = 0;
+                verdict.step = RitualStep::UseNext;
+                return verdict;
+            }
+            // Everyone who had to join has: the object must turn active now.
+            state.activeWaitMs += diffMs;
+            if (state.activeWaitMs >= kRitualActiveMs)
+                return facts.uniqueUsers < state.required
+                    ? RitualFail(kCodeNotEnough, "The ritual needs more participants than joined.")
+                    : RitualFail(kCodeFailed, "The ritual object did not turn active.");
+            return verdict;
+
+        case RitualStage::Settle:
+            if (!facts.goActive)
+            {
+                // A ritual that is used up leaves with its cast done; one that went back to ready was cancelled.
+                if (!facts.targetPresent)
+                {
+                    verdict.step = RitualStep::Succeed;
+                    return verdict;
+                }
+                return RitualFail(kCodeInterrupted, "The ritual was cancelled (a participant stopped channeling).");
+            }
+            if (state.stageMs >= kRitualSettleMs)
+                verdict.step = RitualStep::Succeed;
+            return verdict;
+    }
+    return verdict;
 }
 
 // ---------------------------------------------------------------------------

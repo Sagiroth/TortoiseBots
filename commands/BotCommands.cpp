@@ -5264,6 +5264,8 @@ struct CommanderTask
     bool actStarted = false;
     bool superseded = false;  // a later order set the bot's movement: it is not ours to put back
     bool departed = false;    // the bot left the commanded party
+    uint32 ritualId = 0;      // ritual: the order's group (RitualGroups); its clock runs the act, not this task
+    bool ready = false;       // ritual: the bot stands in range of the object, holding
     uint32 actTries = 0;
     uint32 nudgeMs = 0;
     uint32 baseline = 0;      // open: the game object's state when the action began
@@ -5281,6 +5283,29 @@ std::unordered_map<uint64, CommanderTask>& CommanderTasks()
 }
 
 uint32 s_commanderTaskMs = 0;
+
+// A `cmd ritual` order: the bots' tasks (one per bot, kind Ritual, linked by ritualId) and the clock
+// that decides for all of them (RemoteCommander::AdvanceRitual).
+struct RitualGroup
+{
+    uint32 id = 0;
+    uint64 commanderRaw = 0;
+    uint64 targetRaw = 0;
+    std::vector<uint64> members;  // bot GUIDs, in the order typed; the first uses first
+    RemoteCommander::RitualState state;
+    std::string intent;
+};
+
+std::unordered_map<uint32, RitualGroup>& RitualGroups()
+{
+    static std::unordered_map<uint32, RitualGroup> groups;
+    return groups;
+}
+
+uint32 s_ritualNextId = 0;
+
+// A ritual order ended for a reason of one member (or of the whole group): ends the other members, answers once.
+void FailRitualGroup(uint32 id, uint64 exceptBot, std::string const& code, std::string const& message);
 
 struct TaskTarget
 {
@@ -5600,8 +5625,7 @@ void EndTaskStance(CommanderTask const& task, Player* bot, PlayerbotAI* ai)
 
 // Ends a task: ledger forgotten, loot target cleared, movement stance back,
 // then the final answer.
-void FinishCommanderTask(CommanderTask& task, bool ok, uint32 count, std::string const& payload,
-    std::string const& code, std::string const& message)
+void ReleaseTaskStance(CommanderTask const& task)
 {
     RemoteCommander::LootOrders().Forget(task.botRaw);
     Player* bot = FindCharacter(task.botRaw);
@@ -5610,6 +5634,37 @@ void FinishCommanderTask(CommanderTask& task, bool ok, uint32 count, std::string
         EndTaskStance(task, bot, ai);
     else if (bot && task.walking && !task.superseded)
         PendingStanceRestores().push_back(task);
+}
+
+// A ritual member that is let go before the ritual is over stops its helper channel, so it leaves the
+// object's participants and nothing is left half used. Not once the object is active: its cast is
+// sent, and a participant leaving then would send the object back to ready.
+void StopRitualChannel(CommanderTask const& task)
+{
+    Player* bot = FindCharacter(task.botRaw);
+    if (!bot || !bot->IsInWorld() || !task.actSpellId)
+        return;
+    Spell* spell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+    if (!spell || !spell->m_spellInfo || spell->m_spellInfo->Id != task.actSpellId)
+        return;
+    GameObject* go = bot->GetMap() ? bot->GetMap()->GetGameObject(ObjectGuid(task.targetRaw)) : nullptr;
+    if (go && go->GetGoState() == GO_STATE_ACTIVE)
+        return;
+    bot->InterruptNonMeleeSpells(false);
+}
+
+void FinishCommanderTask(CommanderTask& task, bool ok, uint32 count, std::string const& payload,
+    std::string const& code, std::string const& message)
+{
+    if (task.ritualId)
+        StopRitualChannel(task);
+    ReleaseTaskStance(task);
+    if (task.ritualId)
+    {
+        // A member ended on its own (a later order, a released binding, a lost bot): the ritual order ends with it.
+        FailRitualGroup(task.ritualId, task.botRaw, code, message);
+        return;
+    }
     if (ok)
         TaskReplyAck(task, count, payload);
     else
@@ -5925,6 +5980,9 @@ void CompleteCommanderTask(CommanderTask& task)
 // One look at a running task. Returns true when it is over (answered).
 bool StepCommanderTask(CommanderTask& task, uint32 diff)
 {
+    // A ritual member is stepped by its group (StepRitualGroups), which sees all the bots at once.
+    if (task.ritualId)
+        return false;
     Player* commander = FindCharacter(task.commanderRaw);
     Player* bot = FindCharacter(task.botRaw);
     PlayerbotAI* ai = bot && bot->IsInWorld() ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
@@ -6057,39 +6115,262 @@ bool StepCommanderTask(CommanderTask& task, uint32 diff)
     return false;
 }
 
+// ---------------------------------------------------------------------------
+// Summoning rituals (`cmd ritual`): the group's look
+// ---------------------------------------------------------------------------
+
+// The ritual object, seen from the map of any member that stands in a world.
+GameObject* RitualObject(RitualGroup const& group)
+{
+    ObjectGuid const guid(group.targetRaw);
+    for (uint64 raw : group.members)
+    {
+        Player* bot = FindCharacter(raw);
+        if (bot && bot->IsInWorld() && bot->GetMap())
+            return bot->GetMap()->GetGameObject(guid);
+    }
+    return nullptr;
+}
+
+// A bot that already used the object stays where it is: a movement generator something queued since is
+// dropped. Its spells are left alone, the helper channel is the participation itself.
+void KeepRitualStill(PlayerbotAI* ai, Player* bot)
+{
+    ai->DropQueuedMovementOrders();
+    if (bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL))
+        return;
+    if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
+    {
+        bot->GetMotionMaster()->Clear();
+        bot->GetMotionMaster()->MoveIdle();
+    }
+}
+
+void EndRitualMembers(RitualGroup const& group, uint64 exceptBot, bool stopChannels)
+{
+    auto& tasks = CommanderTasks();
+    for (uint64 raw : group.members)
+    {
+        if (raw == exceptBot)
+            continue;
+        auto it = tasks.find(raw);
+        if (it == tasks.end() || it->second.ritualId != group.id)
+            continue;
+        CommanderTask task = it->second;
+        tasks.erase(it);
+        if (stopChannels)
+            StopRitualChannel(task);
+        ReleaseTaskStance(task);
+    }
+}
+
+void RitualReply(RitualGroup const& group, bool ok, uint32 count, std::string const& code, std::string const& message)
+{
+    Player* commander = FindCharacter(group.commanderRaw);
+    if (!commander || !commander->IsInWorld() || !commander->GetSession())
+        return;
+    ChatHandler handler(commander);
+    if (ok)
+        SendActionAck(&handler, group.intent, "party", count, "done");
+    else
+        SendActionError(&handler, group.intent, code.c_str(), message.c_str());
+}
+
+void FailRitualGroup(uint32 id, uint64 exceptBot, std::string const& code, std::string const& message)
+{
+    auto& groups = RitualGroups();
+    auto it = groups.find(id);
+    if (it == groups.end())
+        return;
+    RitualGroup const group = it->second;
+    groups.erase(it);
+    EndRitualMembers(group, exceptBot, true);
+    RitualReply(group, false, 0, code, message);
+}
+
+// The use of the member whose turn it is: the bot's own "use game object" code, which sends the
+// same CMSG_GAMEOBJ_USE a right click does. True when the bot accepted it (it is not yet a participant).
+bool SendRitualUse(RitualGroup& group, Player* commander)
+{
+    auto& tasks = CommanderTasks();
+    auto it = tasks.find(group.members[group.state.nextUse]);
+    if (it == tasks.end())
+        return false;
+    CommanderTask& task = it->second;
+    Player* bot = FindCharacter(task.botRaw);
+    PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+    if (!ai)
+        return false;
+    if (bot->IsMounted())
+        ai->Unmount();
+    ai->ClearLastCastCheckFail();
+    std::string const param = "0 go " + std::to_string(group.targetRaw);
+    task.actStarted = ExecuteQuietAction(ai, "commander use", ai::Event("cmd open", param, commander));
+    return task.actStarted;
+}
+
+// One look at a ritual order. True when it is over (answered, the members let go).
+bool StepRitualGroup(RitualGroup& group, uint32 diff)
+{
+    Player* commander = FindCharacter(group.commanderRaw);
+    if (!commander || !commander->IsInWorld())
+    {
+        FailRitualGroup(group.id, 0, RemoteCommander::kCodeFailed, "The commander left.");
+        return true;
+    }
+
+    auto& tasks = CommanderTasks();
+    GameObject* go = RitualObject(group);
+    RemoteCommander::RitualFacts facts;
+    facts.targetPresent = go && sServerFacade.isSpawned(go);
+    facts.goActive = go && go->GetGoState() == GO_STATE_ACTIVE;
+    if (go)
+        facts.uniqueUsers = go->GetUniqueUseCount();
+
+    bool allReady = true;
+    for (uint64 raw : group.members)
+    {
+        auto it = tasks.find(raw);
+        Player* bot = FindCharacter(raw);
+        PlayerbotAI* ai = bot && bot->IsInWorld() ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+        if (it == tasks.end() || it->second.ritualId != group.id || !ai || !bot->IsAlive() ||
+            bot->IsBeingTeleported() || bot->IsTaxiFlying() || (go && bot->GetMapId() != go->GetMapId()))
+        {
+            facts.unavailable = true;
+            allReady = false;
+            continue;
+        }
+        CommanderTask& task = it->second;
+        if (!IsCommandedBy(commander, bot))
+        {
+            task.departed = true;
+            facts.unavailable = true;
+            allReady = false;
+            continue;
+        }
+        if (bot->IsInCombat())
+            facts.inCombat = true;
+
+        if (task.state.stage == RemoteCommander::TaskStage::Walk)
+        {
+            RemoteCommander::TaskFacts walk;
+            walk.targetPresent = facts.targetPresent;
+            walk.inCombat = bot->IsInCombat();
+            walk.distance = go ? bot->GetDistance(go) : 0.0f;
+            walk.inRange = go && RemoteCommander::InUseRange(walk.distance, INTERACTION_DISTANCE);
+            RemoteCommander::TaskVerdict const verdict = RemoteCommander::AdvanceTask(task.state, walk, diff);
+            if (verdict.step == RemoteCommander::TaskStep::Fail && !facts.walkFailCode)
+            {
+                facts.walkFailCode = verdict.code;
+                facts.walkFailMessage = verdict.message;
+            }
+            else if (verdict.step == RemoteCommander::TaskStep::BeginAct)
+                task.ready = true;
+            else if (verdict.step == RemoteCommander::TaskStep::Wait)
+                NudgeTaskWalk(task, bot, diff);
+        }
+        if (!task.ready)
+        {
+            allReady = false;
+            continue;
+        }
+        // Standing in range: hold still. A bot that has not used the object yet is held hard (its own
+        // spell and movement dropped); one that has is the participant, its channel is left alone.
+        if (task.actStarted)
+            KeepRitualStill(ai, bot);
+        else
+            HoldForAct(task, ai, bot);
+    }
+    facts.allReady = allReady && !facts.unavailable;
+
+    if (go)
+    {
+        for (uint64 raw : group.members)
+            if (Player* bot = FindCharacter(raw))
+                if (go->HasUniqueUser(bot))
+                    ++facts.membersJoined;
+        if (group.state.nextUse < group.members.size())
+            if (Player* next = FindCharacter(group.members[group.state.nextUse]))
+            {
+                facts.nextInRange = RemoteCommander::InUseRange(next->GetDistance(go), INTERACTION_DISTANCE);
+                facts.nextJoined = go->HasUniqueUser(next);
+            }
+    }
+
+    RemoteCommander::RitualVerdict verdict = RemoteCommander::AdvanceRitual(group.state, facts, diff);
+    if (verdict.step == RemoteCommander::RitualStep::UseNext && !SendRitualUse(group, commander))
+        verdict = RemoteCommander::RitualUseRefused(group.state);
+    switch (verdict.step)
+    {
+        case RemoteCommander::RitualStep::Wait:
+        case RemoteCommander::RitualStep::UseNext:
+            return false;
+        case RemoteCommander::RitualStep::Succeed:
+        {
+            RitualGroup const done = group;
+            RitualGroups().erase(done.id);
+            EndRitualMembers(done, 0, false);
+            RitualReply(done, true, done.state.required, "", "");
+            return true;
+        }
+        case RemoteCommander::RitualStep::Fail:
+            FailRitualGroup(group.id, 0, verdict.code, verdict.message);
+            return true;
+    }
+    return false;
+}
+
+void StepRitualGroups(uint32 diff)
+{
+    std::vector<uint32> ids;
+    for (auto const& entry : RitualGroups())
+        ids.push_back(entry.first);
+    for (uint32 id : ids)
+    {
+        auto it = RitualGroups().find(id);
+        if (it != RitualGroups().end())
+            StepRitualGroup(it->second, diff);
+    }
+}
+
 // A later order cancels the commander's running tasks (of one bot, or all). Only
 // an order that sets the bot's movement itself skips the walk's end; after any
 // other the bot re-forms as after a finished walk.
 void SupersedeCommanderTasks(uint64 commanderRaw, uint64 onlyBotRaw, RemoteCommander::LaterOrder later)
 {
+    // The keys first: finishing a ritual member ends the other members of its group too.
     auto& tasks = CommanderTasks();
-    for (auto it = tasks.begin(); it != tasks.end();)
+    std::vector<uint64> keys;
+    for (auto const& entry : tasks)
+        if (entry.second.commanderRaw == commanderRaw && (!onlyBotRaw || entry.second.botRaw == onlyBotRaw))
+            keys.push_back(entry.first);
+    for (uint64 key : keys)
     {
-        if (it->second.commanderRaw == commanderRaw && (!onlyBotRaw || it->second.botRaw == onlyBotRaw))
-        {
-            it->second.superseded = RemoteCommander::LaterOrderTakesMovement(later);
-            FinishCommanderTask(it->second, false, 0, "", RemoteCommander::kCodeCancelled,
-                "A later order took the bot.");
-            it = tasks.erase(it);
-        }
-        else
-            ++it;
+        auto it = tasks.find(key);
+        if (it == tasks.end())
+            continue;
+        CommanderTask task = it->second;
+        tasks.erase(it);
+        task.superseded = RemoteCommander::LaterOrderTakesMovement(later);
+        FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeCancelled, "A later order took the bot.");
     }
 }
 
 void CancelCommanderTasks(uint64 commanderRaw)
 {
     auto& tasks = CommanderTasks();
-    for (auto it = tasks.begin(); it != tasks.end();)
+    std::vector<uint64> keys;
+    for (auto const& entry : tasks)
+        if (entry.second.commanderRaw == commanderRaw)
+            keys.push_back(entry.first);
+    for (uint64 key : keys)
     {
-        if (it->second.commanderRaw == commanderRaw)
-        {
-            FinishCommanderTask(it->second, false, 0, "", RemoteCommander::kCodeFailed,
-                "The commanded group was released.");
-            it = tasks.erase(it);
-        }
-        else
-            ++it;
+        auto it = tasks.find(key);
+        if (it == tasks.end())
+            continue;
+        CommanderTask task = it->second;
+        tasks.erase(it);
+        FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeFailed, "The commanded group was released.");
     }
 }
 
@@ -6129,6 +6410,8 @@ void UpdateCommanderTasks(uint32 diff)
         return;
     uint32 const elapsed = s_commanderTaskMs;
     s_commanderTaskMs = 0;
+    if (!RitualGroups().empty())
+        StepRitualGroups(elapsed);
     for (auto it = tasks.begin(); it != tasks.end();)
     {
         if (StepCommanderTask(it->second, elapsed))
@@ -6141,6 +6424,7 @@ void UpdateCommanderTasks(uint32 diff)
 void ClearCommanderTasks()
 {
     CommanderTasks().clear();
+    RitualGroups().clear();
     PendingStanceRestores().clear();
     RemoteCommander::LootOrders().Clear();
     s_commanderTaskMs = 0;
@@ -6376,6 +6660,113 @@ static bool CommanderUse(ChatHandler* handler, CommanderOrder const& order, Play
     return LaunchCommanderTask(handler, order, bot, ai, task);
 }
 
+// cmd ritual <go-guid | entry:id[@x,y,z]> <bot1> <bot2> [<bot3>...]: the named bots walk to a summoning
+// ritual object (Uldaman's altars) and use it together; one PENDING, then one final ACK or ERR for the
+// whole party (the grammar and the core's rules are in RemoteCommanderTasks.h).
+static bool CommanderRitual(ChatHandler* handler, CommanderOrder const& order,
+    RemoteCommander::RitualOrder const& request, std::string const& intent)
+{
+    std::vector<Player*> bots;
+    std::vector<PlayerbotAI*> ais;
+    for (std::string const& name : request.bots)
+    {
+        Player* bot = FindCommandedBot(order, name);
+        if (!bot)
+        {
+            SendActionError(handler, intent, "no-bot", ("That bot is not in your commanded group: " + name).c_str());
+            return true;
+        }
+        BotRecord* record = BotManager::Instance().FindBot(bot->GetObjectGuid());
+        if (!RemoteCommander::MayIssueOrder(sPlayerbotAIConfig.remoteCommander, true,
+            RemoteCommander::OrderTier::OwnerOrGm, record && CanControlBot(order.commander, record)))
+        {
+            SendActionError(handler, intent, "denied", "Only each bot's owner (or a GameMaster) may do that.");
+            return true;
+        }
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+        if (!CommanderTaskGuard(handler, intent, bot, ai, true))
+            return true;
+        bots.push_back(bot);
+        ais.push_back(ai);
+    }
+
+    uint64 const guid = ResolveOrderGuid(handler, intent, bots[0], request.spec, false);
+    if (!guid)
+        return true;
+    GameObject* go = ObjectGuid(guid).IsGameObject() ? ais[0]->GetGameObject(ObjectGuid(guid)) : nullptr;
+    if (!go || !sServerFacade.isSpawned(go))
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeInvalidTarget,
+            "No game object with that GUID is on the bot's map.");
+        return true;
+    }
+    if (go->GetGoType() != GAMEOBJECT_TYPE_SUMMONING_RITUAL)
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeInvalidTarget,
+            "That object is not a summoning ritual (use cmd open for a lever, a door or a chest).");
+        return true;
+    }
+    if (go->GetGoState() == GO_STATE_ACTIVE)
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeBusy, "That ritual is already in progress.");
+        return true;
+    }
+    GameObjectInfo const* info = go->GetGOInfo();
+    uint32 const required = info && info->summoningRitual.reqParticipants ? info->summoningRitual.reqParticipants : 1;
+    if (bots.size() < required)
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeNotEnough,
+            ("That ritual needs " + std::to_string(required) + " different players; " +
+             std::to_string(bots.size()) + " bots were named.").c_str());
+        return true;
+    }
+    for (Player* bot : bots)
+        if (bot->GetMapId() != go->GetMapId() ||
+            !RemoteCommander::WithinReactDistance(bot->GetDistance(go), sPlayerbotAIConfig.reactDistance))
+        {
+            SendActionError(handler, intent, RemoteCommander::kCodeTooFar,
+                "The object is farther from a bot than AiPlayerbot.ReactDistance. Move the group closer first.");
+            return true;
+        }
+
+    RitualGroup group;
+    group.id = ++s_ritualNextId;
+    group.commanderRaw = order.commander->GetObjectGuid().GetRawValue();
+    group.targetRaw = guid;
+    group.intent = intent;
+    TaskTarget target;
+    target.go = go;
+    uint32 slowestWalkMs = 0;
+    auto& tasks = CommanderTasks();
+    for (size_t i = 0; i < bots.size(); ++i)
+    {
+        Player* bot = bots[i];
+        CommanderTask task;
+        task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Ritual, bot->GetDistance(go), true);
+        task.commanderRaw = group.commanderRaw;
+        task.botRaw = bot->GetObjectGuid().GetRawValue();
+        task.botName = bot->GetName();
+        task.targetRaw = guid;
+        task.intent = intent;
+        task.ritualId = group.id;
+        task.actSpellId = info ? info->summoningRitual.animSpell : 0; // the helpers' channel (StopRitualChannel)
+        slowestWalkMs = std::max(slowestWalkMs, task.state.walkBudgetMs);
+        if (!TaskInRange(task, bot, target))
+            BeginTaskWalk(task, order.commander, bot, ais[i], go);
+        tasks[task.botRaw] = task;
+        group.members.push_back(task.botRaw);
+    }
+    group.state = RemoteCommander::MakeRitual(static_cast<uint32>(bots.size()), required, slowestWalkMs);
+    uint32 const id = group.id;
+    RitualGroups()[id] = group;
+    // Bots that already stand at the object may start at once; a refusal on the spot answers alone.
+    if (StepRitualGroup(RitualGroups()[id], 0))
+        return true;
+    handler->PSendSysMessage("TBM:ACTION_PENDING|%s|party|%u|%s", ProtocolSafe(intent).c_str(),
+        (RitualGroups()[id].state.ceilingMs + 999) / 1000, std::to_string(guid).c_str());
+    return true;
+}
+
 // cmd state <go-guid | entry:id>[@x,y,z]: what a game object is doing now, for a
 // client that cannot see it (a door that opens when a fight is won). Read-only,
 // one lookup; answers at once, never walks anyone anywhere.
@@ -6480,7 +6871,7 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
     if (!RemoteCommander::IsKnownOrder(verb))
     {
         SendActionError(handler, intent, "invalid",
-            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid|entry:id[@x,y,z]> <bot> [itemId] / open <guid|entry:id[@x,y,z]> <bot> / use <itemId> <bot> [guid|entry:id[@x,y,z]] / state <guid|entry:id[@x,y,z]>");
+            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid|entry:id[@x,y,z]> <bot> [itemId] / open <guid|entry:id[@x,y,z]> <bot> / use <itemId> <bot> [guid|entry:id[@x,y,z]] / ritual <guid|entry:id[@x,y,z]> <bot1> <bot2> [<bot3>...] / state <guid|entry:id[@x,y,z]>");
         return true;
     }
 
@@ -6530,6 +6921,7 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         RemoteCommander::LootOrder lootRequest;
         RemoteCommander::OpenOrder openRequest;
         RemoteCommander::UseOrder useRequest;
+        RemoteCommander::RitualOrder ritualRequest;
         bool parsed = true;
         char const* usage = nullptr;
         if (verb == "loot")
@@ -6547,11 +6939,19 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             parsed = RemoteCommander::ParseUseOrder(parts, useRequest);
             usage = "Usage: .bot cmd use <itemId> <bot> [target guid | entry:<id>[@x,y,z]]";
         }
+        else if (verb == "ritual")
+        {
+            parsed = RemoteCommander::ParseRitualOrder(parts, ritualRequest);
+            usage = "Usage: .bot cmd ritual <object guid | entry:<id>[@x,y,z]> <bot1> <bot2> [<bot3>...] (2-5 different bots)";
+        }
         if (!parsed)
         {
             SendActionError(handler, intent, RemoteCommander::kCodeInvalid, usage);
             return true;
         }
+        // A ritual names several bots; each is checked for its owner inside.
+        if (verb == "ritual")
+            return CommanderRitual(handler, order, ritualRequest, intent);
         std::string const botName = RemoteCommander::OwnerOrderBotName(verb, parts);
         Player* bot = botName.empty() ? nullptr : FindCommandedBot(order, botName);
         if (!bot)
