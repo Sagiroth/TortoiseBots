@@ -8,7 +8,8 @@ const mem = () => { const d = {}; return { d, getItem: (k) => (k in d ? d[k] : n
 
 // ---- defaults: what the maps drew before layers existed is on, everything new is off
 const def = L.defaults();
-assert.deepStrictEqual(Object.keys(def).sort(), L.keys().slice().sort());
+assert.deepStrictEqual(Object.keys(def).sort(), L.keys().concat(["dim"]).sort());
+assert.strictEqual(def.dim, 30); // the picture was darkened by 30 % before the slider existed
 ["bg", "grid", "zone", "bots", "botnames", "lead", "trail"].forEach((k) => assert.strictEqual(def[k], true, k));
 ["zonelabels", "scale", "trailtime", "heading", "healring", "commander", "mobhostile", "mobneutral", "mobcritter", "threat", "bottarget", "aggro"]
   .forEach((k) => assert.strictEqual(def[k], false, k));
@@ -66,4 +67,43 @@ const act = L.active(s, L.availability({ bots: true }));
 assert.strictEqual(act.bots, true); assert.strictEqual(act.grid, false /* turned off */); assert.strictEqual(act.threat, false /* chosen but no data */);
 assert.strictEqual(act.trail, false /* no data */);
 assert.deepStrictEqual(L.groups(), ["Map", "Party", "Mobs"]);
+
+// ---- the dim slider: 0-80 %, saved with the other choices
+assert.strictEqual(L.DIM_MAX, 80);
+assert.strictEqual(L.setDim(def, 0).dim, 0);
+assert.strictEqual(L.setDim(def, 55).dim, 55);
+assert.strictEqual(L.setDim(def, 100).dim, 80, "capped at 80");
+assert.strictEqual(L.setDim(def, -5).dim, 0, "not below 0");
+assert.strictEqual(L.setDim(def, "40").dim, 40, "a slider value arrives as a string");
+assert.strictEqual(L.setDim(def, "abc").dim, 30, "junk falls back");
+assert.strictEqual(L.setDim(def, NaN).dim, 30);
+assert.strictEqual(L.setDim(def, 12.6).dim, 13);
+assert.strictEqual(L.set(def, "dim", true).dim, 30, "dim is not a toggle");
+const dst = mem();
+L.save(dst, L.setDim(L.set(def, "grid", false), 65));
+assert.strictEqual(Object.keys(dst.d).length, 1);
+assert.strictEqual(L.load(dst).dim, 65); assert.strictEqual(L.load(dst).grid, false);
+assert.strictEqual(L.normalize({ dim: "x" }).dim, 30);
+assert.strictEqual(L.normalize({ dim: 999 }).dim, 80);
+
+// ---- storage v2 with a migration from v1
+assert.strictEqual(L.STORAGE_KEY, "tbdash.mapLayers.v2");
+assert.strictEqual(L.OLD_STORAGE_KEY, "tbdash.mapLayers.v1");
+const mig = mem();
+mig.d["tbdash.mapLayers.v1"] = JSON.stringify({ grid: false, trail: false, threat: true });
+const migrated = L.load(mig);
+assert.strictEqual(migrated.grid, false); assert.strictEqual(migrated.trail, false); assert.strictEqual(migrated.threat, true);
+assert.strictEqual(migrated.bots, true); assert.strictEqual(migrated.dim, 30, "v1 had no dim: the default");
+assert.strictEqual(L.save(mig, L.setDim(migrated, 10)), true);
+assert.ok("tbdash.mapLayers.v2" in mig.d, "the next save writes v2");
+assert.strictEqual(L.load(mig).dim, 10);
+mig.d["tbdash.mapLayers.v1"] = JSON.stringify({ grid: true }); // v2 wins once it exists
+assert.strictEqual(L.load(mig).grid, false);
+const bad1 = mem(); bad1.d["tbdash.mapLayers.v1"] = "{broken";
+assert.deepStrictEqual(L.load(bad1), def, "a broken v1 gives the defaults");
+
+// ---- the map-data layers are available once the module reports the data (an empty list counts)
+const full = L.availability({ picture: true, commanderPos: true, mobs: true, mobTargets: true, botTargets: true });
+["commander", "mobhostile", "mobneutral", "mobcritter", "threat", "bottarget", "aggro"].forEach((k) => assert.strictEqual(full[k].ok, true, k));
+assert.ok(/newer module|does not report|not online/.test(L.availability({}).mobhostile.why));
 console.log("maplayers.js ok");

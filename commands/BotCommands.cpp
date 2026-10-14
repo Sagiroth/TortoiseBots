@@ -8430,6 +8430,47 @@ static void NoteCommanderOrderResult(ChatHandler* handler, std::string const& in
     CommanderOrderLog().Note(commanderRaw, std::move(record));
 }
 
+// The map data of one binding for the dashboard (once per 2 s snapshot cycle, only while a binding stands): the commander's
+// position when it is online and in the world, and the hostile units the commander's perception feed would list for this binding
+// (the same builder: the bots' own cached lists, resolved by guid on the lead's map, capped at kMaxHostiles; no grid or world
+// scan). The bots' targets are read by the emitter from the bots it already walks.
+static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player* commander, Player* lead,
+    CommanderTelemetry::BindingRef& ref)
+{
+    if (commander && ref.commanderOnline && commander->IsInWorld())
+    {
+        ref.commanderPlaced = true;
+        ref.commanderMap = commander->GetMapId();
+        ref.commanderX = commander->GetPositionX();
+        ref.commanderY = commander->GetPositionY();
+    }
+    if (!lead || !lead->IsInWorld() || ref.bots.empty())
+        return;
+    static RemoteCommander::View::Snapshot snapshot; // not the feed's own: the feed's frame may still be paced out from it
+    CollectViewSnapshot(binding, snapshot);
+    Map* map = lead->GetMap();
+    ref.mobsReported = true;
+    ref.mobsMap = lead->GetMapId();
+    size_t const count = std::min(snapshot.hostileCount, CommanderTelemetry::kMaxMobsPerBinding);
+    ref.mobs.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        RemoteCommander::View::Hostile const& h = snapshot.hostiles[i];
+        CommanderTelemetry::MobInfo mob;
+        mob.id = h.guid;
+        mob.entry = h.entry;
+        if (Unit* unit = map ? map->GetUnit(::ObjectGuid(h.guid)) : nullptr)
+            mob.name = unit->GetName();
+        mob.hpPct = h.hpPct;
+        mob.x = h.x;
+        mob.y = h.y;
+        mob.victim = h.target;
+        mob.reaction = h.reaction;
+        mob.kind = h.critter ? 'k' : h.civilian ? 'v' : h.guard ? 'g' : h.unattackable ? 'u' : 0;
+        ref.mobs.push_back(std::move(mob));
+    }
+}
+
 void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
 {
     out.clear();
@@ -8460,6 +8501,7 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
         if (group && group->GetId() == binding->groupId)
             FillCommandedBots(group, lead, ref.bots);
         ref.orders = CommanderOrderLog().Recent(commanderRaw);
+        FillCommanderMapData(*binding, commander, lead, ref);
         out.push_back(std::move(ref));
     }
     CommanderOrderLog().Retain(bound);

@@ -77,6 +77,9 @@ func TestCommandersAreBounded(t *testing.T) {
 		for j := 0; j < maxCommanderBots+5; j++ {
 			b.Bots = append(b.Bots, model.CommanderBot{Name: "b"})
 		}
+		for j := 0; j < maxCommanderMobs+5; j++ {
+			b.Mobs = append(b.Mobs, model.CommanderMob{ID: "1"})
+		}
 		for j := 0; j < maxCommanderOrders+5; j++ {
 			b.Orders = append(b.Orders, model.CommanderOrder{At: int64(j)})
 		}
@@ -86,6 +89,9 @@ func TestCommandersAreBounded(t *testing.T) {
 	v := s.Commanders()
 	if len(v.Commanders) != maxCommanderBindings || len(v.Commanders[0].Bots) != maxCommanderBots || len(v.Commanders[0].Orders) != maxCommanderOrders {
 		t.Fatalf("bounds: %d bindings, %d bots, %d orders", len(v.Commanders), len(v.Commanders[0].Bots), len(v.Commanders[0].Orders))
+	}
+	if len(v.Commanders[0].Mobs) != maxCommanderMobs {
+		t.Errorf("mobs not bounded: %d", len(v.Commanders[0].Mobs))
 	}
 	// The newest orders are the ones kept.
 	if last := v.Commanders[0].Orders[maxCommanderOrders-1]; last.At != int64(maxCommanderOrders+4) {

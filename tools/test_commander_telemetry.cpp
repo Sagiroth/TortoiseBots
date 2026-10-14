@@ -183,6 +183,109 @@ void TestPayloadCapsAndSize()
     Check(json.size() < 40000, "the worst case fits one datagram");
 }
 
+MobInfo Mob(uint64_t id, std::string name, char reaction = 'h', char kind = 0, uint64_t victim = 0)
+{
+    MobInfo m;
+    m.id = id;
+    m.entry = 4863;
+    m.name = std::move(name);
+    m.hpPct = 85;
+    m.x = -1234.56f;
+    m.y = 987.65f;
+    m.victim = victim;
+    m.reaction = reaction;
+    m.kind = kind;
+    return m;
+}
+
+size_t Count(std::string const& hay, std::string const& needle)
+{
+    size_t n = 0;
+    for (size_t pos = hay.find(needle); pos != std::string::npos; pos = hay.find(needle, pos + 1))
+        ++n;
+    return n;
+}
+
+void TestMapData()
+{
+    BindingInfo b;
+    b.commander = "Zfmagea";
+    b.lead = "Forthur";
+    BotInfo bot = Bot("Forthur", true);
+    bot.id = 0x0000000000002A5Cull;
+    bot.target = 0xF130001EDF000102ull; // a creature guid: does not fit a JSON number
+    b.bots.push_back(bot);
+    b.bots.push_back(Bot("Idle", false)); // no id, no target
+    b.commanderPlaced = true;
+    b.commanderMap = 209;
+    b.commanderX = 1100.5f;
+    b.commanderY = -50.5f;
+    b.mobsReported = true;
+    b.mobsMap = 209;
+    b.mobs.push_back(Mob(0xF130001EDF000102ull, "Stonevault \"Rock\"chewer", 'h', 0, 0x2A5C));
+    b.mobs.push_back(Mob(2, "Rat", 'n', 'k'));
+    b.mobs.push_back(Mob(3, "Guard", 'f', 'g'));
+    b.mobs.push_back(Mob(4, "Odd", 'x', 'z')); // unknown letters are cleaned
+    std::string const json = BuildPayload(9, 1, 1, 1, {b});
+
+    Check(Has(json, "\"commander_pos\":{\"map\":209,\"x\":1100.5,\"y\":-50.5}"), "the commander's position and map");
+    Check(Has(json, "\"id\":\"10844\"") && Has(json, "\"target\":\"17379391094613082370\""),
+        "bot id and target are decimal strings (64 bits do not fit a JSON number)");
+    Check(Count(json, "\"target\":") == 1, "a bot with no target has no target field");
+    Check(Has(json, "\"mobs_map\":209") && Has(json, "\"mobs\":["), "the mobs and their map");
+    Check(Count(json, "\"entry\":4863") == 4, "every mob carries its entry");
+    Check(Has(json, "Stonevault \\\"Rock\\\"chewer"), "a mob name is escaped");
+    Check(Has(json, "\"victim\":\"10844\""), "whom a mob targets");
+    Check(Count(json, "\"victim\":") == 1, "a mob with no victim has no victim field");
+    Check(Has(json, "\"reaction\":\"n\",\"kind\":\"k\""), "neutral critter");
+    Check(Has(json, "\"reaction\":\"f\",\"kind\":\"g\""), "friendly guard");
+    Check(Count(json, "\"reaction\":\"h\"") == 2, "unknown reaction letters read as hostile");
+    Check(Count(json, "\"kind\":") == 2, "unknown kinds are left out");
+    Check(Has(json, "\"hp\":85") && Has(json, "\"x\":-1234.6") && Has(json, "\"y\":987.7"), "mob hp and place");
+
+    // Old shape: nothing reported, nothing added.
+    BindingInfo plain;
+    plain.commander = "Old";
+    plain.bots.push_back(Bot("A", true));
+    std::string const old = BuildPayload(9, 1, 1, 1, {plain});
+    Check(!Has(old, "commander_pos") && !Has(old, "\"mobs") && !Has(old, "\"target\"") && !Has(old, "\"id\""),
+        "a binding without map data keeps the old shape");
+    // An empty list that was read is still sent: the dashboard knows the module reports mobs.
+    plain.mobsReported = true;
+    Check(Has(BuildPayload(9, 1, 1, 1, {plain}), "\"mobs\":[]"), "an empty mob list is sent when it was read");
+}
+
+void TestMapDataCapsAndSize()
+{
+    BindingInfo b;
+    b.commander = std::string(40, 'C');
+    b.lead = std::string(12, 'L');
+    for (int i = 0; i < 6; ++i)
+    {
+        BotInfo bot = Bot("Botname" + std::to_string(i), i == 0);
+        bot.id = 0xFFFFFFFFFFFFFFFFull;
+        bot.target = 0xFFFFFFFFFFFFFFFFull;
+        b.bots.push_back(bot);
+    }
+    for (int i = 0; i < 8; ++i)
+        b.orders.push_back(Order(i, "ritual", true, std::string(kMaxOrderResult, 'r'), std::string(kMaxOrderDetail, 'd')));
+    b.commanderPlaced = true;
+    b.mobsReported = true;
+    for (int i = 0; i < 40; ++i)
+        b.mobs.push_back(Mob(0xFFFFFFFFFFFFFFFFull, std::string(60, 'M'), 'h', 'k', 0xFFFFFFFFFFFFFFFFull));
+
+    std::string const one = BuildPayload(9, 1, 1, 1, {b});
+    Check(Count(one, "\"entry\":") == kMaxMobsPerBinding, "mobs per binding are capped");
+    Check(!Has(one, std::string(kMaxMobName + 1, 'M')), "a mob name is clipped");
+    std::printf("one full binding with %zu mobs: %zu bytes\n", kMaxMobsPerBinding, one.size());
+
+    std::vector<BindingInfo> many(kMaxBindings + 3, b);
+    std::string const json = BuildPayload(9, 1, 1, 1, many);
+    Check(Count(json, "\"entry\":") == kMaxMobsPerPayload, "mobs per payload are capped");
+    Check(json.size() < 60000, "the worst case with map data still fits one datagram");
+    std::printf("worst case (%zu bindings, %zu mobs): %zu bytes\n", kMaxBindings, kMaxMobsPerPayload, json.size());
+}
+
 void TestControlCharacters()
 {
     BindingInfo b;
@@ -200,6 +303,8 @@ int main()
     TestOrderLogBoundsCommanders();
     TestPayload();
     TestPayloadCapsAndSize();
+    TestMapData();
+    TestMapDataCapsAndSize();
     TestControlCharacters();
     if (g_failures)
     {

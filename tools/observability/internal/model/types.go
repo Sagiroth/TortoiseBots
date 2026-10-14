@@ -547,6 +547,32 @@ type CommanderBinding struct {
 	Lead          string           `json:"lead"`
 	Bots          []CommanderBot   `json:"bots"`
 	Orders        []CommanderOrder `json:"orders"` // oldest first
+
+	// Map data, from a module that reports it (all absent from an older one; the dashboard then greys the layers out).
+	CommanderPos *CommanderPos  `json:"commander_pos,omitempty"` // where the commander stands, when online and in the world
+	MobsMap      uint32         `json:"mobs_map,omitempty"`      // the map the mobs are on (the lead's)
+	Mobs         []CommanderMob `json:"mobs"`                    // hostile units near the lead; null = not reported, [] = reported, none near
+}
+
+// CommanderPos is the commander character's own position.
+type CommanderPos struct {
+	MapID uint32  `json:"map"`
+	X     float64 `json:"x"`
+	Y     float64 `json:"y"`
+}
+
+// CommanderMob is a unit near the lead of a binding. IDs are decimal strings: a creature guid is 64 bits, more than a JSON
+// number holds in a browser.
+type CommanderMob struct {
+	ID       string  `json:"id"`
+	Entry    uint32  `json:"entry"`
+	Name     string  `json:"name"`
+	HP       uint32  `json:"hp"` // percent
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+	Victim   string  `json:"victim,omitempty"`   // guid of the unit it targets; matches a bot's id
+	Reaction string  `json:"reaction"`           // h hostile, n neutral, f friendly (to the bound bots)
+	Kind     string  `json:"kind,omitempty"`     // k critter, v civilian, g guard, u unattackable; empty: an ordinary unit
 }
 
 // CommanderBot is a bot of a bound party.
@@ -568,6 +594,8 @@ type CommanderBot struct {
 	X         float64 `json:"x"`
 	Y         float64 `json:"y"`
 	Z         float64 `json:"z"`
+	ID        string  `json:"id,omitempty"`     // the bot's guid as a decimal string (what a mob's victim and a bot's target name)
+	Target    string  `json:"target,omitempty"` // guid of its target, absent when it has none
 }
 
 // CommanderOrder is one order of the commander and the module's answer.

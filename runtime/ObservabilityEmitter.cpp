@@ -1442,6 +1442,13 @@ void ObservabilityEmitter::EmitCommanders()
         info.groupId = ref.groupId;
         info.lead = ref.lead ? ref.lead->GetName() : "";
         info.orders = ref.orders;
+        info.commanderPlaced = ref.commanderPlaced;
+        info.commanderMap = ref.commanderMap;
+        info.commanderX = ref.commanderX;
+        info.commanderY = ref.commanderY;
+        info.mobsReported = ref.mobsReported;
+        info.mobsMap = ref.mobsMap;
+        info.mobs = ref.mobs; // at most kMaxMobsPerBinding, copied once per 2 s
         for (Player* bot : ref.bots)
         {
             if (!bot || !bot->IsInWorld() || info.bots.size() >= CommanderTelemetry::kMaxBotsPerBinding)
@@ -1469,6 +1476,13 @@ void ObservabilityEmitter::EmitCommanders()
             b.x = bot->GetPositionX();
             b.y = bot->GetPositionY();
             b.z = bot->GetPositionZ();
+            b.id = bot->GetObjectGuid().GetRawValue();
+            // What it has selected, else what it fights: two field reads.
+            ::ObjectGuid target = bot->GetTargetGuid();
+            if (target.IsEmpty())
+                if (Unit* victim = bot->GetVictim())
+                    target = victim->GetObjectGuid();
+            b.target = target.GetRawValue();
             info.bots.push_back(std::move(b));
         }
         infos.push_back(std::move(info));

@@ -5,6 +5,11 @@
 // binding (commander, lead bot, the bound bots with their vitals and
 // position, and the commander's last orders with the module's answer).
 //
+// Map data (additive fields, old daemons ignore them): the commander's own
+// position when online, each bound bot's target, and the hostile units near
+// the lead (the list the commander's TBM:VIEW feed builds, capped), so the
+// dashboard map can draw mobs, threat lines and aggro rings.
+//
 // Cost rule: nothing here runs per bot tick. The emitter asks for the
 // bindings once per 2 s snapshot cycle, and only while at least one binding
 // exists; an order is noted when its reply is sent (a few per minute). The
@@ -33,6 +38,9 @@ constexpr size_t kMaxOrdersPerCommander = 8;
 constexpr size_t kMaxTrackedCommanders = 16;
 constexpr size_t kMaxBindings = 8;     // per payload: keeps one datagram well under the loopback MTU
 constexpr size_t kMaxBotsPerBinding = 6;
+constexpr size_t kMaxMobsPerBinding = 24; // the perception feed's own cap (kMaxHostiles)
+constexpr size_t kMaxMobsPerPayload = 64; // all bindings together: the datagram stays well under 64 KiB
+constexpr size_t kMaxMobName = 24;
 constexpr size_t kMaxOrderDetail = 80;
 constexpr size_t kMaxOrderResult = 120;
 
@@ -116,6 +124,20 @@ private:
     std::deque<uint64_t> m_arrival; // commanders in the order they first noted an order
 };
 
+// One hostile-ish unit near the lead, as the dashboard shows it.
+struct MobInfo
+{
+    uint64_t id = 0;       // raw guid (a decimal string on the wire: 64 bits do not fit a JSON number)
+    uint32_t entry = 0;
+    std::string name;
+    uint32_t hpPct = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    uint64_t victim = 0;   // who the unit targets (raw guid), 0 = nobody
+    char reaction = 'h';   // h hostile, n neutral, f friendly (to the bound bots)
+    char kind = 0;         // 0 ordinary, 'k' critter, 'v' civilian, 'g' guard, 'u' unattackable
+};
+
 // A standing binding as the commands layer reports it: live objects, read on
 // the world thread.
 struct BindingRef
@@ -128,6 +150,14 @@ struct BindingRef
     Player* lead = nullptr;     // may be null while the lead bot is between maps
     std::vector<Player*> bots;  // lead bot first
     std::vector<OrderRecord> orders;
+    // Map data, filled by the commands layer (see CollectCommanderTelemetry).
+    bool commanderPlaced = false; // commanderMap/X/Y are valid (online and in the world)
+    uint32_t commanderMap = 0;
+    float commanderX = 0.0f;
+    float commanderY = 0.0f;
+    bool mobsReported = false;    // the mob list was read (it may be empty)
+    uint32_t mobsMap = 0;         // the map the mobs are on (the lead's)
+    std::vector<MobInfo> mobs;
 };
 
 // One bound bot as the dashboard shows it.
@@ -150,6 +180,8 @@ struct BotInfo
     float x = 0.0f;
     float y = 0.0f;
     float z = 0.0f;
+    uint64_t id = 0;     // raw guid, 0 = not reported
+    uint64_t target = 0; // raw guid of its target, 0 = none
 };
 
 struct BindingInfo
@@ -162,6 +194,13 @@ struct BindingInfo
     std::string lead;
     std::vector<BotInfo> bots;
     std::vector<OrderRecord> orders;
+    bool commanderPlaced = false;
+    uint32_t commanderMap = 0;
+    float commanderX = 0.0f;
+    float commanderY = 0.0f;
+    bool mobsReported = false;
+    uint32_t mobsMap = 0;
+    std::vector<MobInfo> mobs;
 };
 
 inline std::string JsonEscape(std::string const& s)
@@ -205,6 +244,7 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
        << ",\"ts\":" << ts
        << ",\"type\":\"COMMANDERS\",\"commanders\":[";
     size_t shown = 0;
+    size_t mobsTotal = 0;
     for (BindingInfo const& b : bindings)
     {
         if (shown >= kMaxBindings)
@@ -238,9 +278,41 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
                << ",\"lead\":" << (bot.lead ? "true" : "false")
                << ",\"map\":" << bot.mapId
                << ",\"zone\":" << bot.zoneId
-               << ",\"x\":" << bot.x << ",\"y\":" << bot.y << ",\"z\":" << bot.z << "}";
+               << ",\"x\":" << bot.x << ",\"y\":" << bot.y << ",\"z\":" << bot.z;
+            if (bot.id)
+                ss << ",\"id\":\"" << bot.id << "\"";
+            if (bot.target)
+                ss << ",\"target\":\"" << bot.target << "\"";
+            ss << "}";
         }
-        ss << "],\"orders\":[";
+        ss << "]";
+        if (b.commanderPlaced)
+            ss << ",\"commander_pos\":{\"map\":" << b.commanderMap << ",\"x\":" << b.commanderX << ",\"y\":" << b.commanderY << "}";
+        if (b.mobsReported)
+        {
+            ss << ",\"mobs_map\":" << b.mobsMap << ",\"mobs\":[";
+            size_t mobs = 0;
+            for (MobInfo const& m : b.mobs)
+            {
+                if (mobs >= kMaxMobsPerBinding || mobsTotal >= kMaxMobsPerPayload)
+                    break;
+                if (mobs++)
+                    ss << ",";
+                ++mobsTotal;
+                ss << "{\"id\":\"" << m.id << "\",\"entry\":" << m.entry
+                   << ",\"name\":\"" << JsonEscape(Clip(m.name, kMaxMobName)) << "\""
+                   << ",\"hp\":" << m.hpPct
+                   << ",\"x\":" << m.x << ",\"y\":" << m.y;
+                if (m.victim)
+                    ss << ",\"victim\":\"" << m.victim << "\"";
+                ss << ",\"reaction\":\"" << (m.reaction == 'n' || m.reaction == 'f' ? m.reaction : 'h') << "\"";
+                if (m.kind == 'k' || m.kind == 'v' || m.kind == 'g' || m.kind == 'u')
+                    ss << ",\"kind\":\"" << m.kind << "\"";
+                ss << "}";
+            }
+            ss << "]";
+        }
+        ss << ",\"orders\":[";
         size_t orders = 0;
         for (OrderRecord const& o : b.orders)
         {

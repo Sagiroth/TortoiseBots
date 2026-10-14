@@ -21,6 +21,7 @@ const CommandersStaleAfter = 12 * time.Second
 const (
 	maxCommanderBindings = 16
 	maxCommanderBots     = 8
+	maxCommanderMobs     = 24
 	maxCommanderOrders   = 16
 )
 
@@ -61,6 +62,9 @@ func (s *Store) ApplyCommanders(p *model.CommandersPayload) bool {
 		}
 		if len(b.Orders) > maxCommanderOrders {
 			b.Orders = b.Orders[len(b.Orders)-maxCommanderOrders:]
+		}
+		if len(b.Mobs) > maxCommanderMobs {
+			b.Mobs = b.Mobs[:maxCommanderMobs]
 		}
 		if b.Bots == nil {
 			b.Bots = []model.CommanderBot{}

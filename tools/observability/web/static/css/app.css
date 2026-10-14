@@ -2850,7 +2850,7 @@ select.input {
 .cmd-external summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
 .cmd-frame { width: 100%; height: 78vh; min-height: 480px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); display: block; margin-top: 8px; }
 /* Commanders maps: the real game-map picture, the layers panel and the layers' own marks */
-.cmd-map image.bg { filter: brightness(0.7); }
+.cmd-map image.bg { filter: brightness(var(--bgb, 0.7)); }
 .cmd-map text.zone2 { fill: rgba(139, 148, 158, 0.7); font-weight: 600; }
 .cmd-map rect.zone2 { fill: none; stroke: rgba(139, 148, 158, 0.35); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
 .cmd-map .range { fill: rgba(34, 197, 94, 0.07); stroke: var(--role-healer, #22c55e); stroke-width: 1.5; stroke-dasharray: 7 5; vector-effect: non-scaling-stroke; }
@@ -2878,3 +2878,27 @@ select.input {
 .cmd-map g.bot[data-guid] { cursor: pointer; }
 .cmd-map g.bot[data-guid]:hover .dot { stroke-width: 3; }
 .cmd-map g.bot[data-guid]:hover text { fill: var(--accent-blue-bright); }
+
+/* Commanders maps: dim slider, mobs, threat and target lines, the commander, the paused-follow chip */
+.cmd-dim { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; font-size: 0.84rem; }
+.cmd-dim input { flex: 0 1 220px; }
+.cmd-dim b { min-width: 3em; font-variant-numeric: tabular-nums; }
+.cmd-dim.off { opacity: 0.45; }
+.cmd-map .mob circle { stroke: #000; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.cmd-map .mob.hostile circle { fill: #ef4444; }
+.cmd-map .mob.neutral circle { fill: #9ca3af; }
+.cmd-map .mob.critter circle { fill: #a8a29e; stroke: rgba(0, 0, 0, 0.5); }
+.cmd-map line.threat { stroke: #ef4444; stroke-width: 1.5; opacity: 0.85; vector-effect: non-scaling-stroke; }
+.cmd-map line.bottarget { stroke: #58a6ff; stroke-width: 1.5; stroke-dasharray: 4 3; opacity: 0.9; vector-effect: non-scaling-stroke; }
+.cmd-map circle.aggro { fill: rgba(239, 68, 68, 0.06); stroke: #ef4444; }
+.cmd-map line.cmdline { stroke: #facc15; stroke-width: 1.2; stroke-dasharray: 2 5; opacity: 0.9; vector-effect: non-scaling-stroke; }
+.cmd-map .cmdr polygon { fill: #facc15; stroke: #000; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.cmd-map .cmdr text { fill: #facc15; font-weight: 600; paint-order: stroke; stroke: #000; stroke-linejoin: round; }
+.cmd-legend i.mobh, .cmd-legend i.mobn, .cmd-legend i.mobc { border-color: #000; }
+.cmd-legend i.mobh { background: #ef4444; } .cmd-legend i.mobn { background: #9ca3af; } .cmd-legend i.mobc { background: #a8a29e; width: 8px; height: 8px; }
+.cmd-legend i.lthreat, .cmd-legend i.ltarget { width: 16px; height: 0; border: 0; border-radius: 0; border-top: 2px solid #ef4444; vertical-align: 3px; }
+.cmd-legend i.ltarget { border-top: 2px dashed #58a6ff; }
+.cmd-legend i.cmdr { width: 9px; height: 9px; border: 1px solid #000; border-radius: 0; background: #facc15; transform: rotate(45deg); }
+.cmd-legend i.aggro { background: rgba(239, 68, 68, 0.1); border: 1.5px dashed #ef4444; }
+.cmd-resume { position: absolute; left: 8px; top: 8px; height: 28px; padding: 0 10px; border-radius: 14px; border: 1px solid var(--accent-blue); background: rgba(14, 19, 27, 0.9); color: var(--text-main); font: inherit; font-size: 0.78rem; cursor: pointer; }
+.cmd-resume[hidden] { display: none; }

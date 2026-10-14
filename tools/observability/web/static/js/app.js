@@ -4492,7 +4492,7 @@
   const CMD_DIM_MS = 15000;
   const cmdTracker = CmdView.newTracker();
   const cmdCards = new Map(); // commander -> card element
-  const cmdMaps = {};         // commander -> {follow, view, pic}
+  const cmdMaps = {};         // commander -> {follow, view, userScale (the viewer's own zoom, kept while following), pic}
   // Map layers: one choice for every card and every map, kept in the browser once (maplayers.js). cmdAvail is what each card has data for.
   const cmdLayerStore = (() => { try { return window.localStorage; } catch (e) { return null; } })();
   let cmdLayers = MapLayers.load(cmdLayerStore);
@@ -4636,7 +4636,14 @@
       + '<span><i class="lead"></i>Lead</span><span><i class="dead"></i>Dead</span>'
       + (o.trail ? '<span><i class="trail"></i>Lead\'s path</span>' : '')
       + (o.heading ? '<span><i class="heading"></i>Heading</span>' : '')
-      + (o.healring ? '<span><i class="ring"></i>Healer range</span>' : '');
+      + (o.healring ? '<span><i class="ring"></i>Healer range</span>' : '')
+      + (o.mobhostile ? '<span><i class="mobh"></i>Hostile</span>' : '')
+      + (o.mobneutral ? '<span><i class="mobn"></i>Neutral</span>' : '')
+      + (o.mobcritter ? '<span><i class="mobc"></i>Critter</span>' : '')
+      + (o.threat ? '<span><i class="lthreat"></i>Mob on</span>' : '')
+      + (o.bottarget ? '<span><i class="ltarget"></i>Bot target</span>' : '')
+      + (o.commander ? '<span><i class="cmdr"></i>Commander</span>' : '')
+      + (o.aggro ? '<span><i class="aggro"></i>Aggro range</span>' : '');
   }
 
   function cmdZoneRect(lead) {
@@ -4675,12 +4682,17 @@
     const heading = lead && lead.map === (first && first.map) ? CmdView.heading(trail, cmdServerNow()) : null;
     const zr = cmdZoneRect(first);
     const zonesAround = !!(first && ZONE_BOUNDS && Object.keys(ZONE_BOUNDS).some(k => ZONE_BOUNDS[k] && ZONE_BOUNDS[k].map_id === first.map && ZONE_BOUNDS[k].area_id !== first.zone));
+    // What the module reports for the map the party is on (a mob list that is empty still counts: the layers stay selectable).
+    const mapId = first ? first.map : null;
+    const mobs = first ? CmdView.mobsOf(bind, mapId) : [];
+    const reported = !!first && Array.isArray(bind.mobs) && bind.mobs_map === mapId;
+    const commanderAt = first ? CmdView.commanderPlace(bind, mapId) : null;
     const ctx = {
       picture: pics.length > 0, zone: !!zr, zonesAround, bots: onMap.length > 0, lead: !!lead && onMap.indexOf(lead) >= 0,
       trail: trail.length >= 2, heading: !!heading, healer: onMap.some(b => b.role === 'healer' && b.alive !== false),
-      commanderPos: false, mobs: false, mobTargets: false, botTargets: false, // the module's report carries none of these
+      commanderPos: !!commanderAt, mobs: reported, mobTargets: reported, botTargets: reported && onMap.some(b => !!b.id),
     };
-    return { lead, first, onMap, pics, trail, heading, zr, ctx };
+    return { lead, first, onMap, pics, trail, heading, zr, ctx, mobs, commanderAt };
   }
 
   // A clock time for a label on the path: the game server's seconds in the browser's locale.
@@ -4695,15 +4707,15 @@
     const stage = card.querySelector('.cmd-stage'), svg = card.querySelector('svg.cmd-map');
     const pw = stage.clientWidth, ph = stage.clientHeight;
     if (!pw || !ph) return; // the tab is hidden
-    const ms = cmdMaps[key] || (cmdMaps[key] = { follow: true, view: null, pic: '' });
+    const ms = cmdMaps[key] || (cmdMaps[key] = { follow: true, view: null, userScale: null, pic: '' });
     const facts = cmdMapFacts(bind);
-    const { lead, first, onMap, pics, trail, heading, zr } = facts;
+    const { lead, first, onMap, pics, trail, heading, zr, mobs, commanderAt } = facts;
     const avail = MapLayers.availability(facts.ctx);
     cmdAvail[key] = avail;
     const on = MapLayers.active(cmdLayers, avail);
     const away = (bind.bots || []).length - onMap.length;
     const pts = onMap.map(b => CmdView.project(b.x, b.y));
-    if (ms.follow || !ms.view) ms.view = CmdView.fitView(pts, pw, ph, 44, 60);
+    if (ms.follow || !ms.view) ms.view = CmdView.followView(pts, pw, ph, 44, 60, ms.userScale);
     const v = ms.view, box = CmdView.viewBox(v, pw, ph), k = 1 / v.scale;
     const step = CmdView.gridStep(v.scale), grid = CmdView.gridLines(box, step);
     const f = n => n.toFixed(2);
@@ -4716,6 +4728,7 @@
       picG._k = picKey;
       picG.innerHTML = picKey ? `<image class="bg" href="${esc(pick.url)}" x="${pick.x}" y="${pick.y}" width="${pick.w}" height="${pick.h}" preserveAspectRatio="none"/>` : '';
     }
+    svg.style.setProperty('--bgb', String((100 - cmdLayers.dim) / 100)); // the picture's brightness (the dim slider)
     const sel = card.querySelector('select.cmd-pic');
     sel.hidden = pics.length < 2;
     if (pics.length >= 2 && sel._k !== pics.map(l => l.name).join('|')) {
@@ -4762,6 +4775,37 @@
       const pt = (a, b) => `${f(a)},${f(b)}`;
       g += `<polygon class="heading" points="${pt(tip.x, tip.y)} ${pt(p.x + heading.x * base + nx * half, p.y + heading.y * base + ny * half)} ${pt(p.x + heading.x * base - nx * half, p.y + heading.y * base - ny * half)}"><title>${esc(lead.name)} is heading this way (from its movement)</title></polygon>`;
     }
+    // mobs, their threat and the bots' targets sit under the party's dots
+    const shown = mobs.filter(m => on['mob' + CmdView.mobClass(m)]);
+    if (on.aggro) {
+      CmdView.aggroMobs(shown).forEach(m => {
+        const p = CmdView.project(m.x, m.y);
+        g += `<circle class="range aggro" cx="${f(p.x)}" cy="${f(p.y)}" r="${CmdView.AGGRO_RANGE_YD}"><title>${esc(m.name || 'unit')}: aggro range about ${CmdView.AGGRO_RANGE_YD} yd</title></circle>`;
+      });
+    }
+    if (on.threat) {
+      CmdView.threatLines(shown, onMap).forEach(l => {
+        const a = CmdView.project(l.mob.x, l.mob.y), b = CmdView.project(l.bot.x, l.bot.y);
+        g += `<line class="threat" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"><title>${esc(l.mob.name || 'unit')} is on ${esc(l.bot.name)}</title></line>`;
+      });
+    }
+    if (on.bottarget) {
+      CmdView.botTargetLines(onMap, mobs).forEach(l => {
+        const a = CmdView.project(l.bot.x, l.bot.y), b = CmdView.project(l.mob.x, l.mob.y);
+        g += `<line class="bottarget" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"><title>${esc(l.bot.name)} targets ${esc(l.mob.name || 'unit')}</title></line>`;
+      });
+    }
+    shown.forEach(m => {
+      const p = CmdView.project(m.x, m.y), cls = CmdView.mobClass(m), r = (cls === 'critter' ? 3 : 5) * k;
+      g += `<g class="mob ${cls}"><title>${esc(m.name || 'unit')}${m.entry ? ' (' + m.entry + ')' : ''} - ${cls}, ${m.hp}% health</title><circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/></g>`;
+    });
+    if (on.commander && commanderAt) {
+      const c = CmdView.project(commanderAt.x, commanderAt.y), tgt = lead && lead.map === (first && first.map) ? CmdView.project(lead.x, lead.y) : null;
+      if (tgt) g += `<line class="cmdline" x1="${f(c.x)}" y1="${f(c.y)}" x2="${f(tgt.x)}" y2="${f(tgt.y)}"/>`;
+      const d = 8 * k;
+      g += `<g class="cmdr"><title>${esc(bind.commander)} (commander)</title><polygon points="${f(c.x)},${f(c.y - d)} ${f(c.x + d)},${f(c.y)} ${f(c.x)},${f(c.y + d)} ${f(c.x - d)},${f(c.y)}"/>`
+        + `<text x="${f(c.x + 11 * k)}" y="${f(c.y + 4 * k)}" style="font-size:${f(11.5 * k)}px;stroke-width:${f(3 * k)}px">${esc(bind.commander)}</text></g>`;
+    }
     // dead first so a live bot is drawn over them
     onMap.slice().sort((a, b) => (a.alive === false ? 0 : 1) - (b.alive === false ? 0 : 1)).forEach(b => {
       const p = CmdView.project(b.x, b.y), role = CmdView.roleKey(b), isLead = b === lead && on.lead;
@@ -4788,11 +4832,12 @@
     const fb = card.querySelector('[data-act="follow"]');
     fb.setAttribute('aria-pressed', ms.follow ? 'true' : 'false');
     fb.classList.toggle('on', ms.follow);
+    card.querySelector('.cmd-resume').hidden = ms.follow;
   }
 
   function bindCmdMap(card, key) {
     const stage = card.querySelector('.cmd-stage');
-    const ms = () => cmdMaps[key] || (cmdMaps[key] = { follow: true, view: null });
+    const ms = () => cmdMaps[key] || (cmdMaps[key] = { follow: true, view: null, userScale: null });
     const size = () => [stage.clientWidth, stage.clientHeight];
     const rel = e => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
     const free = () => { ms().follow = false; };
@@ -4819,8 +4864,9 @@
         m.view = CmdView.panBy(m.view, cur.x - prev.x, cur.y - prev.y);
       } else if (pointers.size === 2 && m.view) {
         const ids = [...pointers.keys()], other = pointers.get(ids[0] === e.pointerId ? ids[1] : ids[0]);
-        free();
-        m.view = CmdView.pinch(m.view, prev, other, cur, other, pw, ph);
+        // Pinching only zooms: while following, the party stays in the middle and the following goes on.
+        m.view = m.follow ? CmdView.pinchFollow(m.view, prev, other, cur, other) : CmdView.pinch(m.view, prev, other, cur, other, pw, ph);
+        m.userScale = m.view.scale;
       }
       pointers.set(e.pointerId, cur);
       drawCmdMap(key);
@@ -4836,12 +4882,14 @@
       const m = ms();
       if (!m.view) return;
       e.preventDefault();
-      free();
-      const p = rel(e), [pw, ph] = size();
-      m.view = CmdView.zoomAt(m.view, e.deltaY < 0 ? 1.25 : 0.8, pw, ph, p.x, p.y);
+      const p = rel(e), [pw, ph] = size(), factor = e.deltaY < 0 ? 1.25 : 0.8;
+      // Zooming never pauses the following; while following it zooms around the party (the middle), not around the cursor.
+      m.view = m.follow ? CmdView.zoomFollow(m.view, factor) : CmdView.zoomAt(m.view, factor, pw, ph, p.x, p.y);
+      m.userScale = m.view.scale;
       drawCmdMap(key);
     }, { passive: false });
     card.querySelector('select.cmd-pic').addEventListener('change', e => { ms().pic = e.target.value; drawCmdMap(key); });
+    card.querySelector('.cmd-resume').addEventListener('click', () => { ms().follow = true; drawCmdMap(key); });
     card.querySelector('.cmd-maptools').addEventListener('click', e => {
       const btn = e.target.closest('button[data-act]');
       if (!btn) return;
@@ -4849,8 +4897,9 @@
       if (btn.dataset.act === 'follow') {
         m.follow = !m.follow;
       } else if (m.view) {
-        free();
-        m.view = CmdView.zoomAt(m.view, btn.dataset.act === 'in' ? 1.5 : 1 / 1.5, pw, ph, pw / 2, ph / 2);
+        const factor = btn.dataset.act === 'in' ? 1.5 : 1 / 1.5;
+        m.view = m.follow ? CmdView.zoomFollow(m.view, factor) : CmdView.zoomAt(m.view, factor, pw, ph, pw / 2, ph / 2);
+        m.userScale = m.view.scale;
       }
       drawCmdMap(key);
     });
@@ -4878,6 +4927,7 @@
               <button type="button" data-act="out" title="Zoom out" aria-label="Zoom out">&minus;</button>
               <button type="button" data-act="follow" class="follow" title="Keep the party in view">Follow</button>
             </div>
+            <button type="button" class="cmd-resume" data-act="resume" hidden title="You moved the map. Click to keep the party in the middle again.">Paused - click to follow</button>
             <div class="cmd-grid-size"></div>
             <div class="cmd-scale" hidden><i></i><span></span></div>
             <div class="cmd-mapnote"></div>
@@ -4950,10 +5000,23 @@
   // ---- the layers panel: one choice for all maps ----
 
   const cmdLayerRows = {}; // layer key -> {box, row, why}
+  let cmdDimRow = null;    // the dim slider's {row, box, val}
 
   function initCmdLayers() {
     const body = document.getElementById('cmd-layers-body');
     if (!body || body.childElementCount) return;
+    const dimRow = document.createElement('label');
+    dimRow.className = 'cmd-dim';
+    dimRow.innerHTML = '<span>Dim the map picture</span><input type="range" min="0" max="' + MapLayers.DIM_MAX + '" step="5" aria-label="Dim the map picture"><b></b>';
+    const dimBox = dimRow.querySelector('input'), dimVal = dimRow.querySelector('b');
+    dimBox.addEventListener('input', () => {
+      cmdLayers = MapLayers.setDim(cmdLayers, dimBox.value);
+      MapLayers.save(cmdLayerStore, cmdLayers);
+      dimVal.textContent = cmdLayers.dim + '%';
+      cmdCards.forEach((_, k) => drawCmdMap(k));
+    });
+    body.appendChild(dimRow);
+    cmdDimRow = { row: dimRow, box: dimBox, val: dimVal };
     MapLayers.groups().forEach(group => {
       const wrap = document.createElement('div');
       wrap.className = 'cmd-lgroup';
@@ -4991,6 +5054,13 @@
   function paintCmdLayers() {
     const keys = Object.keys(cmdAvail);
     const avail = MapLayers.mergeAvailability(keys.length ? keys.map(k => cmdAvail[k]) : [MapLayers.availability({})]);
+    if (cmdDimRow) {
+      cmdDimRow.box.value = String(cmdLayers.dim);
+      cmdDimRow.val.textContent = cmdLayers.dim + '%';
+      cmdDimRow.box.disabled = !avail.bg.ok;
+      cmdDimRow.row.classList.toggle('off', !avail.bg.ok);
+      cmdDimRow.row.title = avail.bg.ok ? '' : 'Greyed out: ' + avail.bg.why;
+    }
     MapLayers.DEFS.forEach(d => {
       const r = cmdLayerRows[d.key];
       if (!r) return;

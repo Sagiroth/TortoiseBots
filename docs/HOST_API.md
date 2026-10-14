@@ -173,7 +173,7 @@ Current adapters:
 
 | Adapter | Responsibility |
 | --- | --- |
-| `BotHostAdapter` | startup, shutdown and world update; at startup registers the observability emitter's commander provider (`ObservabilityEmitter::SetCommanderProvider` -> `BotCommands::CollectCommanderTelemetry`, module-internal: the dashboard's Commanders tab, no core seam) |
+| `BotHostAdapter` | startup, shutdown and world update; at startup registers the observability emitter's commander provider (`ObservabilityEmitter::SetCommanderProvider` -> `BotCommands::CollectCommanderTelemetry`, module-internal: the dashboard's Commanders tab, no core seam; the `COMMANDERS` datagram also carries map data, i.e. the commander's position, each bound bot's target and up to 24 hostile units near the lead from the `TBM:VIEW` feed's own builder, read once per 2 s cycle only while a binding stands: no per-tick cost, no world scan, no new core call) |
 | `BotSessionAdapter` | Headless session lifecycle |
 | `BotPlayerAdapter` | player lifecycle/reclaim attachment; answers core LFT managed-bot rolecheck (`IsManagedBot`/`GetBotRoles`); logs bot quest completions for `bot_events.csv`; on a bot's own `OnMapChanged` re-applies the Issue #218 instance guard to its non-combat strategies (`AiFactory::ApplyInstanceGuardOnMapChange`) |
 | `BotUnitAdapter` | `UnitScript::OnUnitDeath`: killer attribution for `deaths.csv`; `UnitScript::OnDamage`: last-non-self-damager memory so Spirit of Redemption expiries (core self-kill) still log the real killer |

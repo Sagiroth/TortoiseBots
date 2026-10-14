@@ -2,11 +2,15 @@
 // Commanders tab map layers: which things a map draws. One choice for every card (and every map), kept in the browser once, not per
 // map. Pure logic (no page, no markup) so a test can run it under node (internal/commandersjs). app.js draws and shows the panel.
 //
+// Besides the on/off choices the state holds `dim`: how much the real map picture is darkened, 0-80 %.
+//
 // A layer has a key, a label, a group, a default (what the maps drew before layers existed stays on, anything new is off) and `needs`:
 // the data it can only be drawn from. When a map has no such data the layer is greyed out in the panel with the reason, and drawn
 // nowhere; the saved choice is kept for when the data arrives.
 (function (root) {
-  const STORAGE_KEY = "tbdash.mapLayers.v1";
+  const STORAGE_KEY = "tbdash.mapLayers.v2";
+  const OLD_STORAGE_KEY = "tbdash.mapLayers.v1"; // booleans only; read once when v2 is missing (the picture was darkened 30 % then)
+  const DIM_MAX = 80, DIM_DEFAULT = 30;
 
   // needs: "" (always), or a key of availability()'s context. why: what the panel says while it is missing.
   const DEFS = [
@@ -22,13 +26,13 @@
     { key: "trailtime", label: "Times on the path", group: "Party", def: false, needs: "trail", why: "the lead has not moved yet" },
     { key: "heading", label: "Lead's heading arrow (from its movement)", group: "Party", def: false, needs: "heading", why: "the lead has not moved enough to tell" },
     { key: "healring", label: "Healer range (40 yd)", group: "Party", def: false, needs: "healer", why: "no living healer on this map" },
-    { key: "commander", label: "Commander and line to the lead", group: "Party", def: false, needs: "commanderPos", why: "the module does not report the commander's position" },
-    { key: "mobhostile", label: "Hostile mobs", group: "Mobs", def: false, needs: "mobs", why: "the module's report carries no mobs" },
-    { key: "mobneutral", label: "Neutral mobs", group: "Mobs", def: false, needs: "mobs", why: "the module's report carries no mobs" },
-    { key: "mobcritter", label: "Critters", group: "Mobs", def: false, needs: "mobs", why: "the module's report carries no mobs" },
-    { key: "threat", label: "Threat lines (mob to whom it targets)", group: "Mobs", def: false, needs: "mobTargets", why: "the module's report carries no mob targets" },
-    { key: "bottarget", label: "Bot target lines", group: "Mobs", def: false, needs: "botTargets", why: "the module's report carries no bot targets" },
-    { key: "aggro", label: "Aggro range (20 yd) around pull targets", group: "Mobs", def: false, needs: "mobs", why: "the module's report carries no mobs" },
+    { key: "commander", label: "Commander and line to the lead", group: "Party", def: false, needs: "commanderPos", why: "the commander is not online on the map of the party" },
+    { key: "mobhostile", label: "Hostile mobs", group: "Mobs", def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
+    { key: "mobneutral", label: "Neutral mobs", group: "Mobs", def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
+    { key: "mobcritter", label: "Critters", group: "Mobs", def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
+    { key: "threat", label: "Threat lines (mob to whom it targets)", group: "Mobs", def: false, needs: "mobTargets", why: "the game server does not report mobs yet (it needs the newer module)" },
+    { key: "bottarget", label: "Bot target lines", group: "Mobs", def: false, needs: "botTargets", why: "the game server does not report bot targets yet (it needs the newer module)" },
+    { key: "aggro", label: "Aggro range (20 yd) around pull targets", group: "Mobs", def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
   ];
 
   const keys = () => DEFS.map((d) => d.key);
@@ -36,7 +40,13 @@
   function defaults() {
     const o = {};
     DEFS.forEach((d) => { o[d.key] = d.def; });
+    o.dim = DIM_DEFAULT;
     return o;
+  }
+
+  // A dim percent as a whole number in 0..DIM_MAX; anything else is the default.
+  function clampDim(n) {
+    return typeof n === "number" && isFinite(n) ? Math.min(DIM_MAX, Math.max(0, Math.round(n))) : DIM_DEFAULT;
   }
 
   // Whatever was stored, as a full set: unknown keys are dropped, non-booleans fall back to the default.
@@ -44,14 +54,17 @@
     const out = defaults();
     if (raw && typeof raw === "object" && !Array.isArray(raw)) {
       DEFS.forEach((d) => { if (typeof raw[d.key] === "boolean") out[d.key] = raw[d.key]; });
+      if ("dim" in raw) out.dim = clampDim(raw.dim);
     }
     return out;
   }
 
   // storage is a Storage-like {getItem, setItem} (or null / one that throws: the defaults are then used and nothing is kept).
+  // v2 is read first; without it the v1 choices carry over (their layers are kept, the dim starts at its default). The next save writes v2.
   function load(storage) {
     try {
-      const s = storage && storage.getItem(STORAGE_KEY);
+      if (!storage) return defaults();
+      const s = storage.getItem(STORAGE_KEY) || storage.getItem(OLD_STORAGE_KEY);
       return normalize(s ? JSON.parse(s) : null);
     } catch (e) {
       return defaults();
@@ -70,7 +83,13 @@
 
   function set(state, key, on) {
     const out = normalize(state);
-    if (key in out) out[key] = !!on;
+    if (key !== "dim" && DEFS.some((d) => d.key === key)) out[key] = !!on;
+    return out;
+  }
+
+  function setDim(state, pct) {
+    const out = normalize(state);
+    out.dim = clampDim(Number(pct));
     return out;
   }
 
@@ -101,6 +120,6 @@
 
   const groups = () => DEFS.reduce((g, d) => (g.indexOf(d.group) < 0 ? g.concat(d.group) : g), []);
 
-  const api = { STORAGE_KEY, DEFS, keys, defaults, normalize, load, save, set, availability, mergeAvailability, active, groups };
+  const api = { STORAGE_KEY, OLD_STORAGE_KEY, DIM_MAX, DIM_DEFAULT, clampDim, setDim, DEFS, keys, defaults, normalize, load, save, set, availability, mergeAvailability, active, groups };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MapLayers = api;
 })(typeof self !== "undefined" ? self : this);

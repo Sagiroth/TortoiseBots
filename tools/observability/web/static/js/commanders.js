@@ -6,6 +6,7 @@
   const FAR_YD = 40;          // a bot this far from the lead is flagged
   const LOW_HP_PCT = 30;      // a live bot under this is flagged
   const STALE_WARN_SEC = 30;  // no update for this long is flagged
+  const AGGRO_RANGE_YD = 20;  // the ring drawn around a mob nobody fights yet (a rough guide: the real radius depends on levels)
   const HEAL_RANGE_YD = 40;   // a healer's spells reach this far (the ring of the healer-range layer)
   const TRAIL_MAX = 120;      // positions of the lead kept for its trail
   const TRAIL_STEP_YD = 2;    // a new trail point after this much movement
@@ -300,6 +301,69 @@
     return panBy(z, m1.x - m0.x, m1.y - m0.y);
   }
 
+  // ---- following the party while zooming -------------------------------------------------------------------------
+  // Following keeps the party in the middle of the panel. The zoom is the viewer's own once they have set one (wheel, pinch, + / -);
+  // until then it is the one that fits the party. Zooming never ends the following (only a drag does), and while following it zooms
+  // around the party in the middle, not around the cursor.
+
+  // The view while following: centred on the points (plane), at userScale when the viewer has chosen one, else at the fitting scale.
+  function followView(pts, pw, ph, padPx, minSpan, userScale) {
+    const fit = fitView(pts, pw, ph, padPx, minSpan);
+    if (!pts.length || !(userScale > 0)) return fit;
+    return { cx: fit.cx, cy: fit.cy, scale: clampScale(userScale) };
+  }
+
+  // One zoom step by factor while following: the middle of the panel (the party) stays where it is.
+  function zoomFollow(v, factor) { return { cx: v.cx, cy: v.cy, scale: clampScale(v.scale * factor) }; }
+
+  // Two fingers moved while following: only their distance counts (a pan would be a drag, which pauses the following).
+  function pinchFollow(v, a0, b0, a1, b1) {
+    const d0 = Math.hypot(a0.x - b0.x, a0.y - b0.y), d1 = Math.hypot(a1.x - b1.x, a1.y - b1.y);
+    return d0 > 1 ? zoomFollow(v, d1 / d0) : v;
+  }
+
+  // ---- mobs, targets and the commander (data from the module's COMMANDERS report) ---------------------------------------------
+  // A mob is {id, entry, name, hp, x, y, victim?, reaction: h|n|f, kind?: k|v|g|u}; ids are decimal strings. Anything malformed is dropped.
+
+  const num = (n) => typeof n === "number" && isFinite(n);
+
+  // The mobs of a binding that can be drawn on mapId: [] when the module reports none or they are on another map.
+  function mobsOf(bind, mapId) {
+    if (!bind || !Array.isArray(bind.mobs) || bind.mobs_map !== mapId) return [];
+    return bind.mobs.filter((m) => m && typeof m.id === "string" && num(m.x) && num(m.y) && (m.reaction === "h" || m.reaction === "n" || m.reaction === "f"));
+  }
+
+  // How a mob is drawn: "hostile", "neutral", "critter", or "" (friendly units are not drawn: guards, town folk).
+  function mobClass(m) {
+    if (!m || m.reaction === "f") return "";
+    if (m.kind === "k") return "critter";
+    if (m.kind === "v" || m.kind === "g") return "";
+    return m.reaction === "h" ? "hostile" : "neutral";
+  }
+
+  // Lines from each mob to the bot it targets: [{mob, bot}] (both with game x, y). Only bots on the list count.
+  function threatLines(mobs, bots) {
+    const byId = {};
+    (bots || []).forEach((b) => { if (b.id) byId[b.id] = b; });
+    return (mobs || []).filter((m) => m.victim && byId[m.victim] && mobClass(m) !== "").map((m) => ({ mob: m, bot: byId[m.victim] }));
+  }
+
+  // Lines from each bot to its target when that is a listed mob: [{bot, mob}].
+  function botTargetLines(bots, mobs) {
+    const byId = {};
+    (mobs || []).forEach((m) => { byId[m.id] = m; });
+    return (bots || []).filter((b) => b.alive !== false && b.target && byId[b.target]).map((b) => ({ bot: b, mob: byId[b.target] }));
+  }
+
+  // The mobs that get an aggro ring: hostile ones that nobody fights yet, i.e. the next pull. (Critters and neutrals do not aggro.)
+  function aggroMobs(mobs) { return (mobs || []).filter((m) => mobClass(m) === "hostile" && !m.victim && num(m.hp) && m.hp > 0); }
+
+  // The commander's own place when it stands on mapId: {x, y} (game coordinates) or null.
+  function commanderPlace(bind, mapId) {
+    const p = bind && bind.commander_pos;
+    return p && p.map === mapId && num(p.x) && num(p.y) ? { x: p.x, y: p.y } : null;
+  }
+
   // Grid spacing in yards so that lines sit about 80 px apart, and the line positions inside a plane box [x, y, w, h].
   function gridStep(scale) {
     const raw = 80 / scale, steps = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
@@ -393,6 +457,7 @@
     HEAL_RANGE_YD, FAR_YD, LOW_HP_PCT, STALE_WARN_SEC, pretty, plural, ageText, roleKey, roleLabel, distance, leadBot, partyRows, orderText, stateWord,
     headerText, headerParts, botHref, warnings, newTracker, note, context, prune, project, fitView, viewBox, zoomAt, panBy, pinch, gridStep, gridLines,
     trailSegments, clampScale, heading, trailStamps, scaleBar, zonesIn, pictureLayers,
+    AGGRO_RANGE_YD, followView, zoomFollow, pinchFollow, mobsOf, mobClass, threatLines, botTargetLines, aggroMobs, commanderPlace,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.CmdView = api;
 })(typeof self !== "undefined" ? self : this);

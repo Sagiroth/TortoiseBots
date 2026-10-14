@@ -217,4 +217,69 @@ assert.deepStrictEqual(C.pictureLayers([Object.assign({}, okLayer, { w: 0 })]), 
 assert.deepStrictEqual(C.pictureLayers([Object.assign({}, okLayer, { x: "1" })]), []);
 assert.deepStrictEqual(C.pictureLayers(null), []); assert.deepStrictEqual(C.pictureLayers([null, 3]), []);
 assert.strictEqual(C.pictureLayers([Object.assign({}, okLayer, { name: "x".repeat(100) })])[0].name.length, 40);
+
+// ---- zooming while following: the party stays in the middle, only the scale changes
+{
+  const pts = [{ x: 0, y: 0 }, { x: 100, y: 60 }];
+  const fit = C.followView(pts, 400, 300, 20, 60, null);
+  assert.deepStrictEqual(fit, C.fitView(pts, 400, 300, 20, 60), "no zoom of the viewer's own: the fitting view");
+  const in1 = C.zoomFollow(fit, 1.5);
+  assert.strictEqual(in1.cx, fit.cx); assert.strictEqual(in1.cy, fit.cy); // the party's centre did not move
+  assert.ok(Math.abs(in1.scale - fit.scale * 1.5) < 1e-9);
+  // the next refresh (the party walked): centred on the new middle, at the viewer's zoom
+  const walked = [{ x: 500, y: 500 }, { x: 600, y: 560 }];
+  const kept = C.followView(walked, 400, 300, 20, 60, in1.scale);
+  assert.strictEqual(kept.scale, in1.scale);
+  assert.strictEqual(kept.cx, 550); assert.strictEqual(kept.cy, 530);
+  // zoom out and in, clamped
+  assert.strictEqual(C.zoomFollow({ cx: 1, cy: 2, scale: 13 }, 4).scale, 14);
+  assert.strictEqual(C.zoomFollow({ cx: 1, cy: 2, scale: 0.05 }, 0.1).scale, 0.04);
+  assert.strictEqual(C.followView(pts, 400, 300, 20, 60, 99).scale, 14, "a stored zoom is clamped too");
+  assert.deepStrictEqual(C.followView([], 400, 300, 20, 60, 2), { cx: 0, cy: 0, scale: 1 }, "no points: nothing to follow");
+  assert.deepStrictEqual(C.followView(pts, 400, 300, 20, 60, 0), fit, "0 means not chosen");
+  // pinch while following: only the distance counts, the middle stays
+  const a0 = { x: 100, y: 100 }, b0 = { x: 200, y: 100 };
+  const pz = C.pinchFollow(fit, a0, b0, { x: 50, y: 300 }, { x: 250, y: 300 }); // spread 100 -> 200, and dragged down
+  assert.strictEqual(pz.cx, fit.cx); assert.strictEqual(pz.cy, fit.cy);
+  assert.ok(Math.abs(pz.scale - fit.scale * 2) < 1e-9);
+  assert.strictEqual(C.pinchFollow(fit, a0, a0, a0, b0), fit, "fingers on one point: no change");
+  // while not following, zoom around the cursor still keeps the point under it (unchanged)
+  const free = C.zoomAt(fit, 2, 400, 300, 300, 100);
+  assert.notStrictEqual(free.cx, fit.cx);
+}
+
+// ---- mobs, lines, rings, the commander
+{
+  const mobs = [
+    { id: "11", entry: 1, name: "Wolf", hp: 100, x: 10, y: 20, reaction: "h", victim: "700" },
+    { id: "12", entry: 2, name: "Rat", hp: 100, x: 11, y: 21, reaction: "n", kind: "k" },
+    { id: "13", entry: 3, name: "Boar", hp: 50, x: 12, y: 22, reaction: "n" },
+    { id: "14", entry: 4, name: "Guard", hp: 100, x: 13, y: 23, reaction: "f", kind: "g" },
+    { id: "15", entry: 5, name: "Spider", hp: 90, x: 14, y: 24, reaction: "h" },
+    { id: "16", entry: 6, name: "Cultist", hp: 0, x: 15, y: 25, reaction: "h" },
+    { id: "17", entry: 7, name: "Civilian", hp: 100, x: 1, y: 1, reaction: "h", kind: "v" },
+  ];
+  const bind = { mobs_map: 209, mobs: mobs.concat([null, { id: 5, x: 1, y: 1, reaction: "h" }, { id: "18", x: NaN, y: 1, reaction: "h" }, { id: "19", x: 1, y: 1, reaction: "z" }]) };
+  assert.strictEqual(C.mobsOf(bind, 209).length, 7, "malformed mobs are dropped");
+  assert.deepStrictEqual(C.mobsOf(bind, 1), [], "another map: none");
+  assert.deepStrictEqual(C.mobsOf({}, 209), []); assert.deepStrictEqual(C.mobsOf(null, 209), []);
+  assert.deepStrictEqual(C.mobsOf({ mobs_map: 209, mobs: "x" }, 209), []);
+  assert.deepStrictEqual(mobs.map(C.mobClass), ["hostile", "critter", "neutral", "", "hostile", "hostile", ""]);
+  const bots = [{ id: "700", name: "Tank", x: 0, y: 0, alive: true, target: "11" }, { id: "701", name: "Heal", x: 1, y: 1, alive: true },
+    { id: "702", name: "Dead", x: 2, y: 2, alive: false, target: "15" }];
+  const tl = C.threatLines(mobs, bots);
+  assert.strictEqual(tl.length, 1); assert.strictEqual(tl[0].mob.id, "11"); assert.strictEqual(tl[0].bot.name, "Tank");
+  assert.deepStrictEqual(C.threatLines(mobs, []), []);
+  assert.deepStrictEqual(C.threatLines([{ id: "1", x: 0, y: 0, reaction: "h", victim: "999" }], bots), [], "a victim that is not a listed bot");
+  const bl = C.botTargetLines(bots, mobs);
+  assert.strictEqual(bl.length, 1, "a dead bot draws no line"); assert.strictEqual(bl[0].mob.name, "Wolf");
+  assert.deepStrictEqual(C.botTargetLines([{ id: "1", target: "nope", alive: true }], mobs), []);
+  // aggro rings: hostile mobs nobody fights yet (the wolf has a victim, the dead cultist has no health)
+  assert.deepStrictEqual(C.aggroMobs(mobs).map((m) => m.name), ["Spider"]);
+  assert.strictEqual(C.AGGRO_RANGE_YD, 20);
+  assert.deepStrictEqual(C.commanderPlace({ commander_pos: { map: 209, x: 5, y: 6 } }, 209), { x: 5, y: 6 });
+  assert.strictEqual(C.commanderPlace({ commander_pos: { map: 1, x: 5, y: 6 } }, 209), null);
+  assert.strictEqual(C.commanderPlace({ commander_pos: { map: 209, x: "5", y: 6 } }, 209), null);
+  assert.strictEqual(C.commanderPlace({}, 209), null);
+}
 console.log("commanders.js ok");

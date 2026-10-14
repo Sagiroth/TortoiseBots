@@ -2,6 +2,7 @@ package udp
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,5 +85,69 @@ func TestEmptyCommandersListEndsTheBindings(t *testing.T) {
 	}
 	if len(hub.events) != 2 {
 		t.Fatalf("both datagrams must reach the stream: %v", hub.events)
+	}
+}
+
+// The fields CommanderTelemetry::BuildPayload adds for the map layers (tools/test_commander_telemetry.cpp, TestMapData). The guids are
+// decimal strings: a creature guid does not fit a JSON number.
+const commandersMapDatagram = `{"v":9,"session":77,"seq":7,"ts":1791990030,"type":"COMMANDERS","commanders":[
+ {"commander":"Zfmagea","commander_guid":4242,"online":true,"view":true,"group":42,"lead":"Forthur","bots":[
+  {"name":"Forthur","guid":700,"class":"warrior","role":"tank","level":46,"hp":2706,"max_hp":2706,"power":40,"max_power":100,"power_type":"rage","alive":true,"lead":true,"map":209,"zone":1176,"x":1212.7,"y":842.0,"z":8.9,"id":"10844","target":"17379391094613082370"}],
+  "commander_pos":{"map":209,"x":1100.5,"y":-50.5},
+  "mobs_map":209,"mobs":[
+   {"id":"17379391094613082370","entry":4863,"name":"Stonevault Rockchewer","hp":85,"x":1230.5,"y":850.0,"victim":"10844","reaction":"h"},
+   {"id":"17379391094613082371","entry":4000,"name":"Rat","hp":100,"x":1240.0,"y":851.0,"reaction":"n","kind":"k"}],
+  "orders":[]}]}`
+
+func TestCommandersMapDataReachesTheStore(t *testing.T) {
+	l, store, _ := newTestListener()
+	l.processPacket([]byte(commandersMapDatagram))
+	c := store.Commanders().Commanders[0]
+	if c.CommanderPos == nil || c.CommanderPos.MapID != 209 || c.CommanderPos.X != 1100.5 || c.CommanderPos.Y != -50.5 {
+		t.Fatalf("commander position: %+v", c.CommanderPos)
+	}
+	if c.Bots[0].ID != "10844" || c.Bots[0].Target != "17379391094613082370" {
+		t.Fatalf("bot id/target: %+v", c.Bots[0])
+	}
+	if c.MobsMap != 209 || len(c.Mobs) != 2 {
+		t.Fatalf("mobs: %+v", c.Mobs)
+	}
+	m := c.Mobs[0]
+	if m.ID != "17379391094613082370" || m.Entry != 4863 || m.Name != "Stonevault Rockchewer" || m.HP != 85 || m.Victim != "10844" || m.Reaction != "h" || m.Kind != "" {
+		t.Fatalf("mob: %+v", m)
+	}
+	if r := c.Mobs[1]; r.Reaction != "n" || r.Kind != "k" || r.Victim != "" {
+		t.Fatalf("critter: %+v", r)
+	}
+	out, err := json.Marshal(store.Commanders())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"id":"17379391094613082370"`) {
+		t.Fatalf("a guid must stay a string in the REST/stream output: %s", out)
+	}
+}
+
+// An older module sends none of it: the page sees mobs as null (not reported), not as an empty list.
+func TestCommandersWithoutMapDataStayAbsent(t *testing.T) {
+	l, store, _ := newTestListener()
+	l.processPacket([]byte(commandersDatagram))
+	c := store.Commanders().Commanders[0]
+	if c.CommanderPos != nil || c.Mobs != nil || c.Bots[0].ID != "" || c.Bots[0].Target != "" {
+		t.Fatalf("map data appeared from nowhere: %+v", c)
+	}
+	out, _ := json.Marshal(c)
+	if strings.Contains(string(out), "commander_pos") || !strings.Contains(string(out), `"mobs":null`) {
+		t.Fatalf("shape: %s", out)
+	}
+}
+
+// An empty list that the module read is kept as an empty list: the layers are then available.
+func TestCommandersEmptyMobListIsReported(t *testing.T) {
+	l, store, _ := newTestListener()
+	l.processPacket([]byte(`{"v":9,"session":77,"seq":8,"ts":1791990040,"type":"COMMANDERS","commanders":[{"commander":"Z","bots":[],"mobs_map":209,"mobs":[],"orders":[]}]}`))
+	out, _ := json.Marshal(store.Commanders().Commanders[0])
+	if !strings.Contains(string(out), `"mobs":[]`) {
+		t.Fatalf("shape: %s", out)
 	}
 }
