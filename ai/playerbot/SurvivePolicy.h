@@ -47,7 +47,8 @@ namespace ai
     // Why a bot did not start resting on `.bot action rest` (issue #916). The
     // order already ran the drink/food actions; this only names the first
     // gate that held, so the refusal can say why instead of the generic
-    // fallback. Empty means no known gate held.
+    // fallback. shouldDrink/shouldEat are the actions' own "should drink" /
+    // "should eat" values, so the text cannot drift from the real check.
     struct RestRefusalInput
     {
         bool alive = true;
@@ -60,7 +61,8 @@ namespace ai
         std::uint32_t eatStopPct = 50;
         bool hasDrink = true;         // a drink in the bags, or the item cheat
         bool hasFood = true;          // food in the bags, or the item cheat
-        bool leaderMoving = false;    // its master is moving (follow breaks rest)
+        bool shouldDrink = true;      // AI value "should drink"
+        bool shouldEat = true;        // AI value "should eat"
     };
 
     inline std::string RestRefusalReason(RestRefusalInput const& in)
@@ -86,31 +88,72 @@ namespace ai
                 std::to_string(in.eatStopPct) + "%)";
             return text;
         }
-        bool const drinkBlocked = !needsDrink || !in.hasDrink;
-        bool const foodBlocked = !needsFood || !in.hasFood;
-        if (drinkBlocked && foodBlocked)
+        bool const canDrink = needsDrink && in.hasDrink;
+        bool const canEat = needsFood && in.hasFood;
+        if (!canDrink && !canEat)
             return needsDrink && needsFood ? "no food or drink" : needsDrink ? "no drink" : "no food";
-        if (in.leaderMoving)
+        // Under the stop line with the item at hand, but the should-value
+        // says no: the only extra gate there is following a moving leader
+        // (ShouldDrinkValue / ShouldEatValue).
+        if ((!canDrink || !in.shouldDrink) && (!canEat || !in.shouldEat))
             return "leader is moving";
-        return "";
+        // A gate the list above does not know (e.g. the eat-side CC hold).
+        return "other: not useful now";
     }
 
-    // "No bot rested: Anna in combat; Bert no drink." Bots without a known
-    // reason are left out. Empty when no bot has one (the caller keeps its
-    // generic text).
+    // "No bot rested: no drink: Anna, Bert; in combat: Cara." Bots are grouped
+    // under their reason in first-seen order. PSendSysMessage formats into a
+    // 2048-byte buffer and addon chat lines are shorter still, so the text is
+    // capped at maxBytes and ends with "+K more" for the bots left out.
     inline std::string FormatRestRefusal(
-        std::vector<std::pair<std::string, std::string>> const& reasons)
+        std::vector<std::pair<std::string, std::string>> const& reasons,
+        std::size_t maxBytes = 240)
     {
-        std::string text;
+        std::vector<std::pair<std::string, std::vector<std::string>>> groups;
         for (auto const& entry : reasons)
         {
-            if (entry.second.empty())
-                continue;
-            text += (text.empty() ? "" : "; ") + entry.first + " " + entry.second;
+            std::string const reason = entry.second.empty() ? "other: not useful now" : entry.second;
+            auto it = groups.begin();
+            while (it != groups.end() && it->first != reason)
+                ++it;
+            if (it == groups.end())
+            {
+                groups.push_back({ reason, {} });
+                it = groups.end() - 1;
+            }
+            it->second.push_back(entry.first);
         }
-        if (text.empty())
-            return text;
-        return "No bot rested: " + text + ".";
+        if (groups.empty())
+            return "";
+
+        std::string text = "No bot rested: ";
+        std::size_t const reserve = 16; // room for "; +NN more."
+        std::size_t left = reasons.size();
+        bool cut = false;
+        bool firstGroup = true;
+        for (auto const& group : groups)
+        {
+            std::string head = (firstGroup ? "" : "; ") + group.first + ": ";
+            bool firstName = true;
+            for (std::string const& name : group.second)
+            {
+                std::string piece = firstName ? head + name : ", " + name;
+                if (text.size() + piece.size() + reserve > maxBytes)
+                {
+                    cut = true;
+                    break;
+                }
+                text += piece;
+                firstName = false;
+                --left;
+            }
+            if (cut)
+                break;
+            firstGroup = false;
+        }
+        if (left)
+            text += (text.back() == ' ' ? "" : "; ") + std::string("+") + std::to_string(left) + " more";
+        return text + ".";
     }
 
     // Drink is only for mana users: warriors (rage) and rogues (energy) get

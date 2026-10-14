@@ -3587,7 +3587,8 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             if (!accepted)
             {
                 // Name the gate that held so the caller can wait instead of
-                // guessing (#916). Same lines the drink/food actions use.
+                // guessing (#916). The stop lines and the should-values are
+                // the ones the drink/food actions read.
                 bool const cheat = ai->HasCheat(BotCheatMask::item);
                 ai::AiObjectContext* aiContext = ai->GetAiObjectContext();
                 ai::RestRefusalInput in;
@@ -3606,8 +3607,8 @@ static bool HandleAction(ChatHandler* handler, char const* args)
                     !aiContext->GetValue<std::list<Item*>>("inventory items", "drink")->Get().empty();
                 in.hasFood = cheat ||
                     !aiContext->GetValue<std::list<Item*>>("inventory items", "food")->Get().empty();
-                Player* master = ai->GetMaster();
-                in.leaderMoving = master && master != bot && master->IsMoving();
+                in.shouldDrink = aiContext->GetValue<bool>("should drink")->Get();
+                in.shouldEat = aiContext->GetValue<bool>("should eat")->Get();
                 restRefusals.emplace_back(bot->GetName(), ai::RestRefusalReason(in));
             }
         }
