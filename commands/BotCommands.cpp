@@ -4093,8 +4093,9 @@ void RestoreFollower(uint64 botRaw, uint64 leadRaw)
 // defined with the task code below.
 void CancelCommanderTasks(uint64 commanderRaw);
 // A later order takes the bot(s) over (onlyBotRaw 0 = every bot of the commander): the running
-// tasks end with ERR cancelled and leave the bot's movement to the new order.
-void SupersedeCommanderTasks(uint64 commanderRaw, uint64 onlyBotRaw);
+// tasks end with ERR cancelled. An order that sets movement itself (move, stay, follow, summon)
+// keeps the walk's stance; after attack, focus or pull the bot re-forms as after a finished walk.
+void SupersedeCommanderTasks(uint64 commanderRaw, uint64 onlyBotRaw, RemoteCommander::LaterOrder later);
 
 // Ends a binding: followers get their own follow target back. The lead bot
 // keeps holding where it stands. notify: tell the commander (automatic
@@ -4821,7 +4822,7 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
     ObjectGuid const targetGuid = target->GetObjectGuid();
     uint32 succeeded = 0;
     SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(),
-        onlyBot ? onlyBot->GetObjectGuid().GetRawValue() : 0);
+        onlyBot ? onlyBot->GetObjectGuid().GetRawValue() : 0, RemoteCommander::LaterOrder::Attack);
     for (Player* bot : order.bots)
     {
         if (onlyBot && bot != onlyBot)
@@ -4864,7 +4865,7 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
     std::string const& intent)
 {
     order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
-    SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0);
+    SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Focus);
     uint32 succeeded = 0;
     for (Player* bot : order.bots)
     {
@@ -4943,7 +4944,7 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
         return true;
     }
 
-    SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0);
+    SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Move);
 
     // Same transition as `.bot action come`, with the point as the stay spot.
     leadAi->DropQueuedMovementOrders();
@@ -4969,7 +4970,8 @@ static bool CommanderStayFollowRest(ChatHandler* handler, CommanderOrder const& 
 {
     uint32 succeeded = 0;
     if (verb == "stay" || verb == "follow")
-        SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0);
+        SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0,
+            verb == "stay" ? RemoteCommander::LaterOrder::Stay : RemoteCommander::LaterOrder::Follow);
     if (verb == "follow")
         succeeded = FormUpOnLead(order.commander, order.lead, order.bots, false);
     else
@@ -5072,7 +5074,8 @@ static bool CommanderSummon(ChatHandler* handler, CommanderOrder const& order, P
         SendActionError(handler, intent, "failed", "The bot could not be assigned to you for the summon.");
         return true;
     }
-    SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), bot->GetObjectGuid().GetRawValue());
+    SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), bot->GetObjectGuid().GetRawValue(),
+        RemoteCommander::LaterOrder::Summon);
     if (!PlayerConvenience::Instance().RequestSummon(order.commander, bot, lead))
     {
         SendActionError(handler, intent, "failed", "The summon was refused.");
@@ -5115,7 +5118,7 @@ struct CommanderTask
     bool walking = false;     // the movement stance was changed for the walk
     bool wasStaying = false;
     bool actStarted = false;
-    bool superseded = false;  // a later order took the bot: its movement is not ours to put back
+    bool superseded = false;  // a later order set the bot's movement: it is not ours to put back
     bool departed = false;    // the bot left the commanded party
     uint32 actTries = 0;
     uint32 nudgeMs = 0;
@@ -5632,14 +5635,17 @@ bool StepCommanderTask(CommanderTask& task, uint32 diff)
     return false;
 }
 
-void SupersedeCommanderTasks(uint64 commanderRaw, uint64 onlyBotRaw)
+// A later order cancels the commander's running tasks (of one bot, or all). Only
+// an order that sets the bot's movement itself skips the walk's end; after any
+// other the bot re-forms as after a finished walk.
+void SupersedeCommanderTasks(uint64 commanderRaw, uint64 onlyBotRaw, RemoteCommander::LaterOrder later)
 {
     auto& tasks = CommanderTasks();
     for (auto it = tasks.begin(); it != tasks.end();)
     {
         if (it->second.commanderRaw == commanderRaw && (!onlyBotRaw || it->second.botRaw == onlyBotRaw))
         {
-            it->second.superseded = true;
+            it->second.superseded = RemoteCommander::LaterOrderTakesMovement(later);
             FinishCommanderTask(it->second, false, 0, "", RemoteCommander::kCodeCancelled,
                 "A later order took the bot.");
             it = tasks.erase(it);
@@ -5862,7 +5868,8 @@ static bool CommanderUse(ChatHandler* handler, CommanderOrder const& order, Play
     }
 
     CommanderTask task;
-    task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Use, 0.0f, true);
+    // Nothing to walk to unless the target is a game object (below): a fight does not stop it.
+    task.state = RemoteCommander::MakeInPlaceTask(RemoteCommander::TaskKind::Use);
     task.itemId = request.itemId;
     task.spellId = spellId;
     task.intent = intent;
@@ -6129,7 +6136,7 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             return CommanderAttack(handler, order, target, intent, attackBot);
         if (verb == "focus")
             return CommanderFocus(handler, order, target, intent);
-        SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0);
+        SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Pull);
         BotCommandContext context = CommanderContext(order, target);
         return RunPullOrder(handler, context, order.lead, verb, option, intent);
     }

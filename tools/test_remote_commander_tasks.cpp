@@ -431,6 +431,48 @@ static void TestLootMethod()
     CHECK(!ParseLootThreshold("gold", threshold));
 }
 
+// A use with nothing to walk to (on the bot itself or a unit) is allowed in
+// combat: a fight does not stop it, it goes on to the action. A use that walks
+// to a game object still stops when a fight starts.
+static void TestInPlaceUseInCombat()
+{
+    TaskState state = MakeInPlaceTask(TaskKind::Use);
+    CHECK(!state.walks);
+    TaskFacts facts;
+    facts.inCombat = true;
+    facts.inRange = true;
+    TaskVerdict verdict = AdvanceTask(state, facts, 0);
+    CHECK(verdict.step == TaskStep::BeginAct);
+    CHECK(state.stage == TaskStage::Act);
+    facts.actStarted = true;
+    verdict = AdvanceTask(state, facts, kTaskTickMs);
+    CHECK(verdict.step == TaskStep::Wait);
+    facts.actDone = true;
+    verdict = AdvanceTask(state, facts, kTaskTickMs);
+    CHECK(verdict.step == TaskStep::Succeed);
+
+    TaskState walking = MakeTask(TaskKind::Use, 20.0f, true);
+    CHECK(walking.walks);
+    TaskFacts fight = Walking(20.0f);
+    fight.inCombat = true;
+    verdict = AdvanceTask(walking, fight, kTaskTickMs);
+    CHECK(verdict.step == TaskStep::Fail && std::strcmp(verdict.code, kCodeInCombat) == 0);
+}
+
+// A later order cancels a running task. Only an order that sets the bot's
+// movement itself leaves the cancelled walk's stance alone; after an attack,
+// a focus or a pull the bot re-forms as a finished walk would.
+static void TestLaterOrderMovement()
+{
+    CHECK(LaterOrderTakesMovement(LaterOrder::Move));
+    CHECK(LaterOrderTakesMovement(LaterOrder::Stay));
+    CHECK(LaterOrderTakesMovement(LaterOrder::Follow));
+    CHECK(LaterOrderTakesMovement(LaterOrder::Summon));
+    CHECK(!LaterOrderTakesMovement(LaterOrder::Attack));
+    CHECK(!LaterOrderTakesMovement(LaterOrder::Focus));
+    CHECK(!LaterOrderTakesMovement(LaterOrder::Pull));
+}
+
 int main()
 {
     TestStandingPoint();
@@ -443,6 +485,8 @@ int main()
     TestWalkRefusals();
     TestActStage();
     TestTeleportEndsUse();
+    TestInPlaceUseInCombat();
+    TestLaterOrderMovement();
     TestObjectEffect();
     TestLockVerdict();
     TestCastReasonCodes();

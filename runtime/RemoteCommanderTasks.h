@@ -138,6 +138,9 @@ struct TaskState
     float bestDistance = 1.0e9f;
     uint32_t walkBudgetMs = kMinWalkMs;
     uint32_t actBudgetMs = kLootWindowMs;
+    // false: nothing to walk to (a use on the bot itself or on a unit). Such an
+    // order is allowed in combat, so a fight does not stop it before the action.
+    bool walks = true;
 };
 
 inline uint32_t ActBudgetMs(TaskKind kind)
@@ -158,6 +161,15 @@ inline TaskState MakeTask(TaskKind kind, float startDistance, bool needsWalk)
     state.stage = needsWalk ? TaskStage::Walk : TaskStage::Act;
     state.walkBudgetMs = WalkBudgetMs(startDistance);
     state.actBudgetMs = ActBudgetMs(kind);
+    return state;
+}
+
+// An order with nothing to walk to: it passes the walk stage at the first look
+// (the glue reports it in range) and a fight does not stop it.
+inline TaskState MakeInPlaceTask(TaskKind kind)
+{
+    TaskState state = MakeTask(kind, 0.0f, true);
+    state.walks = false;
     return state;
 }
 
@@ -198,7 +210,7 @@ inline TaskVerdict TaskFail(char const* code, char const* message)
 }
 
 // One look at a running task, `diffMs` after the last. Walk: refuse when the
-// bot cannot act any more, a fight starts, the object is gone, the bot stalls or
+// bot cannot act any more, a fight starts (only for an order that walks), the object is gone, the bot stalls or
 // the budget runs out; begin the action when it stands in range. Act: succeed
 // when the result is in, time out otherwise.
 inline TaskVerdict AdvanceTask(TaskState& state, TaskFacts const& facts, uint32_t diffMs)
@@ -222,7 +234,7 @@ inline TaskVerdict AdvanceTask(TaskState& state, TaskFacts const& facts, uint32_
     {
         if (!facts.targetPresent)
             return TaskFail(kCodeInvalidTarget, "The object is gone.");
-        if (facts.inCombat)
+        if (facts.inCombat && state.walks)
             return TaskFail(kCodeInCombat, "The bot is in combat and stopped.");
         if (facts.inRange)
         {
@@ -253,6 +265,43 @@ inline TaskVerdict AdvanceTask(TaskState& state, TaskFacts const& facts, uint32_
     if (state.stageMs >= state.actBudgetMs)
         return TaskFail(kCodeTimeout, "No result came back in time.");
     return verdict;
+}
+
+// ---------------------------------------------------------------------------
+// Later orders
+// ---------------------------------------------------------------------------
+
+// The commander orders that cancel a running task (the bot answers `cancelled`).
+enum class LaterOrder : uint8_t
+{
+    Move,
+    Stay,
+    Follow,
+    Summon,
+    Attack,
+    Focus,
+    Pull, // pull and pullback
+};
+
+// Does the later order set the bot's movement itself? Then the cancelled walk
+// leaves the stance alone. An attack, a focus or a pull does not: the bot ends
+// the walk as a finished one does (re-forms on the lead bot, or holds where it
+// stands), so it does not go back to the object's standing point after the fight.
+inline bool LaterOrderTakesMovement(LaterOrder order)
+{
+    switch (order)
+    {
+        case LaterOrder::Move:
+        case LaterOrder::Stay:
+        case LaterOrder::Follow:
+        case LaterOrder::Summon:
+            return true;
+        case LaterOrder::Attack:
+        case LaterOrder::Focus:
+        case LaterOrder::Pull:
+            return false;
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
