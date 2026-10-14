@@ -984,6 +984,17 @@ std::string AiFactory::RealMasterSafeNonCombatStrategies(PlayerbotAI* ai, std::s
     return StripOpenWorldNonCombatStrategies(strategies);
 }
 
+std::string AiFactory::CommandedSafeNonCombatStrategies(Player* player, std::string const& strategies)
+{
+    // A bound bot holds or follows on its commander's orders: the list's
+    // "+wander" would replace the binding's stay/follow, and its open-world
+    // adds would start walks of its own.
+    if (!TortoiseBots::BotCommands::IsInCommandedGroup(player))
+        return strategies;
+
+    return StripOpenWorldNonCombatStrategies(strategies);
+}
+
 std::string AiFactory::StripOpenWorldNonCombatStrategies(std::string const& strategies)
 {
     std::string kept;
@@ -1306,7 +1317,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                 nonCombatEngine->addStrategy("maintenance");
             }
 
-            nonCombatEngine->ChangeStrategy(HireSafeNonCombatStrategies(facade, sPlayerbotAIConfig.randomBotNonCombatStrategies));
+            nonCombatEngine->ChangeStrategy(CommandedSafeNonCombatStrategies(player, HireSafeNonCombatStrategies(facade, sPlayerbotAIConfig.randomBotNonCombatStrategies)));
         }
         else
         {
@@ -1353,8 +1364,8 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                         // What the guard drops here is recorded in withheld, so leaving
                         // the instance gives back only those entries
                         // (ApplyInstanceGuardOnMapChange).
-                        nonCombatEngine->ChangeStrategy(HireSafeNonCombatStrategies(facade, RealMasterSafeNonCombatStrategies(facade,
-                            InstanceSafeNonCombatStrategies(player, sPlayerbotAIConfig.randomBotNonCombatStrategies, &withheld))));
+                        nonCombatEngine->ChangeStrategy(CommandedSafeNonCombatStrategies(player, HireSafeNonCombatStrategies(facade, RealMasterSafeNonCombatStrategies(facade,
+                            InstanceSafeNonCombatStrategies(player, sPlayerbotAIConfig.randomBotNonCombatStrategies, &withheld)))));
                         facade->instanceGuardWithheld = withheld;
                     }
                     else
@@ -1400,6 +1411,10 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
         }
     }
 
+    // A bot a remote commander has bound moves only on its orders: whatever
+    // open-world kit the branches above gave it (a group leader's grind,
+    // travel and rpg, also inside an instance) comes off until the release.
+    TortoiseBots::BotCommands::HoldCommanderAutonomy(player, facade, true);
 }
 
 Engine* AiFactory::createNonCombatEngine(Player* player, PlayerbotAI* const facade, AiObjectContext* AiObjectContext)
@@ -1496,7 +1511,12 @@ void AiFactory::ApplyInstanceGuardOnMapChange(Player* player, PlayerbotAI* ai)
     std::string const restore =
         ai::InstanceGuardRestore(withheld, ai->HasRealPlayerMaster(), hasFollow);
     if (!restore.empty())
+    {
         ai->ChangeStrategy(restore, BotState::BOT_STATE_NON_COMBAT);
+        // A bound bot leaving the instance (a wipe's graveyard) gets no own
+        // walks back: the binding holds them until its release.
+        TortoiseBots::BotCommands::HoldCommanderAutonomy(player, ai, false);
+    }
 }
 
 void AiFactory::AddDefaultDeadStrategies(Player* player, PlayerbotAI* const facade, Engine* deadEngine)

@@ -923,6 +923,50 @@ static void TestCommanderThreatLedger()
     CHECK(!ledger.Holds(5));
 }
 
+// ZF-1 run 5: the bound lead bot walked off by itself ("move to rpg target",
+// travel's grind target) after a rest gate. A binding strips the open-world
+// kit and gives back on release exactly what it took; a reset while bound
+// re-notes the rebuilt kit, a load or map change adds to it, and an order
+// (which changes no strategy) never gives anything back.
+static void TestCommanderAutonomyLedger()
+{
+    auto bit = [](char const* name) -> uint32_t {
+        for (unsigned i = 0; i < kCommanderAutonomyCount; ++i)
+            if (std::string(CommanderAutonomyStrategy(i)) == name)
+                return 1u << i;
+        return 0;
+    };
+    uint32_t const grind = bit("grind"), travel = bit("travel"), rpg = bit("rpg"), tfish = bit("tfish");
+    CHECK(grind && travel && rpg && tfish && bit("explore") && bit("travel once"));
+    CHECK(!bit("wander") && !bit("stay") && !bit("follow")); // movement modes stay with the binding's orders
+
+    CHECK(CommanderAutonomyChange(grind | rpg, '-') == "-grind,-rpg");
+    CHECK(CommanderAutonomyChange(grind | travel | rpg, '+') == "+grind,+travel,+rpg");
+    CHECK(CommanderAutonomyChange(0, '+').empty());
+
+    CommanderAutonomyLedger ledger;
+    // Bind: the lead bot (group leader kit) loses grind/travel/tfish/rpg.
+    CHECK(ledger.Hold(10, grind | travel | tfish | rpg, false) == (grind | travel | tfish | rpg));
+    CHECK(ledger.Withheld(10) == (grind | travel | tfish | rpg));
+    // A follower with nothing to strip is noted with an empty mask.
+    CHECK(ledger.Hold(11, 0, false) == 0 && ledger.Withheld(11) == 0);
+    // The bound bot leaves an instance: the instance guard gave rpg back; held again, still one note.
+    CHECK(ledger.Hold(11, rpg, false) == rpg && ledger.Withheld(11) == rpg);
+    // A strategy reset while bound rebuilt the kit without tfish: the note is the rebuilt kit.
+    CHECK(ledger.Hold(10, grind | travel | rpg, true) == (grind | travel | rpg));
+    CHECK(ledger.Withheld(10) == (grind | travel | rpg));
+    // A snapshot load right after the reset adds what the snapshot carried.
+    ledger.Hold(10, tfish, false);
+    CHECK(ledger.Withheld(10) == (grind | travel | tfish | rpg));
+    // Unbind: exactly what was taken comes back, once.
+    CHECK(ledger.Release(10) == (grind | travel | tfish | rpg));
+    CHECK(ledger.Release(10) == 0);
+    CHECK(ledger.Withheld(10) == 0);
+    CHECK(ledger.Hold(0, rpg, false) == 0);
+    ledger.Clear();
+    CHECK(ledger.Withheld(11) == 0);
+}
+
 // A hire may be bound by its own hirer only: the bind gate sees "hired" for a
 // hire of anybody else, and the usual flow (the commander's five hires) passes.
 static void TestHiresOfTheCommander()
@@ -973,6 +1017,7 @@ int main()
     TestHeldAttack();
     TestCommandedBackoffYields();
     TestCommanderThreatLedger();
+    TestCommanderAutonomyLedger();
     TestOrderGate();
     TestParseGuid();
     TestParseMovePoint();

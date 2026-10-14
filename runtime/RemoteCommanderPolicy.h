@@ -653,6 +653,84 @@ private:
     std::unordered_set<uint64_t> bots_;
 };
 
+// A bound bot moves only on the commander's orders: after `cmd rest` or `cmd
+// move` it holds its spot until the next order. The open-world kit (grind,
+// travel, rpg and the rest) starts its own walks, and the lead bot of a
+// bot-only party carries it (AiFactory gives it to a group leader, also inside
+// an instance), so a binding takes it off every bound bot and puts back on
+// release exactly what it took. Bit i of a mask stands for entry i.
+// "rpg" takes its children (rpg quest/vendor/explore/maintenance) with it and
+// gives them back. "wander" is not here: it is a movement mode, a sibling of
+// the binding's stay/follow, which the bind already replaced; the strategy
+// lists the bot is given while bound are filtered instead
+// (AiFactory::CommandedSafeNonCombatStrategies).
+inline char const* CommanderAutonomyStrategy(unsigned index)
+{
+    static char const* const strategies[] = { "grind", "travel", "travel once", "tfish", "rpg",
+        "rpg craft", "rpg player", "rpg guild", "rpg jump", "explore" };
+    return strategies[index];
+}
+
+constexpr unsigned kCommanderAutonomyCount = 10;
+
+// "-a,-b" (strip) or "+a,+b" (restore) for the entries of a mask.
+inline std::string CommanderAutonomyChange(uint32_t mask, char sign)
+{
+    std::string change;
+    for (unsigned i = 0; i < kCommanderAutonomyCount; ++i)
+    {
+        if (!(mask & (1u << i)))
+            continue;
+        if (!change.empty())
+            change += ',';
+        change += sign;
+        change += CommanderAutonomyStrategy(i);
+    }
+    return change;
+}
+
+// What the bindings took off each bound bot. World thread only.
+class CommanderAutonomyLedger
+{
+public:
+    // A bound bot has the entries in `present`: they come off now and are
+    // noted for the release. fresh: the bot's strategies were just rebuilt
+    // from nothing (a reset), so what it had before is gone and the rebuilt
+    // kit is what the release gives back; otherwise the note grows (a
+    // snapshot load or a map change added to what the bind already took).
+    // Returns the mask to strip.
+    uint32_t Hold(uint64_t guid, uint32_t present, bool fresh)
+    {
+        if (!guid)
+            return 0;
+        auto it = held_.find(guid);
+        if (it == held_.end())
+            it = held_.emplace(guid, 0u).first;
+        it->second = fresh ? present : (it->second | present);
+        return present;
+    }
+    // The bot left the binding: what to give back (once).
+    uint32_t Release(uint64_t guid)
+    {
+        auto it = held_.find(guid);
+        if (it == held_.end())
+            return 0;
+        uint32_t const mask = it->second;
+        held_.erase(it);
+        return mask;
+    }
+    // What a save while bound must still write as the bot's own.
+    uint32_t Withheld(uint64_t guid) const
+    {
+        auto it = held_.find(guid);
+        return it == held_.end() ? 0u : it->second;
+    }
+    void Clear() { held_.clear(); }
+
+private:
+    std::unordered_map<uint64_t, uint32_t> held_;
+};
+
 // ---------------------------------------------------------------------------
 // Order auth gate
 // ---------------------------------------------------------------------------

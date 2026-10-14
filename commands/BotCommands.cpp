@@ -4322,6 +4322,14 @@ RemoteCommander::CommanderThreatLedger& CommanderThreatBots()
     return ledger;
 }
 
+// What each binding took off its bots' non-combat strategies (the open-world
+// kit), given back on release.
+RemoteCommander::CommanderAutonomyLedger& CommanderAutonomyBots()
+{
+    static RemoteCommander::CommanderAutonomyLedger ledger;
+    return ledger;
+}
+
 uint32 s_commanderSweepMs = 0;
 
 // Issue #884, phase 2: one perception feed per binding (`.bot commander view
@@ -4511,6 +4519,21 @@ void RestoreCommanderThreatBackoff(uint64 botRaw)
         ai->ChangeStrategy("-threat", BotState::BOT_STATE_COMBAT);
 }
 
+// Gives a bot that left the binding the open-world kit the binding took off
+// it, as it had it before the bind. A bot that now follows a real player
+// gets nothing back (#741: it keeps following its player).
+void RestoreCommanderAutonomy(uint64 botRaw)
+{
+    uint32 const mask = CommanderAutonomyBots().Release(botRaw);
+    if (!mask)
+        return;
+    Player* bot = FindCharacter(botRaw);
+    PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+    if (!ai || ai->HasRealPlayerMaster() || IsInCommandedGroup(bot))
+        return;
+    ai->ChangeStrategy(RemoteCommander::CommanderAutonomyChange(mask, '+'), BotState::BOT_STATE_NON_COMBAT);
+}
+
 // The commander's running bot tasks (loot, open, use) end with the binding;
 // defined with the task code below.
 void CancelCommanderTasks(uint64 commanderRaw);
@@ -4534,8 +4557,10 @@ uint32 ReleaseBinding(uint64 commanderRaw, RemoteCommander::ReleaseReason reason
     {
         RestoreFollower(follower, removed.leadGuid);
         RestoreCommanderThreatBackoff(follower);
+        RestoreCommanderAutonomy(follower);
     }
     RestoreCommanderThreatBackoff(removed.leadGuid);
+    RestoreCommanderAutonomy(removed.leadGuid);
     Player* commander = FindCharacter(commanderRaw);
     Player* lead = FindCharacter(removed.leadGuid);
     // A bot that joined after the bind is no follower but may hold the
@@ -4543,7 +4568,10 @@ uint32 ReleaseBinding(uint64 commanderRaw, RemoteCommander::ReleaseReason reason
     if (Group* group = lead ? lead->GetGroup() : nullptr)
         if (group->GetId() == removed.groupId)
             for (Group::MemberSlot const& slot : group->GetMemberSlots())
+            {
                 RestoreCommanderThreatBackoff(slot.guid.GetRawValue());
+                RestoreCommanderAutonomy(slot.guid.GetRawValue());
+            }
     // The commander's own hires go back to its party (or wait for it to come
     // back online inside the logout grace): a hire lives in its hirer's party.
     // After the follow targets and the threat back-off above were restored,
@@ -4580,6 +4608,7 @@ void ReleaseDepartedFollowers(uint64 commanderRaw, RemoteCommander::Binding cons
     {
         RestoreFollower(follower, leadRaw);
         RestoreCommanderThreatBackoff(follower);
+        RestoreCommanderAutonomy(follower);
         CommanderBindings().RemoveFollower(commanderRaw, follower);
     }
 }
@@ -5206,7 +5235,12 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
         HireLifecycle::KeepInstanceAfterPartyMove(bot);
     FormUpOnLead(commander, lead, bots, true);
     for (Player* bot : bots)
+    {
         GiveCommanderThreatBackoff(bot);
+        // No own walks while bound: the lead bot (a group leader's kit) and any
+        // follower lose grind/travel/rpg until the release.
+        HoldCommanderAutonomy(bot, PlayerbotAIStorage::Instance().GetAI(bot), false);
+    }
     std::string roster;
     for (Player* bot : bots)
         roster += (roster.empty() ? "" : ", ") + std::string(bot->GetName());
@@ -8360,6 +8394,24 @@ bool IsCommanderThreat(Player* bot)
     return bot && CommanderThreatBots().Holds(bot->GetObjectGuid().GetRawValue());
 }
 
+void HoldCommanderAutonomy(Player* bot, PlayerbotAI* ai, bool fresh)
+{
+    if (!bot || !ai || bot->InBattleGround() || !IsInCommandedGroup(bot))
+        return;
+    uint32 present = 0;
+    for (unsigned i = 0; i < RemoteCommander::kCommanderAutonomyCount; ++i)
+        if (ai->HasStrategy(RemoteCommander::CommanderAutonomyStrategy(i), BotState::BOT_STATE_NON_COMBAT))
+            present |= 1u << i;
+    uint32 const strip = CommanderAutonomyBots().Hold(bot->GetObjectGuid().GetRawValue(), present, fresh);
+    if (strip)
+        ai->ChangeStrategy(RemoteCommander::CommanderAutonomyChange(strip, '-'), BotState::BOT_STATE_NON_COMBAT);
+}
+
+uint32_t CommanderAutonomyWithheld(Player* bot)
+{
+    return bot ? CommanderAutonomyBots().Withheld(bot->GetObjectGuid().GetRawValue()) : 0;
+}
+
 bool IsInCommandedGroup(Player* bot)
 {
     if (!bot || !bot->GetGroup() || CommanderBindings().Empty())
@@ -8398,6 +8450,7 @@ void ClearRemoteCommanders()
     CommanderViews().clear();
     SavedFollowTargets().clear();
     CommanderThreatBots().Clear();
+    CommanderAutonomyBots().Clear();
     ClearCommanderTasks();
     s_commanderSweepMs = 0;
 }

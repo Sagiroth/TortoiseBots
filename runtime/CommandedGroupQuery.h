@@ -10,6 +10,7 @@
 #include <cstdint>
 
 class Player;
+class PlayerbotAI;
 
 namespace TortoiseBots {
 namespace BotCommands {
@@ -21,6 +22,18 @@ bool IsInCommandedGroup(Player* bot);
 // and the snapshot save leaves it out (it is the binding's, not the bot's).
 void NoteCommanderThreat(Player* bot);
 bool IsCommanderThreat(Player* bot);
+
+// A bound bot moves only on the commander's orders (RemoteCommander::
+// CommanderAutonomyLedger): the open-world kit (grind, travel, rpg...) comes
+// off it while it is bound and goes back on release. The bind calls this, and
+// so does every path that may give the kit back while the bot is bound
+// (AiFactory's strategy rebuild, the snapshot load, the instance guard's
+// restore). fresh: the strategies were just rebuilt from nothing. Does
+// nothing for a bot outside a bound group.
+void HoldCommanderAutonomy(Player* bot, PlayerbotAI* ai, bool fresh);
+// The entries a binding holds off the bot: the snapshot save still writes
+// them as the bot's own (they are the bot's, not the binding's).
+uint32_t CommanderAutonomyWithheld(Player* bot);
 
 // The hire lifecycle's questions about a commander's binding (hires bound to
 // their own hirer, issue #884). The hire sweep settles a commander's binding

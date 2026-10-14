@@ -58,6 +58,10 @@ public:
     // RandomBotNonCombatStrategies without its open-world adds (grind, travel,
     // tfish, rpg, rpg craft, wander) while the bot's master is a real player.
     static std::string RealMasterSafeNonCombatStrategies(PlayerbotAI* ai, std::string const& strategies);
+    // RandomBotNonCombatStrategies without its open-world adds (grind, travel,
+    // tfish, rpg, rpg craft, wander) while a remote commander has bound the
+    // bot: it moves only on the commander's orders.
+    static std::string CommandedSafeNonCombatStrategies(Player* player, std::string const& strategies);
     // The list with every "+grind/+travel/+tfish/+rpg/+rpg craft/+wander" entry removed.
     static std::string StripOpenWorldNonCombatStrategies(std::string const& strategies);
 };

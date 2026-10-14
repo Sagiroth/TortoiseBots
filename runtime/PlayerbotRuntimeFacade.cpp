@@ -498,8 +498,11 @@ void RandomBotFacade::ChangeStrategy(Player* player)
         // A hire never regains the autonomy kit on the timed re-apply: the
         // ledger strip holds for the life of the hire, while owned alts and
         // pool bots keep today's behaviour.
-        ai->ChangeStrategy(AiFactory::HireSafeNonCombatStrategies(ai, AiFactory::RealMasterSafeNonCombatStrategies(ai,
-            AiFactory::InstanceSafeNonCombatStrategies(player, sPlayerbotAIConfig.randomBotNonCombatStrategies))), BotState::BOT_STATE_NON_COMBAT);
+        // Nor does a bot a remote commander has bound: it moves only on orders.
+        ai->ChangeStrategy(AiFactory::CommandedSafeNonCombatStrategies(player, AiFactory::HireSafeNonCombatStrategies(ai,
+            AiFactory::RealMasterSafeNonCombatStrategies(ai,
+            AiFactory::InstanceSafeNonCombatStrategies(player, sPlayerbotAIConfig.randomBotNonCombatStrategies)))),
+            BotState::BOT_STATE_NON_COMBAT);
     }
 }
 
