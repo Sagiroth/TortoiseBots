@@ -118,6 +118,33 @@ static void TestStalledNearPointCountsAsArrived()
     CHECK(r2.state == State::Paused && r2.note.find("stuck") != std::string::npos);
 }
 
+// Live bug: a scorpid in the Sentinel pit was pulled, fought and leashed home
+// over and over for minutes.
+static void TestPullLoopOnOneTargetPauses()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {7078})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.seen = true;
+    f.units = {Unit(42, 7078, 10)};
+    int pulls = 0;
+    for (int i = 0; i < 2000 && r.state == State::Running; ++i)
+    {
+        f.anyInCombat = false;
+        if (Tick(r, f) == "pullback 42")
+        {
+            ++pulls;
+            // Every pull starts a short fight; the unit survives it.
+            f.anyInCombat = true;
+            for (int k = 0; k < 5; ++k)
+                Tick(r, f);
+        }
+    }
+    CHECK(pulls == static_cast<int>(kMaxPullsPerTarget));
+    CHECK(r.state == State::Paused && r.note.find("survived 3 pulls") != std::string::npos);
+}
+
 static void TestPullGatherAndFight()
 {
     DungeonPlan plan;
@@ -521,6 +548,7 @@ int main()
     TestMove();
     TestWalkStuckIsBounded();
     TestStalledNearPointCountsAsArrived();
+    TestPullLoopOnOneTargetPauses();
     TestPullGatherAndFight();
     TestUnseenPackIsApproachedNotCleared();
     TestPullThatStartsNoFightIsPassed();

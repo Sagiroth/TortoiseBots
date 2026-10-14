@@ -64,6 +64,7 @@ constexpr std::uint32_t kWalkTries = 3;           // ... at most this often, the
 constexpr float kWalkProgressYd = 2.0f;
 constexpr std::uint32_t kPullNoFightMs = 25000;   // a pull that started no fight in this time failed
 constexpr std::uint32_t kPullTriesPerUnit = 2;    // a unit two pulls could not start a fight with is passed
+constexpr std::uint32_t kMaxPullsPerTarget = 3;  // a unit three pulls (with fights) did not kill pauses the run
 constexpr std::uint32_t kMaxPullsPerStep = 10;
 constexpr std::uint32_t kFightCapMs = 180000;
 constexpr std::uint32_t kBossFightCapMs = 420000;
@@ -413,6 +414,14 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
         return;
     }
     std::uint32_t& tries = r.pullTries[u.guid];
+    if (tries >= kMaxPullsPerTarget)
+    {
+        // Each pull started a fight, yet the unit lives: it evades, leashes
+        // home or stands where the party cannot reach. Never loop on it.
+        Pause(r, "unit " + std::to_string(u.entry) + " (guid " + std::to_string(u.guid) + ") survived " +
+            std::to_string(kMaxPullsPerTarget) + " pulls (evading or out of reach): kill it by hand or .bot run skip");
+        return;
+    }
     ++tries;
     ++r.pulls;
     r.pullGuid = u.guid;
