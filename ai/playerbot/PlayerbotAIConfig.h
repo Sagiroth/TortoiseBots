@@ -503,6 +503,7 @@ public:
     bool paladinJudgementUpkeep;
     // Onyxia phase 2 whelp duty for AoE ranged DPS and egg-cave avoidance (opt-in).
     bool onyxiaWhelpsAndEggs;
+    bool dungeonTactics;
     // Bots stay out of listed creatures' permanent damaging auras, e.g. Maraudon's Creeping Sludge (opt-in).
     bool avoidCreatureAuras;
     // Bots may fly the taxi paths a core repair fixes (TaxiPathPolicy.h).

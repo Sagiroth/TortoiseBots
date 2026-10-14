@@ -2,6 +2,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/AmmoStackPolicy.h"
+#include "playerbot/BossTacticsMgr.h"
 #include "../../runtime/HireLevelPolicy.h"
 #include "../../runtime/HireUnlockPolicy.h"
 #include "../../runtime/RemoteCommanderView.h"
@@ -911,6 +912,7 @@ bool PlayerbotAIConfig::Initialize()
     hunterViperOnLowMana = config.GetBoolDefault("AiPlayerbot.HunterViperOnLowMana", true);
     paladinJudgementUpkeep = config.GetBoolDefault("AiPlayerbot.PaladinJudgementUpkeep", true);
     onyxiaWhelpsAndEggs = config.GetBoolDefault("AiPlayerbot.OnyxiaWhelpsAndEggs", true);
+    dungeonTactics = config.GetBoolDefault("AiPlayerbot.DungeonTactics", false);
     avoidCreatureAuras = config.GetBoolDefault("AiPlayerbot.AvoidCreatureAuras", true);
     allowRepairedTaxiPaths = config.GetBoolDefault("AiPlayerbot.AllowRepairedTaxiPaths", false);
     turnInRpg = config.GetBoolDefault("AiPlayerbot.TurnInRpg", false);
@@ -1120,6 +1122,8 @@ bool PlayerbotAIConfig::Initialize()
 
     sLog.outString("Loading named locations.");
     sRandomBotFacade.LoadNamedLocationCache();
+    sLog.outString("Loading boss tactics.");
+    ai::LoadBossTactics();
     sRandomBotFacade.LoadBattleMastersCache();
     sRandomBotFacade.LoadAuctionPrices();
 

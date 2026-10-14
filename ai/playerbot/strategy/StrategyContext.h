@@ -51,6 +51,7 @@
 // #include "generic/WorldBuffTravelStrategy.h" // E2E green: excluded to avoid GetSource mismatches
 #include "generic/DungeonStrategy.h"
 #include "generic/OnyxiasLairDungeonStrategies.h"
+#include "generic/BossTacticsStrategy.h"
 #include "generic/MoltenCoreDungeonStrategies.h"
 #include "generic/BlackwingLairDungeonStrategies.h"
 #include "generic/NaxxramasDungeonStrategies.h"
@@ -175,6 +176,7 @@ namespace ai
             creators["mimic consumables"] = [](PlayerbotAI* ai) { return new MimicConsumableStrategy(ai); };
             // Dungeon Strategies
             creators["dungeon"] = [](PlayerbotAI* ai) { return new DungeonStrategy(ai); };
+            creators["boss tactics"] = [](PlayerbotAI* ai) { return new BossTacticsStrategy(ai); };
             creators["onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairDungeonStrategy(ai); };
             creators["molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreDungeonStrategy(ai); };
             creators["blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairDungeonStrategy(ai); };

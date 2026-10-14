@@ -9,6 +9,7 @@ relates_to:
   - guide-getting-started
   - concept-bot-mechanics-and-quirks
   - class-overview
+  - guide-boss-tactics
 ---
 
 # Dungeon & Raid Tactics Guide
@@ -337,6 +338,7 @@ Bots do not clear dungeons on their own. Autonomous dungeon clearing is an expli
 | Kill order | Baelog (6906) → Revelosh (6910) → Ironaya (7228) → Obsidian Sentinel (7023) → [Altar of the Keepers] → Ancient Stone Keeper (7206) → Galgann Firehammer (7291) → Grimlok (4854) → [Altar of Archaedas] → Archaedas (2748, end boss) |
 | Do not wait for | Annora (11073), a friendly enchanter; Eric "The Swift" (6907) and Olaf (6908), who die with Baelog |
 | Quirks | Both altars are objectives, not bosses. Grimlok is seventh, not first |
+| Bot tactics | Opt-in per-boss rows for Revelosh, the Lost Dwarves, Ironaya and the Obsidian Sentinel: [Boss Tactics](boss-tactics.md) |
 
 #### Zul'Farrak (map 209)
 

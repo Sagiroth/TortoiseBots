@@ -9,6 +9,13 @@ void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // Custom Turtle raids (807/532/800) gate behind EnableCustomRaidTactics
     // in both paths, so a disabled custom gate cannot re-arm mid-fight.
     // Add this combat triggers in case the bot gets summoned into the dungeon and goes straight into combat
+
+    // Data-driven boss tactics (ai_boss_tactic): the trigger holds the gate, see
+    // BossTacticsPolicy.h. Off unless AiPlayerbot.DungeonTactics or a commander binding.
+    triggers.push_back(new TriggerNode(
+        "enter boss tactics",
+        NextAction::array(0, new NextAction("enable boss tactics strategy", 100.0f), NULL)));
+
     triggers.push_back(new TriggerNode(
         "enter onyxia's lair",
         NextAction::array(0, new NextAction("enable onyxia's lair strategy", 100.0f), NULL)));
@@ -56,6 +63,12 @@ void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // Data-driven boss tactics (ai_boss_tactic): the trigger holds the gate, see
+    // BossTacticsPolicy.h. Off unless AiPlayerbot.DungeonTactics or a commander binding.
+    triggers.push_back(new TriggerNode(
+        "enter boss tactics",
+        NextAction::array(0, new NextAction("enable boss tactics strategy", 100.0f), NULL)));
+
     triggers.push_back(new TriggerNode(
         "enter onyxia's lair",
         NextAction::array(0, new NextAction("enable onyxia's lair strategy", 100.0f), NULL)));

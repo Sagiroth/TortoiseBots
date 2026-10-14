@@ -695,6 +695,19 @@ AiPlayerbot.PaladinJudgementUpkeep = 1
 # 1 - whelp duty and egg avoidance (Default)
 AiPlayerbot.OnyxiaWhelpsAndEggs = 1
 
+# Dungeon boss tactics.
+# Per-boss rows from the world table ai_boss_tactic (map + boss entry) that bots
+# apply while they fight that boss: interrupt a listed spell, kill a listed add
+# before anything else (in a listed order), stay out of the boss's front during a
+# listed frontal attack. Built from Turtle's own core data; Uldaman up to
+# Ironaya and the Obsidian Sentinel so far (docs/guides/boss-tactics.md).
+# This changes how bots play in dungeons, so it is off for everybody by default.
+# Bots in a group that a remote commander has bound get the tactics regardless of
+# this key. An explicit target order from a player always wins.
+# 0 - off, except for commander-bound groups (Default)
+# 1 - on for every bot on a map that has rows
+AiPlayerbot.DungeonTactics = 0
+
 # Keep out of creature auras.
 # Some creatures carry a permanent damaging aura that pulses around them even
 # while they are idle. With this on, every bot steps out when it is within 8 yd

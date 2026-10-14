@@ -75,6 +75,7 @@
 #include "WorldBuffTravelActions.h"
 
 #include "OnyxiasLairDungeonActions.h"
+#include "BossTacticsActions.h"
 #include "MoltenCoreDungeonActions.h"
 #include "BlackwingLairDungeonActions.h"
 #include "NaxxramasDungeonActions.h"
@@ -348,6 +349,11 @@ namespace ai
             creators["move to"] = [](PlayerbotAI* ai) { return new MoveToAction(ai); };
 
             // Dungeon Actions
+            creators["enable boss tactics strategy"] = [](PlayerbotAI* ai) { return new BossTacticsEnableStrategyAction(ai); };
+            creators["disable boss tactics strategy"] = [](PlayerbotAI* ai) { return new BossTacticsDisableStrategyAction(ai); };
+            creators["boss tactics interrupt"] = [](PlayerbotAI* ai) { return new BossTacticsInterruptAction(ai); };
+            creators["boss tactics kill first"] = [](PlayerbotAI* ai) { return new BossTacticsKillFirstAction(ai); };
+            creators["boss tactics step behind"] = [](PlayerbotAI* ai) { return new BossTacticsStepBehindAction(ai); };
             creators["enable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnableDungeonStrategyAction(ai); };
             creators["disable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairDisableDungeonStrategyAction(ai); };
             creators["enable molten core strategy"] = [](PlayerbotAI* ai) { return new MoltenCoreEnableDungeonStrategyAction(ai); };
