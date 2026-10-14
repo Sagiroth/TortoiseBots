@@ -38,3 +38,4 @@ AiPlayerbot.BombRunoutDistance	— (commented example)	30.0f	—	restart	Playerb
 AiPlayerbot.HazardEvasionDistance	— (commented example)	12.0f	—	restart	PlayerbotAIConfig::Initialize + RaidSpreadAction/DragonFlankAction	raid	—	—	—	pending (#201)
 AiPlayerbot.EnableCustomRaidTactics	1	true	—	restart	PlayerbotAIConfig::Initialize + DungeonStrategy custom triggers	raid	0/1	—	—	pending (#203)
 AiPlayerbot.DungeonTactics	0	false	—	restart	PlayerbotAIConfig::Initialize + BossTacticsTriggers (enter/leave boss tactics)	raid	0/1	—	—	pending (boss tactics P1)
+AiPlayerbot.DungeonSelfClear	0	false	—	restart	PlayerbotAIConfig::Initialize + HandleDungeonRun (.bot run)	commander	0/1	—	—	pending (run leader P3)

@@ -2,7 +2,7 @@
 id: guide-dungeon-run-leader
 title: Dungeon Run Leader
 category: guides
-summary: The dungeon plan tables (ai_dungeon_plan, ai_dungeon_leg, ai_dungeon_step) that turtle-agent's exporter fills, their row format, and how the server loads them.
+summary: The opt-in run leader (.bot run, AiPlayerbot.DungeonSelfClear) that lets a bound party clear a dungeon plan by itself, its safety rules and supported steps, and the plan tables (ai_dungeon_plan, ai_dungeon_leg, ai_dungeon_step) that turtle-agent's exporter fills.
 tags: [guide, dungeon, plan, commander, self-clear, uldaman]
 relates_to:
   - guide-boss-tactics
@@ -15,6 +15,8 @@ relates_to:
 # Dungeon Run Leader
 
 A **dungeon plan** is the route of one dungeon written as data: where to walk, which packs to pull, which bosses to kill, which objects to open and what to wait for. Plans are made and checked live by [turtle-agent](https://github.com/pjerra/turtle-agent) (its `dungeons/<name>.json`, plan format v1); its exporter turns them into world migrations for the tables below. The turtle-agent file is the single source: edit the plan there and export again, never the rows by hand.
+
+The **run leader** (`.bot run`) lets a bound party clear such a plan by itself. It is **off by default** (`AiPlayerbot.DungeonSelfClear = 0`); see [Run leader](#run-leader) below.
 
 The tables are read once at startup into a cache (`ai/playerbot/DungeonPlanMgr.cpp`, one pass per table). Nothing reads them per tick; a change needs a restart.
 
@@ -90,3 +92,52 @@ The loader skips a row it cannot use and names it in the server log (`ai_dungeon
 | `legs[i].boss` | `boss` (`entries` = `first`, `flags` from `team`); its `loot_item` becomes a `loot` of the boss entry right after it |
 | `legs[i].after_boss` | after the `boss` row, same kinds as `steps` |
 | `skip`, `rest`, `companions_loot`, `watchdog` | not carried over yet |
+
+## Run leader
+
+Owner decision (2026-10-14): bots may clear a dungeon by themselves as an **opt-in** mode, off by default. It needs `AiPlayerbot.DungeonSelfClear = 1`, `AiPlayerbot.RemoteCommander = 1` and a remote commander binding (`.bot commander bind <LeadBot>`): the run leads the bound party, nobody else's. The commands and the `TBM:RUN` status line are in [Player Controls §1b](player-controls.md#1b-run-leader-bot-run-dungeon-self-clear).
+
+It is the **observe** mode of the dungeon modes: the bots clear, the commander (a player, or turtle-agent with `--mode observe`) only watches the status line and the `TBM:VIEW` feed, and may pause, skip, resume or stop.
+
+### How it plays
+
+Once a second the run reads the party (alive, dead, in combat, health, mana, spread) and the current step's surroundings, and the step machine (`runtime/DungeonRunPolicy.h`) answers with at most one order. The order is sent exactly as the commander's own `.bot cmd <order>` (`move`, `move ... direct`, `pullback`, `rest`, `loot`, `open`, `use`): same checks, same ACK/ERR lines. The fights are the bots' own combat AI, with the [boss tactics](boss-tactics.md) of a bound party.
+
+| Step | What the run does |
+| :--- | :--- |
+| `move`, `move_direct` | Before the hop: pulls a hostile within 15 yd of the hop's point that no later `pull` or `boss` step owns. Then `cmd move` to the point; done within 3 yd. No progress for 12 s: the move again, at most 3 times, then pause. |
+| `pull` | Not within 60 yd of the centre yet: walks to 30 yd short of it. Then, nearest first: gathers the party (every bot within 20 yd of the lead bot, `cmd move` to the lead bot's own spot; 30 s at most) and sends `cmd pullback <guid>`. A pull that starts no fight in 25 s is tried once more, then that unit is passed. Done when no living hostile unit of the pack is left within its radius. A stealthed (ambush) pack: the party walks through its centre and fights what shows. |
+| `boss` | As `pull`, in kill order: the `entries` first, the boss last. A boss that is not hostile to the party (the Lost Dwarves to an Alliance party) is left alone. |
+| `loot` | Already carried: done. Else `cmd loot entry:<id>@x,y,z <lead bot> [item]`, waits for the task, and pauses when the item is not in the bags afterwards. |
+| `open` | Pauses when the lead bot lacks the item the lock needs; else `cmd open entry:<id>@x,y,z <lead bot>` and waits for the task. |
+| `use_item` | Already made: done. Else `cmd use <item> <lead bot>`; pauses when the made item is missing. |
+| `wait_object` | Reads the object's state near the point (like `cmd state`) until it matches; `timeout_s` then pause. |
+| `wait_clear` | Walks to the spot if needed; waits until no living hostile is within the radius; `timeout_s` then pause. |
+| `rest` | `cmd rest` and waits as the rest gate does. |
+| `ritual` | **Not supported yet**: the run pauses and names it (do it by hand with `.bot cmd ritual`, then `skip`, `resume`). |
+
+The lead bot is the carrier of every object and item step.
+
+### Safety rules
+
+From turtle-agent's remote driver (the same rules, now on the server):
+
+- **Gather before a pull**, and pull only what is near: the nearest unit of the step, or of the next hop.
+- **Never pull what a later step owns**: a unit near the next hop that a later `pull` or `boss` step lists (by entry, within its radius) is left for that step.
+- **No unseen pack counted cleared, no live boss counted dead**: a pack or boss is judged only while the lead bot stands within 60 yd of it (its grid is loaded there), and only "no living hostile unit left" ends it.
+- **3 dead stop the run** (pause: regroup with `cmd revive`, then `resume`); so does a dead lead bot.
+- **Every wait is bounded**: gather 30 s, a pull's fight start 25 s, a fight 180 s (a boss 420 s), a rest 60 s (it then goes on), a task 90 s, a step 300 s out of combat (a wait step: its timeout plus 60 s), at most 10 pulls per step. A ceiling pauses the run with the reason; nothing loops.
+- **Any player order pauses it** (`.bot cmd` but `state`, `.bot action`).
+- **Rest gate** after every fight and before every step: when a living bot is under 80 % health, a healer under 50 % mana or another mana user under 35 %, `cmd rest` (again every 20 s) until everyone is at 90 % health, healers 80 % and others 60 % mana, or 60 s.
+
+### Not supported yet
+
+- `ritual` steps (Uldaman's Altar of the Keepers, Archaedas) pause the run.
+- A party with a real player in it (a player leading their own party): the run leads bound parties only.
+- Plan v1's `skip`, per-leg `rest`, `companions_loot` (Revelosh's Shaft: the run's `loot` takes the corpse with the lead bot, but other bots may loot it first), team-gated `pull` flags (a pack that is not hostile is left alone instead), `area_trigger`, gossip and waves.
+- Whispered orders to a bot do not pause the run.
+- Wipe recovery: the run pauses; reviving and resuming is up to the commander.
+
+### Cost
+
+Nothing while no run exists. A running run ticks once a second (never per bot tick) and does at most one local grid search around its lead bot, only when the step's point is within 60 yd. No database access after startup.

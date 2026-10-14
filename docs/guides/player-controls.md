@@ -190,6 +190,32 @@ TBM:VIEW|v1|12|E|5
 
 ---
 
+### 1b. Run leader (`.bot run`, dungeon self-clear)
+
+Off by default: needs `AiPlayerbot.DungeonSelfClear = 1` **and** `AiPlayerbot.RemoteCommander = 1`, otherwise every `.bot run` answers `TBM:ACTION_ERR|run <verb>|disabled|…`. A bound commander (`.bot commander bind`) starts a **dungeon plan** for its party and the bots clear it by themselves: they walk the plan's route, pull its packs, kill its bosses and do its object steps, through the same orders as `.bot cmd` (each one shows as its usual ACK/ERR line). The commander may watch from anywhere (with `.bot commander view on`, the feed shows what the bots see). Plans, the step kinds and the safety rules: [Dungeon Run Leader](dungeon-run-leader.md).
+
+| Command | What it does |
+| :--- | :--- |
+| `.bot run start [plan]` | Starts the plan for your bound party (without a name: the one plan of the lead bot's map). The lead bot must be on the plan's map (`.bot cmd enter` first). ERR `not-bound`, `no-plan`, `wrong-map`, `busy` (a run is going). |
+| `.bot run pause` | Pauses the run; the bots hold what they do. |
+| `.bot run resume` | Goes on with a paused run; the paused step starts over with fresh tries and ceilings. |
+| `.bot run skip` | A paused run leaves out its current step (and stays paused). For a step it cannot do: do it by hand, `skip`, `resume`. |
+| `.bot run stop` | Ends the run; the bots stay where they are, still bound. |
+| `.bot run status` | Sends the run's status line again. |
+| `.bot run list` | The loaded plans: name, map, steps, and how many steps are not supported yet. |
+
+**Any order of yours pauses the run:** every `.bot cmd` order but `state`, and every `.bot action`, sets it to `paused` with the order named, until `.bot run resume`. Unbinding ends it.
+
+**Status line** (to the commander, whenever the step, phase or note changes, and on `start`, `status`, `pause`, `resume`, `skip`, `stop`):
+
+```text
+TBM:RUN|<plan>|<state>|<step>/<steps>|<leg>|<kind>|<phase>|<note>
+TBM:RUN|uldaman|running|7/41|baelog|pull|pull|pulling 4851
+TBM:RUN|uldaman|paused|12/41|baelog|boss|begin|3 dead: regroup (cmd revive), then .bot run resume
+```
+
+`<state>` is `running`, `paused` or `done`; `<phase>` is `begin`, `gather`, `walk`, `pull`, `task`, `rest` or `wait`; `<note>` says what it does, or why it paused.
+
 ## 2. Roster & Lifecycle Commands
 
 These commands manage the login, party membership, and presence of your owned bots:
