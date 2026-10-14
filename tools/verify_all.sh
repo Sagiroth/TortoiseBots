@@ -122,6 +122,7 @@ if command -v g++ >/dev/null 2>&1; then
         test_heigan_dance_policy
         test_hire_deletion_policy
         test_hire_departure_policy
+        test_hire_fee_policy
         test_hire_gear_policy
         test_hire_intro_policy
         test_hire_level_policy

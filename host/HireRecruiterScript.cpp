@@ -5,6 +5,7 @@
 #include "HireRecruiterScript.h"
 #include "../runtime/HireProvisionService.h"
 #include "../runtime/HireCost.h"
+#include "../runtime/HireFeePolicy.h"
 #include "../runtime/HireSpecPolicy.h"
 #include "../runtime/HireTierRequestPolicy.h"
 #include "../runtime/HireUnlockPolicy.h"
@@ -188,7 +189,19 @@ uint32_t QuoteHireCostAtTier(Player* player, uint8_t tier)
 {
     uint32_t base = HireCost::ForNextHire(CurrentCosts(), QuoteHireCount(player),
         player ? player->GetLevel() : 1);
-    return HireCostAtTier(base, tier, sPlayerbotAIConfig.hireGearTierCostMult);
+    uint32_t cost = HireCostAtTier(base, tier, sPlayerbotAIConfig.hireGearTierCostMult);
+    // AiPlayerbot.HireFreeMinSecurity: the quote shown is what Hire() charges.
+    return player ? TortoiseBots::HireFeeCharged(cost, static_cast<int>(player->GetSession()->GetSecurity()),
+        sPlayerbotAIConfig.hireFreeMinSecurity) : cost;
+}
+
+// The fee as the menus print it: "free (GM)" for an account that hires free.
+std::string HireFeeLabel(Player* player, uint32_t cost)
+{
+    if (player && TortoiseBots::HireFeeWaived(static_cast<int>(player->GetSession()->GetSecurity()),
+        sPlayerbotAIConfig.hireFreeMinSecurity))
+        return "free (GM)";
+    return ai::ChatHelper::formatMoney(cost);
 }
 
 // Issue #490 PR 2: "Choose equipment" step after the spec step. Lists tier 0
@@ -641,7 +654,7 @@ void ShowTierMenu(Player* player, Creature* creature, uint8 classId, uint8 race,
     for (uint8_t tier = 0; tier <= highestTier; ++tier)
     {
         std::ostringstream label;
-        label << HireTierKitName(tier) << " (" << ai::ChatHelper::formatMoney(QuoteHireCostAtTier(player, tier)) << ")";
+        label << HireTierKitName(tier) << " (" << HireFeeLabel(player, QuoteHireCostAtTier(player, tier)) << ")";
         AddItem(player, GOSSIP_ICON_BATTLE, label.str().c_str(), HireTierStepSender(tier), packed);
     }
     AddItem(player, GOSSIP_ICON_TALK, "< Back", kHireTierBackSender, packed);
@@ -670,7 +683,7 @@ void ShowConfirmMenu(Player* player, Creature* creature, uint8 classId, uint8 ra
     label << "Hire " << RaceName(race) << " " << ClassName(classId) << " (" << specs[specIndex].label << ")";
     if (gearTier > 0)
         label << " in " << HireTierKitName(gearTier);
-    label << " for " << ai::ChatHelper::formatMoney(cost) << ". Confirm?";
+    label << " for " << HireFeeLabel(player, cost) << ". Confirm?";
     // The tier rides in the sender (530+tier); the packed selection rides in
     // the action. Back returns to the equipment step when the player has a
     // choice, else to the spec menu (unchanged old path).

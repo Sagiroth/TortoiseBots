@@ -367,6 +367,9 @@ public:
     // Issue #936: how many levels above the hirer a `.bot hire ... level=<n>`
     // companion may be (0 = never above the hirer; a GM is not limited by it).
     uint32 hireMaxLevelAboveHirer = 0;
+    // Accounts with this security level or more hire for free (no gold taken,
+    // reply says "free (GM)"). 0 = off. runtime/HireFeePolicy.h is the rule.
+    uint32 hireFreeMinSecurity = 0;
     // Companions are hired at a <Mercenary Hire> recruiter. When set, the fast
     // `.bot hire` command also works anywhere; fees are the same either way.
     bool hireAnywhere = false;

@@ -8,6 +8,7 @@
 #include "HireGearCache.h"
 #include "HireGearPolicy.h"
 #include "HireLevelPolicy.h"
+#include "HireFeePolicy.h"
 #include "HireTierRequestPolicy.h"
 #include "HireUnlockPolicy.h"
 #include "BotManager.h"
@@ -298,6 +299,12 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     costs.raidFlatCopper = sPlayerbotAIConfig.hireRaidFlatCostCopper;
     uint32_t cost = HireCostAtTier(HireCost::ForNextHire(costs, owned, level),
         gearTier, sPlayerbotAIConfig.hireGearTierCostMult);
+    // AiPlayerbot.HireFreeMinSecurity (0 = off): staff accounts hire free.
+    // The cost drops to 0 before the affordability check, the charge and every
+    // refund below, so no gold moves in either direction.
+    int const requesterSecurity = static_cast<int>(requester->GetSession()->GetSecurity());
+    bool const feeWaived = TortoiseBots::HireFeeWaived(requesterSecurity, sPlayerbotAIConfig.hireFreeMinSecurity);
+    cost = TortoiseBots::HireFeeCharged(cost, requesterSecurity, sPlayerbotAIConfig.hireFreeMinSecurity);
     if (requester->GetMoney() < cost)
     {
         outcome.status = HireStatus::Poor;
@@ -330,16 +337,22 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
 
     // Charge before the login queue: a queued login that later fails must not
     // mint a free companion, and a failed charge path must not queue a login.
-    requester->ModifyMoney(-static_cast<int32>(cost));
-    requester->SaveToDB();
+    if (cost)
+    {
+        requester->ModifyMoney(-static_cast<int32>(cost));
+        requester->SaveToDB();
+    }
 
     ObjectGuid masterGuid = requester->GetObjectGuid();
     uint32_t ownerAccountId = requester->GetSession()->GetAccountId();
     if (!BotManager::Instance().AddBotWithMaster(accountId, guid, masterGuid))
     {
         // Refund: the login queue rejected us (already online/pending).
-        requester->ModifyMoney(static_cast<int32>(cost));
-        requester->SaveToDB();
+        if (cost)
+        {
+            requester->ModifyMoney(static_cast<int32>(cost));
+            requester->SaveToDB();
+        }
         outcome.status = HireStatus::Failed;
         outcome.message = "That mercenary is already mustering. Try again shortly.";
         return outcome;
@@ -347,8 +360,11 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     if (!BotManager::Instance().RegisterOwnedCharacter(ownerAccountId, accountId, guid, masterGuid))
     {
         BotManager::Instance().RemoveBot(guid, false);
-        requester->ModifyMoney(static_cast<int32>(cost));
-        requester->SaveToDB();
+        if (cost)
+        {
+            requester->ModifyMoney(static_cast<int32>(cost));
+            requester->SaveToDB();
+        }
         outcome.status = HireStatus::Failed;
         outcome.message = "Could not record your ownership. No gold was taken.";
         return outcome;
@@ -359,8 +375,11 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     if (!HireLifecycle::Instance().Claim(guid, masterGuid, ownerAccountId, accountId))
     {
         BotManager::Instance().RemoveBot(guid, false);
-        requester->ModifyMoney(static_cast<int32>(cost));
-        requester->SaveToDB();
+        if (cost)
+        {
+            requester->ModifyMoney(static_cast<int32>(cost));
+            requester->SaveToDB();
+        }
         outcome.status = HireStatus::Failed;
         outcome.message = "Could not record your hire. No gold was taken.";
         sLog.outError("TortoiseBots: hire ledger unavailable; the hire of character %s (%u) was rolled back",
@@ -387,7 +406,8 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     outcome.cost = cost;
     outcome.botName = data ? data->sName : "companion";
     outcome.message = std::string("Hired ") + outcome.botName + " for " +
-        ai::ChatHelper::formatMoney(cost) + ". Your companion is mustering.";
+        (feeWaived ? std::string("free (GM)") : ai::ChatHelper::formatMoney(cost)) +
+        ". Your companion is mustering.";
     if (sel.level)
     {
         outcome.message += std::string(" Level ") + std::to_string(level) + ".";

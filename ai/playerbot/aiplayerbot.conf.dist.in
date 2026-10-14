@@ -341,6 +341,10 @@ AiPlayerbot.TravelPickBudgetUs = 4000
 # never above 60). 0 = no higher than the hirer; a GM hirer may go to 60. Any
 # level below the hirer is allowed. No level given = the hirer's level, as ever.
 #AiPlayerbot.HireMaxLevelAboveHirer = 0
+# Free hires for staff: accounts with this security level or more hire
+# companions for free (no gold taken; the reply says "free (GM)"). 0 = off,
+# everyone pays. 3 = accounts with GM level 3 and up hire free. Range 0-6.
+#AiPlayerbot.HireFreeMinSecurity = 0
 # HireAnywhere: 0 = hire only at a <Mercenary Hire> recruiter (the .bot hire
 # command points players to one); 1 = .bot hire also works anywhere. Fees are
 # the same either way.

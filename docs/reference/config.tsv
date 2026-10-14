@@ -11,6 +11,7 @@ AiPlayerbot.HireEnabled	1	true	—	restart	PlayerbotAIConfig::Initialize + HireP
 AiPlayerbot.HireMinAccountSecurity	0	0	—	restart	PlayerbotAIConfig::Initialize + HireProvisionService/HireRecruiterScript	hire	0-6	—	—	shipped (#192)
 AiPlayerbot.HireMaxBotsPerPlayer	4	4	—	restart	PlayerbotAIConfig::Initialize + HireProvisionService	hire	0-39	—	—	shipped (#192)
 AiPlayerbot.HireMaxLevelAboveHirer	0	0	—	restart	PlayerbotAIConfig::Initialize + HireProvisionService (HireLevelPolicy.h)	hire	0-59	—	0 = no higher than the hirer; GM not limited	shipped (#936)
+AiPlayerbot.HireFreeMinSecurity	0	0	—	restart	PlayerbotAIConfig::Initialize + HireProvisionService/HireRecruiterScript (HireFeePolicy.h)	hire	0-6	—	0 = off; N = accounts with security >= N hire free ("free (GM)"), no gold taken or added	shipped
 AiPlayerbot.HireAnywhere	0	false	—	restart	PlayerbotAIConfig::Initialize + HireProvisionService (.bot hire only)	hire	0/1	—	—	shipped
 AiPlayerbot.HireBaseCostCopper	15000	15000	—	restart	PlayerbotAIConfig::Initialize + HireCost::ForHireIndex	hire	0-100000000	—	0 = free hiring	shipped (#192)
 AiPlayerbot.HirePartyMult2	1.66	1.66	—	restart	PlayerbotAIConfig::Initialize + HireCost::ForHireIndex	hire	0-100	—	—	shipped (#192)
