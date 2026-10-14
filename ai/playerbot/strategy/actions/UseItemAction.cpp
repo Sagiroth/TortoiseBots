@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "UseItemAction.h"
+#include "UseItemNamePolicy.h"
 
 #include "playerbot/PlayerbotAIConfig.h"
 #include "Database/DBCStore.h"
@@ -321,7 +322,7 @@ bool UseAction::Execute(Event& event)
         for (const ObjectGuid& goGUID : nearestGOs)
         {
             GameObject* go = ai->GetGameObject(goGUID);
-            if (go && std::string(go->GetName()).find(useName))
+            if (go && UseNameMatchesObject(std::string(go->GetName()), useName))
             {
                 const float distance = bot->GetDistance(go);
                 if (distance < closest)
