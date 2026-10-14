@@ -525,9 +525,9 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
         if (r.phase == Phase::AwaitPull)
             return;
     }
-    if (const UnitFact* near = PickPull(r, f.hopUnits, 0))
+    if (const UnitFact* hopUnit = PickPull(r, f.hopUnits, 0))
     {
-        PullUnit(r, f, *near, order);
+        PullUnit(r, f, *hopUnit, order);
         return;
     }
     r.note = "walking";
