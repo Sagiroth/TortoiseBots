@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace ai
@@ -167,7 +168,27 @@ namespace ai
         BadTimeout,       // over kPlanMaxTimeoutS
         BadParam,         // wait_object state other than 0-2
         BadPoint,         // not a finite point
+        BadEntries,       // `entries` is not a comma list of non-zero creature entries
     };
+
+    inline const char* PlanStepRefusalName(PlanStepRefusal refusal)
+    {
+        switch (refusal)
+        {
+            case PlanStepRefusal::None: return "none";
+            case PlanStepRefusal::Sealed: return "Sealed";
+            case PlanStepRefusal::UnknownPlan: return "UnknownPlan";
+            case PlanStepRefusal::UnknownKind: return "UnknownKind";
+            case PlanStepRefusal::Duplicate: return "Duplicate";
+            case PlanStepRefusal::MissingEntry: return "MissingEntry";
+            case PlanStepRefusal::BadRadius: return "BadRadius";
+            case PlanStepRefusal::BadTimeout: return "BadTimeout";
+            case PlanStepRefusal::BadParam: return "BadParam";
+            case PlanStepRefusal::BadPoint: return "BadPoint";
+            case PlanStepRefusal::BadEntries: return "BadEntries";
+        }
+        return "unknown";
+    }
 
     // Fills the defaults of a step and checks it. The step is changed only when
     // it is accepted.
@@ -259,9 +280,9 @@ namespace ai
             PlanStepRefusal refusal = NormalizePlanStep(step);
             if (refusal != PlanStepRefusal::None)
                 return refusal;
-            for (const PlanStep& have : it->second.steps)
-                if (have.leg == step.leg && have.seq == step.seq)
-                    return PlanStepRefusal::Duplicate;
+            // (plan, leg, seq) is the table's primary key; a set keeps the check O(1).
+            if (!stepKeys_[planName].insert((static_cast<std::uint32_t>(step.leg) << 16) | step.seq).second)
+                return PlanStepRefusal::Duplicate;
             it->second.steps.push_back(std::move(step));
             ++steps_;
             return PlanStepRefusal::None;
@@ -326,6 +347,7 @@ namespace ai
 
     private:
         std::unordered_map<std::string, DungeonPlan> plans_;
+        std::unordered_map<std::string, std::unordered_set<std::uint32_t>> stepKeys_;
         std::size_t steps_ = 0;
         std::atomic<bool> sealed_{false};
     };

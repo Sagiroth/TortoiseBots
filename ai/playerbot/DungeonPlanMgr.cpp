@@ -65,12 +65,12 @@ void ai::LoadDungeonPlans()
             step.flags = fields[11].GetUInt32();
             step.timeoutS = fields[12].GetUInt16();
             PlanStepRefusal refusal = ParsePlanEntries(fields[13].GetCppString(), step.entries)
-                ? table.AddStep(plan, step) : PlanStepRefusal::MissingEntry;
+                ? table.AddStep(plan, step) : PlanStepRefusal::BadEntries;
             if (refusal != PlanStepRefusal::None)
             {
                 ++skippedSteps;
-                sLog.outError("ai_dungeon_step: plan '%s' leg %u seq %u (%s) skipped (reason %u)", plan.c_str(),
-                    uint32(step.leg), uint32(step.seq), fields[3].GetCppString().c_str(), uint32(refusal));
+                sLog.outError("ai_dungeon_step: plan '%s' leg %u seq %u (%s) skipped (%s)", plan.c_str(),
+                    uint32(step.leg), uint32(step.seq), fields[3].GetCppString().c_str(), PlanStepRefusalName(refusal));
             }
         } while (result->NextRow());
     }

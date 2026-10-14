@@ -117,6 +117,8 @@ static void TestTable()
     CHECK(table.AddStep("uldaman", Step(0, 9, PlanStepKind::Move, -236.5f, 54.9f, -46.0f)) == PlanStepRefusal::None);
     CHECK(table.AddStep("uldaman", Step(0, 9, PlanStepKind::Rest)) == PlanStepRefusal::Duplicate);
     CHECK(table.AddStep("other", Step(0, 1, PlanStepKind::Rest)) == PlanStepRefusal::UnknownPlan);
+    CHECK(std::string(PlanStepRefusalName(PlanStepRefusal::BadEntries)) == "BadEntries");
+    CHECK(std::string(PlanStepRefusalName(PlanStepRefusal::Duplicate)) == "Duplicate");
 
     // Nothing is readable before the seal.
     CHECK(table.Find("uldaman") == nullptr);
