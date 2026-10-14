@@ -142,8 +142,8 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 
     // Shield Slam at medium rage (donor TankWarriorStrategy gates at 40):
     // at 20 rage slam fired before the sunder stack was complete and stole
-    // the GCD from revenge (5 rage, proc-gated). Thunder clap stays below
-    // at HIGH+1 (matches donor slam+2/devastate+1/clap+1 shape).
+    // the GCD from revenge (5 rage, proc-gated). On 2+ mobs in melee
+    // Thunder Clap (HIGH+7, "melee light aoe" above) goes before it.
     triggers.push_back(new TriggerNode(
         "medium rage available",
         NextAction::array(0, new NextAction("shield slam", ACTION_HIGH + 4), NULL)));
