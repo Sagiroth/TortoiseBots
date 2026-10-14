@@ -197,3 +197,89 @@ func TestCommandersCarryTheRun(t *testing.T) {
 		t.Fatalf("no run field expected: %s", out)
 	}
 }
+
+// The module's path data rides in the binding: the plan's steps, the game objects, the cast target. An older module sends none.
+func TestCommandersCarryPathData(t *testing.T) {
+	var steps, objects string
+	for i := 0; i < 40; i++ {
+		if i > 0 {
+			steps += ","
+			objects += ","
+		}
+		steps += `{"i":` + string(rune('0'+i%10)) + `,"k":"move","x":1.5,"y":2.5}`
+		objects += `{"id":"9","entry":1,"name":"Door","x":1,"y":2,"type":"d","state":"r"}`
+	}
+	raw := `{"v":9,"session":3,"seq":1,"ts":50,"type":"COMMANDERS","commanders":[
+{"commander":"A","online":true,"group":1,"lead":"W","bots":[{"name":"H","guid":5,"cast":"Flash Heal","ctgt":"77"}],"orders":[],
+ "run":{"plan":"u","state":"running","step":1,"steps":9,"plan_steps":[` + steps + `,{"i":9,"k":"boss","x":3,"y":4,"r":30,"e":4854,"n":"Grimlok","sk":true}]},
+ "objects":[` + objects + `]},
+{"commander":"B","online":true,"group":2,"lead":"X","bots":[],"orders":[],"objects":[]},
+{"commander":"C","online":true,"group":3,"lead":"Y","bots":[],"orders":[]}]}`
+	var p model.CommandersPayload
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestStore(newClock())
+	s.ApplyCommanders(&p)
+	v := s.Commanders().Commanders
+	if v[0].Bots[0].CastTarget != "77" {
+		t.Fatalf("cast target lost: %+v", v[0].Bots[0])
+	}
+	if len(v[0].Run.PlanSteps) != maxCommanderSteps || len(v[0].Objects) != maxCommanderObjects {
+		t.Fatalf("steps %d, objects %d: they must be capped", len(v[0].Run.PlanSteps), len(v[0].Objects))
+	}
+	if len(p.Commanders[0].Run.PlanSteps) != 41 {
+		t.Fatal("the caller's payload must not be trimmed")
+	}
+	if v[1].Objects == nil || len(v[1].Objects) != 0 || v[2].Objects != nil {
+		t.Fatalf("[] means reported, none seen; absent means not reported: %v / %v", v[1].Objects, v[2].Objects)
+	}
+	out, _ := json.Marshal(v[2])
+	if !strings.Contains(string(out), `"objects":null`) || strings.Contains(string(out), `plan_steps`) {
+		t.Fatalf("view of a binding without path data: %s", out)
+	}
+}
+
+func trailPayload(ts int64, mapID uint32, x, y float64) *model.CommandersPayload {
+	p := &model.CommandersPayload{V: model.ProtocolVersion, Session: 5, TS: ts, Type: "COMMANDERS"}
+	p.Commanders = []model.CommanderBinding{{
+		Commander: "A", Online: true, Lead: "L",
+		Bots: []model.CommanderBot{{Name: "L", GUID: 1, Lead: true, MapID: mapID, X: x, Y: y, Alive: true}, {Name: "M", GUID: 2, MapID: mapID, X: 0, Y: 0, Alive: true}},
+	}}
+	return p
+}
+
+// The server keeps a short bounded path per bot: a point per few yards, a new trail on a new map, gone when the binding ends or the report is stale.
+func TestCommandersKeepTrails(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	s.ApplyCommanders(trailPayload(100, 209, 0, 0))
+	s.ApplyCommanders(trailPayload(102, 209, 1, 0)) // under the step: no point
+	s.ApplyCommanders(trailPayload(104, 209, 5, 0))
+	tr := s.Trails()["A"]
+	if len(tr[1].Points) != 2 || tr[1].Points[1].X != 5 || tr[1].Points[1].T != 104 || tr[1].Map != 209 {
+		t.Fatalf("lead trail: %+v", tr[1])
+	}
+	if len(tr[2].Points) != 1 {
+		t.Fatalf("a bot that stands still keeps one point: %+v", tr[2])
+	}
+	s.ApplyCommanders(trailPayload(106, 70, 9, 9)) // another map: a new trail
+	if tr := s.Trails()["A"][1]; tr.Map != 70 || len(tr.Points) != 1 {
+		t.Fatalf("new map, new trail: %+v", tr)
+	}
+	for i := 0; i < TrailMaxPoints+50; i++ {
+		s.ApplyCommanders(trailPayload(200+int64(i), 70, 9+float64(i+1)*3, 9))
+	}
+	if tr := s.Trails()["A"][1]; len(tr.Points) != TrailMaxPoints || tr.Points[len(tr.Points)-1].X != 9+float32(TrailMaxPoints+50)*3 {
+		t.Fatalf("the trail is a ring of %d: %d points", TrailMaxPoints, len(tr.Points))
+	}
+	c.Advance(CommandersStaleAfter + time.Second)
+	if len(s.Trails()) != 0 {
+		t.Fatal("a stale report has no trails")
+	}
+	s.ApplyCommanders(&model.CommandersPayload{V: model.ProtocolVersion, Session: 5, TS: 9999, Type: "COMMANDERS"})
+	c.Advance(time.Second)
+	if len(s.Trails()) != 0 {
+		t.Fatal("the trails of an ended binding are forgotten")
+	}
+}

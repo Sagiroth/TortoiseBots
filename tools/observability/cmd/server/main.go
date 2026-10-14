@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -415,6 +416,28 @@ func main() {
 			ExternalURL string `json:"external_url,omitempty"`
 			RealMaps    bool   `json:"real_maps"`
 		}{store.Commanders(), commanderURL, mapPics != nil})
+	}))
+
+	// The bound bots' recent paths (a short bounded history kept in memory), so a page opened mid-run starts with the trails drawn:
+	// {"<commander>": {"<bot guid>": {"map": 209, "pts": [[x, y, unix seconds], ...]}}}, oldest point first.
+	mux.HandleFunc("/api/v1/commanders/trails", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		type trailJSON struct {
+			Map uint32       `json:"map"`
+			Pts [][3]float64 `json:"pts"`
+		}
+		out := map[string]map[string]trailJSON{}
+		for c, bots := range store.Trails() {
+			m := make(map[string]trailJSON, len(bots))
+			for g, t := range bots {
+				pts := make([][3]float64, len(t.Points))
+				for i, p := range t.Points {
+					pts[i] = [3]float64{math.Round(float64(p.X)*10) / 10, math.Round(float64(p.Y)*10) / 10, float64(p.T)}
+				}
+				m[strconv.FormatUint(uint64(g), 10)] = trailJSON{Map: t.Map, Pts: pts}
+			}
+			out[c] = m
+		}
+		writeJSON(w, out)
 	}))
 
 	// Real map pictures for the Commanders maps: the layer list of a map id, and the .png/.json files of the TBDASH_MAP_DIR folder
