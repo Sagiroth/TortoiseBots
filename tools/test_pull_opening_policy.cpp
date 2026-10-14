@@ -181,11 +181,16 @@ int main()
         CHECK(!ParsePullOrderOption("-1", o));
         CHECK(!ParsePullOrderOption("1000", o));
         CHECK(!ParsePullOrderOption("5abc", o));
-        CHECK(!ParsePullOrderOption("ranged 5", o));
+        CHECK(ParsePullOrderOption("ranged 10", o) && o.hasSeconds && o.seconds == 10 && o.ranged);
+        CHECK(ParsePullOrderOption("RANGED 0", o) && o.hasSeconds && o.seconds == 0 && o.ranged);
+        CHECK(ParsePullOrderOption("0", o) && o.hasSeconds && o.seconds == 0 && !o.ranged);
+        CHECK(!ParsePullOrderOption("+5", o));
+        CHECK(!ParsePullOrderOption("5 5", o));
+        CHECK(!ParsePullOrderOption("5 ranged 5", o));
         CHECK(!ParsePullOrderOption("ranged ranged", o));
         CHECK(!ParsePullOrderOption("5 ranged now", o));
         CHECK(!ParsePullOrderOption("rangedx", o));
-        std::cout << "  [PASS] pull order words: [seconds] [ranged], nothing else\n";
+        std::cout << "  [PASS] pull order words: seconds and ranged, either order, each once\n";
     }
 
     std::cout << "All pull opening policy tests passed.\n";

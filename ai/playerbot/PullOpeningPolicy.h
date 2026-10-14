@@ -120,8 +120,9 @@ namespace ai
         }
     }
 
-    // The words of a pull order after the verb: `[seconds] [ranged]`, either or
-    // both, in that order. seconds is 0-60. Returns false for anything else.
+    // The words of a pull order after the verb: the join delay (digits, 0-60)
+    // and the word `ranged`, each at most once, in either order. A sign or any
+    // other word is refused. Returns false for anything else.
     struct PullOrderOption
     {
         bool hasSeconds = false;
@@ -133,37 +134,38 @@ namespace ai
     {
         out = PullOrderOption();
         size_t pos = 0;
-        auto nextWord = [&](std::string& word) {
+        while (true)
+        {
             while (pos < text.size() && (text[pos] == ' ' || text[pos] == '\t'))
                 ++pos;
+            if (pos >= text.size())
+                return true;
             size_t const start = pos;
             while (pos < text.size() && text[pos] != ' ' && text[pos] != '\t')
                 ++pos;
-            word = text.substr(start, pos - start);
+            std::string word = text.substr(start, pos - start);
             for (char& c : word)
                 if (c >= 'A' && c <= 'Z')
                     c = static_cast<char>(c - 'A' + 'a');
-            return !word.empty();
-        };
 
-        std::string word;
-        bool more = nextWord(word);
-        if (more && !word.empty() && word.find_first_not_of("0123456789") == std::string::npos)
-        {
-            if (word.size() > 3)
+            if (word == "ranged")
+            {
+                if (out.ranged)
+                    return false;
+                out.ranged = true;
+            }
+            else if (word.find_first_not_of("0123456789") == std::string::npos)
+            {
+                if (out.hasSeconds || word.size() > 3)
+                    return false;
+                unsigned const seconds = static_cast<unsigned>(std::atoi(word.c_str()));
+                if (seconds > 60)
+                    return false;
+                out.hasSeconds = true;
+                out.seconds = seconds;
+            }
+            else
                 return false;
-            unsigned const seconds = static_cast<unsigned>(std::atoi(word.c_str()));
-            if (seconds > 60)
-                return false;
-            out.hasSeconds = true;
-            out.seconds = seconds;
-            more = nextWord(word);
         }
-        if (more && word == "ranged")
-        {
-            out.ranged = true;
-            more = nextWord(word);
-        }
-        return !more;
     }
 }

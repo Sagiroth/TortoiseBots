@@ -3664,9 +3664,13 @@ static bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context,
             if (blocker != ai::PullRangedBlocker::None)
             {
                 openingNote = ai::PullRangedBlockerName(blocker);
-                // A mob that is simply too close is the normal body pull of a
-                // pullback; only an explicit `ranged` order is told about it.
-                if (blocker != ai::PullRangedBlocker::TooClose || openingProbe->IsCommandRangedOrder())
+                // Whispered only when the order said `ranged`, or the tank has
+                // a ranged weapon it cannot fire (no ammo, skill or spell).
+                // A tank with no ranged weapon at all, or a mob that is simply
+                // too close, walks in quietly on the automatic rules; the ACK
+                // detail still names the blocker.
+                if (openingProbe->IsCommandRangedOrder() ||
+                    (blocker != ai::PullRangedBlocker::NoWeapon && blocker != ai::PullRangedBlocker::TooClose))
                 {
                     char const* missing =
                         blocker == ai::PullRangedBlocker::NoWeapon ? "no ranged weapon equipped"
@@ -8245,7 +8249,7 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         }
         if (pull && parts.size() >= 2)
         {
-            // "[seconds] [ranged]": either or both, in that order.
+            // "[seconds] [ranged]": either or both, in either order.
             std::string words = parts[1];
             if (parts.size() == 3)
                 words += " " + parts[2];
@@ -8253,7 +8257,7 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             if (!ai::ParsePullOrderOption(words, parsed))
             {
                 SendActionError(handler, intent, "invalid",
-                    "After the guid: the join delay (0-60 seconds), then optionally the word ranged.");
+                    "After the guid: the join delay (0-60 seconds) and/or the word ranged, in either order.");
                 return true;
             }
             option = PullOptionText(parsed);
