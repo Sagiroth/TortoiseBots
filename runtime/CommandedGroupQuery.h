@@ -7,6 +7,8 @@
 // answer is read from the binding table in commands/BotCommands.cpp (world
 // thread only); the AI includes this header instead of the command layer.
 
+#include <cstdint>
+
 class Player;
 
 namespace TortoiseBots {
@@ -19,6 +21,13 @@ bool IsInCommandedGroup(Player* bot);
 // and the snapshot save leaves it out (it is the binding's, not the bot's).
 void NoteCommanderThreat(Player* bot);
 bool IsCommanderThreat(Player* bot);
+
+// The hire lifecycle's questions about a commander's binding (hires bound to
+// their own hirer, issue #884). The hire sweep settles a commander's binding
+// first, so a binding that lost its lead or its group is released - and its
+// hires returned to the hirer - before any hire is judged.
+bool HasCommanderBinding(uint64_t commanderRaw);
+void SettleCommanderBinding(uint64_t commanderRaw);
 
 } // namespace BotCommands
 } // namespace TortoiseBots

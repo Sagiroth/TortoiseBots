@@ -25,6 +25,7 @@
 #include "Database/DatabaseEnv.h"
 #include "Log.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <ctime>
 #include <memory>
@@ -464,6 +465,20 @@ void HireLifecycle::Reunite(HiredRecord& record, Player* master)
 void HireLifecycle::SweepGracePeriod(time_t now)
 {
     uint32_t grace = sPlayerbotAIConfig.hireDisconnectGracePeriod;
+    // Settle the binding of every commander that has bound hires first, before
+    // the loop judges any hire: the commander's own 1 s sweep may not have run
+    // yet, and a lead that logged off or left would otherwise make its bound
+    // hires look like hires that left their hirer's party. Settling may return
+    // hires (group changes), so it runs outside the loop over m_hired.
+    {
+        std::vector<ObjectGuid> commanders;
+        for (auto const& kv : m_hired)
+            if (kv.second.commandState == HireCommandState::Bound &&
+                std::find(commanders.begin(), commanders.end(), kv.second.masterGuid) == commanders.end())
+                commanders.push_back(kv.second.masterGuid);
+        for (ObjectGuid const& commander : commanders)
+            BotCommands::SettleCommanderBinding(commander.GetRawValue());
+    }
     for (auto it = m_hired.begin(); it != m_hired.end();)
     {
         HiredRecord& record = it->second;
@@ -478,14 +493,16 @@ void HireLifecycle::SweepGracePeriod(time_t now)
             Dismiss(orphan, "runtime record gone");
             continue;
         }
-        // A bound state that no binding backs any more (the binding went
-        // without telling us) is dropped: the ordinary rules apply again.
+        // A hire bound to its hirer is judged only after the hirer's binding
+        // was settled (see the pre-pass above): a binding that lost its lead
+        // or its group is released first, which returns the hire instead of
+        // letting this sweep read "not in the commanded group" as a departure.
         if (record.commandState == HireCommandState::Bound)
         {
             Player* commanded = sObjectAccessor.FindPlayer(record.botGuid);
             bool const live = commanded && commanded->IsInWorld();
-            if (!CommandStateStillHolds(record.commandState, live,
-                    live && BotCommands::IsInCommandedGroup(commanded)))
+            if (DecideBoundHireSweep(BotCommands::HasCommanderBinding(record.masterGuid.GetRawValue()), live,
+                    live && BotCommands::IsInCommandedGroup(commanded)) == BoundHireVerdict::DropState)
                 record.commandState = HireCommandState::None;
         }
         // Issue #378 backstop: a master that left the party in a way no group

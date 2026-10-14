@@ -6790,6 +6790,22 @@ bool IsInCommandedGroup(Player* bot)
     return false;
 }
 
+bool HasCommanderBinding(uint64_t commanderRaw)
+{
+    return CommanderBindings().FindByCommander(commanderRaw) != nullptr;
+}
+
+// Release a binding that no longer holds (its hires go back to the hirer), or,
+// when the commander has no binding at all, return any hires still marked as
+// bound to one.
+void SettleCommanderBinding(uint64_t commanderRaw)
+{
+    if (CommanderBindings().FindByCommander(commanderRaw))
+        StandingBinding(commanderRaw);
+    else
+        HireLifecycle::Instance().EndCommand(::ObjectGuid(commanderRaw));
+}
+
 void ClearRemoteCommanders()
 {
     CommanderBindings().Clear();

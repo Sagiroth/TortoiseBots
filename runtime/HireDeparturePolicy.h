@@ -69,21 +69,35 @@ inline bool ShouldDismissHireOnOwnRemoval(HireCommandState command)
 }
 
 // The hire's group was disbanded: ends the hire, unless the hirer's binding
-// holds it (the binding then ends on its own and returns the hire to its
-// hirer, see DecideHireBindingEnd).
+// holds it (the binding then ends on its own, GroupChanged, and returns the
+// hire to its hirer, see DecideHireBindingEnd).
 inline bool ShouldDismissHireOnDisband(HireCommandState command)
 {
     return command == HireCommandState::None;
 }
 
-// Safety net for a Bound state that no binding backs any more (a binding that
-// vanished without telling the hire lifecycle): the state is dropped and the
-// ordinary rules apply again. A hire that is not live counts as still bound.
-inline bool CommandStateStillHolds(HireCommandState command, bool hireLive, bool inCommandedGroup)
+// The hire sweep's verdict on a Bound hire, taken only AFTER the hirer's
+// binding was settled (a binding whose lead left or whose group changed is
+// released, which returns its hires, before the sweep may judge any hire):
+//  - no binding stands for the hirer: the hires are returned to the hirer, they
+//    are never judged as hires that left their hirer's party;
+//  - a binding stands and the hire is in its group, or is not live: nothing;
+//  - a binding stands and a live hire is not in its group (it left or was
+//    taken out): the bound state is dropped and the ordinary rules apply.
+enum class BoundHireVerdict : uint8_t
 {
-    if (command != HireCommandState::Bound)
-        return command != HireCommandState::None;
-    return !hireLive || inCommandedGroup;
+    Keep,
+    ReturnToHirer,
+    DropState,
+};
+
+inline BoundHireVerdict DecideBoundHireSweep(bool bindingStands, bool hireLive, bool inCommandedGroup)
+{
+    if (!bindingStands)
+        return BoundHireVerdict::ReturnToHirer;
+    if (!hireLive || inCommandedGroup)
+        return BoundHireVerdict::Keep;
+    return BoundHireVerdict::DropState;
 }
 
 // What happens to a hire when its hirer's binding ends (unbind, or any

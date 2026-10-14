@@ -111,14 +111,30 @@ static void TestOtherEndsWhileBound()
     CHECK(!ShouldDismissHireOnDisband(HireCommandState::Transition));
 }
 
-// A Bound state nothing backs any more is dropped, so the hire is not immune forever.
-static void TestStaleBoundState()
+// The hire sweep judges a Bound hire only after the hirer's binding was
+// settled. The lead logging off or leaving makes "the hire is not in the
+// commanded group" true for the whole party for up to a second, before the
+// commander's own sweep releases the binding: that must return the hires, never
+// read as a departure that deletes them.
+static void TestBoundSweepOrdering()
 {
-    CHECK(CommandStateStillHolds(HireCommandState::Bound, true, true));
-    CHECK(!CommandStateStillHolds(HireCommandState::Bound, true, false));
-    CHECK(CommandStateStillHolds(HireCommandState::Bound, false, false)); // not live: left alone
-    CHECK(!CommandStateStillHolds(HireCommandState::None, true, true));
-    CHECK(CommandStateStillHolds(HireCommandState::Transition, true, false));
+    // Lead gone / group changed, binding not yet released: the settle step
+    // releases it, then no binding stands and the hires are returned.
+    CHECK(DecideBoundHireSweep(false, true, false) == BoundHireVerdict::ReturnToHirer);
+    CHECK(DecideBoundHireSweep(false, true, true) == BoundHireVerdict::ReturnToHirer);
+    CHECK(DecideBoundHireSweep(false, false, false) == BoundHireVerdict::ReturnToHirer);
+    // The binding stands and the hire is in its group, or not live: nothing.
+    CHECK(DecideBoundHireSweep(true, true, true) == BoundHireVerdict::Keep);
+    CHECK(DecideBoundHireSweep(true, false, false) == BoundHireVerdict::Keep);
+    // The binding stands but a live hire is outside its group: ordinary rules.
+    CHECK(DecideBoundHireSweep(true, true, false) == BoundHireVerdict::DropState);
+    // Never DropState without a standing binding, whatever the hire's group.
+    for (int live = 0; live <= 1; ++live)
+        for (int inGroup = 0; inGroup <= 1; ++inGroup)
+            CHECK(DecideBoundHireSweep(false, live, inGroup) != BoundHireVerdict::DropState);
+    // A returned hire is never dismissed by the departure rule on the way: the
+    // binding's end puts it in transition, which the rule leaves alone.
+    CHECK(!ShouldDismissHireOnGroupDeparture(true, true, true, false, HireCommandState::Transition));
 }
 
 // Unbind: the hire goes back to its hirer's party when the hirer is online,
@@ -147,7 +163,7 @@ int main()
     TestAllCombinations();
     TestBoundHireKeepsLiving();
     TestOtherEndsWhileBound();
-    TestStaleBoundState();
+    TestBoundSweepOrdering();
     TestBindingEnd();
     std::printf("hire departure policy: %d checks passed\n", checks);
     return 0;
