@@ -282,9 +282,22 @@ inline TaskVerdict AdvanceTask(TaskState& state, TaskFacts const& facts, uint32_
         verdict.step = TaskStep::Succeed;
         return verdict;
     }
+    // A fight ends the act of an order on an object or a corpse like it ends the
+    // walk: the hold is released at once instead of keeping the bot on the spot
+    // until the budget runs out. A use in place keeps going in a fight.
+    if (facts.inCombat && state.walks)
+        return TaskFail(kCodeInCombat, "The bot is in combat and stopped.");
     if (state.stageMs >= state.actBudgetMs)
         return TaskFail(kCodeTimeout, "No result came back in time.");
     return verdict;
+}
+
+// A refused start of the act is tried again on the next look only while the
+// bot may still act: not in a fight for an order that walks (AdvanceTask then
+// ends it with in-combat, and the bot is neither held nor has its spell stopped).
+inline bool MayRetryAct(TaskState const& state, TaskFacts const& facts)
+{
+    return facts.botAvailable && state.stage == TaskStage::Act && !(facts.inCombat && state.walks);
 }
 
 // ---------------------------------------------------------------------------

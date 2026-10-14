@@ -198,9 +198,9 @@ static void TestActStage()
     TaskFacts facts = Walking(2.0f);
     facts.inRange = true;
     CHECK(AdvanceTask(state, facts, 0).step == TaskStep::BeginAct);
-    facts.inCombat = true;
     facts.targetPresent = false;
     CHECK(AdvanceTask(state, facts, kTaskTickMs).step == TaskStep::Wait);
+    facts.inCombat = true;
 
     TaskFacts gone = facts;
     gone.botAvailable = false;
@@ -533,6 +533,43 @@ static void TestActHold()
     CHECK(kActTries >= 2);
 }
 
+// A fight during the act of an order that walked ends it with in-combat at the
+// next look (the hold is released), and a refused start is not retried in it;
+// a result already in still counts, and a use in place keeps going.
+static void TestCombatEndsAct()
+{
+    TaskState chest = MakeTask(TaskKind::Open, 3.0f, true, true);
+    TaskFacts facts = Walking(3.0f);
+    facts.inRange = true;
+    CHECK(AdvanceTask(chest, facts, 0).step == TaskStep::BeginAct);
+    facts.actStarted = true;
+    CHECK(MayRetryAct(chest, facts));
+    facts.inCombat = true;
+    CHECK(!MayRetryAct(chest, facts));
+    TaskVerdict verdict = AdvanceTask(chest, facts, kTaskTickMs);
+    CHECK(verdict.step == TaskStep::Fail && std::strcmp(verdict.code, kCodeInCombat) == 0);
+
+    TaskState done = MakeTask(TaskKind::Loot, 3.0f, true);
+    TaskFacts walk = Walking(3.0f);
+    walk.inRange = true;
+    AdvanceTask(done, walk, 0);
+    walk.inCombat = true;
+    walk.actDone = true;
+    CHECK(AdvanceTask(done, walk, kTaskTickMs).step == TaskStep::Succeed);
+
+    TaskState potion = MakeInPlaceTask(TaskKind::Use);
+    TaskFacts inPlace;
+    inPlace.inRange = true;
+    AdvanceTask(potion, inPlace, 0);
+    inPlace.inCombat = true;
+    CHECK(MayRetryAct(potion, inPlace));
+    CHECK(AdvanceTask(potion, inPlace, kTaskTickMs).step == TaskStep::Wait);
+
+    TaskFacts gone;
+    gone.botAvailable = false;
+    CHECK(!MayRetryAct(potion, gone));
+}
+
 int main()
 {
     TestStandingPoint();
@@ -553,6 +590,7 @@ int main()
     TestActBudgetCoversTheCast();
     TestOpenRefusal();
     TestActHold();
+    TestCombatEndsAct();
     TestLootLedger();
     TestLootItemWanted();
     TestLootMethod();

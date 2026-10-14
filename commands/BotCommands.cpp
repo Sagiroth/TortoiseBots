@@ -5184,6 +5184,7 @@ struct CommanderTask
     uint64 useTargetRaw = 0;  // use: the unit or game object the item is used on
     uint32 itemId = 0;        // loot: only this item (0 = all); use: the item
     uint32 spellId = 0;       // use: the item's on-use spell
+    uint32 actSpellId = 0;    // the spell the started act is casting (0 = none): the one the hold protects
     bool lootLike = false;    // ends with a loot window (corpse, chest)
     bool noWalk = false;      // nothing to walk to
     bool walking = false;     // the movement stance was changed for the walk
@@ -5348,6 +5349,22 @@ void EndTaskWalk(CommanderTask const& task, Player* bot, PlayerbotAI* ai)
         ai->SetMovementStrategy("follow");
 }
 
+// Tasks that ended while their bot was out of the world or between maps (a
+// map change, a teleport): their stance and the act hold are put back once the
+// bot stands in a world again; a bot that logged out is dropped.
+std::vector<CommanderTask>& PendingStanceRestores()
+{
+    static std::vector<CommanderTask> pending;
+    return pending;
+}
+
+void EndTaskStance(CommanderTask const& task, Player* bot, PlayerbotAI* ai)
+{
+    if (task.lootLike && ai->GetAiObjectContext())
+        ai->GetAiObjectContext()->GetValue<ai::LootObject>("loot target")->Set(ai::LootObject());
+    EndTaskWalk(task, bot, ai);
+}
+
 // Ends a task: ledger forgotten, loot target cleared, movement stance back,
 // then the final answer.
 void FinishCommanderTask(CommanderTask& task, bool ok, uint32 count, std::string const& payload,
@@ -5356,12 +5373,10 @@ void FinishCommanderTask(CommanderTask& task, bool ok, uint32 count, std::string
     RemoteCommander::LootOrders().Forget(task.botRaw);
     Player* bot = FindCharacter(task.botRaw);
     PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
-    if (ai && bot->IsInWorld())
-    {
-        if (task.lootLike && ai->GetAiObjectContext())
-            ai->GetAiObjectContext()->GetValue<ai::LootObject>("loot target")->Set(ai::LootObject());
-        EndTaskWalk(task, bot, ai);
-    }
+    if (ai && bot->IsInWorld() && !bot->IsBeingTeleported())
+        EndTaskStance(task, bot, ai);
+    else if (bot && task.walking && !task.superseded)
+        PendingStanceRestores().push_back(task);
     if (ok)
         TaskReplyAck(task, count, payload);
     else
@@ -5418,6 +5433,10 @@ void HoldForAct(CommanderTask& task, PlayerbotAI* ai, Player* bot)
     }
     ai->DropQueuedMovementOrders();
     SetStayAnchor(ai, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+    // Feared, confused, charmed or stunned: the core owns its movement; leave it
+    // (the start is refused and retried, or the task ends).
+    if (bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL))
+        return;
     if (bot->IsNonMeleeSpellCasted(false))
         bot->InterruptNonMeleeSpells(false);
     bot->GetMotionMaster()->Clear();
@@ -5431,8 +5450,12 @@ void HoldForAct(CommanderTask& task, PlayerbotAI* ai, Player* bot)
 // would break the cast. The bot's AI itself sleeps through its own cast.
 void KeepStillDuringAct(CommanderTask const& task, Player* bot)
 {
-    if (!RemoteCommander::HoldsForAct(task.targetRaw != 0, task.noWalk) || !task.actStarted ||
-        !bot->IsNonMeleeSpellCasted(false))
+    if (!RemoteCommander::HoldsForAct(task.targetRaw != 0, task.noWalk) || !task.actStarted || !task.actSpellId)
+        return;
+    Spell* spell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    if (!spell || !spell->m_spellInfo || spell->m_spellInfo->Id != task.actSpellId)
+        return;
+    if (bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL))
         return;
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
     {
@@ -5580,12 +5603,17 @@ ActStart BeginTaskAct(CommanderTask& task, Player* commander, Player* bot, Playe
     else
         start = BeginUseAct(task, commander, bot, ai);
     task.actStarted = start == ActStart::Started;
+    task.actSpellId = 0;
     // A cast with a cast time (the 5 s Opening of a locked chest): the act stage
-    // waits for it to run out before it waits for the result.
+    // waits for it to run out before it waits for the result, and the hold keeps
+    // the bot still while that spell (only that one) is being cast.
     if (task.actStarted)
         if (Spell* spell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+        {
+            task.actSpellId = spell->m_spellInfo ? spell->m_spellInfo->Id : 0;
             task.state.actBudgetMs = RemoteCommander::ActBudgetAfterCast(task.state, task.lootLike,
                 spell->GetCastedTime());
+        }
     return start;
 }
 
@@ -5700,8 +5728,7 @@ bool StepCommanderTask(CommanderTask& task, uint32 diff)
     }
 
     // A refused attempt that may pass the next look.
-    if (facts.botAvailable && task.state.stage == RemoteCommander::TaskStage::Act && !task.actStarted &&
-        task.actTries > 0)
+    if (RemoteCommander::MayRetryAct(task.state, facts) && !task.actStarted && task.actTries > 0)
     {
         if (task.actTries >= RemoteCommander::kActTries)
         {
@@ -5803,8 +5830,30 @@ void CancelCommanderTasks(uint64 commanderRaw)
 }
 
 // Each tick while a task runs: every kTaskTickMs a look at each.
+// The stances of tasks that ended out of the world (PendingStanceRestores).
+void RestorePendingStances()
+{
+    auto& pending = PendingStanceRestores();
+    for (auto it = pending.begin(); it != pending.end();)
+    {
+        Player* bot = FindCharacter(it->botRaw);
+        if (bot && (!bot->IsInWorld() || bot->IsBeingTeleported()))
+        {
+            ++it;
+            continue;
+        }
+        PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+        // A newer order owns the bot's movement now; a bot that logged out is gone.
+        if (ai && !CommanderTasks().count(it->botRaw))
+            EndTaskStance(*it, bot, ai);
+        it = pending.erase(it);
+    }
+}
+
 void UpdateCommanderTasks(uint32 diff)
 {
+    if (!PendingStanceRestores().empty())
+        RestorePendingStances();
     auto& tasks = CommanderTasks();
     if (tasks.empty())
     {
@@ -5828,6 +5877,7 @@ void UpdateCommanderTasks(uint32 diff)
 void ClearCommanderTasks()
 {
     CommanderTasks().clear();
+    PendingStanceRestores().clear();
     RemoteCommander::LootOrders().Clear();
     s_commanderTaskMs = 0;
 }
