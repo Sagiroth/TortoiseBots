@@ -98,7 +98,7 @@ bool AttackMyTargetAction::Execute(Event& event)
                    tgt ? (int)tgt->GetMapId() : -1,
                    bot ? bot->GetMapId() : 0);
 
-            if (Attack(requester, tgt))
+            if (Attack(requester, tgt, true))
             {
                 CommitExplicitAttackTarget(ai, guid);
                 SC_LOG("attack-cmd OK bot=%s tgt=%s",
@@ -130,7 +130,7 @@ bool AttackRTITargetAction::Execute(Event& event)
 
     if (rtiTarget && rtiTarget->IsInWorld() && rtiTarget->GetMapId() == bot->GetMapId())
     {
-        if (Attack(requester, rtiTarget))
+        if (Attack(requester, rtiTarget, true))
         {
             CommitExplicitAttackTarget(ai, rtiTarget->getObjectGuid());
             return true;
@@ -189,7 +189,14 @@ bool AttackAction::CanPetAttack(PlayerbotAI* ai, Pet* pet, Unit* target)
     return true;
 }
 
-bool AttackAction::Attack(Player* requester, Unit* target)
+bool AttackAction::ArmsMeleeSwing()
+{
+    // Why "ranged" bots without a ranged weapon still swing: see Attack().
+    return !ai->IsHeal(bot) &&
+        (!ai->IsRanged(bot) || !bot->GetWeaponForAttack(RANGED_ATTACK, true, true));
+}
+
+bool AttackAction::Attack(Player* requester, Unit* target, bool acceptCurrentVictim)
 {
     MotionMaster &mm = *bot->GetMotionMaster();
 	if (mm.GetCurrentMovementGeneratorType() == TAXI_MOTION_TYPE || (bot->IsFlying() && WorldPosition(bot).currentHeight() > 10.0f))
@@ -269,14 +276,13 @@ bool AttackAction::Attack(Player* requester, Unit* target)
             // attack order against 0.035-0.079 for warrior/paladin/rogue and 0.11-0.23 for
             // the nukers. "ranged" describes the talent spec, not what the bot attacks
             // with; healers keep the old, deliberate hands-off handling.
-            const bool meleeEval = !ai->IsHeal(bot) &&
-                (!ai->IsRanged(bot) || !bot->GetWeaponForAttack(RANGED_ATTACK, true, true));
+            const bool meleeEval = ArmsMeleeSwing();
             // Unit::Attack returns false for the victim the bot is already
-            // attacking (unless it only has to arm the melee swing), so a bot
-            // already hitting its target reported "melee - FAILED" on every
-            // tick it re-picked melee. Already attacking it the asked way is
-            // the goal of the order, not a failure.
-            const bool alreadyAttacking = TortoiseBots::IsAlreadyAttackingTarget(
+            // attacking (unless it only has to arm the melee swing). For an
+            // explicit order that is the goal already reached, not a failure.
+            // Automatic callers keep the raw result: a success ends the engine
+            // tick, and some (razorgore engage) rely on the false as a guard.
+            const bool alreadyAttacking = acceptCurrentVictim && TortoiseBots::IsAlreadyAttackingTarget(
                 bot->GetVictim() == target, meleeEval, bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING));
             result = alreadyAttacking || bot->Attack(target, meleeEval);
             SC_LOG("attack-cmd bot->Attack bot=%s tgt=%s result=%d meleeEval=%d",

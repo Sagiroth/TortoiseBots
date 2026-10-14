@@ -11,11 +11,22 @@
 #include "../../../runtime/PetSpellRankPolicy.h"
 #include "../../../runtime/WarlockPetPolicy.h"
 #include "../../../runtime/PetTauntPolicy.h"
+#include "../../../runtime/AttackOrderPolicy.h"
 
 using namespace ai;
 
 bool MeleeAction::isUseful()
 {
+    // Already swinging at the current target and facing it: nothing to do.
+    // Unit::Attack would refuse the same victim, so running melee only
+    // logged "melee - FAILED" every tick. USELESS lets the tick fall through
+    // to lower actions (a success here would end it and starve them).
+    // A bot that turned away still runs melee, which faces the target again.
+    Unit* target = GetTarget();
+    if (target && bot->GetVictim() == target &&
+        TortoiseBots::IsAlreadyAttackingTarget(true, ArmsMeleeSwing(), bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING)) &&
+        sServerFacade.isInFront(bot, target, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
+        return false;
     return true;
 }
 

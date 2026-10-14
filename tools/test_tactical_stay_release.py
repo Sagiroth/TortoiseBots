@@ -170,7 +170,7 @@ class TacticalStayReleaseTest(unittest.TestCase):
         # attacks, like the .bot orders.
         body = extract("bool AttackMyTargetAction::Execute(", "\n}\n", ATTACK_SOURCE)
         end_stay = body.index("ai->EndStayForOrder()")
-        self.assertLess(end_stay, body.index("Attack(requester, tgt)"))
+        self.assertLess(end_stay, body.index("Attack(requester, tgt, true)"))
 
 
 if __name__ == "__main__":

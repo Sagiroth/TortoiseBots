@@ -5,8 +5,10 @@
 // victim the unit already attacks, unless it only has to switch on the melee
 // swing. The action passed that false on as a failure, so a bot already
 // hitting its target logged "melee - FAILED" every time it re-picked melee
-// (seen live on a tank and a rogue in Uldaman). Pure decision logic,
-// unit-tested in tools/test_attack_order_policy.cpp.
+// (seen live on a tank and a rogue in Uldaman). Only explicit orders (attack
+// my target, RTI) treat it as done; the melee action goes USELESS instead,
+// because a success ends the engine tick (tools/test_attack_order_wiring.py).
+// Pure decision logic, unit-tested in tools/test_attack_order_policy.cpp.
 
 namespace TortoiseBots
 {
