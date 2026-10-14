@@ -164,7 +164,9 @@ bool HireLifecycle::BeginCommand(ObjectGuid botGuid, ObjectGuid commanderGuid)
 void HireLifecycle::ConfirmCommand(ObjectGuid commanderGuid)
 {
     for (auto& kv : m_hired)
-        if (kv.second.masterGuid == commanderGuid && kv.second.commandState == HireCommandState::Transition)
+        // A hire held out of world from an earlier binding (regroupOnReturn) is not part of this one.
+        if (kv.second.masterGuid == commanderGuid && kv.second.commandState == HireCommandState::Transition &&
+            !kv.second.regroupOnReturn)
             kv.second.commandState = HireCommandState::Bound;
 }
 
@@ -202,11 +204,26 @@ uint32_t HireLifecycle::EndCommand(ObjectGuid commanderGuid)
         if (it == m_hired.end())
             continue; // dismissed meanwhile
         HiredRecord& record = it->second;
-        Player* bot = sObjectAccessor.FindPlayer(guid);
+        // FindPlayer is null for a character that is out of world (a far
+        // teleport, an instance entry): look it up as it is, so such a hire is
+        // held and re-joined instead of being released to the ordinary rules.
+        Player* bot = sObjectAccessor.FindPlayerNotInWorld(guid);
         bool const live = bot && bot->IsInWorld();
         bool const masterOnline = master && MasterOnline(record) && !record.masterOfflineSince;
-        switch (DecideHireBindingEnd(live, masterOnline, live && master && bot->IsInSameRaidWith(master)))
+        bool keepTransition = false;
+        switch (DecideHireBindingEnd(live, masterOnline, live && master && bot->IsInSameRaidWith(master), bot != nullptr))
         {
+            case HireBindingEnd::AwaitWorld:
+            {
+                // Held in transition: the sweep re-joins it once it is back in
+                // world, for at most the logout grace period (at least a minute).
+                time_t const bound = std::max<time_t>(60, static_cast<time_t>(sPlayerbotAIConfig.hireDisconnectGracePeriod));
+                record.regroupOnReturn = true;
+                record.regroupDeadline = time(nullptr) + bound;
+                keepTransition = true;
+                ++handled;
+                break;
+            }
             case HireBindingEnd::RejoinHirer:
                 record.regroupOnReturn = true;
                 Reunite(record, master);
@@ -222,7 +239,8 @@ uint32_t HireLifecycle::EndCommand(ObjectGuid commanderGuid)
             case HireBindingEnd::Leave:
                 break;
         }
-        record.commandState = HireCommandState::None;
+        if (!keepTransition)
+            record.commandState = HireCommandState::None;
     }
     TB_LOG_DETAIL("TortoiseBots: commander %s released %u hired companion(s) back to their hirer",
         commanderGuid.GetString().c_str(), handled);
@@ -492,6 +510,31 @@ void HireLifecycle::SweepGracePeriod(time_t now)
             it = m_hired.erase(it);
             Dismiss(orphan, "runtime record gone");
             continue;
+        }
+        // A hire held in transition because it was out of world when its hirer's
+        // binding ended: re-join it once it is back, within the bound.
+        if (record.commandState == HireCommandState::Transition && record.regroupOnReturn)
+        {
+            Player* held = sObjectAccessor.FindPlayer(record.botGuid);
+            Player* hirer = sObjectAccessor.FindPlayer(record.masterGuid);
+            bool const hirerOnline = hirer && MasterOnline(record) && !record.masterOfflineSince;
+            switch (DecideAwaitedRegroup(hirerOnline, held && held->IsInWorld(), now >= record.regroupDeadline))
+            {
+                case AwaitedRegroup::Wait:
+                    ++it;
+                    continue;
+                case AwaitedRegroup::Retry:
+                    Reunite(record, hirer);
+                    record.commandState = HireCommandState::None;
+                    break; // judged by the rules below, now back with its hirer
+                case AwaitedRegroup::Park:
+                    record.commandState = HireCommandState::None; // regroupOnReturn stays: the hirer's return re-joins it
+                    break;
+                case AwaitedRegroup::GiveUp:
+                    record.commandState = HireCommandState::None;
+                    record.regroupOnReturn = false;
+                    break;
+            }
         }
         // A hire bound to its hirer is judged only after the hirer's binding
         // was settled (see the pre-pass above): a binding that lost its lead

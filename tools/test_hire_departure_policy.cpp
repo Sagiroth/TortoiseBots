@@ -146,10 +146,41 @@ static void TestBindingEnd()
     CHECK(DecideHireBindingEnd(true, true, true) == HireBindingEnd::Keep);
     CHECK(DecideHireBindingEnd(true, false, false) == HireBindingEnd::ParkForLogin);
     CHECK(DecideHireBindingEnd(true, false, true) == HireBindingEnd::ParkForLogin);
-    CHECK(DecideHireBindingEnd(false, true, false) == HireBindingEnd::Leave);
-    CHECK(DecideHireBindingEnd(false, false, false) == HireBindingEnd::Leave);
+    CHECK(DecideHireBindingEnd(false, true, false, false) == HireBindingEnd::Leave); // no character at all
+    CHECK(DecideHireBindingEnd(false, false, false, false) == HireBindingEnd::Leave);
     // After the unbind the hire is an ordinary one again: apart from an online
     // hirer it ends (the re-invite did not take), as before this feature.
+    CHECK(ShouldDismissHireOnGroupDeparture(true, true, true, false, HireCommandState::None));
+}
+
+// A hire out of world when the binding ends (a far `cmd summon`, an instance
+// entry) is a hire mid-teleport, not a lost one: it is held in transition and
+// re-joined once back, never released to the ordinary rules (which would delete
+// it for being outside its online hirer's party).
+static void TestHireOutOfWorldAtBindingEnd()
+{
+    CHECK(DecideHireBindingEnd(false, true, false, true) == HireBindingEnd::AwaitWorld);
+    CHECK(DecideHireBindingEnd(false, true, true, true) == HireBindingEnd::AwaitWorld);
+    // No character object at all: nothing to hold.
+    CHECK(DecideHireBindingEnd(false, true, false, false) == HireBindingEnd::Leave);
+    // The hirer is offline: the logout grace owns it, in world or not.
+    CHECK(DecideHireBindingEnd(false, false, false, true) == HireBindingEnd::ParkForLogin);
+    // Never a plain release for an existing hire with an online hirer outside its party.
+    for (int live = 0; live <= 1; ++live)
+        for (int inGroup = 0; inGroup <= 1; ++inGroup)
+            CHECK(DecideHireBindingEnd(live, true, inGroup, true) != HireBindingEnd::Leave);
+
+    // The sweep: wait while out of world, re-join when back, park if the hirer
+    // left meanwhile, and give up (ordinary rules) only past the bound.
+    CHECK(DecideAwaitedRegroup(true, false, false) == AwaitedRegroup::Wait);
+    CHECK(DecideAwaitedRegroup(true, true, false) == AwaitedRegroup::Retry);
+    CHECK(DecideAwaitedRegroup(false, true, false) == AwaitedRegroup::Park);
+    CHECK(DecideAwaitedRegroup(false, false, false) == AwaitedRegroup::Park);
+    CHECK(DecideAwaitedRegroup(true, false, true) == AwaitedRegroup::GiveUp);
+    CHECK(DecideAwaitedRegroup(true, true, true) == AwaitedRegroup::GiveUp);
+    // While held (transition) the departure rule leaves the hire alone.
+    CHECK(!ShouldDismissHireOnGroupDeparture(true, true, true, false, HireCommandState::Transition));
+    // After the give-up the ordinary rule applies again, as before this feature.
     CHECK(ShouldDismissHireOnGroupDeparture(true, true, true, false, HireCommandState::None));
 }
 
@@ -165,6 +196,7 @@ int main()
     TestOtherEndsWhileBound();
     TestBoundSweepOrdering();
     TestBindingEnd();
+    TestHireOutOfWorldAtBindingEnd();
     std::printf("hire departure policy: %d checks passed\n", checks);
     return 0;
 }

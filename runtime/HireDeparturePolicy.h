@@ -104,19 +104,44 @@ inline BoundHireVerdict DecideBoundHireSweep(bool bindingStands, bool hireLive, 
 // automatic release). The hire is kept: it goes back to its hirer's party.
 enum class HireBindingEnd : uint8_t
 {
-    Leave,        // not a live hire: nothing to do
+    Leave,        // no such character any more: nothing to do
     Keep,         // already in the hirer's party
     RejoinHirer,  // leave the bound party, accept the hirer's invitation again
     ParkForLogin, // the hirer is offline: the logout grace period owns the hire; it rejoins on return
+    AwaitWorld,   // the hire is out of world (far teleport, instance entry): stays in transition, the sweep re-joins it once it is back
 };
 
-inline HireBindingEnd DecideHireBindingEnd(bool hireLive, bool hirerOnline, bool inHirerGroup)
+// hireExists: the character object is there, in the world or not. A hire out of
+// world is a hire mid-teleport, not a missing one: it must not be released into
+// the ordinary rules, which would read "not in the hirer's party" and delete it.
+inline HireBindingEnd DecideHireBindingEnd(bool hireLive, bool hirerOnline, bool inHirerGroup,
+    bool hireExists = true)
 {
-    if (!hireLive)
+    if (!hireExists)
         return HireBindingEnd::Leave;
     if (!hirerOnline)
         return HireBindingEnd::ParkForLogin;
+    if (!hireLive)
+        return HireBindingEnd::AwaitWorld;
     return inHirerGroup ? HireBindingEnd::Keep : HireBindingEnd::RejoinHirer;
+}
+
+// The sweep's step for a hire held in transition until it is back in world.
+enum class AwaitedRegroup : uint8_t
+{
+    Wait,    // still out of world, within the bound
+    Retry,   // back in world and the hirer is online: re-join now
+    Park,    // the hirer logged out meanwhile: the logout grace owns the hire
+    GiveUp,  // out of world for longer than the bound: the ordinary rules end it
+};
+
+inline AwaitedRegroup DecideAwaitedRegroup(bool hirerOnline, bool hireLive, bool deadlinePassed)
+{
+    if (deadlinePassed)
+        return AwaitedRegroup::GiveUp;
+    if (!hirerOnline)
+        return AwaitedRegroup::Park;
+    return hireLive ? AwaitedRegroup::Retry : AwaitedRegroup::Wait;
 }
 
 } // namespace TortoiseBots

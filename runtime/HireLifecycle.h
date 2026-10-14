@@ -110,6 +110,10 @@ private:
         // The hirer logged out while the hire sat in a bound party: when the
         // hirer returns the hire leaves that party before it is re-invited.
         bool regroupOnReturn = false;
+        // A hire out of world when its hirer's binding ended is held in
+        // transition (regroupOnReturn set) until it is back, but not longer
+        // than this.
+        time_t regroupDeadline = 0;
     };
 
     // A dismissed hire whose character is waiting for its asynchronous
