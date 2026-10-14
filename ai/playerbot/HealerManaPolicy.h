@@ -105,15 +105,15 @@ namespace ai
 
     // Whether a grouped healer's off-spec damage (`healer should attack`,
     // `healer should wand`) may go on its current target: only when that mob
-    // already fights another party member. A healer that opens on a fresh mob
-    // (the tank still on its own pull, the commander holding the party back
-    // for the opener) pulls it onto itself. Without a target the rows decide
-    // as before (their actions need one anyway); a bot outside a group is
-    // never held back.
-    inline bool HealerDamageTargetAllowed(bool grouped, bool hasTarget, bool targetFightsOtherMember)
+    // already fights the party (another member or the healer itself). A
+    // healer that opens on a fresh mob (the tank still on its own pull, the
+    // commander holding the party back for the opener) pulls it onto itself.
+    // Without a target the rows decide as before (their actions need one
+    // anyway); a bot outside a group is never held back.
+    inline bool HealerDamageTargetAllowed(bool grouped, bool hasTarget, bool targetFightsGroup)
     {
         if (!grouped || !hasTarget)
             return true;
-        return targetFightsOtherMember;
+        return targetFightsGroup;
     }
 }

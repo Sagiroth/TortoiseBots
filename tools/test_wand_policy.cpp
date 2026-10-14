@@ -139,6 +139,35 @@ int main()
         g.noMana = true;
         CHECK(!HealerMayWand(g));
     }
+    // Review #956: the mob on the healer itself counts as engaged; out of
+    // mana the healer may then wand it (it would otherwise heal until OOM
+    // and die without a shot). With mana and nobody hurt, it wands too.
+    {
+        HealerWandGate g;
+        g.groupedHealer = true;
+        g.targetEngaged = true; // victim == the healer
+        g.memberNeedsHeal = true; // the healer itself under the low line
+        CHECK(!HealerMayWand(g));
+        g.noMana = true;
+        CHECK(HealerMayWand(g));
+    }
+    // Donor escape: no other group member near -> like solo, even on a
+    // fresh mob with somebody hurt far away.
+    {
+        HealerWandGate g;
+        g.groupedHealer = true;
+        g.memberNeedsHeal = true;
+        g.aloneNear = true;
+        CHECK(HealerMayWand(g));
+    }
+    // Explicit attack order on the mob (cmd attack <guid> <Healer>).
+    {
+        HealerWandGate g;
+        g.groupedHealer = true;
+        g.memberNeedsHeal = true;
+        g.explicitOrder = true;
+        CHECK(HealerMayWand(g));
+    }
     // A running wand the gate no longer allows stops, whatever the probes
     // say and even under the raid "has aggro" row; no wand, nothing to stop.
     {

@@ -121,24 +121,32 @@ namespace ai
     // 81 % to 46 %). The shoot action and the "wand blocks cast" stop both
     // ask this rule, so the wand neither starts nor keeps running then.
     //
-    // The wand's mob must also be fighting another party member already: a
-    // healer that opens on a fresh mob pulls it onto itself (same run: the
-    // priest wanded a mob the tank had not touched yet, took it, and spent
-    // the next seconds on Fade instead of heals).
+    // The wand's mob must also be fighting the party already (a member or
+    // the healer itself): a healer that opens on a fresh mob pulls it onto
+    // itself (same run: the priest wanded a mob the tank had not touched
+    // yet, took it, and spent the next seconds on Fade instead of heals).
     //
     // Out of mana (the "no mana" row, under 5 %) the wand is all the healer
     // has left, so it may wand an engaged mob whoever is hurt.
+    //
+    // Never held back (mod-playerbots HealerShouldAttackTrigger escape,
+    // GenericTriggers.cpp:348): no other group member near (within
+    // SightDistance) - a player who ran off, a group spread over the map:
+    // the healer fights like a solo bot. Nor on the target of an explicit
+    // attack order to this bot (player control first).
     struct HealerWandGate
     {
         bool groupedHealer = false;   // heal spec, in a group
         bool memberNeedsHeal = false; // a party member in heal reach is under the almost-full line, or the healer under the low line
         bool noMana = false;          // under the "no mana" line
-        bool targetEngaged = false;   // the wand's mob is attacking another party member
+        bool targetEngaged = false;   // the wand's mob is attacking the healer or another party member
+        bool aloneNear = false;       // no other live group member within SightDistance
+        bool explicitOrder = false;   // the wand's mob is this bot's explicit attack target
     };
 
     inline bool HealerMayWand(HealerWandGate const& gate)
     {
-        if (!gate.groupedHealer)
+        if (!gate.groupedHealer || gate.aloneNear || gate.explicitOrder)
             return true;
         if (!gate.targetEngaged)
             return false;
