@@ -108,6 +108,7 @@ Once a second the run reads the party (alive, dead, in combat, health, mana, spr
 | `move`, `move_direct` | Before the hop: pulls a hostile within 15 yd of the hop's point that no later `pull` or `boss` step owns. Then `cmd move` to the point; done within 3 yd. No progress for 12 s: the move again, at most 3 times, then pause. |
 | `pull` | Not within 60 yd of the centre yet: walks to 30 yd short of it. Then, nearest first: gathers the party (every bot within 20 yd of the lead bot, `cmd move` to the lead bot's own spot; 30 s at most) and sends `cmd pullback <guid>`. A pull that starts no fight in 25 s is tried once more, then that unit is passed. Done when no living hostile unit of the pack is left within its radius. A stealthed (ambush) pack: the party walks through its centre and fights what shows. |
 | `boss` | As `pull`, in kill order: the `entries` first, the boss last. A boss that is not hostile to the party (the Lost Dwarves to an Alliance party) is left alone. |
+| team flags (`2` Alliance, `4` Horde) on `pull`/`boss` | A step for the other team is skipped without a walk to it; only when the party already stands within 60 yd and a unit of it is hostile anyway is it fought like any pack (the Lost Dwarves were hostile to an Alliance party in a live run). A later step for the other team owns nothing (its units near a hop may be pulled). |
 | `loot` | Already carried: done. Else `cmd loot entry:<id>@x,y,z <lead bot> [item]`, waits for the task, and pauses when the item is not in the bags afterwards. |
 | `open` | Pauses when the lead bot lacks the item the lock needs; else `cmd open entry:<id>@x,y,z <lead bot>` and waits for the task. |
 | `use_item` | Already made: done. Else `cmd use <item> <lead bot>`; pauses when the made item is missing. |
@@ -126,16 +127,16 @@ From turtle-agent's remote driver (the same rules, now on the server):
 - **Never pull what a later step owns**: a unit near the next hop that a later `pull` or `boss` step lists (by entry, within its radius) is left for that step.
 - **No unseen pack counted cleared, no live boss counted dead**: a pack or boss is judged only while the lead bot stands within 60 yd of it (its grid is loaded there), and only "no living hostile unit left" ends it.
 - **3 dead stop the run** (pause: regroup with `cmd revive`, then `resume`); so does a dead lead bot.
+- **Switched off mid-run** (a config reload sets `AiPlayerbot.DungeonSelfClear = 0`): every run ends with a last status line.
 - **Every wait is bounded**: gather 30 s, a pull's fight start 25 s, a fight 180 s (a boss 420 s), a rest 60 s (it then goes on), a task 90 s, a step 300 s out of combat (a wait step: its timeout plus 60 s), at most 10 pulls per step. A ceiling pauses the run with the reason; nothing loops.
-- **Any player order pauses it** (`.bot cmd` but `state`, `.bot action`).
+- **Any player order pauses it**: `.bot cmd` (but `state`), `.bot action`, and any chat command a real player gives a bot of the party (a whisper such as `stay`, `follow` or `attack`, `.bot command`, party chat) that passes the bot's command check.
 - **Rest gate** after every fight and before every step: when a living bot is under 80 % health, a healer under 50 % mana or another mana user under 35 %, `cmd rest` (again every 20 s) until everyone is at 90 % health, healers 80 % and others 60 % mana, or 60 s.
 
 ### Not supported yet
 
 - `ritual` steps (Uldaman's Altar of the Keepers, Archaedas) pause the run.
 - A party with a real player in it (a player leading their own party): the run leads bound parties only.
-- Plan v1's `skip`, per-leg `rest`, `companions_loot` (Revelosh's Shaft: the run's `loot` takes the corpse with the lead bot, but other bots may loot it first), team-gated `pull` flags (a pack that is not hostile is left alone instead), `area_trigger`, gossip and waves.
-- Whispered orders to a bot do not pause the run.
+- Plan v1's `skip`, per-leg `rest`, `companions_loot` (Revelosh's Shaft: the run's `loot` takes the corpse with the lead bot, but other bots may loot it first), `area_trigger`, gossip and waves.
 - Wipe recovery: the run pauses; reviving and resuming is up to the commander.
 
 ### Cost

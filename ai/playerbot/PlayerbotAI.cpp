@@ -1,6 +1,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
+#include "../../runtime/CommandedGroupQuery.h"
 #include <stdarg.h>
 #include <deque>
 #include <iomanip>
@@ -2671,6 +2672,8 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
                     BotCommandFirstWordLower(filtered) + "|denied|Not authorized for this bot command.");
             return;
         }
+        // A player's order to a bot of a party a run leader drives pauses the run.
+        TortoiseBots::BotCommands::NoteHumanChatOrder(bot, filtered);
     }
     if (!IsAllowedCommand(filtered) && !GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, type != CHAT_MSG_WHISPER, &fromPlayer))
         return;

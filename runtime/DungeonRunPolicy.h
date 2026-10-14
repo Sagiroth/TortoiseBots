@@ -127,6 +127,7 @@ struct Facts
     std::uint32_t minHealerManaPct = 100;
     std::uint32_t minManaPct = 100;     // mana users that are not healers
     // The step.
+    std::uint32_t team = 0;             // the party's team: ai::kPlanFlagAlliance or kPlanFlagHorde (0 unknown)
     bool seen = false;                  // the lead bot stands within kSeeYd of the step's point
     std::vector<UnitFact> units;        // pull/boss: living units of the step's entries within its radius
     std::vector<UnitFact> hopUnits;     // move: living hostile units within kHopPullYd of the point, not owned by a later step
@@ -448,6 +449,21 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         AwaitPull(r);
         if (r.phase == Phase::AwaitPull)
             return;
+    }
+    // A pack or boss for the other team (flags 2/4) is skipped without a
+    // look. Only when the party already stands near it and a unit of it is
+    // hostile anyway is it fought like any pack (Uldaman's Lost Dwarves were
+    // hostile to an Alliance party in a live run).
+    if (!ai::StepForTeam(s, f.team))
+    {
+        bool hostileHere = false;
+        for (const UnitFact& u : f.units)
+            hostileHere = hostileHere || (u.hostile && !r.passed.count(u.guid));
+        if (!f.seen || !hostileHere)
+        {
+            NextStep(r, std::string(s.kind == PlanStepKind::Boss ? "boss" : "pack") + " is for the other team: skipped");
+            return;
+        }
     }
     if (!f.seen)
     {

@@ -400,6 +400,34 @@ static void TestStepIdleCeiling()
     CHECK(r.state == State::Paused && r.note.find("hostiles still near") != std::string::npos);
 }
 
+static void TestTeamFlags()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {4851}, ai::kPlanFlagHorde), Step(PlanStepKind::Rest)};
+    Facts f = Party(0);
+    f.team = ai::kPlanFlagAlliance;
+    // Not seen yet: a pack for the other team is skipped without a walk.
+    Run r = Start(&plan);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note.find("other team") != std::string::npos);
+    // Seen and nothing hostile there: skipped too.
+    Run r2 = Start(&plan);
+    f.seen = true;
+    f.units = {Unit(5, 4851, 10)};
+    f.units[0].hostile = false;
+    Tick(r2, f);
+    CHECK(r2.step == 1);
+    // Seen and hostile anyway: fought like any pack.
+    Run r3 = Start(&plan);
+    f.units[0].hostile = true;
+    CHECK(Tick(r3, f) == "pullback 5");
+    // The party's own team, or a step for both: normal.
+    Run r4 = Start(&plan);
+    f.team = ai::kPlanFlagHorde;
+    CHECK(Tick(r4, f) == "pullback 5");
+    CHECK(ai::StepForTeam(plan.steps[0], 0) && ai::StepForTeam(plan.steps[1], ai::kPlanFlagAlliance));
+}
+
 static void TestEmptyPlan()
 {
     DungeonPlan plan;
@@ -427,6 +455,7 @@ int main()
     TestUnsupportedPausesAndSkip();
     TestPlayerOrderAndRefusalPause();
     TestStepIdleCeiling();
+    TestTeamFlags();
     TestEmptyPlan();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;

@@ -8523,6 +8523,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.leadY = lead->GetPositionY();
     f.leadZ = lead->GetPositionZ();
     f.carrier = lead->GetName();
+    f.team = lead->GetTeam() == ALLIANCE ? ai::kPlanFlagAlliance : ai::kPlanFlagHorde;
     for (Player* bot : bots)
     {
         ++f.total;
@@ -8604,7 +8605,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 if (DistanceTo(unit, step->x, step->y, step->z) > kHopPullYd || unit->IsInCombat())
                     continue;
                 if (ai::OwnedByLaterStep(*slot.run.plan, slot.run.step, unit->GetEntry(),
-                        unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ()))
+                        unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), f.team))
                     continue;
                 UnitFact fact;
                 fact.guid = unit->GetObjectGuid().GetRawValue();
@@ -8706,10 +8707,15 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
             slot.taskText.clear();
         }
         std::string answer;
-        if (!IssueRunOrder(commander, order, answer))
-            TortoiseBots::DungeonRun::OrderRefused(slot.run, order, answer);
+        bool const accepted = IssueRunOrder(commander, order, answer);
+        // The order may have released the binding (and the run with it): `slot`
+        // is not to be touched before the run is looked up again.
+        it = DungeonRuns().find(commanderRaw);
+        if (it == DungeonRuns().end())
+            return;
+        if (!accepted)
+            TortoiseBots::DungeonRun::OrderRefused(it->second.run, order, answer);
     }
-    // The order may have released the binding (and the run) on the way.
     it = DungeonRuns().find(commanderRaw);
     if (it == DungeonRuns().end())
         return;
@@ -8724,6 +8730,19 @@ static void UpdateDungeonRuns(uint32 diff)
 {
     if (DungeonRuns().empty())
     {
+        s_dungeonRunMs = 0;
+        return;
+    }
+    // Switched off by a config reload: every run ends, with a last status line.
+    if (!sPlayerbotAIConfig.dungeonSelfClear || !sPlayerbotAIConfig.remoteCommander)
+    {
+        for (auto& entry : DungeonRuns())
+        {
+            entry.second.run.state = TortoiseBots::DungeonRun::State::Done;
+            entry.second.run.note = "stopped: the run leader was switched off (AiPlayerbot.DungeonSelfClear)";
+            SendRunLine(FindCharacter(entry.first), entry.second, false);
+        }
+        DungeonRuns().clear();
         s_dungeonRunMs = 0;
         return;
     }
@@ -9067,6 +9086,26 @@ bool IsInCommandedGroup(Player* bot)
             return true;
     }
     return false;
+}
+
+void NoteHumanChatOrder(Player* bot, std::string const& text)
+{
+    if (!bot || DungeonRuns().empty() || CommanderBindings().Empty())
+        return;
+    for (uint64 commanderRaw : CommanderBindings().Commanders())
+    {
+        if (!DungeonRuns().count(commanderRaw))
+            continue;
+        RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commanderRaw);
+        Player* lead = binding ? FindCharacter(binding->leadGuid) : nullptr;
+        Group* group = lead ? lead->GetGroup() : nullptr;
+        if (group && group->GetId() == binding->groupId && group->IsMember(bot->GetObjectGuid()))
+        {
+            std::string const word = Trim(text).substr(0, Trim(text).find_first_of(" \t"));
+            PauseDungeonRunForPlayer(commanderRaw, "chat '" + word.substr(0, 32) + "' to " + bot->GetName());
+            return;
+        }
+    }
 }
 
 bool HasCommanderBinding(uint64_t commanderRaw)

@@ -204,7 +204,7 @@ Off by default: needs `AiPlayerbot.DungeonSelfClear = 1` **and** `AiPlayerbot.Re
 | `.bot run status` | Sends the run's status line again. |
 | `.bot run list` | The loaded plans: name, map, steps, and how many steps are not supported yet. |
 
-**Any order of yours pauses the run:** every `.bot cmd` order but `state`, and every `.bot action`, sets it to `paused` with the order named, until `.bot run resume`. Unbinding ends it.
+**Any player order pauses the run:** every `.bot cmd` order but `state`, every `.bot action`, and every chat command a real player gives a bot of the party (a whispered `stay`, `follow`, `attack`, `.bot command`, ...) sets it to `paused` with the order named, until `.bot run resume`. Unbinding ends it.
 
 **Status line** (to the commander, whenever the step, phase or note changes, and on `start`, `status`, `pause`, `resume`, `skip`, `stop`):
 
