@@ -5230,23 +5230,20 @@ bool PlayerbotAI::CanCastSpell(std::string name, Unit* target, uint8 effectMask,
 
 bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, bool checkHasSpell, Item* itemTarget, bool ignoreRange, bool ignoreInCombat, bool ignoreMount, SpellCastResult* checkResult)
 {
-    // Remember why the newest check failed for callers that ask for no result, so the engine can tell the
-    // remote commander's feed (one store on the way out; a caller-supplied checkResult is left alone).
-    struct CastFailNote
-    {
-        PlayerbotAI* ai;
-        SpellCastResult const* result;
-        ~CastFailNote()
-        {
-            if (result && *result != SPELL_CAST_OK)
-                ai->NoteCastCheckFail(*result);
-        }
-    };
-    SpellCastResult localCheck = SPELL_CAST_OK;
-    CastFailNote const castFailNote{this, checkResult ? nullptr : &localCheck};
-    if (!checkResult)
-        checkResult = &localCheck;
+    if (checkResult)
+        return CheckCanCastSpell(spellid, target, effectMask, checkHasSpell, itemTarget, ignoreRange, ignoreInCombat, ignoreMount, checkResult);
 
+    // Callers that ask for no result: remember why the check failed, only when it did fail (a result the check
+    // lets through, such as MOVING or an ignored range, is not a reason), for the remote commander's feed.
+    SpellCastResult localCheck = SPELL_CAST_OK;
+    bool const canCast = CheckCanCastSpell(spellid, target, effectMask, checkHasSpell, itemTarget, ignoreRange, ignoreInCombat, ignoreMount, &localCheck);
+    if (!canCast && localCheck != SPELL_CAST_OK)
+        NoteCastCheckFail(localCheck);
+    return canCast;
+}
+
+bool PlayerbotAI::CheckCanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, bool checkHasSpell, Item* itemTarget, bool ignoreRange, bool ignoreInCombat, bool ignoreMount, SpellCastResult* checkResult)
+{
     if (!spellid)
     {
         if (checkResult)

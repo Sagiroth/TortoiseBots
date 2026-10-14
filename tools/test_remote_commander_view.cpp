@@ -482,7 +482,8 @@ static void TestActionResultFields()
     x.reason = std::string(40, 'r');
     FormatPartyRecord(scratch, x);
     std::printf("worst-case party record: %zu bytes\n", scratch.size());
-    CHECK(scratch.size() <= 210); // plus the longest line prefix (26 bytes) stays under 250
+    CHECK(scratch.size() == 204); // the exact maximum; with the longest line prefix (26 bytes) it stays under 250
+    CHECK(scratch.size() + 26 <= kMaxLineBytes);
 }
 
 static void TestBufferReuse()
