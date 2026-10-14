@@ -33,6 +33,16 @@ class StayAnchorWiringTest(unittest.TestCase):
         self.assertIn("SetStayAnchor(leadAi, point.x, point.y, point.z, lead->GetMapId());", fn)
         self.assertNotIn('posMap["stay"]', fn)
 
+    def test_direct_move_walks_straight_and_anchors_the_lead(self):
+        fn = body(COMMANDS, "static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& order,\n    RemoteCommander::MovePoint const& point, std::string const& intent)\n{",
+                  "\n}\n")
+        self.assertIn("SetStayAnchor(ai, point.x, point.y, point.z, lead->GetMapId());", fn)
+        self.assertIn("MovePoint(0, point.x, point.y, point.z, MOVE_RUN_MODE);", fn)
+        self.assertNotIn("MOVE_PATHFINDING", fn)
+        self.assertIn("CheckDirectStep(", fn)
+        self.assertIn("CheckDirectGround(", fn)
+        self.assertNotIn('posMap["stay"]', fn)
+
     def test_come_hold_comestay_use_helper(self):
         branch = body(COMMANDS, 'else if (intent == "come" || intent == "hold" || intent == "comestay")',
                       'else if (intent == "ready")')

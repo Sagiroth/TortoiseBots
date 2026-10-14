@@ -1156,5 +1156,86 @@ inline char const* MoveVerdictCode(MoveVerdict verdict)
     return "invalid";
 }
 
+// ---------------------------------------------------------------------------
+// `cmd move <x> <y> <z> direct`: a straight walk for a gap the navmesh does not
+// bridge (a ramp the mesh lacks), the way a player walks it
+// ---------------------------------------------------------------------------
+
+// A direct step is a short hop: every bot must be within this horizontal
+// distance and this height difference of the point, and the point needs a floor
+// within kDirectGroundTolerance of its z. Nothing checks the line between (no
+// navmesh), so the limits are what keeps a step from crossing half a dungeon.
+constexpr float kDirectMaxDistance = 25.0f;
+constexpr float kDirectMaxVertical = 8.0f;
+constexpr float kDirectGroundTolerance = 3.0f;
+
+struct MoveOrder
+{
+    MovePoint point;
+    bool direct = false;
+};
+
+// "<x> <y> <z>" or "<x> <y> <z> direct" (the keyword in any case, last).
+inline bool ParseMoveOrder(std::string const& text, MoveOrder& out)
+{
+    std::vector<std::string> parts = SplitOrderArgs(text);
+    MoveOrder order;
+    if (parts.size() == 4)
+    {
+        std::string word = parts[3];
+        for (char& c : word)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (word != "direct")
+            return false;
+        order.direct = true;
+        parts.pop_back();
+    }
+    if (parts.size() != 3)
+        return false;
+    if (!ParseCoordinate(parts[0], order.point.x) || !ParseCoordinate(parts[1], order.point.y) ||
+        !ParseCoordinate(parts[2], order.point.z))
+        return false;
+    out = order;
+    return true;
+}
+
+enum class DirectVerdict : uint8_t
+{
+    Ok,
+    TooFar,
+    NoGround,
+};
+
+// One bot's distance to the point: horizontal yards and the height difference
+// (either sign). A bound exactly on the limit is allowed.
+inline DirectVerdict CheckDirectStep(float horizontal, float vertical)
+{
+    if (!std::isfinite(horizontal) || !std::isfinite(vertical) ||
+        horizontal > kDirectMaxDistance || std::fabs(vertical) > kDirectMaxVertical)
+        return DirectVerdict::TooFar;
+    return DirectVerdict::Ok;
+}
+
+// The map height under the point (Map::GetHeight; INVALID_HEIGHT, -100000, when
+// it finds none) against the point's z.
+inline DirectVerdict CheckDirectGround(float groundZ, float pointZ)
+{
+    if (!std::isfinite(groundZ) || groundZ <= -50000.0f ||
+        std::fabs(groundZ - pointZ) > kDirectGroundTolerance)
+        return DirectVerdict::NoGround;
+    return DirectVerdict::Ok;
+}
+
+inline char const* DirectVerdictCode(DirectVerdict verdict)
+{
+    switch (verdict)
+    {
+        case DirectVerdict::Ok: return "ok";
+        case DirectVerdict::TooFar: return "too-far";
+        case DirectVerdict::NoGround: return "no-ground";
+    }
+    return "invalid";
+}
+
 } // namespace RemoteCommander
 } // namespace TortoiseBots

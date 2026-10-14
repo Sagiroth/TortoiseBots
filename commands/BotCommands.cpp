@@ -5156,15 +5156,22 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
 // The lead bot walks to the point on its navmesh path (MoveTo through the
 // mature stay/return-to-stay pair, inside instances too) and holds there; the
 // rest of the group follows it.
+static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& order,
+    RemoteCommander::MovePoint const& point, std::string const& intent);
+
 static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std::string const& args,
     std::string const& intent)
 {
-    RemoteCommander::MovePoint point;
-    if (!RemoteCommander::ParseMovePoint(args, point))
+    RemoteCommander::MoveOrder request;
+    if (!RemoteCommander::ParseMoveOrder(args, request))
     {
-        SendActionError(handler, intent, "invalid", "Usage: .bot cmd move <x> <y> <z> (map coordinates on the lead bot's map)");
+        SendActionError(handler, intent, "invalid",
+            "Usage: .bot cmd move <x> <y> <z> [direct] (map coordinates on the lead bot's map)");
         return true;
     }
+    if (request.direct)
+        return CommanderMoveDirect(handler, order, request.point, intent);
+    RemoteCommander::MovePoint const point = request.point;
     Player* lead = order.lead;
     if (!lead->IsAlive() || lead->IsTaxiFlying() || lead->IsBeingTeleported())
     {
@@ -5225,6 +5232,99 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
             followers.push_back(bot);
     uint32 following = FormUpOnLead(order.commander, lead, followers, false);
     SendActionAck(handler, intent, "party", following + 1, lead->GetName());
+    return true;
+}
+
+// `cmd move <x> <y> <z> direct`: for a gap the navmesh does not bridge. Every live bot of the group
+// walks a straight line to the point (a MovePoint without MOVE_PATHFINDING: the core's own straight
+// walk), the way a player walks it. Only a short step: each bot within kDirectMaxDistance
+// horizontally and kDirectMaxVertical vertically of the point, and the point on the ground (the
+// map height within kDirectGroundTolerance). Nothing checks the line between, so no step is made
+// unless every bot passes. Afterwards the lead bot holds at the point and the others follow it, as
+// after a plain `cmd move`.
+static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& order,
+    RemoteCommander::MovePoint const& point, std::string const& intent)
+{
+    Player* lead = order.lead;
+    if (!lead->IsAlive() || lead->IsTaxiFlying() || lead->IsBeingTeleported())
+    {
+        SendActionError(handler, intent, "lead-unavailable", "The lead bot is dead, on a taxi or teleporting.");
+        return true;
+    }
+    if (!PlayerbotAIStorage::Instance().GetAI(lead))
+    {
+        SendActionError(handler, intent, "no-ai", "The lead bot has no AI.");
+        return true;
+    }
+
+    std::vector<Player*> walkers;
+    for (Player* bot : order.bots)
+    {
+        if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->GetMap() != lead->GetMap() ||
+            bot->IsTaxiFlying() || bot->IsBeingTeleported() || !PlayerbotAIStorage::Instance().GetAI(bot))
+            continue;
+        float const dx = point.x - bot->GetPositionX();
+        float const dy = point.y - bot->GetPositionY();
+        RemoteCommander::DirectVerdict const step =
+            RemoteCommander::CheckDirectStep(std::sqrt(dx * dx + dy * dy), point.z - bot->GetPositionZ());
+        if (step != RemoteCommander::DirectVerdict::Ok)
+        {
+            std::string const message = "The point is more than " +
+                std::to_string(static_cast<uint32>(RemoteCommander::kDirectMaxDistance)) + " yd (or " +
+                std::to_string(static_cast<uint32>(RemoteCommander::kDirectMaxVertical)) +
+                " yd up or down) from " + bot->GetName() + ". A direct step is short: walk closer first.";
+            SendActionError(handler, intent, RemoteCommander::DirectVerdictCode(step), message.c_str());
+            return true;
+        }
+        walkers.push_back(bot);
+    }
+
+    // The floor under the point (the vmap/terrain height searched down from just above it).
+    float ground = INVALID_HEIGHT;
+    if (MaNGOS::IsValidMapCoord(point.x, point.y, point.z))
+        ground = lead->GetMap()->GetHeight(point.x, point.y, point.z, true,
+            RemoteCommander::kDirectGroundTolerance + 2.0f);
+    if (RemoteCommander::CheckDirectGround(ground, point.z) != RemoteCommander::DirectVerdict::Ok)
+    {
+        SendActionError(handler, intent, RemoteCommander::DirectVerdictCode(RemoteCommander::DirectVerdict::NoGround),
+            "The point has no ground within 3 yd of its height.");
+        return true;
+    }
+
+    SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Move);
+
+    uint32 walking = 0;
+    for (Player* bot : walkers)
+    {
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+        if (bot == lead)
+        {
+            ai->DropQueuedMovementOrders();
+            PlayerConvenience::Instance().NoteHoldOrder(lead->GetObjectGuid());
+            ai->Reset();
+            ai->SetMovementStrategy("stay");
+            SetStayAnchor(ai, point.x, point.y, point.z, lead->GetMapId());
+        }
+        else
+            FormUpOnLead(order.commander, lead, std::vector<Player*>{ bot }, false);
+
+        // The straight walk. The bot's own AI would re-plan it on the navmesh at its next step
+        // (the stay spot is ahead of it), so the AI sleeps for the walk, as it does after a path move.
+        bot->GetMotionMaster()->Clear();
+        bot->GetMotionMaster()->MovePoint(0, point.x, point.y, point.z, MOVE_RUN_MODE);
+        float const dx = point.x - bot->GetPositionX();
+        float const dy = point.y - bot->GetPositionY();
+        float const speed = bot->GetSpeed(MOVE_RUN) > 1.0f ? bot->GetSpeed(MOVE_RUN) : 7.0f;
+        ai->SetActionDuration(static_cast<uint32>(std::sqrt(dx * dx + dy * dy) / speed * 1000.0f) +
+            sPlayerbotAIConfig.reactDelay);
+        ++walking;
+    }
+    if (!walking)
+    {
+        SendActionError(handler, intent, "failed", "No bot of the group could take the step.");
+        return true;
+    }
+    SendActionAck(handler, intent, "party", walking, lead->GetName());
     return true;
 }
 
