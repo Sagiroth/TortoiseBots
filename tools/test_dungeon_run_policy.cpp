@@ -708,11 +708,55 @@ static void TestOtherTeamBossIsLookedAtAndFoughtUnlessFriendly()
     Run r3 = Start(&plan);
     Tick(r3, f);
     CHECK(r3.step == 1 && r3.note.find("friendly") != std::string::npos);
-    // In sight and gone: the boss is down.
+    // In sight and nobody there: skipped (not "boss down": it was never fought).
     f.units.clear();
     Run r4 = Start(&plan);
     Tick(r4, f);
-    CHECK(r4.step == 1 && r4.note == "boss down");
+    CHECK(r4.step == 1 && r4.note == "boss is for the other team and not here: skipped");
+    // The party's own boss in sight and gone: down.
+    f.team = ai::kPlanFlagHorde;
+    Run r5 = Start(&plan);
+    Tick(r5, f);
+    CHECK(r5.step == 1 && r5.note == "boss down");
+}
+
+// Round 2: a resume after a wipe in which the lead bot itself is dead: the
+// regroup revives it (its ghost may be on another map meanwhile), bounded.
+static void TestResumeWithLeadDead()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.dead = 1;
+    f.alive = 4;
+    f.leadAlive = false;
+    Tick(r, f);
+    CHECK(r.state == State::Paused && r.note.find("lead bot is dead") != std::string::npos);
+    CHECK(Resume(r));
+    CHECK(r.regroup);
+    CHECK(Tick(r, f) == "revive party");
+    // The ghost runs back: no pause while the regroup's ceiling holds.
+    for (int i = 0; i < 100; ++i)
+        Tick(r, f);
+    CHECK(r.state == State::Running && r.regroup);
+    // Alive again, gathered: the step goes on.
+    f.dead = 0;
+    f.alive = 5;
+    f.leadAlive = true;
+    CHECK(Tick(r, f) == "move 40.0 0.0 0.0");
+    CHECK(!r.regroup);
+    // A lead bot that never comes back is bounded by kRegroupReviveMs.
+    Run r2 = Start(&plan);
+    Facts g = Party(0);
+    g.dead = 1;
+    g.alive = 4;
+    g.leadAlive = false;
+    Tick(r2, g);
+    Resume(r2);
+    for (std::uint32_t i = 0; i <= kRegroupReviveMs / kTickMs + 2 && r2.state == State::Running; ++i)
+        Tick(r2, g);
+    CHECK(r2.state == State::Paused && r2.note.find("still dead") != std::string::npos);
 }
 
 static void TestEmptyPlan()
@@ -733,6 +777,7 @@ int main()
     TestOutOfReachPackIsSkippedNotCleared();
     TestMissingItemPausesOnce();
     TestResumeRegroups();
+    TestResumeWithLeadDead();
     TestFarMoveWalksBackInHops();
     TestDirectStepGathersFirst();
     TestSkipWhileRunning();

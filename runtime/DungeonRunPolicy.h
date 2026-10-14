@@ -556,14 +556,12 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         bool notFriendly = false;
         for (const UnitFact& u : f.units)
             notFriendly = notFriendly || (u.hostile && !r.passed.count(u.guid));
-        bool const skip = s.kind == PlanStepKind::Boss
-            ? (f.seen && !f.units.empty() && !notFriendly)
-            : (!f.seen || !notFriendly);
+        bool const skip = s.kind == PlanStepKind::Boss ? (f.seen && !notFriendly) : (!f.seen || !notFriendly);
         if (skip)
         {
-            NextStep(r, s.kind == PlanStepKind::Boss
-                ? "boss is for the other team and friendly to this party: skipped"
-                : "pack is for the other team: skipped");
+            NextStep(r, s.kind != PlanStepKind::Boss ? "pack is for the other team: skipped"
+                : f.units.empty() ? "boss is for the other team and not here: skipped"
+                                  : "boss is for the other team and friendly to this party: skipped");
             return;
         }
     }

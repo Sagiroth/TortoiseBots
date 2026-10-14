@@ -8668,6 +8668,11 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         return;
     float const toPoint = DistanceTo(lead, step->x, step->y, step->z);
     f.seen = toPoint <= kSeeYd;
+    // The navmesh query for the next approach hop runs only when the policy
+    // can use one: not while it walks a hop already fixed, not in a regroup
+    // (the lead bot may be a ghost on another map), and never off the plan's map.
+    bool const wantsApproach = !f.seen && slot.run.phase != Phase::Walk && !slot.run.regroup &&
+        lead->GetMapId() == slot.run.plan->map;
 
     switch (step->kind)
     {
@@ -8676,7 +8681,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         {
             if (!f.seen)
             {
-                f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ);
+                if (wantsApproach)
+                    f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ);
                 break;
             }
             std::vector<uint32> entries = step->entries;
@@ -8714,7 +8720,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         {
             if (!f.seen)
             {
-                f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ);
+                if (wantsApproach)
+                    f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ);
                 break;
             }
             std::list<Unit*> hostiles;
@@ -8740,7 +8747,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         {
             if (!f.seen)
             {
-                f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ);
+                if (wantsApproach)
+                    f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ);
                 break;
             }
             std::list<Unit*> hostiles;
@@ -8809,7 +8817,11 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
     // Between maps: look again next second (the binding sweep bounds a lead that never comes back).
     if (!lead || !group || !lead->IsInWorld())
         return;
-    if (lead->GetMapId() != slot.run.plan->map)
+    // A dead lead bot released by the regroup's `revive party` is a ghost on
+    // the graveyard's map until its corpse run brings it back: the regroup's
+    // own ceiling (kRegroupReviveMs) bounds that, not this check.
+    bool const ghostInRegroup = slot.run.regroup && !lead->IsAlive();
+    if (lead->GetMapId() != slot.run.plan->map && !ghostInRegroup)
     {
         TortoiseBots::DungeonRun::Pause(slot.run, "the lead bot is not on the plan's map (" +
             std::to_string(slot.run.plan->map) + ")");
@@ -8840,9 +8852,15 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
             // A move point the navmesh cannot reach: walk around to the nearest
             // reachable point near it before giving up (never a silent skip).
             float dx = 0.0f, dy = 0.0f, dz = 0.0f;
-            bool const unreachable = order.compare(0, 5, "move ") == 0 &&
-                (answer.compare(0, 11, "unreachable") == 0 || answer.compare(0, 8, "off-mesh") == 0);
             ai::PlanStep const* step = TortoiseBots::DungeonRun::Current(it->second.run);
+            // Only a refusal of the step's own point starts a detour (not of a
+            // gather or regroup move to the lead bot's spot, nor of an approach hop).
+            bool const ownMove = step && (step->kind == ai::PlanStepKind::Move ||
+                step->kind == ai::PlanStepKind::MoveDirect) &&
+                order == TortoiseBots::DungeonRun::MoveOrder(step->x, step->y, step->z,
+                    step->kind == ai::PlanStepKind::MoveDirect);
+            bool const unreachable = ownMove &&
+                (answer.compare(0, 11, "unreachable") == 0 || answer.compare(0, 8, "off-mesh") == 0);
             if (!(unreachable && step && !it->second.run.detour &&
                     NearestReachablePoint(lead, step->x, step->y, step->z, dx, dy, dz) &&
                     TortoiseBots::DungeonRun::UseDetour(it->second.run, dx, dy, dz)))
