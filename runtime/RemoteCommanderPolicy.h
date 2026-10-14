@@ -553,6 +553,57 @@ inline std::string PartyAttackAckDetail(std::string const& stayingTank)
     return stayingTank.empty() ? std::string() : "tank-stays:" + stayingTank;
 }
 
+// A `cmd attack` that reaches a bot which has lost control of itself
+// (stunned, hexed or polymorphed, feared, feigning death: the core's
+// UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL) is held for that bot and carried
+// out as soon as the bot can act again. The attack action refuses a bot in
+// that state outright (AttackAction::isPossible), so the order used to be
+// dropped with "That bot did not accept the attack." while the bot came out of
+// the crowd control with nothing to do: zf-hires-2 run 6 (a Sandfury
+// Shadowhunter's 10 s Hex on the tank, four named attacks refused, the party
+// wiped) and uldaman-hires-2 r-20261014T152407 (Stone Steward's Ground
+// Tremor stun; three refusals, then the wipe at 1431 s). A healer is not held:
+// the attack order never sends a healer at the mob.
+inline bool HoldsAttackUntilControl(bool isHealer, bool lostControl)
+{
+    return lostControl && !isHealer;
+}
+
+// How long a held attack waits for the bot to get control back: longer than
+// the crowd control dungeon mobs cast (a Hex lasts 10 s, a mob's Polymorph up
+// to 20 s), short enough that a stale order does not fire into a later fight.
+constexpr uint32_t kHeldAttackMaxMs = 20000;
+
+enum class HeldAttackStep
+{
+    Wait, // the bot still has no control: keep the order
+    Run,  // the bot can act: carry the order out now
+    Drop, // the bot or the target is gone, or the order went stale
+};
+
+// botReady: in world, alive, on the target's map. targetAlive: the ordered
+// unit still exists there and lives.
+inline HeldAttackStep StepHeldAttack(bool botReady, bool targetAlive, bool lostControl, uint32_t heldMs)
+{
+    if (!botReady || !targetAlive || heldMs > kHeldAttackMaxMs)
+        return HeldAttackStep::Drop;
+    return lostControl ? HeldAttackStep::Wait : HeldAttackStep::Run;
+}
+
+// The ACK detail of a `cmd attack`: the party form's `tank-stays:<Tank>`
+// as before, and `held:<Bot>[,<Bot>...]` for bots whose attack waits for
+// them to get control back; both parts joined by ';' when both apply.
+inline std::string AttackAckDetail(std::string const& stayingTank, std::vector<std::string> const& heldBots)
+{
+    std::string detail = PartyAttackAckDetail(stayingTank);
+    if (heldBots.empty())
+        return detail;
+    std::string held = "held:";
+    for (size_t i = 0; i < heldBots.size(); ++i)
+        held += (i ? "," : "") + heldBots[i];
+    return detail.empty() ? held : detail + ";" + held;
+}
+
 // The threat back-off holds a damage bot off a mob the tank has no threat on
 // (ThreatValue reads 100 then). In a commanded party a mob that is hitting a
 // party member who is not a tank is already off the tank: backing off it only

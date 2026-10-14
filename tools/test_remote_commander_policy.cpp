@@ -859,6 +859,31 @@ static void TestPartyAttackAckDetail()
     CHECK(PartyAttackAckDetail("Lcwarra") == "tank-stays:Lcwarra");
 }
 
+// A bot without control of itself (stun, Hex, fear) keeps the attack order
+// until it can act; a healer is never sent at the mob, so it is not held.
+static void TestHeldAttack()
+{
+    CHECK(HoldsAttackUntilControl(false, true));
+    CHECK(!HoldsAttackUntilControl(false, false));
+    CHECK(!HoldsAttackUntilControl(true, true));
+
+    // zf-hires-2 run 6: the hexed tank keeps the order and runs it when the Hex ends.
+    CHECK(StepHeldAttack(true, true, true, 3000) == HeldAttackStep::Wait);
+    CHECK(StepHeldAttack(true, true, false, 10500) == HeldAttackStep::Run);
+    CHECK(StepHeldAttack(true, true, true, kHeldAttackMaxMs) == HeldAttackStep::Wait);
+    CHECK(StepHeldAttack(true, true, true, kHeldAttackMaxMs + 1) == HeldAttackStep::Drop);
+    CHECK(StepHeldAttack(true, true, false, kHeldAttackMaxMs + 1) == HeldAttackStep::Drop);
+    CHECK(StepHeldAttack(false, true, false, 0) == HeldAttackStep::Drop);
+    CHECK(StepHeldAttack(true, false, false, 0) == HeldAttackStep::Drop);
+    CHECK(kHeldAttackMaxMs > 10000); // outlasts a Hex
+
+    CHECK(AttackAckDetail("", {}).empty());
+    CHECK(AttackAckDetail("Lcwarra", {}) == "tank-stays:Lcwarra");
+    CHECK(AttackAckDetail("", {"Forthur"}) == "held:Forthur");
+    CHECK(AttackAckDetail("", {"Forthur", "Puvur"}) == "held:Forthur,Puvur");
+    CHECK(AttackAckDetail("Lcwarra", {"Puvur"}) == "tank-stays:Lcwarra;held:Puvur");
+}
+
 // The back-off yields on a mob hitting the healer or a damage bot of a
 // commanded party, never on a mob hitting the tank, and never outside one.
 static void TestCommandedBackoffYields()
@@ -941,6 +966,7 @@ int main()
     TestPartyAttackTankStays();
     TestAttackLeavesPullRunning();
     TestPartyAttackAckDetail();
+    TestHeldAttack();
     TestCommandedBackoffYields();
     TestCommanderThreatLedger();
     TestOrderGate();

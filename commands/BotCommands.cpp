@@ -5071,6 +5071,56 @@ static Unit* ResolveOrderTarget(ChatHandler* handler, std::string const& intent,
     return unit;
 }
 
+namespace {
+
+// A `cmd attack` held for a bot that had lost control of itself (stun, Hex,
+// fear: RemoteCommander::HoldsAttackUntilControl), keyed by the bot's GUID.
+// UpdateHeldAttacks carries it out when the bot can act again. A later order
+// of the commander for that bot (SupersedeCommanderTasks) or the end of the
+// binding (CancelCommanderTasks) drops it. World thread only.
+struct HeldAttack
+{
+    uint64 commanderRaw = 0;
+    uint64 targetRaw = 0;
+    uint32 heldMs = 0;
+};
+
+std::unordered_map<uint64, HeldAttack>& HeldAttacks()
+{
+    static std::unordered_map<uint64, HeldAttack> held;
+    return held;
+}
+
+void DropHeldAttacks(uint64 commanderRaw, uint64 onlyBotRaw)
+{
+    auto& held = HeldAttacks();
+    for (auto it = held.begin(); it != held.end();)
+    {
+        if (it->second.commanderRaw == commanderRaw && (!onlyBotRaw || it->first == onlyBotRaw))
+            it = held.erase(it);
+        else
+            ++it;
+    }
+}
+
+// The per-bot steps of an attack order. selectionOwner carries the target:
+// AttackMyTargetAction reads its event owner's selection.
+bool RunBotAttackOrder(PlayerbotAI* ai, Player* bot, Player* selectionOwner, ObjectGuid targetGuid)
+{
+    RelaxTacticalMovement(ai);
+    ai->ChangeStrategy("-wait for attack", BotState::BOT_STATE_ALL);
+    bool accepted = true;
+    if (!PlayerbotAI::IsHeal(bot))
+    {
+        selectionOwner->SetSelectionGuid(targetGuid);
+        accepted = ExecuteQuietAction(ai, "attack my target", ai::Event("action attack", "", selectionOwner));
+    }
+    ExecuteQuietNextAction(ai, false);
+    return accepted;
+}
+
+} // namespace
+
 // Same per-bot steps as `.bot action attack`, with the lead bot's selection
 // carrying the GUID-named target: AttackMyTargetAction reads its event
 // owner's selection. The commander's own selection is never touched.
@@ -5080,7 +5130,9 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
     ObjectGuid const targetGuid = target->GetObjectGuid();
     uint32 succeeded = 0;
     std::string stayingTank;
-    SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(),
+    std::vector<std::string> heldBots;
+    uint64 const commanderRaw = order.commander->GetObjectGuid().GetRawValue();
+    SupersedeCommanderTasks(commanderRaw,
         onlyBot ? onlyBot->GetObjectGuid().GetRawValue() : 0, RemoteCommander::LaterOrder::Attack);
     for (Player* bot : order.bots)
     {
@@ -5114,18 +5166,23 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
             stayingTank = bot->GetName();
             continue;
         }
-        RelaxTacticalMovement(ai);
-        ai->ChangeStrategy("-wait for attack", BotState::BOT_STATE_ALL);
-        bool accepted = true;
-        if (!PlayerbotAI::IsHeal(bot))
+        // A bot that has lost control of itself (stunned, hexed, feared)
+        // cannot take the attack now: the order waits for it
+        // (RemoteCommander::HoldsAttackUntilControl) and counts as taken.
+        if (RemoteCommander::HoldsAttackUntilControl(PlayerbotAI::IsHeal(bot),
+                bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL)))
         {
-            // Set again for every bot: an earlier bot's first AI step may be
-            // the lead bot's own, which can change its selection.
-            order.lead->SetSelectionGuid(targetGuid);
-            accepted = ExecuteQuietAction(ai, "attack my target", ai::Event("action attack", "", order.lead));
+            HeldAttack& held = HeldAttacks()[bot->GetObjectGuid().GetRawValue()];
+            held.commanderRaw = commanderRaw;
+            held.targetRaw = targetGuid.GetRawValue();
+            held.heldMs = 0;
+            heldBots.push_back(bot->GetName());
+            ++succeeded;
+            continue;
         }
-        ExecuteQuietNextAction(ai, false);
-        if (accepted)
+        // The lead bot's selection is set again for every bot: an earlier
+        // bot's first AI step may be the lead bot's own, which can change it.
+        if (RunBotAttackOrder(ai, bot, order.lead, targetGuid))
             ++succeeded;
     }
     if (!succeeded)
@@ -5135,10 +5192,57 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
         return true;
     }
     if (onlyBot)
-        SendActionAck(handler, intent, "bot:" + std::string(onlyBot->GetName()), succeeded);
+        SendActionAck(handler, intent, "bot:" + std::string(onlyBot->GetName()), succeeded,
+            RemoteCommander::AttackAckDetail("", heldBots));
     else
-        SendActionAck(handler, intent, "party", succeeded, RemoteCommander::PartyAttackAckDetail(stayingTank));
+        SendActionAck(handler, intent, "party", succeeded, RemoteCommander::AttackAckDetail(stayingTank, heldBots));
     return true;
+}
+
+// Each tick while an attack is held: run it for a bot that can act again,
+// drop it when the bot or the target is gone or the wait ran out.
+static void UpdateHeldAttacks(uint32 diff)
+{
+    auto& held = HeldAttacks();
+    if (held.empty())
+        return;
+    struct Due
+    {
+        uint64 botRaw;
+        uint64 targetRaw;
+    };
+    std::vector<Due> due;
+    for (auto it = held.begin(); it != held.end();)
+    {
+        it->second.heldMs += diff;
+        Player* bot = FindCharacter(it->first);
+        bool const botReady = bot && bot->IsInWorld() && !bot->IsBeingTeleported() && bot->IsAlive() &&
+            PlayerbotAIStorage::Instance().GetAI(bot);
+        Unit* target = botReady && bot->GetMap() ? bot->GetMap()->GetUnit(ObjectGuid(it->second.targetRaw)) : nullptr;
+        bool const targetAlive = target && target->IsInWorld() && target->IsAlive();
+        bool const lostControl = botReady && bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL);
+        switch (RemoteCommander::StepHeldAttack(botReady, targetAlive, lostControl, it->second.heldMs))
+        {
+            case RemoteCommander::HeldAttackStep::Wait:
+                ++it;
+                break;
+            case RemoteCommander::HeldAttackStep::Run:
+                due.push_back({it->first, it->second.targetRaw});
+                it = held.erase(it);
+                break;
+            case RemoteCommander::HeldAttackStep::Drop:
+                it = held.erase(it);
+                break;
+        }
+    }
+    // Run after the sweep, so nothing the AI step does can touch the map being iterated.
+    for (Due const& order : due)
+    {
+        Player* bot = FindCharacter(order.botRaw);
+        PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+        if (ai)
+            RunBotAttackOrder(ai, bot, bot, ObjectGuid(order.targetRaw));
+    }
 }
 
 // `.bot action focus skull` on a GUID: Skull goes on the target in the bound
@@ -6891,6 +6995,8 @@ void StepRitualGroups(uint32 diff)
 // other the bot re-forms as after a finished walk.
 void SupersedeCommanderTasks(uint64 commanderRaw, uint64 onlyBotRaw, RemoteCommander::LaterOrder later)
 {
+    // A later order replaces an attack still waiting for the bot to get control back.
+    DropHeldAttacks(commanderRaw, onlyBotRaw);
     // The keys first: finishing a ritual member ends the other members of its group too.
     auto& tasks = CommanderTasks();
     std::vector<uint64> keys;
@@ -6911,6 +7017,7 @@ void SupersedeCommanderTasks(uint64 commanderRaw, uint64 onlyBotRaw, RemoteComma
 
 void CancelCommanderTasks(uint64 commanderRaw)
 {
+    DropHeldAttacks(commanderRaw, 0);
     auto& tasks = CommanderTasks();
     std::vector<uint64> keys;
     for (auto const& entry : tasks)
@@ -7808,6 +7915,8 @@ void UpdateRemoteCommanders(uint32_t diff)
         s_commanderSweepMs = 0;
         if (!CommanderViews().empty())
             CommanderViews().clear();
+        if (!HeldAttacks().empty())
+            HeldAttacks().clear();
         return;
     }
     s_commanderSweepMs += diff;
@@ -7819,6 +7928,8 @@ void UpdateRemoteCommanders(uint32_t diff)
     }
     // Issue #884, phase 2: the perception feed of the bindings that stand.
     UpdateCommanderViews(diff);
+    // Attacks held for bots that had lost control of themselves.
+    UpdateHeldAttacks(diff);
     // The bot tasks (loot, open, use) of the commanders.
     UpdateCommanderTasks(diff);
 }
