@@ -733,6 +733,10 @@ namespace ai
         // The raid "has aggro" -> shoot row (mage, warlock) wands on purpose
         // to stop building threat; leave that wand alone.
         bool RaidAggroWand();
+        // The "threat" strategy's multiplier zeroes a single-target nuke
+        // now (same gate as ThreatMultiplier): the nuke falls back to the
+        // wand, so the wand is the intended back-off, not a GCD trap.
+        bool ThreatVetoesNuke();
     };
 
     class AlmostFullManaTrigger : public Trigger

@@ -80,6 +80,10 @@ namespace ai
         // Blocked when nobody needs one). Heal rows sit far above the
         // "no mana" wand row, so a wanted heal stops the wand even there.
         WandSpellProbe bestHeal = WandSpellProbe::Blocked;
+        // The "threat" multiplier zeroes the nukes ("high threat" active):
+        // the next tick would fall back to the wand anyway, so stopping it
+        // only ping-pongs (stop, wait one swing, "shoot" again).
+        bool nukeThreatVetoed = false;
     };
 
     inline bool ShouldStopWandToCast(WandState const& state)
@@ -88,7 +92,7 @@ namespace ai
             return false;
         if (state.bestHeal != WandSpellProbe::Blocked)
             return true;
-        if (state.noManaRowActive)
+        if (state.noManaRowActive || state.nukeThreatVetoed)
             return false;
         return state.bestNuke != WandSpellProbe::Blocked;
     }

@@ -144,6 +144,17 @@ bool WandBlocksCastTrigger::RaidAggroWand()
     return group && group->isRaidGroup() && AI_VALUE2(bool, "has aggro", "current target");
 }
 
+bool WandBlocksCastTrigger::ThreatVetoesNuke()
+{
+    // Mirrors ThreatMultiplier::GetValue (ThreatStrategy.cpp) for a
+    // single-target damage spell.
+    if (!ai->HasStrategy("threat", BotState::BOT_STATE_COMBAT))
+        return false;
+    if (AI_VALUE(bool, "neglect threat") || !AI_VALUE(bool, "group"))
+        return false;
+    return AI_VALUE2(bool, "trigger active", "high threat");
+}
+
 bool AlmostFullManaTrigger::IsActive()
 {
     return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") > 85;

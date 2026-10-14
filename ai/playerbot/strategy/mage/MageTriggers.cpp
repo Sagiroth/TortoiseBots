@@ -49,11 +49,20 @@ bool WandBlocksNukeTrigger::IsActive()
     if (noManaRowActive)
         return false;
 
+    // Near the tank's threat the "threat" multiplier vetoes the nukes and
+    // they fall back to the wand on purpose; stopping it would only restart
+    // it a swing later.
+    bool const nukeThreatVetoed = ThreatVetoesNuke();
+    if (nukeThreatVetoed)
+        return false;
+
     WandState const state{
         true,
         BetterWandSpellProbe(ProbeSpell("frostbolt", target), ProbeSpell("fireball", target)),
         keepWandForThreat,
-        noManaRowActive};
+        noManaRowActive,
+        WandSpellProbe::Blocked,
+        nukeThreatVetoed};
     return ShouldStopWandToCast(state);
 }
 
