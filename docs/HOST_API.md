@@ -204,6 +204,15 @@ bound commanders' `TBM:VIEW` perception feed (phase 2: one frame per
 most 8 lines per commander per tick). It needs no core hook: bindings live in the module and are looked up again each time,
 never kept as `Group` or `Player` pointers.
 
+The dashboard's `COMMANDERS` datagram (`runtime/CommanderTelemetry.h`, built by the observability emitter once per 2 s
+snapshot cycle and only while a binding stands) carries, besides vitals, orders, mobs and the run line, the data the Commanders
+map draws from, all additive and bounded: per casting bot `ctgt` (the spell's unit target, read from the bot's current spell),
+per binding `objects[]` (doors, chests, levers, goobers and rituals from the bots' already calculated `nearest game objects`
+lists, resolved on the lead's map, at most 16 per binding and 24 per datagram) and, for a run leader's run, `run.plan_steps[]`
+(the current section's steps, at most 20 per run and 32 per datagram, windowed around the current step). None of it runs per
+bot tick, scans the grid or touches the database; the datagram stays under 60 000 bytes in the worst case
+(`tools/test_commander_telemetry.cpp`). An older module simply omits the fields.
+
 The core listener is generic; it does not call a PlayerBots singleton.
 
 Players' `.bot` commands do not arrive on that thread: the core dispatches

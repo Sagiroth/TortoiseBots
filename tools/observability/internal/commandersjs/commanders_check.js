@@ -130,7 +130,17 @@ assert.strictEqual(tr.trail.Gbmage.pts.length, 2);
 b = party(); b.bots[0].map = 1; C.note(tr, b, 110); // a new map restarts the trail
 assert.strictEqual(tr.trail.Gbmage.pts.length, 1); assert.strictEqual(tr.trail.Gbmage.map, 1);
 for (let i = 0; i < 300; i++) { b = party(); b.bots[0].x = i * 5; C.note(tr, b, 200 + i); }
-assert.ok(tr.trail.Gbmage.pts.length <= 120);
+assert.strictEqual(tr.trail.Gbmage.pts.length, 240, "the lead's trail is a ring of 240 positions (the path-length slider's maximum)");
+// the daemon's stored history goes in front: only older points, only on the trail's map
+{
+  const t2 = C.newTracker(); let q = party(); q.bots[0].x = 500; C.note(t2, q, 1000);
+  assert.strictEqual(C.prependTrail(t2, "Gbmage", q.bots[0].map, [[1, 2, 10], [3, 4, 20], [500, 0, 1000], [9, 9, 1500], ["x", 1, 2], null]), 2);
+  assert.deepStrictEqual(t2.trail.Gbmage.pts.map((p) => p[2]), [10, 20, 1000]);
+  assert.strictEqual(C.prependTrail(t2, "Gbmage", q.bots[0].map, [[1, 2, 10]]), 0, "twice adds nothing");
+  assert.strictEqual(C.prependTrail(t2, "Gbmage", 999, [[1, 2, 1]]), 0, "another map");
+  assert.strictEqual(C.prependTrail(t2, "Nobody", 1, [[1, 2, 1]]), 0);
+  assert.strictEqual(C.prependTrail(t2, "Gbmage", q.bots[0].map, "junk"), 0);
+}
 // a dead bot that is raised is not a "drop"
 tr = C.newTracker(); b = party(); b.bots[1].alive = false; b.bots[1].hp = 0; C.note(tr, b, 1);
 b = party(); b.bots[1].hp = 50; C.note(tr, b, 3);

@@ -8,7 +8,7 @@
   const STALE_WARN_SEC = 30;  // no update for this long is flagged
   const AGGRO_RANGE_YD = 20;  // the ring drawn around a mob nobody fights yet (a rough guide: the real radius depends on levels)
   const HEAL_RANGE_YD = 40;   // a healer's spells reach this far (the ring of the healer-range layer)
-  const TRAIL_MAX = 120;      // positions of the lead kept for its trail
+  const TRAIL_MAX = 240;      // positions of the lead kept for its trail (the trail-length slider shows up to this many)
   const TRAIL_STEP_YD = 2;    // a new trail point after this much movement
   const FIGHT_WINDOW_SEC = 8; // an HP drop this recent counts as a fight
   const MOVE_WINDOW_SEC = 6;  // lead movement this recent counts as walking
@@ -256,6 +256,18 @@
     }
   }
 
+  // Older points of the lead (from the daemon's short history, oldest first, [x, y, t]) put in front of the trail this page has seen: only
+  // those older than its first point, and only on the map the trail is on. Returns how many were taken.
+  function prependTrail(tr, commander, mapId, pts) {
+    const t = tr.trail[commander];
+    if (!t || t.map !== mapId || !Array.isArray(pts) || !pts.length) return 0;
+    const first = t.pts.length ? t.pts[0][2] : Infinity;
+    const older = pts.filter((p) => Array.isArray(p) && num(p[0]) && num(p[1]) && num(p[2]) && p[2] < first);
+    if (!older.length) return 0;
+    t.pts = older.concat(t.pts).slice(-TRAIL_MAX);
+    return older.length;
+  }
+
   function context(tr, bind, nowSec) {
     return { nowSec, hpDropAt: tr.hpDropAt[bind.commander] || 0, leadMovedAt: tr.leadMovedAt[bind.commander] || 0 };
   }
@@ -462,7 +474,7 @@
   const api = {
     HEAL_RANGE_YD, FAR_YD, LOW_HP_PCT, STALE_WARN_SEC, pretty, plural, ageText, roleKey, roleLabel, distance, leadBot, partyRows, orderText, stateWord,
     headerText, headerParts, botHref, warnings, newTracker, note, context, prune, project, fitView, viewBox, zoomAt, panBy, pinch, gridStep, gridLines,
-    trailSegments, clampScale, heading, trailStamps, scaleBar, zonesIn, pictureLayers,
+    trailSegments, clampScale, prependTrail, heading, trailStamps, scaleBar, zonesIn, pictureLayers,
     AGGRO_RANGE_YD, followView, zoomFollow, pinchFollow, mobsOf, mobClass, threatLines, botTargetLines, aggroMobs, commanderPlace,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.CmdView = api;

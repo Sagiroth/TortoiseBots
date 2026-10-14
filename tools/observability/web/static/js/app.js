@@ -4500,6 +4500,9 @@
   const cmdEvents = UnitInfo.newEvents(); // deaths, wipes, boss kills, objects opened (derived from the reports as they come)
   const cmdPics = new Map();  // map id -> [picture layer] | 'loading' | null (the folder has none; asked again after a while)
   const cmdPicMiss = new Map();
+  const cmdTrails = CmdPaths.newTrails(); // every bot's path (the lead's is in cmdTracker.trail), kept from the 2 s reports
+  const cmdStalls = CmdPaths.newStalls(); // where the run paused or an order was refused, fixed when first seen
+  let cmdTrailsLoading = false;
 
   // Seconds since the game server last reported, by this browser's clock (-1: never).
   function cmdAgeSec() {
@@ -4524,15 +4527,42 @@
       c.updatedAt = view.updated_at || Math.round(Date.now() / 1000);
       c.freshAt = Date.now();
       c.lost = false;
-      c.list.forEach(bind => { CmdView.note(cmdTracker, bind, c.updatedAt); UnitInfo.noteEvents(cmdEvents, bind, c.updatedAt); });
+      c.list.forEach(bind => { CmdView.note(cmdTracker, bind, c.updatedAt); UnitInfo.noteEvents(cmdEvents, bind, c.updatedAt); cmdNotePaths(bind, c.updatedAt); });
       CmdView.prune(cmdTracker, c.list.map(b => b.commander));
       UnitInfo.pruneEvents(cmdEvents, c.list.map(b => b.commander));
+      CmdPaths.pruneTrails(cmdTrails, c.list);
+      CmdPaths.pruneStalls(cmdStalls, c.list.map(b => b.commander));
+      seedCmdTrails(c.list);
     } else {
       // No fresh report: keep what was last shown (see COMMANDERS_KEEP_MS) and say so.
       c.fresh = false;
     }
     paintCommandersBadge();
     if (state.activeTab === 'commanders') renderCommanders();
+  }
+
+  // What the browser remembers of a binding between reports: every bot's path and the places where the run stalled or an order was refused.
+  function cmdNotePaths(bind, nowSec) {
+    CmdPaths.noteTrails(cmdTrails, bind, nowSec);
+    const lead = CmdView.leadBot(bind), tr = cmdTracker.trail[bind.commander];
+    const leadPts = lead && tr && tr.map === lead.map ? tr.pts : [];
+    CmdPaths.noteStalls(cmdStalls, bind, nowSec, leadPts, lead ? { x: lead.x, y: lead.y } : null, CmdPaths.runSteps(bind.run), lead ? lead.map : null);
+  }
+
+  // A binding the page has not asked the daemon about yet gets its short stored history once: the paths then start with what happened
+  // before this page was opened. One request at a time; a failure only means the paths start now.
+  function seedCmdTrails(list) {
+    if (cmdTrailsLoading || !list.some(b => !cmdTrails.seeded[b.commander])) return;
+    list.forEach(b => { cmdTrails.seeded[b.commander] = true; });
+    cmdTrailsLoading = true;
+    fetch('/api/v1/commanders/trails').then(jsonOrThrow).then(data => {
+      CmdPaths.seedTrails(cmdTrails, data);
+      state.commanders.list.forEach(bind => {
+        const lead = CmdView.leadBot(bind), h = lead && data && data[bind.commander] && data[bind.commander][lead.guid];
+        if (h) CmdView.prependTrail(cmdTracker, bind.commander, h.map, CmdPaths.cleanPoints(h.pts));
+      });
+      if (state.activeTab === 'commanders') renderCommanders();
+    }).catch(() => {}).then(() => { cmdTrailsLoading = false; });
   }
 
   function fetchCommanders() {
@@ -4657,6 +4687,10 @@
     crown: '<path d="M-5 3.2V-2.2L-2.5 0.4L0 -3.8L2.5 0.4L5 -2.2V3.2z"/>',
     door: '<path d="M-3 4.2V-4.2h6v8.4z"/><circle class="eye" cx="1.2" cy="0.4" r="0.8"/>',
     coin: '<circle cx="0" cy="0" r="3.8"/><path class="ln eyeln" d="M0 -2V2"/>',
+    chest: '<path d="M-4 -0.8a4 3.2 0 0 1 8 0V3.6h-8z"/><path class="ln eyeln" d="M-4 0.6h8"/><circle class="eye" cx="0" cy="1.8" r="0.8"/>',
+    lever: '<path class="ln" d="M-3.4 3.6h6.8M0 3.4L2.6 -2.6"/><circle cx="2.8" cy="-3.2" r="1.5"/>',
+    gong: '<circle class="ring" cx="0" cy="0" r="3.7"/><circle cx="0" cy="0" r="1.5"/>',
+    stop: '<path d="M-3.4 -3.4h6.8v6.8h-6.8z"/><path class="ln eyeln" d="M-1 -1.8v3.6M1 -1.8v3.6"/>',
   };
   // One icon centred at plane point (x, y); size in drawing units (px * k) on a dark disc so it reads on any picture.
   function cmdMapIcon(name, x, y, size, title) {
@@ -4671,6 +4705,13 @@
     return '<span><i class="tank"></i>Tank</span><span><i class="healer"></i>Healer</span><span><i class="dps"></i>DPS</span>'
       + '<span><i class="lead"></i>Lead</span><span><i class="dead"></i>Dead</span>'
       + (o.trail ? '<span><i class="trail"></i>Lead\'s path</span>' : '')
+      + (o.membertrails ? '<span><i class="mtrail"></i>Group paths</span>' : '')
+      + (o.runsteps ? '<span><i class="route"></i>Run route</span><span><i class="lstep"></i>Pull / boss step</span>' : '')
+      + (o.stalls ? '<span class="lic">stalled / refused <svg viewBox="-6 -6 12 12" class="ic-x"><path d="M-3.4 -3.4L3.4 3.4M3.4 -3.4L-3.4 3.4"/></svg></span>' : '')
+      + (o.objects ? '<span class="lic">door <svg viewBox="-6 -6 12 12" class="ic-door">' + CMD_MAP_ICONS.door + '</svg></span><span class="lic">chest <svg viewBox="-6 -6 12 12" class="ic-chest">' + CMD_MAP_ICONS.chest + '</svg></span>'
+        + '<span class="lic">lever <svg viewBox="-6 -6 12 12" class="ic-lever">' + CMD_MAP_ICONS.lever + '</svg></span><span class="lic">altar / gong <svg viewBox="-6 -6 12 12" class="ic-gong">' + CMD_MAP_ICONS.gong + '</svg></span>' : '')
+      + (o.healline ? '<span><i class="lheal"></i>Heals</span>' : '')
+      + (o.ccline ? '<span><i class="lcc"></i>Crowd control</span>' : '')
       + (o.heading ? '<span><i class="heading"></i>Heading</span>' : '')
       + (o.healring ? '<span><i class="ring"></i>Healer range</span>' : '')
       + (o.mobhostile ? '<span><i class="mobh"></i>Hostile</span>' : '')
@@ -4679,7 +4720,7 @@
       + (o.threat ? '<span><i class="lthreat"></i>Mob on</span>' : '')
       + (o.bottarget ? '<span><i class="ltarget"></i>Bot target</span>' : '')
       + (o.commander ? '<span><i class="cmdr"></i>Commander</span>' : '')
-      + (o.aggro ? '<span><i class="aggro"></i>Aggro range</span>' : '')
+      + (o.aggro ? '<span><i class="aggro"></i>Aggro range (by level)</span>' : '')
       + (o.bossmark ? '<span><i class="lboss"></i>Boss (crown, name shown)</span>' : '')
       + (o.hpbars ? '<span><i class="lhp"></i>Health bar</span>' : '')
       + (o.threatcolors ? '<span><i class="tc-tank"></i>On the tank</span><span><i class="tc-other"></i>On someone else</span><span><i class="tc-target"></i>Tank\'s target</span><span><i class="tc-pull"></i>Pull target</span>' : '')
@@ -4731,19 +4772,129 @@
     const mobs = first ? CmdView.mobsOf(bind, mapId) : [];
     const reported = !!first && Array.isArray(bind.mobs) && bind.mobs_map === mapId;
     const commanderAt = first ? CmdView.commanderPlace(bind, mapId) : null;
+    // What the drawing layers have: the other bots' paths, the plan steps of the run, stall spots, the objects the bots have seen.
+    const steps = CmdPaths.runSteps(bind.run);
+    const stalls = first ? CmdPaths.stallsOf(cmdStalls, bind.commander, mapId) : [];
+    const objs = first ? CmdPaths.objectsOf(bind, mapId) : [];
+    const objsReported = !!first && Array.isArray(bind.objects) && bind.mobs_map === mapId;
     const ctx = {
+      memberTrails: !!first && CmdPaths.memberTrails(cmdTrails, bind, mapId, CmdPaths.TRAIL_MAX).length > 0,
+      runSteps: steps.length > 0, stalls: stalls.length > 0, objects: objsReported,
       picture: pics.length > 0, zone: !!zr, zonesAround, bots: onMap.length > 0, lead: !!lead && onMap.indexOf(lead) >= 0,
       trail: trail.length >= 2, heading: !!heading, healer: onMap.some(b => b.role === 'healer' && b.alive !== false),
       commanderPos: !!commanderAt, mobs: reported, mobTargets: reported, botTargets: reported && onMap.some(b => !!b.id),
       activity: onMap.some(b => b.st != null) || mobs.some(m => m.cast || m.cc),
       events: UnitInfo.eventsOf(cmdEvents, bind.commander).length > 0,
     };
-    return { lead, first, onMap, pics, trail, heading, zr, ctx, mobs, commanderAt };
+    return { lead, first, onMap, pics, trail, heading, zr, ctx, mobs, commanderAt, steps, stalls, objs };
   }
 
   // A clock time for a label on the path: the game server's seconds in the browser's locale.
   function cmdClock(sec) {
     return new Date(sec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  // ---- the drawing layers of a card's map: paths, run steps, stall spots, objects, combat lines ----
+  // Each builder returns SVG for the map's dynamic group. c = {f (number format), k (drawing units per pixel), units (the hover table)}.
+  // Every server string (names, reasons) goes through esc(); the lines' opacity and thickness come from the layers panel.
+
+  // Inline style of a line layer: stroke width (base px times the panel's thickness) and opacity (alpha times the panel's opacity).
+  function cmdLineStyle(key, basePx, alpha) {
+    const st = MapLayers.styleOf(cmdLayers, key);
+    return `stroke-width:${(basePx * st.th).toFixed(2)}px;opacity:${((alpha == null ? 1 : alpha) * st.op).toFixed(2)}`;
+  }
+
+  const cmdPt = (c, x, y) => { const p = CmdView.project(x, y); return `${c.f(p.x)},${c.f(p.y)}`; };
+
+  // The lead's path (fading with age, brighter than the others') or another bot's, cut to the length set in the panel.
+  function cmdTrailSvg(c, key, cls, pts, baseAlpha, basePx) {
+    let g = '';
+    CmdView.trailSegments(pts.map(p => CmdView.project(p[0], p[1])), 14, 0.15).forEach(sg => {
+      g += `<polyline class="${cls}" style="${cmdLineStyle(key, basePx, sg.alpha * baseAlpha)}" points="${sg.points.map(p => `${c.f(p.x)},${c.f(p.y)}`).join(' ')}"/>`;
+    });
+    return g;
+  }
+
+  function cmdMemberTrailsSvg(c, bind, mapId) {
+    let g = '';
+    CmdPaths.memberTrails(cmdTrails, bind, mapId, cmdLayers.trailLen).forEach(m => {
+      g += cmdTrailSvg(c, 'membertrails', `mtrail ${CmdView.roleKey(m.bot)}`, m.pts, 0.75, 2);
+    });
+    return g;
+  }
+
+  // The run's route (dashed: grey where it has been, bright ahead), a thin line from the lead to the step it is on, and the marks:
+  // numbered circles for pulls and bosses (cleared / next / skipped), icons for loot, doors, rituals and stops, small dots on moves.
+  function cmdRunStepsSvg(c, steps, lead) {
+    let g = '';
+    CmdPaths.routeSegments(steps).forEach(sg => {
+      g += `<polyline class="route ${sg.done ? 'done' : 'ahead'}" style="${cmdLineStyle('runsteps', sg.done ? 2 : 2.6, sg.done ? 0.6 : 1)}" points="${sg.points.map(p => cmdPt(c, p.x, p.y)).join(' ')}"/>`;
+    });
+    const next = steps.find(x => x.state === 'next');
+    if (lead && next) {
+      const a = CmdView.project(lead.x, lead.y), b = CmdView.project(next.x, next.y);
+      g += `<line class="route toward" style="${cmdLineStyle('runsteps', 1.4, 0.8)}" x1="${c.f(a.x)}" y1="${c.f(a.y)}" x2="${c.f(b.x)}" y2="${c.f(b.y)}"/>`;
+    }
+    const k = c.k;
+    steps.forEach(st => {
+      const p = CmdView.project(st.x, st.y), uid = 's:' + st.i;
+      c.units[uid] = { kind: 's', obj: st };
+      g += `<g class="rstep ${esc(st.state)} k-${esc(st.k)}" data-u="${esc(uid)}"><circle class="hit" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(12 * k)}"/>`;
+      if (st.k === 'pull' || st.k === 'boss') {
+        const r = (st.k === 'boss' ? 11 : 9) * k;
+        if (st.state === 'next' && st.r) g += `<circle class="steparea" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(st.r)}"/>`;
+        g += `<circle class="stepdot" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(r)}"/>`
+          + `<text class="stepnum" x="${c.f(p.x)}" y="${c.f(p.y + 3.6 * k)}" style="font-size:${c.f((st.i > 99 ? 8.5 : 10) * k)}px">${esc(st.i)}</text>`;
+        if (st.state === 'skipped') g += `<line class="stepskip" x1="${c.f(p.x - r)}" y1="${c.f(p.y + r)}" x2="${c.f(p.x + r)}" y2="${c.f(p.y - r)}"/>`;
+        if (st.k === 'boss') {
+          g += cmdMapIcon('crown', p.x, p.y - 17 * k, 12 * k).replace('class="ic ic-crown"', 'class="ic ic-crown crownmark"');
+          if (st.n) g += `<text class="stepname" x="${c.f(p.x + r + 4 * k)}" y="${c.f(p.y + 4 * k)}" style="font-size:${c.f(11 * k)}px;stroke-width:${c.f(3 * k)}px">${esc(st.n)}</text>`;
+        }
+      } else if (CmdPaths.stepIcon(st.k)) {
+        g += cmdMapIcon(CmdPaths.stepIcon(st.k), p.x, p.y, 13 * k);
+      } else {
+        g += `<circle class="stepmove" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(2.8 * k)}"/>`;
+      }
+      g += '</g>';
+    });
+    return g;
+  }
+
+  // A red cross where the run paused or an order was refused, with the reason beside the newest few; hover or tap for the whole text.
+  function cmdStallsSvg(c, stalls) {
+    let g = '';
+    const k = c.k, d = 5 * k;
+    stalls.forEach((st, i) => {
+      const p = CmdView.project(st.x, st.y), uid = 'x:' + st.id;
+      c.units[uid] = { kind: 'x', obj: st };
+      const path = `M${c.f(p.x - d)},${c.f(p.y - d)}L${c.f(p.x + d)},${c.f(p.y + d)}M${c.f(p.x + d)},${c.f(p.y - d)}L${c.f(p.x - d)},${c.f(p.y + d)}`;
+      g += `<g class="stall${st.live ? ' live' : ''}" data-u="${esc(uid)}"><circle class="hit" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(12 * k)}"/>`
+        + `<path class="xcase" d="${path}"/><path class="xmark" d="${path}"/>`;
+      if (i >= stalls.length - 3) {
+        const why = st.reason.length > 44 ? st.reason.slice(0, 43) + '…' : st.reason;
+        g += `<text class="stalltext" x="${c.f(p.x + 8 * k)}" y="${c.f(p.y + 4 * k)}" style="font-size:${c.f(10.5 * k)}px;stroke-width:${c.f(3 * k)}px">${esc(why)}</text>`;
+      }
+      g += '</g>';
+    });
+    return g;
+  }
+
+  const CMD_OBJECT_ICON = { d: 'door', c: 'chest', b: 'lever', g: 'gong', r: 'spark', o: 'gong' };
+  function cmdObjectsSvg(c, objs) {
+    let g = '';
+    objs.forEach(o => {
+      const p = CmdView.project(o.x, o.y), uid = 'o:' + o.id;
+      c.units[uid] = { kind: 'o', obj: o };
+      g += `<g class="obj st-${esc(o.state)}" data-u="${esc(uid)}"><circle class="hit" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(11 * c.k)}"/>`
+        + cmdMapIcon(CMD_OBJECT_ICON[o.type] || 'gong', p.x, p.y, 12 * c.k) + '</g>';
+    });
+    return g;
+  }
+
+  // Lines between two game points: from (a) to (b), classed and styled as one of the combat layers.
+  function cmdLineSvg(c, key, cls, a, b, baseAlpha) {
+    const p = CmdView.project(a.x, a.y), q = CmdView.project(b.x, b.y);
+    return `<line class="${cls}" style="${cmdLineStyle(key, 1.6, baseAlpha)}" x1="${c.f(p.x)}" y1="${c.f(p.y)}" x2="${c.f(q.x)}" y2="${c.f(q.y)}"/>`;
   }
 
   function drawCmdMap(key) {
@@ -4755,7 +4906,7 @@
     if (!pw || !ph) return; // the tab is hidden
     const ms = cmdMaps[key] || (cmdMaps[key] = { follow: true, view: null, userScale: null, pic: '' });
     const facts = cmdMapFacts(bind);
-    const { lead, first, onMap, pics, trail, heading, zr, mobs, commanderAt } = facts;
+    const { lead, first, onMap, pics, trail, heading, zr, mobs, commanderAt, steps, stalls, objs } = facts;
     const avail = MapLayers.availability(facts.ctx);
     cmdAvail[key] = avail;
     const on = MapLayers.active(cmdLayers, avail);
@@ -4804,11 +4955,12 @@
         g += `<circle class="range heal" cx="${f(p.x)}" cy="${f(p.y)}" r="${CmdView.HEAL_RANGE_YD}"><title>${esc(b.name)}: healing range ${CmdView.HEAL_RANGE_YD} yd</title></circle>`;
       });
     }
-    if (on.trail && trail.length >= 2) {
-      CmdView.trailSegments(trail.map(p => CmdView.project(p[0], p[1])), 14, 0.15).forEach(s => {
-        g += `<polyline class="trail" style="opacity:${f(s.alpha)}" points="${s.points.map(p => `${f(p.x)},${f(p.y)}`).join(' ')}"/>`;
-      });
-    }
+    // units: every thing that can be hovered gets a key; the hover box looks it up here, so it follows the 2 s refresh.
+    const units = ms.units = {};
+    const dc = { f, k, units };
+    if (on.runsteps) g += cmdRunStepsSvg(dc, steps, lead && first && lead.map === first.map ? lead : null);
+    if (on.membertrails && first) g += cmdMemberTrailsSvg(dc, bind, first.map);
+    if (on.trail && trail.length >= 2) g += cmdTrailSvg(dc, 'trail', 'trail', trail.slice(-cmdLayers.trailLen), 1, 3);
     if (on.trailtime) {
       CmdView.trailStamps(trail, v.scale, 70, 8).forEach(s => {
         g += `<g class="stamp"><circle cx="${f(s.x)}" cy="${f(s.y)}" r="${f(3 * k)}"/>`
@@ -4821,30 +4973,31 @@
       const pt = (a, b) => `${f(a)},${f(b)}`;
       g += `<polygon class="heading" points="${pt(tip.x, tip.y)} ${pt(p.x + heading.x * base + nx * half, p.y + heading.y * base + ny * half)} ${pt(p.x + heading.x * base - nx * half, p.y + heading.y * base - ny * half)}"><title>${esc(lead.name)} is heading this way (from its movement)</title></polygon>`;
     }
-    // Every unit that can be hovered gets a key; the hover box looks the unit up here, so it follows the 2 s refresh.
-    const units = ms.units = {};
     const lead2 = lead && first && lead.map === first.map ? lead : null;
     const boxCtx = { lead: lead2, bots: onMap, mobs };
     // mobs, their threat and the bots' targets sit under the party's dots
     const shown = mobs.filter(m => on['mob' + CmdView.mobClass(m)]);
     if (on.aggro) {
       CmdView.aggroMobs(shown).forEach(m => {
-        const p = CmdView.project(m.x, m.y);
-        g += `<circle class="range aggro" cx="${f(p.x)}" cy="${f(p.y)}" r="${CmdView.AGGRO_RANGE_YD}"/>`;
+        const p = CmdView.project(m.x, m.y), r = CmdPaths.aggroRadius(m.lvl, lead ? lead.level : 0);
+        g += `<circle class="range aggro" style="${cmdLineStyle('aggro', 1.5)}" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"><title>${esc(m.name || 'unit')}: aggro range about ${Math.round(r)} yd</title></circle>`;
       });
     }
     if (on.threat) {
       CmdView.threatLines(shown, onMap).forEach(l => {
         const a = CmdView.project(l.mob.x, l.mob.y), b = CmdView.project(l.bot.x, l.bot.y);
-        g += `<line class="threat" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"/>`;
+        g += `<line class="threat" style="${cmdLineStyle('threat', 1.5, 0.85)}" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"/>`;
       });
     }
     if (on.bottarget) {
       CmdView.botTargetLines(onMap, mobs).forEach(l => {
         const a = CmdView.project(l.bot.x, l.bot.y), b = CmdView.project(l.mob.x, l.mob.y);
-        g += `<line class="bottarget" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"/>`;
+        g += `<line class="bottarget" style="${cmdLineStyle('bottarget', 1.5, 0.9)}" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"/>`;
       });
     }
+    if (on.healline) CmdPaths.healLines(onMap).forEach(l => { g += cmdLineSvg(dc, 'healline', 'healline', l.from, l.to, 0.9); });
+    if (on.ccline) CmdPaths.ccLines(onMap, mobs).forEach(l => { g += cmdLineSvg(dc, 'ccline', 'ccline', l.from, l.to, 0.9); });
+    if (on.objects) g += cmdObjectsSvg(dc, objs);
     // the health bar and status icons over a unit at plane point p, radius r (drawing units)
     const overlay = (u, kind, p, r) => {
       let o = '';
@@ -4887,6 +5040,7 @@
           + cmdMapIcon(e.kind === 'death' || e.kind === 'wipe' ? 'skull' : e.kind === 'boss' ? 'crown' : e.kind === 'loot' ? 'coin' : 'door', p.x, p.y, (big ? 17 : 12) * k) + '</g>';
       });
     }
+    if (on.stalls) g += cmdStallsSvg(dc, stalls);
     if (on.commander && commanderAt) {
       const c = CmdView.project(commanderAt.x, commanderAt.y), tgt = lead2 ? CmdView.project(lead.x, lead.y) : null;
       if (tgt) g += `<line class="cmdline" x1="${f(c.x)}" y1="${f(c.y)}" x2="${f(tgt.x)}" y2="${f(tgt.y)}"/>`;
@@ -4966,6 +5120,9 @@
     const ctx = { lead: facts.lead && facts.first && facts.lead.map === facts.first.map ? facts.lead : null, bots: facts.onMap, mobs: facts.mobs };
     const d = u.kind === 'b' ? UnitInfo.describeBot(u.obj, ctx) : u.kind === 'm' ? UnitInfo.describeMob(u.obj, ctx)
       : u.kind === 'c' ? UnitInfo.describeCommander(u.obj.name, u.obj, ctx)
+      : u.kind === 'o' ? UnitInfo.describeObject(u.obj, ctx)
+      : u.kind === 's' ? UnitInfo.describeNote('Run step ' + u.obj.i, CmdPaths.stepText(u.obj), 'event')
+      : u.kind === 'x' ? UnitInfo.describeNote(u.obj.kind === 'pause' ? 'Run paused here' : 'Refused here', CmdPaths.stallText(u.obj), 'hostile')
       : UnitInfo.describeEvent(u.obj, bind.bound_at > 0 ? bind.bound_at : UnitInfo.firstSeen(cmdEvents, key));
     const sig = JSON.stringify(d);
     if (tip._k !== sig) {
@@ -5188,6 +5345,7 @@
 
   const cmdLayerRows = {}; // layer key -> {box, row, why}
   let cmdDimRow = null;    // the dim slider's {row, box, val}
+  let cmdTrailRow = null;  // the path-length slider's {row, box, val}
 
   function initCmdLayers() {
     const body = document.getElementById('cmd-layers-body');
@@ -5204,6 +5362,18 @@
     });
     body.appendChild(dimRow);
     cmdDimRow = { row: dimRow, box: dimBox, val: dimVal };
+    const lenRow = document.createElement('label');
+    lenRow.className = 'cmd-dim';
+    lenRow.innerHTML = '<span>Path length (positions drawn)</span><input type="range" min="' + MapLayers.TRAIL_LEN_MIN + '" max="' + MapLayers.TRAIL_LEN_MAX + '" step="10" aria-label="Path length"><b></b>';
+    const lenBox = lenRow.querySelector('input'), lenVal = lenRow.querySelector('b');
+    lenBox.addEventListener('input', () => {
+      cmdLayers = MapLayers.setTrailLen(cmdLayers, lenBox.value);
+      MapLayers.save(cmdLayerStore, cmdLayers);
+      lenVal.textContent = String(cmdLayers.trailLen);
+      cmdCards.forEach((_, k) => drawCmdMap(k));
+    });
+    body.appendChild(lenRow);
+    cmdTrailRow = { row: lenRow, box: lenBox, val: lenVal };
     MapLayers.groups().forEach(group => {
       const wrap = document.createElement('div');
       wrap.className = 'cmd-lgroup';
@@ -5224,6 +5394,32 @@
         row.append(box, text, why);
         wrap.appendChild(row);
         cmdLayerRows[d.key] = { box, row, why };
+        if (d.line) {
+          // a line layer also has its opacity and thickness (shown while the layer is on)
+          const st = document.createElement('div');
+          st.className = 'cmd-lstyle';
+          st.hidden = true;
+          const mk = (label, field, min, max) => {
+            const lab = document.createElement('label'), name = document.createElement('span'), inp = document.createElement('input'), val = document.createElement('b');
+            name.textContent = label;
+            inp.type = 'range';
+            inp.min = String(min);
+            inp.max = String(max);
+            inp.step = field === 'op' ? '5' : '10';
+            inp.setAttribute('aria-label', label + ' of ' + d.label);
+            inp.addEventListener('input', () => {
+              cmdLayers = MapLayers.setStyle(cmdLayers, d.key, field, inp.value);
+              MapLayers.save(cmdLayerStore, cmdLayers);
+              val.textContent = cmdLayers.style[d.key][field] + '%';
+              cmdCards.forEach((_, k) => drawCmdMap(k));
+            });
+            lab.append(name, inp, val);
+            st.appendChild(lab);
+            return { inp, val };
+          };
+          cmdLayerRows[d.key].style = { wrap: st, op: mk('Opacity', 'op', MapLayers.OP_MIN, MapLayers.OP_MAX), th: mk('Thickness', 'th', MapLayers.TH_MIN, MapLayers.TH_MAX) };
+          wrap.appendChild(st);
+        }
       });
       body.appendChild(wrap);
     });
@@ -5248,10 +5444,25 @@
       cmdDimRow.row.classList.toggle('off', !avail.bg.ok);
       cmdDimRow.row.title = avail.bg.ok ? '' : 'Greyed out: ' + avail.bg.why;
     }
+    if (cmdTrailRow) {
+      const any = avail.trail.ok || avail.membertrails.ok;
+      cmdTrailRow.box.value = String(cmdLayers.trailLen);
+      cmdTrailRow.val.textContent = String(cmdLayers.trailLen);
+      cmdTrailRow.box.disabled = !any;
+      cmdTrailRow.row.classList.toggle('off', !any);
+    }
     MapLayers.DEFS.forEach(d => {
       const r = cmdLayerRows[d.key];
       if (!r) return;
       const a = avail[d.key];
+      if (r.style) {
+        const sv = cmdLayers.style[d.key];
+        r.style.wrap.hidden = !(cmdLayers[d.key] && a.ok);
+        r.style.op.inp.value = String(sv.op);
+        r.style.op.val.textContent = sv.op + '%';
+        r.style.th.inp.value = String(sv.th);
+        r.style.th.val.textContent = sv.th + '%';
+      }
       r.box.checked = !!cmdLayers[d.key];
       r.box.disabled = !a.ok;
       r.row.classList.toggle('off', !a.ok);

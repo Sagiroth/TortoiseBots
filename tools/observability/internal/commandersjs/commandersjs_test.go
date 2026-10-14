@@ -39,3 +39,14 @@ func TestUnitInfoJS(t *testing.T) {
 func TestPartyRowsJS(t *testing.T) {
 	runCheck(t, "partyrows_check.js", "../../web/static/js/app.js")
 }
+
+// TestPathsJS runs paths_check.js: bot trails and their stored history, run steps and their route, stall spots, objects, aggro radius, heal
+// and crowd-control lines.
+func TestPathsJS(t *testing.T) {
+	runCheck(t, "paths_check.js", "../../web/static/js/paths.js")
+}
+
+// TestDrawingJS runs drawing_check.js: the SVG the drawing layers build in app.js (escaping, line styles, one hover entry per mark).
+func TestDrawingJS(t *testing.T) {
+	runCheck(t, "drawing_check.js", "../../web/static/js/app.js")
+}

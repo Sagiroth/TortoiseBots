@@ -8,13 +8,13 @@ const mem = () => { const d = {}; return { d, getItem: (k) => (k in d ? d[k] : n
 
 // ---- defaults: what the maps drew before layers existed is on, everything new is off
 const def = L.defaults();
-assert.deepStrictEqual(Object.keys(def).sort(), L.keys().concat(["dim"]).sort());
+assert.deepStrictEqual(Object.keys(def).sort(), L.keys().concat(["dim", "trailLen", "style"]).sort());
 assert.strictEqual(def.dim, 30); // the picture was darkened by 30 % before the slider existed
 // ... plus, new with the unit info: the boss marker and the health bars
-["bg", "grid", "zone", "bots", "botnames", "lead", "trail", "bossmark", "hpbars"].forEach((k) => assert.strictEqual(def[k], true, k));
+["bg", "grid", "zone", "bots", "botnames", "lead", "trail", "bossmark", "hpbars", "runsteps"].forEach((k) => assert.strictEqual(def[k], true, k));
 ["zonelabels", "scale", "trailtime", "heading", "healring", "commander", "mobhostile", "mobneutral", "mobcritter", "threat", "bottarget", "aggro",
-  "hostilenames", "threatcolors", "statusicons", "events", "feed", "runinfo"].forEach((k) => assert.strictEqual(def[k], false, k));
-assert.strictEqual(L.DEFS.filter((d) => d.def).length, 9);
+  "hostilenames", "threatcolors", "statusicons", "events", "feed", "runinfo", "membertrails", "healline", "ccline", "stalls", "objects"].forEach((k) => assert.strictEqual(def[k], false, k));
+assert.strictEqual(L.DEFS.filter((d) => d.def).length, 10);
 assert.strictEqual(new Set(L.keys()).size, L.keys().length);
 L.DEFS.forEach((d) => { assert.ok(d.label && d.group, d.key); assert.ok(!d.needs || d.why, d.key + " needs a reason"); });
 
@@ -67,7 +67,7 @@ assert.strictEqual(L.mergeAvailability([]).grid.ok, false);
 const act = L.active(s, L.availability({ bots: true }));
 assert.strictEqual(act.bots, true); assert.strictEqual(act.grid, false /* turned off */); assert.strictEqual(act.threat, false /* chosen but no data */);
 assert.strictEqual(act.trail, false /* no data */);
-assert.deepStrictEqual(L.groups(), ["Map", "Party", "Mobs", "Units", "Run"]);
+assert.deepStrictEqual(L.groups(), ["Map", "Party", "Mobs", "Combat", "Units", "Run", "Objects"]);
 
 // ---- the dim slider: 0-80 %, saved with the other choices
 assert.strictEqual(L.DIM_MAX, 80);
@@ -123,4 +123,42 @@ assert.strictEqual(L.active(def, L.availability({ mobs: true })).bossmark, true,
 // the saved choice of an older page (without the new keys) gets the new defaults
 const old = mem(); old.d[L.STORAGE_KEY] = JSON.stringify({ grid: false });
 assert.strictEqual(L.load(old).bossmark, true); assert.strictEqual(L.load(old).hpbars, true); assert.strictEqual(L.load(old).statusicons, false);
+
+// ---- the drawing layers (paths, run steps, stalls, objects, combat lines): data needs, line styles, trail length
+const draw = L.availability({});
+["membertrails", "runsteps", "stalls", "objects", "healline", "ccline"].forEach((k) => assert.strictEqual(draw[k].ok, false, k + " is greyed without data"));
+const withDraw = L.availability({ memberTrails: true, runSteps: true, stalls: true, objects: true, activity: true });
+["membertrails", "runsteps", "stalls", "objects", "healline", "ccline"].forEach((k) => assert.strictEqual(withDraw[k].ok, true, k));
+// every line layer has a style; layers that are no lines have none
+const lines = L.DEFS.filter((d) => d.line).map((d) => d.key);
+["trail", "membertrails", "runsteps", "threat", "bottarget", "healline", "ccline", "aggro"].forEach((k) => assert.ok(lines.includes(k), k + " is a line layer"));
+assert.deepStrictEqual(Object.keys(def.style).sort(), lines.slice().sort());
+lines.forEach((k) => assert.deepStrictEqual(L.styleOf(def, k), { op: 1, th: 1 }, k));
+assert.deepStrictEqual(L.styleOf(def, "grid"), { op: 1, th: 1 }, "a layer without a style reads as normal");
+let sty = L.setStyle(def, "trail", "op", 40);
+sty = L.setStyle(sty, "trail", "th", "250");
+assert.deepStrictEqual(L.styleOf(sty, "trail"), { op: 0.4, th: 2.5 });
+assert.strictEqual(L.styleOf(sty, "runsteps").op, 1, "one layer's style does not touch another's");
+assert.strictEqual(L.styleOf(L.setStyle(def, "trail", "op", 0), "trail").op, 0.1, "opacity is kept visible (10 % at least)");
+assert.strictEqual(L.styleOf(L.setStyle(def, "trail", "th", 9999), "trail").th, 3);
+assert.strictEqual(L.styleOf(L.setStyle(def, "trail", "th", 1), "trail").th, 0.5);
+assert.strictEqual(L.styleOf(L.setStyle(def, "trail", "op", "junk"), "trail").op, 1, "junk falls back");
+assert.deepStrictEqual(L.setStyle(def, "grid", "op", 20).style, def.style, "grid is no line layer");
+assert.deepStrictEqual(L.setStyle(def, "trail", "bad", 20).style, def.style);
+assert.strictEqual(L.setTrailLen(def, 60).trailLen, 60);
+assert.strictEqual(L.setTrailLen(def, 5).trailLen, 10);
+assert.strictEqual(L.setTrailLen(def, 5000).trailLen, 240);
+assert.strictEqual(L.setTrailLen(def, "abc").trailLen, 120);
+// styles survive a save and load; junk in a stored style is cleaned
+const sst = mem();
+L.save(sst, L.setTrailLen(sty, 50));
+const back = L.load(sst);
+assert.deepStrictEqual(L.styleOf(back, "trail"), { op: 0.4, th: 2.5 }); assert.strictEqual(back.trailLen, 50);
+assert.strictEqual(L.normalize({ style: { trail: { op: "x", th: 99999 }, grid: { op: 5 } } }).style.trail.op, 100);
+assert.strictEqual(L.normalize({ style: { trail: { op: "x", th: 99999 } } }).style.trail.th, 300);
+assert.ok(!("grid" in L.normalize({ style: { grid: { op: 5 } } }).style), "styles of other keys are dropped");
+assert.strictEqual(L.normalize({ style: [1, 2] }).style.trail.op, 100);
+assert.strictEqual(L.normalize({ trailLen: "x" }).trailLen, 120);
+// an older saved choice (no styles) gets the normal look; the default-on layer count stays honest
+assert.strictEqual(L.load(old).style.trail.th, 100); assert.strictEqual(L.load(old).runsteps, true); assert.strictEqual(L.load(old).membertrails, false);
 console.log("maplayers.js ok");

@@ -122,6 +122,22 @@
     return { title: str(name), sub: "Commander", tone: "commander", rows };
   }
 
+  // A game object: its name, what kind it is and whether it is closed, open or used, and the distance to the lead.
+  const OBJ_KIND_WORD = { d: "Door", c: "Chest", b: "Lever", g: "Gong or altar", r: "Ritual", o: "Object" };
+  const OBJ_STATE_WORD = { r: "closed", a: "open", u: "used" };
+  function describeObject(o, ctx) {
+    const rows = [["State", OBJ_STATE_WORD[o.state] || "closed"]];
+    const d = dist(o, (ctx || {}).lead);
+    if (d != null) rows.push(["From the lead", Math.round(d) + " yd"]);
+    if (o.entry) rows.push(["Entry", String(o.entry)]);
+    return { title: str(o.name) || OBJ_KIND_WORD[o.type] || "Object", sub: OBJ_KIND_WORD[o.type] || "Object", tone: "object", rows };
+  }
+
+  // A plain note over a map mark (a run step, a stall spot): a title and one line.
+  function describeNote(title, sub, tone) {
+    return { title: str(title), sub: str(sub), tone: tone || "event", rows: [] };
+  }
+
   function describeEvent(e, startSec) {
     const l = feedLine(e, startSec);
     return { title: l.text, sub: l.time ? "at " + l.time + " into the run" : "", tone: "event", rows: [] };
@@ -325,7 +341,7 @@
 
   const api = {
     runBrief,
-    activity, actionPhrase, describeBot, describeMob, describeCommander, describeEvent, boxPosition, hpBar, hpClass, threatClass, targetMarks, statusIcons,
+    activity, actionPhrase, describeBot, describeMob, describeCommander, describeObject, describeNote, describeEvent, boxPosition, hpBar, hpClass, threatClass, targetMarks, statusIcons,
     newEvents, noteEvents, eventsOf, firstSeen, pruneEvents, clockText, feedLine, pinsOn, runInfo, dist, CC_WORD,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.UnitInfo = api;

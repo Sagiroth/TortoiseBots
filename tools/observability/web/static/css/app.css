@@ -2823,7 +2823,7 @@ select.input {
 .cmd-map .grid { stroke: rgba(255, 255, 255, 0.07); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .cmd-map rect.zone { fill: rgba(88, 166, 255, 0.04); stroke: rgba(88, 166, 255, 0.45); stroke-width: 1.5; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
 .cmd-map text.zone { fill: rgba(139, 148, 158, 0.9); font-weight: 600; }
-.cmd-map .trail { fill: none; stroke: #fff; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.cmd-map .trail { fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .cmd-map .dot { stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .cmd-map .bot.tank .dot { fill: var(--role-tank); }
 .cmd-map .bot.healer .dot { fill: var(--role-healer); }
@@ -2983,3 +2983,47 @@ select.input {
 .cmd-runstep { color: var(--text-main); font-weight: 600; }
 .cmd-runstep.paused { color: var(--accent-yellow); }
 .cmd-state.s-run-paused { color: var(--accent-yellow); }
+
+/* Commanders maps: paths of the group, run steps, stall spots, objects, heal and crowd-control lines, and the line styles in the layers panel */
+.cmd-map .mtrail { fill: none; stroke: #9ca3af; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.cmd-map .mtrail.tank { stroke: var(--role-tank, #2f80ff); } .cmd-map .mtrail.healer { stroke: var(--role-healer, #22c55e); }
+.cmd-map .mtrail.dps { stroke: var(--role-dps, #ff9f1c); } .cmd-map .mtrail.other { stroke: var(--role-other, #9ca3af); } .cmd-map .mtrail.dead { stroke: var(--role-dead, #6b7280); }
+.cmd-map .route { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.cmd-map .route.done { stroke: #94a3b8; stroke-dasharray: 3 6; }
+.cmd-map .route.ahead { stroke: #38bdf8; stroke-dasharray: 8 5; }
+.cmd-map .route.toward { stroke: #facc15; stroke-dasharray: 2 4; }
+.cmd-map .rstep .stepdot { fill: rgba(14, 19, 27, 0.88); stroke: #38bdf8; stroke-width: 1.8; vector-effect: non-scaling-stroke; }
+.cmd-map .rstep.cleared .stepdot { stroke: #4ade80; opacity: 0.6; }
+.cmd-map .rstep.next .stepdot { stroke: #facc15; stroke-width: 2.8; fill: rgba(250, 204, 21, 0.2); }
+.cmd-map .rstep.skipped .stepdot { stroke: #6b7280; opacity: 0.75; }
+.cmd-map .rstep .stepnum { fill: #fff; text-anchor: middle; font-weight: 700; pointer-events: none; }
+.cmd-map .rstep.cleared .stepnum { fill: #86efac; } .cmd-map .rstep.skipped .stepnum { fill: #9ca3af; }
+.cmd-map .rstep .stepskip { stroke: #ef4444; stroke-width: 1.8; stroke-linecap: round; vector-effect: non-scaling-stroke; pointer-events: none; }
+.cmd-map .rstep .steparea { fill: rgba(250, 204, 21, 0.06); stroke: #facc15; stroke-width: 1.2; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; pointer-events: none; }
+.cmd-map .rstep .stepmove { fill: #38bdf8; stroke: #000; stroke-width: 0.8; vector-effect: non-scaling-stroke; }
+.cmd-map .rstep.cleared .stepmove { fill: #64748b; } .cmd-map .rstep.next .stepmove { fill: #facc15; }
+.cmd-map .rstep.cleared .ic, .cmd-map .rstep.skipped .ic { opacity: 0.55; }
+.cmd-map text.stepname { fill: #fde68a; font-weight: 600; paint-order: stroke; stroke: #000; stroke-linejoin: round; pointer-events: none; }
+.cmd-map g.rstep, .cmd-map g.stall, .cmd-map g.obj { cursor: help; }
+.cmd-map .stall .xcase { fill: none; stroke: #000; stroke-width: 5.5; stroke-linecap: round; vector-effect: non-scaling-stroke; pointer-events: none; }
+.cmd-map .stall .xmark { fill: none; stroke: #ef4444; stroke-width: 2.8; stroke-linecap: round; vector-effect: non-scaling-stroke; pointer-events: none; }
+.cmd-map .stall:not(.live) .xmark { stroke: #f87171; opacity: 0.8; }
+.cmd-map text.stalltext { fill: #fecaca; font-weight: 600; paint-order: stroke; stroke: #000; stroke-linejoin: round; pointer-events: none; }
+.cmd-map .obj.st-u .ic { opacity: 0.55; }
+.cmd-map .obj.st-a .ic .bgd { stroke: #4ade80; stroke-width: 1.4; }
+.cmd-map .ic-chest { fill: #fbbf24; } .cmd-map .ic-stop { fill: #94a3b8; }
+.cmd-map .ic-lever { fill: #c4b5fd; color: #c4b5fd; } .cmd-map .ic-gong { fill: #fdba74; color: #fdba74; }
+.cmd-map line.healline { stroke: #4ade80; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.cmd-map line.ccline { stroke: #c084fc; stroke-width: 1.6; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; }
+.cmd-legend i.mtrail { width: 16px; height: 2px; border: 0; border-radius: 2px; background: linear-gradient(90deg, #2f80ff 33%, #22c55e 33% 66%, #ff9f1c 66%); vertical-align: 3px; }
+.cmd-legend i.route { width: 16px; height: 0; border: 0; border-radius: 0; border-top: 2px dashed #38bdf8; vertical-align: 3px; }
+.cmd-legend i.lstep { width: 12px; height: 12px; background: rgba(14, 19, 27, 0.88); border: 2px solid #38bdf8; }
+.cmd-legend i.lheal, .cmd-legend i.lcc { width: 16px; height: 0; border: 0; border-radius: 0; border-top: 2px solid #4ade80; vertical-align: 3px; }
+.cmd-legend i.lcc { border-top: 2px dashed #c084fc; }
+.cmd-legend svg.ic-x { fill: none; stroke: #ef4444; stroke-width: 2; stroke-linecap: round; }
+.cmd-legend svg.ic-chest { fill: #fbbf24; } .cmd-legend svg.ic-lever { fill: #c4b5fd; color: #c4b5fd; } .cmd-legend svg.ic-gong { fill: #fdba74; color: #fdba74; }
+.cmd-lstyle { display: grid; gap: 0; margin: 0 0 6px 30px; font-size: 0.74rem; color: var(--text-muted); }
+.cmd-lstyle[hidden] { display: none; }
+.cmd-lstyle label { display: grid; grid-template-columns: 5.4em minmax(0, 1fr) 3.2em; align-items: center; gap: 6px; min-height: 30px; }
+.cmd-lstyle input[type="range"] { width: 100%; min-width: 0; height: 28px; margin: 0; }
+.cmd-lstyle b { font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; }

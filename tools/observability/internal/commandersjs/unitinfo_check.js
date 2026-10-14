@@ -176,4 +176,15 @@ assert.strictEqual(U.runBrief({}, 5), null, "no run: nothing"); assert.strictEqu
 assert.strictEqual(U.runBrief({ run: Object.assign({}, run, { changed: 0 }) }, 1000).changedAgo, null);
 const rr = U.newEvents();
 assert.strictEqual(U.runInfo(bind({ commander: "RR", bound_at: 1000, run }), rr, 1100).text, "Run 01:40 · step 78/205 · ancient stone keeper · pull · rest", "the run line carries the step and section");
+// ---- the box over a game object and over a plain mark
+{
+  const d = U.describeObject({ name: "Ancient Treasure", type: "c", state: "u", entry: 2087, x: 3, y: 4, map: 1 }, { lead: { x: 0, y: 0, map: 1 } });
+  assert.strictEqual(d.title, "Ancient Treasure"); assert.strictEqual(d.sub, "Chest"); assert.strictEqual(d.tone, "object");
+  assert.deepStrictEqual(d.rows, [["State", "used"], ["From the lead", "5 yd"], ["Entry", "2087"]]);
+  assert.strictEqual(U.describeObject({ type: "d", state: "r" }, {}).title, "Door", "no name: the kind");
+  assert.strictEqual(U.describeObject({ type: "?", state: "?" }, null).sub, "Object");
+  const n = U.describeNote("Run step 7", "Pull, radius 15 yd", "event");
+  assert.deepStrictEqual([n.title, n.sub, n.tone, n.rows.length], ["Run step 7", "Pull, radius 15 yd", "event", 0]);
+  assert.strictEqual(U.describeNote(null, undefined).title, "");
+}
 console.log("unitinfo.js ok");
