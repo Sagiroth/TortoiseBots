@@ -46,6 +46,7 @@ static Facts Party(float x = 0)
     f.alive = 5;
     f.leadX = x;
     f.carrier = "Tanky";
+    f.seen = true;  // the step's point within kSeeYd; tests of far steps clear it
     return f;
 }
 
@@ -123,13 +124,13 @@ static void TestStalledNearPointCountsAsArrived()
 static void TestPullLoopOnOneTargetPauses()
 {
     DungeonPlan plan;
-    plan.steps = {PullStep(10, {7078})};
+    plan.steps = {PullStep(10, {7078}), Step(PlanStepKind::Rest)};
     Run r = Start(&plan);
     Facts f = Party(0);
     f.seen = true;
     f.units = {Unit(42, 7078, 10)};
     int pulls = 0;
-    for (int i = 0; i < 2000 && r.state == State::Running; ++i)
+    for (int i = 0; i < 2000 && r.state == State::Running && r.step == 0; ++i)
     {
         f.anyInCombat = false;
         if (Tick(r, f) == "pullback 42")
@@ -142,7 +143,156 @@ static void TestPullLoopOnOneTargetPauses()
         }
     }
     CHECK(pulls == static_cast<int>(kMaxPullsPerTarget));
-    CHECK(r.state == State::Paused && r.note.find("survived 3 pulls") != std::string::npos);
+    // Left as out of reach: the step ends "skipped, not cleared", the run goes on.
+    CHECK(r.state == State::Running && r.step == 1 && r.note.find("skipped, not cleared") != std::string::npos);
+    CHECK(r.unreachable.count(42) == 1);
+}
+
+// Live: ten Cleft Scorpids in a pit, each pull fought one that leashed home.
+static void TestOutOfReachPackIsSkippedNotCleared()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {7078}), Step(PlanStepKind::Move, 30)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    for (std::uint64_t g = 1; g <= 10; ++g)
+        f.units.push_back(Unit(g, 7078, 10 + g));
+    int pulls = 0;
+    for (int i = 0; i < 3000 && r.state == State::Running && r.step == 0; ++i)
+    {
+        f.anyInCombat = false;
+        if (Tick(r, f).compare(0, 9, "pullback ") == 0)
+        {
+            ++pulls;
+            f.anyInCombat = true;
+            for (int k = 0; k < 5; ++k)
+                Tick(r, f);
+        }
+    }
+    CHECK(pulls == static_cast<int>(kFruitlessPulls));
+    CHECK(r.state == State::Running && r.step == 1);
+    CHECK(r.note.find("skipped, not cleared: 10 units") != std::string::npos);
+    // Never pulled again on the way (hop pulls skip them too).
+    f.units.clear();
+    f.hopUnits = {Unit(3, 7078, 13)};
+    CHECK(Tick(r, f) == "move 30.0 0.0 0.0");
+}
+
+// Live cascade: no Shaft -> no Staff -> Keystone -> Seal wait, each failing.
+static void TestMissingItemPausesOnce()
+{
+    DungeonPlan plan;
+    PlanStep loot = Step(PlanStepKind::Loot, 1, 2, 3);
+    loot.entry = 6910;
+    loot.item = 7741;
+    PlanStep use = Step(PlanStepKind::UseItem);
+    use.entry = 7740;
+    use.item = 7733;
+    PlanStep open = Step(PlanStepKind::Open, 4, 5, 6);
+    open.entry = 124371;
+    open.item = 7733;
+    PlanStep wait = Step(PlanStepKind::WaitObject, 7, 8, 9);
+    wait.entry = 124372;
+    wait.param = 1;
+    plan.steps = {loot, use, open, wait, Step(PlanStepKind::Move, 1)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    std::string order = Tick(r, f);
+    CHECK(order.compare(0, 5, "loot ") == 0);
+    // The corpse is gone: the order is refused. One pause, naming the item.
+    OrderRefused(r, order, "not-found: No spawned game object or corpse of that entry is near the point");
+    CHECK(r.state == State::Paused && r.note.find("item 7741 missing") != std::string::npos);
+    CHECK(Skip(r));
+    CHECK(r.missing.count(7741) == 1 && r.state == State::Running && r.step == 1);
+    // The medallion is there, but its use needs the Shaft: refused, no pause.
+    f.carrierHasEntryItem = true;
+    order = Tick(r, f);
+    CHECK(order == "use 7740 Tanky");
+    OrderRefused(r, order, "busy: The cast failed (spell check 40).");
+    CHECK(r.state == State::Running && r.step == 2 && r.missing.count(7733) == 1);
+    // No staff: the Keystone and the Seal wait are left out with notes.
+    Tick(r, f);
+    CHECK(r.state == State::Running && r.step == 3 && r.note.find("left out") != std::string::npos);
+    Tick(r, f);
+    CHECK(r.state == State::Running && r.step == 4 && r.note.find("open before it") != std::string::npos);
+}
+
+// After a wipe: resume revives the party and gathers it before the step.
+static void TestResumeRegroups()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.dead = 3;
+    f.alive = 2;
+    Tick(r, f);
+    CHECK(r.state == State::Paused);
+    CHECK(Resume(r));
+    CHECK(Tick(r, f) == "revive party");
+    CHECK(r.state == State::Running && r.note.find("regroup") == 0);
+    CHECK(Tick(r, f).empty());
+    // Up again but spread out: gather on the lead bot, then the step.
+    f.dead = 0;
+    f.alive = 5;
+    f.maxMemberYd = 80;
+    CHECK(Tick(r, f) == "move 0.0 0.0 0.0");
+    f.maxMemberYd = 5;
+    CHECK(Tick(r, f) == "move 40.0 0.0 0.0");
+    // Revive that never works is bounded.
+    Run r2 = Start(&plan);
+    Facts g = Party(0);
+    g.dead = 3;
+    g.alive = 2;
+    Tick(r2, g);
+    Resume(r2);
+    for (int i = 0; i < 400 && r2.state == State::Running; ++i)
+        Tick(r2, g);
+    CHECK(r2.state == State::Paused && r2.note.find("still dead") != std::string::npos);
+}
+
+// A far move point (the lead came back from the entrance): navmesh hops.
+static void TestFarMoveWalksBackInHops()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 200)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.seen = false;
+    f.approachKnown = true;
+    f.approachX = 40;
+    CHECK(Tick(r, f) == "move 40.0 0.0 0.0");
+    f.leadX = 40;
+    CHECK(Tick(r, f).empty());
+    f.seen = true;
+    CHECK(Tick(r, f) == "move 200.0 0.0 0.0");
+}
+
+// The Sentinel ramp: a direct step gathers the party first.
+static void TestDirectStepGathersFirst()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::MoveDirect, 5)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.maxMemberYd = 30;
+    CHECK(Tick(r, f) == "move 0.0 0.0 0.0");
+    CHECK(Tick(r, f).empty());
+    f.maxMemberYd = 4;
+    CHECK(Tick(r, f) == "move 5.0 0.0 0.0 direct");
+}
+
+// `.bot run skip` while running goes on running.
+static void TestSkipWhileRunning()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40), Step(PlanStepKind::Move, 10)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    Tick(r, f);
+    CHECK(Skip(r));
+    CHECK(r.state == State::Running && r.step == 1 && !r.regroup);
+    CHECK(Tick(r, f) == "move 10.0 0.0 0.0");
 }
 
 // Live: `cmd move -159.5 281.6 -49.1` refused unreachable (a point up a
@@ -231,6 +381,7 @@ static void TestUnseenPackIsApproachedNotCleared()
     // No path toward it at all: pause, never a straight-line guess.
     Run r2 = Start(&plan);
     Facts g = Party(0);
+    g.seen = false;
     Tick(r2, g);
     CHECK(r2.state == State::Paused && r2.note.find("no walkable path") == 0);
     // Hops that never bring it in sight are bounded.
@@ -448,9 +599,10 @@ static void TestUnsupportedPausesAndSkip()
     Tick(r, f);
     CHECK(r.state == State::Paused && r.note.find("not supported yet") != std::string::npos);
     CHECK(!Supported(PlanStepKind::Ritual) && Supported(PlanStepKind::Move));
+    // Skip from a pause goes on running (after the regroup).
     CHECK(Skip(r));
-    CHECK(r.state == State::Paused && r.step == 1);
-    CHECK(Resume(r));
+    CHECK(r.state == State::Running && r.step == 1 && r.regroup);
+    CHECK(!Resume(r));
     CHECK(Tick(r, f) == "move 10.0 0.0 0.0");
 }
 
@@ -501,6 +653,7 @@ static void TestTeamFlags()
     plan.steps = {PullStep(10, {4851}, ai::kPlanFlagHorde), Step(PlanStepKind::Rest)};
     Facts f = Party(0);
     f.team = ai::kPlanFlagAlliance;
+    f.seen = false;
     // Not seen yet: a pack for the other team is skipped without a walk.
     Run r = Start(&plan);
     CHECK(Tick(r, f).empty());
@@ -536,6 +689,7 @@ static void TestOtherTeamBossIsLookedAtAndFoughtUnlessFriendly()
     plan.steps = {boss, Step(PlanStepKind::Rest)};
     Facts f = Party(0);
     f.team = ai::kPlanFlagAlliance;
+    f.seen = false;
     // Not in sight: walk to it, never skip.
     Run r = Start(&plan);
     f.approachKnown = true;
@@ -576,6 +730,12 @@ int main()
     TestWalkStuckIsBounded();
     TestStalledNearPointCountsAsArrived();
     TestPullLoopOnOneTargetPauses();
+    TestOutOfReachPackIsSkippedNotCleared();
+    TestMissingItemPausesOnce();
+    TestResumeRegroups();
+    TestFarMoveWalksBackInHops();
+    TestDirectStepGathersFirst();
+    TestSkipWhileRunning();
     TestUnreachableMoveDetours();
     TestPullGatherAndFight();
     TestUnseenPackIsApproachedNotCleared();

@@ -66,8 +66,11 @@ constexpr std::uint32_t kWalkTries = 3;           // ... at most this often, the
 constexpr float kWalkProgressYd = 2.0f;
 constexpr std::uint32_t kPullNoFightMs = 25000;   // a pull that started no fight in this time failed
 constexpr std::uint32_t kPullTriesPerUnit = 2;    // a unit two pulls could not start a fight with is passed
-constexpr std::uint32_t kMaxPullsPerTarget = 3;  // a unit three pulls (with fights) did not kill pauses the run
-constexpr std::uint32_t kMaxPullsPerStep = 10;
+constexpr std::uint32_t kMaxPullsPerTarget = 3;  // a unit three fought pulls did not kill is out of reach
+constexpr std::uint32_t kFruitlessPulls = 3;      // three pulls in a row that kill nothing: the rest of the pack is out of reach
+constexpr std::uint32_t kMaxPullsPerStep = 20;
+constexpr std::uint32_t kRegroupReviveMs = 240000; // after a resume: the dead must be up within this
+constexpr std::uint32_t kRegroupGatherMs = 60000;  // ... and the party gathered within this after that
 constexpr std::uint32_t kFightCapMs = 180000;
 constexpr std::uint32_t kBossFightCapMs = 420000;
 constexpr std::uint32_t kRestCapMs = 60000;
@@ -185,6 +188,18 @@ struct Run
     std::uint32_t pulls = 0;
     std::unordered_map<std::uint64_t, std::uint32_t> pullTries;
     std::unordered_set<std::uint64_t> passed;
+    std::size_t openAtLastPull = 0;
+    std::uint32_t fruitlessPulls = 0;
+    // Run-wide (kept across steps).
+    std::unordered_set<std::uint64_t> unreachable;   // units given up on: never pulled again this run
+    std::unordered_set<std::uint32_t> missing;       // items the run did not get (a skipped loot or use)
+    std::uint32_t pendingMissing = 0;                 // the item a paused step failed to get (missing on skip)
+    std::size_t skippedOpenStep = static_cast<std::size_t>(-1); // an `open` left out: the wait after it goes too
+    // Regroup after a resume (revive the dead, gather), before the step.
+    bool regroup = false;
+    bool reviveSent = false;
+    bool regroupGatherSent = false;
+    std::uint32_t regroupMs = 0;
 };
 
 inline const PlanStep* Current(const Run& r)
@@ -241,10 +256,13 @@ inline void ResetStep(Run& r)
     r.pulls = 0;
     r.pullTries.clear();
     r.passed.clear();
+    r.openAtLastPull = 0;
+    r.fruitlessPulls = 0;
 }
 
 inline void NextStep(Run& r, const std::string& note)
 {
+    r.pendingMissing = 0;
     ++r.step;
     ResetStep(r);
     r.note = note;
@@ -270,7 +288,9 @@ inline Run Start(const DungeonPlan* plan, std::size_t fromStep = 0)
     return r;
 }
 
-// `.bot run resume`: the paused step starts over with fresh tries.
+// `.bot run resume`: the party regroups first (the dead are revived, the
+// living gather on the lead bot), then the paused step starts over with fresh
+// tries; a lead bot far from it walks back on the navmesh (approach hops).
 inline bool Resume(Run& r)
 {
     if (r.state != State::Paused || !Current(r))
@@ -278,19 +298,38 @@ inline bool Resume(Run& r)
     r.state = State::Running;
     r.fighting = false;
     ResetStep(r);
-    r.note = "resumed";
+    r.regroup = true;
+    r.reviveSent = false;
+    r.regroupGatherSent = false;
+    r.regroupMs = 0;
+    r.note = "resumed: regrouping";
     return true;
 }
 
-// `.bot run skip`: a paused run leaves its step out and stays paused.
+// `.bot run skip`: leaves the current step out and goes on running (from a
+// pause too, with the regroup of a resume). An item the step failed to get is
+// noted missing: later steps that need it are left out with a note instead
+// of failing one after the other.
 inline bool Skip(Run& r)
 {
-    if (r.state != State::Paused || !Current(r))
+    const PlanStep* s = Current(r);
+    if (r.state == State::Done || !s)
         return false;
+    bool const wasPaused = r.state == State::Paused;
+    if (r.pendingMissing)
+        r.missing.insert(r.pendingMissing);
+    if (s->kind == PlanStepKind::Open)
+        r.skippedOpenStep = r.step;
     std::size_t const skipped = r.step + 1;
+    r.state = State::Running;
     NextStep(r, "skipped step " + std::to_string(skipped));
-    if (r.state != State::Done)
-        r.state = State::Paused;
+    if (wasPaused && r.state == State::Running)
+    {
+        r.regroup = true;
+        r.reviveSent = false;
+        r.regroupGatherSent = false;
+        r.regroupMs = 0;
+    }
     return true;
 }
 
@@ -308,12 +347,27 @@ inline bool PauseForPlayer(Run& r, const std::string& order)
 // gate's own ceiling ends the wait.
 inline void OrderRefused(Run& r, const std::string& order, const std::string& answer)
 {
-    if (order == "rest")
+    if (order == "rest" || order == "revive party")
     {
-        r.note = "rest refused: " + answer;
+        // The rest gate and the regroup have their own ceilings.
+        r.note = order + " refused: " + answer;
         return;
     }
-    Pause(r, "cmd " + order + " refused: " + answer);
+    const PlanStep* s = Current(r);
+    if (s && s->kind == PlanStepKind::UseItem && s->item && !r.missing.empty())
+    {
+        // A use that cannot work because an earlier item is missing (a
+        // reagent): a consequence, not a second failure.
+        r.missing.insert(s->item);
+        NextStep(r, "use_item " + std::to_string(s->entry) + " refused (" + answer + "): an earlier item is missing; " +
+            "item " + std::to_string(s->item) + " is noted missing too");
+        return;
+    }
+    if (s && (s->kind == PlanStepKind::Loot || s->kind == PlanStepKind::UseItem) && s->item)
+        r.pendingMissing = s->item;
+    Pause(r, "cmd " + order + " refused: " + answer +
+        (r.pendingMissing ? " (item " + std::to_string(r.pendingMissing) +
+            " missing: .bot run skip leaves out the steps that need it)" : ""));
 }
 
 inline bool NeedsRest(const Facts& f, const RestLines& l)
@@ -377,7 +431,7 @@ inline const UnitFact* PickPull(const Run& r, const std::vector<UnitFact>& units
     const UnitFact* best = nullptr;
     for (const UnitFact& u : units)
     {
-        if (!u.hostile || u.evading || u.stealthed || r.passed.count(u.guid))
+        if (!u.hostile || u.evading || u.stealthed || r.passed.count(u.guid) || r.unreachable.count(u.guid))
             continue;
         if (entry && u.entry != entry)
             continue;
@@ -393,7 +447,7 @@ inline std::size_t OpenUnits(const Run& r, const std::vector<UnitFact>& units)
 {
     std::size_t n = 0;
     for (const UnitFact& u : units)
-        if (u.hostile && !r.passed.count(u.guid))
+        if (u.hostile && !r.passed.count(u.guid) && !r.unreachable.count(u.guid))
             ++n;
     return n;
 }
@@ -425,8 +479,9 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     {
         // Each pull started a fight, yet the unit lives: it evades, leashes
         // home or stands where the party cannot reach. Never loop on it.
-        Pause(r, "unit " + std::to_string(u.entry) + " (guid " + std::to_string(u.guid) + ") survived " +
-            std::to_string(kMaxPullsPerTarget) + " pulls (evading or out of reach): kill it by hand or .bot run skip");
+        r.unreachable.insert(u.guid);
+        r.note = "unit " + std::to_string(u.entry) + " survived " + std::to_string(kMaxPullsPerTarget) +
+            " pulls: left as out of reach";
         return;
     }
     ++tries;
@@ -448,6 +503,33 @@ inline void AwaitPull(Run& r)
         r.passed.insert(r.pullGuid);
     r.pullGuid = 0;
     EnterPhase(r, Phase::Begin);
+}
+
+// Walks toward a step whose point is out of sight, one navmesh hop at a time
+// (the glue's approach point). A hop is fixed when its walk starts; once there
+// the next tick asks for the next one. Bounded by kMaxApproachHops.
+inline void ApproachHop(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt, std::string& order,
+    const std::string& what)
+{
+    r.note = "approaching the " + what;
+    if (r.phase == Phase::Walk)
+    {
+        if (WalkTo(r, f, r.walkX, r.walkY, r.walkZ, false, dt, order))
+            EnterPhase(r, Phase::Begin);
+        return;
+    }
+    if (!f.approachKnown)
+    {
+        Pause(r, "no walkable path toward the " + what + " at " + Num(s.x) + " " + Num(s.y) + " " + Num(s.z));
+        return;
+    }
+    if (++r.approachHops > kMaxApproachHops)
+    {
+        Pause(r, std::to_string(kMaxApproachHops) + " approach hops did not bring the party within " +
+            Num(kSeeYd) + " yd of the " + what);
+        return;
+    }
+    WalkTo(r, f, f.approachX, f.approachY, f.approachZ, false, dt, order);
 }
 
 // pull and boss steps: approach until seen, then pull in order until nothing
@@ -487,28 +569,7 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
     }
     if (!f.seen)
     {
-        r.note = "approaching";
-        // A hop is fixed when its walk starts; once there the next tick asks
-        // for the next hop.
-        if (r.phase == Phase::Walk)
-        {
-            if (WalkTo(r, f, r.walkX, r.walkY, r.walkZ, false, dt, order))
-                EnterPhase(r, Phase::Begin);
-            return;
-        }
-        if (!f.approachKnown)
-        {
-            Pause(r, "no walkable path toward the " + std::string(s.kind == PlanStepKind::Boss ? "boss" : "pack") +
-                " at " + Num(s.x) + " " + Num(s.y) + " " + Num(s.z));
-            return;
-        }
-        if (++r.approachHops > kMaxApproachHops)
-        {
-            Pause(r, std::to_string(kMaxApproachHops) + " approach hops did not bring the party within " +
-                Num(kSeeYd) + " yd of the step");
-            return;
-        }
-        WalkTo(r, f, f.approachX, f.approachY, f.approachZ, false, dt, order);
+        ApproachHop(r, f, s, dt, order, s.kind == PlanStepKind::Boss ? "boss" : "pack");
         return;
     }
     const UnitFact* pick = nullptr;
@@ -519,6 +580,27 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
             pick = PickPull(r, f.units, entry);
     if (pick)
     {
+        // Pulls that kill nothing, three in a row: the rest of the pack is
+        // out of reach (a pit, a ledge). It is left, not counted cleared.
+        std::size_t const open = OpenUnits(r, f.units);
+        if (r.phase != Phase::Gather)
+        {
+            if (r.pulls > 0 && open >= r.openAtLastPull)
+                ++r.fruitlessPulls;
+            else if (r.pulls > 0)
+                r.fruitlessPulls = 0;
+            r.openAtLastPull = open;
+        }
+        if (r.fruitlessPulls >= kFruitlessPulls)
+        {
+            for (const UnitFact& u : f.units)
+                if (u.hostile && !r.passed.count(u.guid))
+                    r.unreachable.insert(u.guid);
+            NextStep(r, std::string(s.kind == PlanStepKind::Boss ? "boss" : "pack") + " skipped, not cleared: " +
+                std::to_string(open) + " units out of reach after " + std::to_string(kFruitlessPulls) +
+                " pulls that killed nothing");
+            return;
+        }
         PullUnit(r, f, *pick, order);
         return;
     }
@@ -546,10 +628,21 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         if (!r.walkedThrough)
             return;
     }
-    bool const anyListed = !f.units.empty();
-    NextStep(r, s.kind == PlanStepKind::Boss
-        ? (anyListed ? "boss is friendly to this party: left alone" : "boss down")
-        : (anyListed ? "pack is friendly to this party: left alone" : "pack cleared"));
+    std::size_t outOfReach = 0;
+    bool friendlyLeft = false;
+    for (const UnitFact& u : f.units)
+    {
+        if (u.hostile && r.unreachable.count(u.guid))
+            ++outOfReach;
+        friendlyLeft = friendlyLeft || !u.hostile;
+    }
+    std::string const what = s.kind == PlanStepKind::Boss ? "boss" : "pack";
+    if (outOfReach)
+        NextStep(r, what + " skipped, not cleared: " + std::to_string(outOfReach) + " units out of reach");
+    else if (friendlyLeft)
+        NextStep(r, what + " is friendly to this party: left alone");
+    else
+        NextStep(r, s.kind == PlanStepKind::Boss ? "boss down" : "pack cleared");
 }
 
 inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt, std::string& order)
@@ -563,6 +656,28 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
     if (const UnitFact* hopUnit = PickPull(r, f.hopUnits, 0))
     {
         PullUnit(r, f, *hopUnit, order);
+        return;
+    }
+    // Far away (after a wipe the lead bot comes back from the entrance; a
+    // long plan hop): walk back on the navmesh in hops first.
+    if (!r.detour && !f.seen)
+    {
+        ApproachHop(r, f, s, dt, order, "next point");
+        return;
+    }
+    // A direct step takes the lead bot's line: the party gathers on it first
+    // (`cmd move ... direct` refuses while a bot has no way to the lead's spot).
+    if (s.kind == PlanStepKind::MoveDirect && r.phase != Phase::Walk && f.maxMemberYd > kGatherYd)
+    {
+        if (r.phase != Phase::Gather)
+        {
+            EnterPhase(r, Phase::Gather);
+            r.note = "gathering before a direct step";
+            order = MoveOrder(f.leadX, f.leadY, f.leadZ, false);
+        }
+        else if (r.phaseMs >= kGatherCapMs)
+            Pause(r, "the party did not gather within " + std::to_string(kGatherCapMs / 1000) +
+                " s before a direct step (a bot is " + Num(f.maxMemberYd) + " yd from the lead bot)");
         return;
     }
     if (r.detour)
@@ -612,11 +727,27 @@ inline void TaskStep(Run& r, const Facts& f, const PlanStep& s, std::string& ord
         }
         if (s.kind == PlanStepKind::Open && s.item && !f.carrierHasItem)
         {
+            if (r.missing.count(s.item))
+            {
+                std::size_t const here = r.step;
+                NextStep(r, "open " + std::to_string(s.entry) + " left out: it needs item " + std::to_string(s.item) +
+                    ", which the run did not get");
+                r.skippedOpenStep = here;
+                return;
+            }
             Pause(r, "open: " + f.carrier + " does not carry item " + std::to_string(s.item) + " (the lock needs it)");
             return;
         }
         if (s.kind == PlanStepKind::UseItem && !f.carrierHasEntryItem)
         {
+            if (r.missing.count(s.entry))
+            {
+                if (s.item)
+                    r.missing.insert(s.item);
+                NextStep(r, "use_item " + std::to_string(s.entry) + " left out: the run did not get that item");
+                return;
+            }
+            r.pendingMissing = s.item;
             Pause(r, "use_item: " + f.carrier + " does not carry item " + std::to_string(s.entry));
             return;
         }
@@ -636,9 +767,21 @@ inline void TaskStep(Run& r, const Facts& f, const PlanStep& s, std::string& ord
             order = "use " + std::to_string(s.entry) + " " + f.carrier;
         return;
     }
+    bool const consequence = s.kind == PlanStepKind::UseItem && s.item && !r.missing.empty();
     if (f.taskReply == 2)
     {
-        Pause(r, kind + " failed: " + f.taskText);
+        if (consequence)
+        {
+            r.missing.insert(s.item);
+            NextStep(r, "use_item failed (" + f.taskText + "): an earlier item is missing; item " +
+                std::to_string(s.item) + " is noted missing too");
+            return;
+        }
+        if (s.kind != PlanStepKind::Open && s.item)
+            r.pendingMissing = s.item;
+        Pause(r, kind + " failed: " + f.taskText +
+            (r.pendingMissing ? " (item " + std::to_string(r.pendingMissing) +
+                " missing: .bot run skip leaves out the steps that need it)" : ""));
         return;
     }
     if (f.carrierBusy)
@@ -649,7 +792,16 @@ inline void TaskStep(Run& r, const Facts& f, const PlanStep& s, std::string& ord
     }
     if (s.kind != PlanStepKind::Open && s.item && !f.carrierHasItem)
     {
-        Pause(r, kind + " done, but item " + std::to_string(s.item) + " is not in " + f.carrier + "'s bags");
+        if (consequence)
+        {
+            r.missing.insert(s.item);
+            NextStep(r, "use_item did not make item " + std::to_string(s.item) +
+                " (an earlier item is missing): it is noted missing too");
+            return;
+        }
+        r.pendingMissing = s.item;
+        Pause(r, kind + " done, but item " + std::to_string(s.item) + " is not in " + f.carrier +
+            "'s bags (.bot run skip leaves out the steps that need it)");
         return;
     }
     NextStep(r, kind + " done");
@@ -679,6 +831,42 @@ inline std::string Tick(Run& r, const Facts& f, std::uint32_t dt = kTickMs, cons
         return order;
     }
     r.phaseMs += dt;
+
+    // After a resume or a skip from a pause: the dead get up, the living
+    // gather on the lead bot, then the step goes on.
+    if (r.regroup)
+    {
+        r.regroupMs += dt;
+        if (f.dead > 0 || !f.leadAlive)
+        {
+            r.note = "regroup: " + std::to_string(f.dead) + " dead, reviving";
+            if (!r.reviveSent || r.regroupMs % 60000 < dt)
+            {
+                r.reviveSent = true;
+                order = "revive party";
+            }
+            if (r.regroupMs > kRegroupReviveMs)
+                Pause(r, "regroup: " + std::to_string(f.dead) + " still dead after " +
+                    std::to_string(kRegroupReviveMs / 1000) + " s (cmd revive <bot>, then .bot run resume)");
+            return order;
+        }
+        if (f.maxMemberYd > kGatherYd && !f.anyInCombat)
+        {
+            r.note = "regroup: gathering on the lead bot";
+            if (!r.regroupGatherSent)
+            {
+                r.regroupGatherSent = true;
+                r.regroupMs = 0;
+                order = MoveOrder(f.leadX, f.leadY, f.leadZ, false);
+            }
+            else if (r.regroupMs > kRegroupGatherMs)
+                Pause(r, "regroup: the party did not gather within " + std::to_string(kRegroupGatherMs / 1000) +
+                    " s (a bot is " + Num(f.maxMemberYd) + " yd from the lead bot)");
+            return order;
+        }
+        r.regroup = false;
+        r.note = "regrouped";
+    }
 
     // Wipe: stop and regroup.
     if (f.dead >= kWipeDead || (f.total > 0 && f.alive == 0))
@@ -779,6 +967,11 @@ inline std::string Tick(Run& r, const Facts& f, std::uint32_t dt = kTickMs, cons
             TaskStep(r, f, *s, order);
             break;
         case PlanStepKind::WaitObject:
+            if (r.skippedOpenStep != static_cast<std::size_t>(-1) && r.step == r.skippedOpenStep + 1)
+            {
+                NextStep(r, "wait for object " + std::to_string(s->entry) + " left out: the open before it was left out");
+                break;
+            }
             if (r.phase != Phase::Wait)
                 EnterPhase(r, Phase::Wait);
             if (f.objectState == static_cast<int>(s->param))
@@ -792,8 +985,7 @@ inline std::string Tick(Run& r, const Facts& f, std::uint32_t dt = kTickMs, cons
         case PlanStepKind::WaitClear:
             if (!f.seen)
             {
-                r.note = "walking to the spot to watch";
-                WalkTo(r, f, s->x, s->y, s->z, false, dt, order);
+                ApproachHop(r, f, *s, dt, order, "spot to watch");
                 break;
             }
             if (r.phase != Phase::Wait)
