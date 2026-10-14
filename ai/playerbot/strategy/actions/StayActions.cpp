@@ -33,8 +33,10 @@ bool StayActionBase::Stay(Player* requester)
         context->GetValue<time_t>("stay time")->Set(stayTime);
     }
 
+    // Already standing still: the bookkeeping above is the whole job, and
+    // the bot is staying as asked, so this is a success, not a failure.
     if (!sServerFacade.isMoving(bot))
-        return false;
+        return true;
 
     ai->StopMoving();
     bot->ClearUnitState(UNIT_STAT_CHASE);
@@ -51,7 +53,17 @@ bool StayAction::Execute(Event& event)
 
 bool StayAction::isUseful()
 {
-    return !AI_VALUE2(bool, "moving", "self target");
+    if (AI_VALUE2(bool, "moving", "self target"))
+        return false;
+
+    // Standing still, Stay() only has work while the idle clock ("stay
+    // time", read by the sit/return triggers) is not running yet, a follow
+    // target or path is still remembered, or the unit has not actually
+    // stopped. Otherwise it is a no-op: letting it run anyway reported
+    // "stay - FAILED" on every idle tick of a staying bot.
+    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+    return !AI_VALUE(time_t, "stay time") || lastMove.lastFollow || !lastMove.lastPath.empty() ||
+        sServerFacade.isMoving(bot);
 }
 
 bool SitAction::Execute(Event& event)

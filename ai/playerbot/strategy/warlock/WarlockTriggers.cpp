@@ -8,6 +8,7 @@
 #include "../../../runtime/HealthFunnelPolicy.h"
 #include "../../../runtime/WarlockPetPolicy.h"
 #include "../../../runtime/WarlockTapPolicy.h"
+#include "../../../runtime/WarlockStonePolicy.h"
 
 using namespace ai;
 
@@ -21,33 +22,46 @@ bool DemonArmorTrigger::IsActive()
 			   !ai->HasAura("demon armor", target);
 }
 
+namespace
+{
+// Held off-hand stone in the bags that can go into the off-hand right now
+// (runtime/WarlockStonePolicy.h). Turtle's bag-consumable Spellstone and
+// Firestone share the vanilla names but cannot be equipped; matching on the
+// name alone made the equip action fail on every tick.
+bool HasHoldableStoneToEquip(Player* bot, std::list<Item*> const& stones)
+{
+    TortoiseBots::WarlockStoneSlotFacts slots;
+    slots.offHandEmpty = !bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
+    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    slots.hasMainHand = mainHand != nullptr;
+    slots.mainHandInventoryType = mainHand ? mainHand->GetProto()->InventoryType : 0;
+    for (Item* stone : stones)
+    {
+        if (stone && !stone->IsEquipped() &&
+            TortoiseBots::CanHoldWarlockStone(stone->GetProto()->InventoryType, slots))
+            return true;
+    }
+    return false;
+}
+}
+
 bool SpellstoneTrigger::IsActive()
 {
+    // Off-hand held item like firestone (not a weapon temp-enchant: the
+    // stone's on-use spell targets the caster). Never displace worn gear,
+    // and a two-handed main-hand leaves nowhere to put it.
     if (AI_VALUE2(uint32, "item count", getName()) == 0)
         return false;
-    // Off-hand held item like firestone (not a weapon temp-enchant: the
-    // stone's on-use spell targets the caster). Same gates: never displace
-    // worn gear, and a two-handed main-hand leaves nowhere to put it.
-    if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
-        return false;
-    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
-    if (!mainHand || mainHand->GetProto()->InventoryType == INVTYPE_2HWEAPON)
-        return false;
-    return true;
+    return HasHoldableStoneToEquip(bot, AI_VALUE2(std::list<Item*>, "inventory items", getName()));
 }
 
 bool FirestoneTrigger::IsActive()
 {
+    // Same gates as the spellstone: never displace worn gear, and a
+    // two-handed main-hand leaves nowhere to put it.
     if (AI_VALUE2(uint32, "item count", getName()) == 0)
         return false;
-    // Off-hand held item: never displace worn gear, and a two-handed
-    // main-hand leaves nowhere to put it (the equip would fail every tick).
-    if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
-        return false;
-    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
-    if (!mainHand || mainHand->GetProto()->InventoryType == INVTYPE_2HWEAPON)
-        return false;
-    return true;
+    return HasHoldableStoneToEquip(bot, AI_VALUE2(std::list<Item*>, "inventory items", getName()));
 }
 
 bool UnendingBreathTrigger::IsActive()

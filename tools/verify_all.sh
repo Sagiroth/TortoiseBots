@@ -43,6 +43,7 @@ python3 -m unittest tools/test_travel_route_distance.py
 python3 -m unittest tools/test_outfit_item_parser.py
 python3 -m unittest tools/test_queue_prerequisite_merge.py
 python3 -m unittest tools/test_tactical_stay_release.py
+python3 -m unittest tools/test_stay_anchor_wiring.py
 python3 -m unittest tools/test_keepout_set_aside_wiring.py
 echo "✓ Engine unit tests passed."
 
@@ -60,6 +61,7 @@ if command -v g++ >/dev/null 2>&1; then
         test_aoe_fear_policy
         test_aoe_off_policy
         test_arcane_rupture_policy
+        test_attack_order_policy
         test_auto_tools_kit_policy
         test_autonomous_bg_policy
         test_avoid_aoe_policy
@@ -223,6 +225,7 @@ if command -v g++ >/dev/null 2>&1; then
         test_voidwalker_policy
         test_wand_policy
         test_warlock_pet_policy
+        test_warlock_stone_policy
         test_warlock_tap_policy
         test_weighted_shuffle_policy
         test_work_idle_policy

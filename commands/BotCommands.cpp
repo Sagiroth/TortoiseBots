@@ -616,6 +616,24 @@ static void EndFlee(PlayerbotAI* ai)
         ai->ChangeStrategy("-passive", BotState::BOT_STATE_COMBAT);
 }
 
+// Moves a staying bot's anchors to a new spot: the "stay" position that
+// "return to stay position" walks back to, and the idle "return" anchor the
+// return strategy walks to, exactly as the stay shortcut sets both to the
+// bot's own spot. Setting only "stay" left "return" at the spot of an
+// earlier stay order, and the two strategies then walked the bot back and
+// forth between the old and the new spot every few seconds.
+static void SetStayAnchor(PlayerbotAI* ai, float x, float y, float z, uint32 mapId)
+{
+    ai::PositionMap& posMap = ai->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
+    ai::PositionEntry stayPos = posMap["stay"];
+    stayPos.Set(x, y, z, mapId);
+    posMap["stay"] = stayPos;
+    ai::PositionEntry returnPos = posMap["return"];
+    returnPos.Set(x, y, z, mapId);
+    posMap["return"] = returnPos;
+    posMap["random"].Reset();
+}
+
 // Tactical requests must be able to leave a prior stay/follow hold. The
 // movement and combat behavior itself remains owned by PlayerbotAI.
 static void RelaxTacticalMovement(PlayerbotAI* ai)
@@ -3560,10 +3578,8 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             // shortcut; the captured stay position below remains Come's
             // regroup anchor.
             ai->SetMovementStrategy("stay");
-            ai::PositionMap& posMap = ai->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
-            ai::PositionEntry pos = posMap["stay"];
-            pos.Set(WorldPosition(requester));
-            posMap["stay"] = pos;
+            SetStayAnchor(ai, requester->GetPositionX(), requester->GetPositionY(),
+                requester->GetPositionZ(), requester->GetMapId());
             accepted = ExecuteQuietAction(ai, "return to stay position",
                 ai::Event("return to stay position", "stay", requester));
         }
@@ -4834,10 +4850,7 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
     PlayerConvenience::Instance().NoteHoldOrder(lead->GetObjectGuid());
     leadAi->Reset();
     leadAi->SetMovementStrategy("stay");
-    ai::PositionMap& posMap = leadAi->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
-    ai::PositionEntry stayPos = posMap["stay"];
-    stayPos.Set(point.x, point.y, point.z, lead->GetMapId());
-    posMap["stay"] = stayPos;
+    SetStayAnchor(leadAi, point.x, point.y, point.z, lead->GetMapId());
     ExecuteQuietAction(leadAi, "return to stay position",
         ai::Event("return to stay position", "stay", order.commander));
 

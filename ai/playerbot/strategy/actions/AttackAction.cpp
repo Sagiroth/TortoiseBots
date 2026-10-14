@@ -8,6 +8,7 @@
 #include "playerbot/BotDiagnostics.h" // SC_LOG for attack-command diagnostic trace
 #include "playerbot/strategy/generic/CombatStrategy.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "../../../../runtime/AttackOrderPolicy.h"
 
 using namespace ai;
 
@@ -270,7 +271,14 @@ bool AttackAction::Attack(Player* requester, Unit* target)
             // with; healers keep the old, deliberate hands-off handling.
             const bool meleeEval = !ai->IsHeal(bot) &&
                 (!ai->IsRanged(bot) || !bot->GetWeaponForAttack(RANGED_ATTACK, true, true));
-            result = bot->Attack(target, meleeEval);
+            // Unit::Attack returns false for the victim the bot is already
+            // attacking (unless it only has to arm the melee swing), so a bot
+            // already hitting its target reported "melee - FAILED" on every
+            // tick it re-picked melee. Already attacking it the asked way is
+            // the goal of the order, not a failure.
+            const bool alreadyAttacking = TortoiseBots::IsAlreadyAttackingTarget(
+                bot->GetVictim() == target, meleeEval, bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING));
+            result = alreadyAttacking || bot->Attack(target, meleeEval);
             SC_LOG("attack-cmd bot->Attack bot=%s tgt=%s result=%d meleeEval=%d",
                    bot ? bot->GetName() : "(null)",
                    target ? target->GetName() : "(null)",
