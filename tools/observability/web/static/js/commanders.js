@@ -6,6 +6,7 @@
   const FAR_YD = 40;          // a bot this far from the lead is flagged
   const LOW_HP_PCT = 30;      // a live bot under this is flagged
   const STALE_WARN_SEC = 30;  // no update for this long is flagged
+  const HEAL_RANGE_YD = 40;   // a healer's spells reach this far (the ring of the healer-range layer)
   const TRAIL_MAX = 120;      // positions of the lead kept for its trail
   const TRAIL_STEP_YD = 2;    // a new trail point after this much movement
   const FIGHT_WINDOW_SEC = 8; // an HP drop this recent counts as a fight
@@ -52,7 +53,7 @@
     const rows = ((bind && bind.bots) || []).map((b) => {
       const dist = b === lead ? null : distance(b, lead);
       return {
-        name: b.name, lead: b === lead, alive: b.alive !== false,
+        name: b.name, guid: b.guid || 0, lead: b === lead, alive: b.alive !== false,
         role: roleKey(b), roleLabel: roleLabel(b), cls: pretty(b.class), level: b.level || 0,
         hp: Math.round(pct(b.hp, b.max_hp)), hasPower: b.max_power > 0, power: Math.round(pct(b.power, b.max_power)),
         powerKind: powerKind(b), hpText: b.hp + " / " + b.max_hp, powerText: b.power + " / " + b.max_power,
@@ -66,6 +67,20 @@
     rows.sort((a, b) => (a.lead ? -1 : 0) - (b.lead ? -1 : 0) || a._o - b._o || (a.name < b.name ? -1 : 1));
     rows.forEach((r) => delete r._o);
     return rows;
+  }
+
+  // The dashboard's own link to a character's detail view (the route app.js parses: #/<tab>?bot=<guid>), or '' for a guid that is not one.
+  // The Commanders tab stays the tab underneath, as it does for a bot picked anywhere else.
+  function botHref(guid) {
+    if (typeof guid === "string" && !/^[0-9]{1,10}$/.test(guid)) return "";
+    const n = Number(guid);
+    return Number.isInteger(n) && n > 0 && n <= 4294967295 ? "#/commanders?bot=" + n : "";
+  }
+
+  // The first part of a card's header with the commander linkable: [commander name, rest]; the rest begins with the arrow.
+  function headerParts(bind, place, state) {
+    const text = headerText(bind, place, state), name = String((bind && bind.commander) || "");
+    return text.indexOf(name) === 0 ? [name, text.slice(name.length)] : ["", text];
   }
 
   // ---- orders ------------------------------------------------------------------------------------------------------
@@ -309,10 +324,75 @@
     return out;
   }
 
+  // The direction the lead is walking, from the trail (positions [x, y, t] in game coordinates, oldest first): the unit vector, in the
+  // drawing plane, from the last point that lies at least minYd behind the newest one. null when the lead has not moved that far, or the
+  // newest point is older than maxAgeSec (nowSec given): the module reports no facing, so this is the heading of the movement.
+  function heading(pts, nowSec, maxAgeSec, minYd) {
+    if (!pts || pts.length < 2) return null;
+    const last = pts[pts.length - 1], min = minYd == null ? 4 : minYd;
+    if (nowSec && last[2] && nowSec - last[2] > (maxAgeSec == null ? 20 : maxAgeSec)) return null;
+    for (let i = pts.length - 2; i >= 0; i--) {
+      const d = Math.hypot(last[0] - pts[i][0], last[1] - pts[i][1]);
+      if (d >= min) {
+        const v = project((last[0] - pts[i][0]) / d, (last[1] - pts[i][1]) / d);
+        return { x: v.x, y: v.y };
+      }
+    }
+    return null;
+  }
+
+  // Which trail points get a time label: walking back from the newest, one whenever the picture has moved minPx since the last one
+  // labelled, at most maxN. Returns [{x, y, t}] in the drawing plane, oldest first (points without a time are skipped).
+  function trailStamps(pts, scale, minPx, maxN) {
+    const out = [];
+    let prev = null;
+    for (let i = (pts || []).length - 1; i >= 0 && out.length < (maxN == null ? 8 : maxN); i--) {
+      const p = pts[i];
+      if (!p[2]) continue;
+      const q = project(p[0], p[1]);
+      if (prev && Math.hypot(q.x - prev.x, q.y - prev.y) * scale < (minPx == null ? 70 : minPx)) continue;
+      out.push({ x: q.x, y: q.y, t: p[2] });
+      prev = q;
+    }
+    return out.reverse();
+  }
+
+  // The scale bar: the longest round number of yards that is at most maxPx pixels wide at this scale (pixels per yard): {yd, px}.
+  function scaleBar(scale, maxPx) {
+    const steps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+    let yd = steps[0];
+    steps.forEach((s) => { if (s * scale <= (maxPx == null ? 110 : maxPx)) yd = s; });
+    return { yd, px: yd * scale };
+  }
+
+  // The zones of a map that overlap a plane box [x, y, w, h] and are not the skipped one: [{name, x, y, w, h}] in the plane, for their labels.
+  // bounds is the daemon's zone table {"<map>_<area>": {map_id, area_id, name, loc_left, loc_right, loc_top, loc_bottom}}.
+  function zonesIn(bounds, mapId, box, skipArea) {
+    const out = [];
+    Object.keys(bounds || {}).forEach((k) => {
+      const z = bounds[k];
+      if (!z || z.map_id !== mapId || z.area_id === skipArea || typeof z.loc_left !== "number") return;
+      const a = project(z.loc_top, z.loc_left), b = project(z.loc_bottom, z.loc_right);
+      const r = { name: z.name, x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+      if (r.x < box[0] + box[2] && r.x + r.w > box[0] && r.y < box[1] + box[3] && r.y + r.h > box[1]) out.push(r);
+    });
+    return out;
+  }
+
+  // The picture layers the daemon lists for a map (GET /api/v1/maps/<id>), as the page may use them: only a name, a daemon file URL
+  // and a finite rectangle in the drawing plane make it through; anything else is dropped.
+  const PIC_URL = /^\/api\/v1\/mapfiles\/[0-9]{1,9}(?:\.[a-z]+(?:-[0-9]+f)?)?\.png$/;
+  function pictureLayers(list) {
+    if (!Array.isArray(list)) return [];
+    return list.filter((l) => l && typeof l.url === "string" && PIC_URL.test(l.url) && typeof l.name === "string"
+      && [l.x, l.y, l.w, l.h].every((n) => typeof n === "number" && isFinite(n)) && l.w > 0 && l.h > 0)
+      .map((l) => ({ name: l.name.slice(0, 40), url: l.url, x: l.x, y: l.y, w: l.w, h: l.h }));
+  }
+
   const api = {
-    FAR_YD, LOW_HP_PCT, STALE_WARN_SEC, pretty, plural, ageText, roleKey, roleLabel, distance, leadBot, partyRows, orderText, stateWord,
-    headerText, warnings, newTracker, note, context, prune, project, fitView, viewBox, zoomAt, panBy, pinch, gridStep, gridLines,
-    trailSegments, clampScale,
+    HEAL_RANGE_YD, FAR_YD, LOW_HP_PCT, STALE_WARN_SEC, pretty, plural, ageText, roleKey, roleLabel, distance, leadBot, partyRows, orderText, stateWord,
+    headerText, headerParts, botHref, warnings, newTracker, note, context, prune, project, fitView, viewBox, zoomAt, panBy, pinch, gridStep, gridLines,
+    trailSegments, clampScale, heading, trailStamps, scaleBar, zonesIn, pictureLayers,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.CmdView = api;
 })(typeof self !== "undefined" ? self : this);

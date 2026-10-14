@@ -1436,6 +1436,7 @@ void ObservabilityEmitter::EmitCommanders()
     {
         CommanderTelemetry::BindingInfo info;
         info.commander = ref.commander;
+        info.commanderGuid = ref.commanderGuid;
         info.commanderOnline = ref.commanderOnline;
         info.viewOn = ref.viewOn;
         info.groupId = ref.groupId;

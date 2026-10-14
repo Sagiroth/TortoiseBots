@@ -539,13 +539,14 @@ type CommandersPayload struct {
 
 // CommanderBinding is one commander's standing binding.
 type CommanderBinding struct {
-	Commander string           `json:"commander"`
-	Online    bool             `json:"online"` // the commander has a network session
-	View      bool             `json:"view"`   // its TBM:VIEW perception feed is on
-	Group     uint32           `json:"group"`
-	Lead      string           `json:"lead"`
-	Bots      []CommanderBot   `json:"bots"`
-	Orders    []CommanderOrder `json:"orders"` // oldest first
+	Commander     string           `json:"commander"`
+	CommanderGUID uint32           `json:"commander_guid,omitempty"` // the commander character's guid (low part; absent from an older module): opens its detail view
+	Online        bool             `json:"online"`                   // the commander has a network session
+	View          bool             `json:"view"`                     // its TBM:VIEW perception feed is on
+	Group         uint32           `json:"group"`
+	Lead          string           `json:"lead"`
+	Bots          []CommanderBot   `json:"bots"`
+	Orders        []CommanderOrder `json:"orders"` // oldest first
 }
 
 // CommanderBot is a bot of a bound party.

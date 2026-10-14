@@ -8320,6 +8320,7 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
         CommanderTelemetry::BindingRef ref;
         Player* commander = FindCharacter(commanderRaw);
         ref.commander = commander ? commander->GetName() : "offline #" + std::to_string(::ObjectGuid(commanderRaw).GetCounter());
+        ref.commanderGuid = ::ObjectGuid(commanderRaw).GetCounter();
         ref.commanderOnline = commander && commander->GetSession() && commander->GetSession()->HasNetworkTransport();
         ref.groupId = binding->groupId;
         auto const view = CommanderViews().find(commanderRaw);

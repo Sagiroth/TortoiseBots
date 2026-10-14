@@ -124,6 +124,7 @@ void TestPayload()
 {
     BindingInfo b;
     b.commander = "Zfmagea";
+    b.commanderGuid = 4242;
     b.commanderOnline = true;
     b.viewOn = true;
     b.groupId = 42;
@@ -138,6 +139,7 @@ void TestPayload()
     Check(Has(json, "\"session\":77") && Has(json, "\"seq\":5") && Has(json, "\"ts\":1791990010"), "carries session, seq and ts");
     Check(Has(json, "\"type\":\"COMMANDERS\""), "has its type");
     Check(Has(json, "\"commander\":\"Zfmagea\"") && Has(json, "\"online\":true") && Has(json, "\"view\":true") && Has(json, "\"group\":42"), "binding fields");
+    Check(Has(json, "\"commander_guid\":4242"), "the commander's guid, for the dashboard's detail link");
     Check(Has(json, "\"lead\":\"Forthur\""), "lead bot name");
     Check(Has(json, "\"class\":\"warrior\"") && Has(json, "\"role\":\"tank\"") && Has(json, "\"power_type\":\"rage\""), "bot class, role, power type");
     Check(Has(json, "\"hp\":2706") && Has(json, "\"max_hp\":2706") && Has(json, "\"power\":40") && Has(json, "\"max_power\":100"), "bot vitals");

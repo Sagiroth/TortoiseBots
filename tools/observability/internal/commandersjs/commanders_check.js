@@ -154,4 +154,67 @@ const segs = C.trailSegments(Array.from({ length: 50 }, (_, i) => ({ x: i, y: 0 
 assert.ok(segs.length <= 10 && segs.length >= 2);
 assert.ok(segs[0].alpha < segs[segs.length - 1].alpha && segs[segs.length - 1].alpha === 1);
 assert.deepStrictEqual(C.trailSegments([{ x: 0, y: 0 }], 5), []);
+
+// ---- links to the detail view of a character (the route app.js parses)
+assert.strictEqual(C.botHref(1234), "#/commanders?bot=1234");
+assert.strictEqual(C.botHref("77"), "#/commanders?bot=77");
+["", 0, -5, 1.5, "abc", null, undefined, NaN, 4294967296, "1;x", "0x10"].forEach((g) => assert.strictEqual(C.botHref(g), "", String(g)));
+assert.strictEqual(C.partyRows(party())[1].guid, 2);
+assert.deepStrictEqual(C.headerParts(party(), "Uldaman", "fighting"), ["Gbmage", " → 3 bots · Uldaman · fighting"]);
+assert.deepStrictEqual(C.headerParts({ commander: "", bots: [] }, "", ""), ["", " → 0 bots"]);
+
+// ---- map layers helpers
+// heading: positions [x, y, t] in game coordinates; the unit vector comes back in the plane (x -> -y, y -> -x)
+let hd = C.heading([[0, 0, 1], [10, 0, 2]], 3, 20, 4); // walking north (game x grows): up the screen, plane y shrinks
+assert.ok(Math.abs(hd.x) < 1e-9 && Math.abs(hd.y + 1) < 1e-9);
+hd = C.heading([[0, 0, 1], [0, 10, 2]], 3, 20, 4); // walking west (game y grows): plane x shrinks, to the left of the screen
+assert.ok(Math.abs(hd.x + 1) < 1e-9 && Math.abs(hd.y) < 1e-9);
+assert.strictEqual(C.heading([[0, 0, 1], [1, 0, 2]], 3, 20, 4), null);   // moved less than 4 yd
+assert.strictEqual(C.heading([[0, 0, 1], [10, 0, 2]], 100, 20, 4), null); // newest point is stale
+assert.strictEqual(C.heading([[0, 0, 1]], 3), null);
+assert.strictEqual(C.heading(null, 3), null);
+// a step of 1 yd at a time still finds the point far enough back
+hd = C.heading(Array.from({ length: 12 }, (_, i) => [i, 0, i + 1]), 12, 20, 4);
+assert.ok(hd && Math.abs(hd.y + 1) < 1e-9);
+// time labels keep their distance and the newest one
+const pts = Array.from({ length: 101 }, (_, i) => [i, 0, 1000 + i]);
+let st = C.trailStamps(pts, 2, 70, 8); // 70 px at 2 px/yd is 35 yd
+assert.strictEqual(st[st.length - 1].t, 1100);
+for (let i = 1; i < st.length; i++) assert.ok(Math.hypot(st[i].x - st[i - 1].x, st[i].y - st[i - 1].y) * 2 >= 70 - 1e-9);
+assert.ok(st.length <= 8 && st.length >= 3);
+assert.strictEqual(C.trailStamps(pts, 2, 70, 2).length, 2);
+assert.deepStrictEqual(C.trailStamps([[0, 0, 0], [5, 5, 0]], 2, 70, 8), []); // no times, no labels
+assert.deepStrictEqual(C.trailStamps(null, 1), []);
+// scale bar: the longest round number of yards within maxPx
+assert.deepStrictEqual(C.scaleBar(1, 110), { yd: 100, px: 100 });
+assert.deepStrictEqual(C.scaleBar(4, 110), { yd: 20, px: 80 });
+assert.deepStrictEqual(C.scaleBar(0.04, 110), { yd: 2000, px: 80 });
+assert.strictEqual(C.scaleBar(500, 110).yd, 1); // even a yard is wide: still a yard
+// zones around: those overlapping the box, not the skipped one
+const zb = {
+  "1_14": { map_id: 1, area_id: 14, name: "Durotar", loc_left: 100, loc_right: -100, loc_top: 100, loc_bottom: -100 },
+  "1_17": { map_id: 1, area_id: 17, name: "Barrens", loc_left: 1000, loc_right: 500, loc_top: 1000, loc_bottom: 500 },
+  "0_9": { map_id: 0, area_id: 9, name: "Elsewhere", loc_left: 100, loc_right: -100, loc_top: 100, loc_bottom: -100 },
+};
+let zs = C.zonesIn(zb, 1, [-150, -150, 300, 300], 0);
+assert.deepStrictEqual(zs.map((z) => z.name), ["Durotar"]);
+assert.deepStrictEqual([zs[0].x, zs[0].y, zs[0].w, zs[0].h], [-100, -100, 200, 200]);
+assert.deepStrictEqual(C.zonesIn(zb, 1, [-150, -150, 300, 300], 14), []);
+assert.deepStrictEqual(C.zonesIn(null, 1, [0, 0, 1, 1], 0), []);
+// a picture lies where the game puts it: layer rect from the daemon (Zul'Farrak 209), a game point inside it
+const L = { x: -1625, y: -2052.080078125, w: 1625 - 241.6699981689453, h: 2052.080078125 - 1129.1700439453125 };
+const gp = C.project(2052.080078125 - 100, 1625 - 200); // 100 yd south and 200 yd east of the north-west corner
+assert.ok(Math.abs(gp.x - (L.x + 200)) < 1e-9 && Math.abs(gp.y - (L.y + 100)) < 1e-9);
+assert.ok(gp.x > L.x && gp.x < L.x + L.w && gp.y > L.y && gp.y < L.y + L.h);
+// picture layers from the daemon: only its own file urls and finite rectangles
+const okLayer = { name: "worldmap", source: "worldmap", url: "/api/v1/mapfiles/209.png", x: -1625, y: -2052, w: 1383, h: 923 };
+assert.deepStrictEqual(C.pictureLayers([okLayer, Object.assign({}, okLayer, { name: "navmesh", url: "/api/v1/mapfiles/209.navmesh.png" }),
+  Object.assign({}, okLayer, { name: "2f", url: "/api/v1/mapfiles/189.worldmap-2f.png" })]).map((l) => l.name), ["worldmap", "navmesh", "2f"]);
+[ "http://evil.example/x.png", "/api/v1/mapfiles/../../etc/passwd.png", "/api/v1/mapfiles/209.json", "javascript:alert(1)", "/api/v1/mapfiles/209.png\"onload=\"x", "", 5 ]
+  .forEach((u) => assert.deepStrictEqual(C.pictureLayers([Object.assign({}, okLayer, { url: u })]), [], String(u)));
+assert.deepStrictEqual(C.pictureLayers([Object.assign({}, okLayer, { w: NaN })]), []);
+assert.deepStrictEqual(C.pictureLayers([Object.assign({}, okLayer, { w: 0 })]), []);
+assert.deepStrictEqual(C.pictureLayers([Object.assign({}, okLayer, { x: "1" })]), []);
+assert.deepStrictEqual(C.pictureLayers(null), []); assert.deepStrictEqual(C.pictureLayers([null, 3]), []);
+assert.strictEqual(C.pictureLayers([Object.assign({}, okLayer, { name: "x".repeat(100) })])[0].name.length, 40);
 console.log("commanders.js ok");

@@ -2849,3 +2849,32 @@ select.input {
 .cmd-empty .empty-hint { margin: 4px 0; }
 .cmd-external summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
 .cmd-frame { width: 100%; height: 78vh; min-height: 480px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); display: block; margin-top: 8px; }
+/* Commanders maps: the real game-map picture, the layers panel and the layers' own marks */
+.cmd-map image.bg { filter: brightness(0.7); }
+.cmd-map text.zone2 { fill: rgba(139, 148, 158, 0.7); font-weight: 600; }
+.cmd-map rect.zone2 { fill: none; stroke: rgba(139, 148, 158, 0.35); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.cmd-map .range { fill: rgba(34, 197, 94, 0.07); stroke: var(--role-healer, #22c55e); stroke-width: 1.5; stroke-dasharray: 7 5; vector-effect: non-scaling-stroke; }
+.cmd-map polygon.heading { fill: #fff; stroke: #000; stroke-width: 1.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.cmd-map .stamp circle { fill: #fff; stroke: #000; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.cmd-map .stamp text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-linejoin: round; }
+.cmd-maptools select { height: 32px; max-width: 120px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(14, 19, 27, 0.85); color: var(--text-main); font: inherit; }
+.cmd-maptools select[hidden] { display: none; }
+.cmd-scale { position: absolute; right: 8px; bottom: 6px; display: flex; flex-direction: column; align-items: flex-end; font-size: 0.7rem; color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; }
+.cmd-scale[hidden] { display: none; }
+.cmd-scale i { display: block; height: 5px; border: 2px solid #fff; border-top: 0; box-shadow: 0 1px 2px #000; }
+.cmd-legend i.heading { width: 0; height: 0; border: 0; border-radius: 0; border-style: solid; border-width: 5px 0 5px 11px; border-color: transparent transparent transparent #fff; background: none; }
+.cmd-legend i.ring { background: rgba(34, 197, 94, 0.15); border: 1.5px dashed #22c55e; }
+.cmd-layers { margin-bottom: 12px; }
+.cmd-layers summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
+.cmd-layers-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 8px 18px; margin: 8px 0; }
+.cmd-lgroup h4 { margin: 0 0 4px; color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.cmd-lrow { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 8px; align-items: center; min-height: 36px; padding: 2px 0; cursor: pointer; font-size: 0.86rem; }
+.cmd-lrow input { width: 18px; height: 18px; margin: 0; }
+.cmd-lrow em { grid-column: 2; font-style: normal; font-size: 0.72rem; color: var(--text-dim); }
+.cmd-lrow em:empty { display: none; }
+.cmd-lrow.off { opacity: 0.55; cursor: default; }
+.cmd-botlink { color: inherit; text-decoration: none; cursor: pointer; border-bottom: 1px dotted var(--text-dim); }
+.cmd-botlink:hover, .cmd-botlink:focus-visible { color: var(--accent-blue-bright); border-bottom-color: currentColor; }
+.cmd-map g.bot[data-guid] { cursor: pointer; }
+.cmd-map g.bot[data-guid]:hover .dot { stroke-width: 3; }
+.cmd-map g.bot[data-guid]:hover text { fill: var(--accent-blue-bright); }

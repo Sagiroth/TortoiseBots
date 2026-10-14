@@ -19,6 +19,7 @@ import (
 	"tortoise-observability/internal/armory"
 	"tortoise-observability/internal/auth"
 	zoneproject "tortoise-observability/internal/map"
+	"tortoise-observability/internal/mapdir"
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
 	"tortoise-observability/internal/ringbuf"
@@ -62,6 +63,9 @@ func main() {
 	// `turtle-agent dashboard`) that the Commanders tab embeds. Unset: the tab
 	// shows what the module knows and nothing else.
 	commanderURLRaw := flag.String("commander-url", getEnv("TBDASH_COMMANDER_URL", ""), "Optional URL of an external commander dashboard to embed in the Commanders tab (env TBDASH_COMMANDER_URL)")
+	// Optional folder of real game-map pictures (turtle-agent `minimap-extract` output) for the Commanders tab maps. Never part of the
+	// repository: the owner's own extracted assets. Unset: the maps keep their plain grid.
+	mapDirRaw := flag.String("map-dir", getEnv("TBDASH_MAP_DIR", ""), "Optional folder of map pictures (<id>.png + <id>.json from `turtle-agent minimap-extract`) drawn under the Commanders tab maps (env TBDASH_MAP_DIR)")
 	devNoAuth := flag.Bool("dev-no-auth", false, "Disable Game Master authentication check for local dev testing")
 	// The activity rollup is in-memory, so without this a dashboard restart
 	// resets every counter. The file sits in the mounted icon-cache directory
@@ -190,6 +194,14 @@ func main() {
 		commanderURL = ""
 	} else if commanderURL != "" {
 		log.Printf("[Commanders] embedding the commander dashboard at %s", commanderURL)
+	}
+
+	mapPics, err := mapdir.New(*mapDirRaw)
+	if err != nil {
+		log.Printf("[Commanders] ignoring the map folder %q: %v", *mapDirRaw, err)
+		mapPics = nil
+	} else if mapPics != nil {
+		log.Printf("[Commanders] real map pictures served from %s", mapPics.Root())
 	}
 
 	// 5. WebSocket hub and UDP ingestion
@@ -401,8 +413,16 @@ func main() {
 		writeJSON(w, struct {
 			model.CommandersView
 			ExternalURL string `json:"external_url,omitempty"`
-		}{store.Commanders(), commanderURL})
+			RealMaps    bool   `json:"real_maps"`
+		}{store.Commanders(), commanderURL, mapPics != nil})
 	}))
+
+	// Real map pictures for the Commanders maps: the layer list of a map id, and the .png/.json files of the TBDASH_MAP_DIR folder
+	// (nothing else). Behind the same login as the rest of the API.
+	if mapPics != nil {
+		mux.HandleFunc(mapdir.MapsPrefix, requireAuth(mapPics.HandleLayers))
+		mux.HandleFunc(mapdir.FilePrefix, requireAuth(mapPics.HandleFile))
+	}
 
 	mux.HandleFunc("/api/v1/server-info", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		if info := store.ServerInfo(); info != nil {

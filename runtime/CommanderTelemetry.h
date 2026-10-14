@@ -121,6 +121,7 @@ private:
 struct BindingRef
 {
     std::string commander;      // the commander's name; "offline #<guid>" when not found
+    uint32_t commanderGuid = 0; // the commander's character guid (low part), also when offline
     bool commanderOnline = false;
     bool viewOn = false;        // the TBM:VIEW perception feed is on
     uint32_t groupId = 0;
@@ -154,6 +155,7 @@ struct BotInfo
 struct BindingInfo
 {
     std::string commander;
+    uint32_t commanderGuid = 0; // the dashboard opens this character's detail view from it
     bool commanderOnline = false;
     bool viewOn = false;
     uint32_t groupId = 0;
@@ -210,6 +212,7 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
         if (shown++)
             ss << ",";
         ss << "{\"commander\":\"" << JsonEscape(b.commander) << "\""
+           << ",\"commander_guid\":" << b.commanderGuid
            << ",\"online\":" << (b.commanderOnline ? "true" : "false")
            << ",\"view\":" << (b.viewOn ? "true" : "false")
            << ",\"group\":" << b.groupId

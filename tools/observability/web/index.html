@@ -457,6 +457,13 @@
           <p id="cmd-empty-why" class="empty-hint"></p>
           <p class="empty-hint">A card appears here within a couple of seconds of a binding. A commander binds a bot-only party of up to five with <code>.bot commander bind &lt;LeadBot&gt; [&lt;Bot&gt; ...]</code> (a GM, or a player who controls every bot of the party; the server needs <code>AiPlayerbot.RemoteCommander = 1</code>). The card goes away when the commander unbinds with <code>.bot commander unbind</code>, logs out, or the party breaks up.</p>
         </div>
+        <!-- What the maps draw: one choice for every map on the page, kept in this browser. -->
+        <details id="cmd-layers" class="card cmd-layers">
+          <summary>Map layers</summary>
+          <p class="empty-hint">One choice for all the maps below, kept in this browser. A greyed layer has no data on any map right now; its reason is next to it.</p>
+          <div id="cmd-layers-body" class="cmd-layers-body"></div>
+          <button type="button" id="cmd-layers-reset" class="btn">Reset to defaults</button>
+        </details>
         <div id="cmd-list"></div>
         <!-- Only present when the operator set TBDASH_COMMANDER_URL; the frame is not loaded until it is opened. -->
         <details id="cmd-external" class="card cmd-external" hidden>
@@ -655,7 +662,8 @@
 
 </div>
 
-<script src="/static/js/commanders.js?v=1"></script>
-<script src="/static/js/app.js?v=11"></script>
+<script src="/static/js/commanders.js?v=2"></script>
+<script src="/static/js/maplayers.js?v=1"></script>
+<script src="/static/js/app.js?v=12"></script>
 </body>
 </html>
