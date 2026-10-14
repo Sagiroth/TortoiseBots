@@ -771,6 +771,15 @@ static void TestPartyAttackTankStays()
     CHECK(!PartyAttackLeavesTankOnItsMob(true, false, true));
 }
 
+// An attack on the mob a bot is still pulling leaves the pull running; an
+// attack on another mob, or with no pull running, goes as ordered.
+static void TestAttackLeavesPullRunning()
+{
+    CHECK(AttackLeavesPullRunning(true, true));
+    CHECK(!AttackLeavesPullRunning(true, false));
+    CHECK(!AttackLeavesPullRunning(false, false));
+}
+
 // The ACK says when the tank stayed, so the client can name it for the add.
 static void TestPartyAttackAckDetail()
 {
@@ -858,6 +867,7 @@ int main()
     TestMasterLeftRule();
     TestCommandedThreatBackoff();
     TestPartyAttackTankStays();
+    TestAttackLeavesPullRunning();
     TestPartyAttackAckDetail();
     TestCommandedBackoffYields();
     TestCommanderThreatLedger();

@@ -5000,6 +5000,16 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
         if (!ai)
             continue;
+        // A bot still pulling this target keeps its pull (RemoteCommander::
+        // AttackLeavesPullRunning): the pull end hands it the fight, so it
+        // counts as having taken the order.
+        PullStrategy const* pull = PullStrategy::Get(ai);
+        Unit* const pullTarget = pull ? pull->GetTarget() : nullptr;
+        if (RemoteCommander::AttackLeavesPullRunning(pullTarget != nullptr, pullTarget == target))
+        {
+            ++succeeded;
+            continue;
+        }
         // A tank holding another mob keeps it (RemoteCommander::
         // PartyAttackLeavesTankOnItsMob); it is fighting, so it counts as
         // having taken the order.

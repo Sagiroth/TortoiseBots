@@ -532,6 +532,19 @@ inline bool PartyAttackLeavesTankOnItsMob(bool partyWide, bool isTank, bool hold
     return partyWide && isTank && holdsAnotherMob;
 }
 
+// A `cmd attack` on the mob a bot is still pulling (a `cmd pullback` tank
+// walking it back to the anchor) leaves the pull to run: the pull already
+// brings that mob, and its end hands the fight over. Re-running the attack
+// sent the tank back to the mob each order while the pull's return trigger
+// walked it to the anchor again, and the pull's multiplier kept Sunder and
+// Taunt muted all along (uldaman-groupb-1, r-20261014T085131-ec81: one order a
+// second, the tank flipped melee / "return to pull position" for 10 s and
+// lost the mob). An attack on another mob goes as before.
+inline bool AttackLeavesPullRunning(bool pullRunning, bool pullTargetIsOrderTarget)
+{
+    return pullRunning && pullTargetIsOrderTarget;
+}
+
 // The ACK detail of a party-wide `cmd attack` that left the tank on its mob:
 // `tank-stays:<Tank>`, so the client knows the tank did not go and can name it
 // for the target (`cmd attack <guid> <tank>`). Empty when the tank went.
