@@ -796,8 +796,42 @@ static void TestCommanderThreatLedger()
     CHECK(!ledger.Holds(5));
 }
 
+// A hire may be bound by its own hirer only: the bind gate sees "hired" for a
+// hire of anybody else, and the usual flow (the commander's five hires) passes.
+static void TestHiresOfTheCommander()
+{
+    uint64_t const commander = 0x1001, other = 0x2002;
+    // Not a hire: never blocks. A hire of the commander: bindable. A hire of
+    // somebody else, or of nobody known: refused.
+    CHECK(!HireBlocksBind(false, 0, commander));
+    CHECK(!HireBlocksBind(false, other, commander));
+    CHECK(!HireBlocksBind(true, commander, commander));
+    CHECK(HireBlocksBind(true, other, commander));
+    CHECK(HireBlocksBind(true, 0, commander));
+    // No commander guid: nothing is "its own".
+    CHECK(HireBlocksBind(true, 0, 0));
+
+    // Five hires of the commander (lead + four): the gate lets them through.
+    BindFacts facts = GoodBind(4);
+    facts.lead.hired = HireBlocksBind(true, commander, commander);
+    for (BindMember& member : facts.members)
+        member.hired = HireBlocksBind(true, commander, commander);
+    CHECK(CheckBind(facts) == BindRefusal::None);
+
+    // The same bind with one hire of somebody else is refused, as lead or member.
+    facts.members[2].hired = HireBlocksBind(true, other, commander);
+    CHECK(CheckBind(facts) == BindRefusal::MemberHired);
+    CHECK(std::string(BindRefusalCode(BindRefusal::MemberHired)) == "hired");
+    facts.members[2].hired = false;
+    facts.lead.hired = HireBlocksBind(true, other, commander);
+    CHECK(CheckBind(facts) == BindRefusal::LeadHired);
+    CHECK(std::string(BindRefusalText(BindRefusal::LeadHired)).find("Another player's") != std::string::npos);
+    CHECK(std::string(BindRefusalText(BindRefusal::MemberHired)).find("Another player's") != std::string::npos);
+}
+
 int main()
 {
+    TestHiresOfTheCommander();
     TestBindingTable();
     TestFollowers();
     TestDepartedFollowers();

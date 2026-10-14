@@ -24,15 +24,33 @@
 //
 // A hire whose master left the party while online has masterOnline true,
 // everGrouped true and inSameGroupWithMaster false, so it is dismissed.
+//
+// Remote commander (issue #884): a hire may be bound by its own hirer
+// (`.bot commander bind`), which puts the hire in a bot-only party the hirer is
+// not in. HireCommandState says where a hire stands in that: while it is bound
+// the "left the hirer's party" end conditions are suspended (the binding is the
+// reason it is elsewhere); the hire still ends on dismiss, on the hirer's
+// logout grace, and on a removal from the bound party that no bind step made.
+
+#include <cstdint>
 
 namespace TortoiseBots
 {
 
+enum class HireCommandState : uint8_t
+{
+    None,       // an ordinary hire: every end condition applies
+    Transition, // the bind or unbind is moving the hire between parties right now
+    Bound,      // bound to its own hirer: the hirer is meant to be outside its party
+};
+
 inline bool ShouldDismissHireOnGroupDeparture(bool isHire, bool masterOnline, bool everGrouped,
-    bool inSameGroupWithMaster)
+    bool inSameGroupWithMaster, HireCommandState command = HireCommandState::None)
 {
     if (!isHire)
         return false; // a pool bot or an alt: nothing here may touch it
+    if (command != HireCommandState::None)
+        return false; // the hirer's own binding keeps the hire outside the hirer's party
     if (!masterOnline)
         return false; // offline/logged-out master: the disconnect grace period owns the hire
     if (!everGrouped)
@@ -40,6 +58,51 @@ inline bool ShouldDismissHireOnGroupDeparture(bool isHire, bool masterOnline, bo
     if (inSameGroupWithMaster)
         return false; // still together
     return true;
+}
+
+// The hire itself was removed from its group (kicked, left): the hire ends,
+// unless a bind or unbind step took it out. A bound hire that someone else
+// removes still ends.
+inline bool ShouldDismissHireOnOwnRemoval(HireCommandState command)
+{
+    return command != HireCommandState::Transition;
+}
+
+// The hire's group was disbanded: ends the hire, unless the hirer's binding
+// holds it (the binding then ends on its own and returns the hire to its
+// hirer, see DecideHireBindingEnd).
+inline bool ShouldDismissHireOnDisband(HireCommandState command)
+{
+    return command == HireCommandState::None;
+}
+
+// Safety net for a Bound state that no binding backs any more (a binding that
+// vanished without telling the hire lifecycle): the state is dropped and the
+// ordinary rules apply again. A hire that is not live counts as still bound.
+inline bool CommandStateStillHolds(HireCommandState command, bool hireLive, bool inCommandedGroup)
+{
+    if (command != HireCommandState::Bound)
+        return command != HireCommandState::None;
+    return !hireLive || inCommandedGroup;
+}
+
+// What happens to a hire when its hirer's binding ends (unbind, or any
+// automatic release). The hire is kept: it goes back to its hirer's party.
+enum class HireBindingEnd : uint8_t
+{
+    Leave,        // not a live hire: nothing to do
+    Keep,         // already in the hirer's party
+    RejoinHirer,  // leave the bound party, accept the hirer's invitation again
+    ParkForLogin, // the hirer is offline: the logout grace period owns the hire; it rejoins on return
+};
+
+inline HireBindingEnd DecideHireBindingEnd(bool hireLive, bool hirerOnline, bool inHirerGroup)
+{
+    if (!hireLive)
+        return HireBindingEnd::Leave;
+    if (!hirerOnline)
+        return HireBindingEnd::ParkForLogin;
+    return inHirerGroup ? HireBindingEnd::Keep : HireBindingEnd::RejoinHirer;
 }
 
 } // namespace TortoiseBots

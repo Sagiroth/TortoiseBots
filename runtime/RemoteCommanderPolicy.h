@@ -281,10 +281,19 @@ struct BindMember
 {
     bool controllable = false; // CanControlBot: owner, master, claim or GM
     bool liveBot = false;      // live module-owned Headless bot with an AI
-    bool hired = false;        // hired companion: bound to its hirer's party
+    bool hired = false;        // hired by somebody other than the commander (see HireBlocksBind)
     bool inOtherGroup = false; // in a group that is neither the lead's nor the commander's
     bool inOtherBinding = false; // lead or follower of another commander's binding
 };
+
+// A hired companion's life is tied to its hirer's party: it ends when the
+// companion leaves it. The commander's own hires are the exception (the hire
+// lifecycle suspends that rule while they are bound to their hirer, see
+// HireDeparturePolicy.h), so only a hire of somebody else blocks a bind.
+inline bool HireBlocksBind(bool isHire, uint64_t hirerGuid, uint64_t commanderGuid)
+{
+    return isHire && (!commanderGuid || hirerGuid != commanderGuid);
+}
 
 struct BindFacts
 {
@@ -333,8 +342,8 @@ enum class BindRefusal : uint8_t
 };
 
 // The bind is refused (fail closed) unless the commander controls every bot,
-// no bot is a hired companion (its hire ends when it leaves its hirer's
-// party), the result is a bot-only party of two to five, and nobody else
+// no bot is another player's hired companion (its hire ends when it leaves
+// its hirer's party; the commander's own hires may be bound), the result is a bot-only party of two to five, and nobody else
 // commands it.
 inline BindRefusal CheckBind(BindFacts const& facts)
 {
@@ -417,14 +426,14 @@ inline char const* BindRefusalText(BindRefusal refusal)
         case BindRefusal::CommanderIsBot: return "A bot cannot be a commander.";
         case BindRefusal::AlreadyBound: return "You already command a group. Use .bot commander unbind first.";
         case BindRefusal::LeadNotControllable: return "The lead bot is not an online bot you control.";
-        case BindRefusal::LeadHired: return "A hired companion cannot lead a commanded group (its hire ends when it leaves your party).";
+        case BindRefusal::LeadHired: return "Another player's hired companion cannot lead a commanded group (its hire ends when it leaves its hirer's party). Your own hires can.";
         case BindRefusal::LeadGroupRaid: return "The lead bot is in a raid or battleground group.";
         case BindRefusal::GroupHasPlayer: return "The lead bot's group has a player in it. Commanded groups are bots only.";
         case BindRefusal::GroupBound: return "Another commander already commands that group.";
         case BindRefusal::NoMembers: return "Name the bots to group with the lead bot: .bot commander bind <LeadBot> <Bot> [<Bot>...].";
         case BindRefusal::GroupTooLarge: return "A commanded group holds at most five bots.";
         case BindRefusal::MemberNotControllable: return "A named or grouped bot is not an online bot you control.";
-        case BindRefusal::MemberHired: return "Hired companions cannot join a commanded group (their hire ends when they leave your party).";
+        case BindRefusal::MemberHired: return "Another player's hired companions cannot join a commanded group (their hire ends when they leave their hirer's party). Your own hires can.";
         case BindRefusal::MemberInOtherGroup: return "A named bot is in another group. Remove it from that group first.";
         case BindRefusal::BotInOtherBinding: return "A named bot is still in another commander's group. That commander must unbind first.";
         case BindRefusal::PartyUnnamed: return "Your party holds a bot you did not name. Name every bot in your party in the bind (or take the others out of it first).";

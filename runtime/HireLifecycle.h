@@ -2,6 +2,7 @@
 
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectGuid.h"
+#include "HireDeparturePolicy.h"
 
 #include <cstdint>
 #include <ctime>
@@ -57,6 +58,22 @@ public:
     void SetGearTier(ObjectGuid botGuid, uint8_t tier);
     uint8_t GearTier(ObjectGuid botGuid) const;
 
+    // Remote commander (issue #884): a hire may be bound by its own hirer, which
+    // takes the hirer out of the hire's party. While bound, the "left the
+    // hirer's party" end conditions are suspended (HireDeparturePolicy.h); the
+    // hire still ends on dismiss and on the hirer's logout grace.
+    //
+    // Before the bind moves anybody: the hire enters its transition. False (and
+    // nothing changes) for a bot that is not a hire of `commanderGuid`.
+    bool BeginCommand(ObjectGuid botGuid, ObjectGuid commanderGuid);
+    // The bind succeeded: this commander's hires in transition are bound.
+    void ConfirmCommand(ObjectGuid commanderGuid);
+    // The binding ended (or the bind failed): the commander's hires go back to
+    // the commander's party if it is online, or wait for its return inside the
+    // logout grace. Returns the hires handled; 0 for a commander with none.
+    uint32_t EndCommand(ObjectGuid commanderGuid);
+    uint32_t CommandedHireCount(ObjectGuid commanderGuid) const;
+
     // Group hooks (called from the module GroupScript adapter).
     void OnGroupMemberRemoved(Group* group, ObjectGuid guid);
     void OnGroupDisband(Group* group);
@@ -88,6 +105,11 @@ private:
         // hire: only then is a master-less group a dismissal.
         bool everGrouped = false;
         uint8_t gearTier = 0;
+        // Remote commander: where the hire stands in its hirer's binding.
+        HireCommandState commandState = HireCommandState::None;
+        // The hirer logged out while the hire sat in a bound party: when the
+        // hirer returns the hire leaves that party before it is re-invited.
+        bool regroupOnReturn = false;
     };
 
     // A dismissed hire whose character is waiting for its asynchronous

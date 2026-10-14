@@ -4166,6 +4166,11 @@ uint32 ReleaseBinding(uint64 commanderRaw, RemoteCommander::ReleaseReason reason
         if (group->GetId() == removed.groupId)
             for (Group::MemberSlot const& slot : group->GetMemberSlots())
                 RestoreCommanderThreatBackoff(slot.guid.GetRawValue());
+    // The commander's own hires go back to its party (or wait for it to come
+    // back online inside the logout grace): a hire lives in its hirer's party.
+    // After the follow targets and the threat back-off above were restored,
+    // while the hires are still in the bound party.
+    HireLifecycle::Instance().EndCommand(::ObjectGuid(commanderRaw));
     TB_LOG_DETAIL("TortoiseBots: remote commander %s released group of %s: %s",
         commander ? commander->GetName() : "(offline)", lead ? lead->GetName() : "(offline)",
         RemoteCommander::ReleaseReasonText(reason));
@@ -4226,7 +4231,11 @@ RemoteCommander::BindMember MemberFacts(Player* commander, Player* bot)
     BotRecord* record = BotManager::Instance().FindBot(bot->GetObjectGuid());
     facts.controllable = record && CanControlBot(commander, record);
     facts.liveBot = record && IsLiveHeadlessBot(bot, record);
-    facts.hired = HireLifecycle::Instance().IsHired(bot->GetObjectGuid());
+    // Hired by somebody else: refused. The commander's own hires may be bound
+    // (the hire lifecycle suspends their "left the hirer's party" end).
+    HireLifecycle& hires = HireLifecycle::Instance();
+    facts.hired = RemoteCommander::HireBlocksBind(hires.IsHired(bot->GetObjectGuid()),
+        hires.GetMaster(bot->GetObjectGuid()).GetRawValue(), commander ? commander->GetObjectGuid().GetRawValue() : 0);
     // One binding per bot: its saved follow target belongs to that binding.
     facts.inOtherBinding = CommanderBindings().FindByBot(bot->GetObjectGuid().GetRawValue()) != nullptr;
     return facts;
@@ -4698,6 +4707,34 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
         return true;
     }
 
+    // The commander's own hires may be bound: from here until the binding
+    // stands they are in transition, so moving them between parties does not
+    // end their hire (the commander leaves their party, or they leave it to
+    // join the lead bot's). A failed bind returns them to the commander.
+    bool hiresInTransition = false;
+    {
+        ::ObjectGuid const commanderGuid = commander->GetObjectGuid();
+        HireLifecycle& hires = HireLifecycle::Instance();
+        auto beginCommand = [&](Player* bot)
+        {
+            if (bot && hires.BeginCommand(bot->GetObjectGuid(), commanderGuid))
+                hiresInTransition = true;
+        };
+        beginCommand(lead);
+        for (Player* bot : joiners)
+            beginCommand(bot);
+        if (facts.leadGrouped)
+            for (Group::MemberSlot const& slot : leadGroup->GetMemberSlots())
+                beginCommand(ObjectAccessor::FindPlayer(slot.guid));
+    }
+    auto failBind = [&](char const* code, char const* message)
+    {
+        if (hiresInTransition)
+            HireLifecycle::Instance().EndCommand(commander->GetObjectGuid());
+        SendActionError(handler, intent, code, message);
+        return true;
+    };
+
     // Form or adopt the party. A kept commander party stays the same group
     // (and so keeps its instance bind): the lead bot takes the lead, the named
     // bots outside it join, and the commander leaves it last (earlier only
@@ -4716,28 +4753,24 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
         if (keepParty && lead->GetGroup() && lead->GetGroup()->IsFull() &&
             !DropCommanderFromParty(lead->GetGroup(), commander))
         {
-            SendActionError(handler, intent, "invite-failed", "The party is full and the commander cannot leave it.");
-            return true;
+            return failBind("invite-failed", "The party is full and the commander cannot leave it.");
         }
         if (!JoinLeadGroup(lead, bot))
         {
             std::string message = std::string("The group invitation for ") + bot->GetName() +
                 " was refused (another pending invite, a faction rule, or a full group). Bind again to adopt the group as it is now.";
-            SendActionError(handler, intent, "invite-failed", message.c_str());
-            return true;
+            return failBind("invite-failed", message.c_str());
         }
     }
     if (keepParty && lead->GetGroup() && !DropCommanderFromParty(lead->GetGroup(), commander))
     {
-        SendActionError(handler, intent, "invite-failed", "The commander cannot leave the party (it would be left with fewer than two bots).");
-        return true;
+        return failBind("invite-failed", "The commander cannot leave the party (it would be left with fewer than two bots).");
     }
 
     Group* group = lead->GetGroup();
     if (!group || !group->IsLeader(lead->GetObjectGuid()) || group->GetMembersCount() < 2)
     {
-        SendActionError(handler, intent, "invite-failed", "The lead bot could not form a group.");
-        return true;
+        return failBind("invite-failed", "The lead bot could not form a group.");
     }
 
     RemoteCommander::Binding binding;
@@ -4747,10 +4780,13 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
     RemoteCommander::BindResult result = CommanderBindings().Bind(binding);
     if (result != RemoteCommander::BindResult::Bound)
     {
-        SendActionError(handler, intent, result == RemoteCommander::BindResult::GroupAlreadyBound
+        return failBind(result == RemoteCommander::BindResult::GroupAlreadyBound
             ? "group-bound" : "already-bound", "The group or you are already bound.");
-        return true;
     }
+
+    // The commander's hires stay hires while bound (the "left the hirer's
+    // party" end is suspended for them until the binding ends).
+    HireLifecycle::Instance().ConfirmCommand(commander->GetObjectGuid());
 
     // The perception feed starts off with every new binding; `.bot commander
     // view on` turns it on.
@@ -4811,9 +4847,14 @@ static bool HandleCommander(ChatHandler* handler, char const* args)
 
     if (verb == "unbind")
     {
+        uint32 const hiresBound = HireLifecycle::Instance().CommandedHireCount(commander->GetObjectGuid());
         uint32 restored = ReleaseBinding(commanderRaw, RemoteCommander::ReleaseReason::Unbound, false);
-        handler->PSendSysMessage("You no longer command %s's group. The bots stay grouped; %s holds where it stands.",
-            leadName.c_str(), leadName.c_str());
+        if (hiresBound)
+            handler->PSendSysMessage("You no longer command %s's group. Your %u hired companions rejoin your party; "
+                "any other bots stay grouped.", leadName.c_str(), hiresBound);
+        else
+            handler->PSendSysMessage("You no longer command %s's group. The bots stay grouped; %s holds where it stands.",
+                leadName.c_str(), leadName.c_str());
         SendActionAck(handler, intent, "party", restored, leadName);
         return true;
     }
