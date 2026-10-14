@@ -62,18 +62,43 @@ static void TestFallbackTiers()
     CHECK(DecideSoulstoneTarget(Grouped(), {}).kind == SoulstoneChoiceKind::None);
 }
 
-// Aura already up: skip, and do not hand the stone to a lower tier (the
-// item cooldown is 30 minutes, the healer stays the target).
+// Aura already up on the whole tier: it is done, the next tier is stoned
+// (a second warlock stones the tank after the first stoned the healer).
 static void TestSkipsWhenAuraPresent()
 {
     SoulstoneCandidate stoned = Healer();
     stoned.hasSoulstoneAura = true;
-    CHECK(DecideSoulstoneTarget(Grouped(), {stoned, Leader()}).kind == SoulstoneChoiceKind::None);
+    CHECK(PicksMember(DecideSoulstoneTarget(Grouped(), {stoned, Tank()}), 1));
+    CHECK(PicksMember(DecideSoulstoneTarget(Grouped(), {stoned, Leader()}), 1));
+    // Everyone stoned: nothing to do.
+    SoulstoneCandidate stonedTank = Tank();
+    stonedTank.hasSoulstoneAura = true;
+    SoulstoneCandidate stonedLeader = Leader();
+    stonedLeader.hasSoulstoneAura = true;
+    CHECK(DecideSoulstoneTarget(Grouped(), {stoned, stonedTank, stonedLeader}).kind == SoulstoneChoiceKind::None);
     // Two healers: the one without the aura gets it.
     CHECK(PicksMember(DecideSoulstoneTarget(Grouped(), {stoned, Healer()}), 1));
     // Aura falls off: stoned again.
     stoned.hasSoulstoneAura = false;
     CHECK(PicksMember(DecideSoulstoneTarget(Grouped(), {stoned, Leader()}), 0));
+}
+
+// Two warlocks: the first stones the healer; the second sees the aura (or
+// the first one casting) and, with the healer done, takes the tank.
+static void TestSecondWarlockStonesTheTank()
+{
+    SoulstoneCandidate healer = Healer();
+    SoulstoneCandidate tank = Tank();
+    // First warlock casting on the healer: the second waits for the healer.
+    healer.targetedByOtherWarlock = true;
+    CHECK(DecideSoulstoneTarget(Grouped(), {healer, tank}).kind == SoulstoneChoiceKind::None);
+    // Cast landed: healer holds the aura, the second warlock stones the tank.
+    healer.targetedByOtherWarlock = false;
+    healer.hasSoulstoneAura = true;
+    CHECK(PicksMember(DecideSoulstoneTarget(Grouped(), {healer, tank}), 1));
+    // Then the tank holds it too: nothing left for either warlock.
+    tank.hasSoulstoneAura = true;
+    CHECK(DecideSoulstoneTarget(Grouped(), {healer, tank}).kind == SoulstoneChoiceKind::None);
 }
 
 // Never in combat, in any shape of group.
@@ -173,6 +198,7 @@ int main()
     TestHealerBeatsLeader();
     TestFallbackTiers();
     TestSkipsWhenAuraPresent();
+    TestSecondWarlockStonesTheTank();
     TestSkipsInCombat();
     TestWaitsForTheHealer();
     TestSolo();

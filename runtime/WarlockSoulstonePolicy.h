@@ -13,10 +13,11 @@
 //
 // Who is stoned (owner order 2026-10-15, donor mod-playerbots "ss healer"):
 //   in a group  - the healer, else the tank, else the master/leader; one
-//                 tier at a time. A tier that exists in the group but has no
-//                 member ready (out of range, no line of sight, dead, aura
-//                 already up, another warlock mid-cast) is waited for, not
-//                 skipped: a used stone starts the item's 30 minute cooldown,
+//                 tier at a time. A tier with a member that lacks the aura
+//                 but is not ready (out of range, no line of sight, dead,
+//                 another warlock mid-cast) is waited for, not skipped; a
+//                 tier whose members all hold the aura is done and the next
+//                 tier is stoned (a second warlock stones the tank). Waiting: a used stone starts the item's 30 minute cooldown,
 //                 so spending it on the leader because the healer is a few
 //                 yards late would leave the healer unstoned for half an hour.
 //   solo        - the warlock stones itself (unchanged behaviour).
@@ -28,7 +29,7 @@
 // create step stays quiet instead of queueing a spell that fails isPossible
 // every few seconds. Shards come from Drain Soul (see ClassConsumablePolicy.h)
 // and, for hires and `.bot maintenance`, from PlayerbotFactory::InitReagents
-// (1-5 shards for a warlock of level 10+).
+// (a random 1-5 shards for a warlock of level 10+: stack 3 x2, capped at the keep band of 5).
 
 namespace TortoiseBots
 {
@@ -179,12 +180,13 @@ inline SoulstoneChoice DecideSoulstoneTarget(SoulstoneFacts const& facts,
     static constexpr SoulstoneTier order[] = {SoulstoneTier::Healer, SoulstoneTier::Tank, SoulstoneTier::Leader};
     for (SoulstoneTier tier : order)
     {
-        bool tierPresent = false;
+        bool tierNeedsStone = false; // a member of the tier lacks the aura
         for (size_t i = 0; i < others.size(); ++i)
         {
             if (SoulstoneTierOf(others[i]) != tier)
                 continue;
-            tierPresent = true;
+            if (!others[i].hasSoulstoneAura)
+                tierNeedsStone = true;
             if (IsSoulstoneReady(others[i]))
             {
                 SoulstoneChoice pick;
@@ -193,9 +195,12 @@ inline SoulstoneChoice DecideSoulstoneTarget(SoulstoneFacts const& facts,
                 return pick;
             }
         }
-        // The tier exists but nobody in it is ready: wait, do not fall
-        // through to a lower tier (see the header comment).
-        if (tierPresent)
+        // A member lacks the aura but is not ready (far, dead, no line of
+        // sight, another warlock casting): wait, do not fall through to a
+        // lower tier (see the header comment). A tier whose members all hold
+        // the aura is done, so the next tier is looked at (a second warlock
+        // stones the tank).
+        if (tierNeedsStone)
             return none;
     }
     return none;

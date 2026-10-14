@@ -9804,13 +9804,15 @@ with a Soul Shard in the bags.
   decision `runtime/WarlockSoulstonePolicy.h`.
 - Differences from the donor, on purpose: on by default (owner order
   2026-10-15, no config key because the donor has none); the master/leader
-  is the last fallback; a tier present in the group but not ready is waited
-  for (the item shares a 30 minute cooldown); the stone used is the best rank
+  is the last fallback; a tier with a member that lacks the aura but is
+  not ready is waited for (the item shares a 30 minute cooldown), while a tier whose members all hold the aura is done and
+  the next tier is stoned (a second warlock stones the tank); the stone used is the best rank
   held (a stone made before a rank-up used to stay unused forever); the
   create trigger stays quiet without a Soul Shard and the create row ranks
   one above the other stones so a single shard goes to the Soulstone.
 - Shard source (unchanged): Drain Soul organic harvest; hires and `.bot
-  maintenance` seed 1-5 shards via `PlayerbotFactory::InitReagents`.
+  maintenance` seed a random 1-5 shards (target 3 x2, capped at 5) via
+  `PlayerbotFactory::InitReagents`.
 - Validation: `tools/test_warlock_soulstone_policy.cpp` (38 checks: healer >
   leader, aura skip and re-apply, combat skip, wait for an unready healer,
   no shard no create, rank pick), `bash tools/verify_all.sh`, `-fsyntax-only`
