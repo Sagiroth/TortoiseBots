@@ -9152,6 +9152,73 @@ static std::string SpellNameOf(uint32 spellId)
     return spell ? spell->SpellName[0] : std::string();
 }
 
+// The unit the spell a unit is casting is aimed at (raw guid), 0 when it casts nothing or the spell has no unit target.
+static uint64 CurrentSpellTargetGuid(Unit* unit)
+{
+    for (CurrentSpellTypes type : { CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL })
+        if (Spell* spell = unit->GetCurrentSpell(type))
+            return spell->m_targets.getUnitTargetGuid().GetRawValue();
+    return 0;
+}
+
+// What the dashboard calls a game object: a letter for its type, or 0 for the kinds it does not draw (mailboxes, fishing holes ...).
+static char DashboardObjectType(GameObject const* go)
+{
+    switch (go->GetGoType())
+    {
+        case GAMEOBJECT_TYPE_DOOR: return 'd';
+        case GAMEOBJECT_TYPE_CHEST: return 'c';
+        case GAMEOBJECT_TYPE_BUTTON: return 'b';
+        case GAMEOBJECT_TYPE_GOOBER: return 'g';
+        case GAMEOBJECT_TYPE_SUMMONING_RITUAL: return 'r';
+        default: return 0;
+    }
+}
+
+// The doors, chests, levers, goobers (gongs, altars) and rituals the bound bots have seen near them: their own cached "nearest game
+// objects" lists (read only when a bot already calculated one, no grid scan), resolved on the lead's map, the ones nearest the lead
+// first, capped at kMaxObjectsPerBinding. Once per 2 s snapshot cycle, only while a binding stands.
+static void FillCommanderObjects(Player* lead, CommanderTelemetry::BindingRef& ref)
+{
+    Map* map = lead->GetMap();
+    if (!map)
+        return;
+    ref.objectsReported = true;
+    static std::list<ObjectGuid> cached;
+    std::vector<std::pair<float, CommanderTelemetry::ObjectInfo>> found;
+    std::unordered_set<uint64_t> seen;
+    for (Player* bot : ref.bots)
+    {
+        if (!bot || !bot->IsInWorld() || bot->GetMapId() != lead->GetMapId())
+            continue;
+        ReadCachedGuidList(PlayerbotAIStorage::Instance().GetAI(bot), "nearest game objects", cached);
+        for (ObjectGuid const& guid : cached)
+        {
+            if (!seen.insert(guid.GetRawValue()).second)
+                continue;
+            GameObject* go = map->GetGameObject(guid);
+            char const type = go && go->IsInWorld() ? DashboardObjectType(go) : 0;
+            if (!type)
+                continue;
+            CommanderTelemetry::ObjectInfo info;
+            info.id = guid.GetRawValue();
+            info.entry = go->GetEntry();
+            info.name = go->GetName() ? go->GetName() : "";
+            info.x = go->GetPositionX();
+            info.y = go->GetPositionY();
+            info.type = type;
+            info.state = go->GetGoState() == GO_STATE_ACTIVE ? 'a' : (go->getLootState() != GO_READY ? 'u' : 'r');
+            float const dx = info.x - lead->GetPositionX(), dy = info.y - lead->GetPositionY();
+            found.emplace_back(dx * dx + dy * dy, std::move(info));
+        }
+    }
+    std::sort(found.begin(), found.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
+    size_t const count = std::min(found.size(), CommanderTelemetry::kMaxObjectsPerBinding);
+    ref.objects.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+        ref.objects.push_back(std::move(found[i].second));
+}
+
 // The map data of one binding for the dashboard (once per 2 s snapshot cycle, only while a binding stands): the commander's
 // position when it is online and in the world, and the hostile units the commander's perception feed would list for this binding
 // (the same builder: the bots' own cached lists, resolved by guid on the lead's map, capped at kMaxHostiles; no grid or world
@@ -9215,6 +9282,8 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         extra.cc = CommanderTelemetry::CcKind(bot->HasUnitState(UNIT_STAT_STUNNED), bot->HasUnitState(UNIT_STAT_CONFUSED),
             bot->HasUnitState(UNIT_STAT_FLEEING), bot->HasUnitState(UNIT_STAT_ROOT));
         extra.moving = bot->IsMoving();
+        if (member.casting)
+            extra.castTarget = CurrentSpellTargetGuid(bot);
         if (bot->IsAlive() && !bot->IsInCombat())
             if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
                 extra.rest = ai->HasAura("drink", bot) ? 'd' : ai->HasAura("food", bot) ? 'e' : 0;
@@ -9223,6 +9292,7 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
                 extra.targetName = target->GetName();
         ref.botExtras.push_back(std::move(extra));
     }
+    FillCommanderObjects(lead, ref);
 }
 
 void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)

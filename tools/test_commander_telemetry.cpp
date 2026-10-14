@@ -411,6 +411,140 @@ void TestRunInfo()
     Check(BuildPayload(9, 1, 1, 1, many).size() < 60000, "a run on every binding fits one datagram");
 }
 
+void TestPathData()
+{
+    // The step window: a short section is listed whole, a long one keeps the current step a few steps from the window's start.
+    auto w = RunStepWindow(10, 15, 12);
+    Check(w.first == 10 && w.second == 15, "a short section is listed whole");
+    w = RunStepWindow(0, 100, 0);
+    Check(w.first == 0 && w.second == kMaxRunSteps, "a long section starts at its first step");
+    w = RunStepWindow(0, 100, 50);
+    Check(w.first == 50 - kMaxRunSteps / 4 && w.second == w.first + kMaxRunSteps && w.first <= 50 && 50 < w.second, "the window follows the current step");
+    w = RunStepWindow(0, 100, 99);
+    Check(w.second == 100 && w.second - w.first == kMaxRunSteps, "the window ends with the section");
+    w = RunStepWindow(0, 100, 140);
+    Check(w.second == 100 && w.first == 100 - kMaxRunSteps, "a finished run (step past the end) shows the last steps");
+    w = RunStepWindow(5, 5, 5);
+    Check(w.first == w.second, "an empty section lists nothing");
+    w = RunStepWindow(40, 100, 10);
+    Check(w.first == 40 && w.second == 40 + kMaxRunSteps, "a step before the section clamps to its start");
+
+    BindingInfo b;
+    b.commander = "Glacienne";
+    BotInfo healer = Bot("Healer", false);
+    healer.hasExtra = true;
+    healer.extra.cast = "Flash Heal";
+    healer.extra.castTarget = 0xF130001EDF000102ull;
+    BotInfo idle = Bot("Idle", false);
+    idle.hasExtra = true;
+    idle.extra.castTarget = 77; // not casting: no target is sent
+    b.bots.push_back(healer);
+    b.bots.push_back(idle);
+    b.run.present = true;
+    b.run.plan = "uldaman";
+    b.run.state = "running";
+    for (uint32_t i = 0; i < 3; ++i)
+    {
+        RunStepInfo st;
+        st.index = 40 + i;
+        st.kind = i == 0 ? "move" : i == 1 ? "pull" : "boss";
+        st.x = -6000.25f + i;
+        st.y = -2900.5f;
+        st.radius = i == 0 ? 0.0f : 15.0f;
+        st.entry = i == 2 ? 4854 : 0;
+        st.name = i == 2 ? "Grimlok \"the\" Stonebreaker" : "";
+        st.skipped = i == 1;
+        b.run.stepList.push_back(st);
+    }
+    b.objectsReported = true;
+    ObjectInfo o1;
+    o1.id = 0xF110000000000009ull;
+    o1.entry = 2087;
+    o1.name = "Ancient \"Treasure\" Chest";
+    o1.x = -6001.0f;
+    o1.y = -2899.0f;
+    o1.type = 'c';
+    o1.state = 'u';
+    ObjectInfo o2 = o1;
+    o2.type = 'z'; // unknown letters read as other
+    o2.state = '?';
+    b.objects = {o1, o2};
+    std::string const json = BuildPayload(9, 1, 1, 1, {b});
+
+    Check(Has(json, "\"cast\":\"Flash Heal\",\"ctgt\":\"17379391094613082370\""), "a cast names its unit target");
+    Check(Count(json, "\"ctgt\":") == 1, "no cast, no cast target");
+    Check(Has(json, "\"plan_steps\":[{\"i\":40,\"k\":\"move\",\"x\":-6000.2,\"y\":-2900.5}"), "the first step has no radius or entry");
+    Check(Has(json, "{\"i\":41,\"k\":\"pull\",\"x\":-5999.2,\"y\":-2900.5,\"r\":15.0,\"sk\":true}"), "a pull with its radius, marked skipped");
+    Check(Has(json, "\"e\":4854,\"n\":\"Grimlok \\\"the\\\" Stonebreak") && !Has(json, "Stonebreaker"), "a boss with its entry, an escaped name clipped");
+    Check(Has(json, "\"objects\":[{\"id\":\"17370383762768003081\",\"entry\":2087"), "objects carry their guid as a decimal string");
+    Check(Has(json, "\"type\":\"c\",\"state\":\"u\"}") && Has(json, "\"type\":\"o\",\"state\":\"r\"}"), "type and state letters, unknown ones cleaned");
+    Check(json.find('\n') == std::string::npos, "still one line");
+
+    BindingInfo plain;
+    plain.commander = "Old";
+    plain.run.present = true;
+    std::string const old = BuildPayload(9, 1, 1, 1, {plain});
+    Check(!Has(old, "plan_steps") && !Has(old, "objects") && !Has(old, "ctgt"), "a binding without path data keeps the old shape");
+    plain.objectsReported = true;
+    Check(Has(BuildPayload(9, 1, 1, 1, {plain}), "\"objects\":[]"), "an empty object list that was read is sent");
+
+    // Caps and the worst case: every binding full of steps, objects, mobs and casting bots.
+    BindingInfo big;
+    big.commander = std::string(40, 'C');
+    big.lead = std::string(12, 'L');
+    for (int i = 0; i < 6; ++i)
+    {
+        BotInfo bot = Bot("Botname" + std::to_string(i), i == 0);
+        bot.id = bot.target = 0xFFFFFFFFFFFFFFFFull;
+        bot.hasExtra = true;
+        bot.extra.action = std::string(60, 'a');
+        bot.extra.cast = std::string(60, 'c');
+        bot.extra.castTarget = 0xFFFFFFFFFFFFFFFFull;
+        bot.extra.targetName = std::string(60, 't');
+        big.bots.push_back(bot);
+    }
+    for (int i = 0; i < 8; ++i)
+        big.orders.push_back(Order(i, "ritual", true, std::string(kMaxOrderResult, 'r'), std::string(kMaxOrderDetail, 'd')));
+    big.commanderPlaced = true;
+    big.mobsReported = true;
+    for (int i = 0; i < 40; ++i)
+        big.mobs.push_back(Mob(0xFFFFFFFFFFFFFFFFull, std::string(60, 'M'), 'h', 'k', 0xFFFFFFFFFFFFFFFFull));
+    big.run.present = true;
+    big.run.plan = std::string(60, 'p');
+    big.run.note = std::string(500, 'n');
+    for (uint32_t i = 0; i < 60; ++i)
+    {
+        RunStepInfo st;
+        st.index = 4000000000u + i;
+        st.kind = "move_direct";
+        st.x = st.y = -12345.67f;
+        st.radius = 100.0f;
+        st.entry = 4000000000u;
+        st.name = std::string(60, 'S');
+        st.skipped = true;
+        big.run.stepList.push_back(st);
+    }
+    big.objectsReported = true;
+    for (int i = 0; i < 40; ++i)
+    {
+        ObjectInfo o = o1;
+        o.id = 0xFFFFFFFFFFFFFFFFull;
+        o.name = std::string(60, 'O');
+        big.objects.push_back(o);
+    }
+    std::string const one = BuildPayload(9, 1, 1, 1, {big});
+    Check(Count(one, "\"i\":") == kMaxRunSteps, "steps per run are capped");
+    Check(Count(one, "\"state\":\"u\"") == kMaxObjectsPerBinding, "objects per binding are capped");
+    std::printf("one full binding with steps and objects: %zu bytes\n", one.size());
+    std::vector<BindingInfo> many(kMaxBindings + 3, big);
+    std::string const json2 = BuildPayload(9, 1, 1, 1, many);
+    Check(Count(json2, "\"i\":") == kMaxRunStepsPerPayload, "steps per payload are capped");
+    Check(Count(json2, "\"state\":\"u\"") == kMaxObjectsPerPayload, "objects per payload are capped");
+    Check(!Has(json2, std::string(kMaxObjectName + 1, 'O')) && !Has(json2, std::string(kMaxMobName + 1, 'S')), "object and step names are clipped");
+    Check(json2.size() < 60000, "the worst case with paths, steps and objects still fits one datagram");
+    std::printf("worst case with paths (%zu bindings): %zu bytes\n", kMaxBindings, json2.size());
+}
+
 void TestControlCharacters()
 {
     BindingInfo b;
@@ -432,6 +566,7 @@ int main()
     TestMapDataCapsAndSize();
     TestUnitInfo();
     TestRunInfo();
+    TestPathData();
     TestControlCharacters();
     if (g_failures)
     {
