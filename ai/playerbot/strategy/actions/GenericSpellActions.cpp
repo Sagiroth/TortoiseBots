@@ -766,7 +766,14 @@ bool CastShootAction::isUseful()
     // answer is cached for ~1 s, CcCastWaiting). Only the wand
     // classes register "wand blocks cc"; for the others this is a miss.
     WandBlocksCcTrigger* wandBlocksCc = dynamic_cast<WandBlocksCcTrigger*>(context->GetTrigger("wand blocks cc"));
-    return !wandBlocksCc || !wandBlocksCc->CcCastWaiting();
+    if (wandBlocksCc && wandBlocksCc->CcCastWaiting())
+        return false;
+
+    // A grouped healer never starts a wand while somebody needs a heal, nor
+    // on a mob the party is not fighting yet (HealerMayWand, WandPolicy.h).
+    // Asked here and not only by the "healer should wand" row: a queued
+    // "shoot" outlives that row by up to ExpireActionTime.
+    return HealerWandAllowed(ai, GetTarget());
 }
 
 bool CastShootAction::Execute(Event& event)

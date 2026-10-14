@@ -96,6 +96,14 @@ int main()
     CHECK(HealerDpsManaAllows(false, 0, 101));
     CHECK(HealerDpsManaAllows(false, 0, 10));
 
+    // Healer damage target: solo or no target -> as before; grouped, only a
+    // mob that already fights another party member (Uldaman 2026-10-14:
+    // the priest opened on a mob the tank had not touched and took it).
+    CHECK(HealerDamageTargetAllowed(false, true, false));
+    CHECK(HealerDamageTargetAllowed(true, false, false));
+    CHECK(HealerDamageTargetAllowed(true, true, true));
+    CHECK(!HealerDamageTargetAllowed(true, true, false));
+
     std::printf("healer mana policy: OK (%d checks)\n", checks);
     return 0;
 }

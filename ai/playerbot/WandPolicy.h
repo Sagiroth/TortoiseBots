@@ -84,17 +84,67 @@ namespace ai
         // the next tick would fall back to the wand anyway, so stopping it
         // only ping-pongs (stop, wait one swing, "shoot" again).
         bool nukeThreatVetoed = false;
+        // A grouped healer whose wand HealerMayWand no longer allows (a
+        // party member needs a heal, or the wand's mob is not fighting the
+        // party): the wand goes, whatever the spell probes say. The same
+        // rule keeps "shoot" from starting it again, so this never
+        // ping-pongs.
+        bool healerMustStop = false;
     };
 
     inline bool ShouldStopWandToCast(WandState const& state)
     {
-        if (!state.wandAutoRepeat || state.keepWandForThreat)
+        if (!state.wandAutoRepeat)
+            return false;
+        if (state.healerMustStop)
+            return true;
+        if (state.keepWandForThreat)
             return false;
         if (state.bestHeal != WandSpellProbe::Blocked)
             return true;
         if (state.noManaRowActive || state.nukeThreatVetoed)
             return false;
         return state.bestNuke != WandSpellProbe::Blocked;
+    }
+
+    // When a grouped healer may wand at all (heal spec in a group; a bot
+    // outside a group or without a heal spec is never held back here).
+    //
+    // mod-playerbots puts every healer damage row, the wand included, under
+    // HealerShouldAttackTrigger, which is off while any party member is under
+    // the almost-full line: a healer never wands while somebody needs a heal.
+    // Here the "healer should wand" row asks the same, but a queued "shoot"
+    // outlives the trigger by up to ExpireActionTime (5 s), and a running
+    // wand renews the GCD on every shot, so every heal row answers "not
+    // ready" and the engine falls through to the wand again (Uldaman
+    // 2026-10-14: the priest wanded at 4000+ mana while the tank went from
+    // 81 % to 46 %). The shoot action and the "wand blocks cast" stop both
+    // ask this rule, so the wand neither starts nor keeps running then.
+    //
+    // The wand's mob must also be fighting another party member already: a
+    // healer that opens on a fresh mob pulls it onto itself (same run: the
+    // priest wanded a mob the tank had not touched yet, took it, and spent
+    // the next seconds on Fade instead of heals).
+    //
+    // Out of mana (the "no mana" row, under 5 %) the wand is all the healer
+    // has left, so it may wand an engaged mob whoever is hurt.
+    struct HealerWandGate
+    {
+        bool groupedHealer = false;   // heal spec, in a group
+        bool memberNeedsHeal = false; // a party member in heal reach is under the almost-full line, or the healer under the low line
+        bool noMana = false;          // under the "no mana" line
+        bool targetEngaged = false;   // the wand's mob is attacking another party member
+    };
+
+    inline bool HealerMayWand(HealerWandGate const& gate)
+    {
+        if (!gate.groupedHealer)
+            return true;
+        if (!gate.targetEngaged)
+            return false;
+        if (gate.noMana)
+            return true;
+        return !gate.memberNeedsHeal;
     }
 
     // Combine two spell probes: the better outcome wins.

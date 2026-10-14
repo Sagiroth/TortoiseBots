@@ -702,6 +702,16 @@ namespace ai
         bool checkMana;
     };
 
+    // True when `target` is attacking a member of the bot's group other
+    // than the bot itself (HealerDamageTargetAllowed, HealerMayWand).
+    bool TargetFightsOtherGroupMember(Player* bot, Unit* target);
+
+    // Game-state side of HealerMayWand (WandPolicy.h): may this bot start
+    // (or keep) a wand on `target` now? Always true outside a group or
+    // without a heal spec. Used by the "shoot" action and the priest's
+    // "wand blocks cast" stop, so both read the same line.
+    bool HealerWandAllowed(PlayerbotAI* ai, Unit* target);
+
     // Shared probes for the class "wand blocks ..." triggers (mage, priest,
     // warlock; rule in WandPolicy.h). Each Turtle wand shot renews the GCD,
     // so a running wand keeps every caster spell "not ready"; the class

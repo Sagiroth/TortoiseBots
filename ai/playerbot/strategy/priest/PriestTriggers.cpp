@@ -174,6 +174,11 @@ bool PriestWandBlocksCastTrigger::IsActive()
     // the "threat" multiplier vetoes the nukes (Smite falls back to the
     // wand); heals are never threat-gated, so a wanted heal still stops it.
     bool const nukeThreatVetoed = bestNuke != WandSpellProbe::Blocked && ThreatVetoesNuke();
-    WandState const state{true, bestNuke, false, NoManaRowActive(), bestHeal, nukeThreatVetoed};
+    WandState state{true, bestNuke, false, NoManaRowActive(), bestHeal, nukeThreatVetoed};
+    // A healer stops its wand as soon as the wand is no longer allowed
+    // (HealerMayWand): somebody needs a heal, or the mob left the party.
+    // The heal probes above only see heals below "medium health" or a
+    // missing Renew, and a wand renews the GCD that every heal row needs.
+    state.healerMustStop = healerSpec && !HealerWandAllowed(ai, target);
     return ShouldStopWandToCast(state);
 }

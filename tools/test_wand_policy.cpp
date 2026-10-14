@@ -109,6 +109,54 @@ int main()
     CHECK(!ShouldStopWandToCast(WandState{true, P::Blocked, false, false,
         ClassifyWandSpellProbe(false, true, B{false, false, false, true})}));
 
+    // Healer wand gate (HealerMayWand). Not a grouped healer: never held back.
+    {
+        HealerWandGate g;
+        CHECK(HealerMayWand(g));
+        g.memberNeedsHeal = true;
+        CHECK(HealerMayWand(g));
+    }
+    // Grouped healer, healthy party, mob fighting the tank: wand.
+    {
+        HealerWandGate g;
+        g.groupedHealer = true;
+        g.targetEngaged = true;
+        CHECK(HealerMayWand(g));
+        // Uldaman 2026-10-14: the tank drops under 90 % -> no wand, even at
+        // full mana with a "shoot" still queued from the healthy tick.
+        g.memberNeedsHeal = true;
+        CHECK(!HealerMayWand(g));
+        // Out of mana the wand is all that is left.
+        g.noMana = true;
+        CHECK(HealerMayWand(g));
+    }
+    // A fresh mob (nobody of the party fights it yet): never, not even
+    // out of mana - the healer would pull it onto itself.
+    {
+        HealerWandGate g;
+        g.groupedHealer = true;
+        CHECK(!HealerMayWand(g));
+        g.noMana = true;
+        CHECK(!HealerMayWand(g));
+    }
+    // A running wand the gate no longer allows stops, whatever the probes
+    // say and even under the raid "has aggro" row; no wand, nothing to stop.
+    {
+        WandState s{true, P::Blocked, false, false};
+        s.healerMustStop = true;
+        CHECK(ShouldStopWandToCast(s));
+        s.keepWandForThreat = true;
+        CHECK(ShouldStopWandToCast(s));
+        s.noManaRowActive = true;
+        CHECK(ShouldStopWandToCast(s));
+        s.wandAutoRepeat = false;
+        CHECK(!ShouldStopWandToCast(s));
+        // Default: unchanged behaviour.
+        WandState d{true, P::Blocked, false, false};
+        CHECK(!d.healerMustStop);
+        CHECK(!ShouldStopWandToCast(d));
+    }
+
     // Wait after the stop: until the next shot would have fired, plus the
     // react delay; never more than one swing.
     CHECK(WandStopWaitMs(1200, 1800, 100) == 1300);
