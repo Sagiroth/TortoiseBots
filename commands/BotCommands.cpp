@@ -4343,16 +4343,6 @@ RemoteCommander::BindMember MemberFacts(Player* commander, Player* bot)
     return facts;
 }
 
-// Take a bot out of the commander's own party (the commander asked for it
-// by name); the group pointer is read again because removing a member can
-// disband it.
-void LeaveCommanderParty(Player* commander, Player* bot)
-{
-    Group* group = commander ? commander->GetGroup() : nullptr;
-    if (group && group->IsMember(bot->GetObjectGuid()))
-        group->RemoveMember(bot->GetObjectGuid(), 0);
-}
-
 // The commander leaves the party the bind keeps (the party and its instance
 // bind outlive a member who leaves; the core disbands one left with fewer than
 // two members, so this refuses unless two bots stay). Server side, so no
@@ -4860,11 +4850,33 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
     // bots outside it join, and the commander leaves it last (earlier only
     // when the party is full and a bot is still to join). Otherwise: out of the
     // commander's party, the lead bot leads, every named bot joins it.
+    // Re-forming a party of only the commander and named bots (a raid: the
+    // commander and five hires), the commander leaves it first: the party the
+    // dungeon is bound to then never disbands with the commander as its last
+    // member outside, which resets that dungeon under the bots
+    // (Group::Disband keeps the bind only for a last member standing in it).
+    Group* const formerParty = commanderParty;
+    bool everyBotNamed = leadLeavesParty && formerParty && !planFacts.partyHasOtherPlayer;
+    if (everyBotNamed)
+        for (Group::MemberSlot const& slot : formerParty->GetMemberSlots())
+            if (slot.guid != commander->GetObjectGuid() && slot.guid != lead->GetObjectGuid() &&
+                std::none_of(joiners.begin(), joiners.end(),
+                    [&](Player* bot) { return bot->GetObjectGuid() == slot.guid; }))
+                everyBotNamed = false;
+    if (everyBotNamed)
+        DropCommanderFromParty(formerParty, commander);
+    // The group pointer stays valid after a disband here (the module's
+    // RemoveMember never deletes it; a disbanded group has no members).
+    auto leaveFormerParty = [&](Player* bot)
+    {
+        if (formerParty && formerParty->IsMember(bot->GetObjectGuid()))
+            formerParty->RemoveMember(bot->GetObjectGuid(), 0);
+    };
     if (leadLeavesParty)
-        LeaveCommanderParty(commander, lead);
+        leaveFormerParty(lead);
     if (!keepParty)
         for (Player* bot : joiners)
-            LeaveCommanderParty(commander, bot);
+            leaveFormerParty(bot);
     if (Group* group = lead->GetGroup())
         if (!group->IsLeader(lead->GetObjectGuid()))
             group->ChangeLeader(lead->GetObjectGuid());
@@ -4913,6 +4925,9 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
     CommanderViews()[commanderRaw] = CommanderView();
 
     std::vector<Player*> bots = CommandedBots(group, lead);
+    // Bots moved between parties inside a dungeon stay in it (no hearth 60 s later).
+    for (Player* bot : bots)
+        HireLifecycle::KeepInstanceAfterPartyMove(bot);
     FormUpOnLead(commander, lead, bots, true);
     for (Player* bot : bots)
         GiveCommanderThreatBackoff(bot);

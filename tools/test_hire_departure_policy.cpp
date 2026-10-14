@@ -184,6 +184,31 @@ static void TestHireOutOfWorldAtBindingEnd()
     CHECK(ShouldDismissHireOnGroupDeparture(true, true, true, false, HireCommandState::None));
 }
 
+// zf2-hires-2: a re-invite that did not land keeps the hire held until the bound.
+static void TestFailedReinviteIsRetried()
+{
+    CHECK(KeepAwaitingRegroup(false, false));
+    CHECK(!KeepAwaitingRegroup(true, false));
+    CHECK(!KeepAwaitingRegroup(false, true)); // bound passed: the ordinary rules
+    CHECK(!KeepAwaitingRegroup(true, true));
+}
+
+// zf2-hires-2: a party move inside a dungeon carries the instance over.
+static void TestPartyMoveKeepsInstance()
+{
+    // Outside a dungeon: nothing (no homebind timer there).
+    CHECK(DecidePartyMoveInstance(false, false, false, false) == PartyMoveInstance::Nothing);
+    // A fresh party (the bind's re-formed party, the hirer's new party): bound to the bot's instance.
+    CHECK(DecidePartyMoveInstance(true, false, false, false) == PartyMoveInstance::BindParty);
+    // The party already holds this instance: the bot is kept inside.
+    CHECK(DecidePartyMoveInstance(true, false, true, true) == PartyMoveInstance::KeepValid);
+    // The party holds another instance of the map: the core's homebind stands.
+    CHECK(DecidePartyMoveInstance(true, false, true, false) == PartyMoveInstance::Nothing);
+    // The instance is already waiting for its reset: never bound again.
+    CHECK(DecidePartyMoveInstance(true, true, false, false) == PartyMoveInstance::Nothing);
+    CHECK(DecidePartyMoveInstance(true, true, true, true) == PartyMoveInstance::Nothing);
+}
+
 int main()
 {
     TestMasterLeftWhileOnline();
@@ -197,6 +222,8 @@ int main()
     TestBoundSweepOrdering();
     TestBindingEnd();
     TestHireOutOfWorldAtBindingEnd();
+    TestFailedReinviteIsRetried();
+    TestPartyMoveKeepsInstance();
     std::printf("hire departure policy: %d checks passed\n", checks);
     return 0;
 }

@@ -22,6 +22,7 @@
 #include "WorldSession.h"
 #include "Chat.h"
 #include "Group/Group.h"
+#include "Maps/Map.h"
 #include "Database/DatabaseEnv.h"
 #include "Log.h"
 
@@ -179,6 +180,34 @@ uint32_t HireLifecycle::CommandedHireCount(ObjectGuid commanderGuid) const
     return count;
 }
 
+void HireLifecycle::KeepInstanceAfterPartyMove(Player* bot)
+{
+    if (!bot || !bot->IsInWorld() || bot->IsGameMaster())
+        return;
+    Map* map = bot->GetMap();
+    Group* party = bot->GetGroup();
+    if (!map || !party || party->isBGGroup() || !map->IsDungeon())
+        return;
+    DungeonMap* dungeon = static_cast<DungeonMap*>(map);
+    DungeonPersistentState* state = dungeon->GetPersistanceState();
+    if (!state)
+        return;
+    InstanceGroupBind* bind = party->GetBoundInstance(map->GetId());
+    switch (DecidePartyMoveInstance(true, dungeon->IsUnloadingBeforeReset(), bind != nullptr,
+        bind && bind->state == state))
+    {
+        case PartyMoveInstance::BindParty:
+            party->BindToInstance(state, false);
+            bot->m_InstanceValid = true;
+            break;
+        case PartyMoveInstance::KeepValid:
+            bot->m_InstanceValid = true;
+            break;
+        case PartyMoveInstance::Nothing:
+            break;
+    }
+}
+
 uint32_t HireLifecycle::EndCommand(ObjectGuid commanderGuid)
 {
     // The whole set enters its transition first: pulling one hire out of the
@@ -227,6 +256,15 @@ uint32_t HireLifecycle::EndCommand(ObjectGuid commanderGuid)
             case HireBindingEnd::RejoinHirer:
                 record.regroupOnReturn = true;
                 Reunite(record, master);
+                // The invitation did not land: held and invited again by the
+                // sweep within the same bound as a hire out of world.
+                if (KeepAwaitingRegroup(bot->IsInSameRaidWith(master), false))
+                {
+                    record.regroupOnReturn = true;
+                    record.regroupDeadline = time(nullptr) +
+                        std::max<time_t>(60, static_cast<time_t>(sPlayerbotAIConfig.hireDisconnectGracePeriod));
+                    keepTransition = true;
+                }
                 ++handled;
                 break;
             case HireBindingEnd::ParkForLogin:
@@ -454,6 +492,8 @@ void HireLifecycle::Reunite(HiredRecord& record, Player* master)
     }
     if (bot->IsInSameRaidWith(master))
     {
+        // Back in its hirer's party inside a dungeon: it stays there.
+        KeepInstanceAfterPartyMove(bot);
         // Issue #378: the hire is confirmed grouped, so a later departure of
         // the master ends the hire instead of being treated as a provisioning
         // artefact.
@@ -525,6 +565,12 @@ void HireLifecycle::SweepGracePeriod(time_t now)
                     continue;
                 case AwaitedRegroup::Retry:
                     Reunite(record, hirer);
+                    if (KeepAwaitingRegroup(held->IsInSameRaidWith(hirer), false))
+                    {
+                        record.regroupOnReturn = true; // invited again next sweep
+                        ++it;
+                        continue;
+                    }
                     record.commandState = HireCommandState::None;
                     break; // judged by the rules below, now back with its hirer
                 case AwaitedRegroup::Park:

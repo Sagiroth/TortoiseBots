@@ -144,4 +144,41 @@ inline AwaitedRegroup DecideAwaitedRegroup(bool hirerOnline, bool hireLive, bool
     return hireLive ? AwaitedRegroup::Retry : AwaitedRegroup::Wait;
 }
 
+// The return path re-invited a held hire (the binding's end, or the sweep's
+// retry) and the invitation did not land (a teleport in flight, a refused
+// invite): the hire stays held and is invited again on the next sweep until
+// the bound passes, instead of being judged at once as a hire outside its
+// hirer's party (zf2-hires-2: the tank was deleted 3 s after an unbind).
+inline bool KeepAwaitingRegroup(bool regrouped, bool deadlinePassed)
+{
+    return !regrouped && !deadlinePassed;
+}
+
+// A bind or a hire's return moves a bot between parties while it stands in a
+// dungeon. The core starts its 60 s homebind timer for a player who leaves a
+// party inside an instance (Group::_homebindIfInstance) and stops it only when
+// the player joins a party bound to that same instance; a fresh party is bound
+// to nothing, so the bots were teleported to their hearth 60 s after the
+// bind (zf2-hires-2, three times). The module moved them, so it carries the
+// instance over: a receiving party with no bind for the map is bound to the
+// instance the bot stands in, and a bot whose party holds that instance keeps
+// it. A party bound to another instance of the map, or an instance already
+// waiting for its reset, is left to the core.
+enum class PartyMoveInstance : uint8_t
+{
+    Nothing,
+    BindParty, // bind the party to the bot's instance, then KeepValid
+    KeepValid, // the party holds the bot's instance: the bot stays inside
+};
+
+inline PartyMoveInstance DecidePartyMoveInstance(bool inDungeon, bool instanceResetting,
+    bool partyBoundToMap, bool partyBoundToThisInstance)
+{
+    if (!inDungeon || instanceResetting)
+        return PartyMoveInstance::Nothing;
+    if (!partyBoundToMap)
+        return PartyMoveInstance::BindParty;
+    return partyBoundToThisInstance ? PartyMoveInstance::KeepValid : PartyMoveInstance::Nothing;
+}
+
 } // namespace TortoiseBots

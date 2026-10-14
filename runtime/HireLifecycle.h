@@ -73,6 +73,11 @@ public:
     // logout grace. Returns the hires handled; 0 for a commander with none.
     uint32_t EndCommand(ObjectGuid commanderGuid);
     uint32_t CommandedHireCount(ObjectGuid commanderGuid) const;
+    // After the module moved `bot` into its current party (a bind, a hire's
+    // return) while it stands in a dungeon: the party keeps the bot's instance
+    // instead of the core teleporting it to its hearth 60 s later
+    // (DecidePartyMoveInstance). Any bot, hired or not.
+    static void KeepInstanceAfterPartyMove(Player* bot);
 
     // Group hooks (called from the module GroupScript adapter).
     void OnGroupMemberRemoved(Group* group, ObjectGuid guid);
