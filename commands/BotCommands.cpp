@@ -4498,13 +4498,21 @@ Unit* SeenHostile(Player* bot, ObjectGuid guid)
     return unit;
 }
 
+// hostileOnly: leave out a unit the bot does not react to as hostile (the
+// first pass over the sight lists, so neutrals never take a slot from an enemy).
 void AddViewHostile(RemoteCommander::View::Snapshot& snapshot, RemoteCommander::View::HostileSet& taken,
-    Player* bot, ObjectGuid guid)
+    Player* bot, ObjectGuid guid, bool hostileOnly = false)
 {
     if (taken.Full() || guid.IsEmpty() || taken.Contains(guid.GetRawValue()))
         return;
     Unit* unit = SeenHostile(bot, guid);
-    if (!unit || !taken.Add(guid.GetRawValue()))
+    if (!unit)
+        return;
+    // How the seeing bot reacts to it: a field read on the unit's faction.
+    ReputationRank const reaction = bot->GetReactionTo(unit);
+    if (hostileOnly && reaction > REP_HOSTILE)
+        return;
+    if (!taken.Add(guid.GetRawValue()))
         return;
     RemoteCommander::View::Hostile* hostile = snapshot.AddHostile();
     if (!hostile)
@@ -4523,6 +4531,14 @@ void AddViewHostile(RemoteCommander::View::Snapshot& snapshot, RemoteCommander::
     hostile->evading = creature && creature->IsInEvadeMode();
     hostile->crowdControlled = unit->HasUnitState(UNIT_STAT_STUNNED | UNIT_STAT_CONFUSED |
         UNIT_STAT_FLEEING | UNIT_STAT_ROOT);
+    // What kind of unit it is: fields the unit and its template already hold
+    // (no lookup, no scan).
+    hostile->reaction = reaction <= REP_HOSTILE ? 'h' : (reaction >= REP_FRIENDLY ? 'f' : 'n');
+    hostile->critter = unit->GetCreatureType() == CREATURE_TYPE_CRITTER;
+    hostile->civilian = creature && creature->IsCivilian();
+    hostile->guard = creature && creature->IsGuard();
+    hostile->unattackable = unit->HasFlag(UNIT_FIELD_FLAGS,
+        UNIT_FLAG_SPAWNING | UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_NON_ATTACKABLE_2);
 
     // Engaged: the top of its own threat list, in % of the top entry.
     if (!unit->IsInCombat() || !unit->CanHaveThreatList())
@@ -4610,17 +4626,19 @@ void CollectViewSnapshot(RemoteCommander::Binding const& binding, RemoteCommande
         for (ObjectGuid const& guid : cached)
             AddViewHostile(snapshot, taken, bot, guid);
     }
-    // Then everything the bots' own sight lists hold, up to the cap.
-    for (Player* bot : bots)
-    {
-        if (taken.Full())
-            break;
-        if (!bot->IsInWorld() || !bot->IsAlive())
-            continue;
-        ReadCachedGuidList(PlayerbotAIStorage::Instance().GetAI(bot), "possible targets", cached);
-        for (ObjectGuid const& guid : cached)
-            AddViewHostile(snapshot, taken, bot, guid);
-    }
+    // Then everything the bots' own sight lists hold, up to the cap: the
+    // hostile ones first, the neutral ones (marked n) with the room left.
+    for (bool hostileOnly : { true, false })
+        for (Player* bot : bots)
+        {
+            if (taken.Full())
+                break;
+            if (!bot->IsInWorld() || !bot->IsAlive())
+                continue;
+            ReadCachedGuidList(PlayerbotAIStorage::Instance().GetAI(bot), "possible targets", cached);
+            for (ObjectGuid const& guid : cached)
+                AddViewHostile(snapshot, taken, bot, guid, hostileOnly);
+        }
 }
 
 // Each tick while a binding exists: build the frames that fall due, send at

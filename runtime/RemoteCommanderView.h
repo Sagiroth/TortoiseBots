@@ -29,7 +29,7 @@
 //
 //   party record:   guid,name,hp,maxhp,power,maxpower,powertype,x,y,z,o,map,
 //                   instance,target,spell,dead,state,action,result,reason
-//   hostile record: guid,entry,x,y,z,hp%,target,spell,flags
+//   hostile record: guid,entry,x,y,z,hp%,target,spell,flags,reaction,kind
 //   threat record:  hostile,guid:pct[,guid:pct...]
 //
 // B comes first and E last; <lines> counts every line of the frame, B and E
@@ -40,6 +40,16 @@
 // field of B and was added within v1: fields 1-4 keep their meaning, and a
 // reader takes a missing fifth field as 0. Fields never contain `|`, `;`, `,`
 // or `:`.
+//
+// The hostile record's last two fields (reaction, kind) were added within v1 as
+// trailing fields, like the party record's: a reader that stops at 9 fields
+// keeps working. `reaction` is how the bound bot reacts to the unit: h
+// hostile, n neutral (a unit that does not attack unprovoked: wildlife, quest
+// givers, most town NPCs), f friendly; `-` when unknown. A neutral unit is still
+// listed (older readers keep seeing it), so a driver that wants real enemies
+// keeps reaction h. `kind` is any of k critter (CREATURE_TYPE_CRITTER), v
+// civilian, g guard, u not attackable (spawning, immune to players or
+// unattackable flag), or `-`. Both read fields the unit already holds.
 //
 // The party record's last three fields describe the bot's newest action
 // verdict as parts: `action` is the action name only (at most 16 bytes, `-`
@@ -132,6 +142,11 @@ struct Hostile
     bool stealthed = false;
     bool evading = false;
     bool crowdControlled = false;
+    char reaction = 'h';   // h hostile, n neutral, f friendly (to the bound bot)
+    bool critter = false;  // CREATURE_TYPE_CRITTER
+    bool civilian = false; // creature template civilian
+    bool guard = false;    // town or faction guard
+    bool unattackable = false; // spawning, immune to players, or unattackable flag
 };
 
 struct ThreatEntry
@@ -389,7 +404,9 @@ inline void FormatPartyRecord(std::string& out, PartyMember const& m)
     AppendToken(out, m.reason, kMaxReasonBytes);
 }
 
-// Flags: s stealthed, e evading, c crowd-controlled; '-' for none.
+// Flags: s stealthed, e evading, c crowd-controlled; '-' for none. Then the
+// reaction letter (h, n, f; '-' otherwise) and the kind letters (k critter,
+// v civilian, g guard, u not attackable; '-' for none).
 inline void FormatHostileRecord(std::string& out, Hostile const& h)
 {
     out.clear();
@@ -409,6 +426,20 @@ inline void FormatHostileRecord(std::string& out, Hostile const& h)
     if (h.crowdControlled)
         out += 'c';
     if (out.size() == before)
+        out += '-';
+    out += ',';
+    out += (h.reaction == 'h' || h.reaction == 'n' || h.reaction == 'f') ? h.reaction : '-';
+    out += ',';
+    size_t const kindBefore = out.size();
+    if (h.critter)
+        out += 'k';
+    if (h.civilian)
+        out += 'v';
+    if (h.guard)
+        out += 'g';
+    if (h.unattackable)
+        out += 'u';
+    if (out.size() == kindBefore)
         out += '-';
 }
 

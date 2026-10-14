@@ -247,9 +247,59 @@ static void TestHostileAndThreatRecords()
     CheckGrammar(frame, 2);
     CHECK(frame.lines[0] == "TBM:VIEW|v1|2|B|0x10,0,2,1,0");
     CHECK(frame.lines[1] ==
-        "TBM:VIEW|v1|2|H|0xF1300000000000AA,1234,10.0,20.0,30.0,100,0x11,8122,sec;0xBB,0,0.0,0.0,0.0,0,0,0,-");
+        "TBM:VIEW|v1|2|H|0xF1300000000000AA,1234,10.0,20.0,30.0,100,0x11,8122,sec,h,-;0xBB,0,0.0,0.0,0.0,0,0,0,-,h,-");
     CHECK(frame.lines[2] == "TBM:VIEW|v1|2|T|0xF1300000000000AA,0x10:100,0x12:50,0x13:50");
     CHECK(frame.lines[3] == "TBM:VIEW|v1|2|E|4");
+}
+
+// Reaction and kind (hostile fields 10 and 11): trailing fields added within
+// v1, so the first nine keep their place for an older reader.
+static void TestHostileReactionAndKind()
+{
+    Snapshot s;
+    s.lead = 0x10;
+    Hostile* wolf = s.AddHostile();
+    wolf->guid = 0xA1;
+    wolf->entry = 299;
+    Hostile* rabbit = s.AddHostile();
+    rabbit->guid = 0xA2;
+    rabbit->entry = 721;
+    rabbit->reaction = 'n';
+    rabbit->critter = true;
+    Hostile* guard = s.AddHostile();
+    guard->guid = 0xA3;
+    guard->entry = 68;
+    guard->reaction = 'f';
+    guard->civilian = true;
+    guard->guard = true;
+    guard->unattackable = true;
+    Hostile* odd = s.AddHostile();
+    odd->guid = 0xA4;
+    odd->reaction = '?';
+    Frame frame;
+    std::string scratch;
+    BuildFrame(s, 3, frame, scratch);
+    CheckGrammar(frame, 3);
+    CHECK(frame.lines[0] == "TBM:VIEW|v1|3|B|0x10,0,4,0,0");
+    CHECK(frame.lines[1] ==
+        "TBM:VIEW|v1|3|H|0xA1,299,0.0,0.0,0.0,0,0,0,-,h,-;0xA2,721,0.0,0.0,0.0,0,0,0,-,n,k;"
+        "0xA3,68,0.0,0.0,0.0,0,0,0,-,f,vgu;0xA4,0,0.0,0.0,0.0,0,0,0,-,-,-");
+    // An older reader that takes the first nine fields sees the old record.
+    std::vector<std::string> fields = Split(Split(Payload(frame.lines[1]), ';')[1], ',');
+    CHECK(fields.size() == 11);
+    CHECK(fields[0] == "0xA2" && fields[1] == "721" && fields[8] == "-");
+    // The longest record still fits a line of its own.
+    Hostile big;
+    big.guid = 0xFFFFFFFFFFFFFFFFull;
+    big.entry = 0xFFFFFFFFu;
+    big.x = big.y = big.z = -99999.9f;
+    big.hpPct = 100;
+    big.target = 0xFFFFFFFFFFFFFFFFull;
+    big.casting = 0xFFFFFFFFu;
+    big.stealthed = big.evading = big.crowdControlled = true;
+    big.critter = big.civilian = big.guard = big.unattackable = true;
+    FormatHostileRecord(scratch, big);
+    CHECK(scratch.size() + 26 <= kMaxLineBytes);
 }
 
 static void TestThreatTopN()
@@ -337,7 +387,7 @@ static void TestFullFrameSplitsUnderLimit()
             if (part == 'P')
                 CHECK(fields == 20);
             else if (part == 'H')
-                CHECK(fields == 9);
+                CHECK(fields == 11);
             else
                 CHECK(fields == 1 + kThreatTopN);
         }
@@ -589,6 +639,7 @@ int main()
     TestEmptyFrame();
     TestPartyRecord();
     TestHostileAndThreatRecords();
+    TestHostileReactionAndKind();
     TestThreatTopN();
     TestHostileDedupeAndCap();
     TestFullFrameSplitsUnderLimit();
