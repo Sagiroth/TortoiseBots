@@ -1175,15 +1175,19 @@ constexpr float kDirectGroundTolerance = 3.0f;
 constexpr float kDirectGroundSlack = 0.5f;
 constexpr float kDirectLosHeight = 2.0f;
 // The others take the lead bot's line: each walks to the lead bot's spot first,
-// then on to the point. A follower within kDirectNearLead yards (and
-// kDirectNearLeadVertical up or down) of the lead bot that sees it walks
-// straight to the spot; any other one on its navmesh path, which must be
-// complete and at most kDirectMaxGatherPath yards long. A follower below a ledge
-// or behind a corner thus never walks its own straight line through it
-// (Uldaman's scorpid pit: the followers stood on the pit floor, a 2.5 yd ledge
-// below the ramp, and saw the point over it).
+// then on to the point. A follower with a complete navmesh path of at most
+// kDirectMaxGatherPath yards to the spot walks that path (the floor under it is
+// known); only one without such a path that stands within kDirectNearLead yards
+// (and kDirectNearLeadVertical up or down: on the lead bot's floor, not under a
+// ledge) of the lead bot and sees it walks straight to the spot (the lead bot
+// stands in the navmesh hole after an earlier step). A follower below a ledge or
+// behind a corner thus never walks its own straight line through it (Uldaman's
+// scorpid pit: the followers stood on the pit floor, a 2.5 yd ledge below the
+// ramp, and saw the point over it). Its AI sleeps for the walk, at most
+// kDirectMaxSleepMs, so a bot attacked on the way still reacts.
 constexpr float kDirectNearLead = 5.0f;
-constexpr float kDirectNearLeadVertical = 2.5f;
+constexpr float kDirectNearLeadVertical = 1.0f;
+constexpr uint32_t kDirectMaxSleepMs = 4000;
 constexpr float kDirectMaxGatherPath = 40.0f;
 
 struct MoveOrder
@@ -1254,8 +1258,8 @@ inline DirectVerdict CheckDirectLos(bool inLineOfSight)
 // How a follower reaches the lead bot's spot before it takes the lead bot's line.
 enum class DirectJoin : uint8_t
 {
-    Straight, // near the lead bot and in its sight: a straight walk to its spot
-    Path,     // its navmesh path to the lead bot's spot
+    Path,     // its complete navmesh path to the lead bot's spot (preferred)
+    Straight, // no such path, but on the lead bot's floor nearby and in its sight: a straight walk to its spot
     None,     // neither: the step is refused (too-far) and nobody moves
 };
 
@@ -1266,11 +1270,11 @@ enum class DirectJoin : uint8_t
 inline DirectJoin ChooseDirectJoin(float horizontal, float vertical, bool seesLead, bool pathComplete,
     float pathLength)
 {
+    if (pathComplete && std::isfinite(pathLength) && pathLength >= 0.0f && pathLength <= kDirectMaxGatherPath)
+        return DirectJoin::Path;
     if (seesLead && std::isfinite(horizontal) && std::isfinite(vertical) && horizontal <= kDirectNearLead &&
         std::fabs(vertical) <= kDirectNearLeadVertical)
         return DirectJoin::Straight;
-    if (pathComplete && std::isfinite(pathLength) && pathLength >= 0.0f && pathLength <= kDirectMaxGatherPath)
-        return DirectJoin::Path;
     return DirectJoin::None;
 }
 

@@ -5259,8 +5259,8 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
 // player walks it. Only a short step: the lead bot within kDirectMaxDistance horizontally and
 // kDirectMaxVertical vertically of the point, the point on the ground (the map height at most
 // kDirectGroundTolerance below it) and in the lead bot's sight (no-los). The bots walk to that floor.
-// The others take the lead bot's line: each walks to the lead bot's spot first (straight when it stands
-// near the lead bot and sees it, else on its complete navmesh path of at most kDirectMaxGatherPath yd)
+// The others take the lead bot's line: each walks to the lead bot's spot first (on its complete navmesh
+// path of at most kDirectMaxGatherPath yd, else straight when it stands near it on its floor and sees it)
 // and on from there to the point, so a follower below a ledge or behind a corner never walks its own
 // line through it. Nothing moves unless the lead bot passes and every follower has a way to its spot
 // (too-far). Afterwards the lead bot holds at the point and the others follow it, as after a plain
@@ -5352,7 +5352,7 @@ static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& orde
         bool pathComplete = false;
         float pathLength = -1.0f;
         Movement::PointsArray route;
-        if (valid && !seesLead)
+        if (valid)
         {
             PathFinder path(bot);
             path.calculate(leadX, leadY, leadZ, false);
@@ -5370,10 +5370,10 @@ static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& orde
         if (join == RemoteCommander::DirectJoin::None)
         {
             std::string const message = std::string(bot->GetName()) + " is not with " + lead->GetName() +
-                " (more than " + std::to_string(static_cast<uint32>(RemoteCommander::kDirectNearLead)) +
-                " yd away or out of its sight, and no navmesh path of at most " +
+                " (no navmesh path of at most " +
                 std::to_string(static_cast<uint32>(RemoteCommander::kDirectMaxGatherPath)) +
-                " yd to its spot). A direct step takes the lead bot's line: gather the party on it first.";
+                " yd to its spot, and not within " + std::to_string(static_cast<uint32>(RemoteCommander::kDirectNearLead)) +
+                " yd of it on its floor in its sight). A direct step takes the lead bot's line: gather the party on it first.";
             SendActionError(handler, intent, RemoteCommander::DirectVerdictCode(RemoteCommander::DirectVerdict::TooFar),
                 message.c_str());
             return true;
@@ -5426,7 +5426,9 @@ static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& orde
         if (!bot->IsInCombat())
         {
             float const speed = bot->GetSpeed(MOVE_RUN) > 1.0f ? bot->GetSpeed(MOVE_RUN) : 7.0f;
-            ai->SetActionDuration(static_cast<uint32>(length / speed * 1000.0f) + sPlayerbotAIConfig.reactDelay);
+            // Capped: on a long route the bot wakes before the end, so one attacked on the way still reacts.
+            ai->SetActionDuration(std::min<uint32>(static_cast<uint32>(length / speed * 1000.0f) +
+                sPlayerbotAIConfig.reactDelay, RemoteCommander::kDirectMaxSleepMs));
         }
         ++walking;
     }
