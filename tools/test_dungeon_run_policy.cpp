@@ -145,6 +145,33 @@ static void TestPullLoopOnOneTargetPauses()
     CHECK(r.state == State::Paused && r.note.find("survived 3 pulls") != std::string::npos);
 }
 
+// Live: `cmd move -159.5 281.6 -49.1` refused unreachable (a point up a
+// ledge). The glue finds a reachable point near it; the step walks there.
+static void TestUnreachableMoveDetours()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 50, 0, 0), Step(PlanStepKind::Rest)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    std::string order = Tick(r, f);
+    CHECK(order == "move 50.0 0.0 0.0");
+    // Too far from the plan's point: not a stand-in.
+    CHECK(!UseDetour(r, 30, 0, 0));
+    CHECK(UseDetour(r, 44, 2, 0));
+    CHECK(r.state == State::Running && r.detour);
+    // Only once per step.
+    CHECK(!UseDetour(r, 45, 0, 0));
+    CHECK(Tick(r, f) == "move 44.0 2.0 0.0");
+    f.leadX = 44;
+    f.leadY = 2;
+    Tick(r, f);
+    CHECK(r.step == 1 && r.note.find("nearest reachable point") != std::string::npos);
+    // The detour is per step.
+    CHECK(!r.detour);
+    // Not for a step that is not a move.
+    CHECK(!UseDetour(r, 1, 1, 1));
+}
+
 static void TestPullGatherAndFight()
 {
     DungeonPlan plan;
@@ -549,6 +576,7 @@ int main()
     TestWalkStuckIsBounded();
     TestStalledNearPointCountsAsArrived();
     TestPullLoopOnOneTargetPauses();
+    TestUnreachableMoveDetours();
     TestPullGatherAndFight();
     TestUnseenPackIsApproachedNotCleared();
     TestPullThatStartsNoFightIsPassed();

@@ -8545,6 +8545,45 @@ bool ApproachOnPath(Player* lead, float x, float y, float z, float& ox, float& o
     return false;
 }
 
+// A point the lead bot can walk to on its navmesh, as near as possible to
+// (x,y,z) and at most DungeonRun::kDetourMaxYd from it: the point itself on the
+// ground first, then rings of 3, 6, 10 and 15 yd around it (12 directions,
+// each put on the ground). Only run when a move was refused, never per tick.
+bool NearestReachablePoint(Player* lead, float x, float y, float z, float& ox, float& oy, float& oz)
+{
+    Map* map = lead->GetMap();
+    if (!map)
+        return false;
+    auto reachable = [&](float px, float py, float pz) -> bool
+    {
+        float const ground = map->GetHeight(px, py, pz + 5.0f);
+        if (ground <= INVALID_HEIGHT || std::fabs(ground - pz) > 10.0f)
+            return false;
+        PathFinder path(lead);
+        path.calculate(px, py, ground, false);
+        if (path.getPathType() & PATHFIND_NOPATH)
+            return false;
+        Vector3 const end = path.getActualEndPosition();
+        if (ai::PlanDistance(end.x, end.y, end.z, px, py, ground) > 5.0f)
+            return false;
+        ox = px;
+        oy = py;
+        oz = ground;
+        return true;
+    };
+    if (reachable(x, y, z))
+        return true;
+    float const rings[] = {3.0f, 6.0f, 10.0f, TortoiseBots::DungeonRun::kDetourMaxYd};
+    for (float ring : rings)
+        for (int i = 0; i < 12; ++i)
+        {
+            float const angle = static_cast<float>(i) * 3.14159265f / 6.0f;
+            if (reachable(x + ring * std::cos(angle), y + ring * std::sin(angle), z))
+                return true;
+        }
+    return false;
+}
+
 void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f)
 {
@@ -8750,7 +8789,19 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
         if (it == DungeonRuns().end())
             return;
         if (!accepted)
-            TortoiseBots::DungeonRun::OrderRefused(it->second.run, order, answer);
+        {
+            // A move point the navmesh cannot reach: walk around to the nearest
+            // reachable point near it before giving up (never a silent skip).
+            float dx = 0.0f, dy = 0.0f, dz = 0.0f;
+            bool const unreachable = order.compare(0, 5, "move ") == 0 &&
+                (answer.compare(0, 11, "unreachable") == 0 || answer.compare(0, 8, "off-mesh") == 0);
+            ai::PlanStep const* step = TortoiseBots::DungeonRun::Current(it->second.run);
+            if (!(unreachable && step && !it->second.run.detour &&
+                    NearestReachablePoint(lead, step->x, step->y, step->z, dx, dy, dz) &&
+                    TortoiseBots::DungeonRun::UseDetour(it->second.run, dx, dy, dz)))
+                TortoiseBots::DungeonRun::OrderRefused(it->second.run, order, answer +
+                    (unreachable ? " (no reachable point within 15 yd of it either)" : ""));
+        }
     }
     it = DungeonRuns().find(commanderRaw);
     if (it == DungeonRuns().end())

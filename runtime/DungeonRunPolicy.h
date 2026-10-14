@@ -56,6 +56,8 @@ constexpr float kSeeYd = 60.0f;                   // a pack, boss or spot is jud
 constexpr float kApproachYd = 30.0f;              // an unseen pack is approached to this far from its centre
 constexpr float kApproachHopYd = 40.0f;           // ... in navmesh path hops of at most this length
 constexpr std::uint32_t kMaxApproachHops = 8;     // ... and at most this many, then pause
+constexpr float kDetourMaxYd = 15.0f;             // an unreachable move point may be stood in for by a
+                                                  // reachable one at most this far from it
 constexpr float kGatherYd = 20.0f;                // every living bot this close to the lead before a pull
 constexpr float kHopPullYd = 15.0f;               // units this close to the next hop are pulled first
 constexpr std::uint32_t kGatherCapMs = 30000;
@@ -166,6 +168,10 @@ struct Run
     bool orderSent = false;  // task steps: the order went out
     bool walkedThrough = false;
     std::uint32_t approachHops = 0;
+    // A move whose point the navmesh cannot reach walks to the nearest
+    // reachable point near it instead (UseDetour).
+    bool detour = false;
+    float detourX = 0.0f, detourY = 0.0f, detourZ = 0.0f;
     bool fighting = false;
     std::uint32_t fightMs = 0;
     std::uint32_t restRepeatMs = 0;
@@ -226,6 +232,7 @@ inline void ResetStep(Run& r)
     r.orderSent = false;
     r.walkedThrough = false;
     r.approachHops = 0;
+    r.detour = false;
     r.walkTries = 0;
     r.walkStillMs = 0;
     r.walkBestYd = 0.0f;
@@ -558,9 +565,38 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
         PullUnit(r, f, *hopUnit, order);
         return;
     }
+    if (r.detour)
+    {
+        r.note = "walking around: the plan's point is off the walkable way";
+        if (WalkTo(r, f, r.detourX, r.detourY, r.detourZ, false, dt, order))
+            NextStep(r, "arrived at the nearest reachable point, " +
+                Num(ai::PlanDistance(r.detourX, r.detourY, r.detourZ, s.x, s.y, s.z)) + " yd from the plan's");
+        return;
+    }
     r.note = "walking";
     if (WalkTo(r, f, s.x, s.y, s.z, s.kind == PlanStepKind::MoveDirect, dt, order))
         NextStep(r, "arrived");
+}
+
+// The glue found that the current move step's point cannot be reached (its
+// `cmd move` was refused unreachable or off-mesh) and that (x,y,z), within
+// kDetourMaxYd of it, can: the step walks there instead, by the navmesh path
+// around whatever is in the way. False (nothing changes) when the step is not
+// a move, a detour is already on, or the point is too far from the plan's.
+inline bool UseDetour(Run& r, float x, float y, float z)
+{
+    const PlanStep* s = Current(r);
+    if (!s || r.state != State::Running || r.detour ||
+        (s->kind != PlanStepKind::Move && s->kind != PlanStepKind::MoveDirect))
+        return false;
+    if (ai::PlanDistance(x, y, z, s->x, s->y, s->z) > kDetourMaxYd)
+        return false;
+    r.detour = true;
+    r.detourX = x;
+    r.detourY = y;
+    r.detourZ = z;
+    EnterPhase(r, Phase::Begin);
+    return true;
 }
 
 // loot, open, use_item: one commander task for the carrier, then its result.
