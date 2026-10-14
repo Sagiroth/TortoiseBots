@@ -7,6 +7,7 @@
 #include "../runtime/ClaimLifecycle.h"
 #include "../runtime/HireProvisionService.h"
 #include "../runtime/HireSpecPolicy.h"
+#include "../runtime/HireLevelPolicy.h"
 #include "../runtime/HireTierRequestPolicy.h"
 #include "BotCommandContext.h"
 #include "../behavior/PlayerConvenience.h"
@@ -1019,12 +1020,16 @@ static bool HandleMatureCommand(ChatHandler* handler, char const* args)
 // Issue #192: fast-path companion hire. Same service, costs, and caps as the
 // <Mercenary Hire> gossip wizard, but only available when the server sets
 // AiPlayerbot.HireAnywhere; otherwise it points players to a recruiter. Usage:
-//   .bot hire <class> [dps|tank|healer] [race] [male|female] [tier]
+//   .bot hire <class> [dps|tank|healer] [race] [male|female] [tier] [level]
 // Tokens after the class may come in any order: "warrior tauren male tank",
 // "mage female frost", and "paladin protection" all parse. Bare spec words
 // (protection/arms/fury/holy/retribution/...) imply their role. The optional
 // tier word (t<N>, tier<N>, or the tier name like mc) picks the equipment
 // tier up to the player's highest unlock (default tier 0, Standard kit).
+// Issue #936: the optional level is level=<n> (or level:<n>, lvl=<n>) in any
+// position, or a bare number of 12 or more as the last word. HireLevelPolicy.h
+// holds the rule: 1 up to your level plus AiPlayerbot.HireMaxLevelAboveHirer
+// (a GM up to 60); no level hires at your own level.
 static bool HandleHire(ChatHandler* handler, char const* args)
 {
     Player* requester = Requester(handler);
@@ -1036,7 +1041,7 @@ static bool HandleHire(ChatHandler* handler, char const* args)
     std::string input = Trim(args ? args : "");
     if (input.empty())
     {
-        handler->PSendSysMessage("Usage: .bot hire <class> [dps/tank/healer] [race] [male/female] [tier]");
+        handler->PSendSysMessage("Usage: .bot hire <class> [dps/tank/healer] [race] [male/female] [tier] [level=<1-60>]");
         return true;
     }
     // Split on whitespace; class/race/gender/role/spec/tier tokens in any order.
@@ -1048,14 +1053,46 @@ static bool HandleHire(ChatHandler* handler, char const* args)
             tokens.push_back(token);
     }
     HireSelection sel;
+    // Issue #936: requested hire level (0 = none). Bad level words refuse.
+    uint32 requestedLevel = 0;
     // Tokens that are not class/race/gender/role words: resolved against the
     // class after the loop, so "frost mage" works in either order.
     std::vector<std::string> specWords;
-    for (std::string raw : tokens)
+    for (size_t tokenIndex = 0; tokenIndex < tokens.size(); ++tokenIndex)
     {
-        std::string token = raw;
+        std::string token = tokens[tokenIndex];
         for (char& c : token)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        // Level word first: level=45 is no class/race/role/tier word.
+        uint32 levelWord = 0;
+        HireLevelWord levelKind = ParseHireLevelWord(token, levelWord);
+        if (levelKind == HireLevelWord::Bad)
+        {
+            handler->PSendSysMessage("Bad level \"%s\": use level=<1-60>, for example .bot hire mage level=42.", tokens[tokenIndex].c_str());
+            return true;
+        }
+        if (levelKind == HireLevelWord::Ok)
+        {
+            if (requestedLevel)
+            {
+                handler->PSendSysMessage("Give only one level.");
+                return true;
+            }
+            requestedLevel = levelWord;
+            continue;
+        }
+        // A bare number of 12+ as the last word (not a race/gender/class id).
+        if (tokenIndex + 1 == tokens.size() && tokenIndex > 0 && sel.classId &&
+            ParseBareHireLevel(token, levelWord))
+        {
+            if (requestedLevel)
+            {
+                handler->PSendSysMessage("Give only one level.");
+                return true;
+            }
+            requestedLevel = levelWord;
+            continue;
+        }
         if (!sel.classId)
         {
             uint32 parsed = ai::ChatHelper::parseClass(token);
@@ -1150,14 +1187,22 @@ static bool HandleHire(ChatHandler* handler, char const* args)
     }
     if (!sel.classId)
     {
-        handler->PSendSysMessage("Usage: .bot hire <class> [dps/tank/healer] [race] [male/female] [tier]");
+        handler->PSendSysMessage("Usage: .bot hire <class> [dps/tank/healer] [race] [male/female] [tier] [level=<1-60>]");
         return true;
     }
+    // Issue #936: the level is clamped against the hirer in Hire() (the one
+    // authority); the early tier check below needs the same answer.
+    if (requestedLevel > 255)
+        requestedLevel = 255;
+    sel.level = static_cast<uint8>(requestedLevel);
+    uint32 hireLevel = ResolveHireLevel(requester->GetLevel(), requestedLevel,
+        sPlayerbotAIConfig.hireMaxLevelAboveHirer,
+        requester->GetSession()->GetSecurity() >= SEC_GAMEMASTER).level;
     // Issue #490 PR 2: a tier above the player's unlock fails fast with the
     // highest available tier named (Hire() re-validates against stale state).
     // Below 60 or with tiers disabled the tier is ignored, so skip the lookup.
     if (sel.gearTier > 0 && sPlayerbotAIConfig.hireGearTiersEnabled &&
-        requester->GetLevel() == kHireGearHireLevel)
+        hireLevel == kHireGearHireLevel)
     {
         uint8_t highest = HireProvisionService::Instance().HighestUnlockedHireTierFor(requester);
         if (sel.gearTier > highest)

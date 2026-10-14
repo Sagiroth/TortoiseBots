@@ -28,6 +28,9 @@ struct HireSelection
     uint8 role = 0;
     int specIndex = -1;
     uint8 gearTier = 0;
+    // Issue #936: requested level (0 = the hirer's level, as before). Hire()
+    // clamps it against the hirer (HireLevelPolicy.h); gossip leaves it 0.
+    uint8 level = 0;
 };
 
 enum class HireStatus

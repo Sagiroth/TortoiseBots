@@ -7,6 +7,7 @@
 #include "HireSpecPolicy.h"
 #include "HireGearCache.h"
 #include "HireGearPolicy.h"
+#include "HireLevelPolicy.h"
 #include "HireTierRequestPolicy.h"
 #include "HireUnlockPolicy.h"
 #include "BotManager.h"
@@ -60,7 +61,6 @@ namespace TortoiseBots
 
 namespace
 {
-constexpr uint32 kMaxLevel = 60;
 constexpr uint32 kPendingProvisionTimeoutSec = 300;
 
 std::string RandomHireName()
@@ -266,11 +266,13 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
         return outcome;
     }
 
-    uint32_t level = requester->GetLevel();
-    if (level < 1)
-        level = 1;
-    if (level > kMaxLevel)
-        level = kMaxLevel;
+    // Issue #936: the hire's level. No request = the hirer's level, as ever;
+    // a request runs from 1 up to the hirer's level plus the configured
+    // allowance (a GM only up to 60). HireLevelPolicy.h is the one rule.
+    HireLevelResult levelChoice = ResolveHireLevel(requester->GetLevel(), sel.level,
+        sPlayerbotAIConfig.hireMaxLevelAboveHirer,
+        requester->GetSession()->GetSecurity() >= static_cast<int>(SEC_GAMEMASTER));
+    uint32_t level = levelChoice.level;
     // Issue #490 PR 2: the chosen tier must be unlocked (start tier or a
     // rewarded unlock quest). Clamp above the max; re-validate here so a
     // stale gossip menu cannot hire above the unlock.
@@ -386,6 +388,13 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     outcome.botName = data ? data->sName : "companion";
     outcome.message = std::string("Hired ") + outcome.botName + " for " +
         ai::ChatHelper::formatMoney(cost) + ". Your companion is mustering.";
+    if (sel.level)
+    {
+        outcome.message += std::string(" Level ") + std::to_string(level) + ".";
+        if (levelChoice.clamped)
+            outcome.message += std::string(" The level you asked for is above your limit (") +
+                std::to_string(levelChoice.maxAllowed) + ").";
+    }
     return outcome;
 }
 

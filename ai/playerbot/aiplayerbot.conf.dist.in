@@ -336,6 +336,11 @@ AiPlayerbot.TravelPickBudgetUs = 4000
 #AiPlayerbot.HireEnabled = 1
 #AiPlayerbot.HireMinAccountSecurity = 0
 #AiPlayerbot.HireMaxBotsPerPlayer = 4
+# Issue #936: `.bot hire <class> ... [level]` (or level=<n>) hires the
+# companion at a chosen level, 1 up to the hirer's level plus this many (0-59,
+# never above 60). 0 = no higher than the hirer; a GM hirer may go to 60. Any
+# level below the hirer is allowed. No level given = the hirer's level, as ever.
+#AiPlayerbot.HireMaxLevelAboveHirer = 0
 # HireAnywhere: 0 = hire only at a <Mercenary Hire> recruiter (the .bot hire
 # command points players to one); 1 = .bot hire also works anywhere. Fees are
 # the same either way.
