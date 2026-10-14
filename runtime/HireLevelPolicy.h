@@ -29,6 +29,7 @@ enum class HireLevelWord
 {
     NotLevel,  // the token is not a level word; the caller parses it as before
     Ok,        // levelOut holds the requested level (1..999, not yet clamped)
+    Prefix,    // bare "level" / "lvl": the number is the next word
     Bad        // a level word without a usable number: refuse
 };
 
@@ -59,6 +60,8 @@ inline bool ParseSmallNumber(std::string const& s, uint32_t& out)
 // is Ok here and is clamped by ResolveHireLevel.
 inline HireLevelWord ParseHireLevelWord(std::string const& word, uint32_t& levelOut)
 {
+    if (word == "level" || word == "lvl")
+        return HireLevelWord::Prefix;
     std::size_t prefix = 0;
     if (word.compare(0, 5, "level") == 0)
         prefix = 5;
@@ -73,6 +76,27 @@ inline HireLevelWord ParseHireLevelWord(std::string const& word, uint32_t& level
         return HireLevelWord::Bad;
     levelOut = value;
     return HireLevelWord::Ok;
+}
+
+// The number after a bare "level" / "lvl" word ("level 42"): 1..999.
+inline bool ParseHireLevelNumber(std::string const& word, uint32_t& levelOut)
+{
+    uint32_t value = 0;
+    if (!detail::ParseSmallNumber(word, value) || value < kHireLevelMin)
+        return false;
+    levelOut = value;
+    return true;
+}
+
+// AiPlayerbot.HireMaxLevelAboveHirer as read from the config (signed): below
+// 0 is 0 (no higher than the hirer), above 59 is 59.
+inline uint32_t ClampHireLevelAllowance(int64_t raw)
+{
+    if (raw < 0)
+        return 0;
+    if (raw > 59)
+        return 59;
+    return static_cast<uint32_t>(raw);
 }
 
 // A bare number as the LAST token of the command. Only numbers that no

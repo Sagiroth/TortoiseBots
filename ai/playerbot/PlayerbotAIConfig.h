@@ -364,9 +364,9 @@ public:
     // Maximum hired companions per player. Party hires cap at 4 regardless;
     // raise toward 39 to fill a full 40-man raid (player + hires).
     uint32 hireMaxBotsPerPlayer = 4;
-// Issue #936: how many levels above the hirer a `.bot hire ... level=<n>`
-// companion may be (0 = never above the hirer; a GM is not limited by it).
-uint32 hireMaxLevelAboveHirer = 0;
+    // Issue #936: how many levels above the hirer a `.bot hire ... level=<n>`
+    // companion may be (0 = never above the hirer; a GM is not limited by it).
+    uint32 hireMaxLevelAboveHirer = 0;
     // Companions are hired at a <Mercenary Hire> recruiter. When set, the fast
     // `.bot hire` command also works anywhere; fees are the same either way.
     bool hireAnywhere = false;

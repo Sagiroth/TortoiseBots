@@ -2,6 +2,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/AmmoStackPolicy.h"
+#include "../../runtime/HireLevelPolicy.h"
 #include "../../runtime/HireUnlockPolicy.h"
 #include "../../runtime/RemoteCommanderView.h"
 #include <cerrno>
@@ -472,9 +473,9 @@ bool PlayerbotAIConfig::Initialize()
     hireMaxBotsPerPlayer = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireMaxBotsPerPlayer", 4));
     if (hireMaxBotsPerPlayer > 39)
         hireMaxBotsPerPlayer = 39;
-    hireMaxLevelAboveHirer = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireMaxLevelAboveHirer", 0));
-    if (hireMaxLevelAboveHirer > 59)
-        hireMaxLevelAboveHirer = 59;
+    // Read signed: a negative value must mean 0, not wrap to a huge allowance.
+    hireMaxLevelAboveHirer = TortoiseBots::ClampHireLevelAllowance(
+        static_cast<int64_t>(config.GetIntDefault("AiPlayerbot.HireMaxLevelAboveHirer", 0)));
     hireAnywhere = config.GetBoolDefault("AiPlayerbot.HireAnywhere", false);
     hireBaseCostCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireBaseCostCopper", 15000));
     if (hireBaseCostCopper > 100000000)

@@ -1068,7 +1068,7 @@ static bool HandleHire(ChatHandler* handler, char const* args)
         HireLevelWord levelKind = ParseHireLevelWord(token, levelWord);
         if (levelKind == HireLevelWord::Bad)
         {
-            handler->PSendSysMessage("Bad level \"%s\": use level=<1-60>, for example .bot hire mage level=42.", tokens[tokenIndex].c_str());
+            handler->PSendSysMessage("Bad level \"%s\": use level=<1-60> or level <1-60>, for example .bot hire mage level=42.", tokens[tokenIndex].c_str());
             return true;
         }
         if (levelKind == HireLevelWord::Ok)
@@ -1081,10 +1081,33 @@ static bool HandleHire(ChatHandler* handler, char const* args)
             requestedLevel = levelWord;
             continue;
         }
-        // A bare number of 12+ as the last word (not a race/gender/class id).
-        if (tokenIndex + 1 == tokens.size() && tokenIndex > 0 && sel.classId &&
-            ParseBareHireLevel(token, levelWord))
+        // "level 42" / "lvl 42": the number is the next word.
+        if (levelKind == HireLevelWord::Prefix)
         {
+            if (tokenIndex + 1 >= tokens.size() || !ParseHireLevelNumber(tokens[tokenIndex + 1], levelWord))
+            {
+                handler->PSendSysMessage("Bad level: use level=<1-60> or level <1-60>, for example .bot hire mage level=42.");
+                return true;
+            }
+            if (requestedLevel)
+            {
+                handler->PSendSysMessage("Give only one level.");
+                return true;
+            }
+            requestedLevel = levelWord;
+            ++tokenIndex;
+            continue;
+        }
+        // A bare number of 12+ (not a race/gender/class id) is a level only as
+        // the last word after the class; anywhere else it is refused rather
+        // than dropped.
+        if (ParseBareHireLevel(token, levelWord))
+        {
+            if (tokenIndex + 1 != tokens.size() || tokenIndex == 0 || !sel.classId)
+            {
+                handler->PSendSysMessage("Unclear number \"%s\": put the level last, or write level=<1-60>, for example .bot hire mage level=42.", tokens[tokenIndex].c_str());
+                return true;
+            }
             if (requestedLevel)
             {
                 handler->PSendSysMessage("Give only one level.");

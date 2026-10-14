@@ -51,13 +51,44 @@ static void TestLevelWord()
     CHECK(lv == 0);
 
     // Everything else is not a level word, so old input parses as before.
-    CHECK(ParseHireLevelWord("level", lv) == HireLevelWord::NotLevel);
+    // "level 42" / "lvl 42": the bare word asks for the next word's number.
+    CHECK(ParseHireLevelWord("level", lv) == HireLevelWord::Prefix);
+    CHECK(ParseHireLevelWord("lvl", lv) == HireLevelWord::Prefix);
     CHECK(ParseHireLevelWord("levelling", lv) == HireLevelWord::NotLevel);
-    CHECK(ParseHireLevelWord("lvl", lv) == HireLevelWord::NotLevel);
     CHECK(ParseHireLevelWord("mage", lv) == HireLevelWord::NotLevel);
     CHECK(ParseHireLevelWord("t3", lv) == HireLevelWord::NotLevel);
     CHECK(ParseHireLevelWord("", lv) == HireLevelWord::NotLevel);
     CHECK(ParseHireLevelWord("45", lv) == HireLevelWord::NotLevel);
+}
+
+static void TestLevelNumber()
+{
+    uint32_t lv = 0;
+    CHECK(ParseHireLevelNumber("42", lv) && lv == 42);
+    CHECK(ParseHireLevelNumber("5", lv) && lv == 5);
+    CHECK(ParseHireLevelNumber("1", lv) && lv == 1);
+    CHECK(ParseHireLevelNumber("999", lv) && lv == 999);
+    lv = 0;
+    CHECK(!ParseHireLevelNumber("0", lv));
+    CHECK(!ParseHireLevelNumber("", lv));
+    CHECK(!ParseHireLevelNumber("tank", lv));
+    CHECK(!ParseHireLevelNumber("-3", lv));
+    CHECK(!ParseHireLevelNumber("1000", lv));
+    CHECK(lv == 0);
+}
+
+static void TestAllowanceClamp()
+{
+    // A negative config value must not wrap into a huge allowance.
+    CHECK(ClampHireLevelAllowance(-1) == 0);
+    CHECK(ClampHireLevelAllowance(-2147483647LL - 1) == 0);
+    CHECK(ClampHireLevelAllowance(0) == 0);
+    CHECK(ClampHireLevelAllowance(5) == 5);
+    CHECK(ClampHireLevelAllowance(59) == 59);
+    CHECK(ClampHireLevelAllowance(60) == 59);
+    CHECK(ClampHireLevelAllowance(100000) == 59);
+    // And the clamped value keeps an ordinary player at or below their level.
+    CHECK(ResolveHireLevel(50, 60, ClampHireLevelAllowance(-1), false).level == 50);
 }
 
 static void TestBareLevel()
@@ -159,6 +190,8 @@ static void TestMaxAllowed()
 int main()
 {
     TestLevelWord();
+    TestLevelNumber();
+    TestAllowanceClamp();
     TestBareLevel();
     TestNoLevelKeepsHirerLevel();
     TestDefaultNoHigherThanHirer();
