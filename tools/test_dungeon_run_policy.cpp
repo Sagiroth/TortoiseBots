@@ -96,6 +96,28 @@ static void TestWalkStuckIsBounded()
     CHECK(r.note.find("stuck") != std::string::npos);
 }
 
+// Live bug: a move point just off the mesh; the lead bot stopped 4.6 yd short.
+static void TestStalledNearPointCountsAsArrived()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 50, 0, 0), Step(PlanStepKind::Rest)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    CHECK(!Tick(r, f).empty());
+    f.leadX = 45.4f;
+    for (int i = 0; i < 30 && r.step == 0 && r.state == State::Running; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.step == 1 && r.note == "arrived");
+    // Still farther than kStalledArriveYd: retries, then the stuck pause.
+    Run r2 = Start(&plan);
+    f.leadX = 0;
+    Tick(r2, f);
+    f.leadX = 40;
+    for (int i = 0; i < 200 && r2.state == State::Running; ++i)
+        Tick(r2, f);
+    CHECK(r2.state == State::Paused && r2.note.find("stuck") != std::string::npos);
+}
+
 static void TestPullGatherAndFight()
 {
     DungeonPlan plan;
@@ -136,15 +158,34 @@ static void TestUnseenPackIsApproachedNotCleared()
     Run r = Start(&plan);
     Facts f = Party(0);
     f.seen = false;
-    // Approach to kApproachYd short of the centre, and only one move for it.
-    CHECK(Tick(r, f) == "move 70.0 0.0 0.0");
+    // The glue gives the next hop on the navmesh path; one move per hop.
+    f.approachKnown = true;
+    f.approachX = 35;
+    CHECK(Tick(r, f) == "move 35.0 0.0 0.0");
     f.leadX = 10;
     CHECK(Tick(r, f).empty());
     CHECK(r.step == 0 && r.state == State::Running);
+    // At the hop and still not in sight: the next hop.
+    f.leadX = 34;
+    CHECK(Tick(r, f).empty());
+    f.approachX = 70;
+    CHECK(Tick(r, f) == "move 70.0 0.0 0.0");
     f.leadX = 70;
     f.seen = true;
     Tick(r, f);
     CHECK(r.state == State::Done);
+    // No path toward it at all: pause, never a straight-line guess.
+    Run r2 = Start(&plan);
+    Facts g = Party(0);
+    Tick(r2, g);
+    CHECK(r2.state == State::Paused && r2.note.find("no walkable path") == 0);
+    // Hops that never bring it in sight are bounded.
+    Run r3 = Start(&plan);
+    g.approachKnown = true;
+    g.approachX = 1;  // within kArriveYd: every hop "arrives" at once
+    for (int i = 0; i < 50 && r3.state == State::Running; ++i)
+        Tick(r3, g);
+    CHECK(r3.state == State::Paused && r3.note.find("approach hops") != std::string::npos);
 }
 
 static void TestPullThatStartsNoFightIsPassed()
@@ -199,7 +240,7 @@ static void TestBossKillOrderAndTeamGate()
     for (UnitFact& u : f.units)
         u.hostile = false;
     Tick(r2, f);
-    CHECK(r2.step == 1 && r2.note.find("not hostile") != std::string::npos);
+    CHECK(r2.step == 1 && r2.note.find("friendly") != std::string::npos);
 }
 
 static void TestHopPullsNearUnitsFirst()
@@ -428,6 +469,44 @@ static void TestTeamFlags()
     CHECK(ai::StepForTeam(plan.steps[0], 0) && ai::StepForTeam(plan.steps[1], ai::kPlanFlagAlliance));
 }
 
+// Live bug (first bots-only Uldaman run): the Lost Dwarves (boss flagged
+// horde) were skipped for an Alliance party before anybody looked at them.
+static void TestOtherTeamBossIsLookedAtAndFoughtUnlessFriendly()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 100);
+    boss.entry = 6906;
+    boss.entries = {6907, 6908};
+    boss.flags = ai::kPlanFlagHorde;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {boss, Step(PlanStepKind::Rest)};
+    Facts f = Party(0);
+    f.team = ai::kPlanFlagAlliance;
+    // Not in sight: walk to it, never skip.
+    Run r = Start(&plan);
+    f.approachKnown = true;
+    f.approachX = 40;
+    CHECK(Tick(r, f) == "move 40.0 0.0 0.0");
+    CHECK(r.step == 0);
+    // In sight, the dwarves neutral or hostile: fought, Eric first.
+    f.seen = true;
+    f.leadX = 70;
+    f.units = {Unit(1, 6906, 30), Unit(3, 6907, 35)};
+    Run r2 = Start(&plan);
+    CHECK(Tick(r2, f) == "pullback 3");
+    // In sight and all friendly: skipped, saying why.
+    for (UnitFact& u : f.units)
+        u.hostile = false;
+    Run r3 = Start(&plan);
+    Tick(r3, f);
+    CHECK(r3.step == 1 && r3.note.find("friendly") != std::string::npos);
+    // In sight and gone: the boss is down.
+    f.units.clear();
+    Run r4 = Start(&plan);
+    Tick(r4, f);
+    CHECK(r4.step == 1 && r4.note == "boss down");
+}
+
 static void TestEmptyPlan()
 {
     DungeonPlan plan;
@@ -441,6 +520,7 @@ int main()
 {
     TestMove();
     TestWalkStuckIsBounded();
+    TestStalledNearPointCountsAsArrived();
     TestPullGatherAndFight();
     TestUnseenPackIsApproachedNotCleared();
     TestPullThatStartsNoFightIsPassed();
@@ -456,6 +536,7 @@ int main()
     TestPlayerOrderAndRefusalPause();
     TestStepIdleCeiling();
     TestTeamFlags();
+    TestOtherTeamBossIsLookedAtAndFoughtUnlessFriendly();
     TestEmptyPlan();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;

@@ -50,8 +50,12 @@ using ai::PlanStepKind;
 constexpr std::uint32_t kTickMs = 1000;           // the glue ticks every run this often
 constexpr std::uint32_t kWipeDead = 3;            // this many dead bots pause the run
 constexpr float kArriveYd = 3.0f;                 // a walk is done this close to its point
+constexpr float kStalledArriveYd = 6.0f;          // ... or this close once it stopped gaining ground (a point
+                                                  // just off the mesh or on a ledge the bot cannot reach)
 constexpr float kSeeYd = 60.0f;                   // a pack, boss or spot is judged only from this close
 constexpr float kApproachYd = 30.0f;              // an unseen pack is approached to this far from its centre
+constexpr float kApproachHopYd = 40.0f;           // ... in navmesh path hops of at most this length
+constexpr std::uint32_t kMaxApproachHops = 8;     // ... and at most this many, then pause
 constexpr float kGatherYd = 20.0f;                // every living bot this close to the lead before a pull
 constexpr float kHopPullYd = 15.0f;               // units this close to the next hop are pulled first
 constexpr std::uint32_t kGatherCapMs = 30000;
@@ -109,7 +113,7 @@ struct UnitFact
     std::uint64_t guid = 0;
     std::uint32_t entry = 0;
     float distLead = 0.0f;
-    bool hostile = true;     // hostile to the party (a friendly one is never pulled)
+    bool hostile = true;     // not friendly to the party (hostile or neutral): it may be pulled
     bool stealthed = false;
     bool evading = false;    // running home: not pulled this tick
 };
@@ -129,6 +133,11 @@ struct Facts
     // The step.
     std::uint32_t team = 0;             // the party's team: ai::kPlanFlagAlliance or kPlanFlagHorde (0 unknown)
     bool seen = false;                  // the lead bot stands within kSeeYd of the step's point
+    // pull/boss not seen yet: the next approach hop, a point of the lead bot's
+    // navmesh path toward the step's point (kApproachHopYd along it at most,
+    // kApproachYd short of the point). approachKnown false: no path.
+    bool approachKnown = false;
+    float approachX = 0.0f, approachY = 0.0f, approachZ = 0.0f;
     std::vector<UnitFact> units;        // pull/boss: living units of the step's entries within its radius
     std::vector<UnitFact> hopUnits;     // move: living hostile units within kHopPullYd of the point, not owned by a later step
     int objectState = -1;               // wait_object: 0 ready, 1 active, 2 active_alt; -1 not found
@@ -155,6 +164,7 @@ struct Run
     bool stepRested = false; // a `rest` step has had its gate
     bool orderSent = false;  // task steps: the order went out
     bool walkedThrough = false;
+    std::uint32_t approachHops = 0;
     bool fighting = false;
     std::uint32_t fightMs = 0;
     std::uint32_t restRepeatMs = 0;
@@ -214,6 +224,7 @@ inline void ResetStep(Run& r)
     r.stepRested = false;
     r.orderSent = false;
     r.walkedThrough = false;
+    r.approachHops = 0;
     r.walkTries = 0;
     r.walkStillMs = 0;
     r.walkBestYd = 0.0f;
@@ -335,6 +346,8 @@ inline bool WalkTo(Run& r, const Facts& f, float x, float y, float z, bool direc
         r.walkBestYd = dist;
         r.walkStillMs = 0;
     }
+    if (r.walkStillMs >= kWalkRetryMs && dist <= kStalledArriveYd)
+        return true;
     if (r.walkStillMs >= kWalkRetryMs)
     {
         if (r.walkTries >= kWalkTries)
@@ -347,23 +360,6 @@ inline bool WalkTo(Run& r, const Facts& f, float x, float y, float z, bool direc
         order = MoveOrder(x, y, z, direct);
     }
     return false;
-}
-
-// The point kApproachYd short of (x,y,z) on the line from the lead bot.
-inline void ApproachPoint(const Facts& f, float x, float y, float z, float& ox, float& oy, float& oz)
-{
-    float const dist = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, x, y, z);
-    if (dist <= kApproachYd)
-    {
-        ox = f.leadX;
-        oy = f.leadY;
-        oz = f.leadZ;
-        return;
-    }
-    float const t = kApproachYd / dist;
-    ox = x + (f.leadX - x) * t;
-    oy = y + (f.leadY - y) * t;
-    oz = z + (f.leadZ - z) * t;
 }
 
 // The unit to pull now: hostile, not evading, not passed, not stealthed;
@@ -450,30 +446,53 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         if (r.phase == Phase::AwaitPull)
             return;
     }
-    // A pack or boss for the other team (flags 2/4) is skipped without a
-    // look. Only when the party already stands near it and a unit of it is
-    // hostile anyway is it fought like any pack (Uldaman's Lost Dwarves were
-    // hostile to an Alliance party in a live run).
+    // A step for the other team (flags 2/4):
+    //   - a pack is skipped without a look, unless the party already stands
+    //     near it and a unit of it is not friendly;
+    //   - a boss is always looked at first, and skipped only when every unit
+    //     of its encounter there is friendly to the party. A hostile or
+    //     neutral one is fought (Uldaman's Lost Dwarves carry team horde in
+    //     the plan, yet were hostile to an Alliance party in a live run).
     if (!ai::StepForTeam(s, f.team))
     {
-        bool hostileHere = false;
+        bool notFriendly = false;
         for (const UnitFact& u : f.units)
-            hostileHere = hostileHere || (u.hostile && !r.passed.count(u.guid));
-        if (!f.seen || !hostileHere)
+            notFriendly = notFriendly || (u.hostile && !r.passed.count(u.guid));
+        bool const skip = s.kind == PlanStepKind::Boss
+            ? (f.seen && !f.units.empty() && !notFriendly)
+            : (!f.seen || !notFriendly);
+        if (skip)
         {
-            NextStep(r, std::string(s.kind == PlanStepKind::Boss ? "boss" : "pack") + " is for the other team: skipped");
+            NextStep(r, s.kind == PlanStepKind::Boss
+                ? "boss is for the other team and friendly to this party: skipped"
+                : "pack is for the other team: skipped");
             return;
         }
     }
     if (!f.seen)
     {
-        // The approach point is fixed when the walk starts (it would move
-        // with the lead bot otherwise, and every tick would send a new move).
-        float ax = r.walkX, ay = r.walkY, az = r.walkZ;
-        if (r.phase != Phase::Walk)
-            ApproachPoint(f, s.x, s.y, s.z, ax, ay, az);
         r.note = "approaching";
-        WalkTo(r, f, ax, ay, az, false, dt, order);
+        // A hop is fixed when its walk starts; once there the next tick asks
+        // for the next hop.
+        if (r.phase == Phase::Walk)
+        {
+            if (WalkTo(r, f, r.walkX, r.walkY, r.walkZ, false, dt, order))
+                EnterPhase(r, Phase::Begin);
+            return;
+        }
+        if (!f.approachKnown)
+        {
+            Pause(r, "no walkable path toward the " + std::string(s.kind == PlanStepKind::Boss ? "boss" : "pack") +
+                " at " + Num(s.x) + " " + Num(s.y) + " " + Num(s.z));
+            return;
+        }
+        if (++r.approachHops > kMaxApproachHops)
+        {
+            Pause(r, std::to_string(kMaxApproachHops) + " approach hops did not bring the party within " +
+                Num(kSeeYd) + " yd of the step");
+            return;
+        }
+        WalkTo(r, f, f.approachX, f.approachY, f.approachZ, false, dt, order);
         return;
     }
     const UnitFact* pick = nullptr;
@@ -513,8 +532,8 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
     }
     bool const anyListed = !f.units.empty();
     NextStep(r, s.kind == PlanStepKind::Boss
-        ? (anyListed ? "boss is not hostile to this party: left alone" : "boss down")
-        : (anyListed ? "pack is not hostile to this party: left alone" : "pack cleared"));
+        ? (anyListed ? "boss is friendly to this party: left alone" : "boss down")
+        : (anyListed ? "pack is friendly to this party: left alone" : "pack cleared"));
 }
 
 inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt, std::string& order)

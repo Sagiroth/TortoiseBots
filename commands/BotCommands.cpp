@@ -8513,6 +8513,38 @@ void HostileCreaturesAround(Player* lead, float range, std::list<Unit*>& out)
     });
 }
 
+// The next approach hop toward (x,y,z): a point of the lead bot's own navmesh
+// path, the first one kApproachYd from the target or kApproachHopYd along the
+// path (or its end). False when the navmesh has no path at all. A point on the
+// path is what `cmd move` accepts; a straight-line guess can sit off the mesh.
+bool ApproachOnPath(Player* lead, float x, float y, float z, float& ox, float& oy, float& oz)
+{
+    using namespace TortoiseBots::DungeonRun;
+    PathFinder path(lead);
+    path.calculate(x, y, z, false);
+    if (path.getPathType() & PATHFIND_NOPATH)
+        return false;
+    Movement::PointsArray const& points = path.getPath();
+    if (points.size() < 2)
+        return false;
+    float walked = 0.0f;
+    for (size_t i = 1; i < points.size(); ++i)
+    {
+        Vector3 const& from = points[i - 1];
+        Vector3 const& to = points[i];
+        walked += ai::PlanDistance(from.x, from.y, from.z, to.x, to.y, to.z);
+        if (ai::PlanDistance(to.x, to.y, to.z, x, y, z) <= kApproachYd || walked >= kApproachHopYd ||
+            i + 1 == points.size())
+        {
+            ox = to.x;
+            oy = to.y;
+            oz = to.z;
+            return true;
+        }
+    }
+    return false;
+}
+
 void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f)
 {
@@ -8563,7 +8595,10 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         case ai::PlanStepKind::Boss:
         {
             if (!f.seen)
+            {
+                f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ);
                 break;
+            }
             std::vector<uint32> entries = step->entries;
             if (step->entry)
                 entries.push_back(step->entry);
@@ -8585,7 +8620,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.guid = creature->GetObjectGuid().GetRawValue();
                     unit.entry = creature->GetEntry();
                     unit.distLead = lead->GetDistance(creature);
-                    unit.hostile = lead->IsHostileTo(creature);
+                    // Hostile or neutral may be pulled; only a friendly one is left alone.
+                    unit.hostile = !sServerFacade.IsFriendlyTo(creature, lead);
                     unit.stealthed = IsStealthed(creature);
                     unit.evading = creature->IsInEvadeMode();
                     f.units.push_back(unit);
