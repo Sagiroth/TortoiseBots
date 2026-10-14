@@ -296,7 +296,7 @@ static void TestOrderGate()
     CHECK(TierForOrder("summon") == OrderTier::OwnerOrGm);
     CHECK(IsKnownOrder("revive") && IsKnownOrder("summon"));
     // The per-bot player orders move items and open things for one bot: owner or GM.
-    for (char const* verb : { "loot", "open", "use", "ritual" })
+    for (char const* verb : { "loot", "open", "use", "ritual", "enter" })
     {
         CHECK(TierForOrder(verb) == OrderTier::OwnerOrGm);
         CHECK(IsKnownOrder(verb));

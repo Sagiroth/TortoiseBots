@@ -43,6 +43,7 @@
 #include "../ai/playerbot/AiFactory.h"
 #include "../runtime/RemoteCommanderView.h"
 #include "../runtime/RemoteCommanderTasks.h"
+#include "../runtime/RemoteCommanderEnter.h"
 #include "../ai/playerbot/LootObjectStack.h"
 #include "../ai/playerbot/strategy/Engine.h"
 #include "../ai/playerbot/strategy/Value.h"
@@ -72,6 +73,9 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Maps/PathFinder.h"
 #include "Maps/Cell.h"
+#include "Maps/Map.h"
+#include "Database/DBCStores.h"
+#include "Database/SQLStorages.h"
 #include "Maps/CellImpl.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
@@ -5315,6 +5319,13 @@ struct CommanderTask
     std::string lastMessage;
     std::string intent;
     std::string botName;
+    // cmd enter: this task walks to an area trigger and sends it (StepEnterTask).
+    // Its result goes to the order's tally, not to the commander on its own.
+    bool enter = false;
+    bool enterLead = false;   // the lead bot of the order: the others follow it in
+    uint32 enterOrder = 0;    // the order's serial (EnterOrders())
+    uint32 triggerId = 0;
+    RemoteCommander::EnterState enterState;
 };
 
 std::unordered_map<uint64, CommanderTask>& CommanderTasks()
@@ -5347,6 +5358,52 @@ uint32 s_ritualNextId = 0;
 
 // A ritual order ended for a reason of one member (or of the whole group): ends the other members, answers once.
 void FailRitualGroup(uint32 id, uint64 exceptBot, std::string const& code, std::string const& message);
+
+// cmd enter: one record per running order, keyed by a serial. The bots' tasks report
+// their result here; when all have reported the order answers once (ACK entered, or the
+// ERR that names the cause). Decisions: runtime/RemoteCommanderEnter.h.
+struct EnterOrderState
+{
+    uint64 commanderRaw = 0;
+    uint32 triggerId = 0;
+    std::string intent;
+    std::string scope; // party, or bot:<Name> for the one bot named
+    RemoteCommander::EnterTally tally;
+};
+
+std::unordered_map<uint32, EnterOrderState>& EnterOrders()
+{
+    static std::unordered_map<uint32, EnterOrderState> orders;
+    return orders;
+}
+
+uint32 s_enterSerial = 0;
+
+void NoteEnterResult(CommanderTask const& task, bool ok, std::string const& code, std::string const& message)
+{
+    auto& orders = EnterOrders();
+    auto it = orders.find(task.enterOrder);
+    if (it == orders.end())
+        return;
+    EnterOrderState& order = it->second;
+    if (ok)
+        RemoteCommander::NoteEntered(order.tally, task.enterLead);
+    else
+        RemoteCommander::NoteFailed(order.tally, task.enterLead, task.botName, code, message);
+    if (!RemoteCommander::EnterComplete(order.tally))
+        return;
+    RemoteCommander::EnterAnswer const answer = RemoteCommander::FinalEnterAnswer(order.tally);
+    Player* commander = FindCharacter(order.commanderRaw);
+    if (commander && commander->IsInWorld() && commander->GetSession())
+    {
+        ChatHandler handler(commander);
+        if (answer.ok)
+            SendActionAck(&handler, order.intent, order.scope, answer.count, answer.detail);
+        else
+            SendActionError(&handler, order.intent, answer.code.c_str(), answer.message.c_str());
+    }
+    orders.erase(it);
+}
 
 struct TaskTarget
 {
@@ -5708,6 +5765,11 @@ void FinishCommanderTask(CommanderTask& task, bool ok, uint32 count, std::string
         FailRitualGroup(task.ritualId, task.botRaw, code, message);
         return;
     }
+    if (task.enter)
+    {
+        NoteEnterResult(task, ok, code, message);
+        return;
+    }
     if (ok)
         TaskReplyAck(task, count, payload);
     else
@@ -5716,11 +5778,8 @@ void FinishCommanderTask(CommanderTask& task, bool ok, uint32 count, std::string
 
 // The walk: the bot holds ("stay") at a point just short of the object and
 // walks to it on its own path finding, like `cmd move`.
-void BeginTaskWalk(CommanderTask& task, Player* commander, Player* bot, PlayerbotAI* ai, WorldObject* object)
+void StartTaskStayWalk(CommanderTask& task, Player* commander, Player* bot, PlayerbotAI* ai)
 {
-    task.wasStaying = ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT);
-    task.stand = RemoteCommander::StandingPoint(bot->GetPositionX(), bot->GetPositionY(),
-        object->GetPositionX(), object->GetPositionY(), object->GetPositionZ());
     ai->DropQueuedMovementOrders();
     PlayerConvenience::Instance().NoteHoldOrder(bot->GetObjectGuid());
     ai->Reset();
@@ -5728,6 +5787,24 @@ void BeginTaskWalk(CommanderTask& task, Player* commander, Player* bot, Playerbo
     SetStayAnchor(ai, task.stand.x, task.stand.y, task.stand.z, bot->GetMapId());
     ExecuteQuietAction(ai, "return to stay position", ai::Event("return to stay position", "stay", commander));
     task.walking = true;
+}
+
+void BeginTaskWalk(CommanderTask& task, Player* commander, Player* bot, PlayerbotAI* ai, WorldObject* object)
+{
+    task.wasStaying = ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT);
+    task.stand = RemoteCommander::StandingPoint(bot->GetPositionX(), bot->GetPositionY(),
+        object->GetPositionX(), object->GetPositionY(), object->GetPositionZ());
+    StartTaskStayWalk(task, commander, bot, ai);
+}
+
+// cmd enter: the walk goes to the middle of the trigger zone. The bot holds there (a follower
+// keeps holding while it waits for the lead bot), so it does not trail the lead bot into the dungeon.
+void BeginEnterWalk(CommanderTask& task, Player* commander, Player* bot, PlayerbotAI* ai,
+    AreaTriggerEntry const* trigger)
+{
+    task.wasStaying = ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT);
+    task.stand = RemoteCommander::Point3{ trigger->x, trigger->y, trigger->z };
+    StartTaskStayWalk(task, commander, bot, ai);
 }
 
 // A bot that stands still short of the object takes a direct path step to
@@ -6020,6 +6097,141 @@ void CompleteCommanderTask(CommanderTask& task)
     FinishCommanderTask(task, true, 1, task.spellId ? "spell:" + std::to_string(task.spellId) : "-", "", "");
 }
 
+// ---------------------------------------------------------------------------
+// cmd enter: through a dungeon entrance
+//
+// A headless bot never sends its own CMSG_AREATRIGGER, so the order does it for the bot:
+// the bot walks into the trigger zone (the task walk) and the glue then hands the bot's
+// session the same packet a client sends, WorldSession::HandleAreaTriggerOpcode, which
+// runs the core's own entry path (the trigger's phase, level and condition, the raid group,
+// the per-account instance limit in MapManager::CanPlayerEnter, Player::TeleportTo with
+// the instance and group binds, Map::CanEnter). Nothing is skipped or reimplemented
+// there; JudgeEntry below only names the reason of a refusal. The lead bot goes first
+// (it creates the group's instance bind); the followers hold at the trigger until it
+// stands in the dungeon.
+// ---------------------------------------------------------------------------
+
+// What the core's entry path asks of this bot at this trigger, for the readable reason of a refusal.
+RemoteCommander::EntryFacts GatherEntryFacts(Player* bot, AreaTriggerTeleport const* tele, MapEntry const* targetMap)
+{
+    RemoteCommander::EntryFacts facts;
+    facts.gm = bot->IsGameMaster();
+    facts.requiredPhase = tele->requiredPhase;
+    facts.phaseOpen = tele->requiredPhase <= sWorld.GetContentPhase();
+    facts.level = bot->GetLevel();
+    facts.requiredLevel = tele->requiredLevel;
+    facts.ignoreLevel = sWorld.getConfig(CONFIG_BOOL_INSTANCE_IGNORE_LEVEL);
+    // The maps where a Lunatic challenger enters below the level (the same list as the core's handler).
+    static constexpr uint32 kLunaticMaps[] = { 36, 43, 389, 822 };
+    for (uint32 mapId : kLunaticMaps)
+        if (targetMap->id == mapId && bot->HasChallenge(CHALLENGE_LUNATIC))
+            facts.lunaticOverride = true;
+    facts.conditionFailed = tele->requiredCondition && bot->GetMap() &&
+        !sObjectMgr.IsConditionSatisfied(tele->requiredCondition, bot, bot->GetMap(), bot, CONDITION_FROM_AREATRIGGER);
+    facts.conditionMessage = tele->message;
+    facts.raidMap = targetMap->IsDungeon() && targetMap->IsRaid();
+    facts.ignoreRaid = sWorld.getConfig(CONFIG_BOOL_INSTANCE_IGNORE_RAID);
+    Group* group = bot->GetGroup();
+    facts.inRaidGroup = group && group->isRaidGroup();
+    auto* bound = bot->GetBoundInstanceSaveForSelfOrGroup(targetMap->id);
+    facts.instanceCountOk = bot->CheckInstanceCount(bound ? bound->GetInstanceId() : 0);
+    return facts;
+}
+
+// The entrance a trigger leads through, or null when it is not an instance entrance.
+AreaTriggerTeleport const* InstanceEntranceOf(AreaTriggerEntry const* trigger, MapEntry const** targetMap)
+{
+    if (!trigger)
+        return nullptr;
+    AreaTriggerTeleport const* tele = sObjectMgr.GetAreaTriggerTeleport(trigger->id);
+    MapEntry const* map = tele ? sMapStorage.LookupEntry<MapEntry>(tele->destination.mapId) : nullptr;
+    if (!RemoteCommander::IsInstanceEntrance(tele != nullptr, map && map->IsDungeon(), trigger->mapid,
+            tele ? tele->destination.mapId : 0))
+        return nullptr;
+    if (targetMap)
+        *targetMap = map;
+    return tele;
+}
+
+// The walk is over and the lead bot is in (or this is the lead bot): send the core the
+// area trigger. Returns true when the task ended on the spot (a refusal).
+bool SendEnterTrigger(CommanderTask& task, Player* bot, PlayerbotAI* ai, AreaTriggerTeleport const* tele,
+    MapEntry const* targetMap)
+{
+    RemoteCommander::EntryVerdict const verdict = RemoteCommander::JudgeEntry(GatherEntryFacts(bot, tele, targetMap));
+    if (!verdict.ok)
+    {
+        FinishCommanderTask(task, false, 0, "", verdict.code, verdict.message);
+        return true;
+    }
+    ai->DropQueuedMovementOrders();
+    WorldPacket packet(CMSG_AREATRIGGER);
+    packet << task.triggerId;
+    packet.rpos(0);
+    bot->GetSession()->HandleAreaTriggerOpcode(packet);
+    if (bot->IsBeingTeleported())
+        return false;
+    // The core refused: say why when the reason can be read now (the bot's state may have
+    // changed with the attempt), else name the checks that only the core sees.
+    RemoteCommander::EntryVerdict const again = RemoteCommander::JudgeEntry(GatherEntryFacts(bot, tele, targetMap));
+    if (!again.ok)
+        FinishCommanderTask(task, false, 0, "", again.code, again.message);
+    else
+        FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeFailed,
+            "The server refused the entry (the instance is full or locked by an encounter, the bot stands outside the "
+            "zone, or a script said no).");
+    return true;
+}
+
+// One look at one bot's way in. Returns true when the task is over.
+bool StepEnterTask(CommanderTask& task, Player* bot, PlayerbotAI* ai, uint32 diff)
+{
+    auto& orders = EnterOrders();
+    auto orderIt = orders.find(task.enterOrder);
+    AreaTriggerEntry const* trigger = sObjectMgr.GetAreaTrigger(task.triggerId);
+    MapEntry const* targetMap = nullptr;
+    AreaTriggerTeleport const* tele = InstanceEntranceOf(trigger, &targetMap);
+    if (!bot)
+    {
+        FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeUnavailable, "The bot logged out.");
+        return true;
+    }
+    if (orderIt == orders.end() || !tele || !targetMap)
+    {
+        FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeFailed, "The entrance or the order is gone.");
+        return true;
+    }
+
+    RemoteCommander::EnterFacts facts;
+    facts.available = ai && bot->IsAlive() && !bot->IsBeingTeleported() && !bot->IsTaxiFlying();
+    facts.inTransit = bot->IsAlive() && (!bot->IsInWorld() || bot->IsBeingTeleported());
+    facts.arrived = bot->IsInWorld() && !bot->IsBeingTeleported() && bot->GetMapId() == tele->destination.mapId;
+    facts.inCombat = bot->IsInCombat();
+    facts.inRange = bot->IsInWorld() && IsPointInAreaTriggerZone(trigger, bot->GetMapId(), bot->GetPositionX(),
+        bot->GetPositionY(), bot->GetPositionZ(), RemoteCommander::kEnterTriggerMargin);
+    facts.distance = bot->GetDistance(trigger->x, trigger->y, trigger->z, SizeFactor::None);
+    facts.leadEntered = orderIt->second.tally.leadEntered;
+    facts.leadFailed = orderIt->second.tally.leadFailed;
+
+    RemoteCommander::EnterVerdict const verdict = RemoteCommander::AdvanceEnter(task.enterState, facts, diff);
+    switch (verdict.step)
+    {
+        case RemoteCommander::EnterStep::Wait:
+            if (facts.available && task.enterState.stage == RemoteCommander::EnterStage::Walk)
+                NudgeTaskWalk(task, bot, diff);
+            return false;
+        case RemoteCommander::EnterStep::SendTrigger:
+            return SendEnterTrigger(task, bot, ai, tele, targetMap);
+        case RemoteCommander::EnterStep::Succeed:
+            FinishCommanderTask(task, true, 1, "entered", "", "");
+            return true;
+        case RemoteCommander::EnterStep::Fail:
+            FinishCommanderTask(task, false, 0, "", verdict.code, verdict.message);
+            return true;
+    }
+    return false;
+}
+
 // One look at a running task. Returns true when it is over (answered).
 bool StepCommanderTask(CommanderTask& task, uint32 diff)
 {
@@ -6043,6 +6255,9 @@ bool StepCommanderTask(CommanderTask& task, uint32 diff)
             "The bot left the commanded party.");
         return true;
     }
+
+    if (task.enter)
+        return StepEnterTask(task, bot, ai, diff);
 
     RemoteCommander::TaskFacts facts;
     facts.botAvailable = ai && bot->IsAlive() && !bot->IsBeingTeleported() && !bot->IsTaxiFlying();
@@ -6473,6 +6688,7 @@ void ClearCommanderTasks()
     CommanderTasks().clear();
     RitualGroups().clear();
     RemoteCommander::RitualHolds().Clear();
+    EnterOrders().clear();
     PendingStanceRestores().clear();
     RemoteCommander::LootOrders().Clear();
     s_commanderTaskMs = 0;
@@ -6815,6 +7031,151 @@ static bool CommanderRitual(ChatHandler* handler, CommanderOrder const& order,
     return true;
 }
 
+// cmd enter <area trigger id | near> [bot]: the party (or the one bot named) goes through a
+// dungeon entrance, the lead bot first. Owner or GM, for every bot it moves.
+static bool CommanderEnter(ChatHandler* handler, CommanderOrder const& order,
+    RemoteCommander::EnterOrder const& request, std::string const& intent)
+{
+    bool const single = !request.bot.empty();
+    std::vector<Player*> bots;
+    if (single)
+    {
+        Player* named = FindCommandedBot(order, request.bot);
+        if (!named)
+        {
+            SendActionError(handler, intent, "no-bot", "That bot is not in your commanded group.");
+            return true;
+        }
+        bots.push_back(named);
+    }
+    else
+        bots = order.bots;
+    if (bots.empty())
+    {
+        SendActionError(handler, intent, "lead-unavailable", "No bot of the group is in the world.");
+        return true;
+    }
+    for (Player* bot : bots)
+    {
+        BotRecord* record = BotManager::Instance().FindBot(bot->GetObjectGuid());
+        if (!RemoteCommander::MayIssueOrder(sPlayerbotAIConfig.remoteCommander, true,
+            RemoteCommander::OrderTier::OwnerOrGm, record && CanControlBot(order.commander, record)))
+        {
+            std::string const message = std::string("Only the owner of ") + bot->GetName() + " (or a GameMaster) may do that.";
+            SendActionError(handler, intent, "denied", message.c_str());
+            return true;
+        }
+    }
+
+    // Which trigger: the id, or the nearest instance entrance to the lead bot (to the bot named).
+    uint32 triggerId = request.triggerId;
+    if (request.nearest)
+    {
+        Player* reference = single ? bots[0] : order.lead;
+        std::vector<RemoteCommander::TriggerCandidate> candidates;
+        if (reference->IsInWorld())
+            for (auto const& entry : sObjectMgr.GetAreaTriggersMap())
+            {
+                AreaTriggerEntry const& at = entry.second;
+                if (at.mapid != reference->GetMapId() || !InstanceEntranceOf(&at, nullptr))
+                    continue;
+                RemoteCommander::TriggerCandidate candidate;
+                candidate.id = at.id;
+                candidate.distance = reference->GetDistance(at.x, at.y, at.z, SizeFactor::None);
+                candidates.push_back(candidate);
+            }
+        if (!RemoteCommander::PickNearestTrigger(candidates, sPlayerbotAIConfig.reactDistance, triggerId))
+        {
+            SendActionError(handler, intent, RemoteCommander::kCodeNotFound,
+                "No instance entrance within AiPlayerbot.ReactDistance of the bot. Move the group closer first.");
+            return true;
+        }
+    }
+    AreaTriggerEntry const* trigger = sObjectMgr.GetAreaTrigger(triggerId);
+    MapEntry const* targetMap = nullptr;
+    AreaTriggerTeleport const* tele = InstanceEntranceOf(trigger, &targetMap);
+    if (!tele || !targetMap)
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeNotFound,
+            "That area trigger is not an instance entrance (use `near`, or a trigger id that leads into a dungeon).");
+        return true;
+    }
+
+    // Every bot: free to act, on the entrance's map and within reach, and cleared by the entry's requirements.
+    // Nothing moves unless all pass.
+    float maxDistance = 0.0f;
+    std::vector<float> distances;
+    for (Player* bot : bots)
+    {
+        std::string const name = bot->GetName();
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+        if (!CommanderTaskGuard(handler, intent, bot, ai, true))
+            return true;
+        if (!bot->IsInWorld() || bot->GetMapId() != trigger->mapid)
+        {
+            SendActionError(handler, intent, RemoteCommander::kCodeTooFar,
+                (name + " is not on the entrance's map. Move the group there first.").c_str());
+            return true;
+        }
+        float const distance = bot->GetDistance(trigger->x, trigger->y, trigger->z, SizeFactor::None);
+        if (!RemoteCommander::WithinReactDistance(distance, sPlayerbotAIConfig.reactDistance))
+        {
+            SendActionError(handler, intent, RemoteCommander::kCodeTooFar,
+                (name + " is farther from the entrance than AiPlayerbot.ReactDistance. Move the group closer first.").c_str());
+            return true;
+        }
+        RemoteCommander::EntryVerdict const verdict = RemoteCommander::JudgeEntry(GatherEntryFacts(bot, tele, targetMap));
+        if (!verdict.ok)
+        {
+            SendActionError(handler, intent, verdict.code, (name + ": " + verdict.message).c_str());
+            return true;
+        }
+        distances.push_back(distance);
+        maxDistance = std::max(maxDistance, distance);
+    }
+
+    uint32 const serial = ++s_enterSerial;
+    EnterOrderState& state = EnterOrders()[serial];
+    state.commanderRaw = order.commander->GetObjectGuid().GetRawValue();
+    state.triggerId = triggerId;
+    state.intent = intent;
+    state.scope = single ? "bot:" + std::string(bots[0]->GetName()) : std::string("party");
+    state.tally.total = static_cast<uint32>(bots.size());
+    bool const hasFollowers = !single && bots.size() > 1;
+
+    auto& tasks = CommanderTasks();
+    std::vector<uint64> raws;
+    for (size_t i = 0; i < bots.size(); ++i)
+    {
+        Player* bot = bots[i];
+        CommanderTask task;
+        task.commanderRaw = state.commanderRaw;
+        task.botRaw = bot->GetObjectGuid().GetRawValue();
+        task.botName = bot->GetName();
+        task.intent = intent;
+        task.enter = true;
+        task.enterOrder = serial;
+        task.triggerId = triggerId;
+        task.enterLead = !single && bot == order.lead;
+        task.enterState = RemoteCommander::MakeEnterState(distances[i], maxDistance, hasFollowers && !task.enterLead);
+        BeginEnterWalk(task, order.commander, bot, PlayerbotAIStorage::Instance().GetAI(bot), trigger);
+        tasks[task.botRaw] = task;
+        raws.push_back(task.botRaw);
+    }
+    // A first look at each, the lead bot first: a bot already at the trigger sends it at once.
+    for (uint64 raw : raws)
+    {
+        auto it = tasks.find(raw);
+        if (it != tasks.end() && StepCommanderTask(it->second, 0))
+            tasks.erase(raw);
+    }
+    if (EnterOrders().count(serial))
+        handler->PSendSysMessage("TBM:ACTION_PENDING|%s|%s|%u|%u", ProtocolSafe(intent).c_str(),
+            ProtocolSafe(EnterOrders()[serial].scope).c_str(),
+            RemoteCommander::EnterBudgetMs(maxDistance, hasFollowers) / 1000, triggerId);
+    return true;
+}
+
 // cmd state <go-guid | entry:id>[@x,y,z]: what a game object is doing now, for a
 // client that cannot see it (a door that opens when a fight is won). Read-only,
 // one lookup; answers at once, never walks anyone anywhere.
@@ -6919,7 +7280,7 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
     if (!RemoteCommander::IsKnownOrder(verb))
     {
         SendActionError(handler, intent, "invalid",
-            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid|entry:id[@x,y,z]> <bot> [itemId] / open <guid|entry:id[@x,y,z]> <bot> / use <itemId> <bot> [guid|entry:id[@x,y,z]] / ritual <guid|entry:id[@x,y,z]> <bot1> <bot2> [<bot3>...] / state <guid|entry:id[@x,y,z]>");
+            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid|entry:id[@x,y,z]> <bot> [itemId] / open <guid|entry:id[@x,y,z]> <bot> / use <itemId> <bot> [guid|entry:id[@x,y,z]] / ritual <guid|entry:id[@x,y,z]> <bot1> <bot2> [<bot3>...] / state <guid|entry:id[@x,y,z]> / enter <area trigger id|near> [bot]");
         return true;
     }
 
@@ -6961,6 +7322,19 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
 
     std::vector<std::string> parts = RemoteCommander::SplitOrderArgs(rest);
     RemoteCommander::OrderTier const tier = RemoteCommander::TierForOrder(verb);
+
+    // enter: owner or GM for every bot it moves, checked in CommanderEnter (the bot is optional).
+    if (verb == "enter")
+    {
+        RemoteCommander::EnterOrder enterRequest;
+        if (!RemoteCommander::ParseEnterOrder(parts, enterRequest))
+        {
+            SendActionError(handler, intent, RemoteCommander::kCodeInvalid,
+                "Usage: .bot cmd enter <area trigger id | near> [bot]");
+            return true;
+        }
+        return CommanderEnter(handler, order, enterRequest, intent);
+    }
 
     // Owner-or-GM orders name one bot of the group; the commander must
     // control it now (the bound commander alone is not enough).

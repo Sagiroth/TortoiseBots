@@ -609,14 +609,14 @@ inline OrderTier TierForOrder(std::string const& verb)
         verb == "focus" || verb == "move" || verb == "stay" || verb == "follow" ||
         verb == "rest" || verb == "lootmethod" || verb == "state")
         return OrderTier::Tactical;
-    // revive, summon, loot, open, use, ritual and anything unknown: fail closed.
+    // revive, summon, loot, open, use, ritual, enter and anything unknown: fail closed.
     return OrderTier::OwnerOrGm;
 }
 
 inline bool IsKnownOrder(std::string const& verb)
 {
     return TierForOrder(verb) == OrderTier::Tactical || verb == "revive" || verb == "summon" ||
-        verb == "loot" || verb == "open" || verb == "use" || verb == "ritual";
+        verb == "loot" || verb == "open" || verb == "use" || verb == "ritual" || verb == "enter";
 }
 
 // enabled: AiPlayerbot.RemoteCommander. boundCommander: the requester holds a
