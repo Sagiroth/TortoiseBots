@@ -876,6 +876,10 @@ static void TestHeldAttack()
     CHECK(StepHeldAttack(false, true, false, 0) == HeldAttackStep::Drop);
     CHECK(StepHeldAttack(true, false, false, 0) == HeldAttackStep::Drop);
     CHECK(kHeldAttackMaxMs > 10000); // outlasts a Hex
+    // The mage sheeped the target during the hold: the attack must not break it.
+    CHECK(StepHeldAttack(true, true, false, 3000, true) == HeldAttackStep::Drop);
+    CHECK(StepHeldAttack(true, true, true, 3000, true) == HeldAttackStep::Drop);
+    CHECK(StepHeldAttack(true, true, false, 3000, false) == HeldAttackStep::Run);
 
     CHECK(AttackAckDetail("", {}).empty());
     CHECK(AttackAckDetail("Lcwarra", {}) == "tank-stays:Lcwarra");

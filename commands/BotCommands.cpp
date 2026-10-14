@@ -30,6 +30,7 @@
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
 #include "../ai/playerbot/strategy/values/RtiTargetValue.h"
 #include "../ai/playerbot/strategy/values/AttackersValue.h"
+#include "../ai/playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "../ai/playerbot/strategy/values/PositionValue.h"
 #include "../ai/playerbot/strategy/values/ItemUsageValue.h"
 #include "../ai/playerbot/strategy/actions/EquipAction.h"
@@ -5221,7 +5222,10 @@ static void UpdateHeldAttacks(uint32 diff)
         Unit* target = botReady && bot->GetMap() ? bot->GetMap()->GetUnit(ObjectGuid(it->second.targetRaw)) : nullptr;
         bool const targetAlive = target && target->IsInWorld() && target->IsAlive();
         bool const lostControl = botReady && bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL);
-        switch (RemoteCommander::StepHeldAttack(botReady, targetAlive, lostControl, it->second.heldMs))
+        // The party crowd-controlled the target during the hold (a mage's sheep): hitting it would break that.
+        bool const targetCced = targetAlive &&
+            ai::PossibleAttackTargetsValue::HoldsBreakableCc(PlayerbotAIStorage::Instance().GetAI(bot), target, bot);
+        switch (RemoteCommander::StepHeldAttack(botReady, targetAlive, lostControl, it->second.heldMs, targetCced))
         {
             case RemoteCommander::HeldAttackStep::Wait:
                 ++it;
@@ -5549,6 +5553,8 @@ static bool CommanderStayFollowRest(ChatHandler* handler, CommanderOrder const& 
     std::string const& verb, std::string const& intent)
 {
     uint32 succeeded = 0;
+    // Any of these orders replaces an attack still held for a bot under crowd control.
+    DropHeldAttacks(order.commander->GetObjectGuid().GetRawValue(), 0);
     if (verb == "stay" || verb == "follow")
         SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0,
             verb == "stay" ? RemoteCommander::LaterOrder::Stay : RemoteCommander::LaterOrder::Follow);
@@ -7904,6 +7910,8 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
     if (!target)
         return true;
     BotCommandContext context = CommanderContext(order, target);
+    // A cc order replaces any attack still held for a bot under crowd control.
+    DropHeldAttacks(order.commander->GetObjectGuid().GetRawValue(), 0);
     return RunCcOrder(handler, context, order.judge, ccIntent, intent);
 }
 

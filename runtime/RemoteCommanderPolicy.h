@@ -582,10 +582,13 @@ enum class HeldAttackStep
 };
 
 // botReady: in world, alive, on the target's map. targetAlive: the ordered
-// unit still exists there and lives.
-inline HeldAttackStep StepHeldAttack(bool botReady, bool targetAlive, bool lostControl, uint32_t heldMs)
+// unit still exists there and lives. targetCrowdControlled: the party put a
+// breakable crowd control on the target meanwhile (a mage's sheep, a sap):
+// the held attack would break it, so the order is dropped.
+inline HeldAttackStep StepHeldAttack(bool botReady, bool targetAlive, bool lostControl, uint32_t heldMs,
+    bool targetCrowdControlled = false)
 {
-    if (!botReady || !targetAlive || heldMs > kHeldAttackMaxMs)
+    if (!botReady || !targetAlive || targetCrowdControlled || heldMs > kHeldAttackMaxMs)
         return HeldAttackStep::Drop;
     return lostControl ? HeldAttackStep::Wait : HeldAttackStep::Run;
 }
