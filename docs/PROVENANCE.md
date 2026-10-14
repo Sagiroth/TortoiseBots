@@ -9620,3 +9620,11 @@ on the test VM (see the PR); build pending; in-game pending.
 - Copied / ported / reimplemented: reimplemented (one `getThreatType` override per action). *Multi-Shot*, *Flamestrike* and *Arcane Explosion* are typed beyond the donor: all three hit mobs other than the target.
 - Reason: Zul'Farrak hires-2 run 3b (2026-10-14): 2-6 s after the party was released on the mob the tank held, the warlock's *Rain of Fire* and the hunter's *Volley* / *Multi-Shot* hit four mobs the tank had barely touched; the warlock took 100% of the top threat on three of them and the party wiped.
 - Validation: `bash tools/verify_all.sh`; `-fsyntax-only` of the touched headers on the test VM; in-game pending.
+
+### Protection tank: Thunder Clap first on packs
+
+- Feature: the Protection row "melee light aoe" (2+ mobs in melee) casts *Thunder Clap* at ACTION_HIGH + 7, above *Demoralizing Shout* (HIGH+6) and *Sunder Armor* (HIGH+5); it was HIGH+1, where Sunder spent every 15 rage first.
+- Source: mod-playerbots 79bd428. File: `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp` ("thunder clap and rage" -> thunder clap at ACTION_MOVE + 11; "medium rage available" -> thunder clap HIGH+1) and `GenericWarriorStrategy.cpp` ("light aoe" -> thunder clap HIGH+5 above demoralizing shout HIGH+1).
+- Copied / ported / reimplemented: reimplemented (one priority change). Kept to 2+ mobs in melee instead of the donor's any-target row, so a single mob still gets the Sunder stack first. Turtle's spell_template gives *Thunder Clap* (6343, 8198, 8204, 8205, 11580) stances 196608 = Battle + Defensive, so the tank does not leave Defensive Stance for it.
+- Reason: Zul'Farrak hires-2 (2026-10-14): in runs 3b and 6 the tank had 2+ mobs within 5 yd in 239 frames (64 + 175) and cast *Thunder Clap* in 2 of them; 135 of 175 such frames in run 6 had under 20 rage, all of it going to *Sunder Armor* (80 frames). The damage bots took the loose mobs and the party wiped twice.
+- Validation: `bash tools/verify_all.sh`; `-fsyntax-only` of `ProtectionWarriorStrategy.cpp` on the test VM; in-game pending.

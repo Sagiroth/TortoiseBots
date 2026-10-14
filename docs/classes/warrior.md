@@ -29,7 +29,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
    - Keeps *Shield Block* active on cooldown to enable *Revenge*.
    - Stacks *Sunder Armor* to a full 5-stack, then stops (re-applies only to refresh an expiring stack; sunder yields to Shield Slam only once 40+ rage makes slam live).
    - *Shield Slam* fires on the Improved Shield Slam proc (+35%/+70% damage charge) above the rage ladder but below taunt/shield block, otherwise at 40+ rage — after the sunder stack is complete and *Revenge* has had its GCD.
-   - *Thunder Clap* fires on spare rage (40+) as extra threat, since the AoE toggle the base tree gates it behind is normally off in party pulls.
+   - *Thunder Clap* (usable in Defensive Stance on Turtle) fires first whenever two or more mobs are in melee and the current target is not clapped yet: it outranks *Demoralizing Shout* and *Sunder Armor*, so the tank's rage goes to threat on the whole pack before the single-target builders.
 3. **Emergency Mitigation:**
    - *Shield Wall* fires early at low health (default 20-50%) so damage is blunted before it becomes lethal.
    - *Last Stand* (12975, per game data) is held for the critical-health trigger (default 20) only.

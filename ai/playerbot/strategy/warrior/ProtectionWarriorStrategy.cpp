@@ -119,10 +119,17 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "sunder armor",
         NextAction::array(0, new NextAction("sunder armor", ACTION_HIGH + 5), NULL)));
 
-    // Reserve single-target rage and GCDs for threat builders.
+    // Two or more mobs in melee: Thunder Clap (Turtle allows it in Defensive
+    // Stance) is the tank's threat on every mob at once, so it goes before
+    // the single-target builders (Demoralizing Shout HIGH+6, Sunder HIGH+5).
+    // At HIGH+1 Sunder took every 15 rage first and the clap almost never
+    // fired: 2 claps in 175 pack frames, ZF hires-2 run 6. The action is a
+    // debuff, so it is recast only once the current target lost the clap.
+    // Donor TankWarriorStrategy puts it higher still ("thunder clap and
+    // rage", ACTION_MOVE + 11, on one mob too).
     triggers.push_back(new TriggerNode(
         "melee light aoe",
-        NextAction::array(0, new NextAction("thunder clap", ACTION_HIGH + 1), NULL)));
+        NextAction::array(0, new NextAction("thunder clap", ACTION_HIGH + 7), NULL)));
 
     triggers.push_back(new TriggerNode(
         "revenge",
