@@ -600,6 +600,30 @@ static void TestCombatEndsAct()
     CHECK(!MayRetryAct(potion, gone));
 }
 
+// cmd state: the words of the answer.
+static void TestGoStateText()
+{
+    CHECK(std::strcmp(GoStateName(0), "active") == 0);
+    CHECK(std::strcmp(GoStateName(1), "ready") == 0);
+    CHECK(std::strcmp(GoStateName(2), "alternative") == 0);
+    CHECK(std::strcmp(GoStateName(9), "unknown") == 0);
+    CHECK(std::strcmp(GoLootStateName(0), "not-ready") == 0);
+    CHECK(std::strcmp(GoLootStateName(1), "ready") == 0);
+    CHECK(std::strcmp(GoLootStateName(2), "activated") == 0);
+    CHECK(std::strcmp(GoLootStateName(3), "just-deactivated") == 0);
+    CHECK(std::strcmp(GoLootStateName(7), "unknown") == 0);
+    CHECK(GoFlagsText(0) == "none");
+    CHECK(GoFlagsText(0x1) == "in-use");
+    CHECK(GoFlagsText(0x2) == "locked");
+    CHECK(GoFlagsText(0x3) == "in-use+locked");
+    CHECK(GoFlagsText(0x20 | 0x40) == "none");                // flags the client has no use for
+    CHECK(GoFlagsText(0x2 | 0x4 | 0x10) == "locked+interact-cond+no-interact");
+    std::string const detail = FormatGoState(17293822569102704826ULL, 124372, 0, 0, 1, 0x20);
+    CHECK(detail == "guid:17293822569102704826,entry:124372,type:0,state:active,loot:ready,flags:none");
+    CHECK(detail.find('|') == std::string::npos && detail.find(' ') == std::string::npos);
+    CHECK(std::strcmp(kCodeNotFound, "not-found") == 0);
+}
+
 int main()
 {
     TestStandingPoint();
@@ -626,6 +650,7 @@ int main()
     TestLootLedger();
     TestLootItemWanted();
     TestLootMethod();
+    TestGoStateText();
     std::printf("remote commander tasks: %d checks passed\n", checks);
     return 0;
 }

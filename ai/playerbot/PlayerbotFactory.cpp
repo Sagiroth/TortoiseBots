@@ -4,6 +4,7 @@
 #include "playerbot/PerformanceMonitor.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/SpellRankPolicy.h"
+#include "playerbot/AmmoStackPolicy.h"
 #include "../../runtime/HunterPetPolicy.h"
 #include "../../runtime/PetSpellRankPolicy.h"
 #include "../../runtime/StarterKitPolicy.h"
@@ -3206,10 +3207,10 @@ void PlayerbotFactory::InitAmmo()
             entry = 0;
     }
     uint32 count = entry ? bot->GetItemCount(entry) / 200 : 0;
-    uint32 maxCount = 5 + level / 10;
-
-    if (ai->HasCheat(BotCheatMask::item))
-        maxCount = 1;
+    // Hunters keep 5 + level / 10 stacks; warriors and rogues carry
+    // AiPlayerbot.AmmoStacksNonHunter (default 2); the item cheat keeps 1.
+    uint32 maxCount = AmmoStackTarget(bot->GetClass() == CLASS_HUNTER, level,
+        sPlayerbotAIConfig.ammoStacksNonHunter, ai->HasCheat(BotCheatMask::item));
 
     if (!entry || count <= 2)
     {

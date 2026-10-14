@@ -71,6 +71,8 @@ constexpr char const* kCodeUnavailable = "unavailable";
 constexpr char const* kCodeUnreachable = "unreachable";
 constexpr char const* kCodeTimeout = "timeout";
 constexpr char const* kCodeCancelled = "cancelled";
+// A by-entry target (cmd open|loot|use entry:<id>, cmd state) with no spawned object in the search area.
+constexpr char const* kCodeNotFound = "not-found";
 
 // ---------------------------------------------------------------------------
 // Standing point and budgets
@@ -749,6 +751,67 @@ inline bool ParseLootThreshold(std::string const& token, int& threshold)
     else
         return false;
     return threshold >= kThresholdMin && threshold <= kThresholdMax;
+}
+
+// ---------------------------------------------------------------------------
+// `cmd state`: the answer about a game object
+// ---------------------------------------------------------------------------
+
+// GOState: GO_STATE_ACTIVE 0 (a door open, a lever pulled), GO_STATE_READY 1
+// (a door closed, a lever at rest), GO_STATE_ACTIVE_ALTERNATIVE 2.
+inline char const* GoStateName(uint32_t state)
+{
+    switch (state)
+    {
+        case 0: return "active";
+        case 1: return "ready";
+        case 2: return "alternative";
+    }
+    return "unknown";
+}
+
+// LootState: GO_NOT_READY 0, GO_READY 1, GO_ACTIVATED 2, GO_JUST_DEACTIVATED 3.
+inline char const* GoLootStateName(uint32_t state)
+{
+    switch (state)
+    {
+        case 0: return "not-ready";
+        case 1: return "ready";
+        case 2: return "activated";
+        case 3: return "just-deactivated";
+    }
+    return "unknown";
+}
+
+// GameObjectFlags: in-use 0x1 (disables interaction while animated), locked
+// 0x2, interact-cond 0x4, no-interact 0x10; joined with '+', "none" for none.
+inline std::string GoFlagsText(uint32_t flags)
+{
+    std::string text;
+    auto add = [&text](char const* name)
+    {
+        if (!text.empty())
+            text += '+';
+        text += name;
+    };
+    if (flags & 0x1)
+        add("in-use");
+    if (flags & 0x2)
+        add("locked");
+    if (flags & 0x4)
+        add("interact-cond");
+    if (flags & 0x10)
+        add("no-interact");
+    return text.empty() ? std::string("none") : text;
+}
+
+// The detail of `TBM:ACTION_ACK|cmd state|party|1|<detail>`: comma-separated
+// key:value pairs, no spaces and no '|'. The guid is decimal, like ACTION_PENDING's.
+inline std::string FormatGoState(uint64_t guid, uint32_t entry, uint32_t type, uint32_t goState,
+    uint32_t lootState, uint32_t flags)
+{
+    return "guid:" + std::to_string(guid) + ",entry:" + std::to_string(entry) + ",type:" + std::to_string(type) +
+        ",state:" + GoStateName(goState) + ",loot:" + GoLootStateName(lootState) + ",flags:" + GoFlagsText(flags);
 }
 
 } // namespace RemoteCommander

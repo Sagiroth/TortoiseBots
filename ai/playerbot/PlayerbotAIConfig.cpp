@@ -1,6 +1,7 @@
 
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/AmmoStackPolicy.h"
 #include "../../runtime/HireUnlockPolicy.h"
 #include "../../runtime/RemoteCommanderView.h"
 #include <cerrno>
@@ -549,6 +550,8 @@ bool PlayerbotAIConfig::Initialize()
     worldBuffsUnlockFeeCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsUnlockFeeCopper", 1000000));
     if (worldBuffsUnlockFeeCopper > 100000000)
         worldBuffsUnlockFeeCopper = 100000000;
+    ammoStacksNonHunter = ai::ClampNonHunterAmmoStacks(
+        config.GetIntDefault("AiPlayerbot.AmmoStacksNonHunter", static_cast<int>(ai::kAmmoStacksNonHunterDefault)));
     // Issue #473: opt-in owned/hired-bot quality of life (all off by default).
     ownedBotMaintenanceEnabled = config.GetBoolDefault("AiPlayerbot.OwnedBotMaintenanceEnabled", false);
     ownedBotAutogearEnabled = config.GetBoolDefault("AiPlayerbot.OwnedBotAutogearEnabled", false);

@@ -9,6 +9,7 @@
 
 #include "../runtime/RemoteCommanderPolicy.h"
 
+#include <cmath>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -285,7 +286,7 @@ static void TestBindGate()
 // summon: owner-or-GM, as for whispers. Nothing without a binding or the toggle.
 static void TestOrderGate()
 {
-    for (char const* verb : { "attack", "pull", "pullback", "cc", "focus", "move", "stay", "follow", "rest", "lootmethod" })
+    for (char const* verb : { "attack", "pull", "pullback", "cc", "focus", "move", "stay", "follow", "rest", "lootmethod", "state" })
     {
         CHECK(TierForOrder(verb) == OrderTier::Tactical);
         CHECK(IsKnownOrder(verb));
@@ -496,6 +497,122 @@ static std::vector<std::string> Args(std::string const& text)
     return SplitOrderArgs(text);
 }
 
+// entry:<id>[@x,y,z]: the by-entry target of cmd open, loot, use and state.
+static void TestParseTargetSpec()
+{
+    TargetSpec spec;
+    CHECK(ParseTargetSpec("entry:124372", spec) && spec.ByEntry() && spec.entry == 124372 && !spec.hasPoint && spec.guid == 0);
+    CHECK(ParseTargetSpec("ENTRY:7@-235.5,295,-48", spec) && spec.entry == 7 && spec.hasPoint);
+    CHECK(spec.point.x == -235.5f && spec.point.y == 295.0f && spec.point.z == -48.0f);
+    CHECK(ParseTargetSpec("entry:7@1;2;3", spec) && spec.hasPoint && spec.point.z == 3.0f);   // semicolons too
+    CHECK(ParseTargetSpec("entry:16777215", spec) && spec.entry == 16777215);                  // the 24-bit maximum
+    // The GUID form stays as it was.
+    CHECK(ParseTargetSpec("0xF130000C5E0012AB", spec) && !spec.ByEntry() && spec.guid == 0xF130000C5E0012ABULL);
+    CHECK(ParseTargetSpec("42", spec) && spec.guid == 42 && !spec.hasPoint);
+    // Refused.
+    CHECK(!ParseTargetSpec("entry:", spec));
+    CHECK(!ParseTargetSpec("entry:0", spec));
+    CHECK(!ParseTargetSpec("entry:16777216", spec));       // past 24 bits
+    CHECK(!ParseTargetSpec("entry:123456789", spec));
+    CHECK(!ParseTargetSpec("entry:abc", spec));
+    CHECK(!ParseTargetSpec("entry:12x", spec));
+    CHECK(!ParseTargetSpec("entry:-5", spec));
+    CHECK(!ParseTargetSpec("entry:7@1,2", spec));          // two coordinates
+    CHECK(!ParseTargetSpec("entry:7@1,2,3,4", spec));
+    CHECK(!ParseTargetSpec("entry:7@", spec));
+    CHECK(!ParseTargetSpec("entry:7@a,b,c", spec));
+    CHECK(!ParseTargetSpec("entry:7@1,2,99999", spec));    // off the map
+    CHECK(!ParseTargetSpec("0x1F@1,2,3", spec));           // a point does not go with a GUID
+    CHECK(!ParseTargetSpec("", spec));
+}
+
+// The point's commas must not split the token; everything else splits as before.
+static void TestSplitKeepsEntryPoint()
+{
+    std::vector<std::string> parts = Args("entry:124372@-235,295,-48 Lcwarlock");
+    CHECK(parts.size() == 2 && parts[0] == "entry:124372@-235,295,-48" && parts[1] == "Lcwarlock");
+    parts = Args("entry:7@1;2;3  Lcwarra");
+    CHECK(parts.size() == 2 && parts[0] == "entry:7@1;2;3");
+    parts = Args("5 Lcwarra entry:7@1,2,3");
+    CHECK(parts.size() == 3 && parts[2] == "entry:7@1,2,3");
+    parts = Args("1,2,3");                                  // move points are untouched
+    CHECK(parts.size() == 3);
+    parts = Args("entry:7 1,2,3");
+    CHECK(parts.size() == 4 && parts[0] == "entry:7");
+    CHECK(IsEntryTargetPrefix("Entry:5") && !IsEntryTargetPrefix("entry") && !IsEntryTargetPrefix("0xentry:"));
+}
+
+static void TestOrdersByEntry()
+{
+    LootOrder loot;
+    CHECK(ParseLootOrder(Args("entry:6910@-120.5,40,-47 Lcwarlock 7741"), loot));
+    CHECK(loot.spec.ByEntry() && loot.spec.entry == 6910 && loot.spec.hasPoint && loot.guid == 0);
+    CHECK(loot.bot == "Lcwarlock" && loot.itemId == 7741);
+    CHECK(ParseLootOrder(Args("entry:6910 Lcwarlock"), loot) && !loot.spec.hasPoint);
+    CHECK(ParseLootOrder(Args("0x1F Lcwarlock"), loot) && loot.guid == 0x1F && !loot.spec.ByEntry());
+    CHECK(!ParseLootOrder(Args("entry:0 Lcwarlock"), loot));
+
+    OpenOrder open;
+    CHECK(ParseOpenOrder(Args("entry:124371@-235,262,-48 Lcwarlock"), open));
+    CHECK(open.spec.entry == 124371 && open.guid == 0 && open.bot == "Lcwarlock");
+    CHECK(!ParseOpenOrder(Args("entry:124371@-235,262 Lcwarlock"), open));   // a point of two
+    CHECK(!ParseOpenOrder(Args("entry:124371"), open));                        // the bot is required
+
+    UseOrder use;
+    CHECK(ParseUseOrder(Args("7740 Lcwarra entry:124372@-235,295,-48"), use));
+    CHECK(use.itemId == 7740 && use.spec.entry == 124372 && use.target == 0);
+    CHECK(ParseUseOrder(Args("7740 Lcwarra 0x20"), use) && use.target == 0x20 && !use.spec.ByEntry());
+    CHECK(ParseUseOrder(Args("7740 Lcwarra"), use) && use.target == 0 && !use.spec.ByEntry());
+    CHECK(!ParseUseOrder(Args("7740 Lcwarra entry:x"), use));
+
+    // The bot is the second token in every form.
+    CHECK(OwnerOrderBotName("open", Args("entry:7@1,2,3 Lcwarlock")) == "Lcwarlock");
+    CHECK(OwnerOrderBotName("loot", Args("entry:7 Lcwarlock 7741")) == "Lcwarlock");
+}
+
+static void TestStateOrder()
+{
+    StateOrder state;
+    CHECK(ParseStateOrder(Args("entry:124372@-235,295,-48"), state) && state.spec.entry == 124372 && state.spec.hasPoint);
+    CHECK(ParseStateOrder(Args("entry:124372"), state) && !state.spec.hasPoint);
+    CHECK(ParseStateOrder(Args("0xF1100000000000AA"), state) && state.spec.guid == 0xF1100000000000AAULL);
+    CHECK(!ParseStateOrder(Args(""), state));
+    CHECK(!ParseStateOrder(Args("entry:1 extra"), state));
+    CHECK(!ParseStateOrder(Args("entry:0"), state));
+}
+
+// The nearest candidate within the radius wins; a tie goes to the lowest GUID.
+static void TestPickNearestEntry()
+{
+    uint64_t guid = 0;
+    std::vector<EntryCandidate> none;
+    CHECK(!PickNearestEntry(none, 30.0f, guid) && guid == 0);
+
+    std::vector<EntryCandidate> candidates = { {0xA3, 12.0f}, {0xA1, 4.5f}, {0xA2, 29.9f} };
+    CHECK(PickNearestEntry(candidates, 30.0f, guid) && guid == 0xA1);
+    // Out of the radius: nothing (and the answer is left alone).
+    guid = 77;
+    candidates = { {0xA1, 30.5f}, {0xA2, 45.0f} };
+    CHECK(!PickNearestEntry(candidates, 30.0f, guid) && guid == 77);
+    // Exactly on the radius counts.
+    candidates = { {0xA1, 30.0f} };
+    CHECK(PickNearestEntry(candidates, 30.0f, guid) && guid == 0xA1);
+    // Equally near: the lowest GUID, whatever the order.
+    candidates = { {0xB5, 8.0f}, {0xB2, 8.0f}, {0xB9, 8.0f} };
+    CHECK(PickNearestEntry(candidates, 30.0f, guid) && guid == 0xB2);
+    candidates = { {0xB9, 8.0f}, {0xB2, 8.0f}, {0xB5, 8.0f} };
+    CHECK(PickNearestEntry(candidates, 30.0f, guid) && guid == 0xB2);
+    // A nearer one beats a lower GUID.
+    candidates = { {0x01, 9.0f}, {0xFF, 2.0f} };
+    CHECK(PickNearestEntry(candidates, 30.0f, guid) && guid == 0xFF);
+    // A zero GUID is no candidate; NaN distance is never picked.
+    candidates = { {0, 1.0f}, {0xC1, std::nanf("")} };
+    CHECK(!PickNearestEntry(candidates, 30.0f, guid));
+    // The radius: 30 yd around a point, ReactDistance around the bot.
+    CHECK(EntrySearchRadius(true, 150.0f) == kEntryPointRadius && kEntryPointRadius == 30.0f);
+    CHECK(EntrySearchRadius(false, 150.0f) == 150.0f);
+}
+
 static void TestParseItemId()
 {
     uint32_t id = 0;
@@ -626,6 +743,11 @@ int main()
     TestTargetVerdict();
     TestMoveVerdict();
     TestParseItemId();
+    TestParseTargetSpec();
+    TestSplitKeepsEntryPoint();
+    TestOrdersByEntry();
+    TestStateOrder();
+    TestPickNearestEntry();
     TestParseLootOrder();
     TestParseOpenOrder();
     TestParseUseOrder();

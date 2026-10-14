@@ -59,6 +59,7 @@ if command -v g++ >/dev/null 2>&1; then
         test_ah_seller_teleport_policy
         test_ammo_cache_policy
         test_ammo_cheat_policy
+        test_ammo_stack_policy
         test_anubrekhan_swarm_policy
         test_aoe_fear_policy
         test_aoe_off_policy

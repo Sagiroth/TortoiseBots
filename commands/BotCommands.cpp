@@ -70,6 +70,10 @@
 #include "Database/DatabaseEnv.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Maps/PathFinder.h"
+#include "Maps/Cell.h"
+#include "Maps/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Creature.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -5290,6 +5294,135 @@ RemoteCommander::LockFacts GoLockFacts(Player* bot, GameObject* go)
     return facts;
 }
 
+// ---------------------------------------------------------------------------
+// Targets by entry (cmd open|loot|use entry:<id>[@x,y,z], cmd state)
+// ---------------------------------------------------------------------------
+
+float DistanceToPoint(RemoteCommander::MovePoint const& point, WorldObject const* object)
+{
+    float const dx = object->GetPositionX() - point.x;
+    float const dy = object->GetPositionY() - point.y;
+    float const dz = object->GetPositionZ() - point.z;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+// Grid-search predicate: a spawned game object of the entry within range of the point.
+class EntryGameObjectCheck
+{
+public:
+    EntryGameObjectCheck(uint32 entry, RemoteCommander::MovePoint const& reference, float range)
+        : m_entry(entry), m_reference(reference), m_range(range) {}
+    bool operator()(GameObject* go)
+    {
+        return go && go->GetEntry() == m_entry && sServerFacade.isSpawned(go) &&
+            DistanceToPoint(m_reference, go) <= m_range;
+    }
+
+private:
+    uint32 m_entry;
+    RemoteCommander::MovePoint m_reference;
+    float m_range;
+};
+
+// Grid-search predicate: a corpse of the creature entry within range of the point.
+class EntryCorpseCheck
+{
+public:
+    EntryCorpseCheck(uint32 entry, RemoteCommander::MovePoint const& reference, float range)
+        : m_entry(entry), m_reference(reference), m_range(range) {}
+    bool operator()(Creature* creature)
+    {
+        return creature && creature->GetEntry() == m_entry &&
+            sServerFacade.GetDeathState(creature) == CORPSE && DistanceToPoint(m_reference, creature) <= m_range;
+    }
+
+private:
+    uint32 m_entry;
+    RemoteCommander::MovePoint m_reference;
+    float m_range;
+};
+
+// The GUID of the nearest spawned game object of spec.entry (and, with
+// corpses, the nearest corpse of that creature entry, a lootable one first)
+// around the order's point, or around the bot when it gave none. One bounded
+// grid search of the bot's map (the cells that radius touches, loaded ones
+// only), never a world scan. 0 when nothing is there.
+uint64 FindEntryTarget(Player* bot, RemoteCommander::TargetSpec const& spec, bool corpses)
+{
+    Map* map = bot->GetMap();
+    if (!map || !spec.ByEntry())
+        return 0;
+    RemoteCommander::MovePoint reference = spec.point;
+    if (!spec.hasPoint)
+    {
+        reference.x = bot->GetPositionX();
+        reference.y = bot->GetPositionY();
+        reference.z = bot->GetPositionZ();
+    }
+    float const radius = RemoteCommander::EntrySearchRadius(spec.hasPoint, sPlayerbotAIConfig.reactDistance);
+    if (radius <= 0.0f)
+        return 0;
+
+    std::vector<RemoteCommander::EntryCandidate> objects;
+    {
+        std::list<GameObject*> found;
+        EntryGameObjectCheck check(spec.entry, reference, radius);
+        MaNGOS::GameObjectListSearcher<EntryGameObjectCheck> searcher(found, check);
+        Cell::VisitGridObjects(reference.x, reference.y, map, searcher, radius);
+        for (GameObject* go : found)
+            objects.push_back({go->GetObjectGuid().GetRawValue(), DistanceToPoint(reference, go)});
+    }
+    std::vector<RemoteCommander::EntryCandidate> lootable;
+    std::vector<RemoteCommander::EntryCandidate> corpseAny;
+    if (corpses)
+    {
+        std::list<Creature*> found;
+        EntryCorpseCheck check(spec.entry, reference, radius);
+        MaNGOS::CreatureListSearcher<EntryCorpseCheck> searcher(found, check);
+        Cell::VisitGridObjects(reference.x, reference.y, map, searcher, radius);
+        for (Creature* creature : found)
+        {
+            RemoteCommander::EntryCandidate const candidate{creature->GetObjectGuid().GetRawValue(),
+                DistanceToPoint(reference, creature)};
+            corpseAny.push_back(candidate);
+            if (creature->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE))
+                lootable.push_back(candidate);
+        }
+    }
+    // Objects and lootable corpses compete on distance; a corpse that has
+    // nothing left is chosen only when nothing else is there (the order then
+    // answers that there is nothing to loot).
+    std::vector<RemoteCommander::EntryCandidate> pool = objects;
+    pool.insert(pool.end(), lootable.begin(), lootable.end());
+    if (pool.empty())
+        pool = corpseAny;
+    uint64 guid = 0;
+    return RemoteCommander::PickNearestEntry(pool, radius, guid) ? guid : 0;
+}
+
+// The GUID an order's target names: the GUID as typed, or the nearest object
+// of the entry. 0 (with the ERR already sent) when a by-entry search finds nothing.
+// The ACK of a by-entry order is preceded by one `TBM:ACTION_TARGET` line that names the
+// GUID chosen, so a client can log it and use it later (cmd state, cmd attack).
+uint64 ResolveOrderGuid(ChatHandler* handler, std::string const& intent, Player* bot,
+    RemoteCommander::TargetSpec const& spec, bool corpses)
+{
+    if (!spec.ByEntry())
+        return spec.guid;
+    uint64 const guid = FindEntryTarget(bot, spec, corpses);
+    if (!guid)
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeNotFound,
+            corpses
+                ? "No spawned game object or corpse of that entry is near the point (or the bot)."
+                : "No spawned game object of that entry is near the point (or the bot).");
+        return 0;
+    }
+    handler->PSendSysMessage("TBM:ACTION_TARGET|%s|bot:%s|%s|%u", ProtocolSafe(intent).c_str(),
+        ProtocolSafe(bot->GetName()).c_str(), std::to_string(guid).c_str(), spec.entry);
+    return guid;
+}
+
 bool TaskInRange(CommanderTask const& task, Player* bot, TaskTarget const& target)
 {
     if (task.noWalk)
@@ -5975,14 +6108,17 @@ static bool LaunchCommanderTask(ChatHandler* handler, CommanderOrder const& orde
     return true;
 }
 
-// cmd loot <corpse-or-go-guid> <bot> [itemId]
+// cmd loot <corpse-or-go-guid | entry:id[@x,y,z]> <bot> [itemId]
 static bool CommanderLoot(ChatHandler* handler, CommanderOrder const& order, Player* bot,
     RemoteCommander::LootOrder const& request, std::string const& intent)
 {
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     if (!CommanderTaskGuard(handler, intent, bot, ai, true))
         return true;
-    TaskTarget const target = ResolveTaskTarget(ai, request.guid);
+    uint64 const guid = ResolveOrderGuid(handler, intent, bot, request.spec, true);
+    if (!guid)
+        return true;
+    TaskTarget const target = ResolveTaskTarget(ai, guid);
     if (!TaskTargetPresent(target))
     {
         SendActionError(handler, intent, RemoteCommander::kCodeInvalidTarget,
@@ -6008,21 +6144,24 @@ static bool CommanderLoot(ChatHandler* handler, CommanderOrder const& order, Pla
     }
     CommanderTask task;
     task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Loot, distance, true);
-    task.targetRaw = request.guid;
+    task.targetRaw = guid;
     task.itemId = request.itemId;
     task.lootLike = true;
     task.intent = intent;
     return LaunchCommanderTask(handler, order, bot, ai, task);
 }
 
-// cmd open <go-guid> <bot>
+// cmd open <go-guid | entry:id[@x,y,z]> <bot>
 static bool CommanderOpen(ChatHandler* handler, CommanderOrder const& order, Player* bot,
     RemoteCommander::OpenOrder const& request, std::string const& intent)
 {
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     if (!CommanderTaskGuard(handler, intent, bot, ai, true))
         return true;
-    TaskTarget const target = ResolveTaskTarget(ai, request.guid);
+    uint64 const guid = ResolveOrderGuid(handler, intent, bot, request.spec, false);
+    if (!guid)
+        return true;
+    TaskTarget const target = ResolveTaskTarget(ai, guid);
     if (!target.go || !TaskTargetPresent(target))
     {
         SendActionError(handler, intent, RemoteCommander::kCodeInvalidTarget,
@@ -6046,12 +6185,12 @@ static bool CommanderOpen(ChatHandler* handler, CommanderOrder const& order, Pla
     CommanderTask task;
     task.lootLike = target.go->GetGoType() == GAMEOBJECT_TYPE_CHEST;
     task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Open, distance, true, task.lootLike);
-    task.targetRaw = request.guid;
+    task.targetRaw = guid;
     task.intent = intent;
     return LaunchCommanderTask(handler, order, bot, ai, task);
 }
 
-// cmd use <itemId> <bot> [target-guid]
+// cmd use <itemId> <bot> [target-guid | entry:id[@x,y,z]]
 static bool CommanderUse(ChatHandler* handler, CommanderOrder const& order, Player* bot,
     RemoteCommander::UseOrder const& request, std::string const& intent)
 {
@@ -6089,9 +6228,15 @@ static bool CommanderUse(ChatHandler* handler, CommanderOrder const& order, Play
     task.spellId = spellId;
     task.intent = intent;
     task.noWalk = true;
-    if (request.target)
+    if (request.target || request.spec.ByEntry())
     {
-        ObjectGuid const targetGuid(request.target);
+        // By entry: a game object (the nearest spawned one of that entry).
+        uint64 const targetRaw = request.spec.ByEntry()
+            ? ResolveOrderGuid(handler, intent, bot, request.spec, false)
+            : request.target;
+        if (!targetRaw)
+            return true;
+        ObjectGuid const targetGuid(targetRaw);
         if (targetGuid.IsGameObject())
         {
             GameObject* go = ai->GetGameObject(targetGuid);
@@ -6109,8 +6254,8 @@ static bool CommanderUse(ChatHandler* handler, CommanderOrder const& order, Play
                 return true;
             }
             task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Use, distance, true);
-            task.targetRaw = request.target;
-            task.useTargetRaw = request.target;
+            task.targetRaw = targetRaw;
+            task.useTargetRaw = targetRaw;
             task.noWalk = false;
         }
         else if (targetGuid.IsUnit())
@@ -6122,7 +6267,7 @@ static bool CommanderUse(ChatHandler* handler, CommanderOrder const& order, Play
                     "No unit with that GUID is on the bot's map.");
                 return true;
             }
-            task.useTargetRaw = request.target;
+            task.useTargetRaw = targetRaw;
         }
         else
         {
@@ -6132,6 +6277,35 @@ static bool CommanderUse(ChatHandler* handler, CommanderOrder const& order, Play
         }
     }
     return LaunchCommanderTask(handler, order, bot, ai, task);
+}
+
+// cmd state <go-guid | entry:id>[@x,y,z]: what a game object is doing now, for a
+// client that cannot see it (a door that opens when a fight is won). Read-only,
+// one lookup; answers at once, never walks anyone anywhere.
+static bool CommanderState(ChatHandler* handler, CommanderOrder const& order,
+    RemoteCommander::StateOrder const& request, std::string const& intent)
+{
+    Player* judge = order.judge;
+    if (!judge || !judge->IsInWorld() || !judge->GetMap())
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeUnavailable, "The group is between maps. Try again in a moment.");
+        return true;
+    }
+    uint64 const guid = request.spec.ByEntry() ? FindEntryTarget(judge, request.spec, false) : request.spec.guid;
+    ObjectGuid const objectGuid(guid);
+    GameObject* go = guid && objectGuid.IsGameObject() ? judge->GetMap()->GetGameObject(objectGuid) : nullptr;
+    if (!go || !sServerFacade.isSpawned(go))
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeNotFound,
+            request.spec.ByEntry() ? "No spawned game object of that entry is near the point (or the group)."
+                                   : "No spawned game object with that GUID is on the group's map.");
+        return true;
+    }
+    SendActionAck(handler, intent, "party", 1,
+        RemoteCommander::FormatGoState(guid, go->GetEntry(), static_cast<uint32>(go->GetGoType()),
+            static_cast<uint32>(go->GetGoState()), static_cast<uint32>(go->getLootState()),
+            go->GetUInt32Value(GAMEOBJECT_FLAGS)));
+    return true;
 }
 
 // cmd lootmethod <ffa|group|rr|master|nbg> [threshold]: the lead bot, the
@@ -6192,7 +6366,7 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
     if (!RemoteCommander::IsKnownOrder(verb))
     {
         SendActionError(handler, intent, "invalid",
-            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid> <bot> [itemId] / open <guid> <bot> / use <itemId> <bot> [guid]");
+            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid|entry:id[@x,y,z]> <bot> [itemId] / open <guid|entry:id[@x,y,z]> <bot> / use <itemId> <bot> [guid|entry:id[@x,y,z]] / state <guid|entry:id[@x,y,z]>");
         return true;
     }
 
@@ -6247,17 +6421,17 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         if (verb == "loot")
         {
             parsed = RemoteCommander::ParseLootOrder(parts, lootRequest);
-            usage = "Usage: .bot cmd loot <corpse-or-object guid> <bot> [itemId]";
+            usage = "Usage: .bot cmd loot <corpse-or-object guid | entry:<id>[@x,y,z]> <bot> [itemId]";
         }
         else if (verb == "open")
         {
             parsed = RemoteCommander::ParseOpenOrder(parts, openRequest);
-            usage = "Usage: .bot cmd open <object guid> <bot>";
+            usage = "Usage: .bot cmd open <object guid | entry:<id>[@x,y,z]> <bot>";
         }
         else if (verb == "use")
         {
             parsed = RemoteCommander::ParseUseOrder(parts, useRequest);
-            usage = "Usage: .bot cmd use <itemId> <bot> [target guid]";
+            usage = "Usage: .bot cmd use <itemId> <bot> [target guid | entry:<id>[@x,y,z]]";
         }
         if (!parsed)
         {
@@ -6297,6 +6471,17 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         return true;
     }
 
+    if (verb == "state")
+    {
+        RemoteCommander::StateOrder stateRequest;
+        if (!RemoteCommander::ParseStateOrder(parts, stateRequest))
+        {
+            SendActionError(handler, intent, RemoteCommander::kCodeInvalid,
+                "Usage: .bot cmd state <object guid | entry:<id>[@x,y,z]>");
+            return true;
+        }
+        return CommanderState(handler, order, stateRequest, intent);
+    }
     if (verb == "move")
         return CommanderMove(handler, order, rest, intent);
     if (verb == "lootmethod")

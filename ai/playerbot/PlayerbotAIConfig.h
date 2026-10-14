@@ -416,6 +416,8 @@ public:
     uint32 worldBuffsSilithystPricePerPersonCopper = 4000;
     uint32 worldBuffsUnlockFeeRaidCopper = 2000000;
     uint32 worldBuffsUnlockFeeCopper = 1000000;
+    // Ammo stacks (200 rounds each) a warrior or rogue with a bow/gun/crossbow carries; hunters keep 5 + level / 10.
+    uint32 ammoStacksNonHunter = 2;
     // Issue #473: opt-in alternative play style for owned/hired bots only.
     // Every part defaults off and never touches pool bots. The maintenance
     // command refreshes one owned bot's kit (consumables/reagents/ammo/

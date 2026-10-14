@@ -17,6 +17,7 @@
 //
 // Plain data and the standard library only.
 
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -518,7 +519,7 @@ inline OrderTier TierForOrder(std::string const& verb)
     // things for one bot, so they stay with its owner (or a GM).
     if (verb == "attack" || verb == "pull" || verb == "pullback" || verb == "cc" ||
         verb == "focus" || verb == "move" || verb == "stay" || verb == "follow" ||
-        verb == "rest" || verb == "lootmethod")
+        verb == "rest" || verb == "lootmethod" || verb == "state")
         return OrderTier::Tactical;
     // revive, summon, loot, open, use and anything unknown: fail closed.
     return OrderTier::OwnerOrGm;
@@ -597,13 +598,32 @@ struct MovePoint
     float z = 0.0f;
 };
 
-// Splits on spaces, tabs, commas and semicolons ("x y z", "x,y,z", "x;y;z").
+// True when the token being read is a by-entry target ("entry:<id>[@x,y,z]"):
+// the commas and semicolons of its point do not split it.
+inline bool IsEntryTargetPrefix(std::string const& token)
+{
+    static char const kPrefix[] = "entry:";
+    if (token.size() < 6)
+        return false;
+    for (size_t i = 0; i < 6; ++i)
+        if (std::tolower(static_cast<unsigned char>(token[i])) != kPrefix[i])
+            return false;
+    return true;
+}
+
+// Splits on spaces, tabs, commas and semicolons ("x y z", "x,y,z", "x;y;z"),
+// except inside a by-entry target, which only a space or a tab ends.
 inline std::vector<std::string> SplitOrderArgs(std::string const& text)
 {
     std::vector<std::string> parts;
     std::string current;
     for (char c : text)
     {
+        if ((c == ',' || c == ';') && IsEntryTargetPrefix(current))
+        {
+            current += c;
+            continue;
+        }
         if (c == ' ' || c == '\t' || c == ',' || c == ';')
         {
             if (!current.empty())
@@ -667,10 +687,105 @@ inline bool ParseItemId(std::string const& token, uint32_t& out)
     return true;
 }
 
-// cmd loot <corpse-or-go-guid> <bot> [itemId]
-struct LootOrder
+// ---------------------------------------------------------------------------
+// Targets by entry: "entry:<id>[@x,y,z]"
+// ---------------------------------------------------------------------------
+
+// A game object (or corpse) is named by the raw GUID only the client that saw
+// it spawn knows, or by its entry: the server then finds the nearest spawned
+// one. The point, when given, is where to look (the bot may be far from it);
+// without one the search runs around the bot.
+constexpr uint32_t kMaxEntryId = 0xFFFFFF; // the entry field of a GUID is 24 bits
+constexpr float kEntryPointRadius = 30.0f; // yards around a given point
+
+struct TargetSpec
+{
+    uint64_t guid = 0;   // the GUID form (0 for the entry form)
+    uint32_t entry = 0;  // the entry form (0 for the GUID form)
+    bool hasPoint = false;
+    MovePoint point;
+    bool ByEntry() const { return entry != 0; }
+};
+
+// "entry:<id>" or "entry:<id>@x,y,z" (the point split by commas or
+// semicolons, no spaces), or a raw GUID (ParseGuid). A point on a GUID is
+// refused.
+inline bool ParseTargetSpec(std::string const& token, TargetSpec& out)
+{
+    TargetSpec spec;
+    if (!IsEntryTargetPrefix(token))
+    {
+        if (!ParseGuid(token, spec.guid))
+            return false;
+        out = spec;
+        return true;
+    }
+    size_t const at = token.find('@');
+    std::string const idText = token.substr(6, at == std::string::npos ? std::string::npos : at - 6);
+    if (idText.empty() || idText.size() > 8)
+        return false;
+    uint32_t id = 0;
+    for (char c : idText)
+    {
+        if (c < '0' || c > '9')
+            return false;
+        id = id * 10 + static_cast<uint32_t>(c - '0');
+    }
+    if (!id || id > kMaxEntryId)
+        return false;
+    spec.entry = id;
+    if (at != std::string::npos)
+    {
+        std::vector<std::string> coords = SplitOrderArgs(token.substr(at + 1));
+        if (coords.size() != 3 || !ParseCoordinate(coords[0], spec.point.x) ||
+            !ParseCoordinate(coords[1], spec.point.y) || !ParseCoordinate(coords[2], spec.point.z))
+            return false;
+        spec.hasPoint = true;
+    }
+    out = spec;
+    return true;
+}
+
+// How far from the reference (the given point, else the bot) a by-entry
+// search looks: 30 yd around a point, ReactDistance around the bot.
+inline float EntrySearchRadius(bool hasPoint, float reactDistance)
+{
+    return hasPoint ? kEntryPointRadius : reactDistance;
+}
+
+struct EntryCandidate
 {
     uint64_t guid = 0;
+    float distance = 0.0f; // from the reference point
+};
+
+// The nearest candidate inside the radius; equally near ones go to the lowest
+// GUID, so the same world always gives the same answer.
+inline bool PickNearestEntry(std::vector<EntryCandidate> const& candidates, float radius, uint64_t& guid)
+{
+    bool found = false;
+    EntryCandidate best;
+    for (EntryCandidate const& candidate : candidates)
+    {
+        if (!candidate.guid || !(candidate.distance <= radius))
+            continue;
+        if (!found || candidate.distance < best.distance ||
+            (candidate.distance == best.distance && candidate.guid < best.guid))
+        {
+            best = candidate;
+            found = true;
+        }
+    }
+    if (found)
+        guid = best.guid;
+    return found;
+}
+
+// cmd loot <corpse-or-go-guid|entry:id[@x,y,z]> <bot> [itemId]
+struct LootOrder
+{
+    uint64_t guid = 0;      // the GUID form (0 when the target is by entry)
+    TargetSpec spec;        // the target as typed
     std::string bot;
     uint32_t itemId = 0; // 0 = everything
 };
@@ -680,8 +795,9 @@ inline bool ParseLootOrder(std::vector<std::string> const& parts, LootOrder& out
     if (parts.size() < 2 || parts.size() > 3)
         return false;
     LootOrder order;
-    if (!ParseGuid(parts[0], order.guid))
+    if (!ParseTargetSpec(parts[0], order.spec))
         return false;
+    order.guid = order.spec.guid;
     order.bot = parts[1];
     if (parts.size() == 3 && !ParseItemId(parts[2], order.itemId))
         return false;
@@ -689,10 +805,11 @@ inline bool ParseLootOrder(std::vector<std::string> const& parts, LootOrder& out
     return true;
 }
 
-// cmd open <go-guid> <bot>
+// cmd open <go-guid|entry:id[@x,y,z]> <bot>
 struct OpenOrder
 {
-    uint64_t guid = 0;
+    uint64_t guid = 0;      // the GUID form (0 when the target is by entry)
+    TargetSpec spec;        // the target as typed
     std::string bot;
 };
 
@@ -701,19 +818,38 @@ inline bool ParseOpenOrder(std::vector<std::string> const& parts, OpenOrder& out
     if (parts.size() != 2)
         return false;
     OpenOrder order;
-    if (!ParseGuid(parts[0], order.guid))
+    if (!ParseTargetSpec(parts[0], order.spec))
         return false;
+    order.guid = order.spec.guid;
     order.bot = parts[1];
     out = order;
     return true;
 }
 
-// cmd use <itemId> <bot> [target-guid]
+// cmd state <go-guid|entry:id>[@x,y,z]: a read-only question about a game object.
+struct StateOrder
+{
+    TargetSpec spec;
+};
+
+inline bool ParseStateOrder(std::vector<std::string> const& parts, StateOrder& out)
+{
+    if (parts.size() != 1)
+        return false;
+    StateOrder order;
+    if (!ParseTargetSpec(parts[0], order.spec))
+        return false;
+    out = order;
+    return true;
+}
+
+// cmd use <itemId> <bot> [target-guid|entry:id[@x,y,z]]
 struct UseOrder
 {
     uint32_t itemId = 0;
     std::string bot;
-    uint64_t target = 0; // 0 = no target (the item on its own)
+    uint64_t target = 0; // 0 = no target (the item on its own, or a game object by entry)
+    TargetSpec spec;     // the target as typed (by entry: a game object)
 };
 
 inline bool ParseUseOrder(std::vector<std::string> const& parts, UseOrder& out)
@@ -724,8 +860,12 @@ inline bool ParseUseOrder(std::vector<std::string> const& parts, UseOrder& out)
     if (!ParseItemId(parts[0], order.itemId))
         return false;
     order.bot = parts[1];
-    if (parts.size() == 3 && !ParseGuid(parts[2], order.target))
-        return false;
+    if (parts.size() == 3)
+    {
+        if (!ParseTargetSpec(parts[2], order.spec))
+            return false;
+        order.target = order.spec.guid;
+    }
     out = order;
     return true;
 }

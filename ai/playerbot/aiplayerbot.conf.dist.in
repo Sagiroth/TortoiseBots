@@ -392,6 +392,12 @@ AiPlayerbot.TravelPickBudgetUs = 4000
 #AiPlayerbot.WorldBuffsSilithystPricePerPersonCopper = 4000
 #AiPlayerbot.WorldBuffsUnlockFeeRaidCopper = 2000000
 #AiPlayerbot.WorldBuffsUnlockFeeCopper = 1000000
+# Ammo stacks (200 rounds each) a warrior or rogue with a bow, gun or
+# crossbow keeps topped up (maintenance, level-up, ammo refill). Hunters keep
+# 5 + level / 10 stacks as before and are not affected. 1-10, never more than
+# a hunter of the same level gets; a bot with the item cheat keeps 1. The
+# value below is the value that actually runs.
+#AiPlayerbot.AmmoStacksNonHunter = 2
 # Issue #473: opt-in quality of life for owned/hired bots only (every part
 # off by default; pool bots always keep progressing organically and are
 # never touched). The values below are the values that actually run.
