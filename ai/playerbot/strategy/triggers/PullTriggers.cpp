@@ -110,6 +110,17 @@ bool PullEndTrigger::IsActive()
     if (secondsSincePullStarted >= strategy->GetMaxPullTime())
         return true;
 
+    // The mob came to the puller before the pull action ran (a corner pull:
+    // the tank walks to a mob it cannot see and the mob meets it on the way).
+    // It is on the tank in melee, so the pull has landed; ending it here hands
+    // the mob to the rotation (PullEndAction). Waiting for the pull action
+    // instead kept PullMultiplier muting every action below ACTION_INTERRUPT
+    // until the time cap above: in Uldaman the tank stood 8 s with its back to
+    // the mob, no swing, no ability, no turn.
+    if (!strategy->HasPullActionCompleted() && target->GetVictim() == bot &&
+        bot->CanReachWithMeleeAutoAttack(target))
+        return true;
+
     // An ordinary pull hands control back to combat as soon as its pull action
     // succeeds.  Before that, retain the request while the tank closes to its
     // class-specific melee/ranged pull distance.
