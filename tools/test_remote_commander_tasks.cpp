@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 using namespace TortoiseBots::RemoteCommander;
 
@@ -649,8 +650,8 @@ static RitualState Joining()
 
 static void TestRitualBudget()
 {
-    // walk + 3 joins x 2 s x 2 tries + 4 s + 5 s
-    CHECK(RitualBudgetMs(20000, 3) == 20000 + 12000 + 4000 + 5000);
+    // walk + 3 joins x 2 s x 2 tries + 4 s + 7 s
+    CHECK(RitualBudgetMs(20000, 3) == 20000 + 12000 + 4000 + 7000);
     CHECK(MakeRitual(3, 3, 20000).ceilingMs == RitualBudgetMs(20000, 3));
 }
 
@@ -889,6 +890,81 @@ static void TestRitualMemberWalks()
     CHECK(AdvanceTask(member, facts, kTaskTickMs).step == TaskStep::Fail);
 }
 
+// The altars' cast ends with the Stone Keepers or Archaedas waking and attacking: a fight (or a bot lost in
+// it) once the object is active is the ritual having worked, not an in-combat failure. Before it, a fight
+// still fails the order.
+static void TestRitualCombatAfterActiveIsDone()
+{
+    RitualState state = Joining();
+    RitualFacts facts = AllReady();
+    facts.goActive = true;
+    facts.inCombat = true;                       // the third use and the first hit in one look
+    CHECK(AdvanceRitual(state, facts, kTaskTickMs).step == RitualStep::Succeed);
+    CHECK(state.stage == RitualStage::Settle);
+    // In the settle, mid-way: still active, a bot in combat or dead.
+    state = Joining();
+    facts = AllReady();
+    facts.goActive = true;
+    CHECK(AdvanceRitual(state, facts, kTaskTickMs).step == RitualStep::Wait);
+    facts.inCombat = true;
+    CHECK(AdvanceRitual(state, facts, kTaskTickMs).step == RitualStep::Succeed);
+    state = Joining();
+    facts = AllReady();
+    facts.goActive = true;
+    AdvanceRitual(state, facts, kTaskTickMs);
+    facts.unavailable = true;                    // a bot the Keeper killed
+    CHECK(AdvanceRitual(state, facts, kTaskTickMs).step == RitualStep::Succeed);
+    // But the object back at ready while a bot is in combat is the ritual cancelled.
+    facts = AllReady();
+    facts.goActive = false;
+    facts.inCombat = true;
+    RitualVerdict verdict = AdvanceRitual(state, facts, kTaskTickMs);
+    CHECK(verdict.step == RitualStep::Fail && std::strcmp(verdict.code, kCodeInterrupted) == 0);
+    // Before the object is active a fight fails the order.
+    state = Joining();
+    facts = AllReady();
+    facts.inCombat = true;
+    verdict = AdvanceRitual(state, facts, kTaskTickMs);
+    CHECK(verdict.step == RitualStep::Fail && std::strcmp(verdict.code, kCodeInCombat) == 0);
+}
+
+// The settle covers the ritual cast: spells 11568 and 10340 have cast time index 6 = 5000 ms (SpellCastTimes.dbc).
+static void TestRitualSettleCoversTheCast()
+{
+    constexpr uint32_t kRitualCastMs = 5000;
+    CHECK(kRitualSettleMs >= kRitualCastMs + 1000);
+    CHECK(RitualBudgetMs(0, 3) >= 3 * kRitualJoinWaitMs + kRitualActiveMs + kRitualSettleMs);
+}
+
+// A joined bot's AI is held for the ritual until the order lets it go.
+static void TestRitualHolds()
+{
+    RitualHoldSet holds;
+    CHECK(holds.Empty() && !holds.Holds(7));
+    holds.Hold(7);
+    holds.Hold(8);
+    CHECK(holds.Holds(7) && holds.Holds(8) && !holds.Holds(9));
+    holds.Release(7);
+    CHECK(!holds.Holds(7) && holds.Holds(8));
+    holds.Clear();
+    CHECK(holds.Empty() && !holds.Holds(8));
+    CHECK(RitualHolds().Empty());                // the shared set starts empty
+}
+
+// The ERR for a use that never registered names the cause that is not the party's doing (the first user ever).
+static void TestRitualNotJoinedText()
+{
+    CHECK(std::string(kRitualNotJoinedText).find("FIRST user ever") != std::string::npos);
+    CHECK(std::string(kRitualNotJoinedText).find("outside this party") != std::string::npos);
+    RitualState state = Joining();
+    RitualFacts facts = AllReady();
+    AdvanceRitual(state, facts, kTaskTickMs);
+    RitualVerdict verdict;
+    for (int i = 0; i < 100 && (verdict.step == RitualStep::Wait || verdict.step == RitualStep::UseNext); ++i)
+        verdict = AdvanceRitual(state, facts, kTaskTickMs);
+    CHECK(verdict.step == RitualStep::Fail && std::strcmp(verdict.message, kRitualNotJoinedText) == 0);
+}
+
 int main()
 {
     TestStandingPoint();
@@ -929,6 +1005,10 @@ int main()
     TestRitualPushedAway();
     TestRitualActiveAtOnce();
     TestRitualMemberWalks();
+    TestRitualCombatAfterActiveIsDone();
+    TestRitualSettleCoversTheCast();
+    TestRitualHolds();
+    TestRitualNotJoinedText();
     std::printf("remote commander tasks: %d checks passed\n", checks);
     return 0;
 }

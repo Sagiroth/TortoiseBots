@@ -5628,6 +5628,8 @@ void EndTaskStance(CommanderTask const& task, Player* bot, PlayerbotAI* ai)
 void ReleaseTaskStance(CommanderTask const& task)
 {
     RemoteCommander::LootOrders().Forget(task.botRaw);
+    if (task.ritualId)
+        RemoteCommander::RitualHolds().Release(task.botRaw);
     Player* bot = FindCharacter(task.botRaw);
     PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
     if (ai && bot->IsInWorld() && !bot->IsBeingTeleported())
@@ -6133,7 +6135,8 @@ GameObject* RitualObject(RitualGroup const& group)
 }
 
 // A bot that already used the object stays where it is: a movement generator something queued since is
-// dropped. Its spells are left alone, the helper channel is the participation itself.
+// dropped. Its spells are left alone here: the helper channel is the participation itself, and the bot's own AI
+// is held for it (RemoteCommander::RitualHolds), so nothing else casts.
 void KeepRitualStill(PlayerbotAI* ai, Player* bot)
 {
     ai->DropQueuedMovementOrders();
@@ -6206,6 +6209,9 @@ bool SendRitualUse(RitualGroup& group, Player* commander)
     ai->ClearLastCastCheckFail();
     std::string const param = "0 go " + std::to_string(group.targetRaw);
     task.actStarted = ExecuteQuietAction(ai, "commander use", ai::Event("cmd open", param, commander));
+    // From its use on the bot does nothing of its own (RitualHolds): the channel is the participation.
+    if (task.actStarted)
+        RemoteCommander::RitualHolds().Hold(task.botRaw);
     return task.actStarted;
 }
 
@@ -6425,6 +6431,7 @@ void ClearCommanderTasks()
 {
     CommanderTasks().clear();
     RitualGroups().clear();
+    RemoteCommander::RitualHolds().Clear();
     PendingStanceRestores().clear();
     RemoteCommander::LootOrders().Clear();
     s_commanderTaskMs = 0;

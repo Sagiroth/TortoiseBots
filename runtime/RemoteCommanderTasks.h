@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -320,7 +321,7 @@ inline bool MayRetryAct(TaskState const& state, TaskFacts const& facts)
 //    spell, a channel that any step of more than 0.5 yd, a hit or a stun breaks;
 //    a broken channel takes the player out of the unique users again;
 //  - the use that brings the count to reqParticipants turns the object active
-//    (GO_STATE_ACTIVE) and casts the ritual spell, a short cast, at the object;
+//    (GO_STATE_ACTIVE) and casts the ritual spell (5 s: SpellCastTimes index 6) at the object;
 //    the object's script reacts to it (the altars wake the Stone Keepers or
 //    Archaedas); while that cast runs the count must stay at reqParticipants;
 //  - the core has no timer of its own: an object left half used stays half used.
@@ -337,9 +338,11 @@ constexpr uint32_t kRitualJoinWaitMs = 2000;
 constexpr uint32_t kRitualUseTries = 2;
 // After the last bot joined the object must turn active within this long.
 constexpr uint32_t kRitualActiveMs = 4000;
-// After it turned active the bots stay this long for the ritual cast to run; it still being
-// active at the end is the success (the cast itself has no result a client could see).
-constexpr uint32_t kRitualSettleMs = 5000;
+// After it turned active the bots stay this long for the ritual cast to run; it still being active
+// at the end is the success (the cast itself has no result a client could see). Spells 11568 and 10340
+// (the altars') have cast time index 6 = 5000 ms in SpellCastTimes.dbc, so this is that cast plus
+// 2 s. The helper channel 11206 lasts SpellDuration index 6 = 600 s, far longer than the order.
+constexpr uint32_t kRitualSettleMs = 7000;
 
 enum class RitualStage : uint8_t
 {
@@ -347,6 +350,15 @@ enum class RitualStage : uint8_t
     Join,   // the bots use the object one after the other
     Settle, // the object is active: everyone stays still until the cast has run
 };
+
+// The core remembers the FIRST player ever to use the object (GameObject::m_firstUser, set once and never reset
+// by a failed or finished ritual); that player is the caster and fixes the group the later users must belong to
+// (castersGrouped). If anyone outside the party clicked the altar before, every use of the party's bots is
+// ignored without a word and the bots never become participants: the order then ends with this text.
+constexpr char const* kRitualNotJoinedText =
+    "A bot's use did not make it a participant. The bots must be in the party of the object's FIRST user ever "
+    "(the core never forgets who that was): if anyone outside this party used the altar before, its ritual "
+    "cannot be fired from here (a fresh instance resets it). Otherwise the bot was out of reach.";
 
 struct RitualState
 {
@@ -377,6 +389,31 @@ inline RitualState MakeRitual(uint32_t members, uint32_t required, uint32_t slow
     state.required = required;
     state.ceilingMs = RitualBudgetMs(slowestWalkMs, required);
     return state;
+}
+
+// The bots that have used the ritual object and are being held for it. A participant is a participant only
+// while its helper channel runs (11206): any spell of its own (a buff, a heal, a drink, which the bot's AI
+// casts on its own account: PlayerbotAI::CanCastSpell does not count a channel as a cast in progress) or any
+// step ends the channel (Object.cpp SetCurrentCastedSpell, Spell::update), takes the bot out of the object's
+// participants and sends an active altar back to ready. So the bot's AI does nothing of its own from its use
+// until the order lets it go (every end of the order releases: ReleaseTaskStance).
+class RitualHoldSet
+{
+public:
+    void Hold(uint64_t bot) { m_bots.insert(bot); }
+    void Release(uint64_t bot) { m_bots.erase(bot); }
+    bool Holds(uint64_t bot) const { return !m_bots.empty() && m_bots.count(bot) != 0; }
+    bool Empty() const { return m_bots.empty(); }
+    void Clear() { m_bots.clear(); }
+
+private:
+    std::unordered_set<uint64_t> m_bots;
+};
+
+inline RitualHoldSet& RitualHolds()
+{
+    static RitualHoldSet holds;
+    return holds;
 }
 
 struct RitualFacts
@@ -435,6 +472,33 @@ inline RitualVerdict AdvanceRitual(RitualState& state, RitualFacts const& facts,
     state.elapsedMs += diffMs;
     state.stageMs += diffMs;
     RitualVerdict verdict;
+
+    // The object turned active: the ritual cast is sent and nothing a bot meets from now on undoes
+    // it. The altars' cast ends with the Stone Keepers or Archaedas waking and attacking, so a fight
+    // (or a bot lost in it) inside the settle is the ritual having worked: the order is done. Only
+    // the object going back to ready, which is a participant leaving before the cast ended, fails it.
+    if (state.stage == RitualStage::Join && facts.goActive)
+    {
+        state.stage = RitualStage::Settle;
+        state.stageMs = 0;
+    }
+    if (state.stage == RitualStage::Settle)
+    {
+        if (!facts.goActive)
+        {
+            // A ritual that is used up leaves with its cast done; one that went back to ready was cancelled.
+            if (!facts.targetPresent)
+            {
+                verdict.step = RitualStep::Succeed;
+                return verdict;
+            }
+            return RitualFail(kCodeInterrupted, "The ritual was cancelled (a participant stopped channeling).");
+        }
+        if (facts.inCombat || facts.unavailable || state.stageMs >= kRitualSettleMs)
+            verdict.step = RitualStep::Succeed;
+        return verdict;
+    }
+
     if (facts.unavailable)
         return RitualFail(kCodeUnavailable, "A bot died, left the map or the party, or is teleporting.");
     if (facts.walkFailCode)
@@ -459,12 +523,6 @@ inline RitualVerdict AdvanceRitual(RitualState& state, RitualFacts const& facts,
             return verdict;
 
         case RitualStage::Join:
-            if (facts.goActive)
-            {
-                state.stage = RitualStage::Settle;
-                state.stageMs = 0;
-                return verdict;
-            }
             if (!facts.targetPresent)
                 return RitualFail(kCodeInvalidTarget, "The ritual object is gone.");
             // A bot that had joined is not a participant any more: it moved, was hit or stunned.
@@ -484,8 +542,7 @@ inline RitualVerdict AdvanceRitual(RitualState& state, RitualFacts const& facts,
                 if (state.useWaitMs >= kRitualJoinWaitMs)
                 {
                     if (state.useTries + 1 >= kRitualUseTries)
-                        return RitualFail(kCodeFailed,
-                            "A bot's use did not make it a participant (the bot must be in the same party as the first user and in reach).");
+                        return RitualFail(kCodeFailed, kRitualNotJoinedText);
                     ++state.useTries;
                     state.useSent = false;
                     state.useWaitMs = 0;
@@ -510,19 +567,7 @@ inline RitualVerdict AdvanceRitual(RitualState& state, RitualFacts const& facts,
             return verdict;
 
         case RitualStage::Settle:
-            if (!facts.goActive)
-            {
-                // A ritual that is used up leaves with its cast done; one that went back to ready was cancelled.
-                if (!facts.targetPresent)
-                {
-                    verdict.step = RitualStep::Succeed;
-                    return verdict;
-                }
-                return RitualFail(kCodeInterrupted, "The ritual was cancelled (a participant stopped channeling).");
-            }
-            if (state.stageMs >= kRitualSettleMs)
-                verdict.step = RitualStep::Succeed;
-            return verdict;
+            break; // handled above
     }
     return verdict;
 }

@@ -15,6 +15,7 @@
 #include "../../runtime/HireLifecycle.h"
 #include "../../runtime/PoolBotTradePolicy.h"
 #include "../../runtime/QueuedOrderPolicy.h"
+#include "../../runtime/RemoteCommanderTasks.h"
 #include "ByteBuffer.h"
 #include "ObjectAccessor.h"
 
@@ -2226,6 +2227,14 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
     masterIncomingPacketHandlers.Handle(helper);
     SC_PHASE("UpdateAIInternal.masterOutgoingPackets", bot ? bot->GetName() : "(null)");
     masterOutgoingPacketHandlers.Handle(helper);
+
+    // A bot that joined a commanded summoning ritual stays a participant only while its helper channel
+    // runs, and any cast, drink or step of its own ends it: its engine waits until the order lets it go.
+    if (TortoiseBots::RemoteCommander::RitualHolds().Holds(bot->GetObjectGuid().GetRawValue()))
+    {
+        SetAIInternalUpdateDelay(sPlayerbotAIConfig.reactDelay);
+        return;
+    }
 
     SC_PHASE("UpdateAIInternal.DoNextAction", bot ? bot->GetName() : "(null)");
 	DoNextAction(minimal);
@@ -5322,7 +5331,8 @@ bool PlayerbotAI::CheckCanCastSpell(uint32 spellid, Unit* target, uint8 effectMa
     // failures over 47 minutes (Smite, Shadow Bolt, Fireball, heals). The
     // expression is spelled exactly as Spell::prepare() spells it: channeled
     // and auto-repeat spells are not "in progress" for this purpose.
-    if (bot->IsNonMeleeSpellCasted(false, true, true))
+    if (bot->IsNonMeleeSpellCasted(false, true, true) ||
+        TortoiseBots::RemoteCommander::RitualHolds().Holds(bot->GetObjectGuid().GetRawValue()))
     {
         if (checkResult)
         {
@@ -5815,7 +5825,8 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     // one. Live: 545 of the 750 SPELL_IN_PROGRESS refusals in a 47-minute window were Skinning,
     // plus the herb/ore/opening spells of the same path. Same expression as prepare(): a channeled
     // or auto-repeat spell does not count as "in progress".
-    if (bot->IsNonMeleeSpellCasted(false, true, true))
+    if (bot->IsNonMeleeSpellCasted(false, true, true) ||
+        TortoiseBots::RemoteCommander::RitualHolds().Holds(bot->GetObjectGuid().GetRawValue()))
     {
         botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=cast-in-progress", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
         NoteCastCheckFail(SPELL_FAILED_SPELL_IN_PROGRESS);
