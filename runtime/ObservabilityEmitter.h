@@ -178,6 +178,7 @@ private:
     void EmitCommanders();
     std::function<void(std::vector<CommanderTelemetry::BindingRef>&)> m_commanderProvider;
     std::vector<CommanderTelemetry::BindingRef> m_commanderRefs; // reused between cycles
+    std::unordered_map<uint32_t, int64_t> m_commanderSince; // commander guid -> unix seconds its binding was first seen
     bool m_commandersSent = false; // the last COMMANDERS datagram listed at least one binding
     // Effective running settings for the dashboard Server panel (Addendum 2):
     // core rate getters + AiPlayerbot flags, sent at startup and on a slow

@@ -552,6 +552,7 @@ type CommanderBinding struct {
 	CommanderPos *CommanderPos  `json:"commander_pos,omitempty"` // where the commander stands, when online and in the world
 	MobsMap      uint32         `json:"mobs_map,omitempty"`      // the map the mobs are on (the lead's)
 	Mobs         []CommanderMob `json:"mobs"`                    // hostile units near the lead; null = not reported, [] = reported, none near
+	BoundAt      int64          `json:"bound_at,omitempty"`      // unix seconds the binding was first seen standing (the run timer starts here); absent from an older module
 }
 
 // CommanderPos is the commander character's own position.
@@ -573,6 +574,10 @@ type CommanderMob struct {
 	Victim   string  `json:"victim,omitempty"`   // guid of the unit it targets; matches a bot's id
 	Reaction string  `json:"reaction"`           // h hostile, n neutral, f friendly (to the bound bots)
 	Kind     string  `json:"kind,omitempty"`     // k critter, v civilian, g guard, u unattackable; empty: an ordinary unit
+	Level    uint32  `json:"lvl,omitempty"`      // absent: unknown
+	Rank     string  `json:"rank,omitempty"`     // b boss, e elite, r rare; empty: an ordinary unit
+	CC       string  `json:"cc,omitempty"`       // s stunned, c confused (polymorph, sleep), f fleeing, r rooted; empty: free
+	Cast     string  `json:"cast,omitempty"`     // the spell it is casting right now
 }
 
 // CommanderBot is a bot of a bound party.
@@ -596,6 +601,16 @@ type CommanderBot struct {
 	Z         float64 `json:"z"`
 	ID        string  `json:"id,omitempty"`     // the bot's guid as a decimal string (what a mob's victim and a bot's target name)
 	Target    string  `json:"target,omitempty"` // guid of its target, absent when it has none
+
+	// Activity, from a newer module (all absent from an older one).
+	State      string `json:"st,omitempty"`    // the AI's state: c combat, n non-combat, d dead, r reaction
+	Action     string `json:"act,omitempty"`   // the engine's newest action name
+	Result     string `json:"res,omitempty"`   // that action's verdict: O ok, F failed, I impossible, U useless, P prereq, V vetoed, - none
+	Cast       string `json:"cast,omitempty"`  // the spell it is casting right now
+	CC         string `json:"cc,omitempty"`    // s stunned, c confused, f fleeing, r rooted; empty: free
+	Rest       string `json:"rest,omitempty"`  // d drinking, e eating
+	Moving     bool   `json:"mv,omitempty"`
+	TargetName string `json:"tname,omitempty"` // name of its target
 }
 
 // CommanderOrder is one order of the commander and the module's answer.

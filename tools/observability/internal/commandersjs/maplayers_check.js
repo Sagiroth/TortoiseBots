@@ -10,10 +10,11 @@ const mem = () => { const d = {}; return { d, getItem: (k) => (k in d ? d[k] : n
 const def = L.defaults();
 assert.deepStrictEqual(Object.keys(def).sort(), L.keys().concat(["dim"]).sort());
 assert.strictEqual(def.dim, 30); // the picture was darkened by 30 % before the slider existed
-["bg", "grid", "zone", "bots", "botnames", "lead", "trail"].forEach((k) => assert.strictEqual(def[k], true, k));
-["zonelabels", "scale", "trailtime", "heading", "healring", "commander", "mobhostile", "mobneutral", "mobcritter", "threat", "bottarget", "aggro"]
-  .forEach((k) => assert.strictEqual(def[k], false, k));
-assert.strictEqual(L.DEFS.filter((d) => d.def).length, 7);
+// ... plus, new with the unit info: the boss marker and the health bars
+["bg", "grid", "zone", "bots", "botnames", "lead", "trail", "bossmark", "hpbars"].forEach((k) => assert.strictEqual(def[k], true, k));
+["zonelabels", "scale", "trailtime", "heading", "healring", "commander", "mobhostile", "mobneutral", "mobcritter", "threat", "bottarget", "aggro",
+  "hostilenames", "threatcolors", "statusicons", "events", "feed", "runinfo"].forEach((k) => assert.strictEqual(def[k], false, k));
+assert.strictEqual(L.DEFS.filter((d) => d.def).length, 9);
 assert.strictEqual(new Set(L.keys()).size, L.keys().length);
 L.DEFS.forEach((d) => { assert.ok(d.label && d.group, d.key); assert.ok(!d.needs || d.why, d.key + " needs a reason"); });
 
@@ -66,7 +67,7 @@ assert.strictEqual(L.mergeAvailability([]).grid.ok, false);
 const act = L.active(s, L.availability({ bots: true }));
 assert.strictEqual(act.bots, true); assert.strictEqual(act.grid, false /* turned off */); assert.strictEqual(act.threat, false /* chosen but no data */);
 assert.strictEqual(act.trail, false /* no data */);
-assert.deepStrictEqual(L.groups(), ["Map", "Party", "Mobs"]);
+assert.deepStrictEqual(L.groups(), ["Map", "Party", "Mobs", "Units", "Run"]);
 
 // ---- the dim slider: 0-80 %, saved with the other choices
 assert.strictEqual(L.DIM_MAX, 80);
@@ -106,4 +107,20 @@ assert.deepStrictEqual(L.load(bad1), def, "a broken v1 gives the defaults");
 const full = L.availability({ picture: true, commanderPos: true, mobs: true, mobTargets: true, botTargets: true });
 ["commander", "mobhostile", "mobneutral", "mobcritter", "threat", "bottarget", "aggro"].forEach((k) => assert.strictEqual(full[k].ok, true, k));
 assert.ok(/newer module|does not report|not online/.test(L.availability({}).mobhostile.why));
+
+// ---- the unit-info layers: the names toggles, boss marker, bars, icons, threat colours, events, feed and run line
+const bare = L.availability({});
+assert.strictEqual(bare.hpbars.ok, true); assert.strictEqual(bare.runinfo.ok, true);   // need no data of the module
+["bossmark", "hostilenames", "threatcolors", "statusicons", "events", "feed"].forEach((k) => assert.strictEqual(bare[k].ok, false, k + " is greyed without data"));
+const info = L.availability({ mobs: true, mobTargets: true, activity: true, events: true });
+["bossmark", "hostilenames", "threatcolors", "statusicons", "events", "feed"].forEach((k) => assert.strictEqual(info[k].ok, true, k));
+// the group's names and the hostile names are two separate switches
+let toggled = L.set(L.set(def, "botnames", false), "hostilenames", true);
+assert.strictEqual(toggled.botnames, false); assert.strictEqual(toggled.hostilenames, true);
+assert.strictEqual(L.active(toggled, L.availability({ bots: true, mobs: true })).botnames, false);
+assert.strictEqual(L.active(toggled, L.availability({ bots: true, mobs: true })).hostilenames, true);
+assert.strictEqual(L.active(def, L.availability({ mobs: true })).bossmark, true, "the boss marker is on by default once mobs are reported");
+// the saved choice of an older page (without the new keys) gets the new defaults
+const old = mem(); old.d[L.STORAGE_KEY] = JSON.stringify({ grid: false });
+assert.strictEqual(L.load(old).bossmark, true); assert.strictEqual(L.load(old).hpbars, true); assert.strictEqual(L.load(old).statusicons, false);
 console.log("maplayers.js ok");

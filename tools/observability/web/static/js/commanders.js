@@ -159,6 +159,7 @@
     const bots = (bind && bind.bots) || [];
     if (!bots.length) return "no bots reporting";
     if (bots.every((b) => b.alive === false)) return "wiped";
+    if (bots.some((b) => b.alive !== false && b.st === "c")) return "fighting"; // a module that reports the AI state says so itself
     if (c.hpDropAt && now - c.hpDropAt <= FIGHT_WINDOW_SEC) return "fighting";
     const last = lastMeaningful(bind.orders);
     const verb = last ? String(last.verb || "").toLowerCase() : "";

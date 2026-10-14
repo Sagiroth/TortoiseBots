@@ -1,6 +1,8 @@
 package state
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -136,5 +138,37 @@ func TestNormalizeCommanderURL(t *testing.T) {
 		if got, err := NormalizeCommanderURL(bad); err == nil {
 			t.Errorf("NormalizeCommanderURL(%q) = %q, want an error", bad, got)
 		}
+	}
+}
+
+// The module's unit info (what a bot is doing, a unit's level, rank, cast and crowd control, when the binding began) survives the
+// datagram's JSON, the store and the view the dashboard fetches; an older module's datagram simply leaves the fields empty.
+func TestCommandersCarryUnitInfo(t *testing.T) {
+	raw := `{"v":9,"session":3,"seq":1,"ts":50,"type":"COMMANDERS","commanders":[{"commander":"Z","bound_at":40,"online":true,"group":1,"lead":"Lead",
+"bots":[{"name":"Lead","lead":true,"alive":true,"st":"c","act":"melee","res":"O","cast":"Mortal Strike","cc":"s","rest":"d","mv":true,"tname":"Revelosh"},{"name":"Old","alive":true}],
+"mobs_map":70,"mobs":[{"id":"5","entry":1,"name":"Revelosh","hp":80,"x":1,"y":2,"reaction":"h","lvl":47,"rank":"b","cc":"f","cast":"Chain Lightning"}],"orders":[]}]}`
+	var p model.CommandersPayload
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestStore(newClock())
+	if !s.ApplyCommanders(&p) {
+		t.Fatal("payload refused")
+	}
+	b := s.Commanders().Commanders[0]
+	lead, old, mob := b.Bots[0], b.Bots[1], b.Mobs[0]
+	if b.BoundAt != 40 || lead.State != "c" || lead.Action != "melee" || lead.Result != "O" || lead.Cast != "Mortal Strike" ||
+		lead.CC != "s" || lead.Rest != "d" || !lead.Moving || lead.TargetName != "Revelosh" {
+		t.Fatalf("bot unit info lost: %+v (bound_at %d)", lead, b.BoundAt)
+	}
+	if mob.Level != 47 || mob.Rank != "b" || mob.CC != "f" || mob.Cast != "Chain Lightning" {
+		t.Fatalf("mob unit info lost: %+v", mob)
+	}
+	if old.State != "" || old.Action != "" || old.Moving {
+		t.Fatalf("a bot of an older module must read as empty: %+v", old)
+	}
+	out, err := json.Marshal(b.Bots[1])
+	if err != nil || strings.Contains(string(out), `"st"`) || strings.Contains(string(out), `"mv"`) {
+		t.Fatalf("empty unit info must stay out of the view: %s", out)
 	}
 }

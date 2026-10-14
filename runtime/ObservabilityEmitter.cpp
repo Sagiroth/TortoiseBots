@@ -1449,6 +1449,11 @@ void ObservabilityEmitter::EmitCommanders()
         info.mobsReported = ref.mobsReported;
         info.mobsMap = ref.mobsMap;
         info.mobs = ref.mobs; // at most kMaxMobsPerBinding, copied once per 2 s
+        // Since when the binding has stood (first seen here), for the dashboard's run timer; forgotten with the binding.
+        int64_t& since = m_commanderSince[ref.commanderGuid];
+        if (!since)
+            since = static_cast<int64_t>(time(nullptr));
+        info.boundAt = since;
         for (Player* bot : ref.bots)
         {
             if (!bot || !bot->IsInWorld() || info.bots.size() >= CommanderTelemetry::kMaxBotsPerBinding)
@@ -1483,9 +1488,24 @@ void ObservabilityEmitter::EmitCommanders()
                 if (Unit* victim = bot->GetVictim())
                     target = victim->GetObjectGuid();
             b.target = target.GetRawValue();
+            for (CommanderTelemetry::BotExtra const& extra : ref.botExtras) // at most kMaxBotsPerBinding of them
+                if (extra.id == b.id)
+                {
+                    b.hasExtra = true;
+                    b.extra = extra;
+                    break;
+                }
             info.bots.push_back(std::move(b));
         }
         infos.push_back(std::move(info));
+    }
+    // Forget the start time of the bindings that ended.
+    for (auto it = m_commanderSince.begin(); it != m_commanderSince.end();)
+    {
+        bool standing = false;
+        for (CommanderTelemetry::BindingRef const& ref : m_commanderRefs)
+            standing = standing || ref.commanderGuid == it->first;
+        it = standing ? std::next(it) : m_commanderSince.erase(it);
     }
     m_commandersSent = !infos.empty();
     SendDatagram(CommanderTelemetry::BuildPayload(kProtocolVersion, m_sessionId, m_snapshotSeq, time(nullptr), infos));

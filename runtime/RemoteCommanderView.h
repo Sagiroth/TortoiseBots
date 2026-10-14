@@ -142,6 +142,9 @@ struct Hostile
     bool stealthed = false;
     bool evading = false;
     bool crowdControlled = false;
+    char ccKind = 0;       // which kind (s stunned, c confused, f fleeing, r rooted); the wire frame only carries the flag
+    uint32_t level = 0;    // not on the wire; the dashboard's COMMANDERS payload reads it
+    char rank = 0;         // not on the wire: b boss, e elite, r rare, 0 ordinary
     char reaction = 'h';   // h hostile, n neutral, f friendly (to the bound bot)
     bool critter = false;  // CREATURE_TYPE_CRITTER
     bool civilian = false; // creature template civilian

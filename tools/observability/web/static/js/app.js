@@ -4497,6 +4497,7 @@
   const cmdLayerStore = (() => { try { return window.localStorage; } catch (e) { return null; } })();
   let cmdLayers = MapLayers.load(cmdLayerStore);
   const cmdAvail = {};        // commander -> availability of each layer on its map
+  const cmdEvents = UnitInfo.newEvents(); // deaths, wipes, boss kills, objects opened (derived from the reports as they come)
   const cmdPics = new Map();  // map id -> [picture layer] | 'loading' | null (the folder has none; asked again after a while)
   const cmdPicMiss = new Map();
 
@@ -4523,8 +4524,9 @@
       c.updatedAt = view.updated_at || Math.round(Date.now() / 1000);
       c.freshAt = Date.now();
       c.lost = false;
-      c.list.forEach(bind => CmdView.note(cmdTracker, bind, c.updatedAt));
+      c.list.forEach(bind => { CmdView.note(cmdTracker, bind, c.updatedAt); UnitInfo.noteEvents(cmdEvents, bind, c.updatedAt); });
       CmdView.prune(cmdTracker, c.list.map(b => b.commander));
+      UnitInfo.pruneEvents(cmdEvents, c.list.map(b => b.commander));
     } else {
       // No fresh report: keep what was last shown (see COMMANDERS_KEEP_MS) and say so.
       c.fresh = false;
@@ -4594,6 +4596,19 @@
     return `<span class="cmd-bar ${kind}" title="${esc(text)}"><i style="width:${p}%"></i></span><em>${p}%</em>`;
   }
 
+  // What a character is doing, under its name: "fighting Revelosh", "casting Frostbolt on Revelosh", "drinking", "moving", "dead".
+  // Empty when the module does not say (an older one).
+  function cmdDoingHtml(bind, guid) {
+    const bots = bind.bots || [], b = bots.find(x => x.guid === guid);
+    if (!b) return '';
+    const mobs = CmdView.mobsOf(bind, b.map);
+    const target = b.target ? mobs.find(m => m.id === b.target) : null;
+    const act = UnitInfo.activity(b, { targetName: (target && target.name) || b.tname });
+    if (!act) return '';
+    const full = b.act ? `${act.text} (last action: ${b.act})` : act.text;
+    return `<span class="cmd-doing ic-${esc(act.icon)}" title="${esc(full)}">${esc(act.text)}</span>`;
+  }
+
   function cmdPartyHtml(bind) {
     const rows = CmdView.partyRows(bind);
     if (!rows.length) return '<div class="empty-hint">No bound bot is in the world.</div>';
@@ -4608,7 +4623,7 @@
         : '<span class="cmd-meter cmd-deadtxt">Dead</span><span class="cmd-meter"></span>';
       return `<div class="cmd-row ${r.alive ? '' : 'dead'}">
         ${cmdIcon(r.role, r.alive ? r.roleLabel : r.roleLabel + ' (dead)')}
-        <span class="cmd-who"><b>${r.lead ? '★ ' : ''}${cmdBotLink(r.guid, r.name)}</b> <span class="muted">${esc(r.cls)}${r.level ? ' · ' + esc(r.level) : ''}</span></span>
+        <span class="cmd-who"><b>${r.lead ? '★ ' : ''}${cmdBotLink(r.guid, r.name)}</b> <span class="muted">${esc(r.cls)}${r.level ? ' · ' + esc(r.level) : ''}</span>${cmdDoingHtml(bind, r.guid)}</span>
         ${bars}<span class="cmd-dist">${dist}</span></div>`;
     }).join('');
   }
@@ -4630,6 +4645,27 @@
 
   // ---- the map of one card ----
 
+  // Small pictures in a box from -5 to 5: over a unit (status), as the boss crown and as event pins. Drawn by cmdIcon().
+  const CMD_MAP_ICONS = {
+    skull: '<path d="M-3.6 0.4a3.6 3.6 0 1 1 7.2 0v2h-1.4v1.8h-1v-1h-1v1h-1.6v-1h-1v1h-1V2.4h-1.4z"/><circle class="eye" cx="-1.4" cy="-0.2" r="0.95"/><circle class="eye" cx="1.4" cy="-0.2" r="0.95"/>',
+    spark: '<path d="M0 -4.6L1.2 -1.2L4.6 0L1.2 1.2L0 4.6L-1.2 1.2L-4.6 0L-1.2 -1.2Z"/>',
+    sheep: '<circle cx="-1.6" cy="-0.6" r="2.3"/><circle cx="0.6" cy="-1.6" r="2.1"/><circle cx="1" cy="0.6" r="2.2"/><circle class="head" cx="3.1" cy="0.6" r="1.5"/><path class="leg" d="M-1.5 2.4V4M1 2.6V4"/>',
+    stun: '<circle class="ring" cx="0" cy="0" r="3.6"/><path class="ln" d="M-1.9 -1.5h3.8l-3.8 3h3.8"/>',
+    arrow: '<path class="ln" d="M-4 0H2.6M0 -3.2L3.8 0L0 3.2"/>',
+    root: '<path class="ln" d="M-4 4H4M0 -4V3M-2.4 0.8L0 3.2L2.4 0.8"/>',
+    cup: '<path d="M-3.2 -2.6h6.4l-1.1 5.6h-4.2z"/><path class="ln" d="M3 -1.2h1.4v2.2H2.4"/>',
+    crown: '<path d="M-5 3.2V-2.2L-2.5 0.4L0 -3.8L2.5 0.4L5 -2.2V3.2z"/>',
+    door: '<path d="M-3 4.2V-4.2h6v8.4z"/><circle class="eye" cx="1.2" cy="0.4" r="0.8"/>',
+    coin: '<circle cx="0" cy="0" r="3.8"/><path class="ln eyeln" d="M0 -2V2"/>',
+  };
+  // One icon centred at plane point (x, y); size in drawing units (px * k) on a dark disc so it reads on any picture.
+  function cmdIcon(name, x, y, size, title) {
+    const body = CMD_MAP_ICONS[name];
+    if (!body) return '';
+    const sc = size / 11;
+    return `<g class="ic ic-${name}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${sc.toFixed(4)})">${title ? `<title>${esc(title)}</title>` : ''}<circle class="bgd" r="6.2"/>${body}</g>`;
+  }
+
   function cmdLegendHtml(on) {
     const o = on || {};
     return '<span><i class="tank"></i>Tank</span><span><i class="healer"></i>Healer</span><span><i class="dps"></i>DPS</span>'
@@ -4643,7 +4679,15 @@
       + (o.threat ? '<span><i class="lthreat"></i>Mob on</span>' : '')
       + (o.bottarget ? '<span><i class="ltarget"></i>Bot target</span>' : '')
       + (o.commander ? '<span><i class="cmdr"></i>Commander</span>' : '')
-      + (o.aggro ? '<span><i class="aggro"></i>Aggro range</span>' : '');
+      + (o.aggro ? '<span><i class="aggro"></i>Aggro range</span>' : '')
+      + (o.bossmark ? '<span><i class="lboss"></i>Boss (crown, name shown)</span>' : '')
+      + (o.hpbars ? '<span><i class="lhp"></i>Health bar</span>' : '')
+      + (o.threatcolors ? '<span><i class="tc-tank"></i>On the tank</span><span><i class="tc-other"></i>On someone else</span><span><i class="tc-target"></i>Tank\'s target</span><span><i class="tc-pull"></i>Pull target</span>' : '')
+      + (o.statusicons ? '<span class="lic">dead <svg viewBox="-6 -6 12 12" class="ic-skull">' + CMD_MAP_ICONS.skull + '</svg></span><span class="lic">casting <svg viewBox="-6 -6 12 12" class="ic-spark">' + CMD_MAP_ICONS.spark + '</svg></span>'
+        + '<span class="lic">crowd controlled <svg viewBox="-6 -6 12 12" class="ic-sheep">' + CMD_MAP_ICONS.sheep + '</svg></span><span class="lic">drinking / eating <svg viewBox="-6 -6 12 12" class="ic-cup">' + CMD_MAP_ICONS.cup + '</svg></span>'
+        + '<span class="lic">fleeing <svg viewBox="-6 -6 12 12" class="ic-arrow">' + CMD_MAP_ICONS.arrow + '</svg></span>' : '')
+      + (o.events ? '<span class="lic">death <svg viewBox="-6 -6 12 12" class="ic-skull">' + CMD_MAP_ICONS.skull + '</svg></span><span class="lic">boss down <svg viewBox="-6 -6 12 12" class="ic-crown">' + CMD_MAP_ICONS.crown + '</svg></span>'
+        + '<span class="lic">opened <svg viewBox="-6 -6 12 12" class="ic-door">' + CMD_MAP_ICONS.door + '</svg></span><span class="lic">looted <svg viewBox="-6 -6 12 12" class="ic-coin">' + CMD_MAP_ICONS.coin + '</svg></span>' : '');
   }
 
   function cmdZoneRect(lead) {
@@ -4691,6 +4735,8 @@
       picture: pics.length > 0, zone: !!zr, zonesAround, bots: onMap.length > 0, lead: !!lead && onMap.indexOf(lead) >= 0,
       trail: trail.length >= 2, heading: !!heading, healer: onMap.some(b => b.role === 'healer' && b.alive !== false),
       commanderPos: !!commanderAt, mobs: reported, mobTargets: reported, botTargets: reported && onMap.some(b => !!b.id),
+      activity: onMap.some(b => b.st != null) || mobs.some(m => m.cast || m.cc),
+      events: UnitInfo.eventsOf(cmdEvents, bind.commander).length > 0,
     };
     return { lead, first, onMap, pics, trail, heading, zr, ctx, mobs, commanderAt };
   }
@@ -4775,44 +4821,88 @@
       const pt = (a, b) => `${f(a)},${f(b)}`;
       g += `<polygon class="heading" points="${pt(tip.x, tip.y)} ${pt(p.x + heading.x * base + nx * half, p.y + heading.y * base + ny * half)} ${pt(p.x + heading.x * base - nx * half, p.y + heading.y * base - ny * half)}"><title>${esc(lead.name)} is heading this way (from its movement)</title></polygon>`;
     }
+    // Every unit that can be hovered gets a key; the hover box looks the unit up here, so it follows the 2 s refresh.
+    const units = ms.units = {};
+    const lead2 = lead && first && lead.map === first.map ? lead : null;
+    const boxCtx = { lead: lead2, bots: onMap, mobs };
     // mobs, their threat and the bots' targets sit under the party's dots
     const shown = mobs.filter(m => on['mob' + CmdView.mobClass(m)]);
     if (on.aggro) {
       CmdView.aggroMobs(shown).forEach(m => {
         const p = CmdView.project(m.x, m.y);
-        g += `<circle class="range aggro" cx="${f(p.x)}" cy="${f(p.y)}" r="${CmdView.AGGRO_RANGE_YD}"><title>${esc(m.name || 'unit')}: aggro range about ${CmdView.AGGRO_RANGE_YD} yd</title></circle>`;
+        g += `<circle class="range aggro" cx="${f(p.x)}" cy="${f(p.y)}" r="${CmdView.AGGRO_RANGE_YD}"/>`;
       });
     }
     if (on.threat) {
       CmdView.threatLines(shown, onMap).forEach(l => {
         const a = CmdView.project(l.mob.x, l.mob.y), b = CmdView.project(l.bot.x, l.bot.y);
-        g += `<line class="threat" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"><title>${esc(l.mob.name || 'unit')} is on ${esc(l.bot.name)}</title></line>`;
+        g += `<line class="threat" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"/>`;
       });
     }
     if (on.bottarget) {
       CmdView.botTargetLines(onMap, mobs).forEach(l => {
         const a = CmdView.project(l.bot.x, l.bot.y), b = CmdView.project(l.mob.x, l.mob.y);
-        g += `<line class="bottarget" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"><title>${esc(l.bot.name)} targets ${esc(l.mob.name || 'unit')}</title></line>`;
+        g += `<line class="bottarget" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"/>`;
       });
     }
+    // the health bar and status icons over a unit at plane point p, radius r (drawing units)
+    const overlay = (u, kind, p, r) => {
+      let o = '';
+      const bar = on.hpbars ? UnitInfo.hpBar(u, kind) : null;
+      if (bar) {
+        const w = 22 * k, h = 3.4 * k, x0 = p.x - w / 2, y0 = p.y - r - 7 * k;
+        o += `<g class="hpbar ${bar.cls}"><rect class="bg" x="${f(x0)}" y="${f(y0)}" width="${f(w)}" height="${f(h)}"/><rect class="fg" x="${f(x0)}" y="${f(y0)}" width="${f(w * bar.pct / 100)}" height="${f(h)}"/></g>`;
+      }
+      if (on.statusicons) {
+        const ic = UnitInfo.statusIcons(u, kind), step = 12 * k, y0 = p.y - r - (bar ? 15 : 9) * k;
+        ic.forEach((x, i) => { o += cmdIcon(x.icon, p.x + (i - (ic.length - 1) / 2) * step, y0, 11 * k, x.title); });
+      }
+      return o;
+    };
+    const marks = on.threatcolors ? UnitInfo.targetMarks(mobs, onMap) : { tank: {}, pull: {} };
     shown.forEach(m => {
-      const p = CmdView.project(m.x, m.y), cls = CmdView.mobClass(m), r = (cls === 'critter' ? 3 : 5) * k;
-      g += `<g class="mob ${cls}"><title>${esc(m.name || 'unit')}${m.entry ? ' (' + m.entry + ')' : ''} - ${cls}, ${m.hp}% health</title><circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/></g>`;
+      const p = CmdView.project(m.x, m.y), cls = CmdView.mobClass(m), boss = on.bossmark && m.rank === 'b';
+      const r = (boss ? 9 : cls === 'critter' ? 3 : 5) * k, uid = 'm:' + m.id;
+      units[uid] = { kind: 'm', obj: m };
+      g += `<g class="mob ${cls}${boss ? ' boss' : ''}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(Math.max(r, 11 * k))}"/>`;
+      if (on.threatcolors) {
+        const tc = UnitInfo.threatClass(m, onMap);
+        if (marks.pull[m.id]) g += `<circle class="tpull" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 9 * k)}"/>`;
+        if (marks.tank[m.id]) g += `<circle class="ttarget" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 5.5 * k)}"/>`;
+        if (tc !== 'none') g += `<circle class="tring ${tc}" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 2.2 * k)}"/>`;
+      }
+      g += `<circle class="body" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/>`;
+      if (boss) g += cmdIcon('crown', p.x, p.y, 12 * k).replace('class="ic ic-crown"', 'class="ic ic-crown crownmark"');
+      g += overlay(m, 'mob', p, boss ? r + 8 * k : r);
+      if (boss || (on.hostilenames && cls === 'hostile')) {
+        g += `<text class="mname${boss ? ' boss' : ''}" x="${f(p.x + (r + 4 * k))}" y="${f(p.y + 4 * k)}" style="font-size:${f((boss ? 12.5 : 10.5) * k)}px;stroke-width:${f(3 * k)}px">${esc(m.name || (m.entry ? 'creature ' + m.entry : 'unit'))}</text>`;
+      }
+      g += '</g>';
     });
+    if (on.events) {
+      UnitInfo.pinsOn(UnitInfo.eventsOf(cmdEvents, bind.commander), first ? first.map : null, 30).forEach(e => {
+        const p = CmdView.project(e.x, e.y), uid = 'e:' + e.id, big = e.kind === 'wipe' || e.kind === 'boss';
+        units[uid] = { kind: 'e', obj: e };
+        g += `<g class="evpin ev-${esc(e.kind)}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(11 * k)}"/>`
+          + cmdIcon(e.kind === 'death' || e.kind === 'wipe' ? 'skull' : e.kind === 'boss' ? 'crown' : e.kind === 'loot' ? 'coin' : 'door', p.x, p.y, (big ? 17 : 12) * k) + '</g>';
+      });
+    }
     if (on.commander && commanderAt) {
-      const c = CmdView.project(commanderAt.x, commanderAt.y), tgt = lead && lead.map === (first && first.map) ? CmdView.project(lead.x, lead.y) : null;
+      const c = CmdView.project(commanderAt.x, commanderAt.y), tgt = lead2 ? CmdView.project(lead.x, lead.y) : null;
       if (tgt) g += `<line class="cmdline" x1="${f(c.x)}" y1="${f(c.y)}" x2="${f(tgt.x)}" y2="${f(tgt.y)}"/>`;
       const d = 8 * k;
-      g += `<g class="cmdr"><title>${esc(bind.commander)} (commander)</title><polygon points="${f(c.x)},${f(c.y - d)} ${f(c.x + d)},${f(c.y)} ${f(c.x)},${f(c.y + d)} ${f(c.x - d)},${f(c.y)}"/>`
+      units['c:'] = { kind: 'c', obj: { name: bind.commander, x: commanderAt.x, y: commanderAt.y } };
+      g += `<g class="cmdr" data-u="c:"><circle class="hit" cx="${f(c.x)}" cy="${f(c.y)}" r="${f(11 * k)}"/><polygon points="${f(c.x)},${f(c.y - d)} ${f(c.x + d)},${f(c.y)} ${f(c.x)},${f(c.y + d)} ${f(c.x - d)},${f(c.y)}"/>`
         + `<text x="${f(c.x + 11 * k)}" y="${f(c.y + 4 * k)}" style="font-size:${f(11.5 * k)}px;stroke-width:${f(3 * k)}px">${esc(bind.commander)}</text></g>`;
     }
     // dead first so a live bot is drawn over them
     onMap.slice().sort((a, b) => (a.alive === false ? 0 : 1) - (b.alive === false ? 0 : 1)).forEach(b => {
-      const p = CmdView.project(b.x, b.y), role = CmdView.roleKey(b), isLead = b === lead && on.lead;
-      const hp = b.max_hp ? Math.round((b.hp / b.max_hp) * 100) : 0;
-      g += `<g class="bot ${role}"${CmdView.botHref(b.guid) ? ` data-guid="${esc(b.guid)}"` : ''}><title>${esc(b.name)} - ${esc(CmdView.roleLabel(b))}, ${b.alive === false ? 'dead' : hp + '% health'}${CmdView.botHref(b.guid) ? ' (click for details)' : ''}</title>`
+      const p = CmdView.project(b.x, b.y), role = CmdView.roleKey(b), isLead = b === lead && on.lead, uid = 'b:' + (b.guid || b.name);
+      units[uid] = { kind: 'b', obj: b };
+      g += `<g class="bot ${role}" data-u="${esc(uid)}"${CmdView.botHref(b.guid) ? ` data-guid="${esc(b.guid)}"` : ''}><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(12 * k)}"/>`
         + (isLead ? `<circle class="leadring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(11 * k)}"/>` : '')
         + (on.bots ? `<circle class="dot" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(6 * k)}"/>` : '')
+        + (on.bots ? overlay(b, 'bot', p, (isLead ? 11 : 6) * k) : '')
         + (on.botnames ? `<text x="${f(p.x + 10 * k)}" y="${f(p.y + 4 * k)}" style="font-size:${f(11.5 * k)}px;stroke-width:${f(3 * k)}px">${isLead ? '★ ' : ''}${esc(b.name)}</text>` : '')
         + '</g>';
     });
@@ -4833,6 +4923,74 @@
     fb.setAttribute('aria-pressed', ms.follow ? 'true' : 'false');
     fb.classList.toggle('on', ms.follow);
     card.querySelector('.cmd-resume').hidden = ms.follow;
+
+    // the run line and the event feed
+    const evs = UnitInfo.eventsOf(cmdEvents, bind.commander), now = cmdServerNow();
+    const run = card.querySelector('.cmd-run');
+    run.hidden = !on.runinfo;
+    if (on.runinfo) run.textContent = UnitInfo.runInfo(bind, cmdEvents, now).text;
+    const start = bind.bound_at > 0 ? bind.bound_at : UnitInfo.firstSeen(cmdEvents, bind.commander);
+    const feed = card.querySelector('.cmd-feed');
+    feed.hidden = !(on.feed && evs.length);
+    if (!feed.hidden) {
+      const lines = evs.slice(-8).reverse(), sig = lines.map(e => e.id).join(',') + '|' + start;
+      if (feed._k !== sig) {
+        feed._k = sig;
+        feed.replaceChildren(...lines.map(e => {
+          const l = UnitInfo.feedLine(e, start), row = document.createElement('div'), t = document.createElement('b'), x = document.createElement('span');
+          row.className = 'ev ev-' + e.kind;
+          row.title = cmdClock(e.t);
+          t.textContent = l.time || cmdClock(e.t);
+          x.textContent = l.text;
+          row.append(t, x);
+          return row;
+        }));
+      }
+    }
+    paintCmdTip(key);
+  }
+
+  // ---- the box shown when the pointer rests on a unit ----
+
+  // Fills and places the box of a card's map for the unit it names (cmdMaps[key].tip = {id, x, y} in stage pixels); hides it when the
+  // unit is gone. Built with textContent only: names and spell names come from the game server.
+  function paintCmdTip(key) {
+    const card = cmdCards.get(key), ms = cmdMaps[key];
+    if (!card || !ms) return;
+    const stage = card.querySelector('.cmd-stage'), tip = card.querySelector('.cmd-tip');
+    const u = ms.tip && ms.units ? ms.units[ms.tip.id] : null;
+    if (!u) { tip.hidden = true; if (ms.tip) ms.tip = null; return; }
+    const bind = state.commanders.list.find(b => b.commander === key);
+    const facts = bind ? cmdMapFacts(bind) : null;
+    if (!facts) { tip.hidden = true; return; }
+    const ctx = { lead: facts.lead && facts.first && facts.lead.map === facts.first.map ? facts.lead : null, bots: facts.onMap, mobs: facts.mobs };
+    const d = u.kind === 'b' ? UnitInfo.describeBot(u.obj, ctx) : u.kind === 'm' ? UnitInfo.describeMob(u.obj, ctx)
+      : u.kind === 'c' ? UnitInfo.describeCommander(u.obj.name, u.obj, ctx)
+      : UnitInfo.describeEvent(u.obj, bind.bound_at > 0 ? bind.bound_at : UnitInfo.firstSeen(cmdEvents, key));
+    const sig = JSON.stringify(d);
+    if (tip._k !== sig) {
+      tip._k = sig;
+      const head = document.createElement('div'), title = document.createElement('b'), sub = document.createElement('span');
+      head.className = 'tt-head';
+      title.textContent = d.title;
+      sub.textContent = d.sub;
+      head.append(title, sub);
+      const kids = [head];
+      d.rows.forEach(r => {
+        const row = document.createElement('div'), l = document.createElement('span'), v = document.createElement('span');
+        row.className = 'tt-row';
+        l.textContent = r[0];
+        v.textContent = r[1];
+        row.append(l, v);
+        kids.push(row);
+      });
+      tip.replaceChildren(...kids);
+      tip.className = 'cmd-tip tone-' + d.tone;
+    }
+    tip.hidden = false;
+    const pos = UnitInfo.boxPosition(ms.tip.x, ms.tip.y, tip.offsetWidth, tip.offsetHeight, stage.clientWidth, stage.clientHeight);
+    tip.style.left = pos.left + 'px';
+    tip.style.top = pos.top + 'px';
   }
 
   function bindCmdMap(card, key) {
@@ -4846,9 +5004,20 @@
     const svg = stage.querySelector('svg');
     // A tap on a bot's dot or name (not a drag) opens that character's details, like a bot picked anywhere else.
     let tap = null;
+    const unitAt = e => { const n = e.target.closest && e.target.closest('[data-u]'); return n ? n.dataset.u : ''; };
+    const hideTip = () => { const m = ms(); if (m.tip) { m.tip = null; paintCmdTip(key); } };
+    // A mouse resting on a unit shows its box; moving off hides it. (A touch shows it on a tap, see below.)
+    svg.addEventListener('pointermove', e => {
+      if (e.pointerType !== 'mouse' || e.buttons) return;
+      const uid = unitAt(e);
+      if (!uid) { hideTip(); return; }
+      ms().tip = { id: uid, x: rel(e).x, y: rel(e).y };
+      paintCmdTip(key);
+    });
+    svg.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hideTip(); });
     svg.addEventListener('pointerdown', e => {
       const hit = e.target.closest && e.target.closest('g.bot[data-guid]');
-      tap = pointers.size === 0 && hit ? { id: e.pointerId, guid: parseInt(hit.dataset.guid, 10), x: e.clientX, y: e.clientY } : null;
+      tap = pointers.size === 0 ? { id: e.pointerId, guid: hit ? parseInt(hit.dataset.guid, 10) : 0, uid: unitAt(e), touch: e.pointerType !== 'mouse', x: e.clientX, y: e.clientY } : null;
       pointers.set(e.pointerId, rel(e));
       try { svg.setPointerCapture(e.pointerId); } catch (_) { /* a synthetic pointer */ }
       lastPinch = null;
@@ -4873,7 +5042,19 @@
     });
     const up = e => {
       pointers.delete(e.pointerId);
-      if (tap && tap.id === e.pointerId && e.type === 'pointerup' && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 6) openProfile(tap.guid);
+      if (tap && tap.id === e.pointerId && e.type === 'pointerup' && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 6) {
+        const m = ms();
+        if (!tap.touch) {
+          if (tap.guid) openProfile(tap.guid); // a click on a bot opens its details; its box is already up from the hover
+        } else if (tap.uid && !(m.tip && m.tip.id === tap.uid)) {
+          m.tip = { id: tap.uid, x: rel(e).x, y: rel(e).y }; // first tap: the box
+          paintCmdTip(key);
+        } else if (tap.uid && tap.guid) {
+          openProfile(tap.guid); // second tap on the same bot: its details
+        } else {
+          hideTip(); // a tap on nothing, or on the same unit that has no details
+        }
+      }
       if (tap && tap.id === e.pointerId) tap = null;
     };
     svg.addEventListener('pointerup', up);
@@ -4911,6 +5092,7 @@
     card.innerHTML = `
       <div class="cmd-head"><h2 class="cmd-title"></h2><div class="cmd-badges"></div></div>
       <div class="cmd-sub"></div>
+      <div class="cmd-run" hidden></div>
       <div class="cmd-warn" aria-live="polite"></div>
       <div class="cmd-body">
         <div class="cmd-left">
@@ -4931,7 +5113,9 @@
             <div class="cmd-grid-size"></div>
             <div class="cmd-scale" hidden><i></i><span></span></div>
             <div class="cmd-mapnote"></div>
+            <div class="cmd-tip" hidden></div>
           </div>
+          <div class="cmd-feed" hidden></div>
           <div class="cmd-legend">${cmdLegendHtml()}</div>
         </div>
       </div>`;

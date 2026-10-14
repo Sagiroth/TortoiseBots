@@ -59,6 +59,9 @@ assert.strictEqual(C.stateWord(b, { nowSec: 1000 }), "wiped");
 b = party();
 assert.strictEqual(C.stateWord(b, { nowSec: 1000, hpDropAt: 995 }), "fighting");
 assert.strictEqual(C.stateWord(b, { nowSec: 1000, hpDropAt: 900 }), "idle");
+// a module that reports the AI state (st: c = combat) says "fighting" itself, with no HP drop needed
+assert.strictEqual(C.stateWord({ bots: [{ name: "A", alive: true, st: "c" }], orders: [] }, { nowSec: 1000 }), "fighting");
+assert.strictEqual(C.stateWord({ bots: [{ name: "A", alive: false, st: "c" }, { name: "B", alive: true, st: "n" }], orders: [] }, { nowSec: 1000 }), "idle");
 b.orders = [ord("attack", 990)];
 assert.strictEqual(C.stateWord(b, { nowSec: 1000 }), "attacking");
 assert.strictEqual(C.stateWord(b, { nowSec: 1100 }), "idle");

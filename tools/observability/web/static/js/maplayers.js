@@ -4,7 +4,7 @@
 //
 // Besides the on/off choices the state holds `dim`: how much the real map picture is darkened, 0-80 %.
 //
-// A layer has a key, a label, a group, a default (what the maps drew before layers existed stays on, anything new is off) and `needs`:
+// A layer has a key, a label, a group, a default (what the maps drew before layers existed stays on, anything new is off, except the boss marker and the health bars) and `needs`:
 // the data it can only be drawn from. When a map has no such data the layer is greyed out in the panel with the reason, and drawn
 // nowhere; the saved choice is kept for when the data arrives.
 (function (root) {
@@ -20,7 +20,7 @@
     { key: "zonelabels", label: "Names of the zones around", group: "Map", def: false, needs: "zonesAround", why: "no zone outlines known for this map" },
     { key: "scale", label: "Distance scale bar", group: "Map", def: false, needs: "" },
     { key: "bots", label: "Bot dots", group: "Party", def: true, needs: "bots", why: "no bot on this map" },
-    { key: "botnames", label: "Bot names", group: "Party", def: true, needs: "bots", why: "no bot on this map" },
+    { key: "botnames", label: "Names of the group (the bots)", group: "Party", def: true, needs: "bots", why: "no bot on this map" },
     { key: "lead", label: "Lead mark", group: "Party", def: true, needs: "lead", why: "the lead is not reporting" },
     { key: "trail", label: "Lead's path", group: "Party", def: true, needs: "trail", why: "the lead has not moved yet" },
     { key: "trailtime", label: "Times on the path", group: "Party", def: false, needs: "trail", why: "the lead has not moved yet" },
@@ -33,6 +33,14 @@
     { key: "threat", label: "Threat lines (mob to whom it targets)", group: "Mobs", def: false, needs: "mobTargets", why: "the game server does not report mobs yet (it needs the newer module)" },
     { key: "bottarget", label: "Bot target lines", group: "Mobs", def: false, needs: "botTargets", why: "the game server does not report bot targets yet (it needs the newer module)" },
     { key: "aggro", label: "Aggro range (20 yd) around pull targets", group: "Mobs", def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
+    { key: "hostilenames", label: "Names of hostile units", group: "Mobs", def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
+    { key: "bossmark", label: "Boss marker (bigger, crown, name always shown)", group: "Mobs", def: true, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
+    { key: "threatcolors", label: "Threat colours (ring = whom it attacks: tank blue, others red; tank's target and pull target marked)", group: "Mobs", def: false, needs: "mobTargets", why: "the game server does not report mobs yet (it needs the newer module)" },
+    { key: "hpbars", label: "Health bars over units", group: "Units", def: true, needs: "" },
+    { key: "statusicons", label: "Status icons (dead, casting, crowd controlled, drinking, fleeing)", group: "Units", def: false, needs: "activity", why: "the game server does not report what units do yet (it needs the newer module)" },
+    { key: "events", label: "Event pins (deaths, wipes, boss kills, objects opened or looted)", group: "Run", def: false, needs: "events", why: "nothing has happened since this page started watching" },
+    { key: "feed", label: "Event feed under the map", group: "Run", def: false, needs: "events", why: "nothing has happened since this page started watching" },
+    { key: "runinfo", label: "Run timer and boss checklist on the card", group: "Run", def: false, needs: "" },
   ];
 
   const keys = () => DEFS.map((d) => d.key);

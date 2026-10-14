@@ -4995,6 +4995,12 @@ void AddViewHostile(RemoteCommander::View::Snapshot& snapshot, RemoteCommander::
     hostile->evading = creature && creature->IsInEvadeMode();
     hostile->crowdControlled = unit->HasUnitState(UNIT_STAT_STUNNED | UNIT_STAT_CONFUSED |
         UNIT_STAT_FLEEING | UNIT_STAT_ROOT);
+    hostile->ccKind = CommanderTelemetry::CcKind(unit->HasUnitState(UNIT_STAT_STUNNED),
+        unit->HasUnitState(UNIT_STAT_CONFUSED), unit->HasUnitState(UNIT_STAT_FLEEING), unit->HasUnitState(UNIT_STAT_ROOT));
+    hostile->level = unit->GetLevel();
+    if (creature)
+        hostile->rank = CommanderTelemetry::RankKind(creature->GetCreatureInfo()->rank,
+            creature->HasExtraFlag(CREATURE_FLAG_EXTRA_INSTANCE_BIND));
     // What kind of unit it is: fields the unit and its template already hold
     // (no lookup, no scan).
     hostile->reaction = reaction <= REP_HOSTILE ? 'h' : (reaction >= REP_FRIENDLY ? 'f' : 'n');
@@ -9139,6 +9145,13 @@ static void NoteCommanderOrderResult(ChatHandler* handler, std::string const& in
     CommanderOrderLog().Note(commanderRaw, std::move(record));
 }
 
+// The name of a spell (English), empty when unknown.
+static std::string SpellNameOf(uint32 spellId)
+{
+    SpellEntry const* spell = sSpellMgr.GetSpellEntry(spellId);
+    return spell ? spell->SpellName[0] : std::string();
+}
+
 // The map data of one binding for the dashboard (once per 2 s snapshot cycle, only while a binding stands): the commander's
 // position when it is online and in the world, and the hostile units the commander's perception feed would list for this binding
 // (the same builder: the bots' own cached lists, resolved by guid on the lead's map, capped at kMaxHostiles; no grid or world
@@ -9176,7 +9189,39 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         mob.victim = h.target;
         mob.reaction = h.reaction;
         mob.kind = h.critter ? 'k' : h.civilian ? 'v' : h.guard ? 'g' : h.unattackable ? 'u' : 0;
+        mob.level = h.level;
+        mob.rank = h.rank;
+        mob.cc = h.ccKind;
+        if (h.casting)
+            mob.cast = SpellNameOf(h.casting);
         ref.mobs.push_back(std::move(mob));
+    }
+    // What each bound bot is doing: the view snapshot already holds its state, newest action, cast and target; the rest are
+    // field and aura reads (crowd control, drink/food), once per bot per 2 s.
+    ref.botExtras.reserve(snapshot.partyCount);
+    for (size_t i = 0; i < snapshot.partyCount; ++i)
+    {
+        RemoteCommander::View::PartyMember const& member = snapshot.party[i];
+        Player* bot = FindCharacter(member.guid);
+        if (!bot)
+            continue;
+        CommanderTelemetry::BotExtra extra;
+        extra.id = member.guid;
+        extra.state = member.state;
+        extra.action = member.action;
+        extra.result = member.result;
+        if (member.casting)
+            extra.cast = SpellNameOf(member.casting);
+        extra.cc = CommanderTelemetry::CcKind(bot->HasUnitState(UNIT_STAT_STUNNED), bot->HasUnitState(UNIT_STAT_CONFUSED),
+            bot->HasUnitState(UNIT_STAT_FLEEING), bot->HasUnitState(UNIT_STAT_ROOT));
+        extra.moving = bot->IsMoving();
+        if (bot->IsAlive() && !bot->IsInCombat())
+            if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+                extra.rest = ai->HasAura("drink", bot) ? 'd' : ai->HasAura("food", bot) ? 'e' : 0;
+        if (member.target && map)
+            if (Unit* target = map->GetUnit(::ObjectGuid(member.target)))
+                extra.targetName = target->GetName();
+        ref.botExtras.push_back(std::move(extra));
     }
 }
 

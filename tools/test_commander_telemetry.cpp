@@ -286,6 +286,95 @@ void TestMapDataCapsAndSize()
     std::printf("worst case (%zu bindings, %zu mobs): %zu bytes\n", kMaxBindings, kMaxMobsPerPayload, json.size());
 }
 
+void TestUnitInfo()
+{
+    Check(CcKind(true, true, true, true) == 's' && CcKind(false, true, true, true) == 'c' && CcKind(false, false, true, true) == 'f' &&
+              CcKind(false, false, false, true) == 'r' && CcKind(false, false, false, false) == 0,
+        "crowd control is the first kind that holds");
+    Check(RankKind(3, false) == 'b' && RankKind(1, true) == 'b' && RankKind(1, false) == 'e' && RankKind(2, false) == 'r' &&
+              RankKind(4, false) == 'r' && RankKind(0, false) == 0,
+        "a rank letter: boss, elite, rare, ordinary");
+
+    BindingInfo b;
+    b.commander = "Zfmagea";
+    b.commanderGuid = 9;
+    b.boundAt = 1791990000;
+    BotInfo bot = Bot("Forthur", true);
+    bot.id = 11;
+    bot.hasExtra = true;
+    bot.extra.state = 'c';
+    bot.extra.action = "melee";
+    bot.extra.result = 'O';
+    bot.extra.cast = "Mortal \"Strike\"";
+    bot.extra.cc = 's';
+    bot.extra.rest = 'd';
+    bot.extra.moving = true;
+    bot.extra.targetName = "Revelosh";
+    b.bots.push_back(bot);
+    b.bots.push_back(Bot("Plain", false)); // no extra: no activity fields
+    b.mobsReported = true;
+    MobInfo boss = Mob(5, "Revelosh");
+    boss.level = 47;
+    boss.rank = 'b';
+    boss.cc = 'f';
+    boss.cast = "Chain Lightning";
+    b.mobs.push_back(boss);
+    MobInfo plain = Mob(6, "Rat");
+    plain.rank = 'x';
+    plain.cc = 'q';
+    b.mobs.push_back(plain);
+    std::string const json = BuildPayload(9, 1, 1, 1, {b});
+
+    Check(Has(json, "\"bound_at\":1791990000"), "when the binding began");
+    Check(Has(json, "\"st\":\"c\"") && Has(json, "\"act\":\"melee\"") && Has(json, "\"res\":\"O\""), "a bot's state and newest action");
+    Check(Has(json, "\"cast\":\"Mortal \\\"Strike\\\"\""), "the spell a bot casts, escaped");
+    Check(Has(json, "\"cc\":\"s\"") && Has(json, "\"rest\":\"d\"") && Has(json, "\"mv\":true") && Has(json, "\"tname\":\"Revelosh\""), "a bot's crowd control, rest, movement and target name");
+    Check(Count(json, "\"st\":") == 1 && Count(json, "\"act\":") == 1, "a bot without extra keeps the old shape");
+    Check(Has(json, "\"lvl\":47") && Has(json, "\"rank\":\"b\"") && Has(json, "\"cast\":\"Chain Lightning\""), "a mob's level, rank and cast");
+    Check(Count(json, "\"rank\":") == 1 && Count(json, "\"lvl\":") == 1, "an ordinary mob has no rank or level field");
+    Check(Count(json, "\"cc\":") == 2, "unknown crowd-control letters are left out");
+
+    // Bounds: clipped names, and the worst case still fits one datagram.
+    BindingInfo big;
+    big.commander = "C";
+    big.boundAt = 1791990000;
+    for (int i = 0; i < 6; ++i)
+    {
+        BotInfo x = Bot("Botname" + std::to_string(i), i == 0);
+        x.id = 0xFFFFFFFFFFFFFFFFull;
+        x.target = 0xFFFFFFFFFFFFFFFFull;
+        x.hasExtra = true;
+        x.extra.state = 'c';
+        x.extra.action = std::string(90, 'a');
+        x.extra.result = 'O';
+        x.extra.cast = std::string(90, 'c');
+        x.extra.cc = 's';
+        x.extra.rest = 'e';
+        x.extra.moving = true;
+        x.extra.targetName = std::string(90, 't');
+        big.bots.push_back(x);
+    }
+    for (int i = 0; i < 8; ++i)
+        big.orders.push_back(Order(i, "ritual", true, std::string(kMaxOrderResult, 'r'), std::string(kMaxOrderDetail, 'd')));
+    big.mobsReported = true;
+    for (int i = 0; i < 40; ++i)
+    {
+        MobInfo m = Mob(0xFFFFFFFFFFFFFFFFull, std::string(60, 'M'), 'h', 'k', 0xFFFFFFFFFFFFFFFFull);
+        m.level = 63;
+        m.rank = 'b';
+        m.cc = 's';
+        m.cast = std::string(90, 'c');
+        big.mobs.push_back(m);
+    }
+    std::vector<BindingInfo> many(kMaxBindings + 3, big);
+    std::string const worst = BuildPayload(9, 1, 1, 1, many);
+    Check(!Has(worst, std::string(kMaxActionName + 1, 'a')) && !Has(worst, std::string(kMaxCastName + 1, 'c')) &&
+              !Has(worst, std::string(kMaxTargetName + 1, 't')),
+        "action, cast and target names are clipped");
+    Check(worst.size() < 60000 && worst.size() < 65000, "the worst case with unit info still fits one datagram");
+    std::printf("worst case with unit info (%zu bindings, %zu mobs): %zu bytes\n", kMaxBindings, kMaxMobsPerPayload, worst.size());
+}
+
 void TestControlCharacters()
 {
     BindingInfo b;
@@ -305,6 +394,7 @@ int main()
     TestPayloadCapsAndSize();
     TestMapData();
     TestMapDataCapsAndSize();
+    TestUnitInfo();
     TestControlCharacters();
     if (g_failures)
     {
