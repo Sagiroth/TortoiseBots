@@ -246,7 +246,7 @@ if command -v g++ >/dev/null 2>&1; then
         test_voidwalker_policy
         test_wand_policy
         test_warlock_pet_policy
-        test_warlock_stone_policy
+        test_warlock_stone_policy test_warlock_soulstone_policy
         test_warlock_tap_policy
         test_weighted_shuffle_policy
         test_work_idle_policy

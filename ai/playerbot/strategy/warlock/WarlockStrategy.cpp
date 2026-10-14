@@ -98,7 +98,9 @@ void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "no soulstone",
-        NextAction::array(0, new NextAction("create soulstone", ACTION_NORMAL), NULL)));
+        // One above the healthstone / weapon stones: a warlock with a single
+        // shard spends it on the stone the group's healer needs first.
+        NextAction::array(0, new NextAction("create soulstone", ACTION_NORMAL + 1), NULL)));
 
     // Donor-parity pre-tap (WAR-5): top up to near-full mana between pulls
     // while health allows. Both bands at 9: above drink (6)/loot (6) so the

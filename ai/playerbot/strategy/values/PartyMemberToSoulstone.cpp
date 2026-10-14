@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "PartyMemberToSoulstone.h"
 #include "playerbot/ServerFacade.h"
+#include "../../../../runtime/WarlockSoulstonePolicy.h"
 
 using namespace ai;
 
@@ -17,39 +18,6 @@ public:
         }
         return false;
     }
-};
-
-// Finds a healer or tank in range without an active soulstone buff
-// and not already being targeted by another warlock's cast
-class FindSoulstoneTarget : public FindPlayerPredicate, public PlayerbotAIAware
-{
-public:
-    FindSoulstoneTarget(PlayerbotAI* ai, PartyMemberValue* value) : PlayerbotAIAware(ai), value(value) {}
-
-    virtual bool Check(Unit* unit) override
-    {
-        Player* player = dynamic_cast<Player*>(unit);
-        if (!player || !player->IsAlive() || player->InBattleGround())
-            return false;
-
-        if (sServerFacade.getDistance2d(ai->GetBot(), player) > ai->GetRange("spell"))
-            return false;
-
-        // Skip DPS — only healers and tanks are worth stoning
-        if (!ai->IsHeal(player) && !ai->IsTank(player))
-            return false;
-
-        // Skip players who already have a soulstone buff
-        if (ai->HasAura("soulstone resurrection", player))
-            return false;
-
-        // Skip players another warlock is already mid-cast on
-        return !value->IsTargetOfSpellCast(player, predicate);
-    }
-
-private:
-    PartyMemberValue* value;
-    IsTargetOfSoulstoneSpell predicate;
 };
 
 static bool HasOtherWarlockInGroup(Player* bot, Group* group)
@@ -79,37 +47,69 @@ static bool BotIsAlreadySoulstoned(Player* bot)
     return false;
 }
 
+// The group as the warlock sees it, for TortoiseBots::DecideSoulstoneTarget
+// (runtime/WarlockSoulstonePolicy.h: healer, else tank, else master/leader).
+// Members on other maps and offline members are left out, so they never hold
+// a tier the warlock would wait on.
 Unit* PartyMemberToSoulstone::Calculate()
 {
     // If a master player has manually assigned revive targets, defer to that
     if (!AI_VALUE(std::list<ObjectGuid>, "revive targets").empty())
         return nullptr;
 
-    Group* group = bot->GetGroup();
+    TortoiseBots::SoulstoneFacts facts;
+    facts.botInCombat = bot->IsInCombat();
+    if (facts.botInCombat)
+        return nullptr;
 
+    Group* group = bot->GetGroup();
+    facts.inGroup = group != nullptr;
+    facts.botHasSoulstoneAura = BotIsAlreadySoulstoned(bot);
+
+    std::vector<TortoiseBots::SoulstoneCandidate> candidates;
+    std::vector<Player*> players;
     if (group)
     {
-        // FindPartyMember automatically prioritizes healers over tanks
-        FindSoulstoneTarget finder(ai, this);
-        Unit* target = FindPartyMember(finder);
-
-        if (!target)
-            return nullptr;
-
-        // Multiple warlocks in group may target same player. Each roll D20 to stagger casts.
-        if (HasOtherWarlockInGroup(bot, group))
+        Player* master = GetMaster();
+        float const range = ai->GetRange("spell");
+        for (Player* member : LiveGroupMembers(group))
         {
-            if (urand(1, 20) != 20)
-                return nullptr;
+            if (!member || member == bot || member->GetMapId() != bot->GetMapId() || member->InBattleGround())
+                continue;
+
+            TortoiseBots::SoulstoneCandidate c;
+            c.isHealer = ai->IsHeal(member);
+            c.isTank = !c.isHealer && ai->IsTank(member);
+            c.isLeader = member == master || group->IsLeader(member->GetObjectGuid());
+            c.alive = member->IsAlive();
+            if (c.alive && TortoiseBots::SoulstoneTierOf(c) != TortoiseBots::SoulstoneTier::None)
+            {
+                c.inRange = sServerFacade.getDistance2d(bot, member) <= range;
+                c.inLineOfSight = c.inRange && sServerFacade.IsWithinLOSInMap(bot, member);
+                c.hasSoulstoneAura = ai->HasAura("soulstone resurrection", member);
+                // Only worth the nearby-caster scan for a member that is otherwise ready.
+                if (c.inLineOfSight && !c.hasSoulstoneAura)
+                {
+                    IsTargetOfSoulstoneSpell predicate;
+                    c.targetedByOtherWarlock = IsTargetOfSpellCast(member, predicate);
+                }
+            }
+            candidates.push_back(c);
+            players.push_back(member);
         }
-
-        return target;
     }
-    else
-    {
-        if (BotIsAlreadySoulstoned(bot))
-            return nullptr;
 
+    TortoiseBots::SoulstoneChoice choice = TortoiseBots::DecideSoulstoneTarget(facts, candidates);
+    switch (choice.kind)
+    {
+    case TortoiseBots::SoulstoneChoiceKind::Self:
         return ai->GetBot();
+    case TortoiseBots::SoulstoneChoiceKind::Member:
+        // Multiple warlocks in group may target same player. Each roll D20 to stagger casts.
+        if (HasOtherWarlockInGroup(bot, group) && urand(1, 20) != 20)
+            return nullptr;
+        return players[choice.index];
+    default:
+        return nullptr;
     }
 }

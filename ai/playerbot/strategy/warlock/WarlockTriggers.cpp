@@ -9,6 +9,7 @@
 #include "../../../runtime/WarlockPetPolicy.h"
 #include "../../../runtime/WarlockTapPolicy.h"
 #include "../../../runtime/WarlockStonePolicy.h"
+#include "../../../../runtime/WarlockSoulstonePolicy.h"
 
 using namespace ai;
 
@@ -472,30 +473,22 @@ bool WrongPetTrigger::IsActive()
 
 uint32 SoulstoneTrigger::GetItemId()
 {
-    uint32 itemId = 0;
-    const uint32 level = bot->GetLevel();
-    if (level >= 18 && level < 30)
-    {
-        itemId = 5232;
-    }
-    else if (level >= 30 && level < 40)
-    {
-        itemId = 16892;
-    }
-    else if (level >= 40 && level < 50)
-    {
-        itemId = 16893;
-    }
-    else if (level >= 50 && level < 60)
-    {
-        itemId = 16895;
-    }
-    else if (level >= 60)
-    {
-        itemId = 16896;
-    }
+    return TortoiseBots::PickSoulstoneItem(bot->GetLevel(), [this](uint32 itemId) { return bot->GetItemCount(itemId); });
+}
 
-    return itemId;
+bool HasSoulstoneTrigger::IsActive()
+{
+    if (!WarlockConjuredItemTrigger::IsActive())
+        return false;
+
+    // Create Soulstone consumes a Soul Shard: shardless, stay quiet instead of
+    // queueing a cast that fails isPossible every time the trigger fires.
+    TortoiseBots::SoulstoneCreateFacts facts;
+    facts.level = bot->GetLevel();
+    facts.soulShards = bot->GetItemCount(TortoiseBots::WARLOCK_SOUL_SHARD_ITEM);
+    facts.soulstonesHeld = 0; // the count check above already found none
+    facts.inCombat = bot->IsInCombat();
+    return TortoiseBots::ShouldCreateSoulstone(facts);
 }
 
 bool RainOfFireChannelCheckTrigger::IsActive()

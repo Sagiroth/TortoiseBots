@@ -8,6 +8,7 @@
 #include "../../../runtime/DevourMagicPolicy.h"
 #include "../../../runtime/HealthFunnelPolicy.h"
 #include "../../../runtime/SeductionPolicy.h"
+#include "../../../../runtime/WarlockSoulstonePolicy.h"
 
 namespace ai
 {
@@ -125,30 +126,7 @@ namespace ai
     private:
         uint32 GetItemId() override
         {
-            uint32 itemId = 0;
-            const uint32 level = bot->GetLevel();
-            if (level >= 18 && level < 30)
-            {
-                itemId = 5232;
-            }
-            else if (level >= 30 && level < 40)
-            {
-                itemId = 16892;
-            }
-            else if (level >= 40 && level < 50)
-            {
-                itemId = 16893;
-            }
-            else if (level >= 50 && level < 60)
-            {
-                itemId = 16895;
-            }
-            else if (level >= 60)
-            {
-                itemId = 16896;
-            }
-
-            return itemId;
+            return TortoiseBots::PickSoulstoneItem(bot->GetLevel(), [this](uint32 itemId) { return bot->GetItemCount(itemId); });
         }
     };
 

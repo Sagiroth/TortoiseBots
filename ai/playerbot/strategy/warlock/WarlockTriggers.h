@@ -249,6 +249,7 @@ namespace ai
     {
     public:
         HasSoulstoneTrigger(PlayerbotAI* ai) : WarlockConjuredItemTrigger(ai, "soulstone") {}
+        virtual bool IsActive() override;
     };
 
     class FearTrigger : public HasCcTargetTrigger
@@ -462,7 +463,8 @@ namespace ai
     class SoulstoneTrigger : public ItemTargetTrigger
     {
     public:
-        SoulstoneTrigger(PlayerbotAI* ai) : ItemTargetTrigger(ai, "revive targets", true, true) {}
+        // Checked every 5th tick: the target scan walks the group.
+        SoulstoneTrigger(PlayerbotAI* ai) : ItemTargetTrigger(ai, "revive targets", true, true, 5) {}
         std::string GetTargetName() override { return "party member to soulstone"; }
         uint32 GetItemId() override;
     };
