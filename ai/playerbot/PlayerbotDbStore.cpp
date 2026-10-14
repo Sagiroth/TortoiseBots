@@ -10,6 +10,8 @@
 #include <vector>
 
 #include "LootObjectStack.h"
+#include "../../runtime/CommandedGroupQuery.h"
+#include "../../runtime/RemoteCommanderPolicy.h"
 #include "strategy/values/Formations.h"
 #include "strategy/values/PositionValue.h"
 INSTANTIATE_SINGLETON_1(PlayerbotDbStore);
@@ -79,6 +81,18 @@ void PlayerbotDbStore::Load(PlayerbotAI *ai, std::string preset)
         }
 
         ai->GetAiObjectContext()->Load(values);
+
+        // The snapshot never holds a binding's "threat" (Save below): a bot
+        // that is still bound gets it back for the binding.
+        Player* bot = ai->GetBot();
+        if (stored.combat && TortoiseBots::BotCommands::IsInCommandedGroup(bot) &&
+            !ai->HasRealPlayerMaster() && !bot->InBattleGround() &&
+            TortoiseBots::RemoteCommander::KeepsCommandedThreatBackoff(true, PlayerbotAI::IsTank(bot)) &&
+            !ai->HasStrategy("threat", BotState::BOT_STATE_COMBAT))
+        {
+            ai->ChangeStrategy("+threat", BotState::BOT_STATE_COMBAT);
+            TortoiseBots::BotCommands::NoteCommanderThreat(bot);
+        }
     }
 
     // An anchor ("pull hold") restored from the snapshot has no pull left to
@@ -133,6 +147,11 @@ void PlayerbotDbStore::Save(PlayerbotAI *ai, std::string preset)
         std::list<std::string_view> strategies = ai->GetStrategies(state);
         if (ai->PullWindowAdded(state))
             strategies.remove(std::string_view("wait for attack"));
+        // A commander binding's "threat" is the binding's, not the bot's
+        // (RemoteCommander::CommanderThreatLedger): never stored, so a save
+        // while bound does not keep the back-off after the binding ends.
+        if (state == BotState::BOT_STATE_COMBAT && TortoiseBots::BotCommands::IsCommanderThreat(ai->GetBot()))
+            strategies.remove(std::string_view("threat"));
         return strategies;
     };
     SaveValue(guid, preset, "co", FormatStrategies("co", stored(BotState::BOT_STATE_COMBAT)));

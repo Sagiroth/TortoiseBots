@@ -14,5 +14,11 @@ namespace BotCommands {
 
 bool IsInCommandedGroup(Player* bot);
 
+// The "threat" back-off a binding gave a bot (RemoteCommander::
+// CommanderThreatLedger): AiFactory and the strategy snapshot load note it,
+// and the snapshot save leaves it out (it is the binding's, not the bot's).
+void NoteCommanderThreat(Player* bot);
+bool IsCommanderThreat(Player* bot);
+
 } // namespace BotCommands
 } // namespace TortoiseBots

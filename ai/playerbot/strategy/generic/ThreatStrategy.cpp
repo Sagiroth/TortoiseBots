@@ -3,6 +3,8 @@
 #include "ThreatStrategy.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
+#include "../../../../runtime/CommandedGroupQuery.h"
+#include "../../../../runtime/RemoteCommanderPolicy.h"
 
 using namespace ai;
 
@@ -56,7 +58,19 @@ float ThreatMultiplier::GetValue(Action* action)
     }
 
     if (AI_VALUE2(bool, "trigger active", "high threat"))
+    {
+        // In a commanded party a mob already hitting the healer or a damage
+        // bot is off the tank: backing off it leaves it there
+        // (RemoteCommander::CommandedBackoffYields).
+        Unit* target = AI_VALUE(Unit*, "current target");
+        Unit* victim = target ? target->GetVictim() : nullptr;
+        Player* victimPlayer = victim ? victim->ToPlayer() : nullptr;
+        bool const hitsMember = victimPlayer && bot->GetGroup() && bot->GetGroup()->IsMember(victimPlayer->GetObjectGuid());
+        if (hitsMember && TortoiseBots::RemoteCommander::CommandedBackoffYields(
+                TortoiseBots::BotCommands::IsInCommandedGroup(bot), true, PlayerbotAI::IsTank(victimPlayer)))
+            return 1.0f;
         return 0.0;
+    }
 
     return 1.0f;
 }

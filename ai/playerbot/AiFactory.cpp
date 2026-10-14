@@ -824,7 +824,13 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
     // Applied after the configured strategy strings: the shipped default
     // random-bot string carries -threat and would strip it again.
     if (KeepsPartyThreatBackoff(player, facade) && !combatEngine->HasStrategy("threat"))
+    {
         combatEngine->addStrategy("threat");
+        // Given for a commander's binding (a bot that joined the bound party
+        // after the bind, or a reset while bound): the binding owns it.
+        if (!facade->HasRealPlayerMaster())
+            TortoiseBots::BotCommands::NoteCommanderThreat(player);
+    }
 
     // Battleground switch
     if (player->InBattleGround())

@@ -91,7 +91,6 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 // Lens fallback stubs — core headers absent in static analysis. Real build uses
@@ -3957,11 +3956,11 @@ std::unordered_map<uint64, ai::GuidPosition>& SavedFollowTargets()
 }
 
 // The bots a binding gave the "threat" combat strategy (they did not have it
-// before): it comes off again when they leave the binding.
-std::unordered_set<uint64>& CommanderThreatBots()
+// before): never stored with the bot, and taken off when they leave.
+RemoteCommander::CommanderThreatLedger& CommanderThreatBots()
 {
-    static std::unordered_set<uint64> bots;
-    return bots;
+    static RemoteCommander::CommanderThreatLedger ledger;
+    return ledger;
 }
 
 uint32 s_commanderSweepMs = 0;
@@ -4112,25 +4111,26 @@ void RestoreFollower(uint64 botRaw, uint64 leadRaw)
 void GiveCommanderThreatBackoff(Player* bot)
 {
     PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
-    if (!ai || bot->InBattleGround() ||
-        !RemoteCommander::KeepsCommandedThreatBackoff(true, PlayerbotAI::IsTank(bot)) ||
-        ai->HasStrategy("threat", BotState::BOT_STATE_COMBAT))
+    if (!ai)
         return;
-    ai->ChangeStrategy("+threat", BotState::BOT_STATE_COMBAT);
-    CommanderThreatBots().insert(bot->GetObjectGuid().GetRawValue());
+    bool const eligible = !bot->InBattleGround() &&
+        RemoteCommander::KeepsCommandedThreatBackoff(true, PlayerbotAI::IsTank(bot));
+    if (CommanderThreatBots().Give(bot->GetObjectGuid().GetRawValue(), eligible,
+            ai->HasStrategy("threat", BotState::BOT_STATE_COMBAT)))
+        ai->ChangeStrategy("+threat", BotState::BOT_STATE_COMBAT);
 }
 
 // Takes the binding's "threat" strategy off a bot that left the binding,
 // unless the general rule still gives it (a real-player master).
 void RestoreCommanderThreatBackoff(uint64 botRaw)
 {
-    if (!CommanderThreatBots().erase(botRaw))
+    if (!CommanderThreatBots().Holds(botRaw))
         return;
     Player* bot = FindCharacter(botRaw);
     PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
-    if (!ai || AiFactory::KeepsPartyThreatBackoff(bot, ai))
-        return;
-    ai->ChangeStrategy("-threat", BotState::BOT_STATE_COMBAT);
+    bool const stillDue = ai && AiFactory::KeepsPartyThreatBackoff(bot, ai);
+    if (CommanderThreatBots().Release(botRaw, stillDue) && ai)
+        ai->ChangeStrategy("-threat", BotState::BOT_STATE_COMBAT);
 }
 
 // The commander's running bot tasks (loot, open, use) end with the binding;
@@ -4160,6 +4160,12 @@ uint32 ReleaseBinding(uint64 commanderRaw, RemoteCommander::ReleaseReason reason
     RestoreCommanderThreatBackoff(removed.leadGuid);
     Player* commander = FindCharacter(commanderRaw);
     Player* lead = FindCharacter(removed.leadGuid);
+    // A bot that joined after the bind is no follower but may hold the
+    // binding's "threat" (noted by AiFactory): release it too.
+    if (Group* group = lead ? lead->GetGroup() : nullptr)
+        if (group->GetId() == removed.groupId)
+            for (Group::MemberSlot const& slot : group->GetMemberSlots())
+                RestoreCommanderThreatBackoff(slot.guid.GetRawValue());
     TB_LOG_DETAIL("TortoiseBots: remote commander %s released group of %s: %s",
         commander ? commander->GetName() : "(offline)", lead ? lead->GetName() : "(offline)",
         RemoteCommander::ReleaseReasonText(reason));
@@ -4941,6 +4947,7 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
 {
     ObjectGuid const targetGuid = target->GetObjectGuid();
     uint32 succeeded = 0;
+    std::string stayingTank;
     SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(),
         onlyBot ? onlyBot->GetObjectGuid().GetRawValue() : 0, RemoteCommander::LaterOrder::Attack);
     for (Player* bot : order.bots)
@@ -4962,6 +4969,7 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
                 PlayerbotAI::IsTank(bot), holdsAnotherMob))
         {
             ++succeeded;
+            stayingTank = bot->GetName();
             continue;
         }
         RelaxTacticalMovement(ai);
@@ -4987,7 +4995,7 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
     if (onlyBot)
         SendActionAck(handler, intent, "bot:" + std::string(onlyBot->GetName()), succeeded);
     else
-        SendActionAck(handler, intent, "party", succeeded);
+        SendActionAck(handler, intent, "party", succeeded, RemoteCommander::PartyAttackAckDetail(stayingTank));
     return true;
 }
 
@@ -6715,6 +6723,17 @@ bool IsCommandedBy(Player* commander, Player* bot)
     return group && group->GetId() == binding->groupId && group->IsMember(bot->GetObjectGuid());
 }
 
+void NoteCommanderThreat(Player* bot)
+{
+    if (bot)
+        CommanderThreatBots().Note(bot->GetObjectGuid().GetRawValue());
+}
+
+bool IsCommanderThreat(Player* bot)
+{
+    return bot && CommanderThreatBots().Holds(bot->GetObjectGuid().GetRawValue());
+}
+
 bool IsInCommandedGroup(Player* bot)
 {
     if (!bot || !bot->GetGroup() || CommanderBindings().Empty())
@@ -6735,7 +6754,7 @@ void ClearRemoteCommanders()
     CommanderBindings().Clear();
     CommanderViews().clear();
     SavedFollowTargets().clear();
-    CommanderThreatBots().clear();
+    CommanderThreatBots().Clear();
     ClearCommanderTasks();
     s_commanderSweepMs = 0;
 }
