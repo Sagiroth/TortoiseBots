@@ -5818,6 +5818,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     if (bot->IsNonMeleeSpellCasted(false, true, true))
     {
         botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=cast-in-progress", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
+        NoteCastCheckFail(SPELL_FAILED_SPELL_IN_PROGRESS);
         return false;
     }
 
@@ -5968,6 +5969,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         {
             spell->cancel();
             botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=moving-jump-fall", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
+            NoteCastCheckFail(SPELL_FAILED_MOVING);
             return false;
         }
 
@@ -5983,6 +5985,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
 
             spell->cancel();
             botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=moving-no-master", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
+            NoteCastCheckFail(SPELL_FAILED_MOVING);
             return false;
         }
     }
@@ -6045,7 +6048,11 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     }
 
     if (spellSuccess != SPELL_CAST_OK)
+    {
+        // The core's own refusal, kept for the caller (the remote commander's open order).
+        NoteCastCheckFail(spellSuccess);
         return false;
+    }
 
     PlayAttackEmote(6);
 

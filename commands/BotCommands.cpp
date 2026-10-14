@@ -5398,6 +5398,49 @@ void NudgeTaskWalk(CommanderTask& task, Player* bot, uint32 diff)
         MOVE_RUN_MODE | MOVE_PATHFINDING);
 }
 
+// The act hold (RemoteCommander::HoldsForAct): before each attempt to start the
+// action, the bot stops where it stands and holds there. A bot that walked
+// already holds ("stay") at its standing point, which the act may begin a few
+// yards short of; one that stood in range from the start was still following.
+// Its stay moves to the spot it stands on, its movement generator is dropped
+// and a spell of its own is interrupted (the order beats the automation). The
+// stance comes back with the task's end (EndTaskWalk: finish, cancel, timeout).
+void HoldForAct(CommanderTask& task, PlayerbotAI* ai, Player* bot)
+{
+    if (!RemoteCommander::HoldsForAct(task.targetRaw != 0, task.noWalk))
+        return;
+    if (!task.walking && !task.superseded)
+    {
+        task.wasStaying = ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT);
+        PlayerConvenience::Instance().NoteHoldOrder(bot->GetObjectGuid());
+        ai->SetMovementStrategy("stay");
+        task.walking = true;
+    }
+    ai->DropQueuedMovementOrders();
+    SetStayAnchor(ai, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+    if (bot->IsNonMeleeSpellCasted(false))
+        bot->InterruptNonMeleeSpells(false);
+    bot->GetMotionMaster()->Clear();
+    bot->GetMotionMaster()->MoveIdle();
+    if (sServerFacade.isMoving(bot))
+        ai->StopMoving();
+}
+
+// While the started cast runs: a movement generator something queued since
+// (a reaction, a convenience order) is dropped before it takes a step that
+// would break the cast. The bot's AI itself sleeps through its own cast.
+void KeepStillDuringAct(CommanderTask const& task, Player* bot)
+{
+    if (!RemoteCommander::HoldsForAct(task.targetRaw != 0, task.noWalk) || !task.actStarted ||
+        !bot->IsNonMeleeSpellCasted(false))
+        return;
+    if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
+    {
+        bot->GetMotionMaster()->Clear();
+        bot->GetMotionMaster()->MoveIdle();
+    }
+}
+
 enum class ActStart : uint8
 {
     Started,
@@ -5474,9 +5517,16 @@ ActStart BeginLootAct(CommanderTask& task, Player* commander, Player* bot, Playe
     if (ExecuteQuietAction(ai, "open loot", ai::Event("cmd loot", "", commander)))
         return ActStart::Started;
     RemoteCommander::LootOrders().Forget(task.botRaw);
-    char const* reason = ViewFailReason(static_cast<uint32>(ai->GetLastCastCheckFail()));
-    return RefuseAct(task, ActStart::Retry, RemoteCommander::CastReasonCode(reason ? reason : ""),
-        "The bot could not start opening it.");
+    // The reason the open did not start: the cast check the bot's CastSpell
+    // recorded (its own gates: moving, another cast; or the core's check), else
+    // the loot range the open loot action keeps.
+    uint32 const castFail = static_cast<uint32>(ai->GetLastCastCheckFail());
+    char const* reason = ViewFailReason(castFail);
+    if (!reason && castFail == static_cast<uint32>(SPELL_CAST_OK) && !lootObject.IsInLootRange(bot))
+        reason = "range";
+    std::string const why = reason ? reason : "";
+    return RefuseAct(task, ActStart::Retry, RemoteCommander::CastReasonCode(why),
+        RemoteCommander::OpenRefusalText(why, castFail));
 }
 
 // A game object that is not a chest: use it like a player would.
@@ -5521,6 +5571,7 @@ ActStart BeginTaskAct(CommanderTask& task, Player* commander, Player* bot, Playe
 {
     task.actStarted = false;
     ++task.actTries;
+    HoldForAct(task, ai, bot);
     ActStart start;
     if (task.lootLike)
         start = BeginLootAct(task, commander, bot, ai, target);
@@ -5529,6 +5580,12 @@ ActStart BeginTaskAct(CommanderTask& task, Player* commander, Player* bot, Playe
     else
         start = BeginUseAct(task, commander, bot, ai);
     task.actStarted = start == ActStart::Started;
+    // A cast with a cast time (the 5 s Opening of a locked chest): the act stage
+    // waits for it to run out before it waits for the result.
+    if (task.actStarted)
+        if (Spell* spell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+            task.state.actBudgetMs = RemoteCommander::ActBudgetAfterCast(task.state, task.lootLike,
+                spell->GetCastedTime());
     return start;
 }
 
@@ -5629,6 +5686,9 @@ bool StepCommanderTask(CommanderTask& task, uint32 diff)
         facts.actDone = task.state.stage == RemoteCommander::TaskStage::Act && TaskActDone(task, bot, ai);
     }
 
+    if (facts.botAvailable && task.state.stage == RemoteCommander::TaskStage::Act)
+        KeepStillDuringAct(task, bot);
+
     // A used object that vanished (despawn, map change) is no "opened".
     if (facts.botAvailable && task.state.stage == RemoteCommander::TaskStage::Act && task.actStarted &&
         task.state.kind == RemoteCommander::TaskKind::Open && !task.lootLike &&
@@ -5643,7 +5703,7 @@ bool StepCommanderTask(CommanderTask& task, uint32 diff)
     if (facts.botAvailable && task.state.stage == RemoteCommander::TaskStage::Act && !task.actStarted &&
         task.actTries > 0)
     {
-        if (task.actTries >= 4)
+        if (task.actTries >= RemoteCommander::kActTries)
         {
             FinishCommanderTask(task, false, 0, "", task.lastCode, task.lastMessage);
             return true;
@@ -5900,9 +5960,9 @@ static bool CommanderOpen(ChatHandler* handler, CommanderOrder const& order, Pla
         return true;
     }
     CommanderTask task;
-    task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Open, distance, true);
-    task.targetRaw = request.guid;
     task.lootLike = target.go->GetGoType() == GAMEOBJECT_TYPE_CHEST;
+    task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Open, distance, true, task.lootLike);
+    task.targetRaw = request.guid;
     task.intent = intent;
     return LaunchCommanderTask(handler, order, bot, ai, task);
 }

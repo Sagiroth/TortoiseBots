@@ -154,13 +154,33 @@ inline uint32_t ActBudgetMs(TaskKind kind)
     return kLootWindowMs;
 }
 
-inline TaskState MakeTask(TaskKind kind, float startDistance, bool needsWalk)
+// An order that ends in a loot window (a corpse, a chest) waits for the loot
+// window, also `cmd open` on a chest: an object's 4 s is shorter than the 5 s
+// Opening cast of a locked chest.
+inline uint32_t ActBudgetMs(TaskKind kind, bool lootLike)
+{
+    return lootLike ? kLootWindowMs : ActBudgetMs(kind);
+}
+
+// Once the action's cast is under way the act stage lasts until the cast has
+// run out plus the usual wait for its result (the loot window, the object's
+// reaction), never less than before. stageMs is what the act stage has used so
+// far (refused attempts before the cast started); castMs is the cast time
+// still to run.
+inline uint32_t ActBudgetAfterCast(TaskState const& state, bool lootLike, uint32_t castMs)
+{
+    uint64_t const needed = static_cast<uint64_t>(state.stageMs) + castMs + ActBudgetMs(state.kind, lootLike);
+    uint64_t const capped = std::min<uint64_t>(needed, kMaxWalkMs);
+    return static_cast<uint32_t>(std::max<uint64_t>(state.actBudgetMs, capped));
+}
+
+inline TaskState MakeTask(TaskKind kind, float startDistance, bool needsWalk, bool lootLike = false)
 {
     TaskState state;
     state.kind = kind;
     state.stage = needsWalk ? TaskStage::Walk : TaskStage::Act;
     state.walkBudgetMs = WalkBudgetMs(startDistance);
-    state.actBudgetMs = ActBudgetMs(kind);
+    state.actBudgetMs = ActBudgetMs(kind, lootLike);
     return state;
 }
 
@@ -418,6 +438,49 @@ inline char const* CastReasonCode(std::string const& reason)
         return kCodeBusy;
     return kCodeFailed;
 }
+
+// The message of a refused open (the code is CastReasonCode(reason)). reason is
+// the short cast reason; castResult the core's SpellCastResult number of the
+// refused cast (0 = none was recorded: the bot's own gate refused before the
+// core saw a cast).
+inline std::string OpenRefusalText(std::string const& reason, uint32_t castResult)
+{
+    if (reason == "moving")
+        return "The bot was moving and could not start the opening cast.";
+    if (reason == "casting")
+        return "The bot is busy casting another spell.";
+    if (reason == "range")
+        return "The bot is not close enough to open it.";
+    if (reason == "los")
+        return "The bot has no line of sight to it.";
+    if (reason == "no-target")
+        return "The opening cast found no valid target.";
+    if (reason == "no-item")
+        return "The opening needs an item the bot does not carry.";
+    if (castResult)
+        return "The opening cast failed (spell check " + std::to_string(castResult) + ").";
+    return "The bot could not start opening it.";
+}
+
+// ---------------------------------------------------------------------------
+// The act hold
+// ---------------------------------------------------------------------------
+
+// While the one action of an order on a corpse or an object starts and runs,
+// the bot holds still where it stands: the Opening cast of a locked chest takes
+// 5 s and breaks on the first step, and the bot's own follow, formation or stay
+// movement would otherwise take it (the glue stops the bot, anchors its stay on
+// the spot and clears a movement generator before each attempt and while the
+// cast runs). A use with nothing to walk to (a potion, a bandage) keeps its stance.
+inline bool HoldsForAct(bool hasObjectTarget, bool noWalk)
+{
+    return hasObjectTarget && !noWalk;
+}
+
+// A start attempt that the bot's own movement refused (still on the last yards,
+// a follow step) is retried after the hold stopped it, like any other refusal;
+// after kActTries refused attempts the order ends with the newest refusal.
+constexpr uint32_t kActTries = 4;
 
 // ---------------------------------------------------------------------------
 // Loot ledger

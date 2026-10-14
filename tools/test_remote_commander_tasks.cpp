@@ -473,6 +473,66 @@ static void TestLaterOrderMovement()
     CHECK(!LaterOrderTakesMovement(LaterOrder::Pull));
 }
 
+// `cmd open` on a chest waits for a loot window, not for an object's reaction:
+// the 5 s Opening cast of a locked chest (Baelog's Chest, lock 93) does not fit
+// in 4 s. Once a cast is under way the act stage covers the rest of the cast
+// plus the wait for its result, never less than before and never unbounded.
+static void TestActBudgetCoversTheCast()
+{
+    CHECK(ActBudgetMs(TaskKind::Open, false) == kOpenEffectMs);
+    CHECK(ActBudgetMs(TaskKind::Open, true) == kLootWindowMs);
+    CHECK(ActBudgetMs(TaskKind::Loot, true) == kLootWindowMs);
+    CHECK(ActBudgetMs(TaskKind::Use, false) == kUseCastMs);
+    CHECK(MakeTask(TaskKind::Open, 5.0f, true, true).actBudgetMs == kLootWindowMs);
+    CHECK(MakeTask(TaskKind::Open, 5.0f, true).actBudgetMs == kOpenEffectMs);
+
+    TaskState chest = MakeTask(TaskKind::Open, 3.0f, false, true);
+    chest.stageMs = 500; // one refused attempt before the cast started
+    CHECK(ActBudgetAfterCast(chest, true, 5000) == 500 + 5000 + kLootWindowMs);
+
+    TaskState lever = MakeTask(TaskKind::Open, 3.0f, false);
+    CHECK(ActBudgetAfterCast(lever, false, 0) == kOpenEffectMs);       // instant: unchanged
+    CHECK(ActBudgetAfterCast(lever, false, 3000) == 3000 + kOpenEffectMs);
+
+    TaskState use = MakeInPlaceTask(TaskKind::Use);
+    CHECK(ActBudgetAfterCast(use, false, 1000) == 1000 + kUseCastMs);
+    CHECK(ActBudgetAfterCast(use, false, 600000) == kMaxWalkMs);       // capped
+
+    // The extended budget holds the stage open through the cast.
+    TaskState open = MakeTask(TaskKind::Open, 3.0f, false, true);
+    open.actBudgetMs = ActBudgetAfterCast(open, true, 5000);
+    TaskFacts started;
+    started.inRange = true;
+    started.actStarted = true;
+    CHECK(AdvanceTask(open, started, 9000).step == TaskStep::Wait);
+    CHECK(AdvanceTask(open, started, 4000).step == TaskStep::Fail);
+}
+
+// A refused open says why: the bot's own gates (moving, another cast), the
+// range, or the core's cast check by number.
+static void TestOpenRefusal()
+{
+    CHECK(std::strcmp(CastReasonCode("moving"), "busy") == 0);
+    CHECK(OpenRefusalText("moving", 0).find("moving") != std::string::npos);
+    CHECK(OpenRefusalText("casting", 0).find("casting") != std::string::npos);
+    CHECK(OpenRefusalText("range", 0).find("close enough") != std::string::npos);
+    CHECK(OpenRefusalText("los", 0).find("line of sight") != std::string::npos);
+    CHECK(OpenRefusalText("", 12) == "The opening cast failed (spell check 12).");
+    CHECK(OpenRefusalText("", 0) == "The bot could not start opening it.");
+    CHECK(OpenRefusalText("moving", 33).find("moving") != std::string::npos); // the reason wins
+}
+
+// The hold: orders on a corpse or an object hold the bot still while the action
+// starts and runs; a use with nothing to walk to keeps the bot's stance.
+static void TestActHold()
+{
+    CHECK(HoldsForAct(true, false));
+    CHECK(!HoldsForAct(true, true));
+    CHECK(!HoldsForAct(false, true));
+    CHECK(!HoldsForAct(false, false));
+    CHECK(kActTries >= 2);
+}
+
 int main()
 {
     TestStandingPoint();
@@ -490,6 +550,9 @@ int main()
     TestObjectEffect();
     TestLockVerdict();
     TestCastReasonCodes();
+    TestActBudgetCoversTheCast();
+    TestOpenRefusal();
+    TestActHold();
     TestLootLedger();
     TestLootItemWanted();
     TestLootMethod();
