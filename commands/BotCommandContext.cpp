@@ -360,7 +360,7 @@ void PausePartyDpsForPull(BotCommandContext const& context, Player* executor, ui
 // but the command snapshots the tank's default and records the per-request
 // mode on the PullStrategy. PullEndAction restores the default, so a pull
 // never leaks into the next command and a pullback never sticks.
-bool ConfigurePullMode(PlayerbotAI* ai, bool pullback, uint32 joinDelaySeconds)
+bool ConfigurePullMode(PlayerbotAI* ai, bool pullback, uint32 joinDelaySeconds, bool rangedOrder)
 {
     if (!ai)
         return false;
@@ -377,7 +377,7 @@ bool ConfigurePullMode(PlayerbotAI* ai, bool pullback, uint32 joinDelaySeconds)
     if (applied)
     {
         if (PullStrategy* strategy = PullStrategy::Get(ai))
-            strategy->BeginCommand(pullback, hadPullBack, joinDelaySeconds);
+            strategy->BeginCommand(pullback, hadPullBack, joinDelaySeconds, rangedOrder);
     }
     return applied;
 }

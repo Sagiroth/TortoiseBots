@@ -25,6 +25,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 
 ### 1. Protection (Tank)
 1. **Pull & Engagement:** Charges on enemy-out-of-melee, then swaps to Defensive Stance (no Battle Stance prep in code). No *Intercept* gap-closer: it needs Berserker Stance, and the tank stays in Defensive Stance (donor `TankWarriorStrategy` has none either).
+   - *Ranged pull (commanded):* a tank hired with a gun, bow, crossbow or thrown weapon plus ammo opens a `.bot action pull`/`.bot cmd pull` from range when the mob stands where walking in is wrong — no walkable path (a ledge), farther than `AiPlayerbot.RangedPullMeleeApproach` (20 yd), or the order says `ranged` — and a pullback always does. It fires *Shoot Bow/Gun/Crossbow* or *Throw* once, stands still until the shot lands, then falls back to the pull anchor as usual. Without the weapon, its skill, the shoot spell or ammo it walks in and whispers what is missing. A rogue pulls the same way; see [player controls](../guides/player-controls.md).
 2. **Threat Generation:**
    - Keeps *Shield Block* active on cooldown to enable *Revenge*.
    - Stacks *Sunder Armor* to a full 5-stack, then stops (re-applies only to refresh an expiring stack; sunder yields to Shield Slam only once 40+ rage makes slam live).

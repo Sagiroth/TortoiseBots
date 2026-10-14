@@ -1830,6 +1830,19 @@ AiPlayerbot.EnableCustomRaidTactics = 1
 #AiPlayerbot.PullDpsJoinDelay = 10
 #AiPlayerbot.PullBackDpsJoinDelay = 5
 #AiPlayerbot.PullBackMaxReturnTime = 15
+
+# Ranged opening for commanded pulls (".bot action pull|pullback", ".bot cmd
+# pull|pullback"). A plain pull walks the tank in; with RangedPull = 1 the tank
+# shoots instead (gun, bow, crossbow, thrown weapon with its ammo; a hunter or
+# caster uses its pull spell) when the mob is in sight and in shot range and
+# either no path leads to it (a ledge) or it is farther than
+# RangedPullMeleeApproach yards (walking in would meet the next pack). The order
+# word `ranged` (".bot action pull 10 ranged") asks for it on any pull and is
+# honoured whatever this says. A pullback always opens from range. A tank
+# without the weapon or ammo walks in and the answer says why. Commanded pulls
+# only: the tank's own automatic pulls are unchanged.
+#AiPlayerbot.RangedPull = 1
+#AiPlayerbot.RangedPullMeleeApproach = 20
 # Random bot default strategies (applied after defaults)
 # Note: non-tank bots grouped with a real-player master (outside BGs) get `threat` added back
 # after this list, so `-threat` here only affects masterless pool bots.

@@ -801,6 +801,8 @@ bool PlayerbotAIConfig::Initialize()
     pullDpsJoinDelay = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.PullDpsJoinDelay", 10));
     pullBackDpsJoinDelay = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.PullBackDpsJoinDelay", 5));
     pullBackMaxReturnTime = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.PullBackMaxReturnTime", 15));
+    rangedPull = config.GetBoolDefault("AiPlayerbot.RangedPull", true);
+    rangedPullMeleeApproach = config.GetFloatDefault("AiPlayerbot.RangedPullMeleeApproach", 20.0f);
     randombotStartingLevel = config.GetIntDefault("AiPlayerbot.randombotStartingLevel", 1);
     randomBotStartLevelMin = config.GetIntDefault("AiPlayerbot.RandomBotStartLevelMin", 1);
     randomBotStartLevelMax = config.GetIntDefault("AiPlayerbot.RandomBotStartLevelMax", 60);

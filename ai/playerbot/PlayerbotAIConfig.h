@@ -551,6 +551,12 @@ public:
     uint32 pullDpsJoinDelay;
     uint32 pullBackDpsJoinDelay;
     uint32 pullBackMaxReturnTime;
+    // Commanded pulls open from range (the tank's ranged weapon) when the mob
+    // is in sight and in shot range but cannot be walked to, or is farther than
+    // rangedPullMeleeApproach. Off = a plain pull always walks in unless the
+    // order says `ranged`.
+    bool rangedPull;
+    float rangedPullMeleeApproach;
     uint32 randombotStartingLevel;
     // Level seeding for persistent-level pools (DisableRandomLevels=1). Fresh
     // pool bots are created at level 1 by CharacterCreation, so the pool

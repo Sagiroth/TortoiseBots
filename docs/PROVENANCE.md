@@ -9775,3 +9775,10 @@ on the test VM (see the PR); build pending; in-game pending.
 - Reason: four stacked gates — (1) potion armed at <40% so the first 2 min cycle slipped 40 s; (2) blanket mage rune block; (3) gem node with no potion fallback; (4) evocation late + SINGLE threat type. Spell 51931 is Turtle Hot Streak proc rank 2 (stacking Pyroblast cast-time reduction, not a mana cost).
 - Validation: `tools/test_caster_mana_policy.cpp`, `bash tools/verify_all.sh` clean, module build green (build-commit.sh 4bacbb58); live raid re-test pending (server busy).
 
+## Commanded ranged pull: weapon pulls for tanks — 2026-10-15
+
+- Feature: `.bot action pull|pullback [seconds] [ranged]` and `.bot cmd pull|pullback <guid> [seconds] [ranged]`: the tank opens from range with its equipped ranged weapon when the mob is unreachable by navmesh path, farther than `AiPlayerbot.RangedPullMeleeApproach`, or the order says `ranged`; `AiPlayerbot.RangedPull` gates the automatic rules.
+- Source: donor mod-playerbots@79bd4281 (`src/Ai/Base/Strategy/PullStrategy.cpp`: `GetSpellName` maps the equipped ranged weapon to `shoot gun` / `shoot bow` / `shoot crossbow` / `throw`; `CanDoPullAction` refuses a "shoot" pull without a ranged weapon). Reimplemented, not copied: the weapon-to-spell mapping already lived in `generic/PullStrategy.cpp` (#346, #389) and is now one shared helper; the opening decision (`ai/playerbot/PullOpeningPolicy.h`), the path check and the order word are local. The donor warrior's *Heroic Throw* pull is WotLK-only and not ported.
+- Reason: a plain pull command is a melee engagement; on a ledge the tank cannot reach, or a camp near the next pack, walking in fails or aggroes the neighbours.
+- Validation: `tools/test_pull_opening_policy.cpp` (reachable / unreachable, range, sight, explicit order, config off, pullback, order parsing), `bash tools/verify_all.sh`, `-fsyntax-only` of the touched module files on the test VM; live check pending.
+

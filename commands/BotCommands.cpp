@@ -25,6 +25,7 @@
 #include "../ai/playerbot/PlayerbotDbStore.h"
 #include "../ai/playerbot/ChatHelper.h"
 #include "../ai/playerbot/BotState.h"
+#include "../ai/playerbot/PullOpeningPolicy.h"
 #include "../ai/playerbot/PullRefusalPolicy.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
@@ -3113,6 +3114,16 @@ static bool HandleTotem(ChatHandler* handler, char const* args)
 }
 
 
+// The canonical text of a parsed pull order's words, "[seconds][ ranged]": what
+// RunPullOrder takes as its option.
+static std::string PullOptionText(ai::PullOrderOption const& parsed)
+{
+    std::string text = parsed.hasSeconds ? std::to_string(parsed.seconds) : std::string();
+    if (parsed.ranged)
+        text += text.empty() ? "ranged" : " ranged";
+    return text;
+}
+
 static bool ParseAction(std::string input, std::string& intent, std::string& option)
 {
     intent.clear();
@@ -3262,29 +3273,23 @@ static bool ParseAction(std::string input, std::string& intent, std::string& opt
     else if (first == "pull" || first == "pullback")
     {
         // Owner-specified adjustable delay: ".bot action pull [seconds]" and
-        // ".bot action pullback [seconds]". Plain "pull"/"pullback" keeps the
-        // configured default; the TBM addon sends the slider value here.
-        // Anything else is rejected here (not in HandleAction) so the usage
-        // line stays the single source of truth for the surface.
+        // ".bot action pullback [seconds]", each with an optional trailing
+        // "ranged" (open from range whatever the mob does). Plain
+        // "pull"/"pullback" keeps the configured default; the TBM addon sends
+        // the slider value here. Anything else is rejected here (not in
+        // HandleAction) so the usage line stays the single source of truth for
+        // the surface. option = "[seconds][ ranged]".
         if (remainder.empty())
         {
             intent = first;
             return true;
         }
-        try
-        {
-            size_t pos = 0;
-            int seconds = std::stoi(remainder, &pos);
-            if (pos != remainder.size() || seconds < 0 || seconds > 60)
-                return false;
-            intent = first;
-            option = std::to_string(seconds);
-            return true;
-        }
-        catch (...)
-        {
+        ai::PullOrderOption parsed;
+        if (!ai::ParsePullOrderOption(remainder, parsed))
             return false;
-        }
+        intent = first;
+        option = PullOptionText(parsed);
+        return true;
     }
     else if (!remainder.empty())
         return false;
@@ -3599,13 +3604,17 @@ static bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context,
     uint32 joinDelay = pullback
         ? sPlayerbotAIConfig.pullBackDpsJoinDelay
         : sPlayerbotAIConfig.pullDpsJoinDelay;
-    if (!option.empty())
-        joinDelay = static_cast<uint32>(std::stoi(option));
+    // option is "[seconds][ ranged]" (PullOptionText).
+    ai::PullOrderOption pullWords;
+    ai::ParsePullOrderOption(option, pullWords);
+    if (pullWords.hasSeconds)
+        joinDelay = pullWords.seconds;
     // Pull and Pullback share the mature request action; the per-command
-    // return mode (plus join delay) is recorded on the PullStrategy
-    // (never sticky). The tank's default is restored when the pull ends.
+    // return mode (plus join delay and the `ranged` word) is recorded on the
+    // PullStrategy (never sticky). The tank's default is restored when the pull
+    // ends.
     PullModeSnapshot pullModeBefore = SavePullMode(ai);
-    if (!ConfigurePullMode(ai, pullback, joinDelay))
+    if (!ConfigurePullMode(ai, pullback, joinDelay, pullWords.ranged))
     {
         char const* message = pullback
             ? "The mature pullback strategy is unavailable."
@@ -3613,15 +3622,6 @@ static bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context,
         SendActionError(handler, reportIntent, "pull-policy", message);
         return true;
     }
-
-    // Report a body-pull substitution honestly: "reach pull" means the
-    // tank has no working ranged option, so it walks in, hits the mob in
-    // melee once, then returns to the anchor like a ranged pullback. The
-    // ACK detail carries it for both intents.
-    std::string pullActionName;
-    if (PullStrategy* probe = PullStrategy::Get(ai))
-        pullActionName = probe->GetPullActionName();
-    bool bodyPull = pullActionName == "reach pull";
 
     // Snapshot the target GUID: the live selection can change between
     // command validation and the pull tick.
@@ -3633,6 +3633,52 @@ static bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context,
         RestorePullMode(ai, pullModeBefore);
         SendActionError(handler, reportIntent, "failed", "The native pull strategy rejected the target.");
         return true;
+    }
+    // How the pull opens, now that the request has the target and has decided:
+    // "reach pull" means the tank walks in and hits the mob in melee once. When
+    // the order wanted range (a `ranged` order, a pullback, an unreachable or
+    // far mob) and the tank cannot fire - no weapon, skill, shoot spell or ammo
+    // - the pull walks in and the answer names what is missing. Reported
+    // honestly for both intents, in the ACK detail and in a whisper to the
+    // requester.
+    PullStrategy* openingProbe = PullStrategy::Get(ai);
+    std::string pullActionName;
+    if (openingProbe)
+        pullActionName = openingProbe->GetPullActionName();
+    bool bodyPull = pullActionName == "reach pull";
+    std::string openingNote;
+    if (openingProbe && openingProbe->CommandWantsRanged())
+    {
+        if (!bodyPull)
+        {
+            // Opens from range because the order, the ledge or the distance
+            // said so. A pullback's ACK stays what it always was.
+            if (!pullback)
+                openingNote = std::string("ranged-") + ai::PullOpeningReasonName(openingProbe->GetOpeningReason());
+        }
+        else
+        {
+            Unit* openingTarget = openingProbe->GetTarget();
+            ai::PullRangedBlocker const blocker = openingProbe->GetRangedBlocker(
+                openingTarget && openingTarget->IsInWorld() ? executor->GetDistance(openingTarget) : -1.0f);
+            if (blocker != ai::PullRangedBlocker::None)
+            {
+                openingNote = ai::PullRangedBlockerName(blocker);
+                // A mob that is simply too close is the normal body pull of a
+                // pullback; only an explicit `ranged` order is told about it.
+                if (blocker != ai::PullRangedBlocker::TooClose || openingProbe->IsCommandRangedOrder())
+                {
+                    char const* missing =
+                        blocker == ai::PullRangedBlocker::NoWeapon ? "no ranged weapon equipped"
+                        : blocker == ai::PullRangedBlocker::Untrained ? "the weapon skill is missing"
+                        : blocker == ai::PullRangedBlocker::NoSpell ? "the shoot spell is not learned"
+                        : blocker == ai::PullRangedBlocker::NoAmmo ? "no ammo"
+                        : "the target is inside the minimum shooting range";
+                    ai->TellPlayerNoFacing(requester, std::string(executor->GetName()) +
+                        " cannot pull from range (" + missing + "), so it walks in.");
+                }
+            }
+        }
     }
     // The pull is accepted (the request only records state): now the tank
     // may break its stay, a fled party comes back and the DPS hold at your
@@ -3689,10 +3735,12 @@ static bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context,
 
     std::string scope = context.selectedBot == executor
         ? "bot:" + std::string(executor->GetName()) : "party";
+    std::string executorDetail = executor->GetName();
     if (bodyPull)
-        SendActionAck(handler, reportIntent, scope, 1, std::string(executor->GetName()) + " body-pull");
-    else
-        SendActionAck(handler, reportIntent, scope, 1, executor->GetName());
+        executorDetail += " body-pull";
+    if (!openingNote.empty())
+        executorDetail += " " + openingNote;
+    SendActionAck(handler, reportIntent, scope, 1, executorDetail);
     return true;
 }
 
@@ -3725,7 +3773,7 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             if (intent.empty())
                 intent = "unknown";
         }
-        SendActionError(handler, intent, "invalid", "Usage: .bot action attack/interrupt/stop/pull [seconds]/pullback [seconds]/come/stay/hold/follow/flee/focus skull/cc <mark> [bot]/cc clear [bot]/auto cc [on/off]/sap [on/off] [bot]/aoe [on/off]/loot [on/off]/repair/sell/rest/drink/eat/release/corpse run/learn/trade/ready/raid [status/tankface/douse/custom status/custom on/custom off]");
+        SendActionError(handler, intent, "invalid", "Usage: .bot action attack/interrupt/stop/pull [seconds] [ranged]/pullback [seconds] [ranged]/come/stay/hold/follow/flee/focus skull/cc <mark> [bot]/cc clear [bot]/auto cc [on/off]/sap [on/off] [bot]/aoe [on/off]/loot [on/off]/repair/sell/rest/drink/eat/release/corpse run/learn/trade/ready/raid [status/tankface/douse/custom status/custom on/custom off]");
         return true;
     }
     if (!requester->IsInWorld() || !requester->IsAlive() || requester->IsBeingTeleported())
@@ -8179,9 +8227,9 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         bool const pull = verb == "pull" || verb == "pullback";
         bool const scoped = verb == "attack";
         std::string option;
-        if (parts.empty() || parts.size() > (pull || scoped ? 2u : 1u))
+        if (parts.empty() || parts.size() > (pull ? 3u : scoped ? 2u : 1u))
         {
-            std::string message = "Usage: .bot cmd " + verb + " <guid>" + (pull ? " [seconds]" : scoped ? " [bot]" : "");
+            std::string message = "Usage: .bot cmd " + verb + " <guid>" + (pull ? " [seconds] [ranged]" : scoped ? " [bot]" : "");
             SendActionError(handler, intent, "invalid", message.c_str());
             return true;
         }
@@ -8195,16 +8243,20 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
                 return true;
             }
         }
-        if (pull && parts.size() == 2)
+        if (pull && parts.size() >= 2)
         {
-            char* end = nullptr;
-            long seconds = std::strtol(parts[1].c_str(), &end, 10);
-            if (!end || *end != '\0' || seconds < 0 || seconds > 60)
+            // "[seconds] [ranged]": either or both, in that order.
+            std::string words = parts[1];
+            if (parts.size() == 3)
+                words += " " + parts[2];
+            ai::PullOrderOption parsed;
+            if (!ai::ParsePullOrderOption(words, parsed))
             {
-                SendActionError(handler, intent, "invalid", "The join delay is 0-60 seconds.");
+                SendActionError(handler, intent, "invalid",
+                    "After the guid: the join delay (0-60 seconds), then optionally the word ranged.");
                 return true;
             }
-            option = std::to_string(seconds);
+            option = PullOptionText(parsed);
         }
         Unit* target = ResolveOrderTarget(handler, intent, order, parts[0]);
         if (!target)
