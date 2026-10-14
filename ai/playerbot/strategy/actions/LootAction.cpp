@@ -15,6 +15,7 @@
 #include "playerbot/QuestLogPolicy.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "../../../../runtime/RemoteCommanderTasks.h"
+#include "../../../../runtime/CommandedGroupQuery.h"
 
 
 using namespace ai;
@@ -73,6 +74,23 @@ bool OpenLootAction::Execute(Event& event)
     // DoLoot re-validates the object (Refresh), which empties lootObject.guid when it is
     // no longer lootable; keep the guid the attempt was made on.
     ObjectGuid const lootGuid = lootObject.guid;
+
+    // A bot in a commanded group opens a game object only on the commander's
+    // order (that order watches the object): a chest it picked before the bind
+    // is dropped, not opened. The stack offers no other one (OrderByDistance).
+    if (lootGuid.IsGameObject())
+    {
+        uint32 onlyItem = 0;
+        bool const ordered = TortoiseBots::RemoteCommander::LootOrders().Watching(
+            bot->GetObjectGuid().GetRawValue(), lootGuid.GetRawValue(), onlyItem);
+        if (!TortoiseBots::RemoteCommander::OwnLootTakesObject(true,
+                !ordered && TortoiseBots::BotCommands::IsInCommandedGroup(bot), ordered))
+        {
+            context->GetValue<LootObject>("loot target")->Set(LootObject());
+            return false;
+        }
+    }
+
     bool result = DoLoot(lootObject);
     LootObjectStack* lootStack = AI_VALUE(LootObjectStack*, "available loot");
 

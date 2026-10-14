@@ -6,6 +6,7 @@
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/strategy/Engine.h"
 #include "../ai/playerbot/strategy/Action.h"
+#include "../ai/playerbot/strategy/AiObjectContext.h"
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
 #include "../ai/playerbot/strategy/values/PositionValue.h"
 #include "../ai/playerbot/WorldPosition.h"
@@ -96,6 +97,18 @@ bool ExecuteQuietAction(PlayerbotAI* ai, std::string const& action, ai::Event co
     if (!silent.IsActive())
         return ai && ai->DoSpecificAction(action, ai::Event(event), true);
     return ai->DoSpecificAction(action, ai::Event(event), true);
+}
+
+bool ExecuteOrderedAction(PlayerbotAI* ai, std::string const& action, ai::Event const& event)
+{
+    if (!ai || !ai->GetAiObjectContext())
+        return false;
+    ai::Action* ordered = ai->GetAiObjectContext()->GetAction(action);
+    if (!ordered)
+        return false;
+    ScopedSilentStrategy silent(ai);
+    ai::Event copy(event);
+    return ordered->Execute(copy);
 }
 
 void ExecuteQuietNextAction(PlayerbotAI* ai, bool minimal)

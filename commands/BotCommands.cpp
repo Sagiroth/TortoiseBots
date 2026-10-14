@@ -5185,6 +5185,9 @@ struct CommanderTask
     uint32 itemId = 0;        // loot: only this item (0 = all); use: the item
     uint32 spellId = 0;       // use: the item's on-use spell
     uint32 actSpellId = 0;    // the spell the started act is casting (0 = none): the one the hold protects
+    uint32 actCastMs = 0;     // that spell's cast time at the start
+    uint32 actRunMs = 0;      // how long it has run since
+    RemoteCommander::Point3 actFrom; // where the bot stood when it started
     bool lootLike = false;    // ends with a loot window (corpse, chest)
     bool noWalk = false;      // nothing to walk to
     bool walking = false;     // the movement stance was changed for the walk
@@ -5534,17 +5537,26 @@ ActStart BeginLootAct(CommanderTask& task, Player* commander, Player* bot, Playe
 
     // A chest or node opens through the bot's own opening code (its lock
     // spell, a key it carries); the window comes back through the loot window
-    // handler either way.
+    // handler either way. The order runs "open loot" itself: through the engine
+    // a movement action is useless while the bot holds "stay", the stance the
+    // walk and the act hold put it in, so every chest order ended before a cast
+    // was even tried ("spell check 255", the core's SPELL_CAST_OK).
     ai->ClearLastCastCheckFail();
     ai->GetAiObjectContext()->GetValue<ai::LootObject>("loot target")->Set(lootObject);
-    if (ExecuteQuietAction(ai, "open loot", ai::Event("cmd loot", "", commander)))
+    if (ExecuteOrderedAction(ai, "open loot", ai::Event("cmd loot", "", commander)))
         return ActStart::Started;
     RemoteCommander::LootOrders().Forget(task.botRaw);
     // The reason the open did not start: the cast check the bot's CastSpell
     // recorded (its own gates: moving, another cast; or the core's check), else
-    // the loot range the open loot action keeps.
+    // someone else opening or looting it, else the loot range the open loot
+    // action keeps.
+    static_assert(RemoteCommander::kCastOk == static_cast<uint32>(SPELL_CAST_OK),
+        "RemoteCommander::kCastOk must be the core's SPELL_CAST_OK");
     uint32 const castFail = static_cast<uint32>(ai->GetLastCastCheckFail());
     char const* reason = ViewFailReason(castFail);
+    if (!reason && castFail == static_cast<uint32>(SPELL_CAST_OK) &&
+        (target.go->getLootState() != GO_READY || target.go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE)))
+        reason = "in-use";
     if (!reason && castFail == static_cast<uint32>(SPELL_CAST_OK) && !lootObject.IsInLootRange(bot))
         reason = "range";
     std::string const why = reason ? reason : "";
@@ -5607,10 +5619,14 @@ ActStart BeginTaskAct(CommanderTask& task, Player* commander, Player* bot, Playe
     // A cast with a cast time (the 5 s Opening of a locked chest): the act stage
     // waits for it to run out before it waits for the result, and the hold keeps
     // the bot still while that spell (only that one) is being cast.
+    task.actCastMs = 0;
+    task.actRunMs = 0;
     if (task.actStarted)
         if (Spell* spell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL))
         {
             task.actSpellId = spell->m_spellInfo ? spell->m_spellInfo->Id : 0;
+            task.actCastMs = spell->GetCastedTime();
+            task.actFrom = RemoteCommander::Point3{ bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ() };
             task.state.actBudgetMs = RemoteCommander::ActBudgetAfterCast(task.state, task.lootLike,
                 spell->GetCastedTime());
         }
@@ -5716,6 +5732,24 @@ bool StepCommanderTask(CommanderTask& task, uint32 diff)
 
     if (facts.botAvailable && task.state.stage == RemoteCommander::TaskStage::Act)
         KeepStillDuringAct(task, bot);
+
+    // The held act's cast ended before its time without a result: the core
+    // cancelled it. Answer now and say what was seen (a step, a fight).
+    if (facts.botAvailable && task.state.stage == RemoteCommander::TaskStage::Act && task.actStarted &&
+        task.actSpellId && task.actCastMs && !facts.actDone &&
+        RemoteCommander::HoldsForAct(task.targetRaw != 0, task.noWalk))
+    {
+        task.actRunMs += diff;
+        Spell* spell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+        bool const running = spell && spell->m_spellInfo && spell->m_spellInfo->Id == task.actSpellId;
+        if (RemoteCommander::ActCastBroken(running, task.actCastMs, task.actRunMs))
+        {
+            float const moved = bot->GetDistance(task.actFrom.x, task.actFrom.y, task.actFrom.z, SizeFactor::None);
+            FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeFailed,
+                RemoteCommander::ActCastBrokenText(task.actRunMs, moved, bot->IsInCombat()));
+            return true;
+        }
+    }
 
     // A used object that vanished (despawn, map change) is no "opened".
     if (facts.botAvailable && task.state.stage == RemoteCommander::TaskStage::Act && task.actStarted &&

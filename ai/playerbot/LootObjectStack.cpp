@@ -5,6 +5,8 @@
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/QuestLogPolicy.h"
 #include "../../runtime/GatherToolPolicy.h"
+#include "../../runtime/CommandedGroupQuery.h"
+#include "../../runtime/RemoteCommanderTasks.h"
 
 using namespace ai;
 
@@ -636,11 +638,22 @@ std::vector<LootObject> LootObjectStack::OrderByDistance(float maxDistance)
 
     std::map<float, LootObject> sortedMap;
     LootTargetList safeCopy(availableLoot);
+    // A bot in a commanded group leaves game objects to the commander's orders
+    // (RemoteCommander::OwnLootTakesObject); asked once, and only when one is queued.
+    int commanded = -1;
     for (LootTargetList::iterator i = safeCopy.begin(); i != safeCopy.end(); i++)
     {
         ObjectGuid guid = i->guid;
         if (IsAbandoned(guid))
             continue;
+
+        if (guid.IsGameObject())
+        {
+            if (commanded < 0)
+                commanded = TortoiseBots::BotCommands::IsInCommandedGroup(bot) ? 1 : 0;
+            if (!TortoiseBots::RemoteCommander::OwnLootTakesObject(true, commanded == 1, false))
+                continue;
+        }
 
         LootObject lootObject(bot, guid);
         if (!lootObject.IsLootPossible(bot))

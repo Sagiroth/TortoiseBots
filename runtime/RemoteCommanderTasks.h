@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -447,15 +448,19 @@ inline char const* CastReasonCode(std::string const& reason)
         return kCodeNoItem;
     if (reason == "no-target")
         return kCodeInvalidTarget;
-    if (reason == "cd" || reason == "casting" || reason == "moving")
+    if (reason == "cd" || reason == "casting" || reason == "moving" || reason == "in-use")
         return kCodeBusy;
     return kCodeFailed;
 }
 
+// SPELL_CAST_OK in this core (Spells/SpellDefines.h: 0xFF, "custom value"): the
+// glue's "no cast check was recorded", never a reason (the glue asserts it).
+constexpr uint32_t kCastOk = 0xFF;
+
 // The message of a refused open (the code is CastReasonCode(reason)). reason is
 // the short cast reason; castResult the core's SpellCastResult number of the
-// refused cast (0 = none was recorded: the bot's own gate refused before the
-// core saw a cast).
+// refused cast (0 or kCastOk = none was recorded: the bot's own gate refused
+// before the core saw a cast; "spell check 255" named the core's OK as a failure).
 inline std::string OpenRefusalText(std::string const& reason, uint32_t castResult)
 {
     if (reason == "moving")
@@ -470,7 +475,9 @@ inline std::string OpenRefusalText(std::string const& reason, uint32_t castResul
         return "The opening cast found no valid target.";
     if (reason == "no-item")
         return "The opening needs an item the bot does not carry.";
-    if (castResult)
+    if (reason == "in-use")
+        return "Someone else is opening or looting it right now.";
+    if (castResult && castResult != kCastOk)
         return "The opening cast failed (spell check " + std::to_string(castResult) + ").";
     return "The bot could not start opening it.";
 }
@@ -494,6 +501,49 @@ inline bool HoldsForAct(bool hasObjectTarget, bool noWalk)
 // a follow step) is retried after the hold stopped it, like any other refusal;
 // after kActTries refused attempts the order ends with the newest refusal.
 constexpr uint32_t kActTries = 4;
+
+// The started act's cast (the 5 s Opening of a locked chest) is gone before its
+// cast time ran out: the core cancelled it (a step of more than 0.5 yd, damage,
+// a stun). The order ends there with what the glue saw, instead of waiting out
+// its budget for a window that cannot come. One look of slack: the sweep sees
+// the cast every kTaskTickMs, so a cast that completed is never called broken.
+inline bool ActCastBroken(bool castRunning, uint32_t castMs, uint32_t sinceStartMs)
+{
+    return castMs && !castRunning && sinceStartMs + kTaskTickMs < castMs;
+}
+
+// The answer of a broken act cast: how long it ran and what the glue saw of the
+// usual causes, so a live run names the interrupter.
+inline std::string ActCastBrokenText(uint32_t sinceStartMs, float movedYards, bool inCombat)
+{
+    char ran[16];
+    std::snprintf(ran, sizeof(ran), "%.1f", sinceStartMs / 1000.0f);
+    std::string text = std::string("The opening cast was interrupted after ") + ran + " s (";
+    if (movedYards > 0.5f)
+    {
+        char moved[16];
+        std::snprintf(moved, sizeof(moved), "%.1f", movedYards);
+        text += std::string("the bot moved ") + moved + " yd";
+    }
+    else if (inCombat)
+        text += "the bot is in combat";
+    else
+        text += "it did not move and is not in combat";
+    return text + ").";
+}
+
+// ---------------------------------------------------------------------------
+// The bound group's own looting
+// ---------------------------------------------------------------------------
+
+// A bot in a group a commander has bound leaves game objects (chests, herb and
+// ore nodes, quest objects) to the commander's orders; corpses stay its own.
+// Its own 5 s Opening casts on a chest (several bots at once, on arrival) broke
+// on their next follow step, and raced the bot the commander had ordered.
+inline bool OwnLootTakesObject(bool isGameObject, bool inCommandedGroup, bool commanderOrdered)
+{
+    return !isGameObject || !inCommandedGroup || commanderOrdered;
+}
 
 // ---------------------------------------------------------------------------
 // Loot ledger

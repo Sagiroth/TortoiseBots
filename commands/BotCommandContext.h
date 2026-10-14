@@ -75,6 +75,11 @@ Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::s
 // The pre-existing non-combat `silent` strategy is restored exactly on scope
 // exit, so this helper cannot change a bot's durable strategy configuration.
 bool ExecuteQuietAction(PlayerbotAI* ai, std::string const& action, ai::Event const& event);
+// Execute one action for an explicit order, quietly, past the engine's
+// isUseful/isPossible gates: those say when the automation may pick the action
+// (a movement action is useless while the bot holds "stay"), and the order put
+// the bot on that stay itself. The action's own checks still apply.
+bool ExecuteOrderedAction(PlayerbotAI* ai, std::string const& action, ai::Event const& event);
 // Run one normal AI step without exposing incidental bot chat to the owner.
 void ExecuteQuietNextAction(PlayerbotAI* ai, bool minimal = false);
 // Put a named mature action on the active engine so its existing prerequisite

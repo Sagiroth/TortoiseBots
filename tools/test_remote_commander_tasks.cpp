@@ -520,6 +520,36 @@ static void TestOpenRefusal()
     CHECK(OpenRefusalText("", 12) == "The opening cast failed (spell check 12).");
     CHECK(OpenRefusalText("", 0) == "The bot could not start opening it.");
     CHECK(OpenRefusalText("moving", 33).find("moving") != std::string::npos); // the reason wins
+    // The core's SPELL_CAST_OK (0xFF) is "no check recorded", not "spell check 255".
+    CHECK(OpenRefusalText("", kCastOk) == "The bot could not start opening it.");
+    CHECK(OpenRefusalText("in-use", 0).find("Someone else") != std::string::npos);
+    CHECK(std::strcmp(CastReasonCode("in-use"), "busy") == 0);
+}
+
+// The started cast vanished before its cast time: broken (a step, damage); a cast
+// that ran its time out, still runs, or had no cast time is not.
+static void TestActCastBroken()
+{
+    CHECK(ActCastBroken(false, 5000, 300));
+    CHECK(ActCastBroken(false, 5000, 4500));
+    CHECK(!ActCastBroken(true, 5000, 300));
+    CHECK(!ActCastBroken(false, 5000, 5000 - kTaskTickMs));
+    CHECK(!ActCastBroken(false, 5000, 5250));
+    CHECK(!ActCastBroken(false, 0, 0));
+    CHECK(ActCastBrokenText(300, 1.24f, false) ==
+        "The opening cast was interrupted after 0.3 s (the bot moved 1.2 yd).");
+    CHECK(ActCastBrokenText(1000, 0.0f, true).find("in combat") != std::string::npos);
+    CHECK(ActCastBrokenText(1000, 0.2f, false).find("did not move") != std::string::npos);
+}
+
+// A bound group's own loot chain: corpses as before, a game object only on the
+// commander's order; an unbound bot loots as before.
+static void TestOwnLootInCommandedGroup()
+{
+    CHECK(OwnLootTakesObject(false, true, false));
+    CHECK(!OwnLootTakesObject(true, true, false));
+    CHECK(OwnLootTakesObject(true, true, true));
+    CHECK(OwnLootTakesObject(true, false, false));
 }
 
 // The hold: orders on a corpse or an object hold the bot still while the action
@@ -589,6 +619,8 @@ int main()
     TestCastReasonCodes();
     TestActBudgetCoversTheCast();
     TestOpenRefusal();
+    TestActCastBroken();
+    TestOwnLootInCommandedGroup();
     TestActHold();
     TestCombatEndsAct();
     TestLootLedger();
