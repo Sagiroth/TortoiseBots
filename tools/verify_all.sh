@@ -83,6 +83,7 @@ if command -v g++ >/dev/null 2>&1; then
         test_class_consumable_policy
         test_combat_spread_policy
         test_combat_stuck_policy
+        test_commander_telemetry
         test_creature_aura_keepout_policy
         test_death_cluster_policy
         test_debuff_spread_policy

@@ -45,6 +45,7 @@
 #include "../runtime/RemoteCommanderView.h"
 #include "../runtime/RemoteCommanderTasks.h"
 #include "../runtime/RemoteCommanderEnter.h"
+#include "../runtime/CommanderTelemetry.h"
 #include "../ai/playerbot/LootObjectStack.h"
 #include "../ai/playerbot/strategy/Engine.h"
 #include "../ai/playerbot/strategy/Value.h"
@@ -1951,6 +1952,11 @@ static bool HandleSummon(ChatHandler* handler, char const* args)
     handler->PSendSysMessage("Summoning %s to a safe position near you (3s); it will follow on arrival.", name.c_str());
     return true;
 }
+// Notes a remote commander's order and the module's answer for the observability
+// dashboard's Commanders tab (defined with the commander state below).
+static void NoteCommanderOrderResult(ChatHandler* handler, std::string const& intent, bool ok,
+    std::string const& result);
+
 static std::string ProtocolSafe(std::string value)
 {
     for (char& character : value)
@@ -1969,6 +1975,8 @@ static void SendActionError(ChatHandler* handler, std::string const& intent,
     std::string safeMessage = ProtocolSafe(message ? message : "request rejected");
     handler->PSendSysMessage("TBM:ACTION_ERR|%s|%s|%s", ProtocolSafe(intent).c_str(),
         code ? code : "rejected", safeMessage.c_str());
+    NoteCommanderOrderResult(handler, intent, false,
+        std::string(code ? code : "rejected") + ": " + safeMessage);
 }
 
 static void SendActionAck(ChatHandler* handler, std::string const& intent,
@@ -1980,6 +1988,7 @@ static void SendActionAck(ChatHandler* handler, std::string const& intent,
     std::string safeExecutor = executor.empty() ? "-" : ProtocolSafe(executor);
     handler->PSendSysMessage("TBM:ACTION_ACK|%s|%s|%u|%s",
         ProtocolSafe(intent).c_str(), safeScope.c_str(), count, safeExecutor.c_str());
+    NoteCommanderOrderResult(handler, intent, true, safeScope + " " + std::to_string(count));
 }
 
 static bool ExecuteInterruptAction(ChatHandler* handler, BotCommandContext const& context,
@@ -4054,6 +4063,25 @@ std::unordered_map<uint64, CommanderView>& CommanderViews()
     static std::unordered_map<uint64, CommanderView> views;
     return views;
 }
+
+// The commanders' last orders with the module's answer, for the observability
+// dashboard (runtime/CommanderTelemetry.h): bounded, noted when a reply is
+// sent, cleared with the bindings. s_commanderOrderDetail is the arguments of
+// the order being handled now (set only while HandleCommanderOrder runs, so a
+// later reply of a bot task carries none).
+TortoiseBots::CommanderTelemetry::OrderLog& CommanderOrderLog()
+{
+    static TortoiseBots::CommanderTelemetry::OrderLog log;
+    return log;
+}
+
+std::string s_commanderOrderDetail;
+
+struct CommanderOrderDetailScope
+{
+    explicit CommanderOrderDetailScope(std::string const& detail) { s_commanderOrderDetail = detail; }
+    ~CommanderOrderDetailScope() { s_commanderOrderDetail.clear(); }
+};
 
 // The character with this raw guid, also while it is between maps (a zoning
 // commander or lead bot must not lose the binding).
@@ -7495,6 +7523,7 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     std::string rest = split == std::string::npos ? std::string() : Trim(text.substr(split + 1));
     std::string const intent = "cmd " + (verb.empty() ? std::string("unknown") : ProtocolSafe(verb));
+    CommanderOrderDetailScope const detailScope(rest);
 
     if (!RemoteCommander::IsKnownOrder(verb))
     {
@@ -7734,6 +7763,7 @@ void UpdateRemoteCommanders(uint32_t diff)
     if (CommanderBindings().Empty())
     {
         s_commanderSweepMs = 0;
+        CommanderOrderLog().Clear();
         if (!CommanderViews().empty())
             CommanderViews().clear();
         return;
@@ -7749,6 +7779,61 @@ void UpdateRemoteCommanders(uint32_t diff)
     UpdateCommanderViews(diff);
     // The bot tasks (loot, open, use) of the commanders.
     UpdateCommanderTasks(diff);
+}
+
+static void NoteCommanderOrderResult(ChatHandler* handler, std::string const& intent, bool ok,
+    std::string const& result)
+{
+    // Only the answers to a bound commander's `.bot cmd <order>` count.
+    if (intent.compare(0, 4, "cmd ") != 0)
+        return;
+    Player* commander = Requester(handler);
+    if (!commander)
+        return;
+    uint64 const commanderRaw = commander->GetObjectGuid().GetRawValue();
+    if (!CommanderBindings().FindByCommander(commanderRaw))
+        return;
+    CommanderTelemetry::OrderRecord record;
+    record.at = static_cast<int64_t>(time(nullptr));
+    record.verb = intent.substr(4);
+    record.detail = s_commanderOrderDetail;
+    record.ok = ok;
+    record.result = result;
+    CommanderOrderLog().Note(commanderRaw, std::move(record));
+}
+
+void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
+{
+    out.clear();
+    // Nothing to read while no commander is bound: the common case costs a lookup.
+    if (CommanderBindings().Empty())
+    {
+        CommanderOrderLog().Clear();
+        return;
+    }
+    std::unordered_set<uint64_t> bound;
+    for (uint64 commanderRaw : CommanderBindings().Commanders())
+    {
+        bound.insert(commanderRaw);
+        RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commanderRaw);
+        if (!binding || out.size() >= CommanderTelemetry::kMaxBindings)
+            continue;
+        CommanderTelemetry::BindingRef ref;
+        Player* commander = FindCharacter(commanderRaw);
+        ref.commander = commander ? commander->GetName() : "offline #" + std::to_string(::ObjectGuid(commanderRaw).GetCounter());
+        ref.commanderOnline = commander && commander->GetSession() && commander->GetSession()->HasNetworkTransport();
+        ref.groupId = binding->groupId;
+        auto const view = CommanderViews().find(commanderRaw);
+        ref.viewOn = view != CommanderViews().end() && view->second.enabled;
+        Player* lead = FindCharacter(binding->leadGuid);
+        Group* group = lead ? lead->GetGroup() : nullptr;
+        ref.lead = lead;
+        if (group && group->GetId() == binding->groupId)
+            FillCommandedBots(group, lead, ref.bots);
+        ref.orders = CommanderOrderLog().Recent(commanderRaw);
+        out.push_back(std::move(ref));
+    }
+    CommanderOrderLog().Retain(bound);
 }
 
 bool IsCommandedBy(Player* commander, Player* bot)
@@ -7808,6 +7893,7 @@ void SettleCommanderBinding(uint64_t commanderRaw)
 
 void ClearRemoteCommanders()
 {
+    CommanderOrderLog().Clear();
     CommanderBindings().Clear();
     CommanderViews().clear();
     SavedFollowTargets().clear();

@@ -124,6 +124,10 @@ type Store struct {
 	// Stored verbatim; cleared on session change only.
 	serverInfo *model.ServerInfoPayload
 
+	// commanders is the latest COMMANDERS payload (commanders.go): the
+	// standing remote-commander bindings behind the Commanders tab.
+	commanders commandersState
+
 	// Activity rollup fed by the BOT_EVENTS datagrams: per-bot counters plus
 	// the pool-wide loot/quest/level feeds. Cleared with the roster.
 	activity  map[uint32]*botActivityState

@@ -195,6 +195,15 @@ func (l *Listener) processPacket(data []byte) {
 		// event and the next snapshot carries the same payload inline.
 		l.hub.Broadcast("server_info", info)
 
+	case "COMMANDERS":
+		var cmd model.CommandersPayload
+		if err := json.Unmarshal(data, &cmd); err != nil {
+			return
+		}
+		if l.store.ApplyCommanders(&cmd) {
+			l.hub.Broadcast("commanders", l.store.Commanders())
+		}
+
 	default:
 		var anomaly model.AnomalyPayload
 		if err := json.Unmarshal(data, &anomaly); err != nil {

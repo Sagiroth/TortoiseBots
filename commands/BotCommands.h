@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "../runtime/CommandedGroupQuery.h" // IsInCommandedGroup
+#include "../runtime/CommanderTelemetry.h"
 
 class ChatHandler;
 class Player;
@@ -26,6 +28,10 @@ bool TryHandleBotCommand(ChatHandler* handler, char const* text);
 // every binding at shutdown.
 void UpdateRemoteCommanders(uint32_t diff);
 void ClearRemoteCommanders();
+// The standing bindings for the observability dashboard's Commanders tab:
+// commander, lead bot, bound bots and the commander's last orders. World
+// thread; read-only (nothing is settled or released); empty while none stands.
+void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out);
 // True when bot is in the group the commander is bound to: master-relative
 // conveniences (the summon out of a dungeon when the master leaves it) leave
 // such a bot with its lead bot.

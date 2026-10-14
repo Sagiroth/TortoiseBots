@@ -4,7 +4,7 @@ import "time"
 
 // ProtocolVersion is bumped whenever the C++ -> Go datagram layout changes in
 // a way the daemon must understand. It is carried in every datagram.
-const ProtocolVersion = 8
+const ProtocolVersion = 9
 
 // Anomaly types accepted from the game server. Anything else is rejected so
 // that Prometheus label cardinality stays bounded. STUCK is counter-only
@@ -515,4 +515,71 @@ type ZoneBoundingBox struct {
 	LocRight  float64 `json:"loc_right"`  // y2
 	LocTop    float64 `json:"loc_top"`    // x1
 	LocBottom float64 `json:"loc_bottom"` // x2
+}
+
+// CommandersPayload is the COMMANDERS datagram: the standing remote-commander
+// bindings (a commander that leads a bot-only party from anywhere) with the
+// bound bots and the commander's last orders. Sent every snapshot cycle while
+// a binding stands, and once with an empty list when the last one ends. It
+// describes what the module knows, for any client of the commander protocol.
+type CommandersPayload struct {
+	V          int                `json:"v"`
+	Session    uint64             `json:"session"`
+	Seq        uint64             `json:"seq"`
+	TS         int64              `json:"ts"`
+	Type       string             `json:"type"`
+	Commanders []CommanderBinding `json:"commanders"`
+}
+
+// CommanderBinding is one commander's standing binding.
+type CommanderBinding struct {
+	Commander string           `json:"commander"`
+	Online    bool             `json:"online"` // the commander has a network session
+	View      bool             `json:"view"`   // its TBM:VIEW perception feed is on
+	Group     uint32           `json:"group"`
+	Lead      string           `json:"lead"`
+	Bots      []CommanderBot   `json:"bots"`
+	Orders    []CommanderOrder `json:"orders"` // oldest first
+}
+
+// CommanderBot is a bot of a bound party.
+type CommanderBot struct {
+	Name      string  `json:"name"`
+	GUID      uint32  `json:"guid"`
+	Class     string  `json:"class"`
+	Role      string  `json:"role"`
+	Level     uint32  `json:"level"`
+	HP        uint32  `json:"hp"`
+	MaxHP     uint32  `json:"max_hp"`
+	Power     uint32  `json:"power"`
+	MaxPower  uint32  `json:"max_power"`
+	PowerType string  `json:"power_type"`
+	Alive     bool    `json:"alive"`
+	Lead      bool    `json:"lead"`
+	MapID     uint32  `json:"map"`
+	ZoneID    uint32  `json:"zone"`
+	X         float64 `json:"x"`
+	Y         float64 `json:"y"`
+	Z         float64 `json:"z"`
+}
+
+// CommanderOrder is one order of the commander and the module's answer.
+type CommanderOrder struct {
+	At     int64  `json:"at"` // unix seconds
+	Verb   string `json:"verb"`
+	Detail string `json:"detail"`
+	OK     bool   `json:"ok"`
+	Result string `json:"result"`
+}
+
+// CommandersView is what GET /api/v1/commanders and the "commanders" stream
+// event carry.
+type CommandersView struct {
+	Commanders []CommanderBinding `json:"commanders"`
+	// UpdatedAt is the unix time of the last COMMANDERS datagram (0: none yet).
+	UpdatedAt int64 `json:"updated_at"`
+	// AgeSec is how old that datagram is; Fresh is false past the stale limit,
+	// when Commanders is empty whatever the last datagram said.
+	AgeSec float64 `json:"age_sec"`
+	Fresh  bool    `json:"fresh"`
 }

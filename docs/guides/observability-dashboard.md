@@ -21,7 +21,7 @@ TortoiseBots Module (C++)
 Go Observability Daemon (tools/observability)
     │
     ├──► Prometheus Metrics HTTP Endpoint (/metrics)
-    ├──► REST API (/api/v1/status, /api/v1/bots, /api/v1/issues, /api/v1/anomalies, /api/v1/anomalies/totals)
+    ├──► REST API (/api/v1/status, /api/v1/bots, /api/v1/issues, /api/v1/anomalies, /api/v1/anomalies/totals, /api/v1/commanders)
     └──► WebSocket (/api/v1/stream) -> Embedded Web SPA Dashboard (:8095)
 ```
 
@@ -29,10 +29,11 @@ Go Observability Daemon (tools/observability)
 
 ## 1. Web Dashboard Features
 
-When the daemon is running, sign in with a game account of GM rank ≥ 2 (or run with `--dev-no-auth` for local dev), then open `http://localhost:8095` in your browser (port is configurable via `--http-port`). The dashboard has seven tabs, each answering one question; the URL hash (`#/bots?bot=123&p=gear`) records the tab and the open bot profile, and the last tab is remembered across reloads:
+When the daemon is running, sign in with a game account of GM rank ≥ 2 (or run with `--dev-no-auth` for local dev), then open `http://localhost:8095` in your browser (port is configurable via `--http-port`). The dashboard has eight tabs, each answering one question; the URL hash (`#/bots?bot=123&p=gear`) records the tab and the open bot profile, and the last tab is remembered across reloads:
 - **Overview** — is everything running? World tick, bots/players online, snapshot age and active issues; the 10-minute population and tick charts; the live-state census (click a state to list those bots) and a short needs-attention list (longest issues, low-HP count).
 - **Bots** — the one list of bots, online and offline together. Filter by name/class/spec or by any column with fields in the search box (`lvl:50-60 ilvl:>40 zone:tanaris gold:<10 deaths:0`; numbers take `N`, `A-B`, `>N`, `>=N`, `<N`, `<=N`, text fields match a substring, all terms must match), online/offline, state chips and class chips (the counts double as the fleet census) or "With issues". Three column sets: **Live** (status, health, power, target, zone), **Progress** (XP bar with XP/hour, average item level, gold) and **Activity** (session quests, loot, notable loot, kills, deaths, money, vendors, repairs, give-ups, gathering, AH). Click a row to open the profile.
 - **Map** — where the bots are: continent tabs with zone chips, the 2D world/zone map, breadcrumb trails and class legend. Click a marker to open the profile (a narrow side panel on this tab).
+- **Commanders** — who leads which bots, and what did they order. For each standing `.bot commander` binding ([`player-controls.md`](player-controls.md) §1a): the commander (online or not), the lead bot, whether the perception feed is on, the bound bots (class/role, HP and power bars, map/zone and position; dead ones struck through), a per-map plot of the bots with short paths (north up, one unit a yard, no artwork because instances have none), and the commander's last eight orders with the module's answer (`ACK` with scope and count, or `ERR` with code and message). It reports what the module knows, the same for any client of the commander protocol; it needs `AiPlayerbot.RemoteCommander = 1` and shows nothing while no binding stands. The list is dropped 12–15 s after the server stops reporting. **Optional embedded view.** Set `TBDASH_COMMANDER_URL` (or `--commander-url`) to the address of a commander dashboard, for example turtle-agent's `turtle-agent dashboard` (`http://127.0.0.1:8790`), and the tab adds a frame with it and an "Open in a new tab" link; unset, nothing of it appears. The address is opened by the viewer's browser, not by the daemon, so `127.0.0.1` is the viewer's machine; the other dashboard must allow being framed from this page (turtle-agent allows loopback pages, other origins via its `--embed-from`), and an `http` frame does not load inside an `https` dashboard (open it in a new tab).
 - **Progress** — are the bots levelling? Gaining-XP, median/total XP per hour, deaths per minute and died-in-5-min KPIs; level bands (per level while the pool spans ≤10 levels, otherwise five-level buckets) with the band's average equipped item level and its ratio to the band's level; the level-up timeline.
 - **Activity** — what happened: pool counters grouped as Quests, Combat, Loot & gathering, Money and Services (the window they cover is labelled `SINCE HH:MM`), then one feed panel switching between quests, notable loot/money/gather drops (filter by quality, class, level, bot) and the live event console.
 - **Issues** — what is broken: KPIs, active issues over time and by zone, then one panel switching between active issues (stuck 60 s while moving, dead 2+ min, unable to reach a combat target 2+ min), recently resolved episodes and the rolling incident feed (last 1000 anomalies ≈ 30 min) with the session-totals line (`GET /api/v1/anomalies/totals`). Only episodes past their gate are shown and no dead-long rows open in the first 5 min after a server restart.
@@ -98,6 +99,10 @@ The daemon exports Prometheus metrics at `http://localhost:8095/metrics`, allowi
 - `tortoisebots_grinding_xp_per_hour_total` / `tortoisebots_grinding_bots_gaining` / `tortoisebots_grinding_deaths_per_min` / `tortoisebots_grinding_pct_in_combat`: Pool XP and bot-death activity behind the grinding panel.
 - `tortoisebots_issues_active`: Number of active stuck-episode issues by type.
 - `tortoisebots_snapshots_total` / `tortoisebots_anomalies_total`: Telemetry ingest counters (roster snapshots published / anomalies detected).
+
+### Commanders API
+
+`GET /api/v1/commanders` — the standing remote-commander bindings from the module's `COMMANDERS` datagrams: `commanders[]` (`commander`, `online`, `view`, `group`, `lead`, `bots[]` with class, role, level, hp/max_hp, power/max_power/power_type, alive, lead, map, zone, x/y/z, and `orders[]` oldest first with `at`, `verb`, `detail`, `ok`, `result`), `updated_at`, `age_sec`, `fresh` (false after 12 s without a datagram, with `commanders` empty) and, only when `TBDASH_COMMANDER_URL` is set, `external_url`. In memory only; the same list is pushed as the `commanders` stream event.
 
 ### Activity API
 

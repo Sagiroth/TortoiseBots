@@ -2,6 +2,7 @@
 
 #include "Common.h"
 #include "PlayerLagWindow.h"
+#include "CommanderTelemetry.h"
 #include <cstdint>
 #include <ctime>
 #include <map>
@@ -152,6 +153,11 @@ public:
     // own Player* roster to every telemetry cycle. Called on the world thread.
     void SetExternalRosterProvider(std::function<void(std::vector<Player*>&)> provider);
 
+    // The standing remote-commander bindings (issue #884) for the dashboard's
+    // Commanders tab, filled by the commands layer on the world thread. Read
+    // once per snapshot cycle; the provider returns at once while none exists.
+    void SetCommanderProvider(std::function<void(std::vector<CommanderTelemetry::BindingRef>&)> provider);
+
 private:
     ObservabilityEmitter();
     ~ObservabilityEmitter();
@@ -165,6 +171,12 @@ private:
     bool AnomalyAllowed(uint32 guid, uint8 typeId, uint32 nowMs);
     void AddStateTime(size_t stateIndex, uint32 diff);
     void EmitSnapshotCycle(std::vector<Player*> const& activeBots, uint32 diff);
+    // COMMANDERS datagram: one per snapshot cycle while a binding stands, and
+    // one empty list when the last binding ends. Nothing otherwise.
+    void EmitCommanders();
+    std::function<void(std::vector<CommanderTelemetry::BindingRef>&)> m_commanderProvider;
+    std::vector<CommanderTelemetry::BindingRef> m_commanderRefs; // reused between cycles
+    bool m_commandersSent = false; // the last COMMANDERS datagram listed at least one binding
     // Effective running settings for the dashboard Server panel (Addendum 2):
     // core rate getters + AiPlayerbot flags, sent at startup and on a slow
     // cadence. No strings from config files, no secrets — numbers and on/off.

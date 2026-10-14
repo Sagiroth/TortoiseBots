@@ -8,6 +8,7 @@
 //   Map       where are they?             Progress  are they levelling?
 //   Activity  what happened?              Issues    what is broken?
 //   Server    how is it configured?
+//   Commanders  who leads which bots, and what did they order?
 // A bot's detail lives in ONE slide-over profile that any tab can open; the
 // URL hash (#/bots?bot=123&p=gear) records the tab and the open profile.
 (function() {
@@ -47,6 +48,9 @@
     anomalyTotals: null,
     grinding: { bots_tracked: 0, bots_gaining_xp: 0, pct_gaining_xp: 0, median_xp_hour: 0, total_xp_hour: 0, deaths_per_min: 0, pct_died_5min: 0, state_counts: {}, level_bands: [] },
     serverInfo: null,
+    // Remote-commander bindings reported by the module (COMMANDERS datagrams).
+    commanders: { list: [], fresh: false, updatedAt: 0, receivedAt: 0, externalUrl: '', frameLoaded: false },
+    cmdTrails: {},
     server: {
       online: false,
       stale: true,
@@ -743,6 +747,7 @@
     overview: { hash: 'overview', title: 'Overview' },
     roster: { hash: 'bots', title: 'Bots' },
     map: { hash: 'map', title: 'Map' },
+    commanders: { hash: 'commanders', title: 'Commanders' },
     progress: { hash: 'progress', title: 'Progress' },
     activity: { hash: 'activity', title: 'Activity' },
     issues: { hash: 'issues', title: 'Issues' },
@@ -825,6 +830,7 @@
   function renderTab(tab) {
     if (tab === 'overview') { renderOverviewCharts(); renderStates(); renderAttention(); }
     else if (tab === 'map') renderMap();
+    else if (tab === 'commanders') renderCommanders();
     else if (tab === 'roster') renderBotsTab();
     else if (tab === 'progress') renderProgress();
     else if (tab === 'activity') renderActivityTab();
@@ -844,6 +850,7 @@
     if (tab === 'roster' && Date.now() - state.rosterAt > 15000) fetchRoster();
     if (tab === 'activity') fetchFeed();
     if (tab === 'issues') fetchAnomalyTotals();
+    if (tab === 'commanders') { fetchCommanders(); showCommanderFrame(); }
   }
 
   el.menuItems.forEach(item => item.addEventListener('click', closeNavDrawer));
@@ -891,6 +898,7 @@
       fetchIssues(true);
       fetchActivity();
       fetchRoster();
+      fetchCommanders();
       if (state.activeTab === 'activity') fetchFeed();
       if (state.profileGuid !== null) fetchProfile(state.profileGuid);
     });
@@ -4276,6 +4284,8 @@
     } else if (msg.event === 'status') {
       applyServerStatus(msg.data);
       updateOverviewMetrics();
+    } else if (msg.event === 'commanders') {
+      applyCommanders(msg.data);
     } else if (msg.event === 'server_info') {
       if (msg.data) { state.serverInfo = msg.data; renderServerPanel(); }
     } else if (msg.event === 'anomaly') {
@@ -4293,6 +4303,202 @@
         appendConsoleLog(time, a.type, `<span class="log-bot">${esc(a.bot || 'Bot')}</span>: ${esc(a.details || a.last_action || '')}`, sev);
       }
     }
+  }
+
+
+  // ---- Commanders -----------------------------------------------------------
+  // What the MODULE knows about each standing remote-commander binding: the
+  // commander, the bound bots (vitals, place) and the commander's last orders
+  // with the module's answer. It is the same for any client of the commander
+  // protocol. The optional embedded view of an external commander dashboard
+  // (TBDASH_COMMANDER_URL) only appears when the daemon reports a URL.
+
+  // The module reports a binding every 2 s snapshot cycle; past this silence
+  // the list is dropped locally (the daemon applies the same rule on a fetch).
+  const COMMANDERS_STALE_MS = 15000;
+  const CMD_TRAIL_POINTS = 40;
+
+  function applyCommanders(view) {
+    if (!view || typeof view !== 'object') return;
+    const c = state.commanders;
+    c.list = Array.isArray(view.commanders) ? view.commanders : [];
+    c.fresh = !!view.fresh;
+    c.updatedAt = view.updated_at || 0;
+    c.receivedAt = Date.now();
+    if (typeof view.external_url === 'string') c.externalUrl = view.external_url;
+    noteCommanderTrails();
+    paintCommandersBadge();
+    if (state.activeTab === 'commanders') renderCommanders();
+  }
+
+  function fetchCommanders() {
+    fetch('/api/v1/commanders').then(jsonOrThrow).then(applyCommanders).catch(() => {});
+  }
+
+  function expireCommanders() {
+    const c = state.commanders;
+    if (c.list.length && Date.now() - c.receivedAt > COMMANDERS_STALE_MS) {
+      c.list = [];
+      c.fresh = false;
+      paintCommandersBadge();
+      if (state.activeTab === 'commanders') renderCommanders();
+    }
+  }
+
+  function paintCommandersBadge() {
+    const badge = document.getElementById('commanders-count');
+    if (!badge) return;
+    const n = state.commanders.list.length;
+    badge.textContent = String(n);
+    badge.style.display = n > 0 ? '' : 'none';
+  }
+
+  function cmdTrailKey(b) { return `${b.map}:${b.guid}`; }
+
+  // Short per-bot paths for the plot, kept in the page (the module sends the
+  // current position only). A path restarts when the bot changes map.
+  function noteCommanderTrails() {
+    const live = {};
+    state.commanders.list.forEach(bind => (bind.bots || []).forEach(b => {
+      const key = cmdTrailKey(b);
+      live[key] = true;
+      const trail = state.cmdTrails[key] || (state.cmdTrails[key] = []);
+      const last = trail[trail.length - 1];
+      if (!last || Math.hypot(last[0] - b.x, last[1] - b.y) >= 2) {
+        trail.push([b.x, b.y]);
+        if (trail.length > CMD_TRAIL_POINTS) trail.shift();
+      }
+    }));
+    Object.keys(state.cmdTrails).forEach(k => { if (!live[k]) delete state.cmdTrails[k]; });
+  }
+
+  function cmdBar(pct, kind) {
+    const p = Math.max(0, Math.min(100, Math.round(pct)));
+    const cls = kind === 'hp' ? (p < 30 ? 'low' : '') : (kind === 'rage' || kind === 'energy' ? kind : 'power');
+    return `<span class="cmd-bar ${cls}"><i style="width:${p}%"></i></span>${p}%`;
+  }
+
+  function cmdRoleClass(b) {
+    if (!b.alive) return 'dead';
+    return b.role === 'tank' ? 'tank' : b.role === 'healer' ? 'healer' : b.role === 'dps' ? 'dps' : 'other';
+  }
+
+  function cmdTime(sec) {
+    return sec ? new Date(sec * 1000).toLocaleTimeString() : '';
+  }
+
+  function cmdMapLabel(mapId, zoneId) {
+    const zone = zoneId ? getZoneName(zoneId, mapId) : '';
+    return zone && zone !== '-' ? `${zone} (map ${mapId})` : `map ${mapId}`;
+  }
+
+  function cmdBotsTable(bind) {
+    const rows = (bind.bots || []).map(b => {
+      const hp = b.max_hp ? (b.hp / b.max_hp) * 100 : 0;
+      const power = b.max_power ? (b.power / b.max_power) * 100 : 0;
+      const powerKind = b.power_type === 'rage' || b.power_type === 'energy' ? b.power_type : 'mana';
+      return `<tr class="${b.alive ? '' : 'cmd-dead'}">
+        <td>${b.lead ? '★ ' : ''}${esc(b.name)}</td>
+        <td>${esc(b.class)}${b.role ? ` / ${esc(b.role)}` : ''}</td>
+        <td>${esc(b.level)}</td>
+        <td>${cmdBar(hp, 'hp')}</td>
+        <td title="${esc(b.power_type)}">${b.max_power ? cmdBar(power, powerKind) : '–'}</td>
+        <td>${esc(cmdMapLabel(b.map, b.zone))}</td>
+        <td>${esc(Math.round(b.x))}, ${esc(Math.round(b.y))}</td>
+      </tr>`;
+    }).join('');
+    return `<div class="table-container"><table class="data-table">
+      <thead><tr><th>Bot</th><th>Class / role</th><th>Lvl</th><th>HP</th><th>Power</th><th>Where</th><th>x, y</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="7" class="table-empty">No bound bot is in the world.</td></tr>'}</tbody></table></div>`;
+  }
+
+  function cmdOrders(bind) {
+    const orders = (bind.orders || []).slice().reverse();
+    if (!orders.length) return '<div class="empty-hint">No order since the server started or the binding was made.</div>';
+    return `<div class="cmd-orders">${orders.map(o => `<div class="${o.ok ? 'ok' : 'err'}"><span class="when">${esc(cmdTime(o.at))}</span> ${o.ok ? 'ACK' : 'ERR'} ${esc(o.verb)}${o.detail ? ` ${esc(o.detail)}` : ''} &rarr; ${esc(o.result)}</div>`).join('')}</div>`;
+  }
+
+  // One plot per map the bound bots stand on: north up, west left, one unit a
+  // yard, fitted to the bots and their paths. No artwork: instances have none.
+  function cmdPlots(bind) {
+    const byMap = {};
+    (bind.bots || []).forEach(b => { (byMap[b.map] = byMap[b.map] || []).push(b); });
+    const html = Object.keys(byMap).map(mapId => {
+      const bots = byMap[mapId];
+      const pts = [];
+      const trails = bots.map(b => {
+        const trail = (state.cmdTrails[cmdTrailKey(b)] || []).map(p => [-p[1], -p[0]]);
+        trail.forEach(p => pts.push(p));
+        return trail;
+      });
+      bots.forEach(b => pts.push([-b.y, -b.x]));
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      pts.forEach(p => { minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]); minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]); });
+      const span = Math.max(maxX - minX, maxY - minY, 60);
+      const pad = span * 0.18;
+      const w = Math.max(maxX - minX, 60) + pad * 2;
+      const h = Math.max(maxY - minY, 60) + pad * 2;
+      const vx = (minX + maxX) / 2 - w / 2;
+      const vy = (minY + maxY) / 2 - h / 2;
+      const r = Math.max(w, h) / 70;
+      const dots = bots.map(b => {
+        const x = -b.y, y = -b.x;
+        const cls = cmdRoleClass(b);
+        const hp = b.max_hp ? Math.round((b.hp / b.max_hp) * 100) : 0;
+        return `<circle class="cmd-dot ${cls}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(b.lead ? r * 1.5 : r).toFixed(2)}"><title>${esc(b.name)} (${esc(b.class)} ${esc(b.role)}) ${hp}% hp, ${esc(Math.round(b.x))}, ${esc(Math.round(b.y))}</title></circle>`
+          + `<text x="${(x + r * 1.8).toFixed(1)}" y="${(y - r * 1.2).toFixed(1)}">${esc(b.name)}</text>`;
+      }).join('');
+      const lines = trails.map((trail, i) => trail.length > 1
+        ? `<polyline class="trail ${cmdRoleClass(bots[i])}" points="${trail.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')}"/>` : '').join('');
+      // 10-yard scale bar and north arrow
+      const sx = vx + w * 0.04, sy = vy + h * 0.95;
+      const scale = `<line class="scale" x1="${sx.toFixed(1)}" y1="${sy.toFixed(1)}" x2="${(sx + 10).toFixed(1)}" y2="${sy.toFixed(1)}"/><text x="${(sx + 12).toFixed(1)}" y="${(sy + r).toFixed(1)}">10 yd</text>`;
+      const north = `<text class="north" x="${(vx + w * 0.96).toFixed(1)}" y="${(vy + h * 0.07).toFixed(1)}" text-anchor="end">N ↑</text>`;
+      const font = Math.max(w, h) / 38;
+      return `<div><div class="cmd-plot-title">${esc(cmdMapLabel(mapId, bots[0].zone))}</div>
+        <svg class="cmd-plot" viewBox="${vx.toFixed(1)} ${vy.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" style="--cmd-font:${font.toFixed(2)}px" role="img" aria-label="Bound bots on map ${esc(mapId)}">${lines}${dots}${scale}${north}</svg></div>`;
+    }).join('');
+    return `<div class="cmd-plots">${html || '<div class="empty-hint">No bound bot is in the world.</div>'}</div>`;
+  }
+
+  function renderCommanders() {
+    const c = state.commanders;
+    const listEl = document.getElementById('cmd-list');
+    const emptyEl = document.getElementById('cmd-empty');
+    if (!listEl || !emptyEl) return;
+    const bots = c.list.reduce((n, b) => n + (b.bots || []).length, 0);
+    const down = c.list.reduce((n, b) => n + (b.bots || []).filter(x => !x.alive).length, 0);
+    const set = (id, text) => { const e = document.getElementById(id); if (e) e.textContent = text; };
+    set('cmd-kpi-bindings', c.list.length);
+    set('cmd-kpi-bots', bots);
+    set('cmd-kpi-dead', down);
+    set('cmd-kpi-age', c.updatedAt ? fmtDuration(Math.max(0, Math.round(Date.now() / 1000 - c.updatedAt))) + ' ago' : '–');
+    emptyEl.style.display = c.list.length ? 'none' : '';
+    listEl.innerHTML = c.list.map(bind => `<div class="card">
+      <div class="cmd-card-head">
+        <span class="cmd-name">${esc(bind.commander)}</span>
+        <span class="badge ${bind.online ? 'badge-info' : 'badge-error'}">${bind.online ? 'online' : 'offline'}</span>
+        <span class="cmd-meta">leads ${esc(bind.lead || '?')} · group ${esc(bind.group)} · ${(bind.bots || []).length} bots · perception feed ${bind.view ? 'on' : 'off'}</span>
+      </div>
+      <div class="cmd-grid">
+        <div>${cmdBotsTable(bind)}<h3 class="cmd-plot-title" style="margin-top:12px">Last orders</h3>${cmdOrders(bind)}</div>
+        ${cmdPlots(bind)}
+      </div></div>`).join('');
+    showCommanderFrame();
+  }
+
+  // The external commander dashboard: nothing is drawn, and no request is
+  // made to it, unless the daemon was started with TBDASH_COMMANDER_URL.
+  function showCommanderFrame() {
+    const box = document.getElementById('cmd-external');
+    const frame = document.getElementById('cmd-external-frame');
+    const link = document.getElementById('cmd-external-link');
+    if (!box || !frame || !link) return;
+    const url = state.commanders.externalUrl;
+    if (!url) { box.hidden = true; return; }
+    box.hidden = false;
+    link.href = url;
+    if (state.activeTab === 'commanders' && frame.getAttribute('src') !== url) frame.src = url;
   }
 
   // ---- Persistent issues --------------------------------------------------
@@ -4550,6 +4756,9 @@
   fetchHistory();
   fetchActivity();
   setInterval(fetchActivity, 30000);
+  fetchCommanders();
+  setInterval(fetchCommanders, 30000);
+  setInterval(expireCommanders, 3000);
   setInterval(fetchRoster, 60000);
   initWebSocket();
 

@@ -58,6 +58,10 @@ func main() {
 	dbcDir := flag.String("dbc-dir", getEnv("DBC_DIR", ""), "Optional operator DBC directory (same files mangosd reads); enables talent trees when world talent mirrors are empty")
 	issueMinAgeSec := flag.Int("issue-min-age-sec", getEnvInt("ISSUE_MIN_AGE_SEC", 300), "Only surface bot issues that persist at least this many seconds")
 	minGMLevel := flag.Int("min-gm-level", getEnvInt("MIN_GM_LEVEL", 2), "Minimum GM rank required for dashboard login (2 = gamemaster)")
+	// An optional external commander dashboard (for example turtle-agent's
+	// `turtle-agent dashboard`) that the Commanders tab embeds. Unset: the tab
+	// shows what the module knows and nothing else.
+	commanderURLRaw := flag.String("commander-url", getEnv("TBDASH_COMMANDER_URL", ""), "Optional URL of an external commander dashboard to embed in the Commanders tab (env TBDASH_COMMANDER_URL)")
 	devNoAuth := flag.Bool("dev-no-auth", false, "Disable Game Master authentication check for local dev testing")
 	// The activity rollup is in-memory, so without this a dashboard restart
 	// resets every counter. The file sits in the mounted icon-cache directory
@@ -179,6 +183,14 @@ func main() {
 			time.Sleep(sweepInterval)
 		}
 	}()
+
+	commanderURL, err := state.NormalizeCommanderURL(*commanderURLRaw)
+	if err != nil {
+		log.Printf("[Commanders] ignoring commander URL: %v", err)
+		commanderURL = ""
+	} else if commanderURL != "" {
+		log.Printf("[Commanders] embedding the commander dashboard at %s", commanderURL)
+	}
 
 	// 5. WebSocket hub and UDP ingestion
 	hub := ws.NewHub()
@@ -382,6 +394,16 @@ func main() {
 		writeJSON(w, store.QuestFeed(f))
 	}))
 
+	// Commanders: the standing remote-commander bindings the module reports
+	// (COMMANDERS datagrams), plus the embedded external dashboard's URL when
+	// the operator set one. Memory only; nothing here reads a database.
+	mux.HandleFunc("/api/v1/commanders", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, struct {
+			model.CommandersView
+			ExternalURL string `json:"external_url,omitempty"`
+		}{store.Commanders(), commanderURL})
+	}))
+
 	mux.HandleFunc("/api/v1/server-info", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		if info := store.ServerInfo(); info != nil {
 			writeJSON(w, info)
@@ -471,6 +493,7 @@ func main() {
 		initial := []ws.Event{
 			{Name: "snapshot", Data: store.Snapshot()},
 			{Name: "status", Data: store.Status()},
+			{Name: "commanders", Data: store.Commanders()},
 		}
 		if info := store.ServerInfo(); info != nil {
 			initial = append(initial, ws.Event{Name: "server_info", Data: info})

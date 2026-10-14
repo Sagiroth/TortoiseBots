@@ -135,6 +135,9 @@ void BotHostAdapter::OnStartup()
     TB_LOG_BASIC("TortoiseBots %s (AI %s)", BuildVersion().c_str(), configured ? "enabled" : "disabled");
     TB_LOG_BASIC("%s", AttributionLine().c_str());
     ObservabilityEmitter::Instance().Initialize();
+    // The dashboard's Commanders tab: the standing remote-commander bindings.
+    ObservabilityEmitter::Instance().SetCommanderProvider(
+        [](std::vector<CommanderTelemetry::BindingRef>& out) { BotCommands::CollectCommanderTelemetry(out); });
 }
 void BotHostAdapter::OnUpdate(uint32 diff)
 {

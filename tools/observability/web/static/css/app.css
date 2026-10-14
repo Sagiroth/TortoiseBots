@@ -2740,3 +2740,40 @@ select.input {
     min-height: 38px;
   }
 }
+
+/* ---------- Commanders tab ---------- */
+.cmd-card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.cmd-card-head .cmd-name { font-size: 1rem; font-weight: 650; color: #fff; }
+.cmd-card-head .cmd-meta { color: var(--text-muted); font-size: 0.8rem; }
+.cmd-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 1100px) { .cmd-grid { grid-template-columns: 1fr; } }
+.cmd-bar { display: inline-block; width: 54px; height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; vertical-align: middle; overflow: hidden; margin-right: 6px; }
+.cmd-bar i { display: block; height: 100%; background: var(--accent-green-bright); }
+.cmd-bar.low i { background: var(--accent-red); }
+.cmd-bar.power i { background: var(--accent-blue-bright); }
+.cmd-bar.rage i { background: var(--accent-red); }
+.cmd-bar.energy i { background: var(--accent-yellow); }
+.cmd-dead td { color: var(--text-dim); text-decoration: line-through; }
+.cmd-orders { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.74rem; display: grid; gap: 2px; margin-top: 6px; }
+.cmd-orders .ok { color: var(--accent-green-bright); }
+.cmd-orders .err { color: var(--accent-red); }
+.cmd-orders .when { color: var(--text-dim); }
+.cmd-plots { display: grid; gap: 12px; }
+.cmd-plot-title { color: var(--text-muted); font-size: 0.78rem; margin-bottom: 4px; }
+.cmd-plot { width: 100%; height: auto; max-height: 340px; background: var(--bg-card-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); display: block; }
+.cmd-plot .trail { fill: none; opacity: 0.45; vector-effect: non-scaling-stroke; stroke-width: 1.2; }
+.cmd-plot text { fill: var(--text-main); font-size: var(--cmd-font, 4px); paint-order: stroke; stroke: var(--bg-card-subtle); stroke-width: calc(var(--cmd-font, 4px) * 0.5); }
+.cmd-plot .north { fill: var(--text-dim); stroke: none; }
+.cmd-plot .scale { stroke: var(--text-muted); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.cmd-plot .trail.tank { stroke: var(--accent-yellow); }
+.cmd-plot .trail.healer { stroke: var(--accent-green-bright); }
+.cmd-plot .trail.dps { stroke: var(--accent-blue-bright); }
+.cmd-plot .trail.other { stroke: var(--accent-purple); }
+.cmd-plot .trail.dead { stroke: var(--text-dim); }
+.cmd-dot { stroke: var(--bg-card-subtle); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.cmd-dot.tank { fill: var(--accent-yellow); }
+.cmd-dot.healer { fill: var(--accent-green-bright); }
+.cmd-dot.dps { fill: var(--accent-blue-bright); }
+.cmd-dot.other { fill: var(--accent-purple); }
+.cmd-dot.dead { fill: var(--text-dim); }
+.cmd-frame { width: 100%; height: 78vh; min-height: 480px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); display: block; margin-bottom: 8px; }
