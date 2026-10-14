@@ -193,8 +193,12 @@ void HireLifecycle::KeepInstanceAfterPartyMove(Player* bot)
     if (!state)
         return;
     InstanceGroupBind* bind = party->GetBoundInstance(map->GetId());
-    switch (DecidePartyMoveInstance(true, dungeon->IsUnloadingBeforeReset(), bind != nullptr,
-        bind && bind->state == state))
+    PartyMoveInstance const decision = DecidePartyMoveInstance(true, dungeon->IsUnloadingBeforeReset(),
+        bind != nullptr, bind && bind->state == state);
+    InstancePlayerBind* solo = bot->GetBoundInstance(map->GetId());
+    if (DropSoloBindAfterPartyMove(decision, solo != nullptr, solo && solo->perm, solo && solo->state == state))
+        bot->UnbindInstance(map->GetId());
+    switch (decision)
     {
         case PartyMoveInstance::BindParty:
             party->BindToInstance(state, false);

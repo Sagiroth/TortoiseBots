@@ -207,6 +207,13 @@ static void TestPartyMoveKeepsInstance()
     // The instance is already waiting for its reset: never bound again.
     CHECK(DecidePartyMoveInstance(true, true, false, false) == PartyMoveInstance::Nothing);
     CHECK(DecidePartyMoveInstance(true, true, true, true) == PartyMoveInstance::Nothing);
+    // The bot's solo bind to the same instance goes once the party holds it.
+    CHECK(DropSoloBindAfterPartyMove(PartyMoveInstance::BindParty, true, false, true));
+    CHECK(DropSoloBindAfterPartyMove(PartyMoveInstance::KeepValid, true, false, true));
+    CHECK(!DropSoloBindAfterPartyMove(PartyMoveInstance::Nothing, true, false, true));
+    CHECK(!DropSoloBindAfterPartyMove(PartyMoveInstance::KeepValid, true, true, true));  // permanent stays
+    CHECK(!DropSoloBindAfterPartyMove(PartyMoveInstance::KeepValid, true, false, false)); // other instance
+    CHECK(!DropSoloBindAfterPartyMove(PartyMoveInstance::KeepValid, false, false, false));
 }
 
 int main()

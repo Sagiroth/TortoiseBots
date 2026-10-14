@@ -181,4 +181,16 @@ inline PartyMoveInstance DecidePartyMoveInstance(bool inDungeon, bool instanceRe
     return partyBoundToThisInstance ? PartyMoveInstance::KeepValid : PartyMoveInstance::Nothing;
 }
 
+// Once the party holds the bot's instance, a non-permanent solo bind of the
+// bot to that same instance is dropped, as the core does on entry
+// (DungeonMap::BindPlayerOrGroupOnEnter). Kept, it made the bot the party's
+// "last member already bound" at the next disband: Group::Disband skipped the
+// hand-over and reset the dungeon (bind -> unbind round trip).
+inline bool DropSoloBindAfterPartyMove(PartyMoveInstance decision, bool hasSoloBind,
+    bool soloBindPermanent, bool soloBindThisInstance)
+{
+    return decision != PartyMoveInstance::Nothing && hasSoloBind && !soloBindPermanent &&
+        soloBindThisInstance;
+}
+
 } // namespace TortoiseBots
