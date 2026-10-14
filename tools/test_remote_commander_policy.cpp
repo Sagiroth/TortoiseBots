@@ -608,6 +608,12 @@ static void TestPickNearestEntry()
     // A zero GUID is no candidate; NaN distance is never picked.
     candidates = { {0, 1.0f}, {0xC1, std::nanf("")} };
     CHECK(!PickNearestEntry(candidates, 30.0f, guid));
+    // A point must lie within ReactDistance of the bot, else the order is too-far before any search.
+    CHECK(EntryPointInReach(0.0f, 150.0f) && EntryPointInReach(149.9f, 150.0f) && EntryPointInReach(150.0f, 150.0f));
+    CHECK(!EntryPointInReach(150.1f, 150.0f));
+    CHECK(!EntryPointInReach(900.0f, 150.0f));          // a point across the map
+    CHECK(!EntryPointInReach(1.0f, 0.0f));              // no react distance, nothing is in reach
+    CHECK(!EntryPointInReach(std::nanf(""), 150.0f));
     // The radius: 30 yd around a point, ReactDistance around the bot.
     CHECK(EntrySearchRadius(true, 150.0f) == kEntryPointRadius && kEntryPointRadius == 30.0f);
     CHECK(EntrySearchRadius(false, 150.0f) == 150.0f);

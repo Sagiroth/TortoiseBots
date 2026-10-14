@@ -5342,6 +5342,23 @@ private:
     float m_range;
 };
 
+// A by-entry target's point must be within ReactDistance of the bot, checked
+// before anything is searched. True without a point (the search then runs
+// around the bot).
+bool EntryPointReachable(Player* bot, RemoteCommander::TargetSpec const& spec)
+{
+    if (!spec.hasPoint)
+        return true;
+    RemoteCommander::MovePoint botPoint;
+    botPoint.x = bot->GetPositionX();
+    botPoint.y = bot->GetPositionY();
+    botPoint.z = bot->GetPositionZ();
+    float const dx = spec.point.x - botPoint.x;
+    float const dy = spec.point.y - botPoint.y;
+    float const dz = spec.point.z - botPoint.z;
+    return RemoteCommander::EntryPointInReach(std::sqrt(dx * dx + dy * dy + dz * dz), sPlayerbotAIConfig.reactDistance);
+}
+
 // The GUID of the nearest spawned game object of spec.entry (and, with
 // corpses, the nearest corpse of that creature entry, a lootable one first)
 // around the order's point, or around the bot when it gave none. One bounded
@@ -5362,6 +5379,12 @@ uint64 FindEntryTarget(Player* bot, RemoteCommander::TargetSpec const& spec, boo
     float const radius = RemoteCommander::EntrySearchRadius(spec.hasPoint, sPlayerbotAIConfig.reactDistance);
     if (radius <= 0.0f)
         return 0;
+    // Only what the bot can reach is ever returned (within ReactDistance of
+    // the bot), so a not-found does not tell what lies farther away.
+    RemoteCommander::MovePoint botPoint;
+    botPoint.x = bot->GetPositionX();
+    botPoint.y = bot->GetPositionY();
+    botPoint.z = bot->GetPositionZ();
 
     std::vector<RemoteCommander::EntryCandidate> objects;
     {
@@ -5370,7 +5393,8 @@ uint64 FindEntryTarget(Player* bot, RemoteCommander::TargetSpec const& spec, boo
         MaNGOS::GameObjectListSearcher<EntryGameObjectCheck> searcher(found, check);
         Cell::VisitGridObjects(reference.x, reference.y, map, searcher, radius);
         for (GameObject* go : found)
-            objects.push_back({go->GetObjectGuid().GetRawValue(), DistanceToPoint(reference, go)});
+            if (RemoteCommander::EntryPointInReach(DistanceToPoint(botPoint, go), sPlayerbotAIConfig.reactDistance))
+                objects.push_back({go->GetObjectGuid().GetRawValue(), DistanceToPoint(reference, go)});
     }
     std::vector<RemoteCommander::EntryCandidate> lootable;
     std::vector<RemoteCommander::EntryCandidate> corpseAny;
@@ -5382,6 +5406,8 @@ uint64 FindEntryTarget(Player* bot, RemoteCommander::TargetSpec const& spec, boo
         Cell::VisitGridObjects(reference.x, reference.y, map, searcher, radius);
         for (Creature* creature : found)
         {
+            if (!RemoteCommander::EntryPointInReach(DistanceToPoint(botPoint, creature), sPlayerbotAIConfig.reactDistance))
+                continue;
             RemoteCommander::EntryCandidate const candidate{creature->GetObjectGuid().GetRawValue(),
                 DistanceToPoint(reference, creature)};
             corpseAny.push_back(candidate);
@@ -5401,14 +5427,20 @@ uint64 FindEntryTarget(Player* bot, RemoteCommander::TargetSpec const& spec, boo
 }
 
 // The GUID an order's target names: the GUID as typed, or the nearest object
-// of the entry. 0 (with the ERR already sent) when a by-entry search finds nothing.
-// The ACK of a by-entry order is preceded by one `TBM:ACTION_TARGET` line that names the
-// GUID chosen, so a client can log it and use it later (cmd state, cmd attack).
+// of the entry. 0 (with the ERR already sent) when the point is out of the bot's reach (`too-far`,
+// before any search) or the search finds nothing. The ACK of a by-entry order is preceded by one
+// `TBM:ACTION_TARGET` line, printed only after both checks passed, that names the GUID chosen, so a client can log it and use it later (cmd state, cmd attack).
 uint64 ResolveOrderGuid(ChatHandler* handler, std::string const& intent, Player* bot,
     RemoteCommander::TargetSpec const& spec, bool corpses)
 {
     if (!spec.ByEntry())
         return spec.guid;
+    if (!EntryPointReachable(bot, spec))
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeTooFar,
+            "That point is farther from the bot than AiPlayerbot.ReactDistance. Move the group closer first.");
+        return 0;
+    }
     uint64 const guid = FindEntryTarget(bot, spec, corpses);
     if (!guid)
     {
@@ -6291,14 +6323,31 @@ static bool CommanderState(ChatHandler* handler, CommanderOrder const& order,
         SendActionError(handler, intent, RemoteCommander::kCodeUnavailable, "The group is between maps. Try again in a moment.");
         return true;
     }
+    if (request.spec.ByEntry() && !EntryPointReachable(judge, request.spec))
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeTooFar,
+            "That point is farther from the bot than AiPlayerbot.ReactDistance. Move the group closer first.");
+        return true;
+    }
     uint64 const guid = request.spec.ByEntry() ? FindEntryTarget(judge, request.spec, false) : request.spec.guid;
     ObjectGuid const objectGuid(guid);
     GameObject* go = guid && objectGuid.IsGameObject() ? judge->GetMap()->GetGameObject(objectGuid) : nullptr;
+    // Only what a bot of the group can reach: within ReactDistance of the judge bot
+    // or of any live bot of the party on its map. Anything else answers like a missing object.
+    if (go)
+    {
+        bool reachable = RemoteCommander::EntryPointInReach(judge->GetDistance(go), sPlayerbotAIConfig.reactDistance);
+        for (Player* member : order.bots)
+            if (!reachable && member && member->IsAlive() && member->IsInWorld() && member->GetMap() == judge->GetMap())
+                reachable = RemoteCommander::EntryPointInReach(member->GetDistance(go), sPlayerbotAIConfig.reactDistance);
+        if (!reachable)
+            go = nullptr;
+    }
     if (!go || !sServerFacade.isSpawned(go))
     {
         SendActionError(handler, intent, RemoteCommander::kCodeNotFound,
             request.spec.ByEntry() ? "No spawned game object of that entry is near the point (or the group)."
-                                   : "No spawned game object with that GUID is on the group's map.");
+                                   : "No spawned game object with that GUID is within reach of the group.");
         return true;
     }
     SendActionAck(handler, intent, "party", 1,

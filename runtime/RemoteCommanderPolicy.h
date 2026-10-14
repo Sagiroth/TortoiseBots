@@ -753,6 +753,15 @@ inline float EntrySearchRadius(bool hasPoint, float reactDistance)
     return hasPoint ? kEntryPointRadius : reactDistance;
 }
 
+// A by-entry search is only for what the bots can reach: its point (or, with
+// none, the bot itself) must lie within ReactDistance of the bot. A point
+// farther away is refused (`too-far`) before anything is searched, so an order
+// cannot be used to ask what is spawned anywhere on the map.
+inline bool EntryPointInReach(float distanceBotToPoint, float reactDistance)
+{
+    return reactDistance > 0.0f && distanceBotToPoint <= reactDistance;
+}
+
 struct EntryCandidate
 {
     uint64_t guid = 0;
