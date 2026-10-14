@@ -553,6 +553,20 @@ type CommanderBinding struct {
 	MobsMap      uint32         `json:"mobs_map,omitempty"`      // the map the mobs are on (the lead's)
 	Mobs         []CommanderMob `json:"mobs"`                    // hostile units near the lead; null = not reported, [] = reported, none near
 	BoundAt      int64          `json:"bound_at,omitempty"`      // unix seconds the binding was first seen standing (the run timer starts here); absent from an older module
+	Run          *CommanderRun  `json:"run,omitempty"`           // the run leader's run of this binding ("observe" mode); absent when it has none or from an older module
+}
+
+// CommanderRun is where the run leader (`.bot run`) stands in a dungeon plan for one binding.
+type CommanderRun struct {
+	Plan    string `json:"plan"`
+	State   string `json:"state"`   // running, paused or done
+	Step    uint32 `json:"step"`    // 1-based step shown (0 before the first)
+	Steps   uint32 `json:"steps"`   // steps in the plan
+	Leg     string `json:"leg"`     // the current leg's name: the section
+	Kind    string `json:"kind"`    // move, pull, boss, loot, open ...
+	Phase   string `json:"phase"`   // what the step is doing
+	Note    string `json:"note"`    // what it does now, or why it paused
+	Changed int64  `json:"changed"` // unix seconds the step, phase, state or note last changed
 }
 
 // CommanderPos is the commander character's own position.

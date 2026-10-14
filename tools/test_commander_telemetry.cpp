@@ -375,6 +375,42 @@ void TestUnitInfo()
     std::printf("worst case with unit info (%zu bindings, %zu mobs): %zu bytes\n", kMaxBindings, kMaxMobsPerPayload, worst.size());
 }
 
+void TestRunInfo()
+{
+    BindingInfo b;
+    b.commander = "Glacienne";
+    b.bots.push_back(Bot("Worwusorl", true));
+    std::string const none = BuildPayload(9, 1, 1, 1, {b});
+    Check(!Has(none, "\"run\""), "a binding without a run keeps the old shape");
+
+    b.run.present = true;
+    b.run.plan = "uldaman";
+    b.run.state = "paused";
+    b.run.step = 78;
+    b.run.steps = 205;
+    b.run.leg = "ancient_stone_keeper";
+    b.run.kind = "pull";
+    b.run.phase = "rest";
+    b.run.note = "a unit survived \"3\" pulls";
+    b.run.changedAt = 1791990100;
+    std::string const json = BuildPayload(9, 1, 1, 1, {b});
+    Check(Has(json, "\"run\":{\"plan\":\"uldaman\",\"state\":\"paused\",\"step\":78,\"steps\":205,\"leg\":\"ancient_stone_keeper\""), "the run's plan, state, step and leg");
+    Check(Has(json, "\"kind\":\"pull\",\"phase\":\"rest\"") && Has(json, "\"changed\":1791990100"), "kind, phase and when it last changed");
+    Check(Has(json, "survived \\\"3\\\" pulls"), "the note is escaped");
+    Check(json.find('\n') == std::string::npos, "still one line");
+
+    // Clipped, and the worst case with a run on every binding still fits one datagram.
+    b.run.note = std::string(500, 'n');
+    b.run.leg = std::string(90, 'l');
+    std::string const clipped = BuildPayload(9, 1, 1, 1, {b});
+    Check(!Has(clipped, std::string(kMaxRunNote + 1, 'n')) && !Has(clipped, std::string(kMaxRunWord + 1, 'l')), "the run's words are clipped");
+    BindingInfo big = b;
+    for (int i = 0; i < 6; ++i)
+        big.bots.push_back(Bot("Botname" + std::to_string(i), false));
+    std::vector<BindingInfo> many(kMaxBindings, big);
+    Check(BuildPayload(9, 1, 1, 1, many).size() < 60000, "a run on every binding fits one datagram");
+}
+
 void TestControlCharacters()
 {
     BindingInfo b;
@@ -395,6 +431,7 @@ int main()
     TestMapData();
     TestMapDataCapsAndSize();
     TestUnitInfo();
+    TestRunInfo();
     TestControlCharacters();
     if (g_failures)
     {

@@ -5164,11 +5164,14 @@
       const place = cmdPlace(bind);
       const hp = CmdView.headerParts(bind, place, '');
       setHtml(card.querySelector('.cmd-title'), `${cmdBotLink(bind.commander_guid, hp[0])}${esc(hp[1])} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
+      const rb = UnitInfo.runBrief(bind, nowSec);
       setHtml(card.querySelector('.cmd-badges'),
-        `<span class="badge ${bind.online ? 'badge-info' : 'badge-error'}">${bind.online ? 'online' : 'offline'}</span>`
+        (rb ? `<span class="badge ${rb.paused ? 'badge-warn' : 'badge-info'}" title="The run leader clears the dungeon plan with this party; the commander only watches (observe mode) and may pause, skip or stop.">observe${rb.paused ? ' · paused' : ''}</span>` : '')
+        + `<span class="badge ${bind.online ? 'badge-info' : 'badge-error'}">${bind.online ? 'online' : 'offline'}</span>`
         + `<span class="badge ${bind.view ? 'badge-info' : 'badge-warn'}" title="The commander's TBM:VIEW perception feed">feed ${bind.view ? 'on' : 'off'}</span>`);
       const leadBot = CmdView.leadBot(bind);
-      setHtml(card.querySelector('.cmd-sub'), `Led by <b>${leadBot ? cmdBotLink(leadBot.guid, leadBot.name) : esc(bind.lead || '?')}</b> &middot; group ${esc(bind.group)}`);
+      setHtml(card.querySelector('.cmd-sub'), `Led by <b>${leadBot ? cmdBotLink(leadBot.guid, leadBot.name) : esc(bind.lead || '?')}</b> &middot; group ${esc(bind.group)}`
+        + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}" title="${esc((rb.note ? rb.note + '. ' : '') + (rb.changedAgo != null ? 'Last change ' + CmdView.ageText(rb.changedAgo) + ' ago.' : ''))}">${esc((bind.run.plan ? bind.run.plan + ' · ' : '') + rb.text)}</span>` : ''));
       const warns = CmdView.warnings(bind, { ageSec: age >= 0 ? age : null });
       setHtml(card.querySelector('.cmd-warn'), warns.length
         ? warns.map(w => `<span class="cmd-pill ${w.level}"><b aria-hidden="true">${w.level === 'bad' ? '!' : '▲'}</b> ${esc(w.text)}</span>`).join('')

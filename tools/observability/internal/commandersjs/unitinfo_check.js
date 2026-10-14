@@ -164,4 +164,16 @@ const g = U.newEvents();
 U.noteEvents(g, bind({ commander: "G", mobs: [mob({ id: "1", name: "Last", rank: "b", hp: 20 })] }), 10);
 U.noteEvents(g, bind({ commander: "G", mobs: [] }), 20);
 assert.strictEqual(U.runInfo(bind({ commander: "G", bound_at: 0 }), g, 30).text, "Run 00:20 · bosses 1 / 1 seen · last: Last");
+// ---- the run leader's run ("observe")
+const run = { plan: "uldaman", state: "running", step: 78, steps: 205, leg: "ancient_stone_keeper", kind: "pull", phase: "rest", note: "resting", changed: 990 };
+let rb = U.runBrief({ run }, 1000);
+assert.strictEqual(rb.text, "step 78/205 · ancient stone keeper · pull · rest"); assert.strictEqual(rb.paused, false); assert.strictEqual(rb.changedAgo, 10); assert.strictEqual(rb.reason, "");
+rb = U.runBrief({ run: Object.assign({}, run, { state: "paused", note: "a unit survived 3 pulls" }) }, 1000);
+assert.strictEqual(rb.text, "step 78/205 · ancient stone keeper · paused"); assert.strictEqual(rb.paused, true); assert.strictEqual(rb.reason, "a unit survived 3 pulls");
+assert.strictEqual(U.runBrief({ run: Object.assign({}, run, { state: "done", step: 205 }) }, 0).text, "step 205/205 · ancient stone keeper · done");
+assert.strictEqual(U.runBrief({ run: { state: "running", step: 0, steps: 0, leg: "-", kind: "-", phase: "-", note: "-" } }, 5).text, "", "an empty run says nothing");
+assert.strictEqual(U.runBrief({}, 5), null, "no run: nothing"); assert.strictEqual(U.runBrief({ run: "x" }, 5), null);
+assert.strictEqual(U.runBrief({ run: Object.assign({}, run, { changed: 0 }) }, 1000).changedAgo, null);
+const rr = U.newEvents();
+assert.strictEqual(U.runInfo(bind({ commander: "RR", bound_at: 1000, run }), rr, 1100).text, "Run 01:40 · step 78/205 · ancient stone keeper · pull · rest", "the run line carries the step and section");
 console.log("unitinfo.js ok");

@@ -50,6 +50,8 @@ constexpr size_t kMaxMobName = 24;
 constexpr size_t kMaxCastName = 24;     // a spell name
 constexpr size_t kMaxActionName = 32;   // the bot's newest action name
 constexpr size_t kMaxTargetName = 24;
+constexpr size_t kMaxRunWord = 32;      // plan, state, leg, kind and phase names of a run
+constexpr size_t kMaxRunNote = 120;     // what the run does now, or why it paused
 constexpr size_t kMaxOrderDetail = 80;
 constexpr size_t kMaxOrderResult = 120;
 
@@ -172,6 +174,22 @@ struct MobInfo
     std::string cast;      // name of the spell it is casting, empty = none
 };
 
+// The run leader's run of a binding (`.bot run`, behind AiPlayerbot.DungeonSelfClear): where it stands in the dungeon plan. Only a binding
+// with a run carries it; the dashboard shows it as the "observe" mode of the dungeon modes (the bots clear, the commander watches).
+struct RunInfo
+{
+    bool present = false;
+    std::string plan;       // the plan's name ("uldaman")
+    std::string state;      // running, paused or done
+    uint32_t step = 0;      // 1-based step shown (0 before the first)
+    uint32_t steps = 0;     // steps in the plan
+    std::string leg;        // the current leg's name (the section)
+    std::string kind;       // the step kind (move, pull, boss ...)
+    std::string phase;      // what the step is doing (walk, pull, rest ...)
+    std::string note;       // what it does now, or why it paused
+    int64_t changedAt = 0;  // unix seconds the step, phase, state or note last changed
+};
+
 // What a bound bot is doing, read next to the view snapshot (same cadence, no extra scan).
 struct BotExtra
 {
@@ -208,6 +226,7 @@ struct BindingRef
     std::vector<MobInfo> mobs;
     std::vector<BotExtra> botExtras; // one per bot read from the view snapshot, matched by id
     int64_t boundAt = 0;             // unix seconds the binding was first seen standing, 0 = unknown
+    RunInfo run;                     // the run leader's run of this binding, when it has one
 };
 
 // One bound bot as the dashboard shows it.
@@ -254,6 +273,7 @@ struct BindingInfo
     uint32_t mobsMap = 0;
     std::vector<MobInfo> mobs;
     int64_t boundAt = 0;
+    RunInfo run;
 };
 
 inline std::string JsonEscape(std::string const& s)
@@ -358,6 +378,18 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
             ss << "}";
         }
         ss << "]";
+        if (b.run.present)
+        {
+            RunInfo const& r = b.run;
+            ss << ",\"run\":{\"plan\":\"" << JsonEscape(Clip(r.plan, kMaxRunWord)) << "\""
+               << ",\"state\":\"" << JsonEscape(Clip(r.state, kMaxRunWord)) << "\""
+               << ",\"step\":" << r.step << ",\"steps\":" << r.steps
+               << ",\"leg\":\"" << JsonEscape(Clip(r.leg, kMaxRunWord)) << "\""
+               << ",\"kind\":\"" << JsonEscape(Clip(r.kind, kMaxRunWord)) << "\""
+               << ",\"phase\":\"" << JsonEscape(Clip(r.phase, kMaxRunWord)) << "\""
+               << ",\"note\":\"" << JsonEscape(Clip(r.note, kMaxRunNote)) << "\""
+               << ",\"changed\":" << r.changedAt << "}";
+        }
         if (b.commanderPlaced)
             ss << ",\"commander_pos\":{\"map\":" << b.commanderMap << ",\"x\":" << b.commanderX << ",\"y\":" << b.commanderY << "}";
         if (b.mobsReported)

@@ -172,3 +172,28 @@ func TestCommandersCarryUnitInfo(t *testing.T) {
 		t.Fatalf("empty unit info must stay out of the view: %s", out)
 	}
 }
+
+// The run leader's run rides in the binding; a binding without one has none.
+func TestCommandersCarryTheRun(t *testing.T) {
+	raw := `{"v":9,"session":3,"seq":1,"ts":50,"type":"COMMANDERS","commanders":[
+{"commander":"Glacienne","online":true,"group":1,"lead":"W","bots":[],"orders":[],"run":{"plan":"uldaman","state":"paused","step":78,"steps":205,"leg":"ancient_stone_keeper","kind":"pull","phase":"rest","note":"a unit survived 3 pulls","changed":40}},
+{"commander":"Other","online":true,"group":2,"lead":"X","bots":[],"orders":[]}]}`
+	var p model.CommandersPayload
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestStore(newClock())
+	s.ApplyCommanders(&p)
+	v := s.Commanders().Commanders
+	r := v[0].Run
+	if r == nil || r.Plan != "uldaman" || r.State != "paused" || r.Step != 78 || r.Steps != 205 || r.Leg != "ancient_stone_keeper" || r.Note == "" || r.Changed != 40 {
+		t.Fatalf("run lost: %+v", r)
+	}
+	if v[1].Run != nil {
+		t.Fatalf("a binding without a run must have none: %+v", v[1].Run)
+	}
+	out, _ := json.Marshal(v[1])
+	if strings.Contains(string(out), `"run"`) {
+		t.Fatalf("no run field expected: %s", out)
+	}
+}

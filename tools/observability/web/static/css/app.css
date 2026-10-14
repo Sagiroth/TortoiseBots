@@ -2979,3 +2979,7 @@ select.input {
 .cmd-legend i.tc-tank { border-color: #2f80ff; } .cmd-legend i.tc-other { border-color: #ef4444; }
 .cmd-legend i.tc-target { background: transparent; border-color: #fff; box-shadow: 0 0 0 1.5px #ef4444 inset; }
 .cmd-legend i.tc-pull { background: transparent; border: 1.5px dashed #facc15; }
+
+.cmd-runstep { color: var(--text-main); font-weight: 600; }
+.cmd-runstep.paused { color: var(--accent-yellow); }
+.cmd-state.s-run-paused { color: var(--accent-yellow); }

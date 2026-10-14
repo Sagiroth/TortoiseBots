@@ -291,13 +291,40 @@
     const alive = m ? Object.keys(m.bosses).map((k) => m.bosses[k]) : [];
     alive.forEach((b) => seen.push(b.name));
     const parts = ["Run " + clockText(elapsed)];
+    const brief = runBrief(bind, nowSec);
+    if (brief && brief.text) parts.push(brief.text);
     if (down.length || alive.length) parts.push("bosses " + down.length + " / " + (down.length + alive.length) + " seen");
     if (alive.length) parts.push("next: " + alive[0].name);
     else if (down.length) parts.push("last: " + down[down.length - 1]);
     return { elapsed, start, down, next: alive.length ? alive[0].name : "", text: parts.join(" · ") };
   }
 
+  // The run leader's run of a binding (`.bot run`; the "observe" mode: the bots clear, the commander watches), in words:
+  // {text: "step 78/205 · ancient stone keeper · pull · resting", paused, reason, changedAgo (seconds, or null), state}; null for a
+  // binding without a run (or an older module). nowSec is the game server's clock.
+  function runBrief(bind, nowSec) {
+    const r = bind && bind.run;
+    if (!r || typeof r !== "object") return null;
+    const leg = str(r.leg).replace(/[_\-]+/g, " ").trim();
+    const parts = [];
+    if (num(r.steps) && r.steps > 0) parts.push("step " + (r.step || 0) + "/" + r.steps);
+    if (leg && leg !== "-") parts.push(leg);
+    if (r.state === "done") parts.push("done");
+    else if (r.state === "paused") parts.push("paused");
+    else {
+      const what = [str(r.kind) !== "-" ? str(r.kind) : "", str(r.phase) !== "-" ? str(r.phase) : ""].filter(Boolean);
+      if (what.length) parts.push(what.join(" · "));
+    }
+    const paused = r.state === "paused";
+    const note = str(r.note) === "-" ? "" : str(r.note);
+    return {
+      text: parts.join(" · "), paused, reason: paused ? note : "", note, state: str(r.state),
+      changedAgo: num(r.changed) && r.changed > 0 && nowSec ? Math.max(0, Math.round(nowSec - r.changed)) : null,
+    };
+  }
+
   const api = {
+    runBrief,
     activity, actionPhrase, describeBot, describeMob, describeCommander, describeEvent, boxPosition, hpBar, hpClass, threatClass, targetMarks, statusIcons,
     newEvents, noteEvents, eventsOf, firstSeen, pruneEvents, clockText, feedLine, pinsOn, runInfo, dist, CC_WORD,
   };

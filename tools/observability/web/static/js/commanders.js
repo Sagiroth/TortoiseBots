@@ -159,6 +159,7 @@
     const bots = (bind && bind.bots) || [];
     if (!bots.length) return "no bots reporting";
     if (bots.every((b) => b.alive === false)) return "wiped";
+    if (bind.run && bind.run.state === "paused") return "run paused";
     if (bots.some((b) => b.alive !== false && b.st === "c")) return "fighting"; // a module that reports the AI state says so itself
     if (c.hpDropAt && now - c.hpDropAt <= FIGHT_WINDOW_SEC) return "fighting";
     const last = lastMeaningful(bind.orders);
@@ -210,6 +211,10 @@
     if (newest && !newest.ok) {
       const t = orderText(newest);
       out.push({ level: "warn", kind: "refused", text: "Last order refused: " + t.label + (t.target ? " " + t.target : "") + " (" + t.result.replace(/^refused: /, "") + ")" });
+    }
+    if (bind && bind.run && bind.run.state === "paused") {
+      const note = String(bind.run.note || "").replace(/^-$/, "").trim();
+      out.push({ level: "warn", kind: "runpaused", text: "Run paused: " + (note || "no reason given") });
     }
     if (bind && bind.online === false) out.push({ level: "warn", kind: "offline", text: "Commander " + bind.commander + " is offline" });
     if (o.ageSec != null && o.ageSec > STALE_WARN_SEC) {
