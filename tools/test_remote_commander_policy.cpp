@@ -10,6 +10,8 @@
 #include "../runtime/RemoteCommanderPolicy.h"
 
 #include <cstdio>
+#include <string>
+#include <vector>
 #include <cstdlib>
 
 using namespace TortoiseBots::RemoteCommander;
@@ -256,7 +258,7 @@ static void TestBindGate()
 // summon: owner-or-GM, as for whispers. Nothing without a binding or the toggle.
 static void TestOrderGate()
 {
-    for (char const* verb : { "attack", "pull", "pullback", "cc", "focus", "move", "stay", "follow", "rest" })
+    for (char const* verb : { "attack", "pull", "pullback", "cc", "focus", "move", "stay", "follow", "rest", "lootmethod" })
     {
         CHECK(TierForOrder(verb) == OrderTier::Tactical);
         CHECK(IsKnownOrder(verb));
@@ -265,6 +267,14 @@ static void TestOrderGate()
     CHECK(TierForOrder("revive") == OrderTier::OwnerOrGm);
     CHECK(TierForOrder("summon") == OrderTier::OwnerOrGm);
     CHECK(IsKnownOrder("revive") && IsKnownOrder("summon"));
+    // The per-bot player orders move items and open things for one bot: owner or GM.
+    for (char const* verb : { "loot", "open", "use" })
+    {
+        CHECK(TierForOrder(verb) == OrderTier::OwnerOrGm);
+        CHECK(IsKnownOrder(verb));
+        CHECK(!MayIssueOrder(true, true, OrderTier::OwnerOrGm, false));
+    }
+    CHECK(IsKnownOrder("lootmethod"));
     // Unknown verbs fail closed.
     CHECK(TierForOrder("teleport") == OrderTier::OwnerOrGm);
     CHECK(!IsKnownOrder("teleport"));
@@ -454,6 +464,80 @@ static void TestMoveVerdict()
     CHECK(CheckMove(facts) == MoveVerdict::Ok);
 }
 
+static std::vector<std::string> Args(std::string const& text)
+{
+    return SplitOrderArgs(text);
+}
+
+static void TestParseItemId()
+{
+    uint32_t id = 0;
+    CHECK(ParseItemId("7741", id) && id == 7741);
+    CHECK(ParseItemId("999999", id) && id == 999999);
+    CHECK(!ParseItemId("", id) && id == 0);
+    CHECK(!ParseItemId("0", id));
+    CHECK(!ParseItemId("1000000", id));
+    CHECK(!ParseItemId("77a1", id));
+    CHECK(!ParseItemId("-5", id));
+    CHECK(!ParseItemId("0x1F", id));
+}
+
+// cmd loot <guid> <bot> [itemId]
+static void TestParseLootOrder()
+{
+    LootOrder order;
+    CHECK(ParseLootOrder(Args("0xF130000C5E0012AB Lcpriest"), order));
+    CHECK(order.guid == 0xF130000C5E0012ABULL && order.bot == "Lcpriest" && order.itemId == 0);
+    CHECK(ParseLootOrder(Args("42 Lcpriest 7741"), order));
+    CHECK(order.guid == 42 && order.itemId == 7741);
+    CHECK(!ParseLootOrder(Args("42"), order));                  // the bot is required
+    CHECK(!ParseLootOrder(Args(""), order));
+    CHECK(!ParseLootOrder(Args("42 Lcpriest 7741 extra"), order));
+    CHECK(!ParseLootOrder(Args("nonsense Lcpriest"), order));    // not a guid
+    CHECK(!ParseLootOrder(Args("0 Lcpriest"), order));
+    CHECK(!ParseLootOrder(Args("42 Lcpriest 0"), order));        // not an item
+    CHECK(!ParseLootOrder(Args("42 Lcpriest abc"), order));
+}
+
+// cmd open <guid> <bot>
+static void TestParseOpenOrder()
+{
+    OpenOrder order;
+    CHECK(ParseOpenOrder(Args("0x1F Lcwarra"), order) && order.guid == 0x1F && order.bot == "Lcwarra");
+    CHECK(!ParseOpenOrder(Args("0x1F"), order));
+    CHECK(!ParseOpenOrder(Args("0x1F Lcwarra 7"), order));
+    CHECK(!ParseOpenOrder(Args("Lcwarra 0x1F"), order));
+}
+
+// cmd use <itemId> <bot> [target-guid]
+static void TestParseUseOrder()
+{
+    UseOrder order;
+    CHECK(ParseUseOrder(Args("7733 Lcpriest"), order));
+    CHECK(order.itemId == 7733 && order.bot == "Lcpriest" && order.target == 0);
+    CHECK(ParseUseOrder(Args("7733 Lcpriest 0xF1300000010203AB"), order));
+    CHECK(order.target == 0xF1300000010203ABULL);
+    CHECK(!ParseUseOrder(Args("7733"), order));
+    CHECK(!ParseUseOrder(Args("Lcpriest 7733"), order));
+    CHECK(!ParseUseOrder(Args("0 Lcpriest"), order));
+    CHECK(!ParseUseOrder(Args("7733 Lcpriest zz"), order));
+    CHECK(!ParseUseOrder(Args("7733 Lcpriest 1 2"), order));
+}
+
+// Which argument is the bot: revive/summon take it alone, loot/open/use second.
+static void TestOwnerOrderBotName()
+{
+    CHECK(OwnerOrderBotName("revive", Args("Lcpriest")) == "Lcpriest");
+    CHECK(OwnerOrderBotName("summon", Args("Lcpriest")) == "Lcpriest");
+    CHECK(OwnerOrderBotName("revive", Args("Lcpriest extra")).empty());
+    CHECK(OwnerOrderBotName("revive", Args("")).empty());
+    CHECK(OwnerOrderBotName("loot", Args("42 Lcpriest 7741")) == "Lcpriest");
+    CHECK(OwnerOrderBotName("open", Args("42 Lcpriest")) == "Lcpriest");
+    CHECK(OwnerOrderBotName("use", Args("7733 Lcpriest")) == "Lcpriest");
+    CHECK(OwnerOrderBotName("loot", Args("42")).empty());
+    CHECK(OwnerOrderBotName("teleport", Args("a b")).empty());
+}
+
 int main()
 {
     TestBindingTable();
@@ -466,6 +550,11 @@ int main()
     TestParseMovePoint();
     TestTargetVerdict();
     TestMoveVerdict();
+    TestParseItemId();
+    TestParseLootOrder();
+    TestParseOpenOrder();
+    TestParseUseOrder();
+    TestOwnerOrderBotName();
     std::printf("remote commander policy: %d checks passed\n", checks);
     return 0;
 }

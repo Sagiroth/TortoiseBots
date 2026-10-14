@@ -40,6 +40,8 @@
 #include "runtime/OwnedBotQolPolicy.h"
 #include "../runtime/RemoteCommanderPolicy.h"
 #include "../runtime/RemoteCommanderView.h"
+#include "../runtime/RemoteCommanderTasks.h"
+#include "../ai/playerbot/LootObjectStack.h"
 #include "../ai/playerbot/strategy/Engine.h"
 #include "../ai/playerbot/strategy/Value.h"
 #include "../ai/playerbot/GuidPosition.h"
@@ -4087,11 +4089,17 @@ void RestoreFollower(uint64 botRaw, uint64 leadRaw)
     ResetFollowTargetCache(ai);
 }
 
+// The commander's running bot tasks (loot, open, use) end with the binding;
+// defined with the task code below.
+void CancelCommanderTasks(uint64 commanderRaw);
+
 // Ends a binding: followers get their own follow target back. The lead bot
 // keeps holding where it stands. notify: tell the commander (automatic
 // release); an explicit unbind answers through its own ACK.
 uint32 ReleaseBinding(uint64 commanderRaw, RemoteCommander::ReleaseReason reason, bool notify)
 {
+    if (CommanderBindings().FindByCommander(commanderRaw))
+        CancelCommanderTasks(commanderRaw);
     RemoteCommander::Binding removed = CommanderBindings().Unbind(commanderRaw);
     CommanderViews().erase(commanderRaw);
     if (!removed.commanderGuid)
@@ -4805,12 +4813,14 @@ static Unit* ResolveOrderTarget(ChatHandler* handler, std::string const& intent,
 // carrying the GUID-named target: AttackMyTargetAction reads its event
 // owner's selection. The commander's own selection is never touched.
 static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, Unit* target,
-    std::string const& intent)
+    std::string const& intent, Player* onlyBot = nullptr)
 {
     ObjectGuid const targetGuid = target->GetObjectGuid();
     uint32 succeeded = 0;
     for (Player* bot : order.bots)
     {
+        if (onlyBot && bot != onlyBot)
+            continue;
         if (!bot || !bot->IsInWorld() || bot->GetMap() != order.lead->GetMap())
             continue;
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
@@ -4832,10 +4842,14 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
     }
     if (!succeeded)
     {
-        SendActionError(handler, intent, "failed", "No bot of the group accepted the attack.");
+        SendActionError(handler, intent, "failed", onlyBot ? "That bot did not accept the attack."
+            : "No bot of the group accepted the attack.");
         return true;
     }
-    SendActionAck(handler, intent, "party", succeeded);
+    if (onlyBot)
+        SendActionAck(handler, intent, "bot:" + std::string(onlyBot->GetName()), succeeded);
+    else
+        SendActionAck(handler, intent, "party", succeeded);
     return true;
 }
 
@@ -5057,6 +5071,824 @@ static bool CommanderSummon(ChatHandler* handler, CommanderOrder const& order, P
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Per-bot player orders: loot, open, use (and lootmethod)
+//
+// What a player does at a corpse, a chest, a lever or in the bags, done by one
+// bound bot on the commander's word. `cmd loot <guid> <bot> [itemId]`, `cmd
+// open <guid> <bot>`, `cmd use <itemId> <bot> [guid]` name a bot of the
+// commanded group that the commander owns (or a GM). Synchronous refusals answer
+// with TBM:ACTION_ERR at once. An accepted order runs as a short task in
+// this file: walk (the "stay" anchor and a direct path step, bounded by the
+// react distance and a time budget), do the one action through the bot's own
+// loot or use code, and answer later with the final TBM:ACTION_ACK or
+// TBM:ACTION_ERR of the same verb. TBM:ACTION_PENDING marks an accepted
+// order that is still running. Decisions: runtime/RemoteCommanderTasks.h.
+// World thread only (UpdateRemoteCommanders drives the tasks); nothing runs
+// while no task exists.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct CommanderTask
+{
+    RemoteCommander::TaskState state;
+    uint64 commanderRaw = 0;
+    uint64 botRaw = 0;
+    uint64 targetRaw = 0;     // the corpse or game object to walk to; 0 = none
+    uint64 useTargetRaw = 0;  // use: the unit or game object the item is used on
+    uint32 itemId = 0;        // loot: only this item (0 = all); use: the item
+    uint32 spellId = 0;       // use: the item's on-use spell
+    bool lootLike = false;    // ends with a loot window (corpse, chest)
+    bool noWalk = false;      // nothing to walk to
+    bool walking = false;     // the movement stance was changed for the walk
+    bool wasStaying = false;
+    bool actStarted = false;
+    uint32 actTries = 0;
+    uint32 nudgeMs = 0;
+    uint32 baseline = 0;      // open: the game object's state when the action began
+    RemoteCommander::Point3 stand;
+    std::string lastCode;     // the newest refusal while the action is retried
+    std::string lastMessage;
+    std::string intent;
+    std::string botName;
+};
+
+std::unordered_map<uint64, CommanderTask>& CommanderTasks()
+{
+    static std::unordered_map<uint64, CommanderTask> tasks;
+    return tasks;
+}
+
+uint32 s_commanderTaskMs = 0;
+
+struct TaskTarget
+{
+    Creature* creature = nullptr;
+    GameObject* go = nullptr;
+    WorldObject* object() const
+    {
+        if (creature)
+            return creature;
+        return go;
+    }
+};
+
+TaskTarget ResolveTaskTarget(PlayerbotAI* ai, uint64 raw)
+{
+    TaskTarget target;
+    ObjectGuid const guid(raw);
+    if (guid.IsGameObject())
+        target.go = ai->GetGameObject(guid);
+    else if (guid.IsAnyTypeCreature())
+        target.creature = ai->GetCreature(guid);
+    return target;
+}
+
+// Still there to walk to: a corpse, or a spawned game object.
+bool TaskTargetPresent(TaskTarget const& target)
+{
+    if (target.creature)
+        return sServerFacade.GetDeathState(target.creature) == CORPSE;
+    if (target.go)
+        return sServerFacade.isSpawned(target.go);
+    return false;
+}
+
+// The state of a game object that a use changes: its loot state, its go state
+// and whether it is still spawned.
+uint32 PackGoState(GameObject* go)
+{
+    if (!go || !sServerFacade.isSpawned(go))
+        return 0xFFFFFFFFu;
+    return (static_cast<uint32>(go->getLootState()) << 8) | static_cast<uint32>(go->GetGoState());
+}
+
+// The lock of a game object, as the core's lock rows say it: a key item the
+// bot carries, or skill it has.
+RemoteCommander::LockFacts GoLockFacts(Player* bot, GameObject* go)
+{
+    RemoteCommander::LockFacts facts;
+    if (!go || !go->GetGOInfo())
+        return facts;
+    LockEntry const* lock = sLockStore.LookupEntry(go->GetGOInfo()->GetLockId());
+    if (!lock)
+        return facts;
+    for (int i = 0; i < 8; ++i)
+    {
+        if (lock->Type[i] == LOCK_KEY_ITEM && lock->Index[i] > 0)
+        {
+            uint32 const key = lock->Index[i];
+            if (!facts.hasKey)
+            {
+                facts.keyItem = key;
+                facts.hasKey = bot->HasItemCount(key, 1, false);
+            }
+        }
+        else if (lock->Type[i] == LOCK_KEY_SKILL && !facts.skillId)
+        {
+            uint32 const skillId = SkillByLockType(LockType(lock->Index[i]));
+            if (skillId > 0)
+            {
+                facts.skillId = skillId;
+                facts.reqSkill = std::max<uint32>(1, lock->Skill[i]);
+                facts.skillValue = bot->GetSkillValue(skillId);
+            }
+        }
+    }
+    return facts;
+}
+
+bool TaskInRange(CommanderTask const& task, Player* bot, TaskTarget const& target)
+{
+    if (task.noWalk)
+        return true;
+    if (target.creature)
+        return target.creature->IsWithinDistInMap(bot, bot->GetMaxLootDistance(target.creature), true,
+            SizeFactor::None);
+    if (target.go)
+        return RemoteCommander::InUseRange(bot->GetDistance(target.go), INTERACTION_DISTANCE);
+    return false;
+}
+
+void TaskReplyAck(CommanderTask const& task, uint32 count, std::string const& payload)
+{
+    Player* commander = FindCharacter(task.commanderRaw);
+    if (!commander || !commander->IsInWorld() || !commander->GetSession())
+        return;
+    ChatHandler handler(commander);
+    SendActionAck(&handler, task.intent, "bot:" + task.botName, count, payload);
+}
+
+void TaskReplyErr(CommanderTask const& task, std::string const& code, std::string const& message)
+{
+    Player* commander = FindCharacter(task.commanderRaw);
+    if (!commander || !commander->IsInWorld() || !commander->GetSession())
+        return;
+    ChatHandler handler(commander);
+    SendActionError(&handler, task.intent, code.c_str(), message.c_str());
+}
+
+// The walk is over: a bot that followed goes back to following the lead bot;
+// one that was holding a spot, or is the lead bot, holds where it stands.
+void EndTaskWalk(CommanderTask const& task, Player* bot, PlayerbotAI* ai)
+{
+    if (!task.walking || !bot || !ai || !bot->IsInWorld())
+        return;
+    if (task.wasStaying)
+    {
+        SetStayAnchor(ai, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+        return;
+    }
+    Player* commander = FindCharacter(task.commanderRaw);
+    RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(task.commanderRaw);
+    Player* lead = binding ? FindCharacter(binding->leadGuid) : nullptr;
+    if (commander && lead && lead->IsInWorld())
+    {
+        std::vector<Player*> one(1, bot);
+        FormUpOnLead(commander, lead, one, false);
+    }
+    else
+        ai->SetMovementStrategy("follow");
+}
+
+// Ends a task: ledger forgotten, loot target cleared, movement stance back,
+// then the final answer.
+void FinishCommanderTask(CommanderTask& task, bool ok, uint32 count, std::string const& payload,
+    std::string const& code, std::string const& message)
+{
+    RemoteCommander::LootOrders().Forget(task.botRaw);
+    Player* bot = FindCharacter(task.botRaw);
+    PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+    if (ai && bot->IsInWorld())
+    {
+        if (task.lootLike && ai->GetAiObjectContext())
+            ai->GetAiObjectContext()->GetValue<ai::LootObject>("loot target")->Set(ai::LootObject());
+        EndTaskWalk(task, bot, ai);
+    }
+    if (ok)
+        TaskReplyAck(task, count, payload);
+    else
+        TaskReplyErr(task, code, message);
+}
+
+// The walk: the bot holds ("stay") at a point just short of the object and
+// walks to it on its own path finding, like `cmd move`.
+void BeginTaskWalk(CommanderTask& task, Player* commander, Player* bot, PlayerbotAI* ai, WorldObject* object)
+{
+    task.wasStaying = ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT);
+    task.stand = RemoteCommander::StandingPoint(bot->GetPositionX(), bot->GetPositionY(),
+        object->GetPositionX(), object->GetPositionY(), object->GetPositionZ());
+    ai->DropQueuedMovementOrders();
+    PlayerConvenience::Instance().NoteHoldOrder(bot->GetObjectGuid());
+    ai->Reset();
+    ai->SetMovementStrategy("stay");
+    SetStayAnchor(ai, task.stand.x, task.stand.y, task.stand.z, bot->GetMapId());
+    ExecuteQuietAction(ai, "return to stay position", ai::Event("return to stay position", "stay", commander));
+    task.walking = true;
+}
+
+// A bot that stands still short of the object takes a direct path step to
+// the standing point (the stay action stops within its follow range).
+void NudgeTaskWalk(CommanderTask& task, Player* bot, uint32 diff)
+{
+    task.nudgeMs += diff;
+    if (task.nudgeMs < RemoteCommander::kNudgeMs)
+        return;
+    task.nudgeMs = 0;
+    if (sServerFacade.isMoving(bot))
+        return;
+    bot->GetMotionMaster()->MovePoint(0, task.stand.x, task.stand.y, task.stand.z,
+        MOVE_RUN_MODE | MOVE_PATHFINDING);
+}
+
+enum class ActStart : uint8
+{
+    Started,
+    Retry,  // not now (a cast or range check refused); try again on the next look
+    Failed, // final: lastCode/lastMessage say why
+};
+
+ActStart RefuseAct(CommanderTask& task, ActStart how, char const* code, std::string const& message)
+{
+    task.lastCode = code;
+    task.lastMessage = message;
+    return how;
+}
+
+// The item's first on-use spell (0 when it has none).
+uint32 ItemUseSpell(ItemPrototype const* proto)
+{
+    if (!proto)
+        return 0;
+    for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+        if (proto->Spells[i].SpellId &&
+            (proto->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_ON_USE ||
+             proto->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_ON_NO_DELAY_USE))
+            return proto->Spells[i].SpellId;
+    return 0;
+}
+
+// The action of a loot-like task, once the bot stands in range.
+ActStart BeginLootAct(CommanderTask& task, Player* commander, Player* bot, PlayerbotAI* ai, TaskTarget const& target)
+{
+    ObjectGuid const guid(task.targetRaw);
+    ai::LootObject lootObject(bot, guid);
+    if (lootObject.IsEmpty())
+        return RefuseAct(task, ActStart::Failed, RemoteCommander::kCodeFailed, target.creature
+            ? "This corpse has nothing this bot may loot under the group's loot rules (another member's turn, already looted, or not tapped by the group)."
+            : "The object cannot be looted right now (already open, used up, or on the bot's skip list).");
+
+    ai::LootObjectStack* stack = ai->GetAiObjectContext()->GetValue<ai::LootObjectStack*>("available loot")->Get();
+    if (target.go)
+    {
+        RemoteCommander::LockVerdict const lock = RemoteCommander::CheckLock(GoLockFacts(bot, target.go));
+        if (lock != RemoteCommander::LockVerdict::Open)
+            return RefuseAct(task, ActStart::Failed, RemoteCommander::LockVerdictCode(lock),
+                RemoteCommander::LockVerdictText(lock));
+        if (!lootObject.IsLootPossible(bot))
+            return RefuseAct(task, ActStart::Failed, RemoteCommander::kCodeFailed,
+                "Nothing in it for this bot (quest-only contents, bags full, or the object is in use).");
+    }
+    else if (!target.creature->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE))
+        return RefuseAct(task, ActStart::Failed, RemoteCommander::kCodeFailed, "Nothing is left to loot on this corpse.");
+
+    if (bot->IsMounted())
+        ai->Unmount();
+    RemoteCommander::LootOrders().Watch(task.botRaw, task.targetRaw, task.itemId);
+    if (stack)
+        stack->NotePlayerOrder(guid);
+
+    if (target.creature)
+    {
+        // The corpse window straight away: an explicit order, so the strategy's
+        // "is it worth the bags" filter (IsLootPossible) does not apply; the
+        // loot rights were checked by the loot object above.
+        WorldPacket packet(CMSG_LOOT, 8);
+        packet << guid;
+        bot->GetSession()->HandleLootOpcode(packet);
+        return ActStart::Started;
+    }
+
+    // A chest or node opens through the bot's own opening code (its lock
+    // spell, a key it carries); the window comes back through the loot window
+    // handler either way.
+    ai->ClearLastCastCheckFail();
+    ai->GetAiObjectContext()->GetValue<ai::LootObject>("loot target")->Set(lootObject);
+    if (ExecuteQuietAction(ai, "open loot", ai::Event("cmd loot", "", commander)))
+        return ActStart::Started;
+    RemoteCommander::LootOrders().Forget(task.botRaw);
+    char const* reason = ViewFailReason(static_cast<uint32>(ai->GetLastCastCheckFail()));
+    return RefuseAct(task, ActStart::Retry, RemoteCommander::CastReasonCode(reason ? reason : ""),
+        "The bot could not start opening it.");
+}
+
+// A game object that is not a chest: use it like a player would.
+ActStart BeginObjectAct(CommanderTask& task, Player* commander, Player* bot, PlayerbotAI* ai, TaskTarget const& target)
+{
+    RemoteCommander::LockVerdict const lock = RemoteCommander::CheckLock(GoLockFacts(bot, target.go));
+    if (lock != RemoteCommander::LockVerdict::Open)
+        return RefuseAct(task, ActStart::Failed, RemoteCommander::LockVerdictCode(lock),
+            RemoteCommander::LockVerdictText(lock));
+    if (bot->IsMounted())
+        ai->Unmount();
+    task.baseline = PackGoState(target.go);
+    ai->ClearLastCastCheckFail();
+    std::string const param = "0 go " + std::to_string(task.targetRaw);
+    if (ExecuteQuietAction(ai, "commander use", ai::Event("cmd open", param, commander)))
+        return ActStart::Started;
+    return RefuseAct(task, ActStart::Failed, RemoteCommander::kCodeFailed,
+        "The bot could not use it (already used, busy, or out of reach).");
+}
+
+ActStart BeginUseAct(CommanderTask& task, Player* commander, Player* bot, PlayerbotAI* ai)
+{
+    std::string kind = "none";
+    if (task.useTargetRaw)
+        kind = ObjectGuid(task.useTargetRaw).IsGameObject() ? "go" : "unit";
+    ai->ClearLastCastCheckFail();
+    std::string const param = std::to_string(task.itemId) + " " + kind + " " + std::to_string(task.useTargetRaw);
+    if (ExecuteQuietAction(ai, "commander use", ai::Event("cmd use", param, commander)))
+        return ActStart::Started;
+    uint32 const castFail = static_cast<uint32>(ai->GetLastCastCheckFail());
+    if (castFail != static_cast<uint32>(SPELL_CAST_OK))
+    {
+        char const* reason = ViewFailReason(castFail);
+        return RefuseAct(task, ActStart::Failed, RemoteCommander::CastReasonCode(reason ? reason : ""),
+            "The cast failed (spell check " + std::to_string(castFail) + ").");
+    }
+    return RefuseAct(task, ActStart::Failed, RemoteCommander::kCodeFailed,
+        "The bot could not use the item (cooldown, not usable by it, or not usable on that target).");
+}
+
+ActStart BeginTaskAct(CommanderTask& task, Player* commander, Player* bot, PlayerbotAI* ai, TaskTarget const& target)
+{
+    task.actStarted = false;
+    ++task.actTries;
+    ActStart start;
+    if (task.lootLike)
+        start = BeginLootAct(task, commander, bot, ai, target);
+    else if (task.state.kind == RemoteCommander::TaskKind::Open)
+        start = BeginObjectAct(task, commander, bot, ai, target);
+    else
+        start = BeginUseAct(task, commander, bot, ai);
+    task.actStarted = start == ActStart::Started;
+    return start;
+}
+
+// The result of the started action is in.
+bool TaskActDone(CommanderTask const& task, Player* bot, PlayerbotAI* ai)
+{
+    if (!task.actStarted)
+        return false;
+    if (task.lootLike)
+    {
+        RemoteCommander::LootWatch const* watch = RemoteCommander::LootOrders().Find(task.botRaw);
+        return watch && watch->finished;
+    }
+    if (task.state.kind == RemoteCommander::TaskKind::Open)
+        return PackGoState(ai->GetGameObject(ObjectGuid(task.targetRaw))) != task.baseline;
+    return !bot->IsNonMeleeSpellCasted(false);
+}
+
+// The success answer of a finished action.
+void CompleteCommanderTask(CommanderTask& task)
+{
+    if (task.lootLike)
+    {
+        RemoteCommander::LootWatch const* watch = RemoteCommander::LootOrders().Find(task.botRaw);
+        if (!watch)
+        {
+            FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeFailed, "The loot window was lost.");
+            return;
+        }
+        if (watch->refused)
+        {
+            FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeFailed,
+                "The server refused the loot window (not this bot's loot under the group rules, or too far).");
+            return;
+        }
+        uint32 const count = RemoteCommander::LootedItemCount(*watch);
+        std::string const payload = RemoteCommander::FormatLootedItems(*watch);
+        if (task.itemId && !count)
+        {
+            FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeFailed,
+                "That item was not in the loot for this bot (group rules, taken, or no room in its bags).");
+            return;
+        }
+        FinishCommanderTask(task, true, count, payload, "", "");
+        return;
+    }
+    if (task.state.kind == RemoteCommander::TaskKind::Open)
+    {
+        FinishCommanderTask(task, true, 1, "opened", "", "");
+        return;
+    }
+    FinishCommanderTask(task, true, 1, task.spellId ? "spell:" + std::to_string(task.spellId) : "-", "", "");
+}
+
+// One look at a running task. Returns true when it is over (answered).
+bool StepCommanderTask(CommanderTask& task, uint32 diff)
+{
+    Player* commander = FindCharacter(task.commanderRaw);
+    Player* bot = FindCharacter(task.botRaw);
+    PlayerbotAI* ai = bot && bot->IsInWorld() ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+    if (!commander || !commander->IsInWorld())
+    {
+        FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeFailed, "The commander left.");
+        return true;
+    }
+
+    RemoteCommander::TaskFacts facts;
+    facts.botAvailable = ai && bot->IsAlive() && !bot->IsBeingTeleported() && !bot->IsTaxiFlying();
+    TaskTarget target;
+    if (facts.botAvailable)
+    {
+        if (task.targetRaw)
+            target = ResolveTaskTarget(ai, task.targetRaw);
+        facts.targetPresent = !task.targetRaw || TaskTargetPresent(target);
+        facts.inCombat = bot->IsInCombat();
+        facts.inRange = TaskInRange(task, bot, target);
+        if (WorldObject* object = target.object())
+            facts.distance = bot->GetDistance(object);
+        facts.actDone = task.state.stage == RemoteCommander::TaskStage::Act && TaskActDone(task, bot, ai);
+    }
+
+    // A refused attempt that may pass the next look.
+    if (facts.botAvailable && task.state.stage == RemoteCommander::TaskStage::Act && !task.actStarted &&
+        task.actTries > 0)
+    {
+        if (task.actTries >= 4)
+        {
+            FinishCommanderTask(task, false, 0, "", task.lastCode, task.lastMessage);
+            return true;
+        }
+        if (BeginTaskAct(task, commander, bot, ai, target) == ActStart::Failed)
+        {
+            FinishCommanderTask(task, false, 0, "", task.lastCode, task.lastMessage);
+            return true;
+        }
+    }
+
+    RemoteCommander::TaskVerdict verdict = RemoteCommander::AdvanceTask(task.state, facts, diff);
+    switch (verdict.step)
+    {
+        case RemoteCommander::TaskStep::Wait:
+            if (facts.botAvailable && task.state.stage == RemoteCommander::TaskStage::Walk && !task.noWalk)
+                NudgeTaskWalk(task, bot, diff);
+            return false;
+        case RemoteCommander::TaskStep::BeginAct:
+        {
+            ActStart const start = BeginTaskAct(task, commander, bot, ai, target);
+            if (start == ActStart::Failed)
+            {
+                FinishCommanderTask(task, false, 0, "", task.lastCode, task.lastMessage);
+                return true;
+            }
+            // An action that is over at once (an instant item) answers on the spot.
+            if (start == ActStart::Started && TaskActDone(task, bot, ai))
+            {
+                CompleteCommanderTask(task);
+                return true;
+            }
+            return false;
+        }
+        case RemoteCommander::TaskStep::Succeed:
+            CompleteCommanderTask(task);
+            return true;
+        case RemoteCommander::TaskStep::Fail:
+        {
+            std::string code = verdict.code;
+            std::string message = verdict.message;
+            if (std::strcmp(verdict.code, RemoteCommander::kCodeTimeout) == 0)
+            {
+                if (task.state.stage == RemoteCommander::TaskStage::Act && !task.lastCode.empty() && !task.actStarted)
+                {
+                    code = task.lastCode;
+                    message = task.lastMessage;
+                }
+                else if (task.state.kind == RemoteCommander::TaskKind::Open && !task.lootLike &&
+                    task.state.stage == RemoteCommander::TaskStage::Act)
+                {
+                    code = RemoteCommander::kCodeFailed;
+                    message = "The object showed no change after the bot used it.";
+                }
+            }
+            FinishCommanderTask(task, false, 0, "", code, message);
+            return true;
+        }
+    }
+    return false;
+}
+
+void CancelCommanderTasks(uint64 commanderRaw)
+{
+    auto& tasks = CommanderTasks();
+    for (auto it = tasks.begin(); it != tasks.end();)
+    {
+        if (it->second.commanderRaw == commanderRaw)
+        {
+            FinishCommanderTask(it->second, false, 0, "", RemoteCommander::kCodeFailed,
+                "The commanded group was released.");
+            it = tasks.erase(it);
+        }
+        else
+            ++it;
+    }
+}
+
+// Each tick while a task runs: every kTaskTickMs a look at each.
+void UpdateCommanderTasks(uint32 diff)
+{
+    auto& tasks = CommanderTasks();
+    if (tasks.empty())
+    {
+        s_commanderTaskMs = 0;
+        return;
+    }
+    s_commanderTaskMs += diff;
+    if (s_commanderTaskMs < RemoteCommander::kTaskTickMs)
+        return;
+    uint32 const elapsed = s_commanderTaskMs;
+    s_commanderTaskMs = 0;
+    for (auto it = tasks.begin(); it != tasks.end();)
+    {
+        if (StepCommanderTask(it->second, elapsed))
+            it = tasks.erase(it);
+        else
+            ++it;
+    }
+}
+
+void ClearCommanderTasks()
+{
+    CommanderTasks().clear();
+    RemoteCommander::LootOrders().Clear();
+    s_commanderTaskMs = 0;
+}
+
+} // namespace
+
+// The guards every per-bot task order shares: the bot lives and is free to act.
+static bool CommanderTaskGuard(ChatHandler* handler, std::string const& intent, Player* bot,
+    PlayerbotAI* ai, bool walks)
+{
+    if (!ai)
+    {
+        SendActionError(handler, intent, "no-ai", "That bot has no AI.");
+        return false;
+    }
+    if (!bot->IsAlive() || bot->IsTaxiFlying() || bot->IsBeingTeleported())
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeUnavailable,
+            "That bot is dead, on a taxi or teleporting.");
+        return false;
+    }
+    if (CommanderTasks().count(bot->GetObjectGuid().GetRawValue()) ||
+        PlayerConvenience::Instance().IsBusy(bot->GetObjectGuid()))
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeBusy,
+            "That bot is busy with an earlier order (or a pending summon).");
+        return false;
+    }
+    if (walks && bot->IsInCombat())
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeInCombat, "That bot is in combat.");
+        return false;
+    }
+    return true;
+}
+
+// Takes the task into the table, starts its walk, looks at it once (it may
+// finish on the spot: the answer is then synchronous) and marks it pending.
+static bool LaunchCommanderTask(ChatHandler* handler, CommanderOrder const& order, Player* bot,
+    PlayerbotAI* ai, CommanderTask task)
+{
+    task.commanderRaw = order.commander->GetObjectGuid().GetRawValue();
+    task.botRaw = bot->GetObjectGuid().GetRawValue();
+    task.botName = bot->GetName();
+    if (!task.noWalk && task.targetRaw)
+    {
+        TaskTarget const target = ResolveTaskTarget(ai, task.targetRaw);
+        if (!TaskInRange(task, bot, target))
+            BeginTaskWalk(task, order.commander, bot, ai, target.object());
+    }
+    auto& tasks = CommanderTasks();
+    CommanderTask& stored = tasks[task.botRaw] = task;
+    if (StepCommanderTask(stored, 0))
+    {
+        tasks.erase(task.botRaw);
+        return true;
+    }
+    uint32 const seconds = (stored.state.walkBudgetMs + stored.state.actBudgetMs) / 1000;
+    handler->PSendSysMessage("TBM:ACTION_PENDING|%s|bot:%s|%u|%s", ProtocolSafe(stored.intent).c_str(),
+        ProtocolSafe(stored.botName).c_str(), seconds, std::to_string(stored.targetRaw).c_str());
+    return true;
+}
+
+// cmd loot <corpse-or-go-guid> <bot> [itemId]
+static bool CommanderLoot(ChatHandler* handler, CommanderOrder const& order, Player* bot,
+    RemoteCommander::LootOrder const& request, std::string const& intent)
+{
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!CommanderTaskGuard(handler, intent, bot, ai, true))
+        return true;
+    TaskTarget const target = ResolveTaskTarget(ai, request.guid);
+    if (!TaskTargetPresent(target))
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeInvalidTarget,
+            "No corpse or game object with that GUID is on the bot's map.");
+        return true;
+    }
+    float const distance = bot->GetDistance(target.object());
+    if (!RemoteCommander::WithinReactDistance(distance, sPlayerbotAIConfig.reactDistance))
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeTooFar,
+            "The object is farther from the bot than AiPlayerbot.ReactDistance. Move the group closer first.");
+        return true;
+    }
+    if (target.go)
+    {
+        RemoteCommander::LockVerdict const lock = RemoteCommander::CheckLock(GoLockFacts(bot, target.go));
+        if (lock != RemoteCommander::LockVerdict::Open)
+        {
+            SendActionError(handler, intent, RemoteCommander::LockVerdictCode(lock),
+                RemoteCommander::LockVerdictText(lock));
+            return true;
+        }
+    }
+    CommanderTask task;
+    task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Loot, distance, true);
+    task.targetRaw = request.guid;
+    task.itemId = request.itemId;
+    task.lootLike = true;
+    task.intent = intent;
+    return LaunchCommanderTask(handler, order, bot, ai, task);
+}
+
+// cmd open <go-guid> <bot>
+static bool CommanderOpen(ChatHandler* handler, CommanderOrder const& order, Player* bot,
+    RemoteCommander::OpenOrder const& request, std::string const& intent)
+{
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!CommanderTaskGuard(handler, intent, bot, ai, true))
+        return true;
+    TaskTarget const target = ResolveTaskTarget(ai, request.guid);
+    if (!target.go || !TaskTargetPresent(target))
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeInvalidTarget,
+            "No game object with that GUID is on the bot's map.");
+        return true;
+    }
+    float const distance = bot->GetDistance(target.go);
+    if (!RemoteCommander::WithinReactDistance(distance, sPlayerbotAIConfig.reactDistance))
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeTooFar,
+            "The object is farther from the bot than AiPlayerbot.ReactDistance. Move the group closer first.");
+        return true;
+    }
+    RemoteCommander::LockVerdict const lock = RemoteCommander::CheckLock(GoLockFacts(bot, target.go));
+    if (lock != RemoteCommander::LockVerdict::Open)
+    {
+        SendActionError(handler, intent, RemoteCommander::LockVerdictCode(lock),
+            RemoteCommander::LockVerdictText(lock));
+        return true;
+    }
+    CommanderTask task;
+    task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Open, distance, true);
+    task.targetRaw = request.guid;
+    task.lootLike = target.go->GetGoType() == GAMEOBJECT_TYPE_CHEST;
+    task.intent = intent;
+    return LaunchCommanderTask(handler, order, bot, ai, task);
+}
+
+// cmd use <itemId> <bot> [target-guid]
+static bool CommanderUse(ChatHandler* handler, CommanderOrder const& order, Player* bot,
+    RemoteCommander::UseOrder const& request, std::string const& intent)
+{
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!CommanderTaskGuard(handler, intent, bot, ai, false))
+        return true;
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(request.itemId);
+    if (!proto)
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeInvalid, "No item with that id exists.");
+        return true;
+    }
+    if (!bot->HasItemCount(request.itemId, 1, false))
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeNoItem, "The bot carries no such item in its bags.");
+        return true;
+    }
+    if (bot->CanUseItem(proto) != EQUIP_ERR_OK)
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeFailed,
+            "The bot cannot use that item (level, class or skill).");
+        return true;
+    }
+    uint32 const spellId = ItemUseSpell(proto);
+    if (spellId && bot->HasSpellCooldown(spellId))
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeBusy, "That item is on cooldown.");
+        return true;
+    }
+
+    CommanderTask task;
+    task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Use, 0.0f, false);
+    task.itemId = request.itemId;
+    task.spellId = spellId;
+    task.intent = intent;
+    task.noWalk = true;
+    if (request.target)
+    {
+        ObjectGuid const targetGuid(request.target);
+        if (targetGuid.IsGameObject())
+        {
+            GameObject* go = ai->GetGameObject(targetGuid);
+            if (!go || !sServerFacade.isSpawned(go))
+            {
+                SendActionError(handler, intent, RemoteCommander::kCodeInvalidTarget,
+                    "No game object with that GUID is on the bot's map.");
+                return true;
+            }
+            float const distance = bot->GetDistance(go);
+            if (!RemoteCommander::WithinReactDistance(distance, sPlayerbotAIConfig.reactDistance))
+            {
+                SendActionError(handler, intent, RemoteCommander::kCodeTooFar,
+                    "The object is farther from the bot than AiPlayerbot.ReactDistance. Move the group closer first.");
+                return true;
+            }
+            task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Use, distance, true);
+            task.targetRaw = request.target;
+            task.useTargetRaw = request.target;
+            task.noWalk = false;
+        }
+        else if (targetGuid.IsUnit())
+        {
+            Unit* unit = ai->GetUnit(targetGuid);
+            if (!unit || !unit->IsInWorld())
+            {
+                SendActionError(handler, intent, RemoteCommander::kCodeInvalidTarget,
+                    "No unit with that GUID is on the bot's map.");
+                return true;
+            }
+            task.useTargetRaw = request.target;
+        }
+        else
+        {
+            SendActionError(handler, intent, RemoteCommander::kCodeInvalidTarget,
+                "The target GUID is neither a unit nor a game object.");
+            return true;
+        }
+    }
+    return LaunchCommanderTask(handler, order, bot, ai, task);
+}
+
+// cmd lootmethod <ffa|group|rr|master|nbg> [threshold]: the lead bot, the
+// group's leader, sets it through the same handler a client's loot method
+// window uses; the answer reads the method back from the group.
+static bool CommanderLootMethod(ChatHandler* handler, CommanderOrder const& order,
+    std::vector<std::string> const& parts, std::string const& intent)
+{
+    int method = 0;
+    int threshold = 0;
+    bool hasThreshold = false;
+    if (parts.empty() || parts.size() > 2 || !RemoteCommander::ParseLootMethod(parts[0], method) ||
+        (parts.size() == 2 && !RemoteCommander::ParseLootThreshold(parts[1], threshold)))
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeInvalid,
+            "Usage: .bot cmd lootmethod <ffa|group|rr|master|nbg> [threshold 1-5 or common/uncommon/rare/epic/legendary]");
+        return true;
+    }
+    hasThreshold = parts.size() == 2;
+    Player* lead = order.lead;
+    Group* group = order.group;
+    if (!lead->GetSession() || !group->IsLeader(lead->GetObjectGuid()))
+    {
+        SendActionError(handler, intent, "lead-unavailable", "The lead bot does not lead the group.");
+        return true;
+    }
+    if (!hasThreshold)
+        threshold = static_cast<int>(group->GetLootThreshold());
+    threshold = std::max(RemoteCommander::kThresholdMin, std::min(RemoteCommander::kThresholdMax, threshold));
+
+    WorldPacket packet;
+    packet << uint32(method);
+    packet << (method == RemoteCommander::kLootMaster ? lead->GetObjectGuid() : ObjectGuid());
+    packet << uint32(threshold);
+    lead->GetSession()->HandleLootMethodOpcode(packet);
+
+    if (static_cast<int>(group->GetLootMethod()) != method)
+    {
+        SendActionError(handler, intent, RemoteCommander::kCodeFailed, "The group's loot method did not change.");
+        return true;
+    }
+    std::string state = std::string(RemoteCommander::LootMethodName(static_cast<int>(group->GetLootMethod()))) +
+        ":" + std::to_string(static_cast<int>(group->GetLootThreshold()));
+    SendActionAck(handler, intent, "party", static_cast<uint32>(order.bots.size()), state);
+    return true;
+}
+
 static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
 {
     std::string text = Trim(args ? args : "");
@@ -5070,7 +5902,7 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
     if (!RemoteCommander::IsKnownOrder(verb))
     {
         SendActionError(handler, intent, "invalid",
-            "Usage: .bot cmd attack|pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] / focus <guid> / move <x> <y> <z> / stay / follow / rest / revive <bot> / summon <bot>");
+            "Usage: .bot cmd attack <guid> [bot] / pull|pullback <guid> [seconds] / cc <mark> <guid> [bot] / focus <guid> / move <x> <y> <z> / stay / follow / rest / lootmethod <ffa|group|rr|master|nbg> [threshold] / revive <bot> / summon <bot> / loot <guid> <bot> [itemId] / open <guid> <bot> / use <itemId> <bot> [guid]");
         return true;
     }
 
@@ -5117,7 +5949,33 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
     // control it now (the bound commander alone is not enough).
     if (tier == RemoteCommander::OrderTier::OwnerOrGm)
     {
-        Player* bot = parts.size() == 1 ? FindCommandedBot(order, parts[0]) : nullptr;
+        RemoteCommander::LootOrder lootRequest;
+        RemoteCommander::OpenOrder openRequest;
+        RemoteCommander::UseOrder useRequest;
+        bool parsed = true;
+        char const* usage = nullptr;
+        if (verb == "loot")
+        {
+            parsed = RemoteCommander::ParseLootOrder(parts, lootRequest);
+            usage = "Usage: .bot cmd loot <corpse-or-object guid> <bot> [itemId]";
+        }
+        else if (verb == "open")
+        {
+            parsed = RemoteCommander::ParseOpenOrder(parts, openRequest);
+            usage = "Usage: .bot cmd open <object guid> <bot>";
+        }
+        else if (verb == "use")
+        {
+            parsed = RemoteCommander::ParseUseOrder(parts, useRequest);
+            usage = "Usage: .bot cmd use <itemId> <bot> [target guid]";
+        }
+        if (!parsed)
+        {
+            SendActionError(handler, intent, RemoteCommander::kCodeInvalid, usage);
+            return true;
+        }
+        std::string const botName = RemoteCommander::OwnerOrderBotName(verb, parts);
+        Player* bot = botName.empty() ? nullptr : FindCommandedBot(order, botName);
         if (!bot)
         {
             std::string message = "Usage: .bot cmd " + verb + " <bot of your commanded group>";
@@ -5131,6 +5989,12 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             SendActionError(handler, intent, "denied", "Only this bot's owner (or a GameMaster) may do that.");
             return true;
         }
+        if (verb == "loot")
+            return CommanderLoot(handler, order, bot, lootRequest, intent);
+        if (verb == "open")
+            return CommanderOpen(handler, order, bot, openRequest, intent);
+        if (verb == "use")
+            return CommanderUse(handler, order, bot, useRequest, intent);
         return verb == "revive"
             ? CommanderRevive(handler, order, bot, intent)
             : CommanderSummon(handler, order, bot, intent);
@@ -5145,6 +6009,8 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
 
     if (verb == "move")
         return CommanderMove(handler, order, rest, intent);
+    if (verb == "lootmethod")
+        return CommanderLootMethod(handler, order, parts, intent);
     if (verb == "stay" || verb == "follow" || verb == "rest")
     {
         if (!parts.empty())
@@ -5159,14 +6025,25 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
     if (verb == "attack" || verb == "focus" || verb == "pull" || verb == "pullback")
     {
         bool const pull = verb == "pull" || verb == "pullback";
+        bool const scoped = verb == "attack";
         std::string option;
-        if (parts.empty() || parts.size() > (pull ? 2u : 1u))
+        if (parts.empty() || parts.size() > (pull || scoped ? 2u : 1u))
         {
-            std::string message = "Usage: .bot cmd " + verb + " <guid>" + (pull ? " [seconds]" : "");
+            std::string message = "Usage: .bot cmd " + verb + " <guid>" + (pull ? " [seconds]" : scoped ? " [bot]" : "");
             SendActionError(handler, intent, "invalid", message.c_str());
             return true;
         }
-        if (parts.size() == 2)
+        Player* attackBot = nullptr;
+        if (scoped && parts.size() == 2)
+        {
+            attackBot = FindCommandedBot(order, parts[1]);
+            if (!attackBot)
+            {
+                SendActionError(handler, intent, "no-bot", "That bot is not in your commanded group.");
+                return true;
+            }
+        }
+        if (pull && parts.size() == 2)
         {
             char* end = nullptr;
             long seconds = std::strtol(parts[1].c_str(), &end, 10);
@@ -5181,7 +6058,7 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         if (!target)
             return true;
         if (verb == "attack")
-            return CommanderAttack(handler, order, target, intent);
+            return CommanderAttack(handler, order, target, intent, attackBot);
         if (verb == "focus")
             return CommanderFocus(handler, order, target, intent);
         BotCommandContext context = CommanderContext(order, target);
@@ -5239,6 +6116,8 @@ void UpdateRemoteCommanders(uint32_t diff)
     }
     // Issue #884, phase 2: the perception feed of the bindings that stand.
     UpdateCommanderViews(diff);
+    // The bot tasks (loot, open, use) of the commanders.
+    UpdateCommanderTasks(diff);
 }
 
 bool IsCommandedBy(Player* commander, Player* bot)
@@ -5259,6 +6138,7 @@ void ClearRemoteCommanders()
     CommanderBindings().Clear();
     CommanderViews().clear();
     SavedFollowTargets().clear();
+    ClearCommanderTasks();
     s_commanderSweepMs = 0;
 }
 

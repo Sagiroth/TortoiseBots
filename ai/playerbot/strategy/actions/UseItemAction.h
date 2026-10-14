@@ -58,6 +58,19 @@ namespace ai
         bool OpenItem(Player* requester, Item* item);
     };
 
+    // `.bot cmd use` / `.bot cmd open` of the remote commander: use an item (on a unit or a game
+    // object) or a game object, named exactly. Param: "<itemId> <none|unit|go> <guid>" (itemId 0 = the
+    // game object itself). Unlike "use", nothing is matched by name, so a nearby object of a similar
+    // name cannot take the order's place. A refused cast check is kept for the caller (NoteCastCheckFail).
+    class CommanderUseAction : public UseAction
+    {
+    public:
+        CommanderUseAction(PlayerbotAI* ai) : UseAction(ai, "commander use") {}
+
+    protected:
+        virtual bool Execute(Event& event) override;
+    };
+
     class UseItemIdAction : public UseAction
     {
     public:

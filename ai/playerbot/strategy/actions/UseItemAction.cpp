@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "UseItemAction.h"
 #include "UseItemNamePolicy.h"
+#include <sstream>
 
 #include "playerbot/PlayerbotAIConfig.h"
 #include "Database/DBCStore.h"
@@ -370,6 +371,34 @@ bool UseAction::Execute(Event& event)
     return false;
 }
 
+bool CommanderUseAction::Execute(Event& event)
+{
+    Player* requester = event.GetOwner();
+    std::istringstream in(event.GetParam());
+    uint32 itemId = 0;
+    std::string kind;
+    uint64 raw = 0;
+    in >> itemId >> kind >> raw;
+    if (in.fail())
+        return false;
+
+    MakeVerbose(false);
+    ObjectGuid const guid(raw);
+    if (kind == "go")
+    {
+        GameObject* go = ai->GetGameObject(guid);
+        if (!go)
+            return false;
+        return itemId ? UseItem(requester, itemId, go) : UseGameObject(requester, event, go);
+    }
+    if (kind == "unit")
+    {
+        Unit* unit = ai->GetUnit(guid);
+        return unit && itemId && UseItem(requester, itemId, unit);
+    }
+    return itemId && UseItem(requester, itemId, static_cast<Unit*>(nullptr));
+}
+
 bool UseAction::UseItem(Player* requester, uint32 itemId, Unit* target)
 {
     return UseItemInternal(requester, itemId, target, nullptr, nullptr);
@@ -664,6 +693,8 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
             {
                 successCast = true;
             }
+            if (!successCast)
+                ai->NoteCastCheckFail(result);
 
             if (successCast)
             {

@@ -428,17 +428,21 @@ enum class OrderTier : uint8_t
 
 inline OrderTier TierForOrder(std::string const& verb)
 {
+    // lootmethod changes the bound group's rule, like any group member's order
+    // to its leader would; the per-bot loot/open/use orders move items and open
+    // things for one bot, so they stay with its owner (or a GM).
     if (verb == "attack" || verb == "pull" || verb == "pullback" || verb == "cc" ||
         verb == "focus" || verb == "move" || verb == "stay" || verb == "follow" ||
-        verb == "rest")
+        verb == "rest" || verb == "lootmethod")
         return OrderTier::Tactical;
-    // revive, summon and anything unknown: fail closed.
+    // revive, summon, loot, open, use and anything unknown: fail closed.
     return OrderTier::OwnerOrGm;
 }
 
 inline bool IsKnownOrder(std::string const& verb)
 {
-    return TierForOrder(verb) == OrderTier::Tactical || verb == "revive" || verb == "summon";
+    return TierForOrder(verb) == OrderTier::Tactical || verb == "revive" || verb == "summon" ||
+        verb == "loot" || verb == "open" || verb == "use";
 }
 
 // enabled: AiPlayerbot.RemoteCommander. boundCommander: the requester holds a
@@ -553,6 +557,104 @@ inline bool ParseMovePoint(std::string const& text, MovePoint& out)
         return false;
     out = point;
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// Per-bot player orders (loot, open, use) and the loot method: arguments
+// ---------------------------------------------------------------------------
+
+// An item entry: decimal, 1 to 999999.
+inline bool ParseItemId(std::string const& token, uint32_t& out)
+{
+    out = 0;
+    if (token.empty() || token.size() > 6)
+        return false;
+    uint32_t value = 0;
+    for (char c : token)
+    {
+        if (c < '0' || c > '9')
+            return false;
+        value = value * 10 + static_cast<uint32_t>(c - '0');
+    }
+    if (!value)
+        return false;
+    out = value;
+    return true;
+}
+
+// cmd loot <corpse-or-go-guid> <bot> [itemId]
+struct LootOrder
+{
+    uint64_t guid = 0;
+    std::string bot;
+    uint32_t itemId = 0; // 0 = everything
+};
+
+inline bool ParseLootOrder(std::vector<std::string> const& parts, LootOrder& out)
+{
+    if (parts.size() < 2 || parts.size() > 3)
+        return false;
+    LootOrder order;
+    if (!ParseGuid(parts[0], order.guid))
+        return false;
+    order.bot = parts[1];
+    if (parts.size() == 3 && !ParseItemId(parts[2], order.itemId))
+        return false;
+    out = order;
+    return true;
+}
+
+// cmd open <go-guid> <bot>
+struct OpenOrder
+{
+    uint64_t guid = 0;
+    std::string bot;
+};
+
+inline bool ParseOpenOrder(std::vector<std::string> const& parts, OpenOrder& out)
+{
+    if (parts.size() != 2)
+        return false;
+    OpenOrder order;
+    if (!ParseGuid(parts[0], order.guid))
+        return false;
+    order.bot = parts[1];
+    out = order;
+    return true;
+}
+
+// cmd use <itemId> <bot> [target-guid]
+struct UseOrder
+{
+    uint32_t itemId = 0;
+    std::string bot;
+    uint64_t target = 0; // 0 = no target (the item on its own)
+};
+
+inline bool ParseUseOrder(std::vector<std::string> const& parts, UseOrder& out)
+{
+    if (parts.size() < 2 || parts.size() > 3)
+        return false;
+    UseOrder order;
+    if (!ParseItemId(parts[0], order.itemId))
+        return false;
+    order.bot = parts[1];
+    if (parts.size() == 3 && !ParseGuid(parts[2], order.target))
+        return false;
+    out = order;
+    return true;
+}
+
+// The bot an owner-or-GM order names, or an empty string when the arguments
+// do not fit the verb (revive/summon take the bot alone; loot/open/use name it
+// second, after the object or item).
+inline std::string OwnerOrderBotName(std::string const& verb, std::vector<std::string> const& parts)
+{
+    if ((verb == "revive" || verb == "summon") && parts.size() == 1)
+        return parts[0];
+    if ((verb == "loot" || verb == "open" || verb == "use") && parts.size() >= 2)
+        return parts[1];
+    return std::string();
 }
 
 // ---------------------------------------------------------------------------

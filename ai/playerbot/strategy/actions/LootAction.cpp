@@ -14,6 +14,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/QuestLogPolicy.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
+#include "../../../../runtime/RemoteCommanderTasks.h"
 
 
 using namespace ai;
@@ -436,6 +437,9 @@ bool StoreLootAction::Execute(Event& event)
         else
             lootStack->Remove(guid);
         RESET_AI_VALUE(LootObject, "loot target");
+        // A remote commander's loot order waits for this window: tell it the server refused.
+        TortoiseBots::RemoteCommander::LootOrders().NoteWindowEnd(bot->GetObjectGuid().GetRawValue(),
+            guid.GetRawValue(), true);
         return false;
     }
 
@@ -464,6 +468,8 @@ bool StoreLootAction::Execute(Event& event)
         bot->GetSession()->HandleLootReleaseOpcode(release);
         AI_VALUE(LootObjectStack*, "available loot")->Remove(guid);
         RESET_AI_VALUE(LootObject, "loot target");
+        TortoiseBots::RemoteCommander::LootOrders().NoteWindowEnd(bot->GetObjectGuid().GetRawValue(),
+            guid.GetRawValue(), true);
         return false;
     }
 
@@ -475,10 +481,20 @@ bool StoreLootAction::Execute(Event& event)
 
     uint32 itemsTaken = 0;
 
-    if (gold > 0)
+    // A remote commander's loot order on this very object (cmd loot / cmd open): an explicit
+    // order takes its item (or everything the group rules give this bot) without the strategy's
+    // loot filter, and the window reports what it took.
+    uint64 const botRaw = bot->GetObjectGuid().GetRawValue();
+    uint32 orderedItem = 0;
+    bool const commanderOrder = TortoiseBots::RemoteCommander::LootOrders().Watching(botRaw, guid.GetRawValue(), orderedItem);
+
+    // An order for one item leaves the money on the corpse.
+    if (gold > 0 && !(commanderOrder && orderedItem))
     {
         WorldPacket packet(CMSG_LOOT_MONEY, 0);
         bot->GetSession()->HandleLootMoneyOpcode(packet);
+        if (commanderOrder)
+            TortoiseBots::RemoteCommander::LootOrders().NoteCopper(botRaw, guid.GetRawValue(), gold);
 
         // Money taken before the item loop, so gold-only corpses (most low-level
         // kills) used to leave no trace: income was unmeasurable and a bot that
@@ -514,7 +530,15 @@ bool StoreLootAction::Execute(Event& event)
 			continue;
 		}
 
-        if (!ai::IsSkinningLoot((uint32)internalLootType) && !IsLootAllowed(itemQualifier, ai))
+        if (commanderOrder)
+        {
+            if (!TortoiseBots::RemoteCommander::LootItemWanted(orderedItem, itemid))
+                continue;
+            ItemPrototype const* orderedProto = sObjectMgr.GetItemPrototype(itemid);
+            if (!orderedProto || (orderedProto->MaxCount > 0 && bot->HasItemCount(itemid, orderedProto->MaxCount, true)))
+                continue;
+        }
+        else if (!ai::IsSkinningLoot((uint32)internalLootType) && !IsLootAllowed(itemQualifier, ai))
         {
             sLog.outDebug("[BOT LOOT] %s: skip item=%u (IsLootAllowed=false)", bot->GetName(), itemid);
             continue;
@@ -554,6 +578,8 @@ bool StoreLootAction::Execute(Event& event)
         packet << itemindex;
         bot->GetSession()->HandleAutostoreLootItemOpcode(packet);
         ++itemsTaken;
+        if (commanderOrder)
+            TortoiseBots::RemoteCommander::LootOrders().NoteItem(botRaw, guid.GetRawValue(), itemid, itemcount);
         sLog.outDebug("[BOT LOOT] %s: take item=%u x%u", bot->GetName(), itemid, itemcount);
 
         if (proto->Quality > ITEM_QUALITY_NORMAL && !urand(0, 50) && ai->HasStrategy("emote", BotState::BOT_STATE_NON_COMBAT)) ai->PlayEmote(TEXTEMOTE_CHEER);
@@ -609,6 +635,9 @@ bool StoreLootAction::Execute(Event& event)
     bot->GetSession()->HandleLootReleaseOpcode(packet);
 
     ai->AccelerateRespawn(guid);
+
+    if (commanderOrder)
+        TortoiseBots::RemoteCommander::LootOrders().NoteWindowEnd(botRaw, guid.GetRawValue(), false);
 
     return true;
 }

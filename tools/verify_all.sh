@@ -179,6 +179,7 @@ if command -v g++ >/dev/null 2>&1; then
         test_ready_rebuff_policy
         test_rear_flank_policy
         test_remote_commander_policy
+        test_remote_commander_tasks
         test_remote_commander_view
         test_resist_aura_policy
         test_retaliation_policy

@@ -344,6 +344,7 @@ namespace ai
             creators["arcane torrent"] = [](PlayerbotAI* ai) { return new CastArcaneTorrentAction(ai); };
 
             creators["use id"] = [](PlayerbotAI* ai) { return new UseItemIdAction(ai); };
+            creators["commander use"] = [](PlayerbotAI* ai) { return new CommanderUseAction(ai); };
             creators["move to"] = [](PlayerbotAI* ai) { return new MoveToAction(ai); };
 
             // Dungeon Actions
