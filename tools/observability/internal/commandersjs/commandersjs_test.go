@@ -33,3 +33,9 @@ func TestMapLayersJS(t *testing.T) {
 func TestUnitInfoJS(t *testing.T) {
 	runCheck(t, "unitinfo_check.js", "../../web/static/js/unitinfo.js")
 }
+
+// TestPartyRowsJS runs partyrows_check.js: the party table header and every row have the same number of cells, and app.js declares
+// no helper twice.
+func TestPartyRowsJS(t *testing.T) {
+	runCheck(t, "partyrows_check.js", "../../web/static/js/app.js")
+}

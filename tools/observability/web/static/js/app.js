@@ -4645,7 +4645,7 @@
 
   // ---- the map of one card ----
 
-  // Small pictures in a box from -5 to 5: over a unit (status), as the boss crown and as event pins. Drawn by cmdIcon().
+  // Small pictures in a box from -5 to 5: over a unit (status), as the boss crown and as event pins. Drawn by cmdMapIcon().
   const CMD_MAP_ICONS = {
     skull: '<path d="M-3.6 0.4a3.6 3.6 0 1 1 7.2 0v2h-1.4v1.8h-1v-1h-1v1h-1.6v-1h-1v1h-1V2.4h-1.4z"/><circle class="eye" cx="-1.4" cy="-0.2" r="0.95"/><circle class="eye" cx="1.4" cy="-0.2" r="0.95"/>',
     spark: '<path d="M0 -4.6L1.2 -1.2L4.6 0L1.2 1.2L0 4.6L-1.2 1.2L-4.6 0L-1.2 -1.2Z"/>',
@@ -4659,7 +4659,7 @@
     coin: '<circle cx="0" cy="0" r="3.8"/><path class="ln eyeln" d="M0 -2V2"/>',
   };
   // One icon centred at plane point (x, y); size in drawing units (px * k) on a dark disc so it reads on any picture.
-  function cmdIcon(name, x, y, size, title) {
+  function cmdMapIcon(name, x, y, size, title) {
     const body = CMD_MAP_ICONS[name];
     if (!body) return '';
     const sc = size / 11;
@@ -4855,7 +4855,7 @@
       }
       if (on.statusicons) {
         const ic = UnitInfo.statusIcons(u, kind), step = 12 * k, y0 = p.y - r - (bar ? 15 : 9) * k;
-        ic.forEach((x, i) => { o += cmdIcon(x.icon, p.x + (i - (ic.length - 1) / 2) * step, y0, 11 * k, x.title); });
+        ic.forEach((x, i) => { o += cmdMapIcon(x.icon, p.x + (i - (ic.length - 1) / 2) * step, y0, 11 * k, x.title); });
       }
       return o;
     };
@@ -4872,7 +4872,7 @@
         if (tc !== 'none') g += `<circle class="tring ${tc}" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 2.2 * k)}"/>`;
       }
       g += `<circle class="body" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/>`;
-      if (boss) g += cmdIcon('crown', p.x, p.y, 12 * k).replace('class="ic ic-crown"', 'class="ic ic-crown crownmark"');
+      if (boss) g += cmdMapIcon('crown', p.x, p.y, 12 * k).replace('class="ic ic-crown"', 'class="ic ic-crown crownmark"');
       g += overlay(m, 'mob', p, boss ? r + 8 * k : r);
       if (boss || (on.hostilenames && cls === 'hostile')) {
         g += `<text class="mname${boss ? ' boss' : ''}" x="${f(p.x + (r + 4 * k))}" y="${f(p.y + 4 * k)}" style="font-size:${f((boss ? 12.5 : 10.5) * k)}px;stroke-width:${f(3 * k)}px">${esc(m.name || (m.entry ? 'creature ' + m.entry : 'unit'))}</text>`;
@@ -4884,7 +4884,7 @@
         const p = CmdView.project(e.x, e.y), uid = 'e:' + e.id, big = e.kind === 'wipe' || e.kind === 'boss';
         units[uid] = { kind: 'e', obj: e };
         g += `<g class="evpin ev-${esc(e.kind)}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(11 * k)}"/>`
-          + cmdIcon(e.kind === 'death' || e.kind === 'wipe' ? 'skull' : e.kind === 'boss' ? 'crown' : e.kind === 'loot' ? 'coin' : 'door', p.x, p.y, (big ? 17 : 12) * k) + '</g>';
+          + cmdMapIcon(e.kind === 'death' || e.kind === 'wipe' ? 'skull' : e.kind === 'boss' ? 'crown' : e.kind === 'loot' ? 'coin' : 'door', p.x, p.y, (big ? 17 : 12) * k) + '</g>';
       });
     }
     if (on.commander && commanderAt) {
