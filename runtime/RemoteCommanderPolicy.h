@@ -1163,11 +1163,17 @@ inline char const* MoveVerdictCode(MoveVerdict verdict)
 
 // A direct step is a short hop: every bot must be within this horizontal
 // distance and this height difference of the point, and the point needs a floor
-// within kDirectGroundTolerance of its z. Nothing checks the line between (no
-// navmesh), so the limits are what keeps a step from crossing half a dungeon.
+// at most kDirectGroundTolerance below its z (and at most kDirectGroundSlack
+// above it: a floor higher than the point would put the bot inside it). The bots
+// walk to that floor, not to the point's z. There is no navmesh on the line, so
+// each bot must also see the point (line of sight from kDirectLosHeight above
+// the bot to kDirectLosHeight above the floor there): no step cuts through a
+// wall. The limits keep a step from crossing half a dungeon.
 constexpr float kDirectMaxDistance = 25.0f;
 constexpr float kDirectMaxVertical = 8.0f;
 constexpr float kDirectGroundTolerance = 3.0f;
+constexpr float kDirectGroundSlack = 0.5f;
+constexpr float kDirectLosHeight = 2.0f;
 
 struct MoveOrder
 {
@@ -1204,6 +1210,7 @@ enum class DirectVerdict : uint8_t
     Ok,
     TooFar,
     NoGround,
+    NoLos,
 };
 
 // One bot's distance to the point: horizontal yards and the height difference
@@ -1216,14 +1223,21 @@ inline DirectVerdict CheckDirectStep(float horizontal, float vertical)
     return DirectVerdict::Ok;
 }
 
-// The map height under the point (Map::GetHeight; INVALID_HEIGHT, -100000, when
-// it finds none) against the point's z.
+// The map height under the point (Map::GetHeight, searched down from just above
+// it; INVALID_HEIGHT, -100000, when it finds none) against the point's z: a floor
+// up to kDirectGroundTolerance below it, or up to kDirectGroundSlack above.
 inline DirectVerdict CheckDirectGround(float groundZ, float pointZ)
 {
     if (!std::isfinite(groundZ) || groundZ <= -50000.0f ||
-        std::fabs(groundZ - pointZ) > kDirectGroundTolerance)
+        groundZ > pointZ + kDirectGroundSlack || groundZ < pointZ - kDirectGroundTolerance)
         return DirectVerdict::NoGround;
     return DirectVerdict::Ok;
+}
+
+// One bot's line of sight to the point (Map::isInLineOfSight, both ends raised).
+inline DirectVerdict CheckDirectLos(bool inLineOfSight)
+{
+    return inLineOfSight ? DirectVerdict::Ok : DirectVerdict::NoLos;
 }
 
 inline char const* DirectVerdictCode(DirectVerdict verdict)
@@ -1233,6 +1247,7 @@ inline char const* DirectVerdictCode(DirectVerdict verdict)
         case DirectVerdict::Ok: return "ok";
         case DirectVerdict::TooFar: return "too-far";
         case DirectVerdict::NoGround: return "no-ground";
+        case DirectVerdict::NoLos: return "no-los";
     }
     return "invalid";
 }

@@ -492,12 +492,17 @@ static void TestDirectVerdict()
 
     CHECK(CheckDirectGround(-46.8f, -46.8f) == DirectVerdict::Ok);
     CHECK(CheckDirectGround(-49.8f, -46.8f) == DirectVerdict::Ok);   // 3 yd below: on the limit
-    CHECK(CheckDirectGround(-43.8f, -46.8f) == DirectVerdict::Ok);
-    CHECK(CheckDirectGround(-50.0f, -46.8f) == DirectVerdict::NoGround);
-    CHECK(CheckDirectGround(-43.0f, -46.8f) == DirectVerdict::NoGround);
+    CHECK(CheckDirectGround(-46.3f, -46.8f) == DirectVerdict::Ok);   // 0.5 yd above: the slack
+    CHECK(CheckDirectGround(-50.0f, -46.8f) == DirectVerdict::NoGround); // too far below: the bots would hang
+    CHECK(CheckDirectGround(-46.2f, -46.8f) == DirectVerdict::NoGround); // a floor above the point: inside the geometry
+    CHECK(CheckDirectGround(-43.8f, -46.8f) == DirectVerdict::NoGround);
     CHECK(CheckDirectGround(-100000.0f, -46.8f) == DirectVerdict::NoGround); // INVALID_HEIGHT
     CHECK(CheckDirectGround(std::nanf(""), 0.0f) == DirectVerdict::NoGround);
     CHECK(std::string(DirectVerdictCode(DirectVerdict::NoGround)) == "no-ground");
+
+    CHECK(CheckDirectLos(true) == DirectVerdict::Ok);
+    CHECK(CheckDirectLos(false) == DirectVerdict::NoLos);
+    CHECK(std::string(DirectVerdictCode(DirectVerdict::NoLos)) == "no-los");
 }
 
 static void TestMoveVerdict()

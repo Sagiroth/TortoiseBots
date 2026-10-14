@@ -5238,8 +5238,8 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
 // `cmd move <x> <y> <z> direct`: for a gap the navmesh does not bridge. Every live bot of the group
 // walks a straight line to the point (a MovePoint without MOVE_PATHFINDING: the core's own straight
 // walk), the way a player walks it. Only a short step: each bot within kDirectMaxDistance
-// horizontally and kDirectMaxVertical vertically of the point, and the point on the ground (the
-// map height within kDirectGroundTolerance). Nothing checks the line between, so no step is made
+// horizontally and kDirectMaxVertical vertically of the point, the point on the ground (the
+// map height at most kDirectGroundTolerance below it) and in sight of each bot (no-los). The bots walk to that floor. Nothing checks the line between, so no step is made
 // unless every bot passes. Afterwards the lead bot holds at the point and the others follow it, as
 // after a plain `cmd move`.
 static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& order,
@@ -5279,16 +5279,35 @@ static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& orde
         walkers.push_back(bot);
     }
 
-    // The floor under the point (the vmap/terrain height searched down from just above it).
+    // The floor under the point (the vmap/terrain height searched down from just above it). The bots walk to it,
+    // not to the point's own z: a floor above the point would be inside the geometry, one far below leaves them hanging.
+    Map* const map = lead->GetMap();
     float ground = INVALID_HEIGHT;
     if (MaNGOS::IsValidMapCoord(point.x, point.y, point.z))
-        ground = lead->GetMap()->GetHeight(point.x, point.y, point.z, true,
-            RemoteCommander::kDirectGroundTolerance + 2.0f);
+        ground = map->GetHeight(point.x, point.y, point.z, true, RemoteCommander::kDirectGroundTolerance + 2.0f);
     if (RemoteCommander::CheckDirectGround(ground, point.z) != RemoteCommander::DirectVerdict::Ok)
     {
         SendActionError(handler, intent, RemoteCommander::DirectVerdictCode(RemoteCommander::DirectVerdict::NoGround),
-            "The point has no ground within 3 yd of its height.");
+            "The point has no ground within 3 yd below it (or 0.5 yd above it).");
         return true;
+    }
+
+    // Nothing is checked on the line itself (no navmesh), so each bot must see the point: a follower behind a pillar,
+    // or a lead on the pit floor, would otherwise cut through the wall.
+    for (Player* bot : walkers)
+    {
+        float const h = RemoteCommander::kDirectLosHeight;
+        bool const los = MaNGOS::IsValidMapCoord(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) &&
+            map->isInLineOfSight(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ() + h,
+                point.x, point.y, ground + h);
+        if (RemoteCommander::CheckDirectLos(los) != RemoteCommander::DirectVerdict::Ok)
+        {
+            std::string const message = std::string(bot->GetName()) + " has no line of sight to the point. A direct step "
+                "does not cut through walls: walk the bots to where they see it first.";
+            SendActionError(handler, intent, RemoteCommander::DirectVerdictCode(RemoteCommander::DirectVerdict::NoLos),
+                message.c_str());
+            return true;
+        }
     }
 
     SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Move);
@@ -5303,7 +5322,7 @@ static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& orde
             PlayerConvenience::Instance().NoteHoldOrder(lead->GetObjectGuid());
             ai->Reset();
             ai->SetMovementStrategy("stay");
-            SetStayAnchor(ai, point.x, point.y, point.z, lead->GetMapId());
+            SetStayAnchor(ai, point.x, point.y, ground, lead->GetMapId());
         }
         else
             FormUpOnLead(order.commander, lead, std::vector<Player*>{ bot }, false);
@@ -5311,12 +5330,16 @@ static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& orde
         // The straight walk. The bot's own AI would re-plan it on the navmesh at its next step
         // (the stay spot is ahead of it), so the AI sleeps for the walk, as it does after a path move.
         bot->GetMotionMaster()->Clear();
-        bot->GetMotionMaster()->MovePoint(0, point.x, point.y, point.z, MOVE_RUN_MODE);
-        float const dx = point.x - bot->GetPositionX();
-        float const dy = point.y - bot->GetPositionY();
-        float const speed = bot->GetSpeed(MOVE_RUN) > 1.0f ? bot->GetSpeed(MOVE_RUN) : 7.0f;
-        ai->SetActionDuration(static_cast<uint32>(std::sqrt(dx * dx + dy * dy) / speed * 1000.0f) +
-            sPlayerbotAIConfig.reactDelay);
+        bot->GetMotionMaster()->MovePoint(0, point.x, point.y, ground, MOVE_RUN_MODE);
+        // A bot in a fight keeps its AI (a healer asleep for 4 s would stop healing); it may re-plan the step.
+        if (!bot->IsInCombat())
+        {
+            float const dx = point.x - bot->GetPositionX();
+            float const dy = point.y - bot->GetPositionY();
+            float const speed = bot->GetSpeed(MOVE_RUN) > 1.0f ? bot->GetSpeed(MOVE_RUN) : 7.0f;
+            ai->SetActionDuration(static_cast<uint32>(std::sqrt(dx * dx + dy * dy) / speed * 1000.0f) +
+                sPlayerbotAIConfig.reactDelay);
+        }
         ++walking;
     }
     if (!walking)
