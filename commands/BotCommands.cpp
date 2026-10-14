@@ -24,6 +24,7 @@
 #include "../ai/playerbot/PlayerbotDbStore.h"
 #include "../ai/playerbot/ChatHelper.h"
 #include "../ai/playerbot/BotState.h"
+#include "../ai/playerbot/PullRefusalPolicy.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
 #include "../ai/playerbot/strategy/values/RtiTargetValue.h"
@@ -3211,7 +3212,8 @@ static bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context,
     Player* executor = ResolvePullExecutor(context);
     if (!executor)
     {
-        SendActionError(handler, reportIntent, "no-tank", "No live tank-capable owned party bot can pull this target.");
+        bool const tankBusy = PullTankIsBusy(context);
+        SendActionError(handler, reportIntent, ai::PullNoExecutorCode(tankBusy), ai::PullNoExecutorText(tankBusy));
         return true;
     }
 
@@ -4187,6 +4189,21 @@ void LeaveCommanderParty(Player* commander, Player* bot)
         group->RemoveMember(bot->GetObjectGuid(), 0);
 }
 
+// The commander leaves the party the bind keeps (the party and its instance
+// bind outlive a member who leaves; the core disbands one left with fewer than
+// two members, so this refuses unless two bots stay). Server side, so no
+// leave packet reaches the bots' "master left" handler. True when the
+// commander is out of the group.
+bool DropCommanderFromParty(Group* group, Player* commander)
+{
+    if (!group || !commander || !group->IsMember(commander->GetObjectGuid()))
+        return group != nullptr;
+    if (!RemoteCommander::CanDropCommanderFromParty(group->GetMembersCount()))
+        return false;
+    group->RemoveMember(commander->GetObjectGuid(), 0);
+    return !group->IsMember(commander->GetObjectGuid());
+}
+
 // The lead bot invites, the member accepts through the native handlers - the
 // same opcodes the AI's own invite/accept actions use, without the accept
 // action's master rebind: the member keeps its durable master.
@@ -4537,14 +4554,28 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
     facts.lead = MemberFacts(commander, lead);
     Group* commanderParty = commander->GetGroup();
     Group* leadGroup = lead ? lead->GetGroup() : nullptr;
-    // A lead bot in the commander's own party is taken out of it.
-    bool const leadLeavesParty = leadGroup && leadGroup == commanderParty;
-    if (leadGroup && !leadLeavesParty)
+    // A lead bot in the commander's own party keeps that party (the instance
+    // bind lives on the group): the lead bot leads it and the commander leaves.
+    // Only a raid or a party with another player is rebuilt, as before.
+    RemoteCommander::BindPlanFacts planFacts;
+    planFacts.leadInCommanderParty = leadGroup && leadGroup == commanderParty;
+    planFacts.leadInOwnGroup = leadGroup && !planFacts.leadInCommanderParty;
+    if (planFacts.leadInCommanderParty)
+    {
+        planFacts.partyIsRaidOrBg = leadGroup->isRaidGroup() || leadGroup->isBGGroup();
+        for (Group::MemberSlot const& slot : leadGroup->GetMemberSlots())
+            if (slot.guid != commander->GetObjectGuid() && !BotManager::Instance().IsBot(slot.guid))
+                planFacts.partyHasOtherPlayer = true;
+    }
+    RemoteCommander::BindGroupPlan const plan = RemoteCommander::DecideBindGroup(planFacts);
+    bool const keepParty = plan == RemoteCommander::BindGroupPlan::KeepCommanderParty;
+    bool const leadLeavesParty = plan == RemoteCommander::BindGroupPlan::ReformFromCommanderParty;
+    if (leadGroup && (keepParty || plan == RemoteCommander::BindGroupPlan::AdoptLeadGroup))
     {
         facts.leadGrouped = true;
         facts.leadGroupIsRaidOrBg = leadGroup->isRaidGroup() || leadGroup->isBGGroup();
         for (Group::MemberSlot const& slot : leadGroup->GetMemberSlots())
-            if (!BotManager::Instance().IsBot(slot.guid))
+            if (slot.guid != commander->GetObjectGuid() && !BotManager::Instance().IsBot(slot.guid))
                 facts.leadGroupHasRealPlayer = true;
         facts.leadGroupBound = CommanderBindings().FindByGroup(leadGroup->GetId()) != nullptr;
     }
@@ -4559,7 +4590,7 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
     {
         for (Group::MemberSlot const& slot : leadGroup->GetMemberSlots())
         {
-            if (slot.guid == lead->GetObjectGuid())
+            if (slot.guid == lead->GetObjectGuid() || slot.guid == commander->GetObjectGuid())
                 continue;
             counted.push_back(slot.guid);
             facts.members.push_back(MemberFacts(commander, ObjectAccessor::FindPlayer(slot.guid)));
@@ -4589,17 +4620,27 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
         return true;
     }
 
-    // Form or adopt the party: out of the commander's party, the lead bot
-    // leads, every named bot joins it.
+    // Form or adopt the party. A kept commander party stays the same group
+    // (and so keeps its instance bind): the lead bot takes the lead, the named
+    // bots outside it join, and the commander leaves it last (earlier only
+    // when the party is full and a bot is still to join). Otherwise: out of the
+    // commander's party, the lead bot leads, every named bot joins it.
     if (leadLeavesParty)
         LeaveCommanderParty(commander, lead);
-    for (Player* bot : joiners)
-        LeaveCommanderParty(commander, bot);
+    if (!keepParty)
+        for (Player* bot : joiners)
+            LeaveCommanderParty(commander, bot);
     if (Group* group = lead->GetGroup())
         if (!group->IsLeader(lead->GetObjectGuid()))
             group->ChangeLeader(lead->GetObjectGuid());
     for (Player* bot : joiners)
     {
+        if (keepParty && lead->GetGroup() && lead->GetGroup()->IsFull() &&
+            !DropCommanderFromParty(lead->GetGroup(), commander))
+        {
+            SendActionError(handler, intent, "invite-failed", "The party is full and the commander cannot leave it.");
+            return true;
+        }
         if (!JoinLeadGroup(lead, bot))
         {
             std::string message = std::string("The group invitation for ") + bot->GetName() +
@@ -4607,6 +4648,11 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
             SendActionError(handler, intent, "invite-failed", message.c_str());
             return true;
         }
+    }
+    if (keepParty && lead->GetGroup() && !DropCommanderFromParty(lead->GetGroup(), commander))
+    {
+        SendActionError(handler, intent, "invite-failed", "The commander cannot leave the party (it would be left with fewer than two bots).");
+        return true;
     }
 
     Group* group = lead->GetGroup();
@@ -6207,6 +6253,21 @@ bool IsCommandedBy(Player* commander, Player* bot)
     Player* lead = FindCharacter(binding->leadGuid);
     Group* group = lead ? lead->GetGroup() : nullptr;
     return group && group->GetId() == binding->groupId && group->IsMember(bot->GetObjectGuid());
+}
+
+bool IsInCommandedGroup(Player* bot)
+{
+    if (!bot || !bot->GetGroup() || CommanderBindings().Empty())
+        return false;
+    for (uint64 commanderRaw : CommanderBindings().Commanders())
+    {
+        RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commanderRaw);
+        Player* lead = binding ? FindCharacter(binding->leadGuid) : nullptr;
+        Group* group = lead ? lead->GetGroup() : nullptr;
+        if (group && group->GetId() == binding->groupId && group->IsMember(bot->GetObjectGuid()))
+            return true;
+    }
+    return false;
 }
 
 void ClearRemoteCommanders()

@@ -46,6 +46,10 @@ std::vector<Player*> ResolveDynamicScope(BotCommandContext const& context);
 // bot. A selected bot is considered first only when the request also resolves
 // a valid enemy target; otherwise a live tank-capable party bot is selected.
 Player* ResolvePullExecutor(BotCommandContext const& context, bool allowSelected = true);
+// True when no executor was free but a tank-capable bot (the selected one or a
+// party bot) is alive and in combat: the pull is refused as `tank-busy`, not
+// `no-tank`. Read only after ResolvePullExecutor returned null.
+bool PullTankIsBusy(BotCommandContext const& context);
 // Hold party DPS for the join delay while the tank pulls and
 // establishes threat. Healers and tanks are untouched. For a pullback the
 // window additionally covers the tank's return leg and is narrowed to the

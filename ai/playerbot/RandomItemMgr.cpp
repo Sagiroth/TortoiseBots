@@ -12,6 +12,7 @@
 
 #include "strategy/values/SharedValueContext.h"
 #include "strategy/values/SpecWeaponPolicy.h"
+#include "strategy/values/AmmoCachePolicy.h"
 
 char * strstri (const char* str1, const char* str2);
 
@@ -3828,36 +3829,49 @@ void RandomItemMgr::BuildAmmoCache()
         maxLevel = sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL);
 
     sLog.outBasic("Building ammo cache for %d levels", maxLevel);
-	int counter1 = 0;
+    // Every white row of the class and subclass a bot of `level` can use; the
+    // pick (deprecated rows out, best damage per second, then required level,
+    // then lowest entry) is ai::PickAmmo, so it never depends on row order.
+    auto pickAmmo = [](uint32 itemClass, uint32 subClass, uint32 level) -> uint32
+    {
+        auto rows = WorldDatabase.PQuery(
+            "select entry, required_level, flags, name, dmg_min1, dmg_max1, delay from item_template"
+            " where class = '%u' and subclass = '%u' and required_level <= '%u' and quality = '%u'",
+            itemClass, subClass, level, ITEM_QUALITY_NORMAL);
+        if (!rows)
+            return 0;
+
+        std::vector<ai::AmmoCandidate> candidates;
+        do
+        {
+            Field* fields = rows->Fetch();
+            ai::AmmoCandidate candidate;
+            candidate.entry = fields[0].GetUInt32();
+            candidate.requiredLevel = fields[1].GetUInt32();
+            candidate.flags = fields[2].GetUInt32();
+            candidate.name = fields[3].GetString();
+            candidate.dmgMin = fields[4].GetFloat();
+            candidate.dmgMax = fields[5].GetFloat();
+            candidate.delayMs = fields[6].GetUInt32();
+            candidates.push_back(candidate);
+        } while (rows->NextRow());
+        return ai::PickAmmo(candidates, level);
+    };
+
+    int counter1 = 0;
     for (uint32 level = 1; level <= maxLevel+1; level+=10)
     {
         for (uint32 subClass = ITEM_SUBCLASS_ARROW; subClass <= ITEM_SUBCLASS_BULLET; subClass++)
         {
-            auto results = WorldDatabase.PQuery(
-                    "select entry, required_level from item_template where class = '%u' and subclass = '%u' and required_level <= '%u' and quality = '%u' order by required_level desc",
-                    ITEM_CLASS_PROJECTILE, subClass, level, ITEM_QUALITY_NORMAL);
-            if (!results)
-                return;
-
-            Field* fields = results->Fetch();
-            if (fields)
+            if (uint32 entry = pickAmmo(ITEM_CLASS_PROJECTILE, subClass, level))
             {
-                uint32 entry = fields[0].GetUInt32();
                 ammoCache[level / 10][subClass] = entry;
-				counter1++;
+                counter1++;
             }
         }
 
-        auto results = WorldDatabase.PQuery(
-            "select entry, required_level from item_template where class = '%u' and subclass = '%u' and required_level <= '%u' and quality = '%u' order by required_level desc",
-            ITEM_CLASS_WEAPON, ITEM_SUBCLASS_WEAPON_THROWN, level, ITEM_QUALITY_NORMAL);
-        if (!results)
-            return;
-
-        Field* fields = results->Fetch();
-        if (fields)
+        if (uint32 entry = pickAmmo(ITEM_CLASS_WEAPON, ITEM_SUBCLASS_WEAPON_THROWN, level))
         {
-            uint32 entry = fields[0].GetUInt32();
             ammoCache[level / 10][ITEM_SUBCLASS_WEAPON_THROWN] = entry;
             counter1++;
         }

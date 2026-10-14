@@ -2,6 +2,8 @@
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/RandomBotFacade.h"
 #include "GenericActions.h"
+#include "../../../../commands/BotCommands.h"
+#include "../../../../runtime/RemoteCommanderPolicy.h"
 
 namespace ai
 {
@@ -41,7 +43,15 @@ namespace ai
 
             Player* master = GetMaster();
             if (master && member == master->GetName())
+            {
+                // A bot in a group a commander commands stays when its master
+                // leaves (the agent leaving its own party must not break the
+                // bound party and its instance bind); every other bot leaves.
+                if (!TortoiseBots::RemoteCommander::LeavesWhenMasterLeaves(
+                        TortoiseBots::BotCommands::IsInCommandedGroup(bot)))
+                    return false;
                 return Leave(bot);
+            }
 
             return false;
         }

@@ -261,6 +261,29 @@ Player* ResolvePullExecutor(BotCommandContext const& context, bool allowSelected
     return nullptr;
 }
 
+bool PullTankIsBusy(BotCommandContext const& context)
+{
+    if (!context.requester)
+        return false;
+
+    auto busyTank = [&](Player* bot)
+    {
+        if (!bot || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() ||
+            bot->GetMap() != context.requester->GetMap())
+            return false;
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+        return ai && (ai->GetForcedRole() == static_cast<uint8>(BOT_ROLE_TANK) ||
+            PlayerbotAI::IsTank(bot, true));
+    };
+
+    if (busyTank(context.selectedBot))
+        return true;
+    for (Player* bot : context.partyBots)
+        if (busyTank(bot))
+            return true;
+    return false;
+}
+
 // Threat window: while the tank pulls and establishes threat, party DPS bots
 // hold at the command anchor. Healers stay active. Uses the mature
 // "wait for attack" gate the rotation already honors (AttackAction skips

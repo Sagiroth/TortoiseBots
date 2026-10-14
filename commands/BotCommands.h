@@ -28,6 +28,10 @@ void ClearRemoteCommanders();
 // conveniences (the summon out of a dungeon when the master leaves it) leave
 // such a bot with its lead bot.
 bool IsCommandedBy(Player* commander, Player* bot);
+// True when bot is in a group some commander has bound (any commander). The
+// "master left the party, so leave" rule skips such a bot: the bound group's
+// instance bind would be lost with it.
+bool IsInCommandedGroup(Player* bot);
 
 } // namespace BotCommands
 } // namespace TortoiseBots

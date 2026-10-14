@@ -538,6 +538,52 @@ static void TestOwnerOrderBotName()
     CHECK(OwnerOrderBotName("teleport", Args("a b")).empty());
 }
 
+// The bind keeps the party the lead bot is in (the instance bind lives on the
+// group), and only re-forms one it cannot keep.
+static void TestBindGroupPlan()
+{
+    BindPlanFacts facts;
+    CHECK(DecideBindGroup(facts) == BindGroupPlan::FormNew);
+
+    facts = BindPlanFacts();
+    facts.leadInOwnGroup = true;
+    CHECK(DecideBindGroup(facts) == BindGroupPlan::AdoptLeadGroup);
+
+    // Lead bot in the commander's party: kept, whether the party is the
+    // commander plus bots (the 19i case) or holds more bots than were named.
+    facts = BindPlanFacts();
+    facts.leadInCommanderParty = true;
+    CHECK(DecideBindGroup(facts) == BindGroupPlan::KeepCommanderParty);
+
+    // A raid / battleground party, or one with another player, is re-formed.
+    facts.partyIsRaidOrBg = true;
+    CHECK(DecideBindGroup(facts) == BindGroupPlan::ReformFromCommanderParty);
+    facts.partyIsRaidOrBg = false;
+    facts.partyHasOtherPlayer = true;
+    CHECK(DecideBindGroup(facts) == BindGroupPlan::ReformFromCommanderParty);
+
+    // The commander's party wins over "some other group" when both are set.
+    facts = BindPlanFacts();
+    facts.leadInCommanderParty = true;
+    facts.leadInOwnGroup = true;
+    CHECK(DecideBindGroup(facts) == BindGroupPlan::KeepCommanderParty);
+
+    // The core disbands a party left with fewer than two members: the
+    // commander leaves a kept party only with at least two bots staying.
+    CHECK(!CanDropCommanderFromParty(0));
+    CHECK(!CanDropCommanderFromParty(2));   // commander + 1 bot
+    CHECK(CanDropCommanderFromParty(3));    // commander + 2 bots
+    CHECK(CanDropCommanderFromParty(5));
+}
+
+// A bot in a commanded group does not leave when its master does; every other
+// bot keeps the general rule.
+static void TestMasterLeftRule()
+{
+    CHECK(!LeavesWhenMasterLeaves(true));
+    CHECK(LeavesWhenMasterLeaves(false));
+}
+
 int main()
 {
     TestBindingTable();
@@ -545,6 +591,8 @@ int main()
     TestDepartedFollowers();
     TestReleaseRule();
     TestBindGate();
+    TestBindGroupPlan();
+    TestMasterLeftRule();
     TestOrderGate();
     TestParseGuid();
     TestParseMovePoint();

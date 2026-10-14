@@ -57,6 +57,7 @@ if command -v g++ >/dev/null 2>&1; then
         test_adaptive_budget
         test_ah_buyer_policy
         test_ah_seller_teleport_policy
+        test_ammo_cache_policy
         test_ammo_cheat_policy
         test_anubrekhan_swarm_policy
         test_aoe_fear_policy
@@ -164,6 +165,7 @@ if command -v g++ >/dev/null 2>&1; then
         test_protection_potion_policy
         test_pull_firing_policy
         test_pull_join_window_policy
+        test_pull_refusal_policy
         test_pull_regen_policy
         test_quest_giver_stall_policy
         test_quest_log_triage_policy
