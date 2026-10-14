@@ -503,6 +503,22 @@ static void TestDirectVerdict()
     CHECK(CheckDirectLos(true) == DirectVerdict::Ok);
     CHECK(CheckDirectLos(false) == DirectVerdict::NoLos);
     CHECK(std::string(DirectVerdictCode(DirectVerdict::NoLos)) == "no-los");
+
+    // A follower joins the lead bot's line: straight when near it and in its sight, else on a complete navmesh path.
+    CHECK(ChooseDirectJoin(0.0f, 0.0f, true, false, -1.0f) == DirectJoin::Straight);
+    CHECK(ChooseDirectJoin(5.0f, 2.5f, true, false, -1.0f) == DirectJoin::Straight);   // on the limits
+    CHECK(ChooseDirectJoin(5.0f, -2.5f, true, false, -1.0f) == DirectJoin::Straight);
+    CHECK(ChooseDirectJoin(5.1f, 0.0f, true, false, -1.0f) == DirectJoin::None);       // too far for straight, no path
+    CHECK(ChooseDirectJoin(3.0f, 2.6f, true, false, -1.0f) == DirectJoin::None);       // a ledge below the lead bot
+    CHECK(ChooseDirectJoin(3.0f, 0.0f, false, false, -1.0f) == DirectJoin::None);      // around a corner, no path
+    // Uldaman run 13: a follower 7 yd back on the pit floor, 0.4 yd lower, with a path along the pit to the lip.
+    CHECK(ChooseDirectJoin(7.1f, -0.4f, true, true, 8.0f) == DirectJoin::Path);
+    CHECK(ChooseDirectJoin(3.0f, 0.0f, false, true, 12.0f) == DirectJoin::Path);
+    CHECK(ChooseDirectJoin(30.0f, 0.0f, false, true, 40.0f) == DirectJoin::Path);      // on the path limit
+    CHECK(ChooseDirectJoin(30.0f, 0.0f, false, true, 40.1f) == DirectJoin::None);
+    CHECK(ChooseDirectJoin(10.0f, 0.0f, false, false, 10.0f) == DirectJoin::None);     // incomplete path
+    CHECK(ChooseDirectJoin(std::nanf(""), 0.0f, true, false, -1.0f) == DirectJoin::None);
+    CHECK(ChooseDirectJoin(10.0f, 0.0f, false, true, std::nanf("")) == DirectJoin::None);
 }
 
 static void TestMoveVerdict()

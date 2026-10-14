@@ -43,6 +43,10 @@ class StayAnchorWiringTest(unittest.TestCase):
         self.assertIn("CheckDirectGround(", fn)
         self.assertIn("isInLineOfSight(", fn)
         self.assertIn("IsInCombat()", fn)
+        # The followers take the lead bot's line: its spot first (straight or on a complete navmesh path), then the point.
+        self.assertIn("ChooseDirectJoin(", fn)
+        self.assertIn("for (Vector3 const& next : { leadSpot, target })", fn)
+        self.assertIn("init.MovebyPath(walker.route);", fn)
         self.assertNotIn('posMap["stay"]', fn)
 
     def test_come_hold_comestay_use_helper(self):
