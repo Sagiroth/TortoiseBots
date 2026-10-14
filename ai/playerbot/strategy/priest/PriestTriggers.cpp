@@ -5,6 +5,31 @@
 
 using namespace ai;
 
+bool ai::PriestPackLoose(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!bot || !bot->GetGroup())
+        return false;
+
+    // Attackers whose victim is not a tank (a pet, a healer, a DPS).
+    uint32 offTank = 0;
+    for (ObjectGuid const& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
+    {
+        Unit* attacker = ai->GetUnit(guid);
+        if (!attacker || !attacker->IsAlive())
+            continue;
+        Unit* victim = attacker->GetVictim();
+        if (!victim)
+            continue;
+        Player* victimPlayer = victim->IsPlayer() ? static_cast<Player*>(victim) : nullptr;
+        if (victimPlayer && PlayerbotAI::IsTank(victimPlayer))
+            continue;
+        if (++offTank >= 2)
+            return true;
+    }
+    return false;
+}
+
 bool InnerFireTrigger::IsActive()
 {
     return BuffTrigger::IsActive();

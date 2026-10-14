@@ -103,9 +103,23 @@ void PriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "low health",
         NextAction::array(0, new NextAction("greater heal", ACTION_MEDIUM_HEAL), NULL)));
 
+    // Owner-approved (2026-10-14): Flash Heal over Greater Heal while the
+    // tank does not hold the pack (PriestPackLoose).
+    triggers.push_back(new TriggerNode(
+        "low health loose pack",
+        NextAction::array(0, new NextAction("flash heal", ACTION_MEDIUM_HEAL + 0.5f), NULL)));
+
     triggers.push_back(new TriggerNode(
         "target of attacker",
         NextAction::array(0, new NextAction("power word: shield", ACTION_HIGH), NULL)));
+
+    // Owner-approved (2026-10-14): a mob on the priest is shed with Fade
+    // before the next heal, above every heal row (critical heal + 2 is the
+    // highest). The action needs a group to shed to, so solo priests are
+    // unaffected; its 30 s cooldown keeps it to one cast per window.
+    triggers.push_back(new TriggerNode(
+        "target of attacker",
+        NextAction::array(0, new NextAction("fade", ACTION_CRITICAL_HEAL + 3), NULL)));
 
     // Drop aggro while climbing the threat table in a group (donor
     // GenericPriestStrategy fires fade at 55 here; the raid-only node below

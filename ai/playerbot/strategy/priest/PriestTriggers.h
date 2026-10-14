@@ -1,6 +1,7 @@
 #pragma once
 
 #include "playerbot/strategy/triggers/GenericTriggers.h"
+#include "playerbot/strategy/triggers/HealthTriggers.h"
 
 namespace ai
 {
@@ -26,6 +27,35 @@ namespace ai
     public:
         InnerFocusForHealTrigger(PlayerbotAI* ai) : Trigger(ai, "inner focus for heal") {}
         bool IsActive() override;
+    };
+
+    // Owner-approved behaviour (2026-10-14): while the tank does not hold the
+    // whole pack - two or more attackers on someone other than a tank - a
+    // party healer takes Flash Heal over Greater Heal. The long cast lost the
+    // race against the damage and drew threat from every loose mob (ZF hire
+    // run: 3555 -> 1354 mana in 38 s, healer top threat 28.5 s).
+    bool PriestPackLoose(PlayerbotAI* ai);
+
+    class PartyMemberLowHealthLoosePackTrigger : public PartyMemberLowHealthTrigger
+    {
+    public:
+        PartyMemberLowHealthLoosePackTrigger(PlayerbotAI* ai) : PartyMemberLowHealthTrigger(ai, "party member low health loose pack") {}
+        bool IsActive() override { return PartyMemberLowHealthTrigger::IsActive() && PriestPackLoose(ai); }
+    };
+
+    class PartyMemberMediumHealthLoosePackTrigger : public PartyMemberLowHealthTrigger
+    {
+    public:
+        PartyMemberMediumHealthLoosePackTrigger(PlayerbotAI* ai) :
+            PartyMemberLowHealthTrigger(ai, "party member medium health loose pack", sPlayerbotAIConfig.mediumHealth, sPlayerbotAIConfig.lowHealth) {}
+        bool IsActive() override { return PartyMemberLowHealthTrigger::IsActive() && PriestPackLoose(ai); }
+    };
+
+    class LowHealthLoosePackTrigger : public LowHealthTrigger
+    {
+    public:
+        LowHealthLoosePackTrigger(PlayerbotAI* ai) : LowHealthTrigger(ai, "low health loose pack") {}
+        bool IsActive() override { return LowHealthTrigger::IsActive() && PriestPackLoose(ai); }
     };
 
     BUFF_TRIGGER(AscendanceTrigger, "ascendance");

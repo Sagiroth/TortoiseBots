@@ -51,6 +51,17 @@ void HolyPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
                              new NextAction("heal on party", ACTION_MEDIUM_HEAL - 1),
                              new NextAction("lesser heal on party", ACTION_MEDIUM_HEAL - 2), NULL)));
 
+    // Owner-approved (2026-10-14): while the tank does not hold the pack,
+    // Flash Heal goes just above Greater Heal (still below Inner Focus and
+    // the shield). Greater Heal stays the fallback when Flash Heal fails.
+    triggers.push_back(new TriggerNode(
+        "party member low health loose pack",
+        NextAction::array(0, new NextAction("flash heal on party", ACTION_MEDIUM_HEAL + 2.5f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member medium health loose pack",
+        NextAction::array(0, new NextAction("flash heal on party", ACTION_MEDIUM_HEAL + 0.5f), NULL)));
+
     triggers.push_back(new TriggerNode(
         "party member almost full health",
         NextAction::array(0, new NextAction("renew on party", ACTION_LIGHT_HEAL), NULL)));

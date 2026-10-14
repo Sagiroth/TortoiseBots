@@ -54,7 +54,9 @@ On Turtle every wand shot puts the global cooldown on the shooter for the wand's
 The bot checks for the *Weakened Soul* debuff (6788) before attempting *Power Word: Shield*. If the target already has Weakened Soul, the shield is skipped in favor of a direct heal, preventing wasted cast attempts.
 
 ### Threat Drop
-Climbing toward the top of the threat table without holding aggro fires *Fade* at high priority in any group (solo priests have nobody to shed to, so they keep healing instead); raids keep the additional emergency-slot fade.
+Climbing toward the top of the threat table without holding aggro fires *Fade* at high priority in any group (solo priests have nobody to shed to, so they keep healing instead); raids keep the additional emergency-slot fade. In a group, a mob that targets the priest makes it cast *Fade* before its next heal (above every heal row; once per 30 s cooldown), as approved by the owner on 2026-10-14.
+
+While the tank does not hold the whole pack (two or more attackers on someone other than a tank), Holy and Discipline healers cast *Flash Heal* ahead of *Greater Heal* on low- and medium-health allies, and on themselves at low health. The slow, expensive cast was losing the race against the damage and drawing threat from every loose mob (Zul'Farrak hire run, 2026-10-14). *Greater Heal* stays the fallback when *Flash Heal* cannot be cast.
 ---
 
 ## Shadow DPS Rotation

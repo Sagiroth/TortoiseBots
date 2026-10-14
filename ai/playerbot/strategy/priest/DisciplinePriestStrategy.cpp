@@ -43,6 +43,16 @@ void DisciplinePriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
         NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 4),
                              new NextAction("greater heal on party", ACTION_MEDIUM_HEAL), NULL)));
 
+    // Owner-approved (2026-10-14): Flash Heal just above Greater Heal while
+    // the tank does not hold the pack (see HolyPriestStrategy).
+    triggers.push_back(new TriggerNode(
+        "party member low health loose pack",
+        NextAction::array(0, new NextAction("flash heal on party", ACTION_MEDIUM_HEAL + 1.5f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member medium health loose pack",
+        NextAction::array(0, new NextAction("flash heal on party", ACTION_MEDIUM_HEAL + 0.5f), NULL)));
+
     triggers.push_back(new TriggerNode(
         "party member almost full health",
         NextAction::array(0, new NextAction("power word: shield on party", ACTION_LIGHT_HEAL + 3),

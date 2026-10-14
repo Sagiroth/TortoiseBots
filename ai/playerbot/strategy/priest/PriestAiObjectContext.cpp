@@ -187,6 +187,9 @@ namespace ai
                 creators["power infusion"] = [](PlayerbotAI* ai) { return new PowerInfusionTrigger(ai); };
                 creators["inner focus"] = [](PlayerbotAI* ai) { return new InnerFocusTrigger(ai); };
                 creators["inner focus for heal"] = [](PlayerbotAI* ai) { return new InnerFocusForHealTrigger(ai); };
+                creators["party member low health loose pack"] = [](PlayerbotAI* ai) { return new PartyMemberLowHealthLoosePackTrigger(ai); };
+                creators["party member medium health loose pack"] = [](PlayerbotAI* ai) { return new PartyMemberMediumHealthLoosePackTrigger(ai); };
+                creators["low health loose pack"] = [](PlayerbotAI* ai) { return new LowHealthLoosePackTrigger(ai); };
                 creators["ascendance"] = [](PlayerbotAI* ai) { return new AscendanceTrigger(ai); };
                 creators["shadow protection"] = [](PlayerbotAI* ai) { return new ShadowProtectionTrigger(ai); };
                 creators["shadow protection on party"] = [](PlayerbotAI* ai) { return new ShadowProtectionOnPartyTrigger(ai); };
