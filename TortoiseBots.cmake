@@ -197,6 +197,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/ai/playerbot/BotDiagnostics.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/BossTacticsMgr.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/BroadcastHelper.cpp"
+    "${TORTOISEBOTS_ROOT}/ai/playerbot/DungeonPlanMgr.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/ChatFilter.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/FleeManager.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/Helpers.cpp"

@@ -49,6 +49,7 @@ python3 -m unittest tools/test_keepout_set_aside_wiring.py
 python3 -m unittest tools/test_pull_end_engaged.py
 python3 -m unittest tools/test_priest_fade_flash_wiring.py
 python3 -m unittest tools/test_boss_tactics_sql.py
+python3 -m unittest tools/test_dungeon_plan_sql.py
 echo "✓ Engine unit tests passed."
 
 echo ""
@@ -95,6 +96,7 @@ if command -v g++ >/dev/null 2>&1; then
         test_dps_target_policy
         test_dual_wield_policy
         test_dungeon_follow_hold_policy
+        test_dungeon_plan_policy
         test_dungeon_follow_stall_policy
         test_equip_threshold_policy
         test_fishing_spot_policy
