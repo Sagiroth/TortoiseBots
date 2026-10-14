@@ -2757,38 +2757,95 @@ select.input {
 }
 
 /* ---------- Commanders tab ---------- */
-.cmd-card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-.cmd-card-head .cmd-name { font-size: 1rem; font-weight: 650; color: #fff; }
-.cmd-card-head .cmd-meta { color: var(--text-muted); font-size: 0.8rem; }
-.cmd-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
-@media (max-width: 1100px) { .cmd-grid { grid-template-columns: 1fr; } }
-.cmd-bar { display: inline-block; width: 54px; height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; vertical-align: middle; overflow: hidden; margin-right: 6px; }
+.cmd-card { --role-tank: #2f80ff; --role-healer: #22c55e; --role-dps: #ff9f1c; --role-other: #bc8cff; --role-dead: #6b7280; margin-bottom: 16px; }
+.cmd-card.stale { opacity: 0.7; }
+.cmd-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.cmd-title { font-size: 1.05rem; font-weight: 650; color: #fff; margin: 0; overflow-wrap: anywhere; }
+.cmd-badges { display: flex; gap: 6px; }
+.cmd-sub { color: var(--text-muted); font-size: 0.8rem; margin: 2px 0 8px; }
+.cmd-sub b { color: var(--text-main); font-weight: 600; }
+.cmd-state { font-weight: 650; color: var(--text-main); }
+.cmd-state.s-fighting, .cmd-state.s-attacking, .cmd-state.s-pulling { color: var(--accent-red); }
+.cmd-state.s-moving { color: var(--accent-blue-bright); }
+.cmd-state.s-wiped { color: var(--accent-red); }
+.cmd-state.s-idle, .cmd-state.s-no-bots-reporting { color: var(--text-muted); font-weight: 500; }
+.cmd-warn { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.cmd-pill { display: inline-flex; align-items: baseline; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 0.78rem; border: 1px solid var(--border-color); color: var(--text-muted); }
+.cmd-pill.warn { color: var(--accent-yellow); border-color: var(--accent-yellow); background: rgba(210, 153, 34, 0.12); }
+.cmd-pill.bad { color: #fff; border-color: var(--accent-red); background: rgba(248, 81, 73, 0.25); }
+.cmd-pill.ok { color: var(--accent-green-bright); border-color: rgba(63, 185, 80, 0.4); }
+.cmd-body { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr); gap: 16px; }
+@media (max-width: 1000px) { .cmd-body { grid-template-columns: minmax(0, 1fr); } }
+.cmd-h { color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; margin: 14px 0 4px; font-weight: 600; }
+.cmd-row { display: grid; grid-template-columns: 28px minmax(130px, 1.5fr) minmax(96px, 1fr) minmax(96px, 1fr) 76px; gap: 4px 10px; align-items: center; padding: 5px 0; border-top: 1px solid var(--border-color); font-size: 0.86rem; }
+.cmd-row-head { border-top: 0; padding: 0 0 3px; color: var(--text-dim); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.cmd-who { min-width: 0; overflow-wrap: anywhere; }
+.cmd-who b { font-weight: 600; }
+.cmd-row.dead .cmd-who { color: var(--text-dim); text-decoration: line-through; }
+.cmd-dist { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.cmd-card .muted { color: var(--text-muted); }
+.cmd-flag { color: var(--accent-yellow); font-weight: 600; }
+.cmd-deadtxt { color: var(--accent-red); font-weight: 600; }
+.cmd-role { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; color: var(--role-other); background: rgba(188, 140, 255, 0.14); }
+.cmd-role svg { width: 15px; height: 15px; }
+.cmd-role.tank { color: var(--role-tank); background: rgba(47, 128, 255, 0.16); }
+.cmd-role.healer { color: var(--role-healer); background: rgba(34, 197, 94, 0.16); }
+.cmd-role.dps { color: var(--role-dps); background: rgba(255, 159, 28, 0.16); }
+.cmd-role.dead { color: var(--role-dead); background: rgba(107, 114, 128, 0.16); }
+.cmd-meter { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cmd-meter em { font-style: normal; font-size: 0.74rem; color: var(--text-muted); min-width: 2.6em; font-variant-numeric: tabular-nums; }
+.cmd-bar { flex: 1 1 auto; min-width: 40px; max-width: 120px; height: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden; }
 .cmd-bar i { display: block; height: 100%; background: var(--accent-green-bright); }
 .cmd-bar.low i { background: var(--accent-red); }
-.cmd-bar.power i { background: var(--accent-blue-bright); }
+.cmd-bar.mana i { background: var(--accent-blue-bright); }
 .cmd-bar.rage i { background: var(--accent-red); }
 .cmd-bar.energy i { background: var(--accent-yellow); }
-.cmd-dead td { color: var(--text-dim); text-decoration: line-through; }
-.cmd-orders { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.74rem; display: grid; gap: 2px; margin-top: 6px; }
-.cmd-orders .ok { color: var(--accent-green-bright); }
-.cmd-orders .err { color: var(--accent-red); }
-.cmd-orders .when { color: var(--text-dim); }
-.cmd-plots { display: grid; gap: 12px; }
-.cmd-plot-title { color: var(--text-muted); font-size: 0.78rem; margin-bottom: 4px; }
-.cmd-plot { width: 100%; height: auto; max-height: 340px; background: var(--bg-card-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); display: block; }
-.cmd-plot .trail { fill: none; opacity: 0.45; vector-effect: non-scaling-stroke; stroke-width: 1.2; }
-.cmd-plot text { fill: var(--text-main); font-size: var(--cmd-font, 4px); paint-order: stroke; stroke: var(--bg-card-subtle); stroke-width: calc(var(--cmd-font, 4px) * 0.5); }
-.cmd-plot .north { fill: var(--text-dim); stroke: none; }
-.cmd-plot .scale { stroke: var(--text-muted); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
-.cmd-plot .trail.tank { stroke: var(--accent-yellow); }
-.cmd-plot .trail.healer { stroke: var(--accent-green-bright); }
-.cmd-plot .trail.dps { stroke: var(--accent-blue-bright); }
-.cmd-plot .trail.other { stroke: var(--accent-purple); }
-.cmd-plot .trail.dead { stroke: var(--text-dim); }
-.cmd-dot { stroke: var(--bg-card-subtle); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.cmd-dot.tank { fill: var(--accent-yellow); }
-.cmd-dot.healer { fill: var(--accent-green-bright); }
-.cmd-dot.dps { fill: var(--accent-blue-bright); }
-.cmd-dot.other { fill: var(--accent-purple); }
-.cmd-dot.dead { fill: var(--text-dim); }
-.cmd-frame { width: 100%; height: 78vh; min-height: 480px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); display: block; margin-bottom: 8px; }
+@media (max-width: 640px) {
+  .cmd-row { grid-template-columns: 28px minmax(0, 1fr) auto; grid-template-areas: "role who dist" ". hp hp" ". pw pw"; }
+  .cmd-row > :nth-child(1) { grid-area: role; }
+  .cmd-row > :nth-child(2) { grid-area: who; }
+  .cmd-row > :nth-child(3) { grid-area: hp; }
+  .cmd-row > :nth-child(4) { grid-area: pw; }
+  .cmd-row > :nth-child(5) { grid-area: dist; }
+  .cmd-row-head { display: none; }
+  .cmd-bar { max-width: none; }
+}
+.cmd-orders { display: grid; gap: 1px; font-size: 0.82rem; }
+.cmd-order { display: grid; grid-template-columns: 1.2em minmax(0, 1fr) auto; gap: 6px; align-items: baseline; padding: 2px 0; }
+.cmd-order .txt { overflow-wrap: anywhere; }
+.cmd-order.ok .mark { color: var(--accent-green-bright); }
+.cmd-order.err .mark, .cmd-order.err .txt { color: var(--accent-red); }
+.cmd-order .when { color: var(--text-dim); font-size: 0.74rem; white-space: nowrap; }
+.cmd-stage { position: relative; height: 320px; background: var(--bg-card-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; touch-action: none; user-select: none; }
+@media (max-width: 640px) { .cmd-stage { height: 260px; } }
+.cmd-map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+.cmd-map:active { cursor: grabbing; }
+.cmd-map .grid { stroke: rgba(255, 255, 255, 0.07); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.cmd-map rect.zone { fill: rgba(88, 166, 255, 0.04); stroke: rgba(88, 166, 255, 0.45); stroke-width: 1.5; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+.cmd-map text.zone { fill: rgba(139, 148, 158, 0.9); font-weight: 600; }
+.cmd-map .trail { fill: none; stroke: #fff; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.cmd-map .dot { stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.cmd-map .bot.tank .dot { fill: var(--role-tank); }
+.cmd-map .bot.healer .dot { fill: var(--role-healer); }
+.cmd-map .bot.dps .dot { fill: var(--role-dps); }
+.cmd-map .bot.other .dot { fill: var(--role-other); }
+.cmd-map .bot.dead .dot { fill: var(--role-dead); stroke: rgba(255, 255, 255, 0.4); }
+.cmd-map .bot.dead text { fill: var(--text-dim); }
+.cmd-map .leadring { fill: none; stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.cmd-map .bot text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-linejoin: round; }
+.cmd-maptools { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; }
+.cmd-maptools button { min-width: 34px; height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(14, 19, 27, 0.85); color: var(--text-main); font: inherit; cursor: pointer; }
+.cmd-maptools button.on { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+.cmd-grid-size { position: absolute; left: 8px; bottom: 6px; font-size: 0.7rem; color: var(--text-dim); pointer-events: none; }
+.cmd-mapnote { position: absolute; left: 0; right: 0; top: 0; padding: 3px 10px; font-size: 0.74rem; color: var(--accent-yellow); pointer-events: none; }
+.cmd-mapnote:empty { display: none; }
+.cmd-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 0.74rem; color: var(--text-muted); }
+.cmd-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; border: 1.5px solid #fff; }
+.cmd-legend i.tank { background: #2f80ff; } .cmd-legend i.healer { background: #22c55e; } .cmd-legend i.dps { background: #ff9f1c; } .cmd-legend i.dead { background: #6b7280; }
+.cmd-legend i.lead { background: transparent; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35); }
+.cmd-legend i.trail { width: 16px; height: 3px; border: 0; border-radius: 2px; background: #fff; }
+.cmd-empty { text-align: left; }
+.cmd-empty-title { font-size: 1rem; margin: 0 0 6px; }
+.cmd-empty .empty-hint { margin: 4px 0; }
+.cmd-external summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
+.cmd-frame { width: 100%; height: 78vh; min-height: 480px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); display: block; margin-top: 8px; }

@@ -452,17 +452,18 @@
           <div class="kpi"><div class="kpi-label">Down</div><div id="cmd-kpi-dead" class="kpi-value kpi-red">0</div><div class="kpi-sub">dead bound bots</div></div>
           <div class="kpi"><div class="kpi-label">Report</div><div id="cmd-kpi-age" class="kpi-value">&ndash;</div><div class="kpi-sub">from the game server</div></div>
         </div>
-        <div id="cmd-empty" class="card"><div class="empty-hint">No remote commander is bound right now. A commander binds a bot-only party with <code>.bot commander bind &lt;LeadBot&gt;</code> (needs <code>AiPlayerbot.RemoteCommander</code>).</div></div>
-        <div id="cmd-list"></div>
-        <!-- Only present when the operator set TBDASH_COMMANDER_URL. -->
-        <div id="cmd-external" class="card" hidden>
-          <div class="card-head">
-            <h2 class="card-title">Commander dashboard</h2>
-            <a id="cmd-external-link" class="card-link" target="_blank" rel="noopener noreferrer">Open in a new tab</a>
-          </div>
-          <iframe id="cmd-external-frame" class="cmd-frame" title="Commander dashboard" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>
-          <div class="empty-hint">If the frame stays blank, the commander dashboard refused to be framed from this address: open it in a new tab.</div>
+        <div id="cmd-empty" class="card cmd-empty">
+          <h2 class="cmd-empty-title">No commander is bound right now</h2>
+          <p id="cmd-empty-why" class="empty-hint"></p>
+          <p class="empty-hint">A card appears here within a couple of seconds of a binding. A commander binds a bot-only party of up to five with <code>.bot commander bind &lt;LeadBot&gt; [&lt;Bot&gt; ...]</code> (a GM, or a player who controls every bot of the party; the server needs <code>AiPlayerbot.RemoteCommander = 1</code>). The card goes away when the commander unbinds with <code>.bot commander unbind</code>, logs out, or the party breaks up.</p>
         </div>
+        <div id="cmd-list"></div>
+        <!-- Only present when the operator set TBDASH_COMMANDER_URL; the frame is not loaded until it is opened. -->
+        <details id="cmd-external" class="card cmd-external" hidden>
+          <summary>Open the agent's live map</summary>
+          <p class="empty-hint"><a id="cmd-external-link" class="card-link" target="_blank" rel="noopener noreferrer">Open it in its own tab</a> for the full map, or look at it here. If the frame stays blank, the other dashboard refused to be framed from this address: use the link.</p>
+          <iframe id="cmd-external-frame" class="cmd-frame" title="Commander dashboard" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>
+        </details>
       </section>
 
       <!-- TAB: ISSUES — what is broken -->
@@ -654,6 +655,7 @@
 
 </div>
 
-<script src="/static/js/app.js?v=10"></script>
+<script src="/static/js/commanders.js?v=1"></script>
+<script src="/static/js/app.js?v=11"></script>
 </body>
 </html>

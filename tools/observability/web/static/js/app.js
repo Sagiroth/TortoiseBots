@@ -49,8 +49,7 @@
     grinding: { bots_tracked: 0, bots_gaining_xp: 0, pct_gaining_xp: 0, median_xp_hour: 0, total_xp_hour: 0, deaths_per_min: 0, pct_died_5min: 0, state_counts: {}, level_bands: [] },
     serverInfo: null,
     // Remote-commander bindings reported by the module (COMMANDERS datagrams).
-    commanders: { list: [], fresh: false, updatedAt: 0, receivedAt: 0, externalUrl: '', frameLoaded: false },
-    cmdTrails: {},
+    commanders: { list: [], fresh: false, updatedAt: 0, freshAt: 0, reportedAt: 0, lost: false, externalUrl: '' },
     server: {
       online: false,
       stale: true,
@@ -856,7 +855,7 @@
     if (tab === 'activity') fetchFeed();
     if (tab === 'auctions') fetchAuctions();
     if (tab === 'issues') fetchAnomalyTotals();
-    if (tab === 'commanders') { fetchCommanders(); showCommanderFrame(); }
+    if (tab === 'commanders') fetchCommanders();
   }
 
   el.menuItems.forEach(item => item.addEventListener('click', closeNavDrawer));
@@ -1069,6 +1068,7 @@
         ZONE_CONFIG = cfg;
         populateZoneSelect(el.zoneFilterInput ? el.zoneFilterInput.value : '');
         loadZoneMap(state.currentZoneId);
+        if (state.activeTab === 'commanders') renderCommanders();
       })
       .catch(() => {});
 
@@ -1093,6 +1093,7 @@
           EXTRA_ZONE_NAMES = cfg;
           if (state.activeTab === 'map') renderMap();
           if (state.activeTab === 'overview') renderAttention();
+          if (state.activeTab === 'commanders') renderCommanders();
         }
       })
       .catch(() => {});
@@ -1228,6 +1229,7 @@
         if (cfg && Object.keys(cfg).length > 0) {
           ZONE_BOUNDS = cfg;
           if (state.mapView === 'world') renderMap();
+          if (state.activeTab === 'commanders') renderCommanders();
         }
       })
       .catch(() => {});
@@ -4478,26 +4480,48 @@
 
 
   // ---- Commanders -----------------------------------------------------------
-  // What the MODULE knows about each standing remote-commander binding: the
-  // commander, the bound bots (vitals, place) and the commander's last orders
-  // with the module's answer. It is the same for any client of the commander
-  // protocol. The optional embedded view of an external commander dashboard
-  // (TBDASH_COMMANDER_URL) only appears when the daemon reports a URL.
+  // What the MODULE knows about each standing remote-commander binding, as one card per binding: a one-line header, the
+  // few warnings worth a glance, the party, the commander's last orders in plain words and a small map. The wording and the
+  // map math live in commanders.js (CmdView, unit-tested under node); this part only draws. It is the same for any client of
+  // the commander protocol. The optional link to an external commander dashboard (TBDASH_COMMANDER_URL) only appears when
+  // the daemon reports a URL, and nothing of it is loaded until the viewer opens it.
 
-  // The module reports a binding every 2 s snapshot cycle; past this silence
-  // the list is dropped locally (the daemon applies the same rule on a fetch).
-  const COMMANDERS_STALE_MS = 15000;
-  const CMD_TRAIL_POINTS = 40;
+  // The daemon calls its list stale after 12 s. The last list stays on screen, dimmed and with a warning, so a stopped
+  // server is visible instead of the cards vanishing; it is dropped after this long without a report.
+  const COMMANDERS_KEEP_MS = 5 * 60 * 1000;
+  const CMD_DIM_MS = 15000;
+  const cmdTracker = CmdView.newTracker();
+  const cmdCards = new Map(); // commander -> card element
+  const cmdMaps = {};         // commander -> {follow, view}
+
+  // Seconds since the game server last reported, by this browser's clock (-1: never).
+  function cmdAgeSec() {
+    const c = state.commanders;
+    return c.freshAt ? (Date.now() - c.freshAt) / 1000 : -1;
+  }
+  // The game server's clock now: the time of its last report plus what has passed here since (orders carry its clock).
+  function cmdServerNow() {
+    const c = state.commanders;
+    return c.updatedAt ? c.updatedAt + (Date.now() - c.freshAt) / 1000 : Date.now() / 1000;
+  }
 
   function applyCommanders(view) {
     if (!view || typeof view !== 'object') return;
     const c = state.commanders;
-    c.list = Array.isArray(view.commanders) ? view.commanders : [];
-    c.fresh = !!view.fresh;
-    c.updatedAt = view.updated_at || 0;
-    c.receivedAt = Date.now();
     if (typeof view.external_url === 'string') c.externalUrl = view.external_url;
-    noteCommanderTrails();
+    c.reportedAt = view.updated_at || c.reportedAt || 0;
+    if (view.fresh) {
+      c.list = Array.isArray(view.commanders) ? view.commanders : [];
+      c.fresh = true;
+      c.updatedAt = view.updated_at || Math.round(Date.now() / 1000);
+      c.freshAt = Date.now();
+      c.lost = false;
+      c.list.forEach(bind => CmdView.note(cmdTracker, bind, c.updatedAt));
+      CmdView.prune(cmdTracker, c.list.map(b => b.commander));
+    } else {
+      // No fresh report: keep what was last shown (see COMMANDERS_KEEP_MS) and say so.
+      c.fresh = false;
+    }
     paintCommandersBadge();
     if (state.activeTab === 'commanders') renderCommanders();
   }
@@ -4506,130 +4530,242 @@
     fetch('/api/v1/commanders').then(jsonOrThrow).then(applyCommanders).catch(() => {});
   }
 
+  // Runs every few seconds: ages the warnings and drops a list nobody has reported for a long time.
   function expireCommanders() {
     const c = state.commanders;
-    if (c.list.length && Date.now() - c.receivedAt > COMMANDERS_STALE_MS) {
+    if (!c.list.length) return;
+    if (Date.now() - c.freshAt > COMMANDERS_KEEP_MS) {
       c.list = [];
       c.fresh = false;
+      c.lost = true;
       paintCommandersBadge();
-      if (state.activeTab === 'commanders') renderCommanders();
     }
+    if (state.activeTab === 'commanders') renderCommanders();
   }
 
   function paintCommandersBadge() {
     const badge = document.getElementById('commanders-count');
     if (!badge) return;
-    const n = state.commanders.list.length;
+    const n = state.commanders.fresh ? state.commanders.list.length : 0;
     badge.textContent = String(n);
     badge.style.display = n > 0 ? '' : 'none';
   }
 
-  function cmdTrailKey(b) { return `${b.map}:${b.guid}`; }
-
-  // Short per-bot paths for the plot, kept in the page (the module sends the
-  // current position only). A path restarts when the bot changes map.
-  function noteCommanderTrails() {
-    const live = {};
-    state.commanders.list.forEach(bind => (bind.bots || []).forEach(b => {
-      const key = cmdTrailKey(b);
-      live[key] = true;
-      const trail = state.cmdTrails[key] || (state.cmdTrails[key] = []);
-      const last = trail[trail.length - 1];
-      if (!last || Math.hypot(last[0] - b.x, last[1] - b.y) >= 2) {
-        trail.push([b.x, b.y]);
-        if (trail.length > CMD_TRAIL_POINTS) trail.shift();
-      }
-    }));
-    Object.keys(state.cmdTrails).forEach(k => { if (!live[k]) delete state.cmdTrails[k]; });
+  // Sets innerHTML only when it changed, so a tooltip or a text selection survives the 2 s refresh.
+  function setHtml(node, html) {
+    if (!node || node._h === html) return;
+    node._h = html;
+    node.innerHTML = html;
   }
 
-  function cmdBar(pct, kind) {
-    const p = Math.max(0, Math.min(100, Math.round(pct)));
-    const cls = kind === 'hp' ? (p < 30 ? 'low' : '') : (kind === 'rage' || kind === 'energy' ? kind : 'power');
-    return `<span class="cmd-bar ${cls}"><i style="width:${p}%"></i></span>${p}%`;
+  const CMD_ICONS = {
+    tank: '<path d="M8 1.2l5.8 2.2V8c0 3.3-2.4 5.7-5.8 6.8C4.6 13.7 2.2 11.3 2.2 8V3.4z" fill="currentColor"/>',
+    healer: '<path d="M6.3 2h3.4v4.3H14v3.4H9.7V14H6.3V9.7H2V6.3h4.3z" fill="currentColor"/>',
+    dps: '<path d="M3 13L13 3M9.5 3H13v3.5M4.5 9.5l2 2M2.5 13.5L4 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+    other: '<circle cx="8" cy="8" r="4.5" fill="currentColor"/>',
+    dead: '<path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  };
+  function cmdIcon(role, title) {
+    return `<span class="cmd-role ${role}" title="${esc(title)}"><svg viewBox="0 0 16 16" aria-hidden="true">${CMD_ICONS[role] || CMD_ICONS.other}</svg></span>`;
   }
 
-  function cmdRoleClass(b) {
-    if (!b.alive) return 'dead';
-    return b.role === 'tank' ? 'tank' : b.role === 'healer' ? 'healer' : b.role === 'dps' ? 'dps' : 'other';
+  function cmdPlace(bind) {
+    const lead = CmdView.leadBot(bind) || (bind.bots || [])[0];
+    if (!lead) return '';
+    const zone = lead.zone ? getZoneName(lead.zone, lead.map) : '';
+    return zone && zone !== '-' && !/^Zone \d+$/.test(zone) ? zone : `Map ${lead.map}`;
+  }
+
+  function cmdBarHtml(p, kind, text) {
+    return `<span class="cmd-bar ${kind}" title="${esc(text)}"><i style="width:${p}%"></i></span><em>${p}%</em>`;
+  }
+
+  function cmdPartyHtml(bind) {
+    const rows = CmdView.partyRows(bind);
+    if (!rows.length) return '<div class="empty-hint">No bound bot is in the world.</div>';
+    const head = '<div class="cmd-row cmd-row-head"><span></span><span>Bot</span><span>Health</span><span>Mana / rage</span><span>From lead</span></div>';
+    return head + rows.map(r => {
+      const dist = r.lead ? '<span class="muted">lead</span>'
+        : r.otherMap ? '<span class="cmd-flag">other map</span>'
+        : r.dist == null ? '' : `<span class="${r.far ? 'cmd-flag' : ''}">${r.dist} yd</span>`;
+      const bars = r.alive
+        ? `<span class="cmd-meter">${cmdBarHtml(r.hp, r.hp < CmdView.LOW_HP_PCT ? 'low' : 'hp', 'Health ' + r.hpText)}</span>
+           <span class="cmd-meter">${r.hasPower ? cmdBarHtml(r.power, r.powerKind, r.powerKind + ' ' + r.powerText) : '<span class="muted">–</span>'}</span>`
+        : '<span class="cmd-meter cmd-deadtxt">Dead</span><span class="cmd-meter"></span>';
+      return `<div class="cmd-row ${r.alive ? '' : 'dead'}">
+        ${cmdIcon(r.role, r.alive ? r.roleLabel : r.roleLabel + ' (dead)')}
+        <span class="cmd-who"><b>${r.lead ? '★ ' : ''}${esc(r.name)}</b> <span class="muted">${esc(r.cls)}${r.level ? ' · ' + esc(r.level) : ''}</span></span>
+        ${bars}<span class="cmd-dist">${dist}</span></div>`;
+    }).join('');
+  }
+
+  function cmdOrdersHtml(bind, serverNow) {
+    const orders = (bind.orders || []).slice().reverse();
+    if (!orders.length) return '<div class="empty-hint">No order since the server started or the binding was made.</div>';
+    return orders.map(o => {
+      const t = CmdView.orderText(o);
+      const ago = o.at ? CmdView.ageText(serverNow - o.at) + ' ago' : '';
+      return `<div class="cmd-order ${t.ok ? 'ok' : 'err'}" title="${esc(cmdTime(o.at) + '  ' + t.raw)}">
+        <span class="mark" aria-hidden="true">${t.ok ? '✓' : '✗'}</span><span class="txt">${esc(t.text)}</span><span class="when">${esc(ago)}</span></div>`;
+    }).join('');
   }
 
   function cmdTime(sec) {
     return sec ? new Date(sec * 1000).toLocaleTimeString() : '';
   }
 
-  function cmdMapLabel(mapId, zoneId) {
-    const zone = zoneId ? getZoneName(zoneId, mapId) : '';
-    return zone && zone !== '-' ? `${zone} (map ${mapId})` : `map ${mapId}`;
+  // ---- the map of one card ----
+
+  function cmdLegendHtml() {
+    return '<span><i class="tank"></i>Tank</span><span><i class="healer"></i>Healer</span><span><i class="dps"></i>DPS</span>'
+      + '<span><i class="lead"></i>Lead</span><span><i class="dead"></i>Dead</span><span><i class="trail"></i>Lead\'s path</span>';
   }
 
-  function cmdBotsTable(bind) {
-    const rows = (bind.bots || []).map(b => {
-      const hp = b.max_hp ? (b.hp / b.max_hp) * 100 : 0;
-      const power = b.max_power ? (b.power / b.max_power) * 100 : 0;
-      const powerKind = b.power_type === 'rage' || b.power_type === 'energy' ? b.power_type : 'mana';
-      return `<tr class="${b.alive ? '' : 'cmd-dead'}">
-        <td>${b.lead ? '★ ' : ''}${esc(b.name)}</td>
-        <td>${esc(b.class)}${b.role ? ` / ${esc(b.role)}` : ''}</td>
-        <td>${esc(b.level)}</td>
-        <td>${cmdBar(hp, 'hp')}</td>
-        <td title="${esc(b.power_type)}">${b.max_power ? cmdBar(power, powerKind) : '–'}</td>
-        <td>${esc(cmdMapLabel(b.map, b.zone))}</td>
-        <td>${esc(Math.round(b.x))}, ${esc(Math.round(b.y))}</td>
-      </tr>`;
-    }).join('');
-    return `<div class="table-container"><table class="data-table">
-      <thead><tr><th>Bot</th><th>Class / role</th><th>Lvl</th><th>HP</th><th>Power</th><th>Where</th><th>x, y</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="7" class="table-empty">No bound bot is in the world.</td></tr>'}</tbody></table></div>`;
+  function cmdZoneRect(lead) {
+    if (!lead || !ZONE_BOUNDS) return null;
+    const zb = ZONE_BOUNDS[`${lead.map}_${lead.zone}`];
+    if (!zb || typeof zb.loc_left !== 'number') return null;
+    // loc_left/right are game y (west positive), loc_top/bottom game x (north positive)
+    const a = CmdView.project(zb.loc_top, zb.loc_left), b = CmdView.project(zb.loc_bottom, zb.loc_right);
+    return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y), name: displayZoneName(zb.name) };
   }
 
-  function cmdOrders(bind) {
-    const orders = (bind.orders || []).slice().reverse();
-    if (!orders.length) return '<div class="empty-hint">No order since the server started or the binding was made.</div>';
-    return `<div class="cmd-orders">${orders.map(o => `<div class="${o.ok ? 'ok' : 'err'}"><span class="when">${esc(cmdTime(o.at))}</span> ${o.ok ? 'ACK' : 'ERR'} ${esc(o.verb)}${o.detail ? ` ${esc(o.detail)}` : ''} &rarr; ${esc(o.result)}</div>`).join('')}</div>`;
-  }
-
-  // One plot per map the bound bots stand on: north up, west left, one unit a
-  // yard, fitted to the bots and their paths. No artwork: instances have none.
-  function cmdPlots(bind) {
-    const byMap = {};
-    (bind.bots || []).forEach(b => { (byMap[b.map] = byMap[b.map] || []).push(b); });
-    const html = Object.keys(byMap).map(mapId => {
-      const bots = byMap[mapId];
-      const pts = [];
-      const trails = bots.map(b => {
-        const trail = (state.cmdTrails[cmdTrailKey(b)] || []).map(p => [-p[1], -p[0]]);
-        trail.forEach(p => pts.push(p));
-        return trail;
+  function drawCmdMap(key) {
+    const card = cmdCards.get(key);
+    const bind = state.commanders.list.find(b => b.commander === key);
+    if (!card || !bind) return;
+    const stage = card.querySelector('.cmd-stage'), svg = card.querySelector('svg.cmd-map');
+    const pw = stage.clientWidth, ph = stage.clientHeight;
+    if (!pw || !ph) return; // the tab is hidden
+    const ms = cmdMaps[key] || (cmdMaps[key] = { follow: true, view: null });
+    const lead = CmdView.leadBot(bind);
+    const first = lead || (bind.bots || [])[0];
+    const onMap = (bind.bots || []).filter(b => first && b.map === first.map);
+    const away = (bind.bots || []).length - onMap.length;
+    const pts = onMap.map(b => CmdView.project(b.x, b.y));
+    if (ms.follow || !ms.view) ms.view = CmdView.fitView(pts, pw, ph, 44, 60);
+    const v = ms.view, box = CmdView.viewBox(v, pw, ph), k = 1 / v.scale;
+    const step = CmdView.gridStep(v.scale), grid = CmdView.gridLines(box, step);
+    const f = n => n.toFixed(2);
+    let g = '';
+    grid.xs.forEach(x => { g += `<line class="grid" x1="${f(x)}" y1="${f(box[1])}" x2="${f(x)}" y2="${f(box[1] + box[3])}"/>`; });
+    grid.ys.forEach(y => { g += `<line class="grid" x1="${f(box[0])}" y1="${f(y)}" x2="${f(box[0] + box[2])}" y2="${f(y)}"/>`; });
+    const zr = cmdZoneRect(first);
+    if (zr) {
+      g += `<rect class="zone" x="${f(zr.x)}" y="${f(zr.y)}" width="${f(zr.w)}" height="${f(zr.h)}"/>`
+        + `<text class="zone" x="${f(zr.x + 6 * k)}" y="${f(zr.y + 14 * k)}" style="font-size:${f(11 * k)}px">${esc(zr.name)}</text>`;
+    }
+    const tr = cmdTracker.trail[key];
+    if (tr && first && tr.map === first.map) {
+      CmdView.trailSegments(tr.pts.map(p => CmdView.project(p[0], p[1])), 14, 0.15).forEach(s => {
+        g += `<polyline class="trail" style="opacity:${f(s.alpha)}" points="${s.points.map(p => `${f(p.x)},${f(p.y)}`).join(' ')}"/>`;
       });
-      bots.forEach(b => pts.push([-b.y, -b.x]));
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      pts.forEach(p => { minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]); minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]); });
-      const span = Math.max(maxX - minX, maxY - minY, 60);
-      const pad = span * 0.18;
-      const w = Math.max(maxX - minX, 60) + pad * 2;
-      const h = Math.max(maxY - minY, 60) + pad * 2;
-      const vx = (minX + maxX) / 2 - w / 2;
-      const vy = (minY + maxY) / 2 - h / 2;
-      const r = Math.max(w, h) / 70;
-      const dots = bots.map(b => {
-        const x = -b.y, y = -b.x;
-        const cls = cmdRoleClass(b);
-        const hp = b.max_hp ? Math.round((b.hp / b.max_hp) * 100) : 0;
-        return `<circle class="cmd-dot ${cls}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(b.lead ? r * 1.5 : r).toFixed(2)}"><title>${esc(b.name)} (${esc(b.class)} ${esc(b.role)}) ${hp}% hp, ${esc(Math.round(b.x))}, ${esc(Math.round(b.y))}</title></circle>`
-          + `<text x="${(x + r * 1.8).toFixed(1)}" y="${(y - r * 1.2).toFixed(1)}">${esc(b.name)}</text>`;
-      }).join('');
-      const lines = trails.map((trail, i) => trail.length > 1
-        ? `<polyline class="trail ${cmdRoleClass(bots[i])}" points="${trail.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')}"/>` : '').join('');
-      // 10-yard scale bar and north arrow
-      const sx = vx + w * 0.04, sy = vy + h * 0.95;
-      const scale = `<line class="scale" x1="${sx.toFixed(1)}" y1="${sy.toFixed(1)}" x2="${(sx + 10).toFixed(1)}" y2="${sy.toFixed(1)}"/><text x="${(sx + 12).toFixed(1)}" y="${(sy + r).toFixed(1)}">10 yd</text>`;
-      const north = `<text class="north" x="${(vx + w * 0.96).toFixed(1)}" y="${(vy + h * 0.07).toFixed(1)}" text-anchor="end">N ↑</text>`;
-      const font = Math.max(w, h) / 38;
-      return `<div><div class="cmd-plot-title">${esc(cmdMapLabel(mapId, bots[0].zone))}</div>
-        <svg class="cmd-plot" viewBox="${vx.toFixed(1)} ${vy.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" style="--cmd-font:${font.toFixed(2)}px" role="img" aria-label="Bound bots on map ${esc(mapId)}">${lines}${dots}${scale}${north}</svg></div>`;
-    }).join('');
-    return `<div class="cmd-plots">${html || '<div class="empty-hint">No bound bot is in the world.</div>'}</div>`;
+    }
+    // dead first so a live bot is drawn over them
+    onMap.slice().sort((a, b) => (a.alive === false ? 0 : 1) - (b.alive === false ? 0 : 1)).forEach(b => {
+      const p = CmdView.project(b.x, b.y), role = CmdView.roleKey(b), isLead = b === lead;
+      const hp = b.max_hp ? Math.round((b.hp / b.max_hp) * 100) : 0;
+      g += `<g class="bot ${role}"><title>${esc(b.name)} - ${esc(CmdView.roleLabel(b))}, ${b.alive === false ? 'dead' : hp + '% health'}</title>`
+        + (isLead ? `<circle class="leadring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(11 * k)}"/>` : '')
+        + `<circle class="dot" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(6 * k)}"/>`
+        + `<text x="${f(p.x + 10 * k)}" y="${f(p.y + 4 * k)}" style="font-size:${f(11.5 * k)}px;stroke-width:${f(3 * k)}px">${isLead ? '★ ' : ''}${esc(b.name)}</text></g>`;
+    });
+    svg.setAttribute('viewBox', box.map(f).join(' '));
+    svg.innerHTML = g;
+    const note = away > 0 ? `${away} bot${away === 1 ? ' is' : 's are'} on another map` : '';
+    card.querySelector('.cmd-mapnote').textContent = note;
+    card.querySelector('.cmd-grid-size').textContent = `grid ${step} yd`;
+    const fb = card.querySelector('[data-act="follow"]');
+    fb.setAttribute('aria-pressed', ms.follow ? 'true' : 'false');
+    fb.classList.toggle('on', ms.follow);
+  }
+
+  function bindCmdMap(card, key) {
+    const stage = card.querySelector('.cmd-stage');
+    const ms = () => cmdMaps[key] || (cmdMaps[key] = { follow: true, view: null });
+    const size = () => [stage.clientWidth, stage.clientHeight];
+    const rel = e => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    const free = () => { ms().follow = false; };
+    const pointers = new Map();
+    let lastPinch = null;
+    const svg = stage.querySelector('svg');
+    svg.addEventListener('pointerdown', e => {
+      pointers.set(e.pointerId, rel(e));
+      try { svg.setPointerCapture(e.pointerId); } catch (_) { /* a synthetic pointer */ }
+      lastPinch = null;
+    });
+    svg.addEventListener('pointermove', e => {
+      if (!pointers.has(e.pointerId)) return;
+      const prev = pointers.get(e.pointerId), cur = rel(e), [pw, ph] = size();
+      const m = ms();
+      if (pointers.size === 1) {
+        if (!m.view) return;
+        if (Math.hypot(cur.x - prev.x, cur.y - prev.y) < 1) return;
+        free();
+        m.view = CmdView.panBy(m.view, cur.x - prev.x, cur.y - prev.y);
+      } else if (pointers.size === 2 && m.view) {
+        const ids = [...pointers.keys()], other = pointers.get(ids[0] === e.pointerId ? ids[1] : ids[0]);
+        free();
+        m.view = CmdView.pinch(m.view, prev, other, cur, other, pw, ph);
+      }
+      pointers.set(e.pointerId, cur);
+      drawCmdMap(key);
+    });
+    const up = e => { pointers.delete(e.pointerId); };
+    svg.addEventListener('pointerup', up);
+    svg.addEventListener('pointercancel', up);
+    svg.addEventListener('wheel', e => {
+      const m = ms();
+      if (!m.view) return;
+      e.preventDefault();
+      free();
+      const p = rel(e), [pw, ph] = size();
+      m.view = CmdView.zoomAt(m.view, e.deltaY < 0 ? 1.25 : 0.8, pw, ph, p.x, p.y);
+      drawCmdMap(key);
+    }, { passive: false });
+    card.querySelector('.cmd-maptools').addEventListener('click', e => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const m = ms(), [pw, ph] = size();
+      if (btn.dataset.act === 'follow') {
+        m.follow = !m.follow;
+      } else if (m.view) {
+        free();
+        m.view = CmdView.zoomAt(m.view, btn.dataset.act === 'in' ? 1.5 : 1 / 1.5, pw, ph, pw / 2, ph / 2);
+      }
+      drawCmdMap(key);
+    });
+  }
+
+  function newCmdCard(key) {
+    const card = document.createElement('div');
+    card.className = 'card cmd-card';
+    card.innerHTML = `
+      <div class="cmd-head"><h2 class="cmd-title"></h2><div class="cmd-badges"></div></div>
+      <div class="cmd-sub"></div>
+      <div class="cmd-warn" aria-live="polite"></div>
+      <div class="cmd-body">
+        <div class="cmd-left">
+          <div class="cmd-party"></div>
+          <h3 class="cmd-h">Last orders</h3>
+          <div class="cmd-orders"></div>
+        </div>
+        <div class="cmd-mapbox">
+          <div class="cmd-stage">
+            <svg class="cmd-map" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet"></svg>
+            <div class="cmd-maptools">
+              <button type="button" data-act="in" title="Zoom in" aria-label="Zoom in">+</button>
+              <button type="button" data-act="out" title="Zoom out" aria-label="Zoom out">&minus;</button>
+              <button type="button" data-act="follow" class="follow" title="Keep the party in view">Follow</button>
+            </div>
+            <div class="cmd-grid-size"></div>
+            <div class="cmd-mapnote"></div>
+          </div>
+          <div class="cmd-legend">${cmdLegendHtml()}</div>
+        </div>
+      </div>`;
+    bindCmdMap(card, key);
+    return card;
   }
 
   function renderCommanders() {
@@ -4637,30 +4773,57 @@
     const listEl = document.getElementById('cmd-list');
     const emptyEl = document.getElementById('cmd-empty');
     if (!listEl || !emptyEl) return;
+    const age = cmdAgeSec(), dim = age * 1000 > CMD_DIM_MS;
     const bots = c.list.reduce((n, b) => n + (b.bots || []).length, 0);
-    const down = c.list.reduce((n, b) => n + (b.bots || []).filter(x => !x.alive).length, 0);
+    const down = c.list.reduce((n, b) => n + (b.bots || []).filter(x => x.alive === false).length, 0);
     const set = (id, text) => { const e = document.getElementById(id); if (e) e.textContent = text; };
     set('cmd-kpi-bindings', c.list.length);
     set('cmd-kpi-bots', bots);
     set('cmd-kpi-dead', down);
-    set('cmd-kpi-age', c.updatedAt ? fmtDuration(Math.max(0, Math.round(Date.now() / 1000 - c.updatedAt))) + ' ago' : '–');
+    set('cmd-kpi-age', age >= 0 ? CmdView.ageText(age) + ' ago' : '–');
     emptyEl.style.display = c.list.length ? 'none' : '';
-    listEl.innerHTML = c.list.map(bind => `<div class="card">
-      <div class="cmd-card-head">
-        <span class="cmd-name">${esc(bind.commander)}</span>
-        <span class="badge ${bind.online ? 'badge-info' : 'badge-error'}">${bind.online ? 'online' : 'offline'}</span>
-        <span class="cmd-meta">leads ${esc(bind.lead || '?')} · group ${esc(bind.group)} · ${(bind.bots || []).length} bots · perception feed ${bind.view ? 'on' : 'off'}</span>
-      </div>
-      <div class="cmd-grid">
-        <div>${cmdBotsTable(bind)}<h3 class="cmd-plot-title" style="margin-top:12px">Last orders</h3>${cmdOrders(bind)}</div>
-        ${cmdPlots(bind)}
-      </div></div>`).join('');
-    showCommanderFrame();
+    const why = document.getElementById('cmd-empty-why');
+    if (why) {
+      why.textContent = c.lost ? 'The game server has not reported for several minutes, so the last bindings were dropped.'
+        : c.reportedAt ? `The last commander report from the game server was at ${cmdTime(c.reportedAt)}: either the last binding ended, or the server stopped reporting.`
+        : 'The game server has not reported any commander yet (it sends them only while a binding stands).';
+    }
+
+    const keys = c.list.map(b => b.commander);
+    cmdCards.forEach((card, key) => { if (!keys.includes(key)) { card.remove(); cmdCards.delete(key); delete cmdMaps[key]; } });
+    const nowSec = cmdServerNow();
+    c.list.forEach((bind, i) => {
+      const key = bind.commander;
+      let card = cmdCards.get(key);
+      if (!card) { card = newCmdCard(key); cmdCards.set(key, card); }
+      if (listEl.children[i] !== card) listEl.insertBefore(card, listEl.children[i] || null);
+      card.classList.toggle('stale', dim);
+      const word = CmdView.stateWord(bind, CmdView.context(cmdTracker, bind, nowSec));
+      const place = cmdPlace(bind);
+      setHtml(card.querySelector('.cmd-title'), `${esc(CmdView.headerText(bind, place, ''))} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
+      setHtml(card.querySelector('.cmd-badges'),
+        `<span class="badge ${bind.online ? 'badge-info' : 'badge-error'}">${bind.online ? 'online' : 'offline'}</span>`
+        + `<span class="badge ${bind.view ? 'badge-info' : 'badge-warn'}" title="The commander's TBM:VIEW perception feed">feed ${bind.view ? 'on' : 'off'}</span>`);
+      setHtml(card.querySelector('.cmd-sub'), `Led by <b>${esc(bind.lead || '?')}</b> &middot; group ${esc(bind.group)}`);
+      const warns = CmdView.warnings(bind, { ageSec: age >= 0 ? age : null });
+      setHtml(card.querySelector('.cmd-warn'), warns.length
+        ? warns.map(w => `<span class="cmd-pill ${w.level}"><b aria-hidden="true">${w.level === 'bad' ? '!' : '▲'}</b> ${esc(w.text)}</span>`).join('')
+        : '<span class="cmd-pill ok"><b aria-hidden="true">✓</b> No warnings</span>');
+      setHtml(card.querySelector('.cmd-party'), cmdPartyHtml(bind));
+      setHtml(card.querySelector('.cmd-orders'), cmdOrdersHtml(bind, nowSec));
+      drawCmdMap(key);
+    });
+    showCommanderLink();
   }
 
-  // The external commander dashboard: nothing is drawn, and no request is
-  // made to it, unless the daemon was started with TBDASH_COMMANDER_URL.
-  function showCommanderFrame() {
+  window.addEventListener('resize', () => {
+    if (state.activeTab !== 'commanders') return;
+    cmdCards.forEach((_, key) => drawCmdMap(key));
+  });
+
+  // The external commander dashboard: nothing is drawn, and no request is made to it, unless the daemon was started with
+  // TBDASH_COMMANDER_URL; and its frame is only loaded once the viewer opens the section.
+  function showCommanderLink() {
     const box = document.getElementById('cmd-external');
     const frame = document.getElementById('cmd-external-frame');
     const link = document.getElementById('cmd-external-link');
@@ -4669,7 +4832,12 @@
     if (!url) { box.hidden = true; return; }
     box.hidden = false;
     link.href = url;
-    if (state.activeTab === 'commanders' && frame.getAttribute('src') !== url) frame.src = url;
+    if (box.open && frame.getAttribute('src') !== url) frame.src = url;
+  }
+
+  function initCommanderLink() {
+    const box = document.getElementById('cmd-external');
+    if (box) box.addEventListener('toggle', showCommanderLink);
   }
 
   // ---- Persistent issues --------------------------------------------------
@@ -4928,6 +5096,7 @@
   fetchHistory();
   fetchActivity();
   setInterval(fetchActivity, 30000);
+  initCommanderLink();
   fetchCommanders();
   setInterval(fetchCommanders, 30000);
   setInterval(expireCommanders, 3000);
