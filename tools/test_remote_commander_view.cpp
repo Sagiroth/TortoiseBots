@@ -89,6 +89,8 @@ static void FillParty(Snapshot& s, size_t n)
         m.casting = 10934;
         m.state = 'c';
         m.action = "shadow word: pain";
+        m.result = 'F';
+        m.reason = "oom";
     }
 }
 
@@ -202,15 +204,16 @@ static void TestPartyRecord()
     m.dead = false;
     m.state = 'c';
     m.action = "heroic strike";
+    m.result = 'O';
     Frame frame;
     std::string scratch;
     BuildFrame(s, 1, frame, scratch);
     CHECK(frame.count == 3);
     CHECK(frame.lines[0] == "TBM:VIEW|v1|1|B|0x10,1,0,0,0");
     CHECK(frame.lines[1] ==
-        "TBM:VIEW|v1|1|P|0x10,Tanky,4000,5000,35,100,1,1.3,-2.0,3.0,1.50,36,12,0xF130000F2E0012A4,0,0,c,heroic strike");
+        "TBM:VIEW|v1|1|P|0x10,Tanky,4000,5000,35,100,1,1.3,-2.0,3.0,1.50,36,12,0xF130000F2E0012A4,0,0,c,heroic strike,O,-");
     CheckGrammar(frame, 1);
-    CHECK(Split(Payload(frame.lines[1]), ',').size() == 18);
+    CHECK(Split(Payload(frame.lines[1]), ',').size() == 20);
 }
 
 static void TestHostileAndThreatRecords()
@@ -332,7 +335,7 @@ static void TestFullFrameSplitsUnderLimit()
         {
             size_t fields = Split(rec, ',').size();
             if (part == 'P')
-                CHECK(fields == 18);
+                CHECK(fields == 20);
             else if (part == 'H')
                 CHECK(fields == 9);
             else
@@ -361,6 +364,8 @@ static void TestTruncatedFlag()
         m.casting = 99999;
         m.state = 'c';
         m.action = "a very long action name";
+        m.result = 'I';
+        m.reason = "a very long reason code";
     }
     Frame frame;
     std::string scratch;
@@ -391,10 +396,12 @@ static void TestSanitising()
     BuildFrame(s, 3, frame, scratch);
     CheckGrammar(frame, 3);
     std::vector<std::string> fields = Split(Payload(frame.lines[1]), ',');
-    CHECK(fields.size() == 18);
+    CHECK(fields.size() == 20);
     CHECK(fields[1] == "Evil_Name_x_");
     CHECK(fields[17].size() == kMaxActionBytes);
-    CHECK(fields[17] == "cast_spell_with_every_se");
+    CHECK(fields[17] == "cast_spell_with_");
+    CHECK(fields[18] == "-"); // no result set
+    CHECK(fields[19] == "-"); // no reason set
     // UTF-8: never cut inside a character.
     std::string out;
     AppendToken(out, "\xC3\xA9\xC3\xA9\xC3\xA9", 5); // three two-byte characters, 5 bytes allowed
@@ -412,6 +419,70 @@ static void TestSanitising()
     std::vector<std::string> f2 = Split(Payload(frame.lines[1]), ',');
     CHECK(f2[16] == "-");
     CHECK(f2[7] == "0.0");
+}
+
+// The action verdict as parts: name, result letter, reason code (field 18-20).
+static void TestActionResultFields()
+{
+    Snapshot s;
+    PartyMember& m = s.AddPartyMember();
+    m.guid = 7;
+    m.name = "Pat";
+    m.action = "drink";
+    m.result = 'F';
+    m.reason = "no-item";
+    PartyMember& bad = s.AddPartyMember();
+    bad.guid = 8;
+    bad.name = "Bad";
+    bad.action = "spellstone";
+    bad.result = 'x';               // not a result letter
+    bad.reason = "oom,with|seps";   // separators and length are cleaned
+    Frame frame;
+    std::string scratch;
+    BuildFrame(s, 9, frame, scratch);
+    CheckGrammar(frame, 9);
+    std::vector<std::string> recs = Split(Payload(frame.lines[1]), ';');
+    CHECK(recs.size() == 2);
+    std::vector<std::string> a = Split(recs[0], ',');
+    CHECK(a.size() == 20);
+    CHECK(a[17] == "drink" && a[18] == "F" && a[19] == "no-item");
+    std::vector<std::string> b = Split(recs[1], ',');
+    CHECK(b.size() == 20);
+    CHECK(b[17] == "spellstone" && b[18] == "-");
+    CHECK(b[19] == "oom_with_s");
+    CHECK(b[19].size() == kMaxReasonBytes);
+    // Every result letter the grammar names passes through; reuse resets the slots.
+    for (char c : std::string("OFIUPV"))
+    {
+        s.Clear();
+        PartyMember& r = s.AddPartyMember();
+        CHECK(r.result == '-' && r.reason.empty());
+        r.guid = 1;
+        r.result = c;
+        BuildFrame(s, 1, frame, scratch);
+        CHECK(Split(Payload(frame.lines[1]), ',')[18] == std::string(1, c));
+    }
+    // The widest record the caps allow: name and fields at their caps, still
+    // under a line, so a party of five never loses one to the limit.
+    Snapshot w;
+    PartyMember& x = w.AddPartyMember();
+    x.guid = 0xFFFFFFFFFFFFFFFFull;
+    x.name = "Longestnames";
+    x.hp = x.maxHp = x.power = x.maxPower = 4294967295u;
+    x.powerType = 3;
+    x.x = x.y = x.z = -9999999.9f;
+    x.o = 6.28f;
+    x.map = x.instance = 4294967295u;
+    x.target = 0xFFFFFFFFFFFFFFFFull;
+    x.casting = 4294967295u;
+    x.dead = true;
+    x.state = 'c';
+    x.action = std::string(40, 'a');
+    x.result = 'I';
+    x.reason = std::string(40, 'r');
+    FormatPartyRecord(scratch, x);
+    std::printf("worst-case party record: %zu bytes\n", scratch.size());
+    CHECK(scratch.size() <= 210); // plus the longest line prefix (26 bytes) stays under 250
 }
 
 static void TestBufferReuse()
@@ -522,6 +593,7 @@ int main()
     TestFullFrameSplitsUnderLimit();
     TestTruncatedFlag();
     TestSanitising();
+    TestActionResultFields();
     TestBufferReuse();
     TestOversizedRecordDropped();
     TestLineCap();

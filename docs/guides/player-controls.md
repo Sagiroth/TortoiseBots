@@ -121,14 +121,14 @@ TBM:VIEW|v1|<seq>|H|<hostile record>[;<hostile record>...]
 TBM:VIEW|v1|<seq>|T|<threat record>[;<threat record>...]
 TBM:VIEW|v1|<seq>|E|<lines>
 
-party record   = guid,name,hp,maxhp,power,maxpower,powertype,x,y,z,o,map,instance,target,spell,dead,state,action
+party record   = guid,name,hp,maxhp,power,maxpower,powertype,x,y,z,o,map,instance,target,spell,dead,state,action,result,reason
 hostile record = guid,entry,x,y,z,hp%,target,spell,flags
 threat record  = hostile,guid:pct[,guid:pct...]
 ```
 
 - `B` (begin) is always the first line: the lead bot, how many party, hostile and threat records the frame holds, and `<truncated>`: `1` when the caps or the line limit left at least one record out of the frame (the counts are what was written), else `0`. `<truncated>` is the fifth field of `B`, added within `v1`: fields 1-4 keep their meaning, and a reader takes a missing fifth field as `0`. `E` (end) is always the last: `<lines>` counts every line of the frame, `B` and `E` included, so a client knows the frame is whole. In between come the `P`, `H` and `T` lines, in that order, each only when it has records; a part may span several lines.
 - GUIDs are `0x` + upper-case hex (the form `.bot cmd` takes back), `0` for none. Coordinates have one decimal, the orientation two.
-- Party: `powertype` 0 mana, 1 rage, 2 focus, 3 energy; `target` the bot's target (else its victim); `spell` the spell id it is casting or channelling (0 none); `dead` 0/1; `state` `c` combat, `n` non-combat, `d` dead, `r` reaction; `action` the last action its AI ran (up to 24 bytes), `-` when none. Names are cut at 12 bytes.
+- Party: `powertype` 0 mana, 1 rage, 2 focus, 3 energy; `target` the bot's target (else its victim); `spell` the spell id it is casting or channelling (0 none); `dead` 0/1; `state` `c` combat, `n` non-combat, `d` dead, `r` reaction; `action`, `result` and `reason` are the newest verdict its AI gave an action, as parts. `action` is the action name only (up to 16 bytes, for example `drink`), `-` when none yet. `result` is one letter: `O` ok, `F` failed, `I` impossible, `U` useless, `P` prerequisites queued first, `V` dropped before running (vetoed, or held back by the failure backoff), `-` none. `reason` is a short code for why a failed (`F`) or impossible (`I`) action did not run, when the bot's last spell-cast check said so: `no-item`, `oom`, `range`, `los`, `cd`, `moving`, `casting`, `no-target` (up to 10 bytes); `-` when unknown, which is the case for failures that are not a cast check (an item or movement action that fails reports `F` with no reason). `result` and `reason` are the 19th and 20th fields, added within `v1` as trailing fields: a reader that stops at 18 fields keeps working, and now gets a clean action name where it used to get the head of the AI's rolling log cut to 24 bytes. A party record is about 150 bytes in practice and 204 at the extreme (every number at its maximum), so each fits a line on its own (line prefix at most 26 bytes, limit 250); the action, result and reason together take at most 29 bytes, 5 more than the old 24-byte action. Names are cut at 12 bytes.
 - Hostile: `entry` the creature entry (0 for a player); `hp%` 0-100; `target` its target; `flags` any of `s` stealthed, `e` evading, `c` crowd-controlled (stunned, incapacitated, polymorphed, feared, rooted), or `-`.
 - Threat: for each hostile in combat with a threat list, its top three entries, highest first, as `guid:pct` with `pct` the share of the top entry's threat (the top is 100).
 - Free-text fields never contain `|`, `;`, `,` or `:` (they become `_`).
@@ -137,7 +137,7 @@ Example (one bot fighting one mob):
 
 ```text
 TBM:VIEW|v1|12|B|0x2A,1,1,1,0
-TBM:VIEW|v1|12|P|0x2A,Tanky,4000,5000,35,100,1,-8913.2,554.5,93.1,1.50,0,0,0xF130000C5E0012AB,0,0,c,heroic strike
+TBM:VIEW|v1|12|P|0x2A,Tanky,4000,5000,35,100,1,-8913.2,554.5,93.1,1.50,0,0,0xF130000C5E0012AB,0,0,c,heroic strike,O,-
 TBM:VIEW|v1|12|H|0xF130000C5E0012AB,3874,-8900.0,560.0,94.0,64,0x2A,0,-
 TBM:VIEW|v1|12|T|0xF130000C5E0012AB,0x2A:100,0x2B:41
 TBM:VIEW|v1|12|E|5

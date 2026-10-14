@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include <stdarg.h>
+#include <cstring>
 #include <iomanip>
 
 #include "Engine.h"
@@ -168,6 +169,18 @@ void Engine::RecordFailure(Action* action, Event& event, ActionResult result)
         std::string targetName = target ? target->GetName() : "";
         sObservabilityEmitter.OnActionFailed(ai->GetBot(), action->getName(), targetName);
     }
+}
+
+void Engine::NoteOutcome(Action* action, char result)
+{
+    if (!action)
+        return;
+    std::string const& name = action->getName();
+    std::strncpy(lastOutcomeName, name.c_str(), sizeof(lastOutcomeName) - 1);
+    lastOutcomeName[sizeof(lastOutcomeName) - 1] = '\0';
+    lastOutcomeResult = result;
+    // Only a verdict that says the action did not run carries a cast-check reason.
+    lastOutcomeCastFail = (result == 'F' || result == 'I') ? static_cast<uint32>(ai->GetLastCastCheckFail()) : 0;
 }
 
 void Engine::ClearActionFailures(Action* action, Event& event)
@@ -370,6 +383,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
             else
             {
                 bool isUseful = false;
+                ai->ClearLastCastCheckFail();
                 if (!isStunned || action->isUsefulWhenStunned())
                 {
                     // E2E green: PerformanceMonitor stub
@@ -384,6 +398,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         relevance = 0.0f;
                         action->setRelevance(relevance);
                         LogAction("A:%s - vetoed earlier this tick", action->getName().c_str());
+                        NoteOutcome(action, 'V');
                     }
                     else if (std::find(modifiedActions.begin(), modifiedActions.end(), action) == modifiedActions.end())
                     {
@@ -418,6 +433,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     if (IsFailureBackedOff(action, event))
                     {
                         LogAction("A:%s - BACKOFF src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                        NoteOutcome(action, 'V');
                         delete actionNode;
                         continue;
                     }
@@ -435,6 +451,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         LogAction("A:%s - PREREQ src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
                         if (MultiplyAndPush(actionNode->getPrerequisites(), relevance + 0.02, false, event, "prereq"))
                         {
+                            NoteOutcome(action, 'P');
                             PushAgain(actionNode, relevance + 0.01, event);
                             continue;
                         }
@@ -459,6 +476,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         if (actionExecuted)
                         {
                             LogAction("A:%s - OK src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                            NoteOutcome(action, 'O');
                             botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), true);
                             ClearActionFailures(action, event);
                             MultiplyAndPush(actionNode->getContinuers(), 0, false, event, "cont");
@@ -469,6 +487,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         else
                         {
                             LogAction("A:%s - FAILED src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                            NoteOutcome(action, 'F');
                             botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), false);
                             RecordFailure(action, event, ACTION_RESULT_FAILED);
                             MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
@@ -499,6 +518,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                             }
                         }
                         LogAction("A:%s - IMPOSSIBLE src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                        NoteOutcome(action, 'I');
                         botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), false);
                         RecordFailure(action, event, ACTION_RESULT_IMPOSSIBLE);
                         MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
@@ -530,6 +550,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     }
                     lastRelevance = relevance;
                     LogAction("A:%s - USELESS src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                    NoteOutcome(action, 'U');
                 }
             }
             delete actionNode;

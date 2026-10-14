@@ -5230,6 +5230,23 @@ bool PlayerbotAI::CanCastSpell(std::string name, Unit* target, uint8 effectMask,
 
 bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, bool checkHasSpell, Item* itemTarget, bool ignoreRange, bool ignoreInCombat, bool ignoreMount, SpellCastResult* checkResult)
 {
+    // Remember why the newest check failed for callers that ask for no result, so the engine can tell the
+    // remote commander's feed (one store on the way out; a caller-supplied checkResult is left alone).
+    struct CastFailNote
+    {
+        PlayerbotAI* ai;
+        SpellCastResult const* result;
+        ~CastFailNote()
+        {
+            if (result && *result != SPELL_CAST_OK)
+                ai->NoteCastCheckFail(*result);
+        }
+    };
+    SpellCastResult localCheck = SPELL_CAST_OK;
+    CastFailNote const castFailNote{this, checkResult ? nullptr : &localCheck};
+    if (!checkResult)
+        checkResult = &localCheck;
+
     if (!spellid)
     {
         if (checkResult)

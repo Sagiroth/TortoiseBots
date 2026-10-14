@@ -957,6 +957,11 @@ public:
     float GetLevelFloat() const;
 
     void SetLastEvent(ai::Event& event) { lastEvent = event; }
+    // The newest failed cast check made by CanCastSpell(uint32, Unit*, ...) when the caller asked for no result;
+    // the engine clears it before judging an action and reads it for the remote commander's failure reason.
+    SpellCastResult GetLastCastCheckFail() const { return lastCastCheckFail; }
+    void ClearLastCastCheckFail() { lastCastCheckFail = SPELL_CAST_OK; }
+    void NoteCastCheckFail(SpellCastResult result) { lastCastCheckFail = result; }
     ai::Event& GetLastEvent() { return lastEvent; }
 
 #ifdef BUILD_ELUNA
@@ -1038,6 +1043,7 @@ protected:
     void PublishChatGate();
     std::vector<std::string> m_recordedMessages;
     ai::Event lastEvent;
+    SpellCastResult lastCastCheckFail = SPELL_CAST_OK;
     LastKillerInfo lastKiller_;
     LastKillerInfo lastDamager_; // last non-self damager (UNITHOOK_ON_DAMAGE); SoR fallback for SetLastKiller
     bool deathHandled_ = false; // this death was logged and counted; cleared when the bot is seen alive again

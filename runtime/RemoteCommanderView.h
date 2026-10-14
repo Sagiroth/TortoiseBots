@@ -28,7 +28,7 @@
 //   TBM:VIEW|v1|<seq>|E|<lines>
 //
 //   party record:   guid,name,hp,maxhp,power,maxpower,powertype,x,y,z,o,map,
-//                   instance,target,spell,dead,state,action
+//                   instance,target,spell,dead,state,action,result,reason
 //   hostile record: guid,entry,x,y,z,hp%,target,spell,flags
 //   threat record:  hostile,guid:pct[,guid:pct...]
 //
@@ -40,6 +40,17 @@
 // field of B and was added within v1: fields 1-4 keep their meaning, and a
 // reader takes a missing fifth field as 0. Fields never contain `|`, `;`, `,`
 // or `:`.
+//
+// The party record's last three fields describe the bot's newest action
+// verdict as parts: `action` is the action name only (at most 16 bytes, `-`
+// for none), `result` one letter (O ok, F failed, I impossible, U useless,
+// P prerequisites queued first, V dropped before running by a veto or the
+// failure backoff, `-` none yet), `reason` a short code when the engine
+// knows it (no-item, oom, range, los, cd, moving, casting, no-target; at
+// most 10 bytes, `-` for none). Until this change field 18 held the head of
+// the AI's rolling action log cut to 24 bytes; `result` and `reason` are new
+// trailing fields, so a v1 reader that stops at 18 fields keeps working
+// (parsers accept longer records) and now gets a clean action name.
 
 #include <cstddef>
 #include <cstdint>
@@ -68,7 +79,8 @@ constexpr size_t kMaxLinesPerFrame = 40;
 constexpr size_t kLinesPerTick = 8;
 // Text field caps (bytes).
 constexpr size_t kMaxNameBytes = 12;
-constexpr size_t kMaxActionBytes = 24;
+constexpr size_t kMaxActionBytes = 16;
+constexpr size_t kMaxReasonBytes = 10;
 
 inline uint32_t ClampIntervalMs(int64_t ms)
 {
@@ -102,7 +114,9 @@ struct PartyMember
     uint32_t casting = 0;  // spell id being cast or channelled, 0 = none
     bool dead = false;
     char state = 'n';      // c combat, n non-combat, d dead, r reaction
-    std::string action;    // the bot's last executed action
+    std::string action;    // name of the bot's newest action verdict
+    char result = '-';     // O ok, F failed, I impossible, U useless, P prereq, V vetoed, - none
+    std::string reason;    // short failure code, empty = unknown
 };
 
 struct Hostile
@@ -240,6 +254,8 @@ struct Snapshot
         member.dead = false;
         member.state = 'n';
         member.action.clear();
+        member.result = '-';
+        member.reason.clear();
         return member;
     }
 
@@ -342,6 +358,11 @@ inline void AppendFloat(std::string& out, float value, int decimals)
     out += buffer;
 }
 
+inline bool IsResultLetter(char c)
+{
+    return c == 'O' || c == 'F' || c == 'I' || c == 'U' || c == 'P' || c == 'V';
+}
+
 inline void FormatPartyRecord(std::string& out, PartyMember const& m)
 {
     out.clear();
@@ -363,7 +384,9 @@ inline void FormatPartyRecord(std::string& out, PartyMember const& m)
     out += m.dead ? '1' : '0'; out += ',';
     char const state = (m.state == 'c' || m.state == 'n' || m.state == 'd' || m.state == 'r') ? m.state : '-';
     out += state; out += ',';
-    AppendToken(out, m.action, kMaxActionBytes);
+    AppendToken(out, m.action, kMaxActionBytes); out += ',';
+    out += IsResultLetter(m.result) ? m.result : '-'; out += ',';
+    AppendToken(out, m.reason, kMaxReasonBytes);
 }
 
 // Flags: s stealthed, e evading, c crowd-controlled; '-' for none.

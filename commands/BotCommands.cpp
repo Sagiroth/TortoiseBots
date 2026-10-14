@@ -4260,6 +4260,34 @@ char ViewStateLetter(PlayerbotAI* ai, Player* bot)
     }
 }
 
+// The short failure code of the view feed's party record (grammar:
+// runtime/RemoteCommanderView.h) for the SpellCastResult the engine kept from
+// the failed action's last cast check; nullptr when it has no code.
+char const* ViewFailReason(uint32 castFail)
+{
+    switch (static_cast<SpellCastResult>(castFail))
+    {
+        case SPELL_FAILED_NO_POWER: return "oom";
+        case SPELL_FAILED_OUT_OF_RANGE:
+        case SPELL_FAILED_TOO_CLOSE: return "range";
+        case SPELL_FAILED_LINE_OF_SIGHT: return "los";
+        case SPELL_FAILED_NOT_READY:
+        case SPELL_FAILED_ITEM_NOT_READY: return "cd";
+        case SPELL_FAILED_MOVING: return "moving";
+        case SPELL_FAILED_SPELL_IN_PROGRESS: return "casting";
+        case SPELL_FAILED_ITEM_GONE:
+        case SPELL_FAILED_REAGENTS:
+        case SPELL_FAILED_EQUIPPED_ITEM:
+        case SPELL_FAILED_NEED_AMMO: return "no-item";
+        case SPELL_FAILED_BAD_TARGETS:
+        case SPELL_FAILED_BAD_IMPLICIT_TARGETS:
+        case SPELL_FAILED_TARGETS_DEAD:
+        case SPELL_FAILED_TARGET_ENEMY:
+        case SPELL_FAILED_TARGET_FRIENDLY: return "no-target";
+        default: return nullptr;
+    }
+}
+
 // One of the bot's guid-list values, only when it already holds a calculated
 // list; otherwise nothing (the bot calculates it on its own schedule).
 void ReadCachedGuidList(PlayerbotAI* ai, char const* name, std::list<ObjectGuid>& out)
@@ -4375,7 +4403,13 @@ void CollectViewSnapshot(RemoteCommander::Binding const& binding, RemoteCommande
         member.state = ViewStateLetter(ai, bot);
         if (ai)
             if (ai::Engine* engine = ai->GetCurrentEngine())
-                member.action = engine->GetLastAction();
+            {
+                // The newest verdict as parts (name, result letter, reason code).
+                member.action = engine->GetLastOutcomeName();
+                member.result = engine->GetLastOutcomeResult();
+                if (char const* reason = ViewFailReason(engine->GetLastOutcomeCastFail()))
+                    member.reason = reason;
+            }
     }
 
     taken.Clear();

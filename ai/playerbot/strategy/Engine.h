@@ -82,6 +82,14 @@ namespace ai
 		void ChangeStrategy(const std::string& names);
 		void PrintStrategies(Player* requester, const std::string& engineType);
         std::string GetLastAction() { return lastAction; }
+        // The newest action the engine gave a verdict on, as parts (the remote commander's feed reads these
+        // instead of cutting the joined lastAction text). Result letter: O ok, F failed, I impossible,
+        // U useless, P prerequisites queued first, V dropped before running (veto or failure backoff),
+        // '-' none yet. castFail is the SpellCastResult of the last failed cast check made while the action
+        // was judged (0 = none or not a cast).
+        char const* GetLastOutcomeName() const { return lastOutcomeName; }
+        char GetLastOutcomeResult() const { return lastOutcomeResult; }
+        uint32 GetLastOutcomeCastFail() const { return lastOutcomeCastFail; }
         const Action* GetLastExecutedAction() const { return lastExecutedAction; }
         std::string const& GetLastExecutedTrigger() const { return lastExecutedTrigger; }
 
@@ -150,6 +158,10 @@ namespace ai
         std::unordered_map<std::string, std::unique_ptr<ActionNode>> actionNodePrototypes;
         float lastRelevance;
         std::string lastAction;
+        char lastOutcomeName[24] = {0};
+        char lastOutcomeResult = '-';
+        uint32 lastOutcomeCastFail = 0;
+        void NoteOutcome(Action* action, char result);
         ActionExecutionListeners actionExecutionListeners;
         BotState state;
         Action* lastExecutedAction;
