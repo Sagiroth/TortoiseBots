@@ -145,7 +145,10 @@ bool PriestWandBlocksCastTrigger::IsActive()
         }
     }
 
-    // Priests have no raid "has aggro -> shoot" row.
-    WandState const state{true, bestNuke, false, NoManaRowActive(), bestHeal};
+    // Priests have no raid "has aggro -> shoot" row. Near the tank's threat
+    // the "threat" multiplier vetoes the nukes (Smite falls back to the
+    // wand); heals are never threat-gated, so a wanted heal still stops it.
+    bool const nukeThreatVetoed = bestNuke != WandSpellProbe::Blocked && ThreatVetoesNuke();
+    WandState const state{true, bestNuke, false, NoManaRowActive(), bestHeal, nukeThreatVetoed};
     return ShouldStopWandToCast(state);
 }

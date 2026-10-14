@@ -625,12 +625,21 @@ bool WarlockWandBlocksNukeTrigger::IsActive()
     if (noManaRowActive)
         return false;
 
+    // Near the tank's threat the "threat" multiplier vetoes Shadow Bolt:
+    // stopping the wand then leaves the warlock idle (or restarts the wand
+    // from the "has aggro" row a swing later), never casting.
+    bool const nukeThreatVetoed = ThreatVetoesNuke();
+    if (nukeThreatVetoed)
+        return false;
+
     // Shadow Bolt is every spec's filler (default combat action), known
     // from level 1, with no cooldown of its own: NOT_READY is the GCD.
     WandState const state{
         true,
         ProbeSpell("shadow bolt", target),
         keepWandForThreat,
-        noManaRowActive};
+        noManaRowActive,
+        WandSpellProbe::Blocked,
+        nukeThreatVetoed};
     return ShouldStopWandToCast(state);
 }
