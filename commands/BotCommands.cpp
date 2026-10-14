@@ -36,6 +36,7 @@
 #include "playerbot/PlayerbotFactory.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/SurvivePolicy.h"
 #include "runtime/OwnedBotQolPolicy.h"
 #include "../runtime/RemoteCommanderPolicy.h"
 #include "../runtime/RemoteCommanderView.h"
@@ -3458,6 +3459,8 @@ static bool HandleAction(ChatHandler* handler, char const* args)
 
     uint32 succeeded = 0;
     std::string aoeState;
+    // Per-bot reasons a rest order did not start, for the refusal (#916).
+    std::vector<std::pair<std::string, std::string>> restRefusals;
     for (Player* bot : scope)
     {
         // Scope entries are resolved live from ObjectAccessor, but earlier
@@ -3581,6 +3584,32 @@ static bool HandleAction(ChatHandler* handler, char const* args)
                 rested = ExecuteQuietAction(ai, "food", ai::Event(intent, "food", requester)) || rested;
             accepted = rested || (bot->GetHealth() >= bot->GetMaxHealth() &&
                 (bot->GetPowerType() != POWER_MANA || bot->GetPower(POWER_MANA) >= bot->GetMaxPower(POWER_MANA)));
+            if (!accepted)
+            {
+                // Name the gate that held so the caller can wait instead of
+                // guessing (#916). Same lines the drink/food actions use.
+                bool const cheat = ai->HasCheat(BotCheatMask::item);
+                ai::AiObjectContext* aiContext = ai->GetAiObjectContext();
+                ai::RestRefusalInput in;
+                in.alive = bot->IsAlive();
+                in.inCombat = bot->IsInCombat();
+                in.groupFighting = aiContext->GetValue<bool>("has attackers")->Get() ||
+                    ai->IsGroupMemberNearInCombat();
+                in.usesMana = bot->GetPowerType() == POWER_MANA;
+                in.manaPct = in.usesMana && bot->GetMaxPower(POWER_MANA)
+                    ? bot->GetPower(POWER_MANA) * 100 / bot->GetMaxPower(POWER_MANA) : 100;
+                in.drinkStopPct = ai::DrinkStopManaPct(cheat, sPlayerbotAIConfig.almostFullHealth);
+                in.healthPct = bot->GetMaxHealth() ? bot->GetHealth() * 100 / bot->GetMaxHealth() : 100;
+                in.eatStopPct = ai::RestStopHealthPct(cheat, sPlayerbotAIConfig.mediumHealth,
+                    sPlayerbotAIConfig.lowHealth, sPlayerbotAIConfig.almostFullHealth);
+                in.hasDrink = cheat ||
+                    !aiContext->GetValue<std::list<Item*>>("inventory items", "drink")->Get().empty();
+                in.hasFood = cheat ||
+                    !aiContext->GetValue<std::list<Item*>>("inventory items", "food")->Get().empty();
+                Player* master = ai->GetMaster();
+                in.leaderMoving = master && master != bot && master->IsMoving();
+                restRefusals.emplace_back(bot->GetName(), ai::RestRefusalReason(in));
+            }
         }
         else if (intent == "aoe")
         {
@@ -3727,7 +3756,9 @@ static bool HandleAction(ChatHandler* handler, char const* args)
 
     if (!succeeded)
     {
-        SendActionError(handler, intent, "failed", "No scoped bot accepted the mature action.");
+        std::string const restText = ai::FormatRestRefusal(restRefusals);
+        SendActionError(handler, intent, "failed", restText.empty()
+            ? "No scoped bot accepted the mature action." : restText.c_str());
         return true;
     }
 

@@ -66,7 +66,7 @@ The modern control plane operates on **player intent**. Instead of micromanaging
 | `.bot action loot [on\|off]` | None | Toggles corpse looting across scoped bots; with no argument it flips the current state, and the `ACK` detail is the resulting state. |
 | `.bot action repair` | None | Orders scoped bots to repair gear at a nearby vendor. |
 | `.bot action sell` | None | Orders scoped bots to sell grey vendor trash. |
-| `.bot action rest` *(or `drink`, `eat`)* | None | Orders scoped bots to sit and consume food/drink until full. |
+| `.bot action rest` *(or `drink`, `eat`)* | None | Orders scoped bots to sit and consume food/drink until full. When no bot starts, the refusal names each bot's reason (`TBM:ACTION_ERR\|rest\|failed\|No bot rested: <Name> <reason>; ...`): `dead`, `in combat`, `party still fighting`, `no drink` / `no food` (no item in the bags and no item cheat; a mage in the party trades conjured water), `leader is moving`, or `nothing to rest (...)` when it is above the lines it rests to. |
 | `.bot action release` | None | Commands dead companion bots to release spirit. |
 | `.bot action corpse run` | None | Commands spirit bots to run back to corpse. |
 | `.bot action learn` | None | Commands scoped bots to learn spells from nearby trainers. |

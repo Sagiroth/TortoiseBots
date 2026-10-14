@@ -130,6 +130,50 @@ int main()
     CHECK(!ShouldSelfHealerHoldGround(true, true, true, 100, 15));
     CHECK(!ShouldSelfHealerHoldGround(false, false, true, 100, 15));
 
+    // Rest refusal reasons (#916): the first gate that held, in order.
+    {
+        using ai::RestRefusalInput;
+        using ai::RestRefusalReason;
+        RestRefusalInput in;
+        in.usesMana = true;
+        in.manaPct = 40;
+        in.healthPct = 100;
+        in.alive = false;
+        CHECK(RestRefusalReason(in) == "dead");
+        in.alive = true;
+        in.inCombat = true;
+        in.groupFighting = true;
+        CHECK(RestRefusalReason(in) == "in combat");
+        in.inCombat = false;
+        CHECK(RestRefusalReason(in) == "party still fighting");
+        in.groupFighting = false;
+        in.hasDrink = false;
+        CHECK(RestRefusalReason(in) == "no drink");
+        in.healthPct = 30;
+        in.hasFood = false;
+        CHECK(RestRefusalReason(in) == "no food or drink");
+        in.hasFood = true;
+        in.leaderMoving = true;
+        CHECK(RestRefusalReason(in) == "leader is moving");
+        in.hasDrink = true;
+        in.leaderMoving = false;
+        CHECK(RestRefusalReason(in).empty());
+        in.manaPct = 90;
+        in.healthPct = 96;
+        CHECK(RestRefusalReason(in) == "nothing to rest (mana 90% >= 85%, health 96% >= 50%)");
+        in.usesMana = false;
+        in.healthPct = 20;
+        in.hasFood = false;
+        CHECK(RestRefusalReason(in) == "no food");
+        in.healthPct = 80;
+        CHECK(RestRefusalReason(in) == "nothing to rest (health 80% >= 50%)");
+
+        CHECK(ai::FormatRestRefusal({}).empty());
+        CHECK(ai::FormatRestRefusal({ { "Anna", "" } }).empty());
+        CHECK(ai::FormatRestRefusal({ { "Anna", "in combat" }, { "Bert", "" }, { "Cara", "no drink" } }) ==
+            "No bot rested: Anna in combat; Cara no drink.");
+    }
+
     std::cout << "survive policy: OK\n";
     return 0;
 }

@@ -44,6 +44,75 @@ namespace ai
         return usesMana && manaPct < stopManaPct;
     }
 
+    // Why a bot did not start resting on `.bot action rest` (issue #916). The
+    // order already ran the drink/food actions; this only names the first
+    // gate that held, so the refusal can say why instead of the generic
+    // fallback. Empty means no known gate held.
+    struct RestRefusalInput
+    {
+        bool alive = true;
+        bool inCombat = false;        // the bot itself is in combat
+        bool groupFighting = false;   // has attackers or a party member near in combat
+        bool usesMana = false;
+        std::uint32_t manaPct = 100;
+        std::uint32_t drinkStopPct = 85;
+        std::uint32_t healthPct = 100;
+        std::uint32_t eatStopPct = 50;
+        bool hasDrink = true;         // a drink in the bags, or the item cheat
+        bool hasFood = true;          // food in the bags, or the item cheat
+        bool leaderMoving = false;    // its master is moving (follow breaks rest)
+    };
+
+    inline std::string RestRefusalReason(RestRefusalInput const& in)
+    {
+        if (!in.alive)
+            return "dead";
+        if (in.inCombat)
+            return "in combat";
+        if (in.groupFighting)
+            return "party still fighting";
+
+        bool const needsDrink = in.usesMana && in.manaPct < in.drinkStopPct;
+        bool const needsFood = in.healthPct < in.eatStopPct;
+        if (!needsDrink && !needsFood)
+        {
+            // Above both stop lines but not full: the drink and food actions
+            // have nothing to do, so the bot does not sit down.
+            std::string text = "nothing to rest (";
+            if (in.usesMana)
+                text += "mana " + std::to_string(in.manaPct) + "% >= " +
+                    std::to_string(in.drinkStopPct) + "%, ";
+            text += "health " + std::to_string(in.healthPct) + "% >= " +
+                std::to_string(in.eatStopPct) + "%)";
+            return text;
+        }
+        bool const drinkBlocked = !needsDrink || !in.hasDrink;
+        bool const foodBlocked = !needsFood || !in.hasFood;
+        if (drinkBlocked && foodBlocked)
+            return needsDrink && needsFood ? "no food or drink" : needsDrink ? "no drink" : "no food";
+        if (in.leaderMoving)
+            return "leader is moving";
+        return "";
+    }
+
+    // "No bot rested: Anna in combat; Bert no drink." Bots without a known
+    // reason are left out. Empty when no bot has one (the caller keeps its
+    // generic text).
+    inline std::string FormatRestRefusal(
+        std::vector<std::pair<std::string, std::string>> const& reasons)
+    {
+        std::string text;
+        for (auto const& entry : reasons)
+        {
+            if (entry.second.empty())
+                continue;
+            text += (text.empty() ? "" : "; ") + entry.first + " " + entry.second;
+        }
+        if (text.empty())
+            return text;
+        return "No bot rested: " + text + ".";
+    }
+
     // Drink is only for mana users: warriors (rage) and rogues (energy) get
     // no water, druids/shamans/paladins/hunters (mana) do. Callers pass
     // bot->GetPowerType() == POWER_MANA.
