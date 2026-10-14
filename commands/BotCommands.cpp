@@ -4092,6 +4092,9 @@ void RestoreFollower(uint64 botRaw, uint64 leadRaw)
 // The commander's running bot tasks (loot, open, use) end with the binding;
 // defined with the task code below.
 void CancelCommanderTasks(uint64 commanderRaw);
+// A later order takes the bot(s) over (onlyBotRaw 0 = every bot of the commander): the running
+// tasks end with ERR cancelled and leave the bot's movement to the new order.
+void SupersedeCommanderTasks(uint64 commanderRaw, uint64 onlyBotRaw);
 
 // Ends a binding: followers get their own follow target back. The lead bot
 // keeps holding where it stands. notify: tell the commander (automatic
@@ -4817,6 +4820,8 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
 {
     ObjectGuid const targetGuid = target->GetObjectGuid();
     uint32 succeeded = 0;
+    SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(),
+        onlyBot ? onlyBot->GetObjectGuid().GetRawValue() : 0);
     for (Player* bot : order.bots)
     {
         if (onlyBot && bot != onlyBot)
@@ -4859,6 +4864,7 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
     std::string const& intent)
 {
     order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
+    SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0);
     uint32 succeeded = 0;
     for (Player* bot : order.bots)
     {
@@ -4937,6 +4943,8 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
         return true;
     }
 
+    SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0);
+
     // Same transition as `.bot action come`, with the point as the stay spot.
     leadAi->DropQueuedMovementOrders();
     PlayerConvenience::Instance().NoteHoldOrder(lead->GetObjectGuid());
@@ -4960,6 +4968,8 @@ static bool CommanderStayFollowRest(ChatHandler* handler, CommanderOrder const& 
     std::string const& verb, std::string const& intent)
 {
     uint32 succeeded = 0;
+    if (verb == "stay" || verb == "follow")
+        SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0);
     if (verb == "follow")
         succeeded = FormUpOnLead(order.commander, order.lead, order.bots, false);
     else
@@ -5062,6 +5072,7 @@ static bool CommanderSummon(ChatHandler* handler, CommanderOrder const& order, P
         SendActionError(handler, intent, "failed", "The bot could not be assigned to you for the summon.");
         return true;
     }
+    SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), bot->GetObjectGuid().GetRawValue());
     if (!PlayerConvenience::Instance().RequestSummon(order.commander, bot, lead))
     {
         SendActionError(handler, intent, "failed", "The summon was refused.");
@@ -5104,6 +5115,8 @@ struct CommanderTask
     bool walking = false;     // the movement stance was changed for the walk
     bool wasStaying = false;
     bool actStarted = false;
+    bool superseded = false;  // a later order took the bot: its movement is not ours to put back
+    bool departed = false;    // the bot left the commanded party
     uint32 actTries = 0;
     uint32 nudgeMs = 0;
     uint32 baseline = 0;      // open: the game object's state when the action began
@@ -5159,8 +5172,8 @@ bool TaskTargetPresent(TaskTarget const& target)
 // and whether it is still spawned.
 uint32 PackGoState(GameObject* go)
 {
-    if (!go || !sServerFacade.isSpawned(go))
-        return 0xFFFFFFFFu;
+    if (!go)
+        return 0;
     return (static_cast<uint32>(go->getLootState()) << 8) | static_cast<uint32>(go->GetGoState());
 }
 
@@ -5233,8 +5246,17 @@ void TaskReplyErr(CommanderTask const& task, std::string const& code, std::strin
 // one that was holding a spot, or is the lead bot, holds where it stands.
 void EndTaskWalk(CommanderTask const& task, Player* bot, PlayerbotAI* ai)
 {
-    if (!task.walking || !bot || !ai || !bot->IsInWorld())
+    if (!task.walking || task.superseded || !bot || !ai || !bot->IsInWorld())
         return;
+    if (task.departed)
+    {
+        // Left the party: its own follow target is back (ReleaseDepartedFollowers); the lead bot is not its lead.
+        if (task.wasStaying)
+            SetStayAnchor(ai, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+        else
+            ai->SetMovementStrategy("follow");
+        return;
+    }
     if (task.wasStaying)
     {
         SetStayAnchor(ai, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
@@ -5436,6 +5458,14 @@ ActStart BeginTaskAct(CommanderTask& task, Player* commander, Player* bot, Playe
     return start;
 }
 
+// How a used game object stands against the state it had when the bot used it.
+RemoteCommander::ObjectEffect ObjectEffectOf(CommanderTask const& task, PlayerbotAI* ai)
+{
+    GameObject* go = ai->GetGameObject(ObjectGuid(task.targetRaw));
+    bool const present = go && sServerFacade.isSpawned(go);
+    return RemoteCommander::JudgeObjectEffect(present, task.baseline, present ? PackGoState(go) : 0);
+}
+
 // The result of the started action is in.
 bool TaskActDone(CommanderTask const& task, Player* bot, PlayerbotAI* ai)
 {
@@ -5447,7 +5477,7 @@ bool TaskActDone(CommanderTask const& task, Player* bot, PlayerbotAI* ai)
         return watch && watch->finished;
     }
     if (task.state.kind == RemoteCommander::TaskKind::Open)
-        return PackGoState(ai->GetGameObject(ObjectGuid(task.targetRaw))) != task.baseline;
+        return ObjectEffectOf(task, ai) == RemoteCommander::ObjectEffect::Reacted;
     return !bot->IsNonMeleeSpellCasted(false);
 }
 
@@ -5499,8 +5529,19 @@ bool StepCommanderTask(CommanderTask& task, uint32 diff)
         return true;
     }
 
+    // A follower that left the commanded party is not ours to order any more.
+    if (bot && !IsCommandedBy(commander, bot))
+    {
+        task.departed = true;
+        FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeUnavailable,
+            "The bot left the commanded party.");
+        return true;
+    }
+
     RemoteCommander::TaskFacts facts;
     facts.botAvailable = ai && bot->IsAlive() && !bot->IsBeingTeleported() && !bot->IsTaxiFlying();
+    facts.teleporting = bot && bot->IsAlive() && (!bot->IsInWorld() || bot->IsBeingTeleported());
+    facts.actStarted = task.actStarted;
     TaskTarget target;
     if (facts.botAvailable)
     {
@@ -5512,6 +5553,16 @@ bool StepCommanderTask(CommanderTask& task, uint32 diff)
         if (WorldObject* object = target.object())
             facts.distance = bot->GetDistance(object);
         facts.actDone = task.state.stage == RemoteCommander::TaskStage::Act && TaskActDone(task, bot, ai);
+    }
+
+    // A used object that vanished (despawn, map change) is no "opened".
+    if (facts.botAvailable && task.state.stage == RemoteCommander::TaskStage::Act && task.actStarted &&
+        task.state.kind == RemoteCommander::TaskKind::Open && !task.lootLike &&
+        ObjectEffectOf(task, ai) == RemoteCommander::ObjectEffect::Gone)
+    {
+        FinishCommanderTask(task, false, 0, "", RemoteCommander::kCodeFailed,
+            "The object disappeared while the bot used it.");
+        return true;
     }
 
     // A refused attempt that may pass the next look.
@@ -5579,6 +5630,23 @@ bool StepCommanderTask(CommanderTask& task, uint32 diff)
         }
     }
     return false;
+}
+
+void SupersedeCommanderTasks(uint64 commanderRaw, uint64 onlyBotRaw)
+{
+    auto& tasks = CommanderTasks();
+    for (auto it = tasks.begin(); it != tasks.end();)
+    {
+        if (it->second.commanderRaw == commanderRaw && (!onlyBotRaw || it->second.botRaw == onlyBotRaw))
+        {
+            it->second.superseded = true;
+            FinishCommanderTask(it->second, false, 0, "", RemoteCommander::kCodeCancelled,
+                "A later order took the bot.");
+            it = tasks.erase(it);
+        }
+        else
+            ++it;
+    }
 }
 
 void CancelCommanderTasks(uint64 commanderRaw)
@@ -5794,7 +5862,7 @@ static bool CommanderUse(ChatHandler* handler, CommanderOrder const& order, Play
     }
 
     CommanderTask task;
-    task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Use, 0.0f, false);
+    task.state = RemoteCommander::MakeTask(RemoteCommander::TaskKind::Use, 0.0f, true);
     task.itemId = request.itemId;
     task.spellId = spellId;
     task.intent = intent;
@@ -6061,6 +6129,7 @@ static bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             return CommanderAttack(handler, order, target, intent, attackBot);
         if (verb == "focus")
             return CommanderFocus(handler, order, target, intent);
+        SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0);
         BotCommandContext context = CommanderContext(order, target);
         return RunPullOrder(handler, context, order.lead, verb, option, intent);
     }

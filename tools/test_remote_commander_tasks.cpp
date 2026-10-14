@@ -221,6 +221,52 @@ static void TestActStage()
     CHECK(AdvanceTask(state, facts, kUseCastMs + 1).step == TaskStep::Succeed);
 }
 
+// An item that teleports the bot (hearthstone) ends with the bot between maps:
+// that is its result, but only for a use whose cast has started.
+static void TestTeleportEndsUse()
+{
+    TaskState use = MakeTask(TaskKind::Use, 0.0f, true);   // nothing to walk to: in range at once
+    TaskFacts facts;
+    facts.inRange = true;
+    CHECK(AdvanceTask(use, facts, 0).step == TaskStep::BeginAct);
+    facts.botAvailable = false;
+    facts.teleporting = true;
+    facts.actStarted = true;
+    CHECK(AdvanceTask(use, facts, kTaskTickMs).step == TaskStep::Succeed);
+
+    // Not started yet (a retry state), or dead rather than teleporting: unavailable.
+    TaskVerdict verdict;
+    facts.actStarted = false;
+    verdict = AdvanceTask(use, facts, kTaskTickMs);
+    CHECK(verdict.step == TaskStep::Fail && std::strcmp(verdict.code, kCodeUnavailable) == 0);
+    facts.actStarted = true;
+    facts.teleporting = false;
+    verdict = AdvanceTask(use, facts, kTaskTickMs);
+    CHECK(verdict.step == TaskStep::Fail && std::strcmp(verdict.code, kCodeUnavailable) == 0);
+
+    // Loot and open are never saved by a teleport.
+    TaskState loot = MakeTask(TaskKind::Loot, 0.0f, true);
+    TaskFacts walkOk;
+    walkOk.inRange = true;
+    AdvanceTask(loot, walkOk, 0);
+    facts.teleporting = true;
+    verdict = AdvanceTask(loot, facts, kTaskTickMs);
+    CHECK(verdict.step == TaskStep::Fail);
+    // A use still in its walk stage is not over either.
+    TaskState walking = MakeTask(TaskKind::Use, 30.0f, true);
+    CHECK(AdvanceTask(walking, facts, kTaskTickMs).step == TaskStep::Fail);
+}
+
+// A used object shows its reaction by changing state; a vanished one is no result.
+static void TestObjectEffect()
+{
+    CHECK(JudgeObjectEffect(true, 0x100, 0x100) == ObjectEffect::Waiting);
+    CHECK(JudgeObjectEffect(true, 0x100, 0x101) == ObjectEffect::Reacted);
+    CHECK(JudgeObjectEffect(false, 0x100, 0) == ObjectEffect::Gone);
+    CHECK(JudgeObjectEffect(false, 0, 0) == ObjectEffect::Gone);   // gone even if the packed state matches
+    CHECK(std::strcmp(kCodeCancelled, "cancelled") == 0);
+}
+
 static void TestLockVerdict()
 {
     LockFacts none;
@@ -396,6 +442,8 @@ int main()
     TestWalkTimeout();
     TestWalkRefusals();
     TestActStage();
+    TestTeleportEndsUse();
+    TestObjectEffect();
     TestLockVerdict();
     TestCastReasonCodes();
     TestLootLedger();

@@ -576,10 +576,17 @@ bool StoreLootAction::Execute(Event& event)
 
         WorldPacket packet(CMSG_AUTOSTORE_LOOT_ITEM, 1);
         packet << itemindex;
+        uint32 const countBefore = commanderOrder ? bot->GetItemCount(itemid) : 0;
         bot->GetSession()->HandleAutostoreLootItemOpcode(packet);
         ++itemsTaken;
         if (commanderOrder)
-            TortoiseBots::RemoteCommander::LootOrders().NoteItem(botRaw, guid.GetRawValue(), itemid, itemcount);
+        {
+            // Only what really reached the bags counts (the core refuses a full bag or a unique item).
+            uint32 const countAfter = bot->GetItemCount(itemid);
+            if (countAfter > countBefore)
+                TortoiseBots::RemoteCommander::LootOrders().NoteItem(botRaw, guid.GetRawValue(), itemid,
+                    std::min(itemcount, countAfter - countBefore));
+        }
         sLog.outDebug("[BOT LOOT] %s: take item=%u x%u", bot->GetName(), itemid, itemcount);
 
         if (proto->Quality > ITEM_QUALITY_NORMAL && !urand(0, 50) && ai->HasStrategy("emote", BotState::BOT_STATE_NON_COMBAT)) ai->PlayEmote(TEXTEMOTE_CHEER);

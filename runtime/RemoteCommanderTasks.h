@@ -69,6 +69,7 @@ constexpr char const* kCodeInvalidTarget = "invalid-target";
 constexpr char const* kCodeUnavailable = "unavailable";
 constexpr char const* kCodeUnreachable = "unreachable";
 constexpr char const* kCodeTimeout = "timeout";
+constexpr char const* kCodeCancelled = "cancelled";
 
 // ---------------------------------------------------------------------------
 // Standing point and budgets
@@ -163,6 +164,8 @@ inline TaskState MakeTask(TaskKind kind, float startDistance, bool needsWalk)
 struct TaskFacts
 {
     bool botAvailable = true;   // in world, alive, not teleporting, on the target's map
+    bool teleporting = false;   // alive but in a teleport or between maps (an item's teleport)
+    bool actStarted = false;    // the action itself has been started (a cast is under way or over)
     bool inCombat = false;
     bool targetPresent = true;  // the object is still there (checked while walking)
     bool inRange = false;       // the bot stands inside the interaction range
@@ -204,7 +207,16 @@ inline TaskVerdict AdvanceTask(TaskState& state, TaskFacts const& facts, uint32_
     state.stageMs += diffMs;
     TaskVerdict verdict;
     if (!facts.botAvailable)
+    {
+        // An item that teleports the bot (a hearthstone) ends with the bot between maps:
+        // its cast completed, that is the result.
+        if (facts.teleporting && facts.actStarted && state.kind == TaskKind::Use && state.stage == TaskStage::Act)
+        {
+            verdict.step = TaskStep::Succeed;
+            return verdict;
+        }
         return TaskFail(kCodeUnavailable, "The bot died, left the map or is teleporting.");
+    }
 
     if (state.stage == TaskStage::Walk)
     {
@@ -259,6 +271,26 @@ inline bool WithinReactDistance(float distance, float reactDistance)
 inline bool InUseRange(float distance, float interactionDistance)
 {
     return distance <= interactionDistance - kInteractMargin;
+}
+
+// ---------------------------------------------------------------------------
+// Object state after a use
+// ---------------------------------------------------------------------------
+
+enum class ObjectEffect : uint8_t
+{
+    Waiting, // still the same state: no reaction yet
+    Reacted, // the object changed state
+    Gone,    // the object (or the map) is gone: not a result
+};
+
+// A used object shows its effect by changing state. One that disappears is not
+// an "opened": a despawn or a map change during the wait fails the order.
+inline ObjectEffect JudgeObjectEffect(bool present, uint32_t baseline, uint32_t now)
+{
+    if (!present)
+        return ObjectEffect::Gone;
+    return now != baseline ? ObjectEffect::Reacted : ObjectEffect::Waiting;
 }
 
 // ---------------------------------------------------------------------------

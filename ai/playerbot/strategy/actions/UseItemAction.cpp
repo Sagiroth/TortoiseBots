@@ -804,6 +804,14 @@ bool UseAction::UseGameObject(Player* requester, Event& event, GameObject* gameO
         return false;
     }
 
+    // The core refuses a use of a no-interact object too (SpellHandler); the key branch below calls Use() directly.
+    if (gameObject->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT))
+    {
+        std::ostringstream out; out << "I can't interact with " << chat->formatGameobject(gameObject);
+        ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+        return false;
+    }
+
     if (bot->GetDistance(gameObject) > INTERACTION_DISTANCE)
     {
         std::ostringstream out; out << "I'm too far away from " << chat->formatGameobject(gameObject);
