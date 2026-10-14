@@ -734,6 +734,26 @@ static void TestMasterLeftRule()
     CHECK(LeavesWhenMasterLeaves(false));
 }
 
+// Commanded damage bots and healers back off near the tank's threat; the tank
+// and bots outside a commanded group are left to the general rule.
+static void TestCommandedThreatBackoff()
+{
+    CHECK(KeepsCommandedThreatBackoff(true, false));
+    CHECK(!KeepsCommandedThreatBackoff(true, true));
+    CHECK(!KeepsCommandedThreatBackoff(false, false));
+    CHECK(!KeepsCommandedThreatBackoff(false, true));
+}
+
+// Only a party-wide attack leaves a tank on the mob it holds; a named attack
+// and a tank holding nothing go as ordered, and damage bots always go.
+static void TestPartyAttackTankStays()
+{
+    CHECK(PartyAttackLeavesTankOnItsMob(true, true, true));
+    CHECK(!PartyAttackLeavesTankOnItsMob(false, true, true));
+    CHECK(!PartyAttackLeavesTankOnItsMob(true, true, false));
+    CHECK(!PartyAttackLeavesTankOnItsMob(true, false, true));
+}
+
 int main()
 {
     TestBindingTable();
@@ -743,6 +763,8 @@ int main()
     TestBindGate();
     TestBindGroupPlan();
     TestMasterLeftRule();
+    TestCommandedThreatBackoff();
+    TestPartyAttackTankStays();
     TestOrderGate();
     TestParseGuid();
     TestParseMovePoint();

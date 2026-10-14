@@ -31,6 +31,8 @@
 #include "playerbot/RandomBotFacade.h"
 #include "playerbot/InstanceGuardPolicy.h"
 #include "playerbot/SurvivePolicy.h"
+#include "../../runtime/CommandedGroupQuery.h"
+#include "../../runtime/RemoteCommanderPolicy.h"
 #include "Battlegrounds/BattleGroundMgr.h"
 
 // The class context of a bot; the augmenters of other modules are applied on top in
@@ -455,11 +457,17 @@ BotRoles AiFactory::GetPlayerRoles(const Player* player)
 // Masterless pool bots keep the old behavior: the multiplier is group-gated
 // anyway, and threat vetoes would stall their solo leveling burn. ThreatValue
 // returns 0 with no tank, so solo/no-tank parties are unaffected even when the
-// veto is present.
+// veto is present. A party a remote commander leads has no real-player master
+// (the commander stands outside it) and backs off the same way.
 bool AiFactory::KeepsPartyThreatBackoff(Player* player, PlayerbotAI* const facade)
 {
-    return player && facade && !player->InBattleGround() && facade->HasRealPlayerMaster() &&
-        !PlayerbotAI::IsTank(player);
+    if (!player || !facade || player->InBattleGround())
+        return false;
+    bool const isTank = PlayerbotAI::IsTank(player);
+    if (facade->HasRealPlayerMaster())
+        return !isTank;
+    return TortoiseBots::RemoteCommander::KeepsCommandedThreatBackoff(
+        TortoiseBots::BotCommands::IsInCommandedGroup(player), isTank);
 }
 
 void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const facade, Engine* combatEngine)

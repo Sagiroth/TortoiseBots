@@ -498,6 +498,30 @@ inline bool LeavesWhenMasterLeaves(bool inCommandedGroup)
     return !inCommandedGroup;
 }
 
+// A commanded party is bot-only and its commander stands outside it, so no
+// bot in it has a real-player master and the party threat back-off (the
+// "threat" combat strategy, AiFactory::KeepsPartyThreatBackoff) was never
+// given: the damage bots burned through the tank's lead on every mob
+// (uldaman-remote-5: 26 threat overrides, the warlock on top for 47 s). A
+// commanded bot gets it the way a bot in a player's party does: every bot
+// but a tank.
+inline bool KeepsCommandedThreatBackoff(bool inCommandedGroup, bool isTank)
+{
+    return inCommandedGroup && !isTank;
+}
+
+// A party-wide `cmd attack` sends every damage bot at the target. A tank that
+// already holds another living mob (its victim is attacking it) stays on that
+// mob: the order otherwise pulled it off, and the mob it left went for the
+// healer or a damage bot (uldaman-remote-5: 20 of 27 such orders moved the
+// tank, 19 of the mobs it left were on another bot 4 s later). The named form
+// `cmd attack <guid> <tank>` still moves the tank, and a tank that holds
+// nothing goes with the party as before.
+inline bool PartyAttackLeavesTankOnItsMob(bool partyWide, bool isTank, bool holdsAnotherMob)
+{
+    return partyWide && isTank && holdsAnotherMob;
+}
+
 // ---------------------------------------------------------------------------
 // Order auth gate
 // ---------------------------------------------------------------------------
