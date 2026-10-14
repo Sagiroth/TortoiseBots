@@ -4578,6 +4578,31 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
             if (slot.guid != commander->GetObjectGuid() && !BotManager::Instance().IsBot(slot.guid))
                 facts.leadGroupHasRealPlayer = true;
         facts.leadGroupBound = CommanderBindings().FindByGroup(leadGroup->GetId()) != nullptr;
+
+        // A kept party is commanded as a whole: every bot in it must have been
+        // named (a bot is never taken under command without being asked).
+        if (keepParty)
+        {
+            std::vector<ObjectGuid> named;
+            for (size_t i = 1; i < names.size(); ++i)
+                if (Player* bot = FindOnlineByName(names[i]))
+                    named.push_back(bot->GetObjectGuid());
+            for (Group::MemberSlot const& slot : leadGroup->GetMemberSlots())
+                if (slot.guid != lead->GetObjectGuid() && slot.guid != commander->GetObjectGuid() &&
+                    std::find(named.begin(), named.end(), slot.guid) == named.end())
+                    facts.keptPartyHasUnnamedBot = true;
+        }
+
+        // Making the lead bot leader copies the lead's own instance binds onto
+        // the group (Player::ConvertInstancesToGroup), replacing the group's
+        // bind for the same map: the bots would be ejected all the same.
+        if (!leadGroup->IsLeader(lead->GetObjectGuid()))
+            for (auto const& entry : lead->GetBoundInstances())
+            {
+                InstanceGroupBind* groupBind = leadGroup->GetBoundInstance(entry.first);
+                if (groupBind && groupBind->state != entry.second.state)
+                    facts.leadBindWouldReplaceGroupBind = true;
+            }
     }
 
     // The group to be: the lead's current bot-only group (adopted as it is)

@@ -295,6 +295,15 @@ struct BindFacts
     bool leadGroupIsRaidOrBg = false;
     bool leadGroupHasRealPlayer = false; // a human other than the commander
     bool leadGroupBound = false;         // another commander holds it
+    // The commander's own party is kept (BindGroupPlan::KeepCommanderParty) and
+    // holds a bot other than the lead that the command did not name: it would
+    // be commanded without being asked for.
+    bool keptPartyHasUnnamedBot = false;
+    // The group's leader is about to change to the lead bot, and the lead bot
+    // holds its own bind for an instance map the group is bound to a different
+    // instance of: Player::ConvertInstancesToGroup copies the lead's binds onto
+    // the group and would replace the group's bind with the lead's.
+    bool leadBindWouldReplaceGroupBind = false;
     // Every bot the group would contain besides the lead: current members of
     // the lead's group plus the named bots not yet in it.
     std::vector<BindMember> members;
@@ -317,6 +326,8 @@ enum class BindRefusal : uint8_t
     MemberHired,
     MemberInOtherGroup,
     BotInOtherBinding,
+    PartyUnnamed,
+    LeadBound,
 };
 
 // The bind is refused (fail closed) unless the commander controls every bot,
@@ -347,6 +358,10 @@ inline BindRefusal CheckBind(BindFacts const& facts)
             return BindRefusal::GroupHasPlayer;
         if (facts.leadGroupBound)
             return BindRefusal::GroupBound;
+        if (facts.keptPartyHasUnnamedBot)
+            return BindRefusal::PartyUnnamed;
+        if (facts.leadBindWouldReplaceGroupBind)
+            return BindRefusal::LeadBound;
     }
     if (facts.members.empty())
         return BindRefusal::NoMembers;
@@ -385,6 +400,8 @@ inline char const* BindRefusalCode(BindRefusal refusal)
         case BindRefusal::MemberHired: return "hired";
         case BindRefusal::MemberInOtherGroup: return "member-grouped";
         case BindRefusal::BotInOtherBinding: return "bot-bound";
+        case BindRefusal::PartyUnnamed: return "party-unnamed";
+        case BindRefusal::LeadBound: return "lead-bound";
     }
     return "rejected";
 }
@@ -408,6 +425,8 @@ inline char const* BindRefusalText(BindRefusal refusal)
         case BindRefusal::MemberHired: return "Hired companions cannot join a commanded group (their hire ends when they leave your party).";
         case BindRefusal::MemberInOtherGroup: return "A named bot is in another group. Remove it from that group first.";
         case BindRefusal::BotInOtherBinding: return "A named bot is still in another commander's group. That commander must unbind first.";
+        case BindRefusal::PartyUnnamed: return "Your party holds a bot you did not name. Name every bot in your party in the bind (or take the others out of it first).";
+        case BindRefusal::LeadBound: return "The lead bot has its own saved instance that would replace the group's. Reset it first (.instance unbind for the lead bot) or pick another lead.";
     }
     return "Request rejected.";
 }

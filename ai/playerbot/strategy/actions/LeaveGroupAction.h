@@ -2,7 +2,7 @@
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/RandomBotFacade.h"
 #include "GenericActions.h"
-#include "../../../../commands/BotCommands.h"
+#include "../../../../runtime/CommandedGroupQuery.h"
 #include "../../../../runtime/RemoteCommanderPolicy.h"
 
 namespace ai

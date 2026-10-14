@@ -193,6 +193,33 @@ static void TestBindGate()
     facts.commanderIsBot = true;
     CHECK(CheckBind(facts) == BindRefusal::CommanderIsBot);
 
+    // A kept party is commanded as a whole: a bot in it that was not named is a
+    // refusal (before its own hired/controllable verdict), with no change made.
+    facts = GoodBind(2);
+    facts.leadGrouped = true;
+    facts.keptPartyHasUnnamedBot = true;
+    facts.members[1].hired = true;
+    CHECK(CheckBind(facts) == BindRefusal::PartyUnnamed);
+    CHECK(std::string(BindRefusalCode(BindRefusal::PartyUnnamed)) == "party-unnamed");
+    CHECK(std::string(BindRefusalText(BindRefusal::PartyUnnamed)).find("did not name") != std::string::npos);
+    // Every bot named: the same hired bot is then judged as a named member.
+    facts.keptPartyHasUnnamedBot = false;
+    CHECK(CheckBind(facts) == BindRefusal::MemberHired);
+    // Not a kept party (no leadGrouped): the flag is never looked at.
+    facts = GoodBind(2);
+    facts.keptPartyHasUnnamedBot = true;
+    CHECK(CheckBind(facts) == BindRefusal::None);
+
+    // The lead bot's own bind for the group's instance map would replace the
+    // group's bind when it takes the lead: refused as lead-bound.
+    facts = GoodBind(2);
+    facts.leadGrouped = true;
+    facts.leadBindWouldReplaceGroupBind = true;
+    CHECK(CheckBind(facts) == BindRefusal::LeadBound);
+    CHECK(std::string(BindRefusalCode(BindRefusal::LeadBound)) == "lead-bound");
+    facts.leadBindWouldReplaceGroupBind = false;
+    CHECK(CheckBind(facts) == BindRefusal::None);
+
     facts = GoodBind(2);
     facts.commanderAlreadyBound = true;
     CHECK(CheckBind(facts) == BindRefusal::AlreadyBound);
