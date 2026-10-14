@@ -709,27 +709,99 @@ public:
         it->second = fresh ? present : (it->second | present);
         return present;
     }
-    // The bot left the binding: what to give back (once).
+    // The bot left the binding: what to give back (once), with anything an
+    // earlier release still kept for leaving an instance.
     uint32_t Release(uint64_t guid)
     {
+        uint32_t mask = TakeDeferred(guid);
         auto it = held_.find(guid);
         if (it == held_.end())
-            return 0;
-        uint32_t const mask = it->second;
+            return mask;
+        mask |= it->second;
         held_.erase(it);
         return mask;
     }
-    // What a save while bound must still write as the bot's own.
+    // Released inside a dungeon or raid: the kit must not come back there (it
+    // walks the bot to grind and rpg targets in the instance, and the #218
+    // guard skips a group leader), so it waits until the bot leaves.
+    void Defer(uint64_t guid, uint32_t mask)
+    {
+        if (guid && mask)
+            deferred_[guid] |= mask;
+    }
+    // The bot is on an open-world map and no longer bound: the kit that waited.
+    uint32_t TakeDeferred(uint64_t guid)
+    {
+        auto it = deferred_.find(guid);
+        if (it == deferred_.end())
+            return 0;
+        uint32_t const mask = it->second;
+        deferred_.erase(it);
+        return mask;
+    }
+    // What a save must still write as the bot's own (held or waiting).
     uint32_t Withheld(uint64_t guid) const
     {
+        uint32_t mask = 0;
         auto it = held_.find(guid);
-        return it == held_.end() ? 0u : it->second;
+        if (it != held_.end())
+            mask |= it->second;
+        auto deferred = deferred_.find(guid);
+        if (deferred != deferred_.end())
+            mask |= deferred->second;
+        return mask;
     }
-    void Clear() { held_.clear(); }
+    bool Holds(uint64_t guid) const { return held_.find(guid) != held_.end(); }
+    // The bots a binding holds the kit off now (the sweep checks they are
+    // still bound).
+    void HeldBots(std::vector<uint64_t>& out) const
+    {
+        out.clear();
+        for (auto const& entry : held_)
+            out.push_back(entry.first);
+    }
+    bool Empty() const { return held_.empty(); }
+    void Clear()
+    {
+        held_.clear();
+        deferred_.clear();
+    }
 
 private:
     std::unordered_map<uint64_t, uint32_t> held_;
+    std::unordered_map<uint64_t, uint32_t> deferred_;
 };
+
+// A bot leaving the binding gets its kit back now only on an open-world map;
+// inside a dungeon or raid it waits until the bot leaves the instance.
+inline bool RestoresAutonomyNow(bool onInstanceMap) { return !onInstanceMap; }
+
+// The bit of a strategy name in the commander autonomy list; 0 when it is not in it.
+inline uint32_t CommanderAutonomyBit(std::string const& name)
+{
+    for (unsigned i = 0; i < kCommanderAutonomyCount; ++i)
+        if (name == CommanderAutonomyStrategy(i))
+            return 1u << i;
+    return 0;
+}
+
+// The autonomy entries a strategy list ("+a,-b,+c") would add: what a list
+// filtered for a bound bot would have given it, noted for the release.
+inline uint32_t CommanderAutonomyAdds(std::string const& list)
+{
+    uint32_t mask = 0;
+    size_t start = 0;
+    while (start <= list.size())
+    {
+        size_t end = list.find(',', start);
+        if (end == std::string::npos)
+            end = list.size();
+        if (end > start && list[start] == '+')
+            mask |= CommanderAutonomyBit(list.substr(start + 1, end - start - 1));
+        start = end + 1;
+    }
+    return mask;
+}
 
 // ---------------------------------------------------------------------------
 // Order auth gate

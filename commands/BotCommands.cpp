@@ -4519,19 +4519,54 @@ void RestoreCommanderThreatBackoff(uint64 botRaw)
         ai->ChangeStrategy("-threat", BotState::BOT_STATE_COMBAT);
 }
 
+bool OnInstanceMap(Player* bot)
+{
+    return bot && bot->GetMap() && (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid());
+}
+
 // Gives a bot that left the binding the open-world kit the binding took off
-// it, as it had it before the bind. A bot that now follows a real player
-// gets nothing back (#741: it keeps following its player).
+// it, as it had it before the bind. Inside a dungeon or raid the kit waits
+// until the bot leaves the instance (CommanderAutonomyMapChange). A bot that
+// now follows a real player gets nothing back (#741: it keeps following its
+// player). A bot still in a bound group keeps holding.
 void RestoreCommanderAutonomy(uint64 botRaw)
 {
-    uint32 const mask = CommanderAutonomyBots().Release(botRaw);
-    if (!mask)
-        return;
     Player* bot = FindCharacter(botRaw);
-    PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
-    if (!ai || ai->HasRealPlayerMaster() || IsInCommandedGroup(bot))
+    if (bot && IsInCommandedGroup(bot))
         return;
+    uint32 const mask = CommanderAutonomyBots().Release(botRaw);
+    PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+    if (!mask || !ai || ai->HasRealPlayerMaster())
+        return;
+    if (!RemoteCommander::RestoresAutonomyNow(OnInstanceMap(bot)))
+    {
+        CommanderAutonomyBots().Defer(botRaw, mask);
+        return;
+    }
     ai->ChangeStrategy(RemoteCommander::CommanderAutonomyChange(mask, '+'), BotState::BOT_STATE_NON_COMBAT);
+}
+
+// A bot the binding held the kit off that is no longer in a bound group (one
+// that joined after the bind and left again; followers and the release are
+// handled where they leave) gets it back. Once a second, from the sweep.
+void SweepCommanderAutonomy()
+{
+    if (CommanderAutonomyBots().Empty())
+        return;
+    static std::vector<uint64> held;
+    CommanderAutonomyBots().HeldBots(held);
+    for (uint64 botRaw : held)
+    {
+        Player* bot = FindCharacter(botRaw);
+        // Offline: its snapshot kept the kit (PlayerbotDbStore::Save).
+        if (!bot)
+        {
+            CommanderAutonomyBots().Release(botRaw);
+            continue;
+        }
+        if (!IsInCommandedGroup(bot))
+            RestoreCommanderAutonomy(botRaw);
+    }
 }
 
 // The commander's running bot tasks (loot, open, use) end with the binding;
@@ -8291,6 +8326,9 @@ void UpdateRemoteCommanders(uint32_t diff)
     // Nothing runs while no commander is bound.
     if (CommanderBindings().Empty())
     {
+        // Every release restored its bots; anything left (a late joiner that
+        // left in the last second) goes back now.
+        SweepCommanderAutonomy();
         s_commanderSweepMs = 0;
         CommanderOrderLog().Clear();
         if (!CommanderViews().empty())
@@ -8305,6 +8343,7 @@ void UpdateRemoteCommanders(uint32_t diff)
         s_commanderSweepMs = 0;
         for (uint64 commanderRaw : CommanderBindings().Commanders())
             StandingBinding(commanderRaw);
+        SweepCommanderAutonomy();
     }
     // Issue #884, phase 2: the perception feed of the bindings that stand.
     UpdateCommanderViews(diff);
@@ -8394,11 +8433,11 @@ bool IsCommanderThreat(Player* bot)
     return bot && CommanderThreatBots().Holds(bot->GetObjectGuid().GetRawValue());
 }
 
-void HoldCommanderAutonomy(Player* bot, PlayerbotAI* ai, bool fresh)
+void HoldCommanderAutonomy(Player* bot, PlayerbotAI* ai, bool fresh, uint32_t listHeld)
 {
     if (!bot || !ai || bot->InBattleGround() || !IsInCommandedGroup(bot))
         return;
-    uint32 present = 0;
+    uint32 present = listHeld;
     for (unsigned i = 0; i < RemoteCommander::kCommanderAutonomyCount; ++i)
         if (ai->HasStrategy(RemoteCommander::CommanderAutonomyStrategy(i), BotState::BOT_STATE_NON_COMBAT))
             present |= 1u << i;
@@ -8410,6 +8449,15 @@ void HoldCommanderAutonomy(Player* bot, PlayerbotAI* ai, bool fresh)
 uint32_t CommanderAutonomyWithheld(Player* bot)
 {
     return bot ? CommanderAutonomyBots().Withheld(bot->GetObjectGuid().GetRawValue()) : 0;
+}
+
+void CommanderAutonomyMapChange(Player* bot, PlayerbotAI* ai)
+{
+    if (!bot || !ai || OnInstanceMap(bot) || bot->InBattleGround() || IsInCommandedGroup(bot))
+        return;
+    uint32 const mask = CommanderAutonomyBots().TakeDeferred(bot->GetObjectGuid().GetRawValue());
+    if (mask && !ai->HasRealPlayerMaster())
+        ai->ChangeStrategy(RemoteCommander::CommanderAutonomyChange(mask, '+'), BotState::BOT_STATE_NON_COMBAT);
 }
 
 bool IsInCommandedGroup(Player* bot)

@@ -28,12 +28,17 @@ bool IsCommanderThreat(Player* bot);
 // off it while it is bound and goes back on release. The bind calls this, and
 // so does every path that may give the kit back while the bot is bound
 // (AiFactory's strategy rebuild, the snapshot load, the instance guard's
-// restore). fresh: the strategies were just rebuilt from nothing. Does
-// nothing for a bot outside a bound group.
-void HoldCommanderAutonomy(Player* bot, PlayerbotAI* ai, bool fresh);
+// restore). fresh: the strategies were just rebuilt from nothing. listHeld:
+// entries a config list would have added but was filtered of for the bound
+// bot (AiFactory::CommandedSafeNonCombatStrategies), noted for the release
+// too. Does nothing for a bot outside a bound group.
+void HoldCommanderAutonomy(Player* bot, PlayerbotAI* ai, bool fresh, uint32_t listHeld = 0);
 // The entries a binding holds off the bot: the snapshot save still writes
 // them as the bot's own (they are the bot's, not the binding's).
 uint32_t CommanderAutonomyWithheld(Player* bot);
+// A bot's map changed: a kit its release kept back inside a dungeon or raid
+// comes back once it is on an open-world map and not bound again.
+void CommanderAutonomyMapChange(Player* bot, PlayerbotAI* ai);
 
 // The hire lifecycle's questions about a commander's binding (hires bound to
 // their own hirer, issue #884). The hire sweep settles a commander's binding

@@ -965,6 +965,57 @@ static void TestCommanderAutonomyLedger()
     CHECK(ledger.Hold(0, rpg, false) == 0);
     ledger.Clear();
     CHECK(ledger.Withheld(11) == 0);
+
+    // The config list a bound bot is given drops its open-world adds; what it
+    // would have added is noted, so the release gives that back too.
+    uint32_t const craft = bit("rpg craft");
+    CHECK(CommanderAutonomyAdds("+grind,+loot,+custom::say,+tfish,+wander,+rpg craft") == (grind | tfish | craft));
+    CHECK(CommanderAutonomyAdds("-rpg,+travel") == travel);
+    CHECK(CommanderAutonomyAdds("") == 0 && CommanderAutonomyAdds("+wander,+stay") == 0);
+    CHECK(CommanderAutonomyBit("rpg") == rpg && CommanderAutonomyBit("rpg quest") == 0);
+}
+
+// Review of #974: bots bound in the open world and unbound inside Zul'Farrak
+// must not get grind/travel/rpg back there (they would walk to rpg and grind
+// targets in the dungeon, past the #218 guard, which skips group leaders).
+// The release keeps the kit until the bot is on an open-world map again.
+static void TestCommanderAutonomyRestoreInsideInstance()
+{
+    uint32_t const grind = CommanderAutonomyBit("grind"), travel = CommanderAutonomyBit("travel"),
+        rpg = CommanderAutonomyBit("rpg"), explore = CommanderAutonomyBit("explore");
+    CHECK(!RestoresAutonomyNow(true));
+    CHECK(RestoresAutonomyNow(false));
+
+    CommanderAutonomyLedger ledger;
+    ledger.Hold(10, grind | travel | rpg | explore, false);   // bound in the open world
+    CHECK(ledger.Holds(10));
+    uint32_t const released = ledger.Release(10);             // unbind inside ZF
+    CHECK(released == (grind | travel | rpg | explore));
+    CHECK(!ledger.Holds(10));
+    ledger.Defer(10, released);                               // nothing applied inside
+    CHECK(ledger.Withheld(10) == released);                   // a save still keeps it as the bot's own
+    CHECK(ledger.TakeDeferred(10) == released);               // leaving the instance gives it back, once
+    CHECK(ledger.TakeDeferred(10) == 0);
+    CHECK(ledger.Withheld(10) == 0);
+
+    // Bound again before leaving: a later release in the open world gives
+    // back both what waited and what the new binding took.
+    ledger.Defer(11, rpg);
+    ledger.Hold(11, grind, false);
+    CHECK(ledger.Release(11) == (grind | rpg));
+    CHECK(ledger.TakeDeferred(11) == 0);
+
+    // The sweep sees the held bots, not the waiting ones.
+    ledger.Hold(12, travel, false);
+    ledger.Defer(13, rpg);
+    std::vector<uint64_t> held;
+    ledger.HeldBots(held);
+    CHECK(held.size() == 1 && held[0] == 12);
+    ledger.Defer(0, rpg);
+    ledger.Defer(14, 0);
+    CHECK(ledger.Withheld(0) == 0 && ledger.Withheld(14) == 0);
+    ledger.Clear();
+    CHECK(ledger.Empty() && ledger.Withheld(13) == 0);
 }
 
 // A hire may be bound by its own hirer only: the bind gate sees "hired" for a
@@ -1018,6 +1069,7 @@ int main()
     TestCommandedBackoffYields();
     TestCommanderThreatLedger();
     TestCommanderAutonomyLedger();
+    TestCommanderAutonomyRestoreInsideInstance();
     TestOrderGate();
     TestParseGuid();
     TestParseMovePoint();

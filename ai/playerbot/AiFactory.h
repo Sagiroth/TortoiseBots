@@ -61,7 +61,7 @@ public:
     // RandomBotNonCombatStrategies without its open-world adds (grind, travel,
     // tfish, rpg, rpg craft, wander) while a remote commander has bound the
     // bot: it moves only on the commander's orders.
-    static std::string CommandedSafeNonCombatStrategies(Player* player, std::string const& strategies);
+    static std::string CommandedSafeNonCombatStrategies(Player* player, std::string const& strategies, uint32* held = nullptr);
     // The list with every "+grind/+travel/+tfish/+rpg/+rpg craft/+wander" entry removed.
     static std::string StripOpenWorldNonCombatStrategies(std::string const& strategies);
 };
