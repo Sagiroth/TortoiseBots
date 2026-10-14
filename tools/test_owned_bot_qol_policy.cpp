@@ -110,6 +110,63 @@ static void TestGroupSummonReviveRepairRule()
     CHECK(OwnedBotGroupSummonRevive(true, true, true));
     CHECK(!OwnedBotGroupSummonRevive(true, true, false));
 }
+static void TestRangedPickFitsAmmo()
+{
+    using K = RangedAmmoKind;
+    // Report case: arrows only, an empty slot or a bow: a gun is refused.
+    CHECK(!OwnedBotAcceptRangedPick(K::Empty, 0, K::Bullet, 500, true, false));
+    CHECK(!OwnedBotAcceptRangedPick(K::Arrow, 100, K::Bullet, 900, true, false));
+    // The bow that fits the arrows is accepted.
+    CHECK(OwnedBotAcceptRangedPick(K::Arrow, 100, K::Arrow, 200, true, false));
+    CHECK(OwnedBotAcceptRangedPick(K::Empty, 0, K::Arrow, 200, true, false));
+    // Bullets only: mirror.
+    CHECK(!OwnedBotAcceptRangedPick(K::Bullet, 100, K::Arrow, 900, false, true));
+    CHECK(OwnedBotAcceptRangedPick(K::Bullet, 100, K::Bullet, 120, false, true));
+}
+
+static void TestRangedPickKeepsPreviousTypeWithoutAmmo()
+{
+    using K = RangedAmmoKind;
+    // No ammo at all: keep the type it had before.
+    CHECK(OwnedBotAcceptRangedPick(K::Bullet, 100, K::Bullet, 300, false, false));
+    CHECK(!OwnedBotAcceptRangedPick(K::Bullet, 100, K::Arrow, 900, false, false));
+    CHECK(OwnedBotAcceptRangedPick(K::Arrow, 100, K::Arrow, 300, false, false));
+    CHECK(!OwnedBotAcceptRangedPick(K::Arrow, 100, K::Bullet, 900, false, false));
+    // Thrown stays thrown-side: an ammo weapon is not forced on a bot that never had one.
+    CHECK(!OwnedBotAcceptRangedPick(K::NoAmmo, 100, K::Bullet, 900, false, false));
+    // Empty slot and no ammo: any type may be picked (maintenance follows the weapon).
+    CHECK(OwnedBotAcceptRangedPick(K::Empty, 0, K::Bullet, 100, false, false));
+    CHECK(OwnedBotAcceptRangedPick(K::Empty, 0, K::Arrow, 100, false, false));
+}
+
+static void TestRangedPickSwitchNeedsBigGainAndAmmo()
+{
+    using K = RangedAmmoKind;
+    // Both ammo types carried: a type switch needs +50% score.
+    CHECK(!OwnedBotAcceptRangedPick(K::Arrow, 100, K::Bullet, 149, true, true));
+    CHECK(OwnedBotAcceptRangedPick(K::Arrow, 100, K::Bullet, 150, true, true));
+    CHECK(OwnedBotAcceptRangedPick(K::Bullet, 100, K::Bullet, 101, true, true));
+    // The current weapon is a dud (its ammo is missing, the other type is
+    // held): switching to the held type needs no gain, only ammo.
+    CHECK(OwnedBotAcceptRangedPick(K::Bullet, 500, K::Arrow, 10, true, false));
+    CHECK(OwnedBotRangedReplacesDud(K::Bullet, K::Arrow, true, false));
+    CHECK(!OwnedBotRangedReplacesDud(K::Bullet, K::Bullet, true, false));  // no ammo for the new gun either
+    CHECK(!OwnedBotRangedReplacesDud(K::Arrow, K::Bullet, true, false));   // old bow is fine
+    CHECK(!OwnedBotRangedReplacesDud(K::Bullet, K::Arrow, false, false));  // no ammo at all
+    CHECK(!OwnedBotRangedReplacesDud(K::NoAmmo, K::Arrow, true, false));
+    // ... but a new gun with no bullets is still refused while arrows are held.
+    CHECK(!OwnedBotAcceptRangedPick(K::Bullet, 500, K::Bullet, 900, true, false));
+}
+
+static void TestRangedPickNoAmmoWeaponsUnaffected()
+{
+    using K = RangedAmmoKind;
+    // Thrown, wands and relics follow the normal score rules whatever the bags hold.
+    CHECK(OwnedBotAcceptRangedPick(K::Arrow, 100, K::NoAmmo, 50, true, false));
+    CHECK(OwnedBotAcceptRangedPick(K::Empty, 0, K::NoAmmo, 50, false, false));
+    CHECK(OwnedBotAcceptRangedPick(K::NoAmmo, 100, K::NoAmmo, 200, false, true));
+}
+
 int main()
 {
     TestOwnedBotAllowed();
@@ -124,6 +181,10 @@ int main()
     TestGroupSummonCooldown();
     TestGroupSummonCombatGate();
     TestGroupSummonReviveRepairRule();
+    TestRangedPickFitsAmmo();
+    TestRangedPickKeepsPreviousTypeWithoutAmmo();
+    TestRangedPickSwitchNeedsBigGainAndAmmo();
+    TestRangedPickNoAmmoWeaponsUnaffected();
     std::printf("owned bot qol policy: %d checks passed\n", checks);
     return 0;
 }

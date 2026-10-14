@@ -63,6 +63,75 @@ inline bool OwnedBotGroupSummonRevive(bool inCombat, bool allowInCombat, bool re
 {
     return revive && (!inCombat || allowInCombat);
 }
+// Autogear ranged pick: a bow or crossbow shoots arrows, a gun shoots bullets,
+// and auto shot is dead without the matching ammo. Autogear hands out no ammo
+// (the bot's own kit or owned-bot maintenance does), so the ranged pick must
+// fit what the bags already hold. Kinds: Empty = nothing in the ranged slot,
+// NoAmmo = thrown, wand, relic (no ammo needed), Arrow = bow/crossbow,
+// Bullet = gun.
+enum class RangedAmmoKind
+{
+    Empty,
+    NoAmmo,
+    Arrow,
+    Bullet,
+};
+
+// A candidate of a different ammo type replaces a usable current weapon only
+// when its stat score is at least this percent of the current one.
+constexpr uint32_t kRangedTypeSwitchGainPct = 150;
+
+inline bool RangedKindNeedsAmmo(RangedAmmoKind kind)
+{
+    return kind == RangedAmmoKind::Arrow || kind == RangedAmmoKind::Bullet;
+}
+
+inline bool BagsHoldAmmoFor(RangedAmmoKind kind, bool hasArrows, bool hasBullets)
+{
+    return kind == RangedAmmoKind::Arrow ? hasArrows : kind == RangedAmmoKind::Bullet ? hasBullets : false;
+}
+
+// True when the equipped ranged weapon is a dud (needs ammo the bags lack) and
+// the candidate needs ammo the bags do hold: then even a lower-scored
+// candidate is an upgrade, so the "not better than the old item" gate is skipped.
+inline bool OwnedBotRangedReplacesDud(RangedAmmoKind current, RangedAmmoKind candidate,
+    bool hasArrows, bool hasBullets)
+{
+    return RangedKindNeedsAmmo(current) && !BagsHoldAmmoFor(current, hasArrows, hasBullets) &&
+        RangedKindNeedsAmmo(candidate) && BagsHoldAmmoFor(candidate, hasArrows, hasBullets);
+}
+
+// Decide whether autogear may equip `candidate` (score candidateScore) over
+// the equipped ranged weapon `current` (score currentScore, 0 when empty),
+// given which ammo the bags hold. Rules:
+//  - a candidate that needs no ammo follows the normal score rules;
+//  - a candidate whose ammo is in the bags is fine, but switching away from a
+//    weapon that is still usable (its own ammo in the bags) to the other ammo
+//    type needs a big score gain;
+//  - a candidate whose ammo is NOT in the bags is refused when the bot carries
+//    ammo of the other type; when it carries none at all, only the type of the
+//    weapon it had before (or any type for an empty slot) is allowed.
+inline bool OwnedBotAcceptRangedPick(RangedAmmoKind current, uint32_t currentScore,
+    RangedAmmoKind candidate, uint32_t candidateScore, bool hasArrows, bool hasBullets)
+{
+    if (!RangedKindNeedsAmmo(candidate))
+        return true;
+
+    auto holds = [&](RangedAmmoKind kind) { return BagsHoldAmmoFor(kind, hasArrows, hasBullets); };
+
+    if (!holds(candidate))
+    {
+        if (hasArrows || hasBullets)
+            return false;
+        return current == RangedAmmoKind::Empty || current == candidate;
+    }
+
+    if (RangedKindNeedsAmmo(current) && current != candidate && holds(current))
+        return static_cast<uint64_t>(candidateScore) * 100 >=
+            static_cast<uint64_t>(currentScore) * kRangedTypeSwitchGainPct;
+    return true;
+}
+
 // Parse the optional autogear quality/ilvl argument ("", "green", "200").
 // Returns the clamped quality / effective ilvl cap (0 = config cap only).
 // Rejects bare digits <= 5: those read as qualities, not item levels (donor

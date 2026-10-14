@@ -35,7 +35,14 @@ public:
     // other gear path (no wipe, no syncWithMaster; the ilvl cap is an
     // InitEquipment argument, never a global mutation). Never touches pool
     // bots; the caller gates on runtime/OwnedBotQolPolicy.h.
+    // The ranged pick fits the ammo already in the bags (bow/crossbow with
+    // arrows, gun with bullets), see OwnedBotAcceptRangedPick; no ammo is
+    // handed out here.
     void AutogearOwned(uint32 cappedQuality, uint32 ilvlCap);
+    // True when the bags hold usable ammo for a ranged weapon of this item
+    // subclass (gun -> bullets, bow/crossbow -> arrows). Weapons that need no
+    // ammo report true. Used by the autogear reply to warn about a dud weapon.
+    bool HasAmmoInBagsFor(uint32 weaponSubClass);
     // Weapon/armour/riding skills plus two class-appropriate professions and the
     // secondary skills, all bounded by the current level. Public so the runtime can
     // give it to persistent-level bots on first login. Primaries are granted from
@@ -159,6 +166,9 @@ private:
     uint32 itemQuality;
     PlayerbotAI* ai;
     Player* bot;
+    // Set only by AutogearOwned: InitEquipment then filters the ranged slot
+    // by the ammo the bags hold.
+    bool ammoAwareRanged = false;
 };
 
 enum PriorizedConsumables

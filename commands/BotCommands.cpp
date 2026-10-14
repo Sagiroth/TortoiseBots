@@ -2457,6 +2457,18 @@ static bool HandleAutogear(ChatHandler* handler, char const* args)
     PlayerbotFactory factory(bot, bot->GetLevel());
     factory.AutogearOwned(parsed.quality, parsed.ilvlCap);
     handler->PSendSysMessage("Re-geared %s within the configured caps.", name.c_str());
+
+    // Autogear hands out no ammo: say so when the ranged weapon it left
+    // equipped has none in the bags (auto shot cannot fire), like the tank's
+    // "no shield equipped" warning.
+    Item const* ranged = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
+    ItemPrototype const* rangedProto = ranged ? ranged->GetProto() : nullptr;
+    if (rangedProto && rangedProto->Class == ITEM_CLASS_WEAPON && !factory.HasAmmoInBagsFor(rangedProto->SubClass))
+    {
+        bool const gun = rangedProto->SubClass == ITEM_SUBCLASS_WEAPON_GUN;
+        handler->PSendSysMessage("Warning: %s has %s equipped but no %s in the bags - auto shot will not fire until %s gets some (owned-bot maintenance or hand them over).",
+            name.c_str(), rangedProto->Name1, gun ? "bullets" : "arrows", name.c_str());
+    }
     return true;
 }
 
