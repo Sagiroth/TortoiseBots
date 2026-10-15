@@ -20,8 +20,8 @@
 ## Licence
 
 - [ ] I license this contribution under **AGPL-3.0-or-later**, the same terms as
-      the project (see [`LICENSE`](../LICENSE) and
-      [`CONTRIBUTING.md`](../CONTRIBUTING.md#licence-of-contributions)), and I
+      the project (see [`LICENSE`](https://github.com/Sagiroth/TortoiseBots/blob/main/LICENSE) and
+      [`CONTRIBUTING.md`](https://github.com/Sagiroth/TortoiseBots/blob/main/CONTRIBUTING.md#licence-of-contributions)), and I
       have the right to do so.
 - [ ] Code copied or ported from another project keeps its original notice, is
       AGPL-3.0 compatible, and is recorded in `docs/PROVENANCE.md` (or: no such
