@@ -50,3 +50,9 @@ func TestPathsJS(t *testing.T) {
 func TestDrawingJS(t *testing.T) {
 	runCheck(t, "drawing_check.js", "../../web/static/js/app.js")
 }
+
+// TestDemoJS runs demo_check.js: the Commanders tab demo (a simulated group) gives every drawing layer something to show, through the
+// same helpers as a real report.
+func TestDemoJS(t *testing.T) {
+	runCheck(t, "demo_check.js", "../../web/static/js/demo.js")
+}

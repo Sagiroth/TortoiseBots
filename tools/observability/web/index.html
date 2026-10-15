@@ -457,6 +457,16 @@
           <p id="cmd-empty-why" class="empty-hint"></p>
           <p class="empty-hint">A card appears here within a couple of seconds of a binding. A commander binds a bot-only party of up to five with <code>.bot commander bind &lt;LeadBot&gt; [&lt;Bot&gt; ...]</code> (a GM, or a player who controls every bot of the party; the server needs <code>AiPlayerbot.RemoteCommander = 1</code>). The card goes away when the commander unbinds with <code>.bot commander unbind</code>, logs out, or the party breaks up.</p>
         </div>
+        <!-- Demo map: a simulated group on its own card to try every drawing layer. Off by default; also #/commanders?demo=1. -->
+        <div class="card cmd-demo-bar">
+          <label class="cmd-demo-switch" title="Show an extra card with a made-up group (nothing comes from the game server) so every map layer can be tried">
+            <input type="checkbox" id="cmd-demo"><span>Demo map</span>
+          </label>
+          <span class="empty-hint">Simulated group on Uldaman, to try all the drawings. Never mixed with real commanders.</span>
+          <span id="cmd-demo-note" class="cmd-demo-note" hidden>
+            <button type="button" id="cmd-demo-all" class="btn" title="Switch every map layer on for this page (not saved)">Turn every layer on</button>
+          </span>
+        </div>
         <!-- What the maps draw: one choice for every map on the page, kept in this browser. -->
         <details id="cmd-layers" class="card cmd-layers">
           <summary>Map layers</summary>
@@ -666,6 +676,7 @@
 <script src="/static/js/maplayers.js?v=4"></script>
 <script src="/static/js/unitinfo.js?v=2"></script>
 <script src="/static/js/paths.js?v=1"></script>
-<script src="/static/js/app.js?v=15"></script>
+<script src="/static/js/demo.js?v=1"></script>
+<script src="/static/js/app.js?v=16"></script>
 </body>
 </html>

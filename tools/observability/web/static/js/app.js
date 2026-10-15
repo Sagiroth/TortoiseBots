@@ -777,7 +777,7 @@
     const [path, query] = window.location.hash.replace(/^#\/?/, '').split('?');
     const q = new URLSearchParams(query || '');
     const bot = parseInt(q.get('bot'), 10);
-    return { tab: HASH_TO_TAB[path] || null, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p') };
+    return { tab: HASH_TO_TAB[path] || null, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1' };
   }
 
   function routeHash(r) {
@@ -812,6 +812,7 @@
     const tab = r.tab || state.activeTab;
     if (tab !== state.activeTab || !routeApplied) showTab(tab);
     routeApplied = true;
+    if (r.demo && tab === 'commanders') setCmdDemo(true, true); // #/commanders?demo=1
     if (r.bot !== null) {
       state.profileTab = PROFILE_TABS.includes(r.ptab) ? r.ptab : 'overview';
       showProfile(r.bot);
@@ -4515,6 +4516,72 @@
     return c.updatedAt ? c.updatedAt + (Date.now() - c.freshAt) / 1000 : Date.now() / 1000;
   }
 
+  // The Demo map: a simulated group (demo.js) on its own card, off by default. It goes through the same note / draw functions as a real
+  // report; it is never put in state.commanders.list, so the counts, the badge and the real cards never see it.
+  const cmdDemo = { on: false, timer: null, start: 0, bind: null };
+  const CMD_DEMO_MS = 2000;
+  const cmdAllBinds = () => (cmdDemo.on && cmdDemo.bind ? state.commanders.list.concat([cmdDemo.bind]) : state.commanders.list);
+  const cmdFindBind = key => cmdAllBinds().find(b => b.commander === key);
+  const cmdNowFor = bind => (bind && bind.demo ? Date.now() / 1000 : cmdServerNow());
+
+  function cmdDemoTick() {
+    if (!cmdDemo.on) return;
+    const now = Date.now() / 1000, bind = CmdDemo.frame(now, cmdDemo.start);
+    cmdDemo.bind = bind;
+    cmdTrails.seeded[bind.commander] = true; // the daemon has no history of it
+    CmdView.note(cmdTracker, bind, now);
+    UnitInfo.noteEvents(cmdEvents, bind, now);
+    cmdNotePaths(bind, now);
+    cmdPruneAll();
+    if (state.activeTab === 'commanders') renderCommanders();
+  }
+
+  // Forget what the page remembers of a binding that is gone (the demo one included).
+  function cmdPruneAll() {
+    const all = cmdAllBinds(), keys = all.map(b => b.commander);
+    CmdView.prune(cmdTracker, keys);
+    UnitInfo.pruneEvents(cmdEvents, keys);
+    CmdPaths.pruneTrails(cmdTrails, all);
+    CmdPaths.pruneStalls(cmdStalls, keys);
+  }
+
+  function setCmdDemo(on, quiet) {
+    on = !!on;
+    if (on === cmdDemo.on) return;
+    cmdDemo.on = on;
+    if (cmdDemo.timer) { clearInterval(cmdDemo.timer); cmdDemo.timer = null; }
+    const box = document.getElementById('cmd-demo');
+    if (box) box.checked = on;
+    const note = document.getElementById('cmd-demo-note');
+    if (note) note.hidden = !on;
+    if (on) {
+      cmdDemo.start = Date.now() / 1000;
+      cmdDemo.timer = setInterval(cmdDemoTick, CMD_DEMO_MS);
+      cmdDemoTick();
+    } else {
+      cmdDemo.bind = null;
+      cmdPruneAll();
+      delete cmdTrails.seeded[CmdDemo.COMMANDER];
+      if (state.activeTab === 'commanders') renderCommanders();
+    }
+    if (!quiet) {
+      const q = new URLSearchParams((window.location.hash.split('?')[1]) || '');
+      if (on) q.set('demo', '1'); else q.delete('demo');
+      const qs = q.toString();
+      try { history.replaceState(null, '', '#/commanders' + (qs ? '?' + qs : '')); } catch (e) {}
+    }
+  }
+  function initCmdDemo() {
+    const box = document.getElementById('cmd-demo');
+    if (box) box.addEventListener('change', () => setCmdDemo(box.checked));
+    const all = document.getElementById('cmd-demo-all');
+    if (all) all.addEventListener('click', () => {
+      MapLayers.DEFS.forEach(d => { cmdLayers = MapLayers.set(cmdLayers, d.key, true); }); // for this page only: not saved
+      cmdCards.forEach((_, k) => drawCmdMap(k));
+      paintCmdLayers();
+    });
+  }
+
   function applyCommanders(view) {
     if (!view || typeof view !== 'object') return;
     const c = state.commanders;
@@ -4528,10 +4595,7 @@
       c.freshAt = Date.now();
       c.lost = false;
       c.list.forEach(bind => { CmdView.note(cmdTracker, bind, c.updatedAt); UnitInfo.noteEvents(cmdEvents, bind, c.updatedAt); cmdNotePaths(bind, c.updatedAt); });
-      CmdView.prune(cmdTracker, c.list.map(b => b.commander));
-      UnitInfo.pruneEvents(cmdEvents, c.list.map(b => b.commander));
-      CmdPaths.pruneTrails(cmdTrails, c.list);
-      CmdPaths.pruneStalls(cmdStalls, c.list.map(b => b.commander));
+      cmdPruneAll();
       seedCmdTrails(c.list);
     } else {
       // No fresh report: keep what was last shown (see COMMANDERS_KEEP_MS) and say so.
@@ -4764,7 +4828,7 @@
     const pics = Array.isArray(pl) ? pl : [];
     const tr = cmdTracker.trail[bind.commander];
     const trail = tr && first && tr.map === first.map ? tr.pts : [];
-    const heading = lead && lead.map === (first && first.map) ? CmdView.heading(trail, cmdServerNow()) : null;
+    const heading = lead && lead.map === (first && first.map) ? CmdView.heading(trail, cmdNowFor(bind)) : null;
     const zr = cmdZoneRect(first);
     const zonesAround = !!(first && ZONE_BOUNDS && Object.keys(ZONE_BOUNDS).some(k => ZONE_BOUNDS[k] && ZONE_BOUNDS[k].map_id === first.map && ZONE_BOUNDS[k].area_id !== first.zone));
     // What the module reports for the map the party is on (a mob list that is empty still counts: the layers stay selectable).
@@ -4899,7 +4963,7 @@
 
   function drawCmdMap(key) {
     const card = cmdCards.get(key);
-    const bind = state.commanders.list.find(b => b.commander === key);
+    const bind = cmdFindBind(key);
     if (!card || !bind) return;
     const stage = card.querySelector('.cmd-stage'), svg = card.querySelector('svg.cmd-map');
     const pw = stage.clientWidth, ph = stage.clientHeight;
@@ -5079,7 +5143,7 @@
     card.querySelector('.cmd-resume').hidden = ms.follow;
 
     // the run line and the event feed
-    const evs = UnitInfo.eventsOf(cmdEvents, bind.commander), now = cmdServerNow();
+    const evs = UnitInfo.eventsOf(cmdEvents, bind.commander), now = cmdNowFor(bind);
     const run = card.querySelector('.cmd-run');
     run.hidden = !on.runinfo;
     if (on.runinfo) run.textContent = UnitInfo.runInfo(bind, cmdEvents, now).text;
@@ -5114,7 +5178,7 @@
     const stage = card.querySelector('.cmd-stage'), tip = card.querySelector('.cmd-tip');
     const u = ms.tip && ms.units ? ms.units[ms.tip.id] : null;
     if (!u) { tip.hidden = true; if (ms.tip) ms.tip = null; return; }
-    const bind = state.commanders.list.find(b => b.commander === key);
+    const bind = cmdFindBind(key);
     const facts = bind ? cmdMapFacts(bind) : null;
     if (!facts) { tip.hidden = true; return; }
     const ctx = { lead: facts.lead && facts.first && facts.lead.map === facts.first.map ? facts.lead : null, bots: facts.onMap, mobs: facts.mobs };
@@ -5282,6 +5346,7 @@
       const a = e.target.closest && e.target.closest('a.cmd-botlink');
       if (!a || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
+      if (card.classList.contains('cmd-demo')) return; // the simulated bots have no details
       openProfile(parseInt(a.dataset.guid, 10));
     });
     return card;
@@ -5308,28 +5373,29 @@
         : 'The game server has not reported any commander yet (it sends them only while a binding stands).';
     }
 
-    const keys = c.list.map(b => b.commander);
+    const all = cmdAllBinds(), keys = all.map(b => b.commander);
     cmdCards.forEach((card, key) => { if (!keys.includes(key)) { card.remove(); cmdCards.delete(key); delete cmdMaps[key]; delete cmdAvail[key]; } });
-    const nowSec = cmdServerNow();
-    c.list.forEach((bind, i) => {
-      const key = bind.commander;
+    all.forEach((bind, i) => {
+      const key = bind.commander, demo = !!bind.demo, nowSec = cmdNowFor(bind);
       let card = cmdCards.get(key);
       if (!card) { card = newCmdCard(key); cmdCards.set(key, card); }
       if (listEl.children[i] !== card) listEl.insertBefore(card, listEl.children[i] || null);
-      card.classList.toggle('stale', dim);
+      card.classList.toggle('stale', dim && !demo);
+      card.classList.toggle('cmd-demo', demo);
       const word = CmdView.stateWord(bind, CmdView.context(cmdTracker, bind, nowSec));
       const place = cmdPlace(bind);
       const hp = CmdView.headerParts(bind, place, '');
-      setHtml(card.querySelector('.cmd-title'), `${cmdBotLink(bind.commander_guid, hp[0])}${esc(hp[1])} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
+      setHtml(card.querySelector('.cmd-title'), `${demo ? 'DEMO &middot; simulated group' : cmdBotLink(bind.commander_guid, hp[0]) + esc(hp[1])} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
       const rb = UnitInfo.runBrief(bind, nowSec);
       setHtml(card.querySelector('.cmd-badges'),
-        (rb ? `<span class="badge ${rb.paused ? 'badge-warn' : 'badge-info'}" title="The run leader clears the dungeon plan with this party; the commander only watches (observe mode) and may pause, skip or stop.">observe${rb.paused ? ' · paused' : ''}</span>` : '')
+        (demo ? '<span class="badge badge-warn" title="Made up by this page to try the map drawings. Nothing of it comes from the game server.">simulated</span>' : '')
+        + (rb ? `<span class="badge ${rb.paused ? 'badge-warn' : 'badge-info'}" title="The run leader clears the dungeon plan with this party; the commander only watches (observe mode) and may pause, skip or stop.">observe${rb.paused ? ' · paused' : ''}</span>` : '')
         + `<span class="badge ${bind.online ? 'badge-info' : 'badge-error'}">${bind.online ? 'online' : 'offline'}</span>`
         + `<span class="badge ${bind.view ? 'badge-info' : 'badge-warn'}" title="The commander's TBM:VIEW perception feed">feed ${bind.view ? 'on' : 'off'}</span>`);
       const leadBot = CmdView.leadBot(bind);
       setHtml(card.querySelector('.cmd-sub'), `Led by <b>${leadBot ? cmdBotLink(leadBot.guid, leadBot.name) : esc(bind.lead || '?')}</b> &middot; group ${esc(bind.group)}`
         + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}" title="${esc((rb.note ? rb.note + '. ' : '') + (rb.changedAgo != null ? 'Last change ' + CmdView.ageText(rb.changedAgo) + ' ago.' : ''))}">${esc((bind.run.plan ? bind.run.plan + ' · ' : '') + rb.text)}</span>` : ''));
-      const warns = CmdView.warnings(bind, { ageSec: age >= 0 ? age : null });
+      const warns = CmdView.warnings(bind, { ageSec: demo ? 0 : age >= 0 ? age : null });
       setHtml(card.querySelector('.cmd-warn'), warns.length
         ? warns.map(w => `<span class="cmd-pill ${w.level}"><b aria-hidden="true">${w.level === 'bad' ? '!' : '▲'}</b> ${esc(w.text)}</span>`).join('')
         : '<span class="cmd-pill ok"><b aria-hidden="true">✓</b> No warnings</span>');
@@ -5753,6 +5819,7 @@
   setInterval(fetchActivity, 30000);
   initCommanderLink();
   initCmdLayers();
+  initCmdDemo();
   fetchCommanders();
   setInterval(fetchCommanders, 30000);
   setInterval(expireCommanders, 3000);

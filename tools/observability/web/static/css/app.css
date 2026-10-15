@@ -3027,3 +3027,10 @@ select.input {
 .cmd-lstyle label { display: grid; grid-template-columns: 5.4em minmax(0, 1fr) 3.2em; align-items: center; gap: 6px; min-height: 30px; }
 .cmd-lstyle input[type="range"] { width: 100%; min-width: 0; height: 28px; margin: 0; }
 .cmd-lstyle b { font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; }
+
+/* Demo map (simulated group) */
+.cmd-demo-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 12px; padding: 10px 16px; }
+.cmd-demo-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+.cmd-demo-bar .empty-hint { margin: 0; }
+.cmd-demo-note { margin-left: auto; }
+.cmd-card.cmd-demo { border: 1px dashed var(--accent-amber, #d29922); }
