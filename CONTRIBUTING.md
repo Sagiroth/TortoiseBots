@@ -48,3 +48,19 @@ Keep pull requests small enough to review. Include:
 
 If a full build or runtime test is not available, say so clearly rather than
 leaving the reviewer to guess.
+
+## Licence of contributions
+
+TortoiseBots is licensed under **AGPL-3.0-or-later** (see [`LICENSE`](LICENSE)
+and [`LICENCE.md`](LICENCE.md)). By opening a pull request or otherwise
+submitting a contribution, you agree that:
+
+- your contribution is licensed under AGPL-3.0-or-later, the same terms as the
+  rest of the project;
+- you wrote it yourself, or you have the right to submit it under these terms;
+- code copied or ported from another project keeps its original copyright and
+  licence notice, is compatible with AGPL-3.0, and is recorded in
+  [`docs/PROVENANCE.md`](docs/PROVENANCE.md).
+
+Do not submit code whose licence forbids this (proprietary, "non-commercial
+only", GPL-2.0-only without an "or later" grant, or no licence at all).

@@ -8,6 +8,32 @@ donor lineages. The licence that applies to a file follows its retained notice,
 the donor grant and the project's own grant for original work; these must not be
 collapsed into a blanket "GPL-2.0" label without checking the exact variant.
 
+### Licence for original TortoiseBots work
+
+Original TortoiseBots work — code, SQL, configuration, documentation, tools and
+addons written for this repository — is copyright © Sagiroth and the
+TortoiseBots contributors, and is licensed under the **GNU Affero General Public
+License, version 3 or (at your option) any later version (AGPL-3.0-or-later)**.
+The full text is in [`LICENSE`](LICENSE).
+
+In practice: anyone who distributes TortoiseBots or a modified version, **or
+runs a modified version on a server that players connect to**, must offer those
+users the complete corresponding source code of that version under the same
+licence (AGPL-3.0 sections 5, 6 and 13). Closed-source forks and private
+modified servers without published source are not permitted.
+
+### Contributions
+
+Every contribution submitted to this repository (pull request, patch, commit,
+or file attached to an issue) is licensed by its author under
+AGPL-3.0-or-later, the same terms as the project ("inbound = outbound"). By
+submitting a contribution you confirm that you wrote it or otherwise have the
+right to license it under these terms. Code taken from another project must
+keep its original notice and be compatible with AGPL-3.0 — see
+[`CONTRIBUTING.md`](CONTRIBUTING.md#licence-of-contributions).
+
+### Donor code
+
 Every file ported from a donor must retain its original copyright and licence
 notice. See `ai/playerbot/` headers,
 [`docs/PROVENANCE.md`](docs/PROVENANCE.md), and
