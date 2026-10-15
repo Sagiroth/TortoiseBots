@@ -59,12 +59,6 @@ assert.strictEqual(C.stateWord(b, { nowSec: 1000 }), "wiped");
 b = party();
 assert.strictEqual(C.stateWord(b, { nowSec: 1000, hpDropAt: 995 }), "fighting");
 assert.strictEqual(C.stateWord(b, { nowSec: 1000, hpDropAt: 900 }), "idle");
-// the run leader's run: paused shows as the state and as a warning with the reason
-const paused = { bots: [{ name: "A", alive: true }], orders: [], run: { state: "paused", note: "a unit survived 3 pulls" } };
-assert.strictEqual(C.stateWord(paused, { nowSec: 1000 }), "run paused");
-assert.deepStrictEqual(C.warnings(paused, {}).filter((w) => w.kind === "runpaused").map((w) => w.text), ["Run paused: a unit survived 3 pulls"]);
-assert.deepStrictEqual(C.warnings({ bots: [], orders: [], run: { state: "paused", note: "-" } }, {}).filter((w) => w.kind === "runpaused").map((w) => w.text), ["Run paused: no reason given"]);
-assert.strictEqual(C.warnings({ bots: [], orders: [], run: { state: "running" } }, {}).filter((w) => w.kind === "runpaused").length, 0);
 // a module that reports the AI state (st: c = combat) says "fighting" itself, with no HP drop needed
 assert.strictEqual(C.stateWord({ bots: [{ name: "A", alive: true, st: "c" }], orders: [] }, { nowSec: 1000 }), "fighting");
 assert.strictEqual(C.stateWord({ bots: [{ name: "A", alive: false, st: "c" }, { name: "B", alive: true, st: "n" }], orders: [] }, { nowSec: 1000 }), "idle");

@@ -17,9 +17,8 @@
 // every character is doing and answer a hover over any unit.
 //
 // Map drawing (additive, same rule): the spell a bot is casting also names its target (a healer's heal target, a crowd-control
-// caster's mob), the game objects the bots have seen near them (doors, chests, altars, gongs: type and state, capped), and, for a run
-// leader's run, the plan's steps of the current section (capped, rebuilt only when the step moves). The dashboard draws paths,
-// run steps, objects, stall spots and combat lines from these and from its own memory of the 2 s reports.
+// caster's mob) and the game objects the bots have seen near them (doors, chests, altars, gongs: type and state, capped). The
+// dashboard draws paths, objects, stall spots and combat lines from these and from its own memory of the 2 s reports.
 //
 // Cost rule: nothing here runs per bot tick. The emitter asks for the
 // bindings once per 2 s snapshot cycle, and only while at least one binding
@@ -56,10 +55,6 @@ constexpr size_t kMaxMobName = 24;
 constexpr size_t kMaxCastName = 24;     // a spell name
 constexpr size_t kMaxActionName = 32;   // the bot's newest action name
 constexpr size_t kMaxTargetName = 24;
-constexpr size_t kMaxRunWord = 32;      // plan, state, leg, kind and phase names of a run
-constexpr size_t kMaxRunNote = 120;     // what the run does now, or why it paused
-constexpr size_t kMaxRunSteps = 20;     // plan steps listed per run (the current section's next ones)
-constexpr size_t kMaxRunStepsPerPayload = 32; // all bindings together
 constexpr size_t kMaxObjectsPerBinding = 16;
 constexpr size_t kMaxObjectsPerPayload = 24;
 constexpr size_t kMaxObjectName = 24;
@@ -185,19 +180,6 @@ struct MobInfo
     std::string cast;      // name of the spell it is casting, empty = none
 };
 
-// One step of the run leader's plan, as the dashboard draws it (a dashed route for moves, numbered circles for pulls, marks for the rest).
-struct RunStepInfo
-{
-    uint32_t index = 0;    // 1-based position in the plan (the "step" of the run counts the same way)
-    std::string kind;      // move, move_direct, pull, boss, loot, open, use_item, wait_object, wait_clear, rest, ritual
-    float x = 0.0f;
-    float y = 0.0f;
-    float radius = 0.0f;   // pull, boss and wait_clear: the area the step cares about
-    uint32_t entry = 0;    // the creature or object the step is about (a boss, a chest), 0 = none
-    std::string name;      // that creature's name when known, empty = unknown
-    bool skipped = false;  // the step was left out with `.bot run skip`
-};
-
 // A game object a bound bot has seen near it. type: d door, c chest, b button or lever, g goober (gong, altar, switch), r ritual, o other.
 // state: r ready (closed, untouched), a active (open, pressed), u used (looted or spent).
 struct ObjectInfo
@@ -209,42 +191,6 @@ struct ObjectInfo
     float y = 0.0f;
     char type = 'o';
     char state = 'r';
-};
-
-// Which steps of a plan are listed: the current section's (leg's) steps, at most `cap`. legFirst..legEnd is the 0-based half-open range
-// of the section in the plan's step list, `current` the 0-based step the run stands at (it may lie past the end of a finished run).
-// A section longer than the cap shows the window that keeps the current step a few steps from its start, so what is coming up is
-// listed and the last cleared steps stay in sight. Returns {first, end} 0-based, half-open; empty when the section is.
-inline std::pair<size_t, size_t> RunStepWindow(size_t legFirst, size_t legEnd, size_t current, size_t cap = kMaxRunSteps)
-{
-    if (legEnd <= legFirst || cap == 0)
-        return {legFirst, legFirst};
-    size_t const total = legEnd - legFirst;
-    if (total <= cap)
-        return {legFirst, legEnd};
-    size_t const keepBehind = cap / 4;
-    size_t const cur = current < legFirst ? legFirst : (current >= legEnd ? legEnd - 1 : current);
-    size_t first = cur > legFirst + keepBehind ? cur - keepBehind : legFirst;
-    if (first + cap > legEnd)
-        first = legEnd - cap;
-    return {first, first + cap};
-}
-
-// The run leader's run of a binding (`.bot run`, behind AiPlayerbot.DungeonSelfClear): where it stands in the dungeon plan. Only a binding
-// with a run carries it; the dashboard shows it as the "observe" mode of the dungeon modes (the bots clear, the commander watches).
-struct RunInfo
-{
-    bool present = false;
-    std::string plan;       // the plan's name ("uldaman")
-    std::string state;      // running, paused or done
-    uint32_t step = 0;      // 1-based step shown (0 before the first)
-    uint32_t steps = 0;     // steps in the plan
-    std::string leg;        // the current leg's name (the section)
-    std::string kind;       // the step kind (move, pull, boss ...)
-    std::string phase;      // what the step is doing (walk, pull, rest ...)
-    std::string note;       // what it does now, or why it paused
-    int64_t changedAt = 0;  // unix seconds the step, phase, state or note last changed
-    std::vector<RunStepInfo> stepList; // the current section's steps (see RunStepWindow); empty = not reported
 };
 
 // What a bound bot is doing, read next to the view snapshot (same cadence, no extra scan).
@@ -284,7 +230,6 @@ struct BindingRef
     std::vector<MobInfo> mobs;
     std::vector<BotExtra> botExtras; // one per bot read from the view snapshot, matched by id
     int64_t boundAt = 0;             // unix seconds the binding was first seen standing, 0 = unknown
-    RunInfo run;                     // the run leader's run of this binding, when it has one
     bool objectsReported = false;    // the object list was read (it may be empty)
     std::vector<ObjectInfo> objects; // game objects the bots have seen, on the lead's map
 };
@@ -333,7 +278,6 @@ struct BindingInfo
     uint32_t mobsMap = 0;
     std::vector<MobInfo> mobs;
     int64_t boundAt = 0;
-    RunInfo run;
     bool objectsReported = false;
     std::vector<ObjectInfo> objects;
 };
@@ -380,7 +324,6 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
        << ",\"type\":\"COMMANDERS\",\"commanders\":[";
     size_t shown = 0;
     size_t mobsTotal = 0;
-    size_t stepsTotal = 0;
     size_t objectsTotal = 0;
     for (BindingInfo const& b : bindings)
     {
@@ -446,44 +389,6 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
             ss << "}";
         }
         ss << "]";
-        if (b.run.present)
-        {
-            RunInfo const& r = b.run;
-            ss << ",\"run\":{\"plan\":\"" << JsonEscape(Clip(r.plan, kMaxRunWord)) << "\""
-               << ",\"state\":\"" << JsonEscape(Clip(r.state, kMaxRunWord)) << "\""
-               << ",\"step\":" << r.step << ",\"steps\":" << r.steps
-               << ",\"leg\":\"" << JsonEscape(Clip(r.leg, kMaxRunWord)) << "\""
-               << ",\"kind\":\"" << JsonEscape(Clip(r.kind, kMaxRunWord)) << "\""
-               << ",\"phase\":\"" << JsonEscape(Clip(r.phase, kMaxRunWord)) << "\""
-               << ",\"note\":\"" << JsonEscape(Clip(r.note, kMaxRunNote)) << "\""
-               << ",\"changed\":" << r.changedAt;
-            if (!r.stepList.empty())
-            {
-                ss << ",\"plan_steps\":[";
-                size_t listed = 0;
-                for (RunStepInfo const& st : r.stepList)
-                {
-                    if (listed >= kMaxRunSteps || stepsTotal >= kMaxRunStepsPerPayload)
-                        break;
-                    if (listed++)
-                        ss << ",";
-                    ++stepsTotal;
-                    ss << "{\"i\":" << st.index << ",\"k\":\"" << JsonEscape(Clip(st.kind, kMaxRunWord)) << "\""
-                       << ",\"x\":" << st.x << ",\"y\":" << st.y;
-                    if (st.radius > 0.0f)
-                        ss << ",\"r\":" << st.radius;
-                    if (st.entry)
-                        ss << ",\"e\":" << st.entry;
-                    if (!st.name.empty())
-                        ss << ",\"n\":\"" << JsonEscape(Clip(st.name, kMaxMobName)) << "\"";
-                    if (st.skipped)
-                        ss << ",\"sk\":true";
-                    ss << "}";
-                }
-                ss << "]";
-            }
-            ss << "}";
-        }
         if (b.commanderPlaced)
             ss << ",\"commander_pos\":{\"map\":" << b.commanderMap << ",\"x\":" << b.commanderX << ",\"y\":" << b.commanderY << "}";
         if (b.mobsReported)

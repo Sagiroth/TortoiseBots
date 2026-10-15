@@ -553,7 +553,6 @@ type CommanderBinding struct {
 	MobsMap      uint32         `json:"mobs_map,omitempty"`      // the map the mobs are on (the lead's)
 	Mobs         []CommanderMob `json:"mobs"`                    // hostile units near the lead; null = not reported, [] = reported, none near
 	BoundAt      int64          `json:"bound_at,omitempty"`      // unix seconds the binding was first seen standing (the run timer starts here); absent from an older module
-	Run          *CommanderRun  `json:"run,omitempty"`           // the run leader's run of this binding ("observe" mode); absent when it has none or from an older module
 
 	// Doors, chests, altars and gongs the bots have seen near them (on the map of MobsMap), capped; null = not reported, [] = reported, none seen.
 	Objects []CommanderObject `json:"objects"`
@@ -568,34 +567,6 @@ type CommanderObject struct {
 	Y     float64 `json:"y"`
 	Type  string  `json:"type"`  // d door, c chest, b button or lever, g goober (gong, altar, switch), r ritual, o other
 	State string  `json:"state"` // r ready (closed, untouched), a active (open, pressed), u used (looted or spent)
-}
-
-// CommanderRunStep is one step of the run's plan in the current section: where it is and what it is for.
-type CommanderRunStep struct {
-	Index   uint32  `json:"i"` // 1-based position in the plan (the run's "step" counts the same way)
-	Kind    string  `json:"k"` // move, move_direct, pull, boss, loot, open, use_item, wait_object, wait_clear, rest, ritual
-	X       float64 `json:"x"`
-	Y       float64 `json:"y"`
-	Radius  float64 `json:"r,omitempty"`  // pull, boss, wait_clear: the area the step cares about
-	Entry   uint32  `json:"e,omitempty"`  // the creature or object the step is about
-	Name    string  `json:"n,omitempty"`  // its name when the module knows it
-	Skipped bool    `json:"sk,omitempty"` // left out with `.bot run skip`
-}
-
-// CommanderRun is where the run leader (`.bot run`) stands in a dungeon plan for one binding.
-type CommanderRun struct {
-	Plan    string `json:"plan"`
-	State   string `json:"state"`   // running, paused or done
-	Step    uint32 `json:"step"`    // 1-based step shown (0 before the first)
-	Steps   uint32 `json:"steps"`   // steps in the plan
-	Leg     string `json:"leg"`     // the current leg's name: the section
-	Kind    string `json:"kind"`    // move, pull, boss, loot, open ...
-	Phase   string `json:"phase"`   // what the step is doing
-	Note    string `json:"note"`    // what it does now, or why it paused
-	Changed int64  `json:"changed"` // unix seconds the step, phase, state or note last changed
-
-	// The plan's steps of the current section (the next ~20), from a module that reports them; absent otherwise.
-	PlanSteps []CommanderRunStep `json:"plan_steps,omitempty"`
 }
 
 // CommanderPos is the commander character's own position.

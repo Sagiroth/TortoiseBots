@@ -42,7 +42,7 @@
   const B = partyAt(T.bossFight[0]), packBoss = (fwd, side) => ahead(B, fwd, side);
   const R = partyAt(70), restSpot = ahead(R, 0, 0);
   const DOOR = ahead(partyAt(T.door), 12, 0), LEVER = ahead(partyAt(T.lever), 0, 14), CHEST = ahead(B, 30, 6), GONG = ahead(B, 22, -16);
-  const PACK_IDLE = ahead(partyAt(56), 8, 40); // a pack off to the side the run skips
+  const PACK_IDLE = ahead(partyAt(56), 8, 40); // a pack off to the side the party skips
 
   // ---- the party
   const BOTS = [
@@ -172,42 +172,10 @@
     ];
   }
 
-  // ---- the run
-  const STEPS = [
-    { i: 1, k: "move", at: () => partyAt(0) },
-    { i: 2, k: "move", at: () => partyAt(18) },
-    { i: 3, k: "pull", at: () => packA(18, 0), r: 18, e: 4850, n: "Shadowforge Cultist" },
-    { i: 4, k: "pull", at: () => PACK_IDLE, r: 14, e: 4860, n: "Stone Sentry", sk: true },
-    { i: 5, k: "rest", at: () => restSpot, r: 20 },
-    { i: 6, k: "open", at: () => DOOR, e: 2087, n: "Ancient Door" },
-    { i: 7, k: "move_direct", at: () => partyAt(92) },
-    { i: 8, k: "pull", at: () => packBoss(22, 0), r: 22, e: 6910, n: "Stonevault Warden" },
-    { i: 9, k: "boss", at: () => packBoss(24, 0), r: 30, e: 6906, n: "Revelosh" },
-    { i: 10, k: "loot", at: () => CHEST, e: 2089, n: "Ancient Treasure" },
-    { i: 11, k: "use_item", at: () => GONG, e: 2090, n: "Gong of Archaedas" },
-    { i: 12, k: "move", at: () => partyAt(137) },
-  ];
-  const STEP_FROM = [[0, 1], [10, 2], [24, 3], [46, 5], [80, 6], [84, 7], [96, 8], [100, 9], [126, 10], [130, 11], [134, 12]];
-  const PHASE = ["", "walking", "walking", "fighting", "", "resting", "opening", "walking", "pulling", "fighting", "looting", "using", "walking"];
-
-  function runAt(t, start) {
-    const step = STEP_FROM.reduce((s, r) => (t >= r[0] ? r[1] : s), 1), st = STEPS[step - 1];
-    const paused = within(t, T.rest) || t >= T.wipe;
-    const changedLt = paused ? (t >= T.wipe ? T.wipe : T.rest[0]) : STEP_FROM.filter((r) => r[0] <= t).pop()[0];
-    return {
-      plan: "uldaman-demo", state: paused ? "paused" : "running", step, steps: STEPS.length, leg: "stonekeepers hall", kind: st.k,
-      phase: paused ? "waiting" : PHASE[step],
-      note: t >= T.wipe ? "party wiped, waiting for the release" : within(t, T.rest) ? "waiting for mana: healer 40%" : "",
-      changed: Math.floor(start + changedLt),
-      plan_steps: STEPS.map((s) => { const p = s.at(), o = { i: s.i, k: s.k, x: round1(p.x), y: round1(p.y) }; if (s.r) o.r = s.r; if (s.e) o.e = s.e; if (s.n) o.n = s.n; if (s.sk) o.sk = true; return o; }),
-    };
-  }
-
   // ---- the orders the commander gave (oldest first, only those already given in this loop)
   function ordersAt(t, start) {
     const bad = ahead(partyAt(T.refused), 40, 30);
     const all = [
-      [2, "run", "start uldaman-demo", true, "ok"],
       [24, "pull", "entry:4850", true, "ok"],
       [28, "cc", "Shadowforge Ambusher", true, "ok: polymorph"],
       [62, "rest", "", true, "ok"],
@@ -230,7 +198,7 @@
     return {
       commander: COMMANDER, commander_guid: 9000, online: true, view: true, group: 4242, lead: "Simtank", demo: true, bots,
       orders: ordersAt(t, base), commander_pos: { map: MAP, x: round1(cp.x), y: round1(cp.y) }, mobs_map: MAP, mobs, bound_at: Math.floor(start),
-      run: runAt(t, base), objects: objectsAt(t),
+      objects: objectsAt(t),
     };
   }
 

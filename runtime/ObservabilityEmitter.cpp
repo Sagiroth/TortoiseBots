@@ -1456,7 +1456,6 @@ void ObservabilityEmitter::EmitCommanders()
         if (!since)
             since = static_cast<int64_t>(time(nullptr));
         info.boundAt = since;
-        info.run = ref.run;
         for (Player* bot : ref.bots)
         {
             if (!bot || !bot->IsInWorld() || info.bots.size() >= CommanderTelemetry::kMaxBotsPerBinding)

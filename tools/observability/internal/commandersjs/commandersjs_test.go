@@ -40,7 +40,7 @@ func TestPartyRowsJS(t *testing.T) {
 	runCheck(t, "partyrows_check.js", "../../web/static/js/app.js")
 }
 
-// TestPathsJS runs paths_check.js: bot trails and their stored history, run steps and their route, stall spots, objects, aggro radius, heal
+// TestPathsJS runs paths_check.js: bot trails and their stored history, stall spots, objects, aggro radius, heal
 // and crowd-control lines.
 func TestPathsJS(t *testing.T) {
 	runCheck(t, "paths_check.js", "../../web/static/js/paths.js")

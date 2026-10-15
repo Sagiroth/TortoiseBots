@@ -4579,7 +4579,7 @@
   const cmdPics = new Map();  // map id -> [picture layer] | 'loading' | null (the folder has none; asked again after a while)
   const cmdPicMiss = new Map();
   const cmdTrails = CmdPaths.newTrails(); // every bot's path (the lead's is in cmdTracker.trail), kept from the 2 s reports
-  const cmdStalls = CmdPaths.newStalls(); // where the run paused or an order was refused, fixed when first seen
+  const cmdStalls = CmdPaths.newStalls(); // where an order was refused, fixed when first seen
   let cmdTrailsLoading = false;
 
   // Seconds since the game server last reported, by this browser's clock (-1: never).
@@ -4682,12 +4682,12 @@
     if (state.activeTab === 'commanders') renderCommanders();
   }
 
-  // What the browser remembers of a binding between reports: every bot's path and the places where the run stalled or an order was refused.
+  // What the browser remembers of a binding between reports: every bot's path and the places where an order was refused.
   function cmdNotePaths(bind, nowSec) {
     CmdPaths.noteTrails(cmdTrails, bind, nowSec);
     const lead = CmdView.leadBot(bind), tr = cmdTracker.trail[bind.commander];
     const leadPts = lead && tr && tr.map === lead.map ? tr.pts : [];
-    CmdPaths.noteStalls(cmdStalls, bind, nowSec, leadPts, lead ? { x: lead.x, y: lead.y } : null, CmdPaths.runSteps(bind.run), lead ? lead.map : null);
+    CmdPaths.noteStalls(cmdStalls, bind, nowSec, leadPts, lead ? { x: lead.x, y: lead.y } : null, lead ? lead.map : null);
   }
 
   // A binding the page has not asked the daemon about yet gets its short stored history once: the paths then start with what happened
@@ -4847,8 +4847,7 @@
       + '<span><i class="lead"></i>Lead</span><span><i class="dead"></i>Dead</span>'
       + (o.trail ? '<span><i class="trail"></i>Lead\'s path</span>' : '')
       + (o.membertrails ? '<span><i class="mtrail"></i>Group paths</span>' : '')
-      + (o.runsteps ? '<span><i class="route"></i>Run route</span><span><i class="lstep"></i>Pull / boss step</span>' : '')
-      + (o.stalls ? '<span class="lic">stalled / refused <svg viewBox="-6 -6 12 12" class="ic-x"><path d="M-3.4 -3.4L3.4 3.4M3.4 -3.4L-3.4 3.4"/></svg></span>' : '')
+      + (o.stalls ? '<span class="lic">refused <svg viewBox="-6 -6 12 12" class="ic-x"><path d="M-3.4 -3.4L3.4 3.4M3.4 -3.4L-3.4 3.4"/></svg></span>' : '')
       + (o.objects ? '<span class="lic">door <svg viewBox="-6 -6 12 12" class="ic-door">' + CMD_MAP_ICONS.door + '</svg></span><span class="lic">chest <svg viewBox="-6 -6 12 12" class="ic-chest">' + CMD_MAP_ICONS.chest + '</svg></span>'
         + '<span class="lic">lever <svg viewBox="-6 -6 12 12" class="ic-lever">' + CMD_MAP_ICONS.lever + '</svg></span><span class="lic">altar / gong <svg viewBox="-6 -6 12 12" class="ic-gong">' + CMD_MAP_ICONS.gong + '</svg></span>' : '')
       + (o.healline ? '<span><i class="lheal"></i>Heals</span>' : '')
@@ -4913,21 +4912,20 @@
     const mobs = first ? CmdView.mobsOf(bind, mapId) : [];
     const reported = !!first && Array.isArray(bind.mobs) && bind.mobs_map === mapId;
     const commanderAt = first ? CmdView.commanderPlace(bind, mapId) : null;
-    // What the drawing layers have: the other bots' paths, the plan steps of the run, stall spots, the objects the bots have seen.
-    const steps = CmdPaths.runSteps(bind.run);
+    // What the drawing layers have: the other bots' paths, stall spots, the objects the bots have seen.
     const stalls = first ? CmdPaths.stallsOf(cmdStalls, bind.commander, mapId) : [];
     const objs = first ? CmdPaths.objectsOf(bind, mapId) : [];
     const objsReported = !!first && Array.isArray(bind.objects) && bind.mobs_map === mapId;
     const ctx = {
       memberTrails: !!first && CmdPaths.memberTrails(cmdTrails, bind, mapId, CmdPaths.TRAIL_MAX).length > 0,
-      runSteps: steps.length > 0, stalls: stalls.length > 0, objects: objsReported,
+      stalls: stalls.length > 0, objects: objsReported,
       picture: pics.length > 0, zone: !!zr, zonesAround, bots: onMap.length > 0, lead: !!lead && onMap.indexOf(lead) >= 0,
       trail: trail.length >= 2, heading: !!heading, healer: onMap.some(b => b.role === 'healer' && b.alive !== false),
       commanderPos: !!commanderAt, mobs: reported, mobTargets: reported, botTargets: reported && onMap.some(b => !!b.id),
       activity: onMap.some(b => b.st != null) || mobs.some(m => m.cast || m.cc),
       events: UnitInfo.eventsOf(cmdEvents, bind.commander).length > 0,
     };
-    return { lead, first, onMap, pics, trail, heading, zr, ctx, mobs, commanderAt, steps, stalls, objs };
+    return { lead, first, onMap, pics, trail, heading, zr, ctx, mobs, commanderAt, stalls, objs };
   }
 
   // A clock time for a label on the path: the game server's seconds in the browser's locale.
@@ -4935,7 +4933,7 @@
     return new Date(sec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
 
-  // ---- the drawing layers of a card's map: paths, run steps, stall spots, objects, combat lines ----
+  // ---- the drawing layers of a card's map: paths, stall spots, objects, combat lines ----
   // Each builder returns SVG for the map's dynamic group. c = {f (number format), k (drawing units per pixel), units (the hover table)}.
   // Every server string (names, reasons) goes through esc(); the lines' opacity and thickness come from the layers panel.
 
@@ -4964,44 +4962,7 @@
     return g;
   }
 
-  // The run's route (dashed: grey where it has been, bright ahead), a thin line from the lead to the step it is on, and the marks:
-  // numbered circles for pulls and bosses (cleared / next / skipped), icons for loot, doors, rituals and stops, small dots on moves.
-  function cmdRunStepsSvg(c, steps, lead) {
-    let g = '';
-    CmdPaths.routeSegments(steps).forEach(sg => {
-      g += `<polyline class="route ${sg.done ? 'done' : 'ahead'}" style="${cmdLineStyle('runsteps', sg.done ? 2 : 2.6, sg.done ? 0.6 : 1)}" points="${sg.points.map(p => cmdPt(c, p.x, p.y)).join(' ')}"/>`;
-    });
-    const next = steps.find(x => x.state === 'next');
-    if (lead && next) {
-      const a = CmdView.project(lead.x, lead.y), b = CmdView.project(next.x, next.y);
-      g += `<line class="route toward" style="${cmdLineStyle('runsteps', 1.4, 0.8)}" x1="${c.f(a.x)}" y1="${c.f(a.y)}" x2="${c.f(b.x)}" y2="${c.f(b.y)}"/>`;
-    }
-    const k = c.k;
-    steps.forEach(st => {
-      const p = CmdView.project(st.x, st.y), uid = 's:' + st.i;
-      c.units[uid] = { kind: 's', obj: st };
-      g += `<g class="rstep ${esc(st.state)} k-${esc(st.k)}" data-u="${esc(uid)}"><circle class="hit" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(12 * k)}"/>`;
-      if (st.k === 'pull' || st.k === 'boss') {
-        const r = (st.k === 'boss' ? 11 : 9) * k;
-        if (st.state === 'next' && st.r) g += `<circle class="steparea" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(st.r)}"/>`;
-        g += `<circle class="stepdot" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(r)}"/>`
-          + `<text class="stepnum" x="${c.f(p.x)}" y="${c.f(p.y + 3.6 * k)}" style="font-size:${c.f((st.i > 99 ? 8.5 : 10) * k)}px">${esc(st.i)}</text>`;
-        if (st.state === 'skipped') g += `<line class="stepskip" x1="${c.f(p.x - r)}" y1="${c.f(p.y + r)}" x2="${c.f(p.x + r)}" y2="${c.f(p.y - r)}"/>`;
-        if (st.k === 'boss') {
-          g += cmdMapIcon('crown', p.x, p.y - 17 * k, 12 * k).replace('class="ic ic-crown"', 'class="ic ic-crown crownmark"');
-          if (st.n) g += `<text class="stepname" x="${c.f(p.x + r + 4 * k)}" y="${c.f(p.y + 4 * k)}" style="font-size:${c.f(11 * k)}px;stroke-width:${c.f(3 * k)}px">${esc(st.n)}</text>`;
-        }
-      } else if (CmdPaths.stepIcon(st.k)) {
-        g += cmdMapIcon(CmdPaths.stepIcon(st.k), p.x, p.y, 13 * k);
-      } else {
-        g += `<circle class="stepmove" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(2.8 * k)}"/>`;
-      }
-      g += '</g>';
-    });
-    return g;
-  }
-
-  // A red cross where the run paused or an order was refused, with the reason beside the newest few; hover or tap for the whole text.
+  // A red cross where an order was refused, with the reason beside the newest few; hover or tap for the whole text.
   function cmdStallsSvg(c, stalls) {
     let g = '';
     const k = c.k, d = 5 * k;
@@ -5047,7 +5008,7 @@
     if (!pw || !ph) return; // the tab is hidden
     const ms = cmdMaps[key] || (cmdMaps[key] = { follow: true, view: null, userScale: null, pic: '' });
     const facts = cmdMapFacts(bind);
-    const { lead, first, onMap, pics, trail, heading, zr, mobs, commanderAt, steps, stalls, objs } = facts;
+    const { lead, first, onMap, pics, trail, heading, zr, mobs, commanderAt, stalls, objs } = facts;
     const avail = MapLayers.availability(facts.ctx);
     cmdAvail[key] = avail;
     const on = MapLayers.active(cmdLayers, avail);
@@ -5099,7 +5060,6 @@
     // units: every thing that can be hovered gets a key; the hover box looks it up here, so it follows the 2 s refresh.
     const units = ms.units = {};
     const dc = { f, k, units };
-    if (on.runsteps) g += cmdRunStepsSvg(dc, steps, lead && first && lead.map === first.map ? lead : null);
     if (on.membertrails && first) g += cmdMemberTrailsSvg(dc, bind, first.map);
     if (on.trail && trail.length >= 2) g += cmdTrailSvg(dc, 'trail', 'trail', trail.slice(-cmdLayers.trailLen), 1, 3);
     if (on.trailtime) {
@@ -5262,8 +5222,7 @@
     const d = u.kind === 'b' ? UnitInfo.describeBot(u.obj, ctx) : u.kind === 'm' ? UnitInfo.describeMob(u.obj, ctx)
       : u.kind === 'c' ? UnitInfo.describeCommander(u.obj.name, u.obj, ctx)
       : u.kind === 'o' ? UnitInfo.describeObject(u.obj, ctx)
-      : u.kind === 's' ? UnitInfo.describeNote('Run step ' + u.obj.i, CmdPaths.stepText(u.obj), 'event')
-      : u.kind === 'x' ? UnitInfo.describeNote(u.obj.kind === 'pause' ? 'Run paused here' : 'Refused here', CmdPaths.stallText(u.obj), 'hostile')
+      : u.kind === 'x' ? UnitInfo.describeNote('Refused here', CmdPaths.stallText(u.obj), 'hostile')
       : UnitInfo.describeEvent(u.obj, bind.bound_at > 0 ? bind.bound_at : UnitInfo.firstSeen(cmdEvents, key));
     const sig = JSON.stringify(d);
     if (tip._k !== sig) {
@@ -5463,15 +5422,12 @@
       const place = cmdPlace(bind);
       const hp = CmdView.headerParts(bind, place, '');
       setHtml(card.querySelector('.cmd-title'), `${demo ? 'DEMO &middot; simulated group' : cmdBotLink(bind.commander_guid, hp[0]) + esc(hp[1])} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
-      const rb = UnitInfo.runBrief(bind, nowSec);
       setHtml(card.querySelector('.cmd-badges'),
         (demo ? '<span class="badge badge-warn" title="Made up by this page to try the map drawings. Nothing of it comes from the game server.">simulated</span>' : '')
-        + (rb ? `<span class="badge ${rb.paused ? 'badge-warn' : 'badge-info'}" title="The run leader clears the dungeon plan with this party; the commander only watches (observe mode) and may pause, skip or stop.">observe${rb.paused ? ' · paused' : ''}</span>` : '')
         + `<span class="badge ${bind.online ? 'badge-info' : 'badge-error'}">${bind.online ? 'online' : 'offline'}</span>`
         + `<span class="badge ${bind.view ? 'badge-info' : 'badge-warn'}" title="The commander's TBM:VIEW perception feed">feed ${bind.view ? 'on' : 'off'}</span>`);
       const leadBot = CmdView.leadBot(bind);
-      setHtml(card.querySelector('.cmd-sub'), `Led by <b>${leadBot ? cmdBotLink(leadBot.guid, leadBot.name) : esc(bind.lead || '?')}</b> &middot; group ${esc(bind.group)}`
-        + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}" title="${esc((rb.note ? rb.note + '. ' : '') + (rb.changedAgo != null ? 'Last change ' + CmdView.ageText(rb.changedAgo) + ' ago.' : ''))}">${esc((bind.run.plan ? bind.run.plan + ' · ' : '') + rb.text)}</span>` : ''));
+      setHtml(card.querySelector('.cmd-sub'), `Led by <b>${leadBot ? cmdBotLink(leadBot.guid, leadBot.name) : esc(bind.lead || '?')}</b> &middot; group ${esc(bind.group)}`);
       const warns = CmdView.warnings(bind, { ageSec: demo ? 0 : age >= 0 ? age : null });
       setHtml(card.querySelector('.cmd-warn'), warns.length
         ? warns.map(w => `<span class="cmd-pill ${w.level}"><b aria-hidden="true">${w.level === 'bad' ? '!' : '▲'}</b> ${esc(w.text)}</span>`).join('')

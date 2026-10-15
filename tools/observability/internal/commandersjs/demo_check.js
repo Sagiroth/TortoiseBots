@@ -25,7 +25,7 @@ vm.createContext(ctx);
 ["commanders.js", "maplayers.js", "unitinfo.js", "paths.js", "demo.js"].forEach((f) => vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f }));
 vm.runInContext(
   [grab("esc"), grabConst("CMD_MAP_ICONS"), grabConst("CMD_OBJECT_ICON"), grab("cmdMapIcon"), grab("cmdLineStyle"), grabConst("cmdPt"), grab("cmdTrailSvg"),
-    grab("cmdMemberTrailsSvg"), grab("cmdRunStepsSvg"), grab("cmdStallsSvg"), grab("cmdObjectsSvg"), grab("cmdLineSvg"), grab("cmdNotePaths")].join("\n") +
+    grab("cmdMemberTrailsSvg"), grab("cmdStallsSvg"), grab("cmdObjectsSvg"), grab("cmdLineSvg"), grab("cmdNotePaths")].join("\n") +
   "\nvar cmdLayers = MapLayers.defaults(); var cmdTrails = CmdPaths.newTrails(); var cmdStalls = CmdPaths.newStalls(); var cmdTracker = CmdView.newTracker(); var cmdEvents = UnitInfo.newEvents();" +
   "\ncmdLayers.trailLen = 240;", ctx);
 const same = (a, b, m) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b), m);
@@ -56,7 +56,7 @@ for (let sec = 1000; sec <= 1000 + 2 * D.LOOP; sec += 2) {
   const dc = () => ({ f, k: 0.5, units: {} });
   const cls = (c) => mobs.filter((m) => V.mobClass(m) === c).length;
   const marks = U.targetMarks(mobs, onMap);
-  const steps = P.runSteps(bind.run), stalls = P.stallsOf(ctx.cmdStalls, bind.commander, mapId);
+  const stalls = P.stallsOf(ctx.cmdStalls, bind.commander, mapId);
   mark("bg", 1); mark("grid", 1); mark("scale", 1);
   mark("bots", onMap.length); mark("botnames", onMap.length); mark("lead", lead ? 1 : 0);
   mark("trail", trail.length >= 2 ? run("cmdTrailSvg({f: " + f.toString() + ", k: 0.5, units: {}}, 'trail', 'trail', trail, 1, 3).length") : 0);
@@ -79,8 +79,6 @@ for (let sec = 1000; sec <= 1000 + 2 * D.LOOP; sec += 2) {
   mobs.forEach((m) => U.statusIcons(m, "mob").forEach((i) => { icons[i.icon] = 1; }));
   Object.keys(icons).forEach((i) => { seen["icon:" + i] = (seen["icon:" + i] || 0) + 1; });
   mark("statusicons", Object.keys(icons).length);
-  ctx.steps = steps; ctx.dcx = dc();
-  mark("runsteps", run("cmdRunStepsSvg(dcx, steps, lead)").length);
   ctx.stalls = stalls; ctx.dcx = dc();
   mark("stalls", stalls.length ? run("cmdStallsSvg(dcx, stalls)").length : 0);
   const evs = U.eventsOf(ctx.cmdEvents, bind.commander);
@@ -90,7 +88,6 @@ for (let sec = 1000; sec <= 1000 + 2 * D.LOOP; sec += 2) {
   ctx.objs = P.objectsOf(bind, mapId); ctx.dcx = dc();
   mark("objects", ctx.objs.length ? run("cmdObjectsSvg(dcx, objs)").length : 0);
   ctx.objStates = (ctx.objStates || new Set()); ctx.objs.forEach((o) => ctx.objStates.add(o.type + o.state));
-  steps.forEach((s) => { seen["step:" + s.state] = 1; seen["stepk:" + s.k] = 1; });
   stalls.forEach((s) => { seen["stall:" + s.kind] = 1; });
   mobs.forEach((m) => { if (m.cc) seen["cc:" + m.cc] = 1; if (m.cast) seen["mobcast"] = 1; if (m.rank) seen["rank:" + m.rank] = 1; });
   bind.bots.forEach((b) => { if (b.rest) seen["rest:" + b.rest] = 1; if (b.cc) seen["botcc:" + b.cc] = 1; if (!b.alive) seen["botdead"] = 1; });
@@ -104,7 +101,7 @@ assert.ok(seen.bg, "the map picture comes from the daemon's map folder for map 7
 
 // and the pieces the story promises
 ["mobcast", "victim:tank", "victim:healer", "botdead", "rest:d", "rest:e", "cc:c", "cc:f", "botcc:s", "botcc:r", "rank:b", "rank:e",
-  "step:cleared", "step:next", "step:skipped", "step:todo", "stall:pause", "stall:refused", "stepk:boss", "stepk:pull", "stepk:move", "stepk:open", "stepk:rest",
+  "stall:refused",
   "icon:skull", "icon:spark", "icon:sheep", "icon:arrow", "icon:cup", "icon:stun", "icon:root"].forEach((k) => assert.ok(seen[k], `the demo never shows ${k}`));
 ["death", "boss", "wipe", "open", "loot"].forEach((k) => assert.ok(events.has(k), `no ${k} event in the demo`));
 ["dr", "da", "br", "ba", "cr", "cu", "gr", "ga"].forEach((k) => assert.ok(ctx.objStates.has(k), `no object ${k}`));

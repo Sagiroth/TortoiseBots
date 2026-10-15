@@ -1,5 +1,5 @@
 "use strict";
-// Commanders tab map drawing: the logic behind the path, run-step, object, stall and combat-line layers, free of the page so a test can
+// Commanders tab map drawing: the logic behind the path, object, stall and combat-line layers, free of the page so a test can
 // run it under node (internal/commandersjs). Pure except the two small stores it is handed (the bot trails and the stall spots), which
 // only keep what they are fed. app.js turns these results into SVG; nothing here builds markup.
 //
@@ -11,7 +11,6 @@
   const TRAIL_LEN_MIN = 10;
   const STALL_KEEP_SEC = 15 * 60; // a stall spot stays on the map this long
   const STALL_MAX = 12;           // per commander
-  const STEPS_MAX = 24;           // plan steps taken from a report
   const OBJECTS_MAX = 24;
   const AGGRO_BASE_YD = 20, AGGRO_MIN_YD = 5, AGGRO_MAX_YD = 45;
 
@@ -106,74 +105,8 @@
     return out;
   }
 
-  // ---- run steps -----------------------------------------------------------------------------------------------------
-
-  const KINDS = { move: 1, move_direct: 1, pull: 1, boss: 1, loot: 1, open: 1, use_item: 1, wait_object: 1, wait_clear: 1, rest: 1, ritual: 1 };
-
-  // The plan steps of a run, cleaned: [{i, k, x, y, r, e, n, state}] with state cleared | next | todo | skipped. A step before the run's
-  // current step is cleared unless the module marked it skipped; the current one is next. [] when the module sends no list.
-  function runSteps(run) {
-    if (!run || !Array.isArray(run.plan_steps)) return [];
-    const cur = Number(run.step) || 0;
-    const out = [];
-    run.plan_steps.slice(0, STEPS_MAX).forEach((s) => {
-      if (!s || !num(s.i) || !num(s.x) || !num(s.y) || !KINDS[s.k]) return;
-      const state = s.sk ? "skipped" : s.i < cur ? "cleared" : s.i === cur ? "next" : "todo";
-      out.push({
-        i: s.i, k: s.k, x: s.x, y: s.y, r: num(s.r) && s.r > 0 ? Math.min(s.r, 100) : 0,
-        e: num(s.e) ? s.e : 0, n: typeof s.n === "string" ? s.n.slice(0, 40) : "", state,
-      });
-    });
-    out.sort((a, b) => a.i - b.i);
-    return out;
-  }
-
-  // The route through the steps in plan order, as two dashed lines: where the run has been (cleared and skipped steps) and what is
-  // ahead (from the next step on). The two share the point where they meet. [{done: bool, points: [{x, y}]}] in game coordinates.
-  function routeSegments(steps) {
-    const done = [], ahead = [];
-    steps.forEach((s) => {
-      const p = { x: s.x, y: s.y };
-      if (s.state === "cleared" || s.state === "skipped") done.push(p); else ahead.push(p);
-    });
-    const out = [];
-    if (done.length && ahead.length) done.push(ahead[0]);
-    if (done.length >= 2) out.push({ done: true, points: done });
-    if (ahead.length >= 2) out.push({ done: false, points: ahead });
-    return out;
-  }
-
-  // The steps that are drawn as numbered circles (a pull is a pack; a boss is a crown, but also numbered), in plan order.
-  function numberedSteps(steps) { return steps.filter((s) => s.k === "pull" || s.k === "boss"); }
-
-  // The icon a step that is not a plain move or a pull gets, or '' for those: a crown for a boss, a door for open/use, a coin for loot,
-  // a stop mark for waits and rests, a spark for a ritual.
-  function stepIcon(kind) {
-    switch (kind) {
-      case "boss": return "crown";
-      case "loot": return "coin";
-      case "open": case "use_item": return "door";
-      case "ritual": return "spark";
-      case "rest": case "wait_object": case "wait_clear": return "stop";
-      default: return "";
-    }
-  }
-
-  const STEP_WORD = {
-    move: "Walk to", move_direct: "Walk straight to", pull: "Pull", boss: "Kill the boss", loot: "Loot", open: "Open", use_item: "Use an item at",
-    wait_object: "Wait for an object at", wait_clear: "Wait until clear at", rest: "Rest at", ritual: "Ritual at",
-  };
-  // A short sentence for a step's tooltip: "Step 42: Pull at 2, 2, radius 15 yd (the step the run is on)".
-  function stepText(s) {
-    const what = STEP_WORD[s.k] || s.k;
-    const who = s.n ? " " + s.n : s.e && (s.k === "boss" || s.k === "loot" || s.k === "open") ? " (creature or object " + s.e + ")" : "";
-    const area = " at " + Math.round(s.x) + ", " + Math.round(s.y) + (s.r ? ", radius " + Math.round(s.r) + " yd" : "");
-    const st = s.state === "next" ? "the step the run is on" : s.state === "cleared" ? "done" : s.state === "skipped" ? "skipped" : "coming up";
-    return "Step " + s.i + ": " + what + who + area + " (" + st + ")";
-  }
-
   // ---- stall spots and refused moves ---------------------------------------------------------------------------------
-  // A stall spot is where something went wrong: the run paused (the note says why), or an order was refused. The place is fixed when the
+  // A stall spot is where something went wrong: an order was refused. The place is fixed when the
   // report is first seen, since the lead walks on. Kept per commander for STALL_KEEP_SEC, at most STALL_MAX.
 
   function newStalls() { return { by: {} }; }
@@ -194,22 +127,13 @@
     return { x: best[0], y: best[1] };
   }
 
-  // Note the new stalls of a fresh report. leadPts = the lead's trail on its map; leadNow = {x, y} or null; steps = runSteps(run); mapId = the
+  // Note the new stalls of a fresh report. leadPts = the lead's trail on its map; leadNow = {x, y} or null; mapId = the
   // map the party is on (a spot is only drawn on that map).
-  // ids make a stall noted once: a pause by the run's `changed` stamp, a refusal by the order's time and verb.
-  function noteStalls(st, bind, nowSec, leadPts, leadNow, steps, mapId) {
+  // ids make a stall noted once: a refusal by the order's time and verb.
+  function noteStalls(st, bind, nowSec, leadPts, leadNow, mapId) {
     const list = st.by[bind.commander] || (st.by[bind.commander] = []);
     const have = {};
     list.forEach((s) => { have[s.id] = s; });
-    const run = bind.run;
-    const pausedId = run && run.state === "paused" ? "p:" + (run.changed || 0) + ":" + (run.step || 0) : "";
-    if (pausedId && !have[pausedId]) {
-      const cur = steps.find((s) => s.i === run.step);
-      const at = cur ? { x: cur.x, y: cur.y } : leadNow;
-      const reason = String(run.note || "").replace(/^-$/, "").trim() || "no reason given";
-      if (at) list.push({ id: pausedId, kind: "pause", map: mapId, x: at.x, y: at.y, reason, at: run.changed || nowSec, live: true });
-    }
-    list.forEach((s) => { if (s.kind === "pause") s.live = s.id === pausedId; }); // a pause that was resumed stays, dimmed
     (bind.orders || []).forEach((o) => {
       const verb = String(o.verb || "").toLowerCase();
       if (o.ok || !REFUSED_VERBS[verb]) return;
@@ -242,9 +166,8 @@
     Object.keys(st.by).forEach((k) => { if (!live[k]) delete st.by[k]; });
   }
 
-  // A stall's tooltip: "Run paused: <why>" or "Move refused: <why>".
+  // A stall's tooltip: "Move refused: <why>".
   function stallText(s) {
-    if (s.kind === "pause") return "Run paused" + (s.live ? "" : " (resumed since)") + ": " + s.reason;
     const verb = s.verb ? s.verb[0].toUpperCase() + s.verb.slice(1) : "Order";
     return verb + " refused: " + s.reason;
   }
@@ -315,7 +238,6 @@
   const api = {
     TRAIL_MAX, TRAIL_STEP_YD, TRAIL_LEN_DEFAULT, TRAIL_LEN_MIN, STALL_KEEP_SEC, STALL_MAX, AGGRO_BASE_YD,
     newTrails, trailOf, noteTrails, seedTrails, pruneTrails, trailPoints, memberTrails, cleanPoints,
-    runSteps, routeSegments, numberedSteps, stepIcon, stepText,
     newStalls, noteStalls, stallsOf, pruneStalls, stallText, orderPoint, placeAt, refusedReason,
     objectsOf, objectText, aggroRadius, healLines, ccLines, hasCastTargets,
   };

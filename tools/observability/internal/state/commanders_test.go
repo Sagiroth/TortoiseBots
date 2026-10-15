@@ -173,45 +173,17 @@ func TestCommandersCarryUnitInfo(t *testing.T) {
 	}
 }
 
-// The run leader's run rides in the binding; a binding without one has none.
-func TestCommandersCarryTheRun(t *testing.T) {
-	raw := `{"v":9,"session":3,"seq":1,"ts":50,"type":"COMMANDERS","commanders":[
-{"commander":"Glacienne","online":true,"group":1,"lead":"W","bots":[],"orders":[],"run":{"plan":"uldaman","state":"paused","step":78,"steps":205,"leg":"ancient_stone_keeper","kind":"pull","phase":"rest","note":"a unit survived 3 pulls","changed":40}},
-{"commander":"Other","online":true,"group":2,"lead":"X","bots":[],"orders":[]}]}`
-	var p model.CommandersPayload
-	if err := json.Unmarshal([]byte(raw), &p); err != nil {
-		t.Fatal(err)
-	}
-	s := newTestStore(newClock())
-	s.ApplyCommanders(&p)
-	v := s.Commanders().Commanders
-	r := v[0].Run
-	if r == nil || r.Plan != "uldaman" || r.State != "paused" || r.Step != 78 || r.Steps != 205 || r.Leg != "ancient_stone_keeper" || r.Note == "" || r.Changed != 40 {
-		t.Fatalf("run lost: %+v", r)
-	}
-	if v[1].Run != nil {
-		t.Fatalf("a binding without a run must have none: %+v", v[1].Run)
-	}
-	out, _ := json.Marshal(v[1])
-	if strings.Contains(string(out), `"run"`) {
-		t.Fatalf("no run field expected: %s", out)
-	}
-}
-
-// The module's path data rides in the binding: the plan's steps, the game objects, the cast target. An older module sends none.
+// The module's path data rides in the binding: the game objects, the cast target. An older module sends none.
 func TestCommandersCarryPathData(t *testing.T) {
-	var steps, objects string
+	var objects string
 	for i := 0; i < 40; i++ {
 		if i > 0 {
-			steps += ","
 			objects += ","
 		}
-		steps += `{"i":` + string(rune('0'+i%10)) + `,"k":"move","x":1.5,"y":2.5}`
 		objects += `{"id":"9","entry":1,"name":"Door","x":1,"y":2,"type":"d","state":"r"}`
 	}
 	raw := `{"v":9,"session":3,"seq":1,"ts":50,"type":"COMMANDERS","commanders":[
 {"commander":"A","online":true,"group":1,"lead":"W","bots":[{"name":"H","guid":5,"cast":"Flash Heal","ctgt":"77"}],"orders":[],
- "run":{"plan":"u","state":"running","step":1,"steps":9,"plan_steps":[` + steps + `,{"i":9,"k":"boss","x":3,"y":4,"r":30,"e":4854,"n":"Grimlok","sk":true}]},
  "objects":[` + objects + `]},
 {"commander":"B","online":true,"group":2,"lead":"X","bots":[],"orders":[],"objects":[]},
 {"commander":"C","online":true,"group":3,"lead":"Y","bots":[],"orders":[]}]}`
@@ -225,17 +197,17 @@ func TestCommandersCarryPathData(t *testing.T) {
 	if v[0].Bots[0].CastTarget != "77" {
 		t.Fatalf("cast target lost: %+v", v[0].Bots[0])
 	}
-	if len(v[0].Run.PlanSteps) != maxCommanderSteps || len(v[0].Objects) != maxCommanderObjects {
-		t.Fatalf("steps %d, objects %d: they must be capped", len(v[0].Run.PlanSteps), len(v[0].Objects))
+	if len(v[0].Objects) != maxCommanderObjects {
+		t.Fatalf("objects %d: they must be capped", len(v[0].Objects))
 	}
-	if len(p.Commanders[0].Run.PlanSteps) != 41 {
+	if len(p.Commanders[0].Objects) != 40 {
 		t.Fatal("the caller's payload must not be trimmed")
 	}
 	if v[1].Objects == nil || len(v[1].Objects) != 0 || v[2].Objects != nil {
 		t.Fatalf("[] means reported, none seen; absent means not reported: %v / %v", v[1].Objects, v[2].Objects)
 	}
 	out, _ := json.Marshal(v[2])
-	if !strings.Contains(string(out), `"objects":null`) || strings.Contains(string(out), `plan_steps`) {
+	if !strings.Contains(string(out), `"objects":null`) {
 		t.Fatalf("view of a binding without path data: %s", out)
 	}
 }
