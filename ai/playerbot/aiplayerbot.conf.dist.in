@@ -738,11 +738,10 @@ AiPlayerbot.DungeonSelfClear = 0
 # With it on, a non-tank bot without an attack order also does not Charge,
 # Intercept or Feral Charge onto a listed creature or onto a mob within 9 yd
 # of one, and its flank, set-behind and unstack moves never end in the ring.
-# Off by default until a clean live re-test: a linked pack that is already
-# fighting the group is not handled well yet (two Maraudon wipes, 2026-10-13).
-# 0 - no keep-out; bots melee and walk past these creatures as before (Default)
-# 1 - stay out of listed creature auras
-AiPlayerbot.AvoidCreatureAuras = 0
+# On by default.
+# 0 - no keep-out; bots melee and walk past these creatures as before
+# 1 - stay out of listed creature auras (Default)
+AiPlayerbot.AvoidCreatureAuras = 1
 
 # Two taxi paths in the 1.18.1 client data have missing nodes, and a bot that
 # flies one crashes the world server: 355 (Shimmerstar Lake -> Valormok) and
