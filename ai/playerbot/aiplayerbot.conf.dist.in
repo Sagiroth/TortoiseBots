@@ -729,18 +729,6 @@ AiPlayerbot.OnyxiaWhelpsAndEggs = 1
 # 1 - on for every bot on a map that has rows
 AiPlayerbot.DungeonTactics = 0
 
-# Dungeon self-clear (the run leader).
-# `.bot run start [plan]` lets a remote commander's bound party clear a dungeon
-# plan (world tables ai_dungeon_plan/leg/step) by itself: it walks the route,
-# pulls the packs, kills the bosses and opens the doors with the commander's own
-# orders, and pauses on 3 dead, on any player order and at every wait's ceiling.
-# Needs AiPlayerbot.RemoteCommander = 1 and a binding (.bot commander bind).
-# Bots then clear without a player giving each order, so it is off by default
-# (docs/guides/dungeon-run-leader.md).
-# 0 - `.bot run` is refused (Default)
-# 1 - a bound commander may start a run
-AiPlayerbot.DungeonSelfClear = 0
-
 # Keep out of creature auras.
 # Some creatures carry a permanent damaging aura that pulses around them even
 # while they are idle. With this on, every bot steps out when it is within 8 yd

@@ -359,28 +359,16 @@ namespace ai
         return std::sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    // Whether a pull or boss step is meant for a party of `team`
-    // (kPlanFlagAlliance or kPlanFlagHorde; 0 = unknown, everything is). A step
-    // with neither team flag is for both.
-    inline bool StepForTeam(const PlanStep& step, std::uint32_t team)
-    {
-        std::uint32_t const teams = step.flags & (kPlanFlagAlliance | kPlanFlagHorde);
-        return teams == 0 || team == 0 || (teams & team) != 0;
-    }
-
     // Whether a unit of `entry` standing at x,y,z belongs to a pull or boss
     // step AFTER step index `from` (the run leader never pulls what a later step
-    // owns: the plan's order says when it is fought). A later step for the
-    // other team (StepForTeam) owns nothing.
+    // owns: the plan's order says when it is fought).
     inline bool OwnedByLaterStep(const DungeonPlan& plan, std::size_t from, std::uint32_t entry,
-        float x, float y, float z, std::uint32_t team = 0)
+        float x, float y, float z)
     {
         for (std::size_t i = from + 1; i < plan.steps.size(); ++i)
         {
             const PlanStep& step = plan.steps[i];
             if (step.kind != PlanStepKind::Pull && step.kind != PlanStepKind::Boss)
-                continue;
-            if (!StepForTeam(step, team))
                 continue;
             bool listed = step.entry == entry ||
                 std::find(step.entries.begin(), step.entries.end(), entry) != step.entries.end();

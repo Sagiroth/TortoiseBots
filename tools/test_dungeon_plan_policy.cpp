@@ -164,11 +164,6 @@ static void TestLaterOwner()
     CHECK(OwnedByLaterStep(plan, 2, 201, 90, 0, 0));
     CHECK(!OwnedByLaterStep(plan, 0, 999, 60, 0, 0));
     CHECK(!OwnedByLaterStep(plan, 3, 200, 100, 0, 0));
-    // A later step for the other team owns nothing for this party.
-    plan.steps[2].flags = kPlanFlagHorde;
-    CHECK(OwnedByLaterStep(plan, 0, 100, 62, 0, 0));
-    CHECK(OwnedByLaterStep(plan, 0, 100, 62, 0, 0, kPlanFlagHorde));
-    CHECK(!OwnedByLaterStep(plan, 0, 100, 62, 0, 0, kPlanFlagAlliance));
 }
 
 static void TestLongHops()

@@ -926,7 +926,6 @@ bool PlayerbotAIConfig::Initialize()
     paladinJudgementUpkeep = config.GetBoolDefault("AiPlayerbot.PaladinJudgementUpkeep", true);
     onyxiaWhelpsAndEggs = config.GetBoolDefault("AiPlayerbot.OnyxiaWhelpsAndEggs", true);
     dungeonTactics = config.GetBoolDefault("AiPlayerbot.DungeonTactics", false);
-    dungeonSelfClear = config.GetBoolDefault("AiPlayerbot.DungeonSelfClear", false);
     avoidCreatureAuras = config.GetBoolDefault("AiPlayerbot.AvoidCreatureAuras", true);
     allowRepairedTaxiPaths = config.GetBoolDefault("AiPlayerbot.AllowRepairedTaxiPaths", false);
     turnInRpg = config.GetBoolDefault("AiPlayerbot.TurnInRpg", false);

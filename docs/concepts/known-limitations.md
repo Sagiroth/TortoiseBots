@@ -33,8 +33,7 @@ This document provides an honest, authoritative record of current architectural 
 ## 3. Explicit Non-Goals (What We Deliberately Do Not Do)
 
 - **Autonomous Dungeon Clear (`mod-dungeon-clear` / `.dc` commands):**
-  - A second, autonomous pull and pathing brain (a `mod-dungeon-clear` port) stays excluded. Dungeons are designed for a player (or a remote commander) leading companion bots.
-  - The one exception, by owner decision (2026-10-14): the opt-in **run leader** (`.bot run`, `AiPlayerbot.DungeonSelfClear`, default `0`) lets a bound party follow a stored dungeon plan with the remote commander's own orders, and any player order pauses it. See [Dungeon Run Leader](../guides/dungeon-run-leader.md).
+  - Autonomous bot pathfinding that clears entire dungeons without a human leader is explicitly excluded. Dungeons are designed for a human player leading companion bots.
 - **Expansion Mechanics (TBC / WotLK):**
   - No Death Knights, glyphs, vehicles, Arena ratings, or expansion zones (e.g. Outland, Northrend).
   - All classes are strictly Vanilla 1.12 with Turtle WoW 1.18.1 additions.
