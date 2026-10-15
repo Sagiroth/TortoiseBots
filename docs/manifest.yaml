@@ -78,9 +78,6 @@ nodes:
   - id: guide-boss-tactics
     path: guides/boss-tactics.md
     category: guides
-  - id: guide-dungeon-run-leader
-    path: guides/dungeon-run-leader.md
-    category: guides
 
   # Concepts
   - id: concept-architecture-invariants
