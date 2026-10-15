@@ -90,8 +90,8 @@ assert.strictEqual(P.routeSegments(st.slice(3)).length, 1, "only what is ahead")
 assert.deepStrictEqual(P.numberedSteps(st).map((s) => s.i), [41, 42, 44]);
 assert.deepStrictEqual(["boss", "loot", "open", "use_item", "ritual", "rest", "wait_object", "wait_clear", "move", "pull"].map(P.stepIcon),
   ["crown", "coin", "door", "door", "spark", "stop", "stop", "stop", "", ""]);
-assert.ok(/Step 42: Pull, radius 15 yd \(the step the run is on\)/.test(P.stepText(st[2])));
-assert.ok(/Kill the boss Grimlok, radius 30 yd \(coming up\)/.test(P.stepText(st[4])));
+assert.ok(/Step 42: Pull at 2, 2, radius 15 yd \(the step the run is on\)/.test(P.stepText(st[2])));
+assert.ok(/Kill the boss Grimlok at 5, 5, radius 30 yd \(coming up\)/.test(P.stepText(st[4])));
 assert.ok(/skipped/.test(P.stepText(st[1])) && /done/.test(P.stepText(st[0])));
 
 // ---- stall spots

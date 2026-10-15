@@ -163,11 +163,11 @@
     move: "Walk to", move_direct: "Walk straight to", pull: "Pull", boss: "Kill the boss", loot: "Loot", open: "Open", use_item: "Use an item at",
     wait_object: "Wait for an object at", wait_clear: "Wait until clear at", rest: "Rest at", ritual: "Ritual at",
   };
-  // A short sentence for a step's tooltip: "Step 42: pull (radius 15 yd)  -  next" in words.
+  // A short sentence for a step's tooltip: "Step 42: Pull at 2, 2, radius 15 yd (the step the run is on)".
   function stepText(s) {
     const what = STEP_WORD[s.k] || s.k;
     const who = s.n ? " " + s.n : s.e && (s.k === "boss" || s.k === "loot" || s.k === "open") ? " (creature or object " + s.e + ")" : "";
-    const area = s.r ? ", radius " + Math.round(s.r) + " yd" : "";
+    const area = " at " + Math.round(s.x) + ", " + Math.round(s.y) + (s.r ? ", radius " + Math.round(s.r) + " yd" : "");
     const st = s.state === "next" ? "the step the run is on" : s.state === "cleared" ? "done" : s.state === "skipped" ? "skipped" : "coming up";
     return "Step " + s.i + ": " + what + who + area + " (" + st + ")";
   }
