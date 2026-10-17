@@ -171,7 +171,8 @@ static void TestWalkBackAfterRegroup()
     CHECK(r.walkBackIdx == 2);
     CHECK(r.walkBackDirect);
 
-    // A direct step on the way: the plan's points at once, from the one nearest the lead bot.
+    // A direct step on the way: straight to the last move point before the first direct step (here the only one
+    // before it, the nearest), then the plan's own points over the hole. Run 4: not from step 1.
     DungeonPlan pit;
     pit.name = "pit";
     pit.steps = {Step(PlanStepKind::Move, 30, 0, 0), Step(PlanStepKind::MoveDirect, 40, 0, 0),
@@ -179,7 +180,7 @@ static void TestWalkBackAfterRegroup()
     Run p = Start(&pit, 4);
     StartWalkBack(p, f);
     CHECK(p.walkBack);
-    CHECK(!p.walkBackDirect);
+    CHECK(p.walkBackDirect);
     CHECK(p.walkBackIdx == 0);
 
     // Standing on the last move point, or near the step itself: no walk back.

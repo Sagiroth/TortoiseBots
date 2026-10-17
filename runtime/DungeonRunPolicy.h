@@ -52,6 +52,7 @@
 #include "../ai/playerbot/DungeonPlanPolicy.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -130,6 +131,24 @@ constexpr std::uint32_t kGuardHealerWaitMs = 0;   // ... a mob hitting a healer 
                                                   // took the healer from 73 % to dead in 4 s
 constexpr std::uint32_t kGuardRepeatMs = 2000;    // a further pick-up no sooner than this after the last one
 constexpr std::uint32_t kGuardOrdersPerFight = 3; // pick-up orders one fight may send
+// The healer's stand for a pull (the run leader's commander context): this far
+// behind the lead bot's spot, on the line from the pull target through that spot
+// (Uldaman run 4: the priest stood level with or ahead of the tank and died of
+// the camp's first hits). Within heal range of the tank (40 yd), clear of the
+// pack's first swings. The glue checks the point on the ground and the navmesh
+// and falls back to half the distance, then to the spot itself.
+constexpr float kHealerBackYd = 9.0f;
+inline bool HealerBackPoint(float leadX, float leadY, float targetX, float targetY, float back, float& x, float& y)
+{
+    float const dx = leadX - targetX, dy = leadY - targetY;
+    float const len = std::sqrt(dx * dx + dy * dy);
+    if (len < 1.0f)
+        return false; // standing on the target: no side is behind
+    x = leadX + dx / len * back;
+    y = leadY + dy / len * back;
+    return true;
+}
+
 // A party member coming back with attackers runs on to the party (RunBack; the
 // owner's rule of 2026-10-17). Uldaman 2026-10-17 (tests/uldaman-events-2):
 // the revived priest and mage stopped to fight a scorpid at -174 311, 73-76 yd
@@ -287,6 +306,12 @@ struct Facts
     // bot within kGuardYd of it; distLead from the lead bot, `hitting` and
     // `victimHealer` set.
     std::vector<UnitFact> partyAttackers;
+    // The pull in flight (CheckReach), read in fights only: the lead bot's own
+    // pull command is still reaching its target (the target has not come for
+    // it, it has not turned back), and how many living, not friendly mobs have
+    // a party bot as their victim (any of them, the lead bot too).
+    bool leadReaching = false;
+    std::uint32_t reachAggro = 0;
 };
 
 // Where a boss's corpse lay when the boss step saw him down.
@@ -433,6 +458,10 @@ struct Run
     std::uint32_t guardOrders = 0;
     std::uint32_t guardSinceOrderMs = 0; // fight time since the last pick-up
     bool guardReturn = false;
+    // The tank's reach for a pull is cut off once a mob has aggro (CheckReach):
+    // `stopReachDue` asks the glue to end the lead bot's pull, once per pull.
+    bool stopReachDue = false;
+    bool reachStopped = false;
     // Members running back to the party with attackers on them (RunBack): the
     // glue keeps each one a passive follower of the lead bot (it does not stop
     // to fight) while its name is here. Per bot: how long it has run, and its
@@ -602,6 +631,8 @@ inline void ResetStep(Run& r)
     r.guardMs = 0;
     r.guardOrders = 0;
     r.guardReturn = false;
+    r.stopReachDue = false;
+    r.reachStopped = false;
     r.hold.clear();
     r.holdDue = false;
 }
@@ -1391,6 +1422,7 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     ++tries;
     ++(walkBack ? r.walkBackPulls : r.pulls);
     r.pullGuid = u.guid;
+    r.reachStopped = false;
     EnterPhase(r, Phase::AwaitPull);
     r.note = "pulling " + std::to_string(u.entry);
     order = "pullback " + std::to_string(u.guid);
@@ -1539,6 +1571,22 @@ inline bool DirectStepOnWay(const Run& r, std::size_t from)
     return false;
 }
 
+// The last move point before the first direct step at or after `from`, and
+// not before `from`: where a walk back stops its navmesh hops and starts
+// replaying the plan's own points over the hole. `from` itself when it is the
+// direct step (or nothing is before it).
+inline std::size_t LastPointBeforeDirect(const Run& r, std::size_t from)
+{
+    std::size_t first = from;
+    while (first < r.step && first < r.plan->steps.size() && r.plan->steps[first].kind != PlanStepKind::MoveDirect)
+        ++first;
+    std::size_t start = from;
+    for (std::size_t i = from; i < first; ++i)
+        if (IsMovePoint(r.plan->steps[i]))
+            start = i;
+    return start;
+}
+
 // The plan's move point nearest the lead bot before the current step (npos
 // for none), ReplayWalkBack's start.
 inline std::size_t NearestMovePoint(const Run& r, const Facts& f)
@@ -1590,10 +1638,17 @@ inline void StartWalkBack(Run& r, const Facts& f)
     std::size_t const nearest = NearestMovePoint(r, f);
     if (nearest != static_cast<std::size_t>(-1) && nearest < last && DirectStepOnWay(r, nearest))
     {
+        // Only the navmesh hole needs the plan's own points: straight (in
+        // navmesh hops) to the last move point before the first direct step,
+        // then the plan's points from there (the direct hops, then the rest).
+        // Uldaman run 4: the replay from step 1 walked Baelog's wing again,
+        // 528 yd for the 397 the way to step 39 and the pit hops need.
         r.walkBack = true;
-        r.walkBackIdx = nearest;
+        r.walkBackDirect = true;
+        r.walkBackIdx = LastPointBeforeDirect(r, nearest);
         r.approachHops = 0;
-        r.note = "walk back: a direct step is on the way: replaying the plan's points";
+        r.note = "walk back: a direct step is on the way: straight to step " + std::to_string(r.walkBackIdx + 1) +
+            ", then the plan's points";
         EnterPhase(r, Phase::Begin);
         return;
     }
@@ -1620,10 +1675,31 @@ inline void NextWalkBackPoint(Run& r)
 // the hostiles within kHopPullYd of it (the glue's hopUnits, read for this
 // point: FactStep) are pulled first, a direct one gathers first, then a
 // WalkTo (bounded by kWalkTries). One point a tick: the facts are read for it.
+inline bool WaitForFallen(Run& r, const Facts& f);
+
+// A dead bot first (the owner's wait rule, 2026-10-17): no walk back point and
+// no direct step goes out while a party member is dead. A direct step takes
+// the lead bot's line, and a dead bot cannot join it. Uldaman run 4, 14:03:
+// the rogue died on his corpse run 120 yd away after the regroup was over;
+// the walk back pushed on to the pit's direct step, named a bot that stood
+// with the lead bot, and paused with the rogue still dead 9 minutes later.
+// The ordinary wait (WaitForFallen) only runs between steps; this asks for
+// the same regroup (revive party, gather, a stuck straggler summoned) on any
+// tick before such an order. True when the regroup starts. Not in a fight,
+// a scripted event or a regroup.
+inline bool FallenFirst(Run& r, const Facts& f)
+{
+    if (f.dead == 0 || r.regroup || f.anyInCombat || InEvent(r))
+        return false;
+    return WaitForFallen(r, f);
+}
+
 inline bool WalkBack(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
     if (!r.walkBack)
         return false;
+    if (r.walkBackIdx < r.step && FallenFirst(r, f))
+        return true;
     while (r.walkBackIdx < r.step && !IsMovePoint(r.plan->steps[r.walkBackIdx]))
         ++r.walkBackIdx;
     if (r.walkBackIdx >= r.step)
@@ -1885,6 +1961,8 @@ inline void MoveStep(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt
         ApproachHop(r, f, s, dt, order, "next point");
         return;
     }
+    if (s.kind == PlanStepKind::MoveDirect && r.phase != Phase::Walk && FallenFirst(r, f))
+        return;
     // A direct step takes the lead bot's line: the party gathers on it first
     // (`cmd move ... direct` refuses while a bot has no way to the lead's spot).
     if (s.kind == PlanStepKind::MoveDirect && r.phase != Phase::Walk && f.maxMemberYd > kGatherYd && !r.gatherWaived)
@@ -2383,6 +2461,25 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     r.note = "fighting: the tank picks up " + std::to_string(u->entry) + " off " +
         (u->victimHealer ? "the healer" : "the party") + " (" + Num(u->distLead) + " yd)";
     order = "attack " + std::to_string(u->guid) + " " + f.carrier;
+    return true;
+}
+
+// The tank's reach for a pull stops as soon as a mob has aggro. Uldaman run 4
+// (2026-10-17, sentinel pull 2): the tank kept walking toward the west Relic
+// Hunters to reach its pull target, 15.7 yd from the Sentinel, after the camp
+// was awake, and pulled six mobs with the boss. While the lead bot is still
+// reaching (Facts::leadReaching) and any mob has a party bot as its victim
+// (Facts::reachAggro), the glue ends the lead bot's pull (Run::stopReachDue,
+// once per pull): the tank stands where it is and the fight is the party's.
+// True when it asks.
+inline bool CheckReach(Run& r, const Facts& f)
+{
+    if (r.reachStopped || !f.leadReaching || f.reachAggro == 0 || !f.leadAlive || InEvent(r))
+        return false;
+    r.reachStopped = true;
+    r.stopReachDue = true;
+    r.note = "fighting: the pull stops, " + std::to_string(f.reachAggro) +
+        (f.reachAggro == 1 ? " mob has" : " mobs have") + " aggro already";
     return true;
 }
 
@@ -2907,6 +3004,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
             if (!autoRegroup && f.leadAlive)
                 r.note = "event: fighting" + (progress.empty() ? std::string() : " (" + progress + ")");
         }
+        CheckReach(r, f);
         if (CheckCc(r, f, dt, order))
             return order;
         if (CheckGuard(r, f, dt, order))
@@ -2935,6 +3033,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.focusGuid = 0;
         r.guardMs = 0;
         r.guardOrders = 0;
+        r.reachStopped = false;
         if (r.phase != Phase::AwaitTask && r.phase != Phase::Wait)
             EnterPhase(r, Phase::Begin);
     }

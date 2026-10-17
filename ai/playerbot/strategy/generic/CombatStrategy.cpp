@@ -121,6 +121,11 @@ void WaitForAttackStrategy::InitCombatMultipliers(std::list<Multiplier*>& multip
 
 bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
 {
+    // The run leader's healer is held on its stand for a pull but never kept
+    // from healing: the join window gates damage, and it deals none.
+    if (ai->RunHealOnly())
+        return false;
+
     // Only check if the bot has the strategy enabled
     if (ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT))
     {

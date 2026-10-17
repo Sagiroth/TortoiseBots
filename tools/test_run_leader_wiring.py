@@ -197,5 +197,39 @@ class RunLeaderWiringTest(unittest.TestCase):
         use = (ROOT / "ai/playerbot/strategy/actions/UseItemAction.cpp").read_text()
         self.assertIn("TortoiseBots::DoorLock::OpensOnPlainUse(lockTypes, lockIndex)", use)
 
+    def test_uldaman_run4_fixes_are_wired(self):
+        # The tank's reach for a pull stops once a mob has aggro: the facts are read in fights, the policy asks, the
+        # glue ends the lead bot's pull.
+        guard = body(COMMANDS, "void ReadGuardFacts(", "\n}\n")
+        self.assertIn("ReadReachFacts(lead, leadAi, bots, f);", guard)
+        reach = body(COMMANDS, "void ReadReachFacts(", "\n}\n")
+        self.assertIn("f.reachAggro", reach)
+        self.assertIn("f.leadReaching", reach)
+        self.assertIn("pull->IsCommandActive()", reach)
+        stop = body(COMMANDS, "void StopLeadReach(", "\n}\n")
+        self.assertIn('"pull end"', stop)
+        tick = body(COMMANDS, "void TickDungeonRun(", "\n}\n")
+        self.assertIn("if (it->second.run.stopReachDue)", tick)
+        self.assertIn("StopLeadReach(commander, lead);", tick)
+        # The healer: held on its stand in the run leader's pulls, behind the tank, kept to heals for the run.
+        self.assertIn("context.runLeader = true;", COMMANDS)
+        self.assertIn("healerAi->SetRunHealOnly(true);", tick)
+        ctx = (ROOT / "commands/BotCommandContext.cpp").read_text()
+        pause = body(ctx, "void PausePartyDpsForPull(", "\n}\n")
+        self.assertIn("(healer && !context.runLeader)", pause)
+        self.assertIn("ai->SetRunHealOnly(true);", pause)
+        self.assertIn("context.healerStand(bot, hx, hy, hz)", pause)
+        trig = (ROOT / "ai/playerbot/strategy/triggers/GenericTriggers.cpp").read_text()
+        self.assertIn("gate.healOnly = ai->RunHealOnly();", trig)
+        self.assertIn("if (ai->RunHealOnly())\n        return false;", trig)
+        combat = (ROOT / "ai/playerbot/strategy/generic/CombatStrategy.cpp").read_text()
+        self.assertIn("if (ai->RunHealOnly())\n        return false;", combat)
+        # A refused direct step names the dead bot, else the farthest, not the first one checked.
+        direct = body(COMMANDS, "static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& order,\n"
+                      "    RemoteCommander::MovePoint const& point, std::string const& intent)\n{", "\n}\n")
+        self.assertIn("refusedDead", direct)
+        self.assertIn("horizontal > refusedYd", direct)
+
+
 if __name__ == "__main__":
     unittest.main()

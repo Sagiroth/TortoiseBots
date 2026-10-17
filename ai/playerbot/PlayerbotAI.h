@@ -371,6 +371,12 @@ public:
     void StartPullWindow(uint8 windowSeconds);
     void RestampPullWindow() { pullWindow_.Restamp(time(0)); }
     bool HasPullWindow() const { return pullWindow_.Running(); }
+    // The run leader (.bot run) keeps a healer to heals while a run is going:
+    // its off-spec damage rows (healer should attack / healer should wand) and
+    // the wand stay off, and a pull's join window never gates its heals. Memory
+    // only, set and cleared by the run leader's sync (commands/BotCommands.cpp).
+    bool RunHealOnly() const { return runHealOnly_; }
+    void SetRunHealOnly(bool on) { runHealOnly_ = on; }
     bool PullWindowExpired(uint8 seconds) const { return pullWindow_.Expired(time(0), seconds); }
     bool PullWindowAdded(BotState type) const { return pullWindow_.Added(static_cast<unsigned>(type)); }
     uint8 PullWindowSavedSeconds() const { return static_cast<uint8>(pullWindow_.savedWaitSeconds); }
@@ -1066,6 +1072,7 @@ protected:
     LastKillerInfo lastDamager_; // last non-self damager (UNITHOOK_ON_DAMAGE); SoR fallback for SetLastKiller
     bool deathHandled_ = false; // this death was logged and counted; cleared when the bot is seen alive again
     ai::PullJoinWindow pullWindow_; // see StartPullWindow
+    bool runHealOnly_ = false;      // see RunHealOnly
     // After a change to "wait for attack" in the engines of `type` by anyone
     // but the window itself: those copies are no longer the pull's, and the
     // hold is over once the combat engine has none left.

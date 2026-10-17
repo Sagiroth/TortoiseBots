@@ -326,21 +326,35 @@ void PausePartyDpsForPull(BotCommandContext const& context, Player* executor, ui
         if (!bot || bot == executor)
             continue;
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
-        if (!ai || PlayerbotAI::IsHeal(bot, true))
+        // A healer is held only in the run leader's pulls: it stands on its
+        // stand and keeps healing (Uldaman run 4: the one bot not put on stay
+        // followed the tank to the camp, wanded and died).
+        bool const healer = ai && PlayerbotAI::IsHeal(bot, true);
+        if (!ai || (healer && !context.runLeader))
             continue;
         if (ai->GetForcedRole() == static_cast<uint8>(BOT_ROLE_TANK) ||
             PlayerbotAI::IsTank(bot, true))
             continue;
+        WorldPosition stand = anchor;
+        if (healer)
+        {
+            // Heals only, from behind the tank (PlayerbotAI::RunHealOnly; the
+            // run leader's sync keeps it set for the run).
+            ai->SetRunHealOnly(true);
+            float hx = 0.0f, hy = 0.0f, hz = 0.0f;
+            if (context.healerStand && context.healerStand(bot, hx, hy, hz))
+                stand = WorldPosition(anchor.GetMapId(), hx, hy, hz);
+        }
         // Hold this bot at the anchor: stay owns the movement mode, and the
         // anchor copy lets the release step distinguish our hold from a
         // player-placed stay (only ours is cleared).
         ai->SetMovementStrategy("stay");
         ai::PositionMap& posMap = ai->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
         ai::PositionEntry stayPos = posMap["stay"];
-        stayPos.Set(anchor.getX(), anchor.getY(), anchor.getZ(), anchor.GetMapId());
+        stayPos.Set(stand.getX(), stand.getY(), stand.getZ(), stand.GetMapId());
         posMap["stay"] = stayPos;
         ai::PositionEntry holdPos = posMap["pull hold"];
-        holdPos.Set(anchor.getX(), anchor.getY(), anchor.getZ(), anchor.GetMapId());
+        holdPos.Set(stand.getX(), stand.getY(), stand.getZ(), stand.GetMapId());
         posMap["pull hold"] = holdPos;
         // "wait for attack" with this pull's delay, on its own clock from here
         // (PullJoinWindowPolicy.h). A "wait for attack" or a delay the player

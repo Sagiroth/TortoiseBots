@@ -120,6 +120,7 @@ bool ai::HealerWandAllowed(PlayerbotAI* ai, Unit* target)
     gate.aloneNear = NoGroupMemberNear(bot);
     ObjectGuid const ordered = context->GetValue<ObjectGuid>("explicit attack target")->Get();
     gate.explicitOrder = target && ordered && ordered == target->GetObjectGuid();
+    gate.healOnly = ai->RunHealOnly();
     gate.noMana = context->GetValue<bool>("has mana", "self target")->Get() &&
         context->GetValue<uint8>("mana", "self target")->Get() < 5;
 
@@ -151,6 +152,11 @@ bool HealerShouldAttackTrigger::IsActive()
     // group near, the healer fights like a solo bot.
     if (NoGroupMemberNear(bot))
         return true;
+
+    // The run leader's healer heals and casts no damage spell (Holy Fire,
+    // Smite, Mind Blast, the wand; PlayerbotAI::RunHealOnly).
+    if (ai->RunHealOnly())
+        return false;
 
     if (AI_VALUE2(uint8, "health", "party member to heal") < sPlayerbotAIConfig.almostFullHealth)
         return false;
