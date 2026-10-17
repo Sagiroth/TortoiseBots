@@ -78,7 +78,9 @@ constexpr float kStalledArriveYd = 6.0f;          // ... or this close once it s
 constexpr float kSeeYd = 60.0f;                   // a pack, boss or spot is judged only from this close
 constexpr float kApproachYd = 30.0f;              // an unseen pack is approached to this far from its centre
 constexpr float kApproachHopYd = 40.0f;           // ... in navmesh path hops of at most this length
-constexpr std::uint32_t kMaxApproachHops = 8;     // ... and at most this many, then pause
+constexpr std::uint32_t kMaxApproachHops = 8;     // ... and at most this many without getting nearer, then pause
+constexpr float kHopClearYd = 20.0f;              // an approach hop in sight of the pack is finished unless a unit is this close
+constexpr float kApproachProgressYd = 5.0f;       // a hop that ends this much nearer than the nearest so far is progress
 constexpr std::uint32_t kMaxWalkBackHops = 40;    // a walk back straight to its last point: hops before the replay
 constexpr float kDetourMaxYd = 15.0f;             // an unreachable move point may be stood in for by a
                                                   // reachable one at most this far from it
@@ -273,9 +275,19 @@ struct Facts
     long long eventData = -1;           // done by instance data: the value now; -1 the map has no instance data
     std::uint32_t hostilesNear = 0;     // wait_clear: living hostiles within the radius
     std::string carrier;                // the bot that does object and item steps (the lead bot)
+    // open / use_item: the step's inputs (its item, and `param` when set) are
+    // split between bots, none carries them all: who holds what (PickItemCarrier).
+    std::string itemsSplit;
     bool carrierHasItem = false;        // the step's `item` is in the carrier's bags
     bool carrierHasEntryItem = false;   // use_item: the item to use is in the bags
     bool carrierBusy = false;           // a commander task (loot/open/use) runs for the carrier
+    // loot: read for the step's item, on the tick of an order and after a refusal.
+    bool partyHasItem = false;          // some party bot (dead ones too) carries the step's `item`
+    std::string itemHolder;             // ... the first such bot
+    // ... and only after a refusal, from the remembered corpse:
+    std::string lootTurn;               // the party bot whose round-robin turn the corpse is ("": none, not a bot)
+    bool corpseChecked = false;         // the remembered corpse (by guid) was looked at
+    bool corpseHasItem = false;         // ... and is in the map, still holding the step's item (not looted)
     int taskReply = 0;                  // the carrier's task answer since the run's order: 0 none, 1 ACK, 2 ERR
     std::string taskText;
     // Guarding the party (GuardTarget), read in fights only:
@@ -313,7 +325,12 @@ struct Run
     bool stepRested = false; // a `rest` step has had its gate
     bool orderSent = false;  // task steps: the order went out
     bool walkedThrough = false;
-    std::uint32_t approachHops = 0;
+    // The target of the approach hop the walk goes to (hopWalk), to tell it from
+    // another walk of the step (the stealth walk through a pack's centre).
+    bool hopWalk = false;
+    float hopX = 0.0f, hopY = 0.0f, hopZ = 0.0f;
+    std::uint32_t approachHops = 0;     // approach hops since the party last got nearer to the step's point
+    float approachBestYd = 0.0f;        // the nearest the lead bot has been to it (0: not set yet)
     // A move whose point the navmesh cannot reach walks to the nearest
     // reachable point near it instead (UseDetour).
     bool detour = false;
@@ -347,6 +364,13 @@ struct Run
     std::uint32_t walkBackPulls = 0; // pulls on the way of the walk back (not counted in `pulls`)
     // Run-wide (kept across steps).
     std::unordered_set<std::uint64_t> unreachable;   // units given up on: never pulled again this run
+    // loot: the bot the order goes to ("": the carrier), the bots a refusal on the
+    // loot rules has been tried with, and the refusal's pause text while the
+    // next bot is tried.
+    std::string taskBot;
+    std::vector<std::string> lootTried;
+    std::string lootRefusal;
+    bool lootRights = false;            // the refusal was the loot rules (another member's turn ...)
     std::unordered_set<std::uint32_t> missing;       // items the run did not get (a skipped loot or use)
     std::unordered_map<std::uint32_t, CorpseMark> corpses; // boss entry -> the corpse seen when that boss step ended "boss down"
     std::uint32_t pendingMissing = 0;                 // the item a paused step failed to get (missing on skip)
@@ -558,8 +582,14 @@ inline void ResetStep(Run& r)
     r.restForEating = false;
     r.stepRested = false;
     r.orderSent = false;
+    r.taskBot.clear();
+    r.lootTried.clear();
+    r.lootRefusal.clear();
+    r.lootRights = false;
     r.walkedThrough = false;
     r.approachHops = 0;
+    r.approachBestYd = 0.0f;
+    r.hopWalk = false;
     r.detour = false;
     r.walkTries = 0;
     r.walkStillMs = 0;
@@ -932,6 +962,36 @@ inline std::string DirectStragglerName(const std::string& answer)
     return answer.substr(head.size(), at - head.size());
 }
 
+inline std::string MissingHint(const Run& r)
+{
+    return r.pendingMissing ? " (item " + std::to_string(r.pendingMissing) +
+        " missing: .bot run skip leaves out the steps that need it)" : std::string();
+}
+
+// The module's refusals of a loot order that another bot, or the facts, may
+// settle (BeginLootAct): the loot rules (another member's turn, already looted,
+// not tapped by the group), and a corpse with nothing left on it.
+constexpr const char* kLootRightsText = "nothing this bot may loot";
+constexpr const char* kLootEmptyText = "Nothing is left to loot";
+
+inline bool LootRefusalOpen(const std::string& text)
+{
+    return text.find(kLootRightsText) != std::string::npos || text.find(kLootEmptyText) != std::string::npos;
+}
+
+// A loot order was refused or failed: the step does not pause yet. The next
+// tick (TaskStep, with the facts) counts it done if a party bot carries the
+// item, tries the bot whose turn it is or another one for a refusal on the
+// loot rules, and pauses only when none is left.
+inline void LootRefused(Run& r, const std::string& text)
+{
+    r.lootRefusal = text;
+    r.lootRights = text.find(kLootRightsText) != std::string::npos;
+    r.orderSent = false;
+    EnterPhase(r, Phase::Begin);
+    r.note = text + ": looking for another bot to take it";
+}
+
 inline void OrderRefused(Run& r, const std::string& order, const std::string& answer)
 {
     // The summon of a direct step's follower: `busy` (a summon of that bot is
@@ -1056,9 +1116,12 @@ inline void OrderRefused(Run& r, const std::string& order, const std::string& an
     }
     if (s && (s->kind == PlanStepKind::Loot || s->kind == PlanStepKind::UseItem) && s->item)
         r.pendingMissing = s->item;
-    Pause(r, "cmd " + order + " refused: " + answer +
-        (r.pendingMissing ? " (item " + std::to_string(r.pendingMissing) +
-            " missing: .bot run skip leaves out the steps that need it)" : ""));
+    if (s && s->kind == PlanStepKind::Loot && order.compare(0, 5, "loot ") == 0 && LootRefusalOpen(answer))
+    {
+        LootRefused(r, "cmd " + order + " refused: " + answer);
+        return;
+    }
+    Pause(r, "cmd " + order + " refused: " + answer + MissingHint(r));
 }
 
 inline bool NeedsRest(const Facts& f, const RestLines& l)
@@ -1427,6 +1490,16 @@ inline void ApproachHop(Run& r, const Facts& f, const PlanStep& s, std::uint32_t
         Pause(r, "no walkable path toward the " + what + " at " + Num(s.x) + " " + Num(s.y) + " " + Num(s.z));
         return;
     }
+    // The cap counts hops that did not bring the lead bot nearer: a long way
+    // walked in hops of kApproachHopYd is not stopped by it, a loop is.
+    float const toStep = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, s.x, s.y, s.z);
+    if (r.approachBestYd <= 0.0f)
+        r.approachBestYd = toStep;
+    else if (toStep < r.approachBestYd - kApproachProgressYd)
+    {
+        r.approachBestYd = toStep;
+        r.approachHops = 0;
+    }
     if (++r.approachHops > kMaxApproachHops)
     {
         // Before the pause, a bot that stands still far behind is summoned
@@ -1440,9 +1513,13 @@ inline void ApproachHop(Run& r, const Facts& f, const PlanStep& s, std::uint32_t
             return;
         }
         Pause(r, std::to_string(kMaxApproachHops) + " approach hops did not bring the party within " +
-            Num(kSeeYd) + " yd of the " + what);
+            Num(kSeeYd) + " yd of the " + what + " (nearest it got: " + Num(r.approachBestYd) + " yd)");
         return;
     }
+    r.hopWalk = true;
+    r.hopX = f.approachX;
+    r.hopY = f.approachY;
+    r.hopZ = f.approachZ;
     WalkTo(r, f, f.approachX, f.approachY, f.approachZ, false, dt, order);
 }
 
@@ -1719,6 +1796,27 @@ inline bool WalkBack(Run& r, const Facts& f, std::uint32_t dt, std::string& orde
     return true;
 }
 
+// The approach hop the pack came in sight during is walked to its end first
+// (Ragefire 19z13, trogg cave pull 13: the pull's gather broke the hop off, the
+// anchor was still the stand at the top of the ramp, more than kStragglerDzYd
+// above, so the gather "went back" to it and the next hop came forward again:
+// eight times, then the hop cap). Arriving at the hop's point makes it the
+// anchor (WalkTo). Not when a unit of the step stands within kHopClearYd of the
+// lead bot: then the pull goes on from here with the anchor unchanged.
+inline bool FinishHopInSight(Run& r, const Facts& f, std::uint32_t dt, std::string& order, const char* what)
+{
+    if (r.phase != Phase::Walk || !r.hopWalk || r.walkX != r.hopX || r.walkY != r.hopY || r.walkZ != r.hopZ)
+        return false;
+    for (const UnitFact& u : f.units)
+        if (u.hostile && u.distLead < kHopClearYd)
+            return false;
+    r.note = std::string("approaching the ") + what;
+    if (!WalkTo(r, f, r.hopX, r.hopY, r.hopZ, false, dt, order))
+        return true;
+    EnterPhase(r, Phase::Begin); // arrived (the anchor is set): on with the pull
+    return false;
+}
+
 // pull and boss steps: approach until seen, then pull in order until nothing
 // hostile of the step is left. `order` lists the entries in kill order (empty:
 // any entry, nearest first).
@@ -1757,6 +1855,8 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         ApproachHop(r, f, s, dt, order, s.kind == PlanStepKind::Boss ? "boss" : "pack");
         return;
     }
+    if (FinishHopInSight(r, f, dt, order, s.kind == PlanStepKind::Boss ? "boss" : "pack"))
+        return;
     if (s.kind == PlanStepKind::Boss)
         for (const UnitFact& u : f.units)
             r.bossSeenAlive = r.bossSeenAlive || u.entry == s.entry;
@@ -1939,6 +2039,87 @@ inline bool UseDetour(Run& r, float x, float y, float z)
     return true;
 }
 
+// open / use_item: the bags of one bot, for PickItemCarrier.
+struct BagFact
+{
+    std::string name;
+    std::vector<std::uint32_t> held; // the step's input items this bot carries
+};
+
+// The bot an open / use_item goes to: the lead bot when it carries every input
+// of the step (its item, the item to use, and the second item in `param`),
+// else the first bot that does. None carries them all: the lead bot, and
+// `split` names who holds what when someone holds the step's first input.
+// Only the step's own inputs count, never loot a bot kept for other reasons.
+inline std::string PickItemCarrier(const std::vector<BagFact>& bags, const std::vector<std::uint32_t>& inputs,
+    const std::string& lead, std::string* split = nullptr)
+{
+    auto holdsAll = [&](const BagFact& b)
+    {
+        for (std::uint32_t item : inputs)
+            if (item && std::find(b.held.begin(), b.held.end(), item) == b.held.end())
+                return false;
+        return true;
+    };
+    std::string best;
+    for (const BagFact& b : bags)
+        if (holdsAll(b) && (best.empty() || b.name == lead))
+            best = b.name;
+    if (!best.empty())
+        return best;
+    if (split && !inputs.empty())
+    {
+        bool first = false;
+        for (const BagFact& b : bags)
+            first = first || std::find(b.held.begin(), b.held.end(), inputs[0]) != b.held.end();
+        if (first)
+            for (const BagFact& b : bags)
+            {
+                std::string has;
+                for (std::uint32_t item : b.held)
+                    has += (has.empty() ? "" : ", ") + std::to_string(item);
+                if (!has.empty())
+                    *split += (split->empty() ? "" : "; ") + b.name + " holds " + has;
+            }
+    }
+    return lead;
+}
+
+// loot: the next bot to try after a refusal on the loot rules: the one whose
+// round-robin turn the corpse is (f.lootTurn), then each living party bot not
+// tried yet. "" for none.
+inline std::string NextLootBot(const Run& r, const Facts& f)
+{
+    auto tried = [&](const std::string& name)
+    {
+        return std::find(r.lootTried.begin(), r.lootTried.end(), name) != r.lootTried.end();
+    };
+    if (!f.lootTurn.empty() && !tried(f.lootTurn))
+        for (const MemberFact& m : f.members)
+            if (m.name == f.lootTurn)
+                return f.lootTurn;
+    for (const MemberFact& m : f.members)
+        if (!m.name.empty() && !tried(m.name))
+            return m.name;
+    return std::string();
+}
+
+// loot: no bot is left to try (or the refusal was not about the loot rules).
+inline void LootGivenUp(Run& r, const Facts& f, const PlanStep& s)
+{
+    std::string text = r.lootRefusal;
+    if (s.item && f.corpseChecked && !f.corpseHasItem)
+        text = "loot: item " + std::to_string(s.item) + " not on corpse and not in any bag (" + text + ")";
+    else if (r.lootRights && r.lootTried.size() > 1)
+    {
+        text += " (tried";
+        for (const std::string& name : r.lootTried)
+            text += " " + name;
+        text += ")";
+    }
+    Pause(r, text + MissingHint(r));
+}
+
 // loot, open, use_item: one commander task for the carrier, then its result.
 inline void TaskStep(Run& r, const Facts& f, const PlanStep& s, std::string& order)
 {
@@ -1948,6 +2129,35 @@ inline void TaskStep(Run& r, const Facts& f, const PlanStep& s, std::string& ord
         if ((s.kind == PlanStepKind::Loot || s.kind == PlanStepKind::UseItem) && s.item && f.carrierHasItem)
         {
             NextStep(r, kind + ": " + f.carrier + " already carries item " + std::to_string(s.item));
+            return;
+        }
+        // A loot step is done when any party bot has the item (the quest item of
+        // one member is looted by that member, or already was: Uldaman 19z13,
+        // Revelosh 7741), before the order and after a refusal.
+        if (s.kind == PlanStepKind::Loot && s.item && f.partyHasItem)
+        {
+            NextStep(r, kind + ": " + (f.itemHolder.empty() ? f.carrier : f.itemHolder) + " already carries item " +
+                std::to_string(s.item));
+            return;
+        }
+        if (s.kind == PlanStepKind::Loot && !r.lootRefusal.empty())
+        {
+            std::string next;
+            // The item gone from the corpse (and in no bag): no bot can take it.
+            if (r.lootRights && !(s.item && f.corpseChecked && !f.corpseHasItem))
+                next = NextLootBot(r, f);
+            if (next.empty())
+            {
+                LootGivenUp(r, f, s);
+                return;
+            }
+            r.taskBot = next;
+        }
+        if ((s.kind == PlanStepKind::Open || s.kind == PlanStepKind::UseItem) && !f.itemsSplit.empty())
+        {
+            // The items the step needs sit in different bags (a loot step passed
+            // on another bot's bags): one bot must carry them all.
+            Pause(r, kind + ": no bot carries every item it needs: " + f.itemsSplit);
             return;
         }
         if (s.kind == PlanStepKind::Open && s.item && !f.carrierHasItem)
@@ -1983,7 +2193,10 @@ inline void TaskStep(Run& r, const Facts& f, const PlanStep& s, std::string& ord
         }
         r.orderSent = true;
         EnterPhase(r, Phase::AwaitTask);
-        r.note = kind + " by " + f.carrier;
+        std::string const bot = s.kind == PlanStepKind::Loot && !r.taskBot.empty() ? r.taskBot : f.carrier;
+        if (s.kind == PlanStepKind::Loot)
+            r.lootTried.push_back(bot);
+        r.note = kind + " by " + bot;
         if (s.kind == PlanStepKind::Loot)
         {
             // The boss corpse remembered from his step: by guid (the loot task walks to it);
@@ -1992,9 +2205,9 @@ inline void TaskStep(Run& r, const Facts& f, const PlanStep& s, std::string& ord
             std::string const target = corpse != r.corpses.end() && corpse->second.guid
                 ? GuidArg(corpse->second.guid) : EntryArg(s.entry, s.x, s.y, s.z);
             if (corpse != r.corpses.end() && corpse->second.guid)
-                r.note = kind + " by " + f.carrier + ": the corpse of " + std::to_string(s.entry) + " at " +
+                r.note = kind + " by " + bot + ": the corpse of " + std::to_string(s.entry) + " at " +
                     Num(corpse->second.x) + " " + Num(corpse->second.y) + " " + Num(corpse->second.z);
-            order = "loot " + target + " " + f.carrier + (s.item ? " " + std::to_string(s.item) : "");
+            order = "loot " + target + " " + bot + (s.item ? " " + std::to_string(s.item) : "");
         }
         else if (s.kind == PlanStepKind::Open)
             order = "open " + EntryArg(s.entry, s.x, s.y, s.z) + " " + f.carrier;
@@ -2014,9 +2227,12 @@ inline void TaskStep(Run& r, const Facts& f, const PlanStep& s, std::string& ord
         }
         if (s.kind != PlanStepKind::Open && s.item)
             r.pendingMissing = s.item;
-        Pause(r, kind + " failed: " + f.taskText +
-            (r.pendingMissing ? " (item " + std::to_string(r.pendingMissing) +
-                " missing: .bot run skip leaves out the steps that need it)" : ""));
+        if (s.kind == PlanStepKind::Loot && LootRefusalOpen(f.taskText))
+        {
+            LootRefused(r, kind + " failed: " + f.taskText);
+            return;
+        }
+        Pause(r, kind + " failed: " + f.taskText + MissingHint(r));
         return;
     }
     if (f.carrierBusy)
@@ -2025,7 +2241,7 @@ inline void TaskStep(Run& r, const Facts& f, const PlanStep& s, std::string& ord
             Pause(r, kind + ": " + f.carrier + " did not finish in " + std::to_string(kTaskCapMs / 1000) + " s");
         return;
     }
-    if (s.kind != PlanStepKind::Open && s.item && !f.carrierHasItem)
+    if (s.kind != PlanStepKind::Open && s.item && !f.carrierHasItem && !(s.kind == PlanStepKind::Loot && f.partyHasItem))
     {
         if (consequence)
         {

@@ -408,6 +408,274 @@ static void TestUnseenPackIsApproachedNotCleared()
     CHECK(r3.state == State::Paused && r3.note.find("approach hops") != std::string::npos);
 }
 
+// Ragefire 19z13, trogg cave pull 13: the pack is 70 yd down a ramp. The hop
+// toward it was broken off by the pull's gather as soon as the pack came in
+// sight, while the anchor was still the previous stand 11 yd higher (more than
+// kStragglerDzYd): the gather "went back" to it, the next hop came forward
+// again, eight times, then the hop cap. The hop is walked to its end first, and
+// its point becomes the anchor.
+static void TestFarPackHopIsNotUndoneByTheGatherBack()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(-238.0f, {11318})};
+    plan.steps[0].y = -36.0f;
+    plan.steps[0].z = -56.4f;
+    Run r = Start(&plan);
+    r.restDue = false;
+    r.anchorKnown = true; // the previous step's stand, at the top of the ramp
+    r.anchorX = -169.1f; r.anchorY = -34.9f; r.anchorZ = -40.9f;
+    Facts f = Party(-169.1f);
+    f.leadY = -34.9f; f.leadZ = -40.9f;
+    f.seen = false;
+    f.approachKnown = true;
+    f.approachX = -205; f.approachY = -34; f.approachZ = -52;
+    CHECK(Tick(r, f) == "move -205.0 -34.0 -52.0");
+    // Half way down the pack comes in sight (60 yd): the hop goes on.
+    f.leadX = -200.7f; f.leadY = -35.6f; f.leadZ = -48.5f;
+    f.seen = true;
+    f.units = {Unit(1, 11318, 38)};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.phase == Phase::Walk && r.note == "approaching the pack");
+    // At the hop's point: it is the anchor and the pull goes out, no gather back.
+    f.leadX = -205; f.leadY = -34; f.leadZ = -52;
+    f.units = {Unit(1, 11318, 34)};
+    CHECK(Tick(r, f) == "pullback 1");
+    CHECK(r.anchorX == -205.0f && r.anchorZ == -52.0f);
+    CHECK(r.note.find("gathering back") == std::string::npos);
+    // A unit of the pack within kHopClearYd: no walking on, the pull goes from
+    // here and the anchor stays (the party is not gathered next to the pack).
+    Run q = Start(&plan);
+    q.restDue = false;
+    q.anchorKnown = true;
+    q.anchorX = -169.1f; q.anchorY = -34.9f; q.anchorZ = -40.9f;
+    Facts g = Party(-169.1f);
+    g.leadY = -34.9f; g.leadZ = -40.9f;
+    g.seen = false;
+    g.approachKnown = true;
+    g.approachX = -205; g.approachY = -34; g.approachZ = -52;
+    Tick(q, g);
+    g.leadX = -222; g.leadY = -34; g.leadZ = -54;
+    g.seen = true;
+    g.maxMemberYd = 40;
+    g.units = {Unit(1, 11318, 17)};
+    CHECK(Tick(q, g).compare(0, 5, "move ") == 0);
+    CHECK(q.note.find("gathering back at -169.1 -34.9 -40.9") == 0);
+    CHECK(q.anchorX == -169.1f);
+    // A player's move next to the visible pack, the party behind: the anchor stays too.
+    Run m = Start(&plan);
+    m.restDue = false;
+    m.anchorKnown = true;
+    m.anchorX = -169.1f; m.anchorY = -34.9f; m.anchorZ = -40.9f;
+    Facts h = g;
+    h.units = {Unit(1, 11318, 15)};
+    Tick(m, h);
+    CHECK(m.anchorX == -169.1f && m.anchorZ == -40.9f);
+}
+
+// A hop loop that really gets nowhere still pauses after kMaxApproachHops, with
+// how near it got; a long way walked in hops that do get nearer is not capped.
+static void TestApproachHopCapCountsHopsWithoutProgress()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(1000, {1})};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.seen = false;
+    f.approachKnown = true;
+    for (int hop = 1; hop <= 3 * static_cast<int>(kMaxApproachHops); ++hop)
+    {
+        f.approachX = f.leadX + 40;
+        CHECK(Tick(r, f) == "move " + Num(f.approachX) + " 0.0 0.0");
+        f.leadX = f.approachX; // the hop is walked, 40 yd nearer
+        CHECK(Tick(r, f).empty());
+        CHECK(r.state == State::Running);
+    }
+    // The lead bot is pushed back each time: no progress, 8 hops, the pause.
+    Run s = Start(&plan);
+    s.restDue = false;
+    Facts g = Party(0);
+    g.seen = false;
+    g.approachKnown = true;
+    for (int i = 0; i < 100 && s.state == State::Running; ++i)
+    {
+        g.approachX = 40;
+        Tick(s, g);
+        g.leadX = 40;
+        Tick(s, g);
+        g.leadX = 0; // dragged back
+    }
+    CHECK(s.state == State::Paused);
+    CHECK(s.note.find("8 approach hops did not bring the party within 60.0 yd of the pack") == 0);
+    CHECK(s.note.find("nearest it got: 1000.0 yd") != std::string::npos);
+}
+
+// Uldaman 19z13, Revelosh loot step 20: the lead bot may not loot the corpse
+// (quest item 7741, another member's turn). The step is done once any party bot
+// carries the item; else the bot whose turn it is, then each living bot, is
+// tried before the run pauses.
+static void TestLootStepIsDoneWhenAnyPartyBotHasTheItem()
+{
+    DungeonPlan plan;
+    PlanStep loot = Step(PlanStepKind::Loot, 1, 2, 3);
+    loot.entry = 6910;
+    loot.item = 7741;
+    plan.steps = {loot, Step(PlanStepKind::Move, 9)};
+    // Before the order.
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.members = {Mem("Tanky", 0), Mem("Healy", 5)};
+    f.partyHasItem = true;
+    f.itemHolder = "Healy";
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note.find("Healy already carries item 7741") != std::string::npos);
+    // After a refusal (Healy took the item while the order was out).
+    Run q = Start(&plan);
+    Facts g = Party(0);
+    g.members = f.members;
+    std::string const order = Tick(q, g);
+    CHECK(order.compare(0, 5, "loot ") == 0);
+    OrderRefused(q, order, "failed: This corpse has nothing this bot may loot under the group's loot rules");
+    CHECK(q.state == State::Running && q.step == 0);
+    g.partyHasItem = true;
+    g.itemHolder = "Healy";
+    CHECK(Tick(q, g).empty());
+    CHECK(q.step == 1 && q.state == State::Running);
+}
+
+static void TestLootRefusalTriesTheTurnBotThenEachBot()
+{
+    DungeonPlan plan;
+    PlanStep loot = Step(PlanStepKind::Loot, 1, 2, 3);
+    loot.entry = 6910;
+    loot.item = 7741;
+    plan.steps = {loot, Step(PlanStepKind::Move, 9)};
+    char const* rights = "failed: This corpse has nothing this bot may loot under the group's loot rules (another "
+        "member's turn, already looted, or not tapped by the group)";
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.members = {Mem("Tanky", 0), Mem("Healy", 5), Mem("Stabby", 6)};
+    f.corpseChecked = true;
+    f.corpseHasItem = true; // still on the corpse
+    std::string order = Tick(r, f);
+    CHECK(order.find(" Tanky 7741") != std::string::npos);
+    OrderRefused(r, order, rights);
+    CHECK(r.state == State::Running);
+    // The corpse's round-robin turn is Stabby's: he is tried first.
+    f.lootTurn = "Stabby";
+    order = Tick(r, f);
+    CHECK(order.compare(0, 5, "loot ") == 0 && order.find(" Stabby 7741") != std::string::npos);
+    CHECK(r.state == State::Running && r.taskBot == "Stabby");
+    OrderRefused(r, order, rights);
+    // Then each bot not tried yet.
+    order = Tick(r, f);
+    CHECK(order.find(" Healy 7741") != std::string::npos);
+    // His task is accepted and the item lands in his bags: done.
+    f.taskReply = 1;
+    f.partyHasItem = true;
+    f.itemHolder = "Healy";
+    Tick(r, f);
+    CHECK(r.state == State::Running && r.step == 1);
+
+    // Everybody refused: one pause naming who was tried and the skip hint.
+    Run p = Start(&plan);
+    Facts g = f;
+    g.partyHasItem = false;
+    g.taskReply = 0;
+    g.lootTurn.clear();
+    for (int i = 0; i < 3; ++i)
+    {
+        order = Tick(p, g);
+        CHECK(order.compare(0, 5, "loot ") == 0);
+        OrderRefused(p, order, rights);
+    }
+    Tick(p, g);
+    CHECK(p.state == State::Paused);
+    CHECK(p.note.find("(tried Tanky Healy Stabby)") != std::string::npos);
+    CHECK(p.note.find("item 7741 missing") != std::string::npos);
+
+    // The item is gone from the corpse and in no bag: no point in trying the
+    // rest; the pause says so plainly.
+    Run e = Start(&plan);
+    Facts h = f;
+    h.partyHasItem = false;
+    h.taskReply = 0;
+    h.corpseHasItem = false;
+    order = Tick(e, h);
+    OrderRefused(e, order, rights);
+    Tick(e, h);
+    CHECK(e.state == State::Paused);
+    CHECK(e.note.find("item 7741 not on corpse and not in any bag") != std::string::npos);
+    CHECK(e.note.find("item 7741 missing") != std::string::npos);
+    // A refusal that is not about the loot rules still pauses at once.
+    Run n = Start(&plan);
+    order = Tick(n, f);
+    OrderRefused(n, order, "not-found: No corpse of that entry is near the point");
+    CHECK(n.state == State::Paused && n.note.find("not-found") != std::string::npos);
+}
+
+// open / use_item go to the bot that carries every input of the step: its item
+// (or the item to use) and `param`. Loot another bot keeps for other reasons
+// does not count.
+static void TestItemCarrierIsPickedFromTheStepsOwnInputs()
+{
+    std::vector<BagFact> bags(3);
+    bags[0].name = "Tanky";
+    bags[1].name = "Healy";
+    bags[2].name = "Stabby";
+    std::string split;
+    // The Medallion use: 7740, and the Shaft 7741 in `param`.
+    std::vector<std::uint32_t> inputs = {7740, 7741};
+    bags[0].held = {7740};
+    bags[1].held = {7740, 7741};
+    CHECK(PickItemCarrier(bags, inputs, "Tanky", &split) == "Healy");
+    // The lead bot carries all: it keeps the step.
+    bags[0].held = {7740, 7741};
+    CHECK(PickItemCarrier(bags, inputs, "Tanky", &split) == "Tanky");
+    // The Keystone: only its key matters; two bots carry unrelated loot (the
+    // glue lists only the step's own inputs, so those do not show up at all).
+    std::vector<std::uint32_t> key = {7733};
+    bags[0].held.clear();
+    bags[1].held.clear();
+    bags[2].held = {7733};
+    CHECK(PickItemCarrier(bags, key, "Tanky", &split) == "Stabby");
+    CHECK(split.empty());
+    // Split: the lead bot stays the carrier and the note says who holds what.
+    bags[0].held = {7740};
+    bags[1].held = {7741};
+    bags[2].held.clear();
+    CHECK(PickItemCarrier(bags, inputs, "Tanky", &split) == "Tanky");
+    CHECK(split == "Tanky holds 7740; Healy holds 7741");
+    // Nobody has the first input: no split note (the missing-item rules apply).
+    split.clear();
+    bags[0].held.clear();
+    CHECK(PickItemCarrier(bags, inputs, "Tanky", &split) == "Tanky" && split.empty());
+}
+
+// The use_item pauses, naming who holds what, when the inputs are split.
+static void TestUseItemPausesOnSplitInputs()
+{
+    DungeonPlan plan;
+    PlanStep use = Step(PlanStepKind::UseItem);
+    use.entry = 7740;
+    use.item = 7733;
+    use.param = 7741;
+    plan.steps = {use};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.carrierHasEntryItem = true;
+    f.itemsSplit = "Tanky holds 7740; Healy holds 7741";
+    Tick(r, f);
+    CHECK(r.state == State::Paused);
+    CHECK(r.note.find("no bot carries every item it needs: Tanky holds 7740; Healy holds 7741") != std::string::npos);
+    // Healy carries both: the glue names her the carrier and the use goes to her.
+    Run q = Start(&plan);
+    Facts g = Party(0);
+    g.carrier = "Healy";
+    g.carrierHasEntryItem = true;
+    CHECK(Tick(q, g) == "use 7740 Healy");
+}
+
 static void TestPullThatStartsNoFightIsPassed()
 {
     DungeonPlan plan;
@@ -2501,6 +2769,12 @@ int main()
     TestUnreachableMoveDetours();
     TestPullGatherAndFight();
     TestUnseenPackIsApproachedNotCleared();
+    TestFarPackHopIsNotUndoneByTheGatherBack();
+    TestApproachHopCapCountsHopsWithoutProgress();
+    TestItemCarrierIsPickedFromTheStepsOwnInputs();
+    TestUseItemPausesOnSplitInputs();
+    TestLootStepIsDoneWhenAnyPartyBotHasTheItem();
+    TestLootRefusalTriesTheTurnBotThenEachBot();
     TestPullThatStartsNoFightIsPassed();
     TestAmbushWalksThrough();
     TestBossKillOrderAndTeamGate();
