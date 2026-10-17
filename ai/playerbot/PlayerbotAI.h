@@ -351,6 +351,8 @@ public:
     virtual void UpdateAI(uint32 elapsed, bool minimal = false);
 
     void HandleCommands();
+    // Chat commands waiting for the next reaction pass (HandleCommands drains them).
+    size_t QueuedChatCommandCount() const { return chatCommands.size(); }
 private:
     void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
 public:

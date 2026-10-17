@@ -52,6 +52,7 @@
 #include "../ai/playerbot/DungeonPlanPolicy.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -858,6 +859,218 @@ inline Run Start(const DungeonPlan* plan, std::size_t fromStep = 0)
         r.note = "plan has no steps";
     }
     return r;
+}
+
+inline std::string LowerCopy(std::string v)
+{
+    for (char& c : v)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return v;
+}
+
+// ---------------------------------------------------------------------------
+// The run's own time limit (AiPlayerbot.DungeonRunMaxMinutes) and the notes of
+// a stop. A run that hit its limit used to read "stopped by .bot run stop"
+// (Uldaman run 2, 2026-10-17: the agent's 3 h cap sent a plain stop).
+// ---------------------------------------------------------------------------
+
+constexpr std::uint32_t kRunMaxMinutesDefault = 180; // the shipped template and the code fallback agree (3 h)
+
+// maxMinutes 0 = no limit.
+inline bool RunTimeLimitReached(std::uint64_t elapsedMs, std::uint32_t maxMinutes)
+{
+    return maxMinutes > 0 && elapsedMs >= static_cast<std::uint64_t>(maxMinutes) * 60000ull;
+}
+
+// "time limit reached (3h)", "time limit reached (90 min)".
+inline std::string RunTimeLimitNote(std::uint32_t maxMinutes)
+{
+    std::string span = maxMinutes % 60 == 0 ? std::to_string(maxMinutes / 60) + "h"
+                                            : std::to_string(maxMinutes) + " min";
+    return "time limit reached (" + span + ")";
+}
+
+// The note of `.bot run stop [reason]`: no reason keeps the old text; a reason
+// (the agent's own cap, "time limit reached (3h)") is shown as it came, cut to
+// kRunStopReasonMax characters and reduced to printable ASCII without the
+// protocol's separator.
+constexpr std::size_t kRunStopReasonMax = 80;
+
+inline std::string RunStopNote(const std::string& reason)
+{
+    std::string clean;
+    for (char c : reason)
+    {
+        if (c == '|' || c < 0x20 || c > 0x7e)
+            c = ' ';
+        if (c == ' ' && (clean.empty() || clean.back() == ' '))
+            continue;
+        clean.push_back(c);
+        if (clean.size() >= kRunStopReasonMax)
+            break;
+    }
+    while (!clean.empty() && clean.back() == ' ')
+        clean.pop_back();
+    return clean.empty() ? std::string("stopped by .bot run stop") : "stopped: " + clean;
+}
+
+// ---------------------------------------------------------------------------
+// `.bot run start [plan] [from [leg|step] <leg name|leg number|step number>]`
+// ---------------------------------------------------------------------------
+
+enum class StartFrom : std::uint8_t
+{
+    Beginning, // no `from`: the first step
+    Leg,       // a leg's name or number (`from 4`, `from leg trogg_west`)
+    Step,      // a step number as the status line shows it, from 1 (`from step 57`)
+};
+
+struct StartArgs
+{
+    bool ok = true;       // false: the words do not parse
+    std::string plan;     // "" = the one plan of the lead bot's map
+    StartFrom from = StartFrom::Beginning;
+    std::string value;    // the leg name / number or the step number
+};
+
+// `arg` is the text after `start`, already lowercased. Words before `from` are
+// the plan (at most one); after it an optional `leg` or `step`, then the value.
+inline StartArgs ParseStartArgs(const std::string& arg)
+{
+    StartArgs out;
+    std::vector<std::string> words;
+    std::size_t i = 0;
+    while (i < arg.size())
+    {
+        while (i < arg.size() && (arg[i] == ' ' || arg[i] == '\t'))
+            ++i;
+        std::size_t begin = i;
+        while (i < arg.size() && arg[i] != ' ' && arg[i] != '\t')
+            ++i;
+        if (i > begin)
+            words.push_back(arg.substr(begin, i - begin));
+    }
+    std::size_t at = 0;
+    if (!words.empty() && words[0] != "from")
+        out.plan = words[at++];
+    if (at == words.size())
+        return out;
+    if (words[at] != "from")
+    {
+        out.ok = false; // a second word that is not `from`
+        return out;
+    }
+    ++at;
+    StartFrom kind = StartFrom::Leg;
+    if (at < words.size() && (words[at] == "leg" || words[at] == "step"))
+        kind = words[at++] == "leg" ? StartFrom::Leg : StartFrom::Step;
+    if (at + 1 != words.size())
+    {
+        out.ok = false; // no value, or words after it
+        return out;
+    }
+    out.from = kind;
+    out.value = words[at];
+    return out;
+}
+
+enum class FromResult : std::uint8_t
+{
+    Ok,
+    NoSuchLeg,
+    NoSuchStep,
+};
+
+inline bool AllDigits(const std::string& v)
+{
+    return !v.empty() && v.size() <= 5 && std::all_of(v.begin(), v.end(), [](char c) { return c >= '0' && c <= '9'; });
+}
+
+// A scripted event starts at its ritual, open or use_item step and runs on in the
+// hold behind it (EventHoldAhead). A start that lands on the hold, or on a move
+// leading into one, would never send the ritual: it goes back to the step that
+// starts the event (the Uldaman Keepers' ritual ends leg 10, its hold opens
+// leg 11). Anything else, or a hold with no such step before it, stays put.
+inline std::size_t EventStartStep(const DungeonPlan& plan, std::size_t idx)
+{
+    auto const moveLike = [](PlanStepKind k) { return k == PlanStepKind::Move || k == PlanStepKind::MoveDirect; };
+    std::size_t const n = plan.steps.size();
+    if (idx >= n)
+        return idx;
+    PlanStepKind const kind = plan.steps[idx].kind;
+    if (kind != PlanStepKind::Hold && !moveLike(kind))
+        return idx;
+    std::size_t j = idx;
+    while (j < n && moveLike(plan.steps[j].kind))
+        ++j;
+    if (kind != PlanStepKind::Hold && !(j < n && plan.steps[j].kind == PlanStepKind::Hold))
+        return idx;
+    std::size_t k = idx;
+    while (k > 0)
+    {
+        --k;
+        PlanStepKind const back = plan.steps[k].kind;
+        if (back == PlanStepKind::Ritual || back == PlanStepKind::Open || back == PlanStepKind::UseItem)
+            return k;
+        if (!moveLike(back))
+            return idx;
+    }
+    return idx;
+}
+
+// The index of the step the run starts at. `movedBack` is set when a start
+// inside an event was moved back to the step that starts it.
+inline FromResult ResolveStartStep(const DungeonPlan& plan, StartFrom from, const std::string& value,
+    std::size_t& step, bool* movedBack = nullptr)
+{
+    step = 0;
+    if (movedBack)
+        *movedBack = false;
+    if (from == StartFrom::Beginning)
+        return FromResult::Ok;
+    if (from == StartFrom::Step)
+    {
+        if (!AllDigits(value))
+            return FromResult::NoSuchStep;
+        std::size_t const n = static_cast<std::size_t>(std::atoi(value.c_str()));
+        if (n < 1 || n > plan.steps.size())
+            return FromResult::NoSuchStep;
+        step = EventStartStep(plan, n - 1);
+        if (movedBack)
+            *movedBack = step != n - 1;
+        return FromResult::Ok;
+    }
+    bool const numeric = AllDigits(value);
+    int const number = numeric ? std::atoi(value.c_str()) : -1;
+    for (std::size_t i = 0; i < plan.steps.size(); ++i)
+    {
+        std::uint8_t const leg = plan.steps[i].leg;
+        if (numeric ? static_cast<int>(leg) == number : LowerCopy(plan.LegName(leg)) == value)
+        {
+            step = EventStartStep(plan, i);
+            if (movedBack)
+                *movedBack = step != i;
+            return FromResult::Ok;
+        }
+    }
+    return FromResult::NoSuchLeg;
+}
+
+// A start partway needs the whole party inside the instance: the steps before
+// are not done and not checked, so a party that is outside (or scattered over
+// two maps) would walk a dungeon plan from the middle in the wrong place.
+enum class PartialStartVerdict : std::uint8_t
+{
+    Ok,
+    NotInstance,    // the lead bot is not on an instance map
+    PartyScattered, // a commanded bot is on another map or instance than the lead bot
+};
+
+inline PartialStartVerdict CheckPartialStart(bool leadOnInstanceMap, std::size_t members, std::size_t membersWithLead)
+{
+    if (!leadOnInstanceMap)
+        return PartialStartVerdict::NotInstance;
+    return membersWithLead < members ? PartialStartVerdict::PartyScattered : PartialStartVerdict::Ok;
 }
 
 // `.bot run resume`: the party regroups first (the dead are revived, the

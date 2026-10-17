@@ -102,6 +102,10 @@ The loader skips a row it cannot use and names it in the server log (`ai_dungeon
 
 Owner decision (2026-10-14): bots may clear a dungeon by themselves as an **opt-in** mode, off by default. It needs `AiPlayerbot.DungeonSelfClear = 1`, `AiPlayerbot.RemoteCommander = 1` and a remote commander binding (`.bot commander bind <LeadBot>`): the run leads the bound party, nobody else's. The commands and the `TBM:RUN` status line are in [Player Controls §1b](player-controls.md#1b-run-leader-bot-run-dungeon-self-clear).
 
+**Starting partway** (`.bot run start [plan] from <leg|step>`, player-controls §1b): the run begins at the first step of a leg (`from 4`, `from leg trogg_west`) or at a step number (`from step 57`) instead of the start, for a party that is already inside the instance (a retry after a failed run, a hand-walked party). The server checks that the lead bot is on an instance map and the whole commanded party in its instance, and says so in its reply; the steps before are neither done nor checked, (a start inside a scripted event goes back to the step that starts it, so the ritual is not skipped), so doors they would open and items they would fetch are the caller's business. Without `from` the run starts at step 1 as before.
+
+**Time limit:** `AiPlayerbot.DungeonRunMaxMinutes` (default 180, `0` = none) ends a run that has lasted that long since `run start` (a pause counts) with the note `time limit reached (3h)`; it is not a stop by hand. A driver with a limit of its own can pass its reason to `.bot run stop <reason>`.
+
 It is the **observe** mode of the dungeon modes: the bots clear, the commander (a player, or turtle-agent with `--mode observe`) only watches the status line and the `TBM:VIEW` feed, and may pause, skip, resume or stop.
 
 ### How it plays

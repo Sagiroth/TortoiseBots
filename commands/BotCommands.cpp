@@ -4488,6 +4488,7 @@ struct DungeonRunSlot
     int taskReply = 0;        // its task's answer since then: 0 none, 1 ACK, 2 ERR
     std::string taskText;
     std::unordered_set<uint64> heldRaw; // bots on stay for the run's hold (DungeonRun::Run::hold)
+    uint64 elapsedMs = 0;     // since `run start`, a pause counts (AiPlayerbot.DungeonRunMaxMinutes)
 };
 
 std::unordered_map<uint64, DungeonRunSlot>& DungeonRuns()
@@ -5954,6 +5955,7 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
     facts.distanceFromLead = std::sqrt(dx * dx + dy * dy + dz * dz);
     facts.maxDistance = sPlayerbotAIConfig.reactDistance;
     facts.leadSpotGather = s_runIssuing && s_runGather;
+    facts.fromRunLeader = s_runIssuing;
     // The lead bot already stands on the point ("hold here"): the path finder
     // answers NOPATH for a zero-length path, so skip it; CheckMove accepts it.
     if (!RemoteCommander::IsAtLead(facts.distanceFromLead))
@@ -5966,6 +5968,10 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
         float const ey = end.y - point.y;
         float const ez = end.z - point.z;
         facts.endOffset = std::sqrt(ex * ex + ey * ey + ez * ez);
+        float const lx = end.x - lead->GetPositionX();
+        float const ly = end.y - lead->GetPositionY();
+        float const lz = end.z - lead->GetPositionZ();
+        facts.endFromLead = std::sqrt(lx * lx + ly * ly + lz * lz);
     }
     RemoteCommander::MoveVerdict verdict = RemoteCommander::CheckMove(facts);
     if (verdict != RemoteCommander::MoveVerdict::Ok)
@@ -5975,7 +5981,7 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
             message = "The point is more than " + std::to_string(static_cast<uint32>(facts.maxDistance)) +
                 " yd (AiPlayerbot.ReactDistance) from the lead bot. Move in shorter legs.";
         else if (verdict == RemoteCommander::MoveVerdict::NoPath)
-            message = "The lead bot has no walkable path to that point.";
+            message = "The lead bot has no walkable path to that point (no navmesh route reaches it).";
         else
             message = "The point is not on walkable ground (the path ends more than 5 yd from it).";
         SendActionError(handler, intent, RemoteCommander::MoveVerdictCode(verdict), message.c_str());
@@ -9567,6 +9573,20 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
         return;
     DungeonRunSlot& slot = it->second;
     Player* commander = FindCharacter(commanderRaw);
+    // The run's own time limit: it ends the run with its own note, not as a plain stop.
+    slot.elapsedMs += dt;
+    if (slot.run.state != TortoiseBots::DungeonRun::State::Done &&
+        TortoiseBots::DungeonRun::RunTimeLimitReached(slot.elapsedMs, sPlayerbotAIConfig.dungeonRunMaxMinutes))
+    {
+        slot.run.state = TortoiseBots::DungeonRun::State::Done;
+        slot.run.note = TortoiseBots::DungeonRun::RunTimeLimitNote(sPlayerbotAIConfig.dungeonRunMaxMinutes);
+        TB_LOG_DETAIL("TortoiseBots: run leader of %s: %s", commander ? commander->GetName() : "?",
+            slot.run.note.c_str());
+        SendRunLine(commander, slot, true);
+        ReleaseRunHold(commander, binding->leadGuid, slot);
+        DungeonRuns().erase(it);
+        return;
+    }
     if (slot.run.state != TortoiseBots::DungeonRun::State::Running || !commander)
     {
         ReleaseRunHold(commander, binding->leadGuid, slot); // paused by a player's order (DungeonRun::Pause)
@@ -9738,7 +9758,8 @@ static bool HandleDungeonRun(ChatHandler* handler, char const* args)
     std::string verb = text.substr(0, split);
     for (char& c : verb)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    std::string arg = split == std::string::npos ? std::string() : Trim(text.substr(split + 1));
+    std::string const rawArg = split == std::string::npos ? std::string() : Trim(text.substr(split + 1));
+    std::string arg = rawArg;
     for (char& c : arg)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     std::string const intent = "run " + (verb.empty() ? std::string("unknown") : ProtocolSafe(verb));
@@ -9746,7 +9767,7 @@ static bool HandleDungeonRun(ChatHandler* handler, char const* args)
     if (verb != "start" && verb != "pause" && verb != "resume" && verb != "skip" && verb != "stop" &&
         verb != "status" && verb != "list")
     {
-        SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] / pause / resume / skip / stop / status / list");
+        SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from <leg|step N>] / pause / resume / skip / stop [reason] / status / list");
         return true;
     }
     Player* commander = Requester(handler);
@@ -9804,7 +9825,14 @@ static bool HandleDungeonRun(ChatHandler* handler, char const* args)
             SendActionError(handler, intent, "lead-unavailable", "The lead bot is between maps. Try again in a moment.");
             return true;
         }
-        std::string name = arg;
+        StartArgs const startArgs = ParseStartArgs(arg);
+        if (!startArgs.ok)
+        {
+            SendActionError(handler, intent, "invalid",
+                "Usage: .bot run start [plan] [from <leg name|leg number|step N>] (.bot run list)");
+            return true;
+        }
+        std::string name = startArgs.plan;
         if (name.empty())
         {
             std::vector<std::string> const here = ai::GetDungeonPlans().PlansOnMap(lead->GetMapId());
@@ -9829,11 +9857,51 @@ static bool HandleDungeonRun(ChatHandler* handler, char const* args)
                 "The lead bot is not on that plan's map: bring the party in first (.bot cmd enter).");
             return true;
         }
+        std::size_t startStep = 0;
+        bool movedBack = false;
+        FromResult const resolved = ResolveStartStep(*plan, startArgs.from, startArgs.value, startStep, &movedBack);
+        if (resolved != FromResult::Ok)
+        {
+            SendActionError(handler, intent, resolved == FromResult::NoSuchLeg ? "no-leg" : "no-step",
+                resolved == FromResult::NoSuchLeg
+                    ? "The plan has no such leg (a leg name or number from .bot run status)."
+                    : ("The plan has steps 1 to " + std::to_string(plan->steps.size()) + ".").c_str());
+            return true;
+        }
+        // A start partway is only for a party that already stands in the instance: the steps before
+        // are neither done nor checked here (the retry after a failed run, or a hand-walked party).
+        if (startStep > 0)
+        {
+            Group* leadGroup = lead->GetGroup();
+            std::vector<Player*> const members = leadGroup ? CommandedBots(leadGroup, lead) : std::vector<Player*>();
+            std::size_t withLead = 0;
+            for (Player* member : members)
+                if (member->GetMapId() == lead->GetMapId() && member->GetInstanceId() == lead->GetInstanceId())
+                    ++withLead;
+            PartialStartVerdict const verdict = CheckPartialStart(OnInstanceMap(lead), members.size(), withLead);
+            if (verdict != PartialStartVerdict::Ok)
+            {
+                SendActionError(handler, intent, verdict == PartialStartVerdict::NotInstance ? "not-in-instance" : "party-scattered",
+                    verdict == PartialStartVerdict::NotInstance
+                        ? "A run starts partway only inside the instance: bring the party in first (.bot cmd enter), or start from the beginning."
+                        : "A run starts partway only when the whole party is in the lead bot's instance (.bot cmd summon).");
+                return true;
+            }
+        }
         DungeonRunSlot slot;
-        slot.run = Start(plan);
+        slot.run = Start(plan, startStep);
         DungeonRunSlot& stored = DungeonRuns()[commanderRaw] = slot;
         s_dungeonRunMs = 0;
-        TB_LOG_DETAIL("TortoiseBots: run leader of %s started plan %s", commander->GetName(), plan->name.c_str());
+        TB_LOG_DETAIL("TortoiseBots: run leader of %s started plan %s at step %u", commander->GetName(), plan->name.c_str(),
+            static_cast<uint32>(startStep + 1));
+        if (startStep > 0)
+        {
+            std::string const& legName = plan->LegName(plan->steps[startStep].leg);
+            handler->PSendSysMessage("The run starts at step %u of %u (leg %s): the party is in the instance; the steps before it are not done or checked.%s",
+                static_cast<uint32>(startStep + 1), static_cast<uint32>(plan->steps.size()),
+                legName.empty() ? std::to_string(plan->steps[startStep].leg).c_str() : legName.c_str(),
+                movedBack ? " The start was moved back to the step that starts the event it fell in." : "");
+        }
         SendActionAck(handler, intent, "party", static_cast<uint32>(plan->steps.size()), plan->name);
         SendRunLine(commander, stored, true);
         return true;
@@ -9854,7 +9922,7 @@ static bool HandleDungeonRun(ChatHandler* handler, char const* args)
     if (verb == "stop")
     {
         slot.run.state = State::Done;
-        slot.run.note = "stopped by .bot run stop";
+        slot.run.note = RunStopNote(rawArg); // "stopped by .bot run stop", or the reason the caller gave
         SendRunLine(commander, slot, true);
         ReleaseRunHold(commander, binding->leadGuid, slot); // held bots follow the lead bot again
         DungeonRuns().erase(it);

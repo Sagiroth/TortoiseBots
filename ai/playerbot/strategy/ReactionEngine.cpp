@@ -3,6 +3,7 @@
 
 #include "ReactionEngine.h"
 #include "playerbot/BombRunoutPolicy.h"
+#include "../../../runtime/ReactionWorkPolicy.h"
 #include <iomanip>
 
 using namespace ai;
@@ -329,8 +330,10 @@ bool ReactionEngine::HasReactionWork() const
     Player* bot = ai->GetBot();
     if (!bot)
         return true;
-    // Queued owner commands or combat/death/alive transitions always run.
-    if (ai->HasRealPlayerMaster())
+    // Queued owner commands or combat/death/alive transitions always run. A
+    // command waiting in the chat queue counts for a masterless bot too (a
+    // bound hire): see runtime/ReactionWorkPolicy.h.
+    if (TortoiseBots::ReactionPassForced(ai->HasRealPlayerMaster(), ai->QueuedChatCommandCount()))
         return true;
     if (ai->IsStateActive(BotState::BOT_STATE_COMBAT) != bot->IsInCombat())
         return true;

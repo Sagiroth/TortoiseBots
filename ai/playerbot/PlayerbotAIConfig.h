@@ -529,6 +529,8 @@ public:
     bool dungeonTactics;
     // `.bot run`: a bound party clears a dungeon plan by itself (opt-in).
     bool dungeonSelfClear;
+    // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
+    uint32 dungeonRunMaxMinutes;
     // Bots stay out of listed creatures' permanent damaging auras, e.g. Maraudon's Creeping Sludge (opt-in).
     bool avoidCreatureAuras;
     // Bots may fly the taxi paths a core repair fixes (TaxiPathPolicy.h).

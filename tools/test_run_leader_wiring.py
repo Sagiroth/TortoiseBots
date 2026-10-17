@@ -66,7 +66,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("ReleaseRunHold(commander, binding->leadGuid, slot);", early)
         offmap = body(tick, "the lead bot is not on the plan's map", "return;")
         self.assertIn("ReleaseRunHold(commander, binding->leadGuid, slot);", offmap)
-        stop = body(COMMANDS, 'slot.run.note = "stopped by .bot run stop";', "DungeonRuns().erase(it);")
+        stop = body(COMMANDS, 'slot.run.note = RunStopNote(rawArg);', "DungeonRuns().erase(it);")
         self.assertIn("ReleaseRunHold(commander, binding->leadGuid, slot);", stop)
         facts = body(COMMANDS, "void ReadRunFacts(", "\n}\n")
         self.assertIn("f.deadNames.push_back(bot->GetName());", facts)
@@ -196,6 +196,29 @@ class RunLeaderWiringTest(unittest.TestCase):
         # 4. A door whose lock needs no key and no skill opens on a plain use.
         use = (ROOT / "ai/playerbot/strategy/actions/UseItemAction.cpp").read_text()
         self.assertIn("TortoiseBots::DoorLock::OpensOnPlainUse(lockTypes, lockIndex)", use)
+
+    def test_small_batch_2026_10_17_is_wired(self):
+        # 1. `cmd move` hands the policy how far the path's end is from the lead bot (an incomplete path that goes nowhere).
+        move = body(COMMANDS, "static bool CommanderMove(", "\n}\n")
+        self.assertIn("facts.endFromLead = std::sqrt(lx * lx + ly * ly + lz * lz);", move)
+        self.assertIn("facts.fromRunLeader = s_runIssuing;", move)
+        # 2. The run's time limit ends the run with its own note; `run stop` takes a reason.
+        tick = body(COMMANDS, "void TickDungeonRun(", "\n}\n")
+        self.assertIn("RunTimeLimitReached(slot.elapsedMs, sPlayerbotAIConfig.dungeonRunMaxMinutes)", tick)
+        self.assertIn("RunTimeLimitNote(sPlayerbotAIConfig.dungeonRunMaxMinutes)", tick)
+        self.assertIn("slot.run.note = RunStopNote(rawArg);", COMMANDS)
+        config = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
+        template = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
+        self.assertIn('"AiPlayerbot.DungeonRunMaxMinutes", 180', config)
+        self.assertIn("AiPlayerbot.DungeonRunMaxMinutes = 180", template)
+        # 3. The reaction pass reads a queued chat command for a masterless bot (talents / spells answers).
+        engine = (ROOT / "ai/playerbot/strategy/ReactionEngine.cpp").read_text()
+        self.assertIn("ReactionPassForced(ai->HasRealPlayerMaster(), ai->QueuedChatCommandCount())", engine)
+        # 4. `run start ... from ...` resolves the step and guards a start partway.
+        start = body(COMMANDS, "static bool HandleDungeonRun(", "\nvoid UpdateRemoteCommanders(")
+        self.assertIn("ResolveStartStep(*plan, startArgs.from, startArgs.value, startStep, &movedBack)", start)
+        self.assertIn("CheckPartialStart(OnInstanceMap(lead), members.size(), withLead)", start)
+        self.assertIn("slot.run = Start(plan, startStep);", start)
 
 if __name__ == "__main__":
     unittest.main()

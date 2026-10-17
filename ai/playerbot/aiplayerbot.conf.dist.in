@@ -783,6 +783,12 @@ AiPlayerbot.DungeonTactics = 0
 # 1 - a bound commander may start a run
 AiPlayerbot.DungeonSelfClear = 0
 
+# The run leader's time limit, in minutes from `.bot run start` (a pause counts).
+# At the limit the run ends and its status line says "time limit reached (3h)".
+# 0 - no limit
+# 180 - three hours (Default)
+AiPlayerbot.DungeonRunMaxMinutes = 180
+
 # Scripted area triggers for bots (an audited allowlist of trigger ids, off by default).
 # A bot has no game client, so it never tells the server it walked into an area
 # trigger, and a trigger script never ran for it: Zul'Farrak's Witch Doctor

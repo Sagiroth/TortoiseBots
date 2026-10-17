@@ -2485,8 +2485,155 @@ static void TestLeadDeadAfterTheFightHolds()
     CHECK(q.hold.empty() && !q.holdDue);
 }
 
+// The run's own time limit and the stop note: the 3 h cap used to read as a plain stop.
+static void TestRunTimeLimitAndStopNote()
+{
+    CHECK(kRunMaxMinutesDefault == 180);
+    CHECK(!RunTimeLimitReached(0, 180));
+    CHECK(!RunTimeLimitReached(180ull * 60000ull - 1, 180));
+    CHECK(RunTimeLimitReached(180ull * 60000ull, 180));
+    CHECK(RunTimeLimitReached(4000ull * 3600000ull, 180));
+    CHECK(!RunTimeLimitReached(4000ull * 3600000ull, 0)); // 0 = no limit
+    CHECK(RunTimeLimitNote(180) == "time limit reached (3h)");
+    CHECK(RunTimeLimitNote(60) == "time limit reached (1h)");
+    CHECK(RunTimeLimitNote(90) == "time limit reached (90 min)");
+
+    CHECK(RunStopNote("") == "stopped by .bot run stop");
+    CHECK(RunStopNote("   ") == "stopped by .bot run stop");
+    CHECK(RunStopNote("time limit reached (3h)") == "stopped: time limit reached (3h)");
+    CHECK(RunStopNote("a|b  c") == "stopped: a b c"); // no protocol separator, spaces squeezed
+    CHECK(RunStopNote(std::string(300, 'x')).size() == std::string("stopped: ").size() + kRunStopReasonMax);
+}
+
+// `.bot run start [plan] [from ...]`.
+static DungeonPlan TwoLegPlan()
+{
+    DungeonPlan plan;
+    plan.name = "test";
+    plan.map = 70;
+    plan.legs.push_back(ai::PlanLeg{0, "entrance"});
+    plan.legs.push_back(ai::PlanLeg{3, "Trogg_West"});
+    for (std::uint8_t leg : {0, 0, 3, 3, 3})
+    {
+        PlanStep st = Step(PlanStepKind::Move, 1, 2, 3);
+        st.leg = leg;
+        plan.steps.push_back(st);
+    }
+    return plan;
+}
+
+static void TestStartFromParsing()
+{
+    StartArgs a = ParseStartArgs("");
+    CHECK(a.ok && a.plan.empty() && a.from == StartFrom::Beginning);
+    a = ParseStartArgs("uldaman");
+    CHECK(a.ok && a.plan == "uldaman" && a.from == StartFrom::Beginning);
+    a = ParseStartArgs("uldaman from 4");
+    CHECK(a.ok && a.plan == "uldaman" && a.from == StartFrom::Leg && a.value == "4");
+    a = ParseStartArgs("uldaman from leg trogg_west");
+    CHECK(a.ok && a.from == StartFrom::Leg && a.value == "trogg_west");
+    a = ParseStartArgs("uldaman from step 57");
+    CHECK(a.ok && a.from == StartFrom::Step && a.value == "57");
+    a = ParseStartArgs("from step 2"); // the lead bot's map names the plan
+    CHECK(a.ok && a.plan.empty() && a.from == StartFrom::Step && a.value == "2");
+    a = ParseStartArgs("  uldaman   from   leg   baelog ");
+    CHECK(a.ok && a.plan == "uldaman" && a.value == "baelog");
+    CHECK(!ParseStartArgs("uldaman from").ok);
+    CHECK(!ParseStartArgs("uldaman from step").ok);
+    CHECK(!ParseStartArgs("uldaman from 3 4").ok);
+    CHECK(!ParseStartArgs("uldaman two from 3").ok);
+    CHECK(!ParseStartArgs("uldaman fromm 3").ok);
+}
+
+static void TestStartFromResolve()
+{
+    DungeonPlan plan = TwoLegPlan();
+    std::size_t step = 99;
+    CHECK(ResolveStartStep(plan, StartFrom::Beginning, "", step) == FromResult::Ok && step == 0);
+    CHECK(ResolveStartStep(plan, StartFrom::Leg, "3", step) == FromResult::Ok && step == 2); // first step of leg 3
+    CHECK(ResolveStartStep(plan, StartFrom::Leg, "0", step) == FromResult::Ok && step == 0);
+    CHECK(ResolveStartStep(plan, StartFrom::Leg, "trogg_west", step) == FromResult::Ok && step == 2); // name, any case
+    CHECK(ResolveStartStep(plan, StartFrom::Leg, "7", step) == FromResult::NoSuchLeg);
+    CHECK(ResolveStartStep(plan, StartFrom::Leg, "nowhere", step) == FromResult::NoSuchLeg);
+    CHECK(ResolveStartStep(plan, StartFrom::Step, "1", step) == FromResult::Ok && step == 0);
+    CHECK(ResolveStartStep(plan, StartFrom::Step, "5", step) == FromResult::Ok && step == 4);
+    CHECK(ResolveStartStep(plan, StartFrom::Step, "6", step) == FromResult::NoSuchStep);
+    CHECK(ResolveStartStep(plan, StartFrom::Step, "0", step) == FromResult::NoSuchStep);
+    CHECK(ResolveStartStep(plan, StartFrom::Step, "x", step) == FromResult::NoSuchStep);
+
+    // The run begins on that step, running, with the usual first-step state.
+    Run r = Start(&plan, 2);
+    CHECK(r.step == 2 && r.state == State::Running);
+}
+
+// The Uldaman Keepers: the ritual ends leg 10, the hold opens leg 11. A start on the hold goes back
+// to the ritual, or the event never starts.
+static DungeonPlan EventPlan()
+{
+    DungeonPlan plan;
+    plan.name = "event";
+    plan.map = 70;
+    plan.legs.push_back(ai::PlanLeg{10, "keepers"});
+    plan.legs.push_back(ai::PlanLeg{11, "archaedas"});
+    struct Row { std::uint8_t leg; PlanStepKind kind; };
+    for (Row row : {Row{10, PlanStepKind::Move}, Row{10, PlanStepKind::Move}, Row{10, PlanStepKind::Ritual},
+                    Row{11, PlanStepKind::Hold}, Row{11, PlanStepKind::Move}, Row{11, PlanStepKind::Pull},
+                    Row{11, PlanStepKind::Move}, Row{11, PlanStepKind::Open}, Row{11, PlanStepKind::Move},
+                    Row{11, PlanStepKind::Hold}})
+    {
+        PlanStep st = Step(row.kind, 1, 2, 3);
+        st.leg = row.leg;
+        plan.steps.push_back(st);
+    }
+    return plan;
+}
+
+static void TestStartInsideEventGoesBack()
+{
+    DungeonPlan plan = EventPlan();
+    std::size_t step = 99;
+    bool back = false;
+    // Leg 11 begins on the hold (step index 3): back to the ritual (index 2).
+    CHECK(ResolveStartStep(plan, StartFrom::Leg, "11", step, &back) == FromResult::Ok && step == 2 && back);
+    CHECK(ResolveStartStep(plan, StartFrom::Leg, "archaedas", step, &back) == FromResult::Ok && step == 2 && back);
+    // A step number on the hold (step 4), and on the moves before the ritual (steps 1, 2) leading into... the ritual.
+    CHECK(ResolveStartStep(plan, StartFrom::Step, "4", step, &back) == FromResult::Ok && step == 2 && back);
+    // The ritual itself and the leg before it stay as asked.
+    CHECK(ResolveStartStep(plan, StartFrom::Step, "3", step, &back) == FromResult::Ok && step == 2 && !back);
+    CHECK(ResolveStartStep(plan, StartFrom::Leg, "10", step, &back) == FromResult::Ok && step == 0 && !back);
+    // A move that leads into the second hold (index 8) goes back to the open step (index 7); the hold itself too.
+    CHECK(ResolveStartStep(plan, StartFrom::Step, "9", step, &back) == FromResult::Ok && step == 7 && back);
+    CHECK(ResolveStartStep(plan, StartFrom::Step, "10", step, &back) == FromResult::Ok && step == 7 && back);
+    // A pull in the middle of the leg is not an event start.
+    CHECK(ResolveStartStep(plan, StartFrom::Step, "6", step, &back) == FromResult::Ok && step == 5 && !back);
+    // A move that leads into no hold stays put.
+    CHECK(ResolveStartStep(plan, StartFrom::Step, "7", step, &back) == FromResult::Ok && step == 6 && !back);
+    // A hold with no ritual/open/use_item before it (only moves, then the plan's start) stays put.
+    DungeonPlan bare;
+    bare.map = 70;
+    for (PlanStepKind k : {PlanStepKind::Move, PlanStepKind::Hold})
+        bare.steps.push_back(Step(k, 1, 2, 3));
+    CHECK(EventStartStep(bare, 1) == 1 && EventStartStep(bare, 0) == 0);
+    // The run that starts there begins with the ritual, not the hold.
+    Run r = Start(&plan, 2);
+    CHECK(Current(r)->kind == PlanStepKind::Ritual && EventHoldAhead(r) != nullptr);
+}
+
+static void TestPartialStartGuard()
+{
+    CHECK(CheckPartialStart(true, 5, 5) == PartialStartVerdict::Ok);
+    CHECK(CheckPartialStart(false, 5, 5) == PartialStartVerdict::NotInstance);
+    CHECK(CheckPartialStart(true, 5, 4) == PartialStartVerdict::PartyScattered);
+    CHECK(CheckPartialStart(true, 0, 0) == PartialStartVerdict::Ok);
+}
+
 int main()
 {
+    TestRunTimeLimitAndStopNote();
+    TestStartFromParsing();
+    TestStartFromResolve();
+    TestStartInsideEventGoesBack();
+    TestPartialStartGuard();
     TestMove();
     TestWalkStuckIsBounded();
     TestStalledNearPointCountsAsArrived();

@@ -577,10 +577,53 @@ static void TestMoveVerdict()
     facts.endOffset = 12.0f;
     CHECK(CheckMove(facts) == MoveVerdict::OffMesh);
 
-    // An incomplete path is walked in legs, however far its end is.
+    // An incomplete path to a far point is walked in legs, however far its end is.
     facts = Walkable();
+    facts.distanceFromLead = 100.0f;
     facts.pathType = 0x0001 | kPathIncomplete;
     facts.endOffset = 60.0f;
+    facts.endFromLead = 40.0f;
+    CHECK(CheckMove(facts) == MoveVerdict::Ok);
+    facts.endFromLead = -1.0f; // not measured
+    CHECK(CheckMove(facts) == MoveVerdict::Ok);
+
+    // Ragefire 2026-10-17: a point 6 yd from the lead bot, the path finder
+    // answered incomplete (the point is on another part of the mesh), the old
+    // verdict was Ok and the lead bot stood still after three acks.
+    facts = Walkable();
+    facts.distanceFromLead = 6.4f;
+    facts.pathType = 0x0001 | kPathIncomplete;
+    facts.endOffset = 6.4f;
+    facts.endFromLead = 0.3f;
+    CHECK(CheckMove(facts) == MoveVerdict::NoPath);
+    // A short incomplete path that ends far from the point, with some progress.
+    facts.endFromLead = 3.0f;
+    CHECK(CheckMove(facts) == MoveVerdict::NoPath);
+    facts.distanceFromLead = kIncompleteShortYd;
+    CHECK(CheckMove(facts) == MoveVerdict::NoPath);
+    facts.distanceFromLead = kIncompleteShortYd + 1.0f; // beyond: the length cap may explain it
+    CHECK(CheckMove(facts) == MoveVerdict::Ok);
+    // ... but a path that goes nowhere is refused at any distance.
+    facts.endFromLead = kNoProgressYd;
+    CHECK(CheckMove(facts) == MoveVerdict::NoPath);
+    // The run leader's own hops and gathers (fromRunLeader) are not refused for an end far from the
+    // point: that would pause the run on legs 0-3. A path that goes nowhere is refused for it too.
+    facts = Walkable();
+    facts.distanceFromLead = 12.0f;
+    facts.pathType = 0x0001 | kPathIncomplete;
+    facts.endOffset = 9.0f;
+    facts.endFromLead = 8.0f;
+    CHECK(CheckMove(facts) == MoveVerdict::NoPath); // a player's order
+    facts.fromRunLeader = true;
+    CHECK(CheckMove(facts) == MoveVerdict::Ok);     // the run leader's hop
+    facts.endFromLead = 0.5f;
+    CHECK(CheckMove(facts) == MoveVerdict::NoPath); // no progress at all
+    // A short incomplete path that ends near the point is walkable.
+    facts = Walkable();
+    facts.distanceFromLead = 20.0f;
+    facts.pathType = 0x0001 | kPathIncomplete;
+    facts.endOffset = kMaxMoveEndOffset;
+    facts.endFromLead = 15.0f;
     CHECK(CheckMove(facts) == MoveVerdict::Ok);
 
     // No mmaps for the map (PATHFIND_NOT_USING_PATH): a straight line.
