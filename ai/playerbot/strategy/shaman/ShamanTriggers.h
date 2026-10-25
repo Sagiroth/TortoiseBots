@@ -344,6 +344,13 @@ namespace ai
 
         virtual bool IsActive() override
         {
+            // An explicit earth-totem choice takes precedence over proactive fear upkeep.
+            if (ai->HasStrategy("totem earth stoneclaw", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth stoneskin", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth earthbind", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth strength", BotState::BOT_STATE_COMBAT))
+                return false;
+
             Unit* target = AI_VALUE(Unit*, "current target");
             uint32 spellId = AI_VALUE2(uint32, "spell id", "tremor totem");
             return target && IsRaidFearEncounter(bot->GetMapId(), target->GetEntry()) && spellId &&

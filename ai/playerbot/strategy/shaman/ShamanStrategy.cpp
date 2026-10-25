@@ -40,6 +40,10 @@ void ShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     ClassStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "raid fear tremor totem",
+        NextAction::array(0, new NextAction("tremor totem", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "low health",
         NextAction::array(0, new NextAction("healing wave", ACTION_MEDIUM_HEAL), NULL)));
 
