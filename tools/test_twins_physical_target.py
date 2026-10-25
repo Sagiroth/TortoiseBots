@@ -165,6 +165,7 @@ Unit* GetGroupTankTarget(PlayerbotAI* ai) { return ai->tankTarget; }
 Unit* GetNefarianBoneConstructTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetViscidusGlobTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetFankrissSpawnTarget(PlayerbotAI*) { return nullptr; }
+Unit* GetSkeramImageTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMarliSpawnTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetThekalBalanceTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetArlokkPantherTarget(PlayerbotAI*) { return nullptr; }

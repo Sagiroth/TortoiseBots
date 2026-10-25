@@ -61,6 +61,7 @@ Unit *explicitTarget = nullptr, *raidTarget = nullptr, *construct = nullptr, *ta
 std::vector<Unit*> possible;
 Unit* GetArlokkPantherTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetFankrissSpawnTarget(PlayerbotAI*) { return nullptr; }
+Unit* GetSkeramImageTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMarliSpawnTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetThekalBalanceTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetNefarianBoneConstructTarget(PlayerbotAI*) { return construct; }
