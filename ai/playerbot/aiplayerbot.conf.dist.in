@@ -6059,4 +6059,4 @@ AiPlayerbot.RoleConsumables.FlaskQuest = 0
 # companions bypass these quest gates and receive a small role/level kit on
 # first safe update after hire/login/resurrection and every five minutes.
 # No free items for owned alts, claimed pool bots or roaming bots. Food excluded.
-AiPlayerbot.RoleConsumables.AutoProvision = 0
+AiPlayerbot.RoleConsumables.AutoProvision = 1
