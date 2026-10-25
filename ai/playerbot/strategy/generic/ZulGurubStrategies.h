@@ -3,6 +3,12 @@
 
 namespace ai
 {
+    class ArlokkPantherStrategy : public Strategy
+    {
+    public:
+        ArlokkPantherStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "arlokk panther focus"; }
+    };
     class HakkarPoisonStrategy : public Strategy
     {
     public:

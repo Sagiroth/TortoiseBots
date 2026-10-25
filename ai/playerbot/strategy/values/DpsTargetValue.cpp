@@ -286,6 +286,30 @@ namespace
         return count;
     }
 
+    Unit* GetArlokkPantherTarget(PlayerbotAI* ai)
+    {
+        Player* bot = ai ? ai->GetBot() : nullptr;
+        if (!bot || bot->GetMapId() != 309 || !bot->IsAlive() || !bot->IsInCombat() || ai->IsTank(bot) ||
+            !ai->HasStrategy("arlokk panther focus", BotState::BOT_STATE_COMBAT))
+            return nullptr;
+
+        AiObjectContext* context = ai->GetAiObjectContext();
+        std::list<ObjectGuid> const possible = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
+        // Prowlers remain engaged while Arlokk vanishes out of the target list.
+        DpsTargetStrategy strategy(ai);
+        for (ObjectGuid const& guid : possible)
+        {
+            Unit* candidate = ai->GetUnit(guid);
+            if (!candidate || candidate->GetEntry() != 15101 || !candidate->IsAlive() || !candidate->IsInCombat() ||
+                !candidate->IsInMap(bot) || !PossibleAttackTargetsValue::IsValid(candidate, bot,
+                    sPlayerbotAIConfig.sightDistance, false, false) || candidate == AI_VALUE(Unit*, "cc target"))
+                continue;
+            ThreatManager& threat = sServerFacade.GetThreatManager(candidate);
+            strategy.CheckAttacker(candidate, &threat);
+        }
+        return strategy.GetResult();
+    }
+
     Unit* GetMarliSpawnTarget(PlayerbotAI* ai)
     {
         Player* bot = ai ? ai->GetBot() : nullptr;
@@ -610,6 +634,9 @@ Unit* DpsTargetValue::Calculate()
     // the next pick like the tank's victim below.
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+
+    if (Unit* panther = GetArlokkPantherTarget(ai))
+        return panther;
 
     if (Unit* spawn = GetMarliSpawnTarget(ai))
         return spawn;

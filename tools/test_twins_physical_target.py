@@ -162,6 +162,7 @@ Unit* GetNefarianBoneConstructTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetViscidusGlobTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMarliSpawnTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetThekalBalanceTarget(PlayerbotAI*) { return nullptr; }
+Unit* GetArlokkPantherTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMaexxnaRescueTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetOnyxiaWhelpTarget(PlayerbotAI*) { return nullptr; }
 '''
