@@ -1,5 +1,6 @@
 #pragma once
 #include "generic/ZulGurubStrategies.h"
+#include "generic/TwinEmperorDungeonStrategies.h"
 #include "generic/TempleOfAhnQirajStrategies.h"
 #include "generic/RuinsOfAhnQirajStrategies.h"
 
@@ -203,6 +204,7 @@ namespace ai
             creators["kt interrupt"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptStrategy(ai); };
             creators["thaddius polarity"] = [](PlayerbotAI* ai) { return new ThaddiusPolarityStrategy(ai); };
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatStrategy(ai); };
+            creators["twins physical dps"] = [](PlayerbotAI* ai) { return new TwinPhysicalDpsStrategy(ai); };
             creators["viscidus glob focus"] = [](PlayerbotAI* ai) { return new ViscidusGlobStrategy(ai); };
             creators["ossirian crystal"] = [](PlayerbotAI* ai) { return new OssirianCrystalStrategy(ai); };
             creators["grobbulus clouds"] = [](PlayerbotAI* ai) { return new GrobbulusCloudStrategy(ai); };
