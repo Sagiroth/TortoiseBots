@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/SarturaTankActions.h"
 #include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "TankTargetValue.h"
 #include "playerbot/strategy/actions/FankrissTankActions.h"
@@ -204,6 +205,9 @@ Unit* TankTargetValue::Calculate()
     if (TwinsOpeningHold(ai)) return nullptr;
     if (Unit* explicitTarget = GetExplicitAttackTarget())
         return explicitTarget;
+
+    if (Unit* assigned = GetAssignedSarturaTankTarget(ai))
+        return assigned;
 
     // Explicit boss tanks keep threat during their off-tank turn instead of
     // joining the loose-add tournament. Other attack/mark orders still win.

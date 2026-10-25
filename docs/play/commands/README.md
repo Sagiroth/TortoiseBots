@@ -209,3 +209,4 @@ The pair cancels when the pull order ends, a team becomes unavailable, or
 cast completion, projectile arrival and hit/resist results are not simultaneous.
 Core proximity aggro can still happen on approach. `TwinsPairedPull` diagnostics
 report armed, launched (including dispatch milliseconds), cancelled or cast-failed.
+Sartura assignment: [opt-in main-tank strategy and guard allocation](../local-raid-tactics.md#sartura-main-tank-opt-in).

@@ -11,6 +11,8 @@ namespace ai
         int GetType() override { return STRATEGY_TYPE_TANK; }
 
     private:
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
         void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
     };
 }

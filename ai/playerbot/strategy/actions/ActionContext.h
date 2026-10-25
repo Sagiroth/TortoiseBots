@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/SarturaTankActions.h"
 #pragma once
 #include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "TwinsOpeningActions.h"
@@ -384,6 +385,7 @@ namespace ai
             creators["ossirian crystal click"] = [](PlayerbotAI* ai) { return new OssirianCrystalAction(ai); };
             creators["fankriss swap"] = [](PlayerbotAI* ai) { return new FankrissSwapAction(ai); };
             creators["fankriss tank engage"] = [](PlayerbotAI* ai) { return new FankrissTankEngageAction(ai); };
+            creators["sartura tank recover"] = [](PlayerbotAI* ai) { return new SarturaTankRecoverAction(ai); };
             creators["twins position"] = [](PlayerbotAI* ai) { return new TwinsPositionAction(ai); };
             creators["twins engage"] = [](PlayerbotAI* ai) { return new TwinsEngageAction(ai); };
             creators["twins searing pain"] = [](PlayerbotAI* ai) { return new TwinsSearingPainAction(ai); };

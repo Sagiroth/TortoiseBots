@@ -15,7 +15,7 @@ namespace
             if (!action)
                 return 1.0f;
             std::string const& name = action->getName();
-            bool const escape = name == "sartura whirlwind escape" || name == "move away from hazard" ||
+            bool const escape = name == "avoid aoe" || name == "sartura whirlwind escape" || name == "move away from hazard" ||
                 name == "raid bomb runout" || name == "flee" || name == "runaway";
             if (escape)
                 return 1.0f;

@@ -875,6 +875,61 @@ assign tank recovery, spread the raid, or stop pet melee. The boss can change
 target every one to two seconds during Whirlwind. Use under supervision;
 disable with `all -sartura whirlwind`.
 
+### Sartura main tank (opt-in)
+
+Assign exactly one living tank in AQ40:
+
+```text
+.bot strategy -sartura main tank @tank
+.bot strategy +sartura main tank MainTankName
+.bot strategy +tank assist @tank
+.bot strategy +sartura whirlwind,+avoid aoe
+```
+
+Replace `MainTankName` with the intended tank. For the last command, clear a
+selected bot to address the party; a selected bot otherwise limits the scope.
+Stage four tanks separately before pulling, with healers in range. The named
+tank must already have a tank role. This does not pull an idle boss or move
+bots into starting positions. Release manual stay/follow/pull holds through
+the usual explicit combat orders before expecting automatic recovery.
+
+During an already-engaged encounter, the assigned tank keeps Sartura instead
+of joining the loose-add target selection. Other controllable tank bots on
+`tank assist` are distributed over engaged living Royal Guards by sorted tank
+and guard GUIDs. With three off-tanks and three visible guards this is one per
+guard; more tanks share guards. Guardians must be in each tank's nearby target
+cache. After guards die, normal off-tank targeting resumes. Duplicate living
+main-tank assignments are ambiguous and leave normal behavior unchanged;
+remove the extras instead of relying on an automatic election.
+
+Recovery outranks ordinary tank assist, switches to Defensive Stance/bear form
+when learned, restores the boss target, uses a ready single-target Taunt/Growl
+when appropriate, and otherwise uses normal melee reach after knockbacks.
+It respects spell readiness, LOS, immunity and normal movement/path checks.
+An explicit attack order on a different target or a manual movement hold wins;
+a main-tank order on Sartura herself remains compatible with the assignment.
+Do not send a party-wide explicit attack order on Sartura if the off-tanks
+should select guards automatically: those player orders take precedence too.
+Raid marks alone do not pull the assigned main tank onto a guard.
+
+The role never chases or taunts an assigned target while its Whirlwind aura is
+active. Both `avoid aoe` and `sartura whirlwind escape` remain allowed, including
+when the two strategies are enabled together. The assignment does not itself
+supply an escape strategy. Large-area taunts are suppressed while assignments
+are active so they do not pull the guard pack onto the main tank or steal the
+boss. Ordinary healing/defensives remain available.
+
+Sartura's aura is **26083**; **26084** is its damage pulse. The core deliberately
+resets threat during spins and between them. This role keeps responsibility and
+recovers aggro; it cannot promise uninterrupted tank-only victims, eliminate
+Whirlwind damage, repair a failed path, or explain a past pull with no StepOut
+telemetry. No automatic replacement is elected if the assigned tank dies or
+leaves; normal targeting resumes. Disable with:
+
+```text
+.bot strategy -sartura main tank @tank
+```
+
 ### Skeram image focus (opt-in)
 
 Enable `all +skeram image focus` on DPS bots to prefer engaged Skeram images
