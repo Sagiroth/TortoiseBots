@@ -182,3 +182,9 @@ void OnyxiaBreathStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipl
     multipliers.push_back(new OnyxiaBreathMultiplier(ai));
 }
 void OnyxiaBreathStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers) { InitCombatMultipliers(multipliers); }
+
+void OnyxiaLandingTankStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("onyxia landing target needed",
+        NextAction::array(0, new NextAction("onyxia landing attack", ACTION_HIGH + 2), nullptr)));
+}

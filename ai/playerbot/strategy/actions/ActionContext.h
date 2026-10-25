@@ -395,6 +395,7 @@ namespace ai
 
             // Dungeon Boss Actions
             creators["onyxia deep breath escape"] = [](PlayerbotAI* ai) { return new OnyxiaBreathEscapeAction(ai); };
+            creators["onyxia landing attack"] = [](PlayerbotAI* ai) { return new OnyxiaLandingAttackAction(ai); };
             creators["onyxia air spread"] = [](PlayerbotAI* ai) { return new OnyxiaAirSpreadAction(ai); };
             creators["enable onyxia fight strategy"] = [](PlayerbotAI* ai) { return new OnyxiaEnableFightStrategyAction(ai); };
             creators["disable onyxia fight strategy"] = [](PlayerbotAI* ai) { return new OnyxiaDisableFightStrategyAction(ai); };

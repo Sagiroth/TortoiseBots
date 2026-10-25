@@ -231,6 +231,7 @@ namespace ai
             // Dungeon Boss Strategies
             creators["onyxia deep breath"] = [](PlayerbotAI* ai) { return new OnyxiaBreathStrategy(ai); };
             creators["onyxia whelps"] = [](PlayerbotAI* ai) { return new OnyxiaWhelpStrategy(ai); };
+            creators["onyxia landing tank"] = [](PlayerbotAI* ai) { return new OnyxiaLandingTankStrategy(ai); };
             creators["onyxia air spread"] = [](PlayerbotAI* ai) { return new OnyxiaAirSpreadStrategy(ai); };
             creators["onyxia"] = [](PlayerbotAI* ai) { return new OnyxiaFightStrategy(ai); };
             creators["majordomo dps"] = [](PlayerbotAI* ai) { return new MajordomoDpsStrategy(ai); };

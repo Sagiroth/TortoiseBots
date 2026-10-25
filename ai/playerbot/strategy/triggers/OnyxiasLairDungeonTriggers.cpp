@@ -56,3 +56,9 @@ bool OnyxiaBreathTrigger::IsActive()
     OnyxiaBreathEscapeAction action(ai);
     return action.isUseful();
 }
+
+bool OnyxiaLandingTankTrigger::IsActive()
+{
+    OnyxiaLandingAttackAction action(ai);
+    return action.isUseful();
+}

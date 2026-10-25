@@ -376,3 +376,48 @@ Unit* ai::GetOnyxiaWhelpTarget(PlayerbotAI* ai)
     }
     return result;
 }
+
+
+Unit* ai::GetAssignedOnyxiaLandingTarget(PlayerbotAI* ai)
+{
+    Player* bot = ai ? ai->GetBot() : nullptr;
+    if (!bot || bot->GetMapId() != 249 || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->IsBeingTeleported() || !bot->IsInCombat() || !ai->IsTank(bot) ||
+        !ai->HasStrategy("onyxia landing tank", BotState::BOT_STATE_COMBAT))
+        return nullptr;
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* order = ai->GetUnit(AI_VALUE(ObjectGuid, "explicit attack target"));
+    if (order && PossibleAttackTargetsValue::IsValid(order, bot,
+        sPlayerbotAIConfig.sightDistance, false, false))
+        return nullptr;
+    if (AI_VALUE(Unit*, "rti target"))
+        return nullptr;
+    PositionMap& positions = AI_VALUE(PositionMap&, "position");
+    auto hold = positions.find("pull hold");
+    if (ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT) ||
+        (hold != positions.end() && hold->second.isSet()))
+        return nullptr;
+
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* boss = ai->GetUnit(guid);
+        // The core resets threat before landing and keeps summoning whelps
+        // in phase three. Assign this one tank to the landed boss, not adds.
+        if (boss && boss->GetEntry() == 10184 && boss->IsAlive() && boss->IsInCombat() &&
+            boss->IsInMap(bot) && boss->GetHealthPercent() < 40.0f &&
+            !boss->IsFlying() && !boss->HasAura(17131) &&
+            PossibleAttackTargetsValue::IsValid(boss, bot, sPlayerbotAIConfig.sightDistance, false, false))
+            return boss;
+    }
+    return nullptr;
+}
+
+bool OnyxiaLandingAttackAction::isUseful()
+{
+    Unit* boss = GetTarget();
+    return boss && boss != AI_VALUE(Unit*, "current target");
+}

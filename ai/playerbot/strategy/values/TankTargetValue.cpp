@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "TankTargetValue.h"
+#include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "RaidDpsTargetPolicy.h"
 #include "GolemaggTankAssignmentValue.h"
@@ -252,6 +253,9 @@ Unit* TankTargetValue::Calculate()
 
     if (Unit* assigned = GetAssignedPatchwerkTankTarget(ai))
         return assigned;
+
+    if (Unit* boss = GetAssignedOnyxiaLandingTarget(ai))
+        return boss;
 
     if (Unit* whelp = GetOnyxiaWhelpTarget(ai))
         return whelp;

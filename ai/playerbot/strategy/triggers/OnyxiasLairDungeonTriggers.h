@@ -4,6 +4,13 @@
 
 namespace ai
 {
+    class OnyxiaLandingTankTrigger : public Trigger
+    {
+    public:
+        OnyxiaLandingTankTrigger(PlayerbotAI* ai) : Trigger(ai, "onyxia landing target needed", 1) {}
+        bool IsActive() override;
+    };
+
     class OnyxiaBreathTrigger : public Trigger
     {
     public:

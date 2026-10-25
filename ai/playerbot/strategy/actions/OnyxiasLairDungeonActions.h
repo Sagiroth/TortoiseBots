@@ -6,6 +6,15 @@
 
 namespace ai
 {
+    Unit* GetAssignedOnyxiaLandingTarget(PlayerbotAI* ai);
+    class OnyxiaLandingAttackAction : public AttackAction
+    {
+    public:
+        OnyxiaLandingAttackAction(PlayerbotAI* ai) : AttackAction(ai, "onyxia landing attack") {}
+        Unit* GetTarget() override { return GetAssignedOnyxiaLandingTarget(ai); }
+        bool isUseful() override;
+    };
+
     void ObserveOnyxiaBreathPacket(PlayerbotAI* ai, WorldPacket const& packet);
     bool OnyxiaBreathActive(PlayerbotAI* ai);
     class OnyxiaBreathEscapeAction : public MovementAction

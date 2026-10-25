@@ -3,6 +3,15 @@
 
 namespace ai
 {
+    class OnyxiaLandingTankStrategy : public Strategy
+    {
+    public:
+        OnyxiaLandingTankStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "onyxia landing tank"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+
     class OnyxiaBreathStrategy : public Strategy
     {
     public:
