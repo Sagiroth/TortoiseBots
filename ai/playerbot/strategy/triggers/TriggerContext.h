@@ -1,4 +1,5 @@
 #pragma once
+#include "../actions/GeddonBombActions.h"
 #include "../actions/KurinnaxxActions.h"
 #include "playerbot/strategy/generic/KriCloudStrategy.h"
 #include "playerbot/strategy/generic/SarturaWhirlwindStrategy.h"
@@ -362,6 +363,7 @@ namespace ai
             creators["leave karazhan crypt"] = [](PlayerbotAI* ai) { return new KarazhanCryptLeaveDungeonTrigger(ai); };
 
             creators["environmental hazard nearby"] = [](PlayerbotAI* ai) { return new EnvironmentalHazardTrigger(ai); };
+            creators["geddon bomb movement"] = [](PlayerbotAI* ai) { return new GeddonBombMovementTrigger(ai); };
             creators["raid bomb debuff"] = [](PlayerbotAI* ai) { return new RaidBombDebuffTrigger(ai); };
             creators["four horsemen mark"] = [](PlayerbotAI* ai) { return new FourHorsemenMarkTrigger(ai); };
             creators["dragon breath risk"] = [](PlayerbotAI* ai) { return new DragonBreathRiskTrigger(ai); };

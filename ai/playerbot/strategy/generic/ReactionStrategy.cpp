@@ -31,6 +31,9 @@ void ReactionStrategy::InitReactionTriggers(std::list<TriggerNode*> &triggers)
         "environmental hazard nearby",
         NextAction::array(0, new NextAction("move away from hazard", ACTION_EMERGENCY + 5), NULL)));
 
+    triggers.push_back(new TriggerNode("geddon bomb movement",
+        NextAction::array(0, new NextAction("geddon bomb move", ACTION_EMERGENCY + 8), NULL)));
+
     // Universal raid survival (any raid map): bomb carriers run 30yd clear,
     // non-tanks flank dragons, stacked ranged split, Four Horsemen mark
     // carriers (3+ stacks) rotate to the next horseman's corner. Reaction

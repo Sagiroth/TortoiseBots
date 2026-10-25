@@ -1,4 +1,5 @@
 #pragma once
+#include "../actions/GeddonBombActions.h"
 #include "GrobbulusCloudHazards.h"
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -250,6 +251,7 @@ namespace ai
 
             creators["rti cc"] = [](PlayerbotAI* ai) { return new RtiCcValue(ai); };
             creators["rti"] = [](PlayerbotAI* ai) { return new RtiValue(ai); };
+            creators["geddon bomb state"] = [](PlayerbotAI* ai) { return new GeddonBombStateValue(ai); };
             creators["position"] = [](PlayerbotAI* ai) { return new PositionValue(ai); };
             creators["pos"] = [](PlayerbotAI* ai) { return new SinglePositionValue(ai); };
             creators["current position"] = [](PlayerbotAI* ai) { return new CurrentPositionValue(ai); };

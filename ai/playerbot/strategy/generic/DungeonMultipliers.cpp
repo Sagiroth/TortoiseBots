@@ -4,6 +4,7 @@
 #include "playerbot/strategy/AiObjectContext.h"
 #include "DungeonMultipliers.h"
 #include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
+#include "playerbot/strategy/actions/GeddonBombActions.h"
 #include "playerbot/strategy/actions/DungeonActions.h"
 #include "playerbot/strategy/actions/ReachTargetActions.h"
 #include "playerbot/strategy/actions/ChooseTargetActions.h"
@@ -271,6 +272,9 @@ float GeddonInfernoMultiplier::GetValue(Action* action)
 
 float RaidBombMovementMultiplier::GetValue(Action* action)
 {
+    // Fixed mode is explicitly armed by the player and also owns the return.
+    if (action && ai->GetBot()->GetMapId() == 409 && UpdateGeddonBombMovement(ai))
+        return GeddonBombAllowsAction(action->getName()) ? 1.0f : 0.0f;
     // The multiplier is installed globally; inspect the encounter aura before
     // doing any group/hold-order work for ordinary combat actions.
     if (!action || !GetRaidBombAura(ai) || !RaidBombMovementAllowed(ai))

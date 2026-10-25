@@ -1,5 +1,6 @@
 #include "playerbot/GroupMembers.h"
 #include "DungeonActions.h"
+#include "GeddonBombActions.h"
 #include "MoltenCoreDungeonActions.h"
 #include "playerbot/policy/raid/GeddonInfernoPolicy.h"
 #include "playerbot/strategy/triggers/DungeonTriggers.h"
@@ -360,6 +361,8 @@ bool ai::RaidBombMovementAllowed(PlayerbotAI* ai)
 bool RaidBombRunoutAction::PrepareRunout(std::vector<RaidRunoutPoint>& members)
 {
     Aura* aura = GetRaidBombAura(ai);
+    if (aura && aura->GetId() == 20475 && HasGeddonBombSpot(ai))
+        return false;
     if (!aura || !RaidBombMovementAllowed(ai) ||
         !std::isfinite(sPlayerbotAIConfig.bombRunoutDistance) || sPlayerbotAIConfig.bombRunoutDistance <= 0.0f)
     {

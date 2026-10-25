@@ -1,6 +1,7 @@
 // pi-lens-ignore-file: all
 #include "BotCommandHandlers.h"
 #include "CommandShared.h"
+#include "../ai/playerbot/strategy/actions/GeddonBombActions.h"
 #include "BotCommandContext.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/BotManager.h"
@@ -254,6 +255,13 @@ static bool ParseAction(std::string input, std::string& intent, std::string& opt
 
     std::string remainder = firstSeparator == std::string::npos
         ? std::string() : Trim(input.substr(firstSeparator + 1));
+    if (first == "bombspot")
+    {
+        for (char& c : remainder) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (!remainder.empty() && remainder != "status" && remainder != "clear") return false;
+        intent = remainder.empty() ? "bombspot" : "bombspot " + remainder;
+        return true;
+    }
     if (first == "focus" || first == "cc")
     {
         size_t secondSeparator = remainder.find_first_of(" \t");
@@ -958,7 +966,7 @@ bool HandleAction(ChatHandler* handler, char const* args)
             if (intent.empty())
                 intent = "unknown";
         }
-        SendActionError(handler, intent, "invalid", "Usage: .bot action attack/interrupt/stop/pull [seconds] [ranged]/pullback [seconds] [ranged]/come/stay/hold/follow/flee/focus skull/cc <mark> [bot]/cc clear [bot]/auto cc [on/off]/sap [on/off] [bot]/aoe [on/off]/loot [on/off]/repair/sell/rest/drink/eat/release/corpse run/learn/trade/ready/raid [status/tankface/douse/custom status/custom on/custom off]");
+        SendActionError(handler, intent, "invalid", "Usage: .bot action attack/interrupt/stop/pull [seconds] [ranged]/pullback [seconds] [ranged]/come/stay/hold/follow/flee/focus skull/cc <mark> [bot]/cc clear [bot]/auto cc [on/off]/sap [on/off] [bot]/aoe [on/off]/loot [on/off]/repair/sell/rest/drink/eat/release/corpse run/learn/trade/ready/bombspot [status/clear]/raid [status/tankface/douse/custom status/custom on/custom off]");
         return true;
     }
     if (!requester->IsInWorld() || !requester->IsAlive() || requester->IsBeingTeleported())
@@ -968,6 +976,52 @@ bool HandleAction(ChatHandler* handler, char const* args)
     }
 
     BotCommandContext context = BuildContext(requester);
+    if (intent == "bombspot" || intent == "bombspot status" || intent == "bombspot clear")
+    {
+        bool const setting = intent == "bombspot";
+        if (setting && (requester->GetMapId() != 409 || requester->IsInCombat() || !context.group))
+        {
+            SendActionError(handler, intent, "invalid", "Set bombspot out of combat in Molten Core, while grouped.");
+            return true;
+        }
+        // Whole owned raid scope, never accidentally just the selected tank.
+        if (setting)
+            for (Player* member : context.partyBots)
+                if (member && member->IsInCombat())
+                {
+                    SendActionError(handler, intent, "in-combat", "Set the shared bomb spot before pulling.");
+                    return true;
+                }
+        uint32 count = 0;
+        for (Player* member : context.partyBots)
+        {
+            if (!member || !IsLiveHeadlessBot(member)) continue;
+            PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(member);
+            if (!botAi || !botAi->GetAiObjectContext()) continue;
+            auto& state = botAi->GetAiObjectContext()->GetValue<ai::GeddonBombState&>("geddon bomb state")->Get();
+            if (setting)
+            {
+                if (!member->IsInMap(requester) || member->GetGroup() != context.group) continue;
+                state.Arm({requester->GetPositionX(),requester->GetPositionY(),requester->GetPositionZ()},
+                    requester->GetInstanceId(), context.group->GetId());
+            }
+            else if (intent == "bombspot clear")
+            {
+                if (state.Active()) botAi->StopMoving();
+                state.Clear();
+            }
+            else
+            {
+                bool const set = ai::HasGeddonBombSpot(botAi);
+                handler->PSendSysMessage("Bomb spot %s: %s (%.1f, %.1f, %.1f)", member->GetName(),
+                    set ? "set" : "unset", state.spot.x,state.spot.y,state.spot.z);
+            }
+            ++count;
+        }
+        if (!count) SendActionError(handler,intent,"no-bots","No live owned raid bots accepted the bomb spot command.");
+        else SendActionAck(handler,intent,"party",count, setting ? "Fixed Geddon bomb spot set; bomb carriers temporarily override hold orders." : "");
+        return true;
+    }
     bool tactical = intent == "pull" || intent == "pullback";
     if ((intent == "attack" || intent == "interrupt" || tactical) && !context.enemyTarget)
     {

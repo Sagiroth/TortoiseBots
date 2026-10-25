@@ -251,7 +251,7 @@ public:
         if (!action || !GetActiveGeddonInferno(ai))
             return 1.0f;
         std::string const& name = action->getName();
-        bool const escape = name == "geddon inferno retreat" || name == "raid bomb runout" ||
+        bool const escape = name == "geddon inferno retreat" || name == "raid bomb runout" || name == "geddon bomb move" ||
             name == "move away from hazard";
         return GeddonInfernoBlocksAction(dynamic_cast<MovementAction*>(action) != nullptr,
             dynamic_cast<CastReachTargetSpellAction*>(action) != nullptr, escape) ? 0.0f : 1.0f;
