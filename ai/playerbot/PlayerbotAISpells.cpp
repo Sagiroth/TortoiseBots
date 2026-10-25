@@ -1,3 +1,4 @@
+#include "playerbot/strategy/ZulGurubCurePolicy.h"
 #include "playerbot/playerbot.h"
 #include "PlayerbotAI.h"
 #include "playerbot/GroupMembers.h"
@@ -1793,6 +1794,9 @@ bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string spell, u
 
 bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
 {
+    if (ai::GetZulGurubProtectedDispelMask(this, target) & GetDispellMask(DispelType(dispelType)))
+        return false;
+
     bool isFriend = sServerFacade.IsFriendlyTo(bot, target);
 	for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
 	{

@@ -12,6 +12,7 @@
 #include "Database/DBCStores.h"
 #include "BotActionLog.h"
 #include "playerbot/strategy/RaidCurePolicy.h"
+#include "playerbot/strategy/ZulGurubCurePolicy.h"
 
 #include <algorithm>
 #include <map>
@@ -22,6 +23,37 @@ using namespace ai;
 
 namespace ai
 {
+std::uint32_t GetZulGurubProtectedDispelMask(PlayerbotAI* ai, Unit* target)
+{
+    if (!ai || !target || ai->GetBot()->GetMapId() != 309 || !target->IsInWorld() ||
+        !target->IsInMap(ai->GetBot()))
+        return 0;
+    std::uint32_t mask = 0;
+    if (ai->HasStrategy("hakkar poison", BotState::BOT_STATE_COMBAT) && target->HasAura(24321))
+        mask |= GetDispellMask(DISPEL_POISON);
+    return mask && sServerFacade.IsFriendlyTo(ai->GetBot(), target) ? mask : 0;
+}
+
+bool IsZulGurubCureSpellProtected(PlayerbotAI* ai, Unit* target, std::uint32_t spellId)
+{
+    std::uint32_t const protectedMask = GetZulGurubProtectedDispelMask(ai, target);
+    if (!protectedMask)
+        return false;
+    SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+    if (!spell)
+        return false;
+    for (int i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; ++i)
+    {
+        if (spell->Effect[i] != SPELL_EFFECT_DISPEL)
+            continue;
+        // Match core EffectDispel, including its negative/all-dispel form.
+        int32 const type = spell->EffectMiscValue[i];
+        if (protectedMask & GetDispellMask(type < 0 ? DISPEL_ALL : DispelType(type)))
+            return true;
+    }
+    return false;
+}
+
 bool CastCureSpellAction::isUseful()
 {
     Unit* target = GetTarget();
@@ -290,6 +322,9 @@ bool CastSpellAction::Execute(Event& event)
             return false;
         }
 
+        if (IsZulGurubCureSpellProtected(ai, target, spellId))
+            return false;
+
         if (GetTargetName() == "current target" && (!bot->GetCurrentSpell(CURRENT_MELEE_SPELL) && !bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL)))
         {
             if (bot->GetClass() == CLASS_HUNTER && spellName != "auto shot" && sServerFacade.getDistance2d(bot, target) > 5.0f)
@@ -409,7 +444,7 @@ bool CastSpellAction::isUseful()
     if (BreaksCcInArea(ai, bot, sServerFacade.LookupSpellInfo(spellId), spellTarget))
         return false;
 
-    return true;
+    return !IsZulGurubCureSpellProtected(ai, spellTarget, spellId);
 }
 NextAction** CastSpellAction::getPrerequisites()
 {

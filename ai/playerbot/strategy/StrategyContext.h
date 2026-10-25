@@ -1,4 +1,5 @@
 #pragma once
+#include "generic/ZulGurubStrategies.h"
 #include "generic/RuinsOfAhnQirajStrategies.h"
 
 #include "generic/RoleConsumableStrategy.h"
@@ -178,6 +179,7 @@ namespace ai
             creators["ai chat"] = [](PlayerbotAI* ai) { return new AIChatStrategy(ai); };
 
             creators["mimic consumables"] = [](PlayerbotAI* ai) { return new MimicConsumableStrategy(ai); };
+            creators["hakkar poison"] = [](PlayerbotAI* ai) { return new HakkarPoisonStrategy(ai); };
             // Dungeon Strategies
             creators["dungeon"] = [](PlayerbotAI* ai) { return new DungeonStrategy(ai); };
             creators["onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairDungeonStrategy(ai); };
