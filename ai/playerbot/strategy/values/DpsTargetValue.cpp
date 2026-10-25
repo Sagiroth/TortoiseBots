@@ -241,6 +241,19 @@ namespace
         }
     };
 
+    // Encounter-specific selectors retain their least-health ordering.
+    class DpsTargetStrategy : public FindLeastHpTargetStrategy
+    {
+    public:
+        explicit DpsTargetStrategy(PlayerbotAI* ai) : FindLeastHpTargetStrategy(ai) {}
+        using FindNonCcTargetStrategy::IsCcTarget;
+        void CheckAttacker(Unit* attacker, ThreatManager* threatManager) override
+        {
+            if (!IsRaidDpsTargetExcluded(ai, attacker))
+                FindLeastHpTargetStrategy::CheckAttacker(attacker, threatManager);
+        }
+    };
+
     bool IsComboBot(PlayerbotAI* ai, Player* bot)
     {
         if (bot->GetClass() == CLASS_ROGUE)
@@ -270,6 +283,43 @@ namespace
             }
         }
         return count;
+    }
+
+    Unit* GetMarliSpawnTarget(PlayerbotAI* ai)
+    {
+        Player* bot = ai ? ai->GetBot() : nullptr;
+        if (!bot || bot->GetMapId() != 309 || !bot->IsAlive() || !bot->IsInCombat() || ai->IsTank(bot) ||
+            !ai->HasStrategy("marli spawn focus", BotState::BOT_STATE_COMBAT))
+            return nullptr;
+
+        AiObjectContext* context = ai->GetAiObjectContext();
+        std::list<ObjectGuid> const possible = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
+        bool active = false;
+        for (ObjectGuid const& guid : possible)
+        {
+            Unit* candidate = ai->GetUnit(guid);
+            if (candidate && candidate->GetEntry() == 14510 && candidate->IsAlive() &&
+                candidate->IsInCombat() && candidate->IsInMap(bot))
+            {
+                active = true;
+                break;
+            }
+        }
+        if (!active)
+            return nullptr;
+
+        DpsTargetStrategy strategy(ai);
+        for (ObjectGuid const& guid : possible)
+        {
+            Unit* candidate = ai->GetUnit(guid);
+            if (!candidate || candidate->GetEntry() != 15041 || !candidate->IsAlive() || !candidate->IsInCombat() ||
+                !candidate->IsInMap(bot) || !PossibleAttackTargetsValue::IsValid(candidate, bot,
+                    sPlayerbotAIConfig.sightDistance, false, false) || candidate == AI_VALUE(Unit*, "cc target"))
+                continue;
+            ThreatManager& threat = sServerFacade.GetThreatManager(candidate);
+            strategy.CheckAttacker(candidate, &threat);
+        }
+        return strategy.GetResult();
     }
 
     Unit* GetThekalBalanceTarget(PlayerbotAI* ai)
@@ -518,6 +568,9 @@ Unit* DpsTargetValue::Calculate()
     // the next pick like the tank's victim below.
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+
+    if (Unit* spawn = GetMarliSpawnTarget(ai))
+        return spawn;
 
     if (Unit* priest = GetThekalBalanceTarget(ai))
         return priest;

@@ -21,4 +21,10 @@ namespace ai
         ThekalBalanceStrategy(PlayerbotAI* ai) : Strategy(ai) {}
         std::string getName() override { return "thekal balance"; }
     };
+    class MarliSpawnStrategy : public Strategy
+    {
+    public:
+        MarliSpawnStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "marli spawn focus"; }
+    };
 }

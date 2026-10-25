@@ -17,7 +17,10 @@ class ZulGurubTargetTest(unittest.TestCase):
         selector = ('Unit* GetThekalBalanceTarget(PlayerbotAI*) { return nullptr; }')
         if 'Unit* GetThekalBalanceTarget(' in source:
             selector = function(source, 'Unit* GetThekalBalanceTarget(')
-        production = (function(source, 'class DpsTargetStrategy') + ';\n' + selector + '\n' +
+        marli = 'Unit* GetMarliSpawnTarget(PlayerbotAI*) { return nullptr; }'
+        if 'Unit* GetMarliSpawnTarget(' in source:
+            marli = function(source, 'Unit* GetMarliSpawnTarget(')
+        production = (function(source, 'class DpsTargetStrategy') + ';\n' + selector + '\n' + marli + '\n' +
                       function(source, 'Unit* DpsTargetValue::Calculate()') + '\n' +
                       function(triggers, 'bool NotDpsTargetActiveTrigger::IsActive()'))
         fixture = r'''
@@ -79,18 +82,22 @@ struct PlayerbotAI {
     Unit* GetUnit(ObjectGuid id) { return units[id]; }
 };
 struct { float sightDistance=60; } sPlayerbotAIConfig;
-struct { bool IsAlive(Unit* u) { return u->IsAlive(); } } sServerFacade;
+struct ThreatManager {};
+struct {
+    bool IsAlive(Unit* u) { return u->IsAlive(); }
+    ThreatManager& GetThreatManager(Unit*) { static ThreatManager threat; return threat; }
+} sServerFacade;
 struct PossibleAttackTargetsValue {
     static unsigned checks;
     static bool IsValid(Unit* u, Player*, float, bool, bool) { ++checks; return u->valid && !u->controlled; }
 };
 unsigned PossibleAttackTargetsValue::checks=0;
-struct ThreatManager {};
 struct FindNonCcTargetStrategy {
     PlayerbotAI* ai;
     Unit* result=nullptr;
     explicit FindNonCcTargetStrategy(PlayerbotAI* ai):ai(ai){}
     bool IsCcTarget(Unit* u) { return u->reserved; }
+    Unit* GetResult() { return result; }
     virtual void CheckAttacker(Unit*, ThreatManager*)=0;
 };
 struct FindLeastHpTargetStrategy : FindNonCcTargetStrategy {
@@ -164,6 +171,32 @@ int main() {
     assert(GetThekalBalanceTarget(&ai)==nullptr && PossibleAttackTargetsValue::checks==0);
     ai.strategies.clear(); ai.context.possible={lorkhan.guid};
     assert(value.Calculate()==&thekal); // immediate opt-out
+
+    Unit marli{{10},14510,1000}, low{{11},15041,20}, high{{12},15041,50};
+    ai.units[marli.guid]=&marli; ai.units[low.guid]=&low; ai.units[high.guid]=&high;
+    ai.context.possible={marli.guid,low.guid,high.guid}; tankTarget=&marli;
+    ai.context.listReads=0;
+    assert(value.Calculate()==&marli && ai.context.listReads==0);
+    ai.strategies={"marli spawn focus"};
+    assert(value.Calculate()==&low); // baseline keeps the boss while the spawn grows
+    ai.context.current=&marli; ai.context.dps=value.Calculate(); assert(trigger.IsActive());
+    ordered=&marli; assert(value.Calculate()==ordered); ordered=nullptr;
+    rti=&marli; assert(value.Calculate()==rti); rti=nullptr;
+    low.reserved=true; assert(value.Calculate()==&high); low.reserved=false;
+    ai.context.cc=&low; assert(value.Calculate()==&high); ai.context.cc=nullptr;
+    low.controlled=true; assert(value.Calculate()==&high); low.controlled=false;
+    low.valid=false; assert(value.Calculate()==&high); low.valid=true;
+    low.excluded=true; assert(value.Calculate()==&high); low.excluded=false;
+    low.alive=false; assert(value.Calculate()==&high); high.alive=false;
+    assert(value.Calculate()==&marli); low.alive=high.alive=true;
+    marli.combat=false; assert(GetMarliSpawnTarget(&ai)==nullptr); marli.combat=true;
+    marli.alive=false; assert(GetMarliSpawnTarget(&ai)==nullptr); marli.alive=true;
+    marli.entry=14507; assert(GetMarliSpawnTarget(&ai)==nullptr); marli.entry=14510;
+    ai.bot.tank=true; ai.context.listReads=0; assert(value.Calculate()==&marli && ai.context.listReads==0);
+    ai.bot.tank=false; ai.bot.map=1; assert(GetMarliSpawnTarget(&ai)==nullptr && ai.context.listReads==0);
+    ai.bot.map=309; ai.bot.combat=false; assert(GetMarliSpawnTarget(&ai)==nullptr && ai.context.listReads==0);
+    ai.bot.combat=true; ai.bot.alive=false; assert(GetMarliSpawnTarget(&ai)==nullptr && ai.context.listReads==0);
+    ai.bot.alive=true; ai.strategies.clear(); assert(value.Calculate()==&marli);
 }
 '''
         with tempfile.TemporaryDirectory() as tmp:

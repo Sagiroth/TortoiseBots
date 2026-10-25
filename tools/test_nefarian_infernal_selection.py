@@ -59,6 +59,7 @@ struct FindLeastHpTargetStrategy : FindNonCcTargetStrategy {
 bool IsRaidDpsTargetExcluded(PlayerbotAI*, Unit* unit) { return unit->excluded; }
 Unit *explicitTarget = nullptr, *raidTarget = nullptr, *construct = nullptr, *tankTarget = nullptr;
 std::vector<Unit*> possible;
+Unit* GetMarliSpawnTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetThekalBalanceTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetNefarianBoneConstructTarget(PlayerbotAI*) { return construct; }
 Unit* GetMaexxnaRescueTarget(PlayerbotAI*) { return nullptr; }
