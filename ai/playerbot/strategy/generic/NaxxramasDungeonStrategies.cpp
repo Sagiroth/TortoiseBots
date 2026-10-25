@@ -203,6 +203,11 @@ public:
         if (!action)
             return 1.0f;
         std::string const name = action->getName();
+        // Suspend only the saved movement orders, without deleting them or
+        // their anchors. They resume after Patchwerk dies/evades or opt-out.
+        if ((name == "stay" || name == "follow" || name == "return to stay position" || name == "sit") &&
+            GetPatchwerkSoakBoss(ai))
+            return 0.0f;
         bool const taunt = EbonrocTauntAction(name);
         bool const approach = dynamic_cast<MovementAction*>(action) ||
             dynamic_cast<CastReachTargetSpellAction*>(action) || dynamic_cast<AttackAction*>(action);

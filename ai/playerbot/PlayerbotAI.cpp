@@ -2,6 +2,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/RaidTankHealing.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/strategy/ZulGurubCurePolicy.h"
 #include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
 #include "playerbot/PerformanceMonitor.h"
@@ -793,6 +794,36 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     if (StopUnsafeRaidHealerFiller(this))
         SetAIInternalUpdateDelay(0);
 
+    // Opt-in Patchwerk soakers must not wait for their own combat flag or a
+    // non-combat buff/rest delay. Keep orders/anchors intact: the exception
+    // lasts only while the assigned encounter is active.
+    bool const soakActive = GetPatchwerkSoakBoss(this) != nullptr;
+    bool const soakWasActive = AI_VALUE2(bool, "manual bool", "patchwerk soak active");
+    SET_AI_VALUE2(bool, "manual bool", "patchwerk soak active", soakActive);
+    if (soakActive)
+    {
+        if (!soakWasActive)
+        {
+            bot->InterruptNonMeleeSpells(false);
+            ResetAIInternalUpdateDelay();
+            if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+                sPlayerbotAIConfig.logEvent(this, "PatchwerkSoakEngage", ObjectGuid(), "group engaged; preparing stance and melee");
+        }
+        PatchwerkSoakEngageAction opening(this);
+        if (opening.isUseful())
+        {
+            if (CanUpdateAIInternal() && opening.isPossible())
+            {
+                Event event("patchwerk soak opening");
+                opening.Execute(event);
+                // Respect a stance GCD or movement delay; bound failed retries.
+                if (GetAIInternalUpdateDelay() < 250)
+                    SetAIInternalUpdateDelay(250);
+            }
+            return;
+        }
+    }
+
     bool doMinimalReaction = minimal || !AllowActivity(REACT_ACTIVITY);
 
 #ifdef PLAYERBOT_ELUNA
@@ -1207,7 +1238,8 @@ void PlayerbotAI::OnCombatStarted()
         aiObjectContext->GetValue<time_t>("combat start time")->Set(time(0));
 
         // Update stay position on location when combat starts
-        if (HasStrategy("stay", BotState::BOT_STATE_COMBAT) && !HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT))
+        if (HasStrategy("stay", BotState::BOT_STATE_COMBAT) && !HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) &&
+            !GetPatchwerkSoakBoss(this))
         {
             aiObjectContext->GetValue<PositionEntry>("pos", "stay")->Set(PositionEntry(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->GetMapId()));
         }

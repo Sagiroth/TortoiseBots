@@ -2,9 +2,11 @@
 #include "PatchwerkSoakerActions.h"
 #include "playerbot/PatchwerkSoakerPolicy.h"
 #include "playerbot/GroupMembers.h"
+#include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
+#include <algorithm>
 
 using namespace ai;
 namespace
@@ -29,8 +31,108 @@ bool OrderedElsewhere(PlayerbotAI* ai, Unit* boss)
 }
 }
 
+namespace
+{
+bool EligibleSoaker(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    return bot->IsInWorld() && bot->IsAlive() && bot->GetMapId() == 533 &&
+        !bot->IsBeingTeleported() && bot->GetGroup() && PatchwerkSoakerAssigned(ai);
+}
+bool LivePatchwerk(Player* bot, Unit* boss)
+{
+    return boss && boss->IsInWorld() && boss->GetEntry() == 16028 && boss->IsAlive() &&
+        boss->IsInMap(bot) && boss->IsInCombat() && bot->IsValidAttackTarget(boss) &&
+        boss->IsCreature() && !static_cast<Creature*>(boss)->IsInEvadeMode() &&
+        bot->IsWithinDistInMap(boss, sPlayerbotAIConfig.sightDistance);
+}
+char const* MissingSoakStance(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (bot->GetClass() == CLASS_WARRIOR && bot->HasSpell(71) && !ai->HasAura("defensive stance", bot))
+        return "defensive stance";
+    if (bot->GetClass() == CLASS_DRUID && !ai->HasAura("dire bear form", bot) && !ai->HasAura("bear form", bot))
+    {
+        if (bot->HasSpell(9634)) return "dire bear form";
+        if (bot->HasSpell(5487)) return "bear form";
+    }
+    return nullptr;
+}
+}
+
+ObjectGuid PatchwerkSoakBossValue::Calculate()
+{
+    if (!EligibleSoaker(ai))
+        return ObjectGuid();
+    // Bounded raid roster, no grid/world scan. Selection alone is not a pull:
+    // require a live group member's actual victim or attacker in combat.
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+    {
+        if (!member->IsInWorld() || !member->IsAlive() || !member->IsInMap(bot) ||
+            !sServerFacade.IsFriendlyTo(bot, member))
+            continue;
+        Unit* victim = member->GetVictim();
+        if (member->IsInCombat() && LivePatchwerk(bot, victim))
+            return victim->GetObjectGuid();
+        for (Unit* attacker : member->GetAttackers())
+            if (LivePatchwerk(bot, attacker))
+                return attacker->GetObjectGuid();
+    }
+    return ObjectGuid();
+}
+
+Unit* ai::GetPatchwerkSoakBoss(PlayerbotAI* ai)
+{
+    if (!EligibleSoaker(ai))
+        return nullptr;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* boss = ai->GetUnit(AI_VALUE(ObjectGuid, "patchwerk soak boss"));
+    // Cached GUIDs never extend the stay exception beyond death/evade.
+    return LivePatchwerk(ai->GetBot(), boss) ? boss : nullptr;
+}
+
+bool PatchwerkSoakEngageAction::isUseful()
+{
+    Unit* boss = GetPatchwerkSoakBoss(ai);
+    return boss && (MissingSoakStance(ai) || bot->GetVictim() != boss ||
+        !bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) ||
+        !bot->CanReachWithMeleeAutoAttack(boss) || !bot->IsWithinLOSInMap(boss, true));
+}
+
+bool PatchwerkSoakEngageAction::Execute(Event& event)
+{
+    Unit* boss = GetPatchwerkSoakBoss(ai);
+    if (!boss || !isPossible())
+        return false;
+    // Prepare mitigation before arming an attack or running into Hateful range.
+    if (char const* stance = MissingSoakStance(ai))
+        return ai->DoSpecificAction(stance, event, true);
+    if (bot->IsNonMeleeSpellCasted(true, false, true))
+        return false;
+    if (bot->GetVictim() != boss || !bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING))
+    {
+        if (!Attack(GetMaster(), boss))
+            return false;
+        context->GetValue<Unit*>("tank target")->Reset();
+        context->GetValue<bool>("invalid target", "current target")->Reset();
+    }
+    if (!bot->CanReachWithMeleeAutoAttack(boss) || !bot->IsWithinLOSInMap(boss, true))
+    {
+        bool const moved = ChaseTo(boss, 0.0f, bot->GetAngle(boss));
+        // ChaseTo's core fallback arms a chase with Attack(false). Restore
+        // melee swings so arrival never needs another attack command.
+        bot->Attack(boss, true);
+        if (moved)
+            ai->SetActionDuration(std::min<uint32>(GetDuration(), 1000));
+        return moved;
+    }
+    return true;
+}
+
 Unit* ai::GetPatchwerkBoss(PlayerbotAI* ai)
 {
+    if (Unit* boss = GetPatchwerkSoakBoss(ai))
+        return boss;
     Player* bot = ai->GetBot();
     if (bot->GetMapId() != 533 || !bot->IsInWorld() || !bot->IsAlive() ||
         bot->IsBeingTeleported() || !bot->IsInCombat() ||

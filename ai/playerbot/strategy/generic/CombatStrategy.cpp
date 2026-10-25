@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "CombatStrategy.h"
 #include "playerbot/ServerFacade.h"
 
@@ -121,6 +122,9 @@ void WaitForAttackStrategy::InitCombatMultipliers(std::list<Multiplier*>& multip
 
 bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
 {
+    if (GetPatchwerkSoakBoss(ai))
+        return false; // Assigned soakers join immediately; DPS retain their delay.
+
     // Only check if the bot has the strategy enabled
     if (ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT))
     {
