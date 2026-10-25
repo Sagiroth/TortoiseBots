@@ -1,6 +1,7 @@
 // pi-lens-ignore-file: all
 #include "BotCommandHandlers.h"
 #include "CommandShared.h"
+#include "../ai/playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "../ai/playerbot/strategy/actions/GeddonBombActions.h"
 #include "BotCommandContext.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -883,7 +884,7 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
             pullTarget = nullptr;
             if (PullStrategy* probe = PullStrategy::Get(ai))
             {
-                preparingStance = probe->NeedsBossPullStance();
+                preparingStance = probe->NeedsBossPullStance() || !ai::PatchwerkSoakersReadyForPull(ai);
                 pullTarget = probe->GetTarget();
                 pullRange = probe->GetRange();
             }

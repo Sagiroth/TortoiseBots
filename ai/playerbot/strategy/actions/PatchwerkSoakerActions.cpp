@@ -7,6 +7,7 @@
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
 #include <algorithm>
+#include "playerbot/strategy/generic/PullStrategy.h"
 
 using namespace ai;
 namespace
@@ -58,6 +59,97 @@ char const* MissingSoakStance(PlayerbotAI* ai)
     }
     return nullptr;
 }
+}
+
+namespace
+{
+bool PatchwerkMainPull(PlayerbotAI* ai)
+{
+    if (!ai) return false;
+    Player* bot = ai->GetBot();
+    PullStrategy* pull = PullStrategy::Get(ai);
+    Unit* boss = pull ? pull->GetTarget() : nullptr;
+    return bot->IsInWorld() && bot->IsAlive() && !bot->IsBeingTeleported() &&
+        bot->GetMapId() == 533 && bot->GetGroup() && ai->IsTank(bot) &&
+        Has(ai, "patchwerk main") && !Has(ai, "patchwerk soak") &&
+        pull && pull->IsCommandActive() && !pull->IsCommandPullback() &&
+        pull->HasPullStarted() && !pull->HasPullActionCompleted() &&
+        boss && boss->IsInWorld() && boss->IsAlive() && boss->GetEntry() == 16028 &&
+        boss->IsInMap(bot) && !boss->IsInCombat() && bot->IsValidAttackTarget(boss) &&
+        boss->IsCreature() && !static_cast<Creature*>(boss)->IsInEvadeMode();
+}
+bool PullRendezvousExpired(PullStrategy* pull)
+{
+    return time(nullptr) - pull->GetPullStartTime() >= pull->GetMaxPullTime();
+}
+}
+
+ObjectGuid PatchwerkSoakPullerValue::Calculate()
+{
+    if (!EligibleSoaker(ai)) return ObjectGuid();
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+    {
+        if (!member->IsInMap(bot) || !sServerFacade.IsFriendlyTo(bot, member)) continue;
+        PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(member);
+        if (PatchwerkMainPull(peer) && !PullRendezvousExpired(PullStrategy::Get(peer)))
+            return member->GetObjectGuid();
+    }
+    return ObjectGuid();
+}
+
+Player* ai::GetPatchwerkSoakPuller(PlayerbotAI* ai)
+{
+    if (!EligibleSoaker(ai)) return nullptr;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* unit = ai->GetUnit(AI_VALUE(ObjectGuid, "patchwerk soak puller"));
+    if (!unit || !unit->IsPlayer()) return nullptr;
+    Player* main = static_cast<Player*>(unit);
+    PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(main);
+    // Recheck the cached GUID: cancellation, death, retarget and expiry must
+    // stop staging immediately, not one cache interval later.
+    return main->IsInMap(ai->GetBot()) && main->GetGroup() == ai->GetBot()->GetGroup() &&
+        sServerFacade.IsFriendlyTo(ai->GetBot(), main) && PatchwerkMainPull(peer) &&
+        !PullRendezvousExpired(PullStrategy::Get(peer)) ? main : nullptr;
+}
+
+bool ai::PatchwerkSoakersReadyForPull(PlayerbotAI* main)
+{
+    if (!PatchwerkMainPull(main)) return true;
+    PullStrategy* pull = PullStrategy::Get(main);
+    // Never interrupt the arrow's windup. The existing pull-end trigger owns
+    // timeout cleanup; an expired rendezvous must not authorize a late shot.
+    if (pull->HasPullActionCast()) return true;
+    if (PullRendezvousExpired(pull)) return false;
+    for (Player* member : LiveGroupMembers(main->GetBot()->GetGroup()))
+    {
+        PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(member);
+        if (!peer || !PatchwerkSoakerAssigned(peer)) continue;
+        if (!EligibleSoaker(peer) || !member->IsInMap(main->GetBot()) ||
+            !sServerFacade.IsFriendlyTo(main->GetBot(), member) || !peer->CanMove() ||
+            MissingSoakStance(peer) || peer->GetAIInternalUpdateDelay() > 250 ||
+            member->GetDistance(main->GetBot()) > 1.0f ||
+            !member->IsWithinLOSInMap(main->GetBot(), true))
+            return false;
+    }
+    return true;
+}
+
+bool PatchwerkSoakStageAction::Execute(Event& event)
+{
+    Player* main = GetPatchwerkSoakPuller(ai);
+    if (!main || !isPossible()) return false;
+    if (char const* stance = MissingSoakStance(ai))
+        return ai->DoSpecificAction(stance, event, true);
+    if (bot->GetDistance(main) <= 1.0f && bot->IsWithinLOSInMap(main, true))
+    {
+        if (bot->IsMoving()) ai->StopMoving();
+        return true;
+    }
+    // A friendly rendezvous, never an Attack/Chase of an idle boss. Use the
+    // standard checked path to the main's current point, including on stay.
+    bool const moved = MoveTo(main->GetMapId(), main->getPositionX(), main->getPositionY(), main->getPositionZ());
+    if (moved) ai->SetActionDuration(std::min<uint32>(GetDuration(), 250));
+    return moved;
 }
 
 ObjectGuid PatchwerkSoakBossValue::Calculate()

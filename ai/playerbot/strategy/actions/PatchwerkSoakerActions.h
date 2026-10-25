@@ -12,6 +12,20 @@ namespace ai
         ObjectGuid Calculate() override;
     };
     Unit* GetPatchwerkSoakBoss(PlayerbotAI* ai);
+    class PatchwerkSoakPullerValue : public CalculatedValue<ObjectGuid>
+    {
+    public:
+        PatchwerkSoakPullerValue(PlayerbotAI* ai) : CalculatedValue<ObjectGuid>(ai, "patchwerk soak puller", 1) {}
+        ObjectGuid Calculate() override;
+    };
+    Player* GetPatchwerkSoakPuller(PlayerbotAI* ai);
+    bool PatchwerkSoakersReadyForPull(PlayerbotAI* main);
+    class PatchwerkSoakStageAction : public MovementAction
+    {
+    public:
+        PatchwerkSoakStageAction(PlayerbotAI* ai) : MovementAction(ai, "patchwerk soak stage") {}
+        bool Execute(Event& event) override;
+    };
     class PatchwerkSoakEngageAction : public AttackAction
     {
     public:

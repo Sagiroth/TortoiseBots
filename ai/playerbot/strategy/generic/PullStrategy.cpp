@@ -7,6 +7,7 @@
 #include "playerbot/WorldPosition.h"
 #include "playerbot/policy/pull/PullReachPolicy.h"
 #include "PullStrategy.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 
 using namespace ai;
 
@@ -406,6 +407,12 @@ bool PullStrategy::NeedsBossPullStance() const
 
 bool PullStrategy::PrepareBossPull(Event& event, bool atFiringPosition)
 {
+    if (!PatchwerkSoakersReadyForPull(ai))
+    {
+        ai->StopMoving();
+        TraceCommand("patchwerk-rendezvous", "waiting for soakers", 0);
+        return false;
+    }
     // Never cast during the ranged auto-shot windup: that cancels the arrow.
     if (!IsProtectionBossCommand() || HasPullActionCast())
         return true;

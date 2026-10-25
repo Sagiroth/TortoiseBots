@@ -794,6 +794,35 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     if (StopUnsafeRaidHealerFiller(this))
         SetAIInternalUpdateDelay(0);
 
+    // A player-authorized Patchwerk pull stages soakers beside its main tank
+    // before combat. Never erase stay/follow or let staging arm an attack.
+    bool const soakStaging = GetPatchwerkSoakPuller(this) != nullptr;
+    bool const soakWasStaging = AI_VALUE2(bool, "manual bool", "patchwerk soak staging");
+    SET_AI_VALUE2(bool, "manual bool", "patchwerk soak staging", soakStaging);
+    if (soakWasStaging && !soakStaging)
+    {
+        StopMoving();
+        ResetAIInternalUpdateDelay();
+    }
+    if (soakStaging)
+    {
+        if (!soakWasStaging)
+        {
+            bot->InterruptNonMeleeSpells(false);
+            ResetAIInternalUpdateDelay();
+            if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+                sPlayerbotAIConfig.logEvent(this, "PatchwerkSoakStage", ObjectGuid(), "joining main before pull");
+        }
+        if (CanUpdateAIInternal())
+        {
+            PatchwerkSoakStageAction staging(this);
+            Event event("patchwerk soak staging");
+            staging.Execute(event);
+            if (GetAIInternalUpdateDelay() < 250) SetAIInternalUpdateDelay(250);
+        }
+        return;
+    }
+
     // Opt-in Patchwerk soakers must not wait for their own combat flag or a
     // non-combat buff/rest delay. Keep orders/anchors intact: the exception
     // lasts only while the assigned encounter is active.
