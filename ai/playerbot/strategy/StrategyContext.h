@@ -197,6 +197,7 @@ namespace ai
             creators["patchwerk soak"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai,"patchwerk soak"); };
             creators["patchwerk melee safety"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai,"patchwerk melee safety"); };
             creators["kt interrupt"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptStrategy(ai); };
+            creators["thaddius polarity"] = [](PlayerbotAI* ai) { return new ThaddiusPolarityStrategy(ai); };
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatStrategy(ai); };
             creators["ossirian crystal"] = [](PlayerbotAI* ai) { return new OssirianCrystalStrategy(ai); };
             creators["grobbulus clouds"] = [](PlayerbotAI* ai) { return new GrobbulusCloudStrategy(ai); };

@@ -89,7 +89,7 @@ bool ThaddiusMovePolarityAction::Execute(Event& event)
 {
     const bool negative = ai->HasAura(28084, bot) || ai->HasAura(28085, bot) || ai->HasAura(29660, bot);
     const bool positive = ai->HasAura(28059, bot) || ai->HasAura(28062, bot) || ai->HasAura(29659, bot);
-    const int side = ThaddiusPolaritySide(negative, positive);
+    const int side = UpstreamThaddiusPolaritySide(negative, positive);
     const bool ranged = ai->IsRanged(bot);
 
     // Donor polarity spots (same map geometry): left melee / left ranged /

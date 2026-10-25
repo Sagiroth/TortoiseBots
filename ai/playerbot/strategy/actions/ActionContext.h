@@ -82,6 +82,7 @@
 #include "MoltenCoreDungeonActions.h"
 #include "BlackwingLairDungeonActions.h"
 #include "NaxxramasDungeonActions.h"
+#include "ThaddiusPolarityActions.h"
 #include "EmeraldSanctumDungeonActions.h"
 #include "LowerKarazhanDungeonActions.h"
 #include "ClassicRaidDungeonActions.h"
@@ -364,6 +365,7 @@ namespace ai
             creators["enable blackwing lair strategy"] = [](PlayerbotAI* ai) { return new BlackwingLairEnableDungeonStrategyAction(ai); };
             creators["disable blackwing lair strategy"] = [](PlayerbotAI* ai) { return new BlackwingLairDisableDungeonStrategyAction(ai); };
             creators["maexxna rescue"] = [](PlayerbotAI* ai) { return new MaexxnaRescueAction(ai); };
+            creators["thaddius polarity stack"] = [](PlayerbotAI* ai) { return new ThaddiusPolarityStackAction(ai); };
             creators["patchwerk melee retreat"] = [](PlayerbotAI* ai) { return new PatchwerkMeleeRetreatAction(ai); };
             creators["kt frostbolt interrupt"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptAction(ai); };
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatAction(ai); };

@@ -3,6 +3,13 @@
 #include "NaxxramasDungeonTriggers.h"
 
 using namespace ai;
+#include "playerbot/strategy/actions/ThaddiusPolarityActions.h"
+bool ThaddiusPolarityTrigger::IsActive()
+{
+    ThaddiusPolarityStackAction action(ai);
+    return action.isUseful();
+}
+
 #include "playerbot/strategy/actions/NaxxramasDungeonActions.h"
 bool MaexxnaRescueTrigger::IsActive()
 {

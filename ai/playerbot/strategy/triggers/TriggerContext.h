@@ -318,6 +318,8 @@ namespace ai
             creators["war stomp"] = [](PlayerbotAI* ai) { return new WarStompTrigger(ai); };
             creators["perception"] = [](PlayerbotAI* ai) { return new PerceptionTrigger(ai); };
 
+            creators["thaddius polarity split"] = [](PlayerbotAI* ai) { return new ThaddiusPolarityTrigger(ai); };
+
             // Dungeon Triggers
             creators["enter onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnterDungeonTrigger(ai); };
             creators["leave onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairLeaveDungeonTrigger(ai); };

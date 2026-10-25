@@ -73,6 +73,19 @@ namespace ai
         void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
     };
 
+
+    class ThaddiusPolarityStrategy : public Strategy
+    {
+    public:
+        ThaddiusPolarityStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "thaddius polarity"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     class FourHorsemanFightStrategy : public Strategy
     {
     public:

@@ -4,6 +4,14 @@
 
 namespace ai
 {
+
+    class ThaddiusPolarityTrigger : public Trigger
+    {
+    public:
+        ThaddiusPolarityTrigger(PlayerbotAI* ai) : Trigger(ai, "thaddius polarity split", 1) {}
+        bool IsActive() override;
+    };
+
     class PatchwerkMeleeTrigger : public Trigger
     {
     public:

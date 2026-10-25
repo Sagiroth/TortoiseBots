@@ -2,6 +2,8 @@
 #include "playerbot/playerbot.h"
 #include "NaxxramasDungeonStrategies.h"
 #include "DungeonMultipliers.h"
+#include "playerbot/strategy/actions/ThaddiusPolarityActions.h"
+#include "playerbot/strategy/actions/ReachTargetActions.h"
 
 using namespace ai;
 
@@ -129,7 +131,7 @@ public:
         if (!action || !InsideGrobbulusCloud(ai)) return 1.0f;
         std::string const name=action->getName();
         if (name=="grobbulus cloud escape" || name=="raid bomb runout" || name=="move away from hazard") return 1.0f;
-        return dynamic_cast<MovementAction*>(action) || dynamic_cast<CastReachTargetSpellAction*>(action) ? 0.0f : 1.0f;
+        return ShouldHoldThaddiusPolarityPosition(ai) ? 0.0f : 1.0f;
     }
 };
 }
@@ -237,6 +239,45 @@ void PatchwerkAssignmentStrategy::InitCombatMultipliers(std::list<Multiplier*>& 
     multipliers.push_back(new PatchwerkAssignmentMultiplier(ai));
 }
 void PatchwerkAssignmentStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}
+
+namespace
+{
+class ThaddiusPolarityMultiplier : public Multiplier
+{
+public:
+    ThaddiusPolarityMultiplier(PlayerbotAI* ai) : Multiplier(ai, "thaddius polarity movement") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || (!dynamic_cast<MovementAction*>(action) &&
+                        !dynamic_cast<CastReachTargetSpellAction*>(action)))
+            return 1.0f;
+        std::string const& name = action->getName();
+        bool const escape = name == "thaddius polarity stack" || name == "move away from hazard" ||
+            name == "raid bomb runout" || name == "grobbulus cloud escape" ||
+            name == "locust swarm retreat" || name == "flee" || name == "runaway";
+        if (escape)
+            return 1.0f;
+        return ShouldHoldThaddiusPolarityPosition(ai) ? 0.0f : 1.0f;
+    }
+};
+}
+void ThaddiusPolarityStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("thaddius polarity split",
+        NextAction::array(0, new NextAction("thaddius polarity stack", ACTION_EMERGENCY + 9), nullptr)));
+}
+void ThaddiusPolarityStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitCombatTriggers(triggers);
+}
+void ThaddiusPolarityStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new ThaddiusPolarityMultiplier(ai));
+}
+void ThaddiusPolarityStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
 {
     InitCombatMultipliers(multipliers);
 }
