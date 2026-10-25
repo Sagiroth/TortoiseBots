@@ -359,6 +359,7 @@ namespace ai
 
             // Dungeon Boss Triggers
 
+            creators["golemagg tank target excluded"] = [](PlayerbotAI* ai) { return new GolemaggTankRetargetTrigger(ai); };
             creators["raid dps target excluded"] = [](PlayerbotAI* ai) { return new RaidDpsRetargetTrigger(ai); };
             creators["geddon inferno active"] = [](PlayerbotAI* ai) { return new LocalGeddonInfernoTrigger(ai); };
             creators["start magmadar fight"] = [](PlayerbotAI* ai) { return new MagmadarStartFightTrigger(ai); };

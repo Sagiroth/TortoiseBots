@@ -54,6 +54,24 @@ namespace ai
         void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
     };
 
+    class GolemaggBossTankStrategy : public Strategy
+    {
+    public:
+        GolemaggBossTankStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "golemagg boss tank"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
+    class GolemaggAddTankStrategy : public GolemaggBossTankStrategy
+    {
+    public:
+        GolemaggAddTankStrategy(PlayerbotAI* ai) : GolemaggBossTankStrategy(ai) {}
+        std::string getName() override { return "golemagg add tank"; }
+    };
+
     // Opt-in DPS exclusions; tanks and explicit targets keep their assignments.
     class GolemaggDpsStrategy : public Strategy
     {

@@ -49,3 +49,9 @@ bool RaidDpsRetargetTrigger::IsActive()
     RaidDpsRetargetAction action(ai);
     return action.isUseful();
 }
+
+bool GolemaggTankRetargetTrigger::IsActive()
+{
+    GolemaggTankRetargetAction action(ai);
+    return action.isUseful();
+}

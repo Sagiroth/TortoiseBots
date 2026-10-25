@@ -23,6 +23,14 @@ namespace ai
     // player movement orders permit this tactic. Does not depend on current target.
     Unit* GetActiveGeddonInferno(PlayerbotAI* ai);
 
+    class GolemaggTankRetargetAction : public Action
+    {
+    public:
+        GolemaggTankRetargetAction(PlayerbotAI* ai) : Action(ai, "golemagg tank retarget") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
+
     class RaidDpsRetargetAction : public Action
     {
     public:

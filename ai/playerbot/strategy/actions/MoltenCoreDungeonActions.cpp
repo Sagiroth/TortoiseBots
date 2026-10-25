@@ -68,6 +68,11 @@ bool GolemaggTankHoldAction::Execute(Event& event)
 #include "MoltenCoreDungeonActions.h"
 #include "playerbot/policy/raid/GeddonInfernoPolicy.h"
 #include "playerbot/RaidDpsExclusionPolicy.h"
+#include "playerbot/RaidTankAssignmentPolicy.h"
+#include "playerbot/GroupMembers.h"
+#include "playerbot/strategy/values/GolemaggTankAssignmentValue.h"
+#include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "../../../../runtime/PlayerbotAIStorage.h"
 #include "playerbot/strategy/values/RaidDpsTargetPolicy.h"
 #include "playerbot/strategy/values/RtiTargetValue.h"
 #include "playerbot/strategy/values/PositionValue.h"
@@ -249,4 +254,139 @@ Unit* ai::GetActiveGarr(PlayerbotAI* ai)
             return boss;
     }
     return nullptr;
+}
+
+
+namespace
+{
+bool GolemaggTankHoldOrder(PlayerbotAI* ai)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    PositionMap& positions = AI_VALUE(PositionMap&, "position");
+    auto hold = positions.find("pull hold");
+    return ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT) ||
+        (hold != positions.end() && hold->second.isSet());
+}
+
+Unit* GolemaggTankExplicitTarget(PlayerbotAI* ai)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "explicit attack target"));
+    if (target && PossibleAttackTargetsValue::IsValid(target, ai->GetBot(),
+        sPlayerbotAIConfig.sightDistance, false, false))
+        return target;
+    target = AI_VALUE(Unit*, "rti target");
+    return target && PossibleAttackTargetsValue::IsValid(target, ai->GetBot(),
+        sPlayerbotAIConfig.sightDistance, false, false) ? target : nullptr;
+}
+}
+
+GolemaggTankAssignment GolemaggTankAssignmentValue::Calculate()
+{
+    GolemaggTankAssignment assignment;
+    Player* bot = ai->GetBot();
+    if (!bot->IsAlive() || !bot->IsInWorld() || bot->IsBeingTeleported() ||
+        !bot->IsInCombat() || bot->GetMapId() != 409 || !ai->IsTank(bot) ||
+        (!ai->HasStrategy("golemagg boss tank", BotState::BOT_STATE_COMBAT) &&
+         !ai->HasStrategy("golemagg add tank", BotState::BOT_STATE_COMBAT)) ||
+        GolemaggTankHoldOrder(ai) || GolemaggTankExplicitTarget(ai))
+        return assignment;
+    Unit* boss = nullptr;
+    std::vector<std::uint64_t> adds;
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || !unit->IsAlive() || !unit->IsInCombat() || !unit->IsInMap(bot))
+            continue;
+        if (unit->GetEntry() == 11988)
+            boss = unit;
+        else if (unit->GetEntry() == 11672)
+            adds.push_back(guid.GetRawValue());
+    }
+    if (!boss)
+        return assignment;
+    std::vector<RaidTankCandidate> tanks;
+    auto addCandidate = [&](Player* member)
+    {
+        if (!member || !member->IsAlive() || !member->IsInWorld() || member->IsBeingTeleported() ||
+            !member->IsInMap(bot) || !member->IsInCombat())
+            return;
+        PlayerbotAI* memberAI = PlayerbotAIStorage::Instance().GetAI(member);
+        if (!memberAI)
+        {
+            // A human already holding/attacking the boss retains that role.
+            if (ai->IsTank(member) && (boss->GetVictim() == member || member->GetVictim() == boss))
+                tanks.push_back({ member->GetObjectGuid().GetRawValue(), true, false, boss->GetObjectGuid().GetRawValue() });
+            return;
+        }
+        if (!memberAI->IsTank(member) || GolemaggTankHoldOrder(memberAI))
+            return;
+        bool const bossRole = memberAI->HasStrategy("golemagg boss tank", BotState::BOT_STATE_COMBAT);
+        bool const addRole = memberAI->HasStrategy("golemagg add tank", BotState::BOT_STATE_COMBAT);
+        if (!bossRole && !addRole)
+            return;
+        Unit* locked = GolemaggTankExplicitTarget(memberAI);
+        if (locked && locked != boss && locked->GetEntry() != 11672)
+            return;
+        tanks.push_back({ member->GetObjectGuid().GetRawValue(), bossRole, addRole,
+            locked ? locked->GetObjectGuid().GetRawValue() : 0 });
+    };
+    if (bot->GetGroup())
+        for (Player* member : LiveGroupMembers(bot->GetGroup()))
+            addCandidate(member);
+    else
+        addCandidate(bot);
+    auto const plan = PlanGolemaggTanks(tanks, boss->GetObjectGuid().GetRawValue(), adds);
+    assignment.active = true;
+    assignment.boss = boss->GetObjectGuid();
+    if (plan.bossTank == bot->GetObjectGuid().GetRawValue())
+        assignment.targets.push_back(assignment.boss);
+    else
+        for (auto const& add : plan.addOwners)
+            if (add.second == bot->GetObjectGuid().GetRawValue())
+                assignment.targets.push_back(ObjectGuid(add.first));
+    return assignment;
+}
+
+bool ai::IsGolemaggTankTargetExcluded(PlayerbotAI* ai, Unit* target)
+{
+    Player* bot = ai->GetBot();
+    if (bot->GetMapId() != 409 || !bot->IsInCombat() || !ai->IsTank(bot) ||
+        (!ai->HasStrategy("golemagg boss tank", BotState::BOT_STATE_COMBAT) &&
+         !ai->HasStrategy("golemagg add tank", BotState::BOT_STATE_COMBAT)))
+        return false;
+    if (!target || !target->IsAlive() || sServerFacade.IsFriendlyTo(bot, target) ||
+        GolemaggTankHoldOrder(ai) || GolemaggTankExplicitTarget(ai))
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    auto const assignment = AI_VALUE(GolemaggTankAssignment, "golemagg tank assignment");
+    Unit* boss = ai->GetUnit(assignment.boss);
+    if (!assignment.active || !boss || !boss->IsAlive() || !boss->IsInCombat() || !boss->IsInMap(ai->GetBot()))
+        return false;
+    return std::find(assignment.targets.begin(), assignment.targets.end(), target->GetObjectGuid()) == assignment.targets.end();
+}
+
+bool GolemaggTankRetargetAction::isUseful()
+{
+    return IsGolemaggTankTargetExcluded(ai, AI_VALUE(Unit*, "current target"));
+}
+
+bool GolemaggTankRetargetAction::Execute(Event& event)
+{
+    if (!isUseful())
+        return false;
+    Unit* excluded = AI_VALUE(Unit*, "current target");
+    for (int type = CURRENT_MELEE_SPELL; type < CURRENT_MAX_SPELL; ++type)
+        if (Spell* spell = bot->GetCurrentSpell(CurrentSpellTypes(type)))
+            if (spell->m_targets.getUnitTargetGuid() == excluded->GetObjectGuid())
+                bot->InterruptSpell(CurrentSpellTypes(type));
+    ai->StopMoving();
+    bot->AttackStop();
+    SET_AI_VALUE(Unit*, "current target", nullptr);
+    context->GetValue<Unit*>("tank target")->Reset();
+    ai->DoSpecificAction("tank assist", event, true);
+    return true;
 }

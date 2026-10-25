@@ -6,6 +6,7 @@
 #include "playerbot/strategy/values/RaidDpsTargetPolicy.h"
 #include "playerbot/policy/raid/GeddonInfernoPolicy.h"
 #include "playerbot/GarrAoePolicy.h"
+#include "playerbot/strategy/values/GolemaggTankAssignmentValue.h"
 #include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 #include "playerbot/strategy/actions/ReachTargetActions.h"
 
@@ -342,6 +343,40 @@ void GarrDpsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 }
 
 void GarrDpsStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}
+
+
+namespace
+{
+class GolemaggTankMultiplier : public Multiplier
+{
+public:
+    GolemaggTankMultiplier(PlayerbotAI* ai) : Multiplier(ai, "golemagg tank assignment") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || action->IsCrowdControlAction() || action->getName() == "attack my target" ||
+            action->getName() == "attack rti target")
+            return 1.0f;
+        bool const offensive = dynamic_cast<AttackAction*>(action) || dynamic_cast<CastSpellAction*>(action);
+        return offensive && IsGolemaggTankTargetExcluded(ai, action->GetTarget()) ? 0.0f : 1.0f;
+    }
+};
+}
+
+void GolemaggBossTankStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("golemagg tank target excluded",
+        NextAction::array(0, new NextAction("golemagg tank retarget", ACTION_HIGH + 5), NULL)));
+}
+
+void GolemaggBossTankStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new GolemaggTankMultiplier(ai));
+}
+
+void GolemaggBossTankStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
 {
     InitCombatMultipliers(multipliers);
 }

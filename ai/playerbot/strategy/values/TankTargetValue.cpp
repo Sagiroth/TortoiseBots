@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "TankTargetValue.h"
 #include "RaidDpsTargetPolicy.h"
+#include "GolemaggTankAssignmentValue.h"
 #include "PossibleAttackTargetsValue.h"
 #include "AttackersValue.h"
 #include "playerbot/ServerFacade.h"
@@ -93,7 +94,7 @@ public:
         Player* bot = ai->GetBot();
         AiObjectContext* context = ai->GetAiObjectContext();
 
-        if (!attacker || !attacker->IsAlive())
+        if (!attacker || !attacker->IsAlive() || IsGolemaggTankTargetExcluded(ai, attacker))
             return;
 
         if (IsCcTarget(attacker)) return;

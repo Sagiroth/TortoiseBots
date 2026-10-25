@@ -18,6 +18,7 @@
 #include "MasterTargetValue.h"
 #include "LineTargetValue.h"
 #include "TankTargetValue.h"
+#include "GolemaggTankAssignmentValue.h"
 #include "DpsTargetValue.h"
 #include "CcTargetValue.h"
 #include "CurrentCcTargetValue.h"
@@ -158,6 +159,7 @@ namespace ai
             creators["self target"] = [](PlayerbotAI* ai) { return new SelfTargetValue(ai); };
             creators["master target"] = [](PlayerbotAI* ai) { return new MasterTargetValue(ai); };
             creators["line target"] = [](PlayerbotAI* ai) { return new LineTargetValue(ai); };
+            creators["golemagg tank assignment"] = [](PlayerbotAI* ai) { return new GolemaggTankAssignmentValue(ai); };
             creators["tank target"] = [](PlayerbotAI* ai) { return new TankTargetValue(ai); };
             creators["dps target"] = [](PlayerbotAI* ai) { return new DpsTargetValue(ai); };
             creators["dps aoe target"] = [](PlayerbotAI* ai) { return new DpsAoeTargetValue(ai); };

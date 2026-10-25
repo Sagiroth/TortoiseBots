@@ -194,6 +194,8 @@ namespace ai
             creators["onyxia"] = [](PlayerbotAI* ai) { return new OnyxiaFightStrategy(ai); };
             creators["majordomo dps"] = [](PlayerbotAI* ai) { return new MajordomoDpsStrategy(ai); };
             creators["garr dps"] = [](PlayerbotAI* ai) { return new GarrDpsStrategy(ai); };
+            creators["golemagg boss tank"] = [](PlayerbotAI* ai) { return new GolemaggBossTankStrategy(ai); };
+            creators["golemagg add tank"] = [](PlayerbotAI* ai) { return new GolemaggAddTankStrategy(ai); };
             creators["golemagg dps"] = [](PlayerbotAI* ai) { return new GolemaggDpsStrategy(ai); };
             creators["geddon inferno"] = [](PlayerbotAI* ai) { return new GeddonInfernoStrategy(ai); };
             creators["magmadar"] = [](PlayerbotAI* ai) { return new MagmadarFightStrategy(ai); };

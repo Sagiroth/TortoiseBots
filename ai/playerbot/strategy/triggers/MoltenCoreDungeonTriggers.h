@@ -17,6 +17,13 @@ namespace ai
         MoltenCoreLeaveDungeonTrigger(PlayerbotAI* ai) : LeaveDungeonTrigger(ai, "leave molten core", "molten core", 409) {}
     };
 
+    class GolemaggTankRetargetTrigger : public Trigger
+    {
+    public:
+        GolemaggTankRetargetTrigger(PlayerbotAI* ai) : Trigger(ai, "golemagg tank target excluded", 1) {}
+        bool IsActive() override;
+    };
+
     class RaidDpsRetargetTrigger : public Trigger
     {
     public:
