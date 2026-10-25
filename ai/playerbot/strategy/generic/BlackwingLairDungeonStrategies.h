@@ -35,6 +35,13 @@ namespace ai
         std::string getName() override { return "nefarian phase3"; }
     };
 
+    class NefarianInfernalFocusStrategy : public Strategy
+    {
+    public:
+        NefarianInfernalFocusStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "nefarian infernal focus"; }
+    };
+
     class EbonrocSwapStrategy : public Strategy
     {
     public:

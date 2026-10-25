@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "DpsTargetValue.h"
 #include "RaidDpsTargetPolicy.h"
+#include "playerbot/strategy/NefarianAddTargetPolicy.h"
 #include "playerbot/RaidDpsExclusionPolicy.h"
 #include "playerbot/strategy/actions/NaxxramasDungeonActions.h"
 #include "LeastHpTargetValue.h"
@@ -311,6 +312,20 @@ namespace
             nefarian->GetHealthPercent(), chosen != nullptr) ? chosen : nullptr;
     }
 
+    class NefarianInfernalTargetStrategy : public FindLeastHpTargetStrategy
+    {
+    public:
+        explicit NefarianInfernalTargetStrategy(PlayerbotAI* ai) : FindLeastHpTargetStrategy(ai) {}
+
+        void CheckAttacker(Unit* attacker, ThreatManager* threatManager) override
+        {
+            AiObjectContext* context = ai->GetAiObjectContext();
+            if (attacker && attacker->GetEntry() == NEFARIAN_CORRUPTED_INFERNAL_ENTRY &&
+                attacker != AI_VALUE(Unit*, "cc target") && !IsRaidDpsTargetExcluded(ai, attacker))
+                FindLeastHpTargetStrategy::CheckAttacker(attacker, threatManager);
+        }
+    };
+
     bool IsAttackedByParty(Unit* target, Group* group)
     {
         for (Player* member : LiveGroupMembers(group))
@@ -493,6 +508,14 @@ Unit* DpsTargetValue::Calculate()
 
     if (Unit* tankTarget = GetGroupTankTarget(ai))
     {
+        if (!ai->IsTank(bot) && ai->HasStrategy("nefarian infernal focus", BotState::BOT_STATE_COMBAT) &&
+            IsNefarianClassCallAdd(bot->GetMapId(), tankTarget->GetEntry(), NEFARIAN_CORRUPTED_INFERNAL_ENTRY))
+        {
+            NefarianInfernalTargetStrategy infernalStrategy(ai);
+            if (Unit* infernal = TargetValue::FindTarget(&infernalStrategy))
+                return infernal;
+        }
+
         if (tankTarget != AI_VALUE(Unit*, "cc target") && !ccProbe.IsCcTarget(tankTarget) &&
             !IsWastedDpsTarget(ai, tankTarget) && !IsRaidDpsTargetExcluded(ai, tankTarget))
             return tankTarget;

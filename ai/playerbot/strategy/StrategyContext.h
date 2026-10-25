@@ -187,6 +187,7 @@ namespace ai
             creators["blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairDungeonStrategy(ai); };
             creators["razorgore phase1"] = [](PlayerbotAI* ai) { return new RazorgorePhaseOneStrategy(ai); };
             creators["nefarian phase3"] = [](PlayerbotAI* ai) { return new NefarianPhaseThreeStrategy(ai); };
+            creators["nefarian infernal focus"] = [](PlayerbotAI* ai) { return new NefarianInfernalFocusStrategy(ai); };
             creators["maexxna rescue"] = [](PlayerbotAI* ai) { return new MaexxnaRescueStrategy(ai); };
             creators["patchwerk main"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai,"patchwerk main"); };
             creators["patchwerk soak"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai,"patchwerk soak"); };
