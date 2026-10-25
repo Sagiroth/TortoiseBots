@@ -381,6 +381,8 @@ namespace ai
             creators["raid dps target excluded"] = [](PlayerbotAI* ai) { return new RaidDpsRetargetTrigger(ai); };
             creators["ragnaros son pickup"] = [](PlayerbotAI* ai) { return new RagnarosSonTrigger(ai); };
             creators["geddon inferno active"] = [](PlayerbotAI* ai) { return new LocalGeddonInfernoTrigger(ai); };
+
+            creators["gehennas rain nearby"] = [](PlayerbotAI* ai) { return new GehennasRainTrigger(ai); };
             creators["start magmadar fight"] = [](PlayerbotAI* ai) { return new MagmadarStartFightTrigger(ai); };
             creators["end magmadar fight"] = [](PlayerbotAI* ai) { return new MagmadarEndFightTrigger(ai); };
             creators["magmadar lava bomb"] = [](PlayerbotAI* ai) { return new MagmadarLavaBombTrigger(ai); };

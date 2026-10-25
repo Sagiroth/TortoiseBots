@@ -5,6 +5,13 @@
 
 namespace ai
 {
+    class GehennasRainTrigger : public Trigger
+    {
+    public:
+        GehennasRainTrigger(PlayerbotAI* ai) : Trigger(ai, "gehennas rain nearby", 1) {}
+        bool IsActive() override;
+    };
+
     class MoltenCoreEnterDungeonTrigger : public EnterDungeonTrigger
     {
     public:

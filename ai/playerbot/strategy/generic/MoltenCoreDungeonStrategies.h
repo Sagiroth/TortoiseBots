@@ -3,6 +3,16 @@
 
 namespace ai
 {
+    class GehennasRainStrategy : public Strategy
+    {
+    public:
+        GehennasRainStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "gehennas rain"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+
     class MoltenCoreDungeonStrategy : public Strategy
     {
     public:

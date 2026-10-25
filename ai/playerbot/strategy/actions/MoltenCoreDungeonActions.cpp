@@ -65,6 +65,9 @@ bool GolemaggTankHoldAction::Execute(Event& event)
 }
 
 #include "playerbot/playerbot.h"
+#include "GehennasRainHazards.h"
+#include "Objects/DynamicObject.h"
+#include <cmath>
 #include "MoltenCoreDungeonActions.h"
 #include "playerbot/policy/raid/GeddonInfernoPolicy.h"
 #include "TwinEmperorDungeonActions.h"
@@ -432,4 +435,59 @@ bool GolemaggTankRetargetAction::Execute(Event& event)
     context->GetValue<Unit*>("tank target")->Reset();
     ai->DoSpecificAction("tank assist", event, true);
     return true;
+}
+
+
+std::list<HazardPosition> ai::GetGehennasRainHazards(PlayerbotAI* ai)
+{
+    Player* bot = ai ? ai->GetBot() : nullptr;
+    if (!bot || bot->GetMapId() != 409 || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->IsBeingTeleported() || !bot->IsInCombat() ||
+        !ai->HasStrategy("gehennas rain", BotState::BOT_STATE_COMBAT))
+        return {};
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+    PositionMap& positions = AI_VALUE(PositionMap&, "position");
+    auto hold = positions.find("pull hold");
+    if (ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT) ||
+        (hold != positions.end() && hold->second.isSet()))
+        return {};
+
+    std::list<HazardPosition> hazards;
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* boss = ai->GetUnit(guid);
+        if (!boss || boss->GetEntry() != 12259 || !boss->IsAlive() ||
+            !boss->IsInCombat() || !boss->IsInMap(bot))
+            continue;
+
+        // EffectPersistentAA registers Rain of Fire directly on its caster.
+        // The generic nearest-dynamic-objects value currently returns no objects.
+        std::vector<DynamicObject*> areas;
+        boss->GetDynObjects(19717, SpellEffectIndex(0), areas);
+        for (DynamicObject* area : areas)
+        {
+            if (!area || !area->IsInMap(bot) || area->GetCasterGuid() != boss->GetObjectGuid() ||
+                area->GetSpellId() != 19717 || area->GetEffIndex() != 0 ||
+                area->GetDuration() <= 0 || !std::isfinite(area->GetRadius()) || area->GetRadius() <= 0)
+                continue;
+            hazards.emplace_back(WorldPosition(area), area->GetRadius() + 2.0f);
+        }
+        break;
+    }
+    return hazards;
+}
+
+bool ai::GehennasRainTooClose(PlayerbotAI* ai)
+{
+    Player* bot = ai ? ai->GetBot() : nullptr;
+    if (!bot)
+        return false;
+    for (HazardPosition const& hazard : GetGehennasRainHazards(ai))
+        if (WorldPosition(bot).distance(hazard.first) <= hazard.second)
+            return true;
+    return false;
 }

@@ -241,6 +241,7 @@ namespace ai
             creators["golemagg boss tank"] = [](PlayerbotAI* ai) { return new GolemaggBossTankStrategy(ai); };
             creators["golemagg add tank"] = [](PlayerbotAI* ai) { return new GolemaggAddTankStrategy(ai); };
             creators["golemagg dps"] = [](PlayerbotAI* ai) { return new GolemaggDpsStrategy(ai); };
+            creators["gehennas rain"] = [](PlayerbotAI* ai) { return new GehennasRainStrategy(ai); };
             creators["geddon inferno"] = [](PlayerbotAI* ai) { return new GeddonInfernoStrategy(ai); };
             creators["magmadar"] = [](PlayerbotAI* ai) { return new MagmadarFightStrategy(ai); };
             creators["garr"] = [](PlayerbotAI* ai) { return new GarrFightStrategy(ai); };

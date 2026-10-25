@@ -30,6 +30,7 @@ bool GeddonInfernoTrigger::IsActive()
     }
     return false;
 }
+#include "playerbot/strategy/actions/GehennasRainHazards.h"
 #include "playerbot/playerbot.h"
 #include "MoltenCoreDungeonTriggers.h"
 #include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
@@ -54,4 +55,9 @@ bool GolemaggTankRetargetTrigger::IsActive()
 {
     GolemaggTankRetargetAction action(ai);
     return action.isUseful();
+}
+
+bool GehennasRainTrigger::IsActive()
+{
+    return GehennasRainTooClose(ai);
 }

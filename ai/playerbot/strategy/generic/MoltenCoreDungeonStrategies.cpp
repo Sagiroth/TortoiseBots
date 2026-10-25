@@ -386,3 +386,15 @@ void RagnarosSonsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("ragnaros son pickup",
         NextAction::array(0, new NextAction("ragnaros son attack", ACTION_HIGH + 2), nullptr)));
 }
+
+
+void GehennasRainStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("gehennas rain nearby",
+        NextAction::array(0, new NextAction("move away from hazard", ACTION_EMERGENCY + 7), nullptr)));
+}
+
+void GehennasRainStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitCombatTriggers(triggers);
+}
