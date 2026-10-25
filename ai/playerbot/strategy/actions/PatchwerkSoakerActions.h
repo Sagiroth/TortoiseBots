@@ -2,8 +2,29 @@
 #include "MovementActions.h"
 #include "AttackAction.h"
 #include "playerbot/strategy/Value.h"
+#include "playerbot/PatchwerkOpeningPolicy.h"
 namespace ai
 {
+    bool PatchwerkThreatTank(PlayerbotAI* ai, Unit* target);
+    bool PatchwerkDpsOpeningHold(PlayerbotAI* ai);
+    bool PatchwerkOpeningBlocksSpell(PlayerbotAI* ai, uint32 spellId, Unit* target);
+    class PatchwerkOpeningWindowValue : public CalculatedValue<PatchwerkOpeningWindow>
+    {
+    public:
+        PatchwerkOpeningWindowValue(PlayerbotAI* ai) : CalculatedValue(ai, "patchwerk opening window", 1) {}
+        PatchwerkOpeningWindow Calculate() override;
+    private:
+        PatchwerkOpeningWindow window;
+        ObjectGuid bossGuid;
+        Group* group = nullptr;
+        uint32 instance = 0;
+    };
+    class PatchwerkOpeningOwnerValue : public CalculatedValue<ObjectGuid>
+    {
+    public:
+        PatchwerkOpeningOwnerValue(PlayerbotAI* ai) : CalculatedValue(ai, "patchwerk opening owner", 1) {}
+        ObjectGuid Calculate() override;
+    };
     // Cached group discovery also works before the soaker enters combat.
     class PatchwerkSoakBossValue : public CalculatedValue<ObjectGuid>
     {

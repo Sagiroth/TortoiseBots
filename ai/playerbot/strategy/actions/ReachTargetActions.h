@@ -16,6 +16,7 @@
 #include "playerbot/policy/combat/RangedApproachPolicy.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "playerbot/RaidTankHealing.h"
+#include "PatchwerkSoakerActions.h"
 #include "AI/CreatureAI.h"
 #include <ctime>
 
@@ -106,6 +107,9 @@ namespace ai
 
         virtual bool Execute(Event& event) override
 		{
+            Unit* openingTarget = GetTarget();
+            if (openingTarget && openingTarget->GetEntry() == 16028 && PatchwerkDpsOpeningHold(ai)) return false;
+
             Unit* target = GetTarget();
             if (target)
             {

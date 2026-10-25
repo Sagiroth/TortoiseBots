@@ -122,6 +122,7 @@ void WaitForAttackStrategy::InitCombatMultipliers(std::list<Multiplier*>& multip
 
 bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
 {
+    if (PatchwerkDpsOpeningHold(ai)) return true;
     if (GetPatchwerkSoakBoss(ai))
         return false; // Assigned soakers join immediately; DPS retain their delay.
 

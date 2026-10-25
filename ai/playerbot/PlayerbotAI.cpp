@@ -794,6 +794,22 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     if (StopUnsafeRaidHealerFiller(this))
         SetAIInternalUpdateDelay(0);
 
+    // Keep one shared opening clock on the assigned main, including while
+    // the raid is waiting outside combat. Never restart it for late DPS joins.
+    if (HasStrategy("patchwerk main", BotState::BOT_STATE_COMBAT))
+        aiObjectContext->GetValue<PatchwerkOpeningWindow>("patchwerk opening window")->Get();
+    if (PatchwerkDpsOpeningHold(this))
+    {
+        if (bot->GetVictim() && bot->GetVictim()->GetEntry() == 16028) bot->AttackStop();
+        for (uint32 slot : {uint32(CURRENT_GENERIC_SPELL), uint32(CURRENT_CHANNELED_SPELL), uint32(CURRENT_AUTOREPEAT_SPELL)})
+            if (Spell* spell = bot->GetCurrentSpell(CurrentSpellTypes(slot)))
+                if (PatchwerkOpeningBlocksSpell(this, spell->m_spellInfo->Id,
+                    aiObjectContext->GetValue<Unit*>("current target")->Get()))
+                    bot->InterruptSpell(CurrentSpellTypes(slot));
+        if (Pet* pet = bot->GetPet())
+            if (pet->GetVictim() && pet->GetVictim()->GetEntry() == 16028) pet->AttackStop();
+    }
+
     // Do not leave the main on the ordinary pull-end action delay while its
     // rendezvoused soakers start swinging. The action consumes only a landed,
     // explicit Patchwerk main pull and never cancels an unlanded shot.

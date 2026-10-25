@@ -49,6 +49,12 @@ namespace ai
     // shares the "Improved Shield Slam" name and would keep a name trigger
     // active forever. Proc aura is 1 charge (procCharges=1), so firing slam
     // immediately consumes the bonus before it expires.
+    class PatchwerkShieldSlamTrigger : public Trigger
+    {
+    public:
+        PatchwerkShieldSlamTrigger(PlayerbotAI* ai) : Trigger(ai, "patchwerk shield slam") {}
+        bool IsActive() override;
+    };
     class ImprovedShieldSlamProcTrigger : public Trigger
     {
     public:

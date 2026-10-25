@@ -136,6 +136,7 @@ namespace ai
                 creators["shield bash"] = [](PlayerbotAI* ai) { return new ShieldBashInterruptSpellTrigger(ai); };
                 creators["disarm"] = [](PlayerbotAI* ai) { return new DisarmDebuffTrigger(ai); };
                 creators["concussion blow"] = [](PlayerbotAI* ai) { return new ConcussionBlowTrigger(ai); };
+                creators["patchwerk shield slam"] = [](PlayerbotAI* ai) { return new PatchwerkShieldSlamTrigger(ai); };
                 creators["improved shield slam proc"] = [](PlayerbotAI* ai) { return new ImprovedShieldSlamProcTrigger(ai); };
                 creators["shield bash on enemy healer"] = [](PlayerbotAI* ai) { return new ShieldBashInterruptEnemyHealerSpellTrigger(ai); };
                 creators["battle stance"] = [](PlayerbotAI* ai) { return new BattleStanceTrigger(ai); };

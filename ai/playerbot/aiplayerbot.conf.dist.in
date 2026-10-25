@@ -6064,3 +6064,7 @@ AiPlayerbot.RoleConsumables.FlaskQuest = 0
 # first safe update after hire/login/resurrection and every five minutes.
 # No free items for owned alts, claimed pool bots or roaming bots. Food excluded.
 AiPlayerbot.RoleConsumables.AutoProvision = 1
+
+# Assigned Patchwerk main enables a group DPS opening hold. 0 disables; 3-5 seconds.
+# Starts at engagement (DPS also wait during the commanded approach); no later cap.
+AiPlayerbot.PatchwerkOpeningDelay = 4

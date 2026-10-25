@@ -48,9 +48,11 @@ struct AI {
  bool HasSpell(const char*){return learned;}
  Aura* GetAura(const char*,Unit*,bool=false){return aura;}
  bool HasAura(const char*,Unit*,bool){return aura && aura->stacks>=5;}
+ bool CanCastSpell(const char*,Unit*){return false;}
  bool CanCastSpell(uint32 id,Unit*){return usable[id] && rage >= (id==3 ? 20 : 30);}
  uint32 id(std::string name){if(name=="medium rage available")return rage>=40;return name=="bloodthirst"?1:name=="mortal strike"?2:3;}
 };
+bool PatchwerkThreatTank(AI*, Unit*){return false;} // separately exercised by Patchwerk opening fixture
 struct Facade {
  AI* ai;
  bool IsSpellReady(Unit*,uint32 id){return ai->ready[id];}

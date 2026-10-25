@@ -424,6 +424,8 @@ namespace ai
             creators["or"] = [](PlayerbotAI* ai) { return new BoolOrValue(ai); };
             creators["not"] = [](PlayerbotAI* ai) { return new NotValue(ai); };
             creators["gt32"] = [](PlayerbotAI* ai) { return new GT32Value(ai); };
+            creators["patchwerk opening window"] = [](PlayerbotAI* ai) { return new PatchwerkOpeningWindowValue(ai); };
+            creators["patchwerk opening owner"] = [](PlayerbotAI* ai) { return new PatchwerkOpeningOwnerValue(ai); };
             creators["patchwerk soak puller"] = [](PlayerbotAI* ai) { return new PatchwerkSoakPullerValue(ai); };
             creators["patchwerk soak boss"] = [](PlayerbotAI* ai) { return new PatchwerkSoakBossValue(ai); };
             creators["manual bool"] = [](PlayerbotAI* ai) { return new BoolManualSetValue(ai); };

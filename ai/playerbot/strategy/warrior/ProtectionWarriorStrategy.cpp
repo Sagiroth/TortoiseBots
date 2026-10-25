@@ -160,6 +160,11 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "improved shield slam proc",
         NextAction::array(0, new NextAction("shield slam", ACTION_HIGH + 5), NULL)));
 
+    // Encounter assignment: use the actual spell cost, alongside the generic
+    // affordable-rage row, while Patchwerk tanks need a threat lead.
+    triggers.push_back(new TriggerNode("patchwerk shield slam",
+        NextAction::array(0, new NextAction("shield slam", ACTION_HIGH + 4), NULL)));
+
     // Shield Slam at any affordable rage (donor TankWarriorStrategy gates at
     // 40, but that stranded rage-thin off-tanks): Slam costs 20 rage, and a
     // Protection bot that is not the boss's victim earns almost no rage

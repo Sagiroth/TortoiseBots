@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/AoeFearPolicy.h"
 #include "playerbot/RetaliationPolicy.h"
@@ -198,6 +199,9 @@ namespace ai
             Unit* target = GetTarget();
             if (!target)
                 return false;
+
+            if (PatchwerkThreatTank(ai, target))
+                return !ai->CanCastSpell("shield slam", target) && !ai->CanCastSpell("revenge", target);
 
             const bool isTank = ai->IsTank(bot);
 

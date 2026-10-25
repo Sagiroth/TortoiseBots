@@ -53,3 +53,7 @@ AiPlayerbot.ObservabilityPort = 9195
 AiPlayerbot.ObservabilityHost = 127.0.0.1
 # Mobs, threat and target lines for every dungeon run on the dashboard's Dungeons tab (only acts with Observability = 1).
 AiPlayerbot.ObservabilityDungeonMobs = 1
+
+# Assigned Patchwerk main enables a group DPS opening hold. 0 disables; 3-5 seconds.
+# Starts at engagement (DPS also wait during the commanded approach); no later cap.
+AiPlayerbot.PatchwerkOpeningDelay = 4

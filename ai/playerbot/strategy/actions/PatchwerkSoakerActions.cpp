@@ -84,6 +84,97 @@ bool PullRendezvousExpired(PullStrategy* pull)
 }
 }
 
+bool ai::PatchwerkThreatTank(PlayerbotAI* ai, Unit* target)
+{
+    return target && target->GetEntry() == 16028 && target->IsAlive() && target->IsInCombat() &&
+        ai->GetBot()->GetMapId() == 533 && target->IsInMap(ai->GetBot()) && ai->IsTank(ai->GetBot()) &&
+        Has(ai, "patchwerk main") != Has(ai, "patchwerk soak");
+}
+
+PatchwerkOpeningWindow PatchwerkOpeningWindowValue::Calculate()
+{
+    if (group != bot->GetGroup() || instance != bot->GetInstanceId())
+    { window = {}; bossGuid.Clear(); group = bot->GetGroup(); instance = bot->GetInstanceId(); }
+    if (!group || bot->GetMapId() != 533 || !ai->IsTank(bot) ||
+        !Has(ai, "patchwerk main") || Has(ai, "patchwerk soak"))
+    {
+        window = {}; bossGuid.Clear(); return window;
+    }
+    // Encounter lifetime, not sight range: leaving melee must not reset a
+    // finished opening and impose a new delay when the boss comes back.
+    auto fighting = [this](Unit* unit)
+    {
+        return unit && unit->GetEntry() == 16028 && unit->IsAlive() && unit->IsInWorld() &&
+            unit->IsInMap(bot) && unit->IsInCombat() && unit->IsCreature() &&
+            !static_cast<Creature*>(unit)->IsInEvadeMode();
+    };
+    PullStrategy* pull = PullStrategy::Get(ai);
+    Unit* boss = ai->GetUnit(bossGuid);
+    bool const ordered = pull && pull->IsCommandActive() && !pull->IsCommandPullback();
+    Unit* requested = ordered ? pull->GetTarget() : nullptr;
+    if (requested && requested->GetEntry() == 16028) boss = requested;
+    if (!fighting(boss))
+    {
+        // An explicit, still-unengaged pull holds DPS during the approach too.
+        if (!(boss && boss == requested && boss->IsAlive() && boss->IsInWorld() &&
+              boss->IsInMap(bot) && !boss->IsInCombat() && boss->IsCreature() &&
+              !static_cast<Creature*>(boss)->IsInEvadeMode()))
+        {
+            boss = nullptr;
+            for (Player* member : LiveGroupMembers(group))
+            {
+                if (!member->IsAlive() || !member->IsInMap(bot)) continue;
+                if (fighting(member->GetVictim())) { boss = member->GetVictim(); break; }
+                for (Unit* attacker : member->GetAttackers())
+                    if (fighting(attacker)) { boss = attacker; break; }
+                if (boss) break;
+            }
+        }
+    }
+    bossGuid = boss ? boss->GetObjectGuid() : ObjectGuid();
+    window.Observe(bossGuid.GetRawValue(), boss && boss->IsInCombat(), ordered,
+        WorldTimer::getMSTime());
+    return window;
+}
+
+ObjectGuid PatchwerkOpeningOwnerValue::Calculate()
+{
+    if (bot->GetMapId() != 533 || !bot->GetGroup()) return ObjectGuid();
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+    {
+        if (!member->IsInWorld() || !member->IsInMap(bot) || !sServerFacade.IsFriendlyTo(bot, member)) continue;
+        PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(member);
+        if (peer && peer->IsTank(member) && Has(peer, "patchwerk main") && !Has(peer, "patchwerk soak"))
+            return member->GetObjectGuid();
+    }
+    return ObjectGuid();
+}
+
+bool ai::PatchwerkDpsOpeningHold(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!sPlayerbotAIConfig.patchwerkOpeningDelay || bot->GetMapId() != 533 ||
+        !bot->IsAlive() || !bot->GetGroup() || ai->IsTank(bot) || ai->IsHeal(bot)) return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* owner = ai->GetUnit(AI_VALUE(ObjectGuid, "patchwerk opening owner"));
+    if (!owner || !owner->IsPlayer() || !owner->IsInMap(bot)) return false;
+    Player* main = static_cast<Player*>(owner);
+    if (main->GetGroup() != bot->GetGroup()) return false;
+    PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(main);
+    if (!peer || !Has(peer, "patchwerk main") || Has(peer, "patchwerk soak")) return false;
+    PatchwerkOpeningWindow window = peer->GetAiObjectContext()->GetValue<PatchwerkOpeningWindow>("patchwerk opening window")->Get();
+    return window.Holds(WorldTimer::getMSTime(), sPlayerbotAIConfig.patchwerkOpeningDelay * 1000);
+}
+
+bool ai::PatchwerkOpeningBlocksSpell(PlayerbotAI* ai, uint32 spellId, Unit* target)
+{
+    if (ai->GetBot()->GetMapId() != 533 || !sPlayerbotAIConfig.patchwerkOpeningDelay) return false;
+    // Positive heals/buffs and other encounter targets remain available.
+    if (target && target != ai->GetBot() && target->GetEntry() != 16028) return false;
+    SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+    return spell && !IsPositiveSpell(spell) && PatchwerkDpsOpeningHold(ai);
+}
+
 ObjectGuid PatchwerkSoakPullerValue::Calculate()
 {
     if (!EligibleSoaker(ai)) return ObjectGuid();
