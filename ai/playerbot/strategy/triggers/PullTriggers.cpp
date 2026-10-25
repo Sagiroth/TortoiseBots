@@ -16,6 +16,20 @@ bool PullStartTrigger::IsActive()
     return strategy && strategy->IsPullPendingToStart();
 }
 
+bool PullContinueTrigger::IsActive()
+{
+    PullStrategy* strategy = PullStrategy::Get(ai);
+    if (!strategy || !strategy->HasPullStarted() || strategy->IsPullPendingToStart() ||
+        strategy->HasPullActionCompleted() || !bot->IsAlive())
+        return false;
+    Unit* target = strategy->GetTarget();
+    if (!target || !target->IsInWorld() || !target->IsAlive() ||
+        time(nullptr) - strategy->GetPullStartTime() >= strategy->GetMaxPullTime())
+        return false;
+    strategy->TraceCommand("continue-trigger");
+    return true;
+}
+
 bool ShouldPullTrigger::IsActive()
 {
     // Dungeons only, deliberately. Outdoors a bot already has grinding and travel

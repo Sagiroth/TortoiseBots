@@ -5,6 +5,8 @@
 #include "EnemyPlayerValue.h"
 #include "WorldPvpSeekChecks.h"
 #include "playerbot/policy/combat/AttackersAoeDensityPolicy.h"
+#include <atomic>
+#include <cstdlib>
 
 using namespace ai;
 using namespace MaNGOS;
@@ -102,12 +104,19 @@ std::list<ObjectGuid> AttackersValue::Calculate()
             if (pAttackersValue->calculatePos.sqDistance2d(bot) > 100.0f)
                 continue;
 
+            // Remember our own cache time so it can be restored if we fall back to the full scan.
+            const time_t ownLastCheckTime = lastCheckTime;
+
             // Make the value expire at the same time as the copied value.
             lastCheckTime = pAttackersValue->lastCheckTime;
 
             calculatePos = pAttackersValue->calculatePos;
 
             result = PAI_VALUE(std::list<ObjectGuid>, valueName);
+
+            // Did the other bot actually have attackers? Checked before the donor-specific
+            // targets are removed and before validation.
+            const bool borrowedListHadEntries = !result.empty();
 
             std::vector<std::string> specificTargetNames = { "current target","old target","attack target","pull target" };
             Unit* target;
@@ -134,12 +143,42 @@ std::list<ObjectGuid> AttackersValue::Calculate()
             // against ourselves only dropped every threat aimed at a groupmate,
             // so grouped bots never engaged (#549). The dedup/first-seen/getOne
             // loop is the shared DistinctValidTargets policy rule.
-            return DistinctValidTargets(result,
+            std::list<ObjectGuid> distinctResult = DistinctValidTargets(result,
                 [this](const ObjectGuid& guid)
                 {
                     return IsValidForGroup(ai->GetUnit(guid));
                 },
                 getOne);
+
+            // The other bot had attackers but none are valid for this bot (for example it is not
+            // engaged yet, so the target is not fighting it). Do not report "no attackers":
+            // restore our cache time and use the normal full scan below, which checks each
+            // target against the group member that is actually fighting it.
+            if (borrowedListHadEntries && distinctResult.empty())
+            {
+                // Opt-in, bounded capture: at most one event per second, 20 per process.
+                static const bool diagnostic = [] {
+                    const char* flag = std::getenv("TB_SHARED_ATTACKERS_DIAG");
+                    return flag && flag[0] == '1';
+                }();
+                if (diagnostic)
+                {
+                    static std::atomic<time_t> nextLog{0};
+                    static std::atomic<unsigned> logCount{0};
+                    time_t now = time(nullptr);
+                    time_t due = nextLog.load();
+                    if (logCount.load() < 20 && now >= due && nextLog.compare_exchange_strong(due, now + 1))
+                    {
+                        if (logCount.fetch_add(1) < 20)
+                            sLog.outString("TBSHARED nonempty-borrow -> empty-after-filter -> full-scan bot=%s guid=%u donor=%u qualifier=%s",
+                                bot->GetName(), bot->GetGUIDLow(), player->GetGUIDLow(), qualifier.c_str());
+                    }
+                }
+                lastCheckTime = ownLastCheckTime;
+                break;
+            }
+
+            return distinctResult;
         }
     }
 
@@ -383,8 +422,9 @@ bool AttackersValue::InCombat(Unit* target, Player* player, bool checkPullTarget
     return inCombat;
 }
 
-bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool checkInCombat, bool validatePossibleTarget)
+bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool checkInCombat, bool validatePossibleTarget, char const** reason)
 {
+    auto reject = [reason](char const* text) { if (reason) *reason = text; return false; };
     Player* playerToCheckAgainst = owner != nullptr ? owner : player;
 
     // An explicit attack order is the player's pull: the target is valid before either
@@ -397,7 +437,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
             explicitAttackTarget = ai->GetAiObjectContext()->GetValue<ObjectGuid>("explicit attack target")->Get() == target->getObjectGuid();
     }
     // Validate possible target
-    if (validatePossibleTarget && !PossibleTargetsValue::IsValid(target, playerToCheckAgainst))
+    if (validatePossibleTarget && !PossibleTargetsValue::IsValid(target, playerToCheckAgainst, false, reason))
     {
         return false;
     }
@@ -416,7 +456,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
             if (!targetAi->HasStrategy("pvp", BotState::BOT_STATE_COMBAT) &&
                 !WorldPvpSeekChecks::IsSeeking(targetAi, playerToCheckAgainst))
             {
-                return false;
+                return reject("PvP strategy is disabled");
             }
         }
 
@@ -437,14 +477,14 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
                     if (!playerAi->HasActivePlayerMaster())
                         rtiTarget = PAI_VALUE(Unit*, "rti target");
                     if (target != rtiTarget)
-                        return false;
+                        return reject("recent player-killer avoidance");
                 }
             }
         }
         // If the enemy player is in a PVP Prohibited zone
         if (inPvPProhibitedZone)
         {
-            return false;
+            return reject("PvP is prohibited here");
         }
 
         const bool isDuelOpponent = player->m_duel && player->m_duel->opponent == target->getObjectGuid();
@@ -455,7 +495,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
             // If the enemy player is not within sight distance
             if (!enemyPlayer->IsWithinDist(playerToCheckAgainst, EnemyPlayerValue::GetMaxAttackDistance(playerToCheckAgainst), false))
             {
-                return false;
+                return reject("enemy player is outside attack distance");
             }
         }
 
@@ -475,7 +515,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
             }
 
             if (!isRtiTarget)
-                return false;
+                return reject("enemy player is not engaged");
         }
     }
     // If the target is a NPC
@@ -489,7 +529,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
         // guards against for players, above) is never treated as a valid attacker.
         if (sServerFacade.IsFriendlyTo(playerToCheckAgainst, target))
         {
-            return false;
+            return reject("target is friendly to the bot");
         }
 
         // If the target is not fighting the player (and if the owner bot is not pulling the target)
@@ -504,13 +544,13 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
             }
 
             if(!isRtiTarget)
-                return false;
+                return reject("target is not engaged");
         }
 
         // If the target is a player's pet and in a PvP prohibited zone
         if (target->getObjectGuid().IsPet() && inPvPProhibitedZone)
         {
-            return false;
+            return reject("pet is in a PvP-prohibited area");
         }
 
         // If the target is evading
@@ -519,12 +559,12 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
         {
             if (creature->IsInEvadeMode())
             {
-                return false;
+                return reject("target is evading");
             }
         }
     }
 
-    if (IgnoreTarget(target, playerToCheckAgainst))
+    if (IgnoreTarget(target, playerToCheckAgainst, reason))
         return false;
 
     return true;
@@ -584,8 +624,9 @@ bool AttackersValue::IsKeepoutSetAside(Unit* target, Player* bot)
     return false;
 }
 
-bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
+bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst, char const** reason)
 {
+    auto ignored = [reason](char const* text) { if (reason) *reason = text; return true; };
     if (!PlayerbotAIStorage::Instance().GetAI(playerToCheckAgainst))
         return false;
 
@@ -610,7 +651,7 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
     {
         if (WorldTimer::getMSTime() < givenUp->second &&
             (cannotBeReached || target->GetVictim() != playerToCheckAgainst || !playerToCheckAgainst->IsWithinLOSInMap(target, true)))
-            return true;
+            return ignored("target is temporarily marked unreachable");
         unreachable.erase(givenUp);
     }
 
@@ -629,7 +670,7 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
         {
             if (WorldTimer::getMSTime() < givenUpKind->second &&
                 (cannotBeReached || target->GetVictim() != playerToCheckAgainst || !playerToCheckAgainst->IsWithinLOSInMap(target, true)))
-                return true;
+                return ignored("creature type is temporarily marked unreachable");
             unreachableKinds.erase(givenUpKind);
         }
     }
@@ -646,14 +687,14 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
             if (AreaEntry const* area = AreaEntry::GetById(zone))
                 capital = (area->Flags & AREA_FLAG_CAPITAL) != 0;
         if (capital)
-            return true;
+            return ignored("capital-city target avoidance");
         // Hostile-town guard: target stands among guards hostile to this bot's team
         // (static spawn data, 60 yd around the target). Random masterless bots only;
         // retaliation preserved (NON_COMBAT gate above): a guard that attacks the bot
         // is fought like any other. Own-team guards never trigger the helper.
         if (sPlayerbotAIConfig.avoidHostileTowns && !ai->HasRealPlayerMaster() &&
             WorldPosition(target).IsGuardedHostileTownFor(playerToCheckAgainst))
-            return true;
+            return ignored("hostile-town target avoidance");
     }
 
     // Ignore hard hostiles while not already fighting - but never a mob that
@@ -668,13 +709,13 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
     {
         // When traveling a long distance.
         if (AI_VALUE(bool, "travel target traveling") && AI_VALUE2(float, "distance", "travel target") > sPlayerbotAIConfig.reactDistance)
-            return true;
+            return ignored("high-level target avoided while traveling");
 
         //When moving to master far away.
         if ((ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
             ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)) &&
             AI_VALUE2(bool, "trigger active", "out of react range"))
-            return true;
+            return ignored("high-level target avoided while following out of range");
 
         if (ai->GetMaster() && !ai->HasActivePlayerMaster())
         {
@@ -682,7 +723,7 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
 
             //When master is traveling a long distance.
             if (PAI_VALUE(bool, "travel target traveling") && PAI_VALUE2(float, "distance", "travel target") > sPlayerbotAIConfig.reactDistance)
-                return true;
+                return ignored("high-level target avoided while master travels");
         }
     }
 
@@ -719,7 +760,7 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
         }
 
         if (isDummy && ai->GetFixedBotNumber(BotTypeNumber::DUMMY_ATTACK_NUMBER, 10, 0.2f)) //90% of bots, cycle every 5 min.
-            return true;
+            return ignored("training-dummy avoidance");
     }
 
     return false;

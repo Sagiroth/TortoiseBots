@@ -1,3 +1,7 @@
+#include "../ai/playerbot/AiFactory.h"
+#include "Config/Config.h"
+#include "ExperimentalBisService.h"
+#include "Chat.h"
 // pi-lens-ignore-file: clang:pp_file_not_found,clang:unknown_typename,clang:use_of_undeclared_identifier,clang:unknown_type_name,clang:undeclared_var_use,clang:incomplete_member_access
 #include "../ai/playerbot/GroupMembers.h"
 #include "HireProvisionService.h"
@@ -44,6 +48,8 @@
 #include "SharedDefines.h"
 #include "Log.h"
 #include "Group/Group.h"
+#include "Maps/Map.h"
+#include "Maps/InstanceData.h"
 #include "Database/DatabaseEnv.h"
 #include "Database/DBCStores.h"
 #include "Spells/SpellMgr.h"
@@ -123,6 +129,26 @@ bool HireProvisionService::ClassCanRole(uint8 classId, uint8 role)
     return false;
 }
 
+char const* HireProvisionService::RequestedSpecName(uint8 cls, int index)
+{
+    static char const* names[12][4] = {
+        {}, {"protection","arms","fury"}, {"protection","holy","retribution"},
+        {"beastmastery","marksmanship","survival"}, {"assassination","combat","subtlety"},
+        {"holy","discipline","shadow"}, {}, {"restoration","elemental","enhancement"},
+        {"frost","fire","arcane"}, {"affliction","demonology","destruction"},
+        {}, {"feral","restoration","balance","feral"}
+    };
+    return cls < 12 && index >= 0 && index < 4 ? names[cls][index] : nullptr;
+}
+int HireProvisionService::RequestedSpecTab(uint8 cls, int index)
+{
+    static int const tabs[12][4] = {
+        {}, {2,0,1}, {1,0,2}, {0,1,2}, {0,1,2}, {1,0,2}, {},
+        {2,0,1}, {2,1,0}, {0,1,2}, {}, {1,2,0,1}
+    };
+    return RequestedSpecName(cls,index) ? tabs[cls][index] : -1;
+}
+
 bool HireProvisionService::CheckHireAllowed(Player* requester, bool fromGossip, HireOutcome& outcome)
 {
     if (!requester || !requester->GetSession() || !requester->IsInWorld())
@@ -180,7 +206,7 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
         return outcome;
     }
     Team requesterTeam = requester->GetTeam();
-    if (Player::TeamForRace(sel.race) != requesterTeam)
+    if (!sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_GROUP) && Player::TeamForRace(sel.race) != requesterTeam)
     {
         outcome.status = HireStatus::InvalidChoice;
         outcome.message = "That race fights for the other faction.";
@@ -193,6 +219,17 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
         outcome.message = "The experimental shaman tank is turned off on this server.";
         return outcome;
     }
+    if (sel.specIndex >= 0)
+    {
+        char const* requested = RequestedSpecName(sel.classId, sel.specIndex);
+        if (!requested || ai::ChangeTalentsAction::getPremadePaths(sel.classId, requested, (ai::BotRoles)role).empty())
+        {
+            outcome.status = HireStatus::InvalidChoice;
+            outcome.message = "Requested specialization has no configured build compatible with that role; no hire created.";
+            return outcome;
+        }
+    }
+
     if (!ClassCanRole(sel.classId, role))
     {
         outcome.status = HireStatus::InvalidChoice;
@@ -314,7 +351,8 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     // organic world character) and never one of the player's own characters.
     // The durable hire ledger records exactly these created characters, and it
     // is the only thing the deletion guard trusts.
-    Team team = requesterTeam;
+    // Pool-account faction rules apply to the companion being created, not its master.
+    Team team = Player::TeamForRace(resolved.race);
     if (!CreateCandidate(resolved, team, accountId, guid))
     {
         outcome.status = HireStatus::NoCandidate;
@@ -967,7 +1005,12 @@ bool HireProvisionService::EnsureGrouped(Player* master, Player* bot)
         return true;
 
     if (Group* oldGroup = bot->GetGroup())
-        oldGroup->RemoveMember(bot->GetObjectGuid(), 0);
+    {
+        if (oldGroup != master->GetGroup())
+            oldGroup->RemoveMember(bot->GetObjectGuid(), 0);
+        else
+            return bot->IsInSameRaidWith(master);
+    }
 
     Group* requesterGroup = master->GetGroup();
     if (requesterGroup && requesterGroup->isBGGroup())
@@ -1024,6 +1067,14 @@ uint32_t HireProvisionService::CountHired(Player* master) const
     return count;
 }
 
+bool HireProvisionService::IsPending(ObjectGuid guid) const
+{
+    for (PendingProvision const& pending : m_pending)
+        if (pending.botGuid == guid)
+            return true;
+    return false;
+}
+
 bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
 {
     if (!bot || !bot->IsInWorld())
@@ -1050,10 +1101,21 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
 
     if (masterOnline)
     {
-        if (!Reunite(bot, master))
+        char const* arrivalReason = "unknown";
+        if (!Reunite(bot, master, arrivalReason))
         {
-            sLog.outError("TortoiseBots: hired bot %s could not join master %s after provisioning",
-                bot->GetName(), master->GetName());
+            if (pending.reuniteAttempts == 0 || pending.reuniteAttempts % 30 == 0)
+            {
+                Map* destination = master->GetMap();
+                Group* group = master->GetGroup();
+                sLog.outError("TortoiseBots: HIRE_ARRIVAL bot=%s guid=%u master=%s attempt=%u reason=%s source=%u/%u destination=%u/%u sameRaid=%u members=%u raid=%u botCombat=%u masterCombat=%u encounter=%u groupInstanceCombat=%u",
+                    bot->GetName(), bot->GetGUIDLow(), master->GetName(), unsigned(pending.reuniteAttempts + 1), arrivalReason,
+                    bot->GetMapId(), bot->GetInstanceId(), master->GetMapId(), master->GetInstanceId(),
+                    unsigned(bot->IsInSameRaidWith(master)), group ? unsigned(group->GetMembersCount()) : 0,
+                    unsigned(group && group->isRaidGroup()), unsigned(bot->IsInCombat()), unsigned(master->IsInCombat()),
+                    unsigned(destination && destination->GetInstanceData() && destination->GetInstanceData()->IsEncounterInProgress()),
+                    unsigned(group && group->InCombatToInstance(master->GetInstanceId())));
+            }
             return false;
         }
         // Issue #378: the hire is confirmed grouped, so leaving the party now
@@ -1081,13 +1143,28 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         TB_LOG_BASIC("TortoiseBots: hired companion %s provisioned while master offline in %lldms; grouped on return",
             bot->GetName(), (long long)provisionElapsedMs);
     }
+    // Reunite may have just queued a near-teleport acknowledgement. Wait for
+    // that transfer or an initial buff cast instead of permanently skipping gear.
+    if (pending.specVerified && bot->GetLevel() == 60 &&
+        (bot->IsBeingTeleported() || bot->IsNonMeleeSpellCasted(false)))
+        return false;
+    std::string gearReport;
+    if (pending.specVerified)
+        ApplyExperimentalBis(bot, gearReport);
+    else
+        gearReport = "locked gearing skipped";
+    std::string summary = std::string(bot->GetName()) + ": " + pending.provisionReport + "; " + gearReport +
+        "; " + InspectExperimentalBis(bot);
+    if (masterOnline)
+        ChatHandler(master->GetSession()).PSendSysMessage("%s", summary.c_str());
+    sLog.outString("TortoiseBots hire verification: %s", summary.c_str());
     return true;
 }
 
 // Issue #281: runs exactly once per hire. Level/talents/spells/gear/SaveToDB
 // are the heavy world-thread work; re-running them on every group retry
 // (plus the seeding in BotManager::OnPlayerLogin) cost 2-3 full passes.
-void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision const& pending, PlayerbotAI* ai, Player* master)
+void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision& pending, PlayerbotAI* ai, Player* master)
 {
     // Level sync: GiveLevel runs the full stat/talent-point pipeline (and
     // UpdateSkillsForLevel rides along inside it); the bot keeps its
@@ -1113,15 +1190,16 @@ void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision const& p
     uint8 forcedRole = pending.role ? pending.role : DefaultRoleForClass(bot->GetClass());
     ai->SetForcedRole(forcedRole);
     {
-        char const* specName = HireSpecPathName(bot->GetClass(), pending.specIndex);
+        char const* specName = RequestedSpecName(bot->GetClass(), pending.specIndex);
         std::vector<TalentPath*> paths = ai::ChangeTalentsAction::getPremadePaths(
             bot->GetClass(), specName ? specName : "", (ai::BotRoles)forcedRole);
         // Fall back to the role only when no premade build exists for the
         // requested spec (or the request was role-only); then to any build
         // when the role has none either.
-        if (paths.empty())
-            paths = ai::ChangeTalentsAction::getPremadePaths(bot->GetClass(), "", (ai::BotRoles)forcedRole);
-        if (paths.empty())
+        // The upstream fallback rationale above does not permit substituting
+        // another specialization for an explicit experimental request.
+        // Explicit experimental specs must never silently fall back.
+        if (paths.empty() && pending.specIndex < 0)
             paths = ai::ChangeTalentsAction::getPremadePaths(bot->GetClass(), "", ai::BOT_ROLE_NONE);
         bool appliedSpec = false;
         if (!paths.empty())
@@ -1157,11 +1235,8 @@ void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision const& p
         // Fall through to the generic auto path when no premade spec matched:
         // AutoSelectTalents converges on the class default for the new level.
         ai::Event talentEvent("hire", "", master);
-        if (!appliedSpec)
+        if (!appliedSpec && pending.specIndex < 0)
         {
-            if (specName)
-                sLog.outError("TortoiseBots: hired %s (class %u) for spec '%s' but no premade build could be applied; falling back to the role",
-                    bot->GetName(), uint32(bot->GetClass()), specName);
             ai->DoSpecificAction("auto talents", talentEvent, true);
         }
         else if (PlayerbotAIStorage::Instance().GetAI(bot))
@@ -1184,6 +1259,14 @@ void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision const& p
     // table only replaces the slots it defines. Slots without a row, hires
     // below 60 and tier 0 keep today's behaviour untouched.
     ProvisionHireGear(bot, pending, ai);
+    auto points = AiFactory::GetPlayerSpecTabs(bot);
+    int actual = AiFactory::GetPlayerSpecTab(bot);
+    int expected = RequestedSpecTab(bot->GetClass(), pending.specIndex);
+    pending.specVerified = points[actual] > 0 && points[actual] > points[(actual+1)%3] &&
+        points[actual] > points[(actual+2)%3] && (expected < 0 || actual == expected) &&
+        (AiFactory::GetPlayerRoles(bot->GetClass(), actual) & forcedRole) != 0;
+    pending.provisionReport = pending.specVerified ? "talents and role verified" :
+        "FAILED: requested talents/role not verified; locked gear NOT applied";
     // Snapshot the provisioned spellbook. Kept on the pending entry for
     // post-deploy diagnosis (what the intro could see); the intro itself
     // reads the live spellbook through the rank chains below. Non-const on
@@ -1213,48 +1296,50 @@ void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision const& p
 // Group::AddMember only touches map state via instance binds, so accepting
 // while still on the old map is safe; teleport + same-map moves that keep
 // the player in world complete on the next tick regardless.
-bool HireProvisionService::Reunite(Player* bot, Player* master)
+bool HireProvisionService::Reunite(Player* bot, Player* master, char const*& reason)
 {
-    if (!bot || !master)
-        return false;
-    if (bot->IsInSameRaidWith(master))
-        return true;
+    if (!bot || !master) { reason = "missing-player"; return false; }
     // The bot itself must be settled: mid-teleport it is out of world, and
     // HandleGroupAcceptOpcode/AddMember reads live map state. Same-map hops
     // that stay in world are safe to group through.
-    if (!bot->IsInWorld() || bot->IsBeingTeleported())
-        return false;
-    if (!master->IsInWorld())
-        return false;
-    if (bot->GetMapId() != master->GetMapId())
-    {
-        if (!EnsureGrouped(master, bot))
-            return false;
-        bot->TeleportTo(master->GetMapId(), master->GetPositionX(), master->GetPositionY(),
-            master->GetPositionZ(), master->GetOrientation(), 0);
-        return bot->IsInSameRaidWith(master);
-    }
+    if (!bot->IsInWorld()) { reason = "bot-not-in-world"; return false; }
+    if (!master->IsInWorld()) { reason = "master-not-in-world"; return false; }
+    if (bot->IsBeingTeleported()) { reason = "bot-teleport-pending"; return false; }
+    if (master->IsBeingTeleported()) { reason = "master-teleport-pending"; return false; }
+
     // Same map, but a far hop (e.g. opposite continents' distance or a forced
     // map change): invite now so the pending entry survives the transfer,
     // then teleport. Near hops stay in world and complete without waiting.
-    bool farHop = bot->GetDistance(master) > 500.0f;
-    if (farHop)
+    // Local provisioning also verifies arrival after same-map hops.
+    // Group before crossing maps so the core resolves the master's instance.
+    // Membership alone is not proof that the hire has arrived.
+    if (!bot->IsInSameRaidWith(master) && !EnsureGrouped(master, bot))
+    { reason = "group-invite-or-accept-failed"; return false; }
+    // A GM master can enter a raid solo, but the non-GM hire needs a raid group.
+    // Do this after the first invitation creates the group, before TeleportTo.
+    if (master->GetMap()->IsRaid())
     {
-        if (!EnsureGrouped(master, bot))
-            return false;
-        bot->TeleportTo(master->GetMapId(), master->GetPositionX(), master->GetPositionY(),
-            master->GetPositionZ(), master->GetOrientation(), 0);
-        return bot->IsInSameRaidWith(master);
+        Group* group = master->GetGroup();
+        if (!group || group->isBGGroup() || bot->GetGroup() != group)
+        { reason = "raid-group-mismatch"; return false; }
+        if (!group->isRaidGroup())
+            group->ConvertToRaid();
     }
-    bot->TeleportTo(master->GetMapId(), master->GetPositionX(), master->GetPositionY(),
+    if (bot->GetMap() == master->GetMap() && bot->GetDistance(master) < 1.0f)
+        return true;
+
+    // This path is only initial hire provisioning, not established companions.
+    bot->CombatStopWithPets(true);
+    bot->InterruptNonMeleeSpells(false);
+    bot->StopMoving();
+    bool accepted = bot->TeleportTo(master->GetMapId(), master->GetPositionX(), master->GetPositionY(),
         master->GetPositionZ(), master->GetOrientation(), 0);
+    reason = accepted ? "teleport-accepted-awaiting-landing" : "core-teleport-rejected";
     // Near teleport executes on the bot's next ack tick; group once the bot
     // lands (or immediately if the core kept it in world).
-    if (bot->IsBeingTeleported() && !bot->IsInWorld())
-        return false;
-    if (!EnsureGrouped(master, bot))
-        return false;
-    return bot->IsInSameRaidWith(master);
+    // Initial grouping has already happened; the next retry verifies landing.
+    // BotManager still drives teleport ACK while pending; verify landing on retry.
+    return false;
 }
 
 void HireProvisionService::DropStalePending()
@@ -1287,6 +1372,62 @@ void HireProvisionService::Update(uint32_t diff)
     if (m_updateElapsedMs < 1000)
         return;
     m_updateElapsedMs = 0;
+    // Opt-in integration test: only freshly created ledger-backed characters.
+    // Never selects or changes an existing player's character or companions.
+    static bool testEnabled = sConfig.GetBoolDefault("TortoiseBots.ExperimentalHireSelfTest", false);
+    static int testStage = 0;
+    static unsigned testTicks = 0;
+    static ObjectGuid testMaster, testHire;
+    static uint32 testAccount = 0;
+    if (testEnabled)
+    {
+        ++testTicks;
+        if (testStage == 0 && RandomBotService::Instance().IsPoolAvailable())
+        {
+            HireSelection fixture; fixture.classId=CLASS_WARRIOR; fixture.race=RACE_HUMAN; fixture.gender=GENDER_MALE;
+            testEnabled = CreateCandidate(fixture, ALLIANCE, testAccount, testMaster);
+            if (testEnabled)
+                testEnabled = HireLifecycle::Instance().Claim(testMaster,testMaster,testAccount,testAccount) &&
+                    BotManager::Instance().AddBot(testAccount,testMaster);
+            sLog.outString("ExperimentalHireSelfTest fixture account=%u guid=%u queued=%u",testAccount,testMaster.GetCounter(),testEnabled);
+            testStage=1;
+        }
+        else if (testStage == 1)
+        {
+            Player* fixture = sObjectAccessor.FindPlayer(testMaster);
+            if (fixture && fixture->IsInWorld() && PlayerbotAIStorage::Instance().GetAI(fixture))
+            {
+                fixture->GiveLevel(60); fixture->SetMoney(1000000);
+                HireSelection choice; choice.classId=CLASS_WARRIOR; choice.race=RACE_HUMAN;
+                choice.gender=GENDER_MALE; choice.role=ai::BOT_ROLE_DPS; choice.specIndex=2;
+                HireOutcome result=Hire(fixture,choice,false);
+                sLog.outString("ExperimentalHireSelfTest hire: %s",result.message.c_str());
+                if(result.status==HireStatus::Ok) {testHire=m_pending.back().botGuid;testStage=2;}
+                else testTicks=120;
+            }
+        }
+        else if (testStage == 2)
+        {
+            bool pending=false;
+            for(auto const& request:m_pending) if(request.botGuid==testHire) pending=true;
+            Player* hired=sObjectAccessor.FindPlayer(testHire);
+            if(!pending && hired)
+            {
+                std::string report=InspectExperimentalBis(hired);
+                bool passed=report.find("spec=Fury")!=std::string::npos && report.find("role=dps")!=std::string::npos && report.find("gear=17/17")!=std::string::npos;
+                sLog.outString("ExperimentalHireSelfTest %s: %s",passed?"PASSED":"FAILED",report.c_str());
+                testTicks=120;
+            }
+        }
+        if(testTicks>=120)
+        {
+            if(testStage!=2) sLog.outError("ExperimentalHireSelfTest FAILED or timed out at stage %d",testStage);
+            if(!testHire.IsEmpty()) HireLifecycle::Instance().DismissNow(testHire,"experimental hire self-test cleanup");
+            if(!testMaster.IsEmpty()) HireLifecycle::Instance().DismissNow(testMaster,"experimental hire self-test cleanup");
+            testEnabled=false;
+            sLog.outString("ExperimentalHireSelfTest cleanup requested for disposable fixtures only");
+        }
+    }
     if (m_pending.empty())
         return;
 

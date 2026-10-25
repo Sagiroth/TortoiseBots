@@ -362,7 +362,7 @@ public:
     // Drop a pull's anchor hold ("pull hold" + the stay it owns) and go back to
     // the bot's default movement. A no-op when no hold is placed, and never
     // touches a stay the player asked for (that drops the hold marker first).
-    void ReleasePullHold();
+    void ReleasePullHold(const char* reason = "unspecified");
     // The join window an ordered pull places on a held DPS bot
     // (PullJoinWindowPolicy.h). In memory only, never stored with the bot.
     // StartPullWindow writes the pull's delay into "wait for attack time" and
@@ -395,6 +395,12 @@ public:
     // run after a newer `.bot action follow` (runtime/QueuedOrderPolicy.h).
     // World thread. Returns how many queued commands were dropped.
     size_t DropQueuedMovementOrders();
+    void BeginPullHoldTrace(Player* tank);
+    void TracePullHold(const char* event);
+private:
+    ObjectGuid pullHoldTraceTank_;
+    uint32 pullHoldTraceStartMs_ = 0;
+public:
 	std::string HandleRemoteCommand(std::string command);
     void HandleCommand(uint32 type, const std::string& text, Player& fromPlayer, const uint32 lang = LANG_UNIVERSAL);
     void QueueChatResponse(uint32 msgType, ObjectGuid guid1, ObjectGuid guid2, std::string message, std::string chanName, std::string name, bool noDelay = false);

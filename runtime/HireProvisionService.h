@@ -160,6 +160,11 @@ public:
     // or highest rewarded unlock quest). One small lookup per page/command.
     static uint8_t HighestUnlockedHireTierFor(Player* player);
 
+    // Suppress normal AI until a new hire has been prepared and delivered.
+    bool IsPending(ObjectGuid guid) const;
+
+    static char const* RequestedSpecName(uint8 cls, int index);
+    static int RequestedSpecTab(uint8 cls, int index);
     static bool ClassCanRole(uint8 classId, uint8 role);
     static uint8 DefaultRoleForClass(uint8 classId);
 
@@ -191,6 +196,8 @@ public:
         // Issue #281: heavy provisioning (level/talents/spells/gear/SaveToDB)
         // runs exactly once per hire; retries only redo teleport/grouping.
         bool provisioned = false;
+        bool specVerified = false;
+        std::string provisionReport;
         // Reunite attempts so far (invite failures + teleport waits).
         uint32_t reuniteAttempts = 0;
         // Spellbook snapshot at the end of the heavy pass (post-deploy
@@ -220,9 +227,9 @@ public:
     // no set for the key, so the caller keeps the current kit.
     static bool EquipHireGearSet(Player* bot, PlayerbotAI* ai, uint8_t classId, char const* specKey, uint8_t race, uint8_t tier);
     // Issue #281: heavy one-shot work (level/talents/spells/gear/SaveToDB).
-    void ProvisionHeavy(Player* bot, PendingProvision const& pending, PlayerbotAI* ai, Player* master);
+    void ProvisionHeavy(Player* bot, PendingProvision& pending, PlayerbotAI* ai, Player* master);
     // Issue #281: teleport + grouping only; safe to retry every tick.
-    bool Reunite(Player* bot, Player* master);
+    bool Reunite(Player* bot, Player* master, char const*& reason);
     void DropStalePending();
 
     std::vector<PendingProvision> m_pending;

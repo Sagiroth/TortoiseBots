@@ -1,0 +1,87 @@
+entry	name	inventory_type	allowable_class	required_level
+12640	Lionheart Helm	1	-1	56
+16922	Leggings of Transcendence	7	16	60
+16923	Robes of Transcendence	20	16	60
+16926	Bindings of Transcendence	9	16	60
+18810	Wild Growth Spaulders	3	-1	60
+18821	Quick Strike Ring	11	-1	60
+19019	Thunderfury, Blessed Blade of the Windseeker	13	-1	0
+19132	Crystal Adorned Crown	1	-1	60
+19339	Mind Quickening Gem	12	31360	60
+19341	Lifegiving Gem	12	1	60
+19379	Neltharion's Tear	12	-1	60
+19382	Pure Elementium Band	11	-1	60
+19385	Empowered Leggings	7	-1	60
+19387	Chromatic Boots	8	-1	60
+19395	Rejuvenating Gem	12	-1	60
+19431	Styleen's Impeding Scarab	12	-1	60
+19437	Boots of Pure Thought	8	-1	60
+20264	Peacekeeper Gauntlets	10	1535	60
+21330	Conqueror's Spaulders	3	1	0
+21581	Gauntlets of Annihilation	10	32767	60
+21582	Grasp of the Old God	6	32767	60
+21585	Dark Storm Gauntlets	10	32767	60
+21601	Ring of Emperor Vek'lor	11	32767	60
+21604	Bracelets of Royal Redemption	9	32767	60
+21667	Legplates of Blazing Light	7	32767	60
+21674	Gauntlets of Steadfast Determination	10	32767	60
+21709	Ring of the Fallen God	11	32767	0
+21712	Amulet of the Fallen God	2	32767	0
+22399	Idol of Health	28	32767	60
+22416	Dreadnaught Breastplate	5	1	0
+22417	Dreadnaught Legplates	7	1	0
+22418	Dreadnaught Helmet	1	1	0
+22419	Dreadnaught Pauldrons	3	1	0
+22420	Dreadnaught Sabatons	8	1	0
+22422	Dreadnaught Waistguard	6	1	0
+22423	Dreadnaught Bracers	9	1	0
+22425	Redemption Tunic	5	2	0
+22428	Redemption Helm	1	2	0
+22429	Redemption Spaulders	3	2	0
+22430	Redemption Boots	8	2	0
+22488	Dreamwalker Tunic	5	1024	0
+22493	Dreamwalker Handguards	10	1024	0
+22496	Frostfire Robe	20	128	60
+22498	Frostfire Circlet	1	128	0
+22500	Frostfire Sandals	8	128	0
+22514	Circlet of Faith	1	16	0
+22515	Mantle of Faith	3	16	0
+22516	Sandals of Faith	8	16	0
+22517	Gloves of Faith	10	16	0
+22730	Eyestalk Waist Cord	6	-1	60
+22732	Mark of C'Thun	2	32767	60
+22807	Wraith Blade	13	2047	60
+22811	Soulstring	15	-1	60
+22819	Shield of Condemnation	14	1503	60
+22821	Doomfinger	26	1503	60
+22936	Wristguards of Vengeance	9	1535	60
+22938	Cryptfiend Silk Cloak	16	-1	60
+22939	Band of Unanswered Prayers	11	-1	60
+22954	Kiss of the Spider	12	-1	60
+22960	Cloak of Suturing	16	32767	60
+22983	Rime Covered Mantle	3	32767	60
+23000	Plated Abomination Ribcage	5	32767	60
+23006	Libram of Light	28	32767	60
+23009	Wand of the Whispering Dead	26	-1	60
+23021	The Soul Harvester's Bindings	9	1503	60
+23036	Necklace of Necropsy	2	1503	60
+23038	Band of Unnatural Forces	11	1503	60
+23041	Slayer's Crest	12	1503	60
+23043	The Face of Death	14	1503	60
+23045	Shroud of Dominion	16	1503	60
+23047	Eye of the Dead	12	1503	60
+23048	Sapphiron's Right Eye	23	1503	60
+23049	Sapphiron's Left Eye	23	1503	60
+23050	Cloak of the Necropolis	16	1503	60
+23053	Stormrage's Talisman of Seething	2	1503	60
+23054	Gressil, Dawn of Ruin	13	1503	60
+23056	Hammer of the Twisting Nether	13	1503	60
+23057	Gem of Trapped Innocents	2	1503	60
+23059	Ring of the Dreadnaught	11	1	60
+23061	Ring of Faith	11	16	60
+23062	Frostfire Ring	11	128	60
+23066	Ring of Redemption	11	2	60
+23068	Legplates of Carnage	7	1535	60
+23070	Leggings of Polarity	7	32767	60
+23219	Girdle of the Mentor	6	-1	60
+23577	The Hungering Cold	13	1503	60

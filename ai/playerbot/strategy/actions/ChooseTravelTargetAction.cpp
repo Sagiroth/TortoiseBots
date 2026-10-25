@@ -26,8 +26,19 @@
 #include "Guild/GuildMgr.h"
 #include <iomanip>
 #include <mutex>
+#include "Maps/Map.h"
 
 using namespace ai;
+
+namespace
+{
+bool IsControlledRaidCompanion(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    return ai->HasRealPlayerMaster() && bot->IsInWorld() && bot->GetMap()->IsRaid();
+}
+}
+
 
 inline std::string GetTravelPurposeName(std::string purpose)
 {
@@ -268,6 +279,10 @@ namespace
 
 bool ChooseTravelTargetAction::Execute(Event& event)
 {
+    // Raid companions follow player orders; autonomous destination search can stall the world thread.
+    if (IsControlledRaidCompanion(ai))
+        return false;
+
     TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
 
     if(travelTarget->GetStatus() != TravelStatus::TRAVEL_STATUS_PREPARE)
@@ -542,7 +557,7 @@ bool ChooseTravelTargetAction::isUseful()
 
 bool ChooseTravelTargetAction::CanChooseTravel()
 {
-    if (TravelBlockedInsideInstance(ai))
+    if (IsControlledRaidCompanion(ai) || TravelBlockedInsideInstance(ai))
         return false;
 
     if (!ai->AllowActivity(TRAVEL_ACTIVITY))
@@ -1849,6 +1864,10 @@ bool ResetTargetAction::isUseful()
 
 bool RequestTravelTargetAction::Execute(Event& event)
 {
+    // Raid companions follow player orders; autonomous destination search can stall the world thread.
+    if (IsControlledRaidCompanion(ai))
+        return false;
+
     TravelDestinationPurpose actionPurpose = TravelDestinationPurpose(stoi(getQualifier()));
 
     WorldPosition center = event.GetOwner() ? event.GetOwner() : (GetMaster() ? GetMaster() : bot);
@@ -1929,6 +1948,10 @@ bool RequestTravelTargetAction::Execute(Event& event)
 }
 
 bool RequestTravelTargetAction::isUseful() {
+    // Raid companions follow player orders; autonomous destination search can stall the world thread.
+    if (IsControlledRaidCompanion(ai))
+        return false;
+
     if (bot->InBattleGround())
         return false;
 

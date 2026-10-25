@@ -407,6 +407,9 @@ void PausePartyDpsForPull(BotCommandContext const& context, Player* executor, ui
     if (pullback)
         windowSeconds = std::min<uint32>(255, sPlayerbotAIConfig.pullBackMaxReturnTime + joinDelaySeconds);
     WorldPosition anchor(context.requester);
+    if (executor)
+        if (PlayerbotAI* tankAi = PlayerbotAIStorage::Instance().GetAI(executor))
+            tankAi->BeginPullHoldTrace(executor);
     for (Player* bot : context.partyBots)
     {
         if (!bot || bot == executor)
@@ -439,6 +442,7 @@ void PausePartyDpsForPull(BotCommandContext const& context, Player* executor, ui
         // arrives at the anchor (pullback), so the join delay runs from the
         // event, not from the command.
         ai->GetAiObjectContext()->GetValue<time_t>("combat start time")->Set(time(0));
+        ai->BeginPullHoldTrace(executor);
     }
 }
 

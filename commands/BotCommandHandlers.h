@@ -33,6 +33,8 @@ bool HandleLease(ChatHandler* handler, char const* args);
 bool HandleVersion(ChatHandler* handler, char const* args);
 bool HandlePullback(ChatHandler* handler, char const* args);
 bool HandleRole(ChatHandler* handler, char const* args);
+bool HandleGearInspect(ChatHandler* handler, char const* args);
+bool HandleGearBis(ChatHandler* handler, char const* args);
 bool HandleSummon(ChatHandler* handler, char const* args);
 bool HandleMaintenance(ChatHandler* handler, char const* args);
 bool HandleAutogear(ChatHandler* handler, char const* args);

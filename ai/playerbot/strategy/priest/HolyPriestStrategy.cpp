@@ -105,13 +105,17 @@ void HolyPriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
 
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("power word: shield on party", ACTION_HIGH + 2),
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_HIGH + 4),
+            new NextAction("greater heal on party", ACTION_HIGH + 3),
+            new NextAction("flash heal on party", ACTION_HIGH + 2),
             new NextAction("heal on party", ACTION_HIGH + 1),
             new NextAction("lesser heal on party", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member medium health",
-        NextAction::array(0, new NextAction("heal on party", ACTION_HIGH),
+        NextAction::array(0, new NextAction("greater heal on party", ACTION_HIGH + 2),
+            new NextAction("flash heal on party", ACTION_HIGH + 1),
+            new NextAction("heal on party", ACTION_HIGH),
             new NextAction("lesser heal on party", ACTION_HIGH - 1), NULL)));
 
     triggers.push_back(new TriggerNode(

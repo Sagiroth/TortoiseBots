@@ -25,6 +25,14 @@ namespace ai
     public:
         ReachTargetAction(PlayerbotAI* ai, std::string name, float range = 0.0f) : MovementAction(ai, name), Qualified(), range(range), spellName("") {}
 
+        void ResetPullRetryProgress(ObjectGuid target)
+        {
+            if (noLosTarget == target)
+                noLosTarget = ObjectGuid();
+            lastGiveUpMs = 0;
+            giveUpsInARow = 0;
+        }
+
     private:
         // Give-up bookkeeping for a hostile target that is out of line of sight (see Execute).
         ObjectGuid noLosTarget;
@@ -100,6 +108,12 @@ namespace ai
             Unit* target = GetTarget();
             if (target)
             {
+                auto traceReach = [this](char const* branch, int result = -1)
+                {
+                    if (getName() == "reach pull")
+                        if (PullStrategy* pull = PullStrategy::Get(ai))
+                            pull->TraceCommand("reach-branch", branch, result);
+                };
                 UpdateMovementState();
 
                 // Ignore movement if too far
@@ -154,6 +168,7 @@ namespace ai
                         sServerFacade.isInFront(target, bot, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT) &&
                         sServerFacade.IsDistanceGreaterThan(distanceToTarget, sPlayerbotAIConfig.tooCloseDistance))
                 {
+                    traceReach("wait-for-approaching-enemy", 1);
                     return true;
                 }
 
@@ -231,6 +246,7 @@ namespace ai
                     bool const groupInstanceFight = bot->GetGroup() && bot->GetMap() && bot->GetMap()->IsDungeon();
                     if (!groupInstanceFight && (noHeadway || stoodStill))
                     {
+                        traceReach("no-headway-timeout", 0);
                         // The attacker exception only holds in sight: a mob that "attacks" the bot
                         // from out of sight for 15 s without closing in is stuck as well (a Wendigo in
                         // its cave kept a mage as its victim for four minutes at 44 yd).
@@ -348,7 +364,9 @@ namespace ai
                 }
                 else
                 {
-                    return MoveIntoRange(target, chaseDist);
+                    bool const moved = MoveIntoRange(target, chaseDist);
+                    traceReach("move-into-range-return", moved);
+                    return moved;
                 }
             }
 
@@ -672,6 +690,11 @@ namespace ai
         bool MoveIntoRange(Unit* target, float distance) override
         {
             PullStrategy* strategy = PullStrategy::Get(ai);
+            // Reach is a prerequisite and can execute before PullStartAction.
+            // It must obey the same stance gate before moving toward the boss.
+            Event preparation("boss pull preparation", "", ai->GetMaster());
+            if (strategy && !strategy->PrepareBossPull(preparation, false))
+                return true; // queued pull action has its own preparation gate
             if (!strategy || strategy->GetPullActionName() == "reach pull")
                 return ChaseTo(target, distance, bot->GetAngle(target));
 

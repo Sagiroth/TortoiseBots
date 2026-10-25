@@ -10,6 +10,13 @@ namespace ai
 		bool IsActive() override;
 	};
 
+    class PullContinueTrigger : public Trigger
+    {
+    public:
+        PullContinueTrigger(PlayerbotAI* ai) : Trigger(ai, "pull continue") {}
+        bool IsActive() override;
+    };
+
     // True when a tank in a dungeon group should start the next fight itself.
     class ShouldPullTrigger : public Trigger
     {

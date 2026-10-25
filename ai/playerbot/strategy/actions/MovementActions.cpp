@@ -4,6 +4,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "MovementActions.h"
+#include "playerbot/strategy/generic/PullStrategy.h"
 #include "Movement/MotionMaster.h"
 #include "Movement/MovementGenerator.h"
 #include "playerbot/FleeManager.h"
@@ -1770,6 +1771,12 @@ WorldPosition CalculatePerpendicularPoint(const WorldPosition& A, const WorldPos
 
 bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
 {
+    auto traceChase = [this](char const* branch, int result = -1)
+    {
+        if (getName() == "reach pull")
+            if (PullStrategy* pull = PullStrategy::Get(ai))
+                pull->TraceCommand("chase-branch", branch, result);
+    };
     if (!ai->CanMove())
     {
         sLog.outDetail("[BOT CHASE] %s: CanMove() blocked", bot->GetName());
@@ -1814,7 +1821,11 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     // and a bot on the hill above it that point is the hill - the bot walks there,
     // still sees nothing and repeats, or falls back to a chase that does not move.
     if (distanceToTarget > sPlayerbotAIConfig.sightDistance || !bot->IsWithinLOSInMap(obj, true))
-        return MoveTo(targetPosition.GetMapId(), targetPosition.getX(), targetPosition.getY(), targetPosition.getZ());
+    {
+        bool const moved = MoveTo(targetPosition.GetMapId(), targetPosition.getX(), targetPosition.getY(), targetPosition.getZ());
+        traceChase("move-to", moved);
+        return moved;
+    }
 
     const Vector3 directionToTarget = (targetPoint - botPoint).directionOrZero();
     const Vector3 endPoint = botPoint + (directionToTarget * std::min(distance, distanceToTarget));
@@ -1869,6 +1880,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
             if (bot->GetTransport())
                 init.SetTransport(bot->GetTransport()->GetGUIDLow());
             init.Launch();
+            traceChase(path.size() > 1 ? "spline-launched" : "spline-short-path", !bot->IsStopped());
             sLog.outDetail("[BOT CHASE] %s -> %s: dist=%.1f target=%.1f pts=%u wait=%.2f (MovePath)",
                 bot->GetName(), obj->GetName(), distanceToTarget, distance, (uint32)path.size(), distance / bot->GetSpeed(MOVE_RUN));
             WaitForReach(distance);
@@ -1888,6 +1900,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
         {
             bot->SetTargetGuid(obj->getObjectGuid()); //Needed to keep chase going in combat.
             bot->Attack((Unit*)obj, false); //Needed to keep chase going in combat.
+            traceChase("existing-chase", 1);
             return true;
         }
     }
@@ -1905,7 +1918,10 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     {
         bool tryJump = ai->DoSpecificAction("jump::chase", Event(), true);
         if (tryJump)
+        {
+            traceChase("jump", 1);
             return true;
+        }
     }
 
     if (!endPosition.isValid()) return false;
@@ -1915,6 +1931,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     bot->Attack((Unit*)obj, false); //Needed to keep chase going in combat.
 
     mm.MoveChase((Unit*)obj, distance, angle);
+    traceChase("move-chase-issued", !bot->IsStopped());
     float dist = sServerFacade.getDistance2d(bot, obj);
     float distDiff = dist > distance ? dist - distance : 0.f;
     sLog.outDetail("[BOT CHASE] %s -> %s: dist=%.1f target=%.1f wait=%.2f (MoveChase)",

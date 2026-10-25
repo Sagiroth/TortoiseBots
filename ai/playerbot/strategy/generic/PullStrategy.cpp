@@ -26,6 +26,7 @@ void ai::ReleaseHeldPartyNow(Player* tank)
         // "wait for attack" of the player's own and no pull window keeps it.
         if (!memberAi->HasPullWindow())
             continue;
+        memberAi->TracePullHold("early-release-request");
         memberAi->GetAiObjectContext()->GetValue<uint8>("wait for attack time")->Set(0);
         memberAi->GetAiObjectContext()->GetValue<time_t>("combat start time")->Set(time(0));
     }
@@ -46,7 +47,7 @@ private:
         return new ActionNode("pull start",
             /*P*/ NULL,
             /*A*/ NULL,
-            /*C*/ NextAction::array(0, new NextAction("pull action", ACTION_NORMAL), NULL));
+            /*C*/ NextAction::array(0, new NextAction("pull action", ACTION_MOVE), NULL));
     }
 
     // Movement freeze fix: when the target is outside pull range the queued
@@ -304,6 +305,12 @@ void PullStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "pull start",
         NextAction::array(0, new NextAction("pull start", ACTION_MOVE), new NextAction("pull action", ACTION_MOVE), NULL)));
 
+    // An accepted pull must survive a lost/deferred one-shot continuation.
+    // Requeue only after start, until engagement, death, or the existing timeout.
+    triggers.push_back(new TriggerNode(
+        "pull continue",
+        NextAction::array(0, new NextAction("pull action", ACTION_MOVE), NULL)));
+
     triggers.push_back(new TriggerNode(
         "pull end",
         NextAction::array(0, new NextAction("pull end", ACTION_MOVE), NULL)));
@@ -379,13 +386,121 @@ bool PullStrategy::CanDoPullAction(Unit* target)
     return true;
 }
 
+bool PullStrategy::IsProtectionBossCommand() const
+{
+    Player* bot = ai->GetBot();
+    Unit* target = GetTarget();
+    return commandActive && !commandPullback && bot && bot->IsAlive() &&
+        bot->GetClass() == CLASS_WARRIOR && ai->IsTank(bot) &&
+        ai->HasStrategy("protection", BotState::BOT_STATE_COMBAT) &&
+        target && target->IsInWorld() && target->IsAlive() &&
+        target->GetTypeId() == TYPEID_UNIT &&
+        static_cast<Creature*>(target)->IsWorldBoss();
+}
+
+bool PullStrategy::NeedsBossPullStance() const
+{
+    return IsProtectionBossCommand() && !HasPullActionCast() &&
+        !ai->HasAura("defensive stance", ai->GetBot());
+}
+
+bool PullStrategy::PrepareBossPull(Event& event, bool atFiringPosition)
+{
+    // Never cast during the ranged auto-shot windup: that cancels the arrow.
+    if (!IsProtectionBossCommand() || HasPullActionCast())
+        return true;
+
+    if (NeedsBossPullStance())
+    {
+        bossPrepActed = true;
+        bool cast = ai->DoSpecificAction("defensive stance", event, true);
+        TraceCommand("boss-preparation", "defensive stance", cast ? 1 : 0);
+        // Yield even after success; do not force another cast through its GCD.
+        // The existing 15-second pull timeout bounds a failed preparation.
+        return false;
+    }
+
+    // Do not spend a long cooldown while still walking to the firing spot.
+    if (!atFiringPosition || bossWallChecked)
+        return true;
+
+    Player* bot = ai->GetBot();
+    if (ai->HasAura("shield wall", bot) || ai->HasAura("last stand", bot))
+    {
+        bossWallChecked = true;
+        TraceCommand("boss-preparation", "defensive already active", 1);
+        return true;
+    }
+
+    uint32 wall = ai->GetAiObjectContext()->GetValue<uint32>("spell id", "shield wall")->Get();
+    if (!wall || !sServerFacade.IsSpellReady(bot, wall))
+    {
+        bossWallChecked = true;
+        TraceCommand("boss-preparation", "shield wall unavailable", 0);
+        return true;
+    }
+
+    // A known, ready wall may still be waiting for stance/GCD/equipment.
+    // Keep preparation pending instead of silently shooting unprotected.
+    bossPrepActed = true;
+    bool cast = ai->DoSpecificAction("shield wall", event, true);
+    TraceCommand("boss-preparation", "shield wall", cast ? 1 : 0);
+    if (cast)
+        bossWallChecked = true;
+    return false;
+}
+
+bool PullStrategy::ConsumeBossPrepRestamp()
+{
+    if (!bossPrepActed)
+        return false;
+    bossPrepActed = false;
+    return true;
+}
+
+Unit* PullStrategy::GetBossOpeningTarget() const
+{
+    if (!bossOpeningTime || time(0) - bossOpeningTime >= 10 ||
+        !ai->GetBot()->IsAlive() || !ai->HasStrategy("protection", BotState::BOT_STATE_COMBAT))
+        return nullptr;
+    Unit* target = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+    if (!target || !target->IsInWorld() || !target->IsAlive() ||
+        target->GetObjectGuid() != bossOpeningTarget)
+        return nullptr;
+    return target;
+}
+
+void PullStrategy::TraceCommand(char const* stage, char const* action, int result)
+{
+    if (!commandActive || commandTraceSeen.size() >= 48)
+        return;
+    std::string key = std::string(stage) + "|" + action + "|" + std::to_string(result);
+    if (!commandTraceSeen.insert(key).second)
+        return;
+    Player* bot = ai->GetBot();
+    Unit* target = GetTarget();
+    sLog.outString("TBPULL bot=%s guid=%u stage=%s action=%s result=%d state=%u pending=%u completed=%u cast=%u age=%lld target=%u distance=%.1f moving=%u",
+        bot->GetName(), bot->GetGUIDLow(), stage, action, result, unsigned(ai->GetState()),
+        unsigned(pendingToStart), unsigned(pullActionCompleted), unsigned(pullActionCastMs != 0),
+        pullStartTime ? static_cast<long long>(time(nullptr) - pullStartTime) : 0LL,
+        target ? target->GetGUIDLow() : 0, target ? bot->GetDistance(target) : -1.0f,
+        unsigned(bot->IsMoving()));
+}
+
 void PullStrategy::OnPullStarted()
 {
+    TraceCommand("start");
     pendingToStart = false;
 }
 
 void PullStrategy::OnPullActionCompleted()
 {
+    if (IsProtectionBossCommand() && !bossOpeningTime)
+    {
+        bossOpeningTarget = GetTarget()->GetObjectGuid();
+        bossOpeningTime = time(0);
+    }
+    TraceCommand("engagement-complete");
     pendingToStart = false;
     pullActionCompleted = true;
     pullStartTime = time(0);
@@ -395,6 +510,12 @@ void PullStrategy::OnPullActionCompleted()
 
 void PullStrategy::NotePullActionCast()
 {
+    if (IsProtectionBossCommand())
+    {
+        bossOpeningTarget = GetTarget()->GetObjectGuid();
+        bossOpeningTime = time(0);
+    }
+    TraceCommand("cast-issued");
     pullActionCastMs = WorldTimer::getMSTime();
     if (!pullActionCastMs)
         pullActionCastMs = 1; // 0 is "no cast yet"
@@ -433,6 +554,7 @@ bool PullStrategy::HasPullApproachExpired() const
 
 void PullStrategy::OnPullEnded()
 {
+    TraceCommand("end");
     pendingToStart = false;
     pullActionCompleted = false;
     pullStartTime = 0;
@@ -454,6 +576,11 @@ void PullStrategy::OnPullEnded()
 
 void PullStrategy::BeginCommand(bool pullback, bool hadPullBackStrategy, uint32 joinDelaySeconds, bool rangedOrder)
 {
+    bossOpeningTarget.Clear();
+    bossOpeningTime = 0;
+    bossWallChecked = false;
+    bossPrepActed = false;
+    commandTraceSeen.clear();
     commandActive = true;
     commandPullback = pullback;
     commandRangedOrder = rangedOrder;
@@ -472,6 +599,7 @@ void PullStrategy::RequestPull(Unit* target, bool resetTime)
 {
     SetTarget(target);
     pendingToStart = true;
+    TraceCommand("request", "", resetTime ? 1 : 0);
 
     // Return-leg intent, fixed for the whole pull: the command's own mode when
     // it owns this pull, else the tank's configured "pull back" behaviour (the
@@ -542,6 +670,15 @@ void PullStrategy::DecideOpening(Unit* target)
 float PullMultiplier::GetValue(Action* action)
 {
     const PullStrategy* strategy = PullStrategy::Get(ai);
+    // Keep this Protection puller's opening in Defensive Stance. This short
+    // window affects neither Fury nor ordinary trash/automatic pulls.
+    if (strategy && strategy->GetBossOpeningTarget())
+    {
+        const std::string name = action->getName();
+        if (name == "battle stance" || name == "berserker stance" ||
+            name == "charge" || name == "intercept" || name == "overpower")
+            return 0.0f;
+    }
     if (strategy && strategy->HasTarget())
     {
         if ((action->getName() == "pull my target") ||

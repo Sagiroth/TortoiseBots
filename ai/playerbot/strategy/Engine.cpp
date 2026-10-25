@@ -1,3 +1,4 @@
+#include "../../../runtime/TemporaryPassTiming.h"
 
 #include "playerbot/playerbot.h"
 #include <stdarg.h>
@@ -5,6 +6,7 @@
 #include <iomanip>
 
 #include "Engine.h"
+#include "generic/PullStrategy.h"
 #include "playerbot/PlayerbotAIConfig.h"
 // #include "playerbot/PerformanceMonitor.h" // E2E green
 #include "playerbot/BotActionLog.h"
@@ -16,6 +18,14 @@
 #endif
 
 using namespace ai;
+static void TracePullStep(PlayerbotAI* ai, char const* stage, Action* action, int result)
+{
+    if (!action || action->getName().find("pull") == std::string::npos)
+        return;
+    if (PullStrategy* pull = PullStrategy::Get(ai))
+        pull->TraceCommand(stage, action->getName().c_str(), result);
+}
+
 // M1 decision trail: short engine-state label so TICK lines identify which of
 // the four engines (combat/non-combat/dead/reaction) emitted a decision.
 static const char* BotStateName(BotState state)
@@ -252,6 +262,7 @@ void Engine::Init()
 
 bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 {
+    TBPassDiag::Scope diagnosticEngine("Engine.DoNextAction", ai->GetBot()->GetGUIDLow(), state == BotState::BOT_STATE_COMBAT ? "combat" : "noncombat-or-dead");
     // Hot path: this tick line used to format + append + trim + detail-log on
     // every DoNextAction call. LogAction early-outs for groupless bots, but
     // only after that work; skip the call itself when it would be a no-op.
@@ -293,14 +304,14 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
     inDoNextAction = true;
 
     time_t currentTime = time(0);
-    aiObjectContext->Update();
+    { TBPassDiag::Scope timing("engine.context-update", ai->GetBot()->GetGUIDLow()); aiObjectContext->Update(); }
     // Force-rebuff cycle roll (donor RollBuffPendingCycle): the per-tick
     // "buff proposed / buff pending" flags clear at tick start so each tick
     // re-derives them from its own trigger evaluations and casts.
     aiObjectContext->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(false);
     aiObjectContext->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(false);
-    ProcessTriggers(minimal);
-    PushDefaultActions();
+    { TBPassDiag::Scope timing("engine.triggers", ai->GetBot()->GetGUIDLow()); ProcessTriggers(minimal); }
+    { TBPassDiag::Scope timing("engine.defaults", ai->GetBot()->GetGUIDLow()); PushDefaultActions(); }
 
     std::vector<Action*> modifiedActions;
     // Actions a multiplier VETOED (factor 0) in this tick. modifiedActions above exempts an
@@ -387,9 +398,11 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                 if (!isStunned || action->isUsefulWhenStunned())
                 {
                     // E2E green: PerformanceMonitor stub
-                    isUseful = action->isUseful();
+                    { TBPassDiag::Scope timing("action.isUseful", ai->GetBot()->GetGUIDLow(), action->getName().c_str()); isUseful = action->isUseful(); }
 // E2E green: pmo stub
                 }
+
+                TracePullStep(ai, "useful", action, isUseful);
 
                 if (isUseful)
                 {
@@ -410,8 +423,9 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                             // that zeroes it. Silent factors are the usual reason a
                             // sensible rotation looks arbitrary in hindsight.
                             float beforeMult = relevance;
-                            float factor = multiplier->GetValue(action);
+                            float factor; { TBPassDiag::Scope timing("action.multiplier", ai->GetBot()->GetGUIDLow(), multiplier->getName().c_str()); factor = multiplier->GetValue(action); }
                             relevance *= factor;
+                            if (factor == 0.0f) TracePullStep(ai, multiplier->getName().c_str(), action, 0);
 
                             action->setRelevance(relevance);
                             if (factor != 1.0f)
@@ -432,6 +446,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     // expiry without queue churn.
                     if (IsFailureBackedOff(action, event))
                     {
+                        TracePullStep(ai, "backoff", action, 1);
                         LogAction("A:%s - BACKOFF src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
                         NoteOutcome(action, 'V');
                         delete actionNode;
@@ -448,23 +463,27 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
                     if (!skipPrerequisites)
                     {
+                        TBPassDiag::Scope timing("action.prerequisites", ai->GetBot()->GetGUIDLow(), action->getName().c_str());
                         LogAction("A:%s - PREREQ src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
                         if (MultiplyAndPush(actionNode->getPrerequisites(), relevance + 0.02, false, event, "prereq"))
                         {
                             NoteOutcome(action, 'P');
+                            TracePullStep(ai, "prerequisite-queued", action, 1);
                             PushAgain(actionNode, relevance + 0.01, event);
                             continue;
                         }
                     }
 
                     // E2E green: PerformanceMonitor stub
-                    bool isPossible = action->isPossible();
+                    bool isPossible; { TBPassDiag::Scope timing("action.isPossible", ai->GetBot()->GetGUIDLow(), action->getName().c_str()); isPossible = action->isPossible(); }
 // E2E green: pmo stub
 
+                    TracePullStep(ai, "possible", action, isPossible);
                     if (isPossible && relevance)
                     {
                         // E2E green: PerformanceMonitor stub
-                        actionExecuted = ListenAndExecute(action, event);
+                        { TBPassDiag::Scope timing("action.execute", ai->GetBot()->GetGUIDLow(), action->getName().c_str()); actionExecuted = ListenAndExecute(action, event); }
+                        TracePullStep(ai, "executed", action, actionExecuted);
 // E2E green: pmo stub
 
 #ifdef PLAYERBOT_ELUNA
@@ -718,12 +737,14 @@ ActionResult Engine::ExecuteAction(const std::string& name, Event& event)
             ClearActionFailures(action, event);
             // E2E green: PerformanceMonitor stub
             bool isUseful = action->isUseful();
+            TracePullStep(ai, "direct-useful", action, isUseful);
 // E2E green: pmo stub
 
             if (isUseful)
             {
                 // E2E green: PerformanceMonitor stub
                 bool isPossible = action->isPossible();
+                TracePullStep(ai, "direct-possible", action, isPossible);
 // E2E green: pmo stub
 
                 if (isPossible)
@@ -731,6 +752,7 @@ ActionResult Engine::ExecuteAction(const std::string& name, Event& event)
                     action->MakeVerbose(event.getOwner() != nullptr);
                     // E2E green: PerformanceMonitor stub
                     bool executionResult = ListenAndExecute(action, event);
+                    TracePullStep(ai, "direct-executed", action, executionResult);
 // E2E green: pmo stub
 
                     MultiplyAndPush(action->getContinuers(), 0.0f, false, event, "default");
@@ -919,7 +941,7 @@ void Engine::ProcessTriggers(bool minimal)
             if (minimal && node->getFirstRelevance() < 100)
                 continue;
             // E2E green: PerformanceMonitor stub
-            Event event = trigger->Check();
+            Event event; { TBPassDiag::Scope timing("trigger.Check", ai->GetBot()->GetGUIDLow(), trigger->getName().c_str()); event = trigger->Check(); }
 
 #ifdef PLAYERBOT_ELUNA
             // used by eluna

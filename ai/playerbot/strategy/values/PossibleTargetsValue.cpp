@@ -91,27 +91,28 @@ bool PossibleTargetsValue::IsAttackable(Unit* target, Player* player)
            !target->HasAuraType(SPELL_AURA_SPIRIT_OF_REDEMPTION);
 }
 
-bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos)
+bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos, char const** reason)
 {
+    auto reject = [reason](char const* text) { if (reason) *reason = text; return false; };
     // If the target is available
     if (target && target->IsInWorld() && (target->GetMapId() == player->GetMapId()))
     {
         // If the target is dead
         if (sServerFacade.UnitIsDead(target))
         {
-            return false;
+            return reject("target is dead");
         }
 
         // If the target is friendly
         if (IsFriendly(target, player))
         {
-            return false;
+            return reject("target is friendly");
         }
 
         // If the target can't be attacked
         if (!IsAttackable(target, player))
         {
-            return false;
+            return reject("target has non-attackable flags or Spirit of Redemption");
         }
 
         // A creature in evade mode is untouchable: the core refuses to start an attack
@@ -137,16 +138,16 @@ bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos)
         {
             if (!target->IsVisibleForOrDetect(player, player->GetCamera().GetBody(), true))
             {
-                return false;
+                return reject("target is not visible to this bot");
             }
         }
         if (!CanFreeMoveValue::CanFreeAttack(PlayerbotAIStorage::Instance().GetAI(player), target))
-            return false;
+            return reject("target is outside allowed attack movement range");
 
         return true;
     }
 
-    return false;
+    return reject("target is unavailable or on another map");
 }
 
 void PossibleTriggersValue::FindUnits(std::list<Unit*> &targets)

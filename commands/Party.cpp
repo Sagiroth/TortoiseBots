@@ -4,6 +4,7 @@
 #include "BotCommandContext.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/BotManager.h"
+#include "../runtime/ExperimentalBisService.h"
 #include "../runtime/BotActivityLease.h"
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/ClaimLifecycle.h"
@@ -987,6 +988,50 @@ bool HandlePullback(ChatHandler* handler, char const* args)
     return true;
 }
 
+bool HandleGearInspect(ChatHandler* handler, char const* /*args*/)
+{
+    Player* requester = Requester(handler);
+    if (!requester) { handler->PSendSysMessage("Select your companion in game."); return true; }
+    BotCommandContext context = BuildContext(requester);
+    if (!context.selectedBot) { handler->PSendSysMessage("Select a controlled companion."); return true; }
+    handler->PSendSysMessage("%s: %s", context.selectedBot->GetName(), InspectExperimentalBis(context.selectedBot).c_str());
+    return true;
+}
+
+bool HandleGearBis(ChatHandler* handler, char const* args)
+{
+    Player* requester = Requester(handler);
+    if (!requester || !requester->GetSession() || requester->GetSession()->GetSecurity() < SEC_GAMEMASTER)
+    { handler->PSendSysMessage("Experimental BiS provisioning requires an in-game GM."); return true; }
+    if (requester->IsInCombat())
+    { handler->PSendSysMessage("Leave combat before provisioning companions."); return true; }
+    std::string name = Trim(args ? args : "");
+    std::vector<Player*> bots;
+    if (name == "all") bots = BotManager::Instance().GetBotsForMaster(requester->GetObjectGuid());
+    else if (!name.empty() && normalizePlayerName(name))
+    {
+        Player* bot = sObjectAccessor.FindPlayerByName(name.c_str());
+        if (bot) bots.push_back(bot);
+    }
+    else { handler->PSendSysMessage("Usage: .bot gearbis <Name|all>"); return true; }
+    uint32 geared=0, skipped=0, failed=0;
+    for (Player* bot : bots)
+    {
+        BotRecord* record = BotManager::Instance().FindBot(bot->GetObjectGuid());
+        if (bot == requester || !record || record->masterGuid != requester->GetObjectGuid() ||
+            !CanControlBot(requester, record) || !IsLiveHeadlessBot(bot, record) ||
+            HireLifecycle::Instance().GetMaster(bot->GetObjectGuid()) != requester->GetObjectGuid())
+        { ++skipped; handler->PSendSysMessage("%s: not your current hired companion; skipped.", bot->GetName()); continue; }
+        std::string report;
+        int status = ApplyExperimentalBis(bot, report);
+        if (status > 0) ++geared; else if (status == 0) ++skipped; else ++failed;
+        handler->PSendSysMessage("%s: %s", bot->GetName(), report.c_str());
+    }
+    if (bots.empty()) handler->PSendSysMessage("No matching online controlled companions found.");
+    handler->PSendSysMessage("BiS: geared=%u skipped=%u failed=%u", geared, skipped, failed);
+    return true;
+}
+
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename,clang:undeclared_var_use
 bool HandleSummon(ChatHandler* handler, char const* args)
 {
@@ -1011,10 +1056,23 @@ bool HandleSummon(ChatHandler* handler, char const* args)
         handler->PSendSysMessage("You cannot summon while on a taxi.");
         return true;
     }
+    // Explicit all scope ignores selection and includes only this master's ready bots.
+    if (Trim(args ? args : "") == "all")
+    {
+        std::vector<std::string> names;
+        for (Player* companion : BotManager::Instance().GetBotsForMaster(requester->GetObjectGuid()))
+            if (companion)
+                names.emplace_back(companion->GetName());
+        if (names.empty())
+            handler->PSendSysMessage("No currently controlled companions are ready to summon.");
+        for (std::string const& companionName : names)
+            HandleSummon(handler, companionName.c_str());
+        return true;
+    }
     std::string name = Trim(args ? args : "");
     if (name.empty() || !normalizePlayerName(name))
     {
-        handler->PSendSysMessage("Usage: .bot summon <online bot name> (same account only)");
+        handler->PSendSysMessage("Usage: .bot summon <online bot name|all> (controlled companions only)");
         return true;
     }
     Player* bot = sObjectMgr.GetPlayer(name.c_str());

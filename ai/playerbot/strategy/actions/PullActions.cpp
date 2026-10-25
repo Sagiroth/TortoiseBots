@@ -4,6 +4,7 @@
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/AttackersValue.h"
 #include "PullActions.h"
+#include "ReachTargetActions.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "../../runtime/BotManager.h"
 #include "../../runtime/PlayerbotAIStorage.h"
@@ -80,6 +81,7 @@ void RestampPullParty(Player* tank, uint32 waitSeconds, bool narrowWindow)
         memberAi->GetAiObjectContext()->GetValue<time_t>("combat start time")->Set(time(0));
         // The window's own clock ("pull hold expired").
         memberAi->RestampPullWindow();
+        memberAi->TracePullHold(narrowWindow ? "restamp-return" : "restamp-engagement");
     }
 }
 } // namespace
@@ -205,9 +207,33 @@ bool PullRequestAction::Execute(Event& event)
         return false;
     }
 
-    if (!AttackersValue::IsValid(target, bot, nullptr, false))
+    // Only an explicit player pull retries the selected target's give-up cache.
+    // Automatic pulls retain avoidance, and normal target/path checks still run.
+    if (requester && requester->GetSession() && requester->GetSession()->HasNetworkTransport() &&
+        (event.GetSource() == "pull" || event.GetSource() == "pullback"))
     {
-        ai->TellPlayerNoFacing(requester, "The target can't be pulled");
+        auto* unreachable = context->GetValue<std::map<ObjectGuid, uint32>&>("unreachable targets");
+        auto* entries = context->GetValue<std::map<uint32, uint32>&>("unreachable entries");
+        if (!unreachable || !entries)
+        {
+            ai->TellPlayerNoFacing(requester, "Can't pull: unreachable-target cache is unavailable");
+            sLog.outError("TortoiseBots: pull retry cache lookup failed for %s", bot->GetName());
+            return false;
+        }
+        unreachable->Get().erase(target->GetObjectGuid());
+        if (target->IsCreature())
+            entries->Get().erase(target->GetEntry());
+        for (char const* name : { "reach pull", "reach melee", "reach spell" })
+            if (auto* reach = dynamic_cast<ReachTargetAction*>(context->GetAction(name)))
+                reach->ResetPullRetryProgress(target->GetObjectGuid());
+    }
+
+    char const* rejectionReason = "unspecified target validation failure";
+    if (!AttackersValue::IsValid(target, bot, nullptr, false, true, &rejectionReason))
+    {
+        ai->TellPlayerNoFacing(requester, std::string("Can't pull: ") + rejectionReason);
+        sLog.outBasic("TortoiseBots: PULL_REJECT bot=%s guid=%u target=%s entry=%u reason=%s distance=%.1f",
+            bot->GetName(), bot->GetGUIDLow(), target->GetName(), target->GetEntry(), rejectionReason, distanceToPullTarget);
         return false;
     }
 
@@ -369,6 +395,8 @@ bool PullStartAction::Execute(Event& event)
         Unit* target = strategy->GetTarget();
         if (target)
         {
+            if (!strategy->PrepareBossPull(event, false))
+                return true; // preparation made progress; do not back off the pull
             if (strategy->GetPreActionName().empty())
                 result = true;
             else
@@ -442,6 +470,14 @@ bool PullAction::Execute(Event& event)
                 strategy->RequestPull(target, false);
                 return false;
             }
+
+            if (!strategy->PrepareBossPull(event, true))
+                return true; // wait on the normal clock, not failure backoff
+
+            // Preparation (stance, wall) ran after the DPS hold began. Restart
+            // the held party's join window once, just before the shot.
+            if (strategy->ConsumeBossPrepRestamp())
+                RestampPullParty(bot, 0, false);
 
             std::string actionName = strategy->GetPullActionName();
 
@@ -745,6 +781,7 @@ bool PullEndAction::Execute(Event& event)
 bool ReleasePullHoldAction::Execute(Event& event)
 {
     (void)event;
+    ai->TracePullHold("expiry-action");
     // Ending the pull's window is the release: dropping its own "wait for
     // attack" frees the anchor hold (marker + the stay it owns) with it
     // (PlayerbotAI::ChangeStrategy), and a "wait for attack" the player set

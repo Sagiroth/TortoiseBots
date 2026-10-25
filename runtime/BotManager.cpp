@@ -1,3 +1,5 @@
+#include "HireProvisionService.h"
+#include "TemporaryPassTiming.h"
 #include "../ai/playerbot/GroupMembers.h"
 #include "BotManager.h"
 #include "BotActivityLease.h"
@@ -223,6 +225,9 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
     if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
         return false;
     if (!record.random)
+        return false;
+    // A hired companion is delivered to its master, never scattered as pool population.
+    if (!record.masterGuid.IsEmpty() || HireProvisionService::Instance().IsPending(record.characterGuid))
         return false;
     // Low-level bots are not scattered at all: below level 10 their quests are in the
     // starting area and a level-fitting inn elsewhere (a capital, say) puts zones they
@@ -1916,6 +1921,7 @@ void BotManager::UpdateBots(uint32_t diff)
     // periodic BOTPERF line is the only direct measure of how much of the
     // world tick this pass owns.
     auto const passStart = std::chrono::steady_clock::now();
+    TBPassDiag::Pass diagnosticPass(static_cast<uint32_t>(m_bots.size()));
 
     // Self-tuning tick budget: feed the measured previous world tick (diff)
     // and the previous pool turn loop inside it before the passes read their
@@ -1951,12 +1957,14 @@ void BotManager::UpdateBots(uint32_t diff)
     // One scan builds both candidate lists: player-owned bots are separated
     // out so they can never queue behind the pool, and the pool is what the
     // later budget may cut.
+    // Preparation scope ends before the controlled loop.
     std::vector<uint32_t> playerGuids;
     std::vector<uint32_t> poolGuids;
     playerGuids.reserve(m_bots.size());
     poolGuids.reserve(m_bots.size());
     uint32_t masterBots = 0;       // player bots with a live real-player master
     uint32_t ownedAccountBots = 0; // player bots on the owner's own account
+    { TBPassDiag::Scope timingPreparation("classification");
     for (auto const& kv : m_bots)
     {
         if (kv.second.record.lifecycle != BotLifecycle::InWorld)
@@ -1975,8 +1983,10 @@ void BotManager::UpdateBots(uint32_t diff)
             poolGuids.push_back(kv.first);
     }
 
+    }
     auto updateOneBot = [this, diff](uint32_t guidLow)
     {
+        TBPassDiag::Scope diagnosticBot("updateOneBot", guidLow);
         auto it = m_bots.find(guidLow);
         if (it == m_bots.end())
             return;
@@ -2011,7 +2021,7 @@ void BotManager::UpdateBots(uint32_t diff)
             bool const nearTeleport = player->IsBeingTeleportedNear();
             if ((nearTeleport || player->IsBeingTeleportedFar()) && ai)
             {
-                ai->HandleTeleportAck();
+                { TBPassDiag::Scope timing("HandleTeleportAck", guidLow); ai->HandleTeleportAck(); }
                 ++entry.teleportAcks;
                 if (player->IsBeingTeleportedNear())
                     ++entry.teleportAcksIgnored;
@@ -2023,6 +2033,10 @@ void BotManager::UpdateBots(uint32_t diff)
             if (!nearTeleport || player->IsBeingTeleported() || !player->IsInWorld())
                 return;
         }
+
+        // Keep ACK handling above active, but never run normal AI during hire setup.
+        if (HireProvisionService::Instance().IsPending(entry.record.characterGuid))
+            return;
 
         if (entry.aiAdapter && entry.aiAdapter->IsUsable())
         {
@@ -2086,8 +2100,10 @@ void BotManager::UpdateBots(uint32_t diff)
     };
 
     // Pass 1: bots under a real player, always, first, with no budget.
+    { TBPassDiag::Scope timing("controlled-loop");
     for (uint32_t guidLow : playerGuids)
         updateOneBot(guidLow);
+    }
 
     // Pass 2: the random pool, one turn queue (BotTurnScheduler.h). A bot is
     // due when its AI asked to think again, capped by its situation (combat,
@@ -2165,10 +2181,13 @@ void BotManager::UpdateBots(uint32_t diff)
 
     if (!m_pendingBotRemovals.empty())
     {
+        TBPassDiag::Scope timing("deferred-removals");
         std::vector<PendingBotRemoval> pending;
         pending.swap(m_pendingBotRemovals);
-        for (auto const& removal : pending)
+        for (auto const& removal : pending) {
+            TBPassDiag::Scope timingRemoval("RemoveBot", removal.characterGuid.GetCounter());
             RemoveBot(removal.characterGuid, removal.save);
+        }
     }
 
     // BOTPERF: module pass cost per world tick, one line per ~30 s of tick

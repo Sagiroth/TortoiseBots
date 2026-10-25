@@ -147,17 +147,38 @@ void PlayerbotFactory::PruneDuplicateEquipRows()
         return;
 
     uint32 guid = bot->GetGUIDLow();
-    std::string const& worldDb = WorldDatabaseName();
-    if (!worldDb.empty())
+    // Item prototypes come from the configured world database's loaded cache.
+    // Never join a hardcoded world schema from the character connection.
+    struct SavedEquip { uint32 item; uint32 slot; uint32 level; uint32 quality; };
+    std::vector<SavedEquip> rows;
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
+        "SELECT item, slot, item_template FROM character_inventory "
+        "WHERE guid = %u AND bag = 0 AND slot IN (4,6,7,15,16,17)", guid));
+    if (result)
     {
-        CharacterDatabase.PExecute(
-            "DELETE ci FROM character_inventory ci WHERE ci.guid = %u AND ci.bag = 0 "
-            "AND ci.slot IN (4,6,7,15,16,17) "
-            "AND ci.item NOT IN (SELECT item FROM (SELECT x.item, "
-            "ROW_NUMBER() OVER (PARTITION BY x.slot ORDER BY it.item_level DESC, it.Quality DESC, x.item DESC) rn "
-            "FROM character_inventory x JOIN `%s`.item_template it ON it.entry = x.item_template "
-            "WHERE x.guid = %u AND x.bag = 0 AND x.slot IN (4,6,7,15,16,17)) t WHERE t.rn = 1)",
-            guid, worldDb.c_str(), guid);
+        do
+        {
+            Field* fields = result->Fetch();
+            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(fields[2].GetUInt32());
+            // Do not delete anything if a template cannot be resolved safely.
+            if (!proto)
+                return;
+            rows.push_back({fields[0].GetUInt32(), fields[1].GetUInt32(), proto->ItemLevel, proto->Quality});
+        } while (result->NextRow());
+    }
+    for (SavedEquip const& row : rows)
+    {
+        bool inferior = false;
+        for (SavedEquip const& other : rows)
+            if (other.slot == row.slot &&
+                (other.level > row.level ||
+                 (other.level == row.level && other.quality > row.quality) ||
+                 (other.level == row.level && other.quality == row.quality && other.item > row.item)))
+                inferior = true;
+        if (inferior)
+            CharacterDatabase.PExecute(
+                "DELETE FROM character_inventory WHERE guid = %u AND bag = 0 AND slot = %u AND item = %u",
+                guid, row.slot, row.item);
     }
     CharacterDatabase.PExecute(
         "DELETE ii FROM item_instance ii LEFT JOIN character_inventory ci ON ci.item = ii.guid "

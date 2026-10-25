@@ -169,6 +169,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/runtime/HireCost.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/HireProvisionService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/HireGearCache.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/ExperimentalBisService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/HireLifecycle.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/HireUnlockKillStore.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/ClaimLifecycle.cpp"

@@ -128,6 +128,8 @@ char const* RaceName(uint8 race)
 
 bool ClassForFaction(uint8 classId, Team team)
 {
+    if (sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_GROUP))
+        return true;
     if (team == ALLIANCE)
         return classId != CLASS_SHAMAN;
     if (team == HORDE)
@@ -234,7 +236,7 @@ void ShowRaceMenu(Player* player, Creature* creature, uint8 classId)
     {
         if (!sObjectMgr.GetPlayerInfo(race, classId))
             continue;
-        if (Player::TeamForRace(race) != team)
+        if (!sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_GROUP) && Player::TeamForRace(race) != team)
             continue;
         AddItem(player, GOSSIP_ICON_CHAT, RaceName(race), kSenderRace, (uint32(classId) << 8) | race);
         ++shown;
@@ -838,7 +840,8 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
             return true;
         }
         uint8 race = static_cast<uint8>(low);
-        if (!sObjectMgr.GetPlayerInfo(race, classId) || Player::TeamForRace(race) != player->GetTeam())
+        if (!sObjectMgr.GetPlayerInfo(race, classId) ||
+            (!sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_GROUP) && Player::TeamForRace(race) != player->GetTeam()))
         {
             ShowRaceMenu(player, creature, classId);
             return true;

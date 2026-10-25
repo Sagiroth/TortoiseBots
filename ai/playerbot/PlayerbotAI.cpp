@@ -1,3 +1,4 @@
+#include "../../runtime/TemporaryPassTiming.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
@@ -308,6 +309,7 @@ static bool HasSeatedAura(Player* bot)
 
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 {
+    TBPassDiag::Scope diagnosticScope("UpdateAI", bot ? bot->GetObjectGuid().GetCounter() : 0);
     AiObjectContext* context = aiObjectContext;
     std::unique_ptr<PerformanceMonitorOperation> pmo;
     if (sPlayerbotAIConfig.perfMonEnabled)
@@ -824,6 +826,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
 bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
 {
+    TBPassDiag::Scope diagnosticScope("UpdateAIReaction", bot ? bot->GetObjectGuid().GetCounter() : 0);
     bool reactionFound;
     std::unique_ptr<PerformanceMonitorOperation> pmo;
     if (sPlayerbotAIConfig.perfMonEnabled)
@@ -1251,7 +1254,7 @@ void PlayerbotAI::OnCombatEnded()
         // engine-independent - without it the tank kept the stay in
         // BOT_STATE_NON_COMBAT, where no pull trigger exists, and never
         // followed the party again.
-        ReleasePullHold();
+        ReleasePullHold("release-combat-ended");
 
         ChangeEngine(BotState::BOT_STATE_NON_COMBAT);
     }
@@ -1907,7 +1910,8 @@ void PlayerbotAI::OnDeath()
         // A corpse cannot hold an anchor, and the dead engine is no place to
         // keep one: the tank would come back from the spirit healer still
         // parked on the stay that pull placed it on, instead of following.
-        ReleasePullHold();
+        TracePullHold("bot-death");
+        ReleasePullHold("release-bot-death");
         ChangeEngine(BotState::BOT_STATE_DEAD);
     }
 }
@@ -1978,6 +1982,7 @@ void PlayerbotAI::HandleCommands()
 
 void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 {
+    TBPassDiag::Scope diagnosticScope("UpdateAIInternal", bot ? bot->GetObjectGuid().GetCounter() : 0);
     SC_PHASE("UpdateAIInternal.entry", bot ? bot->GetName() : "(null)");
     if (bot->IsBeingTeleported() || !bot->IsInWorld())
         return;
@@ -2744,6 +2749,7 @@ void PlayerbotAI::ChangeEngine(BotState type)
 
 void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
 {
+    TBPassDiag::Scope diagnosticAction("DoNextAction", bot ? bot->GetObjectGuid().GetCounter() : 0);
     SC_PHASE("DoNextAction.entry", bot ? bot->GetName() : "(null)");
     const bool previousActivityOverride = explicitActivityOverride;
     explicitActivityOverride = previousActivityOverride || forceActivity;
@@ -2783,12 +2789,45 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
     SC_PHASE("DoNextAction.staleTargetCheck", bot ? bot->GetName() : "(null)");
     if (currentEngine == engines[(uint8)BotState::BOT_STATE_NON_COMBAT] && sServerFacade.IsInCombat(bot))
     {
-        if (aiObjectContext->GetValue<Unit*>("current target")->Get() != NULL ||
-            aiObjectContext->GetValue<ObjectGuid>("attack target")->Get() != ObjectGuid() ||
-            aiObjectContext->GetValue<ObjectGuid>("explicit attack target")->Get() != ObjectGuid() ||
-            aiObjectContext->GetValue<Unit*>("dps target")->Get() != NULL)
+        const char* resetTarget = nullptr;
+        if ((aiObjectContext->GetValue<Unit*>("current target")->Get() != NULL && (resetTarget = "current target")) ||
+            (aiObjectContext->GetValue<ObjectGuid>("attack target")->Get() != ObjectGuid() && (resetTarget = "attack target")) ||
+            (aiObjectContext->GetValue<ObjectGuid>("explicit attack target")->Get() != ObjectGuid() && (resetTarget = "explicit attack target")) ||
+            (aiObjectContext->GetValue<Unit*>("dps target")->Get() != NULL && (resetTarget = "dps target")))
         {
+            // Temporary held-DPS diagnostic: one sample per second, twenty per process.
+            // Only held bots consume the cap; compare the clock across the unchanged Reset().
+            static std::mutex resetTraceMutex;
+            static uint32 resetTraceCount = 0;
+            static uint32 resetTraceLastMs = 0;
+            uint32 traceSample = 0;
+            uint32 traceTickMs = 0;
+            time_t traceEpoch = 0;
+            time_t traceCombatBefore = 0;
+            const bool traceHeld = HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT);
+            if (traceHeld)
+            {
+                std::lock_guard<std::mutex> traceLock(resetTraceMutex);
+                const uint32 nowMs = WorldTimer::getMSTime();
+                if (resetTraceCount < 20 && (!resetTraceCount || nowMs - resetTraceLastMs >= 1000))
+                {
+                    traceSample = ++resetTraceCount;
+                    resetTraceLastMs = nowMs;
+                    traceTickMs = nowMs;
+                    traceEpoch = time(0);
+                    traceCombatBefore = aiObjectContext->GetValue<time_t>("combat start time")->Get();
+                }
+            }
             Reset();
+            if (traceSample)
+            {
+                sLog.outString("TBRESETCLOCK scope=held-only bot=%s guid=%u epoch=%lld tickMs=%u combatStartBefore=%lld combatStartAfter=%lld waitForAttackBefore=1 waitForAttackAfter=%u trigger=%s serverCombat=%u sample=%u",
+                    bot->GetName(), bot->GetGUIDLow(), static_cast<long long>(traceEpoch), traceTickMs,
+                    static_cast<long long>(traceCombatBefore),
+                    static_cast<long long>(aiObjectContext->GetValue<time_t>("combat start time")->Get()),
+                    HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) ? 1u : 0u,
+                    resetTarget, sServerFacade.IsInCombat(bot) ? 1u : 0u, traceSample);
+            }
         }
     }
 
@@ -3055,7 +3094,7 @@ void PlayerbotAI::ChangeStrategy(const std::string& names, BotState type)
     // with it. One rule here beats repeating the release at every caller; a
     // hold left without its guard would keep the bot on stay for good.
     if (names.find("-wait for attack") != std::string::npos)
-        ReleasePullHold();
+        ReleasePullHold("release-strategy-removed");
 
     if(type == BotState::BOT_STATE_ALL)
     {
@@ -4112,7 +4151,13 @@ void PlayerbotAI::SetMovementStrategy(const std::string& movement)
     // stay the player asked for: a player-placed stay must survive the hold's
     // release. Callers that place the hold write the marker after calling this.
     if (aiObjectContext)
-        aiObjectContext->GetValue<PositionMap&>("position")->Get().erase("pull hold");
+    {
+        auto& positions = aiObjectContext->GetValue<PositionMap&>("position")->Get();
+        auto hold = positions.find("pull hold");
+        if (hold != positions.end() && hold->second.isSet())
+            TracePullHold("release-movement-order");
+        positions.erase("pull hold");
+    }
 
     // Keep the mature chat-shortcut semantics in one place. Follow, wander,
     // and stay are the mutually exclusive owner-controlled modes. Guard and
@@ -4172,7 +4217,32 @@ void PlayerbotAI::EnsureDefaultMovementStrategy(Player* requester)
     }
 }
 
-void PlayerbotAI::ReleasePullHold()
+void PlayerbotAI::BeginPullHoldTrace(Player* tank)
+{
+    pullHoldTraceTank_ = tank ? tank->GetObjectGuid() : ObjectGuid();
+    pullHoldTraceStartMs_ = WorldTimer::getMSTime();
+    TracePullHold("begin");
+}
+
+void PlayerbotAI::TracePullHold(const char* event)
+{
+    if (!pullHoldTraceStartMs_ || !aiObjectContext)
+        return;
+    Player* tank = ObjectAccessor::FindPlayer(pullHoldTraceTank_);
+    PositionMap& positions = aiObjectContext->GetValue<PositionMap&>("position")->Get();
+    auto hold = positions.find("pull hold");
+    time_t start = aiObjectContext->GetValue<time_t>("combat start time")->Get();
+    sLog.outString("TBHOLD bot=%s guid=%u event=%s tank=%u tankFound=%u tankAlive=%u botAlive=%u state=%u ageMs=%u clockAge=%lld wait=%u held=%u waitStrategy=%u",
+        bot->GetName(), bot->GetGUIDLow(), event, pullHoldTraceTank_.GetCounter(),
+        tank ? 1u : 0u, tank && tank->IsAlive() ? 1u : 0u, bot->IsAlive() ? 1u : 0u,
+        static_cast<unsigned>(currentState), WorldTimer::getMSTime() - pullHoldTraceStartMs_,
+        static_cast<long long>(start > 0 ? time(0) - start : -1),
+        static_cast<unsigned>(aiObjectContext->GetValue<uint8>("wait for attack time")->Get()),
+        hold != positions.end() && hold->second.isSet() ? 1u : 0u,
+        HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) ? 1u : 0u);
+}
+
+void PlayerbotAI::ReleasePullHold(const char* reason)
 {
     if (!aiObjectContext)
         return;
@@ -4187,6 +4257,7 @@ void PlayerbotAI::ReleasePullHold()
     if (!posMap["pull hold"].isSet())
         return;
 
+    TracePullHold(reason);
     posMap.erase("pull hold");
     if (posMap["stay"].isSet())
     {

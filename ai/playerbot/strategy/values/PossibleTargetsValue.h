@@ -19,7 +19,7 @@ namespace ai
           NearestUnitsValue(ai, name, range, ignoreLos), Qualified() { this->keepLegacyRefresh = true; }
 
         std::list<ObjectGuid> Calculate() override;
-        static bool IsValid(Unit* target, Player* player, bool ignoreLos = false);
+        static bool IsValid(Unit* target, Player* player, bool ignoreLos = false, char const** reason = nullptr);
 
     protected:
         virtual void FindUnits(std::list<Unit*> &targets) override;

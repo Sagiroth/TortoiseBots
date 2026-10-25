@@ -696,6 +696,19 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
     Player* executor = ResolvePullExecutor(context);
     if (!executor)
     {
+            uint32 total = 0, dead = 0, combat = 0, otherMap = 0, noAI = 0, notTank = 0;
+            for (Player* candidate : context.partyBots)
+            {
+                ++total;
+                if (!candidate || !candidate->IsInWorld()) { ++noAI; continue; }
+                if (!candidate->IsAlive()) { ++dead; continue; }
+                if (candidate->IsInCombat()) { ++combat; continue; }
+                if (candidate->GetMap() != requester->GetMap()) { ++otherMap; continue; }
+                PlayerbotAI* candidateAI = PlayerbotAIStorage::Instance().GetAI(candidate);
+                if (!candidateAI) { ++noAI; continue; }
+                if (candidateAI->GetForcedRole() != static_cast<uint8>(BOT_ROLE_TANK) && !PlayerbotAI::IsTank(candidate, true)) ++notTank;
+            }
+            handler->PSendSysMessage("Pull unavailable: %u controlled candidates; rejected: dead=%u, combat flag=%u, other map/instance=%u, unavailable=%u, not tank=%u. See the pull refusal details for current eligibility.", total, dead, combat, otherMap, noAI, notTank);
         bool const tankBusy = PullTankIsBusy(context);
         std::string const detail = PullBlockerDetail(context);
         std::string const text = ai::PullNoExecutorText(tankBusy, detail);
@@ -743,7 +756,7 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
     // Snapshot the target GUID: the live selection can change between
     // command validation and the pull tick.
     ai::Event pullEvent(intent, context.enemyTarget->GetObjectGuid(), requester);
-    if (!ExecuteQuietAction(ai, "pull my target", pullEvent))
+    if (!ai->DoSpecificAction("pull my target", pullEvent, true))
     {
         // Not caught by the pre-check: put the tank's pull mode back.
         // No bot's movement, flee or hold was touched yet.
@@ -857,11 +870,20 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
         // point or chase motion counts as started (ai/playerbot/PullStartPolicy.h).
         auto readStart = [&]()
         {
+            // Re-read after each AI step; the pull may end or change its target.
+            bool preparingStance = false;
+            pullTarget = nullptr;
+            if (PullStrategy* probe = PullStrategy::Get(ai))
+            {
+                preparingStance = probe->NeedsBossPullStance();
+                pullTarget = probe->GetTarget();
+                pullRange = probe->GetRange();
+            }
             MovementGeneratorType const motion = executor->GetMotionMaster()->GetCurrentMovementGeneratorType();
             ai::PullStartFacts facts;
             facts.hasTarget = pullTarget && pullTarget->IsInWorld();
             facts.moving = sServerFacade.isMoving(executor);
-            facts.motionLaunched = motion == POINT_MOTION_TYPE || motion == CHASE_MOTION_TYPE;
+            facts.motionLaunched = preparingStance || motion == POINT_MOTION_TYPE || motion == CHASE_MOTION_TYPE;
             if (facts.hasTarget)
                 facts.distance = executor->GetDistance(pullTarget);
             facts.range = pullRange;
@@ -873,6 +895,14 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
         if (ai::RetryPullWalk(startFacts, bodyPull))
         {
             ExecuteQuietAction(ai, "reach pull", ai::Event(intent, "", requester));
+            startFacts = readStart();
+        }
+        // Preserve the bounded local fallback without undoing upstream's
+        // direct reach retry or launched-motion recognition.
+        for (int step = 0; step < 3 && !ai::PullWalkStarted(startFacts); ++step)
+        {
+            ai->ClearActionClock();
+            ExecuteQuietNextAction(ai, false);
             startFacts = readStart();
         }
         bool started = ai::PullWalkStarted(startFacts);

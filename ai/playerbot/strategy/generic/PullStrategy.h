@@ -1,4 +1,5 @@
 #pragma once
+#include <set>
 #include "playerbot/strategy/Strategy.h"
 #include "playerbot/strategy/Multiplier.h"
 #include "playerbot/PullOpeningPolicy.h"
@@ -19,6 +20,15 @@ namespace ai
 
         bool CanDoPullAction(Unit* target);
 
+        // Explicit plain boss pulls only. No automatic/trash/pullback policy change.
+        bool IsProtectionBossCommand() const;
+        bool NeedsBossPullStance() const;
+        bool PrepareBossPull(Event& event, bool atFiringPosition);
+        Unit* GetBossOpeningTarget() const;
+        // True once, after boss preparation actually acted, so the caller can
+        // restart the held party's join window just before the shot.
+        bool ConsumeBossPrepRestamp();
+
         Unit* GetTarget() const;
         bool HasTarget() const { return GetTarget() != nullptr; }
 
@@ -28,6 +38,7 @@ namespace ai
 
         virtual std::string GetPreActionName() const;
 
+        void TraceCommand(char const* stage, char const* action = "", int result = -1);
         void RequestPull(Unit* target, bool resetTime = true);
         bool IsPullPendingToStart() const { return pendingToStart; }
         bool HasPullStarted() const { return pullStartTime > 0; }
@@ -115,6 +126,13 @@ namespace ai
         void InitNonCombatMultipliers(std::list<Multiplier*>& multipliers) override;
 
     private:
+        // A short command-owned window survives OnPullEnded, which runs as
+        // soon as the arrow lands. A new command clears it; expiry is lazy.
+        ObjectGuid bossOpeningTarget;
+        time_t bossOpeningTime = 0;
+        bool bossWallChecked = false;
+        bool bossPrepActed = false;
+        std::set<std::string> commandTraceSeen;
         std::string pullActionName; //shoot
         std::string preActionName;
         bool pendingToStart;

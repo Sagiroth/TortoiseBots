@@ -24,8 +24,8 @@ namespace ai
         AttackersValue(PlayerbotAI* ai, std::string name = "attackers", int interval = 2) : ObjectGuidListCalculatedValue(ai, name, interval), Qualified() { this->keepLegacyRefresh = true; }
         virtual std::list<ObjectGuid> Calculate() override;
 
-        static bool IsValid(Unit* target, Player* player, Player* owner = nullptr, bool checkInCombat = true, bool validatePossibleTarget = true);
-        static bool IgnoreTarget(Unit* target, Player* playerToCheckAgainst);
+        static bool IsValid(Unit* target, Player* player, Player* owner = nullptr, bool checkInCombat = true, bool validatePossibleTarget = true, char const** reason = nullptr);
+        static bool IgnoreTarget(Unit* target, Player* playerToCheckAgainst, char const** reason = nullptr);
         // True while `bot`'s own "keepout set aside" book refuses `target`
         // (a melee chase held outside a creature aura keep-out set it aside,
         // MovementAction::HoldChaseOutsideKeepout; CreatureAuraSetAsideHolds
