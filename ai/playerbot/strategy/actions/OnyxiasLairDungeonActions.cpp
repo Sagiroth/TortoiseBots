@@ -405,10 +405,11 @@ Unit* ai::GetAssignedOnyxiaLandingTarget(PlayerbotAI* ai)
     for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
     {
         Unit* boss = ai->GetUnit(guid);
-        // The core resets threat before landing and keeps summoning whelps
-        // in phase three. Assign this one tank to the landed boss, not adds.
+        // The assigned tank holds the boss in both ground phases; returning
+        // to generic add targeting after a threat loss can drag her sideways.
+        // Phase three also needs this priority after the scripted threat reset.
         if (boss && boss->GetEntry() == 10184 && boss->IsAlive() && boss->IsInCombat() &&
-            boss->IsInMap(bot) && boss->GetHealthPercent() < 40.0f &&
+            boss->IsInMap(bot) &&
             !boss->IsFlying() && !boss->HasAura(17131) &&
             PossibleAttackTargetsValue::IsValid(boss, bot, sPlayerbotAIConfig.sightDistance, false, false))
             return boss;

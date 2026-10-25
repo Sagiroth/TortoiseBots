@@ -1,4 +1,5 @@
 #pragma once
+#include "../actions/OnyxiaTankPositionActions.h"
 #include "../actions/GeddonBombActions.h"
 #include "../actions/KurinnaxxActions.h"
 #include "playerbot/strategy/generic/KriCloudStrategy.h"
@@ -377,6 +378,7 @@ namespace ai
             creators["start onyxia fight"] = [](PlayerbotAI* ai) { return new OnyxiaStartFightTrigger(ai); };
             creators["end onyxia fight"] = [](PlayerbotAI* ai) { return new OnyxiaEndFightTrigger(ai); };
             creators["onyxia breath escape needed"] = [](PlayerbotAI* ai) { return new OnyxiaBreathTrigger(ai); };
+            creators["onyxia tank position needed"] = [](PlayerbotAI* ai) { return new OnyxiaTankPositionTrigger(ai); };
             creators["onyxia landing target needed"] = [](PlayerbotAI* ai) { return new OnyxiaLandingTankTrigger(ai); };
             creators["onyxia air spread needed"] = [](PlayerbotAI* ai) { return new OnyxiaAirSpreadTrigger(ai); };
             creators["onyxia airborne"] = [](PlayerbotAI* ai) { return new OnyxiaAirborneTrigger(ai); };

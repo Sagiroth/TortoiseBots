@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "OnyxiasLairDungeonStrategies.h"
+#include "playerbot/strategy/actions/OnyxiaTankPositionActions.h"
 #include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
 #include "playerbot/strategy/actions/ReachTargetActions.h"
 #include "playerbot/strategy/actions/AttackAction.h"
@@ -186,6 +187,24 @@ void OnyxiaBreathStrategy::InitReactionMultipliers(std::list<Multiplier*>& multi
 
 void OnyxiaLandingTankStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("onyxia tank position needed",
+        NextAction::array(0, new NextAction("onyxia tank position", ACTION_HIGH + 3), nullptr)));
     triggers.push_back(new TriggerNode("onyxia landing target needed",
         NextAction::array(0, new NextAction("onyxia landing attack", ACTION_HIGH + 2), nullptr)));
+}
+
+void OnyxiaLandingTankStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("onyxia tank position needed",
+        NextAction::array(0, new NextAction("onyxia tank position", ACTION_HIGH + 3), nullptr)));
+}
+
+void OnyxiaLandingTankStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new OnyxiaTankPositionMultiplier(ai));
+}
+
+void OnyxiaLandingTankStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new OnyxiaTankPositionMultiplier(ai));
 }

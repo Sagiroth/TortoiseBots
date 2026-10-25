@@ -116,7 +116,7 @@ int main(){
  ai.context.current=&boss;assert(!action.isUseful());ai.context.current=&whelp;
  boss.flying=true;assert(selector.Calculate()==&whelp);boss.flying=false;
  boss.aura=true;assert(selector.Calculate()==&whelp);boss.aura=false;
- boss.hp=40;assert(selector.Calculate()==&whelp);boss.hp=39;
+ boss.hp=100;assert(selector.Calculate()==&boss);boss.hp=39; // fixed spot/assignment also covers phase one
  ai.enabled=false;assert(selector.Calculate()==&whelp);ai.enabled=true;
  ai.tank=false;assert(selector.Calculate()==&whelp);ai.tank=true;
  bot.map=1;assert(selector.Calculate()==&whelp);bot.map=249;
