@@ -101,6 +101,16 @@ Player-facing boundaries, gameplay quirks, and project non-goals are cataloged i
 - **Summon Sequencing:** Re-binding the master occurs before follow movement is resumed to guarantee ownership cannot be hijacked during a teleport transition.
 - **Out-of-AH Inventory Queries:** Bots check their inventory values using cached vendor and pricing models rather than sending world-wide auction queries.
 
+
+## Local companion behavior
+
+### Experimental hire arrival
+
+Experimental hire provisioning keeps initial-arrival gating inside the module; core teleport and instance admission remain authoritative. Existing companions are excluded once pending provisioning completes.
+
+When the hiring player is already inside a raid map, initial hire arrival converts the shared party to a raid before teleporting. This uses normal core entry checks; it does not grant GM status or bypass instance restrictions. Arrival retry logging is bounded.
+
+
 ## Optional raid boss observations
 
 `RaidBossDiagnostics` uses the existing unit-update and packet-send hooks to

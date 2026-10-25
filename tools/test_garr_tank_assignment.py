@@ -22,6 +22,7 @@ class GarrAssignmentCallerTest(unittest.TestCase):
         refresh = function(value, "virtual void Refresh()")
         refresh = refresh.replace("time_t now = time(0);", "time_t now = fixtureNow;")
         fixture = policy.replace("#pragma once", "").replace("PlanGolemaggTanks(", "RealPlanGolemaggTanks(")
+        fixture += (root / "ai/playerbot/TankAddPickupPolicy.h").read_text().replace("#pragma once", "")
         fixture += r'''
 #include <cassert>
 #include <ctime>
@@ -67,12 +68,13 @@ struct Unit {
     unsigned GetEntry() const { return entry; }
     unsigned GetMapId() const { return map; }
     ObjectGuid GetObjectGuid() const { return guid; }
+    ObjectGuid getObjectGuid() const { return guid; }
     Unit* GetVictim() const { return victim; }
     float GetDistance(Unit* unit) const { return float(unit->guid.raw); }
 };
 struct PlayerbotAI;
 struct Player;
-struct Group { std::vector<Player*> members; };
+struct Group { std::vector<Player*> members; ObjectGuid GetMainTankGuid(){return {};} };
 struct Player : Unit {
     bool tank = true, inWorld = true, teleporting = false;
     PlayerbotAI* ai = nullptr;

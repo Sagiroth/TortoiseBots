@@ -29,7 +29,7 @@ class BombWiring(unittest.TestCase):
 #include <cctype>
 #include <string>
 #include <iostream>
-'''+f'#include "{policy}"\n'+r'''
+'''+f'#include "{policy}"\n#include "{root}/ai/playerbot/PullOpeningPolicy.h"\n'+r'''
 using namespace ai;
 struct Action { std::string name; Action(std::string n):name(n){} virtual ~Action(){} std::string getName(){return name;} };
 struct MovementAction:Action{using Action::Action;};
@@ -45,6 +45,7 @@ std::string Trim(std::string s){auto a=s.find_first_not_of(" \t");return a==std:
 bool IsRaidTargetMark(std::string const& s){return s=="skull";}
 '''
         code += function(source, 'float RaidBombMovementMultiplier::GetValue(')
+        code += '\n'+function(command, 'static std::string PullOptionText(')
         code += '\n'+function(command, 'static bool ParseAction(')
         code += r'''
 int main(){

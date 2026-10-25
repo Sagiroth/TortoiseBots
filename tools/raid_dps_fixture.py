@@ -50,4 +50,7 @@ def world(fixture):
     fixture = fixture.replace('struct TargetValue {', 'struct TargetValue { Unit* FindLastCcTarget() { return nullptr; }')
     fixture += '\nUnit* FindLastCcTarget() { return nullptr; }\n'
     fixture += '\nUnit* FourHorsemenRotationTarget(PlayerbotAI*, Player*) { return nullptr; }\n'
+    # No creature keepout or fleeing runner in these encounter-focused worlds.
+    fixture += '\nstruct AttackersValue {static bool IsKeepoutSetAside(Unit*, Player*) {return false;}};\n'
+    fixture += '\ntemplate<class Probe> Unit* FinishRunnerTarget(PlayerbotAI*, Player*, Unit*, Probe&) {return nullptr;}\n'
     return fixture

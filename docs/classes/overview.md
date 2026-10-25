@@ -108,3 +108,26 @@ When a party member is out of heal range or line of sight:
 - Out of combat, healers only path to members below 90% health.
 
 </details>
+
+
+## Local companion behavior
+
+## Shared party and raid healing
+
+All healer classes use the same party-target selector across the full live raid roster, not only their subgroup. Candidates must be alive, friendly, in the same instance and inside the existing two-times-heal-range movement envelope. Dueling or teleporting players are excluded; pets receive the same validity checks. A focus-heal list stays exclusive and does not add selected NPCs or pets.
+
+Selection uses the configured critical/low/medium/almost-full health bands rather than raw missing hit points. The most urgent player band wins; tanks receive a small preference within noncritical bands and win equal-health emergency ties. Critical allies take precedence over less urgent tanks. Pets are a fallback after injured players. Full-health tanks and healthy pets no longer fill assignment slots. The explicit `preheal` strategy still uses predicted melee damage.
+
+Ready bot healers spread by stable GUID order only within the most urgent band. Dead, controlled, casting, distant, low-mana or explicitly focus-assigned peers do not consume automatic assignment slots. Routine targets already receiving a direct group heal are deferred; members below medium health remain eligible because a pending heal is not a survival guarantee. This is bounded roster-based triage, not an estimate of exact incoming healing or a persistent tank-healer reservation. Self-healing continues through existing self-health triggers.
+
+### Saving mana when another heal lands first
+
+The existing optional `heal interrupt` strategy now checks the native pre-cast state, so it can cancel a normal direct heal before mana is spent. Enable it in the reaction engine with `react +heal interrupt` (disable with `react -heal interrupt`). The patch does not enable it automatically or change mana-saving levels, trained ranks or class spell priorities.
+
+It cancels a direct-only single-target heal when its actual cast target is full, or above 90% health with over half the estimated heal wasted. It does not cancel channels, area/chain heals or heal-plus-HoT spells based on one member's health. With the explicit `preheal` strategy, reachable melee attackers' estimated damage is included before deciding to cancel. This estimate does not predict boss spell damage; encounter testing remains necessary. Self-healing and party healing use the same guard when this optional strategy is active.
+
+### Healing visibility and explicit assignments
+
+Automatic triage prefers eligible allies currently in line of sight, then uses urgency bands and stable healer assignment within that visible set. A blocked ally does not displace a visible one merely because its health is lower. If no visible candidate exists, the normal reach prerequisite may approach an injured ally when movement is allowed. Explicit `focus heal targets` assignments may prioritize an urgent blocked target when the healer can move; stay, movement-control and current-cast gates prevent that exception. Within the same urgency band, visible assigned targets still win, including for additional healer slots. Normal path/cast validation remains authoritative; this does not guarantee a route around an obstacle.
+
+Upstream healer coverage remains an eligibility filter in combat: a noncritical patient outside this healer’s range/LOS is left to another fit healer already covering that patient. Critical allies are never dropped by that filter. Hidden GMs remain excluded. Local urgency, assignments and LOS ordering apply to the remaining candidates.

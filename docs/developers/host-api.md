@@ -945,6 +945,19 @@ Before adding another core seam, establish that:
 If the design would make PlayerBots-specific checks spread through normal
 core gameplay code, redesign it.
 
+
+## Local companion behavior
+
+### Experimental hire arrival
+
+Experimental initial hire arrival: BotManager skips random scattering for master-bound bots and pauses normal AI for pending hires, retaining teleport acknowledgement handling. HireProvisionService groups first, requests the master location, and verifies arrival before completion. No core hook changes.
+
+When the hiring player is already inside a raid map, initial hire arrival converts the shared party to a raid before teleporting. This uses normal core entry checks; it does not grant GM status or bypass instance restrictions. Arrival retry logging is bounded.
+
+### Instance-limit feedback
+
+The existing outgoing packet hook delivers `SMSG_TRANSFER_ABORTED` to `PlayerbotAI::HandleBotOutgoingPacket` before the headless session's no-socket return. A module-owned headless companion reports `TRANSFER_ABORT_TOO_MANY_INSTANCES` to its live human controller immediately, with a per-bot/controller30second cooldown. Packet parsing uses a copy; no admission check, new hook or core change is involved.
+
 ## Raid boss diagnostics (module only)
 
 `RaidBossDiagnostics` observes the existing `UnitScript::OnUnitUpdate`,

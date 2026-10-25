@@ -190,13 +190,13 @@ Unit* PartyMemberToHeal::Calculate()
     {
         if (!Check(target))
             return;
-    // Issue #904: in combat an ally this healer cannot reach from where it
-    // stands and another healer covers is that healer's to heal. Dropping it
-    // here (not just refusing the walk) lets this healer fall back to somebody
-    // it can reach, instead of picking the far ally and then standing idle.
-    // The covering healer is in reach of the ally, so it keeps the ally in its
-    // own list: nobody drops an ally nobody else can heal. Out-of-reach is
-    // tested distance first, line of sight only inside the range.
+        // Issue #904: in combat an ally this healer cannot reach from where it
+        // stands and another healer covers is that healer's to heal. Dropping it
+        // here (not just refusing the walk) lets this healer fall back to somebody
+        // it can reach, instead of picking the far ally and then standing idle.
+        // The covering healer is in reach of the ally, so it keeps the ally in its
+        // own list: nobody drops an ally nobody else can heal. Out-of-reach is
+        // tested distance first, line of sight only inside the range.
         if (ai->IsStateActive(BotState::BOT_STATE_COMBAT))
         {
             float const reachLimit = HealReachLimit(ai);

@@ -21,7 +21,7 @@ def fixture(root):
     source = (root/'ai/playerbot/strategy/actions/OnyxiasLairDungeonActions.cpp').read_text()
     caller_root = pathlib.Path(os.environ.get('TBOTS_CALLER_SOURCE', root))
     tank = (caller_root/'ai/playerbot/strategy/values/TankTargetValue.cpp').read_text()
-    code = r'''
+    code = '#include "' + str(root / 'ai/playerbot/MainTankPolicy.h') + '"\n' + r'''
 #include <cassert>
 #include <list>
 #include <map>
@@ -86,6 +86,9 @@ Unit* GetOnyxiaWhelpTarget(PlayerbotAI*){return nullptr;}
 bool IsNefarianAddTankOptedIn(PlayerbotAI*){return false;}
 using NefarianAddAssignment=int;
 Unit* GetAssignedNefarianAddTarget(PlayerbotAI*,int){return nullptr;}
+struct AttackersValue {static bool IsKeepoutSetAside(Unit*, Player*){return false;}};
+bool IsExplicitMainTank(Player*){return false;}
+unsigned GroupTankCount(PlayerbotAI*,Player*){return 1;}
 struct FindTankTargetSmartStrategy{FindTankTargetSmartStrategy(PlayerbotAI*){}};
 struct TankTargetValue:RtiTargetValue{
  Unit* FindLastCcTarget(){return nullptr;}

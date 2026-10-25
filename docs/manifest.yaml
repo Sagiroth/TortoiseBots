@@ -252,3 +252,17 @@ nodes:
     path: reference/hire-gear.md
     category: reference
     summary: Static level-60 hire sets per class/spec/tier from the offline generator.
+
+  # Retained local controls
+  - id: local-configuration
+    path: server/local-configuration.md
+    category: server
+    summary: Configuration for retained local provisioning, consumables and diagnostics.
+  - id: local-raid-tactics
+    path: play/local-raid-tactics.md
+    category: play
+    summary: Optional encounter controls, assignments and their current limitations.
+  - id: local-companion-controls
+    path: play/local-companion-controls.md
+    category: play
+    summary: Additional companion commands, role selectors, gear controls and raid assignments.

@@ -22,7 +22,7 @@ class ChartTests(unittest.TestCase):
         for name in ('DpsTargetValue','DpsAoeTargetValue'):
             body=source.split('Unit* '+name+'::Calculate()')[1].split('\n}')[0]
             self.assertIn('SelectCthunSpreadTarget(ai, sectorTarget)',body)
-            self.assertLess(body.index('if (rti)'),body.index('SelectCthunSpreadTarget'))
+            self.assertLess(body.index('if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;'),body.index('SelectCthunSpreadTarget'))
         action=(ROOT/'ai/playerbot/strategy/actions/CthunSpreadActions.cpp').read_text()
         self.assertIn('if(ai->IsHeal(bot) || ai->IsTank(bot)) return false',action)
         self.assertIn('!boss->IsInCombat()',action)

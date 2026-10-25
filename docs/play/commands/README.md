@@ -172,3 +172,8 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot ah item`](../../server/admin-commands.md#bot-ah-item) | Admin & GM | Inspects, resets, or overrides item auction prices. |
 | [`.ahbot`](../../server/admin-commands.md#ahbot) | Admin & GM | Shorthand alias for `.bot ah` commands. |
 | [`.reload config`](../../server/admin-commands.md#reload-config) | Admin & GM | Reloads core configuration files. |
+
+
+## Local companion extensions
+
+See [local companion controls](../local-companion-controls.md), [local raid tactics](../local-raid-tactics.md) and [local configuration](../../server/local-configuration.md) for the additional controls in this build.

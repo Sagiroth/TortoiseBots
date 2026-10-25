@@ -33,7 +33,7 @@ class ReachProgressTest(unittest.TestCase):
         head_start = source.index('uint32 const nowMs = WorldTimer::getMSTime();', stand_end)
         head_end = source.index('if (!groupInstanceFight && (noHeadway || stoodStill))', head_start)
         head = source[head_start:head_end]
-        cpp = r'''
+        cpp = '#include "' + str(root / 'ai/playerbot/CastKeepsRunningPolicy.h') + '"\n' + r'''
 #include <algorithm>
 #include <cassert>
 #include <cmath>

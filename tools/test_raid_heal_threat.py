@@ -17,14 +17,21 @@ struct Action {virtual ~Action(){};virtual std::string getName(){return "action"
 struct CastSpellAction:Action {std::string name;std::string getName() override{return name;}};
 struct CastHealingSpellAction:CastSpellAction {};
 struct ShieldAction:CastSpellAction {ActionThreatType GetThreatType() override{return ActionThreatType::ACTION_THREAT_NONE;}};
-struct Bot {void SendPlaySpellVisual(int){}};
+struct Unit {virtual ~Unit(){};Unit* GetVictim(){return nullptr;}Unit* ToPlayer(){return nullptr;}unsigned GetObjectGuid(){return 1;}};
+using Player=Unit;
+struct Group {bool IsMember(unsigned){return false;}};
+struct Bot {void SendPlaySpellVisual(int){};Group* GetGroup(){return nullptr;}};
+struct PlayerbotAI {static bool IsTank(Player*){return false;}};
+namespace TortoiseBots {namespace BotCommands {bool IsInCommandedGroup(Bot*){return false;}}
+namespace RemoteCommander {bool CommandedBackoffYields(bool,bool,bool){return false;}}}
 struct AI {bool unsafe=true,neglect=false,group=true,high=true;int aoe=100;Bot bot;
  bool HasStrategy(std::string,int){return false;}Bot* GetMaster(){return nullptr;}Bot* GetBot(){return &bot;}
  int value(std::string n){return n=="neglect threat"?neglect:n=="group"?group:n=="aoe"?aoe:n=="high threat"?high:0;}};
 bool RaidHealerShouldHoldDamage(AI* ai){return ai->unsafe;}
-#define AI_VALUE(type,name) static_cast<type>(ai->value(name))
+template<class T>T fixtureValue(AI* ai,std::string name){if constexpr(std::is_pointer_v<T>)return nullptr;else return static_cast<T>(ai->value(name));}
+#define AI_VALUE(type,name) fixtureValue<type>(ai,name)
 #define AI_VALUE2(type,name,qualifier) static_cast<type>(ai->value(qualifier))
-struct Multiplier {AI* ai;float GetValue(Action* action) BODY};
+struct Multiplier {AI* ai;Bot* bot=ai->GetBot();float GetValue(Action* action) BODY};
 int main(){
  AI ai;Multiplier m{&ai};CastHealingSpellAction heal;ShieldAction shield;CastSpellAction damage;shield.name="power word: shield";damage.name="holy fire";
  assert(m.GetValue(&heal)==1);assert(m.GetValue(&shield)==1); // no tank threat: AOE=100

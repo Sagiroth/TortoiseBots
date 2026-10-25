@@ -134,3 +134,19 @@ There are no class-specific configuration flags for Shamans. General combat and 
 **When a shaman counts as a tank:** a bot with the tank spec or tank role always does. A player shaman counts as a tank when wearing a shield, with *Rockbiter Weapon* on the main hand and *Totemic Alignment* or *Spirit Armor* learned (from about level 25 with the tank levelling order), or after [`.bot role self tank`](../play/commands/roster-and-hiring.md#bot-role). A shaman tank also counts as a tank next to a warrior, paladin or druid tank. Hunter and warlock pets then stop taunting, healers treat the shaman as the tank, and the other bots keep their threat below it.
 
 **A bot that rolled the tank spec stays a tank.** The tank build is identified by its own talents — *Totemic Alignment* or *Spirit Armor* learned; only the `7.3` premade allocates either — so it is read from the character rather than from whatever role was handed out for the moment. A pool shaman that rolled `7.3` therefore keeps tanking across a server restart, after leaving a group, and after a dungeon-finder fill ends, all of which drop the in-memory role. Below level 25, where neither key talent is learned yet, the levelling layout carries the same identity: the `7.3` order spends its points in an allocation no other Shaman premade uses, so the spent talents identify it from level 15 on, and the dungeon finder takes it as a tank. Levels 10–14 ship the same layout for `7.3` and `7.1` (enhancement), so such a bot plays the Enhancement kit there — the character cannot tell the two apart. An explicit [`.bot role`](../play/commands/roster-and-hiring.md#bot-role) order always wins at any level — `.bot role <bot> dps` keeps the DPS kit on a tank-built shaman, while `.bot role <bot> clear` hands it back to its build. A dungeon-finder fill that temporarily forces a role on a DPS shaman is unaffected: without the tank talents that bot reads as damage, and its own kit returns when the fill ends.
+
+## Local companion behavior
+
+- **Raid fear support:** Tremor Totem is also maintained when the current target is Magmadar, Onyxia, or Nefarian in the matching raid, provided the spell is known and ready and no Tremor Totem is present.
+
+### Proactive raid Tremor wiring
+
+The active elemental, enhancement and restoration combat strategies schedule
+`raid fear tremor totem`. Against the existing Magmadar, Onyxia and Nefarian
+map/entry allowlist, it requests a known, ready Tremor Totem when one is not
+already present, at ACTION_HIGH + 1. This is a pre-fear request, not a promise
+that a pulse will prevent every fear. Explicit stoneclaw/stoneskin/earthbind/strength earth-totem strategies take
+precedence. Other targets and existing totem checks are unchanged. The legacy GenericShamanStrategy is not the active spec builder.
+
+The separate opt-in `yauj fear` extends that request to Princess Yauj in AQ40
+while she is the current target. See the local raid tactics guide for limits.

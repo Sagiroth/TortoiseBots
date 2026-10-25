@@ -109,3 +109,16 @@ TortoiseBots provides pre-configured talent progressions at 5-level checkpoints 
 ## Class settings
 
 There are no class-specific configuration flags for Priests. General healing thresholds, mana reserves, and reaction times are configured in [Combat settings](../server/settings/combat.md).
+
+
+## Local companion behavior
+
+### Experimental Holy combat healing correction
+
+Holy combat low/medium-health triggers now prefer Greater Heal and Flash Heal over Heal and Lesser Heal. Explicit lower-level candidates remain for unlearned or unusable spells. Critical-health Shield/Flash Heal priorities are unchanged. The non-combat low/medium ladder now uses the same Greater Heal / Flash Heal preference, so priests healing before their combat-engine transition retain the same direct-heal priorities. This corrects the captured raid Lesser Heal selection; it does not address CPU stalls or buff retries. Runtime confirmation requires a new combat log.
+
+Patchwerk preventive soaker shields yield whenever a friendly, living tank in
+combat on the same map is below the configured almost-full health threshold
+(default 90%), including assigned main/soaker tanks. This check is independent
+of the chosen patient, range, LOS and pending heals. Preventive shields also
+rank below fast tank heals; healthy-soaker shielding resumes at the safe line.

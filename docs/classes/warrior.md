@@ -101,3 +101,31 @@ TortoiseBots provides pre-configured talent progressions at 5-level checkpoints 
 ## Class settings
 
 There are no class-specific configuration flags for Warriors. General combat, tanking, and pull settings are configured in [Combat settings](../server/settings/combat.md).
+
+
+## Local companion behavior
+
+Assigned `patchwerk soak` bots do not taunt Patchwerk; the designated main tank retains his normal swing target.
+
+## Explicit Protection boss-pull opening
+
+A plain `.bot action pull` against a creature flagged as a world boss prepares
+its Protection Warrior puller in Defensive Stance before approach, and attempts
+Shield Wall at the firing position before the shot. A missing or cooling-down
+Wall does not prohibit pulling. A known, ready Wall that cannot be cast waits
+within the existing pull timeout. Last Stand remains a critical-health emergency;
+an already active Last Stand prevents the proactive Wall attempt.
+
+For ten seconds from the shot (or body-pull engagement), that puller avoids
+offensive stance changes, charge, intercept and overpower. Shield Block priority is
+not changed. Preparation never casts during the bow windup, and once it has acted
+the held party's join window is restarted just before the shot. Rage, shield
+equipment, cooldowns and spell checks are not bypassed. Automatic pulls, trash and
+pullback behavior are unchanged. Other tanks still assist normally; this is not
+simultaneous multi-tank engagement or healer preparation.
+
+Assigned `patchwerk main` / `patchwerk soak` tanks in active Naxxramas combat
+use Sunder as a threat filler even at five stacks. Affordable Shield Slam and
+Revenge take precedence. The encounter probe checks Shield Slam’s actual
+castability; the upstream generic row also supports affordable 20-rage Slams.
+Other encounters retain the upstream rotation.
