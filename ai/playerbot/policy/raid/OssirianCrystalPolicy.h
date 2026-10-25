@@ -46,3 +46,36 @@ inline bool ShouldUseOssirianCrystal(float bossDistToCrystal, bool crystalInUse,
     return debuffMsRemaining <= kOssirianRunNowMs;
 }
 } // namespace ai
+
+#include <cmath>
+#include <cstdint>
+#include <map>
+namespace ai
+{
+inline bool OssirianWeaknessDue(bool strength, bool hasWeakness, int32_t remainingMs)
+{
+    return strength || !hasWeakness || (remainingMs >= 0 && remainingMs <= 6000);
+}
+inline bool OssirianCrystalInRange(float centerDistance)
+{
+    // Actual weakness radius30yd; retain5yd margin during the5sec delayed cast.
+    return std::isfinite(centerDistance) && centerDistance >= 0 && centerDistance <= 25;
+}
+struct OssirianClickWindow
+{
+    std::map<uint64_t,unsigned> attempts;
+    uint32_t lastAttempt = 0;
+    bool started = false;
+    bool Ready(uint64_t crystal, uint32_t now) const
+    {
+        auto it = attempts.find(crystal);
+        return crystal && (it == attempts.end() || it->second < 2) &&
+            (!started || now-lastAttempt >= 8000);
+    }
+    bool Claim(uint64_t crystal,uint64_t caller,uint64_t chosen,uint32_t now)
+    {
+        if (!caller || caller != chosen || !Ready(crystal,now)) return false;
+        ++attempts[crystal]; lastAttempt=now; started=true; return true;
+    }
+};
+}

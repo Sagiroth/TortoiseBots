@@ -13,7 +13,7 @@
 using ai::ShouldRunToOssirianCrystal;
 using ai::ShouldUseOssirianCrystal;
 
-int main()
+int UpstreamOssirianCrystalPolicyTest()
 {
     std::cout << "Starting TortoiseBots Ossirian-crystal policy tests...\n";
 
@@ -41,4 +41,33 @@ int main()
 
     std::cout << "All Ossirian-crystal policy tests passed.\n";
     return 0;
+}
+
+#include "../ai/playerbot/policy/raid/OssirianCrystalPolicy.h"
+#include <cassert>
+#include <limits>
+int main()
+{
+    if (UpstreamOssirianCrystalPolicyTest()) return 1;
+    using namespace ai;
+    assert(OssirianWeaknessDue(true,true,40000));
+    assert(OssirianWeaknessDue(false,false,0));
+    assert(OssirianWeaknessDue(false,true,6000));
+    assert(!OssirianWeaknessDue(false,true,6001));
+    assert(!OssirianWeaknessDue(false,true,-1));
+    assert(OssirianCrystalInRange(25));
+    assert(!OssirianCrystalInRange(25.1f));
+    assert(!OssirianCrystalInRange(std::numeric_limits<float>::quiet_NaN()));
+    OssirianClickWindow w;
+    assert(!w.Claim(100,2,1,0));
+    assert(w.Claim(100,1,1,0));
+    assert(!w.Claim(101,2,2,1)); // different crystal still shares the boss claim
+    assert(!w.Ready(100,7999));
+    assert(w.Claim(100,2,2,8000)); // replacement may take the bounded retry
+    assert(!w.Ready(100,16000));
+    assert(w.Claim(101,2,2,16000));
+    OssirianClickWindow wrap;
+    assert(wrap.Claim(100,1,1,0xfffffff0u));
+    assert(!wrap.Ready(101,10));
+    assert(wrap.Ready(101,8000));
 }
