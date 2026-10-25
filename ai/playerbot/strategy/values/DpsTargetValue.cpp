@@ -433,6 +433,9 @@ Unit* DpsTargetValue::Calculate()
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
 
+    if (Unit* whelp = GetOnyxiaWhelpTarget(ai))
+        return whelp;
+
     GeneralDpsStrategy ccProbe(ai, 0.0f);
 
     // A nearly dead mob running from the fight comes before the tank's victim:
@@ -506,6 +509,9 @@ Unit* DpsAoeTargetValue::Calculate()
 
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+
+    if (Unit* whelp = GetOnyxiaWhelpTarget(ai))
+        return whelp;
 
     FindMaxHpTargetStrategy strategy(ai);
     return TargetValue::FindTarget(&strategy);

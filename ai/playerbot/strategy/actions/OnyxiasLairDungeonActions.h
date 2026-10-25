@@ -7,6 +7,7 @@
 namespace ai
 {
     Unit* GetAirborneOnyxia(PlayerbotAI* ai);
+    bool OnyxiaWhelpSupportActive(PlayerbotAI* ai);
     bool OnyxiaAirSpreadEnabled(PlayerbotAI* ai);
 
     class OnyxiaAirSpreadAction : public MovementAction

@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "TankTargetValue.h"
+#include "RaidDpsTargetPolicy.h"
 #include "PossibleAttackTargetsValue.h"
 #include "AttackersValue.h"
 #include "playerbot/ServerFacade.h"
@@ -244,6 +245,9 @@ Unit* TankTargetValue::Calculate()
         else if (!victim)
             return rti;
     }
+
+    if (Unit* whelp = GetOnyxiaWhelpTarget(ai))
+        return whelp;
 
     FindTankTargetSmartStrategy strategy(ai);
     if (Unit* target = FindTarget(&strategy))

@@ -189,6 +189,7 @@ namespace ai
             creators["karazhan crypt"] = [](PlayerbotAI* ai) { return new KarazhanCryptDungeonStrategy(ai); };
 
             // Dungeon Boss Strategies
+            creators["onyxia whelps"] = [](PlayerbotAI* ai) { return new OnyxiaWhelpStrategy(ai); };
             creators["onyxia air spread"] = [](PlayerbotAI* ai) { return new OnyxiaAirSpreadStrategy(ai); };
             creators["onyxia"] = [](PlayerbotAI* ai) { return new OnyxiaFightStrategy(ai); };
             creators["majordomo dps"] = [](PlayerbotAI* ai) { return new MajordomoDpsStrategy(ai); };

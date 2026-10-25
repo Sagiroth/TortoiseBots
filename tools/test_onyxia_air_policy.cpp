@@ -6,6 +6,13 @@
 int main()
 {
     using namespace ai;
+    assert(OnyxiaWhelpRole(true, false, false));
+    assert(OnyxiaWhelpRole(false, false, false));
+    assert(!OnyxiaWhelpRole(false, true, false));
+    assert(!OnyxiaWhelpRole(false, false, true));
+    assert(OnyxiaWhelpScore(true, true, false, 40) > OnyxiaWhelpScore(true, false, true, 1));
+    assert(OnyxiaWhelpScore(false, true, false, 40) < OnyxiaWhelpScore(false, false, true, 1));
+    assert(OnyxiaWhelpScore(false, false, true, 15) > OnyxiaWhelpScore(false, false, false, 10));
     assert(OnyxiaAirPhase(true, true, true, false));
     assert(OnyxiaAirPhase(true, true, false, true));
     assert(!OnyxiaAirPhase(true, true, false, false));

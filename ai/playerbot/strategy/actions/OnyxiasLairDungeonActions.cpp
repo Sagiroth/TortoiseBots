@@ -211,6 +211,9 @@ bool OnyxiaAvoidEggsAction::Execute(Event& event)
 #include "playerbot/OnyxiaAirPolicy.h"
 #include "playerbot/CombatSpreadPolicy.h"
 #include "playerbot/strategy/values/PositionValue.h"
+#include "playerbot/strategy/values/RaidDpsTargetPolicy.h"
+#include "playerbot/strategy/values/LeastHpTargetValue.h"
+#include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
 using namespace ai;
 
@@ -312,4 +315,63 @@ bool OnyxiaAirSpreadAction::Execute(Event& event)
         }
     }
     return false;
+}
+
+
+bool ai::OnyxiaWhelpSupportActive(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!ai->HasStrategy("onyxia whelps", BotState::BOT_STATE_COMBAT) ||
+        !OnyxiaWhelpRole(ai->IsTank(bot), ai->IsRanged(bot), ai->IsHeal(bot)) || !GetAirborneOnyxia(ai))
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* explicitTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "explicit attack target"));
+    if (explicitTarget && PossibleAttackTargetsValue::IsValid(explicitTarget, bot,
+        sPlayerbotAIConfig.sightDistance, false, false))
+        return false;
+    if (AI_VALUE(Unit*, "rti target"))
+        return false;
+    PositionMap& positions = AI_VALUE(PositionMap&, "position");
+    auto hold = positions.find("pull hold");
+    return !ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) &&
+        !ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT) &&
+        !ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) &&
+        !ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT) &&
+        (hold == positions.end() || !hold->second.isSet());
+}
+
+Unit* ai::GetOnyxiaWhelpTarget(PlayerbotAI* ai)
+{
+    if (!OnyxiaWhelpSupportActive(ai))
+        return nullptr;
+    class WhelpCcFilter : public FindLeastHpTargetStrategy
+    {
+    public:
+        WhelpCcFilter(PlayerbotAI* ai) : FindLeastHpTargetStrategy(ai) {}
+        using FindNonCcTargetStrategy::IsCcTarget;
+    } filter(ai);
+    Player* bot = ai->GetBot();
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* current = AI_VALUE(Unit*, "current target");
+    Unit* result = nullptr;
+    float best = -100000.0f;
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
+    {
+        Unit* whelp = ai->GetUnit(guid);
+        if (!whelp || whelp->GetEntry() != 11262 || !whelp->IsAlive() || !whelp->IsInMap(bot) ||
+            !whelp->IsInCombat() || filter.IsCcTarget(whelp) ||
+            !PossibleAttackTargetsValue::IsValid(whelp, bot, sPlayerbotAIConfig.sightDistance, false, true))
+            continue;
+        Unit* victim = whelp->GetVictim();
+        Player* victimPlayer = dynamic_cast<Player*>(victim);
+        bool const needsPickup = !victimPlayer || !ai->IsTank(victimPlayer);
+        float const score = OnyxiaWhelpScore(ai->IsTank(bot), needsPickup, whelp == current,
+            sServerFacade.getDistance2d(bot, whelp));
+        if (!result || score > best || (score == best && whelp->GetObjectGuid() < result->GetObjectGuid()))
+        {
+            result = whelp;
+            best = score;
+        }
+    }
+    return result;
 }

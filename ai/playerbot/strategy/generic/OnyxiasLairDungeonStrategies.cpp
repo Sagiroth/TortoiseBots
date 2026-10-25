@@ -121,3 +121,36 @@ void OnyxiaAirSpreadStrategy::InitReactionMultipliers(std::list<Multiplier*>& mu
 {
     InitCombatMultipliers(multipliers);
 }
+
+
+namespace
+{
+class OnyxiaWhelpMovementMultiplier : public Multiplier
+{
+public:
+    OnyxiaWhelpMovementMultiplier(PlayerbotAI* ai) : Multiplier(ai, "onyxia whelp movement") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || !OnyxiaWhelpSupportActive(ai))
+            return 1.0f;
+        Unit* boss = GetAirborneOnyxia(ai);
+        if (!boss || action->GetTarget() != boss || ai->GetBot()->CanReachWithMeleeAutoAttack(boss) ||
+            dynamic_cast<AttackAction*>(action))
+            return 1.0f;
+        // Turtle enlarges her airborne hitbox: permit legal melee specials
+        // from the floor, but do not chase an unreachable airborne target.
+        return dynamic_cast<ReachTargetAction*>(action) || dynamic_cast<CastReachTargetSpellAction*>(action)
+            ? 0.0f : 1.0f;
+    }
+};
+}
+
+void OnyxiaWhelpStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new OnyxiaWhelpMovementMultiplier(ai));
+}
+
+void OnyxiaWhelpStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}
