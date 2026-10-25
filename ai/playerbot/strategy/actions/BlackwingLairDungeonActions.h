@@ -12,11 +12,20 @@
 namespace ai
 {
     Unit* GetActiveEbonrocSwapBoss(PlayerbotAI* ai);
+    Unit* GetActiveVaelTankHandoverBoss(PlayerbotAI* ai);
 
     class EbonrocShadowSwapAction : public Action
     {
     public:
         EbonrocShadowSwapAction(PlayerbotAI* ai) : Action(ai, "ebonroc shadow swap") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
+
+    class VaelastraszTankHandoverAction : public Action
+    {
+    public:
+        VaelastraszTankHandoverAction(PlayerbotAI* ai) : Action(ai, "vael tank handover") {}
         bool isUseful() override;
         bool Execute(Event& event) override;
     };

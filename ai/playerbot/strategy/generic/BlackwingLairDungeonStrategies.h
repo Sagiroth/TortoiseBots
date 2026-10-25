@@ -3,6 +3,18 @@
 
 namespace ai
 {
+    class VaelastraszTankHandoverStrategy : public Strategy
+    {
+    public:
+        VaelastraszTankHandoverStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "vael tank handover"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     // Manually enabled for the orb/add-control phase; automatically yields
     // when the core disables the Orb of Domination at the phase transition.
     class RazorgorePhaseOneStrategy : public Strategy

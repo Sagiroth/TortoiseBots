@@ -332,6 +332,7 @@ namespace ai
             creators["enter naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasEnterDungeonTrigger(ai); };
             creators["leave naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasLeaveDungeonTrigger(ai); };
             creators["ebonroc shadow swap needed"] = [](PlayerbotAI* ai) { return new EbonrocShadowSwapTrigger(ai); };
+            creators["vael tank handover needed"] = [](PlayerbotAI* ai) { return new VaelTankHandoverTrigger(ai); };
             creators["enter blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairEnterDungeonTrigger(ai); };
             creators["leave blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairLeaveDungeonTrigger(ai); };
             creators["enter zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubEnterDungeonTrigger(ai); };

@@ -9,3 +9,9 @@ bool EbonrocShadowSwapTrigger::IsActive()
     EbonrocShadowSwapAction action(ai);
     return action.isUseful();
 }
+
+bool VaelTankHandoverTrigger::IsActive()
+{
+    VaelastraszTankHandoverAction action(ai);
+    return action.isUseful();
+}

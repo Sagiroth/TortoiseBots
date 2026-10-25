@@ -14,6 +14,13 @@ namespace ai
         bool IsActive() override;
     };
 
+    class VaelTankHandoverTrigger : public Trigger
+    {
+    public:
+        VaelTankHandoverTrigger(PlayerbotAI* ai) : Trigger(ai, "vael tank handover needed", 1) {}
+        bool IsActive() override;
+    };
+
     class BlackwingLairEnterDungeonTrigger : public EnterDungeonTrigger
     {
     public:

@@ -183,6 +183,7 @@ namespace ai
             creators["onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairDungeonStrategy(ai); };
             creators["molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreDungeonStrategy(ai); };
             creators["ebonroc swap"] = [](PlayerbotAI* ai) { return new EbonrocSwapStrategy(ai); };
+            creators["vael tank handover"] = [](PlayerbotAI* ai) { return new VaelastraszTankHandoverStrategy(ai); };
             creators["blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairDungeonStrategy(ai); };
             creators["razorgore phase1"] = [](PlayerbotAI* ai) { return new RazorgorePhaseOneStrategy(ai); };
             creators["maexxna rescue"] = [](PlayerbotAI* ai) { return new MaexxnaRescueStrategy(ai); };

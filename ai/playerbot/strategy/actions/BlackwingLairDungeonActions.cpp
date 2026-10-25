@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "BlackwingLairDungeonActions.h"
 #include "playerbot/EbonrocSwapPolicy.h"
+#include "playerbot/VaelTankHandoverPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
@@ -66,6 +67,8 @@ struct EbonrocSwapRecord
 };
 std::mutex swapMutex;
 std::map<std::pair<uint32, uint64>, EbonrocSwapRecord> swaps;
+std::mutex vaelSwapMutex;
+std::map<std::pair<uint32, uint64>, EbonrocSwapRecord> vaelSwaps;
 
 struct EbonrocSwapRequest
 {
@@ -121,6 +124,62 @@ EbonrocSwapRequest GetEbonrocSwapRequest(PlayerbotAI* ai, bool claim)
         chosen->GetObjectGuid().GetRawValue(), now) : record.window.Ready(now);
     return ready ? EbonrocSwapRequest{ boss, chosenSpell } : EbonrocSwapRequest{};
 }
+
+EbonrocSwapRequest GetVaelHandoverRequest(PlayerbotAI* ai, bool claim)
+{
+    Unit* boss = GetActiveVaelTankHandoverBoss(ai);
+    Unit* victim = boss ? boss->GetVictim() : nullptr;
+    Player* victimTank = dynamic_cast<Player*>(victim);
+    bool const hasAdrenaline = victim && (victim->HasAura(23620) || victim->HasAura(18173));
+    if (!boss || !victimTank || !victim->IsAlive() || !ai->IsTank(victimTank) || !hasAdrenaline ||
+        !VaelTankHandoverActive(true, true, ai->GetBot()->IsAlive(), ai->GetBot()->IsInCombat(), true, hasAdrenaline))
+        return {};
+
+    Player* chosen = nullptr;
+    uint32 chosenSpell = 0;
+    Group* group = ai->GetBot()->GetGroup();
+    if (!group)
+        return {};
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == victimTank || !member->IsAlive() || !member->IsInWorld() ||
+            member->IsBeingTeleported() || !member->IsInMap(boss) || !member->IsInCombat())
+            continue;
+        PlayerbotAI* candidate = PlayerbotAIStorage::Instance().GetAI(member);
+        if (!candidate || !candidate->IsTank(member) ||
+            !candidate->HasStrategy("vael tank handover", BotState::BOT_STATE_COMBAT) ||
+            EbonrocHoldOrder(candidate) || EbonrocOtherTargetOrder(candidate, boss))
+            continue;
+        uint32 const spell = ReadyEbonrocTaunt(candidate, boss);
+        if (spell && (!chosen || member->GetObjectGuid() < chosen->GetObjectGuid()))
+        {
+            chosen = member;
+            chosenSpell = spell;
+        }
+    }
+
+    uint32 const now = WorldTimer::getMSTime();
+    std::lock_guard<std::mutex> lock(vaelSwapMutex);
+    for (auto it = vaelSwaps.begin(); it != vaelSwaps.end();)
+        if (now - it->second.lastSeen > 60000)
+            it = vaelSwaps.erase(it);
+        else
+            ++it;
+    auto& record = vaelSwaps[{ boss->GetInstanceId(), boss->GetObjectGuid().GetRawValue() }];
+    record.lastSeen = now;
+    record.window.ObserveVictim(victim->GetObjectGuid().GetRawValue());
+    Aura* adrenaline = ai->GetAura(23620, victim);
+    if (!adrenaline)
+        adrenaline = ai->GetAura(18173, victim);
+    if (!adrenaline)
+        return {};
+    record.window.Begin(victim->GetObjectGuid().GetRawValue(), adrenaline->GetAuraApplyTime());
+    if (!chosen || chosen != ai->GetBot())
+        return {};
+    bool const ready = claim ? record.window.Claim(ai->GetBot()->GetObjectGuid().GetRawValue(),
+        chosen->GetObjectGuid().GetRawValue(), now) : record.window.Ready(now);
+    return ready ? EbonrocSwapRequest{ boss, chosenSpell } : EbonrocSwapRequest{};
+}
 }
 
 Unit* ai::GetActiveEbonrocSwapBoss(PlayerbotAI* ai)
@@ -141,6 +200,23 @@ Unit* ai::GetActiveEbonrocSwapBoss(PlayerbotAI* ai)
     return nullptr;
 }
 
+Unit* ai::GetActiveVaelTankHandoverBoss(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (bot->GetMapId() != 469 || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
+        !bot->IsInCombat() || !ai->HasStrategy("vael tank handover", BotState::BOT_STATE_COMBAT) ||
+        EbonrocHoldOrder(ai))
+        return nullptr;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* boss = ai->GetUnit(guid);
+        if (boss && boss->GetEntry() == 13020 && boss->IsAlive() && boss->IsInCombat() && boss->IsInMap(bot))
+            return boss;
+    }
+    return nullptr;
+}
+
 bool EbonrocShadowSwapAction::isUseful()
 {
     return GetEbonrocSwapRequest(ai, false).boss != nullptr;
@@ -153,5 +229,18 @@ bool EbonrocShadowSwapAction::Execute(Event& event)
         return false;
     // Claim before casting: another bot cannot race this unconfirmed attempt.
     // A cast return value is not confirmation; the next observed victim is.
+    return ai->CastSpell(request.spell, request.boss);
+}
+
+bool VaelastraszTankHandoverAction::isUseful()
+{
+    return GetVaelHandoverRequest(ai, false).boss != nullptr;
+}
+
+bool VaelastraszTankHandoverAction::Execute(Event& event)
+{
+    auto const request = GetVaelHandoverRequest(ai, true);
+    if (!request.boss || !request.spell)
+        return false;
     return ai->CastSpell(request.spell, request.boss);
 }

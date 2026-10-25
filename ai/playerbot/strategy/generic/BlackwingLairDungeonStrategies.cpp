@@ -5,11 +5,40 @@
 #include "playerbot/strategy/actions/AttackAction.h"
 #include "playerbot/strategy/values/RaidDpsTargetPolicy.h"
 #include "playerbot/EbonrocSwapPolicy.h"
+#include "playerbot/VaelTankHandoverPolicy.h"
 
 using namespace ai;
 
 namespace
 {
+class RaidTankTauntCoordinationMultiplier : public Multiplier
+{
+public:
+    RaidTankTauntCoordinationMultiplier(PlayerbotAI* ai) : Multiplier(ai, "raid tank taunt coordination") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || !EbonrocTauntAction(action->getName()))
+            return 1.0f;
+        Unit* boss = GetActiveVaelTankHandoverBoss(ai);
+        if (!boss)
+            return 1.0f;
+        std::string const name = action->getName();
+        bool const aoe = name == "challenging shout" || name == "challenging roar";
+        Unit* victim = boss->GetVictim();
+        if (action->GetTarget() != boss && !aoe && !(name == "righteous defense" && action->GetTarget() == victim))
+            return 1.0f;
+        Player* victimTank = dynamic_cast<Player*>(victim);
+        bool const victimIsTank = victimTank && victimTank->IsAlive() && ai->IsTank(victimTank);
+        bool const victimHasAdrenaline = victimIsTank &&
+            (victim->HasAura(23620) || victim->HasAura(18173));
+        bool const otherHealthyTank = victimIsTank && victimTank != ai->GetBot() &&
+            ai->IsTank(victimTank) && !victimHasAdrenaline;
+        bool const selfHasAdrenaline = ai->GetBot()->HasAura(23620) || ai->GetBot()->HasAura(18173);
+        return VaelBlockAutomaticTaunt(selfHasAdrenaline, victimHasAdrenaline,
+            otherHealthyTank) ? 0.0f : 1.0f;
+    }
+};
+
 class RazorgorePhaseOneMultiplier : public Multiplier
 {
 public:
@@ -26,6 +55,27 @@ public:
         return offensive && IsRaidDpsTargetExcluded(ai, action->GetTarget()) ? 0.0f : 1.0f;
     }
 };
+}
+
+void VaelastraszTankHandoverStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("vael tank handover needed",
+        NextAction::array(0, new NextAction("vael tank handover", ACTION_EMERGENCY + 4), NULL)));
+}
+
+void VaelastraszTankHandoverStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitCombatTriggers(triggers);
+}
+
+void VaelastraszTankHandoverStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new RaidTankTauntCoordinationMultiplier(ai));
+}
+
+void VaelastraszTankHandoverStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
 }
 
 void RazorgorePhaseOneStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
