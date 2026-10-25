@@ -1,5 +1,6 @@
 #include "playerbot/strategy/actions/SarturaTankActions.h"
 #pragma once
+#include "playerbot/strategy/actions/HuhuranActions.h"
 #include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "../generic/CthunSpreadStrategy.h"
@@ -348,6 +349,8 @@ namespace ai
             creators["kt frostbolt ready"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptTrigger(ai); };
             creators["locust swarm active"] = [](PlayerbotAI* ai) { return new LocustSwarmTrigger(ai); };
             creators["ossirian crystal ready"] = [](PlayerbotAI* ai) { return new OssirianCrystalTrigger(ai); };
+            creators["huhuran tank engage needed"] = [](PlayerbotAI* ai) { return new HuhuranTankTrigger(ai); };
+            creators["huhuran ranged too close"] = [](PlayerbotAI* ai) { return new HuhuranRangedTrigger(ai); };
             creators["fankriss swap needed"] = [](PlayerbotAI* ai) { return new FankrissSwapTrigger(ai); };
             creators["fankriss tank engage needed"] = [](PlayerbotAI* ai) { return new FankrissTankEngageTrigger(ai); };
             creators["sartura tank recover needed"] = [](PlayerbotAI* ai) { return new SarturaTankRecoverTrigger(ai); };

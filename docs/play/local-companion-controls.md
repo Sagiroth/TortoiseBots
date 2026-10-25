@@ -736,3 +736,66 @@ Use `.bot role <BotName> tank` for healing recognition.
 DPS chooses either `all +twins physical dps` or `all +twins spell dps`.
 See the Twin Emperors section of the local raid tactics guide for staging,
 full commands and the remaining teleport limitations.
+
+## Huhuran threat tanks and ranged spacing (opt-in)
+
+Huhuran cannot be handed over with Taunt. Assign two or three **already geared
+and configured tanks**; all must build ordinary threat from the start. Replace
+`TankOne`, `TankTwo` and `HealerOne` with character names:
+
+```text
+.bot role TankOne tank
+.bot role TankTwo tank
+.bot command TankOne all +huhuran tank
+.bot command TankTwo all +huhuran tank
+.bot command HealerOne all +huhuran ranged
+```
+
+Repeat the tank commands for an optional third tank, and the ranged command for
+each ranged DPS/healer who is **not** one of the 15 designated nature-resistance
+soakers. Do not enable ranged spacing on the fifteenth soaker just because that
+player is normally ranged. Leave both strategies disabled unless assigned.
+
+Pull with the chosen first tank normally. The role only finds an already-engaged
+Huhuran attacking this group in AQ40; it never starts a fresh pull. Assigned tanks
+join in combat or non-combat, select Huhuran over loose-target tank assistance,
+prepare Defensive Stance/bear form when learned, and keep their normal threat
+rotation. Their opening attack delay and ordinary damage threat back-off are
+bypassed only while this assignment is active. Automatic taunt actions (including
+Growl, Mocking Blow and area taunts) are vetoed in combat/reaction engines.
+Do not issue manual taunt/cast orders: this is not a spell prohibition in the core.
+
+There is no Acid Spit stack election, forced threat change or scripted taunt.
+A death or threat drop lets the next actual threat holder take over naturally.
+It may be a non-tank if the backup tanks have not built enough threat; gear,
+healing, rage and normal hit/cast checks still matter. The role does not throttle
+DPS or guarantee a particular tank order. Tanks keep attacking rather than
+stepping out to shed stacks.
+
+`huhuran ranged` moves a ranged DPS/healer outward when too close to the engaged
+boss. It aims for 24 yards from the boss center, or three yards beyond the
+fifteenth closest living, same-instance raid member **without this ranged role**,
+capped at 28 yards. Protected ranged bots do not push each other farther out.
+A one-yard tolerance avoids constant repositioning. With fewer than 15 eligible
+soakers it keeps the 24-yard target, but cannot keep everyone out of the volley.
+These are approximate center distances, not a guarantee of spell target ranking.
+
+Spacing finishes an existing cast before moving, checks height/LOS/path/hazards,
+and retains ordinary movement safety checks. It does not kite Huhuran if the
+ranged bot becomes her victim. Healing reach remains available. Short offensive
+spells cannot repeatedly pull a settled bot into melee; ordinary out-of-range
+recovery still runs. Bad terrain, cast pressure, healing reach, insufficient
+soakers or scattered players can prevent ideal spacing. NR gear, buffs, potions,
+Tranq assignments and careful Wyvern Sting handling remain the raid leader's job.
+
+Explicit stay/guard/combat-follow and valid alternate attack/raid-mark orders win.
+Release parked orders and clear conflicting targets before pulling; adding a role
+does not cancel them. Existing non-combat follow is retained. Ranged spacing also
+stands down during `wait for attack`; assigned tanks alone bypass that opening
+wait. Disable the assignments after the encounter:
+
+```text
+.bot command TankOne all -huhuran tank
+.bot command TankTwo all -huhuran tank
+.bot command HealerOne all -huhuran ranged
+```

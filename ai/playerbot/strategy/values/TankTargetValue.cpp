@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/HuhuranActions.h"
 
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/actions/SarturaTankActions.h"
@@ -211,6 +212,8 @@ Unit* TankTargetValue::Calculate()
 
     // Explicit boss tanks keep threat during their off-tank turn instead of
     // joining the loose-add tournament. Other attack/mark orders still win.
+    if (Unit* boss = GetAssignedHuhuranTankTarget(ai))
+        return boss;
     if (Unit* boss = GetAssignedFankrissTankTarget(ai))
         return boss;
     Unit* twin=nullptr;

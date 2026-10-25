@@ -203,3 +203,11 @@ When [`AiPlayerbot.EnableCustomRaidTactics`](../server/settings/dungeons-raids.m
 - **Emerald Sanctum (Solnius):** Tanks keep the dragon facing away to avoid Acid Breath. Emerald Rot carriers run out via the shared bomb runout action. When Call of Nightmare triggers, DPS bots focus down incoming add waves.
 - **Lower Karazhan (Araxxna & Moroes):** Araxxna's spiderling swarms trigger AoE cleave. Moroes' smoke bomb forces tanks and DPS to re-acquire their targets.
 - **Karazhan Crypt:** Set [`.bot formation near`](commands/party-actions.md#bot-formation) before entering narrow tunnels to keep bots from clipping through walls. Levers and puzzle doors must be operated manually by the player.
+
+### Huhuran backup tanks
+
+The opt-in `huhuran tank` role keeps two or three configured tanks attacking the
+engaged boss; handoffs use actual threat, never automatic taunts. Optional
+`huhuran ranged` spacing helps non-soaking ranged/healers stay outside the close
+group. It cannot replace 15 prepared nature-resistance soakers. See the
+[assignment commands and limitations](local-companion-controls.md#huhuran-threat-tanks-and-ranged-spacing-opt-in).

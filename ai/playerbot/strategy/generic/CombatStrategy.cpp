@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/HuhuranActions.h"
 
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/actions/TwinsOpeningActions.h"
@@ -126,6 +127,8 @@ bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
     if (TwinsOpeningHold(ai)) return true;
     if (PatchwerkDpsOpeningHold(ai)) return true;
     if (TwinsOpeningTank(ai)) return false; // Side tanks establish threat; DPS keep the normal hold.
+    if (GetAssignedHuhuranTankTarget(ai))
+        return false; // All assigned tanks build threat from the start; no taunt handoff.
     if (GetPatchwerkSoakBoss(ai))
         return false; // Assigned soakers join immediately; DPS retain their delay.
 

@@ -1,5 +1,6 @@
 #include "playerbot/strategy/actions/SarturaTankActions.h"
 #pragma once
+#include "playerbot/strategy/actions/HuhuranActions.h"
 #include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "TwinsOpeningActions.h"
 #include "CthunSpreadActions.h"
@@ -383,6 +384,8 @@ namespace ai
             creators["kt frostbolt interrupt"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptAction(ai); };
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatAction(ai); };
             creators["ossirian crystal click"] = [](PlayerbotAI* ai) { return new OssirianCrystalAction(ai); };
+            creators["huhuran tank engage"] = [](PlayerbotAI* ai) { return new HuhuranTankEngageAction(ai); };
+            creators["huhuran ranged move"] = [](PlayerbotAI* ai) { return new HuhuranRangedAction(ai); };
             creators["fankriss swap"] = [](PlayerbotAI* ai) { return new FankrissSwapAction(ai); };
             creators["fankriss tank engage"] = [](PlayerbotAI* ai) { return new FankrissTankEngageAction(ai); };
             creators["sartura tank recover"] = [](PlayerbotAI* ai) { return new SarturaTankRecoverAction(ai); };

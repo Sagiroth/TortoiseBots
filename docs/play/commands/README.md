@@ -210,3 +210,7 @@ cast completion, projectile arrival and hit/resist results are not simultaneous.
 Core proximity aggro can still happen on approach. `TwinsPairedPull` diagnostics
 report armed, launched (including dispatch milliseconds), cancelled or cast-failed.
 Sartura assignment: [opt-in main-tank strategy and guard allocation](../local-raid-tactics.md#sartura-main-tank-opt-in).
+Huhuran opt-in assignments: `all +huhuran tank` keeps a configured tank building
+boss threat without automatic taunts; `all +huhuran ranged` gives a non-soaking
+ranged DPS/healer bounded spacing outside the close group. Remove with the
+corresponding `all -...` command. See [Huhuran setup and limits](../local-companion-controls.md#huhuran-threat-tanks-and-ranged-spacing-opt-in).

@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/HuhuranActions.h"
 
 #include "playerbot/playerbot.h"
 #include "ThreatStrategy.h"
@@ -13,6 +14,9 @@ float ThreatMultiplier::GetValue(Action* action)
     // Per-fight suppression (mod-playerbots "neglect threat"): a boss
     // fight strategy that owns positioning/targeting sets this while
     // engaged so threat gating does not veto its scripted target choice.
+    if (GetAssignedHuhuranTankTarget(ai))
+        return 1.0f; // Backup tanks need threat even while another tank holds Huhuran.
+
     if (AI_VALUE(bool, "neglect threat"))
         return 1.0f;
 

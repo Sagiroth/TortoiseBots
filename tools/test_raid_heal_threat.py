@@ -27,6 +27,7 @@ namespace RemoteCommander {bool CommandedBackoffYields(bool,bool,bool){return fa
 struct AI {bool unsafe=true,neglect=false,group=true,high=true;int aoe=100;Bot bot;
  bool HasStrategy(std::string,int){return false;}Bot* GetMaster(){return nullptr;}Bot* GetBot(){return &bot;}
  int value(std::string n){return n=="neglect threat"?neglect:n=="group"?group:n=="aoe"?aoe:n=="high threat"?high:0;}};
+Unit* GetAssignedHuhuranTankTarget(AI*){return nullptr;}
 bool RaidHealerShouldHoldDamage(AI* ai){return ai->unsafe;}
 template<class T>T fixtureValue(AI* ai,std::string name){if constexpr(std::is_pointer_v<T>)return nullptr;else return static_cast<T>(ai->value(name));}
 #define AI_VALUE(type,name) fixtureValue<type>(ai,name)

@@ -84,6 +84,7 @@ Unit* GetAssignedGarrTankTarget(PlayerbotAI*){return nullptr;}
 Unit* GetAssignedPatchwerkTankTarget(PlayerbotAI*){return nullptr;}
 Unit* GetAssignedFankrissTankTarget(PlayerbotAI*){return nullptr;}
 Unit* GetAssignedSarturaTankTarget(PlayerbotAI*){return nullptr;}
+Unit* GetAssignedHuhuranTankTarget(PlayerbotAI*){return nullptr;}
 bool SelectTwinsTankTarget(PlayerbotAI*,Unit*&){return false;}
 bool SelectTwinsDpsTarget(PlayerbotAI*,Unit*&){return false;}
 bool TwinsOpeningHold(PlayerbotAI*){return false;}

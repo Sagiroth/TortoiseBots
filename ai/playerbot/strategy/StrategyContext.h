@@ -1,5 +1,6 @@
 #include "playerbot/strategy/actions/SarturaTankActions.h"
 #pragma once
+#include "playerbot/strategy/actions/HuhuranActions.h"
 #include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "generic/CthunSpreadStrategy.h"
 #include "actions/KurinnaxxActions.h"
@@ -197,6 +198,8 @@ namespace ai
             creators["sartura whirlwind"] = [](PlayerbotAI* ai) { return new SarturaWhirlwindStrategy(ai); };
             creators["yauj fear"] = [](PlayerbotAI* ai) { return new YaujFearStrategy(ai); };
             creators["skeram image focus"] = [](PlayerbotAI* ai) { return new SkeramImageStrategy(ai); };
+            creators["huhuran tank"] = [](PlayerbotAI* ai) { return new HuhuranTankStrategy(ai); };
+            creators["huhuran ranged"] = [](PlayerbotAI* ai) { return new HuhuranRangedStrategy(ai); };
             creators["fankriss tank"] = [](PlayerbotAI* ai) { return new FankrissTankStrategy(ai); };
             creators["sartura main tank"] = [](PlayerbotAI* ai) { return new SarturaMainTankStrategy(ai); };
             creators["fankriss spawn focus"] = [](PlayerbotAI* ai) { return new FankrissSpawnStrategy(ai); };
