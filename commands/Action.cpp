@@ -934,6 +934,7 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
     if (!openingNote.empty())
         executorDetail += " " + openingNote;
     SendActionAck(handler, reportIntent, scope, 1, executorDetail);
+    WarnPartyStayAfterPull(handler, context, executor);
     return true;
 }
 

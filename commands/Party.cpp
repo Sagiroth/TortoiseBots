@@ -985,6 +985,7 @@ bool HandlePullback(ChatHandler* handler, char const* args)
     ExecuteQuietNextAction(tankAI, false);
 
     handler->PSendSysMessage("Pullback requested: tank %s is using its native pull strategy.", tank->GetName());
+    WarnPartyStayAfterPull(handler, context, tank);
     return true;
 }
 
