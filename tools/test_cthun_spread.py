@@ -125,7 +125,8 @@ struct Player:Unit {
 };
 struct PlayerbotAI {Player bot;Player* GetBot(){return &bot;}};
 bool Enabled(PlayerbotAI*){return true;}
-bool Surface(Player* p){return p->alive && CthunSurface(p->map,p->x,p->y,p->z);}
+bool Surface(Player* p){return p->alive && CthunApproach(p->map,p->x,p->y,p->z);}
+bool CthunPullOrdered(PlayerbotAI*,Unit*){return false;}
 namespace ai {bool CthunSpreadEnabled(PlayerbotAI*);}
 ''' + extract('Unit* Boss(PlayerbotAI* ai)') + extract('bool ai::CthunSpreadEnabled(PlayerbotAI* ai)') + r'''
 int main(){
@@ -135,7 +136,8 @@ int main(){
  assert(CthunSpreadEnabled(&ai));
  ai.bot.los=false;assert(!CthunSpreadEnabled(&ai)); // waiting behind door must not pull
  body.combat=true;eye.alive=false;assert(CthunSpreadEnabled(&ai)); // body phase/raid engaged
- ai.bot.x=kCthunCenter.x-96;assert(!CthunSpreadEnabled(&ai));
+ ai.bot.x=kCthunCenter.x-96;assert(CthunSpreadEnabled(&ai)); // engaged approach
+ ai.bot.x=-8800;assert(!CthunSpreadEnabled(&ai));
  ai.bot.x=kCthunCenter.x;ai.bot.z=-96;assert(!CthunSpreadEnabled(&ai));
  ai.bot.z=100;body.alive=false;assert(!CthunSpreadEnabled(&ai));
  body.alive=true;ai.bot.map=249;assert(!CthunSpreadEnabled(&ai));

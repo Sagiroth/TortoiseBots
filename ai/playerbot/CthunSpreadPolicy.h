@@ -29,6 +29,18 @@ inline bool CthunSurface(unsigned map, float x, float y, float z)
     return map == 531 && std::isfinite(z) && z > 90 && z < 110 &&
         CthunDistance({x,y}, kCthunCenter) < 95;
 }
+// The western approach/ramp is part of entry only after engagement or an
+// explicit Eye pull. Keep the stomach and the rest of AQ40 out of scope.
+inline bool CthunApproach(unsigned map, float x, float y, float z)
+{
+    return CthunSurface(map,x,y,z) || (map==531 && std::isfinite(z) &&
+        z>90 && z<125 && x>-8705 && x<-8640 && y>1935 && y<2045);
+}
+// Static-vmap LOS blocked at this waiting point; ground navmesh checked.
+// Eye Beam ignores LOS: this prevents premature aggro, not combat damage.
+constexpr CthunPoint kCthunWaiting{-8675.0f,1968.0f};
+constexpr float kCthunWaitingZ=108.90f;
+constexpr CthunPoint kCthunEntry{-8640.0f,1975.0f};
 inline bool CthunSpawnClear(CthunPoint p, float clearance = 12.0f)
 {
     for (auto eye : kCthunEyes) if (CthunDistance(p, eye) < clearance) return false;
@@ -45,8 +57,9 @@ struct CthunSlot
 };
 struct CthunPlacement { uint32_t guid; CthunPoint point; bool assigned; float radius = .5f; };
 // Chart order: left 1/3/5/7, right 2/4/6/8, entrance below.
-// Door objects 180745 lie southwest of the boss, approximately 157.5 degrees.
-// In world XY, chart-up is -22.5 degrees; increasing angles turn chart-left.
+// Preserve the deployed chart orientation: chart-up is -22.5 degrees.
+// Object 180745 is Grasp of C'Thun, not a doorway; the approach route
+// below uses the actual western ramp, independently of chart orientation.
 inline float CthunSectorAngle(unsigned sector)
 {
     constexpr float degrees[8]={22.5f,-22.5f,67.5f,-67.5f,112.5f,-112.5f,157.5f,-157.5f};
@@ -100,6 +113,13 @@ inline CthunPoint CthunChartStep(CthunPoint here,CthunPoint destination,unsigned
     if(CthunDistance(here,kCthunCenter)>47) return CthunPolar(43,angle);
     float step=std::max(-kCthunPi/8,std::min(kCthunPi/8,delta));
     return CthunPolar(43,angle+step);
+}
+// Join the chart lanes through the actual ramp mouth, not via a point on
+// the upper western ledge. Runtime follows a complete navmesh path to it.
+inline CthunPoint CthunEntryStep(CthunPoint here, float z, CthunPoint destination,unsigned sector)
+{
+    if(here.x<-8645 || z>105) return kCthunEntry;
+    return CthunChartStep(here,destination,sector);
 }
 inline unsigned CthunTargetSector(CthunPoint point)
 {

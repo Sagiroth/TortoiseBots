@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "CthunSpreadActions.h"
 #include "playerbot/GroupMembers.h"
+#include "playerbot/strategy/generic/PullStrategy.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
 #include <map>
 #include "AI/ScriptedInstance.h"
@@ -15,7 +16,7 @@ namespace
 bool Surface(Player* p)
 {
     return p && p->IsInWorld() && p->IsAlive() && !p->IsBeingTeleported() &&
-        CthunSurface(p->GetMapId(),p->GetPositionX(),p->GetPositionY(),p->GetPositionZ());
+        CthunApproach(p->GetMapId(),p->GetPositionX(),p->GetPositionY(),p->GetPositionZ());
 }
 bool Enabled(PlayerbotAI* ai)
 {
@@ -36,18 +37,34 @@ Unit* Boss(PlayerbotAI* ai)
     }
     return nullptr;
 }
+bool CthunPullOrdered(PlayerbotAI* ai, Unit* boss)
+{
+    if(!boss || boss->GetEntry()!=15589) return false;
+    // Reuse the live, cancellable command intent; no sticky encounter flag.
+    // Same raid/instance only. Ordinary targeting or a marker cannot pull.
+    for(Player* member:LiveGroupMembers(ai->GetBot()->GetGroup()))
+    {
+        if(!member->IsAlive() || !member->IsInMap(ai->GetBot())) continue;
+        auto* peer=PlayerbotAIStorage::Instance().GetAI(member);
+        auto* pull=peer ? PullStrategy::Get(peer) : nullptr;
+        if(pull && pull->IsCommandActive() && !pull->IsCommandPullback() && pull->GetTarget()==boss)
+            return true;
+    }
+    return false;
+}
 CthunPoint Point(WorldObject* p) {return {p->GetPositionX(),p->GetPositionY()};}
 
 }
 bool ai::CthunSpreadEnabled(PlayerbotAI* ai)
 {
     if(!Enabled(ai) || !Surface(ai->GetBot()) || !ai->GetBot()->GetGroup()) return false;
-    // The room boundary, not bot combat state, activates entry spreading.
-    // No attack is issued here; an idle Eye is only an encounter identity.
     Unit* boss=Boss(ai);
-    // Before engagement, use the same LOS condition as the core pull check.
-    // Do not walk a waiting group through a wall/door to start a fresh pull.
-    return boss && (boss->IsInCombat() || ai->GetBot()->IsWithinLOSInMap(boss));
+    Player* bot=ai->GetBot();
+    // After an authorized pull/engagement, include the waiting area even
+    // without LOS or bot combat state. Idle pre-pull activation stays local.
+    return boss && (boss->IsInCombat() || CthunPullOrdered(ai,boss) ||
+        (CthunSurface(bot->GetMapId(),bot->GetPositionX(),bot->GetPositionY(),bot->GetPositionZ()) &&
+         bot->IsWithinLOSInMap(boss)));
 }
 
 std::vector<CthunPlacement> const& CthunSpreadAction::GroupPlan()
@@ -139,14 +156,14 @@ bool CthunSpreadAction::Prepare()
     // not make every moving player an impassable 10-yard wall: that closed
     // all entry lanes as the raid spread. Final slots provide the spacing.
     unsigned sector=bot->GetGroup()->GetMemberGroup(bot->getObjectGuid());
-    CthunPoint next=CthunChartStep(here,destination,sector);
+    CthunPoint next=CthunEntryStep(here,bot->GetPositionZ(),destination,sector);
     WorldPosition start(bot),end(531,next.x,next.y,bot->GetPositionZ());
     end.setZ(bot->GetMap()->GetHeight(next.x,next.y,bot->GetPositionZ(),true));
-    if(!CthunSurface(531,end.getX(),end.getY(),end.getZ()) || IsHazardNearPosition(end)) return blocked();
+    if(!CthunApproach(531,end.getX(),end.getY(),end.getZ()) || IsHazardNearPosition(end)) return blocked();
     auto path=start.GetPathTo(end,bot);
     if(!end.isPathTo(path)) return blocked();
     for(auto const& waypoint:path)
-        if(!CthunSurface(531,waypoint.getX(),waypoint.getY(),waypoint.getZ()) || IsHazardNearPosition(waypoint)) return blocked();
+        if(!CthunApproach(531,waypoint.getX(),waypoint.getY(),waypoint.getZ()) || IsHazardNearPosition(waypoint)) return blocked();
     preparedDestination=destination;
     preparedPath=path;
     routeBlocked=false;
