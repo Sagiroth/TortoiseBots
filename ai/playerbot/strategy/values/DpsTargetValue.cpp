@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "DpsTargetValue.h"
 #include "RaidDpsTargetPolicy.h"
+#include "playerbot/RaidDpsExclusionPolicy.h"
 #include "playerbot/strategy/actions/NaxxramasDungeonActions.h"
 #include "LeastHpTargetValue.h"
 #include "AttackersValue.h"
@@ -270,6 +271,46 @@ namespace
         return count;
     }
 
+    Unit* GetNefarianBoneConstructTarget(PlayerbotAI* ai)
+    {
+        Player* bot = ai ? ai->GetBot() : nullptr;
+        if (!bot || bot->GetMapId() != 469 || !bot->IsAlive() || !bot->IsInCombat() || ai->IsTank(bot) ||
+            !ai->HasStrategy("nefarian phase3", BotState::BOT_STATE_COMBAT))
+            return nullptr;
+
+        AiObjectContext* context = ai->GetAiObjectContext();
+        Unit* nefarian = nullptr;
+        std::list<ObjectGuid> const possibleTargets = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
+        for (ObjectGuid const& guid : possibleTargets)
+        {
+            Unit* candidate = ai->GetUnit(guid);
+            if (candidate && candidate->GetEntry() == 11583 && candidate->IsAlive() && candidate->IsInCombat())
+            {
+                nefarian = candidate;
+                break;
+            }
+        }
+        if (!nefarian)
+            return nullptr;
+
+        GeneralDpsStrategy strategy(ai, 0.0f);
+        Unit* chosen = nullptr;
+        for (ObjectGuid const& guid : possibleTargets)
+        {
+            Unit* candidate = ai->GetUnit(guid);
+            if (!candidate || candidate->GetEntry() != 14605 || !candidate->IsAlive() ||
+                !PossibleAttackTargetsValue::IsValid(candidate, bot, sPlayerbotAIConfig.sightDistance, false, false) ||
+                candidate == AI_VALUE(Unit*, "cc target") || strategy.IsCcTarget(candidate))
+                continue;
+            if (!chosen || candidate->GetObjectGuid() < chosen->GetObjectGuid())
+                chosen = candidate;
+        }
+
+        return NefarianBoneFocusActive(ai->HasStrategy("nefarian phase3", BotState::BOT_STATE_COMBAT),
+            true, bot->IsAlive(), bot->IsInCombat(), ai->IsTank(bot), nefarian->IsAlive(), nefarian->IsInCombat(),
+            nefarian->GetHealthPercent(), chosen != nullptr) ? chosen : nullptr;
+    }
+
     bool IsAttackedByParty(Unit* target, Group* group)
     {
         for (Player* member : LiveGroupMembers(group))
@@ -434,6 +475,9 @@ Unit* DpsTargetValue::Calculate()
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
 
+    if (Unit* construct = GetNefarianBoneConstructTarget(ai))
+        return construct;
+
     if (Unit* wrap = GetMaexxnaRescueTarget(ai))
         return wrap;
 
@@ -513,6 +557,9 @@ Unit* DpsAoeTargetValue::Calculate()
 
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+
+    if (Unit* construct = GetNefarianBoneConstructTarget(ai))
+        return construct;
 
     if (Unit* wrap = GetMaexxnaRescueTarget(ai))
         return wrap;

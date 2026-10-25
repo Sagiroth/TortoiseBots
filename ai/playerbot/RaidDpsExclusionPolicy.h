@@ -32,4 +32,12 @@ namespace ai
         // A missing object must not turn phase-one boss damage back on.
         return enabled && inBwl && isRazorgore && bossInCombat && (!orbFound || !orbDisabled);
     }
+
+    inline bool NefarianBoneFocusActive(bool optedIn, bool inBwl, bool botAlive,
+        bool botInCombat, bool botIsTank, bool nefarianAlive, bool nefarianInCombat,
+        float nefarianHealthPercent, bool boneConstructAvailable)
+    {
+        return optedIn && inBwl && botAlive && botInCombat && !botIsTank && nefarianAlive &&
+            nefarianInCombat && nefarianHealthPercent < 20.0f && boneConstructAvailable;
+    }
 }

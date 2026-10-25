@@ -28,6 +28,13 @@ namespace ai
         void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
     };
 
+    class NefarianPhaseThreeStrategy : public Strategy
+    {
+    public:
+        NefarianPhaseThreeStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "nefarian phase3"; }
+    };
+
     class EbonrocSwapStrategy : public Strategy
     {
     public:
