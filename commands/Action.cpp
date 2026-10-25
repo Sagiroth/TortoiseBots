@@ -731,7 +731,7 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
     {
         if(intent=="pullback" || !ai::TwinsTeamsReady(ai))
         {
-            SendActionError(handler,reportIntent,"twins-teams","Twins need one living warrior and Searing Pain warlock on each assigned side. Stage and hold all four; use pull, not pullback.");
+            SendActionError(handler,reportIntent,"twins-teams","Twins need one living warrior and Searing Pain warlock on each assigned side; the west warrior needs a trained ranged weapon and ammo. Stage and hold all four; use pull, not pullback.");
             return true;
         }
     }
@@ -784,6 +784,7 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
     }
     if (ai::TwinsRaidControlled(ai) && (context.enemyTarget->GetEntry()==15275 || context.enemyTarget->GetEntry()==15276) && !pullback)
     {
+        ai::TwinsBeginPairedPull(ai,context.enemyTarget);
         // The request is the authorization token. Do not execute generic body
         // pull/reach fallbacks: the two assigned teams own acquisition and drag.
         for (Player* member:context.partyBots)
@@ -792,7 +793,7 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
                 EndFlee(peer);
                 peer->ClearActionClock();
             }
-        SendActionAck(handler,reportIntent,"party",1,std::string(executor->GetName())+" Twins acquisition; damage waits for separated tank ownership");
+        SendActionAck(handler,reportIntent,"party",1,std::string(executor->GetName())+" Twins paired pull armed; both tanks wait for ranged readiness; damage waits for separated ownership");
         return true;
     }
     // How the pull opens, now that the request has the target and has decided:

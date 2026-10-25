@@ -96,6 +96,7 @@ bool DpsHolding(PlayerbotAI*){return false;}
 struct State{bool opening=false;};State ObserveTwins(PlayerbotAI*){return {};}
 bool PullOrdered(PlayerbotAI*,Unit*,Unit*){return false;}
 bool TwinsMayAttack(PlayerbotAI*,Unit*){return true;}
+bool PairWaiting(PlayerbotAI*){return false;}bool PairCasting(PlayerbotAI*){return false;}
 unsigned TankEntry(PlayerbotAI*);
 Unit* LocalTankBoss(PlayerbotAI*a){return a->local?Boss(a,TankEntry(a)):nullptr;}
 namespace ai {bool SelectTwinsTankTarget(PlayerbotAI*,Unit*&);bool SelectTwinsDpsTarget(PlayerbotAI*,Unit*&);bool IsTwinsOpeningTargetExcluded(PlayerbotAI*,Unit*);}

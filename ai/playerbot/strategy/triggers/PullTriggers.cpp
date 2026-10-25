@@ -4,6 +4,7 @@
 #include "playerbot/strategy/Action.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "PullTriggers.h"
+#include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/actions/PullActions.h"
 #include "../../policy/class/ShamanTankPolicy.h"
@@ -96,6 +97,10 @@ bool PullEndTrigger::IsActive()
         ReleaseHeldPartyNow(bot);
         return true;
     }
+
+    // Linked proximity aggro is not the paired ranged opening. Keep its
+    // authorization until both casts are dispatched or the coordinator cancels.
+    if(TwinsPairedPullPending(ai)) return false;
 
     // The return leg follows the intent recorded when the pull was requested
     // (command mode, or the tank's own "pull back" for an automatic pull).

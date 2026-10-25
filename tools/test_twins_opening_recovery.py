@@ -130,6 +130,7 @@ bool PullOrdered(PlayerbotAI*,Unit*,Unit*){return ordered;}Unit*Boss(PlayerbotAI
 unsigned TankEntry(PlayerbotAI*a){return a->entry;}int Side(PlayerbotAI*a){return a->side;}
 Unit*LocalTankBoss(PlayerbotAI*a){return a->local;}Unit*SideTank(PlayerbotAI*a,unsigned,int){return a->GetBot();}
 bool Has(PlayerbotAI*a,const char*n){return a->damage==(std::string(n)=="twins physical dps"?15275:15276);}
+bool PairWaiting(PlayerbotAI*){return false;}
 namespace ai{bool TwinsMayAttack(PlayerbotAI*,Unit*);}
 '''.replace('#include <cassert>','#include <cassert>\n#include <string>')+extract(s,'bool ai::TwinsMayAttack(')+r'''
 int main(){PlayerbotAI a;a.tank=true;a.damage=15275;

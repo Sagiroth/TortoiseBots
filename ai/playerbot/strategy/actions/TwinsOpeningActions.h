@@ -13,6 +13,8 @@ bool TwinsBlocksSpell(PlayerbotAI* ai,uint32 spellId,Unit* target);
 bool TwinsTeamsReady(PlayerbotAI* ai);
 bool TwinsPullCandidate(PlayerbotAI* ai,Unit* target);
 void TwinsEnforceOpening(PlayerbotAI* ai);
+bool TwinsPairedPullPending(PlayerbotAI* ai);
+void TwinsBeginPairedPull(PlayerbotAI* ai,Unit* target);
 bool TwinsOpeningEnabled(PlayerbotAI* ai);
 bool TwinsHealTargetAllowed(PlayerbotAI* ai,Unit* target);
 bool TwinsOpeningTank(PlayerbotAI* ai);

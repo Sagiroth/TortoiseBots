@@ -32,6 +32,7 @@ Unit*GetVictim(){return nullptr;}float GetPositionX(){return p.x;}float GetPosit
 struct PlayerbotAI{Unit bot{{},.5},physical{kTwinsWest},caster{kTwinsEast};unsigned entry=15275;int side=1;bool preparing=true,local=false;Unit*GetBot(){return &bot;}};
 unsigned TankEntry(PlayerbotAI*a){return a->entry;}int Side(PlayerbotAI*a){return a->side;}
 Unit* LocalTankBoss(PlayerbotAI*a){return a->local?&a->physical:nullptr;}
+bool PairWaiting(PlayerbotAI*){return false;}
 bool OtherOrder(PlayerbotAI*,Unit*){return false;}
 Unit* Boss(PlayerbotAI*a,unsigned e){return e==15275?&a->physical:&a->caster;}
 TwinsPoint Point(Unit*u){return u->p;}

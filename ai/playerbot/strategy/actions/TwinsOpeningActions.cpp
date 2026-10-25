@@ -18,6 +18,35 @@
 using namespace ai;
 namespace
 {
+// Map-thread calls may re-enter spell guards while dispatching the pair.
+// Store GUIDs, never player pointers, across updates.
+struct PairedPull
+{
+    ObjectGuid owner,target;
+    uint32 started=0,launched=0;
+    bool pending=false,dispatching=false;
+};
+std::recursive_mutex pairMutex;
+std::map<std::pair<uint32,uint32>,PairedPull> pairedPulls;
+PairedPull* Pair(PlayerbotAI* ai)
+{
+    if(!ai || !ai->GetBot()->GetGroup()) return nullptr;
+    auto i=pairedPulls.find({ai->GetBot()->GetInstanceId(),ai->GetBot()->GetGroup()->GetId()});
+    return i==pairedPulls.end() ? nullptr:&i->second;
+}
+bool PairWaiting(PlayerbotAI* ai)
+{
+    std::lock_guard<std::recursive_mutex> lock(pairMutex);
+    auto* p=Pair(ai);return p && p->pending && !p->dispatching &&
+        uint32(WorldTimer::getMSTime()-p->started)<=30000;
+}
+bool PairCasting(PlayerbotAI* ai)
+{
+    std::lock_guard<std::recursive_mutex> lock(pairMutex);
+    auto* p=Pair(ai);
+    return p && p->launched && uint32(WorldTimer::getMSTime()-p->launched)<3000 &&
+        ai->GetBot()->IsNonMeleeSpellCasted(false,false,false);
+}
 bool Has(PlayerbotAI* ai,char const* name) {return ai->HasStrategy(name,BotState::BOT_STATE_COMBAT);}
 TwinsPoint Point(WorldObject* unit) {return {unit->GetPositionX(),unit->GetPositionY(),unit->GetPositionZ()};}
 int Side(PlayerbotAI* ai) {return TwinsSide(Has(ai,"twins west"),Has(ai,"twins east"));}
@@ -185,7 +214,7 @@ bool DesiredTankPosition(PlayerbotAI* ai,TwinsPoint& destination)
     if(state.opening && local)
     {
         TwinsPoint home=Side(ai)==0 ? kTwinsWest:kTwinsEast;
-        if(local->GetVictim()!=ai->GetBot())
+        if(local->GetVictim()!=ai->GetBot() || PairWaiting(ai))
         {
             // Acquire from range before dragging. The caster may be beside the
             // physical boss, so a melee approach would enter Arcane Burst.
@@ -244,6 +273,85 @@ void ClearWrongTarget(PlayerbotAI* ai,Unit* desired)
 }
 }
 
+bool ai::TwinsPairedPullPending(PlayerbotAI* ai) {return PairWaiting(ai);}
+
+void ai::TwinsBeginPairedPull(PlayerbotAI* ai,Unit* target)
+{
+    std::lock_guard<std::recursive_mutex> lock(pairMutex);
+    uint32 now=WorldTimer::getMSTime();
+    for(auto i=pairedPulls.begin();i!=pairedPulls.end();)
+        if(uint32(now-i->second.started)>120000) i=pairedPulls.erase(i);else ++i;
+    auto& pair=pairedPulls[{ai->GetBot()->GetInstanceId(),ai->GetBot()->GetGroup()->GetId()}];
+    pair={ai->GetBot()->GetObjectGuid(),target->GetObjectGuid(),now,0,true,false};
+    sPlayerbotAIConfig.logEvent(ai,"TwinsPairedPull","armed","west Shoot; east Searing Pain");
+}
+namespace
+{
+void UpdatePairedPull(PlayerbotAI* ai)
+{
+    std::lock_guard<std::recursive_mutex> lock(pairMutex);
+    auto* pair=Pair(ai);
+    if(!pair || !pair->pending || pair->dispatching) return;
+    Player* owner=ai->GetBot()->GetMap()->GetPlayer(pair->owner);
+    auto* ownerAI=owner ? PlayerbotAIStorage::Instance().GetAI(owner):nullptr;
+    auto* pull=ownerAI ? PullStrategy::Get(ownerAI):nullptr;
+    if(!owner || !owner->IsAlive() || owner->GetGroup()!=ai->GetBot()->GetGroup() ||
+        !pull || !pull->IsCommandActive() || pull->IsCommandPullback() || !pull->GetTarget() ||
+        pull->GetTarget()->GetObjectGuid()!=pair->target || !TwinsTeamsReady(ai) ||
+        uint32(WorldTimer::getMSTime()-pair->started)>30000)
+    {
+        pair->pending=false;
+        if(pull && pull->IsCommandActive() && pull->GetTarget() && pull->GetTarget()->GetObjectGuid()==pair->target)
+            pull->OnPullEnded();
+        sPlayerbotAIConfig.logEvent(ai,"TwinsPairedPull","cancelled","order ended, team unavailable or 30s timeout");
+        return;
+    }
+    Player* west=SideTank(ai,15275,0),*east=SideTank(ai,15276,1);
+    Unit* physical=Boss(ai,15275),*caster=Boss(ai,15276);
+    if(!west || !east || !physical || !caster) return;
+    auto* warrior=PlayerbotAIStorage::Instance().GetAI(west);
+    auto* warlock=PlayerbotAIStorage::Instance().GetAI(east);
+    if(west->HasSpell(71) && !warrior->HasAura("defensive stance",west))
+    {Event event;warrior->DoSpecificAction("defensive stance",event,true);return;}
+    // Both acquire ranged LOS before either is allowed to fire. Positioning
+    // remains responsible for validated approach paths (never a body-pull fallback).
+    for(auto const& entry:{std::make_pair(warrior,physical),std::make_pair(warlock,caster)})
+    {
+        Player* bot=entry.first->GetBot();Unit* target=entry.second;
+        if(bot->GetDistance(target)<15.f || bot->GetDistance(target)>28.f ||
+            !bot->IsWithinLOSInMap(target,true) || bot->IsNonMeleeSpellCasted(false,false,false)) return;
+    }
+    // Stop and face BOTH before checking either spell. CastSpell otherwise
+    // spends its first attempt stopping/standing instead of starting the cast.
+    for(auto const& entry:{std::make_pair(warrior,physical),std::make_pair(warlock,caster)})
+    {
+        auto* peer=entry.first;Player* bot=peer->GetBot();
+        peer->StopMoving();bot->AttackStop();bot->SetStandState(UNIT_STAND_STATE_STAND);
+        sServerFacade.SetFacingTo(bot,entry.second);
+        peer->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(entry.second);
+        bot->SetSelectionGuid(entry.second->GetObjectGuid());
+    }
+    // The scoped guard permits only this synchronous preflight/dispatch to
+    // pass the ordinary spell gate. No second bot decision or timer intervenes.
+    pair->dispatching=true;
+    CastShootAction shot(warrior);
+    if(!shot.isPossible() || !warlock->CanCastSpell("searing pain",caster))
+    {pair->dispatching=false;return;}
+    Event event;
+    uint32 first=WorldTimer::getMSTime();
+    bool pain=warlock->CastSpell("searing pain",caster);
+    bool shoot=pain && shot.Execute(event);
+    pair->dispatching=false;
+    pair->pending=false;pair->launched=WorldTimer::getMSTime();
+    if(shoot) pull->NotePullActionCast();
+    // Core projectile/cast times still differ. This measures cast requests,
+    // not impacts, and records partial failure rather than claiming atomicity.
+    sPlayerbotAIConfig.logEvent(ai,"TwinsPairedPull",shoot ? "launched":"cast-failed",
+        "pain="+std::to_string(pain)+" shoot="+std::to_string(shoot)+
+        " dispatchMs="+std::to_string(uint32(pair->launched-first)));
+}
+}
+
 bool ai::TwinsRaidControlled(PlayerbotAI* ai)
 {
     Player* bot=ai ? ai->GetBot():nullptr;
@@ -266,7 +374,9 @@ bool ai::TwinsTeamsReady(PlayerbotAI* ai)
         auto* peer=PlayerbotAIStorage::Instance().GetAI(tank);
         if(entry==15276 && (!peer || !peer->HasSpell("searing pain"))) return false;
     }
-    return true;
+    auto* warrior=PlayerbotAIStorage::Instance().GetAI(SideTank(ai,15275,0));
+    auto* pull=warrior ? PullStrategy::Get(warrior):nullptr;
+    return pull && pull->GetRangedBlocker()==PullRangedBlocker::None;
 }
 bool ai::TwinsPullCandidate(PlayerbotAI* ai,Unit* target)
 {
@@ -279,6 +389,7 @@ bool ai::TwinsMayAttack(PlayerbotAI* ai,Unit* target)
 {
     if(!target || (target->GetEntry()!=15275 && target->GetEntry()!=15276) || !TwinsRaidControlled(ai)) return true;
     auto state=ObserveTwins(ai);
+    if(PairWaiting(ai)) return false;
     if(!state.active && !PullOrdered(ai,Boss(ai,15275),Boss(ai,15276))) return false;
     if(TankEntry(ai)) return LocalTankBoss(ai)==target && SideTank(ai,TankEntry(ai),Side(ai))==ai->GetBot();
     if(!state.active || state.Holding()) return false;
@@ -303,8 +414,9 @@ bool ai::TwinsBlocksSpell(PlayerbotAI* ai,uint32 spellId,Unit* target)
 void ai::TwinsEnforceOpening(PlayerbotAI* ai)
 {
     if(!TwinsRaidControlled(ai)) return;
+    UpdatePairedPull(ai);
     Player* bot=ai->GetBot();
-    if(TankEntry(ai))
+    if(TankEntry(ai) && !PairWaiting(ai))
         if(Unit* local=LocalTankBoss(ai))
             if(local->GetVictim()==bot)
                 if(auto* pull=PullStrategy::Get(ai))
@@ -462,11 +574,12 @@ bool TwinsPositionAction::Prepare()
     {
         Unit* own=Boss(ai,TankEntry(ai));
         if(own && OtherOrder(ai,own) && !ObserveTwins(ai).opening) return false;
+        if(PairCasting(ai)) return false;
         if(!DesiredTankPosition(ai,destination)) return false;
         if(TankEntry(ai)==15275 && own && GroupEngaged(ai,own) && bot->HasSpell(71) &&
             !ai->HasAura("defensive stance",bot)) return false;
         Unit* pickup=LocalTankBoss(ai);
-        if(ObserveTwins(ai).opening && pickup && pickup->GetVictim()!=bot &&
+        if(ObserveTwins(ai).opening && pickup && (pickup->GetVictim()!=bot || PairWaiting(ai)) &&
             bot->GetDistance(pickup)>=15.f && bot->GetDistance(pickup)<=28.f && bot->IsWithinLOSInMap(pickup,true) && !danger)
             return false; // fire the acquisition shot before further movement
         // Establish ranged threat before repositioning, if already safely in
@@ -589,6 +702,7 @@ bool TwinsPositionAction::Execute(Event&)
 }
 bool TwinsEngageAction::isUseful()
 {
+    if(PairWaiting(ai) || PairCasting(ai)) return false;
     if(!TwinsOpeningEnabled(ai)) return false;
     Unit* target=nullptr;
     bool controlled=SelectTwinsTankTarget(ai,target) || SelectTwinsDpsTarget(ai,target);
@@ -607,6 +721,7 @@ bool TwinsEngageAction::isUseful()
 }
 bool TwinsEngageAction::Execute(Event& event)
 {
+    if(PairWaiting(ai) || PairCasting(ai)) return false;
     if(!TwinsOpeningEnabled(ai)) return false;
     if(PetOnCaster(ai)) RecallPet(ai);
     Unit* target=nullptr;
@@ -635,7 +750,7 @@ bool TwinsEngageAction::Execute(Event& event)
 bool TwinsSearingPainAction::isUseful()
 {
     Unit* target=nullptr;
-    return TankEntry(ai)==15276 && SelectTwinsTankTarget(ai,target) && target &&
+    return !PairWaiting(ai) && !PairCasting(ai) && TankEntry(ai)==15276 && SelectTwinsTankTarget(ai,target) && target &&
         ai->GetBot()->GetDistance(target)>12.f && ai->CanCastSpell("searing pain",target);
 }
 bool TwinsSearingPainAction::Execute(Event&)
@@ -659,6 +774,9 @@ public:
             (dynamic_cast<AttackAction*>(action) || dynamic_cast<CastSpellAction*>(action) || name=="pet attack") &&
             IsRaidDpsTargetExcluded(ai,action->GetTarget())) return 0;
         if(!TwinsOpeningEnabled(ai)) return 1;
+        if(PairCasting(ai) && TankEntry(ai) && name!="move away from hazard" && name!="flee" && name!="runaway" &&
+            (dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) ||
+             dynamic_cast<CastSpellAction*>(action) || name=="twins engage" || name=="twins searing pain")) return 0;
         if(name=="twins position" || name=="twins engage" || name=="twins searing pain" ||
             name=="set facing" || name=="move away from hazard" || name=="flee" || name=="runaway") return 1;
         if(TankEntry(ai) && ObserveTwins(ai).opening && (name=="pull action" || name=="reach pull")) return 0;

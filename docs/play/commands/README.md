@@ -197,3 +197,15 @@ strategy immediately and prints combat strategies; unknown strategy changes are
 rejected. Other mature commands retain their forwarding behavior. See
 [local raid tactics](../local-raid-tactics.md#twin-emperors-side-teams-and-teleport-handoff-opt-in)
 for side roles, opening pull selection and equipment requirements.
+
+With both side teams staged, target either twin and use `.bot action pull`.
+The assigned west warrior and east warlock wait until BOTH have 15–28 yard
+range and LOS, then issue Shoot and Searing Pain in one coordinator update.
+A ranged weapon, trained skill and ammunition are required on the warrior.
+The warlock needs Searing Pain and enough mana. Defensive Stance is prepared
+before dispatch. Other damage still waits for separated tank ownership.
+The pair cancels when the pull order ends, a team becomes unavailable, or
+30 seconds elapse. Do not use pullback. Cast requests are coordinated;
+cast completion, projectile arrival and hit/resist results are not simultaneous.
+Core proximity aggro can still happen on approach. `TwinsPairedPull` diagnostics
+report armed, launched (including dispatch milliseconds), cancelled or cast-failed.
