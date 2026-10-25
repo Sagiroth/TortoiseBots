@@ -3,6 +3,9 @@
 #include "InvalidTargetValue.h"
 #include "playerbot/strategy/actions/NaxxramasDungeonActions.h"
 #include "PossibleAttackTargetsValue.h"
+#include "RaidDpsTargetPolicy.h"
+#include "TargetValue.h"
+#include "ViscidusGlobPolicy.h"
 #include "EnemyPlayerValue.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -54,6 +57,27 @@ bool InvalidTargetValue::Calculate()
     if (ShouldDropMaexxnaRescueTarget(ai, target))
         return true;
     if (IsMaexxnaRescueTarget(ai, target))
+        return false;
+
+    // Viscidus globs are deliberately passive and therefore fail the ordinary
+    // attacker-validity test until damaged. Keep an opted-in DPS bot's selected
+    // glob only while it remains in the nearby hostile scan and passes the same
+    // attackability, range, CC and raid-exclusion checks used during selection.
+    Creature* glob = dynamic_cast<Creature*>(target);
+    if (qualifier == "current target" && glob &&
+        CanUseViscidusGlobTarget(bot->GetMapId(),
+            ai->HasStrategy("viscidus glob focus", BotState::BOT_STATE_COMBAT),
+            bot->IsAlive(), bot->IsInCombat(), ai->IsTank(bot), glob->GetEntry(),
+            [&]()
+            {
+                std::list<ObjectGuid> nearbyTargets = AI_VALUE(std::list<ObjectGuid>, "possible targets no los");
+                return std::find(nearbyTargets.begin(), nearbyTargets.end(), target->getObjectGuid()) != nearbyTargets.end() &&
+                    sServerFacade.IsAlive(target) &&
+                    PossibleAttackTargetsValue::IsPossibleTarget(target, bot,
+                        sPlayerbotAIConfig.sightDistance, false) &&
+                    target != AI_VALUE(Unit*, "cc target") && !IsRaidCrowdControlMarkedTarget(ai, target) &&
+                    !IsRaidDpsTargetExcluded(ai, target);
+            }))
         return false;
 
     // A player command deliberately selects a hostile target before either side

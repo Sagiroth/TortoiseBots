@@ -3,6 +3,7 @@
 #include "DpsTargetValue.h"
 #include "RaidDpsTargetPolicy.h"
 #include "playerbot/strategy/NefarianAddTargetPolicy.h"
+#include "ViscidusGlobPolicy.h"
 #include "playerbot/RaidDpsExclusionPolicy.h"
 #include "playerbot/strategy/actions/NaxxramasDungeonActions.h"
 #include "LeastHpTargetValue.h"
@@ -351,6 +352,47 @@ namespace
         return chosen;
     }
 
+    Unit* GetViscidusGlobTarget(PlayerbotAI* ai)
+    {
+        Player* bot = ai ? ai->GetBot() : nullptr;
+        if (!bot || !ShouldFocusViscidusGlob(bot->GetMapId(),
+                ai->HasStrategy("viscidus glob focus", BotState::BOT_STATE_COMBAT),
+                bot->IsAlive(), bot->IsInCombat(), ai->IsTank(bot), VISCIDUS_GLOB_ENTRY))
+            return nullptr;
+
+        AiObjectContext* context = ai->GetAiObjectContext();
+        if (!context)
+            return nullptr;
+
+        // Glob AIs intentionally never engage attackers, so they are absent from
+        // possible attack targets. During Viscidus's exploded phase use the
+        // nearby hostile scan and validate attackability without an aggro gate.
+        std::list<ObjectGuid> const nearbyTargets = AI_VALUE(std::list<ObjectGuid>, "possible targets no los");
+        DpsTargetStrategy strategy(ai);
+        Unit* chosen = nullptr;
+        Unit* ccTarget = AI_VALUE(Unit*, "cc target");
+        for (ObjectGuid const& guid : nearbyTargets)
+        {
+            Unit* candidate = ai->GetUnit(guid);
+            if (!candidate ||
+                !CanUseViscidusGlobTarget(bot->GetMapId(), true, bot->IsAlive(),
+                    bot->IsInCombat(), ai->IsTank(bot), candidate->GetEntry(), [&]()
+                    {
+                        return sServerFacade.IsAlive(candidate) &&
+                            PossibleAttackTargetsValue::IsPossibleTarget(candidate, bot,
+                                sPlayerbotAIConfig.sightDistance, false) &&
+                            !strategy.IsCcTarget(candidate) && candidate != ccTarget &&
+                            !IsRaidDpsTargetExcluded(ai, candidate);
+                    }))
+                continue;
+
+            if (!chosen || candidate->GetHealth() < chosen->GetHealth())
+                chosen = candidate;
+        }
+
+        return chosen;
+    }
+
     Unit* GetNefarianBoneConstructTarget(PlayerbotAI* ai)
     {
         Player* bot = ai ? ai->GetBot() : nullptr;
@@ -577,6 +619,9 @@ Unit* DpsTargetValue::Calculate()
 
     if (Unit* construct = GetNefarianBoneConstructTarget(ai))
         return construct;
+
+    if (Unit* glob = GetViscidusGlobTarget(ai))
+        return glob;
 
     if (Unit* wrap = GetMaexxnaRescueTarget(ai))
         return wrap;

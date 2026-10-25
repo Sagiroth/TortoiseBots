@@ -9,6 +9,8 @@
 
 namespace ai
 {
+    bool IsRaidCrowdControlMarkedTarget(PlayerbotAI* ai, Unit* target);
+
     class FindTargetStrategy
     {
     public:

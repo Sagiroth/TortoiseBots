@@ -126,7 +126,10 @@ struct DpsTargetStrategy : FindNonCcTargetStrategy {
     DpsTargetStrategy(PlayerbotAI* ai) : FindNonCcTargetStrategy{ai} {}
 };
 '''
-        fixture += active + reserved + select + r'''
+        shared = function((values / "TargetValue.cpp").read_text(),
+                          "bool ai::IsRaidCrowdControlMarkedTarget(").replace(
+                              "bool ai::", "bool ", 1)
+        fixture += active + shared + reserved + select + r'''
 int main() {
     Player bot;
     PlayerbotAI ai{&bot, {}, {}};

@@ -1,5 +1,6 @@
 #pragma once
 #include "generic/ZulGurubStrategies.h"
+#include "generic/TempleOfAhnQirajStrategies.h"
 #include "generic/RuinsOfAhnQirajStrategies.h"
 
 #include "generic/RoleConsumableStrategy.h"
@@ -202,6 +203,7 @@ namespace ai
             creators["kt interrupt"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptStrategy(ai); };
             creators["thaddius polarity"] = [](PlayerbotAI* ai) { return new ThaddiusPolarityStrategy(ai); };
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatStrategy(ai); };
+            creators["viscidus glob focus"] = [](PlayerbotAI* ai) { return new ViscidusGlobStrategy(ai); };
             creators["ossirian crystal"] = [](PlayerbotAI* ai) { return new OssirianCrystalStrategy(ai); };
             creators["grobbulus clouds"] = [](PlayerbotAI* ai) { return new GrobbulusCloudStrategy(ai); };
             creators["loatheb spore guard"] = [](PlayerbotAI* ai) { return new LoathebSporeGuardStrategy(ai); };

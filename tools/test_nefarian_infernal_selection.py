@@ -62,6 +62,7 @@ std::vector<Unit*> possible;
 Unit* GetMarliSpawnTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetThekalBalanceTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetNefarianBoneConstructTarget(PlayerbotAI*) { return construct; }
+Unit* GetViscidusGlobTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMaexxnaRescueTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetOnyxiaWhelpTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetGroupTankTarget(PlayerbotAI*) { return tankTarget; }

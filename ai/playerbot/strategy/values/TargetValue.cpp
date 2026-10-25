@@ -533,3 +533,19 @@ std::list<ObjectGuid> FearWardTargetsValue::Calculate()
         tankTargets.push_back(bot->GetObjectGuid());
     return tankTargets;
 }
+
+// Raid focus pickers keep explicit CC marks out of their encounter overrides.
+// The general target tournament retains upstream's timed CC protection policy.
+bool ai::IsRaidCrowdControlMarkedTarget(PlayerbotAI* ai, Unit* attacker)
+{
+    if (!ai || !ai->GetBot() || !attacker)
+        return false;
+    class RaidMarkProbe : public FindNonCcTargetStrategy
+    {
+    public:
+        explicit RaidMarkProbe(PlayerbotAI* ai) : FindNonCcTargetStrategy(ai) {}
+        using FindNonCcTargetStrategy::IsCcMark;
+        void CheckAttacker(Unit*, ThreatManager*) override {}
+    } probe(ai);
+    return probe.IsCcMark(attacker);
+}
