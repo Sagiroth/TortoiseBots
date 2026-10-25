@@ -809,6 +809,40 @@ namespace ai
             Unit* target = GetTarget();
             return !target || !AnotherHealerCoversAlly(ai, target, HealReachLimit(ai));
         }
+
+        bool MoveIntoRange(Unit* target, float distance) override
+        {
+            if (!target || !sServerFacade.IsFriendlyTo(bot, target))
+                return false;
+
+            bool const inLos = bot->IsWithinLOSInMap(target, true);
+            if (inLos && IsWithinReach(target))
+                return true;
+
+            // Ranged chase destinations fail the core's dungeon melee-reach
+            // check. A healer must use a path-checked point move, not attack its
+            // patient and install a chase that never advances.
+            if (!inLos)
+                return MoveTo(target->GetMapId(), target->getPositionX(),
+                    target->getPositionY(), target->getPositionZ());
+
+            WorldPosition healer(bot);
+            WorldPosition patient(target);
+            PullFiringPosition point = ComputePullFiringPosition(
+                healer.getX(), healer.getY(), patient.getX(), patient.getY(), distance);
+            if (!point.valid)
+                return false;
+
+            WorldPosition position(target->GetMapId(), point.x, point.y, healer.getZ());
+            position.setZ(position.GetHeight());
+            // Reject other floors and invalid/hazardous positions rather than
+            // falling back to walking directly onto a tank under the boss.
+            if (std::fabs(position.getZ() - healer.getZ()) > 4.0f ||
+                !IsValidPosition(position, patient))
+                return false;
+
+            return MoveTo(position.GetMapId(), position.getX(), position.getY(), position.getZ());
+        }
     };
 
     class ReachPartyMemberToResurrectAction : public ReachTargetAction
