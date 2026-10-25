@@ -7,6 +7,15 @@
 
 namespace ai
 {
+    Unit* GetActiveLocustSwarm(PlayerbotAI* ai);
+    class LocustSwarmRetreatAction : public MovementAction
+    {
+    public:
+        LocustSwarmRetreatAction(PlayerbotAI* ai) : MovementAction(ai, "locust swarm retreat") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
+
     Unit* GetMaexxnaRescueTarget(PlayerbotAI* ai);
     bool ShouldDropMaexxnaRescueTarget(PlayerbotAI* ai, Unit* target);
     bool IsMaexxnaRescueTarget(PlayerbotAI* ai, Unit* target);

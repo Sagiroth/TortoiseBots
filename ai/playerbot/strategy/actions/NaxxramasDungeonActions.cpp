@@ -99,3 +99,97 @@ bool MaexxnaRescueAction::isUseful()
     Unit* wrap = GetMaexxnaRescueTarget(ai);
     return wrap && wrap != AI_VALUE(Unit*, "current target");
 }
+
+#include "playerbot/LocustSwarmPolicy.h"
+Unit* ai::GetActiveLocustSwarm(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (bot->GetMapId() != 533 || !ai->HasStrategy("locust swarm retreat", BotState::BOT_STATE_COMBAT))
+        return nullptr;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    PositionMap& positions = AI_VALUE(PositionMap&, "position");
+    auto hold = positions.find("pull hold");
+    bool const ordered = ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT) ||
+        (hold != positions.end() && hold->second.isSet());
+    if (!LocustSwarmEligible(ai->HasStrategy("locust swarm retreat", BotState::BOT_STATE_COMBAT),
+        bot->IsInWorld() && !bot->IsBeingTeleported() && bot->IsAlive(),
+        bot->GetMapId() == 533, bot->IsInCombat(), ai->IsTank(bot), ordered))
+        return nullptr;
+
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* boss = ai->GetUnit(guid);
+        if (boss && boss->GetEntry() == 15956 && boss->IsInMap(bot) &&
+            boss->IsAlive() && boss->IsInCombat() && boss->HasAura(28785))
+            return boss;
+    }
+    return nullptr;
+}
+
+bool LocustSwarmRetreatAction::isUseful()
+{
+    Unit* boss = GetActiveLocustSwarm(ai);
+    return MovementAction::isUseful() && boss &&
+        LocustSwarmNeedsRetreat(bot->GetCombatDistance(boss));
+}
+
+bool LocustSwarmRetreatAction::Execute(Event& event)
+{
+    Unit* boss = GetActiveLocustSwarm(ai);
+    if (!boss || !LocustSwarmNeedsRetreat(bot->GetCombatDistance(boss)))
+        return false;
+
+    // Stop an already-running chase even if all escape routes fail validation.
+    ai->StopMoving();
+    WorldPosition const start(bot);
+    WorldPosition const center(boss);
+    float const radius = kLocustSwarmClearance + 1.0f + bot->GetCombatReach() + boss->GetCombatReach();
+    float const away = center.GetAngleTo(start);
+    // Prefer directly outward. Destinations are on one fixed boss-centered
+    // ring, not an additional step from the bot on every reaction tick.
+    for (float offset : { 0.0f, 0.35f, -0.35f, 0.7f, -0.7f, 1.05f, -1.05f })
+    {
+        float const angle = away + offset;
+        WorldPosition point = center + WorldPosition(0, radius * cos(angle), radius * sin(angle), 0.0f);
+        point.setZ(point.GetHeight());
+        if (fabs(point.getZ() - start.getZ()) > 5.0f || IsHazardNearPosition(point) ||
+            !bot->IsWithinLOS(point.getX(), point.getY(), point.getZ() + bot->GetCollisionHeight()) ||
+            !start.canPathTo(point, bot))
+            continue;
+
+        // Reject paths that initially dive closer to the moving boss, or cross
+        // known hazards. Re-evaluate against the boss's current position each action.
+        auto const path = start.GetPathTo(point, bot);
+        if (!point.isPathTo(path))
+            continue;
+        bool safePath = true;
+        for (WorldPosition const& waypoint : path)
+            if (fabs(waypoint.getZ() - start.getZ()) > 5.0f || IsHazardNearPosition(waypoint) ||
+                center.distance(waypoint) + 1.0f < center.distance(start))
+                safePath = false;
+        if (!safePath)
+            continue;
+        bool nearUnpulled = false;
+        for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets"))
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (unit && unit->IsAlive() && !unit->IsInCombat() &&
+                sServerFacade.getDistance2d(unit, point.getX(), point.getY()) < sPlayerbotAIConfig.aggroDistance)
+            {
+                nearUnpulled = true;
+                break;
+            }
+        }
+        if (!nearUnpulled && MoveTo(bot->GetMapId(), point.getX(), point.getY(), point.getZ(),
+            false, IsReaction(), false, true))
+        {
+            if (IsReaction())
+                WaitForReach(start.distance(point));
+            return true;
+        }
+    }
+    return false;
+}

@@ -3,6 +3,18 @@
 
 namespace ai
 {
+    class LocustSwarmRetreatStrategy : public Strategy
+    {
+    public:
+        LocustSwarmRetreatStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "locust swarm retreat"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     class MaexxnaRescueStrategy : public Strategy
     {
     public:

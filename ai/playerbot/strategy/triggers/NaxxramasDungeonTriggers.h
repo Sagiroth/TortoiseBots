@@ -4,6 +4,13 @@
 
 namespace ai
 {
+    class LocustSwarmTrigger : public Trigger
+    {
+    public:
+        LocustSwarmTrigger(PlayerbotAI* ai) : Trigger(ai, "locust swarm active", 1) {}
+        bool IsActive() override;
+    };
+
     class MaexxnaRescueTrigger : public Trigger
     {
     public:

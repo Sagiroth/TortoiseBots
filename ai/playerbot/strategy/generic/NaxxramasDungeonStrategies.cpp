@@ -74,3 +74,46 @@ void MaexxnaRescueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode("maexxna rescue needed",
         NextAction::array(0, new NextAction("maexxna rescue", 80.0f), nullptr)));
 }
+
+#include "playerbot/LocustSwarmPolicy.h"
+#include "playerbot/strategy/actions/NaxxramasDungeonActions.h"
+#include "playerbot/strategy/actions/ReachTargetActions.h"
+namespace
+{
+class LocustSwarmMultiplier : public Multiplier
+{
+public:
+    LocustSwarmMultiplier(PlayerbotAI* ai) : Multiplier(ai, "locust swarm movement") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || !GetActiveLocustSwarm(ai))
+            return 1.0f;
+        std::string const& name = action->getName();
+        bool const escape = name == "locust swarm retreat" || name == "raid bomb runout" ||
+            name == "move away from hazard";
+        return LocustSwarmBlocksAction(dynamic_cast<MovementAction*>(action) != nullptr,
+            dynamic_cast<CastReachTargetSpellAction*>(action) != nullptr, escape) ? 0.0f : 1.0f;
+    }
+};
+}
+
+void LocustSwarmRetreatStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("locust swarm active",
+        NextAction::array(0, new NextAction("locust swarm retreat", ACTION_EMERGENCY + 7), NULL)));
+}
+
+void LocustSwarmRetreatStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitCombatTriggers(triggers);
+}
+
+void LocustSwarmRetreatStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new LocustSwarmMultiplier(ai));
+}
+
+void LocustSwarmRetreatStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}
