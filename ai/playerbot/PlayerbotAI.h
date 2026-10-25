@@ -9,6 +9,7 @@
 #include "BotState.h"
 #include "PlayerTalentSpec.h"
 #include <stack>
+#include <chrono>
 #include "strategy/IterateItemsMask.h"
 #include "BotDiagnostics.h"
 #include "playerbot/DeathClusterPolicy.h"
@@ -1069,6 +1070,8 @@ protected:
 	// alive each tick without dereferencing it. Set in SetMaster().
 	// Used by RevalidateMasterPointer() at the top of UpdateAI.
 	ObjectGuid masterGuid;
+    ObjectGuid instanceLimitNoticeMaster;
+    std::chrono::steady_clock::time_point instanceLimitNoticeTime{};
 	uint32 accountId;
     AiObjectContext* aiObjectContext;
     Engine* currentEngine;

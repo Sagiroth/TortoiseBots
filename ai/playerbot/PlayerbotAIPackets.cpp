@@ -1,3 +1,5 @@
+#include "Chat/Chat.h"
+#include "../../runtime/BotManager.h"
 #include "playerbot/playerbot.h"
 #include "PlayerbotAI.h"
 #include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
@@ -193,6 +195,38 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 	// thread never copy that opcode to the bot.
 	switch (packet.getOpcode())
 	{
+    case SMSG_TRANSFER_ABORTED:
+    {
+        if (packet.size() < 1 || !bot || !bot->GetSession() ||
+            !bot->GetSession()->IsHeadless() ||
+            !TortoiseBots::BotManager::Instance().IsBot(bot->GetObjectGuid()))
+            return;
+
+        WorldPacket copy(packet);
+        copy.rpos(0);
+        uint8 reason;
+        copy >> reason;
+        if (reason != TRANSFER_ABORT_TOO_MANY_INSTANCES)
+            return;
+
+        Player* controller = GetMaster();
+        if (!controller || !controller->GetSession() ||
+            !controller->GetSession()->HasNetworkTransport())
+            return;
+
+        auto const now = std::chrono::steady_clock::now();
+        if (instanceLimitNoticeMaster == controller->GetObjectGuid() &&
+            now - instanceLimitNoticeTime < std::chrono::seconds(30))
+            return;
+        instanceLimitNoticeMaster = controller->GetObjectGuid();
+        instanceLimitNoticeTime = now;
+        // Report the core's reason without probing or changing admission state.
+        // Send now to the live controller; do not retain a player/session pointer.
+        ChatHandler(controller).PSendSysMessage(
+            "%s can't enter: bot account hit the %u instances/hour limit. Try again after an earlier entry expires.",
+            bot->GetName(), unsigned(MAX_INSTANCE_PER_ACCOUNT_PER_HOUR));
+        return;
+    }
 	case SMSG_SPELL_FAILURE:
 	{
 		WorldPacket p(packet);
