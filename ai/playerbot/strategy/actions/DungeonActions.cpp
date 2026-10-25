@@ -31,7 +31,8 @@ bool MoveAwayFromHazard::Execute(Event& event)
     {
         const WorldPosition& hazardPosition = hazard.first;
         const float distance = bot->GetDistance(hazardPosition.getX(), hazardPosition.getY(), hazardPosition.getZ());
-        if (distance < closestHazardDistance)
+        // A nearer hazard outside the bot must not mask a containing hazard.
+        if (distance <= hazard.second && distance < closestHazardDistance)
         {
             closestHazardDistance = distance;
             closestHazard = &hazard;
