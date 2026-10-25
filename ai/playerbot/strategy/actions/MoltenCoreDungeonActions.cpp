@@ -161,6 +161,9 @@ bool GeddonInfernoRetreatAction::Execute(Event& event)
 bool ai::IsRaidDpsTargetExcluded(PlayerbotAI* ai, Unit* target)
 {
     Player* bot = ai->GetBot();
+    // DPS target values call this outside raids too; avoid strategy lookups there.
+    if (bot->GetMapId() != 409)
+        return false;
     if (!target || !target->IsAlive() || !target->IsInMap(bot) || !bot->IsAlive() || !bot->IsInCombat())
         return false;
     RaidDpsEncounter const encounter = RaidDpsEncounterForTarget(target->GetEntry(),

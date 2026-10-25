@@ -271,7 +271,9 @@ float GeddonInfernoMultiplier::GetValue(Action* action)
 
 float RaidBombMovementMultiplier::GetValue(Action* action)
 {
-    if (!action || !RaidBombMovementAllowed(ai) || !GetRaidBombAura(ai))
+    // The multiplier is installed globally; inspect the encounter aura before
+    // doing any group/hold-order work for ordinary combat actions.
+    if (!action || !GetRaidBombAura(ai) || !RaidBombMovementAllowed(ai))
         return 1.0f;
     std::string const& name = action->getName();
     if (name == "raid bomb runout" || name == "geddon inferno retreat" || name == "move away from hazard")
