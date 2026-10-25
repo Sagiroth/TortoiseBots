@@ -1,5 +1,6 @@
 #pragma once
 #include "../actions/KurinnaxxActions.h"
+#include "playerbot/strategy/generic/KriCloudStrategy.h"
 #include "playerbot/strategy/generic/SarturaWhirlwindStrategy.h"
 
 #include "RagnarosTriggers.h"
@@ -331,6 +332,7 @@ namespace ai
             creators["leave molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreLeaveDungeonTrigger(ai); };
             creators["maexxna rescue needed"] = [](PlayerbotAI* ai) { return new MaexxnaRescueTrigger(ai); };
             creators["kt fissure nearby"] = [](PlayerbotAI* ai) { return new KelThuzadFissureTrigger(ai); };
+            creators["kri cloud nearby"] = [](PlayerbotAI* ai) { return new KriCloudTrigger(ai); };
             creators["sartura whirlwind nearby"] = [](PlayerbotAI* ai) { return new SarturaWhirlwindTrigger(ai); };
             creators["sapphiron blizzard nearby"] = [](PlayerbotAI* ai) { return new SapphironBlizzardTrigger(ai); };
             creators["patchwerk melee unsafe"] = [](PlayerbotAI* ai) { return new PatchwerkMeleeTrigger(ai); };

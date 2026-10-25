@@ -1,5 +1,6 @@
 #pragma once
 #include "KurinnaxxActions.h"
+#include "KriCloudActions.h"
 #include "SarturaWhirlwindActions.h"
 #include "KelThuzadFissureActions.h"
 
@@ -430,6 +431,7 @@ namespace ai
             creators["move away from geddon"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayAction(ai); };
 
             creators["kt fissure escape"] = [](PlayerbotAI* ai) { return new KelThuzadFissureEscapeAction(ai); };
+            creators["kri cloud escape"] = [](PlayerbotAI* ai) { return new KriCloudEscapeAction(ai); };
             creators["sartura whirlwind escape"] = [](PlayerbotAI* ai) { return new SarturaWhirlwindEscapeAction(ai); };
             creators["move away from hazard"] = [](PlayerbotAI* ai) { return new MoveAwayFromHazard(ai); };
             creators["raid bomb runout"] = [](PlayerbotAI* ai) { return new RaidBombRunoutAction(ai); };

@@ -3,6 +3,7 @@
 #include "playerbot/strategy/actions/KelThuzadFissureActions.h"
 #include "HazardsValue.h"
 #include "playerbot/strategy/actions/SarturaWhirlwindActions.h"
+#include "playerbot/strategy/actions/KriCloudActions.h"
 
 #include "playerbot/strategy/actions/GehennasRainHazards.h"
 #include "GrobbulusCloudHazards.h"
@@ -175,6 +176,8 @@ std::list<HazardPosition> HazardsValue::Calculate()
     hazards.splice(hazards.end(), clouds);
     auto blizzards = GetSapphironBlizzardHazards(ai);
     hazards.splice(hazards.end(), blizzards);
+    auto kriClouds = GetKriCloudHazards(ai);
+    hazards.splice(hazards.end(), kriClouds);
     auto whirlwinds = GetSarturaWhirlwindHazards(ai);
     hazards.splice(hazards.end(), whirlwinds);
 
