@@ -68,3 +68,9 @@ void FourHorsemanFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& trigge
 		"end four horseman fight",
 		NextAction::array(0, new NextAction("disable four horseman fight strategy", 100.0f), NULL)));
 }
+
+void MaexxnaRescueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("maexxna rescue needed",
+        NextAction::array(0, new NextAction("maexxna rescue", 80.0f), nullptr)));
+}

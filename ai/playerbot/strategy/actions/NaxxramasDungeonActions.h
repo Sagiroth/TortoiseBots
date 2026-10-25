@@ -3,9 +3,21 @@
 #include "DungeonActions.h"
 #include "ChangeStrategyAction.h"
 #include "UseItemAction.h"
+#include "AttackAction.h"
 
 namespace ai
 {
+    Unit* GetMaexxnaRescueTarget(PlayerbotAI* ai);
+    bool ShouldDropMaexxnaRescueTarget(PlayerbotAI* ai, Unit* target);
+    bool IsMaexxnaRescueTarget(PlayerbotAI* ai, Unit* target);
+    class MaexxnaRescueAction : public AttackAction
+    {
+    public:
+        MaexxnaRescueAction(PlayerbotAI* ai) : AttackAction(ai, "maexxna rescue") {}
+        Unit* GetTarget() override { return GetMaexxnaRescueTarget(ai); }
+        bool isUseful() override;
+    };
+
     class NaxxramasEnableDungeonStrategyAction : public ChangeAllStrategyAction
     {
     public:

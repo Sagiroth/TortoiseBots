@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "DpsTargetValue.h"
 #include "RaidDpsTargetPolicy.h"
+#include "playerbot/strategy/actions/NaxxramasDungeonActions.h"
 #include "LeastHpTargetValue.h"
 #include "AttackersValue.h"
 #include "PossibleAttackTargetsValue.h"
@@ -433,6 +434,9 @@ Unit* DpsTargetValue::Calculate()
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
 
+    if (Unit* wrap = GetMaexxnaRescueTarget(ai))
+        return wrap;
+
     if (Unit* whelp = GetOnyxiaWhelpTarget(ai))
         return whelp;
 
@@ -509,6 +513,9 @@ Unit* DpsAoeTargetValue::Calculate()
 
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+
+    if (Unit* wrap = GetMaexxnaRescueTarget(ai))
+        return wrap;
 
     if (Unit* whelp = GetOnyxiaWhelpTarget(ai))
         return whelp;

@@ -3,6 +3,15 @@
 
 namespace ai
 {
+    class MaexxnaRescueStrategy : public Strategy
+    {
+    public:
+        MaexxnaRescueStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "maexxna rescue"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+
     class NaxxramasDungeonStrategy : public Strategy
     {
     public:

@@ -4,6 +4,13 @@
 
 namespace ai
 {
+    class MaexxnaRescueTrigger : public Trigger
+    {
+    public:
+        MaexxnaRescueTrigger(PlayerbotAI* ai) : Trigger(ai, "maexxna rescue needed", 1) {}
+        bool IsActive() override;
+    };
+
     class NaxxramasEnterDungeonTrigger : public EnterDungeonTrigger
     {
     public:

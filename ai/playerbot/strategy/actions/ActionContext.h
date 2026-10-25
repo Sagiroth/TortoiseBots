@@ -359,6 +359,7 @@ namespace ai
             creators["ebonroc shadow swap"] = [](PlayerbotAI* ai) { return new EbonrocShadowSwapAction(ai); };
             creators["enable blackwing lair strategy"] = [](PlayerbotAI* ai) { return new BlackwingLairEnableDungeonStrategyAction(ai); };
             creators["disable blackwing lair strategy"] = [](PlayerbotAI* ai) { return new BlackwingLairDisableDungeonStrategyAction(ai); };
+            creators["maexxna rescue"] = [](PlayerbotAI* ai) { return new MaexxnaRescueAction(ai); };
             creators["enable naxxramas strategy"] = [](PlayerbotAI* ai) { return new NaxxramasEnableDungeonStrategyAction(ai); };
             creators["disable naxxramas strategy"] = [](PlayerbotAI* ai) { return new NaxxramasDisableDungeonStrategyAction(ai); };
             creators["enable zul'gurub strategy"] = [](PlayerbotAI* ai) { return new ZulgurubEnableDungeonStrategyAction(ai); };

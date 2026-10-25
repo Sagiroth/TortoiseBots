@@ -322,6 +322,7 @@ namespace ai
             creators["leave onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairLeaveDungeonTrigger(ai); };
             creators["enter molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreEnterDungeonTrigger(ai); };
             creators["leave molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreLeaveDungeonTrigger(ai); };
+            creators["maexxna rescue needed"] = [](PlayerbotAI* ai) { return new MaexxnaRescueTrigger(ai); };
             creators["enter naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasEnterDungeonTrigger(ai); };
             creators["leave naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasLeaveDungeonTrigger(ai); };
             creators["ebonroc shadow swap needed"] = [](PlayerbotAI* ai) { return new EbonrocShadowSwapTrigger(ai); };

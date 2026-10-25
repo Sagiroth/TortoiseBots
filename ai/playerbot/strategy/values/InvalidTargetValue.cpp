@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "InvalidTargetValue.h"
+#include "playerbot/strategy/actions/NaxxramasDungeonActions.h"
 #include "PossibleAttackTargetsValue.h"
 #include "EnemyPlayerValue.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -49,6 +50,11 @@ bool InvalidTargetValue::Calculate()
             return true;
         }
     }
+
+    if (ShouldDropMaexxnaRescueTarget(ai, target))
+        return true;
+    if (IsMaexxnaRescueTarget(ai, target))
+        return false;
 
     // A player command deliberately selects a hostile target before either side
     // has threat.  The ordinary validity path requires active combat, which made
