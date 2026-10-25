@@ -113,6 +113,7 @@ bool IsRaidDpsTargetExcluded(PlayerbotAI*,Unit* u) { return u->excluded; }
 Unit *ordered=nullptr, *rti=nullptr, *tankTarget=nullptr;
 Unit* GetNefarianBoneConstructTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetFankrissSpawnTarget(PlayerbotAI*) { return nullptr; }
+Unit* GetAyamissLarvaTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetArlokkPantherTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMarliSpawnTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetThekalBalanceTarget(PlayerbotAI*) { return nullptr; }

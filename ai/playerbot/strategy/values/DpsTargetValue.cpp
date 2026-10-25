@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "DpsTargetValue.h"
 #include "FankrissSpawnTarget.h"
+#include "AyamissLarvaTarget.h"
 #include "SkeramImageTarget.h"
 #include "RaidDpsTargetPolicy.h"
 #include "playerbot/strategy/NefarianAddTargetPolicy.h"
@@ -639,6 +640,9 @@ Unit* DpsTargetValue::Calculate()
 
     if (Unit* image = GetSkeramImageTarget(ai))
         return image;
+
+    if (Unit* larva = GetAyamissLarvaTarget(ai))
+        return larva;
 
     if (Unit* spawn = GetFankrissSpawnTarget(ai))
         return spawn;

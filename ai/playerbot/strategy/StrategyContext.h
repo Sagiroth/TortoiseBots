@@ -5,6 +5,7 @@
 #include "generic/KriCloudStrategy.h"
 #include "generic/SarturaWhirlwindStrategy.h"
 #include "generic/FankrissStrategy.h"
+#include "generic/AyamissStrategy.h"
 #include "generic/ZulGurubStrategies.h"
 #include "generic/TwinEmperorDungeonStrategies.h"
 #include "generic/CthunDungeonStrategies.h"
@@ -193,6 +194,7 @@ namespace ai
             creators["yauj fear"] = [](PlayerbotAI* ai) { return new YaujFearStrategy(ai); };
             creators["skeram image focus"] = [](PlayerbotAI* ai) { return new SkeramImageStrategy(ai); };
             creators["fankriss spawn focus"] = [](PlayerbotAI* ai) { return new FankrissSpawnStrategy(ai); };
+            creators["ayamiss larva focus"] = [](PlayerbotAI* ai) { return new AyamissLarvaStrategy(ai); };
             creators["arlokk panther focus"] = [](PlayerbotAI* ai) { return new ArlokkPantherStrategy(ai); };
             creators["marli spawn focus"] = [](PlayerbotAI* ai) { return new MarliSpawnStrategy(ai); };
             creators["thekal balance"] = [](PlayerbotAI* ai) { return new ThekalBalanceStrategy(ai); };
