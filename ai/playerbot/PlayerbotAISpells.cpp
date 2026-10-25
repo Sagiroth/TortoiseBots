@@ -1357,6 +1357,20 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         TellPlayerNoFacing(GetMaster() ? GetMaster() : bot, out);
     }
 
+    // Local raid diagnostics: one bot_events.csv row per
+    // successful cast by a grouped warrior tank in combat, so live raid tests
+    // show what the tanks actually spend rage on.
+    if (bot->GetClass() == CLASS_WARRIOR && bot->GetGroup() && IsTank(bot) && bot->IsInCombat())
+    {
+        Aura* sunder = target ? GetAura("sunder armor", target) : nullptr;
+        std::ostringstream info;
+        info << "rage=" << bot->GetPower(POWER_RAGE) / 10
+             << " sunder=" << (sunder ? sunder->GetStackAmount() : 0)
+             << " target=" << (target ? target->GetEntry() : 0)
+             << " targetsMe=" << (target && target->GetVictim() == bot ? 1 : 0);
+        sPlayerbotAIConfig.logEvent(this, "TankCast", pSpellInfo->SpellName[0], info.str());
+    }
+
     return true;
 }
 
@@ -1502,6 +1516,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarg
         out << "Casting " << ChatHelper::formatSpell(pSpellInfo);
         TellPlayerNoFacing(GetMaster() ? GetMaster() : bot, out);
     }
+
 
     return true;
 }
@@ -1661,6 +1676,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
         out << "Casting " << ChatHelper::formatSpell(pSpellInfo);
         TellPlayerNoFacing(GetMaster() ? GetMaster() : bot, out);
     }
+
 
     return true;
 }

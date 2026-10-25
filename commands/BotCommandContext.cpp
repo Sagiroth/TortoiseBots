@@ -343,11 +343,33 @@ Player* ResolvePullExecutor(BotCommandContext const& context, bool allowSelected
         IsPullCandidate(context.requester, context.selectedBot))
         return context.selectedBot;
 
+    // An encounter-assigned main tank pulls before any other tank, and an
+    // assigned soaker only pulls when no other candidate exists: the DPS
+    // threat window waits on the puller, and a soaker never holds the boss.
+    auto hasStrategy = [](Player* bot, char const* name)
+    {
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+        return ai && (ai->HasStrategy(name, BotState::BOT_STATE_COMBAT) ||
+            ai->HasStrategy(name, BotState::BOT_STATE_NON_COMBAT));
+    };
+
+    for (Player* bot : context.partyBots)
+    {
+        if (hasStrategy(bot, "patchwerk main") && IsPullCandidate(context.requester, bot))
+            return bot;
+    }
+
     for (Player* bot : context.partyBots)
     {
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
         if (ai && ai->GetForcedRole() == static_cast<uint8>(BOT_ROLE_TANK) &&
-            IsPullCandidate(context.requester, bot))
+            !hasStrategy(bot, "patchwerk soak") && IsPullCandidate(context.requester, bot))
+            return bot;
+    }
+
+    for (Player* bot : context.partyBots)
+    {
+        if (!hasStrategy(bot, "patchwerk soak") && IsPullCandidate(context.requester, bot))
             return bot;
     }
 
