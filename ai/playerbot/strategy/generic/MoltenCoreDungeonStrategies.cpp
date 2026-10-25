@@ -380,3 +380,9 @@ void GolemaggBossTankStrategy::InitReactionMultipliers(std::list<Multiplier*>& m
 {
     InitCombatMultipliers(multipliers);
 }
+
+void RagnarosSonsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("ragnaros son pickup",
+        NextAction::array(0, new NextAction("ragnaros son attack", ACTION_HIGH + 2), nullptr)));
+}

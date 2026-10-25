@@ -141,4 +141,12 @@ namespace ai
         void InitDeadTriggers(std::list<TriggerNode*>& triggers) override;
         void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
     };
+    class RagnarosSonsStrategy : public Strategy
+    {
+    public:
+        RagnarosSonsStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "ragnaros sons"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
 }

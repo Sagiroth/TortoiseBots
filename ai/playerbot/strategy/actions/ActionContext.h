@@ -1,6 +1,8 @@
 #pragma once
 #include "SarturaWhirlwindActions.h"
 #include "KelThuzadFissureActions.h"
+
+#include "RagnarosActions.h"
 #include "PatchwerkSoakerActions.h"
 #include "KelThuzadInterruptActions.h"
 #include "RuinsOfAhnQirajActions.h"
@@ -404,6 +406,7 @@ namespace ai
             creators["disable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarDisableFightStrategyAction(ai); };
             creators["golemagg tank retarget"] = [](PlayerbotAI* ai) { return new GolemaggTankRetargetAction(ai); };
             creators["raid dps retarget"] = [](PlayerbotAI* ai) { return new RaidDpsRetargetAction(ai); };
+            creators["ragnaros son attack"] = [](PlayerbotAI* ai) { return new RagnarosSonAttackAction(ai); };
             creators["geddon inferno retreat"] = [](PlayerbotAI* ai) { return new GeddonInfernoRetreatAction(ai); };
             creators["move away from magmadar"] = [](PlayerbotAI* ai) { return new MagmadarMoveAwayAction(ai); };
 
