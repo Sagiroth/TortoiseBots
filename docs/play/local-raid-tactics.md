@@ -56,7 +56,7 @@ targets, raid marks and crowd control remain ahead of this behavior. This only
 assists glob kills; it does not automate frost spell selection or the 200-hit
 freeze phase.
 
-### Twin Emperors: opening side teams (opt-in)
+### Twin Emperors: side teams and teleport handoff (opt-in)
 
 Prepare one warrior and one warlock on each side before pulling.
 Use `twins veknilash tank` for warriors and `twins veklor tank` for warlocks.
@@ -84,10 +84,22 @@ Replace the example character names below with your actual bots:
 Assign physical damage dealers (including hunters) `all +twins physical dps`.
 Assign spell damage dealers `all +twins spell dps` instead. Never enable both.
 Use per-bot names: `@ranged` also includes hunters and is not a spell-DPS filter.
-Healers keep their healing roles; position enough healers to cover each side.
+Assign healers to a side too, using real character names:
+
+```text
+.bot role WestHealer heal
+.bot command WestHealer all +twins healer
+.bot command WestHealer all +twins west
+.bot role EastHealer heal
+.bot command EastHealer all +twins healer
+.bot command EastHealer all +twins east
+```
+
+Repeat for every assigned healer. They keep healing both tanks and other allies
+on their own side; they do not chase the other team's tank across the room.
 The explicit tank role makes a warlock recognizable to the healing policies.
 
-The opening only activates in the Twins room on map 531, after the raid engages
+The strategy only activates in the Twins room on map 531, after the raid engages
 a twin or an ordinary bot pull is ordered against one. It does not pull on its
 own just because a twin is selected. Pullback orders do not authorize movement.
 Clear old attack orders and raid target marks before using these assignments.
@@ -110,8 +122,8 @@ The warrior adopts Defensive Stance and attacks the physical twin at the fixed
 outer side of its platform. The warlock uses repeated Searing Pain and aims for
 18 yards of edge-to-edge clearance from a separated Vek'lor. A spare tank waits
 outside the caster landing zone. Tanks cannot chase their assigned twin across
-the room. Ordinary DPS hold behavior remains unchanged; the assigned tanks can
-start establishing threat immediately after engagement.
+the room. The assigned tanks can start establishing threat immediately after engagement.
+DPS use the handoff hold below in addition to their ordinary opening rules.
 
 Inside the room, physical DPS selects engaged Vek'nilash; spell DPS selects
 engaged Vek'lor. Explicit attack/mark orders remain ahead of this routing.
@@ -120,11 +132,31 @@ Opted-in bots avoid the caster's 10-yard burst range with a bounding-radius and
 from attacking Vek'lor. Keep pets passive manually too: defensive pet AI is not
 a guaranteed instant recall. Existing CC reservations and generic hazards remain.
 
-This is opening control, not a complete Twins strategy. There is no teleport
-countdown, coordinated closest-player pickup, threat-reset handoff or DPS hold
-after teleport. Boss separation depends on establishing the correct victim;
-these positions cannot guarantee recovery after both bosses collapse together.
-Blizzard and exploding-bug discovery are not added. Do not expect a full kill.
+At 25 seconds after engagement or an observed position exchange, opted-in DPS
+stop new attacks, recall pets and clear both landing areas. The spare warrior
+moves to 13 yards edge-to-edge from Vek'lor, outside the burst margin but nearer
+than the warlock. Keep human players and passive pets farther away than the
+warriors. The core gives the nearest unit threat immediately after relocation;
+the two-second freeze is not extra time to get into position.
+
+After the exchange, each side's warrior picks up its arriving boss first.
+Against Vek'nilash it moves into melee. Against Vek'lor it withdraws while the
+side's warlock takes over with Searing Pain. DPS resume after the freeze, once
+the physical warrior is in melee and the caster targets its warlock at 15–20
+yards with LOS, continuously confirmed for half a second. Healers keep healing
+through the handoff. Tanks never chase an identity to the opposite platform.
+
+Enabling mid-fight, or a gap longer than two seconds in observation, uses a
+conservative hold until an actual exchange is observed. Keep the strategies on
+before the pull. Removing them releases their control. Existing DoTs, reactive
+damage and uncontrolled pets are not cancelled. Explicit other-target orders
+can defeat the arrangement; clear them first. An absent or dead assigned tank
+can keep the DPS handoff hold active: intervene rather than expecting recovery.
+
+This is not a complete Twins strategy. Boss separation depends on establishing
+the correct victim; these positions cannot guarantee recovery after both bosses
+collapse together. Blizzard and exploding-bug discovery are not added. Offline
+fixtures do not prove live pickup timing or a full kill.
 
 Disable using the same commands with `-` instead of `+`; restore normal forced
 roles afterward (for example `.bot role EastWarlock dps`).

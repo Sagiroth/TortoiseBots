@@ -1,6 +1,7 @@
 
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "PartyMemberToHeal.h"
 #include "HealerCoverage.h"
 #include "playerbot/HealTargetPolicy.h"
@@ -275,6 +276,7 @@ bool PartyMemberToHeal::CanHealPet(Pet* pet)
 
 bool PartyMemberToHeal::Check(Unit* player)
 {
+    if (!TwinsHealTargetAllowed(ai, player)) return false;
     bool isBg = bot->InBattleGround();
 
     // The cast action owns the exact range check and its reach prerequisite owns

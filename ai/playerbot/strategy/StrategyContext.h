@@ -226,6 +226,7 @@ namespace ai
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatStrategy(ai); };
             creators["twins veklor tank"] = [](PlayerbotAI* ai) { return new TwinsOpeningStrategy(ai,"twins veklor tank"); };
             creators["twins veknilash tank"] = [](PlayerbotAI* ai) { return new TwinsOpeningStrategy(ai,"twins veknilash tank"); };
+            creators["twins healer"] = [](PlayerbotAI* ai) { return new TwinsOpeningStrategy(ai,"twins healer"); };
             creators["twins spell dps"] = [](PlayerbotAI* ai) { return new TwinsOpeningStrategy(ai,"twins spell dps"); };
             creators["twins east"] = [](PlayerbotAI* ai) { return new TwinsSideStrategy(ai,"twins east"); };
             creators["twins west"] = [](PlayerbotAI* ai) { return new TwinsSideStrategy(ai,"twins west"); };

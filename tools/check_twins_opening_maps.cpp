@@ -39,13 +39,16 @@ int main(int argc,char**argv)
         assert(vmap.loadMap(vdir.c_str(),531,x,y)==VMAP::VMAP_LOAD_RESULT_OK);
     using namespace ai;
     assert(TwinsSeparated(kTwinsWest,kTwinsEast,3));
-    struct Route {TwinsPoint start,end,caster;bool clearance;};
+    struct Route {TwinsPoint start,end,caster;bool clearance;bool escape=false;};
     std::vector<Route> routes;
     for(int side=0;side<2;++side) {
         TwinsPoint home=side ? kTwinsEast:kTwinsWest;
         TwinsPoint other=side ? kTwinsWest:kTwinsEast;
         TwinsPoint stage=side ? TwinsPoint{-8870,1240,-105.065f}:TwinsPoint{-9040,1210,-104.346f};
-        for(float offset:{5.f,20.f,24.f}) {
+        routes.push_back({TwinsOutward(home,side,24),TwinsOutward(home,side,15),home,true});
+        routes.push_back({TwinsOutward(home,side,15),TwinsOutward(home,side,5),other,true});
+        routes.push_back({TwinsOutward(home,side,5),TwinsOutward(home,side,24),home,true,true});
+        for(float offset:{5.f,15.f,20.f,24.f,35.f}) {
             auto goal=TwinsOutward(home,side,offset);
             routes.push_back({stage,goal,offset==5 ? other:home,true});
             routes.push_back({goal,home,home,false}); // spell/melee LOS
@@ -71,10 +74,13 @@ int main(int argc,char**argv)
             TwinsPoint start{verts[3*i-1],verts[3*i-3],verts[3*i-2]};
             TwinsPoint end{verts[3*i+2],verts[3*i],verts[3*i+1]};
             int steps=std::max(1,int(std::ceil(TwinsDistance(start,end))));
+            TwinsPoint previous=start;
             for(int j=0;j<=steps;++j) {
                 float f=float(j)/steps;
                 TwinsPoint p{start.x+f*(end.x-start.x),start.y+f*(end.y-start.y),start.z+f*(end.z-start.z)};
-                assert(TwinsDistance(p,route.caster)>14.5f);
+                if(route.escape) assert(TwinsSafeStep(previous,p,route.caster,14.5f));
+                else assert(TwinsDistance(p,route.caster)>14.5f);
+                previous=p;
             }
         }
     }

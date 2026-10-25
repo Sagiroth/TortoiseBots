@@ -1,5 +1,8 @@
 #include "playerbot/playerbot.h"
 #include "TwinsOpeningActions.h"
+#include "playerbot/TwinsTeleportPolicy.h"
+#include <map>
+#include <mutex>
 #include "GenericSpellActions.h"
 #include "playerbot/strategy/values/RaidDpsTargetPolicy.h"
 #include "ReachTargetActions.h"
@@ -18,6 +21,8 @@ namespace
 bool Has(PlayerbotAI* ai,char const* name) {return ai->HasStrategy(name,BotState::BOT_STATE_COMBAT);}
 TwinsPoint Point(WorldObject* unit) {return {unit->GetPositionX(),unit->GetPositionY(),unit->GetPositionZ()};}
 int Side(PlayerbotAI* ai) {return TwinsSide(Has(ai,"twins west"),Has(ai,"twins east"));}
+bool HealerRole(PlayerbotAI* ai)
+{ return Has(ai,"twins healer") && Side(ai)>=0 && ai->IsHeal(ai->GetBot()); }
 unsigned TankEntry(PlayerbotAI* ai)
 {
     bool caster=Has(ai,"twins veklor tank"),physical=Has(ai,"twins veknilash tank");
@@ -38,6 +43,13 @@ bool GroupEngaged(PlayerbotAI* ai,Unit* boss)
     Group* group=ai->GetBot()->GetGroup();
     Unit* victim=boss->GetVictim();
     if(victim && victim->IsPlayer() && static_cast<Player*>(victim)->GetGroup()==group) return true;
+    // DoStopAttack clears both victims during the scripted two-second freeze.
+    // ResetThreat keeps references (including zero threat); zone combat inserts
+    // the raid. Membership, not a positive threat amount, bridges that interval.
+    for(HostileReference const* ref:boss->GetThreatManager().getThreatList())
+        if(ref->getUnitGuid().IsPlayer())
+            if(Player* member=boss->GetMap()->GetPlayer(ref->getUnitGuid()))
+                if(member->IsAlive() && member->GetGroup()==group) return true;
     for(Player* member:LiveGroupMembers(group))
         if(member->IsAlive() && member->IsInMap(ai->GetBot()) &&
             (member->GetVictim()==boss || member->GetAttackers().count(boss))) return true;
@@ -71,10 +83,72 @@ Unit* LocalTankBoss(PlayerbotAI* ai)
 }
 float BurstRadius(PlayerbotAI* ai,Unit* boss)
 { return 12.f+boss->GetObjectBoundingRadius()+ai->GetBot()->GetObjectBoundingRadius(); }
+Player* SideTank(PlayerbotAI* ai,unsigned entry,int side)
+{
+    Player* result=nullptr;
+    for(Player* member:LiveGroupMembers(ai->GetBot()->GetGroup()))
+    {
+        if(!member->IsAlive() || !member->IsInWorld() || !member->IsInMap(ai->GetBot())) continue;
+        auto* peer=PlayerbotAIStorage::Instance().GetAI(member);
+        if(peer && TankEntry(peer)==entry && Side(peer)==side && TwinsOnSide(Point(member),side) &&
+            (!result || member->GetObjectGuid()<result->GetObjectGuid())) result=member;
+    }
+    return result;
+}
+TwinsTeleportState ObserveTwins(PlayerbotAI* ai)
+{
+    struct Sample {TwinsTeleportState state;bool sampled=false;};
+    static std::mutex mutex;
+    static std::map<std::pair<uint32,uint32>,Sample> clocks;
+    static uint32 lastCleanup=0;
+    uint32 now=WorldTimer::getMSTime();
+    TwinsTeleportState result;bool changed=false;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if(uint32(now-lastCleanup)>60000)
+        {
+            lastCleanup=now;
+            for(auto i=clocks.begin();i!=clocks.end();)
+                if(uint32(now-i->second.state.sampledAt)>120000) i=clocks.erase(i);else ++i;
+        }
+        auto& sample=clocks[{ai->GetBot()->GetInstanceId(),ai->GetBot()->GetGroup()->GetId()}];
+        auto& state=sample.state;
+        // One bounded roster sample per raid per 100 ms, not per action/path point.
+        if(sample.sampled && uint32(now-state.sampledAt)<100) return state;
+        if(sample.sampled && uint32(now-state.sampledAt)>2000) state=TwinsTeleportState{};
+        Unit* physical=Boss(ai,15275),*caster=Boss(ai,15276);
+        bool engaged=GroupEngaged(ai,physical) || GroupEngaged(ai,caster),owners=false;
+        if(physical && caster)
+        {
+            Player* warrior=SideTank(ai,15275,TwinsPointSide(Point(physical)));
+            Player* warlock=SideTank(ai,15276,TwinsPointSide(Point(caster)));
+            owners=warrior && warlock && physical->GetVictim()==warrior && caster->GetVictim()==warlock &&
+                warrior->CanReachWithMeleeAutoAttack(physical) &&
+                warlock->GetDistance(caster)>=15.f && warlock->GetDistance(caster)<=20.f &&
+                warlock->IsWithinLOSInMap(caster,true);
+        }
+        unsigned phase=state.Phase(),epoch=state.epoch;
+        state.Observe(now,engaged,physical ? Point(physical):TwinsPoint{},caster ? Point(caster):TwinsPoint{},owners);
+        changed=phase!=state.Phase() || epoch!=state.epoch;result=state;sample.sampled=true;
+    }
+    if(changed)
+    {
+        char const* phases[]={"idle","stable","prepare","handoff"};
+        sPlayerbotAIConfig.logEvent(ai,"TwinsTeleportPhase",phases[result.Phase()],std::to_string(result.epoch));
+    }
+    return result;
+}
+bool TwinsPreparing(PlayerbotAI* ai) {return ObserveTwins(ai).Preparing();}
+bool DpsRole(PlayerbotAI* ai)
+{ return !TankEntry(ai) && !ai->IsHeal(ai->GetBot()) && TwinsDamageEntry(Has(ai,"twins physical dps"),Has(ai,"twins spell dps")); }
+bool DpsHolding(PlayerbotAI* ai) {return DpsRole(ai) && ObserveTwins(ai).Holding();}
+float LandingRadius(PlayerbotAI* ai,Unit* boss)
+{ return 28.f+boss->GetObjectBoundingRadius()+ai->GetBot()->GetObjectBoundingRadius(); }
 bool PetOnCaster(PlayerbotAI* ai)
 {
     Pet* pet=ai->GetBot()->GetPet();
-    return pet && pet->GetVictim() && pet->GetVictim()->GetEntry()==15276;
+    return pet && pet->GetVictim() && (pet->GetVictim()->GetEntry()==15276 ||
+        (pet->GetVictim()->GetEntry()==15275 && ObserveTwins(ai).Holding()));
 }
 void RecallPet(PlayerbotAI* ai)
 {
@@ -96,6 +170,14 @@ bool DesiredTankPosition(PlayerbotAI* ai,TwinsPoint& destination)
     TwinsPoint home=side==0 ? kTwinsWest : kTwinsEast;
     if(caster && TwinsOnSide(Point(caster),side))
     {
+        if(TankEntry(ai)==15275)
+        {
+            // Warrior-first protocol: be nearest for incoming physical boss,
+            // outside the current caster's burst. After receiving caster proximity
+            // threat, withdraw while the warlock takes over with Searing Pain.
+            float offset=TwinsPreparing(ai) ? 13.f+caster->GetObjectBoundingRadius()+ai->GetBot()->GetObjectBoundingRadius() : 24.f;
+            destination=TwinsOutward(Point(caster),side,offset);return true;
+        }
         // The caster may stop at spell range. Keep 18 yards of edge-to-edge
         // clearance when separated, never follow its identity across the room.
         Unit* brother=Boss(ai,15275);
@@ -127,9 +209,10 @@ bool ai::TwinsOpeningEnabled(PlayerbotAI* ai)
     Player* bot=ai ? ai->GetBot() : nullptr;
     if(!bot || !bot->IsAlive() || !bot->IsInWorld() || bot->IsBeingTeleported() || !bot->GetGroup() ||
         !TwinsRoom(bot->GetMapId(),Point(bot))) return false;
-    if(!TankEntry(ai) && !Has(ai,"twins physical dps") && !Has(ai,"twins spell dps")) return false;
+    if(!TankEntry(ai) && !HealerRole(ai) && !Has(ai,"twins physical dps") && !Has(ai,"twins spell dps")) return false;
     Unit* physical=Boss(ai,15275),*caster=Boss(ai,15276);
-    return GroupEngaged(ai,physical) || GroupEngaged(ai,caster) || PullOrdered(ai,physical,caster);
+    auto phase=ObserveTwins(ai);
+    return phase.active || PullOrdered(ai,physical,caster);
 }
 bool ai::TwinsOpeningTank(PlayerbotAI* ai)
 { return TwinsOpeningEnabled(ai) && TankEntry(ai); }
@@ -140,6 +223,8 @@ bool ai::TwinsOpeningRouteAllowed(PlayerbotAI* ai,std::vector<WorldPosition> con
     if(!caster) return true;
     TwinsPoint previous=Point(ai->GetBot());
     float radius=BurstRadius(ai,caster);
+    bool hold=DpsHolding(ai);Unit* physical=hold ? Boss(ai,15275):nullptr;
+    if(hold) radius=LandingRadius(ai,caster);
     for(auto const& point:path)
     {
         TwinsPoint end{point.getX(),point.getY(),point.getZ()};
@@ -149,7 +234,8 @@ bool ai::TwinsOpeningRouteAllowed(PlayerbotAI* ai,std::vector<WorldPosition> con
         {
             float f=float(i)/count;
             TwinsPoint sample{previous.x+f*(end.x-previous.x),previous.y+f*(end.y-previous.y),previous.z+f*(end.z-previous.z)};
-            if(!TwinsSafeStep(before,sample,Point(caster),radius)) return false;
+            if(!TwinsSafeStep(before,sample,Point(caster),radius) ||
+                (physical && !TwinsSafeStep(before,sample,Point(physical),LandingRadius(ai,physical)))) return false;
             before=sample;
         }
         previous=end;
@@ -184,6 +270,7 @@ bool ai::SelectTwinsDpsTarget(PlayerbotAI* ai,Unit*& target)
     if(!entry) return false;
     Unit* boss=Boss(ai,entry);
     if(!boss || !GroupEngaged(ai,boss) || OtherOrder(ai,boss)) return false;
+    if(DpsHolding(ai)) return true; // Clear current damage/pets until actual ownership is confirmed.
     target=boss;return true;
 }
 bool ai::IsTwinsOpeningTargetExcluded(PlayerbotAI* ai,Unit* target)
@@ -194,22 +281,35 @@ bool ai::IsTwinsOpeningTargetExcluded(PlayerbotAI* ai,Unit* target)
     return SelectTwinsDpsTarget(ai,assigned) && target!=assigned;
 }
 bool ai::TwinsPetAttackAllowed(PlayerbotAI* ai,Unit* target)
-{ return !target || target->GetEntry()!=15276 || !TwinsOpeningEnabled(ai); }
+{
+    if(!target || !TwinsOpeningEnabled(ai)) return true;
+    return target->GetEntry()!=15276 && (target->GetEntry()!=15275 || !ObserveTwins(ai).Holding());
+}
 std::list<HazardPosition> ai::GetTwinsOpeningHazards(PlayerbotAI* ai)
 {
     std::list<HazardPosition> hazards;
     if(!TwinsOpeningEnabled(ai)) return hazards;
-    if(Unit* caster=Boss(ai,15276)) hazards.emplace_back(WorldPosition(caster),BurstRadius(ai,caster));
+    bool hold=DpsHolding(ai);
+    if(Unit* caster=Boss(ai,15276)) hazards.emplace_back(WorldPosition(caster),hold ? LandingRadius(ai,caster):BurstRadius(ai,caster));
+    if(hold) if(Unit* physical=Boss(ai,15275)) hazards.emplace_back(WorldPosition(physical),LandingRadius(ai,physical));
     return hazards;
+}
+bool ai::TwinsHealTargetAllowed(PlayerbotAI* ai,Unit* target)
+{
+    if(!HealerRole(ai) || !TwinsOpeningEnabled(ai)) return true;
+    return target && (target==ai->GetBot() || TwinsOnSide(Point(target),Side(ai)));
 }
 bool ai::TwinsOpeningMoveAllowed(PlayerbotAI* ai,float x,float y,float z)
 {
     if(!TwinsOpeningEnabled(ai)) return true;
     TwinsPoint end{x,y,z};
     Unit* own=TankEntry(ai) ? Boss(ai,TankEntry(ai)) : nullptr;
-    if(own && !OtherOrder(ai,own) && (!TwinsRoom(531,end) || !TwinsOnSide(end,Side(ai)))) return false;
+    if((HealerRole(ai) || (own && !OtherOrder(ai,own))) && (!TwinsRoom(531,end) || !TwinsOnSide(end,Side(ai)))) return false;
     Unit* caster=Boss(ai,15276);
-    return !caster || TwinsSafeStep(Point(ai->GetBot()),end,Point(caster),BurstRadius(ai,caster));
+    if(!caster) return true;
+    if(!TwinsSafeStep(Point(ai->GetBot()),end,Point(caster),DpsHolding(ai) ? LandingRadius(ai,caster):BurstRadius(ai,caster))) return false;
+    Unit* physical=DpsHolding(ai) ? Boss(ai,15275):nullptr;
+    return !physical || TwinsSafeStep(Point(ai->GetBot()),end,Point(physical),LandingRadius(ai,physical));
 }
 
 bool TwinsPositionAction::Prepare()
@@ -219,11 +319,25 @@ bool TwinsPositionAction::Prepare()
     Unit* caster=Boss(ai,15276);
     float radius=caster ? BurstRadius(ai,caster) : 0;
     bool danger=caster && TwinsDistance(Point(bot),Point(caster))<radius;
-    bool tank=TankEntry(ai)!=0;
+    bool tank=TankEntry(ai)!=0,healer=HealerRole(ai),hold=DpsHolding(ai);
+    Unit* landing=nullptr;
+    for(unsigned entry:{15275u,15276u})
+        if(Unit* candidate=Boss(ai,entry))
+            if(hold && TwinsDistance(Point(bot),Point(candidate))<LandingRadius(ai,candidate) &&
+                (!landing || TwinsDistance(Point(bot),Point(candidate))<TwinsDistance(Point(bot),Point(landing)))) landing=candidate;
     Unit* dpsTarget=nullptr;
     bool approach=!tank && SelectTwinsDpsTarget(ai,dpsTarget) && dpsTarget &&
         bot->GetDistance(dpsTarget)>sPlayerbotAIConfig.sightDistance*.8f;
-    if(!tank && !danger && !approach) return false;
+    if(!tank && !healer && !danger && !approach && !landing)
+    {
+        // A pre-window approach spline must not continue into the landing area.
+        if(hold && OwnsMovement())
+            for(unsigned entry:{15275u,15276u})
+                if(Unit* boss=Boss(ai,entry))
+                    if(TwinsDistance(lastDestination,Point(boss))<LandingRadius(ai,boss))
+                    {destination=Point(bot);return true;}
+        return false;
+    }
     if(tank)
     {
         Unit* own=Boss(ai,TankEntry(ai));
@@ -237,6 +351,23 @@ bool TwinsPositionAction::Prepare()
             caster->GetVictim()!=bot && TwinsOnSide(Point(bot),Side(ai)) &&
             bot->GetDistance(caster)<=28.f && bot->GetDistance(caster)>=15.f && bot->IsWithinLOSInMap(caster,true))
             return false;
+    }
+    else if(healer && !danger)
+    {
+        Unit* local=Boss(ai,15275);
+        if(!local || !TwinsOnSide(Point(local),Side(ai))) local=caster;
+        if(!local) return false;
+        if(TwinsOnSide(Point(bot),Side(ai)) && bot->GetDistance(local)>=22.f &&
+            bot->GetDistance(local)<=40.f && bot->IsWithinLOSInMap(local,true)) return false;
+        if(bot->IsNonMeleeSpellCasted(true,false,true)) return false; // finish essential heals
+        destination=TwinsOutward(Side(ai)==0 ? kTwinsWest:kTwinsEast,Side(ai),35.f);
+    }
+    else if(landing)
+    {
+        float dx=bot->GetPositionX()-landing->GetPositionX(),dy=bot->GetPositionY()-landing->GetPositionY();
+        float length=std::hypot(dx,dy);if(length<.1f){dx=1;dy=0;length=1;}
+        float clear=LandingRadius(ai,landing)+2.f;
+        destination={landing->GetPositionX()+dx/length*clear,landing->GetPositionY()+dy/length*clear,bot->GetPositionZ()};
     }
     else if(!danger && approach)
     {
@@ -259,8 +390,11 @@ bool TwinsPositionAction::Prepare()
     if(lastSpline && bot->movespline->GetId()==lastSpline && !bot->movespline->Finalized() &&
         bot->GetMotionMaster()->GetCurrentMovementGeneratorType()!=CHASE_MOTION_TYPE &&
         TwinsDistance(destination,lastDestination)<1.f) return false;
-    if(TwinsDistance(Point(bot),destination)<1.5f)
-        return tank && bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==CHASE_MOTION_TYPE;
+    // The standby point is only one yard outside our burst margin.
+    // A broad arrival tolerance must not leave the warrior inside that circle.
+    float arrival=tank && TankEntry(ai)==15275 && TwinsPreparing(ai) ? .25f : 1.5f;
+    if(!danger && TwinsDistance(Point(bot),destination)<arrival)
+        return (tank || healer) && bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==CHASE_MOTION_TYPE;
     WorldPosition start(bot),end(531,destination.x,destination.y,destination.z);
     end.setZ(bot->GetMap()->GetHeight(destination.x,destination.y,destination.z,true));
     auto blocked=[&]() {
@@ -283,20 +417,32 @@ bool TwinsPositionAction::Prepare()
         {
             float f=float(i)/steps;
             TwinsPoint sample{previous.x+f*(next.x-previous.x),previous.y+f*(next.y-previous.y),previous.z+f*(next.z-previous.z)};
-            if(!TwinsRoom(531,sample) || (tank && TwinsOnSide(previous,Side(ai)) && !TwinsOnSide(sample,Side(ai))) ||
+            if(!TwinsRoom(531,sample) || ((tank || healer) && TwinsOnSide(previous,Side(ai)) && !TwinsOnSide(sample,Side(ai))) ||
                 (caster && !TwinsSafeStep(sampleBefore,sample,Point(caster),radius))) return blocked();
             WorldPosition position(531,sample.x,sample.y,sample.z);
             for(auto const& hazard:hazards)
             {
                 // The burst circle above allows monotonic escape when inside.
-                if(caster && hazard.first.distance(WorldPosition(caster))<.1f && std::abs(hazard.second-radius)<.1f) continue;
+                bool ownHazard=false;
+                for(unsigned entry:{15275u,15276u})
+                    if(Unit* boss=Boss(ai,entry))
+                        if(hazard.first.distance(WorldPosition(boss))<.1f &&
+                            std::abs(hazard.second-(hold ? LandingRadius(ai,boss):BurstRadius(ai,boss)))<.1f)
+                            ownHazard=true;
+                if(ownHazard) continue;
                 if(position.distance(hazard.first)<=hazard.second) return blocked();
             }
             sampleBefore=sample;
         }
         previous=next;
     }
+    if(!TwinsOpeningRouteAllowed(ai,route)) return blocked();
     path=route;return true;
+}
+bool TwinsPositionAction::OwnsMovement() const
+{
+    return lastSpline && bot->movespline->GetId()==lastSpline && !bot->movespline->Finalized() &&
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType()!=CHASE_MOTION_TYPE;
 }
 bool TwinsPositionAction::isUseful()
 {
@@ -326,10 +472,10 @@ bool TwinsEngageAction::isUseful()
     if(!controlled) return false;
     Unit* current=AI_VALUE(Unit*,"current target");
     if(current!=target) return true;
+    if(TankEntry(ai)==15275 && !ai->HasAura("defensive stance",bot) && bot->HasSpell(71)) return true;
     if(!target) return false;
     if(TankEntry(ai)==15276 && (bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) ||
         bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==CHASE_MOTION_TYPE)) return true;
-    if(TankEntry(ai)==15275 && !ai->HasAura("defensive stance",bot) && bot->HasSpell(71)) return true;
     return TankEntry(ai)!=15276 && (bot->GetVictim()!=target ||
         (!ai->IsRanged(bot) && !bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING)));
 }
@@ -340,15 +486,19 @@ bool TwinsEngageAction::Execute(Event& event)
     Unit* target=nullptr;
     if(!SelectTwinsTankTarget(ai,target) && !SelectTwinsDpsTarget(ai,target)) return false;
     ClearWrongTarget(ai,target);
-    if(!target) return true;
+    if(TankEntry(ai)==15275 && !ai->HasAura("defensive stance",bot) && bot->HasSpell(71))
+        return ai->DoSpecificAction("defensive stance",event,true);
+    if(!target)
+    {
+        if(DpsHolding(ai) && bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==CHASE_MOTION_TYPE) ai->StopMoving();
+        return true;
+    }
     if(TankEntry(ai)==15276)
     {
         if(bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==CHASE_MOTION_TYPE) ai->StopMoving();
         bot->AttackStop();bot->SetSelectionGuid(target->GetObjectGuid());SET_AI_VALUE(Unit*,"current target",target);
         return true;
     }
-    if(TankEntry(ai)==15275 && !ai->HasAura("defensive stance",bot) && bot->HasSpell(71))
-        return ai->DoSpecificAction("defensive stance",event,true);
     return Attack(GetMaster(),target);
 }
 bool TwinsSearingPainAction::isUseful()
@@ -381,7 +531,16 @@ public:
         if(name=="twins position" || name=="twins engage" || name=="twins searing pain" ||
             name=="set facing" || name=="move away from hazard" || name=="flee" || name=="runaway") return 1;
         if(name=="pet attack" && !TwinsPetAttackAllowed(ai,action->GetTarget())) return 0;
-        if(dynamic_cast<CastHealingSpellAction*>(action)) return 1;
+        if(dynamic_cast<CastHealingSpellAction*>(action)) return TwinsHealTargetAllowed(ai,action->GetTarget()) ? 1 : 0;
+        if(!action->IsCrowdControlAction() && DpsHolding(ai) &&
+            (name=="melee" || name=="shoot" || name=="pet attack" ||
+             action->getThreatType()==ActionThreatType::ACTION_THREAT_AOE ||
+             (action->GetTarget()!=ai->GetBot() && (dynamic_cast<AttackAction*>(action) || dynamic_cast<CastSpellAction*>(action))))) return 0;
+        if(HealerRole(ai) && dynamic_cast<ReachTargetAction*>(action))
+            return TwinsHealTargetAllowed(ai,action->GetTarget()) ? 1 : 0;
+        auto* positioning=dynamic_cast<TwinsPositionAction*>(ai->GetAiObjectContext()->GetAction("twins position"));
+        if(dynamic_cast<MovementAction*>(action) &&
+            (HealerRole(ai) || DpsHolding(ai) || (positioning && positioning->OwnsMovement()))) return 0;
         if((dynamic_cast<AttackAction*>(action) || dynamic_cast<CastSpellAction*>(action)) &&
             IsTwinsOpeningTargetExcluded(ai,action->GetTarget())) return 0;
         if(!TankEntry(ai)) return 1;

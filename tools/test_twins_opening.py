@@ -40,6 +40,8 @@ bool TwinsOpeningEnabled(PlayerbotAI*a){return a->enabled;}
 Unit* Boss(PlayerbotAI*a,unsigned){return &a->boss;}
 TwinsPoint Point(Unit*u){return u->point;}
 float BurstRadius(PlayerbotAI*,Unit*){return 14.5f;}
+bool DpsHolding(PlayerbotAI*){return false;}
+float LandingRadius(PlayerbotAI*,Unit*){return 30;}
 namespace ai {bool TwinsOpeningRouteAllowed(PlayerbotAI*,std::vector<WorldPosition> const&);}
 '''+body+r'''
 int main(){
@@ -90,6 +92,7 @@ bool TwinsOpeningEnabled(PlayerbotAI*a){return a->enabled;}
 Unit* Boss(PlayerbotAI*a,unsigned e){return e==15275?&a->physical:&a->caster;}
 bool OtherOrder(PlayerbotAI*a,Unit*){return a->order;}
 bool GroupEngaged(PlayerbotAI*a,Unit*){return a->engaged;}
+bool DpsHolding(PlayerbotAI*){return false;}
 unsigned TankEntry(PlayerbotAI*);
 Unit* LocalTankBoss(PlayerbotAI*a){return a->local?Boss(a,TankEntry(a)):nullptr;}
 namespace ai {bool SelectTwinsTankTarget(PlayerbotAI*,Unit*&);bool SelectTwinsDpsTarget(PlayerbotAI*,Unit*&);bool IsTwinsOpeningTargetExcluded(PlayerbotAI*,Unit*);}
@@ -141,7 +144,7 @@ int main(){WaitForAttackMultiplier m;Action pos{"twins position"},engage{"twins 
         self.assertIn('pull->IsCommandActive() && !pull->IsCommandPullback()',action)
         self.assertIn('!bot->GetGroup()',action)
         self.assertIn('TwinsRoom(bot->GetMapId(),Point(bot))',action)
-        self.assertIn('GroupEngaged(ai,physical) || GroupEngaged(ai,caster) || PullOrdered',action)
+        self.assertIn('return phase.active || PullOrdered(ai,physical,caster)',action)
         self.assertIn('!end.isPathTo(route,1.f,1.f)',action)
         self.assertIn('TwinsOpeningTank(ai)) return false;',source)
         self.assertIn('bot->GetDistance(dpsTarget)>sPlayerbotAIConfig.sightDistance*.8f',action)

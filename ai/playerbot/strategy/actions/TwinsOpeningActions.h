@@ -7,6 +7,7 @@
 namespace ai
 {
 bool TwinsOpeningEnabled(PlayerbotAI* ai);
+bool TwinsHealTargetAllowed(PlayerbotAI* ai,Unit* target);
 bool TwinsOpeningTank(PlayerbotAI* ai);
 bool TwinsOpeningRouteAllowed(PlayerbotAI* ai,std::vector<WorldPosition> const& path);
 bool TwinsOpeningChaseAllowed(PlayerbotAI* ai,WorldObject* target,float range);
@@ -22,6 +23,7 @@ public:
     TwinsPositionAction(PlayerbotAI* ai) : MovementAction(ai,"twins position") {}
     bool isUseful() override;
     bool Execute(Event& event) override;
+    bool OwnsMovement() const;
 private:
     bool Prepare();
     uint32 lastSpline=0,lastCheck=0,lastReport=0;
