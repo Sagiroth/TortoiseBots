@@ -1,4 +1,5 @@
 #pragma once
+#include "KurinnaxxActions.h"
 #include "SarturaWhirlwindActions.h"
 #include "KelThuzadFissureActions.h"
 
@@ -374,6 +375,8 @@ namespace ai
             creators["kt frostbolt interrupt"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptAction(ai); };
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatAction(ai); };
             creators["ossirian crystal click"] = [](PlayerbotAI* ai) { return new OssirianCrystalAction(ai); };
+            creators["kurinnaxx swap"] = [](PlayerbotAI* ai) { return new KurinnaxxSwapAction(ai); };
+            creators["kurinnaxx hold attacks"] = [](PlayerbotAI* ai) { return new KurinnaxxHoldAction(ai); };
             creators["grobbulus cloud escape"] = [](PlayerbotAI* ai) { return new GrobbulusCloudEscapeAction(ai); };
             creators["enable naxxramas strategy"] = [](PlayerbotAI* ai) { return new NaxxramasEnableDungeonStrategyAction(ai); };
             creators["disable naxxramas strategy"] = [](PlayerbotAI* ai) { return new NaxxramasDisableDungeonStrategyAction(ai); };

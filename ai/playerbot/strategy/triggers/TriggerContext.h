@@ -1,4 +1,5 @@
 #pragma once
+#include "../actions/KurinnaxxActions.h"
 #include "playerbot/strategy/generic/SarturaWhirlwindStrategy.h"
 
 #include "RagnarosTriggers.h"
@@ -336,6 +337,8 @@ namespace ai
             creators["kt frostbolt ready"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptTrigger(ai); };
             creators["locust swarm active"] = [](PlayerbotAI* ai) { return new LocustSwarmTrigger(ai); };
             creators["ossirian crystal ready"] = [](PlayerbotAI* ai) { return new OssirianCrystalTrigger(ai); };
+            creators["kurinnaxx swap needed"] = [](PlayerbotAI* ai) { return new KurinnaxxSwapTrigger(ai); };
+            creators["kurinnaxx hold needed"] = [](PlayerbotAI* ai) { return new KurinnaxxHoldTrigger(ai); };
             creators["grobbulus cloud nearby"] = [](PlayerbotAI* ai) { return new GrobbulusCloudTrigger(ai); };
             creators["enter naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasEnterDungeonTrigger(ai); };
             creators["leave naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasLeaveDungeonTrigger(ai); };

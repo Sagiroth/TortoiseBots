@@ -1,4 +1,5 @@
 #pragma once
+#include "actions/KurinnaxxActions.h"
 #include "generic/SkeramImageStrategy.h"
 #include "generic/SarturaWhirlwindStrategy.h"
 #include "generic/FankrissStrategy.h"
@@ -214,6 +215,7 @@ namespace ai
             creators["thaddius polarity"] = [](PlayerbotAI* ai) { return new ThaddiusPolarityStrategy(ai); };
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatStrategy(ai); };
             creators["twins physical dps"] = [](PlayerbotAI* ai) { return new TwinPhysicalDpsStrategy(ai); };
+            creators["kurinnaxx swap"] = [](PlayerbotAI* ai) { return new KurinnaxxSwapStrategy(ai); };
             creators["cthun carapace"] = [](PlayerbotAI* ai) { return new CthunCarapaceStrategy(ai); };
             creators["viscidus glob focus"] = [](PlayerbotAI* ai) { return new ViscidusGlobStrategy(ai); };
             creators["ossirian crystal"] = [](PlayerbotAI* ai) { return new OssirianCrystalStrategy(ai); };
