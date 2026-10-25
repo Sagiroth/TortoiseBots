@@ -1,4 +1,5 @@
 """Compile the production raid dispatch and DPS selector with small world stubs."""
+from tools.raid_dps_fixture import tournament, world
 import pathlib
 import shutil
 import subprocess
@@ -141,10 +142,10 @@ struct FindNonCcTargetStrategy {
     bool IsCcTarget(Unit* unit) { return unit->cc; }
 };
 struct FindLeastHpTargetStrategy : FindNonCcTargetStrategy {
-    Unit* selected = nullptr;
+    Unit* result = nullptr;
     using FindNonCcTargetStrategy::FindNonCcTargetStrategy;
     virtual void CheckAttacker(Unit* unit, ThreatManager*) {
-        if (!IsCcTarget(unit) && (!selected || unit->health < selected->health)) selected = unit;
+        if (!IsCcTarget(unit) && (!result || unit->health < result->health)) result = unit;
     }
 };
 struct TargetValue : RtiTargetValue {
@@ -154,7 +155,7 @@ struct TargetValue : RtiTargetValue {
     Unit* GetExplicitAttackTarget() { return ai->GetUnit(ai->context.order); }
     Unit* FindTarget(FindLeastHpTargetStrategy* strategy) {
         for (auto guid : context->attackers) strategy->CheckAttacker(ai->GetUnit(guid), nullptr);
-        return strategy->selected;
+        return strategy->result;
     }
 };
 struct DpsTargetValue : TargetValue {
@@ -173,7 +174,8 @@ Unit* GetArlokkPantherTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMaexxnaRescueTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetOnyxiaWhelpTarget(PlayerbotAI*) { return nullptr; }
 '''
-        fixture += twins + cthun + dispatch + strategy + infernal + selector + r'''
+        fixture = world(fixture)
+        fixture += twins + cthun + dispatch + strategy + tournament(source) + infernal + selector + r'''
 int main() {
     Player bot;
     PlayerbotAI ai{&bot, {}, {}, {}, nullptr, false, 0};

@@ -84,6 +84,13 @@ int main()
 {
     if (UpstreamGeddonPolicyTest() != 0) return 1;
     using namespace ai;
+    // Both movement filters run in combat: local survival moves must pass both.
+    for (std::string const name : {"geddon inferno retreat", "geddon bomb move", "move away from hazard"})
+    {
+        assert(!ShouldBlockGeddonMove(true, name, true, false));
+        assert(!ShouldBlockGeddonMove(true, name, false, true));
+        assert(!GeddonInfernoBlocksAction(true, false, true));
+    }
     // Opt-in, encounter and explicit-order boundaries. No role/victim gate:
     // the current tank must use exactly the same retreat decision as DPS.
     assert(GeddonInfernoEnabled(true, true, true, true, false));

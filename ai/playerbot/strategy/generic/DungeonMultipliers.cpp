@@ -182,7 +182,9 @@ float GolemaggFightMultiplier::GetValue(Action* action)
     }
     // Assist tanks (every tank but the main tank) never follow tank-assist
     // retargets: they stay glued to their rager.
-    if (ai->IsTank(bot) && livingTanks > 1)
+    if (ai->IsTank(bot) && livingTanks > 1 &&
+        !ai->HasStrategy("golemagg boss tank", BotState::BOT_STATE_COMBAT) &&
+        !ai->HasStrategy("golemagg add tank", BotState::BOT_STATE_COMBAT))
     {
         if (!tankRoles.BotIsMainTank() && dynamic_cast<TankAssistAction*>(action))
             return 0.0f;

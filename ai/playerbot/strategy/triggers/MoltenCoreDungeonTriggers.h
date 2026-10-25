@@ -238,6 +238,9 @@ namespace ai
 
         bool IsActive() override
         {
+            if (ai->HasStrategy("golemagg boss tank", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("golemagg add tank", BotState::BOT_STATE_COMBAT))
+                return false;
             if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
                 return false;
             if (!ai->HasStrategy("golemagg", BotState::BOT_STATE_COMBAT))

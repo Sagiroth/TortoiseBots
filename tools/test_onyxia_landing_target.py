@@ -29,7 +29,10 @@ def fixture(root):
 #include <type_traits>
 using ObjectGuid=unsigned;
 enum class BotState{BOT_STATE_COMBAT};
+struct PlayerbotAI;
 struct Unit {
+ Unit* victim=nullptr;PlayerbotAI* controller=nullptr;
+ Unit* GetVictim(){return victim;}
  unsigned entry=10184,map=249,instance=1;float hp=39;
  bool world=true,alive=true,combat=true,teleport=false,flying=false,aura=false,valid=true;
  unsigned GetEntry(){return entry;}unsigned GetMapId(){return map;}
@@ -41,7 +44,9 @@ struct Unit {
 using Player=Unit;
 struct Position{bool set=false;bool isSet(){return set;}};
 using PositionMap=std::map<std::string,Position>;
-struct AiObjectContext{PositionMap positions;std::list<ObjectGuid> attackers{1};ObjectGuid order=0;Unit* rti=nullptr;Unit* current=nullptr;};
+template<class T>struct FixtureValue{T data{};T Get(){return data;}};
+struct AiObjectContext{FixtureValue<std::string> rtiSetting;
+ template<class T>FixtureValue<T>* GetValue(std::string){return &rtiSetting;}PositionMap positions;std::list<ObjectGuid> attackers{1};ObjectGuid order=0;Unit* rti=nullptr;Unit* current=nullptr;};
 struct PlayerbotAI{
  Player* bot;Unit* boss;Unit* ordered=nullptr;bool enabled=true,tank=true;std::string hold;
  AiObjectContext context;
@@ -49,6 +54,10 @@ struct PlayerbotAI{
  Unit* GetUnit(ObjectGuid g){return g==1?boss:g==2?ordered:nullptr;}
  bool IsTank(Player*){return tank;}
  bool HasStrategy(std::string s,BotState){return s=="onyxia landing tank"?enabled:s==hold;}
+};
+struct PlayerbotAIStorage{
+ static PlayerbotAIStorage& Instance(){static PlayerbotAIStorage storage;return storage;}
+ PlayerbotAI* GetAI(Player* p){return p->controller;}
 };
 template<class T>T value(AiObjectContext* c,std::string n){
  if constexpr(std::is_same_v<T,PositionMap&>)return c->positions;
@@ -67,7 +76,8 @@ struct OnyxiaLandingAttackAction{
 // The existing fallback represents its documented nearest-loose-add result.
 // The test verifies the production Calculate caller actually overrides it.
 Unit* looseWhelp=nullptr;
-struct RtiTargetValue{Unit* Calculate(){return nullptr;}};
+Unit* markedTarget=nullptr;
+struct RtiTargetValue{Unit* Calculate(){return markedTarget;}};
 // Garr assignment is inactive in this Onyxia fixture.
 Unit* GetAssignedGarrTankTarget(PlayerbotAI*){return nullptr;}
 Unit* GetAssignedPatchwerkTankTarget(PlayerbotAI*){return nullptr;}
@@ -77,6 +87,7 @@ using NefarianAddAssignment=int;
 Unit* GetAssignedNefarianAddTarget(PlayerbotAI*,int){return nullptr;}
 struct FindTankTargetSmartStrategy{FindTankTargetSmartStrategy(PlayerbotAI*){}};
 struct TankTargetValue:RtiTargetValue{
+ Player* bot;
  PlayerbotAI* ai;AiObjectContext* context;
  Unit* GetExplicitAttackTarget(){return nullptr;}
  Unit* FindTarget(FindTankTargetSmartStrategy*){return looseWhelp;}
@@ -89,8 +100,18 @@ struct TankTargetValue:RtiTargetValue{
     code += r'''
 int main(){
  Player bot;Unit boss,whelp;whelp.entry=11262;looseWhelp=&whelp;
- PlayerbotAI ai{&bot,&boss};TankTargetValue selector;selector.ai=&ai;selector.context=&ai.context;
+ PlayerbotAI ai{&bot,&boss};TankTargetValue selector;selector.bot=&bot;selector.ai=&ai;selector.context=&ai.context;
  OnyxiaLandingAttackAction action{&ai,&ai.context};ai.context.current=&whelp;
+ // Exercise upstream conditional RTI with both lookup paths returning the same mark.
+ // Landing is disabled for these cases so falling through reaches the loose add.
+ Unit marked;marked.entry=999;markedTarget=&marked;ai.context.rti=&marked;ai.enabled=false;
+ assert(selector.Calculate()==&marked);
+ marked.victim=&bot;assert(selector.Calculate()==&whelp);
+ Player otherTank;PlayerbotAI otherAi{&otherTank,&boss};otherTank.controller=&otherAi;
+ marked.victim=&otherTank;assert(selector.Calculate()==&whelp);
+ otherAi.context.rtiSetting.data="cross";assert(selector.Calculate()==&marked);
+ otherAi.context.rtiSetting.data="";ai.tank=false;assert(selector.Calculate()==&marked);ai.tank=true;
+ markedTarget=nullptr;ai.context.rti=nullptr;ai.enabled=true;
  assert(selector.Calculate()==&boss);assert(action.isUseful());
  ai.context.current=&boss;assert(!action.isUseful());ai.context.current=&whelp;
  boss.flying=true;assert(selector.Calculate()==&whelp);boss.flying=false;

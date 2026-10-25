@@ -27,7 +27,7 @@ bool LocustSwarmTrigger::IsActive()
 
 #include "playerbot/strategy/values/GrobbulusCloudHazards.h"
 #include "playerbot/strategy/actions/SapphironBlizzardHazards.h"
-bool GrobbulusCloudTrigger::IsActive() { return InsideGrobbulusCloud(ai); }
+bool LocalGrobbulusCloudTrigger::IsActive() { return InsideGrobbulusCloud(ai); }
 
 #include "playerbot/strategy/actions/KelThuzadInterruptActions.h"
 bool KelThuzadInterruptTrigger::IsActive()
@@ -43,7 +43,7 @@ bool PatchwerkMeleeTrigger::IsActive()
     return action.isUseful();
 }
 
-bool ai::SapphironBlizzardTrigger::IsActive() { return SapphironBlizzardTooClose(ai); }
+bool ai::LocalSapphironBlizzardTrigger::IsActive() { return SapphironBlizzardTooClose(ai); }
 
 bool KelThuzadFissureTrigger::IsActive()
 {

@@ -72,6 +72,9 @@ namespace ai
     // non-tank non-healer runs.)
     inline bool IsOssirianCrystalRunner(PlayerbotAI* ai, Player* bot)
     {
-        return !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot);
+        // The local opt-in uses one elected nearby clicker and a bounded claim.
+        // Do not bypass that claim with the automatic run-and-click path.
+        return !ai->HasStrategy("ossirian crystal", BotState::BOT_STATE_COMBAT) &&
+            !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot);
     }
 }

@@ -1,4 +1,5 @@
 """Production ZG selectors, DPS precedence and existing retarget trigger."""
+from tools.raid_dps_fixture import tournament, world
 import pathlib
 import shutil
 import subprocess
@@ -17,7 +18,7 @@ class ArlokkTargetTest(unittest.TestCase):
         selector = 'Unit* GetArlokkPantherTarget(PlayerbotAI*) { return nullptr; }'
         if 'Unit* GetArlokkPantherTarget(' in source:
             selector = function(source, 'Unit* GetArlokkPantherTarget(')
-        production = (function(source, 'class DpsTargetStrategy') + ';\n' + selector + '\n' +
+        production = (function(source, 'class DpsTargetStrategy') + ';\n' + tournament(source) + selector + '\n' +
                       function(source, 'Unit* DpsTargetValue::Calculate()') + '\n' +
                       function(triggers, 'bool NotDpsTargetActiveTrigger::IsActive()'))
         fixture = r'''
@@ -174,6 +175,6 @@ int main() {
         with tempfile.TemporaryDirectory() as tmp:
             source = pathlib.Path(tmp) / 'fixture.cpp'
             binary = pathlib.Path(tmp) / 'fixture'
-            source.write_text(fixture + production + checks)
+            source.write_text(world(fixture) + production + checks)
             subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror',str(source),'-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True)

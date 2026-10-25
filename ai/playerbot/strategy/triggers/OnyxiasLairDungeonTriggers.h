@@ -69,6 +69,9 @@ namespace ai
         {
             if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
                 return false;
+            // The selected local tactic validates the entire damage chain.
+            if (ai->HasStrategy("onyxia deep breath", BotState::BOT_STATE_COMBAT))
+                return false;
             if (!ai->HasStrategy("onyxia", BotState::BOT_STATE_COMBAT))
                 return false;
             AiObjectContext* context = ai->GetAiObjectContext();

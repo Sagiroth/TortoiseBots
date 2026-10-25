@@ -26,10 +26,10 @@ namespace ai
         bool IsActive() override;
     };
 
-    class GrobbulusCloudTrigger : public Trigger
+    class LocalGrobbulusCloudTrigger : public Trigger
     {
     public:
-        GrobbulusCloudTrigger(PlayerbotAI* ai) : Trigger(ai,"grobbulus cloud nearby",1) {}
+        LocalGrobbulusCloudTrigger(PlayerbotAI* ai) : Trigger(ai,"grobbulus cloud nearby",1) {}
         bool IsActive() override;
     };
 
@@ -87,10 +87,10 @@ namespace ai
         bool IsActive() override;
     };
 
-    class SapphironBlizzardTrigger : public Trigger
+    class LocalSapphironBlizzardTrigger : public Trigger
     {
     public:
-        SapphironBlizzardTrigger(PlayerbotAI* ai) : Trigger(ai, "sapphiron blizzard nearby", 1) {}
+        LocalSapphironBlizzardTrigger(PlayerbotAI* ai) : Trigger(ai, "sapphiron blizzard nearby", 1) {}
         bool IsActive() override;
     };
 

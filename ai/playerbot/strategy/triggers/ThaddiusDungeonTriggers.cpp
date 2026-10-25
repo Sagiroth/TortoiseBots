@@ -50,6 +50,9 @@ bool ThaddiusPhaseTransitionTrigger::IsActive()
 
 bool ThaddiusPhaseThaddiusTrigger::IsActive()
 {
+    // Keep the opt-in geometry, opposite-charge path checks and manual holds.
+    if (ai->HasStrategy("thaddius polarity", BotState::BOT_STATE_COMBAT))
+        return false;
     Unit* stalagg;
     Unit* feugen;
     Unit* thaddius;

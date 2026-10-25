@@ -358,7 +358,7 @@ namespace
             return nullptr;
 
         AiObjectContext* context = ai->GetAiObjectContext();
-        GeneralDpsStrategy strategy(ai, 0.0f);
+        DpsTargetStrategy strategy(ai);
         Unit* chosen = nullptr;
         for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
         {
@@ -442,7 +442,7 @@ namespace
         if (!nefarian)
             return nullptr;
 
-        GeneralDpsStrategy strategy(ai, 0.0f);
+        DpsTargetStrategy strategy(ai);
         Unit* chosen = nullptr;
         for (ObjectGuid const& guid : possibleTargets)
         {

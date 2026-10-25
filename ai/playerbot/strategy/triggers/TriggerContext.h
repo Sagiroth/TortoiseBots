@@ -336,14 +336,14 @@ namespace ai
             creators["kt fissure nearby"] = [](PlayerbotAI* ai) { return new KelThuzadFissureTrigger(ai); };
             creators["kri cloud nearby"] = [](PlayerbotAI* ai) { return new KriCloudTrigger(ai); };
             creators["sartura whirlwind nearby"] = [](PlayerbotAI* ai) { return new SarturaWhirlwindTrigger(ai); };
-            creators["sapphiron blizzard nearby"] = [](PlayerbotAI* ai) { return new SapphironBlizzardTrigger(ai); };
+            creators["sapphiron blizzard nearby"] = [](PlayerbotAI* ai) { return new LocalSapphironBlizzardTrigger(ai); };
             creators["patchwerk melee unsafe"] = [](PlayerbotAI* ai) { return new PatchwerkMeleeTrigger(ai); };
             creators["kt frostbolt ready"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptTrigger(ai); };
             creators["locust swarm active"] = [](PlayerbotAI* ai) { return new LocustSwarmTrigger(ai); };
             creators["ossirian crystal ready"] = [](PlayerbotAI* ai) { return new OssirianCrystalTrigger(ai); };
             creators["kurinnaxx swap needed"] = [](PlayerbotAI* ai) { return new KurinnaxxSwapTrigger(ai); };
             creators["kurinnaxx hold needed"] = [](PlayerbotAI* ai) { return new KurinnaxxHoldTrigger(ai); };
-            creators["grobbulus cloud nearby"] = [](PlayerbotAI* ai) { return new GrobbulusCloudTrigger(ai); };
+            creators["grobbulus cloud nearby"] = [](PlayerbotAI* ai) { return new LocalGrobbulusCloudTrigger(ai); };
             creators["enter naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasEnterDungeonTrigger(ai); };
             creators["leave naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasLeaveDungeonTrigger(ai); };
             creators["ebonroc shadow swap needed"] = [](PlayerbotAI* ai) { return new EbonrocShadowSwapTrigger(ai); };

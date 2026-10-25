@@ -9,6 +9,9 @@ using namespace ai;
 
 bool GeddonInfernoTrigger::IsActive()
 {
+    // The selected local tactic owns its larger clearance and final rooted pulse.
+    if (ai->HasStrategy("geddon inferno", BotState::BOT_STATE_COMBAT))
+        return false;
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
         return false;
     // Only during a live Geddon fight: the multiplier keeps covering the

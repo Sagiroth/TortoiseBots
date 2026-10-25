@@ -21,6 +21,10 @@ bool GolemaggHealerPositionAction::Execute(Event& event)
 bool GolemaggTankHoldAction::Execute(Event& event)
 {
     (void)event;
+    // Explicit local boss/add assignments must not inherit slot-order camps.
+    if (ai->HasStrategy("golemagg boss tank", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("golemagg add tank", BotState::BOT_STATE_COMBAT))
+        return false;
     AiObjectContext* context = ai->GetAiObjectContext();
     const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
     Unit* boss = nullptr;

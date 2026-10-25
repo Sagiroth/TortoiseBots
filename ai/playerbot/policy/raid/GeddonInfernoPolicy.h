@@ -41,8 +41,12 @@ namespace ai
     // types so it remains unit-testable.
     inline bool IsGeddonSurvivalMove(const std::string& actionName)
     {
+        // Local runouts and hazard escape must also pass this dungeon-wide gate.
         return actionName == "move away from geddon" ||
-               actionName == "raid bomb runout";
+               actionName == "raid bomb runout" ||
+               actionName == "geddon inferno retreat" ||
+               actionName == "geddon bomb move" ||
+               actionName == "move away from hazard";
     }
 
     inline bool ShouldBlockGeddonMove(bool actionMovesOrReaches, const std::string& actionName,

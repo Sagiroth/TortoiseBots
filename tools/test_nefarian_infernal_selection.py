@@ -1,4 +1,5 @@
 """Run the production DPS orchestration and Infernal filter with target fixtures."""
+from tools.raid_dps_fixture import tournament, world
 import pathlib
 import shutil
 import subprocess
@@ -39,6 +40,7 @@ struct PlayerbotAI {
         assert(name == "nefarian infernal focus");
         return enabled;
     }
+    Player* GetBot() { return &bot; }
     bool IsTank(Player* player) const { return player->tank; }
     AiObjectContext* GetAiObjectContext() { return &context; }
 };
@@ -86,7 +88,8 @@ struct DpsTargetValue : RtiTargetValue {
     Unit* Calculate();
 };
 '''
-        fixture += dps + infernal + calculate + r'''
+        fixture = world(fixture)
+        fixture += dps + tournament(text) + infernal + calculate + r'''
 int main() {
     PlayerbotAI ai;
     DpsTargetValue value(&ai);

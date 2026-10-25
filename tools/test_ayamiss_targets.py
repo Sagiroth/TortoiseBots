@@ -1,4 +1,5 @@
 """Production Ayamiss selector, DPS precedence and existing retarget trigger."""
+from tools.raid_dps_fixture import tournament, world
 import pathlib
 import shutil
 import subprocess
@@ -19,7 +20,7 @@ class AyamissTargetTest(unittest.TestCase):
         selector = 'Unit* GetAyamissLarvaTarget(PlayerbotAI*) { return nullptr; }'
         if 'Unit* GetAyamissLarvaTarget(' in spawn_source:
             selector = function(spawn_source, 'class AyamissTargetStrategy') + ';\n' + function(spawn_source, 'Unit* GetAyamissLarvaTarget(')
-        production = (function(source, 'class DpsTargetStrategy') + ';\n' + selector + '\n' +
+        production = (function(source, 'class DpsTargetStrategy') + ';\n' + tournament(source) + selector + '\n' +
                       function(source, 'Unit* DpsTargetValue::Calculate()') + '\n' +
                       function(triggers, 'bool NotDpsTargetActiveTrigger::IsActive()'))
         fixture = r'''
@@ -192,6 +193,6 @@ int main() {
         with tempfile.TemporaryDirectory() as tmp:
             source = pathlib.Path(tmp) / 'fixture.cpp'
             binary = pathlib.Path(tmp) / 'fixture'
-            source.write_text(fixture + production + checks)
+            source.write_text(world(fixture) + production + checks)
             subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror','-Wno-unused-parameter',str(source),'-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True)

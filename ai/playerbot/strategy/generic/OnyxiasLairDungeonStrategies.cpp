@@ -95,7 +95,8 @@ public:
         if (!action || !OnyxiaAirSpreadEnabled(ai))
             return 1.0f;
         std::string const name = action->getName();
-        if (name == "onyxia air spread" || name == "move away from hazard" || name == "flee" ||
+        if (name == "onyxia air spread" || name == "onyxia breath safe zone" ||
+            name == "move away from hazard" || name == "flee" ||
             dynamic_cast<AttackAction*>(action))
             return 1.0f;
         // Keep the spread position while airborne; ordinary range/formation
