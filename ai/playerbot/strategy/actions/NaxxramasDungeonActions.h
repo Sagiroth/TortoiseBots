@@ -7,6 +7,8 @@
 
 namespace ai
 {
+    Unit* GetActiveLoathebSporeGuard(PlayerbotAI* ai);
+    bool IsLoathebSporeTargetExcluded(PlayerbotAI* ai, Unit* target);
     class GrobbulusCloudEscapeAction : public MovementAction
     {
     public:

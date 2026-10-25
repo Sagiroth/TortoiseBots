@@ -225,6 +225,51 @@ public:
     }
 };
 }
+#include "playerbot/GarrAoePolicy.h"
+#include "playerbot/strategy/actions/GenericSpellActions.h"
+namespace
+{
+class LoathebSporeGuardMultiplier : public Multiplier
+{
+public:
+    LoathebSporeGuardMultiplier(PlayerbotAI* ai) : Multiplier(ai, "loatheb spore protection") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || !GetActiveLoathebSporeGuard(ai))
+            return 1.0f;
+        if (GarrIncidentalDamageAction(action->getName(),
+                action->getThreatType() == ActionThreatType::ACTION_THREAT_AOE,
+                dynamic_cast<CastHealingSpellAction*>(action) != nullptr,
+                action->IsCrowdControlAction()))
+            return 0.0f;
+        if (action->IsCrowdControlAction() || action->getName() == "attack my target" ||
+            action->getName() == "attack rti target")
+            return 1.0f;
+        bool const offensive = dynamic_cast<AttackAction*>(action) ||
+            dynamic_cast<CastSpellAction*>(action) || action->getName() == "pet attack";
+        return offensive && IsLoathebSporeTargetExcluded(ai, action->GetTarget()) ? 0.0f : 1.0f;
+    }
+};
+}
+
+void LoathebSporeGuardStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("raid dps target excluded",
+        NextAction::array(0, new NextAction("raid dps retarget", ACTION_HIGH + 5), nullptr)));
+}
+void LoathebSporeGuardStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitCombatTriggers(triggers);
+}
+void LoathebSporeGuardStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new LoathebSporeGuardMultiplier(ai));
+}
+void LoathebSporeGuardStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}
+
 void PatchwerkAssignmentStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     if (name == "patchwerk melee safety")

@@ -3,6 +3,18 @@
 
 namespace ai
 {
+    class LoathebSporeGuardStrategy : public Strategy
+    {
+    public:
+        LoathebSporeGuardStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "loatheb spore guard"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     class PatchwerkAssignmentStrategy : public Strategy
     {
     public:

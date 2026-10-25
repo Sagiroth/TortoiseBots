@@ -202,6 +202,7 @@ namespace ai
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatStrategy(ai); };
             creators["ossirian crystal"] = [](PlayerbotAI* ai) { return new OssirianCrystalStrategy(ai); };
             creators["grobbulus clouds"] = [](PlayerbotAI* ai) { return new GrobbulusCloudStrategy(ai); };
+            creators["loatheb spore guard"] = [](PlayerbotAI* ai) { return new LoathebSporeGuardStrategy(ai); };
             creators["naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasDungeonStrategy(ai); };
             creators["zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubDungeonStrategy(ai); };
             creators["ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajDungeonStrategy(ai); };

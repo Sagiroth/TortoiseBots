@@ -105,6 +105,43 @@ bool MaexxnaRescueAction::isUseful()
     return wrap && wrap != AI_VALUE(Unit*, "current target");
 }
 
+#include "playerbot/LoathebSporePolicy.h"
+#include "playerbot/strategy/values/RtiTargetValue.h"
+
+Unit* ai::GetActiveLoathebSporeGuard(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (bot->GetMapId() != 533 || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->IsBeingTeleported() || !bot->IsInCombat() ||
+        !ai->HasStrategy("loatheb spore guard", BotState::BOT_STATE_COMBAT))
+        return nullptr;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* boss = ai->GetUnit(guid);
+        if (boss && boss->GetEntry() == 16011 && boss->IsInMap(bot) && boss->IsAlive() && boss->IsInCombat())
+            return boss;
+    }
+    return nullptr;
+}
+
+bool ai::IsLoathebSporeTargetExcluded(PlayerbotAI* ai, Unit* target)
+{
+    Player* bot = ai->GetBot();
+    if (!target || target->GetEntry() != 16286 || !target->IsAlive() || !target->IsInMap(bot) ||
+        !GetActiveLoathebSporeGuard(ai))
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    bool ordered = AI_VALUE(ObjectGuid, "explicit attack target") == target->GetObjectGuid();
+    if (Group* group = bot->GetGroup())
+    {
+        int const mark = RtiTargetValue::GetRtiIndex(AI_VALUE(std::string, "rti"));
+        ordered = ordered || (mark >= 0 && ObjectGuid(group->GetTargetIcon(mark)) == target->GetObjectGuid());
+    }
+    return LoathebSporeProtected(true, bot->GetMapId() == 533, true, target->GetEntry(), ordered);
+}
+
+
 #include "playerbot/LocustSwarmPolicy.h"
 Unit* ai::GetActiveLocustSwarm(PlayerbotAI* ai)
 {
