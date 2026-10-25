@@ -1189,8 +1189,9 @@ public:
                 for (auto& questId : questIds)
                 {
                     Quest const* questTemplate = sObjectMgr.GetQuestTemplate(questId);
-                    if (questTemplate)
-                        replaceCaseInsensitive(message, " " + ChatHelper::formatQuest(questTemplate), "");
+                    if (!questTemplate)
+                        continue;
+                    replaceCaseInsensitive(message, " " + ChatHelper::formatQuest(questTemplate), "");
                     replaceCaseInsensitive(message, ChatHelper::formatQuest(questTemplate), "");
                 }
             }
