@@ -112,6 +112,10 @@ struct PlayerbotAI {
     Unit* GetUnit(ObjectGuid guid) { return units[guid]; }
 };
 namespace ai {
+    int faerlinaDispatchCalls = 0;
+    bool IsFaerlinaWorshipperTargetExcluded(PlayerbotAI*, Unit* target) {
+        ++faerlinaDispatchCalls; return target && target->GetEntry() == 16506;
+    }
     int naxxDispatchCalls = 0;
     bool IsLoathebSporeTargetExcluded(PlayerbotAI*, Unit* target) {
         ++naxxDispatchCalls; return target && target->GetEntry() == 16286;
@@ -293,6 +297,8 @@ int main() {
     bot.map = 533;
     Unit spore{16286, 533, 100, ObjectGuid(5)};
     assert(IsRaidDpsTargetExcluded(&ai, &spore) && naxxDispatchCalls == 1);
+    Unit worshipper{16506, 533, 100, ObjectGuid(6)};
+    assert(IsRaidDpsTargetExcluded(&ai, &worshipper) && faerlinaDispatchCalls == 1);
 
     // Original MC/BWL dispatch behavior: AQ's additive hook cannot capture it.
     Unit majordomo{12018, 409, 100, ObjectGuid(3)};
