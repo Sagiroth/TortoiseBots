@@ -2337,9 +2337,10 @@ void TravelNodeMap::manageNodes(Unit* bot, bool mapFull)
         TravelNode* startNode;
         TravelNode* newNode;
 
-        for (auto startNode : m_nodes)
+        for (size_t i = 0; i < m_nodes.size();)
         {
-            cropUselessNode(startNode);
+            if (!cropUselessNode(m_nodes[i]))
+                ++i;
         }
 
         //Pick random Node
