@@ -179,6 +179,7 @@ namespace ai
             creators["ai chat"] = [](PlayerbotAI* ai) { return new AIChatStrategy(ai); };
 
             creators["mimic consumables"] = [](PlayerbotAI* ai) { return new MimicConsumableStrategy(ai); };
+            creators["jindo curse"] = [](PlayerbotAI* ai) { return new JindoCurseStrategy(ai); };
             creators["hakkar poison"] = [](PlayerbotAI* ai) { return new HakkarPoisonStrategy(ai); };
             // Dungeon Strategies
             creators["dungeon"] = [](PlayerbotAI* ai) { return new DungeonStrategy(ai); };

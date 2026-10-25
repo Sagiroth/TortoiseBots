@@ -187,6 +187,33 @@ int main() {
     party.friendly=false; assert(action.Execute(event)); party.friendly=true;
     party.world=false; assert(!action.isUseful()); party.world=true;
     ai.strategies.clear(); assert(action.Execute(event)); // immediate opt-out
+
+    // Jin'do: Delusions grants shade damage access. Protect the whole curse
+    // type, including a cure requested for a different curse on this target.
+    SpellEntry delusions; delusions.Id=24306; delusions.Dispel=DISPEL_CURSE;
+    Aura d{&delusions}; other.Dispel=DISPEL_CURSE;
+    party.ids={24306}; party.auras={&d,&o};
+    SpellEntry decurse; decurse.Effect[0]=SPELL_EFFECT_DISPEL;
+    decurse.EffectMiscValue[0]=DISPEL_CURSE; sServerFacade.spells[2782]=decurse;
+    action.spellId=2782;
+    assert(ai.HasAuraToDispel(&party,DISPEL_CURSE));
+    assert(action.isUseful() && action.Execute(event)); // default off
+    ai.strategies={"hakkar poison"}; assert(action.Execute(event)); // independent toggles
+    ai.strategies={"jindo curse"};
+    assert(!ai.HasAuraToDispel(&party,DISPEL_CURSE));
+    assert(!action.isUseful() && !action.Execute(event));
+    action.spellId=527; assert(action.Execute(event)); // Hex is magic, not curse
+    action.spellId=2782;
+    party.ids.clear(); assert(action.isUseful());
+    party.ids={24306}; assert(!action.Execute(event)); // queued before curse landed
+    bot.ids={24306}; bot.auras={&d}; action.target=&bot;
+    assert(!ai.HasAuraToDispel(&bot,DISPEL_CURSE) && !action.Execute(event));
+    action.target=&party;
+    bot.map=party.map=1; assert(action.Execute(event)); bot.map=party.map=309;
+    party.instance=2; assert(action.Execute(event)); party.instance=1;
+    party.friendly=false; assert(action.Execute(event)); party.friendly=true;
+    action.spellId=999; assert(!action.Execute(event));
+    ai.strategies.clear(); assert(action.Execute(event));
 }
 '''
         with tempfile.TemporaryDirectory() as tmp:

@@ -31,6 +31,8 @@ std::uint32_t GetZulGurubProtectedDispelMask(PlayerbotAI* ai, Unit* target)
     std::uint32_t mask = 0;
     if (ai->HasStrategy("hakkar poison", BotState::BOT_STATE_COMBAT) && target->HasAura(24321))
         mask |= GetDispellMask(DISPEL_POISON);
+    if (ai->HasStrategy("jindo curse", BotState::BOT_STATE_COMBAT) && target->HasAura(24306))
+        mask |= GetDispellMask(DISPEL_CURSE);
     return mask && sServerFacade.IsFriendlyTo(ai->GetBot(), target) ? mask : 0;
 }
 
