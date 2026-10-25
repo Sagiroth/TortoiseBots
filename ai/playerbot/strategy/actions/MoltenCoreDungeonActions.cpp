@@ -162,21 +162,58 @@ bool ai::IsRaidDpsTargetExcluded(PlayerbotAI* ai, Unit* target)
 {
     Player* bot = ai->GetBot();
     // DPS target values call this outside raids too; avoid strategy lookups there.
-    if (bot->GetMapId() != 409)
+    bool const inMoltenCore = bot->GetMapId() == 409;
+    bool const inBlackwingLair = bot->GetMapId() == 469;
+    if (!inMoltenCore && !inBlackwingLair)
         return false;
     if (!target || !target->IsAlive() || !target->IsInMap(bot) || !bot->IsAlive() || !bot->IsInCombat())
         return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
     RaidDpsEncounter const encounter = RaidDpsEncounterForTarget(target->GetEntry(),
         ai->HasStrategy("golemagg dps", BotState::BOT_STATE_COMBAT),
         ai->HasStrategy("majordomo dps", BotState::BOT_STATE_COMBAT),
-        ai->HasStrategy("garr dps", BotState::BOT_STATE_COMBAT));
-    bool const protectedEntry = encounter != RaidDpsEncounter::None;
+        ai->HasStrategy("garr dps", BotState::BOT_STATE_COMBAT),
+        inBlackwingLair && ai->HasStrategy("razorgore phase1", BotState::BOT_STATE_COMBAT));
+
+    bool encounterActive = false;
+    bool protectedEntry = false;
+    if (encounter == RaidDpsEncounter::Razorgore)
+    {
+        // The BWL script disables the orb after all eggs are destroyed and
+        // switches the encounter to phase two. Use the existing cached nearby
+        // game-object value; if the orb is temporarily out of sight, fail
+        // closed and keep the phase-one damage guard active.
+        bool orbFound = false;
+        bool orbDisabled = false;
+        for (GuidPosition const& position : AI_VALUE(std::list<GuidPosition>, "entry filter::{gos in sight,177808}"))
+        {
+            GameObject* orb = position.GetGameObject(bot->GetInstanceId());
+            if (!orb)
+                continue;
+            orbFound = true;
+            orbDisabled = orb->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT);
+            break;
+        }
+        encounterActive = RazorgorePhaseOneTargetProtected(true, true, true,
+            target->IsInCombat(), orbFound, orbDisabled);
+        protectedEntry = true;
+    }
+    else
+    {
+        protectedEntry = encounter != RaidDpsEncounter::None;
+        // Majordomo yields when his adds die. Do not autonomously burn him down,
+        // but preserve the assigned tank and explicit damage orders.
+        encounterActive = encounter == RaidDpsEncounter::Majordomo &&
+            target->IsInCombat() && !sServerFacade.IsFriendlyTo(bot, target);
+    }
     bool const enabled = protectedEntry;
-    bool const inEncounterMap = bot->GetMapId() == 409;
-    bool const tank = ai->IsTank(bot);
+    bool const inEncounterMap = inMoltenCore || (inBlackwingLair && encounter == RaidDpsEncounter::Razorgore);
+    // Phase one is controlled through the orb; a tank role is not permission
+    // to attack Razorgore automatically. Explicit attack/raid-mark orders are
+    // still represented by `ordered` below and remain authoritative.
+    bool const tank = encounter == RaidDpsEncounter::Razorgore ? false : ai->IsTank(bot);
     if (!protectedEntry || !enabled || !inEncounterMap || tank)
         return false;
-    AiObjectContext* context = ai->GetAiObjectContext();
     bool ordered = AI_VALUE(ObjectGuid, "explicit attack target") == target->GetObjectGuid();
     if (Group* group = bot->GetGroup())
     {
@@ -184,10 +221,6 @@ bool ai::IsRaidDpsTargetExcluded(PlayerbotAI* ai, Unit* target)
         if (mark >= 0 && ObjectGuid(group->GetTargetIcon(mark)) == target->GetObjectGuid())
             ordered = true;
     }
-    // Majordomo yields when his adds die. Do not autonomously burn him down,
-    // but preserve the assigned tank and explicit damage orders.
-    bool encounterActive = encounter == RaidDpsEncounter::Majordomo &&
-        target->IsInCombat() && !sServerFacade.IsFriendlyTo(bot, target);
     if (encounter == RaidDpsEncounter::Golemagg || encounter == RaidDpsEncounter::Garr)
     {
         uint32 const bossEntry = encounter == RaidDpsEncounter::Golemagg ? 11988 : 12057;

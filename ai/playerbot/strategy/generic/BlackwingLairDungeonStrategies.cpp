@@ -2,9 +2,47 @@
 #include "BlackwingLairDungeonStrategies.h"
 #include "DungeonMultipliers.h"
 #include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
+#include "playerbot/strategy/actions/AttackAction.h"
+#include "playerbot/strategy/values/RaidDpsTargetPolicy.h"
 #include "playerbot/EbonrocSwapPolicy.h"
 
 using namespace ai;
+
+namespace
+{
+class RazorgorePhaseOneMultiplier : public Multiplier
+{
+public:
+    RazorgorePhaseOneMultiplier(PlayerbotAI* ai) : Multiplier(ai, "razorgore phase one discipline") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || action->IsCrowdControlAction())
+            return 1.0f;
+        std::string const name = action->getName();
+        if (name == "attack my target" || name == "attack rti target")
+            return 1.0f;
+        bool const offensive = dynamic_cast<AttackAction*>(action) ||
+            dynamic_cast<CastSpellAction*>(action) || name == "pet attack";
+        return offensive && IsRaidDpsTargetExcluded(ai, action->GetTarget()) ? 0.0f : 1.0f;
+    }
+};
+}
+
+void RazorgorePhaseOneStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("raid dps target excluded",
+        NextAction::array(0, new NextAction("raid dps retarget", ACTION_HIGH + 5), NULL)));
+}
+
+void RazorgorePhaseOneStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new RazorgorePhaseOneMultiplier(ai));
+}
+
+void RazorgorePhaseOneStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}
 
 void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
