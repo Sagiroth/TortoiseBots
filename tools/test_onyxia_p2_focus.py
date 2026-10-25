@@ -27,6 +27,7 @@ Unit*GetOnyxiaRangedTarget(PlayerbotAI*){return &boss;}
 struct Action{std::string name;Unit*target=&boss;Action(std::string n):name(n){}virtual ~Action(){}std::string getName(){return name;}Unit*GetTarget(){return target;}};
 struct MovementAction:Action{using Action::Action;};struct ReachTargetAction:MovementAction{using MovementAction::MovementAction;};
 struct CastReachTargetSpellAction:Action{using Action::Action;};struct AttackAction:Action{using Action::Action;};
+bool SuppressOnyxiaAirAoe(PlayerbotAI*,Action*){return false;}
 struct OnyxiaAirSpreadMultiplier{PlayerbotAI*ai=nullptr;float GetValue(Action*);};
 '''+f+'''
 int main(){OnyxiaAirSpreadMultiplier m;ReachTargetAction reach("reach spell");MovementAction follow("follow");
@@ -53,6 +54,7 @@ struct Scan{bool bossAirborne=true;Unit*whelp=nullptr;};Scan scan;
 Scan ScanOnyxiaWhelps(PlayerbotAI*,Player*){return scan;}bool IsOnyxiaWhelpDuty(PlayerbotAI*,Player*){return true;}
 struct Config{bool onyxiaWhelpsAndEggs=true;}sPlayerbotAIConfig;
 struct Facade{bool IsAlive(Unit*){return true;}}sServerFacade;
+bool SuppressOnyxiaAirAoe(PlayerbotAI*,Action*){return false;}
 struct OnyxiaWhelpHoldMultiplier{Player*bot=&player;PlayerbotAI*ai=&brain;Context*context=nullptr;float GetValue(Action*);};
 '''+extract(s,'float OnyxiaWhelpHoldMultiplier::GetValue(')+'''
 int main(){OnyxiaWhelpHoldMultiplier m;DpsAssistAction assist;

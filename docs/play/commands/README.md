@@ -314,3 +314,18 @@ every ten seconds; `OnyxiaAirReach` and `OnyxiaAirCast` report movement/cast
 starts or blockers at most once per two seconds per bot and category. They
 include raw map/instance coordinates, range, LOS and action/core verdicts.
 A rejected route never falls back to an airborne chase or a whelp cave.
+
+During airborne Onyxia, ranged bots using the existing Onyxia strategies keep
+casting single-target damage without waiting for a tank's threat lead. The
+threat back-off, feign-death threat trigger and raid wand-on-aggro rule resume
+when she lands; ordinary whelp threat rules remain. Ground AoE yields to
+single-target spells unless the selected nearby cluster contains at least
+three live, engaged, unmarked whelps. Heals remain unaffected.
+
+A ranged bot displaced onto the outer arena floor can return to a central
+floor point, then move into spell range and line of sight. This requires a
+complete inward navmesh route clear of eggs and hazards; it cannot route
+through the egg caves or chase the airborne boss. Player movement holds and
+Deep Breath still take priority. `OnyxiaAirReach` reports `returning to floor`
+or the refused approach, egg, path or hazard check. Ground phases no longer
+produce the misleading `no engaged airborne boss` state row.

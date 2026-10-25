@@ -13,7 +13,7 @@ class RaidHealThreatTest(unittest.TestCase):
 using uint8=unsigned char;
 namespace BotState {constexpr int BOT_STATE_COMBAT=1;}
 enum class ActionThreatType {ACTION_THREAT_NONE,ACTION_THREAT_SINGLE,ACTION_THREAT_AOE};
-struct Action {virtual ~Action(){};virtual std::string getName(){return "action";}virtual ActionThreatType GetThreatType(){return ActionThreatType::ACTION_THREAT_AOE;}};
+struct Unit;struct Action {Unit* GetTarget(){return nullptr;}virtual ~Action(){};virtual std::string getName(){return "action";}virtual ActionThreatType GetThreatType(){return ActionThreatType::ACTION_THREAT_AOE;}};
 struct CastSpellAction:Action {std::string name;std::string getName() override{return name;}};
 struct CastHealingSpellAction:CastSpellAction {};
 struct ShieldAction:CastSpellAction {ActionThreatType GetThreatType() override{return ActionThreatType::ACTION_THREAT_NONE;}};
@@ -28,6 +28,7 @@ struct AI {bool unsafe=true,neglect=false,group=true,high=true;int aoe=100;Bot b
  bool HasStrategy(std::string,int){return false;}Bot* GetMaster(){return nullptr;}Bot* GetBot(){return &bot;}
  int value(std::string n){return n=="neglect threat"?neglect:n=="group"?group:n=="aoe"?aoe:n=="high threat"?high:0;}};
 Unit* GetAssignedHuhuranTankTarget(AI*){return nullptr;}
+bool IsOnyxiaAirCombatTarget(AI*,Unit*){return false;}
 bool RaidHealerShouldHoldDamage(AI* ai){return ai->unsafe;}
 template<class T>T fixtureValue(AI* ai,std::string name){if constexpr(std::is_pointer_v<T>)return nullptr;else return static_cast<T>(ai->value(name));}
 #define AI_VALUE(type,name) fixtureValue<type>(ai,name)

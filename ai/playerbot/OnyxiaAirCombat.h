@@ -12,9 +12,12 @@ namespace ai
         std::uint64_t target = 0;
         std::uint32_t choiceAt = 0;
         std::uint64_t recovered = 0;
+        std::uint32_t aoeAt = 0;
+        unsigned aoeWhelps = 0;
         std::uint32_t lastLog[static_cast<unsigned>(OnyxiaAirLog::Count)]{};
     };
     bool IsOnyxiaAirCombatTarget(PlayerbotAI* ai, Unit* target);
+    bool SuppressOnyxiaAirAoe(PlayerbotAI* ai, Action* action);
     bool OnyxiaAirNeedsAssist(PlayerbotAI* ai);
     void UpdateOnyxiaAirCombat(PlayerbotAI* ai);
     void LogOnyxiaAir(PlayerbotAI* ai, OnyxiaAirLog kind, char const* reason,

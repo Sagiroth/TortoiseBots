@@ -2,6 +2,7 @@
 
 #include "playerbot/playerbot.h"
 #include "ThreatStrategy.h"
+#include "playerbot/OnyxiaAirCombat.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
@@ -11,6 +12,12 @@ using namespace ai;
 
 float ThreatMultiplier::GetValue(Action* action)
 {
+    // There is no tank threat ceiling during flight; whelp AoE still uses
+    // ordinary threat rules, and landing immediately restores the ceiling.
+    if (action && action->GetThreatType() == ActionThreatType::ACTION_THREAT_SINGLE &&
+        IsOnyxiaAirCombatTarget(ai, action->GetTarget()))
+        return 1.0f;
+
     // Per-fight suppression (mod-playerbots "neglect threat"): a boss
     // fight strategy that owns positioning/targeting sets this while
     // engaged so threat gating does not veto its scripted target choice.

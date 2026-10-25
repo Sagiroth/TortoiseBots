@@ -23,6 +23,15 @@ namespace ai
         return (tank && needsPickup ? 1000.0f : 0.0f) + (current ? 10.0f : 0.0f) - distance;
     }
 
+    inline bool OnyxiaAirApproachFloor(float x, float y, float z)
+    {
+        // Outer arena floor and central west lane; egg caves lie beyond this
+        // apron. Actual paths must also clear eggs and return inward.
+        return std::isfinite(x) && std::isfinite(y) && std::isfinite(z) &&
+            x >= -80.0f && x <= 35.0f && y >= -252.0f && y <= -180.0f &&
+            z >= -94.0f && z <= -80.0f;
+    }
+
     // Conservative central floor, inset from the eight flight endpoints and
     // the whelp-spawn/egg-pit sides in Turtle's boss_onyxia.cpp. This bounds
     // candidates; navmesh, height and hazard checks are still required.

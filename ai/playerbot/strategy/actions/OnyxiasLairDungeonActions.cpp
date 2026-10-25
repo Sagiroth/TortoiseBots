@@ -1,5 +1,7 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/values/AoeValues.h"
+#include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "OnyxiasLairDungeonActions.h"
 #include "playerbot/OnyxiaAirCombat.h"
 
@@ -182,6 +184,7 @@ bool OnyxiaKillWhelpsAction::Execute(Event& event)
 
 float OnyxiaWhelpHoldMultiplier::GetValue(Action* action)
 {
+    if (SuppressOnyxiaAirAoe(ai, action)) return 0.0f;
     if (!action || !sPlayerbotAIConfig.onyxiaWhelpsAndEggs)
         return 1.0f;
     const bool assist = dynamic_cast<DpsAssistAction*>(action) || dynamic_cast<TankAssistAction*>(action);
@@ -283,7 +286,10 @@ void ai::UpdateOnyxiaAirCombat(PlayerbotAI* ai)
     Unit* boss = GetAirborneOnyxia(ai);
     if (!boss)
     {
-        if (ai->GetBot()->IsInCombat()) LogOnyxiaAir(ai, OnyxiaAirLog::State, "no engaged airborne boss");
+        // Ground phases are expected, not a failed airborne recovery.
+        Unit* known = ai->GetAiObjectContext()->GetValue<Unit*>("boss target")->Get();
+        if (known && known->GetEntry() == 10184 && (known->IsFlying() || known->HasAura(17131)))
+            LogOnyxiaAir(ai, OnyxiaAirLog::State, "airborne boss not engaged/eligible", known);
         return;
     }
     LogOnyxiaAir(ai, OnyxiaAirLog::State, "active", boss);
@@ -350,6 +356,28 @@ Unit* ai::GetOnyxiaRangedTarget(PlayerbotAI* ai)
     state.target = target ? target->GetObjectGuid().GetRawValue() : 0;
     state.choiceAt = now;
     return target;
+}
+
+bool ai::SuppressOnyxiaAirAoe(PlayerbotAI* ai, Action* action)
+{
+    if (!action || action->GetThreatType() != ActionThreatType::ACTION_THREAT_AOE ||
+        !OnyxiaRangedFocusEnabled(ai) || dynamic_cast<CastHealingSpellAction*>(action)) return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (!IsOnyxiaAirCombatTarget(ai, AI_VALUE(Unit*, "current target"))) return false;
+    OnyxiaAirCombatState& state = AI_VALUE(OnyxiaAirCombatState&, "onyxia air combat state");
+    uint32 const now = WorldTimer::getMSTime();
+    if (state.aoeAt && uint32(now - state.aoeAt) < 1000) return state.aoeWhelps < 3;
+    unsigned whelps = 0;
+    for (ObjectGuid const& guid : AoeCountValue::FindMaxDensity(ai->GetBot()))
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (unit && unit->GetEntry() == 11262 && unit->IsAlive() && unit->IsInMap(ai->GetBot()) &&
+            unit->IsInCombat() && ai->GetBot()->GetDistance(unit) <= 35.0f &&
+            !IsRaidCrowdControlMarkedTarget(ai, unit)) ++whelps;
+    }
+    state.aoeAt = now;
+    state.aoeWhelps = whelps;
+    return whelps < 3;
 }
 
 bool ai::OnyxiaAirNeedsAssist(PlayerbotAI* ai)

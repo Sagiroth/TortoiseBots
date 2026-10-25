@@ -134,6 +134,7 @@ assert(!OnyxiaTankRouteSafe(start,{start,{-65,-215,-84.247f}},end));
 #include <algorithm>
 #include "playerbot/OnyxiaAirPolicy.h"
 #include "playerbot/OnyxiaTankPositionPolicy.h"
+#include "playerbot/policy/raid/OnyxiaWhelpEggPolicy.h"
 using namespace ai;using uint32=unsigned;
 struct Unit{float x=22.8763f,y=-217.152f,z=-60,reach=22;float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}float GetCollisionHeight(){return 2;}float GetCombatReach(){return reach;}struct Guid{int GetRawValue(){return 99;}};Guid GetObjectGuid(){return {};}};
 struct Spline{bool final=true;bool Finalized(){return final;}};
@@ -146,6 +147,8 @@ struct Position{bool set=false;bool isSet(){return set;}};using PositionMap=std:
 struct Context{PositionMap positions;};
 #define AI_VALUE(T,N) context->positions
 struct AI{float minimum=0;bool GetSpellRange(std::string,float*max,float*min){*max=30;*min=minimum;return true;}bool move=true,stay=false,breath=false;bool CanMove(){return move;}int GetState(){return 0;}bool HasStrategy(std::string n,int){return stay&&n=="stay";}};
+struct GameObject{float x=-1000,y=-1000;float GetPositionX(){return x;}float GetPositionY(){return y;}};
+std::vector<GameObject*> eggs;auto CollectOnyxiaEggs(AI*){return eggs;}
 enum class OnyxiaAirLog{Reach};void LogOnyxiaAir(AI*,OnyxiaAirLog,char const*,Unit*,std::string const&){}
 bool IsOnyxiaAirCombatTarget(AI*,Unit*t){return t;}bool OnyxiaBreathActive(AI*a){return a->breath;}
 struct WorldTimer{static unsigned getMSTime(){return 10000;}};

@@ -3,6 +3,7 @@
 #include "OnyxiasLairDungeonActions.h"
 #include "playerbot/OnyxiaAirPolicy.h"
 #include "playerbot/OnyxiaTankPositionPolicy.h"
+#include "playerbot/policy/raid/OnyxiaWhelpEggPolicy.h"
 #include <sstream>
 #include "playerbot/strategy/values/PositionValue.h"
 #include "Movement/spline/MoveSplineInit.h"
@@ -41,7 +42,19 @@ bool ReachTargetAction::ReachAirborneOnyxia(Unit* target)
         return OnyxiaSpreadFloor(point.getX(), point.getY(), point.getZ()) ||
             OnyxiaTankCorridor({point.getX(), point.getY(), point.getZ()});
     };
-    if (!floor(start)) return fail("start outside validated floor/z");
+    bool const entering = !floor(start);
+    if (entering && !OnyxiaAirApproachFloor(start.getX(), start.getY(), start.getZ()))
+        return fail("start outside approach floor/z");
+    auto const eggs = CollectOnyxiaEggs(ai);
+    auto eggSafe = [&eggs](WorldPosition const& point)
+    {
+        for (GameObject* egg : eggs)
+            if (OnyxiaDist2d(point.getX(), point.getY(), egg->GetPositionX(), egg->GetPositionY()) < kOnyxiaEggDangerRadius)
+                return false;
+        return true;
+    };
+    if (!eggSafe(start)) return fail("start near egg trap");
+    auto radius = [](WorldPosition const& p) { return std::hypot(p.getX() + 25.0f, p.getY() + 215.0f); };
     std::vector<WorldPosition> candidates;
     // Project onto the central floor, not the boss's elevated spline endpoint.
     // The core's spell range uses combat reach, including Onyxia's flight reach.
@@ -54,8 +67,8 @@ bool ReachTargetAction::ReachAirborneOnyxia(Unit* target)
             float const distance = point.distance(WorldPosition(target)) - bot->GetCombatReach() - target->GetCombatReach();
             if (!OnyxiaSpreadFloor(x, y, point.getZ())) { ++badFloor; continue; }
             if (IsHazardNearPosition(point)) { ++badHazard; continue; }
-            if (distance > maximum - 1.0f || distance < minimum + 1.0f) { ++badRange; continue; }
-            if (!bot->IsWithinLOSAtPosition(x, y, point.getZ(), target->GetPositionX(),
+            if (!entering && (distance > maximum - 1.0f || distance < minimum + 1.0f)) { ++badRange; continue; }
+            if (!entering && !bot->IsWithinLOSAtPosition(x, y, point.getZ(), target->GetPositionX(),
                 target->GetPositionY(), target->GetPositionZ(), true, target->GetCollisionHeight()))
             { ++badLos; continue; }
             candidates.push_back(point);
@@ -75,6 +88,7 @@ bool ReachTargetAction::ReachAirborneOnyxia(Unit* target)
         std::vector<WorldPosition> const path = start.GetPathTo(point, bot);
         if (path.size() < 2 || !point.isPathTo(path, 1.0f, 1.0f)) continue;
         bool safe = true;
+        bool reachedFloor = !entering;
         WorldPosition previous = start;
         for (WorldPosition const& next : path)
         {
@@ -85,9 +99,14 @@ bool ReachTargetAction::ReachAirborneOnyxia(Unit* target)
                 WorldPosition sample(249, previous.getX() + t * (next.getX() - previous.getX()),
                     previous.getY() + t * (next.getY() - previous.getY()),
                     previous.getZ() + t * (next.getZ() - previous.getZ()));
-                if (!floor(sample) ||
+                bool const central = floor(sample);
+                bool const ingress = entering && !reachedFloor &&
+                    OnyxiaAirApproachFloor(sample.getX(), sample.getY(), sample.getZ()) &&
+                    radius(sample) <= radius(start) + 2.0f;
+                if ((!central && !ingress) || !eggSafe(sample) ||
                     !IsMovingAllowed(249, sample.getX(), sample.getY(), sample.getZ()) || IsHazardNearPosition(sample))
                 { safe = false; break; }
+                if (central) reachedFloor = true;
             }
             if (!safe) break;
             previous = next;
@@ -100,10 +119,10 @@ bool ReachTargetAction::ReachAirborneOnyxia(Unit* target)
         init.SetWalk(false);
         init.SetFacingGUID(target->GetObjectGuid().GetRawValue());
         init.Launch();
-        LogOnyxiaAir(ai, OnyxiaAirLog::Reach, "started", target, "spell=" + spellName);
+        LogOnyxiaAir(ai, OnyxiaAirLog::Reach, entering ? "returning to floor" : "started", target, "spell=" + spellName);
         return true;
     }
-    return fail("paths rejected: incomplete/floor/hazard/movement gate");
+    return fail("paths rejected: incomplete/floor/egg/hazard/movement gate");
 }
 
 void ai::LogOnyxiaAir(PlayerbotAI* ai, OnyxiaAirLog kind, char const* reason, Unit* target, std::string const& detail)

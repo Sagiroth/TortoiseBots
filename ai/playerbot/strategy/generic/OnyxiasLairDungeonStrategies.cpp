@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "OnyxiasLairDungeonStrategies.h"
+#include "playerbot/OnyxiaAirCombat.h"
 #include "playerbot/strategy/actions/OnyxiaTankPositionActions.h"
 #include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
 #include "playerbot/strategy/actions/ReachTargetActions.h"
@@ -93,6 +94,7 @@ public:
     OnyxiaAirSpreadMultiplier(PlayerbotAI* ai) : Multiplier(ai, "onyxia spread position") {}
     float GetValue(Action* action) override
     {
+        if (SuppressOnyxiaAirAoe(ai, action)) return 0.0f;
         if (!action || !OnyxiaAirSpreadEnabled(ai))
             return 1.0f;
         std::string const name = action->getName();
@@ -141,6 +143,7 @@ public:
     OnyxiaWhelpMovementMultiplier(PlayerbotAI* ai) : Multiplier(ai, "onyxia whelp movement") {}
     float GetValue(Action* action) override
     {
+        if (SuppressOnyxiaAirAoe(ai, action)) return 0.0f;
         if (!action || !OnyxiaWhelpSupportActive(ai))
             return 1.0f;
         Unit* boss = GetAirborneOnyxia(ai);
