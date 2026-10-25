@@ -40,6 +40,7 @@ class ReachProgressTest(unittest.TestCase):
 #include <cstdint>
 #include <iostream>
 #include <string>
+template<class A,class U>bool IsOnyxiaAirCombatTarget(A*,U*){return false;}
 using uint32=std::uint32_t;
 using uint64=std::uint64_t;
 constexpr int SPELL_RANGE_IDX_COMBAT=2,SPELLMOD_RANGE=1,SPELL_AURA_MOD_ATTACK_AND_SPELL_RANGE=2;
@@ -61,7 +62,7 @@ struct Bot:Unit {Map map;bool GetGroup(){return false;}Map* GetMap(){return &map
  bool IsValidAttackTarget(Unit*){return valid;}
  bool IsNonMeleeSpellCasted(bool,bool,bool){return casting;}
  bool IsWithinLOSInMap(Unit*,bool){return los;}
- float GetDistance(Unit*){return distance;}
+ float GetDistance(Unit*){return distance;}float GetCombatDistance(Unit*){return distance;}
  bool CanReachWithMeleeAutoAttack(Unit*){return autoReach;}
  // Geometry boundary: native core owns target reach, leeway and XY-only spell
  // distance. Record the modifier supplied by the real module helper.
@@ -73,7 +74,7 @@ struct Bot:Unit {Map map;bool GetGroup(){return false;}Map* GetMap(){return &map
  bool IsInCombat(){return combat;}
 };
 struct AI {bool stay=false,castable=true;
- bool HasStrategy(std::string,int){return stay;}int GetState(){return 0;}
+ bool GetSpellRange(std::string,float*,float*){return false;}bool HasStrategy(std::string,int){return stay;}int GetState(){return 0;}
  bool CanCastSpell(std::string,Unit*,bool,void*,bool,bool,bool){return castable;}
 };
 struct SpellEntry {uint32 Id=1,rangeIndex=2;};

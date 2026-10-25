@@ -1,5 +1,7 @@
 #include "playerbot/strategy/Action.h"
 #include "ChooseTargetActions.h"
+#include "OnyxiasLairDungeonActions.h"
+#include "playerbot/OnyxiaAirCombat.h"
 #include "Movement/MovementGenerator.h"
 #include "AI/CreatureAI.h"
 #include "playerbot/TravelMgr.h"
@@ -20,6 +22,11 @@ bool DpsAssistAction::isUseful()
     if (bot->HasAura(23333) || bot->HasAura(23335))
         return false;
 
+    if (OnyxiaRangedFocusEnabled(ai))
+    {
+        Unit* target = GetTarget();
+        return target && (target != AI_VALUE(Unit*, "current target") || bot->GetVictim() != target);
+    }
     return true;
 }
 
@@ -500,6 +507,9 @@ bool AttackEnemyFlagCarrierAction::isUseful()
 bool SelectNewTargetAction::Execute(Event& event)
 {
     Unit* target = AI_VALUE(Unit*, "current target");
+    // A queued invalid-target action can predate the airborne recovery.
+    if (IsOnyxiaAirCombatTarget(ai, target) && bot->GetSelectionGuid() == target->getObjectGuid())
+        return false;
     if (target && sServerFacade.UnitIsDead(target))
     {
         // Save the dead target for later looting

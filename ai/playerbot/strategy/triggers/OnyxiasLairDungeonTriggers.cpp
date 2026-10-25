@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "OnyxiasLairDungeonTriggers.h"
+#include "playerbot/OnyxiaAirCombat.h"
 #include "playerbot/policy/raid/OnyxiaWhelpEggPolicy.h"
 #include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
 
@@ -8,7 +9,10 @@ using namespace ai;
 
 bool OnyxiaAirborneTrigger::IsActive()
 {
-    return OnyxiaRangedFocusEnabled(ai) && GetAirborneOnyxia(ai);
+    if (!OnyxiaRangedFocusEnabled(ai) || !GetAirborneOnyxia(ai)) return false;
+    // The base fight also uses this trigger for generic raid spread. The
+    // opt-in air-spread strategy owns its own independent reaction trigger.
+    return !ai->HasStrategy("onyxia air spread", BotState::BOT_STATE_COMBAT) || OnyxiaAirNeedsAssist(ai);
 }
 
 bool OnyxiaWhelpsTrigger::IsActive()

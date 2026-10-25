@@ -25,7 +25,12 @@ STUB = r'''
 #include <type_traits>
 #include "playerbot/OnyxiaAirPolicy.h"
 using namespace ai;
-using ObjectGuid=int;
+struct ObjectGuid{unsigned long long raw=0;ObjectGuid(unsigned long long v=0):raw(v){}operator unsigned long long()const{return raw;}unsigned long long GetRawValue()const{return raw;}};
+struct WorldTimer{static unsigned getMSTime(){return 10000;}};
+struct OnyxiaAirCombatState{unsigned long long target=0,recovered=0;unsigned choiceAt=0;};
+enum class OnyxiaAirLog{Recovery,State,Reach,Cast};
+using uint32=unsigned;constexpr int CURRENT_AUTOREPEAT_SPELL=2;
+struct Spell{struct Targets{ObjectGuid guid;ObjectGuid getUnitTargetGuid(){return guid;}}m_targets;};
 enum class BotState {BOT_STATE_COMBAT,BOT_STATE_NON_COMBAT};
 struct Player; struct Unit;
 struct Threat {float value=1;float getThreat(Player*){return value;}};
@@ -35,18 +40,19 @@ struct Unit {
  bool IsAlive(){return alive;}bool IsInWorld(){return world;}bool IsInCombat(){return combat;}
  unsigned GetEntry(){return entry;}bool IsInMap(Unit*b){return map==b->map&&instance==b->instance;}
  bool HasAura(unsigned){return hover;}bool IsFlying(){return flying;}Threat&GetThreatManager(){return threat;}
- Unit*GetVictim(){return victim;}int getObjectGuid(){return guid;}std::string GetName(){return "Onyxia";}
+ Unit*GetVictim(){return victim;}ObjectGuid getObjectGuid(){return guid;}ObjectGuid GetObjectGuid(){return guid;}std::string GetName(){return "Onyxia";}
 };
 struct Creature:Unit {bool evade=false;bool IsInEvadeMode(){return evade;}};
-struct Player:Unit {bool teleported=false,attackable=true;int selection=0;std::vector<Player*>group;
+struct Player:Unit {Spell*repeat=nullptr;int interrupts=0;Spell*GetCurrentSpell(int){return repeat;}void InterruptSpell(int){repeat=nullptr;++interrupts;}bool teleported=false,attackable=true;int selection=0;std::vector<Player*>group;
  unsigned GetMapId(){return map;}bool IsBeingTeleported(){return teleported;}bool IsValidAttackTarget(Unit*){return attackable;}
  std::vector<Player*>*GetGroup(){return &group;}int GetSelectionGuid(){return selection;}void SetSelectionGuid(int g){selection=g;}
  void SetInCombatWith(Unit*){combat=true;}
 };
 auto LiveGroupMembers(std::vector<Player*>*g){return *g;}
-template<class T>struct Value{T v{};T Get(){return v;}void Set(T a){v=a;}};
-struct AiObjectContext {Value<Unit*>boss,current,marked;Value<int>order;std::list<int>attackers;
- template<class T>Value<T>*GetValue(std::string key){if constexpr(std::is_same_v<T,Unit*>)return key=="boss target"?&boss:key=="rti target"?&marked:&current;else return &order;}
+template<class T>struct Value{T v{};int resets=0;T Get(){return v;}void Set(T a){v=a;}void Reset(){++resets;v={};}};
+struct StateValue{OnyxiaAirCombatState v;OnyxiaAirCombatState&Get(){return v;}};
+struct AiObjectContext {StateValue state;Value<unsigned>active;Value<bool>invalid;Value<Unit*>dps;Value<Unit*>boss,current,marked;Value<ObjectGuid>order;std::list<int>attackers;
+ template<class T>auto GetValue(std::string key,std::string qualifier=""){if constexpr(std::is_same_v<T,unsigned>)return &active;else if constexpr(std::is_same_v<T,OnyxiaAirCombatState&>)return &state;else if constexpr(std::is_same_v<T,bool>)return &invalid;else if constexpr(std::is_same_v<T,Unit*>)return key=="boss target"?&boss:key=="rti target"?&marked:key=="dps target"?&dps:&current;else return &order;}
  template<class T>T Read(std::string key){if constexpr(std::is_same_v<T,std::list<int>>)return attackers;else return GetValue<T>(key)->Get();}
 };
 #define AI_VALUE(T,N) context->Read<T>(N)
@@ -60,6 +66,7 @@ struct PlayerbotAI {Player bot;AiObjectContext context;Creature boss;bool ranged
 };
 struct Config {float sightDistance=60;void logEvent(PlayerbotAI*,std::string,std::string,std::string){}}sPlayerbotAIConfig;
 struct PossibleAttackTargetsValue{static bool IsValid(Unit*,Player*,float,bool,bool){return true;}};
+void LogOnyxiaAir(PlayerbotAI*,OnyxiaAirLog,char const*,Unit* =nullptr,std::string const& = ""){}
 namespace ai {Unit*GetAirborneOnyxia(PlayerbotAI*);bool OnyxiaRangedFocusEnabled(PlayerbotAI*);bool IsOnyxiaAirCombatTarget(PlayerbotAI*,Unit*);void UpdateOnyxiaAirCombat(PlayerbotAI*);
 Unit*GetOnyxiaRangedTarget(PlayerbotAI*a){return GetAirborneOnyxia(a);}}
 '''
@@ -126,6 +133,7 @@ assert(!OnyxiaTankRouteSafe(start,{start,{-65,-215,-84.247f}},end));
 #include <string>
 #include <algorithm>
 #include "playerbot/OnyxiaAirPolicy.h"
+#include "playerbot/OnyxiaTankPositionPolicy.h"
 using namespace ai;using uint32=unsigned;
 struct Unit{float x=22.8763f,y=-217.152f,z=-60,reach=22;float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}float GetCollisionHeight(){return 2;}float GetCombatReach(){return reach;}struct Guid{int GetRawValue(){return 99;}};Guid GetObjectGuid(){return {};}};
 struct Spline{bool final=true;bool Finalized(){return final;}};
@@ -137,7 +145,8 @@ bool IsWithinLOSInMap(Unit*,bool){return true;}bool IsWithinLOSAtPosition(float,
 struct Position{bool set=false;bool isSet(){return set;}};using PositionMap=std::map<std::string,Position>;
 struct Context{PositionMap positions;};
 #define AI_VALUE(T,N) context->positions
-struct AI{bool move=true,stay=false,breath=false;bool CanMove(){return move;}int GetState(){return 0;}bool HasStrategy(std::string n,int){return stay&&n=="stay";}};
+struct AI{float minimum=0;bool GetSpellRange(std::string,float*max,float*min){*max=30;*min=minimum;return true;}bool move=true,stay=false,breath=false;bool CanMove(){return move;}int GetState(){return 0;}bool HasStrategy(std::string n,int){return stay&&n=="stay";}};
+enum class OnyxiaAirLog{Reach};void LogOnyxiaAir(AI*,OnyxiaAirLog,char const*,Unit*,std::string const&){}
 bool IsOnyxiaAirCombatTarget(AI*,Unit*t){return t;}bool OnyxiaBreathActive(AI*a){return a->breath;}
 struct WorldTimer{static unsigned getMSTime(){return 10000;}};
 bool cave=false,incomplete=false;int launches=0;float launchedZ=0;float launchedX=0;
@@ -150,7 +159,7 @@ bool isPathTo(std::vector<WorldPosition>const&,float,float)const{return !incompl
 namespace Movement{struct Point{float x,y,z;Point(float X,float Y,float Z):x(X),y(Y),z(Z){}};using PointsArray=std::vector<Point>;
 struct MoveSplineInit{PointsArray points;MoveSplineInit(Player&,char const*){}void MovebyPath(PointsArray const&p){points=p;}void SetWalk(bool){}void SetFacingGUID(int){}
 void Launch(){++launches;launchedZ=points.back().z;launchedX=points.back().x;}};}
-struct ReachTargetAction{Player*bot;AI*ai;Context*context;float range=30;unsigned lastOnyxiaAirRoute=0;bool hazard=false,movement=true;
+struct ReachTargetAction{Player*bot;AI*ai;Context*context;std::string spellName="frostbolt";float range=30;unsigned lastOnyxiaAirRoute=0;bool hazard=false,movement=true;
 bool IsHazardNearPosition(WorldPosition const&){return hazard;}bool IsMovingAllowed(unsigned,float,float,float){return movement;}
 bool ReachAirborneOnyxia(Unit*);};
 '''+method+r'''
@@ -165,6 +174,13 @@ ai.breath=true;assert(!action.ReachAirborneOnyxia(&boss));ai.breath=false;
 bot.casting=true;assert(!action.ReachAirborneOnyxia(&boss));bot.casting=false;
 context.positions["pull hold"].set=true;assert(!action.ReachAirborneOnyxia(&boss));context.positions.clear();
 bot.x=launchedX;assert(!action.ReachAirborneOnyxia(&boss));assert(launches==1);
+// Hunter minimum range: move away on the floor rather than idle inside the dead zone.
+action.lastOnyxiaAirRoute=0;ai.minimum=8;bot.x=boss.x;bot.y=boss.y;boss.z=-65;
+assert(action.ReachAirborneOnyxia(&boss));assert(launches==2&&launchedX<bot.x);
+// The already validated central lane connects western staging to spread floor.
+action.lastOnyxiaAirRoute=0;ai.minimum=0;bot.x=-83.7f;bot.y=-215;
+assert(action.ReachAirborneOnyxia(&boss));assert(launches==3);
+
 }
 ''')
 

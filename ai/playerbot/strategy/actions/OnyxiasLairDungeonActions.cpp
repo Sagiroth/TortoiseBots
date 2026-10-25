@@ -279,9 +279,14 @@ bool ai::OnyxiaRangedFocusEnabled(PlayerbotAI* ai)
 
 void ai::UpdateOnyxiaAirCombat(PlayerbotAI* ai)
 {
-    if (!OnyxiaAirDamageRole(ai)) return;
+    if (!OnyxiaAirDamageRole(ai) || !ai->GetBot()->IsAlive() || !ai->GetBot()->IsInWorld()) return;
     Unit* boss = GetAirborneOnyxia(ai);
-    if (!boss) return;
+    if (!boss)
+    {
+        if (ai->GetBot()->IsInCombat()) LogOnyxiaAir(ai, OnyxiaAirLog::State, "no engaged airborne boss");
+        return;
+    }
+    LogOnyxiaAir(ai, OnyxiaAirLog::State, "active", boss);
     Player* bot = ai->GetBot();
     AiObjectContext* context = ai->GetAiObjectContext();
     // Preserve valid player orders and the existing healer-whelp rescue priority.
@@ -296,24 +301,63 @@ void ai::UpdateOnyxiaAirCombat(PlayerbotAI* ai)
     bool const combatEngine = ai->GetState() == BotState::BOT_STATE_COMBAT;
     bool const changed = AI_VALUE(Unit*, "current target") != target || bot->GetSelectionGuid() != target->getObjectGuid();
     if (!coreCombat) bot->SetInCombatWith(boss);
-    if (!combatEngine) ai->OnCombatStarted();
+    if (!combatEngine)
+    {
+        ai->OnCombatStarted();
+        ai->ClearActionClock();
+    }
     if (changed)
     {
         context->GetValue<Unit*>("current target")->Set(target);
         bot->SetSelectionGuid(target->getObjectGuid());
+        // These values may still describe the target from before the handoff.
+        context->GetValue<bool>("invalid target", "current target")->Reset();
+        context->GetValue<Unit*>("dps target")->Reset();
     }
-    if (!combatEngine || !coreCombat || changed)
+    // Auto-repeat owns its original spell target, not the current selection.
+    // Let the normal shot/wand action restart it after a genuine handoff.
+    if (Spell* repeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
+        if (repeat->m_targets.getUnitTargetGuid() != target->GetObjectGuid())
+        {
+            bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+            context->GetValue<uint32>("active spell")->Reset();
+        }
+    OnyxiaAirCombatState& state = AI_VALUE(OnyxiaAirCombatState&, "onyxia air combat state");
+    if ((!combatEngine || !coreCombat || changed) &&
+        (!combatEngine || state.recovered != target->GetObjectGuid().GetRawValue()))
     {
-        ai->ClearActionClock();
-        sPlayerbotAIConfig.logEvent(ai, "OnyxiaAirRecover", combatEngine ? "target/core combat" : "combat engine", target->GetName());
+        state.recovered = target->GetObjectGuid().GetRawValue();
+        LogOnyxiaAir(ai, OnyxiaAirLog::Recovery, combatEngine ? "target/core combat" : "combat engine", target);
     }
 }
 
 Unit* ai::GetOnyxiaRangedTarget(PlayerbotAI* ai)
 {
-    if(!OnyxiaRangedFocusEnabled(ai)) return nullptr;
-    if(Unit* whelp=GetOnyxiaWhelpTarget(ai)) return whelp;
-    return GetAirborneOnyxia(ai);
+    if (!OnyxiaRangedFocusEnabled(ai)) return nullptr;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    OnyxiaAirCombatState& state = AI_VALUE(OnyxiaAirCombatState&, "onyxia air combat state");
+    uint32 const now = WorldTimer::getMSTime();
+    // Recovery, assist, multipliers and the rotation share one decision. A
+    // changed victim/cache during that decision must not flip boss/whelp back.
+    if (state.target && uint32(now - state.choiceAt) < 1000)
+        if (Unit* target = ai->GetUnit(ObjectGuid(state.target)))
+            if (target->IsAlive() && target->IsInMap(ai->GetBot()) &&
+                (target->GetEntry() == 10184 ||
+                 (PossibleAttackTargetsValue::IsValid(target, ai->GetBot(), sPlayerbotAIConfig.sightDistance, false, false) &&
+                  !IsRaidCrowdControlMarkedTarget(ai, target)))) return target;
+    Unit* target = GetOnyxiaWhelpTarget(ai);
+    if (!target) target = GetAirborneOnyxia(ai);
+    state.target = target ? target->GetObjectGuid().GetRawValue() : 0;
+    state.choiceAt = now;
+    return target;
+}
+
+bool ai::OnyxiaAirNeedsAssist(PlayerbotAI* ai)
+{
+    Unit* target = GetOnyxiaRangedTarget(ai);
+    if (!target) return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    return AI_VALUE(Unit*, "current target") != target || ai->GetBot()->GetVictim() != target;
 }
 
 bool ai::OnyxiaAirSpreadEnabled(PlayerbotAI* ai)

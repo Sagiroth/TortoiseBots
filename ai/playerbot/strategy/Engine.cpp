@@ -12,6 +12,7 @@
 // #include "playerbot/PerformanceMonitor.h" // E2E green
 #include "playerbot/BotActionLog.h"
 #include "playerbot/ForceRebuffPolicy.h"
+#include "playerbot/OnyxiaAirCombat.h"
 #include "../../../runtime/ObservabilityEmitter.h"
 
 #ifdef BUILD_ELUNA
@@ -406,6 +407,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                 if (!isUseful && action->getName() == "sartura whirlwind escape")
                     LogSarturaEscape(ai, "SarturaEscapeBlocked", isStunned ? "stunned" : "not-useful");
                 TracePullStep(ai, "useful", action, isUseful);
+                TraceOnyxiaAirAction(ai, action, "useful", isUseful);
 
                 if (isUseful)
                 {
@@ -428,7 +430,11 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                             float beforeMult = relevance;
                             float factor; { TBPassDiag::Scope timing("action.multiplier", ai->GetBot()->GetGUIDLow(), multiplier->getName().c_str()); factor = multiplier->GetValue(action); }
                             relevance *= factor;
-                            if (factor == 0.0f) TracePullStep(ai, multiplier->getName().c_str(), action, 0);
+                            if (factor == 0.0f)
+                            {
+                                TracePullStep(ai, multiplier->getName().c_str(), action, 0);
+                                TraceOnyxiaAirAction(ai, action, multiplier->getName().c_str(), false);
+                            }
 
                             action->setRelevance(relevance);
                             if (factor != 1.0f)
@@ -486,11 +492,13 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     if (!isPossible && action->getName() == "sartura whirlwind escape")
                         LogSarturaEscape(ai, "SarturaEscapeBlocked", "not-possible");
                     TracePullStep(ai, "possible", action, isPossible);
+                    TraceOnyxiaAirAction(ai, action, "possible", isPossible);
                     if (isPossible && relevance)
                     {
                         // E2E green: PerformanceMonitor stub
                         { TBPassDiag::Scope timing("action.execute", ai->GetBot()->GetGUIDLow(), action->getName().c_str()); actionExecuted = ListenAndExecute(action, event); }
                         TracePullStep(ai, "executed", action, actionExecuted);
+                        TraceOnyxiaAirAction(ai, action, "executed", actionExecuted);
 // E2E green: pmo stub
 
 #ifdef PLAYERBOT_ELUNA

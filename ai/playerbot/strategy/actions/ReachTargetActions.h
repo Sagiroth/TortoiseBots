@@ -499,6 +499,12 @@ namespace ai
 
         bool IsWithinReach(Unit* target)
         {
+            if (IsOnyxiaAirCombatTarget(ai, target))
+            {
+                float maximum = range, minimum = 0;
+                if (!spellName.empty()) ai->GetSpellRange(spellName, &maximum, &minimum);
+                return bot->GetCombatDistance(target) >= minimum && bot->GetCombatDistance(target) <= maximum;
+            }
             // GetSpellRange's combat-index result is only the caster's reach.
             // Match the core melee spell envelope, including the target's reach
             // and range modifiers (Spell::CheckRange), instead of chasing into it.

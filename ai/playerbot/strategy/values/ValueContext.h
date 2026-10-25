@@ -18,6 +18,7 @@
 #include "PartyMemberToResurrect.h"
 #include "PartyMemberToSoulstone.h"
 #include "CurrentTargetValue.h"
+#include "OnyxiaAirCombatValue.h"
 #include "SelfTargetValue.h"
 #include "MasterTargetValue.h"
 #include "LineTargetValue.h"
@@ -128,6 +129,7 @@ namespace ai
     public:
         ValueContext()
         {
+            creators["onyxia air combat state"] = [](PlayerbotAI* ai) { return new OnyxiaAirCombatStateValue(ai); };
             creators["fankriss active boss"] = [](PlayerbotAI* ai) { return new FankrissActiveBossValue(ai); };
             creators["patchwerk soaker to shield"] = [](PlayerbotAI* ai) { return new PatchwerkSoakerShieldValue(ai); };
             creators["raid tank needs healing"] = [](PlayerbotAI* ai) { return new RaidTankHealingValue(ai); };

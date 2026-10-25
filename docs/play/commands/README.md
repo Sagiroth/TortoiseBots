@@ -302,3 +302,15 @@ flight height. Deep Breath escapes take priority. The landing tank can enter
 from the west central lane (x -110 to 35, y -232 to -198), provided the entire
 navmesh route stays in that lane and clears hazards and unengaged enemies.
 A route through either whelp cave is refused.
+
+Onyxia airborne focus only requests assist for a target handoff. Once engaged,
+normal spells and Auto Shot get their turns. Hunters use both minimum and
+maximum shot range when choosing a checked floor position. A shot or wand
+still bound to the previous target restarts through the normal class action.
+
+Air diagnostics in `bot_events.csv` are encounter-scoped:
+`OnyxiaAirRecover` records recovery transitions; `OnyxiaAirState` samples state
+every ten seconds; `OnyxiaAirReach` and `OnyxiaAirCast` report movement/cast
+starts or blockers at most once per two seconds per bot and category. They
+include raw map/instance coordinates, range, LOS and action/core verdicts.
+A rejected route never falls back to an airborne chase or a whelp cave.
