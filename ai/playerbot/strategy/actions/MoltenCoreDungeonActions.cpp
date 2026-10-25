@@ -68,6 +68,7 @@ bool GolemaggTankHoldAction::Execute(Event& event)
 #include "MoltenCoreDungeonActions.h"
 #include "playerbot/policy/raid/GeddonInfernoPolicy.h"
 #include "TwinEmperorDungeonActions.h"
+#include "CthunDungeonActions.h"
 #include "NaxxramasDungeonActions.h"
 #include "playerbot/RaidDpsExclusionPolicy.h"
 #include "playerbot/RaidTankAssignmentPolicy.h"
@@ -164,7 +165,7 @@ bool ai::IsRaidDpsTargetExcluded(PlayerbotAI* ai, Unit* target)
 {
     Player* bot = ai->GetBot();
     if (bot->GetMapId() == 531)
-        return IsTwinPhysicalDpsTargetExcluded(ai, target);
+        return IsTwinPhysicalDpsTargetExcluded(ai, target) || IsCthunCarapaceTargetExcluded(ai, target);
     if (bot->GetMapId() == 533)
         return IsLoathebSporeTargetExcluded(ai, target) || IsFaerlinaWorshipperTargetExcluded(ai, target);
     // DPS target values call this outside raids too; avoid strategy lookups there.

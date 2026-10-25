@@ -26,6 +26,8 @@ class TwinsPhysicalTargetTest(unittest.TestCase):
                             "bool ai::IsRaidDpsTargetExcluded(")
         twins = function((actions / "TwinEmperorDungeonActions.cpp").read_text(),
                          "bool ai::IsTwinPhysicalDpsTargetExcluded(")
+        cthun = function((actions / "CthunDungeonActions.cpp").read_text(),
+                         "bool ai::IsCthunCarapaceTargetExcluded(")
         source = (values / "DpsTargetValue.cpp").read_text()
         strategy = function(source, "class DpsTargetStrategy :") + ";\n"
         infernal = function(source, "class NefarianInfernalTargetStrategy :") + ";\n"
@@ -52,11 +54,15 @@ struct Unit {
     uint32 entry = 0, map = 531, health = 10;
     ObjectGuid guid;
     bool alive = true, combat = true, friendly = false, cc = false;
+    bool carapace = false, inWorld = true;
+    uint32 instance = 1;
+    bool HasAura(uint32 id) const { return id == 26156 && carapace; }
+    bool IsInWorld() const { return inWorld; }
     uint32 GetEntry() const { return entry; }
     uint32 GetMapId() const { return map; }
     bool IsAlive() const { return alive; }
     bool IsInCombat() const { return combat; }
-    bool IsInMap(Unit* other) const { return map == other->map; }
+    bool IsInMap(Unit* other) const { return map == other->map && instance == other->instance; }
     ObjectGuid GetObjectGuid() const { return guid; }
 };
 struct Group {
@@ -64,7 +70,9 @@ struct Group {
     uint64 GetTargetIcon(int index) { return icons[index]; }
 };
 struct Player : Unit {
-    uint32 GetInstanceId() const { return 1; }
+    bool teleporting = false;
+    bool IsBeingTeleported() const { return teleporting; }
+    uint32 GetInstanceId() const { return instance; }
     Group* group = nullptr;
     Group* GetGroup() { return group; }
 };
@@ -110,6 +118,7 @@ namespace ai {
     }
     bool IsRaidDpsTargetExcluded(PlayerbotAI*, Unit*);
     bool IsTwinPhysicalDpsTargetExcluded(PlayerbotAI*, Unit*);
+    bool IsCthunCarapaceTargetExcluded(PlayerbotAI*, Unit*);
 }
 using namespace ai;
 struct { bool IsFriendlyTo(Player*, Unit* unit) { return unit->friendly; } } sServerFacade;
@@ -156,7 +165,7 @@ Unit* GetThekalBalanceTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMaexxnaRescueTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetOnyxiaWhelpTarget(PlayerbotAI*) { return nullptr; }
 '''
-        fixture += twins + dispatch + strategy + infernal + selector + r'''
+        fixture += twins + cthun + dispatch + strategy + infernal + selector + r'''
 int main() {
     Player bot;
     PlayerbotAI ai{&bot, {}, {}, {}, nullptr, false, 0};
@@ -215,6 +224,70 @@ int main() {
     bot.map = 531;
     ai.strategies.clear();
     assert(!IsRaidDpsTargetExcluded(&ai, &veklor));
+
+    // C'Thun's shell is damage reduction, not generic immunity. Test the
+    // actual DPS selector both when assisting a tank and when choosing low HP.
+    Unit body{15727, 531, 1, ObjectGuid(10)};
+    Unit tentacle{15726, 531, 100, ObjectGuid(11)};
+    body.carapace = true;
+    ai.units[body.guid] = &body;
+    ai.units[tentacle.guid] = &tentacle;
+    ai.context.attackers = {body.guid, tentacle.guid};
+    ai.tankTarget = &body;
+    assert(selector.Calculate() == &body); // Off by default.
+    ai.strategies = {"cthun carapace"};
+    assert(selector.Calculate() == &tentacle); // Previously attacked the shelled body.
+    assert(IsRaidDpsTargetExcluded(&ai, &body));
+    ai.tankTarget = nullptr;
+    assert(selector.Calculate() == &tentacle);
+    tentacle.cc = true;
+    assert(selector.Calculate() == nullptr);
+    tentacle.cc = false;
+    body.carapace = false; // Flesh Tentacles killed: normal body DPS becomes legal.
+    assert(!IsRaidDpsTargetExcluded(&ai, &body));
+    assert(selector.Calculate() == &body);
+    body.carapace = true; // Shell reapplied: ordinary retarget guard becomes active again.
+    assert(IsRaidDpsTargetExcluded(&ai, &body));
+    assert(selector.Calculate() == &tentacle);
+    ai.context.order = body.guid;
+    assert(!IsRaidDpsTargetExcluded(&ai, &body));
+    assert(selector.Calculate() == &body);
+    ai.context.order = ObjectGuid();
+    ai.context.rti = "skull"; group.icons[7] = body.guid.value;
+    assert(!IsRaidDpsTargetExcluded(&ai, &body));
+    assert(selector.Calculate() == &body);
+    ai.context.rti.clear(); group.icons[7] = 0;
+    ai.tank = true;
+    assert(!IsRaidDpsTargetExcluded(&ai, &body));
+    ai.tank = false;
+    for (bool* flag : {&bot.alive, &bot.combat, &bot.inWorld, &body.alive, &body.combat}) {
+        *flag = false; assert(!IsRaidDpsTargetExcluded(&ai, &body)); *flag = true;
+    }
+    bot.teleporting = true;
+    assert(!IsRaidDpsTargetExcluded(&ai, &body)); bot.teleporting = false;
+    body.map = 0; assert(!IsRaidDpsTargetExcluded(&ai, &body)); body.map = 531;
+    body.instance = 2; assert(!IsRaidDpsTargetExcluded(&ai, &body)); body.instance = 1;
+    ai.strategyReads = 0;
+    body.carapace = false;
+    assert(!IsRaidDpsTargetExcluded(&ai, &body));
+    assert(ai.strategyReads == 0); // No strategy work in the vulnerable window.
+    body.carapace = true;
+    for (uint32 entry : {15589u, 15726u, 15802u}) { // Eye, surface and stomach tentacles unchanged.
+        body.entry = entry;
+        assert(!IsRaidDpsTargetExcluded(&ai, &body));
+        assert(ai.strategyReads == 0);
+    }
+    body.entry = 15727;
+    bot.map = 0;
+    assert(!IsRaidDpsTargetExcluded(&ai, &body));
+    assert(ai.strategyReads == 0); bot.map = 531;
+    assert(!IsRaidDpsTargetExcluded(&ai, nullptr));
+    ai.strategies.clear();
+    assert(!IsRaidDpsTargetExcluded(&ai, &body));
+    assert(selector.Calculate() == &body);
+    ai.strategies = {"twins physical dps", "cthun carapace"};
+    assert(IsRaidDpsTargetExcluded(&ai, &body));
+    assert(IsRaidDpsTargetExcluded(&ai, &veklor));
 
     bot.map = 533;
     Unit spore{16286, 533, 100, ObjectGuid(5)};
