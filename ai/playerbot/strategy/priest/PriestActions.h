@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/AoeFearPolicy.h"
+#include "playerbot/RaidTankHealing.h"
 
 namespace ai
 {
@@ -42,7 +43,33 @@ namespace ai
     CURE_ACTION(CastDispelMagicAction, "dispel magic");
     CURE_PARTY_ACTION(CastDispelMagicOnPartyAction, "dispel magic", DISPEL_MAGIC);
     SPELL_ACTION(CastDispelMagicOnTargetAction, "dispel magic");
-    CC_ACTION(CastShackleUndeadAction, "shackle undead");
+    class CastShackleUndeadAction : public CastCrowdControlSpellAction
+    {
+    public:
+        CastShackleUndeadAction(PlayerbotAI* ai) : CastCrowdControlSpellAction(ai, "shackle undead") {}
+        bool Execute(Event& event) override
+        {
+            if (SuppressAutomaticRaidShackle(ai, GetTarget(), event.getOwner() != nullptr))
+                return false;
+            return CastCrowdControlSpellAction::Execute(event);
+        }
+    };
+    class ShieldPatchwerkSoakerAction : public CastBuffSpellAction
+    {
+    public:
+        ShieldPatchwerkSoakerAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "power word: shield") {}
+        std::string getName() override { return "shield patchwerk soaker"; }
+        std::string GetTargetName() override { return "patchwerk soaker to shield"; }
+        // In-range instant protection only: no detour away from a heal patient.
+        std::string GetReachActionName() override { return ""; }
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_NONE; }
+        bool isUseful() override
+        {
+            Unit* target = GetTarget();
+            return target && !ai->HasAura(6788, target) && !ai->HasAura("power word: shield", target) &&
+                CastBuffSpellAction::isUseful();
+        }
+    };
     SPELL_ACTION_U(CastManaBurnAction, "mana burn", AI_VALUE2(uint8, "mana", "self target") < 50 && AI_VALUE2(uint8, "mana", "current target") >= 20);
     BUFF_ACTION(CastLevitateAction, "levitate");
     BUFF_ACTION(CastDivineSpiritAction, "divine spirit");

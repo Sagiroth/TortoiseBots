@@ -127,6 +127,7 @@ namespace ai
     public:
         ValueContext()
         {
+            creators["patchwerk soaker to shield"] = [](PlayerbotAI* ai) { return new PatchwerkSoakerShieldValue(ai); };
             creators["raid tank needs healing"] = [](PlayerbotAI* ai) { return new RaidTankHealingValue(ai); };
             creators["active spell"] = [](PlayerbotAI* ai) { return new ActiveSpellValue(ai); };
             creators["craft"] = [](PlayerbotAI* ai) { return new CraftValue(ai); };

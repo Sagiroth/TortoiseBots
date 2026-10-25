@@ -3,6 +3,7 @@
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 #include "playerbot/strategy/triggers/HealthTriggers.h"
 #include "playerbot/policy/heal/HealPacePolicy.h"
+#include "playerbot/RaidTankHealing.h"
 
 namespace ai
 {
@@ -118,7 +119,27 @@ namespace ai
     // so the shed-aggro rows ("fade ready and ...") arm only while the spell
     // is trained and the cooldown spent.
     CD_TRIGGER(FadeReadyTrigger, "fade");
-    CC_TRIGGER(ShackleUndeadTrigger, "shackle undead");
+    class ShackleUndeadTrigger : public HasCcTargetTrigger
+    {
+    public:
+        ShackleUndeadTrigger(PlayerbotAI* ai) : HasCcTargetTrigger(ai, "shackle undead") {}
+        bool IsActive() override
+        {
+            Unit* target = AI_VALUE2(Unit*, "cc target", "shackle undead");
+            return target && !SuppressAutomaticRaidShackle(ai, target, false) && HasCcTargetTrigger::IsActive();
+        }
+    };
+    class PatchwerkSoakerShieldTrigger : public Trigger
+    {
+    public:
+        PatchwerkSoakerShieldTrigger(PlayerbotAI* ai) : Trigger(ai, "patchwerk soaker needs shield") {}
+        bool IsActive() override
+        {
+            uint32 spell = AI_VALUE2(uint32, "spell id", "power word: shield");
+            return spell && sServerFacade.IsSpellReady(bot, spell) &&
+                AI_VALUE(Unit*, "patchwerk soaker to shield");
+        }
+    };
     INTERRUPT_TRIGGER(SilenceTrigger, "silence");
     INTERRUPT_HEALER_TRIGGER(SilenceEnemyHealerTrigger, "silence");
 

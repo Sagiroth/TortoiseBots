@@ -204,6 +204,7 @@ namespace ai
                 creators["prayer of fortitude on party"] = [](PlayerbotAI* ai) { return new PrayerOfFortitudeOnPartyTrigger(ai); };
                 creators["prayer of spirit on party"] = [](PlayerbotAI* ai) { return new PrayerOfSpiritOnPartyTrigger(ai); };
                 creators["shackle undead"] = [](PlayerbotAI* ai) { return new ShackleUndeadTrigger(ai); };
+                creators["patchwerk soaker needs shield"] = [](PlayerbotAI* ai) { return new PatchwerkSoakerShieldTrigger(ai); };
                 creators["discipline fire"] = [](PlayerbotAI* ai) { return new HolyFireTrigger(ai); };
                 creators["touch of weakness"] = [](PlayerbotAI* ai) { return new TouchOfWeaknessTrigger(ai); };
                 creators["hex of weakness"] = [](PlayerbotAI* ai) { return new HexOfWeaknessTrigger(ai); };
@@ -277,6 +278,7 @@ namespace ai
                 creators["shadow protection"] = [](PlayerbotAI* ai) { return new CastShadowProtectionAction(ai); };
                 creators["shadow protection on party"] = [](PlayerbotAI* ai) { return new CastShadowProtectionOnPartyAction(ai); };
                 creators["shackle undead"] = [](PlayerbotAI* ai) { return new CastShackleUndeadAction(ai); };
+                creators["shield patchwerk soaker"] = [](PlayerbotAI* ai) { return new ShieldPatchwerkSoakerAction(ai); };
                 creators["prayer of fortitude on party"] = [](PlayerbotAI* ai) { return new CastPrayerOfFortitudeOnPartyAction(ai); };
                 creators["prayer of spirit on party"] = [](PlayerbotAI* ai) { return new CastPrayerOfSpiritOnPartyAction(ai); };
                 creators["prayer of shadow protection on party"] = [](PlayerbotAI* ai) { return new CastPrayerOfShadowProtectionAction(ai); };

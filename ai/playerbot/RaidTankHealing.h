@@ -4,6 +4,13 @@
 
 namespace ai
 {
+    bool SuppressAutomaticRaidShackle(PlayerbotAI* ai, Unit* target, bool explicitRequest);
+    class PatchwerkSoakerShieldValue : public UnitCalculatedValue
+    {
+    public:
+        PatchwerkSoakerShieldValue(PlayerbotAI* ai) : UnitCalculatedValue(ai, "patchwerk soaker to shield") {}
+        Unit* Calculate() override;
+    };
     bool IsPatchwerkHealingAssignment(Player* player);
     Unit* RaidHealingAnchor(PlayerbotAI* ai);
     bool IsRaidHealerMaintenance(std::string name);

@@ -3,6 +3,8 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/AiObjectContext.h"
+#include "playerbot/strategy/actions/GenericSpellActions.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include <algorithm>
 #include <cctype>
 
@@ -109,4 +111,52 @@ bool ai::StopUnsafeRaidHealerFiller(PlayerbotAI* ai)
     if (wand)
         bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
     return true;
+}
+
+// Explicit chat actions and this bot's assigned CC mark remain authoritative.
+bool ai::SuppressAutomaticRaidShackle(PlayerbotAI* ai, Unit* target, bool explicitRequest)
+{
+    Player* bot = ai->GetBot();
+    if (explicitRequest || !bot->GetMap()->IsRaid())
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* mark = AI_VALUE(Unit*, "rti cc target");
+    if (target && target == mark)
+        return false;
+    Unit* boss = AI_VALUE(Unit*, "boss target");
+    return boss && boss->IsAlive() && boss->IsInCombat() && boss->IsInMap(bot);
+}
+
+Unit* PatchwerkSoakerShieldValue::Calculate()
+{
+    Group* group = bot->GetGroup();
+    if (!group || !group->IsRaidGroup() || bot->GetMapId() != 533 || !ai->IsHeal(bot) ||
+        ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT))
+        return nullptr;
+    // An instant preventive shield must not displace an already critical heal.
+    Unit* patient = AI_VALUE(Unit*, "party member to heal");
+    if (patient && patient->GetHealthPercent() < sPlayerbotAIConfig.criticalHealth)
+        return nullptr;
+    float range = 0.0f;
+    if (!ai->GetSpellRange("power word: shield", &range))
+        return nullptr;
+    Player* best = nullptr;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member->IsAlive() || !member->IsInWorld() || !member->IsInMap(bot) ||
+            !sServerFacade.IsFriendlyTo(bot, member) || !bot->IsWithinDistInMap(member, range) ||
+            !sServerFacade.IsWithinLOSInMap(bot, member))
+            continue;
+        PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(member);
+        // Reuse the engagement value: group contact, not injury or the soaker's
+        // own first melee swing, opens the shielding window during approach.
+        if (!peer || !GetPatchwerkSoakBoss(peer) || ai->HasAura(6788, member) ||
+            ai->HasAura("power word: shield", member) ||
+            BuffClaimRegistry::IsTargetClaimedByOther(bot, member, "power word: shield"))
+            continue;
+        if (!best || member->GetHealth() > best->GetHealth() ||
+            (member->GetHealth() == best->GetHealth() && member->GetObjectGuid() < best->GetObjectGuid()))
+            best = member;
+    }
+    return best;
 }
