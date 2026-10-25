@@ -114,7 +114,7 @@ reset();shotOK=false;UpdatePairedPull(&warrior);assert(calls.size()==2 && sPlaye
 }
 ''')
     def test_wiring_and_linked_aggro_does_not_end_barrier(self):
-        command=(ROOT/'commands/BotCommands.cpp').read_text()
+        command='\n'.join(p.read_text() for p in sorted((ROOT/'commands').glob('*.cpp')))
         self.assertIn('ai::TwinsBeginPairedPull(ai,context.enemyTarget);',command)
         s=self.source();f=extract(s,'void ai::TwinsEnforceOpening(')
         self.assertLess(f.index('UpdatePairedPull(ai)'),f.index('OnPullActionCompleted'))

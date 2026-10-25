@@ -22,7 +22,7 @@ class BombWiring(unittest.TestCase):
     def test_parked_melee_and_parser(self):
         root = pathlib.Path(os.environ.get('TBOTS_TEST_SOURCE', pathlib.Path(__file__).resolve().parents[1]))
         source = (root/'ai/playerbot/strategy/generic/DungeonMultipliers.cpp').read_text()
-        command = (root/'commands/BotCommands.cpp').read_text()
+        command = '\n'.join(p.read_text() for p in sorted((root/'commands').glob('*.cpp')))
         policy = pathlib.Path(__file__).resolve().parents[1]/'ai/playerbot/GeddonBombPolicy.h'
         code = r'''
 #include <cassert>
@@ -45,7 +45,7 @@ std::string Trim(std::string s){auto a=s.find_first_not_of(" \t");return a==std:
 bool IsRaidTargetMark(std::string const& s){return s=="skull";}
 '''
         code += function(source, 'float RaidBombMovementMultiplier::GetValue(')
-        code += '\n'+function(command, 'static std::string PullOptionText(')
+        code += '\n'+function(command, 'std::string PullOptionText(')
         code += '\n'+function(command, 'static bool ParseAction(')
         code += r'''
 int main(){

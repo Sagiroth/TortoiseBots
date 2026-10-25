@@ -565,6 +565,31 @@ void RestorePullMode(PlayerbotAI* ai, PullModeSnapshot const& snapshot)
             strategy->RestoreCommand(snapshot.command);
 }
 
+// Pulls release the executor, but preserve companions' explicit positioning.
+void WarnPartyStayAfterPull(ChatHandler* handler, BotCommandContext const& context, Player* executor)
+{
+    uint32 staying = 0;
+    for (Player* member : context.partyBots)
+    {
+        if (!member || member == executor || !member->IsAlive())
+            continue;
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(member);
+        if (!ai || !ai->GetAiObjectContext() ||
+            !(ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
+              ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) ||
+              ai->HasStrategy("stay", BotState::BOT_STATE_REACTION)))
+            continue;
+        ai::PositionMap& positions = ai->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
+        auto hold = positions.find("pull hold");
+        if (hold != positions.end() && hold->second.isSet())
+            continue; // The pull's temporary DPS hold releases automatically.
+        ++staying;
+    }
+    if (staying)
+        handler->PSendSysMessage("%u companion(s) are still on stay and may be unable to reach the fight. Use .bot action follow to release stay.", staying);
+}
+
+
 bool HandleGuard(ChatHandler* handler, char const* args)
 {
     return HandleNamedAction(handler, args, "guard", "guard chat shortcut", "will guard this position", false, true);

@@ -71,6 +71,7 @@ struct PullModeSnapshot
 
 PullModeSnapshot SavePullMode(PlayerbotAI* ai);
 void RestorePullMode(PlayerbotAI* ai, PullModeSnapshot const& snapshot);
+void WarnPartyStayAfterPull(ChatHandler* handler, BotCommandContext const& context, Player* executor);
 
 // Action.cpp: the crowd-control and pull order bodies, shared with the
 // commander's `cmd cc` / `cmd pull`.

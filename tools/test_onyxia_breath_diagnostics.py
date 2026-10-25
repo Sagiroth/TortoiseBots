@@ -7,7 +7,13 @@ Requires a C++17 compiler. No database, server, or network access.
 from pathlib import Path
 import json, subprocess, os, sys, tempfile
 r = Path(__file__).resolve().parents[1]
-core = Path(sys.argv[1])
+core = Path(sys.argv[1]) if __name__ == '__main__' and len(sys.argv) > 1 else Path(os.environ.get('TORTOISE_CORE_ROOT', '/nonexistent'))
+if not (core/'src/game/Chat/Chat.cpp').exists():
+    # Needs a core checkout; unittest discovery imports this script without one.
+    if __name__ == '__main__':
+        sys.exit('usage: test_onyxia_breath_diagnostics.py CORE_CHECKOUT')
+    import unittest
+    raise unittest.SkipTest('core checkout not provided (set TORTOISE_CORE_ROOT)')
 workspace = tempfile.TemporaryDirectory(prefix="onyxia-diagnostics-")
 w = Path(workspace.name)
 def function(text,signature):

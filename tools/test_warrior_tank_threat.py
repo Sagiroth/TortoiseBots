@@ -53,6 +53,7 @@ struct AI {
  Aura* GetAura(const char*,Unit*,bool=false){return aura;}
  bool HasAura(const char*,Unit*,bool){return aura && aura->stacks>=5;}
  bool CanCastSpell(uint32 id,Unit*){return usable[id] && rage >= (id==3 ? 20 : 30);}
+ bool CanCastSpell(const char*,Unit*){return false;}
  uint32 id(std::string name){return name=="bloodthirst"?1:name=="mortal strike"?2:3;}
 };
 struct Facade {
@@ -62,6 +63,8 @@ struct Facade {
 } sServerFacade;
 #define AI_VALUE2(type,key,name) type(ai->id(name))
 #define AI_VALUE(type,key) this->target
+// Local Patchwerk threat assignment (patch 513) is off in these fixtures.
+bool PatchwerkThreatTank(AI*,Unit*){return false;}
 struct BuffTrigger {
  AI* ai; Unit* bot; Unit* target;
  BuffTrigger(AI* a,Unit* b,Unit* t):ai(a),bot(b),target(t){}

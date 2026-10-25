@@ -137,7 +137,7 @@ class PatchwerkPullRendezvousTest(unittest.TestCase):
         self.assertIn('ResetAIInternalUpdateDelay();',stage)
         self.assertIn('CanUpdateAIInternal()',stage)
         self.assertNotIn('ChangeStrategy',stage)
-        commands=(root/'commands/BotCommands.cpp').read_text()
+        commands='\n'.join(p.read_text() for p in sorted((root/'commands').glob('*.cpp')))
         self.assertIn('probe->NeedsBossPullStance() || !ai::PatchwerkSoakersReadyForPull(ai)',commands)
 
 

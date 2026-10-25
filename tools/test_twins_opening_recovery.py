@@ -54,7 +54,7 @@ a.physical.p=kTwinsWest;assert(LocalTankBoss(&a)==&a.physical); // preserve exch
 }
 ''')
     def test_mature_controls_execute_and_report(self):
-        s=(ROOT/'commands/BotCommands.cpp').read_text()
+        s='\n'.join(p.read_text() for p in sorted((ROOT/'commands').glob('*.cpp')))
         cpp(r'''
 #include <string>
 #include <vector>
@@ -73,7 +73,7 @@ struct Store{void Save(PlayerbotAI*){}}sPlayerbotDbStore;
 struct PlayerbotAIStorage{static PlayerbotAIStorage&Instance(){static PlayerbotAIStorage s;return s;}PlayerbotAI*GetAI(Player*){return &brain;}};
 bool KnownStrategyChange(std::vector<Player*>,std::string s){return s=="+twins west";}
 bool HandleStay(ChatHandler*,const char*){held=true;return true;}
-'''+extract(s,'static bool HandleMatureCommand(')+r'''
+'''+extract(s,'bool HandleMatureCommand(')+r'''
 int main(){ChatHandler h;
 HandleMatureCommand(&h,"Example all +twins west");assert(brain.changed && brain.printed && !brain.queued);
 brain={};HandleMatureCommand(&h,"Example stay");assert(held && !brain.queued);

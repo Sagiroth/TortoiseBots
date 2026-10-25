@@ -29,6 +29,7 @@ echo "✓ Action and trigger wiring verified (0 missing live creators)."
 echo ""
 echo "=== 4. Running Engine Unit Tests (discovered: tools/test_*.py) ==="
 python3 -m unittest discover -s tools -p 'test_*.py'
+python3 tools/test_soaker_heal_precedence.py
 echo "✓ Engine unit tests passed."
 
 echo ""

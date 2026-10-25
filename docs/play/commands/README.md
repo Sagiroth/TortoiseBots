@@ -135,6 +135,8 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot role`](roster-and-hiring.md#bot-role) | Roster & Hiring | Configures party role overrides for bots or self. |
 | [`.bot invite`](roster-and-hiring.md#bot-invite) | Roster & Hiring | Invites an online owned bot to your party. |
 | [`.bot uninvite`](roster-and-hiring.md#bot-uninvite) | Roster & Hiring | Removes an owned bot or dismisses a hire from group. |
+| `.bot inspect` | Local | Shows the selected companion's experimental BiS gear report. |
+| `.bot gearbis` | Local | GM only: applies experimental BiS gear to a named companion or `all`. |
 | [`.bot summon`](roster-and-hiring.md#bot-summon) | Roster & Hiring | Teleports an owned bot or hire to your location. |
 | [`.bot maintenance`](roster-and-hiring.md#bot-maintenance) | Roster & Hiring | Refreshes kit items, reagents, ammo, and repairs. |
 | [`.bot autogear`](roster-and-hiring.md#bot-autogear) | Roster & Hiring | Equips level-appropriate gear up to quality caps. |
