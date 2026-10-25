@@ -354,6 +354,7 @@ namespace ai
 
             creators["start onyxia fight"] = [](PlayerbotAI* ai) { return new OnyxiaStartFightTrigger(ai); };
             creators["end onyxia fight"] = [](PlayerbotAI* ai) { return new OnyxiaEndFightTrigger(ai); };
+            creators["onyxia breath escape needed"] = [](PlayerbotAI* ai) { return new OnyxiaBreathTrigger(ai); };
             creators["onyxia air spread needed"] = [](PlayerbotAI* ai) { return new OnyxiaAirSpreadTrigger(ai); };
             creators["onyxia airborne"] = [](PlayerbotAI* ai) { return new OnyxiaAirborneTrigger(ai); };
             creators["onyxia deep breath"] = [](PlayerbotAI* ai) { return new OnyxiaDeepBreathTrigger(ai); };

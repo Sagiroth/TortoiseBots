@@ -6,6 +6,16 @@
 
 namespace ai
 {
+    void ObserveOnyxiaBreathPacket(PlayerbotAI* ai, WorldPacket const& packet);
+    bool OnyxiaBreathActive(PlayerbotAI* ai);
+    class OnyxiaBreathEscapeAction : public MovementAction
+    {
+    public:
+        OnyxiaBreathEscapeAction(PlayerbotAI* ai) : MovementAction(ai, "onyxia deep breath escape") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
+
     Unit* GetAirborneOnyxia(PlayerbotAI* ai);
     bool OnyxiaWhelpSupportActive(PlayerbotAI* ai);
     bool OnyxiaAirSpreadEnabled(PlayerbotAI* ai);

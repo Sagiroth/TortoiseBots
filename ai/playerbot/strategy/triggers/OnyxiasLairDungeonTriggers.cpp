@@ -50,3 +50,9 @@ bool OnyxiaAirSpreadTrigger::IsActive()
     OnyxiaAirSpreadAction action(ai);
     return action.isUseful();
 }
+
+bool OnyxiaBreathTrigger::IsActive()
+{
+    OnyxiaBreathEscapeAction action(ai);
+    return action.isUseful();
+}

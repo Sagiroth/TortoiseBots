@@ -4,6 +4,13 @@
 
 namespace ai
 {
+    class OnyxiaBreathTrigger : public Trigger
+    {
+    public:
+        OnyxiaBreathTrigger(PlayerbotAI* ai) : Trigger(ai, "onyxia breath escape needed", 1) {}
+        bool IsActive() override;
+    };
+
     class OnyxiasLairEnterDungeonTrigger : public EnterDungeonTrigger
     {
     public:

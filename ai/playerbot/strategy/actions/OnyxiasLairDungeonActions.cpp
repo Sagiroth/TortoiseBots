@@ -236,6 +236,7 @@ Unit* ai::GetAirborneOnyxia(PlayerbotAI* ai)
 
 bool ai::OnyxiaAirSpreadEnabled(PlayerbotAI* ai)
 {
+    if (OnyxiaBreathActive(ai)) return false;
     Player* bot = ai->GetBot();
     if (!ai->HasStrategy("onyxia air spread", BotState::BOT_STATE_COMBAT) ||
         ai->IsTank(bot) || (!ai->IsRanged(bot) && !ai->IsHeal(bot)) || !GetAirborneOnyxia(ai))

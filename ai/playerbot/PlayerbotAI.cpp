@@ -1,6 +1,7 @@
 #include "../../runtime/TemporaryPassTiming.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
 #include "playerbot/PerformanceMonitor.h"
 #include <stdarg.h>
 #include <deque>

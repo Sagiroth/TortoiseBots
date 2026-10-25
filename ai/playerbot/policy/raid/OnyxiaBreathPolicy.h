@@ -98,3 +98,84 @@ namespace ai
         return breathCasting && !alreadySafe;
     }
 }
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <string>
+#include <vector>
+
+namespace ai
+{
+struct OnyxiaBreathPoint { float x, y; };
+struct OnyxiaBreathCircle { float x, y, radius; };
+struct OnyxiaBreathLaunch { uint32_t spell; float x, y; };
+// Turtle boss_onyxia.cpp flight endpoints, in perimeter order.
+constexpr OnyxiaBreathLaunch kOnyxiaBreathLaunches[] = {
+    {18617,10.2191f,-247.912f}, {18576,-31.4963f,-250.123f},
+    {18564,-63.5156f,-240.096f}, {18351,-65.8444f,-213.809f},
+    {18596,-58.2509f,-189.020f}, {18609,-33.5561f,-182.682f},
+    {18584,6.8951f,-180.246f}, {17086,22.8763f,-217.152f}
+};
+inline uint32_t OnyxiaBreathDirection(float x, float y)
+{
+    for (auto const& launch : kOnyxiaBreathLaunches)
+        if (std::hypot(x-launch.x,y-launch.y) <= 4.0f)
+            return launch.spell;
+    return 0;
+}
+inline bool OnyxiaBreathFresh(uint32_t now, uint32_t observed)
+{
+    return now-observed < 15000;
+}
+inline bool OnyxiaBreathFloor(float x, float y, float z)
+{
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || z < -93 || z > -80)
+        return false;
+    // Ray crossing handles the two slightly concave side endpoints correctly.
+    bool inside = false;
+    for (unsigned i=0,j=7;i<8;j=i++)
+    {
+        auto const& a=kOnyxiaBreathLaunches[i]; auto const& b=kOnyxiaBreathLaunches[j];
+        if ((a.y>y)!=(b.y>y) && x<(b.x-a.x)*(y-a.y)/(b.y-a.y)+a.x)
+            inside=!inside;
+    }
+    // Inset from both scripted whelp/egg-pit entrances.
+    return inside && std::hypot(x+30.127f,y+254.463f)>=15 &&
+        std::hypot(x+30.817f,y+177.106f)>=15;
+}
+inline float OnyxiaBreathClearance(float x,float y,std::vector<OnyxiaBreathCircle> const& circles)
+{
+    if (circles.empty() || !std::isfinite(x) || !std::isfinite(y))
+        return -std::numeric_limits<float>::infinity();
+    float clearance=std::numeric_limits<float>::infinity();
+    for (auto const& c:circles)
+    {
+        if (!std::isfinite(c.x) || !std::isfinite(c.y) || !std::isfinite(c.radius) || c.radius<=0)
+            return -std::numeric_limits<float>::infinity();
+        clearance=std::min(clearance,std::hypot(x-c.x,y-c.y)-c.radius);
+    }
+    return clearance;
+}
+// The server's vanilla monster-emote packet contains a name, not a source GUID.
+// Bounds-check each field before comparing it with the observed boss/localized text.
+inline bool ReadOnyxiaBossEmote(uint8_t const* bytes,size_t size,std::string& name,std::string& message)
+{
+    if (!bytes || size<5) return false;
+    size_t pos=5;
+    auto readString=[&](std::string& out) {
+        if (size-pos<4) return false;
+        uint32_t n=uint32_t(bytes[pos]) | uint32_t(bytes[pos+1])<<8 |
+            uint32_t(bytes[pos+2])<<16 | uint32_t(bytes[pos+3])<<24;
+        pos+=4;
+        if (!n || n>size-pos || bytes[pos+n-1]!=0) return false;
+        if (std::memchr(bytes+pos,0,n-1)) return false;
+        out.assign(reinterpret_cast<char const*>(bytes+pos),n-1); pos+=n; return true;
+    };
+    if (!readString(name) || size-pos<8) return false;
+    pos+=8;
+    return readString(message) && size-pos==1; // trailing chat tag
+}
+}

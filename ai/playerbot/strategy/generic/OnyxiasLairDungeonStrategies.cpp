@@ -154,3 +154,31 @@ void OnyxiaWhelpStrategy::InitReactionMultipliers(std::list<Multiplier*>& multip
 {
     InitCombatMultipliers(multipliers);
 }
+
+namespace
+{
+class OnyxiaBreathMultiplier : public Multiplier
+{
+public:
+    OnyxiaBreathMultiplier(PlayerbotAI* ai) : Multiplier(ai, "onyxia breath movement") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || !OnyxiaBreathActive(ai)) return 1.0f;
+        std::string const name = action->getName();
+        if (name == "onyxia deep breath escape" || name == "move away from hazard" || name == "raid bomb runout")
+            return 1.0f;
+        return dynamic_cast<MovementAction*>(action) || dynamic_cast<CastReachTargetSpellAction*>(action) ? 0.0f : 1.0f;
+    }
+};
+}
+void OnyxiaBreathStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("onyxia breath escape needed",
+        NextAction::array(0,new NextAction("onyxia deep breath escape",ACTION_EMERGENCY + 10),nullptr)));
+}
+void OnyxiaBreathStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers) { InitCombatTriggers(triggers); }
+void OnyxiaBreathStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new OnyxiaBreathMultiplier(ai));
+}
+void OnyxiaBreathStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers) { InitCombatMultipliers(multipliers); }

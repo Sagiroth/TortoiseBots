@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "PlayerbotAI.h"
+#include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
 #include "PlayerbotAIPackets.h"
 #include "../../runtime/HireLifecycle.h"
 #include "../../runtime/PoolBotTradePolicy.h"
@@ -180,6 +181,9 @@ void RegisterPacketHandlers(PacketHandlingHelper& helper, PacketHandlerSpec cons
 
 void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 {
+    // Triggered breath has no current-cast slot; capture its warning packet.
+    ai::ObserveOnyxiaBreathPacket(this, packet);
+
     //if (packet.empty())
     //    return;
 
