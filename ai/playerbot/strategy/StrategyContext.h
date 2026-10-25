@@ -1,4 +1,5 @@
 #pragma once
+#include "generic/SarturaWhirlwindStrategy.h"
 #include "generic/FankrissStrategy.h"
 #include "generic/ZulGurubStrategies.h"
 #include "generic/TwinEmperorDungeonStrategies.h"
@@ -183,6 +184,7 @@ namespace ai
             creators["ai chat"] = [](PlayerbotAI* ai) { return new AIChatStrategy(ai); };
 
             creators["mimic consumables"] = [](PlayerbotAI* ai) { return new MimicConsumableStrategy(ai); };
+            creators["sartura whirlwind"] = [](PlayerbotAI* ai) { return new SarturaWhirlwindStrategy(ai); };
             creators["fankriss spawn focus"] = [](PlayerbotAI* ai) { return new FankrissSpawnStrategy(ai); };
             creators["arlokk panther focus"] = [](PlayerbotAI* ai) { return new ArlokkPantherStrategy(ai); };
             creators["marli spawn focus"] = [](PlayerbotAI* ai) { return new MarliSpawnStrategy(ai); };

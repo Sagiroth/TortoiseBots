@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/generic/SarturaWhirlwindStrategy.h"
 #include "RuinsOfAhnQirajTriggers.h"
 
 #include "HealthTriggers.h"
@@ -327,6 +328,7 @@ namespace ai
             creators["leave molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreLeaveDungeonTrigger(ai); };
             creators["maexxna rescue needed"] = [](PlayerbotAI* ai) { return new MaexxnaRescueTrigger(ai); };
             creators["kt fissure nearby"] = [](PlayerbotAI* ai) { return new KelThuzadFissureTrigger(ai); };
+            creators["sartura whirlwind nearby"] = [](PlayerbotAI* ai) { return new SarturaWhirlwindTrigger(ai); };
             creators["sapphiron blizzard nearby"] = [](PlayerbotAI* ai) { return new SapphironBlizzardTrigger(ai); };
             creators["patchwerk melee unsafe"] = [](PlayerbotAI* ai) { return new PatchwerkMeleeTrigger(ai); };
             creators["kt frostbolt ready"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptTrigger(ai); };
