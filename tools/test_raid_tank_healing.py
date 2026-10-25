@@ -57,6 +57,17 @@ int main(){
         self.assertLess(update.index('StopUnsafeRaidHealerFiller(this)'),update.index('if(!UpdateAIReaction('))
         self.assertIn('SetAIInternalUpdateDelay(0)',update[update.index('StopUnsafeRaidHealerFiller(this)'):][:130])
 
+    def test_opening_reach_wiring(self):
+        action=(SOURCE/'ai/playerbot/strategy/actions/ReachTargetActions.h').read_text()
+        reach=action.split('class ReachPartyMemberToHealAction',1)[1].split('class ReachPartyMemberToResurrectAction',1)[0]
+        self.assertIn('return patient ? patient : RaidHealingAnchor(ai)',reach)
+        trigger=(SOURCE/'ai/playerbot/strategy/triggers/RangeTriggers.h').read_text().split('class PartyMemberToHealOutOfSpellRangeTrigger',1)[1].split('class FarFromMasterTrigger',1)[0]
+        self.assertIn('target = RaidHealingAnchor(ai)',trigger)
+        self.assertIn('if (!ai->HasStrategy("stay", ai->GetState()))',action)
+        actions=(SOURCE/'ai/playerbot/strategy/actions/GenericSpellActions.cpp').read_text()
+        for marker in ['bool CastSpellAction::isUseful()', 'bool CastSpellAction::Execute(']:
+            self.assertIn('IsRaidHealerMaintenance(spellName)',body(actions,marker))
+
     def test_live_guards(self):
         p=SOURCE/'ai/playerbot/RaidTankHealing.cpp'
         self.assertTrue(p.exists(),'predecessor has no independent raid tank guard')
@@ -79,12 +90,15 @@ struct Unit {bool alive=true;unsigned entry=16028;bool IsAlive(){return alive;}u
 struct Player:Unit {bool world=true,combat=true,same=true,friendly=true,tank=true;unsigned mapid=533;float hp=80;
  Map map;Group* group=nullptr;Unit* victim=nullptr;PlayerbotAI* ai=nullptr;Spell* spells[2]={};int interrupts=0;
  bool IsInWorld(){return world;}bool IsInCombat(){return combat;}bool IsInMap(Player*){return same;}
+ std::vector<Unit*> attackers;float distance=20;
+ std::vector<Unit*> GetAttackers(){return attackers;}float GetDistance(Unit*){return distance;}
  unsigned GetMapId(){return mapid;}Unit* GetVictim(){return victim;}Group* GetGroup(){return group;}
  Map* GetMap(){return &map;}float GetHealthPercent(){return hp;}
  Spell* GetCurrentSpell(int slot){return spells[slot];}void InterruptSpell(int slot){spells[slot]=nullptr;++interrupts;}};
-struct PlayerbotAI {Player* bot;bool healer=true,main=false,soak=false,hold=true;
+struct PlayerbotAI {Player* bot;bool healer=true,main=false,soak=false,hold=true,focus=false;
  Player* GetBot(){return bot;}bool IsHeal(Player*){return healer;}bool IsTank(Player* p){return p->tank;}
- bool HasStrategy(std::string s,int){return s=="patchwerk main"?main:soak;}};
+ float GetRange(std::string){return 30;}
+ bool HasStrategy(std::string s,int){return s=="patchwerk main"?main:s=="patchwerk soak"?soak:focus;}};
 struct PlayerbotAIStorage {static PlayerbotAIStorage& Instance(){static PlayerbotAIStorage s;return s;}
  PlayerbotAI* GetAI(Player* p){return p->ai;}};
 std::vector<Player*> LiveGroupMembers(Group* g){return g->members;}
@@ -92,6 +106,8 @@ struct {bool IsFriendlyTo(Player*,Player* p){return p->friendly;}} sServerFacade
 struct {float almostFullHealth=90;} sPlayerbotAIConfig;
 bool RaidHealerShouldHoldDamage(PlayerbotAI* ai){return ai->hold;}
 bool IsPatchwerkHealingAssignment(Player* player) ASSIGN
+Unit* RaidHealingAnchor(PlayerbotAI* ai) ANCHOR
+bool IsRaidHealerMaintenance(std::string name) MAINTENANCE
 bool IsRaidHealerFiller(std::string name) FILLER
 bool StopUnsafeRaidHealerFiller(PlayerbotAI* ai) STOP
 struct Value {Player* bot;PlayerbotAI* ai;bool Calculate() CALCULATE};
@@ -99,6 +115,16 @@ int main(){
  Player healer,tank;PlayerbotAI ai{&healer},peer{&tank};Group group;group.members={&tank};healer.group=&group;
  Value v{&healer,&ai};Unit boss;tank.victim=&boss;tank.ai=&peer;peer.soak=true;tank.tank=false;
  assert(IsPatchwerkHealingAssignment(&tank));assert(v.Calculate());
+ tank.victim=nullptr;tank.attackers={&boss};
+ assert(IsPatchwerkHealingAssignment(&tank)); // first contact, own victim not yet set
+ tank.attackers.clear();assert(!IsPatchwerkHealingAssignment(&tank));tank.victim=&boss;
+ peer.soak=false;peer.main=true;tank.hp=100;healer.distance=44;
+ assert(RaidHealingAnchor(&ai)==&tank);assert(v.Calculate()); // range before damage
+ healer.distance=20;assert(!v.Calculate());
+ ai.focus=true;assert(!RaidHealingAnchor(&ai));ai.focus=false;
+ tank.combat=false;assert(!RaidHealingAnchor(&ai));tank.combat=true;
+ tank.same=false;assert(!RaidHealingAnchor(&ai));tank.same=true;
+ tank.hp=80;peer.main=false;peer.soak=true;
  peer.soak=false;peer.main=true;assert(v.Calculate());peer.main=false;assert(!v.Calculate());
  tank.tank=true;assert(v.Calculate());tank.hp=90;assert(!v.Calculate());tank.hp=80;
  tank.combat=false;assert(!v.Calculate());tank.combat=true;tank.alive=false;assert(!v.Calculate());
@@ -111,11 +137,20 @@ int main(){
  assert(IsRaidHealerFiller("Shadow Word: Pain"));assert(!IsRaidHealerFiller("Flash Heal"));assert(!IsRaidHealerFiller("fade"));
  Info damage{{"Smite"}},heal{{"Flash Heal"}};Spell cast{&damage},wand{&damage};healer.spells[0]=&cast;healer.spells[1]=&wand;
  assert(StopUnsafeRaidHealerFiller(&ai));assert(healer.interrupts==2);
+ assert(IsRaidHealerMaintenance("Resurrection"));
+ assert(IsRaidHealerMaintenance("power word: fortitude on party"));
+ assert(IsRaidHealerMaintenance("fear ward on tank"));
+ assert(!IsRaidHealerMaintenance("power word: shield on party"));
+ assert(!IsRaidHealerMaintenance("fade"));
+ Info maintenance{{"Resurrection"}};cast.m_spellInfo=&maintenance;healer.spells[0]=&cast;
+ assert(StopUnsafeRaidHealerFiller(&ai));
  cast.m_spellInfo=&heal;healer.spells[0]=&cast;assert(!StopUnsafeRaidHealerFiller(&ai));assert(healer.spells[0]==&cast);
  cast.m_spellInfo=&damage;ai.hold=false;assert(!StopUnsafeRaidHealerFiller(&ai));
  ai.hold=true;cast.state=2;assert(!StopUnsafeRaidHealerFiller(&ai));
 }
 '''
         for key,marker in [('ASSIGN','bool ai::IsPatchwerkHealingAssignment'),('FILLER','bool ai::IsRaidHealerFiller'),('STOP','bool ai::StopUnsafeRaidHealerFiller'),('CALCULATE','bool RaidTankHealingValue::Calculate')]:cpp=cpp.replace(key,body(s,marker))
+        for key,marker,fallback in [('ANCHOR','Unit* ai::RaidHealingAnchor','{ return nullptr; }'),('MAINTENANCE','bool ai::IsRaidHealerMaintenance','{ return false; }')]:
+            cpp=cpp.replace(key,body(s,marker) if marker in s else fallback)
         run(cpp)
 if __name__=='__main__':unittest.main()

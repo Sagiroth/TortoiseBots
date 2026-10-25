@@ -15,6 +15,7 @@
 #include "playerbot/policy/pull/PullFiringPolicy.h"
 #include "playerbot/policy/combat/RangedApproachPolicy.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
+#include "playerbot/RaidTankHealing.h"
 #include "AI/CreatureAI.h"
 #include <ctime>
 
@@ -793,6 +794,11 @@ namespace ai
     public:
         ReachPartyMemberToHealAction(PlayerbotAI* ai) : ReachTargetAction(ai, "reach party member to heal", ai->GetRange("heal")) {}
         virtual std::string GetTargetName() override { return "party member to heal"; }
+        Unit* GetTarget() override
+        {
+            Unit* patient = AI_VALUE(Unit*, GetTargetName());
+            return patient ? patient : RaidHealingAnchor(ai);
+        }
 
         // Every heal on "party member to heal" queues this action as its walk-up
         // prerequisite, so the trigger alone does not stop the walk. In combat

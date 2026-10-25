@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/GroupMembers.h"
+#include "playerbot/RaidTankHealing.h"
 #include "playerbot/strategy/Trigger.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/HealReachPolicy.h"
@@ -335,6 +336,8 @@ namespace ai
         virtual bool IsActive() override
         {
             Unit* target = AI_VALUE(Unit*, GetTargetName());
+            if (!target)
+                target = RaidHealingAnchor(ai);
             if (!target)
                 return false;
 

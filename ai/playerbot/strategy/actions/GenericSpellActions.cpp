@@ -280,7 +280,8 @@ CastSpellAction::CastSpellAction(PlayerbotAI* ai, std::string spell)
 
 bool CastSpellAction::Execute(Event& event)
 {
-    if ((IsRaidHealerFiller(spellName) || IsRaidHealerFiller(getName())) && RaidHealerShouldHoldDamage(ai))
+    if ((IsRaidHealerFiller(spellName) || IsRaidHealerFiller(getName()) ||
+        IsRaidHealerMaintenance(spellName) || IsRaidHealerMaintenance(getName())) && RaidHealerShouldHoldDamage(ai))
         return false;
 
 
@@ -441,7 +442,8 @@ bool CastSpellAction::isPossible()
 
 bool CastSpellAction::isUseful()
 {
-    if ((IsRaidHealerFiller(spellName) || IsRaidHealerFiller(getName())) && RaidHealerShouldHoldDamage(ai))
+    if ((IsRaidHealerFiller(spellName) || IsRaidHealerFiller(getName()) ||
+        IsRaidHealerMaintenance(spellName) || IsRaidHealerMaintenance(getName())) && RaidHealerShouldHoldDamage(ai))
         return false;
 
 

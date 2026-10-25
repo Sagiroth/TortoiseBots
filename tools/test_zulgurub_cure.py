@@ -31,6 +31,7 @@ class ZulGurubCureTest(unittest.TestCase):
             helpers += '\n' + function(actions, 'bool IsZulGurubCureSpellProtected(')
         # This fixture models cures, never healer offensive filler.
         helpers += '\nbool IsRaidHealerFiller(std::string) { return false; }\n'
+        helpers += 'bool IsRaidHealerMaintenance(std::string) { return false; }\n'
         helpers += 'bool RaidHealerShouldHoldDamage(PlayerbotAI*) { return false; }\n'
         production = '\n'.join((
             'namespace ai {', helpers, '}',

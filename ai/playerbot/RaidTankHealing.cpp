@@ -15,9 +15,36 @@ bool ai::IsPatchwerkHealingAssignment(Player* player)
         return false;
     PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(player);
     Unit* target = player->GetVictim();
-    return peer && target && target->IsAlive() && target->GetEntry() == 16028 &&
-        (peer->HasStrategy("patchwerk main", BotState::BOT_STATE_COMBAT) ||
-         peer->HasStrategy("patchwerk soak", BotState::BOT_STATE_COMBAT));
+    if (!peer || (!peer->HasStrategy("patchwerk main", BotState::BOT_STATE_COMBAT) &&
+        !peer->HasStrategy("patchwerk soak", BotState::BOT_STATE_COMBAT)))
+        return false;
+    if (target && target->IsAlive() && target->GetEntry() == 16028)
+        return true;
+    // A pulled boss can already be hitting the assigned tank before Attack()
+    // establishes the tank's own victim (or while the tank cannot attack).
+    for (Unit* attacker : player->GetAttackers())
+        if (attacker->IsAlive() && attacker->GetEntry() == 16028)
+            return true;
+    return false;
+}
+
+Unit* ai::RaidHealingAnchor(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    Group* group = bot->GetGroup();
+    if (!group || !group->IsRaidGroup() || !bot->GetMap()->IsRaid() || !ai->IsHeal(bot) ||
+        ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT))
+        return nullptr;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (member == bot || !member->IsInMap(bot) || !sServerFacade.IsFriendlyTo(bot, member) ||
+            !IsPatchwerkHealingAssignment(member))
+            continue;
+        PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(member);
+        if (peer->HasStrategy("patchwerk main", BotState::BOT_STATE_COMBAT))
+            return member;
+    }
+    return nullptr;
 }
 
 bool RaidTankHealingValue::Calculate()
@@ -25,6 +52,11 @@ bool RaidTankHealingValue::Calculate()
     Group* group = bot->GetGroup();
     if (!group || !group->IsRaidGroup() || !bot->GetMap()->IsRaid() || !ai->IsHeal(bot))
         return false;
+    // Get into healing range during the opening, even before the first hit.
+    // Reach retains the player's stay order and all existing movement checks.
+    Unit* anchor = RaidHealingAnchor(ai);
+    if (anchor && bot->GetDistance(anchor) > ai->GetRange("heal"))
+        return true;
     // Independent of patient selection: LOS, range, focus and a heal in flight
     // must not authorize damage while a raid tank is still below the safe line.
     for (Player* member : LiveGroupMembers(group))
@@ -49,13 +81,27 @@ bool ai::IsRaidHealerFiller(std::string name)
         name == "shoot" || name == "mind blast" || name == "starshards";
 }
 
+bool ai::IsRaidHealerMaintenance(std::string name)
+{
+    std::transform(name.begin(), name.end(), name.begin(),
+        [](unsigned char c) { return std::tolower(c); });
+    for (std::string const suffix : {" on party", " on tank"})
+        if (name.size() >= suffix.size() && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0)
+            name.resize(name.size() - suffix.size());
+    return name == "resurrection" || name == "power word: fortitude" ||
+        name == "prayer of fortitude" || name == "divine spirit" || name == "prayer of spirit" ||
+        name == "shadow protection" || name == "prayer of shadow protection" ||
+        name == "inner fire" || name == "fear ward";
+}
+
 bool ai::StopUnsafeRaidHealerFiller(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
     Spell* cast = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
     Spell* wand = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
     bool const offensiveCast = cast && cast->m_spellInfo &&
-        cast->getState() == SPELL_STATE_PREPARING && IsRaidHealerFiller(cast->m_spellInfo->SpellName[0]);
+        cast->getState() == SPELL_STATE_PREPARING && (IsRaidHealerFiller(cast->m_spellInfo->SpellName[0]) ||
+            IsRaidHealerMaintenance(cast->m_spellInfo->SpellName[0]));
     if ((!offensiveCast && !wand) || !RaidHealerShouldHoldDamage(ai))
         return false;
     if (offensiveCast)
