@@ -91,7 +91,7 @@ void PriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode(
         "patchwerk soaker needs shield",
-        NextAction::array(0, new NextAction("shield patchwerk soaker", ACTION_CRITICAL_HEAL + 2), NULL)));
+        NextAction::array(0, new NextAction("shield patchwerk soaker", ACTION_CRITICAL_HEAL - 1), NULL)));
 
     ClassStrategy::InitCombatTriggers(triggers);
 
@@ -158,7 +158,7 @@ void PriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode(
         "patchwerk soaker needs shield",
-        NextAction::array(0, new NextAction("shield patchwerk soaker", ACTION_CRITICAL_HEAL + 2), NULL)));
+        NextAction::array(0, new NextAction("shield patchwerk soaker", ACTION_CRITICAL_HEAL - 1), NULL)));
 
     ClassStrategy::InitNonCombatTriggers(triggers);
 

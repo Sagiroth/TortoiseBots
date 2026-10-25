@@ -137,6 +137,14 @@ Unit* PatchwerkSoakerShieldValue::Calculate()
     Unit* patient = AI_VALUE(Unit*, "party member to heal");
     if (patient && patient->GetHealthPercent() < sPlayerbotAIConfig.criticalHealth)
         return nullptr;
+    // Preventive shields must yield to tank recovery, even when the selected
+    // patient is someone else or the endangered tank needs healing reach first.
+    for (Player* member : LiveGroupMembers(group))
+        if (member->IsAlive() && member->IsInWorld() && member->IsInMap(bot) &&
+            member->IsInCombat() && sServerFacade.IsFriendlyTo(bot, member) &&
+            (ai->IsTank(member) || IsPatchwerkHealingAssignment(member)) &&
+            member->GetHealthPercent() < sPlayerbotAIConfig.almostFullHealth)
+            return nullptr;
     float range = 0.0f;
     if (!ai->GetSpellRange("power word: shield", &range))
         return nullptr;
