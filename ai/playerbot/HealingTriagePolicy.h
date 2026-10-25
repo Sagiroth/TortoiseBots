@@ -1,0 +1,107 @@
+#pragma once
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+namespace ai
+{
+    struct HealingBands
+    {
+        float critical;
+        float low;
+        float medium;
+        float almostFull;
+    };
+
+    struct HealingCandidate
+    {
+        std::uint64_t guid;
+        std::uint32_t health;
+        std::uint32_t maxHealth;
+        std::uint32_t incomingDamage;
+        bool tank;
+        bool pet;
+        bool incomingHeal;
+        bool inLos = true;
+    };
+
+    inline float PredictedHealHealth(HealingCandidate const& candidate)
+    {
+        if (!candidate.maxHealth)
+            return 100.0f;
+        auto const remaining = candidate.incomingDamage >= candidate.health
+            ? 0 : candidate.health - candidate.incomingDamage;
+        return 100.0f * remaining / candidate.maxHealth;
+    }
+
+    inline bool NeedsPartyHealing(HealingCandidate const& candidate, HealingBands const& bands)
+    {
+        if (!candidate.health || !candidate.maxHealth)
+            return false;
+        float const health = PredictedHealHealth(candidate);
+        // A heal in flight is not a guarantee of survival: never veto urgent help.
+        return health < bands.almostFull && (!candidate.incomingHeal || health < bands.medium);
+    }
+
+    inline unsigned HealingUrgency(HealingCandidate const& candidate, HealingBands const& bands)
+    {
+        float const health = PredictedHealHealth(candidate);
+        unsigned const band = health < bands.critical ? 0 : health < bands.low ? 1
+            : health < bands.medium ? 2 : 3;
+        // Pets are a fallback, not competitors for an injured raid member's slot.
+        return band + (candidate.pet ? 4 : 0);
+    }
+
+    // A visible eligible target prevents opportunistic pursuit behind a wall.
+    // Explicit focus assignments may still use their normal reach prerequisite.
+    inline void FilterHealingLineOfSight(std::vector<HealingCandidate>& candidates,
+                                         bool focused, bool canReach)
+    {
+        bool const visible = std::any_of(candidates.begin(), candidates.end(),
+            [](HealingCandidate const& candidate) { return candidate.inLos; });
+        candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
+            [&](HealingCandidate const& candidate)
+            { return !candidate.inLos && (!canReach || (visible && !focused)); }), candidates.end());
+    }
+
+    inline bool HealingPriority(HealingCandidate const& left, HealingCandidate const& right,
+                                HealingBands const& bands)
+    {
+        unsigned const leftBand = HealingUrgency(left, bands);
+        unsigned const rightBand = HealingUrgency(right, bands);
+        if (leftBand != rightBand)
+            return leftBand < rightBand;
+        if (left.inLos != right.inLos)
+            return left.inLos;
+        float leftHealth = PredictedHealHealth(left);
+        float rightHealth = PredictedHealHealth(right);
+        // Small tank preference within a band; in emergencies the lowest health wins.
+        if (leftBand != 0)
+        {
+            leftHealth -= left.tank ? 10.0f : 0.0f;
+            rightHealth -= right.tank ? 10.0f : 0.0f;
+        }
+        if (leftHealth != rightHealth)
+            return leftHealth < rightHealth;
+        if (left.tank != right.tank)
+            return left.tank;
+        return left.guid < right.guid;
+    }
+
+    // Input is sorted by HealingPriority. Distribute only across the most urgent
+    // band, so an extra healer never tops somebody up while an emergency waits.
+    inline std::size_t HealingAssignment(std::vector<HealingCandidate> const& candidates,
+                                         HealingBands const& bands, std::size_t healerOrdinal)
+    {
+        if (candidates.empty())
+            return 0;
+        unsigned const urgency = HealingUrgency(candidates.front(), bands);
+        std::size_t count = 1;
+        while (count < candidates.size() && HealingUrgency(candidates[count], bands) == urgency &&
+               candidates[count].inLos == candidates.front().inLos)
+            ++count;
+        return healerOrdinal % count;
+    }
+}
