@@ -19,6 +19,18 @@ namespace ai
         MoltenCoreDisableDungeonStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable molten core strategy", "-molten core") {}
     };
 
+    // Returns an engaged, inferno-active boss only when the opt-in and
+    // player movement orders permit this tactic. Does not depend on current target.
+    Unit* GetActiveGeddonInferno(PlayerbotAI* ai);
+
+    class GeddonInfernoRetreatAction : public MovementAction
+    {
+    public:
+        GeddonInfernoRetreatAction(PlayerbotAI* ai) : MovementAction(ai, "geddon inferno retreat") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
+
     class MagmadarEnableFightStrategyAction : public ChangeAllStrategyAction
     {
     public:

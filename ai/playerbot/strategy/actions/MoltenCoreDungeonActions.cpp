@@ -63,3 +63,88 @@ bool GolemaggTankHoldAction::Execute(Event& event)
     }
     return MoveTo(bot->GetMapId(), tx, ty, tz, false, false, false, true);
 }
+
+#include "playerbot/playerbot.h"
+#include "MoltenCoreDungeonActions.h"
+#include "playerbot/policy/raid/GeddonInfernoPolicy.h"
+#include "playerbot/strategy/values/PositionValue.h"
+
+using namespace ai;
+
+Unit* ai::GetActiveGeddonInferno(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    AiObjectContext* context = ai->GetAiObjectContext();
+    PositionMap& positions = AI_VALUE(PositionMap&, "position");
+    auto hold = positions.find("pull hold");
+    bool const ordered = ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT) ||
+        (hold != positions.end() && hold->second.isSet());
+    if (!GeddonInfernoEnabled(ai->HasStrategy("geddon inferno", BotState::BOT_STATE_COMBAT),
+        bot->IsInWorld() && !bot->IsBeingTeleported() && bot->IsAlive(),
+        bot->GetMapId() == 409, bot->IsInCombat(), ordered))
+        return nullptr;
+
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* boss = ai->GetUnit(guid);
+        if (boss && boss->GetEntry() == 12056 && boss->IsInMap(bot) &&
+            GeddonInfernoActive(boss->IsAlive(), boss->IsInCombat(),
+                boss->HasAura(19695), boss->HasUnitState(UNIT_STAT_ROOT)))
+            return boss;
+    }
+    return nullptr;
+}
+
+bool GeddonInfernoRetreatAction::isUseful()
+{
+    Unit* boss = GetActiveGeddonInferno(ai);
+    return MovementAction::isUseful() && boss &&
+        GeddonInfernoNeedsRetreat(bot->GetCombatDistance(boss));
+}
+
+bool GeddonInfernoRetreatAction::Execute(Event& event)
+{
+    Unit* boss = GetActiveGeddonInferno(ai);
+    if (!boss || !GeddonInfernoNeedsRetreat(bot->GetCombatDistance(boss)))
+        return false;
+
+    WorldPosition const start(bot);
+    WorldPosition const center(boss);
+    float const radius = kGeddonInfernoClearance + 1.0f + bot->GetCombatReach() + boss->GetCombatReach();
+    float const away = center.GetAngleTo(start);
+    // Prefer directly outward. Destinations are on one fixed boss-centered
+    // ring, not an additional step from the bot on every reaction tick.
+    for (float offset : { 0.0f, 0.35f, -0.35f, 0.7f, -0.7f, 1.05f, -1.05f })
+    {
+        float const angle = away + offset;
+        WorldPosition point = center + WorldPosition(0, radius * cos(angle), radius * sin(angle), 0.0f);
+        point.setZ(point.GetHeight());
+        if (fabs(point.getZ() - start.getZ()) > 5.0f || IsHazardNearPosition(point) ||
+            !bot->IsWithinLOS(point.getX(), point.getY(), point.getZ() + bot->GetCollisionHeight()) ||
+            !start.canPathTo(point, bot))
+            continue;
+
+        bool nearUnpulled = false;
+        for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets"))
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (unit && unit->IsAlive() && !unit->IsInCombat() &&
+                sServerFacade.getDistance2d(unit, point.getX(), point.getY()) < sPlayerbotAIConfig.aggroDistance)
+            {
+                nearUnpulled = true;
+                break;
+            }
+        }
+        if (!nearUnpulled && MoveTo(bot->GetMapId(), point.getX(), point.getY(), point.getZ(),
+            false, IsReaction(), false, true))
+        {
+            if (IsReaction())
+                WaitForReach(start.distance(point));
+            return true;
+        }
+    }
+    return false;
+}

@@ -383,6 +383,7 @@ namespace ai
 
             creators["enable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarEnableFightStrategyAction(ai); };
             creators["disable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarDisableFightStrategyAction(ai); };
+            creators["geddon inferno retreat"] = [](PlayerbotAI* ai) { return new GeddonInfernoRetreatAction(ai); };
             creators["move away from magmadar"] = [](PlayerbotAI* ai) { return new MagmadarMoveAwayAction(ai); };
 
             creators["enable garr fight strategy"] = [](PlayerbotAI* ai) { return new GarrEnableFightStrategyAction(ai); };

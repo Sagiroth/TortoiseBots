@@ -190,6 +190,7 @@ namespace ai
 
             // Dungeon Boss Strategies
             creators["onyxia"] = [](PlayerbotAI* ai) { return new OnyxiaFightStrategy(ai); };
+            creators["geddon inferno"] = [](PlayerbotAI* ai) { return new GeddonInfernoStrategy(ai); };
             creators["magmadar"] = [](PlayerbotAI* ai) { return new MagmadarFightStrategy(ai); };
             creators["garr"] = [](PlayerbotAI* ai) { return new GarrFightStrategy(ai); };
             creators["shazzrah"] = [](PlayerbotAI* ai) { return new ShazzrahFightStrategy(ai); };

@@ -54,6 +54,20 @@ namespace ai
         void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
     };
 
+    // Explicit opt-in via "all +geddon inferno"; never added by map entry.
+    class GeddonInfernoStrategy : public Strategy
+    {
+    public:
+        GeddonInfernoStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "geddon inferno"; }
+
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     class MagmadarFightStrategy : public Strategy
     {
     public:

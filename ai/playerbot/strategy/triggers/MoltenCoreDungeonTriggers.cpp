@@ -30,3 +30,15 @@ bool GeddonInfernoTrigger::IsActive()
     }
     return false;
 }
+#include "playerbot/playerbot.h"
+#include "MoltenCoreDungeonTriggers.h"
+#include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
+#include "playerbot/policy/raid/GeddonInfernoPolicy.h"
+
+using namespace ai;
+
+bool LocalGeddonInfernoTrigger::IsActive()
+{
+    Unit* boss = GetActiveGeddonInferno(ai);
+    return boss && GeddonInfernoNeedsRetreat(bot->GetCombatDistance(boss));
+}

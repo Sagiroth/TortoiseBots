@@ -358,6 +358,7 @@ namespace ai
 
             // Dungeon Boss Triggers
 
+            creators["geddon inferno active"] = [](PlayerbotAI* ai) { return new LocalGeddonInfernoTrigger(ai); };
             creators["start magmadar fight"] = [](PlayerbotAI* ai) { return new MagmadarStartFightTrigger(ai); };
             creators["end magmadar fight"] = [](PlayerbotAI* ai) { return new MagmadarEndFightTrigger(ai); };
             creators["magmadar lava bomb"] = [](PlayerbotAI* ai) { return new MagmadarLavaBombTrigger(ai); };

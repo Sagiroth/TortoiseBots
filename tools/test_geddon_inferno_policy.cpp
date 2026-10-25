@@ -19,7 +19,7 @@ using ai::kLivingBombSpellId;
 using ai::ShouldBlockGeddonMove;
 using ai::ShouldRunFromGeddonInferno;
 
-int main()
+int UpstreamGeddonPolicyTest()
 {
     std::cout << "Starting TortoiseBots geddon-inferno policy tests...\n";
 
@@ -74,4 +74,40 @@ int main()
 
     std::cout << "All geddon-inferno policy tests passed.\n";
     return 0;
+}
+
+#include "../ai/playerbot/policy/raid/GeddonInfernoPolicy.h"
+#include <cassert>
+#include <iostream>
+
+int main()
+{
+    if (UpstreamGeddonPolicyTest() != 0) return 1;
+    using namespace ai;
+    // Opt-in, encounter and explicit-order boundaries. No role/victim gate:
+    // the current tank must use exactly the same retreat decision as DPS.
+    assert(GeddonInfernoEnabled(true, true, true, true, false));
+    assert(!GeddonInfernoEnabled(false, true, true, true, false));
+    assert(!GeddonInfernoEnabled(true, false, true, true, false));
+    assert(!GeddonInfernoEnabled(true, true, false, true, false));
+    assert(!GeddonInfernoEnabled(true, true, true, false, false));
+    assert(!GeddonInfernoEnabled(true, true, true, true, true));
+    // Full pulse lifecycle, including the root-only ninth scripted tick.
+    assert(GeddonInfernoActive(true, true, true, true));
+    assert(GeddonInfernoActive(true, true, false, true));
+    assert(!GeddonInfernoActive(true, true, false, false));
+    assert(!GeddonInfernoActive(false, true, true, true));
+    assert(!GeddonInfernoActive(true, false, true, true));
+    assert(GeddonInfernoNeedsRetreat(0));
+    assert(GeddonInfernoNeedsRetreat(20));
+    assert(GeddonInfernoNeedsRetreat(22.99f));
+    // Settled bots do not walk another ring-distance on subsequent ticks.
+    for (int tick = 0; tick < 10; ++tick)
+        assert(!GeddonInfernoNeedsRetreat(23));
+    assert(!GeddonInfernoNeedsRetreat(40));
+    assert(GeddonInfernoBlocksAction(true, false, false)); // chase/reach
+    assert(GeddonInfernoBlocksAction(false, true, false)); // charge
+    assert(!GeddonInfernoBlocksAction(false, false, false)); // ranged/heal
+    assert(!GeddonInfernoBlocksAction(true, false, true)); // emergency escape
+    std::cout << "Geddon Inferno policy: passed\n";
 }

@@ -1,7 +1,9 @@
-
 #include "playerbot/playerbot.h"
 #include "MoltenCoreDungeonStrategies.h"
 #include "DungeonMultipliers.h"
+#include "playerbot/policy/raid/GeddonInfernoPolicy.h"
+#include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
+#include "playerbot/strategy/actions/ReachTargetActions.h"
 
 using namespace ai;
 
@@ -229,3 +231,46 @@ void GeddonFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers
 
 // No InitCombatMultipliers here: the multiplier lives on the dungeon-wide
 // "molten core" strategy so bomb carriers stay covered after the fight.
+
+// Geddon remains rooted through the final scripted pulse, even after his
+// eight-second aura expires. Guard all normal movement for that interval.
+
+namespace
+{
+class LocalGeddonInfernoMultiplier : public Multiplier
+{
+public:
+    LocalGeddonInfernoMultiplier(PlayerbotAI* ai) : Multiplier(ai, "geddon inferno movement") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || !GetActiveGeddonInferno(ai))
+            return 1.0f;
+        std::string const& name = action->getName();
+        bool const escape = name == "geddon inferno retreat" || name == "raid bomb runout" ||
+            name == "move away from hazard";
+        return GeddonInfernoBlocksAction(dynamic_cast<MovementAction*>(action) != nullptr,
+            dynamic_cast<CastReachTargetSpellAction*>(action) != nullptr, escape) ? 0.0f : 1.0f;
+    }
+};
+}
+
+void GeddonInfernoStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("geddon inferno active",
+        NextAction::array(0, new NextAction("geddon inferno retreat", ACTION_EMERGENCY + 7), NULL)));
+}
+
+void GeddonInfernoStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitCombatTriggers(triggers);
+}
+
+void GeddonInfernoStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new LocalGeddonInfernoMultiplier(ai));
+}
+
+void GeddonInfernoStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}

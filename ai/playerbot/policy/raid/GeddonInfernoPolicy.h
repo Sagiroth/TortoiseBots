@@ -55,3 +55,34 @@ namespace ai
         return !IsGeddonSurvivalMove(actionName);
     }
 }
+
+
+namespace ai
+{
+    // Turtle spell 19698 uses SpellRadius row 9 (20 yd). Leave an extra
+    // 3 yd beyond combat reach so movement tolerances cannot park on its edge.
+    constexpr float kGeddonInfernoClearance = 23.0f;
+
+    inline bool GeddonInfernoEnabled(bool enabled, bool ready, bool inMoltenCore,
+        bool inCombat, bool holdPosition)
+    {
+        return enabled && ready && inMoltenCore && inCombat && !holdPosition;
+    }
+
+    inline bool GeddonInfernoActive(bool alive, bool engaged, bool aura, bool rooted)
+    {
+        // The core roots Geddon for nine scripted pulses; aura 19695 lasts
+        // only eight seconds. Keep the exclusion through the final pulse.
+        return alive && engaged && (aura || rooted);
+    }
+
+    inline bool GeddonInfernoNeedsRetreat(float combatDistance)
+    {
+        return combatDistance < kGeddonInfernoClearance;
+    }
+
+    inline bool GeddonInfernoBlocksAction(bool movement, bool charge, bool escape)
+    {
+        return (movement || charge) && !escape;
+    }
+}

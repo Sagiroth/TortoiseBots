@@ -17,6 +17,13 @@ namespace ai
         MoltenCoreLeaveDungeonTrigger(PlayerbotAI* ai) : LeaveDungeonTrigger(ai, "leave molten core", "molten core", 409) {}
     };
 
+    class LocalGeddonInfernoTrigger : public Trigger
+    {
+    public:
+        LocalGeddonInfernoTrigger(PlayerbotAI* ai) : Trigger(ai, "geddon inferno active", 1) {}
+        bool IsActive() override;
+    };
+
     class MagmadarStartFightTrigger : public StartBossFightTrigger
     {
     public:
