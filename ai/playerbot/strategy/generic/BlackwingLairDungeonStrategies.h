@@ -15,6 +15,13 @@ namespace ai
         void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
     };
 
+    class NefarianAddTankStrategy : public Strategy
+    {
+    public:
+        NefarianAddTankStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "nefarian add tank"; }
+    };
+
     // Manually enabled for the orb/add-control phase; automatically yields
     // when the core disables the Orb of Domination at the phase transition.
     class RazorgorePhaseOneStrategy : public Strategy

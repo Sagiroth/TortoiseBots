@@ -4,6 +4,7 @@
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "RaidDpsTargetPolicy.h"
 #include "GolemaggTankAssignmentValue.h"
+#include "NefarianAddAssignmentValue.h"
 #include "PossibleAttackTargetsValue.h"
 #include "AttackersValue.h"
 #include "playerbot/ServerFacade.h"
@@ -95,7 +96,8 @@ public:
         Player* bot = ai->GetBot();
         AiObjectContext* context = ai->GetAiObjectContext();
 
-        if (!attacker || !attacker->IsAlive() || IsGolemaggTankTargetExcluded(ai, attacker))
+        if (!attacker || !attacker->IsAlive() || IsGolemaggTankTargetExcluded(ai, attacker) ||
+            IsNefarianAddTargetExcluded(ai, attacker))
             return;
 
         if (IsCcTarget(attacker)) return;
@@ -253,6 +255,13 @@ Unit* TankTargetValue::Calculate()
 
     if (Unit* whelp = GetOnyxiaWhelpTarget(ai))
         return whelp;
+
+    if (IsNefarianAddTankOptedIn(ai))
+    {
+        auto const nefarianAdds = AI_VALUE(NefarianAddAssignment, "nefarian add assignment");
+        if (Unit* assigned = GetAssignedNefarianAddTarget(ai, nefarianAdds))
+            return assigned;
+    }
 
     FindTankTargetSmartStrategy strategy(ai);
     if (Unit* target = FindTarget(&strategy))

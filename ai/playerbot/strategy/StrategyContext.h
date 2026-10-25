@@ -189,6 +189,7 @@ namespace ai
             creators["vael tank handover"] = [](PlayerbotAI* ai) { return new VaelastraszTankHandoverStrategy(ai); };
             creators["blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairDungeonStrategy(ai); };
             creators["razorgore phase1"] = [](PlayerbotAI* ai) { return new RazorgorePhaseOneStrategy(ai); };
+            creators["nefarian add tank"] = [](PlayerbotAI* ai) { return new NefarianAddTankStrategy(ai); };
             creators["nefarian phase3"] = [](PlayerbotAI* ai) { return new NefarianPhaseThreeStrategy(ai); };
             creators["nefarian infernal focus"] = [](PlayerbotAI* ai) { return new NefarianInfernalFocusStrategy(ai); };
             creators["maexxna rescue"] = [](PlayerbotAI* ai) { return new MaexxnaRescueStrategy(ai); };

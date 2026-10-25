@@ -2,10 +2,14 @@
 #include "BlackwingLairDungeonActions.h"
 #include "playerbot/EbonrocSwapPolicy.h"
 #include "playerbot/VaelTankHandoverPolicy.h"
+#include "playerbot/NefarianAddAssignmentPolicy.h"
+#include "playerbot/strategy/values/NefarianAddAssignmentValue.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "playerbot/strategy/values/TargetValue.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
+#include <algorithm>
 #include <map>
 #include <mutex>
 
@@ -23,6 +27,27 @@ bool EbonrocHoldOrder(PlayerbotAI* ai)
         ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) ||
         ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT) ||
         (hold != positions.end() && hold->second.isSet());
+}
+
+class NefarianCcReservation : public FindNonCcTargetStrategy
+{
+public:
+    explicit NefarianCcReservation(PlayerbotAI* ai) : FindNonCcTargetStrategy(ai) {}
+    using FindNonCcTargetStrategy::IsCcTarget;
+    void CheckAttacker(Unit*, ThreatManager*) override {}
+};
+
+bool IsNefarianAddCcReserved(PlayerbotAI* ai, Unit* target)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    NefarianCcReservation reservations(ai);
+    return AI_VALUE(Unit*, "cc target") == target || reservations.IsCcTarget(target);
+}
+
+Player* GetNefarianTankVictim(PlayerbotAI* ai, Unit* add)
+{
+    Player* victim = dynamic_cast<Player*>(add->GetVictim());
+    return victim && victim->IsAlive() && ai->IsTank(victim) ? victim : nullptr;
 }
 
 bool EbonrocOtherTargetOrder(PlayerbotAI* ai, Unit* boss)
@@ -215,6 +240,173 @@ Unit* ai::GetActiveVaelTankHandoverBoss(PlayerbotAI* ai)
             return boss;
     }
     return nullptr;
+}
+
+bool ai::IsNefarianAddTankOptedIn(PlayerbotAI* ai)
+{
+    Player* bot = ai ? ai->GetBot() : nullptr;
+    return bot && bot->IsAlive() && bot->IsInWorld() && !bot->IsBeingTeleported() &&
+        bot->IsInCombat() && bot->GetMapId() == 469 && ai->IsTank(bot) &&
+        ai->HasStrategy("nefarian add tank", BotState::BOT_STATE_COMBAT) && !EbonrocHoldOrder(ai);
+}
+
+NefarianAddAssignment NefarianAddAssignmentValue::Calculate()
+{
+    NefarianAddAssignment assignment;
+    if (!IsNefarianAddTankOptedIn(ai))
+        return assignment;
+    Player* bot = ai->GetBot();
+
+    std::vector<Player*> members;
+    if (bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(bot->GetGroup()))
+            if (member->IsAlive() && member->IsInWorld() && !member->IsBeingTeleported() && member->IsInMap(bot))
+                members.push_back(member);
+    }
+    else
+        members.push_back(bot);
+
+    // Reuse the lowest-GUID participant's cached plan. Only that bot reads
+    // participant target lists and runs the planner; followers select their
+    // own targets from its owner map. No persistent Player/Unit pointers.
+    PlayerbotAI* planner = ai;
+    std::vector<PlayerbotAI*> participants;
+    for (Player* member : members)
+    {
+        PlayerbotAI* memberAI = PlayerbotAIStorage::Instance().GetAI(member);
+        if (!IsNefarianAddTankOptedIn(memberAI))
+            continue;
+        participants.push_back(memberAI);
+        if (member->GetObjectGuid() < planner->GetBot()->GetObjectGuid())
+            planner = memberAI;
+    }
+    if (planner != ai)
+    {
+        assignment = planner->GetAiObjectContext()->GetValue<NefarianAddAssignment>("nefarian add assignment")->Get();
+        assignment.targets.clear();
+        for (auto const& item : assignment.owners)
+            if (item.second == bot->GetObjectGuid())
+                assignment.targets.push_back(item.first);
+        return assignment;
+    }
+
+    Unit* boss = nullptr;
+    auto considerBoss = [&](Unit* unit)
+    {
+        if (unit && unit->GetEntry() == 11583 && unit->IsAlive() && unit->IsInCombat() && unit->IsInMap(bot))
+            boss = unit;
+    };
+    for (Player* member : members)
+    {
+        considerBoss(member->GetVictim());
+        if (PlayerbotAI* memberAI = PlayerbotAIStorage::Instance().GetAI(member))
+            considerBoss(memberAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get());
+    }
+
+    std::vector<NefarianAddTankCandidate> tanks;
+    std::map<std::uint64_t, Unit*> discovered;
+    for (PlayerbotAI* memberAI : participants)
+    {
+        Player* member = memberAI->GetBot();
+        auto const possible = memberAI->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
+        NefarianAddTankCandidate candidate;
+        candidate.guid = member->GetObjectGuid().GetRawValue();
+        for (ObjectGuid const& guid : possible)
+        {
+            Unit* target = memberAI->GetUnit(guid);
+            considerBoss(target);
+            if (!target || (target->GetEntry() != 14605 && target->GetEntry() != 14668) ||
+                !target->IsAlive() || !target->IsInCombat() ||
+                !PossibleAttackTargetsValue::IsValid(target, member, sPlayerbotAIConfig.sightDistance, false, false) ||
+                IsNefarianAddCcReserved(memberAI, target))
+                continue;
+            candidate.possibleAdds.push_back(guid.GetRawValue());
+            discovered[guid.GetRawValue()] = target;
+        }
+
+        Unit* orderedTarget = nullptr;
+        ObjectGuid explicitGuid = memberAI->GetAiObjectContext()->GetValue<ObjectGuid>("explicit attack target")->Get();
+        if (!explicitGuid.IsEmpty())
+        {
+            Unit* explicitTarget = memberAI->GetUnit(explicitGuid);
+            if (explicitTarget && PossibleAttackTargetsValue::IsValid(explicitTarget, member,
+                sPlayerbotAIConfig.sightDistance, false, false))
+                orderedTarget = explicitTarget;
+        }
+        if (!orderedTarget)
+            orderedTarget = memberAI->GetAiObjectContext()->GetValue<Unit*>("rti target")->Get();
+        if (orderedTarget)
+            candidate.lockedTarget = orderedTarget->GetObjectGuid().GetRawValue();
+        tanks.push_back(candidate);
+    }
+    if (!boss || discovered.empty())
+        return assignment;
+
+    std::vector<std::uint64_t> adds;
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> victimLocks;
+    for (auto const& item : discovered)
+    {
+        adds.push_back(item.first);
+        if (Player* victim = GetNefarianTankVictim(ai, item.second))
+            victimLocks.push_back({item.first, victim->GetObjectGuid().GetRawValue()});
+    }
+    auto plan = PlanNefarianAdds(tanks, adds, victimLocks);
+    assignment.active = !plan.empty();
+    assignment.boss = boss->GetObjectGuid();
+    for (auto const& item : plan)
+    {
+        ObjectGuid const add(item.first);
+        ObjectGuid const owner(item.second);
+        assignment.owners.push_back({add, owner});
+        if (owner == bot->GetObjectGuid())
+            assignment.targets.push_back(add);
+    }
+    return assignment;
+}
+
+Unit* ai::GetAssignedNefarianAddTarget(PlayerbotAI* ai, NefarianAddAssignment const& assignment)
+{
+    if (!assignment.active || !IsNefarianAddTankOptedIn(ai))
+        return nullptr;
+    Player* bot = ai->GetBot();
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* current = AI_VALUE(Unit*, "current target");
+    if (current && std::find(assignment.targets.begin(), assignment.targets.end(), current->GetObjectGuid()) != assignment.targets.end() &&
+        PossibleAttackTargetsValue::IsValid(current, bot, sPlayerbotAIConfig.sightDistance, false, false) &&
+        !IsNefarianAddCcReserved(ai, current) &&
+        !PossibleAttackTargetsValue::HasBreakableCC(current, bot) && !PossibleAttackTargetsValue::HasUnBreakableCC(current, bot))
+        return current;
+
+    Unit* selected = nullptr;
+    for (ObjectGuid const& guid : assignment.targets)
+    {
+        Unit* target = ai->GetUnit(guid);
+        if (!target || !target->IsAlive() || !PossibleAttackTargetsValue::IsValid(target, bot,
+            sPlayerbotAIConfig.sightDistance, false, false) ||
+            IsNefarianAddCcReserved(ai, target) ||
+            PossibleAttackTargetsValue::HasBreakableCC(target, bot) || PossibleAttackTargetsValue::HasUnBreakableCC(target, bot))
+            continue;
+        if (!selected || bot->GetDistance(target) < bot->GetDistance(selected))
+            selected = target;
+    }
+    return selected;
+}
+
+bool ai::IsNefarianAddTargetExcluded(PlayerbotAI* ai, Unit* target)
+{
+    if (!target || (target->GetEntry() != 14605 && target->GetEntry() != 14668))
+        return false;
+    if (!IsNefarianAddTankOptedIn(ai))
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    auto const assignment = AI_VALUE(NefarianAddAssignment, "nefarian add assignment");
+    if (!assignment.active)
+        return false;
+    auto owner = std::find_if(assignment.owners.begin(), assignment.owners.end(),
+        [target](auto const& item) { return item.first == target->GetObjectGuid(); });
+    return owner != assignment.owners.end() && !owner->second.IsEmpty() &&
+        owner->second != ai->GetBot()->GetObjectGuid();
 }
 
 bool EbonrocShadowSwapAction::isUseful()
