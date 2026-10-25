@@ -13,6 +13,7 @@
 #include <algorithm>
 #include "playerbot/HealingTriagePolicy.h"
 #include <map>
+#include "playerbot/RaidTankHealing.h"
 
 using namespace ai;
 
@@ -160,6 +161,7 @@ Unit* PartyMemberToHeal::Calculate()
     std::map<ObjectGuid, uint32> const incomingHeals =
         ai->GetAiObjectContext()->GetValue<std::map<ObjectGuid, uint32>>("incoming heals")->Get();
     std::size_t healerOrdinal = 0;
+    std::size_t assignedHealerOrdinal = 0;
 
     // One bounded raid-roster pass, including human healers. No nearby-world scan
     // per candidate. Focused healers own their assignment rather than a raid slot.
@@ -168,6 +170,11 @@ Unit* PartyMemberToHeal::Calculate()
         if (!Check(player))
             continue;
         PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(player);
+        // A cast starting must not renumber all remaining Patchwerk healers.
+        if (!focused && peer && ai->IsHeal(player) &&
+            !peer->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT) &&
+            player->GetObjectGuid() < bot->GetObjectGuid())
+            ++assignedHealerOrdinal;
         if (!focused && peer && ai->IsHeal(player) &&
             !peer->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT) &&
             !player->HasUnitState(UNIT_STAT_CAN_NOT_REACT) && !player->IsNonMeleeSpellCasted(true) &&
@@ -199,13 +206,14 @@ Unit* PartyMemberToHeal::Calculate()
                 [&]() { return AnotherHealerCoversAlly(ai, target, reachLimit); }))
                 return;
         }
+        bool const assigned = target->IsPlayer() && IsPatchwerkHealingAssignment(static_cast<Player*>(target));
         auto const incoming = incomingHeals.find(target->GetObjectGuid());
         uint32 const creditedHealth = HealthWithIncoming(target->GetHealth(), target->GetMaxHealth(),
             incoming == incomingHeals.end() ? 0 : incoming->second, sPlayerbotAIConfig.lowHealth);
         HealingCandidate candidate{target->GetObjectGuid().GetRawValue(), creditedHealth,
             target->GetMaxHealth(), preHealing ? getIncomingdamage(target) : 0,
-            tank, pet, false,
-            sServerFacade.IsWithinLOSInMap(bot, target), target->IsInCombat()};
+            tank || assigned, pet, false,
+            sServerFacade.IsWithinLOSInMap(bot, target), target->IsInCombat(), assigned};
         if (NeedsPartyHealing(candidate, bands) && targets.emplace(candidate.guid, target).second)
             candidates.push_back(candidate);
     };
@@ -256,7 +264,8 @@ Unit* PartyMemberToHeal::Calculate()
         return nullptr;
     std::sort(candidates.begin(), candidates.end(), [&](HealingCandidate const& left, HealingCandidate const& right)
         { return HealingPriority(left, right, bands); });
-    return targets.at(candidates[HealingAssignment(candidates, bands, healerOrdinal)].guid);
+    return targets.at(candidates[HealingAssignment(candidates, bands,
+        candidates.front().patchwerkAssigned ? assignedHealerOrdinal : healerOrdinal)].guid);
 }
 
 bool PartyMemberToHeal::CanHealPet(Pet* pet)

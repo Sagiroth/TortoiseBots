@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/BoostReadinessPolicy.h"
+#include "playerbot/RaidTankHealing.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/HealerManaPolicy.h"
@@ -147,6 +148,9 @@ bool ai::HealerWandAllowed(PlayerbotAI* ai, Unit* target)
 
 bool HealerShouldAttackTrigger::IsActive()
 {
+    if (RaidHealerShouldHoldDamage(ai))
+        return false;
+
     if (!bot->GetGroup())
         return true;
 

@@ -56,7 +56,7 @@ int main() {
             self.assertIn('"flash heal on party", ACTION_CRITICAL_HEAL',node)
             self.assertIn('"power word: shield on party", ACTION_CRITICAL_HEAL + 1',node)
         source=(ROOT/'ai/playerbot/strategy/values/PartyMemberToHeal.cpp').read_text()
-        self.assertIn('target->IsInCombat()}',source)
+        self.assertIn('target->IsInCombat(), assigned}',source)
         trigger=(ROOT/'ai/playerbot/strategy/triggers/HealthTriggers.cpp').read_text()
         self.assertIn('return FastTankHealing(candidate, bands);',trigger)
         self.assertIn('target->IsInCombat()',trigger)

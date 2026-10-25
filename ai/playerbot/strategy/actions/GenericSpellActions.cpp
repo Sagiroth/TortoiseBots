@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/GroupBuffPolicy.h"
+#include "playerbot/RaidTankHealing.h"
 #include "playerbot/ForceRebuffPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/WandPolicy.h"
@@ -279,6 +280,10 @@ CastSpellAction::CastSpellAction(PlayerbotAI* ai, std::string spell)
 
 bool CastSpellAction::Execute(Event& event)
 {
+    if ((IsRaidHealerFiller(spellName) || IsRaidHealerFiller(getName())) && RaidHealerShouldHoldDamage(ai))
+        return false;
+
+
     bool executed = false;
     uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
     if (spellName == "conjure food" || spellName == "conjure water")
@@ -436,6 +441,10 @@ bool CastSpellAction::isPossible()
 
 bool CastSpellAction::isUseful()
 {
+    if ((IsRaidHealerFiller(spellName) || IsRaidHealerFiller(getName())) && RaidHealerShouldHoldDamage(ai))
+        return false;
+
+
     if(!AI_VALUE2(bool, "spell cast useful", spellName))
         return false;
 
@@ -1026,6 +1035,9 @@ bool CastShootAction::isUseful()
 
 bool CastShootAction::Execute(Event& event)
 {
+    if (RaidHealerShouldHoldDamage(ai))
+        return false;
+
     bool succeeded = false;
 
     UpdateWeaponInfo();

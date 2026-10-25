@@ -28,7 +28,7 @@ struct Bot { bool casting=false; bool IsNonMeleeSpellCasted(bool,bool,bool){retu
 HealingBands const bands{20,50,70,90};
 Unit* select(std::vector<HealingCandidate> candidates, bool focused, std::size_t healerOrdinal,
              AI* ai, Bot* bot, std::map<std::uint64_t,Unit*> const& targets) {
-''' + tail + r'''
+''' + 'std::size_t assignedHealerOrdinal = healerOrdinal;\n' + tail + r'''
 int main() {
  AI ai;Bot bot;Unit urgent{1},routine{2},other{3};
  std::map<std::uint64_t,Unit*> targets{{1,&urgent},{2,&routine},{3,&other}};

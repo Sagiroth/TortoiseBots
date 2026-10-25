@@ -1,6 +1,8 @@
 #include "../../runtime/TemporaryPassTiming.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/RaidTankHealing.h"
+#include "playerbot/strategy/ZulGurubCurePolicy.h"
 #include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
 #include "playerbot/PerformanceMonitor.h"
 #include <stdarg.h>
@@ -785,6 +787,11 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // Update facing
     SC_PHASE("UpdateAI.UpdateFaceTarget", bot ? bot->GetName() : "(null)");
     UpdateFaceTarget(elapsed, minimal);
+
+    // Interrupt only offensive filler, before a long cast/action delay can
+    // postpone reacting to a raid tank's falling health. Never cancel a heal.
+    if (StopUnsafeRaidHealerFiller(this))
+        SetAIInternalUpdateDelay(0);
 
     bool doMinimalReaction = minimal || !AllowActivity(REACT_ACTIVITY);
 

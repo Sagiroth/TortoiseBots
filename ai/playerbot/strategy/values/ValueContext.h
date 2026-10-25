@@ -13,6 +13,7 @@
 #include "NearestCorpsesValue.h"
 #include "PartyMemberWithoutAuraValue.h"
 #include "PartyMemberToHeal.h"
+#include "playerbot/RaidTankHealing.h"
 #include "PartyMemberToResurrect.h"
 #include "PartyMemberToSoulstone.h"
 #include "CurrentTargetValue.h"
@@ -125,6 +126,7 @@ namespace ai
     public:
         ValueContext()
         {
+            creators["raid tank needs healing"] = [](PlayerbotAI* ai) { return new RaidTankHealingValue(ai); };
             creators["active spell"] = [](PlayerbotAI* ai) { return new ActiveSpellValue(ai); };
             creators["craft"] = [](PlayerbotAI* ai) { return new CraftValue(ai); };
             creators["collision"] = [](PlayerbotAI* ai) { return new CollisionValue(ai); };

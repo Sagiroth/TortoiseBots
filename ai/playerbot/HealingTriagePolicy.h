@@ -26,6 +26,7 @@ namespace ai
         bool incomingHeal;
         bool inLos = true;
         bool inCombat = false;
+        bool patchwerkAssigned = false;
     };
 
     inline float PredictedHealHealth(HealingCandidate const& candidate)
@@ -42,7 +43,7 @@ namespace ai
     inline bool TankHealingDanger(HealingCandidate const& candidate, HealingBands const& bands)
     {
         return candidate.tank && candidate.inCombat && candidate.health &&
-            candidate.maxHealth && PredictedHealHealth(candidate) < bands.low;
+            candidate.maxHealth && PredictedHealHealth(candidate) < (candidate.patchwerkAssigned ? bands.almostFull : bands.low);
     }
 
     inline bool FastTankHealing(HealingCandidate const& candidate, HealingBands const& bands)
@@ -57,7 +58,8 @@ namespace ai
             return false;
         float const health = PredictedHealHealth(candidate);
         // A heal in flight is not a guarantee of survival: never veto urgent help.
-        return health < bands.almostFull && (!candidate.incomingHeal || health < bands.medium);
+        return health < bands.almostFull && (!candidate.incomingHeal || health < bands.medium ||
+            (candidate.patchwerkAssigned && candidate.inCombat));
     }
 
     inline unsigned HealingUrgency(HealingCandidate const& candidate, HealingBands const& bands)
@@ -116,6 +118,24 @@ namespace ai
     {
         if (candidates.empty())
             return 0;
+        // Share noncritical Patchwerk assignments across the main and soakers;
+        // otherwise a perpetually low main monopolizes every healer until a
+        // soaker is already critical. Critical patients still get the old band.
+        if (candidates.front().patchwerkAssigned &&
+            TankHealingDanger(candidates.front(), bands) &&
+            PredictedHealHealth(candidates.front()) >= bands.critical)
+        {
+            auto eligible = [&](HealingCandidate const& candidate)
+            {
+                return candidate.patchwerkAssigned && TankHealingDanger(candidate, bands) &&
+                    candidate.inLos == candidates.front().inLos;
+            };
+            std::size_t count = std::count_if(candidates.begin(), candidates.end(), eligible);
+            std::size_t slot = healerOrdinal % count;
+            for (std::size_t i = 0; i < candidates.size(); ++i)
+                if (eligible(candidates[i]) && slot-- == 0)
+                    return i;
+        }
         unsigned const urgency = HealingUrgency(candidates.front(), bands);
         std::size_t count = 1;
         while (count < candidates.size() && HealingUrgency(candidates[count], bands) == urgency &&

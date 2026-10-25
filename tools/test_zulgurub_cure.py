@@ -29,6 +29,9 @@ class ZulGurubCureTest(unittest.TestCase):
         if 'std::uint32_t GetZulGurubProtectedDispelMask(' in actions:
             helpers = function(actions, 'std::uint32_t GetZulGurubProtectedDispelMask(')
             helpers += '\n' + function(actions, 'bool IsZulGurubCureSpellProtected(')
+        # This fixture models cures, never healer offensive filler.
+        helpers += '\nbool IsRaidHealerFiller(std::string) { return false; }\n'
+        helpers += 'bool RaidHealerShouldHoldDamage(PlayerbotAI*) { return false; }\n'
         production = '\n'.join((
             'namespace ai {', helpers, '}',
             function(ai, 'bool PlayerbotAI::HasAuraToDispel('),
@@ -128,6 +131,7 @@ struct CastSpellAction {
     Player* bot;
     Unit* target;
     std::string spellName="fixture cure";
+    std::string getName(){ return spellName; }
     uint32 spellId;
     Unit* GetTarget() { return target; }
     std::string GetTargetName() { return "party member to dispel"; }

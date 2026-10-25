@@ -5,6 +5,7 @@
 #include "playerbot/policy/heal/GroupHealPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/HealingTriagePolicy.h"
+#include "playerbot/RaidTankHealing.h"
 
 using namespace ai;
 
@@ -184,7 +185,7 @@ bool PartyMemberTankDangerTrigger::IsActive()
     if (!target || !target->IsPlayer() || !target->IsAlive())
         return false;
     HealingCandidate candidate{target->GetObjectGuid().GetRawValue(), target->GetHealth(),
-        target->GetMaxHealth(), 0, ai->IsTank(static_cast<Player*>(target)), false, false,
+        target->GetMaxHealth(), 0, ai->IsTank(static_cast<Player*>(target)) || IsPatchwerkHealingAssignment(static_cast<Player*>(target)), false, false,
         true, target->IsInCombat()};
     HealingBands const bands{float(sPlayerbotAIConfig.criticalHealth), float(sPlayerbotAIConfig.lowHealth),
         float(sPlayerbotAIConfig.mediumHealth), float(sPlayerbotAIConfig.almostFullHealth)};
