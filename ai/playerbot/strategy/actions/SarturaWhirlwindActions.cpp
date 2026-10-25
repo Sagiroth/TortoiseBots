@@ -20,7 +20,14 @@ std::list<HazardPosition> ai::GetSarturaWhirlwindHazards(PlayerbotAI* ai)
         ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) ||
         ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT) ||
         (hold != positions.end() && hold->second.isSet()))
+    {
+        char const* reason = ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ? "stay" :
+            ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT) ? "follow" :
+            ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) ? "wait-for-attack" :
+            ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT) ? "grind" : "pull-hold";
+        LogSarturaEscape(ai, "SarturaEscapeBlocked", reason);
         return {};
+    }
 
     std::list<HazardPosition> hazards;
     // Resolve live positions and auras from the existing possible-target GUID cache.
@@ -70,4 +77,37 @@ bool SarturaWhirlwindEscapeAction::Execute(Event& event)
     // rather than following the hazard value's previous one-second snapshot.
     RESET_AI_VALUE(std::list<HazardPosition>, "hazards");
     return MoveAwayFromHazard::Execute(event);
+}
+
+void ai::LogSarturaEscape(PlayerbotAI* ai, char const* event, std::string const& reason,
+    bool success, WorldPosition const* destination)
+{
+    Player* bot = ai ? ai->GetBot() : nullptr;
+    if (!sPlayerbotAIConfig.raidBossDiagnostics || !bot || bot->GetMapId() != 531 ||
+        !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || !bot->IsInCombat() ||
+        !ai->HasStrategy("sartura whirlwind", BotState::BOT_STATE_COMBAT)) return;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    auto* escape = dynamic_cast<SarturaWhirlwindEscapeAction*>(context->GetAction("sartura whirlwind escape"));
+    uint32 const now = WorldTimer::getMSTime();
+    if (!escape || !escape->diagnosticThrottle.Due(now)) return;
+    // Pace even unsuccessful diagnostic probes; values/multipliers can ask repeatedly per tick.
+    escape->diagnosticThrottle.Mark(now);
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets"))
+    {
+        Unit* source = ai->GetUnit(guid);
+        if (!source || !source->IsAlive() || !source->IsInCombat() || !source->IsInMap(bot)) continue;
+        uint32 const aura = source->GetEntry() == 15516 ? 26083 : source->GetEntry() == 15984 ? 26038 : 0;
+        if (!aura || !source->HasAura(aura)) continue;
+        auto const* parent = sSpellTemplate.LookupEntry<SpellEntry>(aura);
+        auto const* damage = parent ? sSpellTemplate.LookupEntry<SpellEntry>(parent->EffectTriggerSpell[0]) : nullptr;
+        if (!damage) continue;
+        float const radius = Spells::GetSpellRadius(sSpellRadiusStore.LookupEntry(damage->EffectRadiusIndex[0]));
+        float const distance = WorldPosition(bot).distance(WorldPosition(source));
+        if (!std::isfinite(radius) || radius <= 0 || distance > radius + source->GetLeewayBonusRadius() + 2) continue;
+        sPlayerbotAIConfig.logEvent(ai, event, "sartura whirlwind escape",
+            SarturaDiagnosticRow(source->GetEntry(), aura, distance, reason, success, destination != nullptr,
+                destination ? destination->getX() : 0, destination ? destination->getY() : 0,
+                destination ? destination->getZ() : 0));
+        return;
+    }
 }

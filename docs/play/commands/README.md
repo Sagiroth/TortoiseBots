@@ -235,3 +235,8 @@ Onyxia, peeling only for a whelp attacking a healer in their group. Melee
 handle whelps. Healers keep healing. Ranged may move into spell range instead
 of remaining at an out-of-range spread point. Deep Breath escapes retain
 priority; explicit attack orders and raid marks still override automatic targets.
+
+Sartura retreat diagnostics: with `AiPlayerbot.RaidBossDiagnostics = 1` and
+`+sartura whirlwind` active in AQ40 combat, `bot_events.csv` records
+`SarturaEscape` / `SarturaEscapeBlocked` (combined cap: one row per bot per
+two seconds). See [Sartura diagnostic fields](../local-raid-tactics.md#sartura-retreat-diagnostics).

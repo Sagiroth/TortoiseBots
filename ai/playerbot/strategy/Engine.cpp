@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/SarturaWhirlwindActions.h"
 #include "../../../runtime/TemporaryPassTiming.h"
 
 #include "playerbot/playerbot.h"
@@ -402,6 +403,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 // E2E green: pmo stub
                 }
 
+                if (!isUseful && action->getName() == "sartura whirlwind escape")
+                    LogSarturaEscape(ai, "SarturaEscapeBlocked", isStunned ? "stunned" : "not-useful");
                 TracePullStep(ai, "useful", action, isUseful);
 
                 if (isUseful)
@@ -433,6 +436,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                             if (!relevance)
                             {
                                 LogAction("Multiplier %s made action %s useless", multiplier->getName().c_str(), action->getName().c_str());
+                                if (action->getName() == "sartura whirlwind escape")
+                                    LogSarturaEscape(ai, "SarturaEscapeBlocked", "multiplier:" + multiplier->getName());
                                 vetoedActions.push_back(action);
                                 break;
                             }
@@ -478,6 +483,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     bool isPossible; { TBPassDiag::Scope timing("action.isPossible", ai->GetBot()->GetGUIDLow(), action->getName().c_str()); isPossible = action->isPossible(); }
 // E2E green: pmo stub
 
+                    if (!isPossible && action->getName() == "sartura whirlwind escape")
+                        LogSarturaEscape(ai, "SarturaEscapeBlocked", "not-possible");
                     TracePullStep(ai, "possible", action, isPossible);
                     if (isPossible && relevance)
                     {

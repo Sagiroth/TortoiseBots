@@ -126,6 +126,7 @@ namespace ai {
     };
 }
 using namespace ai;
+void LogSarturaEscape(PlayerbotAI*, char const*, std::string const&) {}
 '''
         checks = r'''
 int main() {

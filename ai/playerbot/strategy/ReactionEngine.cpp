@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/SarturaWhirlwindActions.h"
 
 #include "playerbot/playerbot.h"
 
@@ -88,6 +89,8 @@ bool ReactionEngine::FindReaction(bool isStunned)
                                 reaction->setRelevance(reactionRelevance);
                                 if (reactionRelevance <= 0.0f)
                                 {
+                                    if (reaction->getName() == "sartura whirlwind escape")
+                                        LogSarturaEscape(ai, "SarturaEscapeBlocked", "multiplier:" + (*i)->getName());
                                     // Multiplier made reaction useless
                                     break;
                                 }
@@ -116,10 +119,14 @@ bool ReactionEngine::FindReaction(bool isStunned)
                             }
                             else
                             {
+                                if (reactionRelevance > 0.0f && reaction->getName() == "sartura whirlwind escape")
+                                    LogSarturaEscape(ai, "SarturaEscapeBlocked", "not-possible");
                                 // Add the alternative reactions to the queue
                                 MultiplyAndPush(reactionNode->getAlternatives(), reactionRelevance + 0.03, false, reactionEvent, "alt");
                             }
                         }
+                        else if (reaction->getName() == "sartura whirlwind escape")
+                            LogSarturaEscape(ai, "SarturaEscapeBlocked", isStunned ? "stunned-or-not-useful" : "not-useful");
                     }
 
                     // Delete the reaction node

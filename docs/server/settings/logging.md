@@ -260,3 +260,7 @@ spell-damage packets, including Hateful Strike. `hp_sample` is sampled at packet
 send and `hp_est` is clamped subtraction of reported damage; neither guarantees
 exact post-hit health. Disable the option after collecting a diagnostic capture.
 See [column definitions and coverage](../../developers/host-api.md#csv-columns-unchanged-nine-column-layout).
+
+The same switch also enables [Sartura retreat diagnostics](../../play/local-raid-tactics.md#sartura-retreat-diagnostics)
+for AQ40 bots using `+sartura whirlwind`: `SarturaEscape` and
+`SarturaEscapeBlocked`, together capped at one row per bot per two seconds.

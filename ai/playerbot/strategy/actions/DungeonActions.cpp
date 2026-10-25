@@ -1,5 +1,6 @@
 #include "playerbot/GroupMembers.h"
 #include "DungeonActions.h"
+#include "SarturaWhirlwindActions.h"
 #include "GeddonBombActions.h"
 #include "MoltenCoreDungeonActions.h"
 #include "playerbot/policy/raid/GeddonInfernoPolicy.h"
@@ -23,6 +24,7 @@ using namespace ai;
 
 bool MoveAwayFromHazard::Execute(Event& event)
 {
+    bool movementFailed = false;
     const std::list<HazardPosition>& hazards = AI_VALUE(std::list<HazardPosition>, "hazards");
 
     // Get the closest hazard to move away from
@@ -82,6 +84,8 @@ bool MoveAwayFromHazard::Execute(Event& event)
 
                         if (MoveTo(bot->GetMapId(), point.getX(), point.getY(), point.getZ(), false, IsReaction(), false, true))
                         {
+                            if (getName() == "sartura whirlwind escape")
+                                LogSarturaEscape(ai, "SarturaEscape", "moved", true, &point);
                             if (IsReaction())
                             {
                                 WaitForReach(point.distance(initialPosition));
@@ -89,6 +93,7 @@ bool MoveAwayFromHazard::Execute(Event& event)
 
                             return true;
                         }
+                        movementFailed = true;
                     }
                 }
 
@@ -102,6 +107,9 @@ bool MoveAwayFromHazard::Execute(Event& event)
         }
     }
 
+    if (getName() == "sartura whirlwind escape")
+        LogSarturaEscape(ai, "SarturaEscapeBlocked", movementFailed ? "movement-failed" :
+            closestHazard ? "no-safe-point" : "no-containing-hazard");
     return false;
 }
 

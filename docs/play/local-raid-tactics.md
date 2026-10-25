@@ -1084,3 +1084,36 @@ fixed 1/2/2 slots in eight 45-degree sectors from the raid chart, reachable
 local add selection, and the actual small-eye birth coordinates in Turtle's `boss_cthun.cpp`. It does not implement Dark Glare
 or stomach tactics. A passing geometric layout fixture does not establish
 that a live raid has safe routes, suitable group composition or a clear.
+
+### Sartura retreat diagnostics
+
+Enable the existing `AiPlayerbot.RaidBossDiagnostics = 1` configuration switch
+(default off), include `bot_events.csv` in `AiPlayerbot.AllowedLogFiles`,
+and enable `+sartura whirlwind`. Only living, engaged AQ40 bots
+with that combat strategy are sampled. No orders or movement decisions change.
+`SarturaEscape` reports a successful movement request, not arrival or damage
+avoidance. `SarturaEscapeBlocked` reports a hold, usefulness/possibility gate,
+engine multiplier veto, or exhausted movement search. These share one per-bot
+2-second throttle; repeated or simultaneous outcomes can be omitted.
+
+The standard CSV bot/location fields identify the bot. The first detail field
+is `sartura whirlwind escape`; the second contains:
+
+| Field | Meaning |
+| --- | --- |
+| entry / aura | Nearby spinning boss or guard entry and persistent aura ID |
+| distance | Bot-to-source 3D center distance in yards at the diagnostic sample |
+| reason | `moved`, `stay`, `follow`, `wait-for-attack`, `grind`, `pull-hold`, `not-useful`, `stunned`, `stunned-or-not-useful`, `not-possible`, `multiplier:<name>`, `no-safe-point`, `movement-failed`, or `no-containing-hazard` |
+| success | 1 for an accepted movement request; 0 for a blocked/failed outcome |
+| destination | Requested x,y,z on success; `none` when no move was accepted |
+
+`no-safe-point` means the generic search found no candidate passing hazard,
+LOS and path checks; `movement-failed` means at least one such candidate's
+MoveTo request failed. `not-possible` is the action gate, not a claim about
+which movement restriction caused it. Multiple nearby whirlwinds report the
+first containing source in the cached target list, not necessarily the hazard
+the generic movement planner selected. Sources absent from that cache, missing
+spell data, an inactive strategy, or scheduling starvation do not produce rows.
+Diagnostic probes are also paced at two seconds even when no source qualifies.
+No rows therefore still do not prove zero attempts. `StepOut` is a separate
+hunter event and must not be used as the Sartura retreat counter.

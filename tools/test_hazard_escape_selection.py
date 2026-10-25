@@ -61,9 +61,16 @@ template<> Unit* Context::Read(std::string) { return target; }
 #define AI_VALUE(type,name) context->Read<type>(name)
 enum class BotState { BOT_STATE_COMBAT };
 struct AI { bool HasStrategy(std::string,BotState) { return false; } };
+std::string diagnosticEvent, diagnosticReason;
+bool diagnosticSuccess=false, diagnosticDestination=false;
+void LogSarturaEscape(AI*, char const* event, std::string const& reason, bool success=false, WorldPosition const* dest=nullptr) {
+    diagnosticEvent=event; diagnosticReason=reason; diagnosticSuccess=success; diagnosticDestination=dest!=nullptr;
+}
 struct Event {};
 struct MoveAwayFromHazard {
     Player* bot; Context* context; AI* ai;
+    std::string name="move away from hazard";
+    std::string getName() const { return name; }
     bool reaction=false, moveAllowed=true;
     unsigned moves=0, waits=0;
     WorldPosition destination;
@@ -100,6 +107,15 @@ int main() {
     context.hazards={{{0,1,0,0},0.5f},{{0,5,0,0},1.0f}};
     assert(!action.Execute(event) && action.moves==0); // queued trigger is now stale
     context.hazards.clear(); assert(!action.Execute(event) && action.moves==0);
+    assert(diagnosticEvent.empty()); // unrelated hazard escapes stay silent
+    action.name="sartura whirlwind escape"; context.hazards={{{0,4,0,0},4.0f}};
+    assert(action.Execute(event));
+    assert(diagnosticEvent=="SarturaEscape" && diagnosticReason=="moved" && diagnosticSuccess && diagnosticDestination);
+    bot.los=false; assert(!action.Execute(event));
+    assert(diagnosticEvent=="SarturaEscapeBlocked" && diagnosticReason=="no-safe-point" && !diagnosticSuccess);
+    bot.los=true; action.moveAllowed=false; assert(!action.Execute(event));
+    assert(diagnosticReason=="movement-failed" && !diagnosticDestination);
+    context.hazards.clear(); assert(!action.Execute(event)); assert(diagnosticReason=="no-containing-hazard");
 }
 '''
         with tempfile.TemporaryDirectory() as tmp:
