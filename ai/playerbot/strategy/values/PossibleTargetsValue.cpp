@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "CoreHoundTargetPolicy.h"
 #include "PossibleTargetsValue.h"
 #include "PossibleAttackTargetsValue.h"
 #include "FreeMoveValues.h"
@@ -97,6 +98,9 @@ bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos,
     // If the target is available
     if (target && target->IsInWorld() && (target->GetMapId() == player->GetMapId()))
     {
+        if (IsCollapsedCoreHound(target))
+            return reject("Core Hound has collapsed");
+
         // If the target is dead
         if (sServerFacade.UnitIsDead(target))
         {

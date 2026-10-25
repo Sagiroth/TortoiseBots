@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "AttackAction.h"
+#include "playerbot/strategy/values/CoreHoundTargetPolicy.h"
 #include "Movement/MovementGenerator.h"
 #include "AI/CreatureAI.h"
 #include "playerbot/LootObjectStack.h"
@@ -408,7 +409,7 @@ bool AttackAction::IsTargetValid(Player* requester, Unit* target, float maxDista
 
         return false;
     }
-    else if (sServerFacade.UnitIsDead(target))
+    else if (sServerFacade.UnitIsDead(target) || IsCollapsedCoreHound(target))
     {
         if (verbose)
         {

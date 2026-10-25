@@ -1,4 +1,5 @@
 #pragma once
+#include "CoreHoundTargetPolicy.h"
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -52,7 +53,7 @@ namespace ai
             // (RtiTargetValue::Calculate, attackers gate deleted), accept a
             // marked unit on legality + range + LOS instead of combat state.
             Unit* unit = ai->GetUnit(ObjectGuid(guid));
-            if (!unit || sServerFacade.UnitIsDead(unit))
+            if (!unit || IsCollapsedCoreHound(unit) || sServerFacade.UnitIsDead(unit))
                 return NULL;
 
             if (!PossibleAttackTargetsValue::IsPossibleTarget(unit, bot, sPlayerbotAIConfig.sightDistance, false))

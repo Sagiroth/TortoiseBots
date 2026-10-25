@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "CoreHoundTargetPolicy.h"
 #include "TargetValue.h"
 #include "CcMarkHoldPolicy.h"
 
@@ -18,7 +19,8 @@ Unit* TargetValue::FindTarget(FindTargetStrategy* strategy)
     for (std::list<ObjectGuid>::iterator i = attackers.begin(); i != attackers.end(); ++i)
     {
         Unit* unit = ai->GetUnit(*i);
-        if (!unit)
+        // The cached candidate list may predate a scripted collapse.
+        if (!unit || IsCollapsedCoreHound(unit))
             continue;
 
         ThreatManager &threatManager = sServerFacade.GetThreatManager(unit);
