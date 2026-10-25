@@ -134,7 +134,7 @@ char const* HireProvisionService::RequestedSpecName(uint8 cls, int index)
     static char const* names[12][4] = {
         {}, {"protection","arms","fury"}, {"protection","holy","retribution"},
         {"beastmastery","marksmanship","survival"}, {"assassination","combat","subtlety"},
-        {"holy","discipline","shadow"}, {}, {"restoration","elemental","enhancement"},
+        {"holy","discipline","shadow"}, {}, {"restoration","elemental","enhancement","tank"},
         {"frost","fire","arcane"}, {"affliction","demonology","destruction"},
         {}, {"feral","restoration","balance","feral"}
     };
@@ -144,7 +144,7 @@ int HireProvisionService::RequestedSpecTab(uint8 cls, int index)
 {
     static int const tabs[12][4] = {
         {}, {2,0,1}, {1,0,2}, {0,1,2}, {0,1,2}, {1,0,2}, {},
-        {2,0,1}, {2,1,0}, {0,1,2}, {}, {1,2,0,1}
+        {2,0,1,1}, {2,1,0}, {0,1,2}, {}, {1,2,0,1}
     };
     return RequestedSpecName(cls,index) ? tabs[cls][index] : -1;
 }
