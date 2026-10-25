@@ -15,4 +15,10 @@ namespace ai
         JindoCurseStrategy(PlayerbotAI* ai) : Strategy(ai) {}
         std::string getName() override { return "jindo curse"; }
     };
+    class ThekalBalanceStrategy : public Strategy
+    {
+    public:
+        ThekalBalanceStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "thekal balance"; }
+    };
 }

@@ -272,6 +272,35 @@ namespace
         return count;
     }
 
+    Unit* GetThekalBalanceTarget(PlayerbotAI* ai)
+    {
+        Player* bot = ai ? ai->GetBot() : nullptr;
+        if (!bot || bot->GetMapId() != 309 || !bot->IsAlive() || !bot->IsInCombat() || ai->IsTank(bot) ||
+            !ai->HasStrategy("thekal balance", BotState::BOT_STATE_COMBAT))
+            return nullptr;
+
+        AiObjectContext* context = ai->GetAiObjectContext();
+        GeneralDpsStrategy strategy(ai, 0.0f);
+        Unit* chosen = nullptr;
+        for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
+        {
+            Unit* candidate = ai->GetUnit(guid);
+            // The core uses 14599 in phase one and changes to 14509 for the
+            // tiger phase. Do not balance against the phase-two boss/tigers.
+            if (!candidate || (candidate->GetEntry() != 14599 && candidate->GetEntry() != 11347 &&
+                candidate->GetEntry() != 11348) || !candidate->IsAlive() || !candidate->IsInCombat() ||
+                !candidate->IsInMap(bot) || !PossibleAttackTargetsValue::IsValid(candidate, bot,
+                    sPlayerbotAIConfig.sightDistance, false, false) ||
+                candidate == AI_VALUE(Unit*, "cc target") || strategy.IsCcTarget(candidate) ||
+                IsRaidDpsTargetExcluded(ai, candidate))
+                continue;
+            if (!chosen || candidate->GetHealth() > chosen->GetHealth() ||
+                (candidate->GetHealth() == chosen->GetHealth() && candidate->GetObjectGuid() < chosen->GetObjectGuid()))
+                chosen = candidate;
+        }
+        return chosen;
+    }
+
     Unit* GetNefarianBoneConstructTarget(PlayerbotAI* ai)
     {
         Player* bot = ai ? ai->GetBot() : nullptr;
@@ -489,6 +518,9 @@ Unit* DpsTargetValue::Calculate()
     // the next pick like the tank's victim below.
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+
+    if (Unit* priest = GetThekalBalanceTarget(ai))
+        return priest;
 
     if (Unit* construct = GetNefarianBoneConstructTarget(ai))
         return construct;
