@@ -80,6 +80,13 @@ namespace ai
     public:
         FourHorsemanVoidZoneTrigger(PlayerbotAI* ai) : CloseToCreatureHazardTrigger(ai, "void zone too close", 16697, 10.0f, 90) {}
     };
+    class KelThuzadFissureTrigger : public Trigger
+    {
+    public:
+        KelThuzadFissureTrigger(PlayerbotAI* ai) : Trigger(ai, "kt fissure nearby", 1) {}
+        bool IsActive() override;
+    };
+
     class SapphironBlizzardTrigger : public Trigger
     {
     public:

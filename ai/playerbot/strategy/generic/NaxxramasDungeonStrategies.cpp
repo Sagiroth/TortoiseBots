@@ -415,3 +415,13 @@ void SapphironBlizzardStrategy::InitReactionMultipliers(std::list<Multiplier*>& 
 {
     InitCombatMultipliers(multipliers);
 }
+
+void KelThuzadFissureStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("kt fissure nearby",
+        NextAction::array(0, new NextAction("kt fissure escape", ACTION_EMERGENCY + 2), nullptr)));
+}
+void KelThuzadFissureStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitCombatTriggers(triggers);
+}

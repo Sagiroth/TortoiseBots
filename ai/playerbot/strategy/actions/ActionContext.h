@@ -1,4 +1,5 @@
 #pragma once
+#include "KelThuzadFissureActions.h"
 #include "PatchwerkSoakerActions.h"
 #include "KelThuzadInterruptActions.h"
 #include "RuinsOfAhnQirajActions.h"
@@ -420,6 +421,7 @@ namespace ai
             creators["move away from living bomb"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayFromLivingBombAction(ai); };
             creators["move away from geddon"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayAction(ai); };
 
+            creators["kt fissure escape"] = [](PlayerbotAI* ai) { return new KelThuzadFissureEscapeAction(ai); };
             creators["move away from hazard"] = [](PlayerbotAI* ai) { return new MoveAwayFromHazard(ai); };
             creators["raid bomb runout"] = [](PlayerbotAI* ai) { return new RaidBombRunoutAction(ai); };
             creators["four horsemen rotate"] = [](PlayerbotAI* ai) { return new FourHorsemenRotateAction(ai); };

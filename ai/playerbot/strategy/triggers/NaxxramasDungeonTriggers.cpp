@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/KelThuzadFissureActions.h"
 #include "NaxxramasDungeonTriggers.h"
 
 using namespace ai;
@@ -43,3 +44,8 @@ bool PatchwerkMeleeTrigger::IsActive()
 }
 
 bool ai::SapphironBlizzardTrigger::IsActive() { return SapphironBlizzardTooClose(ai); }
+
+bool KelThuzadFissureTrigger::IsActive()
+{
+    return InsideKelThuzadFissure(ai);
+}

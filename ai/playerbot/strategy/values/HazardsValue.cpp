@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/KelThuzadFissureActions.h"
 #include "HazardsValue.h"
 #include "GrobbulusCloudHazards.h"
 #include "playerbot/strategy/actions/SapphironBlizzardHazards.h"
@@ -165,6 +166,8 @@ std::list<HazardPosition> HazardsValue::Calculate()
         SET_AI_VALUE(std::list<Hazard>, "stored hazards", storedHazards);
     }
 
+    auto fissures = GetKelThuzadFissures(ai);
+    hazards.splice(hazards.end(), fissures);
     auto clouds = GetGrobbulusCloudHazards(ai);
     hazards.splice(hazards.end(), clouds);
     auto blizzards = GetSapphironBlizzardHazards(ai);

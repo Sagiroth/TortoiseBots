@@ -104,6 +104,7 @@
 #include "EngineValues.h"
 #include "FreeMoveValues.h"
 #include "HazardsValue.h"
+#include "playerbot/KelThuzadFissurePolicy.h"
 #include "playerbot/SapphironBlizzardPolicy.h"
 #include "TalentSpecValue.h"
 #include "MountValues.h"
@@ -270,6 +271,7 @@ namespace ai
             creators["attackers targeting me"] = [](PlayerbotAI* ai) { return new AttackersTargetingMeValue(ai); };
             creators["closest attacker targeting me"] = [](PlayerbotAI* ai) { return new ClosestAttackerTargetingMeTargetValue(ai); };
             creators["add hazard"] = [](PlayerbotAI* ai) { return new AddHazardValue(ai); };
+            creators["kt fissure snapshot"] = [](PlayerbotAI* ai) { return new ManualSetValue<KtFissureSnapshot>(ai, {}, "kt fissure snapshot"); };
             creators["sapphiron blizzard snapshot"] = [](PlayerbotAI* ai) {
                 return new ManualSetValue<SapphironBlizzardSnapshot>(ai, {}, "sapphiron blizzard snapshot");
             };
