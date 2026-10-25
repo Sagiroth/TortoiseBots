@@ -644,20 +644,25 @@ void RpgAIChatAction::ManualChat(GuidPosition target, const std::string& line)
         SET_GAI_VALUE2(std::string, "global string", "llmcontext manual" + std::to_string(target.GetCounter()), llmContext);
         return;
     }
-    else if (line == "impersonate")
+    else if (line == "impersonate" || line.find("impersonate ") == 0)
     {
-        SET_AI_VALUE2(int32, "manual int", "rpg ai chat line", 10);
+        if (line.size() <= 12)
+            return;
 
         Unit* unit = target.GetUnit(bot->GetInstanceId());
+        if (!unit)
+            return;
+
+        SET_AI_VALUE2(int32, "manual int", "rpg ai chat line", 10);
 
         std::string unitLine = line.substr(12);
 
-        if (line.find("*") == 0)
+        if (unitLine.find("*") == 0)
             unit->MonsterTextEmote(unitLine.c_str(), bot);
         else
             unit->MonsterSay(unitLine.c_str(), LANG_UNIVERSAL, bot);
 
-        llmContext += std::string(" ") + bot->GetName() + std::string(":") + line;
+        llmContext += std::string(" ") + unit->GetName() + std::string(":") + unitLine;
         SET_GAI_VALUE2(std::string, "global string", "llmcontext manual" + std::to_string(target.GetCounter()), llmContext);
         return;
     }
