@@ -60,6 +60,7 @@ bool IsRaidDpsTargetExcluded(PlayerbotAI*, Unit* unit) { return unit->excluded; 
 Unit *explicitTarget = nullptr, *raidTarget = nullptr, *construct = nullptr, *tankTarget = nullptr;
 std::vector<Unit*> possible;
 Unit* GetArlokkPantherTarget(PlayerbotAI*) { return nullptr; }
+Unit* GetFankrissSpawnTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMarliSpawnTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetThekalBalanceTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetNefarianBoneConstructTarget(PlayerbotAI*) { return construct; }

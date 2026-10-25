@@ -114,6 +114,7 @@ Unit *ordered=nullptr, *rti=nullptr, *tankTarget=nullptr;
 Unit* GetNefarianBoneConstructTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetViscidusGlobTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetArlokkPantherTarget(PlayerbotAI*) { return nullptr; }
+Unit* GetFankrissSpawnTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMaexxnaRescueTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetOnyxiaWhelpTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetGroupTankTarget(PlayerbotAI*) { return tankTarget; }

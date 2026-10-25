@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "DpsTargetValue.h"
+#include "FankrissSpawnTarget.h"
 #include "RaidDpsTargetPolicy.h"
 #include "playerbot/strategy/NefarianAddTargetPolicy.h"
 #include "ViscidusGlobPolicy.h"
@@ -634,6 +635,9 @@ Unit* DpsTargetValue::Calculate()
     // the next pick like the tank's victim below.
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+
+    if (Unit* spawn = GetFankrissSpawnTarget(ai))
+        return spawn;
 
     if (Unit* panther = GetArlokkPantherTarget(ai))
         return panther;
