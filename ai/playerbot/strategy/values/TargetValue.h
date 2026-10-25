@@ -301,6 +301,15 @@ namespace ai
     public:
         BuffTargetsValue(PlayerbotAI* ai) : FriendlyManualTargetsValue(ai) {}
     };
+
+    class FearWardTargetsValue : public ObjectGuidListCalculatedValue
+    {
+    public:
+        FearWardTargetsValue(PlayerbotAI* ai) : ObjectGuidListCalculatedValue(ai, "fear ward targets") {}
+
+    protected:
+        std::list<ObjectGuid> Calculate() override;
+    };
 }
 
 using ai::TargetValue;

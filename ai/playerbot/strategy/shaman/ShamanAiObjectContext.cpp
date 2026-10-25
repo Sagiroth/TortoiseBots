@@ -316,6 +316,7 @@ namespace ai
                 creators["grounding totem reactive"] = [](PlayerbotAI* ai) { return new GroundingTotemReactiveTrigger(ai); };
                 creators["poison cleansing totem reactive"] = [](PlayerbotAI* ai) { return new PoisonCleansingTotemReactiveTrigger(ai); };
                 creators["disease cleansing totem reactive"] = [](PlayerbotAI* ai) { return new DiseaseCleansingTotemReactiveTrigger(ai); };
+                creators["raid fear tremor totem"] = [](PlayerbotAI* ai) { return new RaidFearTremorTotemTrigger(ai); };
                 creators["water totem"] = [](PlayerbotAI* ai) { return new WaterTotemTrigger(ai); };
                 creators["air totem"] = [](PlayerbotAI* ai) { return new AirTotemTrigger(ai); };
                 // NOTE: `call of the ...` triggers removed with their

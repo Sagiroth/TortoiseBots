@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/GroupMembers.h"
+#include "playerbot/strategy/RaidFearPolicy.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 #include "playerbot/policy/class/ShamanStoneclawPolicy.h"
 #include "playerbot/policy/class/ShamanEarthShockPolicy.h"
@@ -336,6 +337,19 @@ namespace ai
         bool inMovement;
     };
 
+    class RaidFearTremorTotemTrigger : public Trigger
+    {
+    public:
+        RaidFearTremorTotemTrigger(PlayerbotAI* ai) : Trigger(ai, "raid fear tremor totem", 2) {}
+
+        virtual bool IsActive() override
+        {
+            Unit* target = AI_VALUE(Unit*, "current target");
+            uint32 spellId = AI_VALUE2(uint32, "spell id", "tremor totem");
+            return target && IsRaidFearEncounter(bot->GetMapId(), target->GetEntry()) && spellId &&
+                !AI_VALUE2(bool, "has totem", "tremor totem") && sServerFacade.IsSpellReady(bot, spellId);
+        }
+    };
 
     class AirTotemTrigger : public Trigger
     {

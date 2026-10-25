@@ -216,7 +216,7 @@ namespace ai
     class FearWardTrigger : public SpellTargetTrigger
     {
     public:
-        FearWardTrigger(PlayerbotAI* ai) : SpellTargetTrigger(ai, "fear ward", "buff targets", true, true) {}
+        FearWardTrigger(PlayerbotAI* ai) : SpellTargetTrigger(ai, "fear ward", "fear ward targets", true, true) {}
         std::string GetTargetName() override { return "self target"; }
     };
 

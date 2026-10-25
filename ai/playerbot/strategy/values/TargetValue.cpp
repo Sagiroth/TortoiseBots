@@ -505,3 +505,31 @@ std::list<ObjectGuid> FriendlyManualTargetsValue::LazyGet()
 {
     return Get();
 }
+
+std::list<ObjectGuid> FearWardTargetsValue::Calculate()
+{
+    std::list<ObjectGuid> assignedTargets = AI_VALUE(std::list<ObjectGuid>, "buff targets");
+    if (!assignedTargets.empty())
+        return assignedTargets;
+
+    std::list<ObjectGuid> tankTargets;
+    std::list<ObjectGuid> otherTargets;
+    Group* group = bot->GetGroup();
+    if (group)
+    {
+        Group::MemberSlotList const& members = group->GetMemberSlots();
+        for (Group::member_citerator itr = members.begin(); itr != members.end(); ++itr)
+        {
+            Player* member = sObjectMgr.GetPlayer(itr->guid);
+            if (!member || member->GetMapId() != bot->GetMapId() || !ai->IsSafe(member))
+                continue;
+
+            (ai->IsTank(member) ? tankTargets : otherTargets).push_back(member->GetObjectGuid());
+        }
+    }
+
+    tankTargets.splice(tankTargets.end(), otherTargets);
+    if (tankTargets.empty())
+        tankTargets.push_back(bot->GetObjectGuid());
+    return tankTargets;
+}

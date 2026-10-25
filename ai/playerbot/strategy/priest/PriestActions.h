@@ -184,7 +184,7 @@ namespace ai
     class CastFearWardAction : public CastSpellTargetAction
     {
     public:
-        CastFearWardAction(PlayerbotAI* ai) : CastSpellTargetAction(ai, "fear ward", "buff targets", true, true) {}
+        CastFearWardAction(PlayerbotAI* ai) : CastSpellTargetAction(ai, "fear ward", "fear ward targets", true, true) {}
         std::string GetTargetName() override { return "self target"; }
     };
 }
