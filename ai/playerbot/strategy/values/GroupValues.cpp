@@ -160,7 +160,7 @@ bool GroupReadyValue::Calculate()
         if (holdForRegen && member->GetHealthPercent() < sPlayerbotAIConfig.almostFullHealth && !member->IsInCombat())
             return false;
 
-        if (!member->GetPower(POWER_MANA))
+        if (!member->GetMaxPower(POWER_MANA))
             continue;
 
         float mana = (static_cast<float> (member->GetPower(POWER_MANA)) / member->GetMaxPower(POWER_MANA)) * 100;
