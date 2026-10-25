@@ -2,6 +2,7 @@
 #include "playerbot/PlayerbotAI.h"
 #include "MovementActions.h"
 #include "playerbot/policy/class/ResistAuraPolicy.h"
+#include "playerbot/RaidBombRunoutPolicy.h"
 #include "playerbot/strategy/values/HazardsValue.h"
 
 namespace ai
@@ -76,12 +77,24 @@ namespace ai
     // Universal raid survival: bomb/plague runout. Runs once directly away
     // from the centre of the living same-map group until no member is
     // within BombRunoutDistance, then stays put (BombRunoutPolicy.h).
+    // Shared between the trigger, escape action and movement guard. Only
+    // recognized raid-map debuffs qualify; the boss need not still be alive.
+    Aura* GetRaidBombAura(PlayerbotAI* ai);
+    bool RaidBombMovementAllowed(PlayerbotAI* ai);
+
     class RaidBombRunoutAction : public MovementAction
     {
     public:
         RaidBombRunoutAction(PlayerbotAI* ai, std::string name = "raid bomb runout") : MovementAction(ai, name) {}
         bool Execute(Event& event) override;
+        bool isUseful() override;
         bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+
+    private:
+        bool PrepareRunout(std::vector<RaidRunoutPoint>& members);
+        RaidBombRunoutPlan runoutPlan;
+        WorldPosition runoutDestination;
+        float runoutFloor = 0.0f;
     };
 
     // Four Horsemen mark rotation (Naxxramas): at 3+ stacks of one mark

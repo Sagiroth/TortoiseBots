@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/ServerFacade.h"
 #include "ReactionStrategy.h"
+#include "DungeonMultipliers.h"
 
 using namespace ai;
 
@@ -49,4 +50,8 @@ void ReactionStrategy::InitReactionTriggers(std::list<TriggerNode*> &triggers)
     triggers.push_back(new TriggerNode(
         "raid spread needed",
         NextAction::array(0, new NextAction("raid spread", ACTION_EMERGENCY + 3), NULL)));
+}
+void ReactionStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new RaidBombMovementMultiplier(ai));
 }

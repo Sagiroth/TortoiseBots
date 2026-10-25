@@ -268,3 +268,20 @@ float GeddonInfernoMultiplier::GetValue(Action* action)
         return 0.0f;
     return 1.0f;
 }
+
+float RaidBombMovementMultiplier::GetValue(Action* action)
+{
+    if (!action || !RaidBombMovementAllowed(ai) || !GetRaidBombAura(ai))
+        return 1.0f;
+    std::string const& name = action->getName();
+    if (name == "raid bomb runout" || name == "geddon inferno retreat" || name == "move away from hazard")
+        return 1.0f;
+    // Preserve the existing emergency escape from damaging ground effects.
+    // The bomb action revalidates group clearance on the next reaction.
+    if (name == "flee" && AI_VALUE2(bool, "has area debuff", "self target"))
+        return 1.0f;
+    // Blocking reach prerequisites also keeps healers from walking back
+    // into the group to cure while carrying an encounter bomb.
+    return dynamic_cast<MovementAction*>(action) || dynamic_cast<CastReachTargetSpellAction*>(action)
+        ? 0.0f : 1.0f;
+}

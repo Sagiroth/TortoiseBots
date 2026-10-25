@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "DungeonStrategy.h"
+#include "DungeonMultipliers.h"
 
 using namespace ai;
 
@@ -139,4 +140,14 @@ void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
             NextAction::array(0, new NextAction("disable karazhan crypt strategy", 100.0f), NULL)));
     }
 
+}
+
+void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new RaidBombMovementMultiplier(ai));
+}
+
+void DungeonStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new RaidBombMovementMultiplier(ai));
 }

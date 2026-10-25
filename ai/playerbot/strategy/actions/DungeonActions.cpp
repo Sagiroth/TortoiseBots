@@ -1,5 +1,7 @@
 #include "playerbot/GroupMembers.h"
 #include "DungeonActions.h"
+#include "MoltenCoreDungeonActions.h"
+#include "playerbot/policy/raid/GeddonInfernoPolicy.h"
 #include "playerbot/strategy/triggers/DungeonTriggers.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -309,56 +311,192 @@ bool FindStep(PlayerbotAI* ai, Player* bot, const WorldPosition& from, float ang
 }
 } // namespace
 
+Aura* ai::GetRaidBombAura(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !bot->IsAlive())
+        return nullptr;
+    uint32 const map = bot->GetMapId();
+    for (uint32 spell : { 20475u, 23620u, 18173u, 23478u, 28169u, 27819u, 56508u })
+    {
+        bool const matches = (map == 409 && spell == 20475) ||
+            (map == 469 && (spell == 23620 || spell == 18173 || spell == 23478)) ||
+            (map == 533 && (spell == 28169 || spell == 27819)) ||
+            (map == 807 && spell == 56508 && ai->HasStrategy("solnius", BotState::BOT_STATE_COMBAT));
+        if (matches)
+            if (Aura* aura = ai->GetAura(spell, bot))
+                return aura;
+    }
+    return nullptr;
+}
+
+bool ai::RaidBombMovementAllowed(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!std::isfinite(sPlayerbotAIConfig.bombRunoutDistance) || sPlayerbotAIConfig.bombRunoutDistance <= 0.0f)
+        return false;
+    bool hasCompanion = false;
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+        if (member && member != bot && member->IsInWorld() && !member->IsBeingTeleported() &&
+            member->IsAlive() && member->IsInMap(bot))
+        {
+            hasCompanion = true;
+            break;
+        }
+    if (!hasCompanion)
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    PositionMap& positions = AI_VALUE(PositionMap&, "position");
+    auto hold = positions.find("pull hold");
+    return !ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) &&
+        !ai->HasStrategy("stay", ai->GetState()) &&
+        !ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT) &&
+        !ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) &&
+        !ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT) &&
+        (hold == positions.end() || !hold->second.isSet());
+}
+
+bool RaidBombRunoutAction::PrepareRunout(std::vector<RaidRunoutPoint>& members)
+{
+    Aura* aura = GetRaidBombAura(ai);
+    if (!aura || !RaidBombMovementAllowed(ai) ||
+        !std::isfinite(sPlayerbotAIConfig.bombRunoutDistance) || sPlayerbotAIConfig.bombRunoutDistance <= 0.0f)
+    {
+        runoutPlan.Reset();
+        runoutDestination = WorldPosition();
+        return false;
+    }
+    if (runoutPlan.Begin(aura->GetId(), aura->GetAuraApplyTime(), bot->GetMapId(), bot->GetInstanceId(),
+        { bot->GetPositionX(), bot->GetPositionY() }))
+    {
+        runoutDestination = WorldPosition();
+        runoutFloor = bot->GetPositionZ();
+    }
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+    {
+        if (member && member != bot && member->IsInWorld() && !member->IsBeingTeleported() &&
+            member->IsAlive() && member->IsInMap(bot))
+            members.push_back({ member->GetPositionX(), member->GetPositionY() });
+    }
+    // There is nobody to bomb when solo. Already-clear carriers keep their
+    // position and may cast; the multiplier prevents autonomous re-entry.
+    return !RaidBombClearOfGroup({ bot->GetPositionX(), bot->GetPositionY() },
+        members, sPlayerbotAIConfig.bombRunoutDistance);
+}
+
+bool RaidBombRunoutAction::isUseful()
+{
+    std::vector<RaidRunoutPoint> members;
+    return PrepareRunout(members);
+}
+
 bool RaidBombRunoutAction::Execute(Event& event)
 {
-    (void)event;
     // Run from the raid's centre, not from one person: anchoring on the
     // master or the nearest member could send a carrier through the other
     // side of the raid. Move once to a point that clears every living
     // same-map member by the runout radius, then stay there; the trigger
     // keeps firing while the aura lasts, but a clear carrier does nothing.
-    Group* group = bot->GetGroup();
-    if (!group)
-        return false;
-    std::vector<DebuffAnchor> members;
-    for (Player* member : LiveGroupMembers(group))
-    {
-        if (!member || member == bot || !sServerFacade.IsAlive(member))
-            continue;
-        if (member->GetMapId() != bot->GetMapId())
-            continue;
-        DebuffAnchor anchor;
-        anchor.x = member->GetPositionX();
-        anchor.y = member->GetPositionY();
-        members.push_back(anchor);
-    }
-    const float runout = sPlayerbotAIConfig.bombRunoutDistance;
-    const float botX = bot->GetPositionX();
-    const float botY = bot->GetPositionY();
-    float centreX = 0.0f, centreY = 0.0f, nearestDist = 0.0f;
-    std::size_t nearestIdx = 0;
-    if (!BombRunoutCentre(botX, botY, members.data(), members.size(), centreX, centreY, nearestDist, nearestIdx))
-        return false;
-    if (IsBombRunoutClear(nearestDist, runout))
-        return false;
-    const float away = BombRunoutAwayAngle(botX, botY, centreX, centreY,
-        members[nearestIdx].x, members[nearestIdx].y);
-    const WorldPosition botPos(bot);
-    WorldPosition out(botPos);
-    const float angles[] = { 0.0f, 0.5f, -0.5f, 1.0f, -1.0f };
-    for (float d : angles)
-    {
-        const float step = BombRunoutStep(botX, botY, away + d, nearestDist, runout, members.data(), members.size());
-        if (FindStep(ai, bot, botPos, away + d, step, out) &&
-            MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true))
-        {
             // Hold the reaction until the carrier arrives, so it is not
             // re-planned every tick on the way out.
-            if (IsReaction())
-                WaitForReach(step);
-            return true;
+    // 30yd clear of the raid anchor: Geddon/Vael/Grobbulus detonations
+    // bracket the whole clump otherwise. Keep running while the aura lives;
+    // the trigger re-fires each tick until it expires or detonates.
+    // Solo carrier: radial flee still clears melee range.
+    // The bounded local policy below retains clearance without repeated runout.
+    std::vector<RaidRunoutPoint> members;
+    if (!PrepareRunout(members))
+        return false;
+
+    WorldPosition const start(bot);
+    float const clearance = sPlayerbotAIConfig.bombRunoutDistance;
+    float const limit = clearance + 10.0f;
+    Unit* inferno = GetActiveGeddonInferno(ai);
+    auto safe = [&](WorldPosition const& point)
+    {
+        if (!point.isValid() || fabs(point.getZ() - runoutFloor) > 5.0f ||
+            !runoutPlan.Contains({ point.getX(), point.getY() }, limit + 0.1f) ||
+            !RaidBombClearOfGroup({ point.getX(), point.getY() }, members, clearance + 2.0f) ||
+            IsHazardNearPosition(point))
+            return false;
+        if (inferno && point.distance(WorldPosition(inferno)) <
+            kGeddonInfernoClearance + bot->GetCombatReach() + inferno->GetCombatReach())
+            return false;
+        for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets"))
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (unit && unit->IsAlive() && !unit->IsInCombat() &&
+                sServerFacade.getDistance2d(unit, point.getX(), point.getY()) < sPlayerbotAIConfig.aggroDistance)
+                return false;
+        }
+        if (!bot->IsWithinLOS(point.getX(), point.getY(), point.getZ() + bot->GetCollisionHeight()))
+            return false;
+        std::vector<WorldPosition> const path = start.GetPathTo(point, bot);
+        if (!point.isPathTo(path))
+            return false;
+        // Do not cross through an active Inferno on the way to a safe endpoint.
+        // If already inside, allow an outward path but never a closer approach.
+        if (inferno)
+        {
+            RaidRunoutPoint const boss = { inferno->GetPositionX(), inferno->GetPositionY() };
+            RaidRunoutPoint previous = { start.getX(), start.getY() };
+            float const radius = kGeddonInfernoClearance + bot->GetCombatReach() + inferno->GetCombatReach();
+            float const minimum = std::min(radius * radius, RaidRunoutDistanceSquared(previous, boss));
+            for (WorldPosition const& waypoint : path)
+            {
+                RaidRunoutPoint const next = { waypoint.getX(), waypoint.getY() };
+                if (RaidRunoutSegmentDistanceSquared(previous, next, boss) + 0.01f < minimum)
+                    return false;
+                previous = next;
+            }
+            if (RaidRunoutSegmentDistanceSquared(previous, { point.getX(), point.getY() }, boss) + 0.01f < minimum)
+                return false;
+        }
+        return true;
+    };
+    auto move = [&](WorldPosition const& point)
+    {
+        if (!MoveTo(bot->GetMapId(), point.getX(), point.getY(), point.getZ(), false, IsReaction(), false, true))
+            return false;
+        if (IsReaction())
+            WaitForReach(start.distance(point));
+        return true;
+    };
+
+    if (runoutDestination && safe(runoutDestination) && move(runoutDestination))
+        return true;
+    runoutDestination = WorldPosition();
+
+    RaidRunoutPoint center = { 0.0f, 0.0f };
+    for (RaidRunoutPoint member : members)
+    {
+        center.x += member.x;
+        center.y += member.y;
+    }
+    center.x /= members.size();
+    center.y /= members.size();
+    float const dx = bot->GetPositionX() - center.x;
+    float const dy = bot->GetPositionY() - center.y;
+    // A GUID-derived heading separates carriers starting at the same point.
+    float const away = dx * dx + dy * dy < 1.0f
+        ? (bot->GetGUIDLow() % 16) * (2.0f * M_PI_F / 16.0f) : atan2(dy, dx);
+    for (float extra : { 2.0f, 6.0f, 10.0f })
+    {
+        for (uint32 step = 0; step < 16; ++step)
+        {
+            float const offset = ((step + 1) / 2) * (2.0f * M_PI_F / 16.0f) * (step % 2 ? 1.0f : -1.0f);
+            RaidRunoutPoint const candidate = runoutPlan.Candidate(clearance + extra, away + offset);
+            WorldPosition point(bot->GetMapId(), candidate.x, candidate.y, runoutFloor);
+            point.setZ(point.GetHeight());
+            if (safe(point) && move(point))
+            {
+                runoutDestination = point;
+                return true;
+            }
         }
     }
+    // No safe destination inside this application's fixed budget: do not
+    // extend the search farther on the next tick or teleport through walls.
     return false;
 }
 

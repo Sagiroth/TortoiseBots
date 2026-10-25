@@ -10,6 +10,7 @@ namespace ai
         virtual int GetType() override { return STRATEGY_TYPE_REACTION; }
 
     protected:
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
         virtual void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
     };
 }

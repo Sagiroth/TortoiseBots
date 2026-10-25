@@ -5,6 +5,7 @@
 #include "DungeonTriggers.h"
 #include "runtime/BotManager.h"
 #include "runtime/PlayerbotAIStorage.h"
+#include "playerbot/strategy/actions/DungeonActions.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -373,17 +374,10 @@ bool BossProtectionPotionReadyTrigger::IsActive()
 
 bool RaidBombDebuffTrigger::IsActive()
 {
-    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
-        return false;
     // Spell-ID based: Geddon Living Bomb, Vael Burning Adrenaline
     // (Turtle 23620 + classic 18173), Grobbulus Mutating Injection,
     // Kel'Thuzad Detonate Mana (27819, vanilla-only).
-    for (uint32 spellId : kRaidBombSpellIds)
-    {
-        if (ai->HasAura(spellId, bot))
-            return true;
-    }
-    return false;
+    return GetRaidBombAura(ai) != nullptr;
 }
 
 bool TooCloseToPlayerWithDebuffTrigger::IsActive()

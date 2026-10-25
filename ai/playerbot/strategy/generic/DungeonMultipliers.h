@@ -44,6 +44,13 @@ namespace ai
         virtual float GetValue(Action* action) override;
     };
 
+    class RaidBombMovementMultiplier : public Multiplier
+    {
+    public:
+        RaidBombMovementMultiplier(PlayerbotAI* ai) : Multiplier(ai, "raid bomb movement") {}
+        float GetValue(Action* action) override;
+    };
+
     class PreventMoveAwayFromCreatureOnReachToCastMultiplier : public Multiplier
     {
     public:
