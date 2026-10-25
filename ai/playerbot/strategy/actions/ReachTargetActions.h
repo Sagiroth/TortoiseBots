@@ -148,6 +148,13 @@ namespace ai
                         stoodDist = distanceToTarget;
                         stoodTarget = target->getObjectGuid();
                     }
+                    // Allow the scheduled movement delay before declaring a gap:
+                    // WaitForReach can deliberately sleep longer than two seconds.
+                    // Time spent fighting/casting between attempts is not headway.
+                    bool const reachIdleGap = lastExecuteMs == 0 ||
+                        uint64(nowMs - lastExecuteMs) > uint64(GetDuration()) + kStandResetMs;
+                    if (reachIdleGap || held)
+                        noLosTarget = ObjectGuid();
                     lastExecuteMs = nowMs;
                 }
 
@@ -233,7 +240,8 @@ namespace ai
                     Player* const victimPlayer = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
                     bool const hitsOurSide = victim == bot || (target->IsCreature() && victimPlayer &&
                         (bot->IsInSameRaidWith(victimPlayer) || victimPlayer == GetMaster()));
-                    bool const noHeadway = !runner && nowMs - noLosSinceMs >= kNoHeadwayMs &&
+                    bool const needsReach = cannotBeReached || !inLos || !IsWithinReach(target);
+                    bool const noHeadway = needsReach && !runner && nowMs - noLosSinceMs >= kNoHeadwayMs &&
                         (!hitsOurSide || !inLos || cannotBeReached);
                     bool const outOfReach = range > 0.0f
                         ? distanceToTarget > range * 1.4f
@@ -478,6 +486,33 @@ namespace ai
         // distance on friendly targets (e.g. Hand of Protection/Freedom).
         virtual bool RequiresAttackableTarget() const { return false; }
 
+        bool IsWithinReach(Unit* target)
+        {
+            // GetSpellRange's combat-index result is only the caster's reach.
+            // Match the core melee spell envelope, including the target's reach
+            // and range modifiers (Spell::CheckRange), instead of chasing into it.
+            if (!spellName.empty())
+            {
+                SpellEntry const* spell = sServerFacade.LookupSpellInfo(
+                    AI_VALUE2(uint32, "spell id", spellName));
+                if (spell && spell->rangeIndex == SPELL_RANGE_IDX_COMBAT)
+                {
+                    float modifier = 1.0f;
+                    if (Player* owner = bot->GetSpellModOwner())
+                    {
+                        float base = ATTACK_DISTANCE;
+                        modifier += owner->ApplySpellMod(spell->Id, SPELLMOD_RANGE, base);
+                    }
+                    modifier += bot->GetTotalAuraRangeModifier(SPELL_AURA_MOD_ATTACK_AND_SPELL_RANGE) /
+                        1000.0f / ATTACK_DISTANCE;
+                    return bot->CanReachWithMeleeSpellAttack(target, modifier);
+                }
+            }
+            if (range <= 0.0f && RequiresAttackableTarget())
+                return bot->CanReachWithMeleeAutoAttack(target);
+            return bot->GetDistance(target) <= range;
+        }
+
         virtual bool isUseful() override
 		{
             // Do not move if stay strategy is set
@@ -515,7 +550,7 @@ namespace ai
                         if (bot->IsWithinLOSInMap(target, true))
                         {
                             // Check if the bot is already on the range required
-                            return bot->GetDistance(target) > range;
+                            return !IsWithinReach(target);
                         }
 
                         return true;
