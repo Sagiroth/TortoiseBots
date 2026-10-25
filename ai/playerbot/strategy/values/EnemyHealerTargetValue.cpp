@@ -15,6 +15,38 @@ Unit* EnemyHealerTargetValue::Calculate()
     std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
     Unit* target = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
     CcGuard ccGuard(ai);
+    // Prefer a Heal we can interrupt now, not an earlier priest outside the
+    // actual interrupt's range. The generic scan below keeps its old fallback.
+    if (bot->GetMapId() == 409 && bot->IsAlive() && bot->IsInCombat() &&
+        ai->HasStrategy("sulfuron interrupts", BotState::BOT_STATE_COMBAT))
+    {
+        bool fightingSulfuron = false;
+        for (ObjectGuid const& guid : attackers)
+        {
+            Unit* boss = ai->GetUnit(guid);
+            if (boss && boss->GetEntry() == 12098 && boss->IsAlive() &&
+                boss->IsInCombat() && boss->IsInMap(bot)) fightingSulfuron = true;
+        }
+        if (fightingSulfuron)
+        {
+            for (ObjectGuid const& guid : attackers)
+            {
+                Unit* priest = ai->GetUnit(guid);
+                if (!priest || priest == target || priest->GetEntry() != 11662 ||
+                    !priest->IsAlive() || !priest->IsInCombat() || !priest->IsInMap(bot) ||
+                    !bot->IsWithinLOSInMap(priest) || ccGuard.IsHeldCcMark(priest)) continue;
+                Spell* heal = priest->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+                if (!heal || heal->m_spellInfo->Id != 19775 || heal->getState() != SPELL_STATE_PREPARING ||
+                    heal->m_spellInfo->PreventionType != SPELL_PREVENTION_TYPE_SILENCE ||
+                    !(heal->m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_DAMAGE) ||
+                    !ai->IsInterruptableSpellCasting(priest, spell, true)) continue;
+                SpellCastResult result = SPELL_FAILED_NOT_READY;
+                if (ai->CanCastSpell(spell, priest, 0, nullptr, false, false, false, &result) &&
+                    result == SPELL_CAST_OK) return priest;
+            }
+        }
+    }
+
     for (std::list<ObjectGuid>::iterator i = attackers.begin(); i != attackers.end(); ++i)
     {
         Unit* unit = ai->GetUnit(*i);

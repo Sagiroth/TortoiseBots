@@ -149,4 +149,12 @@ namespace ai
     private:
         void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
     };
+
+
+    class SulfuronInterruptStrategy : public Strategy
+    {
+    public:
+        SulfuronInterruptStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "sulfuron interrupts"; }
+    };
 }
