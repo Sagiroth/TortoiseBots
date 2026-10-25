@@ -82,6 +82,7 @@ struct RtiTargetValue{Unit* Calculate(){return markedTarget;}};
 // Garr assignment is inactive in this Onyxia fixture.
 Unit* GetAssignedGarrTankTarget(PlayerbotAI*){return nullptr;}
 Unit* GetAssignedPatchwerkTankTarget(PlayerbotAI*){return nullptr;}
+Unit* GetAssignedFankrissTankTarget(PlayerbotAI*){return nullptr;}
 Unit* GetOnyxiaWhelpTarget(PlayerbotAI*){return nullptr;}
 bool IsNefarianAddTankOptedIn(PlayerbotAI*){return false;}
 using NefarianAddAssignment=int;

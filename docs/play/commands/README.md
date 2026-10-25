@@ -177,3 +177,8 @@ The table below lists all primary commands and links to their authoritative docu
 ## Local companion extensions
 
 See [local companion controls](../local-companion-controls.md), [local raid tactics](../local-raid-tactics.md) and [local configuration](../../server/local-configuration.md) for the additional controls in this build.
+
+
+Local opt-in encounter roles include [Fankriss boss tanks](../local-companion-controls.md#fankriss-boss-tanks-opt-in):
+`all +fankriss tank` assigns a warrior/bear to boss threat and Mortal Wound swaps;
+`all -fankriss tank` removes that role.

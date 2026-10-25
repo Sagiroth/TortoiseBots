@@ -685,3 +685,46 @@ This is **not a complete C'Thun strategy**. It does not dodge Dark Glare,
 assign interrupts or Giant Claw tanks, or handle the stomach. Downstairs
 players are excluded from surface movement. Keep those duties manual.
 A genuinely incomplete or hazardous path still logs `CthunSpreadBlocked`.
+
+
+## Fankriss boss tanks (opt-in)
+
+Use two warrior or bear tanks for the boss, with an optional third spare.
+Keep at least one other tank assigned to hatchlings. Replace the example names:
+
+```text
+.bot role Faelor tank
+.bot role Caelia tank
+.bot command Faelor all +fankriss tank
+.bot command Caelia all +fankriss tank
+.bot strategy +fankriss spawn focus @dps
+```
+
+Pull normally with a chosen boss tank. The role does not start a fresh pull.
+Assigned tanks keep attacking Fankriss instead of picking loose hatchlings.
+At five Mortal Wound stacks, one ready tank with **zero** stacks taunts.
+The outgoing tank keeps building threat; after its wounds expire, it can take
+another turn when the new tank reaches the threshold. A third tank is a spare,
+not an extra taunt on a healthy tank. Warriors use Defensive Stance and Taunt;
+druids use bear form and Growl. Paladins have no supported Classic swap taunt.
+Ordinary automatic boss taunts from assigned tanks are suppressed; manual cast
+orders still work. DPS are not held or threat-capped by this role.
+
+Both boss tanks must be close enough to attack/taunt. Normal stay and movement
+rules still apply: release stay before pulling if the tanks need to move.
+An explicit attack or valid raid-target order on a different enemy wins over
+this role. Remove those orders before expecting automatic boss duty.
+
+Server setting `AiPlayerbot.FankrissSwapStacks = 5` changes the threshold (1–9,
+clamped; restart to apply). Setting it does not enable the role. If no healthy,
+in-range tank has a usable taunt, the swap waits; it cannot guarantee survival.
+An assigned clean tank can also taunt if Fankriss is attacking a raid non-tank.
+Failed/resisted attempts can retry after two seconds; actual spell cooldown,
+stance, LOS, range and immunity checks still apply.
+
+Disable on both tanks after the encounter:
+
+```text
+.bot command Faelor all -fankriss tank
+.bot command Caelia all -fankriss tank
+```

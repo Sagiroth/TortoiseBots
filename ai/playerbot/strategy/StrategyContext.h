@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "generic/CthunSpreadStrategy.h"
 #include "actions/KurinnaxxActions.h"
 #include "generic/YaujFearStrategy.h"
@@ -195,6 +196,7 @@ namespace ai
             creators["sartura whirlwind"] = [](PlayerbotAI* ai) { return new SarturaWhirlwindStrategy(ai); };
             creators["yauj fear"] = [](PlayerbotAI* ai) { return new YaujFearStrategy(ai); };
             creators["skeram image focus"] = [](PlayerbotAI* ai) { return new SkeramImageStrategy(ai); };
+            creators["fankriss tank"] = [](PlayerbotAI* ai) { return new FankrissTankStrategy(ai); };
             creators["fankriss spawn focus"] = [](PlayerbotAI* ai) { return new FankrissSpawnStrategy(ai); };
             creators["ayamiss larva focus"] = [](PlayerbotAI* ai) { return new AyamissLarvaStrategy(ai); };
             creators["arlokk panther focus"] = [](PlayerbotAI* ai) { return new ArlokkPantherStrategy(ai); };

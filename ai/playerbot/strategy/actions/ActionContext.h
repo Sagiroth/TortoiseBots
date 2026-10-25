@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "CthunSpreadActions.h"
 #include "OnyxiaTankPositionActions.h"
 #include "GeddonBombActions.h"
@@ -380,6 +381,8 @@ namespace ai
             creators["kt frostbolt interrupt"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptAction(ai); };
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatAction(ai); };
             creators["ossirian crystal click"] = [](PlayerbotAI* ai) { return new OssirianCrystalAction(ai); };
+            creators["fankriss swap"] = [](PlayerbotAI* ai) { return new FankrissSwapAction(ai); };
+            creators["fankriss tank engage"] = [](PlayerbotAI* ai) { return new FankrissTankEngageAction(ai); };
             creators["kurinnaxx swap"] = [](PlayerbotAI* ai) { return new KurinnaxxSwapAction(ai); };
             creators["kurinnaxx hold attacks"] = [](PlayerbotAI* ai) { return new KurinnaxxHoldAction(ai); };
             creators["grobbulus cloud escape"] = [](PlayerbotAI* ai) { return new GrobbulusCloudEscapeAction(ai); };

@@ -57,3 +57,7 @@ AiPlayerbot.ObservabilityDungeonMobs = 1
 # Assigned Patchwerk main enables a group DPS opening hold. 0 disables; 3-5 seconds.
 # Starts at engagement (DPS also wait during the commanded approach); no later cap.
 AiPlayerbot.PatchwerkOpeningDelay = 4
+
+# Opt-in fankriss tank role: swap at this many Mortal Wound stacks (1-9).
+# The replacement must have zero stacks. Does not enable the role by itself.
+AiPlayerbot.FankrissSwapStacks = 5

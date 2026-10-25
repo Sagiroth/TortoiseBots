@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "../generic/CthunSpreadStrategy.h"
 #include "../actions/OnyxiaTankPositionActions.h"
 #include "../actions/GeddonBombActions.h"
@@ -345,6 +346,8 @@ namespace ai
             creators["kt frostbolt ready"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptTrigger(ai); };
             creators["locust swarm active"] = [](PlayerbotAI* ai) { return new LocustSwarmTrigger(ai); };
             creators["ossirian crystal ready"] = [](PlayerbotAI* ai) { return new OssirianCrystalTrigger(ai); };
+            creators["fankriss swap needed"] = [](PlayerbotAI* ai) { return new FankrissSwapTrigger(ai); };
+            creators["fankriss tank engage needed"] = [](PlayerbotAI* ai) { return new FankrissTankEngageTrigger(ai); };
             creators["kurinnaxx swap needed"] = [](PlayerbotAI* ai) { return new KurinnaxxSwapTrigger(ai); };
             creators["kurinnaxx hold needed"] = [](PlayerbotAI* ai) { return new KurinnaxxHoldTrigger(ai); };
             creators["grobbulus cloud nearby"] = [](PlayerbotAI* ai) { return new LocalGrobbulusCloudTrigger(ai); };

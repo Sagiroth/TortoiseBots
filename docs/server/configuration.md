@@ -130,3 +130,11 @@ These keys are read into configuration so older configuration files continue loa
 Raid diagnostics are separately opt-in through
 [`AiPlayerbot.RaidBossDiagnostics`](settings/logging.md#aiplayerbotraidbossdiagnostics)
 (default `0`); enabling event CSV files alone does not enable boss observations.
+
+### Local Fankriss tank rotation
+
+`AiPlayerbot.FankrissSwapStacks = 5` is the Mortal Wound stack threshold for
+bots explicitly enabled with `fankriss tank`. Values clamp to 1–9; the replacement
+must have zero stacks. The default matches the shipped config. Restart after
+changing it. The setting alone enables no encounter behavior and imposes no DPS
+hold. See [Fankriss boss tanks](../play/local-companion-controls.md#fankriss-boss-tanks-opt-in).

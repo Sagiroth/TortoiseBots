@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "TankTargetValue.h"
+#include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "RaidDpsTargetPolicy.h"
@@ -199,6 +200,11 @@ Unit* TankTargetValue::Calculate()
 {
     if (Unit* explicitTarget = GetExplicitAttackTarget())
         return explicitTarget;
+
+    // Explicit boss tanks keep threat during their off-tank turn instead of
+    // joining the loose-add tournament. Other attack/mark orders still win.
+    if (Unit* boss = GetAssignedFankrissTankTarget(ai))
+        return boss;
 
     // A Four Horsemen mark carrier fights the horseman at its new corner:
     // the rotation outranks raid marks here, or the mark walks the tank

@@ -182,6 +182,7 @@ bool PlayerbotAIConfig::Initialize()
     maxWaitForMove = config.GetIntDefault("AiPlayerbot.MaxWaitForMove", 3000);
     expireActionTime = config.GetIntDefault("AiPlayerbot.ExpireActionTime", 5000);
     dispelAuraDuration = config.GetIntDefault("AiPlayerbot.DispelAuraDuration", 2000);
+    fankrissSwapStacks = std::min(9, std::max(1, config.GetIntDefault("AiPlayerbot.FankrissSwapStacks", 5)));
     int const patchwerkDelay = config.GetIntDefault("AiPlayerbot.PatchwerkOpeningDelay", 4);
     patchwerkOpeningDelay = patchwerkDelay <= 0 ? 0 : std::min(5, std::max(3, patchwerkDelay));
     reactDelay = (uint32) config.GetIntDefault("AiPlayerbot.ReactDelay", 100);
