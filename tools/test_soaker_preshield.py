@@ -10,6 +10,7 @@ class SoakerPreshieldTest(unittest.TestCase):
     def test_production_selection_and_cc(self):
         source=(ROOT/'ai/playerbot/RaidTankHealing.cpp').read_text()
         policy=(ROOT/'ai/playerbot/HealingTriagePolicy.h').read_text()
+        policy = policy.replace('#include "HealerManaPolicy.h"', '#include "' + str(ROOT/'ai/playerbot/HealerManaPolicy.h') + '"')
         # Baseline's only shield patient route is the normal healing selector;
         # use its real eligibility policy for the full-health regression case.
         select=body(source,'Unit* PatchwerkSoakerShieldValue::Calculate') if 'Unit* PatchwerkSoakerShieldValue::Calculate' in source else '''{

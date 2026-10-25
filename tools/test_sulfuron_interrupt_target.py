@@ -51,6 +51,7 @@ struct Context {
  }
 };
 struct PlayerbotAI {
+ static bool IsHealSpell(SpellEntry* s){return s->positive;}
  bool enabled=true;Context context;std::map<ObjectGuid,Unit*> units;
  Context* GetAiObjectContext(){return &context;}Unit* GetUnit(ObjectGuid g){return units[g];}
  bool HasStrategy(std::string,BotState){return enabled;}float GetRange(std::string){return 30;}
@@ -61,8 +62,10 @@ struct PlayerbotAI {
 };
 struct {float getDistance2d(Player*,Unit* u){return u->distance;}}sServerFacade;
 bool IsPositiveSpell(SpellEntry* p){return p->positive;}
+struct CcGuard{CcGuard(PlayerbotAI*){}bool IsHeldCcMark(Unit*){return false;}};
 struct EnemyHealerTargetValue{PlayerbotAI* ai;Player* bot;std::string qualifier="kick";Unit* Calculate();};
 '''
+        code = (root/'ai/playerbot/strategy/values/CcMarkHoldPolicy.h').read_text().replace('#pragma once','') + '\nusing namespace ai;\n' + code
         code+=function(source,'Unit* EnemyHealerTargetValue::Calculate()')
         code+=r'''
 int main(){

@@ -11,6 +11,16 @@ using namespace ai;
 int main()
 {
     HealingBands const bands{20, 50, 70, 90};
+    HealingCandidate predicted{99, 80, 100, 40, true, false, false};
+    predicted.incomingHealing = 100;
+    CHECK(PredictedHealHealth(predicted) == 40); // predicted danger cannot be hidden by an incoming heal
+    CHECK(NeedsPartyHealing(predicted, bands));
+    predicted.incomingDamage = 10;
+    CHECK(PredictedHealHealth(predicted) == 100); // routine wound already covered
+    CHECK(!NeedsPartyHealing(predicted, bands));
+    predicted.incomingDamage = 100;
+    CHECK(PredictedHealHealth(predicted) == 0); // predicted lethal hit remains urgent
+    CHECK(NeedsPartyHealing(predicted, bands));
     HealingCandidate tank{1, 95000, 100000, 0, true, false, false};
     HealingCandidate caster{2, 300, 3000, 0, false, false, false};
     CHECK(!NeedsPartyHealing(tank, bands));

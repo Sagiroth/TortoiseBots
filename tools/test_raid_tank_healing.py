@@ -21,6 +21,7 @@ def run(cpp):
 class RaidTankHealingTest(unittest.TestCase):
     def test_assignment(self):
         s=(SOURCE/'ai/playerbot/HealingTriagePolicy.h').read_text()
+        s = s.replace('#include "HealerManaPolicy.h"', '#include "' + str(SOURCE/'ai/playerbot/HealerManaPolicy.h') + '"')
         if 'bool patchwerkAssigned' not in s:
             s=s.replace('bool inCombat = false;','bool inCombat = false; bool patchwerkAssigned = false;')
         run(s+r'''

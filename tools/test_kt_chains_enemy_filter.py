@@ -29,12 +29,14 @@ class ChainsEnemyFilterTest(unittest.TestCase):
 #include <set>
 #include <list>
 #include <map>
-using ObjectGuid = unsigned;
+using ObjectGuid = unsigned;using uint32=unsigned;
+struct WorldTimer{static unsigned getMSTime(){return 1;}};
 #include <string>
 #include <iostream>
 constexpr int SPELL_AURA_MOD_CHARM=6, SPELL_AURA_MOD_POSSESS=2;
 struct Unit {
     virtual ~Unit()=default;
+    Unit* GetVictim(){return nullptr;}
     bool friendly=false, chains=false;
     unsigned map=533;
     ObjectGuid guid=1;
@@ -45,6 +47,7 @@ struct Unit {
     unsigned GetMapId() { return map; }
 };
 struct Player: Unit {
+    bool IsWithinLOSInMap(Unit*,bool){return true;}
     int group=1;
     bool combat=true;
     std::string GetName() { return "fixture"; }
@@ -52,7 +55,8 @@ struct Player: Unit {
     std::set<Unit*> GetAttackers() { return {}; }
 };
 bool IsInGroup_Helper(Player* a,Player* b) { return a->group && a->group==b->group; }
-struct PlayerbotAI {
+struct Context{std::map<ObjectGuid,uint32> entries;template<class T>Context* GetValue(std::string){return this;}auto& Get(){return entries;}};
+struct PlayerbotAI {Context context;Context* GetAiObjectContext(){return &context;}
     bool human=true, avoided=false;
     std::map<ObjectGuid,Unit*> units;
     Unit* GetUnit(ObjectGuid id) { return units[id]; }
@@ -68,7 +72,8 @@ struct { bool IsFriendlyTo(Unit* target,Player*) { return target->friendly; } } 
 struct EnemyPlayersValue {
     PlayerbotAI* ai; Player* bot;
     static bool IsValid(Unit*,Player*);
-    void ApplyFilter(std::list<ObjectGuid>&, bool);
+    bool CanEngageFromHere(Unit*){return true;}
+    void ApplyFilter(std::list<ObjectGuid>&, bool, bool=false);
 };
 '''
         fixture += filter_code + r'''

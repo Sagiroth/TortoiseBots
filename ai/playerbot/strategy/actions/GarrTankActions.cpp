@@ -116,7 +116,7 @@ GarrTankAssignment GarrTankAssignmentValue::Calculate()
     if (!boss)
         return assignment;
 
-    std::vector<RaidTankCandidate> tanks;
+    std::vector<AssignedRaidTankCandidate> tanks;
     for (Player* member : members)
     {
         PlayerbotAI* memberAI = PlayerbotAIStorage::Instance().GetAI(member);

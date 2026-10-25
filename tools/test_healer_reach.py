@@ -32,7 +32,8 @@ using namespace ai;
 struct Unit {float x=0,y=0,z=0;bool friendly=true;
  unsigned GetMapId(){return 533;} float getPositionX(){return x;}
  float getPositionY(){return y;} float getPositionZ(){return z;}};
-struct Bot:Unit {bool los=true;bool IsWithinLOSInMap(Unit*,bool){return los;} float GetAngle(Unit*){return 0;}};
+struct Map {bool dungeon=false;bool IsDungeon(){return dungeon;}} map;
+struct Bot:Unit {Map* GetMap(){return &map;} bool los=true;bool IsWithinLOSInMap(Unit*,bool){return los;} float GetAngle(Unit*){return 0;}};
 struct Facade {bool IsFriendlyTo(Bot*,Unit* u){return u->friendly;}} sServerFacade;
 float floorHeight=0;
 struct WorldPosition {unsigned map;float x,y,z;
@@ -42,6 +43,8 @@ struct WorldPosition {unsigned map;float x,y,z;
  float getZ()const{return z;} float GetHeight(){return floorHeight;} void setZ(float a){z=a;}};
 struct Reach {
  Bot* bot; bool within=false,valid=true,moveAllowed=true,moved=false;
+ bool pathAllowed=true;unsigned paths=0;
+ bool MoveIntoRangeAlongPath(Unit*,float){++paths;moved=pathAllowed;return pathAllowed;}
  unsigned chases=0,points=0;float px=0,py=0;
  bool IsWithinReach(Unit*){return within;}
  bool IsValidPosition(WorldPosition const&,WorldPosition const&){return valid;}
@@ -64,6 +67,8 @@ int main(){
  r=Reach{&bot};bot.los=false;assert(r.Run(&patient,22));assert(r.px==40 && !r.chases);
  bot.los=true;r=Reach{&bot};assert(!r.Run(nullptr,22));
  patient.friendly=false;assert(!r.Run(&patient,22));assert(!r.points);
+ patient.friendly=true;map.dungeon=true;r=Reach{&bot};assert(r.Run(&patient,22));assert(r.paths==1 && !r.chases && !r.points);
+ r=Reach{&bot};r.pathAllowed=false;assert(!r.Run(&patient,22));assert(!r.chases && !r.points);map.dungeon=false;
  patient.friendly=true;patient.x=0;r=Reach{&bot};assert(!r.Run(&patient,22));assert(!r.points);
 }
 '''

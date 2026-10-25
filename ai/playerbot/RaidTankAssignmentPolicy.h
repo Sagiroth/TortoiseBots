@@ -6,7 +6,7 @@
 
 namespace ai
 {
-    struct RaidTankCandidate
+    struct AssignedRaidTankCandidate
     {
         std::uint64_t guid;
         bool bossRole;
@@ -22,7 +22,7 @@ namespace ai
 
     // Inputs contain only live, same-instance participants. Locks are explicit
     // orders (or the human currently holding the boss), not automatic targets.
-    inline GolemaggTankPlan PlanGolemaggTanks(std::vector<RaidTankCandidate> tanks,
+    inline GolemaggTankPlan PlanGolemaggTanks(std::vector<AssignedRaidTankCandidate> tanks,
         std::uint64_t boss, std::vector<std::uint64_t> adds)
     {
         std::sort(tanks.begin(), tanks.end(), [](auto const& a, auto const& b) { return a.guid < b.guid; });

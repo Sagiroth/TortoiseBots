@@ -358,7 +358,7 @@ GolemaggTankAssignment GolemaggTankAssignmentValue::Calculate()
     }
     if (!boss)
         return assignment;
-    std::vector<RaidTankCandidate> tanks;
+    std::vector<AssignedRaidTankCandidate> tanks;
     auto addCandidate = [&](Player* member)
     {
         if (!member || !member->IsAlive() || !member->IsInWorld() || member->IsBeingTeleported() ||

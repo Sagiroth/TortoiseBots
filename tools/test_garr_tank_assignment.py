@@ -31,10 +31,12 @@ class GarrAssignmentCallerTest(unittest.TestCase):
 #include <string>
 #include <type_traits>
 using namespace ai;
+using int32=int;using uint32=unsigned;
+struct Aura{unsigned GetStackAmount(){return 0;}};
 int planCalls = 0, targetReads = 0;
 time_t fixtureNow = 100;
 namespace ai {
-auto PlanGolemaggTanks(std::vector<RaidTankCandidate> tanks,
+auto PlanGolemaggTanks(std::vector<AssignedRaidTankCandidate> tanks,
     std::uint64_t boss, std::vector<std::uint64_t> adds) {
     ++planCalls;
     return RealPlanGolemaggTanks(tanks, boss, adds);
@@ -96,12 +98,14 @@ template<class T> struct Manual : Value<T> {
 struct AiObjectContext {
     PositionMap positions;
     std::map<std::string, Manual<Unit*>> units;
+    Manual<int32> integer;
     Manual<bool> boolean;
     Manual<ObjectGuid> explicitTarget;
     Manual<std::list<ObjectGuid>> possible;
     Value<GarrTankAssignment>* assignment = nullptr;
-    template<class T> Value<T>* GetValue(std::string key) {
-        if constexpr (std::is_same_v<T,bool>) return &boolean;
+    template<class T> Value<T>* GetValue(std::string key, std::string = "") {
+        if constexpr (std::is_same_v<T,int32>) return &integer;
+        else if constexpr (std::is_same_v<T,bool>) return &boolean;
         else if constexpr (std::is_same_v<T,Unit*>) return &units[key];
         else if constexpr (std::is_same_v<T,ObjectGuid>) return &explicitTarget;
         else if constexpr (std::is_same_v<T,std::list<ObjectGuid>>) return &possible;
@@ -127,6 +131,7 @@ struct PlayerbotAI {
     bool DoSpecificAction(std::string, Event&, bool);
     std::set<std::string> strategies;
     explicit PlayerbotAI(Player* bot) : bot(bot) { bot->ai = this; }
+    Aura* GetAura(uint32,Player*){return nullptr;}
     Player* GetBot() const { return bot; }
     AiObjectContext* GetAiObjectContext() { return &context; }
     Unit* GetUnit(ObjectGuid guid) { return world[guid]; }
@@ -155,6 +160,7 @@ struct { float sightDistance = 60, lowHealth = 20; } sPlayerbotAIConfig;
 template<class T> class CalculatedValue : public Value<T> {
 public:
     PlayerbotAI* ai;
+    bool keepLegacyRefresh=false;
     int checkInterval;
     time_t lastCheckTime = 0;
     T value{};
@@ -162,11 +168,12 @@ public:
     virtual T Calculate() = 0;
     void Reset() { lastCheckTime = 0; }
 '''
+        fixture = (root / "ai/playerbot/strategy/ValueRefreshPolicy.h").read_text().replace("#pragma once", "") + fixture
         fixture += refresh + "\n" + get + "\n};\n"
         fixture += function(header, "class GarrTankAssignmentValue") + ";\n"
         fixture += r'''
 struct GarrTankRetargetAction { PlayerbotAI* ai; AiObjectContext* context; Player* bot=ai->GetBot(); bool isUseful(); bool Execute(Event&); };
-struct TankAssistTrigger { AiObjectContext* context; bool IsActive(); };
+struct TankAssistTrigger { AiObjectContext* context;PlayerbotAI* ai;Player* bot=ai->GetBot(); bool IsActive(); };
 '''
         for signature in ["bool GarrHoldOrder(", "Unit* GarrExplicitTarget(",
                           "bool GarrCcTarget(", "bool GarrAssignmentActive(",
@@ -178,6 +185,7 @@ struct TankAssistTrigger { AiObjectContext* context; bool IsActive(); };
                           "bool GarrTankRetargetAction::Execute("]:
             fixture += function(text, signature).replace("ai::", "") + "\n"
         triggers = (root / "ai/playerbot/strategy/triggers/GenericTriggers.cpp").read_text()
+        fixture = (root / "ai/playerbot/FourHorsemenRotationPolicy.h").read_text().replace("#pragma once", "") + fixture
         fixture += function(triggers, "bool TankAssistTrigger::IsActive()")
         fixture += r'''
 bool PlayerbotAI::DoSpecificAction(std::string name, Event&, bool force) {
@@ -221,7 +229,7 @@ int main() {
     assert(GetAssignedGarrTankTarget(&a)==&adds[3]);
     a.context.units["tank target"].value=&adds[3];a.context.boolean.value=true;
     fixtureHoldsCurrent=true;
-    TankAssistTrigger old{&a.context};GarrTankRetargetAction revised{&a,&a.context};
+    TankAssistTrigger old{&a.context,&a};GarrTankRetargetAction revised{&a,&a.context};
 #ifdef LEGACY
     assert(old.IsActive()); // Deployed generic low-health gate strands the priest.
 #else

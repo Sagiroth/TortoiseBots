@@ -110,7 +110,7 @@ struct {
     std::map<ObjectGuid, Player*> players;
     Player* GetPlayer(ObjectGuid guid) { return players[guid]; }
 } sObjectMgr;
-struct { bool IsAlive(Player* p) const { return p->alive; } } sServerFacade;
+[[maybe_unused]] struct { bool IsAlive(Player* p) const { return p->alive; } } sServerFacade;
 struct { float sightDistance = 60; } sPlayerbotAIConfig;
 struct RtiTargetValue {
     static int GetRtiIndex(std::string mark) { return mark == "triangle" ? 3 : -1; }
@@ -118,7 +118,12 @@ struct RtiTargetValue {
 struct PossibleAttackTargetsValue {
     static bool IsValid(Unit* unit, Player*, float, bool, bool) { return unit->valid; }
 };
+struct ThreatManager {};
 struct FindNonCcTargetStrategy {
+    explicit FindNonCcTargetStrategy(PlayerbotAI* a):ai(a){}
+    virtual void CheckAttacker(Unit*,ThreatManager*){}
+    bool IsCcProtected(Unit*){return true;}
+    bool IsCcMark(Unit* attacker);
     PlayerbotAI* ai;
     bool IsCcTarget(Unit* attacker);
 };
@@ -129,6 +134,7 @@ struct DpsTargetStrategy : FindNonCcTargetStrategy {
         shared = function((values / "TargetValue.cpp").read_text(),
                           "bool ai::IsRaidCrowdControlMarkedTarget(").replace(
                               "bool ai::", "bool ", 1)
+        reserved += function((values / "TargetValue.cpp").read_text(), "bool FindNonCcTargetStrategy::IsCcMark(")
         fixture += active + shared + reserved + select + r'''
 int main() {
     Player bot;

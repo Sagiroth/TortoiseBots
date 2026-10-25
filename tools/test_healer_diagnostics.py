@@ -107,6 +107,7 @@ struct Config {
   events.push_back({e,r,d});
  }
 } sPlayerbotAIConfig;
+namespace botdiag {struct BotActionLog {template<class... Args> static void Write(Args...){}};}
 ''' + source + r'''
 struct CastSpellAction {
  PlayerbotAI* ai; Player* bot; Unit* target;

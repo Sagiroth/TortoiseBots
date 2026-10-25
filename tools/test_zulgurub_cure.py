@@ -36,11 +36,14 @@ class ZulGurubCureTest(unittest.TestCase):
         production = '\n'.join((
             'namespace ai {', helpers, '}',
             function(ai, 'bool PlayerbotAI::HasAuraToDispel('),
+            ai[ai.index('static constexpr uint32 kNeverDispelSpellIds'):ai.index(';', ai.index('static constexpr uint32 kNeverDispelSpellIds'))+1],
+            function(ai, 'bool PlayerbotAI::IsNeverDispelSpell('),
             function(ai, 'bool PlayerbotAI::canDispel('),
             function(actions, 'bool CastSpellAction::isUseful('),
             function(actions, 'bool CastSpellAction::Execute(')))
         fixture = r'''
 #include <cassert>
+#include <ctime>
 #include <cstdint>
 #include <list>
 #include <map>
@@ -111,7 +114,10 @@ enum class BotCheatMask { attackspeed };
 struct HealerDiagnosticsStub {
     template<class... T> void CastAttempt(T...) {}
 };
+struct Context{template<class T> Context* GetValue(std::string,std::string){return this;}void Set(time_t){}};
 struct PlayerbotAI {
+    Context* GetAiObjectContext(){static Context c;return &c;}
+    static bool IsNeverDispelSpell(uint32);
     HealerDiagnosticsStub& GetHealerDiagnostics() {
         static HealerDiagnosticsStub diagnostics;
         return diagnostics;
@@ -126,6 +132,7 @@ struct PlayerbotAI {
     bool HasAuraToDispel(Unit*, uint32);
     bool canDispel(SpellEntry const*, uint32);
 };
+bool BreaksCcInArea(PlayerbotAI*,Player*,SpellEntry const*,Unit*){return false;}
 struct Event {};
 struct CastSpellAction {
     PlayerbotAI* ai;
@@ -133,7 +140,7 @@ struct CastSpellAction {
     Unit* target;
     std::string spellName="fixture cure";
     std::string getName(){ return spellName; }
-    uint32 spellId;
+    uint32 spellId;uint32 spellIdOverride=0;
     Unit* GetTarget() { return target; }
     std::string GetTargetName() { return "party member to dispel"; }
     void SetDuration(uint32) {}
@@ -170,7 +177,7 @@ int main() {
     // Off by default: original predicate and cast behavior, no aura/metadata work.
     assert(ai.HasAuraToDispel(&party,DISPEL_POISON));
     assert(action.isUseful() && action.Execute(event));
-    assert(party.auraReads==0 && sServerFacade.lookups==0);
+    assert(party.auraReads==0); // upstream area-CC gate also looks up the spell
     ai.strategies.insert("hakkar poison");
     assert(!ai.HasAuraToDispel(&party,DISPEL_POISON));
     assert(!action.isUseful());

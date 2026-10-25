@@ -12,6 +12,7 @@ class TankHealingTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which('g++'), 'g++ unavailable')
     def test_emergency_assignment(self):
         policy = (ROOT/'ai/playerbot/HealingTriagePolicy.h').read_text()
+        policy = policy.replace('#include "HealerManaPolicy.h"', '#include "' + str(ROOT/'ai/playerbot/HealerManaPolicy.h') + '"')
         # Old code ignores combat state. Supply only the new metadata field so
         # the predecessor compiles and fails on its real selection behavior.
         if 'bool inCombat' not in policy:

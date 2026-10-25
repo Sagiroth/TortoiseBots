@@ -50,7 +50,7 @@ struct AI {
  bool HasAura(const char*,Unit*,bool){return aura && aura->stacks>=5;}
  bool CanCastSpell(const char*,Unit*){return false;}
  bool CanCastSpell(uint32 id,Unit*){return usable[id] && rage >= (id==3 ? 20 : 30);}
- uint32 id(std::string name){if(name=="medium rage available")return rage>=40;return name=="bloodthirst"?1:name=="mortal strike"?2:3;}
+ uint32 id(std::string name){if(name=="medium rage available")return rage>=40;if(name=="light rage available")return rage>=20;return name=="bloodthirst"?1:name=="mortal strike"?2:3;}
 };
 bool PatchwerkThreatTank(AI*, Unit*){return false;} // separately exercised by Patchwerk opening fixture
 struct Facade {
@@ -99,6 +99,8 @@ int main(int argc,char** argv){
    ai.learned=false;assert(!t.IsActive());ai.learned=true;t.target=nullptr;assert(!t.IsActive());
  } else if(test=="affordability") {
    ai.tank=true;SunderAction a(&ai,&bot,&target);
+   ai.rage=40;ai.ready[3]=true;assert(a.isUseful());ai.ready[3]=false;
+   ai.aura=&aura;aura.stacks=5;aura.duration=30000;
    for(unsigned id=1;id<=3;++id){
      ai.ready[id]=true;ai.rage=15;assert(a.isUseful());
      ai.rage=30;ai.usable[id]=false;assert(a.isUseful());

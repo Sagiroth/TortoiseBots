@@ -31,7 +31,7 @@ class ReachProgressTest(unittest.TestCase):
         stand_end = source.index('lastExecuteMs = nowMs;', stand_start) + len('lastExecuteMs = nowMs;')
         stand = source[stand_start:stand_end]
         head_start = source.index('uint32 const nowMs = WorldTimer::getMSTime();', stand_end)
-        head_end = source.index('if (noHeadway || stoodStill)', head_start)
+        head_end = source.index('if (!groupInstanceFight && (noHeadway || stoodStill))', head_start)
         head = source[head_start:head_end]
         cpp = r'''
 #include <algorithm>
@@ -48,12 +48,14 @@ constexpr float ATTACK_DISTANCE=5.0f;
 struct ObjectGuid {unsigned id=0;bool operator!=(ObjectGuid o)const{return id!=o.id;}};
 uint32 clockMs=1000;
 struct WorldTimer {static uint32 getMSTime(){return clockMs;}};
-struct Unit {ObjectGuid guid{1};Unit* victim=nullptr;bool runner=false,unreachable=false;
+struct Player;
+struct Unit {Player* GetCharmerOrOwnerPlayerOrPlayerItself(){return nullptr;}bool IsCreature(){return true;}ObjectGuid guid{1};Unit* victim=nullptr;bool runner=false,unreachable=false;
  ObjectGuid getObjectGuid(){return guid;} Unit* GetVictim(){return victim;}
  bool HasUnitState(int){return runner;}
 };
 struct Player {float rangeMod=0;float ApplySpellMod(uint32,int,float& base){assert(base==5);return rangeMod;}};
-struct Bot:Unit {float distance=3,x=0,y=0,auraRange=0,lastModifier=0;
+struct Map{bool IsDungeon(){return false;}};
+struct Bot:Unit {Map map;bool GetGroup(){return false;}Map* GetMap(){return &map;}bool IsInSameRaidWith(Player*){return false;}float distance=3,x=0,y=0,auraRange=0,lastModifier=0;
  bool valid=true,casting=false,los=true,rooted=false,held=false,combat=true,autoReach=true;
  int stand=0;Player* owner=nullptr;
  bool IsValidAttackTarget(Unit*){return valid;}
@@ -82,6 +84,7 @@ struct Reach {Bot* bot;AI* ai;Unit* target;float range=0;std::string spellName;b
  ObjectGuid noLosTarget,stoodTarget;uint32 noLosSinceMs=0,stoodSinceMs=0,lastExecuteMs=0;
  float noLosBestDist=0,noLosStartX=0,noLosStartY=0,stoodX=0,stoodY=0,stoodDist=0;
  static constexpr uint32 kStandResetMs=2000,kNoHeadwayMs=15000,kNoMoveMs=10000;
+ Player* GetMaster(){return nullptr;}
  Unit* GetTarget(){return target;}bool RequiresAttackableTarget()const{return hostile;}
  static bool TargetCannotBeReached(Unit* target){return target->unreachable;}
  bool IsWithinReach(Unit* target) WITHIN
@@ -89,7 +92,7 @@ struct Reach {Bot* bot;AI* ai;Unit* target;float range=0;std::string spellName;b
  bool tick(){
   float const distanceToTarget=bot->GetDistance(target);bool const inLos=bot->los;
   {STAND}
-  {HEAD return noHeadway || stoodStill;}
+  {HEAD return !groupInstanceFight && (noHeadway || stoodStill);}
  }
 };
 '''.replace('WITHIN', within).replace('USEFUL', useful).replace('STAND}', stand + '}').replace('HEAD return', head + 'return')

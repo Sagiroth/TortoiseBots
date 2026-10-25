@@ -1,5 +1,6 @@
 #pragma once
 
+#include "HealerManaPolicy.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -27,6 +28,8 @@ namespace ai
         bool inLos = true;
         bool inCombat = false;
         bool patchwerkAssigned = false;
+        std::uint32_t incomingHealing = 0;
+        std::uint8_t incomingLowHealth = 50;
     };
 
     inline float PredictedHealHealth(HealingCandidate const& candidate)
@@ -35,7 +38,11 @@ namespace ai
             return 100.0f;
         auto const remaining = candidate.incomingDamage >= candidate.health
             ? 0 : candidate.health - candidate.incomingDamage;
-        return 100.0f * remaining / candidate.maxHealth;
+        // Preserve upstream preheal ordering: damage first, then credit casts
+        // only if the predicted patient is above the danger threshold.
+        auto const credited = HealthWithIncoming(remaining, candidate.maxHealth,
+            candidate.incomingHealing, candidate.incomingLowHealth);
+        return 100.0f * credited / candidate.maxHealth;
     }
 
     // Combat tank health is a conservative urgency signal, not a damage-rate

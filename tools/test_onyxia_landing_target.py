@@ -75,6 +75,7 @@ struct OnyxiaLandingAttackAction{
 };
 // The existing fallback represents its documented nearest-loose-add result.
 // The test verifies the production Calculate caller actually overrides it.
+Unit* FourHorsemenRotationTarget(PlayerbotAI*,Player*){return nullptr;}
 Unit* looseWhelp=nullptr;
 Unit* markedTarget=nullptr;
 struct RtiTargetValue{Unit* Calculate(){return markedTarget;}};
@@ -87,6 +88,7 @@ using NefarianAddAssignment=int;
 Unit* GetAssignedNefarianAddTarget(PlayerbotAI*,int){return nullptr;}
 struct FindTankTargetSmartStrategy{FindTankTargetSmartStrategy(PlayerbotAI*){}};
 struct TankTargetValue:RtiTargetValue{
+ Unit* FindLastCcTarget(){return nullptr;}
  Player* bot;
  PlayerbotAI* ai;AiObjectContext* context;
  Unit* GetExplicitAttackTarget(){return nullptr;}

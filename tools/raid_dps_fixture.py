@@ -46,4 +46,8 @@ def world(fixture):
     # All extracted selectors read estimated group DPS even for a small group.
     # Explicit specializations must appear before the production extraction.
     fixture += '\ntemplate<> float AiObjectContext::Value<float>(std::string) { return 1.0f; }\n'
+    # These encounter cases have no Horsemen rotation or timed CC fallback.
+    fixture = fixture.replace('struct TargetValue {', 'struct TargetValue { Unit* FindLastCcTarget() { return nullptr; }')
+    fixture += '\nUnit* FindLastCcTarget() { return nullptr; }\n'
+    fixture += '\nUnit* FourHorsemenRotationTarget(PlayerbotAI*, Player*) { return nullptr; }\n'
     return fixture

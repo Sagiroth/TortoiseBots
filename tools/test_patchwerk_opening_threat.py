@@ -95,10 +95,11 @@ def rotation_fixture(root):
     code=code.replace('bool PatchwerkThreatTank(AI*, Unit*){return false;} // separately exercised by Patchwerk opening fixture','')
     code=code.replace('struct Unit {', 'struct Unit {unsigned entry=16028,map=533;bool combat=true;unsigned GetEntry(){return entry;}bool IsInCombat(){return combat;}bool IsInMap(Unit* u){return map==u->map;}')
     code=code.replace('int GetMapId(){return 1;}', 'int GetMapId(){return map;}')
-    code=code.replace('struct AI {', 'enum class BotState{BOT_STATE_COMBAT};\nstruct AI {Unit* bot=nullptr;bool main=true,soak=false;Unit* GetBot(){return bot;}bool HasStrategy(std::string s,BotState){return s=="patchwerk main"?main:soak;}')
+    code=code.replace('struct AI {', 'enum class BotState{BOT_STATE_COMBAT};\nstruct AI {Unit* current=nullptr;Unit* bot=nullptr;bool main=true,soak=false;Unit* GetBot(){return bot;}bool HasStrategy(std::string s,BotState){return s=="patchwerk main"?main:soak;}')
     code=code.replace('bool CanCastSpell(const char*,Unit*){return false;}', 'bool CanCastSpell(const char* n,Unit*){return std::string(n)=="revenge"?revenge:ready[3]&&usable[3]&&rage>=20;}bool revenge=false;')
     if 'CanCastSpell(const char*' not in code:
         code=code.replace('bool CanCastSpell(uint32', 'bool revenge=false;bool CanCastSpell(const char* n,Unit*){return std::string(n)=="revenge"?revenge:ready[3]&&usable[3]&&rage>=20;}bool CanCastSpell(uint32')
+    code += '\n#define AI_VALUE(type,key) ai->current\n'
     insert=code.index('struct Facade')
     helper=function(source,'bool Has(').replace('PlayerbotAI','AI')
     if 'bool ai::PatchwerkThreatTank(' in source:helper+=function(source,'bool ai::PatchwerkThreatTank(').replace('ai::','').replace('PlayerbotAI','AI')

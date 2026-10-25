@@ -30,7 +30,7 @@ class GeddonReturnTest(unittest.TestCase):
         strategies = (root/'ai/playerbot/strategy/generic/MoltenCoreDungeonStrategies.cpp').read_text()
         local_gate = strategies.index('!GetActiveGeddonInferno(ai)')
         multiplier = function(strategies[strategies.rfind('float GetValue(', 0, local_gate):], 'float GetValue(')
-        decision = reach[reach.index('if (noHeadway || stoodStill)'):]
+        decision = reach[reach.index('if (!groupInstanceFight && (noHeadway || stoodStill))'):]
         decision = decision[:decision.index('{')]
         no_headway = reach[reach.index('bool const noHeadway ='):]
         no_headway = no_headway[:no_headway.index(';')+1]
@@ -56,7 +56,7 @@ struct CastReachTargetSpellAction:Action {using Action::Action;};
 struct Multiplier {PlayerbotAI* ai; MULTIPLIER };
 bool wouldDrop(Bot* bot,Unit* target){
  const unsigned nowMs=17000,noLosSinceMs=1000,kNoHeadwayMs=15000;
- const bool runner=false,needsReach=true,inLos=true,cannotBeReached=false,stoodStill=false;
+ const bool runner=false,needsReach=true,inLos=true,cannotBeReached=false,stoodStill=false,hitsOurSide=false;
  SCOPE
  NO_HEADWAY
  DECISION {return true;}

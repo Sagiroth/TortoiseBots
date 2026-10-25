@@ -208,12 +208,12 @@ Unit* PartyMemberToHeal::Calculate()
         }
         bool const assigned = target->IsPlayer() && IsPatchwerkHealingAssignment(static_cast<Player*>(target));
         auto const incoming = incomingHeals.find(target->GetObjectGuid());
-        uint32 const creditedHealth = HealthWithIncoming(target->GetHealth(), target->GetMaxHealth(),
-            incoming == incomingHeals.end() ? 0 : incoming->second, sPlayerbotAIConfig.lowHealth);
-        HealingCandidate candidate{target->GetObjectGuid().GetRawValue(), creditedHealth,
+        HealingCandidate candidate{target->GetObjectGuid().GetRawValue(), target->GetHealth(),
             target->GetMaxHealth(), preHealing ? getIncomingdamage(target) : 0,
             tank || assigned, pet, false,
             sServerFacade.IsWithinLOSInMap(bot, target), target->IsInCombat(), assigned};
+        candidate.incomingHealing = incoming == incomingHeals.end() ? 0 : incoming->second;
+        candidate.incomingLowHealth = sPlayerbotAIConfig.lowHealth;
         if (NeedsPartyHealing(candidate, bands) && targets.emplace(candidate.guid, target).second)
             candidates.push_back(candidate);
     };

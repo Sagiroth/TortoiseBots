@@ -87,7 +87,7 @@ struct PlayerbotAI {
 struct PlayerbotAIStorage {PlayerbotAI* ai=nullptr;static PlayerbotAIStorage& Instance(){static PlayerbotAIStorage s;return s;}PlayerbotAI* GetAI(Player*){return ai;}};
 #define AI_VALUE(T,K) ai->context.Read<T>(K)
 #define PAI_VALUE(T,K) PlayerbotAIStorage::Instance().ai->context.Read<T>(K)
-struct {float sightDistance=60;} sPlayerbotAIConfig;
+struct {float sightDistance=60,reactDistance=100;} sPlayerbotAIConfig;
 struct Facade {
  bool UnitIsDead(Unit* u){return !u->alive;}bool IsAlive(Unit* u){return u->alive;}
  bool IsFriendlyTo(Unit*,Unit*){return false;}float getDistance2d(Unit*,Unit*){return 5;}
@@ -112,10 +112,11 @@ struct PossibleAttackTargetsValue {
 };
 struct InvalidTargetValue{PlayerbotAI* ai;Player* bot;std::string qualifier="current target";bool Calculate();};
 struct FindTargetStrategy {Unit* result=nullptr;virtual ~FindTargetStrategy()=default;virtual void CheckAttacker(Unit*,ThreatManager*)=0;Unit* GetResult(){return result;}};
-struct FindNonCcTargetStrategy:FindTargetStrategy {PlayerbotAI* ai;FindNonCcTargetStrategy(PlayerbotAI* a):ai(a){}bool IsCcTarget(Unit*){return false;}};
+struct FindNonCcTargetStrategy:FindTargetStrategy {PlayerbotAI* ai;FindNonCcTargetStrategy(PlayerbotAI* a):ai(a){}static bool IsCastingCcAt(Player*,Unit*){return false;}bool IsCcTarget(Unit*){return false;}};
 struct TargetValue {PlayerbotAI* ai;Player* bot;Unit* FindTarget(FindTargetStrategy*);Unit* GetExplicitAttackTarget();};
 struct RtiTargetValue {PlayerbotAI* ai;Player* bot;Context* context;std::string type="rti";static int GetRtiIndex(std::string r){return r=="skull"?7:-1;}Unit* Calculate();};
-struct AttackAction {PlayerbotAI* ai;Player* bot;bool verbose=true;bool IsTargetValid(Player*,Unit*);};
+struct CcGuard{CcGuard(PlayerbotAI*){}bool IsHeldCcMark(Unit*){return false;}};
+struct AttackAction {PlayerbotAI* ai;Player* bot;bool verbose=true;bool IsTargetValid(Player*,Unit*,float=60);};
 '''
         policy = values/'CoreHoundTargetPolicy.h'
         if policy.exists():

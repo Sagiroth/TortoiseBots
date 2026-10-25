@@ -138,6 +138,7 @@ struct { float sightDistance = 60; } sPlayerbotAIConfig;
 template<class T> class CalculatedValue : public Value<T> {
 public:
     PlayerbotAI* ai;
+    bool keepLegacyRefresh=false;
     int checkInterval;
     time_t lastCheckTime = 0;
     T value{};
@@ -145,6 +146,7 @@ public:
     virtual T Calculate() = 0;
     void Reset() { lastCheckTime = 0; }
 '''
+        fixture = (root / "ai/playerbot/strategy/ValueRefreshPolicy.h").read_text().replace("#pragma once", "") + fixture
         fixture += refresh + "\n" + get + "\n};\n"
         fixture += function(header, "class NefarianAddAssignmentValue") + ";\n"
         fixture += function(text, "class NefarianCcReservation") + ";\n"

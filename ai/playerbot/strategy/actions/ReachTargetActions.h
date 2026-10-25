@@ -836,6 +836,10 @@ namespace ai
                 return MoveTo(target->GetMapId(), target->getPositionX(),
                     target->getPositionY(), target->getPositionZ());
 
+            // Use the upstream dungeon navmesh approach; do not fall back to hostile chase.
+            if (bot->GetMap() && bot->GetMap()->IsDungeon())
+                return MoveIntoRangeAlongPath(target, distance);
+
             WorldPosition healer(bot);
             WorldPosition patient(target);
             PullFiringPosition point = ComputePullFiringPosition(

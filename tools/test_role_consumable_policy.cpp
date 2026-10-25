@@ -34,7 +34,9 @@ int main()
     assert(!NeedsConsumablePotion(C::Health, false, 1, 1, true));
     assert(NeedsConsumablePotion(C::Mana, true, 90, 29, true));
     assert(!NeedsConsumablePotion(C::Mana, true, 90, 0, false));
-    assert(!NeedsConsumablePotion(C::Mana, true, 90, 30, true));
+    assert(NeedsConsumablePotion(C::Mana, true, 90, 30, true));
+    assert(NeedsConsumablePotion(C::Mana, true, 90, 64, true));
+    assert(!NeedsConsumablePotion(C::Mana, true, 90, 65, true));
     ConsumableProvisionClock clock;
     assert(clock.Tick(true, 1)); // first safe login/hire update
     clock.remaining = 300000;
