@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "CurrentTargetValue.h"
+#include "playerbot/OnyxiaAirCombat.h"
 
 #include "playerbot/ServerFacade.h"
 using namespace ai;
@@ -17,6 +18,8 @@ Unit* CurrentTargetValue::Get()
     float maxDistance = sPlayerbotAIConfig.sightDistance;
     if (unit && ai->GetAiObjectContext()->GetValue<ObjectGuid>("explicit attack target")->Get() == unit->getObjectGuid())
         maxDistance = sPlayerbotAIConfig.reactDistance;
+    if (unit && IsOnyxiaAirCombatTarget(ai, unit))
+        return unit;
     if (unit && !bot->IsWithinDistInMap(unit, maxDistance))
         return NULL;
 

@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "CoreHoundTargetPolicy.h"
 #include "InvalidTargetValue.h"
+#include "playerbot/OnyxiaAirCombat.h"
 #include "playerbot/strategy/actions/NaxxramasDungeonActions.h"
 #include "PossibleAttackTargetsValue.h"
 #include "RaidDpsTargetPolicy.h"
@@ -41,6 +42,11 @@ bool InvalidTargetValue::Calculate()
     {
         return true;
     }
+
+    // Flight is scripted, not a failed ground chase. Actual evade was rejected above.
+    if (IsOnyxiaAirCombatTarget(ai, target) &&
+        (qualifier != "current target" || target->getObjectGuid() == bot->GetSelectionGuid()))
+        return false;
 
     // Same for the window before the walk home: the core flags a creature it cannot
     // path to after 3 s (IsEvadeBecauseTargetNotReachable), a full 21 s before the

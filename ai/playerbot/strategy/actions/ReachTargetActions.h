@@ -17,6 +17,7 @@
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "playerbot/RaidTankHealing.h"
 #include "PatchwerkSoakerActions.h"
+#include "playerbot/OnyxiaAirCombat.h"
 #include "AI/CreatureAI.h"
 #include <ctime>
 
@@ -53,6 +54,7 @@ namespace ai
         ObjectGuid stoodTarget;
         float stoodDist = 0.0f;
         uint32 lastExecuteMs = 0;
+        uint32 lastOnyxiaAirRoute = 0;
 
         static uint32 const kNoHeadwayMs = 15000;
         static uint32 const kNoMoveMs = 10000;
@@ -105,12 +107,16 @@ namespace ai
             }
         }
 
+        bool ReachAirborneOnyxia(Unit* target);
+
         virtual bool Execute(Event& event) override
 		{
             Unit* openingTarget = GetTarget();
             if (openingTarget && openingTarget->GetEntry() == 16028 && PatchwerkDpsOpeningHold(ai)) return false;
 
             Unit* target = GetTarget();
+            if (getName() == "reach spell" && IsOnyxiaAirCombatTarget(ai, target))
+                return ReachAirborneOnyxia(target);
             if (target)
             {
                 auto traceReach = [this](char const* branch, int result = -1)

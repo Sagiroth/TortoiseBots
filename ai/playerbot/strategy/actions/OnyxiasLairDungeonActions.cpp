@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "OnyxiasLairDungeonActions.h"
+#include "playerbot/OnyxiaAirCombat.h"
 
 using namespace ai;
 #include "playerbot/ServerFacade.h"
@@ -222,30 +223,90 @@ bool OnyxiaAvoidEggsAction::Execute(Event& event)
 
 using namespace ai;
 
+namespace
+{
+bool EngagedAirborneOnyxia(PlayerbotAI* ai, Unit* boss)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->GetMapId() != 249 ||
+        !boss || !boss->IsInWorld() || boss->GetEntry() != 10184 || !boss->IsInMap(bot) ||
+        !bot->IsValidAttackTarget(boss) ||
+        !OnyxiaAirPhase(boss->IsAlive(), boss->IsInCombat(), boss->HasAura(17131), boss->IsFlying())) return false;
+    Creature* creature = dynamic_cast<Creature*>(boss);
+    if (!creature || creature->IsInEvadeMode()) return false;
+    auto engaged = [boss](Player* member)
+    {
+        return member && member->IsAlive() && member->IsInMap(boss) &&
+            (boss->GetVictim() == member || boss->GetThreatManager().getThreat(member) > 0.0f);
+    };
+    if (engaged(bot)) return true;
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+        if (engaged(member)) return true;
+    return false;
+}
+bool OnyxiaAirDamageRole(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    return bot->GetMapId() == 249 && ai->IsRanged(bot) && !ai->IsTank(bot) && !ai->IsHeal(bot) &&
+        (ai->HasStrategy("onyxia", BotState::BOT_STATE_COMBAT) ||
+         ai->HasStrategy("onyxia's lair", BotState::BOT_STATE_COMBAT) ||
+         ai->HasStrategy("onyxia air spread", BotState::BOT_STATE_COMBAT) ||
+         ai->HasStrategy("onyxia whelps", BotState::BOT_STATE_COMBAT));
+}
+}
+
 Unit* ai::GetAirborneOnyxia(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
-    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
-        bot->GetMapId() != 249 || !bot->IsInCombat())
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->GetMapId() != 249)
         return nullptr;
+    // Independent of the bot's combat flag and its short-range attackers cache.
+    // The cached boss scan still requires this group's actual threat or victim.
     AiObjectContext* context = ai->GetAiObjectContext();
-    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
-    {
-        Unit* boss = ai->GetUnit(guid);
-        if (boss && boss->GetEntry() == 10184 && boss->IsInMap(bot) &&
-            OnyxiaAirPhase(boss->IsAlive(), boss->IsInCombat(), boss->HasAura(17131), boss->IsFlying()))
-            return boss;
-    }
-    return nullptr;
+    Unit* boss = AI_VALUE(Unit*, "boss target");
+    return EngagedAirborneOnyxia(ai, boss) ? boss : nullptr;
+}
+
+bool ai::IsOnyxiaAirCombatTarget(PlayerbotAI* ai, Unit* target)
+{
+    return OnyxiaAirDamageRole(ai) && EngagedAirborneOnyxia(ai, target);
 }
 
 bool ai::OnyxiaRangedFocusEnabled(PlayerbotAI* ai)
 {
-    Player* bot=ai->GetBot();
-    return ai->IsRanged(bot) && !ai->IsTank(bot) && !ai->IsHeal(bot) &&
-        (ai->HasStrategy("onyxia",BotState::BOT_STATE_COMBAT) ||
-         ai->HasStrategy("onyxia air spread",BotState::BOT_STATE_COMBAT) ||
-         ai->HasStrategy("onyxia whelps",BotState::BOT_STATE_COMBAT)) && GetAirborneOnyxia(ai);
+    return OnyxiaAirDamageRole(ai) && GetAirborneOnyxia(ai);
+}
+
+void ai::UpdateOnyxiaAirCombat(PlayerbotAI* ai)
+{
+    if (!OnyxiaAirDamageRole(ai)) return;
+    Unit* boss = GetAirborneOnyxia(ai);
+    if (!boss) return;
+    Player* bot = ai->GetBot();
+    AiObjectContext* context = ai->GetAiObjectContext();
+    // Preserve valid player orders and the existing healer-whelp rescue priority.
+    Unit* order = ai->GetUnit(AI_VALUE(ObjectGuid, "explicit attack target"));
+    Unit* marked = AI_VALUE(Unit*, "rti target");
+    for (Unit* ordered : {order, marked})
+        if (ordered && ordered != boss && PossibleAttackTargetsValue::IsValid(ordered, bot,
+            sPlayerbotAIConfig.sightDistance, false, false)) return;
+    Unit* target = GetOnyxiaRangedTarget(ai);
+    if (!target) return;
+    bool const coreCombat = bot->IsInCombat();
+    bool const combatEngine = ai->GetState() == BotState::BOT_STATE_COMBAT;
+    bool const changed = AI_VALUE(Unit*, "current target") != target || bot->GetSelectionGuid() != target->getObjectGuid();
+    if (!coreCombat) bot->SetInCombatWith(boss);
+    if (!combatEngine) ai->OnCombatStarted();
+    if (changed)
+    {
+        context->GetValue<Unit*>("current target")->Set(target);
+        bot->SetSelectionGuid(target->getObjectGuid());
+    }
+    if (!combatEngine || !coreCombat || changed)
+    {
+        ai->ClearActionClock();
+        sPlayerbotAIConfig.logEvent(ai, "OnyxiaAirRecover", combatEngine ? "target/core combat" : "combat engine", target->GetName());
+    }
 }
 
 Unit* ai::GetOnyxiaRangedTarget(PlayerbotAI* ai)

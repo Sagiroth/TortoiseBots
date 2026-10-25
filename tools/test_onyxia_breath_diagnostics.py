@@ -76,16 +76,16 @@ struct Player:Unit {
  bool IsInWorld(){return world;}bool IsBeingTeleported(){return teleported;}Session* GetSession(){return &session;}
 };
 struct Position {bool isSet(){return false;}};using PositionMap=std::map<std::string,Position>;
-struct AiObjectContext {PositionMap positions;std::list<ObjectGuid> attackers{{99}};
+struct AiObjectContext {Unit* boss=nullptr;PositionMap positions;std::list<ObjectGuid> attackers{{99}};
  template<class T> T Value(const char*){
-  if constexpr(std::is_same_v<T,PositionMap&>)return positions;else return attackers;
+  if constexpr(std::is_same_v<T,PositionMap&>)return positions;else if constexpr(std::is_same_v<T,Unit*>)return boss;else return attackers;
  }
 };
 #define AI_VALUE(type,key) context->Value<type>(key)
 enum class BotState {BOT_STATE_COMBAT, BOT_STATE_NON_COMBAT};
 struct PlayerbotAI {
  Player bot;Unit boss;AiObjectContext context;bool enabled=true,hold=false,debug=true;
- PlayerbotAI(){bot.guid=ObjectGuid(1);bot.x=-25;bot.y=-215;bot.z=-89;}
+ PlayerbotAI(){context.boss=&boss;bot.guid=ObjectGuid(1);bot.x=-25;bot.y=-215;bot.z=-89;}
  Player* GetBot(){return &bot;}AiObjectContext* GetAiObjectContext(){return &context;}
  Unit* GetUnit(ObjectGuid g){return g.raw==99?&boss:nullptr;}
  bool HasStrategy(std::string s,BotState){return s=="onyxia deep breath"?enabled:s=="debug"?debug:s=="stay"&&hold;}
@@ -110,6 +110,7 @@ namespace ai {Unit* GetAirborneOnyxia(PlayerbotAI*);void ObserveOnyxiaBreathPack
 fixture=fixture.replace('struct Radius {float Radius=30;};\n','')
 fixture+=(r/'ai/playerbot/OnyxiaAirPolicy.h').read_text().split('namespace ai')[1].split('inline bool OnyxiaWhelpRole')[0].replace('{','namespace ai {',1)+'}\n'
 # The short policy prefix above contains just the actual airborne predicate.
+fixture+='bool EngagedAirborneOnyxia(PlayerbotAI* a,Unit* b){return b && b->IsInMap(a->GetBot()) && ai::OnyxiaAirPhase(b->IsAlive(),b->IsInCombat(),b->HasAura(17131),b->IsFlying());}\n'
 fixture+=function((r/'ai/playerbot/strategy/actions/OnyxiasLairDungeonActions.cpp').read_text(),'Unit* ai::GetAirborneOnyxia(')
 a=source.index('namespace\n{');b=source.index('bool ai::OnyxiaBreathActive(')
 fixture+=source[a:b]
@@ -144,10 +145,10 @@ fixture+=r'''
  // The same stage is rate limited, and debug-off never logs.
  assert(core.DoMovement());assert(sPlayerbotAIConfig.stages.size()==1);
  nowMs+=20000;ai.debug=false;assert(core.DoMovement());assert(sPlayerbotAIConfig.stages.size()==1);
- // An absent attacker still records the recognized warning.
- ai.debug=true;ai.context.attackers.clear();nowMs+=20000;sPlayerbotAIConfig.stages.clear();
+ // An absent engaged boss still records the recognized warning.
+ ai.debug=true;ai.context.boss=nullptr;nowMs+=20000;sPlayerbotAIConfig.stages.clear();
  assert(core.DoMovement());assert(sPlayerbotAIConfig.stages==std::vector<std::string>{"warning-no-airborne-boss"});
- std::cout<<"PASS debug gate, rate limit, off-waypoint and missing-attacker diagnostics\n";
+ std::cout<<"PASS debug gate, rate limit, off-waypoint and missing-boss diagnostics\n";
 }
 '''
 p=w/'fixture.cpp';p.write_text(fixture)

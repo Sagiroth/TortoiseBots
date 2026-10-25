@@ -110,6 +110,7 @@ struct PossibleAttackTargetsValue {
  static bool IsValid(Unit*,Player*,float,bool=false,bool=true);
  static bool IsPossibleTarget(Unit*,Player*,float,bool=false);
 };
+bool IsOnyxiaAirCombatTarget(PlayerbotAI*,Unit*){return false;}
 struct InvalidTargetValue{PlayerbotAI* ai;Player* bot;std::string qualifier="current target";bool Calculate();};
 struct FindTargetStrategy {Unit* result=nullptr;virtual ~FindTargetStrategy()=default;virtual void CheckAttacker(Unit*,ThreatManager*)=0;Unit* GetResult(){return result;}};
 struct FindNonCcTargetStrategy:FindTargetStrategy {PlayerbotAI* ai;FindNonCcTargetStrategy(PlayerbotAI* a):ai(a){}static bool IsCastingCcAt(Player*,Unit*){return false;}bool IsCcTarget(Unit*){return false;}};

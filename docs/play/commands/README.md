@@ -288,3 +288,17 @@ Both roles act only while Fankriss is fighting this group in AQ40. To disable:
 ```
 
 Remove `aoe` or `fankriss spawn focus` separately if they were enabled just for this fight.
+
+### Onyxia airborne damage recovery
+
+With `onyxia air spread`, `onyxia`, `onyxia's lair`, or `onyxia whelps` enabled,
+ranged DPS retain the engaged airborne Onyxia even if their local attacker cache
+or combat state is lost. Normal class spells and wands remain subject to their
+range, line of sight, mana and cooldown checks. Healers keep healing; melee keep
+their existing whelp duties. Stay and pull holds still prevent movement.
+
+Spell approaches use checked routes on the central floor, never a chase to her
+flight height. Deep Breath escapes take priority. The landing tank can enter
+from the west central lane (x -110 to 35, y -232 to -198), provided the entire
+navmesh route stays in that lane and clears hazards and unengaged enemies.
+A route through either whelp cave is refused.

@@ -8,6 +8,7 @@
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/strategy/ZulGurubCurePolicy.h"
 #include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
+#include "playerbot/OnyxiaAirCombat.h"
 #include "playerbot/PerformanceMonitor.h"
 #include <stdarg.h>
 #include <deque>
@@ -796,6 +797,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // postpone reacting to a raid tank's falling health. Never cancel a heal.
     TwinsEnforceOpening(this);
     UpdateOnyxiaTankOpening(this);
+    UpdateOnyxiaAirCombat(this);
     UpdateFankrissHealing(this);
     if (StopUnsafeRaidHealerFiller(this))
         SetAIInternalUpdateDelay(0);
