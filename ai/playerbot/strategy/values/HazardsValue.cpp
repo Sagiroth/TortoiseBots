@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "HazardsValue.h"
+#include "GrobbulusCloudHazards.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "Maps/PathFinder.h"
 
@@ -163,5 +164,7 @@ std::list<HazardPosition> HazardsValue::Calculate()
         SET_AI_VALUE(std::list<Hazard>, "stored hazards", storedHazards);
     }
 
+    auto clouds = GetGrobbulusCloudHazards(ai);
+    hazards.splice(hazards.end(), clouds);
     return hazards;
 }

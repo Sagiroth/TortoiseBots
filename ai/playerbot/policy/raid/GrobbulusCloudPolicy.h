@@ -27,3 +27,38 @@ inline void GrobbulusBehindSpot(float bossX, float bossY, float bossFacing,
     outY = bossY - 18.0f * std::sin(bossFacing);
 }
 } // namespace ai
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <vector>
+namespace ai
+{
+inline float GrobbulusCloudRadius(int32_t maximumMs,int32_t remainingMs)
+{
+    // Without the aura, Turtle's spell retains its DBC30yd fallback radius.
+    if (maximumMs<=0 || remainingMs<0) return 32.0f;
+    float const age=std::max(0.0f,std::min(float(maximumMs),float(maximumMs)-remainingMs));
+    float const predicted=std::min(float(maximumMs),age+3000.0f);
+    return 2.0f+18.0f*predicted/maximumMs+2.0f;
+}
+struct GrobbulusCloudCircle { float x,y,radius; };
+inline bool GrobbulusCloudContains(float x,float y,std::vector<GrobbulusCloudCircle> const& clouds)
+{
+    for (auto const& c:clouds)
+        if (std::hypot(x-c.x,y-c.y)<=c.radius) return true;
+    return false;
+}
+inline bool GrobbulusEscapeSample(float startX,float startY,float x,float y,
+    std::vector<GrobbulusCloudCircle> const& clouds)
+{
+    if (!std::isfinite(x) || !std::isfinite(y)) return false;
+    for (auto const& c:clouds)
+    {
+        float const start=std::hypot(startX-c.x,startY-c.y);
+        float const sample=std::hypot(x-c.x,y-c.y);
+        if (start>c.radius ? sample<=c.radius : sample+0.5f<start) return false;
+    }
+    return true;
+}
+}

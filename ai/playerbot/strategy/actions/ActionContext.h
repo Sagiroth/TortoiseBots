@@ -363,6 +363,7 @@ namespace ai
             creators["maexxna rescue"] = [](PlayerbotAI* ai) { return new MaexxnaRescueAction(ai); };
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatAction(ai); };
             creators["ossirian crystal click"] = [](PlayerbotAI* ai) { return new OssirianCrystalAction(ai); };
+            creators["grobbulus cloud escape"] = [](PlayerbotAI* ai) { return new GrobbulusCloudEscapeAction(ai); };
             creators["enable naxxramas strategy"] = [](PlayerbotAI* ai) { return new NaxxramasEnableDungeonStrategyAction(ai); };
             creators["disable naxxramas strategy"] = [](PlayerbotAI* ai) { return new NaxxramasDisableDungeonStrategyAction(ai); };
             creators["enable zul'gurub strategy"] = [](PlayerbotAI* ai) { return new ZulgurubEnableDungeonStrategyAction(ai); };

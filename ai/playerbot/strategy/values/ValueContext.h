@@ -1,4 +1,5 @@
 #pragma once
+#include "GrobbulusCloudHazards.h"
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/strategy/AiObjectContext.h"
 
@@ -122,6 +123,7 @@ namespace ai
             creators["craft"] = [](PlayerbotAI* ai) { return new CraftValue(ai); };
             creators["collision"] = [](PlayerbotAI* ai) { return new CollisionValue(ai); };
             creators["skip spells list"] = [](PlayerbotAI* ai) { return new SkipSpellsListValue(ai); };
+            creators["grobbulus cloud hazards"] = [](PlayerbotAI* ai) { return new GrobbulusCloudHazardsValue(ai); };
             creators["nearest game objects"] = [](PlayerbotAI* ai) { return new NearestGameObjects(ai); };
             creators["nearest game objects no los"] = [](PlayerbotAI* ai) { return new NearestGameObjects(ai, sPlayerbotAIConfig.sightDistance, LOS_IGNORE); };
             creators["nearest damaging traps"] = [](PlayerbotAI* ai) { return new NearestDamagingTrapsValue(ai); };

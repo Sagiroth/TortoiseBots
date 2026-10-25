@@ -16,3 +16,6 @@ bool LocustSwarmTrigger::IsActive()
     Unit* boss = GetActiveLocustSwarm(ai);
     return boss && LocustSwarmNeedsRetreat(bot->GetCombatDistance(boss));
 }
+
+#include "playerbot/strategy/values/GrobbulusCloudHazards.h"
+bool GrobbulusCloudTrigger::IsActive() { return InsideGrobbulusCloud(ai); }

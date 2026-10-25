@@ -276,7 +276,7 @@ float RaidBombMovementMultiplier::GetValue(Action* action)
     if (!action || !GetRaidBombAura(ai) || !RaidBombMovementAllowed(ai))
         return 1.0f;
     std::string const& name = action->getName();
-    if (name == "raid bomb runout" || name == "geddon inferno retreat" || name == "move away from hazard")
+    if (name == "raid bomb runout" || name == "geddon inferno retreat" || name == "move away from hazard" || name == "grobbulus cloud escape")
         return 1.0f;
     // Preserve the existing emergency escape from damaging ground effects.
     // The bomb action revalidates group clearance on the next reaction.

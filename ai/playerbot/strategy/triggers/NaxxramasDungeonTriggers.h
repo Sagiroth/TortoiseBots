@@ -4,6 +4,13 @@
 
 namespace ai
 {
+    class GrobbulusCloudTrigger : public Trigger
+    {
+    public:
+        GrobbulusCloudTrigger(PlayerbotAI* ai) : Trigger(ai,"grobbulus cloud nearby",1) {}
+        bool IsActive() override;
+    };
+
     class LocustSwarmTrigger : public Trigger
     {
     public:

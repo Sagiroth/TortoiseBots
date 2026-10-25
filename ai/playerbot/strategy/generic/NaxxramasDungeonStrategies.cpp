@@ -117,3 +117,32 @@ void LocustSwarmRetreatStrategy::InitReactionMultipliers(std::list<Multiplier*>&
 {
     InitCombatMultipliers(multipliers);
 }
+#include "playerbot/strategy/values/GrobbulusCloudHazards.h"
+namespace
+{
+class GrobbulusCloudMultiplier : public Multiplier
+{
+public:
+    GrobbulusCloudMultiplier(PlayerbotAI* ai) : Multiplier(ai,"grobbulus cloud movement") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || !InsideGrobbulusCloud(ai)) return 1.0f;
+        std::string const name=action->getName();
+        if (name=="grobbulus cloud escape" || name=="raid bomb runout" || name=="move away from hazard") return 1.0f;
+        return dynamic_cast<MovementAction*>(action) || dynamic_cast<CastReachTargetSpellAction*>(action) ? 0.0f : 1.0f;
+    }
+};
+}
+void GrobbulusCloudStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("grobbulus cloud nearby",
+        NextAction::array(0,new NextAction("grobbulus cloud escape",ACTION_EMERGENCY+8),nullptr)));
+}
+void GrobbulusCloudStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers) { InitCombatTriggers(triggers); }
+void GrobbulusCloudStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers) { InitCombatTriggers(triggers); }
+void GrobbulusCloudStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new GrobbulusCloudMultiplier(ai));
+}
+void GrobbulusCloudStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers) { InitCombatMultipliers(multipliers); }
+void GrobbulusCloudStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers) { InitCombatMultipliers(multipliers); }

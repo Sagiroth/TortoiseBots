@@ -7,6 +7,14 @@
 
 namespace ai
 {
+    class GrobbulusCloudEscapeAction : public MovementAction
+    {
+    public:
+        GrobbulusCloudEscapeAction(PlayerbotAI* ai) : MovementAction(ai,"grobbulus cloud escape") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
+
     Unit* GetActiveLocustSwarm(PlayerbotAI* ai);
     class LocustSwarmRetreatAction : public MovementAction
     {

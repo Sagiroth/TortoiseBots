@@ -326,6 +326,7 @@ namespace ai
             creators["maexxna rescue needed"] = [](PlayerbotAI* ai) { return new MaexxnaRescueTrigger(ai); };
             creators["locust swarm active"] = [](PlayerbotAI* ai) { return new LocustSwarmTrigger(ai); };
             creators["ossirian crystal ready"] = [](PlayerbotAI* ai) { return new OssirianCrystalTrigger(ai); };
+            creators["grobbulus cloud nearby"] = [](PlayerbotAI* ai) { return new GrobbulusCloudTrigger(ai); };
             creators["enter naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasEnterDungeonTrigger(ai); };
             creators["leave naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasLeaveDungeonTrigger(ai); };
             creators["ebonroc shadow swap needed"] = [](PlayerbotAI* ai) { return new EbonrocShadowSwapTrigger(ai); };
