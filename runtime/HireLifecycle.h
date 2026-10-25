@@ -134,6 +134,17 @@ private:
         bool stopRequested = false;
     };
 
+    enum class DismissalReason { MasterLeft, Disbanded, Removed };
+    struct PendingDismissal
+    {
+        ObjectGuid botGuid;
+        ObjectGuid masterGuid;
+        DismissalReason reason;
+    };
+    // Group hooks run inside core group iteration; never log out there.
+    void QueueDismissal(HiredRecord const& record, DismissalReason reason);
+    void DrainDismissals();
+
     void Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup = true);
     bool MasterOnline(HiredRecord const& record) const;
     // Issue #378: the record's master is online but no longer shares the
@@ -155,6 +166,7 @@ private:
     std::unordered_map<uint32_t, HiredRecord> m_hired;
     std::unordered_set<uint32_t> m_dismissing;
     std::vector<PendingDeletion> m_pendingDeletions;
+    std::vector<PendingDismissal> m_pendingDismissals;
     bool m_ledgerRecovered = false;
     time_t m_recoveryRetryAt = 0;
     uint32_t m_updateElapsedMs = 0;

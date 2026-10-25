@@ -36,6 +36,16 @@ namespace TortoiseBots
 
 namespace
 {
+// Battleground raids temporarily replace GetGroup(). Hire ownership remains
+// with the ordinary party saved by SetBattleGroundRaid, even during entry.
+Group* HireParty(Player* player)
+{
+    if (!player)
+        return nullptr;
+    Group* group = player->GetGroup();
+    return group && group->isBGGroup() ? player->GetOriginalGroup() : group;
+}
+
 // A dismissed hire's Headless session is expected to close on the next ticks.
 // One that refuses is escalated to an explicit stop request, and then
 // abandoned: the character is never deleted while it may still be live, and
@@ -148,7 +158,8 @@ bool HireLifecycle::MasterLeftGroup(HiredRecord const& record) const
     // grouped: the runtime-record watchdog owns that case, not this rule.
     // Issue #387: raid membership, not subgroup: a hire in another raid
     // subgroup still shares the master's group.
-    bool inSameGroup = !bot || !bot->IsInWorld() || !master || bot->IsInSameRaidWith(master);
+    bool inSameGroup = !bot || !bot->IsInWorld() || !master ||
+        (HireParty(bot) && HireParty(bot) == HireParty(master));
     return ShouldDismissHireOnGroupDeparture(true, masterOnline, record.everGrouped, inSameGroup,
         record.commandState);
 }
@@ -289,6 +300,51 @@ uint32_t HireLifecycle::EndCommand(ObjectGuid commanderGuid)
     return handled;
 }
 
+void HireLifecycle::QueueDismissal(HiredRecord const& record, DismissalReason reason)
+{
+    for (PendingDismissal& pending : m_pendingDismissals)
+    {
+        if (pending.botGuid == record.botGuid && pending.masterGuid == record.masterGuid)
+        {
+            // An explicit kick takes precedence over a master departure.
+            if (reason > pending.reason)
+                pending.reason = reason;
+            return;
+        }
+    }
+    m_pendingDismissals.push_back({record.botGuid, record.masterGuid, reason});
+}
+
+void HireLifecycle::DrainDismissals()
+{
+    // Callbacks raised by logout are left for the next tick. No group pointer
+    // or active-registry reference survives across a dismissal.
+    std::vector<PendingDismissal> pending;
+    pending.swap(m_pendingDismissals);
+    for (PendingDismissal const& entry : pending)
+    {
+        auto it = m_hired.find(entry.botGuid.GetCounter());
+        if (it == m_hired.end() || it->second.masterGuid != entry.masterGuid)
+            continue;
+        HiredRecord record = it->second;
+        switch (entry.reason)
+        {
+            case DismissalReason::Removed:
+                if (ShouldDismissHireOnOwnRemoval(record.commandState))
+                    Dismiss(record, "removed from group", false);
+                break;
+            case DismissalReason::Disbanded:
+                if (!record.masterOfflineSince && ShouldDismissHireOnDisband(record.commandState))
+                    Dismiss(record, "group disbanded", false);
+                break;
+            case DismissalReason::MasterLeft:
+                if (MasterLeftGroup(record))
+                    Dismiss(record, "master left the group", false);
+                break;
+        }
+    }
+}
+
 void HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup)
 {
     uint32_t botGuidLow = record.botGuid.GetCounter();
@@ -325,7 +381,7 @@ void HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool 
 
 void HireLifecycle::OnGroupMemberRemoved(Group* group, ObjectGuid guid)
 {
-    if (!group || guid.IsEmpty())
+    if (!group || group->isBGGroup() || guid.IsEmpty())
         return;
 
     // The removed member is itself a hire: the hire ends. Kicked or left by
@@ -337,7 +393,7 @@ void HireLifecycle::OnGroupMemberRemoved(Group* group, ObjectGuid guid)
         HiredRecord record = it->second;
         // A bind or unbind step moving the hire between parties is not an end.
         if (ShouldDismissHireOnOwnRemoval(record.commandState))
-            Dismiss(record, "removed from group", false);
+            QueueDismissal(record, DismissalReason::Removed);
         return;
     }
 
@@ -357,16 +413,17 @@ void HireLifecycle::OnGroupMemberRemoved(Group* group, ObjectGuid guid)
             departing.push_back(record);
     }
     for (HiredRecord const& record : departing)
-        Dismiss(record, "master left the group", false);
+        QueueDismissal(record, DismissalReason::MasterLeft);
 }
 
 void HireLifecycle::OnGroupDisband(Group* group)
 {
-    if (!group)
+    if (!group || group->isBGGroup())
         return;
     // Issue #243: The group is already being disbanded by the core, which will
-    // clean up member slots and session state. Snapshot hired members first,
-    // then dismiss without calling RemoveMember to prevent infinite Disband recursion.
+    // clean up member slots and session state. Logging out here can recursively
+    // delete that group through LeaveBattleground, even without RemoveMember.
+    // Snapshot identities and defer all dismissal work until the world update.
     std::vector<HiredRecord> departing;
     for (auto const& kv : m_hired)
     {
@@ -383,7 +440,7 @@ void HireLifecycle::OnGroupDisband(Group* group)
         // A hire held by its hirer's binding is returned by the binding's end.
         if (!ShouldDismissHireOnDisband(record.commandState))
             continue;
-        Dismiss(record, "group disbanded", false);
+        QueueDismissal(record, DismissalReason::Disbanded);
     }
 }
 
@@ -867,6 +924,7 @@ void HireLifecycle::SweepDeletions(time_t now)
 void HireLifecycle::Update(uint32_t diff)
 {
     time_t now = time(nullptr);
+    DrainDismissals();
 
     // The deletion queue is pumped on every world tick (one character per
     // pass), so a dismissed companion is gone within ticks - a kicked party of
