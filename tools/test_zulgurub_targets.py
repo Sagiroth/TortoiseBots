@@ -121,6 +121,7 @@ Unit* GetFankrissSpawnTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetAyamissLarvaTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetSkeramImageTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMaexxnaRescueTarget(PlayerbotAI*) { return nullptr; }
+Unit* GetOnyxiaRangedTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetOnyxiaWhelpTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetGroupTankTarget(PlayerbotAI*) { return tankTarget; }
 struct TargetValue {

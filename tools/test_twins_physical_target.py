@@ -175,6 +175,7 @@ Unit* GetMarliSpawnTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetThekalBalanceTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetArlokkPantherTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMaexxnaRescueTarget(PlayerbotAI*) { return nullptr; }
+Unit* GetOnyxiaRangedTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetOnyxiaWhelpTarget(PlayerbotAI*) { return nullptr; }
 '''
         fixture = world(fixture)

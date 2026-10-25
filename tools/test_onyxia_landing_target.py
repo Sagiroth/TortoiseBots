@@ -88,6 +88,7 @@ Unit* GetAssignedHuhuranTankTarget(PlayerbotAI*){return nullptr;}
 bool SelectTwinsTankTarget(PlayerbotAI*,Unit*&){return false;}
 bool SelectTwinsDpsTarget(PlayerbotAI*,Unit*&){return false;}
 bool TwinsOpeningHold(PlayerbotAI*){return false;}
+Unit* GetOnyxiaRangedTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetOnyxiaWhelpTarget(PlayerbotAI*){return nullptr;}
 bool IsNefarianAddTankOptedIn(PlayerbotAI*){return false;}
 using NefarianAddAssignment=int;

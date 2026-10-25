@@ -39,7 +39,7 @@ void OnyxiaFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // Deep Breath; the optional air-spread strategy only reduces clustering.
     triggers.push_back(new TriggerNode(
         "onyxia airborne",
-        NextAction::array(0, new NextAction("shoot", ACTION_HIGH),
+        NextAction::array(0, new NextAction("dps assist", ACTION_HIGH + 1),
                              new NextAction("raid spread", ACTION_HIGH - 1), NULL)));
 
     // Toggle (AiPlayerbot.OnyxiaWhelpsAndEggs, on by default; the triggers
@@ -100,12 +100,20 @@ public:
             name == "move away from hazard" || name == "flee" ||
             dynamic_cast<AttackAction*>(action))
             return 1.0f;
+        if(OnyxiaRangedFocusEnabled(ai) && action->GetTarget()==GetOnyxiaRangedTarget(ai) &&
+            (dynamic_cast<ReachTargetAction*>(action) || dynamic_cast<CastReachTargetSpellAction*>(action))) return 1.f;
         // Keep the spread position while airborne; ordinary range/formation
         // movement resumes on landing. Casts from this position remain legal.
         return dynamic_cast<MovementAction*>(action) || dynamic_cast<CastReachTargetSpellAction*>(action)
             ? 0.0f : 1.0f;
     }
 };
+}
+
+void OnyxiaAirSpreadStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("onyxia airborne",
+        NextAction::array(0,new NextAction("dps assist",ACTION_HIGH+1),nullptr)));
 }
 
 void OnyxiaAirSpreadStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
@@ -136,7 +144,7 @@ public:
         if (!action || !OnyxiaWhelpSupportActive(ai))
             return 1.0f;
         Unit* boss = GetAirborneOnyxia(ai);
-        if (!boss || action->GetTarget() != boss || ai->GetBot()->CanReachWithMeleeAutoAttack(boss) ||
+        if (OnyxiaRangedFocusEnabled(ai) || !boss || action->GetTarget() != boss || ai->GetBot()->CanReachWithMeleeAutoAttack(boss) ||
             dynamic_cast<AttackAction*>(action))
             return 1.0f;
         // Turtle enlarges her airborne hitbox: permit legal melee specials

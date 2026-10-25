@@ -53,6 +53,7 @@ namespace ai
         OnyxiaAirSpreadStrategy(PlayerbotAI* ai) : Strategy(ai) {}
         std::string getName() override { return "onyxia air spread"; }
     private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
         void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
         void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
         void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;

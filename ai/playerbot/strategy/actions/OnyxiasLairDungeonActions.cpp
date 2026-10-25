@@ -6,6 +6,7 @@ using namespace ai;
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/raid/OnyxiaBreathPolicy.h"
 #include "playerbot/policy/raid/OnyxiaWhelpEggPolicy.h"
+#include "playerbot/OnyxiaAirPolicy.h"
 #include "ChooseTargetActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
@@ -91,6 +92,9 @@ OnyxiaWhelpScan ai::ScanOnyxiaWhelps(PlayerbotAI* ai, Player* bot)
         }
         if (unit->GetEntry() != kOnyxianWhelpEntry)
             continue;
+        Player* victim=dynamic_cast<Player*>(unit->GetVictim());
+        if(!OnyxiaAirWhelpAllowed(ai->IsRanged(bot),victim && ai->IsHeal(victim),
+            victim && bot->GetGroup() && victim->GetGroup()==bot->GetGroup())) continue;
         const float dist = bot->GetDistance(unit);
         if (dist > kOnyxiaWhelpEngageRange)
             continue;
@@ -118,7 +122,7 @@ OnyxiaWhelpScan ai::ScanOnyxiaWhelps(PlayerbotAI* ai, Player* bot)
 
 bool ai::IsOnyxiaWhelpDuty(PlayerbotAI* ai, Player* bot)
 {
-    return IsOnyxiaWhelpHunter(bot->GetClass(), PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot));
+    return !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot);
 }
 
 std::vector<GameObject*> ai::CollectOnyxiaEggs(PlayerbotAI* ai)
@@ -190,7 +194,8 @@ float OnyxiaWhelpHoldMultiplier::GetValue(Action* action)
     if (!onWhelp || !AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty())
         return 1.0f;
     // The hold only lasts while the boss is airborne (phase 2).
-    return ScanOnyxiaWhelps(ai, bot).bossAirborne ? 0.0f : 1.0f;
+    auto scan=ScanOnyxiaWhelps(ai,bot);
+    return scan.bossAirborne && (!ai->IsRanged(bot) || scan.whelp==current) ? 0.f:1.f;
 }
 
 bool OnyxiaAvoidEggsAction::Execute(Event& event)
@@ -232,6 +237,22 @@ Unit* ai::GetAirborneOnyxia(PlayerbotAI* ai)
             return boss;
     }
     return nullptr;
+}
+
+bool ai::OnyxiaRangedFocusEnabled(PlayerbotAI* ai)
+{
+    Player* bot=ai->GetBot();
+    return ai->IsRanged(bot) && !ai->IsTank(bot) && !ai->IsHeal(bot) &&
+        (ai->HasStrategy("onyxia",BotState::BOT_STATE_COMBAT) ||
+         ai->HasStrategy("onyxia air spread",BotState::BOT_STATE_COMBAT) ||
+         ai->HasStrategy("onyxia whelps",BotState::BOT_STATE_COMBAT)) && GetAirborneOnyxia(ai);
+}
+
+Unit* ai::GetOnyxiaRangedTarget(PlayerbotAI* ai)
+{
+    if(!OnyxiaRangedFocusEnabled(ai)) return nullptr;
+    if(Unit* whelp=GetOnyxiaWhelpTarget(ai)) return whelp;
+    return GetAirborneOnyxia(ai);
 }
 
 bool ai::OnyxiaAirSpreadEnabled(PlayerbotAI* ai)
@@ -322,8 +343,8 @@ bool OnyxiaAirSpreadAction::Execute(Event& event)
 bool ai::OnyxiaWhelpSupportActive(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
-    if (!ai->HasStrategy("onyxia whelps", BotState::BOT_STATE_COMBAT) ||
-        !OnyxiaWhelpRole(ai->IsTank(bot), ai->IsRanged(bot), ai->IsHeal(bot)) || !GetAirborneOnyxia(ai))
+    if ((!ai->HasStrategy("onyxia whelps", BotState::BOT_STATE_COMBAT) && !OnyxiaRangedFocusEnabled(ai)) ||
+        (!OnyxiaWhelpRole(ai->IsTank(bot), ai->IsRanged(bot), ai->IsHeal(bot)) && !OnyxiaRangedFocusEnabled(ai)) || !GetAirborneOnyxia(ai))
         return false;
     AiObjectContext* context = ai->GetAiObjectContext();
     Unit* explicitTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "explicit attack target"));
@@ -365,6 +386,8 @@ Unit* ai::GetOnyxiaWhelpTarget(PlayerbotAI* ai)
             continue;
         Unit* victim = whelp->GetVictim();
         Player* victimPlayer = dynamic_cast<Player*>(victim);
+        if(!OnyxiaAirWhelpAllowed(ai->IsRanged(bot),victimPlayer && ai->IsHeal(victimPlayer),
+            victimPlayer && bot->GetGroup() && victimPlayer->GetGroup()==bot->GetGroup())) continue;
         bool const needsPickup = !victimPlayer || !ai->IsTank(victimPlayer);
         float const score = OnyxiaWhelpScore(ai->IsTank(bot), needsPickup, whelp == current,
             sServerFacade.getDistance2d(bot, whelp));

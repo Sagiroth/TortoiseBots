@@ -13,6 +13,11 @@ namespace ai
         return tank || (!ranged && !healer);
     }
 
+    inline bool OnyxiaAirWhelpAllowed(bool ranged, bool healerVictim, bool ownGroup)
+    {
+        return !ranged || (healerVictim && ownGroup);
+    }
+
     inline float OnyxiaWhelpScore(bool tank, bool needsPickup, bool current, float distance)
     {
         return (tank && needsPickup ? 1000.0f : 0.0f) + (current ? 10.0f : 0.0f) - distance;

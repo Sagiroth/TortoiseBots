@@ -226,3 +226,12 @@ the fixed tank spot while maintaining melee and instant warrior threat.
 The existing pull command supplies the 25-second DPS hold; no extra throttle
 is added. Movement stops on phase change, lost control or a rejected step.
 Remove the role with `.bot command TankName all -onyxia landing tank`.
+
+### Onyxia airborne damage
+
+Use `.bot strategy +onyxia air spread @ranged` and
+`.bot strategy +onyxia whelps @melee`. Ranged damage roles focus airborne
+Onyxia, peeling only for a whelp attacking a healer in their group. Melee
+handle whelps. Healers keep healing. Ranged may move into spell range instead
+of remaining at an out-of-range spread point. Deep Breath escapes retain
+priority; explicit attack orders and raid marks still override automatic targets.

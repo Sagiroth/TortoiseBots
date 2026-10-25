@@ -26,6 +26,8 @@ namespace ai
     };
 
     Unit* GetAirborneOnyxia(PlayerbotAI* ai);
+    bool OnyxiaRangedFocusEnabled(PlayerbotAI* ai);
+    Unit* GetOnyxiaRangedTarget(PlayerbotAI* ai);
     bool OnyxiaWhelpSupportActive(PlayerbotAI* ai);
     bool OnyxiaAirSpreadEnabled(PlayerbotAI* ai);
 

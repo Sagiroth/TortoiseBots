@@ -673,6 +673,9 @@ Unit* DpsTargetValue::Calculate()
     if (Unit* wrap = GetMaexxnaRescueTarget(ai))
         return wrap;
 
+    if (Unit* airborne = GetOnyxiaRangedTarget(ai))
+        return airborne;
+
     if (Unit* whelp = GetOnyxiaWhelpTarget(ai))
         return whelp;
 
@@ -766,6 +769,9 @@ Unit* DpsAoeTargetValue::Calculate()
 
     if (Unit* wrap = GetMaexxnaRescueTarget(ai))
         return wrap;
+
+    if (Unit* airborne = GetOnyxiaRangedTarget(ai))
+        return airborne;
 
     if (Unit* whelp = GetOnyxiaWhelpTarget(ai))
         return whelp;
