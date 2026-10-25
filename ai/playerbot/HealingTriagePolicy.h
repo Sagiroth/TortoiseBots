@@ -49,7 +49,7 @@ namespace ai
     inline bool FastTankHealing(HealingCandidate const& candidate, HealingBands const& bands)
     {
         return candidate.tank && candidate.inCombat && candidate.health &&
-            candidate.maxHealth && PredictedHealHealth(candidate) < bands.medium;
+            candidate.maxHealth && PredictedHealHealth(candidate) < (candidate.patchwerkAssigned ? bands.almostFull : bands.medium);
     }
 
     inline bool NeedsPartyHealing(HealingCandidate const& candidate, HealingBands const& bands)

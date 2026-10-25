@@ -852,7 +852,12 @@ bool HealPartyMemberAction::isUseful()
     heal.lowHealth = sPlayerbotAIConfig.lowHealth;
     heal.mediumHealth = sPlayerbotAIConfig.mediumHealth;
     heal.mediumMana = sPlayerbotAIConfig.mediumMana;
-    if (!ShouldStartHeal(heal))
+    // Patchwerk can remove the remaining health before a conservation delay
+    // ends. Keep the real spell mana/range checks; bypass only the waste heuristic.
+    bool const assignedDanger = target->IsPlayer() &&
+        IsPatchwerkHealingAssignment(static_cast<Player*>(target)) &&
+        target->GetHealthPercent() < sPlayerbotAIConfig.almostFullHealth;
+    if (!assignedDanger && !ShouldStartHeal(heal))
     {
         // A downrankable line still gets its cast when a cheaper rank fits
         // the wound: the gate above vetoes on the TOP rank's estimate, so a

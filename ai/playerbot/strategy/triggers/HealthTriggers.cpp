@@ -186,7 +186,7 @@ bool PartyMemberTankDangerTrigger::IsActive()
         return false;
     HealingCandidate candidate{target->GetObjectGuid().GetRawValue(), target->GetHealth(),
         target->GetMaxHealth(), 0, ai->IsTank(static_cast<Player*>(target)) || IsPatchwerkHealingAssignment(static_cast<Player*>(target)), false, false,
-        true, target->IsInCombat()};
+        true, target->IsInCombat(), IsPatchwerkHealingAssignment(static_cast<Player*>(target))};
     HealingBands const bands{float(sPlayerbotAIConfig.criticalHealth), float(sPlayerbotAIConfig.lowHealth),
         float(sPlayerbotAIConfig.mediumHealth), float(sPlayerbotAIConfig.almostFullHealth)};
     return FastTankHealing(candidate, bands);
