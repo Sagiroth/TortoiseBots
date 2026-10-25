@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "../../runtime/TemporaryPassTiming.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
@@ -795,6 +796,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // postpone reacting to a raid tank's falling health. Never cancel a heal.
     TwinsEnforceOpening(this);
     UpdateOnyxiaTankOpening(this);
+    UpdateFankrissHealing(this);
     if (StopUnsafeRaidHealerFiller(this))
         SetAIInternalUpdateDelay(0);
 

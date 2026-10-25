@@ -254,3 +254,37 @@ opening now reports the specific refusal and logs the tank's actual
 coordinates. Stage the tank in this lane, away from both whelp caves,
 then select Onyxia and retry `.bot action pull 25`. Automatic approach
 from outside this lane is not enabled.
+
+### Fankriss melee stack and web healing (opt-in)
+
+Enable these for the raid before pulling Fankriss:
+
+```text
+.bot strategy +fankriss stack @melee
+.bot strategy +aoe @melee
+.bot strategy +fankriss healing @heal
+.bot strategy +fankriss spawn focus @ranged
+```
+
+`fankriss stack` affects melee DPS only, even though `@melee` also selects tanks.
+It keeps them in melee behind Fankriss and on the boss instead of chasing spawns.
+Their ordinary class AoE rotation cleaves nearby adds; learned abilities, resources,
+cooldowns and crowd-control safety still apply. Ranged keep their spawn focus.
+Tank assignments and Mortal Wound swaps remain controlled by `fankriss tank`.
+Explicit other-target orders/marks and combat stay/follow/hold orders take precedence.
+
+`fankriss healing` keeps healers from following the raid around during this fight.
+After a web, they stop ordinary movement to heal a reachable injured ally in LOS.
+Focused healing assignments and incoming-heal accounting remain in force.
+If no useful ally is reachable, normal healing movement is allowed.
+It cannot bypass Entangle control effects, silence, spell cooldowns or insufficient mana.
+Hazard escape and forced movement remain available.
+
+Both roles act only while Fankriss is fighting this group in AQ40. To disable:
+
+```text
+.bot strategy -fankriss stack @melee
+.bot strategy -fankriss healing @heal
+```
+
+Remove `aoe` or `fankriss spawn focus` separately if they were enabled just for this fight.

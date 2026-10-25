@@ -1,3 +1,5 @@
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
+#include "playerbot/policy/raid/FankrissRaidPolicy.h"
 
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
@@ -257,6 +259,17 @@ Unit* PartyMemberToHeal::Calculate()
     // fire, and nobody gets healed at all while the healer stands there doing
     // damage. Fall back to whoever is worst off.
 
+    // Entangle can relocate the healer. Keep the existing focus/incoming-heal
+    // triage, but use a reachable injured ally before walking back across AQ.
+    if (FankrissHealingActive(ai))
+    {
+        auto reachable = [&](HealingCandidate const& candidate)
+            { return FankrissHealReachable(ai, targets.at(candidate.guid)); };
+        if (std::any_of(candidates.begin(), candidates.end(), reachable))
+            candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
+                [&](HealingCandidate const& candidate) { return !reachable(candidate); }), candidates.end());
+    }
+
     bool const canReach = ai->CanMove() && !ai->HasStrategy("stay", ai->GetState()) &&
         !bot->IsNonMeleeSpellCasted(true, false, true);
     FilterHealingLineOfSight(candidates, focused, canReach);
@@ -286,6 +299,7 @@ bool PartyMemberToHeal::Check(Unit* player)
     // heal envelope for this value.
     float maxDist = isBg ? sPlayerbotAIConfig.healDistanceBg : ai->GetRange("heal");
     maxDist *= 2.0f;
+    maxDist = FankrissHealingSearchRange(maxDist, FankrissHealingActive(ai));
 
     if (!player || player == bot || !player->IsInWorld() || !sServerFacade.IsAlive(player) ||
         player->GetMap() != bot->GetMap() || !sServerFacade.IsFriendlyTo(bot, player))

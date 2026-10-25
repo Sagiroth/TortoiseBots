@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "FankrissSpawnTarget.h"
+#include "../actions/FankrissRaidActions.h"
 #include "LeastHpTargetValue.h"
 #include "PossibleAttackTargetsValue.h"
 #include "RaidDpsTargetPolicy.h"
@@ -25,6 +26,7 @@ namespace ai
 {
     Unit* GetFankrissSpawnTarget(PlayerbotAI* ai)
     {
+        if (Unit* boss = GetFankrissStackBoss(ai)) return boss;
         Player* bot = ai ? ai->GetBot() : nullptr;
         if (!bot || bot->GetMapId() != 531 || !bot->IsAlive() || !bot->IsInCombat() || ai->IsTank(bot) ||
             !ai->HasStrategy("fankriss spawn focus", BotState::BOT_STATE_COMBAT))

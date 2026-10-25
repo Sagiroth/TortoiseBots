@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
 #pragma once
 #include "../actions/GeddonBombActions.h"
 #include "GrobbulusCloudHazards.h"
@@ -127,6 +128,7 @@ namespace ai
     public:
         ValueContext()
         {
+            creators["fankriss active boss"] = [](PlayerbotAI* ai) { return new FankrissActiveBossValue(ai); };
             creators["patchwerk soaker to shield"] = [](PlayerbotAI* ai) { return new PatchwerkSoakerShieldValue(ai); };
             creators["raid tank needs healing"] = [](PlayerbotAI* ai) { return new RaidTankHealingValue(ai); };
             creators["active spell"] = [](PlayerbotAI* ai) { return new ActiveSpellValue(ai); };

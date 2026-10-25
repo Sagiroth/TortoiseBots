@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/strategy/actions/SarturaTankActions.h"
 #pragma once
 #include "playerbot/strategy/actions/HuhuranActions.h"
@@ -118,6 +119,7 @@ namespace ai
     public:
         ActionContext()
         {
+            creators["fankriss rear stack"] = [](PlayerbotAI* ai) { return new FankrissStackAction(ai); };
             creators["cthun spread move"] = [](PlayerbotAI* ai) { return new CthunSpreadAction(ai); };
             creators["mark rti"] = [](PlayerbotAI* ai) { return new MarkRtiAction(ai); };
             creators["set return position"] = [](PlayerbotAI* ai) { return new SetReturnPositionAction(ai); };

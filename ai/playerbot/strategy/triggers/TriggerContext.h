@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/strategy/actions/SarturaTankActions.h"
 #pragma once
 #include "playerbot/strategy/actions/HuhuranActions.h"
@@ -52,6 +53,7 @@ namespace ai
     public:
         TriggerContext()
         {
+            creators["fankriss rear needed"] = [](PlayerbotAI* ai) { return new FankrissStackTrigger(ai); };
             creators["cthun sector target"] = [](PlayerbotAI* ai) { return new CthunSpreadTargetTrigger(ai); };
             creators["cthun spread needed"] = [](PlayerbotAI* ai) { return new CthunSpreadTrigger(ai); };
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnTrigger(ai); };

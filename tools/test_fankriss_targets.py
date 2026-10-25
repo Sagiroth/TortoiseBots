@@ -1,5 +1,6 @@
 """Production Fankriss selector, DPS precedence and existing retarget trigger."""
 from tools.raid_dps_fixture import tournament, world
+import os
 import pathlib
 import shutil
 import subprocess
@@ -12,7 +13,7 @@ from tools.test_nefarian_bone_target import function
 class FankrissTargetTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which('g++'), 'g++ unavailable')
     def test_encounter_target_selection_and_retargeting(self):
-        root = pathlib.Path(__file__).resolve().parents[1]
+        root = pathlib.Path(os.environ.get('FANKRISS_SOURCE', pathlib.Path(__file__).resolve().parents[1]))
         source = (root / 'ai/playerbot/strategy/values/DpsTargetValue.cpp').read_text()
         triggers = (root / 'ai/playerbot/strategy/triggers/GenericTriggers.cpp').read_text()
         spawn_source = (root / 'ai/playerbot/strategy/values/FankrissSpawnTarget.cpp').read_text()
@@ -121,6 +122,8 @@ Unit* GetViscidusGlobTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMaexxnaRescueTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetOnyxiaRangedTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetOnyxiaWhelpTarget(PlayerbotAI*) { return nullptr; }
+Unit* stackBoss=nullptr;
+Unit* GetFankrissStackBoss(PlayerbotAI*) { return stackBoss; }
 Unit* GetGroupTankTarget(PlayerbotAI*) { return tankTarget; }
 struct TargetValue {
     Unit* GetExplicitAttackTarget() { return ordered; }
@@ -152,6 +155,10 @@ int main() {
     ai.context.listReads=0;
     assert(value.Calculate()==&fankriss && ai.context.listReads==0);
     ai.strategies={"fankriss spawn focus"};
+    stackBoss=&fankriss; // scoped stack eligibility is covered in test_fankriss_raid
+    assert(GetFankrissSpawnTarget(&ai)==&fankriss); // do not leave the boss for the low-HP spawn
+    assert(value.Calculate()==&fankriss);
+    stackBoss=nullptr; // ranged/no stack: retain the original spawn priority
     assert(value.Calculate()==&low); // baseline stays on the tank boss target while timed spawns attack the raid
     ai.context.current=&fankriss; ai.context.dps=value.Calculate(); assert(trigger.IsActive());
     ordered=&fankriss; assert(value.Calculate()==ordered); ordered=nullptr;

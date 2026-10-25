@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/strategy/actions/SarturaTankActions.h"
 #pragma once
 #include "playerbot/strategy/actions/HuhuranActions.h"
@@ -94,6 +95,8 @@ namespace ai
     public:
         StrategyContext()
         {
+            creators["fankriss stack"] = [](PlayerbotAI* ai) { return new FankrissStackStrategy(ai); };
+            creators["fankriss healing"] = [](PlayerbotAI* ai) { return new FankrissHealingStrategy(ai); };
             creators["cthun spread"] = [](PlayerbotAI* ai) { return new CthunSpreadStrategy(ai); };
             creators["racials"] = [](PlayerbotAI* ai) { return new RacialsStrategy(ai); };
             creators["loot"] = [](PlayerbotAI* ai) { return new LootNonCombatStrategy(ai); };
