@@ -304,6 +304,12 @@ bool LoseAggroTrigger::IsActive()
         if(ai->IsTank(bot))
         {
             Unit* target = AI_VALUE(Unit*, "current target");
+            // An assigned Patchwerk soaker never takes the boss back: a soaker
+            // taunt keeps Patchwerk off the main tank (live logs showed aggro
+            // bouncing between the main and a soaker after a DPS pulled it).
+            if (target && target->GetEntry() == 16028 &&
+                ai->HasStrategy("patchwerk soak", BotState::BOT_STATE_COMBAT))
+                return false;
             if(target && !target->IsPlayer())
             {
                 Unit* targetsTarget = target->GetVictim();
