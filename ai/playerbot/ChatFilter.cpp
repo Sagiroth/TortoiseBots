@@ -16,6 +16,9 @@ std::string ChatFilter::Filter(std::string message, std::string filter)
     if(filter.empty())
         return message.substr(message.find(" ") + 1);
 
+    if (message == filter)
+        return "";
+
     return message.substr(message.find(filter) + filter.size() + 1);
 }
 
