@@ -85,7 +85,10 @@ bool EnemyPlayersValue::IsValid(Unit* target, Player* player)
             }
 
             // Check that the target is not a mind controlled ally
-            if (target->HasAuraType(SPELL_AURA_MOD_CHARM) || target->HasAuraType(SPELL_AURA_MOD_POSSESS))
+            // Turtle implements Chains through AOE_CHARM (177), whose handler
+            // delegates to charm without changing the stored aura type.
+            if (target->HasAuraType(SPELL_AURA_MOD_CHARM) || target->HasAuraType(SPELL_AURA_MOD_POSSESS) ||
+                (target->GetMapId() == 533 && target->HasAura(28410)))
             {
                 Player* targetPlayer = dynamic_cast<Player*>(target);
                 if (player && targetPlayer && IsInGroup_Helper(player, targetPlayer))
