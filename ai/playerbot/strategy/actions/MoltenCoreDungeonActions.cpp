@@ -67,6 +67,9 @@ bool GolemaggTankHoldAction::Execute(Event& event)
 #include "playerbot/playerbot.h"
 #include "MoltenCoreDungeonActions.h"
 #include "playerbot/policy/raid/GeddonInfernoPolicy.h"
+#include "playerbot/RaidDpsExclusionPolicy.h"
+#include "playerbot/strategy/values/RaidDpsTargetPolicy.h"
+#include "playerbot/strategy/values/RtiTargetValue.h"
 #include "playerbot/strategy/values/PositionValue.h"
 
 using namespace ai;
@@ -147,4 +150,75 @@ bool GeddonInfernoRetreatAction::Execute(Event& event)
         }
     }
     return false;
+}
+
+
+bool ai::IsRaidDpsTargetExcluded(PlayerbotAI* ai, Unit* target)
+{
+    Player* bot = ai->GetBot();
+    if (!target || !target->IsAlive() || !target->IsInMap(bot) || !bot->IsAlive() || !bot->IsInCombat())
+        return false;
+    bool const protectedEntry = target->GetEntry() == 11672;
+    bool const enabled = ai->HasStrategy("golemagg dps", BotState::BOT_STATE_COMBAT);
+    bool const inEncounterMap = bot->GetMapId() == 409;
+    bool const tank = ai->IsTank(bot);
+    if (!protectedEntry || !enabled || !inEncounterMap || tank)
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    bool ordered = AI_VALUE(ObjectGuid, "explicit attack target") == target->GetObjectGuid();
+    if (Group* group = bot->GetGroup())
+    {
+        int const mark = RtiTargetValue::GetRtiIndex(AI_VALUE(std::string, "rti"));
+        if (mark >= 0 && ObjectGuid(group->GetTargetIcon(mark)) == target->GetObjectGuid())
+            ordered = true;
+    }
+    bool encounterActive = false;
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* boss = ai->GetUnit(guid);
+        if (boss && boss->GetEntry() == 11988 && boss->IsInMap(bot) && boss->IsAlive() && boss->IsInCombat())
+        {
+            encounterActive = true;
+            break;
+        }
+    }
+    return RaidDpsTargetExcluded(enabled, inEncounterMap, tank, ordered, protectedEntry, encounterActive);
+}
+
+bool RaidDpsRetargetAction::isUseful()
+{
+    Pet* pet = bot->GetPet();
+    return IsRaidDpsTargetExcluded(ai, AI_VALUE(Unit*, "current target")) ||
+        (pet && IsRaidDpsTargetExcluded(ai, pet->GetVictim()));
+}
+
+bool RaidDpsRetargetAction::Execute(Event& event)
+{
+    bool changed = false;
+    Pet* pet = bot->GetPet();
+    if (pet && IsRaidDpsTargetExcluded(ai, pet->GetVictim()))
+    {
+        // Use the existing command path to cancel the old pet attack/movement.
+        WorldPacket data(CMSG_PET_ACTION);
+        data << pet->GetObjectGuid() << uint32((ACT_COMMAND << 24) | COMMAND_FOLLOW) << ObjectGuid();
+        bot->GetSession()->HandlePetAction(data);
+        changed = true;
+    }
+    if (IsRaidDpsTargetExcluded(ai, AI_VALUE(Unit*, "current target")))
+    {
+        Unit* excluded = AI_VALUE(Unit*, "current target");
+        // Cancel only casts aimed at the discarded enemy; do not cancel a heal.
+        for (int type = CURRENT_MELEE_SPELL; type < CURRENT_MAX_SPELL; ++type)
+            if (Spell* spell = bot->GetCurrentSpell(CurrentSpellTypes(type)))
+                if (spell->m_targets.getUnitTargetGuid() == excluded->GetObjectGuid())
+                    bot->InterruptSpell(CurrentSpellTypes(type));
+        bot->AttackStop();
+        SET_AI_VALUE(Unit*, "current target", nullptr);
+        context->GetValue<Unit*>("dps target")->Reset();
+        ai->DoSpecificAction("dps assist", event, true);
+        changed = true;
+    }
+    if (changed && pet && !IsRaidDpsTargetExcluded(ai, AI_VALUE(Unit*, "current target")))
+        ai->DoSpecificAction("pet attack", event, true);
+    return changed;
 }

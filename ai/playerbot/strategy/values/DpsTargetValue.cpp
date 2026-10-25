@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "DpsTargetValue.h"
+#include "RaidDpsTargetPolicy.h"
 #include "LeastHpTargetValue.h"
 #include "AttackersValue.h"
 #include "PossibleAttackTargetsValue.h"
@@ -142,7 +143,7 @@ namespace
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
             if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsCcTarget(attacker) ||
-                IsWastedDpsTarget(ai, attacker))
+                (IsWastedDpsTarget(ai, attacker) || IsRaidDpsTargetExcluded(ai, attacker)))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -180,7 +181,7 @@ namespace
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
             if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsCcTarget(attacker) ||
-                IsWastedDpsTarget(ai, attacker))
+                (IsWastedDpsTarget(ai, attacker) || IsRaidDpsTargetExcluded(ai, attacker)))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -210,7 +211,7 @@ namespace
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
             if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsCcTarget(attacker) ||
-                IsWastedDpsTarget(ai, attacker))
+                (IsWastedDpsTarget(ai, attacker) || IsRaidDpsTargetExcluded(ai, attacker)))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -442,7 +443,7 @@ Unit* DpsTargetValue::Calculate()
     if (Unit* tankTarget = GetGroupTankTarget(ai))
     {
         if (tankTarget != AI_VALUE(Unit*, "cc target") && !ccProbe.IsCcTarget(tankTarget) &&
-            !IsWastedDpsTarget(ai, tankTarget))
+            !IsWastedDpsTarget(ai, tankTarget) && !IsRaidDpsTargetExcluded(ai, tankTarget))
             return tankTarget;
     }
 
@@ -487,6 +488,8 @@ public:
         // Same CC-mark rule as every other picker: a protected mark is
         // skipped, a free one is a normal enemy.
         if (IsCcTarget(attacker))
+            return;
+        if (IsRaidDpsTargetExcluded(ai, attacker))
             return;
         if (!result || result->GetHealth() < attacker->GetHealth())
             result = attacker;

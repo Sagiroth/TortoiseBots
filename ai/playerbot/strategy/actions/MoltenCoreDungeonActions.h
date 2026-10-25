@@ -23,6 +23,14 @@ namespace ai
     // player movement orders permit this tactic. Does not depend on current target.
     Unit* GetActiveGeddonInferno(PlayerbotAI* ai);
 
+    class RaidDpsRetargetAction : public Action
+    {
+    public:
+        RaidDpsRetargetAction(PlayerbotAI* ai) : Action(ai, "raid dps retarget") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
+
     class GeddonInfernoRetreatAction : public MovementAction
     {
     public:

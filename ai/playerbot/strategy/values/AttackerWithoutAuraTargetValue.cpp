@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "AttackerWithoutAuraTargetValue.h"
 #include "TargetValue.h"
+#include "RaidDpsTargetPolicy.h"
 #include "playerbot/PlayerbotAIConfig.h"
 
 using namespace ai;
@@ -14,7 +15,7 @@ Unit* AttackerWithoutAuraTargetValue::Calculate()
     for (std::list<ObjectGuid>::iterator i = attackers.begin(); i != attackers.end(); ++i)
     {
         Unit* unit = ai->GetUnit(*i);
-        if (!unit || unit == target)
+        if (!unit || unit == target || IsRaidDpsTargetExcluded(ai, unit))
             continue;
 
         // DoT spreading skips a held CC mark: the DoT ticks would break

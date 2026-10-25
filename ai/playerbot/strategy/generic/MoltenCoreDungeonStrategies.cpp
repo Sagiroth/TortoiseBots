@@ -2,6 +2,8 @@
 #include "MoltenCoreDungeonStrategies.h"
 #include "DungeonMultipliers.h"
 #include "playerbot/policy/raid/GeddonInfernoPolicy.h"
+#include "playerbot/strategy/actions/AttackAction.h"
+#include "playerbot/strategy/values/RaidDpsTargetPolicy.h"
 #include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 #include "playerbot/strategy/actions/ReachTargetActions.h"
 
@@ -271,6 +273,43 @@ void GeddonInfernoStrategy::InitCombatMultipliers(std::list<Multiplier*>& multip
 }
 
 void GeddonInfernoStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}
+
+
+namespace
+{
+class RaidDpsTargetMultiplier : public Multiplier
+{
+public:
+    RaidDpsTargetMultiplier(PlayerbotAI* ai) : Multiplier(ai, "raid dps target policy") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || action->IsCrowdControlAction())
+            return 1.0f;
+        std::string const name = action->getName();
+        if (name == "attack my target" || name == "attack rti target")
+            return 1.0f;
+        bool const offensive = dynamic_cast<AttackAction*>(action) ||
+            dynamic_cast<CastSpellAction*>(action) || name == "pet attack";
+        return offensive && IsRaidDpsTargetExcluded(ai, action->GetTarget()) ? 0.0f : 1.0f;
+    }
+};
+}
+
+void GolemaggDpsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("raid dps target excluded",
+        NextAction::array(0, new NextAction("raid dps retarget", ACTION_HIGH + 5), NULL)));
+}
+
+void GolemaggDpsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new RaidDpsTargetMultiplier(ai));
+}
+
+void GolemaggDpsStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
 {
     InitCombatMultipliers(multipliers);
 }

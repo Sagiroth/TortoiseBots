@@ -42,3 +42,10 @@ bool LocalGeddonInfernoTrigger::IsActive()
     Unit* boss = GetActiveGeddonInferno(ai);
     return boss && GeddonInfernoNeedsRetreat(bot->GetCombatDistance(boss));
 }
+
+
+bool RaidDpsRetargetTrigger::IsActive()
+{
+    RaidDpsRetargetAction action(ai);
+    return action.isUseful();
+}

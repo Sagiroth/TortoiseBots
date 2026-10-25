@@ -17,6 +17,13 @@ namespace ai
         MoltenCoreLeaveDungeonTrigger(PlayerbotAI* ai) : LeaveDungeonTrigger(ai, "leave molten core", "molten core", 409) {}
     };
 
+    class RaidDpsRetargetTrigger : public Trigger
+    {
+    public:
+        RaidDpsRetargetTrigger(PlayerbotAI* ai) : Trigger(ai, "raid dps target excluded", 1) {}
+        bool IsActive() override;
+    };
+
     class LocalGeddonInfernoTrigger : public Trigger
     {
     public:

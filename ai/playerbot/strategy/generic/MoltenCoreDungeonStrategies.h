@@ -54,6 +54,18 @@ namespace ai
         void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
     };
 
+    // Opt-in DPS exclusions; tanks and explicit targets keep their assignments.
+    class GolemaggDpsStrategy : public Strategy
+    {
+    public:
+        GolemaggDpsStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "golemagg dps"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     // Explicit opt-in via "all +geddon inferno"; never added by map entry.
     class GeddonInfernoStrategy : public Strategy
     {
