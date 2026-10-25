@@ -20,13 +20,16 @@ class GroupReadyManaTest(unittest.TestCase):
 using ObjectGuid = unsigned;
 constexpr int POWER_MANA = 0;
 struct Unit {};
+struct Group {};
 struct Player : Unit {
     unsigned mana = 0, capacity = 100;
-    bool alive = true, combat = false;
+    bool alive = true, combat = false, grouped = true;
+    float health = 100;
+    Group* GetGroup() { static Group group; return grouped ? &group : nullptr; }
     float distance = 0;
     bool IsAlive() const { return alive; }
     bool IsInCombat() const { return combat; }
-    float GetHealthPercent() const { return 100; }
+    float GetHealthPercent() const { return health; }
     unsigned GetPower(int) const { return mana; }
     unsigned GetMaxPower(int) const { return capacity; }
 } member, leader;
@@ -79,6 +82,10 @@ int main() {
     assert(value.Calculate());
     members.clear();
     assert(value.Calculate());
+    members = {1}; member.alive = true; member.health = 80;
+    assert(!value.Calculate()); // Upstream grouped regeneration gate stays active.
+    leader.grouped = false;
+    assert(value.Calculate()); // Solo attacker-gated health behavior remains.
 }
 '''
         with tempfile.TemporaryDirectory(prefix="group-ready-") as folder:

@@ -60,6 +60,7 @@ struct Unit {
 struct Creature:Unit { bool IsCreature()const override{return true;} bool IsInEvadeMode(){return false;} bool IsEvadeBecauseTargetNotReachable(){return false;} };
 struct Group { ObjectGuid mark; ObjectGuid GetTargetIcon(uint8){return mark;} };
 struct Player:Unit {
+ bool los=true;bool IsWithinLOSInMap(Unit*){return los;}
  Group* group=nullptr;ObjectGuid selection{1};Group* GetGroup(){return group;}
  ObjectGuid GetSelectionGuid(){return selection;} bool IsWithinDistInMap(Unit*,float,bool=false){return true;}
  bool IsValidAttackTarget(Unit* u){return u && u->alive;} bool IsInCombat(){return true;}
@@ -162,6 +163,7 @@ int main(){
  check(targets.GetExplicitAttackTarget()==&collapsed,"revived explicit target valid");
  check(attack.IsTargetValid(&bot,&collapsed),"revived attack valid");
  check(marked.Calculate()==&collapsed,"revived skull valid");
+ bot.los=false;check(!marked.Calculate(),"upstream marked-target LOS gate retained");bot.los=true;
  bot.group=nullptr;ai.context.cached={1};FindLeastHpTargetStrategy revived(&ai);
  check(targets.FindTarget(&revived)==&collapsed,"revived cached GUID eligible");
  // Scope boundaries retain old eligibility, even at HP0 with the dynamic flag.
