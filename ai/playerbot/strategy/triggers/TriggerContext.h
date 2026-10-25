@@ -1,4 +1,5 @@
 #pragma once
+#include "../generic/CthunSpreadStrategy.h"
 #include "../actions/OnyxiaTankPositionActions.h"
 #include "../actions/GeddonBombActions.h"
 #include "../actions/KurinnaxxActions.h"
@@ -47,6 +48,7 @@ namespace ai
     public:
         TriggerContext()
         {
+            creators["cthun spread needed"] = [](PlayerbotAI* ai) { return new CthunSpreadTrigger(ai); };
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnTrigger(ai); };
             creators["sit"] = [](PlayerbotAI* ai) { return new SitTrigger(ai); };
             creators["return to stay position"] = [](PlayerbotAI* ai) { return new ReturnToStayPositionTrigger(ai); };

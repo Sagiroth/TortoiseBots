@@ -1,4 +1,5 @@
 #pragma once
+#include "generic/CthunSpreadStrategy.h"
 #include "actions/KurinnaxxActions.h"
 #include "generic/YaujFearStrategy.h"
 #include "generic/SkeramImageStrategy.h"
@@ -90,6 +91,7 @@ namespace ai
     public:
         StrategyContext()
         {
+            creators["cthun spread"] = [](PlayerbotAI* ai) { return new CthunSpreadStrategy(ai); };
             creators["racials"] = [](PlayerbotAI* ai) { return new RacialsStrategy(ai); };
             creators["loot"] = [](PlayerbotAI* ai) { return new LootNonCombatStrategy(ai); };
             creators["gather"] = [](PlayerbotAI* ai) { return new GatherStrategy(ai); };

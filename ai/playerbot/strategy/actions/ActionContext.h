@@ -1,4 +1,5 @@
 #pragma once
+#include "CthunSpreadActions.h"
 #include "OnyxiaTankPositionActions.h"
 #include "GeddonBombActions.h"
 #include "KurinnaxxActions.h"
@@ -113,6 +114,7 @@ namespace ai
     public:
         ActionContext()
         {
+            creators["cthun spread move"] = [](PlayerbotAI* ai) { return new CthunSpreadAction(ai); };
             creators["mark rti"] = [](PlayerbotAI* ai) { return new MarkRtiAction(ai); };
             creators["set return position"] = [](PlayerbotAI* ai) { return new SetReturnPositionAction(ai); };
             creators["rpg"] = [](PlayerbotAI* ai) { return new RpgAction(ai); };
