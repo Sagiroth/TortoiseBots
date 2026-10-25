@@ -2763,7 +2763,6 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
                 questRange = std::max(5000.f, questRange);
             else
                 questRange = std::min(1500.f, questRange);
-            destinationFetches.push_back({ flag, questId, questRange });
 
             if (onlyClassQuest && destinationFetches.size() > 1) //Only do class quests if we have any.
             {
@@ -2775,6 +2774,7 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
                 if (!firstQuest->GetRequiredClasses() && questTemplate->GetRequiredClasses())
                     destinationFetches = { destinationFetches.front() };
             }
+            destinationFetches.push_back({ flag, questId, questRange });
         }
     }
 
