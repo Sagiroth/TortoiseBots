@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "PartyMemberToDispel.h"
+#include "playerbot/strategy/RaidCurePolicy.h"
 
 #include "playerbot/policy/heal/DispelTargetPolicy.h"
 #include "playerbot/ServerFacade.h"
@@ -20,6 +21,9 @@ public:
     // worse is remembered as the fallback (DispelTargetPolicy.h).
     virtual bool Check(Unit* unit) override
     {
+        if (IsRaidCureInterlocked(unit->GetMapId(), unit->HasAura(MUTATING_INJECTION_SPELL_ID)))
+            return false;
+
         Pet* pet = dynamic_cast<Pet*>(unit);
         if (pet && (pet->getPetType() == MINI_PET || pet->getPetType() == SUMMON_PET))
             return false;

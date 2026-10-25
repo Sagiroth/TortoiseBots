@@ -11,6 +11,7 @@
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 #include "Database/DBCStores.h"
 #include "BotActionLog.h"
+#include "playerbot/strategy/RaidCurePolicy.h"
 
 #include <algorithm>
 #include <map>
@@ -18,6 +19,23 @@
 #include <utility>
 
 using namespace ai;
+
+namespace ai
+{
+bool CastCureSpellAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return CastSpellAction::isUseful() && target &&
+        !IsRaidCureInterlocked(target->GetMapId(), target->HasAura(MUTATING_INJECTION_SPELL_ID));
+}
+
+bool CurePartyMemberAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return CastSpellAction::isUseful() && target &&
+        !IsRaidCureInterlocked(target->GetMapId(), target->HasAura(MUTATING_INJECTION_SPELL_ID));
+}
+}
 
 namespace
 {
