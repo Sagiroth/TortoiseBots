@@ -25,6 +25,7 @@ namespace ai
         bool pet;
         bool incomingHeal;
         bool inLos = true;
+        bool inCombat = false;
     };
 
     inline float PredictedHealHealth(HealingCandidate const& candidate)
@@ -34,6 +35,20 @@ namespace ai
         auto const remaining = candidate.incomingDamage >= candidate.health
             ? 0 : candidate.health - candidate.incomingDamage;
         return 100.0f * remaining / candidate.maxHealth;
+    }
+
+    // Combat tank health is a conservative urgency signal, not a damage-rate
+    // estimate. Include assigned soakers: Hateful Strike does not set a victim.
+    inline bool TankHealingDanger(HealingCandidate const& candidate, HealingBands const& bands)
+    {
+        return candidate.tank && candidate.inCombat && candidate.health &&
+            candidate.maxHealth && PredictedHealHealth(candidate) < bands.low;
+    }
+
+    inline bool FastTankHealing(HealingCandidate const& candidate, HealingBands const& bands)
+    {
+        return candidate.tank && candidate.inCombat && candidate.health &&
+            candidate.maxHealth && PredictedHealHealth(candidate) < bands.medium;
     }
 
     inline bool NeedsPartyHealing(HealingCandidate const& candidate, HealingBands const& bands)
@@ -69,6 +84,10 @@ namespace ai
     inline bool HealingPriority(HealingCandidate const& left, HealingCandidate const& right,
                                 HealingBands const& bands)
     {
+        bool const leftDanger = TankHealingDanger(left, bands);
+        bool const rightDanger = TankHealingDanger(right, bands);
+        if (leftDanger != rightDanger)
+            return leftDanger;
         unsigned const leftBand = HealingUrgency(left, bands);
         unsigned const rightBand = HealingUrgency(right, bands);
         if (leftBand != rightBand)
@@ -100,7 +119,8 @@ namespace ai
         unsigned const urgency = HealingUrgency(candidates.front(), bands);
         std::size_t count = 1;
         while (count < candidates.size() && HealingUrgency(candidates[count], bands) == urgency &&
-               candidates[count].inLos == candidates.front().inLos)
+               candidates[count].inLos == candidates.front().inLos &&
+               TankHealingDanger(candidates[count], bands) == TankHealingDanger(candidates.front(), bands))
             ++count;
         return healerOrdinal % count;
     }

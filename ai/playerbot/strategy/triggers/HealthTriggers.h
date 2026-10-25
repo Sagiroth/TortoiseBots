@@ -81,6 +81,14 @@ namespace ai
         virtual std::string GetTargetName() override { return "party member to heal"; }
     };
 
+    class PartyMemberTankDangerTrigger : public Trigger
+    {
+    public:
+        PartyMemberTankDangerTrigger(PlayerbotAI* ai) : Trigger(ai, "party member tank danger", 1) {}
+        std::string GetTargetName() override { return "party member to heal"; }
+        bool IsActive() override;
+    };
+
     class PartyMemberCriticalHealthTrigger : public PartyMemberLowHealthTrigger
     {
     public:

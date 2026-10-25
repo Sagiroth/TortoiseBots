@@ -79,5 +79,15 @@ int main()
     CHECK(HealingPriority(caster, equal, bands)); // reproducible tie, not roster insertion order
     CHECK(!HealingPriority(equal, caster, bands));
     CHECK(!HealingPriority(caster, caster, bands));
+    tank = {1, 69, 100, 0, true, false, false, true, true};
+    CHECK(FastTankHealing(tank, bands));
+    CHECK(!TankHealingDanger(tank, bands));
+    tank.health = 70; CHECK(!FastTankHealing(tank, bands));
+    tank.health = 49; CHECK(TankHealingDanger(tank, bands));
+    tank.health = 50; CHECK(!TankHealingDanger(tank, bands));
+    tank.inCombat = false; CHECK(!FastTankHealing(tank, bands));
+    tank.inCombat = true; tank.tank = false; CHECK(!FastTankHealing(tank, bands));
+    tank.tank = true; tank.health = 0; CHECK(!FastTankHealing(tank, bands));
+    tank.health = 40; tank.maxHealth = 0; CHECK(!FastTankHealing(tank, bands));
     std::cout << "healing triage policy: OK\n";
 }

@@ -205,7 +205,7 @@ Unit* PartyMemberToHeal::Calculate()
         HealingCandidate candidate{target->GetObjectGuid().GetRawValue(), creditedHealth,
             target->GetMaxHealth(), preHealing ? getIncomingdamage(target) : 0,
             tank, pet, false,
-            sServerFacade.IsWithinLOSInMap(bot, target)};
+            sServerFacade.IsWithinLOSInMap(bot, target), target->IsInCombat()};
         if (NeedsPartyHealing(candidate, bands) && targets.emplace(candidate.guid, target).second)
             candidates.push_back(candidate);
     };

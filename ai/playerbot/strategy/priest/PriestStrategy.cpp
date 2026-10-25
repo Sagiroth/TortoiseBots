@@ -92,6 +92,11 @@ void PriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     ClassStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "party member tank danger",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_CRITICAL_HEAL + 1),
+                             new NextAction("flash heal on party", ACTION_CRITICAL_HEAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "critical health",
         NextAction::array(0, new NextAction("desperate prayer", ACTION_EMERGENCY), NULL)));
 
@@ -148,6 +153,12 @@ void PriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 void PriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitNonCombatTriggers(triggers);
+
+    // The patient can be in combat before the healer's first helpful cast.
+    triggers.push_back(new TriggerNode(
+        "party member tank danger",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_CRITICAL_HEAL + 1),
+                             new NextAction("flash heal on party", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member dead",

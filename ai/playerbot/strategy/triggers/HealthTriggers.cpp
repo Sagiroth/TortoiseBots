@@ -4,6 +4,7 @@
 #include "playerbot/policy/heal/HealingCastPolicy.h"
 #include "playerbot/policy/heal/GroupHealPolicy.h"
 #include "playerbot/GroupMembers.h"
+#include "playerbot/HealingTriagePolicy.h"
 
 using namespace ai;
 
@@ -173,4 +174,19 @@ bool HealTargetFullHealthTrigger::IsActive()
         ai->TellPlayerNoFacing(GetMaster(), msg);
     }
     return true;
+}
+
+// React before the ordinary critical-health tier; a long heal can be too late
+// after the next tank swing. Spell actions retain mana/range/Weakened Soul checks.
+bool PartyMemberTankDangerTrigger::IsActive()
+{
+    Unit* target = GetTarget();
+    if (!target || !target->IsPlayer() || !target->IsAlive())
+        return false;
+    HealingCandidate candidate{target->GetObjectGuid().GetRawValue(), target->GetHealth(),
+        target->GetMaxHealth(), 0, ai->IsTank(static_cast<Player*>(target)), false, false,
+        true, target->IsInCombat()};
+    HealingBands const bands{float(sPlayerbotAIConfig.criticalHealth), float(sPlayerbotAIConfig.lowHealth),
+        float(sPlayerbotAIConfig.mediumHealth), float(sPlayerbotAIConfig.almostFullHealth)};
+    return FastTankHealing(candidate, bands);
 }
