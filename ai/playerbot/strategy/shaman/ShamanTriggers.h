@@ -353,7 +353,9 @@ namespace ai
 
             Unit* target = AI_VALUE(Unit*, "current target");
             uint32 spellId = AI_VALUE2(uint32, "spell id", "tremor totem");
-            return target && IsRaidFearEncounter(bot->GetMapId(), target->GetEntry()) && spellId &&
+            return target && (IsRaidFearEncounter(bot->GetMapId(), target->GetEntry()) ||
+                (bot->GetMapId() == 531 && target->GetEntry() == 15543 &&
+                 ai->HasStrategy("yauj fear", BotState::BOT_STATE_COMBAT))) && spellId &&
                 !AI_VALUE2(bool, "has totem", "tremor totem") && sServerFacade.IsSpellReady(bot, spellId);
         }
     };

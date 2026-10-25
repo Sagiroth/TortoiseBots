@@ -1,5 +1,6 @@
 #pragma once
 #include "actions/KurinnaxxActions.h"
+#include "generic/YaujFearStrategy.h"
 #include "generic/SkeramImageStrategy.h"
 #include "generic/SarturaWhirlwindStrategy.h"
 #include "generic/FankrissStrategy.h"
@@ -187,6 +188,7 @@ namespace ai
 
             creators["mimic consumables"] = [](PlayerbotAI* ai) { return new MimicConsumableStrategy(ai); };
             creators["sartura whirlwind"] = [](PlayerbotAI* ai) { return new SarturaWhirlwindStrategy(ai); };
+            creators["yauj fear"] = [](PlayerbotAI* ai) { return new YaujFearStrategy(ai); };
             creators["skeram image focus"] = [](PlayerbotAI* ai) { return new SkeramImageStrategy(ai); };
             creators["fankriss spawn focus"] = [](PlayerbotAI* ai) { return new FankrissSpawnStrategy(ai); };
             creators["arlokk panther focus"] = [](PlayerbotAI* ai) { return new ArlokkPantherStrategy(ai); };
