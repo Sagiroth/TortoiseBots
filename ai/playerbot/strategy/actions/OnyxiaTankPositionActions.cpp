@@ -1,6 +1,8 @@
 #include "playerbot/playerbot.h"
 #include "OnyxiaTankPositionActions.h"
 #include "ReachTargetActions.h"
+#include "playerbot/strategy/generic/PullStrategy.h"
+#include "Movement/spline/MoveSpline.h"
 #include "playerbot/OnyxiaTankPositionPolicy.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/LastMovementValue.h"
@@ -13,9 +15,14 @@ Unit* ai::GetOnyxiaTankPositionTarget(PlayerbotAI* ai)
 {
     Player* bot = ai ? ai->GetBot() : nullptr;
     if (!bot || bot->GetMapId() != 249 || !bot->IsInWorld() || !bot->IsAlive() ||
-        bot->IsBeingTeleported() || !bot->IsInCombat() || !ai->IsTank(bot) ||
+        bot->IsBeingTeleported() || !ai->IsTank(bot) ||
         !ai->HasStrategy("onyxia landing tank", BotState::BOT_STATE_COMBAT))
         return nullptr;
+    auto* pull=PullStrategy::Get(ai);
+    Unit* ordered=pull && pull->IsCommandActive() && !pull->IsCommandPullback() ? pull->GetTarget():nullptr;
+    if(ordered && ordered->GetEntry()==10184 && ordered->IsAlive() && ordered->IsInMap(bot) &&
+        !ordered->IsFlying() && !ordered->HasAura(17131)) return ordered;
+    if(!bot->IsInCombat()) return nullptr;
     AiObjectContext* context = ai->GetAiObjectContext();
     PositionMap& positions = AI_VALUE(PositionMap&, "position");
     auto hold = positions.find("pull hold");
@@ -46,7 +53,7 @@ Unit* ai::GetOnyxiaTankPositionTarget(PlayerbotAI* ai)
 
 bool OnyxiaTankPositionAction::isUseful()
 {
-    if (!MovementAction::isUseful() || !GetOnyxiaTankPositionTarget(ai)) return false;
+    if (active || !MovementAction::isUseful() || !GetOnyxiaTankPositionTarget(ai)) return false;
     OnyxiaTankPoint const here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
     return OnyxiaTankDistance(here, kOnyxiaTankSpot) > 1.5f || !bot->IsStopped() ||
         bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE;
@@ -54,7 +61,8 @@ bool OnyxiaTankPositionAction::isUseful()
 
 bool OnyxiaTankPositionAction::Execute(Event& /*event*/)
 {
-    if (!GetOnyxiaTankPositionTarget(ai) || !ai->CanMove() || bot->GetTransport() || bot->IsTaxiFlying())
+    Unit* boss=GetOnyxiaTankPositionTarget(ai);
+    if (active || !boss || !ai->CanMove() || bot->GetTransport() || bot->IsTaxiFlying())
         return false;
     WorldPosition const start(bot);
     OnyxiaTankPoint const here{start.getX(), start.getY(), start.getZ()};
@@ -79,20 +87,22 @@ bool OnyxiaTankPositionAction::Execute(Event& /*event*/)
         SetDuration(1000);
         return false;
     };
-    WorldPosition destination(bot->GetMapId(), kOnyxiaTankSpot.x, kOnyxiaTankSpot.y, kOnyxiaTankSpot.z);
+    crossing=!crossed && here.x<boss->GetPositionX()+3.f && boss->GetPositionX()+4.f<kOnyxiaTankSpot.x;
+    OnyxiaTankPoint goal=crossing ? OnyxiaTankPoint{boss->GetPositionX()+4.f,boss->GetPositionY(),boss->GetPositionZ()}:kOnyxiaTankSpot;
+    WorldPosition destination(bot->GetMapId(), goal.x,goal.y,goal.z);
     destination.setZ(destination.GetHeight());
     OnyxiaTankPoint const end{destination.getX(), destination.getY(), destination.getZ()};
     if (!OnyxiaTankCorridor(here) || !OnyxiaTankCorridor(end) ||
-        OnyxiaTankDistance(end, kOnyxiaTankSpot) > 1.5f) return fail();
+        OnyxiaTankDistance(end, goal) > 1.5f) return fail();
     std::vector<WorldPosition> const path = start.GetPathTo(destination, bot);
     std::vector<OnyxiaTankPoint> route;
     for (auto const& point : path) route.push_back({point.getX(), point.getY(), point.getZ()});
-    if (!OnyxiaTankRouteSafe(here, route) || !destination.isPathTo(path, 1.0f, 1.0f)) return fail();
+    if (!OnyxiaTankRouteSafe(here, route, end) || !destination.isPathTo(path, 1.0f, 1.0f)) return fail();
     auto hazards = AI_VALUE(std::list<HazardPosition>, "hazards");
     for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets no los"))
     {
         Unit* unit = ai->GetUnit(guid);
-        if (unit && unit->IsAlive() && unit->IsInMap(bot) && !unit->IsInCombat())
+        if (unit && unit->IsAlive() && unit->IsInMap(bot) && unit!=boss && !unit->IsInCombat())
             hazards.emplace_back(WorldPosition(unit), sPlayerbotAIConfig.aggroDistance);
     }
     WorldPosition previous = start;
@@ -111,16 +121,84 @@ bool OnyxiaTankPositionAction::Execute(Event& /*event*/)
         previous = point;
     }
     ai->StopMoving();
-    bot->InterruptNonMeleeSpells(false);
-    Movement::MoveSplineInit init(*bot, "OnyxiaTankPosition");
-    init.MovebyPath(WorldPosition().toPointsArray(path));
-    init.SetWalk(false);
-    if (!init.Launch()) return fail();
+    openingPath=path;waypoint=1;active=true;awaiting=false;lastUpdate=WorldTimer::getMSTime();
     AI_VALUE(LastMovement&, "last movement").lastPath.clear();
     ClearIdleState();
     blockedReported = false;
-    SetDuration(500);
+    SetDuration(100);
     return true;
+}
+
+void ai::UpdateOnyxiaTankOpening(PlayerbotAI* ai)
+{
+    if(ai->GetBot()->GetMapId()!=249) return;
+    auto* action=dynamic_cast<OnyxiaTankPositionAction*>(ai->GetAiObjectContext()->GetAction("onyxia tank position"));
+    if(action) action->Update();
+}
+
+void OnyxiaTankPositionAction::Update()
+{
+    Unit* boss=GetOnyxiaTankPositionTarget(ai);
+    if(!boss || !ai->CanMove() || bot->GetTransport() || bot->IsTaxiFlying() || bot->IsFalling())
+    {
+        if(active && bot->movespline->Finalized()) ai->StopMoving();
+        active=false;awaiting=false;crossed=false;return;
+    }
+    uint32 now=WorldTimer::getMSTime();
+    if(uint32(now-lastUpdate)<100) return;
+    uint32 elapsed=now-lastUpdate;lastUpdate=now;
+    SET_AI_VALUE(Unit*,"current target",boss);bot->SetSelectionGuid(boss->GetObjectGuid());
+    bot->Attack(boss,true);
+    if(bot->GetClass()==CLASS_WARRIOR)
+    {
+        if(!ai->HasAura("defensive stance",bot) && ai->CanCastSpell("defensive stance",bot))
+            ai->CastSpell("defensive stance",bot);
+        else if(bot->CanReachWithMeleeAutoAttack(boss))
+        {
+            // Heroic Strike spends the next white swing's rage generation.
+            // Reserve it for surplus rage while instant threat is established.
+            for(char const* spell:{"shield slam","revenge","sunder armor"})
+                if(ai->CanCastSpell(spell,boss) && ai->CastSpell(spell,boss)) break;
+            if(bot->GetPower(POWER_RAGE)>=600 && ai->CanCastSpell("heroic strike",boss)) ai->CastSpell("heroic strike",boss);
+        }
+    }
+    if(!active) return;
+    if(!bot->movespline->Finalized()) {active=false;awaiting=false;return;}
+    WorldPosition here(bot);
+    if(awaiting)
+    {
+        if(here.distance(expected)>.15f)
+        {
+            if(uint32(now-sentAt)>1000)
+            {ai->StopMoving();active=false;awaiting=false;sPlayerbotAIConfig.logEvent(ai,"OnyxiaTankPositionBlocked","movement packet not accepted","retry from current position");}
+            return;
+        }
+        awaiting=false;
+    }
+    while(waypoint<openingPath.size() && here.distance(openingPath[waypoint])<.1f) ++waypoint;
+    if(waypoint==openingPath.size())
+    {ai->StopMoving();active=false;crossed=true;return;}
+    auto const& next=openingPath[waypoint];
+    auto step=OnyxiaOpeningStep({here.getX(),here.getY(),here.getZ()},{next.getX(),next.getY(),next.getZ()},
+        bot->GetSpeed(crossing ? MOVE_RUN:MOVE_RUN_BACK),elapsed);
+    WorldPosition point(249,step.x,step.y,step.z);
+    if(!IsMovingAllowed(249,step.x,step.y,step.z) || IsHazardNearPosition(point))
+    {ai->StopMoving();active=false;return;}
+    float facing=crossing ? std::atan2(next.getY()-here.getY(),next.getX()-here.getX()):
+        std::atan2(boss->GetPositionY()-step.y,boss->GetPositionX()-step.x);
+    if(facing<0) facing+=2*M_PI_F;
+    MovementInfo movement=bot->m_movementInfo;
+    movement.RemoveMovementFlag(MOVEFLAG_MASK_MOVING | MOVEFLAG_SPLINE_ENABLED);
+    movement.AddMovementFlag(crossing ? MOVEFLAG_FORWARD:MOVEFLAG_BACKWARD);
+    movement.ChangePosition(step.x,step.y,step.z,facing);
+    // MovementInfo::Write serializes stime into the incoming ctime slot.
+    // Zero disables core extrapolation beyond our validated, paced step.
+    movement.stime=0;movement.ctime=0;
+    // QueuePacket's copy constructor drops receive time; movement packets
+    // require a fresh timestamp to pass the core's move-reject gate.
+    auto* packet=new WorldPacket(MSG_MOVE_HEARTBEAT);
+    *packet<<movement;packet->FillPacketTime(now);bot->GetSession()->QueuePacket(packet);
+    expected=point;sentAt=now;awaiting=true;
 }
 
 float OnyxiaTankPositionMultiplier::GetValue(Action* action)

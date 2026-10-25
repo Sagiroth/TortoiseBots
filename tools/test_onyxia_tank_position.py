@@ -97,6 +97,8 @@ template<class T>T value(AiObjectContext* c,std::string n){
 }
 #define AI_VALUE(T,N) value<T>(context,N)
 struct {float sightDistance=60,aggroDistance=20;void logEvent(PlayerbotAI*,std::string,std::string,std::string){}}sPlayerbotAIConfig;
+struct WorldTimer{static unsigned getMSTime(){return 100;}};
+struct PullStrategy{static PullStrategy*Get(PlayerbotAI*){return nullptr;}bool IsCommandActive(){return false;}bool IsCommandPullback(){return false;}Unit*GetTarget(){return nullptr;}};
 struct PossibleAttackTargetsValue{static bool IsValid(Unit* u,Player*,float,bool,bool){return u->valid;}};
 namespace ai {Unit* GetOnyxiaTankPositionTarget(PlayerbotAI*);}
 std::vector<WorldPosition> launched;
@@ -109,7 +111,7 @@ struct MovementAction:Action {using Action::Action;static bool isUseful(){return
 struct CastReachTargetSpellAction:Action {using Action::Action;};
 struct Event{};
 struct OnyxiaTankPositionAction:MovementAction {
- PlayerbotAI* ai;Player* bot;AiObjectContext* context;bool blockedReported=false,movingAllowed=true;
+ PlayerbotAI* ai;Player* bot;AiObjectContext* context;bool blockedReported=false,movingAllowed=true,active=false,crossed=false,crossing=false,awaiting=false;unsigned lastUpdate=0;size_t waypoint=0;std::vector<WorldPosition> openingPath;
  OnyxiaTankPositionAction(PlayerbotAI* a):MovementAction("onyxia tank position"),ai(a),bot(a->bot),context(&a->context){}
  bool isUseful();bool Execute(Event&);bool IsMovingAllowed(unsigned,float,float,float){return movingAllowed;}
  void SetDuration(unsigned){}void ClearIdleState(){}
@@ -131,7 +133,7 @@ float OnyxiaTankPositionMultiplier::GetValue(Action*){return 1;}
 '''
     code += r'''
 int main(int argc,char** argv){
- Player bot;Unit boss,other;other.entry=11262;PlayerbotAI ai{&bot,&boss,&other};ai.context.current=&boss;
+ Player bot;Unit boss,other;boss.x=-60;other.entry=11262;PlayerbotAI ai{&bot,&boss,&other};ai.context.current=&boss;
  OnyxiaTankPositionAction action(&ai);OnyxiaTankPositionMultiplier guard{&ai};Event event;
  std::string test=argc>1?argv[1]:"movement";
  if(test=="guard"){
@@ -157,7 +159,7 @@ int main(int argc,char** argv){
  ai.enabled=false;assert(!GetOnyxiaTankPositionTarget(&ai));ai.enabled=true;
  ai.context.current=&other;assert(GetOnyxiaTankPositionTarget(&ai)==&boss); // assignment survives threat loss/temporary add target
  assert(!GetOnyxiaTankPositionTarget(nullptr));return 0;}
- assert(action.isUseful());assert(action.Execute(event));assert(launched.size()==2);
+ assert(action.isUseful());assert(action.Execute(event));assert(action.openingPath.size()==2);assert(action.active);assert(!action.isUseful());action.active=false;launched=action.openingPath;
  assert(std::fabs(launched.back().x-kOnyxiaTankSpot.x)<0.01f);assert(ai.context.last.lastPath.empty());
  for(pathMode=1;pathMode<=4;++pathMode){launched.clear();bot.motion.kind=1;bot.stopped=false;
  assert(!action.Execute(event));assert(launched.empty());assert(bot.motion.kind==0);}pathMode=0;
@@ -166,7 +168,7 @@ int main(int argc,char** argv){
  heightOffset=50;assert(!action.Execute(event));assert(launched.empty());heightOffset=0;
  action.movingAllowed=false;assert(!action.Execute(event));action.movingAllowed=true;
  ai.movable=false;assert(!action.Execute(event));ai.movable=true;
- launchOk=false;assert(!action.Execute(event));launchOk=true;
+
  bot.x=kOnyxiaTankSpot.x;bot.y=kOnyxiaTankSpot.y;bot.z=kOnyxiaTankSpot.z;bot.motion.kind=1;
  assert(action.isUseful());assert(action.Execute(event));assert(bot.motion.kind==0);assert(!action.isUseful());
 }

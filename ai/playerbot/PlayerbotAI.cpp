@@ -1,6 +1,7 @@
 #include "../../runtime/TemporaryPassTiming.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/OnyxiaTankPositionActions.h"
 #include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "playerbot/RaidTankHealing.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
@@ -793,6 +794,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // Interrupt only offensive filler, before a long cast/action delay can
     // postpone reacting to a raid tank's falling health. Never cancel a heal.
     TwinsEnforceOpening(this);
+    UpdateOnyxiaTankOpening(this);
     if (StopUnsafeRaidHealerFiller(this))
         SetAIInternalUpdateDelay(0);
 

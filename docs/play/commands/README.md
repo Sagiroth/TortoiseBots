@@ -216,3 +216,13 @@ Huhuran opt-in assignments: `all +huhuran tank` keeps a configured tank building
 boss threat without automatic taunts; `all +huhuran ranged` gives a non-soaking
 ranged DPS/healer bounded spacing outside the close group. Remove with the
 corresponding `all -...` command. See [Huhuran setup and limits](../local-companion-controls.md#huhuran-threat-tanks-and-ranged-spacing-opt-in).
+
+### Onyxia opening tank
+
+Assign exactly one tank with `.bot command TankName all +onyxia landing tank`
+and `.bot role TankName tank`. Select Onyxia, then `.bot action pull 25`.
+The assigned tank runs through her in the central corridor, then backs toward
+the fixed tank spot while maintaining melee and instant warrior threat.
+The existing pull command supplies the 25-second DPS hold; no extra throttle
+is added. Movement stops on phase change, lost control or a rejected step.
+Remove the role with `.bot command TankName all -onyxia landing tank`.

@@ -87,6 +87,7 @@ HandleMatureCommand(&h,"Example co ?");assert(brain.queued);}
 #include <cassert>
 constexpr int ACTION_EMERGENCY=100,ACTION_INTERRUPT=50;
 struct Action{std::string name;std::string getName(){return name;}int getRelevance(){return 0;}};
+bool GetOnyxiaTankPositionTarget(int*){return false;}
 bool assigned=true;bool TwinsOpeningTank(int*){return assigned;}
 struct PullStrategy{static const PullStrategy*Get(int*){static PullStrategy s;return &s;}bool GetBossOpeningTarget()const{return false;}bool HasTarget()const{return true;}};
 struct PullMultiplier{int*ai=nullptr;float GetValue(Action*);};
@@ -102,7 +103,7 @@ assert(m.GetValue(&ordinary)==0);assigned=false;assert(m.GetValue(&engage)==0);}
 #include <string>
 #include <cassert>
 using uint8=unsigned char;
-struct PlayerbotAI;struct Player{unsigned entry=0;PlayerbotAI*brain=nullptr;unsigned GetEntry(){return entry;}};
+struct PlayerbotAI;struct Player{unsigned entry=0;PlayerbotAI*brain=nullptr;unsigned GetEntry(){return entry;}unsigned GetMapId(){return 531;}};
 enum class BotState{BOT_STATE_COMBAT,BOT_STATE_NON_COMBAT};constexpr int BOT_ROLE_TANK=1;
 struct PlayerbotAI{unsigned assigned=0;bool HasStrategy(const char*,BotState){return false;}int GetForcedRole(){return 1;}};
 struct PlayerbotAIStorage{static PlayerbotAIStorage&Instance(){static PlayerbotAIStorage s;return s;}PlayerbotAI*GetAI(Player*p){return p->brain;}};
@@ -121,7 +122,7 @@ lockAI.assigned=0;assert(!ResolvePullExecutor(c,true));configured=false;assert(R
 #include "playerbot/TwinsTeleportPolicy.h"
 #include <cassert>
 using namespace ai;
-struct Unit{unsigned entry=15275;unsigned GetEntry(){return entry;}};
+struct Unit{unsigned entry=15275;unsigned GetEntry(){return entry;}unsigned GetMapId(){return 531;}};
 struct PlayerbotAI{Unit bot,physical{15275},caster{15276};bool tank=false,heal=false;unsigned entry=0,damage=0;int side=0;Unit*local=nullptr;
 Unit*GetBot(){return &bot;}bool IsTank(Unit*){return tank;}bool IsHeal(Unit*){return heal;}};
 TwinsTeleportState state;bool controlled=true,ordered=false;

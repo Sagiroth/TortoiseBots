@@ -1,5 +1,6 @@
 #pragma once
 #include <cmath>
+#include <algorithm>
 #include <vector>
 
 namespace ai
@@ -23,11 +24,11 @@ inline bool OnyxiaTankCorridor(OnyxiaTankPoint p)
         p.z >= -94.0f && p.z <= -80.0f;
 }
 
-inline bool OnyxiaTankRouteSafe(OnyxiaTankPoint start, std::vector<OnyxiaTankPoint> const& path)
+inline bool OnyxiaTankRouteSafe(OnyxiaTankPoint start, std::vector<OnyxiaTankPoint> const& path, OnyxiaTankPoint destination = kOnyxiaTankSpot)
 {
     if (!OnyxiaTankCorridor(start) || path.size() < 2 ||
         OnyxiaTankDistance(start, path.front()) > 2.0f ||
-        OnyxiaTankDistance(kOnyxiaTankSpot, path.back()) > 1.5f)
+        OnyxiaTankDistance(destination, path.back()) > 1.5f)
         return false;
     float length = 0.0f;
     auto previous = start;
@@ -38,5 +39,12 @@ inline bool OnyxiaTankRouteSafe(OnyxiaTankPoint start, std::vector<OnyxiaTankPoi
         previous = point;
     }
     return length <= 120.0f;
+}
+inline OnyxiaTankPoint OnyxiaOpeningStep(OnyxiaTankPoint here, OnyxiaTankPoint next, float speed, unsigned elapsed)
+{
+    float distance=OnyxiaTankDistance(here,next);
+    float budget=std::max(0.f,speed)*std::min(elapsed,200u)/1000.f;
+    float fraction=distance>.01f ? std::min(1.f,budget/distance):1.f;
+    return {here.x+(next.x-here.x)*fraction,here.y+(next.y-here.y)*fraction,here.z+(next.z-here.z)*fraction};
 }
 }

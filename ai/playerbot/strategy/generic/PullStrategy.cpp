@@ -8,6 +8,7 @@
 #include "playerbot/WorldPosition.h"
 #include "playerbot/policy/pull/PullReachPolicy.h"
 #include "PullStrategy.h"
+#include "playerbot/strategy/actions/OnyxiaTankPositionActions.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 
 using namespace ai;
@@ -677,6 +678,13 @@ void PullStrategy::DecideOpening(Unit* target)
 }
 float PullMultiplier::GetValue(Action* action)
 {
+    if(GetOnyxiaTankPositionTarget(ai))
+    {
+        std::string name=action->getName();
+        if(name=="onyxia tank position" || name=="onyxia landing attack" || name=="defensive stance" ||
+            name=="melee" || name=="shield slam" || name=="revenge" || name=="sunder armor" || name=="heroic strike") return 1.f;
+        if(name=="reach pull" || name=="pull action") return 0.f;
+    }
     if (TwinsOpeningTank(ai) && (action->getName()=="twins position" ||
         action->getName()=="twins engage" || action->getName()=="twins searing pain" ||
         action->getName()=="defensive stance")) return 1.0f;

@@ -339,6 +339,15 @@ Player* ResolvePullExecutor(BotCommandContext const& context, bool allowSelected
     if (!context.requester || !context.enemyTarget)
         return nullptr;
 
+    if(context.enemyTarget->GetEntry()==10184 && context.enemyTarget->GetMapId()==249)
+    {
+        bool assigned=false;
+        for(Player* bot:context.partyBots)
+            if(auto* peer=PlayerbotAIStorage::Instance().GetAI(bot))
+                if(peer->HasStrategy("onyxia landing tank",BotState::BOT_STATE_COMBAT))
+                {assigned=true;if(IsPullCandidate(context.requester,bot)) return bot;}
+        if(assigned) return nullptr;
+    }
     bool twinsControlled=false;
     if(context.enemyTarget->GetEntry()==15275 || context.enemyTarget->GetEntry()==15276)
         for(Player* member:context.partyBots)
