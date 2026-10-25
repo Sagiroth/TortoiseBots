@@ -794,6 +794,16 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     if (StopUnsafeRaidHealerFiller(this))
         SetAIInternalUpdateDelay(0);
 
+    // Do not leave the main on the ordinary pull-end action delay while its
+    // rendezvoused soakers start swinging. The action consumes only a landed,
+    // explicit Patchwerk main pull and never cancels an unlanded shot.
+    if (HasStrategy("patchwerk main", BotState::BOT_STATE_COMBAT))
+    {
+        PatchwerkMainEngageAction opening(this);
+        Event event("patchwerk main opening");
+        opening.Execute(event);
+    }
+
     // A player-authorized Patchwerk pull stages soakers beside its main tank
     // before combat. Never erase stay/follow or let staging arm an attack.
     bool const soakStaging = GetPatchwerkSoakPuller(this) != nullptr;
@@ -833,6 +843,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     {
         if (!soakWasActive)
         {
+            WakePatchwerkPullMain(this);
             bot->InterruptNonMeleeSpells(false);
             ResetAIInternalUpdateDelay();
             if (sPlayerbotAIConfig.hasLog("bot_events.csv"))

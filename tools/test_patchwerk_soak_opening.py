@@ -197,6 +197,7 @@ struct PlayerbotAI{
  bool CanUpdateAIInternal(){return delay<100;}void ResetAIInternalUpdateDelay(){delay=0;}
  void Tick(unsigned elapsed);
 };
+void WakePatchwerkPullMain(PlayerbotAI*){} // main handoff has its own production fixture
 Bot* GetPatchwerkSoakBoss(PlayerbotAI* ai){return ai->eligible?ai->bot:nullptr;}
 struct PatchwerkSoakEngageAction{
  PlayerbotAI* ai;PatchwerkSoakEngageAction(PlayerbotAI* ai):ai(ai){}

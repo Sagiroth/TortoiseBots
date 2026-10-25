@@ -12,6 +12,14 @@ namespace ai
         ObjectGuid Calculate() override;
     };
     Unit* GetPatchwerkSoakBoss(PlayerbotAI* ai);
+    // One-shot handoff of an explicitly ordered main-tank pull after its shot lands.
+    void WakePatchwerkPullMain(PlayerbotAI* caller);
+    class PatchwerkMainEngageAction : public AttackAction
+    {
+    public:
+        PatchwerkMainEngageAction(PlayerbotAI* ai) : AttackAction(ai, "patchwerk main engage") {}
+        bool Execute(Event& event) override;
+    };
     class PatchwerkSoakPullerValue : public CalculatedValue<ObjectGuid>
     {
     public:

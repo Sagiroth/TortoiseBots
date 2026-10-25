@@ -152,6 +152,60 @@ bool PatchwerkSoakStageAction::Execute(Event& event)
     return moved;
 }
 
+bool PatchwerkMainEngageAction::Execute(Event& event)
+{
+    PullStrategy* pull = PullStrategy::Get(ai);
+    Unit* boss = pull ? pull->GetTarget() : nullptr;
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
+        !bot->GetGroup() || !ai->IsTank(bot) || !Has(ai, "patchwerk main") ||
+        Has(ai, "patchwerk soak") || bot->GetMapId() != 533 || !isPossible() ||
+        !pull || !pull->IsCommandActive() || pull->IsCommandPullback() ||
+        !pull->HasPullActionCast() || !LivePatchwerk(bot, boss) ||
+        boss->GetThreatManager().getThreat(bot) <= 0.0f)
+        return false;
+    // Combat alone can precede the arrow (a healer or soaker may body-pull).
+    // Require the main's actual threat before interrupting ranged auto-repeat.
+    // Finish through the normal action so command, pet and movement bookkeeping
+    // is identical. This also consumes the request: a peer cannot repeat it.
+    if (!ai->DoSpecificAction("pull end", event, true))
+        return false;
+    bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+    ai->ClearActionClock();
+    if (!Attack(GetMaster(), boss))
+        return false;
+    context->GetValue<Unit*>("tank target")->Reset();
+    context->GetValue<bool>("invalid target", "current target")->Reset();
+    if (!bot->CanReachWithMeleeAutoAttack(boss) || !bot->IsWithinLOSInMap(boss, true))
+    {
+        ChaseTo(boss, 0.0f, bot->GetAngle(boss));
+        bot->Attack(boss, true); // ChaseTo's fallback may use Attack(false).
+    }
+    // Do not charge another pull-end/movement action delay before the normal
+    // threat rotation. Spell GCDs remain enforced by the ordinary cast checks.
+    ai->ClearActionClock();
+    if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        sPlayerbotAIConfig.logEvent(ai, "PatchwerkMainEngage", boss->GetObjectGuid(),
+            "shot landed; melee armed and rotation released");
+    return true;
+}
+
+void ai::WakePatchwerkPullMain(PlayerbotAI* caller)
+{
+    Player* bot = caller->GetBot();
+    if (!bot->GetGroup() || bot->GetMapId() != 533) return;
+    // Only the assigned soaker's first combat transition scans the roster.
+    // This handles update order: the main is armed before that soaker attacks.
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+    {
+        if (!member->IsInMap(bot) || !sServerFacade.IsFriendlyTo(bot, member)) continue;
+        PlayerbotAI* peer = PlayerbotAIStorage::Instance().GetAI(member);
+        if (!peer || !Has(peer, "patchwerk main")) continue;
+        PatchwerkMainEngageAction opening(peer);
+        Event event("patchwerk main opening");
+        opening.Execute(event);
+    }
+}
+
 ObjectGuid PatchwerkSoakBossValue::Calculate()
 {
     if (!EligibleSoaker(ai))
