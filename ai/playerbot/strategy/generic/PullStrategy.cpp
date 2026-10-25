@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "playerbot/strategy/PassiveMultiplier.h"
 #include "../../runtime/BotManager.h"
 #include "../../runtime/PlayerbotAIStorage.h"
@@ -676,6 +677,9 @@ void PullStrategy::DecideOpening(Unit* target)
 }
 float PullMultiplier::GetValue(Action* action)
 {
+    if (TwinsOpeningTank(ai) && (action->getName()=="twins position" ||
+        action->getName()=="twins engage" || action->getName()=="twins searing pain" ||
+        action->getName()=="defensive stance")) return 1.0f;
     const PullStrategy* strategy = PullStrategy::Get(ai);
     // Keep this Protection puller's opening in Defensive Stance. This short
     // window affects neither Fury nor ordinary trash/automatic pulls.

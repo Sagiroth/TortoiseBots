@@ -5,6 +5,7 @@
 #include "../runtime/ClaimLifecycle.h"
 #include "../runtime/AltBotService.h"
 #include "../ai/playerbot/PlayerbotAI.h"
+#include "../ai/playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "../ai/playerbot/ServerFacade.h"
 #include "../ai/playerbot/strategy/Engine.h"
 #include "../ai/playerbot/strategy/Action.h"
@@ -338,6 +339,18 @@ Player* ResolvePullExecutor(BotCommandContext const& context, bool allowSelected
     if (!context.requester || !context.enemyTarget)
         return nullptr;
 
+    bool twinsControlled=false;
+    if(context.enemyTarget->GetEntry()==15275 || context.enemyTarget->GetEntry()==15276)
+        for(Player* member:context.partyBots)
+            if(auto* peer=PlayerbotAIStorage::Instance().GetAI(member))
+                if(ai::TwinsRaidControlled(peer)){twinsControlled=true;break;}
+    if(twinsControlled)
+        {
+            for(Player* bot:context.partyBots)
+                if(auto* peer=PlayerbotAIStorage::Instance().GetAI(bot))
+                    if(ai::TwinsPullCandidate(peer,context.enemyTarget) && IsPullCandidate(context.requester,bot)) return bot;
+            return nullptr; // never fall back to a spare tank for this assigned encounter
+        }
     // Ordered precedence: explicit selection, designated tank, native spec.
     if (allowSelected && context.selectedBot &&
         IsPullCandidate(context.requester, context.selectedBot))

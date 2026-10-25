@@ -25,8 +25,10 @@ class TwinsTeleportTest(unittest.TestCase):
         run_cpp(r'''
 #include "playerbot/TwinsOpeningPolicy.h"
 #include <cassert>
+#include <initializer_list>
 using namespace ai;
-struct Unit{TwinsPoint p;float radius=1.5;float GetObjectBoundingRadius(){return radius;}};
+struct Unit{TwinsPoint p;float radius=1.5;float GetObjectBoundingRadius(){return radius;}
+Unit*GetVictim(){return nullptr;}float GetPositionX(){return p.x;}float GetPositionY(){return p.y;}};
 struct PlayerbotAI{Unit bot{{},.5},physical{kTwinsWest},caster{kTwinsEast};unsigned entry=15275;int side=1;bool preparing=true,local=false;Unit*GetBot(){return &bot;}};
 unsigned TankEntry(PlayerbotAI*a){return a->entry;}int Side(PlayerbotAI*a){return a->side;}
 Unit* LocalTankBoss(PlayerbotAI*a){return a->local?&a->physical:nullptr;}
@@ -34,6 +36,8 @@ bool OtherOrder(PlayerbotAI*,Unit*){return false;}
 Unit* Boss(PlayerbotAI*a,unsigned e){return e==15275?&a->physical:&a->caster;}
 TwinsPoint Point(Unit*u){return u->p;}
 bool TwinsPreparing(PlayerbotAI*a){return a->preparing;}
+struct State{bool opening=false;};State ObserveTwins(PlayerbotAI*){return {};}
+float BurstRadius(PlayerbotAI*,Unit*){return 14;}
 '''+body+r'''
 int main(){PlayerbotAI a;TwinsPoint warrior,warlock;
  assert(DesiredTankPosition(&a,warrior));
@@ -52,6 +56,7 @@ int main(){PlayerbotAI a;TwinsPoint warrior,warlock;
         run_cpp(r'''
 #include "playerbot/TwinsTeleportPolicy.h"
 #include <cassert>
+#include <initializer_list>
 using namespace ai;
 int main(){TwinsTeleportState s;
  s.Observe(100,false,kTwinsWest,kTwinsEast,false);
@@ -72,7 +77,7 @@ int main(){TwinsTeleportState s;
  s.Observe(60200,true,kTwinsWest,kTwinsWest,false);
  s.Observe(60201,true,kTwinsWest,kTwinsEast,false);assert(s.epoch==2 && s.handoff);
  s.Observe(65000,false,kTwinsWest,kTwinsEast,false);assert(!s.active && !s.Holding());
- s.Observe(65100,true,kTwinsWest,kTwinsEast,false);assert(!s.Holding() && s.epoch==0);
+ s.Observe(65100,true,kTwinsWest,kTwinsEast,false);assert(s.Holding() && s.epoch==0); // new opening waits for actual owners
  TwinsTeleportState late;late.Observe(90000,true,kTwinsWest,kTwinsEast,true);
  assert(late.Preparing()); // no trustworthy initial timestamp: clear first
  late.Observe(100000,true,kTwinsEast,kTwinsWest,false);assert(late.epoch==1);
@@ -86,6 +91,7 @@ int main(){TwinsTeleportState s;
         body=extract(self.source(),'bool GroupEngaged(')
         run_cpp(r'''
 #include <cassert>
+#include <initializer_list>
 #include <vector>
 #include <set>
 struct Guid{bool IsPlayer()const{return true;}};
@@ -115,6 +121,7 @@ int main(){Group own,other;PlayerbotAI a;a.bot.group=&own;Unit boss;HostileRefer
         run_cpp(r'''
 #include "playerbot/TwinsOpeningPolicy.h"
 #include <cassert>
+#include <initializer_list>
 using namespace ai;
 struct Unit{TwinsPoint p;};struct PlayerbotAI{Unit bot{kTwinsWest};bool healer=true,enabled=true;int side=0;Unit*GetBot(){return &bot;}};
 bool HealerRole(PlayerbotAI*a){return a->healer;}bool TwinsOpeningEnabled(PlayerbotAI*a){return a->enabled;}

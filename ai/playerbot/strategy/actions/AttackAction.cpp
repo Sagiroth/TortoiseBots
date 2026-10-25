@@ -252,6 +252,7 @@ bool AttackAction::Attack(Player* requester, Unit* target, float maxDistance, bo
         return false;
     }
 
+    if (!TwinsMayAttack(ai,target)) return false;
     if (target && target->GetEntry() == 16028 && PatchwerkDpsOpeningHold(ai)) return false;
     MotionMaster &mm = *bot->GetMotionMaster();
 	if (mm.GetCurrentMovementGeneratorType() == TAXI_MOTION_TYPE || (bot->IsFlying() && WorldPosition(bot).currentHeight() > 10.0f))

@@ -1,6 +1,7 @@
 // pi-lens-ignore-file: all
 #include "BotCommandHandlers.h"
 #include "CommandShared.h"
+#include "../ai/playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "BotCommandContext.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/BotManager.h"
@@ -844,6 +845,22 @@ bool HandleMatureCommand(ChatHandler* handler, char const* args)
 
     if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
     {
+        // Staging controls must be applied now, not merely acknowledged as queued.
+        if (command=="stay") return HandleStay(handler, botName.c_str());
+        if (command.compare(0,4,"all ")==0 && command.substr(4)!="?")
+        {
+            std::string change=Trim(command.substr(4));
+            if (!KnownStrategyChange({bot},change))
+            {
+                handler->PSendSysMessage("Unknown strategy change for %s: %s",resolvedName.c_str(),change.c_str());
+                return true;
+            }
+            ai->ChangeStrategy(change,BotState::BOT_STATE_ALL);
+            sPlayerbotDbStore.Save(ai);
+            handler->PSendSysMessage("Applied to %s in all states: %s",resolvedName.c_str(),change.c_str());
+            ai->PrintStrategies(requester,BotState::BOT_STATE_COMBAT);
+            return true;
+        }
         ai->HandleCommand(CHAT_MSG_WHISPER, command, *requester);
         handler->PSendSysMessage("Forwarded command for %s: %s; action success is not guaranteed.", resolvedName.c_str(), command.c_str());
     }

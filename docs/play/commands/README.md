@@ -190,3 +190,10 @@ Use `.bot role <BotName> tank` for healing recognition.
 DPS chooses either `all +twins physical dps` or `all +twins spell dps`.
 See the Twin Emperors section of the local raid tactics guide for staging,
 full commands and the remaining teleport limitations.
+
+Twins staging: `.bot command BotName stay` executes the same immediate hold as
+`.bot stay BotName`. `.bot command BotName all +twins west` applies a known
+strategy immediately and prints combat strategies; unknown strategy changes are
+rejected. Other mature commands retain their forwarding behavior. See
+[local raid tactics](../local-raid-tactics.md#twin-emperors-side-teams-and-teleport-handoff-opt-in)
+for side roles, opening pull selection and equipment requirements.

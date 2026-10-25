@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/strategy/ZulGurubCurePolicy.h"
 #include "playerbot/playerbot.h"
@@ -470,7 +471,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
 
 bool PlayerbotAI::CheckCanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, bool checkHasSpell, Item* itemTarget, bool ignoreRange, bool ignoreInCombat, bool ignoreMount, SpellCastResult* checkResult)
 {
-    if (PatchwerkOpeningBlocksSpell(this, spellid, target))
+    if (TwinsBlocksSpell(this, spellid, target) || PatchwerkOpeningBlocksSpell(this, spellid, target))
     {
         if (checkResult) *checkResult = SPELL_FAILED_NOT_READY;
         return false;
@@ -1049,7 +1050,7 @@ bool PlayerbotAI::CastSpell(std::string name, Unit* target, Item* itemTarget, bo
 
 bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool waitForSpell, uint32* outSpellDuration)
 {
-    if (PatchwerkOpeningBlocksSpell(this, spellId, target))
+    if (TwinsBlocksSpell(this, spellId, target) || PatchwerkOpeningBlocksSpell(this, spellId, target))
     {
         return false;
     }
@@ -1695,7 +1696,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
 
 bool PlayerbotAI::CastPetSpell(uint32 spellId, Unit* target)
 {
-    if (PatchwerkOpeningBlocksSpell(this, spellId, target)) return false;
+    if (TwinsBlocksSpell(this, spellId, target) || PatchwerkOpeningBlocksSpell(this, spellId, target)) return false;
 
     Pet* pet = bot->GetPet();
     if (pet && spellId && pet->HasSpell(spellId))

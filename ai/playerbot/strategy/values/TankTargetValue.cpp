@@ -199,6 +199,9 @@ public:
 
 Unit* TankTargetValue::Calculate()
 {
+    Unit* assignedTwin=nullptr;
+    if (SelectTwinsTankTarget(ai,assignedTwin) || SelectTwinsDpsTarget(ai,assignedTwin)) return assignedTwin;
+    if (TwinsOpeningHold(ai)) return nullptr;
     if (Unit* explicitTarget = GetExplicitAttackTarget())
         return explicitTarget;
 

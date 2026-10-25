@@ -1,6 +1,7 @@
 // Offline only. Link core Detour/G3D and vmap sources (NO_CORE_FUNCS,
 // MMAP_GENERATOR, USE_STANDARD_MALLOC; preinclude memory and mutex).
 // Arguments: extracted mmaps directory, extracted vmaps directory.
+// Optional fourth argument scans waiting candidates outside both spawn radii.
 // No server, DB writes, or live character actions.
 #include <cmath>
 #include "../ai/playerbot/TwinsOpeningPolicy.h"
@@ -39,18 +40,44 @@ int main(int argc,char**argv)
         assert(vmap.loadMap(vdir.c_str(),531,x,y)==VMAP::VMAP_LOAD_RESULT_OK);
     using namespace ai;
     assert(TwinsSeparated(kTwinsWest,kTwinsEast,3));
-    struct Route {TwinsPoint start,end,caster;bool clearance;bool escape=false;};
+    if(argc>3) {
+        for(int side=0;side<2;++side) for(float x=(side ? -8900.f:-9060.f);x<(side ? -8820.f:-8990.f);x+=5)
+        for(float y=1200;y<=1260;y+=5) {
+            TwinsPoint p{x,y,-104.2f};if(!TwinsRoom(531,p) || TwinsDistance(p,kTwinsWest)<56 || TwinsDistance(p,kTwinsEast)<56) continue;
+            float a[3]={y,-104.2f,x},ext[3]={.5f,18,.5f},b[3];dtPolyRef ref=0;
+            query.findNearestPoly(a,ext,&filter,&ref,b);if(!ref || std::hypot(b[0]-y,b[2]-x)>.3f || b[1]>-85 || b[1]<-120) continue;
+            TwinsPoint home=side ? kTwinsEast:kTwinsWest;
+            float goal[3]={home.y,home.z,home.x},g[3];dtPolyRef gr=0;query.findNearestPoly(goal,ext,&filter,&gr,g);
+            dtPolyRef path[512];int n=0;auto status=query.findPath(ref,gr,b,g,&filter,path,&n,512);
+            if(!dtStatusSucceed(status)||!n||path[n-1]!=gr)continue;
+            printf("side=%d x=%.2f y=%.2f z=%.3f distance=%.1f LOS=%d\n",side,x,y,b[1],TwinsDistance(p,home),int(vmap.isInLineOfSight(531,x,y,b[1]+2,home.x,home.y,g[1]+2)));
+        }
+        return 0;
+    }
+
+    struct Route {TwinsPoint start,end,caster;bool clearance;bool escape=false;bool requireLos=true;};
     std::vector<Route> routes;
     for(int side=0;side<2;++side) {
         TwinsPoint home=side ? kTwinsEast:kTwinsWest;
         TwinsPoint other=side ? kTwinsWest:kTwinsEast;
-        TwinsPoint stage=side ? TwinsPoint{-8870,1240,-105.065f}:TwinsPoint{-9040,1210,-104.346f};
+        TwinsPoint stage=side ? TwinsPoint{-8900,1260,-112.221f}:TwinsPoint{-9035,1245,-112.221f};
+        assert(TwinsDistance(stage,kTwinsWest)>55 && TwinsDistance(stage,kTwinsEast)>55);
         routes.push_back({TwinsOutward(home,side,24),TwinsOutward(home,side,15),home,true});
         routes.push_back({TwinsOutward(home,side,15),TwinsOutward(home,side,5),other,true});
         routes.push_back({TwinsOutward(home,side,5),TwinsOutward(home,side,24),home,true,true});
+        // Collapsed opening: acquire each boss from range, then lead outward.
+        TwinsPoint collapsedPhysical{-8950.6f,1192.4f,-104.17f},collapsedCaster{-8942.6f,1192.4f,-104.17f};
+        TwinsPoint boss=side ? collapsedCaster:collapsedPhysical;
+        float dx=home.x-boss.x,dy=home.y-boss.y,length=std::hypot(dx,dy);
+        TwinsPoint acquisition{boss.x+dx/length*24,boss.y+dy/length*24,boss.z};
+        routes.push_back({stage,acquisition,collapsedCaster,true});
+        routes.push_back({acquisition,TwinsOutward(home,side,side ? 20:5),collapsedCaster,true,false,false});
+        routes.push_back({acquisition,boss,collapsedCaster,false});
         for(float offset:{5.f,15.f,20.f,24.f,35.f}) {
             auto goal=TwinsOutward(home,side,offset);
-            routes.push_back({stage,goal,offset==5 ? other:home,true});
+            // Opening parks the spare at 24 first; preparation goes 24 -> 15,
+            // checked above. Do not claim a direct stage -> 15 route is safe.
+            if(offset!=15) routes.push_back({stage,goal,offset==5 ? other:home,true,false,false});
             routes.push_back({goal,home,home,false}); // spell/melee LOS
         }
     }
@@ -69,7 +96,7 @@ int main(int argc,char**argv)
         query.findStraightPath(a,b,path,count,verts,flags,refs,&n,512);
         float length=0;for(int i=1;i<n;++i)length+=std::hypot(verts[3*i]-verts[3*i-3],verts[3*i+2]-verts[3*i-1]);
         printf(" los=%d complete=%d length=%.2f end=%.2f:%.2f:%.2f\n",int(los),int(complete),length,b[2],b[0],b[1]);
-        assert(los && complete && n>0);
+        assert((los || !route.requireLos) && complete && n>0);
         if(route.clearance) for(int i=1;i<n;++i) {
             TwinsPoint start{verts[3*i-1],verts[3*i-3],verts[3*i-2]};
             TwinsPoint end{verts[3*i+2],verts[3*i],verts[3*i+1]};

@@ -123,6 +123,7 @@ void WaitForAttackStrategy::InitCombatMultipliers(std::list<Multiplier*>& multip
 
 bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
 {
+    if (TwinsOpeningHold(ai)) return true;
     if (PatchwerkDpsOpeningHold(ai)) return true;
     if (TwinsOpeningTank(ai)) return false; // Side tanks establish threat; DPS keep the normal hold.
     if (GetPatchwerkSoakBoss(ai))

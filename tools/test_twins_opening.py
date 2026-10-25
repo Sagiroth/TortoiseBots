@@ -93,6 +93,9 @@ Unit* Boss(PlayerbotAI*a,unsigned e){return e==15275?&a->physical:&a->caster;}
 bool OtherOrder(PlayerbotAI*a,Unit*){return a->order;}
 bool GroupEngaged(PlayerbotAI*a,Unit*){return a->engaged;}
 bool DpsHolding(PlayerbotAI*){return false;}
+struct State{bool opening=false;};State ObserveTwins(PlayerbotAI*){return {};}
+bool PullOrdered(PlayerbotAI*,Unit*,Unit*){return false;}
+bool TwinsMayAttack(PlayerbotAI*,Unit*){return true;}
 unsigned TankEntry(PlayerbotAI*);
 Unit* LocalTankBoss(PlayerbotAI*a){return a->local?Boss(a,TankEntry(a)):nullptr;}
 namespace ai {bool SelectTwinsTankTarget(PlayerbotAI*,Unit*&);bool SelectTwinsDpsTarget(PlayerbotAI*,Unit*&);bool IsTwinsOpeningTargetExcluded(PlayerbotAI*,Unit*);}

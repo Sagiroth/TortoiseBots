@@ -75,10 +75,14 @@ bool OtherOrder(PlayerbotAI* ai,Unit* target)
             sPlayerbotAIConfig.sightDistance,false,false)) return true;
     return false;
 }
+TwinsTeleportState ObserveTwins(PlayerbotAI* ai);
 Unit* LocalTankBoss(PlayerbotAI* ai)
 {
     unsigned entry=TankEntry(ai);
     Unit* boss=entry ? Boss(ai,entry) : nullptr;
+    auto state=ObserveTwins(ai);
+    if(state.opening || !state.active)
+        return boss && Side(ai)==(state.epoch ? TwinsPointSide(entry==15275 ? state.physical:state.caster):(entry==15275 ? 0:1)) ? boss:nullptr;
     return boss && TwinsOnSide(Point(boss),Side(ai)) && !OtherOrder(ai,boss) ? boss : nullptr;
 }
 float BurstRadius(PlayerbotAI* ai,Unit* boss)
@@ -90,7 +94,7 @@ Player* SideTank(PlayerbotAI* ai,unsigned entry,int side)
     {
         if(!member->IsAlive() || !member->IsInWorld() || !member->IsInMap(ai->GetBot())) continue;
         auto* peer=PlayerbotAIStorage::Instance().GetAI(member);
-        if(peer && TankEntry(peer)==entry && Side(peer)==side && TwinsOnSide(Point(member),side) &&
+        if(peer && TankEntry(peer)==entry && Side(peer)==side &&
             (!result || member->GetObjectGuid()<result->GetObjectGuid())) result=member;
     }
     return result;
@@ -123,17 +127,29 @@ TwinsTeleportState ObserveTwins(PlayerbotAI* ai)
             Player* warrior=SideTank(ai,15275,TwinsPointSide(Point(physical)));
             Player* warlock=SideTank(ai,15276,TwinsPointSide(Point(caster)));
             owners=warrior && warlock && physical->GetVictim()==warrior && caster->GetVictim()==warlock &&
+                TwinsOnSide(Point(warrior),TwinsPointSide(Point(physical))) &&
+                TwinsOnSide(Point(warlock),TwinsPointSide(Point(caster))) &&
                 warrior->CanReachWithMeleeAutoAttack(physical) &&
                 warlock->GetDistance(caster)>=15.f && warlock->GetDistance(caster)<=20.f &&
                 warlock->IsWithinLOSInMap(caster,true);
         }
+        bool configured=false;
+        for(Player* member:LiveGroupMembers(ai->GetBot()->GetGroup()))
+            if(member->IsAlive() && member->IsInMap(ai->GetBot()))
+                if(auto* peer=PlayerbotAIStorage::Instance().GetAI(member))
+                    if(TankEntry(peer)) {configured=true;break;}
+        if((state.opening || !state.active) && physical && caster)
+            owners=owners && TwinsPointSide(Point(physical))==(state.epoch ? TwinsPointSide(state.physical):0) &&
+                TwinsPointSide(Point(caster))==(state.epoch ? TwinsPointSide(state.caster):1);
         unsigned phase=state.Phase(),epoch=state.epoch;
         state.Observe(now,engaged,physical ? Point(physical):TwinsPoint{},caster ? Point(caster):TwinsPoint{},owners);
+        state.configured=configured;
+        if(configured && !state.active) state.opening=true;
         changed=phase!=state.Phase() || epoch!=state.epoch;result=state;sample.sampled=true;
     }
     if(changed)
     {
-        char const* phases[]={"idle","stable","prepare","handoff"};
+        char const* phases[]={"idle","stable","prepare","handoff","opening"};
         sPlayerbotAIConfig.logEvent(ai,"TwinsTeleportPhase",phases[result.Phase()],std::to_string(result.epoch));
     }
     return result;
@@ -141,7 +157,7 @@ TwinsTeleportState ObserveTwins(PlayerbotAI* ai)
 bool TwinsPreparing(PlayerbotAI* ai) {return ObserveTwins(ai).Preparing();}
 bool DpsRole(PlayerbotAI* ai)
 { return !TankEntry(ai) && !ai->IsHeal(ai->GetBot()) && TwinsDamageEntry(Has(ai,"twins physical dps"),Has(ai,"twins spell dps")); }
-bool DpsHolding(PlayerbotAI* ai) {return DpsRole(ai) && ObserveTwins(ai).Holding();}
+bool DpsHolding(PlayerbotAI* ai) {return !ai->IsHeal(ai->GetBot()) && (TwinsOpeningHold(ai) || (DpsRole(ai) && ObserveTwins(ai).Holding()));}
 float LandingRadius(PlayerbotAI* ai,Unit* boss)
 { return 28.f+boss->GetObjectBoundingRadius()+ai->GetBot()->GetObjectBoundingRadius(); }
 bool PetOnCaster(PlayerbotAI* ai)
@@ -163,8 +179,32 @@ bool DesiredTankPosition(PlayerbotAI* ai,TwinsPoint& destination)
     if(!TankEntry(ai)) return false;
     int side=Side(ai);
     Unit* local=LocalTankBoss(ai);
-    if(local && OtherOrder(ai,local)) return false;
+    if(local && OtherOrder(ai,local) && !ObserveTwins(ai).opening) return false;
     Unit* caster=Boss(ai,15276);
+    auto state=ObserveTwins(ai);
+    if(state.opening && local)
+    {
+        TwinsPoint home=Side(ai)==0 ? kTwinsWest:kTwinsEast;
+        if(local->GetVictim()!=ai->GetBot())
+        {
+            // Acquire from range before dragging. The caster may be beside the
+            // physical boss, so a melee approach would enter Arcane Burst.
+            float dx=home.x-local->GetPositionX(),dy=home.y-local->GetPositionY();
+            float length=std::hypot(dx,dy);
+            if(length<1.f){dx=Side(ai)==0 ? -1.f:1.f;dy=0;length=1;}
+            for(float range:{24.f,28.f,30.f})
+            {
+                destination={local->GetPositionX()+dx/length*range,local->GetPositionY()+dy/length*range,home.z};
+                if(!caster || TwinsDistance(destination,Point(caster))>BurstRadius(ai,caster)+1.f) return true;
+            }
+            return false;
+        }
+        Unit* brother=Boss(ai,TankEntry(ai)==15275 ? 15276:15275);
+        bool separated=brother && TwinsSeparated(Point(local),Point(brother),3.f) && TwinsOnSide(Point(local),Side(ai));
+        destination=TankEntry(ai)==15275 ? TwinsTankCamp(Side(ai)) :
+            TwinsOutward(separated ? Point(local):home,Side(ai),18.f+local->GetObjectBoundingRadius()+ai->GetBot()->GetObjectBoundingRadius());
+        return true;
+    }
     if(TankEntry(ai)==15275 && local)
     { destination=TwinsTankCamp(side);return true; }
     TwinsPoint home=side==0 ? kTwinsWest : kTwinsEast;
@@ -202,6 +242,84 @@ void ClearWrongTarget(PlayerbotAI* ai,Unit* desired)
         bot->AttackStop();SET_AI_VALUE(Unit*,"current target",nullptr);
     }
 }
+}
+
+bool ai::TwinsRaidControlled(PlayerbotAI* ai)
+{
+    Player* bot=ai ? ai->GetBot():nullptr;
+    return bot && bot->IsAlive() && bot->IsInWorld() && bot->GetGroup() &&
+        TwinsRoom(bot->GetMapId(),Point(bot)) && Boss(ai,15275) && Boss(ai,15276) && ObserveTwins(ai).configured;
+}
+bool ai::TwinsOpeningHold(PlayerbotAI* ai)
+{
+    if(!TwinsRaidControlled(ai)) return false;
+    auto state=ObserveTwins(ai);
+    if(state.active && !state.opening) return false;
+    return !TankEntry(ai) || !LocalTankBoss(ai);
+}
+bool ai::TwinsTeamsReady(PlayerbotAI* ai)
+{
+    for(int side:{0,1}) for(unsigned entry:{15275u,15276u})
+    {
+        Player* tank=SideTank(ai,entry,side);
+        if(!tank || !TwinsRoom(tank->GetMapId(),Point(tank)) || !TwinsOnSide(Point(tank),side)) return false;
+        auto* peer=PlayerbotAIStorage::Instance().GetAI(tank);
+        if(entry==15276 && (!peer || !peer->HasSpell("searing pain"))) return false;
+    }
+    return true;
+}
+bool ai::TwinsPullCandidate(PlayerbotAI* ai,Unit* target)
+{
+    if(!TwinsRaidControlled(ai)) return true;
+    if(!target || (target->GetEntry()!=15275 && target->GetEntry()!=15276)) return true;
+    return TankEntry(ai)==target->GetEntry() && Side(ai)==(target->GetEntry()==15275 ? 0:1) &&
+        SideTank(ai,target->GetEntry(),Side(ai))==ai->GetBot();
+}
+bool ai::TwinsMayAttack(PlayerbotAI* ai,Unit* target)
+{
+    if(!target || (target->GetEntry()!=15275 && target->GetEntry()!=15276) || !TwinsRaidControlled(ai)) return true;
+    auto state=ObserveTwins(ai);
+    if(!state.active && !PullOrdered(ai,Boss(ai,15275),Boss(ai,15276))) return false;
+    if(TankEntry(ai)) return LocalTankBoss(ai)==target && SideTank(ai,TankEntry(ai),Side(ai))==ai->GetBot();
+    if(!state.active || state.Holding()) return false;
+    unsigned entry=TwinsDamageEntry(Has(ai,"twins physical dps"),Has(ai,"twins spell dps"));
+    // A spare tank's damage assignment wins over its generic tank tournament.
+    return entry ? target->GetEntry()==entry : !ai->IsTank(ai->GetBot()) && !ai->IsHeal(ai->GetBot());
+}
+bool ai::TwinsBlocksSpell(PlayerbotAI* ai,uint32 spellId,Unit* target)
+{
+    if(!TwinsRaidControlled(ai)) return false;
+    SpellEntry const* spell=sServerFacade.LookupSpellInfo(spellId);
+    if(!spell || IsPositiveSpell(spell)) return false;
+    if(!TankEntry(ai) && (!target || target==ai->GetBot() || target->GetEntry()==15275 || target->GetEntry()==15276))
+        for(unsigned effect=0;effect<MAX_EFFECT_INDEX;++effect)
+            if(spell->Effect[effect]==SPELL_EFFECT_ATTACK_ME ||
+                (spell->Effect[effect]==SPELL_EFFECT_APPLY_AURA && spell->EffectApplyAuraName[effect]==SPELL_AURA_MOD_TAUNT)) return true;
+    if(target && target!=ai->GetBot()) return !TwinsMayAttack(ai,target);
+    // Self-centred damage/taunts must not grab the other adjacent twin.
+    auto state=ObserveTwins(ai);
+    return !state.active || state.opening || (!TankEntry(ai) && state.Holding());
+}
+void ai::TwinsEnforceOpening(PlayerbotAI* ai)
+{
+    if(!TwinsRaidControlled(ai)) return;
+    Player* bot=ai->GetBot();
+    if(TankEntry(ai))
+        if(Unit* local=LocalTankBoss(ai))
+            if(local->GetVictim()==bot)
+                if(auto* pull=PullStrategy::Get(ai))
+                    if(pull->IsCommandActive() && pull->GetTarget()==local && !pull->HasPullActionCompleted()) pull->OnPullActionCompleted();
+    if(auto* pull=PullStrategy::Get(ai))
+        if(pull->IsCommandActive() && pull->GetTarget())
+            pull->NotePullApproach(bot->GetDistance(pull->GetTarget()),bot->IsMoving());
+    if(TwinsOpeningHold(ai) && bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==CHASE_MOTION_TYPE) ai->StopMoving();
+    if(bot->GetVictim() && !TwinsMayAttack(ai,bot->GetVictim())) bot->AttackStop();
+    for(uint32 slot:{uint32(CURRENT_GENERIC_SPELL),uint32(CURRENT_CHANNELED_SPELL),uint32(CURRENT_AUTOREPEAT_SPELL)})
+        if(Spell* spell=bot->GetCurrentSpell(CurrentSpellTypes(slot)))
+            if(TwinsBlocksSpell(ai,spell->m_spellInfo->Id,ai->GetUnit(spell->m_targets.getUnitTargetGuid())))
+                bot->InterruptSpell(CurrentSpellTypes(slot));
+    if(Pet* pet=bot->GetPet())
+        if(pet->GetVictim() && !TwinsMayAttack(ai,pet->GetVictim())) RecallPet(ai);
 }
 
 bool ai::TwinsOpeningEnabled(PlayerbotAI* ai)
@@ -257,9 +375,9 @@ bool ai::SelectTwinsTankTarget(PlayerbotAI* ai,Unit*& target)
     target=nullptr;
     if(!TwinsOpeningEnabled(ai) || !TankEntry(ai)) return false;
     Unit* own=Boss(ai,TankEntry(ai));
-    if(own && OtherOrder(ai,own)) return false;
+    if(own && OtherOrder(ai,own) && !ObserveTwins(ai).opening) return false;
     Unit* local=LocalTankBoss(ai);
-    if(local && GroupEngaged(ai,local)) target=local;
+    if(local && (GroupEngaged(ai,local) || PullOrdered(ai,Boss(ai,15275),Boss(ai,15276)))) target=local;
     return true; // side is empty: do not fall through to the opposite twin/adds
 }
 bool ai::SelectTwinsDpsTarget(PlayerbotAI* ai,Unit*& target)
@@ -275,6 +393,7 @@ bool ai::SelectTwinsDpsTarget(PlayerbotAI* ai,Unit*& target)
 }
 bool ai::IsTwinsOpeningTargetExcluded(PlayerbotAI* ai,Unit* target)
 {
+    if(!TwinsMayAttack(ai,target)) return true;
     if(!target || (target->GetEntry()!=15275 && target->GetEntry()!=15276) || !TwinsOpeningEnabled(ai)) return false;
     Unit* assigned=nullptr;
     if(TankEntry(ai)) return SelectTwinsTankTarget(ai,assigned) && target!=assigned;
@@ -282,6 +401,7 @@ bool ai::IsTwinsOpeningTargetExcluded(PlayerbotAI* ai,Unit* target)
 }
 bool ai::TwinsPetAttackAllowed(PlayerbotAI* ai,Unit* target)
 {
+    if(!TwinsMayAttack(ai,target)) return false;
     if(!target || !TwinsOpeningEnabled(ai)) return true;
     return target->GetEntry()!=15276 && (target->GetEntry()!=15275 || !ObserveTwins(ai).Holding());
 }
@@ -304,7 +424,7 @@ bool ai::TwinsOpeningMoveAllowed(PlayerbotAI* ai,float x,float y,float z)
     if(!TwinsOpeningEnabled(ai)) return true;
     TwinsPoint end{x,y,z};
     Unit* own=TankEntry(ai) ? Boss(ai,TankEntry(ai)) : nullptr;
-    if((HealerRole(ai) || (own && !OtherOrder(ai,own))) && (!TwinsRoom(531,end) || !TwinsOnSide(end,Side(ai)))) return false;
+    if((HealerRole(ai) || (own && !ObserveTwins(ai).opening && !OtherOrder(ai,own))) && (!TwinsRoom(531,end) || !TwinsOnSide(end,Side(ai)))) return false;
     Unit* caster=Boss(ai,15276);
     if(!caster) return true;
     if(!TwinsSafeStep(Point(ai->GetBot()),end,Point(caster),DpsHolding(ai) ? LandingRadius(ai,caster):BurstRadius(ai,caster))) return false;
@@ -341,10 +461,14 @@ bool TwinsPositionAction::Prepare()
     if(tank)
     {
         Unit* own=Boss(ai,TankEntry(ai));
-        if(own && OtherOrder(ai,own)) return false;
+        if(own && OtherOrder(ai,own) && !ObserveTwins(ai).opening) return false;
         if(!DesiredTankPosition(ai,destination)) return false;
         if(TankEntry(ai)==15275 && own && GroupEngaged(ai,own) && bot->HasSpell(71) &&
             !ai->HasAura("defensive stance",bot)) return false;
+        Unit* pickup=LocalTankBoss(ai);
+        if(ObserveTwins(ai).opening && pickup && pickup->GetVictim()!=bot &&
+            bot->GetDistance(pickup)>=15.f && bot->GetDistance(pickup)<=28.f && bot->IsWithinLOSInMap(pickup,true) && !danger)
+            return false; // fire the acquisition shot before further movement
         // Establish ranged threat before repositioning, if already safely in
         // Searing Pain range on this side. Do not cancel that opening cast.
         if(!danger && TankEntry(ai)==15276 && caster==LocalTankBoss(ai) && GroupEngaged(ai,caster) &&
@@ -417,7 +541,7 @@ bool TwinsPositionAction::Prepare()
         {
             float f=float(i)/steps;
             TwinsPoint sample{previous.x+f*(next.x-previous.x),previous.y+f*(next.y-previous.y),previous.z+f*(next.z-previous.z)};
-            if(!TwinsRoom(531,sample) || ((tank || healer) && TwinsOnSide(previous,Side(ai)) && !TwinsOnSide(sample,Side(ai))) ||
+            if(!TwinsRoom(531,sample) || ((healer || (tank && !ObserveTwins(ai).opening)) && TwinsOnSide(previous,Side(ai)) && !TwinsOnSide(sample,Side(ai))) ||
                 (caster && !TwinsSafeStep(sampleBefore,sample,Point(caster),radius))) return blocked();
             WorldPosition position(531,sample.x,sample.y,sample.z);
             for(auto const& hazard:hazards)
@@ -474,6 +598,8 @@ bool TwinsEngageAction::isUseful()
     if(current!=target) return true;
     if(TankEntry(ai)==15275 && !ai->HasAura("defensive stance",bot) && bot->HasSpell(71)) return true;
     if(!target) return false;
+    if(TankEntry(ai)==15275 && ObserveTwins(ai).opening && target->GetVictim()!=bot)
+    {CastShootAction shot(ai);return shot.isPossible() && shot.isUseful();}
     if(TankEntry(ai)==15276 && (bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) ||
         bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==CHASE_MOTION_TYPE)) return true;
     return TankEntry(ai)!=15276 && (bot->GetVictim()!=target ||
@@ -492,6 +618,11 @@ bool TwinsEngageAction::Execute(Event& event)
     {
         if(DpsHolding(ai) && bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==CHASE_MOTION_TYPE) ai->StopMoving();
         return true;
+    }
+    if(TankEntry(ai)==15275 && ObserveTwins(ai).opening && target->GetVictim()!=bot)
+    {
+        bot->AttackStop();SET_AI_VALUE(Unit*,"current target",target);
+        CastShootAction shot(ai);return shot.isPossible() && shot.Execute(event);
     }
     if(TankEntry(ai)==15276)
     {
@@ -530,6 +661,7 @@ public:
         if(!TwinsOpeningEnabled(ai)) return 1;
         if(name=="twins position" || name=="twins engage" || name=="twins searing pain" ||
             name=="set facing" || name=="move away from hazard" || name=="flee" || name=="runaway") return 1;
+        if(TankEntry(ai) && ObserveTwins(ai).opening && (name=="pull action" || name=="reach pull")) return 0;
         if(name=="pet attack" && !TwinsPetAttackAllowed(ai,action->GetTarget())) return 0;
         if(dynamic_cast<CastHealingSpellAction*>(action)) return TwinsHealTargetAllowed(ai,action->GetTarget()) ? 1 : 0;
         if(!action->IsCrowdControlAction() && DpsHolding(ai) &&

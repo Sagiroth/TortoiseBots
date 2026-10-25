@@ -110,18 +110,52 @@ The side anchors are the initial boss platforms, about 147 yards apart:
 
 | Side | Boss anchor (x, y, z) | Suggested team staging point |
 | --- | --- | --- |
-| West | -9019.14, 1180.07, -104.17 | -9040, 1210, -104.35 |
-| East | -8874.06, 1204.74, -104.17 | -8870, 1240, -105.07 |
+| West | -9019.14, 1180.07, -104.17 | -9035, 1245, -112.22 |
+| East | -8874.06, 1204.74, -104.17 | -8900, 1260, -112.22 |
+
+During staging, use `.bot stay WestWarrior` (replace the name), or
+`.bot command WestWarrior stay`. Both execute the same immediate hold and
+capture that bot's current position. Strategy commands such as
+`.bot command WestWarrior all +twins west` now apply immediately, save, and
+print the combat strategies; an unknown name is rejected. This confirms the
+flags, not that the boss strategy has activated before the pull.
+
+For the opening, select Vek'nilash and use `.bot action pull`.
+The assigned west warrior is the only eligible puller for that target.
+Selecting Vek'lor instead chooses its assigned east warlock. Missing assignments
+refuse the pull; a spare tank is never substituted. Both active side tanks
+acquire their own twin when the pull is ordered. Standby partners do not engage.
+A warrior needs a working ranged weapon and ammunition for the acquisition shot;
+the warlock needs Searing Pain. Equip these before pulling.
+
+All group bots hold new boss damage until the twins are more than 75 yards plus
+boss radii apart, on their assigned sides, and targeting their proper tanks.
+Healing remains available. Wrong-target attacks, spells and spare-tank taunts
+are blocked; this also covers bots without a Twins damage flag. Existing damage
+is not erased. If the bosses are adjacent, the active tanks acquire from range
+and lead them outward. Complete navmesh routes and caster-burst clearance remain
+required; no direct-path fallback is used. This is not guaranteed recovery from
+arbitrary positions or inadequate tank/healer gear.
+
+After opening, the teleport handoff below remains in force. Loss of separation
+closes boss damage again while the assigned teams recover it. Clearing the tank
+role flags removes the group opening guard. Dead bosses do not leave a hold.
 
 Stage manually on the same-side platform, clear the preceding trash, and put
 healers in range. Offline map-531 checks confirm ground, LOS and complete routes
-from these staging points; they do not prove live aggro safety or healer coverage.
+from these staging points. They are about 67/61 yards from the nearer spawn,
+with more than 55 yards to both bosses. The core's aggro radius is at least 50
+yards: keep EACH waiting bot outside it. A stay cannot prevent proximity aggro.
+Do not use the old 35-yard staging positions. These checks do not prove safety
+from other trash, a displaced boss, or the route used to reach a waiting point.
+Healers still need to enter their useful positions after engagement.
 Do not gather both teams at the entrance and expect this to repair a collapsed pull.
 
 The warrior adopts Defensive Stance and attacks the physical twin at the fixed
 outer side of its platform. The warlock uses repeated Searing Pain and aims for
 18 yards of edge-to-edge clearance from a separated Vek'lor. A spare tank waits
-outside the caster landing zone. Tanks cannot chase their assigned twin across
+outside the caster landing zone. Spare Protection tanks with a physical-DPS
+assignment use that damage target and cannot taunt either twin. Tanks cannot chase their assigned twin across
 the room. The assigned tanks can start establishing threat immediately after engagement.
 DPS use the handoff hold below in addition to their ordinary opening rules.
 

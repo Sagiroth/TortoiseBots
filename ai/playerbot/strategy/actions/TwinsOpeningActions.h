@@ -6,6 +6,13 @@
 
 namespace ai
 {
+bool TwinsRaidControlled(PlayerbotAI* ai);
+bool TwinsMayAttack(PlayerbotAI* ai,Unit* target);
+bool TwinsOpeningHold(PlayerbotAI* ai);
+bool TwinsBlocksSpell(PlayerbotAI* ai,uint32 spellId,Unit* target);
+bool TwinsTeamsReady(PlayerbotAI* ai);
+bool TwinsPullCandidate(PlayerbotAI* ai,Unit* target);
+void TwinsEnforceOpening(PlayerbotAI* ai);
 bool TwinsOpeningEnabled(PlayerbotAI* ai);
 bool TwinsHealTargetAllowed(PlayerbotAI* ai,Unit* target);
 bool TwinsOpeningTank(PlayerbotAI* ai);

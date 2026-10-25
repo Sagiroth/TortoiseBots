@@ -1,6 +1,7 @@
 // pi-lens-ignore-file: all
 #include "BotCommandHandlers.h"
 #include "CommandShared.h"
+#include "../ai/playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "../ai/playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "../ai/playerbot/strategy/actions/GeddonBombActions.h"
 #include "BotCommandContext.h"
@@ -726,6 +727,14 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
     }
 
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(executor);
+    if(ai::TwinsRaidControlled(ai) && (context.enemyTarget->GetEntry()==15275 || context.enemyTarget->GetEntry()==15276))
+    {
+        if(intent=="pullback" || !ai::TwinsTeamsReady(ai))
+        {
+            SendActionError(handler,reportIntent,"twins-teams","Twins need one living warrior and Searing Pain warlock on each assigned side. Stage and hold all four; use pull, not pullback.");
+            return true;
+        }
+    }
     // Validate before any state changes: a refused pull must not park the
     // party, end a flee or flip the tank's pull mode.
     std::string refuseCode;
@@ -771,6 +780,19 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
         // No bot's movement, flee or hold was touched yet.
         RestorePullMode(ai, pullModeBefore);
         SendActionError(handler, reportIntent, "failed", "The native pull strategy rejected the target.");
+        return true;
+    }
+    if (ai::TwinsRaidControlled(ai) && (context.enemyTarget->GetEntry()==15275 || context.enemyTarget->GetEntry()==15276) && !pullback)
+    {
+        // The request is the authorization token. Do not execute generic body
+        // pull/reach fallbacks: the two assigned teams own acquisition and drag.
+        for (Player* member:context.partyBots)
+            if (auto* peer=PlayerbotAIStorage::Instance().GetAI(member))
+            {
+                EndFlee(peer);
+                peer->ClearActionClock();
+            }
+        SendActionAck(handler,reportIntent,"party",1,std::string(executor->GetName())+" Twins acquisition; damage waits for separated tank ownership");
         return true;
     }
     // How the pull opens, now that the request has the target and has decided:
