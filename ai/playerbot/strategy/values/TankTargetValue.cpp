@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "TankTargetValue.h"
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "RaidDpsTargetPolicy.h"
 #include "GolemaggTankAssignmentValue.h"
 #include "PossibleAttackTargetsValue.h"
@@ -246,6 +247,9 @@ Unit* TankTargetValue::Calculate()
         else if (!victim)
             return rti;
     }
+
+    if (Unit* assigned = GetAssignedPatchwerkTankTarget(ai))
+        return assigned;
 
     if (Unit* whelp = GetOnyxiaWhelpTarget(ai))
         return whelp;

@@ -3,6 +3,19 @@
 
 namespace ai
 {
+    class PatchwerkAssignmentStrategy : public Strategy
+    {
+    public:
+        PatchwerkAssignmentStrategy(PlayerbotAI* ai, std::string name) : Strategy(ai), name(name) {}
+        std::string getName() override { return name; }
+    private:
+        std::string name;
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     class KelThuzadInterruptStrategy : public Strategy
     {
     public:

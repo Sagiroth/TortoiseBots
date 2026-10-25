@@ -185,6 +185,9 @@ namespace ai
             creators["ebonroc swap"] = [](PlayerbotAI* ai) { return new EbonrocSwapStrategy(ai); };
             creators["blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairDungeonStrategy(ai); };
             creators["maexxna rescue"] = [](PlayerbotAI* ai) { return new MaexxnaRescueStrategy(ai); };
+            creators["patchwerk main"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai,"patchwerk main"); };
+            creators["patchwerk soak"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai,"patchwerk soak"); };
+            creators["patchwerk melee safety"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai,"patchwerk melee safety"); };
             creators["kt interrupt"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptStrategy(ai); };
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatStrategy(ai); };
             creators["ossirian crystal"] = [](PlayerbotAI* ai) { return new OssirianCrystalStrategy(ai); };

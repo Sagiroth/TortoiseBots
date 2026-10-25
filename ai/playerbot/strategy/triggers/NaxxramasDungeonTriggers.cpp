@@ -26,3 +26,10 @@ bool KelThuzadInterruptTrigger::IsActive()
     KelThuzadInterruptAction action(ai);
     return action.isUseful();
 }
+
+#include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
+bool PatchwerkMeleeTrigger::IsActive()
+{
+    PatchwerkMeleeRetreatAction action(ai);
+    return action.isUseful();
+}

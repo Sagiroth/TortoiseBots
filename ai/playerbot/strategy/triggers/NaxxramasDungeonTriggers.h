@@ -4,6 +4,13 @@
 
 namespace ai
 {
+    class PatchwerkMeleeTrigger : public Trigger
+    {
+    public:
+        PatchwerkMeleeTrigger(PlayerbotAI* ai) : Trigger(ai, "patchwerk melee unsafe", 1) {}
+        bool IsActive() override;
+    };
+
     class KelThuzadInterruptTrigger : public Trigger
     {
     public:
