@@ -103,7 +103,15 @@ int strcmpi(char const* a, char const* b) { return strcasecmp(a,b); }
 bool IsPositiveSpell(uint32) { return false; }
 enum class BotState { BOT_STATE_COMBAT };
 enum class BotCheatMask { attackspeed };
+// Diagnostics are observed separately; this fixture tests cure decisions.
+struct HealerDiagnosticsStub {
+    template<class... T> void CastAttempt(T...) {}
+};
 struct PlayerbotAI {
+    HealerDiagnosticsStub& GetHealerDiagnostics() {
+        static HealerDiagnosticsStub diagnostics;
+        return diagnostics;
+    }
     Player* bot;
     std::set<std::string> strategies;
     unsigned casts=0;

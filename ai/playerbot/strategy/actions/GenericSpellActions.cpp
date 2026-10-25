@@ -343,6 +343,7 @@ bool CastSpellAction::Execute(Event& event)
         }
         else
             executed = ai->CastSpell(spellName, target, nullptr, false, &spellDuration);
+        ai->GetHealerDiagnostics().CastAttempt(ai, target, spellIdOverride ? spellIdOverride : spellId, executed);
     }
 
     if (executed)
@@ -373,7 +374,10 @@ bool CastSpellAction::isPossible()
 
     Unit* spellTarget = GetTarget();
     if (!spellTarget)
+    {
+        ai->GetHealerDiagnostics().CheckFailed(ai, nullptr, spellId, SPELL_FAILED_BAD_TARGETS);
         return false;
+    }
 
     bool canReach = false;
     if (spellTarget == bot)
@@ -411,6 +415,7 @@ bool CastSpellAction::isPossible()
     if(!canReach)
     {
         botdiag::BotActionLog::Write(ai, "CAST_REFUSED", "spell=%s reason=out-of-reach", spellName.c_str());
+        ai->GetHealerDiagnostics().CheckFailed(ai, spellTarget, spellId, SPELL_FAILED_OUT_OF_RANGE);
         return false;
     }
 
@@ -421,6 +426,7 @@ bool CastSpellAction::isPossible()
     {
         // NOT_READY (GCD / cast in flight) is every tick's normal answer
         // between casts; logging it would bury the real refusals.
+        ai->GetHealerDiagnostics().CheckFailed(ai, spellTarget, spellId, result);
         if (result != SPELL_FAILED_NOT_READY)
             botdiag::BotActionLog::Write(ai, "CAST_REFUSED", "spell=%s result=%u", spellName.c_str(), (uint32)result);
         return false;

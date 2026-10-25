@@ -2854,6 +2854,8 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
         return;
     }
 
+    healerDiagnostics.Sample(this);
+
     if (minimal)
     {
         if (!MovementAction::MinimalMove(this) && !bot->IsAFK() && !bot->InBattleGround() && !HasRealPlayerMaster())

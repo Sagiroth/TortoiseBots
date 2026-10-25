@@ -881,6 +881,7 @@ bool PlayerbotAIConfig::Initialize()
     actionLogMaxTotalMB = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.ActionLogMaxTotalMB", 2048)));
     actionLogMaxFileMB = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.ActionLogMaxFileMB", 100)));
     actionCountsLog = config.GetBoolDefault("AiPlayerbot.ActionCountsLog", false);
+    healerDiagnostics = config.GetBoolDefault("AiPlayerbot.HealerDiagnostics", true);
     botLogFile = config.GetStringDefault("AiPlayerbot.BotLogFile", "");
     {
         std::string logsDir = sConfig.GetStringDefault("LogsDir", "");

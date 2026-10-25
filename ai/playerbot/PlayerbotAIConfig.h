@@ -631,6 +631,7 @@ public:
     // minutes to logs/action_counts.csv. Default off so production servers
     // pay one branch per executed action and nothing else.
     bool actionCountsLog;
+    bool healerDiagnostics = true;
     // Filename (relative to LogsDir) for the bot subsystem log. When set,
     // all sLog calls from bot .cpp files are redirected there instead of
     // writing to the main server log. Default: "bots.log". Empty = disabled.

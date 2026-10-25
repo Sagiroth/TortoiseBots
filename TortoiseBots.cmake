@@ -210,6 +210,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/ai/playerbot/PlayerbotAIPackets.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/PlayerbotAIQuests.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/PlayerbotAISpells.cpp"
+    "${TORTOISEBOTS_ROOT}/ai/playerbot/HealerDiagnostics.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/PlayerbotAIConfig.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/AiFactory.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/ServerFacade.cpp"
