@@ -7,6 +7,7 @@
 #include "playerbot/policy/raid/GeddonInfernoPolicy.h"
 #include "playerbot/GarrAoePolicy.h"
 #include "playerbot/strategy/values/GolemaggTankAssignmentValue.h"
+#include "playerbot/strategy/values/GarrTankAssignmentValue.h"
 #include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 #include "playerbot/strategy/actions/ReachTargetActions.h"
 
@@ -397,4 +398,37 @@ void GehennasRainStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 void GehennasRainStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
     InitCombatTriggers(triggers);
+}
+
+namespace
+{
+class GarrTankMultiplier : public Multiplier
+{
+public:
+    GarrTankMultiplier(PlayerbotAI* ai) : Multiplier(ai, "garr tank assignment") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || action->IsCrowdControlAction() || action->getName() == "attack my target" ||
+            action->getName() == "attack rti target")
+            return 1.0f;
+        bool const offensive = dynamic_cast<AttackAction*>(action) || dynamic_cast<CastSpellAction*>(action);
+        return offensive && IsGarrTankTargetExcluded(ai, action->GetTarget()) ? 0.0f : 1.0f;
+    }
+};
+}
+
+void GarrBossTankStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("garr tank target excluded",
+        NextAction::array(0, new NextAction("garr tank retarget", ACTION_HIGH + 5), NULL)));
+}
+
+void GarrBossTankStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new GarrTankMultiplier(ai));
+}
+
+void GarrBossTankStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
 }

@@ -248,7 +248,9 @@ namespace ai
             creators["sulfuron interrupts"] = [](PlayerbotAI* ai) { return new SulfuronInterruptStrategy(ai); };
             creators["garr dps"] = [](PlayerbotAI* ai) { return new GarrDpsStrategy(ai); };
             creators["golemagg boss tank"] = [](PlayerbotAI* ai) { return new GolemaggBossTankStrategy(ai); };
+            creators["garr boss tank"] = [](PlayerbotAI* ai) { return new GarrBossTankStrategy(ai); };
             creators["golemagg add tank"] = [](PlayerbotAI* ai) { return new GolemaggAddTankStrategy(ai); };
+            creators["garr add tank"] = [](PlayerbotAI* ai) { return new GarrAddTankStrategy(ai); };
             creators["golemagg dps"] = [](PlayerbotAI* ai) { return new GolemaggDpsStrategy(ai); };
             creators["gehennas rain"] = [](PlayerbotAI* ai) { return new GehennasRainStrategy(ai); };
             creators["geddon inferno"] = [](PlayerbotAI* ai) { return new GeddonInfernoStrategy(ai); };

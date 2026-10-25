@@ -411,6 +411,7 @@ namespace ai
             creators["enable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarEnableFightStrategyAction(ai); };
             creators["disable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarDisableFightStrategyAction(ai); };
             creators["golemagg tank retarget"] = [](PlayerbotAI* ai) { return new GolemaggTankRetargetAction(ai); };
+            creators["garr tank retarget"] = [](PlayerbotAI* ai) { return new GarrTankRetargetAction(ai); };
             creators["raid dps retarget"] = [](PlayerbotAI* ai) { return new RaidDpsRetargetAction(ai); };
             creators["ragnaros son attack"] = [](PlayerbotAI* ai) { return new RagnarosSonAttackAction(ai); };
             creators["geddon inferno retreat"] = [](PlayerbotAI* ai) { return new GeddonInfernoRetreatAction(ai); };

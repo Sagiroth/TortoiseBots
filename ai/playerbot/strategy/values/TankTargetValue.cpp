@@ -5,6 +5,7 @@
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "RaidDpsTargetPolicy.h"
 #include "GolemaggTankAssignmentValue.h"
+#include "GarrTankAssignmentValue.h"
 #include "NefarianAddAssignmentValue.h"
 #include "PossibleAttackTargetsValue.h"
 #include "AttackersValue.h"
@@ -98,6 +99,7 @@ public:
         AiObjectContext* context = ai->GetAiObjectContext();
 
         if (!attacker || !attacker->IsAlive() || IsGolemaggTankTargetExcluded(ai, attacker) ||
+            IsGarrTankTargetExcluded(ai, attacker) ||
             IsNefarianAddTargetExcluded(ai, attacker))
             return;
 
@@ -250,6 +252,9 @@ Unit* TankTargetValue::Calculate()
         else if (!victim)
             return rti;
     }
+
+    if (Unit* assigned = GetAssignedGarrTankTarget(ai))
+        return assigned;
 
     if (Unit* assigned = GetAssignedPatchwerkTankTarget(ai))
         return assigned;

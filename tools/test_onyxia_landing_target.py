@@ -68,6 +68,8 @@ struct OnyxiaLandingAttackAction{
 // The test verifies the production Calculate caller actually overrides it.
 Unit* looseWhelp=nullptr;
 struct RtiTargetValue{Unit* Calculate(){return nullptr;}};
+// Garr assignment is inactive in this Onyxia fixture.
+Unit* GetAssignedGarrTankTarget(PlayerbotAI*){return nullptr;}
 Unit* GetAssignedPatchwerkTankTarget(PlayerbotAI*){return nullptr;}
 Unit* GetOnyxiaWhelpTarget(PlayerbotAI*){return nullptr;}
 bool IsNefarianAddTankOptedIn(PlayerbotAI*){return false;}

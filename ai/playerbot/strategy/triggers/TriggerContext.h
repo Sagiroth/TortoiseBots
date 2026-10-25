@@ -386,6 +386,7 @@ namespace ai
             // Dungeon Boss Triggers
 
             creators["golemagg tank target excluded"] = [](PlayerbotAI* ai) { return new GolemaggTankRetargetTrigger(ai); };
+            creators["garr tank target excluded"] = [](PlayerbotAI* ai) { return new GarrTankRetargetTrigger(ai); };
             creators["raid dps target excluded"] = [](PlayerbotAI* ai) { return new RaidDpsRetargetTrigger(ai); };
             creators["ragnaros son pickup"] = [](PlayerbotAI* ai) { return new RagnarosSonTrigger(ai); };
             creators["geddon inferno active"] = [](PlayerbotAI* ai) { return new LocalGeddonInfernoTrigger(ai); };

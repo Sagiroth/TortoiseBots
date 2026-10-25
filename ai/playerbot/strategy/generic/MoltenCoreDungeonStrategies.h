@@ -64,6 +64,24 @@ namespace ai
         void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
     };
 
+    class GarrBossTankStrategy : public Strategy
+    {
+    public:
+        GarrBossTankStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "garr boss tank"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
+    class GarrAddTankStrategy : public GarrBossTankStrategy
+    {
+    public:
+        GarrAddTankStrategy(PlayerbotAI* ai) : GarrBossTankStrategy(ai) {}
+        std::string getName() override { return "garr add tank"; }
+    };
+
     class GolemaggBossTankStrategy : public Strategy
     {
     public:

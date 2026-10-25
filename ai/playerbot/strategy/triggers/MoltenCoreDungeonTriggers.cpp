@@ -61,3 +61,10 @@ bool GehennasRainTrigger::IsActive()
 {
     return GehennasRainTooClose(ai);
 }
+
+
+bool GarrTankRetargetTrigger::IsActive()
+{
+    GarrTankRetargetAction action(ai);
+    return action.isUseful();
+}

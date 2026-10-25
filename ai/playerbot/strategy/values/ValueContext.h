@@ -21,6 +21,7 @@
 #include "LineTargetValue.h"
 #include "TankTargetValue.h"
 #include "GolemaggTankAssignmentValue.h"
+#include "GarrTankAssignmentValue.h"
 #include "NefarianAddAssignmentValue.h"
 #include "DpsTargetValue.h"
 #include "CcTargetValue.h"
@@ -167,6 +168,7 @@ namespace ai
             creators["master target"] = [](PlayerbotAI* ai) { return new MasterTargetValue(ai); };
             creators["line target"] = [](PlayerbotAI* ai) { return new LineTargetValue(ai); };
             creators["golemagg tank assignment"] = [](PlayerbotAI* ai) { return new GolemaggTankAssignmentValue(ai); };
+            creators["garr tank assignment"] = [](PlayerbotAI* ai) { return new GarrTankAssignmentValue(ai); };
             creators["nefarian add assignment"] = [](PlayerbotAI* ai) { return new NefarianAddAssignmentValue(ai); };
             creators["tank target"] = [](PlayerbotAI* ai) { return new TankTargetValue(ai); };
             creators["dps target"] = [](PlayerbotAI* ai) { return new DpsTargetValue(ai); };
