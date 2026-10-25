@@ -7,6 +7,8 @@
 
 namespace ai
 {
+    Unit* GetActiveFaerlinaWorshipperGuard(PlayerbotAI* ai);
+    bool IsFaerlinaWorshipperTargetExcluded(PlayerbotAI* ai, Unit* target);
     Unit* GetActiveLoathebSporeGuard(PlayerbotAI* ai);
     bool IsLoathebSporeTargetExcluded(PlayerbotAI* ai, Unit* target);
     class GrobbulusCloudEscapeAction : public MovementAction

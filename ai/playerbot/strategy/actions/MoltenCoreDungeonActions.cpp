@@ -166,7 +166,7 @@ bool ai::IsRaidDpsTargetExcluded(PlayerbotAI* ai, Unit* target)
     if (bot->GetMapId() == 531)
         return IsTwinPhysicalDpsTargetExcluded(ai, target);
     if (bot->GetMapId() == 533)
-        return IsLoathebSporeTargetExcluded(ai, target);
+        return IsLoathebSporeTargetExcluded(ai, target) || IsFaerlinaWorshipperTargetExcluded(ai, target);
     // DPS target values call this outside raids too; avoid strategy lookups there.
     bool const inMoltenCore = bot->GetMapId() == 409;
     bool const inBlackwingLair = bot->GetMapId() == 469;

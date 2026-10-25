@@ -229,6 +229,50 @@ public:
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 namespace
 {
+class FaerlinaWorshipperGuardMultiplier : public Multiplier
+{
+public:
+    FaerlinaWorshipperGuardMultiplier(PlayerbotAI* ai) : Multiplier(ai, "faerlina worshipper protection") {}
+    float GetValue(Action* action) override
+    {
+        if (!action)
+            return 1.0f;
+        bool const incidental = GarrIncidentalDamageAction(action->getName(),
+            action->getThreatType() == ActionThreatType::ACTION_THREAT_AOE,
+            dynamic_cast<CastHealingSpellAction*>(action) != nullptr,
+            action->IsCrowdControlAction());
+        if (incidental)
+            return GetActiveFaerlinaWorshipperGuard(ai) ? 0.0f : 1.0f;
+        if (action->IsCrowdControlAction() || action->getName() == "attack my target" ||
+            action->getName() == "attack rti target")
+            return 1.0f;
+        bool const offensive = dynamic_cast<AttackAction*>(action) ||
+            dynamic_cast<CastSpellAction*>(action) || action->getName() == "pet attack";
+        return offensive && IsFaerlinaWorshipperTargetExcluded(ai, action->GetTarget()) ? 0.0f : 1.0f;
+    }
+};
+}
+
+void FaerlinaWorshipperGuardStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("raid dps target excluded",
+        NextAction::array(0, new NextAction("raid dps retarget", ACTION_HIGH + 5), nullptr)));
+}
+void FaerlinaWorshipperGuardStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitCombatTriggers(triggers);
+}
+void FaerlinaWorshipperGuardStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new FaerlinaWorshipperGuardMultiplier(ai));
+}
+void FaerlinaWorshipperGuardStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}
+
+namespace
+{
 class LoathebSporeGuardMultiplier : public Multiplier
 {
 public:

@@ -208,6 +208,7 @@ namespace ai
             creators["viscidus glob focus"] = [](PlayerbotAI* ai) { return new ViscidusGlobStrategy(ai); };
             creators["ossirian crystal"] = [](PlayerbotAI* ai) { return new OssirianCrystalStrategy(ai); };
             creators["grobbulus clouds"] = [](PlayerbotAI* ai) { return new GrobbulusCloudStrategy(ai); };
+            creators["faerlina worshipper guard"] = [](PlayerbotAI* ai) { return new FaerlinaWorshipperGuardStrategy(ai); };
             creators["loatheb spore guard"] = [](PlayerbotAI* ai) { return new LoathebSporeGuardStrategy(ai); };
             creators["naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasDungeonStrategy(ai); };
             creators["zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubDungeonStrategy(ai); };

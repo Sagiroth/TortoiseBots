@@ -142,6 +142,41 @@ bool ai::IsLoathebSporeTargetExcluded(PlayerbotAI* ai, Unit* target)
 }
 
 
+Unit* ai::GetActiveFaerlinaWorshipperGuard(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (bot->GetMapId() != 533 || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->IsBeingTeleported() || !bot->IsInCombat() ||
+        !ai->HasStrategy("faerlina worshipper guard", BotState::BOT_STATE_COMBAT))
+        return nullptr;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* boss = ai->GetUnit(guid);
+        if (boss && boss->GetEntry() == 15953 && boss->IsInMap(bot) && boss->IsAlive() && boss->IsInCombat())
+            return boss;
+    }
+    return nullptr;
+}
+
+bool ai::IsFaerlinaWorshipperTargetExcluded(PlayerbotAI* ai, Unit* target)
+{
+    Player* bot = ai->GetBot();
+    if (!target || target->GetEntry() != 16506 || !target->IsAlive() || !target->IsInMap(bot) ||
+        target->IsFriendlyTo(bot) ||
+        !GetActiveFaerlinaWorshipperGuard(ai))
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    bool ordered = AI_VALUE(ObjectGuid, "explicit attack target") == target->GetObjectGuid();
+    if (Group* group = bot->GetGroup())
+    {
+        int const mark = RtiTargetValue::GetRtiIndex(AI_VALUE(std::string, "rti"));
+        ordered = ordered || (mark >= 0 && ObjectGuid(group->GetTargetIcon(mark)) == target->GetObjectGuid());
+    }
+    return !ordered;
+}
+
+
 #include "playerbot/LocustSwarmPolicy.h"
 Unit* ai::GetActiveLocustSwarm(PlayerbotAI* ai)
 {

@@ -3,6 +3,18 @@
 
 namespace ai
 {
+    class FaerlinaWorshipperGuardStrategy : public Strategy
+    {
+    public:
+        FaerlinaWorshipperGuardStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "faerlina worshipper guard"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     class LoathebSporeGuardStrategy : public Strategy
     {
     public:
