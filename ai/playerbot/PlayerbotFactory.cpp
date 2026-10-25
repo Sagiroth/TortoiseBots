@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotFactory.h"
+#include "../../runtime/RoleConsumableService.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/policy/gear/SpellRankPolicy.h"
@@ -390,6 +391,7 @@ void PlayerbotFactory::Refresh()
 // re-seed backstop already covers gaps).
 void PlayerbotFactory::RestockCompanion()
 {
+    TortoiseBots::TopUpRoleConsumables(ai);
     InitReagents();
     InitPotions();
     InitFood();

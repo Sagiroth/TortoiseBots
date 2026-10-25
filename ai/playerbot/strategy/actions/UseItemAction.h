@@ -2,6 +2,7 @@
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/policy/combat/BandageSafetyPolicy.h"
 #include "GenericActions.h"
+#include "../../../../runtime/RoleConsumableService.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/strategy/values/TargetValue.h"
@@ -120,6 +121,7 @@ namespace ai
 
         bool Execute(Event& event) override
         {
+            if (TortoiseBots::RoleConsumablesManaged(ai)) return false;
             // Check the chance of using a potion (only in pvp)
             const bool shouldUsePotion = !ai->IsInPvp() || frand(0.0f, 1.0f) < sPlayerbotAIConfig.usePotionChance;
             if (shouldUsePotion)

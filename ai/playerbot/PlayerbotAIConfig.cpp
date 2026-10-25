@@ -169,6 +169,12 @@ bool PlayerbotAIConfig::Initialize()
         return false;
     }
 
+    roleConsumablesEnabled = config.GetBoolDefault("AiPlayerbot.RoleConsumables.Enabled", false);
+    roleConsumablesAutoProvision = config.GetBoolDefault("AiPlayerbot.RoleConsumables.AutoProvision", false);
+    roleConsumablesPotionQuest = std::max(0, config.GetIntDefault("AiPlayerbot.RoleConsumables.PotionQuest", 0));
+    roleConsumablesElixirQuest = std::max(0, config.GetIntDefault("AiPlayerbot.RoleConsumables.ElixirQuest", 0));
+    roleConsumablesFlaskQuest = std::max(0, config.GetIntDefault("AiPlayerbot.RoleConsumables.FlaskQuest", 0));
+
     ConfigAccess configA(config);
 
     BarGoLink::SetOutputState(config.GetBoolDefault("AiPlayerbot.ShowProgressBars", true));

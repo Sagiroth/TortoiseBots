@@ -7,6 +7,7 @@
 #include "../../runtime/policy/class/ShamanTankLevelingPolicy.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/AiFactory.h"
+#include "../../runtime/RoleConsumableService.h"
 #include "playerbot/AiContextAugment.h"
 #include <vector>
 #include "strategy/AiObjectContext.h"
@@ -1021,6 +1022,9 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
     if (facade->IsHeal(player) && !combatEngine->HasStrategy("heal interrupt"))
         combatEngine->addStrategy("heal interrupt");
 
+    if (TortoiseBots::RoleConsumablesEnabled())
+        combatEngine->addStrategy("role consumables");
+
     // Battleground switch
     if (player->InBattleGround())
     {
@@ -1624,6 +1628,9 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     {
         nonCombatEngine->ChangeStrategy(sPlayerbotAIConfig.nonCombatStrategies);
     }
+
+    if (TortoiseBots::RoleConsumablesEnabled())
+        nonCombatEngine->addStrategy("role consumables");
 
     // Battleground switch
     if (player->InBattleGround())

@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "playerbot/AiFactory.h"
+#include "../../runtime/RoleConsumableService.h"
 
 #include "../../runtime/ObservabilityEmitter.h"
 #include "../../runtime/WorldPvpPolicy.h"
@@ -352,6 +353,8 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
     // Issue #846: after the master check, so the gate sees the live master.
     PublishChatGate();
+
+    TortoiseBots::UpdateRoleConsumableProvision(this, elapsed, m_consumableProvisionClock);
 
     if(aiInternalUpdateDelay > elapsed)
     {

@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
 
+#include "RoleConsumableAction.h"
 #include "GenericActions.h"
 #include "EmoteAction.h"
 #include "AddLootAction.h"
@@ -271,6 +272,7 @@ namespace ai
             creators["boss protection potion"] = [](PlayerbotAI* ai) { return new UseBossProtectionPotionAction(ai); };
             creators["free action potion"] = [](PlayerbotAI* ai) { return new UseFreeActionPotionAction(ai); };
             creators["use consumable"] = [](PlayerbotAI* ai) { return new UseConsumableAction(ai); };
+            creators["role consumable"] = [](PlayerbotAI* ai) { return new RoleConsumableAction(ai); };
             creators["anti-venom"] = [](PlayerbotAI* ai) { return new UseAntiVenomAction(ai); };
 
             // BG Tactics

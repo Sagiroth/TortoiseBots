@@ -1,5 +1,6 @@
 ﻿#include "playerbot/playerbot.h"
 #include "UseConsumableAction.h"
+#include "../../../../runtime/RoleConsumableService.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/AiFactory.h"
@@ -797,6 +798,7 @@ bool UseConsumableAction::isUseful()
 
 bool UseConsumableAction::Execute(Event& event)
 {
+    if (TortoiseBots::RoleConsumablesManaged(ai)) return false;
     selectedItemId = 0;
 
     if (bot->IsNonMeleeSpellCasted(false, false, true))

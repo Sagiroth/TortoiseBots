@@ -6044,3 +6044,19 @@ AiPlayerbot.HealDistanceBg = 25
 # vmangos) MUST keep this at 0 to avoid a worker-thread SIGSEGV; set 1 only on
 # cores with concurrent terrain support.
 # AiPlayerbot.AsyncTravelPartitions = 0
+
+
+# Role consumables (#491), disabled by default. Enable the strategy for grouped
+# player-owned bots. The real master's rewarded quests unlock stages in order:
+# potions, then elixirs/scrolls/food buffs, then flasks. 0 keeps a stage locked.
+# Buffs follow the master's active supported consumable buff; potions respond
+# to low health/mana. Existing bag items only, even with item cheats enabled.
+AiPlayerbot.RoleConsumables.Enabled = 0
+AiPlayerbot.RoleConsumables.PotionQuest = 0
+AiPlayerbot.RoleConsumables.ElixirQuest = 0
+AiPlayerbot.RoleConsumables.FlaskQuest = 0
+# Private-server opt-in: also enables role consumables. Ledger-backed hired
+# companions bypass these quest gates and receive a small role/level kit on
+# first safe update after hire/login/resurrection and every five minutes.
+# No free items for owned alts, claimed pool bots or roaming bots. Food excluded.
+AiPlayerbot.RoleConsumables.AutoProvision = 0

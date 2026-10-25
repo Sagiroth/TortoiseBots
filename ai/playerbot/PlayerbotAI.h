@@ -17,6 +17,7 @@
 #include "playerbot/PullJoinWindowPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "../../runtime/BotManager.h"
+#include "../../runtime/ConsumableProvisionClock.h"
 
 class Player;
 class ChatHandler;
@@ -1063,6 +1064,7 @@ protected:
 	uint8 m_forcedRole = 0;
 	bool m_petTauntAutocastOrdered = false;
 	time_t m_dungeonCatchUpAt = 0;
+    TortoiseBots::ConsumableProvisionClock m_consumableProvisionClock;
 	// GUID-shadow of `master` so we can verify the pointer is still
 	// alive each tick without dereferencing it. Set in SetMaster().
 	// Used by RevalidateMasterPointer() at the top of UpdateAI.

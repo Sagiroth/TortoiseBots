@@ -180,6 +180,12 @@ public:
     bool botCheckAllAuctionListings;
     bool botsSaveEpics;
     uint32 auctionPriceRefreshInterval = 60; // seconds between price mirror refreshes
+    // Quest-gated role consumables and independent private-server provisioning.
+    bool roleConsumablesEnabled = false;
+    bool roleConsumablesAutoProvision = false;
+    uint32 roleConsumablesPotionQuest = 0;
+    uint32 roleConsumablesElixirQuest = 0;
+    uint32 roleConsumablesFlaskQuest = 0;
     // Default-off bounded AH market population (module-only, native transaction path).
     bool ahMarketEnabled = false;
     uint32 ahMarketInterval = 120; // seconds between market ticks
