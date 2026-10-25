@@ -23,6 +23,16 @@ int main()
         IsPriorityRaidDispel(533, LUCIFRONS_CURSE_SPELL_ID, RAID_DISPEL_CURSE))
         return 1;
 
+    if (!IsPriorityRaidDispel(533, 29213, RAID_DISPEL_CURSE))
+    {
+        std::cerr << "Noth curse must enter the priority pass in Naxxramas\n";
+        return 1;
+    }
+    if (IsPriorityRaidDispel(409, 29213, RAID_DISPEL_CURSE) ||
+        IsPriorityRaidDispel(533, 29213, RAID_DISPEL_MAGIC) ||
+        IsPriorityRaidDispel(533, 29214, RAID_DISPEL_CURSE))
+        return 1;
+
     std::cout << "raid dispel priority policy: OK\n";
     return 0;
 }

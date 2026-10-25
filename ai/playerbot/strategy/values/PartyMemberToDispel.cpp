@@ -30,6 +30,7 @@ public:
             return false;
 
         bool const hasPriorityAura =
+            (IsPriorityRaidDispel(unit->GetMapId(), NOTH_CURSE_SPELL_ID, dispelType) && unit->HasAura(NOTH_CURSE_SPELL_ID)) ||
             (unit->HasAura(LUCIFRONS_CURSE_SPELL_ID) && IsPriorityRaidDispel(unit->GetMapId(), LUCIFRONS_CURSE_SPELL_ID, dispelType)) ||
             (unit->HasAura(MAGMADAR_PANIC_SPELL_ID) && IsPriorityRaidDispel(unit->GetMapId(), MAGMADAR_PANIC_SPELL_ID, dispelType)) ||
             (unit->HasAura(NEFARIAN_WILD_POLYMORPH_SPELL_ID) && IsPriorityRaidDispel(unit->GetMapId(), NEFARIAN_WILD_POLYMORPH_SPELL_ID, dispelType));
