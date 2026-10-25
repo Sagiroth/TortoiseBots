@@ -1,6 +1,8 @@
 #include "playerbot/playerbot.h"
 #include "BlackwingLairDungeonStrategies.h"
 #include "DungeonMultipliers.h"
+#include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
+#include "playerbot/EbonrocSwapPolicy.h"
 
 using namespace ai;
 
@@ -332,4 +334,46 @@ void SuppressionRoomStrategy::OnStrategyAdded(BotState state)
         ai->ChangeStrategy("-avoid mobs", BotState::BOT_STATE_NON_COMBAT);
         ai->ChangeStrategy("-avoid mobs", BotState::BOT_STATE_REACTION);
     }
+}
+
+namespace
+{
+class EbonrocTauntMultiplier : public Multiplier
+{
+public:
+    EbonrocTauntMultiplier(PlayerbotAI* ai) : Multiplier(ai, "ebonroc taunt coordination") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || !EbonrocTauntAction(action->getName()))
+            return 1.0f;
+        Unit* boss = GetActiveEbonrocSwapBoss(ai);
+        if (!boss)
+            return 1.0f;
+        std::string const name = action->getName();
+        bool const aoe = name == "challenging shout" || name == "challenging roar";
+        Unit* victim = boss->GetVictim();
+        if (action->GetTarget() != boss && !aoe && !(name == "righteous defense" && action->GetTarget() == victim))
+            return 1.0f;
+        Player* tank = dynamic_cast<Player*>(victim);
+        bool const otherHealthyTank = tank && tank != ai->GetBot() && ai->IsTank(tank) && !tank->HasAura(23340);
+        return EbonrocBlockAutomaticTaunt(ai->GetBot()->HasAura(23340), victim && victim->HasAura(23340),
+            otherHealthyTank) ? 0.0f : 1.0f;
+    }
+};
+}
+
+void EbonrocSwapStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("ebonroc shadow swap needed",
+        NextAction::array(0, new NextAction("ebonroc shadow swap", ACTION_EMERGENCY + 4), NULL)));
+}
+
+void EbonrocSwapStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new EbonrocTauntMultiplier(ai));
+}
+
+void EbonrocSwapStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
 }

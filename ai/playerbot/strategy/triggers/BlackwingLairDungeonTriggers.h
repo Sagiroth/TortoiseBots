@@ -7,6 +7,13 @@
 
 namespace ai
 {
+    class EbonrocShadowSwapTrigger : public Trigger
+    {
+    public:
+        EbonrocShadowSwapTrigger(PlayerbotAI* ai) : Trigger(ai, "ebonroc shadow swap needed", 1) {}
+        bool IsActive() override;
+    };
+
     class BlackwingLairEnterDungeonTrigger : public EnterDungeonTrigger
     {
     public:

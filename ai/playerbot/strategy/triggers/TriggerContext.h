@@ -324,6 +324,7 @@ namespace ai
             creators["leave molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreLeaveDungeonTrigger(ai); };
             creators["enter naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasEnterDungeonTrigger(ai); };
             creators["leave naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasLeaveDungeonTrigger(ai); };
+            creators["ebonroc shadow swap needed"] = [](PlayerbotAI* ai) { return new EbonrocShadowSwapTrigger(ai); };
             creators["enter blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairEnterDungeonTrigger(ai); };
             creators["leave blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairLeaveDungeonTrigger(ai); };
             creators["enter zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubEnterDungeonTrigger(ai); };

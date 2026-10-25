@@ -179,6 +179,7 @@ namespace ai
             creators["dungeon"] = [](PlayerbotAI* ai) { return new DungeonStrategy(ai); };
             creators["onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairDungeonStrategy(ai); };
             creators["molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreDungeonStrategy(ai); };
+            creators["ebonroc swap"] = [](PlayerbotAI* ai) { return new EbonrocSwapStrategy(ai); };
             creators["blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairDungeonStrategy(ai); };
             creators["naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasDungeonStrategy(ai); };
             creators["zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubDungeonStrategy(ai); };

@@ -11,6 +11,16 @@
 
 namespace ai
 {
+    Unit* GetActiveEbonrocSwapBoss(PlayerbotAI* ai);
+
+    class EbonrocShadowSwapAction : public Action
+    {
+    public:
+        EbonrocShadowSwapAction(PlayerbotAI* ai) : Action(ai, "ebonroc shadow swap") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
+
     const uint32 SPELL_DISARM_TRAP = 1842;
 
     class BlackwingLairEnableDungeonStrategyAction : public ChangeAllStrategyAction

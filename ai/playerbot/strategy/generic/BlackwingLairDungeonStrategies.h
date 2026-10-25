@@ -3,6 +3,17 @@
 
 namespace ai
 {
+    class EbonrocSwapStrategy : public Strategy
+    {
+    public:
+        EbonrocSwapStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "ebonroc swap"; }
+    private:
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     class BlackwingLairDungeonStrategy : public Strategy
     {
     public:
