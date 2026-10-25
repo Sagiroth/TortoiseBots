@@ -220,9 +220,9 @@ namespace ai
                 // `light rage available`, so the veto follows the same
                 // trigger; BT/MS rows are CanCast-gated (rage-aware already).
                 bool slamLive = shieldSlam && sServerFacade.IsSpellReady(bot, shieldSlam) &&
-                    AI_VALUE2(bool, "trigger active", "light rage available");
-                if ((bloodThirst && sServerFacade.IsSpellReady(bot, bloodThirst)) ||
-                    (mortalStrike && sServerFacade.IsSpellReady(bot, mortalStrike)) ||
+                    AI_VALUE2(bool, "trigger active", "light rage available") && ai->CanCastSpell(shieldSlam, target);
+                if ((bloodThirst && sServerFacade.IsSpellReady(bot, bloodThirst) && ai->CanCastSpell(bloodThirst, target)) ||
+                    (mortalStrike && sServerFacade.IsSpellReady(bot, mortalStrike) && ai->CanCastSpell(mortalStrike, target)) ||
                     slamLive)
                 {
                     return false;

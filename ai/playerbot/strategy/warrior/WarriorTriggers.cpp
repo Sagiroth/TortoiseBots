@@ -59,7 +59,7 @@ bool SunderArmorDebuffTrigger::IsActive()
     if (Aura* aura = ai->GetAura("sunder armor", target))
     {
         if (aura->GetStackAmount() >= 5)
-            return aura->GetAuraDuration() <= 6000;
+            return aura->GetAuraDuration() >= 0 && aura->GetAuraDuration() <= 6000;
         return true;
     }
 
