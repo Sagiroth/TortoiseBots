@@ -158,8 +158,11 @@ bool ai::IsRaidDpsTargetExcluded(PlayerbotAI* ai, Unit* target)
     Player* bot = ai->GetBot();
     if (!target || !target->IsAlive() || !target->IsInMap(bot) || !bot->IsAlive() || !bot->IsInCombat())
         return false;
-    bool const protectedEntry = target->GetEntry() == 11672;
-    bool const enabled = ai->HasStrategy("golemagg dps", BotState::BOT_STATE_COMBAT);
+    RaidDpsEncounter const encounter = RaidDpsEncounterForTarget(target->GetEntry(),
+        ai->HasStrategy("golemagg dps", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("majordomo dps", BotState::BOT_STATE_COMBAT));
+    bool const protectedEntry = encounter != RaidDpsEncounter::None;
+    bool const enabled = protectedEntry;
     bool const inEncounterMap = bot->GetMapId() == 409;
     bool const tank = ai->IsTank(bot);
     if (!protectedEntry || !enabled || !inEncounterMap || tank)
@@ -172,14 +175,20 @@ bool ai::IsRaidDpsTargetExcluded(PlayerbotAI* ai, Unit* target)
         if (mark >= 0 && ObjectGuid(group->GetTargetIcon(mark)) == target->GetObjectGuid())
             ordered = true;
     }
-    bool encounterActive = false;
-    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    // Majordomo yields when his adds die. Do not autonomously burn him down,
+    // but preserve the assigned tank and explicit damage orders.
+    bool encounterActive = encounter == RaidDpsEncounter::Majordomo &&
+        target->IsInCombat() && !sServerFacade.IsFriendlyTo(bot, target);
+    if (encounter == RaidDpsEncounter::Golemagg)
     {
-        Unit* boss = ai->GetUnit(guid);
-        if (boss && boss->GetEntry() == 11988 && boss->IsInMap(bot) && boss->IsAlive() && boss->IsInCombat())
+        for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
         {
-            encounterActive = true;
-            break;
+            Unit* boss = ai->GetUnit(guid);
+            if (boss && boss->GetEntry() == 11988 && boss->IsInMap(bot) && boss->IsAlive() && boss->IsInCombat())
+            {
+                encounterActive = true;
+                break;
+            }
         }
     }
     return RaidDpsTargetExcluded(enabled, inEncounterMap, tank, ordered, protectedEntry, encounterActive);

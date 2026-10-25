@@ -66,6 +66,13 @@ namespace ai
         void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
     };
 
+    class MajordomoDpsStrategy : public GolemaggDpsStrategy
+    {
+    public:
+        MajordomoDpsStrategy(PlayerbotAI* ai) : GolemaggDpsStrategy(ai) {}
+        std::string getName() override { return "majordomo dps"; }
+    };
+
     // Explicit opt-in via "all +geddon inferno"; never added by map entry.
     class GeddonInfernoStrategy : public Strategy
     {
