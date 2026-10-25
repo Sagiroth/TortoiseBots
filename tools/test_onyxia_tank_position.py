@@ -30,6 +30,7 @@ def fixture(root):
 #include <list>
 #include <map>
 #include <string>
+#include <sstream>
 #include <type_traits>
 #include "playerbot/OnyxiaTankPositionPolicy.h"
 using namespace ai;
@@ -79,13 +80,13 @@ struct AiObjectContext {
 };
 struct PlayerbotAI {
  Player* bot;Unit* boss;Unit* other;bool enabled=true,tank=true,movable=true;std::string hold;
- AiObjectContext context;int stops=0,errors=0;
+ AiObjectContext context;int stops=0,errors=0;std::string lastError;
  Player* GetBot(){return bot;}AiObjectContext* GetAiObjectContext(){return &context;}
  Unit* GetUnit(ObjectGuid id){return id==1?boss:id==2?other:nullptr;}
  bool IsTank(Player*){return tank;}
  bool HasStrategy(std::string s,BotState){return s=="onyxia landing tank"?enabled:s==hold;}
  bool CanMove(){return movable;}void StopMoving(){++stops;bot->motion.kind=0;bot->stopped=true;}
- Player* GetMaster(){return nullptr;}void TellError(Player*,std::string){++errors;}
+ Player* GetMaster(){return nullptr;}void TellError(Player*,std::string message){++errors;lastError=message;}
 };
 template<class T>T value(AiObjectContext* c,std::string n){
  if constexpr(std::is_same_v<T,PositionMap&>)return c->positions;
@@ -96,7 +97,7 @@ template<class T>T value(AiObjectContext* c,std::string n){
  else return n=="rti target"?c->rti:c->current;
 }
 #define AI_VALUE(T,N) value<T>(context,N)
-struct {float sightDistance=60,aggroDistance=20;void logEvent(PlayerbotAI*,std::string,std::string,std::string){}}sPlayerbotAIConfig;
+struct {float sightDistance=60,aggroDistance=20;std::string reason,detail;void logEvent(PlayerbotAI*,std::string,std::string r,std::string d){reason=r;detail=d;}}sPlayerbotAIConfig;
 struct WorldTimer{static unsigned getMSTime(){return 100;}};
 struct PullStrategy{static PullStrategy*Get(PlayerbotAI*){return nullptr;}bool IsCommandActive(){return false;}bool IsCommandPullback(){return false;}Unit*GetTarget(){return nullptr;}};
 struct PossibleAttackTargetsValue{static bool IsValid(Unit* u,Player*,float,bool,bool){return u->valid;}};
@@ -136,6 +137,16 @@ int main(int argc,char** argv){
  Player bot;Unit boss,other;boss.x=-60;other.entry=11262;PlayerbotAI ai{&bot,&boss,&other};ai.context.current=&boss;
  OnyxiaTankPositionAction action(&ai);OnyxiaTankPositionMultiplier guard{&ai};Event event;
  std::string test=argc>1?argv[1]:"movement";
+ if(test=="outside"){
+ bot.y=-240;bot.motion.kind=1;
+ assert(!action.Execute(event));assert(bot.motion.kind==0);assert(!action.active);
+ assert(sPlayerbotAIConfig.reason=="outside validated tank corridor");
+ assert(sPlayerbotAIConfig.detail.find("start=-25/-240/-87")!=std::string::npos);
+ assert(ai.lastError.find("y -232 to -198")!=std::string::npos);
+ int reports=ai.errors;assert(!action.Execute(event));assert(ai.errors==reports);
+ // A failed route is never widened automatically into either cave.
+ bot.y=-254.463f;assert(!action.Execute(event));bot.y=-177.106f;assert(!action.Execute(event));
+ bot.y=-215;assert(action.Execute(event));assert(action.active);return 0;}
  if(test=="guard"){
  MovementAction chase("reach melee"),face("dragon tank face away"),tankface("tank face away"),hazard("move away from hazard"),flee("flee"),facing("set facing");
  CastReachTargetSpellAction charge("charge");Action melee("melee"),taunt("taunt"),cast("shield slam");
@@ -185,7 +196,7 @@ class OnyxiaTankPositionTest(unittest.TestCase):
             cpp, exe = Path(tmp)/'position.cpp', Path(tmp)/'position'
             cpp.write_text(fixture(root))
             subprocess.run(['g++', '-std=c++17', '-I'+str(own/'ai'), str(cpp), '-o', str(exe)], check=True)
-            for case in ['guard', 'scope', 'movement']:
+            for case in ['guard', 'scope', 'movement', 'outside']:
                 with self.subTest(case=case):
                     subprocess.run([str(exe), case], check=True)
 

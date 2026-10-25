@@ -8,6 +8,7 @@
 #include "playerbot/strategy/values/LastMovementValue.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "Movement/spline/MoveSplineInit.h"
+#include <sstream>
 
 using namespace ai;
 
@@ -76,12 +77,16 @@ bool OnyxiaTankPositionAction::Execute(Event& /*event*/)
         blockedReported = false;
         return true;
     }
-    auto fail = [&]()
+    auto fail = [&](char const* reason = "unsafe or incomplete route")
     {
         if (!blockedReported)
         {
-            sPlayerbotAIConfig.logEvent(ai, "OnyxiaTankPositionBlocked", "unsafe or incomplete route", "manual reposition required");
-            ai->TellError(ai->GetMaster(), "Onyxia tank spot: no safe route. Move the tank into the central room.");
+            std::ostringstream detail;
+            detail << "map=249|start=" << here.x << '/' << here.y << '/' << here.z
+                << "|corridor=x[-70,35],y[-232,-198],z[-94,-80]";
+            sPlayerbotAIConfig.logEvent(ai, "OnyxiaTankPositionBlocked", reason, detail.str());
+            ai->TellError(ai->GetMaster(), std::string("Onyxia tank spot: ") + reason +
+                ". Stage the tank in the center lane (map 249, x -70 to 35, y -232 to -198, floor z -94 to -80), away from both whelp caves, then retry the pull.");
             blockedReported = true;
         }
         SetDuration(1000);
@@ -92,12 +97,13 @@ bool OnyxiaTankPositionAction::Execute(Event& /*event*/)
     WorldPosition destination(bot->GetMapId(), goal.x,goal.y,goal.z);
     destination.setZ(destination.GetHeight());
     OnyxiaTankPoint const end{destination.getX(), destination.getY(), destination.getZ()};
-    if (!OnyxiaTankCorridor(here) || !OnyxiaTankCorridor(end) ||
-        OnyxiaTankDistance(end, goal) > 1.5f) return fail();
+    if (!OnyxiaTankCorridor(here)) return fail("outside validated tank corridor");
+    if (!OnyxiaTankCorridor(end) || OnyxiaTankDistance(end, goal) > 1.5f)
+        return fail("crossing or tank destination outside validated floor");
     std::vector<WorldPosition> const path = start.GetPathTo(destination, bot);
     std::vector<OnyxiaTankPoint> route;
     for (auto const& point : path) route.push_back({point.getX(), point.getY(), point.getZ()});
-    if (!OnyxiaTankRouteSafe(here, route, end) || !destination.isPathTo(path, 1.0f, 1.0f)) return fail();
+    if (!OnyxiaTankRouteSafe(here, route, end) || !destination.isPathTo(path, 1.0f, 1.0f)) return fail("incomplete path or path leaves tank corridor");
     auto hazards = AI_VALUE(std::list<HazardPosition>, "hazards");
     for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets no los"))
     {
@@ -114,9 +120,9 @@ bool OnyxiaTankPositionAction::Execute(Event& /*event*/)
             float const fraction = float(i) / steps;
             WorldPosition sample(bot->GetMapId(), previous.getX() + fraction*(point.getX()-previous.getX()),
                 previous.getY() + fraction*(point.getY()-previous.getY()), previous.getZ() + fraction*(point.getZ()-previous.getZ()));
-            if (!IsMovingAllowed(bot->GetMapId(), sample.getX(), sample.getY(), sample.getZ())) return fail();
+            if (!IsMovingAllowed(bot->GetMapId(), sample.getX(), sample.getY(), sample.getZ())) return fail("movement forbidden on tank route");
             for (auto const& hazard : hazards)
-                if (sample.distance(hazard.first) <= hazard.second + 2.0f) return fail();
+                if (sample.distance(hazard.first) <= hazard.second + 2.0f) return fail("hazard or unengaged enemy on tank route");
         }
         previous = point;
     }

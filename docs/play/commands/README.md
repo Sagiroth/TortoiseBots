@@ -240,3 +240,17 @@ Sartura retreat diagnostics: with `AiPlayerbot.RaidBossDiagnostics = 1` and
 `+sartura whirlwind` active in AQ40 combat, `bot_events.csv` records
 `SarturaEscape` / `SarturaEscapeBlocked` (combined cap: one row per bot per
 two seconds). See [Sartura diagnostic fields](../local-raid-tactics.md#sartura-retreat-diagnostics).
+
+### Failed flee and Onyxia staging
+
+When an ordinary flee cannot find or start a safe escape, it waits three
+seconds before trying again. Normal attacks and spells can run during this
+pause; separate hazard and Deep Breath escapes are unchanged. The
+"Nowhere to flee" warning is limited to once per ten seconds per bot.
+
+The Onyxia landing tank still requires a validated central corridor:
+map 249, x -70 to 35, y -232 to -198, ground z -94 to -80. A blocked
+opening now reports the specific refusal and logs the tank's actual
+coordinates. Stage the tank in this lane, away from both whelp caves,
+then select Onyxia and retry `.bot action pull 25`. Automatic approach
+from outside this lane is not enabled.

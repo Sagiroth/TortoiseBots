@@ -4,6 +4,7 @@
 #include "playerbot/strategy/Value.h"
 #include "playerbot/TravelNode.h"
 #include "playerbot/CombatSpreadPolicy.h"
+#include "playerbot/FleeRetryPolicy.h"
 #include "playerbot/TravelRouteCachePolicy.h"
 
 namespace ai
@@ -72,6 +73,7 @@ namespace ai
             fleeCount = other.fleeCount;
             lastFleeAttempt = other.lastFleeAttempt;
             fleeFailures = other.fleeFailures;
+            fleeRetry = other.fleeRetry;
             spreadFailures = other.spreadFailures;
             lastSpreadStepMs = other.lastSpreadStepMs;
             fleeNoSpotMs = other.fleeNoSpotMs;
@@ -90,6 +92,7 @@ namespace ai
             fleeCount = 0;
             lastFleeAttempt = 0;
             fleeFailures.Clear();
+            fleeRetry = FleeRetryState();
             spreadFailures.Clear();
             lastSpreadStepMs = 0;
             fleeNoSpotMs = 0;
@@ -122,6 +125,7 @@ namespace ai
         // Failed headings only; each cache is scoped to its threat/friendly
         // anchor and map. Dispatches are observed before they can veto.
         FleeFailureMemory fleeFailures;
+        FleeRetryState fleeRetry;
         FleeFailureMemory spreadFailures;
         // WorldTimer ms of the last spread/flee step-out dispatch. Throttles
         // RaidSpreadAction to one step per kSpreadStepCooldownMs so stacked

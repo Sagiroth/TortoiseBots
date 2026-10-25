@@ -163,6 +163,7 @@ namespace ai
     public:
         FleeAction(PlayerbotAI* ai, float distance = sPlayerbotAIConfig.spellDistance) : MovementAction(ai, "flee"), distance(distance) {}
         virtual bool Execute(Event& event) override;
+        bool isUseful() override;
 
     private:
         float distance;

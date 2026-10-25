@@ -2050,6 +2050,8 @@ bool MovementAction::Flee(Unit *target)
 
     LastMovement& fleeMovement = AI_VALUE(LastMovement&, "last movement");
     uint32 const nowMs = WorldTimer::getMSTime();
+    if (!fleeMovement.fleeRetry.CanRetry(nowMs))
+        return false;
     fleeMovement.fleeFailures.Observe(target->GetObjectGuid().GetRawValue(),
         target->GetMapId(), sServerFacade.getDistance2d(bot, target), nowMs, bot->movespline->GetId());
 
@@ -2215,7 +2217,9 @@ bool MovementAction::Flee(Unit *target)
         // flee "succeeded" every tick without moving. A checked point step
         // moves for real, and fails when there is nowhere to go so the
         // engine falls back to fighting.
-        return FleeStepAway(target, distance);
+        bool const moved = FleeStepAway(target, distance);
+        if (!moved) fleeMovement.fleeRetry.Failed(nowMs);
+        return moved;
     }
 
     // Generate a position to flee
@@ -2248,6 +2252,7 @@ bool MovementAction::Flee(Unit *target)
         FleeManager manager(bot, fullDistance ? (ai->GetRange("flee") * 2) : ai->GetRange("flee"), bot->GetAngle(target) + M_PI);
         if (!manager.isUseful())
         {
+            fleeMovement.fleeRetry.Failed(nowMs);
             return false;
         }
 
@@ -2262,7 +2267,9 @@ bool MovementAction::Flee(Unit *target)
         float rx, ry, rz;
         if (!manager.CalculateDestination(&rx, &ry, &rz, &fleeMovement.fleeFailures, nowMs))
         {
-            ai->TellError(GetMaster(), "Nowhere to flee");
+            fleeMovement.fleeRetry.Failed(nowMs);
+            if (fleeMovement.fleeRetry.ShouldReport(nowMs))
+                ai->TellError(GetMaster(), "Nowhere to flee");
             return false;
         }
 
@@ -2276,6 +2283,7 @@ bool MovementAction::Flee(Unit *target)
         }
     }
 
+    if (!succeeded) fleeMovement.fleeRetry.Failed(nowMs);
     return succeeded;
 }
 
@@ -2708,6 +2716,12 @@ bool MovementAction::GeneratePathAvoidingHazards(std::vector<WorldPosition>& mov
 bool FleeAction::Execute(Event& event)
 {
     return Flee(AI_VALUE(Unit*, "current target"));
+}
+
+bool FleeAction::isUseful()
+{
+    return MovementAction::isUseful() &&
+        AI_VALUE(LastMovement&, "last movement").fleeRetry.CanRetry(WorldTimer::getMSTime());
 }
 
 bool AvoidAoeAction::isUseful()
