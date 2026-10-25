@@ -115,6 +115,7 @@ constexpr unsigned NEFARIAN_CORRUPTED_INFERNAL_ENTRY=14668;
 bool IsNefarianClassCallAdd(unsigned,unsigned,unsigned) { return false; }
 bool IsRaidDpsTargetExcluded(PlayerbotAI*,Unit* u) { return u->excluded; }
 Unit *ordered=nullptr, *rti=nullptr, *tankTarget=nullptr;
+bool SelectCthunSpreadTarget(PlayerbotAI*,Unit*&) { return false; }
 Unit* GetNefarianBoneConstructTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetArlokkPantherTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetFankrissSpawnTarget(PlayerbotAI*) { return nullptr; }

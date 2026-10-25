@@ -3,14 +3,13 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
-#include <limits>
 #include <vector>
 
 namespace ai
 {
 // Coordinates from Turtle boss_cthun.cpp, eyeTentaclePositions. These are
-// eruption centers, NOT player markers. Radii below are search bounds; every
-// chosen position still needs floor, path, range and LOS validation.
+// eruption centers, NOT player markers. Fixed player slots are below;
+// the runtime still checks floor and complete navmesh paths.
 struct CthunPoint { float x = 0, y = 0; };
 constexpr CthunPoint kCthunCenter{-8577.3f, 1986.9f};
 constexpr std::array<CthunPoint, 8> kCthunEyes{{
@@ -19,6 +18,9 @@ constexpr std::array<CthunPoint, 8> kCthunEyes{{
     {-8607.269531f,1986.987671f}, {-8598.525391f,1965.769043f},
     {-8577.340820f,1956.940063f}, {-8556.115234f,1965.667725f}}};
 constexpr float kCthunSpacing = 13.0f;
+// Tauren male bounding radius is .9747 in the native display addon.
+// With two .25-yard arrival errors, the tightest pair stays over 10 yards.
+constexpr float kCthunArrival = .25f;
 constexpr float kCthunPi = 3.14159265358979323846f;
 inline float CthunDistance(CthunPoint a, CthunPoint b)
 { return std::hypot(a.x-b.x, a.y-b.y); }
@@ -32,37 +34,6 @@ inline bool CthunSpawnClear(CthunPoint p, float clearance = 12.0f)
     for (auto eye : kCthunEyes) if (CthunDistance(p, eye) < clearance) return false;
     return true;
 }
-inline float CthunSegmentDistance(CthunPoint a, CthunPoint b, CthunPoint p)
-{
-    float const dx=b.x-a.x, dy=b.y-a.y, n=dx*dx+dy*dy;
-    float const t=n > .001f ? std::max(0.0f,std::min(1.0f,((p.x-a.x)*dx+(p.y-a.y)*dy)/n)) : 0;
-    return CthunDistance({a.x+t*dx,a.y+t*dy},p);
-}
-// Allow escape from an existing overlap, never a route that first deepens it.
-inline bool CthunSegmentClear(CthunPoint a, CthunPoint b, CthunPoint obstacle, float radius)
-{
-    float const start=CthunDistance(a,obstacle);
-    return CthunSegmentDistance(a,b,obstacle) + .01f >= std::min(radius,start) &&
-        (start >= radius || CthunDistance(b,obstacle) > start + .01f);
-}
-struct CthunDuty
-{
-    bool healer = false;
-    bool clawTank = false;
-    bool hasOtherTarget = false;
-    bool lineOfSight = true;
-    bool meleeContact = true;
-    float distance = 0;
-    float range = 0;
-};
-inline bool CthunDutyCompatible(CthunDuty const& duty)
-{
-    if(!duty.hasOtherTarget) return true;
-    if(duty.healer) return duty.lineOfSight && duty.distance < duty.range-2;
-    if(duty.clawTank) return duty.lineOfSight && duty.meleeContact;
-    // Eye/body DPS waits at its sector position when melee space is full.
-    return true;
-}
 struct CthunSlot
 {
     uint32_t guid = 0;
@@ -73,153 +44,86 @@ struct CthunSlot
     float radius = .5f;
 };
 struct CthunPlacement { uint32_t guid; CthunPoint point; bool assigned; float radius = .5f; };
-// Bounded deterministic sector candidates. No hardcoded player standing ring.
-inline std::vector<CthunPoint> CthunCandidates(unsigned sector, unsigned rank)
+// Chart order: left 1/3/5/7, right 2/4/6/8, entrance below.
+// Door objects 180745 lie southwest of the boss, approximately 157.5 degrees.
+// In world XY, chart-up is -22.5 degrees; increasing angles turn chart-left.
+inline float CthunSectorAngle(unsigned sector)
 {
-    struct Candidate { CthunPoint point; float score; };
-    std::vector<Candidate> candidates;
-    for (float radius=12; radius<=58; radius+=2)
-        for (int degrees=-18; degrees<=18; degrees+=6)
-        {
-            float const angle=(sector*45.0f+degrees)*kCthunPi/180;
-            CthunPoint const p{kCthunCenter.x+radius*std::cos(angle),kCthunCenter.y+radius*std::sin(angle)};
-            if (!CthunSpawnClear(p)) continue;
-            float const preferred=18.0f+9.0f*rank;
-            candidates.push_back({p,(radius-preferred)*(radius-preferred)+std::abs(degrees+18)*.4f});
-        }
-    std::stable_sort(candidates.begin(),candidates.end(),[](Candidate const& a,Candidate const& b){return a.score<b.score;});
-    std::vector<CthunPoint> result;
-    for (auto const& c:candidates) result.push_back(c.point);
-    return result;
+    constexpr float degrees[8]={22.5f,-22.5f,67.5f,-67.5f,112.5f,-112.5f,157.5f,-157.5f};
+    return degrees[sector%8]*kCthunPi/180;
 }
-// Runtime supplies terrain and duty constraints. Reserve humans/unassigned
-// members at their real positions. Include all five roster slots even when a
-// member is dead/downstairs, so deaths/swallowing never renumber the raid.
-template<class Eligible>
-std::vector<CthunPlacement> CthunPlan(std::vector<CthunSlot> slots, Eligible eligible,
-    std::vector<CthunPlacement> const& previous = {})
+inline CthunPoint CthunPolar(float radius,float angle)
+{ return {kCthunCenter.x+radius*std::cos(angle),kCthunCenter.y+radius*std::sin(angle)}; }
+// Fixed 1 red / 2 green / 2 yellow chart. Literal chart scaling to the
+// 30-yard birth ring cannot fit 40 players. Expand the middle/outer rings
+// beyond that ring; retain stagger and subgroup order. All 40 endpoints
+// checked against map 531's ground navmesh. Group 6's second yellow needs
+// a 3-degree adjustment to clear an obstacle, not a runtime slot search.
+inline CthunPoint CthunChartSlot(unsigned sector,unsigned rank)
 {
-    std::stable_sort(slots.begin(),slots.end(),[](CthunSlot const& a,CthunSlot const& b){
+    constexpr float radii[5]={17.5f,40,40,53.5f,53.5f};
+    constexpr float offsets[5]={0,-11.25f,11.25f,-14,14};
+    float offset=offsets[rank%5]+(sector==5 && rank==4 ? 3 : 0);
+    return CthunPolar(radii[rank%5],CthunSectorAngle(sector)+offset*kCthunPi/180);
+}
+// Roster slots remain reserved for humans, disabled bots, dead and swallowed
+// members. A failed route or a changing heal target never renumbers peers.
+template<class Eligible>
+std::vector<CthunPlacement> CthunPlan(std::vector<CthunSlot> slots,Eligible eligible,
+    std::vector<CthunPlacement> const& = {})
+{
+    std::stable_sort(slots.begin(),slots.end(),[](auto const& a,auto const& b) {
         if(a.sector!=b.sector) return a.sector<b.sector;
         if(a.role!=b.role) return a.role<b.role;
         return a.guid<b.guid;
     });
     std::array<unsigned,8> counts{};
-    std::vector<std::pair<CthunSlot,unsigned>> ranked;
-    std::vector<std::pair<CthunPoint,float>> reserved;
     std::vector<CthunPlacement> plan;
-    for (auto const& slot:slots)
+    for(auto const& slot:slots)
     {
         if(slot.sector>=8) continue;
         unsigned rank=counts[slot.sector]++;
-        if (!slot.movable) { reserved.push_back({slot.here,slot.radius}); plan.push_back({slot.guid,slot.here,false,slot.radius}); }
-        else if(rank<5) ranked.push_back({slot,rank});
-    }
-    // Inner ranks first across ALL sectors, not an entire quadrant first.
-    std::stable_sort(ranked.begin(),ranked.end(),[](auto const& a,auto const& b){return a.second<b.second;});
-    for(auto const& item:ranked)
-    {
-        auto const& slot=item.first;
-        bool found=false;
-        auto candidates=CthunCandidates(slot.sector,item.second);
-        for(auto const& old:previous) if(old.guid==slot.guid && old.assigned)
-        {
-            float angle=std::atan2(old.point.y-kCthunCenter.y,old.point.x-kCthunCenter.x);
-            float delta=std::remainder(angle-slot.sector*kCthunPi/4,2*kCthunPi);
-            if(std::abs(delta)<kCthunPi/8 && CthunSpawnClear(old.point))
-                candidates.insert(candidates.begin(),old.point);
-        }
-        for(auto const& p:candidates)
-        {
-            bool clear=true;
-            for(auto const& q:reserved) if(CthunDistance(p,q.first)<std::max(kCthunSpacing,11.75f+slot.radius+q.second)) {clear=false;break;}
-            if(!clear || !eligible(slot,p)) continue;
-            plan.push_back({slot.guid,p,true,slot.radius}); reserved.push_back({p,slot.radius}); found=true; break;
-        }
-        if(!found) {plan.push_back({slot.guid,slot.here,false,slot.radius});reserved.push_back({slot.here,slot.radius});}
-    }
-    // Failed slots remain at real coordinates. Propagate any resulting
-    // conflicts instead of reserving a destination nobody can reach.
-    for(unsigned pass=0;pass<plan.size();++pass)
-    {
-        bool changed=false;
-        for(auto& p:plan) if(p.assigned)
-            for(auto const& q:plan) if(p.guid!=q.guid && CthunDistance(p.point,q.point)<std::max(kCthunSpacing,11.75f+p.radius+q.radius))
-            {
-                p.assigned=false;
-                for(auto const& slot:slots) if(slot.guid==p.guid) {p.point=slot.here;break;}
-                changed=true;break;
-            }
-        if(!changed) break;
+        if(rank>=5) continue;
+        auto point=CthunChartSlot(slot.sector,rank);
+        plan.push_back({slot.guid,point,slot.movable && eligible(slot,point),slot.radius});
     }
     return plan;
 }
+// Fixed entry lane, not a visibility graph through 40 overlapping player
+// keepouts. Fan out around the 43-yard ring before entering the own sector.
+// Transit cannot guarantee final spacing (the doorway starts clumped).
+inline CthunPoint CthunChartStep(CthunPoint here,CthunPoint destination,unsigned sector)
+{
+    float angle=std::atan2(here.y-kCthunCenter.y,here.x-kCthunCenter.x);
+    float delta=std::remainder(CthunSectorAngle(sector)-angle,2*kCthunPi);
+    if(std::abs(delta)<kCthunPi/8) return destination;
+    if(CthunDistance(here,kCthunCenter)>47) return CthunPolar(43,angle);
+    float step=std::max(-kCthunPi/8,std::min(kCthunPi/8,delta));
+    return CthunPolar(43,angle+step);
 }
-
-namespace ai
+inline unsigned CthunTargetSector(CthunPoint point)
 {
-// Visibility graph around the eight known rupture circles. The graph is only
-// a route proposal: the runtime validates every navmesh segment before moving.
-struct CthunObstacle { CthunPoint point; float radius; };
-inline std::vector<CthunPoint> CthunRoute(CthunPoint start,CthunPoint end,
-    std::vector<CthunObstacle> obstacles = {})
-{
-    auto clear=[&](CthunPoint a,CthunPoint b) {
-        for(auto eye:kCthunEyes) if(!CthunSegmentClear(a,b,eye,10.75f)) return false;
-        for(auto const& obstacle:obstacles)
-            if(CthunDistance(start,obstacle.point)>=obstacle.radius &&
-                CthunSegmentDistance(a,b,obstacle.point)<obstacle.radius) return false;
-        return true;
-    };
-    if(clear(start,end)) return {start,end};
-    std::vector<CthunPoint> nodes{start,end};
-    for(auto eye:kCthunEyes) for(unsigned i=0;i<16;++i)
+    float angle=std::atan2(point.y-kCthunCenter.y,point.x-kCthunCenter.x);
+    unsigned result=0;float best=10;
+    for(unsigned sector=0;sector<8;++sector)
     {
-        float a=i*kCthunPi/8;
-        CthunPoint p{eye.x+11.25f*std::cos(a),eye.y+11.25f*std::sin(a)};
-        if(CthunSpawnClear(p,10.75f)) nodes.push_back(p);
+        float delta=std::abs(std::remainder(angle-CthunSectorAngle(sector),2*kCthunPi));
+        if(delta<best) {result=sector;best=delta;}
     }
-    // Bound dynamic detour nodes to eight nearby blockers. All surface
-    // players still participate in edge validation, including humans.
-    std::stable_sort(obstacles.begin(),obstacles.end(),[&](auto const& a,auto const& b) {
-        return CthunDistance(start,a.point)<CthunDistance(start,b.point);
-    });
-    unsigned blockers=0;
-    for(auto const& obstacle:obstacles)
-    {
-        if(CthunDistance(start,obstacle.point)<obstacle.radius) continue; // existing entry clump
-        if(blockers++==8) break;
-        float radius=obstacle.radius/ std::cos(kCthunPi/8)+.25f;
-        for(unsigned i=0;i<8;++i)
-        {
-            float angle=i*kCthunPi/4;
-            CthunPoint p{obstacle.point.x+radius*std::cos(angle),obstacle.point.y+radius*std::sin(angle)};
-            if(CthunDistance(p,kCthunCenter)<94 && CthunSpawnClear(p,10.75f)) nodes.push_back(p);
-        }
-    }
-    std::vector<float> distance(nodes.size(),std::numeric_limits<float>::max());
-    std::vector<int> parent(nodes.size(),-1);
-    std::vector<bool> done(nodes.size(),false);
-    distance[0]=0;
-    for(unsigned step=0;step<nodes.size();++step)
-    {
-        int current=-1;
-        for(unsigned i=0;i<nodes.size();++i)
-            if(!done[i] && (current<0 || distance[i]<distance[current])) current=i;
-        if(current<0 || distance[current]==std::numeric_limits<float>::max()) break;
-        if(current==1) break;
-        done[current]=true;
-        for(unsigned i=0;i<nodes.size();++i)
-        {
-            float next=distance[current]+CthunDistance(nodes[current],nodes[i]);
-            if(!done[i] && next<distance[i] && clear(nodes[current],nodes[i]))
-            {distance[i]=next;parent[i]=current;}
-        }
-    }
-    if(parent[1]<0) return {};
-    std::vector<CthunPoint> result;
-    for(int i=1;i>=0;i=parent[i]) result.push_back(nodes[i]);
-    std::reverse(result.begin(),result.end());
     return result;
+}
+inline bool CthunNearbySector(unsigned own,unsigned other)
+{ return std::abs(std::remainder(CthunSectorAngle(own)-CthunSectorAngle(other),2*kCthunPi))<kCthunPi/4+.01f; }
+// Normal damage priority; existing tank/control actions are not replaced.
+inline int CthunDamageRank(unsigned entry,bool shelled,bool feasible,bool local,bool heldClaw=false)
+{
+    if(!feasible) return -1;
+    if(entry==15728 && heldClaw) return 0;
+    if(entry==15726 && local) return 1;
+    if(entry==15334 && local) return 2;
+    if(entry==15725 && local) return 3;
+    if(entry==15728 && local) return shelled ? 4 : 6;
+    if(entry==15589 || (entry==15727 && !shelled)) return 5;
+    return -1; // includes Flesh Tentacles below the room and shelled body
 }
 }

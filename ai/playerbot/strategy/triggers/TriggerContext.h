@@ -48,6 +48,7 @@ namespace ai
     public:
         TriggerContext()
         {
+            creators["cthun sector target"] = [](PlayerbotAI* ai) { return new CthunSpreadTargetTrigger(ai); };
             creators["cthun spread needed"] = [](PlayerbotAI* ai) { return new CthunSpreadTrigger(ai); };
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnTrigger(ai); };
             creators["sit"] = [](PlayerbotAI* ai) { return new SitTrigger(ai); };

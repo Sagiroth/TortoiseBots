@@ -163,6 +163,7 @@ struct DpsTargetValue : TargetValue {
     Unit* Calculate();
 };
 Unit* GetGroupTankTarget(PlayerbotAI* ai) { return ai->tankTarget; }
+bool SelectCthunSpreadTarget(PlayerbotAI*,Unit*&) { return false; }
 Unit* GetNefarianBoneConstructTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetViscidusGlobTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetFankrissSpawnTarget(PlayerbotAI*) { return nullptr; }

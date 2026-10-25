@@ -10,6 +10,12 @@ namespace ai
         bool IsActive() override
         { return ai->GetAiObjectContext()->GetAction("cthun spread move")->isUseful(); }
     };
+    class CthunSpreadTargetTrigger : public Trigger
+    {
+    public:
+        explicit CthunSpreadTargetTrigger(PlayerbotAI* ai) : Trigger(ai,"cthun sector target",1) {}
+        bool IsActive() override;
+    };
     class CthunSpreadStrategy : public Strategy
     {
     public:

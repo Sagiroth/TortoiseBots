@@ -24,11 +24,28 @@ public:
 }
 void CthunSpreadStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("cthun sector target",
+        NextAction::array(0,new NextAction("dps assist",ACTION_HIGH+1),nullptr)));
     triggers.push_back(new TriggerNode("cthun spread needed",
         NextAction::array(0,new NextAction("cthun spread move",ACTION_EMERGENCY+2),nullptr)));
 }
 void CthunSpreadStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t) {InitCombatTriggers(t);}
-void CthunSpreadStrategy::InitReactionTriggers(std::list<TriggerNode*>& t) {InitCombatTriggers(t);}
+void CthunSpreadStrategy::InitReactionTriggers(std::list<TriggerNode*>& t)
+{
+    t.push_back(new TriggerNode("cthun spread needed",
+        NextAction::array(0,new NextAction("cthun spread move",ACTION_EMERGENCY+2),nullptr)));
+}
 void CthunSpreadStrategy::InitCombatMultipliers(std::list<Multiplier*>& m) {m.push_back(new CthunSpreadMultiplier(ai));}
 void CthunSpreadStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& m) {InitCombatMultipliers(m);}
 void CthunSpreadStrategy::InitReactionMultipliers(std::list<Multiplier*>& m) {InitCombatMultipliers(m);}
+
+bool CthunSpreadTargetTrigger::IsActive()
+{
+    // Use the ordinary DPS value so explicit attack orders/marks still win.
+    // Also activates an opted-in DPS bot whose sector add entered combat
+    // before the bot itself did. Never dispatch damage in the reaction engine.
+    Unit* local=nullptr;
+    if(!SelectCthunSpreadTarget(ai,local) || !local) return false;
+    Unit* target=AI_VALUE(Unit*,"dps target");
+    return target && (AI_VALUE(Unit*,"current target")!=target || bot->GetVictim()!=target);
+}

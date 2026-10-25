@@ -5,6 +5,8 @@
 #include <map>
 #include "AI/ScriptedInstance.h"
 #include "Movement/spline/MoveSplineInit.h"
+#include "Movement/spline/MoveSpline.h"
+#include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/values/LastMovementValue.h"
 
 using namespace ai;
@@ -35,11 +37,7 @@ Unit* Boss(PlayerbotAI* ai)
     return nullptr;
 }
 CthunPoint Point(WorldObject* p) {return {p->GetPositionX(),p->GetPositionY()};}
-bool Los(Player* player, CthunPoint p,float z,Unit* target)
-{
-    return player->GetMap()->isInLineOfSight(p.x,p.y,z+player->GetCollisionHeight(),
-        target->GetPositionX(),target->GetPositionY(),target->GetPositionZ()+target->GetCollisionHeight(),true);
-}
+
 }
 bool ai::CthunSpreadEnabled(PlayerbotAI* ai)
 {
@@ -57,64 +55,24 @@ std::vector<CthunPlacement> const& CthunSpreadAction::GroupPlan()
     uint32 now=WorldTimer::getMSTime();
     if(lastPlan && now-lastPlan<1000) return plan;
     lastPlan=now;
-    auto previous=plan;
     plan.clear();
     Group* group=bot->GetGroup();
     if(!group) return plan;
     std::vector<CthunSlot> slots;
-    std::map<uint32,Player*> players;
-    std::map<uint32,Unit*> duties;
-    std::map<uint32,float> ranges;
     for(auto const& member:group->GetMemberSlots())
     {
         Player* player=ObjectAccessor::FindPlayer(member.guid);
-        if(!player || !player->IsInMap(bot)) continue;
-        PlayerbotAI* peer=PlayerbotAIStorage::Instance().GetAI(player);
-        bool surface=Surface(player);
-        unsigned role=ai->IsHeal(player) ? 2 : ai->IsRanged(player) && !ai->IsTank(player) ? 1 : 0;
-        // Keep unavailable roster slots, but do not treat downstairs/dead
-        // players as surface obstacles or attempt to move them upstairs.
-        CthunPoint here=surface ? Point(player) : CthunPoint{100000.0f+player->GetGUIDLow(),100000};
-        slots.push_back({player->GetGUIDLow(),member.group,role,here,surface && Enabled(peer),player->GetObjectBoundingRadius()});
-        players[player->GetGUIDLow()]=player;
-        if(peer && surface)
-        {
-            float range=peer->GetRange(role==2 ? "heal":"spell");
-            // Use known primary spells, not an arbitrary universal caster
-            // radius. Core spell range is measured after combat reaches.
-            std::vector<std::string> spells;
-            if(role==2) spells={"flash heal","healing wave","holy light","healing touch"};
-            else spells={"frostbolt","fireball","shadow bolt","smite","lightning bolt","starfire","wrath","shoot"};
-            for(auto const& spell:spells)
-            {
-                float knownRange=0;
-                if(peer->GetSpellRange(spell,&knownRange) && knownRange>range && knownRange<=45) range=knownRange;
-            }
-            ranges[player->GetGUIDLow()]=range;
-            AiObjectContext* context=peer->GetAiObjectContext();
-            Unit* target=role==2 ? AI_VALUE(Unit*,"party member to heal") : AI_VALUE(Unit*,"current target");
-            if(target && target->IsAlive() && target->IsInMap(player) &&
-                CthunSurface(target->GetMapId(),target->GetPositionX(),target->GetPositionY(),target->GetPositionZ()))
-                duties[player->GetGUIDLow()]=target;
-        }
+        PlayerbotAI* peer=player ? PlayerbotAIStorage::Instance().GetAI(player) : nullptr;
+        unsigned role=player && ai->IsHeal(player) ? 2 : player && ai->IsRanged(player) && !ai->IsTank(player) ? 1 : 0;
+        // Offline members retain their previous role reservation until they
+        // return; deaths and swallowing do not alter subgroup order.
+        auto old=roles.find(member.guid.GetCounter());
+        if(!player && old!=roles.end()) role=old->second;
+        roles[member.guid.GetCounter()]=role;
+        slots.push_back({member.guid.GetCounter(),member.group,role,{},
+            player && player->IsInMap(bot) && Surface(player) && Enabled(peer)});
     }
-    plan=CthunPlan(slots,[&](CthunSlot const& slot,CthunPoint p) {
-        Player* player=players[slot.guid];
-        float z=player->GetMap()->GetHeight(p.x,p.y,player->GetPositionZ(),true);
-        if(!CthunSurface(531,p.x,p.y,z)) return false;
-        Unit* target=duties[slot.guid];
-        if(!target || target==player) return true;
-        CthunDuty duty;
-        duty.healer=slot.role==2;
-        duty.clawTank=ai->IsTank(player) && target->GetEntry()==15728;
-        duty.hasOtherTarget=true;
-        duty.lineOfSight=Los(player,p,z,target);
-        duty.meleeContact=player->CanReachWithMeleeAutoAttackAtPosition(target,p.x,p.y,z);
-        float reach=player->GetCombatReach(false)+target->GetCombatReach(false);
-        duty.distance=std::hypot(CthunDistance(p,Point(target)),z-target->GetPositionZ());
-        duty.range=ranges[slot.guid]+reach;
-        return CthunDutyCompatible(duty);
-    },previous);
+    plan=CthunPlan(slots,[](CthunSlot const&,CthunPoint){return true;});
     return plan;
 }
 
@@ -153,57 +111,43 @@ bool CthunSpreadAction::Prepare()
 {
     preparedPath.clear();
     if(!CthunSpreadEnabled(ai) || !ai->CanMove() || bot->GetTransport() || bot->IsTaxiFlying()) return false;
+    Unit* current=AI_VALUE(Unit*,"current target");
+    if(ai->IsTank(bot) && current && current->GetEntry()==15728 && current->IsAlive() && current->IsInCombat())
+    {routeBlocked=true;return false;} // keep the existing tank pickup/contact job
     uint32 now=WorldTimer::getMSTime();
     auto blocked=[&]() {
         routeBlocked=true;
         if(!lastReport || now-lastReport>30000)
         {
             lastReport=now;
-            sPlayerbotAIConfig.logEvent(ai,"CthunSpreadBlocked","no safe sector route or duty-compatible slot","check roster and manual positions");
+            sPlayerbotAIConfig.logEvent(ai,"CthunSpreadBlocked","fixed chart route incomplete or hazardous","check roster and manual positions");
         }
         return false;
     };
     CthunPoint destination;
     if(!Assigned(destination)) return blocked();
     CthunPoint here=Point(bot);
-    if(CthunDistance(here,destination)<=.75f)
+    if(!routeBlocked && lastSpline && bot->movespline->GetId()==lastSpline && !bot->movespline->Finalized() &&
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType()!=CHASE_MOTION_TYPE &&
+        CthunDistance(destination,lastDestination)<.1f) return false;
+    if(CthunDistance(here,destination)<=kCthunArrival)
     {
         routeBlocked=false;
         return bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==CHASE_MOTION_TYPE;
     }
-    // Do not step into an unassigned human/bot, or through another settled
-    // member. Existing doorway overlaps must be allowed to fan out.
-    std::vector<CthunObstacle> obstacles;
-    for(Player* member:LiveGroupMembers(bot->GetGroup()))
-        if(member!=bot && Surface(member) && member->IsInMap(bot))
-            obstacles.push_back({Point(member),10.5f+bot->GetObjectBoundingRadius()+member->GetObjectBoundingRadius()});
-    auto route=CthunRoute(here,destination,obstacles);
-    if(route.size()<2) return blocked();
-    CthunPoint next=route[1];
-    float distance=CthunDistance(here,next);
-    if(distance>4) {next.x=here.x+(next.x-here.x)*4/distance;next.y=here.y+(next.y-here.y)*4/distance;}
+    // A fixed sector lane replaces the old per-bot visibility graph. Do
+    // not make every moving player an impassable 10-yard wall: that closed
+    // all entry lanes as the raid spread. Final slots provide the spacing.
+    unsigned sector=bot->GetGroup()->GetMemberGroup(bot->getObjectGuid());
+    CthunPoint next=CthunChartStep(here,destination,sector);
     WorldPosition start(bot),end(531,next.x,next.y,bot->GetPositionZ());
     end.setZ(bot->GetMap()->GetHeight(next.x,next.y,bot->GetPositionZ(),true));
     if(!CthunSurface(531,end.getX(),end.getY(),end.getZ()) || IsHazardNearPosition(end)) return blocked();
     auto path=start.GetPathTo(end,bot);
     if(!end.isPathTo(path)) return blocked();
-    CthunPoint previous=here;
     for(auto const& waypoint:path)
-    {
-        CthunPoint p{waypoint.getX(),waypoint.getY()};
-        if(!CthunSurface(531,p.x,p.y,waypoint.getZ()) || IsHazardNearPosition(waypoint)) return blocked();
-        if(CthunDistance(previous,p)<.01f) continue;
-        for(auto eye:kCthunEyes)
-            if(!CthunSegmentClear(previous,p,eye,10.75f)) return blocked();
-        for(Player* member:LiveGroupMembers(bot->GetGroup()))
-        {
-            if(member==bot || !Surface(member) || !member->IsInMap(bot)) continue;
-            CthunPoint occupied=Point(member);
-            float clearance=10.5f+bot->GetObjectBoundingRadius()+member->GetObjectBoundingRadius();
-            if(CthunDistance(here,occupied)>=clearance && CthunSegmentDistance(previous,p,occupied)<clearance) return blocked();
-        }
-        previous=p;
-    }
+        if(!CthunSurface(531,waypoint.getX(),waypoint.getY(),waypoint.getZ()) || IsHazardNearPosition(waypoint)) return blocked();
+    preparedDestination=destination;
     preparedPath=path;
     routeBlocked=false;
     return true;
@@ -225,8 +169,80 @@ bool CthunSpreadAction::Execute(Event& /*event*/)
     init.MovebyPath(WorldPosition().toPointsArray(preparedPath));
     init.SetWalk(false);
     if(!init.Launch()) {routeBlocked=true;return false;}
+    lastDestination=preparedDestination;
+    lastSpline=bot->movespline->GetId();
     AI_VALUE(LastMovement&,"last movement").lastPath.clear();
     ClearIdleState();
     SetDuration(500);
+    return true;
+}
+
+bool ai::SelectCthunSpreadTarget(PlayerbotAI* ai,Unit*& target)
+{
+    target=nullptr;
+    if(!CthunSpreadEnabled(ai)) return false;
+    Player* bot=ai->GetBot();
+    if(ai->IsHeal(bot) || ai->IsTank(bot)) return false; // preserve healing and tank pickup
+    Unit* boss=Boss(ai);
+    if(!boss || !boss->IsInCombat()) return false; // position on entry, never order a fresh pull
+    AiObjectContext* context=ai->GetAiObjectContext();
+    Unit* current=AI_VALUE(Unit*,"current target");
+    unsigned sector=bot->GetGroup()->GetMemberGroup(bot->getObjectGuid());
+    bool ranged=ai->IsRanged(bot);
+    std::vector<std::pair<float,float>> ranges;
+    if(ranged)
+    {
+        // Use trained offensive spells and the actual hunter minimum range.
+        // Do not make cooldown or current mana a target-switching signal.
+        std::vector<std::string> spells;
+        switch(bot->GetClass())
+        {
+            case CLASS_HUNTER: spells={"auto shot"};break;
+            case CLASS_MAGE: spells={"frostbolt","fireball","scorch","shoot"};break;
+            case CLASS_WARLOCK: spells={"shadow bolt","immolate","shoot"};break;
+            case CLASS_PRIEST: spells={"mind flay","smite","shoot"};break;
+            case CLASS_SHAMAN: spells={"lightning bolt"};break;
+            case CLASS_DRUID: spells={"wrath","starfire"};break;
+            default: break;
+        }
+        for(auto const& spell:spells)
+        {
+            float maximum=0,minimum=0;
+            if(ai->GetSpellRange(spell,&maximum,&minimum) && maximum>0)
+                ranges.push_back({minimum,maximum});
+        }
+    }
+    bool shelled=boss->GetEntry()==15727 && boss->HasAura(26156);
+    int best=100;unsigned bestSector=8;float bestDistance=0;
+    auto candidates=AI_VALUE(std::list<ObjectGuid>,"possible attack targets");
+    candidates.push_back(boss->getObjectGuid());
+    for(auto guid:candidates)
+    {
+        Unit* unit=ai->GetUnit(guid);
+        if(!unit || !unit->IsInMap(bot) || !unit->IsInCombat() ||
+            !CthunSurface(unit->GetMapId(),unit->GetPositionX(),unit->GetPositionY(),unit->GetPositionZ()) ||
+            !PossibleAttackTargetsValue::IsValid(unit,bot,95,false,false) ||
+            PossibleAttackTargetsValue::IsImmuneToDamage(unit,bot) || !bot->IsWithinLOSInMap(unit)) continue;
+        bool feasible=bot->CanReachWithMeleeAutoAttack(unit);
+        if(ranged)
+        {
+            feasible=false;
+            float distance=bot->GetCombatDistance(unit);
+            for(auto range:ranges) if(distance>=range.first && distance<range.second-.5f) {feasible=true;break;}
+        }
+        unsigned own=CthunTargetSector(Point(unit));
+        int rank=CthunDamageRank(unit->GetEntry(),shelled,feasible,CthunNearbySector(sector,own));
+        if(rank<0) continue;
+        unsigned sectorRank=own==sector ? 0 : 1;
+        float distance=CthunDistance(Point(bot),Point(unit));
+        // Keep an equal-ranked current target; otherwise deterministic near/GUID tie.
+        bool replace=!target || rank<best || (rank==best && sectorRank<bestSector);
+        if(target && rank==best && sectorRank==bestSector)
+            replace=unit==current || (target!=current && (distance<bestDistance ||
+                (distance==bestDistance && unit->GetGUIDLow()<target->GetGUIDLow())));
+        if(replace) {target=unit;best=rank;bestSector=sectorRank;bestDistance=distance;}
+    }
+    // Handled even when no target fits: do not fall through to an unreachable
+    // tank target. Extra melee wait at their chart slot, as requested.
     return true;
 }

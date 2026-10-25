@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "DpsTargetValue.h"
+#include "playerbot/strategy/actions/CthunSpreadActions.h"
 #include "FankrissSpawnTarget.h"
 #include "AyamissLarvaTarget.h"
 #include "SkeramImageTarget.h"
@@ -638,6 +639,9 @@ Unit* DpsTargetValue::Calculate()
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
 
+    Unit* sectorTarget = nullptr;
+    if (SelectCthunSpreadTarget(ai, sectorTarget)) return sectorTarget;
+
     if (Unit* image = GetSkeramImageTarget(ai))
         return image;
 
@@ -749,6 +753,9 @@ Unit* DpsAoeTargetValue::Calculate()
 
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+
+    Unit* sectorTarget = nullptr;
+    if (SelectCthunSpreadTarget(ai, sectorTarget)) return sectorTarget;
 
     if (Unit* construct = GetNefarianBoneConstructTarget(ai))
         return construct;

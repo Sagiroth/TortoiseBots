@@ -1,10 +1,12 @@
 #pragma once
 #include "MovementActions.h"
+#include <map>
 #include "playerbot/CthunSpreadPolicy.h"
 
 namespace ai
 {
     bool CthunSpreadEnabled(PlayerbotAI* ai);
+    bool SelectCthunSpreadTarget(PlayerbotAI* ai, Unit*& target);
     class CthunSpreadAction : public MovementAction
     {
     public:
@@ -17,6 +19,9 @@ namespace ai
     private:
         bool Prepare();
         bool routeBlocked = false;
+        CthunPoint lastDestination, preparedDestination;
+        uint32 lastSpline = 0;
+        std::map<uint32,unsigned> roles;
         std::vector<WorldPosition> preparedPath;
         uint32 lastPlan = 0;
         uint32 lastMove = 0;
