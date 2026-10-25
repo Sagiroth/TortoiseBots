@@ -13,6 +13,17 @@ namespace ai
         void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
     };
 
+    class OnyxiaAirSpreadStrategy : public Strategy
+    {
+    public:
+        OnyxiaAirSpreadStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "onyxia air spread"; }
+    private:
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     class OnyxiaFightStrategy : public Strategy
     {
     public:

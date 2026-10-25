@@ -2,6 +2,8 @@
 #include "playerbot/playerbot.h"
 #include "OnyxiasLairDungeonStrategies.h"
 #include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
+#include "playerbot/strategy/actions/ReachTargetActions.h"
+#include "playerbot/strategy/actions/AttackAction.h"
 
 using namespace ai;
 
@@ -31,6 +33,9 @@ void OnyxiaFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // boss while whelp packs are the valid melee targets. Ranged spread
     // trims Fireball (18392) splash; universal flank keeps Deep Breath
     // lane clear via the reaction engine.
+    // Retained upstream rationale; directional breath handling is separate below.
+    // Existing opportunistic shooting/spread. This does not solve directional
+    // Deep Breath; the optional air-spread strategy only reduces clustering.
     triggers.push_back(new TriggerNode(
         "onyxia airborne",
         NextAction::array(0, new NextAction("shoot", ACTION_HIGH),
@@ -76,4 +81,43 @@ void OnyxiaFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "onyxia deep breath",
         NextAction::array(0, new NextAction("onyxia breath safe zone", ACTION_EMERGENCY + 5), NULL)));
+}
+
+
+namespace
+{
+class OnyxiaAirSpreadMultiplier : public Multiplier
+{
+public:
+    OnyxiaAirSpreadMultiplier(PlayerbotAI* ai) : Multiplier(ai, "onyxia spread position") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || !OnyxiaAirSpreadEnabled(ai))
+            return 1.0f;
+        std::string const name = action->getName();
+        if (name == "onyxia air spread" || name == "move away from hazard" || name == "flee" ||
+            dynamic_cast<AttackAction*>(action))
+            return 1.0f;
+        // Keep the spread position while airborne; ordinary range/formation
+        // movement resumes on landing. Casts from this position remain legal.
+        return dynamic_cast<MovementAction*>(action) || dynamic_cast<CastReachTargetSpellAction*>(action)
+            ? 0.0f : 1.0f;
+    }
+};
+}
+
+void OnyxiaAirSpreadStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("onyxia air spread needed",
+        NextAction::array(0, new NextAction("onyxia air spread", ACTION_EMERGENCY + 2), NULL)));
+}
+
+void OnyxiaAirSpreadStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new OnyxiaAirSpreadMultiplier(ai));
+}
+
+void OnyxiaAirSpreadStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
 }

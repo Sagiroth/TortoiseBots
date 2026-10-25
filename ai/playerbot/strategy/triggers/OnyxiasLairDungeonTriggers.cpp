@@ -44,3 +44,9 @@ bool OnyxiaEggsNearTrigger::IsActive()
     return ShouldAvoidOnyxiaEggs(true, true, IsInOnyxiaEggZone(bot->GetPositionX(), bot->GetPositionY()),
                                  FindOnyxiaEggInDanger(ai, bot) != nullptr);
 }
+
+bool OnyxiaAirSpreadTrigger::IsActive()
+{
+    OnyxiaAirSpreadAction action(ai);
+    return action.isUseful();
+}

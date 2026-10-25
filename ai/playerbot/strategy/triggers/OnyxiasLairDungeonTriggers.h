@@ -16,6 +16,13 @@ namespace ai
         OnyxiasLairLeaveDungeonTrigger(PlayerbotAI* ai) : LeaveDungeonTrigger(ai, "leave onyxia's lair", "onyxia's lair", 249) {}
     };
 
+    class OnyxiaAirSpreadTrigger : public Trigger
+    {
+    public:
+        OnyxiaAirSpreadTrigger(PlayerbotAI* ai) : Trigger(ai, "onyxia air spread needed", 1) {}
+        bool IsActive() override;
+    };
+
     class OnyxiaStartFightTrigger : public StartBossFightTrigger
     {
     public:

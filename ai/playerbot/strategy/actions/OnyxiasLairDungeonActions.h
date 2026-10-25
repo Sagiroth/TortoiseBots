@@ -6,6 +6,19 @@
 
 namespace ai
 {
+    Unit* GetAirborneOnyxia(PlayerbotAI* ai);
+    bool OnyxiaAirSpreadEnabled(PlayerbotAI* ai);
+
+    class OnyxiaAirSpreadAction : public MovementAction
+    {
+    public:
+        OnyxiaAirSpreadAction(PlayerbotAI* ai) : MovementAction(ai, "onyxia air spread") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    private:
+        uint32 lastStep = 0;
+    };
+
     class OnyxiasLairEnableDungeonStrategyAction : public ChangeAllStrategyAction
     {
     public:

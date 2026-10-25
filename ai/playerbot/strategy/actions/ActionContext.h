@@ -375,6 +375,7 @@ namespace ai
             creators["disable karazhan crypt strategy"] = [](PlayerbotAI* ai) { return new KarazhanCryptDisableDungeonStrategyAction(ai); };
 
             // Dungeon Boss Actions
+            creators["onyxia air spread"] = [](PlayerbotAI* ai) { return new OnyxiaAirSpreadAction(ai); };
             creators["enable onyxia fight strategy"] = [](PlayerbotAI* ai) { return new OnyxiaEnableFightStrategyAction(ai); };
             creators["disable onyxia fight strategy"] = [](PlayerbotAI* ai) { return new OnyxiaDisableFightStrategyAction(ai); };
             creators["onyxia breath safe zone"] = [](PlayerbotAI* ai) { return new OnyxiaBreathSafeZoneAction(ai); };

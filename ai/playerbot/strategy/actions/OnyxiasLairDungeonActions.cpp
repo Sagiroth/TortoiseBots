@@ -204,3 +204,112 @@ bool OnyxiaAvoidEggsAction::Execute(Event& event)
     const OnyxiaEggExit& exit = kOnyxiaEggExits[NearestOnyxiaEggExit(bot->GetPositionX(), bot->GetPositionY())];
     return MoveTo(bot->GetMapId(), exit.x, exit.y, exit.z, false, IsReaction(), false, true);
 }
+
+#include "playerbot/playerbot.h"
+#include "OnyxiasLairDungeonActions.h"
+#include "playerbot/GroupMembers.h"
+#include "playerbot/OnyxiaAirPolicy.h"
+#include "playerbot/CombatSpreadPolicy.h"
+#include "playerbot/strategy/values/PositionValue.h"
+
+using namespace ai;
+
+Unit* ai::GetAirborneOnyxia(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
+        bot->GetMapId() != 249 || !bot->IsInCombat())
+        return nullptr;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* boss = ai->GetUnit(guid);
+        if (boss && boss->GetEntry() == 10184 && boss->IsInMap(bot) &&
+            OnyxiaAirPhase(boss->IsAlive(), boss->IsInCombat(), boss->HasAura(17131), boss->IsFlying()))
+            return boss;
+    }
+    return nullptr;
+}
+
+bool ai::OnyxiaAirSpreadEnabled(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!ai->HasStrategy("onyxia air spread", BotState::BOT_STATE_COMBAT) ||
+        ai->IsTank(bot) || (!ai->IsRanged(bot) && !ai->IsHeal(bot)) || !GetAirborneOnyxia(ai))
+        return false;
+    if (!OnyxiaSpreadFloor(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
+        return false;
+    bool hasCompanion = false;
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+        if (member && member != bot && member->IsInWorld() && member->IsAlive() && member->IsInMap(bot))
+            hasCompanion = true;
+    if (!hasCompanion)
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    PositionMap& positions = AI_VALUE(PositionMap&, "position");
+    auto hold = positions.find("pull hold");
+    return !ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) &&
+        !ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT) &&
+        !ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) &&
+        !ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT) &&
+        (hold == positions.end() || !hold->second.isSet());
+}
+
+bool OnyxiaAirSpreadAction::isUseful()
+{
+    if (!OnyxiaAirSpreadEnabled(ai) || IsSpreadOnCooldown(WorldTimer::getMSTime(), lastStep))
+        return false;
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+        if (member && member != bot && member->IsInWorld() && member->IsAlive() && member->IsInMap(bot) &&
+            sServerFacade.getDistance2d(bot, member) < kSpreadSettledDistance)
+            return true;
+    return false;
+}
+
+bool OnyxiaAirSpreadAction::Execute(Event& event)
+{
+    if (!isUseful())
+        return false;
+    lastStep = WorldTimer::getMSTime(); // Also bound retries when the floor is crowded or paths fail.
+    WorldPosition const start(bot);
+    if (!OnyxiaSpreadFloor(start.getX(), start.getY(), start.getZ()))
+        return false;
+    std::vector<RaidRunoutPoint> members;
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+        if (member && member != bot && member->IsInWorld() && member->IsAlive() && member->IsInMap(bot))
+            members.push_back({ member->GetPositionX(), member->GetPositionY() });
+    float const preferred = (bot->GetGUIDLow() % 16) * (2.0f * M_PI_F / 16.0f);
+    for (float radius : { 6.0f, 12.0f, 18.0f })
+    {
+        for (uint32 step = 0; step < 16; ++step)
+        {
+            float const angle = preferred + step * (2.0f * M_PI_F / 16.0f);
+            WorldPosition point(249, start.getX() + radius * cos(angle), start.getY() + radius * sin(angle), start.getZ());
+            point.setZ(point.GetHeight());
+            if (!OnyxiaSpreadFloor(point.getX(), point.getY(), point.getZ()) ||
+                fabs(point.getZ() - start.getZ()) > 5.0f ||
+                !RaidBombClearOfGroup({ point.getX(), point.getY() }, members, kSpreadSettledDistance + 1.0f) ||
+                IsHazardNearPosition(point) ||
+                !bot->IsWithinLOS(point.getX(), point.getY(), point.getZ() + bot->GetCollisionHeight()))
+                continue;
+            std::vector<WorldPosition> const path = start.GetPathTo(point, bot);
+            if (!point.isPathTo(path))
+                continue;
+            bool safePath = true;
+            for (WorldPosition const& waypoint : path)
+                if (!OnyxiaSpreadFloor(waypoint.getX(), waypoint.getY(), waypoint.getZ()) || IsHazardNearPosition(waypoint))
+                {
+                    safePath = false;
+                    break;
+                }
+            if (safePath && MoveTo(249, point.getX(), point.getY(), point.getZ(), false, IsReaction(), false, true))
+            {
+                lastStep = WorldTimer::getMSTime();
+                if (IsReaction())
+                    WaitForReach(start.distance(point));
+                return true;
+            }
+        }
+    }
+    return false;
+}
