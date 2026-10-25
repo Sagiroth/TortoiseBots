@@ -67,6 +67,7 @@ Unit* GetAyamissLarvaTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetSkeramImageTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetMarliSpawnTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetThekalBalanceTarget(PlayerbotAI*) { return nullptr; }
+bool SelectTwinsDpsTarget(PlayerbotAI*,Unit*&) { return false; }
 bool SelectCthunSpreadTarget(PlayerbotAI*,Unit*&) { return false; }
 Unit* GetNefarianBoneConstructTarget(PlayerbotAI*) { return construct; }
 Unit* GetViscidusGlobTarget(PlayerbotAI*) { return nullptr; }

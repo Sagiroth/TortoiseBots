@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/actions/FankrissTankActions.h"
+#include "TwinsOpeningActions.h"
 #include "CthunSpreadActions.h"
 #include "OnyxiaTankPositionActions.h"
 #include "GeddonBombActions.h"
@@ -383,6 +384,9 @@ namespace ai
             creators["ossirian crystal click"] = [](PlayerbotAI* ai) { return new OssirianCrystalAction(ai); };
             creators["fankriss swap"] = [](PlayerbotAI* ai) { return new FankrissSwapAction(ai); };
             creators["fankriss tank engage"] = [](PlayerbotAI* ai) { return new FankrissTankEngageAction(ai); };
+            creators["twins position"] = [](PlayerbotAI* ai) { return new TwinsPositionAction(ai); };
+            creators["twins engage"] = [](PlayerbotAI* ai) { return new TwinsEngageAction(ai); };
+            creators["twins searing pain"] = [](PlayerbotAI* ai) { return new TwinsSearingPainAction(ai); };
             creators["kurinnaxx swap"] = [](PlayerbotAI* ai) { return new KurinnaxxSwapAction(ai); };
             creators["kurinnaxx hold attacks"] = [](PlayerbotAI* ai) { return new KurinnaxxHoldAction(ai); };
             creators["grobbulus cloud escape"] = [](PlayerbotAI* ai) { return new GrobbulusCloudEscapeAction(ai); };

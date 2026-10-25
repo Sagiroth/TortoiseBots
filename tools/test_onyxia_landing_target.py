@@ -83,6 +83,7 @@ struct RtiTargetValue{Unit* Calculate(){return markedTarget;}};
 Unit* GetAssignedGarrTankTarget(PlayerbotAI*){return nullptr;}
 Unit* GetAssignedPatchwerkTankTarget(PlayerbotAI*){return nullptr;}
 Unit* GetAssignedFankrissTankTarget(PlayerbotAI*){return nullptr;}
+bool SelectTwinsTankTarget(PlayerbotAI*,Unit*&){return false;}
 Unit* GetOnyxiaWhelpTarget(PlayerbotAI*){return nullptr;}
 bool IsNefarianAddTankOptedIn(PlayerbotAI*){return false;}
 using NefarianAddAssignment=int;

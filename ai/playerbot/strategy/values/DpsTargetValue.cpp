@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "DpsTargetValue.h"
 #include "playerbot/strategy/actions/CthunSpreadActions.h"
 #include "FankrissSpawnTarget.h"
@@ -638,6 +639,9 @@ Unit* DpsTargetValue::Calculate()
     // the next pick like the tank's victim below.
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && !AttackersValue::IsKeepoutSetAside(rti, bot)) return rti;
+
+    Unit* twin=nullptr;
+    if (SelectTwinsDpsTarget(ai,twin)) return twin;
 
     Unit* sectorTarget = nullptr;
     if (SelectCthunSpreadTarget(ai, sectorTarget)) return sectorTarget;

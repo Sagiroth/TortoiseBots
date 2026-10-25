@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -172,7 +173,7 @@ bool ai::IsRaidDpsTargetExcluded(PlayerbotAI* ai, Unit* target)
 {
     Player* bot = ai->GetBot();
     if (bot->GetMapId() == 531)
-        return IsTwinPhysicalDpsTargetExcluded(ai, target) || IsCthunCarapaceTargetExcluded(ai, target);
+        return IsTwinsOpeningTargetExcluded(ai, target) || IsTwinPhysicalDpsTargetExcluded(ai, target) || IsCthunCarapaceTargetExcluded(ai, target);
     if (bot->GetMapId() == 533)
         return IsLoathebSporeTargetExcluded(ai, target) || IsFaerlinaWorshipperTargetExcluded(ai, target);
     // DPS target values call this outside raids too; avoid strategy lookups there.

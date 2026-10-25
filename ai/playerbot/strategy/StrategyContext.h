@@ -224,6 +224,11 @@ namespace ai
             creators["kt interrupt"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptStrategy(ai); };
             creators["thaddius polarity"] = [](PlayerbotAI* ai) { return new ThaddiusPolarityStrategy(ai); };
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatStrategy(ai); };
+            creators["twins veklor tank"] = [](PlayerbotAI* ai) { return new TwinsOpeningStrategy(ai,"twins veklor tank"); };
+            creators["twins veknilash tank"] = [](PlayerbotAI* ai) { return new TwinsOpeningStrategy(ai,"twins veknilash tank"); };
+            creators["twins spell dps"] = [](PlayerbotAI* ai) { return new TwinsOpeningStrategy(ai,"twins spell dps"); };
+            creators["twins east"] = [](PlayerbotAI* ai) { return new TwinsSideStrategy(ai,"twins east"); };
+            creators["twins west"] = [](PlayerbotAI* ai) { return new TwinsSideStrategy(ai,"twins west"); };
             creators["twins physical dps"] = [](PlayerbotAI* ai) { return new TwinPhysicalDpsStrategy(ai); };
             creators["kurinnaxx swap"] = [](PlayerbotAI* ai) { return new KurinnaxxSwapStrategy(ai); };
             creators["cthun carapace"] = [](PlayerbotAI* ai) { return new CthunCarapaceStrategy(ai); };

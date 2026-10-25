@@ -122,6 +122,7 @@ namespace ai {
         ++naxxDispatchCalls; return target && target->GetEntry() == 16286;
     }
     bool IsRaidDpsTargetExcluded(PlayerbotAI*, Unit*);
+    bool IsTwinsOpeningTargetExcluded(PlayerbotAI*, Unit*) { return false; }
     bool IsTwinPhysicalDpsTargetExcluded(PlayerbotAI*, Unit*);
     bool IsCthunCarapaceTargetExcluded(PlayerbotAI*, Unit*);
 }
@@ -163,6 +164,7 @@ struct DpsTargetValue : TargetValue {
     Unit* Calculate();
 };
 Unit* GetGroupTankTarget(PlayerbotAI* ai) { return ai->tankTarget; }
+bool SelectTwinsDpsTarget(PlayerbotAI*,Unit*&) { return false; }
 bool SelectCthunSpreadTarget(PlayerbotAI*,Unit*&) { return false; }
 Unit* GetNefarianBoneConstructTarget(PlayerbotAI*) { return nullptr; }
 Unit* GetViscidusGlobTarget(PlayerbotAI*) { return nullptr; }

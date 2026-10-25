@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "TankTargetValue.h"
 #include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
@@ -205,6 +206,8 @@ Unit* TankTargetValue::Calculate()
     // joining the loose-add tournament. Other attack/mark orders still win.
     if (Unit* boss = GetAssignedFankrissTankTarget(ai))
         return boss;
+    Unit* twin=nullptr;
+    if (SelectTwinsTankTarget(ai,twin)) return twin;
 
     // A Four Horsemen mark carrier fights the horseman at its new corner:
     // the rotation outranks raid marks here, or the mark walks the tank

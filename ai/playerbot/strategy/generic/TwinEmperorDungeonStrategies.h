@@ -1,14 +1,10 @@
 #pragma once
-#include "MoltenCoreDungeonStrategies.h"
-
+#include "playerbot/strategy/actions/TwinsOpeningActions.h"
 namespace ai
 {
-    // Reuse the established DPS exclusion multiplier and retarget action.
-    // This is an explicit physical-DPS assignment, never a tank assignment.
-    class TwinPhysicalDpsStrategy : public GolemaggDpsStrategy
-    {
-    public:
-        TwinPhysicalDpsStrategy(PlayerbotAI* ai) : GolemaggDpsStrategy(ai) {}
-        std::string getName() override { return "twins physical dps"; }
-    };
+class TwinPhysicalDpsStrategy : public TwinsOpeningStrategy
+{
+public:
+    TwinPhysicalDpsStrategy(PlayerbotAI* ai) : TwinsOpeningStrategy(ai,"twins physical dps") {}
+};
 }

@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "AttackAction.h"
 #include "PatchwerkSoakerActions.h"
 #include "playerbot/strategy/values/CoreHoundTargetPolicy.h"
@@ -176,6 +177,8 @@ bool AttackAction::CanPetAttack(PlayerbotAI* ai, Pet* pet, Unit* target)
     Player* bot = ai->GetBot();
     if (!bot || !bot->IsValidAttackTarget(target))
         return false;
+
+    if (!TwinsPetAttackAllowed(ai, target)) return false;
 
     // Don't send the pet to attack if waiting for attack
     if (WaitForAttackStrategy::ShouldWait(ai))

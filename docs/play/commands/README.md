@@ -182,3 +182,11 @@ See [local companion controls](../local-companion-controls.md), [local raid tact
 Local opt-in encounter roles include [Fankriss boss tanks](../local-companion-controls.md#fankriss-boss-tanks-opt-in):
 `all +fankriss tank` assigns a warrior/bear to boss threat and Mortal Wound swaps;
 `all -fankriss tank` removes that role.
+### Twin Emperors opening assignments
+
+`all +twins veklor tank` assigns a warlock; `all +twins veknilash tank`
+assigns a warrior. Add exactly one side: `all +twins east` or `all +twins west`.
+Use `.bot role <BotName> tank` for healing recognition.
+DPS chooses either `all +twins physical dps` or `all +twins spell dps`.
+See the Twin Emperors section of the local raid tactics guide for staging,
+full commands and the remaining teleport limitations.

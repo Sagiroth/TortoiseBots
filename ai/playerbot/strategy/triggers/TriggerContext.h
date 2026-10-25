@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/actions/FankrissTankActions.h"
+#include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "../generic/CthunSpreadStrategy.h"
 #include "../actions/OnyxiaTankPositionActions.h"
 #include "../actions/GeddonBombActions.h"
@@ -348,6 +349,9 @@ namespace ai
             creators["ossirian crystal ready"] = [](PlayerbotAI* ai) { return new OssirianCrystalTrigger(ai); };
             creators["fankriss swap needed"] = [](PlayerbotAI* ai) { return new FankrissSwapTrigger(ai); };
             creators["fankriss tank engage needed"] = [](PlayerbotAI* ai) { return new FankrissTankEngageTrigger(ai); };
+            creators["twins position needed"] = [](PlayerbotAI* ai) { return new TwinsOpeningTrigger(ai,"twins position needed","twins position"); };
+            creators["twins engage needed"] = [](PlayerbotAI* ai) { return new TwinsOpeningTrigger(ai,"twins engage needed","twins engage"); };
+            creators["twins searing pain ready"] = [](PlayerbotAI* ai) { return new TwinsOpeningTrigger(ai,"twins searing pain ready","twins searing pain"); };
             creators["kurinnaxx swap needed"] = [](PlayerbotAI* ai) { return new KurinnaxxSwapTrigger(ai); };
             creators["kurinnaxx hold needed"] = [](PlayerbotAI* ai) { return new KurinnaxxHoldTrigger(ai); };
             creators["grobbulus cloud nearby"] = [](PlayerbotAI* ai) { return new LocalGrobbulusCloudTrigger(ai); };

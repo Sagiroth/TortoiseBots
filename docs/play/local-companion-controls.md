@@ -728,3 +728,11 @@ Disable on both tanks after the encounter:
 .bot command Faelor all -fankriss tank
 .bot command Caelia all -fankriss tank
 ```
+### Twin Emperors opening assignments
+
+`all +twins veklor tank` assigns a warlock; `all +twins veknilash tank`
+assigns a warrior. Add exactly one side: `all +twins east` or `all +twins west`.
+Use `.bot role <BotName> tank` for healing recognition.
+DPS chooses either `all +twins physical dps` or `all +twins spell dps`.
+See the Twin Emperors section of the local raid tactics guide for staging,
+full commands and the remaining teleport limitations.

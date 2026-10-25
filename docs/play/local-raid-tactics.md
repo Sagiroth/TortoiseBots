@@ -56,24 +56,78 @@ targets, raid marks and crowd control remain ahead of this behavior. This only
 assists glob kills; it does not automate frost spell selection or the 200-hit
 freeze phase.
 
-### Twin Emperors: physical DPS assignment (opt-in)
+### Twin Emperors: opening side teams (opt-in)
 
-Enable `.bot command <BotName> all +twins physical dps` on bots assigned to
-physical DPS; remove with `all -twins physical dps`. In AQ40 combat, autonomous
-DPS selection skips engaged Vek'lor (`15276`), who is immune to normal damage.
-The bot can select another normally eligible target, including Vek'nilash;
-if none is available it does not force a new target. Existing CC reservations,
-attackability/range checks and explicit attack/raid-mark orders still apply.
-Tank roles are exempt. There is no class inference or default enabling.
+Prepare one warrior and one warlock on each side before pulling.
+Use `twins veknilash tank` for warriors and `twins veklor tank` for warlocks.
+Each tank also needs exactly one of `twins west` or `twins east`.
+The names mean the two spawn-side platforms: west starts with Vek'nilash;
+east starts with Vek'lor. They are not compass bearings.
 
-A bot already attacking Vek'lor uses the existing raid retarget action to stop
-that attack, cancel casts aimed at him and recall/redirect its main pet.
-Autonomous target-based damage and pet-attack actions honor the same exclusion.
-As with the other raid DPS exclusions, existing DoTs/incidental AoE are not
-removed and a pet's defensive AI may reacquire before the next bot reaction.
-This assigns physical DPS only: it does not choose caster/pet damage schools,
-position tanks, manage teleports or keep the emperors apart. Keep those
-assignments under player control; do not enable this strategy on caster DPS.
+Replace the example character names below with your actual bots:
+
+```text
+.bot role WestWarrior tank
+.bot command WestWarrior all +twins veknilash tank
+.bot command WestWarrior all +twins west
+.bot role WestWarlock tank
+.bot command WestWarlock all +twins veklor tank
+.bot command WestWarlock all +twins west
+.bot role EastWarrior tank
+.bot command EastWarrior all +twins veknilash tank
+.bot command EastWarrior all +twins east
+.bot role EastWarlock tank
+.bot command EastWarlock all +twins veklor tank
+.bot command EastWarlock all +twins east
+```
+
+Assign physical damage dealers (including hunters) `all +twins physical dps`.
+Assign spell damage dealers `all +twins spell dps` instead. Never enable both.
+Use per-bot names: `@ranged` also includes hunters and is not a spell-DPS filter.
+Healers keep their healing roles; position enough healers to cover each side.
+The explicit tank role makes a warlock recognizable to the healing policies.
+
+The opening only activates in the Twins room on map 531, after the raid engages
+a twin or an ordinary bot pull is ordered against one. It does not pull on its
+own just because a twin is selected. Pullback orders do not authorize movement.
+Clear old attack orders and raid target marks before using these assignments.
+Explicit other-target orders suspend tank assignment; remove the strategies
+when taking full manual control.
+
+The side anchors are the initial boss platforms, about 147 yards apart:
+
+| Side | Boss anchor (x, y, z) | Suggested team staging point |
+| --- | --- | --- |
+| West | -9019.14, 1180.07, -104.17 | -9040, 1210, -104.35 |
+| East | -8874.06, 1204.74, -104.17 | -8870, 1240, -105.07 |
+
+Stage manually on the same-side platform, clear the preceding trash, and put
+healers in range. Offline map-531 checks confirm ground, LOS and complete routes
+from these staging points; they do not prove live aggro safety or healer coverage.
+Do not gather both teams at the entrance and expect this to repair a collapsed pull.
+
+The warrior adopts Defensive Stance and attacks the physical twin at the fixed
+outer side of its platform. The warlock uses repeated Searing Pain and aims for
+18 yards of edge-to-edge clearance from a separated Vek'lor. A spare tank waits
+outside the caster landing zone. Tanks cannot chase their assigned twin across
+the room. Ordinary DPS hold behavior remains unchanged; the assigned tanks can
+start establishing threat immediately after engagement.
+
+Inside the room, physical DPS selects engaged Vek'nilash; spell DPS selects
+engaged Vek'lor. Explicit attack/mark orders remain ahead of this routing.
+Opted-in bots avoid the caster's 10-yard burst range with a bounding-radius and
+2-yard safety margin, including chase routes. Main pets are recalled and blocked
+from attacking Vek'lor. Keep pets passive manually too: defensive pet AI is not
+a guaranteed instant recall. Existing CC reservations and generic hazards remain.
+
+This is opening control, not a complete Twins strategy. There is no teleport
+countdown, coordinated closest-player pickup, threat-reset handoff or DPS hold
+after teleport. Boss separation depends on establishing the correct victim;
+these positions cannot guarantee recovery after both bosses collapse together.
+Blizzard and exploding-bug discovery are not added. Do not expect a full kill.
+
+Disable using the same commands with `-` instead of `+`; restore normal forced
+roles afterward (for example `.bot role EastWarlock dps`).
 
 The shared hazard escape action chooses the nearest area that actually
 contains the bot. A nearby smaller area outside the bot no longer masks a

@@ -174,6 +174,7 @@ int main(){
 #include <string>
 #include <cassert>
 struct Action {std::string n;std::string const& getName(){return n;}};
+bool TwinsOpeningTank(int*) { return false; }
 struct WaitForAttackStrategy {static bool ShouldWait(int*){return true;}};
 struct WaitForAttackMultiplier {int* ai=nullptr;float GetValue(Action*);};
 '''+body+r'''

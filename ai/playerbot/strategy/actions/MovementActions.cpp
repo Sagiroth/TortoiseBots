@@ -2,6 +2,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/TaxiRouteGuard.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "MovementActions.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
@@ -1363,6 +1364,7 @@ bool MovementAction::IsMovingAllowed(Unit* target)
 
 bool MovementAction::IsMovingAllowed(uint32 mapId, float x, float y, float z)
 {
+    if (mapId == 531 && !TwinsOpeningMoveAllowed(ai,x,y,z)) return false;
     float distance = bot->GetDistance(x, y, z);
     if (!bot->InBattleGround() && distance > sPlayerbotAIConfig.reactDistance)
         return false;
@@ -1868,7 +1870,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (IsValidPosition(endPosition, botPosition))
     {
         std::vector<WorldPosition> path = botPosition.GetPathTo(endPosition,bot);
-        if (GeneratePathAvoidingHazards(path))
+        if (GeneratePathAvoidingHazards(path) && TwinsOpeningRouteAllowed(ai,path))
         {
             float distance = botPosition.GetPathLength(path);
             mm.Clear(false, true);
@@ -1892,6 +1894,8 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     {
         sLog.outDetail("[BOT CHASE] %s -> %s: dist=%.1f endPos invalid, falling back", bot->GetName(), obj->GetName(), distanceToTarget);
     }
+
+    if (!TwinsOpeningChaseAllowed(ai,obj,distance)) return false;
 
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
     {

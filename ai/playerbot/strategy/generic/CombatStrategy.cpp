@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/TwinsOpeningActions.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "CombatStrategy.h"
 #include "playerbot/ServerFacade.h"
@@ -123,6 +124,7 @@ void WaitForAttackStrategy::InitCombatMultipliers(std::list<Multiplier*>& multip
 bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
 {
     if (PatchwerkDpsOpeningHold(ai)) return true;
+    if (TwinsOpeningTank(ai)) return false; // Side tanks establish threat; DPS keep the normal hold.
     if (GetPatchwerkSoakBoss(ai))
         return false; // Assigned soakers join immediately; DPS retain their delay.
 
@@ -173,6 +175,9 @@ float WaitForAttackMultiplier::GetValue(Action* action)
 {
     // Allow some movement and targeting actions
     const std::string& actionName = action->getName();
+    if (actionName == "twins position" ||
+        ((actionName == "twins engage" || actionName == "twins searing pain") && TwinsOpeningTank(ai)))
+        return 1.0f;
     if ((actionName != "wait for attack keep safe distance") &&
         (actionName != "cthun spread move") && // encounter entry must not wait for DPS release
         (actionName != "dps assist") &&
