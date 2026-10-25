@@ -4,6 +4,13 @@
 
 namespace ai
 {
+    class KelThuzadInterruptTrigger : public Trigger
+    {
+    public:
+        KelThuzadInterruptTrigger(PlayerbotAI* ai) : Trigger(ai, "kt frostbolt ready", 1) {}
+        bool IsActive() override;
+    };
+
     class GrobbulusCloudTrigger : public Trigger
     {
     public:

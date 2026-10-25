@@ -3,6 +3,18 @@
 
 namespace ai
 {
+    class KelThuzadInterruptStrategy : public Strategy
+    {
+    public:
+        KelThuzadInterruptStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "kt interrupt"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     class GrobbulusCloudStrategy : public Strategy
     {
     public:

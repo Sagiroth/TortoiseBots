@@ -1,4 +1,5 @@
 #pragma once
+#include "KelThuzadInterruptActions.h"
 #include "RuinsOfAhnQirajActions.h"
 #include "playerbot/PlayerbotAI.h"
 
@@ -361,6 +362,7 @@ namespace ai
             creators["enable blackwing lair strategy"] = [](PlayerbotAI* ai) { return new BlackwingLairEnableDungeonStrategyAction(ai); };
             creators["disable blackwing lair strategy"] = [](PlayerbotAI* ai) { return new BlackwingLairDisableDungeonStrategyAction(ai); };
             creators["maexxna rescue"] = [](PlayerbotAI* ai) { return new MaexxnaRescueAction(ai); };
+            creators["kt frostbolt interrupt"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptAction(ai); };
             creators["locust swarm retreat"] = [](PlayerbotAI* ai) { return new LocustSwarmRetreatAction(ai); };
             creators["ossirian crystal click"] = [](PlayerbotAI* ai) { return new OssirianCrystalAction(ai); };
             creators["grobbulus cloud escape"] = [](PlayerbotAI* ai) { return new GrobbulusCloudEscapeAction(ai); };

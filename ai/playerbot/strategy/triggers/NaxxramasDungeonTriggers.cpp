@@ -19,3 +19,10 @@ bool LocustSwarmTrigger::IsActive()
 
 #include "playerbot/strategy/values/GrobbulusCloudHazards.h"
 bool GrobbulusCloudTrigger::IsActive() { return InsideGrobbulusCloud(ai); }
+
+#include "playerbot/strategy/actions/KelThuzadInterruptActions.h"
+bool KelThuzadInterruptTrigger::IsActive()
+{
+    KelThuzadInterruptAction action(ai);
+    return action.isUseful();
+}

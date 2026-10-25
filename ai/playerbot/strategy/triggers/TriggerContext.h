@@ -324,6 +324,7 @@ namespace ai
             creators["enter molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreEnterDungeonTrigger(ai); };
             creators["leave molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreLeaveDungeonTrigger(ai); };
             creators["maexxna rescue needed"] = [](PlayerbotAI* ai) { return new MaexxnaRescueTrigger(ai); };
+            creators["kt frostbolt ready"] = [](PlayerbotAI* ai) { return new KelThuzadInterruptTrigger(ai); };
             creators["locust swarm active"] = [](PlayerbotAI* ai) { return new LocustSwarmTrigger(ai); };
             creators["ossirian crystal ready"] = [](PlayerbotAI* ai) { return new OssirianCrystalTrigger(ai); };
             creators["grobbulus cloud nearby"] = [](PlayerbotAI* ai) { return new GrobbulusCloudTrigger(ai); };

@@ -146,3 +146,42 @@ void GrobbulusCloudStrategy::InitCombatMultipliers(std::list<Multiplier*>& multi
 }
 void GrobbulusCloudStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers) { InitCombatMultipliers(multipliers); }
 void GrobbulusCloudStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers) { InitCombatMultipliers(multipliers); }
+
+#include "playerbot/strategy/actions/KelThuzadInterruptActions.h"
+#include "playerbot/strategy/actions/GenericSpellActions.h"
+namespace
+{
+class KelThuzadInterruptMultiplier : public Multiplier
+{
+public:
+    KelThuzadInterruptMultiplier(PlayerbotAI* ai) : Multiplier(ai, "kt interrupt reservation") {}
+    float GetValue(Action* action) override
+    {
+        auto spell = dynamic_cast<CastSpellAction*>(action);
+        if (!spell)
+            return 1.0f;
+        Unit* boss = GetKelThuzadInterruptBoss(ai);
+        if (!boss || action->GetTarget() != boss)
+            return 1.0f;
+        uint32 id = spell->GetSpellID();
+        return IsKelThuzadReservedInterrupt(ai, id) ? 0.0f : 1.0f;
+    }
+};
+}
+void KelThuzadInterruptStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("kt frostbolt ready",
+        NextAction::array(0, new NextAction("kt frostbolt interrupt", ACTION_EMERGENCY + 9), NULL)));
+}
+void KelThuzadInterruptStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitCombatTriggers(triggers);
+}
+void KelThuzadInterruptStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new KelThuzadInterruptMultiplier(ai));
+}
+void KelThuzadInterruptStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}
