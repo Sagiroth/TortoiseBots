@@ -66,6 +66,16 @@ namespace ai
         void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
     };
 
+    class GarrDpsStrategy : public GolemaggDpsStrategy
+    {
+    public:
+        GarrDpsStrategy(PlayerbotAI* ai) : GolemaggDpsStrategy(ai) {}
+        std::string getName() override { return "garr dps"; }
+    private:
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     class MajordomoDpsStrategy : public GolemaggDpsStrategy
     {
     public:

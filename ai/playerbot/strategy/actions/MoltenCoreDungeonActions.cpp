@@ -160,7 +160,8 @@ bool ai::IsRaidDpsTargetExcluded(PlayerbotAI* ai, Unit* target)
         return false;
     RaidDpsEncounter const encounter = RaidDpsEncounterForTarget(target->GetEntry(),
         ai->HasStrategy("golemagg dps", BotState::BOT_STATE_COMBAT),
-        ai->HasStrategy("majordomo dps", BotState::BOT_STATE_COMBAT));
+        ai->HasStrategy("majordomo dps", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("garr dps", BotState::BOT_STATE_COMBAT));
     bool const protectedEntry = encounter != RaidDpsEncounter::None;
     bool const enabled = protectedEntry;
     bool const inEncounterMap = bot->GetMapId() == 409;
@@ -179,12 +180,13 @@ bool ai::IsRaidDpsTargetExcluded(PlayerbotAI* ai, Unit* target)
     // but preserve the assigned tank and explicit damage orders.
     bool encounterActive = encounter == RaidDpsEncounter::Majordomo &&
         target->IsInCombat() && !sServerFacade.IsFriendlyTo(bot, target);
-    if (encounter == RaidDpsEncounter::Golemagg)
+    if (encounter == RaidDpsEncounter::Golemagg || encounter == RaidDpsEncounter::Garr)
     {
+        uint32 const bossEntry = encounter == RaidDpsEncounter::Golemagg ? 11988 : 12057;
         for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
         {
             Unit* boss = ai->GetUnit(guid);
-            if (boss && boss->GetEntry() == 11988 && boss->IsInMap(bot) && boss->IsAlive() && boss->IsInCombat())
+            if (boss && boss->GetEntry() == bossEntry && boss->IsInMap(bot) && boss->IsAlive() && boss->IsInCombat())
             {
                 encounterActive = true;
                 break;
@@ -230,4 +232,21 @@ bool RaidDpsRetargetAction::Execute(Event& event)
     if (changed && pet && !IsRaidDpsTargetExcluded(ai, AI_VALUE(Unit*, "current target")))
         ai->DoSpecificAction("pet attack", event, true);
     return changed;
+}
+
+
+Unit* ai::GetActiveGarr(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsAlive() || !bot->IsInCombat() || bot->GetMapId() != 409 || ai->IsTank(bot) ||
+        !ai->HasStrategy("garr dps", BotState::BOT_STATE_COMBAT))
+        return nullptr;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* boss = ai->GetUnit(guid);
+        if (boss && boss->GetEntry() == 12057 && boss->IsInMap(bot) && boss->IsAlive() && boss->IsInCombat())
+            return boss;
+    }
+    return nullptr;
 }

@@ -4,6 +4,8 @@
 #include "playerbot/policy/raid/GeddonInfernoPolicy.h"
 #include "playerbot/strategy/actions/AttackAction.h"
 #include "playerbot/strategy/values/RaidDpsTargetPolicy.h"
+#include "playerbot/policy/raid/GeddonInfernoPolicy.h"
+#include "playerbot/GarrAoePolicy.h"
 #include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 #include "playerbot/strategy/actions/ReachTargetActions.h"
 
@@ -310,6 +312,36 @@ void GolemaggDpsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipli
 }
 
 void GolemaggDpsStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}
+
+
+namespace
+{
+class GarrAoeMultiplier : public Multiplier
+{
+public:
+    GarrAoeMultiplier(PlayerbotAI* ai) : Multiplier(ai, "garr incidental damage") {}
+    float GetValue(Action* action) override
+    {
+        if (!action || !GetActiveGarr(ai))
+            return 1.0f;
+        return GarrIncidentalDamageAction(action->getName(),
+            action->getThreatType() == ActionThreatType::ACTION_THREAT_AOE,
+            dynamic_cast<CastHealingSpellAction*>(action) != nullptr,
+            action->IsCrowdControlAction()) ? 0.0f : 1.0f;
+    }
+};
+}
+
+void GarrDpsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new RaidDpsTargetMultiplier(ai));
+    multipliers.push_back(new GarrAoeMultiplier(ai));
+}
+
+void GarrDpsStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
 {
     InitCombatMultipliers(multipliers);
 }
