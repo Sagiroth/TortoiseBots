@@ -1,6 +1,11 @@
 
 #include "playerbot/playerbot.h"
 #include "NaxxramasDungeonActions.h"
+#include "SapphironBlizzardHazards.h"
+#include "Objects/DynamicObject.h"
+#include "playerbot/SapphironBlizzardPolicy.h"
+
+#include <vector>
 
 using namespace ai;
 #include "playerbot/MaexxnaRescuePolicy.h"
@@ -191,5 +196,89 @@ bool LocustSwarmRetreatAction::Execute(Event& event)
             return true;
         }
     }
+    return false;
+}
+
+
+std::list<HazardPosition> ai::GetSapphironBlizzardHazards(PlayerbotAI* ai)
+{
+    Player* bot = ai ? ai->GetBot() : nullptr;
+    if (!bot || bot->GetMapId() != 533 || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->IsBeingTeleported() || !bot->IsInCombat() ||
+        !ai->HasStrategy("sapphiron blizzard", BotState::BOT_STATE_COMBAT))
+        return {};
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+    PositionMap& positions = AI_VALUE(PositionMap&, "position");
+    auto hold = positions.find("pull hold");
+    if (ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT) ||
+        (hold != positions.end() && hold->second.isSet()))
+        return {};
+
+    bool engaged = false;
+    for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* boss = ai->GetUnit(guid);
+        if (boss && boss->GetEntry() == 15989 && boss->IsAlive() && boss->IsInCombat() && boss->IsInMap(bot))
+        {
+            engaged = true;
+            break;
+        }
+    }
+    if (!engaged)
+        return {};
+
+    auto* value = context->GetValue<SapphironBlizzardSnapshot>("sapphiron blizzard snapshot");
+    auto snapshot = value->Get();
+    uint32 const now = WorldTimer::getMSTime();
+    if (snapshot.NeedsRefresh(now, bot->GetMapId(), bot->GetInstanceId()))
+    {
+        snapshot.BeginRefresh(now, bot->GetMapId(), bot->GetInstanceId());
+        // Share bounded discovery across trigger, movement and hazard consumers.
+        std::list<Creature*> blizzards;
+        bot->GetCreatureListWithEntryInGrid(blizzards, SAPPHIRON_BLIZZARD_CREATURE_ENTRY,
+            MAX_VISIBILITY_DISTANCE);
+        for (Creature* blizzard : blizzards)
+        {
+            if (!blizzard || blizzard->GetEntry() != SAPPHIRON_BLIZZARD_CREATURE_ENTRY ||
+                !blizzard->IsInMap(bot))
+                continue;
+            std::vector<DynamicObject*> damageAreas;
+            blizzard->GetDynObjects(SAPPHIRON_BLIZZARD_DAMAGE_SPELL_ID,
+                SpellEffectIndex(SAPPHIRON_BLIZZARD_DAMAGE_EFFECT_INDEX), damageAreas);
+            for (DynamicObject* area : damageAreas)
+                if (area)
+                    snapshot.areas.push_back({blizzard->GetObjectGuid().GetRawValue(),
+                                              area->GetObjectGuid().GetRawValue()});
+        }
+        value->Set(snapshot);
+    }
+
+    std::list<HazardPosition> hazards;
+    for (auto const& id : snapshot.areas)
+    {
+        // Resolve live objects, not cached geometry: removal, expiration and
+        // current bot movement must be visible even between discovery scans.
+        DynamicObject* area = bot->GetMap()->GetDynamicObject(ObjectGuid(id.area));
+        if (!area || area->GetCasterGuid() != ObjectGuid(id.caster) ||
+            !IsActiveSapphironDamageArea(SAPPHIRON_BLIZZARD_CREATURE_ENTRY, area->GetSpellId(),
+                area->GetEffIndex(), area->GetDuration(), area->GetRadius()))
+            continue;
+        hazards.emplace_back(WorldPosition(area), area->GetRadius() + 2.0f);
+    }
+    return hazards;
+}
+
+bool ai::SapphironBlizzardTooClose(PlayerbotAI* ai)
+{
+    Player* bot = ai ? ai->GetBot() : nullptr;
+    if (!bot)
+        return false;
+    for (HazardPosition const& hazard : GetSapphironBlizzardHazards(ai))
+        if (WorldPosition(bot).distance(hazard.first) <= hazard.second)
+            return true;
     return false;
 }

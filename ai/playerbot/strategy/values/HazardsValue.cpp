@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "HazardsValue.h"
 #include "GrobbulusCloudHazards.h"
+#include "playerbot/strategy/actions/SapphironBlizzardHazards.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "Maps/PathFinder.h"
 
@@ -166,5 +167,7 @@ std::list<HazardPosition> HazardsValue::Calculate()
 
     auto clouds = GetGrobbulusCloudHazards(ai);
     hazards.splice(hazards.end(), clouds);
+    auto blizzards = GetSapphironBlizzardHazards(ai);
+    hazards.splice(hazards.end(), blizzards);
     return hazards;
 }

@@ -193,6 +193,7 @@ namespace ai
             creators["nefarian phase3"] = [](PlayerbotAI* ai) { return new NefarianPhaseThreeStrategy(ai); };
             creators["nefarian infernal focus"] = [](PlayerbotAI* ai) { return new NefarianInfernalFocusStrategy(ai); };
             creators["maexxna rescue"] = [](PlayerbotAI* ai) { return new MaexxnaRescueStrategy(ai); };
+            creators["sapphiron blizzard"] = [](PlayerbotAI* ai) { return new SapphironBlizzardStrategy(ai); };
             creators["patchwerk main"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai,"patchwerk main"); };
             creators["patchwerk soak"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai,"patchwerk soak"); };
             creators["patchwerk melee safety"] = [](PlayerbotAI* ai) { return new PatchwerkAssignmentStrategy(ai,"patchwerk melee safety"); };

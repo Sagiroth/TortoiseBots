@@ -80,4 +80,11 @@ namespace ai
     public:
         FourHorsemanVoidZoneTrigger(PlayerbotAI* ai) : CloseToCreatureHazardTrigger(ai, "void zone too close", 16697, 10.0f, 90) {}
     };
+    class SapphironBlizzardTrigger : public Trigger
+    {
+    public:
+        SapphironBlizzardTrigger(PlayerbotAI* ai) : Trigger(ai, "sapphiron blizzard nearby", 1) {}
+        bool IsActive() override;
+    };
+
 }

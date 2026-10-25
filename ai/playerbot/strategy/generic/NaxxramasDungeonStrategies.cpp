@@ -189,6 +189,7 @@ void KelThuzadInterruptStrategy::InitReactionMultipliers(std::list<Multiplier*>&
 }
 
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
+#include "playerbot/strategy/actions/SapphironBlizzardHazards.h"
 #include "playerbot/strategy/actions/AttackAction.h"
 #include "playerbot/EbonrocSwapPolicy.h"
 namespace
@@ -278,6 +279,50 @@ void ThaddiusPolarityStrategy::InitCombatMultipliers(std::list<Multiplier*>& mul
     multipliers.push_back(new ThaddiusPolarityMultiplier(ai));
 }
 void ThaddiusPolarityStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}
+
+
+void SapphironBlizzardStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("sapphiron blizzard nearby",
+        NextAction::array(0, new NextAction("move away from hazard", ACTION_EMERGENCY + 7), nullptr)));
+}
+
+void SapphironBlizzardStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitCombatTriggers(triggers);
+}
+
+namespace
+{
+class SapphironBlizzardMultiplier : public Multiplier
+{
+public:
+    SapphironBlizzardMultiplier(PlayerbotAI* ai) : Multiplier(ai, "sapphiron blizzard movement") {}
+    float GetValue(Action* action) override
+    {
+        if (!action)
+            return 1.0f;
+        std::string const& name = action->getName();
+        bool const escape = name == "move away from hazard" || name == "raid bomb runout" ||
+            name == "grobbulus cloud escape" || name == "flee" || name == "runaway";
+        if (escape)
+            return 1.0f;
+        bool const movement = dynamic_cast<MovementAction*>(action) ||
+            dynamic_cast<CastReachTargetSpellAction*>(action);
+        return movement && SapphironBlizzardTooClose(ai) ? 0.0f : 1.0f;
+    }
+};
+}
+
+void SapphironBlizzardStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new SapphironBlizzardMultiplier(ai));
+}
+
+void SapphironBlizzardStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
 {
     InitCombatMultipliers(multipliers);
 }

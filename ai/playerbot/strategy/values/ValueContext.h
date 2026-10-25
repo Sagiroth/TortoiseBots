@@ -104,6 +104,7 @@
 #include "EngineValues.h"
 #include "FreeMoveValues.h"
 #include "HazardsValue.h"
+#include "playerbot/SapphironBlizzardPolicy.h"
 #include "TalentSpecValue.h"
 #include "MountValues.h"
 #include "DeadValues.h"
@@ -269,6 +270,9 @@ namespace ai
             creators["attackers targeting me"] = [](PlayerbotAI* ai) { return new AttackersTargetingMeValue(ai); };
             creators["closest attacker targeting me"] = [](PlayerbotAI* ai) { return new ClosestAttackerTargetingMeTargetValue(ai); };
             creators["add hazard"] = [](PlayerbotAI* ai) { return new AddHazardValue(ai); };
+            creators["sapphiron blizzard snapshot"] = [](PlayerbotAI* ai) {
+                return new ManualSetValue<SapphironBlizzardSnapshot>(ai, {}, "sapphiron blizzard snapshot");
+            };
             creators["stored hazards"] = [](PlayerbotAI* ai) { return new StoredHazardsValue(ai); };
             creators["hazards"] = [](PlayerbotAI* ai) { return new HazardsValue(ai); };
             creators["invalid target"] = [](PlayerbotAI* ai) { return new InvalidTargetValue(ai); };
