@@ -855,6 +855,11 @@ AiPlayerbot.DungeonTactics = 0
 # 1 - the run leader is on (Default)
 AiPlayerbot.DungeonSelfClear = 1
 
+# Raid bindings for the run leader: `.bot commander bind <LeadBot> raid` binds the commander's own raid of 6 to 40 bots (he leaves it; the lead bot is the main tank), and the run leader uses the raid rules (wipe level, gathering and rest scaled to the raid's size). Needs AiPlayerbot.DungeonSelfClear = 1 and AiPlayerbot.RemoteCommander = 1. Switching it off releases every raid binding.
+# 0 - off (Default)
+# 1 - on
+AiPlayerbot.DungeonRunRaid = 0
+
 # Bot LFG dungeon groups: online, idle world bots of one faction and of a proven
 # dungeon's level band (table ai_bot_lfg_plan; the band is the LFT addon's) form a
 # group of four, tank, healer and damage, with one role left open for a player.
