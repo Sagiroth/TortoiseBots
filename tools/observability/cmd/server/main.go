@@ -23,6 +23,7 @@ import (
 	"tortoise-observability/internal/agentmaps"
 	"tortoise-observability/internal/armory"
 	"tortoise-observability/internal/auth"
+	"tortoise-observability/internal/combat"
 	"tortoise-observability/internal/control"
 	"tortoise-observability/internal/dungeons"
 	zoneproject "tortoise-observability/internal/map"
@@ -279,8 +280,15 @@ func main() {
 	}
 
 	// 5. WebSocket hub and UDP ingestion
+	// Combat fights: the module's per-fight numbers (COMBAT_FIGHT datagrams), judged here by rules.json.
+	combatRules, err := combat.LoadRules(combat.DefaultRules())
+	if err != nil {
+		log.Fatalf("Bad combat rules: %v", err)
+	}
+	combatStore := combat.NewStore(combatRules)
 	hub := ws.NewHub()
 	udpListener := udp.NewListener(*udpHost, *udpPort, store, metricsRegistry, projectionEngine, hub)
+	udpListener.SetCombatStore(combatStore)
 	var forwards []string
 	for _, f := range strings.Split(*forwardUDP, ",") {
 		if f = strings.TrimSpace(f); f != "" {
@@ -538,6 +546,26 @@ func main() {
 	// real players) included. Read-only: the tab draws, it never orders.
 	mux.HandleFunc("/api/v1/dungeons", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, store.Dungeons())
+	}))
+
+	// Combat fights ("a light Turtle Logs"): the module's per-fight numbers
+	// (COMBAT_FIGHT datagrams), judged here by rules.json. The list is per
+	// commander, newest first; each fight carries the v1 warnings with it.
+	mux.HandleFunc("/api/v1/combat/fights", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, combatStore.List(r.URL.Query().Get("commander")))
+	}))
+	mux.HandleFunc("/api/v1/combat/fight/", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		f, warnings, ok := combatStore.Get(strings.TrimPrefix(r.URL.Path, "/api/v1/combat/fight/"))
+		if !ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"no such fight"}`))
+			return
+		}
+		writeJSON(w, struct {
+			Fight    combat.Fight     `json:"fight"`
+			Warnings []combat.Warning `json:"warnings"`
+		}{f, warnings})
 	}))
 
 	// The bound bots' recent paths (a short bounded history kept in memory), so a page opened mid-run starts with the trails drawn:

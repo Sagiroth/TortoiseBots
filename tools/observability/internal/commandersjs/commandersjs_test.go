@@ -63,6 +63,12 @@ func TestDungeonRunsJS(t *testing.T) {
 	runCheck(t, "dungeon_runs_check.js", "../../web/static/js/dungeon-runs.js")
 }
 
+// TestFightsJS runs fights_check.js: the Fights panel's list rows, per-bot
+// table, debuff bars, warning strip and pull post-mortem.
+func TestFightsJS(t *testing.T) {
+	runCheck(t, "fights_check.js", "../../web/static/js/fights.js")
+}
+
 // TestRefreshJS runs refresh_check.js: the refresh-rate picker's options, the choice saved per browser (also with a storage that throws)
 // and the gate that holds live updates to the chosen rate or freezes them while paused.
 func TestRefreshJS(t *testing.T) {

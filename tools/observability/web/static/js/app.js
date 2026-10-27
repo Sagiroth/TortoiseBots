@@ -5984,9 +5984,31 @@
       setHtml(card.querySelector('.cmd-party'), cmdPartyHtml(bind));
       setHtml(card.querySelector('.cmd-orders'), cmdOrdersHtml(bind, nowSec));
       drawCmdMap(key);
+      mountFightPanel(card, bind);
     });
     paintCmdLayers();
     showCommanderLink();
+  }
+
+  // ---- Fights panel ("a light Turtle Logs") --------------------------------
+  // One Fights.mount per card (the daemon's /api/v1/combat/*, internal/combat).
+  // A11 replaces this mount with the raid card's panel (Fights.render if
+  // present); until then each Commanders card fetches its own commander.
+  function mountFightPanel(card, bind) {
+    if (typeof Fights === 'undefined' || !Fights || bind.demo) return;
+    fetch('/api/v1/combat/fights?commander=' + encodeURIComponent(bind.commander)).then(jsonOrThrow).then(list => {
+      Fights.render(card.querySelector('.cmd-fights') || ensureFightMount(card), bind.commander, list);
+    }).catch(() => {});
+  }
+
+  function ensureFightMount(card) {
+    let el = card.querySelector('.cmd-fights');
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'cmd-fights';
+      card.appendChild(el);
+    }
+    return el;
   }
 
   // ---- Dungeons (issue #895) -----------------------------------------------

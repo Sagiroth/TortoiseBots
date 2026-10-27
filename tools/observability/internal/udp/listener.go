@@ -8,7 +8,7 @@ import (
 	"log"
 	"net"
 	"time"
-
+	"tortoise-observability/internal/combat"
 	zoneproject "tortoise-observability/internal/map"
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
@@ -21,16 +21,22 @@ type Hub interface {
 }
 
 // Listener owns the UDP socket and the janitor that evicts stale state.
+// Combat, when set, receives the module's COMBAT_FIGHT datagrams; nil keeps
+// the listener's old shape (an older module sends none and nothing stores).
 type Listener struct {
 	addr       string
 	conn       *net.UDPConn
 	store      *state.Store
+	combat     *combat.Store
 	metricsReg *metrics.Registry
 	zoneProj   *zoneproject.Engine
 	hub        Hub
 	forwards   []*forwardTarget
 	stopChan   chan struct{}
 }
+
+// SetCombatStore wires the fight store the COMBAT_FIGHT case files into.
+func (l *Listener) SetCombatStore(c *combat.Store) { l.combat = c }
 
 func NewListener(host string, port int, store *state.Store, mr *metrics.Registry, zp *zoneproject.Engine, hub Hub) *Listener {
 	return &Listener{
@@ -227,6 +233,20 @@ func (l *Listener) processPacket(data []byte) {
 			l.hub.Broadcast("commanders", l.store.Commanders())
 		}
 
+	case "COMBAT_FIGHT":
+		if l.combat == nil {
+			return
+		}
+		var dg combat.FightDatagram
+		if err := json.Unmarshal(data, &dg); err != nil {
+			return
+		}
+		if dg.Fight.ID == "" {
+			return
+		}
+		if l.combat.Add(dg.Session, dg.Fight) {
+			l.hub.Broadcast("combat", dg.Fight)
+		}
 	default:
 		var anomaly model.AnomalyPayload
 		if err := json.Unmarshal(data, &anomaly); err != nil {
