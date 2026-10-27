@@ -29,9 +29,10 @@ class ReloadPlansWiring(unittest.TestCase):
         run = body(CMD, "bool HandleDungeonRun(", "\nvoid UpdateRemoteCommanders(")
         hook = 'if (verb == "reloadplans")\n        return HandleReloadPlans(handler, intent);'
         self.assertIn(hook, run)
-        # before the in-game requirement and the DungeonSelfClear/RemoteCommander gate: a console GM may reload too
-        self.assertLess(run.index(hook), run.index("Player* commander = Requester(handler);"))
-        self.assertLess(run.index(hook), run.index("RemoteCommander::RunSurfaceOn("))
+        # the dispatch carries the GM side branches and the in-game path; the run-leader gate lives in RunVerbAs
+        self.assertIn("return RunVerbAs(handler, Requester(handler), verb, rawArg, intent);", run)
+        verb = body(CMD, "static bool RunVerbAs(", "\n}\n")
+        self.assertIn("RemoteCommander::RunSurfaceOn(", verb)
         self.assertIn("/ reloadplans (GameMaster)", run)
         # `.bot run` reaches HandleDungeonRun
         self.assertIn('{"run", HandleDungeonRun,', CMD)

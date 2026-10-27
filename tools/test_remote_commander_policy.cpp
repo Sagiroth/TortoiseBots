@@ -986,6 +986,22 @@ static void TestOwnerOrderBotName()
     CHECK(OwnerOrderBotName("teleport", Args("a b")).empty());
 }
 
+// `.bot run for <Commander> <verb>`: the first word is the commander's name
+// (letters only, 2-12), the second the run verb, the rest its arguments; a
+// start never carries the player-led word (that is the commander's own run).
+static void TestParseRunFor()
+{
+    std::string commander, verb, rest;
+    CHECK(ParseRunFor("Gbmage pause", commander, verb, rest));
+    CHECK(commander == "Gbmage" && verb == "pause" && rest.empty());
+    CHECK(ParseRunFor("Gbmage START lower_karazhan_halls from 0", commander, verb, rest));
+    CHECK(commander == "Gbmage" && verb == "start" && rest == "lower_karazhan_halls from 0");
+    CHECK(!ParseRunFor("Gbmage start x player", commander, verb, rest));
+    CHECK(!ParseRunFor("Gbmage here", commander, verb, rest));
+    CHECK(!ParseRunFor("G1 pause", commander, verb, rest));
+    CHECK(!ParseRunFor("", commander, verb, rest));
+}
+
 // The bind keeps the party the lead bot is in (the instance bind lives on the
 // group), and only re-forms one it cannot keep.
 static void TestBindGroupPlan()
@@ -1380,6 +1396,7 @@ int main()
     TestRaidBindRefusals();
     TestRaidBindingRelease();
     TestRaidBindPlan();
+    TestParseRunFor();
     std::printf("remote commander policy: %d checks passed\n", checks);
     return 0;
 }

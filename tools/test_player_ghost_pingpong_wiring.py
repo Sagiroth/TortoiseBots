@@ -66,7 +66,7 @@ class PlayerGhostPingpongWiringTest(unittest.TestCase):
         self.assertIn('case MOVE_FAIL_BOUND_RUN_MAP: return "bound-run-map";', strip_comments(LASTMOVE))
 
     def test_run_stop_has_no_gamemaster_gate(self):
-        run = strip_comments(body(COMMANDS, "bool HandleDungeonRun(", "\nvoid UpdateRemoteCommanders("))
+        run = strip_comments(body(COMMANDS, "static bool RunVerbAs(", "\n}\n"))
         stop = body(run, 'DungeonRunSlot& slot = it->second;\n    if (verb == "stop")', '\n    if (verb == "status")')
         self.assertNotIn("GetSecurity", stop)
         self.assertNotIn("SEC_", stop)

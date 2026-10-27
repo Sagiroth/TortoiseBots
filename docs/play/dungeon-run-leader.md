@@ -144,6 +144,8 @@ Owner decision (2026-10-14, in force since 2026-10-25): the run leader is on by 
 
 It is the **observe** mode of the dungeon modes: the bots clear, the commander (a player, or turtle-agent with `--mode observe`) only watches the status line and the `TBM:VIEW` feed, and may pause, skip, resume or stop.
 
+**Console control** (`.bot run for <Commander> <verb>`): a GameMaster in game, or the server console, remote access or SOAP with such an account, drives another commander's run (`start [plan] [from ...] [speed=<x>]`, `pause`, `resume`, `skip`, `stop`, `status`) as that commander, with that commander's binding; the answers go to the caller. A start never carries the player-led word. [Player Controls §1b](commands/commander.md#run-leader-bot-run).
+
 ### How it plays
 
 Once a second the run reads the party (alive, dead, in combat, health, mana, spread) and the current step's surroundings, and the step machine (`runtime/DungeonRunPolicy.h`) answers with at most one order. The order is sent exactly as the commander's own `.bot cmd <order>` (`move`, `move ... direct`, `pullback`, `rest`, `loot`, `open`, `use`, `ritual`): same checks, same ACK/ERR lines. The fights are the bots' own combat AI, with the [boss tactics](boss-tactics.md) of a bound party.

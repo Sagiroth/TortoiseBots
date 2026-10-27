@@ -530,7 +530,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         engine = (ROOT / "ai/playerbot/strategy/ReactionEngine.cpp").read_text()
         self.assertIn("ReactionPassForced(ai->HasRealPlayerMaster(), ai->QueuedChatCommandCount())", engine)
         # 4. `run start ... from ...` resolves the step and guards a start partway.
-        start = body(COMMANDS, "bool HandleDungeonRun(", "\nvoid UpdateRemoteCommanders(")
+        start = body(COMMANDS, "static bool RunVerbAs(", "\n}\n")
         self.assertIn("ResolveStartStep(*plan, startArgs.from, startArgs.value, startStep, &movedBack)", start)
         self.assertIn("CheckPartialStart(OnInstanceMap(lead), members.size(), withLead)", start)
         self.assertIn("slot.run = Start(plan, startStep);", start)
@@ -1202,7 +1202,7 @@ class RunTestSpeedWiringTest(unittest.TestCase):
 
     def test_the_start_takes_and_guards_the_speed(self):
         code = strip_comments(COMMANDS)
-        run = body(code, "bool HandleDungeonRun(ChatHandler* handler, char const* args)", "\n}\n")
+        run = body(code, "static bool RunVerbAs(", "\n}\n")
         start = run[run.index('if (verb == "start")\n'):]
         self.assertIn("CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(commander))", start)
         self.assertIn("if (!playerLedStart.playerLed)", start)

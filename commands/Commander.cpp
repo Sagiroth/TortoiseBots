@@ -10873,36 +10873,50 @@ static bool HandleBotLfgRun(ChatHandler* handler, std::string const& args, std::
     return true;
 }
 
-bool HandleDungeonRun(ChatHandler* handler, char const* args)
+// `.bot run for <Commander> <verb>`: a GameMaster drives another commander's
+// run from the console. The gate, the argument parse and the name lookup stay
+// here; the verb itself runs as the commander in RunVerbAs.
+static bool HandleRunFor(ChatHandler* handler, std::string const& args, std::string const& intent)
+{
+    Player* requester = Requester(handler);
+    if (requester ? !IsBotAdministrator(requester) : !IsGmCliHandler(handler))
+    {
+        SendActionError(handler, intent, "forbidden", "Only a GameMaster may drive another commander's run.");
+        return true;
+    }
+    std::string commanderName, verb, rest;
+    if (!RemoteCommander::ParseRunFor(args, commanderName, verb, rest))
+    {
+        SendActionError(handler, intent, "invalid",
+            "Usage: .bot run for <Commander> <start [plan] [from <leg|step N>] [speed=<x>]|pause|resume|skip|stop|status>");
+        return true;
+    }
+    Player* commander = sObjectAccessor.FindPlayerByName(commanderName.c_str());
+    if (!commander || !commander->IsInWorld() || !commander->GetSession())
+    {
+        SendActionError(handler, intent, "no-commander", "That commander is not online.");
+        return true;
+    }
+    return RunVerbAs(handler, commander, verb, rest, "run " + verb);
+}
+
+static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,
+    std::string const& intent)
 {
     using namespace TortoiseBots::DungeonRun;
-    std::string text = Trim(args ? args : "");
-    size_t const split = text.find_first_of(" \t");
-    std::string verb = text.substr(0, split);
-    for (char& c : verb)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    std::string const rawArg = split == std::string::npos ? std::string() : Trim(text.substr(split + 1));
     std::string arg = rawArg;
     for (char& c : arg)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    std::string const intent = "run " + (verb.empty() ? std::string("unknown") : ProtocolSafe(verb));
 
-
-    // Before the in-game and run-leader checks: a GameMaster reloads from the console too, with the run leader off.
-    if (verb == "reloadplans")
-        return HandleReloadPlans(handler, intent);
-    if (verb == "lfg")
-        return HandleBotLfgRun(handler, rawArg, intent);
-    if (verb == "system")
-        return HandleSystemRun(handler, rawArg, intent);
+    // The GM side branches stay with the dispatcher in HandleDungeonRun below; only the six
+    // run verbs (start/pause/resume/skip/stop/status) reach this body.
 
     if (verb != "start" && verb != "pause" && verb != "resume" && verb != "skip" && verb != "stop" &&
-        verb != "status" && verb != "list" && verb != "mode" && verb != "here")
+        verb != "status")
     {
-        SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from <leg|step N>] [speed=<1.0-3.0>] [player [tank <Bot>]] / pause / resume / skip / stop [reason] / status / mode / list / reloadplans (GameMaster)");
+        SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from <leg|step N>] [speed=<1.0-3.0>] / pause / resume / skip / stop [reason] / status");
         return true;
     }
-    Player* commander = Requester(handler);
     if (!commander || !commander->GetSession())
     {
         SendActionError(handler, intent, "requester", "You must be in-game.");
@@ -11284,6 +11298,34 @@ bool HandleDungeonRun(ChatHandler* handler, char const* args)
     SendRunLine(commander, slot, true);
     return true;
 }
+
+bool HandleDungeonRun(ChatHandler* handler, char const* args)
+{
+    std::string text = Trim(args ? args : "");
+    size_t const split = text.find_first_of(" \t");
+    std::string verb = text.substr(0, split);
+    for (char& c : verb)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    std::string const rawArg = split == std::string::npos ? std::string() : Trim(text.substr(split + 1));
+    std::string const intent = "run " + (verb.empty() ? std::string("unknown") : ProtocolSafe(verb));
+    // Before the in-game and run-leader checks: a GameMaster reloads from the console too, with the run leader off.
+    if (verb == "reloadplans")
+        return HandleReloadPlans(handler, intent);
+    if (verb == "lfg")
+        return HandleBotLfgRun(handler, rawArg, intent);
+    if (verb == "system")
+        return HandleSystemRun(handler, rawArg, intent);
+    if (verb == "for")
+        return HandleRunFor(handler, rawArg, intent);
+    if (verb != "start" && verb != "pause" && verb != "resume" && verb != "skip" && verb != "stop" &&
+        verb != "status" && verb != "list" && verb != "mode" && verb != "here")
+    {
+        SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from <leg|step N>] [speed=<1.0-3.0>] [player [tank <Bot>]] / pause / resume / skip / stop [reason] / status / mode / list / reloadplans (GameMaster)");
+        return true;
+    }
+    return RunVerbAs(handler, Requester(handler), verb, rawArg, intent);
+}
+
 void UpdateRemoteCommanders(uint32_t diff)
 {
     // The run's raid icons a run's end could not clear yet (its group not found then).

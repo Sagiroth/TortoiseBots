@@ -753,6 +753,7 @@ inline RunOrderVerdict ClassifyRunBoundOrder(bool bound, bool runExists, bool ru
     return runRunning ? RunOrderVerdict::IgnoreChat : RunOrderVerdict::Obey;
 }
 
+
 inline std::string RunBoundRefusalText(std::string const& commanderName)
 {
     return "These bots are bound to " + commanderName + " (.bot commander bind): only " + commanderName +
@@ -1617,6 +1618,57 @@ inline std::string OwnerOrderBotName(std::string const& verb, std::vector<std::s
     if ((verb == "loot" || verb == "open" || verb == "use" || verb == "gossip") && parts.size() >= 2)
         return parts[1];
     return std::string();
+}
+
+// `.bot run for <Commander> <verb> [args]`: a GameMaster drives another
+// commander's run from the console. First word the commander's name (letters
+// only, 2-12), second the run verb lower-cased (start/pause/resume/skip/stop/
+// status), the rest its arguments trimmed. A start never carries the
+// player-led word (that run is the commander's own).
+inline bool ParseRunFor(std::string const& args, std::string& commander, std::string& verb, std::string& rest)
+{
+    size_t at = 0;
+    while (at < args.size() && (args[at] == ' ' || args[at] == '\t'))
+        ++at;
+    size_t nameEnd = at;
+    while (nameEnd < args.size() && args[nameEnd] != ' ' && args[nameEnd] != '\t')
+        ++nameEnd;
+    if (nameEnd - at < 2 || nameEnd - at > 12)
+        return false;
+    for (size_t i = at; i < nameEnd; ++i)
+        if (!std::isalpha(static_cast<unsigned char>(args[i])))
+            return false;
+    commander = args.substr(at, nameEnd - at);
+    at = nameEnd;
+    while (at < args.size() && (args[at] == ' ' || args[at] == '\t'))
+        ++at;
+    size_t verbEnd = at;
+    while (verbEnd < args.size() && args[verbEnd] != ' ' && args[verbEnd] != '\t')
+        ++verbEnd;
+    verb = args.substr(at, verbEnd - at);
+    for (char& c : verb)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (verb != "start" && verb != "pause" && verb != "resume" && verb != "skip" && verb != "stop" &&
+        verb != "status")
+        return false;
+    rest.clear();
+    at = verbEnd;
+    while (at < args.size() && (args[at] == ' ' || args[at] == '\t'))
+        ++at;
+    if (at < args.size())
+    {
+        size_t end = args.size();
+        while (end > at && (args[end - 1] == ' ' || args[end - 1] == '\t'))
+            --end;
+        rest = args.substr(at, end - at);
+    }
+    if (verb == "start")
+    {
+        for (std::string const& word : SplitOrderArgs(rest))
+            if (RitualNameKey(word) == "player")
+                return false;
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------
