@@ -1260,6 +1260,79 @@ static void TestHiresOfTheCommander()
     CHECK(std::string(BindRefusalText(BindRefusal::MemberHired)).find("Another player's") != std::string::npos);
 }
 
+static BindFacts RaidBind(size_t bots)
+{
+    BindFacts f;
+    f.enabled = true; f.raid = true; f.raidAllowed = true; f.leadIsTank = true;
+    f.lead.controllable = true; f.lead.liveBot = true;
+    f.leadInCommanderParty = true; f.leadGrouped = true; f.leadGroupIsRaidOrBg = true;
+    BindMember m; m.controllable = true; m.liveBot = true;
+    f.members.assign(bots - 1, m);
+    return f;
+}
+
+static void TestRaidBindRefusals()
+{
+    CHECK(CheckBind(RaidBind(10)) == BindRefusal::None);
+    CHECK(CheckBind(RaidBind(40)) == BindRefusal::None);
+    CHECK(CheckBind(RaidBind(6)) == BindRefusal::None);
+    CHECK(CheckBind(RaidBind(5)) == BindRefusal::RaidTooSmall);
+    CHECK(CheckBind(RaidBind(41)) == BindRefusal::GroupTooLarge);
+    auto with = [](void (*edit)(BindFacts&)) { BindFacts f = RaidBind(10); edit(f); return CheckBind(f); };
+    CHECK(with([](BindFacts& f) { f.raidAllowed = false; }) == BindRefusal::RaidOff);
+    CHECK(with([](BindFacts& f) { f.enabled = false; }) == BindRefusal::Disabled);
+    CHECK(with([](BindFacts& f) { f.inParty = true; }) == BindRefusal::RaidInParty);
+    CHECK(with([](BindFacts& f) { f.leadGroupIsRaidOrBg = false; }) == BindRefusal::RaidNotInRaid);
+    CHECK(with([](BindFacts& f) { f.leadGroupIsBg = true; }) == BindRefusal::RaidNotInRaid);
+    CHECK(with([](BindFacts& f) { f.leadInCommanderParty = false; }) == BindRefusal::RaidNotInRaid);
+    CHECK(with([](BindFacts& f) { f.leadIsTank = false; }) == BindRefusal::RaidLeadNotTank);
+    CHECK(with([](BindFacts& f) { f.leadGroupHasRealPlayer = true; }) == BindRefusal::GroupHasPlayer);
+    CHECK(with([](BindFacts& f) { f.lead.hired = true; }) == BindRefusal::LeadHired);
+    CHECK(with([](BindFacts& f) { f.members[3].hired = true; }) == BindRefusal::MemberHired);
+    // first failing check wins: raid off before a hired lead
+    CHECK(with([](BindFacts& f) { f.raidAllowed = false; f.lead.hired = true; }) == BindRefusal::RaidOff);
+    // a party bind is untouched by the raid fields
+    BindFacts party = RaidBind(10); party.raid = false; party.leadGroupIsRaidOrBg = true;
+    CHECK(CheckBind(party) == BindRefusal::LeadGroupRaid);
+    CHECK(std::string(BindRefusalCode(BindRefusal::RaidLeadNotTank)) == "raid-lead-not-tank");
+    CHECK(std::string(BindRefusalCode(BindRefusal::RaidOff)) == "raid-off");
+}
+
+static void TestRaidBindingRelease()
+{
+    Binding raid = MakeBinding(1, 2, 7); raid.raid = true;
+    BindingState s = Standing(7);
+    s.raidAllowed = true; s.leadGroupIsRaidOrBg = true; s.memberCount = 40;
+    CHECK(CheckBinding(raid, s) == ReleaseReason::None);
+    BindingState big = s; big.memberCount = 41;
+    CHECK(CheckBinding(raid, big) == ReleaseReason::GroupTooLarge);
+    BindingState bg = s; bg.leadGroupIsBg = true;
+    CHECK(CheckBinding(raid, bg) == ReleaseReason::GroupRaid);
+    BindingState off = s; off.raidAllowed = false;
+    CHECK(CheckBinding(raid, off) == ReleaseReason::Disabled);
+    BindingState player = s; player.realPlayerInGroup = true;
+    CHECK(CheckBinding(raid, player) == ReleaseReason::PlayerJoined);
+    // a party binding still ends on a raid conversion and above five
+    Binding party = MakeBinding(1, 2, 7);
+    CHECK(CheckBinding(party, s) == ReleaseReason::GroupRaid);
+    BindingState six = Standing(7); six.memberCount = 6;
+    CHECK(CheckBinding(party, six) == ReleaseReason::GroupTooLarge);
+}
+
+static void TestRaidBindPlan()
+{
+    BindPlanFacts f; f.raidBind = true; f.leadInCommanderParty = true; f.partyIsRaidOrBg = true;
+    CHECK(DecideBindGroup(f) == BindGroupPlan::KeepCommanderRaid);
+    f.partyHasOtherPlayer = true;
+    CHECK(DecideBindGroup(f) == BindGroupPlan::ReformFromCommanderParty);
+    BindPlanFacts party; party.leadInCommanderParty = true; party.partyIsRaidOrBg = true;
+    CHECK(DecideBindGroup(party) == BindGroupPlan::ReformFromCommanderParty);
+    std::vector<std::string> names{"Tanky", "RAID"};
+    CHECK(TakeBindRaid(names) && names.size() == 1);
+    std::vector<std::string> plain{"Tanky", "Bob"};
+    CHECK(!TakeBindRaid(plain) && plain.size() == 2);
+}
+
 int main()
 {
     TestHiresOfTheCommander();
@@ -1301,6 +1374,9 @@ int main()
     TestParseUseOrder();
     TestParseRitualOrder();
     TestOwnerOrderBotName();
+    TestRaidBindRefusals();
+    TestRaidBindingRelease();
+    TestRaidBindPlan();
     std::printf("remote commander policy: %d checks passed\n", checks);
     return 0;
 }
