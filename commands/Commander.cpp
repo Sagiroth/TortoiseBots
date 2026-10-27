@@ -10876,6 +10876,9 @@ static bool HandleBotLfgRun(ChatHandler* handler, std::string const& args, std::
 // `.bot run for <Commander> <verb>`: a GameMaster drives another commander's
 // run from the console. The gate, the argument parse and the name lookup stay
 // here; the verb itself runs as the commander in RunVerbAs.
+static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,
+    std::string const& intent);
+
 static bool HandleRunFor(ChatHandler* handler, std::string const& args, std::string const& intent)
 {
     Player* requester = Requester(handler);

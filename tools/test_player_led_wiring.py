@@ -56,7 +56,7 @@ class PlayerLedBindWiringTest(unittest.TestCase):
         self.assertIn("hires.ConfirmCommand(", bind)
 
     def test_run_start_player_word(self):
-        run = strip_comments(body(COMMANDS, "static bool RunVerbAs(", "\n}\n"))
+        run = strip_comments(body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n"))
         self.assertIn("TortoiseBots::PlayerLed::TakeStart(speedArgs.rest)", run)
         self.assertIn("BindPlayerLed(handler, commander, playerLedStart.tank, intent)", run)
         self.assertIn("arg = playerLedStart.rest;", run)
@@ -74,7 +74,7 @@ class PlayerLedBindWiringTest(unittest.TestCase):
         self.assertIn("TortoiseBots::PlayerLed::ModeText(", run)
 
     def test_player_led_binding_ends_with_the_run(self):
-        run = strip_comments(body(COMMANDS, "static bool RunVerbAs(", "\n}\n"))
+        run = strip_comments(body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n"))
         stop = run[run.index('if (verb == "stop")'):]
         stop = stop[:stop.index("return true;")]
         self.assertIn("if (playerLed)", stop)
@@ -162,7 +162,7 @@ class PlayerLedGlueWiringTest(unittest.TestCase):
         self.assertNotIn('"stay', player)
 
     def test_skip_with_nothing_picked(self):
-        run = strip_comments(body(COMMANDS, "static bool RunVerbAs(", "\n}\n"))
+        run = strip_comments(body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n"))
         self.assertIn("slot.playerLed.on && slot.playerLed.picked == TortoiseBots::PlayerLed::kNone", run)
         self.assertIn("TortoiseBots::PlayerLed::SkipNearest(slot.run, slot.playerLed, here)", run)
 

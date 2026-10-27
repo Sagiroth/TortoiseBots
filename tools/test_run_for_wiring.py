@@ -39,7 +39,7 @@ class RunForWiringTest(unittest.TestCase):
 
     def test_run_words_run_as_the_commander(self):
         self.assertIn("static bool RunVerbAs(", COMMANDS)
-        verb = body(COMMANDS, "static bool RunVerbAs(")
+        verb = body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{")
         self.assertIn("RemoteCommander::RunSurfaceOn(", verb)
         self.assertIn("if (!commander || !commander->GetSession())", verb)
 

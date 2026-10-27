@@ -31,7 +31,7 @@ class ReloadPlansWiring(unittest.TestCase):
         self.assertIn(hook, run)
         # the dispatch carries the GM side branches and the in-game path; the run-leader gate lives in RunVerbAs
         self.assertIn("return RunVerbAs(handler, Requester(handler), verb, rawArg, intent);", run)
-        verb = body(CMD, "static bool RunVerbAs(", "\n}\n")
+        verb = body(CMD, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
         self.assertIn("RemoteCommander::RunSurfaceOn(", verb)
         self.assertIn("/ reloadplans (GameMaster)", run)
         # `.bot run` reaches HandleDungeonRun
