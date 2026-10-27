@@ -36,6 +36,12 @@ void RestorationDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
         "rebirth",
         NextAction::array(0, new NextAction("rebirth", ACTION_EMERGENCY), NULL)));
 
+    // A Bear or Cat left from an earlier role keeps the form after the switch to
+    // Restoration, and no caster spell can be cast in it. Leave the form first.
+    triggers.push_back(new TriggerNode(
+        "in feral form",
+        NextAction::array(0, new NextAction("caster form", ACTION_HIGH), NULL)));
+
     // mod-playerbots parity (DRU-2): Nature's Swiftness emergency chain.
     // The pop outranks Swiftmend (donor order): NS is the top emergency
     // cooldown, and when it is spent/on cooldown the BuffTrigger base

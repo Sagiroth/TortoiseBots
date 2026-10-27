@@ -46,6 +46,12 @@ void BalanceDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "rebirth",
         NextAction::array(0, new NextAction("rebirth", ACTION_EMERGENCY), NULL)));
 
+    // A Bear or Cat left from an earlier role keeps the form after the switch to
+    // Balance, and no caster spell can be cast in it. Leave the form first.
+    triggers.push_back(new TriggerNode(
+        "in feral form",
+        NextAction::array(0, new NextAction("caster form", ACTION_HIGH), NULL)));
+
     triggers.push_back(new TriggerNode(
         "critical health",
         NextAction::array(0, new NextAction("regrowth", ACTION_CRITICAL_HEAL + 1),
