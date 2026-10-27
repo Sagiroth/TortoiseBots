@@ -2275,6 +2275,19 @@ uint64 GroupBindingKey(uint32 groupId)
     return binding ? binding->commanderGuid : 0;
 }
 
+// `.bot gear raid`: the bots of the commander's bound group (through the lead
+// bot, whose group outlives the binding's cached id), else the commander's
+// own group when he runs unbound.
+Group* GearRaidGroup(Player* commander)
+{
+    if (!commander)
+        return nullptr;
+    if (RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commander->GetObjectGuid().GetRawValue()))
+        if (Player* lead = ObjectAccessor::FindPlayer(ObjectGuid(binding->leadGuid)))
+            if (lead->GetGroup())
+                return lead->GetGroup();
+    return commander->GetGroup();
+}
 
 // A server-owned binding of a bot-only party (SystemRunPolicy.h): the lead bot
 // is its own commander key. The key (or 0 with code/message set).
@@ -10493,7 +10506,7 @@ static bool RebuildBossSpawnCache(uint32& ms, uint32& maps);
 
 // A console, remote-access or SOAP command (no session) of an account of GameMaster rank or the server console itself.
 // Such a handler runs in the world's CLI pass, on the world thread.
-static bool IsGmCliHandler(ChatHandler* handler)
+bool IsGmCliHandler(ChatHandler* handler)
 {
     if (!handler || handler->GetSession())
         return false;

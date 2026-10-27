@@ -400,6 +400,10 @@ AiPlayerbot.TravelPickBudgetUs = 4000
 # The values below are the values that actually run.
 #AiPlayerbot.HireRaidSpread = tank=warrior,druid,paladin;healer=priest,priest,paladin,shaman,druid;dps=mage,warlock,rogue,hunter,warrior,mage,warlock,rogue,hunter,shaman
 #AiPlayerbot.HireRaidPresets = zg=2t 4h 13d t2;aq20=2t 4h 13d t5;onyxia=3t 10h 26d t1;mc=3t 10h 26d t3;bwl=3t 10h 26d t4;aq40=3t 10h 26d t5;naxx=3t 10h 26d t6
+# Named gear presets for `.bot gear <target> preset <name>`: `name=t<tier> [ilvl=<cap>]`, `;`-separated. The tier is the hire gear tier
+# (1 pre-raid, 2 ZG/AQ20/Lower Karazhan, 3 Molten Core/Onyxia/Timbermaw, 4 BWL/Emerald Sanctum, 5 AQ40, 6 Naxxramas, 7 Tower of Karazhan);
+# the cap keeps every item at or under that item level.
+AiPlayerbot.BotGearPresets = prebis=t1 ilvl=63;lkh=t2 ilvl=63;zg=t2 ilvl=63;aq20=t2 ilvl=63;t1=t3 ilvl=66;timbermaw=t3 ilvl=66;onyxia=t3 ilvl=66;mc=t3 ilvl=66;t2=t4 ilvl=76;bwl=t4 ilvl=76;es=t4 ilvl=76;aq40=t5 ilvl=78;naxx=t6 ilvl=83;kara40=t7 ilvl=88
 # Issue #490: static best-in-slot sets for level-60 hires (tiers 1-7 from
 # the tortoise_bots_hire_gear table). 0 = today's random hire gear only.
 # HireGearStartTier (0..7) is the tier every player has. Higher tiers are

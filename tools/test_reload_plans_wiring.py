@@ -43,7 +43,7 @@ class ReloadPlansWiring(unittest.TestCase):
         self.assertIn('SendActionError(handler, intent, "forbidden", "Only a GameMaster may reload the dungeon plans.");', fn)
         self.assertLess(fn.index(gate), fn.index("ai::ReloadDungeonPlans("))
         self.assertLess(fn.index(gate), fn.index("RebuildBossSpawnCache("))
-        cli = body(CMD, "static bool IsGmCliHandler(")
+        cli = body(CMD, "bool IsGmCliHandler(ChatHandler* handler)")
         self.assertIn("if (!handler || handler->GetSession())\n        return false;", cli)
         self.assertIn("cli && cli->GetAccessLevel() >= SEC_GAMEMASTER", cli)
         # the GM rank: account security >= SEC_GAMEMASTER, which this core has only as the shim's alias of

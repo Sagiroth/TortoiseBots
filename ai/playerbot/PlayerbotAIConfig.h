@@ -412,6 +412,10 @@ public:
     // runtime/HireRaidPolicy.h and equal the shipped template.
     std::string hireRaidSpread;
     std::string hireRaidPresets;
+    // Named gear presets for `.bot gear <target> preset <name>`; parsed at
+    // use, the default lives in runtime/policy/hire/BotGearPolicy.h and
+    // equals the shipped template.
+    std::string botGearPresets;
     // Issue #490: static best-in-slot sets for level-60 hires (tiers 1-7).
     // The master switch gates the static pass; tier 0 always keeps today's
     // random hire gear. A player may hire at any tier from 0 up to the

@@ -10,6 +10,7 @@
 #include "LftFillAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "BotLfgAdapter.h"
+#include "BotGearAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "BotPacketAdapter.h"
 #include "RaidBossDiagnostics.h"
@@ -40,6 +41,7 @@ void RegisterScripts()
     new LftFillAdapter();
     new BotLfgAdapter();
     new BotPacketAdapter();
+    new BotGearAdapter();
     new RaidBossDiagnostics();
     new BotPlayerAdapter();
     new BotUnitAdapter();

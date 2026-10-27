@@ -30,6 +30,7 @@ TortoiseBots provides tools to manage owned alternate characters (alts) as bots,
 | [`.bot summon`](#bot-summon) | `<Name>` | Teleports an owned bot or hire to your coordinates. |
 | [`.bot maintenance`](#bot-maintenance) | `<Name>` | Refreshes bot reagents, ammunition, and gear repairs. |
 | [`.bot autogear`](#bot-autogear) | `<Name> [quality\|ilvl]` | Automatically upgrades gear to level-appropriate items. |
+| [`.bot gear`](#bot-gear) | `<Name\|raid Commander> tier\|preset` | Gears a bot or a bound raid to a hire tier under an item-level cap (GM). |
 | [`.bot release`](#bot-release) | None | Commands dead companion bots to release spirit. |
 | [`.bot corpse run`](#bot-corpse-run) | None | Commands spirit bots to return to their corpses. |
 | [`.bot learn`](#bot-learn) | None | Commands nearby companion bots to train new spells. |
@@ -173,6 +174,20 @@ Evaluates a bot's level and automatically equips level-appropriate equipment up 
 Requires [`AiPlayerbot.OwnedBotAutogearEnabled`](../../server/settings/party.md#aiplayerbotownedbotautogearenabled) to be enabled (1). Defaults to uncommon (green) gear unless specified (e.g. `blue` or `200`). Ranged weapons are selected to match existing ammunition in the bot's bags. Note: autogear hands out no ammo; hunter ammunition must be stocked separately.
 
 For real players, use [`.autogear`](#autogear) instead — `.bot autogear` only works on owned or hired bots.
+
+### `.bot gear`
+
+Gears one bot, or every bot of a commander's bound group, to a hire gear tier under an item-level cap. GameMaster only, in game or from the console.
+
+```text
+.bot gear <Name> tier <0-7> [ilvl=<N>] [noenchants]
+.bot gear raid <Commander> tier <0-7> [ilvl=<N>] [noenchants]
+.bot gear <Name|raid <Commander>> preset <name>
+```
+
+The named bot must be online and a bot; `raid <Commander>` gears every bot of the commander's bound group (the lead bot's group when bound, else the commander's own group). Each bot must be level 60, alive and in the world; the kit is the hire tier for the bot's class and role, skipped slots are reported as capped when the cap holds them back. Bagged weapons and armor above the cap are destroyed so the bot cannot re-equip them, and real players are never targets.
+
+Named presets live in [`AiPlayerbot.BotGearPresets`](../../server/settings/hiring.md#aiplayerbotbotgearpresets) (`lkh`, `zg`, `aq20`, `timbermaw`, `onyxia`, `mc`, `bwl`, `es`, `aq40`, `naxx`, `kara40`, `prebis`, `t1`, `t2`).
 
 ### `.autogear`
 

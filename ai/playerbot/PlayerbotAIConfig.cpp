@@ -8,6 +8,7 @@
 #include "../../runtime/HireLevelPolicy.h"
 #include "../../runtime/HireFeePolicy.h"
 #include "../../runtime/HireRaidPolicy.h"
+#include "../../runtime/policy/hire/BotGearPolicy.h"
 #include "../../runtime/HireUnlockPolicy.h"
 #include "../../runtime/RemoteCommanderView.h"
 #include <algorithm>
@@ -609,6 +610,13 @@ bool PlayerbotAIConfig::Initialize()
             sLog.outError("AiPlayerbot.HireRaidPresets '%s' is malformed (name=composition;name=composition); using the default", hireRaidPresets.c_str());
             hireRaidPresets = TortoiseBots::kHireRaidPresetsDefault;
         }
+    }
+    botGearPresets = config.GetStringDefault("AiPlayerbot.BotGearPresets", TortoiseBots::BotGear::kPresetsDefault);
+    if (TortoiseBots::BotGear::ParsePresets(botGearPresets).empty())
+    {
+        sLog.outError("AiPlayerbot.BotGearPresets '%s' is malformed (name=t<tier> [ilvl=<cap>];...); using the default",
+            botGearPresets.c_str());
+        botGearPresets = TortoiseBots::BotGear::kPresetsDefault;
     }
     // Issue #490: static hire-gear tiers. Fallbacks equal the shipped
     // template values.

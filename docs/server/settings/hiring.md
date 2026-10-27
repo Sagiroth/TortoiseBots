@@ -34,6 +34,7 @@ These settings configure mercenary companion hiring, party cost scaling, raid pr
 | [`AiPlayerbot.HireDisconnectGracePeriod`](#aiplayerbothiredisconnectgraceperiod) | `300` | Seconds a hired companion keeps guarding after disconnect before the hire ends. |
 | [`AiPlayerbot.HireRaidSpread`](#aiplayerbothireraidspread) | `tank=warrior...;healer=priest...` | Class priority list per raid role for composition auto-fill. |
 | [`AiPlayerbot.HireRaidPresets`](#aiplayerbothireraidpresets) | `zg=2t...;aq20=2t...;onyxia=3t...` | Named composition presets for one-command raid hiring. |
+| [`AiPlayerbot.BotGearPresets`](#aiplayerbotbotgearpresets) | `prebis=t1...;lkh=t2...` | Named `.bot gear` tier and item-level cap presets. |
 | [`AiPlayerbot.HireGearTiersEnabled`](#aiplayerbothiregeartiersenabled) | `1` | Enables pre-enchanted static gear tiers for hired companions. |
 | [`AiPlayerbot.HireGearStartTier`](#aiplayerbothiregearstarttier) | `0` | Baseline gear tier available to all players without completing quests. |
 | [`AiPlayerbot.HireGearUnlockAccountWide`](#aiplayerbothiregearunlockaccountwide) | `0` | Shares gear tier unlock quest completion across all account characters. |
@@ -271,6 +272,17 @@ Defines shorthand raid composition presets available for one-step raid hiring.
 Allows players to hire complete pre-configured raid teams using `.bot hire raid <preset> [tier]`.
 
 Each preset specifies role counts and an optional default gear tier. Explicit gear tiers supplied in the command override the preset default. Malformed entries log an error and use the built-in defaults.
+
+</details>
+
+### `AiPlayerbot.BotGearPresets`
+Named gear presets for `.bot gear <target> preset <name>`: `name=t<tier> [ilvl=<cap>]`, `;`-separated.
+**Default:** `prebis=t1 ilvl=63;lkh=t2 ilvl=63;zg=t2 ilvl=63;aq20=t2 ilvl=63;t1=t3 ilvl=66;timbermaw=t3 ilvl=66;onyxia=t3 ilvl=66;mc=t3 ilvl=66;t2=t4 ilvl=76;bwl=t4 ilvl=76;es=t4 ilvl=76;aq40=t5 ilvl=78;naxx=t6 ilvl=83;kara40=t7 ilvl=88` · **Values:** semicolon-separated preset definitions · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Each preset fixes the hire gear tier and the item-level cap `.bot gear` applies: `zg` gears tier 2 with every item at or under item level 63. A malformed value logs an error and uses the built-in default.
 
 </details>
 
