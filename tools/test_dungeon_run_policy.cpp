@@ -20731,6 +20731,46 @@ static void TestSpeedLeashClearedByANewStep()
     CHECK(!r.speedLeash && r.speedLeashMs == 0 && !r.speedLeashSpent);
 }
 
+// Rebuilds the status line from the fields with the old format: StatusParts
+// must carry exactly what StatusLine prints.
+static std::string RebuildLine(StatusFields const& f)
+{
+    return "TBM:RUN|" + (f.plan.empty() ? "-" : f.plan) + "|" + f.state + "|" +
+        std::to_string(f.step) + "/" + std::to_string(f.steps) + "|" + (f.leg.empty() ? "-" : f.leg) + "|" +
+        (f.kind.empty() ? "-" : f.kind) + "|" + (f.phase.empty() ? "-" : f.phase) + "|" +
+        (f.note.empty() ? "-" : f.note) +
+        (f.left ? "|left " + std::to_string(f.left) : std::string()) +
+        (f.speed.empty() ? std::string() : "|" + f.speed);
+}
+
+// A6: the dashboard reads the run through StatusParts (Commander.cpp's
+// SendRunLine and CollectCommanderTelemetry), so a StatusLine change must be
+// a StatusParts change too: the fields rebuild the line byte for byte.
+static void TestStatusPartsMatchLine()
+{
+    DungeonPlan plan;
+    plan.name = "t";
+    plan.steps = {PullStep(10, {1}), PullStep(20, {2})};
+    // Before the first step.
+    Run fresh = Start(&plan);
+    CHECK(StatusLine(fresh) == RebuildLine(StatusParts(fresh)));
+    // Mid-run on a pull with a left count and a test speed.
+    Run pulling = Start(&plan, 1);
+    pulling.testSpeed = 2.0f;
+    pulling.deferredPulls.push_back(0);
+    CHECK(StatusLine(pulling) == RebuildLine(StatusParts(pulling)));
+    CHECK(StatusParts(pulling).step == 2 && StatusParts(pulling).left == 1);
+    // Paused, the note carrying the protocol separator.
+    Run held = Start(&plan);
+    Pause(held, "a|b");
+    CHECK(StatusParts(held).note == "a b");
+    CHECK(StatusLine(held) == RebuildLine(StatusParts(held)));
+    int bars = 0;
+    for (char c : StatusLine(held))
+        bars += c == '|';
+    CHECK(bars == 7);
+}
+
 static void TestSpeedShowsInTheLines()
 {
     DungeonPlan plan;
@@ -22698,6 +22738,7 @@ int main()
     TestRaidRunBackBelowWipeLevel();
     TestRaidHoldRegroupGathers();
     TestPartyRulesUnchanged();
+    TestStatusPartsMatchLine();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;
 }

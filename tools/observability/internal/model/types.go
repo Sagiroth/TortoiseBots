@@ -641,6 +641,19 @@ type CommanderObject struct {
 	State string  `json:"state"` // r ready (closed, untouched), a active (open, pressed), u used (looted or spent)
 }
 
+// CommanderRunNote is one status line of the run leader's run (A6): the
+// last 30 distinct TBM:RUN lines, oldest first, so the dashboard can say
+// why the run waits and what it did before.
+type CommanderRunNote struct {
+	At    int64  `json:"at"`    // unix seconds the line went out
+	Step  uint32 `json:"step"`  // 1-based step shown at the time
+	Leg   string `json:"leg"`
+	Kind  string `json:"kind"`
+	Phase string `json:"phase"`
+	State string `json:"state"`
+	Note  string `json:"note"`
+}
+
 // CommanderRunStep is one step of the run's plan in the current section: where it is and what it is for.
 type CommanderRunStep struct {
 	Index   uint32  `json:"i"` // 1-based position in the plan (the run's "step" counts the same way)
@@ -667,6 +680,9 @@ type CommanderRun struct {
 
 	// The plan's steps of the current section (the next ~20), from a module that reports them; absent otherwise.
 	PlanSteps []CommanderRunStep `json:"plan_steps,omitempty"`
+
+	// The run's last status lines, oldest first, from a module that reports them; absent otherwise.
+	Notes []CommanderRunNote `json:"notes,omitempty"`
 }
 
 // CommanderPos is the commander character's own position.
@@ -726,6 +742,9 @@ type CommanderBot struct {
 	Rest       string `json:"rest,omitempty"`  // d drinking, e eating
 	Moving     bool   `json:"mv,omitempty"`
 	TargetName string `json:"tname,omitempty"` // name of its target
+	// Raid, from a module that reports it (both absent from a party bot or an older module).
+	Sub  *int `json:"sub,omitempty"`  // the raid subgroup 0-7
+	Away bool `json:"away,omitempty"` // off the run's gather rule or the plan's map
 }
 
 // CommanderOrder is one order of the commander and the module's answer.

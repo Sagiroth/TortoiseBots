@@ -1665,6 +1665,7 @@ void ObservabilityEmitter::EmitCommanders()
 
     std::vector<CommanderTelemetry::BindingInfo> infos;
     infos.reserve(m_commanderRefs.size());
+    size_t botsTotal = 0; // bots over all bindings: stops at kMaxBotsPerPayload (one raid plus a party)
     for (CommanderTelemetry::BindingRef const& ref : m_commanderRefs)
     {
         CommanderTelemetry::BindingInfo info;
@@ -1696,7 +1697,8 @@ void ObservabilityEmitter::EmitCommanders()
         info.run = ref.run;
         for (Player* bot : ref.bots)
         {
-            if (!bot || !bot->IsInWorld() || info.bots.size() >= CommanderTelemetry::kMaxBotsPerBinding)
+            if (!bot || !bot->IsInWorld() || info.bots.size() >= CommanderTelemetry::kMaxBotsPerBinding ||
+                botsTotal >= CommanderTelemetry::kMaxBotsPerPayload)
                 continue;
             CommanderTelemetry::BotInfo b;
             b.name = bot->GetName();
@@ -1715,6 +1717,7 @@ void ObservabilityEmitter::EmitCommanders()
                 b.maxPower /= 10;
             }
             b.powerType = GetPowerTypeName(bot->GetPowerType());
+            b.subgroup = bot->GetGroup() && bot->GetGroup()->isRaidGroup() ? static_cast<int>(bot->GetSubGroup()) : -1;
             b.lead = ref.lead && bot == ref.lead;
             b.mapId = bot->GetMapId();
             b.zoneId = bot->GetCachedZoneId();
@@ -1722,6 +1725,7 @@ void ObservabilityEmitter::EmitCommanders()
             b.y = bot->GetPositionY();
             b.z = bot->GetPositionZ();
             b.id = bot->GetObjectGuid().GetRawValue();
+            b.away = ref.awayBots.count(bot->GetObjectGuid().GetRawValue()) != 0;
             // What it has selected, else what it fights: two field reads.
             ::ObjectGuid target = bot->GetTargetGuid();
             if (target.IsEmpty())
@@ -1735,6 +1739,7 @@ void ObservabilityEmitter::EmitCommanders()
                     b.extra = extra;
                     break;
                 }
+            ++botsTotal;
             info.bots.push_back(std::move(b));
         }
         infos.push_back(std::move(info));

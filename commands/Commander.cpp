@@ -135,6 +135,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
+#include <deque>
 #include <initializer_list>
 #include <memory>
 #include <mutex>
@@ -232,6 +233,8 @@ struct DungeonRunSlot
 {
     TortoiseBots::DungeonRun::Run run;
     std::string lastLine;     // the last TBM:RUN line sent (a line goes out on change)
+    std::deque<CommanderTelemetry::RunNoteInfo> notes; // the run's last status lines, oldest first
+    int64_t changedAt = 0;                             // unix seconds the last line went out
     uint64 carrierRaw = 0;    // the bot of the run's last loot/open/use order
     int taskReply = 0;        // its task's answer since then: 0 none, 1 ACK, 2 ERR
     std::string taskText;
@@ -6276,6 +6279,20 @@ void SendRunLine(Player* commander, DungeonRunSlot& slot, bool force)
     if (!force && line == slot.lastLine)
         return;
     slot.lastLine = line;
+    // The notes ring: every line the commander's chat would get, so the dashboard shows the run's last lines.
+    TortoiseBots::DungeonRun::StatusFields const fields = TortoiseBots::DungeonRun::StatusParts(slot.run);
+    CommanderTelemetry::RunNoteInfo note;
+    note.at = static_cast<int64_t>(time(nullptr));
+    note.step = static_cast<uint32_t>(fields.step);
+    note.leg = fields.leg;
+    note.kind = fields.kind;
+    note.phase = fields.phase;
+    note.state = fields.state;
+    note.note = fields.note;
+    slot.changedAt = note.at;
+    slot.notes.push_back(std::move(note));
+    while (slot.notes.size() > CommanderTelemetry::kMaxRunNotes)
+        slot.notes.pop_front();
     if (commander && IsSystemBinding(commander->GetObjectGuid().GetRawValue()))
     {
         TB_LOG_BASIC("%s", TortoiseBots::SystemRun::LogLine(commander->GetName(), line).c_str());
@@ -11800,6 +11817,39 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
         ref.orders = CommanderOrderLog().Recent(commanderRaw);
         FillCommanderMapData(*binding, commander, lead, ref);
         FillCommanderCombat(commanderRaw, *binding, lead, ref);
+        // The run leader's run of this binding (the dashboard's "why it waits"):
+        // StatusParts reads the run's fields, so the JSON carries the same run the chat line shows.
+        if (auto const run = DungeonRuns().find(commanderRaw); run != DungeonRuns().end())
+        {
+            TortoiseBots::DungeonRun::StatusFields const fields = TortoiseBots::DungeonRun::StatusParts(run->second.run);
+            ref.run.present = true;
+            ref.run.plan = fields.plan;
+            ref.run.state = fields.state;
+            ref.run.step = static_cast<uint32_t>(fields.step);
+            ref.run.steps = static_cast<uint32_t>(fields.steps);
+            ref.run.leg = fields.leg;
+            ref.run.kind = fields.kind;
+            ref.run.phase = fields.phase;
+            ref.run.note = fields.note;
+            ref.run.changedAt = run->second.changedAt;
+            ref.run.notes.assign(run->second.notes.begin(), run->second.notes.end());
+            // Bots off the run's gather rule or the lead's map: above the gather
+            // radius of the lead bot (a party's kGatherYd, 30 yd for a raid binding)
+            // or on another map. Distance reads only, the run policy is untouched.
+            bool const raid = lead && lead->GetGroup() && lead->GetGroup()->isRaidGroup();
+            float const gatherYd = raid ? 30.0f : TortoiseBots::DungeonRun::kGatherYd;
+            for (Player* bot : ref.bots)
+            {
+                if (!bot || !lead || bot->GetMap() != lead->GetMap())
+                {
+                    if (bot)
+                        ref.awayBots.insert(bot->GetObjectGuid().GetRawValue());
+                    continue;
+                }
+                if (bot != lead && bot->GetDistance(lead) > gatherYd)
+                    ref.awayBots.insert(bot->GetObjectGuid().GetRawValue());
+            }
+        }
         out.push_back(std::move(ref));
     }
     CommanderOrderLog().Retain(bound);

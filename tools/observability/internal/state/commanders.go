@@ -20,8 +20,9 @@ const CommandersStaleAfter = 12 * time.Second
 // Bounds on what one datagram may put in the store (the emitter sends far
 // less); a datagram past them is trimmed, not rejected.
 const (
+	maxCommanderNotes    = 30
 	maxCommanderBindings = 16
-	maxCommanderBots     = 8
+	maxCommanderBots     = 40
 	maxCommanderMobs     = 24
 	maxCommanderOrders   = 16
 	maxCommanderObjects  = 24
@@ -137,6 +138,11 @@ func (s *Store) ApplyCommanders(p *model.CommandersPayload) bool {
 		if b.Run != nil && len(b.Run.PlanSteps) > maxCommanderSteps {
 			run := *b.Run // a copy: the payload's own struct is not changed
 			run.PlanSteps = run.PlanSteps[:maxCommanderSteps]
+			b.Run = &run
+		}
+		if b.Run != nil && len(b.Run.Notes) > maxCommanderNotes {
+			run := *b.Run // a copy: the payload's own struct is not changed
+			run.Notes = run.Notes[len(run.Notes)-maxCommanderNotes:]
 			b.Run = &run
 		}
 		if b.Bots == nil {

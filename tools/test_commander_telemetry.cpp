@@ -174,7 +174,17 @@ void TestPayloadCapsAndSize()
     size_t bots = 0;
     for (size_t pos = json.find("\"guid\":"); pos != std::string::npos; pos = json.find("\"guid\":", pos + 1))
         ++bots;
-    Check(bots == kMaxBindings * kMaxBotsPerBinding, "bots per binding are capped");
+    Check(bots == kMaxBotsPerPayload, "bots are capped over the whole payload (a raid plus a party)");
+    // One binding past the per-binding cap still writes only the cap.
+    BindingInfo big = b;
+    big.bots.clear();
+    for (int i = 0; i < 50; ++i)
+        big.bots.push_back(Bot("Botname" + std::to_string(i), i == 0));
+    std::string const one = BuildPayload(9, 1, 1, 1, {big});
+    size_t oneBots = 0;
+    for (size_t pos = one.find("\"guid\":"); pos != std::string::npos; pos = one.find("\"guid\":", pos + 1))
+        ++oneBots;
+    Check(oneBots == kMaxBotsPerBinding, "bots per binding are capped");
     size_t orders = 0;
     for (size_t pos = json.find("\"verb\":"); pos != std::string::npos; pos = json.find("\"verb\":", pos + 1))
         ++orders;
@@ -551,6 +561,65 @@ void TestPathData()
 
 // Every known boss of the lead's dungeon map with its state in the lead's instance (owner 2026-10-21: all bosses on the dashboard map,
 // alive or dead): the state rule, the merge of several spawns of one entry, and the payload fields, caps and byte budget.
+void TestBosses();
+
+// A6: a raid binding carries up to 40 bots with their subgroup and away
+// flag, and the run's last 30 status lines (notes) with the newest last.
+void TestRaidPayload()
+{
+    BindingInfo raid;
+    raid.commander = "Gbraid";
+    raid.lead = "T0";
+    for (int i = 0; i < 40; ++i)
+    {
+        BotInfo bot = Bot("Bot" + std::to_string(i), i == 0);
+        bot.subgroup = i / 5; // subgroups 0-7
+        if (i >= 37)
+            bot.away = true;
+        raid.bots.push_back(bot);
+    }
+    raid.run.present = true;
+    raid.run.plan = "molten_core";
+    raid.run.state = "running";
+    for (int i = 0; i < 31; ++i)
+    {
+        RunNoteInfo note;
+        note.at = 100 + i;
+        note.step = 1;
+        note.leg = "leg";
+        note.kind = "pull";
+        note.phase = "fight";
+        note.state = "running";
+        note.note = i == 0 ? "the oldest note" : ("note " + std::to_string(i));
+        raid.run.notes.push_back(note);
+    }
+    // A second binding with 30 bots in the same payload: 40 + 30 = 70 > 64,
+    // so the payload stops the second binding's bot list at 24.
+    BindingInfo second = raid;
+    second.bots.clear();
+    for (int i = 0; i < 30; ++i)
+        second.bots.push_back(Bot("B" + std::to_string(i), i == 0));
+    std::string const json = BuildPayload(9, 1, 1, 1, {raid, second});
+    Check(Count(json, "\"name\":") == 64, "a payload carries 64 bots over all bindings");
+    Check(Has(json, "\"sub\":7"), "a subgroup 7 bot writes its sub");
+    Check(Count(json, "\"away\":true") == 3, "three away bots write the flag");
+    Check(Has(json, "\"notes\":["), "the run writes its notes");
+    Check(!Has(json, "the oldest note"), "only the newest 30 notes are written");
+    Check(Has(json, "note 30"), "the newest note is written");
+    Check(json.size() <= kPayloadByteBudget, "a raid plus a party stays within the byte budget");
+    // A party bot writes no sub; a present run without notes writes no notes list.
+    BindingInfo party;
+    party.commander = "P";
+    party.bots.push_back(Bot("Solo", true));
+    party.run.present = true;
+    party.run.plan = "uldaman";
+    party.run.state = "running";
+    std::string const plain = BuildPayload(9, 1, 1, 1, {party});
+    Check(!Has(plain, "\"sub\":"), "a party bot writes no sub");
+    Check(!Has(plain, "\"notes\":["), "no notes pushed: no notes list");
+    Check(!Has(plain, "\"away\":true"), "no away bot: no away flag");
+}
+
 void TestBosses()
 {
     // the state of one spawn: on the map -> alive or a corpse; not on the map -> killed while its respawn time runs, else not known
@@ -838,6 +907,7 @@ int main()
     TestBossRotation();
     TestBossKillLatch();
     TestControlCharacters();
+    TestRaidPayload();
     if (g_failures)
     {
         std::fprintf(stderr, "%d check(s) failed\n", g_failures);

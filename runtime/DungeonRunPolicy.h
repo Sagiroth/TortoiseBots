@@ -14487,28 +14487,47 @@ inline std::string PhaseText(const Run& r)
 //   TBM:RUN|<plan>|<state>|<step>/<steps>|<leg>|<kind>|<phase>|<note>[|left <K>][|speed <x> (test)]
 // <step> counts from 1 (0 before the first, steps+1 is never sent: a done run
 // shows the last). '|' and line breaks in the note become spaces.
-inline std::string StatusLine(const Run& r)
+// The fields StatusLine prints, read by the commands layer (SendRunLine and
+// CollectCommanderTelemetry) so the dashboard gets the same run without the
+// line. The note is already cleaned of '|' and line breaks.
+struct StatusFields
 {
+    std::string plan, state, leg, kind, phase, note;
+    std::size_t step = 0, steps = 0;
+    std::size_t left = 0;
+    std::string speed;
+};
+inline StatusFields StatusParts(const Run& r)
+{
+    StatusFields f;
     std::size_t const total = r.plan ? r.plan->steps.size() : 0;
     std::size_t const shown = total == 0 ? 0 : (r.step < total ? r.step + 1 : total);
     const PlanStep* s = r.plan && shown ? &r.plan->steps[shown - 1] : nullptr;
-    std::string note = r.note;
-    for (char& c : note)
+    f.plan = r.plan ? r.plan->name : "-";
+    f.state = StateName(r.state);
+    f.step = shown;
+    f.steps = total;
+    f.leg = s ? r.plan->LegName(s->leg) : std::string();
+    if (f.leg.empty() && s)
+        f.leg = std::to_string(s->leg);
+    f.kind = s ? ai::PlanStepKindName(s->kind) : std::string();
+    f.phase = PhaseText(r);
+    f.note = r.note;
+    for (char& c : f.note)
         if (c == '|' || c == '\n' || c == '\r')
             c = ' ';
-    std::string leg = s ? r.plan->LegName(s->leg) : std::string();
-    if (leg.empty() && s)
-        leg = std::to_string(s->leg);
-    // Packs the run deferred and left alive (given up, still deferred, a retry under way): an
-    // eighth field, only when there are any, after the note, so a reader of the seven fields
-    // still reads the step (n/m) and the note (it ends with "|left K" there).
-    std::size_t const left = r.deferGivenUp.size() + r.deferredPulls.size() + (DeferRetryOn(r) ? 1 : 0);
-    // The test speed (SpeedLabel), only above 1.0: last, so a reader of the seven fields still reads the note.
-    return "TBM:RUN|" + (r.plan ? r.plan->name : std::string("-")) + "|" + StateName(r.state) + "|" +
-        std::to_string(shown) + "/" + std::to_string(total) + "|" + (leg.empty() ? "-" : leg) + "|" +
-        (s ? ai::PlanStepKindName(s->kind) : "-") + "|" + PhaseText(r) + "|" + (note.empty() ? "-" : note) +
-        (left ? "|left " + std::to_string(left) : std::string()) +
-        (SpeedLabel(r).empty() ? std::string() : "|" + SpeedLabel(r));
+    f.left = r.deferGivenUp.size() + r.deferredPulls.size() + (DeferRetryOn(r) ? 1 : 0);
+    f.speed = SpeedLabel(r);
+    return f;
+}
+inline std::string StatusLine(const Run& r)
+{
+    StatusFields const f = StatusParts(r);
+    return "TBM:RUN|" + f.plan + "|" + f.state + "|" + std::to_string(f.step) + "/" +
+        std::to_string(f.steps) + "|" + (f.leg.empty() ? "-" : f.leg) + "|" + (f.kind.empty() ? "-" : f.kind) +
+        "|" + f.phase + "|" + (f.note.empty() ? "-" : f.note) +
+        (f.left ? "|left " + std::to_string(f.left) : std::string()) +
+        (f.speed.empty() ? std::string() : "|" + f.speed);
 }
 
 // Which steps the run leader does today; the rest pause the run.

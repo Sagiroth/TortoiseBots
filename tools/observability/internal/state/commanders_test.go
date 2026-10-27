@@ -240,6 +240,44 @@ func TestCommandersCarryPathData(t *testing.T) {
 	}
 }
 
+// A6: a raid binding carries the bots' subgroups, away flags and the run's
+// last status lines (oldest first); an older module sends none of them.
+func TestCommandersCarryRaidNotes(t *testing.T) {
+	raw := `{"v":9,"session":3,"seq":1,"ts":50,"type":"COMMANDERS","commanders":[
+{"commander":"Gbraid","online":true,"group":1,"lead":"T0","bots":[
+{"name":"T0","guid":1,"lead":true,"alive":true,"sub":0},
+{"name":"H0","guid":2,"alive":true,"sub":0,"away":true},
+{"name":"Old","guid":3,"alive":false}],
+"orders":[],"run":{"plan":"molten_core","state":"running","step":5,"steps":20,"leg":"garr","kind":"boss","phase":"fight","note":"fighting Garr","changed":60,
+"notes":[{"at":58,"step":4,"leg":"garr","kind":"move","phase":"walk","state":"running","note":"walking in"},{"at":59,"step":5,"leg":"garr","kind":"boss","phase":"fight","state":"running","note":"fighting Garr"}]}},
+{"commander":"P","online":true,"group":2,"lead":"S","bots":[{"name":"Solo","alive":true}],"orders":[]}]}`
+	var p model.CommandersPayload
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestStore(newClock())
+	s.ApplyCommanders(&p)
+	v := s.Commanders().Commanders
+	raid := v[0]
+	if raid.Bots[0].Sub == nil || *raid.Bots[0].Sub != 0 || raid.Bots[2].Sub != nil {
+		t.Fatalf("subgroups lost: %+v", raid.Bots)
+	}
+	if !raid.Bots[1].Away || raid.Bots[0].Away {
+		t.Fatalf("away flags lost: %+v", raid.Bots)
+	}
+	if raid.Run == nil || len(raid.Run.Notes) != 2 || raid.Run.Notes[0].At != 58 || raid.Run.Notes[1].Note != "fighting Garr" {
+		t.Fatalf("run notes lost: %+v", raid.Run)
+	}
+	party := v[1]
+	if len(party.Bots) != 1 || party.Bots[0].Sub != nil || party.Bots[0].Away || party.Run != nil {
+		t.Fatalf("a party binding must stay plain: %+v", party)
+	}
+	out, _ := json.Marshal(party.Bots[0])
+	if strings.Contains(string(out), `"sub"`) || strings.Contains(string(out), `"away"`) {
+		t.Fatalf("empty sub/away must stay out of the view: %s", out)
+	}
+}
+
 func trailPayload(ts int64, mapID uint32, x, y float64) *model.CommandersPayload {
 	p := &model.CommandersPayload{V: model.ProtocolVersion, Session: 5, TS: ts, Type: "COMMANDERS"}
 	p.Commanders = []model.CommanderBinding{{
