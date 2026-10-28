@@ -12,6 +12,7 @@
 #include "../../../runtime/ClaimLifecycle.h"
 #include "../../../runtime/policy/hire/ClaimedBotPolicy.h"
 #include "../../../runtime/HireLifecycle.h"
+#include "../../../runtime/BotGearService.h"
 #include "../../../../runtime/AltBotService.h"
 #include "../../../../runtime/AltBotPolicy.h"
 #include "../../../runtime/policy/hire/HireSourceGuardPolicy.h"
@@ -587,6 +588,15 @@ bool EquipUpgradesAction::Execute(Event& event)
                 TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()),
                 sPlayerbotAIConfig.randomGearAllowPvP, sPlayerbotAIConfig.randomGearAllowReputation))
             continue;
+
+        // A `.bot gear` pin holds the bot under its item-level cap: the cap
+        // pass unequipped (never destroyed) anything above it, and the audit
+        // must not put an above-cap piece back on. Explicit `.bot equip` /
+        // master trade still apply: those are orders, not automation.
+        if (uint32_t cap = TortoiseBots::BotGearService::Instance().PinnedCap(bot->GetGUIDLow()))
+            if (item->GetProto() && item->GetProto()->ItemLevel > cap &&
+                (item->GetProto()->Class == ITEM_CLASS_WEAPON || item->GetProto()->Class == ITEM_CLASS_ARMOR))
+                continue;
 
         // Bags and quivers never go through slot resolution below: core's
         // INVTYPE_BAG probe resolves to a single slot (the first free one, or

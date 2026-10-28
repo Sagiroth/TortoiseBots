@@ -47,6 +47,7 @@ public:
         float avgIlvl = 0;
         uint32_t cappedSlots = 0;
         uint32_t purged = 0;
+        uint32_t kept = 0;
     };
 
     struct JobResult
@@ -61,8 +62,10 @@ public:
 
     bool Busy() const { return m_running; }
     bool IsPinned(uint32_t guidLow) const;
-
-    void OnBotLogout(uint32_t guidLow);
+    // The cap a pinned bot gears under (0 = no cap recorded). Consulted by
+    // the bot's own auto-equip path so a pinned bot never puts an above-cap
+    // item back on (raid-w1-r2 item 2).
+    uint32_t PinnedCap(uint32_t guidLow) const;
 
 private:
     BotGearService() = default;

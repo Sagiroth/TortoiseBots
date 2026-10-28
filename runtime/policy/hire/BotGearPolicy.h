@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -293,6 +294,30 @@ inline bool PurgeBagItem(uint32_t itemClass, uint32_t inventoryType, uint32_t it
         return false;
     uint32_t limit = cap != 0 ? cap : wornMax;
     return itemLevel > limit;
+}
+
+// r2: the service NEVER destroys a pre-existing item. Only an item this
+// `.bot gear` call created (tracked by its GUID) that ended up unused may be
+// removed; displaced worn pieces and pre-existing bag items stay. PurgeBagItem
+// above still decides whether a candidate is above the cap, but the service
+// consults it only for created items.
+inline bool CreatedItemMayBeDestroyed(bool createdByCall, bool unused)
+{
+    return createdByCall && unused;
+}
+
+// r2: a still-worn item above the cap is unequipped to the bags (never
+// destroyed) so "no worn weapon/armor above the cap" holds after the call.
+inline bool WornAboveCap(uint32_t itemLevel, uint32_t cap)
+{
+    return cap != 0 && itemLevel > cap;
+}
+
+// r2 helper: the GUID is in the call's created set and the item went unused.
+// A std::set keeps the header core-free; the service passes its created set.
+inline bool CreatedItemUnused(uint32_t guidLow, std::set<uint32_t> const& created, bool unused)
+{
+    return unused && created.count(guidLow) != 0;
 }
 
 inline std::string SummaryLine(uint8_t tier, uint32_t cap, std::vector<BotResult> const& results)

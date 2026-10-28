@@ -52,6 +52,43 @@ class BotGearWiringTest(unittest.TestCase):
         self.assertIn("kGearBotsPerTick", SERVICE)
         self.assertIn("IsPinned(", SERVICE)
 
+    def test_purge_destroys_only_what_the_call_created(self):
+        # r2: pre-existing bag items survive; only a created-then-unused
+        # item may be destroyed.
+        self.assertIn("CollectCreatedItemGuids(", SERVICE)
+        self.assertIn("BotGear::CreatedItemUnused(", SERVICE)
+        self.assertIn("CreatedItemMayBeDestroyed", POLICY)
+        purge = strip_comments(body(SERVICE, "auto purgeSlot = [&](uint8 bag, uint8 slot, Item* item)", "};"))
+        self.assertIn("BotGear::PurgeBagItem(", purge)
+        self.assertIn("BotGear::CreatedItemUnused(", purge)
+        self.assertIn("bot->DestroyItem(bag, slot, true);", purge)
+        self.assertIn("++kept;", purge)
+
+    def test_worn_above_cap_is_unequipped_not_destroyed(self):
+        self.assertIn("UnequipAboveCapWorn(", SERVICE)
+        self.assertIn("BotGear::WornAboveCap(", SERVICE)
+        wear = strip_comments(body(SERVICE, "uint32_t UnequipAboveCapWorn(Player* bot, uint32_t cap)", "\n}\n"))
+        self.assertIn("bot->RemoveItem(", wear)
+        self.assertIn("bot->StoreItem(", wear)
+        self.assertNotIn("DestroyItem", wear)
+
+    def test_pin_holds_the_cap_in_the_equip_path(self):
+        equip = (ROOT / "ai/playerbot/strategy/actions/EquipAction.cpp").read_text()
+        self.assertIn("BotGearService::Instance().PinnedCap(", equip)
+        self.assertIn("ITEM_CLASS_WEAPON", equip)
+        self.assertIn("ITEM_CLASS_ARMOR", equip)
+
+    def test_skip_reasons_and_null_ai(self):
+        svc = strip_comments(SERVICE)
+        self.assertIn('outcome.skip = "offline";', svc)
+        self.assertIn('outcome.skip = "not-bot";', svc)
+        self.assertIn('outcome.skip = "not-in-world";', svc)
+        self.assertIn('outcome.skip = "no-ai";', svc)
+
+    def test_logout_drops_the_pin(self):
+        mgr = (ROOT / "runtime/BotManager.cpp").read_text()
+        self.assertIn("BotGearService::Instance().OnBotLogout(", mgr)
+
     def test_config_default_matches_header(self):
         self.assertIn('AiPlayerbot.BotGearPresets', CONFIG)
         self.assertIn("BotGear::kPresetsDefault", CONFIG)
