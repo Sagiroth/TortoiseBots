@@ -140,6 +140,14 @@ void AddEntrySource(OrderSourceIndex& index, uint32_t itemId, GuildOrderEntrySou
     list.push_back(source);
 }
 
+struct ZoneAccum
+{
+    uint32_t spawns = 0;
+    float chance = 0.0f;
+    float nearest = 0.0f;
+    bool hasNearest = false;
+};
+
 } // namespace
 
 // Built once at startup, after the travel data is ready: "entry guidps"
