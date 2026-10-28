@@ -3185,8 +3185,8 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
   grid-template-columns: 220px minmax(0, 1fr) minmax(280px, 360px);
   grid-template-areas:
     "frames frames frames"
-    "rail checks roles"
     "rail map roles"
+    "rail checks roles"
     "rail timeline roles";
   gap: 16px;
   align-items: start;
@@ -3290,7 +3290,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-map .fdring { fill: none; stroke: var(--accent-yellow); stroke-width: 2; vector-effect: non-scaling-stroke; }
 
 @media (max-width: 760px) {
-  .cmd-card.fd-on .cmd-body { grid-template-columns: 1fr; grid-template-areas: "frames" "rail" "checks" "map" "timeline" "roles"; }
+  .cmd-card.fd-on .cmd-body { grid-template-columns: 1fr; grid-template-areas: "frames" "rail" "map" "checks" "timeline" "roles"; }
   .fd-frames { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fd-rail { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 4px; }
   .fd-rail .fd-fight { min-width: 180px; }
