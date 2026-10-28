@@ -2973,6 +2973,8 @@ select.input {
 .cmd-controls-row .btn:disabled { opacity: 0.45; cursor: default; }
 .cmd-controls-row select, .cmd-controls-row input { height: 30px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; padding: 0 8px; }
 .cmd-controls-row input[type="number"] { width: 5em; }
+.cmd-controls-row input[type="checkbox"] { height: auto; padding: 0; margin: 0; }
+.cmd-controls-row label.cmd-until { display: flex; align-items: center; gap: 4px; font-size: 0.8rem; color: var(--text-muted); }
 .cmd-controls-note { min-height: 1.2em; margin-top: 6px; font-size: 0.8rem; color: var(--text-muted); overflow-wrap: anywhere; }
 .cmd-waiting { color: var(--accent-yellow); font-weight: 600; }
 .cmd-feed .ev { display: grid; grid-template-columns: 4.6em minmax(0, 1fr); gap: 6px; padding: 1px 0; }

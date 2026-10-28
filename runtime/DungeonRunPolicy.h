@@ -66,6 +66,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -1547,6 +1548,12 @@ struct Run
     // never changed by the run). Above 1.0 the glue gives the party's bots and pets this rate while the run walks
     // (SpeedRateNow); 1.0, every clear, touches nothing. The status line and the done note say it (SpeedLabel).
     float testSpeed = 1.0f;
+    // The stop the start asked for (`.bot run start ... until boss|step N|leg X`): the step it stops before (-1: no
+    // until), the clause as typed ("until boss"), and whether the stop happened (StopAtUntil; NextStep returns at once
+    // once it did). The glue resolves it with ResolveUntilStep, never the run.
+    std::size_t untilStep = static_cast<std::size_t>(-1);
+    std::string untilText;
+    bool untilHit = false;
     bool speedPlayerBlocked = false; // a real player was in the party on a tick: 1.0 for the rest of the run
     std::uint32_t speedOnMs = 0;     // the walking rule (SpeedWalking) has held this long without a break
     float speedNow = 1.0f;           // the rate of the last tick (the glue's SyncRunSpeed reads it)
@@ -2345,6 +2352,23 @@ inline std::string SpeedLabel(const Run& r)
     if (r.testSpeed <= 1.0f)
         return std::string();
     return "speed " + Num(r.testSpeed) + (r.speedPlayerBlocked ? " (test; 1.0 since a real player joined)" : " (test)");
+}
+// The until clause in the status line's label field: "until boss (step 38)" while the stop has not come; "" once it
+// has (the done note says it then).
+inline std::string UntilLabel(const Run& r)
+{
+    if (r.untilHit || r.untilStep == static_cast<std::size_t>(-1) || r.untilText.empty())
+        return std::string();
+    return r.untilText + " (step " + std::to_string(r.untilStep + 1) + ")";
+}
+// StatusLine's trailing label field: the test speed and the until clause, "; "-joined; "" for neither.
+inline std::string TrailLabel(const Run& r)
+{
+    std::string const speed = SpeedLabel(r);
+    std::string const until = UntilLabel(r);
+    if (speed.empty())
+        return until;
+    return until.empty() ? speed : speed + "; " + until;
 }
 // Forward: the item-need gates (spec item-leg-skip C2/C2b, defined beside
 // PausePlayer, past NextStep) for the reports above.
@@ -3569,8 +3593,25 @@ inline void EndRunEarly(Run& r, const std::string& note)
     r.note = with.empty() ? note : note + " (" + with + ")";
 }
 
+// The until stop (`.bot run start ... until`): the run ends before any order of `r.untilStep` goes out, the party
+// standing where it stands. True when it stopped this call. A deferred retry that went back below the stop is not a
+// stop; its return forward is.
+inline bool StopAtUntil(Run& r)
+{
+    if (!r.plan || r.untilHit || r.state == State::Done || r.untilStep == static_cast<std::size_t>(-1) ||
+        r.untilStep >= r.plan->steps.size() || r.step < r.untilStep)
+        return false;
+    r.step = r.untilStep;
+    r.untilHit = true;
+    EndRunEarly(r, "stopped before step " + std::to_string(r.untilStep + 1) + " (" + r.untilText +
+        "): the party stays where it stands");
+    return true;
+}
+
 inline void NextStep(Run& r, const std::string& note)
 {
+    if (r.untilHit)
+        return;
     r.pendingMissing = 0;
     r.unreachableSkips.clear(); // a step done (MoveRefusedUnreachable puts its own skips back)
     ClearApproachStand(r);
@@ -3580,6 +3621,8 @@ inline void NextStep(Run& r, const std::string& note)
     ResetStep(r);
     r.fightMs = 0; // a fight that goes on into the next step starts its ceiling over (the hold's 400 s were the wait step's)
     r.note = full;
+    if (StopAtUntil(r))
+        return;
     if (!Current(r))
     {
         r.state = State::Done;
@@ -3925,6 +3968,86 @@ inline SpeedArgs TakeSpeed(const std::string& arg)
     return out;
 }
 
+inline bool AllDigits(const std::string& v); // below, with the start's words
+
+// `.bot run start ... until boss | until step <N> | until leg <name|number>`: the one clause (any place after the plan
+// name) that ends the run before that step. `arg` is already lower-cased. given: an `until` word was there; ok false:
+// no clause, a bare number or word after `until`, `step` without a number, or a second clause. text: the clause as
+// typed ("until boss"); rest: the other words, single-spaced, in order, for ParseStartArgs.
+enum class UntilKind : std::uint8_t
+{
+    None,
+    Boss,
+    Step,
+    Leg,
+};
+
+struct UntilArgs
+{
+    bool given = false;
+    bool ok = true;
+    UntilKind kind = UntilKind::None;
+    std::string value;
+    std::string text;
+    std::string rest;
+};
+
+inline UntilArgs TakeUntil(const std::string& arg)
+{
+    UntilArgs out;
+    std::size_t i = 0;
+    while (i < arg.size())
+    {
+        while (i < arg.size() && (arg[i] == ' ' || arg[i] == '\t'))
+            ++i;
+        std::size_t const begin = i;
+        while (i < arg.size() && arg[i] != ' ' && arg[i] != '\t')
+            ++i;
+        if (i == begin)
+            break;
+        std::string const word = arg.substr(begin, i - begin);
+        auto const next = [&arg, &i]() -> std::string {
+            while (i < arg.size() && (arg[i] == ' ' || arg[i] == '\t'))
+                ++i;
+            std::size_t const b = i;
+            while (i < arg.size() && arg[i] != ' ' && arg[i] != '\t')
+                ++i;
+            return arg.substr(b, i - b);
+        };
+        if (word != "until")
+        {
+            out.rest += (out.rest.empty() ? "" : " ") + word;
+            continue;
+        }
+        if (out.given)
+        {
+            out.ok = false; // at most one clause
+            break;
+        }
+        out.given = true;
+        std::string const kind = next();
+        if (kind == "boss")
+        {
+            out.kind = UntilKind::Boss;
+            out.text = "until boss";
+            continue;
+        }
+        std::string const value = kind == "step" || kind == "leg" ? next() : std::string();
+        if (kind == "step" && AllDigits(value))
+            out.kind = UntilKind::Step;
+        else if (kind == "leg" && !value.empty())
+            out.kind = UntilKind::Leg;
+        else
+        {
+            out.ok = false; // nothing consumed past the bad word
+            break;
+        }
+        out.value = value;
+        out.text = "until " + kind + " " + value;
+    }
+    return out;
+}
+
 // Who may walk a run at test speed (`speed=` above 1.0): a player-led run never, a party with a real player never,
 // then a GameMaster only, in that order, so the refusal names the reason that holds for anyone first (pip S3
 // 2026-10-26: a rank-0 player's player-led start heard `forbidden`). realPlayer: the first real player of the lead
@@ -3995,6 +4118,24 @@ inline std::size_t EventStartStep(const DungeonPlan& plan, std::size_t idx)
     return idx;
 }
 
+// The first step of the leg `value` names (its number, or its name in any case): the start's `from leg` and the
+// until's `until leg` both find a leg this way.
+inline bool FindLegStart(const DungeonPlan& plan, const std::string& value, std::size_t& idx)
+{
+    bool const numeric = AllDigits(value);
+    int const number = numeric ? std::atoi(value.c_str()) : -1;
+    for (std::size_t i = 0; i < plan.steps.size(); ++i)
+    {
+        std::uint8_t const leg = plan.steps[i].leg;
+        if (numeric ? static_cast<int>(leg) == number : LowerCopy(plan.LegName(leg)) == value)
+        {
+            idx = i;
+            return true;
+        }
+    }
+    return false;
+}
+
 // The index of the step the run starts at. `movedBack` is set when a start
 // inside an event was moved back to the step that starts it.
 inline FromResult ResolveStartStep(const DungeonPlan& plan, StartFrom from, const std::string& value,
@@ -4017,20 +4158,80 @@ inline FromResult ResolveStartStep(const DungeonPlan& plan, StartFrom from, cons
             *movedBack = step != n - 1;
         return FromResult::Ok;
     }
-    bool const numeric = AllDigits(value);
-    int const number = numeric ? std::atoi(value.c_str()) : -1;
-    for (std::size_t i = 0; i < plan.steps.size(); ++i)
+    std::size_t i = 0;
+    if (!FindLegStart(plan, value, i))
+        return FromResult::NoSuchLeg;
+    step = EventStartStep(plan, i);
+    if (movedBack)
+        *movedBack = step != i;
+    return FromResult::Ok;
+}
+
+enum class UntilResult : std::uint8_t
+{
+    Ok,
+    NoBoss,      // no boss step at or after the start
+    NoSuchLeg,
+    NoSuchStep,
+    AtStart,     // the stop would be at or before the start step
+};
+
+// A boss step: a Boss row, or a hold (a scripted event) whose own `entry` or one of its `entries` is a boss of the
+// plan's map (BWL's Vaelastrasz and Nefarian holds, AQ40's boss hold). `isBossEntry` may be empty: Boss rows only.
+inline bool IsBossStep(const PlanStep& s, const std::function<bool(std::uint32_t)>& isBossEntry)
+{
+    if (s.kind == PlanStepKind::Boss)
+        return true;
+    if (s.kind != PlanStepKind::Hold || !isBossEntry)
+        return false;
+    if (s.entry && isBossEntry(s.entry))
+        return true;
+    for (std::uint32_t entry : s.entries)
+        if (isBossEntry(entry))
+            return true;
+    return false;
+}
+
+// The step the run stops before (`.bot run start ... until`), from the start step `startStep` (after `from` and its
+// EventStartStep move-back): a boss step at or after it, the step N (1-based), or the first step of a leg. An event's
+// hold, or a move into one, goes back to the step that starts the event (EventStartStep), so the gossip that starts
+// it is never sent. `stop <= startStep` is refused (AtStart).
+inline UntilResult ResolveUntilStep(const DungeonPlan& plan, UntilKind kind, const std::string& value, std::size_t startStep,
+    const std::function<bool(std::uint32_t)>& isBossEntry, std::size_t& stop)
+{
+    stop = startStep;
+    std::size_t i = startStep;
+    if (kind == UntilKind::Step)
     {
-        std::uint8_t const leg = plan.steps[i].leg;
-        if (numeric ? static_cast<int>(leg) == number : LowerCopy(plan.LegName(leg)) == value)
-        {
-            step = EventStartStep(plan, i);
-            if (movedBack)
-                *movedBack = step != i;
-            return FromResult::Ok;
-        }
+        if (!AllDigits(value))
+            return UntilResult::NoSuchStep;
+        std::size_t const n = static_cast<std::size_t>(std::atoi(value.c_str()));
+        if (n < 1 || n > plan.steps.size())
+            return UntilResult::NoSuchStep;
+        i = n - 1;
     }
-    return FromResult::NoSuchLeg;
+    else if (kind == UntilKind::Leg)
+    {
+        if (!FindLegStart(plan, value, i))
+            return UntilResult::NoSuchLeg;
+    }
+    else if (kind == UntilKind::Boss)
+    {
+        i = plan.steps.size();
+        for (std::size_t j = startStep; j < plan.steps.size(); ++j)
+            if (IsBossStep(plan.steps[j], isBossEntry))
+            {
+                i = j;
+                break;
+            }
+        if (i >= plan.steps.size())
+            return UntilResult::NoBoss;
+    }
+    // UntilKind::None: no clause (the glue never asks): the stop is the start step, refused below.
+    stop = EventStartStep(plan, i);
+    if (stop <= startStep)
+        return UntilResult::AtStart;
+    return UntilResult::Ok;
 }
 
 // A start partway needs the whole party inside the instance: the steps before
@@ -13316,6 +13517,8 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
     r.shotGateRan = false;
     SyncCcIcons(r, f);
     ArmReachedTriggers(r); // a step reached by a skip, a resume or a jump since the last tick
+    if (StopAtUntil(r))
+        return std::string(); // a jump set r.step straight at the stop (AbandonDeferRetry): no order this tick
     std::string order;
     bool held = false;
     if (r.state == State::Running && !r.hold.empty())
@@ -13329,6 +13532,12 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
     }
     if (!held)
         order = TickBody(r, f, dt, lines);
+    if (r.untilHit)
+    {
+        if (!r.shotGateRan)
+            EndShotHold(r);
+        return std::string(); // the step the tick reached was the stop: any order built for it is dropped
+    }
     OffMapReturnTick(r, f, order); // a bot outside the instance in a bot-only run (lead decision 2026-10-24)
     if (!r.shotGateRan)
         EndShotHold(r); // the pull stand's hold ends with any tick its gate did not run on
@@ -13383,6 +13592,8 @@ inline std::size_t FightForwardTarget(const Run& r, const Facts& f)
     std::size_t moves = 0;
     for (std::size_t i = r.step; i < r.plan->steps.size(); ++i)
     {
+        if (r.untilStep != static_cast<std::size_t>(-1) && i >= r.untilStep)
+            return static_cast<std::size_t>(-1); // never skip past the stop
         const PlanStep& p = r.plan->steps[i];
         if (p.leg != leg)
             return static_cast<std::size_t>(-1);
@@ -13475,7 +13686,7 @@ inline bool FightForwardTick(Run& r, const Facts& f)
     std::size_t const first = r.step;
     const PlanStep& p = r.plan->steps[target];
     float const yd = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, p.x, p.y, p.z);
-    while (r.step < target && Current(r) && Current(r)->kind == PlanStepKind::Move)
+    while (r.step < target && r.state == State::Running && Current(r) && Current(r)->kind == PlanStepKind::Move)
         NextStep(r, "fight forward");
     if (r.step != target)
         return true; // StepAfter went another way (a step for the other team): its own rules from here
@@ -14628,7 +14839,7 @@ inline StatusFields StatusParts(const Run& r)
         if (c == '|' || c == '\n' || c == '\r')
             c = ' ';
     f.left = r.deferGivenUp.size() + r.deferredPulls.size() + (DeferRetryOn(r) ? 1 : 0);
-    f.speed = SpeedLabel(r);
+    f.speed = TrailLabel(r);
     return f;
 }
 inline std::string StatusLine(const Run& r)

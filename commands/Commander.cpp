@@ -11130,7 +11130,7 @@ static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const
         // first that holds for anyone (DungeonRunPolicy.h CheckTestSpeed).
         if (!speedArgs.ok)
         {
-            SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from ...] [speed=<1.0-3.0>] (a test run's walking speed)");
+            SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from <leg|step N>] [until boss|step N|leg <name|N>] [speed=<1.0-3.0>] (a test run's walking speed)");
             return true;
         }
         std::string realPlayer;
@@ -11153,11 +11153,26 @@ static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const
         }
         if (!playerLedStart.playerLed)
             arg = LowerCopy(speedArgs.rest);
+        // The until clause (`.bot run start ... until boss|step N|leg X`): a bot-led run's stop before a step.
+        // `arg` is the player-led start's rest for that mode, already lower-cased.
+        UntilArgs const untilArgs = TakeUntil(arg);
+        arg = untilArgs.rest;
+        if (playerLedStart.playerLed && untilArgs.given)
+        {
+            SendActionError(handler, intent, "invalid", "until is for bot-led runs: a player-led run follows the player.");
+            return true;
+        }
+        if (!untilArgs.ok)
+        {
+            SendActionError(handler, intent, "invalid",
+                "Usage: .bot run start [plan] [from <leg|step N>] [until boss|step N|leg <name|N>] [speed=<1.0-3.0>]");
+            return true;
+        }
         StartArgs const startArgs = ParseStartArgs(arg);
         if (!startArgs.ok)
         {
             SendActionError(handler, intent, "invalid",
-                "Usage: .bot run start [plan] [from <leg name|leg number|step N>] [speed=<1.0-3.0>] (.bot run list)");
+                "Usage: .bot run start [plan] [from <leg name|leg number|step N>] [until boss|step N|leg <name|N>] [speed=<1.0-3.0>] (.bot run list)");
             return true;
         }
         std::string name = startArgs.plan;
@@ -11202,6 +11217,41 @@ static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const
                     : ("The plan has steps 1 to " + std::to_string(plan->steps.size()) + ".").c_str());
             return true;
         }
+        // The stop the run ends before (ResolveUntilStep), from the step it starts at: the gossip that starts an
+        // event is never sent, so the stop is the step that starts it.
+        std::size_t untilStop = 0;
+        if (untilArgs.given)
+        {
+            UntilResult const until = ResolveUntilStep(*plan, untilArgs.kind, untilArgs.value, startStep,
+                [plan](std::uint32_t entry) { return ai::GetDungeonPlans().IsBossEntry(plan->map, entry); }, untilStop);
+            if (until != UntilResult::Ok)
+            {
+                switch (until)
+                {
+                    case UntilResult::NoBoss:
+                        SendActionError(handler, intent, "no-boss",
+                            ("No boss step from step " + std::to_string(startStep + 1) + " on.").c_str());
+                        break;
+                    case UntilResult::NoSuchLeg:
+                        SendActionError(handler, intent, "no-leg",
+                            "The plan has no such leg (a leg name or number from .bot run status).");
+                        break;
+                    case UntilResult::NoSuchStep:
+                        SendActionError(handler, intent, "no-step",
+                            ("The plan has steps 1 to " + std::to_string(plan->steps.size()) + ".").c_str());
+                        break;
+                    case UntilResult::AtStart:
+                        SendActionError(handler, intent, "until-at-start",
+                            ("The run would stop before its first step: until names step " +
+                                std::to_string(untilStop + 1) + ", the start is step " +
+                                std::to_string(startStep + 1) + ".").c_str());
+                        break;
+                    case UntilResult::Ok:
+                        break;
+                }
+                return true;
+            }
+        }
         // A start partway is only for a party that already stands in the instance: the steps before
         // are neither done nor checked here (the retry after a failed run, or a hand-walked party).
         if (startStep > 0)
@@ -11240,6 +11290,11 @@ static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const
         slot.run = Start(plan, startStep);
         slot.run.startStep = startStep; // a walk back never goes before it (DungeonRun::ReplayFloor)
         slot.run.testSpeed = speedArgs.rate; // 1.0 unless speed= (DungeonRun::SpeedLabel marks every line)
+        if (untilArgs.given)
+        {
+            slot.run.untilStep = untilStop;
+            slot.run.untilText = untilArgs.text;
+        }
         slot.playerLed.on = playerLedStart.playerLed;
         if (slot.playerLed.on)
             slot.playerLed.tank = lead->GetName();
@@ -11274,6 +11329,15 @@ static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const
         if (stored.run.testSpeed > 1.0f)
             handler->PSendSysMessage("Test speed %s: the party walks %s times as fast between fights (1.0 in a fight, a pull, a rest); this run is a test, never a clear.",
                 TortoiseBots::DungeonRun::Num(stored.run.testSpeed).c_str(), TortoiseBots::DungeonRun::Num(stored.run.testSpeed).c_str());
+        if (untilArgs.given)
+        {
+            ai::PlanStep const& stopStep = plan->steps[untilStop];
+            std::string const stopLeg = plan->LegName(stopStep.leg);
+            handler->PSendSysMessage("The run stops before step %u of %u (%s, %s): the party stays where it stands.",
+                static_cast<uint32>(untilStop + 1), static_cast<uint32>(plan->steps.size()),
+                ai::PlanStepKindName(stopStep.kind),
+                stopLeg.empty() ? std::to_string(stopStep.leg).c_str() : stopLeg.c_str());
+        }
         if (stored.playerLed.on)
             handler->PSendSysMessage("Run mode: %s.", TortoiseBots::PlayerLed::ModeText(stored.playerLed, true).c_str());
         SendActionAck(handler, intent, "party", static_cast<uint32>(plan->steps.size()), plan->name);
@@ -11406,7 +11470,7 @@ bool HandleDungeonRun(ChatHandler* handler, char const* args)
     if (verb != "start" && verb != "pause" && verb != "resume" && verb != "skip" && verb != "stop" &&
         verb != "status" && verb != "list" && verb != "mode" && verb != "here")
     {
-        SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from <leg|step N>] [speed=<1.0-3.0>] [player [tank <Bot>]] / pause / resume / skip / stop [reason] / status / mode / list / reloadplans (GameMaster)");
+        SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from <leg|step N>] [until boss|step N|leg <name|N>] [speed=<1.0-3.0>] [player [tank <Bot>]] / pause / resume / skip / stop [reason] / status / mode / list / reloadplans (GameMaster)");
         return true;
     }
     return RunVerbAs(handler, Requester(handler), verb, rawArg, intent);

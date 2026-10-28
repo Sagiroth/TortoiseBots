@@ -5349,6 +5349,7 @@
       <button type="button" class="btn" data-cl="stop">Stop</button>
       <button type="button" class="btn" data-cl="status">Status</button>
       ${legField}<button type="button" class="btn" data-cl="start">Start from leg</button>
+      <label class="cmd-until" title="End the run before the plan's next boss step: the party stays on its stand"><input type="checkbox" data-cl="until">stop before the boss</label>
       <button type="button" class="btn" data-cl="revive"${dead.length ? '' : ' disabled'}>Revive dead (${dead.length})</button>
       <button type="button" class="btn" data-cl="reload">Reload plans</button>
       <select data-cl="preset" title="Gear preset">${CMD_GEAR_PRESETS.map(p => `<option value="${p}">${esc(p)}</option>`).join('')}</select><button type="button" class="btn" data-cl="gear">Gear preset</button>
@@ -5402,7 +5403,10 @@
       else if (act === 'start') {
         const leg = row.querySelector('[data-cl="leg"]');
         const v = leg ? String(leg.value || '').trim() : '';
-        if (v) cmdControlPost(card, lines.startFromLeg(v));
+        const until = row.querySelector('[data-cl="until"]');
+        const untilBoss = !!(until && until.checked);
+        if (v) cmdControlPost(card, lines.startFromLeg(v, untilBoss));
+        else if (untilBoss) cmdControlPost(card, lines.startUntilBoss);
       }
       else if (act === 'revive' && lines.reviveDead.length) cmdControlPost(card, lines.reviveDead);
       else if (act === 'reload' && confirm('Reload the run plans on the game server?\n' + lines.reloadPlans)) cmdControlPost(card, lines.reloadPlans);

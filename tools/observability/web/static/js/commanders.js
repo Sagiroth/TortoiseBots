@@ -161,7 +161,9 @@
       stop: ".bot run for " + name + " stop",
       status: ".bot run for " + name + " status",
       // a bare number is a step (`from 4` alone would be read as leg 4), anything else a leg name
-      startFromLeg: (leg) => ".bot run for " + name + " start from " + (/^\d+$/.test(String(leg).trim()) ? "step " + String(leg).trim() : "leg " + String(leg).trim()),
+      startFromLeg: (leg, untilBoss) => ".bot run for " + name + " start from " + (/^\d+$/.test(String(leg).trim()) ? "step " + String(leg).trim() : "leg " + String(leg).trim()) + (untilBoss ? " until boss" : ""),
+      // the trash walk that stops at the boss stand, from the plan's first step
+      startUntilBoss: ".bot run for " + name + " start until boss",
       reviveDead: dead.map((n) => ".revive " + n),
       reloadPlans: ".bot run reloadplans",
       gearPreset: (preset) => raid ? ".bot gear raid " + name + " preset " + preset : ".bot gear " + name + " preset " + preset,

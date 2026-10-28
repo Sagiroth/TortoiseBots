@@ -13565,6 +13565,207 @@ static void TestStartFromResolve()
     CHECK(r.step == 2 && r.state == State::Running);
 }
 
+// ---------------------------------------------------------------------------
+// `.bot run start ... until boss|step N|leg X`: the run ends before that step. The plans shaped like the raids the
+// until clause is for: MC's first three legs (37 steps then Lucifron, 5 then Magmadar, 120 then Gehennas, 166 steps
+// in all), and a hold that is a boss's event (BWL's Vaelastrasz: a hold naming his entry).
+// ---------------------------------------------------------------------------
+static DungeonPlan McShapedPlan()
+{
+    DungeonPlan plan;
+    plan.name = "molten_core";
+    plan.map = 409;
+    plan.legs.push_back(ai::PlanLeg{0, "lucifron"});
+    plan.legs.push_back(ai::PlanLeg{1, "magmadar"});
+    plan.legs.push_back(ai::PlanLeg{2, "gehennas"});
+    auto const add = [&plan](std::uint8_t leg, PlanStepKind kind, std::uint32_t entry, float x) {
+        PlanStep st = Step(kind, x, 0, 0);
+        st.leg = leg;
+        st.entry = entry;
+        plan.steps.push_back(st);
+    };
+    for (std::size_t i = 0; i < 37; ++i)
+        add(0, PlanStepKind::Move, 0, static_cast<float>(i));
+    add(0, PlanStepKind::Boss, 12118, 37);  // step 38
+    for (std::size_t i = 0; i < 5; ++i)
+        add(1, PlanStepKind::Move, 0, static_cast<float>(38 + i));
+    add(1, PlanStepKind::Boss, 11982, 43);  // step 44
+    for (std::size_t i = 0; i < 121; ++i)
+        add(2, PlanStepKind::Move, 0, static_cast<float>(44 + i));
+    add(2, PlanStepKind::Boss, 12259, 165); // step 166
+    return plan;
+}
+
+// A hold that names a boss entry is a boss step: the event that starts it must never be sent.
+static DungeonPlan HoldBossPlan()
+{
+    DungeonPlan plan;
+    plan.name = "bwl_hold";
+    plan.map = 469;
+    plan.legs.push_back(ai::PlanLeg{0, "vaelastrasz"});
+    plan.steps = {Step(PlanStepKind::Move, 0, 0, 0), Step(PlanStepKind::Gossip, 0, 0, 0), Step(PlanStepKind::Move, 2, 0, 0)};
+    PlanStep hold = Step(PlanStepKind::Hold, 3, 0, 0);
+    hold.entries = {13020};
+    plan.steps.push_back(hold);
+    plan.steps.push_back(Step(PlanStepKind::Move, 4, 0, 0));
+    PlanStep boss = Step(PlanStepKind::Boss, 5, 0, 0);
+    boss.entry = 11583;
+    plan.steps.push_back(boss);
+    for (PlanStep& st : plan.steps)
+        st.leg = 0;
+    return plan;
+}
+
+static void TestUntilParsing()
+{
+    UntilArgs a = TakeUntil("until boss");
+    CHECK(a.given && a.ok && a.kind == UntilKind::Boss && a.value.empty() && a.text == "until boss" && a.rest.empty());
+    a = TakeUntil("molten_core until boss from step 40");
+    CHECK(a.given && a.ok && a.kind == UntilKind::Boss && a.rest == "molten_core from step 40");
+    StartArgs s = ParseStartArgs(a.rest);
+    CHECK(s.ok && s.plan == "molten_core" && s.from == StartFrom::Step && s.value == "40");
+    a = TakeUntil("until step 29");
+    CHECK(a.given && a.ok && a.kind == UntilKind::Step && a.value == "29" && a.text == "until step 29");
+    a = TakeUntil("until leg gehennas");
+    CHECK(a.given && a.ok && a.kind == UntilKind::Leg && a.value == "gehennas" && a.text == "until leg gehennas");
+    a = TakeUntil("until leg 2");
+    CHECK(a.given && a.ok && a.kind == UntilKind::Leg && a.value == "2");
+    a = TakeUntil("onyxias_lair from leg gehennas speed=3 until boss");
+    CHECK(a.given && a.ok && a.kind == UntilKind::Boss && a.rest == "onyxias_lair from leg gehennas speed=3");
+    for (std::string const bad : {"until", "until 5", "until step", "until step x", "until foo", "until boss until step 3"})
+        CHECK(!TakeUntil(bad).ok);
+    CHECK(!TakeUntil("").given); // no clause: the words go to ParseStartArgs unchanged
+    CHECK(TakeUntil("molten_core").rest == "molten_core");
+}
+
+static void TestUntilResolve()
+{
+    DungeonPlan plan = McShapedPlan();
+    auto const boss = [](std::uint32_t entry) { return entry == 12118 || entry == 11982 || entry == 12259; };
+    std::size_t stop = 99;
+    CHECK(ResolveUntilStep(plan, UntilKind::Boss, "", 0, boss, stop) == UntilResult::Ok && stop == 37);
+    CHECK(ResolveUntilStep(plan, UntilKind::Boss, "", 38, boss, stop) == UntilResult::Ok && stop == 43);
+    CHECK(ResolveUntilStep(plan, UntilKind::Boss, "", 39, boss, stop) == UntilResult::Ok && stop == 43);
+    CHECK(ResolveUntilStep(plan, UntilKind::Boss, "", 43, boss, stop) == UntilResult::AtStart); // the boss is the start
+    CHECK(ResolveUntilStep(plan, UntilKind::Leg, "gehennas", 0, boss, stop) == UntilResult::Ok && stop == 44);
+    CHECK(ResolveUntilStep(plan, UntilKind::Leg, "2", 0, boss, stop) == UntilResult::Ok && stop == 44);
+    CHECK(ResolveUntilStep(plan, UntilKind::Leg, "gehennas", 44, boss, stop) == UntilResult::AtStart);
+    CHECK(ResolveUntilStep(plan, UntilKind::Step, "166", 0, boss, stop) == UntilResult::Ok && stop == 165);
+    CHECK(ResolveUntilStep(plan, UntilKind::Step, "999", 0, boss, stop) == UntilResult::NoSuchStep);
+    CHECK(ResolveUntilStep(plan, UntilKind::Step, "x", 0, boss, stop) == UntilResult::NoSuchStep);
+    CHECK(ResolveUntilStep(plan, UntilKind::Leg, "nope", 0, boss, stop) == UntilResult::NoSuchLeg);
+    DungeonPlan quiet;
+    quiet.steps = {Step(PlanStepKind::Move, 0, 0, 0), Step(PlanStepKind::Pull, 1, 0, 0)};
+    CHECK(ResolveUntilStep(quiet, UntilKind::Boss, "", 0, boss, stop) == UntilResult::NoBoss);
+
+    // A hold naming a boss entry is a boss step, and the stop goes back to the gossip that starts its event.
+    DungeonPlan hold = HoldBossPlan();
+    auto const bosses = [](std::uint32_t entry) { return entry == 13020 || entry == 11583; };
+    CHECK(ResolveUntilStep(hold, UntilKind::Boss, "", 0, bosses, stop) == UntilResult::Ok && stop == 1);
+    CHECK(ResolveUntilStep(hold, UntilKind::Step, "4", 0, bosses, stop) == UntilResult::Ok && stop == 1);
+    CHECK(ResolveUntilStep(hold, UntilKind::Boss, "", 0, {}, stop) == UntilResult::Ok && stop == 5); // Boss rows only
+    CHECK(IsBossStep(hold.steps[3], bosses) && !IsBossStep(hold.steps[3], {}));
+}
+
+// Walk 3 (Onyxia, 2026-10-28): step 28 (the stand) arrived and step 29 (the boss) began in the same second, and the
+// boss approach went out before the guard's `.bot run stop` arrived. The run stops before the step's first order.
+static void TestUntilStopsBeforeTheBossStep()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 5, 0, 0), Step(PlanStepKind::Move, 10, 0, 0), Step(PlanStepKind::Boss, 15, 0, 0)};
+    plan.steps[2].entry = 10184;
+    Run r = Start(&plan);
+    r.untilStep = 2;
+    r.untilText = "until boss";
+    Facts f = Party(0);
+    CHECK(Tick(r, f) == "move 5.0 0.0 0.0");
+    f.leadX = 5;
+    CHECK(Tick(r, f).empty()); // step 1: the stand
+    CHECK(r.state == State::Running && r.step == 1);
+    CHECK(Tick(r, f) == "move 10.0 0.0 0.0");
+    f.leadX = 10;
+    CHECK(Tick(r, f).empty()); // the stand's arrival: no order of the boss step
+    CHECK(r.state == State::Done && r.step == 2);
+    CHECK(r.note.find("stopped before step 3 (until boss): the party stays where it stands") == 0);
+    std::string const note = r.note;
+    CHECK(Tick(r, f).empty() && r.state == State::Done && r.step == 2 && r.note == note);
+}
+
+static void TestUntilSkipAndJumpStop()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 5, 0, 0), Step(PlanStepKind::Pull, 10, 0, 0), Step(PlanStepKind::Move, 15, 0, 0)};
+    plan.steps[1].entries = {1};
+    ai::NormalizePlanStep(plan.steps[1]);
+    // A skip into the stop: paused on the step before it.
+    Run r = Start(&plan, 1);
+    r.state = State::Paused;
+    r.untilStep = 2;
+    r.untilText = "until step 3";
+    CHECK(Skip(r));
+    CHECK(r.state == State::Done && r.step == 2);
+    CHECK(r.note.find("stopped before step 3 (until step 3): the party stays where it stands") == 0);
+    // A jump that sets the step straight at the stop (AbandonDeferRetry): no order that tick.
+    DungeonPlan jumps;
+    jumps.steps = {Step(PlanStepKind::Move, 5, 0, 0), Step(PlanStepKind::Move, 10, 0, 0), Step(PlanStepKind::Move, 15, 0, 0)};
+    Run j = Start(&jumps, 0);
+    j.untilStep = 1;
+    j.untilText = "until step 2";
+    j.step = 1;
+    Facts f = Party(0);
+    CHECK(Tick(j, f).empty());
+    CHECK(j.state == State::Done && j.step == 1 && j.untilHit);
+    CHECK(j.note.find("stopped before step 2 (until step 2)") == 0);
+}
+
+static void TestUntilStopsFightForward()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(0, {1}), Step(PlanStepKind::Move, 5, 0, 0), Step(PlanStepKind::Move, 10, 0, 0),
+        PullStep(20, {2})};
+    Run r = Start(&plan);
+    r.step = 1;
+    Facts f = Party(5);
+    CHECK(r.untilStep == static_cast<std::size_t>(-1));
+    CHECK(FightForwardTarget(r, f) == 3);
+    for (std::size_t stop : {std::size_t(1), std::size_t(2), std::size_t(3)})
+    {
+        r.untilStep = stop;
+        CHECK(FightForwardTarget(r, f) == static_cast<std::size_t>(-1)); // the scan reaches the stop at or before the pull
+    }
+    r.untilStep = 4;
+    CHECK(FightForwardTarget(r, f) == 3); // the stop lies past the pull
+}
+
+static void TestUntilStatusLabel()
+{
+    DungeonPlan plan = McShapedPlan();
+    Run r = Start(&plan);
+    r.untilStep = 37;
+    r.untilText = "until boss";
+    auto const ends = [](const std::string& line, const std::string& suffix) {
+        return line.size() >= suffix.size() && line.compare(line.size() - suffix.size(), suffix.size(), suffix) == 0;
+    };
+    r.testSpeed = 3.0f;
+    CHECK(ends(StatusLine(r), "|speed 3.0 (test); until boss (step 38)"));
+    r.testSpeed = 1.0f;
+    CHECK(ends(StatusLine(r), "|until boss (step 38)"));
+    // The stop: the label goes, the note says it.
+    r.step = 37;
+    CHECK(StopAtUntil(r));
+    CHECK(!ends(StatusLine(r), "(step 38)"));
+    CHECK(StatusLine(r).find("speed 3.0") == std::string::npos);
+    CHECK(r.note.find("(until boss)") != std::string::npos);
+    // No until: the label field stays empty and the plan's end says "plan done" as before.
+    Run plain = Start(&plan);
+    plain.step = plain.plan->steps.size() - 1;
+    plain.state = State::Done;
+    plain.note = DoneNote(plain);
+    CHECK(plain.note == "plan done");
+    CHECK(StatusLine(plain).find("|boss|") != std::string::npos);
+    CHECK(ends(StatusLine(plain), "|plan done"));
+}
+
 // The Uldaman Keepers: the ritual ends leg 10, the hold opens leg 11. A start on the hold goes back
 // to the ritual, or the event never starts.
 static DungeonPlan EventPlan()
@@ -23198,6 +23399,13 @@ int main()
     TestRunawaySummonStepLimits();
     TestPartyRulesUnchanged();
     TestStatusPartsMatchLine();
+    // item 1 until
+    TestUntilParsing();
+    TestUntilResolve();
+    TestUntilStopsBeforeTheBossStep();
+    TestUntilSkipAndJumpStop();
+    TestUntilStopsFightForward();
+    TestUntilStatusLabel();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;
 }
