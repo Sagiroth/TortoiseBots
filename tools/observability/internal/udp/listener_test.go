@@ -375,3 +375,47 @@ func TestCommandersPartsOneBroadcast(t *testing.T) {
 		t.Fatalf("assembled view: %+v", v.Commanders)
 	}
 }
+
+// A replay (turtle-agent dashboard-replay marks every datagram it sends with
+// "replay":true) must not mix into a dashboard's state unless the operator
+// asked for replays: a recording's session is newer than a live module's, so a
+// stray replay would shadow the real roster until the module restarts.
+func TestReplayDatagramsNeedAcceptReplay(t *testing.T) {
+	l, store, hub := newTestListener()
+	replayed := strings.Replace(commandersDatagram, `{"v":9,`, `{"v":9,"replay":true,`, 1)
+
+	l.processPacket([]byte(replayed))
+	if v := store.Commanders(); v.UpdatedAt != 0 || len(v.Commanders) != 0 {
+		t.Fatalf("a replayed datagram reached the store without -accept-replay: %+v", v)
+	}
+	if len(hub.events) != 0 {
+		t.Fatalf("a dropped replay reached the stream: %v", hub.events)
+	}
+	if got := l.replayDropped.Load(); got != 1 {
+		t.Fatalf("dropped replays = %d, want 1", got)
+	}
+
+	l.SetAcceptReplay(true)
+	l.processPacket([]byte(replayed))
+	if v := store.Commanders(); !v.Fresh || len(v.Commanders) != 1 {
+		t.Fatalf("with -accept-replay the replay must apply: %+v", v)
+	}
+	if got := l.replayDropped.Load(); got != 1 {
+		t.Fatalf("an accepted datagram counted as dropped: %d", got)
+	}
+}
+
+// "replay" is the only marker: a live module sends no such key, so its
+// datagrams apply whether or not replays are accepted.
+func TestDatagramWithoutReplayKeyAppliesEitherWay(t *testing.T) {
+	l, store, _ := newTestListener()
+	l.processPacket([]byte(commandersDatagram))
+	if v := store.Commanders(); !v.Fresh || len(v.Commanders) != 1 {
+		t.Fatalf("default: %+v", v)
+	}
+	l.SetAcceptReplay(true)
+	l.processPacket([]byte(commandersDatagram))
+	if v := store.Commanders(); !v.Fresh || len(v.Commanders) != 1 {
+		t.Fatalf("accept: %+v", v)
+	}
+}
