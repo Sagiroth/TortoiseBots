@@ -170,12 +170,20 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
                 continue;
             for (int i = 0; i < 3; ++i)
             {
-                if (spell->Effect[i] == SPELL_EFFECT_CREATE_ITEM && spell->EffectItemType[i] == itemId)
+                if (spell->Effect[i] != SPELL_EFFECT_CREATE_ITEM || spell->EffectItemType[i] != itemId)
+                    continue;
+                plan.sources = SourceCraft;
+                SkillLineAbilityMapBounds bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(spellId);
+                for (SkillLineAbilityMap::const_iterator it = bounds.first; it != bounds.second; ++it)
                 {
-                    plan.sources = SourceCraft;
-                    plan.skillId = spell->EffectSkill[i] ? spell->EffectSkill[i] : spell->EffectSkill[0];
-                    return plan;
+                    if (it->second && it->second->skillId)
+                    {
+                        plan.skillId = it->second->skillId;
+                        plan.skillValue = bot->GetSkillValue(it->second->skillId);
+                        break;
+                    }
                 }
+                return plan;
             }
         }
         plan.verdict = OrderReason::NoRecipe;
