@@ -2291,11 +2291,14 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         }
         else if (order.type == GuildOrderType::Farm || order.type == GuildOrderType::Kill)
         {
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, orderTarget, partitions = travelPartitions]()
+            // A craft order short on a farmable reagent farms that reagent, not the order item.
+            int32 farmItem = AI_VALUE2(int32, "manual int", "guild order farm item");
+            uint32 farmItemId = farmItem > 0 ? (uint32)farmItem : 0;
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, orderTarget, farmItemId, partitions = travelPartitions]()
                 {
                     PartitionedTravelList list;
 
-                    uint32 foundItemId = GuildOrderValue::FindItemByName(orderTarget);
+                    uint32 foundItemId = farmItemId ? farmItemId : GuildOrderValue::FindItemByName(orderTarget);
 
                     if (foundItemId)
                     {

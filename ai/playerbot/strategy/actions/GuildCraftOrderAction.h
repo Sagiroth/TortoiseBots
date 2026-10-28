@@ -15,5 +15,6 @@ namespace ai
 
     private:
         uint32 FindCraftSpell(uint32 itemId);
+        uint32 FindCraftEffect(uint32 spellId, uint32 itemId);
     };
 }
