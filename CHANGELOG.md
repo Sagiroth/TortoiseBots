@@ -88,6 +88,7 @@
 - The new raid map and fight replay read at a glance: a dashed plan route with its stands, packs and aggro rings, layer presets as chips in the existing Layers panel, subgroup colours and healer-to-tank lines on the raid, and a scrub bar with one coloured lane per enemy under the timeline.
 - On a raid's map the bot trails can be cut to the last 30 seconds, the healer → tank links come from the raid's saved layout instead of subgroups, and a mob's line to a party member who is not a tank is drawn red.
 - The map's layer panel now has raid presets (Pathing, Trash pull, Healing, Boss, All) and the plan's route, stand and aggro/wake rings as separate layers; a boss that wakes by script, like Onyxia, draws its own dashed wake ring from the server's data.
+- Every raid map now draws its plan under the party as its own layers, and a Layers button on the map opens the presets panel where Pathing, Trash pull, Healing, Boss and All switch them.
 
 ## v1.8.0 (2026-10-22)
 

@@ -147,6 +147,12 @@ func TestPlanOverlayJS(t *testing.T) {
 	runCheck(t, "planoverlay_check.js", "../../web/static/js/planoverlay.js")
 }
 
+// TestPlanOverlayUIJS runs planoverlay_ui_check.js: the plan layer as app.js draws it (each of its three layers, escaping,
+// the hover entries) and the wiring that feeds it (the plan fetch, the card's plan facts, the raid presets, the Layers button).
+func TestPlanOverlayUIJS(t *testing.T) {
+	runCheck(t, "planoverlay_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestPhaseACSS runs phase_a_css_check.js: the Dashboard phase A block in app.css (the plan layer and the raid layers on the
 // map, the replay row and the aggro lanes in the Fight debugger; theme tokens only apart from the eight group colours, a rule
 // for every emitted class, the phone row, focus kept).

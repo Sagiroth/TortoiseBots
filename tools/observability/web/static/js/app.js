@@ -5015,6 +5015,7 @@
   const cmdPicAsk = new Map(); // map id -> when the daemon was last asked for its picture slots (unix ms)
   const cmdTrails = CmdPaths.newTrails(); // every bot's path (the lead's is in cmdTracker.trail), kept from the 2 s reports
   const cmdStalls = CmdPaths.newStalls(); // where the run paused or an order was refused, fixed when first seen
+  const cmdPlans = {};        // plan name -> {plan: the daemon's /api/v1/plans answer | null, err, at (unix ms of the answer), loading}
   let cmdTrailsLoading = false;
 
   // A departed commander's card and everything keyed by it: the maps, the layers, the debugger's picks and detail cache and the
@@ -5487,7 +5488,7 @@
     return `<g class="ic ic-${name}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${sc.toFixed(4)})">${title ? `<title>${esc(title)}</title>` : ''}<circle class="bgd" r="6.2"/>${body}</g>`;
   }
 
-  function cmdLegendHtml(on) {
+  function cmdLegendHtml(on, planView) {
     const o = on || {};
     return '<span><i class="tank"></i>Tank</span><span><i class="healer"></i>Healer</span><span><i class="dps"></i>DPS</span>'
       + '<span><i class="lead"></i>Lead</span><span><i class="dead"></i>Dead</span>'
@@ -5495,6 +5496,9 @@
       + (o.membertrails ? '<span><i class="mtrail"></i>Group paths</span>' : '')
       + (o.trail || o.membertrails ? '<span class="lic">teleport / summon <svg viewBox="-6 -6 12 12" class="ic-swirl">' + CMD_MAP_ICONS.swirl + '</svg></span><span class="lic">died <svg viewBox="-6 -6 12 12" class="ic-skull">' + CMD_MAP_ICONS.skull + '</svg></span>' : '')
       + (o.runsteps ? '<span><i class="route"></i>Run route</span><span><i class="lstep"></i>Pull / boss step</span>' : '')
+      + (o.planroute || o.planstands ? '<span><i class="plan"></i>Plan route, stands and packs</span>' : '')
+      + (o.planrings ? '<span><i class="ring wake"></i>Aggro and wake rings</span>' : '')
+      + (planView && !planView.numbering ? '<span>Plan rows differ from the plan the server loaded</span>' : '')
       + (o.stalls ? '<span class="lic">stalled / refused <svg viewBox="-6 -6 12 12" class="ic-x"><path d="M-3.4 -3.4L3.4 3.4M3.4 -3.4L-3.4 3.4"/></svg></span>' : '')
       + (o.objects ? '<span class="lic">door <svg viewBox="-6 -6 12 12" class="ic-door">' + CMD_MAP_ICONS.door + '</svg></span><span class="lic">chest <svg viewBox="-6 -6 12 12" class="ic-chest">' + CMD_MAP_ICONS.chest + '</svg></span>'
         + '<span class="lic">lever <svg viewBox="-6 -6 12 12" class="ic-lever">' + CMD_MAP_ICONS.lever + '</svg></span><span class="lic">altar / gong <svg viewBox="-6 -6 12 12" class="ic-gong">' + CMD_MAP_ICONS.gong + '</svg></span>' : '')
@@ -5506,6 +5510,9 @@
       + (o.mobneutral ? '<span><i class="mobn"></i>Neutral</span>' : '')
       + (o.mobcritter ? '<span><i class="mobc"></i>Critter</span>' : '')
       + (o.threat ? '<span><i class="lthreat"></i>Mob on</span>' : '')
+      + (o.threat ? '<span><i class="nontank"></i>Mob on a non-tank</span>' : '')
+      + (o.healtank ? '<span><i class="healtank"></i>Healer → tank (layout)</span>' : '')
+      + (o.subgroups ? '<span>Colour = subgroup</span>' : '')
       + (o.bottarget ? '<span><i class="ltarget"></i>Bot target</span>' : '')
       + (o.commander ? '<span><i class="cmdr"></i>Commander</span>' : '')
       + (o.aggro ? '<span><i class="aggro"></i>Aggro range (by level)</span>' : '')
@@ -5633,10 +5640,10 @@
     return g;
   }
 
-  function cmdMemberTrailsSvg(c, bind, mapId) {
+  function cmdMemberTrailsSvg(c, bind, mapId, nowSec) {
     let g = '';
     CmdPaths.memberTrails(cmdTrails, bind, mapId, cmdLayers.trailLen).forEach(m => {
-      g += cmdTrailSvg(c, 'memberpaths', `mtrail ${CmdView.roleKey(m.bot)}`, m.pts, 0.75, 2);
+      g += cmdTrailSvg(c, 'memberpaths', `mtrail ${CmdView.roleKey(m.bot)}`, CmdPaths.cutByAge(m.pts, nowSec, cmdLayers.trailSec), 0.75, 2);
     });
     return g;
   }
@@ -5724,6 +5731,117 @@
     return g;
   }
 
+  // ---- the plan layer: the run leader's plan (read from the world database by the daemon) on the map ----
+
+  const CMD_PLAN_RETRY_MS = 60000; // a plan that failed or does not exist is asked for again only after this long
+
+  // The plan a card asks for: in the fight debugger with a finished fight selected, that fight's plan (once its detail is loaded);
+  // otherwise the plan the run is walking.
+  function cmdPlanName(bind) {
+    const fd = cmdFd[bind.commander];
+    const det = fd && fd.mode === 'debug' && fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+    if (det && det.fight) return det.fight.plan || '';
+    return bind.run && bind.run.plan ? bind.run.plan : '';
+  }
+
+  // The plan behind a name, kept once fetched: a plan stays for the page's life (the daemon caches it for 10 min), a miss or a
+  // failure is asked for again after a minute. Starts one fetch at a time per name; null while there is nothing to draw yet.
+  function cmdPlanGet(name) {
+    const cached = cmdPlans[name] || (cmdPlans[name] = { plan: null, err: '', at: 0, loading: false });
+    if (cached.plan) return cached.plan;
+    if (cached.loading || (cached.at && cached.err && Date.now() - cached.at < CMD_PLAN_RETRY_MS)) return null;
+    cached.loading = true;
+    fetch('/api/v1/plans/' + encodeURIComponent(name), { credentials: 'same-origin' }).then(r => {
+      if (r.status === 404) { cached.err = 'No plan named ' + name + ' in the world database'; return null; }
+      if (!r.ok) { cached.err = 'The plan is not available (world database)'; return null; }
+      return r.json();
+    }).then(plan => {
+      if (plan) { cached.plan = plan; cached.err = ''; }
+    }).catch(() => { cached.err = 'The plan is not available (world database)'; }).then(() => {
+      cached.loading = false;
+      cached.at = Date.now();
+      cmdCards.forEach((_, k) => drawCmdMap(k));
+    });
+    return null;
+  }
+
+  // What a card's map can draw of the plan: its view, or the reason the plan layers are greyed. The current step is the selected
+  // finished fight's step in the debugger, else the run's; the fight's own step marks the pack it fought.
+  function cmdPlanFacts(bind, first) {
+    if (!first) return { view: null, why: 'No bots on a map' };
+    const name = cmdPlanName(bind);
+    if (!name) return { view: null, why: 'No plan: start a run (.bot run) or pick a fight of a run' };
+    const plan = cmdPlanGet(name);
+    const cached = cmdPlans[name] || {};
+    if (!plan) return { view: null, why: cached.err || 'Loading the plan…' };
+    if (plan.map !== first.map) return { view: null, why: 'The plan is for another map' };
+    const fd = cmdFd[bind.commander];
+    const det = fd && fd.mode === 'debug' && fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+    // a fight of another plan than the one drawn cannot say which step of it the run is on
+    const fight = det && det.fight && det.fight.plan === name ? det.fight : null;
+    const cur = fight && fight.step ? fight.step : (bind.run && bind.run.step) || 0;
+    const fightStep = fight ? fight.step || 0 : 0;
+    return { view: PlanOverlay.view(plan, { mapId: first.map, cur, fightStep, partyLevel: PlanOverlay.partyLevel(bind), run: bind.run }), why: '' };
+  }
+
+  // The plan on a card's picture: the aggro and scripted-wake rings, the route (done dimmed, ahead bright) and the steps (the stands,
+  // the pack and boss circles, the mobs' spawn dots, the fight's pack, a stray mark), each part only under its own layer.
+  // c is the drawing context of drawCmdMap (f, k, units); view comes from PlanOverlay.view.
+  function cmdPlanSvg(c, view, on) {
+    if (!view) return '';
+    const k = c.k;
+    let g = '';
+    const strayOf = {};
+    view.strays.forEach(s => { if (!strayOf[s.i]) strayOf[s.i] = s; });
+    if (on.planrings) {
+      view.rings.forEach(r => {
+        const p = CmdView.project(r.x, r.y);
+        const text = r.wake ? PlanOverlay.wakeText(r.r) : 'aggro about ' + Math.round(r.r) + ' yd';
+        g += `<circle class="plan-ring ${r.wake ? 'wake' : 'aggro'} s-${r.state}${r.patrol ? ' patrol' : ''}" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(r.r)}">`
+          + `<title>${esc(r.name)} (step ${r.step}): ${text}${r.patrol ? ', patrols (drawn at its spawn)' : ''}</title></circle>`;
+      });
+    }
+    if (on.planroute) {
+      view.route.forEach(seg => {
+        g += `<polyline class="plan-route ${seg.done ? 'done' : 'ahead'}" points="${seg.points.map(p => cmdPt(c, p.x, p.y)).join(' ')}"/>`;
+      });
+    }
+    if (!on.planroute && !on.planstands) return g;
+    if (on.planstands) {
+      view.mobs.forEach(m => {
+        const p = CmdView.project(m.x, m.y);
+        g += `<circle class="plan-mob s-${m.state}${m.patrol ? ' patrol' : ''}${m.boss ? ' boss' : ''}" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(3.2 * k)}"/>`;
+      });
+    }
+    view.steps.forEach(s => {
+      const p = CmdView.project(s.x, s.y), uid = 'p:' + s.i;
+      let body = '';
+      if (on.planstands && s.pack) {
+        body += `<circle class="plan-pack" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f((s.k === 'boss' ? 11 : 9) * k)}"/>`
+          + `<text class="plan-num" x="${c.f(p.x)}" y="${c.f(p.y + 3.6 * k)}" style="font-size:${c.f((s.i > 99 ? 8.5 : 10) * k)}px">${s.i}</text>`;
+        if (s.k === 'boss') body += cmdMapIcon('crown', p.x, p.y - 17 * k, 12 * k);
+      } else if (on.planstands && s.stand) {
+        const d = 3.5 * k;
+        body += `<rect class="plan-stand" x="${c.f(p.x - d)}" y="${c.f(p.y - d)}" width="${c.f(2 * d)}" height="${c.f(2 * d)}"/>`;
+      } else if (on.planroute) {
+        body += `<circle class="plan-move" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(2.4 * k)}"/>`;
+      }
+      if (!body) return;
+      c.units[uid] = { kind: 's', obj: { i: s.i, k: s.k, x: s.x, y: s.y, r: s.r, n: s.n, state: s.state === 'done' ? 'cleared' : s.state === 'cur' ? 'next' : 'todo' } };
+      let tips = '';
+      const stray = strayOf[s.i];
+      if (stray) tips += `<title>Step ${stray.i} is inside the ring of ${esc(stray.name)} (pack ${stray.pack}): ${stray.dist.toFixed(1)} yd, ring ${Math.round(stray.ring)} yd</title>`;
+      if (on.planstands && s.stand && s.margin) {
+        const m = s.margin;
+        tips += `<title>${m.dist.toFixed(1)} yd from ${esc(m.name)}, ${m.wake ? 'wake' : 'aggro'} ~${Math.round(m.ring)} yd:`
+          + ` ${m.margin >= 0 ? 'outside by' : 'inside by'} ${Math.abs(m.margin).toFixed(1)} yd</title>`;
+      }
+      g += `<g class="plan-step k-${esc(s.k)} s-${s.state}${s.stand ? ' stand' : ''}${s.fight ? ' plan-fight' : ''}${s.stray ? ' plan-stray' : ''}" data-u="${esc(uid)}">`
+        + `<circle class="hit" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(12 * k)}"/>${tips}${body}</g>`;
+    });
+    return g;
+  }
+
   function drawCmdMap(key) {
     const card = cmdCards.get(key);
     const bind = cmdFindBind(key);
@@ -5733,6 +5851,15 @@
     if (!pw || !ph) return; // the tab is hidden
     const ms = cmdMaps[key] || (cmdMaps[key] = { follow: true, view: null, userScale: null, pic: '' });
     const facts = cmdMapFacts(bind);
+    const pf = cmdPlanFacts(bind, facts.first);
+    facts.ctx.plan = !!pf.view;
+    facts.ctx.planWhy = pf.why;
+    // the other data the raid layers draw from: subgroups of this map's party, the layout's healer->tank pairs, the selected fight's deaths
+    const fdCtx = cmdFd[key];
+    const fdFight = fdCtx && fdCtx.mode === 'debug' && fdCtx.sel && fdCtx.sel !== 'live' ? (fdCtx.details[fdCtx.sel] || {}).fight || null : null;
+    facts.ctx.subgroups = facts.onMap.some(b => typeof b.sub === 'number');
+    facts.ctx.layoutHealers = !!(bind.layout && Array.isArray(bind.layout.th) && bind.layout.th.length);
+    facts.ctx.fightDeaths = !!(fdFight && Array.isArray(fdFight.deaths) && fdFight.deaths.length);
     const { lead, first, onMap, slots, trail, heading, zr, mobs, mobsTotal, commanderAt, steps, stalls, objs } = facts;
     const avail = MapLayers.availability(facts.ctx);
     cmdAvail[key] = avail;
@@ -5799,11 +5926,13 @@
     // units: every thing that can be hovered gets a key; the hover box looks it up here, so it follows the 2 s refresh.
     const units = ms.units = {};
     const dc = { f, k, units };
+    if (pf.view && (on.planroute || on.planstands || on.planrings)) g += cmdPlanSvg(dc, pf.view, on);
     if (on.runsteps) g += cmdRunStepsSvg(dc, steps, lead && first && lead.map === first.map ? lead : null);
-    if (on.membertrails && first) g += cmdMemberTrailsSvg(dc, bind, first.map);
-    if (on.trail && trail.length >= 2) g += cmdTrailSvg(dc, 'leadpath', 'trail', trail.slice(-cmdLayers.trailLen), 1, 3);
+    const nowSec = cmdNowFor(bind), trailDrawn = CmdPaths.cutByAge(trail, nowSec, cmdLayers.trailSec);
+    if (on.membertrails && first) g += cmdMemberTrailsSvg(dc, bind, first.map, nowSec);
+    if (on.trail && trailDrawn.length >= 2) g += cmdTrailSvg(dc, 'leadpath', 'trail', trailDrawn.slice(-cmdLayers.trailLen), 1, 3);
     if (on.trailtime) {
-      CmdView.trailStamps(trail, v.scale, 70, 8).forEach(s => {
+      CmdView.trailStamps(trailDrawn, v.scale, 70, 8).forEach(s => {
         g += `<g class="stamp"><circle cx="${f(s.x)}" cy="${f(s.y)}" r="${f(3 * k)}"/>`
           + `<text x="${f(s.x + 6 * k)}" y="${f(s.y - 5 * k)}" style="font-size:${f(10 * k)}px;stroke-width:${f(3 * k)}px">${esc(cmdClock(s.t))}</text></g>`;
       });
@@ -5825,9 +5954,9 @@
       });
     }
     if (on.threat) {
-      CmdView.threatLines(shown, onMap).forEach(l => {
+      CmdView.threatLines(shown, onMap, bind.layout).forEach(l => {
         const a = CmdView.project(l.mob.x, l.mob.y), b = CmdView.project(l.bot.x, l.bot.y);
-        g += `<line class="threat" style="${cmdLineStyle('threat', 1.5, 0.85)}" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"/>`;
+        g += `<line class="threat${l.nonTank ? ' nontank' : ''}" style="${cmdLineStyle('threat', 1.5, 0.85)}" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"/>`;
       });
     }
     g += cmdCombatLinesSvg(dc, on, onMap, mobs);
@@ -5887,20 +6016,32 @@
     const fd = cmdFd[key];
     if (fd && fd.mode === 'debug' && first && typeof FightDebug !== 'undefined') {
       const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
-      if (det && det.fight && det.fight.map === first.map) g += cmdFightMarksSvg(dc, FightDebug.deathRecaps(det.fight), fd.death);
+      if (det && det.fight && det.fight.map === first.map && on.deaths) g += cmdFightMarksSvg(dc, FightDebug.deathRecaps(det.fight), fd.death);
+    }
+    // healer -> tank lines from the raid layout, under the party (an out-of-range or dead pair keeps its own look)
+    if (on.healtank) {
+      CmdPaths.layoutHealLines(bind, onMap).forEach(l => {
+        const a = CmdView.project(l.from.x, l.from.y), b2 = CmdView.project(l.to.x, l.to.y);
+        const tip = `${l.healer} → ${l.tank}: ${l.dist.toFixed(1)} yd${l.far ? ', out of range' : ''}`;
+        g += `<line class="healtank${l.far ? ' far' : ''}${l.dead ? ' dead' : ''}" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b2.x)}" y2="${f(b2.y)}"><title>${esc(tip)}</title></line>`;
+      });
     }
     const fdSelBot = fd && fd.mode === 'debug' ? fd.bot : null;
+    const layoutNamed = (bind.layout ? [bind.layout.mt].concat(bind.layout.ot || []) : []).filter(Boolean);
     // dead first so a live bot is drawn over them
     onMap.slice().sort((a, b) => (a.alive === false ? 0 : 1) - (b.alive === false ? 0 : 1)).forEach(b => {
       const p = CmdView.project(b.x, b.y), role = CmdView.roleKey(b), isLead = b === lead && on.lead, uid = 'b:' + (b.guid || b.name);
       const isFd = fdSelBot && b.name === fdSelBot;
+      const sg = on.subgroups && typeof b.sub === 'number' && b.sub >= 0 && b.sub <= 7 ? ' sg sg-' + b.sub : '';
+      // names off: the lead, the layout's tanks and the debugger's bot keep theirs
+      const named = on.botnames || isLead || isFd || layoutNamed.indexOf(b.name) >= 0;
       units[uid] = { kind: 'b', obj: b };
-      g += `<g class="bot ${role}${b.player ? ' player' : ''}${isFd ? ' fdsel' : ''}" data-u="${esc(uid)}"${CmdView.botHref(b.guid) ? ` data-guid="${esc(b.guid)}"` : ''}><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(12 * k)}"/>`
+      g += `<g class="bot ${role}${b.player ? ' player' : ''}${isFd ? ' fdsel' : ''}${sg}" data-u="${esc(uid)}"${CmdView.botHref(b.guid) ? ` data-guid="${esc(b.guid)}"` : ''}><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(12 * k)}"/>`
         + (isFd ? `<circle class="fdring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(14 * k)}"/>` : '')
         + (isLead ? `<circle class="leadring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(11 * k)}"/>` : '')
         + (on.bots ? `<circle class="dot" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(6 * k)}"/>` : '')
         + (on.bots ? overlay(b, 'bot', p, (isLead ? 11 : 6) * k) : '')
-        + (on.botnames ? `<text x="${f(p.x + 10 * k)}" y="${f(p.y + 4 * k)}" style="font-size:${f(11.5 * k)}px;stroke-width:${f(3 * k)}px">${isLead ? '★ ' : ''}${esc(b.name)}</text>` : '')
+        + (named ? `<text x="${f(p.x + 10 * k)}" y="${f(p.y + 4 * k)}" style="font-size:${f(11.5 * k)}px;stroke-width:${f(3 * k)}px">${isLead ? '★ ' : ''}${esc(b.name)}</text>` : '')
         + '</g>';
     });
     svg.setAttribute('viewBox', box.map(f).join(' '));
@@ -5918,7 +6059,7 @@
       sc.querySelector('i').style.width = sb.px.toFixed(0) + 'px';
       sc.querySelector('span').textContent = sb.yd >= 1000 ? (sb.yd / 1000) + ' km' : sb.yd + ' yd';
     }
-    setHtml(card.querySelector('.cmd-legend'), cmdLegendHtml(on));
+    setHtml(card.querySelector('.cmd-legend'), cmdLegendHtml(on, pf.view));
     const fb = card.querySelector('[data-act="follow"]');
     fb.setAttribute('aria-pressed', ms.follow ? 'true' : 'false');
     fb.classList.toggle('on', ms.follow);
@@ -6077,6 +6218,7 @@
     card.querySelector('.cmd-maptools').addEventListener('click', e => {
       const btn = e.target.closest('button[data-act]');
       if (!btn) return;
+      if (btn.dataset.act === 'layers') { openCmdLayers(); return; }
       const m = ms(), [pw, ph] = size();
       if (btn.dataset.act === 'follow') {
         m.follow = !m.follow;
@@ -6123,6 +6265,7 @@
             <svg class="cmd-map" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet"><g class="pic"></g><g class="dyn"></g></svg>
             <div class="cmd-maptools">
               <select class="cmd-pic" hidden title="Which picture of this map to draw under the party" aria-label="Map picture"></select>
+              <button type="button" data-act="layers" title="Which things the map draws (the one Maps layer panel)">Layers</button>
               <button type="button" data-act="in" title="Zoom in" aria-label="Zoom in">+</button>
               <button type="button" data-act="out" title="Zoom out" aria-label="Zoom out">&minus;</button>
               <button type="button" data-act="follow" class="follow" title="Keep the party in view">Follow</button>
@@ -6925,10 +7068,42 @@
   const cmdLayerRows = {}; // layer key -> {box, row, why}
   let cmdDimRow = null;    // the dim slider's {row, box, val}
   let cmdTrailRow = null;  // the path-length slider's {row, box, val}
+  let cmdTrailSecRow = null; // the path time cut's {row, box}
+
+  // The map's Layers button: opens the one layer panel (a <details>), brings it into view and puts the keyboard on its presets.
+  function openCmdLayers() {
+    const box = document.getElementById('cmd-layers');
+    if (!box) return;
+    if (box.tagName === 'DETAILS') box.open = true;
+    if (box.scrollIntoView) box.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    const first = box.querySelector('.cmd-presets button');
+    if (first) first.focus();
+  }
 
   function initCmdLayers() {
     const body = document.getElementById('cmd-layers-body');
     if (!body || body.childElementCount) return;
+    // The raid presets first: one click sets the raid's layers for the job at hand; the chosen one is pressed.
+    const presets = document.createElement('div');
+    presets.className = 'cmd-presets';
+    presets.setAttribute('role', 'group');
+    presets.setAttribute('aria-label', 'Layer presets');
+    MapLayers.PRESETS.forEach((p, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.dataset.preset = p.name;
+      btn.textContent = MapLayers.PRESET_LABELS[i] || p.name;
+      btn.setAttribute('aria-pressed', 'false');
+      btn.title = 'Turn the raid layers to ' + (MapLayers.PRESET_LABELS[i] || p.name) + (typeof p.trailSec === 'number' ? ' (paths cut to the last ' + p.trailSec + ' s)' : '');
+      btn.addEventListener('click', () => {
+        cmdLayers = MapLayers.applyPreset(cmdLayers, p.name);
+        MapLayers.save(cmdLayerStore, cmdLayers);
+        cmdCards.forEach((_, k) => drawCmdMap(k));
+        paintCmdLayers();
+      });
+      presets.appendChild(btn);
+    });
+    body.appendChild(presets);
     const dimRow = document.createElement('label');
     dimRow.className = 'cmd-dim';
     dimRow.innerHTML = '<span>Dim the map picture</span><input type="range" min="0" max="' + MapLayers.DIM_MAX + '" step="5" aria-label="Dim the map picture"><b></b>';
@@ -6953,6 +7128,20 @@
     });
     body.appendChild(lenRow);
     cmdTrailRow = { row: lenRow, box: lenBox, val: lenVal };
+    // The time cut of the paths: the whole path, or only its newest seconds (a long walk keeps the last minutes readable).
+    const secRow = document.createElement('label');
+    secRow.className = 'cmd-dim';
+    secRow.innerHTML = '<span>Path time cut</span><select data-trailsec aria-label="Path time cut">'
+      + '<option value="0">All</option><option value="30">30 s</option><option value="60">60 s</option><option value="120">120 s</option></select>';
+    const secBox = secRow.querySelector('select');
+    secBox.addEventListener('change', () => {
+      cmdLayers = MapLayers.setTrailSec(cmdLayers, secBox.value);
+      MapLayers.save(cmdLayerStore, cmdLayers);
+      cmdCards.forEach((_, k) => drawCmdMap(k));
+      paintCmdLayers();
+    });
+    body.appendChild(secRow);
+    cmdTrailSecRow = { row: secRow, box: secBox };
     MapLayers.groups().forEach(group => {
       const wrap = document.createElement('div');
       wrap.className = 'cmd-lgroup';
@@ -7030,6 +7219,16 @@
       cmdTrailRow.box.disabled = !any;
       cmdTrailRow.row.classList.toggle('off', !any);
     }
+    if (cmdTrailSecRow) {
+      const any = avail.leadpath.ok || avail.memberpaths.ok;
+      cmdTrailSecRow.box.value = String(cmdLayers.trailSec);
+      cmdTrailSecRow.box.disabled = !any;
+      cmdTrailSecRow.row.classList.toggle('off', !any);
+    }
+    const chosen = MapLayers.presetOf(cmdLayers);
+    document.querySelectorAll('#cmd-layers-body [data-preset]').forEach(btn => {
+      btn.setAttribute('aria-pressed', btn.dataset.preset === chosen ? 'true' : 'false');
+    });
     MapLayers.DEFS.forEach(d => {
       const r = cmdLayerRows[d.key];
       if (!r) return;
