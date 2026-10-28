@@ -286,9 +286,7 @@ static void TestWindowPrune()
     CHECK(p.size() == 1);
     CHECK(Count(p[0], "\"t_ms\":") == 200);
     CHECK(Contains(p[0], "\"dropped\":100"));
-
 }
-
 
 static void TestBudget()
 {
@@ -345,6 +343,73 @@ static void TestTruncatedPayload()
     CHECK(Contains(p[0], "\"id\":\"55-7\""));
 }
 
+static void TestEngagedCapCountsGuids()
+{
+    // The 500 cap counts distinct guids over all entries: 700 guids of one entry
+    // keep 500 and drop 200, and repeated hits on a dropped guid count once.
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, BossCtx(), 4);
+    for (int round = 0; round < 2; ++round)
+        for (uint32_t g = 0; g < 700; ++g)
+            b.OnDamage(3, 0, 1, "Magey", 11502, (uint64_t)(90000 + g), "Lava Spawn", 1500);
+    b.OnDamage(3, 0, 1, "Magey", 12000, 99999999, "Other", 1600);
+    b.SetInCombat(true, false, 1000);
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "{\"e\":11502,\"n\":\"Lava Spawn\",\"c\":500}"));
+    CHECK(!Contains(p[0], "\"e\":12000"));
+    CHECK(Contains(p[0], "\"dropped\":201"));
+}
+
+static void TestOversizeFightOneSeqPerTake()
+{
+    // Every text and row far past the budget, even the old truncated form
+    // (names kept whole) would not fit: the bounded form goes out, one seq per
+    // queued payload, twice, then the fight is gone.
+    Book b;
+    std::vector<MemberInfo> m;
+    for (uint32_t i = 0; i < 200; ++i)
+        m.push_back({i + 1, std::string(3000, '\x01'), std::string(3000, '\x02'), Role::Damage, 0});
+    b.SetMembers(m);
+    FightContext ctx = BossCtx();
+    ctx.plan = std::string(20000, '\x03');
+    ctx.leg = std::string(20000, '"');
+    ctx.kind = std::string(20000, '\\');
+    ctx.bossName = std::string(20000, '\n');
+    ctx.planned.assign(20000, 4000000000u);
+    b.Start(0, 1700000000, ctx, 8);
+    b.SetInCombat(true, false, 1000);
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    std::string const commander(30000, '\x04');
+    Seq seq;
+    std::vector<std::string> dropped;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, commander, 123, 55, 409, &dropped);
+    CHECK(p.size() == 1);
+    CHECK(seq.calls == 1);
+    CHECK(dropped.empty());
+    CHECK(p[0].size() <= kPayloadByteBudget);
+    CHECK(Contains(p[0], "\"seq\":1,"));
+    CHECK(Contains(p[0], "\"truncated\":true"));
+    CHECK(Count(p[0], "\"guid\":") == kTruncatedBots);
+    CHECK(b.HasTakeablePayloads());
+    p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009001, commander, 123, 55, 409, &dropped);
+    CHECK(p.size() == 1);
+    CHECK(seq.calls == 2);
+    CHECK(Contains(p[0], "\"seq\":2,"));
+    CHECK(!b.HasTakeablePayloads());
+    CHECK(b.TakeFightPayloads(1, 9, seq.fn(), 1700009002, commander, 123, 55, 409, &dropped).empty());
+    CHECK(seq.calls == 2);
+    // A bounded text is cut on a character boundary: a 2-byte character
+    // straddling the cut is left out whole.
+    CHECK(BoundedJson(std::string(47, 'a') + "\xc3\xa9", 48) == std::string(47, 'a'));
+    CHECK(BoundedJson("ab", 48) == "ab");
+}
+
 static void TestMonitorOffIsInert()
 {
     Book b;
@@ -377,6 +442,8 @@ int main()
     TestWindowPrune();
     TestBudget();
     TestTruncatedPayload();
+    TestEngagedCapCountsGuids();
+    TestOversizeFightOneSeqPerTake();
     TestMonitorOffIsInert();
     std::printf("combat monitor policy: %d checks passed\n", checks);
     return 0;

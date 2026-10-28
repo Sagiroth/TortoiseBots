@@ -22,11 +22,20 @@ constexpr uint32_t kMinFightMs = 5000;        // shorter fights are dropped
 constexpr uint32_t kOutOfCombatEndMs = 3000;  // a fight ends this long after the last member left combat
 constexpr uint32_t kWindowMs = 10000;         // the rolling window
 constexpr uint32_t kMaxDeathsPerFight = 200;  // death recaps kept per fight, oldest dropped past it
-constexpr uint32_t kMaxEngagedPerFight = 500; // engaged creatures tracked per fight, counted past it as dropped
+constexpr uint32_t kMaxEngagedPerFight = 500; // distinct engaged creature guids tracked per fight (all entries together)
+constexpr size_t kMaxDroppedTracked = 4096;   // distinct guids past that cap counted as dropped; the count stops here
 constexpr size_t kLastHits = 5;               // death recap
 constexpr size_t kMaxSpellsPerBot = 12;
 constexpr size_t kMaxFightsKept = 5;          // finished fights waiting to be sent, per book
 constexpr size_t kPayloadByteBudget = 60000;
+// The truncated (last-resort) payload bounds every variable-length field, so its
+// size has a fixed ceiling well under the budget: about 2.5 KB of header (five
+// texts of 48 bytes, 64 planned entries) plus about 0.5 KB per bot row (names and
+// classes of 24 bytes, no spells), 40 rows at most.
+constexpr size_t kTruncatedTextBytes = 48;    // commander, plan, leg, kind, boss name (raw bytes before escaping)
+constexpr size_t kTruncatedNameBytes = 24;    // a bot's name and class
+constexpr size_t kTruncatedPlanned = 64;      // planned entries
+constexpr size_t kTruncatedBots = 40;         // bot rows
 
 // Spell names always listed when cast (the daemon's rules read them).
 inline bool AlwaysListed(std::string const& spell)
@@ -170,6 +179,17 @@ inline std::string JsonEscape(std::string const& s)
     return out;
 }
 
+// At most maxRaw bytes of s, cut on a UTF-8 character boundary, then escaped.
+inline std::string BoundedJson(std::string const& s, size_t maxRaw)
+{
+    if (s.size() <= maxRaw)
+        return JsonEscape(s);
+    size_t cut = maxRaw;
+    while (cut > 0 && (static_cast<unsigned char>(s[cut]) & 0xC0) == 0x80)
+        --cut;
+    return JsonEscape(s.substr(0, cut));
+}
+
 inline std::string F1(float v)
 {
     char buf[32];
@@ -267,6 +287,8 @@ public:
         outOfCombat_ = false;
         outOfCombatSince_ = 0;
         engaged_.clear();
+        engagedGuids_ = 0;
+        droppedGuids_.clear();
         engagedDropped_ = 0;
         debuffUp_.clear();
         debuffSampled_ = 0;
@@ -413,32 +435,43 @@ public:
     }
 
     // Ended fights not yet taken, oldest first; each fight is handed out twice, then dropped.
-    // nextSeq runs once per payload, only when a payload goes out. Every queued payload fits the budget.
+    // Each fight is built at seq 0 and shrunk until it fits the budget (fewer spells,
+    // fewer recap hits, then the truncated form with every field bounded, then the
+    // truncated form without bot rows); only a payload that is queued takes a seq
+    // (nextSeq runs once per queued payload) and advances the fight's takes. A fight
+    // that fits in no form is dropped (takes = 2) and its id goes to oversizeDropped.
     std::vector<std::string> TakeFightPayloads(int protocolVersion, uint64_t session,
                                                std::function<uint64_t()> const& nextSeq, int64_t ts,
                                                std::string const& commander, uint32_t commanderGuid,
-                                               uint32_t groupId, uint32_t mapId)
+                                               uint32_t groupId, uint32_t mapId,
+                                               std::vector<std::string>* oversizeDropped = nullptr)
     {
         std::vector<std::string> out;
         for (auto& f : finished_)
         {
             if (f.takes >= 2)
                 continue;
-            uint64_t const seqNum = nextSeq();
-            std::string js = BuildFightJson(f, protocolVersion, session, seqNum, ts, commander, commanderGuid,
-                                            groupId, mapId, kMaxSpellsPerBot, kLastHits, false);
+            auto build = [&](size_t maxSpells, size_t maxHits, bool truncated, size_t maxBots) {
+                return BuildFightJson(f, protocolVersion, session, 0, ts, commander, commanderGuid, groupId, mapId,
+                                      maxSpells, maxHits, truncated, maxBots);
+            };
+            std::string js = build(kMaxSpellsPerBot, kLastHits, false, f.bots.size());
             if (js.size() > kPayloadByteBudget)
-                js = Resequenced(BuildFightJson(f, protocolVersion, session, 0, ts, commander, commanderGuid, groupId,
-                    mapId, 3, kLastHits, false), seqNum);
+                js = build(3, kLastHits, false, f.bots.size());
             if (js.size() > kPayloadByteBudget)
-                js = Resequenced(BuildFightJson(f, protocolVersion, session, 0, ts, commander, commanderGuid, groupId,
-                    mapId, 3, 2, false), seqNum);
+                js = build(3, 2, false, f.bots.size());
             if (js.size() > kPayloadByteBudget)
-                js = Resequenced(BuildFightJson(f, protocolVersion, session, 0, ts, commander, commanderGuid, groupId,
-                    mapId, 0, 0, true), seqNum);
+                js = build(0, 0, true, kTruncatedBots);
             if (js.size() > kPayloadByteBudget)
-                continue;   // no runaway payload crosses the wire
-            out.push_back(js);
+                js = build(0, 0, true, 0);
+            if (js.size() > kPayloadByteBudget)
+            {
+                f.takes = 2;   // no runaway payload crosses the wire, and no seq is spent on it
+                if (oversizeDropped)
+                    oversizeDropped->push_back(std::to_string(groupId) + "-" + std::to_string(f.number));
+                continue;
+            }
+            out.push_back(Resequenced(std::move(js), nextSeq()));
             ++f.takes;
         }
         for (auto it = finished_.begin(); it != finished_.end();)
@@ -547,7 +580,7 @@ private:
         Outcome outcome = Outcome::End;
         FightContext ctx;
         std::vector<EngagedEntry> engaged;
-        uint64_t dropped = 0;   // engaged creatures past the cap
+        uint64_t dropped = 0;   // distinct engaged creature guids past the cap
         std::vector<MemberState> bots;
         uint64_t sampled = 0;
         std::map<std::string, uint64_t> up;
@@ -555,7 +588,7 @@ private:
         uint32_t takes = 0;
     };
 
-    static std::string Resequenced(std::string js, uint64_t seqNum)   // one NextSeq() per payload: rebuilds stamp seq 0
+    static std::string Resequenced(std::string js, uint64_t seqNum)   // stamps the queued payload's seq over the built 0
     {
         std::string const tag = "\"seq\":";
         std::string::size_type pos = js.find(tag);
@@ -572,19 +605,26 @@ private:
     static std::string BuildFightJson(FinishedFight const& f, int protocolVersion, uint64_t session,
                                       uint64_t seqNum, int64_t ts, std::string const& commander,
                                       uint32_t commanderGuid, uint32_t groupId, uint32_t mapId,
-                                      size_t maxSpells, size_t maxHits, bool truncated)
+                                      size_t maxSpells, size_t maxHits, bool truncated, size_t maxBots)
     {
+        // truncated: every variable-length text is bounded and only the first maxBots bot rows go out
+        auto text = [truncated](std::string const& v, size_t maxRaw) {
+            return truncated ? BoundedJson(v, maxRaw) : JsonEscape(v);
+        };
         std::ostringstream ss;
         ss << "{\"v\":" << protocolVersion << ",\"session\":" << session << ",\"seq\":" << seqNum
            << ",\"ts\":" << ts << ",\"type\":\"COMBAT_FIGHT\",\"fight\":{";
-        ss << "\"id\":\"" << groupId << "-" << f.number << "\",\"commander\":\"" << JsonEscape(commander)
+        ss << "\"id\":\"" << groupId << "-" << f.number << "\",\"commander\":\""
+           << text(commander, kTruncatedTextBytes)
            << "\",\"commander_guid\":" << commanderGuid << ",\"group\":" << groupId << ",\"map\":" << mapId
-           << ",\"plan\":\"" << JsonEscape(f.ctx.plan) << "\",\"leg\":\"" << JsonEscape(f.ctx.leg)
-           << "\",\"step\":" << f.ctx.step << ",\"kind\":\"" << JsonEscape(f.ctx.kind)
+           << ",\"plan\":\"" << text(f.ctx.plan, kTruncatedTextBytes) << "\",\"leg\":\""
+           << text(f.ctx.leg, kTruncatedTextBytes)
+           << "\",\"step\":" << f.ctx.step << ",\"kind\":\"" << text(f.ctx.kind, kTruncatedTextBytes)
            << "\",\"start\":" << f.startUnix << ",\"dur_ms\":" << f.durMs << ",\"outcome\":\""
            << OutcomeName(f.outcome) << "\",\"boss\":" << f.ctx.bossEntry << ",\"boss_name\":\""
-           << JsonEscape(f.ctx.bossName) << "\",\"planned\":[";
-        for (size_t i = 0; i < f.ctx.planned.size(); ++i)
+           << text(f.ctx.bossName, kTruncatedTextBytes) << "\",\"planned\":[";
+        size_t const planned = truncated ? std::min(f.ctx.planned.size(), kTruncatedPlanned) : f.ctx.planned.size();
+        for (size_t i = 0; i < planned; ++i)
             ss << (i ? "," : "") << f.ctx.planned[i];
         ss << "],\"engaged\":[";
         if (!truncated)
@@ -596,13 +636,13 @@ private:
                    << "\",\"c\":" << f.engaged[i].guids << "}";
             }
         ss << "],\"dropped\":" << f.dropped << ",\"bots\":[";
-        for (size_t i = 0; i < f.bots.size(); ++i)
+        for (size_t i = 0; i < f.bots.size() && i < maxBots; ++i)
         {
             MemberState const& m = f.bots[i];
             if (i)
                 ss << ",";
-            ss << "{\"name\":\"" << JsonEscape(m.info.name) << "\",\"guid\":" << m.info.guid << ",\"class\":\""
-               << JsonEscape(m.info.cls) << "\",\"role\":\"" << RoleName(m.info.role)
+            ss << "{\"name\":\"" << text(m.info.name, kTruncatedNameBytes) << "\",\"guid\":" << m.info.guid
+               << ",\"class\":\"" << text(m.info.cls, kTruncatedNameBytes) << "\",\"role\":\"" << RoleName(m.info.role)
                << "\",\"sub\":" << m.info.subgroup << ",\"dmg\":" << m.totals.damage
                << ",\"heal\":" << m.totals.healing << ",\"over\":" << m.totals.overheal
                << ",\"taken\":" << m.totals.taken << ",\"casts\":" << m.totals.casts
@@ -660,22 +700,20 @@ private:
         if (guid == 0)
             return;
         auto it = engaged_.find(entry);
-        if (it != engaged_.end())
+        if (it != engaged_.end() && it->second.guids.count(guid))
+            return;
+        if (engagedGuids_ >= kMaxEngagedPerFight)
         {
-            if (it->second.name.empty())
-                it->second.name = name;
-            it->second.guids.insert(guid);
+            // Past the cap: counted once per distinct guid, never inserted.
+            if (droppedGuids_.size() < kMaxDroppedTracked && droppedGuids_.insert(guid).second)
+                ++engagedDropped_;
             return;
         }
-        if (engaged_.size() >= kMaxEngagedPerFight)
-        {
-            ++engagedDropped_;
-            return;
-        }
-        EngagedData& e = engaged_[entry];
+        EngagedData& e = it != engaged_.end() ? it->second : engaged_[entry];
         if (e.name.empty())
             e.name = name;
         e.guids.insert(guid);
+        ++engagedGuids_;
     }
 
     void EndFight(uint32_t endMs, bool allDead)
@@ -722,7 +760,9 @@ private:
     bool outOfCombat_ = false;
     uint32_t outOfCombatSince_ = 0;
     std::map<uint32_t, EngagedData> engaged_;
-    uint64_t engagedDropped_ = 0;   // distinct engaged creatures past the cap
+    uint32_t engagedGuids_ = 0;     // distinct guids in engaged_, all entries together
+    std::unordered_set<uint64_t> droppedGuids_;   // guids past the cap, at most kMaxDroppedTracked
+    uint64_t engagedDropped_ = 0;   // distinct engaged creature guids past the cap (stops at kMaxDroppedTracked)
     std::map<std::string, uint64_t> debuffUp_;
     uint64_t debuffSampled_ = 0;
     std::deque<Death> deaths_;
