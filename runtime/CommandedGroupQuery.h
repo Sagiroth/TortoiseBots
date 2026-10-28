@@ -51,6 +51,11 @@ bool NoteHumanChatOrder(Player* bot, Player& from, std::string const& text, bool
 void NoteCommanderThreat(Player* bot);
 bool IsCommanderThreat(Player* bot);
 
+// A tank healer of a bound raid's layout (the raid layout record in
+// commands/Commander.cpp): its "focus heal targets" is the layout's, not
+// the bot's, so the snapshot save leaves it out like the binding's "threat".
+bool IsRaidFocusHealer(Player* bot);
+
 // A bound bot moves only on the commander's orders (RemoteCommander::
 // CommanderAutonomyLedger): the open-world kit (grind, travel, rpg...) comes
 // off it while it is bound and goes back on release. The bind calls this, and

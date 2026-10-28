@@ -509,8 +509,6 @@ inline BindRefusal CheckRaidBind(BindFacts const& facts)
         return BindRefusal::RaidNotInRaid;
     if (!facts.leadIsTank)
         return BindRefusal::RaidLeadNotTank;
-    if (facts.leadGroupHasRealPlayer)
-        return BindRefusal::GroupHasPlayer;
     if (facts.leadGroupBound)
         return BindRefusal::GroupBound;
     if (facts.leadBindWouldReplaceGroupBind)
@@ -759,7 +757,7 @@ inline std::string RunBoundRefusalText(std::string const& commanderName)
 
 inline BindGroupPlan DecideBindGroup(BindPlanFacts const& facts)
 {
-    if (facts.raidBind && facts.leadInCommanderParty && facts.partyIsRaidOrBg && !facts.partyHasOtherPlayer)
+    if (facts.raidBind && facts.leadInCommanderParty && facts.partyIsRaidOrBg)
         return BindGroupPlan::KeepCommanderRaid;
     if (facts.leadInCommanderParty)
         return (facts.partyIsRaidOrBg || facts.partyHasOtherPlayer)

@@ -43,7 +43,100 @@ static std::vector<int> Sizes(Layout const& l)
     for (auto const& p : l.placements) ++s[p.subgroup];
     return s;
 }
+static uint32_t PeakOf(std::vector<SubgroupMember> const& start, std::vector<SubgroupOp> const& ops)
+{
+    std::vector<uint8_t> at(64, 0);
+    for (SubgroupMember const& m : start)
+        at[m.id] = m.current;
+    auto count = [&](uint8_t sub) { uint32_t n = 0; for (SubgroupMember const& m : start) n += (at[m.id] == sub); return n; };
+    uint32_t peak = 0;
+    for (uint8_t s = 0; s < kSubgroups; ++s)
+        peak = std::max(peak, count(s));
+    for (SubgroupOp const& op : ops)
+    {
+        if (op.swap)
+        {
+            uint8_t a = at[op.member], b = at[op.other];
+            CHECK(a != b);
+            at[op.member] = b;
+            at[op.other] = a;
+        }
+        else
+        {
+            CHECK(count(op.sub) < kSubgroupSize);
+            at[op.member] = op.sub;
+        }
+        for (uint8_t s = 0; s < kSubgroups; ++s)
+            peak = std::max(peak, count(s));
+    }
+    return peak;
+}
 
+static void Placed(std::vector<SubgroupMember> const& start, std::vector<SubgroupOp> const& ops)
+{
+    std::vector<uint8_t> at(64, 0);
+    for (SubgroupMember const& m : start)
+        at[m.id] = m.current;
+    for (SubgroupOp const& op : ops)
+    {
+        if (op.swap)
+        {
+            uint8_t a = at[op.member], b = at[op.other];
+            at[op.member] = b;
+            at[op.other] = a;
+        }
+        else
+            at[op.member] = op.sub;
+    }
+    for (SubgroupMember const& m : start)
+        CHECK(at[m.id] == m.planned);
+}
+
+static void TestPlanSubgroupMoves()
+{
+    // placed and no subgroup ever holds 6 at any step.
+    std::vector<SubgroupMember> raid;
+    for (uint64_t id = 1; id <= 4; ++id)
+        raid.push_back({id, 0, 1});
+    raid.push_back({6, 0, 0});
+    for (uint64_t id = 7; id <= 10; ++id)
+        raid.push_back({id, 1, 0});
+    raid.push_back({12, 1, 1});
+    std::vector<SubgroupOp> ops = PlanSubgroupMoves(raid);
+    CHECK(!ops.empty());
+    Placed(raid, ops);
+    CHECK(PeakOf(raid, ops) <= kSubgroupSize);
+    // Already placed members get no op.
+    std::vector<SubgroupMember> placed{{7, 2, 2}, {8, 2, 2}};
+    CHECK(PlanSubgroupMoves(placed).empty());
+    // Restore plan: members back to their recorded originals, same guarantee.
+    std::vector<SubgroupMember> restore;
+    for (uint64_t id = 1; id <= 4; ++id)
+        restore.push_back({id, 1, 0});
+    restore.push_back({6, 0, 0});
+    for (uint64_t id = 7; id <= 10; ++id)
+        restore.push_back({id, 0, 1});
+    restore.push_back({12, 1, 1});
+    std::vector<SubgroupOp> back = PlanSubgroupMoves(restore);
+    Placed(restore, back);
+    CHECK(PeakOf(restore, back) <= kSubgroupSize);
+    // Three full subgroups rotating 0->1->2->0: no direct swap places
+    // anyone, the relay through a non-target occupant does.
+    std::vector<SubgroupMember> rotation;
+    for (uint64_t id = 21; id <= 24; ++id)
+        rotation.push_back({id, 0, 1});
+    rotation.push_back({25, 0, 0});
+    for (uint64_t id = 26; id <= 29; ++id)
+        rotation.push_back({id, 1, 2});
+    rotation.push_back({30, 1, 1});
+    for (uint64_t id = 31; id <= 34; ++id)
+        rotation.push_back({id, 2, 0});
+    rotation.push_back({35, 2, 2});
+    std::vector<SubgroupOp> turn = PlanSubgroupMoves(rotation);
+    CHECK(!turn.empty());
+    Placed(rotation, turn);
+    CHECK(PeakOf(rotation, turn) <= kSubgroupSize);
+}
 static void TestTankHealerCounts()
 {
     CHECK(RaidHealerMinimum(3) == 1 && RaidHealerMinimum(5) == 2 && RaidHealerMinimum(10) == 4);
@@ -118,6 +211,7 @@ int main()
     TestPlanTen();
     TestPlanTwenty();
     TestPlanForty();
+    TestPlanSubgroupMoves();
     TestPlanErrors();
     TestRunRules();
     std::printf("raid layout policy: %d checks passed\n", checks);

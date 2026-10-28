@@ -12,6 +12,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 COMMANDS = (ROOT / "commands/Commander.cpp").read_text()
+STORE = (ROOT / "ai/playerbot/PlayerbotDbStore.cpp").read_text()
 
 
 def strip_comments(text):
@@ -59,6 +60,7 @@ class RaidBindWiringTest(unittest.TestCase):
         self.assertLess(table, layout)
         self.assertIn("BindGroupPlan::KeepCommanderRaid", bind)
         self.assertIn("raidBind ? names.size() != 1", bind)
+        self.assertIn('"raid"', bind.split("SendActionAck")[-1])
 
     def test_binding_state_reads_the_raid_gates(self):
         state = body(SRC, "ReadBindingState(", "\n}\n")
@@ -71,24 +73,51 @@ class RaidBindWiringTest(unittest.TestCase):
         remove = release.find("RemoveMember(")
         if remove >= 0:
             self.assertLess(clear, remove)
+        self.assertIn("if (removed.raid)\n        ClearRaidLayout(removed.groupId);", COMMANDS)
+        self.assertIn("RaidLayouts()[group->GetId()]", COMMANDS)
+
+    def test_shutdown_clears_layouts_while_groups_exist(self):
+        shutdown = body(SRC, "void ClearRemoteCommanders()", "\n}\n")
+        clear = shutdown.index("ClearRaidLayout(binding->groupId)")
+        bindings = shutdown.index("CommanderBindings().Clear()")
+        layouts = shutdown.index("RaidLayouts().clear()")
+        self.assertLess(clear, bindings)
+        self.assertLess(bindings, layouts)
+
+    def test_departed_follower_leaves_the_layout_record(self):
+        departed = body(SRC, "void ReleaseDepartedFollowers(", "\n}\n")
+        forget = departed.index("ForgetDepartedRaidMember(follower, binding.groupId);")
+        drop = departed.index("CommanderBindings().RemoveFollower(commanderRaw, follower);")
+        self.assertLess(forget, drop)
 
 
 class RaidLayoutWiringTest(unittest.TestCase):
     def test_apply_lays_out_the_raid(self):
         apply = body_from(SRC, "static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> const& bots, ChatHandler* handler)\n{")
         self.assertIn("RaidLayout::Plan(", apply)
-        self.assertIn("ChangeMembersGroup(", apply)
+        self.assertIn("PlanSubgroupMoves(", apply)
+        self.assertIn("SwapMembersGroup(", apply)
+        self.assertIn("GetMemberGroup(", apply)
         self.assertIn("SetMainTank(", apply)
         self.assertIn("SetAssistant(", apply)
         self.assertIn('"focus heal targets"', apply)
         self.assertIn("+focus heal targets", apply)
+        self.assertIn("TBM:RAID_LAYOUT|warning|", apply)
+        self.assertIn("TBM:RAID_LAYOUT|%s|%s|%s|%s|%s", apply)
 
     def test_clear_undoes_the_layout_record(self):
         clear = body_from(SRC, "static void ClearRaidLayout(uint32 groupId)\n{")
         self.assertIn("SetAssistant(", clear)
-        self.assertIn("-focus heal targets", clear)
-        self.assertIn("SetMainTank(ObjectGuid())", clear)
+        self.assertIn("PlanSubgroupMoves(", clear)
+        self.assertIn("-focus heal targets", COMMANDS)
+        self.assertIn("GetGroupById(groupId)", clear)
+        self.assertIn("GetMemberGroup(", clear)
+        self.assertIn("GetMainTankGuid() == applied.setMainTank", clear)
         self.assertIn("layouts.erase(it)", clear)
+
+    def test_save_skips_layout_focus_heal(self):
+        self.assertIn("IsRaidFocusHealer(ai->GetBot())", STORE)
+        self.assertIn('strategies.remove(std::string_view("focus heal targets"))', STORE)
 
 
 if __name__ == "__main__":

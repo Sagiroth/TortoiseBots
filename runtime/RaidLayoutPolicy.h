@@ -188,6 +188,121 @@ inline Layout Plan(std::vector<Member> const& members)
     return layout;
 }
 
+// Subgroup moves that never overfill (Group::ChangeMembersGroup does nothing
+// when the target subgroup already holds 5): given each member's current and
+// planned subgroup, the ordered ops that place every placeable member
+// ({Move(member, sub) | Swap(a, b)}). A member whose target is full swaps
+// with a member of that subgroup whose own plan takes it elsewhere; members
+// already in place get no op. Best effort: a member with no room and no swap
+// partner is left out for the caller to report. Pure: the caller applies the
+// ops (ChangeMembersGroup / SwapMembersGroup) and reads the result back.
+struct SubgroupMember
+{
+    uint64_t id = 0;
+    uint8_t current = 0;
+    uint8_t planned = 0;
+};
+
+struct SubgroupOp
+{
+    bool swap = false; // false: Move(member, sub); true: Swap(member, other)
+    uint64_t member = 0;
+    uint64_t other = 0; // swap partner, Move ignores it
+    uint8_t sub = 0;    // move target, Swap ignores it
+};
+
+inline std::vector<SubgroupOp> PlanSubgroupMoves(std::vector<SubgroupMember> const& members)
+{
+    struct Sim
+    {
+        uint64_t id;
+        uint8_t at;
+        uint8_t planned;
+    };
+    std::vector<Sim> sim;
+    sim.reserve(members.size());
+    uint32_t counts[kSubgroups] = {};
+    for (SubgroupMember const& m : members)
+    {
+        if (m.planned >= kSubgroups)
+            continue;
+        uint8_t const at = m.current < kSubgroups ? m.current : kSubgroups;
+        if (at < kSubgroups)
+            ++counts[at];
+        sim.push_back({m.id, at, m.planned});
+    }
+    std::vector<SubgroupOp> ops;
+    ops.reserve(sim.size());
+    for (size_t pass = 0; pass <= sim.size() * 2 + 1; ++pass)
+    {
+        bool moved = false;
+        for (Sim& s : sim)
+        {
+            if (s.at == s.planned)
+                continue;
+            if (counts[s.planned] < kSubgroupSize)
+            {
+                if (s.at < kSubgroups)
+                    --counts[s.at];
+                ++counts[s.planned];
+                s.at = s.planned;
+                ops.push_back({false, s.id, 0, s.planned});
+                moved = true;
+                continue;
+            }
+            if (s.at >= kSubgroups)
+                continue;
+            Sim* partner = nullptr;
+            for (Sim& o : sim)
+                if (o.id != s.id && o.at == s.planned && o.planned != s.planned)
+                {
+                    partner = &o;
+                    break;
+                }
+            if (!partner)
+                continue;
+            if (partner->planned == s.at)
+            {
+                partner->at = s.at;
+                s.at = s.planned;
+                ops.push_back({true, s.id, partner->id, 0});
+                moved = true;
+                continue;
+            }
+            // The partner's own plan aims elsewhere but not here: free the
+            // target with a direct move when it has room, else relay the
+            // partner into its plan through a non-target occupant, which the
+            // direct move or a later swap then places.
+            if (counts[partner->planned] < kSubgroupSize)
+            {
+                if (partner->at < kSubgroups)
+                    --counts[partner->at];
+                ++counts[partner->planned];
+                ops.push_back({false, partner->id, 0, partner->planned});
+                partner->at = partner->planned;
+                moved = true;
+                continue;
+            }
+            Sim* relay = nullptr;
+            for (Sim& o : sim)
+                if (o.id != s.id && o.id != partner->id && o.at == partner->planned && o.planned != partner->planned)
+                {
+                    relay = &o;
+                    break;
+                }
+            if (!relay)
+                continue;
+            relay->at = partner->at;
+            partner->at = partner->planned;
+            ops.push_back({true, partner->id, relay->id, 0});
+            moved = true;
+        }
+        if (!moved)
+            break;
+    }
+    return ops;
+}
+
 inline uint32_t WipeDeadThreshold(uint32_t total, bool raid, uint32_t partyThreshold)
 {
     if (!raid)
