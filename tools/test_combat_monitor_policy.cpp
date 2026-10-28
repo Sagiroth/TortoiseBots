@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -314,6 +315,49 @@ static void TestBudget()
     CHECK(Count(p[0], "\"name\":\"Bot") == 39);
 }
 
+// Codex r3: sizes are measured with seq 0; the widest seq (UINT64_MAX, 20 digits)
+// must not push a queued payload over the budget. Sweep one spell name's length so
+// the full payload crosses the budget byte by byte.
+static Book NearBudgetFight(size_t pad)
+{
+    Book b;
+    std::vector<MemberInfo> m;
+    for (int i = 0; i < 40; ++i)
+        m.push_back({(uint32_t)(i + 1), "Bot" + std::to_string(i), "mage", Role::Damage, i / 5});
+    b.SetMembers(m);
+    b.Start(0, 1700000000, BossCtx(), 1);
+    for (int i = 0; i < 40; ++i)
+        for (int j = 0; j < 20; ++j)
+            b.OnCast((uint32_t)(i + 1), "Spell" + std::to_string(i) + "_" + std::to_string(j), false, 1500);
+    b.OnCast(1, std::string(pad, 'p'), false, 1600);
+    b.SetInCombat(true, false, 1000);
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    return b;
+}
+
+static void TestSeqWidthStaysInBudget()
+{
+    auto maxSeq = []() { return std::numeric_limits<uint64_t>::max(); };
+    Book probe = NearBudgetFight(0);
+    std::vector<std::string> p0 = probe.TakeFightPayloads(1, 9, maxSeq, 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p0.size() == 1);
+    size_t const base = p0[0].size();
+    CHECK(base < kPayloadByteBudget);
+    size_t const target = kPayloadByteBudget - base;   // pad that lands the payload on the budget
+    bool sawCut = false;
+    for (size_t pad = target > 40 ? target - 40 : 0; pad <= target + 40; ++pad)
+    {
+        Book b = NearBudgetFight(pad);
+        std::vector<std::string> p = b.TakeFightPayloads(1, 9, maxSeq, 1700009000, "Cmdr", 123, 55, 409);
+        CHECK(p.size() == 1);
+        CHECK(p[0].size() <= kPayloadByteBudget);
+        if (p[0].find(std::string(pad, 'p')) == std::string::npos)
+            sawCut = true;
+    }
+    CHECK(sawCut);   // the sweep did reach the cut, so the boundary was exercised
+}
+
 static void TestTruncatedPayload()
 {
     // A 40-bot fight with 200 deaths and 500 engaged: every payload fits the budget.
@@ -441,6 +485,7 @@ int main()
     TestWindow();
     TestWindowPrune();
     TestBudget();
+    TestSeqWidthStaysInBudget();
     TestTruncatedPayload();
     TestEngagedCapCountsGuids();
     TestOversizeFightOneSeqPerTake();
