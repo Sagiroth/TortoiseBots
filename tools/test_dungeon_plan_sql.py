@@ -3827,7 +3827,8 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual((hop["kind"], hop["x"], hop["y"], hop["z"]), ("move_hop_exact", "-287.5", "5", "-63.6"), name)
 
     def test_wailing_caverns_kresh_is_a_boss_leg(self):
-        # 20261028180000 (turtle-agent 8a7f7d0, 2026-10-28) re-exports the whole wailing_caverns plan on top of 20261025002700. Kresh 3653
+        # 20261029120000 (turtle-agent 5dab25c) re-exports the plan of 20261028180000 (8a7f7d0) with the #250 boss-encounter change;
+        # that export re-established the whole wailing_caverns plan on top of 20261025002700. Kresh 3653
         # (faction 7: neutral to every player, so only a step that makes the party attack him fights him) is no longer a pull member: he
         # is the boss of a new leg `kresh` between cobrahn_a and cobrahn_b, at the middle of his 525.9 yd river beat (his third waypoint
         # -3.64081 229.268), where he passes within the row's 30 yd radius at most 96 s apart. The row's timeout_s is 300 (the plan's
@@ -3836,11 +3837,11 @@ class DungeonPlanSql(unittest.TestCase):
         # cobrahn_b's now, so no leg pulls him. Lady Anacondra stays a member of her four spot packs (a boss row per spot would pause the
         # run 'boss not found' three times in four).
         name, text = newest_plan_text("wailing_caverns")
-        self.assertEqual(name, "20261028180000_world.sql")
-        self.assertIn("'turtle-agent 8a7f7d0 dungeons/wailing_caverns.json'", text)
+        self.assertEqual(name, "20261029120000_world.sql")
+        self.assertIn("'turtle-agent 5dab25c dungeons/wailing_caverns.json'", text)
         rows = [r for r in self.step_rows(text) if r["plan"] == "wailing_caverns"]
         kinds = {k: len([r for r in rows if r["kind"] == k]) for k in KINDS}
-        self.assertEqual((len(rows), kinds["move"], kinds["move_hop_exact"], kinds["pull"], kinds["boss"]), (323, 214, 1, 100, 8), name)
+        self.assertEqual((len(rows), kinds["move"], kinds["move_hop_exact"], kinds["pull"], kinds["boss"]), (322, 214, 1, 99, 8), name)
         self.assertEqual(len([r for r in rows if r["kind"] == "pull" and "3653" in r["entries"].split(",")]), 0, name)
         kresh = [r for r in rows if r["leg"] == "3"]
         self.assertEqual([(r["seq"], r["kind"], r["x"], r["y"], r["z"], r["radius"], r["timeout_s"], r["entries"]) for r in kresh],
@@ -3856,10 +3857,10 @@ class DungeonPlanSql(unittest.TestCase):
         # to every player) and their ai_dungeon_boss rows already exist (20261021114931). The legs are the rows' proof: leg 9 zandara sits
         # between pythas_c and skum (the spur is a dead end off the cave mouth corridor), leg 12 vangros between west_column and serpentis
         # (the wing is reached from the west column's north loop only); the later legs keep their rows and close up to 10/11/13/14 (the
-        # kresh leg of 20261028180000 is leg 3, before them).
+        # kresh leg, added by 20261028180000, is leg 3, before them).
         name, text = newest_plan_text("wailing_caverns")
-        self.assertEqual(name, "20261028180000_world.sql")
-        self.assertIn("('wailing_caverns', 43, '3840', '', '3671,61966', 'turtle-agent 8a7f7d0 dungeons/wailing_caverns.json', 'plan v1, mapped (not live-checked)');", text)
+        self.assertEqual(name, "20261029120000_world.sql")
+        self.assertIn("('wailing_caverns', 43, '3840', '', '3671,61966', 'turtle-agent 5dab25c dungeons/wailing_caverns.json', 'plan v1, mapped (not live-checked)');", text)
         legs = leg_rows(text, "wailing_caverns")
         self.assertEqual(len(legs), 15)
         self.assertEqual([legs[i][0] for i in (8, 9, 10, 11, 12, 13, 14)],
@@ -3889,6 +3890,30 @@ class DungeonPlanSql(unittest.TestCase):
                           ("28", "boss", "-419.6", "-218", "-65.6", "0", "5053,5056,5756")], name)
         self.assertEqual((v[0]["kind"], v[0]["x"], v[0]["y"], v[0]["z"]), ("move", "-355.5", "-80.8", "-65.3"), name)
         self.assertEqual((v[27]["comment"], v[27]["x"], v[27]["y"], v[27]["z"]), ("boss approach", "-455", "-190", "-65.5"), name)
+
+    def test_wailing_caverns_bosses_are_encounters(self):
+        # #250 (20261029120000, turtle-agent 5dab25c): the Druid 3840 and the Venomwing 5756 beside Lord Serpentis 3673 (12.5 yd from him)
+        # are his boss row's entries, killed before him, not a pull group: as a pull they dragged him in and his row ended at once with
+        # "pack cleared" (live 2026-10-20). Verdan's leg stops 30 yd short of him on the walk from Serpentis: the old to was 11.5 yd from
+        # him and the walk pulled him before his boss row. A re-export that restores either makes the run fight trash instead of a boss.
+        name, text = newest_plan_text("wailing_caverns")
+        rows = [r for r in self.step_rows(text) if r["plan"] == "wailing_caverns"]
+        serpentis = leg_steps(rows, 13)
+        bosses = [r for r in serpentis if r["kind"] == "boss"]
+        self.assertEqual([r["entry"] for r in bosses], ["3673"], name)
+        self.assertEqual(bosses[0]["entries"], "3840,5756", name)
+        late = [r for r in serpentis if r["kind"] == "pull" and int(r["seq"]) > 43 and "5756" in r["entries"].split(",")]
+        self.assertEqual(late, [], name + ": a Serpentis add is still a pull group after the last approach move")
+
+        verdan = leg_steps(rows, 14)
+        bosses = [r for r in verdan if r["kind"] == "boss"]
+        self.assertEqual([r["entry"] for r in bosses], ["5775"], name)
+        before = [r for r in verdan if r["kind"] == "move" and int(r["seq"]) < int(bosses[0]["seq"])]
+        self.assertTrue(before, name + ": the verdan leg has no move before its boss row")
+        to = before[-1]
+        gap = math.dist((float(to["x"]), float(to["y"]), float(to["z"])),
+                        (float(bosses[0]["x"]), float(bosses[0]["y"]), float(bosses[0]["z"])))
+        self.assertGreaterEqual(gap, 25, "%s: the verdan to is %.1f yd from 5775 (the walk pulls him)" % (name, gap))
 
     def test_gossip_rows_fit_the_loader(self):
         # NormalizePlanStep (DungeonPlanPolicy.h): a gossip row needs its NPC entry, an option of 1-15 (the number `.bot cmd gossip` takes,
