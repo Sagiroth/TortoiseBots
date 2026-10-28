@@ -313,7 +313,7 @@ std::vector<GuildOrderZoneSlice> GuildOrderZonesFor(int32_t entry)
     return found == index.zonesByEntry.end() ? std::vector<GuildOrderZoneSlice>() : found->second;
 }
 
-bool GuildOrderFarmItemFor(Player* bot)
+uint32_t GuildOrderFarmItemFor(Player* bot)
 {
     if (!bot)
         return 0;
