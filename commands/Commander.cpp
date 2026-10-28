@@ -54,6 +54,7 @@
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/policy/combat/RunnerFinishPolicy.h"
 #include "runtime/OwnedBotQolPolicy.h"
+#include "../runtime/RaidLayoutPolicy.h"
 #include "../runtime/RemoteCommanderPolicy.h"
 #include "../ai/playerbot/SwimPathPolicy.h" // ChooseFloorZ's water fact (cmd move keeps a water point in the water)
 #include "../ai/playerbot/AiFactory.h"
@@ -897,6 +898,7 @@ RemoteCommander::BindingState ReadBindingState(RemoteCommander::Binding const& b
 {
     RemoteCommander::BindingState state;
     state.enabled = RemoteCommander::BindingKindEnabled(RemoteCommander::KindOf(binding), CurrentCommanderGates());
+    state.raidAllowed = sPlayerbotAIConfig.dungeonRunRaid && sPlayerbotAIConfig.dungeonSelfClear;
     Player* commander = FindCharacter(binding.commanderGuid);
     state.commanderOnline = commander && commander->GetSession() &&
         commander->GetSession()->HasNetworkTransport();
@@ -907,6 +909,7 @@ RemoteCommander::BindingState ReadBindingState(RemoteCommander::Binding const& b
         state.leadGroupId = group->GetId();
         state.leadIsLeader = group->IsLeader(lead->GetObjectGuid());
         state.leadGroupIsRaidOrBg = group->isRaidGroup() || group->isBGGroup();
+        state.leadGroupIsBg = group->isBGGroup();
         state.memberCount = group->GetMembersCount();
         // A player-led binding stands while the commander leads the party (RemoteCommander::CheckBinding).
         state.commanderIsLeader = group->IsLeader(::ObjectGuid(binding.commanderGuid));
@@ -1082,6 +1085,8 @@ uint32 ReleaseBinding(uint64 commanderRaw, RemoteCommander::ReleaseReason reason
     EraseRunSlot(commanderRaw);
     if (!removed.commanderGuid)
         return 0;
+    if (removed.raid)
+        ClearRaidLayout(removed.groupId);
     for (uint64 follower : removed.followers)
     {
         RestoreFollower(follower, removed.leadGuid);
@@ -1647,15 +1652,25 @@ void UpdateCommanderViews(uint32 diff)
 
 } // namespace
 
+// What ApplyRaidLayout changed, per group id, so the release undoes exactly that.
+struct RaidLayoutApplied { ObjectGuid mainTank; std::vector<ObjectGuid> assistants; std::vector<ObjectGuid> focusHealers; };
+static std::unordered_map<uint32, RaidLayoutApplied>& RaidLayouts();
+// Applies RaidLayout::Plan to the bound raid: subgroups, main tank, assist tanks, tank healers' focus heal targets.
+static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> const& bots, ChatHandler* handler);
+// Undoes it for the binding's group (or what is left of it): every member the layout changed.
+static void ClearRaidLayout(uint32 groupId);
+
 static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::string const& args)
 {
     std::string const intent = "commander bind";
     std::vector<std::string> names = RemoteCommander::SplitOrderArgs(args);
-    // `inparty` (last word): the commander and the other real players of his party stay in it (2026-10-23).
+    // `inparty` (last word): the commander and the other real players of his party stay in it (2026-10-23); `raid`
+    // (last word): the commander's own raid of bots is bound with him outside it.
     bool const inParty = RemoteCommander::TakeBindInParty(names);
-    if (names.empty() || names.size() > RemoteCommander::kMaxGroupSize)
+    bool const raidBind = RemoteCommander::TakeBindRaid(names);
+    if (names.empty() || (raidBind ? names.size() != 1 : names.size() > RemoteCommander::kMaxGroupSize))
     {
-        SendActionError(handler, intent, "invalid", "Usage: .bot commander bind <LeadBot> [<Bot> ...] [inparty] (a party of up to five)");
+        SendActionError(handler, intent, "invalid", "Usage: .bot commander bind <LeadBot> [<Bot> ...] [inparty] (a party of up to five) / .bot commander bind <LeadBot> raid (your raid of 6-40 bots)");
         return true;
     }
 
@@ -1681,6 +1696,7 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
     RemoteCommander::BindPlanFacts planFacts;
     planFacts.leadInCommanderParty = leadGroup && leadGroup == commanderParty;
     planFacts.leadInOwnGroup = leadGroup && !planFacts.leadInCommanderParty;
+    planFacts.raidBind = raidBind;
     if (planFacts.leadInCommanderParty)
     {
         planFacts.partyIsRaidOrBg = leadGroup->isRaidGroup() || leadGroup->isBGGroup();
@@ -1695,10 +1711,14 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
                                           : RemoteCommander::BindGroupPlan::FormNew)
         : RemoteCommander::DecideBindGroup(planFacts);
     facts.inParty = inParty;
+    facts.raid = raidBind;
+    facts.raidAllowed = sPlayerbotAIConfig.dungeonRunRaid && sPlayerbotAIConfig.dungeonSelfClear;
+    facts.leadIsTank = lead && PlayerbotAI::IsTank(lead);
+    facts.leadGroupIsBg = leadGroup && leadGroup->isBGGroup();
     facts.leadInCommanderParty = planFacts.leadInCommanderParty;
     // In-party: only the party's leader may hand its lead to a bot (BindRefusal::NotLeader, before anything moves).
     facts.commanderLeadsParty = commanderParty && commanderParty->IsLeader(commander->GetObjectGuid());
-    bool const keepParty = plan == RemoteCommander::BindGroupPlan::KeepCommanderParty;
+    bool const keepParty = plan == RemoteCommander::BindGroupPlan::KeepCommanderParty || plan == RemoteCommander::BindGroupPlan::KeepCommanderRaid;
     bool const leadLeavesParty = plan == RemoteCommander::BindGroupPlan::ReformFromCommanderParty;
     if (leadGroup && (keepParty || plan == RemoteCommander::BindGroupPlan::AdoptLeadGroup))
     {
@@ -1715,8 +1735,9 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
                     ++facts.partyPlayers;
 
         // A kept party is commanded as a whole: every bot in it must have been
-        // named (a bot is never taken under command without being asked).
-        if (keepParty)
+        // named (a bot is never taken under command without being asked). A
+        // kept raid is bound by the word `raid`: every bot of it is asked for.
+        if (keepParty && !raidBind)
         {
             std::vector<ObjectGuid> named;
             for (size_t i = 1; i < names.size(); ++i)
@@ -1880,6 +1901,7 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
     binding.leadGuid = lead->GetObjectGuid().GetRawValue();
     binding.groupId = group->GetId();
     binding.inParty = inParty;
+    binding.raid = raidBind;
     RemoteCommander::BindResult result = CommanderBindings().Bind(binding);
     if (result != RemoteCommander::BindResult::Bound)
     {
@@ -1896,6 +1918,8 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
     CommanderViews()[commanderRaw] = CommanderView();
 
     std::vector<Player*> bots = CommandedBots(group, lead);
+    if (raidBind)
+        ApplyRaidLayout(group, lead, bots, handler);
     // Bots moved between parties inside a dungeon stay in it (no hearth 60 s later).
     for (Player* bot : bots)
         HireLifecycle::KeepInstanceAfterPartyMove(bot);
@@ -1914,6 +1938,147 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
         inParty ? " You stay in the party: the run leader orders the bots only." : "");
     SendActionAck(handler, intent, "party", static_cast<uint32>(bots.size()), lead->GetName());
     return true;
+}
+
+static std::unordered_map<uint32, RaidLayoutApplied>& RaidLayouts()
+{
+    static std::unordered_map<uint32, RaidLayoutApplied> layouts;
+    return layouts;
+}
+
+static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> const& bots, ChatHandler* handler)
+{
+    if (!group || !lead)
+        return;
+    std::vector<TortoiseBots::RaidLayout::Member> members;
+    members.reserve(bots.size());
+    for (Player* bot : bots)
+    {
+        if (!bot)
+            continue;
+        TortoiseBots::RaidLayout::Member member;
+        member.name = bot->GetName();
+        member.role = PlayerbotAI::IsTank(bot) ? TortoiseBots::RaidLayout::Role::Tank
+            : PlayerbotAI::IsHeal(bot) ? TortoiseBots::RaidLayout::Role::Healer
+            : TortoiseBots::RaidLayout::Role::Damage;
+        member.lead = bot == lead;
+        members.push_back(member);
+    }
+    TortoiseBots::RaidLayout::Layout layout = TortoiseBots::RaidLayout::Plan(members);
+    if (!layout.ok)
+    {
+        SendActionError(handler, "commander bind", "raid-layout", layout.error.c_str());
+        return;
+    }
+    ObjectGuid const leadGuid = lead->GetObjectGuid();
+    std::unordered_map<std::string, Player*> byName;
+    for (Player* bot : bots)
+        if (bot)
+            byName[bot->GetName()] = bot;
+    RaidLayoutApplied applied;
+    applied.mainTank = leadGuid;
+    std::vector<std::string> tanks;
+    std::vector<std::string> offTanks;
+    std::vector<std::string> tankHealers;
+    std::vector<std::string> raidHealers;
+    std::vector<std::string> groupLines(TortoiseBots::RaidLayout::kSubgroups);
+    for (TortoiseBots::RaidLayout::Placement const& placement : layout.placements)
+    {
+        auto it = byName.find(placement.name);
+        if (it == byName.end() || !it->second)
+            continue;
+        Player* bot = it->second;
+        ObjectGuid const guid = bot->GetObjectGuid();
+        if (group->GetMemberGroup(guid) != placement.subgroup)
+            group->ChangeMembersGroup(guid, placement.subgroup);
+        if (placement.role == TortoiseBots::RaidLayout::Role::Tank)
+            tanks.push_back(placement.name);
+        if (placement.tankIndex >= 1)
+        {
+            group->SetAssistant(guid, true);
+            applied.assistants.push_back(guid);
+        }
+    }
+    group->SetMainTank(leadGuid);
+    for (TortoiseBots::RaidLayout::Placement const& placement : layout.placements)
+    {
+        auto it = byName.find(placement.name);
+        if (it == byName.end() || !it->second)
+            continue;
+        Player* bot = it->second;
+        if (placement.tankIndex >= 1)
+            offTanks.push_back(placement.name);
+        std::string& line = groupLines[placement.subgroup];
+        line += (line.empty() ? "" : ", ") + placement.name;
+        if (placement.healsTank >= 0)
+        {
+            size_t tank = static_cast<size_t>(placement.healsTank);
+            std::string const tankName = tank < tanks.size() ? tanks[tank] : lead->GetName();
+            ObjectGuid tankGuid = leadGuid;
+            auto found = byName.find(tankName);
+            if (found != byName.end() && found->second)
+                tankGuid = found->second->GetObjectGuid();
+            tankHealers.push_back(placement.name + " -> " + tankName);
+            PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+            if (ai && ai->GetAiObjectContext())
+            {
+                ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Set({tankGuid, bot->GetObjectGuid()});
+                ai->ChangeStrategy("+focus heal targets", BotState::BOT_STATE_COMBAT);
+            }
+            applied.focusHealers.push_back(bot->GetObjectGuid());
+        }
+        else if (placement.role == TortoiseBots::RaidLayout::Role::Healer)
+            raidHealers.push_back(placement.name);
+    }
+    RaidLayouts()[group->GetId()] = applied;
+    std::string mainName = lead->GetName();
+    auto join = [](std::vector<std::string> const& names) -> std::string
+    {
+        if (names.empty())
+            return "-";
+        std::string out = names[0];
+        for (size_t i = 1; i < names.size(); ++i)
+            out += ", " + names[i];
+        return out;
+    };
+    std::string groups;
+    for (uint8_t sub = 0; sub < TortoiseBots::RaidLayout::kSubgroups; ++sub)
+    {
+        if (groupLines[sub].empty())
+            continue;
+        groups += (groups.empty() ? "" : " | ") + std::to_string(sub + 1) + ": " + groupLines[sub];
+    }
+    handler->PSendSysMessage("Raid layout: main tank %s; off-tanks %s; tank healers %s; raid healers %s; subgroups %s",
+        mainName.c_str(), join(offTanks).c_str(), join(tankHealers).c_str(), join(raidHealers).c_str(), groups.c_str());
+    handler->PSendSysMessage("TBM:RAID_LAYOUT|%u|%s|%s|%s|%s", static_cast<uint32>(bots.size()), mainName.c_str(),
+        join(offTanks).c_str(), join(tankHealers).c_str(), join(raidHealers).c_str());
+}
+
+static void ClearRaidLayout(uint32 groupId)
+{
+    auto& layouts = RaidLayouts();
+    auto it = layouts.find(groupId);
+    if (it == layouts.end())
+        return;
+    RaidLayoutApplied applied = it->second;
+    for (ObjectGuid const& guid : applied.focusHealers)
+    {
+        if (Player* bot = FindCharacter(guid.GetRawValue()))
+            if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+                if (ai->GetAiObjectContext())
+                {
+                    ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Set(std::list<ObjectGuid>());
+                    ai->ChangeStrategy("-focus heal targets", BotState::BOT_STATE_COMBAT);
+                }
+    }
+    if (Group* group = sObjectMgr.GetGroupById(groupId))
+    {
+        for (ObjectGuid const& guid : applied.assistants)
+            if (group->IsMember(guid))
+                group->SetAssistant(guid, false);
+        group->SetMainTank(ObjectGuid());
+    }
+    layouts.erase(it);
 }
 
 namespace {
