@@ -1,0 +1,194 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace TortoiseBots
+{
+namespace GuildOrders
+{
+
+// Guild orders given with `.bot order`. The tokens below are the addon
+// contract: TBM parses them, so a rename changes the addon as well.
+
+enum class OrderType : uint8_t { Farm, Buy, Craft };
+
+enum class OrderState : uint8_t { Working, Waiting, Delivering, Done, Mailed, NoSkill, Cant };
+
+enum class OrderReason : uint8_t
+{
+    None,
+    Grouped,
+    NoSkill,
+    LowSkill,
+    LowLevel,
+    NoRange,
+    NoSource,
+    NoRecipe,
+    Stuck,
+    BagsFull,
+    NoBank
+};
+
+inline char const* TypeToken(OrderType type)
+{
+    switch (type)
+    {
+        case OrderType::Farm:  return "farm";
+        case OrderType::Buy:   return "buy";
+        case OrderType::Craft: return "craft";
+    }
+    return "farm";
+}
+
+inline bool ParseType(std::string const& token, OrderType& out)
+{
+    if (token == "farm")  { out = OrderType::Farm;  return true; }
+    if (token == "buy")   { out = OrderType::Buy;   return true; }
+    if (token == "craft") { out = OrderType::Craft; return true; }
+    return false;
+}
+
+inline char const* StateToken(OrderState state)
+{
+    switch (state)
+    {
+        case OrderState::Working:    return "working";
+        case OrderState::Waiting:    return "waiting";
+        case OrderState::Delivering: return "delivering";
+        case OrderState::Done:       return "done";
+        case OrderState::Mailed:     return "mailed";
+        case OrderState::NoSkill:    return "noskill";
+        case OrderState::Cant:       return "cant";
+    }
+    return "working";
+}
+
+inline bool ParseState(std::string const& token, OrderState& out)
+{
+    for (uint8_t i = 0; i <= uint8_t(OrderState::Cant); ++i)
+        if (token == StateToken(OrderState(i))) { out = OrderState(i); return true; }
+    return false;
+}
+
+inline char const* ReasonToken(OrderReason reason)
+{
+    switch (reason)
+    {
+        case OrderReason::None:     return "-";
+        case OrderReason::Grouped:  return "grouped";
+        case OrderReason::NoSkill:  return "noskill";
+        case OrderReason::LowSkill: return "lowskill";
+        case OrderReason::LowLevel: return "lowlevel";
+        case OrderReason::NoRange:  return "norange";
+        case OrderReason::NoSource: return "nosource";
+        case OrderReason::NoRecipe: return "norecipe";
+        case OrderReason::Stuck:    return "stuck";
+        case OrderReason::BagsFull: return "bagsfull";
+        case OrderReason::NoBank:   return "nobank";
+    }
+    return "-";
+}
+
+inline bool ParseReason(std::string const& token, OrderReason& out)
+{
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoBank); ++i)
+        if (token == ReasonToken(OrderReason(i))) { out = OrderReason(i); return true; }
+    return false;
+}
+
+// The state a reason belongs to. Working has no reason.
+inline OrderState StateForReason(OrderReason reason)
+{
+    switch (reason)
+    {
+        case OrderReason::Grouped:  return OrderState::Waiting;
+        case OrderReason::NoSkill:
+        case OrderReason::LowSkill: return OrderState::NoSkill;
+        case OrderReason::LowLevel:
+        case OrderReason::NoRange:
+        case OrderReason::NoSource:
+        case OrderReason::NoRecipe:
+        case OrderReason::Stuck:    return OrderState::Cant;
+        case OrderReason::BagsFull: return OrderState::Delivering;
+        case OrderReason::NoBank:   return OrderState::Mailed;
+        case OrderReason::None:     break;
+    }
+    return OrderState::Working;
+}
+
+inline bool IsFinished(OrderState state)
+{
+    return state == OrderState::Done || state == OrderState::Mailed || state == OrderState::NoSkill ||
+           state == OrderState::Cant;
+}
+
+// One order, as the store keeps it in memory (one per bot).
+struct OrderRecord
+{
+    uint32_t botGuidLow = 0;
+    uint32_t guildId = 0;
+    uint32_t giverGuidLow = 0;
+    OrderType type = OrderType::Farm;
+    uint32_t itemId = 0;
+    uint32_t amount = 0;
+    uint32_t delivered = 0;
+    OrderState state = OrderState::Working;
+    OrderReason reason = OrderReason::None;
+    uint32_t farmZoneId = 0;   // 0 = not planned yet
+    uint8_t farmChance = 0;    // percent at the best source in farmZoneId
+    bool movedZone = false;    // already moved once to the second-best zone
+    uint32_t deaths = 0;
+    uint32_t workedSinceNewItemSec = 0;
+    uint64_t createdAt = 0;
+    uint64_t updatedAt = 0;
+};
+
+// Source kinds, as listed in TBM:ORDER_ITEM <sources>.
+enum SourceFlag : uint8_t
+{
+    SourceDrop  = 1 << 0,
+    SourceSkin  = 1 << 1,
+    SourceHerb  = 1 << 2,
+    SourceOre   = 1 << 3,
+    SourceCraft = 1 << 4,
+    SourceAh    = 1 << 5,
+};
+
+inline std::string SourcesToken(uint8_t flags)
+{
+    static char const* const names[] = {"drop", "skin", "herb", "ore", "craft", "ah"};
+    std::string out;
+    for (uint8_t i = 0; i < 6; ++i)
+    {
+        if (!(flags & (1 << i)))
+            continue;
+        if (!out.empty())
+            out += ',';
+        out += names[i];
+    }
+    return out.empty() ? "-" : out;
+}
+
+struct FarmZone
+{
+    uint32_t zoneId = 0;
+    uint8_t chance = 0;   // percent at the best source in this zone
+    double score = 0.0;   // spawns x chance
+};
+
+// What one bot can do about one item: the answer of the source finder, used by
+// the search reply, the give command and the travel code alike.
+struct SourcePlan
+{
+    uint8_t sources = 0;             // SourceFlag bits usable by this bot
+    uint32_t minLevel = 0;           // lowest usable source level, 0 = none
+    uint32_t skillId = 0;            // 0 = no skill needed
+    uint32_t skillValue = 0;
+    OrderReason verdict = OrderReason::None;  // None = ok
+    std::vector<FarmZone> zones;     // best first; empty for buy and craft
+};
+
+} // namespace GuildOrders
+} // namespace TortoiseBots

@@ -62,6 +62,10 @@ bool HandleAutogear(ChatHandler* handler, char const* args);
 bool HandleHire(ChatHandler* handler, char const* args);
 bool HandlePool(ChatHandler* handler, char const* args);
 bool HandleLoot(ChatHandler* handler, char const* args);
+// `.bot order search`: the order command checks the requester and the bot,
+// then hands over the order type token and the search text.
+bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std::string const& type,
+                       std::string const& text);
 bool HandleLootLog(ChatHandler* handler, char const* args);
 bool HandleRepair(ChatHandler* handler, char const* args);
 bool HandleSell(ChatHandler* handler, char const* args);
