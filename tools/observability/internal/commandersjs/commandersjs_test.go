@@ -75,6 +75,12 @@ func TestFightDebugJS(t *testing.T) {
 	runCheck(t, "fightdebug_check.js", "../../web/static/js/fightdebug.js")
 }
 
+// TestFightDebugUIJS runs fightdebug_ui_check.js: the Fight debugger's markup in app.js (frames, rail, checks, timeline,
+// recap, role tables, bot panel, map death marks) with the walk 2 fights and with names that would break the page.
+func TestFightDebugUIJS(t *testing.T) {
+	runCheck(t, "fightdebug_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestRefreshJS runs refresh_check.js: the refresh-rate picker's options, the choice saved per browser (also with a storage that throws)
 // and the gate that holds live updates to the chosen rate or freezes them while paused.
 func TestRefreshJS(t *testing.T) {
