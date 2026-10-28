@@ -1,8 +1,11 @@
-// Standalone test for runtime/GuildOrderDeliveryPolicy.h (guild order delivery).
+// Standalone test for runtime/GuildOrderDeliveryPolicy.h (guild order delivery)
+// and runtime/GuildOrderDeliveryQueue.h (world-thread handoff).
 // No core, no DB: feeds ClassifyDelivery plain counters.
 #include "../runtime/GuildOrderDeliveryPolicy.h"
+#include "../runtime/GuildOrderDeliveryQueue.h"
 
 #include <cstdio>
+#include <vector>
 
 using namespace TortoiseBots::GuildOrders;
 
@@ -21,19 +24,49 @@ int main()
     for (size_t i = 1; i < kDeliveryTabCount; ++i)
         CHECK(DeliveryTabAt(i) == DeliveryTabAt(i - 1) + 1);
 
+    // Bank refusal needs consecutive empty passes.
+    CHECK(!BankRefused(0));
+    CHECK(!BankRefused(2));
+    CHECK(BankRefused(3));
+    CHECK(BankRefused(9));
+
     // Amount reached without mail: done; with any mailed stack: mailed.
-    CHECK(ClassifyDelivery(10, 10, false) == DeliveryOutcome::Done);
-    CHECK(ClassifyDelivery(12, 10, false) == DeliveryOutcome::Done);
-    CHECK(ClassifyDelivery(10, 10, true) == DeliveryOutcome::Mailed);
-    CHECK(ClassifyDelivery(12, 10, true) == DeliveryOutcome::Mailed);
-    CHECK(ClassifyDelivery(0, 5, false) == DeliveryOutcome::BackToWork);
-    CHECK(ClassifyDelivery(9, 10, true) == DeliveryOutcome::BackToWork);
+    CHECK(ClassifyDelivery(10, 10, false, true) == DeliveryOutcome::Done);
+    CHECK(ClassifyDelivery(12, 10, false, true) == DeliveryOutcome::Done);
+    CHECK(ClassifyDelivery(10, 10, true, true) == DeliveryOutcome::Mailed);
+    CHECK(ClassifyDelivery(12, 10, true, true) == DeliveryOutcome::Mailed);
+    CHECK(ClassifyDelivery(0, 5, false, true) == DeliveryOutcome::BackToWork);
+    CHECK(ClassifyDelivery(9, 10, true, true) == DeliveryOutcome::BackToWork);
+    CHECK(ClassifyDelivery(9, 10, false, true) == DeliveryOutcome::BackToWork);
+
+    // Nothing moved at all: stuck, never back to work.
+    CHECK(ClassifyDelivery(0, 5, false, false) == DeliveryOutcome::Stuck);
+    CHECK(ClassifyDelivery(9, 10, true, false) == DeliveryOutcome::Stuck);
+    CHECK(ClassifyDelivery(0, 1, false, false) == DeliveryOutcome::Stuck);
 
     // One stack per mail.
     CHECK(DeliveryMailCount(0) == 0);
     CHECK(DeliveryMailCount(1) == 1);
     CHECK(DeliveryMailCount(7) == 7);
 
+    // One request per bot pending; the drain takes all in arrival order.
+    DeliveryQueue queue;
+    CHECK(queue.PendingCount() == 0);
+    CHECK(queue.Enqueue(7, 100));
+    CHECK(!queue.Enqueue(7, 200));
+    CHECK(queue.Enqueue(8, 300));
+    CHECK(queue.PendingCount() == 2);
+    {
+        std::vector<PendingDelivery> batch = queue.TakeAll();
+        CHECK(batch.size() == 2);
+        CHECK(batch[0].botGuidLow == 7 && batch[0].itemId == 100);
+        CHECK(batch[1].botGuidLow == 8 && batch[1].itemId == 300);
+    }
+    CHECK(queue.PendingCount() == 0);
+    CHECK(queue.TakeAll().empty());
+    CHECK(queue.Enqueue(7, 200));
+    queue.Clear();
+    CHECK(queue.PendingCount() == 0);
     if (failures == 0)
         std::printf("test_guild_order_delivery_policy ok\n");
     return failures ? 1 : 0;

@@ -424,7 +424,8 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         newTarget.SetForced(true);
         newTarget.SetRelevance(std::max<uint32>(targetRelevance, 199u));
     }
-    else if (AI_VALUE2(std::string, "manual string", "future travel condition") == "should travel named::guild order")
+    else if (AI_VALUE2(std::string, "manual string", "future travel condition") == "has guild order delivery" ||
+             AI_VALUE2(std::string, "manual string", "future travel condition") == "has guild travel order")
     {
         newTarget.SetForced(true);
         newTarget.SetRelevance(std::max<uint32>(targetRelevance, 198u));
@@ -2470,11 +2471,17 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 
     AI_VALUE(TravelTarget*, "travel target")->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
     SET_AI_VALUE2(std::string, "manual string", "future travel purpose", getQualifier());
+    // Guild orders pin their target to the leg that picked it: farm/buy targets
+    // expire when work ends, banker targets when the delivery ends. A shared
+    // condition would stay true across the Working <-> Delivering flip and pin
+    // the bot on the wrong leg's destination.
+    std::string orderCondition = "should travel named::guild order";
+    if (travelName == "guild order")
+        orderCondition = AI_VALUE(bool, "has guild order delivery") ? "has guild order delivery" : "has guild travel order";
     SET_AI_VALUE2(std::string, "manual string", "future travel condition",
         travelName == "guild meeting" ? "should travel named::guild meeting" :
-        travelName == "guild order" ? "should travel named::guild order" :
+        travelName == "guild order" ? orderCondition :
         event.GetSource());
-    SET_AI_VALUE2(int, "manual int", "future travel relevance", relevance * 100);
 
     return true;
 }

@@ -4,10 +4,9 @@
 
 namespace ai
 {
-    // Delivers a finished guild order: deposits the ordered items into the
-    // guild bank at a nearby guild banker, or mails them to the guild master
-    // when the bank refuses every tab. Runs while the stored order is
-    // Delivering; only the ordered item moves, never anything else.
+    // Queues a guild-order delivery for the world thread. Runs only while the
+    // stored order is Delivering and a guild banker is within interaction
+    // range; the world-thread drain does the deposit and the mail.
     class GuildBankAction : public Action
     {
     public:
@@ -17,7 +16,5 @@ namespace ai
 
     private:
         Unit* FindNearbyGuildBanker();
-        bool DepositAtBanker(Unit* banker, uint32 itemId);
-        void MailToLeader(uint32 itemId);
     };
 }
