@@ -226,6 +226,21 @@ SEEDED_BOSSES.update({(229, 9196): "Highlord Omokk", (229, 9236): "Shadow Hunter
                       (229, 9568): "Overlord Wyrmthalak"})
 NOT_BOSSES.update({9217, 9218, 9219, 9718, 10376, 16080, 16044})
 
+# Naxxramas (20261028200000), the 40-man raid of map 533: the 15 boss steps' entries and the three horsemen each row kills
+# first, names from the core's creature_template (all rank 3). The four horsemen are one row: 16064 Korth'azz with 16065,
+# 16062 and 16063 as its first entries (the four wake together, boss_four_horsemen.cpp Aggro).
+BOSS_PLANS["naxxramas"] = 533
+SEEDED_BOSSES.update({(533, 15956): "Anub'Rekhan", (533, 15953): "Grand Widow Faerlina", (533, 15952): "Maexxna",
+                      (533, 15954): "Noth the Plaguebringer", (533, 15936): "Heigan the Unclean", (533, 16011): "Loatheb",
+                      (533, 16061): "Instructor Razuvious", (533, 16060): "Gothik the Harvester", (533, 16064): "Thane Korth'azz",
+                      (533, 16062): "Highlord Mograine", (533, 16063): "Sir Zeliek", (533, 16065): "Lady Blaumeux",
+                      (533, 16028): "Patchwerk", (533, 15931): "Grobbulus", (533, 15932): "Gluth", (533, 15928): "Thaddius",
+                      (533, 15989): "Sapphiron", (533, 15990): "Kel'Thuzad"})
+NOT_BOSSES.update({15974, 15975, 15976, 15977, 15978, 15979, 15980, 15981, 16017, 16018, 16020, 16021, 16022, 16024,
+                   16025, 16029, 16034, 16036, 16037, 16056, 16057, 16067, 16145, 16146, 16154, 16156, 16157, 16158,
+                   16163, 16164, 16165, 16167, 16168, 16193, 16194, 16215, 16216, 16243, 16244, 16297, 16368, 16446,
+                   16447, 16448, 16449, 16451, 16452, 16453, 16861})
+
 def migrations():
     for path in sorted(glob.glob(os.path.join(ROOT, "data/sql/world/*_world.sql"))):
         with open(path, encoding="utf-8") as handle:
@@ -931,6 +946,56 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual((last["entries"], float(last["radius"])), ("1708", 7.0))
         self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["stormwind_stockade"])
         self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (34);", text)
+
+
+    def test_naxxramas_is_the_raid_prep(self):
+        # 20261028200000 (turtle-agent prep/raid-naxx 0e821c2, 2026-10-28): the 40-man draft with the B1 prep of
+        # RAID-PREP-naxx.md, no row hand-set. 16 legs in the instance's quarter order, 911 steps (702 move, 180 pull,
+        # 15 boss, 5 open, 9 wait_object), the five doors as `open` rows and the nine that a kill opens as
+        # `wait_object` rows. The pulls are merged packs: 180 rows for 719 units (the draft's 298 groups held 788
+        # hostiles among 1029 units), at most 16 units a pack in the plan (4 unique entries in a row), radius at
+        # most 35.
+        name, text = newest_plan_text("naxxramas")
+        self.assertEqual(name, "20261028200000_world.sql")
+        self.assertIn("('naxxramas', 533, '', '', '', 'turtle-agent 0e821c2 dungeons/naxxramas.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual([v[0] for v in leg_rows(text, "naxxramas").values()],
+                         ["spider_wing_entrance", "anub_rekhan", "grand_widow_faerlina", "maexxna",
+                          "noth_the_plaguebringer", "heigan_the_unclean", "loatheb", "instructor_razuvious",
+                          "gothik_the_harvester", "four_horsemen", "patchwerk", "grobbulus", "gluth", "thaddius",
+                          "sapphiron", "kelthuzad"])
+        rows = [r for r in self.step_rows(text) if r["plan"] == "naxxramas"]
+        self.assertEqual(len(rows), 911)
+        self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(16)],
+                         [10, 0, 21, 21, 18, 11, 0, 30, 0, 25, 18, 2, 24, 0, 0, 0])
+        self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
+                         ["15956", "15953", "15952", "15954", "15936", "16011", "16061", "16060", "16064",
+                          "16028", "15931", "15932", "15928", "15989", "15990"])
+        self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss", "open", "wait_object"})
+        # Every boss is the last step of its leg before that leg's door steps (a door a kill opens is opened after it).
+        for leg in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
+            fight = [r for r in leg_steps(rows, leg) if r["kind"] not in ("move", "open", "wait_object")]
+            self.assertEqual(fight[-1]["kind"], "boss", leg)
+        pulls = [r for r in rows if r["kind"] == "pull"]
+        self.assertEqual(len(pulls), 180)
+        self.assertLessEqual(max(float(r["radius"]) for r in pulls), 35.0)
+        self.assertLessEqual(max(len(r["entries"].split(",")) for r in pulls), 4)
+        # The doors: five a use opens (181126 Anub'Rekhan's door shut at spawn; 181195, 194022 and 181119 unlocked by a
+        # kill and still shut; 181121 Thaddius' door after Gluth), nine a kill opens (a wait_object on its state).
+        self.assertEqual({r["entry"] for r in rows if r["kind"] == "open"}, {"181126", "181195", "194022", "181119", "181121"})
+        self.assertEqual({r["entry"] for r in rows if r["kind"] == "wait_object"},
+                         {"181201", "181209", "181496", "181241", "181124", "181125", "181123", "181225", "181228"})
+        # No boss is pulled as trash, no critter or trigger is in a pull, and the four horsemen's row kills the other three first.
+        bosses = {int(r["entry"]) for r in rows if r["kind"] == "boss"}
+        for r in pulls:
+            listed = {int(e) for e in r["entries"].split(",") if e}
+            self.assertFalse(listed & bosses, "naxxramas %s/%s pulls a boss" % (r["leg"], r["seq"]))
+            self.assertFalse(listed & {4075, 14881, 16030, 16068, 11, 16082, 16137, 16211, 16400, 533004},
+                             "naxxramas %s/%s pulls a critter or a trigger" % (r["leg"], r["seq"]))
+        horsemen = [r for r in rows if r["kind"] == "boss" and r["entry"] == "16064"][0]
+        self.assertEqual(horsemen["entries"], "16065,16062,16063")
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["naxxramas"])
+        self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (533) AND `entry` IN (15956, 15953, 15952, 15954, 15936, 16011, 16061, 16060, 16064, 16062, 16063, 16065, 16028, 15931, 15932, 15928, 15989, 15990);", text)
+        self.assertIn("(533, 15990, 'interrupt', 0, 28478, 0, 0, 'Kel''Thuzad: Frostbolt (boss_kelthuzad.cpp:834, every 5-20 s)');", text)
 
     def test_stormwind_vault_is_the_plan_with_the_leg0_split(self):
         # 20261024151700 (turtle-agent 33dcce5, 2026-10-24): 20261024010200 again, with leg-0 pull group 0 split in
