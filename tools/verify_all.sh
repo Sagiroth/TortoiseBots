@@ -50,8 +50,16 @@ if command -v g++ >/dev/null 2>&1; then
     g++ -std=c++17 -Wall -Wextra tools/test_run_trace_writer.cpp runtime/RunTraceWriter.cpp -pthread -o "${BUILD_DIR}/test_run_trace_writer"
     "${BUILD_DIR}/test_run_trace_writer" "${TMPDIR:-/tmp}"
 
+    # Special case: the combat monitor's two-thread race test needs the stub
+    # config, the service TU and ThreadSanitizer (TSan on this WSL needs
+    # setarch -R; without it it aborts with "unexpected memory mapping").
+    g++ -std=c++17 -O1 -g -fsanitize=thread -DCOMBAT_MONITOR_TEST_CONFIG -I. -Itools/tsan_stubs \
+        tools/test_combat_monitor_service_race.cpp runtime/CombatMonitorService.cpp \
+        -o "${BUILD_DIR}/test_combat_monitor_service_race" -pthread
+    setarch "$(uname -m)" -R "${BUILD_DIR}/test_combat_monitor_service_race"
+
     # Every other standalone test: discover the sources, compile and run in parallel.
-    mapfile -t CPP_TESTS < <(printf '%s\n' tools/test_*.cpp | grep -v '^tools/test_log_file_rotation\.cpp$' | grep -v '^tools/test_run_trace_writer\.cpp$')
+    mapfile -t CPP_TESTS < <(printf '%s\n' tools/test_*.cpp | grep -v '^tools/test_log_file_rotation\.cpp$' | grep -v '^tools/test_run_trace_writer\.cpp$' | grep -v '^tools/test_combat_monitor_service_race\.cpp$')
 
     compile_one() {
         local src="$1" name
@@ -85,7 +93,7 @@ if command -v g++ >/dev/null 2>&1; then
         echo "✗ Standalone policy tests FAILED."
         exit 1
     fi
-    echo "✓ $((${#CPP_TESTS[@]} + 2)) standalone policy tests verified (compiled and run in parallel, ${JOBS} jobs)."
+    echo "✓ $((${#CPP_TESTS[@]} + 3)) standalone policy tests verified (compiled and run in parallel, ${JOBS} jobs)."
 else
     echo "ℹ Skipping standalone policy tests (no g++ on PATH)."
 fi
