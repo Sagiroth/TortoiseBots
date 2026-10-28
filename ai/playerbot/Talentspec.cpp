@@ -3,6 +3,9 @@
 #include "playerbot/ServerFacade.h"
 #include "Database/DBCStructure.h"
 #include "Guild/GuildMgr.h"
+#include "../../runtime/PublicNotePolicy.h"
+#include "../../runtime/BotManager.h"
+#include "playerbot/AiFactory.h"
 
 using namespace std::placeholders;
 
@@ -182,16 +185,36 @@ void TalentSpec::ApplyTalents(Player* bot, std::ostringstream* out)
     SetPublicNote(bot);
 }
 
+// Any thread: compute the wanted public-note text from the bot's own data
+// (talents, skills) without touching Guild state, then hand it to the
+// world-thread queue (BotManager::DrainPublicNoteQueue applies it).
 void TalentSpec::SetPublicNote(Player* bot)
 {
-    TalentSpec spec(bot);
-    if (sPlayerbotAIConfig.talentsInPublicNote && bot->GetGuildId())
+    if (!bot || !sPlayerbotAIConfig.talentsInPublicNote || !bot->GetGuildId())
+        return;
+    std::map<uint32, int32> tabs = AiFactory::GetPlayerSpecTabs(bot);
+    int tab = 0;
+    int best = -1;
+    for (uint32 i = 0; i < 3; ++i)
+        if (tabs[i] > best)
+        {
+            best = tabs[i];
+            tab = i;
+        }
+    static uint16 const kPrimary[] = { SKILL_ALCHEMY, SKILL_BLACKSMITHING, SKILL_ENCHANTING, SKILL_ENGINEERING,
+                                       SKILL_HERBALISM, SKILL_LEATHERWORKING, SKILL_MINING, SKILL_SKINNING, SKILL_TAILORING };
+    TortoiseBots::PublicNoteProfession profs[2];
+    uint32_t profCount = 0;
+    for (uint16 id : kPrimary)
     {
-        Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-        MemberSlot* member = guild->GetMemberSlot(bot->getObjectGuid());
-        if (guild->HasRankRight(member->RankId, GR_RIGHT_EPNOTE))
-            member->SetPublicNote(ChatHelper::specName(bot) + " (" + std::to_string(spec.GetTalentPoints(0)) + "/" + std::to_string(spec.GetTalentPoints(1)) + "/" + std::to_string(spec.GetTalentPoints(2)) + ")");
+        if (profCount >= 2 || !bot->HasSkill(id))
+            continue;
+        profs[profCount].skillId = id;
+        profs[profCount].skillValue = bot->GetSkillValue(id);
+        ++profCount;
     }
+    TortoiseBots::BotManager::Instance().QueuePublicNote(bot->getObjectGuid().GetRawValue(),
+        TortoiseBots::ComposePublicNote(bot->GetClass(), tab, tabs[0], tabs[1], tabs[2], profs, profCount));
 }
 
 //Returns a base talentlist for a class.

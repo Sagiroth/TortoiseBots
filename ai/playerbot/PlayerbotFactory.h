@@ -166,6 +166,11 @@ private:
     bool CanEquipItem(ItemPrototype const* proto, uint32 desiredQuality);
     void InitTradeSkills();
     void SetRandomSkill(uint16 id);
+    // Organic professions (ProfessionsGrowWithLevel off): learn the real
+    // rank-1 Apprentice spell of one primary profession at the level-5 gate.
+    // The core consumes a free primary point, grants skill 1/75 and the
+    // starter abilities. No-op when the bot already holds the skill.
+    void LearnApprenticeProfession(uint16 skillId);
     void InitAvailableSpells();
     void InitSpecialSpells();
     void InitClassLevelSpells();
