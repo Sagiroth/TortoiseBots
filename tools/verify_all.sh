@@ -58,8 +58,15 @@ if command -v g++ >/dev/null 2>&1; then
         -o "${BUILD_DIR}/test_combat_monitor_service_race" -pthread
     setarch "$(uname -m)" -R "${BUILD_DIR}/test_combat_monitor_service_race"
 
+    # Special case: the combat monitor's service test needs the stub config
+    # and the service TU (same seam as the race test, no sanitizer).
+    g++ -std=c++17 -Wall -Wextra -DCOMBAT_MONITOR_TEST_CONFIG -I. -Itools/tsan_stubs \
+        tools/test_combat_monitor_service.cpp runtime/CombatMonitorService.cpp \
+        -o "${BUILD_DIR}/test_combat_monitor_service"
+    "${BUILD_DIR}/test_combat_monitor_service"
+
     # Every other standalone test: discover the sources, compile and run in parallel.
-    mapfile -t CPP_TESTS < <(printf '%s\n' tools/test_*.cpp | grep -v '^tools/test_log_file_rotation\.cpp$' | grep -v '^tools/test_run_trace_writer\.cpp$' | grep -v '^tools/test_combat_monitor_service_race\.cpp$')
+    mapfile -t CPP_TESTS < <(printf '%s\n' tools/test_*.cpp | grep -v '^tools/test_log_file_rotation\.cpp$' | grep -v '^tools/test_run_trace_writer\.cpp$' | grep -v '^tools/test_combat_monitor_service_race\.cpp$' | grep -v '^tools/test_combat_monitor_service\.cpp$')
 
     compile_one() {
         local src="$1" name
@@ -93,7 +100,7 @@ if command -v g++ >/dev/null 2>&1; then
         echo "✗ Standalone policy tests FAILED."
         exit 1
     fi
-    echo "✓ $((${#CPP_TESTS[@]} + 3)) standalone policy tests verified (compiled and run in parallel, ${JOBS} jobs)."
+    echo "✓ $((${#CPP_TESTS[@]} + 4)) standalone policy tests verified (compiled and run in parallel, ${JOBS} jobs)."
 else
     echo "ℹ Skipping standalone policy tests (no g++ on PATH)."
 fi

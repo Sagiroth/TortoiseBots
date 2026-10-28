@@ -463,6 +463,14 @@ public:
         }
     }
 
+    size_t WindowEventCount() const   // per-event window entries still stored (tests pin the prune)
+    {
+        size_t n = 0;
+        for (auto const& m : order_)
+            n += m.dmgDone.size() + m.heals.size() + m.castTimes.size();
+        return n;
+    }
+
     std::string WindowJson(uint32_t nowMs)   // the `combat` object of COMMANDERS, "" outside a fight
     {
         if (!inFight_)
