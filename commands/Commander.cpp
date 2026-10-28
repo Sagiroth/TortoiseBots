@@ -67,6 +67,7 @@
 #include "../runtime/SystemRunPolicy.h"
 #include "../runtime/CombatMonitorService.h"
 #include "../runtime/CombatMonitorPolicy.h"
+#include "../runtime/ObservabilityEmitter.h"
 #include "../runtime/RunItemNeedPolicy.h" // item-leg skip (spec C1/D): needs + ledger, namespace TortoiseBots::RunItemNeed
 #include "../runtime/RunItemNeedFacts.h" // the leg's need facts from the party's bags (item-leg skip review round 2)
 #include "../runtime/RunGivenItemRegistry.h" // the run's given item instances (item-leg skip review round 2)
@@ -758,6 +759,9 @@ void EraseRunSlot(uint64_t commanderRaw)
     if (it == DungeonRuns().end())
         return;
     TakeRunItems(it->second, 0);
+    if (RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commanderRaw))
+        if (binding->groupId)
+            TortoiseBots::CombatMonitorService::Instance().Forget(binding->groupId);
     DungeonRuns().erase(it);
 }
 // Every run slot at once (no commander bound any more, the module's clear): the given items go back first.
@@ -1198,6 +1202,8 @@ uint32 ReleaseBinding(uint64 commanderRaw, RemoteCommander::ReleaseReason reason
     // After the follow targets and the threat back-off above were restored,
     // while the hires are still in the bound party.
     HireLifecycle::Instance().EndCommand(::ObjectGuid(commanderRaw));
+    if (removed.groupId)
+        TortoiseBots::CombatMonitorService::Instance().Forget(removed.groupId);
     TB_LOG_DETAIL("TortoiseBots: %s %s released group of %s: %s",
         removed.system ? "system run" : "remote commander",
         commander ? commander->GetName() : "(offline)", lead ? lead->GetName() : "(offline)",
@@ -11755,13 +11761,13 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
 void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
 {
     out.clear();
+    ForgetReleasedCombatGroups();
     // Nothing to read while no commander is bound: the common case costs a lookup.
     if (CommanderBindings().Empty())
     {
         CommanderOrderLog().Clear();
         return;
     }
-    std::unordered_set<uint64_t> bound;
     for (uint64 commanderRaw : CommanderBindings().Commanders())
     {
         bound.insert(commanderRaw);
@@ -11793,7 +11799,6 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
         ref.orders = CommanderOrderLog().Recent(commanderRaw);
         FillCommanderMapData(*binding, commander, lead, ref);
         FillCommanderCombat(commanderRaw, *binding, lead, ref);
-        ForgetReleasedCombatGroups();
         out.push_back(std::move(ref));
     }
     CommanderOrderLog().Retain(bound);
@@ -11863,6 +11868,8 @@ static void ForgetReleasedCombatGroups()
 static void FillCommanderCombat(uint64 commanderRaw, RemoteCommander::Binding const& binding, Player* lead,
     CommanderTelemetry::BindingRef& ref)
 {
+    TortoiseBots::CombatMonitorService::Instance().SyncConfig(sPlayerbotAIConfig.combatMonitor &&
+        TortoiseBots::ObservabilityEmitter::Instance().IsEnabled());
     if (!TortoiseBots::CombatMonitorService::Instance().Enabled() || !lead)
         return;
     if (DungeonRuns().find(commanderRaw) == DungeonRuns().end())
@@ -11920,6 +11927,8 @@ static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding c
     std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& facts, DungeonRunSlot const& slot)
 {
     using namespace TortoiseBots;
+    CombatMonitorService::Instance().SyncConfig(sPlayerbotAIConfig.combatMonitor &&
+        ObservabilityEmitter::Instance().IsEnabled());
     if (!CombatMonitorService::Instance().Enabled() || !lead || !lead->IsInWorld())
         return;
     DungeonRun::StatusFields const fields = DungeonRun::StatusParts(slot.run);

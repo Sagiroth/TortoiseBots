@@ -40,7 +40,7 @@ void CombatMonitorUnitAdapter::OnDamage(Unit* attacker, Unit* victim, uint32& da
         return;
     uint32_t enemyEntry = 0;
     uint64_t enemyGuid = 0;
-    std::string enemyName;
+    char const* enemyName = "";
     if (attackerOwner && !victimOwner)
     {
         Creature* creature = victim->ToCreature();
@@ -93,14 +93,14 @@ void CombatMonitorUnitAdapter::OnUnitDeath(Unit* unit, Unit* killer)
         return;
     if (unit->IsPlayer())
     {
-        std::string killerName = killer ? killer->GetName() : "";
-        CombatMonitorService::Instance().OnDeath(unit->GetGUIDLow(), killerName,
+        char const* killerName = killer ? killer->GetName() : "";
+        CombatMonitorService::Instance().OnDeath(unit->GetGUIDLow(), OwnerLow(killer), killerName,
             unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), 0);
         return;
     }
     Creature* creature = unit->ToCreature();
     if (creature)
-        CombatMonitorService::Instance().OnDeath(0, "", 0.0f, 0.0f, 0.0f, unit->GetEntry());
+        CombatMonitorService::Instance().OnDeath(0, OwnerLow(killer), "", 0.0f, 0.0f, 0.0f, unit->GetEntry());
 }
 
 void CombatMonitorCastAdapter::OnSpellCast(Player* player, Spell* spell, bool /*skipCheck*/)
