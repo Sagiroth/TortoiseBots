@@ -32,6 +32,8 @@
 #include "WorldBuffRaidAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "HireUnlockKillAdapter.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "CombatMonitorAdapter.h"
 
 namespace TortoiseBots {
 
@@ -62,6 +64,8 @@ void RegisterScripts()
     new WorldBuffRaidAdapter();
     // Issue #490 PR 2: hire-unlock boss kills, counters and contracts page.
     new HireUnlockKillAdapter();
+    new CombatMonitorUnitAdapter();
+    new CombatMonitorCastAdapter();
 }
 
 } // namespace TortoiseBots

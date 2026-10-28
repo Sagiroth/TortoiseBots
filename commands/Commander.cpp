@@ -65,6 +65,8 @@
 #include "../runtime/CommanderTelemetry.h"
 #include "../runtime/DungeonRunPolicy.h"
 #include "../runtime/SystemRunPolicy.h"
+#include "../runtime/CombatMonitorService.h"
+#include "../runtime/CombatMonitorPolicy.h"
 #include "../runtime/RunItemNeedPolicy.h" // item-leg skip (spec C1/D): needs + ledger, namespace TortoiseBots::RunItemNeed
 #include "../runtime/RunItemNeedFacts.h" // the leg's need facts from the party's bags (item-leg skip review round 2)
 #include "../runtime/RunGivenItemRegistry.h" // the run's given item instances (item-leg skip review round 2)
@@ -9530,6 +9532,14 @@ std::vector<TortoiseBots::PlayerLed::Engaged> ReadPlayerLedEngaged(Player* comma
     return out;
 }
 
+// Combat monitor glue (task A8b): the 1 Hz sample in the run tick and the
+// snapshot's window read.
+static void FillCommanderCombat(uint64 commanderRaw, RemoteCommander::Binding const& binding, Player* lead,
+    CommanderTelemetry::BindingRef& ref);
+static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding const& binding, Player* lead,
+    std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& facts, DungeonRunSlot const& slot);
+static void ForgetReleasedCombatGroups(void);
+
 void TickDungeonRun(uint64 commanderRaw, uint32 dt)
 {
     auto it = DungeonRuns().find(commanderRaw);
@@ -9819,6 +9829,8 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
     // The real players of the party (the commander and others): deaths, wipes, the regroup, the pull hold, health.
     ReadRunPlayers(slot, commanderRaw, lead, group, bots, facts);
     TortoiseBots::DungeonRun::ApplyPlayerFacts(facts);
+    // The combat monitor's 1 Hz sample of this run's fight (task A8b).
+    RefreshCombatMonitor(commanderRaw, *binding, lead, bots, facts, slot);
     // The step Tick saw: facts (and f.seen) were read for it, but the order below walks the step after it.
     std::size_t const stepBeforeTick = slot.run.step;
     std::string const order = slot.playerLed.on
@@ -11780,6 +11792,8 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
             FillCommandedBots(group, lead, ref.bots);
         ref.orders = CommanderOrderLog().Recent(commanderRaw);
         FillCommanderMapData(*binding, commander, lead, ref);
+        FillCommanderCombat(commanderRaw, *binding, lead, ref);
+        ForgetReleasedCombatGroups();
         out.push_back(std::move(ref));
     }
     CommanderOrderLog().Retain(bound);
@@ -11814,6 +11828,152 @@ static void FillDungeonMob(Player* seer, Unit* unit, CommanderTelemetry::MobInfo
         unit->HasUnitState(UNIT_STAT_FLEEING), unit->HasUnitState(UNIT_STAT_ROOT));
     if (uint32 const spellId = CurrentSpellId(unit))
         mob.cast = SpellNameOf(spellId);
+}
+
+// The combat monitor's 1 Hz run tick (task A8b): the bound bots, in-combat
+// state, aura sample; only when Enabled(). Other workers edit the bind code.
+// Groups the snapshot has fed before: a released binding's book is forgotten
+// here (the bind code is owned by parallel workers).
+static std::unordered_set<uint32_t>& s_combatGroups()
+{
+    static std::unordered_set<uint32_t> groups;
+    return groups;
+}
+
+// A released binding's book is forgotten here, beside the snapshot that fed
+// it (the bind code is owned by parallel workers).
+static void ForgetReleasedCombatGroups()
+{
+    for (auto it = s_combatGroups().begin(); it != s_combatGroups().end();)
+    {
+        bool standing = false;
+        for (uint64 raw : CommanderBindings().Commanders())
+            if (RemoteCommander::Binding const* b = CommanderBindings().FindByCommander(raw))
+                standing = standing || b->groupId == *it;
+        if (standing)
+            ++it;
+        else
+        {
+            TortoiseBots::CombatMonitorService::Instance().Forget(*it);
+            it = s_combatGroups().erase(it);
+        }
+    }
+}
+
+static void FillCommanderCombat(uint64 commanderRaw, RemoteCommander::Binding const& binding, Player* lead,
+    CommanderTelemetry::BindingRef& ref)
+{
+    if (!TortoiseBots::CombatMonitorService::Instance().Enabled() || !lead)
+        return;
+    if (DungeonRuns().find(commanderRaw) == DungeonRuns().end())
+    {
+        // No run: nothing aggregates (the live window would go stale).
+        TortoiseBots::CombatMonitorService::Instance().Forget(ref.groupId);
+        s_combatGroups().erase(ref.groupId);
+        ref.combatJson.clear();
+        return;
+    }
+    TortoiseBots::CombatMonitorService::Instance().NoteBinding(ref.groupId, ref.commander, ref.commanderGuid,
+        lead->GetMapId());
+    s_combatGroups().insert(ref.groupId);
+    ref.combatJson = TortoiseBots::CombatMonitorService::Instance().WindowJson(ref.groupId);
+}
+
+// The group's members as the combat monitor aggregates them.
+static std::vector<TortoiseBots::CombatMonitor::MemberInfo> CombatMonitorMembers(std::vector<Player*> const& bots)
+{
+    std::vector<TortoiseBots::CombatMonitor::MemberInfo> members;
+    members.reserve(bots.size());
+    for (Player* bot : bots)
+    {
+        if (!bot)
+            continue;
+        TortoiseBots::CombatMonitor::MemberInfo member;
+        member.guid = bot->GetGUIDLow();
+        member.name = bot->GetName();
+        switch (bot->GetClass())
+        {
+            case CLASS_WARRIOR: member.cls = "warrior"; break;
+            case CLASS_PALADIN: member.cls = "paladin"; break;
+            case CLASS_HUNTER: member.cls = "hunter"; break;
+            case CLASS_ROGUE: member.cls = "rogue"; break;
+            case CLASS_PRIEST: member.cls = "priest"; break;
+            case CLASS_SHAMAN: member.cls = "shaman"; break;
+            case CLASS_MAGE: member.cls = "mage"; break;
+            case CLASS_WARLOCK: member.cls = "warlock"; break;
+            case CLASS_DRUID: member.cls = "druid"; break;
+            default: member.cls = "unknown"; break;
+        }
+        member.role = PlayerbotAI::IsTank(bot) ? TortoiseBots::CombatMonitor::Role::Tank
+            : PlayerbotAI::IsHeal(bot) ? TortoiseBots::CombatMonitor::Role::Healer
+            : TortoiseBots::CombatMonitor::Role::Damage;
+        member.subgroup = bot->GetGroup() && bot->GetGroup()->isRaidGroup()
+            ? static_cast<int>(bot->GetSubGroup()) : -1;
+        members.push_back(std::move(member));
+    }
+    return members;
+}
+
+// The 1 Hz run tick's combat sample (task A8b): the bound bots, in-combat
+// state, run context and one focus unit's aura sample; only when Enabled().
+static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding const& binding, Player* lead,
+    std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& facts, DungeonRunSlot const& slot)
+{
+    using namespace TortoiseBots;
+    if (!CombatMonitorService::Instance().Enabled() || !lead || !lead->IsInWorld())
+        return;
+    DungeonRun::StatusFields const fields = DungeonRun::StatusParts(slot.run);
+    CombatMonitor::FightContext ctx;
+    ctx.plan = fields.plan;
+    ctx.leg = fields.leg;
+    ctx.kind = fields.kind;
+    ctx.step = static_cast<uint32_t>(fields.step);
+    if (ai::PlanStep const* step = FactStep(slot.run))
+    {
+        if (step->kind == ai::PlanStepKind::Boss)
+        {
+            ctx.bossEntry = step->entry;
+            if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(step->entry))
+                ctx.bossName = info->name;
+        }
+        ctx.planned = step->entries;
+    }
+    // The focus unit (L15): the run's boss when the step is a boss step and he
+    // is engaged, else the engaged unit with the most maximum health.
+    uint64_t focusGuid = 0;
+    uint32_t focusMaxHealth = 0;
+    for (DungeonRun::UnitFact const& u : facts.engagedUnits)
+    {
+        if (ctx.bossEntry && u.entry == ctx.bossEntry)
+        {
+            focusGuid = u.guid;
+            break;
+        }
+        if (u.maxHealth > focusMaxHealth)
+        {
+            focusMaxHealth = u.maxHealth;
+            focusGuid = u.guid;
+        }
+    }
+    std::vector<std::string> debuffKeysUp;
+    if (focusGuid)
+        if (Unit* focus = ObjectAccessor::GetUnit(*lead, ::ObjectGuid(focusGuid)))
+            for (auto const& entry : focus->GetSpellAuraHolderMap())
+            {
+                SpellAuraHolder const* holder = entry.second;
+                if (!holder || holder->IsDeleted() || holder->IsPassive())
+                    continue;
+                SpellEntry const* proto = holder->GetSpellProto();
+                if (!proto)
+                    continue;
+                for (std::string const& key : CombatMonitor::DebuffKeys(proto->SpellName[0],
+                    holder->GetStackAmount()))
+                    debuffKeysUp.push_back(key);
+            }
+    bool const allDead = facts.total > 0 && facts.alive == 0;
+    (void)commanderRaw;
+    CombatMonitorService::Instance().Refresh(binding.groupId, CombatMonitorMembers(bots), facts.anyInCombat,
+        allDead, ctx, debuffKeysUp, WorldTimer::getMSTime());
 }
 
 void CollectDungeonMobs(std::vector<DungeonMobTelemetry::RunRef>& runs)

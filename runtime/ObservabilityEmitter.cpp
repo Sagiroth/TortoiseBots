@@ -686,6 +686,16 @@ void ObservabilityEmitter::SetCommanderProvider(std::function<void(std::vector<C
     m_commanderProvider = std::move(provider);
 }
 
+int ObservabilityEmitter::ProtocolVersion() const { return kProtocolVersion; }
+uint64_t ObservabilityEmitter::SessionId() const { return m_sessionId; }
+uint64_t ObservabilityEmitter::NextSeq() { return ++m_snapshotSeq; }
+int64_t ObservabilityEmitter::NowUnix() const { return static_cast<int64_t>(time(nullptr)); }
+
+void ObservabilityEmitter::SetCombatProvider(std::function<void(std::vector<std::string>&)> provider)
+{
+    m_combatProvider = std::move(provider);
+}
+
 void ObservabilityEmitter::SetDungeonMobProvider(std::function<void(std::vector<DungeonMobTelemetry::RunRef>&)> provider)
 {
     m_dungeonMobProvider = std::move(provider);
@@ -1214,6 +1224,13 @@ void ObservabilityEmitter::Update(uint32 diff)
     CollectOnlinePlayers(onlinePlayers);
     EmitSnapshotCycle(activeBots, onlinePlayers, diff);
     EmitCommanders();
+    if (m_combatProvider)
+    {
+        m_combatPayloads.clear();
+        m_combatProvider(m_combatPayloads);
+        for (std::string const& payload : m_combatPayloads)
+            SendDatagram(payload);
+    }
 
     // Issue #872: real players' online characters get their exact-stats row
     // too (same round-robin rate limit as bots, a few per snapshot, never per
@@ -1670,6 +1687,7 @@ void ObservabilityEmitter::EmitCommanders()
         info.bossesReported = ref.bossesReported;
         info.bossesMap = ref.bossesMap;
         info.bosses = ref.bosses; // at most kMaxBossesPerBinding, copied once per 2 s
+        info.combatJson = ref.combatJson; // the live window, written raw; copied once per 2 s
         // Since when the binding has stood (first seen here), for the dashboard's run timer; forgotten with the binding.
         int64_t& since = m_commanderSince[ref.commanderGuid];
         if (!since)

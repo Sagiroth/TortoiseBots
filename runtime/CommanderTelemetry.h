@@ -455,6 +455,7 @@ struct BindingRef
     bool bossesReported = false;     // the lead is on a dungeon or raid map and its boss list was read (it may be empty)
     uint32_t bossesMap = 0;          // that map
     std::vector<BossInfo> bosses;    // every known boss of it, with its state in the lead's instance (one row per entry)
+    std::string combatJson;          // the live fight window (`combat` object), "" outside a fight
 };
 
 // One bound bot as the dashboard shows it.
@@ -507,6 +508,7 @@ struct BindingInfo
     bool bossesReported = false;
     uint32_t bossesMap = 0;
     std::vector<BossInfo> bosses;
+    std::string combatJson;          // the live fight window (`combat` object), "" outside a fight
 };
 
 inline std::string JsonEscape(std::string const& s)
@@ -745,6 +747,8 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
             bs << "]";
             bossLists.push_back(BossList{static_cast<size_t>(ss.tellp()), bs.str(), listed});
         }
+        if (!b.combatJson.empty())
+            ss << ",\"combat\":" << b.combatJson;
         ss << ",\"orders\":[";
         size_t orders = 0;
         for (OrderRecord const& o : b.orders)
