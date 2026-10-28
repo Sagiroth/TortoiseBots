@@ -64,6 +64,26 @@ static std::string TakeOne(CombatMonitorService& svc, uint32_t group, int64_t ts
     return "";
 }
 
+static std::vector<std::string> TakeEventsFor(CombatMonitorService& svc, uint32_t group, uint32_t nowMs,
+                                              uint32_t gap = 250)
+{
+    std::vector<std::string> out;
+    svc.TakeEventPayloads(out, 12, 77, NextSeq, 1700010000, 1700010000000, nowMs, gap);
+    std::vector<std::string> mine;
+    for (std::string const& p : out)
+        if (p.find("\"group\":" + std::to_string(group) + ",") != std::string::npos)
+            mine.push_back(p);
+    return mine;
+}
+
+static size_t CountOf(std::string const& hay, std::string const& needle)
+{
+    size_t n = 0;
+    for (size_t pos = 0; (pos = hay.find(needle, pos)) != std::string::npos; pos += needle.size())
+        ++n;
+    return n;
+}
+
 static std::string FightId(std::string const& payload)
 {
     std::string const tag = "\"id\":\"";
@@ -292,6 +312,224 @@ static void TestOversizeFightTakesOneSeq()
     svc.Forget(65);
 }
 
+// A fight keeps running after its run is gone; RefreshNoRun neither
+// starts one nor loses the open one.
+static void TestFightOutlivesRunStop()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(70, Members(), true, false, Ctx(), {}, 1000);
+    svc.RefreshNoRun(70, true, false, 300000);
+    svc.RefreshNoRun(70, false, false, 301000);
+    svc.RefreshNoRun(70, false, false, 304500);
+    std::string const first = TakeOne(svc, 70, 1700013000);
+    std::string const second = TakeOne(svc, 70, 1700013000);
+    std::string const third = TakeOne(svc, 70, 1700013000);
+    CHECK(!first.empty());
+    CHECK(first.find("\"dur_ms\":300000") != std::string::npos);
+    CHECK(!second.empty());
+    CHECK(second.find("\"dur_ms\":300000") != std::string::npos);
+    CHECK(third.empty());
+    svc.Forget(70);
+}
+
+static void TestRefreshNoRunNeverStarts()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.RefreshNoRun(71, true, false, 1000);   // no book: nothing to follow
+    CHECK(TakeOne(svc, 71, 1700001000).empty());
+    svc.Refresh(71, Members(), false, false, Ctx(), {}, 2000);   // a book, no fight
+    svc.RefreshNoRun(71, true, false, 3000);
+    CHECK(!svc.InFight(71));
+    CHECK(TakeOne(svc, 71, 1700003000).empty());
+    svc.Forget(71);
+}
+
+static void TestForgetKeepsUntakenFight()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(72, Members(), true, false, Ctx(), {}, 1000);
+    svc.Refresh(72, Members(), false, false, Ctx(), {}, 8000);
+    svc.Refresh(72, Members(), false, false, Ctx(), {}, 11500);   // ends at 8000, 7 s: kept
+    svc.Forget(72);
+    std::string const first = TakeOne(svc, 72, 1700011500);
+    std::string const second = TakeOne(svc, 72, 1700011500);
+    std::string const third = TakeOne(svc, 72, 1700011500);
+    CHECK(!first.empty());
+    CHECK(first.find("\"outcome\":\"end\"") != std::string::npos);
+    CHECK(!second.empty());
+    CHECK(third.empty());
+}
+
+static void TestForgetClosesOpenFight()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(73, Members(), true, false, Ctx(), {}, 1000);
+    svc.RefreshNoRun(73, true, false, 61000);   // 60 s in, still fighting
+    svc.Forget(73);
+    std::string const fight = TakeOne(svc, 73, 1700061000);
+    CHECK(!fight.empty());
+    CHECK(fight.find("\"dur_ms\":60000") != std::string::npos);
+    CHECK(fight.find("\"outcome\":\"end\"") != std::string::npos);
+    TakeOne(svc, 73, 1700061000);
+}
+
+static void TestEventsStartAndDeath()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(74, Members(), true, false, Ctx(), {}, 1000);
+    std::vector<std::string> events = TakeEventsFor(svc, 74, 1000);
+    CHECK(events.size() == 1);
+    CHECK(events[0].find("\"k\":\"start\"") != std::string::npos);
+    CHECK(events[0].find("\"id\":\"74-1\"") != std::string::npos);
+    svc.OnDeath(7, 0, "Magmadar", 1.0f, 2.0f, 3.0f, 0);
+    events = TakeEventsFor(svc, 74, 1400);
+    CHECK(events.size() == 1);
+    CHECK(events[0].find("\"k\":\"death\"") != std::string::npos);
+    CHECK(events[0].find("\"by\":\"Magmadar\"") != std::string::npos);
+    svc.Forget(74);
+}
+
+static void TestEventGapLimits()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(75, Members(), true, false, Ctx(), {}, 1000);
+    CHECK(TakeEventsFor(svc, 75, 1000).size() == 1);
+    svc.OnDeath(7, 0, "Magmadar", 0.0f, 0.0f, 0.0f, 0);
+    CHECK(TakeEventsFor(svc, 75, 1100).empty());
+    std::vector<std::string> const later = TakeEventsFor(svc, 75, 1400);
+    CHECK(later.size() == 1);
+    CHECK(later[0].find("\"k\":\"death\"") != std::string::npos);
+    svc.Forget(75);
+}
+
+static void TestKeepaliveAfter5s()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(76, Members(), true, false, Ctx(), {}, 1000);
+    CHECK(TakeEventsFor(svc, 76, 1000).size() == 1);
+    CHECK(TakeEventsFor(svc, 76, 5000).empty());
+    std::vector<std::string> const keep = TakeEventsFor(svc, 76, 6000);
+    CHECK(keep.size() == 1);
+    CHECK(keep[0].find("\"events\":[]") != std::string::npos);
+    CHECK(keep[0].find("\"fight_ms\":5000") != std::string::npos);
+    svc.Forget(76);
+}
+
+static void TestEventQueueBounded()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(77, Members(), true, false, Ctx(), {}, 1000);
+    CHECK(TakeEventsFor(svc, 77, 1000).size() == 1);   // the start went out first
+    for (uint32_t i = 1; i <= 100; ++i)
+    {
+        svc.Refresh(77, Members(), true, false, Ctx(), {}, 1000 + i);
+        svc.OnDeath(7, 0, "Magmadar", 0.0f, 0.0f, 0.0f, 0);
+    }
+    std::vector<std::string> const first = TakeEventsFor(svc, 77, 2000);
+    CHECK(first.size() == 1);
+    CHECK(first[0].find("\"dropped\":36") != std::string::npos);
+    CHECK(first[0].find("\"events\":[{\"k\":\"death\",\"t\":37,") != std::string::npos);
+    std::vector<std::string> const second = TakeEventsFor(svc, 77, 2400);
+    CHECK(second.size() == 1);
+    CHECK(second[0].find("\"dropped\":0") != std::string::npos);
+    CHECK(second[0].find("\"t\":100,") != std::string::npos);
+    svc.Forget(77);
+}
+
+static void TestEndEventKeptFlag()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(78, Members(), true, false, Ctx(), {}, 1000);
+    CHECK(TakeEventsFor(svc, 78, 1000).size() == 1);
+    svc.Refresh(78, Members(), false, false, Ctx(), {}, 2000);
+    svc.Refresh(78, Members(), false, false, Ctx(), {}, 5000);   // 1 s fight: too short to send
+    std::vector<std::string> const end = TakeEventsFor(svc, 78, 6000);
+    CHECK(end.size() == 1);
+    CHECK(end[0].find("\"k\":\"end\"") != std::string::npos);
+    CHECK(end[0].find("\"kept\":false") != std::string::npos);
+    CHECK(end[0].find("\"fight\":null") != std::string::npos);
+    svc.Forget(78);
+}
+
+static void TestTauntAndInterruptKinds()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(79, Members(), true, false, Ctx(), {}, 1000);
+    CHECK(TakeEventsFor(svc, 79, 1000).size() == 1);
+    svc.OnCast(7, "Taunt", false, 't', 777, "Magmadar");
+    svc.OnCast(9, "Kick", false, 'i', 778, "Magmadar");
+    svc.OnCast(9, "Smite", false);
+    std::vector<std::string> const events = TakeEventsFor(svc, 79, 1400);
+    CHECK(events.size() == 1);
+    CHECK(events[0].find("\"k\":\"taunt\"") != std::string::npos);
+    CHECK(events[0].find("\"k\":\"interrupt\"") != std::string::npos);
+    CHECK(events[0].find("{\"k\":\"taunt\",\"t\":0,\"g\":7,\"n\":\"Tanky\",\"s\":\"Taunt\"") != std::string::npos);
+    CHECK(events[0].find("{\"k\":\"interrupt\",\"t\":0,\"g\":9,\"n\":\"Healy\",\"s\":\"Kick\"") != std::string::npos);
+    CHECK(events[0].find("\"tg\":\"777\"") != std::string::npos);
+    CHECK(events[0].find("\"tg\":\"778\"") != std::string::npos);
+    CHECK(events[0].find("\"s\":\"Taunt\"") != std::string::npos);
+    CHECK(CountOf(events[0], "\"k\":\"") == 2);
+    svc.Forget(79);
+}
+
+static void TestEnemyCastEventOnlyEliteBoss()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(80, Members(), true, false, Ctx(), {}, 1000);
+    CHECK(TakeEventsFor(svc, 80, 1000).size() == 1);
+    svc.NoteEnemyCast(80, 10184, 90001, "Onyxia", "Shadowflame", 't');
+    svc.NoteEnemyCast(80, 10184, 90002, "Onyxia", "Fireball", 'b');
+    svc.NoteEnemyCast(80, 10184, 90003, "Onyxia", "Fear", 'e');
+    std::vector<std::string> const events = TakeEventsFor(svc, 80, 1400);
+    CHECK(events.size() == 1);
+    CHECK(CountOf(events[0], "\"k\":\"cast\"") == 2);
+    CHECK(events[0].find("\"id\":\"90001\"") == std::string::npos);
+    CHECK(events[0].find("\"id\":\"90002\"") != std::string::npos);
+    CHECK(events[0].find("\"id\":\"90003\"") != std::string::npos);
+    CHECK(events[0].find("\"r\":\"b\"") != std::string::npos);
+    CHECK(events[0].find("\"r\":\"e\"") != std::string::npos);
+    svc.Forget(80);
+}
+
+static void TestRetiredBookDrainsThenErased()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(81, Members(), true, false, Ctx(), {}, 1000);
+    svc.RefreshNoRun(81, true, false, 61000);
+    svc.Forget(81);
+    std::vector<std::string> const events = TakeEventsFor(svc, 81, 62000);
+    CHECK(events.size() == 1);
+    CHECK(events[0].find("\"k\":\"end\"") != std::string::npos);
+    CHECK(!TakeOne(svc, 81, 1700062000).empty());
+    CHECK(!TakeOne(svc, 81, 1700062000).empty());
+    CHECK(TakeOne(svc, 81, 1700062000).empty());
+    CHECK(TakeEventsFor(svc, 81, 63000).empty());
+}
+
 int main()
 {
     TestSyncConfigUngated();
@@ -302,6 +540,18 @@ int main()
     TestBitsetFiltersNonMembers();
     TestRepublishOnlyOnChange();
     TestOversizeFightTakesOneSeq();
+    TestFightOutlivesRunStop();
+    TestRefreshNoRunNeverStarts();
+    TestForgetKeepsUntakenFight();
+    TestForgetClosesOpenFight();
+    TestEventsStartAndDeath();
+    TestEventGapLimits();
+    TestKeepaliveAfter5s();
+    TestEventQueueBounded();
+    TestEndEventKeptFlag();
+    TestTauntAndInterruptKinds();
+    TestEnemyCastEventOnlyEliteBoss();
+    TestRetiredBookDrainsThenErased();
     std::printf("combat monitor service: %d checks passed\n", checks);
     return 0;
 }

@@ -47,8 +47,12 @@ void CombatMonitorService::SyncConfig(bool on)
         return;   // only the on->off turn drops the books (the 1 Hz callers sync every tick)
     std::lock_guard<std::mutex> lock(m_mutex);
     m_books.clear();
+    m_retired.clear();
+    m_retiredMeta.clear();
+    m_lastEventSend.clear();
     m_memberGroup.clear();
     m_ctx.clear();
+    m_inFightCount.store(0, std::memory_order_relaxed);
     PublishMembers();
 }
 
@@ -157,26 +161,94 @@ void CombatMonitorService::Refresh(uint32_t groupId, std::vector<CombatMonitor::
             m_memberGroup[kv.first] = groupId;
         PublishMembers();
     }
-    if (anyInCombat && !book.InFight())
+    bool const wasFighting = book.InFight();
+    if (anyInCombat && !wasFighting)
         StartBook(groupId, book, ctx);
     book.SampleDebuffs(debuffKeysUp);
     book.SetInCombat(anyInCombat, allDead, nowMs);
+    NoteFightCount(wasFighting, book.InFight());
+}
+
+// After `.bot run stop` there is no run to Refresh from, so the bound
+// group's open fight is followed here instead: ended by the same 3 s rule.
+// Never starts a book or a fight.
+void CombatMonitorService::RefreshNoRun(uint32_t groupId, bool anyInCombat, bool allDead, uint32_t nowMs)
+{
+    if (!Enabled() || groupId == 0)
+        return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_lastNowMs = nowMs;
+    m_lastUnixNow = static_cast<int64_t>(time(nullptr));
+    auto const it = m_books.find(groupId);
+    if (it == m_books.end() || !it->second.InFight())
+        return;
+    it->second.SetInCombat(anyInCombat, allDead, nowMs);
+    NoteFightCount(true, it->second.InFight());
+}
+
+bool CombatMonitorService::InFight(uint32_t groupId) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const it = m_books.find(groupId);
+    return it != m_books.end() && it->second.InFight();
+}
+
+bool CombatMonitorService::AnyInFight() const
+{
+    return m_inFightCount.load(std::memory_order_relaxed) != 0;
+}
+
+void CombatMonitorService::NoteFightCount(bool before, bool after)
+{
+    if (before == after)
+        return;
+    if (after)
+        m_inFightCount.fetch_add(1, std::memory_order_relaxed);
+    else
+        m_inFightCount.fetch_sub(1, std::memory_order_relaxed);
 }
 
 void CombatMonitorService::Forget(uint32_t groupId)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_books.erase(groupId);
+    bool retired = false;
+    if (auto const it = m_books.find(groupId); it != m_books.end())
+    {
+        bool const wasFighting = it->second.InFight();
+        it->second.Close(m_lastNowMs);
+        NoteFightCount(wasFighting, it->second.InFight());
+        if (it->second.HasTakeablePayloads() || it->second.HasEvents())
+        {
+            // The open fight was just closed and still has to go out, so the book
+            // moves aside and drains like a live one instead of being erased with it.
+            RetiredMeta meta;
+            if (auto const v = m_commander.find(groupId); v != m_commander.end())
+                meta.commander = v->second;
+            if (auto const v = m_commanderGuid.find(groupId); v != m_commanderGuid.end())
+                meta.commanderGuid = v->second;
+            if (auto const v = m_mapId.find(groupId); v != m_mapId.end())
+                meta.mapId = v->second;
+            m_retiredMeta[groupId] = std::move(meta);
+            m_retired[groupId] = std::move(it->second);
+            retired = true;
+        }
+        m_books.erase(it);
+    }
     for (auto it = m_memberGroup.begin(); it != m_memberGroup.end();)
         it = it->second == groupId ? m_memberGroup.erase(it) : std::next(it);
     m_ctx.erase(groupId);
     PublishMembers();
-    m_commander.erase(groupId);
-    m_commanderGuid.erase(groupId);
-    m_mapId.erase(groupId);
+    if (!retired)
+    {
+        m_commander.erase(groupId);
+        m_commanderGuid.erase(groupId);
+        m_mapId.erase(groupId);
+        m_lastEventSend.erase(groupId);
+    }
 }
 
-void CombatMonitorService::OnCast(uint32_t casterGuidLow, char const* spell, bool heal)
+void CombatMonitorService::OnCast(uint32_t casterGuidLow, char const* spell, bool heal, char castKind,
+                                  uint64_t target, char const* targetName)
 {
     if (m_memberCount.load(std::memory_order_relaxed) == 0)
         return;
@@ -193,7 +265,20 @@ void CombatMonitorService::OnCast(uint32_t casterGuidLow, char const* spell, boo
     auto const book = m_books.find(group);
     if (book == m_books.end())
         return;
-    book->second.OnCast(casterGuidLow, spell ? spell : "", heal, m_lastNowMs);
+    book->second.OnCast(casterGuidLow, spell ? spell : "", heal, m_lastNowMs, castKind, target,
+                        targetName ? targetName : "");
+}
+
+void CombatMonitorService::NoteEnemyCast(uint32_t groupId, uint32_t entry, uint64_t guid, char const* name,
+                                          char const* spell, char rank)
+{
+    if (!Enabled() || groupId == 0)
+        return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const book = m_books.find(groupId);
+    if (book == m_books.end())
+        return;
+    book->second.NoteEnemyCast(entry, guid, name ? name : "", spell ? spell : "", rank, m_lastNowMs);
 }
 
 void CombatMonitorService::OnDamage(uint32_t attackerOwnerGuidLow, uint32_t victimOwnerGuidLow, uint32_t amount,
@@ -263,6 +348,7 @@ void CombatMonitorService::OnEnterCombat(uint32_t memberGuidLow)
     {
         auto const ctx = m_ctx.find(group);
         StartBook(group, book->second, ctx != m_ctx.end() ? ctx->second : CombatMonitor::FightContext{});
+        NoteFightCount(false, book->second.InFight());
     }
 }
 
@@ -287,7 +373,9 @@ void CombatMonitorService::OnDeath(uint32_t victimGuidLow, uint32_t killerOwnerG
         auto const book = m_books.find(group);
         if (book == m_books.end())
             return;
+        bool const wasFighting = book->second.InFight();
         book->second.OnDeath(victimGuidLow, killer ? killer : "", x, y, z, m_lastNowMs);
+        NoteFightCount(wasFighting, book->second.InFight());
         return;
     }
     if (enemyEntryDied == 0)
@@ -310,21 +398,49 @@ void CombatMonitorService::TakePayloads(std::vector<std::string>& out, int proto
     out.clear();
     std::vector<std::string> oversize;
     std::lock_guard<std::mutex> lock(m_mutex);
-    for (auto& kv : m_books)
-    {
-        uint32_t commanderGuid = 0;
-        if (auto const it = m_commanderGuid.find(kv.first); it != m_commanderGuid.end())
-            commanderGuid = it->second;
-        uint32_t mapId = 0;
-        if (auto const it = m_mapId.find(kv.first); it != m_mapId.end())
-            mapId = it->second;
-        if (!kv.second.HasTakeablePayloads())
-            continue;
-        std::vector<std::string> payloads = kv.second.TakeFightPayloads(protocolVersion, session, nextSeq, ts,
-                                                                         m_commander[kv.first], commanderGuid,
-                                                                         kv.first, mapId, &oversize);
+    auto drain = [&](uint32_t groupId, CombatMonitor::Book& book, std::string const& commander, uint32_t commanderGuid,
+                     uint32_t mapId) {
+        if (!book.HasTakeablePayloads())
+            return;
+        std::vector<std::string> payloads = book.TakeFightPayloads(protocolVersion, session, nextSeq, ts, commander,
+                                                                   commanderGuid, groupId, mapId, &oversize);
         for (std::string& payload : payloads)
             out.push_back(std::move(payload));
+    };
+    auto commanderOf = [this](uint32_t groupId) -> std::string const& {
+        static std::string const empty;
+        auto const it = m_commander.find(groupId);
+        return it != m_commander.end() ? it->second : empty;
+    };
+    auto guidOf = [this](uint32_t groupId) -> uint32_t {
+        auto const it = m_commanderGuid.find(groupId);
+        return it != m_commanderGuid.end() ? it->second : 0;
+    };
+    auto mapOf = [this](uint32_t groupId) -> uint32_t {
+        auto const it = m_mapId.find(groupId);
+        return it != m_mapId.end() ? it->second : 0;
+    };
+    for (auto& kv : m_books)
+        drain(kv.first, kv.second, commanderOf(kv.first), guidOf(kv.first), mapOf(kv.first));
+    for (auto it = m_retired.begin(); it != m_retired.end();)
+    {
+        RetiredMeta const& meta = m_retiredMeta[it->first];
+        drain(it->first, it->second, meta.commander, meta.commanderGuid, meta.mapId);
+        if (!it->second.HasTakeablePayloads() && !it->second.HasEvents())
+        {
+            if (!m_books.count(it->first))
+            {
+                m_commander.erase(it->first);
+                m_commanderGuid.erase(it->first);
+                m_mapId.erase(it->first);
+                m_ctx.erase(it->first);
+                m_lastEventSend.erase(it->first);
+            }
+            m_retiredMeta.erase(it->first);
+            it = m_retired.erase(it);
+        }
+        else
+            ++it;
     }
     for (std::string const& id : oversize)
     {
@@ -335,6 +451,54 @@ void CombatMonitorService::TakePayloads(std::vector<std::string>& out, int proto
         sLog.outError("TortoiseBots: combat monitor dropped fight %s: no payload form fits %zu bytes", id.c_str(),
                       CombatMonitor::kPayloadByteBudget);
 #endif
+    }
+}
+
+void CombatMonitorService::TakeEventPayloads(std::vector<std::string>& out, int protocolVersion, uint64_t session,
+                                             std::function<uint64_t()> const& nextSeq, int64_t tsUnix, int64_t tsMs,
+                                             uint32_t nowMs, uint32_t minGapMs)
+{
+    out.clear();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto drain = [&](uint32_t groupId, CombatMonitor::Book& book, std::string const& commander, uint32_t commanderGuid,
+                     uint32_t mapId) {
+        bool const inFight = book.InFight();
+        auto const sent = m_lastEventSend.find(groupId);
+        uint32_t const last = sent != m_lastEventSend.end() ? sent->second : 0;
+        bool const keepalive = inFight && nowMs - last >= CombatMonitor::kEventKeepaliveMs;
+        if (!book.HasEvents() && !keepalive)
+            return;
+        if (nowMs - last < minGapMs)
+            return;
+        std::vector<CombatMonitor::LiveEvent> events;
+        uint32_t dropped = 0;
+        book.TakeEvents(events, dropped);
+        CombatMonitor::EventsFightHeader header;
+        // "fight":null only when the last event is the fight's end and nothing new opened.
+        header.present = events.empty() ? inFight : events.back().kind != CombatMonitor::EventKind::End;
+        header.number = book.FightNumber();
+        header.startMs = book.StartMs();
+        header.startUnix = book.StartUnix();
+        header.fightMs = inFight && nowMs >= book.StartMs() ? nowMs - book.StartMs() : book.LastFightMs();
+        header.ctx = book.Context();
+        out.push_back(CombatMonitor::BuildEventsJson(protocolVersion, session, nextSeq(), tsUnix, tsMs, commander,
+                                                     commanderGuid, groupId, mapId, header, events, dropped));
+        m_lastEventSend[groupId] = nowMs;
+    };
+    for (auto& kv : m_books)
+    {
+        auto const c = m_commander.find(kv.first);
+        auto const g = m_commanderGuid.find(kv.first);
+        auto const m = m_mapId.find(kv.first);
+        drain(kv.first, kv.second, c != m_commander.end() ? c->second : std::string(),
+              g != m_commanderGuid.end() ? g->second : 0, m != m_mapId.end() ? m->second : 0);
+    }
+    for (auto& kv : m_retired)
+    {
+        auto const meta = m_retiredMeta.find(kv.first);
+        if (meta == m_retiredMeta.end())
+            continue;
+        drain(kv.first, kv.second, meta->second.commander, meta->second.commanderGuid, meta->second.mapId);
     }
 }
 

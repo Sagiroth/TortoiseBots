@@ -86,12 +86,17 @@ BotHostAdapter::BotHostAdapter()
 // command); the next world tick reads the run leader's keys again (OnUpdate),
 // on the thread that reads them.
 static std::atomic<bool> s_dungeonRunKeysDue{false};
+// The same for the dashboard's live stream keys: read on the world thread.
+static std::atomic<bool> s_realtimeKeysDue{false};
 
 void BotHostAdapter::OnAfterConfigLoad(bool reload)
 {
     ModuleLog::Instance().ApplyConfig();
     if (reload)
+    {
         s_dungeonRunKeysDue.store(true);
+        s_realtimeKeysDue.store(true);
+    }
 }
 
 void BotHostAdapter::OnStartup()
@@ -166,6 +171,16 @@ void BotHostAdapter::OnStartup()
             CombatMonitorService::Instance().TakePayloads(out, emitter.ProtocolVersion(), emitter.SessionId(),
                 [&emitter]() { return emitter.SessionId() ? emitter.NextSeq() : 0; }, emitter.NowUnix());
         });
+    // The live fight stream (COMBAT_EVENTS) on its own 100 ms cadence, and the
+    // elite/boss cast poller every 250 ms while a fight runs.
+    ObservabilityEmitter::Instance().SetCombatEventProvider(
+        [](std::vector<std::string>& out, uint32_t nowMs) {
+            ObservabilityEmitter& emitter = ObservabilityEmitter::Instance();
+            CombatMonitorService::Instance().TakeEventPayloads(out, emitter.ProtocolVersion(), emitter.SessionId(),
+                [&emitter]() { return emitter.SessionId() ? emitter.NextSeq() : 0; }, emitter.NowUnix(),
+                emitter.NowUnixMs(), nowMs, emitter.EventGapMs());
+        });
+    ObservabilityEmitter::Instance().SetEnemyCastPoller([]() { BotCommands::PollEnemyCasts(); });
     // The Dungeons tab (issue #1101): the mobs of every dungeon run.
     ObservabilityEmitter::Instance().SetDungeonMobProvider(
         [](std::vector<DungeonMobTelemetry::RunRef>& runs) { BotCommands::CollectDungeonMobs(runs); });
@@ -181,6 +196,9 @@ void BotHostAdapter::OnUpdate(uint32 diff)
     // AiPlayerbot.DungeonRun*) are read again from aiplayerbot.conf, only those.
     if (s_dungeonRunKeysDue.exchange(false))
         sPlayerbotAIConfig.ReloadDungeonRunKeys();
+    // The dashboard's live stream keys: read on this thread, live on `.reload config`.
+    if (s_realtimeKeysDue.exchange(false))
+        ObservabilityEmitter::Instance().ReloadRealtimeKeys();
 
     // Initialization stops before service configuration when AI is disabled.
     // Do not tick those services against an uninitialized registry/config.

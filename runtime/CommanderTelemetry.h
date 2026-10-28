@@ -628,7 +628,7 @@ inline void AppendMobJson(std::ostringstream& ss, MobInfo const& m)
 // daemon the last binding ended. The boss lists go in last, binding by binding, only while the datagram stays within
 // kPayloadByteBudget; a binding whose list does not fit leaves `bosses_map` and `bosses` out (the dashboard falls back).
 inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t seq, int64_t ts,
-                                std::vector<BindingInfo> const& bindings)
+                                std::vector<BindingInfo> const& bindings, int64_t tsMs = 0)
 {
     std::ostringstream ss;
     ss.setf(std::ios::fixed);
@@ -636,8 +636,10 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
     ss << "{\"v\":" << protocolVersion
        << ",\"session\":" << session
        << ",\"seq\":" << seq
-       << ",\"ts\":" << ts
-       << ",\"type\":\"COMMANDERS\",\"commanders\":[";
+       << ",\"ts\":" << ts;
+    if (tsMs)
+        ss << ",\"ts_ms\":" << tsMs;
+    ss << ",\"type\":\"COMMANDERS\",\"commanders\":[";
     size_t shown = 0;
     size_t mobsTotal = 0;
     size_t stepsTotal = 0;

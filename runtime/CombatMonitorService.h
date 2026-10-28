@@ -30,10 +30,17 @@ public:
     // world thread, 1 Hz from the run tick, for every bound group with a run
     void Refresh(uint32_t groupId, std::vector<CombatMonitor::MemberInfo> members, bool anyInCombat, bool allDead,
                  CombatMonitor::FightContext const& ctx, std::vector<std::string> const& debuffKeysUp, uint32_t nowMs);
+    // A bound group whose run ended keeps its open fight going on the 2 s tick; never starts one.
+    void RefreshNoRun(uint32_t groupId, bool anyInCombat, bool allDead, uint32_t nowMs);
+    bool InFight(uint32_t groupId) const;
+    bool AnyInFight() const;                                // the world-thread cast poller's early exit
     void Forget(uint32_t groupId);                          // binding released or run gone
     // hook side (map threads): a guid that misses the member bitset returns with no lock, refcount or
     // allocation; a hit (member or hash collision) checks the member snapshot, and only a member locks
-    void OnCast(uint32_t casterGuidLow, char const* spell, bool heal);
+    void OnCast(uint32_t casterGuidLow, char const* spell, bool heal, char castKind = 0, uint64_t target = 0,
+                char const* targetName = "");
+    // world thread: an elite or boss creature's cast start, seen by the commander cast poller
+    void NoteEnemyCast(uint32_t groupId, uint32_t entry, uint64_t guid, char const* name, char const* spell, char rank);
     void OnDamage(uint32_t attackerOwnerGuidLow, uint32_t victimOwnerGuidLow, uint32_t amount, char const* attackerName,
                   uint32_t enemyEntry, uint64_t enemyGuid, char const* enemyName);
     void OnHeal(uint32_t healerOwnerGuidLow, uint32_t amount, uint32_t overheal);
@@ -43,6 +50,11 @@ public:
     // emitter / telemetry (world thread)
     void TakePayloads(std::vector<std::string>& out, int protocolVersion, uint64_t session,
                       std::function<uint64_t()> const& nextSeq, int64_t ts);
+    // Live events: one COMBAT_EVENTS datagram per group per call, at most once per minGapMs;
+    // a keepalive with no events while a fight is open and nothing was sent for kEventKeepaliveMs
+    void TakeEventPayloads(std::vector<std::string>& out, int protocolVersion, uint64_t session,
+                           std::function<uint64_t()> const& nextSeq, int64_t tsUnix, int64_t tsMs, uint32_t nowMs,
+                           uint32_t minGapMs);
     std::string WindowJson(uint32_t groupId);
     void NoteBinding(uint32_t groupId, std::string const& commander, uint32_t commanderGuid, uint32_t mapId);
 #ifdef COMBAT_MONITOR_TEST_CONFIG
@@ -65,10 +77,21 @@ private:
     static void NoteSnapshotLoad();                         // counts hook-path snapshot loads (test builds only)
     void StartBook(uint32_t groupId, CombatMonitor::Book& book,
                    CombatMonitor::FightContext const& ctx);  // m_mutex held: next per-group number when a fight starts
-    static void NoteHookLock();                             // counts hook-path mutex takes (test builds only)
+    void NoteFightCount(bool before, bool after);             // m_mutex held: the poller's early exit
+    static void NoteHookLock();                               // counts hook-path mutex takes (test builds only)
     CombatMonitorService() = default;
     mutable std::mutex m_mutex;
     std::unordered_map<uint32_t, CombatMonitor::Book> m_books;   // by group id
+    // Books of released groups that still owe a fight or events; drained like the live ones.
+    struct RetiredMeta
+    {
+        std::string commander;
+        uint32_t commanderGuid = 0;
+        uint32_t mapId = 0;
+    };
+    std::unordered_map<uint32_t, CombatMonitor::Book> m_retired;
+    std::unordered_map<uint32_t, RetiredMeta> m_retiredMeta;
+    std::unordered_map<uint32_t, uint32_t> m_lastEventSend;   // group id -> world ms of its last COMBAT_EVENTS
     MemberMap m_memberGroup;                                     // member guid low -> group id
     // Hook-side copy of the member map, read with std::atomic_load (libstdc++ guards it with a pooled
     // mutex, so hooks reach it only after a bitset hit) and replaced under m_mutex.
@@ -82,6 +105,7 @@ private:
     std::unordered_map<uint32_t, uint32_t> m_mapId;               // group id -> the lead's map
     uint32_t m_lastNowMs = 0;
     int64_t m_lastUnixNow = 0;
+    std::atomic<uint32_t> m_inFightCount{0};   // books in a fight, maintained under m_mutex
     std::atomic<bool> m_enabled{false};
 };
 

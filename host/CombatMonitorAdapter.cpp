@@ -7,6 +7,7 @@
 #include "Spell.h"
 #include "SpellEntry.h"
 #include "SpellAuraDefines.h"
+#include "Maps/Map.h"
 #include "Unit.h"
 
 namespace TortoiseBots {
@@ -113,14 +114,30 @@ void CombatMonitorCastAdapter::OnSpellCast(Player* player, Spell* spell, bool /*
     if (!info)
         return;
     bool heal = false;
+    bool taunt = false;
+    bool interrupt = false;
     for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
     {
         if (info->Effect[i] == SPELL_EFFECT_HEAL)
             heal = true;
         if (info->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_HEAL)
             heal = true;
+        if (info->Effect[i] == SPELL_EFFECT_ATTACK_ME || info->EffectApplyAuraName[i] == SPELL_AURA_MOD_TAUNT)
+            taunt = true;
+        else if (info->Effect[i] == SPELL_EFFECT_INTERRUPT_CAST)
+            interrupt = true;
     }
-    CombatMonitorService::Instance().OnCast(player->GetGUIDLow(), info->SpellName[0].c_str(), heal);
+    char const kind = taunt ? 't' : (interrupt ? 'i' : 0);
+    uint64_t target = 0;
+    std::string targetName;
+    if (kind)
+    {
+        target = spell->m_targets.getUnitTargetGuid().GetRawValue();
+        if (Unit* unit = target ? player->GetMap()->GetUnit(::ObjectGuid(target)) : nullptr)
+            targetName = unit->GetName();
+    }
+    CombatMonitorService::Instance().OnCast(player->GetGUIDLow(), info->SpellName[0].c_str(), heal, kind, target,
+                                            targetName.c_str());
 }
 
 } // namespace TortoiseBots

@@ -479,6 +479,85 @@ static void TestMonitorOffIsInert()
     CHECK(std::string(OutcomeName(Outcome::End)) == "end");
 }
 
+static void TestEngageCoalescedPerEntry()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(1000, 1700000000, BossCtx(), 1);
+    b.OnDamage(1, 0, 10, "Tanky", 10184, 777, "Onyxia", 1100);
+    b.OnDamage(1, 0, 10, "Tanky", 10184, 777, "Onyxia", 1200);   // same guid: not new
+    b.OnDamage(2, 0, 10, "Healy", 10184, 778, "Onyxia", 1300);   // a second guid of that entry
+    b.OnDamage(3, 0, 10, "Magey", 9999, 600, "Whelp", 1400);     // another entry, one guid
+    std::vector<LiveEvent> events;
+    uint32_t dropped = 0;
+    b.TakeEvents(events, dropped);
+    CHECK(dropped == 0);
+    CHECK(events.size() == 3);   // start + two engages (per entry, in entry order)
+    CHECK(events[0].kind == EventKind::Start);
+    LiveEvent const* big = nullptr;
+    LiveEvent const* small = nullptr;
+    for (LiveEvent const& e : events)
+    {
+        if (e.kind != EventKind::Engage)
+            continue;
+        if (e.entry == 10184)
+            big = &e;
+        else if (e.entry == 9999)
+            small = &e;
+    }
+    CHECK(big && big->count == 2 && big->name == "Onyxia");
+    CHECK(small && small->count == 1 && small->name == "Whelp");
+    CHECK(!b.HasEvents());
+}
+
+static void TestCloseOnFullWipe()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(1000, 1700000000, BossCtx(), 1);
+    b.OnDeath(1, "Onyxia", 0.0f, 0.0f, 0.0f, 2000);
+    b.SetMembers({Trio()[0]});   // the rest left the group: the only member left is the dead one
+    b.Close(2500);
+    CHECK(!b.InFight());
+    std::vector<LiveEvent> events;
+    uint32_t dropped = 0;
+    b.TakeEvents(events, dropped);
+    CHECK(!events.empty());
+    CHECK(events.back().kind == EventKind::End);
+    CHECK(events.back().outcome == Outcome::Wipe);
+    CHECK(events.back().kept == false);   // 1.5 s: shorter than kMinFightMs
+}
+
+static void TestEventsJsonHalvesUnderBudget()
+{
+    std::vector<LiveEvent> events;
+    for (size_t i = 0; i < kMaxEventsPerDatagram; ++i)
+    {
+        LiveEvent e;
+        e.kind = EventKind::Death;
+        e.atMs = 1000 + static_cast<uint32_t>(i);
+        e.guid = 4000 + static_cast<uint32_t>(i);
+        e.name = std::string(2000, 'n');
+        e.by = std::string(2000, 'k');
+        events.push_back(std::move(e));
+    }
+    EventsFightHeader header;
+    header.present = true;
+    header.number = 1;
+    header.startMs = 1000;
+    header.startUnix = 1793209948;
+    header.fightMs = 500;
+    header.ctx = BossCtx();
+    size_t emitted = 0;
+    std::string const json = BuildEventsJson(12, 77, 1, 1793210001, 1793210001000, "Cmdr", 5, 9, 249, header, events, 0,
+                                             &emitted);
+    CHECK(json.size() <= kEventsByteBudget);
+    CHECK(emitted > 0);
+    CHECK(emitted < events.size());
+    CHECK(Contains(json, "\"k\":\"death\""));
+    CHECK(Count(json, "\"k\":\"death\"") == emitted);
+}
+
 int main()
 {
     TestNonMemberIgnored();
@@ -494,6 +573,9 @@ int main()
     TestEngagedCapCountsGuids();
     TestOversizeFightOneSeqPerTake();
     TestMonitorOffIsInert();
+    TestEngageCoalescedPerEntry();
+    TestCloseOnFullWipe();
+    TestEventsJsonHalvesUnderBudget();
     std::printf("combat monitor policy: %d checks passed\n", checks);
     return 0;
 }

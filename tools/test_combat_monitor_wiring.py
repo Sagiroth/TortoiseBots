@@ -149,6 +149,60 @@ class CombatMonitorWiringTest(unittest.TestCase):
         self.assertIn("m_combatProvider", after)
         self.assertIn("SendDatagram", after.split("EmitCommanders()", 1)[-1] if "EmitCommanders()" in after else after)
 
+    # Live fight events, and a fight that outlives its run.
+
+    def test_commander_no_run_branch_polls_before_forget(self):
+        code = strip_comments(COMMANDER)
+        fn = definition(code, "static void FillCommanderCombat(")
+        self.assertIn("InFight(", fn)
+        self.assertIn("RefreshNoRun(", fn)
+        self.assertLess(fn.index("InFight("), fn.index("Forget("), "a group still fighting is followed, not forgotten")
+        self.assertLess(fn.index("RefreshNoRun("), fn.index("Forget("), "the no-run tick feeds the open fight first")
+
+    def test_forget_retires_instead_of_dropping(self):
+        fn = body(strip_comments(SERVICE), "CombatMonitorService::Forget(", "\n}\n")
+        self.assertIn("Close(", fn)
+        self.assertIn("m_retired", fn)
+        self.assertIn("HasEvents(", fn)
+
+    def test_cast_hook_classifies_by_spell_effects(self):
+        cast = body(strip_comments(ADAPTER), "CombatMonitorCastAdapter::OnSpellCast(", "\n}\n")
+        for constant in ("SPELL_EFFECT_ATTACK_ME", "SPELL_AURA_MOD_TAUNT", "SPELL_EFFECT_INTERRUPT_CAST"):
+            self.assertIn(constant, cast, constant)
+        self.assertIn("getUnitTargetGuid()", cast)
+        self.assertLess(cast.index("SPELL_EFFECT_ATTACK_ME"), cast.index("OnCast("), "classification first")
+
+    def test_event_drain_runs_before_the_snapshot_gate(self):
+        code = strip_comments(EMITTER)
+        update = definition(code, "void ObservabilityEmitter::Update(")
+        self.assertIn("m_combatEventProvider(", update)
+        self.assertLess(update.index("m_combatEventProvider("),
+                        update.index("if (m_snapshotTimerMs < kSnapshotIntervalMs)"),
+                        "the 100 ms drain is not inside the 2 s gate")
+        self.assertIn("m_enemyCastPoller", update)
+
+    def test_enemy_cast_poll_has_no_world_scan(self):
+        code = strip_comments(COMMANDER)
+        fn = definition(code, "void PollEnemyCasts(")
+        self.assertIn("AnyInFight()", fn)
+        self.assertIn("CurrentSpellId(", fn)
+        self.assertIn("NoteEnemyCast(", fn)
+        for scan in ("GetCreatureListWithEntry", "VisitNearby", "Cell::"):
+            self.assertNotIn(scan, fn, scan)
+
+    def test_conf_dist_carries_the_realtime_keys(self):
+        conf = (ROOT / "conf" / "tortoise_bots.conf.dist").read_text()
+        self.assertIn("AiPlayerbot.ObservabilityRealtime = 1", conf)
+        self.assertIn("AiPlayerbot.ObservabilityRealtime.Events = 1", conf)
+        self.assertIn("AiPlayerbot.ObservabilityRealtime.EventGapMs = 250", conf)
+
+    def test_config_reload_sets_the_realtime_flag(self):
+        startup = (ROOT / "host" / "BotHostAdapter.cpp").read_text()
+        self.assertIn("s_realtimeKeysDue", startup)
+        self.assertIn("ReloadRealtimeKeys()", startup)
+        self.assertIn("ObservabilityEmitter::Instance().SetCombatEventProvider(", startup)
+        self.assertIn("ObservabilityEmitter::Instance().SetEnemyCastPoller(", startup)
+
 
 if __name__ == "__main__":
     unittest.main()

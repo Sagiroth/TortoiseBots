@@ -178,11 +178,20 @@ public:
     uint64_t SessionId() const;
     uint64_t NextSeq();
     int64_t NowUnix() const;
+    int64_t NowUnixMs() const;
     void SetCommanderProvider(std::function<void(std::vector<CommanderTelemetry::BindingRef>&)> provider);
     // The finished combat fights of the bound groups (task A8b) for the
     // dashboard's combat log, filled by the combat monitor service on the
     // world thread. Called once per snapshot cycle after EmitCommanders.
     void SetCombatProvider(std::function<void(std::vector<std::string>&)> provider);
+    // The live fight stream: the monitor's COMBAT_EVENTS datagrams, drained
+    // every 100 ms on the world thread (not inside the 2 s snapshot gate).
+    void SetCombatEventProvider(std::function<void(std::vector<std::string>&, uint32_t nowMs)> provider);
+    // The elite and boss cast poller, called every 250 ms while a fight runs.
+    void SetEnemyCastPoller(std::function<void()> poller);
+    uint32_t EventGapMs() const { return m_eventGapMs; }
+    // `.reload config`: AiPlayerbot.ObservabilityRealtime* read again (world thread).
+    void ReloadRealtimeKeys();
 
     // The mobs of every dungeon run (issue #1101) for the dashboard's Dungeons tab, filled by the commands layer on the world
     // thread once per snapshot cycle for the runs the emitter groups (see EmitDungeonMobs).
@@ -232,6 +241,16 @@ private:
     // call per snapshot cycle, each string sent with SendDatagram.
     std::function<void(std::vector<std::string>&)> m_combatProvider;
     std::vector<std::string> m_combatPayloads; // reused between cycles
+    // The live fight stream (AiPlayerbot.ObservabilityRealtime): a 100 ms
+    // drain and a 250 ms cast poll on every world tick, before the 2 s gate.
+    std::function<void(std::vector<std::string>&, uint32_t)> m_combatEventProvider;
+    std::function<void()> m_enemyCastPoller;
+    std::vector<std::string> m_eventPayloads; // reused between drains
+    bool m_realtimeOn = true;
+    bool m_realtimeEvents = true;
+    uint32_t m_eventGapMs = 250;
+    uint32_t m_eventTimerMs = 0;
+    uint32_t m_castPollMs = 0;
     // Effective running settings for the dashboard Server panel (Addendum 2):
     // core rate getters + AiPlayerbot flags, sent at startup and on a slow
     // cadence. No strings from config files, no secrets — numbers and on/off.

@@ -842,7 +842,9 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("void LoadDungeonRunKeys();", header)
         self.assertIn("bool ReloadDungeonRunKeys();", header)
         on_load = body(host, "void BotHostAdapter::OnAfterConfigLoad(bool reload)\n{", "\n}\n")
-        self.assertIn("if (reload)\n        s_dungeonRunKeysDue.store(true);", on_load)
+        self.assertIn("if (reload)", on_load)
+        self.assertIn("s_dungeonRunKeysDue.store(true);", on_load)
+        self.assertIn("s_realtimeKeysDue.store(true);", on_load)
         self.assertNotIn("ReloadDungeonRunKeys", on_load)  # world thread only
         on_update = body(host, "void BotHostAdapter::OnUpdate(uint32 diff)\n{", "\n}\n")
         self.assertIn("if (s_dungeonRunKeysDue.exchange(false))\n        sPlayerbotAIConfig.ReloadDungeonRunKeys();", on_update)

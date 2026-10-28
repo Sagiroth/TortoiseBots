@@ -925,6 +925,20 @@ void TestDashLayoutAndLabel()
     Check(!Has(shrunk, "Brun"), "the departed off-tank's name is nowhere in the datagram");
 }
 
+// The report's millisecond timestamp, so the daemon can order positions
+// against the last full report (additive; 0 omits it).
+void TestPayloadTsMs()
+{
+    BindingInfo b;
+    b.commander = "Glacienne";
+    b.commanderGuid = 12;
+    b.bots.push_back(Bot("Forthur", true));
+    std::string const json = BuildPayload(9, 77, 5, 1791990010, {b}, 1791990010123);
+    Check(Has(json, "\"ts\":1791990010,\"ts_ms\":1791990010123,\"type\":\"COMMANDERS\""), "ts_ms follows ts");
+    std::string const plain = BuildPayload(9, 77, 5, 1791990010, {b});
+    Check(!Has(plain, "\"ts_ms\""), "a zero ms timestamp omits the key");
+}
+
 } // namespace
 
 int main()
@@ -946,6 +960,7 @@ int main()
     TestBossKillLatch();
     TestControlCharacters();
     TestDashLayoutAndLabel();
+    TestPayloadTsMs();
     TestRaidPayload();
     if (g_failures)
     {

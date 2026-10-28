@@ -145,6 +145,7 @@
 #include <sstream>
 #include <set>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -11814,6 +11815,23 @@ static void FillCommanderObjects(Player* lead, CommanderTelemetry::BindingRef& r
         ref.objects.push_back(std::move(found[i].second));
 }
 
+// The live cast poller's watch, one per bound commander: the mobs of its last
+// full report (guid, entry, rank) and the spell each was last seen casting, so
+// an elite or boss cast is announced once when it starts. World thread only.
+struct CommanderMobWatch
+{
+    uint32 groupId = 0;
+    uint64 leadRaw = 0;
+    std::vector<std::tuple<uint64, uint32, char>> mobs;
+    std::unordered_map<uint64, uint32> lastCast;
+};
+
+static std::unordered_map<uint64, CommanderMobWatch>& s_mobWatch()
+{
+    static std::unordered_map<uint64, CommanderMobWatch> watch;
+    return watch;
+}
+
 // The map data of one binding for the dashboard (once per 2 s snapshot cycle, only while a binding stands): the commander's
 // position when it is online and in the world, and the hostile units the commander's perception feed would list for this binding
 // (the same builder: the bots' own cached lists, resolved by guid on the lead's map, capped at kMaxHostiles; no grid or world
@@ -11821,6 +11839,10 @@ static void FillCommanderObjects(Player* lead, CommanderTelemetry::BindingRef& r
 static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player* commander, Player* lead,
     CommanderTelemetry::BindingRef& ref)
 {
+    CommanderMobWatch& watch = s_mobWatch()[binding.commanderGuid];
+    watch.groupId = ref.groupId;
+    watch.leadRaw = binding.leadGuid;
+    watch.mobs.clear();
     if (commander && ref.commanderOnline && commander->IsInWorld())
     {
         ref.commanderPlaced = true;
@@ -11889,6 +11911,21 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
     }
     FillCommanderObjects(lead, ref);
     FillCommanderBosses(lead, ref);
+    // The cast poller watches the mobs of this report only; the rank rides along for its boss-first order.
+    for (CommanderTelemetry::MobInfo const& mob : ref.mobs)
+        watch.mobs.emplace_back(mob.id, mob.entry, mob.rank);
+    // Forget the last-seen casts of mobs no longer reported: the map stays bounded by one report.
+    for (auto it = watch.lastCast.begin(); it != watch.lastCast.end();)
+    {
+        bool listed = false;
+        for (auto const& mob : watch.mobs)
+            if (std::get<0>(mob) == it->first)
+            {
+                listed = true;
+                break;
+            }
+        it = listed ? std::next(it) : watch.lastCast.erase(it);
+    }
 }
 
 void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
@@ -11899,6 +11936,7 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
     if (CommanderBindings().Empty())
     {
         CommanderOrderLog().Clear();
+        s_mobWatch().clear();
         return;
     }
     std::unordered_set<uint64_t> bound;
@@ -11989,6 +12027,8 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
         out.push_back(std::move(ref));
     }
     CommanderOrderLog().Retain(bound);
+    for (auto it = s_mobWatch().begin(); it != s_mobWatch().end();)
+        it = bound.count(it->first) ? std::next(it) : s_mobWatch().erase(it);
 }
 
 // One unit as the Dungeons tab shows it (issue #1101): field reads on the unit and its template, the seeing member's reaction to
@@ -12052,6 +12092,45 @@ static void ForgetReleasedCombatGroups()
     }
 }
 
+// The elite and boss cast starts of the bound groups (once per 250 ms on the
+// world thread, only while a fight runs): a guid lookup on the lead's map per
+// watched unit, no grid or world scan, at most 8 units per binding.
+void PollEnemyCasts()
+{
+    if (!TortoiseBots::CombatMonitorService::Instance().AnyInFight() || s_mobWatch().empty())
+        return;
+    for (auto& entry : s_mobWatch())
+    {
+        CommanderMobWatch& watch = entry.second;
+        if (!TortoiseBots::CombatMonitorService::Instance().InFight(watch.groupId))
+            continue;
+        Player* lead = FindCharacter(watch.leadRaw);
+        if (!lead || !lead->IsInWorld())
+            continue;
+        Map* map = lead->GetMap();
+        size_t polled = 0;
+        for (int pass = 0; pass < 2 && polled < 8; ++pass)   // rank b first, then e
+        {
+            for (auto const& mob : watch.mobs)
+            {
+                if (polled >= 8)
+                    break;
+                char const rank = std::get<2>(mob);
+                if ((rank == 'b' ? 0 : rank == 'e' ? 1 : -1) != pass)
+                    continue;
+                ++polled;
+                uint64 const guid = std::get<0>(mob);
+                Unit* unit = map->GetUnit(::ObjectGuid(guid));
+                uint32 const spellId = unit ? CurrentSpellId(unit) : 0;
+                if (spellId && spellId != watch.lastCast[guid])
+                    TortoiseBots::CombatMonitorService::Instance().NoteEnemyCast(watch.groupId, std::get<1>(mob), guid,
+                        unit->GetName(), SpellNameOf(spellId), rank);
+                watch.lastCast[guid] = spellId;
+            }
+        }
+    }
+}
+
 static void FillCommanderCombat(uint64 commanderRaw, RemoteCommander::Binding const& binding, Player* lead,
     CommanderTelemetry::BindingRef& ref)
 {
@@ -12061,7 +12140,25 @@ static void FillCommanderCombat(uint64 commanderRaw, RemoteCommander::Binding co
         return;
     if (DungeonRuns().find(commanderRaw) == DungeonRuns().end())
     {
-        // No run: nothing aggregates (the live window would go stale).
+        // No run: nothing aggregates (the live window would go stale). A fight that is
+        // still open is followed to its end here, so `.bot run stop` mid-fight records it.
+        if (TortoiseBots::CombatMonitorService::Instance().InFight(ref.groupId))
+        {
+            bool anyInCombat = false;
+            bool allDead = !ref.bots.empty();
+            for (Player* bot : ref.bots)
+            {
+                anyInCombat = anyInCombat || bot->IsInCombat();
+                allDead = allDead && !bot->IsAlive();
+            }
+            TortoiseBots::CombatMonitorService::Instance().RefreshNoRun(ref.groupId, anyInCombat, allDead,
+                WorldTimer::getMSTime());
+            TortoiseBots::CombatMonitorService::Instance().NoteBinding(ref.groupId, ref.commander, ref.commanderGuid,
+                lead->GetMapId());
+            s_combatGroups().insert(ref.groupId);
+            ref.combatJson = TortoiseBots::CombatMonitorService::Instance().WindowJson(ref.groupId);
+            return;
+        }
         TortoiseBots::CombatMonitorService::Instance().Forget(ref.groupId);
         s_combatGroups().erase(ref.groupId);
         ref.combatJson.clear();

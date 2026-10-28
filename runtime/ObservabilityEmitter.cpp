@@ -573,6 +573,14 @@ void ObservabilityEmitter::Initialize()
     m_dungeonRunOffset = 0;
     m_dungeonMobsTiming = DungeonMobsTiming();
 
+    // The live fight stream and the cast poller; a `.reload config` re-reads them.
+    m_realtimeOn = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime", true);
+    m_realtimeEvents = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime.Events", true);
+    m_eventGapMs = static_cast<uint32_t>(std::max(100, std::min(2000,
+        sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.EventGapMs", 250))));
+    m_eventTimerMs = 0;
+    m_castPollMs = 0;
+
     m_port = sPlayerbotAIConfig.observabilityPort;
     if (m_port == 0)
         m_port = 9195;
@@ -690,10 +698,33 @@ int ObservabilityEmitter::ProtocolVersion() const { return kProtocolVersion; }
 uint64_t ObservabilityEmitter::SessionId() const { return m_sessionId; }
 uint64_t ObservabilityEmitter::NextSeq() { return ++m_snapshotSeq; }
 int64_t ObservabilityEmitter::NowUnix() const { return static_cast<int64_t>(time(nullptr)); }
+int64_t ObservabilityEmitter::NowUnixMs() const
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
 
 void ObservabilityEmitter::SetCombatProvider(std::function<void(std::vector<std::string>&)> provider)
 {
     m_combatProvider = std::move(provider);
+}
+
+void ObservabilityEmitter::SetCombatEventProvider(std::function<void(std::vector<std::string>&, uint32_t)> provider)
+{
+    m_combatEventProvider = std::move(provider);
+}
+
+void ObservabilityEmitter::SetEnemyCastPoller(std::function<void()> poller)
+{
+    m_enemyCastPoller = std::move(poller);
+}
+
+void ObservabilityEmitter::ReloadRealtimeKeys()
+{
+    m_realtimeOn = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime", true);
+    m_realtimeEvents = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime.Events", true);
+    m_eventGapMs = static_cast<uint32_t>(std::max(100, std::min(2000,
+        sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.EventGapMs", 250))));
 }
 
 void ObservabilityEmitter::SetDungeonMobProvider(std::function<void(std::vector<DungeonMobTelemetry::RunRef>&)> provider)
@@ -1201,6 +1232,30 @@ void ObservabilityEmitter::Update(uint32 diff)
     {
         m_serverInfoTimerMs = 0;
         EmitServerInfo();
+    }
+
+    // The live fight stream runs on its own cadence (100 ms drain, 250 ms
+    // cast poll), not inside the 2 s snapshot gate, so events reach the page as
+    // they happen. The per-group EventGapMs still limits datagrams.
+    if (m_realtimeOn && m_realtimeEvents)
+    {
+        m_eventTimerMs += diff;
+        if (m_eventTimerMs >= 100)
+        {
+            m_eventTimerMs = 0;
+            if (m_enemyCastPoller && (m_castPollMs += 100) >= 250)
+            {
+                m_castPollMs = 0;
+                m_enemyCastPoller();
+            }
+            if (m_combatEventProvider)
+            {
+                m_eventPayloads.clear();
+                m_combatEventProvider(m_eventPayloads, nowMs);
+                for (std::string const& payload : m_eventPayloads)
+                    SendDatagram(payload);
+            }
+        }
     }
 
     m_snapshotTimerMs += diff;
@@ -1754,7 +1809,8 @@ void ObservabilityEmitter::EmitCommanders()
         it = standing ? std::next(it) : m_commanderSince.erase(it);
     }
     m_commandersSent = !infos.empty();
-    SendDatagram(CommanderTelemetry::BuildPayload(kProtocolVersion, m_sessionId, m_snapshotSeq, time(nullptr), infos));
+    SendDatagram(CommanderTelemetry::BuildPayload(kProtocolVersion, m_sessionId, m_snapshotSeq, time(nullptr), infos,
+                                                  NowUnixMs()));
 }
 
 // Effective running settings for the dashboard Server panel. Reads live core
