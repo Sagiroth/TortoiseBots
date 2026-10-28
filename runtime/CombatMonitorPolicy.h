@@ -3,17 +3,17 @@
 // heal, cast and death hooks and a 1 Hz aura sample; the numbers only,
 // the dashboard judges them; plain data and the standard library only.
 
- #include <algorithm>
- #include <cstdint>
- #include <cstdio>
- #include <deque>
- #include <functional>
- #include <map>
- #include <sstream>
- #include <string>
- #include <unordered_map>
- #include <unordered_set>
- #include <vector>
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <deque>
+#include <functional>
+#include <map>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace TortoiseBots {
 namespace CombatMonitor {
