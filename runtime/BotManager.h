@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <memory>
 #include <ctime>
+#include <mutex>
 #include <vector>
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectGuid.h"
@@ -124,6 +125,10 @@ public:
     // the bot's AI turn and, for a clearly misplaced pet, from the map-thread
     // player update hook; the two never run at the same time.
     static void CheckNewPetSpawn(::Player* bot, ::PlayerbotAI* ai);
+    // Any thread: queue wanted guild public-note text for a bot (key = bot
+    // guid raw). Map threads call this after computing the text; the world
+    // thread applies it in DrainPublicNoteQueue. Newest text wins per bot.
+    void QueuePublicNote(uint64_t botGuidRaw, std::string text);
     void ReleaseToClient(Player* player);
     void Shutdown();
 
@@ -230,6 +235,10 @@ private:
     void UpdateAutoTest(uint32_t diff);
     void UpdatePacketBridgeTest(uint32_t diff);
     void UpdateBots(uint32_t diff);
+    // Guild public-note write queue (package 7): map threads only compute the
+    // wanted note text and enqueue it; this drains the queue on the world
+    // thread, where Guild state may be touched. Called from OnWorldUpdate.
+    void DrainPublicNoteQueue();
     void PublishMasterView();
     void DetachOwnedBots(Player* master);
     void RebindOwnedBots(Player* master);
@@ -239,6 +248,11 @@ private:
     // Issue #839: master -> live bot guids for packet hooks off the world
     // thread; rebuilt from m_bots at the end of every OnWorldUpdate.
     MasterBotView m_masterView;
+    // Wanted public-note text per bot (key = bot guid raw). Map threads assign
+    // under the lock; the world-thread drain swaps the map out and applies it.
+    // Newest text wins per bot; other bots' entries are never touched.
+    mutable std::mutex m_publicNoteMutex;
+    std::unordered_map<uint64_t, std::string> m_pendingPublicNotes;
     // Reentrancy guard for AI-driven removal. PlayerbotAI::UpdateAIInternal can
     // request its own removal (stunned/idle logout path) while its Update is on
     // the stack inside UpdateBots. Stopping the Headless session synchronously
