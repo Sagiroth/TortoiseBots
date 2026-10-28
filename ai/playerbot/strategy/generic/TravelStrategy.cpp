@@ -19,8 +19,6 @@ float TravelActionMultiplier::GetValue(Action* action)
     {
         if (name.find("guild meeting") != std::string::npos)
             return 1.0f;
-        if (name.find("reagent vendor") != std::string::npos)
-            return 1.0f;
         if (name.find("order vendor") != std::string::npos)
             return 1.0f;
         if (name.find("order capital") != std::string::npos)
@@ -151,7 +149,6 @@ void TravelStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         {"val::and::{has strategy::rpg quest,has focus travel target}","request quest travel target", 6.84f}, //100%
         {"val::should travel named::pvp","request named travel target::pvp", 6.83f},                          // 25%
         {"val::should travel named::guild meeting","request named travel target::guild meeting", 6.96f},      //100%
-        {"val::should travel named::reagent vendor","request named travel target::reagent vendor", 6.955f},   //100%
         {"val::should travel named::order vendor","request named travel target::order vendor", 6.954f},       //100%
         {"val::should travel named::order capital","request named travel target::order capital", 6.953f},     //100%
         {"val::should travel named::guild order","request named travel target::guild order", 6.95f},          //100%

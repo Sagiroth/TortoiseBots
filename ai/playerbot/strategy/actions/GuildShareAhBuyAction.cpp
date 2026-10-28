@@ -1,11 +1,8 @@
 #include "playerbot/playerbot.h"
 #include "GuildShareAhBuyAction.h"
 #include "playerbot/strategy/values/BudgetValues.h"
-#include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/RandomItemMgr.h"
-#include "playerbot/ServerFacade.h"
 #include "AuctionHouse/AuctionHouseMgr.h"
-#include "Guild/GuildMgr.h"
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
 
@@ -19,8 +16,8 @@ bool GuildShareAhBuyAction::isUseful()
     if (bot->IsInCombat())
         return false;
 
-    std::vector<GuildShareItemEntry> shareList = AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list");
-    if (shareList.empty())
+    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    if (order.type != GuildOrderType::AuctionHouse || order.target.empty())
         return false;
 
     if (!FindNearbyAuctioneer())
@@ -46,51 +43,6 @@ Unit* GuildShareAhBuyAction::FindNearbyAuctioneer()
             return npc;
     }
     return nullptr;
-}
-
-bool GuildShareAhBuyAction::CanBotCraftItem(uint32 itemId)
-{
-    for (auto& [spellId, spellState] : bot->GetSpellMap())
-    {
-        if (spellState.state == PLAYERSPELL_REMOVED || spellState.disabled || IsPassiveSpell(spellId))
-            continue;
-
-        const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
-        if (!pSpellInfo)
-            continue;
-
-        for (int i = 0; i < 3; ++i)
-        {
-            if (pSpellInfo->Effect[i] == SPELL_EFFECT_CREATE_ITEM && pSpellInfo->EffectItemType[i] == itemId)
-                return true;
-        }
-    }
-    return false;
-}
-
-bool GuildShareAhBuyAction::CanBotUseReagent(ItemPrototype const* reagentProto)
-{
-    if (!reagentProto)
-        return false;
-
-    static const SkillType craftSkills[] = {
-        SKILL_ALCHEMY,
-        SKILL_BLACKSMITHING,
-        SKILL_ENGINEERING,
-        SKILL_LEATHERWORKING,
-        SKILL_TAILORING,
-        SKILL_ENCHANTING,
-        SKILL_COOKING,
-        SKILL_FIRST_AID
-    };
-
-    for (SkillType skill : craftSkills)
-    {
-        if (ai->HasSkill(skill) && ItemUsageValue::IsItemUsedBySkill(reagentProto, skill))
-            return true;
-    }
-
-    return false;
 }
 
 uint32 GuildShareAhBuyAction::CountMailboxItems(uint32 itemId)
@@ -127,58 +79,20 @@ std::map<uint32, uint32> GuildShareAhBuyAction::GetNeededItems()
 {
     std::map<uint32, uint32> needed;
 
-    std::vector<GuildShareItemEntry> shareList = AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list");
-    if (shareList.empty())
+    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    if (order.type != GuildOrderType::AuctionHouse || order.target.empty())
         return needed;
 
-    std::set<uint32> finishedItemIds;
-    for (const auto& entry : shareList)
-        finishedItemIds.insert(entry.itemId);
+    uint32 itemId = GuildOrderValue::FindItemByName(order.target);
+    if (!itemId)
+        return needed;
 
-    for (uint32 itemId : finishedItemIds)
-    {
-        uint32 guildDeficit = CountGuildFinishedItemDeficit(bot, itemId, shareList);
-        if (guildDeficit == 0)
-            continue;
+    uint32 owned = ai->GetInventoryItemsCountWithId(itemId) + CountMailboxItems(itemId);
+    uint32 want = order.amount ? order.amount : 1;
+    if (owned >= want)
+        return needed;
 
-        uint32 botOwned = ai->GetInventoryItemsCountWithId(itemId) + CountMailboxItems(itemId);
-        uint32 finishedRemaining = (botOwned >= guildDeficit) ? 0 : guildDeficit - botOwned;
-
-        if (finishedRemaining > 0)
-        {
-            needed[itemId] += finishedRemaining;
-        }
-
-        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
-        if (!proto)
-            continue;
-
-        std::vector<std::pair<uint32, uint32>> reagents = ItemUsageValue::GetAllReagentItemIdsForCraftingItem(proto);
-
-        if (reagents.empty() || !CanBotCraftItem(itemId))
-            continue;
-
-        for (const auto& [reagentId, reagentPerCraft] : reagents)
-        {
-            ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
-            if (!reagentProto)
-                continue;
-
-            if (ItemUsageValue::IsItemSoldByAnyVendor(reagentProto))
-                continue;
-
-            if (!CanBotUseReagent(reagentProto))
-                continue;
-
-            uint32 totalReagentNeeded = reagentPerCraft * guildDeficit;
-            uint32 reagentOwned = ai->GetInventoryItemsCountWithId(reagentId) + CountMailboxItems(reagentId);
-            if (reagentOwned >= totalReagentNeeded)
-                continue;
-
-            needed[reagentId] += totalReagentNeeded - reagentOwned;
-        }
-    }
-
+    needed[itemId] = want - owned;
     return needed;
 }
 
@@ -214,11 +128,6 @@ bool GuildShareAhBuyAction::Execute(Event& event)
         return false;
     }
 
-    std::vector<GuildShareItemEntry> shareList = AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list");
-    std::set<uint32> finishedItemIds;
-    for (const auto& entry : shareList)
-        finishedItemIds.insert(entry.itemId);
-
     uint32 availableBudget = AI_VALUE2(uint32, "free money for", uint32(NeedMoneyFor::guild));
 
     struct AuctionCandidate
@@ -228,10 +137,9 @@ bool GuildShareAhBuyAction::Execute(Event& event)
         uint32 itemId;
         uint32 buyout;
         uint32 count;
-        bool isFinishedItem;
     };
 
-    AuctionCandidate bestCandidate = { 0, 0, 0, 0, 0, false };
+    AuctionCandidate bestCandidate = { 0, 0, 0, 0, 0 };
     uint32 bestPricePerItem = std::numeric_limits<uint32>::max();
 
     for (auto const& auctionEntry : *auctionHouse->GetAuctions())
@@ -269,27 +177,12 @@ bool GuildShareAhBuyAction::Execute(Event& event)
             if (msg != EQUIP_ERR_OK)
                 continue;
 
-            bool isFinished = finishedItemIds.count(auctionItemId) > 0;
             uint32 pricePerItem = auction->buyout / auctionCount;
-
-            // Prioritize items over crafting materials
-            if (bestCandidate.auctionId)
-            {
-                if (bestCandidate.isFinishedItem && !isFinished)
-                    continue;
-
-                if (!bestCandidate.isFinishedItem && isFinished)
-                {
-                    bestPricePerItem = pricePerItem;
-                    bestCandidate = { auction->Id, auction->itemGuidLow, auctionItemId, auction->buyout, auctionCount, isFinished };
-                    continue;
-                }
-            }
 
             if (pricePerItem < bestPricePerItem)
             {
                 bestPricePerItem = pricePerItem;
-                bestCandidate = { auction->Id, auction->itemGuidLow, auctionItemId, auction->buyout, auctionCount, isFinished };
+                bestCandidate = { auction->Id, auction->itemGuidLow, auctionItemId, auction->buyout, auctionCount };
             }
     }
 
@@ -315,7 +208,7 @@ bool GuildShareAhBuyAction::Execute(Event& event)
             out << proto->Name1;
         else
             out << "item #" << bestCandidate.itemId;
-        out << (bought ? " from AH for guild share list (" : " from AH for guild share list; core rejected purchase (")
+        out << (bought ? " from AH for guild order (" : " from AH for guild order; core rejected purchase (")
             << (bestCandidate.buyout / 10000) << "g)";
 
         ai->TellPlayerNoFacing(GetMaster(), out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
