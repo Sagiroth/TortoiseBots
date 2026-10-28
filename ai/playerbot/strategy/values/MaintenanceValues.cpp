@@ -701,7 +701,8 @@ bool ShouldGetMailValue::Calculate() {
     if (!master)
         return false;
 
-    bool hasGuildShareList = !AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list").empty();
+    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    bool hasBuyOrder = order.type == GuildOrderType::AuctionHouse && !order.target.empty();
 
     for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
     {
@@ -710,7 +711,7 @@ bool ShouldGetMailValue::Calculate() {
 
         int32 waitingInBoxTime = cur_time - (*itr)->deliver_time;
 
-        if (!hasGuildShareList && waitingInBoxTime < HOUR) //Let mail sit in the inbox for atleast 1 hour
+        if (waitingInBoxTime < HOUR) //Let mail sit in the inbox for atleast 1 hour
         {
             return false;
         }
@@ -720,7 +721,7 @@ bool ShouldGetMailValue::Calculate() {
             return true;
         }
 
-        if (hasGuildShareList && (*itr)->has_items && (*itr)->stationery == MAIL_STATIONERY_AUCTION && waitingInBoxTime > MINUTE) //If bot has guild share list and mail is from AH, take mail immediately.
+        if (hasBuyOrder && (*itr)->has_items && (*itr)->stationery == MAIL_STATIONERY_AUCTION && waitingInBoxTime > MINUTE) //If bot has a buy order and mail is from AH, take mail immediately.
         {
             return true;
         }
