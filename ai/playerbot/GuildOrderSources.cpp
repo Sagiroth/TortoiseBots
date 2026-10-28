@@ -1,4 +1,5 @@
 #include "playerbot/GuildOrderSources.h"
+#include "playerbot/GuildOrderCraft.h"
 
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/values/LootValues.h"
@@ -322,10 +323,19 @@ std::pair<uint32_t, uint32_t> GuildOrderFarmItemFor(Player* bot)
         return { 0, 0 };
     if (record->type == OrderType::Farm)
         return { record->itemId, record->farmZoneId };
-    // Buy falls back to farming its remainder; craft farms the reagent the
-    // package-5 value names. Neither value exists on this branch yet, so
-    // only Farm carries order mode today.
-    return { 0, 0 };
+    if (record->type != OrderType::Craft)
+        return { 0, 0 };
+
+    // Same reagent the "guild order farm item" value picks: one shared
+    // function, so order mode and travel never farm different items.
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!ai)
+        return { 0, 0 };
+    uint32_t reagent = ai::GuildOrderCraftReagentFor(ai, bot, record->itemId, record->amount,
+        record->delivered);
+    if (!reagent)
+        return { 0, 0 };
+    return { reagent, record->farmZoneId };
 }
 
 bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry)

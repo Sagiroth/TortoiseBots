@@ -27,6 +27,10 @@ void GuildStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 
     triggers.push_back(new TriggerNode(
         "very often",
+        NextAction::array(0, new NextAction("guild order vendor", 10.5f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "very often",
         NextAction::array(0, new NextAction("guild craft order", 10.0f), NULL)));
 
     triggers.push_back(new TriggerNode(

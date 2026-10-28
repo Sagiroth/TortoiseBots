@@ -48,6 +48,12 @@ namespace ai
     // not delivering, and delivered plus bags below the amount.
     bool OrderStillNeedsWork(Player* bot, GuildOrder const& order);
 
+    // First missing farmable reagent for a Working craft order: the same
+    // pick the "guild order farm item" value makes, shared so order mode
+    // and travel never farm different items.
+    uint32 GuildOrderCraftReagentFor(PlayerbotAI* ai, Player* bot, uint32 itemId, uint32 amount,
+        uint32 delivered);
+
     class HasGuildTravelOrderValue : public BoolCalculatedValue
     {
     public:
@@ -56,6 +62,9 @@ namespace ai
         bool Calculate() override
         {
             GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+            // A craft order short on a farmable reagent travels like a farm order.
+            if (order.IsCraftOrder())
+                return AI_VALUE(uint32, "guild order farm item") != 0;
             if (!order.IsTravelOrder())
                 return false;
 
@@ -65,6 +74,39 @@ namespace ai
                 return false;
             return OrderStillNeedsWork(bot, order);
         }
+    };
+
+    // The item the bot actually farms for its guild order: the order item for
+    // farm orders, the first missing reagent the planner can source for craft
+    // orders, 0 when none (no order, reagents complete, nothing sourcable).
+    class GuildOrderFarmItemValue : public CalculatedValue<uint32>
+    {
+    public:
+        GuildOrderFarmItemValue(PlayerbotAI* ai) : CalculatedValue<uint32>(ai, "guild order farm item", 10) {}
+
+        uint32 Calculate() override;
+    };
+
+    // First missing craft-order reagent sold unlimited by a vendor, 0 when
+    // none. This is the order-driven vendor trip: anything it returns is
+    // bought, never farmed.
+    class GuildOrderVendorReagentValue : public CalculatedValue<uint32>
+    {
+    public:
+        GuildOrderVendorReagentValue(PlayerbotAI* ai) : CalculatedValue<uint32>(ai, "guild order vendor reagent", 10) {}
+
+        uint32 Calculate() override;
+    };
+
+    // True when the recipe needs a spell focus (anvil, forge, fire),
+    // reagents for at least one cast are ready, and no matching focus
+    // object is in sight.
+    class GuildOrderNeedsFocusValue : public BoolCalculatedValue
+    {
+    public:
+        GuildOrderNeedsFocusValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "guild order needs focus", 10) {}
+
+        bool Calculate() override;
     };
 
     class HasGuildCraftOrderValue : public BoolCalculatedValue
