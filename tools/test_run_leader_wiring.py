@@ -1204,7 +1204,7 @@ class RunTestSpeedWiringTest(unittest.TestCase):
         code = strip_comments(COMMANDS)
         run = body(code, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
         start = run[run.index('if (verb == "start")\n'):]
-        self.assertIn("CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(commander))", start)
+        self.assertIn("CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(Requester(handler)))", start)
         self.assertIn("if (!playerLedStart.playerLed)", start)
         self.assertIn("arg = LowerCopy(speedArgs.rest);", start)
         self.assertLess(start.index("CheckTestSpeed(speedArgs.rate,"), start.index("arg = LowerCopy(speedArgs.rest);"))

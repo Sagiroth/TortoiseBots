@@ -68,9 +68,16 @@ class PlayerLedBindWiringTest(unittest.TestCase):
         self.assertIn("ReleaseBinding(commanderRaw, RemoteCommander::ReleaseReason::Unbound, false);", guard)
         # The player stands in the plan's dungeon.
         self.assertIn("playerLedStart.playerLed && plan->map != commander->GetMapId()", run)
-        # `.bot run mode` stays with the dispatcher in HandleDungeonRun (its own binding-free branch).
+        # `.bot run list/mode/here` reach RunVerbAs: the dispatcher filters
+        # unknown verbs and the `for` path is ParseRunFor-limited, so
+        # RunVerbAs itself holds no early whitelist return.
         dispatch = body(COMMANDS, "bool HandleDungeonRun(", "\n}\n")
         self.assertIn('verb != "mode"', dispatch)
+        self.assertIn('if (verb == "mode")', run)
+        self.assertIn('if (verb == "list")', run)
+        self.assertIn('if (verb == "here")', run)
+        head = run[:run.index('if (verb == "here")')]
+        self.assertNotIn('verb != "start"', head)
         self.assertIn("TortoiseBots::PlayerLed::ModeText(", run)
 
     def test_player_led_binding_ends_with_the_run(self):

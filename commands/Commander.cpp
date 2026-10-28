@@ -10894,10 +10894,19 @@ static bool HandleRunFor(ChatHandler* handler, std::string const& args, std::str
             "Usage: .bot run for <Commander> <start [plan] [from <leg|step N>] [speed=<x>]|pause|resume|skip|stop|status>");
         return true;
     }
+    normalizePlayerName(commanderName);
     Player* commander = sObjectAccessor.FindPlayerByName(commanderName.c_str());
     if (!commander || !commander->IsInWorld() || !commander->GetSession())
     {
         SendActionError(handler, intent, "no-commander", "That commander is not online.");
+        return true;
+    }
+    // A system binding's key is its lead bot: driving it would reach the
+    // server-owned run, so refuse it by name too.
+    if (IsSystemBinding(commander->GetObjectGuid().GetRawValue()) ||
+        BotManager::Instance().IsBot(commander->GetObjectGuid()))
+    {
+        SendActionError(handler, intent, "not-commander", "That name is a bot, not a commander.");
         return true;
     }
     return RunVerbAs(handler, commander, verb, rest, "run " + verb);
@@ -10911,15 +10920,9 @@ static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const
     for (char& c : arg)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
-    // The GM side branches stay with the dispatcher in HandleDungeonRun below; only the six
-    // run verbs (start/pause/resume/skip/stop/status) reach this body.
-
-    if (verb != "start" && verb != "pause" && verb != "resume" && verb != "skip" && verb != "stop" &&
-        verb != "status")
-    {
-        SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from <leg|step N>] [speed=<1.0-3.0>] / pause / resume / skip / stop [reason] / status");
-        return true;
-    }
+    // HandleDungeonRun filters the verbs before dispatching here; the `for`
+    // path is limited to its six verbs by ParseRunFor. Every other verb
+    // reaches its branch below (list/mode/here need no binding).
     if (!commander || !commander->GetSession())
     {
         SendActionError(handler, intent, "requester", "You must be in-game.");
@@ -11061,8 +11064,10 @@ static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const
                         realPlayer = member.name;
                         break;
                     }
+        // With `for`, the GM driving the run is the sender (the console/GM
+        // handler), not the commander the run runs as.
         SpeedRefusal const speedRefusal =
-            CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(commander));
+            CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(Requester(handler)));
         if (!speedRefusal.code.empty())
         {
             SendActionError(handler, intent, speedRefusal.code.c_str(), speedRefusal.text.c_str());

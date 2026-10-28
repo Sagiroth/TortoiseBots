@@ -27,7 +27,7 @@ class RunStartSpeedWiringTest(unittest.TestCase):
 
     def test_the_ordered_refusal_lives_in_the_policy(self):
         run = body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
-        self.assertIn("CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(commander))", run)
+        self.assertIn("CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(Requester(handler)))", run)
         self.assertNotIn('"forbidden", "Only a GameMaster may start a test-speed run', run)
 
     def test_player_led_start_keeps_its_own_words(self):

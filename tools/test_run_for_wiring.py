@@ -37,6 +37,20 @@ class RunForWiringTest(unittest.TestCase):
         self.assertIn('"no-commander"', fn)
         self.assertIn('RunVerbAs(handler, commander, verb, rest, "run " + verb)', fn)
 
+    def test_commander_name_is_normalized_before_lookup(self):
+        fn = body(COMMANDS, "static bool HandleRunFor(")
+        self.assertLess(fn.index("normalizePlayerName(commanderName)"), fn.index("FindPlayerByName("))
+
+    def test_system_binding_key_is_refused(self):
+        fn = body(COMMANDS, "static bool HandleRunFor(")
+        self.assertIn("IsSystemBinding(", fn)
+        self.assertIn('"not-commander"', fn)
+        self.assertLess(fn.index("IsSystemBinding("), fn.index('RunVerbAs(handler, commander, verb, rest, "run " + verb)'))
+
+    def test_speed_checks_the_sender_not_the_commander(self):
+        run = body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{")
+        self.assertIn("CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(Requester(handler)))", run)
+
     def test_run_words_run_as_the_commander(self):
         self.assertIn("static bool RunVerbAs(", COMMANDS)
         verb = body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{")
