@@ -76,6 +76,106 @@
     rows.forEach((r) => delete r._o);
     return rows;
   }
+  // ---- the raid card (A11) --------------------------------------------------------------------------------------------
+
+  // A binding with more than 6 bots (or any bot with a subgroup) is a raid: the card shows subgroup blocks.
+  function isRaid(bind) {
+    const bots = (bind && bind.bots) || [];
+    return bots.length > 6 || bots.some((b) => b && typeof b.sub === "number");
+  }
+
+  // The party as subgroup blocks: [{subgroup: 0..7, label, rows}] with the lead first in its block. A binding whose bots
+  // carry no subgroup is one unlabelled block ("Party") in the party order.
+  function raidBlocks(bind) {
+    const rows = partyRows(bind);
+    const byBot = {};
+    ((bind && bind.bots) || []).forEach((b) => { byBot[b.guid] = typeof b.sub === "number" ? b.sub : -1; });
+    if (!rows.some((r) => byBot[r.guid] >= 0)) return [{ subgroup: -1, label: "Party", rows }];
+    const subs = {};
+    rows.forEach((r) => {
+      const s = byBot[r.guid];
+      const sub = s >= 0 && s <= 7 ? s : 7;
+      (subs[sub] || (subs[sub] = [])).push(r);
+    });
+    return Object.keys(subs).map(Number).sort((a, b) => a - b).map((s) => {
+      const rs = subs[s];
+      rs.sort((a, b) => (a.lead ? -1 : 0) - (b.lead ? -1 : 0));
+      return { subgroup: s, label: "Group " + (s + 1), rows: rs };
+    });
+  }
+
+  // Mobs whose victim is a bound bot that is not a tank (by role), held at least 2 s since the tracker first saw the
+  // victim on that mob: [{mob, victim, role, seconds}]. A mob with no victim or on a tank is not listed.
+  function threatOffTanks(bind, tr, nowSec) {
+    const out = [];
+    const bots = {};
+    ((bind && bind.bots) || []).forEach((b) => { if (b && b.id) bots[b.id] = b; });
+    const scoped = (tr.threat || (tr.threat = {}));
+    const seen = scoped[bind.commander] || (scoped[bind.commander] = {});
+    ((bind && bind.mobs) || []).forEach((m) => {
+      const v = m && m.victim && bots[m.victim];
+      if (!v || v.role === "tank") { if (m && m.id) delete seen[m.id]; return; }
+      const key = m.id || (m.name + "@" + (m.x || 0) + "," + (m.y || 0));
+      if (seen[key] == null) seen[key] = nowSec;
+      const seconds = Math.max(0, Math.round((nowSec || 0) - seen[key]));
+      if (seconds >= 2) out.push({ mob: m, victim: v.name, role: v.role || "other", seconds });
+    });
+    return out;
+  }
+
+  // The run's status lines (oldest first on the wire) newest first: [{at, text: "<step> <leg> <kind> <phase>: <note>", state}].
+  function notesLog(bind) {
+    const notes = bind && bind.run && Array.isArray(bind.run.notes) ? bind.run.notes : [];
+    return notes.slice().reverse().map((n) => ({
+      at: n.at,
+      text: [n.step, n.leg, n.kind, n.phase].join(" ") + ": " + n.note,
+      state: n.state,
+    }));
+  }
+
+  // Deaths of the last fights (the A12 combat data) plus the bots now dead first: [{t, name, killer, fight, x, y}].
+  function deathsTimeline(fights, bind) {
+    const dead = ((bind && bind.bots) || []).filter((b) => b.alive === false);
+    const out = dead.map((b) => ({ t: null, name: b.name, killer: "", fight: "", x: b.x || 0, y: b.y || 0 }));
+    (Array.isArray(fights) ? fights : []).forEach((f) => {
+      (f.deaths || []).forEach((d) => {
+        out.push({
+          t: f.start != null && d.t_ms != null ? Math.round(f.start + d.t_ms / 1000) : null,
+          name: d.name, killer: d.killer || "", fight: f.boss_name || "", x: d.x || 0, y: d.y || 0,
+        });
+      });
+    });
+    return out;
+  }
+
+  // The buttons' GM lines for this binding. startFromLeg takes the plan's leg name or step number; reviveDead lists one
+  // .revive line per dead bound bot; gearPreset gears the raid (a raid binding) or the commander's bot (a party).
+  function controlLines(bind) {
+    const name = bind && bind.commander;
+    const raid = isRaid(bind);
+    const dead = ((bind && bind.bots) || []).filter((b) => b.alive === false).map((b) => b.name);
+    return {
+      pause: ".bot run for " + name + " pause",
+      resume: ".bot run for " + name + " resume",
+      skip: ".bot run for " + name + " skip",
+      stop: ".bot run for " + name + " stop",
+      status: ".bot run for " + name + " status",
+      startFromLeg: (leg) => ".bot run for " + name + " start from " + leg,
+      reviveDead: dead.map((n) => ".revive " + n),
+      reloadPlans: ".bot run reloadplans",
+      gearPreset: (preset) => raid ? ".bot gear raid " + name + " preset " + preset : ".bot gear " + name + " preset " + preset,
+    };
+  }
+
+  // One sentence: the run's state and the seconds since it changed; "stalled" past 120 s, "stuck" past 300 s.
+  function whyWaiting(bind, nowSec) {
+    const r = bind && bind.run;
+    if (!r || typeof r !== "object") return "";
+    const ago = r.changed != null && nowSec ? Math.max(0, Math.round(nowSec - r.changed)) : 0;
+    const flag = ago > 300 ? "stuck" : ago > 120 ? "stalled" : "";
+    return [r.state, r.note, ageText(ago) + " ago", flag].filter(Boolean).join(" \u00b7 ");
+  }
+
 
   // The dashboard's own link to a character's detail view (the route app.js parses: #/<tab>?bot=<guid>), or '' for a guid that is not one.
   // The Commanders tab stays the tab underneath, as it does for a bot picked anywhere else.
@@ -618,6 +718,7 @@
     HEAL_RANGE_YD, FAR_YD, LOW_HP_PCT, STALE_WARN_SEC, pretty, plural, ageText, roleKey, roleLabel, distance, leadBot, partyRows, orderText, stateWord,
     headerText, headerParts, botHref, warnings, newTracker, note, context, prune, project, fitView, viewBox, zoomAt, panBy, pinch, gridStep, gridLines,
     trailSegments, markGap, trailSegmentsBroken, trailRuns, trailMarks, trailEvent, jumpLimitYd, TRAVEL_MAX_YD_PER_SEC, TRAVEL_SLACK_YD, TRAVEL_MAX_GAP_SEC, clampScale, prependTrail, heading, trailStamps, scaleBar, zonesIn, pictureSlots, pictureChoice, pictureSelect, pictureRefreshAfter, PIC_RETRY_MS, PIC_MISSING_MS,
+    raidBlocks, isRaid, threatOffTanks, notesLog, deathsTimeline, controlLines, whyWaiting,
     AGGRO_RANGE_YD, followView, zoomFollow, pinchFollow, mobsOf, mobClass, threatLines, botTargetLines, aggroMobs, commanderPlace,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.CmdView = api;

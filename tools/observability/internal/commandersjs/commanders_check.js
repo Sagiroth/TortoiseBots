@@ -421,4 +421,82 @@ assert.strictEqual(C.jumpLimitYd(500), 612, "...and at most 30 s, so a long sile
   assert.strictEqual(C.trailEvent({ gap: true }, { map: 1, x: 0, y: 0, t: 1 }), "g");
   stepg(60, 106); assert.strictEqual(tg.trail.Gbmage.pts[3].length, 3, "only that one point");
 }
-console.log("commanders.js ok");
+// ---- A11: the raid card (subgroups, off-tank threat, notes, deaths, controls, waiting)
+const raidBot = (i, sub) => bot({ name: "R" + i, guid: 100 + i, id: String(100 + i), role: i % 5 === 0 ? "tank" : i % 5 === 1 ? "healer" : "dps", sub });
+const raidBind = () => {
+  const bots = [];
+  for (let s = 0; s < 4; s++) for (let i = 0; i < 5; i++) bots.push(raidBot(s * 5 + i, s));
+  bots[0].name = "Lead"; bots[0].lead = true;
+  return { commander: "Gbraid", online: true, view: true, group: 9, lead: "Lead", bots, orders: [] };
+};
+// subgroup blocks: one per subgroup in order, 5 rows each, the lead first in block 0
+let rb = C.raidBlocks(raidBind());
+assert.deepStrictEqual(rb.map((b) => b.subgroup), [0, 1, 2, 3]);
+assert.deepStrictEqual(rb.map((b) => b.label), ["Group 1", "Group 2", "Group 3", "Group 4"]);
+assert.deepStrictEqual(rb.map((b) => b.rows.length), [5, 5, 5, 5]);
+assert.strictEqual(rb[0].rows[0].name, "Lead");
+assert.ok(C.isRaid(raidBind()));
+// a 5-man binding without subgroups is one block and stays a party card
+rb = C.raidBlocks(party());
+assert.strictEqual(rb.length, 1); assert.strictEqual(rb[0].label, "Party");
+assert.deepStrictEqual(rb[0].rows.map((r) => r.name), ["Tankie", "Heals", "Dmg1"]);
+assert.ok(!C.isRaid(party()));
+// threat off the tanks: a mob on a healer for 3 s is reported, a mob on a tank is not
+const threatBind = () => ({
+  commander: "Gbmage", bots: [bot({ name: "Tanky", guid: 1, id: "1", role: "tank" }), bot({ name: "Heals", guid: 2, id: "2", role: "healer" })],
+  mobs: [{ id: "m1", entry: 100, name: "Whelp", hp: 80, x: 1, y: 2, reaction: "h", victim: "2" }],
+});
+let ttr = C.newTracker();
+assert.deepStrictEqual(C.threatOffTanks(threatBind(), ttr, 100), [], "first sighting: held 0 s");
+let off = C.threatOffTanks(threatBind(), ttr, 103);
+assert.strictEqual(off.length, 1);
+assert.strictEqual(off[0].mob.name, "Whelp"); assert.strictEqual(off[0].victim, "Heals");
+assert.strictEqual(off[0].role, "healer"); assert.strictEqual(off[0].seconds, 3);
+const tankBind = threatBind(); tankBind.mobs[0].victim = "1";
+assert.deepStrictEqual(C.threatOffTanks(tankBind, C.newTracker(), 103), [], "on a tank: nothing");
+// notes: the run's status lines newest first
+const notesBind = {
+  commander: "Gbraid",
+  run: {
+    plan: "molten_core", state: "running", step: 5, steps: 20, leg: "garr", kind: "boss", phase: "fight", note: "fighting Garr", changed: 60,
+    notes: [
+      { at: 58, step: 4, leg: "garr", kind: "move", phase: "walk", state: "running", note: "walking in" },
+      { at: 59, step: 5, leg: "garr", kind: "boss", phase: "fight", state: "running", note: "fighting Garr" },
+    ],
+  },
+};
+let nl = C.notesLog(notesBind);
+assert.strictEqual(nl.length, 2);
+assert.deepStrictEqual(nl[0], { at: 59, text: "5 garr boss fight: fighting Garr", state: "running" });
+assert.strictEqual(nl[1].at, 58);
+assert.deepStrictEqual(C.notesLog(party()), [], "no run: no notes");
+// deaths: the last fights' deaths plus the bots now dead
+const deadBind = { commander: "Gbraid", bots: [bot({ name: "Live", guid: 1, id: "1" }), bot({ name: "Dead", guid: 2, id: "2", alive: false, hp: 0, x: 7, y: 8 })] };
+const dfights = [{ id: "7-2", boss_name: "Magmadar", start: 1000, deaths: [{ name: "Healy", t_ms: 9000, x: 1.5, y: 2.5, z: 0, killer: "Magmadar", hits: [] }] }];
+let dt = C.deathsTimeline(dfights, deadBind);
+assert.strictEqual(dt.length, 2);
+assert.deepStrictEqual(dt[0], { t: null, name: "Dead", killer: "", fight: "", x: 7, y: 8 });
+assert.deepStrictEqual(dt[1], { t: 1009, name: "Healy", killer: "Magmadar", fight: "Magmadar", x: 1.5, y: 2.5 });
+assert.deepStrictEqual(C.deathsTimeline([], { commander: "G", bots: [bot({})] }), [], "nobody down, no fights: nothing");
+// controls: the buttons' GM lines for this binding
+const ctlBind = { commander: "Gbmage", bots: [bot({ name: "Live", guid: 1 }), bot({ name: "Deadguy", guid: 2, alive: false, hp: 0 })] };
+let cl = C.controlLines(ctlBind, null);
+assert.strictEqual(cl.pause, ".bot run for Gbmage pause");
+assert.strictEqual(cl.resume, ".bot run for Gbmage resume");
+assert.strictEqual(cl.skip, ".bot run for Gbmage skip");
+assert.strictEqual(cl.stop, ".bot run for Gbmage stop");
+assert.strictEqual(cl.status, ".bot run for Gbmage status");
+assert.strictEqual(cl.startFromLeg(2), ".bot run for Gbmage start from 2");
+assert.deepStrictEqual(cl.reviveDead, [".revive Deadguy"]);
+assert.strictEqual(cl.reloadPlans, ".bot run reloadplans");
+assert.strictEqual(cl.gearPreset("zg"), ".bot gear Gbmage preset zg", "a party gears one bot");
+assert.strictEqual(C.controlLines(raidBind(), null).gearPreset("zg"), ".bot gear raid Gbraid preset zg", "a raid gears the raid");
+assert.deepStrictEqual(C.controlLines({ commander: "Gbmage", bots: [bot({})] }, null).reviveDead, [], "nobody down: no revive");
+// waiting: the state, the note and the seconds since it changed; stalled past 120 s, stuck past 300 s
+const waitBind = (ago) => ({ commander: "Gbraid", run: { state: "paused", note: "waiting for mana", changed: 1000 - ago } });
+let ww = C.whyWaiting(waitBind(30), 1000);
+assert.ok(/paused/.test(ww) && /waiting for mana/.test(ww) && !/stalled/.test(ww) && !/stuck/.test(ww), ww);
+assert.ok(/stalled/.test(C.whyWaiting(waitBind(121), 1000)), "stalled at 121 s");
+assert.ok(/stuck/.test(C.whyWaiting(waitBind(301), 1000)), "stuck at 301 s");
+assert.strictEqual(C.whyWaiting(party(), 1000), "", "no run: nothing to wait on");
+ console.log("commanders.js ok");

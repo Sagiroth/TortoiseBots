@@ -2958,6 +2958,23 @@ select.input {
 .cmd-run { color: var(--text-main); font-size: 0.8rem; font-weight: 600; margin: -4px 0 8px; font-variant-numeric: tabular-nums; }
 .cmd-run[hidden], .cmd-feed[hidden], .cmd-tip[hidden] { display: none; }
 .cmd-feed { margin-top: 6px; padding: 4px 8px; max-height: 8.6em; overflow: auto; background: var(--bg-card-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 0.76rem; }
+/* Raid card (A11): subgroup blocks, notes, threat, deaths and run controls under the map. The party tab keeps its own look. */
+.cmd-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 8px 18px; margin-top: 12px; }
+.cmd-panels[hidden] { display: none; }
+.cmd-subgroup { margin: 10px 0 2px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
+.cmd-notes { max-height: 30em; overflow: auto; font-size: 0.8rem; }
+.cmd-note { padding: 1px 0; border-top: 1px solid var(--border-color); overflow-wrap: anywhere; }
+.cmd-threat-row { padding: 2px 0; font-size: 0.84rem; }
+.cmd-threat-row.hot { color: var(--accent-red); font-weight: 600; }
+.cmd-death { padding: 2px 0; font-size: 0.84rem; cursor: pointer; }
+.cmd-death:hover { color: var(--accent-blue-bright); }
+.cmd-controls[hidden] { display: none; }
+.cmd-controls-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cmd-controls-row .btn:disabled { opacity: 0.45; cursor: default; }
+.cmd-controls-row select, .cmd-controls-row input { height: 30px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; padding: 0 8px; }
+.cmd-controls-row input[type="number"] { width: 5em; }
+.cmd-controls-note { min-height: 1.2em; margin-top: 6px; font-size: 0.8rem; color: var(--text-muted); overflow-wrap: anywhere; }
+.cmd-waiting { color: var(--accent-yellow); font-weight: 600; }
 .cmd-feed .ev { display: grid; grid-template-columns: 4.6em minmax(0, 1fr); gap: 6px; padding: 1px 0; }
 .cmd-feed .ev b { color: var(--text-dim); font-weight: 500; font-variant-numeric: tabular-nums; }
 .cmd-feed .ev span { overflow-wrap: anywhere; }

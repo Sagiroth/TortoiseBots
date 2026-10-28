@@ -5030,14 +5030,18 @@
 
   // The Demo map: a simulated group (demo.js) on its own card, off by default. It goes through the same note / draw functions as a real
   // report; it is never put in state.commanders.list, so the counts, the badge and the real cards never see it.
-  const cmdDemo = { on: false, timer: null, start: 0, bind: null };
+  const cmdDemo = { on: false, timer: null, start: 0, bind: null, raidBind: null };
   const CMD_DEMO_MS = 2000; // the demo is stepped at the refresh rate when that is slower (see cmdDemoMs)
   const cmdDemoMs = () => Math.max(CMD_DEMO_MS, refreshGate.interval() * 1000);
   // A binding the page remembers: commanders (and the demo) plus, for the Dungeons tab (issue #895), one pseudo-binding per live
   // dungeon run — the same card DOM and the same map renderer draw it (drawCmdMap reads cmdFindBind), only the header and the party
   // rows are the Dungeons tab's own.
   const cmdAllBinds = () => {
-    const commanders = cmdDemo.on && cmdDemo.bind ? state.commanders.list.concat([cmdDemo.bind]) : state.commanders.list;
+    let commanders = state.commanders.list;
+    if (cmdDemo.on) {
+      if (cmdDemo.bind) commanders = commanders.concat([cmdDemo.bind]);
+      if (cmdDemo.raidBind) commanders = commanders.concat([cmdDemo.raidBind]);
+    }
     return commanders.concat(state.dungeons.binds);
   };
   const cmdFindBind = key => cmdAllBinds().find(b => b.commander === key);
@@ -5045,12 +5049,15 @@
 
   function cmdDemoTick() {
     if (!cmdDemo.on) return;
-    const now = Date.now() / 1000, bind = CmdDemo.frame(now, cmdDemo.start);
-    cmdDemo.bind = bind;
-    cmdTrails.seeded[bind.commander] = true; // the daemon has no history of it
-    CmdView.note(cmdTracker, bind, now);
-    UnitInfo.noteEvents(cmdEvents, bind, now);
-    cmdNotePaths(bind, now);
+    const now = Date.now() / 1000;
+    const bind = CmdDemo.frame(now, cmdDemo.start), raidBind = CmdDemo.raidFrame(now, cmdDemo.start);
+    cmdDemo.bind = bind; cmdDemo.raidBind = raidBind;
+    [bind, raidBind].forEach(b => {
+      cmdTrails.seeded[b.commander] = true; // the daemon has no history of it
+      CmdView.note(cmdTracker, b, now);
+      UnitInfo.noteEvents(cmdEvents, b, now);
+      cmdNotePaths(b, now);
+    });
     cmdPruneAll();
     if (state.activeTab === 'commanders') renderCommanders();
   }
@@ -5078,9 +5085,10 @@
       cmdDemo.timer = setInterval(refreshGate.guard(cmdDemoTick), cmdDemoMs()); // the simulated group freezes with the rest
       cmdDemoTick();
     } else {
-      cmdDemo.bind = null;
+      cmdDemo.bind = null; cmdDemo.raidBind = null;
       cmdPruneAll();
       delete cmdTrails.seeded[CmdDemo.COMMANDER];
+      delete cmdTrails.seeded[CmdDemo.RAID_COMMANDER];
       if (state.activeTab === 'commanders') renderCommanders();
     }
     if (!quiet) {
@@ -5250,6 +5258,159 @@
         <span class="cmd-who"><b>${r.lead ? '★ ' : ''}${cmdBotLink(r.guid, r.name)}</b> <span class="muted">${esc(r.cls)}${r.level ? ' · ' + esc(r.level) : ''}</span>${cmdDoingHtml(bind, r.guid)}</span>
         ${bars}<span class="cmd-dist">${dist}</span></div>`;
     }).join('');
+  }
+  // A raid binding as subgroup blocks (8 x 5 at most). One row reads like a party row (role icon, hp and mana bars,
+  // alive/dead, act+res, cast, target name, distance to the lead, away badge); the header also counts roles.
+  // cmdPartyHtml stays untouched (its helpers are pinned by partyrows_check.js), so the row is built here.
+  function cmdRaidHtml(bind) {
+    return CmdView.raidBlocks(bind).map(b => {
+      const head = b.label === 'Party' ? '' : `<h4 class="cmd-subgroup">${esc(b.label)} &middot; ${b.rows.filter(r => r.alive).length}/${b.rows.length} up</h4>`;
+      return head + b.rows.map(r => cmdRaidRowHtml(bind, r)).join('');
+    }).join('');
+  }
+
+  function cmdRaidRowHtml(bind, r) {
+    const b = (bind.bots || []).find(x => x.guid === r.guid) || {};
+    const dist = r.lead ? '<span class="muted">lead</span>'
+      : r.otherMap ? '<span class="cmd-flag">other map</span>'
+      : r.dist == null ? '' : `<span class="${r.far ? 'cmd-flag' : ''}">${r.dist} yd</span>`;
+    const bars = r.alive
+      ? `<span class="cmd-meter">${cmdBarHtml(r.hp, r.hp < CmdView.LOW_HP_PCT ? 'low' : 'hp', 'Health ' + r.hpText)}</span>
+         <span class="cmd-meter">${r.hasPower ? cmdBarHtml(r.power, r.powerKind, r.powerKind + ' ' + r.powerText) : '<span class="muted">–</span>'}</span>`
+      : '<span class="cmd-meter cmd-deadtxt">Dead</span><span class="cmd-meter"></span>';
+    const away = b.away ? ' <span class="cmd-flag" title="Off the run\u2019s gather rule or the plan\u2019s map">away</span>' : '';
+    const cast = b.cast ? `<span class="muted"> · ${esc(b.cast)}</span>` : '';
+    return `<div class="cmd-row ${r.alive ? '' : 'dead'}">
+      ${cmdIcon(r.role, r.alive ? r.roleLabel : r.roleLabel + ' (dead)')}
+      <span class="cmd-who"><b>${r.lead ? '★ ' : ''}${cmdBotLink(r.guid, r.name)}</b> <span class="muted">${esc(r.cls)}${r.level ? ' · ' + esc(r.level) : ''}${b.act ? ' · ' + esc(b.act) + (b.res ? b.res : '') : ''}</span>${cast}${cmdDoingHtml(bind, r.guid)}</span>
+      ${bars}<span class="cmd-dist">${dist}${away}</span></div>`;
+  }
+
+  // The run's status lines newest first, scrollable to 30 lines.
+  function cmdNotesHtml(bind) {
+    const notes = CmdView.notesLog(bind);
+    if (!notes.length) return '<div class="empty-hint">No run notes reported.</div>';
+    return notes.slice(0, 30).map(n =>
+      `<div class="cmd-note" title="${esc(CmdView.ageText(Date.now() / 1000 - n.at) + ' ago · ' + n.state)}">${esc(n.text)}</div>`).join('');
+  }
+
+  // Mobs on a bound bot that is not a tank (red past 5 s). Each row names the mob, its victim and how long it has held.
+  function cmdThreatHtml(bind) {
+    const off = CmdView.threatOffTanks(bind, cmdTracker, cmdServerNow());
+    if (!off.length) return '<div class="empty-hint">Nothing held off the tanks.</div>';
+    return off.map(o =>
+      `<div class="cmd-threat-row${o.seconds >= 5 ? ' hot' : ''}"><b>${esc(o.mob.name || 'unit')}</b> on <b>${esc(o.victim)}</b> (${esc(o.role)}) · ${o.seconds} s</div>`).join('');
+  }
+
+  // Deaths of the last fights plus the bots now dead; a click centres the map on x/y.
+  function cmdDeathsHtml(bind) {
+    const fights = cmdFightsCache[bind.commander] && cmdFightsCache[bind.commander].list;
+    const deaths = CmdView.deathsTimeline(fights, bind);
+    if (!deaths.length) return '<div class="empty-hint">No deaths reported.</div>';
+    return deaths.map(d =>
+      `<div class="cmd-death" data-x="${d.x}" data-y="${d.y}" title="${d.fight ? 'Fight ' + esc(d.fight) + ' · ' : ''}click to centre the map">${esc(d.name)}${d.killer ? ' · killed by ' + esc(d.killer) : ''}${d.fight ? ' · ' + esc(d.fight) : ''}</div>`).join('');
+  }
+
+  // The run controls: Pause, Resume, Skip, Stop (confirm), Status, Start from leg, Revive dead (sequential), Reload
+  // plans (confirm), Gear preset. Shown only while GET /api/v1/control says enabled. Each button POSTs with
+  // X-TBM-Control: 1 and same-origin credentials; the answer shows under the row for 20 s; the row locks while one runs.
+  const CMD_GEAR_PRESETS = ['lkh', 'zg', 'aq20', 'timbermaw', 'onyxia', 'mc', 'bwl', 'es', 'aq40', 'naxx', 'kara40', 'prebis', 't1', 't2'];
+  const cmdFightsCache = {}; // commander -> {list, at}: the fights behind the Deaths panel (and the Fights panel below)
+  let cmdControlOn = null;   // null: not asked yet; the page asks once per load
+
+  function cmdControlAsk(cb) {
+    if (cmdControlOn !== null) { cb(cmdControlOn); return; }
+    fetch('/api/v1/control').then(jsonOrThrow).then(v => {
+      cmdControlOn = !!(v && v.enabled);
+      cb(cmdControlOn);
+    }).catch(() => { cmdControlOn = false; cb(false); });
+  }
+  function cmdRaidFights(bind, cb) {
+
+    const c = cmdFightsCache[bind.commander];
+    if (c && Date.now() - c.at < 30000) { cb(c.list); return; }
+    fetch('/api/v1/combat/fights?commander=' + encodeURIComponent(bind.commander)).then(jsonOrThrow).then(list => {
+      cmdFightsCache[bind.commander] = { list: Array.isArray(list) ? list : [], at: Date.now() };
+      cb(cmdFightsCache[bind.commander].list);
+    }).catch(() => cb(c ? c.list : null));
+  }
+
+
+  function cmdControlsHtml(bind) {
+    const dead = (bind.bots || []).filter(b => b.alive === false);
+    const leg = bind.run && bind.run.leg;
+    const legField = leg
+      ? `<select data-cl="leg" title="Plan leg to start from">${`<option value="${esc(leg)}">${esc(leg)}</option>`}</select>`
+      : `<input data-cl="leg" type="number" min="1" max="9999" placeholder="leg" title="Step number to start from">`;
+    return `<div class="cmd-controls-row">
+      <button type="button" class="btn" data-cl="pause">Pause</button>
+      <button type="button" class="btn" data-cl="resume">Resume</button>
+      <button type="button" class="btn" data-cl="skip">Skip</button>
+      <button type="button" class="btn" data-cl="stop">Stop</button>
+      <button type="button" class="btn" data-cl="status">Status</button>
+      ${legField}<button type="button" class="btn" data-cl="start">Start from leg</button>
+      <button type="button" class="btn" data-cl="revive"${dead.length ? '' : ' disabled'}>Revive dead (${dead.length})</button>
+      <button type="button" class="btn" data-cl="reload">Reload plans</button>
+      <select data-cl="preset" title="Gear preset">${CMD_GEAR_PRESETS.map(p => `<option value="${p}">${esc(p)}</option>`).join('')}</select><button type="button" class="btn" data-cl="gear">Gear preset</button>
+      </div><div class="cmd-controls-note" aria-live="polite"></div>`;
+  }
+
+  function cmdControlSay(card, text) {
+    const note = card.querySelector('.cmd-controls-note');
+    if (!note) return;
+    note.textContent = text;
+    clearTimeout(note._t);
+    note._t = setTimeout(() => { note.textContent = ''; }, 20000);
+  }
+
+  function cmdControlPost(card, lines) {
+    const row = card.querySelector('.cmd-controls');
+    if (!row || row.dataset.busy) return;
+    row.dataset.busy = '1';
+    row.querySelectorAll('button, select, input').forEach(el => { el.disabled = true; });
+    const seq = Array.isArray(lines) ? lines : [lines];
+    let chain = Promise.resolve(), last = '';
+    seq.forEach(line => {
+      chain = chain.then(() => fetch('/api/v1/control', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-TBM-Control': '1' },
+        body: JSON.stringify({ cmd: line }),
+      }).then(jsonOrThrow).then(v => { last = (v && v.answer) || 'ok'; }).catch(e => { last = String((e && e.message) || e); throw e; }));
+    });
+    chain.then(() => cmdControlSay(card, last)).catch(() => cmdControlSay(card, last)).then(() => {
+      delete row.dataset.busy;
+      row.querySelectorAll('button, select, input').forEach(el => { el.disabled = false; });
+      const dead = (cmdFindBind(card.dataset.commander) || { bots: [] }).bots.filter(b => b.alive === false);
+      const revive = row.querySelector('[data-cl="revive"]');
+      if (revive) { revive.disabled = !dead.length; revive.textContent = `Revive dead (${dead.length})`; }
+    });
+  }
+
+  function cmdControlsBind(card, bind) {
+    const row = card.querySelector('.cmd-controls-row');
+    if (!row || row._bound) return;
+    row._bound = true;
+    row.addEventListener('click', e => {
+      const btn = e.target.closest && e.target.closest('[data-cl]');
+      if (!btn || btn.disabled || btn.tagName === 'SELECT' || btn.tagName === 'INPUT') return;
+      const lines = CmdView.controlLines(bind);
+      const act = btn.dataset.cl;
+      if (act === 'pause') cmdControlPost(card, lines.pause);
+      else if (act === 'resume') cmdControlPost(card, lines.resume);
+      else if (act === 'skip') cmdControlPost(card, lines.skip);
+      else if (act === 'stop' && confirm('Stop the run for ' + bind.commander + '?\n' + lines.stop)) cmdControlPost(card, lines.stop);
+      else if (act === 'status') cmdControlPost(card, lines.status);
+      else if (act === 'start') {
+        const leg = row.querySelector('[data-cl="leg"]');
+        const v = leg ? String(leg.value || '').trim() : '';
+        if (v) cmdControlPost(card, lines.startFromLeg(v));
+      }
+      else if (act === 'revive' && lines.reviveDead.length) cmdControlPost(card, lines.reviveDead);
+      else if (act === 'reload' && confirm('Reload the run plans on the game server?\n' + lines.reloadPlans)) cmdControlPost(card, lines.reloadPlans);
+      else if (act === 'gear') {
+        const sel = row.querySelector('[data-cl="preset"]');
+        if (sel && sel.value) cmdControlPost(card, lines.gearPreset(sel.value));
+      }
+    });
   }
 
   function cmdOrdersHtml(bind, serverNow) {
@@ -5920,6 +6081,12 @@
           <div class="cmd-feed" hidden></div>
           <div class="cmd-legend">${cmdLegendHtml()}</div>
         </div>
+        <div class="cmd-panels">
+          <div class="cmd-panel"><h3 class="cmd-h">Notes</h3><div class="cmd-notes"></div></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Threat</h3><div class="cmd-threat"></div></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Deaths</h3><div class="cmd-deaths"></div></div>
+          <div class="cmd-panel cmd-controls" hidden><h3 class="cmd-h">Controls</h3><div class="cmd-controls-row"></div><div class="cmd-controls-note" aria-live="polite"></div></div>
+        </div>
       </div>`;
     bindCmdMap(card, key);
     // the names in the header, the party table and the lead line: a plain click opens the details in the page (modified clicks keep the link)
@@ -5929,6 +6096,16 @@
       e.preventDefault();
       if (card.classList.contains('cmd-demo')) return; // the simulated bots have no details
       openProfile(parseInt(a.dataset.guid, 10));
+    });
+    // a click on a death centres the card's map on where it happened
+    card.addEventListener('click', e => {
+      const d = e.target.closest && e.target.closest('.cmd-death[data-x][data-y]');
+      if (!d) return;
+      const ms = cmdMaps[key] || (cmdMaps[key] = { follow: false, view: null, userScale: null });
+      const p = CmdView.project(parseFloat(d.dataset.x) || 0, parseFloat(d.dataset.y) || 0);
+      ms.follow = false;
+      ms.view = { cx: p.x, cy: p.y, scale: (ms.view && ms.view.scale) || 2 };
+      drawCmdMap(key);
     });
     return card;
   }
@@ -5968,6 +6145,7 @@
       const place = cmdPlace(bind);
       const hp = CmdView.headerParts(bind, place, '');
       setHtml(card.querySelector('.cmd-title'), `${demo ? 'DEMO &middot; simulated group' : cmdBotLink(bind.commander_guid, hp[0]) + esc(hp[1])} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
+      card.dataset.commander = key;
       const rb = UnitInfo.runBrief(bind, nowSec);
       setHtml(card.querySelector('.cmd-badges'),
         (demo ? '<span class="badge badge-warn" title="Made up by this page to try the map drawings. Nothing of it comes from the game server.">simulated</span>' : '')
@@ -5975,14 +6153,30 @@
         + `<span class="badge ${bind.online ? 'badge-info' : 'badge-error'}">${bind.online ? 'online' : 'offline'}</span>`
         + `<span class="badge ${bind.view ? 'badge-info' : 'badge-warn'}" title="The commander's TBM:VIEW perception feed">feed ${bind.view ? 'on' : 'off'}</span>`);
       const leadBot = CmdView.leadBot(bind);
+      const raidWhy = CmdView.isRaid(bind) ? CmdView.whyWaiting(bind, nowSec) : '';
       setHtml(card.querySelector('.cmd-sub'), `Led by <b>${leadBot ? cmdBotLink(leadBot.guid, leadBot.name) : esc(bind.lead || '?')}</b> &middot; group ${esc(bind.group)}`
-        + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}" title="${esc((rb.note ? rb.note + '. ' : '') + (rb.changedAgo != null ? 'Last change ' + CmdView.ageText(rb.changedAgo) + ' ago.' : ''))}">${esc((bind.run.plan ? bind.run.plan + ' · ' : '') + rb.text)}</span>` : ''));
+        + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}" title="${esc((rb.note ? rb.note + '. ' : '') + (rb.changedAgo != null ? 'Last change ' + CmdView.ageText(rb.changedAgo) + ' ago.' : ''))}">${esc((bind.run.plan ? bind.run.plan + ' · ' : '') + rb.text)}</span>` : '')
+        + (raidWhy ? ` &middot; <span class="cmd-waiting" title="What the run waits on and for how long">${esc(raidWhy)}</span>` : ''));
       const warns = CmdView.warnings(bind, { ageSec: demo ? 0 : age >= 0 ? age : null });
       setHtml(card.querySelector('.cmd-warn'), warns.length
         ? warns.map(w => `<span class="cmd-pill ${w.level}"><b aria-hidden="true">${w.level === 'bad' ? '!' : '▲'}</b> ${esc(w.text)}</span>`).join('')
         : '<span class="cmd-pill ok"><b aria-hidden="true">✓</b> No warnings</span>');
-      setHtml(card.querySelector('.cmd-party'), cmdPartyHtml(bind));
+      const raid = CmdView.isRaid(bind);
+      setHtml(card.querySelector('.cmd-party'), raid ? cmdRaidHtml(bind) : cmdPartyHtml(bind));
       setHtml(card.querySelector('.cmd-orders'), cmdOrdersHtml(bind, nowSec));
+      const panels = card.querySelector('.cmd-panels');
+      if (panels) panels.hidden = !raid;
+      if (raid) {
+        setHtml(card.querySelector('.cmd-notes'), cmdNotesHtml(bind));
+        setHtml(card.querySelector('.cmd-threat'), cmdThreatHtml(bind));
+        setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind));
+        if (!bind.demo) cmdRaidFights(bind, () => setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind)));
+        cmdControlAsk(on => {
+          const ctl = card.querySelector('.cmd-controls');
+          if (ctl) ctl.hidden = !on;
+          if (on) { setHtml(card.querySelector('.cmd-controls-row'), cmdControlsHtml(bind)); cmdControlsBind(card, bind); }
+        });
+      }
       drawCmdMap(key);
       mountFightPanel(card, bind);
     });

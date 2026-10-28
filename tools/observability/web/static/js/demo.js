@@ -233,6 +233,48 @@
       run: runAt(t, base), objects: objectsAt(t),
     };
   }
+  // A 20-bot raid binding (4 subgroups of 5) on the same map, so the raid card has something to draw without a live raid: one dead bot,
+  // one mob held by a healer, run notes and a paused run. `frame` stays the 5-man party; the page shows both while the demo is on.
+  const RAID_COMMANDER = "DEMORAID (simulated)";
+  const RAID_BOTS = [
+    ["Raidtank", "warrior", "tank", "rage", 4200, 100], ["Raidheal", "priest", "healer", "mana", 2600, 3000],
+    ["Raidmage", "mage", "dps", "mana", 2300, 3400], ["Raidhunt", "hunter", "dps", "mana", 2900, 2400], ["Raidlock", "warlock", "dps", "mana", 2400, 3200],
+  ];
+  const RAID_CLASSES = ["warrior", "paladin", "priest", "mage", "warlock", "druid", "hunter", "rogue", "shaman", "warrior", "priest", "mage", "warlock", "druid", "hunter"];
+  function raidFrame(sec, start) {
+    const t = (((sec - start) % LOOP) + LOOP) % LOOP, base = sec - t;
+    const c = partyAt(100), cp = ahead(partyAt(0), -40, -60);
+    const bots = [];
+    for (let s = 0; s < 4; s++) for (let i = 0; i < 5; i++) {
+      const n = s * 5 + i, dead = n === 7;
+      const p = ahead(c, 8 - s * 7 + (i % 2) * 4, -10 + i * 5);
+      const spec = RAID_BOTS[i];
+      bots.push({
+        name: n === 0 ? "Raidlead" : spec[0] + s,
+        guid: 9101 + n, class: i === 0 ? spec[1] : RAID_CLASSES[n % RAID_CLASSES.length], role: spec[2], level: 60,
+        hp: dead ? 0 : Math.round(spec[4] * 0.85), max_hp: spec[4], power: dead ? 0 : Math.round(spec[5] * 0.7), max_power: spec[5],
+        power_type: spec[3], alive: !dead, lead: n === 0, map: MAP, zone: ZONE, x: round1(p.x), y: round1(p.y), z: 0,
+        id: String(9101 + n), sub: s, st: dead ? "d" : "c", act: dead ? undefined : "attack", res: "O",
+      });
+    }
+    const whelp = { id: "70001", entry: 100, name: "Whelp", hp: 80, x: round1(c.x + 6), y: round1(c.y + 4), reaction: "h", victim: "9102" };
+    return {
+      commander: RAID_COMMANDER, commander_guid: 9100, online: true, view: true, group: 4243, lead: "Raidlead", demo: "raid", bots,
+      orders: ordersAt(t, base), commander_pos: { map: MAP, x: round1(cp.x), y: round1(cp.y) }, mobs_map: MAP, mobs: [whelp],
+      bound_at: Math.floor(start),
+      run: {
+        plan: "molten_core", state: within(t, T.rest) ? "paused" : "running", step: 5, steps: 20, leg: "garr", kind: "boss", phase: "fight",
+        note: within(t, T.rest) ? "waiting for mana: healer 40%" : "fighting Garr", changed: Math.floor(base) + 40,
+        notes: [
+          { at: Math.floor(base) + 20, step: 4, leg: "garr", kind: "move", phase: "walk", state: "running", note: "walking in" },
+          { at: Math.floor(base) + 40, step: 5, leg: "garr", kind: "boss", phase: "fight", state: "running", note: "fighting Garr" },
+        ],
+        plan_steps: [{ i: 5, k: "boss", x: round1(c.x + 6), y: round1(c.y + 4), r: 30, e: 100, n: "Whelp" }],
+      },
+      objects: objectsAt(t),
+    };
+  }
+
 
   // The picture slots of the demo card, shaped like the daemon's GET /api/v1/maps/<id> answer: the reference Zul'Farrak layout with all
   // three pictures, and Uldaman as the indoor dungeon the demo walks, which has no minimap picture. The rectangles span the demo route
@@ -254,6 +296,6 @@
     return (PIC_MAPS[id] || []).map((s) => Object.assign({}, s));
   }
 
-  const api = { frame, pictures, LOOP, MAP, COMMANDER, ROUTE: () => ROUTE, T };
+  const api = { frame, raidFrame, RAID_COMMANDER, pictures, LOOP, MAP, COMMANDER, ROUTE: () => ROUTE, T };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.CmdDemo = api;
 })(typeof self !== "undefined" ? self : this);
