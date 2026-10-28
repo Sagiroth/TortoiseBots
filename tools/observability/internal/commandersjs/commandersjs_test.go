@@ -105,6 +105,12 @@ func TestAgentMapsJS(t *testing.T) {
 	runCheck(t, "agentmaps_check.js", "../../web/static/js/agentmaps.js")
 }
 
+// TestFightDebugCSS runs fightdebug_css_check.js: the Fight debugger block in app.css (level tokens on the card, a rule for every
+// class the card emits, the theme's colours only, the phone column, focus kept).
+func TestFightDebugCSS(t *testing.T) {
+	runCheck(t, "fightdebug_css_check.js", "../../web/static/css/app.css")
+}
+
 // TestDungeonsJS runs dungeons_check.js: the Dungeons tab's run states, copy labels, party rows and raid subgroup blocks.
 func TestDungeonsJS(t *testing.T) {
 	node, err := exec.LookPath("node")
