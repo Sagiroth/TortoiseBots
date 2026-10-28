@@ -2202,13 +2202,13 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         if (AI_VALUE(bool, "has guild order delivery"))
         {
             Team team = bot->GetTeam();
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, bot]()
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, this]()
                 {
                     PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg);
 
                     for (auto& [partition, travelPoints] : list)
                     {
-                        travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [team, bot](TravelPoint point)
+                        travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [team, this](TravelPoint point)
                             {
                                 EntryTravelDestination* dest = (EntryTravelDestination*)std::get<TravelDestination*>(point);
                                 if (!dest->GetCreatureInfo())
