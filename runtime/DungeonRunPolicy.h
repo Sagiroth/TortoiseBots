@@ -1388,6 +1388,9 @@ struct Run
     std::unordered_map<std::string, std::uint32_t> runawayMs;
     std::uint32_t runawaySummons = 0;
     std::uint64_t runawayLastMs = 0;
+    // The plan step the runaway budget belongs to: a pause/resume or a wipe recovery restarts the same step
+    // (ResetStep) and keeps its budget; only a new step index clears it.
+    std::size_t runawayStep = static_cast<std::size_t>(-1);
     std::unordered_map<std::string, std::uint64_t> deadSeenMs; // the run clock a bot was last seen dead (NoteDeadSeen), the whole run
     bool directRefusedOn = false;     // this step's direct step was refused too-far (or its gather hit the ceiling) ...
     std::uint64_t directRefusedMs = 0; // ... first at this run clock (DirectPauseDue)
@@ -2199,8 +2202,12 @@ inline void ResetStep(Run& r)
     r.summonWaitMs = 0;
     r.stepSummons.clear();
     r.runawayMs.clear();
-    r.runawaySummons = 0;
-    r.runawayLastMs = 0;
+    if (r.runawayStep != r.step)
+    {
+        r.runawaySummons = 0;
+        r.runawayLastMs = 0;
+        r.runawayStep = r.step;
+    }
     r.directRefusedOn = false;
     r.directRefusedMs = 0;
     r.directRefusedIdx = 0;

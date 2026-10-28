@@ -22461,6 +22461,42 @@ static void TestRunawaySummonCapAndStepReset()
     CHECK(Tick(r, f) == "summon X"); // a new step: allowed again
 }
 
+// Codex r3: a pause/resume or a wipe recovery restarts the SAME step (ResetStep) and must keep the step's
+// runaway budget: the cap and the 30 s between summons hold across it.
+static void TestRunawayBudgetSurvivesASameStepReset()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000), Step(PlanStepKind::Move, 3000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    for (int i = 0; i < 8; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.runawaySummons == 1);
+    ResetStep(r); // a resume of the same step
+    CHECK(r.step == 0 && r.runawaySummons == 1 && r.runawayLastMs != 0);
+    for (int i = 0; i < 12; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f) != "summon X"); // within 30 s of the first: no second summon
+    }
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.runawaySummons == 2);
+    ResetStep(r); // a wipe recovery on the same step
+    for (int i = 0; i < 40; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f) != "summon X"); // the cap stays spent
+    }
+    CHECK(r.runawaySummons == 2);
+}
+
 static void TestRunawayOnlyInARaid()
 {
     DungeonPlan plan;
@@ -23154,6 +23190,7 @@ int main()
     TestRunawayNeverForABotInAFight();
     TestRunawaySummonsABotOnAnotherMap();
     TestRunawaySummonCapAndStepReset();
+    TestRunawayBudgetSurvivesASameStepReset();
     TestRunawayOnlyInARaid();
     TestRunawayNeverInAFight();
     TestRunawayNeverOnABossStep();
