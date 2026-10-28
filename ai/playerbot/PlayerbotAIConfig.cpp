@@ -1101,7 +1101,8 @@ bool PlayerbotAIConfig::Initialize()
     }
     syncAltLevelToMaster = config.GetBoolDefault("AiPlayerbot.SyncAltLevelToMaster", false);
     tweakValue = config.GetIntDefault("AiPlayerbot.TweakValue", 0);
-    talentsInPublicNote = config.GetBoolDefault("AiPlayerbot.TalentsInPublicNote", false);
+    talentsInPublicNote = config.GetBoolDefault("AiPlayerbot.TalentsInPublicNote", true);
+    professionsGrowWithLevel = config.GetBoolDefault("AiPlayerbot.ProfessionsGrowWithLevel", true);
     respawnModNeutral = config.GetFloatDefault("AiPlayerbot.RespawnModNeutral", 10.0f);
     respawnModHostile = config.GetFloatDefault("AiPlayerbot.RespawnModHostile", 5.0f);
     respawnModThreshold = config.GetIntDefault("AiPlayerbot.RespawnModThreshold", 10);
