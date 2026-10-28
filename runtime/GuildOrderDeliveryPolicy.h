@@ -28,11 +28,28 @@ inline uint8_t DeliveryTabAt(size_t index) { return uint8_t(kDeliveryFirstTab + 
 // Consecutive no-move passes before the bank counts as refused.
 inline bool BankRefused(uint32_t emptyPasses) { return emptyPasses >= kDeliveryBankRetries; }
 
-// What the order still needs. The drain never touches more than this:
-// surplus items in the bags stay the bot's own.
+// What the order still needs. The drain moves whole stacks until delivered
+// reaches amount, smallest stacks first, then stops; overshoot is at most
+// one stack and surplus stacks past the quota stay in the bags.
 inline uint32_t DeliveryNeeded(uint32_t delivered, uint32_t amount)
 {
     return delivered >= amount ? 0 : amount - delivered;
+}
+
+// Whether another whole stack may move: only while the quota is unmet.
+inline bool DeliveryMovesOn(uint32_t delivered, uint32_t amount)
+{
+    return delivered < amount;
+}
+
+// Index of the smallest stack (first wins ties), or count when empty.
+inline size_t SmallestStackAt(uint32_t const* counts, size_t stackCount)
+{
+    size_t best = stackCount;
+    for (size_t i = 0; i < stackCount; ++i)
+        if (best == stackCount || counts[i] < counts[best])
+            best = i;
+    return best;
 }
 
 // State the order lands in after a delivery attempt. The bank may take a

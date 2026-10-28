@@ -2202,13 +2202,14 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         if (AI_VALUE(bool, "has guild order delivery"))
         {
             Team team = bot->GetTeam();
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, this]()
+            uint32 botFaction = bot->GetFactionTemplateId();
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, botFaction]()
                 {
                     PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg);
 
                     for (auto& [partition, travelPoints] : list)
                     {
-                        travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [team, this](TravelPoint point)
+                        travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [team, botFaction](TravelPoint point)
                             {
                                 EntryTravelDestination* dest = (EntryTravelDestination*)std::get<TravelDestination*>(point);
                                 if (!dest->GetCreatureInfo())
@@ -2220,7 +2221,12 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                                     return true;
                                 if (position->IsEnemyHomeZoneFor(team))
                                     return true;
-                                if (GuidPosition(HIGHGUID_UNIT, uint32(dest->GetEntry())).IsHostileTo(bot))
+                                FactionTemplateEntry const* bankerFaction =
+                                    sObjectMgr.GetFactionTemplateEntry(dest->GetCreatureInfo()->faction);
+                                FactionTemplateEntry const* botTemplate =
+                                    sObjectMgr.GetFactionTemplateEntry(botFaction);
+                                if (bankerFaction && botTemplate &&
+                                    PlayerbotAI::GetFactionReaction(botTemplate, bankerFaction) < REP_NEUTRAL)
                                     return true;
                                 return false;
                             }), travelPoints.end());

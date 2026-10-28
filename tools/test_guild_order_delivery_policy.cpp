@@ -50,6 +50,21 @@ int main()
     CHECK(DeliveryNeeded(10, 10) == 0);
     CHECK(DeliveryNeeded(12, 10) == 0);
 
+    // Whole stacks move only while the quota is unmet.
+    CHECK(DeliveryMovesOn(0, 10));
+    CHECK(DeliveryMovesOn(9, 10));
+    CHECK(!DeliveryMovesOn(10, 10));
+    CHECK(!DeliveryMovesOn(12, 10));
+
+    // Smallest stack first, first wins ties, empty means none.
+    {
+        uint32_t counts[] = { 20, 5, 12 };
+        CHECK(SmallestStackAt(counts, 3) == 1);
+        uint32_t tied[] = { 5, 5 };
+        CHECK(SmallestStackAt(tied, 2) == 0);
+        CHECK(SmallestStackAt(nullptr, 0) == 0);
+    }
+
     // One stack per mail.
     CHECK(DeliveryMailCount(0) == 0);
     CHECK(DeliveryMailCount(1) == 1);
