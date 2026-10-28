@@ -193,8 +193,27 @@ bool GuildCraftOrderAction::Execute(Event& event)
         if (!shortfall)
             continue;
 
-        if (affordable >= 1 && AI_VALUE2(uint32, "stack space for item", reagentId) == 0)
+        bool fits = AI_VALUE2(uint32, "stack space for item", reagentId) > 0;
+        if (affordable >= 1 && !fits)
             continue;
+
+        // One full-bags rule: a missing reagent that cannot fit with no
+        // craftable batch delivers what is held, or fails stuck.
+        TortoiseBots::CraftOrderPolicy::FullBagsDecision fullBags =
+            TortoiseBots::CraftOrderPolicy::DecideFullBags(fits, affordable,
+                ai->GetInventoryItemsCountWithId(itemId));
+        if (fullBags != TortoiseBots::CraftOrderPolicy::FullBagsDecision::KeepGoing)
+        {
+            if (record)
+            {
+                if (fullBags == TortoiseBots::CraftOrderPolicy::FullBagsDecision::Deliver)
+                    TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Delivering, OrderReason::BagsFull);
+                else
+                    TortoiseBots::GuildOrders::SetState(botGuidLow,
+                        StateForReason(OrderReason::Stuck), OrderReason::Stuck);
+            }
+            return false;
+        }
 
         if (autonomous)
         {
@@ -222,6 +241,23 @@ bool GuildCraftOrderAction::Execute(Event& event)
     uint32 farmItem = AI_VALUE(uint32, "guild order farm item");
     if (farmItem)
     {
+        bool fits = AI_VALUE2(uint32, "stack space for item", farmItem) > 0;
+        TortoiseBots::CraftOrderPolicy::FullBagsDecision fullBags =
+            TortoiseBots::CraftOrderPolicy::DecideFullBags(fits, affordable,
+                ai->GetInventoryItemsCountWithId(itemId));
+        if (fullBags != TortoiseBots::CraftOrderPolicy::FullBagsDecision::KeepGoing)
+        {
+            if (record)
+            {
+                if (fullBags == TortoiseBots::CraftOrderPolicy::FullBagsDecision::Deliver)
+                    TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Delivering, OrderReason::BagsFull);
+                else
+                    TortoiseBots::GuildOrders::SetState(botGuidLow,
+                        StateForReason(OrderReason::Stuck), OrderReason::Stuck);
+            }
+            return false;
+        }
+
         ai->TellDebug(ai->GetMaster(), "Guild craft order: farming reagent " + std::to_string(farmItem), "debug travel");
         return false;
     }
@@ -259,9 +295,12 @@ bool GuildCraftOrderAction::Execute(Event& event)
     {
         if (!record)
             return false;
-        if (ai->GetInventoryItemsCountWithId(itemId) > 0)
+        TortoiseBots::CraftOrderPolicy::FullBagsDecision fullBags =
+            TortoiseBots::CraftOrderPolicy::DecideFullBags(false, 0,
+                ai->GetInventoryItemsCountWithId(itemId));
+        if (fullBags == TortoiseBots::CraftOrderPolicy::FullBagsDecision::Deliver)
             TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Delivering, OrderReason::BagsFull);
-        else if (affordable == 0 && CountFreeBagSlots() == 0)
+        else
             TortoiseBots::GuildOrders::SetState(botGuidLow,
                 StateForReason(OrderReason::Stuck), OrderReason::Stuck);
         return false;

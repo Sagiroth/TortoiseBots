@@ -91,6 +91,19 @@ inline uint32_t BundlesForShortfall(uint32_t shortfall, uint32_t buyCount)
     return (shortfall + buyCount - 1) / buyCount;
 }
 
+// One rule for full bags, used everywhere a missing reagent cannot fit and
+// no batch can be crafted: with finished items in the bags the bot delivers
+// them first (BagsFull); with none it is stuck (Stuck). KeepGoing means the
+// caller waits for travel/buy/craft instead of changing state.
+enum class FullBagsDecision : uint8_t { KeepGoing, Deliver, Stuck };
+
+inline FullBagsDecision DecideFullBags(bool reagentFits, uint32_t batch, uint32_t orderedItems)
+{
+    if (reagentFits || batch > 0)
+        return FullBagsDecision::KeepGoing;
+    return orderedItems > 0 ? FullBagsDecision::Deliver : FullBagsDecision::Stuck;
+}
+
 // Real free bag slots: backpack slots plus each bag's own free slots.
 // Counts slots, not percentages - the 0-100 "bag space" cannot size a batch.
 template <typename Bags, typename FreeIn>

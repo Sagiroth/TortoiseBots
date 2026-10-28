@@ -131,6 +131,24 @@ bool GuildOrderVendorAction::Execute(Event& event)
 
         // Cap the buy to what fits: a failed store is a wasted trip tick.
         uint32 room = AI_VALUE2(uint32, "stack space for item", reagentId);
+        if (room == 0)
+        {
+            // One full-bags rule: nothing more fits, so deliver what is
+            // held or fail stuck - never idle at the vendor.
+            TortoiseBots::CraftOrderPolicy::FullBagsDecision fullBags =
+                TortoiseBots::CraftOrderPolicy::DecideFullBags(false, 0,
+                    ai->GetInventoryItemsCountWithId(itemId));
+            if (record)
+            {
+                if (fullBags == TortoiseBots::CraftOrderPolicy::FullBagsDecision::Deliver)
+                    TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Delivering, OrderReason::BagsFull);
+                else
+                    TortoiseBots::GuildOrders::SetState(botGuidLow,
+                        StateForReason(OrderReason::Stuck), OrderReason::Stuck);
+            }
+            return false;
+        }
+
         uint32 capped = std::min(shortfall, room);
         uint32 bundles = TortoiseBots::CraftOrderPolicy::BundlesForShortfall(capped, buyCount);
         while (bundles > minBundles && uint64_t(bundles) * price > money)

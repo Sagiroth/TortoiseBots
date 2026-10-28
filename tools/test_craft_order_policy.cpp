@@ -114,6 +114,26 @@ static void TestBundlesForShortfall()
     CHECK(BundlesForShortfall(7, 0) == 7);
 }
 
+static void TestDecideFullBags()
+{
+    // Every combination of (reagent fits, batch craftable, ordered items held).
+    for (int fits = 0; fits <= 1; ++fits)
+        for (int batch = 0; batch <= 1; ++batch)
+            for (int items = 0; items <= 1; ++items)
+            {
+                FullBagsDecision got = DecideFullBags(fits != 0, batch, items);
+                FullBagsDecision want;
+                if (fits || batch > 0)
+                    want = FullBagsDecision::KeepGoing;
+                else
+                    want = items > 0 ? FullBagsDecision::Deliver : FullBagsDecision::Stuck;
+                CHECK(got == want);
+            }
+    // Batch sizes above 1 keep going too.
+    CHECK(DecideFullBags(false, 7, 0) == FullBagsDecision::KeepGoing);
+    CHECK(DecideFullBags(false, 7, 3) == FullBagsDecision::KeepGoing);
+}
+
 int main()
 {
     TestShortfall();
@@ -124,6 +144,7 @@ int main()
     TestFreeBagSlots();
     TestCastsAffordable();
     TestBundlesForShortfall();
+    TestDecideFullBags();
     std::printf("craft order policy: %d checks passed\n", checks);
     return 0;
 }
