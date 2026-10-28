@@ -174,7 +174,15 @@ public:
     // The standing remote-commander bindings (issue #884) for the dashboard's
     // Commanders tab, filled by the commands layer on the world thread. Read
     // once per snapshot cycle; the provider returns at once while none exists.
+    int ProtocolVersion() const;
+    uint64_t SessionId() const;
+    uint64_t NextSeq();
+    int64_t NowUnix() const;
     void SetCommanderProvider(std::function<void(std::vector<CommanderTelemetry::BindingRef>&)> provider);
+    // The finished combat fights of the bound groups (task A8b) for the
+    // dashboard's combat log, filled by the combat monitor service on the
+    // world thread. Called once per snapshot cycle after EmitCommanders.
+    void SetCombatProvider(std::function<void(std::vector<std::string>&)> provider);
 
     // The mobs of every dungeon run (issue #1101) for the dashboard's Dungeons tab, filled by the commands layer on the world
     // thread once per snapshot cycle for the runs the emitter groups (see EmitDungeonMobs).
@@ -220,6 +228,10 @@ private:
     std::vector<CommanderTelemetry::BindingRef> m_commanderRefs; // reused between cycles
     std::unordered_map<uint32_t, int64_t> m_commanderSince; // commander guid -> unix seconds its binding was first seen
     bool m_commandersSent = false; // the last COMMANDERS datagram listed at least one binding
+    // The finished COMBAT_FIGHT datagrams of the bound groups: one provider
+    // call per snapshot cycle, each string sent with SendDatagram.
+    std::function<void(std::vector<std::string>&)> m_combatProvider;
+    std::vector<std::string> m_combatPayloads; // reused between cycles
     // Effective running settings for the dashboard Server panel (Addendum 2):
     // core rate getters + AiPlayerbot flags, sent at startup and on a slow
     // cadence. No strings from config files, no secrets — numbers and on/off.

@@ -12,6 +12,7 @@
 #include "../runtime/BattlegroundQueueService.h"
 #include "../runtime/BotLfgService.h"
 #include "../runtime/ObservabilityEmitter.h"
+#include "../runtime/CombatMonitorService.h"
 #include "../runtime/RunTrace.h"
 #include "BotChatAdapter.h"
 #include "BotPacketAdapter.h"
@@ -155,6 +156,14 @@ void BotHostAdapter::OnStartup()
     // The dashboard's Commanders tab: the standing remote-commander bindings.
     ObservabilityEmitter::Instance().SetCommanderProvider(
         [](std::vector<CommanderTelemetry::BindingRef>& out) { BotCommands::CollectCommanderTelemetry(out); });
+    // Finished combat fights: the monitor's TakePayloads fills the payloads, the emitter sends each one.
+    ObservabilityEmitter::Instance().SetCombatProvider(
+        [](std::vector<std::string>& out) {
+            ObservabilityEmitter& emitter = ObservabilityEmitter::Instance();
+            uint64_t seq = emitter.SessionId() ? emitter.NextSeq() : 0;
+            CombatMonitorService::Instance().TakePayloads(out, emitter.ProtocolVersion(), emitter.SessionId(),
+                                                          seq, emitter.NowUnix());
+        });
     // The Dungeons tab (issue #1101): the mobs of every dungeon run.
     ObservabilityEmitter::Instance().SetDungeonMobProvider(
         [](std::vector<DungeonMobTelemetry::RunRef>& runs) { BotCommands::CollectDungeonMobs(runs); });
