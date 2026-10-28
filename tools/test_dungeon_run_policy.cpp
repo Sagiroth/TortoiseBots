@@ -22311,6 +22311,186 @@ static void TestRaidTrashFightGate()
     CHECK(!RaidTrashFight(r, f)); // the plan's boss engaged on a trash step
 }
 
+// Task F4: a raid bot left far behind the lead bot (a stale follow after a teleport) is
+// summoned once it has been out of reach kRunawayMs, at most kRunawaySummonsPerStep a
+// step, never in a fight and never in a party run.
+static Facts RunawayFacts(float xYd = 374.0f)
+{
+    Facts f = Party(0);
+    f.total = 3;
+    f.alive = 3;
+    f.raid.on = true;
+    f.members = {Mem("Tanky", 0.0f), Mem("Healer", 3.0f), Mem("X", xYd)};
+    f.maxMemberYd = xYd;
+    return f;
+}
+
+// The lead bot takes its walk at 10 yd a tick: progress, so the walk never stalls or resends.
+static void WalkOn(Facts& f)
+{
+    f.leadX += 10.0f;
+}
+
+static void TestRunawaySummonInARaid()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    CHECK(Tick(r, f) == "move 2000.0 0.0 0.0");
+    for (int i = 0; i < 6; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    WalkOn(f);
+    CHECK(Tick(r, f) == "summon X"); // 8 s out of reach
+    CHECK(r.note == "X is 374.0 yd from the lead bot (8 s out of reach): summoned");
+    CHECK(r.runawaySummons["X"] == 1);
+}
+
+static void TestRunawayTimerResetsWhenTheBotComesBack()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    Tick(r, f); // the walk's order
+    for (int i = 0; i < 4; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    f.members[2].yd = 90.0f; // back in reach: its clock starts over
+    WalkOn(f);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.runawayMs.count("X") == 0);
+    for (int i = 0; i < 7; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    CHECK(r.runawayMs.count("X") == 0); // still in reach: no clock runs
+    f.members[2].yd = 150.0f; // out again: the 8 s start over
+    for (int i = 0; i < 7; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    WalkOn(f);
+    CHECK(Tick(r, f) == "summon X");
+}
+
+static void TestRunawayNeverForABotInAFight()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    Tick(r, f);
+    f.members[2].inCombat = true;
+    for (int i = 0; i < 15; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    CHECK(r.runawaySummons.count("X") == 0);
+    f.members[2].inCombat = false;
+    f.members[2].attackers = 1;
+    for (int i = 0; i < 15; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    CHECK(r.runawaySummons.count("X") == 0);
+}
+
+static void TestRunawaySummonsABotOnAnotherMap()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    f.members[2].offPlanMap = true;
+    f.members[2].offMapReturnable = false; // the return teleport's own case, not this one
+    f.members[2].yd = 1000.0f;
+    CHECK(Tick(r, f) == "move 2000.0 0.0 0.0");
+    for (int i = 0; i < 6; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    WalkOn(f);
+    CHECK(Tick(r, f) == "summon X");
+    CHECK(r.note.find("on another map") != std::string::npos);
+}
+
+static void TestRunawaySummonCapAndStepReset()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000), Step(PlanStepKind::Move, 3000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    for (int i = 0; i < 8; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.runawaySummons["X"] == 1);
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.runawaySummons["X"] == 2);
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty()); // the third would be due, the step's cap is spent
+    }
+    CHECK(r.runawaySummons["X"] == 2);
+    NextStep(r, "test");
+    CHECK(r.step == 1 && r.runawaySummons.empty() && r.runawayMs.empty());
+    CHECK(Tick(r, f) == "move 3000.0 0.0 0.0");
+    for (int i = 0; i < 6; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    WalkOn(f);
+    CHECK(Tick(r, f) == "summon X"); // a new step: allowed again
+}
+
+static void TestRunawayOnlyInARaid()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    f.raid.on = false;
+    for (int i = 0; i < 20; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.runawaySummons.empty());
+}
+
+static void TestRunawayNeverInAFight()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    f.anyInCombat = true;
+    for (int i = 0; i < 12; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    CHECK(r.runawaySummons.empty());
+}
+
 static void TestPartyRulesUnchanged()
 {
     DungeonPlan plan;
@@ -22896,6 +23076,13 @@ int main()
     TestPartyGuardStillTakesAMobHeldByItsTank();
     TestRaidGuardAHealerMobGoesToAnOffTankWithoutTheWait();
     TestRaidTrashFightGate();
+    TestRunawaySummonInARaid();
+    TestRunawayTimerResetsWhenTheBotComesBack();
+    TestRunawayNeverForABotInAFight();
+    TestRunawaySummonsABotOnAnotherMap();
+    TestRunawaySummonCapAndStepReset();
+    TestRunawayOnlyInARaid();
+    TestRunawayNeverInAFight();
     TestPartyRulesUnchanged();
     TestStatusPartsMatchLine();
     std::cout << "test_dungeon_run_policy: ok\n";
