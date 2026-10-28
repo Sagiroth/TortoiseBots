@@ -20,6 +20,10 @@ namespace GuildOrders
 // sends live updates.
 std::optional<OrderRecord> Find(uint32_t botGuidLow);
 
+// True when the item can go to the guild bank (search and give share it).
+struct ItemPrototype;
+bool IsOrderableItem(ItemPrototype const* proto);
+
 // All orders of one guild (the `.bot order list` reply), best-effort order.
 std::vector<OrderRecord> ListForGuild(uint32_t guildId);
 

@@ -11,8 +11,8 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
-#include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 
 using namespace TortoiseBots::GuildOrders;
 
@@ -107,55 +107,22 @@ uint32_t NodeLockSkill(GameObjectInfo const* goInfo, uint32_t& reqSkill)
     return SKILL_NONE;
 }
 
-struct ZoneVote
-{
-    uint32_t spawns = 0;
-    int32_t areaLevel = 0;
-    bool allyHome = false;
-    bool hordeHome = false;
-};
-
-uint32_t ZoneOf(uint16_t areaFlag, uint32_t mapId, uint32_t& areaId, bool& allyHome, bool& hordeHome)
-{
-    areaId = 0;
-    allyHome = false;
-    hordeHome = false;
-    AreaTableEntry const* area = AreaEntry::GetByAreaFlagAndMap(areaFlag, mapId);
-    if (!area)
-        return 0;
-    areaId = area->Id;
-    uint32_t areaTeam = area->Team;
-    uint32_t zoneId = area->ZoneId ? area->ZoneId : area->Id;
-    if (areaTeam == AREATEAM_NONE && area->ZoneId)
-        if (AreaEntry const* zone = AreaEntry::GetById(area->ZoneId))
-            areaTeam = zone->Team;
-    allyHome = areaTeam == AREATEAM_ALLY;
-    hordeHome = areaTeam == AREATEAM_HORDE;
-    return zoneId;
-}
-
 struct OrderSourceIndex
 {
     std::unordered_map<uint32_t, std::vector<GuildOrderEntrySource>> byItem;
-    std::unordered_map<int32_t, GuildOrderSpawnSummary> spawnByEntry;
-    // Per-entry per-zone spawn counts and enemy-home flags. The nearest
-    // distance per zone is bot-relative and stays a live computation over
-    // the cached spawn positions at plan time.
-    std::unordered_map<int32_t, std::map<uint32_t, uint32_t>> spawnsByZone;
-    std::unordered_map<int32_t, std::map<uint32_t, uint8_t>> teamByZone;
-    std::unordered_map<uint32_t, int32_t> levelByZone;
-    bool built = false;
-    std::mutex lock;
+    std::unordered_map<int32_t, std::vector<GuildOrderZoneSlice>> zonesByEntry;
 };
-
-// Enemy-home flags per zone, as stored in teamByZone.
-uint8_t const kZoneAllyHome = 1 << 0;
-uint8_t const kZoneHordeHome = 1 << 1;
 
 OrderSourceIndex& Index()
 {
     static OrderSourceIndex index;
     return index;
+}
+
+bool& IndexBuilt()
+{
+    static bool built = false;
+    return built;
 }
 
 void AddEntrySource(OrderSourceIndex& index, uint32_t itemId, GuildOrderEntrySource source)
@@ -173,13 +140,15 @@ void AddEntrySource(OrderSourceIndex& index, uint32_t itemId, GuildOrderEntrySou
     list.push_back(source);
 }
 
-void BuildOrderSourceIndex()
-{
-    OrderSourceIndex& index = Index();
-    std::lock_guard<std::mutex> guard(index.lock);
-    if (index.built)
-        return;
+} // namespace
 
+// Built once at startup, after the travel data is ready: "entry guidps"
+// may not exist yet when quest travel is off, so force it here.
+void BuildGuildOrderSourceIndex()
+{
+    if (IndexBuilt())
+        return;
+    OrderSourceIndex& index = Index();
     std::vector<std::pair<uint32_t, float>> chances;
     for (uint32_t entry = 0; entry < sCreatureStorage.GetMaxEntry(); ++entry)
     {
@@ -236,11 +205,20 @@ void BuildOrderSourceIndex()
             AddEntrySource(index, itemId, source);
         }
     }
+    // Zone slices only for entries that drop something orderable: walk the
+    // cached spawn positions once, grouped by zone, with a sample position
+    // per zone for the nearer-wins-ties rule.
+    std::unordered_set<int32_t> wanted;
+    for (auto& [itemId, sources] : index.byItem)
+        for (GuildOrderEntrySource const& source : sources)
+            wanted.insert(source.entry);
 
     EntryGuidps const& guidps = GAI_VALUE_REF(EntryGuidps, "entry guidps");
     for (auto& [entry, points] : guidps)
     {
-        std::map<uint32_t, ZoneVote> votes;
+        if (!wanted.count(entry))
+            continue;
+        std::map<uint32_t, GuildOrderZoneSlice> slices;
         for (AsyncGuidPosition const& point : points)
         {
             uint32_t areaId = 0;
@@ -248,84 +226,51 @@ void BuildOrderSourceIndex()
             uint32_t const zoneId = ZoneOf(point.getAreaFlag(), point.getMapId(), areaId, allyHome, hordeHome);
             if (!zoneId)
                 continue;
-            ZoneVote& vote = votes[zoneId];
-            ++vote.spawns;
-            vote.allyHome = vote.allyHome || allyHome;
-            vote.hordeHome = vote.hordeHome || hordeHome;
-            if (areaId && !index.levelByZone.count(zoneId))
+            GuildOrderZoneSlice& slice = slices[zoneId];
+            slice.zoneId = zoneId;
+            ++slice.spawns;
+            if (allyHome)
+                slice.team |= 1 << 0;
+            if (hordeHome)
+                slice.team |= 1 << 1;
+            if (slice.spawns == 1)
+            {
+                slice.mapId = point.getMapId();
+                slice.x = point.getX();
+                slice.y = point.getY();
+                slice.z = point.getZ();
+            }
+            if (slice.zoneLevel <= 0 && areaId)
             {
                 int32_t areaLevel = 0;
                 if (sTravelMgr.TryGetValidatedAreaLevel(areaId, areaLevel) && areaLevel > 0)
-                    index.levelByZone[zoneId] = areaLevel;
+                    slice.zoneLevel = areaLevel;
                 else if (sTravelMgr.TryGetValidatedAreaLevel(zoneId, areaLevel) && areaLevel > 0)
-                    index.levelByZone[zoneId] = areaLevel;
+                    slice.zoneLevel = areaLevel;
             }
-            index.spawnsByZone[entry][zoneId]++;
-            uint8_t& team = index.teamByZone[entry][zoneId];
-            if (allyHome)
-                team |= kZoneAllyHome;
-            if (hordeHome)
-                team |= kZoneHordeHome;
         }
-        if (votes.empty())
+        if (slices.empty())
             continue;
-        auto best = votes.begin();
-        for (auto it = votes.begin(); it != votes.end(); ++it)
-            if (it->second.spawns > best->second.spawns)
-                best = it;
-        GuildOrderSpawnSummary summary;
-        for (auto& [zoneId, vote] : votes)
-        {
-            summary.spawns += vote.spawns;
-            summary.allyHome = summary.allyHome || vote.allyHome;
-            summary.hordeHome = summary.hordeHome || vote.hordeHome;
-        }
-        summary.zoneId = best->first;
-        auto level = index.levelByZone.find(best->first);
-        summary.areaLevel = level == index.levelByZone.end() ? 0 : level->second;
-        index.spawnByEntry[entry] = summary;
+        auto& out = index.zonesByEntry[entry];
+        for (auto& [zoneId, slice] : slices)
+            out.push_back(slice);
     }
 
-    index.built = true;
+    IndexBuilt() = true;
 }
-
-void EnsureOrderSourceIndex()
-{
-    OrderSourceIndex& index = Index();
-    {
-        std::lock_guard<std::mutex> guard(index.lock);
-        if (index.built)
-            return;
-    }
-    BuildOrderSourceIndex();
-}
-
-struct ZoneAccum
-{
-    uint32_t spawns = 0;
-    float chance = 0.0f;
-    float nearest = 0.0f;
-    bool hasNearest = false;
-};
-
-} // namespace
 
 std::vector<GuildOrderEntrySource> GuildOrderSourcesFor(uint32_t itemId)
 {
-    EnsureOrderSourceIndex();
     OrderSourceIndex& index = Index();
-    std::lock_guard<std::mutex> guard(index.lock);
     auto found = index.byItem.find(itemId);
     return found == index.byItem.end() ? std::vector<GuildOrderEntrySource>() : found->second;
 }
 
-GuildOrderSpawnSummary GuildOrderSpawnSummaryFor(int32_t entry)
+std::vector<GuildOrderZoneSlice> GuildOrderZonesFor(int32_t entry)
 {
-    EnsureOrderSourceIndex();
     OrderSourceIndex& index = Index();
-    std::lock_guard<std::mutex> guard(index.lock);
-    auto found = index.spawnByEntry.find(entry);
-    return found == index.spawnByEntry.end() ? GuildOrderSpawnSummary() : found->second;
+    auto found = index.zonesByEntry.find(entry);
+    return found == index.zonesByEntry.end() ? std::vector<GuildOrderZoneSlice>() : found->second;
 }
 
 bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry)
@@ -335,9 +280,13 @@ bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry)
     std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
     if (!record || record->type != OrderType::Farm || record->state != OrderState::Working || !record->itemId)
         return false;
+    if (!bot->HasSkill(SKILL_SKINNING))
+        return false;
     for (GuildOrderEntrySource const& source : GuildOrderSourcesFor(record->itemId))
     {
-        if (source.entry == int32_t(creatureEntry) && (source.flag & SourceSkin))
+        if (source.entry != int32_t(creatureEntry) || !(source.flag & SourceSkin))
+            continue;
+        if (bot->GetSkillValue(SKILL_SKINNING) >= source.reqSkill)
             return true;
     }
     return false;
@@ -389,7 +338,6 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         return plan;
     }
 
-    EnsureOrderSourceIndex();
     OrderSourceIndex& index = Index();
 
     uint32_t const botLevel = bot->GetLevel();
@@ -397,85 +345,62 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
     WorldPosition const botPos(bot);
     bool const lowGatherLevel = botLevel < kGatherTripMinLevel;
 
-    std::vector<GuildOrderEntrySource> candidates;
+    auto found = index.byItem.find(itemId);
+    if (found == index.byItem.end())
     {
-        std::lock_guard<std::mutex> guard(index.lock);
-        auto found = index.byItem.find(itemId);
-        if (found == index.byItem.end())
-        {
-            plan.verdict = OrderReason::NoSource;
-            return plan;
-        }
-        candidates = found->second;
+        plan.verdict = OrderReason::NoSource;
+        return plan;
     }
+
     bool sawAny = false;
     bool sawHerbOre = false;
     uint8_t skillFail = 0;
     bool sawInRange = false;
 
-    auto noteNeed = [&](GuildOrderEntrySource const& source, uint32_t sourceLevel)
-    {
-        plan.sources |= source.flag;
-        if (sourceLevel > 0 && (!plan.minLevel || sourceLevel < plan.minLevel))
-            plan.minLevel = sourceLevel;
-        if (source.skillId != SKILL_NONE && (plan.skillId == 0 || source.reqSkill > plan.skillValue))
-        {
-            plan.skillId = source.skillId;
-            plan.skillValue = source.reqSkill;
-        }
-    };
+    // Usable need: sources passing every gate (reported when zones exist).
+    uint8_t usableSources = 0;
+    uint32_t usableMinLevel = 0;
+    uint32_t usableSkillId = 0;
+    uint32_t usableSkillValue = 0;
+    // Fallback need: spawned sources outside enemy home zones, with the
+    // minimum skill that unlocks one (reported only on failure).
+    uint8_t fallbackSources = 0;
+    uint32_t fallbackMinLevel = 0;
+    uint32_t fallbackSkillId = 0;
+    uint32_t fallbackSkillValue = 0;
 
     std::map<uint32_t, ZoneAccum> zones;
-    // Entries that survive every gate: the travel branch asks the index for
-    // the same per-item list and re-applies these gates, so plan and travel
-    // never disagree.
+    for (GuildOrderEntrySource const& source : found->second)
     {
-        std::lock_guard<std::mutex> guard(index.lock);
-        for (GuildOrderEntrySource const& source : candidates)
-        {
+        auto slices = index.zonesByEntry.find(source.entry);
+        if (slices == index.zonesByEntry.end())
+            continue;
         sawAny = true;
         bool const creature = source.entry > 0;
         bool const herbOrOre = source.flag == SourceHerb || source.flag == SourceOre;
         if (herbOrOre)
             sawHerbOre = true;
 
-        auto spawns = index.spawnsByZone.find(source.entry);
-        auto teams = index.teamByZone.find(source.entry);
-        if (spawns == index.spawnsByZone.end())
+        for (GuildOrderZoneSlice const& slice : slices->second)
         {
-            // Lootable but never spawned: still tells the verdict what the
-            // bot would need, but grows no zone.
-            if (creature)
-            {
-                noteNeed(source, source.level);
-                if (SourceLevelFits(source.level, botLevel))
-                    sawInRange = true;
-            }
-            continue;
-        }
-
-        for (auto& [zoneId, zoneSpawns] : spawns->second)
-        {
-            bool enemyHome = false;
-            if (teams != index.teamByZone.end())
-            {
-                auto zoneTeam = teams->second.find(zoneId);
-                if (zoneTeam != teams->second.end())
-                    enemyHome = team == ALLIANCE ? (zoneTeam->second & kZoneHordeHome) :
-                        (zoneTeam->second & kZoneAllyHome);
-            }
+            bool const enemyHome = team == ALLIANCE ? (slice.team & (1 << 1)) : (slice.team & (1 << 0));
             if (enemyHome)
                 continue;
+            uint32_t sourceLevel = creature ? source.level :
+                (slice.zoneLevel > 0 ? uint32_t(slice.zoneLevel) : 0);
+            if (sourceLevel == 0)
+                continue;
 
-            uint32_t sourceLevel = source.level;
-            if (!creature)
+            fallbackSources |= source.flag;
+            if (!fallbackMinLevel || sourceLevel < fallbackMinLevel)
+                fallbackMinLevel = sourceLevel;
+            if (source.skillId != SKILL_NONE &&
+                (fallbackSkillId == 0 || source.reqSkill < fallbackSkillValue))
             {
-                auto level = index.levelByZone.find(zoneId);
-                if (level == index.levelByZone.end() || level->second <= 0)
-                    continue;
-                sourceLevel = uint32_t(level->second);
+                fallbackSkillId = source.skillId;
+                fallbackSkillValue = source.reqSkill;
             }
-            noteNeed(source, sourceLevel);
+
             if (!SourceLevelFits(sourceLevel, botLevel))
                 continue;
             sawInRange = true;
@@ -495,46 +420,48 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
                 }
             }
 
-            ZoneAccum& accum = zones[zoneId];
-            accum.spawns += zoneSpawns;
-            accum.chance = std::max(accum.chance, source.chance);
-        }
-    }
-    }
-
-    if (zones.empty())
-    {
-        plan.verdict = OrderVerdict(lowGatherLevel && sawHerbOre, skillFail, sawInRange, sawAny);
-        return plan;
-    }
-
-    // Nearer wins ties: walk the cached spawn positions of the surviving
-    // entries once (positions only; zones resolve from the cached flags).
-    EntryGuidps const& guidps = GAI_VALUE_REF(EntryGuidps, "entry guidps");
-    for (GuildOrderEntrySource const& source : candidates)
-    {
-        auto spawns = guidps.find(source.entry);
-        if (spawns == guidps.end())
-            continue;
-        for (AsyncGuidPosition const& point : spawns->second)
-        {
-            if (point.getMapId() != botPos.getMapId())
-                continue;
-            uint32_t areaId = 0;
-            bool allyHome = false, hordeHome = false;
-            uint32_t const zoneId = ZoneOf(point.getAreaFlag(), point.getMapId(), areaId, allyHome, hordeHome);
-            auto accum = zones.find(zoneId);
-            if (zoneId == 0 || accum == zones.end())
-                continue;
-            float const dist = botPos.sqDistance(point);
-            if (!accum->second.hasNearest || dist < accum->second.nearest)
+            usableSources |= source.flag;
+            if (!usableMinLevel || sourceLevel < usableMinLevel)
+                usableMinLevel = sourceLevel;
+            if (source.skillId != SKILL_NONE &&
+                (usableSkillId == 0 || source.reqSkill > usableSkillValue))
             {
-                accum->second.nearest = dist;
-                accum->second.hasNearest = true;
+                usableSkillId = source.skillId;
+                usableSkillValue = source.reqSkill;
+            }
+
+            ZoneAccum& accum = zones[slice.zoneId];
+            accum.spawns += slice.spawns;
+            accum.chance = std::max(accum.chance, source.chance);
+            if (slice.mapId == botPos.getMapId())
+            {
+                float dx = slice.x - botPos.getX();
+                float dy = slice.y - botPos.getY();
+                float dz = slice.z - botPos.getZ();
+                float const dist = dx * dx + dy * dy + dz * dz;
+                if (!accum.hasNearest || dist < accum.nearest)
+                {
+                    accum.nearest = dist;
+                    accum.hasNearest = true;
+                }
             }
         }
     }
 
+    if (zones.empty())
+    {
+        plan.sources = fallbackSources;
+        plan.minLevel = fallbackMinLevel;
+        plan.skillId = fallbackSkillId;
+        plan.skillValue = fallbackSkillValue;
+        plan.verdict = OrderVerdict(lowGatherLevel && sawHerbOre, skillFail, sawInRange, sawAny);
+        return plan;
+    }
+
+    plan.sources = usableSources;
+    plan.minLevel = usableMinLevel;
+    plan.skillId = usableSkillId;
+    plan.skillValue = usableSkillValue;
     plan.verdict = OrderReason::None;
     for (auto& [zoneId, accum] : zones)
     {

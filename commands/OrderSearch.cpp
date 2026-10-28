@@ -5,6 +5,7 @@
 
 #include "../ai/playerbot/GuildOrderSources.h"
 #include "../runtime/GuildOrderContract.h"
+#include "../runtime/GuildOrderStore.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Chat.h"
@@ -50,23 +51,6 @@ bool& SearchIndexBuilt()
 {
     static bool built = false;
     return built;
-}
-
-// Same rules as package 1's IsOrderableItem (runtime/GuildOrderStore.h on
-// its branch): BoP, quest-bond, quest class and temporary items can never
-// be banked, so they never show up in the search. Lives here until the
-// merge unifies the two copies.
-bool Bankable(ItemPrototype const* proto)
-{
-    if (!proto || proto->Name1.empty())
-        return false;
-    if (proto->Bonding == BIND_WHEN_PICKED_UP || proto->Bonding == BIND_QUEST_ITEM)
-        return false;
-    if (proto->Class == ITEM_CLASS_QUEST)
-        return false;
-    if (proto->Duration != 0)
-        return false;
-    return true;
 }
 
 std::string ToLower(std::string value)
@@ -115,7 +99,7 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
             for (uint32_t itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
             {
                 ItemPrototype const* proto = sItemStorage.LookupEntry<ItemPrototype>(itemId);
-                if (!Bankable(proto))
+                if (!TortoiseBots::GuildOrders::IsOrderableItem(proto))
                     continue;
                 SearchRow row;
                 row.itemId = itemId;

@@ -2223,8 +2223,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 size_t pick = record->movedZone && plan.zones.size() > 1 ? 1 : 0;
                 if (plan.zones.size() <= pick)
                 {
-                    SetState(bot->GetGUIDLow(), OrderState::Cant,
-                        plan.verdict == OrderReason::None ? OrderReason::NoSource : plan.verdict);
+                    OrderReason reason = plan.verdict == OrderReason::None ? OrderReason::NoSource : plan.verdict;
+                    SetState(bot->GetGUIDLow(), TortoiseBots::GuildOrders::StateForReason(reason), reason);
                     return false;
                 }
                 farmZoneId = plan.zones[pick].zoneId;
@@ -2234,8 +2234,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(record->itemId))
                 orderTarget = proto->Name1;
 
-            // Only entries the planner accepts for this bot: same gates as
-            // the plan (level + 3, skill, chance >= 1 % via the index).
+            // Only entries the planner accepts for this bot in the planned
+            // zone: same gates as the plan, read from the index slices.
             uint32_t itemId = record->itemId;
             uint32_t botLevel = bot->GetLevel();
             Team botTeam = bot->GetTeam();
@@ -2252,26 +2252,28 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 bool const herbOrOre = source.flag == SourceHerb || source.flag == SourceOre;
                 if (herbOrOre && lowGatherLevel)
                     continue;
-                GuildOrderSpawnSummary summary = GuildOrderSpawnSummaryFor(source.entry);
-                if (summary.spawns == 0)
-                    continue;
-                if (botTeam == ALLIANCE && summary.hordeHome && !summary.allyHome)
-                    continue;
-                if (botTeam == HORDE && summary.allyHome && !summary.hordeHome)
+                bool zoneUsable = false;
+                for (GuildOrderZoneSlice const& slice : GuildOrderZonesFor(source.entry))
+                {
+                    if (slice.zoneId != farmZoneId || slice.spawns == 0)
+                        continue;
+                    bool const enemyHome = botTeam == ALLIANCE ? (slice.team & (1 << 1)) :
+                        (slice.team & (1 << 0));
+                    if (enemyHome)
+                        continue;
+                    uint32_t level = source.entry > 0 ? source.level :
+                        (slice.zoneLevel > 0 ? uint32_t(slice.zoneLevel) : 0);
+                    if (level == 0 || !TortoiseBots::GuildOrders::SourceLevelFits(level, botLevel))
+                        continue;
+                    zoneUsable = true;
+                    break;
+                }
+                if (!zoneUsable)
                     continue;
                 if (source.entry > 0)
-                {
-                    if (!TortoiseBots::GuildOrders::SourceLevelFits(source.level, botLevel))
-                        continue;
                     mobEntries.push_back(source.entry);
-                }
                 else
-                {
-                    if (summary.areaLevel <= 0 ||
-                        !TortoiseBots::GuildOrders::SourceLevelFits(uint32_t(summary.areaLevel), botLevel))
-                        continue;
                     gatherEntries.push_back(source.entry);
-                }
             }
             if (gatherEntries.empty() && mobEntries.empty())
                 return false;

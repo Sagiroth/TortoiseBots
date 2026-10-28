@@ -27,25 +27,25 @@ struct GuildOrderEntrySource
     uint32_t reqSkill = 0;
 };
 
-// One entry's spawn summary, built once from the cached spawn areas.
-struct GuildOrderSpawnSummary
+// One zone slice of an entry's spawns: flat per-entry list in the index.
+struct GuildOrderZoneSlice
 {
+    uint32_t zoneId = 0;
     uint32_t spawns = 0;
-    uint32_t zoneId = 0;    // dominant zone, 0 = none resolved
-    int32_t areaLevel = 0;  // dominant zone level, <= 0 = unknown
-    bool allyHome = false;
-    bool hordeHome = false;
+    uint8_t team = 0;       // bit 0 ally home, bit 1 horde home
+    int32_t zoneLevel = 0;  // <= 0 = unknown
+    uint32_t mapId = 0;
+    float x = 0.0f, y = 0.0f, z = 0.0f;  // sample spawn position
 };
 
 // The order source index: item -> entries (corpse loot with resolved
-// reference rows, skinning loot, game-object loot) plus the per-entry spawn
-// summary. Built once, lazily, off the hot path; planner, search and travel
-// all read it, so a plan is a small lookup, never a spawn walk.
+// reference rows, skinning loot, game-object loot) plus the flat per-entry
+// zone slices. Built once at startup after the travel data is ready; read
+// only at runtime, so planning is a small lookup, never a spawn walk.
+void BuildGuildOrderSourceIndex();
 std::vector<GuildOrderEntrySource> GuildOrderSourcesFor(uint32_t itemId);
-GuildOrderSpawnSummary GuildOrderSpawnSummaryFor(int32_t entry);
+std::vector<GuildOrderZoneSlice> GuildOrderZonesFor(int32_t entry);
 
 // True when the creature entry can skin the bot's Working farm order item:
 // the narrow gate for emptying order-mob corpses (loot queue and store).
 bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry);
-
-} // namespace ai
