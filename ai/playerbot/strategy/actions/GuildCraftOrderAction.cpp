@@ -48,6 +48,58 @@ uint32 GuildCraftOrderAction::FindCraftEffect(uint32 spellId, uint32 itemId)
     return 0;
 }
 
+uint32 GuildCraftOrderAction::CountFreeBagSlots()
+{
+    uint32 used = 0;
+    for (int i = INVENTORY_SLOT_ITEM_START; i < INVENTORY_SLOT_ITEM_END; ++i)
+    {
+        if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, i))
+            ++used;
+    }
+
+    std::vector<Bag*> bags;
+    for (int i = INVENTORY_SLOT_BAG_START; i < INVENTORY_SLOT_BAG_END; ++i)
+    {
+        Bag* bag = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, i);
+        if (!bag)
+            continue;
+        ItemPrototype const* bagProto = bag->GetProto();
+        if (bagProto && bagProto->Class == ITEM_CLASS_CONTAINER && bagProto->SubClass == ITEM_SUBCLASS_CONTAINER)
+            bags.push_back(bag);
+    }
+
+    return TortoiseBots::CraftOrderPolicy::FreeBagSlots(
+        used, INVENTORY_SLOT_ITEM_END - INVENTORY_SLOT_ITEM_START, bags,
+        [](Bag* bag) { return bag->GetFreeSlots(); });
+}
+
+GameObject* GuildCraftOrderAction::FindFocusObject(uint32 focusId, float range)
+{
+    GameObject* best = nullptr;
+    float bestDist = range;
+
+    std::list<ObjectGuid> objects = AI_VALUE(std::list<ObjectGuid>, "nearest game objects");
+    for (ObjectGuid guid : objects)
+    {
+        GameObject* go = ai->GetGameObject(guid);
+        if (!go || !sServerFacade.isSpawned(go))
+            continue;
+
+        GameObjectInfo const* info = sObjectMgr.GetGameObjectInfo(go->GetEntry());
+        if (!info || info->type != GAMEOBJECT_TYPE_SPELL_FOCUS || info->spellFocus.focusId != focusId)
+            continue;
+
+        float dist = bot->GetDistance(go);
+        if (dist < bestDist)
+        {
+            bestDist = dist;
+            best = go;
+        }
+    }
+
+    return best;
+}
+
 bool GuildCraftOrderAction::Execute(Event& event)
 {
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
@@ -56,6 +108,9 @@ bool GuildCraftOrderAction::Execute(Event& event)
 
     uint32 botGuidLow = bot->GetGUIDLow();
     std::optional<OrderRecord> record = TortoiseBots::GuildOrders::Find(botGuidLow);
+    if (record && record->state != OrderState::Working)
+        return false;
+
     uint32 itemId = record ? record->itemId : GuildOrderValue::FindItemByName(order.target);
     uint32 orderAmount = record ? record->amount : order.amount;
     uint32 delivered = record ? std::min(record->delivered, record->amount) : 0;
@@ -67,8 +122,11 @@ bool GuildCraftOrderAction::Execute(Event& event)
     {
         if (record)
             TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Delivering, OrderReason::None);
-        return false;
+        return true;
     }
+
+    if (bot->IsNonMeleeSpellCasted(false, true, true))
+        return false;
 
     uint32 craftSpellId = FindCraftSpell(itemId);
     if (!craftSpellId)
@@ -102,7 +160,6 @@ bool GuildCraftOrderAction::Execute(Event& event)
         }
     }
 
-    bool missingVendorOnly = false;
     for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
     {
         if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
@@ -118,8 +175,8 @@ bool GuildCraftOrderAction::Execute(Event& event)
         if (reagentProto && ItemUsageValue::IsItemSoldByAnyVendor(reagentProto) &&
             !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(reagentProto))
         {
-            missingVendorOnly = true;
-            continue;
+            ai->TellDebug(ai->GetMaster(), "Guild craft order: buying reagent " + std::to_string(reagentId) + " from vendor", "debug travel");
+            return false;
         }
 
         SourcePlan plan = ai::PlanGuildOrderSources(bot, reagentId, OrderType::Farm);
@@ -127,27 +184,30 @@ bool GuildCraftOrderAction::Execute(Event& event)
         {
             ai->TellDebug(ai->GetMaster(), "Guild craft order: cannot source reagent " + std::to_string(reagentId), "debug travel");
             if (record)
-                TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Cant, plan.verdict);
+                TortoiseBots::GuildOrders::SetState(botGuidLow, StateForReason(plan.verdict), plan.verdict);
             return false;
         }
 
-        SET_AI_VALUE2(int32, "manual int", "guild order farm item", (int32)reagentId);
         ai->TellDebug(ai->GetMaster(), "Guild craft order: farming reagent " + std::to_string(reagentId), "debug travel");
         return false;
     }
 
-    RESET_AI_VALUE2(int32, "manual int", "guild order farm item");
-
-    if (missingVendorOnly)
+    if (pSpellInfo->RequiresSpellFocus)
     {
-        ai->TellDebug(ai->GetMaster(), "Guild craft order: waiting on vendor reagents", "debug travel");
-        return false;
-    }
+        GameObject* focus = FindFocusObject(pSpellInfo->RequiresSpellFocus, sPlayerbotAIConfig.sightDistance);
+        if (!focus)
+        {
+            ai->TellDebug(ai->GetMaster(), "Guild craft order: no workshop in sight", "debug travel");
+            return false;
+        }
 
-    if (pSpellInfo->RequiresSpellFocus && !WorldPosition(bot).HasAreaFlag(AREA_FLAG_CAPITAL))
-    {
-        ai->TellDebug(ai->GetMaster(), "Guild craft order: needs a city workshop", "debug travel");
-        return false;
+        if (!bot->IsWithinDistInMap(focus, 8.0f))
+        {
+            float x, y, z;
+            focus->GetPosition(x, y, z);
+            MoveTo(focus->GetMapId(), x, y, z, false, false);
+            return true;
+        }
     }
 
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
@@ -157,16 +217,19 @@ bool GuildCraftOrderAction::Execute(Event& event)
     uint32 maxYield = TortoiseBots::CraftOrderPolicy::MaxYieldPerCast(
         pSpellInfo->EffectBasePoints[effect], pSpellInfo->EffectBaseDice[effect],
         pSpellInfo->EffectDieSides[effect]);
-    uint32 freeSlots = AI_VALUE(uint8, "bag space") < 100 ? 1 : 0;
-    if (!TortoiseBots::CraftOrderPolicy::FitsInFreeSlots(casts, maxYield, stackSize, freeSlots) &&
-        AI_VALUE2(uint32, "stack space for item", itemId) < remaining)
+    uint32 batch = TortoiseBots::CraftOrderPolicy::BatchForFreeSlots(casts, maxYield, stackSize, CountFreeBagSlots());
+    if (!batch)
+    {
+        if (record)
+            TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Delivering, OrderReason::BagsFull);
         return false;
+    }
 
     std::ostringstream cmd;
-    cmd << "castnc " << craftSpellId << " " << casts;
+    cmd << "castnc " << craftSpellId << " " << batch;
     ai->HandleCommand(CHAT_MSG_WHISPER, cmd.str(), *bot);
 
-    ai->TellDebug(ai->GetMaster(), "Guild craft order: crafting " + std::to_string(casts) + "x " + std::string(proto ? proto->Name1 : order.target), "debug travel");
+    ai->TellDebug(ai->GetMaster(), "Guild craft order: crafting " + std::to_string(batch) + "x " + std::string(proto ? proto->Name1 : order.target), "debug travel");
 
     return true;
 }
@@ -182,20 +245,21 @@ bool GuildCraftOrderAction::isUseful()
     if (bot->IsMounted())
         return false;
 
+    if (bot->IsNonMeleeSpellCasted(false, true, true))
+        return false;
+
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
     if (!order.IsCraftOrder())
         return false;
 
     uint32 botGuidLow = bot->GetGUIDLow();
     std::optional<OrderRecord> record = TortoiseBots::GuildOrders::Find(botGuidLow);
-    uint32 itemId = record ? record->itemId : GuildOrderValue::FindItemByName(order.target);
-    uint32 orderAmount = record ? record->amount : order.amount;
-    uint32 delivered = record ? std::min(record->delivered, record->amount) : 0;
-    if (!itemId || !orderAmount)
+    if (record && record->state != OrderState::Working)
         return false;
 
-    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + delivered;
-    if (currentCount >= orderAmount)
+    uint32 itemId = record ? record->itemId : GuildOrderValue::FindItemByName(order.target);
+    uint32 orderAmount = record ? record->amount : order.amount;
+    if (!itemId || !orderAmount)
         return false;
 
     return true;

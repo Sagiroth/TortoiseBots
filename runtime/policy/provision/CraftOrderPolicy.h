@@ -60,5 +60,31 @@ inline bool FitsInFreeSlots(uint32_t casts, uint32_t maxYieldPerCast, uint32_t s
     return slots <= freeSlots;
 }
 
+// Largest batch (<= casts) whose worst case fits: every cast yielding its
+// maximum. 0 when not even one cast fits - the caller delivers first.
+inline uint32_t BatchForFreeSlots(uint32_t casts, uint32_t maxYieldPerCast, uint32_t stackSize,
+                                  uint32_t freeSlots)
+{
+    if (casts == 0 || maxYieldPerCast == 0 || stackSize == 0)
+        return 0;
+    uint64_t room = uint64_t(freeSlots) * stackSize;
+    uint64_t batch = room / maxYieldPerCast;
+    if (batch > casts)
+        batch = casts;
+    return uint32_t(batch);
+}
+
+// Real free bag slots: backpack slots plus each bag's own free slots.
+// Counts slots, not percentages - the 0-100 "bag space" cannot size a batch.
+template <typename Bags, typename FreeIn>
+inline uint32_t FreeBagSlots(uint32_t backpackUsed, uint32_t backpackSize,
+                             Bags const& bags, FreeIn freeIn)
+{
+    uint32_t free = backpackSize > backpackUsed ? backpackSize - backpackUsed : 0;
+    for (auto const& bag : bags)
+        free += freeIn(bag);
+    return free;
+}
+
 } // namespace CraftOrderPolicy
 } // namespace TortoiseBots

@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 using namespace TortoiseBots::CraftOrderPolicy;
 
@@ -70,12 +71,40 @@ static void TestFitsInFreeSlots()
     CHECK(FitsInFreeSlots(0, 3, 5, 0));
 }
 
+static void TestBatchForFreeSlots()
+{
+    // Whole order fits: full batch.
+    CHECK(BatchForFreeSlots(5, 1, 20, 1) == 5);
+    // One slot of 20 holds 6 casts at worst-case 3 each (18 items).
+    CHECK(BatchForFreeSlots(10, 3, 20, 1) == 6);
+    // Non-stackable: one cast per slot.
+    CHECK(BatchForFreeSlots(5, 1, 1, 3) == 3);
+    // No room: no batch (the caller delivers first).
+    CHECK(BatchForFreeSlots(5, 1, 20, 0) == 0);
+    CHECK(BatchForFreeSlots(0, 1, 20, 4) == 0);
+}
+
+static void TestFreeBagSlots()
+{
+    // Backpack 3/16 used plus bags with 0 and 4 free: 13 + 4.
+    CHECK(FreeBagSlots(3, 16, std::vector<uint32_t>{0, 4},
+        [](uint32_t free) { return free; }) == 17);
+    // Full everywhere.
+    CHECK(FreeBagSlots(16, 16, std::vector<uint32_t>{0, 0},
+        [](uint32_t free) { return free; }) == 0);
+    // No bags.
+    CHECK(FreeBagSlots(10, 16, std::vector<uint32_t>{},
+        [](uint32_t free) { return free; }) == 6);
+}
+
 int main()
 {
     TestShortfall();
     TestMinYield();
     TestCastsForRemaining();
     TestFitsInFreeSlots();
+    TestBatchForFreeSlots();
+    TestFreeBagSlots();
     std::printf("craft order policy: %d checks passed\n", checks);
     return 0;
 }

@@ -73,6 +73,9 @@ namespace ai
         bool Calculate() override
         {
             GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+            // A craft order short on a farmable reagent travels like a farm order.
+            if (order.IsCraftOrder())
+                return AI_VALUE(uint32, "guild order farm item") != 0;
             if (!order.IsTravelOrder())
                 return false;
 
@@ -97,6 +100,38 @@ namespace ai
 
             return true;
         }
+    };
+
+    // The item the bot actually farms for its guild order: the order item for
+    // farm orders, the first missing reagent the planner can source for craft
+    // orders, 0 when none (no order, reagents complete, nothing sourcable).
+    class GuildOrderFarmItemValue : public CalculatedValue<uint32>
+    {
+    public:
+        GuildOrderFarmItemValue(PlayerbotAI* ai) : CalculatedValue<uint32>(ai, "guild order farm item", 10) {}
+
+        uint32 Calculate() override;
+    };
+
+    // First missing craft-order reagent sold unlimited by a vendor, 0 when
+    // none. This is the order-driven vendor trip: anything it returns is
+    // bought, never farmed.
+    class GuildOrderVendorReagentValue : public CalculatedValue<uint32>
+    {
+    public:
+        GuildOrderVendorReagentValue(PlayerbotAI* ai) : CalculatedValue<uint32>(ai, "guild order vendor reagent", 10) {}
+
+        uint32 Calculate() override;
+    };
+
+    // True when a craft order has all its reagents but the recipe needs a
+    // spell focus (anvil, forge, fire) and the bot is not in a capital city.
+    class GuildOrderNeedsCapitalValue : public BoolCalculatedValue
+    {
+    public:
+        GuildOrderNeedsCapitalValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "guild order needs capital", 10) {}
+
+        bool Calculate() override;
     };
 
     class HasGuildCraftOrderValue : public BoolCalculatedValue

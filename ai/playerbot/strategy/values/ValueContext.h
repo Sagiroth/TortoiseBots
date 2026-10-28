@@ -418,6 +418,9 @@ namespace ai
             creators["can hand in petition"] = [](PlayerbotAI* ai) { return new CanHandInPetitionValue(ai); };
             creators["can buy tabard"] = [](PlayerbotAI* ai) { return new CanBuyTabard(ai); };
             creators["guild order"] = [](PlayerbotAI* ai) { return new GuildOrderValue(ai); };
+            creators["guild order farm item"] = [](PlayerbotAI* ai) { return new GuildOrderFarmItemValue(ai); };
+            creators["guild order vendor reagent"] = [](PlayerbotAI* ai) { return new GuildOrderVendorReagentValue(ai); };
+            creators["guild order needs capital"] = [](PlayerbotAI* ai) { return new GuildOrderNeedsCapitalValue(ai); };
             creators["has guild travel order"] = [](PlayerbotAI* ai) { return new HasGuildTravelOrderValue(ai); };
             creators["has guild craft order"] = [](PlayerbotAI* ai) { return new HasGuildCraftOrderValue(ai); };
             creators["guild share target"] = [](PlayerbotAI* ai) { return new GuildShareTargetValue(ai); };

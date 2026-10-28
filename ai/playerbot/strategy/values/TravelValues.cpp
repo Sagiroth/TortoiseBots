@@ -477,12 +477,16 @@ bool ShouldTravelNamedValue::Calculate()
     {
         return AI_VALUE(bool, "has guild travel order");
     }
-    else if (name == "reagent vendor")
+    else if (name == "order capital")
+    {
+        return AI_VALUE(bool, "guild order needs capital");
+    }
+    else if (name == "order vendor")
     {
         // Issue #872 (B11): autonomous alts never travel to buy reagents.
         if (TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()))
             return false;
-        return AI_VALUE(bool, "needs profession reagents");
+        return AI_VALUE(uint32, "guild order vendor reagent") != 0;
     }
     else if (name == "mount")
     {
