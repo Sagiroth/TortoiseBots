@@ -2235,9 +2235,9 @@ static void ClearRaidLayout(uint32 groupId)
                 chat->PSendSysMessage("TBM:RAID_LAYOUT|warning|subgroups not restored: %s", ProtocolSafe(stray).c_str());
         // Only a main tank the layout set is put back (an empty previous one
         // clears it); a later change by anyone else stands.
-        if (group->GetMainTankGuid() == applied.setMainTank)
+        if (!applied.setMainTank.IsEmpty() && group->GetMainTankGuid() == applied.setMainTank)
             group->SetMainTank(applied.previousMainTank);
-        if (group->GetMainAssistantGuid() == applied.setMainTank && !applied.previousMainAssistant.IsEmpty())
+        if (!applied.previousMainAssistant.IsEmpty() && group->GetMainAssistantGuid() != applied.previousMainAssistant)
             group->SetMainAssistant(applied.previousMainAssistant);
     }
 }
