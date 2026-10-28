@@ -8171,6 +8171,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     std::vector<uint32> raidHealths, raidManas; // every living bot's health, non-healer mana (the raid's rest floor)
     for (Player* bot : bots)
     {
+        ++f.total;
         bool isTank = false, isHeal = false;
         if (f.raid.on)
         {
