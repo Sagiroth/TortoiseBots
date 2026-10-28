@@ -448,36 +448,36 @@ void BotManager::QueuePublicNote(uint64_t botGuidRaw, std::string text)
 {
     if (botGuidRaw == 0 || text.empty())
         return;
-    if (!m_publicNoteQueue.Enqueue(botGuidRaw, std::move(text)))
-    {
-        // One pending note per bot: drop the stale text and queue the newer
-        // one, so a burst of talent applies costs one write of fresh text.
-        m_publicNoteQueue.Clear();
-        m_publicNoteQueue.Enqueue(botGuidRaw, std::move(text));
-    }
+    std::lock_guard<std::mutex> lock(m_publicNoteMutex);
+    m_pendingPublicNotes[botGuidRaw] = std::move(text);
 }
 
 void BotManager::DrainPublicNoteQueue()
 {
-    m_publicNoteQueue.Drain([this](uint64_t botGuidRaw, std::string& text)
+    std::unordered_map<uint64_t, std::string> pending;
     {
-        ::Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(botGuidRaw));
+        std::lock_guard<std::mutex> lock(m_publicNoteMutex);
+        pending.swap(m_pendingPublicNotes);
+    }
+    for (auto const& entry : pending)
+    {
+        ::Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(entry.first));
         if (!bot || !bot->IsInWorld())
-            return;
+            continue;
         uint32_t guildId = bot->GetGuildId();
         if (!guildId)
-            return;
+            continue;
         Guild* guild = sGuildMgr.GetGuildById(guildId);
         if (!guild)
-            return;
+            continue;
         MemberSlot* member = guild->GetMemberSlot(bot->getObjectGuid());
         if (!member)
-            return;
+            continue;
         // The bot's own public note is a server feature: no rank right
         // needed. SetPublicNote skips the DB write when unchanged.
-        if (member->PublicNote != text)
-            member->SetPublicNote(text);
-    });
+        if (member->PublicNote != entry.second)
+            member->SetPublicNote(entry.second);
+    }
 }
 
 void BotManager::SweepDeadBots(uint32_t diff)

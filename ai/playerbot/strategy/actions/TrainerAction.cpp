@@ -5,6 +5,7 @@
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/policy/gear/SpellRankPolicy.h"
 #include "playerbot/TravelMgr.h"
+#include "../../../../runtime/policy/provision/TradeTrainerPolicy.h"
 
 using namespace ai;
 
@@ -87,21 +88,32 @@ bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellA
         if (state != TRAINER_SPELL_GREEN)
             continue;
 
-        // A visit must never add a 3rd primary profession: a first-rank
-        // primary teaches only when the bot holds fewer than two primaries
-        // (counted from held skills, so a legacy bare-skill pair without
-        // rank spells still blocks). Ranks and recipes for held professions
-        // are unaffected.
-        if (sSpellMgr.IsPrimaryProfessionFirstRankSpell(tSpell->spell))
+        // A visit must never add a 3rd primary profession. The row spell is
+        // usually the SKILL_STEP teaching spell (e.g. 2581), not the rank-1
+        // profession spell (2575), so the taught spells are scanned exactly
+        // like core Player::GetTrainerSpellState does.
         {
-            static uint16 const kPrimary[] = { SKILL_ALCHEMY, SKILL_BLACKSMITHING, SKILL_ENCHANTING, SKILL_ENGINEERING,
-                                               SKILL_HERBALISM, SKILL_LEATHERWORKING, SKILL_MINING, SKILL_SKINNING, SKILL_TAILORING };
-            uint32_t held = 0;
-            for (uint16 id : kPrimary)
-                if (bot->HasSkill(id))
-                    ++held;
-            if (held >= 2)
-                continue;
+            SpellEntry const* teaching = sServerFacade.LookupSpellInfo(tSpell->spell);
+            TaughtSpellIds taught;
+            if (teaching)
+                for (int j = 0; j < 3 && taught.count < 3; ++j)
+                    if (teaching->Effect[j] == SPELL_EFFECT_LEARN_SPELL && teaching->EffectTriggerSpell[j])
+                    {
+                        taught.ids[taught.count] = teaching->EffectTriggerSpell[j];
+                        ++taught.count;
+                    }
+            auto isFirstRank = [](uint32_t id) { return sSpellMgr.IsPrimaryProfessionFirstRankSpell(id); };
+            if (TrainerRowTeachesFirstRankPrimary(tSpell->spell, taught, isFirstRank))
+            {
+                static uint16 const kPrimary[] = { SKILL_ALCHEMY, SKILL_BLACKSMITHING, SKILL_ENCHANTING, SKILL_ENGINEERING,
+                                                   SKILL_HERBALISM, SKILL_LEATHERWORKING, SKILL_MINING, SKILL_SKINNING, SKILL_TAILORING };
+                uint32_t held = 0;
+                for (uint16 id : kPrimary)
+                    if (bot->HasSkill(id))
+                        ++held;
+                if (!FirstRankPrimaryTeachableNow(true, held))
+                    continue;
+            }
         }
 
         hasTrainable = true;

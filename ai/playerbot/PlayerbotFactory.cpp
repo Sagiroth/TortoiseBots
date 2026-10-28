@@ -3088,13 +3088,12 @@ void PlayerbotFactory::LearnApprenticeProfession(uint16 skillId)
         return;
     // The rank-1 teaching spell is resolved from the trainer lists, not
     // hardcoded: the SKILL_STEP row for this skill whose taught spell is a
-    // primary-profession rank 1. Cached per skill id for the run; the trainer
-    // tables are loaded once at startup.
-    static std::map<uint16, uint32> s_apprenticeTeachingSpell;
-    static bool s_apprenticeScanned = false;
-    if (!s_apprenticeScanned)
+    // primary-profession rank 1. Magic static: thread-safe one-time init
+    // (map threads ding here concurrently); the trainer tables are loaded
+    // once at startup and read-only afterwards.
+    static std::map<uint16, uint32> const s_apprenticeTeachingSpell = []()
     {
-        s_apprenticeScanned = true;
+        std::map<uint16, uint32> table;
         for (uint32 id = 0; id < sCreatureStorage.GetMaxEntry(); ++id)
         {
             CreatureInfo const* co = sCreatureStorage.LookupEntry<CreatureInfo>(id);
@@ -3117,7 +3116,7 @@ void PlayerbotFactory::LearnApprenticeProfession(uint16 skillId)
                 if (!teaching || teaching->Effect[EFFECT_INDEX_1] != SPELL_EFFECT_SKILL_STEP)
                     continue;
                 uint32 skill = teaching->EffectMiscValue[EFFECT_INDEX_1];
-                if (!skill || s_apprenticeTeachingSpell.count(uint16(skill)))
+                if (!skill || table.count(uint16(skill)))
                     continue;
                 bool isFirstRank = false;
                 for (int j = 0; j < 3 && !isFirstRank; ++j)
@@ -3125,10 +3124,11 @@ void PlayerbotFactory::LearnApprenticeProfession(uint16 skillId)
                         sSpellMgr.IsPrimaryProfessionFirstRankSpell(teaching->EffectTriggerSpell[j]))
                         isFirstRank = true;
                 if (isFirstRank)
-                    s_apprenticeTeachingSpell[uint16(skill)] = tSpell->spell;
+                    table[uint16(skill)] = tSpell->spell;
             }
         }
-    }
+        return table;
+    }();
     auto it = s_apprenticeTeachingSpell.find(skillId);
     if (it == s_apprenticeTeachingSpell.end())
         return;

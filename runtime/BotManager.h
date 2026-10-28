@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <memory>
 #include <ctime>
+#include <mutex>
 #include <vector>
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectGuid.h"
@@ -247,11 +248,11 @@ private:
     // Issue #839: master -> live bot guids for packet hooks off the world
     // thread; rebuilt from m_bots at the end of every OnWorldUpdate.
     MasterBotView m_masterView;
-    // Wanted public-note text per bot (key = bot guid raw). A bot queues at
-    // most one pending note; a newer text replaces the older one, so a burst
-    // of talent applies costs one write. Plain data under the queue's lock;
-    // the drain resolves the bot and guild again on the world thread.
-    WorldThreadQueue<std::string> m_publicNoteQueue{1};
+    // Wanted public-note text per bot (key = bot guid raw). Map threads assign
+    // under the lock; the world-thread drain swaps the map out and applies it.
+    // Newest text wins per bot; other bots' entries are never touched.
+    mutable std::mutex m_publicNoteMutex;
+    std::unordered_map<uint64_t, std::string> m_pendingPublicNotes;
     // Reentrancy guard for AI-driven removal. PlayerbotAI::UpdateAIInternal can
     // request its own removal (stunned/idle logout path) while its Update is on
     // the stack inside UpdateBots. Stopping the Headless session synchronously
