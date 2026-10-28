@@ -46,6 +46,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotFormGuild`](#aiplayerbotrandombotformguild) | `1` | Allows random bots to buy guild charters and establish autonomous guilds. |
 | [`AiPlayerbot.GuildMaxBotLimit`](#aiplayerbotguildmaxbotlimit) | `1000` | Maximum number of bots allowed to join a single autonomous bot guild. |
 | [`AiPlayerbot.TalentsInPublicNote`](#aiplayerbottalentsinpublicnote) | `1` | Bots write spec, talents and professions into their guild public note. |
+| [`AiPlayerbot.ProfessionsGrowWithLevel`](#aiplayerbotprofessionsgrowwithlevel) | `1` | Pool bots get profession skill and recipes with their level. |
 | [`AiPlayerbot.EnableGreet`](#aiplayerbotenablegreet) | `1` | Enables text emote greetings when a bot encounters a human player. |
 | [`AiPlayerbot.GreetCooldown`](#aiplayerbotgreetcooldown) | `600` | Cooldown in seconds before a bot may greet the same player again. |
 | [`AiPlayerbot.RandomBotGreet`](#aiplayerbotrandombotgreet) | `0` | Allows masterless pool bots to greet players in addition to owned bots. |
@@ -466,6 +467,21 @@ Bots write their spec, talents and both primary professions with skill into thei
 A guilded bot shows a line like `Arms 31/20/0 Min245 BS230`: spec name, spent talent points per tree, then each primary profession as a short abbreviation plus skill value (Alc, BS, Enc, Eng, Herb, LW, Min, Skin, Tail). The guild client caps every note at 31 characters, so with a long spec name the second profession is left out rather than cut off.
 
 The note refreshes at once when talents change and at most every few minutes when only profession skill changed. Bots only write their own public note and only when their guild rank may edit it; they never read or write officer notes.
+
+</details>
+
+### `AiPlayerbot.ProfessionsGrowWithLevel`
+Pool bots get profession skill of level x 5 and every trainer recipe they qualify for.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+With this on, a pool bot's profession pair keeps pace with its level: skill around level x 5 and all qualifying trainer recipes granted automatically.
+
+With this off, bots still get their profession pair at level 5, but start at skill 1 with no automatic recipes. Ranks and recipes come from trainers, which bots already visit, and skill from gathering and from crafting when it gives a skill-up. Switching the setting changes nothing for existing bots: they keep the skill and recipes they already have.
+
+Use at your own risk: bots levelling a profession from 1 to 300 on their own has not been tested.
 
 </details>
 

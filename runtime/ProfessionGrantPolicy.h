@@ -28,6 +28,14 @@ namespace TortoiseBots
 // Level from which a pool bot without primaries is granted its pair.
 inline constexpr uint32_t PRIMARY_PROFESSION_MIN_LEVEL = 5;
 
+// Apprentice rank ceiling: the max a fresh rank-1 skill starts with. Core
+// trainer data teaches Apprentice (max 75); Journeyman raises it to 150.
+inline constexpr uint32_t APPRENTICE_SKILL_MAX = 75;
+
+// Skill a fresh profession pair starts at when professions no longer grow
+// with level: the bot owns the skill and trains ranks and recipes itself.
+inline constexpr uint32_t ORGANIC_SKILL_START = 1;
+
 struct ProfessionGrantInputs
 {
     uint32_t level = 1;

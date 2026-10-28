@@ -2538,12 +2538,26 @@ void PlayerbotFactory::EnsurePrimaryProfessions()
 
     // Below the gate (or when a primary is already held) the ids stay 0:
     // skip the grant explicitly; Player::SetSkill(0, ...) is a core-side
-    // no-op, but never call it with 0 here.
+    // no-op, but never call it with 0 here. With ProfessionsGrowWithLevel off
+    // the pair still lands at level 5 but starts at skill 1: just own the
+    // skill, never top it up, and leave all recipes to real trainer visits.
     if (firstSkill)
-        SetRandomSkill(firstSkill);
+    {
+        if (sPlayerbotAIConfig.professionsGrowWithLevel)
+            SetRandomSkill(firstSkill);
+        else if (!bot->HasSkill(firstSkill))
+            bot->SetSkill(firstSkill, TortoiseBots::ORGANIC_SKILL_START, TortoiseBots::APPRENTICE_SKILL_MAX);
+    }
     if (secondSkill)
-        SetRandomSkill(secondSkill);
+    {
+        if (sPlayerbotAIConfig.professionsGrowWithLevel)
+            SetRandomSkill(secondSkill);
+        else if (!bot->HasSkill(secondSkill))
+            bot->SetSkill(secondSkill, TortoiseBots::ORGANIC_SKILL_START, TortoiseBots::APPRENTICE_SKILL_MAX);
+    }
 
+    if (!sPlayerbotAIConfig.professionsGrowWithLevel)
+        return;
 
     // learn recipies
     for (uint32 id = 0; id < sCreatureStorage.GetMaxEntry(); ++id)
