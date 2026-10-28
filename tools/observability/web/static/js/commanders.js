@@ -540,11 +540,18 @@
     return m.reaction === "h" ? "hostile" : "neutral";
   }
 
-  // Lines from each mob to the bot it targets: [{mob, bot}] (both with game x, y). Only bots on the list count.
-  function threatLines(mobs, bots) {
+  // Lines from each mob to the bot it targets: [{mob, bot, nonTank}] (both with game x, y). Only bots on the list count. With the raid's
+  // layout (F5), a victim that is not a tank by role and is neither the main tank nor an off-tank is marked nonTank (the map draws it
+  // red); without a layout only the role counts.
+  function threatLines(mobs, bots, layout) {
+    const l = layout || {};
+    const off = Array.isArray(l.ot) ? l.ot : [];
     const byId = {};
     (bots || []).forEach((b) => { if (b.id) byId[b.id] = b; });
-    return (mobs || []).filter((m) => m.victim && byId[m.victim] && mobClass(m) !== "").map((m) => ({ mob: m, bot: byId[m.victim] }));
+    return (mobs || []).filter((m) => m.victim && byId[m.victim] && mobClass(m) !== "").map((m) => {
+      const bot = byId[m.victim];
+      return { mob: m, bot, nonTank: bot.role !== "tank" && bot.name !== l.mt && off.indexOf(bot.name) < 0 };
+    });
   }
 
   // Lines from each bot to its target when that is a listed mob: [{bot, mob}].

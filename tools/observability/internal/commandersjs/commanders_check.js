@@ -510,4 +510,30 @@ assert.strictEqual(C.layoutText({ layout: { mt: "Ragemeister", ot: ["Irelanthe",
 assert.strictEqual(C.layoutText({ layout: { mt: "Ragemeister", ot: [], th: [], rh: [] } }), "MT Ragemeister", "the parts it has");
 assert.strictEqual(C.layoutText(party()), null, "no layout reported: no row");
 assert.strictEqual(C.layoutText({ layout: { mt: "", ot: [], th: [], rh: [] } }), null, "an empty layout says nothing");
+// ---- threat lines: a victim that is not a tank (the raid layout's MT and OTs count as tanks)
+{
+  const tmobs = [
+    { id: "21", x: 0, y: 0, reaction: "h", victim: "700" },
+    { id: "22", x: 0, y: 0, reaction: "h", victim: "701" },
+    { id: "23", x: 0, y: 0, reaction: "h", victim: "702" },
+    { id: "24", x: 0, y: 0, reaction: "h", victim: "703" },
+    { id: "25", x: 0, y: 0, reaction: "h", victim: "704" },
+  ];
+  const tb = [
+    { id: "700", name: "Heals", role: "healer" },
+    { id: "701", name: "Ireni", role: "dps" },
+    { id: "702", name: "Shieldy", role: "tank" },
+    { id: "703", name: "Mage", role: "dps" },
+    { id: "704", name: "Ragemeister", role: "dps" },
+  ];
+  const tl = C.threatLines(tmobs, tb, { mt: "Ragemeister", ot: ["Ireni"] });
+  assert.deepStrictEqual(tl.map((l) => [l.mob.id, l.bot.name, l.nonTank]), [
+    ["21", "Heals", true], ["22", "Ireni", false], ["23", "Shieldy", false], ["24", "Mage", true], ["25", "Ragemeister", false],
+  ], "a healer or a damage dealer off the tanks; the layout's MT and an OT count as tanks");
+  assert.deepStrictEqual(C.threatLines(tmobs, tb).map((l) => l.nonTank), [true, true, false, true, true], "no layout: the role alone");
+  assert.deepStrictEqual(C.threatLines(tmobs, tb, { mt: "Ragemeister" }).map((l) => l.nonTank), [true, true, false, true, false],
+    "a layout without an OT list");
+  assert.deepStrictEqual(C.threatLines([{ id: "1", x: 0, y: 0, reaction: "h", victim: "999" }], tb, { mt: "Ragemeister", ot: ["Ireni"] }), [],
+    "a victim that is not a listed bot");
+}
  console.log("commanders.js ok");
