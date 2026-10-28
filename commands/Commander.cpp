@@ -2233,13 +2233,18 @@ static void ClearRaidLayout(uint32 groupId)
         if (!stray.empty())
             if (std::unique_ptr<ChatHandler> const chat = CommanderReplyHandler(applied.commanderRaw, applied.system))
                 chat->PSendSysMessage("TBM:RAID_LAYOUT|warning|subgroups not restored: %s", ProtocolSafe(stray).c_str());
+        // Read the assistant slot before the tank is restored: the core's tank
+        // flag clears the assistant when that player becomes main tank.
+        ObjectGuid const assistantNow = group->GetMainAssistantGuid();
         // Only a main tank the layout set is put back (an empty previous one
-        // clears it); a later change by anyone else stands.
-        if (!applied.setMainTank.IsEmpty() && group->GetMainTankGuid() == applied.setMainTank)
+        // clears it); a later change by anyone else stands, and so does a later
+        // main assistant who was the saved tank (restoring him would clear it).
+        if (!applied.setMainTank.IsEmpty() && group->GetMainTankGuid() == applied.setMainTank &&
+            (applied.previousMainTank.IsEmpty() || assistantNow != applied.previousMainTank))
             group->SetMainTank(applied.previousMainTank);
-        // The tank flag only clears the main assistant; put it back only into
-        // an empty slot, so a later choice by anyone else stands.
-        if (!applied.previousMainAssistant.IsEmpty() && group->GetMainAssistantGuid().IsEmpty())
+        // The assistant goes back only into a slot that was empty before this
+        // restore, so a later choice by anyone else stands.
+        if (!applied.previousMainAssistant.IsEmpty() && assistantNow.IsEmpty())
             group->SetMainAssistant(applied.previousMainAssistant);
     }
 }

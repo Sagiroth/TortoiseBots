@@ -125,6 +125,15 @@ class RaidLayoutWiringTest(unittest.TestCase):
         self.assertIn("subgroups not restored: %s", clear)
         self.assertIn("layouts.erase(it)", clear)
 
+    def test_assistant_slot_is_read_before_the_tank_is_restored(self):
+        # Codex r3: the core's tank flag clears the assistant, so the slot is
+        # read first and a later assistant who was the saved tank keeps it.
+        clear = body_from(SRC, "static void ClearRaidLayout(uint32 groupId)\n{")
+        read = clear.index("ObjectGuid const assistantNow = group->GetMainAssistantGuid();")
+        self.assertLess(read, clear.index("group->SetMainTank(applied.previousMainTank);"))
+        self.assertIn("assistantNow != applied.previousMainTank", clear)
+        self.assertIn("&& assistantNow.IsEmpty())", clear)
+
     def test_departure_restores_the_healer_snapshot(self):
         forget = body_from(SRC, "static void ForgetDepartedRaidMember(uint64 followerRaw, uint32 groupId)\n{")
         self.assertIn("RestoreRaidFocusHealer(bot, *heals)", forget)
