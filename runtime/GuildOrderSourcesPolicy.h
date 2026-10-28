@@ -1,5 +1,7 @@
 #pragma once
 
+#include "GuildOrderContract.h"
+
 #include <cstdint>
 
 // Pure rules for guild-order source finding: which sources a bot may use for
@@ -29,7 +31,7 @@ inline constexpr float kMinFarmDropChancePct = 1.0f;
 // the skin-after-loot chain would refuse for lack of skill.
 inline uint32_t SkinningSkillForMobLevel(uint32_t mobLevel)
 {
-    if (mobLevel < 10)
+    if (mobLevel <= 10)
         return 1;
     if (mobLevel < 20)
         return (mobLevel - 10) * 10;
@@ -57,6 +59,47 @@ inline double ZoneScore(uint32_t spawns, float chancePct)
 inline bool DropChanceFarmable(float chancePct, bool needsQuest)
 {
     return !needsQuest && chancePct >= kMinFarmDropChancePct;
+}
+
+// Share of one member of an equal-chanced loot group: the rows carry chance
+// 0 in the database, so each member rolls an even split of the group.
+inline float EqualShareChance(uint32_t memberCount)
+{
+    return memberCount == 0 ? 0.0f : 100.0f / float(memberCount);
+}
+
+// A reference row gates its members by its own chance; an equal-chanced
+// reference row carries chance 0, so its members gate by the equal share.
+inline float ReferenceGate(float rowChancePct, float equalSharePct)
+{
+    float gate = rowChancePct > 0.0f ? rowChancePct : equalSharePct;
+    return gate >= 100.0f ? 1.0f : gate / 100.0f;
+}
+
+// Chance of one member row: an explicit chance wins, otherwise the equal
+// share of its group.
+inline float MemberChance(float rowChancePct, float equalSharePct)
+{
+    return rowChancePct > 0.0f ? rowChancePct : equalSharePct;
+}
+
+// Verdict precedence when nothing is usable. A bot that is simply too young
+// for herb/ore hears that first; then the skill failure (missing profession
+// beats too-low skill); then level range; a sub-chance source never upgrades
+// NoSource to NoRange.
+inline OrderReason OrderVerdict(bool lowGatherLevel, uint8_t skillFail, bool sawInRange, bool sawAny)
+{
+    if (!sawAny)
+        return OrderReason::NoSource;
+    if (lowGatherLevel)
+        return OrderReason::LowLevel;
+    if (skillFail == 2)
+        return OrderReason::NoSkill;
+    if (skillFail == 1)
+        return OrderReason::LowSkill;
+    if (sawInRange)
+        return OrderReason::NoSource;
+    return OrderReason::NoRange;
 }
 
 } // namespace GuildOrders

@@ -15,8 +15,6 @@
 #include <cctype>
 #include <mutex>
 
-char* strstri(const char* haystack, const char* needle);
-
 namespace TortoiseBots {
 namespace BotCommands {
 namespace {
@@ -54,11 +52,15 @@ bool& SearchIndexBuilt()
     return built;
 }
 
+// Same rules as package 1's IsOrderableItem (runtime/GuildOrderStore.h on
+// its branch): BoP, quest-bond, quest class and temporary items can never
+// be banked, so they never show up in the search. Lives here until the
+// merge unifies the two copies.
 bool Bankable(ItemPrototype const* proto)
 {
     if (!proto || proto->Name1.empty())
         return false;
-    if (proto->Bonding == BIND_WHEN_PICKED_UP)
+    if (proto->Bonding == BIND_WHEN_PICKED_UP || proto->Bonding == BIND_QUEST_ITEM)
         return false;
     if (proto->Class == ITEM_CLASS_QUEST)
         return false;
@@ -133,7 +135,7 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
         {
             if (matches.size() >= kMaxSearchResults)
                 break;
-            if (strstri(row.name.c_str(), needle.c_str()))
+            if (row.lower.find(needle) != std::string::npos)
                 matches.push_back(&row);
         }
     }

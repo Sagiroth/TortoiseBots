@@ -18,6 +18,7 @@
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "../../../../runtime/RemoteCommanderTasks.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
+#include "playerbot/GuildOrderSources.h"
 
 
 using namespace ai;
@@ -667,8 +668,14 @@ bool StoreLootAction::Execute(Event& event)
         }
         else if (!ai::IsSkinningLoot((uint32)internalLootType) && !IsLootAllowed(itemQualifier, ai))
         {
-            sLog.outDebug("[BOT LOOT] %s: skip item=%u (IsLootAllowed=false)", bot->GetName(), itemid);
-            continue;
+            // A Working skin order needs the corpse empty before the
+            // Skinning cast is legal, so kills of order mobs give up
+            // their grey loot too.
+            if (!guid.IsCreature() || !GuildOrderSkinMobFor(bot, guid.GetEntry()))
+            {
+                sLog.outDebug("[BOT LOOT] %s: skip item=%u (IsLootAllowed=false)", bot->GetName(), itemid);
+                continue;
+            }
         }
 
         if (AI_VALUE2(uint32, "stack space for item", itemid) < itemcount)

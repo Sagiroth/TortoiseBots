@@ -23,7 +23,7 @@ int main()
 
     CHECK(SkinningSkillForMobLevel(1) == 1);
     CHECK(SkinningSkillForMobLevel(9) == 1);
-    CHECK(SkinningSkillForMobLevel(10) == 0);
+    CHECK(SkinningSkillForMobLevel(10) == 1);
     CHECK(SkinningSkillForMobLevel(15) == 50);
     CHECK(SkinningSkillForMobLevel(19) == 90);
     CHECK(SkinningSkillForMobLevel(20) == 100);
@@ -39,6 +39,22 @@ int main()
     CHECK(!DropChanceFarmable(0.9f, false));
     CHECK(!DropChanceFarmable(50.0f, true));
     CHECK(!DropChanceFarmable(0.0f, false));
+
+    CHECK(EqualShareChance(0) == 0.0f);
+    CHECK(EqualShareChance(4) == 25.0f);
+    CHECK(MemberChance(30.0f, 25.0f) == 30.0f);
+    CHECK(MemberChance(0.0f, 25.0f) == 25.0f);
+    CHECK(ReferenceGate(50.0f, 25.0f) == 0.5f);
+    CHECK(ReferenceGate(0.0f, 25.0f) == 0.25f);
+    CHECK(ReferenceGate(100.0f, 25.0f) == 1.0f);
+    CHECK(ReferenceGate(0.0f, 0.0f) == 0.0f);
+
+    CHECK(OrderVerdict(false, 0, false, false) == OrderReason::NoSource);
+    CHECK(OrderVerdict(true, 2, false, true) == OrderReason::LowLevel);
+    CHECK(OrderVerdict(false, 2, false, true) == OrderReason::NoSkill);
+    CHECK(OrderVerdict(false, 1, false, true) == OrderReason::LowSkill);
+    CHECK(OrderVerdict(false, 0, false, true) == OrderReason::NoRange);
+    CHECK(OrderVerdict(false, 0, true, true) == OrderReason::NoSource);
 
     if (failures == 0)
         std::printf("test_guild_order_sources_policy ok\n");

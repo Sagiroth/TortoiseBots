@@ -22,6 +22,7 @@
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/GuildOrderSources.h"
 #include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderSourcesPolicy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "playerbot/RandomBotFacade.h"
 #include "runtime/HireLifecycle.h"
@@ -393,7 +394,9 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     }
     else if (AI_VALUE2(std::string, "manual string", "future travel condition") == "should travel named::guild order")
     {
-        newTarget.SetForced(true);
+        // Order targets stay unforced on purpose: a forced target skips the
+        // despawn and outgrown checks, so the bot would stand at a mined
+        // node instead of rotating to the next target in its farm zone.
         newTarget.SetRelevance(std::max<uint32>(targetRelevance, 198u));
     }
     else
@@ -2180,6 +2183,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             using TortoiseBots::GuildOrders::OrderState;
             using TortoiseBots::GuildOrders::SetFarmZone;
             using TortoiseBots::GuildOrders::SetState;
+            using TortoiseBots::GuildOrders::SourceHerb;
+            using TortoiseBots::GuildOrders::SourceOre;
 
             std::optional<TortoiseBots::GuildOrders::OrderRecord> record = Find(bot->GetGUIDLow());
             if (!record || record->type != TortoiseBots::GuildOrders::OrderType::Farm ||
@@ -2189,11 +2194,32 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             if (record->itemId == 0)
                 return false;
 
+            auto planFor = [&](uint32_t itemId)
+            {
+                return PlanGuildOrderSources(bot, itemId, TortoiseBots::GuildOrders::OrderType::Farm);
+            };
+
+            // The planned zone only changes when it runs dry (the plan no
+            // longer lists it: no usable spawn left) or the bot outlevels it
+            // (zone level + 5 below the bot, the module's outgrown rule).
             uint32_t farmZoneId = record->farmZoneId;
+            if (farmZoneId != 0)
+            {
+                TortoiseBots::GuildOrders::SourcePlan plan = planFor(record->itemId);
+                bool listed = false;
+                for (TortoiseBots::GuildOrders::FarmZone const& zone : plan.zones)
+                    if (zone.zoneId == farmZoneId)
+                        listed = true;
+                int32_t zoneLevel = 0;
+                bool outgrown = listed && sTravelMgr.TryGetValidatedAreaLevel(farmZoneId, zoneLevel) &&
+                    ai::OutgrownZoneRefusesPoint(zoneLevel, bot->GetLevel(),
+                        sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster());
+                if (!listed || outgrown)
+                    farmZoneId = 0;
+            }
             if (farmZoneId == 0)
             {
-                TortoiseBots::GuildOrders::SourcePlan plan =
-                    PlanGuildOrderSources(bot, record->itemId, TortoiseBots::GuildOrders::OrderType::Farm);
+                TortoiseBots::GuildOrders::SourcePlan plan = planFor(record->itemId);
                 size_t pick = record->movedZone && plan.zones.size() > 1 ? 1 : 0;
                 if (plan.zones.size() <= pick)
                 {
@@ -2208,47 +2234,51 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(record->itemId))
                 orderTarget = proto->Name1;
 
+            // Only entries the planner accepts for this bot: same gates as
+            // the plan (level + 3, skill, chance >= 1 % via the index).
             uint32_t itemId = record->itemId;
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, itemId, farmZoneId, partitions = travelPartitions]()
+            uint32_t botLevel = bot->GetLevel();
+            Team botTeam = bot->GetTeam();
+            bool lowGatherLevel = botLevel < TortoiseBots::GuildOrders::kGatherTripMinLevel;
+            std::vector<int32_t> gatherEntries, mobEntries;
+            for (GuildOrderEntrySource const& source : GuildOrderSourcesFor(itemId))
+            {
+                if (source.skillId != SKILL_NONE)
+                {
+                    if (!bot->HasSkill(source.skillId) ||
+                        bot->GetSkillValue(source.skillId) < source.reqSkill)
+                        continue;
+                }
+                bool const herbOrOre = source.flag == SourceHerb || source.flag == SourceOre;
+                if (herbOrOre && lowGatherLevel)
+                    continue;
+                GuildOrderSpawnSummary summary = GuildOrderSpawnSummaryFor(source.entry);
+                if (summary.spawns == 0)
+                    continue;
+                if (botTeam == ALLIANCE && summary.hordeHome && !summary.allyHome)
+                    continue;
+                if (botTeam == HORDE && summary.allyHome && !summary.hordeHome)
+                    continue;
+                if (source.entry > 0)
+                {
+                    if (!TortoiseBots::GuildOrders::SourceLevelFits(source.level, botLevel))
+                        continue;
+                    mobEntries.push_back(source.entry);
+                }
+                else
+                {
+                    if (summary.areaLevel <= 0 ||
+                        !TortoiseBots::GuildOrders::SourceLevelFits(uint32_t(summary.areaLevel), botLevel))
+                        continue;
+                    gatherEntries.push_back(source.entry);
+                }
+            }
+            if (gatherEntries.empty() && mobEntries.empty())
+                return false;
+
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, farmZoneId, gatherEntries, mobEntries, partitions = travelPartitions]()
                 {
                     PartitionedTravelList list;
-
-                    std::list<int32> dropEntries = GAI_VALUE2(std::list<int32>, "item drop list", itemId);
-                    std::vector<int32> gatherEntries, mobEntries, skinEntries;
-                    for (int32 entry : dropEntries)
-                    {
-                        if (entry < 0)
-                            gatherEntries.push_back(entry);
-                        else
-                            mobEntries.push_back(entry);
-                    }
-
-                    // Skins have no destinations of their own: the bot kills the
-                    // mob and skins its own corpse, so skin entries join the
-                    // mob hunt. The drop map only reads corpse loot, so the
-                    // skinning table is walked per creature entry here.
-                    for (int32 entry : mobEntries)
-                    {
-                        LootTemplateAccess const* skin = DropMapValue::GetLootTemplate(
-                            ObjectGuid(HIGHGUID_UNIT, uint32_t(entry), uint32_t(1)), LOOT_SKINNING);
-                        if (!skin)
-                            continue;
-                        bool skinnable = false;
-                        for (LootStoreItem const& row : skin->Entries)
-                            if (row.itemid == itemId && !row.needs_quest)
-                                skinnable = true;
-                        for (LootLootGroupAccess const& group : skin->Groups)
-                        {
-                            for (LootStoreItem const& row : group.ExplicitlyChanced)
-                                if (row.itemid == itemId && !row.needs_quest)
-                                    skinnable = true;
-                            for (LootStoreItem const& row : group.EqualChanced)
-                                if (row.itemid == itemId && !row.needs_quest)
-                                    skinnable = true;
-                        }
-                        if (skinnable)
-                            skinEntries.push_back(entry);
-                    }
 
                     auto zonePinned = [farmZoneId](PartitionedTravelList& found)
                     {
@@ -2273,8 +2303,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                             list[partition].insert(list[partition].end(), points.begin(), points.end());
                     };
 
-                    // Order sources bypass the skill-up filters: a plan whose
-                    // verdict is usable already checked required skill, so
+                    // Order sources bypass the skill-up filters: the entries
+                    // above already passed the planner's skill gate, so
                     // onlyPossible=false keeps maxed-skill and grey nodes.
                     if (!gatherEntries.empty())
                     {
@@ -2287,14 +2317,10 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                         zonePinned(oreList);
                         append(std::move(oreList));
                     }
-                    if (!mobEntries.empty() || !skinEntries.empty())
+                    if (!mobEntries.empty())
                     {
-                        std::vector<int32> hunt = mobEntries;
-                        hunt.insert(hunt.end(), skinEntries.begin(), skinEntries.end());
-                        std::sort(hunt.begin(), hunt.end());
-                        hunt.erase(std::unique(hunt.begin(), hunt.end()), hunt.end());
                         PartitionedTravelList grindList = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                            (uint32_t)TravelDestinationPurpose::Grind, hunt, false);
+                            (uint32_t)TravelDestinationPurpose::Grind, mobEntries, false);
                         zonePinned(grindList);
                         append(std::move(grindList));
                     }
