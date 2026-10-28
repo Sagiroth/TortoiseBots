@@ -1066,6 +1066,33 @@ class RunHoldsItsDeadWiringTest(unittest.TestCase):
         self.assertLess(refused.index('order.compare(0, 7, "return ") == 0'),
                         refused.index('Pause(r, "cmd " + order + " refused: " + answer + MissingHint(r));'))
 
+    def test_a_bot_in_another_copy_is_rejoined(self):
+        # ta252 (Dire Maul West rf-B-4): a bot on the lead bot's map id in another instance id. Its revive/regroup
+        # summon lands in its own copy (a same-map teleport is a near one), so the summon is rerouted to a rejoin that
+        # moves its bind to the lead bot's copy and forces the map change (DungeonRun::InstanceRejoinTick).
+        code = strip_comments(COMMANDS)
+        issue = body(code, "bool IssueRunOrder(Player* commander, std::string const& text, std::string& answer,", "\n}\n")
+        self.assertIn('if (text.compare(0, 7, "rejoin ") == 0)\n        return RunInstanceRejoin(commander, text, answer);', issue)
+        self.assertIn('text.compare(0, 7, "summon ") == 0 && RunOrderBotInOtherCopy(commander, text.substr(7))', issue)
+        self.assertLess(issue.index("RunOrderBotInOtherCopy(commander, text.substr(7))"),
+                        issue.index("HandleCommanderOrder(handler.get(), text.c_str());"))
+        fn = body(code, "bool RunInstanceRejoin(Player* commander, std::string const& order, std::string& answer)\n{", "\n}\n")
+        for needed in ("TortoiseBots::DungeonRun::PlanRejoinBind(facts)", "TELE_TO_FORCE_MAP_CHANGE",
+                       "bot->GetBoundInstanceSaveForSelfOrGroup(mapId)", 'answer = "player: a real player is in the party";',
+                       'sLog.outBasic("[RUN] rejoin', "bot->UnbindInstance(mapId)", "group->BindToInstance(leadState, permanent)"):
+            self.assertIn(needed, fn)
+        self.assertLess(fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"), fn.index("[RUN] rejoin"))
+        self.assertLess(fn.index("[RUN] rejoin"), fn.index("bot->UnbindInstance(mapId)"))
+        self.assertLess(fn.index("bot->GetBoundInstanceSaveForSelfOrGroup(mapId)"), fn.index("bot->TeleportTo(mapId,"))
+        self.assertLess(fn.index("bot->CombatStop();"), fn.index("bot->TeleportTo(mapId,"))
+        facts = body(code, "void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,", "\n}\n")
+        self.assertIn("bool otherCopy = false;", (ROOT / "runtime/DungeonRunPolicy.h").read_text())
+        self.assertIn("member.otherCopy = bot->IsInWorld() && bot->GetMapId() == lead->GetMapId() &&\n"
+                      "            bot->GetInstanceId() != lead->GetInstanceId();", facts)
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        tick = body(policy, "inline std::string Tick(Run& r, const Facts& raw,", "\n}\n")
+        self.assertLess(tick.index("OffMapReturnTick(r, f, order);"), tick.index("InstanceRejoinTick(r, f, order);"))
+
 
 
 class WaitObjectGoneWiringTest(unittest.TestCase):

@@ -18510,6 +18510,158 @@ static void TestOutsideBotNotReturnableBusyWording()
     CHECK(Has(o.note, "Pozzle is outside the instance but cannot be returned (not in the open world): left alone"));
     CHECK(o.note.find("and busy") == std::string::npos);
 }
+// ta252 (Dire Maul West rf-B-4, 2026-10-25): a living bot on the plan's map id in another copy of the instance (the
+// glue gives it kOtherMapYd).
+static MemberFact OtherCopy(const char* name)
+{
+    MemberFact m = Mem(name, kOtherMapYd);
+    m.otherCopy = true;
+    return m;
+}
+static void TestOtherCopyBotIsNamedNotRunningBack()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    BeginRegroup(r);
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 2;
+    f.total = 2;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi")};
+    f.maxMemberYd = kOtherMapYd;
+    std::string const note = WaitNote(r, f);
+    CHECK(Has(note, "Aimboi (in another copy of the instance)"));
+    CHECK(!Has(note, "running back"));
+}
+static void TestOtherCopyBotIsRejoinedNotSummoned()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    BeginRegroup(r);
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 2;
+    f.total = 2;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi")};
+    f.maxMemberYd = kOtherMapYd;
+    std::string order;
+    bool rejoined = false;
+    for (int i = 0; i < 5 && !rejoined; ++i)
+    {
+        order = Tick(r, f);
+        CHECK(order != "summon Aimboi");
+        rejoined = order == "rejoin Aimboi";
+    }
+    CHECK(rejoined);
+    CHECK(Has(r.note, "(try 1 of 3 at this step)"));
+    CHECK(r.rejoinTries["Aimboi"] == 1);
+}
+static void TestRejoinRepeatAndPause()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 2;
+    f.total = 2;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi")};
+    f.maxMemberYd = kOtherMapYd;
+    std::string order;
+    CHECK(InstanceRejoinTick(r, f, order) && order == "rejoin Aimboi");
+    order.clear();
+    r.runMs += kRejoinRepeatMs - 1;
+    CHECK(!InstanceRejoinTick(r, f, order) && order.empty());
+    r.runMs += 1;
+    CHECK(InstanceRejoinTick(r, f, order) && order == "rejoin Aimboi");
+    order.clear();
+    r.runMs += kRejoinRepeatMs;
+    CHECK(InstanceRejoinTick(r, f, order) && order == "rejoin Aimboi");
+    CHECK(r.rejoinTries["Aimboi"] == kRejoinTries);
+    order.clear();
+    r.runMs += kRejoinRepeatMs;
+    CHECK(InstanceRejoinTick(r, f, order) && order.empty() && r.state == State::Paused);
+    CHECK(r.note.find("Aimboi is still in another copy of this instance after 3 moves") == 0);
+    CHECK(Resume(r) && r.rejoinTries.empty());
+}
+static void TestRejoinWithARealPlayerPauses()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 2;
+    f.total = 2;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi")};
+    f.maxMemberYd = kOtherMapYd;
+    PlayerFact player;
+    player.name = "Perzi";
+    f.players = {player};
+    std::string order;
+    CHECK(InstanceRejoinTick(r, f, order) && order.empty() && r.state == State::Paused);
+    CHECK(Has(r.note, "a real player is in the party"));
+}
+static void TestRejoinRefusalIsNoPause()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    OrderRefused(r, "rejoin Aimboi", "failed: x");
+    CHECK(r.state == State::Running);
+    CHECK(Has(r.note, "tried again in 15 s"));
+}
+static void TestOtherCopyFightIsNoPartyFight()
+{
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 2;
+    f.total = 2;
+    MemberFact aimboi = OtherCopy("Aimboi");
+    aimboi.inCombat = true;
+    f.members = {Mem("Nara", 0), aimboi};
+    f.anyInCombat = true;
+    f.leadInCombat = false;
+    Facts view;
+    CHECK(PlanMapFightView(f, view));
+    CHECK(!view.anyInCombat && !view.staleCombat);
+}
+static void TestPlanRejoinBind()
+{
+    // (a) solo, not permanent, another copy; the group has none: drop the solo bind and bind the group.
+    RejoinBindSteps s = PlanRejoinBind(RejoinBindFacts{true, false, false, false, false, false, true});
+    CHECK(s.dropSolo && s.bindGroup && !s.bindSolo && !s.locked);
+    // (b) no solo bind, the group's is another copy, not permanent: the group's is bound.
+    s = PlanRejoinBind(RejoinBindFacts{false, false, false, true, false, false, true});
+    CHECK(!s.dropSolo && s.bindGroup && !s.bindSolo && !s.locked);
+    // (c) the group is on the lead's copy, the solo bind on another, not permanent: only the solo bind goes.
+    s = PlanRejoinBind(RejoinBindFacts{true, false, false, true, false, true, true});
+    CHECK(s.dropSolo && !s.bindGroup && !s.bindSolo && !s.locked);
+    // (d) a permanent solo bind to another copy: locked.
+    s = PlanRejoinBind(RejoinBindFacts{true, true, false, false, false, false, true});
+    CHECK(s.locked);
+    // (e) a permanent group bind to another copy: locked.
+    s = PlanRejoinBind(RejoinBindFacts{false, false, false, true, true, false, true});
+    CHECK(s.locked);
+    // (f) no group: the solo bind to another copy goes and the lead's solo bind is made.
+    s = PlanRejoinBind(RejoinBindFacts{true, false, false, false, false, false, false});
+    CHECK(s.dropSolo && !s.bindGroup && s.bindSolo && !s.locked);
+    // (g) a permanent solo bind to the lead's copy: nothing to do.
+    s = PlanRejoinBind(RejoinBindFacts{true, true, true, false, false, false, false});
+    CHECK(!s.locked && !s.dropSolo && !s.bindGroup && !s.bindSolo);
+}
+static void TestOtherCopyNeverWithTheLeadDead()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 2;
+    f.total = 2;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi")};
+    f.maxMemberYd = kOtherMapYd;
+    f.leadAlive = false;
+    std::string order;
+    CHECK(!InstanceRejoinTick(r, f, order) && order.empty());
+}
+
 // Round 1 finding 3: the lead bot's own fact off the plan's map is never returned (the m.name == f.carrier skip).
 static void TestOutsideLeadBotIsNeverReturned()
 {
@@ -22288,6 +22440,14 @@ int main()
     TestOutsideBotNotReturnableNotedAgainOnNewStep();
     TestOutsideBotNotReturnableBusyWording();
     TestOutsideLeadBotIsNeverReturned();
+    TestOtherCopyBotIsNamedNotRunningBack();
+    TestOtherCopyBotIsRejoinedNotSummoned();
+    TestRejoinRepeatAndPause();
+    TestRejoinWithARealPlayerPauses();
+    TestRejoinRefusalIsNoPause();
+    TestOtherCopyFightIsNoPartyFight();
+    TestPlanRejoinBind();
+    TestOtherCopyNeverWithTheLeadDead();
     TestBossNotAtHisSpotIsSearchedForInTheInstance();
     TestPassedBossAtHisSpotPausesAtOnce();
     TestAliveSearchPauseSaysWhereTheLeadBotIs();

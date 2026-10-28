@@ -5927,6 +5927,28 @@ bool RunIslandEscape(Player* commander, std::string const& order, std::string& a
 bool RunBotWalk(Player* commander, std::string const& order, std::string& answer);
 bool RunStrandedTeleport(Player* commander, std::string const& order, std::string& answer);
 bool RunOffMapReturn(Player* commander, std::string const& order, std::string& answer);
+bool RunInstanceRejoin(Player* commander, std::string const& order, std::string& answer);
+
+// ta252: the named bot stands on the lead bot's map id in another copy of it (another instance id): a run summon of it
+// is a near teleport inside that copy and cannot bring it to the lead bot.
+static bool RunOrderBotInOtherCopy(Player* commander, std::string const& name)
+{
+    if (!commander)
+        return false;
+    RemoteCommander::Binding const* binding =
+        CommanderBindings().FindByCommander(commander->GetObjectGuid().GetRawValue());
+    Player* const lead = binding ? FindCharacter(binding->leadGuid) : nullptr;
+    if (!lead || !lead->IsInWorld())
+        return false;
+    Group* const group = lead->GetGroup();
+    if (!group)
+        return false;
+    for (Player* member : CommandedBots(group, lead))
+        if (member && member != lead && member->IsInWorld() && std::string(member->GetName()) == name)
+            return member->GetMapId() == lead->GetMapId() &&
+                member->GetInstanceId() != lead->GetInstanceId();
+    return false;
+}
 
 // Sends one order as the commander's own `.bot cmd <text>`. False with the
 // module's answer when it was refused (ERR). A pending task answers later.
@@ -5942,6 +5964,12 @@ bool IssueRunOrder(Player* commander, std::string const& text, std::string& answ
         return RunStrandedTeleport(commander, text, answer);
     if (text.compare(0, 7, "return ") == 0)
         return RunOffMapReturn(commander, text, answer);
+    if (text.compare(0, 7, "rejoin ") == 0)
+        return RunInstanceRejoin(commander, text, answer);
+    // ta252: the run's summon of a bot in another copy of the instance would land in that copy (a same-map
+    // teleport is a near one): it is a rejoin instead.
+    if (text.compare(0, 7, "summon ") == 0 && RunOrderBotInOtherCopy(commander, text.substr(7)))
+        return RunInstanceRejoin(commander, "rejoin " + text.substr(7), answer);
     uint64 const raw = commander ? commander->GetObjectGuid().GetRawValue() : 0;
     std::unique_ptr<ChatHandler> handler = IsSystemBinding(raw)
         ? std::unique_ptr<ChatHandler>(new ServerLogChatHandler(commander))
@@ -6714,6 +6742,143 @@ bool RunOffMapReturn(Player* commander, std::string const& order, std::string& a
     }
     TB_LOG_DETAIL("TortoiseBots: run leader: %s returned to the lead bot from outside the instance", bot->GetName());
     answer = "returned " + std::string(name) + " to " + lead->GetName();
+    return true;
+}
+
+// The rejoin of a party bot in another copy of the same instance (DungeonRun::InstanceRejoinTick, ta252; Dire Maul
+// West rf-B-4, 2026-10-25: after each corpse run the hunter came back in another instance id, the regroup listed him
+// "running back" at 1000 yd while he stood on the lead bot's coordinates, and every summon landed in his own copy):
+// "rejoin <name>". Its bind is moved to the lead bot's copy (DungeonRun::PlanRejoinBind: a permanent lockout to the
+// other copy refuses it), then a forced map change puts it there. A run summon of such a bot is rerouted here by
+// IssueRunOrder. Bot-only parties only (rechecked here, right before the send: any member of the group that is not a
+// bot refuses it). False with the refusal; the run tries again after its 15 s.
+bool RunInstanceRejoin(Player* commander, std::string const& order, std::string& answer)
+{
+    RemoteCommander::Binding const* binding =
+        CommanderBindings().FindByCommander(commander->GetObjectGuid().GetRawValue());
+    Player* lead = binding ? FindCharacter(binding->leadGuid) : nullptr;
+    char name[64] = {};
+    if (std::sscanf(order.c_str(), "rejoin %63s", name) != 1)
+    {
+        answer = "invalid: " + order;
+        return false;
+    }
+    if (!lead || !lead->IsInWorld() || !lead->IsAlive() || lead->IsTaxiFlying() || lead->IsBeingTeleported())
+    {
+        answer = "lead-unavailable: the lead bot is dead, on a taxi or teleporting";
+        return false;
+    }
+    if (!lead->GetMap() || !lead->GetMap()->IsDungeon())
+    {
+        answer = "lead-unavailable: the lead bot is not in an instance";
+        return false;
+    }
+    Group* const group = lead->GetGroup();
+    if (!group)
+    {
+        answer = "lead-unavailable: the lead bot has no group";
+        return false;
+    }
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        if (!BotManager::Instance().IsBot(slot.guid))
+        {
+            answer = "player: a real player is in the party";
+            return false;
+        }
+    Player* bot = nullptr;
+    for (Player* member : CommandedBots(group, lead))
+        if (member && member != lead && std::string(member->GetName()) == name)
+            bot = member;
+    if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsTaxiFlying() || bot->IsBeingTeleported() ||
+        PlayerConvenience::Instance().IsBusy(bot->GetObjectGuid()))
+    {
+        answer = "unavailable: that bot is gone, dead, busy, on a taxi or teleporting";
+        return false;
+    }
+    uint32 const mapId = lead->GetMapId();
+    if (bot->GetMapId() != mapId || bot->GetInstanceId() == lead->GetInstanceId())
+    {
+        answer = "invalid: that bot is in the lead bot's copy";
+        return false;
+    }
+    DungeonPersistentState* const leadState = static_cast<DungeonMap*>(lead->GetMap())->GetPersistanceState();
+    if (!leadState)
+    {
+        answer = "failed: the lead bot's instance has no save";
+        return false;
+    }
+    // The bind Player::GetBoundInstanceSaveForSelfOrGroup picks for the entry: its own first, else the group's.
+    InstancePlayerBind* const solo = bot->GetBoundInstance(mapId);
+    InstanceGroupBind* const groupBind = group->GetBoundInstance(mapId);
+    TortoiseBots::DungeonRun::RejoinBindFacts facts;
+    facts.soloBind = solo != nullptr;
+    facts.soloPerm = solo && solo->perm;
+    facts.soloIsLeads = solo && solo->state == leadState;
+    facts.groupBind = groupBind != nullptr;
+    facts.groupPerm = groupBind && groupBind->perm;
+    facts.groupIsLeads = groupBind && groupBind->state == leadState;
+    facts.inGroup = group != nullptr;
+    TortoiseBots::DungeonRun::RejoinBindSteps const steps = TortoiseBots::DungeonRun::PlanRejoinBind(facts);
+    if (steps.locked)
+    {
+        answer = "locked: a saved lockout ties it to another copy";
+        return false;
+    }
+    // The next occurrence names the cause: the bot's own bind and its group's, with the permanence, and the steps.
+    std::string taken;
+    auto addStep = [&taken](char const* step)
+    {
+        taken += (taken.empty() ? "" : ", ") + std::string(step);
+    };
+    if (steps.dropSolo)
+        addStep("drop solo");
+    if (steps.bindGroup)
+        addStep("bind group");
+    if (steps.bindSolo)
+        addStep("bind solo");
+    if (taken.empty())
+        taken = "no bind change";
+    sLog.outBasic("[RUN] rejoin %s: bot instance %u lead instance %u solo %u%s group %u%s -> %s", bot->GetName(),
+        bot->GetInstanceId(), lead->GetInstanceId(), solo && solo->state ? solo->state->GetInstanceId() : 0u,
+        solo && solo->perm ? " (permanent)" : "", groupBind && groupBind->state ? groupBind->state->GetInstanceId() : 0u,
+        groupBind && groupBind->perm ? " (permanent)" : "", taken.c_str());
+    if (steps.dropSolo)
+        bot->UnbindInstance(mapId);
+    bool const permanent = !leadState->CanReset();
+    if (steps.bindGroup)
+        group->BindToInstance(leadState, permanent);
+    if (steps.bindSolo)
+        bot->BindToInstance(leadState, permanent);
+    if (bot->GetBoundInstanceSaveForSelfOrGroup(mapId) != leadState)
+    {
+        answer = "failed: the bind still points at another copy";
+        return false;
+    }
+    // Out of combat and still first, as RunOffMapReturn: the forced map change then puts it in the lead bot's copy.
+    Pet* const pet = bot->GetPet();
+    if (pet && pet->IsAlive() && pet->IsInWorld())
+    {
+        sServerFacade.GetHostileRefManager(pet).deleteReferences();
+        pet->CombatStop();
+    }
+    sServerFacade.GetHostileRefManager(bot).deleteReferences();
+    bot->CombatStop();
+    bot->GetMotionMaster()->Clear(false);
+    bot->StopMoving();
+    if (!bot->TeleportTo(mapId, lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ(),
+            lead->GetOrientation(), TELE_TO_FORCE_MAP_CHANGE))
+    {
+        answer = "failed: the teleport was refused";
+        return false;
+    }
+    if (bot->GetSession() && bot->GetSession()->IsHeadless())
+    {
+        if (bot->IsBeingTeleportedNear())
+            bot->ExecuteTeleportNear();
+        else if (bot->IsBeingTeleportedFar())
+            bot->GetSession()->HandleMoveWorldportAckOpcode();
+    }
+    answer = "rejoined " + std::string(name) + " to " + lead->GetName();
     return true;
 }
 
@@ -8022,6 +8187,10 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         member.name = bot->GetName();
         member.yd = yd;
         member.offPlanMap = bot->GetMapId() != slot.run.plan->map; // outside the instance (DungeonRun::PlanMapFightView)
+        // ta252: same map id, another instance id than the lead bot's (another copy of the instance): a summon cannot
+        // reach it there (DungeonRun::MemberFact::otherCopy, InstanceRejoinTick).
+        member.otherCopy = bot->IsInWorld() && bot->GetMapId() == lead->GetMapId() &&
+            bot->GetInstanceId() != lead->GetInstanceId();
         // Round 1 (2026-10-24): a return teleport can reach the bot only in the open world: not in a battleground,
         // its map no instance/dungeon/battleground (Map::Instanceable on the core's map entry), not on a transport,
         // taxi-flying, teleporting, summoned or loading (DungeonRun::MemberFact::offMapReturnable).
