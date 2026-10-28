@@ -9,6 +9,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -62,6 +63,17 @@ static FightContext BossCtx()
     return c;
 }
 
+// One take per payload: the seq callback runs only when a payload goes out.
+struct Seq
+{
+    uint64_t next = 1;
+    uint64_t calls = 0;
+    std::function<uint64_t()> fn()
+    {
+        return [this]() { ++calls; return next++; };
+    }
+};
+
 static void TestNonMemberIgnored()
 {
     Book b;
@@ -73,8 +85,9 @@ static void TestNonMemberIgnored()
     b.SampleDebuffs({"sunder"});
     b.SetInCombat(false, false, 2000);
     CHECK(!b.InFight());
-    uint64_t seq = 1;
-    CHECK(b.TakeFightPayloads(1, 9, seq, 1700000000, "Cmdr", 123, 55, 409).empty());
+    Seq seq;
+    CHECK(b.TakeFightPayloads(1, 9, seq.fn(), 1700000000, "Cmdr", 123, 55, 409).empty());
+    CHECK(seq.calls == 0);
     CHECK(!b.IsMember(99));
     CHECK(b.IsMember(1) && b.IsMember(2) && b.IsMember(3));
 }
@@ -83,7 +96,7 @@ static void TestFightLifecycle()
 {
     Book b;
     b.SetMembers(Trio());
-    b.Start(0, 1700000000, BossCtx());
+    b.Start(0, 1700000000, BossCtx(), 1);
     CHECK(b.InFight());
     for (int i = 0; i < 4; ++i)
         b.OnCast(1, "Sunder Armor", false, (uint32_t)(1000 + i));
@@ -105,10 +118,12 @@ static void TestFightLifecycle()
     b.SetInCombat(false, false, 23000);
     CHECK(!b.InFight());
 
-    uint64_t seq = 100;
-    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq, 1700023000, "Cmdr", 123, 55, 409);
+    Seq seq;
+    seq.next = 100;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700023000, "Cmdr", 123, 55, 409);
     CHECK(p.size() == 1);
-    CHECK(seq == 101);
+    CHECK(seq.next == 101);
+    CHECK(seq.calls == 1);
     CHECK(Contains(p[0], "\"id\":\"55-1\""));
     CHECK(Contains(p[0], "\"outcome\":\"kill\""));
     CHECK(Contains(p[0], "\"dur_ms\":20000"));
@@ -124,35 +139,38 @@ static void TestFightLifecycle()
     CHECK(Contains(p[0], "\"role\":\"healer\""));
     CHECK(Contains(p[0], "\"role\":\"dps\""));
 
-    std::vector<std::string> again = b.TakeFightPayloads(1, 9, seq, 1700023000, "Cmdr", 123, 55, 409);
+    std::vector<std::string> again = b.TakeFightPayloads(1, 9, seq.fn(), 1700023000, "Cmdr", 123, 55, 409);
     CHECK(again.size() == 1);
     CHECK(Contains(again[0], "\"id\":\"55-1\""));
-    CHECK(seq == 102);
-    CHECK(b.TakeFightPayloads(1, 9, seq, 1700023000, "Cmdr", 123, 55, 409).empty());
-    CHECK(seq == 102);
+    CHECK(seq.next == 102);
+    CHECK(seq.calls == 2);
+    CHECK(b.TakeFightPayloads(1, 9, seq.fn(), 1700023000, "Cmdr", 123, 55, 409).empty());
+    CHECK(seq.next == 102);
+    CHECK(seq.calls == 2);
 }
 
 static void TestShortFightDropped()
 {
     Book b;
     b.SetMembers(Trio());
-    b.Start(0, 1700000000, BossCtx());
+    b.Start(0, 1700000000, BossCtx(), 1);
     b.OnDamage(3, 0, 500, "Magey", 11502, 777, "Magmadar", 500);
     b.SetInCombat(true, false, 1000);
     b.SetInCombat(false, false, 4000);
     CHECK(b.InFight());
     b.SetInCombat(false, false, 7000);
     CHECK(!b.InFight());
-    uint64_t seq = 1;
-    CHECK(b.TakeFightPayloads(1, 9, seq, 1700007000, "Cmdr", 123, 55, 409).empty());
-    CHECK(seq == 1);
+    Seq seq;
+    CHECK(b.TakeFightPayloads(1, 9, seq.fn(), 1700007000, "Cmdr", 123, 55, 409).empty());
+    CHECK(seq.next == 1);
+    CHECK(seq.calls == 0);
 }
 
 static void TestWipe()
 {
     Book b;
     b.SetMembers(Trio());
-    b.Start(0, 1700000000, BossCtx());
+    b.Start(0, 1700000000, BossCtx(), 1);
     for (int i = 0; i < 7; ++i)
         b.OnDamage(0, 1, (uint32_t)(10 * (i + 1)), "Magmadar", 11502, 777, "Magmadar", (uint32_t)(1000 + i));
     b.OnDamage(0, 2, 500, "Magmadar", 11502, 777, "Magmadar", 2000);
@@ -164,8 +182,8 @@ static void TestWipe()
     CHECK(!b.InFight());
     b.SetInCombat(false, true, 9000);
 
-    uint64_t seq = 1;
-    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq, 1700009000, "Cmdr", 123, 55, 409);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
     CHECK(p.size() == 1);
     CHECK(Contains(p[0], "\"outcome\":\"wipe\""));
     CHECK(Count(p[0], "\"killer\":\"Magmadar\"") == 3);
@@ -196,7 +214,7 @@ static void TestDebuffUptime()
 
     Book b;
     b.SetMembers(Trio());
-    b.Start(0, 1700000000, BossCtx());
+    b.Start(0, 1700000000, BossCtx(), 1);
     for (int i = 0; i < 6; ++i)
         b.SampleDebuffs({"sunder", "sunder5", "faerie_fire"});
     for (int i = 0; i < 4; ++i)
@@ -204,8 +222,8 @@ static void TestDebuffUptime()
     b.SetInCombat(true, false, 1000);
     b.SetInCombat(false, false, 6000);
     b.SetInCombat(false, false, 9000);
-    uint64_t seq = 1;
-    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq, 1700009000, "Cmdr", 123, 55, 409);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
     CHECK(p.size() == 1);
     CHECK(Contains(p[0], "\"sampled_s\":10"));
     CHECK(Contains(p[0], "\"sunder\":6"));
@@ -217,7 +235,7 @@ static void TestWindow()
 {
     Book b;
     b.SetMembers(Trio());
-    b.Start(0, 1700000000, BossCtx());
+    b.Start(0, 1700000000, BossCtx(), 1);
     b.OnDamage(3, 0, 9000, "Magey", 11502, 777, "Magmadar", 1000);
     b.OnDamage(3, 0, 3000, "Magey", 11502, 777, "Magmadar", 15000);
     std::string w = b.WindowJson(20000);
@@ -230,6 +248,46 @@ static void TestWindow()
     CHECK(b.WindowJson(24000).empty());
 }
 
+static void TestWindowPrune()
+{
+    // Per-event window vectors drop entries older than the window, on append and on read.
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, BossCtx(), 1);
+    for (int i = 0; i < 10; ++i)
+    {
+        b.OnCast(3, "Fireball", false, (uint32_t)(1000 + i));
+        b.OnDamage(3, 0, 100, "Magey", 11502, 777, "Magmadar", (uint32_t)(1000 + i));
+        b.OnHeal(2, 100, 0, (uint32_t)(1000 + i));
+    }
+    std::string w = b.WindowJson(30000);
+    // Every event is older than the 10 s window: none counts, and the read pruned the vectors.
+    CHECK(!Contains(w, "\"g\":"));
+    b.OnCast(3, "Fireball", false, 30000);
+    b.OnDamage(3, 0, 100, "Magey", 11502, 778, "Add", 30000);
+    b.OnHeal(2, 100, 0, 30000);
+    w = b.WindowJson(30000);
+    CHECK(Contains(w, "\"c\":1"));
+    // Deaths cap at 200 per fight and engaged creatures at 500 (counted past the cap as dropped).
+    Book c;
+    c.SetMembers(Trio());
+    c.Start(0, 1700000000, BossCtx(), 2);
+    for (int i = 0; i < 250; ++i)
+        c.OnDeath(1, "Mob", 0.0f, 0.0f, 0.0f, (uint32_t)(1000 + i));
+    for (uint32_t e = 0; e < 600; ++e)
+        c.OnDamage(3, 0, 1, "Magey", 20000 + e, (uint64_t)(1000 + e), "Mob", 2000);
+    c.SetInCombat(true, false, 1000);
+    c.SetInCombat(false, false, 6000);
+    c.SetInCombat(false, false, 9000);
+    Seq seq;
+    std::vector<std::string> p = c.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Count(p[0], "\"t_ms\":") == 200);
+    CHECK(Contains(p[0], "\"dropped\":100"));
+
+}
+
+
 static void TestBudget()
 {
     Book b;
@@ -240,7 +298,7 @@ static void TestBudget()
     m[0].cls = "warrior";
     m[0].name = "Tanky";
     b.SetMembers(m);
-    b.Start(0, 1700000000, BossCtx());
+    b.Start(0, 1700000000, BossCtx(), 1);
     for (int i = 0; i < 40; ++i)
         for (int j = 0; j < 20; ++j)
             b.OnCast((uint32_t)(i + 1), "Spell" + std::to_string(i) + "_" + std::to_string(j), false, 1500);
@@ -248,18 +306,47 @@ static void TestBudget()
     b.SetInCombat(true, false, 1000);
     b.SetInCombat(false, false, 6000);
     b.SetInCombat(false, false, 9000);
-    uint64_t seq = 1;
-    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq, 1700009000, "Cmdr", 123, 55, 409);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
     CHECK(p.size() == 1);
     CHECK(p[0].size() < kPayloadByteBudget);
     CHECK(Contains(p[0], "{\"n\":\"Sunder Armor\",\"c\":1}"));
     CHECK(Count(p[0], "\"name\":\"Bot") == 39);
 }
 
+static void TestTruncatedPayload()
+{
+    // A 40-bot fight with 200 deaths and 500 engaged: every payload fits the budget.
+    Book b;
+    std::vector<MemberInfo> m;
+    for (int i = 0; i < 40; ++i)
+        m.push_back({(uint32_t)(i + 1), std::string(200, static_cast<char>('A' + (i % 26))), "mage",
+            Role::Damage, i / 5});
+    b.SetMembers(m);
+    b.Start(0, 1700000000, BossCtx(), 7);
+    for (int i = 0; i < 40; ++i)
+        for (int j = 0; j < 50; ++j)
+            b.OnCast((uint32_t)(i + 1), "Spell" + std::to_string(i) + "_" + std::to_string(j) + std::string(60, 'x'),
+                false, 1500);
+    for (int i = 0; i < 200; ++i)
+        b.OnDeath(1, std::string(80, 'k'), 1.0f, 2.0f, 3.0f, (uint32_t)(1500 + i));
+    for (uint32_t e = 0; e < 500; ++e)
+        b.OnDamage(3, 0, 1, "Magey", 30000 + e, (uint64_t)(5000 + e), std::string(80, 'e'), 1600);
+    b.SetInCombat(true, false, 1000);
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    for (std::string const& js : p)
+        CHECK(js.size() <= kPayloadByteBudget);
+    CHECK(Contains(p[0], "\"id\":\"55-7\""));
+}
+
 static void TestMonitorOffIsInert()
 {
     Book b;
-    b.Start(0, 1700000000, BossCtx());
+    b.Start(0, 1700000000, BossCtx(), 1);
     b.OnCast(1, "Fireball", false, 1000);
     b.OnDamage(1, 2, 500, "A", 11502, 777, "Mob", 1000);
     b.OnHeal(1, 500, 0, 1000);
@@ -269,8 +356,9 @@ static void TestMonitorOffIsInert()
     b.NoteBossDied(11502);
     CHECK(!b.InFight());
     CHECK(b.WindowJson(2000).empty());
-    uint64_t seq = 1;
-    CHECK(b.TakeFightPayloads(1, 9, seq, 1700002000, "Cmdr", 123, 55, 409).empty());
+    Seq seq;
+    CHECK(b.TakeFightPayloads(1, 9, seq.fn(), 1700002000, "Cmdr", 123, 55, 409).empty());
+    CHECK(seq.calls == 0);
     CHECK(std::string(OutcomeName(Outcome::Kill)) == "kill");
     CHECK(std::string(OutcomeName(Outcome::Wipe)) == "wipe");
     CHECK(std::string(OutcomeName(Outcome::End)) == "end");
@@ -284,7 +372,9 @@ int main()
     TestWipe();
     TestDebuffUptime();
     TestWindow();
+    TestWindowPrune();
     TestBudget();
+    TestTruncatedPayload();
     TestMonitorOffIsInert();
     std::printf("combat monitor policy: %d checks passed\n", checks);
     return 0;

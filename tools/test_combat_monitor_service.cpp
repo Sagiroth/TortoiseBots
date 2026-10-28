@@ -1,0 +1,220 @@
+// A8b round 2: the combat monitor service's enable flag, fight starts, fight
+// ids and killer-group boss kills, against the real service TU with the stub
+// config:
+//
+//   g++ -std=c++17 -Wall -Wextra -DCOMBAT_MONITOR_TEST_CONFIG -I. -Itools/tsan_stubs \
+//       tools/test_combat_monitor_service.cpp runtime/CombatMonitorService.cpp \
+//       -o /tmp/combat_svc && /tmp/combat_svc
+#include <cassert>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+struct PlayerbotAIConfig { bool combatMonitor = false; };
+#define COMBAT_MONITOR_TEST_CONFIG 1
+#include "../runtime/CombatMonitorService.h"
+#undef COMBAT_MONITOR_TEST_CONFIG
+PlayerbotAIConfig sPlayerbotAIConfig;
+
+using TortoiseBots::CombatMonitorService;
+using TortoiseBots::CombatMonitor::MemberInfo;
+using TortoiseBots::CombatMonitor::Role;
+using TortoiseBots::CombatMonitor::FightContext;
+
+static int checks = 0;
+#define CHECK(cond) do { \
+    ++checks; \
+    if (!(cond)) { \
+        std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
+        std::exit(1); \
+    } \
+} while (0)
+
+static std::vector<MemberInfo> Members()
+{
+    return {MemberInfo{7, "Tanky", "warrior", Role::Tank, -1}, MemberInfo{9, "Healy", "priest", Role::Healer, -1}};
+}
+
+static FightContext Ctx(uint32_t boss = 11502)
+{
+    FightContext ctx;
+    ctx.plan = "molten_core";
+    ctx.leg = "l1";
+    ctx.kind = "boss";
+    ctx.step = 3;
+    ctx.bossEntry = boss;
+    ctx.bossName = "Magmadar";
+    ctx.planned = {boss};
+    return ctx;
+}
+
+static uint64_t g_seq = 1;
+static uint64_t NextSeq()
+{
+    return g_seq++;
+}
+
+static std::string TakeOne(CombatMonitorService& svc, uint32_t group, int64_t ts)
+{
+    std::vector<std::string> out;
+    svc.TakePayloads(out, 12, 77, NextSeq, ts);
+    for (std::string const& p : out)
+        if (p.find("\"group\":" + std::to_string(group)) != std::string::npos)
+            return p;
+    return "";
+}
+
+static std::string FightId(std::string const& payload)
+{
+    std::string const tag = "\"id\":\"";
+    std::string::size_type pos = payload.find(tag);
+    if (pos == std::string::npos)
+        return "";
+    pos += tag.size();
+    return payload.substr(pos, payload.find('"', pos) - pos);
+}
+
+static void TestSyncConfigUngated()
+{
+    // SyncConfig stores the flag even though nobody enabled the monitor: the
+    // flag no longer lives inside Refresh()/Forget().
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = false;
+    svc.SyncConfig(false);
+    CHECK(!svc.Enabled());
+    svc.Refresh(55, Members(), true, false, Ctx(), {}, 1000);
+    CHECK(!svc.Enabled());
+    CHECK(svc.WindowJson(55).empty());
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    CHECK(svc.Enabled());
+    svc.Refresh(55, Members(), true, false, Ctx(), {}, 1000);
+    CHECK(!svc.WindowJson(55).empty());
+    // Turning off drops the books and the member set: hooks stop locking.
+    uint64_t const locks = CombatMonitorService::TestHookLockCount();
+    svc.SyncConfig(false);
+    CHECK(!svc.Enabled());
+    CHECK(svc.WindowJson(55).empty());
+    svc.OnCast(7, "Fireball", false);
+    svc.OnDamage(7, 0, 10, "Tanky", 11502, 777, "Magmadar");
+    CHECK(CombatMonitorService::TestHookLockCount() == locks);
+    svc.SyncConfig(true);
+    svc.Forget(55);
+}
+
+static void TestFightStartNeedsCombat()
+{
+    // No fight out of combat; an enter-combat fight carries the cached context.
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(56, Members(), false, false, Ctx(11502), {}, 1000);
+    CHECK(svc.WindowJson(56).empty());
+    svc.OnEnterCombat(7);
+    std::string const window = svc.WindowJson(56);
+    CHECK(!window.empty());
+    CHECK(!svc.WindowJson(57).empty() == false);
+    svc.Refresh(56, Members(), true, false, Ctx(11502), {}, 2000);
+    svc.Refresh(56, Members(), false, false, Ctx(11502), {}, 9000);
+    svc.Refresh(56, Members(), false, false, Ctx(11502), {}, 13000);
+    std::string const fight = TakeOne(svc, 56, 1700013000);
+    CHECK(!fight.empty());
+    CHECK(fight.find("\"boss\":11502") != std::string::npos);
+    svc.Forget(56);
+}
+
+static void TestFightIdsSurviveForget()
+{
+    // The per-group fight counter survives Forget(): ids never repeat in a session.
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(58, Members(), true, false, Ctx(), {}, 1000);
+    svc.Refresh(58, Members(), false, false, Ctx(), {}, 8000);
+    svc.Refresh(58, Members(), false, false, Ctx(), {}, 12000);
+    std::string const first = TakeOne(svc, 58, 1700012000);
+    CHECK(!first.empty());
+    svc.Forget(58);
+    svc.Refresh(58, Members(), true, false, Ctx(), {}, 13000);
+    svc.Refresh(58, Members(), false, false, Ctx(), {}, 20000);
+    svc.Refresh(58, Members(), false, false, Ctx(), {}, 24000);
+    std::string const second = TakeOne(svc, 58, 1700024000);
+    CHECK(!second.empty());
+    CHECK(FightId(first) != FightId(second));
+    CHECK(FightId(first) == "58-1");
+    CHECK(FightId(second) == "58-2");
+    svc.Forget(58);
+}
+
+static void TestHooksSkipWithoutMembers()
+{
+    // Hooks with no members never take the mutex (the lock counter stands still).
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    uint64_t const locks = CombatMonitorService::TestHookLockCount();
+    svc.OnCast(4242, "Fireball", false);
+    svc.OnDamage(4242, 0, 10, "Nobody", 11502, 777, "Magmadar");
+    svc.OnDamage(0, 4242, 10, "Magmadar", 11502, 777, "Magmadar");
+    svc.OnHeal(4242, 10, 0);
+    svc.OnEnterCombat(4242);
+    svc.OnDeath(4242, 0, "Magmadar", 0.0f, 0.0f, 0.0f, 0);
+    svc.OnDeath(0, 4242, "", 0.0f, 0.0f, 0.0f, 11502);
+    CHECK(CombatMonitorService::TestHookLockCount() == locks);
+}
+
+static void TestBossKillNeedsKillerGroup()
+{
+    // A creature death notes the boss kill only in the killer's group's book.
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    std::vector<MemberInfo> other = {MemberInfo{21, "Other", "mage", Role::Damage, -1}};
+    svc.Refresh(61, Members(), true, false, Ctx(11502), {}, 1000);
+    svc.Refresh(62, other, true, false, Ctx(11502), {}, 1000);
+    // A stranger's kill: no book notes it; both fights end without the kill.
+    svc.OnDeath(0, 999, "", 0.0f, 0.0f, 0.0f, 11502);
+    svc.Refresh(61, Members(), false, false, Ctx(11502), {}, 6000);
+    svc.Refresh(62, other, false, false, Ctx(11502), {}, 6000);
+    svc.Refresh(61, Members(), false, false, Ctx(11502), {}, 10000);
+    svc.Refresh(62, other, false, false, Ctx(11502), {}, 10000);
+    std::string const plain61 = TakeOne(svc, 61, 1700010000);
+    std::string const plain62 = TakeOne(svc, 62, 1700010000);
+    CHECK(!plain61.empty() && !plain62.empty());
+    CHECK(plain61.find("\"outcome\":\"end\"") != std::string::npos);
+    CHECK(plain62.find("\"outcome\":\"end\"") != std::string::npos);
+    // The killer's group only.
+    svc.Refresh(61, Members(), true, false, Ctx(11502), {}, 10000);
+    svc.Refresh(62, other, true, false, Ctx(11502), {}, 10000);
+    svc.OnDeath(0, 7, "", 0.0f, 0.0f, 0.0f, 11502);
+    svc.Refresh(61, Members(), false, false, Ctx(11502), {}, 16000);
+    svc.Refresh(62, other, false, false, Ctx(11502), {}, 16000);
+    svc.Refresh(61, Members(), false, false, Ctx(11502), {}, 20000);
+    svc.Refresh(62, other, false, false, Ctx(11502), {}, 20000);
+    std::string const kill61 = TakeOne(svc, 61, 1700020000);
+    std::string const kill62 = TakeOne(svc, 62, 1700020000);
+    CHECK(!kill61.empty() && !kill62.empty());
+    CHECK(kill61.find("\"outcome\":\"kill\"") != std::string::npos);
+    CHECK(kill62.find("\"outcome\":\"end\"") != std::string::npos);
+    // No killer known: nothing notes it.
+    svc.Refresh(61, Members(), true, false, Ctx(11502), {}, 21000);
+    svc.OnDeath(0, 0, "", 0.0f, 0.0f, 0.0f, 11502);
+    svc.Refresh(61, Members(), false, false, Ctx(11502), {}, 28000);
+    svc.Refresh(61, Members(), false, false, Ctx(11502), {}, 32000);
+    std::string const nokiller = TakeOne(svc, 61, 1700032000);
+    CHECK(!nokiller.empty());
+    CHECK(nokiller.find("\"outcome\":\"end\"") != std::string::npos);
+    svc.Forget(61);
+    svc.Forget(62);
+}
+
+int main()
+{
+    TestSyncConfigUngated();
+    TestFightStartNeedsCombat();
+    TestFightIdsSurviveForget();
+    TestHooksSkipWithoutMembers();
+    TestBossKillNeedsKillerGroup();
+    std::printf("combat monitor service: %d checks passed\n", checks);
+    return 0;
+}
