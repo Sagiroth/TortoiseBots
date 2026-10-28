@@ -73,7 +73,7 @@ assert.strictEqual(one("overheal").lvl, "ok");
 assert.strictEqual(one("overheal").ev, "103,742 effective, 32,478 overheal across 10 healers.");
 
 assert.strictEqual(one("idle").title, "Every bot acted");
-assert.strictEqual(one("idle").num, 0);
+assert.strictEqual(one("idle").num, ""); // no number to show when nobody idled
 assert.strictEqual(one("idle").lvl, "ok");
 assert.strictEqual(one("idle").ev, "All 39 bots cast, hit or healed.");
 
@@ -129,6 +129,7 @@ assert.strictEqual(recaps[0].total, 6422);
 assert.strictEqual(recaps[0].spanMs, 5016);
 assert.strictEqual(recaps[0].hits.length, 5);
 assert.strictEqual(recaps[0].name, "Irelanthe");
+assert.strictEqual(recaps[0].guid, 814); // the fight's bots carry the guid its profile opens
 assert.strictEqual(recaps[0].killer, "Onyxian Warder");
 assert.strictEqual(recaps[0].x, -163);
 assert.strictEqual(recaps[1].hits.length, 1);
@@ -158,6 +159,9 @@ assert.strictEqual(rt.tanks[0].taunts, 1);
 assert.strictEqual(rt.tanks[2].died, 2);
 assert.strictEqual(rt.tanks[2].taken, 10879);
 assert.strictEqual(rt.tanks[0].cls, "warrior");
+assert.strictEqual(rt.tanks[0].guid, 813);
+assert.strictEqual(rt.healers[0].guid, 820);
+assert.strictEqual(rt.dps[0].guid, 828);
 assert.strictEqual(rt.healers.length, 10);
 assert.strictEqual(rt.healers[0].name, "Magnarr");
 assert.ok(Math.abs(rt.healers[0].hps - 25134 / (39111 / 1000)) < 1e-9);
@@ -202,7 +206,10 @@ const dmap = { k5: detail("5-5"), k4: detail("5-4"), k3: detail("5-3") };
 const cards = F.railCards(list, dmap, LAYOUT);
 assert.deepStrictEqual(cards.map((c) => c.key), ["k5", "k4", "k3"]);
 assert.deepStrictEqual(cards.map((c) => c.verdict), ["warn", "fail", "warn"]);
-assert.strictEqual(cards[0].label, "Onyxian Warder");
+assert.strictEqual(cards[0].label, "Pack 3");
+assert.strictEqual(cards[0].mob, "Onyxian Warder");
+assert.strictEqual(cards[1].label, "Pack 2");
+assert.strictEqual(cards[2].label, "Pack 1");
 assert.strictEqual(cards[1].durMs, 39111);
 assert.strictEqual(cards[1].deaths, 2);
 assert.strictEqual(cards[1].step, 22);
@@ -210,7 +217,8 @@ assert.strictEqual(cards[0].lenPct, (35123 / 52477) * 100);
 assert.strictEqual(cards[2].lenPct, 100);
 const unloaded = F.railCards([list[0]], {}, LAYOUT);
 assert.strictEqual(unloaded[0].verdict, null);
-assert.strictEqual(unloaded[0].label, "trash");
+assert.strictEqual(unloaded[0].label, "Pack 1");
+assert.strictEqual(unloaded[0].mob, "trash");
 assert.strictEqual(unloaded[0].lenPct, 100);
 assert.deepStrictEqual(F.railCards(null, {}, LAYOUT), []);
 
@@ -277,6 +285,7 @@ const busy = {
   combat: { win_s: 10, fight_ms: 23000, bots: [{ g: 1, dps: 10, hps: 0, c: 2, ls: "x" }] },
 };
 assert.strictEqual(F.liveChecks(busy).find((c) => c.id === "live_idle").lvl, "ok");
+assert.strictEqual(F.liveChecks(busy).find((c) => c.id === "live_idle").num, "");
 const deadTank = {
   bots: [{ name: "MT", guid: 1, role: "tank", alive: false }, { name: "B", guid: 2, role: "healer", alive: true }],
   layout: { mt: "MT", ot: [] },
@@ -368,7 +377,7 @@ const markupFight = fight({
 const markupCheck = F.checks(markupFight, { mt: "<b>x</b>", ot: [] }, []).find((c) => c.id === "tank_death");
 assert.strictEqual(markupCheck.title, "Tank died: <b>x</b>");
 assert.strictEqual(markupCheck.ev, "<b>x</b> at 1.0 s to <i>k</i>");
-assert.strictEqual(F.railCards([{ key: "k", dur: 1, deaths: 0, step: 1, boss_name: "<img src=x>" }], {}, null)[0].label,
+assert.strictEqual(F.railCards([{ key: "k", dur: 1, deaths: 0, step: 1, boss_name: "<img src=x>" }], {}, null)[0].mob,
   "<img src=x>");
 
 console.log("fightdebug_check: ok");

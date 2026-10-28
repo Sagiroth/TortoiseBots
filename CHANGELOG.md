@@ -76,6 +76,7 @@
 
 ### Dashboard
 - The dashboard now reads a dungeon or raid plan straight from the world database — its legs, steps, stands and each pull's pack mobs — so the raid map can show where the run leader means to go and which enemies belong to which pack.
+- The Fight debugger numbers the group's fights Pack 1, 2, 3 from the oldest up and names the mob on each card, a bot's name in the checks, the role tables, a death recap or the member panel opens that character's gear and talents, a fight that ends while watched live falls back to the finish that went worst, and one broken fight no longer holds back the others or the rest of the page.
 - The dashboard's raid card now names the raid's layout in one row: the main tank, the off-tanks, which healer follows which tank, and the raid healers. The run line also names the current step in its own words, from the plan.
 - Every Commanders card can switch to a Fight debugger: finished fights in a rail with the worst one opened first, plain-language checks (tank deaths, the main tank's Sunder rate, missed debuffs, overheal, idle bots, off-tank taunts, server rule warnings), a damage timeline with death recaps and skulls on the map, raid frames and per-role tables, plus a live view while the group is fighting.
 - That switch is remembered per commander: Live stays as it was, the debugger opens on the fight that went worst and draws its deaths as skulls on the same map (one click frames a death), and picking a member rings them on the map and opens what they cast.
@@ -86,10 +87,7 @@
 - The Fight debugger now shows, for each enemy in a finished fight, who it targeted over time (sampled every 2 s); the stretches where it was on a healer or a damage dealer are marked red.
 - The new raid map and fight replay read at a glance: a dashed plan route with its stands, packs and aggro rings, layer presets as chips in the existing Layers panel, subgroup colours and healer-to-tank lines on the raid, and a scrub bar with one coloured lane per enemy under the timeline.
 - On a raid's map the bot trails can be cut to the last 30 seconds, the healer → tank links come from the raid's saved layout instead of subgroups, and a mob's line to a party member who is not a tank is drawn red.
-<<<<<<< HEAD
-=======
 - The map's layer panel now has raid presets (Pathing, Trash pull, Healing, Boss, All) and the plan's route, stand and aggro/wake rings as separate layers; a boss that wakes by script, like Onyxia, draws its own dashed wake ring from the server's data.
->>>>>>> af0b09368 (Dashboard: plan overlay and the raid layer control)
 
 ## v1.8.0 (2026-10-22)
 

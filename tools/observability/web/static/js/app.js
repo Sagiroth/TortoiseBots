@@ -5017,6 +5017,19 @@
   const cmdStalls = CmdPaths.newStalls(); // where the run paused or an order was refused, fixed when first seen
   let cmdTrailsLoading = false;
 
+  // A departed commander's card and everything keyed by it: the maps, the layers, the debugger's picks and detail cache and the
+  // fights list (a list fetch still in flight drops its callbacks).
+  function cmdForgetCard(key) {
+    const card = cmdCards.get(key);
+    if (card) card.remove();
+    cmdCards.delete(key);
+    delete cmdMaps[key];
+    delete cmdAvail[key];
+    delete cmdFd[key];
+    delete cmdFightsCache[key];
+    delete cmdFightsPending[key];
+  }
+
   // Seconds since the game server last reported, by this browser's clock (-1: never).
   function cmdAgeSec() {
     const c = state.commanders;
@@ -5321,6 +5334,7 @@
   // X-TBM-Control: 1 and same-origin credentials; the answer shows under the row for 20 s; the row locks while one runs.
   const CMD_GEAR_PRESETS = ['lkh', 'zg', 'aq20', 'timbermaw', 'onyxia', 'mc', 'bwl', 'es', 'aq40', 'naxx', 'kara40', 'prebis', 't1', 't2'];
   const cmdFightsCache = {}; // commander -> {list, at}: the fights behind the Deaths panel (and the Fights panel below)
+  const cmdFightsPending = {}; // commander -> callbacks of the one list fetch in flight
   let cmdControlOn = null;   // null: not asked yet; the page asks once per load
 
   function cmdControlAsk(cb) {
@@ -5334,10 +5348,18 @@
 
     const c = cmdFightsCache[bind.commander];
     if (c && Date.now() - c.at < 30000) { cb(c.list); return; }
+    const waiting = cmdFightsPending[bind.commander];
+    if (waiting) { waiting.push(cb); return; }
+    cmdFightsPending[bind.commander] = [cb];
+    const done = list => {
+      const cbs = cmdFightsPending[bind.commander] || [];
+      delete cmdFightsPending[bind.commander];
+      cbs.forEach(f => f(list));
+    };
     fetch('/api/v1/combat/fights?commander=' + encodeURIComponent(bind.commander)).then(jsonOrThrow).then(list => {
       cmdFightsCache[bind.commander] = { list: Array.isArray(list) ? list : [], at: Date.now() };
-      cb(cmdFightsCache[bind.commander].list);
-    }).catch(() => cb(c ? c.list : null));
+      done(cmdFightsCache[bind.commander].list);
+    }).catch(() => done(c ? c.list : null));
   }
 
 
@@ -6145,7 +6167,7 @@
     // The debugger: the mode toggle, the fight rail, a tile, a check's show/recap and a timeline skull. Each one redraws the card's
     // sections and its map (the death marks and the ring follow the pick).
     card.addEventListener('click', e => {
-      const t = e.target.closest && e.target.closest('[data-mode], [data-fd-fight], [data-fd-bot], [data-fd-death]');
+      const t = e.target.closest && e.target.closest('[data-mode], [data-fd-fight], [data-fd-bot], [data-fd-death], [data-fd-profile]');
       if (!t) return;
       const fd = cmdFd[key];
       if (!fd) return;
@@ -6157,6 +6179,11 @@
         return;
       }
       if (!card.classList.contains('fd-on')) return;
+      if (t.dataset.fdProfile != null) {
+        const guid = parseInt(t.dataset.fdProfile, 10);
+        if (guid > 0) openProfile(guid);
+        return;
+      }
       if (t.dataset.fdFight != null) {
         fd.sel = t.dataset.fdFight === 'live' ? 'live' : fdDecodeKey(t.dataset.fdFight);
         fd.userSel = true;
@@ -6205,7 +6232,7 @@
 
     // Only the commanders' cards live in #cmd-list; the Dungeons tab draws its own (the shared cmdCards map holds both).
     const all = cmdAllBinds().filter(b => !b.dungeon), keys = all.map(b => b.commander);
-    cmdCards.forEach((card, key) => { if (!keys.includes(key)) { card.remove(); cmdCards.delete(key); delete cmdMaps[key]; delete cmdAvail[key]; } });
+    cmdCards.forEach((card, key) => { if (!keys.includes(key)) cmdForgetCard(key); });
     all.forEach((bind, i) => {
       const key = bind.commander, demo = !!bind.demo, nowSec = cmdNowFor(bind);
       let card = cmdCards.get(key);
@@ -6310,7 +6337,7 @@
   const cmdFd = {};
 
   function fdState(key) {
-    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, details: {}, loading: false, list: [] };
+    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, details: {}, failed: {}, loading: false, list: [] };
     return cmdFd[key];
   }
 
@@ -6337,7 +6364,7 @@
     const act = document.activeElement;
     let attr = '', val = '';
     if (act && node.contains(act)) {
-      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-mode'].some(a => {
+      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-mode'].some(a => {
         if (!act.hasAttribute || !act.hasAttribute(a)) return false;
         attr = a;
         val = act.getAttribute(a);
@@ -6368,18 +6395,44 @@
     return true;
   }
 
-  // One detail at a time, newest first; a failed one stays unloaded until the next render asks again.
+  // One detail at a time, newest first. A fight that fails (an error, or an answer without a fight) waits 10 s, then 30 s, and is left
+  // alone after three tries, so one broken fight never blocks the rows after it.
+  const FD_DETAIL_BACKOFF = [10000, 30000];
+  const FD_DETAIL_FAIL_MAX = 3;
+
+  function fdDetailFailed(fd, key) {
+    const f = fd.failed[key];
+    return !!f && (f.n >= FD_DETAIL_FAIL_MAX || f.until > Date.now());
+  }
+
+  function fdDetailFail(fd, key) {
+    const f = fd.failed[key] || { n: 0, until: 0 };
+    f.n += 1;
+    f.until = f.n >= FD_DETAIL_FAIL_MAX ? Infinity : Date.now() + FD_DETAIL_BACKOFF[f.n - 1];
+    fd.failed[key] = f;
+  }
+
+  function fdDetailRow(fd) {
+    return fd.list.slice(0, FD_DETAIL_MAX).find(r => r && r.key && !fd.details[r.key] && !fdDetailFailed(fd, r.key)) || null;
+  }
+
   function fdLoad(card, bind) {
     const fd = fdState(bind.commander);
     cmdRaidFights(bind, list => {
-      fd.list = list || [];
+      if (list) fd.list = list;
       if (fd.loading) return;
-      const row = fd.list.slice(0, FD_DETAIL_MAX).find(r => r && r.key && !fd.details[r.key]);
+      const row = fdDetailRow(fd);
       if (!row) return;
       fd.loading = true;
-      fetch('/api/v1/combat/fight/' + encodeURIComponent(row.key)).then(jsonOrThrow).then(res => {
+      const failed = () => {
         fd.loading = false;
-        if (!res || !res.fight) return;
+        fdDetailFail(fd, row.key);
+        if (card.classList.contains('fd-on')) fdLoad(card, bind);
+      };
+      fetch('/api/v1/combat/fight/' + encodeURIComponent(row.key)).then(jsonOrThrow).then(res => {
+        if (!res || !res.fight) { failed(); return; }
+        fd.loading = false;
+        delete fd.failed[row.key];
         fd.details[row.key] = res;
         const keys = Object.keys(fd.details);
         if (keys.length > FD_DETAIL_CACHE) keys.slice(0, keys.length - FD_DETAIL_CACHE).forEach(k => { delete fd.details[k]; });
@@ -6387,8 +6440,17 @@
         renderFightDebug(card, bind);
         drawCmdMap(bind.commander); // the newly loaded fight may be the one the debugger now shows
         fdLoad(card, bind);
-      }).catch(() => { fd.loading = false; });
+      }).catch(failed);
     });
+  }
+
+  // The debugger's pick: the user's own click stands; otherwise the worst finished fight (the newest while no details are loaded),
+  // or the live fight while one runs. A live fight that ended hands the pick back even when the user had chosen it.
+  function fdSyncSel(fd, bind, list, details, layout) {
+    if (fd.sel === 'live' && !bind.combat) { fd.sel = null; fd.userSel = false; }
+    if (fd.userSel) return;
+    const worst = FightDebug.worstIndex(details, layout);
+    fd.sel = worst >= 0 ? list[worst].key : bind.combat ? 'live' : list.length ? list[0].key : null;
   }
 
   function renderFightDebug(card, bind) {
@@ -6397,11 +6459,7 @@
     const list = (cmdFightsCache[key] && cmdFightsCache[key].list) || fd.list || [];
     fd.list = list;
     const details = list.map(r => fd.details[r.key] || null);
-    if (fd.sel === 'live' && !bind.combat) fd.sel = null;
-    if (!fd.userSel) {
-      const worst = FightDebug.worstIndex(details, layout);
-      fd.sel = worst >= 0 ? list[worst].key : bind.combat ? 'live' : list.length ? list[0].key : null;
-    }
+    fdSyncSel(fd, bind, list, details, layout);
     const live = FightDebug.liveSummary(bind);
     const selLive = fd.sel === 'live';
     const det = !selLive && fd.sel ? fd.details[fd.sel] : null;
@@ -6414,6 +6472,8 @@
     fdSet(card.querySelector('.fd-rail'), fdRailHtml(cards, live, fd.sel));
 
     const checks = selLive ? FightDebug.liveChecks(bind) : fight ? FightDebug.checks(fight, layout, det.warnings || []) : [];
+    const guids = {};
+    (bind.bots || []).concat((fight && fight.bots) || []).forEach(b => { if (b && b.name && b.guid != null) guids[b.name] = b.guid; });
     let title = 'Fight';
     let chips = '';
     if (selLive) {
@@ -6435,7 +6495,7 @@
     }
     fdSet(card.querySelector('.fd-title'), esc(title));
     fdSet(card.querySelector('.fd-chips'), chips);
-    fdSet(card.querySelector('.fd-checklist'), fdChecksHtml(checks, recaps));
+    fdSet(card.querySelector('.fd-checklist'), fdChecksHtml(checks, recaps, guids, fd.bot));
 
     fdSet(card.querySelector('.fd-tl'), selLive ? '<p class="empty-hint">The timeline and death recap come when the fight ends.</p>'
       : fight ? fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death) : '');
@@ -6493,25 +6553,34 @@
         + `<span class="fd-fs">Now · ${Math.floor(t / 60)}:${('0' + (t % 60)).slice(-2)} · ${FightDebug.fmtInt(Math.round(live.dps || 0))} dps</span>`
         + `<span class="fd-fd">${live.alive} alive · ${live.active} acting</span></button>`;
     }
-    return html + (cards || []).map(c => {
+    // The daemon lists fights newest first; the rail reads oldest first, Pack 1 on top, under the live card.
+    return html + (cards || []).slice().reverse().map(c => {
       const v = c.verdict;
       const word = v === 'fail' ? 'problem' : v === 'warn' ? 'check' : v === 'ok' ? 'clean' : 'loading';
       const deaths = c.deaths ? c.deaths + (c.deaths === 1 ? ' death' : ' deaths') : 'no deaths';
       return `<button type="button" class="fd-fight v-${v || 'load'}" data-fd-fight="${esc(encodeURIComponent(c.key))}" aria-pressed="${c.key === sel ? 'true' : 'false'}">`
         + `<span class="fd-fl">${esc(c.label)}</span>`
-        + `<span class="fd-fs">step ${c.step} · ${Math.round((c.durMs || 0) / 1000)} s</span>`
+        + `<span class="fd-fv">${word}</span>`
+        + `<span class="fd-fs">${esc(c.mob || 'trash')}</span>`
         + `<span class="fd-len"><i style="width:${(c.lenPct || 0).toFixed(1)}%"></i></span>`
-        + `<span class="fd-fv">${word}</span><span class="fd-fd">${deaths}</span></button>`;
+        + `<span class="fd-fd">step ${c.step} · ${Math.round((c.durMs || 0) / 1000)} s · ${deaths}</span></button>`;
     }).join('');
   }
 
-  function fdChecksHtml(checks, recaps) {
+  function fdChecksHtml(checks, recaps, guids, selBot) {
     return (checks || []).map(c => {
       const word = c.lvl === 'fail' ? 'PROBLEM' : c.lvl === 'warn' ? 'CHECK' : 'PASS';
       const d = typeof c.death === 'number' && c.death >= 0 ? (recaps || [])[c.death] : null;
+      const guid = c.bot && guids ? guids[c.bot] : null;
+      const pressed = c.bot === selBot ? 'true' : 'false';
+      const show = c.bot
+        ? (guid != null
+          ? ` <button type="button" class="fd-link" data-fd-profile="${esc(guid)}" aria-pressed="${pressed}">show</button>`
+          : ` <button type="button" class="fd-link" data-fd-bot="${esc(c.bot)}" aria-pressed="${pressed}">show</button>`)
+        : '';
       return `<li class="fd-check l-${esc(c.lvl)}"><span class="fd-lvl">${word}</span><div class="fd-why">`
         + `<span class="fd-ttl">${esc(c.title)}</span> <span class="fd-num">${esc(c.num)}</span>`
-        + (c.bot ? ` <button type="button" class="fd-link" data-fd-bot="${esc(c.bot)}">show</button>` : '')
+        + show
         + (d ? ` <button type="button" class="fd-link fd-death" data-fd-death="${c.death}" data-x="${d.x}" data-y="${d.y}">recap</button>` : '')
         + `<div class="fd-ev">${esc(c.ev)}</div></div></li>`;
     }).join('');
@@ -6539,16 +6608,25 @@
     const r = list[selDeath] || list[0];
     if (!r) return '';
     const rows = r.hits.map(h => `<tr><td class="mono">${(h.t_ms / 1000).toFixed(1)} s</td><td>${esc(h.a)}</td><td class="n">${FightDebug.fmtInt(h.d)}</td></tr>`).join('');
-    return `<p class="fd-recaphead">Died <b>${esc(r.name)}</b> at ${(r.t_ms / 1000).toFixed(1)} s, killed by ${esc(r.killer)} · `
+    const who = r.guid != null
+      ? `<button type="button" class="fd-botbtn" data-fd-profile="${esc(r.guid)}">${esc(r.name)}</button>`
+      : `<b>${esc(r.name)}</b>`;
+    return `<p class="fd-recaphead">Died ${who} at ${(r.t_ms / 1000).toFixed(1)} s, killed by ${esc(r.killer)} · `
       + `<span class="mono">${FightDebug.fmtInt(r.total)}</span> damage in <span class="mono">${(r.spanMs / 1000).toFixed(1)}</span> s</p>`
       + `<table class="data-table fd-recaptbl"><thead><tr><th>Time</th><th>From</th><th class="n">Damage</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
-  // Three tables: tanks (main first), healers (by healing), damage (by damage). The name cell is a button that picks the bot.
+  // Three tables: tanks (main first), healers (by healing), damage (by damage). The name cell opens the bot's profile.
   function fdRolesHtml(tables, selBot) {
     const t = tables || { tanks: [], healers: [], dps: [], maxHps: 0, maxDps: 0 };
     const row = (on, cells) => `<tr${on ? ' class="sel"' : ''}>${cells.join('')}</tr>`;
-    const nameCell = (r, main) => `<td><button type="button" class="fd-botbtn" data-fd-bot="${esc(r.name)}">${main ? '★ ' : ''}${esc(r.name)}</button> <span class="fd-cls">${esc(r.cls)}</span></td>`;
+    const nameCell = (r, main) => {
+      const pressed = r.name === selBot ? 'true' : 'false';
+      const name = r.guid != null
+        ? `<button type="button" class="fd-botbtn" data-fd-profile="${esc(r.guid)}" aria-pressed="${pressed}">${main ? '★ ' : ''}${esc(r.name)}</button>`
+        : `<button type="button" class="fd-botbtn" data-fd-bot="${esc(r.name)}" aria-pressed="${pressed}">${main ? '★ ' : ''}${esc(r.name)}</button>`;
+      return `<td>${name} <span class="fd-cls">${esc(r.cls)}</span></td>`;
+    };
     const bar = (pct, kind) => `<span class="fd-bar b-${kind}" style="width:${Math.max(0, Math.min(50, Math.round(pct)))}px"></span>`;
     const tanks = `<table class="data-table fd-table"><caption>Tanks</caption><thead><tr><th>Tank</th><th class="n">Sunder</th><th class="n">Taunts</th><th class="n">Taken</th><th class="n">Died</th></tr></thead><tbody>`
       + (t.tanks || []).map(r => row(r.name === selBot, [nameCell(r, r.main), `<td class="n">${r.sunder || '–'}</td>`,
@@ -6583,7 +6661,7 @@
       + `<p class="fd-botl mono">${FightDebug.fmtInt(panel.dmg)} dmg · ${FightDebug.fmtInt(panel.heal)} heal · ${FightDebug.fmtInt(panel.taken)} taken · ${panel.casts} casts</p>`
       + `<table class="data-table fd-table"><caption>Casts</caption><thead><tr><th>Spell</th><th class="n">Casts</th></tr></thead>`
       + `<tbody>${spells || '<tr><td colspan="2" class="empty-hint">No casts recorded.</td></tr>'}</tbody></table>`
-      + (panel.guid != null ? `<p class="fd-open">Open details: ${cmdBotLink(panel.guid, panel.name)}</p>` : '');
+      + (panel.guid != null ? `<p class="fd-open"><button type="button" class="fd-link" data-fd-profile="${esc(panel.guid)}">Gear &amp; profile →</button></p>` : '');
   }
 
   // The selected fight's deaths on the card's map, over the events layer and under the bots.

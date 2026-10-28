@@ -6,13 +6,13 @@ import (
 	"testing"
 )
 
-func runCheck(t *testing.T, check, script string) {
+func runCheck(t *testing.T, check string, args ...string) {
 	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is not installed")
 	}
-	out, err := exec.Command(node, check, script).CombinedOutput()
+	out, err := exec.Command(node, append([]string{check}, args...)...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s failed: %v\n%s", check, err, out)
 	}
@@ -81,6 +81,12 @@ func TestFightDebugUIJS(t *testing.T) {
 	runCheck(t, "fightdebug_ui_check.js", "../../web/static/js/app.js")
 }
 
+// TestFightDebugState runs fightdebug_state_check.js: the debugger's state in app.js (the pick when a live fight ends, one
+// fights-list fetch per commander, the failed-detail backoff and the state a departed commander's card releases).
+func TestFightDebugState(t *testing.T) {
+	runCheck(t, "fightdebug_state_check.js", "../../web/static/js/app.js")
+}
+
 // TestRefreshJS runs refresh_check.js: the refresh-rate picker's options, the choice saved per browser (also with a storage that throws)
 // and the gate that holds live updates to the chosen rate or freezes them while paused.
 func TestRefreshJS(t *testing.T) {
@@ -108,7 +114,7 @@ func TestAgentMapsJS(t *testing.T) {
 // TestFightDebugCSS runs fightdebug_css_check.js: the Fight debugger block in app.css (level tokens on the card, a rule for every
 // class the card emits, the theme's colours only, the phone column, focus kept).
 func TestFightDebugCSS(t *testing.T) {
-	runCheck(t, "fightdebug_css_check.js", "../../web/static/css/app.css")
+	runCheck(t, "fightdebug_css_check.js", "../../web/static/css/app.css", "../../web/static/js/app.js")
 }
 
 // TestDungeonsJS runs dungeons_check.js: the Dungeons tab's run states, copy labels, party rows and raid subgroup blocks.

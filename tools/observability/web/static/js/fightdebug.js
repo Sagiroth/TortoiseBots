@@ -153,7 +153,7 @@
       id: "idle",
       lvl: idle.length ? "warn" : "ok",
       title: idle.length ? idle.length + " bot(s) did nothing" : "Every bot acted",
-      num: idle.length,
+      num: idle.length ? idle.length : "",
       ev: idle.length ? idle.map((b) => b.name).join(", ") : "All " + bots.length + " bots cast, hit or healed.",
       bot: idle.length ? idle[0].name : undefined,
     });
@@ -236,6 +236,7 @@
   // second death's list, so keep what is after the same bot's previous death.
   function deathRecaps(fight) {
     const deaths = (fight && fight.deaths) || [];
+    const bots = (fight && fight.bots) || [];
     const previous = {};
     return deaths.map((d, i) => {
       const after = previous[d.name];
@@ -244,9 +245,11 @@
         .map((h) => ({ t_ms: h.t_ms, a: h.a, d: h.d }));
       previous[d.name] = d.t_ms;
       const total = hits.reduce((s, h) => s + (num(h.d) || 0), 0);
+      const b = bots.find((x) => x.name === d.name);
       return {
         i,
         name: d.name,
+        guid: b && b.guid != null ? b.guid : undefined,
         t_ms: d.t_ms,
         killer: d.killer,
         x: d.x,
@@ -333,6 +336,7 @@
     const tanks = bots.filter((b) => roleOf(b) === "tank");
     const tankRows = tanks.filter((b) => b === mt).concat(tanks.filter((b) => b !== mt)).map((b) => ({
       name: b.name,
+      guid: b.guid,
       cls: b.class || "",
       main: b === mt,
       sunder: spellCount(b, "Sunder Armor"),
@@ -345,6 +349,7 @@
       const over = num(b.over) || 0;
       return {
         name: b.name,
+        guid: b.guid,
         cls: b.class || "",
         hps: heal / secs,
         overPct: heal + over > 0 ? Math.round((over / (heal + over)) * 100) : 0,
@@ -353,6 +358,7 @@
     }).sort(byDesc("hps"));
     const dpsRows = bots.filter((b) => roleOf(b) === "dps").map((b) => ({
       name: b.name,
+      guid: b.guid,
       cls: b.class || "",
       dps: (num(b.dmg) || 0) / secs,
       taken: num(b.taken) || 0,
@@ -387,14 +393,16 @@
   function railCards(list, detailsByKey, layout) {
     const rows = Array.isArray(list) ? list : [];
     const maxDur = rows.reduce((m, r) => Math.max(m, num(r.dur) || 0), 0);
-    return rows.map((row) => {
+    return rows.map((row, i) => {
       const det = detailsByKey && detailsByKey[row.key];
       const fight = det && det.fight;
       const dur = num(row.dur) || 0;
       const engaged = fight && fight.engaged && fight.engaged[0];
       return {
         key: row.key,
-        label: row.boss_name || (fight && fight.boss_name) || (engaged && engaged.n) || "trash",
+        // The daemon lists fights newest first; the oldest is the first pack of the fight.
+        label: "Pack " + (rows.length - i),
+        mob: row.boss_name || (fight && fight.boss_name) || (engaged && engaged.n) || "trash",
         step: num(row.step) || 0,
         durMs: dur,
         deaths: num(row.deaths) || 0,
@@ -446,7 +454,7 @@
         id: "live_idle",
         lvl: idle.length ? "warn" : "ok",
         title: idle.length ? idle.length + " bot(s) did nothing" : "Every bot acted",
-        num: idle.length,
+        num: idle.length ? idle.length : "",
         ev: idle.length ? idle.map((b) => b.name).join(", ") : "Every bot acted in the last " + combat.win_s + " s",
         bot: idle.length ? idle[0].name : undefined,
       });

@@ -101,6 +101,11 @@ assert.ok(firstLi.includes('class="fd-ttl">Tank died: Irelanthe (2×)<'), firstL
 assert.ok(firstLi.includes('class="fd-num">2<'), firstLi);
 assert.ok(firstLi.includes('data-fd-bot="Irelanthe"'), firstLi);
 assert.ok(firstLi.includes('data-fd-death="0"') && firstLi.includes(">recap</button>"), firstLi);
+// With the fight's guids the check's show button opens the bot's profile and says whether that bot is selected.
+const guidChecks = run("fdChecksHtml(checks, recaps, guids, 'Irelanthe')", { checks: ch54, recaps: RECAPS, guids: { Irelanthe: 814, Brun: 815 } });
+assert.ok(guidChecks.includes('class="fd-link" data-fd-profile="814" aria-pressed="true">show</button>'), guidChecks.slice(0, 400));
+assert.ok(guidChecks.includes('data-fd-profile="815" aria-pressed="false">show</button>'), guidChecks.slice(0, 400));
+assert.strictEqual((guidChecks.match(/aria-pressed="true"/g) || []).length, 2, "only the selected bot's show buttons are pressed (the tank death and her taunt row)");
 
 // ---- timeline: the deaths on their marks, the recap of the selected one ---------------------------------------------
 const tl54 = run("FightDebug.timeline(f)", { f: F54 });
@@ -112,7 +117,7 @@ assert.strictEqual((tlHtml.match(/class="fd-tick"/g) || []).length, 8);
 assert.ok(tlHtml.includes('class="fd-hit"'), "the hits before a death");
 assert.ok(run("fdTimelineHtml(FightDebug.timeline(f), [], null)", { f: { dur_ms: 5000, bots: [], deaths: [] } }).includes("No deaths this fight."));
 const recapHtml = run("fdRecapHtml(recaps, null)", { recaps: RECAPS });
-assert.ok(recapHtml.includes("Died <b>Irelanthe</b> at 12.0 s, killed by Onyxian Warder"), recapHtml);
+assert.ok(recapHtml.includes('Died <button type="button" class="fd-botbtn" data-fd-profile="814">Irelanthe</button> at 12.0 s, killed by Onyxian Warder'), recapHtml);
 assert.ok(recapHtml.includes('6,422</span> damage in <span class="mono">5.0</span> s'), recapHtml);
 assert.strictEqual((recapHtml.match(/<tr><td class="mono">/g) || []).length, 5, "the five hits of the first death");
 const recapOne = run("fdRecapHtml(recaps, 1)", { recaps: RECAPS });
@@ -125,9 +130,15 @@ assert.strictEqual((railHtml.match(/<button type="button" class="fd-fight/g) || 
 assert.strictEqual((railHtml.match(/aria-pressed="true"/g) || []).length, 1);
 assert.deepStrictEqual([...railHtml.matchAll(/data-fd-fight="([^"]*)" aria-pressed="true"/g)].map((m) => m[1]), ["5-4"]);
 assert.ok(railHtml.includes(">problem<") && railHtml.includes(">check<") && railHtml.includes(">clean<"), "the verdict words");
+// Pack N counts the fights oldest first, the rail reads Pack 1 at the top, the mob is the subtitle.
+assert.deepStrictEqual([...railHtml.matchAll(/<span class="fd-fl">([^<]*)<\/span>/g)].map((m) => m[1]),
+  ["Pack 1", "Pack 2", "Pack 3", "Pack 4", "Pack 5"]);
+assert.strictEqual(railHtml.indexOf("Pack 1") < railHtml.indexOf("Pack 5"), true, "Pack 1 comes first");
+assert.ok(railHtml.includes('<span class="fd-fs">Onyxian Warder</span>'), railHtml.slice(0, 260));
+assert.ok(railHtml.includes('<span class="fd-fd">step 22 · 39 s · 2 deaths</span>'), railHtml.slice(0, 400));
 const railLive = run("fdRailHtml(cards, live, 'live')", { cards, live: { fightMs: 65000, winS: 10, dps: 4321, hps: 900, active: 31, alive: 39 } });
 assert.ok(railLive.startsWith('<button type="button" class="fd-fight v-live'), railLive.slice(0, 100));
-assert.ok(railLive.indexOf('data-fd-fight="live"') < railLive.indexOf('data-fd-fight="5-5"'), "the live fight comes first");
+assert.ok(railLive.indexOf('data-fd-fight="live"') < railLive.indexOf('data-fd-fight="5-1"'), "the live fight comes first");
 assert.ok(railLive.includes("Now · 1:05 · 4,321 dps"), railLive.slice(0, 220));
 assert.strictEqual((railLive.match(/aria-pressed="true"/g) || []).length, 1);
 // A real fight key is commander, session and id joined by NUL: only a percent-encoded key survives an HTML attribute.
@@ -151,6 +162,11 @@ assert.ok(Array.isArray(roles) && roles.length === 3, "three tables: tanks, heal
 const rolesHtml = roles.join("");
 assert.strictEqual((rolesHtml.match(/class="fd-botbtn"/g) || []).length, 39);
 assert.strictEqual((rolesHtml.match(/<tr class="sel">/g) || []).length, 1);
+// A name is a profile button carrying its guid and whether that bot is the selected one.
+assert.strictEqual((rolesHtml.match(/class="fd-botbtn" data-fd-profile="\d+" aria-pressed="(true|false)">/g) || []).length, 39);
+assert.ok(roles[0].includes('data-fd-profile="813" aria-pressed="false">★ Ragemeister</button>'), roles[0].slice(0, 300));
+assert.ok(roles[2].includes('data-fd-profile="828" aria-pressed="true">Dawnfist</button>'), roles[2].slice(0, 300));
+assert.strictEqual((rolesHtml.match(/aria-pressed="true"/g) || []).length, 1);
 assert.ok(roles[0].includes("<caption>Tanks</caption>") && roles[1].includes("<caption>Healers</caption>") && roles[2].includes("<caption>Damage</caption>"));
 assert.ok(roles[0].indexOf("Ragemeister") < roles[0].indexOf("Brun"), "the main tank comes first");
 assert.ok(roles[1].indexOf("Magnarr") > 0, "the top healer is in the healers table");
@@ -163,7 +179,7 @@ assert.strictEqual((roles[2].match(/class="fd-botbtn"/g) || []).length, 26, "26 
 const panel = run("FightDebug.botPanel(f, 'Ragemeister')", { f: F54 });
 const panelHtml = run("fdBotHtml(panel)", { panel: Object.assign({}, panel, { guid: 813 }) });
 assert.ok(panelHtml.includes("Ragemeister · warrior · group 1"), panelHtml);
-assert.ok(panelHtml.includes('href="#bot/813"'), "the panel links to the character: " + panelHtml.slice(0, 240));
+assert.ok(panelHtml.includes('<button type="button" class="fd-link" data-fd-profile="813">Gear &amp; profile →</button>'), "the panel opens the character's profile: " + panelHtml.slice(0, 240));
 assert.ok(panelHtml.includes("Sunder Armor"), "the spell table");
 const liveRows = run("FightDebug.liveTables(bind)", {
   bind: {
