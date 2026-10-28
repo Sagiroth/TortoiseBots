@@ -2178,7 +2178,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 {
                     PartitionedTravelList list;
 
-                    uint32 foundItemId = orderItemId ? orderItemId : GuildOrderValue::FindItemByName(orderTarget);
+                    uint32 foundItemId = orderItemId;
 
                     if (foundItemId)
                     {

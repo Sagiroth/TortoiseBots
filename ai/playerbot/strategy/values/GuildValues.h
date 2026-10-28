@@ -17,7 +17,7 @@ namespace ai
     {
         GuildOrderType type = GuildOrderType::None;
         std::string target;
-        uint32 itemId = 0; // `.bot order` item entry; 0 for legacy note/share orders
+        uint32 itemId = 0; // `.bot order` item entry
         uint32 amount = 0; // Used for Craft and Farm orders
 
         bool IsValid() const { return type != GuildOrderType::None && !target.empty(); }
@@ -42,12 +42,11 @@ namespace ai
         GuildOrderValue(PlayerbotAI* ai) : CalculatedValue<GuildOrder>(ai, "guild order", 60) {}
 
         GuildOrder Calculate() override;
-
-        static uint32 FindItemByName(const std::string& name);
-    private:
-        static std::string TrimWhitespace(const std::string& str);
-        static bool ParseOrderPrefix(const std::string& note, const std::string& prefix, std::string& outBody);
     };
+
+    // True while the stored order still needs farm/craft work: not waiting,
+    // not delivering, and delivered plus bags below the amount.
+    bool OrderStillNeedsWork(Player* bot, GuildOrder const& order);
 
     class HasGuildTravelOrderValue : public BoolCalculatedValue
     {
@@ -60,23 +59,11 @@ namespace ai
             if (!order.IsTravelOrder())
                 return false;
 
-            // A `.bot order` waits while the bot is grouped with a player.
-            if (order.itemId && ai->HasRealPlayerMaster())
+            // No order work while grouped with a player, delivering, or done
+            // with the amount (delivered plus bags).
+            if (ai->HasRealPlayerMaster())
                 return false;
-
-            // If a Farm order has an amount, check inventory count.
-            if (order.type == GuildOrderType::Farm && order.amount > 0)
-            {
-                uint32 itemId = order.itemId ? order.itemId : GuildOrderValue::FindItemByName(order.target);
-                if (itemId)
-                {
-                    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId);
-                    if (currentCount >= order.amount)
-                        return false;
-                }
-            }
-
-            return true;
+            return OrderStillNeedsWork(bot, order);
         }
     };
 
@@ -90,8 +77,9 @@ namespace ai
             GuildOrder order = AI_VALUE(GuildOrder, "guild order");
             if (!order.IsCraftOrder())
                 return false;
-            // A `.bot order` waits while the bot is grouped with a player.
-            return !order.itemId || !ai->HasRealPlayerMaster();
+            if (ai->HasRealPlayerMaster())
+                return false;
+            return OrderStillNeedsWork(bot, order);
         }
     };
 

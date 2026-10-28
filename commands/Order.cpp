@@ -2,8 +2,10 @@
 #include "CommandShared.h"
 
 #include "../runtime/BotManager.h"
+#include "../runtime/ClaimLifecycle.h"
+#include "../runtime/GuildOrderGiveUpPolicy.h"
 #include "../runtime/GuildOrderStore.h"
-#include "../ai/playerbot/ChatHelper.h"
+#include "../runtime/RandomBotAccountRegistry.h"
 #include "../ai/playerbot/GuildOrderSources.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
@@ -19,7 +21,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <set>
 #include <sstream>
 
 namespace TortoiseBots {
@@ -83,6 +84,18 @@ bool ResolveOrderBot(std::string const& name, Player*& bot, ObjectGuid& guid)
     return !guid.IsEmpty();
 }
 
+// Online: the live module record decides. Offline: the character is a bot
+// when it is claimed into a guild or lives on a random-pool account.
+bool IsOrderBot(Player* bot, ObjectGuid guid)
+{
+    if (bot)
+        return BotManager::Instance().IsBot(guid);
+    if (ClaimLifecycle::Instance().IsClaimed(guid.GetCounter()))
+        return true;
+    uint32_t accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid);
+    return accountId && RandomBotAccountRegistry::Instance().IsRegistered(accountId);
+}
+
 uint32_t GuildOf(Player* bot, ObjectGuid guid)
 {
     if (bot)
@@ -96,27 +109,39 @@ bool IsOrderableItem(ItemPrototype const* proto)
            proto->Class != ITEM_CLASS_QUEST && proto->Duration == 0;
 }
 
+bool ParseUintToken(std::string const& token, uint32_t& value)
+{
+    value = 0;
+    // At most 10 digits: longer input cannot fit uint32 and must fail, not throw.
+    if (token.empty() || token.size() > 10 || !std::all_of(token.begin(), token.end(), ::isdigit))
+        return false;
+    unsigned long parsed = std::stoul(token);
+    if (parsed > 0xFFFFFFFFul)
+        return false;
+    value = static_cast<uint32_t>(parsed);
+    return true;
+}
+
 bool ParseItemToken(std::string const& token, uint32_t& itemId)
 {
     itemId = 0;
-    if (token.find("Hitem:") != std::string::npos)
+    size_t link = token.find("Hitem:");
+    if (link != std::string::npos)
     {
-        std::set<uint32_t> ids = ai::ChatHelper::ExtractAllItemIds(token);
-        if (!ids.empty())
-            itemId = *ids.begin();
-        return itemId != 0;
+        size_t begin = link + 6;
+        size_t end = begin;
+        while (end < token.size() && std::isdigit(static_cast<unsigned char>(token[end])))
+            ++end;
+        return ParseUintToken(token.substr(begin, end - begin), itemId) && itemId != 0;
     }
-    if (!token.empty() && std::all_of(token.begin(), token.end(), ::isdigit))
-        itemId = static_cast<uint32_t>(std::stoul(token));
-    return itemId != 0;
+    return ParseUintToken(token, itemId) && itemId != 0;
 }
 
 bool ParseAmount(std::string const& token, uint32_t& amount)
 {
     amount = 0;
-    if (token.empty() || !std::all_of(token.begin(), token.end(), ::isdigit))
+    if (!ParseUintToken(token, amount))
         return false;
-    amount = static_cast<uint32_t>(std::stoul(token));
     return amount >= kMinAmount && amount <= kMaxAmount;
 }
 
@@ -176,7 +201,7 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
         OrderError(handler, "no-bot", "No such bot.");
         return true;
     }
-    if (bot && !BotManager::Instance().IsBot(guid))
+    if (!IsOrderBot(bot, guid))
     {
         OrderError(handler, "no-bot", "That character is not a bot.");
         return true;
@@ -236,9 +261,7 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
         return true;
     }
 
-    std::optional<OrderRecord> stored = GuildOrders::Find(record.botGuidLow);
-    if (stored)
-        GuildOrders::SendLiveUpdate(*stored, GuildOrders::Progress(bot, *stored));
+    // The next world-thread Update reports the new row to the giver.
 
     SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, typeToken);
     return true;
@@ -253,14 +276,20 @@ bool HandleOrderCancel(ChatHandler* handler, Player* requester, std::string cons
         OrderError(handler, "no-bot", "No such bot.");
         return true;
     }
-    std::optional<OrderRecord> existing = GuildOrders::Find(guid.GetCounter());
-    if (!existing)
+    if (!IsOrderBot(bot, guid))
+    {
+        OrderError(handler, "no-bot", "That character is not a bot.");
+        return true;
+    }
+    // Permission before existence: an unprivileged requester gets
+    // forbidden/not-guild even when there is no order.
+    if (!CheckGiver(handler, requester, GuildOf(bot, guid)))
+        return true;
+    if (!GuildOrders::Find(guid.GetCounter()))
     {
         OrderError(handler, "invalid", "That bot has no order.");
         return true;
     }
-    if (!CheckGiver(handler, requester, existing->guildId))
-        return true;
     GuildOrders::Cancel(guid.GetCounter());
     SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, "cancel");
     return true;
@@ -276,7 +305,14 @@ bool HandleOrderList(ChatHandler* handler, Player* requester)
     std::vector<OrderRecord> orders = GuildOrders::ListForGuild(requester->GetGuildId());
     handler->PSendSysMessage("TBM:ORDER_BEGIN|%u", static_cast<uint32_t>(orders.size()));
     for (OrderRecord const& order : orders)
-        handler->PSendSysMessage("%s", GuildOrders::FormatOrderLine(requester->GetGuildId(), order).c_str());
+    {
+        Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.botGuidLow));
+        bool online = bot && bot->IsInWorld();
+        uint32_t bags = online ? bot->GetItemCount(order.itemId) : 0;
+        handler->PSendSysMessage("%s",
+            GuildOrders::FormatOrderLine(requester->GetGuildId(), order,
+                GuildOrders::ReportedHave(order.delivered, bags, online, order.reportedHave)).c_str());
+    }
     handler->PSendSysMessage("TBM:ORDER_END");
     return true;
 }
@@ -332,6 +368,16 @@ bool HandleOrder(ChatHandler* handler, char const* args)
             OrderError(handler, "no-bot", "No such bot.");
             return true;
         }
+        if (!bot)
+        {
+            OrderError(handler, "no-bot", "Search needs the bot online.");
+            return true;
+        }
+        if (!IsOrderBot(bot, guid))
+        {
+            OrderError(handler, "no-bot", "That character is not a bot.");
+            return true;
+        }
         uint32_t guildId = GuildOf(bot, guid);
         if (!guildId || !requester->GetGuildId() || requester->GetGuildId() != guildId)
         {
@@ -340,11 +386,6 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         }
         if (!CheckGiver(handler, requester, guildId))
             return true;
-        if (!bot)
-        {
-            OrderError(handler, "no-bot", "Search needs the bot online.");
-            return true;
-        }
         return HandleOrderSearch(handler, requester, bot, typeToken, text);
     }
 

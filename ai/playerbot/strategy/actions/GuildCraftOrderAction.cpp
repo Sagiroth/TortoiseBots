@@ -3,6 +3,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/CraftValues.h"
 #include "playerbot/strategy/values/GuildValues.h"
+#include "runtime/GuildOrderStore.h"
 
 using namespace ai;
 
@@ -33,20 +34,14 @@ bool GuildCraftOrderAction::Execute(Event& event)
     if (!order.IsCraftOrder())
         return false;
 
-    uint32 itemId = order.itemId ? order.itemId : GuildOrderValue::FindItemByName(order.target);
-    if (!itemId)
-    {
-        ai->TellDebug(ai->GetMaster(), "Guild craft order: item not found: " + order.target, "debug travel");
+    uint32 itemId = order.itemId;
+    if (!itemId || !OrderStillNeedsWork(bot, order))
         return false;
-    }
 
     uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId);
-    if (currentCount >= order.amount)
-    {
-        ai->TellDebug(ai->GetMaster(), "Guild craft order: already have " + std::to_string(currentCount) + "/" + std::to_string(order.amount) + ", skipping", "debug travel");
-        return false;
-    }
-
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> stored =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    uint32 delivered = (stored && stored->itemId == itemId) ? stored->delivered : 0;
     uint32 craftSpellId = FindCraftSpell(itemId);
     if (!craftSpellId)
     {
@@ -60,8 +55,8 @@ bool GuildCraftOrderAction::Execute(Event& event)
         return false;
     }
 
-    // Calculate the amount to craft
-    uint32 remaining = order.amount - currentCount;
+    // Calculate the amount to craft (what was already delivered counts).
+    uint32 remaining = order.amount - std::min(order.amount, delivered + currentCount);
 
     const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
     if (!pSpellInfo)
@@ -103,13 +98,5 @@ bool GuildCraftOrderAction::isUseful()
     if (!order.IsCraftOrder())
         return false;
 
-    uint32 itemId = order.itemId ? order.itemId : GuildOrderValue::FindItemByName(order.target);
-    if (!itemId)
-        return false;
-
-    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId);
-    if (currentCount >= order.amount)
-        return false;
-
-    return true;
+    return order.itemId && OrderStillNeedsWork(bot, order);
 }

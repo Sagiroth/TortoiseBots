@@ -32,5 +32,21 @@ inline GiveUpAction ClassifyGiveUp(uint32_t workedSinceNewItemSec, uint32_t deat
     return movedZone ? GiveUpAction::GiveUp : GiveUpAction::MoveZone;
 }
 
+// Reported progress never drops: offline (or not yet re-seen) bots keep
+// max(delivered, last reported).
+inline uint32_t ReportedHave(uint32_t delivered, uint32_t bagCount, bool botOnline, uint32_t reportedHave)
+{
+    uint32_t have = delivered + (botOnline ? bagCount : 0);
+    uint32_t floor = delivered > reportedHave ? delivered : reportedHave;
+    return have > floor ? have : floor;
+}
+
+// A real rise in bag count seen while online on consecutive updates resets
+// the give-up clock. A login after an offline gap never counts as new items.
+inline bool IsNewItemRise(bool botOnline, bool sawOnline, uint32_t bagCount, uint32_t lastBagCount)
+{
+    return botOnline && sawOnline && bagCount > lastBagCount;
+}
+
 } // namespace GuildOrders
 } // namespace TortoiseBots

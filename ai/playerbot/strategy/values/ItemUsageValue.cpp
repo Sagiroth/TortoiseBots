@@ -6,8 +6,7 @@
 #include "MountValues.h"
 #include "runtime/policy/provision/AmmoCheatPolicy.h"
 #include "BudgetValues.h"
-
-
+#include "runtime/GuildOrderStore.h"
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/quest/QuestLogPolicy.h"
@@ -124,7 +123,33 @@ ItemUsage ItemUsageValue::Calculate()
     if (forceUsage == ForceItemUsage::FORCE_USAGE_BAG)
         return ItemUsage::ITEM_USAGE_KEEP;
 
-
+    if (bot->GetGuildId())
+    {
+        // `.bot order`: the bot keeps ordered items and, for craft orders, the
+        // reagents - it must not sell, auction or use them while the order runs.
+        std::optional<TortoiseBots::GuildOrders::OrderRecord> stored =
+            TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+        if (stored && stored->guildId == bot->GetGuildId() &&
+            !TortoiseBots::GuildOrders::IsFinished(stored->state))
+        {
+            if (stored->itemId == itemId)
+                return ItemUsage::ITEM_USAGE_GUILD_TASK;
+            if (stored->type == TortoiseBots::GuildOrders::OrderType::Craft)
+            {
+                ItemPrototype const* orderProto = sObjectMgr.GetItemPrototype(stored->itemId);
+                if (orderProto)
+                {
+                    std::vector<std::pair<uint32, uint32>> reagents =
+                        GetAllReagentItemIdsForCraftingItem(orderProto);
+                    for (const auto& [reagentId, reagentCount] : reagents)
+                    {
+                        if (reagentId == itemId)
+                            return ItemUsage::ITEM_USAGE_GUILD_TASK;
+                    }
+                }
+            }
+        }
+    }
 
     // Keep the Tortoise hearthstone.
     if (proto->ItemId == 6948)
