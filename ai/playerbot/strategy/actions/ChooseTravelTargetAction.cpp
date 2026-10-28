@@ -35,6 +35,19 @@
 
 using namespace ai;
 
+// Every leg of a guild order (farm, focus, vendor, delivery) counts as order
+// travel: one leg must never expire another as if it were a leisure trip.
+static bool IsGuildOrderTravelCondition(std::string const& condition)
+{
+    return condition.find("guild order") != std::string::npos ||
+           condition.rfind("should travel named::order ", 0) == 0;
+}
+
+static bool IsGuildOrderTravelName(std::string const& name)
+{
+    return name == "guild order" || name == "order focus" || name == "order vendor";
+}
+
 inline std::string GetTravelPurposeName(std::string purpose)
 {
     if (Qualified::isValidNumberString(purpose) && TravelDestinationPurposeName.find(TravelDestinationPurpose(stoi(purpose))) != TravelDestinationPurposeName.end())
@@ -1967,13 +1980,14 @@ bool RequestTravelTargetAction::isUseful() {
     {
         // A newly working order jumps the queue: the request runs so
         // Execute can expire the leisure target it preempts.
-        if (getQualifier() == "guild order" && AI_VALUE(bool, "has guild travel order"))
+        if (IsGuildOrderTravelName(getQualifier()) &&
+            (getQualifier() != "guild order" || AI_VALUE(bool, "has guild travel order")))
         {
             TravelTarget* current = AI_VALUE(TravelTarget*, "travel target");
             if (current)
             {
                 for (std::string const& condition : current->GetConditions())
-                    if (condition == "should travel named::guild order")
+                    if (IsGuildOrderTravelCondition(condition))
                         return false;
                 return true;
             }
@@ -2102,13 +2116,13 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 
     // A newly working order jumps the queue: expire a non-order travel
     // target so the farm request does not wait behind a leisure trip.
-    if (travelName == "guild order" && AI_VALUE(bool, "travel target active") &&
-        AI_VALUE(bool, "has guild travel order"))
+    if (IsGuildOrderTravelName(travelName) && AI_VALUE(bool, "travel target active") &&
+        (travelName != "guild order" || AI_VALUE(bool, "has guild travel order")))
     {
         TravelTarget* current = AI_VALUE(TravelTarget*, "travel target");
         bool isOrderTarget = false;
         for (std::string const& condition : current->GetConditions())
-            if (condition == "should travel named::guild order")
+            if (IsGuildOrderTravelCondition(condition))
                 isOrderTarget = true;
         if (!isOrderTarget)
         {
@@ -2259,13 +2273,11 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             };
 
             // The planned zone only changes when it runs dry (the plan no
-            // longer lists it: no usable spawn left), the farmed item changes
-            // (craft reagents rotate, each planned in its own zone), or the
+            // longer lists it: no usable spawn left, which also covers a craft
+            // order moving on to a reagent the zone does not have), or the
             // bot outlevels it (zone level + 5 below the bot, the module's
-            // outgrown rule). A farm order keeps its zone across requests;
-            // a craft order's zone belongs to its current reagent.
+            // outgrown rule).
             uint32_t farmZoneId = record->farmZoneId;
-            bool const farmedChanged = order.IsCraftOrder() && record->itemId != itemId;
             TortoiseBots::GuildOrders::SourcePlan plan = planFor(itemId);
             bool listed = false;
             for (TortoiseBots::GuildOrders::FarmZone const& zone : plan.zones)
@@ -2275,7 +2287,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             bool outgrown = listed && sTravelMgr.TryGetValidatedAreaLevel(farmZoneId, zoneLevel) &&
                 ai::OutgrownZoneRefusesPoint(zoneLevel, bot->GetLevel(),
                     sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster());
-            if (farmZoneId == 0 || farmedChanged || !listed || outgrown)
+            if (farmZoneId == 0 || !listed || outgrown)
             {
                 size_t pick = record->movedZone && plan.zones.size() > 1 ? 1 : 0;
                 if (plan.zones.size() <= pick)
