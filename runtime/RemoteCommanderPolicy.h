@@ -509,6 +509,10 @@ inline BindRefusal CheckRaidBind(BindFacts const& facts)
         return BindRefusal::RaidNotInRaid;
     if (!facts.leadIsTank)
         return BindRefusal::RaidLeadNotTank;
+    // A raid with another real player in it is refused: the binding takes
+    // the commander out and commands the raid, never a human in it.
+    if (facts.leadGroupHasRealPlayer)
+        return BindRefusal::GroupHasPlayer;
     if (facts.leadGroupBound)
         return BindRefusal::GroupBound;
     if (facts.leadBindWouldReplaceGroupBind)

@@ -1286,9 +1286,8 @@ static void TestRaidBindRefusals()
     CHECK(with([](BindFacts& f) { f.leadGroupIsBg = true; }) == BindRefusal::RaidNotInRaid);
     CHECK(with([](BindFacts& f) { f.leadInCommanderParty = false; }) == BindRefusal::RaidNotInRaid);
     CHECK(with([](BindFacts& f) { f.leadIsTank = false; }) == BindRefusal::RaidLeadNotTank);
-    // A raid with another real player in it is the commander's own raid:
-    // bound, with the commander taken out of it.
-    CHECK(with([](BindFacts& f) { f.leadGroupHasRealPlayer = true; }) == BindRefusal::None);
+    // A raid with another real player in it is refused (never command a human).
+    CHECK(with([](BindFacts& f) { f.leadGroupHasRealPlayer = true; }) == BindRefusal::GroupHasPlayer);
     CHECK(with([](BindFacts& f) { f.lead.hired = true; }) == BindRefusal::LeadHired);
     CHECK(with([](BindFacts& f) { f.members[3].hired = true; }) == BindRefusal::MemberHired);
     // first failing check wins: raid off before a hired lead
