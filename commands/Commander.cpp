@@ -4659,22 +4659,25 @@ RemoteCommander::EntryFacts GatherEntryFacts(Player* bot, uint32 triggerId, Area
     facts.conditionMessage = tele->message;
     facts.raidMap = targetMap->IsDungeon() && targetMap->IsRaid();
     bool const unscriptedTrigger = sScriptMgr.GetAreaTriggerScriptId(triggerId) == 0;
-    // AiPlayerbot.RaidEntryByCommander: the commander's own condition stands for the bot's when he is a real
-    // player of the bot's raid and meets it himself (the amulet Onyxia's lair asks for). A raid's entrance
-    // only, and only one with no area-trigger script: the fallback teleport would skip the script.
+    // AiPlayerbot.RaidEntryByCommander: the commander's own condition stands for the bot's when he commands the
+    // bot's raid (its member, or the binding's commander, whom a raid binding keeps out of the group) and meets
+    // it himself (the amulet Onyxia's lair asks for). A raid's entrance only, and only one with no
+    // area-trigger script: the fallback teleport would skip the script.
     if (facts.conditionFailed && facts.raidMap && unscriptedTrigger && sPlayerbotAIConfig.raidEntryByCommander)
     {
         Group* group = bot->GetGroup();
         RemoteCommander::Binding const* binding = group ? CommanderBindings().FindByGroup(group->GetId()) : nullptr;
         Player* commander = binding ? FindCharacter(binding->commanderGuid) : nullptr;
         bool const commanderIsRealPlayer = commander && !BotManager::Instance().IsBot(commander->GetObjectGuid());
-        bool const sameRaid = commanderIsRealPlayer && group && group->isRaidGroup() &&
-            group->IsMember(commander->GetObjectGuid());
-        bool const commanderMeets = sameRaid && commander->GetMap() &&
+        // commanderIsRealPlayer implies the binding and the commander: both are found through it.
+        bool const inRaid = commanderIsRealPlayer && group && group->isRaidGroup();
+        bool const commanderOfRaid = inRaid && (group->IsMember(commander->GetObjectGuid()) ||
+            RemoteCommander::BindingCommandsBot(*binding, bot->GetObjectGuid().GetRawValue(), group->GetId()));
+        bool const commanderMeets = commanderOfRaid && commander->GetMap() &&
             sObjectMgr.IsConditionSatisfied(tele->requiredCondition, commander, commander->GetMap(), commander,
                 CONDITION_FROM_AREATRIGGER);
         facts.conditionWaived = RemoteCommander::WaiveCondition(sPlayerbotAIConfig.raidEntryByCommander,
-            facts.raidMap, unscriptedTrigger, commanderIsRealPlayer, sameRaid, commanderMeets);
+            facts.raidMap, unscriptedTrigger, commanderIsRealPlayer, commanderOfRaid, commanderMeets);
     }
     facts.ignoreRaid = sWorld.getConfig(CONFIG_BOOL_INSTANCE_IGNORE_RAID);
     Group* group = bot->GetGroup();

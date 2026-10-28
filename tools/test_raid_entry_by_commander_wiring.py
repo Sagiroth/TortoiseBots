@@ -54,9 +54,20 @@ class RaidEntryByCommanderWiringTest(unittest.TestCase):
         gather = squash(self.gather())
         self.assertIn("facts.conditionWaived = RemoteCommander::WaiveCondition("
                       "sPlayerbotAIConfig.raidEntryByCommander, facts.raidMap, unscriptedTrigger, "
-                      "commanderIsRealPlayer, sameRaid, commanderMeets);", gather)
+                      "commanderIsRealPlayer, commanderOfRaid, commanderMeets);", gather)
         # One assignment only, so no other path can waive a condition.
         self.assertEqual(COMMANDER.count("conditionWaived ="), 1)
+
+    def test_commander_of_a_bound_raid_counts(self):
+        # `.bot commander bind ... raid` takes the commander out of the group, so membership alone never
+        # holds for a bound raid: the binding that commands the bot is the second way in.
+        gather = squash(self.gather())
+        self.assertIn("bool const inRaid = commanderIsRealPlayer && group && group->isRaidGroup();", gather)
+        self.assertIn("RemoteCommander::BindingCommandsBot(*binding, bot->GetObjectGuid().GetRawValue(), "
+                      "group->GetId())", gather)
+        # Only a raid group can have a commander of the raid (the bot's own group is the one the binding names).
+        start = gather.index("bool const commanderOfRaid")
+        self.assertIn("inRaid &&", squash(gather[start:gather.index(";", start)]))
 
     def test_waived_entry_uses_the_core_teleport(self):
         send = body(COMMANDER, "bool SendEnterTrigger(", "\n}\n")

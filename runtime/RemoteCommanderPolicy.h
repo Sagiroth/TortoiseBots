@@ -18,6 +18,7 @@
 //
 // Plain data and the standard library only.
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
@@ -75,6 +76,16 @@ struct Binding
     // The server's own binding of a bot-only party (SystemRunPolicy.h): no commander; its key is the lead bot's guid; never inParty or playerLed.
     bool system = false;
 };
+
+// The binding commands this bot: its lead, or one of its followers, in the bot's own group.
+// A raid binding takes the commander out of the group, so the binding, not the group's
+// membership, is what says who commands the bot there.
+inline bool BindingCommandsBot(Binding const& b, uint64_t botGuid, uint32_t botGroupId)
+{
+    return !b.system && b.groupId != 0 && b.groupId == botGroupId &&
+        (b.leadGuid == botGuid ||
+            std::find(b.followers.begin(), b.followers.end(), botGuid) != b.followers.end());
+}
 
 enum class BindResult : uint8_t
 {

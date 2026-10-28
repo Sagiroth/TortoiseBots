@@ -206,6 +206,63 @@ static void TestConditionWaiver()
     CHECK(!JudgeEntry(facts).ok);
     facts.instanceCountOk = true;
     CHECK(JudgeEntry(facts).ok);
+
+    // A bound raid: `.bot commander bind ... raid` takes the commander out of the group, so the binding, not
+    // group membership, is what makes him the raid's commander.
+    Binding boundRaid;
+    boundRaid.commanderGuid = 100;
+    boundRaid.leadGuid = 11;
+    boundRaid.groupId = 42;
+    boundRaid.raid = true;
+    boundRaid.followers = { 12, 13 };
+    bool const commanderOfRaid = BindingCommandsBot(boundRaid, 12, 42);
+    CHECK(commanderOfRaid);
+    EntryFacts bound = raid;
+    bound.conditionWaived = WaiveCondition(true, true, true, true, commanderOfRaid, true);
+    CHECK(JudgeEntry(bound).ok);
+
+    // The bound commander lacks the amulet: the entrance's own refusal, message included.
+    EntryFacts lacks = raid;
+    lacks.conditionWaived = WaiveCondition(true, true, true, true, commanderOfRaid, false);
+    EntryVerdict const lacksVerdict = JudgeEntry(lacks);
+    CHECK(!lacksVerdict.ok && std::strcmp(lacksVerdict.code, today.code) == 0 &&
+        lacksVerdict.message == today.message);
+
+    // Another commander's binding: this bot is not in the binding's group.
+    bool const otherBinding = BindingCommandsBot(boundRaid, 12, 43);
+    CHECK(!otherBinding);
+    EntryFacts other = raid;
+    other.conditionWaived = WaiveCondition(true, true, true, true, otherBinding, true);
+    EntryVerdict const otherVerdict = JudgeEntry(other);
+    CHECK(!otherVerdict.ok && std::strcmp(otherVerdict.code, today.code) == 0 &&
+        otherVerdict.message == today.message);
+}
+
+static void TestBindingCommandsBot()
+{
+    Binding binding;
+    binding.commanderGuid = 100;
+    binding.leadGuid = 11;
+    binding.groupId = 42;
+    binding.followers = { 12, 13 };
+    CHECK(BindingCommandsBot(binding, 11, 42));   // the lead bot
+    CHECK(BindingCommandsBot(binding, 13, 42));   // a listed follower
+    CHECK(!BindingCommandsBot(binding, 14, 42));  // a bot of the group the binding does not list
+    CHECK(!BindingCommandsBot(binding, 11, 43));  // another commander's binding
+    CHECK(!BindingCommandsBot(binding, 13, 43));
+
+    Binding system;  // the server's own bot-only party: no commander, its key is the lead bot's guid
+    system.commanderGuid = 11;
+    system.leadGuid = 11;
+    system.groupId = 42;
+    system.system = true;
+    CHECK(!BindingCommandsBot(system, 11, 42));
+
+    Binding unbound;  // no group yet
+    unbound.commanderGuid = 100;
+    unbound.leadGuid = 11;
+    CHECK(!BindingCommandsBot(unbound, 11, 0));
+    CHECK(!BindingCommandsBot(unbound, 11, 42));
 }
 
 static EnterFacts Far(float distance)
@@ -427,6 +484,7 @@ int main()
     TestEntranceAndNearest();
     TestRequirements();
     TestConditionWaiver();
+    TestBindingCommandsBot();
     TestBudgets();
     TestLeadWalksThenArrives();
     TestAlreadyInRange();

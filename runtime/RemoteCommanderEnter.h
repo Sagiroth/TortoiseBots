@@ -13,7 +13,8 @@
 // per-bot walk/wait/arrive state machine with its budgets, and the tally that turns the
 // bots' results into the order's single final answer. One check is waived rather than
 // judged: a bot's failed trigger condition at a raid's entrance that has no area-trigger
-// script, when its commander, a real player of the same raid, meets that condition himself
+// script, when its commander, a real player who commands that raid (its member, or the
+// commander of the bot's binding), meets that condition himself
 // (AiPlayerbot.RaidEntryByCommander). The glue is in commands/BotCommands.cpp.
 //
 // Plain data and the standard library only. World thread only, like the rest of the commander.
@@ -182,8 +183,9 @@ inline EntryVerdict RefuseEntry(char const* code, std::string const& message)
 }
 
 // AiPlayerbot.RaidEntryByCommander (owner decision 2026-10-28): a bot's failed trigger
-// condition is waived when the bot's commander (the binding's) is a real player in the
-// bot's raid and meets that condition himself (for Onyxia's lair: the Drakefire Amulet).
+// condition is waived when the bot's commander (the binding's) is a real player who commands
+// the bot's raid (a member of it, or its binding's commander, whom a raid binding keeps out
+// of the group) and meets that condition himself (for Onyxia's lair: the Drakefire Amulet).
 // The key, the commander's own check and the raid are the world's to read; this is the
 // rule only. A refused level, raid group, instance limit or content phase is never waived.
 // A raid's entrance only: a five-player dungeon's condition is never waived. And only an
@@ -191,9 +193,9 @@ inline EntryVerdict RefuseEntry(char const* code, std::string const& message)
 // script, so a script that denies the bot entry at the trigger is not re-checked there
 // (only the map's own admission checks are).
 inline bool WaiveCondition(bool keyOn, bool raidMap, bool unscriptedTrigger, bool commanderIsRealPlayer,
-    bool sameRaid, bool commanderMeetsCondition)
+    bool commanderOfRaid, bool commanderMeetsCondition)
 {
-    return keyOn && raidMap && unscriptedTrigger && commanderIsRealPlayer && sameRaid && commanderMeetsCondition;
+    return keyOn && raidMap && unscriptedTrigger && commanderIsRealPlayer && commanderOfRaid && commanderMeetsCondition;
 }
 
 // The checks in the core's order: content phase, level and condition (a GameMaster
