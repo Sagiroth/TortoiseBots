@@ -7,7 +7,6 @@
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/QuestValues.h"
-#include "playerbot/strategy/values/GuildValues.h"
 #include "../../../runtime/policy/hire/HireSourceGuardPolicy.h"
 #include "../../../runtime/HireLifecycle.h"
 #include "../../../runtime/policy/hire/HireQuestPolicy.h"
@@ -195,18 +194,6 @@ ItemIds TalkToQuestGiverAction::BestRewards(Quest const* quest)
     }
     else
     {
-        uint32 guildShareRewardItemId = AI_VALUE(uint32, "guild share quest reward item");
-        if (guildShareRewardItemId)
-        {
-            for (uint8 i = 0; i < quest->GetRewChoiceItemsCount(); ++i)
-            {
-                if (quest->RewChoiceItemId[i] == guildShareRewardItemId)
-                {
-                    return { i };
-                }
-            }
-        }
-
         // Issue #490 (bug part): hired bots skip source-gated choice rewards
         // when another choice exists (pure rule in
         // runtime/HireSourceGuardPolicy.h). A gated pick lands in the bags

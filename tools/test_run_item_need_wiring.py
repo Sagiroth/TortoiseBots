@@ -112,13 +112,11 @@ class GivenItemProvenanceWiringTest(unittest.TestCase):
 
     def test_bot_item_paths_refuse_a_given_item(self):
         give = (ACTIONS / "GiveItemAction.cpp").read_text()
-        share = (ACTIONS / "GuildShareItemAction.cpp").read_text()
         sell = (ACTIONS / "SellAction.cpp").read_text()
-        for name, text in (("GiveItemAction", give), ("GuildShareItemAction", share)):
-            self.assertIn("RunGivenItemRegistry.h", text, name)
-            moved = text.index("bot->MoveItemFromInventory(item->GetBagSlot(), item->GetSlot(), true);")
-            guard = text.index("TortoiseBots::RunGivenItems::Has(item->GetGUIDLow())")
-            self.assertLess(guard, moved, name)
+        self.assertIn("RunGivenItemRegistry.h", give, "GiveItemAction")
+        moved = give.index("bot->MoveItemFromInventory(item->GetBagSlot(), item->GetSlot(), true);")
+        guard = give.index("TortoiseBots::RunGivenItems::Has(item->GetGUIDLow())")
+        self.assertLess(guard, moved, "GiveItemAction")
         sell_one = body(sell + "\n", "bool SellAction::Sell(Player* requester, Item* item)")
         self.assertIn("TortoiseBots::RunGivenItems::Has(item->GetGUIDLow())", sell_one)
 

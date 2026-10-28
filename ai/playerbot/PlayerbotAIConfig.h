@@ -654,7 +654,6 @@ public:
     bool disableActivityPriorities;
     bool forceActiveWhenNearPlayer;
     bool limitCombatActivity;
-    bool guildOrderAlwaysActive;
     uint32 botActiveAlone;
     uint32 diffWithPlayer;
     uint32 diffEmpty;

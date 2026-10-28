@@ -1,6 +1,6 @@
 // Standalone check for runtime/RunGivenItemRegistry.h (item-leg-skip review round 2, Codex 1): the run's given item
 // instances by GUID; the glue (commands/Commander.cpp GiveRunItems/TakeRunItems/cleanup) and the bot item paths
-// (GiveItemAction, GuildShareItemAction, SellAction) call it (tools/test_run_item_need_wiring.py pins the calls).
+// (GiveItemAction, SellAction) call it (tools/test_run_item_need_wiring.py pins the calls).
 //   g++ -std=c++17 -Wall -Wextra tools/test_run_given_item_registry.cpp -o /tmp/t && /tmp/t
 #include "../runtime/RunGivenItemRegistry.h"
 

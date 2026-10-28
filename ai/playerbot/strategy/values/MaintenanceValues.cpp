@@ -6,7 +6,6 @@
 #include "runtime/policy/provision/NearbyServicePolicy.h"
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
-#include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/strategy/actions/AcceptQuestAction.h"
 #include "playerbot/strategy/triggers/RpgTriggers.h"
 #include "playerbot/RandomBotFacade.h"
@@ -701,8 +700,6 @@ bool ShouldGetMailValue::Calculate() {
     if (!master)
         return false;
 
-    bool hasGuildShareList = !AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list").empty();
-
     for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
     {
         if ((*itr)->state == MAIL_STATE_DELETED || cur_time < (*itr)->deliver_time)
@@ -710,17 +707,12 @@ bool ShouldGetMailValue::Calculate() {
 
         int32 waitingInBoxTime = cur_time - (*itr)->deliver_time;
 
-        if (!hasGuildShareList && waitingInBoxTime < HOUR) //Let mail sit in the inbox for atleast 1 hour
+        if (waitingInBoxTime < HOUR) //Let mail sit in the inbox for atleast 1 hour
         {
             return false;
         }
 
         if ((*itr)->has_items && waitingInBoxTime > HOUR * 4) //Items are allowed to sit in the mail for max 4 hours.
-        {
-            return true;
-        }
-
-        if (hasGuildShareList && (*itr)->has_items && (*itr)->stationery == MAIL_STATIONERY_AUCTION && waitingInBoxTime > MINUTE) //If bot has guild share list and mail is from AH, take mail immediately.
         {
             return true;
         }
