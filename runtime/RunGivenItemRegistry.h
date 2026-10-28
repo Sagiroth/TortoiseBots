@@ -5,7 +5,7 @@
 // recorded in the crash ledger ai_run_given_item before the bot could use
 // them. The run's take-back destroys exactly these instances (never a bot's
 // own copy of the same item), and the bot paths that move an item to someone
-// else (GiveItemAction, GuildShareItemAction, SellAction) refuse them. The
+// else (GiveItemAction, SellAction) refuse them. The
 // core refuses trade, mail and auction of them by the soulbound flag the give
 // sets. World thread only. Plain std, includable without core.
 

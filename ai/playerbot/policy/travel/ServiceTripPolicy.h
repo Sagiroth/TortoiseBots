@@ -48,16 +48,16 @@ namespace ai
     inline constexpr int SERVICE_TRIP_RESCUE_COOLDOWN_SEC = 30 * 60;
 
     // Numeric purpose id ("1024") or named purpose ("city", "trainer class",
-    // "trainer trade", "trainer mount", "trainer pet", "mount", "reagent
-    // vendor"). The named trainer/vendor requests carry a real need of their
-    // own (trainable spells, mount, reagents), so they count as service.
+    // "trainer trade", "trainer mount", "trainer pet", "mount"). The named
+    // trainer/vendor requests carry a real need of their own (trainable
+    // spells, mount), so they count as service.
     // Anything else with a letter in it (pvp, guild meeting, guild order,
     // tabard, petition) walks a route the owner must see on foot: out of
     // scope for the rescue.
     inline bool ServiceTripIsServicePurpose(std::string const& purpose)
     {
         if (purpose == "city" || purpose.compare(0, 7, "trainer") == 0 ||
-            purpose == "mount" || purpose == "reagent vendor")
+            purpose == "mount")
             return true;
         if (purpose.empty())
             return false;
