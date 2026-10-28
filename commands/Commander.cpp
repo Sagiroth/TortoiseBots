@@ -11938,6 +11938,16 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
         ref.lead = lead;
         if (group && group->GetId() == binding->groupId)
             FillCommandedBots(group, lead, ref.bots);
+        // The layout names follow the group: a bot that left it is not among the commanded bots any more, so its name
+        // drops out of the payload rather than aging in the stored record (the group is the truth for who is bound).
+        if (ref.layout.present && !ref.bots.empty())
+        {
+            std::vector<std::string> members;
+            members.reserve(ref.bots.size());
+            for (Player* bot : ref.bots)
+                members.push_back(bot->GetName());
+            ref.layout = CommanderTelemetry::CurrentRaidLayout(ref.layout, members);
+        }
         ref.orders = CommanderOrderLog().Recent(commanderRaw);
         FillCommanderMapData(*binding, commander, lead, ref);
         FillCommanderCombat(commanderRaw, *binding, lead, ref);

@@ -915,6 +915,14 @@ void TestDashLayoutAndLabel()
     std::string const laid = BuildPayload(9, 1, 1, 1, {b});
     Check(Has(laid, "\"layout\":{\"mt\":\"Ragemeister\",\"ot\":[\"Irelanthe\",\"Brun\"],\"th\":[{\"h\":\"Sera\",\"t\":\"Ragemeister\"}],\"rh\":[\"Prayer\"]}"),
         "the raid layout, with its tank healer pairs");
+
+    // F5: the layout follows the group. Off-tank Brun left, so the next datagram no longer names it.
+    BindingInfo departed = b;
+    departed.layout = CurrentRaidLayout(b.layout, {"Ragemeister", "Irelanthe", "Sera", "Prayer"});
+    std::string const shrunk = BuildPayload(9, 1, 1, 1, {departed});
+    Check(Has(shrunk, "\"layout\":{\"mt\":\"Ragemeister\",\"ot\":[\"Irelanthe\"],\"th\":[{\"h\":\"Sera\",\"t\":\"Ragemeister\"}],\"rh\":[\"Prayer\"]}"),
+        "a departed off-tank is gone from the next layout");
+    Check(!Has(shrunk, "Brun"), "the departed off-tank's name is nowhere in the datagram");
 }
 
 } // namespace

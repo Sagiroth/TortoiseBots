@@ -33,6 +33,7 @@
 // Standard library only (Player is a forward declaration), so
 // tools/test_commander_telemetry.cpp compiles it without a game header.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -544,6 +545,34 @@ struct BindingInfo
     std::vector<BossInfo> bosses;
     std::string combatJson;          // the live fight window (`combat` object), "" outside a fight
 };
+
+// The layout as the card may show it, read against the binding's current members: a name whose bot left the group
+// is not among them any more, so it leaves the layout with it (main tank, off-tank, tank healer, the tank it heals,
+// raid healer). An empty member list is the lead bot between maps, not a departure, so the stored record then stands.
+inline RaidLayoutInfo CurrentRaidLayout(RaidLayoutInfo const& stored, std::vector<std::string> const& members)
+{
+    if (members.empty())
+        return stored;
+    auto const present = [&members](std::string const& name)
+    {
+        for (std::string const& member : members)
+            if (member == name)
+                return true;
+        return false;
+    };
+    auto const gone = [&present](std::string const& name) { return !present(name); };
+    RaidLayoutInfo layout = stored;
+    if (!present(layout.mainTank))
+        layout.mainTank.clear();
+    layout.offTanks.erase(std::remove_if(layout.offTanks.begin(), layout.offTanks.end(), gone), layout.offTanks.end());
+    layout.raidHealers.erase(std::remove_if(layout.raidHealers.begin(), layout.raidHealers.end(), gone), layout.raidHealers.end());
+    layout.tankHealers.erase(std::remove_if(layout.tankHealers.begin(), layout.tankHealers.end(),
+        [&present](std::pair<std::string, std::string> const& pair) { return !present(pair.first) || !present(pair.second); }),
+        layout.tankHealers.end());
+    layout.present = stored.present && (!layout.mainTank.empty() || !layout.offTanks.empty() ||
+        !layout.tankHealers.empty() || !layout.raidHealers.empty());
+    return layout;
+}
 
 inline std::string JsonEscape(std::string const& s)
 {

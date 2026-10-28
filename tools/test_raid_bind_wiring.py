@@ -90,6 +90,12 @@ class RaidBindWiringTest(unittest.TestCase):
         drop = departed.index("CommanderBindings().RemoveFollower(commanderRaw, follower);")
         self.assertLess(forget, drop)
 
+    def test_telemetry_names_only_the_bots_still_bound(self):
+        collect = body(SRC, "void CollectCommanderTelemetry(", "\n}\n")
+        fill = collect.index("FillCommandedBots(group, lead, ref.bots);")
+        prune = collect.index("ref.layout = CommanderTelemetry::CurrentRaidLayout(ref.layout, members);")
+        self.assertLess(fill, prune)
+
 
 class RaidLayoutWiringTest(unittest.TestCase):
     def test_apply_lays_out_the_raid(self):
