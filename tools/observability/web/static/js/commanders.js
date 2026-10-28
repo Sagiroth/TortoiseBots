@@ -160,7 +160,8 @@
       skip: ".bot run for " + name + " skip",
       stop: ".bot run for " + name + " stop",
       status: ".bot run for " + name + " status",
-      startFromLeg: (leg) => ".bot run for " + name + " start from " + leg,
+      // a bare number is a step (`from 4` alone would be read as leg 4), anything else a leg name
+      startFromLeg: (leg) => ".bot run for " + name + " start from " + (/^\d+$/.test(String(leg).trim()) ? "step " + String(leg).trim() : "leg " + String(leg).trim()),
       reviveDead: dead.map((n) => ".revive " + n),
       reloadPlans: ".bot run reloadplans",
       gearPreset: (preset) => raid ? ".bot gear raid " + name + " preset " + preset : ".bot gear " + name + " preset " + preset,
