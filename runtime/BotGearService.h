@@ -67,6 +67,8 @@ public:
     // item back on (raid-w1-r2 item 2).
     uint32_t PinnedCap(uint32_t guidLow) const;
 
+    void OnBotLogout(uint32_t guidLow);
+
 private:
     BotGearService() = default;
 
