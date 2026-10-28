@@ -2,8 +2,8 @@
 // ids and killer-group boss kills, against the real service TU with the stub
 // config:
 //
-//   g++ -std=c++17 -Wall -Wextra -DCOMBAT_MONITOR_TEST_CONFIG -I. -Itools/tsan_stubs \
-//       tools/test_combat_monitor_service.cpp runtime/CombatMonitorService.cpp \
+//   g++ -std=c++17 -Wall -Wextra -DCOMBAT_MONITOR_TEST_CONFIG -I. -Itools/tsan_stubs
+//       tools/test_combat_monitor_service.cpp runtime/CombatMonitorService.cpp
 //       -o /tmp/combat_svc && /tmp/combat_svc
 #include <cassert>
 #include <cstdio>
@@ -208,6 +208,90 @@ static void TestBossKillNeedsKillerGroup()
     svc.Forget(62);
 }
 
+static void TestBitsetFiltersNonMembers()
+{
+    // With a group bound, a non-member guid that misses the member bitset
+    // neither loads the snapshot nor locks; a member guid does both.
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(63, Members(), true, false, Ctx(), {}, 1000);
+    uint64_t const locks = CombatMonitorService::TestHookLockCount();
+    uint64_t const loads = CombatMonitorService::TestSnapshotLoadCount();
+    svc.OnCast(4242, "Fireball", false);
+    svc.OnDamage(4242, 0, 10, "Nobody", 11502, 777, "Magmadar");
+    svc.OnDamage(0, 4242, 10, "Magmadar", 11502, 777, "Magmadar");
+    svc.OnHeal(4242, 10, 0);
+    svc.OnEnterCombat(4242);
+    svc.OnDeath(4242, 0, "Magmadar", 0.0f, 0.0f, 0.0f, 0);
+    svc.OnDeath(0, 4242, "", 0.0f, 0.0f, 0.0f, 11502);
+    CHECK(CombatMonitorService::TestHookLockCount() == locks);
+    CHECK(CombatMonitorService::TestSnapshotLoadCount() == loads);
+    svc.OnCast(7, "Sunder Armor", false);
+    CHECK(CombatMonitorService::TestHookLockCount() == locks + 1);
+    CHECK(CombatMonitorService::TestSnapshotLoadCount() == loads + 1);
+    svc.OnDamage(0, 9, 10, "Magmadar", 11502, 777, "Magmadar");
+    CHECK(CombatMonitorService::TestHookLockCount() == locks + 2);
+    // A member that left the group misses again once the next Refresh republished.
+    svc.Refresh(63, {MemberInfo{7, "Tanky", "warrior", Role::Tank, -1}}, true, false, Ctx(), {}, 2000);
+    uint64_t const after = CombatMonitorService::TestHookLockCount();
+    svc.OnHeal(9, 10, 0);
+    CHECK(CombatMonitorService::TestHookLockCount() == after);
+    svc.Forget(63);
+}
+
+static void TestRepublishOnlyOnChange()
+{
+    // Refresh republishes the member set only when it changed; SyncConfig(false)
+    // drops the books only on the on->off turn.
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(64, Members(), false, false, Ctx(), {}, 1000);
+    uint64_t const publishes = CombatMonitorService::TestPublishCount();
+    svc.Refresh(64, Members(), false, false, Ctx(), {}, 2000);
+    svc.Refresh(64, {Members()[1], Members()[0]}, false, false, Ctx(), {}, 3000);
+    CHECK(CombatMonitorService::TestPublishCount() == publishes);
+    svc.Refresh(64, {Members()[0]}, false, false, Ctx(), {}, 4000);
+    CHECK(CombatMonitorService::TestPublishCount() == publishes + 1);
+    svc.Refresh(64, Members(), false, false, Ctx(), {}, 5000);
+    CHECK(CombatMonitorService::TestPublishCount() == publishes + 2);
+    svc.SyncConfig(true);
+    CHECK(CombatMonitorService::TestPublishCount() == publishes + 2);
+    svc.SyncConfig(false);
+    CHECK(CombatMonitorService::TestPublishCount() == publishes + 3);
+    svc.SyncConfig(false);
+    CHECK(CombatMonitorService::TestPublishCount() == publishes + 3);
+    svc.SyncConfig(true);
+    svc.Forget(64);
+}
+
+static void TestOversizeFightTakesOneSeq()
+{
+    // Names far past the budget: the bounded truncated form still goes out,
+    // once per take, each with exactly one seq.
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    std::vector<MemberInfo> big;
+    for (uint32_t i = 0; i < 40; ++i)
+        big.push_back(MemberInfo{100 + i, std::string(5000, 'n'), "mage", Role::Damage, 0});
+    svc.NoteBinding(65, std::string(70000, 'c'), 5, 409);
+    svc.Refresh(65, big, true, false, Ctx(), {}, 1000);
+    svc.Refresh(65, big, false, false, Ctx(), {}, 8000);
+    svc.Refresh(65, big, false, false, Ctx(), {}, 12000);
+    uint64_t const seqBefore = g_seq;
+    std::vector<std::string> out;
+    svc.TakePayloads(out, 12, 77, NextSeq, 1700012000);
+    CHECK(out.size() == 1);
+    CHECK(g_seq == seqBefore + 1);
+    CHECK(out[0].size() <= TortoiseBots::CombatMonitor::kPayloadByteBudget);
+    CHECK(out[0].find("\"truncated\":true") != std::string::npos);
+    CHECK(out[0].find("\"seq\":" + std::to_string(seqBefore) + ",") != std::string::npos);
+    CHECK(CombatMonitorService::TestOversizeDropCount() == 0);
+    svc.Forget(65);
+}
+
 int main()
 {
     TestSyncConfigUngated();
@@ -215,6 +299,9 @@ int main()
     TestFightIdsSurviveForget();
     TestHooksSkipWithoutMembers();
     TestBossKillNeedsKillerGroup();
+    TestBitsetFiltersNonMembers();
+    TestRepublishOnlyOnChange();
+    TestOversizeFightTakesOneSeq();
     std::printf("combat monitor service: %d checks passed\n", checks);
     return 0;
 }

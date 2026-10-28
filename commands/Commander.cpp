@@ -5914,6 +5914,14 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
 // DungeonRun::kSeeYd of it (a pack, a boss, a spot to clear, the next hop).
 // ---------------------------------------------------------------------------
 
+// Combat monitor glue (task A8b): the 1 Hz sample in the run tick and the
+// snapshot's window read.
+static void FillCommanderCombat(uint64 commanderRaw, RemoteCommander::Binding const& binding, Player* lead,
+    CommanderTelemetry::BindingRef& ref);
+static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding const& binding, Player* lead,
+    std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& facts, DungeonRunSlot const& slot);
+static void ForgetReleasedCombatGroups(void);
+
 namespace {
 
 void SendRunLine(Player* commander, DungeonRunSlot& slot, bool force)
@@ -9156,14 +9164,6 @@ std::vector<TortoiseBots::PlayerLed::Engaged> ReadPlayerLedEngaged(Player* comma
     }
     return out;
 }
-
-// Combat monitor glue (task A8b): the 1 Hz sample in the run tick and the
-// snapshot's window read.
-static void FillCommanderCombat(uint64 commanderRaw, RemoteCommander::Binding const& binding, Player* lead,
-    CommanderTelemetry::BindingRef& ref);
-static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding const& binding, Player* lead,
-    std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& facts, DungeonRunSlot const& slot);
-static void ForgetReleasedCombatGroups(void);
 
 void TickDungeonRun(uint64 commanderRaw, uint32 dt)
 {

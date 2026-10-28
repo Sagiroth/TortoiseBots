@@ -27,6 +27,29 @@ def body(text, start, end):
     return text[i:text.index(end, i + len(start))]
 
 
+def definition(text, head):
+    # The body of the first `head` that opens a brace before any ';' (skips forward declarations).
+    i = text.index(head)
+    while True:
+        rest = text[i:]
+        if rest.index("{") < rest.index(";"):
+            return rest[:rest.index("\n}\n")]
+        i = text.index(head, i + len(head))
+
+
+def anon_namespace_lines(text):
+    # 1-based line numbers inside an anonymous `namespace {` ... `} // namespace` block.
+    inside, depth = set(), 0
+    for no, line in enumerate(text.splitlines(), 1):
+        if line == "namespace {":
+            depth += 1
+        elif line == "} // namespace":
+            depth -= 1
+        elif depth:
+            inside.add(no)
+    return inside
+
+
 class CombatMonitorWiringTest(unittest.TestCase):
     def test_adapter_registers_all_five_hooks(self):
         for hook in ("UNITHOOK_ON_DAMAGE", "UNITHOOK_ON_HEAL",
@@ -62,10 +85,12 @@ class CombatMonitorWiringTest(unittest.TestCase):
             fn = body(SERVICE, "::%s(" % name, "\n}\n")
             self.assertIn("m_memberCount", fn, name)
             self.assertIn("atomic_load", fn, name)
+            self.assertIn("MaybeMember(", fn, name)
+            self.assertLess(fn.index("MaybeMember("), fn.index("atomic_load"), name)
             self.assertTrue("std::lock_guard<std::mutex>" in fn or "std::scoped_lock" in fn, name)
         for name in ("Refresh", "Forget", "SyncConfig"):
             fn = body(SERVICE, "::%s(" % name, "\n}\n")
-            self.assertIn("PublishMembers", fn if name != "SyncConfig" else fn + "PublishMembers", name)
+            self.assertIn("PublishMembers", fn, name)
         for member in re.findall(r"(?:Player|Unit)\s*\*\s*m_\w+|(?:Player|Unit)\s*\*\s*\w+;", SERVICE_H):
             self.fail("service must not keep a game pointer: %s" % member)
 
@@ -79,7 +104,7 @@ class CombatMonitorWiringTest(unittest.TestCase):
         code = strip_comments(SERVICE)
         sync = body(code, "CombatMonitorService::SyncConfig(", "\n}\n")
         self.assertNotIn("Enabled()", sync.split("PublishMembers")[0] if "PublishMembers" in sync else sync)
-        self.assertIn("m_enabled.store", sync)
+        self.assertIn("m_enabled.exchange", sync)
         collect = strip_comments(COMMANDER)
         self.assertIn("SyncConfig(sPlayerbotAIConfig.combatMonitor", collect)
         startup = (ROOT / "host" / "BotHostAdapter.cpp").read_text()
@@ -90,6 +115,25 @@ class CombatMonitorWiringTest(unittest.TestCase):
         self.assertIn("CombatMonitorService::Instance().Refresh(", collect)
         self.assertIn("CombatMonitorService::Instance().Forget(", collect)
         self.assertIn("ref.combatJson = ", collect)
+
+    def test_commander_syncs_the_config_before_the_enabled_check(self):
+        code = strip_comments(COMMANDER)
+        for name in ("FillCommanderCombat", "RefreshCombatMonitor"):
+            fn = definition(code, "static void %s(" % name)
+            self.assertIn("SyncConfig(", fn, name)
+            self.assertIn("Enabled()", fn, name)
+            self.assertLess(fn.index("SyncConfig("), fn.index("Enabled()"), name)
+
+    def test_combat_glue_declarations_sit_at_bot_commands_scope(self):
+        # Declared inside `namespace {` but defined outside it, the functions would never link.
+        inside = anon_namespace_lines(COMMANDER)
+        lines = COMMANDER.splitlines()
+        for name in ("FillCommanderCombat", "RefreshCombatMonitor", "ForgetReleasedCombatGroups"):
+            found = [no for no, line in enumerate(lines, 1) if line.startswith("static void %s(" % name)]
+            self.assertEqual(len(found), 2, name)
+            for no in found:
+                self.assertNotIn(no, inside, "%s at line %d" % (name, no))
+
     def test_telemetry_writes_the_window_raw(self):
         self.assertIn("std::string combatJson", TELEMETRY)
         payload = body(TELEMETRY, "inline std::string BuildPayload(", "\n}\n")
