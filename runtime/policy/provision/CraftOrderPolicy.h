@@ -74,6 +74,23 @@ inline uint32_t BatchForFreeSlots(uint32_t casts, uint32_t maxYieldPerCast, uint
     return uint32_t(batch);
 }
 
+// Casts one reagent row affords from the bags. A zero per-cast need never
+// limits (a non-reagent row); the caller takes the min over all rows.
+inline uint32_t CastsAffordable(uint32_t have, uint32_t perCast)
+{
+    return perCast ? have / perCast : UINT32_MAX;
+}
+
+// Bundles of BuyCount to buy for a shortfall, and their total price.
+inline uint32_t BundlesForShortfall(uint32_t shortfall, uint32_t buyCount)
+{
+    if (shortfall == 0)
+        return 0;
+    if (buyCount == 0)
+        return shortfall;
+    return (shortfall + buyCount - 1) / buyCount;
+}
+
 // Real free bag slots: backpack slots plus each bag's own free slots.
 // Counts slots, not percentages - the 0-100 "bag space" cannot size a batch.
 template <typename Bags, typename FreeIn>

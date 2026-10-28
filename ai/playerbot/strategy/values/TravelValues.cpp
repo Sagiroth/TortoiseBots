@@ -477,9 +477,9 @@ bool ShouldTravelNamedValue::Calculate()
     {
         return AI_VALUE(bool, "has guild travel order");
     }
-    else if (name == "order capital")
+    else if (name == "order focus")
     {
-        return AI_VALUE(bool, "guild order needs capital");
+        return AI_VALUE(bool, "guild order needs focus");
     }
     else if (name == "order vendor")
     {

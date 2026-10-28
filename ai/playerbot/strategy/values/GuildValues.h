@@ -92,12 +92,13 @@ namespace ai
         uint32 Calculate() override;
     };
 
-    // True when a craft order has all its reagents but the recipe needs a
-    // spell focus (anvil, forge, fire) and the bot is not in a capital city.
-    class GuildOrderNeedsCapitalValue : public BoolCalculatedValue
+    // True when the recipe needs a spell focus (anvil, forge, fire),
+    // reagents for at least one cast are ready, and no matching focus
+    // object is in sight.
+    class GuildOrderNeedsFocusValue : public BoolCalculatedValue
     {
     public:
-        GuildOrderNeedsCapitalValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "guild order needs capital", 10) {}
+        GuildOrderNeedsFocusValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "guild order needs focus", 10) {}
 
         bool Calculate() override;
     };

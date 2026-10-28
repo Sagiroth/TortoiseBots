@@ -21,6 +21,9 @@
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
+#include "playerbot/GuildOrderCraft.h"
+#include "playerbot/ServerFacade.h"
+#include "runtime/GuildOrderStore.h"
 #include "playerbot/RandomBotFacade.h"
 #include "runtime/HireLifecycle.h"
 #include "Guild/GuildMgr.h"
@@ -2169,6 +2172,11 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         }
 
         std::string orderTarget = order.target;
+        if (order.IsCraftOrder() && orderFarmItem)
+        {
+            if (ItemPrototype const* farmProto = sObjectMgr.GetItemPrototype(orderFarmItem))
+                orderTarget = farmProto->Name1;
+        }
 
         ai->TellDebug(ai->GetMaster(), "Guild order: " + order.GetTypeName() + " " + orderTarget, "debug travel");
 
@@ -2370,25 +2378,76 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::Vendor, entries, false);
             });
     }
-    else if (travelName == "order capital")
+    else if (travelName == "order focus")
     {
-        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+        GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+        if (!order.IsCraftOrder())
+            return false;
+
+        uint32 craftSpellId = ai::FindCraftSpellFor(bot, order.itemId);
+        const SpellEntry* pSpellInfo = craftSpellId ? sServerFacade.LookupSpellInfo(craftSpellId) : nullptr;
+        if (!pSpellInfo || !pSpellInfo->RequiresSpellFocus)
+            return false;
+
+        uint32 focusId = pSpellInfo->RequiresSpellFocus;
+        std::vector<int32> focusEntries;
+        for (uint32 entry = 0; entry < sGOStorage.GetMaxEntry(); ++entry)
+        {
+            GameObjectInfo const* goInfo = sObjectMgr.GetGameObjectInfo(entry);
+            if (goInfo && goInfo->type == GAMEOBJECT_TYPE_SPELL_FOCUS && goInfo->spellFocus.focusId == focusId)
+                focusEntries.push_back(-(int32)entry);
+        }
+
+        if (focusEntries.empty())
+        {
+            ai->TellDebug(ai->GetMaster(), "No focus spawns for focus " + std::to_string(focusId), "debug travel");
+            TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
+                TortoiseBots::GuildOrders::StateForReason(TortoiseBots::GuildOrders::OrderReason::NoSource),
+                TortoiseBots::GuildOrders::OrderReason::NoSource);
+            return false;
+        }
+
+        EntryGuidps const& guidps = GAI_VALUE_REF(EntryGuidps, "entry guidps");
+        std::vector<AsyncGuidPosition const*> spawns;
+        for (int32 entry : focusEntries)
+        {
+            auto it = guidps.find(entry);
+            if (it == guidps.end())
+                continue;
+            for (AsyncGuidPosition const& guidp : it->second)
             {
-                PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg);
+                if (guidp.getMapId() != center.getMapId())
+                    continue;
+                if (guidp.IsEnemyHomeZoneFor(bot->GetTeam()))
+                    continue;
+                spawns.push_back(&guidp);
+            }
+        }
 
-                for (auto& [partition, travelPoints] : list)
+        if (spawns.empty())
+        {
+            ai->TellDebug(ai->GetMaster(), "No reachable focus spawns for focus " + std::to_string(focusId), "debug travel");
+            TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
+                TortoiseBots::GuildOrders::StateForReason(TortoiseBots::GuildOrders::OrderReason::NoSource),
+                TortoiseBots::GuildOrders::OrderReason::NoSource);
+            return false;
+        }
+
+        std::sort(spawns.begin(), spawns.end(), [&center](AsyncGuidPosition const* a, AsyncGuidPosition const* b)
+        {
+            return a->sqDistance2d(center) < b->sqDistance2d(center);
+        });
+
+        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [spawns, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+            {
+                PartitionedTravelList list;
+                for (AsyncGuidPosition const* guidp : spawns)
                 {
-                    travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [](TravelPoint point)
-                        {
-                            WorldPosition* pos = std::get<WorldPosition*>(point);
-                            if (!pos)
-                                return true;
-
-                            AreaTableEntry const* area = pos->GetArea();
-                            uint32 zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
-                            AreaTableEntry const* zone = zoneId ? GetAreaEntryByAreaID(zoneId) : nullptr;
-                            return !zone || !(zone->Flags & AREA_FLAG_CAPITAL);
-                        }), travelPoints.end());
+                    WorldPosition* point = const_cast<AsyncGuidPosition*>(guidp);
+                    TemporaryTravelDestination* dest = new TemporaryTravelDestination(*point);
+                    list[0].push_back(TravelPoint(dest, point, point->distance(center)));
+                    if (list[0].size() >= 5)
+                        break;
                 }
                 return list;
             });
@@ -2409,9 +2468,34 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 
         std::vector<int32> orderVendorEntries(vendorEntrySet.begin(), vendorEntrySet.end());
 
-        if (orderVendorEntries.empty())
+        PartitionedTravelList probe;
+        if (!orderVendorEntries.empty())
         {
-            ai->TellDebug(ai->GetMaster(), "No vendor entries found for order reagent", "debug travel");
+            probe = sTravelMgr.GetPartitions(center, travelPartitions, PlayerTravelInfo(bot),
+                (uint32)TravelDestinationPurpose::Vendor, orderVendorEntries, false);
+            for (auto& [partition, points] : probe)
+            {
+                points.erase(std::remove_if(points.begin(), points.end(), [](TravelPoint point)
+                    {
+                        WorldPosition* pos = std::get<WorldPosition*>(point);
+                        return !pos || pos->distance(center) == FLT_MAX;
+                    }), points.end());
+            }
+        }
+
+        bool reachable = false;
+        for (auto& [partition, points] : probe)
+        {
+            if (!points.empty())
+                reachable = true;
+        }
+
+        if (!reachable)
+        {
+            ai->TellDebug(ai->GetMaster(), "No reachable vendor for order reagent", "debug travel");
+            TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
+                TortoiseBots::GuildOrders::StateForReason(TortoiseBots::GuildOrders::OrderReason::NoSource),
+                TortoiseBots::GuildOrders::OrderReason::NoSource);
             return false;
         }
 

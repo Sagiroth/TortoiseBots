@@ -97,6 +97,23 @@ static void TestFreeBagSlots()
         [](uint32_t free) { return free; }) == 6);
 }
 
+static void TestCastsAffordable()
+{
+    CHECK(CastsAffordable(10, 2) == 5);
+    CHECK(CastsAffordable(9, 2) == 4);
+    CHECK(CastsAffordable(1, 2) == 0);
+    CHECK(CastsAffordable(0, 0) == UINT32_MAX);
+    CHECK(CastsAffordable(7, 0) == UINT32_MAX);
+}
+
+static void TestBundlesForShortfall()
+{
+    CHECK(BundlesForShortfall(0, 5) == 0);
+    CHECK(BundlesForShortfall(5, 5) == 1);
+    CHECK(BundlesForShortfall(6, 5) == 2);
+    CHECK(BundlesForShortfall(7, 0) == 7);
+}
+
 int main()
 {
     TestShortfall();
@@ -105,6 +122,8 @@ int main()
     TestFitsInFreeSlots();
     TestBatchForFreeSlots();
     TestFreeBagSlots();
+    TestCastsAffordable();
+    TestBundlesForShortfall();
     std::printf("craft order policy: %d checks passed\n", checks);
     return 0;
 }

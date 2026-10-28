@@ -6,6 +6,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/GuildOrderSources.h"
+#include "playerbot/GuildOrderCraft.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/policy/provision/CraftOrderPolicy.h"
 #include "Guild/GuildMgr.h"
@@ -59,30 +60,6 @@ bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
     return stored->delivered + bot->GetItemCount(order.itemId) < order.amount;
 }
 
-namespace
-{
-uint32 FindCraftSpellFor(Player* bot, uint32 itemId)
-{
-    for (auto& [spellId, spellState] : bot->GetSpellMap())
-    {
-        if (spellState.state == PLAYERSPELL_REMOVED || spellState.disabled || IsPassiveSpell(spellId))
-            continue;
-
-        const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
-        if (!pSpellInfo)
-            continue;
-
-        for (int i = 0; i < 3; ++i)
-        {
-            if (pSpellInfo->Effect[i] == SPELL_EFFECT_CREATE_ITEM && pSpellInfo->EffectItemType[i] == itemId)
-                return spellId;
-        }
-    }
-
-    return 0;
-}
-} // namespace
-
 uint32 GuildOrderVendorReagentValue::Calculate()
 {
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
@@ -104,13 +81,15 @@ uint32 GuildOrderVendorReagentValue::Calculate()
     if (currentCount >= orderAmount)
         return 0;
 
-    uint32 craftSpellId = FindCraftSpellFor(bot, itemId);
+    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
     if (!craftSpellId)
         return 0;
 
     const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
     if (!pSpellInfo)
         return 0;
+
+    uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, orderAmount - currentCount);
 
     for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
     {
@@ -125,7 +104,7 @@ uint32 GuildOrderVendorReagentValue::Calculate()
 
         uint32 have = ai->GetInventoryItemsCountWithId(reagentId);
         if (TortoiseBots::CraftOrderPolicy::ReagentShortfall(
-                pSpellInfo->ReagentCount[i], orderAmount - currentCount, have) == 0)
+                pSpellInfo->ReagentCount[i], casts, have) == 0)
             continue;
 
         return reagentId;
@@ -134,7 +113,7 @@ uint32 GuildOrderVendorReagentValue::Calculate()
     return 0;
 }
 
-bool GuildOrderNeedsCapitalValue::Calculate()
+bool GuildOrderNeedsFocusValue::Calculate()
 {
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
     if (!order.IsCraftOrder())
@@ -155,7 +134,7 @@ bool GuildOrderNeedsCapitalValue::Calculate()
     if (currentCount >= orderAmount)
         return false;
 
-    uint32 craftSpellId = FindCraftSpellFor(bot, itemId);
+    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
     if (!craftSpellId)
         return false;
 
@@ -169,14 +148,27 @@ bool GuildOrderNeedsCapitalValue::Calculate()
             continue;
 
         uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
-        if (TortoiseBots::CraftOrderPolicy::ReagentShortfall(
-                pSpellInfo->ReagentCount[i], orderAmount - currentCount, have) != 0)
+        if (TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]) == 0)
             return false;
     }
 
-    uint32 zone = bot->GetZoneId();
-    AreaEntry const* area = AreaEntry::GetById(zone);
-    return !area || !(area->Flags & AREA_FLAG_CAPITAL);
+    std::list<ObjectGuid> objects = AI_VALUE(std::list<ObjectGuid>, "nearest game objects");
+    for (ObjectGuid guid : objects)
+    {
+        GameObject* go = ai->GetGameObject(guid);
+        if (!go || !sServerFacade.isSpawned(go))
+            continue;
+
+        GameObjectInfo const* info = sObjectMgr.GetGameObjectInfo(go->GetEntry());
+        if (!info || info->type != GAMEOBJECT_TYPE_SPELL_FOCUS ||
+            info->spellFocus.focusId != pSpellInfo->RequiresSpellFocus)
+            continue;
+
+        if (bot->GetDistance(go) <= sPlayerbotAIConfig.sightDistance)
+            return false;
+    }
+
+    return true;
 }
 
 uint32 GuildOrderFarmItemValue::Calculate()
@@ -203,13 +195,15 @@ uint32 GuildOrderFarmItemValue::Calculate()
     if (currentCount >= orderAmount)
         return 0;
 
-    uint32 craftSpellId = FindCraftSpellFor(bot, itemId);
+    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
     if (!craftSpellId)
         return 0;
 
     const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
     if (!pSpellInfo)
         return 0;
+
+    uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, orderAmount - currentCount);
 
     for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
     {
@@ -224,7 +218,7 @@ uint32 GuildOrderFarmItemValue::Calculate()
 
         uint32 have = ai->GetInventoryItemsCountWithId(reagentId);
         uint32 want = TortoiseBots::CraftOrderPolicy::ReagentShortfall(
-            pSpellInfo->ReagentCount[i], orderAmount - currentCount, have);
+            pSpellInfo->ReagentCount[i], casts, have);
         if (!want)
             continue;
 
