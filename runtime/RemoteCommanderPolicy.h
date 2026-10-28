@@ -652,7 +652,7 @@ inline char const* BindRefusalText(BindRefusal refusal)
         case BindRefusal::RaidInParty: return "A raid is bound with the commander outside it: drop inparty.";
         case BindRefusal::RaidNotInRaid: return "With raid the lead bot must be in your raid group (convert your party to a raid first, e.g. .bot hire raid).";
         case BindRefusal::RaidLeadNotTank: return "The lead bot of a raid must be a tank: it is the main tank.";
-        case BindRefusal::RaidTooSmall: return "A raid binding holds 6 to 40 bots; bind a party of five without raid.";
+        case BindRefusal::RaidTooSmall: return "A raid binding holds 6 to 39 bots; bind a party of five without raid.";
     }
     return "Request rejected.";
 }

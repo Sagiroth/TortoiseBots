@@ -137,6 +137,48 @@ static void TestPlanSubgroupMoves()
     Placed(rotation, turn);
     CHECK(PeakOf(rotation, turn) <= kSubgroupSize);
 }
+static void TestRestoreNewcomerInTarget()
+{
+    // A newcomer fills a restore target (planned = current, so never moved):
+    // the planner swaps or leaves the recorded member and never holds 6.
+    std::vector<SubgroupMember> restore;
+    restore.push_back({1, 1, 0});
+    restore.push_back({2, 1, 0});
+    for (uint64_t id = 3; id <= 6; ++id)
+        restore.push_back({id, 0, 0});
+    restore.push_back({7, 0, 0});
+    std::vector<SubgroupOp> back = PlanSubgroupMoves(restore);
+    CHECK(PeakOf(restore, back) <= kSubgroupSize);
+    std::vector<uint8_t> at(64, 0);
+    for (SubgroupMember const& m : restore)
+        at[m.id] = m.current;
+    for (SubgroupOp const& op : back)
+    {
+        if (op.swap)
+        {
+            uint8_t a = at[op.member], b = at[op.other];
+            at[op.member] = b;
+            at[op.other] = a;
+        }
+        else
+            at[op.member] = op.sub;
+    }
+    CHECK(at[7] == 0);
+}
+static void TestFullRaidKeepsOfflineSlots()
+{
+    // A 40-member raid with 2 offline members holding slots: everyone in,
+    // planned = current for the two out of the layout, no subgroup over 5.
+    std::vector<SubgroupMember> raid;
+    for (uint64_t id = 1; id <= 40; ++id)
+    {
+        uint8_t current = static_cast<uint8_t>((id - 1) / 5);
+        uint8_t planned = (id == 39 || id == 40) ? current : static_cast<uint8_t>((id + 3) % 8);
+        raid.push_back({id, current, planned});
+    }
+    std::vector<SubgroupOp> ops = PlanSubgroupMoves(raid);
+    CHECK(PeakOf(raid, ops) <= kSubgroupSize);
+}
 static void TestTankHealerCounts()
 {
     CHECK(RaidHealerMinimum(3) == 1 && RaidHealerMinimum(5) == 2 && RaidHealerMinimum(10) == 4);
@@ -212,6 +254,8 @@ int main()
     TestPlanTwenty();
     TestPlanForty();
     TestPlanSubgroupMoves();
+    TestRestoreNewcomerInTarget();
+    TestFullRaidKeepsOfflineSlots();
     TestPlanErrors();
     TestRunRules();
     std::printf("raid layout policy: %d checks passed\n", checks);

@@ -1,6 +1,6 @@
 """The raid bind glue (commands/Commander.cpp): binding the commander's raid.
 
-`.bot commander bind <LeadBot> raid` binds the commander's own raid of 6-40
+`.bot commander bind <LeadBot> raid` binds the commander's own raid of 6-39
 bots with the commander outside it (runtime/RemoteCommanderPolicy.h: the raid
 refusals, TakeBindRaid, KeepCommanderRaid). The glue reads the raid facts,
 keeps the raid group as it is, marks the binding a raid, and applies the raid
@@ -93,27 +93,42 @@ class RaidBindWiringTest(unittest.TestCase):
 
 class RaidLayoutWiringTest(unittest.TestCase):
     def test_apply_lays_out_the_raid(self):
-        apply = body_from(SRC, "static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> const& bots, ChatHandler* handler)\n{")
+        apply = body_from(SRC, "static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> const& bots, ChatHandler* handler, uint64_t commanderRaw)\n{")
         self.assertIn("RaidLayout::Plan(", apply)
         self.assertIn("PlanSubgroupMoves(", apply)
         self.assertIn("SwapMembersGroup(", apply)
         self.assertIn("GetMemberGroup(", apply)
+        self.assertIn("GetMemberSlots()", apply)
         self.assertIn("SetMainTank(", apply)
         self.assertIn("SetAssistant(", apply)
+        self.assertIn("GetMainAssistantGuid()", apply)
         self.assertIn('"focus heal targets"', apply)
         self.assertIn("+focus heal targets", apply)
+        self.assertIn('HasStrategy("focus heal targets"', apply)
+        self.assertIn("applied.commanderRaw = commanderRaw;", apply)
         self.assertIn("TBM:RAID_LAYOUT|warning|", apply)
-        self.assertIn("TBM:RAID_LAYOUT|%s|%s|%s|%s|%s", apply)
 
     def test_clear_undoes_the_layout_record(self):
         clear = body_from(SRC, "static void ClearRaidLayout(uint32 groupId)\n{")
         self.assertIn("SetAssistant(", clear)
         self.assertIn("PlanSubgroupMoves(", clear)
-        self.assertIn("-focus heal targets", COMMANDS)
+        self.assertIn("RestoreRaidFocusHealer(bot, record)", clear)
+        restore = body_from(SRC, "static void RestoreRaidFocusHealer(Player* bot, RaidFocusHealer const& record)\n{")
+        self.assertIn("-focus heal targets", restore)
+        self.assertIn("record.previousTargets", restore)
+        self.assertIn("record.hadStrategy", restore)
         self.assertIn("GetGroupById(groupId)", clear)
         self.assertIn("GetMemberGroup(", clear)
+        self.assertIn("GetMemberSlots()", clear)
         self.assertIn("GetMainTankGuid() == applied.setMainTank", clear)
+        self.assertIn("SetMainAssistant(", clear)
+        self.assertIn("subgroups not restored: %s", clear)
         self.assertIn("layouts.erase(it)", clear)
+
+    def test_departure_restores_the_healer_snapshot(self):
+        forget = body_from(SRC, "static void ForgetDepartedRaidMember(uint64 followerRaw, uint32 groupId)\n{")
+        self.assertIn("RestoreRaidFocusHealer(bot, *heals)", forget)
+        self.assertIn("record.guid == guid", forget)
 
     def test_save_skips_layout_focus_heal(self):
         self.assertIn("IsRaidFocusHealer(ai->GetBot())", STORE)
