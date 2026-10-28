@@ -486,6 +486,10 @@ public:
     // commander whose feed is on (`.bot commander view on|off`). Clamped to
     // 250..60000; default 1000.
     uint32 remoteCommanderViewMs = 1000;
+    // A bot's failed dungeon entrance condition (Onyxia's lair asks for the Drakefire
+    // Amulet) is waived when its commander is a real player of the same raid and meets
+    // it himself. On by default.
+    bool raidEntryByCommander = true;
     // Run trace (docs/server/run-trace.md): `.bot trace start <run_id>` records
     // the party's bots as bt-trace v1 JSONL. Off by default; with 0 the command
     // answers that the feature is off.

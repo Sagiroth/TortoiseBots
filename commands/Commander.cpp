@@ -4626,8 +4626,11 @@ void CompleteCommanderTask(CommanderTask& task)
 // session the same packet a client sends, WorldSession::HandleAreaTriggerOpcode, which
 // runs the core's own entry path (the trigger's phase, level and condition, the raid group,
 // the per-account instance limit in MapManager::CanPlayerEnter, Player::TeleportTo with
-// the instance and group binds, Map::CanEnter). Nothing is skipped or reimplemented
-// there; JudgeEntry below only names the reason of a refusal. The lead bot goes first
+// the instance and group binds, Map::CanEnter). JudgeEntry below only names the reason of
+// a refusal, save for the commander's condition waiver (AiPlayerbot.RaidEntryByCommander):
+// a bot that fails only the trigger's condition and whose commander meets it goes in by
+// the same Player::TeleportTo the core would use, since the core cannot be told the
+// commander's condition for a bot. The lead bot goes first
 // (it creates the group's instance bind); the followers hold at the trigger until it
 // stands in the dungeon.
 // ---------------------------------------------------------------------------
@@ -4650,6 +4653,22 @@ RemoteCommander::EntryFacts GatherEntryFacts(Player* bot, AreaTriggerTeleport co
     facts.conditionFailed = tele->requiredCondition && bot->GetMap() &&
         !sObjectMgr.IsConditionSatisfied(tele->requiredCondition, bot, bot->GetMap(), bot, CONDITION_FROM_AREATRIGGER);
     facts.conditionMessage = tele->message;
+    // AiPlayerbot.RaidEntryByCommander: the commander's own condition stands for the bot's when he is a real
+    // player of the bot's raid and meets it himself (the amulet Onyxia's lair asks for).
+    if (facts.conditionFailed && sPlayerbotAIConfig.raidEntryByCommander)
+    {
+        Group* group = bot->GetGroup();
+        RemoteCommander::Binding const* binding = group ? CommanderBindings().FindByGroup(group->GetId()) : nullptr;
+        Player* commander = binding ? FindCharacter(binding->commanderGuid) : nullptr;
+        bool const commanderIsRealPlayer = commander && !BotManager::Instance().IsBot(commander->GetObjectGuid());
+        bool const sameRaid = commanderIsRealPlayer && group && group->isRaidGroup() &&
+            group->IsMember(commander->GetObjectGuid());
+        bool const commanderMeets = sameRaid && commander->GetMap() &&
+            sObjectMgr.IsConditionSatisfied(tele->requiredCondition, commander, commander->GetMap(), commander,
+                CONDITION_FROM_AREATRIGGER);
+        facts.conditionWaived = RemoteCommander::WaiveCondition(sPlayerbotAIConfig.raidEntryByCommander,
+            commanderIsRealPlayer, sameRaid, commanderMeets);
+    }
     facts.raidMap = targetMap->IsDungeon() && targetMap->IsRaid();
     facts.ignoreRaid = sWorld.getConfig(CONFIG_BOOL_INSTANCE_IGNORE_RAID);
     Group* group = bot->GetGroup();
@@ -4679,7 +4698,8 @@ AreaTriggerTeleport const* InstanceEntranceOf(AreaTriggerEntry const* trigger, M
 bool SendEnterTrigger(CommanderTask& task, Player* bot, PlayerbotAI* ai, AreaTriggerTeleport const* tele,
     MapEntry const* targetMap)
 {
-    RemoteCommander::EntryVerdict const verdict = RemoteCommander::JudgeEntry(GatherEntryFacts(bot, tele, targetMap));
+    RemoteCommander::EntryFacts const facts = GatherEntryFacts(bot, tele, targetMap);
+    RemoteCommander::EntryVerdict const verdict = RemoteCommander::JudgeEntry(facts);
     if (!verdict.ok)
     {
         FinishCommanderTask(task, false, 0, "", verdict.code, verdict.message);
@@ -4691,6 +4711,11 @@ bool SendEnterTrigger(CommanderTask& task, Player* bot, PlayerbotAI* ai, AreaTri
     packet.rpos(0);
     bot->GetSession()->HandleAreaTriggerOpcode(packet);
     if (bot->IsBeingTeleported())
+        return false;
+    // The core judges the bot's own trigger condition and cannot be told the commander meets it; when
+    // that waiver is what let the checks above pass, the bot goes in by the core's own teleport
+    // (MapManager::CanPlayerEnter, the instance count and Map::CanEnter still decide).
+    if (facts.conditionWaived && bot->TeleportTo(tele->destination))
         return false;
     // The core refused: say why when the reason can be read now (the bot's state may have
     // changed with the attempt), else name the checks that only the core sees.

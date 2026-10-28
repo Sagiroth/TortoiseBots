@@ -23,7 +23,7 @@ TortoiseBots provides tools to manage owned alternate characters (alts) as bots,
 | [`.bot add`](#bot-add) | `<Name>` | Logs in an owned alt as an active companion bot. |
 | [`.bot remove`](#bot-remove) | `<Name>` | Logs out an owned bot or dismisses a hired companion. |
 | [`.bot hire`](#bot-hire) | `<class> [role] [race] [gender] [tier] [level=<n>]` | Recruits a mercenary companion from a recruiter. |
-| [`.bot hire raid`](#bot-hire-raid) | `<preset\|composition> [tier]` | Recruits up to 39 mercenary companions for a raid. |
+| [`.bot hire raid`](#bot-hire-raid) | `<preset\|composition> [tier] [level=<n>]` | Recruits up to 39 mercenary companions for a raid. |
 | [`.bot role`](#bot-role) | `<Name\|self> <tank\|healer\|dps\|clear>` | Sets group role overrides for bots or the player. |
 | [`.bot invite`](#bot-invite) | `<Name>` | Sends a party invite to an online owned bot. |
 | [`.bot uninvite`](#bot-uninvite) | `<Name>` | Removes an owned bot or dismisses a companion. |
@@ -97,10 +97,10 @@ By default (`AiPlayerbot.HireAnywhere = 0`), the `.bot hire` chat command always
 Recruits up to 39 mercenary companions for a raid in a single operation.
 
 ```text
-.bot hire raid <preset|composition> [tier]
+.bot hire raid <preset|composition> [tier] [level=<1-60>]
 ```
 
-Requires [`AiPlayerbot.HireAnywhere = 1`](../../server/settings/hiring.md#aiplayerbothireanywhere) even at a recruiter (proximity alone does not enable it). The command requires party leader permissions when the party must be converted to a raid (a party that would overflow 5); otherwise no leadership needed. It converts your group to a raid if needed, and checks available raid capacity and seats.
+Requires [`AiPlayerbot.HireAnywhere = 1`](../../server/settings/hiring.md#aiplayerbothireanywhere) even at a recruiter (proximity alone does not enable it). The command requires party leader permissions when the party must be converted to a raid (a party that would overflow 5); otherwise no leadership needed. It converts your group to a raid if needed, and checks available raid capacity and seats. An optional `level=` (or `level <n>`, `lvl=`) hires the whole roster at that level, clamped by the same rule as [`.bot hire`](#bot-hire); without it the companions arrive at your level.
 
 <details>
 <summary>Raid compositions, batching, and quotes</summary>

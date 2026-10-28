@@ -35,6 +35,7 @@
 ### Commands
 - New `.autogear` command gears a real player the way a spawned bot gets geared: items picked for the level and spec from the same gear pool the bots use, upgrades only, replaced items to the bags or the mailbox. GameMasters can gear any player; `AiPlayerbot.PlayerAutogearForAll` (default `0`) lets every player gear themselves.
 - Fixed: `.bot sell` and the "Sell junk" button sold nothing. Bots now sell their grey junk to a vendor in reach, and a sell order that sells nothing says why. Autonomous alts still never sell soulbound or equipped items, whatever ordered the sale.
+- `.bot hire raid` accepts `level=<n>` like `.bot hire` (the whole roster arrives at that level), and its `onyxia` preset now hires tier 3 gear to match the `onyxia` gear preset.
 
 ### Items & Loot
 - New `AiPlayerbot.HireLoot` (default `1`): set it to `0` and hired companions stop looting and pass on every roll, so the party keeps all the loot. Hired companions no longer take part in any quest, including orders from a player.
@@ -43,6 +44,7 @@
 - The companion app can now page through the last day of loot picked up by your party bots, 40 rows at a time.
 
 ### Dungeons & Maps
+- New `AiPlayerbot.RaidEntryByCommander` (default `1`): a commanded raid can enter a dungeon whose entrance asks for something only a player has (Onyxia's Lair and its Drakefire Amulet) when the commander is a real player of the same raid and meets the requirement himself; the entrance's other checks are unchanged.
 - Fixed: a player's ghost outside no longer pulls the run's bots in and out through the portal; the lead-off-map pause resumes by itself.
 - New: GameMasters can start bot-only dungeon test runs at up to 3x walking speed (`.bot run start ... speed=2`); fights stay at normal speed and the status line marks the run as a test.
 - Fixed: at test speed the lead bot waits for the party when a bot falls 25 yd behind, so the party no longer reaches packs split.

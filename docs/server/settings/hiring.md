@@ -264,14 +264,14 @@ Classes unfieldable by your faction are automatically skipped. Repeating a class
 
 ### `AiPlayerbot.HireRaidPresets`
 Defines shorthand raid composition presets available for one-step raid hiring.
-**Default:** `zg=2t 4h 13d t2;aq20=2t 4h 13d t5;onyxia=3t 10h 26d t1;mc=3t 10h 26d t3;bwl=3t 10h 26d t4;aq40=3t 10h 26d t5;naxx=3t 10h 26d t6` · **Values:** semicolon-separated preset definitions · **Restart:** needed
+**Default:** `zg=2t 4h 13d t2;aq20=2t 4h 13d t5;onyxia=3t 10h 26d t3;mc=3t 10h 26d t3;bwl=3t 10h 26d t4;aq40=3t 10h 26d t5;naxx=3t 10h 26d t6` · **Values:** semicolon-separated preset definitions · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-Allows players to hire complete pre-configured raid teams using `.bot hire raid <preset> [tier]`.
+Allows players to hire complete pre-configured raid teams using `.bot hire raid <preset> [tier] [level=<n>]`.
 
-Each preset specifies role counts and an optional default gear tier. Explicit gear tiers supplied in the command override the preset default. Malformed entries log an error and use the built-in defaults.
+Each preset specifies role counts and an optional default gear tier. Explicit gear tiers supplied in the command override the preset default. An optional `level=` hires the whole roster at that level (clamped like `.bot hire`); without it the companions arrive at your level. Malformed entries log an error and use the built-in defaults.
 
 </details>
 

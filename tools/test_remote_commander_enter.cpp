@@ -148,6 +148,48 @@ static void TestRequirements()
     CHECK(!JudgeEntry(facts).ok);
 }
 
+static void TestConditionWaiver()
+{
+    // AiPlayerbot.RaidEntryByCommander: key, a real commander, the bot's raid, the commander's own condition.
+    CHECK(WaiveCondition(true, true, true, true));
+    CHECK(!WaiveCondition(false, true, true, true));  // key off
+    CHECK(!WaiveCondition(true, false, true, true));  // the commander is a bot
+    CHECK(!WaiveCondition(true, true, false, true));  // not in the bot's raid
+    CHECK(!WaiveCondition(true, true, true, false));  // the commander fails too
+
+    // A bot that fails only the condition: the commander's check lets it in.
+    EntryFacts base = Ready();
+    base.conditionFailed = true;
+    EntryVerdict const today = JudgeEntry(base);
+    CHECK(!today.ok && std::strcmp(today.code, kCodeRequirement) == 0);
+    base.conditionWaived = WaiveCondition(true, true, true, true);
+    CHECK(JudgeEntry(base).ok);
+
+    // The commander fails too: the same refusal as today, message included.
+    EntryFacts refused = base;
+    refused.conditionWaived = WaiveCondition(true, true, true, false);
+    EntryVerdict const verdict = JudgeEntry(refused);
+    CHECK(!verdict.ok && std::strcmp(verdict.code, today.code) == 0 && verdict.message == today.message);
+
+    // The key off: today's refusal.
+    EntryFacts keyOff = base;
+    keyOff.conditionWaived = WaiveCondition(false, true, true, true);
+    CHECK(!JudgeEntry(keyOff).ok);
+
+    // The waiver lifts the condition only: the level, raid group and instance limit stay.
+    EntryFacts facts = base;
+    facts.level = 1;
+    CHECK(!JudgeEntry(facts).ok);
+    facts = base;
+    facts.raidMap = true;
+    CHECK(!JudgeEntry(facts).ok);
+    facts.inRaidGroup = true;
+    facts.instanceCountOk = false;
+    CHECK(!JudgeEntry(facts).ok);
+    facts.instanceCountOk = true;
+    CHECK(JudgeEntry(facts).ok);
+}
+
 static EnterFacts Far(float distance)
 {
     EnterFacts facts;
@@ -366,6 +408,7 @@ int main()
     TestParse();
     TestEntranceAndNearest();
     TestRequirements();
+    TestConditionWaiver();
     TestBudgets();
     TestLeadWalksThenArrives();
     TestAlreadyInRange();

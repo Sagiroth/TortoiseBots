@@ -473,8 +473,9 @@ HireRaidOutcome HireProvisionService::HireRaid(Player* requester, HireRaidReques
     if (!CheckHireAllowed(requester, false, gate))
         return refuse(gate.message);
 
-    // No level request: the same rule Hire() applies (the hirer's level, #936).
-    uint32_t level = ResolveHireLevel(requester->GetLevel(), 0,
+    // The level the whole roster hires at: `level=<n>` clamped by the same rule Hire()
+    // applies (#936), else the hirer's own level.
+    uint32_t level = ResolveHireLevel(requester->GetLevel(), request.level,
         sPlayerbotAIConfig.hireMaxLevelAboveHirer,
         requester->GetSession()->GetSecurity() >= static_cast<int>(SEC_GAMEMASTER)).level;
     // Same tier rule as Hire(): validated at 60, ignored below.
@@ -606,6 +607,7 @@ HireRaidOutcome HireProvisionService::HireRaid(Player* requester, HireRaidReques
     HireRaidJob job;
     job.masterGuid = masterGuid;
     job.roster = roster;
+    job.level = static_cast<uint8_t>(level);
     job.raidSized = raidSized;
     job.hadGroup = group != nullptr;
     job.startedInRaid = group && group->isRaidGroup();
@@ -678,6 +680,7 @@ void HireProvisionService::StepRaidJobs()
             sel.classId = slot.classId;
             sel.role = slot.role;
             sel.gearTier = out.tier;
+            sel.level = job.level;
             // Same druid defaults as `.bot hire`: bear tank, restoration
             // healer, cat DPS.
             if (slot.classId == CLASS_DRUID)

@@ -13,9 +13,11 @@
 //                                     "3 tanks", "12 heal", "24 dps")
 //   <N> <class>[:<role>]              explicit class, e.g. "3 warrior:tank"
 //   t<N> | tier<N> | mc | naxx ...    gear tier (ParseHireTierWord), last wins
+//   level=<n> | level <n> | lvl=<n>   hire level (ParseHireLevelWord), as `.bot hire`
 //   <preset>                          first token only, expands to a config
 //                                     composition; later tokens extend it
 
+#include "HireLevelPolicy.h"
 #include "HireSpecPolicy.h"
 #include "HireTierRequestPolicy.h"
 
@@ -39,7 +41,7 @@ constexpr char const* kHireRaidSpreadDefault =
     "dps=mage,warlock,rogue,hunter,warrior,mage,warlock,rogue,hunter,shaman";
 // Presets: name=composition; the composition is the same grammar as the command.
 constexpr char const* kHireRaidPresetsDefault =
-    "zg=2t 4h 13d t2;aq20=2t 4h 13d t5;onyxia=3t 10h 26d t1;mc=3t 10h 26d t3;"
+    "zg=2t 4h 13d t2;aq20=2t 4h 13d t5;onyxia=3t 10h 26d t3;mc=3t 10h 26d t3;"
     "bwl=3t 10h 26d t4;aq40=3t 10h 26d t5;naxx=3t 10h 26d t6";
 
 // One composition entry. classId 0 = pick from the spread by role; role 0 =
@@ -55,6 +57,7 @@ struct HireRaidRequest
 {
     std::vector<HireRaidEntry> entries;
     uint8_t tier = 0;
+    uint32_t level = 0; // 0 = the hirer's level, as `.bot hire`; clamped by ResolveHireLevel
 };
 
 struct HireRaidSlot
@@ -288,6 +291,41 @@ inline bool ParseHireRaidSpec(std::vector<std::string> const& tokens, HireRaidRe
                 }
             }
             out.entries.push_back(entry);
+            continue;
+        }
+        // A level word, as `.bot hire`: level=60, lvl:42, level 60. The raid's
+        // whole roster hires at one level (no bare number: that is a count here).
+        uint32_t levelWord = 0;
+        HireLevelWord const levelKind = ParseHireLevelWord(tok, levelWord);
+        if (levelKind == HireLevelWord::Bad)
+        {
+            error = "Bad level '" + tok + "': use level=<1-60>, for example .bot hire raid 3t 12h 26d level=60.";
+            return false;
+        }
+        if (levelKind == HireLevelWord::Ok)
+        {
+            if (out.level)
+            {
+                error = "Give only one level.";
+                return false;
+            }
+            out.level = levelWord;
+            continue;
+        }
+        if (levelKind == HireLevelWord::Prefix)
+        {
+            if (i + 1 >= tokens.size() || !ParseHireLevelNumber(tokens[i + 1], levelWord))
+            {
+                error = "Bad level: use level=<1-60>, for example .bot hire raid 3t 12h 26d level=60.";
+                return false;
+            }
+            if (out.level)
+            {
+                error = "Give only one level.";
+                return false;
+            }
+            out.level = levelWord;
+            ++i;
             continue;
         }
         uint8_t tier = 0;

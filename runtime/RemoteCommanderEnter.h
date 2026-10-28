@@ -11,7 +11,9 @@
 // exercises it standalone: the argument parsing, the choice of the nearest entrance, the
 // requirement verdict (the readable reason of a refusal; the core stays the judge), the
 // per-bot walk/wait/arrive state machine with its budgets, and the tally that turns the
-// bots' results into the order's single final answer. The glue is in
+// bots' results into the order's single final answer. One check is waived rather than
+// judged: a bot's failed trigger condition when its commander, a real player of the same
+// raid, meets that condition himself (AiPlayerbot.RaidEntryByCommander). The glue is in
 // commands/BotCommands.cpp.
 //
 // Plain data and the standard library only. World thread only, like the rest of the commander.
@@ -140,9 +142,11 @@ inline bool PickNearestTrigger(std::vector<TriggerCandidate> const& candidates, 
 
 // What the core's own entry path asks of a player (WorldSession::HandleAreaTriggerOpcode,
 // MapManager::CanPlayerEnter), read before the packet goes so a refusal can say why. The
-// core stays the judge: this never lets a bot in, it only names the reason of a refusal
-// the core would give anyway (a bot that passes here is still refused by the core when
-// the instance is full, locked by an encounter, or a script says no).
+// core stays the judge: this only names the reason of a refusal the core would give anyway
+// (a bot that passes here is still refused by the core when the instance is full, locked by
+// an encounter, or a script says no). The one check the core cannot waive for a bot is the
+// trigger's condition: the commander's own waiver (conditionWaived) is what the glue's
+// teleport carries when the core refuses the bot for it.
 struct EntryFacts
 {
     bool gm = false;
@@ -153,6 +157,7 @@ struct EntryFacts
     bool ignoreLevel = false;        // Instance.IgnoreLevel
     bool lunaticOverride = false;    // a Lunatic challenger on one of the maps that ignore the level
     bool conditionFailed = false;    // the trigger's condition (key, quest, ...) is not met
+    bool conditionWaived = false;    // ... but the commander of the bot meets it for it (WaiveCondition)
     std::string conditionMessage;    // the trigger's own message for it ("" = none)
     bool raidMap = false;
     bool ignoreRaid = false;         // Instance.IgnoreRaid
@@ -176,6 +181,16 @@ inline EntryVerdict RefuseEntry(char const* code, std::string const& message)
     return verdict;
 }
 
+// AiPlayerbot.RaidEntryByCommander (owner decision 2026-10-28): a bot's failed trigger
+// condition is waived when the bot's commander (the binding's) is a real player in the
+// bot's raid and meets that condition himself (for Onyxia's lair: the Drakefire Amulet).
+// The key, the commander's own check and the raid are the world's to read; this is the
+// rule only. A refused level, raid group, instance limit or content phase is never waived.
+inline bool WaiveCondition(bool keyOn, bool commanderIsRealPlayer, bool sameRaid, bool commanderMeetsCondition)
+{
+    return keyOn && commanderIsRealPlayer && sameRaid && commanderMeetsCondition;
+}
+
 // The checks in the core's order: content phase, level and condition (a GameMaster
 // skips both), the raid group of a raid map, the per-account instance limit.
 inline EntryVerdict JudgeEntry(EntryFacts const& facts)
@@ -188,7 +203,7 @@ inline EntryVerdict JudgeEntry(EntryFacts const& facts)
         if (facts.level < facts.requiredLevel && !facts.ignoreLevel && !facts.lunaticOverride)
             return RefuseEntry(kCodeRequirement, "Needs level " + std::to_string(facts.requiredLevel) +
                 " (the bot is level " + std::to_string(facts.level) + ").");
-        if (facts.conditionFailed)
+        if (facts.conditionFailed && !facts.conditionWaived)
             return RefuseEntry(kCodeRequirement, facts.conditionMessage.empty()
                 ? std::string("The bot does not meet this entrance's requirement (a key, quest or other condition).")
                 : facts.conditionMessage);

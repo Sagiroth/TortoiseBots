@@ -696,6 +696,7 @@ bool PlayerbotAIConfig::Initialize()
     remoteCommanderViewMs = TortoiseBots::RemoteCommander::View::ClampIntervalMs(
         config.GetIntDefault("AiPlayerbot.RemoteCommanderViewMs",
             static_cast<int>(TortoiseBots::RemoteCommander::View::kDefaultIntervalMs)));
+    raidEntryByCommander = config.GetBoolDefault("AiPlayerbot.RaidEntryByCommander", true);
     // Run trace (opt-in): see docs/server/run-trace.md.
     runTrace = config.GetBoolDefault("AiPlayerbot.RunTrace.Enabled", false);
     runTraceIntervalMs = TortoiseBots::RunTrace::ClampIntervalMs(

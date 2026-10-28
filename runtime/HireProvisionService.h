@@ -94,6 +94,9 @@ struct HireRaidJob
 {
     ObjectGuid masterGuid;
     std::vector<HireRaidSlot> roster;
+    // The resolved hire level of the whole roster (HireLevelPolicy.h; the
+    // requester's level unless `level=` asked for another).
+    uint8_t level = 0;
     size_t cursor = 0;
     // The finished raid outgrows a party (members + mustering + plan > 5).
     // A solo master has no group to convert when the job starts; the group
