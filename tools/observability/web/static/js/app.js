@@ -5026,6 +5026,8 @@
     cmdCards.delete(key);
     delete cmdMaps[key];
     delete cmdAvail[key];
+    const fd = cmdFd[key];
+    if (fd && fd.rp) { clearTimeout(fd.rp.timer); fd.rp.playing = false; }
     delete cmdFd[key];
     delete cmdFightsCache[key];
     delete cmdFightsPending[key];
@@ -5790,11 +5792,13 @@
   function cmdPlanSvg(c, view, on) {
     if (!view) return '';
     const k = c.k;
+    const fl = view.floors && typeof view.floors.has === 'function' ? view.floors : null;
     let g = '';
     const strayOf = {};
     view.strays.forEach(s => { if (!strayOf[s.i]) strayOf[s.i] = s; });
     if (on.planrings) {
       view.rings.forEach(r => {
+        if (fl && !fl.has(r.z)) return;
         const p = CmdView.project(r.x, r.y);
         const text = r.wake ? PlanOverlay.wakeText(r.r) : 'aggro about ' + Math.round(r.r) + ' yd';
         g += `<circle class="plan-ring ${r.wake ? 'wake' : 'aggro'} s-${r.state}${r.patrol ? ' patrol' : ''}" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(r.r)}">`
@@ -5809,11 +5813,13 @@
     if (!on.planroute && !on.planstands) return g;
     if (on.planstands) {
       view.mobs.forEach(m => {
+        if (fl && !fl.has(m.z)) return;
         const p = CmdView.project(m.x, m.y);
         g += `<circle class="plan-mob s-${m.state}${m.patrol ? ' patrol' : ''}${m.boss ? ' boss' : ''}" cx="${c.f(p.x)}" cy="${c.f(p.y)}" r="${c.f(3.2 * k)}"/>`;
       });
     }
     view.steps.forEach(s => {
+      if (fl && !fl.has(s.z)) return;
       const p = CmdView.project(s.x, s.y), uid = 'p:' + s.i;
       let body = '';
       if (on.planstands && s.pack) {
@@ -5844,7 +5850,9 @@
 
   function drawCmdMap(key) {
     const card = cmdCards.get(key);
-    const bind = cmdFindBind(key);
+    const liveBind = cmdFindBind(key);
+    const rp = liveBind ? fdReplayActive(key) : null;
+    const bind = rp ? fdReplayBind(liveBind, rp.fight, rp.track, rp.tS) : liveBind;
     if (!card || !bind) return;
     const stage = card.querySelector('.cmd-stage'), svg = card.querySelector('svg.cmd-map');
     const pw = stage.clientWidth, ph = stage.clientHeight;
@@ -5864,6 +5872,7 @@
     const avail = MapLayers.availability(facts.ctx);
     cmdAvail[key] = avail;
     const on = MapLayers.active(cmdLayers, avail, facts.ctx);
+    if (rp) FD_REPLAY_OFF.forEach(p => { on[p] = false; }); // the layers that only mean anything live; the plan and the enemies stay
     const away = (bind.bots || []).length - onMap.length;
     const pts = onMap.map(b => CmdView.project(b.x, b.y));
     if (ms.follow || !ms.view) ms.view = CmdView.followView(pts, pw, ph, 44, 60, ms.userScale);
@@ -5875,6 +5884,9 @@
     const choice = CmdView.pictureChoice(slots, ms.pic);
     const pick = choice.slot;
     ms.pick = pick;
+    // a multi-floor map's picture shows one floor: the plan and the deaths keep to it (nothing hidden when it has no floors)
+    if (pf.view) pf.view.floors = cmdFloors(slots, pick, cmdFloorZs(pf.view, fdFight));
+    const fl = pf.view ? pf.view.floors : null;
     const ui = CmdView.pictureSelect(slots, ms.pic);
     const picKey = on.bg && pick ? `${pick.url}|${pick.x}|${pick.y}|${pick.w}|${pick.h}` : '';
     const picG = svg.querySelector('g.pic');
@@ -6016,7 +6028,12 @@
     const fd = cmdFd[key];
     if (fd && fd.mode === 'debug' && first && typeof FightDebug !== 'undefined') {
       const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
-      if (det && det.fight && det.fight.map === first.map && on.deaths) g += cmdFightMarksSvg(dc, FightDebug.deathRecaps(det.fight), fd.death);
+      if (det && det.fight && det.fight.map === first.map && on.deaths) {
+        // the replay shows only the deaths before its moment, and only those on the floor the picture shows
+        const raw = det.fight.deaths || [];
+        const seen = FightDebug.deathRecaps(det.fight).filter((r, i) => (!rp || r.t_ms <= rp.tMs) && (!fl || fl.has(raw[i] && raw[i].z)));
+        g += cmdFightMarksSvg(dc, seen, fd.death);
+      }
     }
     // healer -> tank lines from the raid layout, under the party (an out-of-range or dead pair keeps its own look)
     if (on.healtank) {
@@ -6253,7 +6270,7 @@
         <div class="fd-frames" role="group" aria-label="Raid frames" hidden></div>
         <nav class="fd-rail" aria-label="Fights" hidden></nav>
         <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><div class="fd-chips"></div></div><ol class="fd-checklist"></ol></section>
-        <section class="fd-timeline" aria-label="Timeline and death recap" hidden><div class="fd-tl"></div><div class="fd-recap"></div></section>
+        <section class="fd-timeline" aria-label="Timeline and death recap" hidden><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
         <section class="fd-roles" aria-label="Roles" hidden><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
         <div class="cmd-left">
           <div class="cmd-party"></div>
@@ -6317,6 +6334,7 @@
       if (t.dataset.mode) {
         fdSaveMode(key, t.dataset.mode === 'debug' ? 'debug' : 'live');
         fd.mode = t.dataset.mode === 'debug' ? 'debug' : 'live';
+        if (fd.mode === 'live') fdReplayStop(fd);
         fd.userSel = false;
         renderCommanders();
         return;
@@ -6335,6 +6353,14 @@
         fd.bot = fd.bot === t.dataset.fdBot ? null : t.dataset.fdBot;
       } else if (t.dataset.fdDeath != null) {
         fd.death = parseInt(t.dataset.fdDeath, 10) || 0;
+        const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+        const fought = det && det.fight, tr = fought ? fd.tracks[fd.sel] : null;
+        const death = fought ? (fought.deaths || [])[fd.death] : null;
+        if (death && tr && tr !== 'loading' && FightReplay.window(tr.prep, fought).ok) {
+          fd.rp.t = Math.min(Math.round(fought.dur_ms || 0), death.t_ms || 0);
+          fd.rp.on = true;
+          fdReplayStop(fd);
+        }
       }
       fdRender(key);
     });
@@ -6348,6 +6374,39 @@
       if (i < 0 || j < 0 || j >= cards.length) return;
       e.preventDefault();
       cards[j].focus();
+    });
+    // The replay: play, speed, exit and a click on the timeline or a lane bar to scrub. Every control leaves the row, the cursor
+    // and the map in step with the one state (rp).
+    card.addEventListener('click', e => {
+      const fd = cmdFd[key];
+      if (!fd || !card.classList.contains('fd-on')) return;
+      const hit = e.target.closest && e.target.closest('[data-fd-play], [data-fd-speed], [data-fd-exit]');
+      if (hit) {
+        if (hit.dataset.fdPlay != null) fdReplayPlay(key);
+        else if (hit.dataset.fdSpeed != null) { fd.rp.speed = FightReplay.nextSpeed(fd.rp.speed); fdReplaySync(key); }
+        else if (hit.dataset.fdExit != null) { fdReplayStop(fd); fd.rp.on = false; fdReplaySync(key); }
+        return;
+      }
+      const bar = e.target.closest && e.target.closest('[data-fd-seekbar]');
+      if (!bar || (e.target.closest && e.target.closest('button'))) return; // a death's skull keeps its own click
+      const scrub = card.querySelector('[data-fd-scrub]');
+      const dur = scrub ? parseFloat(scrub.max) || 0 : 0;
+      const rect = bar.getBoundingClientRect();
+      if (!(dur > 0) || !(rect.width > 0)) return;
+      const at = Math.round(((e.clientX - rect.left) / rect.width) * dur / 100) * 100;
+      fd.rp.t = Math.min(dur, Math.max(0, at));
+      fd.rp.on = true;
+      fdReplayStop(fd);
+      fdReplaySync(key);
+    });
+    card.addEventListener('input', e => {
+      if (!e.target.matches || !e.target.matches('.fd-scrub')) return;
+      const fd = cmdFd[key];
+      if (!fd) return;
+      fd.rp.t = parseFloat(e.target.value) || 0;
+      fd.rp.on = true;
+      fdReplayStop(fd);
+      fdReplaySync(key);
     });
     return card;
   }
@@ -6480,7 +6539,7 @@
   const cmdFd = {};
 
   function fdState(key) {
-    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, details: {}, failed: {}, loading: false, list: [] };
+    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, details: {}, failed: {}, loading: false, list: [], tracks: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null } };
     return cmdFd[key];
   }
 
@@ -6603,6 +6662,10 @@
     fd.list = list;
     const details = list.map(r => fd.details[r.key] || null);
     fdSyncSel(fd, bind, list, details, layout);
+    if (fd.rp.key !== fd.sel) {
+      fdReplayStop(fd);
+      fd.rp = { on: false, t: 0, playing: false, speed: fd.rp.speed, timer: 0, key: fd.sel };
+    }
     const live = FightDebug.liveSummary(bind);
     const selLive = fd.sel === 'live';
     const det = !selLive && fd.sel ? fd.details[fd.sel] : null;
@@ -6643,6 +6706,19 @@
     fdSet(card.querySelector('.fd-tl'), selLive ? '<p class="empty-hint">The timeline and death recap come when the fight ends.</p>'
       : fight ? fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death) : '');
     fdSet(card.querySelector('.fd-recap'), !selLive && fight ? fdRecapHtml(recaps, fd.death) : '');
+    // The replay row: a fight's kept positions are fetched once by the daemon's buffer, then played over the card's map.
+    if (fight) {
+      const track = fd.tracks[fd.sel];
+      if (track === undefined) fdTrackLoad(card, bind, fd.sel, fight);
+      fdPlaySync(card, fd, fight, track && track !== 'loading' ? track : null);
+      const lanes = card.querySelector('.fd-lanes');
+      if (track && track !== 'loading') fdSet(lanes, fdLanesHtml(AggroLanes.lanes(track.raw, fight, bind.bots || []), fight.dur_ms));
+      else fdSet(lanes, `<p class="empty-hint">${track === 'loading' ? 'Loading positions…' : 'No positions kept for this fight (the dashboard keeps the last 30 min, from its own start).'}</p>`);
+      fdCursorSync(card, fd);
+    } else {
+      fdSet(card.querySelector('.fd-play'), '');
+      fdSet(card.querySelector('.fd-lanes'), '');
+    }
 
     const tables = !selLive && fight ? FightDebug.roleTables(fight, layout) : null;
     if (selLive) {
@@ -6805,6 +6881,236 @@
       + `<table class="data-table fd-table"><caption>Casts</caption><thead><tr><th>Spell</th><th class="n">Casts</th></tr></thead>`
       + `<tbody>${spells || '<tr><td colspan="2" class="empty-hint">No casts recorded.</td></tr>'}</tbody></table>`
       + (panel.guid != null ? `<p class="fd-open"><button type="button" class="fd-link" data-fd-profile="${esc(panel.guid)}">Gear &amp; profile →</button></p>` : '');
+  }
+
+  // ---- fight replay: the kept positions of a finished fight, played over the card's map ----
+  // The replay row above the timeline (play, speed, scrub, clock, exit) and one row per engaged enemy under it. The arithmetic
+  // is FightReplay's and AggroLanes'; this builds the markup and moves the card's map to the kept positions.
+  const FD_TRACK_MAX = 60;   // finished fights whose positions are kept per commander for the page's life
+  const FD_REPLAY_OFF = ['trail', 'trailtime', 'heading', 'membertrails', 'commander', 'bottarget', 'healline', 'ccline', 'events', 'feed', 'stalls', 'objects'];
+
+  // The play row of one fight. A fight whose window has fewer than two kept reports cannot be played: its three controls are
+  // disabled and the coverage line says why.
+  function fdPlayHtml(win, durMs, rp) {
+    const dur = Math.max(0, Math.round(durMs || 0));
+    const off = win && win.ok ? '' : ' disabled';
+    const speed = rp && rp.speed ? rp.speed : 1;
+    return `<button type="button" class="fd-playbtn" data-fd-play aria-pressed="false"${off}>Play</button>`
+      + `<button type="button" class="fd-speed" data-fd-speed${off}>${speed}×</button>`
+      + `<input type="range" class="fd-scrub" data-fd-scrub min="0" max="${dur}" step="100" value="0" aria-label="Replay time"${off}>`
+      + `<span class="fd-clock">${esc(FightReplay.clock(0, dur))}</span>`
+      + `<button type="button" class="fd-exit" data-fd-exit${rp && rp.on ? '' : ' hidden'}>Live map</button>`
+      + `<span class="fd-cov">${esc(FightReplay.coverageText(win))}</span>`;
+  }
+
+  // Rebuilds the play row only when the fight (or the arrival of its positions) changes; otherwise it moves the values, so a
+  // scrub the user is dragging keeps its focus and its thumb.
+  function fdPlaySync(card, fd, fight, track) {
+    const node = card && card.querySelector('.fd-play');
+    if (!node) return;
+    const rp = fd.rp, dur = Math.max(0, Math.round((fight && fight.dur_ms) || 0));
+    const win = FightReplay.window(track ? track.prep : null, fight || {});
+    const key = fd.sel + (track ? '|t' : '');
+    if (node.dataset.fdKey !== key) {
+      node.dataset.fdKey = key;
+      node.innerHTML = fdPlayHtml(win, dur, rp);
+    }
+    const scrub = node.querySelector('[data-fd-scrub]');
+    if (scrub && document.activeElement !== scrub) scrub.value = String(Math.min(dur, Math.max(0, Math.round(rp.t))));
+    const clock = node.querySelector('.fd-clock');
+    if (clock) clock.textContent = FightReplay.clock(rp.t, dur);
+    const play = node.querySelector('[data-fd-play]');
+    if (play) { play.textContent = rp.playing ? 'Pause' : 'Play'; play.setAttribute('aria-pressed', rp.playing ? 'true' : 'false'); }
+    const speed = node.querySelector('[data-fd-speed]');
+    if (speed) speed.textContent = rp.speed + '×';
+    const exit = node.querySelector('[data-fd-exit]');
+    if (exit) exit.hidden = !rp.on;
+  }
+
+  // The lanes: one bar per engaged enemy, its parts coloured by whom it faced; the red ones are the healer and the damage
+  // dealers. The summary names the healer time, which is the row this strip exists for.
+  function fdLanesHtml(res, durMs) {
+    const dur = durMs > 0 ? durMs : 0;
+    const pct = (ms) => dur > 0 ? Math.max(0, Math.min(100, (ms / dur) * 100)) : 0;
+    const lanes = (res && res.lanes) || [];
+    let html = '<p class="fd-lanecap">Who each enemy targeted (sampled every 2 s)</p>';
+    lanes.forEach(l => {
+      const label = l.label || l.name || 'enemy';
+      let bar = '';
+      (l.segs || []).forEach(s => {
+        bar += `<i class="fd-seg k-${esc(s.kind)}${s.bad ? ' bad' : ''}" style="left:${pct(s.fromMs).toFixed(2)}%;width:${pct(s.toMs - s.fromMs).toFixed(2)}%"`
+          + ` title="${esc(label + ' on ' + (s.victim || s.kind) + ' ' + (s.fromMs / 1000).toFixed(1) + '-' + (s.toMs / 1000).toFixed(1) + ' s')}"></i>`;
+      });
+      const bad = l.badMs ? ' · ' + (l.badMs / 1000).toFixed(1) + ' s on ' + esc((l.badNames || []).join(', ')) : '';
+      html += `<div class="fd-lane"><span class="fd-lanel">${esc(label)}</span><span class="fd-lanebar">${bar}</span>`
+        + `<span class="fd-lanesum">${l.onTankPct}% on tanks${bad}</span></div>`;
+    });
+    if (res && res.more > 0) html += `<p class="empty-hint">and ${res.more} more enemies</p>`;
+    if (!lanes.length) html += '<p class="empty-hint">No enemy targeted the raid in the kept reports.</p>';
+    return html;
+  }
+
+  // The card's binding at one moment of a fight: the kept positions replace the live ones, the live binding keeps everything the
+  // map needs (commander, layout, run). A bot of the fight's own record is used when the live report no longer has it.
+  function fdReplayBind(bind, fight, track, tS) {
+    const at = FightReplay.botsAt(track && track.prep, tS);
+    const live = {}, recorded = {};
+    (bind.bots || []).forEach(b => { if (b && b.guid != null) live[b.guid] = b; });
+    ((fight && fight.bots) || []).forEach(b => { if (b && b.guid != null) recorded[b.guid] = b; });
+    const bots = [];
+    Object.keys(at).forEach(id => {
+      const guid = parseInt(id, 10), u = at[id];
+      const base = live[guid] || (recorded[guid]
+        ? { name: recorded[guid].name, guid, class: recorded[guid].class, role: recorded[guid].role, sub: recorded[guid].sub, max_hp: 100, level: 0 }
+        : null);
+      if (!base) return;
+      bots.push(Object.assign({}, base, {
+        x: u.x, y: u.y, map: u.map, alive: u.alive, hp: Math.round(u.hp / 100 * (base.max_hp || 100)),
+        id: String(guid), target: '', st: '', act: '', cast: '', ctgt: '', mv: false,
+      }));
+    });
+    const mobs = [];
+    const mobAt = FightReplay.mobsAt(track && track.prep, tS);
+    Object.keys(mobAt).forEach(id => {
+      const m = mobAt[id];
+      mobs.push({ id, entry: m.e, name: m.n, hp: m.hp, x: m.x, y: m.y, victim: m.v ? String(m.v) : '', reaction: 'h', rank: m.rk || '' });
+    });
+    const frames = (track && track.prep && track.prep.frames) || [];
+    let map = 0;
+    if (frames.length) {
+      let t = typeof tS === 'number' && isFinite(tS) ? tS : frames[frames.length - 1].t;
+      t = Math.max(frames[0].t, Math.min(frames[frames.length - 1].t, t));
+      let i = 0;
+      while (i + 1 < frames.length && frames[i + 1].t <= t) i += 1;
+      map = frames[i].map;
+    }
+    return Object.assign({}, bind, { bots, mobs, mobs_map: map, objects: [], orders: [], commander_pos: null });
+  }
+
+  // What a replaying card draws, or null: the debugger is on, the selected finished fight's positions are kept and interpolate.
+  function fdReplayActive(key) {
+    const fd = cmdFd[key];
+    if (!fd || fd.mode !== 'debug' || !fd.rp || !fd.rp.on) return null;
+    const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+    const fight = det && det.fight;
+    if (!fight) return null;
+    const track = fd.tracks[fd.sel];
+    if (!track || track === 'loading' || !FightReplay.window(track.prep, fight).ok) return null;
+    const tMs = Math.max(0, Math.min(Math.round(fight.dur_ms || 0), Math.round(fd.rp.t)));
+    return { tS: (fight.start || 0) + tMs / 1000, tMs, track, fight };
+  }
+
+  // Fetches a fight's kept positions once (the daemon keeps the last 30 min); a failure is remembered, not retried.
+  function fdTrackLoad(card, bind, key, fight) {
+    const fd = cmdFd[bind.commander];
+    if (!fd || !fight || fd.tracks[key] !== undefined) return;
+    if (Object.keys(fd.tracks).some(k => fd.tracks[k] === 'loading')) return;
+    fd.tracks[key] = 'loading';
+    const from = (fight.start || 0) - 4, to = (fight.start || 0) + Math.ceil((fight.dur_ms || 0) / 1000) + 4;
+    fetch('/api/v1/commanders/track?commander=' + encodeURIComponent(bind.commander) + '&from=' + from + '&to=' + to, { credentials: 'same-origin' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(json => { fd.tracks[key] = json && Array.isArray(json.frames) ? { raw: json, prep: FightReplay.prep(json) } : null; })
+      .catch(() => { fd.tracks[key] = null; })
+      .then(() => {
+        const keys = Object.keys(fd.tracks);
+        if (keys.length > FD_TRACK_MAX) keys.slice(0, keys.length - FD_TRACK_MAX).forEach(k => { delete fd.tracks[k]; });
+        renderFightDebug(card, cmdFindBind(bind.commander));
+      });
+  }
+
+  // The cursor over the timeline at the replay's place; a hidden cursor when the fight is not being replayed.
+  function fdCursorSync(card, fd) {
+    const tl = card && card.querySelector('.fd-tl');
+    if (!tl) return;
+    const old = tl.querySelector('.fd-cursor');
+    const scrub = card.querySelector('[data-fd-scrub]');
+    const dur = scrub ? parseFloat(scrub.max) || 0 : 0;
+    if (!fd.rp.on || !(dur > 0)) { if (old) old.remove(); return; }
+    const el = old || document.createElement('i');
+    el.className = 'fd-cursor';
+    el.style.left = (Math.min(1, Math.max(0, fd.rp.t / dur)) * 100).toFixed(2) + '%';
+    if (!old) tl.appendChild(el);
+  }
+
+  // Puts the play row, the cursor and the map in step with the replay state; every control ends here (not a full card render).
+  function fdReplaySync(key) {
+    const fd = cmdFd[key], card = cmdCards.get(key);
+    if (!fd || !card) return;
+    const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+    const fight = det && det.fight;
+    const track = fight ? fd.tracks[fd.sel] : null;
+    fdPlaySync(card, fd, fight, track && track !== 'loading' ? track : null);
+    fdCursorSync(card, fd);
+    drawCmdMap(key);
+  }
+
+  function fdReplayStop(fd) {
+    clearTimeout(fd.rp.timer);
+    fd.rp.playing = false;
+  }
+
+  // Play/pause at the current place; Play at the end starts the fight again from 0.
+  function fdReplayPlay(key) {
+    const fd = cmdFd[key];
+    if (!fd) return;
+    if (fd.rp.playing) { fdReplayStop(fd); fdReplaySync(key); return; }
+    fd.rp.on = true;
+    const act = fdReplayActive(key);
+    if (!act) { fd.rp.on = false; fdReplaySync(key); return; }
+    if (fd.rp.t >= Math.round(act.fight.dur_ms || 0)) fd.rp.t = 0;
+    fd.rp.playing = true;
+    fdReplayTick(key);
+  }
+
+  // One playback step of one card, then the next 250 ms later while it still plays (a setTimeout chain, never an interval).
+  function fdReplayTick(key) {
+    const fd = cmdFd[key];
+    if (!fd || fd.rp.key !== fd.sel) { if (fd) fd.rp.playing = false; return; }
+    const act = fdReplayActive(key);
+    if (!act) { fd.rp.playing = false; fdReplaySync(key); return; }
+    const dur = Math.round(act.fight.dur_ms || 0);
+    fd.rp.t = Math.min(dur, fd.rp.t + FightReplay.TICK_MS * fd.rp.speed);
+    if (fd.rp.t >= dur) fd.rp.playing = false;
+    fdReplaySync(key);
+    const card = cmdCards.get(key);
+    if (!fd.rp.playing || !card || !card.classList.contains('fd-on')) return;
+    fd.rp.timer = setTimeout(() => fdReplayTick(key), FightReplay.TICK_MS);
+  }
+
+  // The floor of a multi-floor map picture (AQ40, Naxxramas, Karazhan's tower). The picture slots know their floor ("2f", ...);
+  // the picture JSON carries no z range, so what the card draws is grouped by z (a gap of CMD_FLOOR_GAP_YD is a floor change)
+  // and the map's Nth floor slot, counted from the bottom, takes the Nth group. Another group count is no floor information,
+  // and nothing is hidden then.
+  const CMD_FLOOR_GAP_YD = 15;
+
+  function cmdFloorZs(view, fight) {
+    const out = [];
+    const add = (v) => { if (typeof v === 'number' && isFinite(v)) out.push(v); };
+    ((view && view.steps) || []).forEach(s => add(s.z));
+    ((view && view.rings) || []).forEach(r => add(r.z));
+    ((fight && fight.deaths) || []).forEach(d => add(d && d.z));
+    return out;
+  }
+
+  function cmdFloors(slots, pick, zs) {
+    const world = (slots || []).filter(s => s && s.kind === 'worldmap');
+    if (world.length < 2 || !pick || pick.kind !== 'worldmap') return null;
+    const floor = pick.floor ? parseInt(pick.floor, 10) : 1;
+    if (!(floor >= 1 && floor <= world.length)) return null;
+    const vals = (zs || []).filter(v => typeof v === 'number' && isFinite(v)).sort((a, b) => a - b);
+    if (!vals.length) return null;
+    const groups = [[vals[0], vals[0]]];
+    for (let i = 1; i < vals.length; i++) {
+      const g = groups[groups.length - 1];
+      if (vals[i] - g[1] >= CMD_FLOOR_GAP_YD) groups.push([vals[i], vals[i]]);
+      else g[1] = vals[i];
+    }
+    if (groups.length !== world.length) return null;
+    const g = groups[floor - 1];
+    return {
+      floor, count: world.length, lo: g[0], hi: g[1],
+      has: (z) => typeof z !== 'number' || !isFinite(z) || (z >= g[0] - 0.01 && z <= g[1] + 0.01),
+    };
   }
 
   // The selected fight's deaths on the card's map, over the events layer and under the bots.

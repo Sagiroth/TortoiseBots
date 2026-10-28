@@ -89,6 +89,7 @@
 - On a raid's map the bot trails can be cut to the last 30 seconds, the healer → tank links come from the raid's saved layout instead of subgroups, and a mob's line to a party member who is not a tank is drawn red.
 - The map's layer panel now has raid presets (Pathing, Trash pull, Healing, Boss, All) and the plan's route, stand and aggro/wake rings as separate layers; a boss that wakes by script, like Onyxia, draws its own dashed wake ring from the server's data.
 - Every raid map now draws its plan under the party as its own layers, and a Layers button on the map opens the presets panel where Pathing, Trash pull, Healing, Boss and All switch them.
+- A finished fight in the Fight debugger now plays on the map, with Play, speed and a scrub bar that move the raid and a cursor along the timeline, and one lane per enemy under it; on a raid map with several floor pictures only the plan and the deaths of the floor on screen are drawn.
 
 ## v1.8.0 (2026-10-22)
 
