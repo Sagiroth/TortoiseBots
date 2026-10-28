@@ -2539,21 +2539,25 @@ void PlayerbotFactory::EnsurePrimaryProfessions()
     // Below the gate (or when a primary is already held) the ids stay 0:
     // skip the grant explicitly; Player::SetSkill(0, ...) is a core-side
     // no-op, but never call it with 0 here. With ProfessionsGrowWithLevel off
-    // the pair still lands at level 5 but starts at skill 1: just own the
-    // skill, never top it up, and leave all recipes to real trainer visits.
+    // the pair still lands at level 5 but only as the real rank-1 Apprentice
+    // spell of each profession: that consumes the free primary points, grants
+    // skill 1/75 and the starter abilities (Find Herbs/Minerals, Smelting,
+    // Disenchant), and chains into Journeyman at a trainer. Bare SetSkill
+    // would leave 2 free points, letting the next trainer visit add a 3rd
+    // and 4th primary. Nothing here ever tops up an existing skill.
     if (firstSkill)
     {
         if (sPlayerbotAIConfig.professionsGrowWithLevel)
             SetRandomSkill(firstSkill);
-        else if (!bot->HasSkill(firstSkill))
-            bot->SetSkill(firstSkill, TortoiseBots::ORGANIC_SKILL_START, TortoiseBots::APPRENTICE_SKILL_MAX);
+        else
+            LearnApprenticeProfession(firstSkill);
     }
     if (secondSkill)
     {
         if (sPlayerbotAIConfig.professionsGrowWithLevel)
             SetRandomSkill(secondSkill);
-        else if (!bot->HasSkill(secondSkill))
-            bot->SetSkill(secondSkill, TortoiseBots::ORGANIC_SKILL_START, TortoiseBots::APPRENTICE_SKILL_MAX);
+        else
+            LearnApprenticeProfession(secondSkill);
     }
 
     if (!sPlayerbotAIConfig.professionsGrowWithLevel)
@@ -3076,6 +3080,63 @@ void PlayerbotFactory::SetRandomSkill(uint16 id)
     uint32 curValue = bot->GetSkillValue(id);
     if (!bot->HasSkill(id) || value > curValue)
         bot->SetSkill(id, value, maxValue);
+}
+
+void PlayerbotFactory::LearnApprenticeProfession(uint16 skillId)
+{
+    if (!skillId || bot->HasSkill(skillId))
+        return;
+    // The rank-1 teaching spell is resolved from the trainer lists, not
+    // hardcoded: the SKILL_STEP row for this skill whose taught spell is a
+    // primary-profession rank 1. Cached per skill id for the run; the trainer
+    // tables are loaded once at startup.
+    static std::map<uint16, uint32> s_apprenticeTeachingSpell;
+    static bool s_apprenticeScanned = false;
+    if (!s_apprenticeScanned)
+    {
+        s_apprenticeScanned = true;
+        for (uint32 id = 0; id < sCreatureStorage.GetMaxEntry(); ++id)
+        {
+            CreatureInfo const* co = sCreatureStorage.LookupEntry<CreatureInfo>(id);
+            if (!co || co->trainer_type != TRAINER_TYPE_TRADESKILLS)
+                continue;
+            uint32 trainerId = co->trainer_id;
+            if (!trainerId)
+                trainerId = co->entry;
+            TrainerSpellData const* trainerSpells = sObjectMgr.GetNpcTrainerTemplateSpells(trainerId);
+            if (!trainerSpells)
+                trainerSpells = sObjectMgr.GetNpcTrainerSpells(trainerId);
+            if (!trainerSpells)
+                continue;
+            for (auto const& entry : trainerSpells->spellList)
+            {
+                TrainerSpell const* tSpell = &entry.second;
+                if (!tSpell)
+                    continue;
+                SpellEntry const* teaching = sServerFacade.LookupSpellInfo(tSpell->spell);
+                if (!teaching || teaching->Effect[EFFECT_INDEX_1] != SPELL_EFFECT_SKILL_STEP)
+                    continue;
+                uint32 skill = teaching->EffectMiscValue[EFFECT_INDEX_1];
+                if (!skill || s_apprenticeTeachingSpell.count(uint16(skill)))
+                    continue;
+                bool isFirstRank = false;
+                for (int j = 0; j < 3 && !isFirstRank; ++j)
+                    if (teaching->Effect[j] == SPELL_EFFECT_LEARN_SPELL && teaching->EffectTriggerSpell[j] &&
+                        sSpellMgr.IsPrimaryProfessionFirstRankSpell(teaching->EffectTriggerSpell[j]))
+                        isFirstRank = true;
+                if (isFirstRank)
+                    s_apprenticeTeachingSpell[uint16(skill)] = tSpell->spell;
+            }
+        }
+    }
+    auto it = s_apprenticeTeachingSpell.find(skillId);
+    if (it == s_apprenticeTeachingSpell.end())
+        return;
+    // Cast, as a trainer visit does: LearnSpell on a SKILL_STEP teaching
+    // spell refuses to store it (core Player::LearnSpell returns false for
+    // SKILL_STEP), while the cast learns the taught Apprentice rank, which
+    // consumes the free point and grants skill 1/75 plus starter abilities.
+    bot->CastSpell(bot, it->second, true);
 }
 
 void PlayerbotFactory::InitClassLevelSpells()

@@ -464,9 +464,9 @@ Bots write their spec, talents and both primary professions with skill into thei
 <details>
 <summary>How it works in detail</summary>
 
-A guilded bot shows a line like `Arms 31/20/0 Min245 BS230`: spec name, spent talent points per tree, then each primary profession as a short abbreviation plus skill value (Alc, BS, Enc, Eng, Herb, LW, Min, Skin, Tail). The guild client caps every note at 31 characters, so with a long spec name the second profession is left out rather than cut off.
+A guilded bot shows a line like `Arms 31/20/0 Mi245 BS230`: a short spec label, spent talent points per tree, then each primary profession as a two-letter abbreviation plus skill value (Al, BS, En, Eg, Hb, LW, Mi, Sk, Ta). Short labels keep spec, talents and both professions inside the 31-character guild note cap for every spec.
 
-The note refreshes at once when talents change and at most every few minutes when only profession skill changed. Bots only write their own public note and only when their guild rank may edit it; they never read or write officer notes.
+The note refreshes at once when talents change and at most every few minutes when only profession skill changed. Writing the bot's own public note is a server feature: no guild rank right is needed, and bots never read or write officer notes.
 
 </details>
 
@@ -479,7 +479,7 @@ Pool bots get profession skill of level x 5 and every trainer recipe they qualif
 
 With this on, a pool bot's profession pair keeps pace with its level: skill around level x 5 and all qualifying trainer recipes granted automatically.
 
-With this off, bots still get their profession pair at level 5, but start at skill 1 with no automatic recipes. Ranks and recipes come from trainers, which bots already visit, and skill from gathering and from crafting when it gives a skill-up. Switching the setting changes nothing for existing bots: they keep the skill and recipes they already have.
+With this off, bots still get their profession pair at level 5, but only as the real rank-1 Apprentice of each profession (skill 1, no automatic recipes). Further ranks and recipes come only from trainers, which bots already visit, and skill from gathering and from crafting when it gives a skill-up. Switching the setting changes nothing for existing bots: they keep the skill and recipes they already have.
 
 Use at your own risk: bots levelling a profession from 1 to 300 on their own has not been tested.
 

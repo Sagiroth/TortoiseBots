@@ -87,6 +87,23 @@ bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellA
         if (state != TRAINER_SPELL_GREEN)
             continue;
 
+        // A visit must never add a 3rd primary profession: a first-rank
+        // primary teaches only when the bot holds fewer than two primaries
+        // (counted from held skills, so a legacy bare-skill pair without
+        // rank spells still blocks). Ranks and recipes for held professions
+        // are unaffected.
+        if (sSpellMgr.IsPrimaryProfessionFirstRankSpell(tSpell->spell))
+        {
+            static uint16 const kPrimary[] = { SKILL_ALCHEMY, SKILL_BLACKSMITHING, SKILL_ENCHANTING, SKILL_ENGINEERING,
+                                               SKILL_HERBALISM, SKILL_LEATHERWORKING, SKILL_MINING, SKILL_SKINNING, SKILL_TAILORING };
+            uint32_t held = 0;
+            for (uint16 id : kPrimary)
+                if (bot->HasSkill(id))
+                    ++held;
+            if (held >= 2)
+                continue;
+        }
+
         hasTrainable = true;
         uint32 spellId = tSpell->spell;
         const SpellEntry *const pSpellInfo =  sServerFacade.LookupSpellInfo(spellId);

@@ -92,16 +92,6 @@ static void TestThresholdValue()
     CHECK(PRIMARY_PROFESSION_MIN_LEVEL == 5);
 }
 
-// Organic start (ProfessionsGrowWithLevel off): the pair still lands at the
-// gate but starts at skill 1 with the Apprentice ceiling, matching what a
-// rank-1 trainer teaches. Pins the exact values production grants:
-// PlayerbotFactory::EnsurePrimaryProfessions (SetSkill on the fresh pair).
-static void TestOrganicStart()
-{
-    CHECK(ORGANIC_SKILL_START == 1);
-    CHECK(APPRENTICE_SKILL_MAX == 75);
-}
-
 // Tailoring + Enchanting share (owner decision): only cloth classes (mage 8,
 // priest 5, warlock 9) may roll it, and only roll 0 of 3 takes it - about 1
 // in 3 eligible bots. Class ids mirror SharedDefines.h (same precedent as
@@ -148,7 +138,6 @@ int main()
     TestNotPool();
     TestTrainerParity();
     TestThresholdValue();
-    TestOrganicStart();
     TestTailorEnchantEligibility();
     TestTailorEnchantShare();
     std::printf("profession grant policy: %d checks passed\n", checks);

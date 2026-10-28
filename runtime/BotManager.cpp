@@ -38,6 +38,8 @@
 #include "WorldPacket.h"
 #include "Chat.h"
 #include "Group/Group.h"
+#include "Guild/Guild.h"
+#include "Guild/GuildMgr.h"
 #include "Maps/GridMap.h"
 #include "Map.h"
 #include "../commands/BotCommands.h"
@@ -441,6 +443,42 @@ bool TeleportMisplacedBot(::Player* bot, int32 areaLevel, const std::string& cau
     return true;
 }
 } // namespace
+
+void BotManager::QueuePublicNote(uint64_t botGuidRaw, std::string text)
+{
+    if (botGuidRaw == 0 || text.empty())
+        return;
+    if (!m_publicNoteQueue.Enqueue(botGuidRaw, std::move(text)))
+    {
+        // One pending note per bot: drop the stale text and queue the newer
+        // one, so a burst of talent applies costs one write of fresh text.
+        m_publicNoteQueue.Clear();
+        m_publicNoteQueue.Enqueue(botGuidRaw, std::move(text));
+    }
+}
+
+void BotManager::DrainPublicNoteQueue()
+{
+    m_publicNoteQueue.Drain([this](uint64_t botGuidRaw, std::string& text)
+    {
+        ::Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(botGuidRaw));
+        if (!bot || !bot->IsInWorld())
+            return;
+        uint32_t guildId = bot->GetGuildId();
+        if (!guildId)
+            return;
+        Guild* guild = sGuildMgr.GetGuildById(guildId);
+        if (!guild)
+            return;
+        MemberSlot* member = guild->GetMemberSlot(bot->getObjectGuid());
+        if (!member)
+            return;
+        // The bot's own public note is a server feature: no rank right
+        // needed. SetPublicNote skips the DB write when unchanged.
+        if (member->PublicNote != text)
+            member->SetPublicNote(text);
+    });
+}
 
 void BotManager::SweepDeadBots(uint32_t diff)
 {
@@ -2414,6 +2452,9 @@ void BotManager::OnWorldUpdate(uint32_t diff)
     UpdateBots(diff);
     SweepDeadBots(diff);
     SweepStrandedBots(diff);
+    // Guild public notes queued by map threads (package 7): Guild state is
+    // only touched here, on the world thread.
+    DrainPublicNoteQueue();
 
     if (m_autoTestEnabled)
         UpdateAutoTest(diff);

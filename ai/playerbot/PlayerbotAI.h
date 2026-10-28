@@ -17,6 +17,7 @@
 #include "playerbot/PullJoinWindowPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/BotAreaTriggerPolicy.h"
+#include "../../runtime/PublicNotePolicy.h"
 #include "../../runtime/BotManager.h"
 
 class Player;
@@ -1143,6 +1144,10 @@ protected:
     // Last ms clock the guild public note was refreshed for skill changes;
     // the note rewrites at most every few minutes per bot.
     uint32 m_lastPublicNoteMs = 0;
+    // Last-seen primary skill pair behind the note (PublicNotePolicy.h):
+    // the tick recomputes the note only when a shown skill value changed.
+    TortoiseBots::PublicNoteInputs m_lastPublicNote;
+    bool m_publicNoteSkillsSeeded = false;
     // First tick (ms clock) the core reported alive while the engine was still DEAD;
     // 0 = not currently mismatched. Backs the 5 s alive-but-DEAD self-heal window.
     uint32 m_aliveWhileDeadSinceMs = 0;
