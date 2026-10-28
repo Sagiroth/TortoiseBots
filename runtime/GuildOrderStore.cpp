@@ -150,10 +150,7 @@ public:
 
         {
             std::lock_guard<std::mutex> lock(m_mutex);
-            Stored& stored = m_orders[record.botGuidLow];
-            stored.record = record;
-            stored.reportSeen = false;
-            stored.dirty = false;
+            m_orders[record.botGuidLow] = Stored{record};
         }
         return true;
     }
@@ -241,15 +238,6 @@ public:
                 out.push_back(guid);
         return out;
     }
-
-    struct ReportState
-    {
-        OrderState state = OrderState::Working;
-        OrderReason reason = OrderReason::None;
-        uint32_t have = 0;
-        uint32_t lastProgressMs = 0;
-        bool seen = false;
-    };
 
     // One locked read-modify-write per Update pass: take the row, fold the
     // world-thread facts in, and hand back what to persist and what to send.
@@ -413,6 +401,7 @@ private:
             record.state = OrderState::Cant;
             record.reason = OrderReason::Stuck;
         }
+        MarkDirtyLocked(stored);
     }
 
     static void MarkDirtyLocked(Stored& stored) { stored.dirty = true; }
