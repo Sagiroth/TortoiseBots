@@ -345,11 +345,13 @@ public:
         else if (!in.botOnline)
             stored.sawOnline = false;
 
-        // Amount reached: the bot heads for the guild bank (the delivery
-        // action walks it there once package 4 lands; until then the state
-        // alone marks it delivering).
+        // Amount reached in bags: the bot heads for the guild bank (the
+        // delivery action walks it there once package 4 lands; until then
+        // the state alone marks it delivering). Mailbox items count for
+        // progress and the give-up clock above, but delivery needs the
+        // items in the bags - the bank deposit cannot take them from mail.
         if (!wasFinished && record.state == OrderState::Working && record.amount > 0 &&
-            record.delivered + ownedNow >= record.amount)
+            record.delivered + in.bagCount >= record.amount)
         {
             record.state = OrderState::Delivering;
             record.reason = OrderReason::None;

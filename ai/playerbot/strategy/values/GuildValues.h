@@ -56,21 +56,7 @@ namespace ai
     public:
         HasGuildTravelOrderValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "has guild travel order", 10) {}
 
-        bool Calculate() override
-        {
-            GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-            if (!order.IsTravelOrder())
-                return false;
-
-            // No order work while grouped with a player, delivering, or done
-            // with the amount (delivered plus bags plus mailbox).
-            if (ai->HasRealPlayerMaster())
-                return false;
-            if (!OrderStillNeedsWork(bot, order))
-                return false;
-            // Bought items wait in the mailbox: fetch them before walking on.
-            return OrderMailboxItems(bot, order.itemId) == 0;
-        }
+        bool Calculate() override;
     };
 
     class HasGuildCraftOrderValue : public BoolCalculatedValue

@@ -85,6 +85,30 @@ bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
         OrderMailboxItems(bot, order.itemId) < order.amount;
 }
 
+bool HasGuildTravelOrderValue::Calculate()
+{
+    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    if (!order.IsTravelOrder())
+        return false;
+
+    // No order work while grouped with a player, delivering, or done
+    // with the amount (delivered plus bags plus mailbox).
+    if (ai->HasRealPlayerMaster())
+        return false;
+    if (!OrderStillNeedsWork(bot, order))
+        return false;
+    if (order.type != GuildOrderType::AuctionHouse || OrderMailboxItems(bot, order.itemId) == 0)
+        return true;
+    // A buy with mail waiting still finishes buying first: the AH visit
+    // concludes (enough owned, or farm fallback) before the bot walks to
+    // a mailbox, one listing per tick until then.
+    std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
+    for (ObjectGuid const& guid : npcs)
+        if (bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_AUCTIONEER))
+            return true;
+    return false;
+}
+
 uint8 PetitionSignsValue::Calculate()
 {
     if (bot->GetGuildId())
