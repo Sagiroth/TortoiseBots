@@ -2475,7 +2475,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 (uint32)TravelDestinationPurpose::Vendor, orderVendorEntries, false);
             for (auto& [partition, points] : probe)
             {
-                points.erase(std::remove_if(points.begin(), points.end(), [](TravelPoint point)
+                points.erase(std::remove_if(points.begin(), points.end(), [&center](TravelPoint point)
                     {
                         WorldPosition* pos = std::get<WorldPosition*>(point);
                         return !pos || pos->distance(center) == FLT_MAX;
