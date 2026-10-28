@@ -123,3 +123,9 @@ func TestDungeonsJS(t *testing.T) {
 		t.Fatalf("dungeons_check.js failed: %v\n%s", err, out)
 	}
 }
+
+// TestFightReplayJS runs fightreplay_check.js: the replay's interpolation between the kept positions, its fight window and the
+// walk 2 track fixture.
+func TestFightReplayJS(t *testing.T) {
+	runCheck(t, "fightreplay_check.js", "../../web/static/js/fightreplay.js")
+}
