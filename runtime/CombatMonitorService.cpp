@@ -48,7 +48,7 @@ void CombatMonitorService::SyncConfig(bool on)
 
 void CombatMonitorService::PublishMembers()
 {
-    m_snapshot = std::make_shared<MemberMap const>(m_memberGroup);
+    std::atomic_store(&m_snapshot, std::make_shared<MemberMap const>(m_memberGroup));
     m_memberCount.store(static_cast<uint32_t>(m_memberGroup.size()), std::memory_order_relaxed);
 }
 

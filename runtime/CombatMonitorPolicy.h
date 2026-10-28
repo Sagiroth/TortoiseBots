@@ -424,17 +424,18 @@ public:
         {
             if (f.takes >= 2)
                 continue;
-            std::string js = BuildFightJson(f, protocolVersion, session, nextSeq(), ts, commander, commanderGuid,
+            uint64_t const seqNum = nextSeq();
+            std::string js = BuildFightJson(f, protocolVersion, session, seqNum, ts, commander, commanderGuid,
                                             groupId, mapId, kMaxSpellsPerBot, kLastHits, false);
             if (js.size() > kPayloadByteBudget)
-                js = BuildFightJson(f, protocolVersion, session, nextSeq(), ts, commander, commanderGuid, groupId,
-                                    mapId, 3, kLastHits, false);
+                js = Resequenced(BuildFightJson(f, protocolVersion, session, 0, ts, commander, commanderGuid, groupId,
+                    mapId, 3, kLastHits, false), seqNum);
             if (js.size() > kPayloadByteBudget)
-                js = BuildFightJson(f, protocolVersion, session, nextSeq(), ts, commander, commanderGuid, groupId,
-                                    mapId, 3, 2, false);
+                js = Resequenced(BuildFightJson(f, protocolVersion, session, 0, ts, commander, commanderGuid, groupId,
+                    mapId, 3, 2, false), seqNum);
             if (js.size() > kPayloadByteBudget)
-                js = BuildFightJson(f, protocolVersion, session, nextSeq(), ts, commander, commanderGuid, groupId,
-                                    mapId, 0, 0, true);
+                js = Resequenced(BuildFightJson(f, protocolVersion, session, 0, ts, commander, commanderGuid, groupId,
+                    mapId, 0, 0, true), seqNum);
             if (js.size() > kPayloadByteBudget)
                 continue;   // no runaway payload crosses the wire
             out.push_back(js);
@@ -545,6 +546,20 @@ private:
         std::deque<Death> deaths;
         uint32_t takes = 0;
     };
+
+    static std::string Resequenced(std::string js, uint64_t seqNum)   // one NextSeq() per payload: rebuilds stamp seq 0
+    {
+        std::string const tag = "\"seq\":";
+        std::string::size_type pos = js.find(tag);
+        if (pos == std::string::npos)
+            return js;
+        pos += tag.size();
+        std::string::size_type end = pos;
+        while (end < js.size() && js[end] >= '0' && js[end] <= '9')
+            ++end;
+        js.replace(pos, end - pos, std::to_string(seqNum));
+        return js;
+    }
 
     static std::string BuildFightJson(FinishedFight const& f, int protocolVersion, uint64_t session,
                                       uint64_t seqNum, int64_t ts, std::string const& commander,
