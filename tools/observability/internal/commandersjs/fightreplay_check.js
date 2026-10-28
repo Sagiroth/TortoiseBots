@@ -92,6 +92,10 @@ assert.strictEqual(R.nextSpeed(0.5), 1);
 assert.strictEqual(R.nextSpeed(1.5), 1);
 assert.strictEqual(R.clock(12000, 39111), "12.0 / 39.1 s");
 assert.strictEqual(R.clock(0, 60000), "0.0 / 60.0 s");
+// The run strip's clock: whole minutes and seconds, "m:ss of m:ss".
+assert.strictEqual(R.spanClock(0, 491000), "0:00 of 8:11");
+assert.strictEqual(R.spanClock(90000, 180000), "1:30 of 3:00");
+assert.strictEqual(R.spanClock(59999, 60000), "1:00 of 1:00", "seconds round, never 0:60");
 
 // ---- walk 2, as the daemon serves it (3.2) --------------------------------------------------------------------------
 const walk = R.prep(JSON.parse(fs.readFileSync(path.join(__dirname, "testdata", "walk2-track.json"), "utf8")));

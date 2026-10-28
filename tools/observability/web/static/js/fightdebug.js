@@ -399,6 +399,7 @@
       const fight = det && det.fight;
       const dur = num(row.dur) || 0;
       const engaged = fight && fight.engaged && fight.engaged[0];
+      const dmg = fight && Array.isArray(fight.bots) ? fight.bots.reduce((s, b) => s + (num(b && b.dmg) || 0), 0) : null;
       return {
         key: row.key,
         // The daemon lists fights newest first; the oldest is the first pack of the fight.
@@ -406,6 +407,7 @@
         mob: row.boss_name || (fight && fight.boss_name) || (engaged && engaged.n) || "trash",
         step: num(row.step) || 0,
         durMs: dur,
+        dmg: dmg,
         deaths: num(row.deaths) || 0,
         lenPct: maxDur > 0 ? (dur / maxDur) * 100 : 0,
         verdict: fight ? verdict(fight, layout, det.warnings || []) : null,

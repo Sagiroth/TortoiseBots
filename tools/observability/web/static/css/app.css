@@ -3184,6 +3184,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) minmax(280px, 360px);
   grid-template-areas:
+    "run run run"
     "frames frames frames"
     "rail map roles"
     "rail checks roles"
@@ -3213,6 +3214,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 
 /* The prototype's panels: the debugger page drops the outer card and each section carries its own board. */
 .cmd-card.fd-on { background: none; border-color: transparent; padding: 0; }
+.cmd-card.fd-on .fd-runtl,
 .cmd-card.fd-on .fd-raid,
 .cmd-card.fd-on .fd-checks,
 .cmd-card.fd-on .fd-timeline,
@@ -3238,6 +3240,29 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-layers.cmd-layers-map .cmd-layers-body { width: min(320px, 70vw); max-height: 330px; overflow: auto; margin: 6px 0 0; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg-card); }
 .cmd-layers.cmd-layers-map > .btn { margin-top: 6px; }
 
+.fd-runtl { grid-area: run; min-width: 0; }
+.fd-rthead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 14px; margin-bottom: 4px; }
+.fd-rthead .cmd-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0; }
+.fd-rtsub { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 0.72rem; color: var(--text-muted); }
+.fd-rtlegend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.fd-rtlegend span { display: inline-flex; align-items: center; gap: 4px; }
+.fd-rtlegend i.sw { width: 10px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--text-dim) 45%, transparent); }
+.fd-rtlegend i.sw-fight { background: var(--accent-yellow); }
+.fd-rtlegend i.sw-boss { background: var(--fd-fail); }
+/* The strip: grey walking, gold trash blocks, a red boss block, the deaths above it and the replay cursor. */
+.fd-rt { position: relative; height: 26px; margin-top: 12px; border-radius: 3px; background: var(--bg-card-subtle); }
+.fd-rtwalk { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--text-dim) 38%, transparent); }
+.fd-rtfight { position: absolute; top: 0; bottom: 0; padding: 0 2px; overflow: hidden; border: 0; border-radius: 2px; background: var(--accent-yellow); color: var(--bg-app); font: 600 0.66rem/26px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: center; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.fd-rtfight.boss { background: var(--fd-fail); color: var(--text-main); }
+.fd-rtfight:hover { filter: brightness(1.1); }
+.fd-rtfight.on { outline: 2px solid var(--text-main); outline-offset: 1px; }
+.fd-rtdeath { position: absolute; top: -12px; transform: translateX(-50%); color: var(--fd-fail); font-size: 0.7rem; font-weight: 700; line-height: 1; }
+.fd-rtcur { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text-main); pointer-events: none; }
+.fd-rtplay { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.fd-rtplay .fd-playbtn { white-space: nowrap; }
+/* One layer control: the map's "Layers ▾" panel; the toolbar's button belongs to Live mode only. */
+.cmd-card.fd-on .cmd-maptools [data-act="layers"] { display: none; }
+
 .fd-raid { grid-area: frames; min-width: 0; }
 .fd-railcol { grid-area: rail; min-width: 0; display: grid; gap: 6px; align-content: start; }
 .fd-raidhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 8px; }
@@ -3249,7 +3274,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-ready .fd-chip.warn { color: var(--fd-warn); border-color: color-mix(in srgb, var(--fd-warn) 45%, transparent); background: color-mix(in srgb, var(--fd-warn) 12%, transparent); }
 .fd-ready .fd-chip.fail { color: var(--fd-fail); border-color: color-mix(in srgb, var(--fd-fail) 45%, transparent); background: color-mix(in srgb, var(--fd-fail) 12%, transparent); }
 .fd-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px 8px; }
-.fd-frames[hidden], .fd-raid[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-timeline[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
+.fd-runtl[hidden], .fd-frames[hidden], .fd-raid[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-timeline[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
 .fd-grp { min-width: 0; display: grid; gap: 4px; align-content: start; }
 .fd-gl { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
 .fd-tile { position: relative; height: 34px; width: 100%; min-width: 0; padding: 0 7px; overflow: hidden; text-align: left; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.76rem; cursor: pointer; }
@@ -3277,7 +3302,8 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-fight .fd-fl { font-weight: 600; }
 .fd-fight .fd-fv { justify-self: end; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
 .fd-fight .fd-fs { grid-column: 1 / -1; color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fd-fight .fd-fd { grid-column: 1 / -1; color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fd-fight .fd-fd { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fd-fight .fd-fdmg { color: var(--text-main); }
 .fd-fight.v-fail { border-left-color: var(--fd-fail); }
 .fd-fight.v-fail .fd-fv { color: var(--fd-fail); }
 .fd-fight.v-warn { border-left-color: var(--fd-warn); }
@@ -3302,7 +3328,8 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-check.l-ok .fd-lvl { color: var(--fd-ok); background: color-mix(in srgb, var(--fd-ok) 15%, transparent); }
 .fd-why { min-width: 0; }
 .fd-ttl { font-weight: 600; }
-.fd-num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.fd-hi { font-weight: 600; }
+.fd-num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8rem; font-weight: 600; color: var(--text-main); font-variant-numeric: tabular-nums; }
 .fd-ev { margin-top: 2px; color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
 .fd-link { margin-left: 6px; padding: 0 7px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-card-subtle); color: var(--text-muted); font: inherit; font-size: 0.7rem; cursor: pointer; }
 .fd-link:hover { color: var(--text-main); border-color: var(--border-strong); }
@@ -3353,10 +3380,11 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-map .fdring { fill: none; stroke: var(--accent-yellow); stroke-width: 2; vector-effect: non-scaling-stroke; }
 
 @media (max-width: 760px) {
-  .cmd-card.fd-on .cmd-body { grid-template-columns: 1fr; grid-template-areas: "frames" "rail" "map" "checks" "timeline" "roles"; }
+  .cmd-card.fd-on .cmd-body { grid-template-columns: 1fr; grid-template-areas: "run" "frames" "rail" "map" "checks" "timeline" "roles"; }
   .fd-frames { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fd-rail { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 4px; min-width: 0; }
   .fd-rail .fd-fight { min-width: 190px; }
+  .fd-rtlegend { display: none; }
   .cmd-card.fd-on .cmd-stage { height: 320px; }
   .cmd-card.fd-on .cmd-maptools { left: 8px; right: 8px; flex-wrap: wrap; justify-content: flex-end; }
   .cmd-card.fd-on .cmd-maptools button { min-width: 30px; height: 28px; padding: 0 8px; }

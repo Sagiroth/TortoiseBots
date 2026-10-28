@@ -5862,7 +5862,7 @@
   function drawCmdMap(key) {
     const card = cmdCards.get(key);
     const liveBind = cmdFindBind(key);
-    const rp = liveBind ? fdReplayActive(key) : null;
+    const rp = liveBind ? (fdReplayActive(key) || fdRunActive(key)) : null;
     const bind = rp ? fdReplayBind(liveBind, rp.fight, rp.track, rp.tS) : liveBind;
     if (!card || !bind) return;
     const stage = card.querySelector('.cmd-stage'), svg = card.querySelector('svg.cmd-map');
@@ -6290,6 +6290,14 @@
       <div class="cmd-run" hidden></div>
       <div class="cmd-warn" aria-live="polite"></div>
       <div class="cmd-body">
+        <section class="fd-runtl" aria-label="Run timeline" hidden>
+          <div class="fd-rthead">
+            <h3 class="cmd-h">Run timeline <span class="fd-rtsub">where the minutes went; drag to replay the raid on the map</span></h3>
+            <div class="fd-rtlegend" aria-hidden="true"><span><i class="sw sw-walk"></i>walking</span><span><i class="sw sw-fight"></i>trash fight</span><span><i class="sw sw-boss"></i>boss</span><span>✕ death</span></div>
+          </div>
+          <div class="fd-rt" data-fd-rt role="img" aria-label="Run timeline"></div>
+          <div class="fd-rtplay" data-fd-rtplayrow></div>
+        </section>
         <section class="fd-raid" aria-label="Raid frames" hidden>
           <div class="fd-raidhead"><h3 class="cmd-h">Raid frames<span class="fd-dead"></span></h3><div class="fd-ready"></div></div>
           <div class="fd-frames" role="group" aria-label="Raid frames"></div>
@@ -6368,7 +6376,7 @@
       if (t.dataset.mode) {
         fdSaveMode(key, t.dataset.mode === 'debug' ? 'debug' : 'live');
         fd.mode = t.dataset.mode === 'debug' ? 'debug' : 'live';
-        if (fd.mode === 'live') fdReplayStop(fd);
+        if (fd.mode === 'live') { fdReplayStop(fd); fdRunStopAll(fd); }
         fd.userSel = false;
         renderCommanders();
         return;
@@ -6383,6 +6391,7 @@
         fd.sel = t.dataset.fdFight === 'live' ? 'live' : fdDecodeKey(t.dataset.fdFight);
         fd.userSel = true;
         fd.death = null;
+        fdRunStopAll(fd);
       } else if (t.dataset.fdBot != null) {
         fd.bot = fd.bot === t.dataset.fdBot ? null : t.dataset.fdBot;
       } else if (t.dataset.fdDeath != null) {
@@ -6391,6 +6400,7 @@
         const fought = det && det.fight, tr = fought ? fd.tracks[fd.sel] : null;
         const death = fought ? (fought.deaths || [])[fd.death] : null;
         if (death && tr && tr !== 'loading' && FightReplay.window(tr.prep, fought).ok) {
+          fdRunStopAll(fd);
           fd.rp.t = Math.min(Math.round(fought.dur_ms || 0), death.t_ms || 0);
           fd.rp.on = true;
           fdReplayStop(fd);
@@ -6408,6 +6418,25 @@
       if (i < 0 || j < 0 || j >= cards.length) return;
       e.preventDefault();
       cards[j].focus();
+    });
+    // The run strip: a fight block selects that fight; the replay button plays the run from where the scrubber is.
+    card.addEventListener('click', e => {
+      const fd = cmdFd[key];
+      if (!fd || !card.classList.contains('fd-on')) return;
+      const t = e.target.closest && e.target.closest('[data-fd-rtfight], [data-fd-rtplay]');
+      if (!t) return;
+      if (t.dataset.fdRtplay != null) { fdRunPlay(key); return; }
+      fd.sel = fdDecodeKey(t.dataset.fdRtfight || '');
+      fd.userSel = true;
+      fd.death = null;
+      fdRunStopAll(fd);
+      fdReplayStop(fd);
+      fd.rp = { on: false, t: 0, playing: false, speed: fd.rp.speed, timer: 0, key: fd.sel };
+      fdRender(key);
+    });
+    card.addEventListener('input', e => {
+      if (!e.target.matches || !e.target.matches('[data-fd-rtscrub]')) return;
+      fdRunScrub(key, parseFloat(e.target.value) || 0);
     });
     // The replay: play, speed, exit and a click on the timeline or a lane bar to scrub. Every control leaves the row, the cursor
     // and the map in step with the one state (rp).
@@ -6430,15 +6459,19 @@
       const at = Math.round(((e.clientX - rect.left) / rect.width) * dur / 100) * 100;
       fd.rp.t = Math.min(dur, Math.max(0, at));
       fd.rp.on = true;
+      fdRunStopAll(fd);
+      fdRunSync(card, fd);
       fdReplayStop(fd);
       fdReplaySync(key);
     });
     card.addEventListener('input', e => {
-      if (!e.target.matches || !e.target.matches('.fd-scrub')) return;
+      if (!e.target.matches || !e.target.matches('.fd-scrub') || e.target.hasAttribute('data-fd-rtscrub')) return;
       const fd = cmdFd[key];
       if (!fd) return;
       fd.rp.t = parseFloat(e.target.value) || 0;
       fd.rp.on = true;
+      fdRunStopAll(fd);
+      fdRunSync(card, fd);
       fdReplayStop(fd);
       fdReplaySync(key);
     });
@@ -6543,7 +6576,7 @@
       if (left) left.hidden = debug;
       const fightsEl = card.querySelector('.cmd-fights');
       if (fightsEl) fightsEl.hidden = debug;
-      card.querySelectorAll('.fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = !debug; });
+      card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = !debug; });
       drawCmdMap(key);
       if (debug) { renderFightDebug(card, bind); fdLoad(card, bind); } else mountFightPanel(card, bind);
     });
@@ -6615,7 +6648,7 @@
   const cmdFd = {};
 
   function fdState(key) {
-    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, details: {}, failed: {}, loading: false, list: [], tracks: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null } };
+    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, details: {}, failed: {}, loading: false, list: [], tracks: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
     return cmdFd[key];
   }
 
@@ -6748,6 +6781,21 @@
     const fight = det && det.fight;
     if (fd.death != null && fight && !(fight.deaths || [])[fd.death]) fd.death = null;
     const recaps = fight ? FightDebug.deathRecaps(fight) : [];
+
+    // The run strip above the raid frames: its blocks, the death marks and the replay scrubber.
+    const run = fdRunModel(bind, list, fd.details, cmdNowFor(bind));
+    fd.run.model = run;
+    const runKey = run ? run.t0 + '|' + run.segs.filter(sg => sg.kind !== 'walk').map(sg => sg.key + ':' + sg.fromS + ':' + sg.toS).join(',') : '';
+    if (fd.run.key !== runKey) {
+      fdRunStop(fd);
+      fd.run.key = runKey;
+      fd.run.t = run ? Math.min(fdRunT(fd, run), run.spanMs) : null;
+    }
+    if (!fd.run.on) fd.run.t = null; // at rest the cursor sits at the newest report, so the clock reads the whole run
+    if (fd.run.on && !run) fdRunStopAll(fd);
+    fdSet(card.querySelector('[data-fd-rt]'), run ? fdRunHtml(run, fd.sel, fd) : '');
+    fdRunPlaySync(card, fd, run);
+    if (run) fdRunLoad(card, bind);
 
     const frames = FightDebug.raidFrames(bind);
     fdSet(card.querySelector('.fd-frames'), fdFramesHtml(frames, fd.bot));
@@ -6884,6 +6932,215 @@
     return rows.length > 0 && rows.every(b => mode(b) === 'debug');
   }
 
+  // ---- the run timeline: where the run's minutes went, and a scrubber that replays the raid on the map ----
+  // The blocks come from the fight list (each row's start and length), the deaths from the loaded fight details, and the walking
+  // from the gaps. Times are game-server unix seconds, the same clock the kept positions use.
+  function fdRunModel(bind, list, details, nowSec) {
+    const rows = (Array.isArray(list) ? list : [])
+      .filter(r => r && r.key && numOr0(r.start) > 0)
+      .slice().sort((a, b) => numOr0(a.start) - numOr0(b.start));
+    if (!rows.length) return null;
+    const firstS = numOr0(rows[0].start);
+    const lastRow = rows[rows.length - 1];
+    const lastEnd = numOr0(lastRow.start) + numOr0(lastRow.dur) / 1000;
+    let t0 = numOr0(bind && bind.bound_at);
+    if (!(t0 > 0) || t0 > firstS) t0 = firstS;
+    let t1 = Math.max(numOr0(nowSec), lastEnd);
+    if (!(t1 > t0)) t1 = t0 + 1;
+    const segs = [], deaths = [];
+    let cur = t0;
+    rows.forEach((r, i) => {
+      const s = numOr0(r.start), e = s + numOr0(r.dur) / 1000;
+      if (s > cur && s > t0) segs.push({ kind: 'walk', fromS: cur, toS: s });
+      const det = details && details[r.key];
+      const fight = det && det.fight;
+      const boss = !!(r.boss_name || (fight && fight.boss_name));
+      segs.push({
+        kind: boss ? 'boss' : 'fight', key: r.key, label: 'P' + (i + 1),
+        name: boss ? String(r.boss_name || fight.boss_name) : '',
+        fromS: Math.max(s, t0), toS: Math.max(e, t0),
+      });
+      ((fight && fight.deaths) || []).forEach((d, j) => {
+        if (!d) return;
+        const tS = s + numOr0(d.t_ms) / 1000;
+        if (tS >= t0 && tS <= t1) deaths.push({ key: r.key, i: j, tS, name: d.name || '', killer: d.killer || '' });
+      });
+      if (e > cur) cur = e;
+    });
+    if (t1 > cur) segs.push({ kind: 'walk', fromS: cur, toS: t1 });
+    return { t0, t1, spanMs: Math.max(0, Math.round((t1 - t0) * 1000)), segs, deaths };
+  }
+
+  function fdRunPct(run, tS) {
+    return run && run.spanMs > 0 ? ((tS - run.t0) * 1000 / run.spanMs) * 100 : 0;
+  }
+
+  function fdRunClock(ms) {
+    const s = Math.max(0, Math.round((numOr0(ms)) / 1000));
+    return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+  }
+
+  function fdRunT(fd, run) {
+    const t = fd.run.t == null ? run.spanMs : fd.run.t;
+    return Math.max(0, Math.min(run.spanMs, t));
+  }
+
+  function fdRunHtml(run, sel, fd) {
+    if (!run) return '';
+    const t = fdRunT(fd, run);
+    let html = '';
+    run.segs.forEach(sg => {
+      const from = fdRunPct(run, sg.fromS), w = Math.max(0.5, fdRunPct(run, sg.toS) - from);
+      if (sg.kind === 'walk') {
+        html += `<span class="fd-rtwalk" style="left:${from.toFixed(2)}%;width:${w.toFixed(2)}%" title="walking · ${fdRunClock((sg.toS - sg.fromS) * 1000)}"></span>`;
+        return;
+      }
+      const boss = sg.kind === 'boss', on = sg.key === sel;
+      const text = boss ? sg.name || 'Boss' : sg.label;
+      const len = Math.round((sg.toS - sg.fromS) * 1000);
+      html += `<button type="button" class="fd-rtfight${boss ? ' boss' : ''}${on ? ' on' : ''}" style="left:${from.toFixed(2)}%;width:${w.toFixed(2)}%" data-fd-rtfight="${esc(encodeURIComponent(sg.key))}" title="${esc(sg.label + (boss ? ' · ' + (sg.name || 'boss') : '') + ' · ' + Math.round(len / 1000) + ' s')}" aria-pressed="${on ? 'true' : 'false'}"><span>${esc(text)}</span></button>`;
+    });
+    run.deaths.forEach(d => {
+      html += `<span class="fd-rtdeath" style="left:${fdRunPct(run, d.tS).toFixed(2)}%" title="${esc(d.name + ' died at ' + new Date(d.tS * 1000).toLocaleTimeString())}">✕</span>`;
+    });
+    html += `<i class="fd-rtcur" style="left:${fdRunPct(run, run.t0 + t / 1000).toFixed(2)}%"></i>`;
+    return html;
+  }
+
+  // The run's play row: enabled only while the daemon kept at least two reports over the run, so the scrub never promises a replay
+  // the frames cannot show.
+  function fdRunPlayHtml(run, st) {
+    if (!run) return '';
+    const span = run.spanMs, t = fdRunT({ run: st }, run), win = fdRunWindow(run, st.track);
+    const off = win && win.ok ? '' : ' disabled';
+    return `<button type="button" class="fd-playbtn" data-fd-rtplay aria-pressed="${st.playing ? 'true' : 'false'}"${off}>${st.playing ? '❚❚ Pause' : '▶ Replay'}</button>`
+      + `<input type="range" class="fd-scrub" data-fd-rtscrub min="0" max="${span}" step="100" value="${Math.round(t)}" aria-label="Run replay time"${off}>`
+      + `<span class="fd-clock" data-fd-rtclock>${esc(FightReplay.spanClock(t, span))}</span>`
+      + `<span class="fd-cov">${esc(fdRunCoverage(run, win))}</span>`;
+  }
+
+  // The daemon keeps 30 min of reports; a longer run's replay covers only its end.
+  const FD_TRACK_WINDOW_S = 1800;
+
+  function fdRunWindow(run, track) {
+    if (!run) return null;
+    if (!track || track === 'loading') return { ok: false, why: track === 'loading' ? 'Loading the kept positions…' : '' };
+    return FightReplay.window(track.prep, { start: run.t0, dur_ms: run.spanMs });
+  }
+
+  function fdRunCoverage(run, win) {
+    if (!win) return '';
+    if (!win.ok) return win.why || 'No kept positions for this run (the daemon keeps the last 30 min)';
+    let s = 'positions every 2 s · ' + win.frames + ' reports';
+    if (run.t1 - run.t0 > FD_TRACK_WINDOW_S) s += ' · the last 30 min of the run';
+    return s;
+  }
+
+  // Rebuilds the run row only when the run (or its positions) changes; a scrub in progress keeps its thumb and its focus.
+  function fdRunPlaySync(card, fd, run) {
+    const node = card && card.querySelector('[data-fd-rtplayrow]');
+    if (!node || !run) return;
+    const key = run.t0 + '|' + run.spanMs + '|' + (fd.run.track ? 't' : '');
+    if (node.dataset.fdKey !== key) { node.dataset.fdKey = key; node.innerHTML = fdRunPlayHtml(run, fd.run); }
+    fdRunSync(card, fd);
+  }
+
+  // The moving parts of the run strip: the cursor, the scrubber, the clock and the play button.
+  function fdRunSync(card, fd) {
+    const run = fd.run.model, node = card && card.querySelector('.fd-runtl');
+    if (!run || !node) return;
+    const t = fdRunT(fd, run);
+    const cur = node.querySelector('.fd-rtcur');
+    if (cur) cur.style.left = fdRunPct(run, run.t0 + t / 1000).toFixed(2) + '%';
+    const scrub = node.querySelector('[data-fd-rtscrub]');
+    if (scrub && document.activeElement !== scrub) scrub.value = String(Math.round(t));
+    const clock = node.querySelector('[data-fd-rtclock]');
+    if (clock) clock.textContent = FightReplay.spanClock(t, run.spanMs);
+    const play = node.querySelector('[data-fd-rtplay]');
+    if (play) {
+      play.textContent = fd.run.playing ? '❚❚ Pause' : '▶ Replay';
+      play.setAttribute('aria-pressed', fd.run.playing ? 'true' : 'false');
+    }
+  }
+
+  function fdRunLoad(card, bind) {
+    const fd = cmdFd[bind.commander], run = fd && fd.run.model;
+    if (!fd || !run || fd.run.track !== undefined || fd.run.loading) return;
+    fd.run.loading = true;
+    fd.run.track = 'loading';
+    const to = Math.ceil(run.t1) + 4, from = Math.max(Math.floor(run.t0) - 4, to - FD_TRACK_WINDOW_S);
+    fetch('/api/v1/commanders/track?commander=' + encodeURIComponent(bind.commander) + '&from=' + from + '&to=' + to, { credentials: 'same-origin' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(json => { fd.run.track = json && Array.isArray(json.frames) ? { raw: json, prep: FightReplay.prep(json) } : null; })
+      .catch(() => { fd.run.track = null; })
+      .then(() => {
+        fd.run.loading = false;
+        const c = cmdCards.get(bind.commander);
+        if (c && c.classList.contains('fd-on')) renderFightDebug(c, cmdFindBind(bind.commander));
+      });
+  }
+
+  function fdRunStop(fd) {
+    clearTimeout(fd.run.timer);
+    fd.run.playing = false;
+  }
+
+  function fdRunStopAll(fd) {
+    fdRunStop(fd);
+    fd.run.on = false;
+  }
+
+  // What the map draws while the run scrub is on, or null. The kept positions at that moment stand in for the live ones.
+  function fdRunActive(key) {
+    const fd = cmdFd[key];
+    if (!fd || fd.mode !== 'debug' || !fd.run || !fd.run.on || !fd.run.model) return null;
+    const run = fd.run.model, track = fd.run.track;
+    if (!track || track === 'loading' || !FightReplay.window(track.prep, { start: run.t0, dur_ms: run.spanMs }).ok) return null;
+    const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
+    const tMs = fdRunT(fd, run);
+    return { tS: run.t0 + tMs / 1000, tMs, track, fight: { start: run.t0, dur_ms: run.spanMs, bots: (det && det.fight && det.fight.bots) || [] } };
+  }
+
+  function fdRunScrub(key, tMs) {
+    const fd = cmdFd[key], run = fd && fd.run.model;
+    if (!run) return;
+    fdRunStop(fd);
+    fd.run.on = true;
+    fd.run.t = Math.max(0, Math.min(run.spanMs, Math.round(tMs)));
+    fdReplayStop(fd);
+    fd.rp.on = false;
+    fdRunSync(cmdCards.get(key), fd);
+    drawCmdMap(key);
+  }
+
+  // Play/pause the run; Play at the end starts again from the first kept report.
+  function fdRunPlay(key) {
+    const fd = cmdFd[key], run = fd && fd.run.model;
+    if (!run) return;
+    if (fd.run.playing) { fdRunStop(fd); fdRunSync(cmdCards.get(key), fd); return; }
+    if (!fdRunActive(key) && !(fd.run.track && fd.run.track !== 'loading')) return;
+    if (fdRunT(fd, run) >= run.spanMs) fd.run.t = 0;
+    fd.run.on = true;
+    fdReplayStop(fd);
+    fd.rp.on = false;
+    fd.run.playing = true;
+    fdRunTick(key);
+  }
+
+  function fdRunTick(key) {
+    const fd = cmdFd[key], run = fd && fd.run.model;
+    if (!fd || !run || !fd.run.playing) { if (fd) fd.run.playing = false; return; }
+    const act = fdRunActive(key);
+    if (!act) { fd.run.playing = false; fdRunSync(cmdCards.get(key), fd); return; }
+    fd.run.t = Math.min(run.spanMs, fdRunT(fd, run) + FightReplay.TICK_MS);
+    if (fdRunT(fd, run) >= run.spanMs) fd.run.playing = false;
+    fdRunSync(cmdCards.get(key), fd);
+    drawCmdMap(key);
+    const card = cmdCards.get(key);
+    if (!fd.run.playing || !card || !card.classList.contains('fd-on')) return;
+    fd.run.timer = setTimeout(() => fdRunTick(key), FightReplay.TICK_MS);
+  }
+
   function fdFramesHtml(frames, selBot) {
     return (frames || []).map(g => {
       const up = g.tiles.filter(t => t.alive).length;
@@ -6919,8 +7176,33 @@
         + `<span class="fd-fv">${word}</span>`
         + `<span class="fd-fs">${esc(c.mob || 'trash')}</span>`
         + `<span class="fd-len"><i style="width:${(c.lenPct || 0).toFixed(1)}%"></i></span>`
-        + `<span class="fd-fd">step ${c.step} · ${Math.round((c.durMs || 0) / 1000)} s · ${deaths}</span></button>`;
+        + `<span class="fd-fd"><span>step ${c.step} · ${Math.round((c.durMs || 0) / 1000)} s · ${deaths}</span>`
+        + (c.dmg != null ? `<span class="fd-fdmg">${FightDebug.fmtInt(c.dmg)} dmg</span>` : '')
+        + '</span></button>';
     }).join('');
+  }
+
+  // The check's key value, in the prototype's words: the debuff's uptime is said against the fight, the Sunder rate per 10 s,
+  // and the non-tank's share against all damage taken. The value itself is emphasised rather than muted.
+  function fdCheckNum(c) {
+    const id = c && c.id ? c.id : '', n = c ? c.num : '';
+    if (n == null || n === '') return '';
+    if (id.indexOf('debuff:') === 0) return String(n) + ' of the fight';
+    if (id === 'mt_sunder') return String(n).replace('/10 s', ' per 10 s');
+    if (id === 'taken_outside') return String(n) + ' of all damage taken';
+    return String(n);
+  }
+
+  // The title, split where the prototype puts the worked-on bot in bold ("… outside the tanks: Kitetastic (damage)").
+  function fdCheckTitle(c) {
+    const t = c && c.title != null ? String(c.title) : '';
+    const id = c && c.id ? c.id : '';
+    if (id === 'mt_sunder' && t && t.indexOf(':') < 0) return { text: t + ':', hi: '' };
+    if (id === 'taken_outside') {
+      const i = t.indexOf(': ');
+      if (i > 0) return { text: t.slice(0, i + 1), hi: t.slice(i + 2) };
+    }
+    return { text: t, hi: '' };
   }
 
   function fdChecksHtml(checks, recaps, guids, selBot) {
@@ -6934,8 +7216,9 @@
           ? ` <button type="button" class="fd-link" data-fd-profile="${esc(guid)}" aria-pressed="${pressed}">show</button>`
           : ` <button type="button" class="fd-link" data-fd-bot="${esc(c.bot)}" aria-pressed="${pressed}">show</button>`)
         : '';
+      const tt = fdCheckTitle(c), num = fdCheckNum(c);
       return `<li class="fd-check l-${esc(c.lvl)}"><span class="fd-lvl">${word}</span><div class="fd-why">`
-        + `<span class="fd-ttl">${esc(c.title)}</span> <span class="fd-num">${esc(c.num)}</span>`
+        + `<span class="fd-ttl">${esc(tt.text)}</span>${tt.hi ? ` <b class="fd-hi">${esc(tt.hi)}</b>${num ? ',' : ''}` : ''}${num ? ` <span class="fd-num">${esc(num)}</span>` : ''}`
         + show
         + (d ? ` <button type="button" class="fd-link fd-death" data-fd-death="${c.death}" data-x="${d.x}" data-y="${d.y}">recap</button>` : '')
         + `<div class="fd-ev">${esc(c.ev)}</div></div></li>`;
@@ -7070,7 +7353,7 @@
     const dur = durMs > 0 ? durMs : 0;
     const pct = (ms) => dur > 0 ? Math.max(0, Math.min(100, (ms / dur) * 100)) : 0;
     const lanes = (res && res.lanes) || [];
-    let html = '<p class="fd-lanecap">Who each enemy targeted (sampled every 2 s)</p>';
+    let html = '<p class="fd-lanecap">Aggro per mob: blue = on a tank, red = on anyone else. From the 2 s mob targets.</p>';
     lanes.forEach(l => {
       const label = l.label || l.name || 'enemy';
       let bar = '';
@@ -7143,7 +7426,7 @@
     if (!fd || !fight || fd.tracks[key] !== undefined) return;
     if (Object.keys(fd.tracks).some(k => fd.tracks[k] === 'loading')) return;
     fd.tracks[key] = 'loading';
-    const from = (fight.start || 0) - 4, to = (fight.start || 0) + Math.ceil((fight.dur_ms || 0) / 1000) + 4;
+    const from = Math.floor(fight.start || 0) - 4, to = Math.ceil((fight.start || 0) + (fight.dur_ms || 0) / 1000) + 4;
     fetch('/api/v1/commanders/track?commander=' + encodeURIComponent(bind.commander) + '&from=' + from + '&to=' + to, { credentials: 'same-origin' })
       .then(r => (r.ok ? r.json() : null))
       .then(json => { fd.tracks[key] = json && Array.isArray(json.frames) ? { raw: json, prep: FightReplay.prep(json) } : null; })
@@ -7191,6 +7474,8 @@
     const fd = cmdFd[key];
     if (!fd) return;
     if (fd.rp.playing) { fdReplayStop(fd); fdReplaySync(key); return; }
+    fdRunStopAll(fd);
+    fdRunSync(cmdCards.get(key), fd);
     fd.rp.on = true;
     const act = fdReplayActive(key);
     if (!act) { fd.rp.on = false; fdReplaySync(key); return; }

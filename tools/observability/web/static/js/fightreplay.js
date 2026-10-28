@@ -178,9 +178,18 @@
     return (t / 1000).toFixed(1) + " / " + (d / 1000).toFixed(1) + " s";
   }
 
+  // The run timeline's clock: whole minutes and seconds, "m:ss of m:ss", as the run strip reads it.
+  function spanClock(ms, durMs) {
+    const fmt = (v) => {
+      const s = Math.max(0, Math.round((num(v) === null ? 0 : v) / 1000));
+      return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2);
+    };
+    return fmt(ms) + " of " + fmt(durMs);
+  }
+
   const api = {
     TICK_MS, SPEEDS, HOLD_S,
-    jumpLimitYd, prep, window, botsAt, mobsAt, nextSpeed, clock, coverageText,
+    jumpLimitYd, prep, window, botsAt, mobsAt, nextSpeed, clock, spanClock, coverageText,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightReplay = api;
 })(typeof self !== "undefined" ? self : this);

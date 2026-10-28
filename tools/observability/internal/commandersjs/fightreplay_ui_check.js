@@ -74,7 +74,7 @@ assert.strictEqual((lanes.match(/class="fd-seg/g) || []).length, 3, "three segme
 assert.strictEqual((lanes.match(/fd-seg k-healer bad/g) || []).length, 1, "the healer's time is the bad one");
 assert.ok(lanes.includes("60% on tanks"));
 assert.ok(lanes.includes("4.0 s on Heal"));
-assert.ok(lanes.includes("Who each enemy targeted (sampled every 2 s)"), "the honest caption");
+assert.ok(lanes.includes("Aggro per mob: blue = on a tank, red = on anyone else."), "the prototype caption");
 assert.ok(lanes.includes("Warder"), "the lane is labelled with the entry's name");
 const evilLane = JSON.parse(JSON.stringify(lanesRes));
 evilLane.lanes[0].label = '<img src=x onerror=alert(1)>"&';

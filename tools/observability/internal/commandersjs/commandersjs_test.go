@@ -165,6 +165,12 @@ func TestFightReplayUIJS(t *testing.T) {
 	runCheck(t, "fightreplay_ui_check.js", "../../web/static/js/app.js")
 }
 
+// TestFightDebugRunUIJS runs fdrun_ui_check.js: the Fight debugger's run timeline (walking and fight blocks, deaths, the run
+// scrubber and its clock), the one map layer control, the aggro lane caption, and the rail's total damage and bold key values.
+func TestFightDebugRunUIJS(t *testing.T) {
+	runCheck(t, "fdrun_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestPhaseACSS runs phase_a_css_check.js: the Dashboard phase A block in app.css (the plan layer and the raid layers on the
 // map, the replay row and the aggro lanes in the Fight debugger; theme tokens only apart from the eight group colours, a rule
 // for every emitted class, the phone row, focus kept).

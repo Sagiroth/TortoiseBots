@@ -28,7 +28,7 @@ vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, {
 assert.ok(ctx.FightDebug && typeof ctx.FightDebug.checks === "function", "fightdebug.js loads as the global FightDebug");
 vm.runInContext(
   [grab("esc"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grab("cmdFightMarksSvg"), grab("fdFramesHtml"),
-    grab("fdRailHtml"), grab("fdChecksHtml"), grab("fdTimelineHtml"), grab("fdRecapHtml"), grab("fdRolesHtml"),
+    grab("fdRailHtml"), grab("fdChecksHtml"), grab("fdCheckNum"), grab("fdCheckTitle"), grab("fdTimelineHtml"), grab("fdRecapHtml"), grab("fdRolesHtml"),
     grab("fdLiveTableHtml"), grab("fdBotHtml")].join("\n") +
   "\nvar CmdView = { project: (x, y) => ({ x: -y, y: -x }) };" +
   "\nvar cmdBotLink = (guid, name) => '<a class=\"cmd-botlink\" href=\"#bot/' + guid + '\">' + esc(name) + '</a>';", ctx);
@@ -135,7 +135,8 @@ assert.deepStrictEqual([...railHtml.matchAll(/<span class="fd-fl">([^<]*)<\/span
   ["Pack 1", "Pack 2", "Pack 3", "Pack 4", "Pack 5"]);
 assert.strictEqual(railHtml.indexOf("Pack 1") < railHtml.indexOf("Pack 5"), true, "Pack 1 comes first");
 assert.ok(railHtml.includes('<span class="fd-fs">Onyxian Warder</span>'), railHtml.slice(0, 260));
-assert.ok(railHtml.includes('<span class="fd-fd">step 22 · 39 s · 2 deaths</span>'), railHtml.slice(0, 400));
+assert.ok(railHtml.includes('<span class="fd-fd"><span>step 22 · 39 s · 2 deaths</span>'), railHtml.slice(0, 400));
+assert.ok(/<span class="fd-fdmg">[\d,]+ dmg<\/span>/.test(railHtml), "the fight's total damage sits at the bottom right: " + railHtml.slice(0, 500));
 const railLive = run("fdRailHtml(cards, live, 'live')", { cards, live: { fightMs: 65000, winS: 10, dps: 4321, hps: 900, active: 31, alive: 39 } });
 assert.ok(railLive.startsWith('<button type="button" class="fd-fight v-live'), railLive.slice(0, 100));
 assert.ok(railLive.indexOf('data-fd-fight="live"') < railLive.indexOf('data-fd-fight="5-1"'), "the live fight comes first");
