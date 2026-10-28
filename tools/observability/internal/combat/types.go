@@ -105,6 +105,8 @@ type FightDatagram struct {
 // FightSummary is one row of GET /api/v1/combat/fights.
 type FightSummary struct {
 	ID       string `json:"id"`
+	Key      string `json:"key"`
+	Session  uint64 `json:"session"`
 	Start    int64  `json:"start"`
 	Dur      uint32 `json:"dur"`
 	Outcome  string `json:"outcome"`

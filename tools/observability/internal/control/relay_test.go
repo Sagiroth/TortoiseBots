@@ -88,9 +88,11 @@ func TestControlRefusals(t *testing.T) {
 	if resp, err := http.DefaultClient.Do(getReq); err != nil {
 		t.Fatal(err)
 	} else {
-		resp.Body.Close()
 		if resp.StatusCode != http.StatusMethodNotAllowed {
-			t.Errorf("GET status = %d, want 405", resp.StatusCode)
+			t.Errorf("GET status = %d, want 405")
+			resp.Body.Close()
+		} else if b := readBody(t, resp); !isJSONRefusal(b, "method not allowed") {
+			t.Errorf("GET body = %q, want JSON {ok:false,error}", b)
 		}
 	}
 
@@ -100,8 +102,8 @@ func TestControlRefusals(t *testing.T) {
 		resp.Body.Close()
 	} else {
 		b := readBody(t, resp)
-		if !strings.Contains(b, "origin") {
-			t.Errorf("missing origin body = %q, want origin", b)
+		if !isJSONRefusal(b, "origin") {
+			t.Errorf("missing origin body = %q, want JSON {ok:false,error} with origin", b)
 		}
 	}
 
@@ -110,7 +112,10 @@ func TestControlRefusals(t *testing.T) {
 		t.Errorf("foreign origin status = %d, want 403", resp.StatusCode)
 		resp.Body.Close()
 	} else {
-		resp.Body.Close()
+		b := readBody(t, resp)
+		if !isJSONRefusal(b, "origin") {
+			t.Errorf("foreign origin body = %q, want JSON {ok:false,error} with origin", b)
+		}
 	}
 
 	// Missing header.
@@ -119,8 +124,8 @@ func TestControlRefusals(t *testing.T) {
 		resp.Body.Close()
 	} else {
 		b := readBody(t, resp)
-		if !strings.Contains(b, "header") {
-			t.Errorf("missing header body = %q, want header", b)
+		if !isJSONRefusal(b, "header") {
+			t.Errorf("missing header body = %q, want JSON {ok:false,error} with header", b)
 		}
 		resp.Body.Close()
 	}
@@ -136,7 +141,10 @@ func TestControlRefusals(t *testing.T) {
 		t.Errorf("no session status = %d, want 401", resp.StatusCode)
 		resp.Body.Close()
 	} else {
-		resp.Body.Close()
+		b := readBody(t, resp)
+		if !isJSONRefusal(b, "unauthorized") {
+			t.Errorf("no session body = %q, want JSON {ok:false,error}", b)
+		}
 	}
 	if _, err := os.Stat(rNo.AuditPath); !os.IsNotExist(err) {
 		t.Errorf("refusal before the session check wrote an audit line")
@@ -151,7 +159,10 @@ func TestControlRefusals(t *testing.T) {
 		t.Errorf("low rank status = %d, want 403", resp.StatusCode)
 		resp.Body.Close()
 	} else {
-		resp.Body.Close()
+		b := readBody(t, resp)
+		if !isJSONRefusal(b, "rank") {
+			t.Errorf("low rank body = %q, want JSON {ok:false,error} with rank", b)
+		}
 	}
 
 	// Disallowed command: 400 and an audit line with ok:false.
@@ -160,8 +171,8 @@ func TestControlRefusals(t *testing.T) {
 		resp.Body.Close()
 	} else {
 		b := readBody(t, resp)
-		if !strings.Contains(b, "not allowed") {
-			t.Errorf("disallowed body = %q, want not allowed", b)
+		if !isJSONRefusal(b, "not allowed") {
+			t.Errorf("disallowed body = %q, want JSON {ok:false,error} with not allowed", b)
 		}
 		resp.Body.Close()
 	}
@@ -220,6 +231,18 @@ func TestControlRefusals(t *testing.T) {
 	close(block)
 	first := <-done
 	first.Body.Close()
+}
+
+// isJSONRefusal reports whether the body is {"ok":false,"error":...} with
+// the fragment in the error text.
+func isJSONRefusal(body, fragment string) bool {
+	var got map[string]any
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		return false
+	}
+	ok, _ := got["ok"].(bool)
+	msg, _ := got["error"].(string)
+	return !ok && strings.Contains(msg, fragment)
 }
 
 func TestControlSOAPTimeout(t *testing.T) {

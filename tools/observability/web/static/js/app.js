@@ -5996,9 +5996,17 @@
   // present); until then each Commanders card fetches its own commander.
   function mountFightPanel(card, bind) {
     if (typeof Fights === 'undefined' || !Fights || bind.demo) return;
+    // The daemon keeps fights per commander (internal/combat, CombatMonitor
+    // on); a card that fetched, or has a fetch in flight, does not fetch
+    // again on every render, and a card with nothing reported yet keeps one
+    // quiet retry per render instead of rebuilding the panel.
+    const mount = card.querySelector('.cmd-fights') || ensureFightMount(card);
+    if (card.dataset.fightState === 'done' || card.dataset.fightState === 'inflight') return;
+    card.dataset.fightState = 'inflight';
     fetch('/api/v1/combat/fights?commander=' + encodeURIComponent(bind.commander)).then(jsonOrThrow).then(list => {
-      Fights.render(card.querySelector('.cmd-fights') || ensureFightMount(card), bind.commander, list);
-    }).catch(() => {});
+      card.dataset.fightState = (Array.isArray(list) && list.length) ? 'done' : 'idle';
+      Fights.render(mount, bind.commander, list);
+    }).catch(() => { card.dataset.fightState = 'idle'; });
   }
 
   function ensureFightMount(card) {

@@ -131,11 +131,64 @@ func TestStoreDedupe(t *testing.T) {
 	if got := s.List("Gbmage"); len(got) != 1 || got[0].ID != "55-1" || got[0].Deaths != 0 || got[0].Warnings != 0 {
 		t.Fatalf("list: %+v", got)
 	}
-	if _, _, ok := s.Get("55-1"); !ok {
+	if got := s.List("Gbmage"); len(got) != 1 || got[0].Session != 9 || got[0].Key == "" {
+		t.Fatalf("list row misses key/session: %+v", got)
+	}
+	if _, _, ok := s.Get("Gbmage", 9, "55-1"); !ok {
 		t.Fatal("Get missed the stored fight")
 	}
-	if _, _, ok := s.Get("55-999"); ok {
+	if _, _, ok := s.GetKey(s.List("Gbmage")[0].Key); !ok {
+		t.Fatal("GetKey missed the stored fight")
+	}
+	if _, _, ok := s.Get("Gbmage", 9, "55-999"); ok {
 		t.Fatal("Get found a fight that was never stored")
+	}
+	if _, _, ok := s.Get("Other", 9, "55-1"); ok {
+		t.Fatal("Get found another commander's fight")
+	}
+}
+
+// The same fight id for two commanders and two sessions: four distinct
+// fights, each reachable only by its own triple.
+func TestStoreCollision(t *testing.T) {
+	s := NewStore(nil)
+	for _, tc := range []struct {
+		commander string
+		session   uint64
+		boss      string
+	}{
+		{"Gbmage", 9, "Magmadar"},
+		{"Gbmage", 10, "Geddon"},
+		{"Other", 9, "Garr"},
+		{"Other", 10, "Shazzrah"},
+	} {
+		f := fixtureFight()
+		f.Commander = tc.commander
+		f.BossName = tc.boss
+		if !s.Add(tc.session, f) {
+			t.Fatalf("take refused for %v", tc)
+		}
+	}
+	if got := s.List("Gbmage"); len(got) != 2 {
+		t.Fatalf("Gbmage keeps %d fights, want 2", len(got))
+	}
+	if got := s.List("Other"); len(got) != 2 {
+		t.Fatalf("Other keeps %d fights, want 2", len(got))
+	}
+	for _, tc := range []struct {
+		commander string
+		session   uint64
+		boss      string
+	}{
+		{"Gbmage", 9, "Magmadar"},
+		{"Gbmage", 10, "Geddon"},
+		{"Other", 9, "Garr"},
+		{"Other", 10, "Shazzrah"},
+	} {
+		f, _, ok := s.Get(tc.commander, tc.session, "55-1")
+		if !ok || f.BossName != tc.boss {
+			t.Fatalf("Get(%q, %d): %+v ok=%v, want boss %q", tc.commander, tc.session, f, ok, tc.boss)
+		}
 	}
 }
 

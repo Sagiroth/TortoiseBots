@@ -45,35 +45,35 @@ func (r *Relay) timeout() time.Duration {
 func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeErrStatus(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	if !sameOrigin(req) {
-		http.Error(w, "forbidden: origin", http.StatusForbidden)
+		writeErrStatus(w, http.StatusForbidden, "forbidden: origin")
 		return
 	}
 	if req.Header.Get("X-TBM-Control") != "1" {
-		http.Error(w, "forbidden: header", http.StatusForbidden)
+		writeErrStatus(w, http.StatusForbidden, "forbidden: header")
 		return
 	}
 	user, rank, err := r.Session(req)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeErrStatus(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if rank < r.MinGM {
 		r.audit(user, "", false, "rank")
-		http.Error(w, "forbidden: rank", http.StatusForbidden)
+		writeErrStatus(w, http.StatusForbidden, "forbidden: rank")
 		return
 	}
 	raw, err := io.ReadAll(io.LimitReader(req.Body, maxRequestBytes+1))
 	if err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		writeErr(w, "bad request")
 		return
 	}
 	if len(raw) > maxRequestBytes {
 		r.audit(user, "", false, "too large")
-		http.Error(w, "bad request", http.StatusBadRequest)
+		writeErr(w, "bad request")
 		return
 	}
 	var in struct {
@@ -81,7 +81,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	if err := json.Unmarshal(raw, &in); err != nil || strings.TrimSpace(in.Cmd) == "" {
 		r.audit(user, "", false, "bad request")
-		http.Error(w, "bad request", http.StatusBadRequest)
+		writeErr(w, "bad request")
 		return
 	}
 	line, ok := Allowed(in.Cmd)
@@ -162,8 +162,12 @@ func isTimeout(err error) bool {
 }
 
 func writeErr(w http.ResponseWriter, msg string) {
+	writeErrStatus(w, http.StatusBadRequest, msg)
+}
+
+func writeErrStatus(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": msg})
 }
 

@@ -555,7 +555,17 @@ func main() {
 		writeJSON(w, combatStore.List(r.URL.Query().Get("commander")))
 	}))
 	mux.HandleFunc("/api/v1/combat/fight/", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		f, warnings, ok := combatStore.Get(strings.TrimPrefix(r.URL.Path, "/api/v1/combat/fight/"))
+		// The detail key is (commander, session, id): fight ids repeat
+		// across commanders and sessions. The list rows carry the composed
+		// key; callers may also pass the three parts as query params.
+		q := r.URL.Query()
+		key := strings.TrimPrefix(r.URL.Path, "/api/v1/combat/fight/")
+		f, warnings, ok := combatStore.GetKey(key)
+		if !ok {
+			if commander, session, id, qok := combatFightKey(q); qok {
+				f, warnings, ok = combatStore.Get(commander, session, id)
+			}
+		}
 		if !ok {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
@@ -820,6 +830,29 @@ func logoutHandler(authService *auth.Service) http.HandlerFunc {
 func writeJSON(w http.ResponseWriter, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+// combatFightKey reads the triple (commander, session, id) from the detail
+// query params. Fight ids repeat across commanders and sessions, so the
+// detail route requires all three.
+func combatFightKey(q map[string][]string) (string, uint64, string, bool) {
+	commanders, ok := q["commander"]
+	if !ok || len(commanders) == 0 || commanders[0] == "" {
+		return "", 0, "", false
+	}
+	sessions, ok := q["session"]
+	if !ok || len(sessions) == 0 || sessions[0] == "" {
+		return "", 0, "", false
+	}
+	session, err := strconv.ParseUint(sessions[0], 10, 64)
+	if err != nil {
+		return "", 0, "", false
+	}
+	ids, ok := q["id"]
+	if !ok || len(ids) == 0 || ids[0] == "" {
+		return "", 0, "", false
+	}
+	return commanders[0], session, ids[0], true
 }
 
 // qUint parses an optional unsigned query parameter; absent or malformed
