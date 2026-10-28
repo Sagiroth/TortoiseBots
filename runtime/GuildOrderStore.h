@@ -8,6 +8,7 @@
 #include <vector>
 
 class Player;
+struct ItemPrototype;
 
 namespace TortoiseBots
 {
@@ -19,6 +20,9 @@ namespace GuildOrders
 // only Update on the world thread looks up players, counts bag items and
 // sends live updates.
 std::optional<OrderRecord> Find(uint32_t botGuidLow);
+
+// True when the item can go to the guild bank (search and give share it).
+bool IsOrderableItem(ItemPrototype const* proto);
 
 // All orders of one guild (the `.bot order list` reply), best-effort order.
 std::vector<OrderRecord> ListForGuild(uint32_t guildId);

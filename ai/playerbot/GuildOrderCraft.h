@@ -62,4 +62,55 @@ inline uint32 CraftCastsForRemaining(uint32 spellId, uint32 itemId, uint32 remai
     return TortoiseBots::CraftOrderPolicy::CastsForRemaining(remaining, yield);
 }
 
+// Casts affordable with what the bags hold: the minimum over reagents.
+template <typename HasItem>
+inline uint32 CraftAffordableCasts(SpellEntry const* pSpellInfo, uint32 casts, HasItem hasItem)
+{
+    if (!pSpellInfo)
+        return 0;
+    uint32 affordable = casts;
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+        affordable = std::min(affordable, TortoiseBots::CraftOrderPolicy::CastsAffordable(
+            hasItem(pSpellInfo->Reagent[i]), pSpellInfo->ReagentCount[i]));
+    }
+    return affordable;
+}
+
+// First missing farmable reagent for a craft order: short of the casts
+// needed, not sold unlimited by a vendor, and the planner can source it.
+// Callbacks are injected so values, actions and order mode share the pick
+// without duplicating the loop or dragging AI headers in here.
+template <typename HasItem, typename StackSpace, typename VendorUnlimited, typename Sourcable>
+inline uint32 FirstFarmableReagentFor(SpellEntry const* pSpellInfo, uint32 casts, uint32 affordable,
+    HasItem hasItem, StackSpace stackSpace, VendorUnlimited vendorUnlimited, Sourcable sourcable)
+{
+    if (!pSpellInfo)
+        return 0;
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+
+        uint32 reagentId = pSpellInfo->Reagent[i];
+        if (vendorUnlimited(reagentId))
+            continue;
+
+        uint32 have = hasItem(reagentId);
+        if (!TortoiseBots::CraftOrderPolicy::ReagentShortfall(pSpellInfo->ReagentCount[i], casts, have))
+            continue;
+
+        if (affordable >= 1 && stackSpace(reagentId) == 0)
+            return 0;
+
+        if (!sourcable(reagentId))
+            continue;
+
+        return reagentId;
+    }
+    return 0;
+}
+
 } // namespace ai

@@ -200,7 +200,9 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/commands/Pool.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Ah.cpp"
     "${TORTOISEBOTS_ROOT}/commands/BotCommandContext.cpp"
-    "${TORTOISEBOTS_ROOT}/commands/Order.cpp")
+    "${TORTOISEBOTS_ROOT}/commands/BotCommandContext.cpp"
+    "${TORTOISEBOTS_ROOT}/commands/Order.cpp"
+    "${TORTOISEBOTS_ROOT}/commands/OrderSearch.cpp")
 
   # These are the module-owned runtime and mature AI foundations. The donor
   # manager/login sources are intentionally absent from this list and are
@@ -244,6 +246,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/ai/playerbot/GuidPosition.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/TravelMgr.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/TravelNode.cpp"
+    "${TORTOISEBOTS_ROOT}/ai/playerbot/GuildOrderSources.cpp"
     "${TORTOISEBOTS_ROOT}/ai/botpch.cpp")
 
   set(TORTOISEBOTS_STRATEGY_SRC)

@@ -9,6 +9,7 @@
 #include "../../runtime/HireLifecycle.h"
 #include "../../runtime/policy/hire/HireLootPolicy.h"
 #include "../../runtime/RemoteCommanderTasks.h"
+#include "playerbot/GuildOrderSources.h"
 
 using namespace ai;
 
@@ -368,10 +369,12 @@ bool LootObject::IsLootPossible(Player* bot)
     //  * a herb/ore node (like every unopened game object) has its loot rolled on the first open
     //    (Player::SendLoot), so no node could ever pass this test either.
     //
-    // Body loot stays gated: a corpse whose remaining items this bot will not take is still not
-    // worth queueing.
+    // Body loot stays gated, except kills of a Working skin order's mobs: the
+    // corpse must be empty before the Skinning cast is legal, so their grey
+    // loot queues too.
     if (skillId == SKILL_NONE && guid.IsCreature() &&
-        !AI_VALUE2_LAZY(bool, "should loot object", std::to_string(guid.GetRawValue())))
+        !AI_VALUE2_LAZY(bool, "should loot object", std::to_string(guid.GetRawValue())) &&
+        !GuildOrderSkinMobFor(bot, guid.GetEntry()))
         return false;
 
     // Skill objects and game objects are the two payloads "should loot object" cannot answer for,

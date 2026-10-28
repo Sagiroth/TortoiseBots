@@ -187,6 +187,50 @@ bool GuildOrderNeedsFocusValue::Calculate()
     return true;
 }
 
+uint32 ai::GuildOrderCraftReagentFor(PlayerbotAI* ai, Player* bot, uint32 itemId, uint32 amount,
+    uint32 delivered)
+{
+    if (!ai || !bot || !itemId || !amount)
+        return 0;
+
+    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + std::min(delivered, amount);
+    if (currentCount >= amount)
+        return 0;
+
+    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
+    if (!craftSpellId)
+        return 0;
+
+    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
+    if (!pSpellInfo)
+        return 0;
+
+    uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, amount - currentCount);
+
+    uint32 affordable = ai::CraftAffordableCasts(pSpellInfo, casts,
+        [&](uint32 reagentId) { return ai->GetInventoryItemsCountWithId(reagentId); });
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+    return ai::FirstFarmableReagentFor(pSpellInfo, casts, affordable,
+        [&](uint32 reagentId) { return ai->GetInventoryItemsCountWithId(reagentId); },
+        [&](uint32 reagentId)
+        {
+            auto* space = context->GetValue<uint32>("stack space for item", std::to_string(reagentId));
+            return space ? space->Get() : 0;
+        },
+        [&](uint32 reagentId)
+        {
+            ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
+            return reagentProto && ItemUsageValue::IsItemSoldByAnyVendor(reagentProto) &&
+                !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(reagentProto);
+        },
+        [&](uint32 reagentId)
+        {
+            return ai::PlanGuildOrderSources(bot, reagentId,
+                TortoiseBots::GuildOrders::OrderType::Farm).verdict == TortoiseBots::GuildOrders::OrderReason::None;
+        });
+}
+
 uint32 GuildOrderFarmItemValue::Calculate()
 {
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
@@ -201,66 +245,8 @@ uint32 GuildOrderFarmItemValue::Calculate()
     if (record && record->state != TortoiseBots::GuildOrders::OrderState::Working)
         return 0;
 
-    uint32 itemId = order.itemId;
-    uint32 orderAmount = order.amount;
-    if (!itemId || !orderAmount)
-        return 0;
-
-    uint32 delivered = record ? std::min(record->delivered, record->amount) : 0;
-    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + delivered;
-    if (currentCount >= orderAmount)
-        return 0;
-
-    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
-    if (!craftSpellId)
-        return 0;
-
-    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
-    if (!pSpellInfo)
-        return 0;
-
-    uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, orderAmount - currentCount);
-
-    uint32 affordable = casts;
-    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
-    {
-        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
-            continue;
-
-        uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
-        affordable = std::min(affordable,
-            TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]));
-    }
-
-    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
-    {
-        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
-            continue;
-
-        uint32 reagentId = pSpellInfo->Reagent[i];
-        ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
-        if (reagentProto && ItemUsageValue::IsItemSoldByAnyVendor(reagentProto) &&
-            !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(reagentProto))
-            continue;
-
-        uint32 have = ai->GetInventoryItemsCountWithId(reagentId);
-        uint32 want = TortoiseBots::CraftOrderPolicy::ReagentShortfall(
-            pSpellInfo->ReagentCount[i], casts, have);
-        if (!want)
-            continue;
-
-        if (affordable >= 1 && AI_VALUE2(uint32, "stack space for item", reagentId) == 0)
-            return 0;
-
-        TortoiseBots::GuildOrders::SourcePlan plan =
-            ai::PlanGuildOrderSources(bot, reagentId, TortoiseBots::GuildOrders::OrderType::Farm);
-        if (plan.verdict != TortoiseBots::GuildOrders::OrderReason::None)
-            continue;
-
-        return reagentId;
-    }
-
-    return 0;
+    uint32 delivered = record ? record->delivered : 0;
+    return ai::GuildOrderCraftReagentFor(ai, bot, order.itemId, order.amount, delivered);
 }
 
 uint8 PetitionSignsValue::Calculate()

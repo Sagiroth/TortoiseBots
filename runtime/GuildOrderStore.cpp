@@ -476,6 +476,12 @@ std::optional<OrderRecord> Find(uint32_t botGuidLow)
     return OrderStore::Instance().Find(botGuidLow);
 }
 
+bool IsOrderableItem(ItemPrototype const* proto)
+{
+    return proto && !proto->Name1.empty() && proto->Bonding != BIND_WHEN_PICKED_UP &&
+           proto->Bonding != BIND_QUEST_ITEM && proto->Class != ITEM_CLASS_QUEST && proto->Duration == 0;
+}
+
 std::vector<OrderRecord> ListForGuild(uint32_t guildId)
 {
     return OrderStore::Instance().ListForGuild(guildId);

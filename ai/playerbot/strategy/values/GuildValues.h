@@ -48,6 +48,12 @@ namespace ai
     // not delivering, and delivered plus bags below the amount.
     bool OrderStillNeedsWork(Player* bot, GuildOrder const& order);
 
+    // First missing farmable reagent for a Working craft order: the same
+    // pick the "guild order farm item" value makes, shared so order mode
+    // and travel never farm different items.
+    uint32 GuildOrderCraftReagentFor(PlayerbotAI* ai, Player* bot, uint32 itemId, uint32 amount,
+        uint32 delivered);
+
     class HasGuildTravelOrderValue : public BoolCalculatedValue
     {
     public:

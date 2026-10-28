@@ -70,6 +70,14 @@ namespace ai
 		bool HasFocusQuest() const {return !focusList.empty();}
 		bool IsFocusQuest(uint32 questId) const { return focusList.find(questId) != focusList.end(); }
 
+		// Order mode: the bot farms a guild order item in its planned zone.
+		// Destination gates skip leisure rules for order sources of that item.
+		bool IsOrderMode() const { return orderItemId != 0; }
+		uint32 GetOrderItem() const { return orderItemId; }
+		uint32 GetOrderZone() const { return orderZoneId; }
+		void SetOrderMode(uint32 itemId, uint32 zoneId) { orderItemId = itemId; orderZoneId = zoneId; }
+		void ClearOrderMode() { orderItemId = 0; orderZoneId = 0; }
+
 		bool GetBoolValue(const std::string& valueName) const {return boolValues.at(valueName);};
 		bool GetBoolValue2(const std::string& valueName, const std::string& qualifier) const { return boolValues.at(valueName + "::" + qualifier); };
 		uint8 GetUint8Value(const std::string& valueName) const { return uint8Values.at(valueName);};
@@ -81,6 +89,8 @@ namespace ai
 		Team team = TEAM_NONE;
 		uint32 level = 0;
 		uint32 identitySeed = 0;
+		uint32 orderItemId = 0;
+		uint32 orderZoneId = 0;
 		uint16 currentSkill[MAX_SKILL_TYPE] = {0};
 		uint16 skillMax[MAX_SKILL_TYPE] = { 0 };
 		uint8 groupSize = 0;

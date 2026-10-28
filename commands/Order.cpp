@@ -103,12 +103,6 @@ uint32_t GuildOf(Player* bot, ObjectGuid guid)
     return Player::GetGuildIdFromDB(guid);
 }
 
-bool IsOrderableItem(ItemPrototype const* proto)
-{
-    return proto && proto->Bonding != BIND_WHEN_PICKED_UP && proto->Bonding != BIND_QUEST_ITEM &&
-           proto->Class != ITEM_CLASS_QUEST && proto->Duration == 0;
-}
-
 bool ParseUintToken(std::string const& token, uint32_t& value)
 {
     value = 0;
@@ -226,7 +220,7 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
         OrderError(handler, "invalid", "Unknown item.");
         return true;
     }
-    if (!IsOrderableItem(proto))
+    if (!GuildOrders::IsOrderableItem(proto))
     {
         OrderError(handler, "bound", "That item cannot go to the guild bank.");
         return true;
@@ -325,6 +319,14 @@ bool HandleOrder(ChatHandler* handler, char const* args)
     if (!requester)
     {
         OrderError(handler, "forbidden", "You must be in-game.");
+        return true;
+    }
+
+    // Guild orders need the travel tables: without them the source index
+    // is empty and no farm plan exists.
+    if (!ai::GuildOrderSourcesReady())
+    {
+        OrderError(handler, "disabled", "Guild orders need travel data (AiPlayerbot.AutoDoQuests = 1).");
         return true;
     }
 

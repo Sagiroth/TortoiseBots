@@ -34,6 +34,7 @@
 #include "../../runtime/StartZoneBalance.h"
 
 #include "playerbot/TravelMgr.h"
+#include "playerbot/GuildOrderSources.h"
 
 #include <iostream>
 #include <numeric>
@@ -1274,6 +1275,9 @@ bool PlayerbotAIConfig::Initialize()
         sLog.outString("Loading Quest Detail Data...");
         sTravelMgr.LoadQuestTravelTable();
     }
+
+    sLog.outString("Loading guild order sources.");
+    ai::BuildGuildOrderSourceIndex();
 
     sLog.outString("Loading taxi node zones.");
     sTravelMgr.LoadTaxiNodeZones();
