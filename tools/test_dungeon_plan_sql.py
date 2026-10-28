@@ -207,6 +207,15 @@ SEEDED_BOSSES.update({(818, 62547): "Dagar the Glutton", (818, 62548): "Oronok T
                       (818, 62661): "Eldermaw the Primordial", (818, 62665): "Lady Drazare",
                       (818, 62671): "Ighal'for"})
 
+# Upper Karazhan Halls / Tower of Karazhan (20261028210000): its map and its eight boss steps, names from the core's
+# creature_template (all rank 3; 59967 is the chess event's King). The chess pieces Bishop 59971, Rook 59970 and Knight
+# 59968, Incantagos' Ley Seekers 59989 and the boss-linked adds Crumbling Exile 59960 and Draenei Truthseeker 59980 are
+# boss.first entries, not steps, so they are not seeded. Mephistroth, the guide's ninth boss, has no creature data.
+BOSS_PLANS["upper_karazhan_halls"] = 814
+SEEDED_BOSSES.update({(814, 61939): "Keeper Gnarlmoon", (814, 61946): "Ley-Watcher Incantagos",
+                      (814, 61951): "Anomalus", (814, 61958): "Echo of Medivh", (814, 59967): "King",
+                      (814, 59981): "Sanv Tas'dal", (814, 59961): "Rupturan the Broken", (814, 59991): "Kruul"})
+
 # Karazhan Crypt (20261024021100): its map and its six boss steps, names from the core's creature_template (Enkhraz 91916,
 # Corpsemuncher 91917, Marrowspike 91920 and Hivaxxis 91929 are rank 3; Commander Andreon 91919 and Guard Captain Gort 92935 rank 1).
 # Alarus 91928 (rank 3) has no spawn row - the six Necrotic Runes summon him - and is not a boss step, so he is not seeded.
@@ -2057,6 +2066,51 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_plan` WHERE `plan` = '(\w+)';", text), ["stormwrought_ruins"])
         self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (818) AND `entry` IN (62547, 62548, 62552, 62549, 62551, 62550, 62652, 62664, 62661, 62665, 62671);", text)
         self.assertIn("(818, 62671, 'Ighal''for');", text)
+
+    def test_upper_karazhan_halls_is_the_raid_prep(self):
+        # 20261028210000 (turtle-agent prep/raid-tok 5bfd881, 2026-10-28): the 40-man Tower of Karazhan draft with the B1
+        # prep of RAID-PREP-tok.md, no row hand-set. 18 legs, 199 steps (132 move, 3 move_direct, 56 pull, 8 boss), eight
+        # bosses in route order (Keeper Gnarlmoon, Ley-Watcher Incantagos, Anomalus, Echo of Medivh, the chess event's King
+        # 59967, then the Outland bosses Sanv Tas'dal, Rupturan the Broken and Kruul). The 56 pulls are merged packs (at
+        # most 5 units a row in the rows' `entries`; the plan caps a merged pack at 16), the radius at most 22.2.
+        name, text = newest_plan_text("upper_karazhan_halls")
+        self.assertEqual(name, "20261028210000_world.sql")
+        self.assertIn("('upper_karazhan_halls', 814, '', '', '', 'turtle-agent e98f2dc dungeons/upper_karazhan_halls.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual([v[0] for v in leg_rows(text, "upper_karazhan_halls").values()],
+                         ["entrance_hall", "tower_ramp", "tower_hall", "keeper_gnarlmoon", "manascale_hall_west",
+                          "manascale_hall_east", "ley_watcher_incantagos", "arcane_hall", "anomalus", "upper_spire",
+                          "upper_spire_top", "echo_of_medivh", "king", "outland_landing", "outland_cave",
+                          "sanv_tas_dal", "rupturan_the_broken", "kruul"])
+        rows = [r for r in self.step_rows(text) if r["plan"] == "upper_karazhan_halls"]
+        self.assertEqual(len(rows), 199)
+        self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(18)],
+                         [6, 7, 7, 4, 7, 10, 3, 3, 5, 1, 1, 0, 0, 1, 1, 0, 0, 0])
+        self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
+                         ["61939", "61946", "61951", "61958", "59967", "59981", "59961", "59991"])
+        self.assertEqual({r["kind"] for r in rows}, {"move", "move_direct", "pull", "boss"})
+        for leg in (3, 6, 8, 11, 12, 15, 16, 17):
+            self.assertEqual(leg_steps(rows, leg)[-1]["kind"], "boss", leg)
+        pulls = [r for r in rows if r["kind"] == "pull"]
+        self.assertEqual(len(pulls), 56)
+        self.assertLessEqual(max(float(r["radius"]) for r in pulls), 22.2)
+        self.assertLessEqual(max(len(r["entries"].split(",")) for r in pulls), 5)
+        # The 15 neutral NPCs (faction 7 Draenei and faction 35 spectators) are in no pull, and neither is a boss or a
+        # boss.first add (the chess pieces, the Ley Seekers, the linked adds of Sanv and Rupturan).
+        for entry in ("62023", "62024", "62025", "62027", "62028", "61990", "61997", "62003", "62030",
+                      "59971", "59970", "59968", "59989", "59960", "59980"):
+            self.assertFalse([r for r in pulls if entry in r["entries"].split(",")], entry)
+        # The boss rows carry the encounter's own adds: the chess pieces, the Ley Seekers, the two linked sets.
+        self.assertEqual({r["entry"]: r["entries"] for r in rows if r["kind"] == "boss"},
+                         {"61939": "", "61946": "59989", "61951": "", "61958": "",
+                          "59967": "59971,59970,59968", "59981": "59980", "59961": "59960", "59991": ""})
+        # The three Outland legs start with a gm_cross waypoint, which the rows carry as a move_direct (not tried live).
+        direct = [r for r in rows if r["kind"] == "move_direct"]
+        self.assertEqual([r["leg"] for r in direct], ["13", "15", "16"])
+        for r in direct:
+            self.assertIn("gm_cross in the plan", r["comment"])
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["upper_karazhan_halls"])
+        self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (814) AND `entry` IN (61939, 61946, 61951, 61958, 59967, 59981, 59961, 59991);", text)
+        self.assertNotIn("`ai_boss_tactic`", text)
 
     def test_karazhan_crypt_is_the_plan_with_the_shaft_dive(self):
         # 20261025002600 (turtle-agent prep/karazhan_crypt c49eb6c, 2026-10-26) replaces 20261025001500: same plan, with the
