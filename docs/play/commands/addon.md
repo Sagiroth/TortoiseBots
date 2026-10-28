@@ -88,6 +88,8 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 | `TBM:CAPS\|<capabilities>` | Advertises server feature capabilities. Exact tokens: `pull-seconds,flee,inventory,behavior,claimed-roster,loot-log`, plus `dungeon-run` while the dungeon run is enabled (`AiPlayerbot.DungeonSelfClear = 1`). |
 | `TBM:LOOT_BEGIN\|<n>\|<nextCursor>` / `TBM:LOOT_END\|<nextCursor>` | Delimits one page of loot history from `.bot lootlog`. |
 | `TBM:LOOT\|<ts>\|<bot>\|<event>\|<itemId>\|<item>\|<sourceType>\|<source>\|<quality>` | Emits one loot row (item taken or money taken). |
+| `TBM:ORDER_ITEMS_BEGIN\|<n>` / `TBM:ORDER_ITEMS_END` | Delimits one order search reply from `.bot order search`. |
+| `TBM:ORDER_ITEM\|<itemId>\|<item>\|<quality>\|<sources>\|<minLevel>\|<skill>\|<verdict>\|<zone>\|<chance>` | Emits one matching item with the bot's farm plan (`<sources>` comma list of `drop,skin,herb,ore,craft,ah`; `<skill>` as `<skillId>:<value>` or `-`; `<verdict>` `ok` or a reason token; `<zone>` the planned farm zone or `-`; `<chance>` percent at the best source, `0` when not applicable). |
 | `TBM:ALTBOTS\|<names>` | Comma-separated list of owned characters active as autonomous alt-bots. |
 | `TBM:VERSION\|<version>` | Handshakes server module version (e.g. `2026-10-20-v1` or `dev`). |
 | `TBM:VIEW` | Real-time perception frame lines for Remote Commander. |
@@ -98,6 +100,7 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 
 - **Capabilities (`TBM:CAPS`):** Emits `TBM:CAPS|pull-seconds,flee,inventory,behavior,claimed-roster,loot-log`, with `,dungeon-run` appended while the dungeon run is enabled. (`mimic` is a behavior toggle, not a capability token).
 - **Loot history (`TBM:LOOT`):** `.bot lootlog [cursor]` replays loot rows for your controllable party bots (owned alts and hired companions) from the last 24 hours, newest piece first, up to 40 rows per reply. A money row carries the copper amount as `<item>` and the corpse entry as `<itemId>`; an item row carries the item name, id and quality. Send the returned `<nextCursor>` back for the next page; `expired` means the piece it pointed at was pruned, so start over without a cursor.
+- **Order search (`TBM:ORDER_ITEM`):** `.bot order search <bot> <farm|buy|craft> <text>` lists up to 30 bankable items matching the text (at least 3 characters), each with the sources this bot can use, the lowest source level, the needed skill, the verdict (`ok` or why the bot cannot get it) and the planned farm zone with its chance. `buy` answers `ah` without a zone; `craft` answers `craft` when the bot knows the recipe, `norecipe` when it does not.
 - **Bot State Grammar (`TBM:BOTSTATE`):** Emitted for all controllable party bots (owned alts and hired companions). Format:
   ```text
   TBM:BOTSTATE|<bot>|move=<follow|stay|guard|free|flee|custom>,loot=<on|off>,aoe=<on|off>,autocc=<on|off>,savemana=<on|off>,boost=<on|off>,threat=<on|off>,potions=<on|off>,mimic=<on|off>,spread=<on|off>,sap=<on|off>[,specs=<strategy>+<strategy>...]
