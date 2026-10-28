@@ -329,7 +329,8 @@ static Book NearBudgetFight(size_t pad)
     for (int i = 0; i < 40; ++i)
         for (int j = 0; j < 20; ++j)
             b.OnCast((uint32_t)(i + 1), "Spell" + std::to_string(i) + "_" + std::to_string(j), false, 1500);
-    b.OnCast(1, std::string(pad, 'p'), false, 1600);
+    for (int k = 0; k < 5; ++k)   // the most cast spell, so it is always in the bot's list
+        b.OnCast(1, std::string(pad, 'p'), false, (uint32_t)(1600 + k));
     b.SetInCombat(true, false, 1000);
     b.SetInCombat(false, false, 6000);
     b.SetInCombat(false, false, 9000);
@@ -345,17 +346,20 @@ static void TestSeqWidthStaysInBudget()
     size_t const base = p0[0].size();
     CHECK(base < kPayloadByteBudget);
     size_t const target = kPayloadByteBudget - base;   // pad that lands the payload on the budget
-    bool sawCut = false;
+    bool sawCut = false, sawFull = false;
     for (size_t pad = target > 40 ? target - 40 : 0; pad <= target + 40; ++pad)
     {
         Book b = NearBudgetFight(pad);
         std::vector<std::string> p = b.TakeFightPayloads(1, 9, maxSeq, 1700009000, "Cmdr", 123, 55, 409);
         CHECK(p.size() == 1);
         CHECK(p[0].size() <= kPayloadByteBudget);
-        if (p[0].find(std::string(pad, 'p')) == std::string::npos)
+        bool const full = p[0].size() == base + pad;   // the full form grows one byte per pad byte
+        if (full)
+            sawFull = true;
+        else
             sawCut = true;
     }
-    CHECK(sawCut);   // the sweep did reach the cut, so the boundary was exercised
+    CHECK(sawFull && sawCut);   // the sweep crossed the cut, so the boundary was exercised
 }
 
 static void TestTruncatedPayload()
