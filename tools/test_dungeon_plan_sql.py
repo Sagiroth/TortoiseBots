@@ -226,6 +226,20 @@ SEEDED_BOSSES.update({(229, 9196): "Highlord Omokk", (229, 9236): "Shadow Hunter
                       (229, 9568): "Overlord Wyrmthalak"})
 NOT_BOSSES.update({9217, 9218, 9219, 9718, 10376, 16080, 16044})
 
+# Zul'Gurub (20261028110000), the 20-man raid of map 309: its eight boss steps, names from the core's creature_template
+# (all rank 3). Arlokk 14515 has no spawn row: the gong 180526 runs event script 9066 and summons her; the plan has no
+# use_object step for it yet (the server path to the gong ends above it). Gahz'ranka 15114 is optional (fishing summon,
+# no step) and Edge of Madness 15082-15085 has no spawn (instance_zulgurub::SpawnRandomBoss is deactivated), so neither
+# is a boss step. Zealot Lor'Khan 11347, Zealot Zath 11348, the Witherbark Speaker 11388 and the four Razzashi Cobras
+# 11373 are boss.first entries, not seeded; 11361 keeps 33 trash tigers in pulls and its two Thekal adds as boss.first.
+BOSS_PLANS["zul_gurub"] = 309
+SEEDED_BOSSES.update({(309, 14517): "High Priestess Jeklik", (309, 14507): "High Priest Venoxis",
+                      (309, 14510): "High Priestess Mar'li", (309, 14599): "High Priest Thekal",
+                      (309, 14515): "High Priestess Arlokk", (309, 11382): "Bloodlord Mandokir",
+                      (309, 11380): "Jin'do the Hexxer", (309, 14834): "Hakkar"})
+NOT_BOSSES.update({14758, 15091})
+
+
 def migrations():
     for path in sorted(glob.glob(os.path.join(ROOT, "data/sql/world/*_world.sql"))):
         with open(path, encoding="utf-8") as handle:
@@ -4590,6 +4604,42 @@ class DungeonPlanSql(unittest.TestCase):
                          ["10505", "10507", "10901", "10502", "10503", "11622", "10432", "10508", "11261", "10504"])
         self.assertFalse([r for r in rows if r["kind"] == "pull" and r["leg"] != "6" and "10475" in r["entries"].split(",")])
         self.assertEqual(sum(1 for r in leg6 if r["kind"] == "pull"), 26)
+
+    def test_zul_gurub_is_the_raid_prep(self):
+        # 20261028110000 (turtle-agent prep/raid-zg 6bb3eab, 2026-10-28): the 20-man ZG prep of RAID-PREP-zg.md.
+        # 9 legs, 1105 steps (the move rows include the approach and via points), 169 merged pulls (cap 12, radius <= 35),
+        # the eight bosses in the guide's order. The runts (2914, 13321, 4075, 1420, 14881) and the two event triggers
+        # (14758, 15091) are in no pull; the first-add rows are the encounter units.
+        name, text = newest_plan_text("zul_gurub")
+        self.assertEqual(name, "20261028110000_world.sql")
+        self.assertIn("('zul_gurub', 309, '', '', '', 'turtle-agent b8cfadd dungeons/zul_gurub.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual([v[0] for v in leg_rows(text, "zul_gurub").values()],
+                         ["high_priestess_jeklik", "high_priest_venoxis", "high_priestess_marli",
+                          "high_priest_thekal", "high_priestess_arlokk", "bloodlord_mandokir",
+                          "jindo_the_hexxer", "hakkar_outer", "hakkar"])
+        rows = [r for r in self.step_rows(text) if r["plan"] == "zul_gurub"]
+        self.assertEqual(len(rows), 1105)
+        self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(9)],
+                         [10, 21, 6, 7, 25, 23, 20, 39, 18])
+        self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
+                         ["14517", "14507", "14510", "14599", "14515", "11382", "11380", "14834"])
+        self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss"})
+        pulls = [r for r in rows if r["kind"] == "pull"]
+        self.assertEqual(len(pulls), 169)
+        self.assertLessEqual(max(float(r["radius"]) for r in pulls), 35.0)
+        self.assertLessEqual(max(len(r["entries"].split(",")) for r in pulls), 12)
+        for entry in ("2914", "13321", "4075", "1420", "14881", "14758", "15091"):
+            self.assertFalse([r for r in pulls if entry in r["entries"].split(",")], entry)
+        boss = {r["entry"]: r for r in rows if r["kind"] == "boss"}
+        self.assertEqual(boss["14507"]["entries"], "11373")
+        self.assertEqual(boss["14510"]["entries"], "11388")
+        self.assertEqual(boss["14599"]["entries"], "11347,11348,11361")
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["zul_gurub"])
+        self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (309) AND `entry` IN (14517, 14507, 14510, 14599, 14515, 11382, 11380, 14834);", text)
+        for row in ("(309, 14517, 'interrupt', 0, 23954, 0, 0, 'Jeklik: Great Heal 23954 (boss_jeklik.cpp, 4 s cast)')",
+                    "(309, 11380, 'kill_first', 14987, 0, 1, 0, 'Jindo: Powerfull Healing Ward 14987 first (boss_jindo.cpp)')",
+                    "(309, 14515, 'behind', 0, 26350, 0, 10, 'Arlokk: Cleave 26350 cone, stay out of her front (boss_arlokk.cpp)')"):
+            self.assertIn(row, text)
 
 if __name__ == "__main__":
     unittest.main()
