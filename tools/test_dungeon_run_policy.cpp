@@ -22159,6 +22159,158 @@ static void TestRaidHoldRegroupGathers()
     CHECK(!r.regroup && (r.walkBack || r.walkBackDue));
 }
 
+// Task F3: raid trash. An off-tank holds the pack's mob (UnitFact::victimTank):
+// the guard never sends the main tank off its stand for a mob already held, and
+// a loose mob goes to a living off-tank round-robin instead of the carrier.
+static Facts RaidTrashFacts(bool offTanks = true)
+{
+    Facts f = Raid();
+    f.leadIsTank = true;
+    f.leadStaying = true;
+    if (offTanks)
+        f.raid.offTanksAlive = {"Brun", "Irelanthe"};
+    return f;
+}
+
+static UnitFact TankHeld(std::uint64_t guid, std::uint32_t entry, float dist)
+{
+    UnitFact u = Hitter(guid, entry, dist);
+    u.victimTank = true;
+    return u;
+}
+
+// A raid pull step with the tank on stay at the stand point, its only pack unit
+// on the pullback, and the fight on.
+static Run StartRaidTrashFight(DungeonPlan& plan, Facts& f, std::uint32_t entry = 12129)
+{
+    plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {entry})};
+    Run r = Start(&plan);
+    Tick(r, f);
+    CHECK(r.step == 1);
+    f.units = {Unit(31, entry, 40)};
+    CHECK(Tick(r, f) == "pullback 31");
+    f.anyInCombat = true;
+    return r;
+}
+
+static void TestRaidGuardLeavesAMobAnOffTankHolds()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 12129, 30)};
+    for (std::uint32_t ms = 0; ms < kGuardWaitMs + 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.guardOrders == 0 && !r.guardReturn);
+    CHECK(GuardPick(f, 0.0f, &r, &r, true) == nullptr);
+}
+
+static void TestRaidGuardRoundRobinsTheOffTanks()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {Hitter(41, 12129, 30)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 41 Brun");
+    CHECK(r.note == "fighting: off-tank Brun picks up 12129 off the party (30.0 yd)");
+    CHECK(!r.guardReturn);
+    // The off-tank holds it; a second loose mob waits its kGuardWaitMs.
+    f.partyAttackers = {TankHeld(41, 12129, 30), Hitter(51, 12130, 32)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 51 Irelanthe");
+    CHECK(r.note.find("off-tank Irelanthe picks up 12130 off the party") != std::string::npos);
+    CHECK(!r.guardReturn && r.guardOrders == 2);
+}
+
+static void TestRaidGuardOnABossStepSendsTheMainTank()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 10);
+    boss.entry = 12129;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {boss};
+    Run r = Start(&plan);
+    Facts f = RaidTrashFacts();
+    CHECK(!RaidTrashFight(r, f)); // the boss step itself
+    f.anyInCombat = true;
+    f.partyAttackers = {Hitter(61, 12129, 20)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 61 Tanky");
+    CHECK(r.guardReturn);
+}
+
+static void TestRaidGuardWithoutAnOffTankSendsTheMainTank()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts(false);
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {Hitter(41, 12129, 30)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 41 Tanky");
+    CHECK(r.guardReturn);
+}
+
+static void TestPartyGuardStillTakesAMobHeldByItsTank()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {4853})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.leadIsTank = true;
+    f.leadStaying = true;
+    f.raid.offTanksAlive = {"Brun", "Irelanthe"}; // only f.raid.on decides (a binding switched off mid-run)
+    Tick(r, f);
+    f.units = {Unit(31, 4853, 40)};
+    CHECK(Tick(r, f) == "pullback 31");
+    f.anyInCombat = true;
+    f.partyAttackers = {TankHeld(81, 4853, 20)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 81 Tanky"); // a party run: the carrier, as before
+    CHECK(r.guardReturn);
+}
+
+static void TestRaidGuardAHealerMobGoesToAnOffTankWithoutTheWait()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    // The fight's first order is the arrival engage, the main tank's: unchanged,
+    // and it ends the tank's stay.
+    f.leadHasAttacker = true;
+    f.leadAttacker = Hitter(61, 12129, 5);
+    CHECK(Tick(r, f) == "attack 61 Tanky");
+    f.leadStaying = false;
+    f.leadHasAttacker = false;
+    f.partyAttackers = {Hitter(71, 12129, 20, true)};
+    CHECK(Tick(r, f).empty()); // kGuardRepeatMs after it
+    CHECK(Tick(r, f) == "attack 71 Brun"); // no kGuardWaitMs
+}
+
+// Task F3: a raid's trash fight hands the mobs to the off-tanks; on a boss step
+// (or a boss's fight) and in a party run the guard's order is the main tank's.
+static void TestRaidTrashFightGate()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(40, {12129}), Step(PlanStepKind::Boss, 60)};
+    Run r = Start(&plan);
+    Facts f = RaidTrashFacts();
+    CHECK(RaidTrashFight(r, f));
+    f.raid.on = false;
+    CHECK(!RaidTrashFight(r, f));
+    f = RaidTrashFacts();
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(91, 12130, 20)};
+    plan.steps[1].entry = 12130;
+    ai::NormalizePlanStep(plan.steps[1]);
+    CHECK(!RaidTrashFight(r, f)); // the plan's boss engaged on a trash step
+}
+
 static void TestPartyRulesUnchanged()
 {
     DungeonPlan plan;
@@ -22737,6 +22889,13 @@ int main()
     TestRaidCcRegatherDone();
     TestRaidRunBackBelowWipeLevel();
     TestRaidHoldRegroupGathers();
+    TestRaidGuardLeavesAMobAnOffTankHolds();
+    TestRaidGuardRoundRobinsTheOffTanks();
+    TestRaidGuardOnABossStepSendsTheMainTank();
+    TestRaidGuardWithoutAnOffTankSendsTheMainTank();
+    TestPartyGuardStillTakesAMobHeldByItsTank();
+    TestRaidGuardAHealerMobGoesToAnOffTankWithoutTheWait();
+    TestRaidTrashFightGate();
     TestPartyRulesUnchanged();
     TestStatusPartsMatchLine();
     std::cout << "test_dungeon_run_policy: ok\n";

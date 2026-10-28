@@ -508,6 +508,8 @@ struct UnitFact
     bool auraOnEngaged = false;
     bool victimHealer = false; // its victim is a healer (Facts::partyAttackers, and a hold's units)
     bool victimLead = false;   // a hold's units: its victim is the lead bot (the tank holds it)
+    // Facts::partyAttackers only: its victim is a living tank other than the lead bot (an off-tank holds it).
+    bool victimTank = false;
     // Facts::partyAttackers only:
     bool hitting = false;      // it hits its victim now: in melee reach of it, or standing and casting (not running in)
     bool victimPet = false;    // its victim is a party bot's pet (the lead bot's own too), not a bot (victimHealer false)
@@ -721,6 +723,9 @@ struct RaidFacts
     bool on = false;                                                    // a raid binding with AiPlayerbot.DungeonRunRaid
     std::uint32_t tanksTotal = 0, tanksDead = 0;                        // tanks, and dead tanks (the wipe level)
     std::uint32_t healersTotal = 0, healersDead = 0;                    // healers, and dead healers (the wipe level)
+    // Living tanks other than the lead bot, on its map within kGuardYd of it and out of a commander task, in the
+    // layout's order: the raid trash fights send a loose mob to them (RaidTrashFight, CheckGuard).
+    std::vector<std::string> offTanksAlive;
 };
 
 // What the glue reads once a tick for the run's current step.
@@ -1775,6 +1780,8 @@ struct Run
     std::uint32_t guardOrders = 0;
     std::uint32_t guardSinceOrderMs = 0; // fight time since the last pick-up
     bool guardReturn = false;
+    // The off-tank a raid trash pick-up goes to next (RaidTrashFight): round-robin over RaidFacts::offTanksAlive.
+    std::size_t offTankTurn = 0;
     // The tank's reach for a pull is cut off once a mob has aggro (CheckReach):
     // `stopReachDue` asks the glue to end the lead bot's pull, once per pull.
     bool stopReachDue = false;
@@ -2254,6 +2261,7 @@ inline void ResetStep(Run& r)
     r.guardRefills = 0;
     r.fightOrders = 0;
     r.guardReturn = false;
+    r.offTankTurn = 0;
     r.stopReachDue = false;
     r.reachStopped = false;
     r.guardEventDown = 0;
@@ -5769,6 +5777,7 @@ inline RestLines LightLines(const RestLines& full)
 
 inline const PlanStep* EventHoldAhead(const Run& r);
 inline bool InEvent(const Run& r);
+inline bool EngagedPlanBoss(const Run& r, const Facts& f);
 inline std::size_t OpenUnits(const Run& r, const std::vector<UnitFact>& units);
 
 // With the aggro estimate off (Facts::joinerCeiling 0): a pull step still to be pulled whose pack in sight has
@@ -11657,12 +11666,25 @@ inline bool GuardLeavesCampAlone(const UnitFact& u)
     return u.castingAtRange && u.campIdle > 0 && u.distLead > kGuardNoWalkYd;
 }
 
-inline const UnitFact* GuardPick(const Facts& f, float holdRadius, const Run* capped = nullptr, const Run* ccRun = nullptr)
+// A raid's trash fight: the guard hands a loose mob to an off-tank instead of
+// the lead bot, which holds its stand for the boss. Never on a boss step or a
+// boss of the plan's fight (EngagedPlanBoss), never in a hold or an event, and
+// never in a party run (the party rules are unchanged).
+inline bool RaidTrashFight(const Run& r, const Facts& f)
+{
+    return f.raid.on && Current(r) && Current(r)->kind != PlanStepKind::Boss && !EngagedPlanBoss(r, f) && !InEvent(r);
+}
+
+inline const UnitFact* GuardPick(const Facts& f, float holdRadius, const Run* capped = nullptr, const Run* ccRun = nullptr,
+    bool raidTrash = false)
 {
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
         if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kGuardYd)
+            continue;
+        // A mob an off-tank holds is not loose: the raid trash guard never sends the main tank off its stand for it.
+        if (raidTrash && u.victimTank)
             continue;
         if (capped && GuardUnitCapped(*capped, u.guid))
             continue;
@@ -11710,7 +11732,7 @@ inline const UnitFact* GuardTarget(const Run& r, const Facts& f)
             r.focusUnstayed) ||
         f.carrier.empty() || InEvent(r))
         return nullptr;
-    return GuardPick(f, 0.0f, &r, &r);
+    return GuardPick(f, 0.0f, &r, &r, RaidTrashFight(r, f));
 }
 
 // The guard inside a hold (Uldaman Keepers, 19z12 attempt 1: the tank held
@@ -11959,6 +11981,18 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     {
         ++r.fightOrders;
         ++r.guardUnitOrders[u->guid];
+    }
+    // A raid trash fight hands a loose mob to an off-tank, round-robin, and the
+    // main tank keeps its stand (no guardReturn): the mob is on a healer or a
+    // DPS, not on the lead bot.
+    if (!hold && RaidTrashFight(r, f) && !f.raid.offTanksAlive.empty() && !u->victimLead)
+    {
+        std::string const& offTank = f.raid.offTanksAlive[r.offTankTurn++ % f.raid.offTanksAlive.size()];
+        r.note = "fighting: off-tank " + offTank + " picks up " + std::to_string(u->entry) + " off " +
+            (u->victimHealer ? "the healer" : u->victimPet ? "a pet" : "the party") + " (" + Num(u->distLead) +
+            " yd)" + RefillNote(r);
+        order = "attack " + std::to_string(u->guid) + " " + offTank;
+        return true;
     }
     if (hold)
     {
@@ -14112,6 +14146,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.guardRefilled = false;
         r.guardRefills = 0;
         r.fightOrders = 0;
+        r.offTankTurn = 0;
         r.reachStopped = false;
         // A fight may have moved the lead bot: an exact point's tighten starts
         // over and its proof is taken again before a direct step goes out.

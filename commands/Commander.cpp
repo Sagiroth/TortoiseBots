@@ -7633,7 +7633,8 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
     }
     std::unordered_set<uint64> seen;
     // The mobs that have `victim` (a bot or a pet) as their victim, each once.
-    auto const addAttackers = [&](Unit* victim, bool healer, bool petVictim)
+    // `tankVictim`: the victim is a tank (an off-tank holding the mob).
+    auto const addAttackers = [&](Unit* victim, bool healer, bool petVictim, bool tankVictim)
     {
         for (Unit* attacker : victim->GetAttackers())
         {
@@ -7655,6 +7656,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
                 fact.campIdle = IdleHostilesNear(lead, attacker, TortoiseBots::DungeonRun::kGuardCampYd);
             fact.victimHealer = healer;
             fact.victimPet = petVictim;
+            fact.victimTank = tankVictim;
             fact.attackable = GroupCanAttack(lead, attacker); // never picked up when it cannot be attacked
             if (hold)
                 fact.distSpot = DistanceTo(attacker, hold->x, hold->y, hold->z);
@@ -7668,12 +7670,12 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             continue;
         // The lead bot's own mobs are leadHit / leadAttacker, not partyAttackers.
         if (bot != lead)
-            addAttackers(bot, PlayerbotAI::IsHeal(bot), false);
+            addAttackers(bot, PlayerbotAI::IsHeal(bot), false, PlayerbotAI::IsTank(bot));
         // A living pet in the world (a hunter's or warlock's, the lead's too):
         // the mobs on it come last in GuardPick, after every mob on a bot.
         Unit* pet = bot->GetPet();
         if (pet && pet->IsAlive() && pet->IsInWorld())
-            addAttackers(pet, false, true);
+            addAttackers(pet, false, true, false);
     }
 }
 
@@ -8460,6 +8462,11 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         MemberFact member;
         member.name = bot->GetName();
         member.yd = yd;
+        // The raid trash guard sends a loose mob to a living off-tank near the
+        // lead bot and not busy with a commander task (DungeonRun::RaidTrashFight).
+        if (f.raid.on && isTank && bot != lead && bot->GetMap() == lead->GetMap() && yd <= kGuardYd &&
+            !CommanderTasks().count(bot->GetObjectGuid().GetRawValue()))
+            f.raid.offTanksAlive.push_back(member.name);
         member.core = isTank || isHeal; // the raid's gather (the glue reads roles on raid ticks only)
         member.offPlanMap = bot->GetMapId() != slot.run.plan->map; // outside the instance (DungeonRun::PlanMapFightView)
         // Round 1 (2026-10-24): a return teleport can reach the bot only in the open world: not in a battleground,
