@@ -975,6 +975,29 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     uint32 skillId = SKILL_NONE;
     uint32 reqSkillValue = 0;
 
+    if (GetPurpose() == TravelDestinationPurpose::SpellFocus)
+    {
+        // Anvils, forges and cooking fires need no skill: the recipe's own
+        // focus id selects the entries, so only the level/distance gates
+        // below apply.
+        GameObjectInfo const* goInfo = GetGoInfo();
+        if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_SPELL_FOCUS)
+            return false;
+
+        WorldPosition* focusPoint = GetClosestPoint(info.getPosition());
+        if (focusPoint)
+        {
+            int32 destAreaLevel = focusPoint->GetAreaLevel();
+            if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
+                return false;
+
+            if (info.GetLevel() <= 5 && focusPoint->distance(info.getPosition()) > 1500.0f)
+                return false;
+        }
+
+        return true;
+    }
+
     if (GetPurpose() == TravelDestinationPurpose::GatherFishing)
     {
         skillId = SKILL_FISHING;
@@ -1133,6 +1156,9 @@ std::string GatherTravelDestination::GetTitle() const {
                 break;
             case TravelDestinationPurpose::GatherHerbalism:
                 out << "gather from ";
+                break;
+            case TravelDestinationPurpose::SpellFocus:
+                out << "craft at ";
                 break;
         }
 
@@ -1843,7 +1869,7 @@ void TravelMgr::LoadQuestTravelTable()
         if (guidpMap.find(entry) == guidpMap.end())
             continue;
 
-        for (uint32 purposeFlagNr = 6; purposeFlagNr < 18; purposeFlagNr++)
+        for (uint32 purposeFlagNr = 6; purposeFlagNr < 20; purposeFlagNr++)
         {
             TravelDestinationPurpose purposeFlag = (TravelDestinationPurpose)(1 << purposeFlagNr);
             if (purpose & (uint32)purposeFlag)
@@ -1860,6 +1886,7 @@ void TravelMgr::LoadQuestTravelTable()
                 case TravelDestinationPurpose::GatherSkinning:
                 case TravelDestinationPurpose::GatherMining:
                 case TravelDestinationPurpose::GatherHerbalism:
+                case TravelDestinationPurpose::SpellFocus:
                     dests.push_back(AddDestination<GatherTravelDestination>(entry, purposeFlag));
                     break;
                 case TravelDestinationPurpose::Grind:

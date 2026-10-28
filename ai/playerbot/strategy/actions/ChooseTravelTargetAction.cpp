@@ -397,6 +397,12 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         newTarget.SetForced(true);
         newTarget.SetRelevance(std::max<uint32>(targetRelevance, 198u));
     }
+    else if (AI_VALUE2(std::string, "manual string", "future travel condition") == "should travel named::order focus" ||
+        AI_VALUE2(std::string, "manual string", "future travel condition") == "should travel named::order vendor")
+    {
+        newTarget.SetForced(true);
+        newTarget.SetRelevance(std::max<uint32>(targetRelevance, 198u));
+    }
     else
     {
         newTarget.SetRelevance(targetRelevance);
@@ -467,6 +473,14 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey,
             time(0) + ((questErrand && !beginnerRepark) ? 10 * MINUTE : MINUTE));
         ai->TellDebug(ai->GetMaster(), "No target set", "debug travel");
+        // An order reagent or workshop with no reachable destination fails
+        // the order: every candidate was rejected by the pick gates.
+        if (purposeKey == "order focus" || purposeKey == "order vendor")
+        {
+            TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
+                TortoiseBots::GuildOrders::StateForReason(TortoiseBots::GuildOrders::OrderReason::NoSource),
+                TortoiseBots::GuildOrders::OrderReason::NoSource);
+        }
         // Same spent-verdict clear as the invalid-result path: the roll
         // admitted this purpose and the search found nothing usable, so the
         // next idle tick re-rolls among whatever is unparked then.
@@ -2407,47 +2421,20 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             return false;
         }
 
-        EntryGuidps const& guidps = GAI_VALUE_REF(EntryGuidps, "entry guidps");
-        std::vector<AsyncGuidPosition const*> spawns;
-        for (int32 entry : focusEntries)
-        {
-            auto it = guidps.find(entry);
-            if (it == guidps.end())
-                continue;
-            for (AsyncGuidPosition const& guidp : it->second)
+        Team team = bot->GetTeam();
+        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [entries = focusEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team]()
             {
-                if (guidp.getMapId() != center.getMapId())
-                    continue;
-                if (guidp.IsEnemyHomeZoneFor(bot->GetTeam()))
-                    continue;
-                spawns.push_back(&guidp);
-            }
-        }
+                PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                    (uint32)TravelDestinationPurpose::SpellFocus, entries, true);
 
-        if (spawns.empty())
-        {
-            ai->TellDebug(ai->GetMaster(), "No reachable focus spawns for focus " + std::to_string(focusId), "debug travel");
-            TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
-                TortoiseBots::GuildOrders::StateForReason(TortoiseBots::GuildOrders::OrderReason::NoSource),
-                TortoiseBots::GuildOrders::OrderReason::NoSource);
-            return false;
-        }
-
-        std::sort(spawns.begin(), spawns.end(), [&center](AsyncGuidPosition const* a, AsyncGuidPosition const* b)
-        {
-            return a->sqDistance2d(center) < b->sqDistance2d(center);
-        });
-
-        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [spawns, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
-            {
-                PartitionedTravelList list;
-                for (AsyncGuidPosition const* guidp : spawns)
+                for (auto& [partition, travelPoints] : list)
                 {
-                    WorldPosition* point = const_cast<AsyncGuidPosition*>(guidp);
-                    TemporaryTravelDestination* dest = new TemporaryTravelDestination(*point);
-                    list[0].push_back(TravelPoint(dest, point, point->distance(center)));
-                    if (list[0].size() >= 5)
-                        break;
+                    travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(),
+                        [team](TravelPoint point)
+                        {
+                            WorldPosition* pos = std::get<WorldPosition*>(point);
+                            return !pos || pos->IsEnemyHomeZoneFor(team);
+                        }), travelPoints.end());
                 }
                 return list;
             });
@@ -2468,31 +2455,9 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 
         std::vector<int32> orderVendorEntries(vendorEntrySet.begin(), vendorEntrySet.end());
 
-        PartitionedTravelList probe;
-        if (!orderVendorEntries.empty())
+        if (orderVendorEntries.empty())
         {
-            probe = sTravelMgr.GetPartitions(center, travelPartitions, PlayerTravelInfo(bot),
-                (uint32)TravelDestinationPurpose::Vendor, orderVendorEntries, false);
-            for (auto& [partition, points] : probe)
-            {
-                points.erase(std::remove_if(points.begin(), points.end(), [&center](TravelPoint point)
-                    {
-                        WorldPosition* pos = std::get<WorldPosition*>(point);
-                        return !pos || pos->distance(center) == FLT_MAX;
-                    }), points.end());
-            }
-        }
-
-        bool reachable = false;
-        for (auto& [partition, points] : probe)
-        {
-            if (!points.empty())
-                reachable = true;
-        }
-
-        if (!reachable)
-        {
-            ai->TellDebug(ai->GetMaster(), "No reachable vendor for order reagent", "debug travel");
+            ai->TellDebug(ai->GetMaster(), "No vendor sells order reagent", "debug travel");
             TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
                 TortoiseBots::GuildOrders::StateForReason(TortoiseBots::GuildOrders::OrderReason::NoSource),
                 TortoiseBots::GuildOrders::OrderReason::NoSource);
@@ -2501,7 +2466,18 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 
         *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [entries = orderVendorEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
             {
-                return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::Vendor, entries, false);
+                PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                    (uint32)TravelDestinationPurpose::Vendor, entries, false);
+
+                for (auto& [partition, points] : list)
+                {
+                    points.erase(std::remove_if(points.begin(), points.end(), [&center](TravelPoint point)
+                        {
+                            WorldPosition* pos = std::get<WorldPosition*>(point);
+                            return !pos || pos->distance(center) == FLT_MAX;
+                        }), points.end());
+                }
+                return list;
             });
     }
     else
@@ -2546,6 +2522,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
     SET_AI_VALUE2(std::string, "manual string", "future travel condition",
         travelName == "guild meeting" ? "should travel named::guild meeting" :
         travelName == "guild order" ? "should travel named::guild order" :
+        travelName == "order focus" ? "should travel named::order focus" :
+        travelName == "order vendor" ? "should travel named::order vendor" :
         event.GetSource());
     SET_AI_VALUE2(int, "manual int", "future travel relevance", relevance * 100);
 
@@ -2570,6 +2548,8 @@ bool RequestNamedTravelTargetAction::isAllowed() const
     else if (name == "guild meeting")
         return true;
     else if (name == "guild order")
+        return true;
+    else if (name == "order focus" || name == "order vendor")
         return true;
     else if (name == "mount")
     {

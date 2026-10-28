@@ -202,6 +202,9 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
             }
         }
 
+        if (gInfo->type == GAMEOBJECT_TYPE_SPELL_FOCUS)
+            purpose |= (uint32)TravelDestinationPurpose::SpellFocus;
+
         if (uint32 skillId = GameObjectLockSkill(gInfo))
         {
             if (skillId == SKILL_MINING)

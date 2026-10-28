@@ -5,7 +5,6 @@
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/LootValues.h"
-#include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/GuildOrderSources.h"
 #include "playerbot/GuildOrderCraft.h"
 #include "runtime/GuildOrderStore.h"
@@ -55,7 +54,7 @@ GameObject* GuildCraftOrderAction::FindFocusObject(uint32 focusId, float range)
     GameObject* best = nullptr;
     float bestDist = range;
 
-    std::list<ObjectGuid> objects = AI_VALUE(std::list<ObjectGuid>, "nearest game objects");
+    std::list<ObjectGuid> objects = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
     for (ObjectGuid guid : objects)
     {
         GameObject* go = ai->GetGameObject(guid);
@@ -133,6 +132,20 @@ bool GuildCraftOrderAction::Execute(Event& event)
         }
     }
 
+    // Affordable casts first: what the bags hold right now decides whether
+    // the bot crafts, gathers more, or fails. Shortfalls below only matter
+    // when more reagents can still be taken.
+    uint32 affordable = casts;
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+
+        uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
+        affordable = std::min(affordable,
+            TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]));
+    }
+
     // Fail early, before spending anything: every farm reagent's verdict
     // first, so a dead reagent stops the order before vendor gold is spent.
     for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
@@ -162,7 +175,7 @@ bool GuildCraftOrderAction::Execute(Event& event)
 
     // Vendor reagents: only what the bot can fully afford for at least one
     // cast, capped to free bag space. Anything else fails now, not after
-    // a trip and partial gold.
+    // a trip and partial gold. Real gold only: orders never cheat.
     bool autonomous = TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid());
     for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
     {
@@ -180,6 +193,9 @@ bool GuildCraftOrderAction::Execute(Event& event)
         if (!shortfall)
             continue;
 
+        if (affordable >= 1 && AI_VALUE2(uint32, "stack space for item", reagentId) == 0)
+            continue;
+
         if (autonomous)
         {
             ai->TellDebug(ai->GetMaster(), "Guild craft order: autonomous bot cannot buy reagent " + std::to_string(reagentId), "debug travel");
@@ -191,9 +207,7 @@ bool GuildCraftOrderAction::Execute(Event& event)
         uint32 oneCast = TortoiseBots::CraftOrderPolicy::ReagentShortfall(pSpellInfo->ReagentCount[i], 1, have);
         uint32 buyCount = reagentProto->BuyCount ? reagentProto->BuyCount : 1;
         uint64_t bundles = TortoiseBots::CraftOrderPolicy::BundlesForShortfall(oneCast, buyCount);
-        RESET_AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::tradeskill);
-        uint32 money = AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::tradeskill);
-        if (bundles * reagentProto->BuyPrice > money)
+        if (bundles * reagentProto->BuyPrice > bot->GetMoney())
         {
             ai->TellDebug(ai->GetMaster(), "Guild craft order: cannot afford reagent " + std::to_string(reagentId), "debug travel");
             if (record)
@@ -232,17 +246,6 @@ bool GuildCraftOrderAction::Execute(Event& event)
 
     // Craft from what is in the bags: the limiting reagent caps the batch,
     // so a full bag of partial reagents still crafts instead of stalling.
-    uint32 affordable = casts;
-    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
-    {
-        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
-            continue;
-
-        uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
-        affordable = std::min(affordable,
-            TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]));
-    }
-
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
     uint32 stackSize = proto ? proto->GetMaxStackSize() : 1;
     if (!stackSize)
@@ -254,8 +257,13 @@ bool GuildCraftOrderAction::Execute(Event& event)
     uint32 batch = TortoiseBots::CraftOrderPolicy::BatchForFreeSlots(affordable, maxYield, stackSize, CountFreeBagSlots());
     if (!batch)
     {
-        if (record && ai->GetInventoryItemsCountWithId(itemId) > 0)
+        if (!record)
+            return false;
+        if (ai->GetInventoryItemsCountWithId(itemId) > 0)
             TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Delivering, OrderReason::BagsFull);
+        else if (affordable == 0 && CountFreeBagSlots() == 0)
+            TortoiseBots::GuildOrders::SetState(botGuidLow,
+                StateForReason(OrderReason::Stuck), OrderReason::Stuck);
         return false;
     }
 

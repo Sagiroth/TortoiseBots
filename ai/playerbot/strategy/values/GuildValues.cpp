@@ -91,6 +91,19 @@ uint32 GuildOrderVendorReagentValue::Calculate()
 
     uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, orderAmount - currentCount);
 
+    // Affordable casts first: when the bags already hold a cast but cannot
+    // take more of a short reagent, craft instead of asking for more.
+    uint32 affordable = casts;
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+
+        uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
+        affordable = std::min(affordable,
+            TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]));
+    }
+
     for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
     {
         if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
@@ -106,6 +119,9 @@ uint32 GuildOrderVendorReagentValue::Calculate()
         if (TortoiseBots::CraftOrderPolicy::ReagentShortfall(
                 pSpellInfo->ReagentCount[i], casts, have) == 0)
             continue;
+
+        if (affordable >= 1 && AI_VALUE2(uint32, "stack space for item", reagentId) == 0)
+            return 0;
 
         return reagentId;
     }
@@ -152,7 +168,7 @@ bool GuildOrderNeedsFocusValue::Calculate()
             return false;
     }
 
-    std::list<ObjectGuid> objects = AI_VALUE(std::list<ObjectGuid>, "nearest game objects");
+    std::list<ObjectGuid> objects = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
     for (ObjectGuid guid : objects)
     {
         GameObject* go = ai->GetGameObject(guid);
@@ -205,6 +221,17 @@ uint32 GuildOrderFarmItemValue::Calculate()
 
     uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, orderAmount - currentCount);
 
+    uint32 affordable = casts;
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+
+        uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
+        affordable = std::min(affordable,
+            TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]));
+    }
+
     for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
     {
         if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
@@ -221,6 +248,9 @@ uint32 GuildOrderFarmItemValue::Calculate()
             pSpellInfo->ReagentCount[i], casts, have);
         if (!want)
             continue;
+
+        if (affordable >= 1 && AI_VALUE2(uint32, "stack space for item", reagentId) == 0)
+            return 0;
 
         TortoiseBots::GuildOrders::SourcePlan plan =
             ai::PlanGuildOrderSources(bot, reagentId, TortoiseBots::GuildOrders::OrderType::Farm);

@@ -2,7 +2,6 @@
 #include "GuildOrderVendorAction.h"
 #include "SellAction.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
-#include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/GuildOrderCraft.h"
@@ -116,12 +115,12 @@ bool GuildOrderVendorAction::Execute(Event& event)
 
         // Total cost up front: never spend gold on a partial buy that fails
         // the order on the next tick. One cast's worth is the minimum.
+        // Real gold only: orders never cheat.
         uint32 buyCount = reagentProto->BuyCount ? reagentProto->BuyCount : 1;
         uint32 price = uint32(floor(reagentProto->BuyPrice * bot->GetReputationPriceDiscount(pCreature)));
         uint32 oneCast = TortoiseBots::CraftOrderPolicy::ReagentShortfall(perCast, 1, have);
         uint32 minBundles = TortoiseBots::CraftOrderPolicy::BundlesForShortfall(oneCast, buyCount);
-        RESET_AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::tradeskill);
-        uint32 money = AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::tradeskill);
+        uint32 money = bot->GetMoney();
         if (uint64_t(minBundles) * price > money)
         {
             if (record)
@@ -146,6 +145,16 @@ bool GuildOrderVendorAction::Execute(Event& event)
             if (after <= before)
                 break;
             bought += after - before;
+        }
+
+        // A buy that moves nothing with room and bundles fails the order:
+        // retrying the same vendor tick after tick never pays.
+        if (bought == 0 && bundles > 0 && room > 0)
+        {
+            if (record)
+                TortoiseBots::GuildOrders::SetState(botGuidLow,
+                    StateForReason(OrderReason::NoSource), OrderReason::NoSource);
+            return false;
         }
 
         RESET_AI_VALUE(uint32, "guild order vendor reagent");
