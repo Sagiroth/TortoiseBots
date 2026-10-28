@@ -3,6 +3,7 @@
 #include "SellAction.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/TravelMgr.h"
 #include "../../../../runtime/GuildOrderStore.h"
 #include "../../../../runtime/policy/provision/CraftOrderPolicy.h"
 
