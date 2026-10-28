@@ -163,6 +163,12 @@ namespace BotCommands {
 // bot through their per-bot "manual follow target" value (the AI's own
 // FollowTargetValue override, the value behind the whispered `follow target`),
 // which the binding sets and puts back on release.
+// The raid layout (defined with ApplyRaidLayout below), used by the release
+// paths above it. A departed follower of a raid binding also leaves the
+// layout record: its focus heal targets go and it drops out of the record.
+static void ClearRaidLayout(uint32 groupId);
+static void ForgetDepartedRaidMember(uint64 followerRaw, uint32 groupId);
+
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -1202,11 +1208,6 @@ uint32 ReleaseBinding(uint64 commanderRaw, RemoteCommander::ReleaseReason reason
     return static_cast<uint32>(removed.followers.size());
 }
 
-// A departed follower of a raid binding also leaves the raid layout record
-// (defined with ApplyRaidLayout below): its focus heal targets go and it
-// drops out of the record.
-static void ForgetDepartedRaidMember(uint64 followerRaw, uint32 groupId);
-
 // Followers that left the bound group (kicked, invited by their owner into
 // another party, left on their own) get their own follow target back at once;
 // otherwise they would keep walking after the lead bot and ignore their
@@ -2145,7 +2146,7 @@ static void ForgetDepartedRaidMember(uint64 followerRaw, uint32 groupId)
         applied.originalSubgroups.end());
 }
 
-bool TortoiseBots::BotCommands::IsRaidFocusHealer(Player* bot)
+bool IsRaidFocusHealer(Player* bot)
 {
     if (!bot)
         return false;
@@ -2194,17 +2195,12 @@ static void ClearRaidLayout(uint32 groupId)
             else if (Player* bot = ObjectAccessor::FindPlayer(ObjectGuid(op.member)))
                 group->ChangeMembersGroup(bot, op.sub);
         }
-        if (applied.hadMainTank)
-        {
-            if (group->GetMainTankGuid() == applied.setMainTank)
-                group->SetMainTank(applied.previousMainTank);
-        }
-        else
-            group->SetMainTank(ObjectGuid());
+        // Only a main tank the layout set is put back (an empty previous one
+        // clears it); a later change by anyone else stands.
+        if (group->GetMainTankGuid() == applied.setMainTank)
+            group->SetMainTank(applied.previousMainTank);
     }
 }
-
-} // namespace
 
 namespace {
 
@@ -2218,6 +2214,8 @@ TortoiseBots::SystemRun::Member SystemMember(Player* bot, bool inOtherGroup)
     member.inOtherGroup = inOtherGroup;
     return member;
 }
+
+} // namespace
 
 // Bot LFG group glue (runtime/BotLfgService.cpp): the service decides, these
 // four read the live binding and group state it needs.
