@@ -13718,6 +13718,82 @@ static void TestUntilSkipAndJumpStop()
     CHECK(j.note.find("stopped before step 2 (until step 2)") == 0);
 }
 
+// The stop's check at the tick's start saw the retry's pull step; inside the tick the regroup's walk back gave the
+// retry up (AbandonDeferRetry set the step straight at the boss, the stop), the lead bot stood on the walk back's last
+// point so no walk back started, and the boss step built its pullback in the same tick. The stop is taken at the tick's
+// end too: the run ends Done at the stop step with no order.
+static void TestUntilStopsAJumpInTheTickBody()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 300, 0, 0);
+    boss.entry = 9;
+    boss.entries = {9};
+    ai::NormalizePlanStep(boss);
+    plan.steps = {Step(PlanStepKind::Move, 5, 0, 0), PullStep(10, {7078}), Step(PlanStepKind::Move, 300, 0, 0), boss};
+    Run r = Start(&plan, 1);
+    r.restDue = false;
+    r.deferRetryStep = 1;
+    r.deferReturnStep = 3;
+    r.deferLeg = 0;
+    r.untilStep = 3;
+    r.untilText = "until boss";
+    Pause(r, "fight ceiling");
+    CHECK(Resume(r) && r.regroup && r.walkBackDue);
+    // The lead bot 2 yd from the walk back's point (step 3's move), 290 yd from the deferred pack: the retry is given
+    // up and the boss step, in sight, would pull at once.
+    Facts f = Party(298);
+    f.units = {Unit(9, 9, 8)};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Done && r.step == 3 && r.untilHit);
+    CHECK(r.note.find("stopped before step 4 (until boss): the party stays where it stands") == 0);
+    CHECK(r.deferGivenUp == std::vector<std::size_t>{1});
+    CHECK(r.note.find("(1 pack left alive") != std::string::npos);
+    std::string const note = r.note;
+    CHECK(Tick(r, f).empty() && r.state == State::Done && r.note == note);
+}
+
+// The item-leg skip set the step at the leg's last row, past the stop (LegNeedGate -> NextStep): the stop's clamp
+// brings the run back to the stop step, and it ends Done.
+static void TestUntilClampsAfterALegSkipLandsPastIt()
+{
+    DungeonPlan plan;
+    plan.name = "zf";
+    ai::PlanLeg leg9;
+    leg9.leg = 9;
+    leg9.name = "gahzrilla";
+    plan.legs.push_back(leg9);
+    PlanStep move = Step(PlanStepKind::Move, 0, 0, 0);
+    move.leg = 9;
+    PlanStep pull = PullStep(10, {7580});
+    pull.leg = 9;
+    PlanStep gong = GongRow();
+    gong.leg = 9;
+    PlanStep boss = Step(PlanStepKind::Boss, 20, 0, 0);
+    boss.leg = 9;
+    boss.entry = 7273;
+    boss.entries = {7273};
+    ai::NormalizePlanStep(boss);
+    PlanStep next = Step(PlanStepKind::Move, 100, 0, 0);
+    next.leg = 10;
+    plan.steps = {move, pull, gong, boss, next};
+    ai::PlanLegNeed need;
+    need.leg = 9;
+    need.item = 9240;
+    need.mode = ai::LegNeedMode::Optional;
+    need.name = "Mallet of Zul'Farrak";
+    plan.needs.push_back(need);
+    Run r = Start(&plan);
+    r.untilStep = 2;
+    r.untilText = "until step 3";
+    Facts f = Party(0);
+    f.legNeedRead = true;
+    f.legNeedHolders = {{9240, ""}};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Done && r.step == 2 && r.untilHit);
+    CHECK(r.note.find("stopped before step 3 (until step 3)") == 0);
+    CHECK(r.note.find("(optional leg skipped: gahzrilla (item 9240))") != std::string::npos);
+}
+
 static void TestUntilStopsFightForward()
 {
     DungeonPlan plan;
@@ -13750,11 +13826,12 @@ static void TestUntilStatusLabel()
     CHECK(ends(StatusLine(r), "|speed 3.0 (test); until boss (step 38)"));
     r.testSpeed = 1.0f;
     CHECK(ends(StatusLine(r), "|until boss (step 38)"));
-    // The stop: the label goes, the note says it.
+    // The stop: the label drops the until clause and keeps the test speed; the note says the stop.
+    r.testSpeed = 3.0f;
     r.step = 37;
     CHECK(StopAtUntil(r));
+    CHECK(ends(StatusLine(r), "|speed 3.0 (test)"));
     CHECK(!ends(StatusLine(r), "(step 38)"));
-    CHECK(StatusLine(r).find("speed 3.0") == std::string::npos);
     CHECK(r.note.find("(until boss)") != std::string::npos);
     // No until: the label field stays empty and the plan's end says "plan done" as before.
     Run plain = Start(&plan);
@@ -23404,6 +23481,8 @@ int main()
     TestUntilResolve();
     TestUntilStopsBeforeTheBossStep();
     TestUntilSkipAndJumpStop();
+    TestUntilStopsAJumpInTheTickBody();
+    TestUntilClampsAfterALegSkipLandsPastIt();
     TestUntilStopsFightForward();
     TestUntilStatusLabel();
     std::cout << "test_dungeon_run_policy: ok\n";

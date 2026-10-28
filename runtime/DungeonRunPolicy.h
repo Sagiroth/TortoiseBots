@@ -13532,11 +13532,13 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
     }
     if (!held)
         order = TickBody(r, f, dt, lines);
-    if (r.untilHit)
+    // A jump in the tick body set r.step straight at the stop, after the check at the tick's start
+    // (AbandonDeferRetry): any order built for the stop step is dropped.
+    if (r.untilHit || StopAtUntil(r))
     {
         if (!r.shotGateRan)
             EndShotHold(r);
-        return std::string(); // the step the tick reached was the stop: any order built for it is dropped
+        return std::string(); // the step the tick reached was the stop
     }
     OffMapReturnTick(r, f, order); // a bot outside the instance in a bot-only run (lead decision 2026-10-24)
     if (!r.shotGateRan)
@@ -14806,9 +14808,11 @@ inline std::string PhaseText(const Run& r)
 }
 
 // The status line for the commander:
-//   TBM:RUN|<plan>|<state>|<step>/<steps>|<leg>|<kind>|<phase>|<note>[|left <K>][|speed <x> (test)]
+//   TBM:RUN|<plan>|<state>|<step>/<steps>|<leg>|<kind>|<phase>|<note>[|left <K>][|label]
 // <step> counts from 1 (0 before the first, steps+1 is never sent: a done run
-// shows the last). '|' and line breaks in the note become spaces.
+// shows the last). '|' and line breaks in the note become spaces. The label is
+// "speed <x> (test)" and "until <clause> (step N)", "; "-joined, either alone;
+// the until half is gone once the stop came.
 // The fields StatusLine prints, read by the commands layer (SendRunLine and
 // CollectCommanderTelemetry) so the dashboard gets the same run without the
 // line. The note is already cleaned of '|' and line breaks.
