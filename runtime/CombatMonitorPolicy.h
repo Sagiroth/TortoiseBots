@@ -3,16 +3,17 @@
 // heal, cast and death hooks and a 1 Hz aura sample; the numbers only,
 // the dashboard judges them; plain data and the standard library only.
 
-#include <algorithm>
-#include <cstdint>
-#include <cstdio>
-#include <deque>
-#include <map>
-#include <sstream>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
+ #include <algorithm>
+ #include <cstdint>
+ #include <cstdio>
+ #include <deque>
+ #include <functional>
+ #include <map>
+ #include <sstream>
+ #include <string>
+ #include <unordered_map>
+ #include <unordered_set>
+ #include <vector>
 
 namespace TortoiseBots {
 namespace CombatMonitor {
@@ -20,6 +21,8 @@ namespace CombatMonitor {
 constexpr uint32_t kMinFightMs = 5000;        // shorter fights are dropped
 constexpr uint32_t kOutOfCombatEndMs = 3000;  // a fight ends this long after the last member left combat
 constexpr uint32_t kWindowMs = 10000;         // the rolling window
+constexpr uint32_t kMaxDeathsPerFight = 200;  // death recaps kept per fight, oldest dropped past it
+constexpr uint32_t kMaxEngagedPerFight = 500; // engaged creatures tracked per fight, counted past it as dropped
 constexpr size_t kLastHits = 5;               // death recap
 constexpr size_t kMaxSpellsPerBot = 12;
 constexpr size_t kMaxFightsKept = 5;          // finished fights waiting to be sent, per book
@@ -199,6 +202,20 @@ inline std::vector<std::pair<std::string, uint32_t>> SpellList(BotTotals const& 
     return always;
 }
 
+inline void PruneBefore(std::vector<std::pair<uint32_t, uint32_t>>& events, uint32_t nowMs)
+{
+    int64_t const cut = static_cast<int64_t>(nowMs) - static_cast<int64_t>(kWindowMs);
+    while (!events.empty() && (static_cast<int64_t>(events.front().first) <= cut || events.front().first > nowMs))
+        events.erase(events.begin());
+}
+
+inline void PruneBefore(std::vector<uint32_t>& times, uint32_t nowMs)
+{
+    int64_t const cut = static_cast<int64_t>(nowMs) - static_cast<int64_t>(kWindowMs);
+    while (!times.empty() && (static_cast<int64_t>(times.front()) <= cut || times.front() > nowMs))
+        times.erase(times.begin());
+}
+
 class Book   // one per bound group
 {
 public:
@@ -238,7 +255,7 @@ public:
     bool IsMember(uint32_t guid) const { return index_.find(guid) != index_.end(); }
     bool InFight() const { return inFight_; }
 
-    void Start(uint32_t nowMs, int64_t unixNow, FightContext ctx)   // no-op while in a fight
+    void Start(uint32_t nowMs, int64_t unixNow, FightContext ctx, uint32_t number)   // no-op while in a fight
     {
         if (inFight_ || order_.empty())
             return;
@@ -250,6 +267,7 @@ public:
         outOfCombat_ = false;
         outOfCombatSince_ = 0;
         engaged_.clear();
+        engagedDropped_ = 0;
         debuffUp_.clear();
         debuffSampled_ = 0;
         deaths_.clear();
@@ -264,8 +282,7 @@ public:
             m.lastSpellMs = 0;
             m.recentHits.clear();
         }
-        ++fightSeq_;
-        fightNumber_ = fightSeq_;
+        fightNumber_ = number;
     }
 
     void OnCast(uint32_t caster, std::string const& spell, bool heal, uint32_t nowMs)
@@ -278,6 +295,7 @@ public:
             ++m.totals.healCasts;
         ++m.totals.spells[spell];
         m.castTimes.push_back(nowMs);
+        PruneBefore(m.castTimes, nowMs);
         m.lastSpell = spell;
         m.lastSpellMs = nowMs;
     }
@@ -296,6 +314,7 @@ public:
             MemberState& m = At(attackerMember);
             m.totals.damage += amount;
             m.dmgDone.emplace_back(nowMs, amount);
+            PruneBefore(m.dmgDone, nowMs);
             AddEngaged(enemyEntry, enemyGuid, enemyName);
         }
         else if (!atk && vic)
@@ -320,6 +339,7 @@ public:
         m.totals.healing += amount;
         m.totals.overheal += overheal;
         m.heals.emplace_back(nowMs, amount);
+        PruneBefore(m.heals, nowMs);
     }
 
     void OnDeath(uint32_t member, std::string const& killer, float x, float y, float z, uint32_t nowMs)
@@ -337,6 +357,8 @@ public:
         d.killer = killer;
         d.hits.assign(m.recentHits.begin(), m.recentHits.end());
         deaths_.push_back(d);
+        while (deaths_.size() > kMaxDeathsPerFight)
+            deaths_.pop_front();
         dead_.insert(member);
         if (dead_.size() >= order_.size())
             EndFight(nowMs, true);
@@ -382,8 +404,18 @@ public:
         bossDied_ = true;
     }
 
+    bool HasTakeablePayloads() const   // a finished fight still owed to the emitter
+    {
+        for (FinishedFight const& f : finished_)
+            if (f.takes < 2)
+                return true;
+        return false;
+    }
+
     // Ended fights not yet taken, oldest first; each fight is handed out twice, then dropped.
-    std::vector<std::string> TakeFightPayloads(int protocolVersion, uint64_t session, uint64_t& seq, int64_t ts,
+    // nextSeq runs once per payload, only when a payload goes out. Every queued payload fits the budget.
+    std::vector<std::string> TakeFightPayloads(int protocolVersion, uint64_t session,
+                                               std::function<uint64_t()> const& nextSeq, int64_t ts,
                                                std::string const& commander, uint32_t commanderGuid,
                                                uint32_t groupId, uint32_t mapId)
     {
@@ -392,17 +424,21 @@ public:
         {
             if (f.takes >= 2)
                 continue;
-            std::string js = BuildFightJson(f, protocolVersion, session, seq, ts, commander, commanderGuid,
-                                            groupId, mapId, kMaxSpellsPerBot, kLastHits);
+            std::string js = BuildFightJson(f, protocolVersion, session, nextSeq(), ts, commander, commanderGuid,
+                                            groupId, mapId, kMaxSpellsPerBot, kLastHits, false);
             if (js.size() > kPayloadByteBudget)
-                js = BuildFightJson(f, protocolVersion, session, seq, ts, commander, commanderGuid, groupId,
-                                    mapId, 3, kLastHits);
+                js = BuildFightJson(f, protocolVersion, session, nextSeq(), ts, commander, commanderGuid, groupId,
+                                    mapId, 3, kLastHits, false);
             if (js.size() > kPayloadByteBudget)
-                js = BuildFightJson(f, protocolVersion, session, seq, ts, commander, commanderGuid, groupId,
-                                    mapId, 3, 2);
+                js = BuildFightJson(f, protocolVersion, session, nextSeq(), ts, commander, commanderGuid, groupId,
+                                    mapId, 3, 2, false);
+            if (js.size() > kPayloadByteBudget)
+                js = BuildFightJson(f, protocolVersion, session, nextSeq(), ts, commander, commanderGuid, groupId,
+                                    mapId, 0, 0, true);
+            if (js.size() > kPayloadByteBudget)
+                continue;   // no runaway payload crosses the wire
             out.push_back(js);
             ++f.takes;
-            ++seq;
         }
         for (auto it = finished_.begin(); it != finished_.end();)
         {
@@ -414,10 +450,23 @@ public:
         return out;
     }
 
-    std::string WindowJson(uint32_t nowMs) const   // the `combat` object of COMMANDERS, "" outside a fight
+    void PruneWindows(uint32_t nowMs)   // drop per-event window entries older than the window
+    {
+        if (!inFight_)
+            return;
+        for (auto& m : order_)
+        {
+            PruneBefore(m.dmgDone, nowMs);
+            PruneBefore(m.heals, nowMs);
+            PruneBefore(m.castTimes, nowMs);
+        }
+    }
+
+    std::string WindowJson(uint32_t nowMs)   // the `combat` object of COMMANDERS, "" outside a fight
     {
         if (!inFight_)
             return "";
+        PruneWindows(nowMs);
         int64_t const cut = static_cast<int64_t>(nowMs) - static_cast<int64_t>(kWindowMs);
         std::ostringstream ss;
         ss << "{\"win_s\":" << (kWindowMs / 1000)
@@ -489,17 +538,18 @@ private:
         Outcome outcome = Outcome::End;
         FightContext ctx;
         std::vector<EngagedEntry> engaged;
+        uint64_t dropped = 0;   // engaged creatures past the cap
         std::vector<MemberState> bots;
         uint64_t sampled = 0;
         std::map<std::string, uint64_t> up;
-        std::vector<Death> deaths;
+        std::deque<Death> deaths;
         uint32_t takes = 0;
     };
 
     static std::string BuildFightJson(FinishedFight const& f, int protocolVersion, uint64_t session,
                                       uint64_t seqNum, int64_t ts, std::string const& commander,
                                       uint32_t commanderGuid, uint32_t groupId, uint32_t mapId,
-                                      size_t maxSpells, size_t maxHits)
+                                      size_t maxSpells, size_t maxHits, bool truncated)
     {
         std::ostringstream ss;
         ss << "{\"v\":" << protocolVersion << ",\"session\":" << session << ",\"seq\":" << seqNum
@@ -514,14 +564,15 @@ private:
         for (size_t i = 0; i < f.ctx.planned.size(); ++i)
             ss << (i ? "," : "") << f.ctx.planned[i];
         ss << "],\"engaged\":[";
-        for (size_t i = 0; i < f.engaged.size(); ++i)
-        {
-            if (i)
-                ss << ",";
-            ss << "{\"e\":" << f.engaged[i].entry << ",\"n\":\"" << JsonEscape(f.engaged[i].name)
-               << "\",\"c\":" << f.engaged[i].guids << "}";
-        }
-        ss << "],\"bots\":[";
+        if (!truncated)
+            for (size_t i = 0; i < f.engaged.size(); ++i)
+            {
+                if (i)
+                    ss << ",";
+                ss << "{\"e\":" << f.engaged[i].entry << ",\"n\":\"" << JsonEscape(f.engaged[i].name)
+                   << "\",\"c\":" << f.engaged[i].guids << "}";
+            }
+        ss << "],\"dropped\":" << f.dropped << ",\"bots\":[";
         for (size_t i = 0; i < f.bots.size(); ++i)
         {
             MemberState const& m = f.bots[i];
@@ -534,7 +585,8 @@ private:
                << ",\"taken\":" << m.totals.taken << ",\"casts\":" << m.totals.casts
                << ",\"heal_casts\":" << m.totals.healCasts << ",\"deaths\":" << m.totals.deaths
                << ",\"spells\":[";
-            std::vector<std::pair<std::string, uint32_t>> spells = SpellList(m.totals, maxSpells);
+            std::vector<std::pair<std::string, uint32_t>> spells = truncated
+                ? std::vector<std::pair<std::string, uint32_t>>{} : SpellList(m.totals, maxSpells);
             for (size_t j = 0; j < spells.size(); ++j)
                 ss << (j ? "," : "") << "{\"n\":\"" << JsonEscape(spells[j].first)
                    << "\",\"c\":" << spells[j].second << "}";
@@ -543,31 +595,39 @@ private:
         ss << "],\"debuffs\":{\"sampled_s\":" << f.sampled << ",\"up_s\":{";
         {
             bool first = true;
-            for (auto const& kv : f.up)
-            {
-                if (!first)
-                    ss << ",";
-                first = false;
-                ss << "\"" << JsonEscape(kv.first) << "\":" << kv.second;
-            }
+            if (!truncated)
+                for (auto const& kv : f.up)
+                {
+                    if (!first)
+                        ss << ",";
+                    first = false;
+                    ss << "\"" << JsonEscape(kv.first) << "\":" << kv.second;
+                }
         }
         ss << "}},\"deaths\":[";
-        for (size_t i = 0; i < f.deaths.size(); ++i)
-        {
-            Death const& d = f.deaths[i];
-            if (i)
-                ss << ",";
-            ss << "{\"name\":\"" << JsonEscape(d.name) << "\",\"t_ms\":" << d.atMs << ",\"x\":" << F1(d.x)
-               << ",\"y\":" << F1(d.y) << ",\"z\":" << F1(d.z) << ",\"killer\":\"" << JsonEscape(d.killer)
-               << "\",\"hits\":[";
-            size_t skip = d.hits.size() > maxHits ? d.hits.size() - maxHits : 0;
-            for (size_t j = skip; j < d.hits.size(); ++j)
-                ss << (j > skip ? "," : "") << "{\"a\":\"" << JsonEscape(d.hits[j].attacker)
-                   << "\",\"d\":" << d.hits[j].amount << ",\"t_ms\":" << d.hits[j].atMs << "}";
-            ss << "]}";
-        }
+        if (!truncated)
+            for (size_t i = 0; i < f.deaths.size(); ++i)
+            {
+                Death const& d = f.deaths[i];
+                if (i)
+                    ss << ",";
+                ss << "{\"name\":\"" << JsonEscape(d.name) << "\",\"t_ms\":" << d.atMs << ",\"x\":" << F1(d.x)
+                   << ",\"y\":" << F1(d.y) << ",\"z\":" << F1(d.z) << ",\"killer\":\"" << JsonEscape(d.killer)
+                   << "\",\"hits\":[";
+                size_t skip = d.hits.size() > maxHits ? d.hits.size() - maxHits : 0;
+                for (size_t j = skip; j < d.hits.size(); ++j)
+                    ss << (j > skip ? "," : "") << "{\"a\":\"" << JsonEscape(d.hits[j].attacker)
+                       << "\",\"d\":" << d.hits[j].amount << ",\"t_ms\":" << d.hits[j].atMs << "}";
+                ss << "]}";
+            }
         ss << "]}}";
-        return ss.str();
+        std::string out = ss.str();
+        if (truncated)
+        {
+            std::string::size_type pos = out.rfind("}}");
+            out.insert(pos, ",\"truncated\":true");
+        }
+        return out;
     }
 
     MemberState& At(uint32_t guid) { return order_[index_[guid]]; }
@@ -576,6 +636,19 @@ private:
     {
         if (guid == 0)
             return;
+        auto it = engaged_.find(entry);
+        if (it != engaged_.end())
+        {
+            if (it->second.name.empty())
+                it->second.name = name;
+            it->second.guids.insert(guid);
+            return;
+        }
+        if (engaged_.size() >= kMaxEngagedPerFight)
+        {
+            ++engagedDropped_;
+            return;
+        }
         EngagedData& e = engaged_[entry];
         if (e.name.empty())
             e.name = name;
@@ -601,6 +674,7 @@ private:
             for (auto const& kv : engaged_)
                 f.engaged.push_back(EngagedEntry{kv.first, kv.second.name,
                                                 static_cast<uint32_t>(kv.second.guids.size())});
+            f.dropped = engagedDropped_;
             f.bots = order_;
             f.sampled = debuffSampled_;
             f.up = debuffUp_;
@@ -625,11 +699,11 @@ private:
     bool outOfCombat_ = false;
     uint32_t outOfCombatSince_ = 0;
     std::map<uint32_t, EngagedData> engaged_;
+    uint64_t engagedDropped_ = 0;   // distinct engaged creatures past the cap
     std::map<std::string, uint64_t> debuffUp_;
     uint64_t debuffSampled_ = 0;
-    std::vector<Death> deaths_;
+    std::deque<Death> deaths_;
     std::unordered_set<uint32_t> dead_;
-    uint32_t fightSeq_ = 0;
     uint32_t fightNumber_ = 0;
     std::deque<FinishedFight> finished_;
 };
