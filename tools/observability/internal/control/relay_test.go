@@ -89,7 +89,7 @@ func TestControlRefusals(t *testing.T) {
 		t.Fatal(err)
 	} else {
 		if resp.StatusCode != http.StatusMethodNotAllowed {
-			t.Errorf("GET status = %d, want 405")
+			t.Errorf("GET status = %d, want 405", resp.StatusCode)
 			resp.Body.Close()
 		} else if b := readBody(t, resp); !isJSONRefusal(b, "method not allowed") {
 			t.Errorf("GET body = %q, want JSON {ok:false,error}", b)
