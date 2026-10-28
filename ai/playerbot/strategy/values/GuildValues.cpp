@@ -56,6 +56,26 @@ bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
     return stored->delivered + bot->GetItemCount(order.itemId) < order.amount;
 }
 
+bool ai::OrderNeedsDelivery(Player* bot)
+{
+    if (!bot || !bot->GetGuildId())
+        return false;
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> stored =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!stored || stored->guildId != bot->GetGuildId())
+        return false;
+    if (stored->state != TortoiseBots::GuildOrders::OrderState::Delivering || !stored->itemId)
+        return false;
+    return bot->GetItemCount(stored->itemId) > 0;
+}
+
+bool HasGuildOrderDeliveryValue::Calculate()
+{
+    if (ai->HasRealPlayerMaster())
+        return false;
+    return OrderNeedsDelivery(bot);
+}
+
 uint8 PetitionSignsValue::Calculate()
 {
     if (bot->GetGuildId())

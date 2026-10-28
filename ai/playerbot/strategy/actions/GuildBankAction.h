@@ -4,15 +4,20 @@
 
 namespace ai
 {
-    class GuildBankAction : public ChatCommandAction
+    // Delivers a finished guild order: deposits the ordered items into the
+    // guild bank at a nearby guild banker, or mails them to the guild master
+    // when the bank refuses every tab. Runs while the stored order is
+    // Delivering; only the ordered item moves, never anything else.
+    class GuildBankAction : public Action
     {
     public:
-        GuildBankAction(PlayerbotAI* ai) : ChatCommandAction(ai, "guild bank") {}
+        GuildBankAction(PlayerbotAI* ai) : Action(ai, "guild bank") {}
         virtual bool Execute(Event& event) override;
-        virtual bool isUsefulWhenStunned() override { return true; }
+        virtual bool isUseful() override;
 
     private:
-        bool Execute(std::string text, GameObject* bank, Player* requester);
-        bool MoveFromCharToBank(Item* item, GameObject* bank, Player* requester);
+        Unit* FindNearbyGuildBanker();
+        bool DepositAtBanker(Unit* banker, uint32 itemId);
+        void MailToLeader(uint32 itemId);
     };
 }

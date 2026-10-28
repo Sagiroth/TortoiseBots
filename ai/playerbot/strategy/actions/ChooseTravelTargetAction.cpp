@@ -29,6 +29,41 @@
 
 using namespace ai;
 
+namespace
+{
+    bool IsGuildBankerDestination(EntryTravelDestination* dest)
+    {
+        CreatureInfo const* info = dest ? dest->GetCreatureInfo() : nullptr;
+        if (!info)
+            return false;
+        switch (dest->GetEntry())
+        {
+            case 62008:
+            case 62009:
+            case 62010:
+            case 62011:
+            case 62012:
+            case 80917:
+            case 80918:
+                return true;
+            default:
+                break;
+        }
+        if (!(info->npc_flags & UNIT_NPC_FLAG_GOSSIP))
+            return false;
+        GossipMenuItemsMapBounds menuItems = sObjectMgr.GetGossipMenuItemsMapBounds(info->gossip_menu_id);
+        if (menuItems.first == menuItems.second)
+            menuItems = sObjectMgr.GetGossipMenuItemsMapBounds(0);
+        for (auto itr = menuItems.first; itr != menuItems.second; ++itr)
+        {
+            GossipMenuItems const& item = itr->second;
+            if (item.option_id == GOSSIP_OPTION_GUILD_BANKER && (item.npc_option_npcflag & info->npc_flags))
+                return true;
+        }
+        return false;
+    }
+}
+
 inline std::string GetTravelPurposeName(std::string purpose)
 {
     if (Qualified::isValidNumberString(purpose) && TravelDestinationPurposeName.find(TravelDestinationPurpose(stoi(purpose))) != TravelDestinationPurposeName.end())
@@ -2159,6 +2194,35 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
     }
     else if (travelName == "guild order")
     {
+        // Delivering outranks working: a bot carrying finished order items
+        // walks to a guild banker first, whatever the order type.
+        if (AI_VALUE(bool, "has guild order delivery"))
+        {
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+                {
+                    PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg);
+
+                    for (auto& [partition, travelPoints] : list)
+                    {
+                        travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [](TravelPoint point)
+                            {
+                                EntryTravelDestination* dest = (EntryTravelDestination*)std::get<TravelDestination*>(point);
+                                if (!dest->GetCreatureInfo())
+                                    return true;
+                                if (!IsGuildBankerDestination(dest))
+                                    return true;
+                                WorldPosition* position = std::get<WorldPosition*>(point);
+                                if (!position || !position->HasAreaFlag(AREA_FLAG_CAPITAL))
+                                    return true;
+                                return false;
+                            }), travelPoints.end());
+                    }
+                    return list;
+                });
+            SET_AI_VALUE2(std::string, "manual string", "future travel detail", "guild banker");
+            return true;
+        }
+
         GuildOrder order = AI_VALUE(GuildOrder, "guild order");
 
         if (!order.IsTravelOrder())

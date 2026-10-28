@@ -475,6 +475,8 @@ bool ShouldTravelNamedValue::Calculate()
     }
     else if (name == "guild order")
     {
+        if (AI_VALUE(bool, "has guild order delivery"))
+            return true;
         return AI_VALUE(bool, "has guild travel order");
     }
     else if (name == "mount")

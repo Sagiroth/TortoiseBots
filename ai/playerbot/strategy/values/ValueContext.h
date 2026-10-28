@@ -420,6 +420,7 @@ namespace ai
             creators["guild order"] = [](PlayerbotAI* ai) { return new GuildOrderValue(ai); };
             creators["has guild travel order"] = [](PlayerbotAI* ai) { return new HasGuildTravelOrderValue(ai); };
             creators["has guild craft order"] = [](PlayerbotAI* ai) { return new HasGuildCraftOrderValue(ai); };
+            creators["has guild order delivery"] = [](PlayerbotAI* ai) { return new HasGuildOrderDeliveryValue(ai); };
 
             creators["experience"] = [](PlayerbotAI* ai) { return new ExperienceValue(ai); };
             creators["honor"] = [](PlayerbotAI* ai) { return new HonorValue(ai); };

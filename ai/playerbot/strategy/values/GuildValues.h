@@ -83,6 +83,18 @@ namespace ai
         }
     };
 
+    // True while the stored order is Delivering and the bot still carries
+    // order items: it needs a guild banker. Any order type lands here.
+    bool OrderNeedsDelivery(Player* bot);
+
+    class HasGuildOrderDeliveryValue : public BoolCalculatedValue
+    {
+    public:
+        HasGuildOrderDeliveryValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "has guild order delivery", 10) {}
+
+        bool Calculate() override;
+    };
+
     class PetitionSignsValue : public SingleCalculatedValue<uint8>
     {
     public:
