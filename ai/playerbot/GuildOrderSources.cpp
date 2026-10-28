@@ -1,5 +1,6 @@
 #include "playerbot/GuildOrderSources.h"
 #include "playerbot/GuildOrderCraft.h"
+#include "playerbot/strategy/values/GuildValues.h"
 
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/values/LootValues.h"
