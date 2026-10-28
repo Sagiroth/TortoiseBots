@@ -2,6 +2,7 @@
 #include "PlayerbotAI.h"
 #include "playerbot/GroupMembers.h"
 #include "strategy/values/LastMovementValue.h"
+#include "strategy/values/GuildValues.h"
 #include "SocialMgr.h"
 
 using namespace ai;
@@ -110,6 +111,14 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
 
     if (HasPlayerNearby())
         return ActivePiorityType::VISIBLE_FOR_PLAYER;
+
+    if (sPlayerbotAIConfig.guildOrderAlwaysActive && bot->IsInWorld() && bot->GetGuildId())
+    {
+        AiObjectContext* context = GetAiObjectContext();
+        GuildOrder guildOrder = AI_VALUE(GuildOrder, "guild order");
+        if (guildOrder.IsValid())
+            return ActivePiorityType::IS_ALWAYS_ACTIVE;
+    }
 
     if (sServerFacade.IsInCombat(bot))
         return ActivePiorityType::IN_COMBAT;

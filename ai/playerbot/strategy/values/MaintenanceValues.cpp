@@ -6,6 +6,7 @@
 #include "runtime/policy/provision/NearbyServicePolicy.h"
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
+#include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/strategy/actions/AcceptQuestAction.h"
 #include "playerbot/strategy/triggers/RpgTriggers.h"
 #include "playerbot/RandomBotFacade.h"
@@ -700,6 +701,9 @@ bool ShouldGetMailValue::Calculate() {
     if (!master)
         return false;
 
+    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    bool hasBuyOrder = order.type == GuildOrderType::AuctionHouse && !order.target.empty();
+
     for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
     {
         if ((*itr)->state == MAIL_STATE_DELETED || cur_time < (*itr)->deliver_time)
@@ -713,6 +717,11 @@ bool ShouldGetMailValue::Calculate() {
         }
 
         if ((*itr)->has_items && waitingInBoxTime > HOUR * 4) //Items are allowed to sit in the mail for max 4 hours.
+        {
+            return true;
+        }
+
+        if (hasBuyOrder && (*itr)->has_items && (*itr)->stationery == MAIL_STATIONERY_AUCTION && waitingInBoxTime > MINUTE) //If bot has a buy order and mail is from AH, take mail immediately.
         {
             return true;
         }
