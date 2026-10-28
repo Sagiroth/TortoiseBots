@@ -45,8 +45,11 @@ namespace ai
     };
 
     // True while the stored order still needs farm/craft work: not waiting,
-    // not delivering, and delivered plus bags below the amount.
+    // not delivering, and delivered plus bags plus mailbox below the amount.
     bool OrderStillNeedsWork(Player* bot, GuildOrder const& order);
+
+    // Order items waiting in the mailbox (bought AH items arrive by mail).
+    uint32 OrderMailboxItems(Player* bot, uint32 itemId);
 
     class HasGuildTravelOrderValue : public BoolCalculatedValue
     {
@@ -60,10 +63,13 @@ namespace ai
                 return false;
 
             // No order work while grouped with a player, delivering, or done
-            // with the amount (delivered plus bags).
+            // with the amount (delivered plus bags plus mailbox).
             if (ai->HasRealPlayerMaster())
                 return false;
-            return OrderStillNeedsWork(bot, order);
+            if (!OrderStillNeedsWork(bot, order))
+                return false;
+            // Bought items wait in the mailbox: fetch them before walking on.
+            return OrderMailboxItems(bot, order.itemId) == 0;
         }
     };
 

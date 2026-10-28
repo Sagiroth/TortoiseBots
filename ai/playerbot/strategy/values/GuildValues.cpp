@@ -6,6 +6,8 @@
 #include "playerbot/ServerFacade.h"
 #include "runtime/GuildOrderStore.h"
 #include "Guild/GuildMgr.h"
+#include "Mail/Mail.h"
+#include "MapNodes/MasterPlayer.h"
 
 using namespace ai;
 
@@ -42,6 +44,32 @@ GuildOrder GuildOrderValue::Calculate()
     return order;
 }
 
+uint32 ai::OrderMailboxItems(Player* bot, uint32 itemId)
+{
+    if (!bot || !bot->GetSession() || !itemId)
+        return 0;
+    MasterPlayer* master = bot->GetSession()->GetMasterPlayer();
+    if (!master)
+        return 0;
+    uint32 count = 0;
+    time_t curTime = time(nullptr);
+    for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
+    {
+        Mail* mail = *itr;
+        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
+            continue;
+        if (!mail->has_items)
+            continue;
+        for (MailItemInfoVec::const_iterator itemItr = mail->items.begin(); itemItr != mail->items.end(); ++itemItr)
+            if (itemItr->item_template == itemId)
+            {
+                Item* mailItem = master->GetMItem(itemItr->item_guid);
+                count += mailItem ? mailItem->GetCount() : 1;
+            }
+    }
+    return count;
+}
+
 bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
 {
     if (!bot || !order.itemId || !order.amount)
@@ -53,7 +81,8 @@ bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
     if (stored->state == TortoiseBots::GuildOrders::OrderState::Waiting ||
         stored->state == TortoiseBots::GuildOrders::OrderState::Delivering)
         return false;
-    return stored->delivered + bot->GetItemCount(order.itemId) < order.amount;
+    return stored->delivered + bot->GetItemCount(order.itemId) +
+        OrderMailboxItems(bot, order.itemId) < order.amount;
 }
 
 uint8 PetitionSignsValue::Calculate()

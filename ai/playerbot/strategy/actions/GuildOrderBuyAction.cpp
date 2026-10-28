@@ -1,14 +1,12 @@
 
 #include "playerbot/playerbot.h"
 #include "GuildOrderBuyAction.h"
-#include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/GuildValues.h"
 #include "runtime/GuildOrderBuyPolicy.h"
 #include "runtime/GuildOrderStore.h"
-#include "playerbot/RandomItemMgr.h"
 #include "AuctionHouse/AuctionHouseMgr.h"
-#include "Mail/Mail.h"
-#include "MapNodes/MasterPlayer.h"
+
+#include <mutex>
 
 using namespace ai;
 using TortoiseBots::GuildOrders::BuyOwnedCount;
@@ -30,13 +28,10 @@ bool GuildOrderBuyAction::isUseful()
     if (!FindNearbyAuctioneer())
         return false;
 
-    if (bot->GetMoney() == 0)
-        return false;
-
     if (AI_VALUE(uint8, "bag space") > 90)
         return false;
 
-    return true;
+    return OrderStillNeedsWork(bot, order);
 }
 
 Unit* GuildOrderBuyAction::FindNearbyAuctioneer()
@@ -49,36 +44,6 @@ Unit* GuildOrderBuyAction::FindNearbyAuctioneer()
             return npc;
     }
     return nullptr;
-}
-
-uint32 GuildOrderBuyAction::CountMailboxItems(uint32 itemId)
-{
-    uint32 count = 0;
-    time_t curTime = time(nullptr);
-    MasterPlayer* master = bot->GetSession() ? bot->GetSession()->GetMasterPlayer() : nullptr;
-    if (!master)
-        return 0;
-
-    for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
-    {
-        Mail* mail = *itr;
-        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
-            continue;
-
-        if (!mail->has_items)
-            continue;
-
-        for (MailItemInfoVec::const_iterator itemItr = mail->items.begin(); itemItr != mail->items.end(); ++itemItr)
-        {
-            if (itemItr->item_template == itemId)
-            {
-                Item* mailItem = master->GetMItem(itemItr->item_guid);
-                count += mailItem ? mailItem->GetCount() : 1;
-            }
-        }
-    }
-
-    return count;
 }
 
 bool GuildOrderBuyAction::Execute(Event& event)
@@ -97,22 +62,27 @@ bool GuildOrderBuyAction::Execute(Event& event)
         TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
     uint32 delivered = (stored && stored->itemId == order.itemId) ? stored->delivered : 0;
     uint32 owned = BuyOwnedCount(delivered, ai->GetInventoryItemsCountWithId(order.itemId),
-        CountMailboxItems(order.itemId));
+        OrderMailboxItems(bot, order.itemId));
     uint32 missing = BuyStillMissing(order.amount, owned);
     if (!missing)
         return false;
 
-    if (!sRandomBotFacade.m_ahActionMutex.try_lock())
+    std::unique_lock<std::mutex> ahLock(sRandomBotFacade.m_ahActionMutex, std::try_to_lock);
+    if (!ahLock.owns_lock())
         return false;
 
     bool bought = false;
-    bool nothingToBuy = false;
+    bool visitDone = false;
 
     AuctionHouseEntry const* ahEntry = AuctionHouseMgr::GetAuctionHouseEntry(auctioneer);
     AuctionHouseObject* auctionHouse = ahEntry ? sAuctionMgr.GetAuctionsMap(ahEntry) : nullptr;
     if (auctionHouse)
     {
-        uint32 budget = AI_VALUE2(uint32, "free money for", uint32(NeedMoneyFor::guild));
+        // Real gold only: the free-money budget counts cheat gold the core
+        // would refuse, and the bid would fail every tick instead of falling
+        // back to farming the rest.
+        uint32 budget = bot->GetMoney();
+        uint32 failedBid = (uint32)AI_VALUE2(int, "manual int", "order buy failed bid");
 
         struct Candidate
         {
@@ -122,7 +92,6 @@ bool GuildOrderBuyAction::Execute(Event& event)
             uint32 count = 0;
         };
         Candidate best;
-        bool affordableSeen = false;
 
         for (auto const& auctionEntry : *auctionHouse->GetAuctions())
         {
@@ -131,6 +100,9 @@ bool GuildOrderBuyAction::Execute(Event& event)
                 continue;
 
             if (auction->owner == bot->GetGUIDLow())
+                continue;
+
+            if (auction->Id == failedBid)
                 continue;
 
             Item* item = sAuctionMgr.GetAItem(auction->itemGuidLow);
@@ -143,7 +115,6 @@ bool GuildOrderBuyAction::Execute(Event& event)
 
             if (auction->buyout > budget)
                 continue;
-            affordableSeen = true;
 
             ItemPosCountVec dest;
             if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, order.itemId, auctionCount) != EQUIP_ERR_OK)
@@ -154,11 +125,12 @@ bool GuildOrderBuyAction::Execute(Event& event)
                 best = { auction->Id, auction->itemGuidLow, auction->buyout, auctionCount };
         }
 
-        // No gold or no listings: the rest becomes a farm. Bag room gone
-        // means a partial delivery instead (the farm path reports it).
-        nothingToBuy = !affordableSeen;
-
-        if (best.auctionId)
+        if (!best.auctionId)
+        {
+            // Nothing affordable that fits the bags: farm the rest.
+            visitDone = true;
+        }
+        else
         {
             WorldPacket packet(CMSG_AUCTION_PLACE_BID, 8 + 4 + 4);
             packet << auctioneer->GetObjectGuid() << best.auctionId << best.buyout;
@@ -173,15 +145,45 @@ bool GuildOrderBuyAction::Execute(Event& event)
             std::ostringstream out;
             out << (bought ? "Bought " : "Could not buy ") << best.count << "x ";
             out << (proto ? proto->Name1 : "item #" + std::to_string(order.itemId));
-            out << (bought ? " from AH for guild order (" : " from AH for guild order; core rejected purchase (")
-                << (best.buyout / 10000) << "g)";
+            if (bought)
+            {
+                SET_AI_VALUE2(int, "manual int", "order buy failed bid", 0);
+                out << " from AH for guild order (" << (best.buyout / 10000) << "g)";
+            }
+            else
+            {
+                // A failed bid is never retried: the listing is gone or the
+                // core refused it, so the rest becomes a farm.
+                SET_AI_VALUE2(int, "manual int", "order buy failed bid", (int)best.auctionId);
+                visitDone = true;
+                out << " from AH for guild order; core rejected purchase (" << (best.buyout / 10000) << "g)";
+            }
             ai->TellPlayerNoFacing(GetMaster(), out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         }
     }
 
-    sRandomBotFacade.m_ahActionMutex.unlock();
+    ahLock.unlock();
 
-    if (nothingToBuy)
-        TortoiseBots::GuildOrders::NoteFarmRest(bot->GetGUIDLow());
+    if (bought)
+    {
+        std::optional<TortoiseBots::GuildOrders::OrderRecord> after =
+            TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+        uint32 deliveredAfter = (after && after->itemId == order.itemId) ? after->delivered : 0;
+        if (!BuyStillMissing(order.amount, BuyOwnedCount(deliveredAfter,
+                ai->GetInventoryItemsCountWithId(order.itemId), OrderMailboxItems(bot, order.itemId))))
+            visitDone = true;
+    }
+
+    if (visitDone)
+    {
+        if (!bought)
+            TortoiseBots::GuildOrders::NoteFarmRest(bot->GetGUIDLow());
+        TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
+        if (!ai->HasActivePlayerMaster() && target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK)
+        {
+            sTravelMgr.SetNullTravelTarget(target);
+            RESET_AI_VALUE(bool, "travel target active");
+        }
+    }
     return bought;
 }

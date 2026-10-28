@@ -14,6 +14,5 @@ namespace ai
 
     private:
         Unit* FindNearbyAuctioneer();
-        uint32 CountMailboxItems(uint32 itemId);
     };
 }

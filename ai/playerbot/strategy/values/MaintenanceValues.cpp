@@ -713,8 +713,7 @@ bool ShouldGetMailValue::Calculate() {
 
         int32 waitingInBoxTime = cur_time - (*itr)->deliver_time;
 
-        if (hasBuyOrder && (*itr)->has_items && (*itr)->stationery == MAIL_STATIONERY_AUCTION &&
-            waitingInBoxTime > MINUTE)
+        if (hasBuyOrder && (*itr)->has_items && (*itr)->stationery == MAIL_STATIONERY_AUCTION)
         {
             return true;
         }

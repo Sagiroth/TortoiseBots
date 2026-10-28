@@ -53,7 +53,7 @@ void NoteBagsFull(uint32_t botGuidLow);
 // What the bot already delivered into the bank or by mail.
 void AddDelivered(uint32_t botGuidLow, uint32_t count);
 
-// Current progress: delivered plus the count of the item in the bot's bags.
+// Current progress: delivered plus bags plus order items in the mailbox.
 // World thread only (reads the live Player when it is online).
 uint32_t Progress(Player* bot, OrderRecord const& order);
 

@@ -20,6 +20,10 @@
 #include "ObjectMgr.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Player.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Mail/Mail.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "MapNodes/MasterPlayer.h"
 
 #include <ctime>
 #include <mutex>
@@ -263,6 +267,7 @@ public:
         bool botAlive = false;
         bool grouped = false;
         uint32_t bagCount = 0;
+        uint32_t mailboxCount = 0;
         uint32_t workedMs = 0;
         uint32_t nowMs = 0;
     };
@@ -322,17 +327,19 @@ public:
         else
             stored.workedCarryMs = 0;
 
-        // A real rise in bag count seen while online resets the give-up clock.
-        // A login after an offline gap never counts as new items.
+        // A real rise in owned count (bags plus mailbox) seen while online
+        // resets the give-up clock. A login after an offline gap never counts
+        // as new items.
+        uint32_t ownedNow = in.bagCount + in.mailboxCount;
         if (!wasFinished && in.botOnline)
         {
-            if (IsNewItemRise(in.botOnline, stored.sawOnline, in.bagCount, stored.lastBagCount) &&
+            if (IsNewItemRise(in.botOnline, stored.sawOnline, ownedNow, stored.lastOwnedCount) &&
                 record.workedSinceNewItemSec != 0)
             {
                 record.workedSinceNewItemSec = 0;
                 MarkDirtyLocked(stored);
             }
-            stored.lastBagCount = in.bagCount;
+            stored.lastOwnedCount = ownedNow;
             stored.sawOnline = true;
         }
         else if (!in.botOnline)
@@ -342,7 +349,7 @@ public:
         // action walks it there once package 4 lands; until then the state
         // alone marks it delivering).
         if (!wasFinished && record.state == OrderState::Working && record.amount > 0 &&
-            record.delivered + in.bagCount >= record.amount)
+            record.delivered + ownedNow >= record.amount)
         {
             record.state = OrderState::Delivering;
             record.reason = OrderReason::None;
@@ -354,7 +361,7 @@ public:
 
         // Reported progress never drops: offline (or not yet re-seen) bots
         // keep max(delivered, last reported).
-        out.reportedHave = ReportedHave(record.delivered, in.bagCount, in.botOnline, record.reportedHave);
+        out.reportedHave = ReportedHave(record.delivered, ownedNow, in.botOnline, record.reportedHave);
 
         bool stateChanged = !stored.reportSeen || stored.reportState != record.state ||
                             stored.reportReason != record.reason;
@@ -386,7 +393,7 @@ private:
         bool dirty = false;
         uint32_t workedCarryMs = 0;
         uint32_t lastWorkedFlushMs = 0;
-        uint32_t lastBagCount = 0;
+        uint32_t lastOwnedCount = 0;
         bool sawOnline = false;
         bool reportSeen = false;
         OrderState reportState = OrderState::Working;
@@ -478,6 +485,35 @@ std::string BotName(uint32_t botGuidLow)
     return "?";
 }
 
+// Bought AH items arrive by mail: progress counts delivered plus bags plus
+// the order items waiting in the mailbox. World thread only, called from
+// Update and Progress where the live Player is already at hand.
+uint32_t MailboxItems(Player* bot, uint32_t itemId)
+{
+    if (!bot || !bot->GetSession() || !itemId)
+        return 0;
+    MasterPlayer* master = bot->GetSession()->GetMasterPlayer();
+    if (!master)
+        return 0;
+    uint32_t count = 0;
+    time_t curTime = time(nullptr);
+    for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
+    {
+        Mail* mail = *itr;
+        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
+            continue;
+        if (!mail->has_items)
+            continue;
+        for (MailItemInfoVec::const_iterator itemItr = mail->items.begin(); itemItr != mail->items.end(); ++itemItr)
+            if (itemItr->item_template == itemId)
+            {
+                Item* mailItem = master->GetMItem(itemItr->item_guid);
+                count += mailItem ? mailItem->GetCount() : 1;
+            }
+    }
+    return count;
+}
+
 void SendOrderLine(OrderRecord const& order, uint32_t have)
 {
     Player* giver = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.giverGuidLow));
@@ -547,7 +583,7 @@ uint32_t Progress(Player* bot, OrderRecord const& order)
 {
     uint32_t have = order.delivered;
     if (bot && bot->IsInWorld() && order.itemId)
-        have += bot->GetItemCount(order.itemId);
+        have += bot->GetItemCount(order.itemId) + MailboxItems(bot, order.itemId);
     return have;
 }
 
@@ -588,6 +624,7 @@ void Update(uint32_t diff)
         in.botOnline = online;
         in.botAlive = online && bot->IsAlive();
         in.bagCount = online && snapshot.itemId ? bot->GetItemCount(snapshot.itemId) : 0;
+        in.mailboxCount = online && snapshot.itemId ? MailboxItems(bot, snapshot.itemId) : 0;
         in.workedMs = diff;
         in.nowMs = now;
         if (online)
