@@ -33,7 +33,7 @@ bool GuildCraftOrderAction::Execute(Event& event)
     if (!order.IsCraftOrder())
         return false;
 
-    uint32 itemId = GuildOrderValue::FindItemByName(order.target);
+    uint32 itemId = order.itemId ? order.itemId : GuildOrderValue::FindItemByName(order.target);
     if (!itemId)
     {
         ai->TellDebug(ai->GetMaster(), "Guild craft order: item not found: " + order.target, "debug travel");
@@ -103,7 +103,7 @@ bool GuildCraftOrderAction::isUseful()
     if (!order.IsCraftOrder())
         return false;
 
-    uint32 itemId = GuildOrderValue::FindItemByName(order.target);
+    uint32 itemId = order.itemId ? order.itemId : GuildOrderValue::FindItemByName(order.target);
     if (!itemId)
         return false;
 

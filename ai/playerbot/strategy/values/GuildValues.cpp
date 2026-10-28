@@ -6,6 +6,7 @@
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/ServerFacade.h"
+#include "runtime/GuildOrderStore.h"
 #include "Guild/GuildMgr.h"
 
 using namespace ai;
@@ -313,6 +314,31 @@ GuildOrder GuildOrderValue::Calculate()
     if (!bot->GetGuildId())
         return order;
 
+    // `.bot order` first: one stored order per bot, by item id.
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> stored =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (stored && stored->guildId == bot->GetGuildId() &&
+        !TortoiseBots::GuildOrders::IsFinished(stored->state))
+    {
+        switch (stored->type)
+        {
+            case TortoiseBots::GuildOrders::OrderType::Farm:
+                order.type = GuildOrderType::Farm;
+                break;
+            case TortoiseBots::GuildOrders::OrderType::Buy:
+                order.type = GuildOrderType::AuctionHouse;
+                break;
+            case TortoiseBots::GuildOrders::OrderType::Craft:
+                order.type = GuildOrderType::Craft;
+                break;
+        }
+        order.itemId = stored->itemId;
+        order.amount = stored->amount;
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(stored->itemId);
+        order.target = proto ? proto->Name1 : std::to_string(stored->itemId);
+        return order;
+    }
+
     Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
     if (!guild)
         return order;
@@ -322,15 +348,6 @@ GuildOrder GuildOrderValue::Calculate()
         return order;
 
     std::string note = member->OfficerNote;
-
-    if (!note.empty())
-    {
-        std::string lower = note;
-        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
-        std::string trimmed = TrimWhitespace(lower);
-        if (trimmed == "skip order")
-            return order;
-    }
 
     if (note.empty())
     {
@@ -1136,7 +1153,7 @@ std::vector<uint32> NeedsProfessionReagentsValue::GetMissingReagents(PlayerbotAI
 
     if (order.IsValid())
     {
-        uint32 orderItemId = GuildOrderValue::FindItemByName(order.target);
+        uint32 orderItemId = order.itemId ? order.itemId : GuildOrderValue::FindItemByName(order.target);
 
         if (order.IsCraftOrder())
         {

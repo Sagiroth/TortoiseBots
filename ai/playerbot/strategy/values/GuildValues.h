@@ -20,10 +20,10 @@ namespace ai
     {
         GuildOrderType type = GuildOrderType::None;
         std::string target;
+        uint32 itemId = 0; // `.bot order` item entry; 0 for legacy note/share orders
         uint32 amount = 0; // Used for Craft and Farm orders
         uint32 questId = 0;
         uint32 rewardItemId = 0;
-
         bool IsValid() const { return type != GuildOrderType::None && !target.empty(); }
         bool IsTravelOrder() const { return type == GuildOrderType::Farm || type == GuildOrderType::Kill || type == GuildOrderType::Explore || type == GuildOrderType::AuctionHouse || type == GuildOrderType::QuestReward; }
         bool IsCraftOrder() const { return type == GuildOrderType::Craft; }
@@ -76,10 +76,14 @@ namespace ai
             if (!order.IsTravelOrder())
                 return false;
 
+            // A `.bot order` waits while the bot is grouped with a player.
+            if (order.itemId && ai->HasRealPlayerMaster())
+                return false;
+
             // If a Farm order has an amount, check inventory count.
             if (order.type == GuildOrderType::Farm && order.amount > 0)
             {
-                uint32 itemId = GuildOrderValue::FindItemByName(order.target);
+                uint32 itemId = order.itemId ? order.itemId : GuildOrderValue::FindItemByName(order.target);
                 if (itemId)
                 {
                     uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId);
@@ -104,7 +108,14 @@ namespace ai
     public:
         HasGuildCraftOrderValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "has guild craft order", 10) {}
 
-        bool Calculate() override { return AI_VALUE(GuildOrder, "guild order").IsCraftOrder(); }
+        bool Calculate() override
+        {
+            GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+            if (!order.IsCraftOrder())
+                return false;
+            // A `.bot order` waits while the bot is grouped with a player.
+            return !order.itemId || !ai->HasRealPlayerMaster();
+        }
     };
 
     // Returns true if the bot has a QuestReward guild order whose quest is not yet in the quest log.
