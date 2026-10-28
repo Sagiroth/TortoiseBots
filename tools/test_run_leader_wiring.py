@@ -602,6 +602,12 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("f.reachAggro", reach)
         self.assertIn("f.leadReaching", reach)
         self.assertIn("pull->IsCommandActive()", reach)
+        # Only a mob outside the pull target's own pack stops the reach: the target is read first, and each attacker
+        # is counted only when it is not the target and farther from it than kReachPackYd.
+        self.assertIn("ReachAggroCounts(", reach)
+        self.assertIn("attacker != target", reach)
+        self.assertIn("++f.reachAggro", reach)
+        self.assertLess(reach.index("pull->GetTarget()"), reach.index("++f.reachAggro"))
         stop = body(COMMANDS, "void StopLeadReach(", "\n}\n")
         self.assertIn('"pull end"', stop)
         tick = body(COMMANDS, "void TickDungeonRun(", "\n}\n")

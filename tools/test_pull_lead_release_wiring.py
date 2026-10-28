@@ -150,6 +150,7 @@ class FightStartHoldWiring(unittest.TestCase):
         fn = body(PLAYERBOT_AI_CPP, "void PlayerbotAI::StartFightStartHold()")
         self.assertIn("ai::FightStartHoldSkipReason(", fn)
         self.assertIn("kFightStartHoldSeconds", fn)
+        self.assertIn("StartPullWindow(ai::kFightStartHoldSeconds, true, ai::kFightStartMinSeconds, true)", fn)
         self.assertIn("RestampPullWindow(true)", fn)
 
     def test_pack_counts_mobs_beside_the_held_bot(self):

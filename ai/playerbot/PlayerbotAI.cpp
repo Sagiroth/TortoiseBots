@@ -1277,7 +1277,7 @@ void PlayerbotAI::StartFightStartHold()
     const char* skip = ai::FightStartHoldSkipReason(facts);
     if (skip == nullptr)
     {
-        StartPullWindow(ai::kFightStartHoldSeconds, true, 0, true);
+        StartPullWindow(ai::kFightStartHoldSeconds, true, ai::kFightStartMinSeconds, true);
         RestampPullWindow(true);
         sLog.outBasic("[BOT] fight-start-hold open %s", bot->GetName());
     }

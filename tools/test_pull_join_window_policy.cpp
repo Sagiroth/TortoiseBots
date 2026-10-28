@@ -692,6 +692,28 @@ int main()
     }
     std::cout << "  [PASS] fight_start_min_zero_releases_at_once_when_held\n";
 
+    // fight_start_minimum_keeps_tank_first: a fight-start hold keeps the DPS
+    // until its minimum even with the whole pack on the tank (a mob's victim
+    // is the tank from its first swing, when its threat lead is one hit); hit,
+    // tank-low and tank-dead still release at once.
+    {
+        ai::PullLeadFacts f;
+        f.landed = true; f.tankAlive = true;
+        f.packUnits = 2; f.packOnTank = 2;
+        f.minSeconds = ai::kFightStartMinSeconds;
+        f.elapsedSeconds = 1;
+        CHECK(ai::PullLeadReleaseReason(f) == nullptr);
+        f.elapsedSeconds = 2;
+        CHECK(std::string(ai::PullLeadReleaseReason(f)) == "tank-first");
+        f.elapsedSeconds = 1; f.botIsVictim = true;
+        CHECK(std::string(ai::PullLeadReleaseReason(f)) == "hit");
+        f.botIsVictim = false; f.tankLow = true;
+        CHECK(std::string(ai::PullLeadReleaseReason(f)) == "tank-low");
+        f.tankLow = false; f.tankAlive = false;
+        CHECK(std::string(ai::PullLeadReleaseReason(f)) == "tank-dead");
+    }
+    std::cout << "  [PASS] fight_start_minimum_keeps_tank_first\n";
+
     // chain_run_leader_onto_fight_start_takes_the_latest_kind
     {
         // A run-leader pull chained onto a fight-start hold with no Clear

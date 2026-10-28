@@ -120,6 +120,8 @@ namespace ai
 
     constexpr unsigned kPullLeadCapSeconds = 10;   // a lead-keyed window ends this long after the landing at the latest
     constexpr unsigned kFightStartHoldSeconds = 4; // a fight-start hold ends this long after the fight starts at the latest
+    constexpr unsigned kFightStartMinSeconds = 2;  // a fight-start hold keeps the DPS this long before "tank-first" (ta265 r4: the victim flips to the tank on its first swing, its threat lead is one hit)
+    static_assert(kFightStartMinSeconds < kFightStartHoldSeconds, "the minimum must fit in the hold");
     constexpr float kPullLeadPackYd = 30.0f;       // hostiles this close to the tank are "the pack"
     constexpr unsigned kPullLeadPanicHpPct = 60;   // tank below this: release (the kill matters more than the threat)
 

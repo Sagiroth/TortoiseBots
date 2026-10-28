@@ -12012,6 +12012,12 @@ inline bool GuardWalkBackWanted(const Run& r, const Facts& f, const PlanStep& s)
     }
 }
 
+// ta265 r4: a mob within kReachPackYd of the pull target is the target's own pack (the core's assistance radius):
+// its aggro does not stop the tank's reach, so the pullback still brings the pack to the party. One farther away
+// (another camp, the Uldaman sentinel at 15.7 yd) still stops it.
+constexpr float kReachPackYd = 10.0f;
+inline bool ReachAggroCounts(float ydFromPullTarget) { return ydFromPullTarget > kReachPackYd; }
+
 // The tank's reach for a pull stops as soon as a mob has aggro. Uldaman run 4
 // (2026-10-17, sentinel pull 2): the tank kept walking toward the west Relic
 // Hunters to reach its pull target, 15.7 yd from the Sentinel, after the camp
