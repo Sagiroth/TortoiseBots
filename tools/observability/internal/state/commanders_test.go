@@ -423,3 +423,55 @@ func TestCommandersTrailDeathAndRelease(t *testing.T) {
 		t.Fatalf("kinds %q, want 0 d r t", got)
 	}
 }
+
+// The module's live fight window (CombatMonitor) rides in the binding while the bound group fights, so the dashboard can show
+// the fight as it happens; a binding outside a fight carries none, and an older module sends none at all.
+func TestCommandersCarryLiveCombat(t *testing.T) {
+	raw := `{"v":12,"session":3,"seq":1,"ts":50,"type":"COMMANDERS","commanders":[
+{"commander":"Glacienne","online":true,"group":1,"lead":"Ragemeister","bots":[],"orders":[],
+ "combat":{"win_s":10,"fight_ms":23000,"bots":[{"g":814,"dps":120,"hps":0,"c":3,"ls":"Maul"}]}},
+{"commander":"Other","online":true,"group":2,"lead":"X","bots":[],"orders":[]}]}`
+	var p model.CommandersPayload
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestStore(newClock())
+	s.ApplyCommanders(&p)
+	v := s.Commanders().Commanders
+	c := v[0].Combat
+	if c == nil || c.WinS != 10 || c.FightMS != 23000 || len(c.Bots) != 1 ||
+		c.Bots[0].GUID != 814 || c.Bots[0].DPS != 120 || c.Bots[0].HPS != 0 || c.Bots[0].Casts != 3 || c.Bots[0].Last != "Maul" {
+		t.Fatalf("live window lost: %+v", c)
+	}
+	out, _ := json.Marshal(v[0])
+	if !strings.Contains(string(out), `"combat":{"win_s":10,"fight_ms":23000`) {
+		t.Fatalf("live window not in the view: %s", out)
+	}
+	if v[1].Combat != nil {
+		t.Fatalf("a binding outside a fight must carry none: %+v", v[1].Combat)
+	}
+	plain, _ := json.Marshal(v[1])
+	if strings.Contains(string(plain), `"combat"`) {
+		t.Fatalf("no combat field expected: %s", plain)
+	}
+}
+
+// The window is bounded like the bots it carries: a datagram past the bound keeps the first 40, and the caller's own payload is
+// not trimmed (the emitter reuses it).
+func TestCommandersCapLiveCombatBots(t *testing.T) {
+	p := commandersPayload(1, 1, "A")
+	win := &model.CommanderCombat{WinS: 10, FightMS: 5000}
+	for i := 0; i < maxCommanderBots+5; i++ {
+		win.Bots = append(win.Bots, model.CommanderCombatBot{GUID: uint32(i + 1)})
+	}
+	p.Commanders[0].Combat = win
+	s := newTestStore(newClock())
+	s.ApplyCommanders(p)
+	c := s.Commanders().Commanders[0].Combat
+	if c == nil || len(c.Bots) != maxCommanderBots || c.Bots[maxCommanderBots-1].GUID != maxCommanderBots {
+		t.Fatalf("window bots not capped: %+v", c)
+	}
+	if len(p.Commanders[0].Combat.Bots) != maxCommanderBots+5 {
+		t.Fatalf("the caller's payload must not be trimmed: %d", len(p.Commanders[0].Combat.Bots))
+	}
+}

@@ -135,6 +135,11 @@ func (s *Store) ApplyCommanders(p *model.CommandersPayload) bool {
 		if len(b.Objects) > maxCommanderObjects {
 			b.Objects = b.Objects[:maxCommanderObjects]
 		}
+		if b.Combat != nil && len(b.Combat.Bots) > maxCommanderBots {
+			combat := *b.Combat // a copy: the payload's own struct is not changed
+			combat.Bots = combat.Bots[:maxCommanderBots]
+			b.Combat = &combat
+		}
 		if b.Run != nil && len(b.Run.PlanSteps) > maxCommanderSteps {
 			run := *b.Run // a copy: the payload's own struct is not changed
 			run.PlanSteps = run.PlanSteps[:maxCommanderSteps]

@@ -78,6 +78,7 @@
 - The dashboard's raid card now names the raid's layout in one row: the main tank, the off-tanks, which healer follows which tank, and the raid healers. The run line also names the current step in its own words, from the plan.
 - Every Commanders card can switch to a Fight debugger: finished fights in a rail with the worst one opened first, plain-language checks (tank deaths, the main tank's Sunder rate, missed debuffs, overheal, idle bots, off-tank taunts, server rule warnings), a damage timeline with death recaps and skulls on the map, raid frames and per-role tables, plus a live view while the group is fighting.
 - That switch is remembered per commander: Live stays as it was, the debugger opens on the fight that went worst and draws its deaths as skulls on the same map (one click frames a death), and picking a member rings them on the map and opens what they cast.
+- The dashboard now receives a commanders raid's live fight numbers while it fights: each bot's damage, healing, casts and last spell in the last ten seconds, so a fight can be read before it ends.
 
 ## v1.8.0 (2026-10-22)
 
