@@ -175,6 +175,15 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
         return;
     }
 
+    if (debug && guid.IsCreatureOrPet())
+    {
+        if (!creature)
+            ai->TellDebug(ai->GetMaster(), "Creature not found on the bot's map.", "debug loot");
+        else
+            ai->TellDebug(ai->GetMaster(), "Creature is not a corpse (death state " +
+                std::to_string((int)sServerFacade.GetDeathState(creature)) + ").", "debug loot");
+    }
+
     GameObject* go = ai->GetGameObject(guid);
     if (go && sServerFacade.isSpawned(go) && go->getLootState() == GO_READY)
     {
@@ -265,7 +274,7 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
         }
     }
 
-    if (debug && guid && !this->guid)
+    if (debug && guid && !this->guid && guid.IsGameObject())
         ai->TellDebug(ai->GetMaster(), "Go has bad lock.", "debug loot");
 }
 

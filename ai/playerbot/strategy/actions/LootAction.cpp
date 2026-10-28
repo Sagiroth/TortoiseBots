@@ -3,6 +3,7 @@
 #include "../../policy/loot/SkinningLootPolicy.h"
 #include "../../policy/loot/LootWindowPolicy.h"
 #include "../../policy/loot/LootHistoryPolicy.h"
+#include "../../policy/loot/LootSlotRightPolicy.h"
 #include "LootAction.h"
 #include "playerbot/CastKeepsRunningPolicy.h"
 
@@ -681,15 +682,21 @@ bool StoreLootAction::Execute(Event& event)
         if (!proto)
             continue;
 
-        LootItem* lootItem = loot->LootItemInSlot(itemindex, bot->GetGUIDLow());
-
+        QuestItem* qitem = nullptr;
+        QuestItem* ffaitem = nullptr;
+        LootItem* lootItem = loot->LootItemInSlot(itemindex, bot->GetGUIDLow(), &qitem, &ffaitem);
         if (!lootItem)
             continue;
 
-        //have no right to loot
-        if (lootItem->is_blocked || lootItem->GetSlotTypeForSharedLoot(ALL_PERMISSION, bot, loot ? loot->GetLootTarget() : nullptr) == MAX_LOOT_SLOT_TYPE)
+        WorldObject const* lootTarget = loot ? loot->GetLootTarget() : nullptr;
+        bool const personal = qitem || ffaitem;
+        bool const sharedAllowed = !personal &&
+            lootItem->GetSlotTypeForSharedLoot(ALL_PERMISSION, bot, lootTarget) != MAX_LOOT_SLOT_TYPE;
+        if (!ai::BotMayTakeLootSlot(lootItem->AllowedForPlayer(bot, lootTarget), qitem != nullptr, ffaitem != nullptr,
+                lootItem->is_blocked, sharedAllowed))
         {
-            sLog.outDebug("[BOT LOOT] %s: skip item=%u (no right: blocked=%u)", bot->GetName(), itemid, lootItem->is_blocked ? 1 : 0);
+            sLog.outDebug("[BOT LOOT] %s: skip item=%u (no right: blocked=%u quest=%u ffa=%u)", bot->GetName(), itemid,
+                lootItem->is_blocked ? 1 : 0, qitem ? 1 : 0, ffaitem ? 1 : 0);
             continue;
         }
 
