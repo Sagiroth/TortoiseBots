@@ -113,7 +113,7 @@ class PlayerLedGlueWiringTest(unittest.TestCase):
     def test_tick_picks_before_the_facts(self):
         tick = strip_comments(body(COMMANDS, "void TickDungeonRun(uint64 commanderRaw, uint32 dt)\n{", "\n}\n"))
         pick = tick.index("TortoiseBots::PlayerLed::Pick(slot.run, slot.playerLed, anchor, ReadPlayerLedEngaged(commander, bots), pathOk);")
-        self.assertLess(pick, tick.index("ReadRunFacts(slot, lead, bots, facts);"))
+        self.assertLess(pick, tick.index("ReadRunFacts(slot, lead, bots, facts, binding->raid);"))
         self.assertIn("slot.playerLed.pullYd = sPlayerbotAIConfig.dungeonRunPlayerLedPullYd;", tick)
         self.assertIn("anchor = ReadPlayerLedAnchor(commander, bots, slot.run.plan->map, slot.playerLed);", tick)
         self.assertIn("? TortoiseBots::PlayerLed::Tick(slot.run, slot.playerLed, facts, anchor, dt)", tick)

@@ -640,6 +640,7 @@ struct MemberFact
     std::uint32_t attackers = 0; // units attacking it or its living pet (their attacker sets, no scan)
     float x = 0.0f, y = 0.0f, z = 0.0f; // where it stands (the stand-still watch: UpdateStill)
     bool ranged = false;    // a ranged bot or a healer: it stands behind the tank in a hold (HoldStands)
+    bool core = false;      // a tank or a healer (the raid's gather waits for every one of them)
     // With Facts::directJoinRead: the glue's own direct-step test for this bot (the one `cmd move ... direct`
     // refuses too-far on: a complete navmesh path of at most kDirectMaxGatherPath yd onto the lead bot's spot,
     // or within kDirectNearLead yd of it on its floor in its sight, or its own line to the point). Unread: true.
@@ -717,10 +718,9 @@ struct HostileSpot
 
 struct RaidFacts
 {
-    bool on = false;
-    std::uint32_t tanksTotal = 0, tanksDead = 0, healersTotal = 0, healersDead = 0;
-    std::uint32_t aliveWithin = 0;
-    std::uint32_t coreAway = 0;
+    bool on = false;                                                    // a raid binding with AiPlayerbot.DungeonRunRaid
+    std::uint32_t tanksTotal = 0, tanksDead = 0;                        // tanks, and dead tanks (the wipe level)
+    std::uint32_t healersTotal = 0, healersDead = 0;                    // healers, and dead healers (the wipe level)
 };
 
 // What the glue reads once a tick for the run's current step.
@@ -13027,7 +13027,19 @@ inline bool WipeLevel(const Facts& f, std::uint32_t dead)
 inline bool PartyGathered(const Facts& f)
 {
     if (f.raid.on)
-        return RaidLayout::RaidGathered(f.alive, f.raid.aliveWithin, f.raid.coreAway);
+    {
+        // The members left after HoldView: a held bot neither counts nor holds the gather.
+        std::uint32_t alive = 0, within = 0, coreAway = 0;
+        for (const MemberFact& m : f.members)
+        {
+            ++alive;
+            if (m.yd <= RaidLayout::kRaidGatherYd)
+                ++within;
+            else if (m.core)
+                ++coreAway;
+        }
+        return RaidLayout::RaidGathered(alive, within, coreAway);
+    }
     return f.maxMemberYd <= kGatherYd;
 }
 

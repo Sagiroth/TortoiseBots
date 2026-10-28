@@ -37,9 +37,11 @@ class RaidRunWiringTest(unittest.TestCase):
     def test_read_run_facts_reads_the_raid(self):
         glue = body_from(SRC, "void ReadRunFacts(")
         self.assertIn("f.raid.on = true;", glue)
-        self.assertIn("RaidLayout::kRaidGatherYd", glue)
         self.assertIn("RaidLayout::RestFloor(", glue)
-        self.assertIn("binding->raid", glue)
+        self.assertIn("member.core = isTank || isHeal;", glue)
+        tick = strip_comments(COMMANDS)
+        self.assertIn("ReadRunFacts(slot, lead, bots, facts, binding->raid);", tick)
+        self.assertIn("ReadRunFacts(slot, holdLead, holdBots, holdFacts, binding->raid);", tick)
 
     def test_party_rules_use_the_raid_helpers(self):
         for old in ("f.dead < kWipeDead", "f.dead >= kWipeDead", "partyDead >= kWipeDead",

@@ -8066,7 +8066,7 @@ std::vector<TortoiseBots::DungeonRun::DoorFact> const& InstanceDoors(uint32 mapI
 static void ReadRunNeedFacts(DungeonRunSlot const& slot, Player* lead, TortoiseBots::DungeonRun::Facts& f);
 
 void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
-    TortoiseBots::DungeonRun::Facts& f)
+    TortoiseBots::DungeonRun::Facts& f, bool raid)
 {
     using namespace TortoiseBots::DungeonRun;
     f = Facts();
@@ -8166,17 +8166,17 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.directJoinSupported = true; // a direct order waits a tick for the read (DungeonRun::HoldForDirectJoin)
     f.directJoinRead = joinWanted;
     // Task A5: a raid binding with AiPlayerbot.DungeonRunRaid scales the run's gather, wipe level and rest floor.
-    // The slot's binding: one binding per group (BindingTable::Bind), read off the lead bot's group.
-    if (Group* leadGroup = lead->GetGroup())
-        if (RemoteCommander::Binding const* binding = CommanderBindings().FindByGroup(leadGroup->GetId()))
-            if (binding->raid && sPlayerbotAIConfig.dungeonRunRaid)
-                f.raid.on = true;
+    if (raid && sPlayerbotAIConfig.dungeonRunRaid)
+        f.raid.on = true;
     std::vector<uint32> raidHealths, raidManas; // every living bot's health, non-healer mana (the raid's rest floor)
     for (Player* bot : bots)
     {
-        ++f.total;
-        bool const isTank = PlayerbotAI::IsTank(bot);
-        bool const isHeal = !isTank && PlayerbotAI::IsHeal(bot);
+        bool isTank = false, isHeal = false;
+        if (f.raid.on)
+        {
+            isTank = PlayerbotAI::IsTank(bot);
+            isHeal = !isTank && PlayerbotAI::IsHeal(bot);
+        }
         if (f.raid.on)
         {
             if (isTank)
@@ -8203,19 +8203,13 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             f.anyInCombat = true;
         float const yd = bot == lead ? 0.0f : bot->GetMap() == lead->GetMap() ? bot->GetDistance(lead) : 1000.0f;
         f.maxMemberYd = std::max(f.maxMemberYd, yd);
-        if (f.raid.on)
-        {
-            if (yd <= TortoiseBots::RaidLayout::kRaidGatherYd)
-                ++f.raid.aliveWithin; // the lead bot is at 0 yd: it counts
-            else if (isTank || isHeal)
-                ++f.raid.coreAway;
-        }
         // By name: a gather's straggler is summoned (DungeonRun::SummonStraggler),
         // and its crowd control is ordered by name (DungeonRun::PickCcOrder):
         // a mage that knows Polymorph, a priest, warlock or rogue by KnownRunCc.
         MemberFact member;
         member.name = bot->GetName();
         member.yd = yd;
+        member.core = isTank || isHeal; // the raid's gather (the glue reads roles on raid ticks only)
         member.offPlanMap = bot->GetMapId() != slot.run.plan->map; // outside the instance (DungeonRun::PlanMapFightView)
         // Round 1 (2026-10-24): a return teleport can reach the bot only in the open world: not in a battleground,
         // its map no instance/dungeon/battleground (Map::Instanceable on the core's map entry), not on a transport,
@@ -9567,7 +9561,7 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
         {
             TortoiseBots::DungeonRun::Facts holdFacts;
             std::vector<Player*> const holdBots = CommandedBots(holdLead->GetGroup(), holdLead);
-            ReadRunFacts(slot, holdLead, holdBots, holdFacts);
+            ReadRunFacts(slot, holdLead, holdBots, holdFacts, binding->raid);
             ReadRunPlayers(slot, commanderRaw, holdLead, holdLead->GetGroup(), holdBots, holdFacts);
             TortoiseBots::DungeonRun::ApplyPlayerFacts(holdFacts);
             if (TortoiseBots::DungeonRun::PlayerHoldBackWhilePaused(slot.run, holdFacts, dt))
@@ -9636,7 +9630,7 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
     }
     RetireLostCarrier(slot, lead, bots);
     TortoiseBots::DungeonRun::Facts facts;
-    ReadRunFacts(slot, lead, bots, facts);
+    ReadRunFacts(slot, lead, bots, facts, binding->raid);
     // The tactic rows the server reads now (a reload may have swapped them under this run's old plan): the deferral
     // gate reads them beside the plan's own (DungeonRun::PullMayBeDeferred), in the tick and in the stand's answer below.
     slot.run.liveTactics = &ai::GetBossTactics();

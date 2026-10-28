@@ -338,7 +338,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("slot.taskReply = 0;", retire)
         tick = body(COMMANDS, "void TickDungeonRun(uint64 commanderRaw, uint32 dt)", "\n}\n")
         self.assertIn("RetireLostCarrier(slot, lead, bots);\n    TortoiseBots::DungeonRun::Facts facts;\n"
-                      "    ReadRunFacts(slot, lead, bots, facts);", tick)
+                      "    ReadRunFacts(slot, lead, bots, facts, binding->raid);", tick)
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
         retire_order = body(policy, "inline void RetireOrder(Run& r)", "\n}\n")
         self.assertIn("r.orderSent = false;", retire_order)

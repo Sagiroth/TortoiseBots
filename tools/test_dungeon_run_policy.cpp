@@ -21801,15 +21801,25 @@ static void TestRefusedFiringPositionNeverLoops()
 // Task A5: raid rules. A raid of 20 (raid.on) scales the wipe level to 40 %
 // (WipeDead = 8), gathers 90 % within kRaidGatherYd, and waits for wipes only
 // at that level; the few dead are revived before the pull as in a party.
-static Facts Raid(float maxYd = 0.0f)
+// Members carry the gather: one entry per living bot (the raid's gather counts
+// them after HoldView, held bots already left out).
+static Facts Raid(float maxYd = 0.0f, std::uint32_t count = 20, std::uint32_t far = 0, bool farCore = false)
 {
     Facts f = Party(0);
-    f.total = 20;
-    f.alive = 20;
+    f.total = count;
+    f.alive = count;
     f.raid.on = true;
     f.raid.tanksTotal = 3;
     f.raid.healersTotal = 5;
     f.maxMemberYd = maxYd;
+    for (std::uint32_t i = 0; i < count; ++i)
+    {
+        MemberFact m = Mem("Bot" + std::to_string(i), i < far ? maxYd : 0.0f);
+        m.core = i < 8; // the first eight are tanks and healers
+        if (i < far)
+            m.core = farCore;
+        f.members.push_back(m);
+    }
     return f;
 }
 
@@ -21834,16 +21844,12 @@ static void TestRaidWipeLevel()
 
 static void TestRaidGathered()
 {
-    Facts f = Raid();
-    f.raid.aliveWithin = 18;
-    f.raid.coreAway = 0;
-    f.maxMemberYd = 45;
-    CHECK(PartyGathered(f));
-    f.raid.aliveWithin = 17;
-    CHECK(!PartyGathered(f));
-    f.raid.aliveWithin = 18;
-    f.raid.coreAway = 1;
-    CHECK(!PartyGathered(f));
+    // 19 of 20 within 30 yd, none of them core: gathered, though one bot is 45 yd out.
+    CHECK(PartyGathered(Raid(45.0f, 20, 1, false)));
+    // ... but one straggler too many (only 17 of 20 within): not gathered.
+    CHECK(!PartyGathered(Raid(45.0f, 20, 3, false)));
+    // ... and the far bot being a tank holds the gather whatever the count.
+    CHECK(!PartyGathered(Raid(45.0f, 20, 1, true)));
     Facts party = Party(0);
     party.maxMemberYd = 21;
     CHECK(!PartyGathered(party));
@@ -21855,10 +21861,9 @@ static void TestRaidPullGateNotHeldByOneStraggler()
 {
     DungeonPlan plan;
     plan.steps = {PullStep(40, {4851, 4852})};
-    Facts f = Raid(45);
+    Facts f = Raid(45.0f, 20, 1, false);
     f.seen = true;
     f.units = {Unit(11, 4851, 45), Unit(12, 4852, 38)};
-    f.raid.aliveWithin = 19;
     Run r = Start(&plan);
     CHECK(Tick(r, f) == "pullback 12");
     CHECK(r.phase != Phase::Gather);
@@ -21871,14 +21876,27 @@ static void TestRaidPullGateNotHeldByOneStraggler()
     CHECK(q.phase == Phase::Gather);
 }
 
+static Facts RaidDead(std::uint32_t dead)
+{
+    Facts f = Raid();
+    f.dead = dead;
+    f.alive = 20 - dead;
+    f.members.clear();
+    for (std::uint32_t i = 0; i < f.alive; ++i)
+    {
+        MemberFact m = Mem("Bot" + std::to_string(i), 0.0f);
+        m.core = i < 8;
+        f.members.push_back(m);
+    }
+    return f;
+}
+
 static void TestRaidRegroupWaitsForWipeLevel()
 {
     DungeonPlan plan;
     plan.steps = {Step(PlanStepKind::Move, 40)};
     // Four dead after a fight: no wipe regroup by itself (the wipe level is 8).
-    Facts f = Raid();
-    f.dead = 4;
-    f.alive = 16;
+    Facts f = RaidDead(4);
     Run r = Start(&plan);
     f.anyInCombat = true;
     CHECK(Tick(r, f).empty());
@@ -21889,24 +21907,216 @@ static void TestRaidRegroupWaitsForWipeLevel()
     // ... but the few dead still hold the next pull until they are back.
     DungeonPlan pullPlan;
     pullPlan.steps = {PullStep(40, {4851})};
-    Facts pull = Raid();
-    pull.dead = 4;
-    pull.alive = 16;
+    Facts pull = RaidDead(4);
     pull.seen = true;
     pull.units = {Unit(11, 4851, 38)};
     Run pr = Start(&pullPlan);
     CHECK(Tick(pr, pull).empty());
     CHECK(pr.phase != Phase::AwaitPull);
     // Eight dead are a wipe: the run regroups by itself.
-    Facts w = Raid();
-    w.dead = 8;
-    w.alive = 12;
+    Facts w = RaidDead(8);
     Run wr = Start(&plan);
     w.anyInCombat = true;
     CHECK(Tick(wr, w).empty());
     w.anyInCombat = false;
     Tick(wr, w);
     CHECK(wr.state == State::Running && wr.regroup && wr.autoRegroups == 1);
+}
+
+// M1: a raid never pulls back at two dead (the retreat is a party rule): in a
+// losing fight with 2 dead, 18 alive and the lead bot up, no retreat goes out.
+static void TestRaidNoRetreatAtTwoDead()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(40, {4851})};
+    Facts f = RaidDead(2);
+    f.retreatAt2Dead = true;
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {HpUnit(0xF130001836000001ull, 4851, 500, 1000)};
+    f.leadX = 10.0f; // 10 yd off the last stand: close enough to pull back to
+    Run r = Start(&plan);
+    r.anchorKnown = true;
+    for (std::uint32_t t = 0; t <= kRetreatQuietMs + 2 * kTickMs; t += kTickMs)
+        Tick(r, f);
+    CHECK(FightBeingLost(r));
+    CHECK(!r.retreatOn && r.retreatMs == 0);
+}
+
+// M3: the raid's near-wipe latch follows the wipe level (8 dead): 4 dead count
+// nothing, 8 dead count one near wipe.
+static void TestRaidNearWipeLatch()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    Run r = Start(&plan);
+    Facts four = RaidDead(4);
+    Tick(r, four);
+    CHECK(r.nearWipes == 0 && !r.nearWiped);
+    Facts eight = RaidDead(8);
+    Tick(r, eight);
+    CHECK(r.nearWipes == 1 && r.nearWiped);
+    Tick(r, eight);
+    CHECK(r.nearWipes == 1);
+    Tick(r, four);
+    CHECK(!r.nearWiped);
+}
+
+// M2: the raid's regroup restart compares against the raid's wipe level (the
+// mutation under test puts it back on the party rule): with 4 dead the fallen
+// wait regroups (revive and gather) instead of handing over to the regroup by
+// itself, and one more death out of combat keeps that regroup (regroupDead
+// stays 4) instead of restarting it.
+static void TestRaidRegroupNotRestartedByOneMoreDeath()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    Facts four = RaidDead(4);
+    Run r = Start(&plan);
+    four.anyInCombat = true;
+    Tick(r, four);
+    four.anyInCombat = false;
+    Tick(r, four);
+    Tick(r, four);
+    CHECK(r.regroup && r.regroupDead == 4);
+    Facts five = RaidDead(5);
+    Tick(r, five);
+    CHECK(r.regroup && r.regroupDead == 4);
+}
+
+// M5: a raid regroup's gather ends with 19 of 20 within 30 yd (the far bot is
+// not held against the raid): the regroup ends and the walk back starts.
+static void TestRaidRegroupGatherDone()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40), Step(PlanStepKind::Move, 90)};
+    Run r = Start(&plan);
+    Facts w = RaidDead(8);
+    w.anyInCombat = true;
+    Tick(r, w);
+    w.anyInCombat = false;
+    Tick(r, w);
+    CHECK(r.regroup);
+    Facts g = Raid(45.0f, 20, 1, false);
+    g.dead = 0;
+    g.alive = 20;
+    Tick(r, g);
+    CHECK(!r.regroup);
+}
+
+// M7: the cc regather ends the same way: one far bot does not hold it.
+static void TestRaidCcRegatherDone()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    Run r = Start(&plan);
+    Facts g = Raid(45.0f, 20, 1, false);
+    r.ccRegather = true;
+    std::string order;
+    CHECK(!SapWait(r, g, kTickMs, order) && order.empty() && !r.ccRegather);
+}
+
+// M4: a member with attackers runs back with 4 dead in a raid (below the wipe
+// level of 8), but not with 8 dead.
+static void TestRaidRunBackBelowWipeLevel()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    auto raid = [&](int alive, int dead)
+    {
+        Facts f;
+        f.total = 20;
+        f.alive = alive;
+        f.dead = dead;
+        f.raid.on = true;
+        f.raid.tanksTotal = 3;
+        f.raid.healersTotal = 5;
+        f.carrier = "Tanky";
+        f.leadAlive = true;
+        for (int i = 0; i < alive; ++i)
+        {
+            MemberFact m = Mem("Bot" + std::to_string(i), 50.0f);
+            m.core = i < 8;
+            m.attackers = (i == 1) ? 1 : 0;
+            f.members.push_back(m);
+        }
+        return f;
+    };
+    Run r = Start(&plan);
+    r.phase = Phase::Gather;
+    CHECK(RunBack(r, raid(16, 4), kTickMs) && r.runBack.size() == 1);
+    Run q = Start(&plan);
+    q.phase = Phase::Gather;
+    CHECK(!RunBack(q, raid(12, 8), kTickMs) && q.runBack.empty());
+}
+
+// HIGH: a raid regroup that holds bots at the fight spot gathers from the rest:
+// the far held bots neither count nor hold the gather, so it ends and the run
+// walks back.
+static void TestRaidHoldRegroupGathers()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    Facts f;
+    f.total = 20;
+    f.alive = 20;
+    f.raid.on = true;
+    f.raid.tanksTotal = 3;
+    f.raid.healersTotal = 5;
+    f.carrier = "Tanky";
+    f.leadX = 210.0f;
+    f.seen = true;
+    for (int i = 0; i < 20; ++i)
+    {
+        MemberFact m = Mem("Bot" + std::to_string(i), 0.0f);
+        m.core = i < 8;
+        f.members.push_back(m);
+    }
+    f.anyInCombat = true;
+    Tick(r, f);
+    f.leadAlive = false;
+    f.dead = 8;
+    f.alive = 12;
+    f.deadNames = {"Bot0", "Bot1", "Bot2", "Bot3", "Bot4", "Bot5", "Bot6", "Bot7"};
+    f.members.clear();
+    for (int i = 8; i < 20; ++i)
+    {
+        MemberFact m = Mem("Bot" + std::to_string(i), 5.0f);
+        m.x = 215.0f;
+        m.core = false;
+        f.members.push_back(m);
+    }
+    Tick(r, f);
+    f.anyInCombat = false;
+    Tick(r, f);
+    CHECK(r.regroup && r.holdDue);
+    // The lead bot up at the entrance, 300 yd from where it fell: the four far
+    // bots at the fight spot hold, and the gather sees only the rest.
+    Facts h;
+    h.total = 20;
+    h.alive = 20;
+    h.raid.on = true;
+    h.raid.tanksTotal = 3;
+    h.raid.healersTotal = 5;
+    h.carrier = "Tanky";
+    h.leadAlive = true;
+    h.leadX = -90.0f;
+    for (int i = 0; i < 20; ++i)
+    {
+        bool const far = i < 4;
+        MemberFact m = Mem("Bot" + std::to_string(i), far ? 305.0f : 0.0f);
+        m.x = far ? 215.0f : -90.0f;
+        m.core = !far && i < 12;
+        h.members.push_back(m);
+    }
+    h.maxMemberYd = 305.0f;
+    Tick(r, h);
+    CHECK(r.hold.size() == 4);
+    CHECK(PartyGathered(HoldView(r, h)));
+    Tick(r, h);
+    CHECK(!r.regroup && (r.walkBack || r.walkBackDue));
 }
 
 static void TestPartyRulesUnchanged()
@@ -22480,6 +22690,13 @@ int main()
     TestRaidGathered();
     TestRaidPullGateNotHeldByOneStraggler();
     TestRaidRegroupWaitsForWipeLevel();
+    TestRaidNoRetreatAtTwoDead();
+    TestRaidNearWipeLatch();
+    TestRaidRegroupNotRestartedByOneMoreDeath();
+    TestRaidRegroupGatherDone();
+    TestRaidCcRegatherDone();
+    TestRaidRunBackBelowWipeLevel();
+    TestRaidHoldRegroupGathers();
     TestPartyRulesUnchanged();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;
