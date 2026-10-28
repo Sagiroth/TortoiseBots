@@ -29,7 +29,7 @@ GuildOrder GuildOrderValue::Calculate()
             order.type = GuildOrderType::Farm;
             break;
         case TortoiseBots::GuildOrders::OrderType::Buy:
-            order.type = GuildOrderType::AuctionHouse;
+            order.type = stored->farmRest ? GuildOrderType::Farm : GuildOrderType::AuctionHouse;
             break;
         case TortoiseBots::GuildOrders::OrderType::Craft:
             order.type = GuildOrderType::Craft;

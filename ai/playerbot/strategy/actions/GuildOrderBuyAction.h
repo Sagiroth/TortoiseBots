@@ -4,17 +4,16 @@
 
 namespace ai
 {
-    class GuildShareAhBuyAction : public Action
+    class GuildOrderBuyAction : public Action
     {
     public:
-        GuildShareAhBuyAction(PlayerbotAI* ai) : Action(ai, "guild ah buy") {}
+        GuildOrderBuyAction(PlayerbotAI* ai) : Action(ai, "guild order buy") {}
 
         bool Execute(Event& event) override;
         bool isUseful() override;
 
     private:
         Unit* FindNearbyAuctioneer();
-        std::map<uint32, uint32> GetNeededItems();
         uint32 CountMailboxItems(uint32 itemId);
     };
 }

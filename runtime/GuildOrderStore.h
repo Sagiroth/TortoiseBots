@@ -40,6 +40,10 @@ void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance);
 // Change state and reason (the next Update reports it to the giver).
 void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason);
 
+// The buy order's auction attempt is over (no gold, no listings): farm what
+// is still missing. Keeps type Buy; GuildOrderValue maps it to Farm.
+void NoteFarmRest(uint32_t botGuidLow);
+
 // The bot died while the order ran. Only deaths in Working count.
 void NoteDeath(uint32_t botGuidLow);
 

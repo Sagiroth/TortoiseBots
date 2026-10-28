@@ -57,7 +57,7 @@ public:
         std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
             "SELECT `bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `delivered`, "
             "`state`, `reason`, `farm_zone`, `farm_chance`, `moved_zone`, `deaths`, `worked_sec`, "
-            "`reported`, `created_at`, `updated_at` FROM `tortoise_bots_guild_order`"));
+            "`reported`, `farm_rest`, `created_at`, `updated_at` FROM `tortoise_bots_guild_order`"));
 
         if (result)
         {
@@ -80,8 +80,9 @@ public:
                 record.deaths = fields[12].GetUInt32();
                 record.workedSinceNewItemSec = fields[13].GetUInt32();
                 record.reportedHave = fields[14].GetUInt32();
-                record.createdAt = fields[15].GetUInt64();
-                record.updatedAt = fields[16].GetUInt64();
+                record.farmRest = fields[15].GetUInt32() != 0;
+                record.createdAt = fields[16].GetUInt64();
+                record.updatedAt = fields[17].GetUInt64();
 
                 if (record.botGuidLow && record.itemId && record.amount)
                     m_orders[record.botGuidLow] = Stored{record};
@@ -134,15 +135,15 @@ public:
                 "REPLACE INTO `tortoise_bots_guild_order` "
                 "(`bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `delivered`, "
                 "`state`, `reason`, `farm_zone`, `farm_chance`, `moved_zone`, `deaths`, `worked_sec`, "
-                "`reported`, `created_at`, `updated_at`) "
+                "`reported`, `farm_rest`, `created_at`, `updated_at`) "
                 "VALUES ('%u', '%u', '%u', '%s', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
-                "'%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
+                "'%u', '%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
                 record.botGuidLow, record.guildId, record.giverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.delivered, StateToken(record.state),
                 ReasonToken(record.reason), record.farmZoneId, record.farmChance,
                 record.movedZone ? 1u : 0u, record.deaths, record.workedSinceNewItemSec,
-                record.reportedHave, static_cast<uint32_t>(record.createdAt),
-                static_cast<uint32_t>(record.updatedAt)))
+                record.reportedHave, record.farmRest ? 1u : 0u,
+                static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt)))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
@@ -203,6 +204,20 @@ public:
             return;
         ++it->second.record.deaths;
         ApplyGiveUpLocked(it->second);
+        MarkDirtyLocked(it->second);
+    }
+
+    void NoteFarmRest(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || IsFinished(it->second.record.state))
+            return;
+        if (it->second.record.type != OrderType::Buy || it->second.record.farmRest)
+            return;
+        it->second.record.farmRest = true;
+        it->second.record.farmZoneId = 0;
+        it->second.record.farmChance = 0;
         MarkDirtyLocked(it->second);
     }
 
@@ -323,8 +338,9 @@ public:
         else if (!in.botOnline)
             stored.sawOnline = false;
 
-        // Amount reached: the bot heads for the guild bank (package 4 walks
-        // it there; until then the state alone marks it delivering).
+        // Amount reached: the bot heads for the guild bank (the delivery
+        // action walks it there once package 4 lands; until then the state
+        // alone marks it delivering).
         if (!wasFinished && record.state == OrderState::Working && record.amount > 0 &&
             record.delivered + in.bagCount >= record.amount)
         {
@@ -424,11 +440,12 @@ private:
         CharacterDatabase.PExecute(
             "UPDATE `tortoise_bots_guild_order` SET `delivered` = '%u', `state` = '%s', `reason` = '%s', "
             "`farm_zone` = '%u', `farm_chance` = '%u', `moved_zone` = '%u', `deaths` = '%u', "
-            "`worked_sec` = '%u', `reported` = '%u', `updated_at` = FROM_UNIXTIME('%u') "
+            "`worked_sec` = '%u', `reported` = '%u', `farm_rest` = '%u', "
+            "`updated_at` = FROM_UNIXTIME('%u') "
             "WHERE `bot_guid` = '%u'",
             record.delivered, StateToken(record.state), ReasonToken(record.reason), record.farmZoneId,
             record.farmChance, record.movedZone ? 1u : 0u, record.deaths,
-            record.workedSinceNewItemSec, record.reportedHave,
+            record.workedSinceNewItemSec, record.reportedHave, record.farmRest ? 1u : 0u,
             static_cast<uint32_t>(record.updatedAt), record.botGuidLow);
     }
 
@@ -504,6 +521,11 @@ void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance)
 void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason)
 {
     OrderStore::Instance().SetState(botGuidLow, state, reason);
+}
+
+void NoteFarmRest(uint32_t botGuidLow)
+{
+    OrderStore::Instance().NoteFarmRest(botGuidLow);
 }
 
 void NoteDeath(uint32_t botGuidLow)
