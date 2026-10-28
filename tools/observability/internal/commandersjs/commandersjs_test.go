@@ -129,3 +129,8 @@ func TestDungeonsJS(t *testing.T) {
 func TestFightReplayJS(t *testing.T) {
 	runCheck(t, "fightreplay_check.js", "../../web/static/js/fightreplay.js")
 }
+
+// TestAggroLanesJS runs aggrolanes_check.js: the aggro lanes of a fight (who each enemy targeted, sampled every 2 s).
+func TestAggroLanesJS(t *testing.T) {
+	runCheck(t, "aggrolanes_check.js", "../../web/static/js/aggrolanes.js")
+}

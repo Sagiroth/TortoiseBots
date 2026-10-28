@@ -81,8 +81,12 @@
 - That switch is remembered per commander: Live stays as it was, the debugger opens on the fight that went worst and draws its deaths as skulls on the same map (one click frames a death), and picking a member rings them on the map and opens what they cast.
 - The dashboard now receives a commanders raid's live fight numbers while it fights: each bot's damage, healing, casts and last spell in the last ten seconds, so a fight can be read before it ends.
 - The Fight debugger card view has its own dark layout: raid frames with health and mana, the fight rail, the checks, the map with the fight's death spots, the timeline with the death recap, and the role tables; on a phone it reads as one column.
+<<<<<<< HEAD
 - The Fight debugger keeps the last half hour of a raid's positions: where each bot and each enemy near the lead stood, every two seconds, plus who each enemy was attacking, so a fight can be replayed on the map afterwards.
 - A finished fight in the Fight debugger can be replayed on the map: play, speed and scrub controls over the raid's kept positions, sampled every 2 s, with health and the deaths where they happened, and a plain note when no positions were kept for that fight.
+=======
+- The Fight debugger now shows, for each enemy in a finished fight, who it targeted over time (sampled every 2 s); the stretches where it was on a healer or a damage dealer are marked red.
+>>>>>>> 6f6cbb441 (Dashboard: aggro lanes (who each enemy targeted, per fight))
 
 ## v1.8.0 (2026-10-22)
 
