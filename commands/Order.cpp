@@ -322,6 +322,14 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         return true;
     }
 
+    // Guild orders need the travel tables: without them the source index
+    // is empty and no farm plan exists.
+    if (!ai::GuildOrderSourcesReady())
+    {
+        OrderError(handler, "disabled", "Guild orders need travel data (AiPlayerbot.AutoDoQuests = 1).");
+        return true;
+    }
+
     std::string rest = Trim(args ? args : "");
     if (rest.empty())
     {

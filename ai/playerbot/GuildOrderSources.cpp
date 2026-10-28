@@ -169,12 +169,15 @@ struct ZoneAccum
 
 } // namespace
 
-// Built once at startup, after the travel data is ready: "entry guidps"
-// may not exist yet when quest travel is off, so force it here.
+// Built once at startup, after the travel data is ready. When quest travel
+// is off, "entry guidps" was never built and the travel tables are empty:
+// the index stays empty instead of forcing a world-wide terrain load, and
+// guild orders report disabled.
 void BuildGuildOrderSourceIndex()
 {
     if (IndexBuilt())
         return;
+    IndexBuilt() = true;
     OrderSourceIndex& index = Index();
     std::vector<std::pair<uint32_t, float>> chances;
     for (uint32_t entry = 0; entry < sCreatureStorage.GetMaxEntry(); ++entry)
@@ -216,7 +219,10 @@ void BuildGuildOrderSourceIndex()
             continue;
         uint32_t reqSkill = 0;
         uint32_t const skillId = NodeLockSkill(goInfo, reqSkill);
-        bool const locked = skillId == SKILL_HERBALISM || skillId == SKILL_MINING;
+        // Only herb and ore nodes travel: a chest or crate has no gather
+        // destination, so it would plan ok and never route.
+        if (skillId != SKILL_HERBALISM && skillId != SKILL_MINING)
+            continue;
         chances.clear();
         CollectLootChances(DropMapValue::GetLootTemplate(
             ObjectGuid(HIGHGUID_GAMEOBJECT, entry, uint32_t(1)), LOOT_CORPSE), chances);
@@ -224,23 +230,27 @@ void BuildGuildOrderSourceIndex()
         {
             GuildOrderEntrySource source;
             source.entry = -int32_t(entry);
-            source.flag = skillId == SKILL_HERBALISM ? SourceHerb :
-                (skillId == SKILL_MINING ? SourceOre : SourceDrop);
+            source.flag = skillId == SKILL_HERBALISM ? SourceHerb : SourceOre;
             source.chance = chance;
-            source.skillId = locked ? skillId : SKILL_NONE;
-            source.reqSkill = locked ? reqSkill : 0;
+            source.skillId = skillId;
+            source.reqSkill = reqSkill;
             AddEntrySource(index, itemId, source);
         }
     }
     // Zone slices only for entries that drop something orderable: walk the
     // cached spawn positions once, grouped by zone, with a sample position
-    // per zone for the nearer-wins-ties rule.
+    // per zone for the nearer-wins-ties rule. Never force the cache: without
+    // the travel tables the index stays empty and orders report disabled.
+    auto* guidpsValue = dynamic_cast<CalculatedValue<EntryGuidps>*>(
+        sSharedObjectContext.GetValue<EntryGuidps>("entry guidps"));
+    if (!guidpsValue || !guidpsValue->HasCachedValue())
+        return;
+    EntryGuidps const& guidps = guidpsValue->LazyGet();
     std::unordered_set<int32_t> wanted;
     for (auto& [itemId, sources] : index.byItem)
         for (GuildOrderEntrySource const& source : sources)
             wanted.insert(source.entry);
 
-    EntryGuidps const& guidps = GAI_VALUE_REF(EntryGuidps, "entry guidps");
     for (auto& [entry, points] : guidps)
     {
         if (!wanted.count(entry))
@@ -282,8 +292,11 @@ void BuildGuildOrderSourceIndex()
         for (auto& [zoneId, slice] : slices)
             out.push_back(slice);
     }
+}
 
-    IndexBuilt() = true;
+bool GuildOrderSourcesReady()
+{
+    return IndexBuilt() && !Index().zonesByEntry.empty();
 }
 
 std::vector<GuildOrderEntrySource> GuildOrderSourcesFor(uint32_t itemId)
@@ -298,6 +311,21 @@ std::vector<GuildOrderZoneSlice> GuildOrderZonesFor(int32_t entry)
     OrderSourceIndex& index = Index();
     auto found = index.zonesByEntry.find(entry);
     return found == index.zonesByEntry.end() ? std::vector<GuildOrderZoneSlice>() : found->second;
+}
+
+bool GuildOrderFarmItemFor(Player* bot)
+{
+    if (!bot)
+        return 0;
+    std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
+    if (!record || record->state != OrderState::Working || !record->itemId)
+        return 0;
+    if (record->type == OrderType::Farm)
+        return record->itemId;
+    // Buy falls back to farming its remainder; craft farms the reagent the
+    // package-5 value names. Neither value exists on this branch yet, so
+    // only Farm carries order mode today.
+    return 0;
 }
 
 bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry)
@@ -315,6 +343,44 @@ bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry)
             continue;
         if (bot->GetSkillValue(SKILL_SKINNING) >= source.reqSkill)
             return true;
+    }
+    return false;
+}
+
+bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,
+    uint32_t team, uint32_t zoneId, uint32_t skillValue, bool hasSkill)
+{
+    if (!itemId || !zoneId)
+        return false;
+    OrderSourceIndex& index = Index();
+    auto found = index.byItem.find(itemId);
+    if (found == index.byItem.end())
+        return false;
+    auto slices = index.zonesByEntry.find(entry);
+    if (slices == index.zonesByEntry.end())
+        return false;
+    for (GuildOrderZoneSlice const& slice : slices->second)
+    {
+        if (slice.zoneId != zoneId || slice.spawns == 0)
+            continue;
+        bool const enemyHome = team == uint32_t(ALLIANCE) ? (slice.team & (1 << 1)) :
+            (team == uint32_t(HORDE) ? (slice.team & (1 << 0)) : false);
+        if (enemyHome)
+            return false;
+        for (GuildOrderEntrySource const& source : found->second)
+        {
+            if (source.entry != entry)
+                continue;
+            uint32_t sourceLevel = entry > 0 ? source.level :
+                (slice.zoneLevel > 0 ? uint32_t(slice.zoneLevel) : 0);
+            if (!SourceLevelFits(sourceLevel, botLevel))
+                continue;
+            if (source.skillId == SKILL_NONE)
+                return true;
+            if (hasSkill && skillValue >= source.reqSkill)
+                return true;
+        }
+        return false;
     }
     return false;
 }
@@ -383,7 +449,7 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
     bool sawHerbOre = false;
     uint8_t skillFail = 0;
     bool sawInRange = false;
-
+    bool unskilledRangeFail = false;
     // Usable need: sources passing every gate (reported when zones exist).
     uint8_t usableSources = 0;
     uint32_t usableMinLevel = 0;
@@ -429,7 +495,11 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
             }
 
             if (!SourceLevelFits(sourceLevel, botLevel))
+            {
+                if (source.skillId == SKILL_NONE)
+                    unskilledRangeFail = true;
                 continue;
+            }
             sawInRange = true;
             if (herbOrOre && lowGatherLevel)
                 continue;
@@ -481,7 +551,7 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         plan.minLevel = fallbackMinLevel;
         plan.skillId = fallbackSkillId;
         plan.skillValue = fallbackSkillValue;
-        plan.verdict = OrderVerdict(lowGatherLevel && sawHerbOre, skillFail, sawInRange, sawAny);
+        plan.verdict = OrderVerdict(lowGatherLevel && sawHerbOre, skillFail, sawInRange, sawAny, unskilledRangeFail);
         return plan;
     }
 

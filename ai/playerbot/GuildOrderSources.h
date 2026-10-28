@@ -43,11 +43,21 @@ struct GuildOrderZoneSlice
 // zone slices. Built once at startup after the travel data is ready; read
 // only at runtime, so planning is a small lookup, never a spawn walk.
 void BuildGuildOrderSourceIndex();
+bool GuildOrderSourcesReady();
 std::vector<GuildOrderEntrySource> GuildOrderSourcesFor(uint32_t itemId);
-std::vector<GuildOrderZoneSlice> GuildOrderZonesFor(int32_t entry);
 
 // True when the creature entry can skin the bot's Working farm order item:
 // the narrow gate for emptying order-mob corpses (loot queue and store).
 bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry);
 
-} // namespace ai
+// The item the bot currently farms for its Working order (0 = none): the
+// farm order item, the buy fallback remainder, or the craft reagent the
+// package-5 value names. One helper so order mode never forks per type.
+uint32_t GuildOrderFarmItemFor(Player* bot);
+
+// Order-mode destination gate over the index: the entry is an order source
+// of the item and usable in the planned zone (level + 3, skill, team).
+// hasSkill/skillValue carry the bot's skill for the entry's gate; team is
+// the bot's Team as a number (0 = no team filter).
+bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,
+    uint32_t team, uint32_t zoneId, uint32_t skillValue, bool hasSkill);

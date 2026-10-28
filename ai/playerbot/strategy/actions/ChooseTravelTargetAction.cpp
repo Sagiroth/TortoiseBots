@@ -2068,6 +2068,25 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 {
     std::string travelName = getQualifier();
 
+    // A newly working order jumps the queue: expire a non-order travel
+    // target so the farm request does not wait behind a leisure trip.
+    if (travelName == "guild order" && AI_VALUE(bool, "travel target active") &&
+        AI_VALUE(bool, "has guild travel order"))
+    {
+        TravelTarget* current = AI_VALUE(TravelTarget*, "travel target");
+        bool isOrderTarget = false;
+        for (std::string const& condition : current->GetConditions())
+            if (condition == "should travel named::guild order")
+                isOrderTarget = true;
+        if (!isOrderTarget)
+        {
+            sTravelMgr.SetNullTravelTarget(current);
+            current->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
+            current->SetExpireIn(1000);
+            RESET_AI_VALUE(bool, "travel target active");
+        }
+    }
+
     WorldPosition center = event.GetOwner() ? event.GetOwner() : (GetMaster() ? GetMaster() : bot);
 
     ai->TellDebug(ai->GetMaster(), "Getting new destination ranges for travel " + getQualifier(), "debug travel");

@@ -55,6 +55,13 @@ int main()
     CHECK(OrderVerdict(false, 1, false, true) == OrderReason::LowSkill);
     CHECK(OrderVerdict(false, 0, false, true) == OrderReason::NoRange);
     CHECK(OrderVerdict(false, 0, true, true) == OrderReason::NoSource);
+    CHECK(OrderVerdict(false, 2, false, true, true) == OrderReason::NoRange);
+    CHECK(OrderVerdict(false, 1, true, true, true) == OrderReason::LowSkill);
+
+    CHECK(OrderModeSkipsGates(true, true));
+    CHECK(!OrderModeSkipsGates(true, false));
+    CHECK(!OrderModeSkipsGates(false, true));
+    CHECK(!OrderModeSkipsGates(false, false));
 
     if (failures == 0)
         std::printf("test_guild_order_sources_policy ok\n");

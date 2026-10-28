@@ -1,4 +1,6 @@
 #include "playerbot/TravelMgr.h"
+#include "playerbot/GuildOrderSources.h"
+#include "runtime/GuildOrderStore.h"
 #include "playerbot/policy/travel/TravelRoutePolicy.h"
 #include "playerbot/GrindSpotPolicy.h"
 #include "playerbot/policy/pull/PullRegenPolicy.h"
@@ -70,6 +72,16 @@ PlayerTravelInfo::PlayerTravelInfo(Player* player)
 
     for (auto& [valueName, value] : uint32Values)
         value = AI_VALUE(uint32, valueName);
+
+    // Order mode: a Working farm order carries its item and planned zone so
+    // destination gates apply the order's own rules to its sources.
+    if (uint32_t farmItem = ai::GuildOrderFarmItemFor(player))
+    {
+        std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
+            TortoiseBots::GuildOrders::Find(player->GetGUIDLow());
+        if (record && record->farmZoneId)
+            SetOrderMode(farmItem, record->farmZoneId);
+    }
 }
 
 std::string EntryTravelDestination::GetShortName() const
@@ -733,6 +745,22 @@ bool ExploreTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& inf
 
 bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 {
+    // Order mode: an order source of the carried item skips the leisure
+    // gates (vendor trip, grind band, prey gold, closest-point level,
+    // outgrown) and applies the order's own gates instead: planner usable
+    // source, level + 3, skill, planned zone. Elite stays.
+    if (info.IsOrderMode())
+    {
+        CreatureInfo const* orderInfo = GetCreatureInfo();
+        if (!orderInfo)
+            return false;
+        if (orderInfo->rank > CREATURE_ELITE_NORMAL && !info.GetBoolValue("can fight elite"))
+            return false;
+        return ai::GuildOrderEntryUsableFor(info.GetOrderItem(), GetEntry(), info.GetLevel(),
+            uint32_t(info.GetTeam()), info.GetOrderZone(), info.GetCurrentSkill(SKILL_SKINNING),
+            info.GetCurrentSkill(SKILL_SKINNING) > 0);
+    }
+
     // The old veto read the cached "should sell" && "can sell" pair, which a fresh
     // pool bot satisfies with one grey pelt in its bags: the next grind search
     // found nothing, so the stranded beginner kept its empty result and its NPC.
@@ -972,6 +1000,38 @@ std::string BossTravelDestination::GetTitle() const
 
 bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 {
+    // Order mode: an order source of the carried item skips the leisure
+    // gates (skill-up cap, grey, closest-point level, outgrown) and
+    // applies the order's own gates instead. Fishing never orders.
+    if (info.IsOrderMode())
+    {
+        if (GetPurpose() == TravelDestinationPurpose::GatherFishing)
+            return false;
+        if (GetEntry() > 0)
+            return false;
+        uint32_t skillValue = 0;
+        bool hasSkill = false;
+        if (GameObjectInfo const* goInfo = GetGoInfo())
+        {
+            if (LockEntry const* lockInfo = sLockStore.LookupEntry(goInfo->GetLockId()))
+            {
+                for (int i = 0; i < 8; ++i)
+                {
+                    if (lockInfo->Type[i] != LOCK_KEY_SKILL)
+                        continue;
+                    if (uint32_t lockSkill = SkillByLockType(LockType(lockInfo->Index[i])))
+                    {
+                        skillValue = info.GetCurrentSkill((SkillType)lockSkill);
+                        hasSkill = skillValue > 0;
+                        break;
+                    }
+                }
+            }
+        }
+        return ai::GuildOrderEntryUsableFor(info.GetOrderItem(), GetEntry(), info.GetLevel(),
+            uint32_t(info.GetTeam()), info.GetOrderZone(), skillValue, hasSkill);
+    }
+
     uint32 skillId = SKILL_NONE;
     uint32 reqSkillValue = 0;
 

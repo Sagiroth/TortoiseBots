@@ -86,13 +86,18 @@ inline float MemberChance(float rowChancePct, float equalSharePct)
 // Verdict precedence when nothing is usable. A bot that is simply too young
 // for herb/ore hears that first; then the skill failure (missing profession
 // beats too-low skill); then level range; a sub-chance source never upgrades
-// NoSource to NoRange.
-inline OrderReason OrderVerdict(bool lowGatherLevel, uint8_t skillFail, bool sawInRange, bool sawAny)
+// NoSource to NoRange. When the skill failure comes only from a fallback
+// source while an unskilled source failed range, range wins: the bot could
+// use the drop if it were in range, so the skill is not the blocker.
+inline OrderReason OrderVerdict(bool lowGatherLevel, uint8_t skillFail, bool sawInRange, bool sawAny,
+    bool unskilledRangeFail = false)
 {
     if (!sawAny)
         return OrderReason::NoSource;
     if (lowGatherLevel)
         return OrderReason::LowLevel;
+    if (!sawInRange && unskilledRangeFail)
+        return OrderReason::NoRange;
     if (skillFail == 2)
         return OrderReason::NoSkill;
     if (skillFail == 1)
@@ -100,6 +105,13 @@ inline OrderReason OrderVerdict(bool lowGatherLevel, uint8_t skillFail, bool saw
     if (sawInRange)
         return OrderReason::NoSource;
     return OrderReason::NoRange;
+}
+
+// Whether an order-mode travel info skips the leisure IsPossible gates for
+// this destination: only order sources of the carried item skip them.
+inline bool OrderModeSkipsGates(bool orderMode, bool isOrderSource)
+{
+    return orderMode && isOrderSource;
 }
 
 } // namespace GuildOrders
