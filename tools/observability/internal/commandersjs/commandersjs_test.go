@@ -87,6 +87,12 @@ func TestFightDebugState(t *testing.T) {
 	runCheck(t, "fightdebug_state_check.js", "../../web/static/js/app.js")
 }
 
+// TestFDMatchUI runs fd_match_check.js: the debugger's header like the approved prototype (its own title and chips, the
+// refresh picker, the short map legend, the raid frames' dead and mana counts) while Live mode keeps every dropped element.
+func TestFDMatchUI(t *testing.T) {
+	runCheck(t, "fd_match_check.js", "../../web/static/js/app.js")
+}
+
 // TestRefreshJS runs refresh_check.js: the refresh-rate picker's options, the choice saved per browser (also with a storage that throws)
 // and the gate that holds live updates to the chosen rate or freezes them while paused.
 func TestRefreshJS(t *testing.T) {

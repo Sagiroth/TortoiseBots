@@ -154,7 +154,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   for (let i = 0; i < 30; i++) {
     const key = "C" + i;
     keys.push(key);
-    const card = { remove() { run("removed += 1"); } };
+    const card = { remove() { run("removed += 1"); }, querySelector() { return null; } };
     run("cmdCards.set(key, card); cmdMaps[key] = {}; cmdAvail[key] = {}; cmdFd[key] = { details: {} };"
       + " cmdFightsCache[key] = { list: [], at: 0 }; cmdFightsPending[key] = [() => {}]", { key, card });
   }

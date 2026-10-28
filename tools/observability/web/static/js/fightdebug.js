@@ -314,6 +314,7 @@
         cls: b.class || "",
         hpPct: maxHp > 0 ? Math.round(((num(b.hp) || 0) / maxHp) * 100) : 0,
         powerPct: maxPower > 0 ? Math.round(((num(b.power) || 0) / maxPower) * 100) : 0,
+        hasPower: maxPower > 0,
         powerKind: framePower(b),
         alive: b.alive !== false,
         tag: layout && b.name === layout.mt ? "MT"

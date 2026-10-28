@@ -5022,7 +5022,18 @@
   // fights list (a list fetch still in flight drops its callbacks).
   function cmdForgetCard(key) {
     const card = cmdCards.get(key);
-    if (card) card.remove();
+    if (card) {
+      // The debugger page moves the one layer panel into its map; take it back before its host card leaves the page.
+      const layers = card.querySelector('#cmd-layers');
+      if (layers) {
+        const page = document.getElementById('tab-commanders'), list = document.getElementById('cmd-list');
+        layers.classList.remove('cmd-layers-map');
+        const sum = layers.querySelector('summary');
+        if (sum && layers.dataset.liveLabel) sum.textContent = layers.dataset.liveLabel;
+        if (page) page.insertBefore(layers, list && list.parentElement === page ? list : null);
+      }
+      card.remove();
+    }
     cmdCards.delete(key);
     delete cmdMaps[key];
     delete cmdAvail[key];
@@ -6076,7 +6087,8 @@
       sc.querySelector('i').style.width = sb.px.toFixed(0) + 'px';
       sc.querySelector('span').textContent = sb.yd >= 1000 ? (sb.yd / 1000) + ' km' : sb.yd + ' yd';
     }
-    setHtml(card.querySelector('.cmd-legend'), cmdLegendHtml(on, pf.view));
+    const fdOn = card.classList.contains('fd-on');
+    setHtml(card.querySelector(fdOn ? '.fd-legend' : '.cmd-legend:not(.fd-legend)'), fdOn ? fdLegendHtml() : cmdLegendHtml(on, pf.view));
     const fb = card.querySelector('[data-act="follow"]');
     fb.setAttribute('aria-pressed', ms.follow ? 'true' : 'false');
     fb.classList.toggle('on', ms.follow);
@@ -6084,9 +6096,9 @@
 
     // the run line and the event feed
     const evs = UnitInfo.eventsOf(cmdEvents, bind.commander), now = cmdNowFor(bind);
-    const run = card.querySelector('.cmd-run');
-    run.hidden = !on.runinfo;
-    if (on.runinfo) run.textContent = UnitInfo.runInfo(bind, cmdEvents, now).text;
+    const runLine = card.querySelector('.cmd-run');
+    runLine.hidden = !on.runinfo || !cmdHeadView(fdOn).run; // the debugger's run chip carries the clock and the step
+    if (!runLine.hidden) runLine.textContent = UnitInfo.runInfo(bind, cmdEvents, now).text;
     const start = bind.bound_at > 0 ? bind.bound_at : UnitInfo.firstSeen(cmdEvents, bind.commander);
     const feed = card.querySelector('.cmd-feed');
     feed.hidden = !(on.feed && evs.length);
@@ -6262,15 +6274,29 @@
     const card = document.createElement('div');
     card.className = 'card cmd-card';
     card.innerHTML = `
-      <div class="cmd-head"><h2 class="cmd-title"></h2><div class="cmd-badges"></div><div class="cmd-mode" role="group" aria-label="Card view" hidden><button type="button" data-mode="live" aria-pressed="true">Live</button><button type="button" data-mode="debug" aria-pressed="false">Fight debugger</button></div></div>
+      <div class="cmd-head">
+        <div class="cmd-headl">
+          <h2 class="cmd-title"></h2>
+          <div class="fd-headmain" hidden><div class="fd-kicker"></div><h2 class="fd-bigtitle">Fight debugger</h2></div>
+          <div class="fd-crumbs" hidden></div>
+        </div>
+        <div class="cmd-headr">
+          <div class="cmd-badges"></div>
+          <label class="refresh-picker fd-refresh" hidden title="How often the maps and cards show new data. Kept in this browser."><span>Refresh every</span><select data-refresh-select aria-label="Refresh every"></select></label>
+          <div class="cmd-mode" role="group" aria-label="Card view" hidden><button type="button" data-mode="live" aria-pressed="true">Live</button><button type="button" data-mode="debug" aria-pressed="false">Fight debugger</button></div>
+        </div>
+      </div>
       <div class="cmd-sub"></div>
       <div class="cmd-run" hidden></div>
       <div class="cmd-warn" aria-live="polite"></div>
       <div class="cmd-body">
-        <div class="fd-frames" role="group" aria-label="Raid frames" hidden></div>
-        <nav class="fd-rail" aria-label="Fights" hidden></nav>
+        <section class="fd-raid" aria-label="Raid frames" hidden>
+          <div class="fd-raidhead"><h3 class="cmd-h">Raid frames<span class="fd-dead"></span></h3><div class="fd-ready"></div></div>
+          <div class="fd-frames" role="group" aria-label="Raid frames"></div>
+        </section>
+        <div class="fd-railcol" hidden><h3 class="cmd-h">Fights</h3><nav class="fd-rail" aria-label="Fights"></nav></div>
         <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><div class="fd-chips"></div></div><ol class="fd-checklist"></ol></section>
-        <section class="fd-timeline" aria-label="Timeline and death recap" hidden><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
+        <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
         <section class="fd-roles" aria-label="Roles" hidden><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
         <div class="cmd-left">
           <div class="cmd-party"></div>
@@ -6278,6 +6304,7 @@
           <div class="cmd-orders"></div>
         </div>
         <div class="cmd-mapbox">
+          <div class="cmd-legend fd-legend" role="note"></div>
           <div class="cmd-stage">
             <svg class="cmd-map" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet"><g class="pic"></g><g class="dyn"></g></svg>
             <div class="cmd-maptools">
@@ -6306,6 +6333,13 @@
         </div>
       </div>`;
     bindCmdMap(card, key);
+    // The debugger-only page hides the page-level "Refresh every" row, so the card header carries the same picker (one saved setting).
+    const rsel = card.querySelector('.fd-refresh select');
+    if (rsel) {
+      rsel.innerHTML = RefreshRate.OPTIONS.map(n => `<option value="${n}">${n === 0 ? 'paused' : n + ' s'}</option>`).join('');
+      rsel.value = String(refreshGate.interval());
+      rsel.addEventListener('change', () => setRefresh(rsel.value));
+    }
     // the names in the header, the party table and the lead line: a plain click opens the details in the page (modified clicks keep the link)
     card.addEventListener('click', e => {
       const a = e.target.closest && e.target.closest('a.cmd-botlink');
@@ -6451,6 +6485,21 @@
         modeEl.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === fd.mode ? 'true' : 'false'));
       }
       card.classList.toggle('fd-on', debug);
+      // Debugger: its own kicker, title and chips in place of the Live title, badges, lead/run line and warnings. Live keeps them.
+      const hv = cmdHeadView(debug);
+      card.querySelector('.cmd-title').hidden = !hv.title;
+      card.querySelector('.cmd-badges').hidden = !hv.badges;
+      card.querySelector('.cmd-sub').hidden = !hv.sub;
+      card.querySelector('.cmd-warn').hidden = !hv.warn;
+      card.querySelector('.fd-headmain').hidden = !hv.crumbs;
+      card.querySelector('.fd-crumbs').hidden = !hv.crumbs;
+      card.querySelector('.fd-refresh').hidden = !hv.refresh;
+      if (hv.crumbs) {
+        const runText = UnitInfo.clockText(UnitInfo.runInfo(bind, cmdEvents, nowSec).elapsed);
+        setHtml(card.querySelector('.fd-kicker'), 'Commander · ' + esc(bind.commander));
+        setHtml(card.querySelector('.fd-crumbs'),
+          fdHeaderHtml(bind, (cmdFightsCache[key] && cmdFightsCache[key].list) || fd.list, fd.details, bind.layout || null, runText));
+      }
       // The live window is the only sign a fight is running: when it goes, the list must be asked for again at once.
       if (bind.combat) card.dataset.fdCombat = '1';
       else if (card.dataset.fdCombat) { card.dataset.fdCombat = ''; delete cmdFightsCache[bind.commander]; }
@@ -6494,12 +6543,39 @@
       if (left) left.hidden = debug;
       const fightsEl = card.querySelector('.cmd-fights');
       if (fightsEl) fightsEl.hidden = debug;
-      card.querySelectorAll('.fd-frames, .fd-rail, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = !debug; });
+      card.querySelectorAll('.fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = !debug; });
       drawCmdMap(key);
       if (debug) { renderFightDebug(card, bind); fdLoad(card, bind); } else mountFightPanel(card, bind);
     });
+    // The prototype drops the page's tiles, its refresh explanation, the demo box and the external map when every card on the
+    // page is the debugger; a demo card or one Live card keeps them. The one layer panel moves into the map, where the debugger's
+    // Layers button expects it, so that control keeps working.
+    const page = document.getElementById('tab-commanders');
+    const debugOnly = cmdDebugOnly(all);
+    if (page) page.classList.toggle('cmd-debug-only', debugOnly);
+    cmdPlaceLayers(debugOnly);
     paintCmdLayers();
     showCommanderLink();
+  }
+
+  function cmdPlaceLayers(debugOnly) {
+    const box = document.getElementById('cmd-layers');
+    if (!box) return;
+    const page = document.getElementById('tab-commanders');
+    const card = document.querySelector('.cmd-card.fd-on');
+    const stage = debugOnly && card ? card.querySelector('.cmd-stage') : null;
+    const sum = box.querySelector('summary');
+    if (sum && !box.dataset.liveLabel) box.dataset.liveLabel = sum.textContent;
+    if (stage) {
+      if (box.parentElement !== stage) stage.appendChild(box); // the prototype's "Layers" pill over the map
+      box.classList.add('cmd-layers-map');
+      if (sum) sum.textContent = 'Layers ▾';
+    } else if (box.classList.contains('cmd-layers-map')) {
+      box.classList.remove('cmd-layers-map');
+      if (sum) sum.textContent = box.dataset.liveLabel;
+      const list = document.getElementById('cmd-list');
+      if (page) page.insertBefore(box, list && list.parentElement === page ? list : null);
+    }
   }
 
   // ---- Fights panel ("a light Turtle Logs") --------------------------------
@@ -6673,7 +6749,10 @@
     if (fd.death != null && fight && !(fight.deaths || [])[fd.death]) fd.death = null;
     const recaps = fight ? FightDebug.deathRecaps(fight) : [];
 
-    fdSet(card.querySelector('.fd-frames'), fdFramesHtml(FightDebug.raidFrames(bind), fd.bot));
+    const frames = FightDebug.raidFrames(bind);
+    fdSet(card.querySelector('.fd-frames'), fdFramesHtml(frames, fd.bot));
+    fdSet(card.querySelector('.fd-dead'), ' · ' + fdFrameStats(frames).dead + ' dead');
+    fdSet(card.querySelector('.fd-ready'), fdReadyHtml(frames));
     const cards = FightDebug.railCards(list, fd.details, layout);
     fdSet(card.querySelector('.fd-rail'), fdRailHtml(cards, live, fd.sel));
 
@@ -6745,6 +6824,64 @@
     }
     botEl.hidden = !panel;
     fdSet(botEl, fdBotHtml(panel));
+  }
+
+  // The debugger's own header: the prototype's crumbs. The fight verdict counts the loaded details against the whole list, so the
+  // chip never shrinks while the newest fights are still arriving.
+  function fdHeaderHtml(bind, list, details, layout, runText) {
+    const rows = Array.isArray(list) ? list : [];
+    const frames = FightDebug.raidFrames(bind);
+    const bots = (bind && bind.bots) || [];
+    const cards = FightDebug.railCards(rows, details || {}, layout || null);
+    const judged = cards.filter(c => c.verdict);
+    const need = judged.filter(c => c.verdict === 'fail').length;
+    const run = bind && bind.run;
+    const step = run && numOr0(run.step) > 0 ? 'step ' + run.step + (numOr0(run.steps) > 0 ? '/' + run.steps : '') : '';
+    const ot = layout && Array.isArray(layout.ot) ? layout.ot.filter(Boolean) : [];
+    return [
+      `<span class="fd-crumb">${bots.length} bot${bots.length === 1 ? '' : 's'} · ${frames.length} group${frames.length === 1 ? '' : 's'}</span>`,
+      run && run.plan ? `<span class="fd-crumb">${esc(run.plan)}</span>` : '',
+      runText ? `<span class="fd-crumb">Run ${esc(runText)}${step ? ' · ' + esc(step) : ''}</span>` : '',
+      layout && layout.mt ? `<span class="fd-crumb">Main tank ${esc(layout.mt)}</span>` : '',
+      ot.length ? `<span class="fd-crumb">Off-tanks ${esc(ot.join(', '))}</span>` : '',
+      judged.length ? `<span class="fd-crumb ${need ? 'fail' : 'ok'}">${need} of ${rows.length} fights need a look</span>` : '',
+    ].filter(Boolean).join('');
+  }
+
+  function numOr0(v) { return typeof v === 'number' && isFinite(v) ? v : 0; }
+
+  // The raid frames header's numbers: the dead, and the living mana users under 30% (a rage or energy bar cannot be low on mana).
+  function fdFrameStats(frames) {
+    const tiles = (frames || []).reduce((a, g) => a.concat((g && g.tiles) || []), []);
+    return {
+      dead: tiles.filter(t => !t.alive || t.role === 'dead').length,
+      lowMana: tiles.filter(t => t.alive && t.role !== 'dead' && t.hasPower && t.powerKind === 'mana' && t.powerPct < 30).length,
+    };
+  }
+
+  function fdReadyHtml(frames) {
+    const s = fdFrameStats(frames);
+    return `<span class="fd-chip ${s.dead ? 'fail' : 'ok'}">${s.dead} dead</span>`
+      + `<span class="fd-chip ${s.lowMana ? 'warn' : 'ok'}">${s.lowMana} under 30% mana</span>`;
+  }
+
+  // The debugger's map legend: the four marks the prototype keeps. The Live page's long legend (casting, crowd controlled,
+  // drinking, the threat colours) stays in `.cmd-legend` for Live mode.
+  function fdLegendHtml() {
+    return '<span><i class="tank"></i>Tank</span><span><i class="healer"></i>Healer</span><span><i class="dps"></i>Damage</span>'
+      + '<span><i class="fdmob"></i>Mob / death</span>';
+  }
+
+  // Which of the card's header pieces a mode shows. The debugger replaces the Live title, the ONLINE/FEED badges, the lead and run
+  // line and the warnings with its own kicker, title and chips, and carries the refresh picker the page row would have offered.
+  function cmdHeadView(debug) {
+    return { title: !debug, badges: !debug, sub: !debug, run: !debug, warn: !debug, crumbs: !!debug, refresh: !!debug };
+  }
+
+  // Every shown card in the debugger: the page's own tiles and boxes go. No card at all keeps the empty page as it is.
+  function cmdDebugOnly(list, modeOf) {
+    const rows = Array.isArray(list) ? list : [], mode = modeOf || fdMode;
+    return rows.length > 0 && rows.every(b => mode(b) === 'debug');
   }
 
   function fdFramesHtml(frames, selBot) {
@@ -7381,7 +7518,7 @@
     const box = document.getElementById('cmd-layers');
     if (!box) return;
     if (box.tagName === 'DETAILS') box.open = true;
-    if (box.scrollIntoView) box.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    if (!box.classList.contains('cmd-layers-map') && box.scrollIntoView) box.scrollIntoView({ block: 'start', behavior: 'smooth' });
     const first = box.querySelector('.cmd-presets button');
     if (first) first.focus();
   }
