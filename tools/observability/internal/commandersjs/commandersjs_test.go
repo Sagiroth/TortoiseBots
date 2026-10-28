@@ -134,3 +134,9 @@ func TestFightReplayJS(t *testing.T) {
 func TestAggroLanesJS(t *testing.T) {
 	runCheck(t, "aggrolanes_check.js", "../../web/static/js/aggrolanes.js")
 }
+
+// TestPlanOverlayJS runs planoverlay_check.js: the plan's route, stands, pack mobs and rings (scripted wakes from the
+// plan's wake_yd), the step states and strays on Onyxia's plan and on Molten Core's multi-leg, multi-boss plan.
+func TestPlanOverlayJS(t *testing.T) {
+	runCheck(t, "planoverlay_check.js", "../../web/static/js/planoverlay.js")
+}

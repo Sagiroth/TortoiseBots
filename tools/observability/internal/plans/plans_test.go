@@ -439,3 +439,137 @@ func TestQueries(t *testing.T) {
 		}
 	}
 }
+
+// TestWakeTable pins the scripted wakes served beside the plan: the data file is the only place a boss's wake radius lives.
+func TestWakeTable(t *testing.T) {
+	if got := wakeOf(10184); got != 62 {
+		t.Fatalf("wakeOf(10184) = %v, want 62", got)
+	}
+	if got := wakeOf(12129); got != 0 {
+		t.Fatalf("wakeOf(12129) = %v, want 0", got)
+	}
+	table := loadWakes([]byte(`{"1": {"yd": 40, "why": "trigger"}, "2": {"yd": 0, "why": "none"}, "x": {"yd": 9}, "3": {"yd": -5}}`))
+	if len(table) != 1 || table[1].Yd != 40 || table[1].Why != "trigger" {
+		t.Fatalf("loadWakes = %+v", table)
+	}
+	if got := len(loadWakes([]byte("{"))); got != 0 {
+		t.Fatalf("loadWakes of broken json = %d rows, want 0", got)
+	}
+}
+
+// TestBuildWakeYd pins wake_yd on the wire: the Onyxia boss step and her spawn carry the scripted wake, the warders do not.
+func TestBuildWakeYd(t *testing.T) {
+	p, err := Build(loadFixture(t), "onyxias_lair")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if got := p.Steps[28].WakeYd; got != 62 {
+		t.Fatalf("boss step wake_yd = %v, want 62", got)
+	}
+	if got := p.Steps[1].WakeYd; got != 0 {
+		t.Fatalf("warder pull step wake_yd = %v, want 0", got)
+	}
+	for _, m := range p.Mobs {
+		want := 0.0
+		if m.E == 10184 {
+			want = 62
+		}
+		if m.WakeYd != want {
+			t.Fatalf("mob %d wake_yd = %v, want %v", m.GUID, m.WakeYd, want)
+		}
+	}
+}
+
+func loadFixtureNamed(t *testing.T, name string) *memSource {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", name+".rows.json"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	var fx fixtureFile
+	if err := json.Unmarshal(raw, &fx); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	return &memSource{
+		planRow:   fx.Plan,
+		found:     true,
+		legs:      fx.Legs,
+		steps:     fx.Steps,
+		spawns:    fx.Spawns,
+		templates: fx.Templates,
+	}
+}
+
+// TestBuildMoltenCore is the non-Onyxia case: a raid plan with several legs and several bosses keeps them all, numbers its
+// steps across the legs and marks each leg's own stands and packs.
+func TestBuildMoltenCore(t *testing.T) {
+	p, err := Build(loadFixtureNamed(t, "molten_core"), "molten_core")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if p.Map != 409 || p.StepsTotal != 45 || len(p.Steps) != 45 {
+		t.Fatalf("map/steps = %d/%d", p.Map, p.StepsTotal)
+	}
+	if len(p.Legs) != 2 || p.Legs[0].Name != "lucifron" || p.Legs[1].Name != "magmadar" {
+		t.Fatalf("legs = %+v", p.Legs)
+	}
+	var bosses, stands, packs []int
+	for _, s := range p.Steps {
+		switch s.K {
+		case "boss":
+			bosses = append(bosses, s.I)
+			packs = append(packs, s.I)
+		case "pull":
+			packs = append(packs, s.I)
+		}
+		if s.Stand {
+			stands = append(stands, s.I)
+		}
+		if s.I != p.Steps[s.I-1].I || s.Leg != p.Steps[s.I-1].Leg {
+			t.Fatalf("step %d out of order: %+v", s.I, s)
+		}
+	}
+	if !reflect.DeepEqual(bosses, []int{38, 44}) || len(packs) != 20 {
+		t.Fatalf("bosses = %v, packs = %d", bosses, len(packs))
+	}
+	if got := len(stands); got != 20 {
+		t.Fatalf("stands = %v", stands)
+	}
+	if p.Steps[37].E != 12118 || p.Steps[37].N != "" || !reflect.DeepEqual(p.Steps[37].Entries, []uint32{12119}) {
+		t.Fatalf("boss step 38 = %+v", p.Steps[37])
+	}
+	if p.Steps[38].Leg != 1 || p.Steps[38].Seq != 0 || p.Steps[38].I != 39 {
+		t.Fatalf("first step of leg 1 = %+v", p.Steps[38])
+	}
+	if p.Steps[44].K != "open" || p.Steps[44].Leg != 1 {
+		t.Fatalf("last step = %+v", p.Steps[44])
+	}
+	if len(p.Mobs) != 0 {
+		t.Fatalf("mobs = %+v, want none (the prep carries no spawns)", p.Mobs)
+	}
+}
+
+func TestBuildMoltenCoreGolden(t *testing.T) {
+	p, err := Build(loadFixtureNamed(t, "molten_core"), "molten_core")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	got, err := json.MarshalIndent(p, "", " ")
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	path := filepath.Join("testdata", "molten_core.plan.json")
+	if *update {
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatalf("write golden: %v", err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden (run with -update): %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("golden mismatch\n got: %s\nwant: %s", got, want)
+	}
+}

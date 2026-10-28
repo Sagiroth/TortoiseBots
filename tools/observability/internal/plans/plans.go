@@ -2,13 +2,14 @@
 // ai_dungeon_plan / ai_dungeon_leg / ai_dungeon_step rows) from the world
 // database and turns one into what the Commanders map's plan layer draws:
 // the kept steps with their stands, the pack mobs (creature spawns matched to
-// the pull/boss step that names their entry) and the truncated flags. The
-// module reads the same rows once at startup; the dashboard reads them
-// read-only and caches the result.
+// the pull/boss step that names their entry), the scripted wake rings of
+// wake.json and the truncated flags. The module reads the same rows once at
+// startup; the dashboard reads them read-only and caches the result.
 package plans
 
 import (
 	"database/sql"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,6 +50,48 @@ const (
 // ErrNotFound means the world database has no plan row with that name (as
 // opposed to the database being unavailable).
 var ErrNotFound = errors.New("no such plan")
+
+// Wake is one scripted wake: the radius at which a boss or an area trigger
+// notices the party, and where the number comes from.
+type Wake struct {
+	Yd  float64 `json:"yd"`
+	Why string  `json:"why"`
+}
+
+//go:embed wake.json
+var wakeJSON []byte
+
+// wakes is wake.json by creature entry. A unit that wakes by script or area
+// trigger instead of its aggro radius belongs here: add a row with its entry,
+// the radius in yards and the source of the number.
+var wakes = loadWakes(wakeJSON)
+
+// loadWakes decodes the wake table: decimal entries with a positive radius.
+// A broken file leaves no wakes (the map then draws aggro rings only) and
+// says so in the log.
+func loadWakes(data []byte) map[uint32]Wake {
+	out := make(map[uint32]Wake)
+	var raw map[string]Wake
+	if err := json.Unmarshal(data, &raw); err != nil {
+		log.Printf("[Plans] wake.json ignored: %v", err)
+		return out
+	}
+	for key, w := range raw {
+		entry, err := strconv.ParseUint(key, 10, 32)
+		if err != nil || entry == 0 || !(w.Yd > 0) {
+			continue
+		}
+		out[uint32(entry)] = w
+	}
+	return out
+}
+
+func wakeOf(entry uint32) float64 {
+	if w, ok := wakes[entry]; ok {
+		return w.Yd
+	}
+	return 0
+}
 
 var nameRe = regexp.MustCompile("^[a-z0-9_]{1,32}$")
 
@@ -139,6 +182,7 @@ type Step struct {
 	N       string   `json:"n,omitempty"`
 	C       string   `json:"c,omitempty"`
 	Stand   bool     `json:"stand,omitempty"`
+	WakeYd  float64  `json:"wake_yd,omitempty"`
 }
 
 type Mob struct {
@@ -154,6 +198,7 @@ type Mob struct {
 	Rank    uint32  `json:"rank"`
 	Patrol  bool    `json:"patrol,omitempty"`
 	NoAggro bool    `json:"noaggro,omitempty"`
+	WakeYd  float64 `json:"wake_yd,omitempty"`
 }
 
 // Queries, exported so a test can pin their shape. Arguments go through ?;
@@ -371,6 +416,7 @@ func Build(src Source, name string) (*Plan, error) {
 		switch k.row.Kind {
 		case "boss":
 			out.N = templates[k.row.Entry].Name
+			out.WakeYd = wakeOf(k.row.Entry)
 		case "pull":
 			var names []string
 			have := make(map[string]bool, len(k.entries))
@@ -431,6 +477,7 @@ func matchMobs(kept []keptStep, spawns []SpawnRow, templates map[uint32]Template
 			Rank:    t.Rank,
 			Patrol:  s.MovementType == waypointMotion,
 			NoAggro: t.FlagsExtra&creatureNoAggro != 0,
+			WakeYd:  wakeOf(s.ID),
 		}
 		if t.Entry != 0 {
 			m.Det = round2(t.Detection)
