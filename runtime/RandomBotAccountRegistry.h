@@ -137,6 +137,8 @@ private:
     // query failure: this is how the registry tells "no accounts" apart from
     // "the database did not answer".
     bool QueryCount(char const* sql, uint32_t& out) const;
+    // The same count rule on the login database, for the prefix-account scan.
+    bool QueryLoginCount(char const* sql, uint32_t& out) const;
     // ok=false means discovery could not be completed; the match list is then
     // incomplete and must not be used or confirmed.
     bool DiscoverPrefixMatches(std::vector<LegacyAccount>& out, std::string& error) const;

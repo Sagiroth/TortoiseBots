@@ -139,6 +139,24 @@ static void TestAdoptionChallenge()
     CHECK(!AdoptionChallengeMatches("", ""));
 }
 
+static void TestAccountScanDecision()
+{
+    // The core's database layer answers null for an empty result set as for an
+    // SQL error. The old rule read that as a failure, so an untouched login
+    // database made the startup scan report an error: this is the case the fix
+    // turns into an empty result.
+    auto oldRule = [](bool, uint32_t, bool rowsAnswered)
+    {
+        return rowsAnswered ? AccountScanVerdict::Rows : AccountScanVerdict::Failed;
+    };
+    CHECK(oldRule(true, 0, false) == AccountScanVerdict::Failed);
+
+    CHECK(DecideAccountScan(true, 0, false) == AccountScanVerdict::NoAccounts);
+    CHECK(DecideAccountScan(false, 0, false) == AccountScanVerdict::Failed);
+    CHECK(DecideAccountScan(true, 5, true) == AccountScanVerdict::Rows);
+    CHECK(DecideAccountScan(true, 5, false) == AccountScanVerdict::Failed);
+}
+
 static void TestModeNames()
 {
     CHECK(std::string(PoolResetModeName(PoolResetMode::Off)) == "off");
@@ -153,6 +171,7 @@ int main()
     TestGenerationDecision();
     TestUsernameRules();
     TestAdoptionChallenge();
+    TestAccountScanDecision();
     TestModeNames();
     std::printf("OK: %d checks passed\n", checks);
     return 0;

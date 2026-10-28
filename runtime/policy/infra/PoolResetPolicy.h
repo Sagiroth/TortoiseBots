@@ -168,6 +168,25 @@ inline bool AccountUsernameHasPrefix(std::string const& username, std::string co
         loweredUser.compare(0, loweredPrefix.size(), loweredPrefix) == 0;
 }
 
+// The core's database layer answers null for an empty result set as well as for
+// an SQL error, so the prefix-account scan counts the accounts first: an
+// answered count of 0 is a login database with no accounts, not a failure.
+enum class AccountScanVerdict
+{
+    Rows,
+    NoAccounts,
+    Failed,
+};
+
+inline AccountScanVerdict DecideAccountScan(bool countAnswered, uint32_t accountCount, bool rowsAnswered)
+{
+    if (!countAnswered)
+        return AccountScanVerdict::Failed;
+    if (accountCount == 0)
+        return AccountScanVerdict::NoAccounts;
+    return rowsAnswered ? AccountScanVerdict::Rows : AccountScanVerdict::Failed;
+}
+
 // Short-lived confirmation challenge for `bot pool adopt confirm <challenge>`.
 // Derived from the exact previewed set (account id + stored username), so any
 // change between preview and confirmation invalidates it.

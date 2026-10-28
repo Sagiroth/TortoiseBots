@@ -62,6 +62,15 @@ bool RandomBotAccountRegistry::QueryCount(char const* sql, uint32_t& out) const
     return true;
 }
 
+bool RandomBotAccountRegistry::QueryLoginCount(char const* sql, uint32_t& out) const
+{
+    std::unique_ptr<QueryResult> result(LoginDatabase.PQuery(sql));
+    if (!result)
+        return false;
+    out = result->Fetch()[0].GetUInt32();
+    return true;
+}
+
 bool RandomBotAccountRegistry::LoadAccountsFromDatabase(std::vector<PoolAccount>& out, std::string& error) const
 {
     uint32_t total = 0;
@@ -300,11 +309,22 @@ bool RandomBotAccountRegistry::DiscoverPrefixMatches(std::vector<LegacyAccount>&
     // The prefix is matched in code, not by a SQL LIKE: the configured value is
     // never interpolated into a pattern, and no wildcard in it can widen the
     // result set.
-    std::unique_ptr<QueryResult> rows(LoginDatabase.PQuery("SELECT `id`, `username` FROM `account` ORDER BY `id`"));
-    if (!rows)
+    uint32_t accountCount = 0;
+    bool const countAnswered = QueryLoginCount("SELECT COUNT(*) FROM `account`", accountCount);
+    std::unique_ptr<QueryResult> rows;
+    if (countAnswered && accountCount)
+        rows.reset(LoginDatabase.PQuery("SELECT `id`, `username` FROM `account` ORDER BY `id`"));
+    switch (DecideAccountScan(countAnswered, accountCount, rows != nullptr))
     {
-        error = "the login database did not answer the account scan";
-        return false;
+        case AccountScanVerdict::NoAccounts:
+            return true;   // out stays empty: nothing matches
+        case AccountScanVerdict::Failed:
+            error = !countAnswered
+                ? "the login database did not answer the account count (the SQL error is in the DB error log)"
+                : "the login database counted " + std::to_string(accountCount) + " accounts but the account scan returned none";
+            return false;
+        case AccountScanVerdict::Rows:
+            break;
     }
 
     do
