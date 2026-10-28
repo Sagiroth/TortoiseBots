@@ -30,6 +30,7 @@ import (
 	"tortoise-observability/internal/mapdir"
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
+	"tortoise-observability/internal/plans"
 	"tortoise-observability/internal/ringbuf"
 	"tortoise-observability/internal/state"
 	"tortoise-observability/internal/udp"
@@ -547,6 +548,15 @@ func main() {
 	mux.HandleFunc("/api/v1/dungeons", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, store.Dungeons())
 	}))
+
+	// Dungeon and raid plans (the run leader's ai_dungeon_* rows, read-only, cached) for the map's plan layer.
+	var planSvc *plans.Service
+	if worldDB, err := plans.OpenWorld(*dbHost, *dbPort, *dbUser, *dbPass, *dbWorld); err != nil {
+		log.Printf("[Plans] world database: %v (the plan layer is off)", err)
+	} else {
+		planSvc = plans.NewService(plans.NewSQLSource(worldDB))
+	}
+	mux.HandleFunc("GET /api/v1/plans/{plan}", requireAuth(plans.Handler(planSvc)))
 
 	// Combat fights ("a light Turtle Logs"): the module's per-fight numbers
 	// (COMBAT_FIGHT datagrams), judged here by rules.json. The list is per
