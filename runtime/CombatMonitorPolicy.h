@@ -28,6 +28,7 @@ constexpr size_t kLastHits = 5;               // death recap
 constexpr size_t kMaxSpellsPerBot = 12;
 constexpr size_t kMaxFightsKept = 5;          // finished fights waiting to be sent, per book
 constexpr size_t kPayloadByteBudget = 60000;
+constexpr size_t kSeqDigitsMax = 20;   // UINT64_MAX in decimal
 // The truncated (last-resort) payload bounds every variable-length field, so its
 // size has a fixed ceiling well under the budget: about 2.5 KB of header (five
 // texts of 48 bytes, 64 planned entries) plus about 0.5 KB per bot row (names and
@@ -455,16 +456,19 @@ public:
                 return BuildFightJson(f, protocolVersion, session, 0, ts, commander, commanderGuid, groupId, mapId,
                                       maxSpells, maxHits, truncated, maxBots);
             };
+            // Measured with seq 0: keep room for the widest seq (20 digits) the
+            // resequence puts in, so a queued payload never crosses the budget.
+            size_t const fit = kPayloadByteBudget - kSeqDigitsMax;
             std::string js = build(kMaxSpellsPerBot, kLastHits, false, f.bots.size());
-            if (js.size() > kPayloadByteBudget)
+            if (js.size() > fit)
                 js = build(3, kLastHits, false, f.bots.size());
-            if (js.size() > kPayloadByteBudget)
+            if (js.size() > fit)
                 js = build(3, 2, false, f.bots.size());
-            if (js.size() > kPayloadByteBudget)
+            if (js.size() > fit)
                 js = build(0, 0, true, kTruncatedBots);
-            if (js.size() > kPayloadByteBudget)
+            if (js.size() > fit)
                 js = build(0, 0, true, 0);
-            if (js.size() > kPayloadByteBudget)
+            if (js.size() > fit)
             {
                 f.takes = 2;   // no runaway payload crosses the wire, and no seq is spent on it
                 if (oversizeDropped)
