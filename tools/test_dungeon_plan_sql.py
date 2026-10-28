@@ -226,6 +226,13 @@ SEEDED_BOSSES.update({(229, 9196): "Highlord Omokk", (229, 9236): "Shadow Hunter
                       (229, 9568): "Overlord Wyrmthalak"})
 NOT_BOSSES.update({9217, 9218, 9219, 9718, 10376, 16080, 16044})
 
+# Emerald Sanctum (20261028170000): its map and its two boss steps, names from the core's creature_template (both rank 3).
+# The 44 Deer 883 and 27 Toads 1420 are level 5 and 1, factions 28 'Prey' and 148 'Ambient': critters, in no pull and no boss row.
+# Added apart from the dicts above so that this change merges with the other plans' edits of them.
+BOSS_PLANS["emerald_sanctum"] = 807
+SEEDED_BOSSES.update({(807, 60747): "Erennius", (807, 60748): "Solnius"})
+NOT_BOSSES.update({883, 1420})
+
 def migrations():
     for path in sorted(glob.glob(os.path.join(ROOT, "data/sql/world/*_world.sql"))):
         with open(path, encoding="utf-8") as handle:
@@ -534,13 +541,21 @@ class DungeonPlanSql(unittest.TestCase):
                 event_entries = {r["entry"] for r in rows if r["plan"] == plan and r["kind"] in EVENT_KINDS and r["entry"] != "0"}
                 if not event_entries:
                     continue
+                by_step = {(r["leg"], r["seq"]): r for r in rows if r["plan"] == plan}
                 for r in rows:
                     if r["plan"] != plan or r["kind"] not in UNIT_KINDS:
                         continue
                     listed = set(e for e in r["entries"].split(",") if e.strip()) if r["entries"] else set()
                     if r["kind"] == "boss" and r["entry"] != "0":
                         listed.add(r["entry"])
-                    hit = listed & event_entries
+                    # A boss row may name the entry of the gossip step right before it in its leg: that gossip is its
+                    # start (Moroes, Solnius), not a unit anybody pulls.
+                    allowed = set()
+                    if r["kind"] == "boss":
+                        prev = by_step.get((r["leg"], str(int(r["seq"]) - 1)))
+                        if prev is not None and prev["kind"] == "gossip" and prev["entry"] != "0":
+                            allowed.add(prev["entry"])
+                    hit = listed & (event_entries - allowed)
                     self.assertEqual(hit, set(), "%s %s: %s/%s lists its own event unit(s) %s in a %s row" %
                                      (name, plan, r["leg"], r["seq"], sorted(hit), r["kind"]))
                 for m in re.finditer(r"^\('%s', \d+, '([^']*)', '([^']*)', '([^']*)'," % plan, text, re.M):
@@ -4253,6 +4268,45 @@ class DungeonPlanSql(unittest.TestCase):
             self.assertEqual(build.returncode, 0, build.stderr)
             run = subprocess.run([binary], input="\n".join(lines) + "\n", capture_output=True, text=True)
         self.assertEqual(run.stdout.strip().splitlines()[-1], "rows %d refused 0" % len(rows), run.stdout)
+
+    def test_emerald_sanctum_is_the_raid_prep(self):
+        # 20261028170000 (turtle-agent prep/raid-es ae49e6a, 2026-10-28): the 40-man ES draft with the B1 prep of
+        # RAID-PREP-es.md, no row hand-set. 5 legs, 45 steps (29 move, 13 pull, 2 boss, 1 gossip), the two bosses in
+        # leg order (Erennius before Solnius), Solnius' gossip (menu index 0 -> cmd gossip param 1) right before his
+        # boss row, the 13 pulls the 10 creature_linking groups and the 3 lone waypoint patrols, and no critter in a
+        # pull. The radius is at most 35 yd (the largest here is 17.2), and each pull's radius stops short of another
+        # pack: no row lists more than four different entries.
+        name, text = newest_plan_text("emerald_sanctum")
+        self.assertEqual(name, "20261028170000_world.sql")
+        self.assertIn("('emerald_sanctum', 807, '', '', '', 'turtle-agent ae49e6a dungeons/emerald_sanctum.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual([v[0] for v in leg_rows(text, "emerald_sanctum").values()],
+                         ["entrance_west", "north_hall", "erennius", "east_sanctum", "solnius"])
+        rows = [r for r in self.step_rows(text) if r["plan"] == "emerald_sanctum"]
+        self.assertEqual(len(rows), 45)
+        self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(5)],
+                         [4, 5, 0, 4, 0])
+        self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"], ["60747", "60748"])
+        self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss", "gossip"})
+        # Every boss is the last step of its leg; the gossip is the step before Solnius' boss row.
+        for leg in (2, 4):
+            self.assertEqual(leg_steps(rows, leg)[-1]["kind"], "boss", leg)
+        solnius = leg_steps(rows, 4)
+        self.assertEqual([r["kind"] for r in solnius[-2:]], ["gossip", "boss"])
+        self.assertEqual((solnius[-2]["entry"], solnius[-2]["param"]), ("60748", "1"))
+        pulls = [r for r in rows if r["kind"] == "pull"]
+        self.assertEqual(len(pulls), 13)
+        self.assertLessEqual(max(float(r["radius"]) for r in pulls), 35.0)
+        self.assertLessEqual(max(len(r["entries"].split(",")) for r in pulls), 4)
+        # The three lone patrols are one-unit pulls of their own entry.
+        singles = sorted((r["entries"], r["radius"]) for r in pulls if r["entries"] in ("60744", "60746"))
+        self.assertEqual(singles, [("60744", "1"), ("60746", "1"), ("60746", "1")])
+        # No critter is in a pull.
+        for entry in ("883", "1420"):
+            self.assertFalse([r for r in pulls if entry in r["entries"].split(",")], entry)
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["emerald_sanctum"])
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_boss` WHERE `map` IN \((\d+)\) AND `entry` IN \(([\d, ]+)\);", text),
+                         [("807", "60747, 60748")])
+        self.assertFalse(re.search(r"(?m)^INSERT INTO `ai_boss_tactic`.*\(807,", text), "no tactic row was written for map 807")
 
     def test_inserted_step_kinds_are_known(self):
         for name, text in migrations():
