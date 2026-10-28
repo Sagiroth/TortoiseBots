@@ -313,19 +313,19 @@ std::vector<GuildOrderZoneSlice> GuildOrderZonesFor(int32_t entry)
     return found == index.zonesByEntry.end() ? std::vector<GuildOrderZoneSlice>() : found->second;
 }
 
-uint32_t GuildOrderFarmItemFor(Player* bot)
+std::pair<uint32_t, uint32_t> GuildOrderFarmItemFor(Player* bot)
 {
-    if (!bot)
-        return 0;
+    if (!bot || !bot->GetGuildId())
+        return { 0, 0 };
     std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
-    if (!record || record->state != OrderState::Working || !record->itemId)
-        return 0;
+    if (!record || record->state != OrderState::Working || !record->itemId || !record->farmZoneId)
+        return { 0, 0 };
     if (record->type == OrderType::Farm)
-        return record->itemId;
+        return { record->itemId, record->farmZoneId };
     // Buy falls back to farming its remainder; craft farms the reagent the
     // package-5 value names. Neither value exists on this branch yet, so
     // only Farm carries order mode today.
-    return 0;
+    return { 0, 0 };
 }
 
 bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry)

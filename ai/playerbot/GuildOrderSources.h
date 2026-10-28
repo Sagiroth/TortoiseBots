@@ -3,6 +3,7 @@
 #include "runtime/GuildOrderContract.h"
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 class Player;
@@ -51,10 +52,11 @@ std::vector<GuildOrderZoneSlice> GuildOrderZonesFor(int32_t entry);
 // the narrow gate for emptying order-mob corpses (loot queue and store).
 bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry);
 
-// The item the bot currently farms for its Working order (0 = none): the
-// farm order item, the buy fallback remainder, or the craft reagent the
-// package-5 value names. One helper so order mode never forks per type.
-uint32_t GuildOrderFarmItemFor(Player* bot);
+// The item and planned zone the bot currently farms for its Working order
+// (0 item = none): the farm order item, the buy fallback remainder, or the
+// craft reagent the package-5 value names. One Find so order mode never
+// forks per type and never looks the record up twice.
+std::pair<uint32_t, uint32_t> GuildOrderFarmItemFor(Player* bot);
 
 // Order-mode destination gate over the index: the entry is an order source
 // of the item and usable in the planned zone (level + 3, skill, team).

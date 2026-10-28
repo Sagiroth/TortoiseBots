@@ -1947,7 +1947,22 @@ bool RequestTravelTargetAction::isUseful() {
         return false;
 
     if (AI_VALUE(bool, "travel target active") && !VendorErrandWhileParked(ai, getQualifier()))
+    {
+        // A newly working order jumps the queue: the request runs so
+        // Execute can expire the leisure target it preempts.
+        if (getQualifier() == "guild order" && AI_VALUE(bool, "has guild travel order"))
+        {
+            TravelTarget* current = AI_VALUE(TravelTarget*, "travel target");
+            if (current)
+            {
+                for (std::string const& condition : current->GetConditions())
+                    if (condition == "should travel named::guild order")
+                        return false;
+                return true;
+            }
+        }
         return false;
+    }
 
     // One vendor journey at a time (issue #399): a picked vendor trip
     // suppresses new vendor requests for ten minutes, until a sale lands or

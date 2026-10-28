@@ -1,6 +1,6 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/GuildOrderSources.h"
-#include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderSourcesPolicy.h"
 #include "playerbot/policy/travel/TravelRoutePolicy.h"
 #include "playerbot/GrindSpotPolicy.h"
 #include "playerbot/policy/pull/PullRegenPolicy.h"
@@ -74,13 +74,13 @@ PlayerTravelInfo::PlayerTravelInfo(Player* player)
         value = AI_VALUE(uint32, valueName);
 
     // Order mode: a Working farm order carries its item and planned zone so
-    // destination gates apply the order's own rules to its sources.
-    if (uint32_t farmItem = ai::GuildOrderFarmItemFor(player))
+    // destination gates apply the order's own rules to its sources. One
+    // store lookup; unguilded bots never touch the lock.
+    if (player->GetGuildId())
     {
-        std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
-            TortoiseBots::GuildOrders::Find(player->GetGUIDLow());
-        if (record && record->farmZoneId)
-            SetOrderMode(farmItem, record->farmZoneId);
+        auto [farmItem, farmZone] = ai::GuildOrderFarmItemFor(player);
+        if (farmItem && farmZone)
+            SetOrderMode(farmItem, farmZone);
     }
 }
 
@@ -749,7 +749,7 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     // gates (vendor trip, grind band, prey gold, closest-point level,
     // outgrown) and applies the order's own gates instead: planner usable
     // source, level + 3, skill, planned zone. Elite stays.
-    if (info.IsOrderMode())
+    if (TortoiseBots::GuildOrders::OrderModeSkipsGates(info.IsOrderMode(), GetEntry() > 0))
     {
         CreatureInfo const* orderInfo = GetCreatureInfo();
         if (!orderInfo)
@@ -1003,12 +1003,9 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     // Order mode: an order source of the carried item skips the leisure
     // gates (skill-up cap, grey, closest-point level, outgrown) and
     // applies the order's own gates instead. Fishing never orders.
-    if (info.IsOrderMode())
+    bool const orderSource = GetPurpose() != TravelDestinationPurpose::GatherFishing && GetEntry() < 0;
+    if (TortoiseBots::GuildOrders::OrderModeSkipsGates(info.IsOrderMode(), orderSource))
     {
-        if (GetPurpose() == TravelDestinationPurpose::GatherFishing)
-            return false;
-        if (GetEntry() > 0)
-            return false;
         uint32_t skillValue = 0;
         bool hasSkill = false;
         if (GameObjectInfo const* goInfo = GetGoInfo())
@@ -1031,6 +1028,8 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
         return ai::GuildOrderEntryUsableFor(info.GetOrderItem(), GetEntry(), info.GetLevel(),
             uint32_t(info.GetTeam()), info.GetOrderZone(), skillValue, hasSkill);
     }
+    if (info.IsOrderMode())
+        return false;
 
     uint32 skillId = SKILL_NONE;
     uint32 reqSkillValue = 0;
