@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "GuildValues.h"
 #include "playerbot/strategy/values/BudgetValues.h"
+#include "playerbot/TravelMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "Guild/GuildMgr.h"
 
