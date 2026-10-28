@@ -616,6 +616,20 @@ func main() {
 		writeJSON(w, out)
 	}))
 
+	// The bound bots' and nearby enemies' places over time (one frame per COMMANDERS report, the last 30 min), for the fight
+	// debugger's replay and aggro lanes: ?commander=&from=&to= (unix seconds, at most 1800 s apart).
+	mux.HandleFunc("GET /api/v1/commanders/track", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		c, from, to, err := state.ParseTrackWindow(r.URL.Query())
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"bad window"}`))
+			return
+		}
+		frames, names := store.Track(c, from, to)
+		writeJSON(w, state.TrackJSON(c, frames, names))
+	}))
+
 	// Real map pictures for the Commanders maps: the layer list of a map id, and the .png/.json files of the TBDASH_MAP_DIR folder
 	// (nothing else). Behind the same login as the rest of the API.
 	if mapPics != nil {

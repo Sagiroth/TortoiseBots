@@ -99,6 +99,7 @@ type commandersState struct {
 	at      time.Time
 	list    []model.CommanderBinding
 	trails  map[string]map[uint32]*BotTrail // commander -> bot guid -> trail
+	tracks  map[string]*commanderTrack      // commander -> fight track (the replay and aggro lanes)
 }
 
 // ApplyCommanders replaces the standing bindings with the datagram's list. A
@@ -160,6 +161,7 @@ func (s *Store) ApplyCommanders(p *model.CommandersPayload) bool {
 	}
 	st.session, st.ts, st.at, st.list = p.Session, p.TS, s.now(), out
 	st.noteTrails(out, p.TS)
+	st.noteTracks(out, p.TS, s.now())
 	return true
 }
 
