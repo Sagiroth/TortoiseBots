@@ -8165,9 +8165,32 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     }
     f.directJoinSupported = true; // a direct order waits a tick for the read (DungeonRun::HoldForDirectJoin)
     f.directJoinRead = joinWanted;
+    // Task A5: a raid binding with AiPlayerbot.DungeonRunRaid scales the run's gather, wipe level and rest floor.
+    // The slot's binding: one binding per group (BindingTable::Bind), read off the lead bot's group.
+    if (Group* leadGroup = lead->GetGroup())
+        if (RemoteCommander::Binding const* binding = CommanderBindings().FindByGroup(leadGroup->GetId()))
+            if (binding->raid && sPlayerbotAIConfig.dungeonRunRaid)
+                f.raid.on = true;
+    std::vector<uint32> raidHealths, raidManas; // every living bot's health, non-healer mana (the raid's rest floor)
     for (Player* bot : bots)
     {
         ++f.total;
+        bool const isTank = PlayerbotAI::IsTank(bot);
+        bool const isHeal = !isTank && PlayerbotAI::IsHeal(bot);
+        if (f.raid.on)
+        {
+            if (isTank)
+                ++f.raid.tanksTotal;
+            else if (isHeal)
+                ++f.raid.healersTotal;
+            if (!bot->IsAlive())
+            {
+                if (isTank)
+                    ++f.raid.tanksDead;
+                else if (isHeal)
+                    ++f.raid.healersDead;
+            }
+        }
         if (!bot->IsAlive())
         {
             ++f.dead;
@@ -8180,6 +8203,13 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             f.anyInCombat = true;
         float const yd = bot == lead ? 0.0f : bot->GetMap() == lead->GetMap() ? bot->GetDistance(lead) : 1000.0f;
         f.maxMemberYd = std::max(f.maxMemberYd, yd);
+        if (f.raid.on)
+        {
+            if (yd <= TortoiseBots::RaidLayout::kRaidGatherYd)
+                ++f.raid.aliveWithin; // the lead bot is at 0 yd: it counts
+            else if (isTank || isHeal)
+                ++f.raid.coreAway;
+        }
         // By name: a gather's straggler is summoned (DungeonRun::SummonStraggler),
         // and its crowd control is ordered by name (DungeonRun::PickCcOrder):
         // a mage that knows Polymorph, a priest, warlock or rogue by KnownRunCc.
@@ -8243,6 +8273,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             f.rezzer = true;
         uint32 const health = bot->GetMaxHealth() ? bot->GetHealth() * 100 / bot->GetMaxHealth() : 100;
         f.minHealthPct = std::min(f.minHealthPct, health);
+        if (f.raid.on)
+            raidHealths.push_back(health);
         if (bot->GetPowerType() == POWER_MANA && bot->GetMaxPower(POWER_MANA))
         {
             uint32 const mana = bot->GetPower(POWER_MANA) * 100 / bot->GetMaxPower(POWER_MANA);
@@ -8250,7 +8282,15 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 f.minHealerManaPct = std::min(f.minHealerManaPct, mana);
             else
                 f.minManaPct = std::min(f.minManaPct, mana);
+            if (f.raid.on && !PlayerbotAI::IsHeal(bot))
+                raidManas.push_back(mana);
         }
+    }
+    if (f.raid.on)
+    {
+        f.minHealthPct = TortoiseBots::RaidLayout::RestFloor(raidHealths, TortoiseBots::RaidLayout::kRaidRestIgnorePct);
+        if (!raidManas.empty())
+            f.minManaPct = TortoiseBots::RaidLayout::RestFloor(raidManas, TortoiseBots::RaidLayout::kRaidRestIgnorePct);
     }
 
     if (sPlayerbotAIConfig.dungeonRunRezHold && f.dead > 0)

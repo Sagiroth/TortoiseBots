@@ -21798,6 +21798,134 @@ static void TestRefusedFiringPositionNeverLoops()
     CHECK(second >= 1 && second <= 2 && r.state == State::Paused);
 }
 
+// Task A5: raid rules. A raid of 20 (raid.on) scales the wipe level to 40 %
+// (WipeDead = 8), gathers 90 % within kRaidGatherYd, and waits for wipes only
+// at that level; the few dead are revived before the pull as in a party.
+static Facts Raid(float maxYd = 0.0f)
+{
+    Facts f = Party(0);
+    f.total = 20;
+    f.alive = 20;
+    f.raid.on = true;
+    f.raid.tanksTotal = 3;
+    f.raid.healersTotal = 5;
+    f.maxMemberYd = maxYd;
+    return f;
+}
+
+static void TestRaidWipeLevel()
+{
+    Facts f = Raid();
+    CHECK(WipeDead(f) == 8);
+    CHECK(!WipeLevel(f, 7));
+    CHECK(WipeLevel(f, 8));
+    Facts noTanks = Raid();
+    noTanks.raid.tanksTotal = 3;
+    noTanks.raid.tanksDead = 3;
+    CHECK(WipeLevel(noTanks, 3));
+    Facts healers = Raid();
+    healers.raid.healersDead = 3;
+    CHECK(WipeLevel(healers, 3));
+    Facts party = Party(0);
+    CHECK(WipeDead(party) == kWipeDead);
+    CHECK(WipeLevel(party, 3));
+    CHECK(!WipeLevel(party, 2));
+}
+
+static void TestRaidGathered()
+{
+    Facts f = Raid();
+    f.raid.aliveWithin = 18;
+    f.raid.coreAway = 0;
+    f.maxMemberYd = 45;
+    CHECK(PartyGathered(f));
+    f.raid.aliveWithin = 17;
+    CHECK(!PartyGathered(f));
+    f.raid.aliveWithin = 18;
+    f.raid.coreAway = 1;
+    CHECK(!PartyGathered(f));
+    Facts party = Party(0);
+    party.maxMemberYd = 21;
+    CHECK(!PartyGathered(party));
+    party.maxMemberYd = 20;
+    CHECK(PartyGathered(party));
+}
+
+static void TestRaidPullGateNotHeldByOneStraggler()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(40, {4851, 4852})};
+    Facts f = Raid(45);
+    f.seen = true;
+    f.units = {Unit(11, 4851, 45), Unit(12, 4852, 38)};
+    f.raid.aliveWithin = 19;
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "pullback 12");
+    CHECK(r.phase != Phase::Gather);
+    Facts party = Party(0);
+    party.seen = true;
+    party.units = {Unit(11, 4851, 45), Unit(12, 4852, 38)};
+    party.maxMemberYd = 45;
+    Run q = Start(&plan);
+    CHECK(Tick(q, party) == "move 0.0 0.0 0.0");
+    CHECK(q.phase == Phase::Gather);
+}
+
+static void TestRaidRegroupWaitsForWipeLevel()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    // Four dead after a fight: no wipe regroup by itself (the wipe level is 8).
+    Facts f = Raid();
+    f.dead = 4;
+    f.alive = 16;
+    Run r = Start(&plan);
+    f.anyInCombat = true;
+    CHECK(Tick(r, f).empty());
+    f.anyInCombat = false;
+    Tick(r, f);
+    CHECK(r.state == State::Running && r.autoRegroups == 0);
+    CHECK(r.note.find("regrouping by itself") == std::string::npos);
+    // ... but the few dead still hold the next pull until they are back.
+    DungeonPlan pullPlan;
+    pullPlan.steps = {PullStep(40, {4851})};
+    Facts pull = Raid();
+    pull.dead = 4;
+    pull.alive = 16;
+    pull.seen = true;
+    pull.units = {Unit(11, 4851, 38)};
+    Run pr = Start(&pullPlan);
+    CHECK(Tick(pr, pull).empty());
+    CHECK(pr.phase != Phase::AwaitPull);
+    // Eight dead are a wipe: the run regroups by itself.
+    Facts w = Raid();
+    w.dead = 8;
+    w.alive = 12;
+    Run wr = Start(&plan);
+    w.anyInCombat = true;
+    CHECK(Tick(wr, w).empty());
+    w.anyInCombat = false;
+    Tick(wr, w);
+    CHECK(wr.state == State::Running && wr.regroup && wr.autoRegroups == 1);
+}
+
+static void TestPartyRulesUnchanged()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.dead = 3;
+    f.alive = 2;
+    f.leadAlive = false;
+    f.anyInCombat = true;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && !r.regroup && r.note.find("regroup follows") != std::string::npos);
+    f.anyInCombat = false;
+    Tick(r, f);
+    CHECK(r.state == State::Running && r.regroup && r.wipes == 0 && r.nearWipes == 1);
+}
+
 int main()
 {
     TestRunGossipStepOfReadsTheCurrentStep();
@@ -22348,6 +22476,11 @@ int main()
     TestSpeedLeashResumesWhenTheRateDrops();
     TestSpeedLeashResumesTheLegOnALegWalk();
     TestSpeedLeashClearedByANewStep();
+    TestRaidWipeLevel();
+    TestRaidGathered();
+    TestRaidPullGateNotHeldByOneStraggler();
+    TestRaidRegroupWaitsForWipeLevel();
+    TestPartyRulesUnchanged();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;
 }

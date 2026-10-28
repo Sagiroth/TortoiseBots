@@ -20,6 +20,7 @@
 //
 // Safety rules, carried over from turtle-agent's remote driver (its plan
 // stepper is the owner's MIT code; provenance in its PR):
+//   - in a raid binding the gather, the wipe level and the rest floor scale with the raid (RaidLayoutPolicy.h)
 //   - gather before a pull: every living bot within kGatherYd of the lead bot;
 //   - the plan's cc units get a `cc <mark>` before a pull (never the pull
 //     target), one unit per bot by creature type and spell (kRunCc), its kill_first units are pulled first and focused in a
@@ -56,6 +57,7 @@
 #include "../ai/playerbot/policy/combat/RangedApproachPolicy.h"
 #include "GossipOrderPolicy.h"
 #include "RemoteCommanderTasks.h"
+#include "RaidLayoutPolicy.h"
 #include "RezHoldPolicy.h"
 
 #include <algorithm>
@@ -711,6 +713,15 @@ struct HostileSpot
     // timeout such a hostile still pauses the step, whatever its dz.
     bool engaged = false;
 };
+// The raid's shape for this tick (a raid binding with AiPlayerbot.DungeonRunRaid only).
+
+struct RaidFacts
+{
+    bool on = false;
+    std::uint32_t tanksTotal = 0, tanksDead = 0, healersTotal = 0, healersDead = 0;
+    std::uint32_t aliveWithin = 0;
+    std::uint32_t coreAway = 0;
+};
 
 // What the glue reads once a tick for the run's current step.
 struct Facts
@@ -747,6 +758,7 @@ struct Facts
     bool botKeysForPlayers = false;
     // The party (the commander's bound bots, the lead bot included).
     std::uint32_t total = 0, alive = 0, dead = 0;
+    RaidFacts raid;                       // set on a raid binding with AiPlayerbot.DungeonRunRaid (off: every rule below as before)
     bool leadAlive = true;
     // The instance's doors (every area trigger into the plan's map), read by the glue from the core's trigger table
     // once per map. A living lead bot on one of them far from every point of the plan revived in another part of the
@@ -1023,6 +1035,11 @@ struct Facts
     float shotStandX = 0.0f, shotStandY = 0.0f, shotStandZ = 0.0f;
     float shotStandYd = 0.0f;           // ... the stand's distance from the unit (centre to centre); it sees the unit
 };
+
+// Task A5: declared here (used from the first gate), defined next to PartyDead.
+inline std::uint32_t WipeDead(const Facts& f);
+inline bool WipeLevel(const Facts& f, std::uint32_t dead);
+inline bool PartyGathered(const Facts& f);
 
 // A bot's own stand point in a hold (HoldStands): the glue walks it there and
 // keeps it on "stay" until the list changes.
@@ -6747,7 +6764,7 @@ inline bool SapWait(Run& r, const Facts& f, std::uint32_t dt, std::string& order
     if (r.ccRegather)
     {
         r.ccRegather = false;
-        if (f.maxMemberYd > kGatherYd)
+        if (!PartyGathered(f))
         {
             // The gather's ceiling counts from here, not from the cc order.
             std::string const why = r.note;
@@ -7325,7 +7342,7 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
         r.note = "checking the way back to " + Num(r.anchorX) + " " + Num(r.anchorY) + " " + Num(r.anchorZ);
         return; // the glue reads the path next tick
     }
-    if ((f.maxMemberYd > kGatherYd || anchor == AnchorState::Off) && !r.gatherWaived)
+    if ((!PartyGathered(f) || anchor == AnchorState::Off) && !r.gatherWaived)
     {
         if (r.phase != Phase::Gather)
         {
@@ -12106,7 +12123,7 @@ inline bool RunBackAllowed(const Run& r)
 // still runs.
 inline bool RunBack(Run& r, const Facts& f, std::uint32_t dt)
 {
-    bool const allowed = RunBackAllowed(r) && f.leadAlive && (r.regroup || (f.dead < kWipeDead && f.alive > 0));
+    bool const allowed = RunBackAllowed(r) && f.leadAlive && (r.regroup || (!WipeLevel(f, f.dead) && f.alive > 0));
     if (!allowed)
     {
         ClearRunBack(r);
@@ -12996,6 +13013,24 @@ inline std::uint32_t PartyDead(const Facts& f)
     return dead;
 }
 
+// Task A5: a raid binding scales the party rules with its size (RaidLayoutPolicy.h). Off: every helper below is the
+// old expression byte for byte.
+inline std::uint32_t WipeDead(const Facts& f)
+{
+    return RaidLayout::WipeDeadThreshold(f.total + static_cast<std::uint32_t>(f.players.size()), f.raid.on, kWipeDead);
+}
+inline bool WipeLevel(const Facts& f, std::uint32_t dead)
+{
+    return dead >= WipeDead(f) ||
+        (f.raid.on && RaidLayout::CoreDown(f.raid.tanksTotal, f.raid.tanksDead, f.raid.healersTotal, f.raid.healersDead));
+}
+inline bool PartyGathered(const Facts& f)
+{
+    if (f.raid.on)
+        return RaidLayout::RaidGathered(f.alive, f.raid.aliveWithin, f.raid.coreAway);
+    return f.maxMemberYd <= kGatherYd;
+}
+
 inline bool PartyAllDead(const Facts& f)
 {
     if (f.total == 0 || f.alive > 0)
@@ -13382,7 +13417,7 @@ inline bool RetreatTick(Run& r, const Facts& f, const PlanStep& s, std::uint32_t
     {
         r.retreatMs += dt;
         float const away = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, r.anchorX, r.anchorY, r.anchorZ);
-        if (away <= kArriveYd || r.retreatMs >= kRetreatCapMs || !f.leadAlive || f.dead >= kWipeDead)
+        if (away <= kArriveYd || r.retreatMs >= kRetreatCapMs || !f.leadAlive || WipeLevel(f, f.dead))
         {
             r.retreatOn = false;
             r.retreatDone = true;
@@ -13398,7 +13433,7 @@ inline bool RetreatTick(Run& r, const Facts& f, const PlanStep& s, std::uint32_t
             Num(r.anchorX) + " " + Num(r.anchorY) + " " + Num(r.anchorZ) + " (" + Num(away) + " yd)";
         return true;
     }
-    if (r.retreatDone || f.dead + 1 != kWipeDead || f.alive == 0 || !f.leadAlive || !r.anchorKnown ||
+    if (r.retreatDone || f.raid.on || f.dead + 1 != kWipeDead || f.alive == 0 || !f.leadAlive || !r.anchorKnown ||
         !RetreatAllowedOn(r, s) || !FightBeingLost(r))
         return false;
     float const away = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, r.anchorX, r.anchorY, r.anchorZ);
@@ -13470,19 +13505,19 @@ inline void NoteWipes(Run& r, const Facts& f)
     r.wiped = partyWiped;
     if (windowWipe)
         r.windowWiped = true;
-    else if (PartyDead(f) < kWipeDead)
+    else if (!WipeLevel(f, PartyDead(f)))
         r.windowWiped = false;
     // A near wipe (kWipeDead or more dead, the players counted, someone still alive) counts once
     // too; one that ends in a wipe counts as both.
     std::uint32_t const partyDead = PartyDead(f);
-    bool const nearWipe = partyDead >= kWipeDead && !partyWiped;
+    bool const nearWipe = WipeLevel(f, partyDead) && !partyWiped;
     // The latch holds until fewer than kWipeDead are dead: a near wipe that
     // turns into a wipe, and the revive one by one after it, is one event.
     if (nearWipe && !r.nearWiped)
         ++r.nearWipes;
     if (nearWipe)
         r.nearWiped = true;
-    else if (partyDead < kWipeDead)
+    else if (!WipeLevel(f, partyDead))
         r.nearWiped = false;
 }
 
@@ -13585,7 +13620,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     // The party's dead (bots and players) count (review round 1); a fight a living player is in is a fight.
     if (r.regroup && r.regroupDead < 0)
         r.regroupDead = static_cast<int>(partyDead);
-    if (r.regroup && !f.anyInCombat && (partyDead >= kWipeDead || allDead) &&
+    if (r.regroup && !f.anyInCombat && (WipeLevel(f, partyDead) || allDead) &&
         static_cast<int>(partyDead) > r.regroupDead)
         r.regroup = false;
     if (r.regroup && !runBackWait && !f.anyInCombat)
@@ -13750,7 +13785,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
                     std::to_string(kRegroupReviveMs / 1000) + " s (cmd revive <bot>, then .bot run resume)");
             return order;
         }
-        if (f.maxMemberYd > kGatherYd && !f.anyInCombat && !r.gatherWaived)
+        if (!PartyGathered(f) && !f.anyInCombat && !r.gatherWaived)
         {
             // A revived bot far away is summoned before the gather walks it.
             if (SummonRevived(r, f, order))
@@ -13827,7 +13862,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     // then it pauses for a regroup by hand.
     // The party's dead, the players counted: three of them (or every bot) are a wipe the run regroups after. The
     // regroup waits for a dead player too (RegroupPlayerWait), so it is not started over while he is down.
-    bool const wipe = partyDead >= kWipeDead || allDead;
+    bool const wipe = WipeLevel(f, partyDead) || allDead;
     bool const autoRegroup = wipe && r.autoRegroups < kAutoRegroupsPerStep;
     if (wipe && !autoRegroup)
     {
