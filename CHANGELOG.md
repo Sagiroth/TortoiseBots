@@ -45,6 +45,8 @@
 
 ### Dungeons & Maps
 - New `AiPlayerbot.RaidEntryByCommander` (default `1`): a commanded raid can enter a dungeon whose entrance asks for something only a player has (Onyxia's Lair and its Drakefire Amulet) when the commander is a real player of the same raid and meets the requirement himself; the entrance's other checks are unchanged.
+- New `AiPlayerbot.RaidEntryByCommander` (default `1`): a commanded raid can enter a raid whose entrance asks for something only a player has (Onyxia's Lair and its Drakefire Amulet) when the commander is a real player of the same raid and meets the requirement himself; the entrance's other checks are unchanged, and a five-player dungeon's or a scripted entrance's condition is never waived.
+- The raid guide now explains that Onyxia's five warder packs respawn whenever she is aggroed, so a wipe that sends the dead back to the entrance costs about five minutes of re-clearing them.
 - Fixed: a player's ghost outside no longer pulls the run's bots in and out through the portal; the lead-off-map pause resumes by itself.
 - New: GameMasters can start bot-only dungeon test runs at up to 3x walking speed (`.bot run start ... speed=2`); fights stay at normal speed and the status line marks the run as a test.
 - Fixed: at test speed the lead bot waits for the party when a bot falls 25 yd behind, so the party no longer reaches packs split.

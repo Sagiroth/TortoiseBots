@@ -94,6 +94,8 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectMgr.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "ScriptMgr.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "GameEventMgr.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectAccessor.h"
@@ -4628,15 +4630,17 @@ void CompleteCommanderTask(CommanderTask& task)
 // the per-account instance limit in MapManager::CanPlayerEnter, Player::TeleportTo with
 // the instance and group binds, Map::CanEnter). JudgeEntry below only names the reason of
 // a refusal, save for the commander's condition waiver (AiPlayerbot.RaidEntryByCommander):
-// a bot that fails only the trigger's condition and whose commander meets it goes in by
-// the same Player::TeleportTo the core would use, since the core cannot be told the
-// commander's condition for a bot. The lead bot goes first
+// a bot that fails only the trigger's condition at a raid entrance that has no area-trigger
+// script, and whose commander meets it, goes in by the same Player::TeleportTo the core
+// would use, since the core cannot be told the commander's condition for a bot. The lead
+// bot goes first
 // (it creates the group's instance bind); the followers hold at the trigger until it
 // stands in the dungeon.
 // ---------------------------------------------------------------------------
 
 // What the core's entry path asks of this bot at this trigger, for the readable reason of a refusal.
-RemoteCommander::EntryFacts GatherEntryFacts(Player* bot, AreaTriggerTeleport const* tele, MapEntry const* targetMap)
+RemoteCommander::EntryFacts GatherEntryFacts(Player* bot, uint32 triggerId, AreaTriggerTeleport const* tele,
+    MapEntry const* targetMap)
 {
     RemoteCommander::EntryFacts facts;
     facts.gm = bot->IsGameMaster();
@@ -4653,9 +4657,12 @@ RemoteCommander::EntryFacts GatherEntryFacts(Player* bot, AreaTriggerTeleport co
     facts.conditionFailed = tele->requiredCondition && bot->GetMap() &&
         !sObjectMgr.IsConditionSatisfied(tele->requiredCondition, bot, bot->GetMap(), bot, CONDITION_FROM_AREATRIGGER);
     facts.conditionMessage = tele->message;
+    facts.raidMap = targetMap->IsDungeon() && targetMap->IsRaid();
+    bool const unscriptedTrigger = sScriptMgr.GetAreaTriggerScriptId(triggerId) == 0;
     // AiPlayerbot.RaidEntryByCommander: the commander's own condition stands for the bot's when he is a real
-    // player of the bot's raid and meets it himself (the amulet Onyxia's lair asks for).
-    if (facts.conditionFailed && sPlayerbotAIConfig.raidEntryByCommander)
+    // player of the bot's raid and meets it himself (the amulet Onyxia's lair asks for). A raid's entrance
+    // only, and only one with no area-trigger script: the fallback teleport would skip the script.
+    if (facts.conditionFailed && facts.raidMap && unscriptedTrigger && sPlayerbotAIConfig.raidEntryByCommander)
     {
         Group* group = bot->GetGroup();
         RemoteCommander::Binding const* binding = group ? CommanderBindings().FindByGroup(group->GetId()) : nullptr;
@@ -4667,9 +4674,8 @@ RemoteCommander::EntryFacts GatherEntryFacts(Player* bot, AreaTriggerTeleport co
             sObjectMgr.IsConditionSatisfied(tele->requiredCondition, commander, commander->GetMap(), commander,
                 CONDITION_FROM_AREATRIGGER);
         facts.conditionWaived = RemoteCommander::WaiveCondition(sPlayerbotAIConfig.raidEntryByCommander,
-            commanderIsRealPlayer, sameRaid, commanderMeets);
+            facts.raidMap, unscriptedTrigger, commanderIsRealPlayer, sameRaid, commanderMeets);
     }
-    facts.raidMap = targetMap->IsDungeon() && targetMap->IsRaid();
     facts.ignoreRaid = sWorld.getConfig(CONFIG_BOOL_INSTANCE_IGNORE_RAID);
     Group* group = bot->GetGroup();
     facts.inRaidGroup = group && group->isRaidGroup();
@@ -4698,7 +4704,7 @@ AreaTriggerTeleport const* InstanceEntranceOf(AreaTriggerEntry const* trigger, M
 bool SendEnterTrigger(CommanderTask& task, Player* bot, PlayerbotAI* ai, AreaTriggerTeleport const* tele,
     MapEntry const* targetMap)
 {
-    RemoteCommander::EntryFacts const facts = GatherEntryFacts(bot, tele, targetMap);
+    RemoteCommander::EntryFacts const facts = GatherEntryFacts(bot, task.triggerId, tele, targetMap);
     RemoteCommander::EntryVerdict const verdict = RemoteCommander::JudgeEntry(facts);
     if (!verdict.ok)
     {
@@ -4719,7 +4725,8 @@ bool SendEnterTrigger(CommanderTask& task, Player* bot, PlayerbotAI* ai, AreaTri
         return false;
     // The core refused: say why when the reason can be read now (the bot's state may have
     // changed with the attempt), else name the checks that only the core sees.
-    RemoteCommander::EntryVerdict const again = RemoteCommander::JudgeEntry(GatherEntryFacts(bot, tele, targetMap));
+    RemoteCommander::EntryVerdict const again = RemoteCommander::JudgeEntry(
+        GatherEntryFacts(bot, task.triggerId, tele, targetMap));
     if (!again.ok)
         FinishCommanderTask(task, false, 0, "", again.code, again.message);
     else
@@ -5734,7 +5741,8 @@ static bool CommanderEnter(ChatHandler* handler, CommanderOrder const& order,
                 (name + " is farther from the entrance than AiPlayerbot.ReactDistance. Move the group closer first.").c_str());
             return true;
         }
-        RemoteCommander::EntryVerdict const verdict = RemoteCommander::JudgeEntry(GatherEntryFacts(bot, tele, targetMap));
+        RemoteCommander::EntryVerdict const verdict = RemoteCommander::JudgeEntry(
+            GatherEntryFacts(bot, triggerId, tele, targetMap));
         if (!verdict.ok)
         {
             SendActionError(handler, intent, verdict.code, (name + ": " + verdict.message).c_str());

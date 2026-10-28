@@ -12,9 +12,9 @@
 // requirement verdict (the readable reason of a refusal; the core stays the judge), the
 // per-bot walk/wait/arrive state machine with its budgets, and the tally that turns the
 // bots' results into the order's single final answer. One check is waived rather than
-// judged: a bot's failed trigger condition when its commander, a real player of the same
-// raid, meets that condition himself (AiPlayerbot.RaidEntryByCommander). The glue is in
-// commands/BotCommands.cpp.
+// judged: a bot's failed trigger condition at a raid's entrance that has no area-trigger
+// script, when its commander, a real player of the same raid, meets that condition himself
+// (AiPlayerbot.RaidEntryByCommander). The glue is in commands/BotCommands.cpp.
 //
 // Plain data and the standard library only. World thread only, like the rest of the commander.
 
@@ -157,7 +157,7 @@ struct EntryFacts
     bool ignoreLevel = false;        // Instance.IgnoreLevel
     bool lunaticOverride = false;    // a Lunatic challenger on one of the maps that ignore the level
     bool conditionFailed = false;    // the trigger's condition (key, quest, ...) is not met
-    bool conditionWaived = false;    // ... but the commander of the bot meets it for it (WaiveCondition)
+    bool conditionWaived = false;    // ... but the commander meets it at a raid entrance with no trigger script
     std::string conditionMessage;    // the trigger's own message for it ("" = none)
     bool raidMap = false;
     bool ignoreRaid = false;         // Instance.IgnoreRaid
@@ -186,9 +186,14 @@ inline EntryVerdict RefuseEntry(char const* code, std::string const& message)
 // bot's raid and meets that condition himself (for Onyxia's lair: the Drakefire Amulet).
 // The key, the commander's own check and the raid are the world's to read; this is the
 // rule only. A refused level, raid group, instance limit or content phase is never waived.
-inline bool WaiveCondition(bool keyOn, bool commanderIsRealPlayer, bool sameRaid, bool commanderMeetsCondition)
+// A raid's entrance only: a five-player dungeon's condition is never waived. And only an
+// entrance with no area-trigger script: the glue's fallback teleport skips the trigger's
+// script, so a script that denies the bot entry at the trigger is not re-checked there
+// (only the map's own admission checks are).
+inline bool WaiveCondition(bool keyOn, bool raidMap, bool unscriptedTrigger, bool commanderIsRealPlayer,
+    bool sameRaid, bool commanderMeetsCondition)
 {
-    return keyOn && commanderIsRealPlayer && sameRaid && commanderMeetsCondition;
+    return keyOn && raidMap && unscriptedTrigger && commanderIsRealPlayer && sameRaid && commanderMeetsCondition;
 }
 
 // The checks in the core's order: content phase, level and condition (a GameMaster

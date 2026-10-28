@@ -150,38 +150,56 @@ static void TestRequirements()
 
 static void TestConditionWaiver()
 {
-    // AiPlayerbot.RaidEntryByCommander: key, a real commander, the bot's raid, the commander's own condition.
-    CHECK(WaiveCondition(true, true, true, true));
-    CHECK(!WaiveCondition(false, true, true, true));  // key off
-    CHECK(!WaiveCondition(true, false, true, true));  // the commander is a bot
-    CHECK(!WaiveCondition(true, true, false, true));  // not in the bot's raid
-    CHECK(!WaiveCondition(true, true, true, false));  // the commander fails too
+    // AiPlayerbot.RaidEntryByCommander: key, a raid's entrance, no trigger script, a real commander, the
+    // bot's raid, the commander's own condition.
+    CHECK(WaiveCondition(true, true, true, true, true, true));
+    CHECK(!WaiveCondition(false, true, true, true, true, true));  // key off
+    CHECK(!WaiveCondition(true, false, true, true, true, true));  // a five-player dungeon
+    CHECK(!WaiveCondition(true, true, false, true, true, true));  // the trigger runs a script
+    CHECK(!WaiveCondition(true, true, true, false, true, true));  // the commander is a bot
+    CHECK(!WaiveCondition(true, true, true, true, false, true));  // not in the bot's raid
+    CHECK(!WaiveCondition(true, true, true, true, true, false));  // the commander fails too
 
-    // A bot that fails only the condition: the commander's check lets it in.
+    // A bot that fails only the condition at a raid's entrance: the commander's check lets it in.
     EntryFacts base = Ready();
     base.conditionFailed = true;
     EntryVerdict const today = JudgeEntry(base);
     CHECK(!today.ok && std::strcmp(today.code, kCodeRequirement) == 0);
-    base.conditionWaived = WaiveCondition(true, true, true, true);
-    CHECK(JudgeEntry(base).ok);
+    EntryFacts raid = base;
+    raid.raidMap = true;
+    raid.inRaidGroup = true;
+    raid.conditionWaived = WaiveCondition(true, true, true, true, true, true);
+    CHECK(JudgeEntry(raid).ok);
+
+    // A five-player dungeon: the commander's own condition never waives the bot's.
+    EntryFacts dungeon = base;
+    dungeon.conditionWaived = WaiveCondition(true, false, true, true, true, true);
+    EntryVerdict const dungeonVerdict = JudgeEntry(dungeon);
+    CHECK(!dungeonVerdict.ok && std::strcmp(dungeonVerdict.code, today.code) == 0 &&
+        dungeonVerdict.message == today.message);
+
+    // A raid whose entrance trigger runs a script: the fallback teleport would skip it, so the refusal stands.
+    EntryFacts scripted = raid;
+    scripted.conditionWaived = WaiveCondition(true, true, false, true, true, true);
+    CHECK(!JudgeEntry(scripted).ok);
 
     // The commander fails too: the same refusal as today, message included.
-    EntryFacts refused = base;
-    refused.conditionWaived = WaiveCondition(true, true, true, false);
+    EntryFacts refused = raid;
+    refused.conditionWaived = WaiveCondition(true, true, true, true, true, false);
     EntryVerdict const verdict = JudgeEntry(refused);
     CHECK(!verdict.ok && std::strcmp(verdict.code, today.code) == 0 && verdict.message == today.message);
 
     // The key off: today's refusal.
-    EntryFacts keyOff = base;
-    keyOff.conditionWaived = WaiveCondition(false, true, true, true);
+    EntryFacts keyOff = raid;
+    keyOff.conditionWaived = WaiveCondition(false, true, true, true, true, true);
     CHECK(!JudgeEntry(keyOff).ok);
 
     // The waiver lifts the condition only: the level, raid group and instance limit stay.
-    EntryFacts facts = base;
+    EntryFacts facts = raid;
     facts.level = 1;
     CHECK(!JudgeEntry(facts).ok);
-    facts = base;
-    facts.raidMap = true;
+    facts = raid;
+    facts.inRaidGroup = false;
     CHECK(!JudgeEntry(facts).ok);
     facts.inRaidGroup = true;
     facts.instanceCountOk = false;

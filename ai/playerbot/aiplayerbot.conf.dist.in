@@ -508,13 +508,14 @@ AiPlayerbot.BotGearPresets = prebis=t1 ilvl=63;lkh=t2 ilvl=63;zg=t2 ilvl=63;aq20
 # the bots already track; no extra world scan. Clamped to 250..60000.
 #AiPlayerbot.RemoteCommanderViewMs = 1000
 
-# Raid entry by the commander. A dungeon entrance can ask a player for something a bot
+# Raid entry by the commander. A raid's entrance can ask a player for something a bot
 # never has (Onyxia's lair asks for the Drakefire Amulet quest reward). With 1, a bot's
 # failed entrance condition is waived when the commander who bound it is a real player in
 # the bot's raid and meets that condition himself; with 0 the bot is refused as before.
-# The entrance's other requirements (level, content phase, raid group, instance limit)
-# are never waived, the commander must stand in the world, and the core still checks the
-# instance itself.
+# A five-player dungeon's condition is never waived, and neither is a scripted entrance's
+# (the fallback teleport would skip the trigger's script). The entrance's other
+# requirements (level, content phase, raid group, instance limit) are never waived, the
+# commander must stand in the world, and the core still checks the instance itself.
 # 0 - off: the bot's own condition decides
 # 1 - on (Default)
 #AiPlayerbot.RaidEntryByCommander = 1
