@@ -76,6 +76,7 @@
 
 ### Dashboard
 - The dashboard's raid card now names the raid's layout in one row: the main tank, the off-tanks, which healer follows which tank, and the raid healers. The run line also names the current step in its own words, from the plan.
+- Every Commanders card can switch to a Fight debugger: finished fights in a rail with the worst one opened first, plain-language checks (tank deaths, the main tank's Sunder rate, missed debuffs, overheal, idle bots, off-tank taunts, server rule warnings), a damage timeline with death recaps and skulls on the map, raid frames and per-role tables, plus a live view while the group is fighting.
 
 ## v1.8.0 (2026-10-22)
 

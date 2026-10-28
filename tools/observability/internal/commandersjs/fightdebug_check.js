@@ -1,0 +1,374 @@
+"use strict";
+// Run by commandersjs_test.go under node: the Fight debugger's pure logic (web/static/js/fightdebug.js).
+// The fixture is walk 2 (Onyxia's Lair, commander Glacienne), newest fight first like GET /api/v1/combat/fights.
+const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
+const F = require(path.resolve(process.argv[2]));
+
+const fights = JSON.parse(fs.readFileSync(path.join(__dirname, "testdata", "walk2-fights.json"), "utf8"));
+const byId = (id) => fights.find((f) => f.id === id);
+const detail = (id, warnings) => ({ fight: byId(id), warnings: warnings || [] });
+const LAYOUT = { mt: "Ragemeister", ot: ["Brun", "Irelanthe"] };
+
+// ---- exports and small helpers -------------------------------------------------------------------------------------
+assert.deepStrictEqual(F.DEBUFF_CHECKS.map((d) => d.key), ["faerie_fire", "coe", "expose_armor"]);
+assert.deepStrictEqual(F.DEBUFF_CHECKS.map((d) => d.name), ["Faerie Fire", "Curse of the Elements", "Expose Armor"]);
+assert.deepStrictEqual(F.TAUNTS, ["Taunt", "Growl", "Hand of Reckoning", "Mocking Blow", "Challenging Shout", "Challenging Roar"]);
+assert.deepStrictEqual(F.LIMITS, { sunderOk: 1.5, sunderWarn: 0.8, takenShare: 0.15, overheal: 0.45, debuffOk: 0.6, minFightMs: 10000 });
+assert.strictEqual(F.fmtInt(175083), "175,083");
+assert.strictEqual(F.fmtInt(0), "0");
+assert.strictEqual(F.fmtInt(999), "999");
+assert.strictEqual(F.roleOf({ role: "tank" }), "tank");
+assert.strictEqual(F.roleOf({ role: "healer" }), "heal");
+assert.strictEqual(F.roleOf({ role: "dps" }), "dps");
+assert.strictEqual(F.spellCount({ spells: [{ n: "Taunt", c: 2 }, { n: "Growl", c: 3 }, { n: "Taunt", c: 1 }] }, "Taunt"), 3);
+assert.strictEqual(F.spellCount(null, "Taunt"), 0);
+
+// ---- main tank and off-tanks: the layout, else the fight's own tanks -----------------------------------------------
+assert.strictEqual(F.mainTank(byId("5-4"), LAYOUT).name, "Ragemeister");
+assert.deepStrictEqual(F.offTanks(byId("5-4"), LAYOUT).map((b) => b.name), ["Brun", "Irelanthe"]);
+const noLayoutFight = {
+  bots: [
+    { name: "DPS", role: "dps" },
+    { name: "TB", role: "tank" },
+    { name: "TA", role: "tank" },
+  ],
+};
+assert.strictEqual(F.mainTank(noLayoutFight, null).name, "TB");
+assert.deepStrictEqual(F.offTanks(noLayoutFight, null).map((b) => b.name), ["TA"]);
+
+// ---- the checks of fight 5-4 --------------------------------------------------------------------------------------
+const c54 = F.checks(byId("5-4"), LAYOUT, []);
+const one = (id) => c54.find((c) => c.id === id);
+assert.strictEqual(c54.length, 10);
+assert.deepStrictEqual(c54.map((c) => c.id),
+  ["tank_death", "debuff:coe", "debuff:expose_armor", "mt_sunder", "taken_outside", "overheal", "idle",
+    "debuff:faerie_fire", "ot_taunt:Brun", "ot_taunt:Irelanthe"]);
+assert.deepStrictEqual(c54.map((c) => c.lvl), ["fail", "warn", "warn", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+
+assert.strictEqual(one("mt_sunder").title, "Main tank Sunder rate");
+assert.strictEqual(one("mt_sunder").num, "2.0/10 s");
+assert.strictEqual(one("mt_sunder").lvl, "ok");
+assert.strictEqual(one("mt_sunder").ev,
+  "Ragemeister cast Sunder Armor 8× in 39 s (Shield Slam 4×). Under 0.8 per 10 s the stack never reaches 5.");
+
+assert.strictEqual(one("tank_death").title, "Tank died: Irelanthe (2×)");
+assert.strictEqual(one("tank_death").num, 2);
+assert.strictEqual(one("tank_death").death, 0);
+assert.strictEqual(one("tank_death").bot, "Irelanthe");
+assert.strictEqual(one("tank_death").ev, "Irelanthe at 12.0 s to Onyxian Warder · Irelanthe at 25.1 s to Onyxian Warder");
+assert.strictEqual(one("other_death"), undefined);
+
+assert.strictEqual(one("taken_outside").title, "Most damage taken outside the tanks: Kitetastic (damage)");
+assert.strictEqual(one("taken_outside").num, "6%");
+assert.strictEqual(one("taken_outside").lvl, "ok");
+assert.strictEqual(one("taken_outside").bot, "Kitetastic");
+assert.strictEqual(one("taken_outside").ev,
+  "Tanks took 21,907; Kitetastic took 9,730 of 175,083. Over 15% on one non-tank usually means threat was lost.");
+
+assert.strictEqual(one("overheal").title, "Healer overheal");
+assert.strictEqual(one("overheal").num, "24%");
+assert.strictEqual(one("overheal").lvl, "ok");
+assert.strictEqual(one("overheal").ev, "103,742 effective, 32,478 overheal across 10 healers.");
+
+assert.strictEqual(one("idle").title, "Every bot acted");
+assert.strictEqual(one("idle").num, 0);
+assert.strictEqual(one("idle").lvl, "ok");
+assert.strictEqual(one("idle").ev, "All 39 bots cast, hit or healed.");
+
+assert.strictEqual(one("debuff:coe").title, "Curse of the Elements up");
+assert.strictEqual(one("debuff:coe").num, "57%");
+assert.strictEqual(one("debuff:coe").lvl, "warn");
+assert.strictEqual(one("debuff:coe").ev, "24 of 42 sampled seconds.");
+assert.strictEqual(one("debuff:expose_armor").title, "Expose Armor up");
+assert.strictEqual(one("debuff:expose_armor").num, "45%");
+assert.strictEqual(one("debuff:expose_armor").lvl, "warn");
+assert.strictEqual(one("debuff:faerie_fire").title, "Faerie Fire up");
+assert.strictEqual(one("debuff:faerie_fire").num, "62%");
+assert.strictEqual(one("debuff:faerie_fire").lvl, "ok");
+
+assert.strictEqual(one("ot_taunt:Brun").title, "Off-tank Brun taunted");
+assert.strictEqual(one("ot_taunt:Brun").num, "2×");
+assert.strictEqual(one("ot_taunt:Brun").lvl, "ok");
+assert.strictEqual(one("ot_taunt:Brun").ev, "paladin: Hand of Reckoning 2; took 6,500.");
+assert.strictEqual(one("ot_taunt:Irelanthe").num, "3×");
+assert.strictEqual(one("ot_taunt:Irelanthe").lvl, "ok");
+assert.strictEqual(one("ot_taunt:Irelanthe").ev, "druid: Growl 3; took 10,879.");
+
+// 5-5: Expose Armor exactly 50 % (warn); 5-3: a weak Sunder, CoE 35 %, Irelanthe never taunted.
+assert.strictEqual(F.checks(byId("5-5"), LAYOUT, []).find((c) => c.id === "debuff:expose_armor").num, "50%");
+const c53 = F.checks(byId("5-3"), LAYOUT, []);
+assert.strictEqual(c53.find((c) => c.id === "mt_sunder").num, "1.3/10 s");
+assert.strictEqual(c53.find((c) => c.id === "mt_sunder").lvl, "warn");
+assert.strictEqual(c53.find((c) => c.id === "debuff:coe").num, "35%");
+// 5-2 Faerie Fire is exactly 24/40 = 0.60: the limit is inclusive.
+assert.strictEqual(F.checks(byId("5-2"), LAYOUT, []).find((c) => c.id === "debuff:faerie_fire").lvl, "ok");
+assert.strictEqual(c53.find((c) => c.id === "ot_taunt:Irelanthe").num, "0×");
+assert.strictEqual(c53.find((c) => c.id === "ot_taunt:Irelanthe").lvl, "warn");
+assert.strictEqual(c53.find((c) => c.id === "ot_taunt:Irelanthe").ev, "druid: no taunt; took 13,457.");
+
+// ---- verdicts, worst pick -----------------------------------------------------------------------------------------
+const details = fights.map((f) => ({ fight: f, warnings: [] }));
+assert.deepStrictEqual(details.map((d) => F.verdict(d.fight, LAYOUT, [])), ["warn", "fail", "warn", "warn", "ok"]);
+assert.strictEqual(F.verdict({ bots: [], deaths: [], debuffs: {}, dur_ms: 1 }, null, []), "ok");
+assert.strictEqual(F.worstIndex(details, LAYOUT), 1);
+assert.strictEqual(F.worstIndex([null, null], LAYOUT), -1);
+const partial = details.slice();
+partial[1] = null;
+const worstPartial = F.worstIndex(partial, LAYOUT);
+assert.notStrictEqual(worstPartial, 1);
+assert.strictEqual(F.verdict(details[worstPartial].fight, LAYOUT, []), "warn");
+// Equal scores keep the earliest (newest) fight.
+assert.strictEqual(F.worstIndex([detail("5-5"), detail("5-5")], LAYOUT), 0);
+
+// ---- death recaps: a second death never repeats the hits of the first ---------------------------------------------
+const recaps = F.deathRecaps(byId("5-4"));
+assert.strictEqual(recaps.length, 2);
+assert.strictEqual(recaps[0].total, 6422);
+assert.strictEqual(recaps[0].spanMs, 5016);
+assert.strictEqual(recaps[0].hits.length, 5);
+assert.strictEqual(recaps[0].name, "Irelanthe");
+assert.strictEqual(recaps[0].killer, "Onyxian Warder");
+assert.strictEqual(recaps[0].x, -163);
+assert.strictEqual(recaps[1].hits.length, 1);
+assert.strictEqual(recaps[1].hits[0].d, 3091);
+assert.strictEqual(recaps[1].spanMs, 0);
+assert.deepStrictEqual(F.deathRecaps({ deaths: [] }), []);
+
+// ---- timeline -----------------------------------------------------------------------------------------------------
+const tl = F.timeline(byId("5-4"));
+assert.strictEqual(tl.durMs, 39111);
+assert.deepStrictEqual(tl.ticks.map((t) => t.label), ["0 s", "5 s", "10 s", "15 s", "20 s", "25 s", "30 s", "35 s"]);
+assert.strictEqual(tl.ticks.length, 8);
+assert.strictEqual(tl.deaths[0].pct.toFixed(2), "30.78");
+assert.strictEqual(tl.deaths[1].pct.toFixed(2), "64.16");
+assert.strictEqual(tl.hits.length, 6);
+assert.strictEqual(tl.hits[5].d, 3091);
+assert.strictEqual(tl.hits[5].h, 44);
+assert.ok(tl.hits.every((h) => h.pct >= 0 && h.pct <= 100));
+
+// ---- role tables ----------------------------------------------------------------------------------------------------
+const rt = F.roleTables(byId("5-4"), LAYOUT);
+assert.deepStrictEqual(rt.tanks.map((r) => r.name), ["Ragemeister", "Brun", "Irelanthe"]);
+assert.strictEqual(rt.tanks[0].main, true);
+assert.strictEqual(rt.tanks[1].main, false);
+assert.strictEqual(rt.tanks[0].sunder, 8);
+assert.strictEqual(rt.tanks[0].taunts, 1);
+assert.strictEqual(rt.tanks[2].died, 2);
+assert.strictEqual(rt.tanks[2].taken, 10879);
+assert.strictEqual(rt.tanks[0].cls, "warrior");
+assert.strictEqual(rt.healers.length, 10);
+assert.strictEqual(rt.healers[0].name, "Magnarr");
+assert.ok(Math.abs(rt.healers[0].hps - 25134 / (39111 / 1000)) < 1e-9);
+assert.strictEqual(rt.healers[0].overPct, Math.round(rt.healers[0].overPct));
+assert.strictEqual(rt.maxHps, rt.healers[0].hps);
+assert.strictEqual(rt.dps.length, 26);
+assert.strictEqual(rt.dps[0].name, "Dawnfist");
+assert.strictEqual(rt.dps[0].dps, 15120 / (39111 / 1000));
+assert.strictEqual(rt.maxDps, rt.dps[0].dps);
+assert.ok(rt.dps.every((r, i) => i === 0 || rt.dps[i - 1].dps >= r.dps));
+const laidOut = {
+  bots: [
+    { name: "TankA", role: "tank", class: "warrior", taken: 10 },
+    { name: "TankB", role: "tank", class: "warrior", taken: 10 },
+    { name: "HealA", role: "healer", class: "priest", heal: 10, over: 10, casts: 1 },
+    { name: "HealB", role: "healer", class: "priest", heal: 10, over: 10, casts: 1 },
+  ],
+  dur_ms: 10000,
+};
+const laid = F.roleTables(laidOut, { mt: "TankB", ot: ["TankA"] });
+assert.deepStrictEqual(laid.tanks.map((r) => r.name), ["TankB", "TankA"]);
+assert.deepStrictEqual(laid.healers.map((r) => r.name), ["HealA", "HealB"]);
+assert.deepStrictEqual(F.roleTables({ dur_ms: 0, bots: [] }, null), { tanks: [], healers: [], dps: [], maxHps: 0, maxDps: 0 });
+
+// ---- one bot --------------------------------------------------------------------------------------------------------
+const bp = F.botPanel(byId("5-4"), "Ragemeister");
+assert.strictEqual(bp.name, "Ragemeister");
+assert.strictEqual(bp.cls, "warrior");
+assert.strictEqual(bp.sub, 0);
+assert.strictEqual(bp.casts, 16);
+assert.deepStrictEqual(bp.spells.map((s) => s.n),
+  ["Sunder Armor", "Shield Slam", "Bloodrage", "Food", "Heroic Strike", "Taunt"]);
+assert.strictEqual(F.botPanel(byId("5-4"), "Nobody"), null);
+
+// ---- the fight rail -------------------------------------------------------------------------------------------------
+const list = [
+  { key: "k5", dur: 35123, deaths: 0, step: 5, boss_name: "" },
+  { key: "k4", dur: 39111, deaths: 2, step: 22, boss_name: "" },
+  { key: "k3", dur: 52477, deaths: 0, step: 9, boss_name: "" },
+];
+const dmap = { k5: detail("5-5"), k4: detail("5-4"), k3: detail("5-3") };
+const cards = F.railCards(list, dmap, LAYOUT);
+assert.deepStrictEqual(cards.map((c) => c.key), ["k5", "k4", "k3"]);
+assert.deepStrictEqual(cards.map((c) => c.verdict), ["warn", "fail", "warn"]);
+assert.strictEqual(cards[0].label, "Onyxian Warder");
+assert.strictEqual(cards[1].durMs, 39111);
+assert.strictEqual(cards[1].deaths, 2);
+assert.strictEqual(cards[1].step, 22);
+assert.strictEqual(cards[0].lenPct, (35123 / 52477) * 100);
+assert.strictEqual(cards[2].lenPct, 100);
+const unloaded = F.railCards([list[0]], {}, LAYOUT);
+assert.strictEqual(unloaded[0].verdict, null);
+assert.strictEqual(unloaded[0].label, "trash");
+assert.strictEqual(unloaded[0].lenPct, 100);
+assert.deepStrictEqual(F.railCards(null, {}, LAYOUT), []);
+
+// ---- raid frames ----------------------------------------------------------------------------------------------------
+const bind = {
+  bots: [
+    { name: "A", guid: 1, class: "warrior", role: "tank", sub: 0, hp: 50, max_hp: 100, power: 10, max_power: 100, power_type: "rage", alive: true },
+    { name: "B", guid: 2, class: "priest", role: "healer", sub: 0, hp: 100, max_hp: 100, power: 100, max_power: 100, power_type: "mana", alive: true },
+    { name: "C", guid: 3, class: "mage", role: "dps", sub: 1, hp: 0, max_hp: 0, alive: true },
+    { name: "D", guid: 4, class: "rogue", role: "dps", sub: 7, hp: 20, max_hp: 40, power: 0, max_power: 100, power_type: "energy", alive: false },
+    { name: "E", guid: 5, class: "hunter", role: "dps", sub: 9, hp: 10, max_hp: 10, alive: true },
+    { name: "F", guid: 6, class: "shaman", role: "dps", hp: 1, max_hp: 2, alive: true },
+  ],
+  layout: { mt: "A", ot: ["D"] },
+};
+const frames = F.raidFrames(bind);
+assert.deepStrictEqual(frames.map((f) => f.label), ["Group 1", "Group 2", "Group 8"]);
+assert.deepStrictEqual(frames.map((f) => f.tiles.length), [2, 1, 3]);
+assert.strictEqual(frames[0].tiles[0].hpPct, 50);
+assert.strictEqual(frames[0].tiles[0].powerPct, 10);
+assert.strictEqual(frames[0].tiles[0].powerKind, "rage");
+assert.strictEqual(frames[0].tiles[0].tag, "MT");
+assert.strictEqual(frames[0].tiles[0].alive, true);
+assert.strictEqual(frames[0].tiles[0].role, "tank");
+assert.strictEqual(frames[0].tiles[1].role, "healer");
+assert.deepStrictEqual(frames[2].tiles.map((t) => t.name), ["D", "E", "F"]);
+assert.strictEqual(frames[2].tiles[0].role, "dead");
+assert.strictEqual(frames[2].tiles[0].tag, "OT");
+assert.strictEqual(frames[2].tiles[0].hpPct, 50);
+assert.strictEqual(frames[2].tiles[0].powerPct, 0);
+assert.strictEqual(frames[2].tiles[0].powerKind, "energy");
+assert.strictEqual(frames[2].tiles[1].tag, "");
+assert.strictEqual(frames[1].tiles[0].hpPct, 0);
+assert.strictEqual(frames[1].tiles[0].powerPct, 0);
+assert.strictEqual(frames[1].tiles[0].powerKind, "mana");
+assert.deepStrictEqual(F.raidFrames({ bots: [{ name: "A" }, { name: "B" }] }).map((f) => f.label), ["Party"]);
+assert.deepStrictEqual(F.raidFrames({ bots: [] }), []);
+
+// ---- live fight: summary, checks, tables -----------------------------------------------------------------------------
+assert.strictEqual(F.liveSummary({}), null);
+assert.strictEqual(F.liveSummary({ bots: [], combat: null }), null);
+const liveBind = {
+  bots: [{ name: "A", guid: 1, role: "tank", alive: true }, { name: "B", guid: 2, role: "healer", alive: false }],
+  combat: { win_s: 10, fight_ms: 23000, bots: [{ g: 1, dps: 120, hps: 0, c: 3, ls: "Maul" }] },
+};
+assert.deepStrictEqual(F.liveSummary(liveBind), { fightMs: 23000, winS: 10, dps: 120, hps: 0, active: 1, alive: 1 });
+
+assert.deepStrictEqual(F.liveChecks({}), []);
+const early = {
+  bots: [{ name: "A", guid: 1, role: "tank", alive: true }],
+  combat: { win_s: 10, fight_ms: 5000, bots: [] },
+};
+assert.ok(!F.liveChecks(early).some((c) => c.id === "live_idle"));
+const full = {
+  bots: [{ name: "A", guid: 1, role: "tank", alive: true }, { name: "B", guid: 2, role: "healer", alive: true }],
+  combat: { win_s: 10, fight_ms: 23000, bots: [{ g: 1, dps: 10, hps: 0, c: 2, ls: "x" }] },
+};
+const idleLive = F.liveChecks(full).find((c) => c.id === "live_idle");
+assert.strictEqual(idleLive.lvl, "warn");
+assert.ok(idleLive.ev.includes("B"));
+assert.strictEqual(idleLive.bot, "B");
+const busy = {
+  bots: [{ name: "A", guid: 1, role: "tank", alive: true }],
+  combat: { win_s: 10, fight_ms: 23000, bots: [{ g: 1, dps: 10, hps: 0, c: 2, ls: "x" }] },
+};
+assert.strictEqual(F.liveChecks(busy).find((c) => c.id === "live_idle").lvl, "ok");
+const deadTank = {
+  bots: [{ name: "MT", guid: 1, role: "tank", alive: false }, { name: "B", guid: 2, role: "healer", alive: true }],
+  layout: { mt: "MT", ot: [] },
+  combat: { win_s: 10, fight_ms: 23000, bots: [{ g: 2, dps: 0, hps: 9, c: 1, ls: "Heal" }] },
+};
+const tankDown = F.liveChecks(deadTank).find((c) => c.id === "live_tank_dead");
+assert.strictEqual(tankDown.lvl, "fail");
+assert.ok(tankDown.title.includes("MT"));
+assert.strictEqual(tankDown.bot, "MT");
+
+const liveRows = F.liveTables(full);
+assert.deepStrictEqual(liveRows.map((r) => r.name), ["A", "B"]);
+assert.strictEqual(liveRows[0].dps, 10);
+assert.strictEqual(liveRows[0].casts, 2);
+assert.strictEqual(liveRows[0].last, "x");
+assert.strictEqual(liveRows[0].role, "tank");
+assert.strictEqual(liveRows[1].dps, 0);
+assert.strictEqual(liveRows[1].casts, 0);
+assert.strictEqual(liveRows[1].last, "");
+
+// ---- a synthetic fight: a warrior main tank over- or under-taunting, and the guards -------------------------------
+const fight = (over) => Object.assign({
+  dur_ms: 30000, bots: [], debuffs: { sampled_s: 0, up_s: {} }, deaths: [], engaged: [], boss_name: "",
+}, over);
+const bot = (over) => Object.assign({
+  name: "B", guid: 1, class: "warrior", role: "dps", dmg: 100, heal: 0, over: 0, taken: 10, casts: 2, deaths: 0, spells: [],
+}, over);
+const warriorMT = (n, dur) => fight({
+  dur_ms: dur,
+  bots: [bot({ name: "T", role: "tank", taken: 100, spells: [{ n: "Sunder Armor", c: n }] })],
+});
+const MTLAYOUT = { mt: "T", ot: [] };
+const sunderOf = (f) => F.checks(f, MTLAYOUT, []).find((c) => c.id === "mt_sunder");
+assert.strictEqual(sunderOf(warriorMT(2, 30000)).lvl, "fail");
+assert.strictEqual(sunderOf(warriorMT(2, 30000)).num, "0.7/10 s");
+assert.strictEqual(sunderOf(warriorMT(3, 30000)).lvl, "warn");
+assert.strictEqual(sunderOf(warriorMT(3, 30000)).num, "1.0/10 s");
+assert.strictEqual(sunderOf(warriorMT(2, 9000)), undefined);
+assert.strictEqual(sunderOf(fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "tank", class: "druid" })] })), undefined);
+assert.strictEqual(sunderOf(fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "dps", class: "warrior" })] })), undefined);
+
+const outside = fight({ bots: [bot({ name: "T", role: "tank", taken: 100 }), bot({ name: "D", role: "dps", taken: 25 })] });
+const outsideCheck = F.checks(outside, { mt: "T", ot: [] }, []).find((c) => c.id === "taken_outside");
+assert.strictEqual(outsideCheck.lvl, "warn");
+assert.strictEqual(outsideCheck.num, "20%");
+assert.strictEqual(outsideCheck.title, "Most damage taken outside the tanks: D (damage)");
+const healOutside = fight({ bots: [bot({ name: "T", role: "tank", taken: 100 }), bot({ name: "H", role: "healer", taken: 25 })] });
+assert.strictEqual(F.checks(healOutside, { mt: "T", ot: [] }, []).find((c) => c.id === "taken_outside").title,
+  "Most damage taken outside the tanks: H (healer)");
+
+const overhealFight = fight({ bots: [bot({ name: "H", role: "healer", heal: 100, over: 100, casts: 3 })] });
+const overhealCheck = F.checks(overhealFight, null, []).find((c) => c.id === "overheal");
+assert.strictEqual(overhealCheck.lvl, "warn");
+assert.strictEqual(overhealCheck.num, "50%");
+
+const idleFight = fight({ bots: [bot({ name: "Idle", dmg: 0, heal: 0, casts: 0 }), bot({ name: "Busy" })] });
+const idleCheck = F.checks(idleFight, null, []).find((c) => c.id === "idle");
+assert.strictEqual(idleCheck.lvl, "warn");
+assert.strictEqual(idleCheck.bot, "Idle");
+assert.ok(idleCheck.title.includes("1"));
+
+const otFight = fight({ bots: [bot({ name: "T", role: "tank" }), bot({ name: "OT", role: "tank", class: "druid" })] });
+const otCheck = F.checks(otFight, { mt: "T", ot: ["OT"] }, []).find((c) => c.id === "ot_taunt:OT");
+assert.strictEqual(otCheck.lvl, "warn");
+assert.strictEqual(otCheck.num, "0×");
+
+const deathFight = fight({
+  bots: [bot({ name: "T", role: "tank" })],
+  deaths: [{ name: "D", t_ms: 4000, killer: "mob", x: 1, y: 2, hits: [] }],
+});
+const otherDeath = F.checks(deathFight, { mt: "T", ot: [] }, []).find((c) => c.id === "other_death");
+assert.strictEqual(otherDeath.lvl, "fail");
+assert.strictEqual(otherDeath.num, 1);
+assert.strictEqual(otherDeath.death, 0);
+
+const ruled = F.checks(byId("5-4"), LAYOUT,
+  [{ rule: "healer_no_heals", level: "red", bot: "X", text: "X (healer) cast no heals" }]);
+const ruleCheck = ruled.find((c) => c.id === "rule:healer_no_heals:X");
+assert.strictEqual(ruleCheck.lvl, "fail");
+assert.strictEqual(ruleCheck.bot, "X");
+assert.strictEqual(ruleCheck.title, "X (healer) cast no heals");
+assert.strictEqual(ruleCheck.ev, "Server rule healer_no_heals");
+
+// ---- no HTML in data: names come back verbatim, the renderer escapes them -------------------------------------------
+const markupFight = fight({
+  bots: [bot({ name: "<b>x</b>", role: "tank", taken: 5 })],
+  deaths: [{ name: "<b>x</b>", t_ms: 1000, killer: "<i>k</i>", x: 0, y: 0, hits: [] }],
+});
+const markupCheck = F.checks(markupFight, { mt: "<b>x</b>", ot: [] }, []).find((c) => c.id === "tank_death");
+assert.strictEqual(markupCheck.title, "Tank died: <b>x</b>");
+assert.strictEqual(markupCheck.ev, "<b>x</b> at 1.0 s to <i>k</i>");
+assert.strictEqual(F.railCards([{ key: "k", dur: 1, deaths: 0, step: 1, boss_name: "<img src=x>" }], {}, null)[0].label,
+  "<img src=x>");
+
+console.log("fightdebug_check: ok");
