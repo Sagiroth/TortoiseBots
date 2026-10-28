@@ -49,3 +49,5 @@ std::vector<GuildOrderZoneSlice> GuildOrderZonesFor(int32_t entry);
 // True when the creature entry can skin the bot's Working farm order item:
 // the narrow gate for emptying order-mob corpses (loot queue and store).
 bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry);
+
+} // namespace ai
