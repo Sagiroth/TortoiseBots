@@ -133,7 +133,9 @@ It is not the live **Dungeons** tab above: that one shows the instance copies bo
 
 ### Run Leader Runs on the Commanders Tab
 
-**A run leader's run ("observe").** A party that clears a dungeon plan by itself (`.bot run`, see [Dungeon Run Leader](../play/dungeon-run-leader.md)) is a card like any other, with an `observe` badge (`observe · paused` when it stopped), its plan, step and section in the card's second line (`uldaman · step 78/205 · ancient stone keeper · pull · rest`; hover for the note and the time of the last change), and a `Run paused: <reason>` warning, so a stuck run shows its reason. It needs a module that sends the run (`run` in the `COMMANDERS` report); an older one shows the party without it.
+**A run leader's run ("observe").** A party that clears a dungeon plan by itself (`.bot run`, see [Dungeon Run Leader](../play/dungeon-run-leader.md)) is a card like any other, with an `observe` badge (`observe · paused` when it stopped), its plan, step and section in the card's second line (`uldaman · step 78/205 · ancient stone keeper · pull · rest`, or `step 78/205 · <the plan step's own description>` when the plan row carries a comment; hover for the note and the time of the last change), and a `Run paused: <reason>` warning, so a stuck run shows its reason. It needs a module that sends the run (`run` in the `COMMANDERS` report); an older one shows the party without it.
+
+**Raid layout.** A bound raid whose group the module laid out (`.bot commander bind ... raid`) shows one `Layout` row above its subgroup blocks: the main tank, the off-tanks, each tank healer as `healer -> tank` and the raid healers. It needs the layout in the `COMMANDERS` report (`layout`); an older module or a group that was never laid out shows no row.
 
 **Run steps** (a party the run leader clears, "observe"): the plan's steps for the current section - a dashed route (grey = done, blue = ahead), numbered circles for pulls and bosses (green = cleared, yellow = the step it is on, struck out = skipped), a crown and name for bosses, icons for loot, doors, rituals and stops - need a module that sends `run.plan_steps`; an older one leaves the layer greyed.
 

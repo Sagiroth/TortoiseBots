@@ -2962,6 +2962,7 @@ select.input {
 .cmd-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 8px 18px; margin-top: 12px; }
 .cmd-panels[hidden] { display: none; }
 .cmd-subgroup { margin: 10px 0 2px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
+.cmd-layout { margin: 8px 0 2px; font-size: 0.8rem; color: var(--text-dim); overflow-wrap: anywhere; }
 .cmd-notes { max-height: 30em; overflow: auto; font-size: 0.8rem; }
 .cmd-note { padding: 1px 0; border-top: 1px solid var(--border-color); overflow-wrap: anywhere; }
 .cmd-threat-row { padding: 2px 0; font-size: 0.84rem; }

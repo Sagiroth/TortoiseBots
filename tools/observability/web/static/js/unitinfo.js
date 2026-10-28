@@ -324,6 +324,7 @@
     const leg = str(r.leg).replace(/[_\-]+/g, " ").trim();
     const parts = [];
     if (num(r.steps) && r.steps > 0) parts.push("step " + (r.step || 0) + "/" + r.steps);
+    if (typeof r.label === "string" && r.label.trim()) parts.push(r.label.trim());
     if (leg && leg !== "-") parts.push(leg);
     if (r.state === "done") parts.push("done");
     else if (r.state === "paused") parts.push("paused");

@@ -104,6 +104,25 @@
     });
   }
 
+  // The bound raid's layout (the module's TBM:RAID_LAYOUT), in words: "MT <name> · OTs <a>, <b> · tank healers <h> -> <t> ·
+  // raid healers <n>"; null when the module reported none (an older one) or every part is empty. The card shows it as one row.
+  function layoutText(bind) {
+    const l = bind && bind.layout;
+    if (!l || typeof l !== "object") return null;
+    const names = (v) => (Array.isArray(v) ? v.filter((n) => typeof n === "string" && n) : []);
+    const pairs = (Array.isArray(l.th) ? l.th : [])
+      .filter((p) => p && typeof p === "object" && p.h && p.t)
+      .map((p) => p.h + " -> " + p.t);
+    const parts = [];
+    if (typeof l.mt === "string" && l.mt) parts.push("MT " + l.mt);
+    const off = names(l.ot);
+    if (off.length) parts.push("OTs " + off.join(", "));
+    if (pairs.length) parts.push("tank healers " + pairs.join(", "));
+    const healers = names(l.rh);
+    if (healers.length) parts.push("raid healers " + healers.join(", "));
+    return parts.length ? parts.join(" · ") : null;
+  }
+
   // Mobs whose victim is a bound bot that is not a tank (by role), held at least 2 s since the tracker first saw the
   // victim on that mob: [{mob, victim, role, seconds}]. A mob with no victim or on a tank is not listed.
   function threatOffTanks(bind, tr, nowSec) {
@@ -721,7 +740,7 @@
     HEAL_RANGE_YD, FAR_YD, LOW_HP_PCT, STALE_WARN_SEC, pretty, plural, ageText, roleKey, roleLabel, distance, leadBot, partyRows, orderText, stateWord,
     headerText, headerParts, botHref, warnings, newTracker, note, context, prune, project, fitView, viewBox, zoomAt, panBy, pinch, gridStep, gridLines,
     trailSegments, markGap, trailSegmentsBroken, trailRuns, trailMarks, trailEvent, jumpLimitYd, TRAVEL_MAX_YD_PER_SEC, TRAVEL_SLACK_YD, TRAVEL_MAX_GAP_SEC, clampScale, prependTrail, heading, trailStamps, scaleBar, zonesIn, pictureSlots, pictureChoice, pictureSelect, pictureRefreshAfter, PIC_RETRY_MS, PIC_MISSING_MS,
-    raidBlocks, isRaid, threatOffTanks, notesLog, deathsTimeline, controlLines, whyWaiting,
+    raidBlocks, isRaid, layoutText, threatOffTanks, notesLog, deathsTimeline, controlLines, whyWaiting,
     AGGRO_RANGE_YD, followView, zoomFollow, pinchFollow, mobsOf, mobClass, threatLines, botTargetLines, aggroMobs, commanderPlace,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.CmdView = api;

@@ -625,6 +625,7 @@ type CommanderBinding struct {
 	Mobs         []CommanderMob `json:"mobs"`                    // hostile units near the lead; null = not reported, [] = reported, none near
 	BoundAt      int64          `json:"bound_at,omitempty"`      // unix seconds the binding was first seen standing (the run timer starts here); absent from an older module
 	Run          *CommanderRun  `json:"run,omitempty"`           // the run leader's run of this binding ("observe" mode); absent when it has none or from an older module
+	Layout       *CommanderLayout `json:"layout,omitempty"`      // the raid layout the module applied to the group; absent when it applied none or from an older module
 
 	// Doors, chests, altars and gongs the bots have seen near them (on the map of MobsMap), capped; null = not reported, [] = reported, none seen.
 	Objects []CommanderObject `json:"objects"`
@@ -663,6 +664,7 @@ type CommanderRunStep struct {
 	Radius  float64 `json:"r,omitempty"`  // pull, boss, wait_clear: the area the step cares about
 	Entry   uint32  `json:"e,omitempty"`  // the creature or object the step is about
 	Name    string  `json:"n,omitempty"`  // its name when the module knows it
+	Label   string  `json:"c,omitempty"`  // the row's own comment (a short description)
 	Skipped bool    `json:"sk,omitempty"` // left out with `.bot run skip`
 }
 
@@ -675,6 +677,7 @@ type CommanderRun struct {
 	Leg     string `json:"leg"`     // the current leg's name: the section
 	Kind    string `json:"kind"`    // move, pull, boss, loot, open ...
 	Phase   string `json:"phase"`   // what the step is doing
+	Label   string `json:"label,omitempty"` // the current step's own comment (the plan row's short description)
 	Note    string `json:"note"`    // what it does now, or why it paused
 	Changed int64  `json:"changed"` // unix seconds the step, phase, state or note last changed
 
@@ -754,6 +757,21 @@ type CommanderOrder struct {
 	Detail string `json:"detail"`
 	OK     bool   `json:"ok"`
 	Result string `json:"result"`
+}
+
+// CommanderLayout is the raid layout the module applied to the binding's group (TBM:RAID_LAYOUT): the main tank, the
+// off-tanks, each tank healer with the tank it was given, and the raid healers left healing the raid.
+type CommanderLayout struct {
+	MainTank    string                `json:"mt"`
+	OffTanks    []string              `json:"ot"`
+	TankHealers []CommanderTankHealer `json:"th"`
+	RaidHealers []string              `json:"rh"`
+}
+
+// CommanderTankHealer is one tank healer of a layout: the healer and the tank it heals.
+type CommanderTankHealer struct {
+	Healer string `json:"h"`
+	Tank   string `json:"t"`
 }
 
 // CommandersView is what GET /api/v1/commanders and the "commanders" stream

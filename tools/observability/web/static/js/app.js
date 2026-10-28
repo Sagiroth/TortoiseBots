@@ -5263,7 +5263,11 @@
   // alive/dead, act+res, cast, target name, distance to the lead, away badge); the header also counts roles.
   // cmdPartyHtml stays untouched (its helpers are pinned by partyrows_check.js), so the row is built here.
   function cmdRaidHtml(bind) {
-    return CmdView.raidBlocks(bind).map(b => {
+    const layout = CmdView.layoutText(bind);
+    const layoutRow = layout
+      ? `<div class="cmd-layout" title="The raid layout the module applied: main tank, off-tanks, tank healers (healer -> tank) and raid healers">Layout: ${esc(layout)}</div>`
+      : '';
+    return layoutRow + CmdView.raidBlocks(bind).map(b => {
       const head = b.label === 'Party' ? '' : `<h4 class="cmd-subgroup">${esc(b.label)} &middot; ${b.rows.filter(r => r.alive).length}/${b.rows.length} up</h4>`;
       return head + b.rows.map(r => cmdRaidRowHtml(bind, r)).join('');
     }).join('');

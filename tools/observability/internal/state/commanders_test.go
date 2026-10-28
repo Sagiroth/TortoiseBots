@@ -278,6 +278,44 @@ func TestCommandersCarryRaidNotes(t *testing.T) {
 	}
 }
 
+// F5: a raid binding carries the layout the module applied (main tank, off-tanks, tank healers, raid healers) and the run's
+// current step label; the dashboard would drop both without the model fields, so they must survive the store and reach the view.
+func TestCommandersCarryLayoutAndLabel(t *testing.T) {
+	raw := `{"v":9,"session":3,"seq":1,"ts":50,"type":"COMMANDERS","commanders":[
+{"commander":"Gbraid","online":true,"group":1,"lead":"Ragemeister","bots":[{"name":"Ragemeister","guid":1,"lead":true,"sub":0}],"orders":[],
+ "layout":{"mt":"Ragemeister","ot":["Irelanthe","Brun"],"th":[{"h":"Sera","t":"Ragemeister"}],"rh":["Prayer"]},
+ "run":{"plan":"onyxias_lair","state":"running","step":28,"steps":40,"leg":"onyxia","kind":"move","phase":"walk","label":"boss stand outside her wake radius",
+  "plan_steps":[{"i":28,"k":"move","x":-80,"y":-211.4,"c":"boss stand outside her wake radius"}]}},
+{"commander":"P","online":true,"group":2,"lead":"S","bots":[{"name":"Solo","alive":true}],"orders":[]}]}`
+	var p model.CommandersPayload
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestStore(newClock())
+	s.ApplyCommanders(&p)
+	v := s.Commanders().Commanders
+	raid := v[0]
+	if raid.Layout == nil || raid.Layout.MainTank != "Ragemeister" || len(raid.Layout.OffTanks) != 2 ||
+		len(raid.Layout.TankHealers) != 1 || raid.Layout.TankHealers[0].Healer != "Sera" ||
+		raid.Layout.TankHealers[0].Tank != "Ragemeister" || len(raid.Layout.RaidHealers) != 1 {
+		t.Fatalf("layout lost: %+v", raid.Layout)
+	}
+	if raid.Run == nil || raid.Run.Label != "boss stand outside her wake radius" || len(raid.Run.PlanSteps) != 1 ||
+		raid.Run.PlanSteps[0].Label != "boss stand outside her wake radius" {
+		t.Fatalf("run label lost: %+v", raid.Run)
+	}
+	out, _ := json.Marshal(raid)
+	if !strings.Contains(string(out), `"layout":{"mt":"Ragemeister","ot":["Irelanthe","Brun"]`) ||
+		!strings.Contains(string(out), `"th":[{"h":"Sera","t":"Ragemeister"}]`) ||
+		!strings.Contains(string(out), `"label":"boss stand outside her wake radius"`) {
+		t.Fatalf("layout or label not in the view: %s", out)
+	}
+	plain, _ := json.Marshal(v[1])
+	if strings.Contains(string(plain), `"layout"`) {
+		t.Fatalf("a binding without a layout must keep it out: %s", plain)
+	}
+}
+
 func trailPayload(ts int64, mapID uint32, x, y float64) *model.CommandersPayload {
 	p := &model.CommandersPayload{V: model.ProtocolVersion, Session: 5, TS: ts, Type: "COMMANDERS"}
 	p.Commanders = []model.CommanderBinding{{

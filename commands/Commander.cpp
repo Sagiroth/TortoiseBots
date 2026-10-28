@@ -1692,6 +1692,11 @@ struct RaidLayoutApplied
     ObjectGuid previousMainAssistant;
     uint64_t commanderRaw = 0;
     bool system = false;
+    // What the layout placed, as the dashboard names it (the same names the TBM:RAID_LAYOUT line carries).
+    std::string mainTank;
+    std::vector<std::string> offTanks;
+    std::vector<std::pair<std::string, std::string>> tankHealers;
+    std::vector<std::string> raidHealers;
     std::vector<std::pair<ObjectGuid, uint8_t>> originalSubgroups;
     std::vector<ObjectGuid> assistants;
     std::vector<RaidFocusHealer> focusHealers;
@@ -2105,6 +2110,7 @@ static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> con
             if (found != byName.end() && found->second)
                 tankGuid = found->second->GetObjectGuid();
             tankHealers.push_back(placement.name + " -> " + tankName);
+            applied.tankHealers.emplace_back(placement.name, tankName);
             PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
             RaidFocusHealer record;
             record.guid = bot->GetObjectGuid();
@@ -2121,6 +2127,9 @@ static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> con
         else if (placement.role == TortoiseBots::RaidLayout::Role::Healer)
             raidHealers.push_back(placement.name);
     }
+    applied.mainTank = lead->GetName();
+    applied.offTanks = offTanks;
+    applied.raidHealers = raidHealers;
     RaidLayouts()[group->GetId()] = applied;
     auto join = [](std::vector<std::string> const& names) -> std::string
     {
@@ -11915,6 +11924,14 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
             ref.commanderOnline = commander && commander->GetSession() && commander->GetSession()->HasNetworkTransport();
         }
         ref.groupId = binding->groupId;
+        if (auto const laid = RaidLayouts().find(binding->groupId); laid != RaidLayouts().end())
+        {
+            ref.layout.present = true;
+            ref.layout.mainTank = laid->second.mainTank;
+            ref.layout.offTanks = laid->second.offTanks;
+            ref.layout.tankHealers = laid->second.tankHealers;
+            ref.layout.raidHealers = laid->second.raidHealers;
+        }
         auto const view = CommanderViews().find(commanderRaw);
         ref.viewOn = view != CommanderViews().end() && view->second.enabled;
         Group* group = lead ? lead->GetGroup() : nullptr;
@@ -11940,6 +11957,8 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
             ref.run.note = fields.note;
             ref.run.changedAt = run->second.changedAt;
             ref.run.notes.assign(run->second.notes.begin(), run->second.notes.end());
+            if (const ai::PlanStep* step = TortoiseBots::DungeonRun::Current(run->second.run))
+                ref.run.label = step->label;
             // Bots off the run's gather rule or the lead's map: above the gather
             // radius of the lead bot (a party's kGatherYd, 30 yd for a raid binding)
             // or on another map. Distance reads only, the run policy is untouched.

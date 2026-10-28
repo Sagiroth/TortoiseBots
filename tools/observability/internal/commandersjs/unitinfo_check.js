@@ -176,6 +176,8 @@ assert.strictEqual(U.runBrief({}, 5), null, "no run: nothing"); assert.strictEqu
 assert.strictEqual(U.runBrief({ run: Object.assign({}, run, { changed: 0 }) }, 1000).changedAgo, null);
 const rr = U.newEvents();
 assert.strictEqual(U.runInfo(bind({ commander: "RR", bound_at: 1000, run }), rr, 1100).text, "Run 01:40 · step 78/205 · ancient stone keeper · pull · rest", "the run line carries the step and section");
+assert.strictEqual(U.runBrief({ run: Object.assign({}, run, { label: "boss stand outside her wake radius" }) }, 1000).text,
+  "step 78/205 · boss stand outside her wake radius · ancient stone keeper · pull · rest", "the step's own label follows the step number");
 // ---- the box over a game object and over a plain mark
 {
   const d = U.describeObject({ name: "Ancient Treasure", type: "c", state: "u", entry: 2087, x: 3, y: 4, map: 1 }, { lead: { x: 0, y: 0, map: 1 } });

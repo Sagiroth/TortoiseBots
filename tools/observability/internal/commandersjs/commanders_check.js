@@ -504,4 +504,10 @@ assert.ok(/paused/.test(ww) && /waiting for mana/.test(ww) && !/stalled/.test(ww
 assert.ok(/stalled/.test(C.whyWaiting(waitBind(121), 1000)), "stalled at 121 s");
 assert.ok(/stuck/.test(C.whyWaiting(waitBind(301), 1000)), "stuck at 301 s");
 assert.strictEqual(C.whyWaiting(party(), 1000), "", "no run: nothing to wait on");
+// the raid layout (F5): main tank, off-tanks, tank healer pairs and raid healers from the module's TBM:RAID_LAYOUT
+assert.strictEqual(C.layoutText({ layout: { mt: "Ragemeister", ot: ["Irelanthe", "Brun"], th: [{ h: "Sera", t: "Ragemeister" }], rh: ["Prayer"] } }),
+  "MT Ragemeister · OTs Irelanthe, Brun · tank healers Sera -> Ragemeister · raid healers Prayer");
+assert.strictEqual(C.layoutText({ layout: { mt: "Ragemeister", ot: [], th: [], rh: [] } }), "MT Ragemeister", "the parts it has");
+assert.strictEqual(C.layoutText(party()), null, "no layout reported: no row");
+assert.strictEqual(C.layoutText({ layout: { mt: "", ot: [], th: [], rh: [] } }), null, "an empty layout says nothing");
  console.log("commanders.js ok");
