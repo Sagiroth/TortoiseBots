@@ -120,7 +120,7 @@ void CombatMonitorCastAdapter::OnSpellCast(Player* player, Spell* spell, bool /*
         if (info->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_HEAL)
             heal = true;
     }
-    CombatMonitorService::Instance().OnCast(player->GetGUIDLow(), info->SpellName[0], heal);
+    CombatMonitorService::Instance().OnCast(player->GetGUIDLow(), info->SpellName[0].c_str(), heal);
 }
 
 } // namespace TortoiseBots
