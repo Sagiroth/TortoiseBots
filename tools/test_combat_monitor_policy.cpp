@@ -260,8 +260,10 @@ static void TestWindowPrune()
         b.OnDamage(3, 0, 100, "Magey", 11502, 777, "Magmadar", (uint32_t)(1000 + i));
         b.OnHeal(2, 100, 0, (uint32_t)(1000 + i));
     }
+    CHECK(b.WindowEventCount() == 30);
     std::string w = b.WindowJson(30000);
     // Every event is older than the 10 s window: none counts, and the read pruned the vectors.
+    CHECK(b.WindowEventCount() == 0);
     CHECK(!Contains(w, "\"g\":"));
     b.OnCast(3, "Fireball", false, 30000);
     b.OnDamage(3, 0, 100, "Magey", 11502, 778, "Add", 30000);
