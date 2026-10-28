@@ -85,11 +85,13 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 | `TBM:BOTSTATE\|<bot>\|<fields>` | Emits bot movement mode, 9 behavior toggles, and the sap switch. |
 | `TBM:CC_ASSIGN_BEGIN\|<n>` / `TBM:CC_ASSIGN_END` | Delimits active crowd control assignments. |
 | `TBM:CC_ASSIGN\|<bot>\|<mark>` | Emits a party bot's assigned CC raid mark. |
-| `TBM:CAPS\|<capabilities>` | Advertises server feature capabilities. Exact tokens: `pull-seconds,flee,inventory,behavior,claimed-roster,loot-log`, plus `dungeon-run` while the dungeon run is enabled (`AiPlayerbot.DungeonSelfClear = 1`). |
+| `TBM:CAPS\|<capabilities>` | Advertises server feature capabilities. Exact tokens: `pull-seconds,flee,inventory,behavior,claimed-roster,loot-log,guild-orders`, plus `dungeon-run` while the dungeon run is enabled (`AiPlayerbot.DungeonSelfClear = 1`). |
 | `TBM:LOOT_BEGIN\|<n>\|<nextCursor>` / `TBM:LOOT_END\|<nextCursor>` | Delimits one page of loot history from `.bot lootlog`. |
 | `TBM:LOOT\|<ts>\|<bot>\|<event>\|<itemId>\|<item>\|<sourceType>\|<source>\|<quality>` | Emits one loot row (item taken or money taken). |
-| `TBM:ORDER_ITEMS_BEGIN\|<n>` / `TBM:ORDER_ITEMS_END` | Delimits one order search reply from `.bot order search`. |
-| `TBM:ORDER_ITEM\|<itemId>\|<item>\|<quality>\|<sources>\|<minLevel>\|<skill>\|<verdict>\|<zone>\|<chance>` | Emits one matching item with the bot's farm plan (`<sources>` comma list of `drop,skin,herb,ore,craft,ah`; `<skill>` as `<skillId>:<value>` or `-`; `<verdict>` `ok` or a reason token; `<zone>` the planned farm zone or `-`; `<chance>` percent at the best source, `0` when not applicable). |
+| `TBM:ORDER_BEGIN\|<n>` / `TBM:ORDER_END` | Delimits the guild order list from `.bot order list`. |
+| `TBM:ORDER\|<bot>\|<type>\|<itemId>\|<item>\|<have>\|<want>\|<state>\|<reason>\|<zone>` | Emits one guild order row; also sent alone as a live update to the giver on state changes and progress (at most every 5 s). |
+| `TBM:ORDER_ITEMS_BEGIN\|<n>` / `TBM:ORDER_ITEMS_END` | Delimits the `.bot order search` result list. |
+| `TBM:ORDER_ITEM\|<itemId>\|<item>\|<quality>\|<sources>\|<minLevel>\|<skill>\|<verdict>\|<zone>\|<chance>` | Emits one searchable item with the bot's verdict and farm zone. |
 | `TBM:ALTBOTS\|<names>` | Comma-separated list of owned characters active as autonomous alt-bots. |
 | `TBM:VERSION\|<version>` | Handshakes server module version (e.g. `2026-10-20-v1` or `dev`). |
 | `TBM:VIEW` | Real-time perception frame lines for Remote Commander. |
@@ -98,9 +100,9 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 
 ### Protocol Grammar & Semantics
 
-- **Capabilities (`TBM:CAPS`):** Emits `TBM:CAPS|pull-seconds,flee,inventory,behavior,claimed-roster,loot-log`, with `,dungeon-run` appended while the dungeon run is enabled. (`mimic` is a behavior toggle, not a capability token).
+- **Capabilities (`TBM:CAPS`):** Emits `TBM:CAPS|pull-seconds,flee,inventory,behavior,claimed-roster,loot-log,guild-orders`, with `,dungeon-run` appended while the dungeon run is enabled. (`mimic` is a behavior toggle, not a capability token).
 - **Loot history (`TBM:LOOT`):** `.bot lootlog [cursor]` replays loot rows for your controllable party bots (owned alts and hired companions) from the last 24 hours, newest piece first, up to 40 rows per reply. A money row carries the copper amount as `<item>` and the corpse entry as `<itemId>`; an item row carries the item name, id and quality. Send the returned `<nextCursor>` back for the next page; `expired` means the piece it pointed at was pruned, so start over without a cursor.
-- **Order search (`TBM:ORDER_ITEM`):** `.bot order search <bot> <farm|buy|craft> <text>` lists up to 30 bankable items matching the text (at least 3 characters), each with the sources this bot can use, the lowest source level, the needed skill, the verdict (`ok` or why the bot cannot get it) and the planned farm zone with its chance. `buy` answers `ah` without a zone; `craft` answers `craft` when the bot knows the recipe, `norecipe` when it does not.
+- **Guild orders (`TBM:ORDER`):** `.bot order list` replays the orders of bots in your guild. `<type>` is `farm`, `buy` or `craft`; `<state>` is `working`, `waiting`, `delivering`, `done`, `mailed`, `noskill` or `cant`; `<reason>` is `-` (none), `grouped`, `noskill`, `lowskill`, `lowlevel`, `norange`, `nosource`, `norecipe`, `stuck`, `bagsfull` or `nobank`; `<zone>` is the farm zone name (or the auction house city for a buy, `-` when none). Outside a list reply, the server sends a lone `TBM:ORDER|...` line to the order giver whenever an order changes state, and on progress at most every 5 seconds. `.bot order search` answers with `TBM:ORDER_ITEM` rows: `<sources>` is a comma list of `drop`, `skin`, `herb`, `ore`, `craft`, `ah`; `<skill>` is `<skillId>:<value>` or `-`; `<verdict>` is `ok` or the reason the bot cannot get it; `<chance>` is the percent chance at the best source in `<zone>`.
 - **Bot State Grammar (`TBM:BOTSTATE`):** Emitted for all controllable party bots (owned alts and hired companions). Format:
   ```text
   TBM:BOTSTATE|<bot>|move=<follow|stay|guard|free|flee|custom>,loot=<on|off>,aoe=<on|off>,autocc=<on|off>,savemana=<on|off>,boost=<on|off>,threat=<on|off>,potions=<on|off>,mimic=<on|off>,spread=<on|off>,sap=<on|off>[,specs=<strategy>+<strategy>...]

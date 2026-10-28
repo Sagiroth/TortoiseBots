@@ -141,6 +141,7 @@ struct OrderRecord
     bool movedZone = false;    // already moved once to the second-best zone
     uint32_t deaths = 0;
     uint32_t workedSinceNewItemSec = 0;
+    uint32_t reportedHave = 0;   // last reported progress; reported have never drops below this
     uint64_t createdAt = 0;
     uint64_t updatedAt = 0;
 };

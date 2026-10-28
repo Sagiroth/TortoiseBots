@@ -1,6 +1,8 @@
 #include "playerbot/playerbot.h"
 #include "GuildShareAhBuyAction.h"
 #include "playerbot/strategy/values/BudgetValues.h"
+#include "playerbot/strategy/values/GuildValues.h"
+#include "runtime/GuildOrderStore.h"
 #include "playerbot/RandomItemMgr.h"
 #include "AuctionHouse/AuctionHouseMgr.h"
 #include "Mail/Mail.h"
@@ -80,14 +82,17 @@ std::map<uint32, uint32> GuildShareAhBuyAction::GetNeededItems()
     std::map<uint32, uint32> needed;
 
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-    if (order.type != GuildOrderType::AuctionHouse || order.target.empty())
+    if (order.type != GuildOrderType::AuctionHouse || !order.itemId)
+        return needed;
+    if (!OrderStillNeedsWork(bot, order))
         return needed;
 
-    uint32 itemId = GuildOrderValue::FindItemByName(order.target);
-    if (!itemId)
-        return needed;
+    uint32 itemId = order.itemId;
 
-    uint32 owned = ai->GetInventoryItemsCountWithId(itemId) + CountMailboxItems(itemId);
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> stored =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    uint32 delivered = (stored && stored->itemId == itemId) ? stored->delivered : 0;
+    uint32 owned = delivered + ai->GetInventoryItemsCountWithId(itemId) + CountMailboxItems(itemId);
     uint32 want = order.amount ? order.amount : 1;
     if (owned >= want)
         return needed;
