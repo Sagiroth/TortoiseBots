@@ -63,8 +63,8 @@ bool GuildOrderVendorAction::Execute(Event& event)
     if (!reagentProto)
         return false;
 
-    uint32 itemId = record ? record->itemId : GuildOrderValue::FindItemByName(order.target);
-    uint32 orderAmount = record ? record->amount : order.amount;
+    uint32 itemId = order.itemId;
+    uint32 orderAmount = order.amount;
     if (!itemId || !orderAmount)
         return false;
 

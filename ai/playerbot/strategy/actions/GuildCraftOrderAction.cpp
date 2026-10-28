@@ -6,8 +6,8 @@
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/LootValues.h"
 #include "playerbot/GuildOrderSources.h"
-#include "../../../../runtime/GuildOrderStore.h"
-#include "../../../../runtime/policy/provision/CraftOrderPolicy.h"
+#include "runtime/GuildOrderStore.h"
+#include "runtime/policy/provision/CraftOrderPolicy.h"
 
 using namespace ai;
 using namespace TortoiseBots::GuildOrders;
@@ -111,8 +111,8 @@ bool GuildCraftOrderAction::Execute(Event& event)
     if (record && record->state != OrderState::Working)
         return false;
 
-    uint32 itemId = record ? record->itemId : GuildOrderValue::FindItemByName(order.target);
-    uint32 orderAmount = record ? record->amount : order.amount;
+    uint32 itemId = order.itemId;
+    uint32 orderAmount = order.amount;
     uint32 delivered = record ? std::min(record->delivered, record->amount) : 0;
     if (!itemId || !orderAmount)
         return false;
@@ -136,6 +136,7 @@ bool GuildCraftOrderAction::Execute(Event& event)
             TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Cant, OrderReason::NoRecipe);
         return false;
     }
+
 
     const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
     if (!pSpellInfo)
@@ -257,8 +258,8 @@ bool GuildCraftOrderAction::isUseful()
     if (record && record->state != OrderState::Working)
         return false;
 
-    uint32 itemId = record ? record->itemId : GuildOrderValue::FindItemByName(order.target);
-    uint32 orderAmount = record ? record->amount : order.amount;
+    uint32 itemId = order.itemId;
+    uint32 orderAmount = order.amount;
     if (!itemId || !orderAmount)
         return false;
 
