@@ -2237,7 +2237,9 @@ static void ClearRaidLayout(uint32 groupId)
         // clears it); a later change by anyone else stands.
         if (!applied.setMainTank.IsEmpty() && group->GetMainTankGuid() == applied.setMainTank)
             group->SetMainTank(applied.previousMainTank);
-        if (!applied.previousMainAssistant.IsEmpty() && group->GetMainAssistantGuid() != applied.previousMainAssistant)
+        // The tank flag only clears the main assistant; put it back only into
+        // an empty slot, so a later choice by anyone else stands.
+        if (!applied.previousMainAssistant.IsEmpty() && group->GetMainAssistantGuid().IsEmpty())
             group->SetMainAssistant(applied.previousMainAssistant);
     }
 }
