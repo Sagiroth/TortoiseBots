@@ -3,6 +3,7 @@
 #include "playerbot/ServerFacade.h"
 #include "Database/DBCStructure.h"
 #include "Guild/GuildMgr.h"
+#include "../../runtime/PublicNotePolicy.h"
 
 using namespace std::placeholders;
 
@@ -190,7 +191,23 @@ void TalentSpec::SetPublicNote(Player* bot)
         Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
         MemberSlot* member = guild->GetMemberSlot(bot->getObjectGuid());
         if (guild->HasRankRight(member->RankId, GR_RIGHT_EPNOTE))
-            member->SetPublicNote(ChatHelper::specName(bot) + " (" + std::to_string(spec.GetTalentPoints(0)) + "/" + std::to_string(spec.GetTalentPoints(1)) + "/" + std::to_string(spec.GetTalentPoints(2)) + ")");
+        {
+            static uint16 const kPrimary[] = { SKILL_ALCHEMY, SKILL_BLACKSMITHING, SKILL_ENCHANTING, SKILL_ENGINEERING,
+                                               SKILL_HERBALISM, SKILL_LEATHERWORKING, SKILL_MINING, SKILL_SKINNING, SKILL_TAILORING };
+            TortoiseBots::PublicNoteProfession profs[2];
+            uint32_t profCount = 0;
+            for (uint16 id : kPrimary)
+            {
+                if (profCount >= 2 || !bot->HasSkill(id))
+                    continue;
+                profs[profCount].skillId = id;
+                profs[profCount].skillValue = bot->GetSkillValue(id);
+                ++profCount;
+            }
+            member->SetPublicNote(TortoiseBots::ComposePublicNote(ChatHelper::specName(bot),
+                spec.GetTalentPoints(0), spec.GetTalentPoints(1), spec.GetTalentPoints(2),
+                profs, profCount));
+        }
     }
 }
 

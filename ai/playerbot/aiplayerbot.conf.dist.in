@@ -1306,8 +1306,11 @@ AiPlayerbot.BotLogFile =
 # Bots may also use the innkeeper "summon me" path when resolving a summon order
 #AiPlayerbot.SummonAtInnkeepersEnabled = 1
 
-# Bots will put their talentspec in guild notes when they change/tell their talents if they have the rights.
-# AiPlayerbot.TalentsInPublicNote = 0
+# Bots write their spec, talents and both primary professions with skill into
+# their guild public note (e.g. "Arms 31/20/0 Min245 BS230"), refreshed on
+# talent changes and every few minutes on skill changes. Needs the edit-own-note
+# guild right; bots never read or write officer notes for this.
+# AiPlayerbot.TalentsInPublicNote = 1
 
 #max limit of members in a guild (bots will leave guild if there are more members than this number)
 # AiPlayerbot.GuildMaxBotLimit = 1000

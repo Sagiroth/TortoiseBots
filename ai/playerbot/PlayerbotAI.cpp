@@ -64,6 +64,8 @@
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/MovementModePolicy.h"
 #include "../../runtime/AutoToolsKitPolicy.h"
+#include "../../runtime/PublicNotePolicy.h"
+#include "playerbot/Talentspec.h"
 #include "../../behavior/PlayerConvenience.h"
 #include "Movement/spline/MoveSplineInitArgs.h"
 #include "Movement/spline/MoveSpline.h"
@@ -742,6 +744,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         // one Hourglass Sand; MC visitors get one Quintessence.
         EnsureAutoToolsKit();
     }
+
+    // Spec/talent/profession line in the guild public note: talent changes
+    // refresh at once (ApplyTalents); this picks up skill-ups, throttled.
+    RefreshPublicNote();
 
     // Alt level sync - level up non-random bots to match master level
     if (sPlayerbotAIConfig.syncAltLevelToMaster && bot->IsAlive() && master && !sRandomBotFacade.IsRandomBot(bot)
@@ -1478,6 +1484,17 @@ void PlayerbotAI::EnsureAutoToolsKit()
     {
         EnsureCheatItem(TortoiseBots::QuintessenceEnsureId(bot->GetLevel()), 1);
     }
+}
+
+void PlayerbotAI::RefreshPublicNote()
+{
+    if (!sPlayerbotAIConfig.talentsInPublicNote || !bot || !bot->GetGuildId())
+        return;
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (m_lastPublicNoteMs && nowMs - m_lastPublicNoteMs < TortoiseBots::kPublicNoteSkillRefreshSec * 1000)
+        return;
+    m_lastPublicNoteMs = nowMs;
+    TalentSpec::SetPublicNote(bot);
 }
 
 void PlayerbotAI::NoteDamager(Unit* damager)

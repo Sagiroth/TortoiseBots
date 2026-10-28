@@ -45,6 +45,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.InviteChat`](#aiplayerbotinvitechat) | `1` | Broadcasts group and raid invitation announcements in say or guild chat. |
 | [`AiPlayerbot.RandomBotFormGuild`](#aiplayerbotrandombotformguild) | `1` | Allows random bots to buy guild charters and establish autonomous guilds. |
 | [`AiPlayerbot.GuildMaxBotLimit`](#aiplayerbotguildmaxbotlimit) | `1000` | Maximum number of bots allowed to join a single autonomous bot guild. |
+| [`AiPlayerbot.TalentsInPublicNote`](#aiplayerbottalentsinpublicnote) | `1` | Bots write spec, talents and professions into their guild public note. |
 | [`AiPlayerbot.EnableGreet`](#aiplayerbotenablegreet) | `1` | Enables text emote greetings when a bot encounters a human player. |
 | [`AiPlayerbot.GreetCooldown`](#aiplayerbotgreetcooldown) | `600` | Cooldown in seconds before a bot may greet the same player again. |
 | [`AiPlayerbot.RandomBotGreet`](#aiplayerbotrandombotgreet) | `0` | Allows masterless pool bots to greet players in addition to owned bots. |
@@ -452,6 +453,19 @@ Maximum membership limit of bot members allowed in a single autonomous bot guild
 Caps the total number of bots that can join a single autonomous bot guild.
 
 If a guild exceeds this membership cap, bots will begin leaving the guild autonomously to maintain reasonable guild sizes and distribute bots across multiple guilds.
+
+</details>
+
+### `AiPlayerbot.TalentsInPublicNote`
+Bots write their spec, talents and both primary professions with skill into their guild public note.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+A guilded bot shows a line like `Arms 31/20/0 Min245 BS230`: spec name, spent talent points per tree, then each primary profession as a short abbreviation plus skill value (Alc, BS, Enc, Eng, Herb, LW, Min, Skin, Tail). The guild client caps every note at 31 characters, so with a long spec name the second profession is left out rather than cut off.
+
+The note refreshes at once when talents change and at most every few minutes when only profession skill changed. Bots only write their own public note and only when their guild rank may edit it; they never read or write officer notes.
 
 </details>
 

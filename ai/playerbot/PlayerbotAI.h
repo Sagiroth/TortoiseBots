@@ -893,6 +893,9 @@ public:
     // max-for-level. All branches no-op without the item cheat.
     bool EnsureCheatItem(uint32 itemId, uint32 count);
     void EnsureAutoToolsKit();
+    // Throttled guild public-note refresh: talent changes refresh at once via
+    // TalentSpec::ApplyTalents; skill-ups arrive through this tick path.
+    void RefreshPublicNote();
     std::vector<ai::DeathAttackerEntry> deathAttackers_;
     uint32 deathAttackersMs_ = 0; // WorldTimer ms of the last sample, 0 = none
     // Last own cast that started the global cooldown (see
@@ -1137,6 +1140,9 @@ protected:
     uint32 m_lastRationRefillMs = 0;
     // Last ms clock the auto-tools kit ensure ran; same bag-walking reason.
     uint32 m_lastAutoToolsKitMs = 0;
+    // Last ms clock the guild public note was refreshed for skill changes;
+    // the note rewrites at most every few minutes per bot.
+    uint32 m_lastPublicNoteMs = 0;
     // First tick (ms clock) the core reported alive while the engine was still DEAD;
     // 0 = not currently mismatched. Backs the 5 s alive-but-DEAD self-heal window.
     uint32 m_aliveWhileDeadSinceMs = 0;
