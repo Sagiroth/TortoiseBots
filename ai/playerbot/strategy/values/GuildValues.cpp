@@ -2,9 +2,13 @@
 #include "playerbot/playerbot.h"
 #include "GuildValues.h"
 #include "playerbot/strategy/values/BudgetValues.h"
+#include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/GuildOrderSources.h"
+#include "playerbot/GuildOrderCraft.h"
 #include "runtime/GuildOrderStore.h"
+#include "runtime/policy/provision/CraftOrderPolicy.h"
 #include "Guild/GuildMgr.h"
 
 using namespace ai;
@@ -54,6 +58,209 @@ bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
         stored->state == TortoiseBots::GuildOrders::OrderState::Delivering)
         return false;
     return stored->delivered + bot->GetItemCount(order.itemId) < order.amount;
+}
+
+uint32 GuildOrderVendorReagentValue::Calculate()
+{
+    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    if (!order.IsCraftOrder())
+        return 0;
+
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (record && record->state != TortoiseBots::GuildOrders::OrderState::Working)
+        return 0;
+
+    uint32 itemId = order.itemId;
+    uint32 orderAmount = order.amount;
+    if (!itemId || !orderAmount)
+        return 0;
+
+    uint32 delivered = record ? std::min(record->delivered, record->amount) : 0;
+    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + delivered;
+    if (currentCount >= orderAmount)
+        return 0;
+
+    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
+    if (!craftSpellId)
+        return 0;
+
+    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
+    if (!pSpellInfo)
+        return 0;
+
+    uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, orderAmount - currentCount);
+
+    // Affordable casts first: when the bags already hold a cast but cannot
+    // take more of a short reagent, craft instead of asking for more.
+    uint32 affordable = casts;
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+
+        uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
+        affordable = std::min(affordable,
+            TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]));
+    }
+
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+
+        uint32 reagentId = pSpellInfo->Reagent[i];
+        ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
+        if (!reagentProto || !ItemUsageValue::IsItemSoldByAnyVendor(reagentProto) ||
+            ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(reagentProto))
+            continue;
+
+        uint32 have = ai->GetInventoryItemsCountWithId(reagentId);
+        if (TortoiseBots::CraftOrderPolicy::ReagentShortfall(
+                pSpellInfo->ReagentCount[i], casts, have) == 0)
+            continue;
+
+        if (affordable >= 1 && AI_VALUE2(uint32, "stack space for item", reagentId) == 0)
+            return 0;
+
+        return reagentId;
+    }
+
+    return 0;
+}
+
+bool GuildOrderNeedsFocusValue::Calculate()
+{
+    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    if (!order.IsCraftOrder())
+        return false;
+
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (record && record->state != TortoiseBots::GuildOrders::OrderState::Working)
+        return false;
+
+    uint32 itemId = order.itemId;
+    uint32 orderAmount = order.amount;
+    if (!itemId || !orderAmount)
+        return false;
+
+    uint32 delivered = record ? std::min(record->delivered, record->amount) : 0;
+    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + delivered;
+    if (currentCount >= orderAmount)
+        return false;
+
+    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
+    if (!craftSpellId)
+        return false;
+
+    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
+    if (!pSpellInfo || !pSpellInfo->RequiresSpellFocus)
+        return false;
+
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+
+        uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
+        if (TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]) == 0)
+            return false;
+    }
+
+    std::list<ObjectGuid> objects = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
+    for (ObjectGuid guid : objects)
+    {
+        GameObject* go = ai->GetGameObject(guid);
+        if (!go || !sServerFacade.isSpawned(go))
+            continue;
+
+        GameObjectInfo const* info = sObjectMgr.GetGameObjectInfo(go->GetEntry());
+        if (!info || info->type != GAMEOBJECT_TYPE_SPELL_FOCUS ||
+            info->spellFocus.focusId != pSpellInfo->RequiresSpellFocus)
+            continue;
+
+        if (bot->GetDistance(go) <= sPlayerbotAIConfig.sightDistance)
+            return false;
+    }
+
+    return true;
+}
+
+uint32 GuildOrderFarmItemValue::Calculate()
+{
+    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    if (order.type == GuildOrderType::Farm)
+        return order.itemId;
+
+    if (!order.IsCraftOrder())
+        return 0;
+
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (record && record->state != TortoiseBots::GuildOrders::OrderState::Working)
+        return 0;
+
+    uint32 itemId = order.itemId;
+    uint32 orderAmount = order.amount;
+    if (!itemId || !orderAmount)
+        return 0;
+
+    uint32 delivered = record ? std::min(record->delivered, record->amount) : 0;
+    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + delivered;
+    if (currentCount >= orderAmount)
+        return 0;
+
+    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
+    if (!craftSpellId)
+        return 0;
+
+    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
+    if (!pSpellInfo)
+        return 0;
+
+    uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, orderAmount - currentCount);
+
+    uint32 affordable = casts;
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+
+        uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
+        affordable = std::min(affordable,
+            TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]));
+    }
+
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+
+        uint32 reagentId = pSpellInfo->Reagent[i];
+        ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
+        if (reagentProto && ItemUsageValue::IsItemSoldByAnyVendor(reagentProto) &&
+            !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(reagentProto))
+            continue;
+
+        uint32 have = ai->GetInventoryItemsCountWithId(reagentId);
+        uint32 want = TortoiseBots::CraftOrderPolicy::ReagentShortfall(
+            pSpellInfo->ReagentCount[i], casts, have);
+        if (!want)
+            continue;
+
+        if (affordable >= 1 && AI_VALUE2(uint32, "stack space for item", reagentId) == 0)
+            return 0;
+
+        TortoiseBots::GuildOrders::SourcePlan plan =
+            ai::PlanGuildOrderSources(bot, reagentId, TortoiseBots::GuildOrders::OrderType::Farm);
+        if (plan.verdict != TortoiseBots::GuildOrders::OrderReason::None)
+            continue;
+
+        return reagentId;
+    }
+
+    return 0;
 }
 
 uint8 PetitionSignsValue::Calculate()

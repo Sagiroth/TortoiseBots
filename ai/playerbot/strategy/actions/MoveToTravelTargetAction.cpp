@@ -1256,7 +1256,9 @@ bool MoveToTravelTargetAction::isUseful()
         auto conditions = travelTarget->GetConditions();
         for (auto& cond : conditions)
         {
-            if (cond == "should travel named::guild order")
+            if (cond == "should travel named::guild order" ||
+                cond == "should travel named::order focus" ||
+                cond == "should travel named::order vendor")
                 return false;
         }
     }

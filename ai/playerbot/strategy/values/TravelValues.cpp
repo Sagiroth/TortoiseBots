@@ -202,6 +202,9 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
             }
         }
 
+        if (gInfo->type == GAMEOBJECT_TYPE_SPELL_FOCUS)
+            purpose |= (uint32)TravelDestinationPurpose::SpellFocus;
+
         if (uint32 skillId = GameObjectLockSkill(gInfo))
         {
             if (skillId == SKILL_MINING)
@@ -476,6 +479,17 @@ bool ShouldTravelNamedValue::Calculate()
     else if (name == "guild order")
     {
         return AI_VALUE(bool, "has guild travel order");
+    }
+    else if (name == "order focus")
+    {
+        return AI_VALUE(bool, "guild order needs focus");
+    }
+    else if (name == "order vendor")
+    {
+        // Issue #872 (B11): autonomous alts never travel to buy reagents.
+        if (TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()))
+            return false;
+        return AI_VALUE(uint32, "guild order vendor reagent") != 0;
     }
     else if (name == "mount")
     {
