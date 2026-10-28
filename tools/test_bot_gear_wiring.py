@@ -64,6 +64,18 @@ class BotGearWiringTest(unittest.TestCase):
         self.assertIn("bot->DestroyItem(bag, slot, true);", purge)
         self.assertIn("++kept;", purge)
 
+    def test_before_snapshot_includes_worn_equipment(self):
+        # r3 (Codex): an item the gear pass swaps off the body lands in a
+        # bag; it must already be in `before`, or the purge would treat it
+        # as created and could destroy it.
+        owned = strip_comments(body(SERVICE, "void CollectOwnedItemGuids(Player* bot, std::set<uint32_t>& out)", "\n}"))
+        self.assertIn("CollectBagItemGuids(bot, out);", owned)
+        self.assertIn("EQUIPMENT_SLOT_START", owned)
+        self.assertIn("EQUIPMENT_SLOT_END", owned)
+        code = strip_comments(SERVICE)
+        self.assertIn("CollectOwnedItemGuids(bot, before);", code)
+        self.assertNotIn("CollectBagItemGuids(bot, before);", code)
+
     def test_worn_above_cap_is_unequipped_not_destroyed(self):
         self.assertIn("UnequipAboveCapWorn(", SERVICE)
         self.assertIn("BotGear::WornAboveCap(", SERVICE)

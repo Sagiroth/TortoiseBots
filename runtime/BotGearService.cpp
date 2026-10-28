@@ -35,9 +35,7 @@ namespace TortoiseBots
 
 namespace
 {
-// The item GUIDs sitting in the bot's bags (equipment excluded): the
-// "existed before this call" set. Whatever the gear pass displaces from the
-// equipment lands here afterwards and is untouched by the purge below.
+// The item GUIDs sitting in the bot's bags (equipment excluded).
 void CollectBagItemGuids(Player* bot, std::set<uint32_t>& out)
 {
     out.clear();
@@ -57,9 +55,24 @@ void CollectBagItemGuids(Player* bot, std::set<uint32_t>& out)
     }
 }
 
+// The item GUIDs the bot owns before this call: worn equipment plus the bags.
+// An item the gear pass swaps off the body lands in a bag afterwards; having
+// recorded it here keeps it out of the "created" set, so the purge never
+// destroys it.
+void CollectOwnedItemGuids(Player* bot, std::set<uint32_t>& out)
+{
+    CollectBagItemGuids(bot, out);
+    if (!bot)
+        return;
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            out.insert(item->GetGUIDLow());
+}
+
 // Everything in the bags now that was not there before: created by this
-// call's AutogearOwned/EquipHireGearSet passes (or displaced off the body by
-// them). The purge below may destroy only a GUID in this set that ended up
+// call's AutogearOwned/EquipHireGearSet passes (an item displaced off the
+// body was in `before`, so it is not here). The purge below may destroy only
+// a GUID in this set that ended up
 // unused (still in the bags, above the cap).
 void CollectCreatedItemGuids(Player* bot, std::set<uint32_t> const& before, std::set<uint32_t>& created)
 {
@@ -260,7 +273,7 @@ void BotGearService::Update(uint32_t /*diff*/)
             continue;
         }
         std::set<uint32_t> before;
-        CollectBagItemGuids(bot, before);
+        CollectOwnedItemGuids(bot, before);
         if (m_job.args.ilvlCap)
         {
             PlayerbotFactory factory(bot, bot->GetLevel());
