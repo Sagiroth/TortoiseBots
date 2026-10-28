@@ -23,6 +23,7 @@ import (
 	"tortoise-observability/internal/agentmaps"
 	"tortoise-observability/internal/armory"
 	"tortoise-observability/internal/auth"
+	"tortoise-observability/internal/control"
 	"tortoise-observability/internal/dungeons"
 	zoneproject "tortoise-observability/internal/map"
 	"tortoise-observability/internal/mapdir"
@@ -84,6 +85,14 @@ func main() {
 	// Optional folder of turtle-agent run maps (`turtle-agent map`: one SVG per run, plus the single-file HTML replay with --html).
 	// Read-only and off by default: unset, the Agent maps tab is hidden and its routes 404.
 	agentMapsDirRaw := flag.String("agent-maps-dir", getEnv("TBDASH_AGENT_MAPS_DIR", ""), "Optional folder of turtle-agent run maps (`turtle-agent map` .svg and .html replays) listed in the Agent maps tab (env TBDASH_AGENT_MAPS_DIR)")
+	// The raid control relay (task A10): an authenticated SOAP forwarder for
+	// allow-listed GM run, gear and revive lines. Off unless a SOAP URL, a
+	// SOAP user and a mode-0600 password file are all configured.
+	soapURL := flag.String("soap-url", getEnv("TBDASH_SOAP_URL", ""), "Game server SOAP URL for the raid control relay (env TBDASH_SOAP_URL; empty = controls off)")
+	soapUser := flag.String("soap-user", getEnv("TBDASH_SOAP_USER", ""), "Game server SOAP account for the relay, rank 4 on test servers (env TBDASH_SOAP_USER; empty = controls off)")
+	soapPasswordFile := flag.String("soap-password-file", getEnv("TBDASH_SOAP_PASSWORD_FILE", ""), "File holding the SOAP account password, mode 0600 or stricter (env TBDASH_SOAP_PASSWORD_FILE; empty = controls off)")
+	controlMinGM := flag.Int("control-min-gm", getEnvInt("TBDASH_CONTROL_MIN_GM", 3), "Minimum dashboard session rank that may use the control relay (env TBDASH_CONTROL_MIN_GM)")
+	controlAudit := flag.String("control-audit", getEnv("TBDASH_CONTROL_AUDIT", ""), "Where the control relay appends its audit lines (env TBDASH_CONTROL_AUDIT; empty = next to the activity state file)")
 	devNoAuth := flag.Bool("dev-no-auth", false, "Disable Game Master authentication check for local dev testing")
 	// The activity rollup is in-memory, so without this a dashboard restart
 	// resets every counter. The file sits in the mounted icon-cache directory
@@ -674,6 +683,39 @@ func main() {
 		}
 		writeJSON(w, page)
 	}))
+	// The raid control relay: allow-listed GM lines forwarded to the game
+	// server over SOAP. Only when a SOAP URL, user and a mode-0600 password
+	// file are all configured; otherwise the route answers 404 and the log
+	// names the missing setting, never the credential.
+	auditPath := *controlAudit
+	if auditPath == "" && *activityStateFile != "" {
+		auditPath = filepath.Join(filepath.Dir(*activityStateFile), "control-audit.log")
+	}
+	if auditPath == "" {
+		auditPath = "control-audit.log"
+	}
+	controlCfg, _ := control.Configure(*soapURL, *soapUser, *soapPasswordFile, uint32(*controlMinGM), auditPath, func(r *http.Request) (string, uint32, error) {
+		sd, err := authService.GetSessionFromRequest(r)
+		if err != nil {
+			return "", 0, err
+		}
+		return sd.Username, sd.Rank, nil
+	})
+	if controlCfg.Enabled {
+		mux.Handle("/api/v1/control", requireAuth(controlCfg.Relay.ServeHTTP))
+		mux.HandleFunc("GET /api/v1/control", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, map[string]bool{"enabled": true})
+		}))
+		log.Printf("[Control] relay on (min GM rank %d, audit %s)", *controlMinGM, auditPath)
+	} else {
+		log.Printf("[Control] %s", controlCfg.Reason)
+		mux.HandleFunc("/api/v1/control", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		}))
+		mux.HandleFunc("GET /api/v1/control", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, map[string]bool{"enabled": false})
+		}))
+	}
 
 	upgrader := websocket.Upgrader{
 		// Only the dashboard's own pages may open an authenticated stream

@@ -131,6 +131,33 @@ client copy is unreadable.
 - **WebSocket**: `/api/v1/stream` accepts browser upgrades only from the same origin (Origin header must match the request host); non-browser clients are unaffected.
 - **`/metrics` is unauthenticated** (plain Prometheus text output: pool counters, no accounts or secrets). Expose the port only where a scraper can reach it, or scrape through a proxy that adds auth.
 
+## Controls
+
+`POST /api/v1/control` forwards one allow-listed GM line to the game server
+over SOAP (`{"cmd": "<line>"}`) and answers `{"ok":true,"answer":"…"}` or
+`{"ok":false,"error":"…"}`. Allowed: `.bot run for <Name> pause|resume|skip|stop|status`,
+`.bot run for <Name> start [<plan>] [from <leg|step N>] [speed=<1.0-3.0>]`,
+`.bot run reloadplans`, `.bot gear <Name> tier <0-7> [ilvl=<1-200>] [noenchants]`,
+`.bot gear raid <Name> tier <0-7> [ilvl=<1-200>] [noenchants]`,
+`.bot gear <Name>|raid <Name> preset <name>`, `.revive <Name>`. Anything else
+(including `.bot commander status`) is refused. The relay needs a separate
+rank-4 SOAP account on test servers only: `--soap-url` / `TBDASH_SOAP_URL`,
+`--soap-user` / `TBDASH_SOAP_USER` and `--soap-password-file` /
+`TBDASH_SOAP_PASSWORD_FILE` (a file holding the password, mode `0600` or
+stricter, read once at start). Off unless all three are set: the route answers
+`404`, `GET /api/v1/control` answers `{"enabled":false}` behind the GM login
+for the page to hide the buttons, and the log names the missing setting,
+never the credential. Guarded by the dashboard's own origin (`Origin` must
+equal `scheme://Host`, header `X-TBM-Control: 1` required), a dashboard
+session of rank >= `--control-min-gm` / `TBDASH_CONTROL_MIN_GM` (default 3),
+one call in flight (`429 "busy"` while one runs) and a 10 s SOAP timeout
+(`504`). Every call (refused ones too, after the session check) appends one
+JSON line to `--control-audit` / `TBDASH_CONTROL_AUDIT`
+(`control-audit.log` next to the activity state file by default):
+`{"t":<unix>,"user":"…","cmd":"…","ok":<bool>,"answer":"<first 200 bytes>"}` —
+the password never appears in the log, the error texts or the answer. Tests
+use a fake SOAP server (`internal/control/*_test.go`); never a real one.
+
 ## Validation
 
 No host Go toolchain is assumed: `docker run --rm -v "$PWD/tools/observability:/src" -w /src golang:1.22-alpine sh -c 'go vet ./... && go test ./...'`. Live check: the server logs `Observability telemetry active`, and `/metrics` (default port 8095) shows `mangos_server_online 1` and a rising `tortoisebots_snapshots_total`.
