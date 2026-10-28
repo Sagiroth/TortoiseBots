@@ -107,6 +107,25 @@ uint32_t NodeLockSkill(GameObjectInfo const* goInfo, uint32_t& reqSkill)
     return SKILL_NONE;
 }
 
+uint32_t ZoneOf(uint16_t areaFlag, uint32_t mapId, uint32_t& areaId, bool& allyHome, bool& hordeHome)
+{
+    areaId = 0;
+    allyHome = false;
+    hordeHome = false;
+    AreaTableEntry const* area = AreaEntry::GetByAreaFlagAndMap(areaFlag, mapId);
+    if (!area)
+        return 0;
+    areaId = area->Id;
+    uint32_t areaTeam = area->Team;
+    uint32_t zoneId = area->ZoneId ? area->ZoneId : area->Id;
+    if (areaTeam == AREATEAM_NONE && area->ZoneId)
+        if (AreaEntry const* zone = AreaEntry::GetById(area->ZoneId))
+            areaTeam = zone->Team;
+    allyHome = areaTeam == AREATEAM_ALLY;
+    hordeHome = areaTeam == AREATEAM_HORDE;
+    return zoneId;
+}
+
 struct OrderSourceIndex
 {
     std::unordered_map<uint32_t, std::vector<GuildOrderEntrySource>> byItem;
