@@ -140,3 +140,10 @@ func TestAggroLanesJS(t *testing.T) {
 func TestPlanOverlayJS(t *testing.T) {
 	runCheck(t, "planoverlay_check.js", "../../web/static/js/planoverlay.js")
 }
+
+// TestPhaseACSS runs phase_a_css_check.js: the Dashboard phase A block in app.css (the plan layer and the raid layers on the
+// map, the replay row and the aggro lanes in the Fight debugger; theme tokens only apart from the eight group colours, a rule
+// for every emitted class, the phone row, focus kept).
+func TestPhaseACSS(t *testing.T) {
+	runCheck(t, "phase_a_css_check.js", "../../web/static/css/app.css")
+}

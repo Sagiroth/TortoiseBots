@@ -84,6 +84,7 @@
 - The Fight debugger keeps the last half hour of a raid's positions: where each bot and each enemy near the lead stood, every two seconds, plus who each enemy was attacking, so a fight can be replayed on the map afterwards.
 - A finished fight in the Fight debugger can be replayed on the map: play, speed and scrub controls over the raid's kept positions, sampled every 2 s, with health and the deaths where they happened, and a plain note when no positions were kept for that fight.
 - The Fight debugger now shows, for each enemy in a finished fight, who it targeted over time (sampled every 2 s); the stretches where it was on a healer or a damage dealer are marked red.
+- The new raid map and fight replay read at a glance: a dashed plan route with its stands, packs and aggro rings, layer presets as chips in the existing Layers panel, subgroup colours and healer-to-tank lines on the raid, and a scrub bar with one coloured lane per enemy under the timeline.
 - On a raid's map the bot trails can be cut to the last 30 seconds, the healer → tank links come from the raid's saved layout instead of subgroups, and a mob's line to a party member who is not a tank is drawn red.
 <<<<<<< HEAD
 =======

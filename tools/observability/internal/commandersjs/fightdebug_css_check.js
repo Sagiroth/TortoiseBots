@@ -10,7 +10,9 @@ const css = fs.readFileSync(cssPath, "utf8");
 const HEAD = "/* ---------- Fight debugger (Commanders card) ---------- */";
 const at = css.indexOf(HEAD);
 assert.ok(at >= 0, "the Fight debugger block starts with its header comment");
-const block = css.slice(at);
+// Its own block only: later blocks in app.css have their own checks and may carry their own colours.
+const nextHead = css.indexOf("/* ---------- ", at + HEAD.length);
+const block = css.slice(at, nextHead < 0 ? css.length : nextHead);
 assert.ok(!css.slice(at + HEAD.length).includes(HEAD), "the block is appended once");
 
 // the level tokens live on the card and only borrow the theme's accent tokens

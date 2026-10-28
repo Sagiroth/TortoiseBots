@@ -3297,3 +3297,81 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
   .cmd-card.fd-on .cmd-stage { height: 320px; }
   .fd-t { overflow-x: auto; }
 }
+
+/* ---------- Dashboard phase A: plan layer, fight replay, aggro lanes ---------- */
+/* The raid map's plan layer and raid layers, the debugger's replay row and aggro lanes, and the layer presets. Apart from the
+   eight raid group colours the prototype fixes, every colour comes from the dashboard's tokens. */
+.cmd-card { --grp-0: #6d9cff; --grp-1: #47c37f; --grp-2: #ee9a4a; --grp-3: #c77dff; --grp-4: #ff6b9a; --grp-5: #3fd0d4; --grp-6: #e2d14b; --grp-7: #a3a8b8; }
+
+.cmd-map .plan-route { fill: none; stroke-linejoin: round; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.cmd-map .plan-route.ahead { stroke: var(--accent-blue-bright); }
+.cmd-map .plan-route.done { stroke: var(--text-dim); opacity: .55; }
+.cmd-map .plan-ring { fill: none; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.cmd-map .plan-ring.aggro { stroke: var(--accent-red); opacity: .55; fill: color-mix(in srgb, var(--accent-red) 7%, transparent); }
+.cmd-map .plan-ring.wake { stroke: var(--fd-fail); stroke-width: 2; stroke-dasharray: 6 4; fill: none; }
+.cmd-map .plan-ring.s-done { opacity: .2; }
+.cmd-map .plan-ring.patrol { stroke-dasharray: 2 3; }
+.cmd-map .plan-ring.wake.patrol { stroke-dasharray: 6 4; }
+.cmd-map .plan-mob { fill: none; stroke: var(--accent-red); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.cmd-map .plan-mob.boss { stroke-width: 2; }
+.cmd-map .plan-stand { fill: var(--accent-yellow); opacity: .85; }
+.cmd-map .plan-step { cursor: help; }
+.cmd-map .plan-step .plan-num { fill: var(--text-main); font-weight: 600; text-anchor: middle; paint-order: stroke; stroke: var(--bg-app); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.cmd-map .plan-step.s-done { opacity: .4; }
+.cmd-map .plan-step.s-cur > circle:not(.hit), .cmd-map .plan-step.s-cur > rect { stroke: var(--accent-yellow); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.cmd-map .plan-fight > circle:not(.hit) { stroke: var(--fd-fail); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.cmd-map .plan-stray > circle:not(.hit), .cmd-map .plan-stray > rect { stroke: var(--fd-warn); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.cmd-map .plan-move { fill: var(--text-dim); }
+
+.cmd-map .bot.sg-0 .dot { fill: var(--grp-0); }
+.cmd-map .bot.sg-1 .dot { fill: var(--grp-1); }
+.cmd-map .bot.sg-2 .dot { fill: var(--grp-2); }
+.cmd-map .bot.sg-3 .dot { fill: var(--grp-3); }
+.cmd-map .bot.sg-4 .dot { fill: var(--grp-4); }
+.cmd-map .bot.sg-5 .dot { fill: var(--grp-5); }
+.cmd-map .bot.sg-6 .dot { fill: var(--grp-6); }
+.cmd-map .bot.sg-7 .dot { fill: var(--grp-7); }
+.cmd-map line.threat.nontank { stroke: var(--fd-fail); }
+.cmd-map line.healtank { stroke: var(--role-healer); stroke-width: 1.6; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.cmd-map line.healtank.far { stroke: var(--fd-warn); }
+.cmd-map line.healtank.dead { opacity: .35; }
+
+.cmd-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 3px; }
+.cmd-presets button { padding: 0 7px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-card-subtle); color: var(--text-muted); font: inherit; font-size: 0.7rem; cursor: pointer; }
+.cmd-presets button:hover { color: var(--text-main); border-color: var(--border-strong); }
+.cmd-presets button[aria-pressed="true"] { border-color: var(--accent-yellow); color: var(--text-main); }
+.cmd-legend i.plan { width: 16px; height: 0; border: 0; border-radius: 0; border-top: 2px dashed var(--accent-blue-bright); vertical-align: 3px; }
+.cmd-legend i.ring.wake { background: color-mix(in srgb, var(--accent-red) 7%, transparent); border-color: var(--fd-fail); }
+.cmd-legend i.nontank { width: 16px; height: 0; border: 0; border-radius: 0; border-top: 2px solid var(--fd-fail); vertical-align: 3px; }
+.cmd-legend i.healtank { width: 16px; height: 0; border: 0; border-radius: 0; border-top: 2px dashed var(--role-healer); vertical-align: 3px; }
+.cmd-legend i.subgroups { background: conic-gradient(var(--grp-0), var(--grp-1), var(--grp-2), var(--grp-3), var(--grp-4), var(--grp-5), var(--grp-6), var(--grp-7), var(--grp-0)); border-color: var(--border-strong); }
+
+.fd-play { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.fd-scrub { flex: 1 1 160px; accent-color: var(--accent-yellow); }
+.fd-clock { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.fd-cov { color: var(--text-muted); font-size: 12px; }
+.fd-playbtn, .fd-speed, .fd-exit { padding: 0 7px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-card-subtle); color: var(--text-muted); font: inherit; font-size: 0.7rem; cursor: pointer; }
+.fd-playbtn:hover, .fd-speed:hover, .fd-exit:hover { color: var(--text-main); border-color: var(--border-strong); }
+.fd-playbtn[aria-pressed="true"] { background: var(--bg-card-hover); color: var(--text-main); }
+.fd-playbtn:disabled, .fd-speed:disabled { opacity: .5; cursor: default; }
+.fd-cursor { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent-yellow); pointer-events: none; }
+
+.fd-lanes { margin-top: 8px; }
+.fd-lanecap { margin: 0 0 4px; color: var(--text-muted); font-size: 12px; }
+.fd-lane { display: grid; grid-template-columns: minmax(90px, 140px) 1fr auto; gap: 8px; align-items: center; min-height: 18px; font-size: 12px; }
+.fd-lanel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-lanebar { position: relative; height: 12px; border: 1px solid var(--border-color); border-radius: 2px; background: var(--bg-card-subtle); overflow: hidden; }
+.fd-seg { position: absolute; top: 0; bottom: 0; }
+.fd-seg.k-tank { background: var(--role-tank); }
+.fd-seg.k-healer { background: var(--fd-fail); box-shadow: inset 0 3px 0 var(--role-healer); }
+.fd-seg.k-dps { background: var(--fd-fail); box-shadow: inset 0 3px 0 var(--role-dps); }
+.fd-seg.k-other { background: var(--text-dim); }
+.fd-seg.k-none, .fd-seg.k-dead { background: transparent; }
+.fd-lanesum { color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+[data-fd-seekbar] { cursor: pointer; }
+
+@media (max-width: 760px) {
+  .fd-lane { grid-template-columns: 1fr; }
+  .fd-lanel, .fd-lanesum { grid-column: 1; }
+  .fd-scrub { flex-basis: 100%; }
+}
