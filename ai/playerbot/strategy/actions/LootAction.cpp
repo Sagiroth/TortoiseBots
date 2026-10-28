@@ -18,6 +18,7 @@
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "../../../../runtime/RemoteCommanderTasks.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
+#include "../../../../runtime/GuildOrderStore.h"
 
 
 using namespace ai;
@@ -674,6 +675,11 @@ bool StoreLootAction::Execute(Event& event)
         if (AI_VALUE2(uint32, "stack space for item", itemid) < itemcount)
         {
             sLog.outDebug("[BOT LOOT] %s: skip item=%u (no stack space, need=%u)", bot->GetName(), itemid, itemcount);
+            std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+                TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+            if (order && order->itemId == itemid && order->state == TortoiseBots::GuildOrders::OrderState::Working &&
+                bot->GetItemCount(itemid) > 0)
+                TortoiseBots::GuildOrders::NoteBagsFull(bot->GetGUIDLow());
             continue;
         }
 

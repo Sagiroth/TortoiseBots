@@ -20,6 +20,7 @@
 #include "../../runtime/RunTrace.h"
 #include "../../runtime/BotActivityLease.h"
 #include "../../runtime/HireLifecycle.h"
+#include "../../runtime/GuildOrderStore.h"
 #include "../../runtime/HireMasterPolicy.h"
 #include "../../runtime/PoolBotTradePolicy.h"
 #include "../../runtime/QueuedOrderPolicy.h"
@@ -1657,6 +1658,7 @@ void PlayerbotAI::OnDeath()
         if (!HasActivePlayerMaster() && !bot->InBattleGround())
         {
             SET_AI_VALUE(uint32, "death count", AI_VALUE(uint32, "death count") + 1);
+            TortoiseBots::GuildOrders::NoteDeath(bot->GetGUIDLow());
 
             // Two deaths in a row to the same kind of creature within fifteen minutes: the bot
             // leaves that kind alone for half an hour - it is not picked as a target and the
