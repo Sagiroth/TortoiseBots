@@ -1808,8 +1808,9 @@ struct Run
     // The off-tank a raid trash pick-up goes to next (RaidTrashFight): round-robin over RaidFacts::offTanksAlive.
     std::size_t offTankTurn = 0;
     // A raid trash fight's main tank on stay with no mob of its own (RaidAssist): how long a mob an off-tank holds
-    // has waited for it, and the units it was sent at this fight.
+    // has waited for it (the wait belongs to one mob: raidAssistGuid), and the units it was sent at this fight.
     std::uint32_t raidAssistMs = 0;
+    std::uint64_t raidAssistGuid = 0;
     std::unordered_set<std::uint64_t> raidAssisted;
     // The tank's reach for a pull is cut off once a mob has aggro (CheckReach):
     // `stopReachDue` asks the glue to end the lead bot's pull, once per pull.
@@ -2299,6 +2300,7 @@ inline void ResetStep(Run& r)
     r.guardReturn = false;
     r.offTankTurn = 0;
     r.raidAssistMs = 0;
+    r.raidAssistGuid = 0;
     r.raidAssisted.clear();
     r.stopReachDue = false;
     r.reachStopped = false;
@@ -12196,7 +12198,14 @@ inline bool RaidAssist(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     if (!u)
     {
         r.raidAssistMs = 0;
+        r.raidAssistGuid = 0;
         return false;
+    }
+    if (u->guid != r.raidAssistGuid)
+    {
+        // a different mob: its own full wait, so the off-tank holds it before the main tank comes
+        r.raidAssistGuid = u->guid;
+        r.raidAssistMs = 0;
     }
     r.raidAssistMs += dt;
     if (r.raidAssistMs < kRaidAssistWaitMs || r.fightOrders >= kGuardOrdersFightCap ||
@@ -14491,6 +14500,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.fightOrders = 0;
         r.offTankTurn = 0;
         r.raidAssistMs = 0;
+        r.raidAssistGuid = 0;
         r.raidAssisted.clear();
         r.reachStopped = false;
         // A fight may have moved the lead bot: an exact point's tighten starts

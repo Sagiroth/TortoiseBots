@@ -22620,6 +22620,22 @@ static void TestRaidMainTankLeavesALooseMobToTheOffTankFirst()
 }
 
 // The main tank has a mob of its own (a pullback's unit on it): the arrival engage sends it as today, and no assist follows.
+// Codex r1: the assist's wait belongs to one mob: when a different held mob becomes the nearest before the wait ran
+// out, that mob gets its own full wait, so the off-tank holds it before the main tank comes.
+static void TestRaidAssistWaitRestartsForANewMob()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 12129, 30)};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty()); // A almost waited out
+    f.partyAttackers = {TankHeld(41, 12129, 30), TankHeld(42, 12129, 10)}; // B, nearer, now held
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty()); // B's own full wait: no order yet
+    CHECK(Tick(r, f) == "attack 42 Tanky");
+}
+
 static void TestRaidMainTankWithAMobOfItsOwnIsNotAssisted()
 {
     DungeonPlan plan;
@@ -23624,6 +23640,7 @@ int main()
     // item 2 raid assist
     TestRaidMainTankHelpsOnASecondMobOfThePack();
     TestRaidMainTankLeavesALooseMobToTheOffTankFirst();
+    TestRaidAssistWaitRestartsForANewMob();
     TestRaidMainTankWithAMobOfItsOwnIsNotAssisted();
     TestRaidMainTankOffStayFightsByItself();
     TestRaidMainTankOnABossStepIgnoresAHeldMob();
