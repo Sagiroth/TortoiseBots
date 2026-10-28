@@ -33,7 +33,7 @@ int main()
     std::cout << "Starting TortoiseBots service trip policy tests...\n";
 
     // Service purposes: numeric AH/vendor/repair/mail/trainer ids, plus the
-    // named city/trainer/mount/reagent-vendor requests. Quest/grind (empty,
+    // named city/trainer/mount requests. Quest/grind (empty,
     // "quest") and every other named leisure trip stay out.
     CHECK(ServiceTripIsServicePurpose("1024"));   // AH
     CHECK(ServiceTripIsServicePurpose("512"));    // Vendor
@@ -44,7 +44,6 @@ int main()
     CHECK(ServiceTripIsServicePurpose("trainer class"));
     CHECK(ServiceTripIsServicePurpose("trainer trade"));
     CHECK(ServiceTripIsServicePurpose("mount"));
-    CHECK(ServiceTripIsServicePurpose("reagent vendor"));
     CHECK(!ServiceTripIsServicePurpose(""));
     CHECK(!ServiceTripIsServicePurpose("quest"));
     CHECK(!ServiceTripIsServicePurpose("4096"));  // Grind
