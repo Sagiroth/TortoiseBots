@@ -2196,16 +2196,19 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
     else if (travelName == "guild order")
     {
         // Delivering outranks working: a bot carrying finished order items
-        // walks to a guild banker first, whatever the order type.
+        // walks to a guild banker first, whatever the order type. No early
+        // return here: the common tail below (PREPARE, purpose, condition)
+        // must run for this leg like for every other branch.
         if (AI_VALUE(bool, "has guild order delivery"))
         {
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+            Team team = bot->GetTeam();
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, bot]()
                 {
                     PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg);
 
                     for (auto& [partition, travelPoints] : list)
                     {
-                        travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [](TravelPoint point)
+                        travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [team, bot](TravelPoint point)
                             {
                                 EntryTravelDestination* dest = (EntryTravelDestination*)std::get<TravelDestination*>(point);
                                 if (!dest->GetCreatureInfo())
@@ -2215,171 +2218,177 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                                 WorldPosition* position = std::get<WorldPosition*>(point);
                                 if (!position || !position->HasAreaFlag(AREA_FLAG_CAPITAL))
                                     return true;
+                                if (position->IsEnemyHomeZoneFor(team))
+                                    return true;
+                                if (GuidPosition(HIGHGUID_UNIT, uint32(dest->GetEntry())).IsHostileTo(bot))
+                                    return true;
                                 return false;
                             }), travelPoints.end());
                     }
                     return list;
                 });
             SET_AI_VALUE2(std::string, "manual string", "future travel detail", "guild banker");
-            return true;
-        }
-
-        GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-
-        if (!order.IsTravelOrder())
-        {
-            ai->TellDebug(ai->GetMaster(), "No valid guild travel order found", "debug travel");
-            return false;
-        }
-
-        std::string orderTarget = order.target;
-
-        ai->TellDebug(ai->GetMaster(), "Guild order: " + order.GetTypeName() + " " + orderTarget, "debug travel");
-
-        if (order.type == GuildOrderType::Farm)
-        {
-            uint32 orderItemId = order.itemId;
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, orderTarget, orderItemId, partitions = travelPartitions]()
-                {
-                    PartitionedTravelList list;
-
-                    uint32 foundItemId = orderItemId;
-
-                    if (foundItemId)
-                    {
-                        std::list<int32> dropEntries = GAI_VALUE2(std::list<int32>, "item drop list", foundItemId);
-
-                        if (!dropEntries.empty())
-                        {
-                            std::vector<int32> gatherEntries, mobEntries;
-                            for (int32 entry : dropEntries)
-                            {
-                                if (entry < 0)
-                                    gatherEntries.push_back(entry);
-                                else
-                                    mobEntries.push_back(entry);
-                            }
-
-                            // Check which gathering skills the bot actually has. Skinning is not one
-                            // of them here: it has no travel destination (a skin comes off the bot's own
-                            // kill), so a skinner-only bot falls through to the mob hunt below.
-                            bool hasHerbalism = travelInfo.GetCurrentSkill(SKILL_HERBALISM) > 0;
-                            bool hasMining = travelInfo.GetCurrentSkill(SKILL_MINING) > 0;
-                            bool hasAnyGathering = hasHerbalism || hasMining;
-
-                            // Bot has a gathering skill: prioritize gather nodes.
-                            if (!gatherEntries.empty() && hasAnyGathering)
-                            {
-                                // Only query gather purposes the bot can actually use.
-                                if (hasHerbalism)
-                                {
-                                    PartitionedTravelList gatherList = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GatherHerbalism, gatherEntries, true);
-                                    for (auto& [partition, points] : gatherList)
-                                        list[partition].insert(list[partition].end(), points.begin(), points.end());
-                                }
-                                if (hasMining)
-                                {
-                                    PartitionedTravelList gatherList = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GatherMining, gatherEntries, true);
-                                    for (auto& [partition, points] : gatherList)
-                                        list[partition].insert(list[partition].end(), points.begin(), points.end());
-                                }
-                            }
-
-                            // If entry-based gather lookup failed, try unfiltered gather by purpose
-                            // (the travel manager may index nodes by their own entry, not drop-source entry).
-                            if (list.empty() && hasAnyGathering && !gatherEntries.empty())
-                            {
-                                if (hasHerbalism)
-                                {
-                                    PartitionedTravelList gatherList = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GatherHerbalism);
-                                    for (auto& [partition, points] : gatherList)
-                                        list[partition].insert(list[partition].end(), points.begin(), points.end());
-                                }
-                                if (list.empty() && hasMining)
-                                {
-                                    PartitionedTravelList gatherList = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GatherMining);
-                                    for (auto& [partition, points] : gatherList)
-                                        list[partition].insert(list[partition].end(), points.begin(), points.end());
-                                }
-                            }
-
-                            // Fall back to mob drops only if no gather nodes were found or bot has no gathering skill.
-                            if (list.empty() && !mobEntries.empty() && !hasAnyGathering)
-                            {
-                                uint32 mobPurpose = (uint32)TravelDestinationPurpose::Grind;
-
-                                list = sTravelMgr.GetPartitions(center, partitions, travelInfo, mobPurpose, mobEntries, false);
-                            }
-                        }
-                    }
-
-                    // Fall back by name: if bot has gathering skills, try gather-only first.
-                    if (list.empty())
-                    {
-                        bool hasHerbalism = travelInfo.GetCurrentSkill(SKILL_HERBALISM) > 0;
-                        bool hasMining = travelInfo.GetCurrentSkill(SKILL_MINING) > 0;
-                        bool hasSkinning = travelInfo.GetCurrentSkill(SKILL_SKINNING) > 0;
-                        bool hasAnyGathering = hasHerbalism || hasMining || hasSkinning;
-
-                        // Try gather nodes by name first if bot can gather.
-                        if (hasAnyGathering)
-                        {
-                            for (auto& destination : ChooseTravelTargetAction::FindDestination(travelInfo, orderTarget, false, false, false, false, false, true))
-                            {
-                                std::list<uint8> chancesToGoFar = { 10,50,90 };
-                                WorldPosition* point = destination->GetNextPoint(center, chancesToGoFar);
-                                if (!point) continue;
-                                list[0].push_back(TravelPoint(destination, point, point->distance(center)));
-                            }
-                        }
-
-                        // If still empty, fall back to mobs, bosses and gather nodes.
-                        if (list.empty())
-                        {
-                            bool includeMobs = !hasAnyGathering;
-                            for (auto& destination : ChooseTravelTargetAction::FindDestination(travelInfo, orderTarget, false, includeMobs, false, includeMobs, includeMobs, true))
-                            {
-                                std::list<uint8> chancesToGoFar = { 10,50,90 };
-                                WorldPosition* point = destination->GetNextPoint(center, chancesToGoFar);
-                                if (!point) continue;
-                                list[0].push_back(TravelPoint(destination, point, point->distance(center)));
-                            }
-                        }
-                    }
-
-                    return list;
-                }
-            );
-        }
-        else if (order.type == GuildOrderType::AuctionHouse)
-        {
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
-                {
-                    PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg);
-
-                    for (auto& [partition, travelPoints] : list)
-                    {
-                        travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [](TravelPoint point)
-                            {
-                                EntryTravelDestination* dest = (EntryTravelDestination*)std::get<TravelDestination*>(point);
-                                if (!dest->GetCreatureInfo())
-                                    return true;
-
-                                if (dest->GetCreatureInfo()->npc_flags & UNIT_NPC_FLAG_AUCTIONEER)
-                                    return false;
-
-                                return true;
-                            }), travelPoints.end());
-                    }
-                    return list;
-                });
         }
         else
         {
-            return false;
-        }
 
-        SET_AI_VALUE2(std::string, "manual string", "future travel detail", orderTarget);
+            GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+
+            if (!order.IsTravelOrder())
+            {
+                ai->TellDebug(ai->GetMaster(), "No valid guild travel order found", "debug travel");
+                return false;
+            }
+
+            std::string orderTarget = order.target;
+
+            ai->TellDebug(ai->GetMaster(), "Guild order: " + order.GetTypeName() + " " + orderTarget, "debug travel");
+
+            if (order.type == GuildOrderType::Farm)
+            {
+                uint32 orderItemId = order.itemId;
+                *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, orderTarget, orderItemId, partitions = travelPartitions]()
+                    {
+                        PartitionedTravelList list;
+
+                        uint32 foundItemId = orderItemId;
+
+                        if (foundItemId)
+                        {
+                            std::list<int32> dropEntries = GAI_VALUE2(std::list<int32>, "item drop list", foundItemId);
+
+                            if (!dropEntries.empty())
+                            {
+                                std::vector<int32> gatherEntries, mobEntries;
+                                for (int32 entry : dropEntries)
+                                {
+                                    if (entry < 0)
+                                        gatherEntries.push_back(entry);
+                                    else
+                                        mobEntries.push_back(entry);
+                                }
+
+                                // Check which gathering skills the bot actually has. Skinning is not one
+                                // of them here: it has no travel destination (a skin comes off the bot's own
+                                // kill), so a skinner-only bot falls through to the mob hunt below.
+                                bool hasHerbalism = travelInfo.GetCurrentSkill(SKILL_HERBALISM) > 0;
+                                bool hasMining = travelInfo.GetCurrentSkill(SKILL_MINING) > 0;
+                                bool hasAnyGathering = hasHerbalism || hasMining;
+
+                                // Bot has a gathering skill: prioritize gather nodes.
+                                if (!gatherEntries.empty() && hasAnyGathering)
+                                {
+                                    // Only query gather purposes the bot can actually use.
+                                    if (hasHerbalism)
+                                    {
+                                        PartitionedTravelList gatherList = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GatherHerbalism, gatherEntries, true);
+                                        for (auto& [partition, points] : gatherList)
+                                            list[partition].insert(list[partition].end(), points.begin(), points.end());
+                                    }
+                                    if (hasMining)
+                                    {
+                                        PartitionedTravelList gatherList = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GatherMining, gatherEntries, true);
+                                        for (auto& [partition, points] : gatherList)
+                                            list[partition].insert(list[partition].end(), points.begin(), points.end());
+                                    }
+                                }
+
+                                // If entry-based gather lookup failed, try unfiltered gather by purpose
+                                // (the travel manager may index nodes by their own entry, not drop-source entry).
+                                if (list.empty() && hasAnyGathering && !gatherEntries.empty())
+                                {
+                                    if (hasHerbalism)
+                                    {
+                                        PartitionedTravelList gatherList = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GatherHerbalism);
+                                        for (auto& [partition, points] : gatherList)
+                                            list[partition].insert(list[partition].end(), points.begin(), points.end());
+                                    }
+                                    if (list.empty() && hasMining)
+                                    {
+                                        PartitionedTravelList gatherList = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GatherMining);
+                                        for (auto& [partition, points] : gatherList)
+                                            list[partition].insert(list[partition].end(), points.begin(), points.end());
+                                    }
+                                }
+
+                                // Fall back to mob drops only if no gather nodes were found or bot has no gathering skill.
+                                if (list.empty() && !mobEntries.empty() && !hasAnyGathering)
+                                {
+                                    uint32 mobPurpose = (uint32)TravelDestinationPurpose::Grind;
+
+                                    list = sTravelMgr.GetPartitions(center, partitions, travelInfo, mobPurpose, mobEntries, false);
+                                }
+                            }
+                        }
+
+                        // Fall back by name: if bot has gathering skills, try gather-only first.
+                        if (list.empty())
+                        {
+                            bool hasHerbalism = travelInfo.GetCurrentSkill(SKILL_HERBALISM) > 0;
+                            bool hasMining = travelInfo.GetCurrentSkill(SKILL_MINING) > 0;
+                            bool hasSkinning = travelInfo.GetCurrentSkill(SKILL_SKINNING) > 0;
+                            bool hasAnyGathering = hasHerbalism || hasMining || hasSkinning;
+
+                            // Try gather nodes by name first if bot can gather.
+                            if (hasAnyGathering)
+                            {
+                                for (auto& destination : ChooseTravelTargetAction::FindDestination(travelInfo, orderTarget, false, false, false, false, false, true))
+                                {
+                                    std::list<uint8> chancesToGoFar = { 10,50,90 };
+                                    WorldPosition* point = destination->GetNextPoint(center, chancesToGoFar);
+                                    if (!point) continue;
+                                    list[0].push_back(TravelPoint(destination, point, point->distance(center)));
+                                }
+                            }
+
+                            // If still empty, fall back to mobs, bosses and gather nodes.
+                            if (list.empty())
+                            {
+                                bool includeMobs = !hasAnyGathering;
+                                for (auto& destination : ChooseTravelTargetAction::FindDestination(travelInfo, orderTarget, false, includeMobs, false, includeMobs, includeMobs, true))
+                                {
+                                    std::list<uint8> chancesToGoFar = { 10,50,90 };
+                                    WorldPosition* point = destination->GetNextPoint(center, chancesToGoFar);
+                                    if (!point) continue;
+                                    list[0].push_back(TravelPoint(destination, point, point->distance(center)));
+                                }
+                            }
+                        }
+
+                        return list;
+                    }
+                );
+            }
+            else if (order.type == GuildOrderType::AuctionHouse)
+            {
+                *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+                    {
+                        PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg);
+
+                        for (auto& [partition, travelPoints] : list)
+                        {
+                            travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [](TravelPoint point)
+                                {
+                                    EntryTravelDestination* dest = (EntryTravelDestination*)std::get<TravelDestination*>(point);
+                                    if (!dest->GetCreatureInfo())
+                                        return true;
+
+                                    if (dest->GetCreatureInfo()->npc_flags & UNIT_NPC_FLAG_AUCTIONEER)
+                                        return false;
+
+                                    return true;
+                                }), travelPoints.end());
+                        }
+                        return list;
+                    });
+            }
+            else
+            {
+                return false;
+            }
+
+            SET_AI_VALUE2(std::string, "manual string", "future travel detail", orderTarget);
+        }
     }
     else if (travelName.find("trainer") == 0)
     {
@@ -2482,6 +2491,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         travelName == "guild meeting" ? "should travel named::guild meeting" :
         travelName == "guild order" ? orderCondition :
         event.GetSource());
+    SET_AI_VALUE2(int, "manual int", "future travel relevance", relevance * 100);
 
     return true;
 }

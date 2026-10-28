@@ -44,6 +44,12 @@ int main()
     CHECK(ClassifyDelivery(9, 10, true, false) == DeliveryOutcome::Stuck);
     CHECK(ClassifyDelivery(0, 1, false, false) == DeliveryOutcome::Stuck);
 
+    // The drain never touches more than the order still needs.
+    CHECK(DeliveryNeeded(0, 10) == 10);
+    CHECK(DeliveryNeeded(7, 10) == 3);
+    CHECK(DeliveryNeeded(10, 10) == 0);
+    CHECK(DeliveryNeeded(12, 10) == 0);
+
     // One stack per mail.
     CHECK(DeliveryMailCount(0) == 0);
     CHECK(DeliveryMailCount(1) == 1);

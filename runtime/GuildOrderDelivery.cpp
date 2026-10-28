@@ -108,13 +108,39 @@ bool ClientBagSlot(Item* item, uint8_t& bag, uint8_t& slot)
     return true;
 }
 
-Item* FirstBagStack(Player* bot, uint32_t itemId)
+// Splits `count` items off `stack` into a free bag slot so the drain can
+// move exactly what the order still needs. Returns the new stack, or
+// nullptr when no free slot exists.
+Item* SplitOffStack(Player* bot, Item* stack, uint32_t count)
 {
+    if (!bot || !stack || count == 0 || count >= stack->GetCount())
+        return nullptr;
+    ItemPosCountVec dest;
+    if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, stack, false) != EQUIP_ERR_OK)
+        return nullptr;
+    uint16 src = (uint16(stack->GetBagSlot()) << 8) | uint16(stack->GetSlot());
+    uint16 dst = (uint16(dest[0].pos >> 8) << 8) | uint16(dest[0].pos & 255);
+    bot->SplitItem(src, dst, count);
+    return bot->GetItemByPos(uint8_t(dst >> 8), uint8_t(dst & 255));
+}
+
+// First carried stack holding at most `maxCount` items: a whole small stack
+// when one fits, else a split-off part of a bigger stack. Surplus beyond
+// maxCount is never touched.
+Item* TakeUpTo(Player* bot, uint32_t itemId, uint32_t maxCount)
+{
+    if (!bot || maxCount == 0)
+        return nullptr;
+    Item* big = nullptr;
     for (uint8_t slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
     {
         Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-        if (item && item->GetEntry() == itemId)
+        if (!item || item->GetEntry() != itemId)
+            continue;
+        if (item->GetCount() <= maxCount)
             return item;
+        if (!big)
+            big = item;
     }
     for (uint8_t bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
     {
@@ -124,26 +150,31 @@ Item* FirstBagStack(Player* bot, uint32_t itemId)
         for (uint32_t slot = 0; slot < pack->GetBagSize(); ++slot)
         {
             Item* item = pack->GetItemByPos(uint8_t(slot));
-            if (item && item->GetEntry() == itemId)
+            if (!item || item->GetEntry() != itemId)
+                continue;
+            if (item->GetCount() <= maxCount)
                 return item;
+            if (!big)
+                big = item;
         }
     }
-    return nullptr;
+    return big ? SplitOffStack(bot, big, maxCount) : nullptr;
 }
 
 // One pass at the banker: one stack per tab, moving on when a tab did not
-// move it. Returns what left the bags. The drain calls this once per world
-// tick; consecutive passes that move nothing mark the bank refused.
-uint32_t DepositPass(Player* bot, Guild* guild, Unit* banker, uint32_t itemId)
+// move it, never more than `needed` in total. Returns what left the bags.
+// The drain calls this once per world tick; consecutive passes that move
+// nothing mark the bank refused.
+uint32_t DepositPass(Player* bot, Guild* guild, Unit* banker, uint32_t itemId, uint32_t needed)
 {
-    if (!bot || !guild || !guild->_Bank || !banker)
+    if (!bot || !guild || !guild->_Bank || !banker || needed == 0)
         return 0;
     ObjectGuid oldSelection = bot->GetSelectionGuid();
     bot->SetSelectionGuid(banker->getObjectGuid());
     uint32_t moved = 0;
-    for (size_t tab = 0; tab < kDeliveryTabCount && bot->GetItemCount(itemId) > 0; ++tab)
+    for (size_t tab = 0; tab < kDeliveryTabCount && moved < needed; ++tab)
     {
-        Item* stack = FirstBagStack(bot, itemId);
+        Item* stack = TakeUpTo(bot, itemId, needed - moved);
         if (!stack)
             break;
         uint8_t bag = 0, slot = 0;
@@ -197,18 +228,19 @@ void ExpireTargetFor(::PlayerbotAI* ai)
     }
 }
 
-// Mails every carried stack of the item, one stack per mail. Returns what
-// left the bags and sets mailedAny when at least one mail went out.
-uint32_t MailStacks(Player* bot, uint32_t itemId, ObjectGuid receiverGuid, bool& mailedAny)
+// Mails up to `needed` items in whole stacks, one stack per mail.
+// Returns what left the bags and sets mailedAny when at least one mail
+// went out. Surplus beyond needed stays in the bags.
+uint32_t MailStacks(Player* bot, uint32_t itemId, ObjectGuid receiverGuid, uint32_t needed, bool& mailedAny)
 {
     mailedAny = false;
-    if (!bot || !receiverGuid || receiverGuid == bot->getObjectGuid())
+    if (!bot || !receiverGuid || receiverGuid == bot->getObjectGuid() || needed == 0)
         return 0;
     Player* receiver = sObjectMgr.GetPlayer(receiverGuid);
     uint32_t mailed = 0;
     for (;;)
     {
-        Item* stack = FirstBagStack(bot, itemId);
+        Item* stack = TakeUpTo(bot, itemId, needed - mailed);
         if (!stack)
             break;
         std::ostringstream body;
@@ -216,6 +248,8 @@ uint32_t MailStacks(Player* bot, uint32_t itemId, ObjectGuid receiverGuid, bool&
              << bot->GetName() << '\n';
         MailDraft draft("Guild order delivery", body.str());
         uint32_t count = stack->GetCount();
+        if (mailed + count > needed)
+            break;
         bot->MoveItemFromInventory(stack->GetBagSlot(), stack->GetSlot(), true);
         stack->DeleteFromInventoryDB();
         stack->SetOwnerGuid(receiverGuid);
@@ -271,6 +305,10 @@ private:
         Player* bot = sObjectAccessor.FindPlayer(guid);
         if (!bot || !bot->IsInWorld() || bot->GetGuildId() != stored->guildId)
             return;
+        // Killed or pulled aggro after queueing: leave the order alone, the
+        // map action re-queues once the bot is alive and out of combat.
+        if (!bot->IsAlive() || bot->IsInCombat())
+            return;
         ::PlayerbotAI* ai = ::PlayerbotAIStorage::Instance().GetAI(bot);
         Unit* banker = FindNearbyGuildBanker(bot, ai);
         if (!banker)
@@ -287,36 +325,38 @@ private:
         bool mailedAny = stored->reason == OrderReason::NoBank;
         bool movedAny = false;
 
-        uint32_t banked = DepositPass(bot, guild, banker, stored->itemId);
+        uint32_t needed = DeliveryNeeded(stored->delivered, stored->amount);
+        uint32_t banked = DepositPass(bot, guild, banker, stored->itemId, needed);
         if (banked > 0)
         {
             AddDelivered(request.botGuidLow, banked);
             emptyPasses = 0;
             movedAny = true;
+            needed = needed > banked ? needed - banked : 0;
         }
         else
             ++emptyPasses;
 
-        bool bankDone = bot->GetItemCount(stored->itemId) == 0;
+        bool bankDone = needed == 0;
         if (!bankDone && BankRefused(emptyPasses))
         {
             ObjectGuid receiver = MailReceiverGuid(*stored, bot->getObjectGuid());
             if (receiver)
             {
                 bool mailed = false;
-                uint32_t count = MailStacks(bot, stored->itemId, receiver, mailed);
+                uint32_t count = MailStacks(bot, stored->itemId, receiver, needed, mailed);
                 if (count > 0)
                 {
                     AddDelivered(request.botGuidLow, count);
                     movedAny = true;
+                    needed = needed > count ? needed - count : 0;
                 }
                 if (mailed)
                     mailedAny = true;
+                bankDone = needed == 0;
             }
-            bankDone = bot->GetItemCount(stored->itemId) == 0;
-            // Mail is one shot: whatever is left after it cannot move.
-            if (bankDone || !receiver)
-                emptyPasses = 0;
+            // Without a receiver nothing further can move: fall through to
+            // the stuck classification below instead of retrying forever.
         }
 
         stored = Find(request.botGuidLow);

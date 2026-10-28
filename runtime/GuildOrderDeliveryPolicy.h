@@ -28,6 +28,13 @@ inline uint8_t DeliveryTabAt(size_t index) { return uint8_t(kDeliveryFirstTab + 
 // Consecutive no-move passes before the bank counts as refused.
 inline bool BankRefused(uint32_t emptyPasses) { return emptyPasses >= kDeliveryBankRetries; }
 
+// What the order still needs. The drain never touches more than this:
+// surplus items in the bags stay the bot's own.
+inline uint32_t DeliveryNeeded(uint32_t delivered, uint32_t amount)
+{
+    return delivered >= amount ? 0 : amount - delivered;
+}
+
 // State the order lands in after a delivery attempt. The bank may take a
 // few more than ordered (a partial stack fills up in the bank), a partial
 // (bags-full) delivery sends the bot back to its farm zone, and an order
