@@ -65,6 +65,8 @@
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/MovementModePolicy.h"
 #include "../../runtime/AutoToolsKitPolicy.h"
+#include "../../runtime/PublicNotePolicy.h"
+#include "playerbot/Talentspec.h"
 #include "../../behavior/PlayerConvenience.h"
 #include "Movement/spline/MoveSplineInitArgs.h"
 #include "Movement/spline/MoveSpline.h"
@@ -188,6 +190,13 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
         allowActiveCheckTimer[i] = time(nullptr);
         allowActive[i] = false;
     }
+
+    // Jitter the first public-note refresh across the window, so a mass
+    // login does not recompute every guilded bot's note on the same tick.
+    // A nonzero seed makes the throttle due only after a random share of
+    // the window has passed (unsigned wrap-safe).
+    m_lastPublicNoteMs = WorldTimer::getMSTime() -
+        (TortoiseBots::kPublicNoteSkillRefreshSec * 1000 - (urand(0, TortoiseBots::kPublicNoteSkillRefreshSec * 1000 - 1)));
 
 	accountId = sObjectMgr.GetPlayerAccountIdByGUID(bot->getObjectGuid());
 
@@ -743,6 +752,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         // one Hourglass Sand; MC visitors get one Quintessence.
         EnsureAutoToolsKit();
     }
+
+    // Spec/talent/profession line in the guild public note: talent changes
+    // refresh at once (ApplyTalents); this picks up skill-ups, throttled.
+    RefreshPublicNote();
 
     // Alt level sync - level up non-random bots to match master level
     if (sPlayerbotAIConfig.syncAltLevelToMaster && bot->IsAlive() && master && !sRandomBotFacade.IsRandomBot(bot)
@@ -1479,6 +1492,48 @@ void PlayerbotAI::EnsureAutoToolsKit()
     {
         EnsureCheatItem(TortoiseBots::QuintessenceEnsureId(bot->GetLevel()), 1);
     }
+}
+
+void PlayerbotAI::RefreshPublicNote()
+{
+    if (!sPlayerbotAIConfig.talentsInPublicNote || !bot || !bot->GetGuildId())
+        return;
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (!TortoiseBots::PublicNoteRefreshDue(m_lastPublicNoteMs, nowMs))
+        return;
+    m_lastPublicNoteMs = nowMs;
+    // Cheap change gate before the talent scan: primary skill values only.
+    // Talent changes refresh at once via ApplyTalents; this tick path only
+    // needs to notice skill-ups, so an unchanged skill pair skips the scan.
+    static uint16 const kPrimary[] = { SKILL_ALCHEMY, SKILL_BLACKSMITHING, SKILL_ENCHANTING, SKILL_ENGINEERING,
+                                       SKILL_HERBALISM, SKILL_LEATHERWORKING, SKILL_MINING, SKILL_SKINNING, SKILL_TAILORING };
+    uint32_t seen = 0;
+    TortoiseBots::PublicNoteInputs inputs;
+    inputs.classId = bot->GetClass();
+    for (uint16 id : kPrimary)
+    {
+        if (seen >= 2 || !bot->HasSkill(id))
+            continue;
+        if (seen == 0)
+        {
+            inputs.skillId0 = id;
+            inputs.skillValue0 = bot->GetSkillValue(id);
+        }
+        else
+        {
+            inputs.skillId1 = id;
+            inputs.skillValue1 = bot->GetSkillValue(id);
+        }
+        ++seen;
+    }
+    if (m_publicNoteSkillsSeeded && inputs.skillId0 == m_lastPublicNote.skillId0 &&
+        inputs.skillValue0 == m_lastPublicNote.skillValue0 &&
+        inputs.skillId1 == m_lastPublicNote.skillId1 &&
+        inputs.skillValue1 == m_lastPublicNote.skillValue1)
+        return;
+    TalentSpec::SetPublicNote(bot);
+    m_publicNoteSkillsSeeded = true;
+    m_lastPublicNote = inputs;
 }
 
 void PlayerbotAI::NoteDamager(Unit* damager)

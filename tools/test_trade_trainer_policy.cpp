@@ -11,6 +11,9 @@
 } while (0)
 
 using ai::TradeSpellJustifiesTrip;
+using ai::TrainerRowTeachesFirstRankPrimary;
+using ai::FirstRankPrimaryTeachableNow;
+using ai::TaughtSpellIds;
 
 int main()
 {
@@ -32,6 +35,46 @@ int main()
     // Unresolvable skill id: fail closed, no trip.
     CHECK(!TradeSpellJustifiesTrip(0, false, true, true));
     CHECK(!TradeSpellJustifiesTrip(0, true, false, true));
+
+    // The predicate stands in for core IsPrimaryProfessionFirstRankSpell:
+    // 2575 Mining is rank 1, 2581 Apprentice Miner (the teaching spell) and
+    // 3564 Journeyman Mining are not.
+    auto isFirstRank = [](uint32_t id) { return id == 2575; };
+
+    // Direct first-rank row: the row spell itself is rank 1.
+    CHECK(TrainerRowTeachesFirstRankPrimary(2575, TaughtSpellIds(), isFirstRank));
+    CHECK(!TrainerRowTeachesFirstRankPrimary(3564, TaughtSpellIds(), isFirstRank));
+    CHECK(!TrainerRowTeachesFirstRankPrimary(0, TaughtSpellIds(), isFirstRank));
+
+    // Teaching-spell row: 2581 is not rank 1 itself, but its taught spell
+    // 2575 is - the guard must fire (core GetTrainerSpellState shape).
+    TaughtSpellIds taught;
+    taught.ids[0] = 2575;
+    taught.count = 1;
+    CHECK(TrainerRowTeachesFirstRankPrimary(2581, taught, isFirstRank));
+
+    // Taught spells without a rank-1 primary: no guard.
+    TaughtSpellIds other;
+    other.ids[0] = 3564;
+    other.ids[1] = 9999;
+    other.count = 2;
+    CHECK(!TrainerRowTeachesFirstRankPrimary(2581, other, isFirstRank));
+
+    // Only the first `count` ids are scanned.
+    TaughtSpellIds stale;
+    stale.ids[0] = 3564;
+    stale.ids[1] = 2575;
+    stale.count = 1;
+    CHECK(!TrainerRowTeachesFirstRankPrimary(2581, stale, isFirstRank));
+
+    // Visit gate: a first-rank row teaches only below two held primaries;
+    // non-first-rank rows (ranks, recipes) always pass.
+    CHECK(FirstRankPrimaryTeachableNow(true, 0));
+    CHECK(FirstRankPrimaryTeachableNow(true, 1));
+    CHECK(!FirstRankPrimaryTeachableNow(true, 2));
+    CHECK(!FirstRankPrimaryTeachableNow(true, 3));
+    CHECK(FirstRankPrimaryTeachableNow(false, 0));
+    CHECK(FirstRankPrimaryTeachableNow(false, 2));
 
     std::cout << "trade trainer policy: OK\n";
     return 0;

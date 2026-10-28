@@ -210,8 +210,11 @@ void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
     if (classIt != s_classTrainers.end())
         for (auto const& e : classIt->second)
             trainers.push_back(&e);
-    for (auto const& e : s_tradeskillTrainers)
-        trainers.push_back(&e);
+    // Organic professions (ProfessionsGrowWithLevel off): ranks and recipes
+    // come only from real trainer visits, never from this level-up sweep.
+    if (sPlayerbotAIConfig.professionsGrowWithLevel)
+        for (auto const& e : s_tradeskillTrainers)
+            trainers.push_back(&e);
 
     for (CachedTrainer const* entry : trainers)
     {
