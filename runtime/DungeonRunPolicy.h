@@ -150,7 +150,7 @@ constexpr std::uint32_t kStragglerSummonMs = 45000;
 constexpr std::uint32_t kStragglerSettleMs = 10000;
 // A raid member left far behind (a stale follow after a teleport): a raid's gather radius (30 yd) times three, past
 // every formation station. Out of reach this long with no fight on (RunawaySummon), the farthest such bot is summoned
-// to the lead bot, at most kRunawaySummonsPerStep a step and kRunawayResummonMs apart.
+// to the lead bot: kRunawaySummonsPerStep bots a step at most, kRunawayResummonMs apart, never on a boss step.
 constexpr float kRunawayYd = 100.0f;
 constexpr std::uint32_t kRunawayMs = 8000;
 constexpr std::uint32_t kRunawaySummonsPerStep = 2;
@@ -1383,10 +1383,11 @@ struct Run
     };
     std::unordered_map<std::string, StepSummon> stepSummons;
     // A raid bot out of reach far behind the lead bot (RunawaySummon): how long it has been out (a bot back in reach
-    // is erased), its summons this step and the run clock of the last one. Cleared with the step's summons.
+    // is erased), the step's summons and the run clock of the last one (kRunawaySummonsPerStep a step,
+    // kRunawayResummonMs apart: one clock for the step, not one per bot). Cleared with the step's summons.
     std::unordered_map<std::string, std::uint32_t> runawayMs;
-    std::unordered_map<std::string, std::uint32_t> runawaySummons;
-    std::unordered_map<std::string, std::uint64_t> runawayLastMs;
+    std::uint32_t runawaySummons = 0;
+    std::uint64_t runawayLastMs = 0;
     std::unordered_map<std::string, std::uint64_t> deadSeenMs; // the run clock a bot was last seen dead (NoteDeadSeen), the whole run
     bool directRefusedOn = false;     // this step's direct step was refused too-far (or its gather hit the ceiling) ...
     std::uint64_t directRefusedMs = 0; // ... first at this run clock (DirectPauseDue)
@@ -2198,8 +2199,8 @@ inline void ResetStep(Run& r)
     r.summonWaitMs = 0;
     r.stepSummons.clear();
     r.runawayMs.clear();
-    r.runawaySummons.clear();
-    r.runawayLastMs.clear();
+    r.runawaySummons = 0;
+    r.runawayLastMs = 0;
     r.directRefusedOn = false;
     r.directRefusedMs = 0;
     r.directRefusedIdx = 0;
@@ -2907,15 +2908,20 @@ inline bool StragglerLadderTick(Run& r, const Facts& f, std::string& order)
     return true;
 }
 
+inline bool EngagedPlanBoss(const Run& r, const Facts& f); // declared here (used from RunawaySummon), defined by the fight progress
+
 // A raid bot left far behind the lead bot with no fight on (a stale follow after a teleport): the gather and the
 // speed leash take turns waiting for it and neither timer runs out, so the run summons it to the lead bot before the
 // step's own wait looks at it again. Out of reach is kRunawayYd from the lead bot or another map; the farthest one is
-// picked, at most kRunawaySummonsPerStep a step and kRunawayResummonMs after its last summon. Party runs keep their
-// ladder and ceilings. True: the tick ends with that order (a refused summon is the existing summon-refused path).
+// picked, kRunawaySummonsPerStep a step at most and kRunawayResummonMs after the step's last summon. Never on a boss
+// step or with a plan boss engaged (RaidTrashFight's own protection: the summon would drop the bot on the boss).
+// Party runs keep their ladder and ceilings. True: the tick ends with that order (a refused summon is the existing
+// summon-refused path).
 inline bool RunawaySummon(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
+    const PlanStep* s = Current(r);
     if (!f.raid.on || !f.leadAlive || f.anyInCombat || r.fighting || LeadInOtherPart(r, f) || r.state != State::Running ||
-        !order.empty())
+        !order.empty() || !s || s->kind == PlanStepKind::Boss || EngagedPlanBoss(r, f))
         return false;
     const MemberFact* pick = nullptr;
     for (const MemberFact& m : f.members)
@@ -2932,12 +2938,10 @@ inline bool RunawaySummon(Run& r, const Facts& f, std::uint32_t dt, std::string&
         std::uint32_t const outMs = (r.runawayMs[m.name] += dt);
         if (outMs < kRunawayMs)
             continue;
-        auto const summons = r.runawaySummons.find(m.name);
-        if (summons != r.runawaySummons.end() && summons->second >= kRunawaySummonsPerStep)
-            continue;
-        auto const last = r.runawayLastMs.find(m.name);
-        if (last != r.runawayLastMs.end() && r.runMs - last->second < kRunawayResummonMs)
-            continue;
+        if (r.runawaySummons >= kRunawaySummonsPerStep)
+            continue; // the step's summons are spent
+        if (r.runawaySummons > 0 && r.runMs - r.runawayLastMs < kRunawayResummonMs)
+            continue; // too soon after the step's last summon, whatever bot it was
         if (!pick || (m.offPlanMap && !pick->offPlanMap) || (m.offPlanMap == pick->offPlanMap && m.yd > pick->yd))
             pick = &m;
     }
@@ -2945,8 +2949,8 @@ inline bool RunawaySummon(Run& r, const Facts& f, std::uint32_t dt, std::string&
         return false;
     order = "summon " + pick->name;
     MarkSummoned(r, pick->name);
-    ++r.runawaySummons[pick->name];
-    r.runawayLastMs[pick->name] = r.runMs;
+    ++r.runawaySummons;
+    r.runawayLastMs = r.runMs;
     r.note = pick->name +
         (pick->offPlanMap ? std::string(" is on another map") : " is " + Num(pick->yd) + " yd from the lead bot") + " (" +
         std::to_string(r.runawayMs[pick->name] / 1000) + " s out of reach): summoned";
@@ -5838,7 +5842,6 @@ inline RestLines LightLines(const RestLines& full)
 
 inline const PlanStep* EventHoldAhead(const Run& r);
 inline bool InEvent(const Run& r);
-inline bool EngagedPlanBoss(const Run& r, const Facts& f);
 inline std::size_t OpenUnits(const Run& r, const std::vector<UnitFact>& units);
 
 // With the aggro estimate off (Facts::joinerCeiling 0): a pull step still to be pulled whose pack in sight has

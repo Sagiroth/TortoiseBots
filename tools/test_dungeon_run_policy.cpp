@@ -22346,7 +22346,7 @@ static void TestRunawaySummonInARaid()
     WalkOn(f);
     CHECK(Tick(r, f) == "summon X"); // 8 s out of reach
     CHECK(r.note == "X is 374.0 yd from the lead bot (8 s out of reach): summoned");
-    CHECK(r.runawaySummons["X"] == 1);
+    CHECK(r.runawaySummons == 1);
 }
 
 static void TestRunawayTimerResetsWhenTheBotComesBack()
@@ -22394,7 +22394,7 @@ static void TestRunawayNeverForABotInAFight()
         WalkOn(f);
         CHECK(Tick(r, f).empty());
     }
-    CHECK(r.runawaySummons.count("X") == 0);
+    CHECK(r.runawaySummons == 0);
     f.members[2].inCombat = false;
     f.members[2].attackers = 1;
     for (int i = 0; i < 15; ++i)
@@ -22402,7 +22402,7 @@ static void TestRunawayNeverForABotInAFight()
         WalkOn(f);
         CHECK(Tick(r, f).empty());
     }
-    CHECK(r.runawaySummons.count("X") == 0);
+    CHECK(r.runawaySummons == 0);
 }
 
 static void TestRunawaySummonsABotOnAnotherMap()
@@ -22436,21 +22436,21 @@ static void TestRunawaySummonCapAndStepReset()
         WalkOn(f);
         Tick(r, f);
     }
-    CHECK(r.runawaySummons["X"] == 1);
+    CHECK(r.runawaySummons == 1);
     for (int i = 0; i < 30; ++i)
     {
         WalkOn(f);
         Tick(r, f);
     }
-    CHECK(r.runawaySummons["X"] == 2);
+    CHECK(r.runawaySummons == 2);
     for (int i = 0; i < 30; ++i)
     {
         WalkOn(f);
         CHECK(Tick(r, f).empty()); // the third would be due, the step's cap is spent
     }
-    CHECK(r.runawaySummons["X"] == 2);
+    CHECK(r.runawaySummons == 2);
     NextStep(r, "test");
-    CHECK(r.step == 1 && r.runawaySummons.empty() && r.runawayMs.empty());
+    CHECK(r.step == 1 && r.runawaySummons == 0 && r.runawayLastMs == 0 && r.runawayMs.empty());
     CHECK(Tick(r, f) == "move 3000.0 0.0 0.0");
     for (int i = 0; i < 6; ++i)
     {
@@ -22473,7 +22473,7 @@ static void TestRunawayOnlyInARaid()
         WalkOn(f);
         Tick(r, f);
     }
-    CHECK(r.runawaySummons.empty());
+    CHECK(r.runawaySummons == 0);
 }
 
 static void TestRunawayNeverInAFight()
@@ -22488,7 +22488,80 @@ static void TestRunawayNeverInAFight()
         WalkOn(f);
         CHECK(Tick(r, f).empty());
     }
-    CHECK(r.runawaySummons.empty());
+    CHECK(r.runawaySummons == 0);
+}
+
+// A boss step never summons a runaway: the summon would drop the bot on the boss (RaidTrashFight's own protection).
+static void TestRunawayNeverOnABossStep()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 10, 0, 0);
+    boss.entry = 62072;
+    plan.steps = {boss};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    f.leadX = 10.0f;
+    for (int i = 0; i < 60; ++i)
+    {
+        std::string const order = Tick(r, f);
+        CHECK(order.compare(0, 7, "summon ") != 0);
+    }
+}
+
+// A plan boss engaged on a move step gets the same protection (EngagedPlanBoss).
+static void TestRunawayNeverWithAPlanBossEngaged()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 900, 0, 0);
+    boss.entry = 62072;
+    plan.steps = {Step(PlanStepKind::Move, 2000), boss};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    f.engagedRead = true;
+    UnitFact u = Unit(91, 62072, 20);
+    u.attackable = true;
+    f.engagedUnits = {u};
+    for (int i = 0; i < 60; ++i)
+    {
+        WalkOn(f);
+        std::string const order = Tick(r, f);
+        CHECK(order.compare(0, 7, "summon ") != 0);
+    }
+}
+
+// Three raid bots out of reach at once: the step gives two of them its summons, the second no sooner than
+// kRunawayResummonMs after the first, and the third never comes.
+static void TestRunawaySummonStepLimits()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    f.total = 6;
+    f.alive = 6;
+    f.members = {Mem("Tanky", 0.0f), Mem("A", 200.0f), Mem("B", 300.0f), Mem("C", 400.0f)};
+    f.maxMemberYd = 400.0f;
+    CHECK(Tick(r, f) == "move 2000.0 0.0 0.0");
+    std::vector<std::uint64_t> at;
+    std::vector<std::string> orders;
+    for (int i = 0; i < 120; ++i)
+    {
+        WalkOn(f);
+        std::string const order = Tick(r, f);
+        if (order.compare(0, 7, "summon ") == 0)
+        {
+            at.push_back(r.runMs);
+            orders.push_back(order);
+            for (MemberFact& m : f.members) // the summon brought it to the lead bot
+                if (order == "summon " + m.name)
+                    m.yd = 3.0f;
+        }
+    }
+    CHECK(orders.size() == 2);
+    CHECK(orders[0] == "summon C");
+    CHECK(orders[1] == "summon B"); // the farthest still out; A never gets one, the step is spent
+    CHECK(at[0] == kRunawayMs);
+    CHECK(at[1] - at[0] == kRunawayResummonMs);
 }
 
 static void TestPartyRulesUnchanged()
@@ -23083,6 +23156,9 @@ int main()
     TestRunawaySummonCapAndStepReset();
     TestRunawayOnlyInARaid();
     TestRunawayNeverInAFight();
+    TestRunawayNeverOnABossStep();
+    TestRunawayNeverWithAPlanBossEngaged();
+    TestRunawaySummonStepLimits();
     TestPartyRulesUnchanged();
     TestStatusPartsMatchLine();
     std::cout << "test_dungeon_run_policy: ok\n";
