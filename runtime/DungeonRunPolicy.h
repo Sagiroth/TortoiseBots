@@ -12017,19 +12017,27 @@ inline const UnitFact* GuardTarget(const Run& r, const Facts& f)
     return GuardPick(f, 0.0f, &r, &r, RaidTrashFight(r, f));
 }
 
-// A raid trash fight (RaidTrashFight) in which the main tank, a living tank on stay, has no mob of its own: the nearest mob an
-// off-tank holds (UnitFact::victimTank) that it has not been sent at this fight. Null otherwise.
+// A raid trash fight (RaidTrashFight) in which the main tank, a living tank on stay, has no mob of its own: a mob an
+// off-tank holds (UnitFact::victimTank) that it has not been sent at this fight. The mob picked already (raidAssistGuid)
+// stays the pick while it is still eligible, so two mobs trading which one is nearer do not restart the wait every tick;
+// only once it is no longer eligible does the nearest one take over (with its own full wait). Null otherwise.
 inline const UnitFact* RaidAssistTarget(const Run& r, const Facts& f)
 {
     if (!RaidTrashFight(r, f) || !f.leadAlive || !f.leadIsTank || !f.leadStaying || f.leadHasAttacker || f.carrier.empty())
         return nullptr;
+    auto const eligible = [&r](const UnitFact& u)
+    {
+        return u.victimTank && u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting &&
+            u.distLead <= kGuardYd && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid) &&
+            !r.raidAssisted.count(u.guid);
+    };
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
-        if (!u.victimTank || !u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kGuardYd)
+        if (!eligible(u))
             continue;
-        if (GuardLeavesCampAlone(u) || CcOrderOut(r, u.guid) || r.raidAssisted.count(u.guid))
-            continue;
+        if (u.guid == r.raidAssistGuid)
+            return &u;
         if (!best || u.distLead < best->distLead)
             best = &u;
     }

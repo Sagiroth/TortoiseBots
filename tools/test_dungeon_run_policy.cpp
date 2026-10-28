@@ -22620,22 +22620,6 @@ static void TestRaidMainTankLeavesALooseMobToTheOffTankFirst()
 }
 
 // The main tank has a mob of its own (a pullback's unit on it): the arrival engage sends it as today, and no assist follows.
-// Codex r1: the assist's wait belongs to one mob: when a different held mob becomes the nearest before the wait ran
-// out, that mob gets its own full wait, so the off-tank holds it before the main tank comes.
-static void TestRaidAssistWaitRestartsForANewMob()
-{
-    DungeonPlan plan;
-    Facts f = RaidTrashFacts();
-    Run r = StartRaidTrashFight(plan, f);
-    f.partyAttackers = {TankHeld(41, 12129, 30)};
-    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
-        CHECK(Tick(r, f).empty()); // A almost waited out
-    f.partyAttackers = {TankHeld(41, 12129, 30), TankHeld(42, 12129, 10)}; // B, nearer, now held
-    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
-        CHECK(Tick(r, f).empty()); // B's own full wait: no order yet
-    CHECK(Tick(r, f) == "attack 42 Tanky");
-}
-
 static void TestRaidMainTankWithAMobOfItsOwnIsNotAssisted()
 {
     DungeonPlan plan;
@@ -22648,6 +22632,111 @@ static void TestRaidMainTankWithAMobOfItsOwnIsNotAssisted()
     f.partyAttackers = {TankHeld(41, 12129, 20)};
     for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
         CHECK(Tick(r, f).empty());
+}
+
+// The assist's wait belongs to one mob: once the pick is gone from the fight, the nearest held mob takes over and gets its
+// own full wait, so the off-tank holds it before the main tank comes.
+static void TestRaidAssistWaitRestartsForANewMob()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 12129, 30)};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty()); // A almost waited out
+    f.partyAttackers = {TankHeld(42, 12129, 10)}; // A left the fight: B is the pick now
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty()); // B's own full wait: no order yet
+    CHECK(Tick(r, f) == "attack 42 Tanky");
+}
+
+// Two held mobs trading which one is nearer every tick (a pack the off-tanks hold side by side): the pick stays the same
+// mob of the fight, so its wait runs out instead of starting over at each swap.
+static void TestRaidAssistPickIsStickyAcrossANearestSwap()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    std::string order;
+    for (std::uint32_t ms = kTickMs; ms <= kRaidAssistWaitMs + kTickMs; ms += kTickMs)
+    {
+        bool const firstNearer = (ms / kTickMs) % 2 == 1;
+        f.partyAttackers = {TankHeld(41, 11658, firstNearer ? 10.0f : 11.0f),
+            TankHeld(42, 11659, firstNearer ? 11.0f : 10.0f)};
+        std::string const ticked = Tick(r, f);
+        if (!ticked.empty())
+        {
+            CHECK(order.empty());
+            order = ticked;
+        }
+    }
+    CHECK(order == "attack 41 Tanky");
+}
+
+// A loose mob (no off-tank holds it) is never the assist's pick: even with its per-unit cap spent, so that the party guard
+// passes it over and RaidAssist is reached, the main tank stays on its stand and the off-tanks take it.
+static void TestRaidAssistNeverOnALooseMob()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    r.guardRefills = 1;
+    r.guardUnitOrders[51] = kGuardOrdersPerUnit;
+    f.partyAttackers = {Hitter(51, 11671, 10)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.fightOrders == 0);
+    CHECK(r.note.find("the main tank helps") == std::string::npos);
+}
+
+// A held mob that is not hitting anyone (a runner, one not yet in reach) is no assist: the off-tank handles it.
+static void TestRaidAssistNeverOnAHeldMobThatIsNotHitting()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    UnitFact held = TankHeld(41, 11671, 10);
+    held.hitting = false;
+    f.partyAttackers = {held};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.fightOrders == 0);
+}
+
+// Two assists in one fight keep kGuardRepeatMs apart: the next held mob's wait is already met, so only the spacing (the
+// last order just out) holds the order back one more tick.
+static void TestRaidAssistKeepsTheOrderSpacing()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 11658, 10)};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 41 Tanky");
+    // The next held mob's wait was met meanwhile; the last order went out this tick.
+    f.partyAttackers = {TankHeld(42, 11659, 10)};
+    r.raidAssistGuid = 42;
+    r.raidAssistMs = kRaidAssistWaitMs - kTickMs;
+    CHECK(Tick(r, f).empty()); // kGuardRepeatMs after the first: not yet
+    CHECK(Tick(r, f) == "attack 42 Tanky");
+}
+
+// The next fight starts over: the fight's end (the run back to the step) clears the assist's mob and the units it was sent at.
+static void TestRaidAssistClearsForTheNextFight()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 11658, 10)};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 41 Tanky");
+    CHECK(r.raidAssistGuid == 41 && r.raidAssisted.count(41) == 1);
+    f.anyInCombat = false;
+    f.partyAttackers.clear();
+    Tick(r, f);
+    CHECK(r.raidAssistGuid == 0 && r.raidAssisted.empty());
 }
 
 // Not on stay: its own AI fights, and the run sends nothing at the held mob.
@@ -23642,6 +23731,11 @@ int main()
     TestRaidMainTankLeavesALooseMobToTheOffTankFirst();
     TestRaidAssistWaitRestartsForANewMob();
     TestRaidMainTankWithAMobOfItsOwnIsNotAssisted();
+    TestRaidAssistPickIsStickyAcrossANearestSwap();
+    TestRaidAssistNeverOnALooseMob();
+    TestRaidAssistNeverOnAHeldMobThatIsNotHitting();
+    TestRaidAssistKeepsTheOrderSpacing();
+    TestRaidAssistClearsForTheNextFight();
     TestRaidMainTankOffStayFightsByItself();
     TestRaidMainTankOnABossStepIgnoresAHeldMob();
     TestRaidAssistNeverInAHold();
