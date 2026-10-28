@@ -198,6 +198,8 @@ void ExpireTargetFor(::PlayerbotAI* ai)
 }
 
 // Mails every carried stack of the item, one stack per mail. Returns what
+// left the bags and sets mailedAny when at least one mail went out.
+uint32_t MailStacks(Player* bot, uint32_t itemId, ObjectGuid receiverGuid, bool& mailedAny)
 {
     mailedAny = false;
     if (!bot || !receiverGuid || receiverGuid == bot->getObjectGuid())
