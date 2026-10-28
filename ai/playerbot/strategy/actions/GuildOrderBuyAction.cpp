@@ -2,9 +2,9 @@
 #include "playerbot/playerbot.h"
 #include "GuildOrderBuyAction.h"
 #include "playerbot/strategy/values/GuildValues.h"
+#include "playerbot/TravelMgr.h"
 #include "runtime/GuildOrderBuyPolicy.h"
 #include "runtime/GuildOrderStore.h"
-#include "AuctionHouse/AuctionHouseMgr.h"
 
 #include <mutex>
 
