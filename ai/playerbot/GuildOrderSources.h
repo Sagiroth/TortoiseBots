@@ -45,6 +45,7 @@ struct GuildOrderZoneSlice
 void BuildGuildOrderSourceIndex();
 bool GuildOrderSourcesReady();
 std::vector<GuildOrderEntrySource> GuildOrderSourcesFor(uint32_t itemId);
+std::vector<GuildOrderZoneSlice> GuildOrderZonesFor(int32_t entry);
 
 // True when the creature entry can skin the bot's Working farm order item:
 // the narrow gate for emptying order-mob corpses (loot queue and store).
@@ -61,3 +62,5 @@ uint32_t GuildOrderFarmItemFor(Player* bot);
 // the bot's Team as a number (0 = no team filter).
 bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,
     uint32_t team, uint32_t zoneId, uint32_t skillValue, bool hasSkill);
+
+} // namespace ai
