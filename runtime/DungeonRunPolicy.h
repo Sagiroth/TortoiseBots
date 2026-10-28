@@ -363,6 +363,8 @@ constexpr std::uint32_t kGuardHealerWaitMs = 0;   // ... a mob hitting a healer 
                                                   // took the healer from 73 % to dead in 4 s
 constexpr std::uint32_t kGuardRepeatMs = 2000;    // a further pick-up no sooner than this after the last one
 constexpr std::uint32_t kGuardOrdersPerFight = 3; // pick-up orders one fight may send (per budget: see below)
+constexpr std::uint32_t kRaidAssistWaitMs = 3000; // a main tank on stay with no mob of its own
+                                                  // helps on an off-tank's mob after this (the off-tank takes it first)
 // A mob hitting the party only by a spell from where it stands (UnitFact::castingAtRange), with a living hostile out of
 // combat within kGuardCampYd of it (UnitFact::campIdle: its own camp, a pack not pulled yet), is not picked up or engaged
 // when the tank would walk more than kGuardNoWalkYd to it (GuardLeavesCampAlone). Scholomance r30 slot C step 16
@@ -1805,6 +1807,10 @@ struct Run
     bool guardReturn = false;
     // The off-tank a raid trash pick-up goes to next (RaidTrashFight): round-robin over RaidFacts::offTanksAlive.
     std::size_t offTankTurn = 0;
+    // A raid trash fight's main tank on stay with no mob of its own (RaidAssist): how long a mob an off-tank holds
+    // has waited for it, and the units it was sent at this fight.
+    std::uint32_t raidAssistMs = 0;
+    std::unordered_set<std::uint64_t> raidAssisted;
     // The tank's reach for a pull is cut off once a mob has aggro (CheckReach):
     // `stopReachDue` asks the glue to end the lead bot's pull, once per pull.
     bool stopReachDue = false;
@@ -2292,6 +2298,8 @@ inline void ResetStep(Run& r)
     r.fightOrders = 0;
     r.guardReturn = false;
     r.offTankTurn = 0;
+    r.raidAssistMs = 0;
+    r.raidAssisted.clear();
     r.stopReachDue = false;
     r.reachStopped = false;
     r.guardEventDown = 0;
@@ -12007,6 +12015,25 @@ inline const UnitFact* GuardTarget(const Run& r, const Facts& f)
     return GuardPick(f, 0.0f, &r, &r, RaidTrashFight(r, f));
 }
 
+// A raid trash fight (RaidTrashFight) in which the main tank, a living tank on stay, has no mob of its own: the nearest mob an
+// off-tank holds (UnitFact::victimTank) that it has not been sent at this fight. Null otherwise.
+inline const UnitFact* RaidAssistTarget(const Run& r, const Facts& f)
+{
+    if (!RaidTrashFight(r, f) || !f.leadAlive || !f.leadIsTank || !f.leadStaying || f.leadHasAttacker || f.carrier.empty())
+        return nullptr;
+    const UnitFact* best = nullptr;
+    for (const UnitFact& u : f.partyAttackers)
+    {
+        if (!u.victimTank || !u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kGuardYd)
+            continue;
+        if (GuardLeavesCampAlone(u) || CcOrderOut(r, u.guid) || r.raidAssisted.count(u.guid))
+            continue;
+        if (!best || u.distLead < best->distLead)
+            best = &u;
+    }
+    return best;
+}
+
 // The guard inside a hold (Uldaman Keepers, 19z12 attempt 1: the tank held
 // "stay" on the hold spot at 102 270 while a Stone Keeper killed the priest
 // at 119 266, 17 yd away, and the mage fled at 16 %). The same rules as
@@ -12159,6 +12186,38 @@ inline std::string RefillNote(Run& r)
     return "; a new unit joined: the orders start over";
 }
 
+// A raid trash fight's main tank, a living tank on stay with no mob of its own, goes once at the nearest mob an off-tank
+// holds: `attack <guid> <carrier>` ends its stay and its own AI takes the pack from there (loose adds first, then held
+// mobs), so the off-tank keeps what it holds and no further order is needed. Loose mobs still go to the off-tanks first
+// (GuardTarget). Not a pick-up: guardOrders and guardUnitOrders are untouched.
+inline bool RaidAssist(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    const UnitFact* u = RaidAssistTarget(r, f);
+    if (!u)
+    {
+        r.raidAssistMs = 0;
+        return false;
+    }
+    r.raidAssistMs += dt;
+    if (r.raidAssistMs < kRaidAssistWaitMs || r.fightOrders >= kGuardOrdersFightCap ||
+        (r.fightOrders > 0 && r.guardSinceOrderMs < kGuardRepeatMs))
+        return false;
+    r.raidAssistMs = 0;
+    r.guardSinceOrderMs = 0;
+    ++r.fightOrders;
+    r.raidAssisted.insert(u->guid);
+    if (!r.guardReturn)
+    {
+        r.guardReturn = true; // it leaves its stand, as at a pick-up
+        r.guardX = f.leadStayKnown ? f.leadStayX : f.leadX;
+        r.guardY = f.leadStayKnown ? f.leadStayY : f.leadY;
+        r.guardZ = f.leadStayKnown ? f.leadStayZ : f.leadZ;
+    }
+    r.note = "fighting: the main tank helps on " + std::to_string(u->entry) + " held by an off-tank (" + Num(u->distLead) + " yd)";
+    order = "attack " + std::to_string(u->guid) + " " + f.carrier;
+    return true;
+}
+
 // One fight tick of the guard: mobs hitting the party for kGuardWaitMs (a
 // healer: at once) send the pick-up, at most kGuardOrdersPerFight a fight and
 // kGuardRepeatMs apart. In a hold the tank on stay is sent at the event's
@@ -12237,7 +12296,7 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     if (!u && !engage)
     {
         r.guardMs = 0;
-        return false;
+        return !hold && RaidAssist(r, f, dt, order);
     }
     if (u)
         r.guardMs += dt;
@@ -14431,6 +14490,8 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.guardRefills = 0;
         r.fightOrders = 0;
         r.offTankTurn = 0;
+        r.raidAssistMs = 0;
+        r.raidAssisted.clear();
         r.reachStopped = false;
         // A fight may have moved the lead bot: an exact point's tighten starts
         // over and its proof is taken again before a direct step goes out.

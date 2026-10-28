@@ -22471,16 +22471,24 @@ static Run StartRaidTrashFight(DungeonPlan& plan, Facts& f, std::uint32_t entry 
     return r;
 }
 
-static void TestRaidGuardLeavesAMobAnOffTankHolds()
+static void TestRaidMainTankHelpsOnAMobAnOffTankHolds()
 {
     DungeonPlan plan;
     Facts f = RaidTrashFacts();
     Run r = StartRaidTrashFight(plan, f);
     f.partyAttackers = {TankHeld(41, 12129, 30)};
-    for (std::uint32_t ms = 0; ms < kGuardWaitMs + 10000; ms += kTickMs)
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
         CHECK(Tick(r, f).empty());
-    CHECK(r.guardOrders == 0 && !r.guardReturn);
+    CHECK(Tick(r, f) == "attack 41 Tanky");
+    CHECK(r.note == "fighting: the main tank helps on 12129 held by an off-tank (30.0 yd)");
+    CHECK(r.guardOrders == 0);
+    CHECK(r.guardReturn);
     CHECK(GuardPick(f, 0.0f, &r, &r, true) == nullptr);
+    // The order ends its stay: its own AI fights the pack from there.
+    f.leadStaying = false;
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.guardOrders == 0);
 }
 
 static void TestRaidGuardRoundRobinsTheOffTanks()
@@ -22568,6 +22576,134 @@ static void TestRaidGuardAHealerMobGoesToAnOffTankWithoutTheWait()
     f.partyAttackers = {Hitter(71, 12129, 20, true)};
     CHECK(Tick(r, f).empty()); // kGuardRepeatMs after it
     CHECK(Tick(r, f) == "attack 71 Brun"); // no kGuardWaitMs
+}
+
+// A raid trash pack with several mobs an off-tank holds (MC Molten Giant pair, 11658/11659): the main tank helps on the
+// nearest one, and once more on the next after it leaves its stand again; never twice at the same unit in one fight.
+static void TestRaidMainTankHelpsOnASecondMobOfThePack()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 11658, 12), TankHeld(42, 11659, 8)};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 42 Tanky");
+    CHECK(r.note == "fighting: the main tank helps on 11659 held by an off-tank (8.0 yd)");
+    // Off its stay (the order ended it), then on it again: the other unit waits the assist wait again, and the order
+    // spacing (kGuardRepeatMs) keeps it off the very next tick.
+    f.leadStaying = false;
+    for (int i = 0; i < 2; ++i)
+        CHECK(Tick(r, f).empty());
+    f.leadStaying = true;
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 41 Tanky");
+    CHECK(r.note.find("helps on 11658") != std::string::npos);
+    for (std::uint32_t ms = 0; ms < 20000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.fightOrders == 2);
+}
+
+// A loose mob goes to an off-tank first (F3): the main tank is not sent at the held one while a pick-up is due.
+static void TestRaidMainTankLeavesALooseMobToTheOffTankFirst()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 11671, 10), Hitter(51, 11671, 12)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 51 Brun");
+    CHECK(r.note == "fighting: off-tank Brun picks up 11671 off the party (12.0 yd)");
+    CHECK(r.note.find("the main tank helps") == std::string::npos);
+}
+
+// The main tank has a mob of its own (a pullback's unit on it): the arrival engage sends it as today, and no assist follows.
+static void TestRaidMainTankWithAMobOfItsOwnIsNotAssisted()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.leadHasAttacker = true;
+    f.leadAttacker = Hitter(61, 12129, 3);
+    CHECK(Tick(r, f) == "attack 61 Tanky");
+    CHECK(r.note.find("the tank engages 12129 on arrival") != std::string::npos);
+    f.partyAttackers = {TankHeld(41, 12129, 20)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+}
+
+// Not on stay: its own AI fights, and the run sends nothing at the held mob.
+static void TestRaidMainTankOffStayFightsByItself()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.leadStaying = false;
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 12129, 20)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+}
+
+// A boss step hands the held mob to the carrier as today (RaidTrashFight false): no assist.
+static void TestRaidMainTankOnABossStepIgnoresAHeldMob()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 10);
+    boss.entry = 12129;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {boss};
+    Run r = Start(&plan);
+    Facts f = RaidTrashFacts();
+    f.anyInCombat = true;
+    f.partyAttackers = {TankHeld(61, 12129, 20)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 61 Tanky");
+    CHECK(r.guardOrders == 1);
+    CHECK(r.guardReturn);
+    CHECK(r.note.find("held by an off-tank") == std::string::npos);
+}
+
+// A hold's fight is not a raid trash fight: HoldGuardTarget's rules are unchanged, no assist.
+static void TestRaidAssistNeverInAHold()
+{
+    DungeonPlan plan;
+    PlanStep hold = Step(PlanStepKind::Hold);
+    hold.radius = 30;
+    ai::NormalizePlanStep(hold);
+    plan.steps = {hold};
+    Run r = Start(&plan);
+    r.eventOn = true;
+    Facts f = RaidTrashFacts();
+    f.anyInCombat = true;
+    f.partyAttackers = {TankHeld(41, 12129, 20)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.note.find("held by an off-tank") == std::string::npos);
+}
+
+// The assist is a raid trash fight's alone (RaidAssistTarget's RaidTrashFight gate): a party run never gets it, even for a
+// held mob the party guard's per-unit cap makes it pass over (which is when RaidAssist would be reached).
+static void TestRaidAssistIsRaidTrashOnly()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {4853})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.leadIsTank = true;
+    f.leadStaying = true;
+    Tick(r, f);
+    f.units = {Unit(31, 4853, 40)};
+    CHECK(Tick(r, f) == "pullback 31");
+    f.anyInCombat = true;
+    r.guardRefills = 1;
+    r.guardUnitOrders[81] = kGuardOrdersPerUnit;
+    f.partyAttackers = {TankHeld(81, 4853, 20)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.fightOrders == 0);
 }
 
 // Task F3: a raid's trash fight hands the mobs to the off-tanks; on a boss step
@@ -23456,7 +23592,7 @@ int main()
     TestRaidCcRegatherDone();
     TestRaidRunBackBelowWipeLevel();
     TestRaidHoldRegroupGathers();
-    TestRaidGuardLeavesAMobAnOffTankHolds();
+    TestRaidMainTankHelpsOnAMobAnOffTankHolds();
     TestRaidGuardRoundRobinsTheOffTanks();
     TestRaidGuardOnABossStepSendsTheMainTank();
     TestRaidGuardWithoutAnOffTankSendsTheMainTank();
@@ -23485,6 +23621,14 @@ int main()
     TestUntilClampsAfterALegSkipLandsPastIt();
     TestUntilStopsFightForward();
     TestUntilStatusLabel();
+    // item 2 raid assist
+    TestRaidMainTankHelpsOnASecondMobOfThePack();
+    TestRaidMainTankLeavesALooseMobToTheOffTankFirst();
+    TestRaidMainTankWithAMobOfItsOwnIsNotAssisted();
+    TestRaidMainTankOffStayFightsByItself();
+    TestRaidMainTankOnABossStepIgnoresAHeldMob();
+    TestRaidAssistNeverInAHold();
+    TestRaidAssistIsRaidTrashOnly();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;
 }
