@@ -77,7 +77,7 @@ Collects per-fight combat numbers of every bound group for the observability das
 <details>
 <summary>How it works in detail</summary>
 
-**Combat monitor:** per-fight combat numbers of every bound group for the observability dashboard: casts, damage, healing and overheal, damage taken, deaths with their last hits, and debuff uptime on the fought unit; one COMBAT_FIGHT datagram per fight and a rolling 10 s window. Costs a hash lookup per damage, heal and cast event while on. Needs AiPlayerbot.Observability.
+**Combat monitor:** per-fight combat numbers of every bound group for the observability dashboard: casts, damage, healing and overheal, damage taken, deaths with their last hits, and debuff uptime on the fought unit; one COMBAT_FIGHT datagram per fight and a rolling 10 s window. The live window is sent with the commanders snapshot but the dashboard does not read it yet (a later daemon task). Costs a hash lookup per damage, heal and cast event while on. Needs AiPlayerbot.Observability.
 
 </details>
 

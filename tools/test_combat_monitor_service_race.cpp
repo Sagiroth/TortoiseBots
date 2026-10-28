@@ -1,13 +1,15 @@
-// A8b: the combat monitor service under ThreadSanitizer. Thread A records
-// hook events (casts, damage, heals, combat, deaths) while thread B drains
-// payloads and windows on the "world thread" and refreshes the books; every
-// access must stay race-free (the hooks run on map threads, the tick and the
-// emitter on the world thread):
+// A8b: the combat monitor service under ThreadSanitizer. Two hook threads
+// record events (casts, damage, heals, combat, deaths) while the world thread
+// refreshes the books, drains payloads and windows; every access must stay
+// race-free (the hooks run on map threads, the tick and the emitter on the
+// world thread). The tick steps nowMs by 1000 and alternates in-combat so
+// fights end and TakeFightPayloads/BuildFightJson run while hooks fire:
 //   g++ -std=c++17 -O1 -g -fsanitize=thread -DCOMBAT_MONITOR_TEST_CONFIG -I. -Itools/tsan_stubs \
 //       tools/test_combat_monitor_service_race.cpp runtime/CombatMonitorService.cpp \
 //       -o /tmp/x -lpthread && setarch "$(uname -m)" -R /tmp/x
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cstdio>
 #include <thread>
 #include <vector>
@@ -46,51 +48,59 @@ static FightContext Ctx()
     return ctx;
 }
 
+static void HookLoop(CombatMonitorService& svc, std::atomic<bool> const& stop, uint32_t seed)
+{
+    uint32_t tick = seed;
+    while (!stop.load(std::memory_order_relaxed))
+    {
+        ++tick;
+        svc.OnCast(7, "Sunder Armor", false);
+        svc.OnDamage(11, 0, 500, "Magey", 11502, 777, "Magmadar");
+        svc.OnDamage(0, 7, 300, "Magmadar", 11502, 777, "Magmadar");
+        svc.OnHeal(9, 800, 200);
+        svc.OnEnterCombat(7);
+        if ((tick % 500) == 0)
+            svc.OnDeath(7, 0, "Magmadar", 1.0f, 2.0f, 3.0f, 0);
+        if ((tick % 700) == 0)
+            svc.OnDeath(0, 11, "", 0.0f, 0.0f, 0.0f, 11502);
+    }
+}
+
 int main()
 {
     sPlayerbotAIConfig.combatMonitor = true;
     CombatMonitorService& svc = CombatMonitorService::Instance();
+    svc.SyncConfig(true);
     std::atomic<bool> stop{false};
     std::atomic<uint64_t> errors{0};
 
-    std::thread recorder([&]() {
-        uint32_t tick = 0;
-        while (!stop.load())
-        {
-            ++tick;
-            svc.OnCast(7, "Sunder Armor", false);
-            svc.OnDamage(11, 0, 500, "Magey", 11502, 777, "Magmadar");
-            svc.OnDamage(0, 7, 300, "Magmadar", 11502, 777, "Magmadar");
-            svc.OnHeal(9, 800, 200);
-            svc.OnEnterCombat(7);
-            if ((tick % 500) == 0)
-                svc.OnDeath(7, "Magmadar", 1.0f, 2.0f, 3.0f, 0);
-            if ((tick % 700) == 0)
-                svc.OnDeath(0, "", 0.0f, 0.0f, 0.0f, 11502);
-        }
-    });
+    std::thread hookA([&]() { HookLoop(svc, stop, 0); });
+    std::thread hookB([&]() { HookLoop(svc, stop, 1000000); });
     std::thread drainer([&]() {
-        uint64_t tick = 0;
+        uint32_t nowMs = 0;
+        uint64_t seq = 1;
         std::vector<std::string> out;
-        while (!stop.load())
+        auto nextSeq = [&]() { return seq++; };
+        for (int tick = 0; tick < 40 && !stop.load(std::memory_order_relaxed); ++tick)
         {
-            ++tick;
-            svc.Refresh(55, Members(), true, false, Ctx(), {"sunder"}, tick);
-            svc.TakePayloads(out, 12, 77, tick, 1791990020);
+            nowMs += 1000;
+            bool const inCombat = (tick % 2) == 0;
+            svc.Refresh(55, Members(), inCombat, false, Ctx(), {"sunder"}, nowMs);
+            svc.TakePayloads(out, 12, 77, nextSeq, 1791990020);
             for (std::string const& p : out)
                 if (p.find("COMBAT_FIGHT") == std::string::npos)
                     errors.fetch_add(1);
             std::string window = svc.WindowJson(55);
             (void)window;
-            if ((tick % 1000) == 0)
+            if ((tick % 10) == 9)
                 svc.Forget(55);
         }
+        stop.store(true, std::memory_order_relaxed);
     });
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-    stop.store(true);
-    recorder.join();
     drainer.join();
+    hookA.join();
+    hookB.join();
     svc.Forget(55);
     if (errors.load() != 0)
     {

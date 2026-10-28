@@ -57,25 +57,39 @@ class CombatMonitorWiringTest(unittest.TestCase):
         self.assertIn("OwnerLow(", damage)
         self.assertIn("GetCharmerOrOwnerPlayerOrPlayerItself()", code)
 
-    def test_service_guards_every_hook_with_the_mutex_and_the_book(self):
+    def test_service_guards_member_hooks_with_the_snapshot_and_the_mutex(self):
         for name in ("OnCast", "OnDamage", "OnHeal", "OnEnterCombat", "OnDeath"):
             fn = body(SERVICE, "::%s(" % name, "\n}\n")
+            self.assertIn("m_memberCount", fn, name)
+            self.assertIn("atomic_load", fn, name)
             self.assertTrue("std::lock_guard<std::mutex>" in fn or "std::scoped_lock" in fn, name)
-            self.assertIn("m_memberGroup.find(", fn, name)
+        for name in ("Refresh", "Forget", "SyncConfig"):
+            fn = body(SERVICE, "::%s(" % name, "\n}\n")
+            self.assertIn("PublishMembers", fn if name != "SyncConfig" else fn + "PublishMembers", name)
         for member in re.findall(r"(?:Player|Unit)\s*\*\s*m_\w+|(?:Player|Unit)\s*\*\s*\w+;", SERVICE_H):
             self.fail("service must not keep a game pointer: %s" % member)
 
-    def test_module_and_cmake_list_the_adapter(self):
-        self.assertTrue("new CombatMonitorAdapter" in MODULE or "CombatMonitorAdapter" in MODULE)
+    def test_module_lists_both_adapters(self):
+        self.assertIn("new CombatMonitorUnitAdapter()", MODULE)
+        self.assertIn("new CombatMonitorCastAdapter()", MODULE)
         self.assertIn("host/CombatMonitorAdapter.cpp", CMAKE)
         self.assertIn("runtime/CombatMonitorService.cpp", CMAKE)
+
+    def test_sync_config_is_ungated(self):
+        code = strip_comments(SERVICE)
+        sync = body(code, "CombatMonitorService::SyncConfig(", "\n}\n")
+        self.assertNotIn("Enabled()", sync.split("PublishMembers")[0] if "PublishMembers" in sync else sync)
+        self.assertIn("m_enabled.store", sync)
+        collect = strip_comments(COMMANDER)
+        self.assertIn("SyncConfig(sPlayerbotAIConfig.combatMonitor", collect)
+        startup = (ROOT / "host" / "BotHostAdapter.cpp").read_text()
+        self.assertIn("SyncConfig(sPlayerbotAIConfig.combatMonitor", strip_comments(startup))
 
     def test_commander_tick_feeds_and_forgets_the_books(self):
         collect = strip_comments(COMMANDER)
         self.assertIn("CombatMonitorService::Instance().Refresh(", collect)
         self.assertIn("CombatMonitorService::Instance().Forget(", collect)
         self.assertIn("ref.combatJson = ", collect)
-
     def test_telemetry_writes_the_window_raw(self):
         self.assertIn("std::string combatJson", TELEMETRY)
         payload = body(TELEMETRY, "inline std::string BuildPayload(", "\n}\n")
