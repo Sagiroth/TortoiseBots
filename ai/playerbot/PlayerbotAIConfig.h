@@ -36,13 +36,6 @@ enum class BotCheatMask : uint32
     maxMask = 1 << 12
 };
 
-enum class BotAutoLogin : uint32
-{
-    DISABLED = 0,
-    LOGIN_ALL_WITH_MASTER = 1,
-    LOGIN_ONLY_ALWAYS_ACTIVE = 2
-};
-
 enum class BotSelfBotLevel : uint32
 {
     DISABLED = 0,
@@ -106,20 +99,17 @@ public:
 	bool IsInPvpProhibitedZone(uint32 id);
 
     bool enabled;
-    bool allowGuildBots;
-    bool allowMultiAccountAltBots;
     uint32 globalCoolDown, reactDelay, maxWaitForMove, expireActionTime, dispelAuraDuration, passiveDelay, repeatDelay,
-        errorDelay, rpgDelay, sitDelay, returnDelay, lootDelay;
-    float sightDistance, spellDistance, reactDistance, grindDistance, lootDistance, groupMemberLootDistance, groupMemberLootDistanceWithActiveMaster,
+        rpgDelay, sitDelay, returnDelay, lootDelay;
+    float sightDistance, spellDistance, reactDistance, grindDistance, lootDistance, groupMemberLootDistance,
         gatheringDistance, groupMemberGatheringDistance, groupMemberGatheringDistanceWithActiveMaster, shootDistance,
         fleeDistance, tooCloseDistance, meleeDistance, followDistance, raidFollowDistance, wanderMinDistance, wanderMaxDistance, whisperDistance, contactDistance,
-        aoeRadius, rpgDistance, targetPosRecalcDistance, farDistance, healDistance, healDistanceBg, aggroDistance, proximityDistance, maxFreeMoveDistance, freeMoveDelay, walkDistance;
+        aoeRadius, rpgDistance, targetPosRecalcDistance, farDistance, healDistance, healDistanceBg, aggroDistance, proximityDistance, walkDistance;
     uint32 criticalHealth, lowHealth, mediumHealth, almostFullHealth;
     uint32 lowMana, mediumMana;
 
     uint32 openGoSpell;
     bool randomBotAutologin;
-    BotAutoLogin botAutologin;
     std::list<uint32> randomBotQuestItems;
     std::list<uint32> randomBotAccounts;
     std::unordered_set<uint32> nonRandomBotAccounts;
@@ -150,7 +140,6 @@ public:
     float randomGearSeedEpicChance;
     bool randomGearTabards;
     bool randomGearTabardsReplaceGuild;
-    bool randomGearTabardsUnobtainable;
     float randomGearTabardsChance;
     std::list<uint32> randomGearBlacklist;
     std::list<uint32> randomGearWhitelist;
@@ -165,7 +154,7 @@ public:
     float attackEmoteChance;
     uint32 minRandomBots, maxRandomBots;
     uint32 randomBotUpdateInterval;
-    bool randomBotTimedLogout, randomBotTimedOffline;
+    bool randomBotTimedLogout;
     // Level ladder (AiPlayerbot.LevelLadder*): choose the next random bot to log in by the
     // shortfall of its level band instead of round-robin over the whole pool, highest level
     // first inside the band, so the field spreads over the levels and the leaders climb to 60.
@@ -173,13 +162,12 @@ public:
     uint32 levelLadderBandSize = 5;
     uint32 levelLadderMaxLevelSharePct = 10;
     uint32 levelLadderLogMinutes = 5;
-    uint32 minRandomBotInWorldTime, maxRandomBotInWorldTime;
+    uint32 maxRandomBotInWorldTime;
     uint32 randomBotStallRelogMinutes = 45;
     uint32 minRandomBotRandomizeTime, maxRandomBotRandomizeTime;
     uint32 minRandomBotChangeStrategyTime, maxRandomBotChangeStrategyTime;
-    uint32 minRandomBotReviveTime, maxRandomBotReviveTime;
     uint32 randomBotsMaxLoginsPerInterval;
-    uint32 minRandomBotsPriceChangeInterval, maxRandomBotsPriceChangeInterval;
+    uint32 maxRandomBotsPriceChangeInterval;
     //Auction house settings
     bool shouldQueryAHListingsOutsideOfAH;
     std::list<uint32> ahOverVendorItemIds;
@@ -216,7 +204,6 @@ public:
     uint32 ahMarketBidMax = 90;             // Max start bid % of buyout
     uint32 ahMarketTimeMin = 8;             // Min auction duration (hours)
     uint32 ahMarketTimeMax = 24;            // Max auction duration (hours)
-    bool ahMarketValueVendor = true;        // Use vendor price multiplier for vendor-sold goods
     //
     bool randomBotLoginAtStartup;
     // Bounded idempotent RNDBOT population: reuse existing RNDBOT% accounts/
@@ -556,7 +543,6 @@ public:
     std::list<std::string> pinnedBotNames;
 
 	bool RandombotsWalkingRPG;
-	bool RandombotsWalkingRPGInDoors;
     bool boostFollow;
     // Dungeon follow holds short of unpulled packs when the leader is far ahead (audit fix 127).
     bool dungeonFollowHoldBeforePacks;
@@ -638,7 +624,6 @@ public:
     bool randomBotGreet;
     bool randomBotShowHelmet;
     bool randomBotShowCloak;
-    bool disableRandomLevels;
     bool gearscorecheck;
     int32 levelCheck;
     // Pool-bot trade safety (issue #469, donor EnableRandomBotTrading 0-3
@@ -648,16 +633,12 @@ public:
     // Addon chatter prefixes that never drive the trade action
     // (donor TradeActionExcludedPrefixes parity, e.g. Questie/DBM lines).
     std::list<std::string> tradeActionExcludedPrefixes;
-	bool randomBotPreQuests;
     float playerbotsXPrate;
-    bool disableBotOptimizations;
     bool disableActivityPriorities;
     bool forceActiveWhenNearPlayer;
     bool limitCombatActivity;
     bool guildOrderAlwaysActive;
     uint32 botActiveAlone;
-    uint32 diffWithPlayer;
-    uint32 diffEmpty;
     uint32 minEnchantingBotLevel;
     // Ordered pull: DPS hold after the tank's pull lands (pull) or after the
     // tank is back at the anchor (pullback). Per-command [seconds] overrides
@@ -671,11 +652,9 @@ public:
     // order says `ranged`.
     bool rangedPull;
     float rangedPullMeleeApproach;
-    uint32 randombotStartingLevel;
-    // Level seeding for persistent-level pools (DisableRandomLevels=1). Fresh
-    // pool bots are created at level 1 by CharacterCreation, so the pool
-    // starts at 1 unless this range seeds it. 1/1 keeps the historic
-    // "walk from level 1" behaviour.
+    // Level seeding: fresh pool bots are created at level 1 by
+    // CharacterCreation, so the pool starts at 1 unless this range seeds it.
+    // 1/1 keeps the historic "walk from level 1" behaviour.
     uint32 randomBotStartLevelMin;
     uint32 randomBotStartLevelMax;
     bool randomBotSayWithoutMaster;
@@ -684,9 +663,7 @@ public:
     bool randomBotRaidNearby;
     bool randomBotGuildNearby;
     bool randomBotFormGuild;
-    bool randomBotRandomPassword;
     bool inviteChat;
-    bool botsSilent;
     // Opt-in diagnostic logging: when true, [BOT] log lines and per-bot action
     // log files (logs/bots/<name>_acc<id>_<timestamp>.log) are emitted. Default
     // off so production servers don't pay disk I/O / branch overhead.
@@ -833,10 +810,6 @@ public:
     // points to WorldDatabase. Keep the expensive persistent rebuild opt-in.
     bool generateFishLocations;
     bool syncAltLevelToMaster;
-    uint32 tweakValue; //Debugging config
-    float respawnModNeutral, respawnModHostile;
-    uint32 respawnModThreshold, respawnModMax;
-    bool respawnModForPlayerBots, respawnModForInstances;
 
     bool randomBotLoginWithPlayer;
     // Autonomous BG queue for WSG/AB/AV. Default on. Bounded cadence and
@@ -910,7 +883,7 @@ public:
     bool bExplicitDbStoreSave = false;
 
     //LM BEGIN
-    std::string llmApiEndpoint, llmApiKey, llmApiJson, llmPrePrompt, llmPreRpgPrompt, llmPrompt, llmPostPrompt, llmResponseStartPattern, llmResponseEndPattern, llmResponseDeletePattern, llmResponseSplitPattern;
+    std::string llmApiEndpoint, llmApiJson, llmPrePrompt, llmPreRpgPrompt, llmPrompt, llmPostPrompt, llmResponseStartPattern, llmResponseEndPattern, llmResponseDeletePattern, llmResponseSplitPattern;
     uint32 llmEnabled, llmContextLength, llmBotToBotChatChance, llmGenerationTimeout, llmMaxSimultaniousGenerations, llmRpgAIChatChance;
     bool llmGlobalContext;
     ParsedUrl llmEndPointUrl;

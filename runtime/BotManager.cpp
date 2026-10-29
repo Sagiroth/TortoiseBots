@@ -1028,6 +1028,25 @@ void BotManager::OnPlayerLogin(::Player* player)
     // 15/35 in the armory instead of 15/36. Idempotent and O(spellbook).
     PlayerbotFactory::EnsureTalentSpellsSaved(player);
 
+    // Helmet and cloak display on pool bots (RandomBotShowHelmet/ShowCloak):
+    // the flags live in PLAYER_FLAGS, so re-applying them each login keeps
+    // existing characters in step after a config change. Hired companions and
+    // claimed bots read their visibility settings on the master's login path;
+    // their characters are never touched here.
+    if (record.random && !HireLifecycle::Instance().IsHired(player->GetObjectGuid()) &&
+        !ClaimLifecycle::Instance().IsClaimed(player->GetGUIDLow()))
+    {
+        if (sPlayerbotAIConfig.randomBotShowHelmet)
+            player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_HELM);
+        else
+            player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_HELM);
+
+        if (sPlayerbotAIConfig.randomBotShowCloak)
+            player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_CLOAK);
+        else
+            player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_CLOAK);
+    }
+
     // Normalize Goblin and High Elf (and any random bot in custom isolated
     // starting zones lacking navmesh/transport to mainland) to standard faction
     // starting zones: Valley of Trials and Northshire. RandomBotEvenStartZones
@@ -1160,7 +1179,7 @@ void BotManager::OnPlayerLogin(::Player* player)
         TB_LOG_DETAIL("TortoiseBots: seeded starter gear for fresh bot %s.", player->GetName());
     }
 
-    // Skills are separate from gear seeding. With DisableRandomLevels=1 a bot never passes
+    // Skills are separate from gear seeding. A level-1 pool bot never passes
     // through a level pipeline: it would keep weapon
     // skill 1 for good and never get a profession, so grind, craft and gather have
     // nothing to work with. Give such a bot the level-bound skill set once, at any

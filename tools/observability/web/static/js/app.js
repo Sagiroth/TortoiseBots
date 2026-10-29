@@ -1868,7 +1868,6 @@
     'AiPlayerbot.LeaveOutgrownZones': 'Bots that are 5+ levels above their zone travel (on foot, flight or boat) to a zone that fits their level.',
     'AiPlayerbot.RandomBotLftEnabled': 'Bots fill missing roles when a real player is waiting in the dungeon finder (LFT).',
     'AiPlayerbot.RandomBotBgEnabled': 'Bots join battlegrounds when a real player is queued, filling both sides so the match starts.',
-    'AiPlayerbot.DisableRandomLevels': 'Not about spawn levels (that is RandomBotStartLevelMin/Max). On = bots below randombotStartingLevel are raised to it. Off = bots keep their seed level and level up by playing.',
     'AiPlayerbot.LevelLadder': 'Chooses which bots log in by level band, so every level range has bots and level 60 is capped.',
     'AiPlayerbot.DisableActivityPriorities': 'On = every bot always thinks at full speed (bots always alive). Off = bots with no player nearby are throttled to botActiveAlone percent.',
     'AiPlayerbot.PerfMonEnabled': 'Built-in performance monitor for bot actions (debugging; costs some CPU).',
@@ -1949,7 +1948,6 @@
           ['LFT', flagBadge(bots.lft), cfg('RandomBotLftEnabled')],
           ['Battlegrounds', flagBadge(bots.bg), cfg('RandomBotBgEnabled')],
           ['AH buyer', flagBadge(bots.ah_buyer), cfg('AhMarketBuyer')],
-          ['Random levels off', flagBadge(bots.disable_random_levels), cfg('DisableRandomLevels')],
           ['Level ladder', flagBadge(bots.level_ladder), cfg('LevelLadder')],
           ['Activity priorities off', flagBadge(bots.disable_activity), cfg('DisableActivityPriorities')]
         ])}
@@ -1992,7 +1990,7 @@
       '# TortoiseBots diagnostic report',
       `- module: ${info.module_version || '?'} / core: ${info.core_revision || '?'} (${info.core_date || '?'}) / max level: ${info.max_level || '?'}`,
       `- rates: xp_kill=${rates.xp_kill ?? '?'} xp_elite=${rates.xp_kill_elite ?? '?'} xp_quest=${rates.xp_quest ?? '?'} xp_explore=${rates.xp_explore ?? '?'} drop_money=${rates.drop_money ?? '?'} honor=${rates.honor ?? '?'} rep=${rates.rep_gain ?? '?'} talent=${rates.talent ?? '?'} bot_xp_mult=${rates.bot_xp_mult ?? '?'}`,
-      `- bots: min/max=${bots.min_random ?? '?'}/${bots.max_random ?? '?'} update=${bots.update_interval ?? '?'} maxlvl=${bots.max_level ?? '?'} group=${on(bots.group_nearby)} raid=${on(bots.raid_nearby)} invite=${on(bots.invite_player)} timed_logout=${on(bots.timed_logout)} no_rand_levels=${on(bots.disable_random_levels)} ladder=${on(bots.level_ladder)} quests=${on(bots.auto_do_quests)} no_activity=${on(bots.disable_activity)} alone=${bots.active_alone ?? '?'} pool=${bots.pool_budget_us ?? '?'}us/${bots.pool_budget_gate_ms ?? '?'}ms ah=${on(bots.ah_buyer)} lft=${on(bots.lft)} bg=${on(bots.bg)}`,
+      `- bots: min/max=${bots.min_random ?? '?'}/${bots.max_random ?? '?'} update=${bots.update_interval ?? '?'} maxlvl=${bots.max_level ?? '?'} group=${on(bots.group_nearby)} raid=${on(bots.raid_nearby)} invite=${on(bots.invite_player)} timed_logout=${on(bots.timed_logout)} ladder=${on(bots.level_ladder)} quests=${on(bots.auto_do_quests)} no_activity=${on(bots.disable_activity)} alone=${bots.active_alone ?? '?'} pool=${bots.pool_budget_us ?? '?'}us/${bots.pool_budget_gate_ms ?? '?'}ms ah=${on(bots.ah_buyer)} lft=${on(bots.lft)} bg=${on(bots.bg)}`,
       `- tuning: xp_rate=${rates.bot_xp_mult ?? '?'} loot_uncommon=${bots.bot_loot_uncommon ?? '?'} loot_rare=${bots.bot_loot_rare ?? '?'} ah_market=${on(bots.ah_market)} autolearn_trainer=${on(bots.auto_learn_trainer_spells)} autolearn_quest=${on(bots.auto_learn_quest_spells)} levelup_mounts=${on(bots.level_up_mounts)} turtle_mount_lvl=${bots.turtle_mount_at_level ?? '?'}`,
       `- diag: perfmon=${on(diag.perf_mon)} bot_events=${on(diag.bot_events)} unreachable=${on(diag.unreachable)} deaths=${on(diag.deaths)}`,
       `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} deaths/min=${(g.deaths_per_min || 0).toFixed(1)} died5m=${Math.round(g.pct_died_5min || 0)}% states=${['combat', 'moving', 'busy', 'stalled', 'resting', 'idle', 'dead'].map(k => `${k}=${((g.state_counts || {})[k]) || 0}`).join(' ')}`,

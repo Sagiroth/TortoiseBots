@@ -132,6 +132,12 @@ python3 -m unittest tools/test_verify_config_defaults.py
 echo "✓ Config defaults verified."
 
 echo ""
+echo "=== 8b. Verifying Config Keys Are Actually Used ==="
+python3 tools/verify_config_usage.py
+python3 -m unittest tools/test_verify_config_usage.py
+echo "✓ Config usage verified."
+
+echo ""
 echo "=========================================="
 echo "🎉 ALL TORTOISEBOTS CHECKS PASSED CLEANLY!"
 echo "=========================================="
