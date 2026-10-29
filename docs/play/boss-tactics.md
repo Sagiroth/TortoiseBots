@@ -48,7 +48,7 @@ Why the commander binding counts: those runs are the ones that exist to clear a 
 | `param` | `behind`: yards around the boss in which its front is kept clear. |
 | `comment` | Free text; where the row came from. |
 
-The primary key is `(map, boss_entry, kind, target_entry, spell_id)`. The loader skips a row it cannot use (unknown kind, an `interrupt` without a spell, a `behind` without a radius, a duplicate key) and logs how many it skipped; `tools/test_boss_tactics_sql.py` rejects the same rows at commit time.
+The primary key is `(map, boss_entry, kind, target_entry, spell_id)`. The loader skips a row it cannot use (unknown kind, an `interrupt` without a spell, a `behind` without a radius, a duplicate key) and logs how many it skipped; `tools/test_boss_tactics_sql.py` rejects the same rows at commit time. With `TORTOISE_CORE=~/tortoise-wow` set, the same test also checks every live `interrupt` row against the core's data: that the spell exists and the core's interrupt rule can stop it, that the boss and target templates exist, and that the boss spawns on its map; without the variable those checks are skipped.
 
 ### Kinds
 
