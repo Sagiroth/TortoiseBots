@@ -140,6 +140,35 @@ int main()
     }
     std::cout << "  [PASS] Test 6: stranded-bot waypoint exemptions\n";
 
-    std::cout << "\nAll 6 TortoiseBots Travel Route Danger Policy tests PASSED!\n";
+    // -------------------------------------------------------------
+    // Test 7: walk-out state (B1/B2/B4: legs share it, no re-entry)
+    // -------------------------------------------------------------
+    {
+        // Stranded town: waypoints at 100/200 yd exempt, 400 yd ends it.
+        RouteStartGround town(false, true);
+        CHECK(town.TownExempt(100.0f));
+        CHECK(town.TownExempt(200.0f));
+        CHECK(!town.TownExempt(400.0f));
+        CHECK(!town.TownExempt(100.0f));  // closed stays closed
+        CHECK(!town.LevelExempt(5642, 5642));  // level was never open
+        // Stranded zone with 3 waypoints: in, in, out.
+        RouteStartGround zone(true, false);
+        CHECK(zone.LevelExempt(5642, 5642));
+        CHECK(zone.LevelExempt(5642, 5642));
+        CHECK(!zone.LevelExempt(148, 5642));
+        CHECK(!zone.TownExempt(10.0f));  // town was never open
+        // Leave and re-enter: the second stretch of start zone is checked.
+        RouteStartGround reentry(true, false);
+        CHECK(reentry.LevelExempt(5642, 5642));
+        CHECK(!reentry.LevelExempt(148, 5642));
+        CHECK(!reentry.LevelExempt(5642, 5642));
+        // Safe start: nothing ever exempt.
+        RouteStartGround safe(false, false);
+        CHECK(!safe.LevelExempt(5642, 5642));
+        CHECK(!safe.TownExempt(0.0f));
+    }
+    std::cout << "  [PASS] Test 7: walk-out state with no re-entry\n";
+
+    std::cout << "\nAll 7 TortoiseBots Travel Route Danger Policy tests PASSED!\n";
     return 0;
 }

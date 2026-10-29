@@ -68,6 +68,56 @@ namespace
         }
         return false;
     }
+
+    // Entry lists for the delivery/buy searches, built once: scanning every
+    // GenericRpg destination worldwide and discarding 99% per search spikes
+    // the worker thread; entry-filtered lookup hits only banker/auctioneer
+    // destinations. Same predicates as the per-point filters below.
+    std::vector<int32> const& GuildBankerEntries()
+    {
+        static std::vector<int32> entries = []()
+        {
+            std::vector<int32> found = { 62008, 62009, 62010, 62011, 62012, 80917, 80918 };
+            for (uint32 entry = 0; entry < sCreatureStorage.GetMaxEntry(); ++entry)
+            {
+                CreatureInfo const* info = sCreatureStorage.LookupEntry<CreatureInfo>(entry);
+                if (!info || !(info->npc_flags & UNIT_NPC_FLAG_GOSSIP))
+                    continue;
+                if (std::find(found.begin(), found.end(), int32(entry)) != found.end())
+                    continue;
+                GossipMenuItemsMapBounds menuItems = sObjectMgr.GetGossipMenuItemsMapBounds(info->gossip_menu_id);
+                if (menuItems.first == menuItems.second)
+                    menuItems = sObjectMgr.GetGossipMenuItemsMapBounds(0);
+                for (auto itr = menuItems.first; itr != menuItems.second; ++itr)
+                {
+                    GossipMenuItems const& item = itr->second;
+                    if (item.option_id == GOSSIP_OPTION_GUILD_BANKER && (item.npc_option_npcflag & info->npc_flags))
+                    {
+                        found.push_back(int32(entry));
+                        break;
+                    }
+                }
+            }
+            return found;
+        }();
+        return entries;
+    }
+
+    std::vector<int32> const& AuctioneerEntries()
+    {
+        static std::vector<int32> entries = []()
+        {
+            std::vector<int32> found;
+            for (uint32 entry = 0; entry < sCreatureStorage.GetMaxEntry(); ++entry)
+            {
+                CreatureInfo const* info = sCreatureStorage.LookupEntry<CreatureInfo>(entry);
+                if (info && (info->npc_flags & UNIT_NPC_FLAG_AUCTIONEER))
+                    found.push_back(int32(entry));
+            }
+            return found;
+        }();
+        return entries;
+    }
 }
 
 // Every leg of a guild order (farm, focus, vendor, delivery) counts as order
@@ -1088,13 +1138,19 @@ static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, W
             !start.IsGuardedHostileTownFor(bot, ai::TRAVEL_ROUTE_SAMPLE_RADIUS_YD, false);
         return RouteLegIsSurvivable(bot, start, *position, nullptr, checkTowns, checkLevel, blocker);
     }
-    // Already-there waypoints are not danger: without this a bot stranded in
-    // deadly ground (or a hostile town) rejects every route and never travels.
+    // Walk waypoints and legs together: one stranded-bot walk-out state for
+    // both, so the exemption that frees a waypoint also frees the leg into
+    // it, and the first endpoint outside the start ground ends it for the
+    // rest of the route (no re-entry). Legs sample the same rules because
+    // the bot walks with the navmesh pathfinder, not node to node: a leg can
+    // cross danger no waypoint sits in. Head leg keeps its original free
+    // level pass; the town rule on it is what strands town bots (B1).
     AreaTableEntry const* startArea = start.GetArea();
     uint32 const startZoneId = startArea ? (startArea->ZoneId ? startArea->ZoneId : startArea->Id) : 0;
-    bool const startTooHigh = ai::TravelRouteAreaTooHigh(start.GetAreaLevel(), bot->GetLevel());
-    bool const startInTown = avoidTowns &&
-        start.IsGuardedHostileTownFor(bot, ai::TRAVEL_ROUTE_SAMPLE_RADIUS_YD, false);
+    ai::RouteStartGround ground(
+        ai::TravelRouteAreaTooHigh(start.GetAreaLevel(), bot->GetLevel()),
+        avoidTowns && start.IsGuardedHostileTownFor(bot, ai::TRAVEL_ROUTE_SAMPLE_RADIUS_YD, false));
+    TravelNode* prevNode = nullptr;
     for (TravelNode* node : route.getNodes())
     {
         WorldPosition* p = node ? node->getPosition() : nullptr;
@@ -1102,8 +1158,7 @@ static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, W
             continue;
         AreaTableEntry const* nodeArea = p->GetArea();
         uint32 const nodeZoneId = nodeArea ? (nodeArea->ZoneId ? nodeArea->ZoneId : nodeArea->Id) : 0;
-        bool const exemptLevel = startTooHigh &&
-            ai::TravelRouteWaypointSharesStartZone(nodeZoneId, startZoneId);
+        bool const exemptLevel = ground.LevelExempt(nodeZoneId, startZoneId);
         int32 const level = p->GetAreaLevel();
         if (!exemptLevel && ai::TravelRouteAreaTooHigh(level, bot->GetLevel()))
         {
@@ -1111,56 +1166,42 @@ static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, W
             ok = false;
             break;
         }
-        bool const exemptTown = startInTown &&
-            ai::TravelRouteWaypointInWalkout(start.distance(*p));
+        bool const exemptTown = ground.TownExempt(start.distance(*p));
         if (!exemptTown && avoidTowns && p->IsGuardedHostileTownFor(bot, ai::TRAVEL_ROUTE_SAMPLE_RADIUS_YD, false))
         {
             blocker = p->getAreaName(true, true) + " (hostile town guards)";
             ok = false;
             break;
         }
+        TravelNodePath* edge = nullptr;
+        if (prevNode)
+        {
+            auto links = prevNode->GetLinks();
+            auto linkIt = links->find(node);
+            if (linkIt != links->end())
+                edge = linkIt->second;
+        }
+        WorldPosition const& from = prevNode ? *prevNode->getPosition() : start;
+        bool const checkLevel = prevNode != nullptr && !exemptLevel;
+        if (!RouteLegIsSurvivable(bot, from, *p, edge, avoidTowns && !exemptTown, checkLevel, blocker))
+        {
+            ok = false;
+            break;
+        }
+        prevNode = node;
     }
 
-    // The waypoints above are not the walk: MoveToTravelTargetAction moves to
-    // the destination point with the navmesh pathfinder and the node route
-    // only supplies the waypoints, so a leg can pass through a hostile town or
-    // an area far above the bot's level without any waypoint sitting in it.
-    // Sample the legs - the same town and area-level rules as the waypoints,
-    // plus the head and tail legs no waypoint check ever covered. The guard
-    // index is a static spawn hash and the area lookup is the one the waypoint
-    // rule already does per node, so this stays a plain lookup on the pick
-    // path: no A*, no world scan.
-    if (ok)
+    // Tail leg: last waypoint to the destination itself. No edge to look
+    // up (getRoute builds it separately); a cross-map destination is
+    // skipped inside by the map check.
+    if (ok && prevNode)
     {
-        TravelNode* prevNode = nullptr;
-        for (TravelNode* node : route.getNodes())
-        {
-            WorldPosition* p = node ? node->getPosition() : nullptr;
-            if (!p)
-                continue;
-
-            TravelNodePath* edge = nullptr;
-            if (prevNode)
-            {
-                auto links = prevNode->GetLinks();
-                auto linkIt = links->find(node);
-                if (linkIt != links->end())
-                    edge = linkIt->second;
-            }
-            WorldPosition const& from = prevNode ? *prevNode->getPosition() : start;
-            if (!RouteLegIsSurvivable(bot, from, *p, edge, avoidTowns, prevNode != nullptr, blocker))
-            {
-                ok = false;
-                break;
-            }
-            prevNode = node;
-        }
-
-        // Tail leg: last waypoint to the destination itself. No edge to look
-        // up (getRoute builds it separately); a cross-map destination is
-        // skipped inside by the map check.
-        if (ok && prevNode &&
-            !RouteLegIsSurvivable(bot, *prevNode->getPosition(), *position, nullptr, avoidTowns, true, blocker))
+        AreaTableEntry const* destArea = position->GetArea();
+        uint32 const destZoneId = destArea ? (destArea->ZoneId ? destArea->ZoneId : destArea->Id) : 0;
+        bool const tailExemptLevel = ground.LevelExempt(destZoneId, startZoneId);
+        bool const tailExemptTown = ground.TownExempt(start.distance(*position));
+        if (!RouteLegIsSurvivable(bot, *prevNode->getPosition(), *position, nullptr,
+            avoidTowns && !tailExemptTown, !tailExemptLevel, blocker))
             ok = false;
     }
 
@@ -2310,11 +2351,11 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
     {
         Team team = bot->GetTeam();
         uint32 botFaction = bot->GetFactionTemplateId();
-        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, botFaction]()
+        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, botFaction, entries = GuildBankerEntries()]()
             {
                 // Order legs search the whole continent (0 = no cap); the zone
                 // pin and the route gate still scope safety.
-                PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg, {}, true, 0.0f);
+                PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg, entries, true, 0.0f);
 
                 for (auto& [partition, travelPoints] : list)
                 {
@@ -2529,9 +2570,9 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 
         else if (order.type == GuildOrderType::AuctionHouse)
         {
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, entries = AuctioneerEntries()]()
                 {
-                    PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg, {}, true, 0.0f);
+                    PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg, entries, true, 0.0f);
 
                     for (auto& [partition, travelPoints] : list)
                     {
