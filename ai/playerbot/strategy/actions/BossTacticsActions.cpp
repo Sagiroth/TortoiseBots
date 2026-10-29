@@ -933,6 +933,14 @@ bool BossTacticsStepBehindAction::Execute(Event& event)
     return MoveTo(bot->GetMapId(), x, y, z);
 }
 
+namespace
+{
+// What each bot remembers of the window it was seated in (BossStandPolicy.h StandHold), by guid. A mutex guards it:
+// the plan is asked for from the trigger, the action, the reach and the dodge of every bot.
+std::mutex g_standHoldMutex;
+std::unordered_map<uint64, StandHold> g_standHolds;
+}
+
 BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
 {
     BossStandTarget target;
@@ -951,6 +959,16 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
 
     AiObjectContext* context = ai->GetAiObjectContext();
     const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    const uint64 selfKey = bot->GetObjectGuid().GetRawValue();
+    const uint32 nowMs = WorldTimer::getMSTime();
+    StandHold hold;
+    {
+        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        auto it = g_standHolds.find(selfKey);
+        if (it != g_standHolds.end())
+            hold = it->second;
+    }
+    bool sawBoss = false;
     std::vector<const BossStandRow*> points;
     for (const ObjectGuid& guid : attackers)
     {
@@ -967,10 +985,23 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
             if (spell->m_spellInfo)
                 casting = spell->m_spellInfo->Id;
         }
-        points = ActiveStandPoints(*rows, role, unit->GetPositionX(), unit->GetPositionY(), casting,
-                                   [unit](uint32 aura) { return unit->HasAura(aura); });
+        // The open window's points; after the cast the same seats for up to the row's hold time, until the boss
+        // is at the release anchor (StandPointsNow arms, keeps and clears the hold).
+        sawBoss = true;
+        points = StandPointsNow(*rows, role, unit->GetPositionX(), unit->GetPositionY(), casting,
+                                [unit](uint32 aura) { return unit->HasAura(aura); }, hold, nowMs);
         if (!points.empty())
             break;
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        // A tick that sees no boss with rows (it dropped off the attacker list for a moment) keeps the hold until its
+        // time is up; StandPointsNow clears it itself when a boss is seen and the hold is over.
+        const bool kept = hold.armed && (sawBoss || static_cast<uint32>(nowMs - hold.lastOpenMs) < hold.holdMs);
+        if (kept)
+            g_standHolds[selfKey] = hold;
+        else
+            g_standHolds.erase(selfKey);
     }
     if (points.empty())
         return target;

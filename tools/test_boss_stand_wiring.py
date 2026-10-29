@@ -89,8 +89,25 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("table.Rows(mapId, unit->GetEntry())", fn)
         self.assertIn("unit->GetCurrentSpell(CURRENT_GENERIC_SPELL)", fn)
         self.assertIn("spell->m_spellInfo->Id", fn)
-        self.assertIn("ActiveStandPoints(*rows, role, unit->GetPositionX(), unit->GetPositionY(), casting,", fn)
+        self.assertIn("StandPointsNow(*rows, role, unit->GetPositionX(), unit->GetPositionY(), casting,", fn)
         self.assertIn("unit->HasAura(aura)", fn)
+
+    def test_the_seat_outlives_the_cast_through_a_per_bot_hold(self):
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        # The hold is read before the scan, handed to the policy with the clock, and written back after it.
+        read = fn.index("hold = it->second;")
+        policy = fn.index("hold, nowMs);")
+        write = fn.index("g_standHolds[selfKey] = hold;")
+        self.assertLess(read, policy)
+        self.assertLess(policy, write)
+        self.assertIn("const uint32 nowMs = WorldTimer::getMSTime();", fn)
+        self.assertIn("const uint64 selfKey = bot->GetObjectGuid().GetRawValue();", fn)
+        self.assertIn("std::lock_guard<std::mutex> lock(g_standHoldMutex);", fn)
+        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_standHoldMutex);"), 2)
+        # A spent hold is dropped (no entry left behind for a bot that never sat again).
+        self.assertIn("g_standHolds.erase(selfKey);", fn)
+        # A tick without the boss keeps the hold only until its time is up.
+        self.assertIn("(sawBoss || static_cast<uint32>(nowMs - hold.lastOpenMs) < hold.holdMs)", fn)
 
     def test_translation_seats_among_the_armed_bots_of_the_same_role(self):
         fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")

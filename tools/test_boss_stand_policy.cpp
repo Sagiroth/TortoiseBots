@@ -332,6 +332,118 @@ int main()
         }
     }
 
+    // The hold: a seat outlives the cast until the sweep is over.
+    {
+        // Anchor 1 at the origin (the lane's start), anchor 2 at (100, 0) (its far end). Both name the other as the
+        // release anchor, as the migration's pairs do; the window spell of each is its own.
+        std::vector<BossStandRow> rows;
+        rows.push_back(Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0));
+        rows.push_back(Row(1, 0, 0, 8, StandRole::Healer, 777, 0, 0, 0, 40, 1, 0));
+        rows.push_back(Row(2, 100, 0, 8, StandRole::Ranged, 888, 0, 0, 100, 32, 1, 0));
+        for (BossStandRow& row : rows)
+            row.releaseAnchor = row.anchor == 1 ? 2 : 1;
+
+        // The defaults: 8 s, no release anchor.
+        CHECK(kBossStandDefaultHoldMs == 8000);
+        CHECK(BossStandRow().holdMs == 8000 && BossStandRow().releaseAnchor == 0);
+
+        // A release anchor is another place than the row's own.
+        {
+            BossStandTable table;
+            BossStandRow self = Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0);
+            self.releaseAnchor = 1;
+            CHECK(!table.Add(self));
+            self.releaseAnchor = 2;
+            CHECK(table.Add(self));
+        }
+
+        // Release anchor reached: the boss within the radius of the named anchor; none named or unknown never.
+        CHECK(StandReleaseAnchorReached(rows, 2, 100, 0));
+        CHECK(StandReleaseAnchorReached(rows, 2, 92, 0));      // on the radius
+        CHECK(!StandReleaseAnchorReached(rows, 2, 91, 0));
+        CHECK(!StandReleaseAnchorReached(rows, 2, 0, 0));      // still at the start of the lane
+        CHECK(!StandReleaseAnchorReached(rows, 0, 100, 0));    // 0: no release anchor
+        CHECK(!StandReleaseAnchorReached(rows, 9, 100, 0));    // an anchor the table does not hold
+        {
+            // Anchor id 0 is a real anchor, but "0" as the release anchor means none.
+            std::vector<BossStandRow> zero = { Row(0, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0) };
+            CHECK(!StandReleaseAnchorReached(zero, 0, 0, 0));
+        }
+
+        // The held points: the held anchor's rows of the role, whatever the window.
+        {
+            const std::vector<const BossStandRow*> held = HeldStandPoints(rows, StandRole::Ranged, 1);
+            CHECK(held.size() == 1 && held[0]->anchor == 1 && held[0]->role == StandRole::Ranged);
+            CHECK(HeldStandPoints(rows, StandRole::Healer, 1).size() == 1);
+            CHECK(HeldStandPoints(rows, StandRole::Healer, 2).empty());
+            CHECK(HeldStandPoints(rows, StandRole::Melee, 1).empty());
+        }
+
+        // Whether a hold lasts: armed, inside the hold time, release anchor not reached.
+        {
+            StandHold hold;
+            CHECK(!StandHoldActive(hold, 1000, false));          // never armed
+            StandHoldArm(hold, rows[0], 1000);
+            CHECK(hold.armed && hold.anchor == 1 && hold.releaseAnchor == 2 && hold.holdMs == 8000 && hold.lastOpenMs == 1000);
+            CHECK(StandHoldActive(hold, 1000, false));
+            CHECK(StandHoldActive(hold, 8999, false));
+            CHECK(!StandHoldActive(hold, 9000, false));          // 8 s since the cast: released
+            CHECK(!StandHoldActive(hold, 1500, true));           // the boss is at the far end: released
+            hold.lastOpenMs = 0xFFFFFF00u;                       // the clock wraps
+            CHECK(StandHoldActive(hold, 100, false));
+            CHECK(!StandHoldActive(hold, 8000, false));
+            // The row's own hold time rules.
+            StandHold quick;
+            BossStandRow shortHold = rows[0];
+            shortHold.holdMs = 3000;
+            StandHoldArm(quick, shortHold, 0);
+            CHECK(StandHoldActive(quick, 2999, false) && !StandHoldActive(quick, 3000, false));
+        }
+
+        // The whole sequence through StandPointsNow, as a bot lives it.
+        {
+            StandHold hold;
+            // Anchor 1's breath is being cast: the window is open.
+            std::vector<const BossStandRow*> now = StandPointsNow(rows, StandRole::Ranged, 1, 0, 777, NoAura, hold, 10000);
+            CHECK(now.size() == 1 && now[0]->anchor == 1);
+            // The cast has ended (no spell), the boss leaves the anchor on the lane: still seated at anchor 1's points.
+            now = StandPointsNow(rows, StandRole::Ranged, 30, 0, 0, NoAura, hold, 10100);
+            CHECK(now.size() == 1 && now[0]->anchor == 1);
+            now = StandPointsNow(rows, StandRole::Ranged, 60, 0, 0, NoAura, hold, 15000);
+            CHECK(now.size() == 1 && now[0]->anchor == 1);
+            // The seat is the same row set the window picked: a healer has its own.
+            StandHold healerHold;
+            CHECK(StandPointsNow(rows, StandRole::Healer, 1, 0, 777, NoAura, healerHold, 10000)[0]->role == StandRole::Healer);
+            // 8 s after the cast ended: released, and the hold is gone.
+            now = StandPointsNow(rows, StandRole::Ranged, 80, 0, 0, NoAura, hold, 18100);
+            CHECK(now.empty() && !hold.armed);
+            // Armed again, then the boss reaches the far anchor first: released.
+            now = StandPointsNow(rows, StandRole::Ranged, 1, 0, 777, NoAura, hold, 20000);
+            CHECK(now.size() == 1);
+            now = StandPointsNow(rows, StandRole::Ranged, 95, 0, 0, NoAura, hold, 21000);
+            CHECK(now.empty() && !hold.armed);
+            // Armed again; a new window starts at the other anchor before the hold ran out: re-seat from the new anchor.
+            now = StandPointsNow(rows, StandRole::Ranged, 1, 0, 777, NoAura, hold, 30000);
+            CHECK(now.size() == 1 && now[0]->anchor == 1);
+            now = StandPointsNow(rows, StandRole::Ranged, 100, 0, 888, NoAura, hold, 31000);
+            CHECK(now.size() == 1 && now[0]->anchor == 2 && hold.anchor == 2 && hold.lastOpenMs == 31000);
+            // No hold without a window ever having opened, and a role without rows never arms one.
+            StandHold none;
+            CHECK(StandPointsNow(rows, StandRole::Ranged, 30, 0, 0, NoAura, none, 1000).empty() && !none.armed);
+            StandHold melee;
+            CHECK(StandPointsNow(rows, StandRole::Melee, 1, 0, 777, NoAura, melee, 1000).empty() && !melee.armed);
+            // A hold from another boss entry is not carried over.
+            StandHold stale;
+            stale.armed = true;
+            stale.bossEntry = 55;
+            stale.anchor = 1;
+            stale.releaseAnchor = 2;
+            stale.holdMs = 8000;
+            stale.lastOpenMs = 1000;
+            CHECK(StandPointsNow(rows, StandRole::Ranged, 30, 0, 0, NoAura, stale, 1500).empty() && !stale.armed);
+        }
+    }
+
     // Arrival: within the tolerance the bot stays put.
     CHECK(StandArrived(0, 0, 0, 0));
     CHECK(StandArrived(0, 0, kBossStandArrived, 0));

@@ -71,6 +71,8 @@ namespace ai
     constexpr std::uint8_t kBossStandMaxSlots = 8;
     // The default count a point seats.
     constexpr std::uint8_t kBossStandDefaultSlots = 5;
+    // How long a seat taken in a window outlives the window spell's cast by default (see StandHold).
+    constexpr std::uint32_t kBossStandDefaultHoldMs = 8000;
 
     struct BossStandRow
     {
@@ -91,6 +93,10 @@ namespace ai
         float dx = 0.0f;                // the unit direction the slots line up in; (0, 0): straight out from the anchor
         float dy = 0.0f;
         std::uint8_t slots = kBossStandDefaultSlots;
+        // A window row's seat outlives the cast: until the boss is within the radius of anchor `releaseAnchor` (the
+        // far end of its lane; 0: none) or `holdMs` after the cast ended, whichever comes first.
+        std::uint32_t holdMs = kBossStandDefaultHoldMs;
+        std::uint32_t releaseAnchor = 0;
     };
 
     class BossStandTable
@@ -109,6 +115,8 @@ namespace ai
             if (!(row.anchorR > 0.0f) || row.side > 1)
                 return false;
             if (row.slots == 0 || row.slots > kBossStandMaxSlots)
+                return false;
+            if (row.releaseAnchor != 0 && row.releaseAnchor == row.anchor)
                 return false;
             std::vector<BossStandRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossStandRow& have : rows)
@@ -211,6 +219,93 @@ namespace ai
                 out.push_back(&row);
         }
         return out;
+    }
+
+    // The rows of one anchor for a role, whatever their window, aura or the boss's place: the seats a hold keeps.
+    inline std::vector<const BossStandRow*> HeldStandPoints(const std::vector<BossStandRow>& rows, StandRole role,
+                                                            std::uint32_t anchor)
+    {
+        std::vector<const BossStandRow*> out;
+        for (const BossStandRow& row : rows)
+        {
+            if (row.anchor == anchor && row.role == role)
+                out.push_back(&row);
+        }
+        return out;
+    }
+
+    // Whether the boss is within the radius of anchor `releaseAnchor` (2D, on the radius counts): the sweep that
+    // followed the cast has reached the lane's far end. 0 and an anchor the rows do not hold never reach.
+    inline bool StandReleaseAnchorReached(const std::vector<BossStandRow>& rows, std::uint32_t releaseAnchor,
+                                          float bossX, float bossY)
+    {
+        if (releaseAnchor == 0)
+            return false;
+        for (const BossStandRow& row : rows)
+        {
+            if (row.anchor != releaseAnchor)
+                continue;
+            const float dx = bossX - row.anchorX;
+            const float dy = bossY - row.anchorY;
+            return dx * dx + dy * dy <= row.anchorR * row.anchorR;
+        }
+        return false;
+    }
+
+    // What a bot remembers of a window it was seated in, so that the seat outlives the cast. The breath's links go
+    // on firing along the lane for seconds after the cast ends; a bot that left its seat the moment the window
+    // closed would walk back under the boss, into the lane.
+    struct StandHold
+    {
+        bool armed = false;
+        std::uint32_t bossEntry = 0;
+        std::uint32_t anchor = 0;          // the anchor of the window the bot was last seated in
+        std::uint32_t releaseAnchor = 0;
+        std::uint32_t holdMs = 0;
+        std::uint32_t lastOpenMs = 0;      // the last time the window was open: the cast's end to within a tick
+    };
+
+    inline void StandHoldArm(StandHold& hold, const BossStandRow& row, std::uint32_t nowMs)
+    {
+        hold.armed = true;
+        hold.bossEntry = row.bossEntry;
+        hold.anchor = row.anchor;
+        hold.releaseAnchor = row.releaseAnchor;
+        hold.holdMs = row.holdMs;
+        hold.lastOpenMs = nowMs;
+    }
+
+    // Whether a hold still seats: armed, less than holdMs since the window was last open (wrap-safe), and the boss
+    // has not reached the release anchor.
+    inline bool StandHoldActive(const StandHold& hold, std::uint32_t nowMs, bool releaseReached)
+    {
+        return hold.armed && !releaseReached && static_cast<std::uint32_t>(nowMs - hold.lastOpenMs) < hold.holdMs;
+    }
+
+    // The points a bot of `role` stands at now: the open window's (ActiveStandPoints; this arms or refreshes the
+    // hold, and a window of another anchor re-seats from that anchor), else the held anchor's while the hold lasts,
+    // else none (the hold is cleared). `rows` are the rows of one boss entry.
+    template <typename HasAura>
+    std::vector<const BossStandRow*> StandPointsNow(const std::vector<BossStandRow>& rows, StandRole role, float bossX,
+                                                    float bossY, std::uint32_t castingSpell, HasAura hasAura,
+                                                    StandHold& hold, std::uint32_t nowMs)
+    {
+        std::vector<const BossStandRow*> points = ActiveStandPoints(rows, role, bossX, bossY, castingSpell, hasAura);
+        if (!points.empty())
+        {
+            StandHoldArm(hold, *points[0], nowMs);
+            return points;
+        }
+        if (!hold.armed)
+            return points;
+        const bool sameBoss = !rows.empty() && rows[0].bossEntry == hold.bossEntry;
+        if (!sameBoss ||
+            !StandHoldActive(hold, nowMs, StandReleaseAnchorReached(rows, hold.releaseAnchor, bossX, bossY)))
+        {
+            hold = StandHold();
+            return points;
+        }
+        return HeldStandPoints(rows, role, hold.anchor);
     }
 
     // A bot of the stand set, as the assignment sees it.

@@ -12,6 +12,12 @@
 --   dx, dy        direction the seats of the point line up in, 9 yd apart (BossStandPolicy.h
 --                 kBossStandSpacing); 0 0 = straight out from the anchor
 --   slots         bots the point seats (1-8)
+--   hold_ms       a window row's seat outlives the cast by up to this long (default 8000) ...
+--   release_anchor ... or until the boss is within the radius of this anchor (the lane's far end; 0 = none),
+--                 whichever comes first. The breath's links keep firing along the lane for seconds after the
+--                 cast ends, so a bot that walked back the moment the cast ended would walk under the boss.
+--                 During the hold the caster reach does not move the bot (it may cast from its seat); a new
+--                 window (the next breath, at any anchor) re-seats from that anchor.
 -- A bot takes the side it stands on (it never crosses the lane for its point) and the nearest point of
 -- it with a free seat; a full side sends it to the other side; a full table seats it nowhere and it
 -- keeps the behaviour it had. No row applying changes nothing for any bot.
@@ -24,8 +30,9 @@
 -- spots (OnyxiasLairDungeonActions.cpp kBreathSafeSpots) sit 50-76 yd from the hover point, out of any cast
 -- range, so a standing stand there would have ended the ranged damage C1 restored; these rows are
 -- WINDOWED instead: they apply only while she casts the breath (window_spell = the point's own breath id,
--- aura = Hover 17131), and the cast ends the row: the bot goes back to C1's reach without a walk back.
--- The window is the 5 s of the cast, so the points are the NEAREST walkable floor that is 31 yd or
+-- aura = Hover 17131), and the row holds a few seconds past the cast (hold_ms 8000, or until she is at the
+-- opposite hover point, release_anchor), after which the bot goes back to C1's reach without a walk back.
+-- The cast is 5 s (and the hold a few more), so the points are the NEAREST walkable floor that is 31 yd or
 -- more from the lane (a segment from the hover point to the opposite one; the N to S lane runs on into
 -- the tunnel to -130.8 -213.4), never the old far spots. Only ranged and healers have rows (melee stays
 -- on her when she lands). Ranged get the two points nearest the usual firing ring of the anchor (about
@@ -63,6 +70,9 @@
 -- 30-68 yd and are a bot that stands in or across the lane when the cast starts: it still starts at once
 -- and runs at 7 yd/s, which is why the old far spots (50-76 yd) could not work and these nearest points are used.
 --
+-- Anchor ids are the core's hover point id + 1 (anchor 1 = point 0 NE ... 8 = point 7 N); release_anchor of an
+-- anchor is the id of the opposite hover point.
+--
 -- Idempotent: the DELETE removes only these rows' boss. The core runs each migration file inside one
 -- transaction. Never edit this file once applied; add a newer migration.
 
@@ -84,76 +94,78 @@ CREATE TABLE IF NOT EXISTS `ai_boss_stand` (
   `dx` float NOT NULL DEFAULT 0,
   `dy` float NOT NULL DEFAULT 0,
   `slots` tinyint unsigned NOT NULL DEFAULT 5,
+  `hold_ms` int unsigned NOT NULL DEFAULT 8000,
+  `release_anchor` int unsigned NOT NULL DEFAULT 0,
   `comment` varchar(255) NOT NULL DEFAULT '',
   PRIMARY KEY (`map`, `boss_entry`, `anchor`, `role`, `window_spell`, `side`, `seq`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DELETE FROM `ai_boss_stand` WHERE `map` = 249 AND `boss_entry` = 10184;
 
-INSERT INTO `ai_boss_stand` (`map`, `boss_entry`, `anchor`, `anchor_x`, `anchor_y`, `anchor_r`, `role`, `window_spell`, `aura`, `side`, `seq`, `x`, `y`, `z`, `dx`, `dy`, `slots`, `comment`) VALUES
--- Hover point 0 NE (10.2 -247.9), breath 18617
-(249, 10184, 0, 10.2191, -247.9120, 8, 'ranged', 18617, 17131, 0, 0, -52.0, -236.0, -85.0, -0.760, 0.650, 5, 'Onyxia NE ranged side 0 point 0: 5 slots, stand to point 37 yd, path-check ok'),
-(249, 10184, 0, 10.2191, -247.9120, 8, 'ranged', 18617, 17131, 0, 1, -68.0, -236.0, -83.7, -0.760, 0.650, 3, 'Onyxia NE ranged side 0 point 1: 3 slots, stand to point 27 yd, path-check ok'),
-(249, 10184, 0, 10.2191, -247.9120, 8, 'ranged', 18617, 17131, 1, 0, 14.0, -210.0, -85.1, -0.760, 0.650, 5, 'Onyxia NE ranged side 1 point 0: 5 slots, stand to point 94 yd, path-check ok'),
-(249, 10184, 0, 10.2191, -247.9120, 8, 'ranged', 18617, 17131, 1, 1, 24.0, -206.0, -84.2, -0.760, 0.650, 5, 'Onyxia NE ranged side 1 point 1: 5 slots, stand to point 104 yd, path-check ok'),
-(249, 10184, 0, 10.2191, -247.9120, 8, 'healer', 18617, 17131, 1, 0, 26.0, -196.0, -83.7, -0.760, 0.650, 5, 'Onyxia NE healer side 1 point 0: 5 slots, stand to point 107 yd, path-check ok'),
-(249, 10184, 0, 10.2191, -247.9120, 8, 'healer', 18617, 17131, 1, 1, 22.0, -216.0, -84.5, 0.760, -0.650, 2, 'Onyxia NE healer side 1 point 1: 2 slots, stand to point 102 yd, path-check ok'),
-(249, 10184, 0, 10.2191, -247.9120, 8, 'healer', 18617, 17131, 1, 2, -18.0, -178.0, -87.2, -0.760, 0.650, 2, 'Onyxia NE healer side 1 point 2: 2 slots, stand to point 71 yd, path-check ok'),
-(249, 10184, 0, 10.2191, -247.9120, 8, 'healer', 18617, 17131, 1, 3, 22.0, -180.0, -84.3, -0.760, 0.650, 2, 'Onyxia NE healer side 1 point 3: 2 slots, stand to point 107 yd, path-check ok'),
--- Hover point 1 E (-31.5 -250.1), breath 18576
-(249, 10184, 1, -31.4963, -250.1230, 8, 'ranged', 18576, 17131, 0, 0, -64.0, -236.0, -84.1, -0.030, 1.000, 5, 'Onyxia E ranged side 0 point 0: 5 slots, stand to point 30 yd, path-check ok'),
-(249, 10184, 1, -31.4963, -250.1230, 8, 'ranged', 18576, 17131, 0, 1, -74.0, -236.0, -82.8, -0.030, 1.000, 5, 'Onyxia E ranged side 0 point 1: 5 slots, stand to point 25 yd, path-check ok'),
-(249, 10184, 1, -31.4963, -250.1230, 8, 'ranged', 18576, 17131, 1, 0, 0.0, -238.0, -86.3, -0.030, 1.000, 5, 'Onyxia E ranged side 1 point 0: 5 slots, stand to point 85 yd, path-check ok'),
-(249, 10184, 1, -31.4963, -250.1230, 8, 'ranged', 18576, 17131, 1, 1, 10.0, -238.0, -85.4, -0.030, 1.000, 5, 'Onyxia E ranged side 1 point 1: 5 slots, stand to point 94 yd, path-check ok'),
-(249, 10184, 1, -31.4963, -250.1230, 8, 'healer', 18576, 17131, 1, 0, 20.0, -238.0, -84.4, -0.030, 1.000, 5, 'Onyxia E healer side 1 point 0: 5 slots, stand to point 104 yd, path-check ok'),
-(249, 10184, 1, -31.4963, -250.1230, 8, 'healer', 18576, 17131, 1, 1, 30.0, -238.0, -82.5, -0.030, 1.000, 5, 'Onyxia E healer side 1 point 1: 5 slots, stand to point 113 yd, path-check ok'),
-(249, 10184, 1, -31.4963, -250.1230, 8, 'healer', 18576, 17131, 1, 2, 0.0, -248.0, -85.7, 0.030, -1.000, 2, 'Onyxia E healer side 1 point 2: 2 slots, stand to point 88 yd, path-check ok'),
-(249, 10184, 1, -31.4963, -250.1230, 8, 'healer', 18576, 17131, 1, 3, 10.0, -248.0, -85.2, 0.030, -1.000, 2, 'Onyxia E healer side 1 point 3: 2 slots, stand to point 97 yd, path-check ok'),
--- Hover point 2 SE (-63.5 -240.1), breath 18564
-(249, 10184, 2, -63.5156, -240.0960, 8, 'ranged', 18564, 17131, 0, 0, -82.0, -214.0, -82.2, 0.760, 0.650, 5, 'Onyxia SE ranged side 0 point 0: 5 slots, stand to point 3 yd, path-check ok'),
-(249, 10184, 2, -63.5156, -240.0960, 8, 'ranged', 18564, 17131, 0, 1, -80.0, -200.0, -82.1, 0.760, 0.650, 3, 'Onyxia SE ranged side 0 point 1: 3 slots, stand to point 11 yd, path-check ok'),
-(249, 10184, 2, -63.5156, -240.0960, 8, 'ranged', 18564, 17131, 1, 0, -28.0, -252.0, -88.6, 0.760, 0.650, 5, 'Onyxia SE ranged side 1 point 0: 5 slots, stand to point 66 yd, path-check ok'),
-(249, 10184, 2, -63.5156, -240.0960, 8, 'ranged', 18564, 17131, 1, 1, -14.0, -254.0, -86.2, 0.760, 0.650, 5, 'Onyxia SE ranged side 1 point 1: 5 slots, stand to point 79 yd, path-check ok'),
-(249, 10184, 2, -63.5156, -240.0960, 8, 'healer', 18564, 17131, 1, 0, 2.0, -252.0, -84.7, 0.760, 0.650, 5, 'Onyxia SE healer side 1 point 0: 5 slots, stand to point 92 yd, path-check ok'),
-(249, 10184, 2, -63.5156, -240.0960, 8, 'healer', 18564, 17131, 1, 1, 8.0, -222.0, -85.5, 0.760, 0.650, 4, 'Onyxia SE healer side 1 point 1: 4 slots, stand to point 89 yd, path-check ok'),
-(249, 10184, 2, -63.5156, -240.0960, 8, 'healer', 18564, 17131, 1, 2, 16.0, -254.0, -84.4, 0.760, 0.650, 2, 'Onyxia SE healer side 1 point 2: 2 slots, stand to point 105 yd, path-check ok'),
-(249, 10184, 2, -63.5156, -240.0960, 8, 'healer', 18564, 17131, 1, 3, 24.0, -220.0, -84.2, 0.760, 0.650, 2, 'Onyxia SE healer side 1 point 3: 2 slots, stand to point 104 yd, path-check ok'),
--- Hover point 3 S (-65.8 -213.8), breath 18351
-(249, 10184, 3, -65.8444, -213.8090, 8, 'ranged', 18351, 17131, 0, 0, -32.0, -184.0, -88.6, 1.000, -0.040, 5, 'Onyxia S ranged side 0 point 0: 5 slots, stand to point 56 yd, path-check ok'),
-(249, 10184, 3, -65.8444, -213.8090, 8, 'ranged', 18351, 17131, 0, 1, -28.0, -174.0, -88.3, 1.000, -0.040, 5, 'Onyxia S ranged side 0 point 1: 5 slots, stand to point 64 yd, path-check ok'),
-(249, 10184, 3, -65.8444, -213.8090, 8, 'ranged', 18351, 17131, 1, 0, -28.0, -248.0, -88.6, 1.000, -0.040, 5, 'Onyxia S ranged side 1 point 0: 5 slots, stand to point 64 yd, path-check ok'),
-(249, 10184, 3, -65.8444, -213.8090, 8, 'healer', 18351, 17131, 0, 0, 14.0, -184.0, -85.0, 1.000, -0.040, 2, 'Onyxia S healer side 0 point 0: 2 slots, stand to point 98 yd, path-check ok'),
--- Hover point 4 SW (-58.3 -189.0), breath 18596
-(249, 10184, 4, -58.2509, -189.0200, 8, 'ranged', 18596, 17131, 0, 0, -28.0, -174.0, -88.3, 0.760, -0.650, 5, 'Onyxia SW ranged side 0 point 0: 5 slots, stand to point 64 yd, path-check ok'),
-(249, 10184, 4, -58.2509, -189.0200, 8, 'ranged', 18596, 17131, 0, 1, -26.0, -164.0, -87.2, 0.760, -0.650, 5, 'Onyxia SW ranged side 0 point 1: 5 slots, stand to point 74 yd, path-check ok'),
-(249, 10184, 4, -58.2509, -189.0200, 8, 'ranged', 18596, 17131, 1, 0, -80.0, -212.0, -82.5, 0.760, -0.650, 5, 'Onyxia SW ranged side 1 point 0: 5 slots, stand to point 1 yd, path-check ok'),
-(249, 10184, 4, -58.2509, -189.0200, 8, 'ranged', 18596, 17131, 1, 1, -82.0, -222.0, -81.8, 0.760, -0.650, 3, 'Onyxia SW ranged side 1 point 1: 3 slots, stand to point 11 yd, path-check ok'),
-(249, 10184, 4, -58.2509, -189.0200, 8, 'healer', 18596, 17131, 0, 0, -4.0, -170.0, -83.0, 0.760, -0.650, 5, 'Onyxia SW healer side 0 point 0: 5 slots, stand to point 86 yd, path-check ok'),
-(249, 10184, 4, -58.2509, -189.0200, 8, 'healer', 18596, 17131, 0, 1, 8.0, -204.0, -85.6, 0.760, -0.650, 4, 'Onyxia SW healer side 0 point 1: 4 slots, stand to point 88 yd, path-check ok'),
-(249, 10184, 4, -58.2509, -189.0200, 8, 'healer', 18596, 17131, 0, 2, 12.0, -172.0, -84.4, 0.760, -0.650, 2, 'Onyxia SW healer side 0 point 2: 2 slots, stand to point 100 yd, path-check ok'),
-(249, 10184, 4, -58.2509, -189.0200, 8, 'healer', 18596, 17131, 0, 3, 24.0, -204.0, -84.1, 0.760, -0.650, 2, 'Onyxia SW healer side 0 point 3: 2 slots, stand to point 104 yd, path-check ok'),
--- Hover point 5 W (-33.6 -182.7), breath 18609
-(249, 10184, 5, -33.5561, -182.6820, 8, 'ranged', 18609, 17131, 0, 0, -2.0, -192.0, -86.6, 0.030, -1.000, 5, 'Onyxia W ranged side 0 point 0: 5 slots, stand to point 81 yd, path-check ok'),
-(249, 10184, 5, -33.5561, -182.6820, 8, 'ranged', 18609, 17131, 0, 1, 8.0, -192.0, -85.6, 0.030, -1.000, 5, 'Onyxia W ranged side 0 point 1: 5 slots, stand to point 90 yd, path-check ok'),
-(249, 10184, 5, -33.5561, -182.6820, 8, 'ranged', 18609, 17131, 1, 0, -66.0, -192.0, -84.1, 0.030, -1.000, 5, 'Onyxia W ranged side 1 point 0: 5 slots, stand to point 24 yd, path-check ok'),
-(249, 10184, 5, -33.5561, -182.6820, 8, 'ranged', 18609, 17131, 1, 1, -76.0, -192.0, -82.6, 0.030, -1.000, 5, 'Onyxia W ranged side 1 point 1: 5 slots, stand to point 19 yd, path-check ok'),
-(249, 10184, 5, -33.5561, -182.6820, 8, 'healer', 18609, 17131, 0, 0, 18.0, -192.0, -84.6, 0.030, -1.000, 5, 'Onyxia W healer side 0 point 0: 5 slots, stand to point 100 yd, path-check ok'),
-(249, 10184, 5, -33.5561, -182.6820, 8, 'healer', 18609, 17131, 0, 1, 28.0, -192.0, -83.0, 0.030, -1.000, 5, 'Onyxia W healer side 0 point 1: 5 slots, stand to point 110 yd, path-check ok'),
-(249, 10184, 5, -33.5561, -182.6820, 8, 'healer', 18609, 17131, 0, 2, -2.0, -182.0, -86.0, -0.030, 1.000, 2, 'Onyxia W healer side 0 point 2: 2 slots, stand to point 83 yd, path-check ok'),
-(249, 10184, 5, -33.5561, -182.6820, 8, 'healer', 18609, 17131, 0, 3, 8.0, -182.0, -85.1, -0.030, 1.000, 2, 'Onyxia W healer side 0 point 3: 2 slots, stand to point 93 yd, path-check ok'),
--- Hover point 6 NW (6.9 -180.2), breath 18584
-(249, 10184, 6, 6.8951, -180.2460, 8, 'ranged', 18584, 17131, 0, 0, 8.0, -220.0, -85.4, -0.760, -0.650, 5, 'Onyxia NW ranged side 0 point 0: 5 slots, stand to point 88 yd, path-check ok'),
-(249, 10184, 6, 6.8951, -180.2460, 8, 'ranged', 18584, 17131, 0, 1, 24.0, -218.0, -84.2, -0.760, -0.650, 5, 'Onyxia NW ranged side 0 point 1: 5 slots, stand to point 104 yd, path-check ok'),
-(249, 10184, 6, 6.8951, -180.2460, 8, 'ranged', 18584, 17131, 1, 0, -46.0, -184.0, -85.9, -0.760, -0.650, 5, 'Onyxia NW ranged side 1 point 0: 5 slots, stand to point 44 yd, path-check ok'),
-(249, 10184, 6, 6.8951, -180.2460, 8, 'ranged', 18584, 17131, 1, 1, -62.0, -186.0, -84.3, -0.760, -0.650, 3, 'Onyxia NW ranged side 1 point 1: 3 slots, stand to point 31 yd, path-check ok'),
-(249, 10184, 6, 6.8951, -180.2460, 8, 'healer', 18584, 17131, 0, 0, 26.0, -228.0, -83.7, -0.760, -0.650, 5, 'Onyxia NW healer side 0 point 0: 5 slots, stand to point 107 yd, path-check ok'),
-(249, 10184, 6, 6.8951, -180.2460, 8, 'healer', 18584, 17131, 0, 1, 28.0, -238.0, -83.0, -0.760, -0.650, 4, 'Onyxia NW healer side 0 point 1: 4 slots, stand to point 111 yd, path-check ok'),
-(249, 10184, 6, 6.8951, -180.2460, 8, 'healer', 18584, 17131, 0, 2, 24.0, -208.0, -84.2, 0.760, 0.650, 2, 'Onyxia NW healer side 0 point 2: 2 slots, stand to point 104 yd, path-check ok'),
-(249, 10184, 6, 6.8951, -180.2460, 8, 'healer', 18584, 17131, 0, 3, -12.0, -250.0, -86.6, -0.760, -0.650, 2, 'Onyxia NW healer side 0 point 3: 2 slots, stand to point 78 yd, path-check ok'),
--- Hover point 7 N (22.9 -217.2), breath 17086
-(249, 10184, 7, 22.8763, -217.1520, 8, 'ranged', 17086, 17131, 0, 0, 0.0, -248.0, -85.7, -1.000, 0.040, 4, 'Onyxia N ranged side 0 point 0: 4 slots, stand to point 88 yd, path-check ok'),
-(249, 10184, 7, 22.8763, -217.1520, 8, 'ranged', 17086, 17131, 0, 1, 10.0, -248.0, -85.2, 1.000, -0.040, 2, 'Onyxia N ranged side 0 point 1: 2 slots, stand to point 97 yd, path-check ok'),
-(249, 10184, 7, 22.8763, -217.1520, 8, 'ranged', 17086, 17131, 1, 0, 4.0, -184.0, -85.8, -1.000, 0.040, 4, 'Onyxia N ranged side 1 point 0: 4 slots, stand to point 89 yd, path-check ok'),
-(249, 10184, 7, 22.8763, -217.1520, 8, 'ranged', 17086, 17131, 1, 1, 4.0, -174.0, -84.6, -1.000, 0.040, 4, 'Onyxia N ranged side 1 point 1: 4 slots, stand to point 92 yd, path-check ok'),
-(249, 10184, 7, 22.8763, -217.1520, 8, 'healer', 17086, 17131, 1, 0, 18.0, -186.0, -84.6, 1.000, -0.040, 2, 'Onyxia N healer side 1 point 0: 2 slots, stand to point 102 yd, path-check ok'),
-(249, 10184, 7, 22.8763, -217.1520, 8, 'healer', 17086, 17131, 1, 1, -34.0, -184.0, -88.3, -1.000, 0.040, 3, 'Onyxia N healer side 1 point 1: 3 slots, stand to point 54 yd, path-check ok');
+INSERT INTO `ai_boss_stand` (`map`, `boss_entry`, `anchor`, `anchor_x`, `anchor_y`, `anchor_r`, `role`, `window_spell`, `aura`, `side`, `seq`, `x`, `y`, `z`, `dx`, `dy`, `slots`, `hold_ms`, `release_anchor`, `comment`) VALUES
+-- Hover point 0 NE (anchor 1) (10.2 -247.9), breath 18617
+(249, 10184, 1, 10.2191, -247.9120, 8, 'ranged', 18617, 17131, 0, 0, -52.0, -236.0, -85.0, -0.760, 0.650, 5, 8000, 5, 'Onyxia NE ranged side 0 point 0: 5 slots, stand to point 37 yd, path-check ok'),
+(249, 10184, 1, 10.2191, -247.9120, 8, 'ranged', 18617, 17131, 0, 1, -68.0, -236.0, -83.7, -0.760, 0.650, 3, 8000, 5, 'Onyxia NE ranged side 0 point 1: 3 slots, stand to point 27 yd, path-check ok'),
+(249, 10184, 1, 10.2191, -247.9120, 8, 'ranged', 18617, 17131, 1, 0, 14.0, -210.0, -85.1, -0.760, 0.650, 5, 8000, 5, 'Onyxia NE ranged side 1 point 0: 5 slots, stand to point 94 yd, path-check ok'),
+(249, 10184, 1, 10.2191, -247.9120, 8, 'ranged', 18617, 17131, 1, 1, 24.0, -206.0, -84.2, -0.760, 0.650, 5, 8000, 5, 'Onyxia NE ranged side 1 point 1: 5 slots, stand to point 104 yd, path-check ok'),
+(249, 10184, 1, 10.2191, -247.9120, 8, 'healer', 18617, 17131, 1, 0, 26.0, -196.0, -83.7, -0.760, 0.650, 5, 8000, 5, 'Onyxia NE healer side 1 point 0: 5 slots, stand to point 107 yd, path-check ok'),
+(249, 10184, 1, 10.2191, -247.9120, 8, 'healer', 18617, 17131, 1, 1, 22.0, -216.0, -84.5, 0.760, -0.650, 2, 8000, 5, 'Onyxia NE healer side 1 point 1: 2 slots, stand to point 102 yd, path-check ok'),
+(249, 10184, 1, 10.2191, -247.9120, 8, 'healer', 18617, 17131, 1, 2, -18.0, -178.0, -87.2, -0.760, 0.650, 2, 8000, 5, 'Onyxia NE healer side 1 point 2: 2 slots, stand to point 71 yd, path-check ok'),
+(249, 10184, 1, 10.2191, -247.9120, 8, 'healer', 18617, 17131, 1, 3, 22.0, -180.0, -84.3, -0.760, 0.650, 2, 8000, 5, 'Onyxia NE healer side 1 point 3: 2 slots, stand to point 107 yd, path-check ok'),
+-- Hover point 1 E (anchor 2) (-31.5 -250.1), breath 18576
+(249, 10184, 2, -31.4963, -250.1230, 8, 'ranged', 18576, 17131, 0, 0, -64.0, -236.0, -84.1, -0.030, 1.000, 5, 8000, 6, 'Onyxia E ranged side 0 point 0: 5 slots, stand to point 30 yd, path-check ok'),
+(249, 10184, 2, -31.4963, -250.1230, 8, 'ranged', 18576, 17131, 0, 1, -74.0, -236.0, -82.8, -0.030, 1.000, 5, 8000, 6, 'Onyxia E ranged side 0 point 1: 5 slots, stand to point 25 yd, path-check ok'),
+(249, 10184, 2, -31.4963, -250.1230, 8, 'ranged', 18576, 17131, 1, 0, 0.0, -238.0, -86.3, -0.030, 1.000, 5, 8000, 6, 'Onyxia E ranged side 1 point 0: 5 slots, stand to point 85 yd, path-check ok'),
+(249, 10184, 2, -31.4963, -250.1230, 8, 'ranged', 18576, 17131, 1, 1, 10.0, -238.0, -85.4, -0.030, 1.000, 5, 8000, 6, 'Onyxia E ranged side 1 point 1: 5 slots, stand to point 94 yd, path-check ok'),
+(249, 10184, 2, -31.4963, -250.1230, 8, 'healer', 18576, 17131, 1, 0, 20.0, -238.0, -84.4, -0.030, 1.000, 5, 8000, 6, 'Onyxia E healer side 1 point 0: 5 slots, stand to point 104 yd, path-check ok'),
+(249, 10184, 2, -31.4963, -250.1230, 8, 'healer', 18576, 17131, 1, 1, 30.0, -238.0, -82.5, -0.030, 1.000, 5, 8000, 6, 'Onyxia E healer side 1 point 1: 5 slots, stand to point 113 yd, path-check ok'),
+(249, 10184, 2, -31.4963, -250.1230, 8, 'healer', 18576, 17131, 1, 2, 0.0, -248.0, -85.7, 0.030, -1.000, 2, 8000, 6, 'Onyxia E healer side 1 point 2: 2 slots, stand to point 88 yd, path-check ok'),
+(249, 10184, 2, -31.4963, -250.1230, 8, 'healer', 18576, 17131, 1, 3, 10.0, -248.0, -85.2, 0.030, -1.000, 2, 8000, 6, 'Onyxia E healer side 1 point 3: 2 slots, stand to point 97 yd, path-check ok'),
+-- Hover point 2 SE (anchor 3) (-63.5 -240.1), breath 18564
+(249, 10184, 3, -63.5156, -240.0960, 8, 'ranged', 18564, 17131, 0, 0, -82.0, -214.0, -82.2, 0.760, 0.650, 5, 8000, 7, 'Onyxia SE ranged side 0 point 0: 5 slots, stand to point 3 yd, path-check ok'),
+(249, 10184, 3, -63.5156, -240.0960, 8, 'ranged', 18564, 17131, 0, 1, -80.0, -200.0, -82.1, 0.760, 0.650, 3, 8000, 7, 'Onyxia SE ranged side 0 point 1: 3 slots, stand to point 11 yd, path-check ok'),
+(249, 10184, 3, -63.5156, -240.0960, 8, 'ranged', 18564, 17131, 1, 0, -28.0, -252.0, -88.6, 0.760, 0.650, 5, 8000, 7, 'Onyxia SE ranged side 1 point 0: 5 slots, stand to point 66 yd, path-check ok'),
+(249, 10184, 3, -63.5156, -240.0960, 8, 'ranged', 18564, 17131, 1, 1, -14.0, -254.0, -86.2, 0.760, 0.650, 5, 8000, 7, 'Onyxia SE ranged side 1 point 1: 5 slots, stand to point 79 yd, path-check ok'),
+(249, 10184, 3, -63.5156, -240.0960, 8, 'healer', 18564, 17131, 1, 0, 2.0, -252.0, -84.7, 0.760, 0.650, 5, 8000, 7, 'Onyxia SE healer side 1 point 0: 5 slots, stand to point 92 yd, path-check ok'),
+(249, 10184, 3, -63.5156, -240.0960, 8, 'healer', 18564, 17131, 1, 1, 8.0, -222.0, -85.5, 0.760, 0.650, 4, 8000, 7, 'Onyxia SE healer side 1 point 1: 4 slots, stand to point 89 yd, path-check ok'),
+(249, 10184, 3, -63.5156, -240.0960, 8, 'healer', 18564, 17131, 1, 2, 16.0, -254.0, -84.4, 0.760, 0.650, 2, 8000, 7, 'Onyxia SE healer side 1 point 2: 2 slots, stand to point 105 yd, path-check ok'),
+(249, 10184, 3, -63.5156, -240.0960, 8, 'healer', 18564, 17131, 1, 3, 24.0, -220.0, -84.2, 0.760, 0.650, 2, 8000, 7, 'Onyxia SE healer side 1 point 3: 2 slots, stand to point 104 yd, path-check ok'),
+-- Hover point 3 S (anchor 4) (-65.8 -213.8), breath 18351
+(249, 10184, 4, -65.8444, -213.8090, 8, 'ranged', 18351, 17131, 0, 0, -32.0, -184.0, -88.6, 1.000, -0.040, 5, 8000, 8, 'Onyxia S ranged side 0 point 0: 5 slots, stand to point 56 yd, path-check ok'),
+(249, 10184, 4, -65.8444, -213.8090, 8, 'ranged', 18351, 17131, 0, 1, -28.0, -174.0, -88.3, 1.000, -0.040, 5, 8000, 8, 'Onyxia S ranged side 0 point 1: 5 slots, stand to point 64 yd, path-check ok'),
+(249, 10184, 4, -65.8444, -213.8090, 8, 'ranged', 18351, 17131, 1, 0, -28.0, -248.0, -88.6, 1.000, -0.040, 5, 8000, 8, 'Onyxia S ranged side 1 point 0: 5 slots, stand to point 64 yd, path-check ok'),
+(249, 10184, 4, -65.8444, -213.8090, 8, 'healer', 18351, 17131, 0, 0, 14.0, -184.0, -85.0, 1.000, -0.040, 2, 8000, 8, 'Onyxia S healer side 0 point 0: 2 slots, stand to point 98 yd, path-check ok'),
+-- Hover point 4 SW (anchor 5) (-58.3 -189.0), breath 18596
+(249, 10184, 5, -58.2509, -189.0200, 8, 'ranged', 18596, 17131, 0, 0, -28.0, -174.0, -88.3, 0.760, -0.650, 5, 8000, 1, 'Onyxia SW ranged side 0 point 0: 5 slots, stand to point 64 yd, path-check ok'),
+(249, 10184, 5, -58.2509, -189.0200, 8, 'ranged', 18596, 17131, 0, 1, -26.0, -164.0, -87.2, 0.760, -0.650, 5, 8000, 1, 'Onyxia SW ranged side 0 point 1: 5 slots, stand to point 74 yd, path-check ok'),
+(249, 10184, 5, -58.2509, -189.0200, 8, 'ranged', 18596, 17131, 1, 0, -80.0, -212.0, -82.5, 0.760, -0.650, 5, 8000, 1, 'Onyxia SW ranged side 1 point 0: 5 slots, stand to point 1 yd, path-check ok'),
+(249, 10184, 5, -58.2509, -189.0200, 8, 'ranged', 18596, 17131, 1, 1, -82.0, -222.0, -81.8, 0.760, -0.650, 3, 8000, 1, 'Onyxia SW ranged side 1 point 1: 3 slots, stand to point 11 yd, path-check ok'),
+(249, 10184, 5, -58.2509, -189.0200, 8, 'healer', 18596, 17131, 0, 0, -4.0, -170.0, -83.0, 0.760, -0.650, 5, 8000, 1, 'Onyxia SW healer side 0 point 0: 5 slots, stand to point 86 yd, path-check ok'),
+(249, 10184, 5, -58.2509, -189.0200, 8, 'healer', 18596, 17131, 0, 1, 8.0, -204.0, -85.6, 0.760, -0.650, 4, 8000, 1, 'Onyxia SW healer side 0 point 1: 4 slots, stand to point 88 yd, path-check ok'),
+(249, 10184, 5, -58.2509, -189.0200, 8, 'healer', 18596, 17131, 0, 2, 12.0, -172.0, -84.4, 0.760, -0.650, 2, 8000, 1, 'Onyxia SW healer side 0 point 2: 2 slots, stand to point 100 yd, path-check ok'),
+(249, 10184, 5, -58.2509, -189.0200, 8, 'healer', 18596, 17131, 0, 3, 24.0, -204.0, -84.1, 0.760, -0.650, 2, 8000, 1, 'Onyxia SW healer side 0 point 3: 2 slots, stand to point 104 yd, path-check ok'),
+-- Hover point 5 W (anchor 6) (-33.6 -182.7), breath 18609
+(249, 10184, 6, -33.5561, -182.6820, 8, 'ranged', 18609, 17131, 0, 0, -2.0, -192.0, -86.6, 0.030, -1.000, 5, 8000, 2, 'Onyxia W ranged side 0 point 0: 5 slots, stand to point 81 yd, path-check ok'),
+(249, 10184, 6, -33.5561, -182.6820, 8, 'ranged', 18609, 17131, 0, 1, 8.0, -192.0, -85.6, 0.030, -1.000, 5, 8000, 2, 'Onyxia W ranged side 0 point 1: 5 slots, stand to point 90 yd, path-check ok'),
+(249, 10184, 6, -33.5561, -182.6820, 8, 'ranged', 18609, 17131, 1, 0, -66.0, -192.0, -84.1, 0.030, -1.000, 5, 8000, 2, 'Onyxia W ranged side 1 point 0: 5 slots, stand to point 24 yd, path-check ok'),
+(249, 10184, 6, -33.5561, -182.6820, 8, 'ranged', 18609, 17131, 1, 1, -76.0, -192.0, -82.6, 0.030, -1.000, 5, 8000, 2, 'Onyxia W ranged side 1 point 1: 5 slots, stand to point 19 yd, path-check ok'),
+(249, 10184, 6, -33.5561, -182.6820, 8, 'healer', 18609, 17131, 0, 0, 18.0, -192.0, -84.6, 0.030, -1.000, 5, 8000, 2, 'Onyxia W healer side 0 point 0: 5 slots, stand to point 100 yd, path-check ok'),
+(249, 10184, 6, -33.5561, -182.6820, 8, 'healer', 18609, 17131, 0, 1, 28.0, -192.0, -83.0, 0.030, -1.000, 5, 8000, 2, 'Onyxia W healer side 0 point 1: 5 slots, stand to point 110 yd, path-check ok'),
+(249, 10184, 6, -33.5561, -182.6820, 8, 'healer', 18609, 17131, 0, 2, -2.0, -182.0, -86.0, -0.030, 1.000, 2, 8000, 2, 'Onyxia W healer side 0 point 2: 2 slots, stand to point 83 yd, path-check ok'),
+(249, 10184, 6, -33.5561, -182.6820, 8, 'healer', 18609, 17131, 0, 3, 8.0, -182.0, -85.1, -0.030, 1.000, 2, 8000, 2, 'Onyxia W healer side 0 point 3: 2 slots, stand to point 93 yd, path-check ok'),
+-- Hover point 6 NW (anchor 7) (6.9 -180.2), breath 18584
+(249, 10184, 7, 6.8951, -180.2460, 8, 'ranged', 18584, 17131, 0, 0, 8.0, -220.0, -85.4, -0.760, -0.650, 5, 8000, 3, 'Onyxia NW ranged side 0 point 0: 5 slots, stand to point 88 yd, path-check ok'),
+(249, 10184, 7, 6.8951, -180.2460, 8, 'ranged', 18584, 17131, 0, 1, 24.0, -218.0, -84.2, -0.760, -0.650, 5, 8000, 3, 'Onyxia NW ranged side 0 point 1: 5 slots, stand to point 104 yd, path-check ok'),
+(249, 10184, 7, 6.8951, -180.2460, 8, 'ranged', 18584, 17131, 1, 0, -46.0, -184.0, -85.9, -0.760, -0.650, 5, 8000, 3, 'Onyxia NW ranged side 1 point 0: 5 slots, stand to point 44 yd, path-check ok'),
+(249, 10184, 7, 6.8951, -180.2460, 8, 'ranged', 18584, 17131, 1, 1, -62.0, -186.0, -84.3, -0.760, -0.650, 3, 8000, 3, 'Onyxia NW ranged side 1 point 1: 3 slots, stand to point 31 yd, path-check ok'),
+(249, 10184, 7, 6.8951, -180.2460, 8, 'healer', 18584, 17131, 0, 0, 26.0, -228.0, -83.7, -0.760, -0.650, 5, 8000, 3, 'Onyxia NW healer side 0 point 0: 5 slots, stand to point 107 yd, path-check ok'),
+(249, 10184, 7, 6.8951, -180.2460, 8, 'healer', 18584, 17131, 0, 1, 28.0, -238.0, -83.0, -0.760, -0.650, 4, 8000, 3, 'Onyxia NW healer side 0 point 1: 4 slots, stand to point 111 yd, path-check ok'),
+(249, 10184, 7, 6.8951, -180.2460, 8, 'healer', 18584, 17131, 0, 2, 24.0, -208.0, -84.2, 0.760, 0.650, 2, 8000, 3, 'Onyxia NW healer side 0 point 2: 2 slots, stand to point 104 yd, path-check ok'),
+(249, 10184, 7, 6.8951, -180.2460, 8, 'healer', 18584, 17131, 0, 3, -12.0, -250.0, -86.6, -0.760, -0.650, 2, 8000, 3, 'Onyxia NW healer side 0 point 3: 2 slots, stand to point 78 yd, path-check ok'),
+-- Hover point 7 N (anchor 8) (22.9 -217.2), breath 17086
+(249, 10184, 8, 22.8763, -217.1520, 8, 'ranged', 17086, 17131, 0, 0, 0.0, -248.0, -85.7, -1.000, 0.040, 4, 8000, 4, 'Onyxia N ranged side 0 point 0: 4 slots, stand to point 88 yd, path-check ok'),
+(249, 10184, 8, 22.8763, -217.1520, 8, 'ranged', 17086, 17131, 0, 1, 10.0, -248.0, -85.2, 1.000, -0.040, 2, 8000, 4, 'Onyxia N ranged side 0 point 1: 2 slots, stand to point 97 yd, path-check ok'),
+(249, 10184, 8, 22.8763, -217.1520, 8, 'ranged', 17086, 17131, 1, 0, 4.0, -184.0, -85.8, -1.000, 0.040, 4, 8000, 4, 'Onyxia N ranged side 1 point 0: 4 slots, stand to point 89 yd, path-check ok'),
+(249, 10184, 8, 22.8763, -217.1520, 8, 'ranged', 17086, 17131, 1, 1, 4.0, -174.0, -84.6, -1.000, 0.040, 4, 8000, 4, 'Onyxia N ranged side 1 point 1: 4 slots, stand to point 92 yd, path-check ok'),
+(249, 10184, 8, 22.8763, -217.1520, 8, 'healer', 17086, 17131, 1, 0, 18.0, -186.0, -84.6, 1.000, -0.040, 2, 8000, 4, 'Onyxia N healer side 1 point 0: 2 slots, stand to point 102 yd, path-check ok'),
+(249, 10184, 8, 22.8763, -217.1520, 8, 'healer', 17086, 17131, 1, 1, -34.0, -184.0, -88.3, -1.000, 0.040, 3, 8000, 4, 'Onyxia N healer side 1 point 1: 3 slots, stand to point 54 yd, path-check ok');

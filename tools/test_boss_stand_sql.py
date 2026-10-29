@@ -21,10 +21,10 @@ MAX_SLOTS = 8
 SPACING = 9.0
 ROW = re.compile(
     r"^\((\d+), (\d+), (\d+), (-?[\d.]+), (-?[\d.]+), ([\d.]+), '(\w+)', (\d+), (\d+), (\d+), (\d+), "
-    r"(-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (\d+), '(?:[^']|'')*'\)[,;]$"
+    r"(-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (\d+), (\d+), (\d+), '(?:[^']|'')*'\)[,;]$"
 )
 FIELDS = ("map", "boss", "anchor", "ax", "ay", "ar", "role", "window", "aura", "side", "seq",
-          "x", "y", "z", "dx", "dy", "slots")
+          "x", "y", "z", "dx", "dy", "slots", "hold", "release")
 
 ONYXIA_MAP = 249
 ONYXIA = 10184
@@ -114,6 +114,8 @@ class BossStandSql(unittest.TestCase):
             self.assertGreaterEqual(row["slots"], 1, where)
             self.assertLessEqual(row["slots"], MAX_SLOTS, where)
             self.assertLess(row["seq"], 256, where)
+            if row["release"]:
+                self.assertNotEqual(row["release"], row["anchor"], where)
 
     def test_primary_keys_are_unique(self):
         seen = set()
@@ -134,7 +136,7 @@ class BossStandSql(unittest.TestCase):
         rows = onyxia_rows()
         self.assertTrue(rows, "no Onyxia stand rows")
         for anchor, (x, y, spell) in enumerate(HOVER):
-            mine = [r for r in rows if r["anchor"] == anchor]
+            mine = [r for r in rows if r["anchor"] == anchor + 1]  # anchor id = hover point id + 1
             self.assertTrue(mine, "hover point %d has no stand rows" % anchor)
             for row in mine:
                 self.assertAlmostEqual(row["ax"], x, delta=0.1, msg="anchor %d x" % anchor)
@@ -155,15 +157,31 @@ class BossStandSql(unittest.TestCase):
         # Melee stays on her when she lands; no tank or melee row.
         self.assertEqual(set(r["role"] for r in onyxia_rows()), {"ranged", "healer"})
 
+    def test_onyxia_seats_are_held_until_the_sweep_ends(self):
+        # The breath's links keep firing along the lane after the 5 s cast: a seat is held 8 s past the cast, or
+        # until she is within the radius of the opposite hover point (the lane's far end), whichever is first.
+        for row in onyxia_rows():
+            anchor = int(row["anchor"])
+            self.assertEqual(row["hold"], 8000.0, "anchor %d hold_ms" % anchor)
+            self.assertEqual(int(row["release"]), (anchor - 1 + 4) % 8 + 1, "anchor %d release anchor" % anchor)
+            self.assertNotEqual(int(row["release"]), anchor)
+        # The release anchor is a place the table holds, with the opposite hover point's coordinates.
+        places = dict((int(r["anchor"]), (r["ax"], r["ay"])) for r in onyxia_rows())
+        for row in onyxia_rows():
+            ox, oy = places[int(row["release"])]
+            hx, hy, _ = HOVER[(int(row["anchor"]) - 1 + 4) % 8]
+            self.assertAlmostEqual(ox, hx, delta=0.1)
+            self.assertAlmostEqual(oy, hy, delta=0.1)
+
     def test_onyxia_every_anchor_seats_both_roles_on_both_sides(self):
         for anchor in range(len(HOVER)):
             for role in ("ranged", "healer"):
-                sides = set(int(r["side"]) for r in onyxia_rows() if r["anchor"] == anchor and r["role"] == role)
+                sides = set(int(r["side"]) for r in onyxia_rows() if r["anchor"] == anchor + 1 and r["role"] == role)
                 self.assertTrue(sides, "anchor %d has no %s rows" % (anchor, role))
 
     def test_onyxia_every_slot_is_clear_of_the_breath_lane(self):
         for row in onyxia_rows():
-            anchor = int(row["anchor"])
+            anchor = int(row["anchor"]) - 1
             start = HOVER[anchor][:2]
             end = HOVER[(anchor + 4) % 8][:2]
             if anchor == 7:
@@ -186,7 +204,7 @@ class BossStandSql(unittest.TestCase):
         for anchor in range(len(HOVER)):
             seats = []
             for row in onyxia_rows():
-                if row["anchor"] == anchor:
+                if row["anchor"] == anchor + 1:
                     seats.extend(slot_positions(row))
             for i in range(len(seats)):
                 for j in range(i + 1, len(seats)):
@@ -198,8 +216,8 @@ class BossStandSql(unittest.TestCase):
         # 17 ranged and 10 healers in the 40-man roster; what does not fit keeps the reactive dodge.
         # The N and S anchors sit on the narrow axis of the room (the shallow bands y < -246 and y > -184).
         for anchor in range(len(HOVER)):
-            ranged = sum(int(r["slots"]) for r in onyxia_rows() if r["anchor"] == anchor and r["role"] == "ranged")
-            healers = sum(int(r["slots"]) for r in onyxia_rows() if r["anchor"] == anchor and r["role"] == "healer")
+            ranged = sum(int(r["slots"]) for r in onyxia_rows() if r["anchor"] == anchor + 1 and r["role"] == "ranged")
+            healers = sum(int(r["slots"]) for r in onyxia_rows() if r["anchor"] == anchor + 1 and r["role"] == "healer")
             self.assertGreaterEqual(ranged, 12, "anchor %d seats %d ranged" % (anchor, ranged))
             self.assertGreaterEqual(healers, 2, "anchor %d seats %d healers" % (anchor, healers))
 
