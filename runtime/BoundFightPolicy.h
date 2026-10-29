@@ -13,6 +13,7 @@ namespace BoundFight {
 
 constexpr uint32_t kSampleMs = 1000;       // the sampler's cadence (the run tick's own 1 Hz)
 constexpr uint32_t kRunFedWindowMs = 1500; // a binding the run fed this recently is the run's
+constexpr uint32_t kLeadGoneGraceMs = 30000; // an open fight survives its lead being away this long
 
 // True when the bound-group sampler feeds this binding now: bound, and the run
 // did not feed it within the window. The subtraction is the core's getMSTime
@@ -22,6 +23,34 @@ inline bool SamplerFeeds(bool bound, bool runFedEver, uint32_t runFedAtMs, uint3
 {
     return bound && (!runFedEver || nowMs - runFedAtMs >= kRunFedWindowMs);
 }
+
+// One binding's clock of its lead being unusable (gone from the world through a
+// map transition, no group, a character that cannot be resolved): until the
+// lead is back the sampler has nothing to feed the open fight with, so after
+// the grace the fight is closed as unfinished instead of kept alive forever.
+struct LeadAway
+{
+    bool sinceSet = false;
+    uint32_t sinceMs = 0;
+
+    // Call each sampler tick; true once the lead has been unusable for the
+    // grace. A usable lead (the transition finished) clears the clock.
+    bool Overdue(bool leadUsable, uint32_t nowMs)
+    {
+        if (leadUsable)
+        {
+            sinceSet = false;
+            return false;
+        }
+        if (!sinceSet)
+        {
+            sinceSet = true;
+            sinceMs = nowMs;
+            return false;
+        }
+        return nowMs - sinceMs >= kLeadGoneGraceMs;
+    }
+};
 
 struct BossCandidate
 {

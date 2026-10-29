@@ -1,7 +1,8 @@
-// The bound-group sampler's feed decision and the fight's boss pick (task R1):
+// The bound-group sampler's decisions and the fight's boss pick (task R1):
 // a fight is fed by the sampler when its run did not feed it in the last 1.5 s,
-// and the boss is the boss-flagged creature with the most maximum health (ties:
-// the lowest entry); plain data and the standard library only.
+// its lead-away clock closes a fight left open after 30 s, and the boss is the
+// boss-flagged creature with the most maximum health (ties: the lowest entry);
+// plain data and the standard library only.
 //
 // Build and run:
 //   g++ -std=c++17 -Wall -Wextra -Werror=return-type tools/test_bound_fight_policy.cpp -o /tmp/bound_fight
@@ -32,6 +33,31 @@ static void TestSamplerFeeds()
     CHECK(!SamplerFeeds(true, true, 1000, 2000));  // fed 1000 ms ago: the run's
     CHECK(SamplerFeeds(true, true, 500, 2000));    // 1500 ms ago: the window's edge is the sampler's
     CHECK(!SamplerFeeds(true, true, 0xFFFFFF00u, 0x00000400u));   // 1280 ms across the tick wrap
+}
+
+// The open-fight clock: a lead away for the grace closes the fight it left
+// open (unfinished), a lead back inside the grace keeps it, and the subtraction
+// crosses a tick wrap.
+static void TestLeadAwayGrace()
+{
+    LeadAway away;
+    CHECK(!away.Overdue(false, 1000));     // the clock starts on the first unusable tick
+    CHECK(!away.Overdue(false, 30999));    // 29 999 ms away: inside the 30 s grace
+    CHECK(away.Overdue(false, 31000));     // 30 s: the fight is closed
+    CHECK(away.Overdue(false, 40000));     // and stays due while the lead is gone
+
+    LeadAway back;
+    CHECK(!back.Overdue(false, 1000));
+    CHECK(!back.Overdue(true, 5000));      // the lead is back (map transition done)
+    CHECK(!back.Overdue(false, 20000));    // a new absence starts the clock again
+    CHECK(!back.Overdue(false, 49999));
+    CHECK(back.Overdue(false, 50000));
+
+    LeadAway wrap;
+    CHECK(!wrap.Overdue(false, 0xFFFFFF00u));
+    CHECK(!wrap.Overdue(false, 0x00000400u));   // 1280 ms across the tick wrap
+    CHECK(!wrap.Overdue(false, 0x00007300u));   // 29 696 ms: still inside
+    CHECK(wrap.Overdue(false, 0x00007500u));    // 30 208 ms: due
 }
 
 static void TestPickBoss()
@@ -67,6 +93,7 @@ static void TestPickBoss()
 int main()
 {
     TestSamplerFeeds();
+    TestLeadAwayGrace();
     TestPickBoss();
     std::printf("bound fight policy: %d checks passed\n", checks);
     return 0;

@@ -6318,6 +6318,9 @@ static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding c
     std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& facts, DungeonRunSlot const& slot);
 static void SampleBoundFights(uint32 diff);
 static void ForgetReleasedCombatGroups(void);
+// The sampler's per-binding state, pruned beside the snapshot that fed it.
+static std::unordered_map<uint64, uint32>& s_runFedAt();
+static std::unordered_map<uint64, TortoiseBots::BoundFight::LeadAway>& s_leadAway();
 
 namespace {
 
@@ -11973,6 +11976,7 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
         CommanderOrderLog().Clear();
         s_mobWatch().clear();
         s_runFedAt().clear();
+        s_leadAway().clear();
         return;
     }
     std::unordered_set<uint64_t> bound;
@@ -12067,6 +12071,8 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
         it = bound.count(it->first) ? std::next(it) : s_mobWatch().erase(it);
     for (auto it = s_runFedAt().begin(); it != s_runFedAt().end();)
         it = bound.count(it->first) ? std::next(it) : s_runFedAt().erase(it);
+    for (auto it = s_leadAway().begin(); it != s_leadAway().end();)
+        it = bound.count(it->first) ? std::next(it) : s_leadAway().erase(it);
 }
 
 // One unit as the Dungeons tab shows it (issue #1101): field reads on the unit and its template, the seeing member's reaction to
@@ -12110,6 +12116,14 @@ static std::unordered_map<uint64, uint32>& s_runFedAt()
 {
     static std::unordered_map<uint64, uint32> fed;
     return fed;
+}
+
+// The sampler's clock of each binding's lead being unusable, kept only while
+// its binding stands (CollectCommanderTelemetry prunes it).
+static std::unordered_map<uint64, TortoiseBots::BoundFight::LeadAway>& s_leadAway()
+{
+    static std::unordered_map<uint64, TortoiseBots::BoundFight::LeadAway> away;
+    return away;
 }
 
 // Groups the snapshot has fed before: a released binding's book is forgotten
@@ -12317,7 +12331,9 @@ static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding c
 // The bound-group sampler (task R1): every standing binding whose run did not
 // feed the combat monitor in the last kRunFedWindowMs gets a 1 Hz sample, so a
 // fight pulled without a run (or after `.bot run stop`) is recorded. The run
-// path is untouched; one sampler per second feeds the rest.
+// path is untouched; one sampler per second feeds the rest. A binding whose
+// lead is unusable is not sampled, and the fight it left open is closed as
+// unfinished after the lead-away grace.
 static void SampleBoundFights(uint32 diff)
 {
     using namespace TortoiseBots;
@@ -12345,7 +12361,12 @@ static void SampleBoundFights(uint32 diff)
             continue;
         Player* lead = FindCharacter(binding->leadGuid);
         Group* group = lead ? lead->GetGroup() : nullptr;
-        if (!lead || !group || !lead->IsInWorld())
+        bool const leadUsable = lead && group && lead->IsInWorld();
+        // The lead is gone (out of world through a map transition, no group) and
+        // the sampler cannot feed: past the grace the fight it left open closes.
+        if (s_leadAway()[commanderRaw].Overdue(leadUsable, now))
+            CombatMonitorService::Instance().CloseUnfinished(binding->groupId, now);
+        if (!leadUsable)
             continue;
         std::vector<Player*> const bots = CommandedBots(group, lead);
         bool anyInCombat = false;

@@ -23,6 +23,7 @@ constexpr uint32_t kOutOfCombatEndMs = 3000;  // a fight ends this long after th
 constexpr uint32_t kWindowMs = 10000;         // the rolling window
 constexpr uint32_t kMaxDeathsPerFight = 200;  // death recaps kept per fight, oldest dropped past it
 constexpr uint32_t kMaxEngagedPerFight = 500; // distinct engaged creature guids tracked per fight (all entries together)
+constexpr size_t kMaxEnemyDeathsPerFight = kMaxEngagedPerFight; // enemy entries remembered for the sampler's later boss pick
 constexpr size_t kMaxDroppedTracked = 4096;   // distinct guids past that cap counted as dropped; the count stops here
 constexpr size_t kLastHits = 5;               // death recap
 constexpr size_t kMaxSpellsPerBot = 12;
@@ -78,9 +79,9 @@ inline std::vector<std::string> DebuffKeys(std::string const& spellName, uint32_
 }
 
 enum class Role : uint8_t { Tank, Healer, Damage };
-enum class Outcome : uint8_t { Kill, Wipe, End };
+enum class Outcome : uint8_t { Kill, Wipe, Unfinished, End };
 
-inline char const* OutcomeName(Outcome o)    // "kill", "wipe", "end"
+inline char const* OutcomeName(Outcome o)    // "kill", "wipe", "unfinished", "end"
 {
     switch (o)
     {
@@ -88,6 +89,8 @@ inline char const* OutcomeName(Outcome o)    // "kill", "wipe", "end"
         return "kill";
     case Outcome::Wipe:
         return "wipe";
+    case Outcome::Unfinished:
+        return "unfinished";
     case Outcome::End:
     default:
         return "end";
@@ -430,6 +433,7 @@ public:
         startUnix_ = unixNow;
         ctx_ = ctx;
         bossDied_ = false;
+        enemyDeaths_.clear();
         outOfCombat_ = false;
         outOfCombatSince_ = 0;
         engaged_.clear();
@@ -591,11 +595,19 @@ public:
             EndFight(outOfCombatSince_, false);
     }
 
-    void NoteBossDied(uint32_t entry)   // the context's boss died inside the fight
+    void NoteBossDied(uint32_t entry)   // an enemy of the open fight died
     {
-        if (!inFight_ || entry == 0 || entry != ctx_.bossEntry)
+        if (!inFight_ || entry == 0)
             return;
-        bossDied_ = true;
+        if (entry == ctx_.bossEntry)
+        {
+            bossDied_ = true;
+            return;
+        }
+        // The sampler picks the boss after the tick's Refresh, so a boss can die
+        // before any pick: the entry is kept for the pick that comes later.
+        if (enemyDeaths_.size() < kMaxEnemyDeathsPerFight)
+            enemyDeaths_.insert(entry);
     }
 
     // The sampler's boss: set once per fight, and never over a run's own boss.
@@ -605,6 +617,8 @@ public:
             return;
         ctx_.bossEntry = entry;
         ctx_.bossName = name;
+        if (enemyDeaths_.count(entry))
+            bossDied_ = true;
     }
 
     // The open fight's engaged creatures, one row per entry (its lowest guid and
@@ -647,6 +661,14 @@ public:
     {
         if (inFight_)
             EndFight(nowMs, !order_.empty() && dead_.size() >= order_.size());
+    }
+
+    // The lead stayed unavailable past the sampler's grace: end the fight it
+    // left open, unfinished unless it was a wipe or the boss already fell.
+    void CloseUnfinished(uint32_t nowMs)
+    {
+        if (inFight_)
+            EndFight(nowMs, false, true);
     }
 
     bool HasEvents() const { return !events_.empty() || !newEngaged_.empty(); }
@@ -999,13 +1021,15 @@ private:
         engagedAtMs_ = nowMs;
     }
 
-    void EndFight(uint32_t endMs, bool allDead)
+    void EndFight(uint32_t endMs, bool allDead, bool unfinished = false)
     {
         Outcome o = Outcome::End;
         if (allDead)
             o = Outcome::Wipe;
         else if (bossDied_ && ctx_.bossEntry != 0)
             o = Outcome::Kill;
+        else if (unfinished)
+            o = Outcome::Unfinished;
         uint32_t const dur = endMs >= startMs_ ? endMs - startMs_ : 0;
         lastDurMs_ = dur;
         LiveEvent ev;
@@ -1037,6 +1061,7 @@ private:
         }
         inFight_ = false;
         bossDied_ = false;
+        enemyDeaths_.clear();
         outOfCombat_ = false;
         outOfCombatSince_ = 0;
     }
@@ -1048,6 +1073,7 @@ private:
     int64_t startUnix_ = 0;
     FightContext ctx_;
     bool bossDied_ = false;
+    std::unordered_set<uint32_t> enemyDeaths_;   // enemy entries that died before the sampler picked a boss
     bool outOfCombat_ = false;
     uint32_t outOfCombatSince_ = 0;
     std::map<uint32_t, EngagedData> engaged_;

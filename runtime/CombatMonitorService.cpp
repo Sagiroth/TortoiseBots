@@ -182,6 +182,21 @@ void CombatMonitorService::NoteBoss(uint32_t groupId, uint32_t entry, char const
     it->second.NoteBoss(entry, name);
 }
 
+// The sampler's lead stayed away past its grace: the open fight is kept, with
+// outcome unfinished unless it was a wipe or the boss already fell.
+void CombatMonitorService::CloseUnfinished(uint32_t groupId, uint32_t nowMs)
+{
+    if (!Enabled() || groupId == 0)
+        return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const it = m_books.find(groupId);
+    if (it == m_books.end())
+        return;
+    bool const wasFighting = it->second.InFight();
+    it->second.CloseUnfinished(nowMs);
+    NoteFightCount(wasFighting, it->second.InFight());
+}
+
 std::vector<CombatMonitor::EngagedUnit> CombatMonitorService::EngagedNow(uint32_t groupId) const
 {
     std::vector<CombatMonitor::EngagedUnit> out;

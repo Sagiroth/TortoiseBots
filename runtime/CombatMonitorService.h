@@ -33,6 +33,8 @@ public:
                  CombatMonitor::FightContext const& ctx, std::vector<std::string> const& debuffKeysUp, uint32_t nowMs);
     // world thread: the fight's boss as the sampler picked it from the engaged creatures (once per fight)
     void NoteBoss(uint32_t groupId, uint32_t entry, char const* name);
+    // world thread: close the open fight of a binding whose lead stayed away past the bound-group grace
+    void CloseUnfinished(uint32_t groupId, uint32_t nowMs);
     // world thread: the open fight's engaged creatures (one row per entry), empty outside a fight
     std::vector<CombatMonitor::EngagedUnit> EngagedNow(uint32_t groupId) const;
     bool InFight(uint32_t groupId) const;

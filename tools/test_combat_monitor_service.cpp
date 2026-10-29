@@ -383,6 +383,46 @@ static void TestServiceNoteBoss()
     svc.Forget(86);
 }
 
+// The sampler's order in the field: Refresh, then NoteBoss from the engaged
+// rows. A boss that dies between two ticks reaches the death hook while no boss
+// is picked yet; the next tick's pick still makes the fight a kill.
+static void TestSamplerBossDeathBeforePick()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(88, Members(), true, false, CommanderCtx(), {}, 1000);
+    svc.OnDamage(7, 0, 500, "Tanky", 11502, 777, "Magmadar");   // engaged, no boss picked yet
+    svc.OnDeath(0, 7, "Tanky", 0.0f, 0.0f, 0.0f, 11502);       // dies between the samples
+    svc.Refresh(88, Members(), false, false, CommanderCtx(), {}, 6000);
+    svc.NoteBoss(88, 11502, "Magmadar");
+    svc.Refresh(88, Members(), false, false, CommanderCtx(), {}, 9000);
+    CHECK(!svc.InFight(88));
+    std::string const fight = TakeOne(svc, 88, 1700010000);
+    CHECK(!fight.empty());
+    CHECK(fight.find("\"boss\":11502") != std::string::npos);
+    CHECK(fight.find("\"outcome\":\"kill\"") != std::string::npos);
+    svc.Forget(88);
+}
+
+// The lead stayed away past the sampler's grace: the open fight is closed and
+// still sent, with outcome unfinished.
+static void TestCloseUnfinished()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(89, Members(), true, false, CommanderCtx(), {}, 1000);
+    CHECK(svc.InFight(89));
+    svc.CloseUnfinished(89, 31000);
+    CHECK(!svc.InFight(89));
+    std::string const fight = TakeOne(svc, 89, 1700013000);
+    CHECK(!fight.empty());
+    CHECK(fight.find("\"outcome\":\"unfinished\"") != std::string::npos);
+    CHECK(fight.find("\"dur_ms\":30000") != std::string::npos);
+    svc.Forget(89);
+}
+
 // The engaged creatures of the open fight, through the service.
 static void TestServiceEngagedNow()
 {
@@ -675,6 +715,8 @@ int main()
     TestFightOutlivesRunStop();
     TestFightWithoutRunRecorded();
     TestServiceNoteBoss();
+    TestSamplerBossDeathBeforePick();
+    TestCloseUnfinished();
     TestServiceEngagedNow();
     TestForgetKeepsUntakenFight();
     TestForgetClosesOpenFight();

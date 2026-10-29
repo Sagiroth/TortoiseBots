@@ -598,6 +598,66 @@ static void TestRefinedBossDeathIsKill()
     CHECK(Contains(p[0], "\"outcome\":\"kill\""));
 }
 
+// The sampler picks the boss after the tick that records its death, so the
+// death of an engaged creature can arrive before any boss is picked: the later
+// pick still makes the fight a kill, and another creature's death does not.
+static void TestBossDeathBeforePickIsKill()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, FightContext{}, 1);
+    b.OnDamage(1, 0, 500, "Tanky", 11502, 777, "Magmadar", 1000);
+    b.NoteBossDied(11503);   // an add: not the boss picked next
+    b.NoteBossDied(11502);   // the boss, before the sampler had picked one
+    b.NoteBoss(11502, "Magmadar");
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"boss\":11502"));
+    CHECK(Contains(p[0], "\"boss_name\":\"Magmadar\""));
+    CHECK(Contains(p[0], "\"outcome\":\"kill\""));
+
+    Book other;   // only another creature died: the picked boss is not a kill
+    other.SetMembers(Trio());
+    other.Start(0, 1700000000, FightContext{}, 1);
+    other.NoteBossDied(11503);
+    other.NoteBoss(11502, "Magmadar");
+    other.SetInCombat(false, false, 6000);
+    other.SetInCombat(false, false, 9000);
+    std::vector<std::string> q = other.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(q.size() == 1);
+    CHECK(Contains(q[0], "\"boss\":11502"));
+    CHECK(Contains(q[0], "\"outcome\":\"end\""));
+}
+
+// The sampler closes a fight its lead left open as unfinished; a boss that
+// already fell still makes that fight a kill.
+static void TestCloseUnfinished()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, FightContext{}, 1);
+    b.CloseUnfinished(20000);
+    CHECK(!b.InFight());
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700020000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"outcome\":\"unfinished\""));
+    CHECK(Contains(p[0], "\"dur_ms\":20000"));
+
+    Book kill;
+    kill.SetMembers(Trio());
+    kill.Start(0, 1700000000, FightContext{}, 1);
+    kill.NoteBoss(11502, "Magmadar");
+    kill.NoteBossDied(11502);
+    kill.CloseUnfinished(20000);
+    std::vector<std::string> q = kill.TakeFightPayloads(1, 9, seq.fn(), 1700020000, "Cmdr", 123, 55, 409);
+    CHECK(q.size() == 1);
+    CHECK(Contains(q[0], "\"outcome\":\"kill\""));
+}
+
 static void TestEngagedNowListsEntries()
 {
     Book b;
@@ -756,6 +816,8 @@ int main()
     TestNoteBossOutsideFightIgnored();
     TestNoteBossKeepsRunBoss();
     TestRefinedBossDeathIsKill();
+    TestBossDeathBeforePickIsKill();
+    TestCloseUnfinished();
     TestEngagedNowListsEntries();
     TestEventsJsonHalvesUnderBudget();
     TestEventsJsonBoundsHugeNames();
