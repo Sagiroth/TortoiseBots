@@ -2,6 +2,7 @@ package plans
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -48,7 +49,7 @@ func writePatrolFile(t *testing.T, dir, name, body string) string {
 
 func getPlan(t *testing.T, src *memSource, name string) *Plan {
 	t.Helper()
-	p, err := NewService(src).Get(name)
+	p, err := NewService(src).Get(context.Background(), name)
 	if err != nil {
 		t.Fatalf("Get(%s): %v", name, err)
 	}
@@ -268,7 +269,7 @@ func TestPatrolsReloadOnChange(t *testing.T) {
 
 	period := func() float64 {
 		t.Helper()
-		p, err := srv.Get("onyxias_lair")
+		p, err := srv.Get(context.Background(), "onyxias_lair")
 		if err != nil {
 			t.Fatalf("Get: %v", err)
 		}

@@ -344,11 +344,11 @@ func main() {
 	// table. The writer waits six seconds for a fight's last frames and runs off the UDP goroutine, which only enqueues.
 	var historyStore *history.Store
 	if *fightHistoryDir != "" {
-		packOf := func(plan string, f combat.Fight) int {
+		packOf := func(ctx context.Context, plan string, f combat.Fight) int {
 			if planSvc == nil || plan == "" {
 				return 0
 			}
-			p, err := planSvc.Get(plan)
+			p, err := planSvc.Get(ctx, plan)
 			if err != nil || p == nil || p.Map != f.Map {
 				return 0
 			}
@@ -994,12 +994,17 @@ func main() {
 	}
 }
 
-// shutdownTimeout bounds the HTTP drain (an open SSE stream may never go idle; the rest of the shutdown still runs).
-const shutdownTimeout = 5 * time.Second
+// shutdownTimeout bounds the HTTP drain (an open SSE stream may never go idle; the rest of the shutdown still runs), and
+// historyShutdownTimeout bounds the history writer, whose pack lookup reads the world database: a hung read must delay the
+// process by seconds, not forever.
+const (
+	shutdownTimeout        = 5 * time.Second
+	historyShutdownTimeout = 10 * time.Second
+)
 
 // shutdown stops the daemon in the order that keeps a finished fight: the HTTP server first (no new requests), then UDP
 // ingestion (and waits for its read loop, so nothing enqueues afterwards), then the history writer, whose Close writes what is
-// still queued. Every step tolerates a second call.
+// still queued or reports what a slow lookup kept from being written. Every step tolerates a second call.
 func shutdown(server *http.Server, udpListener *udp.Listener, fights *history.Store) {
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
@@ -1008,7 +1013,9 @@ func shutdown(server *http.Server, udpListener *udp.Listener, fights *history.St
 		_ = server.Close()
 	}
 	udpListener.Stop()
-	fights.Close()
+	deadline, stopWrites := context.WithTimeout(context.Background(), historyShutdownTimeout)
+	defer stopWrites()
+	fights.Close(deadline)
 }
 
 // serve runs the HTTP server until it fails or ctx is cancelled, then shuts everything down and returns the server's error.

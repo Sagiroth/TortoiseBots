@@ -2,6 +2,7 @@ package plans
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -14,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -44,7 +46,7 @@ type memSource struct {
 	spawnArgs     []uint32
 }
 
-func (m *memSource) Plan(name string) (PlanRow, bool, error) {
+func (m *memSource) Plan(_ context.Context, name string) (PlanRow, bool, error) {
 	m.planCalls++
 	if m.srcErr != nil {
 		return PlanRow{}, false, m.srcErr
@@ -55,21 +57,21 @@ func (m *memSource) Plan(name string) (PlanRow, bool, error) {
 	return m.planRow, m.found, nil
 }
 
-func (m *memSource) Legs(name string) ([]LegRow, error) {
+func (m *memSource) Legs(_ context.Context, name string) ([]LegRow, error) {
 	if m.srcErr != nil {
 		return nil, m.srcErr
 	}
 	return m.legs, nil
 }
 
-func (m *memSource) Steps(name string) ([]StepRow, error) {
+func (m *memSource) Steps(_ context.Context, name string) ([]StepRow, error) {
 	if m.srcErr != nil {
 		return nil, m.srcErr
 	}
 	return m.steps, nil
 }
 
-func (m *memSource) Templates(entries []uint32) ([]TemplateRow, error) {
+func (m *memSource) Templates(_ context.Context, entries []uint32) ([]TemplateRow, error) {
 	m.templateCalls++
 	m.templateArgs = append([]uint32(nil), entries...)
 	if m.srcErr != nil {
@@ -78,7 +80,7 @@ func (m *memSource) Templates(entries []uint32) ([]TemplateRow, error) {
 	return m.templates, nil
 }
 
-func (m *memSource) Spawns(mapID uint32, entries []uint32) ([]SpawnRow, error) {
+func (m *memSource) Spawns(_ context.Context, mapID uint32, entries []uint32) ([]SpawnRow, error) {
 	m.spawnCalls++
 	m.spawnArgs = append([]uint32(nil), entries...)
 	if m.srcErr != nil {
@@ -109,7 +111,7 @@ func loadFixture(t *testing.T) *memSource {
 
 func TestBuildOnyxia(t *testing.T) {
 	src := loadFixture(t)
-	p, err := Build(src, "onyxias_lair")
+	p, err := Build(context.Background(), src, "onyxias_lair")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -181,7 +183,7 @@ func TestBuildOnyxia(t *testing.T) {
 
 func TestBuildOnyxiaGolden(t *testing.T) {
 	src := loadFixture(t)
-	p, err := Build(src, "onyxias_lair")
+	p, err := Build(context.Background(), src, "onyxias_lair")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -216,7 +218,7 @@ func TestBuildDropsRowsTheModuleRefuses(t *testing.T) {
 	steps = append(steps, src.steps[4:]...)
 	src.steps = steps
 
-	p, err := Build(src, "onyxias_lair")
+	p, err := Build(context.Background(), src, "onyxias_lair")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -235,7 +237,7 @@ func TestBuildDropsRowsTheModuleRefuses(t *testing.T) {
 	steps = append(steps, src.steps[4:]...)
 	src.steps = steps
 
-	p, err = Build(src, "onyxias_lair")
+	p, err = Build(context.Background(), src, "onyxias_lair")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -259,7 +261,7 @@ func TestBuildDefaultRadius(t *testing.T) {
 			{Leg: 0, Seq: 3, Kind: "wait_clear", Radius: 7, X: 4, Y: 4, Z: 4},
 		},
 	}
-	p, err := Build(src, "mini")
+	p, err := Build(context.Background(), src, "mini")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -273,7 +275,7 @@ func TestBuildDefaultRadius(t *testing.T) {
 
 func TestBuildNotFound(t *testing.T) {
 	src := &memSource{found: false}
-	_, err := Build(src, "missing")
+	_, err := Build(context.Background(), src, "missing")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
@@ -286,7 +288,7 @@ func TestBuildEntryCap(t *testing.T) {
 			Leg: 0, Seq: uint16(i), Kind: "pull", Entries: strconv.Itoa(i + 1), X: float64(i), Y: 0, Z: 0,
 		})
 	}
-	p, err := Build(src, "wide")
+	p, err := Build(context.Background(), src, "wide")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -316,17 +318,17 @@ func TestServiceCache(t *testing.T) {
 	src := loadFixture(t)
 	srv := NewService(src)
 	srv.SetClock(clock)
-	if _, err := srv.Get("onyxias_lair"); err != nil {
+	if _, err := srv.Get(context.Background(), "onyxias_lair"); err != nil {
 		t.Fatalf("first get: %v", err)
 	}
-	if _, err := srv.Get("onyxias_lair"); err != nil {
+	if _, err := srv.Get(context.Background(), "onyxias_lair"); err != nil {
 		t.Fatalf("second get: %v", err)
 	}
 	if src.planCalls != 1 {
 		t.Fatalf("plan calls = %d, want 1", src.planCalls)
 	}
 	now = base.Add(11 * time.Minute)
-	if _, err := srv.Get("onyxias_lair"); err != nil {
+	if _, err := srv.Get(context.Background(), "onyxias_lair"); err != nil {
 		t.Fatalf("third get: %v", err)
 	}
 	if src.planCalls != 2 {
@@ -337,17 +339,17 @@ func TestServiceCache(t *testing.T) {
 	now = base
 	missSrv := NewService(missing)
 	missSrv.SetClock(clock)
-	if _, err := missSrv.Get("ghost"); !errors.Is(err, ErrNotFound) {
+	if _, err := missSrv.Get(context.Background(), "ghost"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing get: %v", err)
 	}
-	if _, err := missSrv.Get("ghost"); !errors.Is(err, ErrNotFound) {
+	if _, err := missSrv.Get(context.Background(), "ghost"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing get again: %v", err)
 	}
 	if missing.planCalls != 1 {
 		t.Fatalf("miss plan calls = %d, want 1", missing.planCalls)
 	}
 	now = base.Add(61 * time.Second)
-	if _, err := missSrv.Get("ghost"); !errors.Is(err, ErrNotFound) {
+	if _, err := missSrv.Get(context.Background(), "ghost"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing get after ttl: %v", err)
 	}
 	if missing.planCalls != 2 {
@@ -359,7 +361,7 @@ func TestServiceCache(t *testing.T) {
 	errSrv.SetClock(clock)
 	now = base
 	for range 2 {
-		if _, err := errSrv.Get("x"); err == nil {
+		if _, err := errSrv.Get(context.Background(), "x"); err == nil {
 			t.Fatal("erroring get returned nil error")
 		}
 	}
@@ -367,7 +369,7 @@ func TestServiceCache(t *testing.T) {
 		t.Fatalf("error plan calls = %d, want 1 (a failure is cached for PlanErrorTTL)", broken.planCalls)
 	}
 	now = base.Add(PlanErrorTTL + time.Second)
-	if _, err := errSrv.Get("x"); err == nil {
+	if _, err := errSrv.Get(context.Background(), "x"); err == nil {
 		t.Fatal("erroring get after the error ttl returned nil error")
 	}
 	if broken.planCalls != 2 {
@@ -381,10 +383,10 @@ func TestServiceBuildsOutsideTheLock(t *testing.T) {
 	src := &gatedSource{gate: make(chan struct{}), reached: make(chan struct{})}
 	srv := NewService(src)
 	slow := make(chan error, 1)
-	go func() { _, err := srv.Get("slow"); slow <- err }()
+	go func() { _, err := srv.Get(context.Background(), "slow"); slow <- err }()
 	<-src.reached
 	fast := make(chan error, 1)
-	go func() { _, err := srv.Get("fast"); fast <- err }()
+	go func() { _, err := srv.Get(context.Background(), "fast"); fast <- err }()
 	select {
 	case err := <-fast:
 		if err != nil {
@@ -397,7 +399,7 @@ func TestServiceBuildsOutsideTheLock(t *testing.T) {
 	if err := <-slow; err != nil {
 		t.Fatalf("slow get: %v", err)
 	}
-	if _, err := srv.Get("slow"); err != nil {
+	if _, err := srv.Get(context.Background(), "slow"); err != nil {
 		t.Fatalf("cached slow get: %v", err)
 	}
 	if src.calls("slow") != 1 {
@@ -420,7 +422,7 @@ func (g *gatedSource) calls(name string) int {
 	return g.built[name]
 }
 
-func (g *gatedSource) Plan(name string) (PlanRow, bool, error) {
+func (g *gatedSource) Plan(_ context.Context, name string) (PlanRow, bool, error) {
 	if name == "slow" {
 		g.once.Do(func() { close(g.reached) })
 		<-g.gate
@@ -434,13 +436,13 @@ func (g *gatedSource) Plan(name string) (PlanRow, bool, error) {
 	return PlanRow{Plan: name, Map: 249}, true, nil
 }
 
-func (g *gatedSource) Legs(name string) ([]LegRow, error) { return nil, nil }
+func (g *gatedSource) Legs(context.Context, string) ([]LegRow, error) { return nil, nil }
 
-func (g *gatedSource) Steps(name string) ([]StepRow, error) { return nil, nil }
+func (g *gatedSource) Steps(context.Context, string) ([]StepRow, error) { return nil, nil }
 
-func (g *gatedSource) Templates(entries []uint32) ([]TemplateRow, error) { return nil, nil }
+func (g *gatedSource) Templates(context.Context, []uint32) ([]TemplateRow, error) { return nil, nil }
 
-func (g *gatedSource) Spawns(mapID uint32, entries []uint32) ([]SpawnRow, error) { return nil, nil }
+func (g *gatedSource) Spawns(context.Context, uint32, []uint32) ([]SpawnRow, error) { return nil, nil }
 
 func TestHandler(t *testing.T) {
 	do := func(h http.Handler, path string) (*httptest.ResponseRecorder, string) {
@@ -535,7 +537,7 @@ func TestWakeTable(t *testing.T) {
 
 // TestBuildWakeYd pins wake_yd on the wire: the Onyxia boss step and her spawn carry the scripted wake, the warders do not.
 func TestBuildWakeYd(t *testing.T) {
-	p, err := Build(loadFixture(t), "onyxias_lair")
+	p, err := Build(context.Background(), loadFixture(t), "onyxias_lair")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -579,7 +581,7 @@ func loadFixtureNamed(t *testing.T, name string) *memSource {
 // TestBuildMoltenCore is the non-Onyxia case: a raid plan with several legs and several bosses keeps them all, numbers its
 // steps across the legs and marks each leg's own stands and packs.
 func TestBuildMoltenCore(t *testing.T) {
-	p, err := Build(loadFixtureNamed(t, "molten_core"), "molten_core")
+	p, err := Build(context.Background(), loadFixtureNamed(t, "molten_core"), "molten_core")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -626,7 +628,7 @@ func TestBuildMoltenCore(t *testing.T) {
 }
 
 func TestBuildMoltenCoreGolden(t *testing.T) {
-	p, err := Build(loadFixtureNamed(t, "molten_core"), "molten_core")
+	p, err := Build(context.Background(), loadFixtureNamed(t, "molten_core"), "molten_core")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -647,5 +649,58 @@ func TestBuildMoltenCoreGolden(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("golden mismatch\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// waitSource holds a read until its context ends while wait is set, the way a database read does when its caller gives up.
+type waitSource struct {
+	wait atomic.Bool
+	seen chan error
+}
+
+func (w *waitSource) Plan(ctx context.Context, name string) (PlanRow, bool, error) {
+	if w.wait.Load() {
+		<-ctx.Done()
+		w.seen <- ctx.Err()
+		return PlanRow{}, false, ctx.Err()
+	}
+	return PlanRow{Plan: name, Map: 249}, true, nil
+}
+
+func (w *waitSource) Legs(context.Context, string) ([]LegRow, error) { return nil, nil }
+
+func (w *waitSource) Steps(context.Context, string) ([]StepRow, error) { return nil, nil }
+
+func (w *waitSource) Templates(context.Context, []uint32) ([]TemplateRow, error) { return nil, nil }
+
+func (w *waitSource) Spawns(context.Context, uint32, []uint32) ([]SpawnRow, error) { return nil, nil }
+
+// TestGetStopsWithItsCaller pins the cancellation chain: the caller's context ends the world-database read, and a read the
+// caller abandoned is not cached as a database failure.
+func TestGetStopsWithItsCaller(t *testing.T) {
+	src := &waitSource{seen: make(chan error, 1)}
+	src.wait.Store(true)
+	srv := NewService(src)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := srv.Get(ctx, "onyxias_lair")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Get = %v, want the caller's deadline", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Get waited for a read its caller had given up on")
+	}
+	if err := <-src.seen; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("the read saw %v, want the caller's deadline", err)
+	}
+	src.wait.Store(false)
+	if p, err := srv.Get(context.Background(), "onyxias_lair"); err != nil || p == nil {
+		t.Fatalf("Get after the cancelled read = %v, %v; the cancellation was cached", p, err)
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -54,14 +56,15 @@ func (s *Store) dayFiles() []dayFile {
 		}
 		for _, e := range entries {
 			name := e.Name()
-			if e.IsDir() || !strings.HasSuffix(name, ".jsonl") || !validDay(strings.TrimSuffix(name, ".jsonl")) {
+			day := dayOfFile(name)
+			if e.IsDir() || day == "" {
 				continue
 			}
 			info, err := e.Info()
 			if err != nil {
 				continue
 			}
-			out = append(out, dayFile{path: filepath.Join(dir, name), day: strings.TrimSuffix(name, ".jsonl"), size: info.Size()})
+			out = append(out, dayFile{path: filepath.Join(dir, name), day: day, size: info.Size()})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -71,6 +74,27 @@ func (s *Store) dayFiles() []dayFile {
 		return out[i].path < out[j].path
 	})
 	return out
+}
+
+// dayOfFile is the day a day file belongs to, from <day>.jsonl or its fallback <day>-<n>.jsonl; "" means not a day file.
+func dayOfFile(name string) string {
+	base := strings.TrimSuffix(name, ".jsonl")
+	if !strings.HasSuffix(name, ".jsonl") || len(base) < len(dayShape) || !validDay(base[:len(dayShape)]) {
+		return ""
+	}
+	day, rest := base[:len(dayShape)], base[len(dayShape):]
+	if rest == "" {
+		return day
+	}
+	if rest[0] != '-' || len(rest) < 2 {
+		return ""
+	}
+	for i := 1; i < len(rest); i++ {
+		if rest[i] < '0' || rest[i] > '9' {
+			return ""
+		}
+	}
+	return day
 }
 
 // rotate deletes every day file older than the configured days and the index rows that pointed at them. A file exactly Days days
@@ -162,11 +186,7 @@ func (s *Store) run() {
 	var pending []Item
 	for {
 		pending = s.drain(pending)
-		for len(pending) > 0 && !s.cfg.Now().Before(s.dueAt(pending[0])) {
-			it := pending[0]
-			pending = pending[1:]
-			s.write(it)
-		}
+		pending = s.writeDue(pending)
 		var timerC <-chan time.Time
 		var timer *time.Timer
 		if len(pending) > 0 {
@@ -179,14 +199,11 @@ func (s *Store) run() {
 		}
 		select {
 		case it := <-s.q:
+			s.unflushed.Add(1)
 			pending = append(pending, it)
 		case fc := <-s.flush:
 			pending = s.drain(pending)
-			for len(pending) > 0 && !s.cfg.Now().Before(s.dueAt(pending[0])) {
-				it := pending[0]
-				pending = pending[1:]
-				s.write(it)
-			}
+			pending = s.writeDue(pending)
 			close(fc)
 		case <-timerC:
 		case <-s.quit:
@@ -195,7 +212,11 @@ func (s *Store) run() {
 			}
 			pending = s.drain(pending)
 			for _, it := range pending {
-				s.write(it)
+				// A shutdown deadline that passed mid-write leaves the rest unwritten, which is what Close reports.
+				if !s.write(it) {
+					return
+				}
+				s.unflushed.Add(-1)
 			}
 			return
 		}
@@ -205,11 +226,24 @@ func (s *Store) run() {
 	}
 }
 
+// writeDue writes every pending fight whose six-second wait is over, oldest first.
+func (s *Store) writeDue(pending []Item) []Item {
+	for len(pending) > 0 && !s.cfg.Now().Before(s.dueAt(pending[0])) {
+		if !s.write(pending[0]) {
+			return pending
+		}
+		pending = pending[1:]
+		s.unflushed.Add(-1)
+	}
+	return pending
+}
+
 // drain moves every queued fight into the writer's pending list: a flush must see a fight whose Enqueue has already returned.
 func (s *Store) drain(pending []Item) []Item {
 	for {
 		select {
 		case it := <-s.q:
+			s.unflushed.Add(1)
 			pending = append(pending, it)
 		default:
 			return pending
@@ -221,8 +255,12 @@ func (s *Store) drain(pending []Item) []Item {
 func (s *Store) dueAt(it Item) time.Time { return it.At.Add(WriteDelay) }
 
 // write stores one fight: pack and non-tank numbers first (both services outside this store's lock), then the caps, the append
-// and the index row.
-func (s *Store) write(it Item) {
+// and the index row. False means the shutdown deadline cancelled the writer before the fight was stored: it stays counted as
+// unflushed.
+func (s *Store) write(it Item) bool {
+	if s.ctx.Err() != nil {
+		return false
+	}
 	now := s.cfg.Now()
 	if now.Sub(s.lastRotate) >= time.Hour {
 		s.rotate(s.dayFiles(), now)
@@ -231,13 +269,18 @@ func (s *Store) write(it Item) {
 	dir := filepath.Join(s.cfg.Dir, DirName(f.Commander))
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		log.Printf("[History] %s: %v", dir, err)
-		return
+		return true
 	}
-	path := filepath.Join(dir, dayOf(f.Start)+".jsonl")
+	day := dayOf(f.Start)
+	path := s.dayPath(dir, day)
 
 	pack := 0
 	if s.pack != nil {
-		pack = s.pack(f.Plan, f)
+		pack = s.pack(s.ctx, f.Plan, f)
+	}
+	// The lookup above is the slow one (the world database); the deadline may have passed inside it.
+	if s.ctx.Err() != nil {
+		return false
 	}
 	var ntMs, longest *int64
 	if s.lanes != nil {
@@ -253,7 +296,7 @@ func (s *Store) write(it Item) {
 	data, err := json.Marshal(stored)
 	if err != nil {
 		log.Printf("[History] %s: %v", key, err)
-		return
+		return true
 	}
 	data = append(data, '\n')
 
@@ -261,30 +304,98 @@ func (s *Store) write(it Item) {
 	if size+int64(len(data)) > s.cfg.MaxFileBytes {
 		s.logOnce(path, "the day file is full; later fights of that day are not kept")
 		s.dropped("file_cap")
-		return
+		return true
 	}
 	// Room is made before the append: a day file that cannot be deleted stays on disk, and counting it as gone would let the
 	// store grow past its cap while the file is never retried.
 	if s.total+int64(len(data)) > s.cfg.MaxBytes && !s.enforceTotal(path, int64(len(data))) {
 		s.logCap(now)
 		s.dropped("total_cap")
-		return
+		return true
 	}
-	fh, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	n, err, unusable := s.appendLine(path, size, data)
 	if err != nil {
 		log.Printf("[History] %s: %v", path, err)
-		return
-	}
-	n, err := fh.Write(data)
-	fh.Close()
-	if err != nil || n != len(data) {
-		log.Printf("[History] %s: %v", path, err)
-		return
+		if unusable {
+			s.abandon(dir, day)
+		}
+		return true
 	}
 	s.fileSize[path] = size + int64(n)
 	s.total += int64(n)
 	s.appendRow(rowOf(stored, path, size, n))
 	s.written()
+	return true
+}
+
+// dayPath is the file a day's fights go to: <day>.jsonl, or the fallback that replaced one that cannot be appended to.
+func (s *Store) dayPath(dir, day string) string {
+	path := filepath.Join(dir, day+".jsonl")
+	if alt, ok := s.alt[path]; ok {
+		return alt
+	}
+	return path
+}
+
+// appendLine appends one line behind the file's known size. A short or failed write is truncated back to that size, so the next
+// line never lands behind a fragment and the whole file stays readable. unusable reports that even the truncate failed: nothing
+// more may be appended to this file.
+func (s *Store) appendLine(path string, size int64, data []byte) (int, error, bool) {
+	fh, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return 0, err, false
+	}
+	n, err := s.writeFn(fh, data)
+	if cerr := fh.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil && n == len(data) {
+		return n, nil, false
+	}
+	if err == nil {
+		err = io.ErrShortWrite
+	}
+	// The anchor is the pre-append size, or the file's real end when something shrank it under the store: truncating up to a
+	// stale size would fill the gap with NUL bytes.
+	anchor := size
+	if info, serr := os.Stat(path); serr == nil && info.Size() < anchor {
+		anchor = info.Size()
+	}
+	if terr := s.truncate(path, anchor); terr != nil {
+		return n, fmt.Errorf("%w (cannot undo the partial line: %v)", err, terr), true
+	}
+	return n, err, false
+}
+
+// abandon gives up on a day file that holds a fragment nothing can remove: it takes the file's real size from disk (the
+// truncate failed, so the store's idea of it is off) and sends that day's later fights to a fresh file beside it.
+func (s *Store) abandon(dir, day string) {
+	canonical := filepath.Join(dir, day+".jsonl")
+	broken := s.dayPath(dir, day)
+	size := s.fileSize[broken]
+	if info, err := os.Stat(broken); err == nil {
+		size = info.Size()
+	}
+	s.total += size - s.fileSize[broken]
+	s.fileSize[broken] = size
+	alt := s.newDayPath(dir, day)
+	s.alt[canonical] = alt
+	s.dropped("file_broken")
+	log.Printf("[History] %s: unrecoverable partial line; that day's later fights go to %s", broken, alt)
+}
+
+// newDayPath is the first free <day>-<n>.jsonl beside the day's own file.
+func (s *Store) newDayPath(dir, day string) string {
+	for n := 1; ; n++ {
+		path := filepath.Join(dir, fmt.Sprintf("%s-%d.jsonl", day, n))
+		if _, ok := s.fileSize[path]; ok {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+		return path
+	}
 }
 
 // appendRow files one index row; a duplicate key or a full index is dropped without a log line (the counter carries it).
@@ -333,7 +444,10 @@ func (s *Store) oldestFile(keep string, skip map[string]bool) string {
 		if path == keep || skip[path] {
 			continue
 		}
-		day := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+		day := dayOfFile(filepath.Base(path))
+		if day == "" {
+			day = filepath.Base(path)
+		}
 		if best == "" || day < bestDay || (day == bestDay && path < best) {
 			best, bestDay = path, day
 		}

@@ -8,6 +8,7 @@
 package plans
 
 import (
+	"context"
 	"database/sql"
 	_ "embed"
 	"encoding/json"
@@ -144,11 +145,11 @@ type TemplateRow struct {
 // Source is the read side of the world database the builder needs. All
 // queries filter one plan (or a set of creature entries) with ? arguments.
 type Source interface {
-	Plan(name string) (PlanRow, bool, error)
-	Legs(name string) ([]LegRow, error)
-	Steps(name string) ([]StepRow, error) // ORDER BY leg, seq
-	Templates(entries []uint32) ([]TemplateRow, error)
-	Spawns(mapID uint32, entries []uint32) ([]SpawnRow, error)
+	Plan(ctx context.Context, name string) (PlanRow, bool, error)
+	Legs(ctx context.Context, name string) ([]LegRow, error)
+	Steps(ctx context.Context, name string) ([]StepRow, error) // ORDER BY leg, seq
+	Templates(ctx context.Context, entries []uint32) ([]TemplateRow, error)
+	Spawns(ctx context.Context, mapID uint32, entries []uint32) ([]SpawnRow, error)
 }
 
 // Wire types of GET /api/v1/plans/{plan}.
@@ -304,19 +305,19 @@ func round2(v float64) float64 { return math.Round(v*100) / 100 }
 // Build turns one plan's rows into the wire shape. Rows the module refuses
 // (unknown kind, bad entries list) are dropped and never numbered. Mobs are
 // matched by 3D distance to the pull/boss step that names their entry.
-func Build(src Source, name string) (*Plan, error) {
-	row, found, err := src.Plan(name)
+func Build(ctx context.Context, src Source, name string) (*Plan, error) {
+	row, found, err := src.Plan(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
 		return nil, ErrNotFound
 	}
-	legs, err := src.Legs(name)
+	legs, err := src.Legs(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := src.Steps(name)
+	rows, err := src.Steps(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -384,14 +385,14 @@ func Build(src Source, name string) (*Plan, error) {
 
 	templates := map[uint32]TemplateRow{}
 	if len(set) > 0 {
-		tmplRows, err := src.Templates(set)
+		tmplRows, err := src.Templates(ctx, set)
 		if err != nil {
 			return nil, err
 		}
 		for _, t := range tmplRows {
 			templates[t.Entry] = t
 		}
-		spawns, err := src.Spawns(row.Map, set)
+		spawns, err := src.Spawns(ctx, row.Map, set)
 		if err != nil {
 			return nil, err
 		}
@@ -506,10 +507,10 @@ func NewSQLSource(db *sql.DB) Source { return &sqlSource{db: db} }
 
 type sqlSource struct{ db *sql.DB }
 
-func (s *sqlSource) Plan(name string) (PlanRow, bool, error) {
+func (s *sqlSource) Plan(ctx context.Context, name string) (PlanRow, bool, error) {
 	var r PlanRow
 	var source, comment sql.NullString
-	err := s.db.QueryRow(QueryPlan, name).Scan(&r.Plan, &r.Map, &source, &comment)
+	err := s.db.QueryRowContext(ctx, QueryPlan, name).Scan(&r.Plan, &r.Map, &source, &comment)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PlanRow{}, false, nil
 	}
@@ -520,8 +521,8 @@ func (s *sqlSource) Plan(name string) (PlanRow, bool, error) {
 	return r, true, nil
 }
 
-func (s *sqlSource) Legs(name string) ([]LegRow, error) {
-	rows, err := s.db.Query(QueryLegs, name)
+func (s *sqlSource) Legs(ctx context.Context, name string) ([]LegRow, error) {
+	rows, err := s.db.QueryContext(ctx, QueryLegs, name)
 	if err != nil {
 		return nil, err
 	}
@@ -537,8 +538,8 @@ func (s *sqlSource) Legs(name string) ([]LegRow, error) {
 	return out, rows.Err()
 }
 
-func (s *sqlSource) Steps(name string) ([]StepRow, error) {
-	rows, err := s.db.Query(QuerySteps, name)
+func (s *sqlSource) Steps(ctx context.Context, name string) ([]StepRow, error) {
+	rows, err := s.db.QueryContext(ctx, QuerySteps, name)
 	if err != nil {
 		return nil, err
 	}
@@ -556,7 +557,7 @@ func (s *sqlSource) Steps(name string) ([]StepRow, error) {
 	return out, rows.Err()
 }
 
-func (s *sqlSource) Templates(entries []uint32) ([]TemplateRow, error) {
+func (s *sqlSource) Templates(ctx context.Context, entries []uint32) ([]TemplateRow, error) {
 	if len(entries) == 0 {
 		return nil, nil
 	}
@@ -564,7 +565,7 @@ func (s *sqlSource) Templates(entries []uint32) ([]TemplateRow, error) {
 	for i, e := range entries {
 		args[i] = e
 	}
-	rows, err := s.db.Query(fmt.Sprintf(QueryTemplates, inMarks(len(entries))), args...)
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(QueryTemplates, inMarks(len(entries))), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +583,7 @@ func (s *sqlSource) Templates(entries []uint32) ([]TemplateRow, error) {
 	return out, rows.Err()
 }
 
-func (s *sqlSource) Spawns(mapID uint32, entries []uint32) ([]SpawnRow, error) {
+func (s *sqlSource) Spawns(ctx context.Context, mapID uint32, entries []uint32) ([]SpawnRow, error) {
 	if len(entries) == 0 {
 		return nil, nil
 	}
@@ -591,7 +592,7 @@ func (s *sqlSource) Spawns(mapID uint32, entries []uint32) ([]SpawnRow, error) {
 	for _, e := range entries {
 		args = append(args, e)
 	}
-	rows, err := s.db.Query(fmt.Sprintf(QuerySpawns, inMarks(len(entries))), args...)
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(QuerySpawns, inMarks(len(entries))), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -607,9 +608,11 @@ func (s *sqlSource) Spawns(mapID uint32, entries []uint32) ([]SpawnRow, error) {
 	return out, rows.Err()
 }
 
-// OpenWorld opens the small pool the plan reads use on the world database.
+// OpenWorld opens the small pool the plan reads use on the world database. The driver's own read and write timeouts bound a
+// query the server stops answering, so a stuck read cannot outlive its caller's patience (the fight history's writer closes on
+// a deadline).
 func OpenWorld(host string, port int, user, pass, db string) (*sql.DB, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?timeout=5s&parseTime=false", user, pass, host, port, db)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?timeout=5s&readTimeout=10s&writeTimeout=10s&parseTime=false", user, pass, host, port, db)
 	conn, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open world database: %w", err)
@@ -661,8 +664,9 @@ func (s *Service) SetClock(now func() time.Time) {
 
 // Get answers from the cache, else builds the plan outside the lock (a slow world database read must not block the other
 // plans), one build per name. A failure is kept for PlanErrorTTL and a miss for PlanMissTTL, so a page drawing maps at 30 fps
-// does not query a broken or empty database on every draw.
-func (s *Service) Get(name string) (*Plan, error) {
+// does not query a broken or empty database on every draw. ctx cancels the wait and the build's own reads, so a caller that
+// stops needing the plan (a closed request, a shutting-down writer) is not held by a slow database.
+func (s *Service) Get(ctx context.Context, name string) (*Plan, error) {
 	s.mu.Lock()
 	// The paths are built into every plan, so a changed patrol file drops the
 	// whole cache; the check itself is at most once a minute.
@@ -676,11 +680,19 @@ func (s *Service) Get(name string) (*Plan, error) {
 	}
 	if w, ok := s.inflight[name]; ok {
 		s.mu.Unlock()
-		<-w.done
+		select {
+		case <-w.done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 		if w.plan == nil && w.err == nil {
 			return nil, errBuildAborted
 		}
 		return w.plan, w.err
+	}
+	if err := ctx.Err(); err != nil {
+		s.mu.Unlock()
+		return nil, err
 	}
 	w := &buildWaiter{done: make(chan struct{})}
 	s.inflight[name] = w
@@ -700,15 +712,20 @@ func (s *Service) Get(name string) (*Plan, error) {
 				s.put(name, &cacheEntry{plan: p, expires: now.Add(PlanCacheTTL)})
 			case errors.Is(err, ErrNotFound):
 				s.put(name, &cacheEntry{err: ErrNotFound, expires: now.Add(PlanMissTTL)})
-			case err != nil:
+			case err != nil && !canceled(err):
 				s.put(name, &cacheEntry{err: err, expires: now.Add(PlanErrorTTL)})
 			}
 			s.mu.Unlock()
 			close(w.done)
 		}()
-		p, err = Build(s.src, name)
+		p, err = Build(ctx, s.src, name)
 	}()
 	return p, err
+}
+
+// canceled reports a read the caller stopped waiting for: it says nothing about the world database, so it is not cached.
+func canceled(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 var errBuildAborted = errors.New("plan build aborted")
@@ -745,7 +762,7 @@ func Handler(s *Service) http.HandlerFunc {
 			_, _ = w.Write([]byte(`{"error":"world database unavailable"}`))
 			return
 		}
-		p, err := s.Get(name)
+		p, err := s.Get(r.Context(), name)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)

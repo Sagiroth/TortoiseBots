@@ -5,6 +5,7 @@ package history
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"tortoise-observability/internal/combat"
@@ -116,9 +118,12 @@ type line struct {
 // belongs to the writer goroutine alone, which also runs the rotation.
 type Store struct {
 	cfg    Config
-	pack   func(plan string, f combat.Fight) int
+	pack   func(ctx context.Context, plan string, f combat.Fight) int
 	lanes  func(commander string, f combat.Fight) (int64, int64, bool)
 	remove func(path string) error
+	// writeFn and truncate are the file operations the append does; the defaults are the real ones.
+	writeFn  func(f *os.File, p []byte) (int, error)
+	truncate func(path string, size int64) error
 
 	metricsMu sync.RWMutex
 	metrics   Metrics
@@ -134,18 +139,29 @@ type Store struct {
 	once  sync.Once
 	wg    sync.WaitGroup
 
+	// ctx is the writer's context: valid until a shutdown deadline passes, so a lookup in flight at the deadline is
+	// cancelled instead of holding the process open.
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	closeMu sync.RWMutex
 	closed  bool
+
+	// unflushed counts the fights the writer has taken but not written; leftUnflushed is what Close's deadline reported, so
+	// a second Close answers the same.
+	unflushed     atomic.Int64
+	leftUnflushed int
 
 	total      int64
 	fileSize   map[string]int64
 	skipped    map[string]bool
+	alt        map[string]string
 	lastRotate time.Time
 	lastCapLog time.Time
 }
 
 // Open prepares the directory, rebuilds the index from the day files (newest first), deletes expired days and starts the writer.
-func Open(cfg Config, pack func(plan string, f combat.Fight) int, lanes func(commander string, f combat.Fight) (int64, int64, bool)) (*Store, error) {
+func Open(cfg Config, pack func(ctx context.Context, plan string, f combat.Fight) int, lanes func(commander string, f combat.Fight) (int64, int64, bool)) (*Store, error) {
 	cfg = withDefaults(cfg)
 	if cfg.Dir == "" {
 		return nil, errors.New("no history directory")
@@ -158,10 +174,14 @@ func Open(cfg Config, pack func(plan string, f combat.Fight) int, lanes func(com
 		pack:     pack,
 		lanes:    lanes,
 		remove:   os.Remove,
+		writeFn:  func(f *os.File, p []byte) (int, error) { return f.Write(p) },
+		truncate: os.Truncate,
 		byKey:    make(map[string]int),
 		fileSize: make(map[string]int64),
 		skipped:  make(map[string]bool),
+		alt:      make(map[string]string),
 	}
+	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.lastRotate = cfg.Now()
 	if err := s.load(); err != nil {
 		return nil, err
@@ -284,18 +304,39 @@ func (s *Store) Enqueue(it Item) bool {
 	}
 }
 
-// Close drains the queue, writes what is pending and stops the writer.
-func (s *Store) Close() {
+// Close drains the queue, writes what is pending and stops the writer, waiting at most until ctx is done. A writer stuck in a
+// lookup (the world database) must not hold a shutdown open: at the deadline its lookups are cancelled, the fights still
+// unwritten are logged and counted, and Close returns how many there were.
+func (s *Store) Close(ctx context.Context) int {
 	if s == nil {
-		return
+		return 0
 	}
 	s.once.Do(func() {
 		s.closeMu.Lock()
 		s.closed = true
 		close(s.quit)
 		s.closeMu.Unlock()
-		s.wg.Wait()
+		drained := make(chan struct{})
+		go func() {
+			s.wg.Wait()
+			close(drained)
+		}()
+		select {
+		case <-drained:
+			return
+		case <-ctx.Done():
+		}
+		s.cancel()
+		s.leftUnflushed = s.unflushedLeft()
+		log.Printf("[History] shutdown deadline: %d fights could not be flushed", s.leftUnflushed)
 	})
+	return s.leftUnflushed
+}
+
+// unflushedLeft is what the writer had not written when Close's deadline passed: the fights it took plus the ones still
+// queued. Enqueue is already refused, so nothing new arrives.
+func (s *Store) unflushedLeft() int {
+	return int(s.unflushed.Load()) + len(s.q)
 }
 
 // Flush writes every pending fight that is due and returns: the tests' way to run the writer against a fake clock.

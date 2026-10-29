@@ -1,6 +1,8 @@
 package history
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -73,12 +76,12 @@ func mkFight(id, commander string, start int64) combat.Fight {
 
 func open(t *testing.T, cfg Config) *Store {
 	t.Helper()
-	s, err := Open(cfg, func(plan string, f combat.Fight) int { return 0 },
+	s, err := Open(cfg, func(context.Context, string, combat.Fight) int { return 0 },
 		func(commander string, f combat.Fight) (int64, int64, bool) { return 0, 0, false })
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(s.Close)
+	t.Cleanup(func() { s.Close(context.Background()) })
 	return s
 }
 
@@ -145,14 +148,14 @@ func TestReopenRebuildsIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliver(t, s, clock, Item{Session: 3, Fight: mkFight("f1", "Glacienne", t0.Unix()-60), At: clock.Now()})
-	s.Close()
+	s.Close(context.Background())
 
 	clock2 := &fakeClock{t: t0.Add(time.Minute)}
 	s2, err := Open(Config{Dir: dir, Now: clock2.Now}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s2.Close()
+	defer s2.Close(context.Background())
 	rows := s2.List("Glacienne", "2026-10-28")
 	if len(rows) != 1 {
 		t.Fatalf("rows after reopen = %+v", rows)
@@ -176,14 +179,14 @@ func TestDaysRotation(t *testing.T) {
 			t.Fatal(err)
 		}
 		deliver(t, s, clock, Item{Session: 1, Fight: mkFight("f-"+day.Format("2006-01-02"), "Glacienne", day.Unix()-60), At: clock.Now()})
-		s.Close()
+		s.Close(context.Background())
 	}
 	clock := &fakeClock{t: t0}
 	s, err := Open(Config{Dir: dir, Now: clock.Now}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer s.Close(context.Background())
 	days := s.Days("Glacienne")
 	if len(days) != 1 || days[0].Day != "2026-09-28" {
 		t.Fatalf("Days after rotation = %+v, want only the day exactly %d days old", days, HistoryDays)
@@ -209,7 +212,7 @@ func TestTotalCapDeletesOldestDay(t *testing.T) {
 			t.Fatal(err)
 		}
 		deliver(t, s, clock, Item{Session: 1, Fight: mkFight(c.id, "Glacienne", clock.Now().Unix()-60), At: clock.Now()})
-		s.Close()
+		s.Close(context.Background())
 	}
 	oldPath := filepath.Join(dir, DirName("Glacienne"), "2026-10-26.jsonl")
 	midPath := filepath.Join(dir, DirName("Glacienne"), "2026-10-27.jsonl")
@@ -227,7 +230,7 @@ func TestTotalCapDeletesOldestDay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer s.Close(context.Background())
 	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("new", "Glacienne", clock.Now().Unix()-60), At: clock.Now()})
 	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
 		t.Fatalf("the oldest day file survived the total cap: %v", err)
@@ -251,7 +254,7 @@ func TestFailedTrimKeepsTheFileAndDropsNewWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliver(t, s, oldClock, Item{Session: 1, Fight: mkFight("old", "Glacienne", oldClock.Now().Unix()-60), At: oldClock.Now()})
-	s.Close()
+	s.Close(context.Background())
 	oldPath := filepath.Join(dir, DirName("Glacienne"), "2026-10-26.jsonl")
 	info, err := os.Stat(oldPath)
 	if err != nil {
@@ -264,7 +267,7 @@ func TestFailedTrimKeepsTheFileAndDropsNewWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s2.Close()
+	defer s2.Close(context.Background())
 	s2.remove = func(string) error { return errors.New("device busy") }
 	s2.SetMetrics(st)
 
@@ -300,7 +303,7 @@ func TestFileCapSkips(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("f1", "Glacienne", t0.Unix()-60), At: clock.Now()})
-	s.Close()
+	s.Close(context.Background())
 	path := filepath.Join(dir, DirName("Glacienne"), "2026-10-28.jsonl")
 	info, err := os.Stat(path)
 	if err != nil {
@@ -313,7 +316,7 @@ func TestFileCapSkips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s2.Close()
+	defer s2.Close(context.Background())
 	s2.SetMetrics(st)
 	deliver(t, s2, clock2, Item{Session: 1, Fight: mkFight("f2", "Glacienne", t0.Unix()-30), At: clock2.Now()})
 	rows := s2.List("Glacienne", "2026-10-28")
@@ -338,7 +341,7 @@ func TestQueueFullDrops(t *testing.T) {
 	release := make(chan struct{})
 	st := &stats{dropped: map[string]int{}}
 	s, err := Open(Config{Dir: t.TempDir(), Now: clock.Now},
-		func(plan string, f combat.Fight) int {
+		func(_ context.Context, _ string, f combat.Fight) int {
 			select {
 			case entered <- struct{}{}:
 			default:
@@ -349,7 +352,7 @@ func TestQueueFullDrops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer s.Close(context.Background())
 	s.SetMetrics(st)
 	if !s.Enqueue(Item{Session: 1, Fight: mkFight("block", "Glacienne", t0.Unix()-60), At: t0.Add(-time.Minute)}) {
 		t.Fatal("the first Enqueue was refused")
@@ -377,7 +380,7 @@ func TestBrokenLineSkipped(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("f1", "Glacienne", t0.Unix()-60), At: clock.Now()})
-	s.Close()
+	s.Close(context.Background())
 	path := filepath.Join(dir, DirName("Glacienne"), "2026-10-28.jsonl")
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
@@ -393,7 +396,7 @@ func TestBrokenLineSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s2.Close()
+	defer s2.Close(context.Background())
 	s2.SetMetrics(st)
 	if rows := s2.List("Glacienne", "2026-10-28"); len(rows) != 1 {
 		t.Fatalf("rows = %+v, want the one good line", rows)
@@ -423,11 +426,11 @@ func TestPackKeyRules(t *testing.T) {
 	clock := &fakeClock{t: t0}
 	packs := map[string]int{"boss": 29, "step": 0, "planboss": 0, "engaged": 0, "none": 0}
 	s, err := Open(Config{Dir: t.TempDir(), Now: clock.Now},
-		func(plan string, f combat.Fight) int { return packs[f.ID] }, nil)
+		func(_ context.Context, _ string, f combat.Fight) int { return packs[f.ID] }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer s.Close(context.Background())
 	mk := func(id, plan string, boss uint32, step uint32, engaged ...uint32) combat.Fight {
 		f := mkFight(id, "Glacienne", t0.Unix()-60)
 		f.Plan, f.Boss, f.Step, f.Engaged = plan, boss, step, nil
@@ -484,7 +487,7 @@ func TestWriterWaitsForFrames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer s.Close(context.Background())
 	if !s.Enqueue(Item{Session: 1, Fight: mkFight("f1", "Glacienne", t0.Unix()-60), At: t0}) {
 		t.Fatal("Enqueue refused")
 	}
@@ -586,11 +589,11 @@ func TestPackRouteBadInput(t *testing.T) {
 
 func TestPackRouteRows(t *testing.T) {
 	clock := &fakeClock{t: t0}
-	s, err := Open(Config{Dir: t.TempDir(), Now: clock.Now}, func(plan string, f combat.Fight) int { return 21 }, nil)
+	s, err := Open(Config{Dir: t.TempDir(), Now: clock.Now}, func(context.Context, string, combat.Fight) int { return 21 }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer s.Close(context.Background())
 	f1 := mkFight("f1", "Glacienne", t0.Unix()-120)
 	f1.Deaths = []combat.FightDeath{{Name: "Tank"}}
 	deliver(t, s, clock, Item{Session: 1, Fight: f1, Warnings: 2, At: clock.Now()})
@@ -632,7 +635,7 @@ func TestPackRouteRows(t *testing.T) {
 func TestEnqueueDoesNotBlock(t *testing.T) {
 	clock := &fakeClock{t: t0}
 	started := make(chan struct{}, 1)
-	s, err := Open(Config{Dir: t.TempDir(), Now: clock.Now}, func(plan string, f combat.Fight) int {
+	s, err := Open(Config{Dir: t.TempDir(), Now: clock.Now}, func(_ context.Context, _ string, f combat.Fight) int {
 		select {
 		case started <- struct{}{}:
 		default:
@@ -643,7 +646,7 @@ func TestEnqueueDoesNotBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer s.Close(context.Background())
 	first := make(chan bool, 1)
 	go func() {
 		first <- s.Enqueue(Item{Session: 1, Fight: mkFight("f1", "Glacienne", t0.Unix()-60), At: t0.Add(-time.Minute)})
@@ -670,12 +673,12 @@ func TestEnqueueDoesNotBlock(t *testing.T) {
 func TestConcurrentReaders(t *testing.T) {
 	clock := &fakeClock{t: t0}
 	dir := t.TempDir()
-	s, err := Open(Config{Dir: dir, Now: clock.Now}, func(plan string, f combat.Fight) int { return 21 },
+	s, err := Open(Config{Dir: dir, Now: clock.Now}, func(context.Context, string, combat.Fight) int { return 21 },
 		func(commander string, f combat.Fight) (int64, int64, bool) { return 1000, 1000, true })
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer s.Close(context.Background())
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
 	for range 3 {
@@ -709,5 +712,182 @@ func TestConcurrentReaders(t *testing.T) {
 	wg.Wait()
 	if rows := s.List("Glacienne", "2026-10-28"); len(rows) != 40 {
 		t.Fatalf("%d rows, want 40", len(rows))
+	}
+}
+
+// TestCloseReturnsAtTheDeadline pins the shutdown bound: a pack lookup that never returns (a hung world-database read) must not
+// hold the process open, and Close reports the fight it left unwritten.
+func TestCloseReturnsAtTheDeadline(t *testing.T) {
+	clock := &fakeClock{t: t0}
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	s, err := Open(Config{Dir: t.TempDir(), Now: clock.Now},
+		func(_ context.Context, _ string, _ combat.Fight) int {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-release
+			return 0
+		}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Released only after the bound below: a Close that waits for the writer takes those two seconds and fails.
+	time.AfterFunc(2*time.Second, func() { close(release) })
+	if !s.Enqueue(Item{Session: 1, Fight: mkFight("f1", "Glacienne", t0.Unix()-60), At: t0.Add(-time.Minute)}) {
+		t.Fatal("Enqueue refused")
+	}
+	<-entered // the writer is inside the lookup
+	deadline, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	began := time.Now()
+	left := s.Close(deadline)
+	if waited := time.Since(began); waited > time.Second {
+		t.Fatalf("Close waited %v for a stuck lookup, want the deadline", waited)
+	}
+	if left != 1 {
+		t.Fatalf("Close reported %d unflushed fights, want 1", left)
+	}
+}
+
+// TestCloseCancelsTheWriterLookup: the lookup gets the writer's context, so the deadline releases it instead of leaving a
+// goroutine behind on the world database.
+func TestCloseCancelsTheWriterLookup(t *testing.T) {
+	clock := &fakeClock{t: t0}
+	entered := make(chan struct{}, 1)
+	observed := make(chan error, 1)
+	s, err := Open(Config{Dir: t.TempDir(), Now: clock.Now},
+		func(ctx context.Context, _ string, _ combat.Fight) int {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-ctx.Done()
+			observed <- ctx.Err()
+			return 0
+		}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Enqueue(Item{Session: 1, Fight: mkFight("f1", "Glacienne", t0.Unix()-60), At: t0.Add(-time.Minute)}) {
+		t.Fatal("Enqueue refused")
+	}
+	<-entered
+	deadline, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if left := s.Close(deadline); left != 1 {
+		t.Fatalf("Close reported %d unflushed fights, want 1", left)
+	}
+	select {
+	case err := <-observed:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("lookup context ended with %v, want a cancelled writer", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the lookup was not cancelled at the deadline: the writer stays on the database read")
+	}
+}
+
+// TestShortAppendIsTruncated pins the repair: a write that stops halfway leaves a fragment, and the next fight must not be glued
+// to it.
+func TestShortAppendIsTruncated(t *testing.T) {
+	dir := t.TempDir()
+	clock := &fakeClock{t: t0}
+	s, err := Open(Config{Dir: dir, Now: clock.Now}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(context.Background())
+	var short atomic.Bool
+	short.Store(true)
+	s.writeFn = func(f *os.File, p []byte) (int, error) {
+		if short.Load() {
+			return f.Write(p[:len(p)/2])
+		}
+		return f.Write(p)
+	}
+	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("half", "Glacienne", t0.Unix()-120), At: clock.Now()})
+	short.Store(false)
+	deliver(t, s, clock, Item{Session: 2, Fight: mkFight("whole", "Glacienne", t0.Unix()-60), At: clock.Now()})
+
+	path := filepath.Join(dir, DirName("Glacienne"), "2026-10-28.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := bytes.Count(data, []byte("\n")); n != 1 {
+		t.Fatalf("the file holds %d lines, want the one whole line: %q", n, data)
+	}
+	var ln line
+	if err := json.Unmarshal(bytes.TrimSuffix(data, []byte("\n")), &ln); err != nil {
+		t.Fatalf("the line is not whole: %q: %v", data, err)
+	}
+	if ln.Fight.ID != "whole" {
+		t.Fatalf("line = %q, want the fight after the fragment", ln.Fight.ID)
+	}
+	if rows := s.List("Glacienne", "2026-10-28"); len(rows) != 1 || rows[0].ID != "whole" {
+		t.Fatalf("rows = %+v, want only the whole fight", rows)
+	}
+
+	s.Close(context.Background())
+	s2, err := Open(Config{Dir: dir, Now: clock.Now}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close(context.Background())
+	if rows := s2.List("Glacienne", "2026-10-28"); len(rows) != 1 || rows[0].ID != "whole" {
+		t.Fatalf("rows after reopen = %+v, want the whole fight", rows)
+	}
+}
+
+// TestUnrepairableAppendStartsANewFile: when even the truncate fails, that day's later fights go to a fresh file beside the
+// broken one, the broken one is counted once, and a restart indexes both.
+func TestUnrepairableAppendStartsANewFile(t *testing.T) {
+	dir := t.TempDir()
+	clock := &fakeClock{t: t0}
+	s, err := Open(Config{Dir: dir, Now: clock.Now}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(context.Background())
+	st := &stats{dropped: map[string]int{}}
+	s.SetMetrics(st)
+	s.writeFn = func(*os.File, []byte) (int, error) { return 0, errors.New("no space left on device") }
+	s.truncate = func(string, int64) error { return errors.New("read-only file system") }
+	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("lost", "Glacienne", t0.Unix()-120), At: clock.Now()})
+	if got := st.get("file_broken"); got != 1 {
+		t.Fatalf("file_broken = %d, want 1", got)
+	}
+
+	s.writeFn = func(f *os.File, p []byte) (int, error) { return f.Write(p) }
+	s.truncate = os.Truncate
+	deliver(t, s, clock, Item{Session: 2, Fight: mkFight("kept", "Glacienne", t0.Unix()-60), At: clock.Now()})
+
+	commanderDir := filepath.Join(dir, DirName("Glacienne"))
+	alt := filepath.Join(commanderDir, "2026-10-28-1.jsonl")
+	data, err := os.ReadFile(alt)
+	if err != nil {
+		t.Fatalf("the day's later fight did not go to a new file: %v", err)
+	}
+	var ln line
+	if err := json.Unmarshal(bytes.TrimSuffix(data, []byte("\n")), &ln); err != nil || ln.Fight.ID != "kept" {
+		t.Fatalf("fallback file = %q (%v), want the kept fight", data, err)
+	}
+	if info, err := os.Stat(filepath.Join(commanderDir, "2026-10-28.jsonl")); err != nil || info.Size() != 0 {
+		t.Errorf("the abandoned file changed: %v, %d bytes", err, info.Size())
+	}
+	if rows := s.List("Glacienne", "2026-10-28"); len(rows) != 1 || rows[0].ID != "kept" {
+		t.Fatalf("rows = %+v, want only the kept fight", rows)
+	}
+
+	s.Close(context.Background())
+	s2, err := Open(Config{Dir: dir, Now: clock.Now}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close(context.Background())
+	if rows := s2.List("Glacienne", "2026-10-28"); len(rows) != 1 || rows[0].ID != "kept" {
+		t.Fatalf("rows after reopen = %+v, want the fallback's fight", rows)
 	}
 }
