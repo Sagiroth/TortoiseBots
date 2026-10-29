@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,9 +14,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -388,10 +392,6 @@ func main() {
 	}
 	if err := udpListener.Start(); err != nil {
 		log.Fatalf("Failed to start UDP listener: %v", err)
-	}
-	defer udpListener.Stop()
-	if historyStore != nil {
-		defer historyStore.Close()
 	}
 
 	// The live stream's gauge and dropped counter for Prometheus; a once-a-
@@ -985,9 +985,47 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	// A container restart sends SIGTERM (Ctrl+C, SIGINT): without a handler the process would die and lose the fights still
+	// waiting in the history writer.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := serve(ctx, server, udpListener, historyStore); err != nil {
 		log.Fatalf("HTTP server failed: %v", err)
 	}
+}
+
+// shutdownTimeout bounds the HTTP drain (an open SSE stream may never go idle; the rest of the shutdown still runs).
+const shutdownTimeout = 5 * time.Second
+
+// shutdown stops the daemon in the order that keeps a finished fight: the HTTP server first (no new requests), then UDP
+// ingestion (and waits for its read loop, so nothing enqueues afterwards), then the history writer, whose Close writes what is
+// still queued. Every step tolerates a second call.
+func shutdown(server *http.Server, udpListener *udp.Listener, fights *history.Store) {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("[HTTP] Shutdown: %v", err)
+		_ = server.Close()
+	}
+	udpListener.Stop()
+	fights.Close()
+}
+
+// serve runs the HTTP server until it fails or ctx is cancelled, then shuts everything down and returns the server's error.
+func serve(ctx context.Context, server *http.Server, udpListener *udp.Listener, fights *history.Store) error {
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.ListenAndServe() }()
+	var err error
+	select {
+	case err = <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+	case <-ctx.Done():
+		log.Printf("[HTTP] Stopping on %v", ctx.Err())
+	}
+	shutdown(server, udpListener, fights)
+	return err
 }
 
 // logoutHandler ends the session. Logout is POST-only: a GET or HEAD must not

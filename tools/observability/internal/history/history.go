@@ -115,9 +115,10 @@ type line struct {
 // Store is the index plus the writer. rows and byKey sit under mu; the writer's bookkeeping (total, fileSize, skipped, rotate)
 // belongs to the writer goroutine alone, which also runs the rotation.
 type Store struct {
-	cfg   Config
-	pack  func(plan string, f combat.Fight) int
-	lanes func(commander string, f combat.Fight) (int64, int64, bool)
+	cfg    Config
+	pack   func(plan string, f combat.Fight) int
+	lanes  func(commander string, f combat.Fight) (int64, int64, bool)
+	remove func(path string) error
 
 	metricsMu sync.RWMutex
 	metrics   Metrics
@@ -133,10 +134,14 @@ type Store struct {
 	once  sync.Once
 	wg    sync.WaitGroup
 
+	closeMu sync.RWMutex
+	closed  bool
+
 	total      int64
 	fileSize   map[string]int64
 	skipped    map[string]bool
 	lastRotate time.Time
+	lastCapLog time.Time
 }
 
 // Open prepares the directory, rebuilds the index from the day files (newest first), deletes expired days and starts the writer.
@@ -152,6 +157,7 @@ func Open(cfg Config, pack func(plan string, f combat.Fight) int, lanes func(com
 		cfg:      cfg,
 		pack:     pack,
 		lanes:    lanes,
+		remove:   os.Remove,
 		byKey:    make(map[string]int),
 		fileSize: make(map[string]int64),
 		skipped:  make(map[string]bool),
@@ -260,8 +266,15 @@ func fnv1a(s string) uint32 {
 	return h
 }
 
-// Enqueue hands one fight to the writer. False means the queue was full and the fight was dropped (and counted).
+// Enqueue hands one fight to the writer. False means the fight was not kept: the queue was full, or the store is closed (a
+// shutdown drops what still arrives instead of writing into a writer that is gone).
 func (s *Store) Enqueue(it Item) bool {
+	s.closeMu.RLock()
+	defer s.closeMu.RUnlock()
+	if s.closed {
+		s.dropped("closed")
+		return false
+	}
 	select {
 	case s.q <- it:
 		return true
@@ -277,7 +290,10 @@ func (s *Store) Close() {
 		return
 	}
 	s.once.Do(func() {
+		s.closeMu.Lock()
+		s.closed = true
 		close(s.quit)
+		s.closeMu.Unlock()
 		s.wg.Wait()
 	})
 }

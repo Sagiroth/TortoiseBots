@@ -214,7 +214,7 @@ The daemon provides selected admin-relevant HTTP REST endpoints under `/api/v1`:
 
 Activity counters are periodically saved to `activity-state.json` so statistics persist across daemon restarts.
 
-The fight history keeps fights for 30 days in `--fight-history-dir` (env `TBDASH_FIGHT_HISTORY_DIR`, default `<dir of --activity-state-file>/fight-history`, empty disables), one `<commander>/<YYYY-MM-DD>.jsonl` per commander per night, at most 256 MiB in all.
+The fight history keeps fights for 30 days in `--fight-history-dir` (env `TBDASH_FIGHT_HISTORY_DIR`, default `<dir of --activity-state-file>/fight-history`, empty disables), one `<commander>/<YYYY-MM-DD>.jsonl` per commander per night, at most 256 MiB in all. A normal stop (SIGTERM, Ctrl+C — including a container restart) writes the fights still waiting before the daemon exits.
 
 <details>
 <summary>Agent maps API details</summary>

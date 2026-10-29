@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 	"time"
 	"tortoise-observability/internal/combat"
 	"tortoise-observability/internal/history"
@@ -42,6 +43,8 @@ type Listener struct {
 	history    HistorySink
 	forwards   []*forwardTarget
 	stopChan   chan struct{}
+	stopOnce   sync.Once
+	wg         sync.WaitGroup
 }
 
 // SetCombatStore wires the fight store the COMBAT_FIGHT case files into.
@@ -90,20 +93,27 @@ func (l *Listener) Start() error {
 
 	log.Printf("[UDP] Listening for TortoiseBots telemetry on %s", l.addr)
 
+	l.wg.Add(2)
 	go l.readLoop()
 	go l.janitorLoop()
 	return nil
 }
 
+// Stop shuts ingestion down and waits for it: once Stop returns, no datagram is in flight and nothing can enqueue a fight any
+// more. It is safe to call twice.
 func (l *Listener) Stop() {
-	close(l.stopChan)
-	if l.conn != nil {
-		_ = l.conn.Close()
-	}
-	l.closeForwards()
+	l.stopOnce.Do(func() {
+		close(l.stopChan)
+		if l.conn != nil {
+			_ = l.conn.Close()
+		}
+		l.closeForwards()
+	})
+	l.wg.Wait()
 }
 
 func (l *Listener) readLoop() {
+	defer l.wg.Done()
 	buf := make([]byte, 65535)
 
 	for {
@@ -142,6 +152,7 @@ func (l *Listener) readLoop() {
 // refreshed by a snapshot, incomplete cycles, and the online/offline edge.
 // It also re-broadcasts the roster when eviction changed it.
 func (l *Listener) janitorLoop() {
+	defer l.wg.Done()
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 

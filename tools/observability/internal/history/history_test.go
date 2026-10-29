@@ -2,6 +2,7 @@ package history
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -237,6 +238,57 @@ func TestTotalCapDeletesOldestDay(t *testing.T) {
 	days := s.Days("Glacienne")
 	if len(days) != 2 || days[0].Day != "2026-10-28" || days[1].Day != "2026-10-27" {
 		t.Fatalf("Days = %+v, want the new and the 27th day", days)
+	}
+}
+
+// TestFailedTrimKeepsTheFileAndDropsNewWrites pins the cap's accounting: a day file the retention pass cannot delete stays on
+// disk and in the store's accounting, and while the store is over its cap with nothing removable new fights are refused.
+func TestFailedTrimKeepsTheFileAndDropsNewWrites(t *testing.T) {
+	dir := t.TempDir()
+	oldClock := &fakeClock{t: t0.AddDate(0, 0, -2)}
+	s, err := Open(Config{Dir: dir, Now: oldClock.Now}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliver(t, s, oldClock, Item{Session: 1, Fight: mkFight("old", "Glacienne", oldClock.Now().Unix()-60), At: oldClock.Now()})
+	s.Close()
+	oldPath := filepath.Join(dir, DirName("Glacienne"), "2026-10-26.jsonl")
+	info, err := os.Stat(oldPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clock := &fakeClock{t: t0}
+	st := &stats{dropped: map[string]int{}}
+	s2, err := Open(Config{Dir: dir, MaxBytes: info.Size() + 1, Now: clock.Now}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	s2.remove = func(string) error { return errors.New("device busy") }
+	s2.SetMetrics(st)
+
+	deliver(t, s2, clock, Item{Session: 1, Fight: mkFight("new", "Glacienne", t0.Unix()-60), At: clock.Now()})
+	if _, err := os.Stat(oldPath); err != nil {
+		t.Fatalf("the failed trim removed the file anyway: %v", err)
+	}
+	if rows := s2.List("Glacienne", "2026-10-26"); len(rows) != 1 {
+		t.Errorf("the failed trim dropped the index rows: %+v", rows)
+	}
+	if rows := s2.List("Glacienne", "2026-10-28"); len(rows) != 0 {
+		t.Errorf("a fight was written past the total cap: %+v", rows)
+	}
+	if got := st.get("total_cap"); got != 1 {
+		t.Errorf("total_cap drops = %d, want 1", got)
+	}
+
+	// The store still counts the file it could not delete, so the next fight is refused too instead of growing past the cap.
+	deliver(t, s2, clock, Item{Session: 1, Fight: mkFight("newer", "Glacienne", t0.Unix()-30), At: clock.Now()})
+	if rows := s2.List("Glacienne", "2026-10-28"); len(rows) != 0 {
+		t.Errorf("the second fight was written past the total cap: %+v", rows)
+	}
+	if got := st.get("total_cap"); got != 2 {
+		t.Errorf("total_cap drops = %d, want 2", got)
 	}
 }
 

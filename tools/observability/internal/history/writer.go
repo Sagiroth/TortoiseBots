@@ -32,7 +32,7 @@ func (s *Store) load() error {
 	for _, f := range files {
 		s.scan(f)
 	}
-	s.enforceTotal("")
+	s.enforceTotal("", 0)
 	return nil
 }
 
@@ -81,7 +81,7 @@ func (s *Store) rotate(files []dayFile, now time.Time) {
 		if f.day >= cutoff {
 			continue
 		}
-		if err := os.Remove(f.path); err != nil {
+		if err := s.remove(f.path); err != nil {
 			log.Printf("[History] rotating %s: %v", f.path, err)
 			continue
 		}
@@ -263,6 +263,13 @@ func (s *Store) write(it Item) {
 		s.dropped("file_cap")
 		return
 	}
+	// Room is made before the append: a day file that cannot be deleted stays on disk, and counting it as gone would let the
+	// store grow past its cap while the file is never retried.
+	if s.total+int64(len(data)) > s.cfg.MaxBytes && !s.enforceTotal(path, int64(len(data))) {
+		s.logCap(now)
+		s.dropped("total_cap")
+		return
+	}
 	fh, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		log.Printf("[History] %s: %v", path, err)
@@ -278,7 +285,6 @@ func (s *Store) write(it Item) {
 	s.total += int64(n)
 	s.appendRow(rowOf(stored, path, size, n))
 	s.written()
-	s.enforceTotal(path)
 }
 
 // appendRow files one index row; a duplicate key or a full index is dropped without a log line (the counter carries it).
@@ -296,30 +302,35 @@ func (s *Store) appendRow(row Row) {
 	s.rows = append(s.rows, row)
 }
 
-// enforceTotal deletes whole day files, the oldest day first across commanders, until the store fits its byte cap. keep is the
-// file just written and is never the one deleted.
-func (s *Store) enforceTotal(keep string) {
-	for s.total > s.cfg.MaxBytes {
-		path := s.oldestFile(keep)
+// enforceTotal deletes whole day files, the oldest day first across commanders, until the store plus extra fits its byte cap.
+// keep is the file about to be written and is never the one deleted. A file that cannot be deleted keeps its size and index
+// rows: it is still on disk, and a later pass may free it. False means nothing more could be freed.
+func (s *Store) enforceTotal(keep string, extra int64) bool {
+	tried := map[string]bool{}
+	for s.total+extra > s.cfg.MaxBytes {
+		path := s.oldestFile(keep, tried)
 		if path == "" {
-			return
+			return false
 		}
-		size := s.fileSize[path]
-		if err := os.Remove(path); err != nil {
+		tried[path] = true
+		if err := s.remove(path); err != nil {
 			log.Printf("[History] trimming %s: %v", path, err)
+			continue
 		}
-		s.total -= size
+		s.total -= s.fileSize[path]
 		delete(s.fileSize, path)
 		delete(s.skipped, path)
 		s.dropRowsOf(path)
 	}
+	return true
 }
 
-// oldestFile is the oldest day file on record, the plan-path order breaking same-day ties.
-func (s *Store) oldestFile(keep string) string {
+// oldestFile is the oldest day file on record, the plan-path order breaking same-day ties; skip holds the files this pass
+// already tried to delete.
+func (s *Store) oldestFile(keep string, skip map[string]bool) string {
 	best, bestDay := "", ""
 	for path := range s.fileSize {
-		if path == keep {
+		if path == keep || skip[path] {
 			continue
 		}
 		day := strings.TrimSuffix(filepath.Base(path), ".jsonl")
@@ -328,6 +339,15 @@ func (s *Store) oldestFile(keep string) string {
 		}
 	}
 	return best
+}
+
+// logCap reports a stalled total cap at most once a minute: with nothing left to delete, every write would otherwise log.
+func (s *Store) logCap(now time.Time) {
+	if now.Sub(s.lastCapLog) < time.Minute {
+		return
+	}
+	s.lastCapLog = now
+	log.Printf("[History] over the %d MiB total cap and nothing can be deleted; later fights are not kept", s.cfg.MaxBytes>>20)
 }
 
 // dropRowsOf forgets every index row of one deleted file.
