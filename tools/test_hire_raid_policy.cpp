@@ -445,6 +445,44 @@ static void TestBoundSeatRecheck()
     CHECK(HireSeatModeFor(false) == HireSeatMode::Normal);
 }
 
+// C6: on release a seat hire still mustering is cancelled (with refund) first; the trim then counts the rest.
+static void TestReleasePlan()
+{
+    uint32_t const cap = HireMaxCompanions(39, false);
+    // 39 joined hires plus one seat hire still mustering (the newest).
+    std::vector<ReleaseHire> hires;
+    for (uint64_t n = 1; n <= 39; ++n)
+        hires.push_back({ n, false });
+    hires.push_back({ 40, true });
+    ReleasePlan plan = PlanBindingRelease(hires, cap);
+    CHECK(plan.cancel.size() == 1 && plan.cancel[0] == 39);
+    CHECK(plan.dismiss.empty()); // nobody else leaves
+    CHECK(hires.size() - plan.cancel.size() - plan.dismiss.size() == 39);
+
+    // The mustering seat hire is not the newest: still cancelled, and nobody joined is dismissed.
+    hires.clear();
+    hires.push_back({ 1, true });
+    for (uint64_t n = 2; n <= 40; ++n)
+        hires.push_back({ n, false });
+    plan = PlanBindingRelease(hires, cap);
+    CHECK(plan.cancel.size() == 1 && plan.cancel[0] == 0);
+    CHECK(plan.dismiss.empty());
+
+    // 40 joined: the newest joined leaves by the normal dismiss, nothing is cancelled.
+    hires.clear();
+    for (uint64_t n = 1; n <= 40; ++n)
+        hires.push_back({ (n * 17) % 41, false });
+    plan = PlanBindingRelease(hires, cap);
+    CHECK(plan.cancel.empty() && plan.dismiss.size() == 1 && hires[plan.dismiss[0]].hireOrder == 40);
+
+    // 40 joined and one mustering seat hire: the mustering one is cancelled and the newest joined dismissed.
+    hires.push_back({ 41, true });
+    plan = PlanBindingRelease(hires, cap);
+    CHECK(plan.cancel.size() == 1 && plan.cancel[0] == 40);
+    CHECK(plan.dismiss.size() == 1 && hires[plan.dismiss[0]].hireOrder == 40 && !hires[plan.dismiss[0]].musteringSeat);
+    CHECK(PlanBindingRelease({}, cap).cancel.empty());
+}
+
 int main()
 {
     TestRoleCounts();
@@ -457,6 +495,7 @@ int main()
     TestBoundRaidSeat();
     TestSurplusOnRelease();
     TestBoundSeatRecheck();
+    TestReleasePlan();
     std::printf("hire raid policy: %d checks passed\n", checks);
     return 0;
 }

@@ -165,8 +165,9 @@ private:
     // hire's group, so the hire is over. Pure-rule wrapper (HireDeparturePolicy.h).
     bool MasterLeftGroup(HiredRecord const& record) const;
     void Reunite(HiredRecord& record, Player* master);
-    // C6 H1: a commander whose binding ends hires as a player again: the companions above the ordinary limit
-    // (the 40th of a bound raid) are dismissed, the most recently hired first, as `.bot remove` does.
+    // C6 H1: a commander whose binding ends hires as a player again: his bound-raid seat hires still mustering
+    // are cancelled with refund first, then the companions above the ordinary limit (the 40th of a bound raid)
+    // are dismissed, the most recently hired first, as `.bot remove` does.
     void DismissSurplusAfterBinding(ObjectGuid commanderGuid);
     void SweepGracePeriod(time_t now);
 

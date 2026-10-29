@@ -159,6 +159,12 @@ public:
     // Live hired companions owned by master (grace-period resilient).
     uint32_t CountHired(Player* master) const;
 
+    // C6: the hire is a bound-raid seat still mustering (charged for a bound raid, not joined yet).
+    bool IsMusteringSeatHire(ObjectGuid botGuid) const;
+    // C6: the binding it was hired for was released: cancel that mustering seat hire (character deleted, fee
+    // refunded; CancelBoundSeatHire). The pending entry goes on the next Update. No-op for any other hire.
+    void CancelMusteringSeatHire(ObjectGuid botGuid, std::string const& why);
+
     // Issue #490 PR 2: highest gear tier the player may hire at (start tier
     // or highest rewarded unlock quest). One small lookup per page/command.
     static uint8_t HighestUnlockedHireTierFor(Player* player);
@@ -219,6 +225,9 @@ public:
     // C6: a bound-raid seat hire that may not join: the hire ends (its character is deleted, as a dismiss) and
     // the fee goes back to the master (in hand, or by mail when he is offline). A hire already ended is left.
     void CancelBoundSeatHire(PendingProvision const& pending, std::string const& why);
+    // C6: rechecks a seat hire (RecheckBoundSeat) against its binding now; true when it was cancelled.
+    // False for a normal hire or one already joined. master is online.
+    bool SeatHireCancelled(Player* bot, Player* master, PendingProvision& pending);
     static void SnapshotKnownSpells(Player* bot, std::vector<uint32_t>& out);
     static void DropPendingLevelupEcho(PlayerbotAI* ai);
     static void AnnounceIntro(Player* bot, Player* master, PendingProvision& pending);

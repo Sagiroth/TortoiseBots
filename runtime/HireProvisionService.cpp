@@ -1108,6 +1108,17 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
 
     auto start = std::chrono::steady_clock::now();
 
+    // C6: a seat hire whose binding already changed is cancelled before the heavy pass, not after it. The
+    // recheck before the join below stays: later ticks retry only the join.
+    if (masterOnline && SeatHireCancelled(bot, master, pending))
+        return true;
+    if (!masterOnline && HireNeedsSeatRecheck(pending.seatMode, pending.boundSeatJoined))
+    {
+        // A seat hire whose commander went offline cannot join now, and the grace path would group it with him
+        // as an ordinary hire: cancelled instead.
+        CancelBoundSeatHire(pending, "you went offline before it arrived");
+        return true;
+    }
     if (!pending.provisioned)
     {
         ProvisionHeavy(bot, pending, ai, masterOnline ? master : nullptr);
@@ -1146,28 +1157,8 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         // commander is still outside its group, a seat is free and he is within the 40. Anything changed (an
         // unbind, he joined the group, another hire took the last seat): the hire is cancelled, never grouped
         // with him instead.
-        if (HireNeedsSeatRecheck(pending.seatMode, pending.boundSeatJoined))
-        {
-            BotCommands::BoundRaidFacts const boundRaid = BotCommands::BoundRaidOf(master);
-            BoundSeatNow now;
-            now.commanderGuid = master->GetObjectGuid().GetRawValue();
-            now.commanderOnline = true;
-            now.bound = boundRaid.bound;
-            now.leadGuid = boundRaid.leadGuid;
-            now.groupId = boundRaid.groupId;
-            now.commanderInGroup = boundRaid.commanderInGroup;
-            now.members = boundRaid.members;
-            Group* const botGroup = bot->GetGroup();
-            now.botInGroup = boundRaid.bound && botGroup && botGroup->GetId() == boundRaid.groupId;
-            now.owned = CountHired(master);
-            now.configMax = sPlayerbotAIConfig.hireMaxBotsPerPlayer;
-            BoundSeatCheck const check = RecheckBoundSeat(pending.seatGrant, now);
-            if (check.verdict == BoundSeatVerdict::Cancel)
-            {
-                CancelBoundSeatHire(pending, check.reason);
-                return true;
-            }
-        }
+        if (SeatHireCancelled(bot, master, pending))
+            return true;
         if (intoBoundRaid ? !BotCommands::JoinBoundRaid(master, bot) : !Reunite(bot, master))
         {
             sLog.outError("TortoiseBots: hired bot %s could not join master %s after provisioning",
@@ -1193,13 +1184,6 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         TB_LOG_BASIC("TortoiseBots: hired companion %s (level %u role %u) joined %s (provision %lldms, total %lldms)",
             bot->GetName(), bot->GetLevel(), forcedRole, master->GetName(),
             (long long)provisionElapsedMs, (long long)totalElapsedMs);
-    }
-    else if (HireNeedsSeatRecheck(pending.seatMode, pending.boundSeatJoined))
-    {
-        // C6: a bound-raid seat whose commander went offline cannot join now, and the grace path would group
-        // it with him as an ordinary hire: cancelled instead.
-        CancelBoundSeatHire(pending, "you went offline before it arrived");
-        return true;
     }
     else
     {
@@ -1382,6 +1366,50 @@ bool HireProvisionService::Reunite(Player* bot, Player* master)
     if (!EnsureGrouped(master, bot))
         return false;
     return bot->IsInSameRaidWith(master);
+}
+
+bool HireProvisionService::SeatHireCancelled(Player* bot, Player* master, PendingProvision& pending)
+{
+    if (!HireNeedsSeatRecheck(pending.seatMode, pending.boundSeatJoined))
+        return false;
+    BotCommands::BoundRaidFacts const boundRaid = BotCommands::BoundRaidOf(master);
+    BoundSeatNow now;
+    now.commanderGuid = master->GetObjectGuid().GetRawValue();
+    now.commanderOnline = true;
+    now.bound = boundRaid.bound;
+    now.leadGuid = boundRaid.leadGuid;
+    now.groupId = boundRaid.groupId;
+    now.commanderInGroup = boundRaid.commanderInGroup;
+    now.members = boundRaid.members;
+    Group* const botGroup = bot->GetGroup();
+    now.botInGroup = boundRaid.bound && botGroup && botGroup->GetId() == boundRaid.groupId;
+    now.owned = CountHired(master);
+    now.configMax = sPlayerbotAIConfig.hireMaxBotsPerPlayer;
+    BoundSeatCheck const check = RecheckBoundSeat(pending.seatGrant, now);
+    if (check.verdict != BoundSeatVerdict::Cancel)
+        return false;
+    CancelBoundSeatHire(pending, check.reason);
+    return true;
+}
+
+bool HireProvisionService::IsMusteringSeatHire(ObjectGuid botGuid) const
+{
+    for (PendingProvision const& pending : m_pending)
+        if (pending.botGuid == botGuid)
+            return HireNeedsSeatRecheck(pending.seatMode, pending.boundSeatJoined);
+    return false;
+}
+
+void HireProvisionService::CancelMusteringSeatHire(ObjectGuid botGuid, std::string const& why)
+{
+    // Not erased here: the release can run from inside Update's walk over m_pending (a dismissed bot's logout);
+    // the entry of a hire that ended is dropped there on the next pass.
+    for (PendingProvision const& pending : m_pending)
+        if (pending.botGuid == botGuid && HireNeedsSeatRecheck(pending.seatMode, pending.boundSeatJoined))
+        {
+            CancelBoundSeatHire(pending, why);
+            return;
+        }
 }
 
 void HireProvisionService::CancelBoundSeatHire(PendingProvision const& pending, std::string const& why)

@@ -121,6 +121,41 @@ inline std::vector<size_t> PickSurplusHires(std::vector<uint64_t> const& hireOrd
     return leave;
 }
 
+// C6: what a binding's release does with the commander's hires. A bound-raid seat hire still mustering (not
+// joined yet) is cancelled first, its fee refunded (HireProvisionService::CancelBoundSeatHire); only then are
+// the rest counted, and the newest above the ordinary limit are dismissed (PickSurplusHires, no refund).
+struct ReleaseHire
+{
+    uint64_t hireOrder = 0;
+    bool musteringSeat = false; // a bound-raid seat hire that has not joined the raid
+};
+
+struct ReleasePlan
+{
+    std::vector<size_t> cancel;  // indexes into the hires: cancelled with refund, first
+    std::vector<size_t> dismiss; // then dismissed, newest first
+};
+
+inline ReleasePlan PlanBindingRelease(std::vector<ReleaseHire> const& hires, uint32_t ordinaryCap)
+{
+    ReleasePlan plan;
+    std::vector<size_t> kept;
+    std::vector<uint64_t> keptOrder;
+    for (size_t i = 0; i < hires.size(); ++i)
+    {
+        if (hires[i].musteringSeat)
+            plan.cancel.push_back(i);
+        else
+        {
+            kept.push_back(i);
+            keptOrder.push_back(hires[i].hireOrder);
+        }
+    }
+    for (size_t index : PickSurplusHires(keptOrder, ordinaryCap))
+        plan.dismiss.push_back(kept[index]);
+    return plan;
+}
+
 // C6 H2: how a hire was authorized. A bound-raid seat is a hire of a bound raid's commander standing outside
 // its group (it may be his 40th): it joins only that binding's raid, never a party with the commander.
 enum class HireSeatMode : uint8_t

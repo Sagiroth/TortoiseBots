@@ -243,21 +243,32 @@ void HireLifecycle::DismissSurplusAfterBinding(ObjectGuid commanderGuid)
 {
     if (commanderGuid.IsEmpty())
         return;
-    // Every hire he owns counts, live or still mustering (a hire is claimed before it musters).
+    // Only once the binding is gone (ReleaseBinding unbinds before EndCommand): an EndCommand while a raid
+    // binding still stands (a refused second bind) leaves its 40th seat alone.
+    if (BotCommands::HasCommanderBinding(commanderGuid.GetRawValue()))
+        return;
+    // Every hire he owns, live or still mustering (a hire is claimed before it musters).
     std::vector<ObjectGuid> owned;
-    std::vector<uint64_t> order;
+    std::vector<ReleaseHire> hires;
+    HireProvisionService const& provision = HireProvisionService::Instance();
     for (auto const& kv : m_hired)
         if (kv.second.masterGuid == commanderGuid)
         {
             owned.push_back(kv.second.botGuid);
-            order.push_back(kv.second.hireOrder);
+            ReleaseHire hire;
+            hire.hireOrder = kv.second.hireOrder;
+            hire.musteringSeat = provision.IsMusteringSeatHire(kv.second.botGuid);
+            hires.push_back(hire);
         }
     uint32_t const cap = HireMaxCompanions(sPlayerbotAIConfig.hireMaxBotsPerPlayer, false);
-    std::vector<size_t> const leave = PickSurplusHires(order, cap);
-    if (leave.empty())
+    ReleasePlan const plan = PlanBindingRelease(hires, cap);
+    // First the seat hires still mustering: cancelled as a failed hire, the fee refunded.
+    for (size_t index : plan.cancel)
+        HireProvisionService::Instance().CancelMusteringSeatHire(owned[index], "your raid binding ended before it arrived");
+    if (plan.dismiss.empty())
         return;
     std::string names;
-    for (size_t index : leave)
+    for (size_t index : plan.dismiss)
     {
         ObjectGuid const guid = owned[index];
         std::string name;
@@ -268,7 +279,7 @@ void HireLifecycle::DismissSurplusAfterBinding(ObjectGuid commanderGuid)
         DismissNow(guid, "bound raid ended above the companion limit");
     }
     TB_LOG_BASIC("TortoiseBots: commander %s's raid binding ended with %u companions over the limit of %u: %s dismissed",
-        commanderGuid.GetString().c_str(), static_cast<uint32>(leave.size()), cap, names.c_str());
+        commanderGuid.GetString().c_str(), static_cast<uint32>(plan.dismiss.size()), cap, names.c_str());
     Player* master = sObjectAccessor.FindPlayer(commanderGuid);
     if (master && master->IsInWorld() && master->GetSession())
         ChatHandler(master).PSendSysMessage("%s left: your bound raid ended and outside one you command at most %u companions.",
