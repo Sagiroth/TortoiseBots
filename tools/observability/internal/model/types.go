@@ -775,6 +775,19 @@ type CommanderBot struct {
 	// Raid, from a module that reports it (both absent from a party bot or an older module).
 	Sub  *int `json:"sub,omitempty"`  // the raid subgroup 0-7
 	Away bool `json:"away,omitempty"` // off the run's gather rule or the plan's map
+	// The ready check's facts, from a module that reports them (absent from an older one).
+	Ready *CommanderReady `json:"rdy,omitempty"`
+}
+
+// CommanderReady is what one bot brings to a ready check: the raid buffs it has (b), the consumables it has (c), and its
+// key cooldowns (two minutes or longer): how many are ready (cr) out of how many it knows (cn), and the longest time left
+// among the not-ready ones in seconds (cl, absent when 0).
+type CommanderReady struct {
+	B  uint32 `json:"b"`
+	C  uint32 `json:"c"`
+	CR uint8  `json:"cr"`
+	CN uint8  `json:"cn"`
+	CL uint32 `json:"cl,omitempty"`
 }
 
 // CommanderOrder is one order of the commander and the module's answer.

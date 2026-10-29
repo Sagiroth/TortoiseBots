@@ -6362,8 +6362,19 @@
     return null;
   }
 
-  // The plan's layers: its route and stands, and the rings (part of the aggro layer). With every one of them off nothing of the
-  // plan reaches the map, so its overlay is not rebuilt on each draw.
+  // The plan a card's pieces read without fetching: the one the run walks (the ready check wants the stand ahead of the run's
+  // step), once the plan layer fetched it, and only while it is for the map the bots stand on. Null when there is nothing to
+  // read yet (the ready check then skips the stand rules).
+  function cmdPlanFor(bind) {
+    const name = (bind && bind.run && bind.run.plan) || cmdPlanName(bind);
+    const plan = name ? (cmdPlans[name] || {}).plan : null;
+    const bots = (bind && bind.bots) || [];
+    const lead = bots.find(b => b && b.lead) || bots[0] || null;
+    return plan && lead && plan.map === lead.map ? plan : null;
+  }
+
+  // The plan's layers: its route and stands, and the rings (part of the aggro layer). With every one of them off nothing of
+  // the plan reaches the map, so its overlay is not rebuilt on each draw.
   function cmdPlanWanted() {
     return !!(cmdLayers.planroute || cmdLayers.planstands || cmdLayers.aggro);
   }
@@ -6969,11 +6980,16 @@
     // The debugger: the mode toggle, the fight rail, a tile, a check's show/recap and a timeline skull. Each one redraws the card's
     // sections and its map (the death marks and the ring follow the pick).
     card.addEventListener('click', e => {
-      const t = e.target.closest && e.target.closest('[data-fd-fight], [data-fd-bot], [data-fd-death], [data-fd-profile]');
+      const t = e.target.closest && e.target.closest('[data-fd-fight], [data-fd-bot], [data-fd-death], [data-fd-profile], [data-fd-ready]');
       if (!t) return;
       const fd = cmdFd[key];
       if (!fd) return;
       if (!card.classList.contains('fd-on')) return;
+      if (t.dataset.fdReady != null) {
+        fd.readyOpen = !fd.readyOpen;
+        fdRender(key);
+        return;
+      }
       if (t.dataset.fdProfile != null) {
         const guid = parseInt(t.dataset.fdProfile, 10);
         if (guid > 0) openProfile(guid);
@@ -7258,7 +7274,7 @@
   const cmdFd = {};
 
   function fdState(key) {
-    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, details: {}, failed: {}, loading: false, list: [], tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
+    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, list: [], tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
     return cmdFd[key];
   }
 
@@ -7272,7 +7288,7 @@
     const act = document.activeElement;
     let attr = '', val = '';
     if (act && node.contains(act)) {
-      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile'].some(a => {
+      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-fd-ready'].some(a => {
         if (!act.hasAttribute || !act.hasAttribute(a)) return false;
         attr = a;
         val = act.getAttribute(a);
@@ -7399,7 +7415,9 @@
     if (run) fdRunLoad(card, bind);
 
     const frames = FightDebug.raidFrames(bind);
-    fdSet(card.querySelector('.fd-frames'), fdFramesHtml(frames, fd.bot));
+    const ready = typeof ReadyCheck !== 'undefined' ? ReadyCheck.raid(bind, cmdPlanFor(bind)) : null;
+    if (ready) ready.open = !!fd.readyOpen;
+    fdSet(card.querySelector('.fd-frames'), fdFramesHtml(frames, fd.bot, ready));
     fdSet(card.querySelector('.fd-dead'), ' · ' + fdFrameStats(frames).dead + ' dead');
     fdSet(card.querySelector('.fd-ready'), fdReadyHtml(frames));
     const cards = FightDebug.railCards(list, fd.details, layout);
@@ -7739,17 +7757,33 @@
     fd.run.timer = setTimeout(() => fdRunTick(key), FightReplay.TICK_MS);
   }
 
-  function fdFramesHtml(frames, selBot) {
-    return (frames || []).map(g => {
+  function fdFramesHtml(frames, selBot, ready) {
+    const readyWord = l => l === 'fail' ? 'NOT READY' : l === 'warn' ? 'CHECK' : 'READY';
+    const readyBy = {};
+    ((ready && ready.bots) || []).forEach(r => { if (r && r.name) readyBy[r.name] = r; });
+    let head = '';
+    if (ready) {
+      const c = ready.counts || { ok: 0, warn: 0, fail: 0 }, lvl = ready.lvl || 'ok';
+      const rows = (ready.bots || []).filter(r => r && r.lvl !== 'ok');
+      head = `<div class="fd-readyhead"><button type="button" class="fd-chip l-${esc(lvl)}" data-fd-ready aria-expanded="${ready.open ? 'true' : 'false'}">Ready ${c.ok}/${(ready.bots || []).length}</button>`
+        + `<span class="fd-readysub">${c.warn} check · ${c.fail} not ready${ready.known ? '' : ', buffs unknown (older module)'}</span></div>`;
+      if (ready.open) {
+        head += '<ol class="fd-readylist">' + rows.map(r => `<li class="l-${esc(r.lvl)}"><span class="fd-readynm">${esc(r.name)}</span> ${esc((r.reasons || []).join(', '))}</li>`).join('') + '</ol>';
+      }
+    }
+    return head + (frames || []).map(g => {
       const up = g.tiles.filter(t => t.alive).length;
       return `<div class="fd-grp"><div class="fd-gl">${esc(g.label)} · ${up}/${g.tiles.length}</div>` + g.tiles.map(t => {
         const dead = !t.alive || t.role === 'dead';
         const sel = t.name === selBot;
         const tag = t.tag === 'MT' ? ', main tank' : t.tag === 'OT' ? ', off-tank' : '';
+        const rdy = readyBy[t.name];
+        const rdyLabel = rdy ? 'Ready: ' + readyWord(rdy.lvl) + (rdy.reasons && rdy.reasons.length ? ', ' + rdy.reasons.join(', ') : '') : '';
         const aria = `${t.name}, ${t.cls}, ${t.hpPct}% health${tag}${dead ? ', dead' : ''}`;
         return `<button type="button" class="fd-tile r-${esc(t.role)}${dead ? ' dead' : ''}${sel ? ' sel' : ''}" data-fd-bot="${esc(t.name)}" aria-pressed="${sel ? 'true' : 'false'}" aria-label="${esc(aria)}">`
           + `<span class="fd-fill" style="width:${t.hpPct}%"></span><span class="fd-nm">${esc(t.name)}</span>`
           + (t.tag ? `<span class="fd-tag">${esc(t.tag)}</span>` : '')
+          + (rdy ? `<span class="fd-rdy l-${esc(rdy.lvl)}" aria-label="${esc(rdyLabel)}"></span>` : '')
           + `<span class="fd-pw p-${esc(t.powerKind)}"><i style="width:${t.powerPct}%"></i></span></button>`;
       }).join('') + '</div>';
     }).join('');

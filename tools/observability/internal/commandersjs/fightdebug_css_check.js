@@ -35,13 +35,15 @@ for (const m of js.matchAll(/class="([^"]*)"/g)) {
 assert.ok(emitted.has("fd-fight") && emitted.has("fd-fv") && emitted.has("fd-both") && emitted.has("fd-open"),
   "the builders' fight rail and bot panel classes are seen");
 // The replay row and the aggro lanes are styled in the later Dashboard phase A block, which phase_a_css_check.js keeps complete;
-// a class the app emits with its rule there is covered too.
-const PHASE_A = "/* ---------- Dashboard phase A: plan layer, fight replay, aggro lanes ---------- */";
-const laterAt = css.indexOf(PHASE_A);
-const later = laterAt < 0 ? "" : css.slice(laterAt, (() => {
-  const next = css.indexOf("/* ---------- ", laterAt + PHASE_A.length);
-  return next < 0 ? css.length : next;
-})());
+// the ready check has its own block after it. A class the app emits with its rule there is covered too.
+const blockOf = (head) => {
+  const at = css.indexOf(head);
+  if (at < 0) return "";
+  const next = css.indexOf("/* ---------- ", at + head.length);
+  return css.slice(at, next < 0 ? css.length : next);
+};
+const later = blockOf("/* ---------- Dashboard phase A: plan layer, fight replay, aggro lanes ---------- */")
+  + blockOf("/* ---------- Ready check ---------- */");
 const missing = [...emitted].filter((c) => !new RegExp("\\." + c + "(?![\\w-])").test(block)
   && !new RegExp("\\." + c + "(?![\\w-])").test(later));
 assert.deepStrictEqual(missing, [], "classes without a rule: " + missing.join(", "));

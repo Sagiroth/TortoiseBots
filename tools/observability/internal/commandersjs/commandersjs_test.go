@@ -23,6 +23,18 @@ func TestCommandersJS(t *testing.T) {
 	runCheck(t, "commanders_check.js", "../../web/static/js/commanders.js")
 }
 
+// TestReadyCheckJS runs readycheck_check.js: the ready check's pure rules on the attempt-2 bind of Onyxia's plan (the
+// buff, consumable and key-cooldown facts, the dead, mana and stand rules) and on a party.
+func TestReadyCheckJS(t *testing.T) {
+	runCheck(t, "readycheck_check.js", "../../web/static/js/readycheck.js", "../../web/static/js/commanders.js")
+}
+
+// TestReadyCheckUIJS runs readycheck_ui_check.js: the ready check's markup in app.js (a dot per tile, the frames header
+// and its toggle, the list of the not-ready bots, escaping).
+func TestReadyCheckUIJS(t *testing.T) {
+	runCheck(t, "readycheck_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestMapLayersJS runs maplayers_check.js: the layer defaults, the one global saved choice and which layers have data.
 func TestMapLayersJS(t *testing.T) {
 	runCheck(t, "maplayers_check.js", "../../web/static/js/maplayers.js")

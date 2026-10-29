@@ -3539,3 +3539,22 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-map .mobcast { fill: var(--text-main); font-weight: 600; paint-order: stroke; stroke: var(--bg-app); stroke-linejoin: round; text-anchor: middle; pointer-events: none; }
 .cmd-legend i.facing { display: inline-block; width: 0; height: 0; margin-right: 4px; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 8px solid var(--accent-red); vertical-align: middle; }
 .cmd-legend i.larea { display: inline-block; width: 10px; height: 8px; margin-right: 4px; border: 1px solid var(--accent-red); background: color-mix(in srgb, var(--accent-red) 22%, transparent); vertical-align: middle; }
+
+/* ---------- Ready check ---------- */
+/* The debugger's frames header: how many of the raid are ready, how many need a check and how many are not ready, and on a
+   click the reasons of every bot that is not ready. The same level is a dot on each tile. */
+.fd-readyhead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; grid-column: 1 / -1; margin: 0 0 2px; }
+.fd-readyhead .fd-chip { padding: 3px 8px; font: 600 0.62rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; }
+.fd-readyhead .fd-chip.l-ok { color: var(--fd-ok); border-color: color-mix(in srgb, var(--fd-ok) 45%, transparent); background: color-mix(in srgb, var(--fd-ok) 12%, transparent); }
+.fd-readyhead .fd-chip.l-warn { color: var(--fd-warn); border-color: color-mix(in srgb, var(--fd-warn) 45%, transparent); background: color-mix(in srgb, var(--fd-warn) 12%, transparent); }
+.fd-readyhead .fd-chip.l-fail { color: var(--fd-fail); border-color: color-mix(in srgb, var(--fd-fail) 45%, transparent); background: color-mix(in srgb, var(--fd-fail) 12%, transparent); }
+.fd-readysub { color: var(--text-muted); font-size: 0.72rem; }
+.fd-readylist { grid-column: 1 / -1; list-style: none; display: grid; gap: 2px; margin: 0 0 4px; padding: 0; font-size: 0.76rem; color: var(--text-muted); }
+.fd-readylist li.l-warn { color: var(--fd-warn); }
+.fd-readylist li.l-fail { color: var(--fd-fail); }
+.fd-readynm { margin-right: 6px; font-weight: 600; color: var(--text-main); }
+.fd-tile:has(.fd-rdy) { padding-left: 14px; }
+.fd-rdy { position: absolute; top: 4px; left: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
+.fd-rdy.l-ok { background: var(--fd-ok); }
+.fd-rdy.l-warn { background: var(--fd-warn); }
+.fd-rdy.l-fail { background: var(--fd-fail); }
