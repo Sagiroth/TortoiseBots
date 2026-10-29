@@ -24,6 +24,7 @@
 #include "playerbot/PoolFleePolicy.h"
 #include "playerbot/CastKeepsRunningPolicy.h"
 #include "playerbot/JumpPolicy.h"
+#include "../../../../runtime/policy/movement/WalkModePolicy.h"
 #include "playerbot/MagmaHazardPolicy.h"
 #include "playerbot/SwimPathPolicy.h"
 #include "playerbot/MoveFailNotePolicy.h"
@@ -942,7 +943,14 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 
     mm.Clear();
 
-    ForcedMovement moveMode = masterWalking ? FORCED_MOVEMENT_WALK : FORCED_MOVEMENT_RUN;
+    // A walk flag an action has just set (MoveToRpgTargetAction) must ride this
+    // same dispatch, and a walking bot is never flipped to run here: the core
+    // sends a launch's walk/run change with the pre-launch mode restored last,
+    // so a run spline launched on walk flags leaves watching clients walking
+    // until they reload. Leftover flags are cleared before the next tick's
+    // moves are dispatched (PlayerbotAI::DoNextAction); the master's walking is
+    // mimicked only through the walkDistance gate above.
+    ForcedMovement moveMode = ai::WalkModePolicy::DispatchWalks(masterWalking, bot->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE)) ? FORCED_MOVEMENT_WALK : FORCED_MOVEMENT_RUN;
 
     std::vector<WorldPosition> path = movePath.GetPointPath();
 
