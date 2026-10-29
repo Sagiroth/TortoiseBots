@@ -12652,35 +12652,86 @@ inline bool OffMapReturnTick(Run& r, const Facts& f, std::string& order)
     return false;
 }
 
-// ta252: what the glue must change so the core puts a bot into the lead bot's copy
-// (Player::GetBoundInstanceSaveForSelfOrGroup: a permanent solo bind first, else the group's, else the solo one).
+// ta252: what the glue may change so the core puts a bot into the lead bot's copy. The copy a far teleport enters
+// is Player::GetBoundInstanceSaveForSelfOrGroup's: a permanent solo bind first, else the group's, else the solo one.
+// Round 2 (Codex HIGH, 2026-10-29: a failed rejoin left binds mutated): the core's own entry checks run first (the
+// glue's preflight, enterOk) and nothing is written when they fail; the GROUP's bind is never written (a group bound
+// to another copy refuses); the only write is the bot's own solo bind, when the group has none, and the glue undoes
+// it (PlanRejoinSettle, PlanRejoinRestore) when the bot is not in the lead bot's copy kRejoinArriveMs later.
 struct RejoinBindFacts
 {
-    bool soloBind = false, soloPerm = false, soloIsLeads = false;   // the bot's own bind on the map
-    bool groupBind = false, groupPerm = false, groupIsLeads = false; // its group's bind on the map
-    bool inGroup = false;
+    bool enterOk = false;                                         // the core's entry checks for the lead's copy
+    bool soloBind = false, soloPerm = false, soloIsLeads = false; // the bot's own bind on the map
+    bool groupBind = false, groupIsLeads = false;                 // its group's bind on the map
 };
-struct RejoinBindSteps
+enum class RejoinBindPlan
 {
-    bool locked = false;    // a permanent bind to another copy: refuse
-    bool dropSolo = false;  // Player::UnbindInstance(map)
-    bool bindGroup = false; // Group::BindToInstance(lead's state, !CanReset())
-    bool bindSolo = false;  // Player::BindToInstance(lead's state, !CanReset())
+    EntryRefused,   // the core would refuse the entry: refused, nothing written
+    Locked,         // a permanent solo bind to another copy (a saved lockout): refused, nothing written
+    GroupElsewhere, // the group is bound to another copy: only a group rebind would help, refused, nothing written
+    Teleport,       // the binds already lead into the lead bot's copy: the forced map change only
+    BindSolo,       // the group has no bind: Player::BindToInstance(lead's state, false), undone on a failure
 };
-inline RejoinBindSteps PlanRejoinBind(const RejoinBindFacts& b)
+inline RejoinBindPlan PlanRejoinBind(const RejoinBindFacts& b)
 {
-    RejoinBindSteps s;
-    if ((b.soloBind && b.soloPerm && !b.soloIsLeads) || (b.groupBind && b.groupPerm && !b.groupIsLeads))
-    {
-        s.locked = true;
-        return s;
-    }
-    s.dropSolo = b.soloBind && !b.soloIsLeads;
-    if (b.inGroup)
-        s.bindGroup = !b.groupBind || !b.groupIsLeads;
-    else
-        s.bindSolo = !(b.soloBind && b.soloIsLeads);
-    return s;
+    if (!b.enterOk)
+        return RejoinBindPlan::EntryRefused;
+    if (b.soloBind && b.soloPerm)
+        return b.soloIsLeads ? RejoinBindPlan::Teleport : RejoinBindPlan::Locked;
+    if (b.groupBind)
+        return b.groupIsLeads ? RejoinBindPlan::Teleport : RejoinBindPlan::GroupElsewhere;
+    return RejoinBindPlan::BindSolo;
+}
+inline bool RejoinBindWrites(RejoinBindPlan p)
+{
+    return p == RejoinBindPlan::BindSolo;
+}
+
+// ta252 round 2: a rejoin that wrote the solo bind waits for the bot in the lead bot's copy. TeleportTo returning
+// true does not mean it arrived: the far teleport can still fail later (Player::ExecuteTeleportFar's entry checks,
+// DungeonMap::Add in the worldport ack, then HandleReturnOnTeleportFail). Undone before the run's next try.
+constexpr std::uint32_t kRejoinArriveMs = 10000;
+static_assert(kRejoinArriveMs < kRejoinRepeatMs, "a failed rejoin is undone before the run tries that bot again");
+struct RejoinSettleFacts
+{
+    bool pending = false; // a solo bind the rejoin wrote waits for the arrival
+    bool refused = false; // TeleportTo returned false
+    bool arrived = false; // in the world on the map, in the lead bot's instance id, not teleporting
+    std::uint32_t msSince = 0;
+};
+enum class RejoinSettle { None, Wait, Done, Restore };
+inline RejoinSettle PlanRejoinSettle(const RejoinSettleFacts& s)
+{
+    if (!s.pending)
+        return RejoinSettle::None;
+    if (s.refused)
+        return RejoinSettle::Restore;
+    if (s.arrived)
+        return RejoinSettle::Done;
+    return s.msSince < kRejoinArriveMs ? RejoinSettle::Wait : RejoinSettle::Restore;
+}
+
+// ta252 round 2: the undo of the solo bind a failed rejoin wrote.
+struct RejoinRestoreFacts
+{
+    bool soloIsOurs = false;    // its solo bind is still the one the rejoin wrote (lead's instance id, not permanent)
+    bool hadSolo = false;       // it had a solo bind before (to the other copy)
+    bool oldStateFound = false; // that bind's save still exists (MapPersistentStateManager::GetPersistentState)
+};
+enum class RejoinRestore
+{
+    Unbind,      // it had none: Player::UnbindInstance(map)
+    Rebind,      // Player::BindToInstance(old save, old permanence)
+    KeepOldGone, // the old copy's save is gone: nothing to go back to
+    KeepChanged, // the bind changed since (the core): not ours to undo
+};
+inline RejoinRestore PlanRejoinRestore(const RejoinRestoreFacts& r)
+{
+    if (!r.soloIsOurs)
+        return RejoinRestore::KeepChanged;
+    if (!r.hadSolo)
+        return RejoinRestore::Unbind;
+    return r.oldStateFound ? RejoinRestore::Rebind : RejoinRestore::KeepOldGone;
 }
 
 // ta252: a living bot of the party in another copy of the instance is moved into the lead bot's copy

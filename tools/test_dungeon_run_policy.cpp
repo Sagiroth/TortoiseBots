@@ -18625,27 +18625,65 @@ static void TestOtherCopyFightIsNoPartyFight()
 }
 static void TestPlanRejoinBind()
 {
-    // (a) solo, not permanent, another copy; the group has none: drop the solo bind and bind the group.
-    RejoinBindSteps s = PlanRejoinBind(RejoinBindFacts{true, false, false, false, false, false, true});
-    CHECK(s.dropSolo && s.bindGroup && !s.bindSolo && !s.locked);
-    // (b) no solo bind, the group's is another copy, not permanent: the group's is bound.
-    s = PlanRejoinBind(RejoinBindFacts{false, false, false, true, false, false, true});
-    CHECK(!s.dropSolo && s.bindGroup && !s.bindSolo && !s.locked);
-    // (c) the group is on the lead's copy, the solo bind on another, not permanent: only the solo bind goes.
-    s = PlanRejoinBind(RejoinBindFacts{true, false, false, true, false, true, true});
-    CHECK(s.dropSolo && !s.bindGroup && !s.bindSolo && !s.locked);
-    // (d) a permanent solo bind to another copy: locked.
-    s = PlanRejoinBind(RejoinBindFacts{true, true, false, false, false, false, true});
-    CHECK(s.locked);
-    // (e) a permanent group bind to another copy: locked.
-    s = PlanRejoinBind(RejoinBindFacts{false, false, false, true, true, false, true});
-    CHECK(s.locked);
-    // (f) no group: the solo bind to another copy goes and the lead's solo bind is made.
-    s = PlanRejoinBind(RejoinBindFacts{true, false, false, false, false, false, false});
-    CHECK(s.dropSolo && !s.bindGroup && s.bindSolo && !s.locked);
-    // (g) a permanent solo bind to the lead's copy: nothing to do.
-    s = PlanRejoinBind(RejoinBindFacts{true, true, true, false, false, false, false});
-    CHECK(!s.locked && !s.dropSolo && !s.bindGroup && !s.bindSolo);
+    // ta252 round 2 (Codex HIGH): fields {enterOk, soloBind, soloPerm, soloIsLeads, groupBind, groupIsLeads}.
+    using P = RejoinBindPlan;
+    // (a) the normal case: the group is bound to the lead bot's copy. The group's bind wins over a solo one that is
+    // not permanent (Player::GetBoundInstanceSaveForSelfOrGroup), so nothing is written, the stale solo bind included.
+    CHECK(PlanRejoinBind(RejoinBindFacts{true, true, false, false, true, true}) == P::Teleport);
+    CHECK(PlanRejoinBind(RejoinBindFacts{true, false, false, false, true, true}) == P::Teleport);
+    // (b) the group has no bind (Dire Maul West rf-B-4): only the bot's own solo bind moves.
+    CHECK(PlanRejoinBind(RejoinBindFacts{true, true, false, false, false, false}) == P::BindSolo);
+    CHECK(PlanRejoinBind(RejoinBindFacts{true, false, false, false, false, false}) == P::BindSolo);
+    // (c) the group is bound to another copy: the group's bind would have to change, so it refuses (never rebinds a
+    // party), permanent or not.
+    CHECK(PlanRejoinBind(RejoinBindFacts{true, false, false, false, true, false}) == P::GroupElsewhere);
+    CHECK(PlanRejoinBind(RejoinBindFacts{true, true, false, false, true, false}) == P::GroupElsewhere);
+    // (d) a permanent solo bind to another copy: a saved lockout, refused, also with the group on the lead's copy.
+    CHECK(PlanRejoinBind(RejoinBindFacts{true, true, true, false, true, true}) == P::Locked);
+    CHECK(PlanRejoinBind(RejoinBindFacts{true, true, true, false, false, false}) == P::Locked);
+    // (e) a permanent solo bind to the lead bot's copy: it already wins, nothing is written.
+    CHECK(PlanRejoinBind(RejoinBindFacts{true, true, true, true, false, false}) == P::Teleport);
+    // (f) the preflight (the core's own entry checks) failed: refused before anything else, so no bind is touched.
+    CHECK(PlanRejoinBind(RejoinBindFacts{false, true, false, false, false, false}) == P::EntryRefused);
+    CHECK(PlanRejoinBind(RejoinBindFacts{false, false, false, false, true, true}) == P::EntryRefused);
+    CHECK(PlanRejoinBind(RejoinBindFacts{false, true, true, false, false, false}) == P::EntryRefused);
+    // Only BindSolo writes a bind.
+    CHECK(!RejoinBindWrites(P::EntryRefused) && !RejoinBindWrites(P::Locked) && !RejoinBindWrites(P::GroupElsewhere) &&
+        !RejoinBindWrites(P::Teleport) && RejoinBindWrites(P::BindSolo));
+}
+static void TestRejoinSettle()
+{
+    // ta252 round 2: a rejoin that moved the solo bind is checked until the bot is in the lead bot's copy.
+    // Fields {pending, refused, arrived, msSince}.
+    using S = RejoinSettle;
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{false, false, false, 0}) == S::None);
+    // TeleportTo returned false: undone at once.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, true, false, 0}) == S::Restore);
+    // arrived: nothing to undo.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, true, 300}) == S::Done);
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, true, kRejoinArriveMs + 5000}) == S::Done);
+    // in flight: waits up to kRejoinArriveMs, then undone (the far teleport failed in ExecuteTeleportFar or at the
+    // map's Add, where TeleportTo had already returned true).
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, 0}) == S::Wait);
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, kRejoinArriveMs - 1}) == S::Wait);
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, kRejoinArriveMs}) == S::Restore);
+    // the undo comes before the run's next try of the same bot.
+    CHECK(kRejoinArriveMs < kRejoinRepeatMs);
+}
+static void TestRejoinRestore()
+{
+    // ta252 round 2: the undo of the solo bind. Fields {soloIsOurs, hadSolo, oldStateFound}.
+    using R = RejoinRestore;
+    // it had no solo bind: the one the rejoin made goes.
+    CHECK(PlanRejoinRestore(RejoinRestoreFacts{true, false, false}) == R::Unbind);
+    CHECK(PlanRejoinRestore(RejoinRestoreFacts{true, false, true}) == R::Unbind);
+    // its old solo bind's save still exists: bound back to it (with its old permanence).
+    CHECK(PlanRejoinRestore(RejoinRestoreFacts{true, true, true}) == R::Rebind);
+    // the old save is gone (that copy no longer exists): nothing to go back to, kept.
+    CHECK(PlanRejoinRestore(RejoinRestoreFacts{true, true, false}) == R::KeepOldGone);
+    // the solo bind is no longer the one the rejoin made (the core changed it): never touched.
+    CHECK(PlanRejoinRestore(RejoinRestoreFacts{false, false, false}) == R::KeepChanged);
+    CHECK(PlanRejoinRestore(RejoinRestoreFacts{false, true, true}) == R::KeepChanged);
 }
 static void TestOtherCopyNeverWithTheLeadDead()
 {
@@ -22447,6 +22485,8 @@ int main()
     TestRejoinRefusalIsNoPause();
     TestOtherCopyFightIsNoPartyFight();
     TestPlanRejoinBind();
+    TestRejoinSettle();
+    TestRejoinRestore();
     TestOtherCopyNeverWithTheLeadDead();
     TestBossNotAtHisSpotIsSearchedForInTheInstance();
     TestPassedBossAtHisSpotPausesAtOnce();

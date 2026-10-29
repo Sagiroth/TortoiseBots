@@ -1079,12 +1079,40 @@ class RunHoldsItsDeadWiringTest(unittest.TestCase):
         fn = body(code, "bool RunInstanceRejoin(Player* commander, std::string const& order, std::string& answer)\n{", "\n}\n")
         for needed in ("TortoiseBots::DungeonRun::PlanRejoinBind(facts)", "TELE_TO_FORCE_MAP_CHANGE",
                        "bot->GetBoundInstanceSaveForSelfOrGroup(mapId)", 'answer = "player: a real player is in the party";',
-                       'sLog.outBasic("[RUN] rejoin', "bot->UnbindInstance(mapId)", "group->BindToInstance(leadState, permanent)"):
+                       'sLog.outBasic("[RUN] rejoin', "bot->BindToInstance(leadState, false);"):
             self.assertIn(needed, fn)
         self.assertLess(fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"), fn.index("[RUN] rejoin"))
-        self.assertLess(fn.index("[RUN] rejoin"), fn.index("bot->UnbindInstance(mapId)"))
         self.assertLess(fn.index("bot->GetBoundInstanceSaveForSelfOrGroup(mapId)"), fn.index("bot->TeleportTo(mapId,"))
         self.assertLess(fn.index("bot->CombatStop();"), fn.index("bot->TeleportTo(mapId,"))
+        # round 2 (Codex HIGH, 2026-10-29): failure-atomic. The group's bind is never written and the solo bind is
+        # never dropped outright; the core's own entry checks run before the one write; the write is snapshotted
+        # first and undone when TeleportTo refuses (and later by the per-update settle).
+        self.assertNotIn("group->BindToInstance", fn)
+        self.assertNotIn("group->UnbindInstance", fn)
+        self.assertNotIn("bot->UnbindInstance", fn)
+        preflight = "facts.enterOk = sMapMgr.CanPlayerEnter(mapId, bot) && bot->CheckInstanceCount(lead->GetInstanceId()) &&\n        leadMap->CanEnter(bot);"
+        self.assertIn(preflight, fn)
+        self.assertLess(fn.index(preflight), fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"))
+        self.assertLess(fn.index("case RejoinBindPlan::EntryRefused:"), fn.index("bot->BindToInstance(leadState, false);"))
+        self.assertLess(fn.index("PendingRejoins()[botRaw] = snapshot;"), fn.index("bot->BindToInstance(leadState, false);"))
+        self.assertLess(fn.index("if (TortoiseBots::DungeonRun::RejoinBindWrites(plan))"),
+                        fn.index("bot->BindToInstance(leadState, false);"))
+        tele = fn.index("bot->TeleportTo(mapId,")
+        self.assertIn("SettleRejoin(botRaw, bot, true);\n        answer = \"failed: the teleport was refused\";", fn[tele:])
+        self.assertIn("SettleRejoin(botRaw, bot, true);\n        answer = \"failed: the bind still points at another copy\";", fn)
+        self.assertLess(fn.index("SettleRejoin(botRaw, bot, false) == RejoinSettle::Wait"), fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"))
+        settle = body(code, "TortoiseBots::DungeonRun::RejoinSettle SettleRejoin(uint64 raw, Player* bot, bool refused)\n{", "\n}\n")
+        self.assertIn("TortoiseBots::DungeonRun::PlanRejoinSettle(facts)", settle)
+        self.assertIn("bot->GetInstanceId() == p.leadInstanceId", settle)
+        self.assertIn("RestoreRejoinBind(bot, p)", settle)
+        restore = body(code, "std::string RestoreRejoinBind(Player* bot, PendingRejoin const& p)\n{", "\n}\n")
+        for needed in ("TortoiseBots::DungeonRun::PlanRejoinRestore(facts)", "bot->UnbindInstance(p.mapId);",
+                       "bot->BindToInstance(old, p.oldPerm);", "sMapPersistentStateMgr.GetPersistentState(p.mapId, p.oldInstanceId)",
+                       "solo->state->GetInstanceId() == p.leadInstanceId && !solo->perm"):
+            self.assertIn(needed, restore)
+        update = body(code, "static void UpdateDungeonRuns(uint32 diff)\n{", "\n}\n")
+        self.assertIn("if (!PendingRejoins().empty())\n        SettleInstanceRejoins();", update)
+        self.assertLess(update.index("SettleInstanceRejoins();"), update.index("if (DungeonRuns().empty())"))
         facts = body(code, "void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,", "\n}\n")
         self.assertIn("bool otherCopy = false;", (ROOT / "runtime/DungeonRunPolicy.h").read_text())
         self.assertIn("member.otherCopy = bot->IsInWorld() && bot->GetMapId() == lead->GetMapId() &&\n"
