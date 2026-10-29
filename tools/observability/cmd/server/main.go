@@ -88,6 +88,9 @@ func main() {
 	// Optional folder of turtle-agent run maps (`turtle-agent map`: one SVG per run, plus the single-file HTML replay with --html).
 	// Read-only and off by default: unset, the Agent maps tab is hidden and its routes 404.
 	agentMapsDirRaw := flag.String("agent-maps-dir", getEnv("TBDASH_AGENT_MAPS_DIR", ""), "Optional folder of turtle-agent run maps (`turtle-agent map` .svg and .html replays) listed in the Agent maps tab (env TBDASH_AGENT_MAPS_DIR)")
+	// Optional folder of patrol paths for the plan layer (turtle-agent `trash-check --dash-out`, or a `patrol-record` tb-patrols file).
+	// Unset: the committed internal/plans/patrols.json only.
+	patrolsDir := flag.String("patrols-dir", getEnv("TBDASH_PATROLS_DIR", ""), "Optional folder of patrol path files (turtle-agent trash-check --dash-out, or a tb-patrols patrol-record file) drawn on the plan layer (env TBDASH_PATROLS_DIR)")
 	// The raid control relay (task A10): an authenticated SOAP forwarder for
 	// allow-listed GM run, gear and revive lines. Off unless a SOAP URL, a
 	// SOAP user and a mode-0600 password file are all configured.
@@ -577,6 +580,7 @@ func main() {
 	}))
 
 	// Dungeon and raid plans (the run leader's ai_dungeon_* rows, read-only, cached) for the map's plan layer.
+	plans.SetPatrolsDir(*patrolsDir)
 	var planSvc *plans.Service
 	if worldDB, err := plans.OpenWorld(*dbHost, *dbPort, *dbUser, *dbPass, *dbWorld); err != nil {
 		log.Printf("[Plans] world database: %v (the plan layer is off)", err)

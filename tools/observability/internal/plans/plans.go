@@ -200,6 +200,12 @@ type Mob struct {
 	Patrol  bool    `json:"patrol,omitempty"`
 	NoAggro bool    `json:"noaggro,omitempty"`
 	WakeYd  float64 `json:"wake_yd,omitempty"`
+	// The patrol paths of the optional folder (patrols.go): the loop in
+	// yards, its round and where the numbers came from.
+	Path    [][3]float64 `json:"path,omitempty"`
+	PeriodS float64      `json:"period_s,omitempty"`
+	PathEst bool         `json:"path_est,omitempty"`
+	PathSrc string       `json:"path_src,omitempty"`
 }
 
 // Queries, exported so a test can pin their shape. Arguments go through ?;
@@ -393,6 +399,7 @@ func Build(src Source, name string) (*Plan, error) {
 			p.Truncated = true
 		}
 		p.Mobs = matchMobs(kept, spawns, templates)
+		attachPatrols(p.Mobs)
 	}
 
 	for i := range kept {
@@ -657,6 +664,11 @@ func (s *Service) SetClock(now func() time.Time) {
 // does not query a broken or empty database on every draw.
 func (s *Service) Get(name string) (*Plan, error) {
 	s.mu.Lock()
+	// The paths are built into every plan, so a changed patrol file drops the
+	// whole cache; the check itself is at most once a minute.
+	if patrolsState.refresh(s.now()) {
+		s.byID = make(map[string]*cacheEntry, PlanCacheMax)
+	}
 	if c, ok := s.byID[name]; ok && s.now().Before(c.expires) {
 		p, err := c.plan, c.err
 		s.mu.Unlock()
