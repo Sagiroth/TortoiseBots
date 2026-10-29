@@ -373,6 +373,15 @@ inline void PruneBefore(std::vector<uint32_t>& times, uint32_t nowMs)
         times.erase(times.begin());
 }
 
+// One engaged creature entry of the open fight, as the world thread reads it to
+// pick the fight's boss.
+struct EngagedUnit
+{
+    uint32_t entry = 0;
+    uint64_t guid = 0;
+    std::string name;
+};
+
 class Book   // one per bound group
 {
 public:
@@ -587,6 +596,33 @@ public:
         if (!inFight_ || entry == 0 || entry != ctx_.bossEntry)
             return;
         bossDied_ = true;
+    }
+
+    // The sampler's boss: set once per fight, and never over a run's own boss.
+    void NoteBoss(uint32_t entry, std::string const& name)
+    {
+        if (!inFight_ || entry == 0 || ctx_.bossEntry != 0)
+            return;
+        ctx_.bossEntry = entry;
+        ctx_.bossName = name;
+    }
+
+    // The open fight's engaged creatures, one row per entry (its lowest guid and
+    // the entry's name), in engaged_ order; empty outside a fight.
+    std::vector<EngagedUnit> EngagedNow() const
+    {
+        std::vector<EngagedUnit> out;
+        if (!inFight_)
+            return out;
+        out.reserve(engaged_.size());
+        for (auto const& kv : engaged_)
+        {
+            if (kv.second.guids.empty())
+                continue;
+            out.push_back(EngagedUnit{kv.first, *std::min_element(kv.second.guids.begin(), kv.second.guids.end()),
+                kv.second.name});
+        }
+        return out;
     }
 
     // A creature's cast start seen by the poller: only elite and boss units, only in a fight.

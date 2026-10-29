@@ -169,21 +169,29 @@ void CombatMonitorService::Refresh(uint32_t groupId, std::vector<CombatMonitor::
     NoteFightCount(wasFighting, book.InFight());
 }
 
-// After `.bot run stop` there is no run to Refresh from, so the bound
-// group's open fight is followed here instead: ended by the same 3 s rule.
-// Never starts a book or a fight.
-void CombatMonitorService::RefreshNoRun(uint32_t groupId, bool anyInCombat, bool allDead, uint32_t nowMs)
+// The sampler's boss: the first pick of a fight wins, and a run's own boss is
+// never replaced (Book::NoteBoss).
+void CombatMonitorService::NoteBoss(uint32_t groupId, uint32_t entry, char const* name)
 {
-    if (!Enabled() || groupId == 0)
+    if (!Enabled() || groupId == 0 || entry == 0 || !name)
         return;
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_lastNowMs = nowMs;
-    m_lastUnixNow = static_cast<int64_t>(time(nullptr));
     auto const it = m_books.find(groupId);
-    if (it == m_books.end() || !it->second.InFight())
+    if (it == m_books.end())
         return;
-    it->second.SetInCombat(anyInCombat, allDead, nowMs);
-    NoteFightCount(true, it->second.InFight());
+    it->second.NoteBoss(entry, name);
+}
+
+std::vector<CombatMonitor::EngagedUnit> CombatMonitorService::EngagedNow(uint32_t groupId) const
+{
+    std::vector<CombatMonitor::EngagedUnit> out;
+    if (!Enabled() || groupId == 0)
+        return out;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const it = m_books.find(groupId);
+    if (it == m_books.end())
+        return out;
+    return it->second.EngagedNow();
 }
 
 bool CombatMonitorService::InFight(uint32_t groupId) const

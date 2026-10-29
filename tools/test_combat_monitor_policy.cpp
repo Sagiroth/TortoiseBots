@@ -528,6 +528,94 @@ static void TestCloseOnFullWipe()
     CHECK(events.back().kept == false);   // 1.5 s: shorter than kMinFightMs
 }
 
+// The sampler's boss is set once per fight and only while one runs; a run's
+// own boss is never replaced.
+static void TestNoteBossSetsOnce()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, FightContext{}, 1);
+    b.NoteBoss(5, "A");
+    b.NoteBoss(6, "B");
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    CHECK(!b.InFight());
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"boss\":5"));
+    CHECK(Contains(p[0], "\"boss_name\":\"A\""));
+    CHECK(!Contains(p[0], "\"boss\":6"));
+}
+
+static void TestNoteBossOutsideFightIgnored()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.NoteBoss(5, "A");
+    b.Start(0, 1700000000, FightContext{}, 1);
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"boss\":0"));
+    CHECK(Contains(p[0], "\"boss_name\":\"\""));
+}
+
+static void TestNoteBossKeepsRunBoss()
+{
+    FightContext ctx;
+    ctx.kind = "boss";
+    ctx.bossEntry = 7;
+    ctx.bossName = "RunBoss";
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, ctx, 1);
+    b.NoteBoss(5, "Sampler");
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"boss\":7"));
+    CHECK(Contains(p[0], "\"boss_name\":\"RunBoss\""));
+}
+
+static void TestRefinedBossDeathIsKill()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, FightContext{}, 1);
+    b.NoteBoss(5, "A");
+    b.NoteBossDied(5);
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Contains(p[0], "\"boss\":5"));
+    CHECK(Contains(p[0], "\"outcome\":\"kill\""));
+}
+
+static void TestEngagedNowListsEntries()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, BossCtx(), 1);
+    b.OnDamage(3, 0, 5000, "Magey", 11502, 777, "Magmadar", 5000);
+    b.OnDamage(1, 0, 1200, "Tanky", 11502, 778, "Magmadar", 6000);   // same entry: one row
+    b.OnDamage(0, 1, 3000, "Magmadar", 11503, 900, "Add", 7000);
+    std::vector<EngagedUnit> rows = b.EngagedNow();
+    CHECK(rows.size() == 2);
+    CHECK(rows[0].entry == 11502 && rows[0].guid == 777 && rows[0].name == "Magmadar");
+    CHECK(rows[1].entry == 11503 && rows[1].guid == 900 && rows[1].name == "Add");
+    b.SetInCombat(false, false, 12000);
+    b.SetInCombat(false, false, 15000);
+    CHECK(!b.InFight());
+    CHECK(b.EngagedNow().empty());
+}
+
 static void TestEventsJsonHalvesUnderBudget()
 {
     std::vector<LiveEvent> events;
@@ -664,6 +752,11 @@ int main()
     TestMonitorOffIsInert();
     TestEngageCoalescedPerEntry();
     TestCloseOnFullWipe();
+    TestNoteBossSetsOnce();
+    TestNoteBossOutsideFightIgnored();
+    TestNoteBossKeepsRunBoss();
+    TestRefinedBossDeathIsKill();
+    TestEngagedNowListsEntries();
     TestEventsJsonHalvesUnderBudget();
     TestEventsJsonBoundsHugeNames();
     TestEventsRequeueKeepsOrder();

@@ -2,7 +2,8 @@
 // Per-fight combat numbers behind the core's damage, heal, cast, combat and
 // death hooks: plain data and the standard library only; the books themselves
 // are runtime/CombatMonitorPolicy.h. The hooks run on map threads; the 1 Hz
-// run tick and the emitter's snapshot cycle run on the world thread.
+// run tick, the bound-group sampler and the emitter's snapshot cycle run on
+// the world thread.
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -27,11 +28,13 @@ public:
 
     bool Enabled() const;                                   // read on the world thread, cached as std::atomic<bool>
     void SyncConfig(bool on);                               // ungated: stores the flag, drops the books on the on->off turn only
-    // world thread, 1 Hz from the run tick, for every bound group with a run
+    // world thread, 1 Hz from the run tick or the bound-group sampler, for every bound group
     void Refresh(uint32_t groupId, std::vector<CombatMonitor::MemberInfo> members, bool anyInCombat, bool allDead,
                  CombatMonitor::FightContext const& ctx, std::vector<std::string> const& debuffKeysUp, uint32_t nowMs);
-    // A bound group whose run ended keeps its open fight going on the 2 s tick; never starts one.
-    void RefreshNoRun(uint32_t groupId, bool anyInCombat, bool allDead, uint32_t nowMs);
+    // world thread: the fight's boss as the sampler picked it from the engaged creatures (once per fight)
+    void NoteBoss(uint32_t groupId, uint32_t entry, char const* name);
+    // world thread: the open fight's engaged creatures (one row per entry), empty outside a fight
+    std::vector<CombatMonitor::EngagedUnit> EngagedNow(uint32_t groupId) const;
     bool InFight(uint32_t groupId) const;
     bool AnyInFight() const;                                // the world-thread cast poller's early exit
     void Forget(uint32_t groupId);                          // binding released or run gone

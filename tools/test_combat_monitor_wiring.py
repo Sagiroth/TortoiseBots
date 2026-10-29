@@ -151,13 +151,37 @@ class CombatMonitorWiringTest(unittest.TestCase):
 
     # Live fight events, and a fight that outlives its run.
 
-    def test_commander_no_run_branch_polls_before_forget(self):
+    def test_bound_sampler_feeds_fights_without_a_run(self):
+        # Every standing binding keeps its combat book: the run tick feeds the
+        # ones with a run, and the sampler feeds the rest at 1 Hz.
         code = strip_comments(COMMANDER)
-        fn = definition(code, "static void FillCommanderCombat(")
-        self.assertIn("InFight(", fn)
-        self.assertIn("RefreshNoRun(", fn)
-        self.assertLess(fn.index("InFight("), fn.index("Forget("), "a group still fighting is followed, not forgotten")
-        self.assertLess(fn.index("RefreshNoRun("), fn.index("Forget("), "the no-run tick feeds the open fight first")
+        fill = definition(code, "static void FillCommanderCombat(")
+        self.assertNotIn("Forget(", fill, "a standing binding is never forgotten")
+        self.assertNotIn("DungeonRuns()", fill, "the sampler, not this snapshot, owns the no-run case")
+        update = definition(code, "void UpdateRemoteCommanders(")
+        self.assertIn("SampleBoundFights(diff)", update)
+        self.assertLess(update.index("UpdateDungeonRuns(diff)"), update.index("SampleBoundFights(diff)"),
+                        "the sampler runs after the run ticks that stamp their feed")
+        sample = definition(code, "static void SampleBoundFights(")
+        self.assertIn("SamplerFeeds(", sample)
+        self.assertIn("FeedCombatMonitor(", sample)
+        self.assertIn("NoteBoss(", sample)
+        enabled = sample.index("Enabled()")
+        self.assertLess(enabled, sample.index("SamplerFeeds("), "nothing is sampled while the monitor is off")
+        self.assertNotIn("DungeonRuns()", sample[:sample.index("SamplerFeeds(")],
+                         "the feed decision is the run's stamp, not a run slot")
+        for scan in ("GetCreatureListWithEntry", "VisitNearby", "Cell::", "GetPlayers()"):
+            self.assertNotIn(scan, sample, scan)
+        self.assertIn("ctx, nullptr)", sample, "the sampler hands no engaged facts")
+        refresh = definition(code, "static void RefreshCombatMonitor(")
+        self.assertIn("s_runFedAt()[commanderRaw]", refresh)
+        self.assertLess(refresh.index("s_runFedAt()[commanderRaw]"), refresh.index("FeedCombatMonitor("),
+                        "the run's feed is stamped before the sample it feeds")
+        self.assertIn("&facts.engagedUnits", refresh, "the run path keeps its own engaged facts")
+        sources = sorted((ROOT / "runtime").glob("*.h")) + sorted((ROOT / "runtime").glob("*.cpp"))
+        sources.append(ROOT / "commands" / "Commander.cpp")
+        for path in sources:
+            self.assertNotIn("RefreshNoRun", path.read_text(), path)
 
     def test_forget_retires_instead_of_dropping(self):
         fn = body(strip_comments(SERVICE), "CombatMonitorService::Forget(", "\n}\n")
@@ -203,24 +227,18 @@ class CombatMonitorWiringTest(unittest.TestCase):
         self.assertIn("ObservabilityEmitter::Instance().SetCombatEventProvider(", startup)
         self.assertIn("ObservabilityEmitter::Instance().SetEnemyCastPoller(", startup)
 
-    def test_run_slot_erase_leaves_the_open_fight_to_refresh_no_run(self):
+    def test_run_slot_erase_leaves_the_open_fight_to_the_sampler(self):
         # A run that ends while its binding stands (`.bot run stop`, the time
         # limit, a switched-off gate) erases its run slot without dropping the
-        # group's combat book: FillCommanderCombat's no-run branch follows the
-        # open fight to its end through RefreshNoRun, so a fight continuing
-        # after the stop is still recorded. Only the binding's removal forgets.
+        # group's combat book: the sampler feeds the open fight to its end, so a
+        # fight continuing after the stop is still recorded. Only the binding's
+        # removal forgets.
         code = strip_comments(COMMANDER)
         erase = body(code, "void EraseRunSlot(", "\n}\n")
         self.assertIn("TakeRunItems(", erase)
         self.assertNotIn("Forget(", erase, "the run slot's erase must not close the open fight")
         release = body(code, "uint32 ReleaseBinding(", "\n}\n")
         self.assertIn("Forget(removed.groupId)", release, "the binding's removal still forgets")
-        fill = definition(code, "static void FillCommanderCombat(")
-        no_run = fill[fill.index("if (DungeonRuns().find(commanderRaw) == DungeonRuns().end())"):]
-        self.assertIn("RefreshNoRun(", no_run)
-        self.assertIn("InFight(", no_run)
-        self.assertLess(no_run.index("RefreshNoRun("), no_run.index("Forget("),
-                        "the no-run tick feeds the open fight before any forget")
 
 
 if __name__ == "__main__":

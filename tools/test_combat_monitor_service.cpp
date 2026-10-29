@@ -48,6 +48,14 @@ static FightContext Ctx(uint32_t boss = 11502)
     return ctx;
 }
 
+// A bound group's fight without a run: the sampler's context.
+static FightContext CommanderCtx()
+{
+    FightContext ctx;
+    ctx.kind = "commander";
+    return ctx;
+}
+
 static uint64_t g_seq = 1;
 static uint64_t NextSeq()
 {
@@ -312,40 +320,84 @@ static void TestOversizeFightTakesOneSeq()
     svc.Forget(65);
 }
 
-// A fight keeps running after its run is gone; RefreshNoRun neither
-// starts one nor loses the open one.
+// A bound group's fight with no run at all is recorded from its first sampled
+// second: the sampler's "commander" context, no plan, ended by the book's 3 s
+// rule.
+static void TestFightWithoutRunRecorded()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(66, Members(), true, false, CommanderCtx(), {}, 1000);
+    svc.Refresh(66, Members(), false, false, CommanderCtx(), {}, 6000);
+    svc.Refresh(66, Members(), false, false, CommanderCtx(), {}, 7000);
+    svc.Refresh(66, Members(), false, false, CommanderCtx(), {}, 9500);
+    std::string const fight = TakeOne(svc, 66, 1700011000);
+    CHECK(!fight.empty());
+    CHECK(fight.find("\"kind\":\"commander\"") != std::string::npos);
+    CHECK(fight.find("\"plan\":\"\"") != std::string::npos);
+    CHECK(fight.find("\"dur_ms\":5000") != std::string::npos);
+    svc.Forget(66);
+}
+
+// The sampler takes the fight over from the run (the ctx at Start is the
+// run's, so its plan sticks) and records it to its end.
 static void TestFightOutlivesRunStop()
 {
     CombatMonitorService& svc = CombatMonitorService::Instance();
     sPlayerbotAIConfig.combatMonitor = true;
     svc.SyncConfig(true);
     svc.Refresh(70, Members(), true, false, Ctx(), {}, 1000);
-    svc.RefreshNoRun(70, true, false, 300000);
-    svc.RefreshNoRun(70, false, false, 301000);
-    svc.RefreshNoRun(70, false, false, 304500);
+    svc.Refresh(70, Members(), true, false, CommanderCtx(), {}, 300000);
+    svc.Refresh(70, Members(), false, false, CommanderCtx(), {}, 301000);
+    svc.Refresh(70, Members(), false, false, CommanderCtx(), {}, 304500);
     std::string const first = TakeOne(svc, 70, 1700013000);
     std::string const second = TakeOne(svc, 70, 1700013000);
     std::string const third = TakeOne(svc, 70, 1700013000);
     CHECK(!first.empty());
     CHECK(first.find("\"dur_ms\":300000") != std::string::npos);
+    CHECK(first.find("\"plan\":\"molten_core\"") != std::string::npos);
     CHECK(!second.empty());
     CHECK(second.find("\"dur_ms\":300000") != std::string::npos);
     CHECK(third.empty());
     svc.Forget(70);
 }
 
-static void TestRefreshNoRunNeverStarts()
+// The boss of a run-less fight, noted by the sampler through the book.
+static void TestServiceNoteBoss()
 {
     CombatMonitorService& svc = CombatMonitorService::Instance();
     sPlayerbotAIConfig.combatMonitor = true;
     svc.SyncConfig(true);
-    svc.RefreshNoRun(71, true, false, 1000);   // no book: nothing to follow
-    CHECK(TakeOne(svc, 71, 1700001000).empty());
-    svc.Refresh(71, Members(), false, false, Ctx(), {}, 2000);   // a book, no fight
-    svc.RefreshNoRun(71, true, false, 3000);
-    CHECK(!svc.InFight(71));
-    CHECK(TakeOne(svc, 71, 1700003000).empty());
-    svc.Forget(71);
+    svc.Refresh(86, Members(), true, false, CommanderCtx(), {}, 1000);
+    svc.NoteBoss(86, 11502, "Magmadar");
+    svc.NoteBoss(86, 11503, "Other");   // set once per fight
+    svc.Refresh(86, Members(), false, false, CommanderCtx(), {}, 6000);
+    svc.Refresh(86, Members(), false, false, CommanderCtx(), {}, 9000);
+    std::string const fight = TakeOne(svc, 86, 1700010000);
+    CHECK(!fight.empty());
+    CHECK(fight.find("\"kind\":\"commander\"") != std::string::npos);
+    CHECK(fight.find("\"boss\":11502") != std::string::npos);
+    CHECK(fight.find("\"boss_name\":\"Magmadar\"") != std::string::npos);
+    CHECK(fight.find("\"boss\":11503") == std::string::npos);
+    svc.Forget(86);
+}
+
+// The engaged creatures of the open fight, through the service.
+static void TestServiceEngagedNow()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(87, Members(), true, false, CommanderCtx(), {}, 1000);
+    svc.OnDamage(7, 0, 500, "Tanky", 11502, 777, "Magmadar");
+    std::vector<TortoiseBots::CombatMonitor::EngagedUnit> const rows = svc.EngagedNow(87);
+    CHECK(rows.size() == 1);
+    CHECK(rows[0].entry == 11502 && rows[0].guid == 777 && rows[0].name == "Magmadar");
+    svc.Refresh(87, Members(), false, false, CommanderCtx(), {}, 6000);
+    svc.Refresh(87, Members(), false, false, CommanderCtx(), {}, 9000);
+    CHECK(svc.EngagedNow(87).empty());
+    svc.Forget(87);
 }
 
 static void TestForgetKeepsUntakenFight()
@@ -372,7 +424,7 @@ static void TestForgetClosesOpenFight()
     sPlayerbotAIConfig.combatMonitor = true;
     svc.SyncConfig(true);
     svc.Refresh(73, Members(), true, false, Ctx(), {}, 1000);
-    svc.RefreshNoRun(73, true, false, 61000);   // 60 s in, still fighting
+    svc.Refresh(73, Members(), true, false, CommanderCtx(), {}, 61000);   // 60 s in, still fighting
     svc.Forget(73);
     std::string const fight = TakeOne(svc, 73, 1700061000);
     CHECK(!fight.empty());
@@ -519,7 +571,7 @@ static void TestRetiredBookDrainsThenErased()
     sPlayerbotAIConfig.combatMonitor = true;
     svc.SyncConfig(true);
     svc.Refresh(81, Members(), true, false, Ctx(), {}, 1000);
-    svc.RefreshNoRun(81, true, false, 61000);
+    svc.Refresh(81, Members(), true, false, CommanderCtx(), {}, 61000);
     svc.Forget(81);
     std::vector<std::string> const events = TakeEventsFor(svc, 81, 62000);
     CHECK(events.size() == 1);
@@ -532,8 +584,8 @@ static void TestRetiredBookDrainsThenErased()
 
 // A run slot's erase (`.bot run stop`, a time limit, a switched-off gate) is
 // exactly the absence of Forget while the binding stands: the open fight keeps
-// running on RefreshNoRun and records what happens after the stop until combat
-// ends, and only then closes.
+// running on the sampler's Refresh and records what happens after the stop
+// until combat ends, and only then closes.
 static void TestRunStopMidFightKeepsRecording()
 {
     CombatMonitorService& svc = CombatMonitorService::Instance();
@@ -542,7 +594,7 @@ static void TestRunStopMidFightKeepsRecording()
     svc.Refresh(83, Members(), true, false, Ctx(), {}, 1000);
     CHECK(TakeEventsFor(svc, 83, 1000).size() == 1);   // the start went out
     // The run ended mid-fight; the binding stands, so no Forget runs.
-    svc.RefreshNoRun(83, true, false, 4000);
+    svc.Refresh(83, Members(), true, false, CommanderCtx(), {}, 4000);
     CHECK(svc.InFight(83));
     svc.OnDeath(7, 0, "Magmadar", 1.0f, 2.0f, 3.0f, 0);
     std::vector<std::string> const after = TakeEventsFor(svc, 83, 4400);
@@ -551,10 +603,10 @@ static void TestRunStopMidFightKeepsRecording()
     CHECK(after[0].find("\"fight\":null") == std::string::npos);
     CHECK(svc.InFight(83));
     // Combat goes on for another 20 s, then the 3 s rule ends it.
-    svc.RefreshNoRun(83, true, false, 24000);
+    svc.Refresh(83, Members(), true, false, CommanderCtx(), {}, 24000);
     CHECK(svc.InFight(83));
-    svc.RefreshNoRun(83, false, false, 25000);
-    svc.RefreshNoRun(83, false, false, 28000);
+    svc.Refresh(83, Members(), false, false, CommanderCtx(), {}, 25000);
+    svc.Refresh(83, Members(), false, false, CommanderCtx(), {}, 28000);
     CHECK(!svc.InFight(83));
     std::vector<std::string> const end = TakeEventsFor(svc, 83, 28400);
     CHECK(end.size() == 1);
@@ -621,7 +673,9 @@ int main()
     TestRepublishOnlyOnChange();
     TestOversizeFightTakesOneSeq();
     TestFightOutlivesRunStop();
-    TestRefreshNoRunNeverStarts();
+    TestFightWithoutRunRecorded();
+    TestServiceNoteBoss();
+    TestServiceEngagedNow();
     TestForgetKeepsUntakenFight();
     TestForgetClosesOpenFight();
     TestEventsStartAndDeath();
