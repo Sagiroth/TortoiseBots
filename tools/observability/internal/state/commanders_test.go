@@ -73,6 +73,50 @@ func TestCommandersIgnoreOldDatagrams(t *testing.T) {
 	}
 }
 
+// A whole datagram of a cycle already applied is a duplicate (UDP may deliver it twice): it must not replace the
+// standing list, nor refresh the timestamp the staleness check reads. A datagram without a sequence (an older module)
+// keeps the compatibility path and applies.
+func TestCommandersIgnoreDuplicateWholeCycle(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	first := commandersPayload(5, 100, "First")
+	first.Seq = 10
+	if !s.ApplyCommanders(first) {
+		t.Fatal("first payload refused")
+	}
+	before := s.Commanders()
+	dup := commandersPayload(5, 100, "Duplicate")
+	dup.Seq = 10
+	if s.ApplyCommanders(dup) {
+		t.Error("a whole datagram of the applied cycle was applied")
+	}
+	if v := s.Commanders(); len(v.Commanders) != 1 || v.Commanders[0].Commander != "First" || v.UpdatedAt != before.UpdatedAt {
+		t.Fatalf("the duplicate changed the view: %+v", v)
+	}
+	// A duplicate that arrives after the standing list went stale must not make it fresh again.
+	c.Advance(CommandersStaleAfter + time.Second)
+	if s.ApplyCommanders(dup) {
+		t.Error("a late duplicate of the applied cycle was applied")
+	}
+	if v := s.Commanders(); v.Fresh || v.UpdatedAt != before.UpdatedAt {
+		t.Fatalf("the duplicate refreshed the timestamp: fresh %v, updated %d", v.Fresh, v.UpdatedAt)
+	}
+	// A newer cycle still applies.
+	next := commandersPayload(5, 110, "Next")
+	next.Seq = 11
+	if !s.ApplyCommanders(next) {
+		t.Fatal("a newer cycle was refused")
+	}
+	// A datagram without a sequence is an older module's: the compatibility path still applies it.
+	legacy := commandersPayload(5, 120, "Legacy") // Seq stays 0
+	if !s.ApplyCommanders(legacy) {
+		t.Fatal("a datagram without a sequence was refused")
+	}
+	if v := s.Commanders(); len(v.Commanders) != 1 || v.Commanders[0].Commander != "Legacy" {
+		t.Fatalf("legacy datagram did not apply: %+v", v.Commanders)
+	}
+}
+
 func TestCommandersAreBounded(t *testing.T) {
 	s := newTestStore(newClock())
 	p := commandersPayload(1, 1)

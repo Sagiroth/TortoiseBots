@@ -159,8 +159,11 @@ func (s *Store) ApplyCommanders(p *model.CommandersPayload) bool {
 		st.pending, st.carried = nil, nil
 	}
 	if p.Parts <= 1 {
-		if p.Seq < st.seq {
-			return false // a whole list of a cycle older than the one standing (a delayed report, not a newer one)
+		// A whole list of the standing cycle or of an older one is a duplicate or a delayed report, not a newer view:
+		// applying it would replace the bindings and refresh the timestamp the staleness check reads. A payload without
+		// a sequence comes from an older module and keeps the compatibility path; the ts check above still orders it.
+		if p.Seq > 0 && p.Seq <= st.seq {
+			return false
 		}
 		// The whole list in one datagram: every cycle up to 8 bindings and 64 bots, byte-identical to the payload before
 		// parts existed. A cycle that never completed is applied first, so its bindings are not lost.
