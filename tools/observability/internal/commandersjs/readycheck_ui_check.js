@@ -23,7 +23,7 @@ vm.runInContext(fs.readFileSync(path.join(dir, "readycheck.js"), "utf8"), ctx, {
 assert.ok(ctx.ReadyCheck, "readycheck.js loads as the global ReadyCheck");
 vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, { filename: "fightdebug.js" });
 assert.ok(ctx.FightDebug && typeof ctx.FightDebug.raidFrames === "function", "fightdebug.js loads as the global FightDebug");
-vm.runInContext([grab("esc"), grab("fdFramesHtml")].join("\n"), ctx, { filename: "app.js" });
+vm.runInContext([grab("esc"), grab("fdReadyNotRun"), grab("fdFramesHtml")].join("\n"), ctx, { filename: "app.js" });
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const bot = (name, cls, role, rdy, extra) => Object.assign({
@@ -71,6 +71,23 @@ const plainReady = run("ReadyCheck.raid(boards, null)", { boards: plain });
 assert.strictEqual(plainReady.known, false);
 const plainHtml = run("fdFramesHtml(frames, null, ready)", { frames: run("FightDebug.raidFrames(boards)", { boards: plain }), ready: plainReady });
 assert.ok(plainHtml.includes("buffs unknown (older module)"), plainHtml.slice(0, 400));
+
+// A party where every bot is only a "check" has no verdict yet: the header says so instead of "Ready 0/40" (the idle
+// after-run chip the site audit saw).
+const checkOnly = { bots: bind.bots.map((b) => Object.assign({}, b, { lvl: "warn", reasons: ["no flask or elixir"] })),
+  counts: { ok: 0, warn: 5, fail: 0 }, lvl: "warn", known: true, open: false };
+const checkOnlyHtml = run("fdFramesHtml(frames, null, ready)", { frames, ready: checkOnly });
+assert.ok(checkOnlyHtml.includes('<span class="fd-chip">Ready check: not run yet</span>'), checkOnlyHtml.slice(0, 400));
+assert.ok(!checkOnlyHtml.includes("Ready 0/5") && !checkOnlyHtml.includes("5 check"), "no false zero-of-N chip");
+assert.ok(!checkOnlyHtml.includes("data-fd-ready"), "nothing to open before a verdict");
+const emptyReady = { bots: [], counts: { ok: 0, warn: 0, fail: 0 }, lvl: "ok", known: false };
+assert.ok(run("fdFramesHtml(frames, null, ready)", { frames, ready: emptyReady }).includes("Ready check: not run yet"),
+  "no bots is no check either");
+assert.strictEqual(run("fdReadyNotRun(ready)", { ready: { bots: [{ lvl: "ok" }], counts: { ok: 1, warn: 0, fail: 0 } } }), false,
+  "one ready bot is a result");
+assert.strictEqual(run("fdReadyNotRun(ready)", { ready: { bots: [{ lvl: "fail" }], counts: { ok: 0, warn: 0, fail: 1 } } }), false,
+  "one not-ready bot is a result");
+assert.strictEqual(run("fdReadyNotRun(null)"), true);
 assert.strictEqual((plainHtml.match(/class="fd-rdy l-/g) || []).length, 5, "the base rules still mark every tile");
 
 // Nothing from the game server may become markup in the header or the list.

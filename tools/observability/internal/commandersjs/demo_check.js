@@ -24,7 +24,7 @@ const ctx = { console };
 vm.createContext(ctx);
 ["commanders.js", "maplayers.js", "unitinfo.js", "paths.js", "demo.js"].forEach((f) => vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f }));
 vm.runInContext(
-  [grab("esc"), grabConst("CMD_MAP_ICONS"), grabConst("CMD_OBJECT_ICON"), grab("cmdMapIcon"), grab("cmdLineStyle"), grabConst("cmdPt"), grabConst("CMD_TRAIL_MARKS"), grab("cmdTrailSvg"),
+  [grab("esc"), grabConst("CMD_MAP_ICONS"), grabConst("CMD_OBJECT_ICON"), grab("cmdMapIcon"), grab("cmdLineStyle"), grabConst("cmdPt"), grabConst("CMD_TRAIL_MARKS"), grab("cmdClock"), grab("cmdTrailSvg"),
     grab("cmdMemberTrailsSvg"), grab("cmdRunStepsSvg"), grab("cmdStallsSvg"), grab("cmdObjectsSvg"), grab("cmdLineSvg"), grab("cmdNotePaths")].join("\n") +
   "\nvar cmdLayers = MapLayers.defaults(); var cmdTrails = CmdPaths.newTrails(); var cmdStalls = CmdPaths.newStalls(); var cmdTracker = CmdView.newTracker(); var cmdEvents = UnitInfo.newEvents();" +
   "\ncmdLayers.trailLen = 240;", ctx);

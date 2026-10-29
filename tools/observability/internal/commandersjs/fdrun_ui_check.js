@@ -30,7 +30,7 @@ vm.createContext(ctx);
 });
 vm.runInContext([grab("esc"), grab("numOr0"), grab("fdRunModel"), grab("fdRunClock"), grab("fdRunPct"), grab("fdRunT"),
   grab("fdRunHtml"), grab("fdRunWindow"), grab("fdRunCoverage"), grabConst("FD_TRACK_WINDOW_S"), grab("fdRunPlayHtml"),
-  grab("fdRailHtml"), grab("fdChecksHtml"), grab("fdCheckNum"), grab("fdCheckTitle"), grab("fdLanesHtml")].join("\n"), ctx);
+  grab("fdRailHtml"), grab("fdChecksHtml"), grab("fdCheckNum"), grab("fdCheckTitle"), grab("fdLanesHtml"), grab("cmdClock")].join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 
 // ---- the model: walking between the fights, P1..Pn blocks, a boss block from its name, deaths at their second ----------------
@@ -126,6 +126,12 @@ assert.ok(src.includes("fdReplayActive(key) || fdRunActive(key)"), "the map draw
 assert.ok(src.includes("'&from=' + from + '&to=' + to"), "the run's kept positions are fetched once per run");
 assert.ok(src.includes("FD_TRACK_WINDOW_S"), "a run longer than the kept window is clamped");
 assert.ok(src.includes("setTimeout(() => fdRunTick(key)"), "the run plays as a setTimeout chain");
+// one time format in the debugger: a clock label is 24 h in the viewer's zone, never AM/PM
+const clock = run("cmdClock(1700000000)");
+assert.ok(/^\d{2}:\d{2}:\d{2}$/.test(clock), "the debugger's clock is 24 h: " + clock);
+assert.ok(!/(AM|PM)/i.test(clock), "no 12 h marker: " + clock);
+assert.ok(grab("fdRunHtml").includes("cmdClock(d.tS)"), "the run strip's death titles use it");
+assert.ok(grab("cmdClock").includes("hourCycle: 'h23'"), "the hour cycle is pinned, not the browser's");
 assert.ok(grab("fdRunStop").includes("clearTimeout("), "stopping the run clears the pending step");
 assert.strictEqual((src.match(/setInterval\(/g) || []).length, 9, "no new setInterval but the live stream's fallback poll");
 

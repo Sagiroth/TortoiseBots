@@ -5756,7 +5756,7 @@
 
   function cmdLiveEventText(e) {
     const ev = (e && e.ev) || {};
-    const at = e && e.at ? new Date(e.at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ' : '';
+    const at = e && e.at ? cmdClock(e.at) + ' ' : '';
     switch (ev.k) {
       case 'start': return at + 'fight start';
       case 'engage': return at + 'pull ' + (ev.n || 'unit') + (ev.c ? ' ×' + ev.c : '');
@@ -6126,7 +6126,7 @@
   }
 
   function cmdTime(sec) {
-    return sec ? new Date(sec * 1000).toLocaleTimeString() : '';
+    return sec ? cmdClock(sec) : '';
   }
 
   // ---- the map of one card ----
@@ -6273,9 +6273,10 @@
     return { lead, first, onMap, slots, trail, heading, zr, ctx, mobs, mobsTotal, commanderAt, steps, stalls, objs };
   }
 
-  // A clock time for a label on the path: the game server's seconds in the browser's locale.
+  // A clock time for a label on the path: the game server's seconds in the browser's zone, 24 h like the pack table (the
+  // debugger has one time format).
   function cmdClock(sec) {
-    return new Date(sec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return new Date(sec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
   }
 
   // ---- the drawing layers of a card's map: paths, run steps, stall spots, objects, combat lines ----
@@ -6306,7 +6307,7 @@
     });
     CmdView.trailMarks(pts).forEach(m => {
       const def = CMD_TRAIL_MARKS[m.kind], p = CmdView.project(m.x, m.y);
-      const when = typeof m.t === 'number' && m.t > 0 ? ' (' + new Date(m.t * 1000).toLocaleTimeString() + ')' : '';
+      const when = typeof m.t === 'number' && m.t > 0 ? ' (' + cmdClock(m.t) + ')' : '';
       if (def) g += '<g class="trailmark">' + cmdMapIcon(def.icon, p.x, p.y, (basePx > 2.5 ? 12 : 9) * c.k, def.text + when) + '</g>';
     });
     return g;
@@ -8014,7 +8015,7 @@
       html += `<button type="button" class="fd-rtfight${boss ? ' boss' : ''}${on ? ' on' : ''}" style="left:${from.toFixed(2)}%;width:${w.toFixed(2)}%" data-fd-rtfight="${esc(encodeURIComponent(sg.key))}" title="${esc(sg.label + (boss ? ' · ' + (sg.name || 'boss') : '') + ' · ' + Math.round(len / 1000) + ' s')}" aria-pressed="${on ? 'true' : 'false'}"><span>${esc(text)}</span></button>`;
     });
     run.deaths.forEach(d => {
-      html += `<span class="fd-rtdeath" style="left:${fdRunPct(run, d.tS).toFixed(2)}%" title="${esc(d.name + ' died at ' + new Date(d.tS * 1000).toLocaleTimeString())}">✕</span>`;
+      html += `<span class="fd-rtdeath" style="left:${fdRunPct(run, d.tS).toFixed(2)}%" title="${esc(d.name + ' died at ' + cmdClock(d.tS))}">✕</span>`;
     });
     html += `<i class="fd-rtcur" style="left:${fdRunPct(run, run.t0 + t / 1000).toFixed(2)}%"></i>`;
     return html;
@@ -8155,6 +8156,14 @@
     fd.run.timer = setTimeout(() => fdRunTick(key), FightReplay.TICK_MS);
   }
 
+  // A ready check that has not answered yet: no bot is ready and none is not ready (an all-"check" party has no verdict to
+  // report), or there are no bots. The header then says so instead of "Ready 0/40".
+  function fdReadyNotRun(ready) {
+    if (!ready) return true;
+    const bots = ready.bots || [], c = ready.counts || { ok: 0, warn: 0, fail: 0 };
+    return !bots.length || (!c.ok && !c.fail);
+  }
+
   function fdFramesHtml(frames, selBot, ready) {
     const readyWord = l => l === 'fail' ? 'NOT READY' : l === 'warn' ? 'CHECK' : 'READY';
     const readyBy = {};
@@ -8163,10 +8172,14 @@
     if (ready) {
       const c = ready.counts || { ok: 0, warn: 0, fail: 0 }, lvl = ready.lvl || 'ok';
       const rows = (ready.bots || []).filter(r => r && r.lvl !== 'ok');
-      head = `<div class="fd-readyhead"><button type="button" class="fd-chip l-${esc(lvl)}" data-fd-ready aria-expanded="${ready.open ? 'true' : 'false'}">Ready ${c.ok}/${(ready.bots || []).length}</button>`
-        + `<span class="fd-readysub">${c.warn} check · ${c.fail} not ready${ready.known ? '' : ', buffs unknown (older module)'}</span></div>`;
-      if (ready.open) {
-        head += '<ol class="fd-readylist">' + rows.map(r => `<li class="l-${esc(r.lvl)}"><span class="fd-readynm">${esc(r.name)}</span> ${esc((r.reasons || []).join(', '))}</li>`).join('') + '</ol>';
+      if (fdReadyNotRun(ready)) {
+        head = '<div class="fd-readyhead"><span class="fd-chip">Ready check: not run yet</span></div>';
+      } else {
+        head = `<div class="fd-readyhead"><button type="button" class="fd-chip l-${esc(lvl)}" data-fd-ready aria-expanded="${ready.open ? 'true' : 'false'}">Ready ${c.ok}/${(ready.bots || []).length}</button>`
+          + `<span class="fd-readysub">${c.warn} check · ${c.fail} not ready${ready.known ? '' : ', buffs unknown (older module)'}</span></div>`;
+        if (ready.open) {
+          head += '<ol class="fd-readylist">' + rows.map(r => `<li class="l-${esc(r.lvl)}"><span class="fd-readynm">${esc(r.name)}</span> ${esc((r.reasons || []).join(', '))}</li>`).join('') + '</ol>';
+        }
       }
     }
     return head + (frames || []).map(g => {
