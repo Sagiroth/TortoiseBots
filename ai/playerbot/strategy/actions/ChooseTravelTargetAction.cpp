@@ -2420,6 +2420,9 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             std::vector<int32_t> gatherEntries, mobEntries;
             for (GuildOrderEntrySource const& source : GuildOrderSourcesFor(itemId))
             {
+                if (source.entry > 0 &&
+                    TortoiseBots::GuildOrders::CreatureRankExcludedFromSoloFarm(source.rank))
+                    continue;
                 if (source.skillId != SKILL_NONE)
                 {
                     if (!bot->HasSkill(source.skillId) ||

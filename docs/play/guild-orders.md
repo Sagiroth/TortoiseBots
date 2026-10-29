@@ -29,7 +29,7 @@ Open the TBM addon (`/tbm`), go to the **Guild** tab, press **Order** next to a 
 
 - **One order per bot.** A new order replaces the old one. `cancel` removes it and the bot goes back to normal life.
 - **Amount:** 1-200. Only items that can go to the bank can be ordered (no bind-on-pickup, quest or temporary items); those never show up in the search.
-- **Search:** needs at least 3 characters and shows at most 30 matches, each with where that bot would farm it and its rough chance there.
+- **Search:** needs at least 3 characters and shows at most 30 matches, each with where that bot would farm it, its rough chance there, and a difficulty estimate for one item: easy (about 30 kills or gathers), medium (about 200), hard (more than that). Order rows show the same estimate for the full amount; craft orders use the hardest material still missing, and buy orders show none.
 - **The search needs the bot online;** giving an order does not. An order on an offline bot is kept and runs when it comes back online.
 
 ## Who may give orders
@@ -46,10 +46,7 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 
 - **An order beats normal life:** a bot with an order drops questing and grinding to work on it. Exception: in a player's group the order waits until the bot leaves the group.
 - **The bot keeps ordered items:** it does not sell, auction or use them (or the materials of a craft order) while the order runs.
-- **Level safety:** only sources (mobs, nodes) up to the bot's level + 3 count. Herb and ore orders need level 10. If there is nothing usable, the order ends at once.
-- **Giving up:** if an hour of real work brings no new item, the bot moves once to the next best zone; another empty hour there, or 5 deaths during the order, ends it. Only time the bot actually works counts.
-- **Full bags:** when the bags fill up, the bot delivers what it has and goes back to finish. Progress never drops.
-- **Crafting:** the bot needs to know the recipe (hand it a recipe item and it learns it) and have real materials; materials a vendor sells it buys itself with its own gold. A recipe it cannot learn or materials it cannot get end the order.
+- **Level safety:** only sources (mobs, nodes) up to the bot's level + 3 count. Herb and ore orders need level 10. Elite, rare-elite and boss creatures never count: a solo bot does not farm them, so an item that only drops from them ends at once. If there is nothing usable, the order ends at once.
 
 ## Delivery
 
@@ -67,7 +64,7 @@ When the amount is reached, the bot walks to a guild banker in a capital city an
 | `done` | Deposited in the guild bank. |
 | `mailed` | The bank refused, mailed to the guild master. |
 | `noskill` | The item needs a profession the bot lacks, or its skill is too low. |
-| `cant` | No source in level range, no source at all, unknown recipe, or stuck after moving zone once. |
+| `cant` | No source in level range, no source at all, only elite sources, unknown recipe, or stuck after moving zone once. |
 
 ## Requirements
 

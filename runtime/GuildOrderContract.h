@@ -28,7 +28,8 @@ enum class OrderReason : uint8_t
     NoRecipe,
     Stuck,
     BagsFull,
-    NoBank
+    NoBank,
+    Elite,
 };
 
 inline char const* TypeToken(OrderType type)
@@ -87,13 +88,14 @@ inline char const* ReasonToken(OrderReason reason)
         case OrderReason::Stuck:    return "stuck";
         case OrderReason::BagsFull: return "bagsfull";
         case OrderReason::NoBank:   return "nobank";
+        case OrderReason::Elite:    return "elite";
     }
     return "-";
 }
 
 inline bool ParseReason(std::string const& token, OrderReason& out)
 {
-    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoBank); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::Elite); ++i)
         if (token == ReasonToken(OrderReason(i))) { out = OrderReason(i); return true; }
     return false;
 }
@@ -110,12 +112,30 @@ inline OrderState StateForReason(OrderReason reason)
         case OrderReason::NoRange:
         case OrderReason::NoSource:
         case OrderReason::NoRecipe:
+        case OrderReason::Elite:
         case OrderReason::Stuck:    return OrderState::Cant;
         case OrderReason::BagsFull: return OrderState::Delivering;
         case OrderReason::NoBank:   return OrderState::Mailed;
         case OrderReason::None:     break;
     }
     return OrderState::Working;
+}
+
+// Difficulty estimate for a farm plan, from the expected kills or gathers.
+// Search rows estimate one item; order rows estimate the full amount. Buy
+// orders carry none.
+enum class OrderDifficulty : uint8_t { None, Easy, Medium, Hard };
+
+inline char const* DifficultyToken(OrderDifficulty difficulty)
+{
+    switch (difficulty)
+    {
+        case OrderDifficulty::None:   return "-";
+        case OrderDifficulty::Easy:   return "easy";
+        case OrderDifficulty::Medium: return "medium";
+        case OrderDifficulty::Hard:   return "hard";
+    }
+    return "-";
 }
 
 inline bool IsFinished(OrderState state)
@@ -191,6 +211,7 @@ struct SourcePlan
     uint32_t skillValue = 0;
     OrderReason verdict = OrderReason::None;  // None = ok
     std::vector<FarmZone> zones;     // best first; empty for buy and craft
+    float bestChance = 0.0f;         // unfloored percent at zones[0]; 0 when no zones
 };
 
 } // namespace GuildOrders

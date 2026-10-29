@@ -54,6 +54,12 @@ namespace ai
     uint32 GuildOrderCraftReagentFor(PlayerbotAI* ai, Player* bot, uint32 itemId, uint32 amount,
         uint32 delivered);
 
+    // Expected kills for the hardest farmable reagent still missing from the
+    // bags for a craft order, or -1 when every reagent comes from the bags
+    // or from a vendor. The caller turns it into a difficulty estimate.
+    double GuildOrderCraftHardestReagentKills(PlayerbotAI* ai, Player* bot, uint32 itemId, uint32 amount,
+        uint32 delivered);
+
     // Order items waiting in the mailbox (bought AH items arrive by mail).
     uint32 OrderMailboxItems(Player* bot, uint32 itemId);
 

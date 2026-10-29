@@ -2,12 +2,12 @@
 
 #include "GuildOrderDelivery.h"
 #include "GuildOrderGiveUpPolicy.h"
+#include "GuildOrderSourcesPolicy.h"
 #include "../commands/CommandShared.h"
 #include "../host/ModuleLog.h"
 #include "../ai/playerbot/PlayerbotAI.h"
+#include "../ai/playerbot/GuildOrderSources.h"
 #include "PlayerbotAIStorage.h"
-
-// pi-lens-ignore: clang:pp_file_not_found
 #include "Database/DatabaseEnv.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "DBCStores.h"
@@ -609,11 +609,18 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
     std::string zone = ZoneName(order.farmZoneId);
     if (order.type == OrderType::Buy && zone == "-")
         zone = "Auction House";
+    Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.botGuidLow));
+    std::string difficulty = "-";
+    if (bot && bot->IsInWorld())
+        difficulty = ai::PlanOrderDifficulty(bot, order.itemId, order.type, order.amount);
+    else if (order.type == OrderType::Farm && order.farmChance > 0)
+        difficulty = DifficultyToken(
+            EstimateDifficulty(ExpectedKills(order.amount, float(order.farmChance))));
     return "TBM:ORDER|" + BotCommands::ProtocolSafe(BotName(order.botGuidLow)) + "|" +
            TypeToken(order.type) + "|" + std::to_string(order.itemId) + "|" +
            BotCommands::ProtocolSafe(itemName) + "|" + std::to_string(have) + "|" +
            std::to_string(order.amount) + "|" + StateToken(order.state) + "|" +
-           ReasonToken(order.reason) + "|" + BotCommands::ProtocolSafe(zone);
+           ReasonToken(order.reason) + "|" + BotCommands::ProtocolSafe(zone) + "|" + difficulty;
 }
 
 void Initialize()
