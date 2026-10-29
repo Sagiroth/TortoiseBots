@@ -12105,6 +12105,8 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
     ref.mobsMap = lead->GetMapId();
     size_t const count = std::min(snapshot.hostileCount, CommanderTelemetry::kMaxMobsPerBinding);
     ref.mobs.reserve(count);
+    std::vector<Unit*> units;
+    units.reserve(count);
     for (size_t i = 0; i < count; ++i)
     {
         RemoteCommander::View::Hostile const& h = snapshot.hostiles[i];
@@ -12126,12 +12128,23 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         if (h.casting)
             mob.cast = SpellNameOf(h.casting);
         if (unit && (mob.rank == 'b' || mob.rank == 'e'))
-        {
             FillMobFacingAndCast(unit, mob);
-            FillMobState(unit, mob);
-        }
         ref.mobs.push_back(std::move(mob));
+        units.push_back(unit);
     }
+    // The auras and state flags are holder and flag reads: fill them only for the rows that carry the overlay, the first
+    // kMaxMobOverlaysPerPayload boss or elite rows with a facing, bosses first (the payload's own order), not every boss and
+    // elite in view.
+    size_t overlays = 0;
+    for (char rank : {'b', 'e'})
+        for (size_t i = 0; i < ref.mobs.size() && overlays < CommanderTelemetry::kMaxMobOverlaysPerPayload; ++i)
+        {
+            CommanderTelemetry::MobInfo& mob = ref.mobs[i];
+            if (!units[i] || mob.rank != rank || (!mob.hasO && !mob.castId))
+                continue;
+            FillMobState(units[i], mob);
+            ++overlays;
+        }
     // What each bound bot is doing: the view snapshot already holds its state, newest action, cast and target; the rest are
     // field and aura reads (crowd control, drink/food, the boss debuffs it carries), once per bot per 2 s.
     // A debuff the group cast on itself is not the boss's work: the binding's bots and commander are the floor, and each
