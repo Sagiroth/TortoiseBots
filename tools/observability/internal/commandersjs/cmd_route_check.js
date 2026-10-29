@@ -62,4 +62,41 @@ location._hash = "#/commanders/Glacienne";
 run("go({ bot: 7, ptab: 'gear' })");
 assert.strictEqual(location._hash, "#/commanders/Glacienne?bot=7&p=gear", "the profile tab travels with the raid tab: " + location._hash);
 
+// ---- the debugger mode and the picked fight live in the hash ----------------------------------------------------------
+const route = (hash) => { location._hash = hash; return run("parseRoute()"); };
+let r = route("#/commanders/Glacienne/fight");
+assert.deepStrictEqual([r.cmd, r.cmdMode, r.cmdFight], ["Glacienne", "debug", null], "the old tab form's new shape opens the debugger");
+r = route("#/commanders/fight");
+assert.deepStrictEqual([r.cmd, r.cmdMode, r.cmdFight], [null, "debug", null], "All raids in the debugger");
+const KEY = "Glacienne\u0000" + 7 + "\u0000f3";
+r = route("#/commanders/Glacienne/fight/" + encodeURIComponent(KEY));
+assert.deepStrictEqual([r.cmd, r.cmdMode, r.cmdFight], ["Glacienne", "debug", KEY], "the fight key survives its encoding");
+r = route("#/commanders/A%2FB/fight");
+assert.deepStrictEqual([r.cmd, r.cmdMode, r.cmdFight], ["A/B", "debug", null], "a slash in a commander name still works");
+r = route("#/commanders/Glacienne"); // the old form keeps working
+assert.deepStrictEqual([r.cmd, r.cmdMode, r.cmdFight], ["Glacienne", null, null]);
+
+assert.strictEqual(run("routeHash({ tab: 'commanders', cmd: 'Glacienne', cmdMode: 'debug' })"), "#/commanders/Glacienne/fight");
+assert.strictEqual(run("routeHash({ tab: 'commanders', cmd: null, cmdMode: 'debug' })"), "#/commanders/fight");
+assert.strictEqual(run("routeHash({ tab: 'commanders', cmd: 'Glacienne', cmdMode: 'debug', cmdFight: 'K' })"), "#/commanders/Glacienne/fight/K");
+assert.strictEqual(run("routeHash({ tab: 'commanders', cmd: 'Glacienne' })"), "#/commanders/Glacienne", "the old form is still written when no mode is given");
+
+// the whole view survives a profile: reloading #/commanders/Glacienne/fight/K then closing the drawer comes back to it
+ctx.state.activeTab = "commanders";
+location._hash = "#/commanders/Glacienne/fight/K";
+run("go({ bot: 9 })");
+assert.strictEqual(location._hash, "#/commanders/Glacienne/fight/K?bot=9", "the picked fight travels with the drawer: " + location._hash);
+run("go({ bot: null })");
+assert.strictEqual(location._hash, "#/commanders/Glacienne/fight/K", "closing it returns to the fight");
+run("go({ tab: 'overview' })");
+assert.strictEqual(location._hash, "#/overview", "another tab drops the debugger route");
+
+// the demo choice is part of the view: a drawer over a demo fight comes back to the same simulated group
+ctx.state.activeTab = "commanders";
+location._hash = "#/commanders/DEMO%20(simulated)/fight/K1?demo=1";
+run("go({ bot: 9001 })");
+assert.strictEqual(location._hash, "#/commanders/DEMO%20(simulated)/fight/K1?bot=9001&demo=1", "the demo flag survives the drawer: " + location._hash);
+run("go({ bot: null })");
+assert.strictEqual(location._hash, "#/commanders/DEMO%20(simulated)/fight/K1?demo=1");
+
 console.log("cmd route ok");

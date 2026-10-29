@@ -39,6 +39,7 @@ vm.runInContext([
   "var fdPage = { open: null };",
   "var fdFights = null, fdFightsCache = null, fdFightsPending = null;",
   "var fdTabListSeen = () => {};",
+  "var fdFightHash = () => {};",
 ].join("\n"), ctx, { filename: "app.js state" });
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };

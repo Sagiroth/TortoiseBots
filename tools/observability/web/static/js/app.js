@@ -836,16 +836,34 @@
     const [path, query] = window.location.hash.replace(/^#\/?/, '').split('?');
     const segs = path.split('/');
     const tab = HASH_TO_TAB[segs[0]] || null;
-    // #/commanders/<name> opens that commander's tab; #/commanders is All raids.
-    let cmd = null;
+    // #/commanders/<name> opens that commander's tab, #/commanders/<name>/fight[/<fightId>] its Fight debugger with that
+    // fight picked, #/commanders/fight[/<fightId>] All raids in the Fight debugger; #/commanders is All raids.
+    let cmd = null, cmdMode = null, cmdFight = null;
     if (tab === 'commanders' && segs.length > 1) {
-      const rest = segs.slice(1).join('/').replace(/\/+$/, '');
-      if (rest) { try { cmd = decodeURIComponent(rest); } catch (e) { cmd = rest; } }
+      const rest = segs.slice(1);
+      while (rest.length && rest[rest.length - 1] === '') rest.pop();
+      const dec = (s) => { try { return decodeURIComponent(s); } catch (e) { return s; } };
+      if (rest[0] === 'fight') {
+        cmdMode = 'debug';
+        if (rest[1]) cmdFight = dec(rest[1]);
+      } else if (rest.length) {
+        const at = rest.lastIndexOf('fight');
+        if (at >= 0 && at === rest.length - 1) {
+          cmd = dec(rest.slice(0, at).join('/'));
+          cmdMode = 'debug';
+        } else if (at >= 0 && at === rest.length - 2) {
+          cmd = dec(rest.slice(0, at).join('/'));
+          cmdMode = 'debug';
+          cmdFight = dec(rest[rest.length - 1]);
+        } else {
+          cmd = dec(rest.join('/'));
+        }
+      }
     }
     const q = new URLSearchParams(query || '');
     const bot = parseInt(q.get('bot'), 10);
     const map = parseInt(q.get('map'), 10);
-    return { tab, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1', run: q.get('run'), map: Number.isFinite(map) && map > 0 ? map : null, cmd };
+    return { tab, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1', run: q.get('run'), map: Number.isFinite(map) && map > 0 ? map : null, cmd, cmdMode, cmdFight };
   }
 
   function routeHash(r) {
@@ -855,8 +873,16 @@
       if (r.ptab && r.ptab !== 'overview') q.set('p', r.ptab);
     }
     if (r.run) q.set('run', r.run);
+    if (r.demo && r.tab === 'commanders') q.set('demo', '1');
     const qs = q.toString();
-    const cmd = r.tab === 'commanders' && r.cmd ? '/' + encodeURIComponent(r.cmd) : '';
+    let cmd = '';
+    if (r.tab === 'commanders') {
+      if (r.cmd) cmd = '/' + encodeURIComponent(r.cmd);
+      if (r.cmdMode === 'debug') {
+        cmd += '/fight';
+        if (r.cmdFight) cmd += '/' + encodeURIComponent(r.cmdFight);
+      }
+    }
     return `#/${TABS[r.tab].hash}${cmd}${qs ? `?${qs}` : ''}`;
   }
 
@@ -865,10 +891,14 @@
   // keeps the open raid tab it already shows, so a profile drawn over the Fight debugger closes back onto it.
   function go(partial, opts) {
     const cur = parseRoute();
-    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.dungeons.openKey, cmd: cur.cmd }, partial);
+    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.dungeons.openKey, demo: cur.demo, cmd: cur.cmd, cmdMode: cur.cmdMode, cmdFight: cur.cmdFight }, partial);
     if (partial.tab && !('bot' in partial)) next.bot = null;
     if (partial.tab && !('run' in partial)) next.run = null;
-    if (partial.tab && partial.tab !== state.activeTab && !('cmd' in partial)) next.cmd = null;
+    if (partial.tab && partial.tab !== state.activeTab && !('cmd' in partial)) {
+      next.cmd = null;
+      next.cmdMode = null;
+      next.cmdFight = null;
+    }
     const hash = routeHash(next);
     if (opts && opts.replace) {
       history.replaceState(null, '', hash);
@@ -886,12 +916,12 @@
     const tab = r.tab || state.activeTab;
     const prevRunKey = state.dungeons.openKey;
     state.dungeons.openKey = tab === 'dungeons' && r.run ? r.run : null;
-    // The Commanders page's Fight debugger mode and its open tab come from the hash before the tab renders.
-    const prevCmd = fdPage.open;
+    // The Commanders page's Fight debugger mode, its open tab and its picked fight come from the hash before the tab renders.
+    const prevCmd = fdPage.open, prevFight = fdPage.fight;
     if (tab === 'commanders') cmdRouteTab(r);
     if (tab !== state.activeTab || !routeApplied) showTab(tab);
     else if (tab === 'dungeons' && state.dungeons.openKey !== prevRunKey) renderDungeons();
-    else if (tab === 'commanders' && fdPage.open !== prevCmd) renderCommanders();
+    else if (tab === 'commanders' && (fdPage.open !== prevCmd || fdPage.fight !== prevFight)) renderCommanders();
     routeApplied = true;
     if (r.demo && tab === 'commanders') setCmdDemo(true, true); // #/commanders?demo=1
     if (r.map && tab === 'dungeon-runs') dgSelect(r.map); // #/dungeon-runs?map=209 (the glance panel's links)
@@ -5079,6 +5109,7 @@
   const fdPage = {
     mode: null, explicit: false, loaded: false,          // live | debug, and whether the browser chose
     open: null,                                          // null = All raids, else the commander name
+    fight: null,                                         // the picked fight the hash names, so a repaint knows what changed
     gone: {}, known: {}, last: {}, openedAt: {},         // tabs of commanders that disappeared (5 min) and the seen clock
     gridQueued: false,
   };
@@ -5105,10 +5136,11 @@
     fdPage.loaded = true;
     try { if (fdPageStore) fdPageStore.setItem(FdTabs.PAGE_KEY, fdPage.mode); } catch (e) { /* nothing to remember */ }
     if (opts && opts.quiet) return;
-    if (same) { cmdPaintPageMode(next); return; } // clicking the view that is already on only remembers it
+    if (same) { cmdPageHash(fdPage.open, next, fdPage.fight, true); cmdPaintPageMode(next); return; } // clicking the view that is already on only remembers it
     fdStopCard(fdPage.open);
     fdPage.open = null;
-    fdTabHash(null, true);
+    fdPage.fight = null;
+    cmdPageHash(null, next, null, true);
     renderCommanders();
   }
 
@@ -5119,26 +5151,61 @@
     el.querySelectorAll('[data-page-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.pageMode === m ? 'true' : 'false'));
   }
 
-  // The hash decides the open tab (and, when it names one, the debugger); #/commanders is All raids.
+  // The hash decides the open tab and the Fight debugger mode: #/commanders/<name> (the old form) still opens the debugger,
+  // #/commanders/<name>/fight[/<fightId>] names the picked fight too, #/commanders/fight is All raids in the debugger.
   function cmdRouteTab(r) {
-    if (r.cmd) {
+    const debug = r.cmdMode === 'debug' || !!r.cmd;
+    if (debug) {
       cmdPageSetMode('debug', { quiet: true });
       if (fdPage.open !== r.cmd) {
         fdStopCard(fdPage.open);
         fdPage.open = r.cmd;
-        fdSeenWhenOpen(r.cmd);
+        if (r.cmd) fdSeenWhenOpen(r.cmd);
+      }
+      // A fight id needs its commander's tab; All raids has no fight to pick.
+      const fight = r.cmd ? (r.cmdFight || null) : null;
+      if (fdPage.fight !== fight) {
+        fdPage.fight = fight;
+        if (fight) fdRoutePick(r.cmd, fight);
       }
       return;
     }
     if (fdPage.open !== null) { fdStopCard(fdPage.open); fdPage.open = null; }
+    fdPage.fight = null;
   }
 
-  function fdTabHash(name, replace) {
+  // The fight the hash names: the tab picks it as if the user had clicked it, so the detail is fetched by its key even when
+  // it is older than the fetched list. A selection made by a click already stands.
+  function fdRoutePick(name, key) {
+    const fd = fdState(name);
+    if (fd.sel === key && fd.userSel) return;
+    fd.sel = key;
+    fd.userSel = true;
+    fd.death = null;
+    fdRunStopAll(fd);
+  }
+
+  // The Commanders route's hash, with the debugger's fight segment when it is on: a reload, Back and Forward land on the same
+  // tab, view and fight. The query (a profile's ?bot=, the demo flag) is kept.
+  function cmdPageHash(name, mode, fightKey, replace) {
     const q = new URLSearchParams((window.location.hash.split('?')[1]) || '');
     const qs = q.toString();
-    const hash = FdTabs.hashFor(name) + (qs ? '?' + qs : '');
+    const hash = routeHash({ tab: 'commanders', cmd: name || null, cmdMode: mode === 'debug' ? 'debug' : null, cmdFight: mode === 'debug' ? (fightKey || null) : null })
+      + (qs ? '?' + qs : '');
     if (window.location.hash === hash) return;
     try { (replace ? history.replaceState : history.pushState).call(history, null, '', hash); } catch (e) { window.location.hash = hash; }
+  }
+
+  function fdTabHash(name, replace, fightKey) {
+    cmdPageHash(name, 'debug', fightKey, replace);
+  }
+
+  // The picked fight goes into the hash of the open tab; a pick the page made itself replaces the entry instead of adding one.
+  function fdFightHash(fd, replace) {
+    if (cmdPageMode() !== 'debug' || !fdPage.open) return;
+    const key = fd.sel && fd.sel !== 'live' ? fd.sel : null;
+    fdPage.fight = key;
+    cmdPageHash(fdPage.open, 'debug', key, replace);
   }
 
   function fdSeenWhenOpen(name) {
@@ -5160,12 +5227,17 @@
   function fdTabOpen(name) {
     name = name || null;
     if (cmdPageMode() !== 'debug') cmdPageSetMode('debug', { quiet: true });
-    if (name === fdPage.open) { fdTabHash(name, true); return; }
+    if (name === fdPage.open) { fdTabHash(name, true, fdPage.fight); return; }
     fdStopCard(fdPage.open);
     fdPage.open = name;
+    // A tab already picked a fight earlier in this visit keeps it; the hash is written before the card renders, so the pick
+    // the render makes itself (the worst fight) replaces this entry instead of fighting with it.
+    const fd = name != null ? cmdFd[name] : null;
+    const fight = fd && fd.sel && fd.sel !== 'live' ? fd.sel : null;
+    fdPage.fight = fight;
     if (name) fdSeenWhenOpen(name);
+    fdTabHash(name, false, fight);
     renderCommanders();
-    fdTabHash(name, false);
   }
 
   function fdStopCard(key) {
@@ -5456,10 +5528,13 @@
       if (state.activeTab === 'commanders') renderCommanders();
     }
     if (!quiet) {
+      // The demo flag changes, not the view: the debugger mode stays in the hash; a demo tab that just vanished falls back
+      // to All raids.
       const q = new URLSearchParams((window.location.hash.split('?')[1]) || '');
       if (on) q.set('demo', '1'); else q.delete('demo');
       const qs = q.toString();
-      try { history.replaceState(null, '', '#/commanders' + (qs ? '?' + qs : '')); } catch (e) {}
+      const hash = routeHash({ tab: 'commanders', cmd: null, cmdMode: cmdPageMode() === 'debug' ? 'debug' : null }) + (qs ? '?' + qs : '');
+      try { history.replaceState(null, '', hash); } catch (e) { window.location.hash = hash; }
     }
   }
   function initCmdDemo() {
@@ -7068,6 +7143,7 @@
         fd.death = null;
         fd.list = [];
         fdRunStopAll(fd);
+        fdFightHash(fd, false);
         const bind = cmdFindBind(key);
         if (bind) fdLoad(card, bind);
         fdRender(key);
@@ -7088,6 +7164,7 @@
         fd.userSel = true;
         fd.death = null;
         fdRunStopAll(fd);
+        fdFightHash(fd, false);
       } else if (t.dataset.fdBot != null) {
         fd.bot = fd.bot === t.dataset.fdBot ? null : t.dataset.fdBot;
       } else if (t.dataset.fdDeath != null) {
@@ -7151,6 +7228,7 @@
       fd.userSel = true;
       fd.death = null;
       fdRunStopAll(fd);
+      fdFightHash(fd, false);
       fdReplayStop(fd);
       fd.rp = { on: false, t: 0, playing: false, speed: fd.rp.speed, timer: 0, key: fd.sel };
       fdRender(key);
@@ -7617,10 +7695,14 @@
   // or the live fight while one runs. A live fight that ended hands the pick back even when the user had chosen it.
   function fdSyncSel(fd, bind, list, details, layout) {
     const live = FightDebug.liveSummary(bind); // null for a parked group: the LIVE checks panel belongs to a fight
+    const before = fd.sel;
     if (fd.sel === 'live' && !live) { fd.sel = null; fd.userSel = false; }
-    if (fd.userSel) return;
-    const worst = FightDebug.worstIndex(details, layout);
-    fd.sel = worst >= 0 ? list[worst].key : !fd.day && live ? 'live' : list.length ? list[0].key : null;
+    if (!fd.userSel) {
+      const worst = FightDebug.worstIndex(details, layout);
+      fd.sel = worst >= 0 ? list[worst].key : !fd.day && live ? 'live' : list.length ? list[0].key : null;
+    }
+    // A pick the page made itself keeps the URL's fight segment current without adding a history entry per redraw.
+    if (fd.sel !== before) fdFightHash(fd, true);
   }
 
   // The plan facts a finished fight's checks read: the plan's ring strays on the walk to the fight's pack, and that pack and

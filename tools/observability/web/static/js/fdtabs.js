@@ -102,12 +102,6 @@
     return mode === "debug" && !!open && open === key;
   }
 
-  // ---- the hash of an open tab --------------------------------------------------------------------------------------
-  function hashFor(name) {
-    const n = text(name);
-    return "#/commanders" + (n ? "/" + encodeURIComponent(n) : "");
-  }
-
   // ---- the fights summaries both the All raids grid and the open tab read ------------------------------------------
   // cache/pending are the page's own objects (commander -> {list, at} / callbacks of the one request in flight), so the
   // debugger, the Deaths panel and the grid share one answer. list() returns true when it started a request.
@@ -156,7 +150,7 @@
   const api = {
     GONE_MS, FIGHTS_MS, TRACK_RETRY_MS, SEEN_MAX, SEEN_KEY, PAGE_KEY,
     sortBinds, deadCount, stateOf, rowEnd, fightKey, problem, verdictWord, markSeen, loadSeen, saveSeen, model,
-    detailAllowed, hashFor, newFights, trackDue,
+    detailAllowed, newFights, trackDue,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FdTabs = api;
 })(typeof self !== "undefined" ? self : this);

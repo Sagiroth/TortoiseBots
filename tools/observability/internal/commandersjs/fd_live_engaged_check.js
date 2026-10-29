@@ -21,7 +21,7 @@ function grab(name) {
 
 const ctx = { console, FightDebug: F };
 vm.createContext(ctx);
-vm.runInContext([grab("esc"), grab("fdRailHtml"), grab("fdSyncSel")].join("\n"), ctx);
+vm.runInContext([grab("esc"), grab("fdRailHtml"), grab("fdSyncSel"), "var fdFightHash = () => {};"].join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 
 const bots = [
