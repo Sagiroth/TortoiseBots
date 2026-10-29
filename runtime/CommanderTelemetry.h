@@ -25,8 +25,8 @@
 // report full of boss rows stays inside the UDP limit.
 //
 // Live positions (additive, same rule; task S3): while a bound group fights, its bots and the enemies its lead's last report
-// listed go out every 0.5 s (COMMANDER_POS) with the boss and elite rows' facing, so the dashboard's dots glide between the
-// 2 s reports; a group that stands still is only in those 2 s reports unless a shorter idle period is configured.
+// listed go out every 0.5 s (COMMANDER_POS), so the dashboard's dots glide between the 2 s reports; a group that stands
+// still is only in those 2 s reports unless a shorter idle period is configured.
 //
 // Map drawing (additive, same rule): the spell a bot is casting also names its target (a healer's heal target, a crowd-control
 // caster's mob), the game objects the bots have seen near them (doors, chests, altars, gongs: type and state, capped), and, for a run
@@ -999,10 +999,11 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
 
 // The live position report (task S3). The dashboard receives one COMMANDER_POS per bound group every 0.5 s while the group
 // fights, so its dots move between the 2 s reports: the same bots and enemies the last COMMANDERS report carried, matched
-// by guid, with the boss and elite rows' facing read at this cadence too. An idle period under 2000 ms adds out-of-combat
-// reports on its own clock; at 2000 the 2 s report is that source.
+// by guid, with a bot's own facing read at this cadence too. An idle period under 2000 ms adds out-of-combat reports on
+// its own clock; at 2000 the 2 s report is that source.
 
-// One bot's place in the position report. `g` is a low guid as in COMMANDERS; a facing uses the mob `o` convention.
+// One bot's place in the position report. `g` is a low guid as in COMMANDERS; a facing is radians as in COMMANDERS' mob
+// `o`.
 struct PosBot
 {
     uint32_t g = 0;
@@ -1025,10 +1026,6 @@ struct PosMob
     float y = 0.0f;
     uint32_t hpPct = 0;
     uint64_t victim = 0;
-    // A boss or elite turns while it fights, so its row carries where it looks (the overlay's `o`); an ordinary mob does
-    // not, and its row stays as it was.
-    bool hasO = false;
-    float o = 0.0f;
 };
 
 // One binding's positions: the COMMANDERS name, whether the group fights, and its bots and enemies.
@@ -1046,7 +1043,7 @@ constexpr size_t kMaxPosMobs = 24;     // the perception feed's own cap (kMaxMob
 constexpr size_t kPosByteBudget = 16000; // one datagram's share of the 16 KiB UDP budget
 constexpr size_t kMaxPosBindings = 20; // one datagram per commander, 1..20 commanders
 
-// The COMMANDER_POS datagram (protocol v12, "fmt":1). x/y/z in one decimal, a facing in two, a dead bot at hp 0 and a 0.
+// The COMMANDER_POS datagram (protocol v12, "fmt":1). x/y/z and a bot's facing in decimals, a dead bot at hp 0 and a 0.
 // Over kPosByteBudget (cannot happen at the caps) the enemies and then the bots are dropped from the end.
 inline std::string BuildPosPayload(int protocolVersion, uint64_t session, uint64_t seq, int64_t ts, int64_t tsMs,
                                    PosRef const& ref)
@@ -1077,10 +1074,8 @@ inline std::string BuildPosPayload(int protocolVersion, uint64_t session, uint64
             PosMob const& mob = ref.mobs[i];
             if (i)
                 ss << ",";
-            ss << "{\"id\":\"" << mob.id << "\",\"x\":" << mob.x << ",\"y\":" << mob.y << ",\"hp\":" << mob.hpPct;
-            if (mob.hasO)
-                ss << ",\"o\":" << Fixed2(mob.o);
-            ss << ",\"v\":\"" << (mob.victim ? std::to_string(mob.victim) : std::string()) << "\"}";
+            ss << "{\"id\":\"" << mob.id << "\",\"x\":" << mob.x << ",\"y\":" << mob.y << ",\"hp\":" << mob.hpPct
+               << ",\"v\":\"" << (mob.victim ? std::to_string(mob.victim) : std::string()) << "\"}";
         }
         ss << "]}";
         std::string out = ss.str();

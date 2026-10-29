@@ -183,8 +183,8 @@ void BotHostAdapter::OnStartup()
     ObservabilityEmitter::Instance().SetEnemyCastPoller([]() { BotCommands::PollEnemyCasts(); });
     // The live positions (COMMANDER_POS, task S3): the bound groups' bots and the lead's last-reported enemies.
     ObservabilityEmitter::Instance().SetPositionProvider(
-        [](std::vector<CommanderTelemetry::PosRef>& out, bool wantIdle) {
-            BotCommands::CollectCommanderPositions(out, wantIdle);
+        [](std::vector<CommanderTelemetry::PosRef>& out, bool wantCombat, bool wantIdle) {
+            BotCommands::CollectCommanderPositions(out, wantCombat, wantIdle);
         });
     // The Dungeons tab (issue #1101): the mobs of every dungeon run.
     ObservabilityEmitter::Instance().SetDungeonMobProvider(

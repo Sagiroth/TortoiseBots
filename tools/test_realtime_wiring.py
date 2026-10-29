@@ -51,6 +51,22 @@ class RealtimeWiringTest(unittest.TestCase):
         self.assertIn("Clamp(int combat, int idle)", CADENCE)
         self.assertIn("IdleSends(Cadence c)", CADENCE)
 
+    def test_feed_advances_both_periods_each_world_tick(self):
+        code = strip_comments(EMITTER)
+        update = body(code, "void ObservabilityEmitter::Update(", "m_snapshotTimerMs < kSnapshotIntervalMs")
+        self.assertIn("m_posClock.Advance(diff)", update, "both periods advance on every world tick")
+        start = update.index("m_posClock.Advance(diff)")
+        block = update[start:start + 800]
+        self.assertIn("due.Any()", block, "the provider runs when either period is due")
+        self.assertIn("m_positionProvider(m_positionRefs, due.combat, due.idle)", block,
+                      "each period asks for its own groups on the one call")
+        # Neither period may read the other's gate: the idle one then fired only on combat ticks (once per 10 s at
+        # idle 1000 / combat 500).
+        self.assertNotIn("CombatDue", update)
+        self.assertNotIn("IdleDue", update)
+        self.assertNotIn("CombatDue", CADENCE)
+        self.assertNotIn("IdleDue", CADENCE)
+
     def test_conf_template_carries_both_keys(self):
         self.assertIn("AiPlayerbot.ObservabilityRealtime.CombatMs = 500", CONF)
         self.assertIn("AiPlayerbot.ObservabilityRealtime.IdleMs = 2000", CONF)
@@ -59,8 +75,14 @@ class RealtimeWiringTest(unittest.TestCase):
     def test_positions_are_wired_from_the_commands_layer(self):
         self.assertIn("SetPositionProvider(", EMITTER_H)
         self.assertIn("BotCommands::CollectCommanderPositions(", ADAPTER)
-        self.assertIn("CollectCommanderPositions(std::vector<CommanderTelemetry::PosRef>& out, bool wantIdle)",
+        self.assertIn("CollectCommanderPositions(std::vector<CommanderTelemetry::PosRef>& out, bool wantCombat, bool wantIdle)",
                       COMMANDS_H)
+
+    def test_collector_selects_each_periods_groups(self):
+        code = strip_comments(COMMANDER)
+        fn = body(code, "void CollectCommanderPositions(", "\n}\n")
+        self.assertIn("combat ? !wantCombat : !wantIdle", fn,
+                      "a fighting group on the combat period, a standing one on the idle period")
 
     def test_collector_returns_on_no_bindings(self):
         code = strip_comments(COMMANDER)
@@ -77,17 +99,18 @@ class RealtimeWiringTest(unittest.TestCase):
         self.assertIn("s_mobWatch()", fn, "the mobs are the ones the last full report listed")
         self.assertIn("->GetUnit(", fn, "each one resolved by guid on the lead's map")
 
-    def test_facing_rides_only_the_boss_and_elite_rows(self):
+    def test_position_mobs_carry_no_facing(self):
+        # The daemon's COMMANDER_POS mob row is id/x/y/hp/v; a facing here would be a field its model never reads. A bot's
+        # row does carry one (PosBot.o), so only the mob read may be gone.
         code = strip_comments(COMMANDER)
         fn = body(code, "void CollectCommanderPositions(", "\n}\n")
-        guard = fn.index("rank == 'b' || rank == 'e'")
-        self.assertIn("GetOrientation()", fn[guard:guard + 300], "only a boss or elite row reads its facing")
-        self.assertIn("mob.hasO = true;", fn[guard:guard + 300])
+        self.assertIn("pos.o = bot->GetOrientation();", fn, "a bot row keeps its facing")
+        self.assertNotIn("mob.o", fn)
+        self.assertNotIn("mob.hasO", fn)
 
         pos = body(strip_comments(TELEMETRY), "inline std::string BuildPosPayload(", "\n}\n")
-        self.assertIn("hasO", pos)
-        self.assertIn("Fixed2(", pos)
-        self.assertIn(',\\"o\\":', pos, "the facing is written as o")
+        self.assertNotIn("hasO", pos)
+        self.assertNotIn(',\\"o\\":', pos.split('\\"mobs\\":', 1)[1], "the mob rows carry no facing")
 
     def test_builder_caps_and_budget_are_named(self):
         self.assertIn("kMaxPosBots = 40", TELEMETRY)

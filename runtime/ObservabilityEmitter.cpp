@@ -725,7 +725,8 @@ void ObservabilityEmitter::SetEnemyCastPoller(std::function<void()> poller)
     m_enemyCastPoller = std::move(poller);
 }
 
-void ObservabilityEmitter::SetPositionProvider(std::function<void(std::vector<CommanderTelemetry::PosRef>&, bool)> provider)
+void ObservabilityEmitter::SetPositionProvider(
+    std::function<void(std::vector<CommanderTelemetry::PosRef>&, bool wantCombat, bool wantIdle)> provider)
 {
     m_positionProvider = std::move(provider);
 }
@@ -1277,22 +1278,27 @@ void ObservabilityEmitter::Update(uint32 diff)
         }
     }
 
-    // The position feed (COMMANDER_POS): every CombatMs while a bound group
-    // fights, before the 2 s gate. The idle period adds the groups that do
-    // not fight only when it is under 2000 ms; at 2000 the 2 s report is the
-    // idle source. The master switch and the provider gate it first.
-    if (m_realtimeOn && m_positionProvider && m_posClock.CombatDue(diff))
+    // The position feed (COMMANDER_POS): both periods advance on every world
+    // tick, each on its own, so the faster one never starves the other; the
+    // provider runs once when either is due, before the 2 s gate, and reports
+    // each period's own groups. The idle period asks for the groups that do not
+    // fight only when it is under 2000 ms; at 2000 the 2 s report is the idle
+    // source. The master switch and the provider gate it first.
+    if (m_realtimeOn && m_positionProvider)
     {
-        bool const wantIdle = RealtimeCadence::IdleSends(m_posCadence) && m_posClock.IdleDue(diff);
-        m_positionRefs.clear();
-        m_positionProvider(m_positionRefs, wantIdle);
-        for (CommanderTelemetry::PosRef const& ref : m_positionRefs)
+        RealtimeCadence::Due const due = m_posClock.Advance(diff);
+        if (due.Any())
         {
-            std::string const payload = CommanderTelemetry::BuildPosPayload(kProtocolVersion, m_sessionId, NextSeq(),
-                NowUnix(), NowUnixMs(), ref);
-            SendDatagram(payload);
-            ++m_realtimeTiming.posDatagrams;
-            m_realtimeTiming.posBytes += payload.size();
+            m_positionRefs.clear();
+            m_positionProvider(m_positionRefs, due.combat, due.idle);
+            for (CommanderTelemetry::PosRef const& ref : m_positionRefs)
+            {
+                std::string const payload = CommanderTelemetry::BuildPosPayload(kProtocolVersion, m_sessionId, NextSeq(),
+                    NowUnix(), NowUnixMs(), ref);
+                SendDatagram(payload);
+                ++m_realtimeTiming.posDatagrams;
+                m_realtimeTiming.posBytes += payload.size();
+            }
         }
     }
     if (m_realtimeOn)

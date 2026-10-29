@@ -30,29 +30,42 @@ inline Cadence Clamp(int combat, int idle)
 // carries the positions of every standing group, and a second out-of-combat source would only repeat it.
 inline bool IdleSends(Cadence c) { return c.idleMs < 2000; }
 
-// The two accumulators of the position feed, one world tick at a time: each fires once its period is reached and resets
-// then, so the feed never runs twice for the same period.
+// What one world tick makes due for the position feed.
+struct Due
+{
+    bool combat = false;
+    bool idle = false;
+
+    bool Any() const { return combat || idle; }
+};
+
+// The two accumulators of the position feed. Advance runs on every world tick and moves both of them, each on its own
+// period, so a slow period can never hold the other back (and the idle period never loses the time spent waiting for
+// the combat period). Each accumulator resets when it fires.
 class Clock
 {
 public:
     void Set(Cadence c) { m_cadence = c; }
 
-    bool CombatDue(uint32_t diff)
+    Due Advance(uint32_t diff)
     {
+        Due due;
         m_combatMs += diff;
-        if (m_combatMs < m_cadence.combatMs)
-            return false;
-        m_combatMs = 0;
-        return true;
-    }
-
-    bool IdleDue(uint32_t diff)
-    {
-        m_idleMs += diff;
-        if (m_idleMs < m_cadence.idleMs)
-            return false;
-        m_idleMs = 0;
-        return true;
+        if (m_combatMs >= m_cadence.combatMs)
+        {
+            m_combatMs = 0;
+            due.combat = true;
+        }
+        if (IdleSends(m_cadence))
+        {
+            m_idleMs += diff;
+            if (m_idleMs >= m_cadence.idleMs)
+            {
+                m_idleMs = 0;
+                due.idle = true;
+            }
+        }
+        return due;
     }
 
 private:

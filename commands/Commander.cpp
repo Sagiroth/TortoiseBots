@@ -12235,7 +12235,7 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
 // sent every 0.5 s while the group fights (and on the idle period, when one is asked for). Field reads on the bound members
 // and one guid lookup per watched enemy on the lead's map: no grid, world or DB read, nothing per bot tick. At most
 // kMaxPosBindings bindings per call from a rotating start, so more bindings than that all get a turn.
-void CollectCommanderPositions(std::vector<CommanderTelemetry::PosRef>& out, bool wantIdle)
+void CollectCommanderPositions(std::vector<CommanderTelemetry::PosRef>& out, bool wantCombat, bool wantIdle)
 {
     out.clear();
     // Nothing to read while no commander is bound: the common case costs a lookup.
@@ -12265,7 +12265,7 @@ void CollectCommanderPositions(std::vector<CommanderTelemetry::PosRef>& out, boo
                 combat = true;
                 break;
             }
-        if (!combat && !wantIdle)
+        if (combat ? !wantCombat : !wantIdle)
             continue;
         CommanderTelemetry::PosRef ref;
         ref.commander = binding->system ? "system" : CommanderDisplayName(*binding, FindCharacter(commanderRaw));
@@ -12300,7 +12300,6 @@ void CollectCommanderPositions(std::vector<CommanderTelemetry::PosRef>& out, boo
                 if (ref.mobs.size() >= CommanderTelemetry::kMaxPosMobs)
                     break;
                 uint64 const guid = std::get<0>(row);
-                char const rank = std::get<2>(row);
                 Unit* unit = map->GetUnit(::ObjectGuid(guid));
                 if (!unit)
                     continue;
@@ -12311,12 +12310,6 @@ void CollectCommanderPositions(std::vector<CommanderTelemetry::PosRef>& out, boo
                 mob.hpPct = unit->GetMaxHealth()
                     ? static_cast<uint32>(unit->GetHealth() * 100ull / unit->GetMaxHealth()) : 0;
                 mob.victim = unit->GetTargetGuid().GetRawValue();
-                // Only a boss or elite turns on the map; an ordinary enemy keeps its last report's place and no facing.
-                if (rank == 'b' || rank == 'e')
-                {
-                    mob.hasO = true;
-                    mob.o = unit->GetOrientation();
-                }
                 ref.mobs.push_back(mob);
             }
         }
