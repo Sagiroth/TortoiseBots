@@ -37,6 +37,8 @@
 - The companion app can now page through the last day of loot picked up by your party bots, 40 rows at a time.
 - Fixed: bots now pick up quest source items (like the Gnarlpine Necklace that starts Ferocitas the Dream Eater) instead of leaving them on the corpse.
 
+- Fixed: bots now walk to corpses that hold only their own quest item, which can miss the lootable flag the corpse shows you.
+
 ### Dungeons & Maps
 - Fixed: a player's ghost outside no longer pulls the run's bots in and out through the portal; the lead-off-map pause resumes by itself.
 - New: GameMasters can start bot-only dungeon test runs at up to 3x walking speed (`.bot run start ... speed=2`); fights stay at normal speed and the status line marks the run as a test.
