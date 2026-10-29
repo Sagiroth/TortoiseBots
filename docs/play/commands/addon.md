@@ -54,6 +54,7 @@ The interface is divided into functional tabs designed for different stages of g
 ### Guild Tab
 
 - Displays claimed guild bots for your account, detailing bot levels and grouping state.
+- **Order:** opens the order window for a bot: search an item, choose Farm, Buy or Craft and an amount. See [Guild Orders](../guild-orders.md).
 
 ---
 
