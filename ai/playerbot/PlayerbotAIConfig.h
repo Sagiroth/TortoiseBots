@@ -857,6 +857,8 @@ public:
     // Hour (unix time / 3600) each live log was opened in.
     std::unordered_map<std::string, time_t> logHour;
 
+    // Per-fight combat numbers of every bound group for the observability dashboard.
+    bool combatMonitor = false;
     bool raidBossDiagnostics = false;
     std::list<std::string> allowedLogFiles;
     std::list<std::string> debugFilter;
