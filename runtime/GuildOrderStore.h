@@ -52,6 +52,15 @@ void NoteFarmRest(uint32_t botGuidLow);
 // The bot died while the order ran. Only deaths in Working count.
 void NoteDeath(uint32_t botGuidLow);
 
+// An order-leg search came back rejected or empty in the planned zone.
+// Counts consecutive failures there; the third moves the order to the next
+// plan zone through the zone-move path. World thread only (travel pick).
+void NoteSearchFailed(uint32_t botGuidLow, uint32_t zoneId);
+
+// An order-leg search landed: the consecutive-failure count for the zone
+// resets. World thread only (travel pick).
+void NoteSearchLanded(uint32_t botGuidLow);
+
 // The bags filled up before the amount was reached: partial delivery.
 void NoteBagsFull(uint32_t botGuidLow);
 

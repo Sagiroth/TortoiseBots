@@ -191,7 +191,7 @@ public:
         it->second.record.farmChance = chance;
         it->second.record.zoneIndex = zoneIndex;
         it->second.record.farmItemId = farmItemId;
-        MarkDirtyLocked(it->second);
+        it->second.record.searchFailsInZone = 0;
     }
 
     void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason)
@@ -221,6 +221,20 @@ public:
         MarkDirtyLocked(it->second);
     }
 
+    void NoteSearchFailed(uint32_t botGuidLow, uint32_t zoneId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        if (it->second.record.state != OrderState::Working || it->second.record.farmZoneId != zoneId)
+            return;
+        ++it->second.record.searchFailsInZone;
+        if (SearchFailsMoveZone(it->second.record.searchFailsInZone) && MoveZoneForSearchLocked(it->second))
+            it->second.zoneMovePending = true;
+        MarkDirtyLocked(it->second);
+    }
+
     void NoteFarmRest(uint32_t botGuidLow)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -233,6 +247,18 @@ public:
         it->second.record.farmZoneId = 0;
         it->second.record.farmChance = 0;
         it->second.record.zoneIndex = 0;
+        MarkDirtyLocked(it->second);
+    }
+
+    void NoteSearchLanded(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        if (it->second.record.searchFailsInZone == 0)
+            return;
+        it->second.record.searchFailsInZone = 0;
         MarkDirtyLocked(it->second);
     }
 
@@ -464,6 +490,21 @@ private:
         record.farmChance = 0;
         record.workedSinceNewItemSec = 0;
         record.deathsInZone = 0;
+        record.searchFailsInZone = 0;
+        MarkDirtyLocked(stored);
+        return true;
+    }
+    // A zone move after repeated failed searches: same advance-and-clear as
+    // the death/no-progress move, without touching those clocks.
+    static bool MoveZoneForSearchLocked(Stored& stored)
+    {
+        OrderRecord& record = stored.record;
+        if (record.state != OrderState::Working)
+            return false;
+        ++record.zoneIndex;
+        record.farmZoneId = 0;
+        record.farmChance = 0;
+        record.searchFailsInZone = 0;
         MarkDirtyLocked(stored);
         return true;
     }
@@ -617,6 +658,16 @@ void NoteFarmRest(uint32_t botGuidLow)
 void NoteDeath(uint32_t botGuidLow)
 {
     OrderStore::Instance().NoteDeath(botGuidLow);
+}
+
+void NoteSearchFailed(uint32_t botGuidLow, uint32_t zoneId)
+{
+    OrderStore::Instance().NoteSearchFailed(botGuidLow, zoneId);
+}
+
+void NoteSearchLanded(uint32_t botGuidLow)
+{
+    OrderStore::Instance().NoteSearchLanded(botGuidLow);
 }
 
 void NoteBagsFull(uint32_t botGuidLow)

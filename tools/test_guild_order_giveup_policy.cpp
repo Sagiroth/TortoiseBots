@@ -41,7 +41,15 @@ int main()
     CHECK(ClassifyZoneMove(7200, 2) == ZoneMoveTrigger::NoProgress);
 
     // Deaths win when both thresholds hit together.
-    CHECK(ClassifyZoneMove(3600, 5) == ZoneMoveTrigger::Deaths);
+    // Failed order-leg searches move the zone after three in a row: a bad
+    // zone costs short parks, not the hour the death rules would take.
+    CHECK(kSearchFailZoneMove == 3);
+    CHECK(kOrderLegParkSeconds == 15);
+    CHECK(!SearchFailsMoveZone(0));
+    CHECK(!SearchFailsMoveZone(1));
+    CHECK(!SearchFailsMoveZone(2));
+    CHECK(SearchFailsMoveZone(3));
+    CHECK(SearchFailsMoveZone(4));
 
     // The order ends once the bot worked its chosen hours in total.
     CHECK(!IsOrderTimeout(3599, 1));

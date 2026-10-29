@@ -6,6 +6,7 @@
 #include <utility>
 #include "strategy/values/TravelValues.h"
 #include "WorldSquare.h"
+#include <unordered_set>
 
 namespace ai
 {
@@ -559,6 +560,10 @@ namespace ai
 
 		GatherTravelDestination fishMap;
 		std::list<AsyncGuidPosition> fishPoints;
+		// Zones holding at least one fish spot, built with the destinations
+		// above: the order planner asks per search row, so it reads a set,
+		// never a point walk.
+		std::unordered_set<uint32> fishSpotZones;
 		std::unordered_map<uint32, int32> areaLevels;
 		// Taxi-node zone cache (#426 flight transport): node id -> zone area id
 		// (0 = unresolvable at build, fail closed at use). Built once at startup

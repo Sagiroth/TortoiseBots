@@ -575,13 +575,24 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         bool const beginnerRepark = questErrand && bot->GetLevel() < 5 &&
             sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster() &&
             !HasRewardableFinishedQuest(ai);
-        // A rejected order leg never parks: the order stays Working and the
-        // plan only moves on by deaths or an hour without a new item, so a
-        // minute park would idle the bot between re-searches of the same
-        // zone. The leg re-requests next tick and either lands a spot that
-        // turned active or picks the plan's next zone.
+        // An order leg parks briefly: the continent-wide search is dear,
+        // and re-searching the same pinned zone every tick never makes
+        // progress. Three consecutive rejected or empty searches in one
+        // zone move the order to the next plan zone, so a bad zone costs
+        // about a minute, not the hour the death rules would take.
         bool const orderLeg = IsGuildOrderTravelName(purposeKey);
-        if (!orderLeg)
+        if (orderLeg)
+        {
+            uint32_t orderZoneForSearch = 0;
+            if (std::optional<TortoiseBots::GuildOrders::OrderRecord> orderRecord =
+                TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
+                orderZoneForSearch = orderRecord->farmZoneId;
+            TortoiseBots::GuildOrders::NoteSearchFailed(bot->GetGUIDLow(), orderZoneForSearch);
+            SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
+            SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey,
+                time(0) + TortoiseBots::GuildOrders::kOrderLegParkSeconds);
+        }
+        else
         {
             SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey,
@@ -658,6 +669,10 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
     if (futureTravelPurpose == std::to_string((uint32)TravelDestinationPurpose::Grind))
         SET_AI_VALUE2(int32, "manual int", "grind empty streak", 0);
+    // A landed order search breaks the failed-search streak: the zone serves
+    // the order, so the next rejection starts counting from zero.
+    if (IsGuildOrderTravelName(futureTravelPurpose))
+        TortoiseBots::GuildOrders::NoteSearchLanded(bot->GetGUIDLow());
 
     if (AI_VALUE2(std::string, "manual string", "future travel condition") == "has guild travel order")
     {
@@ -671,7 +686,6 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         }
     }
 
-    setNewTarget(requester, &newTarget, travelTarget);
 
     return true;
 }
