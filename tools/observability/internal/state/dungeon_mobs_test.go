@@ -411,3 +411,26 @@ func TestMatchDungeonMobsBySharedMember(t *testing.T) {
 		t.Fatalf("instance precedence: %+v", got)
 	}
 }
+
+// A dungeon mob list carries the boss overlay too (the same object as the commander report), and the daemon notes when a
+// cast ends without changing the caller's payload.
+func TestDungeonMobsCastEnd(t *testing.T) {
+	s := newTestStore(newClock())
+	facing := 1.5
+	boss := model.CommanderMob{ID: "5", Entry: 10184, Name: "Onyxia", HP: 80, Reaction: "h", Rank: "b", O: &facing,
+		CastID: 18435, CastLeftMS: 1200, CastTotalMS: 2000, Shape: &model.CommanderShape{Kind: "cone", Angle: 120, Length: 45}}
+	plain := hostileMob(mobGUID, botGUID)
+	p := mobPayload(1, 1, mobRun(249, 7, nil, 2, boss, plain))
+	p.TS = 100
+	s.ApplyDungeonMobs(p)
+	mobs := *mobEntries(s)["249:7"].run.Mobs
+	if len(mobs) != 2 || mobs[0].CastEndMS != 101200 || mobs[0].Shape == nil || mobs[0].Shape.Kind != "cone" {
+		t.Fatalf("boss overlay lost: %+v", mobs)
+	}
+	if mobs[1].CastEndMS != 0 || mobs[1].O != nil {
+		t.Fatalf("an ordinary mob must carry no cast end: %+v", mobs[1])
+	}
+	if (*p.Runs[0].Mobs)[0].CastEndMS != 0 {
+		t.Fatalf("the caller's payload must not be changed: %d", (*p.Runs[0].Mobs)[0].CastEndMS)
+	}
+}

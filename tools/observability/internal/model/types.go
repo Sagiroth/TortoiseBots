@@ -717,6 +717,27 @@ type CommanderMob struct {
 	Rank     string  `json:"rank,omitempty"`   // b boss, e elite, r rare; empty: an ordinary unit
 	CC       string  `json:"cc,omitempty"`     // s stunned, c confused (polymorph, sleep), f fleeing, r rooted; empty: free
 	Cast     string  `json:"cast,omitempty"`   // the spell it is casting right now
+
+	// The boss overlay (fight debugger phase 2), from a module that reports it and only on boss and elite units: where the
+	// unit faces, the cast it runs and the area that spell covers.
+	O           *float64        `json:"o,omitempty"`       // facing, radians (0 = +x north, counter-clockwise toward +y west); a pointer so 0 is reported and absent stays absent
+	CastID      uint32          `json:"cid,omitempty"`     // the spell being cast or channelled
+	CastLeftMS  uint32          `json:"cleft,omitempty"`   // time left of that cast (or channel) when the module read it, ms
+	CastTotalMS uint32          `json:"ctot,omitempty"`    // the cast's own time, or the channel's duration, ms
+	CastTarget  string          `json:"ctg,omitempty"`     // guid (decimal string) of the unit the spell is aimed at
+	Channel     int             `json:"ch,omitempty"`      // 1 when the spell is channelled
+	Shape       *CommanderShape `json:"shape,omitempty"`   // the area the spell covers; absent when the module has no shape for it
+	CastEndMS   int64           `json:"cend_ms,omitempty"` // when the cast ends, unix ms, filled by the daemon from the report's ts and the time left
+}
+
+// CommanderShape is the area a boss or elite spell covers, as the module's committed shape table knows it: k is cone (in
+// front), back-cone (behind) or line (along the facing); a the full arc in degrees (cones), l the reach in yards along the
+// facing, w the band across a line in yards. An unknown spell has no shape at all.
+type CommanderShape struct {
+	Kind   string  `json:"k"`
+	Angle  uint16  `json:"a,omitempty"`
+	Length float64 `json:"l,omitempty"`
+	Width  float64 `json:"w,omitempty"`
 }
 
 // CommanderBot is a bot of a bound party.

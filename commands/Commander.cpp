@@ -11570,6 +11570,34 @@ static uint64 CurrentSpellTargetGuid(Unit* unit)
     return 0;
 }
 
+// The facing and the cast a boss or elite is running, for the dashboard's boss overlay: the unit's orientation, its
+// current spell's id and time left and total, the spell's unit target, whether it channels, and the area the spell
+// covers from the committed shape table (runtime/SpellShape.h; a spell absent from it sends no shape). Read from what
+// the unit already holds, no scan. Core: Objects/Object.h:835 and :1145, Spells/Spell.h:428-429, SpellEntry.h:1110.
+static void FillMobFacingAndCast(Unit* unit, CommanderTelemetry::MobInfo& mob)
+{
+    mob.hasO = true;
+    mob.o = unit->GetOrientation();
+    for (CurrentSpellTypes type : { CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL })
+    {
+        Spell* spell = unit->GetCurrentSpell(type);
+        if (!spell || !spell->m_spellInfo)
+            continue;
+        mob.castId = spell->m_spellInfo->Id;
+        mob.castLeftMs = spell->GetCastedTime();
+        mob.channel = type == CURRENT_CHANNELED_SPELL;
+        mob.castTotalMs = mob.channel ? static_cast<uint32>(spell->m_spellInfo->GetDuration())
+                                      : static_cast<uint32>(spell->GetCastTime());
+        mob.castTarget = spell->m_targets.getUnitTargetGuid().GetRawValue();
+        if (CommanderTelemetry::SpellShape::Shape const* shape = CommanderTelemetry::SpellShape::For(mob.castId))
+        {
+            mob.hasShape = true;
+            mob.shape = *shape;
+        }
+        return;
+    }
+}
+
 // What the dashboard calls a game object: a letter for its type, or 0 for the kinds it does not draw (mailboxes, fishing holes ...).
 static char DashboardObjectType(GameObject const* go)
 {
@@ -11865,7 +11893,8 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         CommanderTelemetry::MobInfo mob;
         mob.id = h.guid;
         mob.entry = h.entry;
-        if (Unit* unit = map ? map->GetUnit(::ObjectGuid(h.guid)) : nullptr)
+        Unit* unit = map ? map->GetUnit(::ObjectGuid(h.guid)) : nullptr;
+        if (unit)
             mob.name = unit->GetName();
         mob.hpPct = h.hpPct;
         mob.x = h.x;
@@ -11878,6 +11907,8 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         mob.cc = h.ccKind;
         if (h.casting)
             mob.cast = SpellNameOf(h.casting);
+        if (unit && (mob.rank == 'b' || mob.rank == 'e'))
+            FillMobFacingAndCast(unit, mob);
         ref.mobs.push_back(std::move(mob));
     }
     // What each bound bot is doing: the view snapshot already holds its state, newest action, cast and target; the rest are
@@ -12060,6 +12091,8 @@ static void FillDungeonMob(Player* seer, Unit* unit, CommanderTelemetry::MobInfo
         unit->HasUnitState(UNIT_STAT_FLEEING), unit->HasUnitState(UNIT_STAT_ROOT));
     if (uint32 const spellId = CurrentSpellId(unit))
         mob.cast = SpellNameOf(spellId);
+    if (mob.rank == 'b' || mob.rank == 'e')
+        FillMobFacingAndCast(unit, mob);
 }
 
 // The combat monitor's 1 Hz run tick (task A8b): the bound bots, in-combat

@@ -16,6 +16,14 @@
 // crowd control, and when the binding began, so the dashboard can say what
 // every character is doing and answer a hover over any unit.
 //
+// Boss overlay (additive, same rule; owner request 2026-10-29 "the boss doesnt show on the map its direction or when
+// it does the breath"): a boss or elite unit also carries its facing (`o`, radians), the cast it runs (`cid`, `cleft`
+// left and `ctot` total in ms, `ctg` its unit target, `ch` for a channel) and the area that spell covers (`shape`: a
+// cone, a back cone or a line, with arc, reach and width), read from runtime/SpellShape.h's committed table by spell
+// id. Unknown spells send no shape, and no extra datagram is sent: these ride the mob rows of the 2 s report. At most
+// kMaxMobOverlaysPerPayload rows per datagram carry them (bosses first, then elites); the rest keep the old row, so a
+// report full of boss rows stays inside the UDP limit.
+//
 // Map drawing (additive, same rule): the spell a bot is casting also names its target (a healer's heal target, a crowd-control
 // caster's mob), the game objects the bots have seen near them (doors, chests, altars, gongs: type and state, capped), and, for a run
 // leader's run, the plan's steps of the current section (capped, rebuilt only when the step moves). The dashboard draws paths,
@@ -47,6 +55,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "SpellShape.h"
+
 class Player;
 
 namespace TortoiseBots {
@@ -59,6 +69,7 @@ constexpr size_t kMaxBotsPerBinding = 40;   // a raid binding is the only bound 
 constexpr size_t kMaxBotsPerPayload = 64;   // all bindings together: the heaviest raid plus a party, or four parties
 constexpr size_t kMaxMobsPerBinding = 24; // the perception feed's own cap (kMaxHostiles)
 constexpr size_t kMaxMobsPerPayload = 64; // all bindings together: the datagram stays well under 64 KiB
+constexpr size_t kMaxMobOverlaysPerPayload = 16; // boss/elite rows carrying facing, cast and shape: keeps the worst datagram under the UDP limit
 constexpr size_t kMaxMobName = 24;
 constexpr size_t kMaxCastName = 24;     // a spell name
 constexpr size_t kMaxActionName = 32;   // the bot's newest action name
@@ -197,6 +208,16 @@ struct MobInfo
     char rank = 0;         // RankKind: 0 ordinary, 'e' elite, 'r' rare, 'b' boss
     char cc = 0;           // CcKind: 0 free, 's' stunned, 'c' confused, 'f' fleeing, 'r' rooted
     std::string cast;      // name of the spell it is casting, empty = none
+    // Facing and the cast of a boss or elite (the dashboard's boss overlay): what the spell hits and where the unit looks.
+    bool hasO = false;        // o was read (0 is a real facing, so it is not the "unset" value)
+    float o = 0.0f;           // facing, radians (0 = +x north, counter-clockwise toward +y west)
+    uint32_t castId = 0;      // the spell being cast or channelled, 0 = none
+    uint32_t castLeftMs = 0;  // time left of that cast (or of the channel) when the report was read
+    uint32_t castTotalMs = 0; // the cast's own time, or the channel's duration
+    uint64_t castTarget = 0;  // raw guid of the unit the spell is aimed at, 0 = no unit target
+    bool channel = false;     // the spell is channelled
+    bool hasShape = false;    // shape holds the spell's area (SpellShape::For knew it)
+    SpellShape::Shape shape;  // the area (cone, back cone or line) and its size
 };
 
 // One step of the run leader's plan, as the dashboard draws it (a dashed route for moves, numbered circles for pulls, marks for the rest).
@@ -601,8 +622,20 @@ inline std::string JsonEscape(std::string const& s)
     return out;
 }
 
+// Two decimals, as the facing is sent (a slice of a radian is about 0.06 degrees). A value that rounds to zero is
+// written as 0.00, never -0.00.
+inline std::string Fixed2(float v)
+{
+    if (v > -0.005f && v < 0.005f)
+        v = 0.0f;
+    char buf[24];
+    std::snprintf(buf, sizeof(buf), "%.2f", static_cast<double>(v));
+    return buf;
+}
+
 // One mob object as COMMANDERS and DUNGEON_MOBS write it. The stream must be set to fixed, precision 1 (both builders do).
-inline void AppendMobJson(std::ostringstream& ss, MobInfo const& m)
+// overlay: write the facing, cast and shape of a boss or elite row (BuildPayload leaves it out past its per-datagram cap).
+inline void AppendMobJson(std::ostringstream& ss, MobInfo const& m, bool overlay = true)
 {
     ss << "{\"id\":\"" << m.id << "\",\"entry\":" << m.entry
        << ",\"name\":\"" << JsonEscape(Clip(m.name, kMaxMobName)) << "\""
@@ -621,6 +654,27 @@ inline void AppendMobJson(std::ostringstream& ss, MobInfo const& m)
         ss << ",\"cc\":\"" << m.cc << "\"";
     if (!m.cast.empty())
         ss << ",\"cast\":\"" << JsonEscape(Clip(m.cast, kMaxCastName)) << "\"";
+    if (overlay && m.hasO)
+        ss << ",\"o\":" << Fixed2(m.o);
+    if (overlay && m.castId)
+    {
+        ss << ",\"cid\":" << m.castId << ",\"cleft\":" << m.castLeftMs << ",\"ctot\":" << m.castTotalMs;
+        if (m.castTarget)
+            ss << ",\"ctg\":\"" << m.castTarget << "\"";
+        if (m.channel)
+            ss << ",\"ch\":1";
+        if (m.hasShape && m.shape.kind != SpellShape::Kind::None)
+        {
+            ss << ",\"shape\":{\"k\":\"" << SpellShape::KindName(m.shape.kind) << "\"";
+            if (m.shape.angle)
+                ss << ",\"a\":" << m.shape.angle;
+            if (m.shape.length > 0.0f)
+                ss << ",\"l\":" << m.shape.length;
+            if (m.shape.width > 0.0f)
+                ss << ",\"w\":" << m.shape.width;
+            ss << "}";
+        }
+    }
     ss << "}";
 }
 
@@ -642,6 +696,7 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
     ss << ",\"type\":\"COMMANDERS\",\"commanders\":[";
     size_t shown = 0;
     size_t mobsTotal = 0;
+    size_t overlaysTotal = 0;
     size_t stepsTotal = 0;
     size_t botsTotal = 0;
     size_t objectsTotal = 0;
@@ -814,16 +869,25 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
             ss << ",\"commander_pos\":{\"map\":" << b.commanderMap << ",\"x\":" << b.commanderX << ",\"y\":" << b.commanderY << "}";
         if (b.mobsReported)
         {
+            // The rows that carry the overlay: bosses first, then elites, at most kMaxMobOverlaysPerPayload per datagram;
+            // the rest keep the old row, so a report whose every mob is a boss stays inside the UDP limit.
+            size_t const room = mobsTotal < kMaxMobsPerPayload ? kMaxMobsPerPayload - mobsTotal : 0;
+            size_t const listed = std::min({b.mobs.size(), kMaxMobsPerBinding, room});
+            std::vector<char> overlay(listed, 0);
+            for (char rank : {'b', 'e'})
+                for (size_t i = 0; i < listed && overlaysTotal < kMaxMobOverlaysPerPayload; ++i)
+                    if (!overlay[i] && b.mobs[i].rank == rank && (b.mobs[i].hasO || b.mobs[i].castId))
+                    {
+                        overlay[i] = 1;
+                        ++overlaysTotal;
+                    }
             ss << ",\"mobs_map\":" << b.mobsMap << ",\"mobs\":[";
-            size_t mobs = 0;
-            for (MobInfo const& m : b.mobs)
+            for (size_t i = 0; i < listed; ++i)
             {
-                if (mobs >= kMaxMobsPerBinding || mobsTotal >= kMaxMobsPerPayload)
-                    break;
-                if (mobs++)
+                if (i)
                     ss << ",";
                 ++mobsTotal;
-                AppendMobJson(ss, m);
+                AppendMobJson(ss, b.mobs[i], overlay[i] != 0);
             }
             ss << "]";
         }

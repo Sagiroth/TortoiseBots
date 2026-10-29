@@ -135,6 +135,24 @@ func (s *Store) ApplyCommanders(p *model.CommandersPayload) bool {
 		if len(b.Mobs) > maxCommanderMobs {
 			b.Mobs = b.Mobs[:maxCommanderMobs]
 		}
+		// The module sends the time left of a cast; the API and the fight track give the moment it ends, so a replayed frame
+		// needs no arithmetic of its own. The report's ts is whole seconds, so the end is within a second.
+		if p.TS > 0 {
+			casting := false
+			for i := range b.Mobs {
+				casting = casting || b.Mobs[i].CastLeftMS > 0
+			}
+			if casting {
+				mobs := make([]model.CommanderMob, len(b.Mobs)) // a copy: the payload's own rows are not changed
+				copy(mobs, b.Mobs)
+				for j := range mobs {
+					if mobs[j].CastLeftMS > 0 {
+						mobs[j].CastEndMS = p.TS*1000 + int64(mobs[j].CastLeftMS)
+					}
+				}
+				b.Mobs = mobs
+			}
+		}
 		if len(b.Objects) > maxCommanderObjects {
 			b.Objects = b.Objects[:maxCommanderObjects]
 		}

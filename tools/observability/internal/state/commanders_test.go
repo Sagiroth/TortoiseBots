@@ -475,3 +475,57 @@ func TestCommandersCapLiveCombatBots(t *testing.T) {
 		t.Fatalf("the caller's payload must not be trimmed: %d", len(p.Commanders[0].Combat.Bots))
 	}
 }
+
+// The boss overlay (fight debugger phase 2): facing, the current cast and the spell's area survive the datagram's JSON and
+// the view; a facing of 0 survives (it is a real direction), absent fields stay absent, and the daemon fills the cast's
+// end from the report's ts.
+func TestCommandersCarryBossOverlay(t *testing.T) {
+	raw := `{"v":12,"session":3,"seq":1,"ts":50,"type":"COMMANDERS","commanders":[{"commander":"Z","online":true,"group":1,"lead":"Lead",
+"bots":[{"name":"Lead","lead":true,"alive":true}],"mobs_map":249,"mobs":[
+{"id":"5","entry":10184,"name":"Onyxia","hp":80,"x":1,"y":2,"reaction":"h","rank":"b","cast":"Flame Breath","o":0,"cid":18435,"cleft":1200,"ctot":2000,"ctg":"814","shape":{"k":"cone","a":120,"l":45}},
+{"id":"6","entry":12129,"name":"Onyxian Warder","hp":50,"x":3,"y":4,"reaction":"h","rank":"e","o":1.57,"cid":18564,"cleft":5000,"ctot":5000,"ctg":"814","ch":1,"shape":{"k":"line","l":62,"w":60}},
+{"id":"7","entry":1,"name":"Rat","hp":10,"x":5,"y":6,"reaction":"h","cast":"Bite"}],"orders":[]}]}`
+	var p model.CommandersPayload
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestStore(newClock())
+	if !s.ApplyCommanders(&p) {
+		t.Fatal("payload refused")
+	}
+	mobs := s.Commanders().Commanders[0].Mobs
+	if len(mobs) != 3 {
+		t.Fatalf("mobs = %d, want 3", len(mobs))
+	}
+	boss, warder, rat := mobs[0], mobs[1], mobs[2]
+	if boss.O == nil || *boss.O != 0 || boss.CastID != 18435 || boss.CastLeftMS != 1200 || boss.CastTotalMS != 2000 ||
+		boss.CastTarget != "814" || boss.Channel != 0 || boss.CastEndMS != 51200 {
+		t.Fatalf("boss overlay lost: %+v", boss)
+	}
+	if boss.Shape == nil || boss.Shape.Kind != "cone" || boss.Shape.Angle != 120 || boss.Shape.Length != 45 || boss.Shape.Width != 0 {
+		t.Fatalf("boss shape lost: %+v", boss.Shape)
+	}
+	if warder.O == nil || *warder.O != 1.57 || warder.Channel != 1 || warder.CastEndMS != 55000 ||
+		warder.Shape == nil || warder.Shape.Kind != "line" || warder.Shape.Width != 60 {
+		t.Fatalf("warder overlay lost: %+v (shape %+v)", warder, warder.Shape)
+	}
+	if rat.O != nil || rat.CastID != 0 || rat.Shape != nil || rat.CastEndMS != 0 {
+		t.Fatalf("an ordinary mob must carry no overlay: %+v", rat)
+	}
+	out, err := json.Marshal(rat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"o"`, `"cid"`, `"cleft"`, `"ctot"`, `"ctg"`, `"ch"`, `"shape"`, `"cend_ms"`} {
+		if strings.Contains(string(out), key) {
+			t.Fatalf("an ordinary mob must not grow %s: %s", key, out)
+		}
+	}
+	out, _ = json.Marshal(boss)
+	if !strings.Contains(string(out), `"o":0`) || !strings.Contains(string(out), `"cend_ms":51200`) {
+		t.Fatalf("a facing of 0 and the cast's end must be reported: %s", out)
+	}
+	if p.Commanders[0].Mobs[0].CastEndMS != 0 {
+		t.Fatalf("the caller's payload must not be changed: %d", p.Commanders[0].Mobs[0].CastEndMS)
+	}
+}

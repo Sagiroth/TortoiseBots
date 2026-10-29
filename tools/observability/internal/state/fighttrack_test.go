@@ -6,6 +6,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -291,5 +292,51 @@ func TestParseTrackWindow(t *testing.T) {
 		if _, _, _, err := ParseTrackWindow(q); err == nil {
 			t.Errorf("window %v accepted", q)
 		}
+	}
+}
+
+// A frame carries where a boss faced and the cast it ran, and its wire shape says when that cast ends, so a replay can draw
+// the facing arrow and the spell's area without arithmetic of its own.
+func TestTrackCarriesBossOverlay(t *testing.T) {
+	facing := 1.5708
+	mobs := []model.CommanderMob{{ID: "5", Entry: 10184, Name: "Onyxia", X: 1, Y: 2, HP: 80, Rank: "b",
+		O: &facing, CastID: 18435, CastLeftMS: 1200, CastTotalMS: 2000, CastTarget: "814",
+		Shape: &model.CommanderShape{Kind: "cone", Angle: 120, Length: 45}}}
+	s := newTestStore(newClock())
+	s.ApplyCommanders(trackPayload(1, 100, trackBinding("c", []model.CommanderBot{trackBot(814, 0, 0, 100, 100)}, mobs)))
+	frames, names := s.Track("c", 100, 100)
+	if len(frames) != 1 || len(frames[0].Mobs) != 1 {
+		t.Fatalf("frames = %+v", frames)
+	}
+	m := frames[0].Mobs[0]
+	if m.O == nil || *m.O != facing || m.CastID != 18435 || m.CastEnd != 101200 || m.CastTotal != 2000 || m.CastTarget != "814" || m.Channel != 0 || m.Shape == nil || m.Shape.Kind != "cone" {
+		t.Fatalf("frame overlay lost: %+v", m)
+	}
+	raw, err := json.Marshal(TrackJSON("c", frames, names))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"o":1.57`, `"cid":18435`, `"ce":101200`, `"ctot":2000`, `"ctg":"814"`, `"sh":{"k":"cone","a":120,"l":45}`} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("track JSON lacks %s: %s", want, raw)
+		}
+	}
+	// A facing of 0 is a direction, not "not reported".
+	zero := 0.0
+	frames[0].Mobs[0].O = &zero
+	raw, _ = json.Marshal(TrackJSON("c", frames, names))
+	if !strings.Contains(string(raw), `"o":0`) {
+		t.Fatalf("a facing of 0 must be reported: %s", raw)
+	}
+	// The frames the caller got are copies: changing them changes neither the store nor the next read.
+	frames[0].Mobs[0].Shape.Kind = "mutated"
+	again, _ := s.Track("c", 100, 100)
+	if again[0].Mobs[0].Shape == nil || again[0].Mobs[0].Shape.Kind != "cone" {
+		t.Fatalf("a frame's shape must be a copy: %+v", again[0].Mobs[0].Shape)
+	}
+	plain := trackMobJSON{}
+	out, _ := json.Marshal(plain)
+	if strings.Contains(string(out), `"o"`) || strings.Contains(string(out), `"sh"`) {
+		t.Fatalf("an ordinary mob must not grow the overlay fields: %s", out)
 	}
 }

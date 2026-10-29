@@ -378,6 +378,16 @@ void TestUnitInfo()
         m.rank = 'b';
         m.cc = 's';
         m.cast = std::string(90, 'c');
+        m.hasO = true;
+        m.o = -3.14159f;
+        m.castId = 17086;
+        m.castLeftMs = 5000;
+        m.castTotalMs = 5000;
+        m.castTarget = 0xFFFFFFFFFFFFFFFFull;
+        m.hasShape = true;
+        m.shape.kind = TortoiseBots::SpellShape::Kind::Line;
+        m.shape.length = 154.0f;
+        m.shape.width = 60.0f;
         big.mobs.push_back(m);
     }
     std::vector<BindingInfo> many(kMaxBindings + 3, big);
@@ -385,8 +395,72 @@ void TestUnitInfo()
     Check(!Has(worst, std::string(kMaxActionName + 1, 'a')) && !Has(worst, std::string(kMaxCastName + 1, 'c')) &&
               !Has(worst, std::string(kMaxTargetName + 1, 't')),
         "action, cast and target names are clipped");
+    Check(Count(worst, "\"cid\":") == kMaxMobOverlaysPerPayload, "the overlay rows per datagram are capped");
     Check(worst.size() < 60000 && worst.size() < 65000, "the worst case with unit info still fits one datagram");
     std::printf("worst case with unit info (%zu bindings, %zu mobs): %zu bytes\n", kMaxBindings, kMaxMobsPerPayload, worst.size());
+}
+
+// One mob object, exactly as the writer emits it (both builders set the stream to fixed, precision 1).
+std::string MobJson(MobInfo& m)
+{
+    std::ostringstream ss;
+    ss.setf(std::ios::fixed);
+    ss.precision(1);
+    AppendMobJson(ss, m);
+    return ss.str();
+}
+
+// The boss overlay (fight debugger phase 2): facing, the cast and its shape ride the mob row, only when they were read,
+// and a spell with no shape sends none.
+void TestBossOverlay()
+{
+    MobInfo boss = Mob(5, "Onyxia");
+    boss.entry = 10184;
+    boss.hpPct = 80;
+    boss.x = 1.5f;
+    boss.y = -2.5f;
+    boss.level = 63;
+    boss.rank = 'b';
+    boss.cast = "Flame Breath";
+    boss.hasO = true;
+    boss.o = 1.5708f;
+    boss.castId = 18435;
+    boss.castLeftMs = 1200;
+    boss.castTotalMs = 2000;
+    boss.castTarget = 814;
+    boss.hasShape = true;
+    boss.shape.spell = 18435;
+    boss.shape.kind = TortoiseBots::SpellShape::Kind::Cone;
+    boss.shape.angle = 120;
+    boss.shape.length = 45.0f;
+    Check(MobJson(boss) ==
+              "{\"id\":\"5\",\"entry\":10184,\"name\":\"Onyxia\",\"hp\":80,\"x\":1.5,\"y\":-2.5,\"reaction\":\"h\",\"lvl\":63,"
+              "\"rank\":\"b\",\"cast\":\"Flame Breath\",\"o\":1.57,\"cid\":18435,\"cleft\":1200,\"ctot\":2000,\"ctg\":\"814\","
+              "\"shape\":{\"k\":\"cone\",\"a\":120,\"l\":45.0}}",
+        "a boss's facing, cast and cone are written exactly");
+
+    boss.channel = true;
+    boss.shape.kind = TortoiseBots::SpellShape::Kind::Line;
+    boss.shape.angle = 0;
+    boss.shape.length = 154.0f;
+    boss.shape.width = 60.0f;
+    Check(Has(MobJson(boss), "\"ch\":1,\"shape\":{\"k\":\"line\",\"l\":154.0,\"w\":60.0}"),
+        "a channel is flagged and a line carries its width");
+
+    MobInfo plain = Mob(6, "Rat");
+    plain.rank = 'b';
+    plain.hasO = true;
+    plain.o = -0.001f; // rounds to zero
+    Check(MobJson(plain) == "{\"id\":\"6\",\"entry\":4863,\"name\":\"Rat\",\"hp\":85,\"x\":-1234.6,\"y\":987.7,"
+                            "\"reaction\":\"h\",\"rank\":\"b\",\"o\":0.00}",
+        "a facing of zero is sent as 0.00, never -0.00, and a mob without a cast has no cast fields");
+
+    MobInfo old = Mob(7, "Rat");
+    old.cast = "Chain Lightning";
+    Check(!Has(MobJson(old), "\"o\"") && !Has(MobJson(old), "\"cid\""),
+        "an older module's mob keeps the old shape: no facing and no cast id");
+    old.hasShape = true; // a shape without a cast is never written
+    Check(!Has(MobJson(old), "\"shape\""), "a shape without a cast is left out");
 }
 
 void TestRunInfo()
@@ -522,7 +596,22 @@ void TestPathData()
     big.commanderPlaced = true;
     big.mobsReported = true;
     for (int i = 0; i < 40; ++i)
-        big.mobs.push_back(Mob(0xFFFFFFFFFFFFFFFFull, std::string(60, 'M'), 'h', 'k', 0xFFFFFFFFFFFFFFFFull));
+    {
+        MobInfo m = Mob(0xFFFFFFFFFFFFFFFFull, std::string(60, 'M'), 'h', 'k', 0xFFFFFFFFFFFFFFFFull);
+        m.rank = 'b';
+        m.cast = std::string(24, 'c');
+        m.hasO = true;
+        m.o = 3.14159f;
+        m.castId = 18564;
+        m.castLeftMs = 5000;
+        m.castTotalMs = 5000;
+        m.castTarget = 0xFFFFFFFFFFFFFFFFull;
+        m.hasShape = true;
+        m.shape.kind = TortoiseBots::SpellShape::Kind::BackCone;
+        m.shape.angle = 75;
+        m.shape.length = 91.0f;
+        big.mobs.push_back(m);
+    }
     big.run.present = true;
     big.run.plan = std::string(60, 'p');
     big.run.note = std::string(500, 'n');
@@ -555,7 +644,8 @@ void TestPathData()
     Check(Count(json2, "\"i\":") == kMaxRunStepsPerPayload, "steps per payload are capped");
     Check(Count(json2, "\"state\":\"u\"") == kMaxObjectsPerPayload, "objects per payload are capped");
     Check(!Has(json2, std::string(kMaxObjectName + 1, 'O')) && !Has(json2, std::string(kMaxMobName + 1, 'S')), "object and step names are clipped");
-    Check(json2.size() < 60000, "the worst case with paths, steps and objects still fits one datagram");
+    Check(Count(json2, "\"cid\":") == kMaxMobOverlaysPerPayload, "the overlay rows are capped across bindings too");
+    Check(json2.size() < 65507, "the worst case with paths, steps and objects still fits the UDP limit");
     std::printf("worst case with paths (%zu bindings): %zu bytes\n", kMaxBindings, json2.size());
 }
 
@@ -951,6 +1041,7 @@ int main()
     TestMapData();
     TestMapDataCapsAndSize();
     TestUnitInfo();
+    TestBossOverlay();
     TestRunInfo();
     TestPathData();
     TestBosses();

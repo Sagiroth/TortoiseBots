@@ -33,7 +33,8 @@ type TrackBot struct {
 }
 
 // TrackMob is one enemy near the lead in a frame. VictimBot is the bound bot it targeted (0: none); VictimOther means it
-// targeted a unit that is not a bound bot.
+// targeted a unit that is not a bound bot. A boss or elite also carries where it faced and the cast it ran (the fight
+// debugger's replay draws the facing arrow and the spell's area), as the module reported them.
 type TrackMob struct {
 	ID          string
 	Entry       uint32
@@ -42,6 +43,13 @@ type TrackMob struct {
 	VictimBot   uint32
 	VictimOther bool
 	Rank        string
+	O           *float64              // facing, radians; nil when not reported
+	CastID      uint32                // the spell being cast or channelled, 0 = none
+	CastEnd     int64                 // when it ends, unix ms
+	CastTotal   uint32                // its own time, or the channel's duration, ms
+	CastTarget  string                // guid of the unit it is aimed at
+	Channel     int                   // 1 when channelled
+	Shape       *model.CommanderShape // the area it covers; nil when unknown
 }
 
 // TrackFrame is the state of one commander's binding at one report: every bound bot's place and health, every reported enemy,
@@ -102,7 +110,9 @@ func (st *commandersState) noteTracks(list []model.CommanderBinding, ts int64, n
 			f.Bots = append(f.Bots, TrackBot{GUID: bot.GUID, X: float32(bot.X), Y: float32(bot.Y), HP: hpPercent(bot.HP, bot.MaxHP), Alive: bot.Alive, Map: bot.MapID})
 		}
 		for _, m := range b.Mobs {
-			mob := TrackMob{ID: m.ID, Entry: m.Entry, X: float32(m.X), Y: float32(m.Y), HP: uint8(m.HP), Rank: m.Rank}
+			mob := TrackMob{ID: m.ID, Entry: m.Entry, X: float32(m.X), Y: float32(m.Y), HP: uint8(m.HP), Rank: m.Rank,
+				O: m.O, CastID: m.CastID, CastEnd: m.CastEndMS, CastTotal: m.CastTotalMS, CastTarget: m.CastTarget,
+				Channel: m.Channel, Shape: m.Shape}
 			if m.Victim != "" {
 				if g, ok := ids[m.Victim]; ok {
 					mob.VictimBot = g
@@ -207,6 +217,16 @@ func copyFrame(f TrackFrame) TrackFrame {
 	out := f
 	out.Bots = append([]TrackBot(nil), f.Bots...)
 	out.Mobs = append([]TrackMob(nil), f.Mobs...)
+	for i := range out.Mobs {
+		if out.Mobs[i].O != nil {
+			o := *out.Mobs[i].O
+			out.Mobs[i].O = &o
+		}
+		if sh := out.Mobs[i].Shape; sh != nil {
+			copied := *sh
+			out.Mobs[i].Shape = &copied
+		}
+	}
 	return out
 }
 
@@ -232,16 +252,24 @@ func ParseTrackWindow(q url.Values) (commander string, from, to int64, err error
 }
 
 // trackMobJSON is one enemy of a frame in the wire shape: v is the targeted bound bot's guid, vo flags a victim that is not a
-// bound bot (the module sends 1, not true).
+// bound bot (the module sends 1, not true). The boss overlay: o facing in radians (2 decimals), cid cast id, ce cast end unix
+// ms, ctot cast total ms, ctg cast target guid, ch channel, sh the spell's area.
 type trackMobJSON struct {
-	ID    string  `json:"id"`
-	Entry uint32  `json:"e"`
-	X     float64 `json:"x"`
-	Y     float64 `json:"y"`
-	HP    uint8   `json:"hp"`
-	V     uint32  `json:"v,omitempty"`
-	VO    int     `json:"vo,omitempty"`
-	RK    string  `json:"rk,omitempty"`
+	ID    string                `json:"id"`
+	Entry uint32                `json:"e"`
+	X     float64               `json:"x"`
+	Y     float64               `json:"y"`
+	HP    uint8                 `json:"hp"`
+	V     uint32                `json:"v,omitempty"`
+	VO    int                   `json:"vo,omitempty"`
+	RK    string                `json:"rk,omitempty"`
+	O     *float64              `json:"o,omitempty"`
+	CID   uint32                `json:"cid,omitempty"`
+	CE    int64                 `json:"ce,omitempty"`
+	CT    uint32                `json:"ctot,omitempty"`
+	CTG   string                `json:"ctg,omitempty"`
+	CH    int                   `json:"ch,omitempty"`
+	SH    *model.CommanderShape `json:"sh,omitempty"`
 }
 
 type trackFrameJSON struct {
@@ -279,9 +307,14 @@ func TrackJSON(commander string, frames []TrackFrame, names map[uint32]string, t
 		}
 		mobs := make([]trackMobJSON, 0, len(f.Mobs))
 		for _, m := range f.Mobs {
-			o := trackMobJSON{ID: m.ID, Entry: m.Entry, X: roundTenth(m.X), Y: roundTenth(m.Y), HP: m.HP, V: m.VictimBot, RK: m.Rank}
+			o := trackMobJSON{ID: m.ID, Entry: m.Entry, X: roundTenth(m.X), Y: roundTenth(m.Y), HP: m.HP, V: m.VictimBot, RK: m.Rank,
+				CID: m.CastID, CE: m.CastEnd, CT: m.CastTotal, CTG: m.CastTarget, CH: m.Channel, SH: m.Shape}
 			if m.VictimOther {
 				o.VO = 1
+			}
+			if m.O != nil {
+				facing := roundHundredth(*m.O)
+				o.O = &facing
 			}
 			mobs = append(mobs, o)
 		}
@@ -295,4 +328,8 @@ func TrackJSON(commander string, frames []TrackFrame, names map[uint32]string, t
 
 func roundTenth(v float32) float64 {
 	return math.Round(float64(v)*10) / 10
+}
+
+func roundHundredth(v float64) float64 {
+	return math.Round(v*100) / 100
 }
