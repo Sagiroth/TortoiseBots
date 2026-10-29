@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "BossTacticsTriggers.h"
 #include "playerbot/BossTacticsMgr.h"
+#include "playerbot/BossStandPolicy.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 
@@ -83,4 +84,12 @@ bool BossTacticsAvoidCastTrigger::IsActive()
     if (!Ready(ai, bot))
         return false;
     return FindBossCastDanger(ai, bot, ScanBossTactics(ai, bot)).caster != nullptr;
+}
+
+bool BossTacticsStandTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    const BossStandTarget stand = FindBossStand(ai, bot);
+    return stand.valid && !StandArrived(bot->GetPositionX(), bot->GetPositionY(), stand.x, stand.y);
 }

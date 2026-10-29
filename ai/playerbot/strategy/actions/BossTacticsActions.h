@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/BossTacticsPolicy.h"
+#include "playerbot/BossTacticsStand.h"
 #include "ChangeStrategyAction.h"
 #include "AttackAction.h"
 #include "MovementActions.h"
@@ -150,6 +151,22 @@ namespace ai
         // itself, and only once a walk out is under way.
         bool ShouldReactionInterruptCast() const override { return false; }
         bool ShouldReactionInterruptMovement() const override { return false; }
+    };
+
+    // The bot walks to its seat of the stand set that applies now (ai_boss_stand), once.
+    class BossTacticsStandAction : public MovementAction
+    {
+    public:
+        BossTacticsStandAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics stand") {}
+        bool isPossible() override;
+        bool Execute(Event& event) override;
+
+    private:
+        // The last seat the walk was started for: a bot already walking there is not re-pathed (MoveTo relaunches
+        // the spline on every call).
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        bool hasLast = false;
     };
 
     class BossTacticsStepBehindAction : public MovementAction

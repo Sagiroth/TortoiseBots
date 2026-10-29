@@ -8,8 +8,11 @@
 #include <unordered_map>
 #include "BossTacticsActions.h"
 #include "playerbot/BossTacticsMgr.h"
+#include "playerbot/BossStandMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/combat/AoeOffPolicy.h"
+#include "playerbot/GroupMembers.h"
+#include "../../../../runtime/PlayerbotAIStorage.h"
 #include "ChooseTargetActions.h"
 #include "PositionAction.h"
 #include "FollowActions.h"
@@ -928,4 +931,117 @@ bool BossTacticsStepBehindAction::Execute(Event& event)
     float z = boss->GetPositionZ();
     bot->UpdateGroundPositionZ(x, y, z);
     return MoveTo(bot->GetMapId(), x, y, z);
+}
+
+BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
+{
+    BossStandTarget target;
+    if (!ai || !bot || !bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return target;
+    // A map without rows costs one lookup and nothing else.
+    const BossStandTable& table = GetBossStands();
+    const uint32 mapId = bot->GetMapId();
+    if (!table.HasMap(mapId))
+        return target;
+    // The rows only act for a bot whose tactics are armed (the same gate as BossTacticsTriggers.cpp Ready).
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return target;
+
+    const StandRole role = StandRoleOf(PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot));
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    std::vector<const BossStandRow*> points;
+    for (const ObjectGuid& guid : attackers)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || !sServerFacade.IsAlive(unit))
+            continue;
+        const std::vector<BossStandRow>* rows = table.Rows(mapId, unit->GetEntry());
+        if (!rows)
+            continue;
+        // The spell the boss is casting now (a cast with a cast time, as FindBossInterrupt reads it).
+        uint32 casting = 0;
+        if (Spell* spell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+        {
+            if (spell->m_spellInfo)
+                casting = spell->m_spellInfo->Id;
+        }
+        points = ActiveStandPoints(*rows, role, unit->GetPositionX(), unit->GetPositionY(), casting,
+                                   [unit](uint32 aura) { return unit->HasAura(aura); });
+        if (!points.empty())
+            break;
+    }
+    if (points.empty())
+        return target;
+
+    // The bots that share the seats: this group's bots of the same role that are armed the same way. The plan is
+    // a function of their positions, so each of them reaches the same one.
+    std::vector<StandBot> bots;
+    const ObjectGuid selfGuid = bot->GetObjectGuid();
+    StandBot self;
+    self.id = selfGuid.GetRawValue();
+    self.x = bot->GetPositionX();
+    self.y = bot->GetPositionY();
+    bots.push_back(self);
+    if (Group* group = bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (member == bot || !member->IsInWorld() || member->GetMapId() != mapId || !sServerFacade.IsAlive(member))
+                continue;
+            PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+            if (!memberAi || !memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+                continue;
+            if (StandRoleOf(PlayerbotAI::IsTank(member), PlayerbotAI::IsHeal(member), ai->IsRanged(member)) != role)
+                continue;
+            StandBot entry;
+            entry.id = member->GetObjectGuid().GetRawValue();
+            entry.x = member->GetPositionX();
+            entry.y = member->GetPositionY();
+            bots.push_back(entry);
+        }
+    }
+
+    const StandSlot slot = AssignStandSlot(points, bots, selfGuid.GetRawValue());
+    if (!slot.valid)
+        return target;
+    target.valid = true;
+    target.x = slot.x;
+    target.y = slot.y;
+    target.z = slot.z;
+    return target;
+}
+
+bool BossTacticsStandAction::isPossible()
+{
+    return MovementAction::isPossible() && ai->CanMove();
+}
+
+bool BossTacticsStandAction::Execute(Event& event)
+{
+    (void)event;
+    const BossStandTarget stand = FindBossStand(ai, bot);
+    if (!stand.valid || StandArrived(bot->GetPositionX(), bot->GetPositionY(), stand.x, stand.y))
+    {
+        hasLast = false;
+        return false;
+    }
+    // Already walking to this seat: leave the spline alone.
+    if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() &&
+        std::fabs(lastX - stand.x) < 1.0f && std::fabs(lastY - stand.y) < 1.0f)
+        return true;
+
+    // The mover ignores a destination whose z is off the floor, so the seat is put back on the ground.
+    float z = stand.z;
+    bot->UpdateGroundPositionZ(stand.x, stand.y, z);
+    // The cast of a bot on its way out is of no use: stop it, as the reactive dodge does.
+    bot->AttackStop();
+    bot->CastStop();
+    if (!MoveTo(bot->GetMapId(), stand.x, stand.y, z, false, false, false, true))
+        return false;
+    lastX = stand.x;
+    lastY = stand.y;
+    hasLast = true;
+    return true;
 }

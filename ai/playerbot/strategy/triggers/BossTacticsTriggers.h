@@ -53,6 +53,15 @@ namespace ai
         bool IsActive() override;
     };
 
+    // A stand set applies to this bot (ai_boss_stand: the boss is at an anchor casting the row's window spell)
+    // and the bot is not at its seat.
+    class BossTacticsStandTrigger : public Trigger
+    {
+    public:
+        BossTacticsStandTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics stand", 1) {}
+        bool IsActive() override;
+    };
+
     // The bot stands in the front of a boss with a listed frontal attack.
     class BossTacticsFrontTrigger : public Trigger
     {

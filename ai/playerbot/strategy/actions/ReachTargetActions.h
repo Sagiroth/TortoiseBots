@@ -16,6 +16,7 @@
 #include "playerbot/policy/combat/RangedApproachPolicy.h"
 #include "playerbot/policy/combat/EvadeChasePolicy.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
+#include "playerbot/BossTacticsStand.h"
 #include "AI/CreatureAI.h"
 #include <ctime>
 
@@ -639,6 +640,16 @@ namespace ai
 	{
     public:
         ReachSpellAction(PlayerbotAI* ai) : ReachTargetAction(ai, "reach spell", ai->GetRange("spell")) {}
+
+        // A stand set that seats this bot (ai_boss_stand) wins over the walk into range: the bot is on its way to
+        // its seat (the stand action, a higher row) or standing on it, and a walk back to the target would undo the
+        // seat. The reach does nothing until the row stops applying.
+        bool MoveIntoRange(Unit* target, float distance) override
+        {
+            if (FindBossStand(ai, bot).valid)
+                return false;
+            return ReachTargetAction::MoveIntoRange(target, distance);
+        }
     };
 
     // Reach for a crowd-control cast: the spell's range minus

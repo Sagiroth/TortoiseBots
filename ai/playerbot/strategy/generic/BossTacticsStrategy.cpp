@@ -28,6 +28,11 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "boss tactics avoid cast",
         NextAction::array(0, new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6), NULL)));
+    // A stand set applies (ai_boss_stand): the walk to the seat comes before every cast and heal, the way the
+    // reactive Deep Breath dodge does.
+    triggers.push_back(new TriggerNode(
+        "boss tactics stand",
+        NextAction::array(0, new NextAction("boss tactics stand", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
         "boss tactics front",

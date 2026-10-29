@@ -220,10 +220,37 @@ Row added 2026-10-30 (`data/sql/world/20261030160000_world.sql`), read from `tor
 
 What needs a live check: that the melee and healers leave the 13 yd before the 3 s cast ends, that the blast hits nobody but the tank, that the melee come back to their target after it, and that the paced D+A fight (at most 2 Voidwalkers alive, no frame with 4 or more) stays inside 150-260 s with healer mana above 20 % at the end. With `one_at_a_time` in, watch the `BossTacticsHoldKill` rows in `bot_events.csv` (one per bot per 5 s, the action's and the multiplier's rows in separate buckets so neither hides the other: the action's `held=`/`blockers=`/`to=` pick and the multiplier's `veto=assist|aoe|area|dot|sole`) and the frame rows: Servant deaths at least 20 s apart, at most 3 Voidwalkers alive at once, no area cast landing while a held Servant stands within 10 yd of its target.
 
+## Stand sets (`ai_boss_stand`)
+
+A stand set says where bots of a role stand while a boss is at a place and casting a spell. It is its own table, read once at startup (`LoadBossStands`, `ai/playerbot/BossStandMgr.cpp`, called next to the tactics loader); unlike the tactics it is not part of `.bot run reloadplans`, so a change needs a restart. It only acts for a bot with the `boss tactics` strategy armed (the same gate as the rows above).
+
+| Column | Meaning |
+| :--- | :--- |
+| `map`, `boss_entry` | Which boss. |
+| `anchor`, `anchor_x`, `anchor_y`, `anchor_r` | A place the boss stops at; the boss is "at" it within `anchor_r` yd (2D). Rows of one `anchor` id share the three numbers. |
+| `role` | `ranged`, `healer` or `melee` (a tank counts as melee, a healer as a healer before it counts as ranged). |
+| `window_spell` | `0`: always. Else the rows apply only while the boss is casting this spell (read from its current cast). |
+| `aura` | `0`: none. Else the boss has to wear this aura. |
+| `side`, `seq` | The side of the boss's lane a point lies on (0 or 1) and its order there. |
+| `x`, `y`, `z` | The point. The module puts z back on the ground before a move: a move whose z is off the floor is silently ignored. |
+| `dx`, `dy`, `slots` | The point seats up to `slots` bots in a line, 9 yd apart (Fireball's splash is 8 yd), in the direction `dx dy`; `0 0` is straight out from the anchor. |
+
+The primary key is `(map, boss_entry, anchor, role, window_spell, side, seq)`. A row the loader cannot use is skipped with a log line: unknown role, a zero map or boss, no `anchor_r`, a side above 1, `slots` outside 1-8, an anchor id with two places, a second row of the key.
+
+How a bot picks its seat: every bot of the group with the same role (and the strategy armed) is seated in id order from the same positions, so each bot reaches the same plan. A bot takes the side whose nearest point is nearer to it (it never crosses the lane for its point; a tie goes to the side with fewer bots), then the nearest point of that side with a free seat; a full side sends it to the other side; with every seat taken it gets nothing and plays as before. When no row applies (other place, other spell, other role, no aura) nothing changes for any bot.
+
+How it combines with the rest: while a row seats the bot, the stand action (`boss tactics stand`, `ACTION_EMERGENCY`) walks it to the seat once (it stops a running cast first), the caster reach (`reach spell`, including `air_target`'s floor walk) does nothing, and the reactive Deep Breath dodge stands down. When the cast ends the rows stop applying: the reach resumes from wherever the bot stands, with no walk back. The reactive dodge stays the fallback for every bot no row seats.
+
+### Onyxia's stand sets (map 249)
+
+Rows in `data/sql/world/20261029170000_world.sql`: one anchor per hover point (radius 8), window spell = the Deep Breath of that point (the spell she casts AT it: NE 18617, E 18576, SE 18564, S 18351, SW 18596, W 18609, NW 18584, N 17086), aura Hover 17131, rows for `ranged` and `healer` only (melee stays on her when she lands). The points are the nearest walkable floor 31 yd or more from the breath lane (the segment between the hover point and its opposite, the N to S lane continuing into the tunnel), outside the egg fields, on both sides of the lane; ranged take the points nearest the firing ring, healers the next ones. The module's old far spots (50-76 yd from the hover point) could not hold the damage C1 restored, so these rows apply only for the 5 s of the cast. The migration header lists the path-check of every seat from the raid stand and the walk from the firing ring.
+
+What needs a live check: that the boss's breath shows as its current cast (`CURRENT_GENERIC_SPELL`; the core's cast time is honoured for this triggered spell, `SpellEntry::GetCastTime` returns 0 only for aura-triggered ones), that bots reach their seats inside the cast, and the death count at Deep Breath. The N and S anchors sit on the room's narrow axis and seat fewer bots (12-15 ranged, 2-5 healers); the rest keep the reactive dodge.
+
 ## Adding a boss
 
 1. Read the boss from the core: `creature_template` (`spell_list_id`, `ai_name`), `creature_spells`, the `creature_ai_events`/`creature_ai_scripts` rows or the `src/scripts` boss file, and `spell_template` for each spell. Do not use another core's ids.
 2. Add the rows in a **new** migration `data/sql/world/YYYYMMDDHHMMSS_world.sql` (idempotent: `DELETE` the map's rows, `INSERT` them again). Never edit an applied migration.
-3. Run `python3 tools/test_boss_tactics_sql.py`, then check it in game with `AiPlayerbot.DungeonTactics = 1` or a commander binding and a boss pull.
+3. Run `python3 tools/test_boss_tactics_sql.py` (and `python3 tools/test_boss_stand_sql.py` for stand rows), then check it in game with `AiPlayerbot.DungeonTactics = 1` or a commander binding and a boss pull.
 
 Behaviour is based on the mod-playerbots per-map raid strategy pattern, reimplemented as data (no donor code; the source is named in its PR).

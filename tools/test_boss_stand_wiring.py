@@ -1,0 +1,168 @@
+"""Wiring pins for the boss stand sets (Onyxia kill plan, code item C3).
+
+The rules live in ai/playerbot/BossStandPolicy.h (pure, tested by
+tools/test_boss_stand_policy.cpp). These pins prove the live code calls them:
+
+ - the loader reads every column of ai_boss_stand (the migration's) at startup;
+ - the translation (FindBossStand) gates on the map, the armed "boss tactics"
+   strategy, the boss's cast and aura, and seats the bot among the bots of its
+   group with the same role;
+ - the stand action snaps the seat to the ground (a move whose z is off the
+   floor is silently ignored by the movement code), stops the bot's cast and
+   attack, and moves once;
+ - the stand wins over the caster reach (no walk back under the boss while a row
+   seats the bot) and over the reactive Deep Breath dodge, which stays the
+   fallback for every bot no row seats;
+ - no boss name or entry in the generic code.
+
+Run: python3 -m unittest tools/test_boss_stand_wiring.py
+"""
+import pathlib
+import re
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+AI = ROOT / "ai/playerbot"
+STRATEGY = AI / "strategy"
+POLICY = (AI / "BossStandPolicy.h").read_text()
+STAND_H = (AI / "BossTacticsStand.h").read_text()
+MGR_H = (AI / "BossStandMgr.h").read_text()
+MGR_CPP = (AI / "BossStandMgr.cpp").read_text()
+CONFIG = (AI / "PlayerbotAIConfig.cpp").read_text()
+ACTIONS_H = (STRATEGY / "actions/BossTacticsActions.h").read_text()
+ACTIONS = (STRATEGY / "actions/BossTacticsActions.cpp").read_text()
+TRIGGERS = (STRATEGY / "triggers/BossTacticsTriggers.cpp").read_text()
+TRIGGERS_H = (STRATEGY / "triggers/BossTacticsTriggers.h").read_text()
+STRATEGY_CPP = (STRATEGY / "generic/BossTacticsStrategy.cpp").read_text()
+ACTION_CONTEXT = (STRATEGY / "actions/ActionContext.h").read_text()
+TRIGGER_CONTEXT = (STRATEGY / "triggers/TriggerContext.h").read_text()
+REACH = (STRATEGY / "actions/ReachTargetActions.h").read_text()
+ONYXIA_ACTIONS = (STRATEGY / "actions/OnyxiasLairDungeonActions.cpp").read_text()
+MIGRATIONS = sorted((ROOT / "data/sql/world").glob("*_world.sql"))
+
+
+def body(text, start, end="\n}\n"):
+    i = text.index(start)
+    return text[i:text.index(end, i + len(start))]
+
+
+def stand_migration():
+    for path in MIGRATIONS:
+        text = path.read_text()
+        if "CREATE TABLE IF NOT EXISTS `ai_boss_stand`" in text:
+            return text
+    raise AssertionError("no migration creates ai_boss_stand")
+
+
+class BossStandWiring(unittest.TestCase):
+    def test_loader_reads_every_column_of_the_table(self):
+        create = body(stand_migration(), "CREATE TABLE IF NOT EXISTS `ai_boss_stand`", end="\n) ENGINE")
+        columns = re.findall(r"^  `(\w+)`", create, re.M)
+        columns.remove("comment")  # documentation only
+        select = body(MGR_CPP, "std::uint32_t ai::ReadBossStandRows(", end="FROM `ai_boss_stand`")
+        self.assertEqual(re.findall(r"`(\w+)`", select), columns)
+        for index in range(len(columns)):
+            self.assertIn("fields[%d]" % index, MGR_CPP)
+
+    def test_loader_runs_at_startup_next_to_the_tactics(self):
+        self.assertIn("ai::LoadBossStands();", CONFIG)
+        self.assertLess(CONFIG.index("ai::LoadBossTactics();"), CONFIG.index("ai::LoadBossStands();"))
+        self.assertIn("BossStandTable& GetBossStands();", MGR_H)
+        fn = body(MGR_CPP, "void ai::LoadBossStands()")
+        self.assertIn("if (table.Sealed())\n        return;", fn)
+        self.assertIn("ReadBossStandRows(table)", fn)
+        # The reader seals even an empty or missing table.
+        self.assertIn("table.Seal();", body(MGR_CPP, "std::uint32_t ai::ReadBossStandRows("))
+
+    def test_translation_gates_before_it_scans(self):
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        has_map = fn.index("table.HasMap(mapId)")
+        strategy = fn.index('ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)')
+        role = fn.index("StandRoleOf(PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot))")
+        attackers = fn.index('AI_VALUE(std::list<ObjectGuid>, "attackers")')
+        self.assertLess(has_map, strategy)
+        self.assertLess(strategy, role)
+        self.assertLess(role, attackers)
+
+    def test_translation_reads_the_boss_cast_and_aura(self):
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        self.assertIn("table.Rows(mapId, unit->GetEntry())", fn)
+        self.assertIn("unit->GetCurrentSpell(CURRENT_GENERIC_SPELL)", fn)
+        self.assertIn("spell->m_spellInfo->Id", fn)
+        self.assertIn("ActiveStandPoints(*rows, role, unit->GetPositionX(), unit->GetPositionY(), casting,", fn)
+        self.assertIn("unit->HasAura(aura)", fn)
+
+    def test_translation_seats_among_the_armed_bots_of_the_same_role(self):
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        self.assertIn("LiveGroupMembers(group)", fn)
+        self.assertIn("PlayerbotAIStorage::Instance().GetAI(member)", fn)
+        self.assertIn('memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
+        self.assertIn("StandRoleOf(PlayerbotAI::IsTank(member), PlayerbotAI::IsHeal(member), ai->IsRanged(member)) != role", fn)
+        self.assertIn("AssignStandSlot(points, bots, selfGuid.GetRawValue())", fn)
+        # The bot itself is always among them.
+        self.assertLess(fn.index("bots.push_back(self);"), fn.index("LiveGroupMembers(group)"))
+
+    def test_stand_action_snaps_the_seat_to_the_ground_before_the_move(self):
+        fn = body(ACTIONS, "bool BossTacticsStandAction::Execute(Event& event)")
+        snap = fn.index("bot->UpdateGroundPositionZ(stand.x, stand.y, z);")
+        move = fn.index("MoveTo(bot->GetMapId(), stand.x, stand.y, z, false, false, false, true)")
+        self.assertLess(snap, move)
+        self.assertIn("float z = stand.z;", fn)
+        # Never the boss's (flight) height.
+        self.assertNotIn("GetPositionZ()", fn)
+
+    def test_stand_action_stops_the_cast_and_moves_once(self):
+        fn = body(ACTIONS, "bool BossTacticsStandAction::Execute(Event& event)")
+        self.assertIn("bot->AttackStop();", fn)
+        self.assertIn("bot->CastStop();", fn)
+        self.assertLess(fn.index("bot->CastStop();"), fn.index("MoveTo("))
+        self.assertIn("StandArrived(bot->GetPositionX(), bot->GetPositionY(), stand.x, stand.y)", fn)
+        # A bot already walking to this seat is not re-pathed.
+        self.assertIn("!bot->IsStopped() && !bot->movespline->Finalized()", fn)
+        possible = body(ACTIONS, "bool BossTacticsStandAction::isPossible()")
+        self.assertIn("ai->CanMove()", possible)
+
+    def test_trigger_fires_only_for_a_bot_off_its_seat(self):
+        fn = body(TRIGGERS, "bool BossTacticsStandTrigger::IsActive()")
+        self.assertIn("if (!Ready(ai, bot))\n        return false;", fn)
+        self.assertIn("stand.valid && !StandArrived(", fn)
+        self.assertIn('Trigger(ai, "boss tactics stand", 1)', TRIGGERS_H)
+
+    def test_strategy_runs_the_stand_before_casting(self):
+        match = re.search(r'"boss tactics stand",\s*NextAction::array\(0, new NextAction\("boss tactics stand", (\w+)\)', STRATEGY_CPP)
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(1), "ACTION_EMERGENCY")
+        self.assertIn(
+            'creators["boss tactics stand"] = [](PlayerbotAI* ai) { return new BossTacticsStandAction(ai); };', ACTION_CONTEXT)
+        self.assertIn(
+            'creators["boss tactics stand"] = [](PlayerbotAI* ai) { return new BossTacticsStandTrigger(ai); };', TRIGGER_CONTEXT)
+
+    def test_the_stand_wins_over_the_caster_reach(self):
+        fn = body(REACH, "class ReachSpellAction", end="\n    };\n")
+        stand = fn.index("FindBossStand(ai, bot).valid")
+        walk = fn.index("MoveUnderAirborneTarget(target, AirTargetReachDistance(range))")
+        self.assertLess(stand, walk)
+        self.assertIn("if (FindBossStand(ai, bot).valid)\n                return false;", fn)
+
+    def test_the_reactive_dodge_stays_the_fallback(self):
+        fn = body(ONYXIA_ACTIONS, "bool OnyxiaBreathSafeZoneAction::Execute(Event& event)")
+        stand = fn.index("FindBossStand(ai, bot).valid")
+        far_spots = fn.index("kBreathSafeSpots[axis]")
+        self.assertLess(stand, far_spots)
+        self.assertIn("if (FindBossStand(ai, bot).valid)\n        return false;", fn)
+
+    def test_generic_code_names_no_boss(self):
+        for name, text in (("BossStandPolicy.h", POLICY), ("BossTacticsStand.h", STAND_H)):
+            self.assertNotIn("Onyxia", text, name)
+            self.assertNotIn("10184", text, name)
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        self.assertNotIn("10184", fn)
+        self.assertNotIn("Onyxia", fn)
+        self.assertNotIn("17131", fn)
+        for stand_text in (body(MGR_CPP, "std::uint32_t ai::ReadBossStandRows("), body(MGR_CPP, "void ai::LoadBossStands()")):
+            self.assertNotIn("10184", stand_text)
+            self.assertNotIn("Onyxia", stand_text)
+
+
+if __name__ == "__main__":
+    unittest.main()

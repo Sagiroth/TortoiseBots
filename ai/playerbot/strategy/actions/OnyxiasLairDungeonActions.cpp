@@ -5,6 +5,7 @@
 using namespace ai;
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/raid/OnyxiaBreathPolicy.h"
+#include "playerbot/BossTacticsStand.h"
 #include "playerbot/policy/raid/OnyxiaWhelpEggPolicy.h"
 #include "ChooseTargetActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
@@ -26,6 +27,10 @@ BreathSafeSpot const kBreathSafeSpots[4][2] =
 bool OnyxiaBreathSafeZoneAction::Execute(Event& event)
 {
     (void)event;
+    // A stand set (ai_boss_stand, BossTacticsStand.h) that seats this bot answers the breath with the nearest seat
+    // outside the lane; the far spots below stay the fallback for every bot no row applies to.
+    if (FindBossStand(ai, bot).valid)
+        return false;
     // Boss via the attacker scan (works for whelp tanks/melee/healers
     // whose own target is not Onyxia). Axis from boss facing: the core
     // faces the breath destination before clearing target, so facing maps
