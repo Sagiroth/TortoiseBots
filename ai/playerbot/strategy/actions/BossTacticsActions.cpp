@@ -1127,7 +1127,8 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     {
         std::lock_guard<std::mutex> lock(g_standHoldMutex);
         Group* group = bot->GetGroup();
-        const uint64 groupGuid = group ? group->GetLeaderGuid().GetRawValue() : 0;
+        // a bot with no group plans alone: its own guid keeps two groupless bots from sharing one plan
+        const uint64 groupGuid = group ? group->GetLeaderGuid().GetRawValue() : bot->GetObjectGuid().GetRawValue();
         const StandPlanKey key{ boss->GetObjectGuid().GetRawValue(), boss->GetMapId(), boss->GetInstanceId(),
                                 points[0]->anchor, static_cast<uint8>(role), points[0]->windowSpell, groupGuid };
         auto it = g_standPlans.find(key);

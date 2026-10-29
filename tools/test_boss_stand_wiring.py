@@ -275,6 +275,12 @@ class BossStandWiring(unittest.TestCase):
         movement_h = (STRATEGY / "actions/MovementActions.h").read_text()
         self.assertIn("bool ShouldReactionInterruptMovement() const override { return true; }", movement_h)
 
+    def test_a_groupless_bot_plans_alone(self):
+        # Codex round 3: every groupless bot keyed 0 shared one plan, built from the first bot alone, so the others found
+        # no seat. A groupless bot keys its plan by its own guid.
+        fn = body(ACTIONS, "BossTandTarget ai::FindBossStand(".replace("Tand", "Stand"))
+        self.assertIn("group ? group->GetLeaderGuid().GetRawValue() : bot->GetObjectGuid().GetRawValue()", fn)
+
     def test_the_seats_come_from_one_plan_per_window(self):
         # The seats of a window are planned once from the positions and kept for the window: no bot's seat flips while
         # bots walk to theirs, and every bot of the role reads the same plan.
@@ -291,8 +297,8 @@ class BossStandWiring(unittest.TestCase):
         # The plan is keyed by the boss instance (map and instance id, not only the spawn guid), the window's anchor,
         # role and window spell, and the bot's group; the live translation passes all of them; a stale plan is swept
         # whatever its key.
-        self.assertIn("Group* group = bot->GetGroup();\n        const uint64 groupGuid = group ? "
-                      "group->GetLeaderGuid().GetRawValue() : 0;", fn)
+        self.assertIn("Group* group = bot->GetGroup();", fn)
+        self.assertIn("const uint64 groupGuid = group ? group->GetLeaderGuid().GetRawValue() : ", fn)
         self.assertIn("const StandPlanKey key{ boss->GetObjectGuid().GetRawValue(), boss->GetMapId(), "
                       "boss->GetInstanceId(),\n                                points[0]->anchor, "
                       "static_cast<uint8>(role), points[0]->windowSpell, groupGuid };", fn)
