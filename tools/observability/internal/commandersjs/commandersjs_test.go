@@ -271,6 +271,12 @@ func TestBossMapJS(t *testing.T) {
 	runCheck(t, "boss_check.js", "../../web/static/js/app.js", "../../web/static/css/app.css")
 }
 
+// TestBossPanelJS runs bosspanel_check.js: the boss ability panel's table, next window, phase latch and filter, cast match by
+// spell id, auras/flags/adds, add links and escaping.
+func TestBossPanelJS(t *testing.T) {
+	runCheck(t, "bosspanel_check.js", "../../web/static/js/bosspanel.js")
+}
+
 // TestLiveViewJS runs live_check.js: the live stream's pure half (the commanders' URL, the copy-on-write pos merge, the refresh
 // rates that may move the dots, the error fallback and the one-draw-per-frame scheduler: 60 fps for the focused map, 15 for
 // the other visible maps, none for a hidden one, at most 8 glide-only draws per frame round robin).
