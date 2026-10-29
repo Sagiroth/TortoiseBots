@@ -52,6 +52,7 @@
 - Fixed the run leader still pausing (and refusing resume) when a bot was a ghost a few seconds longer than the lead in another part of the instance: it waits, then teleports.
 - The run leader no longer leaves the party standing where the lead bot fell: when the lead bot comes back to life away from it, the survivors are summoned to it and the party walks back together.
 - Fixed: a survivor whose summon to the revived lead bot was refused no longer dropped out of the recovery; the bot stays held and is summoned again a few seconds later, and after three refusals it stays held while the party walks back without it.
+- Fixed the run leader walking back before the summoned survivors landed: while a summon is in flight it waits, so the bot arrives at the lead bot instead of being left anchored where it stood; a summon refused as busy is not resent every tick.
 - Fixed the run leader dropping a focus skull with no retry and keeping a stale skull across pauses.
 - Fixed bots in deep water standing still on a swim the server allows: their move now goes to the server's own swim, or up and out onto a shore within 30 yd.
 - Fixed: a long winding walk refused too-far no longer pauses after six legs (up to 16; a leg back at an earlier leg's end still pauses).

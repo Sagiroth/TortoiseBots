@@ -1412,8 +1412,9 @@ struct Run
     // yet, with the run's clock of that order and the refusals since. It stays
     // in `hold` meantime (no gather, no second summon), and only the facts that
     // show it at the lead bot end the wait: removing it on the order alone lost
-    // a bot whose summon was refused. A refusal clears `pending` (a later tick
-    // sends it again); kHeldSummonTries refusals leave it held while the party
+    // a bot whose summon was refused. A refused summon clears `pending` (a later
+    // tick sends it again); a `busy` one keeps it pending until its own clock
+    // runs out; kHeldSummonTries refusals leave it held while the party
     // walks back without it.
     struct HeldSummon
     {
@@ -5516,19 +5517,27 @@ inline void OrderRefused(Run& r, const std::string& order, const std::string& an
     }
     // A bot held where the lead bot fell and summoned to it (SummonHeldToLead): a refused
     // summon takes nobody to the lead bot, so the bot stays held and the mark is cleared
-    // for a later tick (a `busy` one, a summon of it pending already, is no try of its
-    // own; a bot in combat stays held and fights, and the facts then drop it from the
-    // hold). kHeldSummonTries refusals leave it held and the party walks back without it.
+    // for a later tick (a bot in combat stays held and fights, and the facts then drop it
+    // from the hold). A `busy` one is the subsystem's "one of it is pending already": a
+    // resend the next tick would be refused again, so the mark stays in flight and the
+    // first summon's own clock bounds the wait (no try of its own). kHeldSummonTries
+    // refusals leave it held and the party walks back without it.
     if (order.compare(0, 7, "summon ") == 0)
     {
         auto const mark = r.heldSummons.find(order.substr(7));
         if (mark != r.heldSummons.end() && mark->second.pending)
         {
             std::string const name = mark->first;
-            mark->second.pending = false;
-            if (answer.compare(0, 4, "busy") != 0)
+            bool const busy = answer.compare(0, 4, "busy") == 0;
+            if (!busy)
+            {
+                mark->second.pending = false;
                 ++mark->second.refusals;
-            if (mark->second.refusals >= kHeldSummonTries)
+            }
+            if (busy)
+                r.note = "the lead bot came back to life away from the party: " + name + " summoned to it, refused (" +
+                    answer + "): waiting for the summon already pending";
+            else if (mark->second.refusals >= kHeldSummonTries)
                 r.note = "the lead bot came back to life away from the party: " + name +
                     " could not be summoned to it (" + std::to_string(mark->second.refusals) + " refusals: " + answer +
                     "): it stays held and the party walks back without it";
@@ -12476,8 +12485,10 @@ inline void UpdateHold(Run& r, const Facts& f)
 // RFC 10-20 leg 7: three held bots attacked 55-77 yd from the staying tank, four deaths): the bots held where the
 // lead bot fell are summoned to it, one a tick, then the whole party walks back. A bot stays in the hold until the
 // facts show it at the lead bot: the order alone takes nobody there, and a refused summon (busy, into a fight,
-// teleporting) must not drop it from the recovery. A refusal clears the pending mark (OrderRefused), so a later
-// tick sends it again; kHeldSummonTries refusals leave it held while the party walks back without it. A held bot
+// teleporting) must not drop it from the recovery. A refused summon clears the pending mark
+// (OrderRefused), so a later tick sends it again; a `busy` one, a summon of that bot pending
+// already, keeps it in flight until its own clock runs out; kHeldSummonTries refusals leave it
+// held while the party walks back without it. A held bot
 // in a fight leaves the hold at once (the guard and the gather see it). Not while paused, walking back (a direct
 // step's own summon wait owns the hold then), in an event, with the lead bot dead or in another part, or while
 // the stranded lead bot's teleport runs. True when it set a summon.
@@ -12549,6 +12560,22 @@ inline bool SummonHeldToLead(Run& r, const Facts& f, std::string& order)
         return true;
     }
     return false;
+}
+
+// The held bot whose summon is still in flight (sent, its answer and its
+// arrival not in yet), or "" (2026-10-29): Tick holds the step for it instead
+// of running it on HoldView, which leaves the bot out (the regroup completes
+// at once and the walk back starts before the bot lands). The hold's own order
+// names which, so the note is stable across ticks.
+inline std::string PendingHeldSummon(const Run& r)
+{
+    for (const std::string& name : r.hold)
+    {
+        auto const mark = r.heldSummons.find(name);
+        if (mark != r.heldSummons.end() && mark->second.pending)
+            return name;
+    }
+    return std::string();
 }
 
 // The party is in combat (Facts::anyInCombat) and every unit engaged with it is one the group cannot attack
@@ -13495,7 +13522,24 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
         if (!r.hold.empty())
         {
             if (!SummonHeldToLead(r, f, order))
-                order = TickBody(r, HoldView(r, f), dt, lines);
+            {
+                // A held summon still in flight: the step must not run on a
+                // view that leaves it out (HoldView) before the bot lands. The
+                // regroup then completes at once and the walk back starts; the
+                // summon fixes its spot where the lead bot stood when the order
+                // went out, so the bot lands there while the party walks away and
+                // stays anchored at the entrance. The tick's clock runs on (the
+                // run's own, so the summon's expiry bounds the wait) but the
+                // step does not.
+                std::string const pending = PendingHeldSummon(r);
+                if (!pending.empty() && !f.anyInCombat)
+                {
+                    r.runMs += dt;
+                    r.note = "waiting for the summoned " + pending;
+                }
+                else
+                    order = TickBody(r, HoldView(r, f), dt, lines);
+            }
             held = true;
         }
     }
