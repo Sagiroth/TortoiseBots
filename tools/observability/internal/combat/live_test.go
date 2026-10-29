@@ -407,6 +407,7 @@ func TestExpiredLiveKeepsItsLog(t *testing.T) {
 		t.Fatalf("newest log event t = %d, want 2000", got)
 	}
 }
+
 // A new fight that arrives while the previous fight's end was lost must not
 // erase it: the replaced row is filed as unfinished with its own log, and
 // the new row keeps only its own events.
@@ -453,7 +454,35 @@ func TestReplacedLiveRowFiledUnfinished(t *testing.T) {
 	}
 }
 
-// The ring holds the log kinds up to LiveLogMax and every other kind up to LiveEventsMax, each dropping its own oldest event.
+// A fight that closes a full ring through COMBAT_FIGHT keeps its newest log
+// and reports what the cap dropped, same as the expiry path.
+func TestFiledFightReportsDroppedCasts(t *testing.T) {
+	s := newLiveStore(t)
+	events := make([]string, 0, LiveLogMax+200)
+	for i := range LiveLogMax + 200 {
+		events = append(events, castEvent(i, "Poison Cloud"))
+	}
+	s.ApplyEvents(liveEvents(liveHeader(), events...), liveNow)
+
+	f := Fight{ID: "55-6", Commander: "Gbmage", Group: 55, Map: 409, Start: liveNow.Unix() - 30, DurMS: 30000, Outcome: "kill"}
+	if !s.Add(7, f) {
+		t.Fatal("Add refused")
+	}
+	got, _, ok := s.Get("Gbmage", 7, "55-6")
+	if !ok {
+		t.Fatal("the filed fight is missing")
+	}
+	if len(got.Log) != LiveLogMax {
+		t.Fatalf("log = %d events, want %d", len(got.Log), LiveLogMax)
+	}
+	if got.LogDropped != 200 {
+		t.Fatalf("log dropped = %d, want 200", got.LogDropped)
+	}
+	if gotT := eventT(t, got.Log[0]); gotT != 200 {
+		t.Fatalf("oldest kept cast t = %d, want 200", gotT)
+	}
+}
+
 func TestLiveLogRingCappedPerKind(t *testing.T) {
 	s := newLiveStore(t)
 	events := make([]string, 0, 1500)
@@ -481,6 +510,9 @@ func TestLiveLogRingCappedPerKind(t *testing.T) {
 	}
 	if len(f.Log) != LiveLogMax {
 		t.Fatalf("log = %d events, want %d", len(f.Log), LiveLogMax)
+	}
+	if f.LogDropped != 200 {
+		t.Fatalf("log dropped = %d, want 200 (1200 casts past the %d cap)", f.LogDropped, LiveLogMax)
 	}
 	if got := eventT(t, f.Log[0]); got != 200 {
 		t.Fatalf("oldest kept cast t = %d, want 200 (the newest %d survive)", got, LiveLogMax)

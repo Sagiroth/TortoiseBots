@@ -96,6 +96,7 @@ type liveFight struct {
 	events   []json.RawMessage
 	kinds    []bool // kinds[i]: events[i] is of a kind the fight log keeps
 	logged   int    // events of the log kinds held in events
+	dropped  int    // log-kind events trimmed past LiveLogMax, so the filed fight can report them
 	other    int    // events of every other kind held in events
 	deaths   []FightDeath
 	lastSeen time.Time
@@ -142,17 +143,17 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 		case s.seenLocked(dg.Commander, dg.Session, h.ID):
 			// The finished fight is already filed: a late datagram of it.
 			return FightSummary{}, false, false
-	default:
-		if row != nil {
-			// The new fight replaces the live row, whose own end may
-			// never arrive: file it the way the expiry path files a
-			// quiet row, so neither the fight nor its log is lost.
-			s.fileLiveLocked(dg.Commander, row, "unfinished")
-		}
-		row = &liveFight{session: dg.Session, seq: dg.Seq, id: h.ID, group: dg.Group, mapID: dg.Map, header: *h}
-		s.live[dg.Commander] = row
-		changed = true
-		s.evictLiveLocked()
+		default:
+			if row != nil {
+				// The new fight replaces the live row, whose own end may
+				// never arrive: file it the way the expiry path files a
+				// quiet row, so neither the fight nor its log is lost.
+				s.fileLiveLocked(dg.Commander, row, "unfinished")
+			}
+			row = &liveFight{session: dg.Session, seq: dg.Seq, id: h.ID, group: dg.Group, mapID: dg.Map, header: *h}
+			s.live[dg.Commander] = row
+			changed = true
+			s.evictLiveLocked()
 		}
 	} else {
 		// A datagram that opens no fight only continues the live row of its
@@ -203,6 +204,7 @@ func (lf *liveFight) noteEvent(raw json.RawMessage, kind string) {
 		lf.logged++
 		if lf.logged > LiveLogMax {
 			lf.dropOldest(true)
+			lf.dropped++
 		}
 		return
 	}
@@ -242,10 +244,11 @@ func (lf *liveFight) logForFile() ([]json.RawMessage, int) {
 			out = append(out, raw)
 		}
 	}
-	dropped := 0
+	dropped := lf.dropped
 	if len(out) > LiveLogMax {
-		dropped = len(out) - LiveLogMax
-		out = out[dropped:]
+		extra := len(out) - LiveLogMax
+		dropped += extra
+		out = out[extra:]
 	}
 	if len(out) == 0 {
 		return nil, 0
