@@ -564,6 +564,212 @@ namespace ai
         return lane;
     }
 
+    // Yards a bot covers in a 5 s breath cast at run speed (7 yd/s): a seat further than this is still taken, but the
+    // plan seats as many bots as it can within it.
+    constexpr float kBossStandReach = 35.0f;
+    // Cost added to a seat beyond kBossStandReach, and the cost of leaving a bot unseated (a side with fewer seats than
+    // bots): both dwarf any real walk, so the count within reach is decided first and the total walk second.
+    constexpr double kBossStandFarPenalty = 1000.0;
+    constexpr double kBossStandUnseatedCost = 1000000.0;
+
+    // One bot's seat in a window's plan.
+    struct StandSeat
+    {
+        std::uint64_t id = 0;
+        bool valid = false;  // false: its side had no free seat (it keeps the reactive dodge)
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+    };
+
+    // The side of the lane a bot stands on (0 or 1), as AssignStandSlot reads it; `tie` is set within half a yard
+    // of the lane line (or of equal distance to both sides' points when no lane is known).
+    inline std::uint8_t StandSideOf(const std::vector<const BossStandRow*>& points, const StandLane& lane,
+                                    const StandBot& bot, bool& tie)
+    {
+        tie = false;
+        const float laneLength = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
+        if (lane.valid && laneLength > 0.0001f)
+        {
+            const float lateral =
+                (lane.dx * (bot.y - points[0]->anchorY) - lane.dy * (bot.x - points[0]->anchorX)) / laneLength;
+            tie = std::fabs(lateral) < 0.5f;
+            return lateral >= 0.0f ? 0 : 1;
+        }
+        const float near0 = stand_detail::SideDistance(points, 0, bot.x, bot.y);
+        const float near1 = stand_detail::SideDistance(points, 1, bot.x, bot.y);
+        if (near0 < 0.0f)
+            return 1;
+        if (near1 < 0.0f)
+            return 0;
+        tie = std::fabs(near0 - near1) < 0.5f;
+        return near1 < near0 ? 1 : 0;
+    }
+
+    namespace stand_detail
+    {
+        // Min-cost assignment (Hungarian, O(n^3)) of rows to columns of a square cost matrix: assignment[row] = column.
+        // Deterministic for a given matrix: rows and columns are scanned in index order and a tie keeps the lower index.
+        inline std::vector<std::size_t> MinCostSeats(const std::vector<std::vector<double>>& cost)
+        {
+            const std::size_t n = cost.size();
+            const double inf = 1e18;
+            std::vector<double> u(n + 1, 0.0), v(n + 1, 0.0);
+            std::vector<std::size_t> p(n + 1, 0), way(n + 1, 0);
+            for (std::size_t i = 1; i <= n; ++i)
+            {
+                p[0] = i;
+                std::size_t j0 = 0;
+                std::vector<double> minv(n + 1, inf);
+                std::vector<bool> used(n + 1, false);
+                do
+                {
+                    used[j0] = true;
+                    const std::size_t i0 = p[j0];
+                    double delta = inf;
+                    std::size_t j1 = 0;
+                    for (std::size_t j = 1; j <= n; ++j)
+                    {
+                        if (used[j])
+                            continue;
+                        const double cur = cost[i0 - 1][j - 1] - u[i0] - v[j];
+                        if (cur < minv[j])
+                        {
+                            minv[j] = cur;
+                            way[j] = j0;
+                        }
+                        if (minv[j] < delta)
+                        {
+                            delta = minv[j];
+                            j1 = j;
+                        }
+                    }
+                    for (std::size_t j = 0; j <= n; ++j)
+                    {
+                        if (used[j])
+                        {
+                            u[p[j]] += delta;
+                            v[j] -= delta;
+                        }
+                        else
+                            minv[j] -= delta;
+                    }
+                    j0 = j1;
+                } while (p[j0] != 0);
+                do
+                {
+                    const std::size_t j1 = way[j0];
+                    p[j0] = p[j1];
+                    j0 = j1;
+                } while (j0 != 0);
+            }
+            std::vector<std::size_t> assignment(n, 0);
+            for (std::size_t j = 1; j <= n; ++j)
+                if (p[j] != 0)
+                    assignment[p[j] - 1] = j - 1;
+            return assignment;
+        }
+    }
+
+    // The window's seat plan: one StandSeat per bot of `bots`, in ascending id order.
+    //  - Side: StandSideOf. Bots on the lane line (tie) are placed after the others, in id order, each on the side
+    //    with fewer bots so far (side 0 on equal counts). A bot never gets a seat on the other side.
+    //  - Seats of a side: every slot of every point of that side (SlotPosition), points in `points` order, slots 0..n-1.
+    //  - Per side, a min-cost assignment of its bots (id order) to its seats: the cost is the 2D distance, plus
+    //    kBossStandFarPenalty beyond kBossStandReach; a side with more bots than seats leaves the rest unseated
+    //    (kBossStandUnseatedCost). So the plan seats as many bots within reach as it can, then walks the least in total,
+    //    and a seat beyond reach is still taken.
+    inline std::vector<StandSeat> PlanStandSeats(const std::vector<const BossStandRow*>& points,
+                                                 const std::vector<StandBot>& bots, const StandLane& lane)
+    {
+        std::vector<StandBot> sorted(bots);
+        std::stable_sort(sorted.begin(), sorted.end(), [](const StandBot& a, const StandBot& b) { return a.id < b.id; });
+        std::vector<StandSeat> plan(sorted.size());
+        for (std::size_t i = 0; i < sorted.size(); ++i)
+            plan[i].id = sorted[i].id;
+        if (points.empty())
+            return plan;
+
+        std::vector<std::uint8_t> side(sorted.size(), 0);
+        std::vector<bool> tie(sorted.size(), false);
+        std::size_t count[2] = { 0, 0 };
+        for (std::size_t i = 0; i < sorted.size(); ++i)
+        {
+            bool t = false;
+            side[i] = StandSideOf(points, lane, sorted[i], t);
+            tie[i] = t;
+            if (!t)
+                ++count[side[i]];
+        }
+        for (std::size_t i = 0; i < sorted.size(); ++i)
+        {
+            if (!tie[i])
+                continue;
+            side[i] = count[1] < count[0] ? 1 : 0;
+            ++count[side[i]];
+        }
+
+        for (std::uint8_t s = 0; s < 2; ++s)
+        {
+            std::vector<std::size_t> members;
+            for (std::size_t i = 0; i < sorted.size(); ++i)
+                if (side[i] == s)
+                    members.push_back(i);
+            struct Spot { float x, y, z; };
+            std::vector<Spot> spots;
+            for (const BossStandRow* point : points)
+            {
+                if (point->side != s)
+                    continue;
+                for (unsigned slot = 0; slot < point->slots; ++slot)
+                {
+                    Spot spot;
+                    stand_detail::SlotPosition(*point, slot, spot.x, spot.y);
+                    spot.z = point->z;
+                    spots.push_back(spot);
+                }
+            }
+            if (members.empty() || spots.empty())
+                continue;
+            const std::size_t n = std::max(members.size(), spots.size());
+            std::vector<std::vector<double>> cost(n, std::vector<double>(n, 0.0));
+            for (std::size_t r = 0; r < members.size(); ++r)
+            {
+                const StandBot& bot = sorted[members[r]];
+                for (std::size_t c = 0; c < n; ++c)
+                {
+                    if (c >= spots.size())
+                    {
+                        cost[r][c] = kBossStandUnseatedCost;
+                        continue;
+                    }
+                    const double d = std::sqrt(stand_detail::Dist2(bot.x, bot.y, spots[c].x, spots[c].y));
+                    cost[r][c] = d + (d > kBossStandReach ? kBossStandFarPenalty : 0.0);
+                }
+            }
+            const std::vector<std::size_t> pick = stand_detail::MinCostSeats(cost);
+            for (std::size_t r = 0; r < members.size(); ++r)
+            {
+                if (pick[r] >= spots.size())
+                    continue;
+                StandSeat& seat = plan[members[r]];
+                seat.valid = true;
+                seat.x = spots[pick[r]].x;
+                seat.y = spots[pick[r]].y;
+                seat.z = spots[pick[r]].z;
+            }
+        }
+        return plan;
+    }
+
+    // How long a plan outlives its last read: longer than a tick gap, shorter than the 15 s between two windows.
+    constexpr std::uint32_t kBossStandPlanIdleMs = 3000;
+
+    inline bool StandPlanStale(std::uint32_t nowMs, std::uint32_t lastReadMs)
+    {
+        return static_cast<std::uint32_t>(nowMs - lastReadMs) >= kBossStandPlanIdleMs;
+    }
+
     // The slot of bot `selfId` among `bots` (every bot of the set, self
     // included) on `points` (ActiveStandPoints). The bots are seated in id
     // order, so every bot computes the same plan whatever its own id:

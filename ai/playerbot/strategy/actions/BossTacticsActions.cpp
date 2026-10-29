@@ -5,6 +5,7 @@
 #include <functional>
 #include <limits>
 #include <atomic>
+#include <functional>
 #include <mutex>
 #include <unordered_map>
 #include "BossTacticsActions.h"
@@ -945,6 +946,34 @@ std::unordered_map<uint64, StandFailure> g_standFailures;
 // Entries in the two maps: a bot with nothing to forget costs one atomic read, not a lock.
 std::atomic<size_t> g_standStateCount{0};
 
+// The seat plan of an open window (PlanStandSeats), by boss guid, anchor and role: built by the first bot that sees
+// the window and read by every bot of the role, so all of them walk to one plan and nobody's seat flips while bots
+// move. A plan nobody read for kBossStandPlanIdleMs is stale: the next window builds a new one. Guarded by
+// g_standHoldMutex.
+struct StandPlanKey
+{
+    uint64 boss;
+    uint32 anchor;
+    uint8 role;
+    bool operator==(const StandPlanKey& other) const
+    {
+        return boss == other.boss && anchor == other.anchor && role == other.role;
+    }
+};
+struct StandPlanKeyHash
+{
+    size_t operator()(const StandPlanKey& key) const
+    {
+        return std::hash<uint64>()(key.boss) ^ (std::hash<uint32>()(key.anchor) << 1) ^ (size_t(key.role) << 7);
+    }
+};
+struct StandPlan
+{
+    std::vector<StandSeat> seats;
+    uint32 lastReadMs = 0;
+};
+std::unordered_map<StandPlanKey, StandPlan, StandPlanKeyHash> g_standPlans;
+
 // Drops what is remembered of a bot (it died, left, or is on a map without stand rows).
 void ForgetStand(uint64 key)
 {
@@ -1108,22 +1137,47 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     if (points.empty())
         return target;
 
-    // The side is the side of the lane (anchor -> release anchor) the bot stands on.
+    // The side is the side of the lane (anchor -> release anchor) the bot stands on. The seats come from the window's
+    // one plan (PlanStandSeats), built once from the positions when the window opened and kept while it is read.
     const StandLane lane = bossRows ? StandLaneOf(*bossRows, *points[0]) : StandLane();
-    const StandSlot slot = AssignStandSlot(points, bots, selfGuid.GetRawValue(), lane);
-    if (!slot.valid)
+    StandSeat seat;
+    {
+        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        const StandPlanKey key{ boss->GetObjectGuid().GetRawValue(), points[0]->anchor, static_cast<uint8>(role) };
+        auto it = g_standPlans.find(key);
+        if (it == g_standPlans.end() || StandPlanStale(nowMs, it->second.lastReadMs))
+        {
+            for (auto old = g_standPlans.begin(); old != g_standPlans.end();)
+                old = StandPlanStale(nowMs, old->second.lastReadMs) ? g_standPlans.erase(old) : std::next(old);
+            StandPlan plan;
+            plan.seats = PlanStandSeats(points, bots, lane);
+            it = g_standPlans.insert_or_assign(key, std::move(plan)).first;
+        }
+        it->second.lastReadMs = nowMs;
+        for (const StandSeat& planned : it->second.seats)
+        {
+            if (planned.id == selfGuid.GetRawValue())
+            {
+                seat = planned;
+                break;
+            }
+        }
+    }
+    // A bot the plan did not seat (its side was full, or it was not in the fight when the window opened) keeps the
+    // reactive dodge.
+    if (!seat.valid)
         return target;
     // A seat the mover refused three times in a row is given up on: the reach and the dodge take over.
     {
         std::lock_guard<std::mutex> lock(g_standHoldMutex);
         auto failure = g_standFailures.find(selfKey);
-        if (failure != g_standFailures.end() && StandSeatGivenUp(failure->second, slot.x, slot.y))
+        if (failure != g_standFailures.end() && StandSeatGivenUp(failure->second, seat.x, seat.y))
             return target;
     }
     target.valid = true;
-    target.x = slot.x;
-    target.y = slot.y;
-    target.z = slot.z;
+    target.x = seat.x;
+    target.y = seat.y;
+    target.z = seat.z;
     return target;
 }
 

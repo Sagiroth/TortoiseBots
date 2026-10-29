@@ -104,7 +104,7 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("const uint32 nowMs = WorldTimer::getMSTime();", fn)
         self.assertIn("const uint64 selfKey = bot->GetObjectGuid().GetRawValue();", fn)
         self.assertIn("std::lock_guard<std::mutex> lock(g_standHoldMutex);", fn)
-        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_standHoldMutex);"), 4)
+        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_standHoldMutex);"), 5)
         # A spent hold is dropped (no entry left behind for a bot that never sat again).
         self.assertIn("g_standHolds.erase(selfKey);", fn)
         # A tick without the boss keeps the hold only until its time is up.
@@ -132,7 +132,7 @@ class BossStandWiring(unittest.TestCase):
 
     def test_a_refused_seat_is_given_up_after_three_tries(self):
         fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
-        self.assertIn("StandSeatGivenUp(failure->second, slot.x, slot.y)", fn)
+        self.assertIn("StandSeatGivenUp(failure->second, seat.x, seat.y)", fn)
         action = body(ACTIONS, "bool BossTacticsStandAction::Execute(Event& event)")
         self.assertIn("StandNoteMoveFailure(g_standFailures[key], stand.x, stand.y);", action)
         self.assertLess(action.index("MoveTo("), action.index("StandNoteMoveFailure("))
@@ -176,7 +176,6 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("PlayerbotAIStorage::Instance().GetAI(member)", fn)
         self.assertIn('memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
         self.assertIn("StandRoleOf(PlayerbotAI::IsTank(member), PlayerbotAI::IsHeal(member), ai->IsRanged(member)) != role", fn)
-        self.assertIn("AssignStandSlot(points, bots, selfGuid.GetRawValue(), lane)", fn)
         # The bot itself is judged by the same rule as the others, first.
         self.assertLess(fn.index("const StandCandidate self = candidateOf(bot, heldBefore);"), fn.index("LiveGroupMembers(group)"))
         self.assertIn("selfCounts = StandMemberCounts(self, anchorX, anchorY);", fn)
@@ -273,6 +272,19 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("if (reaction->ShouldInterruptMovement())", react)
         movement_h = (STRATEGY / "actions/MovementActions.h").read_text()
         self.assertIn("bool ShouldReactionInterruptMovement() const override { return true; }", movement_h)
+
+    def test_the_seats_come_from_one_plan_per_window(self):
+        # The seats of a window are planned once from the positions and kept for the window: no bot's seat flips while
+        # bots walk to theirs, and every bot of the role reads the same plan.
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        self.assertIn("PlanStandSeats(points, bots, lane)", fn)
+        self.assertIn("StandPlanStale(nowMs, it->second.lastReadMs)", fn)
+        self.assertIn("it->second.lastReadMs = nowMs;", fn)
+        self.assertNotIn("AssignStandSlot(", fn)
+        declared = body(ACTIONS, "// The seat plan of an open window",
+                        end="std::unordered_map<StandPlanKey, StandPlan, StandPlanKeyHash> g_standPlans;")
+        self.assertIn("struct StandPlanKey", declared)
+        self.assertIn("Guarded by\n// g_standHoldMutex.", declared)
 
     def test_generic_code_names_no_boss(self):
         for name, text in (("BossStandPolicy.h", POLICY), ("BossTacticsStand.h", STAND_H)):

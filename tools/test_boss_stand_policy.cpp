@@ -716,6 +716,157 @@ int main()
     CHECK(!StandArrived(0, 0, kBossStandArrived + 0.5f, 0));
     CHECK(!StandArrived(0, 0, 3, 3));
 
+    // The plan of a window: one seat per bot, as many within reach as the seats allow, the least walk among those.
+    // The anchor-7 ranged rows of 20261029170000_world.sql: anchor (6.8951, -180.2460), radius 8, release anchor 3
+    // (-63.5156, -240.0960), one line (dx, dy = -0.760, -0.650), 5 slots per point.
+    {
+        BossStandRow release = Row(3, -63.5156f, -240.0960f, 8, StandRole::Ranged, 18584, 0, 0, -82.0f, -214.0f,
+                                   0.760f, 0.650f);
+        BossStandRow side0a = Row(7, 6.8951f, -180.2460f, 8, StandRole::Ranged, 18584, 0, 0, 8.0f, -220.0f,
+                                  -0.760f, -0.650f);
+        side0a.releaseAnchor = 3;
+        BossStandRow side0b = Row(7, 6.8951f, -180.2460f, 8, StandRole::Ranged, 18584, 0, 1, 24.0f, -218.0f,
+                                  -0.760f, -0.650f);
+        side0b.releaseAnchor = 3;
+        BossStandRow side1 = Row(7, 6.8951f, -180.2460f, 8, StandRole::Ranged, 18584, 1, 0, -46.0f, -184.0f,
+                                 -0.760f, -0.650f);
+        side1.releaseAnchor = 3;
+        const std::vector<BossStandRow> rows = { release, side0a, side0b, side1 };
+        const std::vector<const BossStandRow*> points = { &rows[1], &rows[2], &rows[3] };
+        const StandLane lane = StandLaneOf(rows, rows[1]);
+        CHECK(lane.valid);
+
+        // Attempt 6, 19:21:42 (the sampler's guids).
+        const std::vector<StandBot> bots = {
+            { 910, 12.3f, -177.9f },  { 923, -7.6f, -202.4f }, { 926, -21.1f, -186.0f }, { 928, -11.7f, -201.1f },
+            { 930, -29.3f, -199.5f }, { 932, -11.2f, -241.5f }, { 933, -40.1f, -196.0f }, { 937, -18.2f, -190.4f },
+            { 940, -6.3f, -201.8f }
+        };
+        const std::vector<StandSeat> plan = PlanStandSeats(points, bots, lane);
+        CHECK(plan.size() == bots.size());
+        int seated = 0;
+        int within = 0;
+        for (std::size_t i = 0; i < plan.size(); ++i)
+        {
+            CHECK(plan[i].id == bots[i].id);  // ascending id order
+            if (!plan[i].valid)
+                continue;
+            ++seated;
+            const StandBot& b = bots[i];
+            bool tie = false;
+            const std::uint8_t own = StandSideOf(points, lane, b, tie);
+            CHECK(!tie);
+            bool seatTie = false;
+            CHECK(StandSideOf(points, lane, { 0, plan[i].x, plan[i].y }, seatTie) == own);
+            if (Dist(b.x, b.y, plan[i].x, plan[i].y) <= kBossStandReach)
+                ++within;
+        }
+        CHECK(seated == 9);
+        CHECK(within == 8);
+        // Esveit (937), whom the guid-order rule sent to the 50 yd slot on the far point, is within reach.
+        for (const StandSeat& seat : plan)
+            if (seat.id == 937)
+            {
+                CHECK(seat.valid);
+                CHECK(Dist(-18.2f, -190.4f, seat.x, seat.y) <= kBossStandReach);
+            }
+        for (std::size_t a = 0; a < plan.size(); ++a)
+            for (std::size_t b = a + 1; b < plan.size(); ++b)
+                CHECK(Dist(plan[a].x, plan[a].y, plan[b].x, plan[b].y) >= 1.0f);
+
+        // The baseline the plan beats: the guid-order rule seats only 6 of the 9 within reach.
+        int baselineWithin = 0;
+        for (const StandBot& b : bots)
+        {
+            const StandSlot slot = AssignStandSlot(points, bots, b.id, lane);
+            if (slot.valid && Dist(b.x, b.y, slot.x, slot.y) <= kBossStandReach)
+                ++baselineWithin;
+        }
+        CHECK(baselineWithin == 6);
+
+        // The same bots in another order give the same plan, and the plan is in id order whatever the input order:
+        // every bot reads one plan.
+        const std::vector<StandBot> reversed(bots.rbegin(), bots.rend());
+        const std::vector<StandSeat> again = PlanStandSeats(points, reversed, lane);
+        CHECK(again.size() == plan.size());
+        for (std::size_t i = 0; i < plan.size(); ++i)
+            CHECK(again[i].id == plan[i].id);
+        for (const StandSeat& seat : plan)
+        {
+            bool found = false;
+            for (const StandSeat& other : again)
+            {
+                if (other.id != seat.id)
+                    continue;
+                found = true;
+                CHECK(other.valid == seat.valid);
+                CHECK(std::fabs(other.x - seat.x) < 0.001f && std::fabs(other.y - seat.y) < 0.001f);
+                CHECK(std::fabs(other.z - seat.z) < 0.001f);
+            }
+            CHECK(found);
+        }
+    }
+
+    // A seat beyond reach is still taken: the penalty only orders the plan, it never refuses a walk.
+    {
+        BossStandRow far = Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 100, 0, 1, 0, 1);
+        far.releaseAnchor = 2;
+        BossStandRow release = Row(2, 100, 0, 8, StandRole::Ranged, 777, 0, 0, 100, 32, 1, 0);
+        const std::vector<BossStandRow> rows = { far, release };
+        const std::vector<const BossStandRow*> points = { &rows[0] };
+        const StandLane lane = StandLaneOf(rows, rows[0]);
+        CHECK(lane.valid);
+        const std::vector<StandSeat> plan = PlanStandSeats(points, { { 1, 0, 0.1f } }, lane);
+        CHECK(plan.size() == 1);
+        CHECK(plan[0].valid);
+        CHECK(std::fabs(plan[0].x - 100.0f) < 0.001f && std::fabs(plan[0].y) < 0.001f);
+        CHECK(Dist(0, 0.1f, plan[0].x, plan[0].y) > kBossStandReach);
+    }
+
+    // A full side leaves the rest unseated: a bot never takes a seat on the other side of the lane.
+    {
+        BossStandRow plus = Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0, 5);
+        plus.releaseAnchor = 2;
+        BossStandRow minus = Row(1, 0, 0, 8, StandRole::Ranged, 777, 1, 0, 0, -32, 1, 0, 1);
+        minus.releaseAnchor = 2;
+        BossStandRow release = Row(2, 100, 0, 8, StandRole::Ranged, 777, 0, 0, 100, 32, 1, 0);
+        const std::vector<BossStandRow> rows = { plus, minus, release };
+        const std::vector<const BossStandRow*> points = { &rows[0], &rows[1] };
+        const StandLane lane = StandLaneOf(rows, rows[0]);
+        const std::vector<StandSeat> plan =
+            PlanStandSeats(points, { { 1, 0, -10 }, { 2, 0, -20 }, { 3, 0, -30 } }, lane);
+        int seated = 0;
+        int unseated = 0;
+        for (const StandSeat& seat : plan)
+            (seat.valid ? seated : unseated)++;
+        CHECK(seated == 1 && unseated == 2);
+    }
+
+    // A bot on the lane line goes to the side with fewer bots, never to the one that is already crowded.
+    {
+        BossStandRow plus = Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0, 1);
+        plus.releaseAnchor = 2;
+        BossStandRow minus = Row(1, 0, 0, 8, StandRole::Ranged, 777, 1, 0, 0, -32, 1, 0, 1);
+        minus.releaseAnchor = 2;
+        BossStandRow release = Row(2, 100, 0, 8, StandRole::Ranged, 777, 0, 0, 100, 32, 1, 0);
+        const std::vector<BossStandRow> rows = { plus, minus, release };
+        const std::vector<const BossStandRow*> points = { &rows[0], &rows[1] };
+        const StandLane lane = StandLaneOf(rows, rows[0]);
+        const std::vector<StandBot> bots = { { 1, 0, 3 }, { 2, 10, 3 }, { 3, 5, 0.2f } };
+        bool tie = false;
+        CHECK(StandSideOf(points, lane, bots[2], tie) == 0);
+        CHECK(tie);  // on the line: the plan places it, not the raw side
+        const std::vector<StandSeat> plan = PlanStandSeats(points, bots, lane);
+        for (const StandSeat& seat : plan)
+            if (seat.id == 3)
+                CHECK(seat.valid && std::fabs(seat.y + 32.0f) < 0.001f);
+    }
+
+    // A plan nobody read for kBossStandPlanIdleMs is stale; the clock wraps.
+    CHECK(!StandPlanStale(2999, 0));
+    CHECK(StandPlanStale(3000, 0));
+    CHECK(!StandPlanStale(5, 0xFFFFFFF0u));
+
     std::cout << "All boss stand policy tests passed.\n";
     return 0;
 }
