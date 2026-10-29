@@ -13215,19 +13215,16 @@ static void TestLeadOnlyDeathRecovers()
     Tick(r, f);
     CHECK(r.regroup && r.walkBackDue && r.autoRegroups == 1 && r.state == State::Running);
     CHECK(r.note.find("the lead bot died and came back") == 0);
-    // The living party holds; the lead bot walks back to it, nobody is
-    // gathered on (or summoned to) the entrance.
+    // The living party is held at the fight spot; the next tick summons it to
+    // the revived lead bot, one a tick (no gather onto the entrance).
     CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran");
     f.seen = false;
     f.approachKnown = true;
     f.approachX = -50;
-    std::string order;
-    for (int i = 0; i < 3; ++i)
-    {
-        order = Tick(r, f);
-        CHECK(order.find("summon") != 0 && order != "move -90.0 0.0 0.0");
-    }
-    CHECK(!r.regroup && r.walkBack && r.hold.size() == 1);
+    std::string order = Tick(r, f);
+    CHECK(order == "summon Fyran");
+    CHECK(r.hold.empty() && r.summoned.count("Fyran"));
+    CHECK(r.note.find("Fyran summoned to it") != std::string::npos);
     // Back with it: the hold ends.
     f.leadX = 200;
     f.members[1].yd = 15;
@@ -13418,8 +13415,8 @@ static void TestDeathDuringRegroup()
 
 // Review of #1060: the common case, the fight ends while the lead bot is
 // still a ghost. The regroup revives it; once it is up at the entrance the
-// living party deep inside holds (no gather to the entrance, no summon there).
-static void TestLeadDeadAfterTheFightHolds()
+// living party deep inside is summoned to it.
+static void TestLeadDeadAfterTheFightSummonsTheParty()
 {
     DungeonPlan plan;
     plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
@@ -13454,12 +13451,9 @@ static void TestLeadDeadAfterTheFightHolds()
     f.seen = false;
     f.approachKnown = true;
     f.approachX = -50;
-    for (int i = 0; i < 20; ++i)
-    {
-        std::string const order = Tick(r, f);
-        CHECK(order.find("summon") != 0 && order != "move -90.0 0.0 0.0");
-    }
-    CHECK(r.state == State::Running && !r.regroup && r.walkBack && r.hold.size() == 1);
+    CHECK(Tick(r, f) == "summon Fyran");
+    CHECK(r.hold.empty() && r.summoned.count("Fyran"));
+    CHECK(r.note.find("Fyran summoned to it") != std::string::npos);
     // A player's order pauses the run: the hold ends (the glue lets them go).
     CHECK(PauseForPlayer(r, "follow"));
     CHECK(r.hold.empty() && !r.holdDue);
@@ -13482,6 +13476,70 @@ static void TestLeadDeadAfterTheFightHolds()
     h.alive = 5;
     Tick(q, h);
     CHECK(q.hold.empty() && !q.holdDue);
+}
+
+// ta263: a bot held where the lead bot fell that gets into a fight leaves the
+// hold at once (the guard and the gather see it again).
+static void TestHeldBotInAFightLeavesTheHold()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    r.hold = {"Fyran"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100)};
+    f.members[1].inCombat = true;
+    f.anyInCombat = true;
+    std::string order;
+    CHECK(!SummonHeldToLead(r, f, order));
+    CHECK(r.hold.empty() && order.empty());
+}
+
+// ta263: one held bot is summoned a tick, each once, then nothing.
+static void TestHeldSummonsOneATick()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    r.hold = {"Fyran", "Walky"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100), Mem("Walky", 120)};
+    f.maxMemberYd = 120;
+    std::string order;
+    CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+    CHECK(r.hold.size() == 1 && r.hold[0] == "Walky" && r.summoned.count("Fyran"));
+    order.clear();
+    CHECK(SummonHeldToLead(r, f, order) && order == "summon Walky");
+    CHECK(r.hold.empty() && r.summoned.count("Walky"));
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+}
+
+// ta263: no held summon while the lead bot's strand teleport runs, while the
+// run is paused for another part, or with the lead bot dead.
+static void TestHeldSummonWaitsForStrandAndOtherPart()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    r.hold = {"Fyran", "Walky"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100), Mem("Walky", 120)};
+    f.maxMemberYd = 120;
+    std::string order;
+    r.strandDue = true;
+    CHECK(!SummonHeldToLead(r, f, order) && r.hold.size() == 2 && order.empty());
+    r.strandDue = false;
+    r.holdWhilePaused = true;
+    CHECK(!SummonHeldToLead(r, f, order) && r.hold.size() == 2 && order.empty());
+    r.holdWhilePaused = false;
+    r.walkBack = true; // a direct step's own summon wait owns the hold then
+    CHECK(!SummonHeldToLead(r, f, order) && r.hold.size() == 2 && order.empty());
+    r.walkBack = false;
+    f.leadAlive = false;
+    CHECK(!SummonHeldToLead(r, f, order) && r.hold.size() == 2 && order.empty());
 }
 
 // The run's own time limit and the stop note: the 3 h cap used to read as a plain stop.
@@ -15957,8 +16015,9 @@ static std::vector<DoorFact> TwoDoors()
 
 // A near wipe with the lead bot among the dead: the fight over, the regroup
 // arms the hold as WaitForFallen does (the living stay at the fight spot), and
-// once the lead bot is up at the entrance the living bot there holds.
-static void TestNearWipeHoldsTheLivingAtTheFightSpot()
+// once the lead bot is up at the entrance the living bot there is summoned to
+// it.
+static void TestNearWipeSummonsTheLivingToTheLead()
 {
     DungeonPlan plan;
     plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
@@ -15994,18 +16053,23 @@ static void TestNearWipeHoldsTheLivingAtTheFightSpot()
     CHECK(Tick(r, f).empty());
     CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran" && !r.holdDue && r.state == State::Running);
     CHECK(!r.leadOtherPart); // the entry door, 100 yd from the plan: the run's own part
-    // The others up at the entry door too: the regroup never gathers or summons Fyran.
+    // The others up at the entry door too: the regroup summons Fyran once and
+    // never gathers him at the door.
     f.dead = 0;
     f.alive = 5;
     f.deadNames.clear();
     f.members = {Mem("Tanky", 0), Mem("Healy", 3), Mem("Magey", 3), Mem("Fyran", 305)};
     f.members[3].x = 215;
+    int summons = 0;
     for (int i = 0; i < 40 && r.regroup; ++i)
     {
         std::string const order = Tick(r, f);
-        CHECK(order != "summon Fyran");
+        if (order == "summon Fyran")
+            ++summons;
+        else
+            CHECK(order.find("summon") != 0);
     }
-    CHECK(r.state == State::Running && r.hold.size() == 1 && r.hold[0] == "Fyran");
+    CHECK(summons == 1 && r.state == State::Running && r.hold.empty());
 }
 
 // The lead bot up at another wing's door: no gather, summon or island hop can
@@ -16924,13 +16988,22 @@ static void TestScarletLibraryR20Replay()
     g.members.push_back(At("Ribbon", 254.0f, -207.0f, 18.7f, 253.7f, -206.6f, 18.7f));
     g.members.push_back(At("Duskstorm", 253.5f, -206.0f, 18.7f, 253.7f, -206.6f, 18.7f));
     bool walked = false;
+    int summoned = 0;
     for (int i = 0; i < 10 && !walked; ++i)
     {
         std::string const order = Tick(q, g);
-        CHECK(order.find("summon") != 0);
+        if (order == "summon Nightcrest")
+            ++summoned;
+        else
+            CHECK(order.find("summon") != 0);
+        if (summoned)
+        {
+            g.members[1] = At("Nightcrest", 253.7f, -206.6f, 18.7f, 253.7f, -206.6f, 18.7f); // the summon lands him
+            g.maxMemberYd = 0;
+        }
         walked = q.walkBack;
     }
-    CHECK(walked && q.state == State::Running && q.hold.size() == 1 && q.hold[0] == "Nightcrest");
+    CHECK(walked && q.state == State::Running && summoned == 1 && q.hold.empty());
 }
 
 // Gnomeregan r21-19z40e step 180: the Alarm-a-bomb 2600 (7897, 0xF130001ED90075B6) kept the party in combat,
@@ -22346,8 +22419,11 @@ int main()
     TestNoPullWithADeadMember();
     TestRegroupWaitsForTheFight();
     TestDeathDuringRegroup();
-    TestLeadDeadAfterTheFightHolds();
-    TestNearWipeHoldsTheLivingAtTheFightSpot();
+    TestLeadDeadAfterTheFightSummonsTheParty();
+    TestNearWipeSummonsTheLivingToTheLead();
+    TestHeldBotInAFightLeavesTheHold();
+    TestHeldSummonsOneATick();
+    TestHeldSummonWaitsForStrandAndOtherPart();
     TestLeadInOtherPartPausesWithTheTrueReason();
     TestRunHoldsItsDeadUntilItEnds();
     TestOtherPartResumeIsRefusedWhileTheLeadIsAway();

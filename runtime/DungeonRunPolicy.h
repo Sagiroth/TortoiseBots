@@ -34,8 +34,9 @@
 //   - the owner's rule (2026-10-17): a fallen member (the lead bot too) is
 //     waited for until it is alive and back with the party before the next
 //     pull, boss, task or move (WaitForFallen), fight first, never mid-event;
-//     a lead bot back at the entrance alone walks back while the living
-//     party holds where it is (LeadRevivedAway);
+//     a lead bot back at the entrance alone gets the living party summoned
+//     to it and the party walks back together (LeadRevivedAway,
+//     SummonHeldToLead);
 //   - a refused gather is sent once more, then the run goes on without it;
 //     at a gather's ceiling (and an approach hop's) a far straggler that
 //     stands still or stalled (kSummonYd) is summoned once;
@@ -1396,6 +1397,9 @@ struct Run
     // and the run leaves them out of its gathers and summons (HoldView). A bot
     // drops out once the lead bot is within kGatherYd of it; the list ends with
     // the walk back, on a pause and with the step.
+    // ta263: in a running run each held bot is summoned to the lead bot
+    // (SummonHeldToLead) and leaves the list; only the other-part pause keeps
+    // bots held (holdWhilePaused).
     std::vector<std::string> hold;
     // A regroup for a dead lead bot (WaitForFallen): once the lead bot is up
     // again more than kSeeYd from where it fell, the hold is filled before the
@@ -12252,9 +12256,8 @@ inline void NoteLeadDeath(Run& r, const Facts& f)
 // summon` brings a bot to the lead bot, not the lead bot to a bot). Counted
 // against kAutoRegroupsPerStep; past that it pauses. A lead bot raised where
 // it fell (a party resurrection) needs nothing.
-// The living party stays where it won the fight: only the revived few walk
-// back (19z11 03:24: the three alive deep in the hall were summoned to the
-// entrance by hand and the whole party walked the way again). Held: every
+// The living party near where the lead bot fell is picked here and
+// summoned to it (SummonHeldToLead). Held: every
 // living bot more than kGatherYd from the lead bot and within kSeeYd of where
 // the lead bot fell.
 inline void FillHold(Run& r, const Facts& f)
@@ -12326,7 +12329,7 @@ inline bool LeadRevivedAway(Run& r, const Facts& f)
     FillHold(r, f);
     r.note = "the lead bot died and came back to life away from the party: regrouping by itself (" +
         std::to_string(r.autoRegroups) + " of " + std::to_string(kAutoRegroupsPerStep) + " at this step)" +
-        (r.hold.empty() ? std::string() : ", the party holds while it walks back");
+        (r.hold.empty() ? std::string() : ", the party is summoned to it and walks back with it");
     return true;
 }
 
@@ -12415,6 +12418,45 @@ inline void UpdateHold(Run& r, const Facts& f)
                     return m.yd <= nearYd;
             return true;
         }), r.hold.end());
+}
+
+// ta263 (owner 2026-10-20: "regroup the survivors at the lead's revive point instead of walking the lead back";
+// RFC 10-20 leg 7: three held bots attacked 55-77 yd from the staying tank, four deaths): the bots held where the
+// lead bot fell are summoned to it, one a tick, once each, then the whole party walks back. A held bot in a fight
+// leaves the hold at once (the guard and the gather see it). Not while paused, walking back (a direct step's own
+// summon wait owns the hold then), in an event, with the lead bot dead or in another part, or while the stranded
+// lead bot's teleport runs. True when it set a summon.
+inline bool SummonHeldToLead(Run& r, const Facts& f, std::string& order)
+{
+    r.hold.erase(std::remove_if(r.hold.begin(), r.hold.end(), [&](const std::string& name)
+        {
+            for (const MemberFact& m : f.members)
+                if (m.name == name)
+                    return m.inCombat || m.attackers > 0;
+            return false;
+        }), r.hold.end());
+    if (r.hold.empty() || r.state != State::Running || r.holdWhilePaused || r.walkBack || !f.leadAlive || f.anyInCombat ||
+        InEvent(r) || r.strandDue || r.strandOn || LeadInOtherPart(r, f))
+        return false;
+    for (auto it = r.hold.begin(); it != r.hold.end(); ++it)
+    {
+        const MemberFact* m = nullptr;
+        for (const MemberFact& c : f.members)
+            if (c.name == *it)
+                m = &c;
+        if (!m || m->offPlanMap || m->name == f.carrier)
+            continue;
+        std::string const name = *it;
+        r.hold.erase(it);
+        MarkSummoned(r, name);
+        if (r.regroup)
+            r.RestartRegroupClock();
+        order = "summon " + name;
+        r.note = "the lead bot came back to life away from the party: " + name + " summoned to it (" + Num(m->yd) +
+            " yd; the party walks back together)";
+        return true;
+    }
+    return false;
 }
 
 // The party is in combat (Facts::anyInCombat) and every unit engaged with it is one the group cannot attack
@@ -13360,7 +13402,8 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
         UpdateHold(r, f);
         if (!r.hold.empty())
         {
-            order = TickBody(r, HoldView(r, f), dt, lines);
+            if (!SummonHeldToLead(r, f, order))
+                order = TickBody(r, HoldView(r, f), dt, lines);
             held = true;
         }
     }
@@ -13836,7 +13879,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
                 FillHold(r, f);
                 if (!r.hold.empty())
                 {
-                    r.note = "regroup: the lead bot is up away from the party: the party holds while it walks back";
+                    r.note = "regroup: the lead bot is up away from the party: the party is summoned to it";
                     return order;
                 }
             }
