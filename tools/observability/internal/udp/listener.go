@@ -20,6 +20,12 @@ type Hub interface {
 	Broadcast(event string, payload interface{})
 }
 
+// LiveSink is the realtime fan-out (the SSE hub): positions and fight events,
+// filtered per commander. It never blocks the read loop.
+type LiveSink interface {
+	Publish(commander, event string, payload interface{})
+}
+
 // Listener owns the UDP socket and the janitor that evicts stale state.
 // Combat, when set, receives the module's COMBAT_FIGHT datagrams; nil keeps
 // the listener's old shape (an older module sends none and nothing stores).
@@ -31,12 +37,17 @@ type Listener struct {
 	metricsReg *metrics.Registry
 	zoneProj   *zoneproject.Engine
 	hub        Hub
+	live       LiveSink
 	forwards   []*forwardTarget
 	stopChan   chan struct{}
 }
 
 // SetCombatStore wires the fight store the COMBAT_FIGHT case files into.
 func (l *Listener) SetCombatStore(c *combat.Store) { l.combat = c }
+
+// SetLiveSink wires the realtime stream (COMMANDERS, COMMANDER_POS and the
+// fight events). Nil keeps the listener's old shape: nothing is pushed there.
+func (l *Listener) SetLiveSink(s LiveSink) { l.live = s }
 
 func NewListener(host string, port int, store *state.Store, mr *metrics.Registry, zp *zoneproject.Engine, hub Hub) *Listener {
 	return &Listener{
@@ -231,6 +242,19 @@ func (l *Listener) processPacket(data []byte) {
 		}
 		if l.store.ApplyCommanders(&cmd) {
 			l.hub.Broadcast("commanders", l.store.Commanders())
+			if l.live != nil {
+				tsMs := cmd.TSMs
+				if tsMs == 0 {
+					tsMs = cmd.TS * 1000 // a module before ts_ms (2.3 is additive)
+				}
+				for i := range cmd.Commanders {
+					b := cmd.Commanders[i]
+					l.live.Publish(b.Commander, "commander", struct {
+						model.CommanderBinding
+						TSMs int64 `json:"ts_ms"`
+					}{b, tsMs})
+				}
+			}
 		}
 
 	case "COMBAT_FIGHT":
@@ -244,8 +268,38 @@ func (l *Listener) processPacket(data []byte) {
 		if dg.Fight.ID == "" {
 			return
 		}
-		if l.combat.Add(dg.Session, dg.Fight) {
+		if summary, ok := l.combat.AddSummary(dg.Session, dg.Fight); ok {
 			l.hub.Broadcast("combat", dg.Fight)
+			if l.live != nil {
+				l.live.Publish(dg.Fight.Commander, "fight", summary)
+			}
+		}
+
+	case "COMBAT_EVENTS":
+		var dg combat.EventsDatagram
+		if err := json.Unmarshal(data, &dg); err != nil {
+			return
+		}
+		l.metricsReg.RecordRealtimeDatagram("COMBAT_EVENTS", len(data))
+		if l.combat == nil {
+			return
+		}
+		summary, changed := l.combat.ApplyEvents(dg, time.Now())
+		if l.live != nil {
+			l.live.Publish(dg.Commander, "events", dg)
+			if changed {
+				l.live.Publish(dg.Commander, "fight_live", summary)
+			}
+		}
+
+	case "COMMANDER_POS":
+		var p model.CommanderPosPayload
+		if err := json.Unmarshal(data, &p); err != nil {
+			return
+		}
+		l.metricsReg.RecordRealtimeDatagram("COMMANDER_POS", len(data))
+		if frame, ok := l.store.ApplyCommanderPos(&p); ok && l.live != nil {
+			l.live.Publish(p.Commander, "pos", frame)
 		}
 	default:
 		var anomaly model.AnomalyPayload

@@ -606,6 +606,7 @@ type CommandersPayload struct {
 	Session    uint64             `json:"session"`
 	Seq        uint64             `json:"seq"`
 	TS         int64              `json:"ts"`
+	TSMs       int64              `json:"ts_ms,omitempty"`
 	Type       string             `json:"type"`
 	Commanders []CommanderBinding `json:"commanders"`
 }
@@ -923,4 +924,57 @@ type DungeonsView struct {
 	// reports no instance id: copies of one dungeon then fall back to one
 	// run per map and cannot be told apart.
 	StaleModule bool `json:"stale_module,omitempty"`
+}
+
+// CommanderPosPayload is the COMMANDER_POS datagram: where a binding's bots
+// and the enemies near its lead are, sent faster than the 2 s COMMANDERS
+// report while they fight. Additive to protocol v12; fmt 1 is the only
+// layout this daemon reads, and an older daemon drops the unknown type.
+type CommanderPosPayload struct {
+	V             int      `json:"v"`
+	FMT           int      `json:"fmt"`
+	Session       uint64   `json:"session"`
+	Seq           uint64   `json:"seq"`
+	TS            int64    `json:"ts"`
+	TSMs          int64    `json:"ts_ms"`
+	Type          string   `json:"type"`
+	Commander     string   `json:"commander"`
+	CommanderGUID uint32   `json:"commander_guid"`
+	Combat        bool     `json:"combat"`
+	Bots          []PosBot `json:"bots"`
+	Mobs          []PosMob `json:"mobs"`
+}
+
+// PosBot is one bot's place in a COMMANDER_POS datagram; M is the map, A is
+// 1 alive and 0 dead (HP 0 then).
+type PosBot struct {
+	G   uint32  `json:"g"`
+	M   uint32  `json:"m"`
+	X   float64 `json:"x"`
+	Y   float64 `json:"y"`
+	Z   float64 `json:"z"`
+	O   float64 `json:"o"`
+	HP  uint32  `json:"hp"`
+	MHP uint32  `json:"mhp"`
+	A   int     `json:"a"`
+}
+
+// PosMob is one enemy near the lead: its guid as a decimal string, where it
+// stands, its health percent and the raw guid of the unit it targets ("" none).
+type PosMob struct {
+	ID string  `json:"id"`
+	X  float64 `json:"x"`
+	Y  float64 `json:"y"`
+	HP uint32  `json:"hp"`
+	V  string  `json:"v"`
+}
+
+// CommanderPosFrame is one accepted position datagram as the live stream
+// carries it.
+type CommanderPosFrame struct {
+	Commander string   `json:"commander"`
+	TSMs      int64    `json:"ts_ms"`
+	Combat    bool     `json:"combat"`
+	Bots      []PosBot `json:"bots"`
+	Mobs      []PosMob `json:"mobs"`
 }

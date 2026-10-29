@@ -411,6 +411,8 @@
         deaths: num(row.deaths) || 0,
         lenPct: maxDur > 0 ? (dur / maxDur) * 100 : 0,
         verdict: fight ? verdict(fight, layout, det.warnings || []) : null,
+        // A row COMBAT_EVENTS opened, with no finished fight behind it yet: no bot rows, no detail to load.
+        live: !!row.live,
       };
     });
   }

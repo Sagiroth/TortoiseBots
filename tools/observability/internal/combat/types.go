@@ -115,6 +115,10 @@ type FightSummary struct {
 	Step     uint32 `json:"step"`
 	Deaths   int    `json:"deaths"`
 	Warnings int    `json:"warnings"`
+	// Live marks the row of a fight still running (COMBAT_EVENTS opened it and
+	// no COMBAT_FIGHT has arrived yet): it has no per-bot numbers and no
+	// detail to load, and the card shows it as it happens.
+	Live bool `json:"live,omitempty"`
 }
 
 // Warning is one fired rule on one bot.

@@ -127,6 +127,6 @@ assert.ok(src.includes("'&from=' + from + '&to=' + to"), "the run's kept positio
 assert.ok(src.includes("FD_TRACK_WINDOW_S"), "a run longer than the kept window is clamped");
 assert.ok(src.includes("setTimeout(() => fdRunTick(key)"), "the run plays as a setTimeout chain");
 assert.ok(grab("fdRunStop").includes("clearTimeout("), "stopping the run clears the pending step");
-assert.strictEqual((src.match(/setInterval\(/g) || []).length, 8, "no new setInterval");
+assert.strictEqual((src.match(/setInterval\(/g) || []).length, 9, "no new setInterval but the live stream's fallback poll");
 
 console.log("fight debugger run timeline ok");

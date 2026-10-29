@@ -31,6 +31,12 @@ type Registry struct {
 	grindingGaining prometheus.Gauge
 	grindingDeaths  prometheus.Gauge
 	grindingCombat  prometheus.Gauge
+	// The live stream (S1): open SSE clients, the frames dropped to a slow
+	// one, and the realtime datagrams that feed it, by type.
+	liveClients       prometheus.Gauge
+	liveDropped       prometheus.Counter
+	realtimeDatagrams *prometheus.CounterVec
+	realtimeBytes     *prometheus.CounterVec
 }
 
 func New() *Registry {
@@ -91,6 +97,22 @@ func New() *Registry {
 			Name: "tortoisebots_grinding_pct_in_combat",
 			Help: "Percent of the roster in combat state (0-100)",
 		}),
+		liveClients: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "tortoisebots_live_clients",
+			Help: "Open Server-Sent Events streams on GET /api/v1/live",
+		}),
+		liveDropped: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "tortoisebots_live_dropped_total",
+			Help: "Live frames dropped for a slow stream (the client is told to resync)",
+		}),
+		realtimeDatagrams: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "tortoisebots_realtime_datagrams_total",
+			Help: "Realtime datagrams accepted by type (COMBAT_EVENTS, COMMANDER_POS)",
+		}, []string{"type"}),
+		realtimeBytes: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "tortoisebots_realtime_bytes_total",
+			Help: "Bytes of realtime datagrams by type (COMBAT_EVENTS, COMMANDER_POS)",
+		}, []string{"type"}),
 	}
 
 	// Initialize server as offline until the first pulse.
@@ -153,6 +175,27 @@ func (r *Registry) RecordAnomaly(a *model.AnomalyPayload) {
 
 func (r *Registry) RecordSnapshot() {
 	r.snapshotsTotal.Inc()
+}
+
+// SetLiveClients mirrors the open live streams.
+func (r *Registry) SetLiveClients(n int) {
+	r.liveClients.Set(float64(n))
+}
+
+// AddLiveDropped adds frames that a slow stream lost since the last call.
+func (r *Registry) AddLiveDropped(n uint64) {
+	if n > 0 {
+		r.liveDropped.Add(float64(n))
+	}
+}
+
+// RecordRealtimeDatagram counts one accepted realtime datagram and its bytes,
+// by type; S3's measurement reads these.
+func (r *Registry) RecordRealtimeDatagram(typ string, bytes int) {
+	r.realtimeDatagrams.WithLabelValues(typ).Inc()
+	if bytes > 0 {
+		r.realtimeBytes.WithLabelValues(typ).Add(float64(bytes))
+	}
 }
 
 // RecordGrinding mirrors the dashboard grinding panel so alerts can use it.

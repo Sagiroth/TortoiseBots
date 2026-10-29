@@ -108,7 +108,7 @@ assert.ok(draw.indexOf("cmdPlanSvg(") > 0 && draw.indexOf("cmdPlanSvg(") < draw.
 // ---- 4b in app.js: the presets, the trail cut, the layout's lines and the Layers button
 ["MapLayers.applyPreset(", "MapLayers.presetOf(", 'data-act="layers"', "CmdPaths.cutByAge(", "CmdView.threatLines(shown, onMap, bind.layout)",
   "CmdPaths.layoutHealLines(", "MapLayers.setTrailSec(", "data-trailsec"].forEach((s) => assert.ok(src.includes(s), s));
-assert.strictEqual((src.match(/setInterval\(/g) || []).length, 8, "no new setInterval");
+assert.strictEqual((src.match(/setInterval\(/g) || []).length, 9, "no new setInterval but the live stream's fallback poll");
 assert.ok(src.includes("getElementById('cmd-layers')"), "the Layers button opens the one panel");
 
 // ---- index.html loads the overlay before app.js

@@ -29,6 +29,7 @@ Go Observability Daemon (tools/observability)
     │
     ├──► Prometheus Metrics HTTP Endpoint (:8095/metrics)
     ├──► REST API (/api/v1/status, /api/v1/bots, /api/v1/issues, /api/v1/commanders)
+    ├──► Live stream (/api/v1/live: Server-Sent Events with positions and fight events as they happen)
     └──► Embedded Web SPA Dashboard (:8095/dashboard)
 ```
 

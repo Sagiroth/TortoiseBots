@@ -141,7 +141,7 @@ assert.ok(src.includes("clearTimeout(fd.rp.timer)"), "stopping clears the pendin
 assert.ok(grab("fdReplayStop").includes("clearTimeout("), "fdReplayStop clears the pending step");
 assert.ok(src.includes("const liveBind = cmdFindBind(key)"), "the map keeps the live binding beside the replayed one");
 assert.ok(src.includes("fd.tracks["), "the per-commander state keeps the tracks");
-assert.strictEqual((src.match(/setInterval\(/g) || []).length, 8, "no new setInterval");
+assert.strictEqual((src.match(/setInterval\(/g) || []).length, 9, "no new setInterval but the live stream's fallback poll");
 const off = run("FD_REPLAY_OFF");
 assert.ok(off.includes("trail") && off.includes("membertrails") && off.includes("events"));
 assert.ok(!off.includes("threat") && !off.includes("bots") && !off.includes("plan"));

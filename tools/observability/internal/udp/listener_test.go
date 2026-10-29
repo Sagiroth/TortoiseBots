@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"tortoise-observability/internal/combat"
 	zoneproject "tortoise-observability/internal/map"
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
@@ -203,5 +204,90 @@ func TestDungeonMobsDatagramJoinsTheDungeonsView(t *testing.T) {
 	}
 	if got := store.Dungeons().Runs[0]; got.Mobs == nil || len(*got.Mobs) != 2 {
 		t.Fatalf("last good datagram lost: %+v", got)
+	}
+}
+
+// ---- realtime types (S1): COMMANDER_POS and COMBAT_EVENTS reach the live sink and never the WebSocket.
+
+type fakeLiveSink struct {
+	got []string
+}
+
+func (s *fakeLiveSink) Publish(commander, event string, _ interface{}) {
+	s.got = append(s.got, commander+":"+event)
+}
+
+func (s *fakeLiveSink) has(want string) bool {
+	for _, g := range s.got {
+		if g == want {
+			return true
+		}
+	}
+	return false
+}
+
+const commanderPosDatagram = `{"v":12,"fmt":1,"session":77,"seq":8,"ts":1791990030,"ts_ms":1791990030500,"type":"COMMANDER_POS",
+ "commander":"Zfmagea","commander_guid":12,"combat":true,
+ "bots":[{"g":700,"m":209,"x":1213.5,"y":842.0,"z":8.9,"o":3.14,"hp":2706,"mhp":2706,"a":1}],
+ "mobs":[{"id":"17370386927380123","x":-20.1,"y":40.2,"hp":87,"v":"700"}]}`
+
+const combatEventsDatagram = `{"v":12,"fmt":1,"session":77,"seq":9,"ts":1791990031,"ts_ms":1791990031250,"type":"COMBAT_EVENTS",
+ "commander":"Zfmagea","commander_guid":12,"group":55,"map":249,
+ "fight":{"id":"55-6","start":1791990000,"start_ms":1791990000120,"plan":"onyxias_lair","leg":"2","step":24,"kind":"boss","boss":10184,"boss_name":"Onyxia","fight_ms":53130},
+ "dropped":0,
+ "events":[{"k":"start","t":0},{"k":"death","t":53000,"g":4021,"n":"Bot","by":"Onyxia","x":-12.3,"y":45.6}]}`
+
+func TestRealtimeTypesReachLiveSink(t *testing.T) {
+	l, store, _ := newTestListener()
+	combatStore := combat.NewStore(nil)
+	l.combat = combatStore
+	sink := &fakeLiveSink{}
+	l.SetLiveSink(sink)
+
+	l.processPacket([]byte(commandersDatagram))
+	if !sink.has("Zfmagea:commander") {
+		t.Fatalf("COMMANDERS did not reach the live sink: %v", sink.got)
+	}
+	l.processPacket([]byte(commanderPosDatagram))
+	if !sink.has("Zfmagea:pos") {
+		t.Fatalf("COMMANDER_POS did not reach the live sink: %v", sink.got)
+	}
+	if v := store.Commanders(); v.Commanders[0].Bots[0].X != 1213.5 {
+		t.Fatalf("pos not merged into the store: %+v", v.Commanders[0].Bots[0])
+	}
+	l.processPacket([]byte(combatEventsDatagram))
+	if !sink.has("Zfmagea:events") || !sink.has("Zfmagea:fight_live") {
+		t.Fatalf("COMBAT_EVENTS did not reach the live sink: %v", sink.got)
+	}
+	l.processPacket([]byte(strings.Replace(combatFightDatagram, `"id":"55-1"`, `"id":"55-6"`, 1)))
+	if !sink.has("Zfmagea:fight") {
+		t.Fatalf("COMBAT_FIGHT did not reach the live sink: %v", sink.got)
+	}
+	if rows := combatStore.List("Zfmagea"); len(rows) != 1 || rows[0].Live {
+		t.Fatalf("the finished fight must replace the live row: %+v", rows)
+	}
+}
+
+func TestNewTypesNoWebSocketBroadcast(t *testing.T) {
+	l, _, hub := newTestListener()
+	l.combat = combat.NewStore(nil)
+	l.SetLiveSink(&fakeLiveSink{})
+	before := len(hub.events)
+	l.processPacket([]byte(commanderPosDatagram))
+	l.processPacket([]byte(combatEventsDatagram))
+	for _, e := range hub.events[before:] {
+		if e == "pos" || e == "events" || e == "fight_live" {
+			t.Fatalf("a realtime type reached the WebSocket: %v", hub.events)
+		}
+	}
+}
+
+// Without a live sink nothing panics and the store still takes the data.
+func TestRealtimeTypesWithoutSink(t *testing.T) {
+	l, store, _ := newTestListener()
+	l.processPacket([]byte(commanderPosDatagram))
+	l.processPacket([]byte(combatEventsDatagram))
+	if v := store.Commanders(); len(v.Commanders) != 0 {
+		t.Fatalf("a pos for no standing binding must be ignored: %+v", v)
 	}
 }

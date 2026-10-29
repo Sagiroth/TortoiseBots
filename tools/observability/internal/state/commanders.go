@@ -96,10 +96,12 @@ type commandersState struct {
 	mu      sync.Mutex
 	session uint64
 	ts      int64
+	tsMs    int64 // the last report's millisecond timestamp (TS*1000 from an older module)
 	at      time.Time
 	list    []model.CommanderBinding
 	trails  map[string]map[uint32]*BotTrail // commander -> bot guid -> trail
 	tracks  map[string]*commanderTrack      // commander -> fight track (the replay and aggro lanes)
+	posTs   map[string]int64                // commander -> ts_ms of the last accepted COMMANDER_POS
 }
 
 // ApplyCommanders replaces the standing bindings with the datagram's list. A
@@ -160,6 +162,22 @@ func (s *Store) ApplyCommanders(p *model.CommandersPayload) bool {
 		out = append(out, b)
 	}
 	st.session, st.ts, st.at, st.list = p.Session, p.TS, s.now(), out
+	st.tsMs = p.TSMs
+	if st.tsMs == 0 {
+		st.tsMs = p.TS * 1000
+	}
+	if st.posTs == nil {
+		st.posTs = map[string]int64{}
+	}
+	standing := make(map[string]bool, len(out))
+	for _, b := range out {
+		standing[b.Commander] = true
+	}
+	for c := range st.posTs {
+		if !standing[c] {
+			delete(st.posTs, c)
+		}
+	}
 	st.noteTrails(out, p.TS)
 	st.noteTracks(out, p.TS, s.now())
 	return true

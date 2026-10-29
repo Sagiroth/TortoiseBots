@@ -5032,6 +5032,21 @@
   const cmdPlans = {};        // plan name -> {plan: the daemon's /api/v1/plans answer | null, err, at (unix ms of the answer), loading}
   let cmdTrailsLoading = false;
 
+  // ---- The live stream (GET /api/v1/live) ----
+  // Positions and fight events arrive as they happen instead of on the 2 s report: the dots glide between reports (glide.js)
+  // and a running fight shows while it runs. One glide state per card, one ring of the newest events per commander, and one
+  // scheduler that draws a marked map once per animation frame.
+  const CMD_LIVE_EVENT_MAX = 12;
+  const cmdGlide = {};        // commander -> Glide state
+  const cmdLiveEvents = {};   // commander -> the newest fight events of the live stream, oldest first
+  const cmdLiveErrors = [];   // when the stream last failed (LiveView.fallback)
+  let cmdLiveOff = false;     // the stream does not work here: poll instead, retry after a minute
+  let cmdLivePoll = null;     // the 2 s poll that stands in while the stream and the WebSocket are both down
+  const cmdSched = LiveView.scheduler(
+    typeof requestAnimationFrame === 'function' ? (fn) => requestAnimationFrame(fn) : null,
+    () => performance.now(),
+    key => drawCmdMap(key));
+
   // ---- Fight debugger mode: one tab per raid, All raids first ------------------------------
   // The Commanders page has two views, kept per browser: Live keeps today's stacked cards, the Fight debugger shows the tab
   // strip and renders the one open commander's card (or the All raids grid). The open tab is in the URL hash, so a reload,
@@ -5484,6 +5499,7 @@
       refreshGate.note(() => list.forEach(bind => { CmdView.note(cmdTracker, bind, updatedAt); UnitInfo.noteEvents(cmdEvents, bind, updatedAt); cmdNotePaths(bind, updatedAt); }));
       refreshGate.submit('commanders', () => {
         c.list = list;
+        LiveView.noteReport(cmdGlide, list, performance.now());
         c.fresh = true;
         c.updatedAt = updatedAt;
         c.freshAt = receivedAt;
@@ -5530,6 +5546,146 @@
 
   function fetchCommanders() {
     fetch('/api/v1/commanders').then(jsonOrThrow).then(applyCommanders).catch(() => {});
+  }
+
+  // ---- The live stream (GET /api/v1/live): the commanders of the open tab's cards and what each frame changes ----
+
+  // The commanders the visible cards draw: the Commanders tab's cards (all of them on the Live page, the one open tab in the
+  // debugger). No demo or dungeon bindings: the daemon knows nothing of them.
+  function cmdLiveNames() {
+    if (state.activeTab !== 'commanders') return [];
+    let list = state.commanders.list || [];
+    if (cmdPageMode() === 'debug' && fdPage.open) list = list.filter(b => b.commander === fdPage.open);
+    return list.map(b => b.commander);
+  }
+
+  function cmdLiveSync() {
+    if (cmdLiveOff) return;
+    const names = cmdLiveNames();
+    LiveView.connect(names, cmdLiveHandlers());
+    if (names.length && cmdLivePoll) { clearInterval(cmdLivePoll); cmdLivePoll = null; }
+  }
+
+  function cmdLiveHandlers() {
+    return {
+      // The stream's own snapshot: the same merge as a commander frame while the WebSocket is down.
+      snapshot: d => {
+        if (!d) return;
+        (d.commanders || []).forEach(b => { if (!state.wsConnected) cmdLiveMergeBinding(b); });
+      },
+      // Only while the WebSocket is down: otherwise the 2 s report is the one path into the list (no double render).
+      commander: d => { if (!state.wsConnected && d) cmdLiveMergeBinding(d); },
+      pos: d => {
+        if (!d || !LiveView.posAllowed(refreshGate.interval())) return;
+        const list = LiveView.applyPos(state.commanders.list, d);
+        if (list === state.commanders.list) return;
+        state.commanders.list = list;
+        const st = cmdGlide[d.commander] || (cmdGlide[d.commander] = Glide.create());
+        const now = performance.now(), map = cmdFindBind(d.commander);
+        (d.bots || []).forEach(b => { if (b && b.g != null) Glide.note(st, Glide.botKey(b.g), b.x, b.y, b.m, b.a === 1, now); });
+        (d.mobs || []).forEach(m => { if (m && m.id != null) Glide.note(st, Glide.mobKey(m.id), m.x, m.y, map ? map.mobs_map : null, true, now); });
+        cmdSched.mark(d.commander, true);
+      },
+      events: d => {
+        if (!d || !d.commander) return;
+        const start = d.fight && typeof d.fight.start === 'number' ? d.fight.start : 0;
+        const ring = cmdLiveEvents[d.commander] || (cmdLiveEvents[d.commander] = []);
+        (Array.isArray(d.events) ? d.events : []).forEach(ev => {
+          if (!ev || typeof ev !== 'object') return;
+          ring.push({ ev: ev, at: start && typeof ev.t === 'number' ? start + Math.floor(ev.t / 1000) : 0 });
+        });
+        if (ring.length > CMD_LIVE_EVENT_MAX) ring.splice(0, ring.length - CMD_LIVE_EVENT_MAX);
+        cmdLivePaintEvents(d.commander);
+        cmdSched.mark(d.commander);
+      },
+      fight_live: d => { if (d) cmdLiveFightChanged(d.commander, d); },
+      fight: s => { if (s) cmdLiveFightChanged(cmdLiveKeyCommander(s.key), s); },
+      // Frames were lost: re-read the report and forget the fight lists that may have changed meanwhile.
+      resync: () => {
+        fetchCommanders();
+        Object.keys(cmdFightsCache).forEach(k => { delete cmdFightsCache[k]; });
+      },
+      error: () => cmdLiveError(),
+    };
+  }
+
+  // The FightSummary's key is "commander\x00session\x00id" (internal/combat.Key).
+  function cmdLiveKeyCommander(key) {
+    const s = String(key || ''), i = s.indexOf('\u0000');
+    return i > 0 ? s.slice(0, i) : '';
+  }
+
+  // A binding of the stream merged by name, through the same gate path as a report (the WebSocket is down, so this is new).
+  function cmdLiveMergeBinding(d) {
+    if (!d || typeof d.commander !== 'string') return;
+    const bind = Object.assign({}, d);
+    delete bind.ts_ms;
+    const list = (state.commanders.list || []).filter(b => b.commander !== d.commander);
+    list.push(bind);
+    applyCommanders({ commanders: list, fresh: true, updated_at: Math.round(Date.now() / 1000) });
+  }
+
+  // A live fight opened, ended or finished: the fights list changed. Its own gate key, so it never replaces a pending report.
+  function cmdLiveFightChanged(commander, summary) {
+    if (!commander) return;
+    delete cmdFightsCache[commander];
+    const card = cmdCards.get(commander);
+    if (card) card.dataset.fightState = '';
+    refreshGate.submit('cmd-fights', renderCommanders);
+  }
+
+  function cmdLiveEventText(e) {
+    const ev = (e && e.ev) || {};
+    const at = e && e.at ? new Date(e.at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ' : '';
+    switch (ev.k) {
+      case 'start': return at + 'fight start';
+      case 'engage': return at + 'pull ' + (ev.n || 'unit') + (ev.c ? ' ×' + ev.c : '');
+      case 'death': return at + 'death ' + (ev.n || 'bot') + (ev.by ? ' by ' + ev.by : '');
+      case 'taunt': return at + 'taunt ' + (ev.n || 'bot') + (ev.tn ? ' -> ' + ev.tn : '');
+      case 'interrupt': return at + 'interrupt ' + (ev.n || 'bot') + (ev.tn ? ' -> ' + ev.tn : '');
+      case 'cast': return at + 'cast ' + (ev.n || 'unit') + (ev.s ? ': ' + ev.s : '');
+      case 'end': return at + 'fight ' + (ev.o || 'end') + (ev.dur ? ' after ' + Math.round(ev.dur / 1000) + ' s' : '');
+      default: return at + (ev.k || 'event');
+    }
+  }
+
+  // The card's "Live events" strip: the newest 12 events, newest first.
+  function cmdLivePaintEvents(commander) {
+    const card = cmdCards.get(commander);
+    if (!card) return;
+    const ring = cmdLiveEvents[commander] || [];
+    const box = card.querySelector('.cmd-live-events');
+    if (box) setHtml(box, ring.slice().reverse().map(e => `<div class="cmd-live-row">${esc(cmdLiveEventText(e))}</div>`).join(''));
+    const wrap = card.querySelector('.cmd-live');
+    if (wrap) wrap.hidden = !ring.length;
+  }
+
+  // The stream failed. Three errors in a minute, or an old daemon (404) or a lost session (401), send the page back to polling
+  // for a minute; the WebSocket is still the primary feed while it is up.
+  function cmdLiveError() {
+    const now = Date.now();
+    cmdLiveErrors.push(now);
+    if (cmdLiveErrors.length > 20) cmdLiveErrors.splice(0, cmdLiveErrors.length - 20);
+    if (LiveView.fallback(cmdLiveErrors, now)) { cmdLiveFallback(); return; }
+    fetch('/api/v1/live', { method: 'HEAD', credentials: 'same-origin' }).then(r => {
+      if (r.status === 401 || r.status === 404) cmdLiveFallback();
+    }).catch(() => {});
+  }
+
+  function cmdLiveFallback() {
+    if (cmdLiveOff) return;
+    cmdLiveOff = true;
+    LiveView.close();
+    if (!cmdLivePoll) cmdLivePoll = setInterval(refreshGate.guard(() => { if (!state.wsConnected) fetchCommanders(); }), 2000);
+    setTimeout(() => { cmdLiveOff = false; if (state.activeTab === 'commanders') cmdLiveSync(); }, 60000);
+  }
+
+  // Once per animation frame: draw the marked maps and the ones whose dots still glide (a hidden tab's rAF pauses by itself).
+  function cmdLiveFrame() {
+    const now = performance.now();
+    Object.keys(cmdGlide).forEach(key => { if (Glide.active(cmdGlide[key], now)) cmdSched.mark(key, true); });
+    cmdSched.frame();
+    requestAnimationFrame(cmdLiveFrame);
   }
 
   // Runs every few seconds: ages the warnings and drops a list nobody has reported for a long time.
@@ -6243,7 +6399,8 @@
     const card = cmdCards.get(key);
     const liveBind = cmdFindBind(key);
     const rp = liveBind ? (fdReplayActive(key) || fdRunActive(key)) : null;
-    const bind = rp ? fdReplayBind(liveBind, rp.fight, rp.track, rp.tS) : liveBind;
+    // Live: the positions glide between reports (no glide during a fight replay, which has its own track).
+    const bind = rp ? fdReplayBind(liveBind, rp.fight, rp.track, rp.tS) : Glide.apply(liveBind, cmdGlide[key] || (cmdGlide[key] = Glide.create()), performance.now());
     if (!card || !bind) return;
     const stage = card.querySelector('.cmd-stage'), svg = card.querySelector('svg.cmd-map');
     const pw = stage.clientWidth, ph = stage.clientHeight;
@@ -6718,6 +6875,7 @@
           <div class="cmd-panel"><h3 class="cmd-h">Deaths</h3><div class="cmd-deaths"></div></div>
           <div class="cmd-panel cmd-controls" hidden><h3 class="cmd-h">Controls</h3><div class="cmd-controls-row"></div><div class="cmd-controls-note" aria-live="polite"></div></div>
         </div>
+        <section class="cmd-live" aria-label="Live events" hidden><h3 class="cmd-h">Live events <span class="cmd-live-sub">as they happen</span></h3><div class="cmd-live-events"></div></section>
       </div>`;
     bindCmdMap(card, key);
     // The debugger-only page hides the page-level "Refresh every" row, so the card header carries the same picker (one saved setting).
@@ -6889,6 +7047,7 @@
     cmdPlaceLayers(mode === 'debug' && !!fdPage.open && !fdTabGone(fdPage.open));
     paintCmdLayers();
     showCommanderLink();
+    cmdLiveSync();
   }
 
   // One card, in the view its page is in: Live draws the party and the map, the debugger draws the fight sections.
@@ -6959,6 +7118,7 @@
     const fightsEl = card.querySelector('.cmd-fights');
     if (fightsEl) fightsEl.hidden = debug;
     card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = !debug; });
+    cmdLivePaintEvents(key);
     drawCmdMap(key);
     if (debug) { renderFightDebug(card, bind); fdLoad(card, bind); } else mountFightPanel(card, bind);
   }
@@ -7009,6 +7169,9 @@
       el.className = 'cmd-fights';
       card.appendChild(el);
     }
+    // The live events strip sits under the fights panel, which is appended at the card's end.
+    const live = card.querySelector('.cmd-live');
+    if (live && live.previousElementSibling !== el) card.appendChild(live);
     return el;
   }
 
@@ -7083,7 +7246,8 @@
   }
 
   function fdDetailRow(fd) {
-    return fd.list.slice(0, FD_DETAIL_MAX).find(r => r && r.key && !fd.details[r.key] && !fdDetailFailed(fd, r.key)) || null;
+    // A live fight has no bot rows (it is drawn from its events until COMBAT_FIGHT arrives).
+    return fd.list.slice(0, FD_DETAIL_MAX).find(r => r && r.key && !r.live && !fd.details[r.key] && !fdDetailFailed(fd, r.key)) || null;
   }
 
   function fdLoad(card, bind) {
@@ -7530,7 +7694,7 @@
       const deaths = c.deaths ? c.deaths + (c.deaths === 1 ? ' death' : ' deaths') : 'no deaths';
       return `<button type="button" class="fd-fight v-${v || 'load'}" data-fd-fight="${esc(encodeURIComponent(c.key))}" aria-pressed="${c.key === sel ? 'true' : 'false'}">`
         + `<span class="fd-fl">${esc(c.label)}</span>`
-        + `<span class="fd-fv">${word}</span>`
+        + `<span class="fd-fv">${c.live ? 'live' : word}</span>`
         + `<span class="fd-fs">${esc(c.mob || 'trash')}</span>`
         + `<span class="fd-len"><i style="width:${(c.lenPct || 0).toFixed(1)}%"></i></span>`
         + `<span class="fd-fd"><span>step ${c.step} · ${Math.round((c.durMs || 0) / 1000)} s · ${deaths}</span>`
@@ -8629,6 +8793,7 @@
   setInterval(refreshGate.guard(expireCommanders), 3000); // a paused page keeps what it froze
   setInterval(refreshGate.guard(fetchRoster), 60000);
   initWebSocket();
+  requestAnimationFrame(cmdLiveFrame);
 
   // First route: the URL hash wins; without one, return to the last tab used.
   if (!parseRoute().tab) {

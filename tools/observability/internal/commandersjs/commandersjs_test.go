@@ -183,3 +183,15 @@ func TestFdTabsJS(t *testing.T) {
 func TestPhaseACSS(t *testing.T) {
 	runCheck(t, "phase_a_css_check.js", "../../web/static/css/app.css")
 }
+
+// TestGlideJS runs glide_check.js: the interpolation of the reported positions (halfway, the gap cap and floor, a teleport, a map
+// change and a death snapping, a late sample starting from the shown position, and the shallow copy the map draws).
+func TestGlideJS(t *testing.T) {
+	runCheck(t, "glide_check.js", "../../web/static/js/glide.js")
+}
+
+// TestLiveViewJS runs live_check.js: the live stream's pure half (the commanders' URL, the copy-on-write pos merge, the refresh
+// rates that may move the dots, the error fallback and the one-draw-per-frame scheduler).
+func TestLiveViewJS(t *testing.T) {
+	runCheck(t, "live_check.js", "../../web/static/js/live.js")
+}

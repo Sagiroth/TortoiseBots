@@ -26,6 +26,7 @@ import (
 	"tortoise-observability/internal/combat"
 	"tortoise-observability/internal/control"
 	"tortoise-observability/internal/dungeons"
+	"tortoise-observability/internal/live"
 	zoneproject "tortoise-observability/internal/map"
 	"tortoise-observability/internal/mapdir"
 	"tortoise-observability/internal/metrics"
@@ -288,8 +289,13 @@ func main() {
 	}
 	combatStore := combat.NewStore(combatRules)
 	hub := ws.NewHub()
+	// The live stream's own fan-out: per-commander positions and fight events
+	// over Server-Sent Events (GET /api/v1/live). The WebSocket above keeps
+	// carrying the roster, the Commanders snapshots and the finished fights.
+	liveHub := live.NewHub()
 	udpListener := udp.NewListener(*udpHost, *udpPort, store, metricsRegistry, projectionEngine, hub)
 	udpListener.SetCombatStore(combatStore)
+	udpListener.SetLiveSink(liveHub)
 	var forwards []string
 	for _, f := range strings.Split(*forwardUDP, ",") {
 		if f = strings.TrimSpace(f); f != "" {
@@ -306,6 +312,21 @@ func main() {
 		log.Fatalf("Failed to start UDP listener: %v", err)
 	}
 	defer udpListener.Stop()
+
+	// The live stream's gauge and dropped counter for Prometheus; a once-a-
+	// second sample is enough for a gauge and keeps the read loop free.
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		var dropped uint64
+		for range ticker.C {
+			metricsRegistry.SetLiveClients(liveHub.Clients())
+			if d := liveHub.Dropped(); d != dropped {
+				metricsRegistry.AddLiveDropped(d - dropped)
+				dropped = d
+			}
+		}
+	}()
 
 	// 6. HTTP router
 	mux := http.NewServeMux()
@@ -629,6 +650,35 @@ func main() {
 		frames, names := store.Track(c, from, to)
 		writeJSON(w, state.TrackJSON(c, frames, names))
 	}))
+
+	// The live stream (S1): Server-Sent Events for the commanders the open tab draws, so positions and fight events reach the
+	// page as they happen instead of on the next report. The first frame is the state at connect (snapshot), then one frame per
+	// accepted datagram. Same login and same-origin rule as the rest of the API; see tools/observability/README.md.
+	initialFrames := func(commanders []string) []live.Frame {
+		asked := make(map[string]bool, len(commanders))
+		for _, c := range commanders {
+			asked[c] = true
+		}
+		view := store.Commanders()
+		binds := make([]model.CommanderBinding, 0, len(commanders))
+		for _, b := range view.Commanders {
+			if asked[b.Commander] {
+				binds = append(binds, b)
+			}
+		}
+		data, err := json.Marshal(struct {
+			Commanders []model.CommanderBinding `json:"commanders"`
+			Live       []combat.FightSummary    `json:"live"`
+			UpdatedAt  int64                    `json:"updated_at"`
+		}{binds, combatStore.LiveRows(commanders), view.UpdatedAt})
+		if err != nil {
+			return nil
+		}
+		return []live.Frame{{Event: "snapshot", Data: data}}
+	}
+	mux.HandleFunc("GET /api/v1/live", requireAuth(live.Handler(liveHub,
+		live.Options{Heartbeat: 15 * time.Second, WriteTimeout: 10 * time.Second, Retry: 3 * time.Second},
+		initialFrames)))
 
 	// Real map pictures for the Commanders maps: the layer list of a map id, and the .png/.json files of the TBDASH_MAP_DIR folder
 	// (nothing else). Behind the same login as the rest of the API.
