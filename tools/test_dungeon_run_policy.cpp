@@ -13594,6 +13594,8 @@ static void TestHeldSummonReleasedOnArrival()
     std::string order;
     CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
     CHECK(r.hold.size() == 1 && r.heldSummons.count("Fyran") == 1);
+    // Almost at the clock's end, the bot lands: released, no try counted.
+    r.runMs = r.heldSummons["Fyran"].ms + kHeldSummonExpiryMs - kTickMs;
     f.members[1].yd = 2.0f; // within kArriveYd: there
     f.maxMemberYd = 2;
     order.clear();
@@ -13625,6 +13627,75 @@ static void TestHeldSummonRefusalCapWalksBack()
     CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran");
     CHECK(r.note.find("could not be summoned") != std::string::npos);
     CHECK(r.note.find("walks back without it") != std::string::npos);
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+}
+
+// ta263: PlayerConvenience accepts a summon before its delayed teleport and can
+// drop it later without an answer (the bot, its anchor or its master changed,
+// the teleport was refused, the arrival timed out), so no OrderRefused ever
+// comes. Past the summon subsystem's own clock (its delay + arrival timeout +
+// a margin) the bot is not at the lead bot: the mark clears and the try counts,
+// as a refusal does. The no-expiry mutation leaves it pending forever here; the
+// uncounted one loses the failed try.
+static void TestHeldSummonExpiresAndCountsATry()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    r.hold = {"Fyran"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100)};
+    f.maxMemberYd = 100;
+    std::string order;
+    CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+    std::uint64_t const sentAt = r.heldSummons["Fyran"].ms;
+    CHECK(sentAt == r.runMs && r.heldSummons["Fyran"].pending);
+    // The subsystem's clock at its end: still in flight, nothing counted.
+    r.runMs = sentAt + kHeldSummonExpiryMs;
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+    CHECK(r.heldSummons.count("Fyran") == 1 && r.heldSummons["Fyran"].pending);
+    CHECK(r.heldSummons["Fyran"].refusals == 0);
+    // Past it: not there, so the mark clears and the try counts; the same tick
+    // sends the summon again.
+    r.runMs = sentAt + kHeldSummonExpiryMs + kTickMs;
+    order.clear();
+    CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+    CHECK(r.heldSummons["Fyran"].pending && r.heldSummons["Fyran"].refusals == 1);
+    CHECK(r.heldSummons["Fyran"].ms == r.runMs && r.hold.size() == 1);
+}
+
+// ta263: summons that never land count toward kHeldSummonTries like refusals;
+// at the cap no further one goes out and the bot stays held while the party
+// walks back without it.
+static void TestExpiredHeldSummonsReachTheCap()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    r.hold = {"Fyran"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100)};
+    f.maxMemberYd = 100;
+    std::string order;
+    for (std::uint32_t i = 0; i < kHeldSummonTries; ++i)
+    {
+        order.clear();
+        CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+        r.runMs = r.heldSummons["Fyran"].ms + kHeldSummonExpiryMs + kTickMs;
+    }
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+    CHECK(r.heldSummons.count("Fyran") == 1 && !r.heldSummons["Fyran"].pending);
+    CHECK(r.heldSummons["Fyran"].refusals == kHeldSummonTries);
+    CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran");
+    CHECK(r.note.find("could not be summoned") != std::string::npos);
+    CHECK(r.note.find("walks back without it") != std::string::npos);
+    // Long past every clock: still no fourth summon.
+    r.runMs += kHeldSummonExpiryMs * 10;
     order.clear();
     CHECK(!SummonHeldToLead(r, f, order) && order.empty());
 }
@@ -22547,6 +22618,8 @@ int main()
     TestRefusedHeldSummonStaysHeld();
     TestRefusedHeldSummonInCombatStaysHeld();
     TestHeldSummonReleasedOnArrival();
+    TestHeldSummonExpiresAndCountsATry();
+    TestExpiredHeldSummonsReachTheCap();
     TestHeldSummonRefusalCapWalksBack();
     TestLeadInOtherPartPausesWithTheTrueReason();
     TestRunHoldsItsDeadUntilItEnds();
