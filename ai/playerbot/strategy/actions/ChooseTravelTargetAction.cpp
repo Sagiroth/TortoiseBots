@@ -2368,14 +2368,21 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             uint32_t farmZoneId = record->farmZoneId;
             TortoiseBots::GuildOrders::SourcePlan plan = planFor(itemId);
             bool listed = false;
+            bool listedOnBotMap = false;
             for (TortoiseBots::GuildOrders::FarmZone const& zone : plan.zones)
                 if (zone.zoneId == farmZoneId)
+                {
                     listed = true;
+                    listedOnBotMap = zone.onBotMap;
+                }
             int32_t zoneLevel = 0;
             bool outgrown = listed && sTravelMgr.TryGetValidatedAreaLevel(farmZoneId, zoneLevel) &&
                 ai::OutgrownZoneRefusesPoint(zoneLevel, bot->GetLevel(),
                     sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster());
-            if (farmZoneId == 0 || !listed || outgrown)
+            // A zone across the sea (the bot changed continent) is unreachable
+            // for pool travel: move to one on this map when the plan has one.
+            bool const acrossSea = listed && !listedOnBotMap && !plan.zones.empty() && plan.zones[0].onBotMap;
+            if (farmZoneId == 0 || !listed || outgrown || acrossSea)
             {
                 size_t pick = record->movedZone && plan.zones.size() > 1 ? 1 : 0;
                 if (plan.zones.size() <= pick)

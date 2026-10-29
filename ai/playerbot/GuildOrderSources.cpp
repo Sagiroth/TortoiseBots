@@ -577,6 +577,7 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         zone.zoneId = zoneId;
         zone.chance = uint8_t(std::min(float(100), std::floor(accum.chance)));
         zone.score = ZoneScore(accum.spawns, accum.chance);
+        zone.onBotMap = accum.hasNearest;
         plan.zones.push_back(zone);
     }
     // Zones on the bot's own map first: pool bots never get travel targets on
