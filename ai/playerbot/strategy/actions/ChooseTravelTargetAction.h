@@ -14,6 +14,7 @@
 
 namespace ai
 {
+    const std::vector<uint32> travelPartitions = { 100, 250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 10000, 50000, 100000, 500000 };
     // The pool pick's shared route verdict: waypoints plus the legs between
     // them, hostile-town cells, area levels, cross-continent transfers. Kept
     // in this TU so its five-minute per-candidate cache stays in one place;
