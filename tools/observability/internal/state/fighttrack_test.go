@@ -312,7 +312,7 @@ func TestTrackCarriesBossOverlay(t *testing.T) {
 	if m.O == nil || *m.O != facing || m.CastID != 18435 || m.CastEnd != 101200 || m.CastTotal != 2000 || m.CastTarget != "814" || m.Channel != 0 || m.Shape == nil || m.Shape.Kind != "cone" {
 		t.Fatalf("frame overlay lost: %+v", m)
 	}
-	raw, err := json.Marshal(TrackJSON("c", frames, names))
+	raw, err := json.Marshal(TrackJSON("c", frames, names, true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func TestTrackCarriesBossOverlay(t *testing.T) {
 	// A facing of 0 is a direction, not "not reported".
 	zero := 0.0
 	frames[0].Mobs[0].O = &zero
-	raw, _ = json.Marshal(TrackJSON("c", frames, names))
+	raw, _ = json.Marshal(TrackJSON("c", frames, names, true))
 	if !strings.Contains(string(raw), `"o":0`) {
 		t.Fatalf("a facing of 0 must be reported: %s", raw)
 	}
