@@ -166,6 +166,7 @@ struct OrderRecord
     uint32_t farmItemId = 0;   // item actually farmed: order item, or the reagent of the current craft leg (0 = order item)
     bool farmRest = false;     // buy order whose AH attempt is over: farm what is missing
     uint32_t deathsInZone = 0; // deaths in the current farm zone
+    uint32_t searchFailsInZone = 0; // consecutive rejected/empty order-leg searches in farmZoneId
     uint32_t workedSinceNewItemSec = 0;
     uint32_t workedTotalSec = 0; // worked time over the whole order, ends it at hours
     uint32_t reportedHave = 0;   // last reported progress; reported have never drops below this

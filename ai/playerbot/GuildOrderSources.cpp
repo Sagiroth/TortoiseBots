@@ -147,6 +147,24 @@ bool& IndexBuilt()
     return built;
 }
 
+void AddFishEntrySource(OrderSourceIndex& index, uint32_t itemId, GuildOrderEntrySource source)
+{
+    // Trophy fish count as fish at any drop rate: the plan still needs a
+    // farmable chance, but the search kind and the lowskill verdict must
+    // not hinge on one.
+    if (source.chance <= 0.0f)
+        return;
+    auto& list = index.byItem[itemId];
+    for (GuildOrderEntrySource& known : list)
+    {
+        if (known.entry != source.entry || known.flag != source.flag)
+            continue;
+        known.chance = std::max(known.chance, source.chance);
+        return;
+    }
+    list.push_back(source);
+}
+
 void AddEntrySource(OrderSourceIndex& index, uint32_t itemId, GuildOrderEntrySource source)
 {
     if (!DropChanceFarmable(source.chance, false))
@@ -268,7 +286,7 @@ void BuildGuildOrderSourceIndex()
             source.chance = chance;
             source.skillId = SKILL_FISHING;
             source.reqSkill = reqSkill;
-            AddEntrySource(index, itemId, source);
+            AddFishEntrySource(index, itemId, source);
         }
     }
     // Open-water fishing: one entry per fishable area id, chance from the
@@ -297,7 +315,7 @@ void BuildGuildOrderSourceIndex()
             source.chance = chance;
             source.skillId = SKILL_FISHING;
             source.reqSkill = zoneSkill > 0 ? uint32_t(zoneSkill) : 0;
-            AddEntrySource(index, itemId, source);
+            AddFishEntrySource(index, itemId, source);
         }
     }
     // Zone slices only for entries that drop something orderable: walk the
@@ -599,6 +617,12 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
     {
         if (source.flag != SourceFish)
             continue;
+        uint32_t const fishAreaId = uint32_t(-(source.entry + kFishingZoneEntryBias));
+        AreaTableEntry const* const fishArea = AreaEntry::GetById(fishAreaId);
+        // Verdict witness, like the non-fish loop below: a fish source
+        // names a way to get the item, so a fish-only item never answers
+        // nosource, and one on this continent answers a skill verdict.
+        FishSourceWitness(sawAny, sawInRange, fishArea && fishArea->MapId == int32_t(botFishingMap));
         if (!botHasFishing)
         {
             skillFail = 2;
@@ -622,13 +646,23 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
             }
             continue;
         }
-        uint32_t zoneId = uint32_t(-(source.entry + kFishingZoneEntryBias));
-        AreaTableEntry const* area = AreaEntry::GetById(uint32_t(-(source.entry + kFishingZoneEntryBias)));
+        // Trophy rows below the farm chance still witness the verdict
+        // above, but never plan a zone: the bot would fish hundreds of
+        // casts for one bite.
+        if (!DropChanceFarmable(source.chance, false))
+            continue;
+        uint32_t zoneId = fishAreaId;
+        AreaTableEntry const* area = fishArea;
         if (area && area->ZoneId)
             zoneId = area->ZoneId;
         // Continent gate: areas carry the map in the DBC; the bot fishes
         // only where it already is.
         if (!area || area->MapId != int32_t(botFishingMap))
+            continue;
+        // The travel leg walks to FISH_LOCATION spots in the planned zone:
+        // skip zones the dataset cannot serve, so the plan never strands
+        // the bot where every search comes back empty.
+        if (!sTravelMgr.FishZoneHasSpots(zoneId))
             continue;
         usableSources |= SourceFish;
         if (usableSkillId == 0 || source.reqSkill > usableSkillValue)

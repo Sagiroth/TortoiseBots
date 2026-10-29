@@ -6,6 +6,7 @@
 #include <utility>
 #include "strategy/values/TravelValues.h"
 #include "WorldSquare.h"
+#include <unordered_set>
 
 namespace ai
 {
@@ -472,6 +473,11 @@ namespace ai
 
 		WorldPosition* GetFishSpot(WorldPosition start, bool onlyNearestGrid = false);
 
+		// Whether the fish dataset holds at least one spot in the zone: the
+		// guild-order planner skips zones it cannot serve, so the travel leg
+		// never plans water it has no walkable point in.
+		bool FishZoneHasSpots(uint32 zoneId) const;
+
 		EntryDestinationMap GetExploreLocs() const { return destinationMap.at(TravelDestinationPurpose::Explore); };
 		DestinationList GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f) const;
 		void GetPartitionsLock(bool getLock = true);
@@ -554,6 +560,10 @@ namespace ai
 
 		GatherTravelDestination fishMap;
 		std::list<AsyncGuidPosition> fishPoints;
+		// Zones holding at least one fish spot, built with the destinations
+		// above: the order planner asks per search row, so it reads a set,
+		// never a point walk.
+		std::unordered_set<uint32> fishSpotZones;
 		std::unordered_map<uint32, int32> areaLevels;
 		// Taxi-node zone cache (#426 flight transport): node id -> zone area id
 		// (0 = unresolvable at build, fail closed at use). Built once at startup

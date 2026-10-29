@@ -56,6 +56,19 @@ inline size_t NextZonePick(bool listed, size_t listedIndex, uint32_t zoneIndex, 
     return start % zoneCount;
 }
 
+// Consecutive rejected or empty order-leg searches in the planned zone move
+// the bot on: a zone whose spots never come active costs a few short parks,
+// not the hour the death/no-progress rules would take to notice.
+inline constexpr uint32_t kSearchFailZoneMove = 3;
+inline constexpr uint32_t kOrderLegParkSeconds = 15;
+
+// Whether the failed-search count moves the zone. Counts only consecutive
+// failures in one zone: a landed search resets it.
+inline bool SearchFailsMoveZone(uint32_t searchFailsInZone)
+{
+    return searchFailsInZone >= kSearchFailZoneMove;
+}
+
 // The order ends once the bot has worked its chosen hours in total without
 // reaching the amount. Out-of-range hours fall back to the default.
 inline bool IsOrderTimeout(uint32_t workedTotalSec, uint32_t hours)
