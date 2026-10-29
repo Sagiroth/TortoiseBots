@@ -60,6 +60,9 @@ namespace ai
     double GuildOrderCraftHardestReagentKills(PlayerbotAI* ai, Player* bot, uint32 itemId, uint32 amount,
         uint32 delivered);
 
+    // Order items waiting in the mailbox (bought AH items arrive by mail).
+    uint32 OrderMailboxItems(Player* bot, uint32 itemId);
+
     class HasGuildTravelOrderValue : public BoolCalculatedValue
     {
     public:

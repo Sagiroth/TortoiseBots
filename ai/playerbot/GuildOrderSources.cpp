@@ -13,8 +13,8 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <string>
 #include <unordered_map>
-#include <unordered_set>
 
 using namespace TortoiseBots::GuildOrders;
 

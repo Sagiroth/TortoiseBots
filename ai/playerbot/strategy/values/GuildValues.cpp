@@ -8,6 +8,7 @@
 #include "playerbot/GuildOrderSources.h"
 #include "playerbot/GuildOrderCraft.h"
 #include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/policy/provision/CraftOrderPolicy.h"
 #include "Guild/GuildMgr.h"
 #include "Mail/Mail.h"
@@ -330,6 +331,7 @@ double ai::GuildOrderCraftHardestReagentKills(PlayerbotAI* ai, Player* bot, uint
             TortoiseBots::GuildOrders::ExpectedKills(need - have, plan.bestChance));
     }
     return hardest;
+}
 
 uint32 GuildOrderFarmItemValue::Calculate()
 {

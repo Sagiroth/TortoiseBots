@@ -1,6 +1,7 @@
 #include "GuildOrderStore.h"
 
 #include "GuildOrderDelivery.h"
+#include "GuildOrderGiveUpPolicy.h"
 #include "GuildOrderSourcesPolicy.h"
 #include "../commands/CommandShared.h"
 #include "../host/ModuleLog.h"
