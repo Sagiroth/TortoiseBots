@@ -1706,10 +1706,7 @@ struct RaidLayoutApplied
     std::vector<RaidFocusHealer> focusHealers;
 };
 static std::unordered_map<uint32, RaidLayoutApplied>& RaidLayouts();
-static void RestoreRaidFocusHealer(Player* bot, RaidFocusHealer const& record);
 // Applies RaidLayout::Plan to the bound raid: subgroups, main tank, assist tanks, tank healers' focus heal targets.
-// Called again when a hire joins the bound raid (JoinBoundRaid): the plan is made anew for all members and the
-// record of the first plan is kept, so the release still puts back the state from before the bind.
 static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> const& bots, ChatHandler* handler, uint64_t commanderRaw);
 // Undoes it for the binding's group (or what is left of it): every member the layout changed.
 static void ClearRaidLayout(uint32 groupId);
@@ -2030,26 +2027,14 @@ static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> con
         if (bot)
             byName[bot->GetName()] = bot;
     RaidLayoutApplied applied;
-    // A plan made again for a raid that already has one (a hire joined): the first record stands, as it holds
-    // the state from before the layout; only members it has not seen are added to it.
-    auto const prior = RaidLayouts().find(group->GetId());
-    bool const replan = prior != RaidLayouts().end();
-    if (replan)
-        applied = prior->second;
-    else
-    {
-        applied.hadMainTank = !group->GetMainTankGuid().IsEmpty();
-        applied.previousMainTank = group->GetMainTankGuid();
-        applied.setMainTank = leadGuid;
-        applied.previousMainAssistant = group->GetMainAssistantGuid();
-    }
+    applied.hadMainTank = !group->GetMainTankGuid().IsEmpty();
+    applied.previousMainTank = group->GetMainTankGuid();
+    applied.setMainTank = leadGuid;
+    applied.previousMainAssistant = group->GetMainAssistantGuid();
     applied.commanderRaw = commanderRaw;
     applied.system = IsSystemBinding(commanderRaw);
-    applied.tankHealers.clear();
     for (Group::MemberSlot const& slot : group->GetMemberSlots())
-        if (!replan || std::none_of(applied.originalSubgroups.begin(), applied.originalSubgroups.end(),
-                [&](std::pair<ObjectGuid, uint8_t> const& entry) { return entry.first == slot.guid; }))
-            applied.originalSubgroups.push_back({slot.guid, group->GetMemberGroup(slot.guid)});
+        applied.originalSubgroups.push_back({slot.guid, group->GetMemberGroup(slot.guid)});
     std::vector<std::string> tanks;
     std::vector<std::string> offTanks;
     std::vector<std::string> tankHealers;
@@ -2105,7 +2090,6 @@ static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> con
     for (Group::MemberSlot const& slot : group->GetMemberSlots())
         realGroups[slot.guid] = group->GetMemberGroup(slot.guid);
     std::string misplaced;
-    std::vector<ObjectGuid> tankHealerNow;
     for (TortoiseBots::RaidLayout::Placement const& placement : layout.placements)
     {
         auto it = byName.find(placement.name);
@@ -2134,40 +2118,19 @@ static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> con
             PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
             RaidFocusHealer record;
             record.guid = bot->GetObjectGuid();
-            // Already a tank healer of the first plan: its record holds the state from before, keep that one.
-            bool const recorded = std::any_of(applied.focusHealers.begin(), applied.focusHealers.end(),
-                [&](RaidFocusHealer const& held) { return held.guid == record.guid; });
-            tankHealerNow.push_back(record.guid);
             if (ai && ai->GetAiObjectContext())
             {
-                if (!recorded)
-                {
-                    record.hadStrategy = ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT);
-                    record.previousTargets =
-                        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Get();
-                }
+                record.hadStrategy = ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT);
+                record.previousTargets =
+                    ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Get();
                 ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Set({tankGuid, bot->GetObjectGuid()});
                 ai->ChangeStrategy("+focus heal targets", BotState::BOT_STATE_COMBAT);
             }
-            if (!recorded)
-                applied.focusHealers.push_back(record);
+            applied.focusHealers.push_back(record);
         }
         else if (placement.role == TortoiseBots::RaidLayout::Role::Healer)
             raidHealers.push_back(placement.name);
     }
-    // A healer the first plan made a tank healer and this one did not: its focus heal targets go back. A healer
-    // that is not among the bots planned now (out of the world for a moment) keeps its record.
-    applied.focusHealers.erase(std::remove_if(applied.focusHealers.begin(), applied.focusHealers.end(),
-        [&](RaidFocusHealer const& held)
-        {
-            if (std::find(tankHealerNow.begin(), tankHealerNow.end(), held.guid) != tankHealerNow.end())
-                return false;
-            if (std::none_of(bots.begin(), bots.end(), [&](Player* bot) { return bot && bot->GetObjectGuid() == held.guid; }))
-                return false;
-            if (Player* bot = FindCharacter(held.guid.GetRawValue()))
-                RestoreRaidFocusHealer(bot, held);
-            return true;
-        }), applied.focusHealers.end());
     applied.mainTank = lead->GetName();
     applied.offTanks = offTanks;
     applied.raidHealers = raidHealers;
@@ -2197,6 +2160,110 @@ static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> con
     handler->PSendSysMessage("TBM:RAID_LAYOUT|%s|%s|%s|%s|%s", ProtocolSafe(std::to_string(bots.size())).c_str(),
         ProtocolSafe(tanksLine).c_str(), ProtocolSafe(join(tankHealers)).c_str(), ProtocolSafe(join(raidHealers)).c_str(),
         ProtocolSafe(groups).c_str());
+}
+
+// A hire joined the bound raid (JoinBoundRaid): only the new bot is placed, nobody else moves. It takes a free
+// seat in the subgroup of its role (RaidLayout::PlanJoinerSubgroup); a tank is an off-tank (assistant); a healer
+// heals the tank with the fewest healers (PickJoinerHealTank) or is a raid healer. The record of the bind's plan
+// gets this one bot added, so the release undoes it with the rest. Without a record (no layout was planned) the
+// bot stays where the group put it.
+static void PlaceJoinerInRaidLayout(Group* group, Player* lead, Player* bot, ChatHandler* handler)
+{
+    if (!group || !lead || !bot || bot == lead)
+        return;
+    auto const found = RaidLayouts().find(group->GetId());
+    if (found == RaidLayouts().end())
+        return;
+    RaidLayoutApplied& applied = found->second;
+    ObjectGuid const botGuid = bot->GetObjectGuid();
+    TortoiseBots::RaidLayout::JoinFacts facts;
+    facts.role = PlayerbotAI::IsTank(bot) ? TortoiseBots::RaidLayout::Role::Tank
+        : PlayerbotAI::IsHeal(bot) ? TortoiseBots::RaidLayout::Role::Healer
+        : TortoiseBots::RaidLayout::Role::Damage;
+    std::vector<std::string> memberNames;
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+    {
+        if (slot.guid == botGuid)
+            continue;
+        memberNames.push_back(slot.name);
+        uint8_t const sub = group->GetMemberGroup(slot.guid);
+        if (sub >= TortoiseBots::RaidLayout::kSubgroups)
+            continue;
+        ++facts.seated[sub];
+        Player* member = ObjectAccessor::FindPlayer(slot.guid);
+        if (!member)
+            continue;
+        if (PlayerbotAI::IsTank(member))
+            facts.tankIn[sub] = true;
+        else if (PlayerbotAI::IsHeal(member))
+            facts.healerIn[sub] = true;
+    }
+    uint8_t const before = group->GetMemberGroup(botGuid);
+    applied.originalSubgroups.push_back({botGuid, before});
+    TortoiseBots::RaidLayout::JoinSeat const seat = TortoiseBots::RaidLayout::PlanJoinerSubgroup(facts);
+    if (seat.ok && seat.subgroup != before)
+        group->ChangeMembersGroup(bot, seat.subgroup);
+    std::string what = "damage dealer";
+    if (facts.role == TortoiseBots::RaidLayout::Role::Tank)
+    {
+        if (!group->IsAssistant(botGuid))
+        {
+            group->SetAssistant(botGuid, true);
+            applied.assistants.push_back(botGuid);
+        }
+        applied.offTanks.push_back(bot->GetName());
+        what = "off-tank";
+    }
+    else if (facts.role == TortoiseBots::RaidLayout::Role::Healer)
+    {
+        auto const present = [&](std::string const& name)
+        {
+            return std::find(memberNames.begin(), memberNames.end(), name) != memberNames.end();
+        };
+        std::vector<std::string> tanks;
+        tanks.push_back(lead->GetName());
+        tanks.insert(tanks.end(), applied.offTanks.begin(), applied.offTanks.end());
+        std::vector<uint32_t> perTank(tanks.size(), 0);
+        for (auto const& pair : applied.tankHealers)
+            for (size_t t = 0; t < tanks.size(); ++t)
+                if (pair.second == tanks[t] && present(pair.first))
+                    ++perTank[t];
+        uint32_t raidHealers = 0;
+        for (std::string const& name : applied.raidHealers)
+            if (present(name))
+                ++raidHealers;
+        int const heals = TortoiseBots::RaidLayout::PickJoinerHealTank(perTank, raidHealers);
+        if (heals < 0)
+        {
+            applied.raidHealers.push_back(bot->GetName());
+            what = "raid healer";
+        }
+        else
+        {
+            std::string const tankName = tanks[static_cast<size_t>(heals)];
+            ObjectGuid tankGuid = lead->GetObjectGuid();
+            for (Group::MemberSlot const& slot : group->GetMemberSlots())
+                if (slot.name == tankName)
+                    tankGuid = slot.guid;
+            applied.tankHealers.emplace_back(bot->GetName(), tankName);
+            PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+            RaidFocusHealer record;
+            record.guid = botGuid;
+            if (ai && ai->GetAiObjectContext())
+            {
+                record.hadStrategy = ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT);
+                record.previousTargets =
+                    ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Get();
+                ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Set({tankGuid, botGuid});
+                ai->ChangeStrategy("+focus heal targets", BotState::BOT_STATE_COMBAT);
+            }
+            applied.focusHealers.push_back(record);
+            what = "tank healer for " + tankName;
+        }
+    }
+    if (handler)
+        handler->PSendSysMessage("Raid layout: %s joined subgroup %u as %s; the rest of the raid stays as it is.",
+            bot->GetName(), static_cast<uint32>(group->GetMemberGroup(botGuid)) + 1, what.c_str());
 }
 
 static void RestoreRaidFocusHealer(Player* bot, RaidFocusHealer const& record)
@@ -13564,12 +13631,11 @@ bool JoinBoundRaid(Player* commander, Player* bot)
     }
     hires.ConfirmCommand(commander->GetObjectGuid());
 
-    // The layout is planned again for the whole raid with the new member in it, and the bot is put under the
-    // binding like the bots of the bind: follows the lead bot, threat back-off, no own walks.
+    // Only the new bot is placed in the layout (nobody else moves), and it is put under the binding like the
+    // bots of the bind: follows the lead bot, threat back-off, no own walks.
     uint64 const commanderRaw = commander->GetObjectGuid().GetRawValue();
-    std::vector<Player*> const bots = CommandedBots(group, lead);
-    if (std::unique_ptr<ChatHandler> const chat = CommanderReplyHandler(commanderRaw, false))
-        ApplyRaidLayout(group, lead, bots, chat.get(), commanderRaw);
+    std::unique_ptr<ChatHandler> const chat = CommanderReplyHandler(commanderRaw, false);
+    PlaceJoinerInRaidLayout(group, lead, bot, chat.get());
     HireLifecycle::KeepInstanceAfterPartyMove(bot);
     FormUpOnLead(commander, lead, std::vector<Player*>{ bot }, false);
     GiveCommanderThreatBackoff(bot);

@@ -188,6 +188,67 @@ inline Layout Plan(std::vector<Member> const& members)
     return layout;
 }
 
+// A hire joining a raid that is already bound (C6): only the new bot is placed, nobody else moves (a
+// reshuffle in the middle of a raid breaks heal assignments and positions). seated: members now in each
+// subgroup, the joiner not counted; tankIn / healerIn: the subgroup holds a tank / a healer.
+struct JoinFacts
+{
+    Role role = Role::Damage;
+    uint8_t seated[kSubgroups] = {};
+    bool tankIn[kSubgroups] = {};
+    bool healerIn[kSubgroups] = {};
+};
+
+struct JoinSeat
+{
+    bool ok = false; // false: the raid has no free seat
+    uint8_t subgroup = 0;
+};
+
+// A tank takes the first subgroup that already holds a tank and has a free seat, a healer the first
+// that holds a healer; a damage dealer, or a role whose subgroups are full, the first free seat.
+inline JoinSeat PlanJoinerSubgroup(JoinFacts const& facts)
+{
+    JoinSeat seat;
+    if (facts.role != Role::Damage)
+        for (uint8_t sub = 0; sub < kSubgroups; ++sub)
+            if (facts.seated[sub] < kSubgroupSize && (facts.role == Role::Tank ? facts.tankIn[sub] : facts.healerIn[sub]))
+            {
+                seat.ok = true;
+                seat.subgroup = sub;
+                return seat;
+            }
+    for (uint8_t sub = 0; sub < kSubgroups; ++sub)
+        if (facts.seated[sub] < kSubgroupSize)
+        {
+            seat.ok = true;
+            seat.subgroup = sub;
+            return seat;
+        }
+    return seat;
+}
+
+// The tank (index in the raid's tank list, the lead bot first) a joining healer heals: the one with the
+// fewest healers, the first on a tie. -1: a raid healer, because the raid keeps its healer minimum
+// (RaidHealerMinimum of the healers) before tanks take more, or every tank has the most a tank takes.
+inline int PickJoinerHealTank(std::vector<uint32_t> const& healersPerTank, uint32_t raidHealers)
+{
+    uint32_t healers = raidHealers;
+    for (uint32_t count : healersPerTank)
+        healers += count;
+    if (raidHealers < RaidHealerMinimum(healers + 1))
+        return -1;
+    int best = -1;
+    for (size_t t = 0; t < healersPerTank.size(); ++t)
+    {
+        if (healersPerTank[t] >= kMaxTankHealers)
+            continue;
+        if (best < 0 || healersPerTank[t] < healersPerTank[static_cast<size_t>(best)])
+            best = static_cast<int>(t);
+    }
+    return best;
+}
+
 // Subgroup moves that never overfill (Group::ChangeMembersGroup does nothing
 // when the target subgroup already holds 5): given each member's current and
 // planned subgroup, the ordered ops that place every placeable member

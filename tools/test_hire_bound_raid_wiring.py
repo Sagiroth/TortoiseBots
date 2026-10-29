@@ -79,8 +79,7 @@ class HireBoundRaidWiringTest(unittest.TestCase):
             "JoinLeadGroup(lead, bot)",
             "hires.CancelCommand(botGuid);",
             "hires.ConfirmCommand(commander->GetObjectGuid());",
-            "CommandedBots(group, lead)",
-            "ApplyRaidLayout(group, lead, bots, chat.get(), commanderRaw);",
+            "PlaceJoinerInRaidLayout(group, lead, bot, chat.get());",
             "FormUpOnLead(commander, lead, std::vector<Player*>{ bot }, false);",
             "GiveCommanderThreatBackoff(bot);",
             "HoldCommanderAutonomy(bot,",
@@ -88,7 +87,9 @@ class HireBoundRaidWiringTest(unittest.TestCase):
         ]
         at = [join.index(part) for part in order]
         self.assertEqual(at, sorted(at))
-        for forbidden in ("EndCommand", "ReleaseBinding", "StandingBinding", "Bind(binding)", "ClearRaidLayout"):
+        # nobody else moves: the join never runs the full plan again
+        for forbidden in ("EndCommand", "ReleaseBinding", "StandingBinding", "Bind(binding)", "ClearRaidLayout",
+                          "ApplyRaidLayout", "CommandedBots", "SwapMembersGroup"):
             self.assertNotIn(forbidden, join)
         # the commander inside the group, a full raid and a settled-out bot are not joins
         self.assertIn("group->IsMember(commander->GetObjectGuid())", join)
@@ -102,20 +103,40 @@ class HireBoundRaidWiringTest(unittest.TestCase):
         self.assertIn("commandState = HireCommandState::None;", cancel)
         self.assertNotIn("for (", cancel)
 
-    def test_the_layout_plan_is_made_again_on_the_first_record(self):
+    def test_the_joiner_alone_is_placed_by_the_policy(self):
+        place = body(CMD_SRC, "static void PlaceJoinerInRaidLayout(", "\n}\n")
+        order = [
+            "RaidLayouts().find(group->GetId())",
+            "TortoiseBots::RaidLayout::JoinFacts facts;",
+            "applied.originalSubgroups.push_back({botGuid, before});",
+            "TortoiseBots::RaidLayout::PlanJoinerSubgroup(facts)",
+            "group->ChangeMembersGroup(bot, seat.subgroup);",
+            "group->SetAssistant(botGuid, true);",
+            "applied.assistants.push_back(botGuid);",
+            "TortoiseBots::RaidLayout::PickJoinerHealTank(perTank, raidHealers)",
+            "applied.tankHealers.emplace_back(bot->GetName(), tankName);",
+            "applied.focusHealers.push_back(record);",
+        ]
+        at = [place.index(part) for part in order]
+        self.assertEqual(at, sorted(at))
+        # its role is read from the bot, as the bind's plan reads it
+        self.assertIn("facts.role = PlayerbotAI::IsTank(bot) ? TortoiseBots::RaidLayout::Role::Tank", place)
+        self.assertIn(": PlayerbotAI::IsHeal(bot) ? TortoiseBots::RaidLayout::Role::Healer", place)
+        # only the new bot moves: one subgroup change, never a swap or a plan
+        self.assertEqual(place.count("ChangeMembersGroup("), 1)
+        for forbidden in ("SwapMembersGroup", "RaidLayout::Plan(", "PlanSubgroupMoves", "SetMainTank", "ApplyRaidLayout"):
+            self.assertNotIn(forbidden, place)
+        # a raid healer keeps the dashboard's list; a tank is an off-tank
+        self.assertIn("applied.raidHealers.push_back(bot->GetName());", place)
+        self.assertIn("applied.offTanks.push_back(bot->GetName());", place)
+
+    def test_the_bind_keeps_its_full_plan(self):
+        bind = body(CMD_SRC, "static bool HandleCommanderBind(", "\n}\n")
+        self.assertIn("ApplyRaidLayout(group, lead, bots, handler, commanderRaw);", bind)
         layout = body(CMD_SRC, "static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> const& bots, ChatHandler* handler, uint64_t commanderRaw)\n{",
                       "static void RestoreRaidFocusHealer(Player* bot, RaidFocusHealer const& record)\n{")
-        self.assertIn("bool const replan = prior != RaidLayouts().end();", layout)
-        self.assertIn("if (replan)\n        applied = prior->second;", layout)
-        # the saved state from before the bind is set on the first plan only
-        first = layout.index("else\n    {\n        applied.hadMainTank")
-        self.assertIn("applied.previousMainTank = group->GetMainTankGuid();", layout[first:first + 400])
-        self.assertIn("applied.previousMainAssistant = group->GetMainAssistantGuid();", layout[first:first + 400])
-        # a member the first plan saw keeps its original subgroup; a tank healer keeps its first snapshot
-        self.assertIn("if (!replan || std::none_of(applied.originalSubgroups.begin()", layout)
-        self.assertIn("if (!recorded)\n                applied.focusHealers.push_back(record);", layout)
-        self.assertIn("if (!recorded)\n                {\n                    record.hadStrategy", layout)
-        self.assertIn("RaidLayouts()[group->GetId()] = applied;", layout)
+        self.assertIn("RaidLayoutApplied applied;\n    applied.hadMainTank = ", layout)
+        self.assertNotIn("replan", layout)
 
     def test_the_query_is_declared_for_the_hire_service(self):
         header = (ROOT / "runtime/CommandedGroupQuery.h").read_text()

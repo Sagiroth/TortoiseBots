@@ -247,6 +247,101 @@ static void TestRunRules()
     CHECK(RestFloor({50, 90, 95, 100, 100}, 10) == 50);
 }
 
+// A hire joining a bound raid is placed alone: nobody else moves (C6).
+static JoinFacts Joiner(Role role)
+{
+    JoinFacts f;
+    f.role = role;
+    return f;
+}
+
+static void TestJoinerSeat()
+{
+    // A damage dealer takes the first free seat.
+    JoinFacts f = Joiner(Role::Damage);
+    f.seated[0] = 5;
+    f.seated[1] = 4;
+    f.tankIn[0] = true;
+    CHECK(PlanJoinerSubgroup(f).ok && PlanJoinerSubgroup(f).subgroup == 1);
+
+    // A tank goes to a subgroup that already holds a tank, the first one with a free seat.
+    f = Joiner(Role::Tank);
+    f.seated[0] = 5; f.seated[1] = 3; f.seated[2] = 2; f.seated[3] = 1;
+    f.tankIn[0] = true; f.tankIn[1] = true; f.tankIn[2] = true;
+    f.healerIn[3] = true;
+    CHECK(PlanJoinerSubgroup(f).ok && PlanJoinerSubgroup(f).subgroup == 1);
+    // The tanks' subgroups full: the first free seat of the raid.
+    f.seated[1] = 5; f.seated[2] = 5;
+    CHECK(PlanJoinerSubgroup(f).ok && PlanJoinerSubgroup(f).subgroup == 3);
+
+    // A healer goes to a subgroup that holds a healer.
+    f = Joiner(Role::Healer);
+    f.seated[0] = 4; f.seated[1] = 5; f.seated[2] = 4; f.seated[3] = 2;
+    f.tankIn[0] = true; f.healerIn[0] = true; f.healerIn[2] = true; f.healerIn[3] = true;
+    CHECK(PlanJoinerSubgroup(f).ok && PlanJoinerSubgroup(f).subgroup == 0);
+    // Its role subgroups full: the first free seat.
+    f.seated[0] = 5; f.seated[2] = 5; f.seated[3] = 5;
+    CHECK(PlanJoinerSubgroup(f).ok && PlanJoinerSubgroup(f).subgroup == 4);
+    // No healer subgroup at all: the first free seat.
+    f = Joiner(Role::Healer);
+    f.seated[0] = 5; f.seated[1] = 2;
+    CHECK(PlanJoinerSubgroup(f).ok && PlanJoinerSubgroup(f).subgroup == 1);
+
+    // A tank is not sent to a healer subgroup, a healer not to a tank subgroup, a damage dealer to neither.
+    f = Joiner(Role::Healer);
+    f.tankIn[0] = true;
+    f.healerIn[2] = true;
+    CHECK(PlanJoinerSubgroup(f).ok && PlanJoinerSubgroup(f).subgroup == 2);
+    f = Joiner(Role::Tank);
+    f.tankIn[3] = true;
+    f.healerIn[1] = true;
+    CHECK(PlanJoinerSubgroup(f).ok && PlanJoinerSubgroup(f).subgroup == 3);
+    f = Joiner(Role::Damage);
+    f.tankIn[3] = true;
+    f.healerIn[2] = true;
+    CHECK(PlanJoinerSubgroup(f).ok && PlanJoinerSubgroup(f).subgroup == 0);
+
+    // A full raid (eight subgroups of five) has no seat.
+    f = Joiner(Role::Tank);
+    for (uint8_t sub = 0; sub < kSubgroups; ++sub)
+        f.seated[sub] = kSubgroupSize;
+    f.tankIn[0] = true;
+    CHECK(!PlanJoinerSubgroup(f).ok);
+    // The last free seat of the last subgroup is still a seat.
+    f.seated[kSubgroups - 1] = kSubgroupSize - 1;
+    CHECK(PlanJoinerSubgroup(f).ok && PlanJoinerSubgroup(f).subgroup == kSubgroups - 1);
+}
+
+static void TestJoinerHealTank()
+{
+    // The tank with the fewest healers; the first on a tie.
+    CHECK(PickJoinerHealTank({2, 1, 2}, 4) == 1);
+    CHECK(PickJoinerHealTank({1, 1, 1}, 4) == 0);
+    CHECK(PickJoinerHealTank({2, 2, 0}, 4) == 2);
+    // Every tank already has the most healers a tank takes: a raid healer.
+    CHECK(PickJoinerHealTank({2, 2, 2}, 4) == -1);
+    // The raid keeps its healer minimum (a third of the healers, rounded up) before a tank gets another.
+    CHECK(PickJoinerHealTank({1, 1, 1}, 1) == -1);  // 4 healers + 1 need 2 raid healers
+    CHECK(PickJoinerHealTank({1, 1, 1}, 2) == 0);   // they have them
+    CHECK(PickJoinerHealTank({1, 0, 1}, 4) == 1);   // the fewest, not the most
+    CHECK(PickJoinerHealTank({1, 1}, 1) == -1);     // 3 healers + 1 need 2 raid healers
+    CHECK(PickJoinerHealTank({1, 1}, 2) == 0);
+    // No tank to heal.
+    CHECK(PickJoinerHealTank({}, 5) == -1);
+    // The same rule the first plan used: 3 tanks and 10 healers leave every tank with two.
+    Layout planned = Plan(Raid(3, 10, 26));
+    CHECK(planned.ok);
+    std::vector<uint32_t> perTank(3, 0);
+    uint32_t raidHealers = 0;
+    for (auto const& p : planned.placements)
+        if (p.role == Role::Healer)
+        {
+            if (p.healsTank >= 0) ++perTank[p.healsTank];
+            else ++raidHealers;
+        }
+    CHECK(PickJoinerHealTank(perTank, raidHealers) == -1);
+}
+
 int main()
 {
     TestTankHealerCounts();
@@ -258,6 +353,8 @@ int main()
     TestFullRaidKeepsOfflineSlots();
     TestPlanErrors();
     TestRunRules();
+    TestJoinerSeat();
+    TestJoinerHealTank();
     std::printf("raid layout policy: %d checks passed\n", checks);
     return 0;
 }
