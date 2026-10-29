@@ -346,6 +346,12 @@ func TestCmdOverflowCSS(t *testing.T) {
 	runCheck(t, "cmd_overflow_css_check.js", "../../web/static/css/app.css")
 }
 
+// TestDungeonsPollJS runs dungeons_poll_check.js: /api/v1/dungeons is asked with every snapshot only while the Dungeons tab or
+// a dungeon card is on screen, and once every 30 s anywhere else (the audit saw 30 requests a minute on a Commanders tab).
+func TestDungeonsPollJS(t *testing.T) {
+	runCheck(t, "dungeons_poll_check.js", "../../web/static/js/app.js")
+}
+
 // TestFDHistoryJS runs fd_history_check.js: the Fight debugger with no raid bound. The commanders with saved fights come from
 // the daemon (newest first, escaped), the one-line note stays above the list, and each opens a read-only history card.
 func TestFDHistoryJS(t *testing.T) {

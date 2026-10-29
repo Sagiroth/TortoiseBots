@@ -1253,14 +1253,23 @@
     }
   }
 
+  // The zone's client art, asked for only while the Map tab shows that zone: the element starts with no source, so a load on
+  // any other tab (a Commanders reload) asks the daemon for no picture at all.
+  function paintZoneArt() {
+    const zone = ZONE_CONFIG[state.currentZoneId];
+    const art = zone && zone.file;
+    if (!el.mapImg) return;
+    if (art && state.activeTab === 'map' && state.mapView === 'zone') {
+      if (el.mapImg.getAttribute('src') !== `/maps/${zone.file}`) el.mapImg.src = `/maps/${zone.file}`;
+      el.mapImg.style.display = 'block';
+    }
+  }
+
   function loadZoneMap(zoneId) {
     const zone = ZONE_CONFIG[zoneId];
     const art = zone && zone.file;
     if (el.mapImg) {
-      if (art) {
-        if (el.mapImg.getAttribute('src') !== `/maps/${zone.file}`) el.mapImg.src = `/maps/${zone.file}`;
-        el.mapImg.style.display = 'block';
-      } else {
+      if (!art) {
         el.mapImg.removeAttribute('src');
         el.mapImg.style.display = 'none';
         resetZoneArt();
@@ -1402,7 +1411,8 @@
       .then(cfg => {
         if (cfg && Object.keys(cfg).length > 0) {
           ZONE_BOUNDS = cfg;
-          if (state.mapView === 'world') renderMap();
+          // Only the Map tab draws the continents; any other tab asks for no map art on a data load.
+          if (state.mapView === 'world' && state.activeTab === 'map') renderMap();
           if (state.activeTab === 'commanders') renderCommanders();
         }
       })
@@ -2335,6 +2345,7 @@
       : ((ZONE_CONFIG[state.currentZoneId] || {}).map ?? state.worldMapId ?? 0);
     renderWorldZones(chipMap);
     if (state.mapView === 'world') { renderWorld(); return; }
+    paintZoneArt();
     if (!el.mapOverlay) return;
     el.mapOverlay.innerHTML = '';
 
@@ -4890,9 +4901,9 @@
 
         renderLive();
 
-        // The Dungeons view is a rollup of the roster; refresh it with each
-        // snapshot (the profile's run link and the world map's link read it too).
-        fetchDungeons();
+        // The Dungeons view is a rollup of the roster: refresh it with each snapshot only while it is on screen, else once
+        // every 30 s (the profile's run link and the world map's link read it too, and a snapshot is every 2 s).
+        if (dgnPollDue(dgnOnScreen(), state.dungeons.at, Date.now())) fetchDungeons();
 
         if (state.bots.length !== prevCount) {
           appendConsoleLog(time, 'roster', `Snapshot #${esc(state.snapshotSeq)}: ${state.bots.length} bots active.`);
@@ -8618,10 +8629,12 @@
     fd.run.timer = setTimeout(() => fdRunTick(key), FightReplay.TICK_MS);
   }
 
-  // A ready check that has not answered yet: no bots, or not one row with a verdict (a row at the neutral "check" level has
-  // said nothing). Any ok, warn or fail row is a real result, even when every bot is only a warning. The header then says so.
+  // A ready check that has not run: the raid is on the move (every bot is far from the next stand, which is no readiness
+  // verdict), or no row carries one (a neutral "check" row has said nothing). Any ok, warn or fail row at the gather is a real
+  // result, even when every bot is only a warning. The header then says so.
   function fdReadyNotRun(ready) {
     if (!ready) return true;
+    if (ready.gathered === false) return true;
     const bots = ready.bots || [];
     return !bots.length || bots.every(r => !r || (r.lvl !== 'ok' && r.lvl !== 'warn' && r.lvl !== 'fail'));
   }
@@ -9155,6 +9168,21 @@
     return DgnView.memberGroups(rows).map(g =>
       (g.label ? `<h4 class="dgn-subgroup">${esc(g.label)}</h4>` : '') + g.rows.map(row).join('')
     ).join('');
+  }
+
+  // The Dungeons rollup is on screen on its own tab and wherever a dungeon card draws (the Commanders page shows the live
+  // runs as cards too). Off screen it is asked once every 30 s, not twice a second.
+  const DGN_POLL_MS = 30000;
+  function dgnOnScreen() {
+    if (state.activeTab === 'dungeons') return true;
+    if (state.activeTab !== 'commanders') return false;
+    let dgnCard = false;
+    cmdCards.forEach((card, key) => { if (key.indexOf('dgn:') === 0) dgnCard = true; });
+    return dgnCard || (state.dungeons.binds || []).length > 0;
+  }
+  function dgnPollDue(onScreen, at, nowMs) {
+    if (onScreen) return true;
+    return !at || nowMs - at >= DGN_POLL_MS;
   }
 
   function fetchDungeons() {

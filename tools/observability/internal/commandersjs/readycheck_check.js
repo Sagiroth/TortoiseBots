@@ -65,6 +65,22 @@ assert.deepStrictEqual(plain(r.counts), { ok: 20, warn: 4, fail: 15 }, JSON.stri
 assert.strictEqual(r.lvl, "fail");
 assert.deepStrictEqual(plain(r.stand), { i: 20, x: -113.88, y: -127.47, z: -48.98 });
 assert.strictEqual(r.known, true, "five bots carry rdy");
+assert.strictEqual(r.gathered, true, "the run waits on the plan's stand step: the raid is gathered");
+
+// A raid walking the plan (its step is not a stand) is not gathered: the stand distance of every bot is no readiness verdict,
+// and the header says "Ready check: not run yet" instead of a red 0/N (the site audit's mid-run chip).
+const walking = R.raid(Object.assign({}, bind, { run: Object.assign({}, bind.run, { step: 21 }) }), plan);
+assert.strictEqual(walking.gathered, false);
+assert.strictEqual(walking.stand, null, "no stand rule while the raid is on the move");
+assert.strictEqual(walking.bots.find((b) => b.name === "Brrtastic").reasons.indexOf("45 yd from the stand"), -1);
+const parked = R.raid(Object.assign({}, bind, { run: Object.assign({}, bind.run, { step: 21, state: "paused" }) }), plan);
+assert.strictEqual(parked.gathered, true, "a parked run may check at the next stand");
+assert.strictEqual(R.gatheredAt({ bots: [] }, plan), true, "a party without a run has nothing to gather at");
+assert.strictEqual(R.gatheredAt(bind, plan), true);
+assert.strictEqual(R.gatheredAt({ run: { step: 21, state: "running" } }, plan), false);
+assert.strictEqual(R.gatheredAt({ run: { step: 21, state: "running" } }, null), true,
+  "without the plan the gather cannot be known: the bot rules speak");
+assert.strictEqual(R.gatheredAt({ run: { step: 20, state: "running" } }, plan), true);
 
 // A bot at exactly half mana is a warn, not a failure (the boundary is pinned here for the mutation).
 assert.deepStrictEqual(plain(R.bot({ name: "Half", alive: true, power_type: "mana", power: 50, max_power: 100 }, {})),

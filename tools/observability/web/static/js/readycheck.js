@@ -87,20 +87,34 @@
     return { name, lvl, reasons };
   }
 
-  // The whole binding: every bot's level, the counts, the worst, the stand the raid is expected at, and whether any bot
-  // has the module's rdy facts at all.
+  // A ready check is a deliberate gather. The raid is gathered when the plan's current step is a stand (the run waits there)
+  // or the run is parked; walking or fighting the plan, every bot is naturally far from the next stand and that distance says
+  // nothing about readiness, so the stand rule (and the header's verdict) waits for the gather.
+  function gatheredAt(bind, plan) {
+    const run = bind && bind.run;
+    const step = num(run && run.step);
+    if (step == null) return true;      // no run: nothing to gather at, the bot rules speak
+    if (run.state === "paused") return true;
+    const steps = plan && Array.isArray(plan.steps) ? plan.steps : null;
+    if (!steps) return true; // no plan to say where the gather is: the bot rules speak, as before
+    return steps.some((s) => s && num(s.i) === step && !!s.stand);
+  }
+
+  // The whole binding: every bot's level, the counts, the worst, the stand the raid is expected at, whether the raid is
+  // gathered for a check, and whether any bot has the module's rdy facts at all.
   function raid(bind, plan) {
     const bots = Array.isArray(bind && bind.bots) ? bind.bots : [];
-    const stand = standOf(plan, bind && bind.run);
+    const gathered = gatheredAt(bind, plan);
+    const stand = gathered ? standOf(plan, bind && bind.run) : null;
     const expect = expected(bind);
     const inRaid = isRaid(bind);
     const rows = bots.map((b) => bot(b, { stand, expect, raid: inRaid }));
     const counts = { ok: 0, warn: 0, fail: 0 };
     rows.forEach((r) => { counts[r.lvl]++; });
     const lvl = counts.fail ? "fail" : counts.warn ? "warn" : "ok";
-    return { bots: rows, counts, lvl, stand, known: bots.some((b) => !!b && !!b.rdy && typeof b.rdy === "object") };
+    return { bots: rows, counts, lvl, stand, gathered, known: bots.some((b) => !!b && !!b.rdy && typeof b.rdy === "object") };
   }
 
-  const api = { READY, BUFF, CONS, PROVIDES, isMana, standOf, bot, raid };
+  const api = { READY, BUFF, CONS, PROVIDES, isMana, standOf, gatheredAt, bot, raid };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.ReadyCheck = api;
 })(typeof self !== "undefined" ? self : this);

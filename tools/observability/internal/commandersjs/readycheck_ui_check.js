@@ -96,7 +96,17 @@ const idleReady = { bots: bind.bots.map((b) => ({ name: b.name, lvl: "check", re
 const idleHtml = run("fdFramesHtml(frames, null, ready)", { frames, ready: idleReady });
 assert.ok(idleHtml.includes('<span class="fd-chip">Ready check: not run yet</span>'), idleHtml.slice(0, 400));
 assert.ok(!idleHtml.includes("data-fd-ready"), "nothing to open before a verdict");
-assert.strictEqual(run("fdReadyNotRun(ready)"), true, "an all-neutral set is no verdict");
+// A raid walking the plan is not gathered for a check: even a full set of "not ready" rows (every bot far from the next
+// stand) reads as the neutral "not run yet" chip, never a red 0/N.
+const midRun = { bots: bind.bots.map((b) => ({ name: b.name, lvl: "fail", reasons: ["45 yd from the stand"] })),
+  counts: { ok: 0, warn: 0, fail: 5 }, lvl: "fail", gathered: false, known: true };
+const midRunHtml = run("fdFramesHtml(frames, null, ready)", { frames, ready: midRun });
+assert.ok(midRunHtml.includes('<span class="fd-chip">Ready check: not run yet</span>'), midRunHtml.slice(0, 300));
+assert.ok(!midRunHtml.includes("data-fd-ready") && !midRunHtml.includes("not ready</span>"), "no red count while the raid is on the move");
+assert.strictEqual(run("fdReadyNotRun(ready)"), true, "an ungathered raid is no verdict");
+assert.strictEqual(run("fdReadyNotRun(ready)", { ready: Object.assign({}, midRun, { gathered: true }) }), false,
+  "the same rows at the gather are a result");
+assert.strictEqual(run("fdReadyNotRun(ready)", { ready: idleReady }), true, "an all-neutral set is no verdict");
 assert.strictEqual(run("fdReadyNotRun(ready)", { ready: { bots: [{ lvl: "warn" }], counts: { ok: 0, warn: 1, fail: 0 } } }), false,
   "one warning row is a result");
 assert.strictEqual(run("fdReadyNotRun(ready)", { ready: { bots: [{ lvl: "ok" }], counts: { ok: 1, warn: 0, fail: 0 } } }), false,
