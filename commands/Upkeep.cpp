@@ -4,6 +4,7 @@
 #include "BotCommandContext.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/BotManager.h"
+#include "../runtime/DowntimeService.h"
 #include "../runtime/BotActivityLease.h"
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/ClaimLifecycle.h"
@@ -216,6 +217,70 @@ bool HandleSell(ChatHandler* handler, char const* args)
             ++succeeded;
     }
     handler->PSendSysMessage("Commanded %u bot(s) to sell vendor trash.", succeeded);
+    return true;
+}
+
+// `.bot downtime [botName]`: ordered town errands for own alts. The alt gets
+// the pool's errand kit for a bounded window (class trainer it can afford,
+// junk vendor, repair) and returns to the master afterwards. Hired
+// companions and pool bots are refused; the DowntimeService owns the window.
+bool HandleDowntime(ChatHandler* handler, char const* args)
+{
+    Player* requester = Requester(handler);
+    if (!requester)
+    {
+        handler->PSendSysMessage("You must be in-game.");
+        return true;
+    }
+
+    std::vector<Player*> scope;
+    if (Trim(args ? args : "").empty())
+    {
+        BotCommandContext context = BuildContext(requester);
+        scope = ResolveDynamicScope(context);
+    }
+    else
+    {
+        Player* bot = nullptr;
+        BotRecord* record = nullptr;
+        std::string name;
+        if (!ResolveOwnedBot(handler, args, bot, record, name))
+        {
+            SendActionError(handler, "downtime", "no-bot",
+                "Usage: .bot downtime [online bot name] (one of your own alts)");
+            return true;
+        }
+        scope.push_back(bot);
+    }
+
+    if (scope.empty())
+    {
+        SendActionError(handler, "downtime", "no-alt",
+            "No controllable bot matches. Select or name one of your own alt bots.");
+        return true;
+    }
+
+    uint32 ordered = 0;
+    std::string firstRefusal;
+    for (Player* bot : scope)
+    {
+        std::string reply;
+        if (DowntimeService::Instance().Start(bot, requester, reply))
+        {
+            ++ordered;
+            handler->PSendSysMessage("Bot %s %s", bot->GetName(), reply.c_str());
+        }
+        else if (firstRefusal.empty())
+            firstRefusal = std::string(bot->GetName()) + " " + reply;
+    }
+
+    if (!ordered)
+    {
+        SendActionError(handler, "downtime", "refused", firstRefusal.c_str());
+        return true;
+    }
+    std::string const ackScope = scope.size() == 1 ? "bot:" + std::string(scope.front()->GetName()) : "party";
+    SendActionAck(handler, "downtime", ackScope, ordered);
     return true;
 }
 

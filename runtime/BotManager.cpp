@@ -9,6 +9,7 @@
 #include "HireLifecycle.h"
 #include "ClaimLifecycle.h"
 #include "AltBotService.h"
+#include "DowntimeService.h"
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
 #include "RandomBotAccountRegistry.h"
@@ -2267,6 +2268,7 @@ void BotManager::UpdateBots(uint32_t diff)
 void BotManager::OnWorldUpdate(uint32_t diff)
 {
     AltBotService::Instance().Update();
+    TortoiseBots::DowntimeService::Instance().Update();
     // Core owns Headless session lifecycle (queue, LoginPlayer dispatch, reclaim).
     // Module only tracks BotRecord and polls adapter state. No pending promotion.
     for (auto it = m_bots.begin(); it != m_bots.end(); )
