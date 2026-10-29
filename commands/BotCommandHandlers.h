@@ -33,6 +33,11 @@ uint64 GroupBindingKey(uint32 groupId);                // the binding's commande
 // run slot. World thread only.
 void CleanupRunGivenItems(Player* player);
 void CleanupRunGivenItemsTick();
+// ta252 round 3: a run rejoin's solo bind snapshot (Commander.cpp PendingRejoins) is settled at the bot's logout
+// (BotPlayerAdapter::OnLogout, the Player still valid) and at its next login (OnLogin), before any new rejoin: a
+// rejoin that did not land in the lead bot's copy is undone. World thread only.
+void SettleRunRejoinOnLogout(Player* player);
+void SettleRunRejoinOnLogin(Player* player);
 bool HandleAdd(ChatHandler* handler, char const* args);
 bool HandleRemove(ChatHandler* handler, char const* args);
 bool HandleLogout(ChatHandler* handler, char const* args);

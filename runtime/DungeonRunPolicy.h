@@ -12698,16 +12698,31 @@ struct RejoinSettleFacts
     bool refused = false; // TeleportTo returned false
     bool arrived = false; // in the world on the map, in the lead bot's instance id, not teleporting
     std::uint32_t msSince = 0;
+    // Round 3 (Codex HIGH, 2026-10-29: a logout mid-rejoin dropped the only snapshot): online = the Player exists
+    // (the undo needs it); settleNow = the logout hook or the next login, no more waiting.
+    bool online = true;
+    bool settleNow = false;
 };
-enum class RejoinSettle { None, Wait, Done, Restore };
+enum class RejoinSettle
+{
+    None,    // nothing pending
+    Wait,    // in flight
+    Done,    // in the lead bot's copy: the snapshot goes
+    Restore, // undo the write, then the snapshot goes
+    Hold,    // offline: keep the snapshot until the logout hook or the next login can undo it
+};
 inline RejoinSettle PlanRejoinSettle(const RejoinSettleFacts& s)
 {
     if (!s.pending)
         return RejoinSettle::None;
+    if (!s.online)
+        return RejoinSettle::Hold;
     if (s.refused)
         return RejoinSettle::Restore;
     if (s.arrived)
         return RejoinSettle::Done;
+    if (s.settleNow)
+        return RejoinSettle::Restore;
     return s.msSince < kRejoinArriveMs ? RejoinSettle::Wait : RejoinSettle::Restore;
 }
 

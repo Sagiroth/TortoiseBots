@@ -6757,6 +6757,7 @@ struct PendingRejoin
     uint32 oldInstanceId = 0;
     bool oldPerm = false;
     uint32 atMs = 0; // WorldTimer::getMSTime at the write
+    bool offlineLogged = false; // the Hold while it is offline was logged once
 };
 std::unordered_map<uint64, PendingRejoin>& PendingRejoins()
 {
@@ -6799,37 +6800,43 @@ std::string RestoreRejoinBind(Player* bot, PendingRejoin const& p)
 }
 
 // A pending rejoin of this bot (PendingRejoins), settled (DungeonRun::PlanRejoinSettle): Done and Restore drop the
-// entry, Restore undoes the bind first. `refused`: its TeleportTo returned false.
-TortoiseBots::DungeonRun::RejoinSettle SettleRejoin(uint64 raw, Player* bot, bool refused)
+// entry, Restore undoes the bind first. `refused`: its TeleportTo returned false. `settleNow`: the logout hook or the next
+// login (SettleRunRejoinOnLogout / OnLogin), no more waiting. Round 3 (Codex HIGH, 2026-10-29): an offline bot (no
+// Player to undo with) keeps its snapshot (Hold) until one of those hooks can undo it.
+TortoiseBots::DungeonRun::RejoinSettle SettleRejoin(uint64 raw, Player* bot, bool refused, bool settleNow)
 {
     using TortoiseBots::DungeonRun::RejoinSettle;
     auto const it = PendingRejoins().find(raw);
     if (it == PendingRejoins().end())
         return RejoinSettle::None;
     PendingRejoin const p = it->second;
-    if (!bot)
-    {
-        // Logged out: the bind is in the DB (character_instance) and the player is gone; the run is told nothing.
-        sLog.outBasic("[RUN] rejoin of %llu not settled: the bot logged out, its solo bind stays on instance %u",
-            static_cast<unsigned long long>(raw), p.leadInstanceId);
-        PendingRejoins().erase(it);
-        return RejoinSettle::Done;
-    }
     TortoiseBots::DungeonRun::RejoinSettleFacts facts;
     facts.pending = true;
     facts.refused = refused;
-    facts.arrived = bot->IsInWorld() && !bot->IsBeingTeleported() && bot->GetMapId() == p.mapId &&
+    facts.online = bot != nullptr;
+    facts.settleNow = settleNow;
+    // At the logout hook the bot may already be off its map (WorldSession::LogoutPlayer finished its far teleport
+    // first, WorldSession.cpp:682-686): there its location still names the copy it was in.
+    facts.arrived = bot && (bot->IsInWorld() || settleNow) && !bot->IsBeingTeleported() && bot->GetMapId() == p.mapId &&
         bot->GetInstanceId() == p.leadInstanceId;
     facts.msSince = WorldTimer::getMSTimeDiff(p.atMs, WorldTimer::getMSTime());
     RejoinSettle const verdict = TortoiseBots::DungeonRun::PlanRejoinSettle(facts);
+    if (verdict == RejoinSettle::Hold)
+    {
+        if (!it->second.offlineLogged)
+            sLog.outBasic("[RUN] rejoin of %llu held: the bot is offline, its solo bind (instance %u) is undone at its "
+                "logout hook or next login", static_cast<unsigned long long>(raw), p.leadInstanceId);
+        it->second.offlineLogged = true;
+        return verdict;
+    }
     if (verdict == RejoinSettle::Done || verdict == RejoinSettle::Restore)
         PendingRejoins().erase(it);
     if (verdict == RejoinSettle::Restore)
     {
         std::string const outcome = RestoreRejoinBind(bot, p);
         sLog.outBasic("[RUN] rejoin %s undone (%s, instance %u): %s", bot->GetName(),
-            refused ? "the teleport was refused" : "not in the lead bot's copy in time", bot->GetInstanceId(),
-            outcome.c_str());
+            refused ? "the teleport was refused" : settleNow ? "logged out or back in elsewhere" :
+            "not in the lead bot's copy in time", bot->GetInstanceId(), outcome.c_str());
     }
     return verdict;
 }
@@ -6842,7 +6849,7 @@ void SettleInstanceRejoins()
     for (auto const& entry : PendingRejoins())
         raws.push_back(entry.first);
     for (uint64 raw : raws)
-        SettleRejoin(raw, FindCharacter(raw), false);
+        SettleRejoin(raw, FindCharacter(raw), false, false);
 }
 
 // The rejoin of a party bot in another copy of the same instance (DungeonRun::InstanceRejoinTick, ta252; Dire Maul
@@ -6896,7 +6903,7 @@ bool RunInstanceRejoin(Player* commander, std::string const& order, std::string&
             bot = member;
     uint64 const botRaw = bot ? bot->GetObjectGuid().GetRawValue() : 0;
     // The last rejoin of this bot first: undone if it did not arrive, else still in flight (no second write).
-    if (bot && SettleRejoin(botRaw, bot, false) == RejoinSettle::Wait)
+    if (bot && SettleRejoin(botRaw, bot, false, false) == RejoinSettle::Wait)
     {
         answer = "busy: its last rejoin is still on the way";
         return false;
@@ -6981,7 +6988,7 @@ bool RunInstanceRejoin(Player* commander, std::string const& order, std::string&
     }
     if (bot->GetBoundInstanceSaveForSelfOrGroup(mapId) != leadState)
     {
-        SettleRejoin(botRaw, bot, true);
+        SettleRejoin(botRaw, bot, true, false);
         answer = "failed: the bind still points at another copy";
         return false;
     }
@@ -7001,7 +7008,7 @@ bool RunInstanceRejoin(Player* commander, std::string const& order, std::string&
     if (!bot->TeleportTo(mapId, lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ(),
             lead->GetOrientation(), TELE_TO_FORCE_MAP_CHANGE))
     {
-        SettleRejoin(botRaw, bot, true);
+        SettleRejoin(botRaw, bot, true, false);
         answer = "failed: the teleport was refused";
         return false;
     }
@@ -10323,7 +10330,21 @@ void SyncRunSpeed()
     }
 }
 
+// ta252 round 3 (Codex HIGH, 2026-10-29): a bot's logout hook and its next login settle its pending rejoin at once
+// (settleNow), with the Player still valid. The logout hook (BotPlayerAdapter::OnLogout, PLAYERHOOK_ON_LOGOUT,
+// WorldSession.cpp:793/803) runs after LogoutPlayer finished its pending far teleport (WorldSession.cpp:682-686);
+// the login hook (BotPlayerAdapter::OnLogin, PLAYERHOOK_ON_LOGIN, CharacterHandler.cpp:1016) settles a snapshot held
+// while it was offline, before the run can send it another rejoin.
+void SettleRunRejoinNow(Player* player)
+{
+    if (player)
+        SettleRejoin(player->GetObjectGuid().GetRawValue(), player, false, true);
+}
+
 } // namespace
+
+void SettleRunRejoinOnLogout(Player* player) { SettleRunRejoinNow(player); }
+void SettleRunRejoinOnLogin(Player* player) { SettleRunRejoinNow(player); }
 
 static void UpdateDungeonRuns(uint32 diff)
 {

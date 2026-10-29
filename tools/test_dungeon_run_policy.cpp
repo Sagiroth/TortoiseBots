@@ -18670,6 +18670,26 @@ static void TestRejoinSettle()
     // the undo comes before the run's next try of the same bot.
     CHECK(kRejoinArriveMs < kRejoinRepeatMs);
 }
+static void TestRejoinSettleAcrossLogout()
+{
+    // ta252 round 3 (Codex HIGH, 2026-10-29): a bot that logs out mid-rejoin must not lose the snapshot.
+    // Fields {pending, refused, arrived, msSince, online, settleNow}.
+    using S = RejoinSettle;
+    // offline (no Player to undo with): the snapshot is held, never dropped, at any age.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, 0, false, false}) == S::Hold);
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, kRejoinArriveMs * 100, false, false}) == S::Hold);
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, true, false, 0, false, false}) == S::Hold);
+    // the logout hook (the Player still valid, its pending far teleport already finished by LogoutPlayer) and the next
+    // login: settleNow, no more waiting. Not in the lead bot's copy: undone at once, also inside kRejoinArriveMs.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, 0, true, true}) == S::Restore);
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, kRejoinArriveMs - 1, true, true}) == S::Restore);
+    // settleNow and arrived: nothing to undo.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, true, 0, true, true}) == S::Done);
+    // nothing pending: nothing, online or not.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{false, false, false, 0, false, true}) == S::None);
+    // the defaults (online, not settleNow) keep the in-flight wait.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, 0}) == S::Wait);
+}
 static void TestRejoinRestore()
 {
     // ta252 round 2: the undo of the solo bind. Fields {soloIsOurs, hadSolo, oldStateFound}.
@@ -22486,6 +22506,7 @@ int main()
     TestOtherCopyFightIsNoPartyFight();
     TestPlanRejoinBind();
     TestRejoinSettle();
+    TestRejoinSettleAcrossLogout();
     TestRejoinRestore();
     TestOtherCopyNeverWithTheLeadDead();
     TestBossNotAtHisSpotIsSearchedForInTheInstance();
