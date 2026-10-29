@@ -1106,7 +1106,7 @@ static bool DestinationPointOnMesh(Player* bot, WorldPosition* position)
 // short hop is exactly how a bot walks into the camp next door: live pool
 // 2026-10-21, bots picked grind/gather points a few hundred yards away and
 // died to mobs 8-15 levels above them on the way.
-static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string& blocker)
+bool SharedRouteIsSurvivable(Player* bot, WorldPosition* position, std::string& blocker)
 {
     if (!position)
         return false;
@@ -1385,7 +1385,7 @@ ai::TravelPickOutcome ChooseTravelTargetAction::SetBestTargetSliced(Player* requ
                     // bypass that a below-level-10 hand-in used to dodge is gone):
                     // waypoints and the legs between them, one travel-node A* plus
                     // one leg scan, cached five minutes per candidate.
-                    if (!RouteIsSurvivable(bot, position, blocker))
+                    if (!ai::SharedRouteIsSurvivable(bot, position, blocker))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - route crosses " + blocker, "debug travel");
                         if (sPlayerbotAIConfig.hasLog("travel_route_gate.csv"))

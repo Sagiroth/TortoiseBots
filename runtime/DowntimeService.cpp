@@ -15,6 +15,7 @@
 #include "../ai/playerbot/strategy/actions/ChooseTravelTargetAction.h"
 #include "../ai/playerbot/TravelMgr.h"
 
+#include <sstream>
 #include "Bag.h"
 #include "Chat.h"
 #include "DBCStructure.h"
@@ -52,36 +53,32 @@ char const* ErrandName(DowntimeErrand errand)
     }
 }
 
-// The partial-purse rule the pool's trainer trip uses: the cheapest green
-// class rank must fit the free-money-for-spells budget.
-bool TrainerErrandNeeded(PlayerbotAI* ai)
+// The trainer park key the pool consults before walking to a class trainer.
+char const* kTrainerClassParkKey = "no travel purpose until::trainer class";
+
+// One shared vendorable-junk rule for the need probe and the sale: a bag-only
+// grey that is neither soulbound nor equipped. A soulbound or equipped piece
+// is never counted and never sold, so probe and sale cannot disagree.
+bool IsDowntimeJunk(Item* item, Player* bot)
 {
-    AiObjectContext* context = ai->GetAiObjectContext();
-
-    uint32 minCost = UINT32_MAX;
-    for (TrainerSpell const* trainable :
-        AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", (uint32)TRAINER_TYPE_CLASS))
-        if (trainable && trainable->spellCost < minCost)
-            minCost = trainable->spellCost;
-
-    if (minCost == UINT32_MAX)
+    ItemPrototype const* proto = item ? item->GetProto() : nullptr;
+    if (!proto || proto->Quality != ITEM_QUALITY_POOR || !proto->SellPrice)
         return false;
-
-    return AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) >= minCost;
+    if (!item || item->IsSoulBound())
+        return false;
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot) == item)
+            return false;
+    return true;
 }
 
-// Vendor junk the default sell filter covers: bag greys a vendor pays for.
-// The alt-safety item guard stays in the loop so a soulbound grey can never
-// count.
+// Vendor junk the default sell filter covers. The alt-safety item guard stays
+// in the loop so a soulbound grey can never count.
 bool VendorErrandNeeded(Player* bot)
 {
     auto const hasJunk = [&](uint8 bag, uint8 slot) -> bool
     {
-        Item* item = bot->GetItemByPos(bag, slot);
-        ItemPrototype const* proto = item ? item->GetProto() : nullptr;
-        if (!proto || proto->Quality != ITEM_QUALITY_POOR || !proto->SellPrice)
-            return false;
-        return AltBotMayVendorItem(proto->Quality, item->IsSoulBound(), false);
+        return IsDowntimeJunk(bot->GetItemByPos(bag, slot), bot);
     };
 
     for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
@@ -95,21 +92,131 @@ bool VendorErrandNeeded(Player* bot)
     return false;
 }
 
-// Anything carried is worn down and the purse covers the repair bill.
+// The pool's trainer need (NeedTravelPurposeValue "trainer class"): nothing to
+// train, a parked trainer need, or a purse that cannot cover the cheapest
+// green rank all refuse before the destination walk.
+bool TrainerErrandNeeded(PlayerbotAI* ai)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    if (AI_VALUE2(uint32, "train cost", (uint32)TRAINER_TYPE_CLASS) == 0)
+        return false;
+
+    std::vector<int32> entries =
+        AI_VALUE2(std::vector<int32>, "available trainers", (uint32)TRAINER_TYPE_CLASS);
+    if (entries.empty())
+        return false;
+
+    // Respect the fruitless-visit park the trainer arrival writes: a park set
+    // because the purse was short lifts the moment it covers the cheapest
+    // rank, a teaching park holds until a level-up clears it. Same timestamps
+    // the pool checks, so the window never re-walks a refused trainer.
+    std::string const parkKey = kTrainerClassParkKey;
+    if (AI_VALUE2(time_t, "manual time", parkKey) > time(0))
+    {
+        bool const moneyPark = AI_VALUE2(bool, "manual bool", "trainer park needs money");
+        uint32 minCost = UINT32_MAX;
+        for (TrainerSpell const* trainable :
+            AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", (uint32)TRAINER_TYPE_CLASS))
+            if (trainable && trainable->spellCost < minCost)
+                minCost = trainable->spellCost;
+        if (minCost == UINT32_MAX)
+            return false;
+        bool const canAfford =
+            AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) >= minCost;
+        if (!canAfford || !moneyPark)
+            return false;
+        RESET_AI_VALUE2(time_t, "manual time", parkKey);
+    }
+
+    uint32 minCost = UINT32_MAX;
+    for (TrainerSpell const* trainable :
+        AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", (uint32)TRAINER_TYPE_CLASS))
+        if (trainable && trainable->spellCost < minCost)
+            minCost = trainable->spellCost;
+
+    if (minCost == UINT32_MAX)
+        return false;
+
+    return AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) >= minCost;
+}
+
+// Sells bag junk matching the shared predicate through the vendor at hand,
+// one item per visit tick. The pool path's per-item hooks (the sale row, the
+// random cap, the claimed/bot filters) do not run for an owned bot, so this
+// stays a plain guarded sale: the predicate above is the soulbound/equipped
+// veto, and bound or worn stock is never offered to the vendor at all.
+void SellDowntimeJunk(PlayerbotAI* ai, Player* bot, Player* master)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    std::list<ObjectGuid> vendors = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
+    for (std::list<ObjectGuid>::iterator i = vendors.begin(); i != vendors.end(); ++i)
+    {
+        ObjectGuid vendorguid = *i;
+        Creature* vendor = bot->GetNPCIfCanInteractWith(vendorguid, UNIT_NPC_FLAG_VENDOR);
+        if (!vendor || !SellAction::HasVendorStock(vendor))
+            continue;
+
+        Item* junk = nullptr;
+        for (uint8 slot = INVENTORY_SLOT_ITEM_START; !junk && slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        {
+            Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (IsDowntimeJunk(item, bot))
+                junk = item;
+        }
+        for (uint8 bag = INVENTORY_SLOT_BAG_START; !junk && bag < INVENTORY_SLOT_BAG_END; ++bag)
+        {
+            Bag* pBag = dynamic_cast<Bag*>(bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag));
+            if (!pBag)
+                continue;
+            for (uint8 slot = 0; slot < pBag->GetBagSize(); ++slot)
+            {
+                Item* item = bot->GetItemByPos(bag, slot);
+                if (IsDowntimeJunk(item, bot))
+                {
+                    junk = item;
+                    break;
+                }
+            }
+        }
+        if (!junk || !junk->GetProto() || !junk->GetProto()->SellPrice)
+            return;
+
+        WorldPacket p;
+        p << vendorguid << junk->getObjectGuid() << junk->GetCount();
+        bot->GetSession()->HandleSellItemOpcode(p);
+        sPlayerbotAIConfig.logEvent(ai, "SellAction", junk->GetProto()->Name1,
+            std::to_string(junk->GetProto()->ItemId));
+        if (master && master->GetSession())
+        {
+            std::ostringstream out;
+            out << "Selling " << ai->GetChatHelper()->formatItem(junk);
+            ai->TellPlayer(master, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+        }
+        return;
+    }
+}
+
+// The pool's repair need: worn gear plus the free-money-for-repair purse.
+// Asking the pool values instead of re-scanning keeps the window in step with
+// the pool rule it borrows.
 bool RepairErrandNeeded(PlayerbotAI* ai)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
 
-    if (AI_VALUE(uint8, "durability inventory") >= 100)
-        return false;
-
-    return AI_VALUE(uint32, "min repair cost") < AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::repair);
+    return AI_VALUE(bool, "should repair") && AI_VALUE(bool, "can repair");
 }
 
-// The nearest reachable destination for one errand, searched exactly like the
-// pool's request actions: same purpose, the same entry set for class trainers,
-// the same possibility gate (the vendor search runs without it, like the pool's
-// vendor request, because the destination's own pre-filter never matches one).
+// The pool's route verdict, same call the pick runs: waypoints plus the legs
+// between them, hostile-town cells, area levels, cross-continent transfers.
+// Declared on ChooseTravelTargetAction so both paths share one five-minute
+// verdict cache.
+
+// The nearest pool-picked destination for one errand: same purpose, the same
+// class-trainer entry set, the same possibility gate the pool's vendor request
+// skips, and then the same per-point verdict SetBestTarget applies - hostile
+// town and area-level gates, the route check, same-map only.
 bool FindErrandDestination(Player* bot, PlayerbotAI* ai, DowntimeErrand errand, TravelDestination*& outDest,
     WorldPosition*& outPos)
 {
@@ -147,6 +254,18 @@ bool FindErrandDestination(Player* bot, PlayerbotAI* ai, DowntimeErrand errand, 
         for (auto& [dest, pos, dist] : points)
         {
             if (!dest || !pos || !dest->IsActive(bot, info))
+                continue;
+            if (pos->GetMapId() != bot->GetMapId())
+                continue;
+            if (pos->IsEnemyHomeZoneFor(bot->GetTeam()))
+                continue;
+            if (sPlayerbotAIConfig.avoidHostileTowns &&
+                pos->IsGuardedHostileTownFor(bot, 60.0f, false))
+                continue;
+            if (!TravelMgr::IsLocationLevelValid(*pos, info, purpose))
+                continue;
+            std::string blocker;
+            if (!ai::SharedRouteIsSurvivable(bot, pos, blocker))
                 continue;
             outDest = dest;
             outPos = pos;
@@ -212,9 +331,82 @@ DowntimeService& DowntimeService::Instance()
     return instance;
 }
 
-bool DowntimeService::IsOnDowntime(uint32_t guidLow) const
+DowntimeEngineKit SnapshotEngineKit(PlayerbotAI* ai, BotState state)
 {
-    return m_windows.count(guidLow) != 0;
+    DowntimeEngineKit kit;
+    kit.follow = ai->HasStrategy("follow", state);
+    kit.wander = ai->HasStrategy("wander", state);
+    kit.stay = ai->HasStrategy("stay", state);
+    kit.guard = ai->HasStrategy("guard", state);
+    kit.free = ai->HasStrategy("free", state);
+    kit.travelOnce = ai->HasStrategy("travel once", state);
+    kit.rpgMaintenance = ai->HasStrategy("rpg maintenance", state);
+    return kit;
+}
+
+bool EngineKitRetaken(PlayerbotAI* ai, DowntimeEngineKit const& before, BotState state)
+{
+    return ai->HasStrategy("follow", state) != before.follow ||
+        ai->HasStrategy("wander", state) != before.wander ||
+        ai->HasStrategy("stay", state) != before.stay ||
+        ai->HasStrategy("guard", state) != before.guard ||
+        ai->HasStrategy("free", state) != before.free;
+}
+
+DowntimeStrategySnapshot DowntimeService::SnapshotStrategies(PlayerbotAI* ai)
+{
+    DowntimeStrategySnapshot snapshot;
+    snapshot.reaction = SnapshotEngineKit(ai, BotState::BOT_STATE_REACTION);
+    snapshot.nonCombat = SnapshotEngineKit(ai, BotState::BOT_STATE_NON_COMBAT);
+    snapshot.combat = SnapshotEngineKit(ai, BotState::BOT_STATE_COMBAT);
+    return snapshot;
+}
+
+bool DowntimeService::MovementModeRetaken(PlayerbotAI* ai, DowntimeStrategySnapshot const& before)
+{
+    // Any owner movement-mode change ends the window: follow/wander/stay/guard
+    // deltas mean an explicit order landed, and a changed free bit means the
+    // owner (or another command path) touched the movement mode too. All three
+    // movement engines are watched: the setter writes them together.
+    return EngineKitRetaken(ai, before.reaction, BotState::BOT_STATE_REACTION) ||
+        EngineKitRetaken(ai, before.nonCombat, BotState::BOT_STATE_NON_COMBAT) ||
+        EngineKitRetaken(ai, before.combat, BotState::BOT_STATE_COMBAT);
+}
+
+void ParkEngineKit(PlayerbotAI* ai, DowntimeEngineKit const& before, BotState state)
+{
+    if (before.follow)
+        ai->ChangeStrategy("-follow", state);
+    if (before.wander)
+        ai->ChangeStrategy("-wander", state);
+    if (before.stay)
+        ai->ChangeStrategy("-stay", state);
+    if (before.guard)
+        ai->ChangeStrategy("-guard", state);
+    if (!before.free)
+        ai->ChangeStrategy("+free", state);
+    if (!before.travelOnce)
+        ai->ChangeStrategy("+travel once", state);
+    if (!before.rpgMaintenance)
+        ai->ChangeStrategy("+rpg maintenance", state);
+}
+
+void RestoreEngineKit(PlayerbotAI* ai, DowntimeEngineKit const& before, BotState state)
+{
+    if (!before.rpgMaintenance)
+        ai->ChangeStrategy("-rpg maintenance", state);
+    if (!before.travelOnce)
+        ai->ChangeStrategy("-travel once", state);
+    if (!before.free)
+        ai->ChangeStrategy("-free", state);
+    if (before.follow)
+        ai->ChangeStrategy("+follow", state);
+    if (before.wander)
+        ai->ChangeStrategy("+wander", state);
+    if (before.stay)
+        ai->ChangeStrategy("+stay", state);
+    if (before.guard)
+        ai->ChangeStrategy("+guard", state);
 }
 
 void DowntimeService::EnterErrandKit(Player* bot, Window& window)
@@ -223,18 +415,12 @@ void DowntimeService::EnterErrandKit(Player* bot, Window& window)
     if (!ai)
         return;
 
-    if (window.hadFollow)
-        ai->ChangeStrategy("-follow", BotState::BOT_STATE_NON_COMBAT);
-    if (window.hadWander)
-        ai->ChangeStrategy("-wander", BotState::BOT_STATE_NON_COMBAT);
-    ai->ChangeStrategy("+free", BotState::BOT_STATE_NON_COMBAT);
-    ai->ChangeStrategy("+travel once", BotState::BOT_STATE_NON_COMBAT);
-    // The base rpg strategy pulls in its children; the town errands live in
-    // "rpg maintenance" (train, repair). Quest, vendor and explore children
-    // stay off: an ordered errand is trainer, junk and repair only, never
-    // autonomous questing, AH, mail or flight-master roaming.
-    ai->ChangeStrategy("+rpg", BotState::BOT_STATE_NON_COMBAT);
-    ai->ChangeStrategy("-rpg quest,-rpg vendor,-rpg explore", BotState::BOT_STATE_NON_COMBAT);
+    // The town errands live in "rpg maintenance" (train, repair) without the
+    // base rpg layer, so the "service nearby npc" trigger and its quest verbs
+    // never arm: trainer, junk and repair only, never autonomous questing.
+    ParkEngineKit(ai, window.before.reaction, BotState::BOT_STATE_REACTION);
+    ParkEngineKit(ai, window.before.nonCombat, BotState::BOT_STATE_NON_COMBAT);
+    ParkEngineKit(ai, window.before.combat, BotState::BOT_STATE_COMBAT);
 }
 
 void DowntimeService::RestoreMovement(Player* bot, Window& window)
@@ -249,32 +435,27 @@ void DowntimeService::RestoreMovement(Player* bot, Window& window)
     if (TravelTarget* target = AI_VALUE(TravelTarget*, "travel target"))
         sTravelMgr.SetNullTravelTarget(target);
 
-    ai->ChangeStrategy("-rpg", BotState::BOT_STATE_NON_COMBAT);
-    ai->ChangeStrategy("-rpg quest,-rpg vendor,-rpg explore,-rpg maintenance", BotState::BOT_STATE_NON_COMBAT);
-    ai->ChangeStrategy("-travel once", BotState::BOT_STATE_NON_COMBAT);
-    ai->ChangeStrategy("-free", BotState::BOT_STATE_NON_COMBAT);
     RESET_AI_VALUE(GuidPosition, "rpg target");
 
-    if (window.hadFollow)
-        ai->ChangeStrategy("+follow", BotState::BOT_STATE_NON_COMBAT);
-    if (window.hadWander)
-        ai->ChangeStrategy("+wander", BotState::BOT_STATE_NON_COMBAT);
+    RestoreEngineKit(ai, window.before.reaction, BotState::BOT_STATE_REACTION);
+    RestoreEngineKit(ai, window.before.nonCombat, BotState::BOT_STATE_NON_COMBAT);
+    RestoreEngineKit(ai, window.before.combat, BotState::BOT_STATE_COMBAT);
 }
 
-bool DowntimeService::Start(Player* bot, Player* master, std::string& reply)
+DowntimeStartVerdict DowntimeService::Start(Player* bot, Player* master, std::string& reply)
 {
     PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
     if (!bot || !ai || !master)
     {
         reply = "has no AI yet.";
-        return false;
+        return DowntimeStartVerdict::Refused;
     }
 
     uint32_t const guidLow = bot->GetGUIDLow();
     if (m_windows.count(guidLow))
     {
         reply = "is already out on its errands.";
-        return true;
+        return DowntimeStartVerdict::AlreadyOut;
     }
 
     BotRecord* record = BotManager::Instance().FindBot(bot->GetObjectGuid());
@@ -288,15 +469,15 @@ bool DowntimeService::Start(Player* bot, Player* master, std::string& reply)
     {
         case DowntimeStartRefusal::Dead:
             reply = "is dead.";
-            return false;
+            return DowntimeStartVerdict::Refused;
         case DowntimeStartRefusal::Autonomous:
             reply = "already plays on its own and runs its own errands.";
-            return false;
+            return DowntimeStartVerdict::Refused;
         case DowntimeStartRefusal::NotOwnedAlt:
             reply = hired ? "is a hired companion, not one of your own alts."
                           : (randomPool ? "is a pool bot, not one of your own alts."
                                         : "is not one of your own alts.");
-            return false;
+            return DowntimeStartVerdict::Refused;
         default:
             break;
     }
@@ -306,16 +487,21 @@ bool DowntimeService::Start(Player* bot, Player* master, std::string& reply)
     Window window;
     window.masterGuid = master->GetObjectGuid();
     window.startedAt = time(nullptr);
-    window.hadFollow = ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT);
-    window.hadWander = ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT);
+    window.before = SnapshotStrategies(ai);
 
     bool anyNeed = false;
     DowntimeErrand first = ArmNextErrand(bot, ai, window.tried, anyNeed);
     if (first == DowntimeErrand::None)
     {
+        // ArmNextErrand re-arms the walker for the leg it picked; a refusal
+        // must leave the bot untouched.
+        if (TravelTarget* target = AI_VALUE(TravelTarget*, "travel target"))
+            sTravelMgr.SetNullTravelTarget(target);
+        if (!window.before.travelOnce && ai->HasStrategy("travel once", BotState::BOT_STATE_NON_COMBAT))
+            ai->ChangeStrategy("-travel once", BotState::BOT_STATE_NON_COMBAT);
         reply = anyNeed ? "cannot reach a class trainer or vendor from here: nothing in range."
                         : "needs nothing: no affordable spell rank, no junk, no repairs.";
-        return false;
+        return DowntimeStartVerdict::Refused;
     }
     window.current = first;
 
@@ -337,7 +523,7 @@ bool DowntimeService::Start(Player* bot, Player* master, std::string& reply)
     }
 
     reply = "is off on its errands: " + errands + ". It comes back to you afterwards.";
-    return true;
+    return DowntimeStartVerdict::Ok;
 }
 
 void DowntimeService::End(uint32_t guidLow, Window& window, char const* note)
@@ -348,6 +534,18 @@ void DowntimeService::End(uint32_t guidLow, Window& window, char const* note)
         if (Player* master = sObjectAccessor.FindPlayer(window.masterGuid))
             TellMaster(master, std::string(bot->GetName()) + " " + note + " and is on its way back to you.");
     }
+}
+
+void DowntimeService::OnBotLogout(Player* bot)
+{
+    if (!bot)
+        return;
+    DowntimeService& service = DowntimeService::Instance();
+    auto it = service.m_windows.find(bot->GetGUIDLow());
+    if (it == service.m_windows.end())
+        return;
+    service.End(it->first, it->second, "had to break off its errands");
+    service.m_windows.erase(it);
 }
 
 void DowntimeService::Update()
@@ -362,9 +560,18 @@ void DowntimeService::Update()
 
         Player* bot = sObjectAccessor.FindPlayer(::ObjectGuid(HIGHGUID_PLAYER, guidLow));
         PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
-        if (!bot || !ai || !bot->IsInWorld())
+        if (!ai)
         {
-            // The bot is gone (logout, reclaim): there is nothing left to restore.
+            // The AI is gone (logout, reclaim): there is nothing left to restore.
+            it = m_windows.erase(it);
+            continue;
+        }
+        if (!bot || !bot->IsInWorld())
+        {
+            // Transiently out of world (teleport, map transfer): restore the
+            // kit while the AI still exists instead of leaking the window's
+            // strategies across it.
+            End(guidLow, window, "had to break off its errands");
             it = m_windows.erase(it);
             continue;
         }
@@ -380,11 +587,8 @@ void DowntimeService::Update()
         bool const masterGone = !master || !master->IsInWorld() || !master->GetSession() ||
             !master->GetSession()->HasNetworkTransport();
         bool const expired = DowntimeWindowExpired(window.startedAt, now);
-        // The owner retargeted the bot (a follow order or a strategy change):
-        // explicit orders beat the errand, so hand it back.
-        bool const retaken = !ai->HasStrategy("free", BotState::BOT_STATE_NON_COMBAT) ||
-            ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
-            ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT);
+        // An explicit owner movement order ends the window immediately.
+        bool const retaken = MovementModeRetaken(ai, window.before);
         if (masterGone || !bot->IsAlive() || bot->InBattleGround() || expired || retaken)
         {
             End(guidLow, window,
@@ -451,7 +655,7 @@ void DowntimeService::Update()
                 nowMs - window.lastArrivalMs >= kDowntimeSellMs)
             {
                 window.lastArrivalMs = nowMs;
-                ai->DoSpecificAction("sell", Event("downtime", "", master), true);
+                SellDowntimeJunk(ai, bot, master);
             }
             ++it;
             continue;

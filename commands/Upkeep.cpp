@@ -262,13 +262,20 @@ bool HandleDowntime(ChatHandler* handler, char const* args)
 
     uint32 ordered = 0;
     std::string firstRefusal;
+    std::string alreadyOut;
     for (Player* bot : scope)
     {
         std::string reply;
-        if (DowntimeService::Instance().Start(bot, requester, reply))
+        DowntimeStartVerdict verdict = DowntimeService::Instance().Start(bot, requester, reply);
+        if (verdict == DowntimeStartVerdict::Ok)
         {
             ++ordered;
             handler->PSendSysMessage("Bot %s %s", bot->GetName(), reply.c_str());
+        }
+        else if (verdict == DowntimeStartVerdict::AlreadyOut)
+        {
+            if (alreadyOut.empty())
+                alreadyOut = std::string(bot->GetName()) + " " + reply;
         }
         else if (firstRefusal.empty())
             firstRefusal = std::string(bot->GetName()) + " " + reply;
@@ -276,6 +283,13 @@ bool HandleDowntime(ChatHandler* handler, char const* args)
 
     if (!ordered)
     {
+        // A repeat order changes nothing: report it as already-out, not as a
+        // fresh success, so retry logic can tell the two apart.
+        if (!alreadyOut.empty() && firstRefusal.empty())
+        {
+            SendActionError(handler, "downtime", "already-out", alreadyOut.c_str());
+            return true;
+        }
         SendActionError(handler, "downtime", "refused", firstRefusal.c_str());
         return true;
     }

@@ -1237,7 +1237,7 @@ void BotManager::OnPlayerBeforeLogout(::Player* player)
     }
     else
         AltBotService::Instance().OnBotLogout(player);
-
+    TortoiseBots::DowntimeService::OnBotLogout(player);
     auto it = m_bots.find(player->GetObjectGuid().GetCounter());
     if (it == m_bots.end())
         return;

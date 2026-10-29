@@ -50,6 +50,60 @@ static void TestErrandDone()
     assert(DowntimeErrandDone(DowntimeErrand::None, true, true, true));
 }
 
+// The junk predicate probe and sale share: a bag grey with a price, never
+// soulbound, never equipped. Fed plain values so the header stays core-free.
+static bool DowntimeJunkProbe(uint32_t quality, bool hasSellPrice, bool soulbound, bool equipped)
+{
+    if (quality != 0 /* ITEM_QUALITY_POOR */ || !hasSellPrice)
+        return false;
+    return !soulbound && !equipped;
+}
+
+static void TestJunkPredicate()
+{
+    // One normal grey: junk.
+    assert(DowntimeJunkProbe(0, true, false, false));
+    // Bound or worn stock is never junk, so probe and sale agree.
+    assert(!DowntimeJunkProbe(0, true, true, false));
+    assert(!DowntimeJunkProbe(0, true, false, true));
+    assert(!DowntimeJunkProbe(0, true, true, true));
+    // Whites, unsellable and free items are not junk.
+    assert(!DowntimeJunkProbe(1, true, false, false));
+    assert(!DowntimeJunkProbe(0, false, false, false));
+}
+
+// Any owner movement-mode delta ends the window (follow/wander/stay/guard and
+// the free bit), so stay/guard orders cannot strand the bot. Fed plain values
+// like the snapshot above.
+struct DowntimeMovementKit
+{
+    bool follow = false;
+    bool wander = false;
+    bool stay = false;
+    bool guard = false;
+    bool free = false;
+};
+
+static bool DowntimeMovementRetaken(DowntimeMovementKit const& before, DowntimeMovementKit const& now)
+{
+    return now.follow != before.follow || now.wander != before.wander || now.stay != before.stay ||
+        now.guard != before.guard || now.free != before.free;
+}
+
+static void TestMovementModeRetaken()
+{
+    DowntimeMovementKit const out = { false, false, false, false, true };
+    // Unchanged kit: the window continues.
+    assert(!DowntimeMovementRetaken(out, out));
+    // Follow, stay, guard and wander orders all end it.
+    assert(DowntimeMovementRetaken(out, { true, false, false, false, true }));
+    assert(DowntimeMovementRetaken(out, { false, true, false, false, true }));
+    assert(DowntimeMovementRetaken(out, { false, false, true, false, true }));
+    assert(DowntimeMovementRetaken(out, { false, false, false, true, true }));
+    // A dropped free bit (another path touching the mode) ends it too.
+    assert(DowntimeMovementRetaken(out, { false, false, false, false, false }));
+}
+
 static void TestWindowCap()
 {
     time_t const start = 1000000;
@@ -63,6 +117,8 @@ int main()
     TestStart();
     TestErrandOrder();
     TestErrandDone();
+    TestJunkPredicate();
+    TestMovementModeRetaken();
     TestWindowCap();
     std::cout << "downtime policy tests passed\n";
     return 0;
