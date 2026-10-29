@@ -820,10 +820,18 @@
 
   function parseRoute() {
     const [path, query] = window.location.hash.replace(/^#\/?/, '').split('?');
+    const segs = path.split('/');
+    const tab = HASH_TO_TAB[segs[0]] || null;
+    // #/commanders/<name> opens that commander's tab; #/commanders is All raids.
+    let cmd = null;
+    if (tab === 'commanders' && segs.length > 1) {
+      const rest = segs.slice(1).join('/').replace(/\/+$/, '');
+      if (rest) { try { cmd = decodeURIComponent(rest); } catch (e) { cmd = rest; } }
+    }
     const q = new URLSearchParams(query || '');
     const bot = parseInt(q.get('bot'), 10);
     const map = parseInt(q.get('map'), 10);
-    return { tab: HASH_TO_TAB[path] || null, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1', run: q.get('run'), map: Number.isFinite(map) && map > 0 ? map : null };
+    return { tab, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1', run: q.get('run'), map: Number.isFinite(map) && map > 0 ? map : null, cmd };
   }
 
   function routeHash(r) {
@@ -834,15 +842,17 @@
     }
     if (r.run) q.set('run', r.run);
     const qs = q.toString();
-    return `#/${TABS[r.tab].hash}${qs ? `?${qs}` : ''}`;
+    const cmd = r.tab === 'commanders' && r.cmd ? '/' + encodeURIComponent(r.cmd) : '';
+    return `#/${TABS[r.tab].hash}${cmd}${qs ? `?${qs}` : ''}`;
   }
 
   // Change the route: switching tab closes the profile unless a bot is given;
   // switching only the profile tab replaces the history entry.
   function go(partial, opts) {
-    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.dungeons.openKey }, partial);
+    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.dungeons.openKey, cmd: null }, partial);
     if (partial.tab && !('bot' in partial)) next.bot = null;
     if (partial.tab && !('run' in partial)) next.run = null;
+    if (partial.tab && !('cmd' in partial)) next.cmd = null;
     const hash = routeHash(next);
     if (opts && opts.replace) {
       history.replaceState(null, '', hash);
@@ -860,8 +870,12 @@
     const tab = r.tab || state.activeTab;
     const prevRunKey = state.dungeons.openKey;
     state.dungeons.openKey = tab === 'dungeons' && r.run ? r.run : null;
+    // The Commanders page's Fight debugger mode and its open tab come from the hash before the tab renders.
+    const prevCmd = fdPage.open;
+    if (tab === 'commanders') cmdRouteTab(r);
     if (tab !== state.activeTab || !routeApplied) showTab(tab);
     else if (tab === 'dungeons' && state.dungeons.openKey !== prevRunKey) renderDungeons();
+    else if (tab === 'commanders' && fdPage.open !== prevCmd) renderCommanders();
     routeApplied = true;
     if (r.demo && tab === 'commanders') setCmdDemo(true, true); // #/commanders?demo=1
     if (r.map && tab === 'dungeon-runs') dgSelect(r.map); // #/dungeon-runs?map=209 (the glance panel's links)
@@ -5018,6 +5032,289 @@
   const cmdPlans = {};        // plan name -> {plan: the daemon's /api/v1/plans answer | null, err, at (unix ms of the answer), loading}
   let cmdTrailsLoading = false;
 
+  // ---- Fight debugger mode: one tab per raid, All raids first ------------------------------
+  // The Commanders page has two views, kept per browser: Live keeps today's stacked cards, the Fight debugger shows the tab
+  // strip and renders the one open commander's card (or the All raids grid). The open tab is in the URL hash, so a reload,
+  // Back and Forward land on the same card. The strip reads only the /api/v1/commanders report; fight summaries are the one
+  // extra request (one per commander, at most every 10 s), and fight details/track/plan belong to the open tab alone.
+  const fdPageStore = (() => { try { return window.localStorage; } catch (e) { return null; } })();
+  const fdPage = {
+    mode: null, explicit: false, loaded: false,          // live | debug, and whether the browser chose
+    open: null,                                          // null = All raids, else the commander name
+    gone: {}, known: {}, last: {}, openedAt: {},         // tabs of commanders that disappeared (5 min) and the seen clock
+    gridQueued: false,
+  };
+  const fdPageSeen = FdTabs.loadSeen(fdPageStore);
+
+  function cmdPageMode() {
+    if (!fdPage.loaded) {
+      fdPage.loaded = true;
+      try {
+        const v = fdPageStore && fdPageStore.getItem(FdTabs.PAGE_KEY);
+        if (v === 'live' || v === 'debug') { fdPage.mode = v; fdPage.explicit = true; }
+      } catch (e) { /* a storage that throws leaves the default */ }
+    }
+    if (fdPage.explicit) return fdPage.mode || 'live';
+    // Nothing saved: a raid opens the debugger (as a raid card did), a party or an empty page stays Live.
+    return state.commanders.list.some(b => !b.demo && CmdView.isRaid(b)) ? 'debug' : 'live';
+  }
+
+  function cmdPageSetMode(mode, opts) {
+    const next = mode === 'live' ? 'live' : 'debug';
+    const same = fdPage.loaded && cmdPageMode() === next;
+    fdPage.mode = next;
+    fdPage.explicit = true;
+    fdPage.loaded = true;
+    try { if (fdPageStore) fdPageStore.setItem(FdTabs.PAGE_KEY, fdPage.mode); } catch (e) { /* nothing to remember */ }
+    if (opts && opts.quiet) return;
+    if (same) { cmdPaintPageMode(next); return; } // clicking the view that is already on only remembers it
+    fdStopCard(fdPage.open);
+    fdPage.open = null;
+    fdTabHash(null, true);
+    renderCommanders();
+  }
+
+  function cmdPaintPageMode(mode) {
+    const el = document.getElementById('cmd-page-mode');
+    if (!el) return;
+    const m = mode || cmdPageMode();
+    el.querySelectorAll('[data-page-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.pageMode === m ? 'true' : 'false'));
+  }
+
+  // The hash decides the open tab (and, when it names one, the debugger); #/commanders is All raids.
+  function cmdRouteTab(r) {
+    if (r.cmd) {
+      cmdPageSetMode('debug', { quiet: true });
+      if (fdPage.open !== r.cmd) {
+        fdStopCard(fdPage.open);
+        fdPage.open = r.cmd;
+        fdSeenWhenOpen(r.cmd);
+      }
+      return;
+    }
+    if (fdPage.open !== null) { fdStopCard(fdPage.open); fdPage.open = null; }
+  }
+
+  function fdTabHash(name, replace) {
+    const q = new URLSearchParams((window.location.hash.split('?')[1]) || '');
+    const qs = q.toString();
+    const hash = FdTabs.hashFor(name) + (qs ? '?' + qs : '');
+    if (window.location.hash === hash) return;
+    try { (replace ? history.replaceState : history.pushState).call(history, null, '', hash); } catch (e) { window.location.hash = hash; }
+  }
+
+  function fdSeenWhenOpen(name) {
+    const nowSec = Date.now() / 1000;
+    fdPage.openedAt[name] = nowSec;
+    const rows = (cmdFightsCache[name] && cmdFightsCache[name].list) || (cmdFd[name] && cmdFd[name].list) || [];
+    const seen = rows.filter(r => FdTabs.rowEnd(r) <= nowSec);
+    if (seen.length) { FdTabs.markSeen(fdPageSeen, seen); FdTabs.saveSeen(fdPageStore, fdPageSeen); }
+  }
+
+  // A fight that ended before the tab was opened is seen; one that ends while the card is open is not (the rule is "opened
+  // after that fight ended"). The list can arrive after the open, hence the clock the open recorded.
+  function fdTabListSeen(name, list) {
+    if (fdPage.open !== name || !fdPage.openedAt[name]) return;
+    const seen = (list || []).filter(r => FdTabs.rowEnd(r) <= fdPage.openedAt[name]);
+    if (seen.length) { FdTabs.markSeen(fdPageSeen, seen); FdTabs.saveSeen(fdPageStore, fdPageSeen); }
+  }
+
+  function fdTabOpen(name) {
+    name = name || null;
+    if (cmdPageMode() !== 'debug') cmdPageSetMode('debug', { quiet: true });
+    if (name === fdPage.open) { fdTabHash(name, true); return; }
+    fdStopCard(fdPage.open);
+    fdPage.open = name;
+    if (name) fdSeenWhenOpen(name);
+    renderCommanders();
+    fdTabHash(name, false);
+  }
+
+  function fdStopCard(key) {
+    const fd = key != null ? cmdFd[key] : null;
+    const card = key != null ? cmdCards.get(key) : null;
+    if (card) card.classList.remove('fd-on');
+    if (!fd) return;
+    if (fd.rp) { clearTimeout(fd.rp.timer); fd.rp.playing = false; }
+    if (fd.run) { clearTimeout(fd.run.timer); fd.run.playing = false; fd.run.on = false; }
+    fd.loading = false;
+  }
+
+  // A commander that was on the page and is not in the report any more keeps its last plan and place for the gone tab.
+  function fdTabsSync(all) {
+    const real = (all || []).filter(b => !b.demo);
+    const keys = {};
+    real.forEach(b => {
+      keys[b.commander] = true;
+      delete fdPage.gone[b.commander];
+      fdPage.known[b.commander] = true;
+      fdPage.last[b.commander] = {
+        plan: (b.run && b.run.plan) || '',
+        place: cmdPlace(b),
+        state: FdTabs.stateOf(b, CmdView.stateWord(b, CmdView.context(cmdTracker, b, cmdNowFor(b)))),
+      };
+    });
+    // A hash naming a commander the first report does not carry is a gone tab too; a later report revives it.
+    if (state.commanders.fresh && fdPage.open && !keys[fdPage.open] && !fdPage.gone[fdPage.open]) {
+      fdPage.gone[fdPage.open] = { since: Date.now() };
+    }
+    Object.keys(fdPage.known).forEach(k => {
+      if (keys[k]) return;
+      if (!fdPage.gone[k]) fdPage.gone[k] = { since: Date.now() };
+    });
+    Object.keys(fdPage.gone).forEach(k => {
+      if (keys[k]) { delete fdPage.gone[k]; return; }
+      if (Date.now() - fdPage.gone[k].since <= FdTabs.GONE_MS) return;
+      delete fdPage.gone[k];
+      delete fdPage.known[k];
+      delete fdPage.last[k];
+      delete fdPage.openedAt[k];
+      if (fdPage.open === k) { fdStopCard(k); fdPage.open = null; fdTabHash(null, true); }
+    });
+  }
+
+  const fdTabGone = key => key != null && !!fdPage.gone[key];
+
+  function fdTabsModel(all) {
+    const rows = FdTabs.sortBinds((all || []).filter(b => !b.dungeon)).map(b => {
+      const nowSec = cmdNowFor(b);
+      return {
+        key: b.commander, name: b.commander, place: cmdPlace(b), plan: (b.run && b.run.plan) || '',
+        state: FdTabs.stateOf(b, CmdView.stateWord(b, CmdView.context(cmdTracker, b, nowSec))),
+        dead: FdTabs.deadCount(b), gone: false, demo: !!b.demo,
+      };
+    });
+    const gone = Object.keys(fdPage.gone).filter(k => !rows.some(r => r.key === k)).sort().map(k => {
+      const m = fdPage.last[k] || {};
+      return { key: k, name: k, place: m.place || '', plan: m.plan || '', state: m.state || 'idle', dead: 0, gone: true };
+    });
+    return FdTabs.model(rows.concat(gone), { fights: cmdFightsCache, seen: fdPageSeen });
+  }
+
+  // The strip: All raids (N) first, then one tab per commander. Rebuilding it keeps the keyboard on the same tab.
+  function fdTabPaint(tabs, mode) {
+    const el = document.getElementById('cmd-tabs');
+    if (!el) return;
+    const show = mode === 'debug' && (tabs || []).length > 0;
+    el.hidden = !show;
+    if (!show) { setHtml(el, ''); return; }
+    const act = document.activeElement;
+    let focusKey = null;
+    if (act && el.contains(act) && act.dataset) focusKey = act.dataset.fdtabAll != null ? 'all' : (act.dataset.fdtab || null);
+    setHtml(el, fdTabsHtml(tabs, fdPage.open));
+    if (focusKey == null) return;
+    const back = Array.from(el.querySelectorAll('[role="tab"]')).find(b => (focusKey === 'all' ? b.dataset.fdtabAll != null : b.dataset.fdtab === focusKey));
+    if (back) back.focus();
+  }
+
+  // The All raids grid's fight summaries: one request per commander, cached 10 s by the shared feed.
+  function fdGridPaintSoon() {
+    if (fdPage.gridQueued) return;
+    fdPage.gridQueued = true;
+    Promise.resolve().then(() => { fdPage.gridQueued = false; fdGridPaint(); });
+  }
+
+  function fdGridPaint() {
+    if (cmdPageMode() !== 'debug' || fdPage.open) return;
+    const all = cmdAllBinds().filter(b => !b.dungeon);
+    const tabs = fdTabsModel(all);
+    fdTabPaint(tabs, 'debug');
+    const grid = document.getElementById('cmd-overview');
+    if (grid && !grid.hidden) setHtml(grid, fdGridHtml(FdTabs.sortBinds(all), tabs));
+  }
+
+  function fdGridPoll(all) {
+    (all || []).forEach(bind => {
+      if (bind.demo) return;
+      cmdRaidFights(bind, () => fdGridPaintSoon());
+    });
+  }
+
+  // A small, static map for an All raids card: the picture and the party's dots, no layers, trails or replay.
+  function fdMiniMapSvg(bind) {
+    const lead = CmdView.leadBot(bind) || (bind.bots || [])[0];
+    if (!lead || !Number.isFinite(lead.x) || !Number.isFinite(lead.y)) return '<span class="cmd-mini-empty">no position</span>';
+    const onMap = (bind.bots || []).filter(b => b && b.map === lead.map && Number.isFinite(b.x) && Number.isFinite(b.y));
+    const pl = bind.demo ? (state.commanders.realMaps ? CmdView.pictureSlots(CmdDemo.pictures(lead.map)) : []) : ensureCmdPics(lead.map);
+    const slots = Array.isArray(pl) ? pl : [];
+    const pick = CmdView.pictureChoice(slots, '').slot;
+    const W = 260, H = 132, pad = 26;
+    const pts = onMap.map(b => CmdView.project(b.x, b.y));
+    const v = CmdView.followView(pts, W, H, pad, 40, null);
+    const box = CmdView.viewBox(v, W, H);
+    const k = 1 / v.scale, f = n => n.toFixed(2);
+    let g = pick ? `<image class="bg" href="${esc(pick.url)}" x="${pick.x}" y="${pick.y}" width="${pick.w}" height="${pick.h}" preserveAspectRatio="none"/>` : '';
+    onMap.forEach(b => {
+      const p = CmdView.project(b.x, b.y), role = CmdView.roleKey(b);
+      const sg = typeof b.sub === 'number' && b.sub >= 0 && b.sub <= 7 ? ' sg sg-' + b.sub : '';
+      g += `<g class="bot ${role}${sg}"><circle class="dot" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(6 * k)}"/></g>`;
+    });
+    return `<svg class="cmd-map cmd-minimap" viewBox="${box.map(f).join(' ')}" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet">${g}</svg>`;
+  }
+
+  function renderFdPage(all, tabs, listEl) {
+    const grid = document.getElementById('cmd-overview');
+    const open = fdPage.open;
+    if (!open) {
+      fdLeaveCard();
+      if (listEl) { listEl.hidden = true; listEl.innerHTML = ''; }
+      if (grid) { grid.hidden = false; setHtml(grid, fdGridHtml(FdTabs.sortBinds(all), tabs)); }
+      fdGridPoll(all);
+      return;
+    }
+    if (grid) { grid.hidden = true; setHtml(grid, ''); }
+    if (listEl) listEl.hidden = false;
+    if (fdTabGone(open)) {
+      fdLeaveCard();
+      if (listEl) listEl.innerHTML = `<div class="card cmd-gone"><h2 class="cmd-gone-title">${esc(open)} is gone</h2><p class="empty-hint">The commander unbound or logged out. Its tab stays greyed for five minutes, then drops and this page goes back to All raids.</p></div>`;
+      return;
+    }
+    const bind = cmdFindBind(open);
+    if (!bind) {
+      fdLeaveCard();
+      if (listEl) listEl.innerHTML = `<div class="card cmd-gone"><h2 class="cmd-gone-title">${esc(open)}</h2><p class="empty-hint">Waiting for this commander in the next report from the game server.</p></div>`;
+      return;
+    }
+    cmdCards.forEach((card, key) => {
+      if (key === open) return;
+      fdStopCard(key);
+      card.remove();
+      cmdCards.delete(key);
+    });
+    let card = cmdCards.get(open);
+    if (!card) { card = newCmdCard(open); cmdCards.set(open, card); }
+    Array.from(listEl.children).forEach(el => { if (el !== card) el.remove(); });
+    if (listEl.firstChild !== card) listEl.insertBefore(card, listEl.firstChild || null);
+    cmdRenderCard(card, bind, true);
+  }
+
+  function fdLeaveCard() {
+    cmdCards.forEach((card, key) => {
+      fdStopCard(key);
+      card.remove();
+      cmdCards.delete(key);
+    });
+  }
+
+  function renderLivePage(all, listEl) {
+    const grid = document.getElementById('cmd-overview');
+    if (grid) { grid.hidden = true; setHtml(grid, ''); }
+    if (listEl) listEl.hidden = false;
+    if (listEl) listEl.querySelectorAll(':scope > .cmd-gone').forEach(el => el.remove());
+    const keys = all.map(b => b.commander);
+    cmdCards.forEach((card, key) => {
+      if (!keys.includes(key)) { cmdForgetCard(key); return; }
+      if (card.classList.contains('fd-on')) { fdStopCard(key); card.remove(); cmdCards.delete(key); }
+    });
+    all.forEach((bind, i) => {
+      let card = cmdCards.get(bind.commander);
+      if (!card) { card = newCmdCard(bind.commander); cmdCards.set(bind.commander, card); }
+      if (listEl.children[i] !== card) listEl.insertBefore(card, listEl.children[i] || null);
+      cmdRenderCard(card, bind, false);
+    });
+  }
+
+
   // A departed commander's card and everything keyed by it: the maps, the layers, the debugger's picks and detail cache and the
   // fights list (a list fetch still in flight drops its callbacks).
   function cmdForgetCard(key) {
@@ -5039,6 +5336,7 @@
     delete cmdAvail[key];
     const fd = cmdFd[key];
     if (fd && fd.rp) { clearTimeout(fd.rp.timer); fd.rp.playing = false; }
+    if (fd && fd.run) { clearTimeout(fd.run.timer); fd.run.playing = false; fd.run.on = false; }
     delete cmdFd[key];
     delete cmdFightsCache[key];
     delete cmdFightsPending[key];
@@ -5133,6 +5431,42 @@
       MapLayers.DEFS.forEach(d => { cmdLayers = MapLayers.set(cmdLayers, d.key, true); }); // for this page only: not saved
       cmdCards.forEach((_, k) => drawCmdMap(k));
       paintCmdLayers();
+    });
+  }
+
+  // The strip, the All raids grid and the Live / Fight debugger switch. A tab or a card opens that commander; the arrow keys
+  // walk the strip (the tabs keep Enter and Space, being buttons).
+  function initCmdTabs() {
+    const el = document.getElementById('cmd-tabs');
+    if (el) {
+      el.addEventListener('click', e => {
+        const t = e.target.closest && e.target.closest('[role="tab"]');
+        if (!t || !el.contains(t)) return;
+        fdTabOpen(t.dataset.fdtabAll != null ? null : fdDecodeKey(t.dataset.fdtab));
+      });
+      el.addEventListener('keydown', e => {
+        const k = e.key;
+        if (k !== 'ArrowLeft' && k !== 'ArrowRight' && k !== 'Home' && k !== 'End') return;
+        const tabs = Array.from(el.querySelectorAll('[role="tab"]'));
+        let i = tabs.indexOf(document.activeElement);
+        if (i < 0) i = tabs.findIndex(b => b.getAttribute('aria-selected') === 'true');
+        if (i < 0) return;
+        const j = k === 'Home' ? 0 : k === 'End' ? tabs.length - 1 : (i + (k === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
+        if (!tabs[j]) return;
+        e.preventDefault();
+        tabs[j].focus();
+        fdTabOpen(tabs[j].dataset.fdtabAll != null ? null : fdDecodeKey(tabs[j].dataset.fdtab));
+      });
+    }
+    const overview = document.getElementById('cmd-overview');
+    if (overview) overview.addEventListener('click', e => {
+      const t = e.target.closest && e.target.closest('[data-fdtab]');
+      if (t) fdTabOpen(fdDecodeKey(t.dataset.fdtab));
+    });
+    const mode = document.getElementById('cmd-page-mode');
+    if (mode) mode.addEventListener('click', e => {
+      const b = e.target.closest && e.target.closest('[data-page-mode]');
+      if (b) cmdPageSetMode(b.dataset.pageMode);
     });
   }
 
@@ -5235,6 +5569,49 @@
   };
   function cmdIcon(role, title) {
     return `<span class="cmd-role ${role}" title="${esc(title)}"><svg viewBox="0 0 16 16" aria-hidden="true">${CMD_ICONS[role] || CMD_ICONS.other}</svg></span>`;
+  }
+
+  // ---- Fight debugger mode: the tab strip and the All raids grid --------------------------
+  // The strip is a tablist: All raids first, then one tab per commander (in combat first, then by name). Every name, plan,
+  // place and state is escaped; the state class is a fixed word, never a name. aria-selected and tabindex follow the open tab.
+  function fdTabsHtml(tabs, open) {
+    const rows = Array.isArray(tabs) ? tabs : [];
+    const n = rows.filter(t => !t.gone && !t.demo).length;
+    const tab = (sel, attrs, body, gone) =>
+      `<button type="button" role="tab" class="cmd-tab${sel ? ' on' : ''}${gone ? ' gone' : ''}" ${attrs} aria-selected="${sel ? 'true' : 'false'}" tabindex="${sel ? '0' : '-1'}">${body}</button>`;
+    let html = tab(open == null, 'data-fdtab-all="1"', `<span class="cmd-tab-label">All raids (${n})</span>`, false);
+    rows.forEach(t => {
+      const sel = open != null && t.key === open;
+      const state = t.state || 'idle';
+      html += tab(sel, `data-fdtab="${esc(encodeURIComponent(t.key))}"`,
+        `<span class="cmd-tab-name">${esc(t.name || t.key)}</span>`
+        + (t.plan || t.place ? `<span class="cmd-tab-sep" aria-hidden="true">&middot;</span><span class="cmd-tab-place">${esc(t.plan || t.place)}</span>` : '')
+        + `<span class="cmd-chip s-${esc(state)}">${esc(state)}</span>`
+        + (numOr0(t.dead) > 0 ? `<span class="cmd-tab-dead">${numOr0(t.dead)} dead</span>` : '')
+        + (t.dot ? '<span class="cmd-tab-dot" title="A new fight needs a look" aria-label="A new fight needs a look"></span>' : '')
+        + (t.gone ? '<span class="cmd-tab-gone">gone</span>' : ''), !!t.gone);
+    });
+    return html;
+  }
+
+  // One small card per commander on the All raids tab: name, plan and step, state, dead count, the newest fight's verdict and
+  // a static mini map. The whole card opens the commander's tab.
+  function fdGridHtml(binds, tabs) {
+    const rows = Array.isArray(tabs) ? tabs : [];
+    return (Array.isArray(binds) ? binds : []).map(bind => {
+      const t = rows.find(r => r.key === bind.commander) || {};
+      const run = bind.run || {};
+      const step = numOr0(run.step) > 0 ? 'step ' + run.step + (numOr0(run.steps) > 0 ? '/' + run.steps : '') : '';
+      const verdict = t.last ? t.verdict : '';
+      return `<button type="button" class="cmd-mini${t.gone ? ' gone' : ''}" data-fdtab="${esc(encodeURIComponent(bind.commander))}" title="Open ${esc(bind.commander)}">`
+        + `<span class="cmd-mini-head"><b class="cmd-mini-name">${esc(bind.commander)}</b><span class="cmd-chip s-${esc(t.state || 'idle')}">${esc(t.state || 'idle')}</span></span>`
+        + `<span class="cmd-mini-sub">${esc(t.plan || t.place || 'no plan')}${step ? ' &middot; ' + esc(step) : ''}</span>`
+        + `<span class="cmd-mini-map">${fdMiniMapSvg(bind)}</span>`
+        + `<span class="cmd-mini-foot">`
+        + (numOr0(t.dead) > 0 ? `<span class="cmd-mini-dead">${numOr0(t.dead)} dead</span>` : '')
+        + (verdict ? `<span class="cmd-mini-verdict v-${esc(verdict)}">last fight: ${esc(verdict)}</span>` : '<span class="cmd-mini-verdict v-none">no fight yet</span>')
+        + '</span></button>';
+    }).join('');
   }
 
   function cmdPlace(bind) {
@@ -5349,6 +5726,20 @@
   const CMD_GEAR_PRESETS = ['lkh', 'zg', 'aq20', 'timbermaw', 'onyxia', 'mc', 'bwl', 'es', 'aq40', 'naxx', 'kara40', 'prebis', 't1', 't2'];
   const cmdFightsCache = {}; // commander -> {list, at}: the fights behind the Deaths panel (and the Fights panel below)
   const cmdFightsPending = {}; // commander -> callbacks of the one list fetch in flight
+  // One fights-summary feed for the whole page: the open tab, the Deaths panel and the All raids grid share the answer held
+  // for 10 s, so a busy page never sends one request per card per refresh.
+  let fdFights = null, fdFightsCache = null, fdFightsPending = null;
+  function fdFightsFeed() {
+    if (!fdFights || fdFightsCache !== cmdFightsCache || fdFightsPending !== cmdFightsPending) {
+      fdFightsCache = cmdFightsCache;
+      fdFightsPending = cmdFightsPending;
+      fdFights = FdTabs.newFights({
+        cache: fdFightsCache, pending: fdFightsPending,
+        fetchRows: key => fetch('/api/v1/combat/fights?commander=' + encodeURIComponent(key)).then(jsonOrThrow),
+      });
+    }
+    return fdFights;
+  }
   let cmdControlOn = null;   // null: not asked yet; the page asks once per load
 
   function cmdControlAsk(cb) {
@@ -5359,21 +5750,10 @@
     }).catch(() => { cmdControlOn = false; cb(false); });
   }
   function cmdRaidFights(bind, cb) {
-
-    const c = cmdFightsCache[bind.commander];
-    if (c && Date.now() - c.at < 30000) { cb(c.list); return; }
-    const waiting = cmdFightsPending[bind.commander];
-    if (waiting) { waiting.push(cb); return; }
-    cmdFightsPending[bind.commander] = [cb];
-    const done = list => {
-      const cbs = cmdFightsPending[bind.commander] || [];
-      delete cmdFightsPending[bind.commander];
-      cbs.forEach(f => f(list));
-    };
-    fetch('/api/v1/combat/fights?commander=' + encodeURIComponent(bind.commander)).then(jsonOrThrow).then(list => {
-      cmdFightsCache[bind.commander] = { list: Array.isArray(list) ? list : [], at: Date.now() };
-      done(cmdFightsCache[bind.commander].list);
-    }).catch(() => done(c ? c.list : null));
+    fdFightsFeed().list(bind.commander, list => {
+      fdTabListSeen(bind.commander, list);
+      if (cb) cb(list);
+    });
   }
 
 
@@ -6283,7 +6663,6 @@
         <div class="cmd-headr">
           <div class="cmd-badges"></div>
           <label class="refresh-picker fd-refresh" hidden title="How often the maps and cards show new data. Kept in this browser."><span>Refresh every</span><select data-refresh-select aria-label="Refresh every"></select></label>
-          <div class="cmd-mode" role="group" aria-label="Card view" hidden><button type="button" data-mode="live" aria-pressed="true">Live</button><button type="button" data-mode="debug" aria-pressed="false">Fight debugger</button></div>
         </div>
       </div>
       <div class="cmd-sub"></div>
@@ -6369,18 +6748,10 @@
     // The debugger: the mode toggle, the fight rail, a tile, a check's show/recap and a timeline skull. Each one redraws the card's
     // sections and its map (the death marks and the ring follow the pick).
     card.addEventListener('click', e => {
-      const t = e.target.closest && e.target.closest('[data-mode], [data-fd-fight], [data-fd-bot], [data-fd-death], [data-fd-profile]');
+      const t = e.target.closest && e.target.closest('[data-fd-fight], [data-fd-bot], [data-fd-death], [data-fd-profile]');
       if (!t) return;
       const fd = cmdFd[key];
       if (!fd) return;
-      if (t.dataset.mode) {
-        fdSaveMode(key, t.dataset.mode === 'debug' ? 'debug' : 'live');
-        fd.mode = t.dataset.mode === 'debug' ? 'debug' : 'live';
-        if (fd.mode === 'live') { fdReplayStop(fd); fdRunStopAll(fd); }
-        fd.userSel = false;
-        renderCommanders();
-        return;
-      }
       if (!card.classList.contains('fd-on')) return;
       if (t.dataset.fdProfile != null) {
         const guid = parseInt(t.dataset.fdProfile, 10);
@@ -6483,7 +6854,7 @@
     const listEl = document.getElementById('cmd-list');
     const emptyEl = document.getElementById('cmd-empty');
     if (!listEl || !emptyEl) return;
-    const age = cmdAgeSec(), dim = age * 1000 > CMD_DIM_MS;
+    const age = cmdAgeSec();
     const bots = c.list.reduce((n, b) => n + (b.bots || []).length, 0);
     const down = c.list.reduce((n, b) => n + (b.bots || []).filter(x => x.alive === false).length, 0);
     const set = (id, text) => { const e = document.getElementById(id); if (e) e.textContent = text; };
@@ -6500,95 +6871,96 @@
     }
 
     // Only the commanders' cards live in #cmd-list; the Dungeons tab draws its own (the shared cmdCards map holds both).
-    const all = cmdAllBinds().filter(b => !b.dungeon), keys = all.map(b => b.commander);
-    cmdCards.forEach((card, key) => { if (!keys.includes(key)) cmdForgetCard(key); });
-    all.forEach((bind, i) => {
-      const key = bind.commander, demo = !!bind.demo, nowSec = cmdNowFor(bind);
-      let card = cmdCards.get(key);
-      if (!card) { card = newCmdCard(key); cmdCards.set(key, card); }
-      if (listEl.children[i] !== card) listEl.insertBefore(card, listEl.children[i] || null);
-      card.classList.toggle('stale', dim && !demo);
-      card.classList.toggle('cmd-demo', demo);
-      const debug = fdMode(bind) === 'debug';
-      const fd = fdState(key);
-      fd.mode = debug ? 'debug' : 'live';
-      const modeEl = card.querySelector('.cmd-mode');
-      if (modeEl) {
-        modeEl.hidden = demo;
-        modeEl.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === fd.mode ? 'true' : 'false'));
-      }
-      card.classList.toggle('fd-on', debug);
-      // Debugger: its own kicker, title and chips in place of the Live title, badges, lead/run line and warnings. Live keeps them.
-      const hv = cmdHeadView(debug);
-      card.querySelector('.cmd-title').hidden = !hv.title;
-      card.querySelector('.cmd-badges').hidden = !hv.badges;
-      card.querySelector('.cmd-sub').hidden = !hv.sub;
-      card.querySelector('.cmd-warn').hidden = !hv.warn;
-      card.querySelector('.fd-headmain').hidden = !hv.crumbs;
-      card.querySelector('.fd-crumbs').hidden = !hv.crumbs;
-      card.querySelector('.fd-refresh').hidden = !hv.refresh;
-      if (hv.crumbs) {
-        const runText = UnitInfo.clockText(UnitInfo.runInfo(bind, cmdEvents, nowSec).elapsed);
-        setHtml(card.querySelector('.fd-kicker'), 'Commander · ' + esc(bind.commander));
-        setHtml(card.querySelector('.fd-crumbs'),
-          fdHeaderHtml(bind, (cmdFightsCache[key] && cmdFightsCache[key].list) || fd.list, fd.details, bind.layout || null, runText));
-      }
-      // The live window is the only sign a fight is running: when it goes, the list must be asked for again at once.
-      if (bind.combat) card.dataset.fdCombat = '1';
-      else if (card.dataset.fdCombat) { card.dataset.fdCombat = ''; delete cmdFightsCache[bind.commander]; }
-      const word = CmdView.stateWord(bind, CmdView.context(cmdTracker, bind, nowSec));
-      const place = cmdPlace(bind);
-      const hp = CmdView.headerParts(bind, place, '');
-      setHtml(card.querySelector('.cmd-title'), `${demo ? 'DEMO &middot; simulated group' : cmdBotLink(bind.commander_guid, hp[0]) + esc(hp[1])} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
-      card.dataset.commander = key;
-      const rb = UnitInfo.runBrief(bind, nowSec);
-      setHtml(card.querySelector('.cmd-badges'),
-        (demo ? '<span class="badge badge-warn" title="Made up by this page to try the map drawings. Nothing of it comes from the game server.">simulated</span>' : '')
-        + (rb ? `<span class="badge ${rb.paused ? 'badge-warn' : 'badge-info'}" title="The run leader clears the dungeon plan with this party; the commander only watches (observe mode) and may pause, skip or stop.">observe${rb.paused ? ' · paused' : ''}</span>` : '')
-        + `<span class="badge ${bind.online ? 'badge-info' : 'badge-error'}">${bind.online ? 'online' : 'offline'}</span>`
-        + `<span class="badge ${bind.view ? 'badge-info' : 'badge-warn'}" title="The commander's TBM:VIEW perception feed">feed ${bind.view ? 'on' : 'off'}</span>`);
-      const leadBot = CmdView.leadBot(bind);
-      const raidWhy = CmdView.isRaid(bind) ? CmdView.whyWaiting(bind, nowSec) : '';
-      setHtml(card.querySelector('.cmd-sub'), `Led by <b>${leadBot ? cmdBotLink(leadBot.guid, leadBot.name) : esc(bind.lead || '?')}</b> &middot; group ${esc(bind.group)}`
-        + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}" title="${esc((rb.note ? rb.note + '. ' : '') + (rb.changedAgo != null ? 'Last change ' + CmdView.ageText(rb.changedAgo) + ' ago.' : ''))}">${esc((bind.run.plan ? bind.run.plan + ' · ' : '') + rb.text)}</span>` : '')
-        + (raidWhy ? ` &middot; <span class="cmd-waiting" title="What the run waits on and for how long">${esc(raidWhy)}</span>` : ''));
-      const warns = CmdView.warnings(bind, { ageSec: demo ? 0 : age >= 0 ? age : null });
-      setHtml(card.querySelector('.cmd-warn'), warns.length
-        ? warns.map(w => `<span class="cmd-pill ${w.level}"><b aria-hidden="true">${w.level === 'bad' ? '!' : '▲'}</b> ${esc(w.text)}</span>`).join('')
-        : '<span class="cmd-pill ok"><b aria-hidden="true">✓</b> No warnings</span>');
-      const raid = CmdView.isRaid(bind);
-      setHtml(card.querySelector('.cmd-party'), raid ? cmdRaidHtml(bind) : cmdPartyHtml(bind));
-      setHtml(card.querySelector('.cmd-orders'), cmdOrdersHtml(bind, nowSec));
-      const panels = card.querySelector('.cmd-panels');
-      if (panels) panels.hidden = !raid || debug;
-      if (raid) {
-        setHtml(card.querySelector('.cmd-notes'), cmdNotesHtml(bind));
-        setHtml(card.querySelector('.cmd-threat'), cmdThreatHtml(bind));
-        setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind));
-        if (!bind.demo) cmdRaidFights(bind, () => setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind)));
-        cmdControlAsk(on => {
-          const ctl = card.querySelector('.cmd-controls');
-          if (ctl) ctl.hidden = !on;
-          if (on) { setHtml(card.querySelector('.cmd-controls-row'), cmdControlsHtml(bind)); cmdControlsBind(card, bind); }
-        });
-      }
-      const left = card.querySelector('.cmd-left');
-      if (left) left.hidden = debug;
-      const fightsEl = card.querySelector('.cmd-fights');
-      if (fightsEl) fightsEl.hidden = debug;
-      card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = !debug; });
-      drawCmdMap(key);
-      if (debug) { renderFightDebug(card, bind); fdLoad(card, bind); } else mountFightPanel(card, bind);
-    });
-    // The prototype drops the page's tiles, its refresh explanation, the demo box and the external map when every card on the
-    // page is the debugger; a demo card or one Live card keeps them. The one layer panel moves into the map, where the debugger's
-    // Layers button expects it, so that control keeps working.
+    const all = cmdAllBinds().filter(b => !b.dungeon);
+    fdTabsSync(all);
+    const mode = cmdPageMode();
+    cmdPaintPageMode(mode);
+    const tabs = fdTabsModel(all);
+    fdTabPaint(tabs, mode);
     const page = document.getElementById('tab-commanders');
-    const debugOnly = cmdDebugOnly(all);
-    if (page) page.classList.toggle('cmd-debug-only', debugOnly);
-    cmdPlaceLayers(debugOnly);
+    if (page) {
+      page.classList.toggle('cmd-debug', mode === 'debug');
+      page.classList.toggle('cmd-debug-only', mode === 'debug' && !!fdPage.open);
+      page.classList.toggle('cmd-debug-grid', mode === 'debug' && !fdPage.open);
+    }
+    if (mode === 'debug') renderFdPage(all, tabs, listEl);
+    else renderLivePage(all, listEl);
+    // The one layer panel moves into the map only for an open commander tab, where the debugger's Layers button expects it.
+    cmdPlaceLayers(mode === 'debug' && !!fdPage.open && !fdTabGone(fdPage.open));
     paintCmdLayers();
     showCommanderLink();
+  }
+
+  // One card, in the view its page is in: Live draws the party and the map, the debugger draws the fight sections.
+  function cmdRenderCard(card, bind, debug) {
+    const key = bind.commander, demo = !!bind.demo, nowSec = cmdNowFor(bind);
+    const age = cmdAgeSec(), dim = age * 1000 > CMD_DIM_MS;
+    card.classList.toggle('stale', dim && !demo);
+    card.classList.toggle('cmd-demo', demo);
+    const fd = fdState(key);
+    fd.mode = debug ? 'debug' : 'live';
+    card.classList.toggle('fd-on', debug);
+    // Debugger: its own kicker, title and chips in place of the Live title, badges, lead/run line and warnings. Live keeps them.
+    const hv = cmdHeadView(debug);
+    card.querySelector('.cmd-title').hidden = !hv.title;
+    card.querySelector('.cmd-badges').hidden = !hv.badges;
+    card.querySelector('.cmd-sub').hidden = !hv.sub;
+    card.querySelector('.cmd-warn').hidden = !hv.warn;
+    card.querySelector('.fd-headmain').hidden = !hv.crumbs;
+    card.querySelector('.fd-crumbs').hidden = !hv.crumbs;
+    card.querySelector('.fd-refresh').hidden = !hv.refresh;
+    if (hv.crumbs) {
+      const runText = UnitInfo.clockText(UnitInfo.runInfo(bind, cmdEvents, nowSec).elapsed);
+      setHtml(card.querySelector('.fd-kicker'), 'Commander · ' + esc(bind.commander));
+      setHtml(card.querySelector('.fd-crumbs'),
+        fdHeaderHtml(bind, (cmdFightsCache[key] && cmdFightsCache[key].list) || fd.list, fd.details, bind.layout || null, runText));
+    }
+    // The live window is the only sign a fight is running: when it goes, the list must be asked for again at once.
+    if (bind.combat) card.dataset.fdCombat = '1';
+    else if (card.dataset.fdCombat) { card.dataset.fdCombat = ''; delete cmdFightsCache[bind.commander]; }
+    const word = CmdView.stateWord(bind, CmdView.context(cmdTracker, bind, nowSec));
+    const place = cmdPlace(bind);
+    const hp = CmdView.headerParts(bind, place, '');
+    setHtml(card.querySelector('.cmd-title'), `${demo ? 'DEMO &middot; simulated group' : cmdBotLink(bind.commander_guid, hp[0]) + esc(hp[1])} &middot; <span class="cmd-state s-${esc(word.replace(/\s+/g, '-'))}">${esc(word)}</span>`);
+    card.dataset.commander = key;
+    const rb = UnitInfo.runBrief(bind, nowSec);
+    setHtml(card.querySelector('.cmd-badges'),
+      (demo ? '<span class="badge badge-warn" title="Made up by this page to try the map drawings. Nothing of it comes from the game server.">simulated</span>' : '')
+      + (rb ? `<span class="badge ${rb.paused ? 'badge-warn' : 'badge-info'}" title="The run leader clears the dungeon plan with this party; the commander only watches (observe mode) and may pause, skip or stop.">observe${rb.paused ? ' · paused' : ''}</span>` : '')
+      + `<span class="badge ${bind.online ? 'badge-info' : 'badge-error'}">${bind.online ? 'online' : 'offline'}</span>`
+      + `<span class="badge ${bind.view ? 'badge-info' : 'badge-warn'}" title="The commander's TBM:VIEW perception feed">feed ${bind.view ? 'on' : 'off'}</span>`);
+    const leadBot = CmdView.leadBot(bind);
+    const raidWhy = CmdView.isRaid(bind) ? CmdView.whyWaiting(bind, nowSec) : '';
+    setHtml(card.querySelector('.cmd-sub'), `Led by <b>${leadBot ? cmdBotLink(leadBot.guid, leadBot.name) : esc(bind.lead || '?')}</b> &middot; group ${esc(bind.group)}`
+      + (rb && rb.text ? ` &middot; <span class="cmd-runstep${rb.paused ? ' paused' : ''}" title="${esc((rb.note ? rb.note + '. ' : '') + (rb.changedAgo != null ? 'Last change ' + CmdView.ageText(rb.changedAgo) + ' ago.' : ''))}">${esc((bind.run.plan ? bind.run.plan + ' · ' : '') + rb.text)}</span>` : '')
+      + (raidWhy ? ` &middot; <span class="cmd-waiting" title="What the run waits on and for how long">${esc(raidWhy)}</span>` : ''));
+    const warns = CmdView.warnings(bind, { ageSec: demo ? 0 : age >= 0 ? age : null });
+    setHtml(card.querySelector('.cmd-warn'), warns.length
+      ? warns.map(w => `<span class="cmd-pill ${w.level}"><b aria-hidden="true">${w.level === 'bad' ? '!' : '▲'}</b> ${esc(w.text)}</span>`).join('')
+      : '<span class="cmd-pill ok"><b aria-hidden="true">✓</b> No warnings</span>');
+    const raid = CmdView.isRaid(bind);
+    setHtml(card.querySelector('.cmd-party'), raid ? cmdRaidHtml(bind) : cmdPartyHtml(bind));
+    setHtml(card.querySelector('.cmd-orders'), cmdOrdersHtml(bind, nowSec));
+    const panels = card.querySelector('.cmd-panels');
+    if (panels) panels.hidden = !raid || debug;
+    if (raid) {
+      setHtml(card.querySelector('.cmd-notes'), cmdNotesHtml(bind));
+      setHtml(card.querySelector('.cmd-threat'), cmdThreatHtml(bind));
+      setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind));
+      if (!bind.demo && !debug) cmdRaidFights(bind, () => setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind)));
+      cmdControlAsk(on => {
+        const ctl = card.querySelector('.cmd-controls');
+        if (ctl) ctl.hidden = !on;
+        if (on) { setHtml(card.querySelector('.cmd-controls-row'), cmdControlsHtml(bind)); cmdControlsBind(card, bind); }
+      });
+    }
+    const left = card.querySelector('.cmd-left');
+    if (left) left.hidden = debug;
+    const fightsEl = card.querySelector('.cmd-fights');
+    if (fightsEl) fightsEl.hidden = debug;
+    card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = !debug; });
+    drawCmdMap(key);
+    if (debug) { renderFightDebug(card, bind); fdLoad(card, bind); } else mountFightPanel(card, bind);
   }
 
   function cmdPlaceLayers(debugOnly) {
@@ -6652,19 +7024,6 @@
     return cmdFd[key];
   }
 
-  function fdMode(bind) {
-    if (!bind || bind.demo) return 'live';
-    try {
-      const v = window.localStorage.getItem('tbdash.cmdmode.' + bind.commander);
-      if (v === 'live' || v === 'debug') return v;
-    } catch (e) { /* a storage that throws leaves the default */ }
-    return CmdView.isRaid(bind) ? 'debug' : 'live';
-  }
-
-  function fdSaveMode(commander, mode) {
-    try { window.localStorage.setItem('tbdash.cmdmode.' + commander, mode); } catch (e) { /* nothing to remember */ }
-  }
-
   function fdDecodeKey(v) {
     try { return decodeURIComponent(v); } catch (e) { return v; }
   }
@@ -6675,7 +7034,7 @@
     const act = document.activeElement;
     let attr = '', val = '';
     if (act && node.contains(act)) {
-      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-mode'].some(a => {
+      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile'].some(a => {
         if (!act.hasAttribute || !act.hasAttribute(a)) return false;
         attr = a;
         val = act.getAttribute(a);
@@ -6740,7 +7099,10 @@
         fdDetailFail(fd, row.key);
         if (card.classList.contains('fd-on')) fdLoad(card, bind);
       };
-      fetch('/api/v1/combat/fight/' + encodeURIComponent(row.key)).then(jsonOrThrow).then(res => {
+      const req = fdFightsFeed().detail(bind.commander, row.key, FdTabs.detailAllowed(cmdPageMode(), fdPage.open, bind.commander),
+        k => fetch('/api/v1/combat/fight/' + encodeURIComponent(k)).then(jsonOrThrow));
+      if (!req) { fd.loading = false; return; }
+      req.then(res => {
         if (!res || !res.fight) { failed(); return; }
         fd.loading = false;
         delete fd.failed[row.key];
@@ -6926,12 +7288,6 @@
     return { title: !debug, badges: !debug, sub: !debug, run: !debug, warn: !debug, crumbs: !!debug, refresh: !!debug };
   }
 
-  // Every shown card in the debugger: the page's own tiles and boxes go. No card at all keeps the empty page as it is.
-  function cmdDebugOnly(list, modeOf) {
-    const rows = Array.isArray(list) ? list : [], mode = modeOf || fdMode;
-    return rows.length > 0 && rows.every(b => mode(b) === 'debug');
-  }
-
   // ---- the run timeline: where the run's minutes went, and a scrubber that replays the raid on the map ----
   // The blocks come from the fight list (each row's start and length), the deaths from the loaded fight details, and the walking
   // from the gaps. Times are game-server unix seconds, the same clock the kept positions use.
@@ -7066,6 +7422,7 @@
   function fdRunLoad(card, bind) {
     const fd = cmdFd[bind.commander], run = fd && fd.run.model;
     if (!fd || !run || fd.run.track !== undefined || fd.run.loading) return;
+    if (!FdTabs.detailAllowed(cmdPageMode(), fdPage.open, bind.commander)) return;
     fd.run.loading = true;
     fd.run.track = 'loading';
     const to = Math.ceil(run.t1) + 4, from = Math.max(Math.floor(run.t0) - 4, to - FD_TRACK_WINDOW_S);
@@ -7424,6 +7781,7 @@
   function fdTrackLoad(card, bind, key, fight) {
     const fd = cmdFd[bind.commander];
     if (!fd || !fight || fd.tracks[key] !== undefined) return;
+    if (!FdTabs.detailAllowed(cmdPageMode(), fdPage.open, bind.commander)) return;
     if (Object.keys(fd.tracks).some(k => fd.tracks[k] === 'loading')) return;
     fd.tracks[key] = 'loading';
     const from = Math.floor(fight.start || 0) - 4, to = Math.ceil((fight.start || 0) + (fight.dur_ms || 0) / 1000) + 4;
@@ -8260,6 +8618,7 @@
   initCommanderLink();
   initCmdLayers();
   initCmdDemo();
+  initCmdTabs();
   initDgRuns();
   initRefreshPicker();
   initAgentMaps();

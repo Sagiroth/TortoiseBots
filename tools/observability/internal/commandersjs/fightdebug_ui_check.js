@@ -196,9 +196,10 @@ assert.ok(liveHtml.includes("Frostbolt") && liveHtml.includes('class="sel"'), li
 // ---- the page wires it up ------------------------------------------------------------------------------------------
 assert.ok(src.includes("'/api/v1/combat/fight/' + encodeURIComponent("), "the fight detail is fetched by its encoded key");
 assert.ok(src.includes("FightDebug.worstIndex("), "the debugger opens on the worst fight");
-assert.ok(src.includes('data-mode="debug"'), "the card offers the debugger mode");
-assert.ok(src.includes('data-act="whole"'), "the map offers the whole picture");
 const html = fs.readFileSync(path.join(dir, "..", "..", "index.html"), "utf8");
+assert.ok(src.includes("cmdPageMode("), "the page decides the view for every commander card");
+assert.ok(html.includes('data-page-mode="debug"'), "the page offers the debugger mode");
+assert.ok(src.includes('data-act="whole"'), "the map offers the whole picture");
 assert.ok(html.indexOf("/static/js/fightdebug.js") > 0 && html.indexOf("/static/js/fightdebug.js") < html.indexOf("/static/js/app.js"),
   "index.html loads fightdebug.js before app.js");
 console.log("fight debugger ui ok");

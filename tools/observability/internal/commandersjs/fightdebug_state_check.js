@@ -8,6 +8,7 @@ const path = require("path");
 const vm = require("vm");
 const appPath = path.resolve(process.argv[2]);
 const src = fs.readFileSync(appPath, "utf8");
+const tabsSrc = fs.readFileSync(path.join(path.dirname(appPath), "fdtabs.js"), "utf8");
 
 function grab(name) {
   const re = new RegExp(`^  function ${name}\\(`, "m"), m = re.exec(src);
@@ -26,10 +27,15 @@ function grabConst(name) {
 let clock = 0;
 const ctx = { console, Date: { now: () => clock } };
 vm.createContext(ctx);
+vm.runInContext(tabsSrc, ctx, { filename: "fdtabs.js" });
 vm.runInContext([
-  grab("cmdForgetCard"), grab("fdState"), grab("fdSyncSel"), grab("cmdRaidFights"),
+  grab("cmdForgetCard"), grab("fdState"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
   grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"),
   grabConst("FD_DETAIL_MAX"), grabConst("FD_DETAIL_BACKOFF"), grabConst("FD_DETAIL_FAIL_MAX"),
+  "var cmdPageMode = () => 'debug';",
+  "var fdPage = { open: null };",
+  "var fdFights = null, fdFightsCache = null, fdFightsPending = null;",
+  "var fdTabListSeen = () => {};",
 ].join("\n"), ctx, { filename: "app.js state" });
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
@@ -75,7 +81,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   assert.deepStrictEqual(got[0].map((r) => r.key), ["k1"]);
 
   run("cmdRaidFights(bind, l => got.push(l))", { bind: { commander: "A" }, got });
-  assert.strictEqual(fetches, 1, "the 30 s cache answers without a fetch");
+  assert.strictEqual(fetches, 1, "the 10 s cache answers without a fetch");
   assert.deepStrictEqual(got[2].map((r) => r.key), ["k1"]);
 
   clock = 31000;
@@ -110,6 +116,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   ctx.drawCmdMap = () => {};
   const card = { classList: { contains: () => true } };
   clock = 0;
+  run("fdPage.open = 'D'");
   run("fdLoad(card, bind)", { card, bind: { commander: "D" } });
   await settle();
   const fdD = run("fdState('D')");
@@ -144,6 +151,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   fdK.list = [{ key: "keep" }];
   fdK.details.keep = { fight: {} };
   ctx.cmdRaidFights = (bind, cb) => cb(null);
+  run("fdPage.open = 'K'");
   run("fdLoad(card, bind)", { card, bind: { commander: "K" } });
   await settle();
   assert.deepStrictEqual(fdK.list.map((r) => r.key), ["keep"], "a failed list fetch does not wipe the known fights");

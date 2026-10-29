@@ -20,7 +20,7 @@ const ctx = { console };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, { filename: "fightdebug.js" });
 vm.runInContext([grab("esc"), grab("numOr0"), grab("fdHeaderHtml"), grab("fdFrameStats"), grab("fdReadyHtml"), grab("fdLegendHtml"),
-  grab("cmdHeadView"), grab("cmdDebugOnly")].join("\n"), ctx);
+  grab("cmdHeadView")].join("\n"), ctx);
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const plain = (v) => JSON.parse(JSON.stringify(v));
@@ -42,10 +42,9 @@ assert.deepStrictEqual(plain(run("cmdHeadView(true)")), { title: false, badges: 
 assert.deepStrictEqual(plain(run("cmdHeadView(false)")), { title: true, badges: true, sub: true, run: true, warn: true, crumbs: false, refresh: false },
   "Live mode keeps every element the debugger drops");
 
-// ---- the page chrome goes only when every shown card is in the debugger --------------------------------------------
-assert.strictEqual(run("cmdDebugOnly([{m:'debug'},{m:'debug'}], b => b.m)"), true);
-assert.strictEqual(run("cmdDebugOnly([{m:'debug'},{m:'live'}], b => b.m)"), false);
-assert.strictEqual(run("cmdDebugOnly([], b => b.m)"), false, "an empty page keeps its tiles and its demo box");
+// ---- the page chrome goes in the page's Fight debugger mode ---------------------------------------------------------
+assert.ok(src.includes("cmdPageMode(") && src.includes("cmd-debug-only"), "the page's debugger mode turns its chrome off");
+assert.ok(src.includes("cmd-debug-grid"), "the All raids tab keeps a chrome of its own");
 
 // ---- the header chips: the prototype's five, plus the run chip carrying the step -----------------------------------
 const head = run("fdHeaderHtml(bind, rows, details, layout, '19:29')", { bind: BIND, rows: ROWS, details: DETAILS, layout: LAYOUT });
@@ -97,7 +96,7 @@ for (const m of evilHead.matchAll(/="([^"]*)"/g)) assert.ok(!/[<>]/.test(m[1]), 
 assert.strictEqual((evilHead.match(/"/g) || []).length % 2, 0, "unbalanced quotes: " + evilHead.slice(0, 200));
 
 // ---- the page wires it up -------------------------------------------------------------------------------------------
-assert.ok(src.includes("cmdDebugOnly(") && src.includes("cmd-debug-only"), "the page turns its chrome off for the debugger-only page");
+assert.ok(src.includes("cmdPageMode(") && src.includes("cmd-debug-only"), "the page turns its chrome off for its debugger mode");
 assert.ok(src.includes('class="fd-crumbs"') && src.includes('class="cmd-legend fd-legend"'), "the card carries the chips and the short legend");
 assert.ok(src.includes("fdReadyHtml(") && src.includes("fdFrameStats("), "the raid frames header counts its dead and low mana");
 assert.ok(src.includes("UnitInfo.clockText("), "the run chip gets the run clock");
