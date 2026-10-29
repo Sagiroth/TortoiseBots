@@ -86,6 +86,51 @@ assert.strictEqual(strayG.length, 1, "one stray mark");
 assert.ok(/data-u="p:3"/.test(strayG[0]), strayG[0]);
 assert.ok(/inside the ring of/.test(strayOut), "the mark says whose ring it is");
 
+// ---- patrol paths (R7b): only under their layer, closed, floor-filtered, every name escaped
+const warders = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "plans", "testdata", "patrols", "onyxia_warders.json"), "utf8"));
+ctx.patrolPlan = JSON.parse(JSON.stringify(plan));
+ctx.patrolPlan.mobs.forEach((m) => {
+  const row = warders[String(m.guid)];
+  if (!row) return;
+  m.path = row.path.map((q) => q.map((v) => Math.round(v * 10) / 10));
+  m.period_s = row.period_s;
+  m.path_est = !!row.estimate;
+});
+vm.runInContext("patrolView = PlanOverlay.view(patrolPlan, { mapId: 249, cur: 20, partyLevel: 60 });", ctx);
+const noPatrols = vm.runInContext("cmdPlanSvg(mk(), patrolView, { planroute: true, planstands: true, planrings: true })", ctx);
+assert.ok(!noPatrols.includes("patrol-path"), "no path without the patrols layer");
+const patrolsOut = vm.runInContext("cmdPlanSvg(mk(), patrolView, { patrols: true })", ctx);
+const paths = patrolsOut.match(/<path class="patrol-path[^"]*" d="([^"]*)"/g) || [];
+assert.strictEqual(paths.length, 4, "one loop per patrolling warder");
+assert.strictEqual((patrolsOut.match(/class="patrol-path est"/g) || []).length, 4, "the recorded loops are estimates");
+paths.forEach((el) => assert.ok(/ Z"$/.test(el), "a closed loop: " + el));
+assert.ok(/Onyxian Warder: patrol, about 36.21 s per round, estimated/.test(patrolsOut), "the title gives the round");
+assert.ok((patrolsOut.match(/patrol-tick/g) || []).length >= 4, "direction ticks along the loops");
+// an ordinary mob draws nothing
+const plain = patrolsOut.match(/<path class="patrol-path[^"]*" d="[^"]*"><title>([^<]*)<\/title>/g) || [];
+assert.strictEqual(plain.length, 4);
+// a mob name from the server is escaped in the title too
+ctx.evilPatrol = JSON.parse(JSON.stringify(ctx.patrolPlan));
+ctx.evilPatrol.mobs.forEach((m) => { if (Array.isArray(m.path)) m.n = '<img src=x onerror=alert(1)>"&'; });
+vm.runInContext("evilPatrolView = PlanOverlay.view(evilPatrol, { mapId: 249, cur: 20, partyLevel: 60 });", ctx);
+const evilPatrolOut = vm.runInContext("cmdPlanSvg(mk(), evilPatrolView, { patrols: true })", ctx);
+assert.ok(!/<img/.test(evilPatrolOut), "no markup from a patrol's name");
+assert.ok(evilPatrolOut.includes("&lt;img"), "the name is still shown");
+// a multi-floor map: only a segment whose both ends are on the shown floor
+ctx.floorPlan = JSON.parse(JSON.stringify(plan));
+ctx.floorPlan.mobs.forEach((m) => {
+  if (m.guid !== 52050) return;
+  m.path = [[0, 0, -50], [10, 0, -50], [10, 10, -10], [0, 10, -10]];
+  m.period_s = 30;
+});
+vm.runInContext("floorView = PlanOverlay.view(floorPlan, { mapId: 249, cur: 20, partyLevel: 60 });", ctx);
+vm.runInContext("floorView.floors = { has: (z) => z === -50 };", ctx);
+const floorOut = vm.runInContext("cmdPlanSvg(mk(), floorView, { patrols: true })", ctx);
+const floorPaths = floorOut.match(/<path class="patrol-path[^"]*" d="([^"]*)"/g) || [];
+assert.strictEqual(floorPaths.length, 1, "one segment of the loop is on the floor");
+assert.ok(floorPaths[0].includes('d="M 0.00,0.00 L 0.00,-10.00"'), "only the two floor points are drawn: " + floorPaths[0]);
+assert.ok(!floorPaths[0].includes(" Z"), "a run that a floor change cuts is not closed");
+
 // ---- the hover entries: the existing step text, the plan's states mapped to the run's words
 ctx.u = mk();
 vm.runInContext("cmdPlanSvg(u, view, { planroute: true, planstands: true, planrings: true });", ctx);
@@ -99,6 +144,13 @@ assert.ok(/^Step 20: /.test(ctx.CmdPaths.stepText(ctx.u.units["p:20"].obj)));
 assert.ok(src.includes("'/api/v1/plans/' + encodeURIComponent("), "the plan URL is encoded");
 assert.ok(src.includes("g += cmdPlanSvg(dc, pf.view, on)"), "drawCmdMap draws the plan");
 assert.ok(src.includes("facts.ctx.planWhy = pf.why"), "the card's plan reason reaches the panel");
+assert.ok(src.includes("facts.ctx.patrols = "), "the card says whether the plan's mobs have patrol paths");
+const wanted = src.slice(src.indexOf("  function cmdPlanWanted()"), src.indexOf("\n  }\n", src.indexOf("  function cmdPlanWanted()")));
+assert.ok(/cmdLayers\.patrols/.test(wanted), "only patrol paths on still build the plan overlay");
+assert.ok(src.includes("pf.view && (on.planroute || on.planstands || on.planrings || on.patrols)"), "and it is drawn for them");
+assert.ok(src.includes("(Array.isArray(p) ? p[2] : p && p.z)"), "the floor split sees the path points");
+const overlaySrc = fs.readFileSync(path.join(dir, "planoverlay.js"), "utf8");
+assert.ok(overlaySrc.includes("path: m.path") && overlaySrc.includes("period_s: num(m.period_s)"), "the view passes the path through");
 assert.ok(src.includes("const pf = cmdPlanFacts(bind, facts.first)"));
 assert.ok(src.includes("fetch('/api/v1/plans/' + encodeURIComponent(name), { credentials: 'same-origin' })"));
 // the plan sits under the bots: inside drawCmdMap its call comes before the party's dots are built

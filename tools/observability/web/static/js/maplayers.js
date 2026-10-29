@@ -2,7 +2,7 @@
 // Commanders tab map layers: which things a map draws. One choice for every card (and every map), kept in the browser once, not per
 // map. Pure logic (no page, no markup) so a test can run it under node (internal/commandersjs). app.js draws and shows the panel.
 //
-// The panel offers 27 layers in 7 groups, the raid's order (Map, Party, Route, Threat, Raid, Events, Objects): the plan is three of
+// The panel offers 28 layers in 7 groups, the raid's order (Map, Party, Route, Threat, Raid, Events, Objects): the plan is three of
 // them (planroute, planstands and the aggro layer's planrings part), and raid presets (Pathing, Trash pull, Healing, Boss, All)
 // switch the raid's keys in one click. Several layers are merges of the finer switches the maps used before: `effective(state)`
 // returns those older keys (mobhostile, mobneutral, trail, threatcolors, ...) computed from the new ones, and app.js's drawing code
@@ -48,6 +48,7 @@
     mobneutral: { def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
     mobcritter: { def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
     aggro: { def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)", line: true },
+    patrols: { def: true, needs: "patrols", why: "no patrol path for this plan (the plan needs a patrols file)" },
     hostilenames: { def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
     bossmark: { def: true, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
     facing: { def: true, needs: "facing", why: "no boss or elite reports where it faces (it needs the newer module)" },
@@ -69,7 +70,7 @@
     objects: { def: false, needs: "objects", why: "the game server does not report objects yet (it needs the newer module)" },
   };
 
-  // The 25 layers the panel offers, in panel order. `parts` are the old switches each one replaces; `styleFrom` is the old line key
+  // The 28 layers the panel offers, in panel order. `parts` are the old switches each one replaces; `styleFrom` is the old line key
   // whose opacity and thickness a merged line layer takes over (its first old key that had a style).
   const DEFS = [
     { key: "bg", label: "Map picture", group: "Map", def: true, parts: ["bg"],
@@ -112,6 +113,8 @@
       tip: "A ring in the colour of whom the unit attacks and a line to that unit; red when it is not a tank of the raid layout." },
     { key: "aggro", label: "Aggro and wake rings", group: "Threat", def: true, line: true, styleFrom: "aggro", parts: ["aggro", "planrings"],
       tip: "The area in which a unit notices the party, the plan's mobs and a boss's scripted wake ring (dashed)." },
+    { key: "patrols", label: "Patrol paths", group: "Threat", def: true, parts: ["patrols"],
+      tip: "The loop a patrolling pack walks, as the plan records it, with its round time; the check for straying move points measures the whole loop." },
     { key: "actionlines", label: "Target, heal and crowd-control lines", group: "Threat", def: false, line: true, styleFrom: "bottarget", parts: ["bottarget", "healline", "ccline"],
       tip: "A line from each bot to its target, from a healer to whom it heals, and from a caster to the unit it controls." },
     { key: "subgroups", label: "Colour by subgroup", group: "Raid", def: false, parts: ["subgroups"],
@@ -304,7 +307,7 @@
     return out;
   }
 
-  // What each of the 25 layers can be drawn from, for one map (one card): {key: {ok, why}}. ctx has the booleans named in
+  // What each of the 28 layers can be drawn from, for one map (one card): {key: {ok, why}}. ctx has the booleans named in
   // OLD_LAYERS' `needs`; a missing one counts as false. ok when ANY of the layer's parts has its data (the rest is simply not drawn);
   // why lists the missing parts' reasons.
   function availability(ctx) {
@@ -358,13 +361,15 @@
 
   // A raid preset applied to a state: the RAID_KEYS on when the preset lists them, off otherwise; the preset's trail cut when it sets
   // one; the boss overlay's two layers follow the enemies layer (a preset never touches it, so a party that shows enemies shows
-  // where its bosses look); every other key, the dim, the path length and the styles untouched. An unknown name gives the state.
+  // where its bosses look); the patrol paths follow the plan route; every other key, the dim, the path length and the styles
+  // untouched. An unknown name gives the state.
   function applyPreset(state, name) {
     const out = normalize(state);
     const p = PRESETS.find((x) => x.name === name);
     if (!p) return out;
     RAID_KEYS.forEach((k) => { out[k] = p.on.indexOf(k) >= 0; });
     out.facing = out.mobcast = out.enemies === true;
+    out.patrols = out.planroute === true;
     if (typeof p.trailSec === "number") out.trailSec = clampTrailSec(p.trailSec);
     return out;
   }

@@ -114,7 +114,7 @@ for (let sec = 1000; sec <= 1000 + 2 * D.LOOP; sec += 2) {
 const EXTERNAL = new Set(["zone", "zonelabels"]);
 // The raid layers read data the simulated group does not carry: a plan, the fight selected in the debugger, the raid layout, the
 // reported subgroups and deaths. The page feeds them from its own data (the plan endpoint, the fight record, the binding).
-const DEMO_UNFED = new Set(["planroute", "planstands", "planrings", "subgroups", "healtank", "deaths"]);
+const DEMO_UNFED = new Set(["planroute", "planstands", "planrings", "patrols", "subgroups", "healtank", "deaths"]);
 L.DEFS.forEach((d) => {
   if (d.parts.every((p) => EXTERNAL.has(p) || DEMO_UNFED.has(p))) return;
   assert.ok(d.parts.some((p) => seen[p] > 0), `layer "${d.key}" has nothing to show in the demo`);

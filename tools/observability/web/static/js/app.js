@@ -6376,7 +6376,7 @@
   // The plan's layers: its route and stands, and the rings (part of the aggro layer). With every one of them off nothing of
   // the plan reaches the map, so its overlay is not rebuilt on each draw.
   function cmdPlanWanted() {
-    return !!(cmdLayers.planroute || cmdLayers.planstands || cmdLayers.aggro);
+    return !!(cmdLayers.planroute || cmdLayers.planstands || cmdLayers.aggro || cmdLayers.patrols);
   }
 
   // What a card's map can draw of the plan: its view, or the reason the plan layers are greyed. The current step is the selected
@@ -6410,6 +6410,51 @@
     let g = '';
     const strayOf = {};
     view.strays.forEach(s => { if (!strayOf[s.i]) strayOf[s.i] = s; });
+    // The patrol loops sit under everything else: each mob's closed path, a segment only when both ends are on the shown
+    // floor, a direction tick about every 4th point.
+    if (on.patrols) {
+      view.mobs.forEach(m => {
+        const pts = (Array.isArray(m.path) ? m.path : []).filter(p => Array.isArray(p) && p.length >= 3
+          && typeof p[0] === 'number' && isFinite(p[0]) && typeof p[1] === 'number' && isFinite(p[1])
+          && typeof p[2] === 'number' && isFinite(p[2]));
+        const n = pts.length;
+        if (n < 2) return;
+        const proj = pts.map(p => CmdView.project(p[0], p[1]));
+        const keep = [];
+        let gaps = 0;
+        for (let i = 0; i < n; i++) {
+          keep[i] = !fl || (fl.has(pts[i][2]) && fl.has(pts[(i + 1) % n][2]));
+          if (!keep[i]) gaps++;
+        }
+        let d = '';
+        if (!gaps) {
+          d = 'M ' + proj.map(p => `${c.f(p.x)},${c.f(p.y)}`).join(' L ') + ' Z';
+        } else {
+          let run = [];
+          const flush = () => { if (run.length >= 2) d += 'M ' + run.map(j => `${c.f(proj[j].x)},${c.f(proj[j].y)}`).join(' L ') + ' '; run = []; };
+          const start = keep.indexOf(false) + 1;
+          for (let s = 0; s < n; s++) {
+            const i = (start + s) % n;
+            if (!keep[i]) { flush(); continue; }
+            if (!run.length) run.push(i);
+            run.push((i + 1) % n);
+          }
+          flush();
+        }
+        if (!d) return;
+        const period = m.period_s;
+        g += `<path class="patrol-path${m.path_est ? ' est' : ''}" d="${d.trim()}"><title>${esc(m.name || 'unit')}: patrol`
+          + `${period > 0 ? ', about ' + c.f(period) + ' s per round' : ''}${m.path_est ? ', estimated' : ''}</title></path>`;
+        for (let i = 0; i < n; i += 4) {
+          if (!keep[i]) continue;
+          const a = proj[i], b = proj[(i + 1) % n];
+          const len = Math.hypot(b.x - a.x, b.y - a.y);
+          if (!(len > 0)) continue;
+          const dx = (b.x - a.x) / len, dy = (b.y - a.y) / len, nx = -dy, ny = dx, t = 3.2 * k, w = 1.8 * k;
+          g += `<polygon class="patrol-tick" points="${c.f(a.x + dx * t)},${c.f(a.y + dy * t)} ${c.f(a.x - dx * t + nx * w)},${c.f(a.y - dy * t + ny * w)} ${c.f(a.x - dx * t - nx * w)},${c.f(a.y - dy * t - ny * w)}"/>`;
+        }
+      });
+    }
     if (on.planrings) {
       view.rings.forEach(r => {
         if (fl && !fl.has(r.z)) return;
@@ -6477,6 +6522,8 @@
     const pf = cmdPlanFacts(bind, facts.first);
     facts.ctx.plan = !!pf.ok;
     facts.ctx.planWhy = pf.why;
+    const planMobs = pf.view ? pf.view.mobs : (pf.zview ? pf.zview.rings : null);
+    facts.ctx.patrols = !!(planMobs && planMobs.some(m => Array.isArray(m.path) && m.path.length >= 2));
     // the other data the raid layers draw from: subgroups of this map's party, the layout's healer->tank pairs, the selected fight's deaths
     const fdCtx = cmdFd[key];
     const fdFight = fdCtx && fdCtx.mode === 'debug' && fdCtx.sel && fdCtx.sel !== 'live' ? (fdCtx.details[fdCtx.sel] || {}).fight || null : null;
@@ -6553,7 +6600,7 @@
     // units: every thing that can be hovered gets a key; the hover box looks it up here, so it follows the 2 s refresh.
     const units = ms.units = {};
     const dc = { f, k, units };
-    if (pf.view && (on.planroute || on.planstands || on.planrings)) g += cmdPlanSvg(dc, pf.view, on);
+    if (pf.view && (on.planroute || on.planstands || on.planrings || on.patrols)) g += cmdPlanSvg(dc, pf.view, on);
     if (on.runsteps) g += cmdRunStepsSvg(dc, steps, lead && first && lead.map === first.map ? lead : null);
     const nowSec = cmdNowFor(bind), trailDrawn = CmdPaths.cutByAge(trail, nowSec, cmdLayers.trailSec);
     if (on.membertrails && first) g += cmdMemberTrailsSvg(dc, bind, first.map, nowSec);
@@ -8205,7 +8252,7 @@
     const out = [];
     const add = (v) => { if (typeof v === 'number' && isFinite(v)) out.push(v); };
     ((view && view.steps) || []).forEach(s => add(s.z));
-    ((view && view.rings) || []).forEach(r => add(r.z));
+    ((view && view.rings) || []).forEach(r => { add(r.z); (Array.isArray(r.path) ? r.path : []).forEach(p => add(Array.isArray(p) ? p[2] : p && p.z)); });
     ((fight && fight.deaths) || []).forEach(d => add(d && d.z));
     return out;
   }

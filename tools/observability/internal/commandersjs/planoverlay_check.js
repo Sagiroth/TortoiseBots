@@ -98,6 +98,82 @@ assert.deepStrictEqual(P.strays(c, 60), [], "its own next pack's ring is the pul
 c = copy(); c.steps.find((x) => x.i === 21).x = -120; c.steps.find((x) => x.i === 21).y = -130; c.steps.find((x) => x.i === 21).z = -50;
 assert.deepStrictEqual(P.strays(c, 60), []);
 
+// ---- patrol paths (R7b): the ring stays at the spawn, the stray and stand distances measure the whole closed loop
+// The four warders' recorded loops (the D1/trash-check data R7a attaches), rounded to 0.1 yd as the plan JSON carries them.
+const warders = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "plans", "testdata", "patrols", "onyxia_warders.json"), "utf8"));
+const withWarders = () => {
+  const p = copy();
+  p.mobs.forEach((m) => {
+    const row = warders[String(m.guid)];
+    if (!row) return;
+    m.path = row.path.map((q) => q.map((v) => Math.round(v * 10) / 10));
+    m.period_s = row.period_s;
+    m.path_est = !!row.estimate;
+  });
+  return p;
+};
+// the spawn distance alone (the no-path rule) for reference: 52050's spawn is 30.8 yd from stand 1
+const wp = withWarders();
+assert.strictEqual(wp.mobs.filter((m) => Array.isArray(m.path) && m.path.length >= 2).length, 4, "four warders patrol");
+// Pinned from a separate Python reference of the rule over this plan + fixture (segment distance, closed loop, rings as above);
+// with the loops attached the clean route still strays nowhere.
+assert.deepStrictEqual(P.strays(wp, 60), []);
+const wm = P.standMargins(wp, 60);
+assert.strictEqual(wm[1].dist.toFixed(2), "7.19", "stand 1 measures to the warder's path, not its spawn");
+assert.strictEqual(wm[1].margin.toFixed(1), "-15.8");
+assert.strictEqual(wm[20].dist.toFixed(2), "3.41");
+assert.strictEqual(wm[20].margin.toFixed(1), "-19.6");
+assert.strictEqual(wm[24].dist.toFixed(2), "20.09", "52053 has no path: its spawn distance stands");
+assert.strictEqual(wm[28].dist.toFixed(2), "62.72", "Onyxia has no path: unchanged");
+const wv = P.view(wp, { mapId: 249, cur: 20, partyLevel: 60 });
+assert.deepStrictEqual(wv.mobs.find((m) => m.guid === 52050).path[0], [52.3, -105.3, -24.8], "the view carries the path");
+assert.strictEqual(wv.mobs.find((m) => m.guid === 52050).period_s, 36.21);
+assert.strictEqual(wv.mobs.find((m) => m.guid === 52050).path_est, true);
+assert.strictEqual(wv.mobs.find((m) => m.guid === 52053).path, undefined, "no path, nothing carried");
+assert.strictEqual(wv.rings.find((r) => r.guid === 52050).r, 23, "the ring stays at the spawn");
+
+// a move point 25 yd from the spawn but 5 yd from the patrol's path (ring 20)
+function pathPlan(extra) {
+  const p = copy();
+  p.mobs.push(Object.assign({ step: 21, guid: 90001, e: 12129, n: "Path Warder", x: -70, y: -130, z: -50, lvl: 63, det: 20,
+    wake_yd: 20, path: [[-100, -130, -50], [-90, -130, -50]], period_s: 30 }, extra || {}));
+  const s3 = p.steps.find((s) => s.i === 3);
+  s3.x = -95; s3.y = -125; s3.z = -50;
+  return p;
+}
+let pc = pathPlan();
+assert.strictEqual(P.distToMob({ x: -95, y: -125, z: -50 }, pc.mobs[pc.mobs.length - 1]).toFixed(2), "5.00");
+let pst = P.strays(pc, 60).filter((x) => x.guid === 90001 && x.i === 3);
+assert.strictEqual(pst.length, 1, "inside the ring of the path though 25 yd from the spawn");
+assert.strictEqual(pst[0].dist.toFixed(2), "5.00");
+assert.strictEqual(pst[0].pack, 21);
+assert.deepStrictEqual(P.strays(pathPlan({ path: undefined }), 60).filter((x) => x.guid === 90001 && x.i === 3), [],
+  "without a path the spawn distance is 25 yd, outside the ring");
+
+// the closing segment (last point back to the first) counts: 10 yd from the two open segments, 0 from the closing one
+const loop = copy();
+loop.mobs.push({ step: 21, guid: 90002, e: 12129, n: "Loop", x: -60, y: -100, z: -50, lvl: 63, det: 20, wake_yd: 5,
+  path: [[-100, -130, -50], [-80, -130, -50], [-80, -110, -50]], period_s: 30 });
+const l3 = loop.steps.find((s) => s.i === 3);
+l3.x = -90; l3.y = -120; l3.z = -50;
+assert.deepStrictEqual(P.strays(loop, 60).filter((x) => x.guid === 90002).map((x) => [x.guid, x.dist.toFixed(2)]), [[90002, "0.00"]]);
+
+// 3D: a point 20 yd above the path is 20 yd away, never 0
+const above = pathPlan();
+above.mobs[above.mobs.length - 1].path = [[-100, -130, -50], [-90, -130, -50]];
+const a3 = above.steps.find((s) => s.i === 3);
+a3.x = -95; a3.y = -130; a3.z = -30;
+const am = above.mobs[above.mobs.length - 1];
+assert.strictEqual(P.distToMob({ x: -95, y: -130, z: -30 }, am).toFixed(2), "20.00");
+assert.deepStrictEqual(P.strays(above, 60).filter((x) => x.guid === 90001 && x.i === 3), [], "20 yd is not inside a 20 yd ring");
+// a spawn-only mob still measures 3D to the spawn
+assert.strictEqual(P.distToMob({ x: 0, y: 0, z: 0 }, { x: 3, y: 4, z: 12 }).toFixed(2), "13.00");
+// another raid's plan is untouched: no patrols, no path keys in its view, no strays
+assert.deepStrictEqual(P.strays(mc, 60), []);
+const mcv = P.view(mc, { mapId: 409, cur: 40, partyLevel: 60 });
+assert.deepStrictEqual(mcv.strays, []);
+assert.strictEqual(mcv.mobs.length, 0);
+
 // ---- view: the whole overlay for one map and one current step
 let v = P.view(plan, { mapId: 249, cur: 20, fightStep: 22, partyLevel: 60 });
 assert.ok(v);

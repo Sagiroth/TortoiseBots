@@ -25,6 +25,35 @@
     const dx = a.x - b.x, dy = a.y - b.y, dz = (a.z || 0) - (b.z || 0);
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   };
+  // The distance from p to the segment a-b in 3D.
+  function segDist3(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, dz = (b.z || 0) - (a.z || 0);
+    const len = dx * dx + dy * dy + dz * dz;
+    const t = len > 0 ? Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy + ((p.z || 0) - (a.z || 0)) * dz) / len)) : 0;
+    return dist3(p, { x: a.x + t * dx, y: a.y + t * dy, z: (a.z || 0) + t * dz });
+  }
+  const pathPoint = (q) => (Array.isArray(q) ? { x: num(q[0]), y: num(q[1]), z: num(q[2]) } : null);
+
+  // The distance from p to a mob: the nearest point of its patrol loop (the wire's path, [[x, y, z], ...]) when it has one,
+  // else its spawn point. The loop is closed (last point back to the first), the way waypoint movement returns: a path
+  // recorded as one leg of a there-and-back walk gains nothing from that closing segment, and a path whose ends lie far
+  // apart is measured as if it walked the straight leg between them (the closed-loop limit).
+  function distToMob(p, m) {
+    const path = m && Array.isArray(m.path) ? m.path : null;
+    if (path && path.length >= 2) {
+      let best = Infinity;
+      for (let i = 0; i < path.length; i++) {
+        const a = pathPoint(path[i]), b = pathPoint(path[(i + 1) % path.length]);
+        if (!a || !b || a.x === null || a.y === null || a.z === null || b.x === null || b.y === null || b.z === null) {
+          best = Infinity;
+          break;
+        }
+        best = Math.min(best, segDist3(p, a, b));
+      }
+      if (best !== Infinity) return best;
+    }
+    return dist3(p, m);
+  }
 
   // The aggro radius the run leader uses (ai::AggroRadius, a copy of the core's Creature::GetAttackDistance): the
   // detection range minus the party-level difference, that difference clamped at -25, the result floored at
@@ -146,8 +175,9 @@
     return null;
   }
 
-  // Each stand's margin to its pack: the pack mob the stand is closest to in 3D after subtracting that mob's ring
-  // (a negative margin means the stand is already inside the ring). {i: {dist, ring, margin, name, wake}}.
+  // Each stand's margin to its pack: the pack mob (or the nearest point of its patrol loop, distToMob) the stand is closest
+  // to in 3D after subtracting that mob's ring (a negative margin means the stand is already inside the ring).
+  // {i: {dist, ring, margin, name, wake}}.
   function standMargins(plan, partyLevel) {
     const memo = plan && typeof plan === "object" ? memoFor(marginsMemo, plan) : null;
     const party = partyOf(partyLevel);
@@ -163,7 +193,7 @@
       (byStep.get(pack.i) || []).forEach((m) => {
         const ring = ringYd(m, party);
         if (!(ring > 0)) return;
-        const dist = dist3(s, m), margin = dist - ring;
+        const dist = distToMob(s, m), margin = dist - ring;
         if (!best || margin < best.margin || (margin === best.margin && m.guid < best.guid)) {
           best = { dist, ring, margin, name: m.n || "", wake: wakeOf(m) > 0 };
         }
@@ -175,8 +205,9 @@
   }
 
   // Pathing check: a move point that lies inside the ring of a mob of a later pack — not the move's own next pack,
-  // whose ring the pull is made from — or inside any scripted wake ring (its own pack included). 3D distance, by
-  // step then pack. [{i, pack, guid, name, dist, ring, wake}].
+  // whose ring the pull is made from — or inside any scripted wake ring (its own pack included). The distance is to the
+  // nearest point of the mob's patrol loop when it has one (distToMob), its spawn otherwise: 3D, by step then pack.
+  // [{i, pack, guid, name, dist, ring, wake}].
   function strays(plan, partyLevel) {
     const memo = plan && typeof plan === "object" ? memoFor(straysMemo, plan) : null;
     const party = partyOf(partyLevel);
@@ -193,7 +224,7 @@
         (byStep.get(p.i) || []).forEach((m) => {
           const ring = ringYd(m, party);
           if (!(ring > 0)) return;
-          const dist = dist3(s, m);
+          const dist = distToMob(s, m);
           if (dist >= ring) return;
           const wake = wakeOf(m) > 0;
           if (own && p.i === own.i && !wake) return;
@@ -248,12 +279,13 @@
 
     const rings = list(plan.mobs).filter((m) => ringYd(m, party) > 0).map((m) => ({
       x: m.x, y: m.y, z: m.z, r: ringYd(m, party), wake: wakeOf(m) > 0, step: m.step, guid: m.guid,
-      name: m.n || "", state: stateOf(m.step), patrol: !!m.patrol,
+      name: m.n || "", state: stateOf(m.step), patrol: !!m.patrol, path: m.path,
     }));
 
     const mobs = list(plan.mobs).map((m) => ({
       x: m.x, y: m.y, z: m.z, step: m.step, guid: m.guid, name: m.n || "", state: stateOf(m.step),
       patrol: !!m.patrol, boss: !!(stepByI[m.step] && stepByI[m.step].k === "boss"),
+      path: m.path, period_s: num(m.period_s), path_est: !!m.path_est,
     }));
 
     const out = { numbering, route, steps: outSteps, rings, mobs, strays: strayList };
@@ -264,7 +296,7 @@
 
   const api = {
     AGGRO_MAX_LEVEL_DIFF, AGGRO_MIN_REACH_YD, PARTY_LEVEL_DEFAULT, MOVE_KINDS, NO_POINT_KINDS,
-    aggroYd, ringYd, wakeText, partyLevel, numberingOk, states, fightPack, standMargins, strays, view,
+    aggroYd, ringYd, wakeText, partyLevel, numberingOk, states, fightPack, standMargins, strays, distToMob, view,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.PlanOverlay = api;
 })(typeof self !== "undefined" ? self : this);

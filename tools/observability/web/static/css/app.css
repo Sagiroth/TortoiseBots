@@ -3558,3 +3558,10 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-rdy.l-ok { background: var(--fd-ok); }
 .fd-rdy.l-warn { background: var(--fd-warn); }
 .fd-rdy.l-fail { background: var(--fd-fail); }
+
+/* ---------- Patrol paths ---------- */
+/* The loop a patrolling pack walks, drawn under the plan's rings and steps: a dashed yellow line and a direction tick every
+   few points; a recorded (estimated) loop is dimmed. Segments that would cross a floor change are left out. */
+.cmd-map .patrol-path { fill: none; stroke: var(--accent-yellow); stroke-width: 1.4; stroke-dasharray: 5 4; stroke-linejoin: round; opacity: .85; vector-effect: non-scaling-stroke; }
+.cmd-map .patrol-path.est { opacity: .6; }
+.cmd-map .patrol-tick { fill: var(--accent-yellow); opacity: .8; pointer-events: none; }

@@ -1,5 +1,5 @@
 "use strict";
-// Run by commandersjs_test.go under node: the Commanders tab's map layer state: the 27 layers in 7 groups and their
+// Run by commandersjs_test.go under node: the Commanders tab's map layer state: the 28 layers in 7 groups and their
 // defaults, the migration from the 32-switch v2 (and the v1 booleans), effective() (the old keys the drawing code reads),
 // the per-layer greying rule, the raid presets, the trail time cut, the mob union of a commander card with its dungeon
 // run, and the "N of M" note.
@@ -11,20 +11,20 @@ const mem = () => { const d = {}; return { d, getItem: (k) => (k in d ? d[k] : n
 const oldAll = (v) => { const o = {}; L.OLD_KEYS.forEach((k) => { o[k] = v; }); return o; };
 const oldDefaults = () => { const o = {}; L.OLD_KEYS.forEach((k) => { o[k] = L.OLD_LAYERS[k].def; }); return o; };
 
-// ---- the 27 layers, 7 groups, and the defaults the brief asks for
+// ---- the 28 layers, 7 groups, and the defaults the brief asks for
 const KEYS = ["bg", "grid", "zone", "bots", "botnames", "hpbars", "leadpath", "memberpaths", "commanderline", "planroute",
-  "planstands", "stalls", "runinfo", "enemies", "critters", "enemynames", "facing", "mobcast", "threat", "aggro", "actionlines", "subgroups",
+  "planstands", "stalls", "runinfo", "enemies", "critters", "enemynames", "facing", "mobcast", "threat", "aggro", "patrols", "actionlines", "subgroups",
   "healtank", "healrange", "deaths", "events", "objects"];
 const def = L.defaults();
 assert.deepStrictEqual(Object.keys(def).sort(), KEYS.concat(["dim", "trailLen", "trailSec", "style"]).sort());
-assert.strictEqual(L.keys().length, 27);
+assert.strictEqual(L.keys().length, 28);
 assert.deepStrictEqual(L.groups(), ["Map", "Party", "Route", "Threat", "Raid", "Events", "Objects"]);
 assert.deepStrictEqual(L.keys(), KEYS, "the panel's order");
 ["bg", "grid", "zone", "bots", "botnames", "hpbars", "leadpath", "planroute", "planstands", "runinfo", "enemies", "enemynames",
-  "facing", "mobcast", "threat", "aggro", "deaths", "events"].forEach((k) => assert.strictEqual(def[k], true, k));
+  "facing", "mobcast", "threat", "aggro", "patrols", "deaths", "events"].forEach((k) => assert.strictEqual(def[k], true, k));
 ["memberpaths", "commanderline", "critters", "stalls", "actionlines", "subgroups", "healtank", "healrange", "objects"]
   .forEach((k) => assert.strictEqual(def[k], false, k));
-assert.strictEqual(L.DEFS.filter((d) => d.def).length, 18);
+assert.strictEqual(L.DEFS.filter((d) => d.def).length, 19);
 assert.strictEqual(new Set(L.keys()).size, L.keys().length);
 L.DEFS.forEach((d) => {
   assert.ok(d.label && d.group && d.tip, d.key + " has a label, a group and a tooltip");
@@ -97,6 +97,14 @@ assert.strictEqual(L.availability({ facing: true }).facing.ok, true, "a reported
 assert.strictEqual(L.availability({ mobcast: true }).mobcast.ok, true, "a reported cast makes the cast layer available");
 assert.strictEqual(L.availability({ mobs: true }).facing.ok, false, "mobs alone say nothing about facing");
 assert.strictEqual(L.availability({ mobs: true }).mobcast.why, "no boss or elite is casting now");
+// patrol paths: the plan's own data (a mob with a path), not the plan itself
+assert.strictEqual(L.OLD_LAYERS.patrols.needs, "patrols");
+assert.strictEqual(L.OLD_LAYERS.patrols.def, true);
+assert.ok(L.OLD_LAYERS.patrols.why.length > 5);
+assert.strictEqual(L.availability({}).patrols.ok, false);
+assert.strictEqual(L.availability({ plan: true }).patrols.ok, false, "a plan without patrol paths has no path layer");
+assert.strictEqual(L.availability({ patrols: true }).patrols.ok, true);
+assert.strictEqual(L.availability({ patrols: true }).patrols.why, "");
 assert.strictEqual(L.availability({}).healtank.why, "no tank healers in the raid layout");
 // bots: the dots and the lead mark need bots or a lead; the names need a bot
 av = L.availability({ lead: true });
@@ -347,6 +355,12 @@ assert.strictEqual(L.applyPreset(L.set(L.defaults(), "stalls", true), "boss").st
 assert.strictEqual(L.applyPreset(L.defaults(), "boss").facing, true);
 assert.strictEqual(L.applyPreset(L.defaults(), "boss").mobcast, true);
 assert.strictEqual(L.applyPreset(L.defaults(), "all").facing, true);
+// patrol paths follow the plan route in a preset
+assert.strictEqual(L.applyPreset(L.defaults(), "pathing").patrols, true);
+assert.strictEqual(L.applyPreset(L.defaults(), "all").patrols, true, "the all preset has the plan route on");
+assert.strictEqual(L.applyPreset(L.defaults(), "heal").patrols, false, "no plan route, no patrol paths");
+assert.strictEqual(L.applyPreset(L.defaults(), "boss").patrols, false);
+assert.strictEqual(L.presetOf(L.applyPreset(L.defaults(), "pathing")), "pathing", "patrols is not a raid key");
 const noEnemies = L.applyPreset(L.set(L.defaults(), "enemies", false), "heal");
 assert.strictEqual(noEnemies.facing, false); assert.strictEqual(noEnemies.mobcast, false);
 assert.strictEqual(L.presetOf(L.applyPreset(L.defaults(), "boss")), "boss", "the overlay layers are not raid keys");
