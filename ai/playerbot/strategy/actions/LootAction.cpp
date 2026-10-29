@@ -4,6 +4,7 @@
 #include "../../policy/loot/LootWindowPolicy.h"
 #include "../../policy/loot/LootHistoryPolicy.h"
 #include "../../policy/loot/LootSlotRightPolicy.h"
+#include "../../policy/loot/CorpseLootPolicy.h"
 #include "LootAction.h"
 #include "playerbot/CastKeepsRunningPolicy.h"
 
@@ -205,7 +206,10 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
     // while any corpse loot is left (Spell::CheckCast -> SPELL_FAILED_TARGET_NOT_LOOTED), so the
     // old !UNIT_FLAG_SKINNABLE requirement made beast corpses unlootable (non-skinners ignored
     // them) and left skinners casting Skinning on an unlooted corpse every tick forever.
-    if (creature && creature->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE))
+    // ai::CorpseHasBodyLootFor also matches the viewer's own loot right, so an allowed corpse
+    // without the raw flag (its only loot left this bot's quest item) sends CMSG_LOOT here,
+    // not a skinning/gather spell.
+    if (creature && ai::CorpseHasBodyLootFor(bot, creature))
     {
         // Dismount in the open step (mod-playerbots LootAction.cpp): "loot available"
         // selects loot while mounted, so this is where a mounted bot gets off.
