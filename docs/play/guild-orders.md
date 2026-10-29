@@ -19,9 +19,9 @@ In your own guild you can send a bot to fetch items for real: it farms, buys or 
 Open the TBM addon (`/tbm`), go to the **Guild** tab, press **Order** next to a bot, search for an item, choose Farm, Buy or Craft and an amount. Without the addon, the same orders work from chat:
 
 ```text
-.bot order <BotName> farm <shift-clicked item link> <amount>
-.bot order <BotName> buy <item id> <amount>
-.bot order <BotName> craft <item id> <amount>
+.bot order <BotName> farm <item link or id> <amount>
+.bot order <BotName> buy <item link or id> <amount>
+.bot order <BotName> craft <item link or id> <amount>
 .bot order <BotName> cancel
 .bot order list
 .bot order search <BotName> farm <text>
@@ -49,7 +49,7 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 - **Level safety:** only sources (mobs, nodes) up to the bot's level + 3 count. Herb and ore orders need level 10. If there is nothing usable, the order ends at once.
 - **Giving up:** if an hour of real work brings no new item, the bot moves once to the next best zone; another empty hour there, or 5 deaths during the order, ends it. Only time the bot actually works counts.
 - **Full bags:** when the bags fill up, the bot delivers what it has and goes back to finish. Progress never drops.
-- **Crafting:** the bot needs to know the recipe (hand it a recipe item and it learns it) and have real materials; vendor-only materials it buys itself. A recipe it cannot learn or materials it cannot get end the order.
+- **Crafting:** the bot needs to know the recipe (hand it a recipe item and it learns it) and have real materials; materials a vendor sells it buys itself with its own gold. A recipe it cannot learn or materials it cannot get end the order.
 
 ## Delivery
 
