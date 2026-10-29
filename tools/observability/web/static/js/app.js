@@ -6189,7 +6189,7 @@
       + (o.bottarget ? '<span><i class="ltarget"></i>Bot target</span>' : '')
       + (o.commander ? '<span><i class="cmdr"></i>Commander</span>' : '')
       + (o.aggro ? '<span><i class="aggro"></i>Aggro range (by level)</span>' : '')
-      + (o.bossmark ? '<span><i class="lboss"></i>Boss (crown, name shown)</span>' : '')
+      + (o.bossmark ? '<span><i class="lboss"></i>Boss: purple, gold ring, crowned, health shown</span><span><i class="lelite"></i>Elite</span>' : '')
       + (o.facing ? '<span><i class="facing"></i>Facing arrow: where a boss or elite looks</span>' : '')
       + (o.mobcast ? '<span><i class="larea"></i>Red area: the spell being cast (cone, back cone or line)</span>' : '')
       + (o.hpbars ? '<span><i class="lhp"></i>Health bar</span>' : '')
@@ -6431,13 +6431,71 @@
         + `${pt(p.x + v.x * base - nx * half, p.y + v.y * base - ny * half)}"/>`;
     }
     if (o.mobcast && casting) {
-      const r = (m.rank === 'b' ? 11 : 7) * k, circ = 2 * Math.PI * r, frac = CmdView.castFrac(m, nowLeftMs);
+      const r = (m.rank === 'b' ? 14 : 7) * k, circ = 2 * Math.PI * r, frac = CmdView.castFrac(m, nowLeftMs);
       const target = m.ctg && botsById && botsById[m.ctg] ? botsById[m.ctg].name : '';
       const label = (m.cast || 'a spell') + ' ' + (nowLeftMs / 1000).toFixed(1) + ' s' + (target ? ' → ' + target : '');
       over += `<circle class="castring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}" stroke-dasharray="${f(frac * circ)} ${f(circ)}" transform="rotate(-90 ${f(p.x)} ${f(p.y)})"/>`
         + `<text class="mobcast" x="${f(p.x)}" y="${f(p.y - r - 8 * k)}" style="font-size:${f(10 * k)}px;stroke-width:${f(3 * k)}px" text-anchor="middle">${esc(label)}</text>`;
     }
     return { under, over };
+  }
+
+  // How much room an enemy takes and whether it is the one to spot: a boss is 14 px across at any zoom (k is one screen px in
+  // drawing units), an elite takes a step up and an ordinary unit keeps its size. The caller multiplies by k.
+  function cmdMobLook(m, bossmark) {
+    const rank = m && m.rank, cls = CmdView.mobClass(m);
+    const boss = !!bossmark && rank === 'b', elite = !!bossmark && rank === 'e';
+    return { boss: boss, elite: elite, r: boss ? 14 : elite ? 7 : cls === 'critter' ? 3 : 5 };
+  }
+
+  // One enemy as a map group: the threat rings, its body (a boss in its own colour with a pulsing gold ring, the crown above
+  // the body and its health after the name), then the overlays. d carries what the draw around it knows: the layers, the marks,
+  // the bots' names, the cast's time left and overlay(), which builds the health bar and the status icons.
+  function cmdMobSvg(c, m, d) {
+    const k = c.k, f = c.f, on = d.on || {}, p = CmdView.project(m.x, m.y);
+    const cls = CmdView.mobClass(m), look = cmdMobLook(m, on.bossmark), r = look.r * k, uid = 'm:' + m.id;
+    const ov = cmdMobOverlaySvg(c, m, on, d.leftMs, d.botsById);
+    c.units[uid] = { kind: 'm', obj: m };
+    let g = `<g class="mob ${cls}${look.boss ? ' boss' : ''}${look.elite ? ' elite' : ''}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(Math.max(r, 11 * k))}"/>${ov.under}`;
+    if (on.threatcolors && d.marks) {
+      const tc = UnitInfo.threatClass(m, d.onMap || []);
+      if (d.marks.pull[m.id]) g += `<circle class="tpull" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 9 * k)}"/>`;
+      if (d.marks.tank[m.id]) g += `<circle class="ttarget" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 5.5 * k)}"/>`;
+      if (tc !== 'none') g += `<circle class="tring ${tc}" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 2.2 * k)}"/>`;
+    }
+    // the gold ring pulses just outside the body; with reduced motion it is a static double ring
+    if (look.boss) {
+      g += `<circle class="bossring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 6 * k)}"/>`
+        + `<circle class="bossring2" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 10 * k)}"/>`;
+    }
+    g += `<circle class="body" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/>${ov.over}`;
+    if (look.boss) g += cmdMapIcon('crown', p.x, p.y - r - 11 * k, 16 * k);
+    // a boss's health bar sits above the crown (r + 16*k), so the crown is not drawn over it
+    g += d.overlay(m, 'mob', p, look.boss ? r + 16 * k : r);
+    if (look.boss || (on.hostilenames && cls === 'hostile')) {
+      // a boss carries its health: "Onyxia 63%", when the report knows it
+      const hp = look.boss && typeof m.hp === 'number' ? ' ' + Math.round(m.hp) + '%' : '';
+      const label = (m.name || (m.entry ? 'creature ' + m.entry : 'unit')) + hp;
+      g += `<text class="mname${look.boss ? ' boss' : ''}" x="${f(p.x + (r + 4 * k))}" y="${f(p.y + 4 * k)}" style="font-size:${f((look.boss ? 13 : 10.5) * k)}px;stroke-width:${f((look.boss ? 4 : 3) * k)}px">${esc(label)}</text>`;
+    }
+    return g + '</g>';
+  }
+
+  // A boss that is on this map but outside the part of it in view: a gold arrow and a crown at the edge, pointing its way, so
+  // a boss is never lost when the view is zoomed or panned away. The marker carries the boss's place; a click centres on it.
+  function cmdBossPoint(c, m, box) {
+    const p = CmdView.project(m.x, m.y), x0 = box[0], y0 = box[1], x1 = x0 + box[2], y1 = y0 + box[3];
+    if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) return '';
+    const pad = 15 * c.k, f = c.f;
+    const x = Math.min(x1 - pad, Math.max(x0 + pad, p.x)), y = Math.min(y1 - pad, Math.max(y0 + pad, p.y));
+    const ang = Math.atan2(p.y - y, p.x - x), cos = Math.cos(ang), sin = Math.sin(ang);
+    const tip = `${f(x + cos * 15 * c.k)},${f(y + sin * 15 * c.k)}`;
+    const b1 = `${f(x + cos * 5 * c.k - sin * 6 * c.k)},${f(y + sin * 5 * c.k + cos * 6 * c.k)}`;
+    const b2 = `${f(x + cos * 5 * c.k + sin * 6 * c.k)},${f(y + sin * 5 * c.k - cos * 6 * c.k)}`;
+    return `<g class="bosspoint" data-bx="${m.x}" data-by="${m.y}"><circle class="hit" cx="${f(x)}" cy="${f(y)}" r="${f(14 * c.k)}"/>`
+      + `<title>${esc((m.name || 'A boss') + ' is off this part of the map: click to centre on it')}</title>`
+      + `<polygon class="bosspoint-arrow" points="${tip} ${b1} ${b2}"/>`
+      + cmdMapIcon('crown', x - cos * 9 * c.k, y - sin * 9 * c.k, 11 * c.k) + '</g>';
   }
 
   // ---- the plan layer: the run leader's plan (read from the world database by the daemon) on the map ----
@@ -6767,28 +6825,14 @@
     const botsById = {};
     onMap.forEach(b => { if (b.id) botsById[b.id] = b; });
     const mobSeen = cmdMobSeenAt[key] || {}, nowMs = performance.now();
-    shown.forEach(m => {
-      const p = CmdView.project(m.x, m.y), cls = CmdView.mobClass(m), boss = on.bossmark && m.rank === 'b';
-      const r = (boss ? 9 : cls === 'critter' ? 3 : 5) * k, uid = 'm:' + m.id;
+    const drawMob = m => cmdMobSvg(dc, m, {
+      on, marks, botsById, onMap, overlay,
       // the time left of its cast: the report's own value counted down from its arrival, or the replay's value at the cursor
-      const leftMs = rp ? (typeof m.cleft === 'number' ? m.cleft : 0) : CmdView.castLeft(m, mobSeen[m.id], nowMs);
-      const ov = cmdMobOverlaySvg(dc, m, on, leftMs, botsById);
-      units[uid] = { kind: 'm', obj: m };
-      g += `<g class="mob ${cls}${boss ? ' boss' : ''}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(Math.max(r, 11 * k))}"/>${ov.under}`;
-      if (on.threatcolors) {
-        const tc = UnitInfo.threatClass(m, onMap);
-        if (marks.pull[m.id]) g += `<circle class="tpull" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 9 * k)}"/>`;
-        if (marks.tank[m.id]) g += `<circle class="ttarget" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 5.5 * k)}"/>`;
-        if (tc !== 'none') g += `<circle class="tring ${tc}" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 2.2 * k)}"/>`;
-      }
-      g += `<circle class="body" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/>${ov.over}`;
-      if (boss) g += cmdMapIcon('crown', p.x, p.y, 12 * k).replace('class="ic ic-crown"', 'class="ic ic-crown crownmark"');
-      g += overlay(m, 'mob', p, boss ? r + 8 * k : r);
-      if (boss || (on.hostilenames && cls === 'hostile')) {
-        g += `<text class="mname${boss ? ' boss' : ''}" x="${f(p.x + (r + 4 * k))}" y="${f(p.y + 4 * k)}" style="font-size:${f((boss ? 12.5 : 10.5) * k)}px;stroke-width:${f(3 * k)}px">${esc(m.name || (m.entry ? 'creature ' + m.entry : 'unit'))}</text>`;
-      }
-      g += '</g>';
+      leftMs: rp ? (typeof m.cleft === 'number' ? m.cleft : 0) : CmdView.castLeft(m, mobSeen[m.id], nowMs),
     });
+    // a boss is drawn after the party (below), so no mob or bot dot can cover the one unit to spot
+    const bosses = on.bossmark ? shown.filter(m => m.rank === 'b') : [];
+    shown.filter(m => bosses.indexOf(m) < 0).forEach(m => { g += drawMob(m); });
     if (on.events) {
       UnitInfo.pinsOn(UnitInfo.eventsOf(cmdEvents, bind.commander), first ? first.map : null, 30).forEach(e => {
         const p = CmdView.project(e.x, e.y), uid = 'e:' + e.id, big = e.kind === 'wipe' || e.kind === 'boss';
@@ -6843,6 +6887,11 @@
         + (named ? `<text x="${f(p.x + 10 * k)}" y="${f(p.y + 4 * k)}" style="font-size:${f(11.5 * k)}px;stroke-width:${f(3 * k)}px">${isLead ? '★ ' : ''}${esc(b.name)}</text>` : '')
         + '</g>';
     });
+    // the bosses last: on top of every enemy and party dot, then the markers of the ones off the part of the map in view
+    bosses.forEach(m => { g += drawMob(m); });
+    bosses.forEach(m => { g += cmdBossPoint(dc, m, box); });
+    ms.bosses = bosses.filter(m => !(typeof m.hp === 'number' && m.hp <= 0)).map(m => ({ x: m.x, y: m.y, name: m.name || '' }));
+    ms.hero = lead2 ? { x: lead2.x, y: lead2.y } : (onMap[0] ? { x: onMap[0].x, y: onMap[0].y } : null);
     svg.setAttribute('viewBox', box.map(f).join(' '));
     svg.querySelector('g.dyn').innerHTML = g;
     const awayNote = away > 0 ? `${away} bot${away === 1 ? ' is' : 's are'} on another map` : '';
@@ -6863,6 +6912,8 @@
     const fb = card.querySelector('[data-act="follow"]');
     fb.setAttribute('aria-pressed', ms.follow ? 'true' : 'false');
     fb.classList.toggle('on', ms.follow);
+    const bossBtn = card.querySelector('.cmd-bossbtn');
+    if (bossBtn) bossBtn.hidden = !(ms.bosses && ms.bosses.length);
     card.querySelector('.cmd-resume').hidden = ms.follow;
 
     // the run line and the event feed
@@ -7004,6 +7055,18 @@
     };
     svg.addEventListener('pointerup', up);
     svg.addEventListener('pointercancel', up);
+    // A click on the edge marker of an off-screen boss centres the map on that boss (a drag is a pan, not a pick).
+    svg.addEventListener('click', e => {
+      const n = e.target.closest && e.target.closest('g.bosspoint');
+      if (!n) return;
+      const bx = Number(n.dataset.bx), by = Number(n.dataset.by);
+      if (!isFinite(bx) || !isFinite(by)) return;
+      const m = ms(), [pw, ph] = size(), p = CmdView.project(bx, by);
+      m.follow = false;
+      m.view = m.view ? { cx: p.x, cy: p.y, scale: m.view.scale } : CmdView.fitView([p], pw, ph, 44, 60);
+      m.userScale = m.view.scale;
+      drawCmdMap(key);
+    });
     svg.addEventListener('wheel', e => {
       const m = ms();
       if (!m.view) return;
@@ -7032,6 +7095,17 @@
           m.follow = false;
           m.userScale = null;
           m.view = CmdView.fitView(pts, pw, ph, 8, 60);
+        }
+      } else if (btn.dataset.act === 'boss') {
+        const list = m.bosses || [];
+        if (list.length) {
+          const from = m.hero || { x: 0, y: 0 };
+          const near = list.reduce((a, b) => (b.x - from.x) * (b.x - from.x) + (b.y - from.y) * (b.y - from.y)
+            < (a.x - from.x) * (a.x - from.x) + (a.y - from.y) * (a.y - from.y) ? b : a);
+          const p = CmdView.project(near.x, near.y);
+          m.follow = false;
+          m.userScale = m.view ? m.view.scale : null;
+          m.view = m.view ? { cx: p.x, cy: p.y, scale: m.view.scale } : CmdView.fitView([p], pw, ph, 44, 60);
         }
       } else if (m.view) {
         const factor = btn.dataset.act === 'in' ? 1.5 : 1 / 1.5;
@@ -7092,6 +7166,7 @@
                 <button type="button" data-act="out" title="Zoom out" aria-label="Zoom out">&minus;</button>
                 <button type="button" data-act="follow" class="follow" title="Keep the party in view">Follow</button>
                 <button type="button" data-act="whole" title="Show the whole map picture">Whole map</button>
+                <button type="button" data-act="boss" class="cmd-bossbtn" hidden title="Centre the map on the nearest living boss">Boss</button>
               </div>
               <button type="button" class="cmd-resume" data-act="resume" hidden title="You moved the map. Click to keep the party in the middle again.">Paused - click to follow</button>
               <div class="cmd-grid-size"></div>

@@ -104,7 +104,7 @@
     { key: "critters", label: "Critters", group: "Threat", def: false, parts: ["mobcritter"],
       tip: "Critters (small harmless units) the game server reports." },
     { key: "enemynames", label: "Enemy names and boss marker", group: "Threat", def: true, parts: ["hostilenames", "bossmark"],
-      tip: "The name of every hostile unit; a boss is bigger, crowned and always named." },
+      tip: "The name of every hostile unit; a boss is bigger, purple with a gold ring, crowned, and always named with its health." },
     { key: "facing", label: "Boss and elite facing", group: "Threat", def: true, parts: ["facing"],
       tip: "An arrow where every boss and elite the game server reports looks (its own facing, not its movement)." },
     { key: "mobcast", label: "Boss and elite casts and spell areas", group: "Threat", def: true, parts: ["mobcast"],

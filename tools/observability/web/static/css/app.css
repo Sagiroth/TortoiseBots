@@ -3005,9 +3005,22 @@ select.input {
 .cmd-map .mob.hostile circle.body { fill: #ef4444; }
 .cmd-map .mob.neutral circle.body { fill: #9ca3af; }
 .cmd-map .mob.critter circle.body { fill: #a8a29e; stroke: rgba(0, 0, 0, 0.5); }
-.cmd-map .mob.boss circle.body { stroke: #facc15; stroke-width: 2; }
-.cmd-map text.mname { fill: #fecaca; font-weight: 600; paint-order: stroke; stroke: #000; stroke-linejoin: round; pointer-events: none; }
+.cmd-map .mob.boss circle.body { fill: #7c3aed; stroke: #facc15; stroke-width: 3; }
+.cmd-map .mob.elite circle.body { stroke: #c0c0c0; stroke-width: 1.6; }
+/* A boss's gold ring pulses just outside the body; with reduced motion it is a static double ring instead. */
+.cmd-map .mob circle.bossring, .cmd-map .mob circle.bossring2 { fill: none; stroke: #facc15; vector-effect: non-scaling-stroke; }
+.cmd-map .mob circle.bossring { stroke-width: 2; animation: bossring 1.6s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+.cmd-map .mob circle.bossring2 { display: none; stroke-width: 1; opacity: 0.45; }
+@keyframes bossring { 0% { transform: scale(1); opacity: 0.9; } 100% { transform: scale(1.5); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .cmd-map .mob circle.bossring { animation: none; opacity: 0.55; }
+  .cmd-map .mob circle.bossring2 { display: inline; }
+}
 .cmd-map text.mname.boss { fill: #facc15; font-weight: 700; }
+/* A boss off the part of the map in view: a gold arrow and a crown at the edge, which a click centres on. */
+.cmd-map g.bosspoint { cursor: pointer; }
+.cmd-map .bosspoint-arrow { fill: #facc15; stroke: #000; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.cmd-map text.mname { fill: #fecaca; font-weight: 600; paint-order: stroke; stroke: #000; stroke-linejoin: round; pointer-events: none; }
 .cmd-map .bot text, .cmd-map .cmdr text { pointer-events: none; }
 .cmd-map circle.tring { fill: none; stroke-width: 2.4; vector-effect: non-scaling-stroke; }
 .cmd-map circle.tring.tank { stroke: #2f80ff; }
@@ -3044,7 +3057,8 @@ select.input {
 .cmd-legend svg.ic-skull { fill: #e5e7eb; } .cmd-legend svg.ic-spark { fill: #facc15; } .cmd-legend svg.ic-sheep { fill: #f9a8d4; }
 .cmd-legend svg.ic-cup { fill: #7dd3fc; color: #7dd3fc; } .cmd-legend svg.ic-arrow { color: #fb923c; } .cmd-legend svg.ic-crown { fill: #facc15; }
 .cmd-legend svg.ic-door { fill: #93c5fd; } .cmd-legend svg.ic-coin { fill: #fcd34d; }
-.cmd-legend i.lboss { background: #ef4444; border-color: #facc15; width: 14px; height: 14px; }
+.cmd-legend i.lboss { background: #7c3aed; border: 3px solid #facc15; width: 16px; height: 16px; }
+.cmd-legend i.lelite { background: #ef4444; border: 2px solid #c0c0c0; }
 .cmd-legend i.lhp { width: 16px; height: 4px; border: 0; border-radius: 2px; background: linear-gradient(90deg, #22c55e 65%, rgba(0, 0, 0, 0.7) 65%); vertical-align: 2px; }
 .cmd-legend i.tc-tank, .cmd-legend i.tc-other { background: #9ca3af; border-width: 2.5px; }
 .cmd-legend i.tc-tank { border-color: #2f80ff; } .cmd-legend i.tc-other { border-color: #ef4444; }

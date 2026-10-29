@@ -261,6 +261,13 @@ func TestBossOverlayJS(t *testing.T) {
 	runCheck(t, "bossoverlay_check.js", "../../web/static/js/app.js", "../../web/static/css/app.css")
 }
 
+// TestBossMapJS runs boss_check.js: a boss stands out on the Commanders map (its size and colour, the pulsing ring and its
+// reduced-motion form, the crown above the body, the name with the health, the off-screen edge marker), it is drawn after
+// the party, the replay keeps its rank, and the legend and the CSS agree.
+func TestBossMapJS(t *testing.T) {
+	runCheck(t, "boss_check.js", "../../web/static/js/app.js", "../../web/static/css/app.css")
+}
+
 // TestLiveViewJS runs live_check.js: the live stream's pure half (the commanders' URL, the copy-on-write pos merge, the refresh
 // rates that may move the dots, the error fallback and the one-draw-per-frame scheduler).
 func TestLiveViewJS(t *testing.T) {
