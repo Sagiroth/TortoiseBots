@@ -575,9 +575,18 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         bool const beginnerRepark = questErrand && bot->GetLevel() < 5 &&
             sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster() &&
             !HasRewardableFinishedQuest(ai);
-        SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
-        SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey,
-            time(0) + ((questErrand && !beginnerRepark) ? 10 * MINUTE : MINUTE));
+        // A rejected order leg never parks: the order stays Working and the
+        // plan only moves on by deaths or an hour without a new item, so a
+        // minute park would idle the bot between re-searches of the same
+        // zone. The leg re-requests next tick and either lands a spot that
+        // turned active or picks the plan's next zone.
+        bool const orderLeg = IsGuildOrderTravelName(purposeKey);
+        if (!orderLeg)
+        {
+            SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
+            SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey,
+                time(0) + ((questErrand && !beginnerRepark) ? 10 * MINUTE : MINUTE));
+        }
         ai->TellDebug(ai->GetMaster(), "No target set", "debug travel");
         // An order reagent or workshop with no reachable destination fails
         // the order: every candidate was rejected by the pick gates.
@@ -2597,7 +2606,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                     if (orderFishes)
                     {
                         PartitionedTravelList fishList = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                            (uint32_t)TravelDestinationPurpose::GatherFishing, {}, false);
+                            (uint32_t)TravelDestinationPurpose::GatherFishing, {}, true);
                         zonePinned(fishList);
                         append(std::move(fishList));
                     }

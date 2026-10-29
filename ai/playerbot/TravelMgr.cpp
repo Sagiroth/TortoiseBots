@@ -2821,6 +2821,32 @@ WorldPosition* TravelMgr::GetFishSpot(WorldPosition start, bool onlyNearestGrid)
     return fishMap.GetNextPoint(start, chances);
 }
 
+bool TravelMgr::FishZoneHasSpots(uint32 zoneId) const
+{
+    if (!zoneId)
+        return false;
+    auto purposeIt = destinationMap.find(TravelDestinationPurpose::GatherFishing);
+    if (purposeIt == destinationMap.end())
+        return false;
+    for (auto const& entryDests : purposeIt->second)
+        for (TravelDestination* dest : entryDests.second)
+        {
+            if (!dest)
+                continue;
+            for (WorldPosition* point : dest->GetPoints())
+            {
+                if (!point)
+                    continue;
+                AreaTableEntry const* area = point->GetArea();
+                if (!area)
+                    continue;
+                if (area->ZoneId ? area->ZoneId == zoneId : area->Id == zoneId)
+                    return true;
+            }
+        }
+    return false;
+}
+
 DestinationList TravelMgr::GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries, bool onlyPossible, float maxDistance) const
 {
     WorldPosition center = info.getPosition();

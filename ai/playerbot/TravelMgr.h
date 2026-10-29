@@ -470,7 +470,10 @@ namespace ai
 		void GetFishLocations(uint32 mapId);
 		void SaveFishLocations();
 
-		WorldPosition* GetFishSpot(WorldPosition start, bool onlyNearestGrid = false);
+		// Whether the fish dataset holds at least one spot in the zone: the
+		// guild-order planner skips zones it cannot serve, so the travel leg
+		// never plans water it has no walkable point in.
+		bool FishZoneHasSpots(uint32 zoneId) const;
 
 		EntryDestinationMap GetExploreLocs() const { return destinationMap.at(TravelDestinationPurpose::Explore); };
 		DestinationList GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f) const;

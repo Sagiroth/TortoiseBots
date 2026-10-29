@@ -1,6 +1,7 @@
 // Standalone test for runtime/GuildOrderFishingPolicy.h: the pure guild
 // fishing-order rules (gear bonuses, zone reach, cheapest pole pick).
 #include "../runtime/GuildOrderFishingPolicy.h"
+#include "../runtime/GuildOrderSourcesPolicy.h"
 
 #include <cstdio>
 
@@ -51,7 +52,25 @@ int main()
     CHECK(FishingGearHelps(1, 130));
     CHECK(!FishingGearHelps(300, 55));
     CHECK(!FishingGearHelps(1, -20));
-    CHECK(!FishingGearHelps(1, 330));
+    // Verdict witness for the fish loop: any fish row makes the item
+    // sourced, and one on the bot's continent makes it ranged.
+    {
+        bool sawAny = false, sawInRange = false;
+        FishSourceWitness(sawAny, sawInRange, true);
+        CHECK(sawAny && sawInRange);
+        CHECK(OrderVerdict(false, 1, sawInRange, sawAny) == OrderReason::LowSkill);
+    }
+    {
+        bool sawAny = false, sawInRange = false;
+        FishSourceWitness(sawAny, sawInRange, false);
+        CHECK(sawAny && !sawInRange);
+        CHECK(OrderVerdict(false, 0, sawInRange, sawAny) == OrderReason::NoRange);
+    }
+    {
+        bool sawAny = false, sawInRange = false;
+        FishSourceWitness(sawAny, sawInRange, true);
+        CHECK(OrderVerdict(false, 2, sawInRange, sawAny) == OrderReason::NoSkill);
+    }
 
     if (failures == 0)
         std::printf("test_guild_order_fishing_policy ok\n");

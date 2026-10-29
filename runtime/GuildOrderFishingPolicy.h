@@ -91,5 +91,15 @@ inline bool FishingGearHelps(uint32_t skillValue, int32_t reqSkill)
            FishingZoneReachable(reqSkill, skillValue);
 }
 
+// Verdict flags for one fish row in the plan loop: any fish row makes the
+// item sourced, and one on the bot's continent makes it ranged, so a
+// fish-only item out of skill answers lowskill/noskill instead of nosource.
+inline void FishSourceWitness(bool& sawAny, bool& sawInRange, bool onBotContinent)
+{
+    sawAny = true;
+    if (onBotContinent)
+        sawInRange = true;
+}
+
 } // namespace GuildOrders
 } // namespace TortoiseBots

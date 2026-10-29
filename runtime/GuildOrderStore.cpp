@@ -656,7 +656,8 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
            TypeToken(order.type) + "|" + std::to_string(order.itemId) + "|" +
            BotCommands::ProtocolSafe(itemName) + "|" + std::to_string(have) + "|" +
            std::to_string(order.amount) + "|" + StateToken(order.state) + "|" +
-           ReasonToken(order.reason) + "|" + BotCommands::ProtocolSafe(zone) + "|" + difficulty;
+           ReasonToken(order.reason) + "|" + BotCommands::ProtocolSafe(zone) + "|" + difficulty +
+           "|" + std::to_string(order.hours);
 }
 
 void Initialize()
