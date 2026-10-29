@@ -758,16 +758,16 @@ void TakeRunItems(DungeonRunSlot& slot, uint64_t guid /*0 = all*/)
     }
 }
 // Every place a run slot goes away routes through this (it takes back the
-// given items first); the only caller of DungeonRuns().erase.
+// given items first); the only caller of DungeonRuns().erase. The group's
+// combat book stays: a binding still standing follows its open fight to the end
+// (FillCommanderCombat through RefreshNoRun), and only the binding's release
+// forgets it.
 void EraseRunSlot(uint64_t commanderRaw)
 {
     auto it = DungeonRuns().find(commanderRaw);
     if (it == DungeonRuns().end())
         return;
     TakeRunItems(it->second, 0);
-    if (RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commanderRaw))
-        if (binding->groupId)
-            TortoiseBots::CombatMonitorService::Instance().Forget(binding->groupId);
     DungeonRuns().erase(it);
 }
 // Every run slot at once (no commander bound any more, the module's clear): the given items go back first.

@@ -530,6 +530,86 @@ static void TestRetiredBookDrainsThenErased()
     CHECK(TakeEventsFor(svc, 81, 63000).empty());
 }
 
+// A run slot's erase (`.bot run stop`, a time limit, a switched-off gate) is
+// exactly the absence of Forget while the binding stands: the open fight keeps
+// running on RefreshNoRun and records what happens after the stop until combat
+// ends, and only then closes.
+static void TestRunStopMidFightKeepsRecording()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(83, Members(), true, false, Ctx(), {}, 1000);
+    CHECK(TakeEventsFor(svc, 83, 1000).size() == 1);   // the start went out
+    // The run ended mid-fight; the binding stands, so no Forget runs.
+    svc.RefreshNoRun(83, true, false, 4000);
+    CHECK(svc.InFight(83));
+    svc.OnDeath(7, 0, "Magmadar", 1.0f, 2.0f, 3.0f, 0);
+    std::vector<std::string> const after = TakeEventsFor(svc, 83, 4400);
+    CHECK(after.size() == 1);
+    CHECK(after[0].find("\"k\":\"death\"") != std::string::npos);
+    CHECK(after[0].find("\"fight\":null") == std::string::npos);
+    CHECK(svc.InFight(83));
+    // Combat goes on for another 20 s, then the 3 s rule ends it.
+    svc.RefreshNoRun(83, true, false, 24000);
+    CHECK(svc.InFight(83));
+    svc.RefreshNoRun(83, false, false, 25000);
+    svc.RefreshNoRun(83, false, false, 28000);
+    CHECK(!svc.InFight(83));
+    std::vector<std::string> const end = TakeEventsFor(svc, 83, 28400);
+    CHECK(end.size() == 1);
+    CHECK(end[0].find("\"k\":\"end\"") != std::string::npos);
+    CHECK(end[0].find("\"dur\":24000") != std::string::npos);
+    std::string const summary = TakeOne(svc, 83, 1700028400);
+    CHECK(!summary.empty());
+    CHECK(summary.find("\"dur_ms\":24000") != std::string::npos);
+    svc.Forget(83);
+}
+
+// The datagram budget shrinks a take below the 32 it dequeued; the events that
+// did not fit go back in order and arrive in later datagrams, none lost.
+static void TestEventShrinkRequeuesTheRest()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    svc.SyncConfig(true);
+    svc.Refresh(84, Members(), true, false, Ctx(), {}, 1000);
+    CHECK(TakeEventsFor(svc, 84, 1000).size() == 1);   // the start went out
+    std::string const prefix(1500, 's');
+    for (uint32_t i = 0; i < 40; ++i)
+        svc.OnCast(7, (prefix + "#" + std::to_string(i)).c_str(), false, 't', 777, "Magmadar");
+    std::vector<std::string> payloads;
+    for (int round = 0; round < 40; ++round)
+    {
+        std::vector<std::string> const got = TakeEventsFor(svc, 84, 1400, 0);
+        if (got.empty())
+            break;
+        payloads.insert(payloads.end(), got.begin(), got.end());
+    }
+    CHECK(payloads.size() > 1);
+    std::vector<uint32_t> order;
+    for (std::string const& payload : payloads)
+    {
+        CHECK(payload.size() <= TortoiseBots::CombatMonitor::kEventsByteBudget);
+        CHECK(payload.find("\"dropped\":0") != std::string::npos);
+        std::string::size_type pos = 0;
+        while ((pos = payload.find("\"s\":\"", pos)) != std::string::npos)
+        {
+            pos += 5;
+            std::string::size_type const hash = payload.find('#', pos);
+            std::string::size_type const quote = payload.find('"', pos);
+            CHECK(hash != std::string::npos && hash < quote);
+            order.push_back(static_cast<uint32_t>(std::stoul(payload.substr(hash + 1, quote - hash - 1))));
+            pos = quote;
+        }
+        CHECK(CountOf(payload, "\"k\":\"taunt\"") < 32);   // the budget shrank it
+    }
+    CHECK(order.size() == 40);
+    for (uint32_t i = 0; i < order.size(); ++i)
+        CHECK(order[i] == i);
+    svc.Forget(84);
+}
+
 int main()
 {
     TestSyncConfigUngated();
@@ -552,6 +632,8 @@ int main()
     TestTauntAndInterruptKinds();
     TestEnemyCastEventOnlyEliteBoss();
     TestRetiredBookDrainsThenErased();
+    TestRunStopMidFightKeepsRecording();
+    TestEventShrinkRequeuesTheRest();
     std::printf("combat monitor service: %d checks passed\n", checks);
     return 0;
 }

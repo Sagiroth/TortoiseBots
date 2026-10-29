@@ -474,15 +474,19 @@ void CombatMonitorService::TakeEventPayloads(std::vector<std::string>& out, int 
         uint32_t dropped = 0;
         book.TakeEvents(events, dropped);
         CombatMonitor::EventsFightHeader header;
-        // "fight":null only when the last event is the fight's end and nothing new opened.
-        header.present = events.empty() ? inFight : events.back().kind != CombatMonitor::EventKind::End;
+        header.inFight = inFight;
         header.number = book.FightNumber();
         header.startMs = book.StartMs();
         header.startUnix = book.StartUnix();
         header.fightMs = inFight && nowMs >= book.StartMs() ? nowMs - book.StartMs() : book.LastFightMs();
         header.ctx = book.Context();
+        size_t emitted = 0;
         out.push_back(CombatMonitor::BuildEventsJson(protocolVersion, session, nextSeq(), tsUnix, tsMs, commander,
-                                                     commanderGuid, groupId, mapId, header, events, dropped));
+                                                     commanderGuid, groupId, mapId, header, events, dropped, &emitted));
+        // The budget may have shrunk the datagram below what was taken: the rest
+        // goes back in order for the next one instead of being lost.
+        if (emitted < events.size())
+            book.RequeueEvents(events, emitted);
         m_lastEventSend[groupId] = nowMs;
     };
     for (auto& kv : m_books)

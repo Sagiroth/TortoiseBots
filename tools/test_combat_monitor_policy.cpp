@@ -542,7 +542,7 @@ static void TestEventsJsonHalvesUnderBudget()
         events.push_back(std::move(e));
     }
     EventsFightHeader header;
-    header.present = true;
+    header.inFight = true;
     header.number = 1;
     header.startMs = 1000;
     header.startUnix = 1793209948;
@@ -556,6 +556,95 @@ static void TestEventsJsonHalvesUnderBudget()
     CHECK(emitted < events.size());
     CHECK(Contains(json, "\"k\":\"death\""));
     CHECK(Count(json, "\"k\":\"death\"") == emitted);
+}
+
+// A single event whose names are far past the budget still goes out as one
+// event: the names are clipped (the last form), so the count never has to drop
+// to zero, and the header alone fits too.
+static void TestEventsJsonBoundsHugeNames()
+{
+    LiveEvent e;
+    e.kind = EventKind::Death;
+    e.atMs = 1200;
+    e.guid = 4000;
+    e.name = std::string(200000, 'n');
+    e.by = std::string(200000, 'k');
+    EventsFightHeader header;
+    header.inFight = true;
+    header.number = 2;
+    header.startMs = 1000;
+    header.startUnix = 1793209948;
+    header.fightMs = 500;
+    header.ctx = BossCtx();
+    size_t emitted = 0;
+    std::string const json = BuildEventsJson(12, 77, 1, 1793210001, 1793210001000, std::string(70000, 'c'), 5, 9, 249,
+                                             header, {e}, 0, &emitted);
+    CHECK(emitted == 1);
+    CHECK(Count(json, "\"k\":\"death\"") == 1);
+    CHECK(json.size() <= kEventsByteBudget);
+    CHECK(json.size() < 20000);
+
+    // No events at all and a commander name of 70000 bytes: the header alone
+    // is bounded too, so the keepalive still fits.
+    size_t const before = emitted;
+    std::string const keepalive = BuildEventsJson(12, 77, 2, 1793210002, 1793210002000, std::string(70000, 'c'), 5, 9,
+                                                  249, header, {}, 0, &emitted);
+    CHECK(emitted == 0);
+    CHECK(before == 1);
+    CHECK(keepalive.size() <= kEventsByteBudget);
+    CHECK(Contains(keepalive, "\"events\":[]"));
+    CHECK(Contains(keepalive, "\"fight\":{"));
+}
+
+// The datagram budget shrinks the count; the events taken but not serialized
+// are requeued at the front, in order, so repeating take/shrink/requeue hands
+// every event out exactly once, oldest first.
+static void TestEventsRequeueKeepsOrder()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(1000, 1700000000, BossCtx(), 1);
+    std::string const prefix(2000, 'x');
+    for (uint32_t i = 0; i < 40; ++i)
+        b.OnCast(1, prefix + "#" + std::to_string(i), false, 1100, 't', 777, "Magmadar");
+    EventsFightHeader header;
+    header.inFight = true;
+    header.number = 1;
+    header.startMs = 1000;
+    header.startUnix = 1793209948;
+    header.fightMs = 1000;
+    header.ctx = BossCtx();
+    size_t nextCast = 0;
+    bool sawStart = false;
+    size_t rounds = 0;
+    while (b.HasEvents())
+    {
+        std::vector<LiveEvent> events;
+        uint32_t dropped = 0;
+        b.TakeEvents(events, dropped);
+        CHECK(!events.empty());
+        size_t emitted = 0;
+        std::string const json = BuildEventsJson(12, 77, 1, 1793210001, 1793210001000, "Cmdr", 5, 9, 249, header,
+                                                 events, dropped, &emitted);
+        CHECK(emitted > 0);   // the clipped form always carries one event
+        CHECK(json.size() <= kEventsByteBudget);
+        for (size_t i = 0; i < emitted; ++i)
+        {
+            if (events[i].kind == EventKind::Start)
+            {
+                CHECK(!sawStart);
+                sawStart = true;
+                continue;
+            }
+            CHECK(events[i].spell == prefix + "#" + std::to_string(nextCast));
+            ++nextCast;
+        }
+        b.RequeueEvents(events, emitted);
+        ++rounds;
+    }
+    CHECK(sawStart);
+    CHECK(nextCast == 40);
+    CHECK(rounds > 1);   // the budget shrank at least once
 }
 
 int main()
@@ -576,6 +665,8 @@ int main()
     TestEngageCoalescedPerEntry();
     TestCloseOnFullWipe();
     TestEventsJsonHalvesUnderBudget();
+    TestEventsJsonBoundsHugeNames();
+    TestEventsRequeueKeepsOrder();
     std::printf("combat monitor policy: %d checks passed\n", checks);
     return 0;
 }

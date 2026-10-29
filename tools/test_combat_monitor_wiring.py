@@ -203,6 +203,25 @@ class CombatMonitorWiringTest(unittest.TestCase):
         self.assertIn("ObservabilityEmitter::Instance().SetCombatEventProvider(", startup)
         self.assertIn("ObservabilityEmitter::Instance().SetEnemyCastPoller(", startup)
 
+    def test_run_slot_erase_leaves_the_open_fight_to_refresh_no_run(self):
+        # A run that ends while its binding stands (`.bot run stop`, the time
+        # limit, a switched-off gate) erases its run slot without dropping the
+        # group's combat book: FillCommanderCombat's no-run branch follows the
+        # open fight to its end through RefreshNoRun, so a fight continuing
+        # after the stop is still recorded. Only the binding's removal forgets.
+        code = strip_comments(COMMANDER)
+        erase = body(code, "void EraseRunSlot(", "\n}\n")
+        self.assertIn("TakeRunItems(", erase)
+        self.assertNotIn("Forget(", erase, "the run slot's erase must not close the open fight")
+        release = body(code, "uint32 ReleaseBinding(", "\n}\n")
+        self.assertIn("Forget(removed.groupId)", release, "the binding's removal still forgets")
+        fill = definition(code, "static void FillCommanderCombat(")
+        no_run = fill[fill.index("if (DungeonRuns().find(commanderRaw) == DungeonRuns().end())"):]
+        self.assertIn("RefreshNoRun(", no_run)
+        self.assertIn("InFight(", no_run)
+        self.assertLess(no_run.index("RefreshNoRun("), no_run.index("Forget("),
+                        "the no-run tick feeds the open fight before any forget")
+
 
 if __name__ == "__main__":
     unittest.main()

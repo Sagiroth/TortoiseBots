@@ -31,6 +31,7 @@ constexpr size_t kPayloadByteBudget = 60000;
 constexpr size_t kMaxLiveEvents = 64;          // queued per book, oldest dropped (counted)
 constexpr size_t kMaxEventsPerDatagram = 32;
 constexpr size_t kEventsByteBudget = 16000;
+constexpr size_t kEventTextBytes = 256;   // last-resort clip of every event and header text
 constexpr uint32_t kEventKeepaliveMs = 5000;
 constexpr size_t kSeqDigitsMax = 20;   // UINT64_MAX in decimal
 // The truncated (last-resort) payload bounds every variable-length field, so its
@@ -221,11 +222,12 @@ inline std::string F1(float v)
     return buf;
 }
 
-// The fight a COMBAT_EVENTS datagram belongs to; present=false sends "fight":null
-// (the last event was the fight's end and nothing new opened).
+// The fight a COMBAT_EVENTS datagram belongs to; the datagram sends "fight":null
+// when its last event is the fight's end, and a fight header when it carries
+// events or nothing went out yet while a fight is open (inFight).
 struct EventsFightHeader
 {
-    bool present = false;
+    bool inFight = false;
     uint32_t number = 0;
     uint32_t startMs = 0;   // world tick time the fight started
     int64_t startUnix = 0;
@@ -234,9 +236,13 @@ struct EventsFightHeader
 };
 
 // One COMBAT_EVENTS datagram (protocol v12, "fmt":1). At most kMaxEventsPerDatagram
-// events go out; past kEventsByteBudget the event count is halved until it fits,
-// so a huge name can never cross the datagram budget. Every event's `t` is its
-// offset from the fight start (the end event carries its duration).
+// events go out; past kEventsByteBudget the count is halved until it fits, and a
+// single event still too big is sent with every text clipped to kEventTextBytes,
+// so one huge name can never cross the datagram budget or push an event out.
+// *emitted reports how many of the handed events were serialized (the rest stay
+// the caller's to requeue); the fight header follows exactly that prefix. Every
+// event's `t` is its offset from the fight start (the end event carries its
+// duration).
 inline std::string BuildEventsJson(int protocolVersion, uint64_t session, uint64_t seq, int64_t ts, int64_t tsMs,
                                    std::string const& commander, uint32_t commanderGuid, uint32_t groupId,
                                    uint32_t mapId, EventsFightHeader const& fight,
@@ -244,23 +250,28 @@ inline std::string BuildEventsJson(int protocolVersion, uint64_t session, uint64
                                    size_t* emitted = nullptr)
 {
     size_t count = std::min(events.size(), kMaxEventsPerDatagram);
+    bool clipped = false;
     for (;;)
     {
+        auto text = [clipped](std::string const& s) {
+            return clipped ? BoundedJson(s, kEventTextBytes) : JsonEscape(s);
+        };
+        bool const present = count == 0 ? fight.inFight : events[count - 1].kind != EventKind::End;
         std::ostringstream ss;
         ss.setf(std::ios::fixed);
         ss.precision(1);
         ss << "{\"v\":" << protocolVersion << ",\"fmt\":1,\"session\":" << session << ",\"seq\":" << seq
            << ",\"ts\":" << ts << ",\"ts_ms\":" << tsMs << ",\"type\":\"COMBAT_EVENTS\",\"commander\":\""
-           << JsonEscape(commander) << "\",\"commander_guid\":" << commanderGuid << ",\"group\":" << groupId
+           << text(commander) << "\",\"commander_guid\":" << commanderGuid << ",\"group\":" << groupId
            << ",\"map\":" << mapId << ",\"fight\":";
-        if (fight.present)
+        if (present)
         {
             int64_t const startMsUnix = tsMs > 0 ? tsMs - static_cast<int64_t>(fight.fightMs) : fight.startUnix * 1000;
             ss << "{\"id\":\"" << groupId << "-" << fight.number << "\",\"start\":" << fight.startUnix
-               << ",\"start_ms\":" << startMsUnix << ",\"plan\":\"" << JsonEscape(fight.ctx.plan) << "\",\"leg\":\""
-               << JsonEscape(fight.ctx.leg) << "\",\"step\":" << fight.ctx.step << ",\"kind\":\""
-               << JsonEscape(fight.ctx.kind) << "\",\"boss\":" << fight.ctx.bossEntry << ",\"boss_name\":\""
-               << JsonEscape(fight.ctx.bossName) << "\",\"fight_ms\":" << fight.fightMs << "}";
+               << ",\"start_ms\":" << startMsUnix << ",\"plan\":\"" << text(fight.ctx.plan) << "\",\"leg\":\""
+               << text(fight.ctx.leg) << "\",\"step\":" << fight.ctx.step << ",\"kind\":\""
+               << text(fight.ctx.kind) << "\",\"boss\":" << fight.ctx.bossEntry << ",\"boss_name\":\""
+               << text(fight.ctx.bossName) << "\",\"fight_ms\":" << fight.fightMs << "}";
         }
         else
             ss << "null";
@@ -279,25 +290,25 @@ inline std::string BuildEventsJson(int protocolVersion, uint64_t session, uint64
                 ss << "{\"k\":\"start\",\"t\":0}";
                 break;
             case EventKind::Engage:
-                ss << "{\"k\":\"engage\",\"t\":" << t << ",\"e\":" << e.entry << ",\"n\":\"" << JsonEscape(e.name)
+                ss << "{\"k\":\"engage\",\"t\":" << t << ",\"e\":" << e.entry << ",\"n\":\"" << text(e.name)
                    << "\",\"c\":" << e.count << "}";
                 break;
             case EventKind::Death:
-                ss << "{\"k\":\"death\",\"t\":" << t << ",\"g\":" << e.guid << ",\"n\":\"" << JsonEscape(e.name)
-                   << "\",\"by\":\"" << JsonEscape(e.by) << "\",\"x\":" << F1(e.x) << ",\"y\":" << F1(e.y) << "}";
+                ss << "{\"k\":\"death\",\"t\":" << t << ",\"g\":" << e.guid << ",\"n\":\"" << text(e.name)
+                   << "\",\"by\":\"" << text(e.by) << "\",\"x\":" << F1(e.x) << ",\"y\":" << F1(e.y) << "}";
                 break;
             case EventKind::Taunt:
             case EventKind::Interrupt:
                 ss << "{\"k\":\"" << (e.kind == EventKind::Taunt ? "taunt" : "interrupt") << "\",\"t\":" << t
-                   << ",\"g\":" << e.guid << ",\"n\":\"" << JsonEscape(e.name) << "\",\"s\":\"" << JsonEscape(e.spell)
+                   << ",\"g\":" << e.guid << ",\"n\":\"" << text(e.name) << "\",\"s\":\"" << text(e.spell)
                    << "\"";
                 if (e.target)
-                    ss << ",\"tg\":\"" << e.target << "\",\"tn\":\"" << JsonEscape(e.targetName) << "\"";
+                    ss << ",\"tg\":\"" << e.target << "\",\"tn\":\"" << text(e.targetName) << "\"";
                 ss << "}";
                 break;
             case EventKind::Cast:
                 ss << "{\"k\":\"cast\",\"t\":" << t << ",\"id\":\"" << e.target << "\",\"e\":" << e.entry
-                   << ",\"n\":\"" << JsonEscape(e.name) << "\",\"s\":\"" << JsonEscape(e.spell) << "\",\"r\":\""
+                   << ",\"n\":\"" << text(e.name) << "\",\"s\":\"" << text(e.spell) << "\",\"r\":\""
                    << (e.rank == 'e' ? 'e' : 'b') << "\"}";
                 break;
             case EventKind::End:
@@ -308,13 +319,18 @@ inline std::string BuildEventsJson(int protocolVersion, uint64_t session, uint64
         }
         ss << "]}";
         std::string out = ss.str();
-        if (out.size() <= kEventsByteBudget || count == 0)
+        if (out.size() <= kEventsByteBudget || (count == 0 && clipped))
         {
             if (emitted)
                 *emitted = count;
             return out;
         }
-        count /= 2;
+        if (count > 1)
+            count /= 2;
+        else if (!clipped)
+            clipped = true;
+        else if (count == 1)
+            count = 0;
     }
 }
 
@@ -622,6 +638,15 @@ public:
             out.push_back(std::move(events_.front()));
             events_.pop_front();
         }
+    }
+
+    // Events taken for a datagram but not serialized (the budget shrank the
+    // count) go back to the front in order: the next datagram carries them
+    // before anything newer, and nothing leaves the queue unrecorded.
+    void RequeueEvents(std::vector<LiveEvent> const& taken, size_t from)
+    {
+        for (size_t i = taken.size(); i > from; --i)
+            events_.push_front(taken[i - 1]);
     }
 
     uint32_t FightNumber() const { return fightNumber_; }
