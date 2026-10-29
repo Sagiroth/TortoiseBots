@@ -1,5 +1,6 @@
-// Standalone test for runtime/GuildOrderGiveUpPolicy.h (guild order give-up).
-// No core, no DB: feeds ClassifyGiveUp plain counters.
+// Standalone test for runtime/GuildOrderGiveUpPolicy.h (guild order zone moves
+// and the player-chosen farm time). No core, no DB: feeds the policy plain
+// counters.
 #include "../runtime/GuildOrderGiveUpPolicy.h"
 
 #include <cstdio>
@@ -11,22 +12,37 @@ static int failures = 0;
 
 int main()
 {
-    CHECK(kGiveUpWorkedSeconds == 3600);
-    CHECK(kGiveUpDeaths == 5);
+    CHECK(kZoneMoveWorkedSeconds == 3600);
+    CHECK(kZoneMoveDeaths == 3);
+    CHECK(kMinOrderHours == 1);
+    CHECK(kMaxOrderHours == 24);
+    CHECK(kDefaultOrderHours == 1);
 
-    // Below both thresholds: keep working.
-    CHECK(ClassifyGiveUp(0, 0, false) == GiveUpAction::KeepWorking);
-    CHECK(ClassifyGiveUp(3599, 4, false) == GiveUpAction::KeepWorking);
-    CHECK(ClassifyGiveUp(3599, 4, true) == GiveUpAction::KeepWorking);
+    // Below both thresholds: keep working in this zone.
+    CHECK(ClassifyZoneMove(0, 0) == ZoneMoveTrigger::None);
+    CHECK(ClassifyZoneMove(3599, 2) == ZoneMoveTrigger::None);
 
-    // First hit moves zone once, by time or by deaths.
-    CHECK(ClassifyGiveUp(3600, 0, false) == GiveUpAction::MoveZone);
-    CHECK(ClassifyGiveUp(0, 5, false) == GiveUpAction::MoveZone);
-    CHECK(ClassifyGiveUp(3600, 5, false) == GiveUpAction::MoveZone);
+    // Three deaths in the zone move, even with fresh progress.
+    CHECK(ClassifyZoneMove(0, 3) == ZoneMoveTrigger::Deaths);
+    CHECK(ClassifyZoneMove(3599, 3) == ZoneMoveTrigger::Deaths);
 
-    // Second hit ends the order.
-    CHECK(ClassifyGiveUp(3600, 0, true) == GiveUpAction::GiveUp);
-    CHECK(ClassifyGiveUp(0, 5, true) == GiveUpAction::GiveUp);
+    // An hour worked without a new item moves for progress, not danger.
+    CHECK(ClassifyZoneMove(3600, 0) == ZoneMoveTrigger::NoProgress);
+    CHECK(ClassifyZoneMove(7200, 2) == ZoneMoveTrigger::NoProgress);
+
+    // Deaths win when both thresholds hit together.
+    CHECK(ClassifyZoneMove(3600, 5) == ZoneMoveTrigger::Deaths);
+
+    // The order ends once the bot worked its chosen hours in total.
+    CHECK(!IsOrderTimeout(3599, 1));
+    CHECK(IsOrderTimeout(3600, 1));
+    CHECK(!IsOrderTimeout(3600, 2));
+    CHECK(IsOrderTimeout(2 * 3600, 2));
+    CHECK(IsOrderTimeout(24 * 3600, 24));
+    CHECK(!IsOrderTimeout(23 * 3600 + 3599, 24));
+    // Out-of-range hours fall back to one hour.
+    CHECK(IsOrderTimeout(3600, 0));
+    CHECK(IsOrderTimeout(3600, 99));
 
     // Reported progress never drops.
     CHECK(ReportedHave(0, 5, true, 0) == 5);
@@ -35,7 +51,7 @@ int main()
     CHECK(ReportedHave(4, 0, false, 2) == 4);
     CHECK(ReportedHave(4, 9, true, 7) == 13);
 
-    // Only a real online rise resets the give-up clock.
+    // Only a real online rise resets the zone-move clock.
     CHECK(IsNewItemRise(true, true, 6, 5));
     CHECK(!IsNewItemRise(true, true, 5, 5));
     CHECK(!IsNewItemRise(true, true, 4, 5));

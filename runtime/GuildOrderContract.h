@@ -30,6 +30,7 @@ enum class OrderReason : uint8_t
     BagsFull,
     NoBank,
     Elite,
+    Timeout,
 };
 
 inline char const* TypeToken(OrderType type)
@@ -89,13 +90,14 @@ inline char const* ReasonToken(OrderReason reason)
         case OrderReason::BagsFull: return "bagsfull";
         case OrderReason::NoBank:   return "nobank";
         case OrderReason::Elite:    return "elite";
+        case OrderReason::Timeout:  return "timeout";
     }
     return "-";
 }
 
 inline bool ParseReason(std::string const& token, OrderReason& out)
 {
-    for (uint8_t i = 0; i <= uint8_t(OrderReason::Elite); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::Timeout); ++i)
         if (token == ReasonToken(OrderReason(i))) { out = OrderReason(i); return true; }
     return false;
 }
@@ -113,7 +115,8 @@ inline OrderState StateForReason(OrderReason reason)
         case OrderReason::NoSource:
         case OrderReason::NoRecipe:
         case OrderReason::Elite:
-        case OrderReason::Stuck:    return OrderState::Cant;
+        case OrderReason::Stuck:
+        case OrderReason::Timeout:  return OrderState::Cant;
         case OrderReason::BagsFull: return OrderState::Delivering;
         case OrderReason::NoBank:   return OrderState::Mailed;
         case OrderReason::None:     break;
@@ -153,15 +156,17 @@ struct OrderRecord
     OrderType type = OrderType::Farm;
     uint32_t itemId = 0;
     uint32_t amount = 0;
+    uint32_t hours = 1;          // player-chosen farm time, whole hours 1-24
     uint32_t delivered = 0;
     OrderState state = OrderState::Working;
     OrderReason reason = OrderReason::None;
     uint32_t farmZoneId = 0;   // 0 = not planned yet
     uint8_t farmChance = 0;    // percent at the best source in farmZoneId
-    bool movedZone = false;    // already moved once to the second-best zone
+    uint32_t zoneIndex = 0;    // position in the current farm plan
     bool farmRest = false;     // buy order whose AH attempt is over: farm what is missing
-    uint32_t deaths = 0;
+    uint32_t deathsInZone = 0; // deaths in the current farm zone
     uint32_t workedSinceNewItemSec = 0;
+    uint32_t workedTotalSec = 0; // worked time over the whole order, ends it at hours
     uint32_t reportedHave = 0;   // last reported progress; reported have never drops below this
     uint64_t createdAt = 0;
     uint64_t updatedAt = 0;

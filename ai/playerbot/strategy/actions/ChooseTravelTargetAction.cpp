@@ -656,7 +656,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
             AreaTableEntry const* area = newTarget.getPosition()->GetArea();
             uint32 zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
             if (zoneId)
-                TortoiseBots::GuildOrders::SetFarmZone(bot->GetGUIDLow(), zoneId, 0);
+                TortoiseBots::GuildOrders::SetFarmZone(bot->GetGUIDLow(), zoneId, 0, 0);
         }
     }
 
@@ -2434,16 +2434,21 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             // longer lists it: no usable spawn left, which also covers a craft
             // order moving on to a reagent the zone does not have), or the
             // bot outlevels it (zone level + 5 below the bot, the module's
-            // outgrown rule).
+            // outgrown rule), or a farm rule moved the bot on (deaths in the
+            // zone, or an hour worked without a new item: cleared by the
+            // store). Then the next zone of the plan runs, wrapping around
+            // to the first when the list is exhausted.
             uint32_t farmZoneId = record->farmZoneId;
             TortoiseBots::GuildOrders::SourcePlan plan = planFor(itemId);
             bool listed = false;
             bool listedOnBotMap = false;
-            for (TortoiseBots::GuildOrders::FarmZone const& zone : plan.zones)
-                if (zone.zoneId == farmZoneId)
+            size_t listedIndex = 0;
+            for (size_t i = 0; i < plan.zones.size(); ++i)
+                if (plan.zones[i].zoneId == farmZoneId)
                 {
                     listed = true;
-                    listedOnBotMap = zone.onBotMap;
+                    listedOnBotMap = plan.zones[i].onBotMap;
+                    listedIndex = i;
                 }
             int32_t zoneLevel = 0;
             bool outgrown = listed && sTravelMgr.TryGetValidatedAreaLevel(farmZoneId, zoneLevel) &&
@@ -2454,7 +2459,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             bool const acrossSea = listed && !listedOnBotMap && !plan.zones.empty() && plan.zones[0].onBotMap;
             if (farmZoneId == 0 || !listed || outgrown || acrossSea)
             {
-                size_t pick = record->movedZone && plan.zones.size() > 1 ? 1 : 0;
+                size_t start = listed ? listedIndex + 1 : record->zoneIndex;
+                size_t pick = plan.zones.empty() ? 0 : start % plan.zones.size();
                 if (plan.zones.size() <= pick)
                 {
                     OrderReason reason = plan.verdict == OrderReason::None ? OrderReason::NoSource : plan.verdict;
@@ -2462,7 +2468,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                     return false;
                 }
                 farmZoneId = plan.zones[pick].zoneId;
-                SetFarmZone(bot->GetGUIDLow(), farmZoneId, plan.zones[pick].chance);
+                SetFarmZone(bot->GetGUIDLow(), farmZoneId, plan.zones[pick].chance, uint32_t(pick));
             }
 
             if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId))
