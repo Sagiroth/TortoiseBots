@@ -8156,12 +8156,12 @@
     fd.run.timer = setTimeout(() => fdRunTick(key), FightReplay.TICK_MS);
   }
 
-  // A ready check that has not answered yet: no bot is ready and none is not ready (an all-"check" party has no verdict to
-  // report), or there are no bots. The header then says so instead of "Ready 0/40".
+  // A ready check that has not answered yet: no bots, or not one row with a verdict (a row at the neutral "check" level has
+  // said nothing). Any ok, warn or fail row is a real result, even when every bot is only a warning. The header then says so.
   function fdReadyNotRun(ready) {
     if (!ready) return true;
-    const bots = ready.bots || [], c = ready.counts || { ok: 0, warn: 0, fail: 0 };
-    return !bots.length || (!c.ok && !c.fail);
+    const bots = ready.bots || [];
+    return !bots.length || bots.every(r => !r || (r.lvl !== 'ok' && r.lvl !== 'warn' && r.lvl !== 'fail'));
   }
 
   function fdFramesHtml(frames, selBot, ready) {

@@ -72,17 +72,33 @@ assert.strictEqual(plainReady.known, false);
 const plainHtml = run("fdFramesHtml(frames, null, ready)", { frames: run("FightDebug.raidFrames(boards)", { boards: plain }), ready: plainReady });
 assert.ok(plainHtml.includes("buffs unknown (older module)"), plainHtml.slice(0, 400));
 
-// A party where every bot is only a "check" has no verdict yet: the header says so instead of "Ready 0/40" (the idle
-// after-run chip the site audit saw).
+// A party where every bot is only a "check" is a real result: the header keeps the zero-ready count, the warning count and
+// the reasons (the site audit's idle "READY 0/40 · 40 check" was this warning set, not an unrun check).
 const checkOnly = { bots: bind.bots.map((b) => Object.assign({}, b, { lvl: "warn", reasons: ["no flask or elixir"] })),
   counts: { ok: 0, warn: 5, fail: 0 }, lvl: "warn", known: true, open: false };
 const checkOnlyHtml = run("fdFramesHtml(frames, null, ready)", { frames, ready: checkOnly });
-assert.ok(checkOnlyHtml.includes('<span class="fd-chip">Ready check: not run yet</span>'), checkOnlyHtml.slice(0, 400));
-assert.ok(!checkOnlyHtml.includes("Ready 0/5") && !checkOnlyHtml.includes("5 check"), "no false zero-of-N chip");
-assert.ok(!checkOnlyHtml.includes("data-fd-ready"), "nothing to open before a verdict");
+assert.ok(checkOnlyHtml.includes('<button type="button" class="fd-chip l-warn" data-fd-ready aria-expanded="false">Ready 0/5</button>'),
+  checkOnlyHtml.slice(0, 400));
+assert.ok(checkOnlyHtml.includes('class="fd-readysub">5 check · 0 not ready</span>'), checkOnlyHtml.slice(0, 400));
+assert.ok(!checkOnlyHtml.includes("not run yet"), "a warning set is a verdict, not an unrun check");
+checkOnly.open = true;
+const checkOnlyOpen = run("fdFramesHtml(frames, null, ready)", { frames, ready: checkOnly });
+assert.strictEqual((checkOnlyOpen.match(/<li class="l-warn">/g) || []).length, 5, "every warning keeps its reason row");
+assert.ok(checkOnlyOpen.includes('<span class="fd-readynm">Bonevale</span> no flask or elixir'), checkOnlyOpen.slice(0, 400));
+checkOnly.open = false;
+
+// The empty set, and a set whose every row is the neutral "check" level (neither ok, warn nor fail), are unrun checks.
 const emptyReady = { bots: [], counts: { ok: 0, warn: 0, fail: 0 }, lvl: "ok", known: false };
 assert.ok(run("fdFramesHtml(frames, null, ready)", { frames, ready: emptyReady }).includes("Ready check: not run yet"),
-  "no bots is no check either");
+  "no bots is no check");
+const idleReady = { bots: bind.bots.map((b) => ({ name: b.name, lvl: "check", reasons: [] })),
+  counts: { ok: 0, warn: 0, fail: 0 }, lvl: "ok", known: false };
+const idleHtml = run("fdFramesHtml(frames, null, ready)", { frames, ready: idleReady });
+assert.ok(idleHtml.includes('<span class="fd-chip">Ready check: not run yet</span>'), idleHtml.slice(0, 400));
+assert.ok(!idleHtml.includes("data-fd-ready"), "nothing to open before a verdict");
+assert.strictEqual(run("fdReadyNotRun(ready)"), true, "an all-neutral set is no verdict");
+assert.strictEqual(run("fdReadyNotRun(ready)", { ready: { bots: [{ lvl: "warn" }], counts: { ok: 0, warn: 1, fail: 0 } } }), false,
+  "one warning row is a result");
 assert.strictEqual(run("fdReadyNotRun(ready)", { ready: { bots: [{ lvl: "ok" }], counts: { ok: 1, warn: 0, fail: 0 } } }), false,
   "one ready bot is a result");
 assert.strictEqual(run("fdReadyNotRun(ready)", { ready: { bots: [{ lvl: "fail" }], counts: { ok: 0, warn: 0, fail: 1 } } }), false,
