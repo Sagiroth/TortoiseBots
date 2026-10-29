@@ -90,6 +90,7 @@ constexpr std::uint32_t kPlayerGatherWaitMs = 60000; // a regroup waits this lon
 constexpr std::uint32_t kPlayerHoldCapMs = 300000;   // a step held (or a regroup waiting) for a player this long pauses
 constexpr std::uint32_t kAutoRegroupsPerStep = 2; // regroups the run does by itself per step, then it pauses
 constexpr std::uint32_t kGatherTries = 2;         // a gather refused this often: the run goes on without it
+constexpr std::uint32_t kHeldSummonTries = 3;     // a held bot's summon refused this often: it stays held, the party walks back without it
 constexpr std::uint32_t kWalkBackRetries = 3;     // a walk-back point refused for a passing reason is sent again this often
 constexpr float kArriveYd = 3.0f;                 // a walk is done this close to its point
 constexpr float kStalledArriveYd = 6.0f;          // ... or this close once it stopped gaining ground (a point
@@ -1398,9 +1399,23 @@ struct Run
     // drops out once the lead bot is within kGatherYd of it; the list ends with
     // the walk back, on a pause and with the step.
     // ta263: in a running run each held bot is summoned to the lead bot
-    // (SummonHeldToLead) and leaves the list; only the other-part pause keeps
-    // bots held (holdWhilePaused).
+    // (SummonHeldToLead) and stays held until the facts show it arrived; only
+    // the other-part pause keeps bots held (holdWhilePaused).
     std::vector<std::string> hold;
+    // ta263: a held bot a summon took toward the lead bot and that is not there
+    // yet, with the run's clock of that order and the refusals since. It stays
+    // in `hold` meantime (no gather, no second summon), and only the facts that
+    // show it at the lead bot end the wait: removing it on the order alone lost
+    // a bot whose summon was refused. A refusal clears `pending` (a later tick
+    // sends it again); kHeldSummonTries refusals leave it held while the party
+    // walks back without it.
+    struct HeldSummon
+    {
+        std::uint32_t ms = 0;       // the run's clock when its summon went out
+        std::uint32_t refusals = 0; // ... refused this often since it was held
+        bool pending = false;       // sent, its answer (a refusal) not in yet
+    };
+    std::unordered_map<std::string, HeldSummon> heldSummons;
     // A regroup for a dead lead bot (WaitForFallen): once the lead bot is up
     // again more than kSeeYd from where it fell, the hold is filled before the
     // regroup gathers (19z11 03:24: the fight ended with the lead bot a ghost).
@@ -2024,6 +2039,7 @@ inline void Pause(Run& r, const std::string& why)
     r.doorPaused = false; // PauseDoor sets it after
     ClearRunBack(r); // a paused run leaves every bot to its own AI
     r.hold.clear();
+    r.heldSummons.clear();
     r.holdDue = false;
     r.holdWhilePaused = false;
     r.otherPartPaused = false; // PauseOtherPart sets it after
@@ -2256,6 +2272,7 @@ inline void ResetStep(Run& r)
     r.holdUnstayed = false;
     r.holdEngageGuid = 0;
     r.hold.clear();
+    r.heldSummons.clear();
     r.holdDue = false;
     r.speedLeash = false;
     r.speedLeashMs = 0;
@@ -5490,6 +5507,30 @@ inline void OrderRefused(Run& r, const std::string& order, const std::string& an
         }
         r.note = order + " refused: " + answer + (r.summonWait.empty() ? "" : ": waiting for it");
         return;
+    }
+    // A bot held where the lead bot fell and summoned to it (SummonHeldToLead): a refused
+    // summon takes nobody to the lead bot, so the bot stays held and the mark is cleared
+    // for a later tick (a `busy` one, a summon of it pending already, is no try of its
+    // own; a bot in combat stays held and fights, and the facts then drop it from the
+    // hold). kHeldSummonTries refusals leave it held and the party walks back without it.
+    if (order.compare(0, 7, "summon ") == 0)
+    {
+        auto const mark = r.heldSummons.find(order.substr(7));
+        if (mark != r.heldSummons.end() && mark->second.pending)
+        {
+            std::string const name = mark->first;
+            mark->second.pending = false;
+            if (answer.compare(0, 4, "busy") != 0)
+                ++mark->second.refusals;
+            if (mark->second.refusals >= kHeldSummonTries)
+                r.note = "the lead bot came back to life away from the party: " + name +
+                    " could not be summoned to it (" + std::to_string(mark->second.refusals) + " refusals: " + answer +
+                    "): it stays held and the party walks back without it";
+            else
+                r.note = "the lead bot came back to life away from the party: " + name + " summoned to it, refused (" +
+                    answer + "): summoning it again";
+            return;
+        }
     }
     // The loot method orders of a loot step's free-for-all detour (LootFfaStep). A refused `ffa` ends the
     // detour: the step goes on the old way. A refused restore only notes it: the next tick sees the method
@@ -12263,6 +12304,7 @@ inline void NoteLeadDeath(Run& r, const Facts& f)
 inline void FillHold(Run& r, const Facts& f)
 {
     r.hold.clear();
+    r.heldSummons.clear(); // a new hold: its summons start over
     for (const MemberFact& m : f.members)
         if (!m.name.empty() && m.yd > kGatherYd &&
             ai::PlanDistance(m.x, m.y, m.z, r.leadDeathX, r.leadDeathY, r.leadDeathZ) <= kSeeYd)
@@ -12406,6 +12448,7 @@ inline void UpdateHold(Run& r, const Facts& f)
     if (!r.walkBack && !r.walkBackDue && !r.regroup)
     {
         r.hold.clear();
+        r.heldSummons.clear();
         return;
     }
     r.hold.erase(std::remove_if(r.hold.begin(), r.hold.end(), [&](const std::string& name)
@@ -12418,14 +12461,20 @@ inline void UpdateHold(Run& r, const Facts& f)
                     return m.yd <= nearYd;
             return true;
         }), r.hold.end());
+    // A bot out of the hold keeps no summon mark (there or gone).
+    for (auto it = r.heldSummons.begin(); it != r.heldSummons.end();)
+        it = std::find(r.hold.begin(), r.hold.end(), it->first) == r.hold.end() ? r.heldSummons.erase(it) : std::next(it);
 }
 
 // ta263 (owner 2026-10-20: "regroup the survivors at the lead's revive point instead of walking the lead back";
 // RFC 10-20 leg 7: three held bots attacked 55-77 yd from the staying tank, four deaths): the bots held where the
-// lead bot fell are summoned to it, one a tick, once each, then the whole party walks back. A held bot in a fight
-// leaves the hold at once (the guard and the gather see it). Not while paused, walking back (a direct step's own
-// summon wait owns the hold then), in an event, with the lead bot dead or in another part, or while the stranded
-// lead bot's teleport runs. True when it set a summon.
+// lead bot fell are summoned to it, one a tick, then the whole party walks back. A bot stays in the hold until the
+// facts show it at the lead bot: the order alone takes nobody there, and a refused summon (busy, into a fight,
+// teleporting) must not drop it from the recovery. A refusal clears the pending mark (OrderRefused), so a later
+// tick sends it again; kHeldSummonTries refusals leave it held while the party walks back without it. A held bot
+// in a fight leaves the hold at once (the guard and the gather see it). Not while paused, walking back (a direct
+// step's own summon wait owns the hold then), in an event, with the lead bot dead or in another part, or while
+// the stranded lead bot's teleport runs. True when it set a summon.
 inline bool SummonHeldToLead(Run& r, const Facts& f, std::string& order)
 {
     r.hold.erase(std::remove_if(r.hold.begin(), r.hold.end(), [&](const std::string& name)
@@ -12435,6 +12484,20 @@ inline bool SummonHeldToLead(Run& r, const Facts& f, std::string& order)
                     return m.inCombat || m.attackers > 0;
             return false;
         }), r.hold.end());
+    // A summoned bot leaves the hold only on facts that show it arrived; one
+    // dead, gone or in a fight left it above and keeps no mark.
+    for (auto it = r.heldSummons.begin(); it != r.heldSummons.end();)
+    {
+        const MemberFact* m = nullptr;
+        for (const MemberFact& c : f.members)
+            if (c.name == it->first)
+                m = &c;
+        bool const atLead = m && m->yd <= kArriveYd;
+        bool const held = std::find(r.hold.begin(), r.hold.end(), it->first) != r.hold.end();
+        if (atLead)
+            r.hold.erase(std::remove(r.hold.begin(), r.hold.end(), it->first), r.hold.end());
+        it = held && !atLead ? std::next(it) : r.heldSummons.erase(it);
+    }
     if (r.hold.empty() || r.state != State::Running || r.holdWhilePaused || r.walkBack || !f.leadAlive || f.anyInCombat ||
         InEvent(r) || r.strandDue || r.strandOn || LeadInOtherPart(r, f))
         return false;
@@ -12446,8 +12509,13 @@ inline bool SummonHeldToLead(Run& r, const Facts& f, std::string& order)
                 m = &c;
         if (!m || m->offPlanMap || m->name == f.carrier)
             continue;
+        auto const mark = r.heldSummons.find(*it);
+        if (mark != r.heldSummons.end() && (mark->second.pending || mark->second.refusals >= kHeldSummonTries))
+            continue; // sent, its answer not in yet, or given up: it stays held
         std::string const name = *it;
-        r.hold.erase(it);
+        Run::HeldSummon& summon = r.heldSummons[name];
+        summon.ms = r.runMs;
+        summon.pending = true;
         MarkSummoned(r, name);
         if (r.regroup)
             r.RestartRegroupClock();
@@ -13851,6 +13919,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
                 r.leadDied = false;
                 r.holdDue = false;
                 r.hold.clear();
+                r.heldSummons.clear();
                 r.walkBackDue = false; // the rescue's walk back is set (RescueDue)
                 return order;
             }
