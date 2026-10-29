@@ -11,6 +11,7 @@
 #include "playerbot/TravelMgr.h"
 #include "../../policy/loot/FishingSpotPolicy.h"
 #include "playerbot/GuildOrderSources.h"
+#include "runtime/GuildOrderFishingPolicy.h"
 #include "TellLosAction.h"
 #include "EquipAction.h"
 using namespace ai;
