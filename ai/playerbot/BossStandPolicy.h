@@ -63,6 +63,25 @@ namespace ai
         return ranged ? StandRole::Ranged : StandRole::Melee;
     }
 
+    // How a row's window opens. `Cast`: the boss is casting the window spell (its current generic spell). A boss whose
+    // spell is cast triggered never shows it as a current spell, so `StoppedNoTarget` opens the
+    // window on the state the cast leaves: the boss wears the row's aura, stands still and has no target.
+    enum class StandSignal : std::uint8_t
+    {
+        None = 0,
+        Cast = 1,
+        StoppedNoTarget = 2,
+    };
+
+    inline StandSignal ParseStandSignal(const std::string& text)
+    {
+        if (text == "cast")
+            return StandSignal::Cast;
+        if (text == "stopped_no_target")
+            return StandSignal::StoppedNoTarget;
+        return StandSignal::None;
+    }
+
     // Yards between two bots seated on one point: Fireball's splash is 8 yd.
     constexpr float kBossStandSpacing = 9.0f;
     // A bot this close to its slot (2D) has arrived and stays put.
@@ -103,6 +122,7 @@ namespace ai
         // far end of its lane; 0: none) or `holdMs` after the cast ended, whichever comes first.
         std::uint32_t holdMs = kBossStandDefaultHoldMs;
         std::uint32_t releaseAnchor = 0;
+        StandSignal windowSignal = StandSignal::Cast;
     };
 
     // A boss whose whole stand set the seal refused.
@@ -132,6 +152,11 @@ namespace ai
             if (row.releaseAnchor != 0 && row.releaseAnchor == row.anchor)
                 return false;
             if (row.holdMs < kBossStandMinHoldMs || row.holdMs > kBossStandMaxHoldMs)
+                return false;
+            // A signal that opens the window has a window to open and an aura to read it by.
+            if (row.windowSignal == StandSignal::None)
+                return false;
+            if (row.windowSignal == StandSignal::StoppedNoTarget && (row.aura == 0 || row.windowSpell == 0))
                 return false;
             std::vector<BossStandRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossStandRow& have : rows)
@@ -235,9 +260,11 @@ namespace ai
 
     // Whether a row applies to a boss at (bossX, bossY): it is at the anchor
     // (2D, on the radius counts), wears the row's aura when the row names one,
-    // and is casting the row's window spell when the row names one.
+    // and its window is open when the row names a window spell: the boss is
+    // casting it, or (a row whose signal is StoppedNoTarget) it stands still
+    // with no target. `stoppedNoTarget` is that state, read by the caller.
     inline bool StandRowActive(const BossStandRow& row, float bossX, float bossY, bool bossHasAura,
-                               std::uint32_t castingSpell)
+                               std::uint32_t castingSpell, bool stoppedNoTarget = false)
     {
         const float dx = bossX - row.anchorX;
         const float dy = bossY - row.anchorY;
@@ -245,7 +272,8 @@ namespace ai
             return false;
         if (row.aura != 0 && !bossHasAura)
             return false;
-        if (row.windowSpell != 0 && castingSpell != row.windowSpell)
+        if (row.windowSpell != 0 && castingSpell != row.windowSpell &&
+            !(row.windowSignal == StandSignal::StoppedNoTarget && stoppedNoTarget))
             return false;
         return true;
     }
@@ -258,7 +286,7 @@ namespace ai
     template <typename HasAura>
     std::vector<const BossStandRow*> ActiveStandPoints(const std::vector<BossStandRow>& rows, StandRole role,
                                                        float bossX, float bossY, std::uint32_t castingSpell,
-                                                       HasAura hasAura)
+                                                       HasAura hasAura, bool stoppedNoTarget = false)
     {
         std::vector<const BossStandRow*> out;
         bool found = false;
@@ -266,7 +294,8 @@ namespace ai
         float bestDistance = 0.0f;
         for (const BossStandRow& row : rows)
         {
-            if (row.role != role || !StandRowActive(row, bossX, bossY, row.aura != 0 && hasAura(row.aura), castingSpell))
+            if (row.role != role ||
+                !StandRowActive(row, bossX, bossY, row.aura != 0 && hasAura(row.aura), castingSpell, stoppedNoTarget))
                 continue;
             const float dx = bossX - row.anchorX;
             const float dy = bossY - row.anchorY;
@@ -283,7 +312,7 @@ namespace ai
         for (const BossStandRow& row : rows)
         {
             if (row.anchor == anchor && row.role == role &&
-                StandRowActive(row, bossX, bossY, row.aura != 0 && hasAura(row.aura), castingSpell))
+                StandRowActive(row, bossX, bossY, row.aura != 0 && hasAura(row.aura), castingSpell, stoppedNoTarget))
                 out.push_back(&row);
         }
         return out;
@@ -356,9 +385,10 @@ namespace ai
     template <typename HasAura>
     std::vector<const BossStandRow*> StandPointsNow(const std::vector<BossStandRow>& rows, StandRole role, float bossX,
                                                     float bossY, std::uint32_t castingSpell, HasAura hasAura,
-                                                    StandHold& hold, std::uint32_t nowMs)
+                                                    StandHold& hold, std::uint32_t nowMs, bool stoppedNoTarget = false)
     {
-        std::vector<const BossStandRow*> points = ActiveStandPoints(rows, role, bossX, bossY, castingSpell, hasAura);
+        std::vector<const BossStandRow*> points =
+            ActiveStandPoints(rows, role, bossX, bossY, castingSpell, hasAura, stoppedNoTarget);
         if (!points.empty())
         {
             StandHoldArm(hold, *points[0], nowMs);
@@ -507,18 +537,46 @@ namespace ai
         }
     }
 
+    // The lane of an anchor as a vector from the anchor to its release anchor (the far end of the boss's flight):
+    // what "the side of the lane" is measured against. Invalid when the point names no release anchor, or no row
+    // holds it.
+    struct StandLane
+    {
+        bool valid = false;
+        float dx = 0.0f;
+        float dy = 0.0f;
+    };
+
+    inline StandLane StandLaneOf(const std::vector<BossStandRow>& rows, const BossStandRow& point)
+    {
+        StandLane lane;
+        if (point.releaseAnchor == 0)
+            return lane;
+        for (const BossStandRow& row : rows)
+        {
+            if (row.anchor != point.releaseAnchor)
+                continue;
+            lane.dx = row.anchorX - point.anchorX;
+            lane.dy = row.anchorY - point.anchorY;
+            lane.valid = lane.dx * lane.dx + lane.dy * lane.dy > 0.0001f;
+            return lane;
+        }
+        return lane;
+    }
+
     // The slot of bot `selfId` among `bots` (every bot of the set, self
     // included) on `points` (ActiveStandPoints). The bots are seated in id
     // order, so every bot computes the same plan whatever its own id:
-    //  - a bot takes the side whose nearest point is nearer to it (it does not
-    //    cross the lane for its point); a tie goes to the side with fewer bots
-    //    seated so far, then to side 0;
-    //  - on its side it takes the nearest point with a free slot; a full side
-    //    sends it to the other side's nearest free point;
-    //  - when every point is full the bot gets nothing (valid false) and keeps
-    //    the behaviour it had.
+    //  - a bot takes the side of the lane it stands on: the sign of
+    //    cross(lane, anchor -> bot), side 0 being "+"; with no lane known, the
+    //    side of the nearest point. Within half a yard of the lane line it goes
+    //    to the side with fewer bots seated so far, then to side 0;
+    //  - on its side it takes the nearest point with a free slot;
+    //  - a side with no point or no free slot seats the bot nowhere (valid
+    //    false): it never crosses the lane for a seat and keeps the behaviour
+    //    it had (the reactive dodge).
     inline StandSlot AssignStandSlot(const std::vector<const BossStandRow*>& points, const std::vector<StandBot>& bots,
-                                     std::uint64_t selfId)
+                                     std::uint64_t selfId, const StandLane& lane = StandLane())
     {
         StandSlot result;
         if (points.empty())
@@ -530,31 +588,41 @@ namespace ai
         std::stable_sort(order.begin(), order.end(),
                          [&](std::size_t a, std::size_t b) { return bots[a].id < bots[b].id; });
 
+        const float laneLength = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
         std::vector<unsigned> used(points.size(), 0u);
         unsigned seated[2] = { 0u, 0u };
         for (std::size_t index : order)
         {
             const StandBot& bot = bots[index];
-            const float near0 = stand_detail::SideDistance(points, 0, bot.x, bot.y);
-            const float near1 = stand_detail::SideDistance(points, 1, bot.x, bot.y);
             std::uint8_t side;
-            if (near0 < 0.0f)
-                side = 1;
-            else if (near1 < 0.0f)
-                side = 0;
-            else if (std::fabs(near0 - near1) < 0.5f)
-                side = seated[1] < seated[0] ? 1 : 0;
-            else
-                side = near1 < near0 ? 1 : 0;
-
-            std::size_t pick = stand_detail::NearestFree(points, used, side, bot.x, bot.y);
-            if (pick == points.size())
+            bool tie = false;
+            if (lane.valid && laneLength > 0.0001f)
             {
-                side = side == 0 ? 1 : 0;
-                pick = stand_detail::NearestFree(points, used, side, bot.x, bot.y);
+                const float lateral =
+                    (lane.dx * (bot.y - points[0]->anchorY) - lane.dy * (bot.x - points[0]->anchorX)) / laneLength;
+                tie = std::fabs(lateral) < 0.5f;
+                side = lateral >= 0.0f ? 0 : 1;
             }
+            else
+            {
+                const float near0 = stand_detail::SideDistance(points, 0, bot.x, bot.y);
+                const float near1 = stand_detail::SideDistance(points, 1, bot.x, bot.y);
+                if (near0 < 0.0f)
+                    side = 1;
+                else if (near1 < 0.0f)
+                    side = 0;
+                else
+                {
+                    tie = std::fabs(near0 - near1) < 0.5f;
+                    side = near1 < near0 ? 1 : 0;
+                }
+            }
+            if (tie)
+                side = seated[1] < seated[0] ? 1 : 0;
+
+            const std::size_t pick = stand_detail::NearestFree(points, used, side, bot.x, bot.y);
             if (pick == points.size())
-                continue;  // every point is full: this bot is not seated
+                continue;  // no free seat on the bot's own side: it is not seated
 
             const unsigned slot = used[pick]++;
             ++seated[side];
@@ -571,9 +639,72 @@ namespace ai
         return result;
     }
 
+    // The ground under a seat: the probe starts above both the row's floor and the bot's own (a far seat's floor can
+    // lie above the row z), and a probe that comes back unchanged found nothing, so the row's z stays.
+    constexpr float kBossStandProbeAbove = 4.0f;
+
+    inline float StandProbeZ(float rowZ, float botZ)
+    {
+        return (rowZ > botZ ? rowZ : botZ) + kBossStandProbeAbove;
+    }
+
+    inline float StandSnappedZ(float rowZ, float probeZ, float groundZ)
+    {
+        return groundZ == probeZ ? rowZ : groundZ;
+    }
+
+    // A seat the mover refuses this many times in a row is given up on (valid false for the bot: the reach and the
+    // dodge take over).
+    constexpr std::uint8_t kBossStandMaxMoveFailures = 3;
+
+    struct StandFailure
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        std::uint8_t count = 0;
+    };
+
+    namespace stand_detail
+    {
+        inline bool SameSeat(const StandFailure& failure, float x, float y)
+        {
+            return Dist2(failure.x, failure.y, x, y) <= 1.0f;
+        }
+    }
+
+    inline void StandNoteMoveFailure(StandFailure& failure, float x, float y)
+    {
+        if (failure.count == 0 || !stand_detail::SameSeat(failure, x, y))
+        {
+            failure.x = x;
+            failure.y = y;
+            failure.count = 0;
+        }
+        if (failure.count < 255)
+            ++failure.count;
+    }
+
+    inline void StandNoteMoveSuccess(StandFailure& failure)
+    {
+        failure = StandFailure();
+    }
+
+    inline bool StandSeatGivenUp(const StandFailure& failure, float x, float y)
+    {
+        return failure.count >= kBossStandMaxMoveFailures && stand_detail::SameSeat(failure, x, y);
+    }
+
     // Whether a bot at (botX, botY) is at its slot already.
     inline bool StandArrived(float botX, float botY, float slotX, float slotY)
     {
         return stand_detail::Dist2(botX, botY, slotX, slotY) <= kBossStandArrived * kBossStandArrived;
+    }
+
+    // A bot this close to its seat keeps the cast it is in the middle of; further out the walk stops it.
+    constexpr float kBossStandKeepCastRange = 6.0f;
+
+    inline bool StandShouldStopCast(float botX, float botY, float slotX, float slotY)
+    {
+        return stand_detail::Dist2(botX, botY, slotX, slotY) > kBossStandKeepCastRange * kBossStandKeepCastRange;
     }
 }

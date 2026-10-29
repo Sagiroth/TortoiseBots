@@ -21,10 +21,10 @@ MAX_SLOTS = 8
 SPACING = 9.0
 ROW = re.compile(
     r"^\((\d+), (\d+), (\d+), (-?[\d.]+), (-?[\d.]+), ([\d.]+), '(\w+)', (\d+), (\d+), (\d+), (\d+), "
-    r"(-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (\d+), (\d+), (\d+), '(?:[^']|'')*'\)[,;]$"
+    r"(-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (\d+), (\d+), (\d+), '(\w+)', '(?:[^']|'')*'\)[,;]$"
 )
 FIELDS = ("map", "boss", "anchor", "ax", "ay", "ar", "role", "window", "aura", "side", "seq",
-          "x", "y", "z", "dx", "dy", "slots", "hold", "release")
+          "x", "y", "z", "dx", "dy", "slots", "hold", "release", "signal")
 
 ONYXIA_MAP = 249
 ONYXIA = 10184
@@ -71,7 +71,7 @@ def migration_rows():
             values = match.groups()
             row = {"file": os.path.basename(path)}
             for name, value in zip(FIELDS, values):
-                row[name] = value if name == "role" else float(value)
+                row[name] = value if name in ("role", "signal") else float(value)
             rows.append(row)
             if line.endswith(";"):
                 in_insert = False
@@ -107,6 +107,11 @@ class BossStandSql(unittest.TestCase):
         for row in migration_rows():
             where = "%s boss %d anchor %d" % (row["file"], row["boss"], row["anchor"])
             self.assertIn(row["role"], ROLES, where)
+            self.assertIn(row["signal"], ("cast", "stopped_no_target"), where)
+            if row["signal"] == "stopped_no_target":
+                # BossStandTable::Add: a signal that opens the window needs an aura and a window spell.
+                self.assertGreater(row["aura"], 0, where)
+                self.assertGreater(row["window"], 0, where)
             self.assertGreater(row["map"], 0, where)
             self.assertGreater(row["boss"], 0, where)
             self.assertGreater(row["ar"], 0.0, where)
@@ -159,6 +164,9 @@ class BossStandSql(unittest.TestCase):
                 # Only while she casts the breath of her current point, in the air.
                 self.assertEqual(row["window"], spell, "anchor %d window spell" % anchor)
                 self.assertEqual(row["aura"], HOVER_AURA, "anchor %d aura" % anchor)
+                # The core casts the breath triggered: it never shows as her current spell, so the window opens on
+                # the state the cast leaves (wears Hover, stands still, no target).
+                self.assertEqual(row["signal"], "stopped_no_target", "anchor %d window signal" % anchor)
 
     def test_onyxia_window_spells_are_the_breath_ids_of_the_dodge_policy(self):
         # The reactive dodge (policy/raid/OnyxiaBreathPolicy.h) lists the same eight ids.
@@ -188,10 +196,25 @@ class BossStandSql(unittest.TestCase):
             self.assertAlmostEqual(oy, hy, delta=0.1)
 
     def test_onyxia_every_anchor_seats_both_roles_on_both_sides(self):
+        # A bot never crosses the lane for a seat (AssignStandSlot): a role with seats on one side only leaves the
+        # bots of the other side to the reactive dodge, and 6 of 8 anchors once had no healer seat on the raid's side.
         for anchor in range(len(HOVER)):
             for role in ("ranged", "healer"):
                 sides = set(int(r["side"]) for r in onyxia_rows() if r["anchor"] == anchor + 1 and r["role"] == role)
-                self.assertTrue(sides, "anchor %d has no %s rows" % (anchor, role))
+                self.assertEqual(sides, {0, 1}, "anchor %d: %s seats are on sides %s" % (anchor + 1, role, sorted(sides)))
+
+    def test_onyxia_side_is_the_side_of_the_lane(self):
+        # AssignStandSlot picks a bot's side as the sign of cross(anchor -> release anchor, anchor -> bot), side 0
+        # being "+": the data's side labels have to be the same geometry for every seat.
+        for row in onyxia_rows():
+            anchor = int(row["anchor"]) - 1
+            ax, ay, _ = HOVER[anchor]
+            rx, ry, _ = HOVER[(anchor + 4) % 8]
+            for x, y in slot_positions(row):
+                cross = (rx - ax) * (y - ay) - (ry - ay) * (x - ax)
+                self.assertEqual(0 if cross >= 0 else 1, int(row["side"]),
+                                 "anchor %d seat (%.1f, %.1f) is on side %d of the lane, labelled %d" % (
+                                     anchor + 1, x, y, 0 if cross >= 0 else 1, row["side"]))
 
     def test_onyxia_every_slot_is_clear_of_the_breath_lane(self):
         for row in onyxia_rows():

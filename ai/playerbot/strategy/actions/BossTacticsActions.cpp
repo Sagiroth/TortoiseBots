@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <functional>
 #include <limits>
+#include <atomic>
 #include <mutex>
 #include <unordered_map>
 #include "BossTacticsActions.h"
@@ -939,27 +940,54 @@ namespace
 // the plan is asked for from the trigger, the action, the reach and the dodge of every bot.
 std::mutex g_standHoldMutex;
 std::unordered_map<uint64, StandHold> g_standHolds;
+// Seats the mover refused, by bot guid (StandFailure): three in a row for one seat and the bot gets no seat.
+std::unordered_map<uint64, StandFailure> g_standFailures;
+// Entries in the two maps: a bot with nothing to forget costs one atomic read, not a lock.
+std::atomic<size_t> g_standStateCount{0};
+
+// Drops what is remembered of a bot (it died, left, or is on a map without stand rows).
+void ForgetStand(uint64 key)
+{
+    if (g_standStateCount.load(std::memory_order_relaxed) == 0)
+        return;
+    std::lock_guard<std::mutex> lock(g_standHoldMutex);
+    g_standHolds.erase(key);
+    g_standFailures.erase(key);
+    g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
+}
 }
 
 BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
 {
     BossStandTarget target;
-    if (!ai || !bot || !bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+    if (!ai || !bot)
         return target;
+    const uint64 selfKey = bot->GetObjectGuid().GetRawValue();
+    // A bot that is dead, gone or teleporting keeps nothing of its last window.
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+    {
+        ForgetStand(selfKey);
+        return target;
+    }
     // A map without rows costs one lookup and nothing else.
     const BossStandTable& table = GetBossStands();
     const uint32 mapId = bot->GetMapId();
     if (!table.HasMap(mapId))
+    {
+        ForgetStand(selfKey);
         return target;
+    }
     // The rows only act for a bot whose tactics are armed (the same gate as BossTacticsTriggers.cpp Ready).
     if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+    {
+        ForgetStand(selfKey);
         return target;
+    }
 
     const StandRole role = StandRoleOf(PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot));
 
     AiObjectContext* context = ai->GetAiObjectContext();
     const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
-    const uint64 selfKey = bot->GetObjectGuid().GetRawValue();
     const uint32 nowMs = WorldTimer::getMSTime();
     StandHold hold;
     {
@@ -972,11 +1000,15 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     const StandHold heldBefore = hold;
     bool sawBoss = false;
     Unit* boss = nullptr;
+    const std::vector<BossStandRow>* bossRows = nullptr;
     std::vector<const BossStandRow*> points;
     for (const ObjectGuid& guid : attackers)
     {
         Unit* unit = ai->GetUnit(guid);
         if (!unit || !sServerFacade.IsAlive(unit))
+            continue;
+        // While a hold is active only its own boss is read: another boss with rows must not clear it.
+        if (hold.armed && hold.bossEntry != 0 && unit->GetEntry() != hold.bossEntry)
             continue;
         const std::vector<BossStandRow>* rows = table.Rows(mapId, unit->GetEntry());
         if (!rows)
@@ -988,14 +1020,19 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
             if (spell->m_spellInfo)
                 casting = spell->m_spellInfo->Id;
         }
+        // A spell cast triggered (a breath) never shows as the current spell: the state the cast leaves opens the
+        // window of a row whose signal says so (the boss stands still and has no target; the row also names the aura
+        // it has to wear and the anchor it has to be at).
+        const bool stoppedNoTarget = unit->IsStopped() && unit->GetTargetGuid().IsEmpty();
         // The open window's points; after the cast the same seats for up to the row's hold time, until the boss
         // is at the release anchor (StandPointsNow arms, keeps and clears the hold).
         sawBoss = true;
         points = StandPointsNow(*rows, role, unit->GetPositionX(), unit->GetPositionY(), casting,
-                                [unit](uint32 aura) { return unit->HasAura(aura); }, hold, nowMs);
+                                [unit](uint32 aura) { return unit->HasAura(aura); }, hold, nowMs, stoppedNoTarget);
         if (!points.empty())
         {
             boss = unit;
+            bossRows = rows;
             break;
         }
     }
@@ -1062,14 +1099,27 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         if (kept)
             g_standHolds[selfKey] = hold;
         else
+        {
             g_standHolds.erase(selfKey);
+            g_standFailures.erase(selfKey);  // the window is over: the next one starts afresh
+        }
+        g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
     }
     if (points.empty())
         return target;
 
-    const StandSlot slot = AssignStandSlot(points, bots, selfGuid.GetRawValue());
+    // The side is the side of the lane (anchor -> release anchor) the bot stands on.
+    const StandLane lane = bossRows ? StandLaneOf(*bossRows, *points[0]) : StandLane();
+    const StandSlot slot = AssignStandSlot(points, bots, selfGuid.GetRawValue(), lane);
     if (!slot.valid)
         return target;
+    // A seat the mover refused three times in a row is given up on: the reach and the dodge take over.
+    {
+        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        auto failure = g_standFailures.find(selfKey);
+        if (failure != g_standFailures.end() && StandSeatGivenUp(failure->second, slot.x, slot.y))
+            return target;
+    }
     target.valid = true;
     target.x = slot.x;
     target.y = slot.y;
@@ -1096,14 +1146,36 @@ bool BossTacticsStandAction::Execute(Event& event)
         std::fabs(lastX - stand.x) < 1.0f && std::fabs(lastY - stand.y) < 1.0f)
         return true;
 
-    // The mover ignores a destination whose z is off the floor, so the seat is put back on the ground.
-    float z = stand.z;
+    // The mover ignores a destination whose z is off the floor, so the seat is put back on the ground. A far seat's
+    // floor can lie above the row's z, so the probe starts above both the row's and the bot's own; a probe that
+    // comes back unchanged found nothing and the row's z stays.
+    const float probeZ = StandProbeZ(stand.z, bot->GetPositionZ());
+    float z = probeZ;
     bot->UpdateGroundPositionZ(stand.x, stand.y, z);
-    // The cast of a bot on its way out is of no use: stop it, as the reactive dodge does.
+    z = StandSnappedZ(stand.z, probeZ, z);
     bot->AttackStop();
-    bot->CastStop();
+    // The cast of a bot on its way out is of no use: stop it, as the reactive dodge does - unless it is already close
+    // to its seat, where a cast in progress is let finish.
+    if (StandShouldStopCast(bot->GetPositionX(), bot->GetPositionY(), stand.x, stand.y))
+        bot->CastStop();
+    const uint64 key = bot->GetObjectGuid().GetRawValue();
     if (!MoveTo(bot->GetMapId(), stand.x, stand.y, z, false, false, false, true))
+    {
+        // A seat the mover keeps refusing is given up on after three tries (FindBossStand returns invalid for it).
+        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        StandNoteMoveFailure(g_standFailures[key], stand.x, stand.y);
+        g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
         return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        auto failure = g_standFailures.find(key);
+        if (failure != g_standFailures.end())
+        {
+            g_standFailures.erase(failure);
+            g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
+        }
+    }
     lastX = stand.x;
     lastY = stand.y;
     hasLast = true;

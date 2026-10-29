@@ -788,6 +788,15 @@ namespace ai
         ReachPartyMemberToHealAction(PlayerbotAI* ai) : ReachTargetAction(ai, "reach party member to heal", ai->GetRange("heal")) {}
         virtual std::string GetTargetName() override { return "party member to heal"; }
 
+        // A stand set that seats this healer (ai_boss_stand) wins over the walk to its patient, as it does over the
+        // caster reach: otherwise the heal walk and the stand walk pull the bot back and forth across the lane.
+        bool MoveIntoRange(Unit* target, float distance) override
+        {
+            if (FindBossStand(ai, bot).valid)
+                return false;
+            return ReachTargetAction::MoveIntoRange(target, distance);
+        }
+
         // Every heal on "party member to heal" queues this action as its walk-up
         // prerequisite, so the trigger alone does not stop the walk. In combat
         // the walk is dropped for an ally another healer already covers

@@ -235,7 +235,7 @@ int main()
             }
             CHECK(onFirst == 5 && onSecond == 2 && mirrored == 0);
         }
-        // Past both +y points (5 + 5), the mirrored side takes the rest, then nobody is seated.
+        // Past both +y points (5 + 5) nobody crosses the lane for the mirrored side: the rest are not seated.
         {
             std::vector<StandBot> bots;
             for (std::uint64_t id = 1; id <= 17; ++id)
@@ -253,7 +253,7 @@ int main()
                         ++mirrored;
                 }
             }
-            CHECK(seated == 15 && mirrored == 5 && unseated == 2);
+            CHECK(seated == 10 && mirrored == 0 && unseated == 7);
         }
         // Spread: every seated bot is at least 9 yd from every other one.
         {
@@ -264,9 +264,10 @@ int main()
             for (std::uint64_t id = 1; id <= 15; ++id)
             {
                 StandSlot slot = AssignStandSlot(points, bots, id);
-                CHECK(slot.valid);
-                slots.push_back(slot);
+                if (slot.valid)
+                    slots.push_back(slot);
             }
+            CHECK(slots.size() == 13);  // 8 on the +y side (10 seats), 7 on the -y side (5 seats): 2 left over
             for (std::size_t a = 0; a < slots.size(); ++a)
                 for (std::size_t b = a + 1; b < slots.size(); ++b)
                     CHECK(Dist(slots[a].x, slots[a].y, slots[b].x, slots[b].y) >= kBossStandSpacing - 0.001f);
@@ -312,12 +313,17 @@ int main()
             CHECK(points[AssignStandSlot(points, bots, 2).point]->side == 1);
             CHECK(points[AssignStandSlot(points, bots, 3).point]->side == 0);
         }
-        // Only one side present: that side, whatever the bot's position.
+        // Only one side has seats: a bot on the other side is not sent across the lane (the reactive dodge keeps it).
         {
             std::vector<BossStandRow> one = { Row(1, 0, 0, 8, StandRole::Ranged, 777, 1, 0, 0, -32, 1, 0) };
             const std::vector<const BossStandRow*> p = Points(one);
-            std::vector<StandBot> bots = { { 1, 2, 10 } };
-            CHECK(AssignStandSlot(p, bots, 1).valid);
+            StandLane laneX;
+            laneX.valid = true;
+            laneX.dx = 100.0f;
+            std::vector<StandBot> across = { { 1, 2, 10 } };
+            CHECK(!AssignStandSlot(p, across, 1, laneX).valid);
+            std::vector<StandBot> own = { { 1, 2, -10 } };
+            CHECK(AssignStandSlot(p, own, 1, laneX).valid);
         }
         // Every bot sees the same plan whatever its own id: the order of the list does not matter.
         {
@@ -330,6 +336,136 @@ int main()
                 CHECK(sa.valid && sb.valid && sa.point == sb.point && sa.slot == sb.slot);
             }
         }
+    }
+
+    // The side is geometric: which side of the lane (anchor -> release anchor) the bot stands on, not which point
+    // is nearer. Side 0 is the "+" side: cross(lane, anchor -> bot) >= 0.
+    {
+        std::vector<BossStandRow> rows;
+        // The lane runs from (0, 0) along +x to anchor 2 at (100, 0); "+y" is side 0.
+        rows.push_back(Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0));    // a point at the lane's start, +y
+        rows.push_back(Row(1, 0, 0, 8, StandRole::Ranged, 777, 1, 0, 90, -32, 1, 0));  // a point near the far end, -y
+        rows.push_back(Row(2, 100, 0, 8, StandRole::Ranged, 888, 0, 0, 100, 32, 1, 0));
+        for (BossStandRow& row : rows)
+            row.releaseAnchor = row.anchor == 1 ? 2 : 1;
+        const StandLane lane = StandLaneOf(rows, rows[0]);
+        CHECK(lane.valid && std::fabs(lane.dx - 100.0f) < 0.001f && std::fabs(lane.dy) < 0.001f);
+        CHECK(!StandLaneOf(rows, Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0)).valid);  // no release anchor named
+        BossStandRow dangling = rows[0];
+        dangling.releaseAnchor = 9;
+        CHECK(!StandLaneOf(rows, dangling).valid);
+        const std::vector<const BossStandRow*> points = { &rows[0], &rows[1] };
+
+        // A bot at (80, 1) is on the +y side. The -y point (90, -32) is the nearer one (33 yd against 80 yd), but
+        // the bot does not cross the lane for it: it takes the +y point, or nothing.
+        std::vector<StandBot> plus = { { 1, 80, 1 } };
+        const StandSlot onPlus = AssignStandSlot(points, plus, 1, lane);
+        CHECK(onPlus.valid && points[onPlus.point]->side == 0);
+        // The same bot with the nearest-point rule (no lane known) would cross: the fallback is the old one.
+        const StandSlot fallback = AssignStandSlot(points, plus, 1);
+        CHECK(fallback.valid && points[fallback.point]->side == 1);
+        // A bot at (80, -1) is on the -y side.
+        std::vector<StandBot> minus = { { 1, 80, -1 } };
+        const StandSlot onMinus = AssignStandSlot(points, minus, 1, lane);
+        CHECK(onMinus.valid && points[onMinus.point]->side == 1);
+        // A bot on the +y side whose side has no free seat gets nothing; it is not sent to the -y side.
+        std::vector<StandBot> crowd;
+        for (std::uint64_t id = 1; id <= 6; ++id)
+            crowd.push_back({ id, 80, 1 });
+        int seated = 0;
+        for (std::uint64_t id = 1; id <= 6; ++id)
+            seated += AssignStandSlot(points, crowd, id, lane).valid ? 1 : 0;
+        CHECK(seated == 5);
+        // On the lane line (within half a yard): the side with fewer bots.
+        std::vector<StandBot> line = { { 1, 50, 0.2f }, { 2, 50, 0.2f } };
+        CHECK(points[AssignStandSlot(points, line, 1, lane).point]->side == 0);
+        CHECK(points[AssignStandSlot(points, line, 2, lane).point]->side == 1);
+        // A lane pointing the other way flips the sides: the same bot at (80, 1) is on the "-" side of a lane
+        // that runs from (0, 0) toward -x.
+        StandLane back;
+        back.valid = true;
+        back.dx = -100.0f;
+        back.dy = 0.0f;
+        const StandSlot flipped = AssignStandSlot(points, plus, 1, back);
+        CHECK(flipped.valid && points[flipped.point]->side == 1);
+    }
+
+    // The window can open on a signal instead of a cast: a triggered cast never shows as the boss's current spell, so
+    // a row may name the stopped-without-a-target state (the boss wears the aura, stands still, has no target).
+    {
+        CHECK(ParseStandSignal("cast") == StandSignal::Cast);
+        CHECK(ParseStandSignal("stopped_no_target") == StandSignal::StoppedNoTarget);
+        CHECK(ParseStandSignal("") == StandSignal::None);
+        CHECK(ParseStandSignal("Cast") == StandSignal::None);
+        BossStandRow row = Row(1, 10, 20, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0, 5, 17131);
+        row.windowSignal = StandSignal::StoppedNoTarget;
+        CHECK(BossStandRow().windowSignal == StandSignal::Cast);  // the default is the cast
+        // Not casting, but stopped without a target at the anchor, wearing the aura: open.
+        CHECK(StandRowActive(row, 10, 20, true, 0, true));
+        CHECK(!StandRowActive(row, 10, 20, true, 0, false));     // still moving or has a target
+        CHECK(!StandRowActive(row, 10, 20, false, 0, true));     // the aura is missing
+        CHECK(!StandRowActive(row, 40, 20, true, 0, true));      // elsewhere
+        CHECK(StandRowActive(row, 10, 20, true, 777, false));    // a cast that is read still opens it
+        // A cast-signal row ignores the state.
+        BossStandRow cast = row;
+        cast.windowSignal = StandSignal::Cast;
+        CHECK(!StandRowActive(cast, 10, 20, true, 0, true));
+        // Through the point selection and the sequence.
+        std::vector<BossStandRow> rows = { row };
+        CHECK(ActiveStandPoints(rows, StandRole::Ranged, 10, 20, 0, AllAuras, true).size() == 1);
+        CHECK(ActiveStandPoints(rows, StandRole::Ranged, 10, 20, 0, AllAuras, false).empty());
+        StandHold hold;
+        CHECK(StandPointsNow(rows, StandRole::Ranged, 10, 20, 0, AllAuras, hold, 1000, true).size() == 1 && hold.armed);
+        // The boss starts to move: the hold keeps the seat past the signal.
+        CHECK(StandPointsNow(rows, StandRole::Ranged, 25, 20, 0, AllAuras, hold, 2000, false).size() == 1);
+        // A signal row is only valid with an aura and a window spell.
+        BossStandTable table;
+        BossStandRow noAura = row;
+        noAura.aura = 0;
+        CHECK(!table.Add(noAura));
+        BossStandRow noWindow = row;
+        noWindow.windowSpell = 0;
+        CHECK(!table.Add(noWindow));
+        BossStandRow none = row;
+        none.windowSignal = StandSignal::None;
+        CHECK(!table.Add(none));
+        CHECK(table.Add(row));
+    }
+
+    // The ground probe starts above the seat's floor and the bot's own: a far seat's floor can lie above the row z.
+    {
+        CHECK(std::fabs(StandProbeZ(-85.0f, -88.0f) - (-81.0f)) < 0.001f);   // the row's z is the higher
+        CHECK(std::fabs(StandProbeZ(-88.0f, -82.0f) - (-78.0f)) < 0.001f);   // the bot's z is the higher
+        // The ground was found: its z. Not found (the probe came back unchanged): the row's z.
+        CHECK(std::fabs(StandSnappedZ(-85.0f, -81.0f, -83.4f) - (-83.4f)) < 0.001f);
+        CHECK(std::fabs(StandSnappedZ(-85.0f, -81.0f, -81.0f) - (-85.0f)) < 0.001f);
+    }
+
+    // A cast in progress is let finish within 6 yd of the seat; further out the walk stops it.
+    {
+        CHECK(kBossStandKeepCastRange == 6.0f);
+        CHECK(!StandShouldStopCast(0, 0, 6, 0));
+        CHECK(!StandShouldStopCast(3, 3, 3, 3));
+        CHECK(StandShouldStopCast(0, 0, 6.5f, 0));
+        CHECK(StandShouldStopCast(0, 0, 30, 30));
+    }
+
+    // A seat the mover refuses three times in a row is given up on; another seat starts afresh.
+    {
+        CHECK(kBossStandMaxMoveFailures == 3);
+        StandFailure failure;
+        CHECK(!StandSeatGivenUp(failure, 10, 20));
+        StandNoteMoveFailure(failure, 10, 20);
+        StandNoteMoveFailure(failure, 10.4f, 20);
+        CHECK(!StandSeatGivenUp(failure, 10, 20));
+        StandNoteMoveFailure(failure, 10, 20.3f);
+        CHECK(StandSeatGivenUp(failure, 10, 20));
+        CHECK(!StandSeatGivenUp(failure, 19, 20));    // a different seat
+        StandNoteMoveFailure(failure, 19, 20);        // the new seat resets the count
+        CHECK(failure.count == 1 && !StandSeatGivenUp(failure, 19, 20));
+        StandNoteMoveFailure(failure, 19, 20);
+        StandNoteMoveSuccess(failure);                // a move that starts clears it
+        CHECK(failure.count == 0 && !StandSeatGivenUp(failure, 19, 20));
     }
 
     // The hold: a seat outlives the cast until the sweep is over.
@@ -560,7 +696,7 @@ int main()
         CHECK(!AssignStandSlot(points, bots, 2).valid);
         CHECK(!AssignStandSlot(points, bots, 14).valid);
 
-        // Over capacity among the bots that do count: overflow as before (15 seats, 2 left over).
+        // Over capacity among the bots that do count: the seats of their own side, the rest keep the dodge.
         std::vector<StandCandidate> crowd;
         for (std::uint64_t id = 1; id <= 17; ++id)
             crowd.push_back({ id, 2.0f, 10.0f, true, false });
@@ -571,7 +707,7 @@ int main()
         int seated = 0, unseated = 0;
         for (std::uint64_t id = 1; id <= 30; ++id)
             (AssignStandSlot(points, counted, id).valid ? seated : unseated)++;
-        CHECK(seated == 15 && unseated == 15);
+        CHECK(seated == 10 && unseated == 20);  // 10 seats on the side they stand on; nobody crosses the lane
     }
 
     // Arrival: within the tolerance the bot stays put.

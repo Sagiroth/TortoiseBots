@@ -1,7 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "BossTacticsTriggers.h"
 #include "playerbot/BossTacticsMgr.h"
-#include "playerbot/BossStandPolicy.h"
+#include "playerbot/BossStandMgr.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 
@@ -9,13 +9,19 @@ using namespace ai;
 
 namespace
 {
+// A map has rows when either table names it: a stand set alone arms the strategy, as a tactics row does.
+bool MapHasRows(uint32 mapId)
+{
+    return GetBossTactics().HasMap(mapId) || GetBossStands().HasMap(mapId);
+}
+
 bool TacticsWanted(Player* bot)
 {
     if (!bot->IsInWorld() || bot->IsBeingTeleported())
         return false;
     // Map first: off every map without rows, and the commander lookup only runs
     // where it could matter.
-    const bool mapHasRows = GetBossTactics().HasMap(bot->GetMapId());
+    const bool mapHasRows = MapHasRows(bot->GetMapId());
     if (!mapHasRows)
         return false;
     const bool optIn = sPlayerbotAIConfig.dungeonTactics;
@@ -25,7 +31,7 @@ bool TacticsWanted(Player* bot)
 bool Ready(PlayerbotAI* ai, Player* bot)
 {
     return bot->IsInWorld() && !bot->IsBeingTeleported() && sServerFacade.IsAlive(bot) &&
-           GetBossTactics().HasMap(bot->GetMapId()) && ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT);
+           MapHasRows(bot->GetMapId()) && ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT);
 }
 }
 

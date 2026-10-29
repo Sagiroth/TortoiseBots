@@ -96,18 +96,71 @@ class BossStandWiring(unittest.TestCase):
         fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
         # The hold is read before the scan, handed to the policy with the clock, and written back after it.
         read = fn.index("hold = it->second;")
-        policy = fn.index("hold, nowMs);")
+        policy = fn.index("hold, nowMs, stoppedNoTarget);")
         write = fn.index("g_standHolds[selfKey] = hold;")
         self.assertLess(read, policy)
         self.assertLess(policy, write)
         self.assertIn("const uint32 nowMs = WorldTimer::getMSTime();", fn)
         self.assertIn("const uint64 selfKey = bot->GetObjectGuid().GetRawValue();", fn)
         self.assertIn("std::lock_guard<std::mutex> lock(g_standHoldMutex);", fn)
-        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_standHoldMutex);"), 3)
+        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_standHoldMutex);"), 4)
         # A spent hold is dropped (no entry left behind for a bot that never sat again).
         self.assertIn("g_standHolds.erase(selfKey);", fn)
         # A tick without the boss keeps the hold only until its time is up.
         self.assertIn("(sawBoss || static_cast<uint32>(nowMs - hold.lastOpenMs) < hold.holdMs)", fn)
+
+    def test_the_window_opens_on_the_state_a_triggered_cast_leaves(self):
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        # The cast is read first; the state is the second way in, read from the boss unit itself.
+        self.assertLess(fn.index("unit->GetCurrentSpell(CURRENT_GENERIC_SPELL)"), fn.index("stoppedNoTarget"))
+        self.assertIn("const bool stoppedNoTarget = unit->IsStopped() && unit->GetTargetGuid().IsEmpty();", fn)
+        self.assertLess(fn.index("const bool stoppedNoTarget"), fn.index("StandPointsNow("))
+        # The same signal the reactive dodge reads (OnyxiasLairDungeonTriggers.h).
+        dodge = (STRATEGY / "triggers/OnyxiasLairDungeonTriggers.h").read_text()
+        self.assertIn("attacker->IsStopped()", dodge)
+        self.assertIn("attacker->GetTargetGuid().IsEmpty()", dodge)
+
+    def test_the_side_is_the_side_of_the_lane(self):
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        self.assertIn("const StandLane lane = bossRows ? StandLaneOf(*bossRows, *points[0]) : StandLane();", fn)
+        self.assertIn("bossRows = rows;", fn)
+        # The policy no longer sends a bot across the lane when its own side is full.
+        policy = body(POLICY, "inline StandSlot AssignStandSlot(", end="\n    }\n")
+        self.assertNotIn("side = side == 0 ? 1 : 0;", policy)
+        self.assertIn("lane.dx * (bot.y - points[0]->anchorY) - lane.dy * (bot.x - points[0]->anchorX)", policy)
+
+    def test_a_refused_seat_is_given_up_after_three_tries(self):
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        self.assertIn("StandSeatGivenUp(failure->second, slot.x, slot.y)", fn)
+        action = body(ACTIONS, "bool BossTacticsStandAction::Execute(Event& event)")
+        self.assertIn("StandNoteMoveFailure(g_standFailures[key], stand.x, stand.y);", action)
+        self.assertLess(action.index("MoveTo("), action.index("StandNoteMoveFailure("))
+        self.assertIn("g_standFailures.erase(failure);", action)
+
+    def test_the_heal_walk_gives_way_to_the_seat(self):
+        fn = body(REACH, "class ReachPartyMemberToHealAction", end="\n    };\n")
+        self.assertIn("if (FindBossStand(ai, bot).valid)\n                return false;\n            return ReachTargetAction::MoveIntoRange(target, distance);", fn)
+
+    def test_a_dead_or_gone_bot_forgets_its_window(self):
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        dead = fn.index("!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot)")
+        self.assertLess(dead, fn.index("ForgetStand(selfKey);"))
+        self.assertGreaterEqual(fn.count("ForgetStand(selfKey);"), 3)  # dead/teleporting, no rows on the map, strategy off
+        forget = body(ACTIONS, "void ForgetStand(uint64 key)")
+        self.assertIn("g_standHolds.erase(key);", forget)
+        self.assertIn("g_standFailures.erase(key);", forget)
+        # The cheap path costs one atomic read.
+        self.assertIn("g_standStateCount.load(std::memory_order_relaxed) == 0", forget)
+
+    def test_a_hold_reads_only_its_own_boss(self):
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        self.assertIn("if (hold.armed && hold.bossEntry != 0 && unit->GetEntry() != hold.bossEntry)\n            continue;", fn)
+        self.assertLess(fn.index("unit->GetEntry() != hold.bossEntry"), fn.index("table.Rows(mapId, unit->GetEntry())"))
+
+    def test_a_stand_set_alone_arms_the_strategy(self):
+        self.assertIn("return GetBossTactics().HasMap(mapId) || GetBossStands().HasMap(mapId);", TRIGGERS)
+        self.assertEqual(TRIGGERS.count("MapHasRows(bot->GetMapId())"), 2)
+        self.assertNotIn("GetBossTactics().HasMap(bot->GetMapId())", TRIGGERS)
 
     def test_the_loader_logs_a_refused_stand_set(self):
         fn = body(MGR_CPP, "std::uint32_t ai::ReadBossStandRows(")
@@ -122,7 +175,7 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("PlayerbotAIStorage::Instance().GetAI(member)", fn)
         self.assertIn('memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
         self.assertIn("StandRoleOf(PlayerbotAI::IsTank(member), PlayerbotAI::IsHeal(member), ai->IsRanged(member)) != role", fn)
-        self.assertIn("AssignStandSlot(points, bots, selfGuid.GetRawValue())", fn)
+        self.assertIn("AssignStandSlot(points, bots, selfGuid.GetRawValue(), lane)", fn)
         # The bot itself is judged by the same rule as the others, first.
         self.assertLess(fn.index("const StandCandidate self = candidateOf(bot, heldBefore);"), fn.index("LiveGroupMembers(group)"))
         self.assertIn("selfCounts = StandMemberCounts(self, anchorX, anchorY);", fn)
@@ -147,18 +200,24 @@ class BossStandWiring(unittest.TestCase):
 
     def test_stand_action_snaps_the_seat_to_the_ground_before_the_move(self):
         fn = body(ACTIONS, "bool BossTacticsStandAction::Execute(Event& event)")
+        probe = fn.index("const float probeZ = StandProbeZ(stand.z, bot->GetPositionZ());")
         snap = fn.index("bot->UpdateGroundPositionZ(stand.x, stand.y, z);")
+        keep = fn.index("z = StandSnappedZ(stand.z, probeZ, z);")
         move = fn.index("MoveTo(bot->GetMapId(), stand.x, stand.y, z, false, false, false, true)")
-        self.assertLess(snap, move)
-        self.assertIn("float z = stand.z;", fn)
+        self.assertLess(probe, snap)
+        self.assertLess(snap, keep)
+        self.assertLess(keep, move)
+        self.assertIn("float z = probeZ;", fn)
         # Never the boss's (flight) height.
-        self.assertNotIn("GetPositionZ()", fn)
+        self.assertNotIn("boss->GetPositionZ", fn)
 
     def test_stand_action_stops_the_cast_and_moves_once(self):
         fn = body(ACTIONS, "bool BossTacticsStandAction::Execute(Event& event)")
         self.assertIn("bot->AttackStop();", fn)
         self.assertIn("bot->CastStop();", fn)
         self.assertLess(fn.index("bot->CastStop();"), fn.index("MoveTo("))
+        # A bot within 6 yd of its seat keeps the cast it is in.
+        self.assertIn("if (StandShouldStopCast(bot->GetPositionX(), bot->GetPositionY(), stand.x, stand.y))\n        bot->CastStop();", fn)
         self.assertIn("StandArrived(bot->GetPositionX(), bot->GetPositionY(), stand.x, stand.y)", fn)
         # A bot already walking to this seat is not re-pathed.
         self.assertIn("!bot->IsStopped() && !bot->movespline->Finalized()", fn)
