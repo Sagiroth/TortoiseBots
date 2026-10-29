@@ -6306,8 +6306,10 @@
     const o = on || {}, k = c.k, f = c.f, none = { under: '', over: '' };
     if (!m || (m.rank !== 'b' && m.rank !== 'e')) return none;
     const p = CmdView.project(m.x, m.y), facing = typeof m.o === 'number', casting = !!m.cid && nowLeftMs > 0;
+    // A lane pinned to its two map ends stands on its own: it is drawn wherever the unit is and however it faces.
+    const pinned = !!(m.shape && CmdView.shapeSeg(m.shape.seg));
     let under = '', over = '';
-    if (o.mobcast && casting && facing && m.shape) {
+    if (o.mobcast && casting && (facing || pinned) && m.shape) {
       const d = CmdView.shapePath(p.x, p.y, m.o, m.shape);
       if (d) under += `<path class="mobshape s-${esc(m.shape.k)}" d="${d}"/>`;
     }

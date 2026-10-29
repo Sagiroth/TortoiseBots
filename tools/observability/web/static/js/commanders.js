@@ -584,15 +584,34 @@
     return d > 0 ? { x: v.x / d, y: v.y / d } : v;
   }
 
-  // The SVG path a shape covers around a unit at plane point (cx, cy) facing o, in yards: a cone with its apex at the unit, a back
-  // cone (the same behind it) or a line along the facing. "" when the shape has no reach or is unknown. k is the caller's
-  // user-space scale (1: the plane is already in yards).
+  // A line's pinned ends [x0, y0, x1, y1] in map coordinates, or null: exactly four finite numbers, nothing else.
+  function shapeSeg(seg) {
+    return Array.isArray(seg) && seg.length === 4 && seg.every((v) => num(v)) ? seg : null;
+  }
+
+  // The SVG path a shape covers: a cone with its apex at the unit (cx, cy) facing o, a back cone (the same behind it), or a line
+  // along the facing; a line that pins its two ends (`seg`) draws the band between them instead, wherever the unit stands. In
+  // yards; "" when the shape has no reach or is unknown. k is the caller's user-space scale (1: the plane is already in yards).
   function shapePath(cx, cy, o, shape, k) {
     if (!shape || typeof shape !== "object") return "";
+    const s = num(k) && k > 0 ? k : 1, x = cx * s, y = cy * s, dir = facingVec(o);
+    const pt = (p) => n2(p.x) + "," + n2(p.y);
+    const w = num(shape.w) ? Math.max(0, shape.w) : 0;
+    if (shape.k === "line" && w > 0) {
+      const seg = shapeSeg(shape.seg);
+      if (seg) {
+        const a = project(seg[0], seg[1]), b = project(seg[2], seg[3]);
+        const ax = a.x * s, ay = a.y * s, bx = b.x * s, by = b.y * s, span = Math.hypot(bx - ax, by - ay);
+        if (!(span > 0)) return "";
+        const nx = -(by - ay) / span, ny = (bx - ax) / span, half = (w * s) / 2;
+        const p1 = { x: ax + nx * half, y: ay + ny * half }, p2 = { x: ax - nx * half, y: ay - ny * half };
+        const p3 = { x: bx - nx * half, y: by - ny * half }, p4 = { x: bx + nx * half, y: by + ny * half };
+        return `M${pt(p1)}L${pt(p2)}L${pt(p3)}L${pt(p4)}Z`;
+      }
+    }
     const l = num(shape.l) ? shape.l : 0;
     if (!(l > 0) || !num(cx) || !num(cy)) return "";
-    const s = num(k) && k > 0 ? k : 1, x = cx * s, y = cy * s, len = l * s, dir = facingVec(o);
-    const pt = (p) => n2(p.x) + "," + n2(p.y);
+    const len = l * s;
     if (shape.k === "cone" || shape.k === "back-cone") {
       const a = num(shape.a) ? shape.a : 0;
       if (!(a > 0)) return "";
@@ -603,7 +622,6 @@
       return `M${n2(x)},${n2(y)}L${pt(p1)}A${n2(len)} ${n2(len)} 0 ${a > 180 ? 1 : 0} 1 ${pt(p2)}Z`;
     }
     if (shape.k === "line") {
-      const w = num(shape.w) ? Math.max(0, shape.w) : 0;
       const v = unit(dir), nx = -v.y, ny = v.x, half = (w * s) / 2;
       const a = { x: x + nx * half, y: y + ny * half }, b = { x: x - nx * half, y: y - ny * half };
       const c = { x: a.x + v.x * len, y: a.y + v.y * len }, d = { x: b.x + v.x * len, y: b.y + v.y * len };
@@ -820,7 +838,7 @@
     trailSegments, markGap, trailSegmentsBroken, trailRuns, trailMarks, trailEvent, jumpLimitYd, TRAVEL_MAX_YD_PER_SEC, TRAVEL_SLACK_YD, TRAVEL_MAX_GAP_SEC, clampScale, prependTrail, heading, trailStamps, scaleBar, zonesIn, pictureSlots, pictureChoice, pictureSelect, pictureRefreshAfter, PIC_RETRY_MS, PIC_MISSING_MS,
     raidBlocks, isRaid, layoutText, threatOffTanks, notesLog, deathsTimeline, controlLines, whyWaiting,
     AGGRO_RANGE_YD, followView, zoomFollow, pinchFollow, mobsOf, mobClass, threatLines, botTargetLines, aggroMobs, commanderPlace,
-    facingVec, shapePath, castLeft, castFrac, angleLerp,
+    facingVec, shapePath, shapeSeg, castLeft, castFrac, angleLerp,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.CmdView = api;
 })(typeof self !== "undefined" ? self : this);

@@ -26,6 +26,28 @@
     return TRAVEL_SLACK_YD + TRAVEL_MAX_YD_PER_SEC * gap;
   }
 
+  // A line's two map ends [x0, y0, x1, y1], or null: exactly four finite numbers, so one bad row cannot break the drawing.
+  function segOf(seg) {
+    if (!Array.isArray(seg) || seg.length !== 4) return null;
+    for (let i = 0; i < 4; i += 1) if (num(seg[i]) === null) return null;
+    return [seg[0], seg[1], seg[2], seg[3]];
+  }
+
+  // The spell area as the map draws it: a known kind and the numbers the wire carries, a lane's ends only when all four are
+  // numbers. An unknown kind or a broken row is dropped whole.
+  function shapeOf(raw) {
+    if (!raw || typeof raw !== "object") return undefined;
+    const k = typeof raw.k === "string" ? raw.k : "";
+    if (k !== "cone" && k !== "back-cone" && k !== "line") return undefined;
+    const out = { k: k };
+    if (num(raw.a) !== null) out.a = raw.a;
+    if (num(raw.l) !== null) out.l = raw.l;
+    if (num(raw.w) !== null) out.w = raw.w;
+    const seg = segOf(raw.seg);
+    if (seg) out.seg = seg;
+    return out;
+  }
+
   // The wire shape of 3.2 into frames of maps: bots by guid, mobs by id. Bad rows are dropped, not fatal.
   function prep(json) {
     const src = json && Array.isArray(json.frames) ? json.frames : [];
@@ -60,10 +82,10 @@
         if (e === null || x === null || y === null) return;
         const hp = num(m.hp);
         const v = num(m.v);
-        // The boss overlay rides along (the page draws it at the cursor): facing, the cast's absolute end and size, its name and
-        // target, and the spell's area. A frame without them stays as it was.
+        // The boss overlay rides along (the page draws it at the cursor): facing, the cast's absolute end (or its time left on a
+        // report that carries `cleft`) and size, its name and target, and the spell's area. A frame without them stays as it was.
         const o = num(m.o);
-        const ce = num(m.ce);
+        const ce = num(m.ce) !== null ? num(m.ce) : (num(m.cleft) !== null ? Math.round(t * 1000 + m.cleft) : null);
         const cid = num(m.cid);
         mobs[String(m.id)] = {
           e: e,
@@ -80,7 +102,7 @@
           ctg: typeof m.ctg === "string" ? m.ctg : "",
           ch: num(m.ch) === null ? 0 : m.ch,
           cn: typeof m.cn === "string" ? m.cn : "",
-          sh: m.sh && typeof m.sh === "object" ? m.sh : undefined,
+          sh: shapeOf(m.sh),
         };
       });
       frames.push({
@@ -136,8 +158,13 @@
     return { x: u.x, y: u.y, hp: Math.round(u.hp), alive: u.alive, map: u.map };
   }
 
+  // One mob of the replay at a moment: the row's own facts plus the boss overlay the frames carried. The shape (and its lane
+  // ends) is copied, so a caller that changes a drawn unit never changes the track.
   function mobOut(u, names) {
-    return { e: u.e, n: names[u.e] || "", x: u.x, y: u.y, hp: Math.round(u.hp), v: u.v, vo: u.vo, rk: u.rk };
+    const sh = u.sh ? Object.assign({}, u.sh) : undefined;
+    if (sh && Array.isArray(sh.seg)) sh.seg = sh.seg.slice();
+    return { e: u.e, n: names[u.e] || "", x: u.x, y: u.y, hp: Math.round(u.hp), v: u.v, vo: u.vo, rk: u.rk,
+      o: u.o, cid: u.cid, ce: u.ce, ctot: u.ctot, ctg: u.ctg, ch: u.ch, cn: u.cn, sh: sh };
   }
 
   // The units of one kind at tS: interpolation between the two bracketing reports, a hold across a jump, a map change or a
@@ -174,7 +201,7 @@
       const uy = u.y + (later.y - u.y) * f;
       const hp = Math.round(u.hp + (later.hp - u.hp) * f);
       if (wantMobs) {
-        out[key] = { e: u.e, n: track.names[u.e] || "", x: ux, y: uy, hp: hp, v: u.v, vo: u.vo, rk: u.rk };
+        out[key] = Object.assign(mobOut(u, track.names), { x: ux, y: uy, hp: hp });
       } else {
         out[key] = { x: ux, y: uy, hp: hp, alive: u.alive, map: u.map };
       }
@@ -207,7 +234,7 @@
 
   const api = {
     TICK_MS, SPEEDS, HOLD_S, UNTRACKED_TEXT, NO_TRACK_TEXT,
-    jumpLimitYd, prep, window, botsAt, mobsAt, nextSpeed, clock, spanClock, coverageText,
+    jumpLimitYd, segOf, shapeOf, prep, window, botsAt, mobsAt, nextSpeed, clock, spanClock, coverageText,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightReplay = api;
 })(typeof self !== "undefined" ? self : this);
