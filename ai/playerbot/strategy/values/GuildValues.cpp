@@ -104,19 +104,12 @@ bool HasGuildTravelOrderValue::Calculate()
         return false;
 
     // No order work while delivering or done with the amount (delivered
-    // plus bags plus mailbox).
+    // plus bags plus mailbox). Mail waiting never blocks the leg: the
+    // travel code walks to a mailbox and collects it before farming, buying
+    // or delivering, since bought items arrive by mail.
     if (!OrderStillNeedsWork(bot, order))
         return false;
-    if (order.type != GuildOrderType::AuctionHouse || OrderMailboxItems(bot, order.itemId) == 0)
-        return true;
-    // A buy with mail waiting still finishes buying first: the AH visit
-    // concludes (enough owned, or farm fallback) before the bot walks to
-    // a mailbox, one listing per tick until then.
-    std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
-    for (ObjectGuid const& guid : npcs)
-        if (bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_AUCTIONEER))
-            return true;
-    return false;
+    return true;
 }
 
 uint32 GuildOrderVendorReagentValue::Calculate()

@@ -23,6 +23,7 @@
 #include "playerbot/GuildOrderSources.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderGiveUpPolicy.h"
+#include "runtime/GuildOrderMailPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/GuildOrderFishingPolicy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
@@ -2407,7 +2408,41 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 
         ai->TellDebug(ai->GetMaster(), "Guild order: " + order.GetTypeName() + " " + orderTarget, "debug travel");
 
-        if (order.type == GuildOrderType::Farm ||
+        // Order items waiting in the mailbox come before everything else:
+        // delivery needs them in the bags, and bought items arrive by mail.
+        // A buy whose auction visit is still open keeps buying first while
+        // an auctioneer is in reach, one listing per tick.
+        bool mailboxLeg = false;
+        using TortoiseBots::GuildOrders::Find;
+        std::optional<TortoiseBots::GuildOrders::OrderRecord> mailRecord = Find(bot->GetGUIDLow());
+        if (!mailRecord || mailRecord->itemId != order.itemId)
+            return false;
+        bool auctionVisitOpen =
+            mailRecord->type == TortoiseBots::GuildOrders::OrderType::Buy && !mailRecord->farmRest;
+        bool auctioneerNearby = false;
+        if (auctionVisitOpen)
+        {
+            std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
+            for (ObjectGuid const& guid : npcs)
+                if (bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_AUCTIONEER))
+                {
+                    auctioneerNearby = true;
+                    break;
+                }
+        }
+        if (TortoiseBots::GuildOrders::CollectOrderMailFirst(
+                ai->GetInventoryItemsCountWithId(order.itemId), mailRecord->delivered,
+                OrderMailboxItems(bot, order.itemId), order.amount,
+                auctionVisitOpen, auctioneerNearby))
+        {
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+                {
+                    return sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                        (uint32)TravelDestinationPurpose::Mail, {}, true, 0.0f);
+                });
+            mailboxLeg = true;
+        }
+        else if (order.type == GuildOrderType::Farm ||
             (order.IsCraftOrder() && orderFarmItem))
         {
             using TortoiseBots::GuildOrders::Find;
@@ -2634,8 +2669,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         {
             return false;
         }
-
-        SET_AI_VALUE2(std::string, "manual string", "future travel detail", orderTarget);
+        SET_AI_VALUE2(std::string, "manual string", "future travel detail",
+            mailboxLeg ? orderTarget + " (mailbox)" : orderTarget);
     }
     else if (travelName.find("trainer") == 0)
     {

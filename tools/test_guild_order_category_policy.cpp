@@ -49,14 +49,17 @@ int main()
     // A fish that mobs also drop (Raw Slitherskin Mackerel 6303) still
     // browses as fish: the fish token beats drop.
     CHECK(ClassifyOrderCategory("fish,drop", false) == OrderItemCategory::Fish);
-    // Trade Goods cloth only when no gather source claims the item.
+    // Trade Goods cloth beats every source token: Wool Cloth 2592 drops from
+    // mobs and skins from Sheep 1933, but it browses as cloth so cat=cloth
+    // finds it and cat=leather does not.
     CHECK(ClassifyOrderCategory("drop", true) == OrderItemCategory::Cloth);
     CHECK(ClassifyOrderCategory("craft,ah", true) == OrderItemCategory::Cloth);
+    CHECK(ClassifyOrderCategory("drop,skin", true) == OrderItemCategory::Cloth);
     CHECK(ClassifyOrderCategory("drop", false) == OrderItemCategory::Drop);
     CHECK(ClassifyOrderCategory("craft,ah", false) == OrderItemCategory::Other);
     CHECK(ClassifyOrderCategory("-", false) == OrderItemCategory::Other);
-    // Skinning beats cloth: a skinned hide is leather even when filed as cloth.
-    CHECK(ClassifyOrderCategory("skin,drop", true) == OrderItemCategory::Leather);
+    // A skinned hide without a cloth name stays leather.
+    CHECK(ClassifyOrderCategory("skin,drop", false) == OrderItemCategory::Leather);
 
     // Trade-goods cloth: the 1.12 cloth names (Linen to Mooncloth, bolts
     // included) end in "cloth"; class 7 only, so armor never matches.

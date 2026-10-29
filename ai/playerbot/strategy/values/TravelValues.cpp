@@ -499,6 +499,19 @@ bool ShouldTravelNamedValue::Calculate()
                 target->SetForced(false);
                 target->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
             }
+            else if (wantWork && !delivering && target->GetDestination() &&
+                target->GetDestination()->GetPurpose() == TravelDestinationPurpose::Mail)
+            {
+                // The mailbox leg is done once no order items wait in the
+                // mail: expire it so the farm, buy or delivery leg re-picks
+                // instead of idling at the mailbox.
+                GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+                if (order.itemId && OrderMailboxItems(bot, order.itemId) == 0)
+                {
+                    target->SetForced(false);
+                    target->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
+                }
+            }
         }
         if (delivering)
             return true;
