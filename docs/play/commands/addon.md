@@ -85,7 +85,7 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 | `TBM:BOTSTATE\|<bot>\|<fields>` | Emits bot movement mode, 9 behavior toggles, and the sap switch. |
 | `TBM:CC_ASSIGN_BEGIN\|<n>` / `TBM:CC_ASSIGN_END` | Delimits active crowd control assignments. |
 | `TBM:CC_ASSIGN\|<bot>\|<mark>` | Emits a party bot's assigned CC raid mark. |
-| `TBM:CAPS\|<capabilities>` | Advertises server feature capabilities. Exact tokens: `pull-seconds,flee,inventory,behavior,claimed-roster,loot-log`, plus `dungeon-run` while the dungeon run is enabled (`AiPlayerbot.DungeonSelfClear = 1`). |
+| `TBM:CAPS\|<capabilities>` | Advertises server feature capabilities. Exact tokens: `pull-seconds,flee,inventory,behavior,claimed-roster,loot-log,downtime`, plus `dungeon-run` while the dungeon run is enabled (`AiPlayerbot.DungeonSelfClear = 1`). |
 | `TBM:LOOT_BEGIN\|<n>\|<nextCursor>` / `TBM:LOOT_END\|<nextCursor>` | Delimits one page of loot history from `.bot lootlog`. |
 | `TBM:LOOT\|<ts>\|<bot>\|<event>\|<itemId>\|<item>\|<sourceType>\|<source>\|<quality>` | Emits one loot row (item taken or money taken). |
 | `TBM:ALTBOTS\|<names>` | Comma-separated list of owned characters active as autonomous alt-bots. |
@@ -96,7 +96,7 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 
 ### Protocol Grammar & Semantics
 
-- **Capabilities (`TBM:CAPS`):** Emits `TBM:CAPS|pull-seconds,flee,inventory,behavior,claimed-roster,loot-log`, with `,dungeon-run` appended while the dungeon run is enabled. (`mimic` is a behavior toggle, not a capability token).
+- **Capabilities (`TBM:CAPS`):** Emits `TBM:CAPS|pull-seconds,flee,inventory,behavior,claimed-roster,loot-log,downtime`, with `,dungeon-run` appended while the dungeon run is enabled. (`mimic` is a behavior toggle, not a capability token).
 - **Loot history (`TBM:LOOT`):** `.bot lootlog [cursor]` replays loot rows for your controllable party bots (owned alts and hired companions) from the last 24 hours, newest piece first, up to 40 rows per reply. A money row carries the copper amount as `<item>` and the corpse entry as `<itemId>`; an item row carries the item name, id and quality. Send the returned `<nextCursor>` back for the next page; `expired` means the piece it pointed at was pruned, so start over without a cursor.
 - **Bot State Grammar (`TBM:BOTSTATE`):** Emitted for all controllable party bots (owned alts and hired companions). Format:
   ```text
