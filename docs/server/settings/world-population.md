@@ -482,7 +482,7 @@ Set to `1` to allow all masterless open-world pool bots to greet players.
 
 ### `AiPlayerbot.RandomBotShowHelmet` / `RandomBotShowCloak`
 Controls whether pool bots wear their helmet and cloak.
-**Default:** `1` / `1` · **Values:** `0` hide, `1` show · **Restart:** not needed (applies on the bots' next login)
+**Default:** `1` / `1` · **Values:** `0` hide, `1` show · **Restart:** needed (takes effect on the bots' next login after restart; no database reset required)
 
 <details>
 <summary>How it works in detail</summary>
