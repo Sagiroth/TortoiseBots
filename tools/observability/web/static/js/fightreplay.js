@@ -8,8 +8,8 @@
   const TICK_MS = 250;                 // one playback step; a setTimeout chain, never an interval
   const SPEEDS = [0.5, 1, 2, 4];
   const HOLD_S = 3;                    // how long a unit that left the report stays drawn
-  // The daemon keeps positions for four commanders at once (TrackMaxCommanders); a fifth fight has none to replay.
-  const UNTRACKED_TEXT = "Replay kept for the first 4 raids only (dashboard limit)";
+  // The daemon keeps positions for twenty commanders at once (TrackMaxCommanders); a 21st has none to replay.
+  const UNTRACKED_TEXT = "Replay kept for the first 20 commanders only (dashboard limit)";
   const NO_TRACK_TEXT = "No positions kept for this fight";
   // Same trail-break numbers as the daemon's JumpLimitYd (internal/state/commanders.go): what a unit can walk in a gap.
   const TRAVEL_SLACK_YD = 12;

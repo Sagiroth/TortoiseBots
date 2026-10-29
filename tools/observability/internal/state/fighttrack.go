@@ -12,15 +12,23 @@ import (
 
 // The fight debugger's replay and aggro lanes need where every bound bot and every enemy near the lead was over the fight, which
 // the trails do not hold (one point per 2 yd, no hp, no mobs) and COMMANDERS history had no place for. One frame per accepted
-// datagram per commander, memory only: 900 frames is 30 min at the 2 s reports, four commanders at once, and a commander that
-// stops reporting is forgotten after 30 min. Frames survive the binding ending, so a finished fight can still be replayed.
+// datagram per commander, memory only: 900 frames is 30 min at the 2 s reports, twenty commanders at once under a memory budget,
+// and a commander that stops reporting is forgotten after 30 min. Frames survive the binding ending, so a finished fight can
+// still be replayed.
 const (
 	TrackMaxFrames     = 900
-	TrackMaxCommanders = 4
+	TrackMaxCommanders = 20
 	TrackKeep          = 30 * time.Minute
 	TrackEdgeSec       = 4
 	TrackMaxWindowSec  = 1800
 	trackMaxNames      = 256
+	// TrackMinFrames is the floor the budget never cuts a track below: 5 min of frames, the shortest useful replay. Under
+	// pressure a track gives up its oldest frames down to this, and only when every track stands here is a whole commander
+	// forgotten.
+	TrackMinFrames = 150
+	// TrackMemBudget bounds all tracks together. Twenty raids at 900 frames of about 3 KB would be ~54 MB; a typical night
+	// (one raid and a few parties) never reaches this, so no replay is cut in practice.
+	TrackMemBudget = 48 << 20
 )
 
 // TrackBot is one bound bot in a frame: where it stood, its health and the map, as reported.
@@ -65,10 +73,12 @@ type TrackFrame struct {
 }
 
 // commanderTrack is one commander's frames plus the entry names seen in them (the frames carry entries, not names, to stay small).
+// bytes is the running estimate of what its frames hold (trackFrameBytes), so the budget check costs no scan.
 type commanderTrack struct {
 	frames   []TrackFrame
 	names    map[uint32]string
 	lastSeen time.Time
+	bytes    int64
 }
 
 // noteTracks appends one frame per binding to the fight track. Called with the lock held.
@@ -127,7 +137,9 @@ func (st *commandersState) noteTracks(list []model.CommanderBinding, ts int64, n
 			}
 		}
 		t.frames = append(t.frames, f)
+		t.bytes += trackFrameBytes(f)
 		if len(t.frames) > TrackMaxFrames {
+			t.bytes -= trackFrameBytes(t.frames[0])
 			t.frames = append(t.frames[:0], t.frames[len(t.frames)-TrackMaxFrames:]...)
 		}
 	}
@@ -136,6 +148,7 @@ func (st *commandersState) noteTracks(list []model.CommanderBinding, ts int64, n
 			delete(st.tracks, c)
 		}
 	}
+	st.trimTrackBudgetLocked()
 	for len(st.tracks) > TrackMaxCommanders {
 		oldest := ""
 		var oldestAt time.Time
@@ -144,6 +157,58 @@ func (st *commandersState) noteTracks(list []model.CommanderBinding, ts int64, n
 				oldest, oldestAt = c, t.lastSeen
 			}
 		}
+		delete(st.tracks, oldest)
+	}
+}
+
+// trackFrameBytes estimates what one frame holds: the frame and its slices, 24 bytes per bot row, and a row plus the id
+// it reports and its cast name per mob. The estimate is what the budget spends; it need not be exact, only stable.
+func trackFrameBytes(f TrackFrame) int64 {
+	n := int64(96) + 24*int64(len(f.Bots))
+	for _, m := range f.Mobs {
+		n += 80 + int64(len(m.ID)) + int64(len(m.CastName))
+	}
+	return n
+}
+
+// trimTrackBudgetLocked keeps the tracks under TrackMemBudget. The track holding the most bytes gives up its oldest frame,
+// never below TrackMinFrames; when every track stands at that floor, the commander seen least recently is forgotten with
+// its whole track. Called with the lock held.
+func (st *commandersState) trimTrackBudgetLocked() {
+	total := int64(0)
+	for _, t := range st.tracks {
+		total += t.bytes
+	}
+	for total > TrackMemBudget {
+		victim := ""
+		var victimBytes int64
+		for c, t := range st.tracks {
+			if len(t.frames) <= TrackMinFrames {
+				continue
+			}
+			if victim == "" || t.bytes > victimBytes || (t.bytes == victimBytes && c > victim) {
+				victim, victimBytes = c, t.bytes
+			}
+		}
+		if victim != "" {
+			t := st.tracks[victim]
+			dropped := trackFrameBytes(t.frames[0])
+			t.bytes -= dropped
+			t.frames = append(t.frames[:0], t.frames[1:]...)
+			total -= dropped
+			continue
+		}
+		oldest := ""
+		var oldestAt time.Time
+		for c, t := range st.tracks {
+			if oldest == "" || t.lastSeen.Before(oldestAt) || (t.lastSeen.Equal(oldestAt) && c > oldest) {
+				oldest, oldestAt = c, t.lastSeen
+			}
+		}
+		if oldest == "" {
+			return
+		}
+		total -= st.tracks[oldest].bytes
 		delete(st.tracks, oldest)
 	}
 }

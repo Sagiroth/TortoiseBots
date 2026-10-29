@@ -196,8 +196,8 @@ func TestTrackHPAndAlive(t *testing.T) {
 }
 
 // TestTrackSaysUntracked: a commander the daemon does not track answers with tracked false and no frames, while a tracked
-// commander whose window held no report answers tracked true with no frames. The page says "replay kept for the first 4
-// raids" for the first and "no positions kept for this fight" for the second.
+// commander whose window held no report answers tracked true with no frames. The page says "replay kept for the first 20
+// commanders" for the first and "no positions kept for this fight" for the second.
 func TestTrackSaysUntracked(t *testing.T) {
 	c := newClock()
 	s := newTestStore(c)
@@ -230,16 +230,23 @@ func TestTrackForgetsAndCaps(t *testing.T) {
 	c := newClock()
 	s := newTestStore(c)
 	bots := []model.CommanderBot{trackBot(1, 1, 2, 10, 10)}
-	for i, name := range []string{"a", "b", "c", "d", "e"} {
+	names := make([]string, 0, 21)
+	for i := 0; i < 21; i++ {
+		names = append(names, "c"+strconv.Itoa(i))
+	}
+	for i, name := range names {
 		if !s.ApplyCommanders(trackPayload(1, int64(100+i), trackBinding(name, bots, nil))) {
 			t.Fatalf("payload %s refused", name)
 		}
 		c.Advance(time.Second)
 	}
-	if frames, _ := s.Track("a", 0, 1000); len(frames) != 0 {
+	if TrackMaxCommanders != 20 {
+		t.Fatalf("TrackMaxCommanders = %d, want 20", TrackMaxCommanders)
+	}
+	if frames, _ := s.Track(names[0], 0, 1000); len(frames) != 0 {
 		t.Errorf("the oldest commander must be dropped, got %d frames", len(frames))
 	}
-	for _, name := range []string{"b", "c", "d", "e"} {
+	for _, name := range names[1:] {
 		if frames, _ := s.Track(name, 0, 1000); len(frames) != 1 {
 			t.Errorf("commander %s: %d frames, want 1", name, len(frames))
 		}
@@ -248,7 +255,7 @@ func TestTrackForgetsAndCaps(t *testing.T) {
 	if !s.ApplyCommanders(trackPayload(1, 200, trackBinding("f", bots, nil))) {
 		t.Fatal("payload f refused")
 	}
-	for _, name := range []string{"a", "b", "c", "d", "e"} {
+	for _, name := range names {
 		if frames, _ := s.Track(name, 0, 1000); len(frames) != 0 {
 			t.Errorf("the forgotten commander %s still has %d frames", name, len(frames))
 		}
@@ -347,5 +354,135 @@ func TestTrackCarriesBossOverlay(t *testing.T) {
 	out, _ := json.Marshal(plain)
 	if strings.Contains(string(out), `"o"`) || strings.Contains(string(out), `"sh"`) || strings.Contains(string(out), `"cn"`) {
 		t.Fatalf("an ordinary mob must not grow the overlay fields: %s", out)
+	}
+}
+
+// frameBytes is the estimate the daemon's memory budget uses (TrackMemBudget): the frame row and its slices, 24 bytes per
+// bot, and 80 bytes plus the id and the cast name per mob.
+func frameBytes(f TrackFrame) int64 {
+	n := int64(96) + 24*int64(len(f.Bots))
+	for _, m := range f.Mobs {
+		n += 80 + int64(len(m.ID)) + int64(len(m.CastName))
+	}
+	return n
+}
+
+// R8: 20 commanders at the full raid size stay under the 48 MiB track budget, every track above the 5 min floor, and the
+// newest report of each is the one kept.
+func TestTrackMemBudget(t *testing.T) {
+	const (
+		budget    = int64(48 << 20)
+		minFrames = 150
+		frames    = 900
+	)
+	c := newClock()
+	s := newTestStore(c)
+	bindings := make([]model.CommanderBinding, 0, 20)
+	names := make([]string, 0, 20)
+	for i := 0; i < 20; i++ {
+		name := "c" + strconv.Itoa(i)
+		names = append(names, name)
+		bots := make([]model.CommanderBot, 0, 40)
+		for g := 1; g <= 40; g++ {
+			bots = append(bots, trackBot(uint32(g), float64(g), 2, 10, 10))
+		}
+		mobs := make([]model.CommanderMob, 0, 24)
+		for m := 0; m < 24; m++ {
+			mobs = append(mobs, model.CommanderMob{ID: "17379391094613" + strconv.Itoa(m), Entry: uint32(1000 + m), Name: "Warden",
+				X: 1, Y: 2, HP: 50, Rank: "e", Cast: "Shadow Bolt", CastID: uint32(700 + m), CastLeftMS: 900, CastTotalMS: 1500})
+		}
+		bindings = append(bindings, trackBinding(name, bots, mobs))
+	}
+	for ts := int64(1); ts <= frames; ts++ {
+		if !s.ApplyCommanders(trackPayload(1, ts, bindings...)) {
+			t.Fatalf("payload ts %d refused", ts)
+		}
+	}
+	var total int64
+	for _, name := range names {
+		got, _ := s.Track(name, 1, frames)
+		if len(got) < minFrames || len(got) > frames {
+			t.Fatalf("%s keeps %d frames, want %d..%d", name, len(got), minFrames, frames)
+		}
+		if got[len(got)-1].T != frames {
+			t.Fatalf("%s lost its newest frame: last T %d", name, got[len(got)-1].T)
+		}
+		for _, f := range got {
+			total += frameBytes(f)
+		}
+	}
+	if total > budget {
+		t.Fatalf("tracks hold an estimated %d bytes, over the %d budget", total, budget)
+	}
+}
+
+// R8: when every track stands at the 5 min floor and the budget is still passed, whole commanders are forgotten, least
+// recently seen first; the newest report never is.
+func TestTrackBudgetForgetsOldest(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	bots := make([]model.CommanderBot, 0, 40)
+	for g := 1; g <= 40; g++ {
+		bots = append(bots, trackBot(uint32(g), float64(g), 2, 10, 10))
+	}
+	mobs := make([]model.CommanderMob, 0, 24)
+	// 575-byte ids put a frame at 16776 estimated bytes: 20 tracks x 150 frames keep the total just under the 48 MiB
+	// budget (50328000 < 50331648). The track reported last carries a 4-byte cast name per mob, so its 150th frame alone
+	// passes the budget: the pressure then arrives when every track stands at the 5 min floor, where nothing below it may
+	// be cut.
+	for m := 0; m < 24; m++ {
+		mobs = append(mobs, model.CommanderMob{ID: strings.Repeat("7", 575), Entry: uint32(1000 + m), Name: "Warden", X: 1, Y: 2, HP: 50, Rank: "e"})
+	}
+	last := make([]model.CommanderMob, 0, 24)
+	for m := 0; m < 24; m++ {
+		last = append(last, model.CommanderMob{ID: strings.Repeat("7", 575), Entry: uint32(1000 + m), Name: "Warden", X: 1, Y: 2, HP: 50, Rank: "e",
+			Cast: "Fire", CastID: uint32(m + 1)})
+	}
+	bindings := make([]model.CommanderBinding, 0, 20)
+	names := make([]string, 0, 20)
+	for i := 0; i < 20; i++ {
+		name := "c" + strconv.Itoa(i)
+		names = append(names, name)
+		m := mobs
+		if i == 19 {
+			m = last
+		}
+		bindings = append(bindings, trackBinding(name, bots, m))
+	}
+	// One report per commander, in order, so their last-seen times are strictly ordered: the forgetting order is then
+	// the report order, not a tie.
+	for cycle := int64(1); cycle <= 150; cycle++ {
+		for i := range bindings {
+			if !s.ApplyCommanders(trackPayload(1, cycle, bindings[i])) {
+				t.Fatalf("cycle %d, commander %s refused", cycle, names[i])
+			}
+			c.Advance(100 * time.Millisecond)
+		}
+	}
+	missing := []string{}
+	kept := []string{}
+	var total int64
+	for _, name := range names {
+		got, _, tracked := s.TrackWindow(name, 1, 150)
+		if !tracked {
+			missing = append(missing, name)
+			continue
+		}
+		kept = append(kept, name)
+		if len(got) < 150 || len(got) > 150 {
+			t.Fatalf("%s has %d frames, want the 5 min floor and no cut below it", name, len(got))
+		}
+		for _, f := range got {
+			total += frameBytes(f)
+		}
+	}
+	if total > 48<<20 {
+		t.Fatalf("tracks hold an estimated %d bytes, over the 48 MiB budget", total)
+	}
+	if strings.Join(missing, ",") != names[0] {
+		t.Fatalf("forgotten %v, kept %v: only the oldest seen in the run (c0) may go", missing, kept)
+	}
+	if kept[len(kept)-1] != names[len(names)-1] {
+		t.Fatalf("the newest report was forgotten: kept %v", kept)
 	}
 }

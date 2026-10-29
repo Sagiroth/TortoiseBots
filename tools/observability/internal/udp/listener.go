@@ -261,15 +261,19 @@ func (l *Listener) processPacket(data []byte) {
 		if err := json.Unmarshal(data, &cmd); err != nil {
 			return
 		}
+		partials := l.store.CommandersPartials()
 		if l.store.ApplyCommanders(&cmd) {
-			l.hub.Broadcast("commanders", l.store.Commanders())
+			// The applied list, not this datagram's bindings: a cycle that arrived in parts applied everything, and a
+			// partial carried bindings this datagram does not hold.
+			view := l.store.Commanders()
+			l.hub.Broadcast("commanders", view)
 			if l.live != nil {
 				tsMs := cmd.TSMs
 				if tsMs == 0 {
 					tsMs = cmd.TS * 1000 // a module before ts_ms (2.3 is additive)
 				}
-				for i := range cmd.Commanders {
-					b := cmd.Commanders[i]
+				for i := range view.Commanders {
+					b := view.Commanders[i]
 					l.live.Publish(b.Commander, "commander", struct {
 						model.CommanderBinding
 						TSMs int64 `json:"ts_ms"`
@@ -277,6 +281,7 @@ func (l *Listener) processPacket(data []byte) {
 				}
 			}
 		}
+		l.metricsReg.AddCommandersPartials(l.store.CommandersPartials() - partials)
 
 	case "COMBAT_FIGHT":
 		if l.combat == nil {

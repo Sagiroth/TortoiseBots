@@ -2,6 +2,7 @@ package udp
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -348,5 +349,29 @@ func TestRejectedCombatEventsNeverReachTheStream(t *testing.T) {
 	l.processPacket([]byte(fresh))
 	if frames := drainLive(c); len(frames) != 1 || frames[0].Event != "events" {
 		t.Fatalf("an accepted update must publish its events: %+v", frames)
+	}
+}
+
+// R8: a COMMANDERS cycle split into parts reaches the store and the stream once, when the last part is in.
+func TestCommandersPartsOneBroadcast(t *testing.T) {
+	l, store, hub := newTestListener()
+	part := func(idx int, name string) []byte {
+		return []byte(`{"v":12,"session":77,"seq":30,"ts":1791990100,"type":"COMMANDERS","part":` + strconv.Itoa(idx) +
+			`,"parts":2,"commanders":[{"commander":"` + name + `","online":true,"group":1,"lead":"L","bots":[],"orders":[]}]}`)
+	}
+	l.processPacket(part(1, "B"))
+	if len(hub.events) != 0 {
+		t.Fatalf("a part alone must not broadcast: %v", hub.events)
+	}
+	if v := store.Commanders(); len(v.Commanders) != 0 {
+		t.Fatalf("a part alone changed the view: %+v", v.Commanders)
+	}
+	l.processPacket(part(0, "A"))
+	if len(hub.events) != 1 || hub.events[0] != "commanders" {
+		t.Fatalf("one part completed the cycle; events %v", hub.events)
+	}
+	v := store.Commanders()
+	if len(v.Commanders) != 2 || v.Commanders[0].Commander != "A" || v.Commanders[1].Commander != "B" {
+		t.Fatalf("assembled view: %+v", v.Commanders)
 	}
 }

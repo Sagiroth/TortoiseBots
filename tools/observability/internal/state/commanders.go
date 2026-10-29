@@ -21,7 +21,8 @@ const CommandersStaleAfter = 12 * time.Second
 // less); a datagram past them is trimmed, not rejected.
 const (
 	maxCommanderNotes    = 30
-	maxCommanderBindings = 16
+	maxCommanderBindings = 20 // one part may hold 8 bindings; 20 is the module's own cap on reported commanders
+	maxCommanderParts    = 20 // a part per binding at most: a binding is never split across parts
 	maxCommanderBots     = 40
 	maxCommanderMobs     = 24
 	maxCommanderOrders   = 16
@@ -31,7 +32,7 @@ const (
 
 // Short server-side history of where the bound bots have been, so a browser that opens the page mid-run starts with the paths already
 // drawn instead of an empty map. One point per TrailMinStepYd yards of movement (the dashboard draws the same way), at most TrailMaxPoints
-// per bot; a bot that changes map starts a new trail. Memory only, bounded by bindings x bots x points (16 x 8 x 240 x 24 bytes).
+// per bot; a bot that changes map starts a new trail. Memory only, bounded by bindings x bots x points (20 x 8 x 240 x 24 bytes).
 const (
 	TrailMaxPoints = 240
 	TrailMinStepYd = 2.0
@@ -102,11 +103,30 @@ type commandersState struct {
 	trails  map[string]map[uint32]*BotTrail // commander -> bot guid -> trail
 	tracks  map[string]*commanderTrack      // commander -> fight track (the replay and aggro lanes)
 	posTs   map[string]int64                // commander -> ts_ms of the last accepted COMMANDER_POS
+
+	// A cycle split into parts (more than 8 bindings or 64 bots) is held here until every part is in; see
+	// applyPendingPartialLocked for what an incomplete set becomes.
+	pending *commanderPending
+	// carried counts, per commander, the cycles in a row its binding was carried over from the previous list instead
+	// of reported: the second carry in a row drops it.
+	carried  map[string]int
+	partials uint64 // COMMANDERS cycles applied incomplete since the process started
 }
 
-// ApplyCommanders replaces the standing bindings with the datagram's list. A
-// datagram of an older server session, or older than the one held in the same
-// session (UDP may reorder), is ignored. It reports whether the view changed.
+// commanderPending is a COMMANDERS cycle that arrived in parts and is not complete yet: the parts received so far,
+// keyed by 0-based part number (a duplicate part number replaces its earlier copy).
+type commanderPending struct {
+	session uint64
+	seq     uint64
+	ts      int64
+	tsMs    int64
+	parts   int
+	got     map[int][]model.CommanderBinding
+}
+
+// ApplyCommanders replaces the standing bindings with the datagram's list. A datagram of an older server session, or
+// older than the one held in the same session (UDP may reorder), is ignored, and a cycle split into parts takes effect
+// only once all of its parts are in. It reports whether the view changed.
 func (s *Store) ApplyCommanders(p *model.CommandersPayload) bool {
 	if p == nil {
 		return false
@@ -120,7 +140,61 @@ func (s *Store) ApplyCommanders(p *model.CommandersPayload) bool {
 	if p.Session == st.session && p.TS < st.ts {
 		return false
 	}
-	list := p.Commanders
+	if p.Part < 0 || p.Parts < 0 {
+		return false
+	}
+	now := s.now()
+	if !st.at.IsZero() && p.Session > st.session {
+		// A restarted server: nothing of the previous session survives, neither an incomplete cycle nor a carried binding.
+		st.pending, st.carried = nil, nil
+	}
+	if p.Parts <= 1 {
+		// The whole list in one datagram: every cycle up to 8 bindings and 64 bots, byte-identical to the payload before
+		// parts existed. A cycle that never completed is applied first, so its bindings are not lost.
+		st.applyPendingPartialLocked(now)
+		st.applyListLocked(p.Commanders, p, now)
+		return true
+	}
+	if p.Parts > maxCommanderParts || p.Part >= p.Parts {
+		return false
+	}
+	pend := st.pending
+	if pend != nil && p.Seq < pend.seq {
+		return false // a reordered part of an older cycle
+	}
+	applied := false
+	if pend != nil && (p.Seq > pend.seq || pend.parts != p.Parts) {
+		// A part of a newer cycle (or of the same seq with another part count) started: the older set will never
+		// complete, because the module sends one cycle every 2 s.
+		applied = st.applyPendingPartialLocked(now)
+		pend = nil
+	}
+	if pend == nil {
+		st.pending = &commanderPending{
+			session: p.Session, seq: p.Seq, ts: p.TS, tsMs: p.TSMs, parts: p.Parts,
+			got: map[int][]model.CommanderBinding{p.Part: p.Commanders},
+		}
+		return applied
+	}
+	pend.got[p.Part] = p.Commanders // a duplicate part number replaces the earlier copy
+	pend.ts, pend.tsMs = p.TS, p.TSMs
+	if len(pend.got) < pend.parts {
+		return false
+	}
+	list := make([]model.CommanderBinding, 0, len(pend.got)*8)
+	for i := 0; i < pend.parts; i++ {
+		list = append(list, pend.got[i]...)
+	}
+	whole := &model.CommandersPayload{Session: pend.session, Seq: pend.seq, TS: pend.ts, TSMs: pend.tsMs}
+	st.pending, st.carried = nil, nil
+	st.applyListLocked(list, whole, now)
+	return true
+}
+
+// applyListLocked replaces the standing bindings with list, capped and normalised, and records the report that stands
+// behind them. It is ApplyCommanders' body for a whole list: one datagram's list or every part of a cycle assembled.
+// Called with the lock held.
+func (st *commandersState) applyListLocked(list []model.CommanderBinding, p *model.CommandersPayload, now time.Time) {
 	if len(list) > maxCommanderBindings {
 		list = list[:maxCommanderBindings]
 	}
@@ -179,7 +253,7 @@ func (s *Store) ApplyCommanders(p *model.CommandersPayload) bool {
 		}
 		out = append(out, b)
 	}
-	st.session, st.ts, st.at, st.list = p.Session, p.TS, s.now(), out
+	st.session, st.ts, st.at, st.list = p.Session, p.TS, now, out
 	st.tsMs = p.TSMs
 	if st.tsMs == 0 {
 		st.tsMs = p.TS * 1000
@@ -197,8 +271,61 @@ func (s *Store) ApplyCommanders(p *model.CommandersPayload) bool {
 		}
 	}
 	st.noteTrails(out, p.TS)
-	st.noteTracks(out, p.TS, s.now())
+	st.noteTracks(out, p.TS, now)
+}
+
+// applyPendingPartialLocked applies the cycle being collected although it will not complete. Its bindings stand, and
+// every commander of the standing list that it does not report is carried over from its last report: once, because a
+// second carry in a row means that commander stopped reporting and must leave the list. Called with the lock held;
+// reports whether there was a set to apply.
+func (st *commandersState) applyPendingPartialLocked(now time.Time) bool {
+	pend := st.pending
+	if pend == nil {
+		return false
+	}
+	st.pending = nil
+	fresh := make([]model.CommanderBinding, 0, len(pend.got)*8)
+	for i := 0; i < pend.parts; i++ {
+		fresh = append(fresh, pend.got[i]...)
+	}
+	if st.carried == nil {
+		st.carried = map[string]int{}
+	}
+	seen := make(map[string]bool, len(fresh))
+	for _, b := range fresh {
+		seen[b.Commander] = true
+		delete(st.carried, b.Commander)
+	}
+	list := append(make([]model.CommanderBinding, 0, len(fresh)+len(st.list)), fresh...)
+	for _, b := range st.list {
+		if seen[b.Commander] || st.carried[b.Commander] > 0 {
+			continue
+		}
+		st.carried[b.Commander] = 1
+		list = append(list, b)
+	}
+	st.partials++
+	st.applyListLocked(list, &model.CommandersPayload{Session: pend.session, Seq: pend.seq, TS: pend.ts, TSMs: pend.tsMs}, now)
+	// The binding cap may have cut carried bindings; their carries go too.
+	live := make(map[string]bool, len(st.list))
+	for _, b := range st.list {
+		live[b.Commander] = true
+	}
+	for name := range st.carried {
+		if !live[name] {
+			delete(st.carried, name)
+		}
+	}
 	return true
+}
+
+// CommandersPartials reports how many COMMANDERS cycles were applied incomplete (their missing bindings carried over)
+// since the process started; the listener turns the growth into the partial counter.
+func (s *Store) CommandersPartials() uint64 {
+	st := &s.commanders
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.partials
 }
 
 // noteTrails adds the bots' places to their trails and forgets the commanders (and bots) that are no longer reported. Called with the lock held.

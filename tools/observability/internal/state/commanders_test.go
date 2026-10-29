@@ -2,6 +2,8 @@ package state
 
 import (
 	"encoding/json"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -527,5 +529,161 @@ func TestCommandersCarryBossOverlay(t *testing.T) {
 	}
 	if p.Commanders[0].Mobs[0].CastEndMS != 0 {
 		t.Fatalf("the caller's payload must not be changed: %d", p.Commanders[0].Mobs[0].CastEndMS)
+	}
+}
+
+// R8: a cycle above the payload caps arrives in parts. Nothing changes until every part of the cycle is in, one view
+// change happens then, and the bindings follow part order whatever the datagram order was.
+func TestCommandersPartsAssemble(t *testing.T) {
+	s := newTestStore(newClock())
+	part := func(seq uint64, idx, total int, names ...string) *model.CommandersPayload {
+		p := commandersPayload(5, 100, names...)
+		p.Seq, p.Part, p.Parts = seq, idx, total
+		return p
+	}
+	if s.ApplyCommanders(part(5, 1, 2, "B")) {
+		t.Fatal("a part of an incomplete cycle must not apply")
+	}
+	if v := s.Commanders(); len(v.Commanders) != 0 || v.Fresh {
+		t.Fatalf("an incomplete cycle changed the view: %+v", v)
+	}
+	// A duplicate part number replaces the earlier copy instead of counting twice.
+	if s.ApplyCommanders(part(5, 1, 2, "C")) {
+		t.Fatal("a duplicate part must not apply the cycle")
+	}
+	if !s.ApplyCommanders(part(5, 0, 2, "A")) {
+		t.Fatal("the last part must apply the cycle")
+	}
+	v := s.Commanders()
+	if len(v.Commanders) != 2 || v.Commanders[0].Commander != "A" || v.Commanders[1].Commander != "C" {
+		t.Fatalf("assembled view = %+v", v.Commanders)
+	}
+	if !v.Fresh || v.UpdatedAt == 0 {
+		t.Fatalf("the assembled cycle must refresh the view: %+v", v)
+	}
+}
+
+// R8: when a newer cycle starts before the older one completed, the older one is applied as a partial: its bindings
+// plus the standing bindings it did not report, carried over once and dropped at the second carry in a row.
+func TestCommandersPartialCarriesOver(t *testing.T) {
+	s := newTestStore(newClock())
+	part := func(seq uint64, ts int64, idx, total int, names ...string) *model.CommandersPayload {
+		p := commandersPayload(5, ts, names...)
+		p.Seq, p.Part, p.Parts = seq, idx, total
+		return p
+	}
+	if s.ApplyCommanders(part(5, 100, 0, 2, "A", "B", "C", "D", "E")) {
+		t.Fatal("part 0 alone must not apply")
+	}
+	if !s.ApplyCommanders(part(5, 100, 1, 2, "F", "G", "H", "I")) {
+		t.Fatal("the complete cycle must apply")
+	}
+	// seq 6 loses its second part (a dropped datagram); seq 7 starts 2 s later.
+	if s.ApplyCommanders(part(6, 102, 0, 2, "A", "B", "C", "D", "E", "F", "G", "H")) {
+		t.Fatal("an incomplete cycle must not apply at once")
+	}
+	if !s.ApplyCommanders(part(7, 104, 0, 2, "A", "B", "C", "D", "E", "F", "G", "H")) {
+		t.Fatal("a newer cycle must flush the older one as a partial")
+	}
+	got := viewNames(s)
+	want := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("partial view = %v, want the fresh bindings plus the carried I", got)
+	}
+	// I is absent from seq 7 too: the second carry in a row drops it.
+	if !s.ApplyCommanders(part(8, 106, 0, 2, "A", "B", "C", "D", "E", "F", "G", "H")) {
+		t.Fatal("seq 8 must flush seq 7 as a partial")
+	}
+	got = viewNames(s)
+	want = []string{"A", "B", "C", "D", "E", "F", "G", "H"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("second partial view = %v, want I dropped", got)
+	}
+	if n := s.CommandersPartials(); n != 2 {
+		t.Fatalf("partials counted = %d, want 2", n)
+	}
+}
+
+// viewNames is the commander names of the standing view, in order.
+func viewNames(s *Store) []string {
+	out := []string{}
+	for _, b := range s.Commanders().Commanders {
+		out = append(out, b.Commander)
+	}
+	return out
+}
+
+// R8: a payload without part keys is the whole list, byte for byte as before parts existed (the golden is the view this
+// daemon produced for the walk-2 report before the change).
+func TestCommandersSinglePartUnchanged(t *testing.T) {
+	raw, err := os.ReadFile("testdata/walk2-commanders-walking.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snap struct {
+		Commanders []model.CommanderBinding `json:"commanders"`
+		UpdatedAt  int64                    `json:"updated_at"`
+	}
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestStore(newClock())
+	if !s.ApplyCommanders(&model.CommandersPayload{Session: 1, TS: snap.UpdatedAt, Type: "COMMANDERS", Commanders: snap.Commanders}) {
+		t.Fatal("payload refused")
+	}
+	got, err := json.Marshal(s.Commanders().Commanders)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/walk2-commanders-view.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got)+"\n" != string(want) {
+		t.Fatalf("single-part view changed:\n got %s\nwant %s", got, want)
+	}
+	if strings.Contains(string(got), `"part"`) || strings.Contains(string(got), `"parts"`) {
+		t.Fatalf("part keys must not reach the view: %s", got)
+	}
+}
+
+// R8: a part number outside its cycle is refused and changes nothing; a cycle of the 20 allowed parts assembles.
+func TestCommandersPartBounds(t *testing.T) {
+	s := newTestStore(newClock())
+	bad := []struct{ part, parts int }{{0, 21}, {-1, 2}, {2, 2}, {0, -1}}
+	for _, c := range bad {
+		p := commandersPayload(1, 10, "A")
+		p.Seq, p.Part, p.Parts = 1, c.part, c.parts
+		if s.ApplyCommanders(p) {
+			t.Errorf("part %d of %d accepted", c.part, c.parts)
+		}
+		if v := s.Commanders(); len(v.Commanders) != 0 {
+			t.Errorf("part %d of %d changed the view: %+v", c.part, c.parts, v.Commanders)
+		}
+	}
+	for i := 0; i < 20; i++ {
+		p := commandersPayload(1, 20, "C"+strconv.Itoa(i))
+		p.Seq, p.Part, p.Parts = 2, i, 20
+		got := s.ApplyCommanders(p)
+		if want := i == 19; got != want {
+			t.Fatalf("part %d of 20 applied = %v, want %v", i, got, want)
+		}
+	}
+	if v := s.Commanders(); len(v.Commanders) != 20 {
+		t.Fatalf("20 bindings assembled: %+v", v.Commanders)
+	}
+}
+
+// R8: the daemon follows 20 commanders; a 21st binding of one datagram is cut.
+func TestCommandersTwentyBindings(t *testing.T) {
+	s := newTestStore(newClock())
+	names := make([]string, 0, 21)
+	for i := 0; i < 21; i++ {
+		names = append(names, "C"+strconv.Itoa(i))
+	}
+	s.ApplyCommanders(commandersPayload(1, 1, names...))
+	v := s.Commanders()
+	if len(v.Commanders) != 20 || v.Commanders[19].Commander != "C19" {
+		t.Fatalf("%d bindings kept, last %s; want 20, C19", len(v.Commanders), v.Commanders[len(v.Commanders)-1].Commander)
 	}
 }

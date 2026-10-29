@@ -93,8 +93,8 @@ assert.strictEqual(R.prep({ commander: "A", frames: [] }).untracked, false, "an 
 const untrackedWin = R.window(untracked, { start: 300, dur_ms: 4000 });
 assert.strictEqual(untrackedWin.ok, false);
 assert.strictEqual(untrackedWin.untracked, true);
-assert.strictEqual(R.coverageText(untrackedWin), "Replay kept for the first 4 raids only (dashboard limit)");
-assert.strictEqual(R.UNTRACKED_TEXT, "Replay kept for the first 4 raids only (dashboard limit)");
+assert.strictEqual(R.coverageText(untrackedWin), "Replay kept for the first 20 commanders only (dashboard limit)");
+assert.strictEqual(R.UNTRACKED_TEXT, "Replay kept for the first 20 commanders only (dashboard limit)");
 assert.strictEqual(R.NO_TRACK_TEXT, "No positions kept for this fight");
 
 // ---- controls -------------------------------------------------------------------------------------------------------

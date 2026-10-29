@@ -42,6 +42,8 @@ type Registry struct {
 	historyWritten prometheus.Counter
 	historyDropped *prometheus.CounterVec
 	historyBroken  prometheus.Counter
+	// COMMANDERS cycles that arrived in parts and were applied incomplete (their missing bindings carried over).
+	commandersPartials prometheus.Counter
 }
 
 func New() *Registry {
@@ -130,6 +132,10 @@ func New() *Registry {
 			Name: "tortoisebots_fight_history_broken_total",
 			Help: "Stored history lines the index could not read",
 		}),
+		commandersPartials: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "tortoisebots_commanders_partial_total",
+			Help: "COMMANDERS cycles applied incomplete, their bindings completed from the previous report",
+		}),
 	}
 
 	// Initialize server as offline until the first pulse.
@@ -212,6 +218,13 @@ func (r *Registry) RecordRealtimeDatagram(typ string, bytes int) {
 	r.realtimeDatagrams.WithLabelValues(typ).Inc()
 	if bytes > 0 {
 		r.realtimeBytes.WithLabelValues(typ).Add(float64(bytes))
+	}
+}
+
+// AddCommandersPartials adds COMMANDERS cycles applied as partials since the last call.
+func (r *Registry) AddCommandersPartials(n uint64) {
+	if n > 0 {
+		r.commandersPartials.Add(float64(n))
 	}
 }
 

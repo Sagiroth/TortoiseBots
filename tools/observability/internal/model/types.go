@@ -602,9 +602,14 @@ type ZoneBoundingBox struct {
 // a binding stands, and once with an empty list when the last one ends. It
 // describes what the module knows, for any client of the commander protocol.
 type CommandersPayload struct {
-	V          int                `json:"v"`
-	Session    uint64             `json:"session"`
-	Seq        uint64             `json:"seq"`
+	V       int    `json:"v"`
+	Session uint64 `json:"session"`
+	Seq     uint64 `json:"seq"`
+	// Part/Parts split one snapshot cycle across datagrams when the bindings or bots pass the payload budget (a part
+	// holds at most 8 bindings, 64 bots and 64 mobs, and a binding is never split). Both are absent from a module
+	// whose cycle fits one datagram, which is byte-identical to the payload before parts existed.
+	Part       int                `json:"part,omitempty"`
+	Parts      int                `json:"parts,omitempty"`
 	TS         int64              `json:"ts"`
 	TSMs       int64              `json:"ts_ms,omitempty"`
 	Type       string             `json:"type"`
