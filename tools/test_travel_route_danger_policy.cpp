@@ -119,6 +119,27 @@ int main()
     }
     std::cout << "  [PASS] Test 5: sample fractions cover 0..1\n";
 
-    std::cout << "\nAll 5 TortoiseBots Travel Route Danger Policy tests PASSED!\n";
+    // -------------------------------------------------------------
+    // Test 6: already-there waypoint exemptions (stranded escape)
+    // -------------------------------------------------------------
+    {
+        // Same zone as start: exempt (a bot in Moonwhisper can route out
+        // through Moonwhisper waypoints); leaving the zone re-arms.
+        CHECK(TravelRouteWaypointSharesStartZone(5642, 5642));
+        CHECK(!TravelRouteWaypointSharesStartZone(148, 5642));
+        // Unresolvable areas never exempt.
+        CHECK(!TravelRouteWaypointSharesStartZone(0, 0));
+        CHECK(!TravelRouteWaypointSharesStartZone(5642, 0));
+        CHECK(!TravelRouteWaypointSharesStartZone(0, 5642));
+        // Walk-out radius: inside it is ground underfoot, outside is a town
+        // the journey crosses.
+        CHECK(TravelRouteWaypointInWalkout(0.0f));
+        CHECK(TravelRouteWaypointInWalkout(TRAVEL_ROUTE_TOWN_WALKOUT_YD));
+        CHECK(!TravelRouteWaypointInWalkout(TRAVEL_ROUTE_TOWN_WALKOUT_YD + 1.0f));
+        CHECK(!TravelRouteWaypointInWalkout(-1.0f));
+    }
+    std::cout << "  [PASS] Test 6: stranded-bot waypoint exemptions\n";
+
+    std::cout << "\nAll 6 TortoiseBots Travel Route Danger Policy tests PASSED!\n";
     return 0;
 }

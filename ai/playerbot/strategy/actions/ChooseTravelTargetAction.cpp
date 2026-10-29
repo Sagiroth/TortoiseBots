@@ -1088,19 +1088,32 @@ static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, W
             !start.IsGuardedHostileTownFor(bot, ai::TRAVEL_ROUTE_SAMPLE_RADIUS_YD, false);
         return RouteLegIsSurvivable(bot, start, *position, nullptr, checkTowns, checkLevel, blocker);
     }
+    // Already-there waypoints are not danger: without this a bot stranded in
+    // deadly ground (or a hostile town) rejects every route and never travels.
+    AreaTableEntry const* startArea = start.GetArea();
+    uint32 const startZoneId = startArea ? (startArea->ZoneId ? startArea->ZoneId : startArea->Id) : 0;
+    bool const startTooHigh = ai::TravelRouteAreaTooHigh(start.GetAreaLevel(), bot->GetLevel());
+    bool const startInTown = avoidTowns &&
+        start.IsGuardedHostileTownFor(bot, ai::TRAVEL_ROUTE_SAMPLE_RADIUS_YD, false);
     for (TravelNode* node : route.getNodes())
     {
         WorldPosition* p = node ? node->getPosition() : nullptr;
         if (!p)
             continue;
+        AreaTableEntry const* nodeArea = p->GetArea();
+        uint32 const nodeZoneId = nodeArea ? (nodeArea->ZoneId ? nodeArea->ZoneId : nodeArea->Id) : 0;
+        bool const exemptLevel = startTooHigh &&
+            ai::TravelRouteWaypointSharesStartZone(nodeZoneId, startZoneId);
         int32 const level = p->GetAreaLevel();
-        if (ai::TravelRouteAreaTooHigh(level, bot->GetLevel()))
+        if (!exemptLevel && ai::TravelRouteAreaTooHigh(level, bot->GetLevel()))
         {
             blocker = p->getAreaName(true, true) + " (level " + std::to_string(level) + ")";
             ok = false;
             break;
         }
-        if (avoidTowns && p->IsGuardedHostileTownFor(bot, ai::TRAVEL_ROUTE_SAMPLE_RADIUS_YD, false))
+        bool const exemptTown = startInTown &&
+            ai::TravelRouteWaypointInWalkout(start.distance(*p));
+        if (!exemptTown && avoidTowns && p->IsGuardedHostileTownFor(bot, ai::TRAVEL_ROUTE_SAMPLE_RADIUS_YD, false))
         {
             blocker = p->getAreaName(true, true) + " (hostile town guards)";
             ok = false;
@@ -2299,7 +2312,9 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         uint32 botFaction = bot->GetFactionTemplateId();
         *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, botFaction]()
             {
-                PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg);
+                // Order legs search the whole continent (0 = no cap); the zone
+                // pin and the route gate still scope safety.
+                PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg, {}, true, 0.0f);
 
                 for (auto& [partition, travelPoints] : list)
                 {
@@ -2491,18 +2506,18 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                     if (!gatherEntries.empty())
                     {
                         PartitionedTravelList herbList = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                            (uint32_t)TravelDestinationPurpose::GatherHerbalism, gatherEntries, false);
+                            (uint32_t)TravelDestinationPurpose::GatherHerbalism, gatherEntries, false, 0.0f);
                         zonePinned(herbList);
                         append(std::move(herbList));
                         PartitionedTravelList oreList = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                            (uint32_t)TravelDestinationPurpose::GatherMining, gatherEntries, false);
+                            (uint32_t)TravelDestinationPurpose::GatherMining, gatherEntries, false, 0.0f);
                         zonePinned(oreList);
                         append(std::move(oreList));
                     }
                     if (!mobEntries.empty())
                     {
                         PartitionedTravelList grindList = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                            (uint32_t)TravelDestinationPurpose::Grind, mobEntries, false);
+                            (uint32_t)TravelDestinationPurpose::Grind, mobEntries, false, 0.0f);
                         zonePinned(grindList);
                         append(std::move(grindList));
                     }
@@ -2516,7 +2531,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         {
             *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
                 {
-                    PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg);
+                    PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg, {}, true, 0.0f);
 
                     for (auto& [partition, travelPoints] : list)
                     {
@@ -2626,7 +2641,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [entries = focusEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team]()
             {
                 PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                    (uint32)TravelDestinationPurpose::SpellFocus, entries, true);
+                    (uint32)TravelDestinationPurpose::SpellFocus, entries, true, 0.0f);
 
                 for (auto& [partition, travelPoints] : list)
                 {
@@ -2668,7 +2683,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [entries = orderVendorEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
             {
                 PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                    (uint32)TravelDestinationPurpose::Vendor, entries, false);
+                    (uint32)TravelDestinationPurpose::Vendor, entries, false, 0.0f);
 
                 for (auto& [partition, points] : list)
                 {

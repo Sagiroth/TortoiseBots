@@ -3159,7 +3159,7 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
         {
             float distance = position->distance(center);
 
-            if (distance > maxDistance)
+            if (maxDistance > 0 && distance > maxDistance)
             {
                 probeRejectDistance++;
                 if (distance > probeFarthest)
