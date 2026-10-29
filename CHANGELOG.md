@@ -4,7 +4,7 @@
 
 ### Configuration
 - `RandomBotShowHelmet` / `RandomBotShowCloak` (default `1`) now take effect: `0` makes pool bots show up without their helmet and/or cloak from their next login. Hired companions and a player's own bots keep the display flags the character already has.
-- Removed 31 configuration keys that were read but did nothing (an old `aiplayerbot.conf` that still sets one keeps loading without issue). The config file template now explains up front what a commented `#Key = value` line means, and the documentation no longer lists a "settings with no effect" table. Only helmet and cloak display remained, so nothing changes for existing setups.
+- Removed 32 configuration keys that were read but did nothing (an old `aiplayerbot.conf` that still sets one keeps loading without issue). The config file template now explains up front what a commented `#Key = value` line means, and the documentation no longer lists a "settings with no effect" table. Only helmet and cloak display remained, so nothing changes for existing setups.
 
 ### World PvP
 - Pool bots stay PvP flagged everywhere, so players can attack them outside contested zones too. About a quarter of free pool bots actively hunt flagged enemies nearby, join same-faction fights, and give up the chase after a minute. Turn it off with `AiPlayerbot.RandomBotForcePvp = 0` and `AiPlayerbot.WorldPvpSeek = 0`.
