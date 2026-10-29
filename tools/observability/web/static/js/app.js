@@ -6962,35 +6962,37 @@
           <div class="fd-frames" role="group" aria-label="Raid frames"></div>
         </section>
         <div class="fd-railcol" hidden><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><nav class="fd-rail" aria-label="Fights"></nav></div>
-        <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><div class="fd-chips"></div></div><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
-        <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
         <section class="fd-roles" aria-label="Roles" hidden><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
         <div class="cmd-left">
           <div class="cmd-party"></div>
           <h3 class="cmd-h">Last orders</h3>
           <div class="cmd-orders"></div>
         </div>
-        <div class="cmd-mapbox">
-          <div class="cmd-legend fd-legend" role="note"></div>
-          <div class="cmd-stage">
-            <svg class="cmd-map" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet"><g class="pic"></g><g class="dyn"></g></svg>
-            <div class="cmd-maptools">
-              <select class="cmd-pic" hidden title="Which picture of this map to draw under the party" aria-label="Map picture"></select>
-              <button type="button" data-act="layers" title="Which things the map draws (the one Maps layer panel)">Layers</button>
-              <button type="button" data-act="in" title="Zoom in" aria-label="Zoom in">+</button>
-              <button type="button" data-act="out" title="Zoom out" aria-label="Zoom out">&minus;</button>
-              <button type="button" data-act="follow" class="follow" title="Keep the party in view">Follow</button>
-              <button type="button" data-act="whole" title="Show the whole map picture">Whole map</button>
+        <div class="fd-centre">
+          <div class="cmd-mapbox">
+            <div class="cmd-legend fd-legend" role="note"></div>
+            <div class="cmd-stage">
+              <svg class="cmd-map" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet"><g class="pic"></g><g class="dyn"></g></svg>
+              <div class="cmd-maptools">
+                <select class="cmd-pic" hidden title="Which picture of this map to draw under the party" aria-label="Map picture"></select>
+                <button type="button" data-act="layers" title="Which things the map draws (the one Maps layer panel)">Layers</button>
+                <button type="button" data-act="in" title="Zoom in" aria-label="Zoom in">+</button>
+                <button type="button" data-act="out" title="Zoom out" aria-label="Zoom out">&minus;</button>
+                <button type="button" data-act="follow" class="follow" title="Keep the party in view">Follow</button>
+                <button type="button" data-act="whole" title="Show the whole map picture">Whole map</button>
+              </div>
+              <button type="button" class="cmd-resume" data-act="resume" hidden title="You moved the map. Click to keep the party in the middle again.">Paused - click to follow</button>
+              <div class="cmd-grid-size"></div>
+              <div class="cmd-scale" hidden><i></i><span></span></div>
+              <div class="cmd-mapnote"></div>
+              <div class="cmd-tip" hidden></div>
             </div>
-            <button type="button" class="cmd-resume" data-act="resume" hidden title="You moved the map. Click to keep the party in the middle again.">Paused - click to follow</button>
-            <div class="cmd-grid-size"></div>
-            <div class="cmd-scale" hidden><i></i><span></span></div>
-            <div class="cmd-mapnote"></div>
-            <div class="cmd-tip" hidden></div>
+            <div class="cmd-picwhy" hidden></div>
+            <div class="cmd-feed" hidden></div>
+            <div class="cmd-legend">${cmdLegendHtml()}</div>
           </div>
-          <div class="cmd-picwhy" hidden></div>
-          <div class="cmd-feed" hidden></div>
-          <div class="cmd-legend">${cmdLegendHtml()}</div>
+          <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><div class="fd-chips"></div></div><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
+          <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
         </div>
         <div class="cmd-panels">
           <div class="cmd-panel"><h3 class="cmd-h">Notes</h3><div class="cmd-notes"></div></div>
@@ -7582,10 +7584,11 @@
   // The debugger's pick: the user's own click stands; otherwise the worst finished fight (the newest while no details are loaded),
   // or the live fight while one runs. A live fight that ended hands the pick back even when the user had chosen it.
   function fdSyncSel(fd, bind, list, details, layout) {
-    if (fd.sel === 'live' && !bind.combat) { fd.sel = null; fd.userSel = false; }
+    const live = FightDebug.liveSummary(bind); // null for a parked group: the LIVE checks panel belongs to a fight
+    if (fd.sel === 'live' && !live) { fd.sel = null; fd.userSel = false; }
     if (fd.userSel) return;
     const worst = FightDebug.worstIndex(details, layout);
-    fd.sel = worst >= 0 ? list[worst].key : !fd.day && bind.combat ? 'live' : list.length ? list[0].key : null;
+    fd.sel = worst >= 0 ? list[worst].key : !fd.day && live ? 'live' : list.length ? list[0].key : null;
   }
 
   // The plan facts a finished fight's checks read: the plan's ring strays on the walk to the fight's pack, and that pack and

@@ -32,8 +32,13 @@ type Store struct {
 	fights  map[string][]keptFight // commander -> newest first
 	seenIDs map[string]map[string]bool
 	live    map[string]*liveFight // commander -> the one open fight (live.go)
+	engaged EngagedFunc           // whether a live row is a real fight now (nil: every row is listed)
 	now     func() time.Time      // tests inject a clock; nil is time.Now
 }
+
+// EngagedFunc tells whether a commander's group has a hostile unit engaged right now (Engaged over the module's
+// snapshot). It must not call back into the store.
+type EngagedFunc func(commander string) bool
 
 // NewStore builds a store judging with rules (nil rules: store only, every
 // summary reads 0 warnings).
@@ -51,6 +56,20 @@ func (s *Store) SetClock(now func() time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.now = now
+}
+
+// SetEngaged installs the check that keeps a live row off the lists while no hostile is engaged (Engaged over the
+// module's snapshot); nil lists every open row. A row the check refuses is kept, not filed: the fight may still be
+// the one it opens, and COMBAT_FIGHT closes it either way.
+func (s *Store) SetEngaged(fn EngagedFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.engaged = fn
+}
+
+// liveListedLocked reports whether the open row of commander is a fight now; called with the lock held.
+func (s *Store) liveListedLocked(commander string) bool {
+	return s.engaged == nil || s.engaged(commander)
 }
 
 func (s *Store) nowLocked() time.Time {
@@ -126,7 +145,7 @@ func (s *Store) List(commander string) []FightSummary {
 	defer s.mu.Unlock()
 	s.expireLocked(s.nowLocked())
 	out := make([]FightSummary, 0, len(s.fights[commander])+1)
-	if lf := s.live[commander]; lf != nil {
+	if lf := s.live[commander]; lf != nil && s.liveListedLocked(commander) {
 		out = append(out, s.liveSummaryLocked(commander, lf))
 	}
 	for _, k := range s.fights[commander] {
@@ -165,6 +184,9 @@ func (s *Store) LiveRows(names []string) []FightSummary {
 	out := make([]FightSummary, 0, len(s.live))
 	for c, lf := range s.live {
 		if len(want) > 0 && !want[c] {
+			continue
+		}
+		if !s.liveListedLocked(c) {
 			continue
 		}
 		out = append(out, s.liveSummaryLocked(c, lf))

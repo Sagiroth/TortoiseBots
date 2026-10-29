@@ -9,6 +9,7 @@ const vm = require("vm");
 const appPath = path.resolve(process.argv[2]);
 const src = fs.readFileSync(appPath, "utf8");
 const tabsSrc = fs.readFileSync(path.join(path.dirname(appPath), "fdtabs.js"), "utf8");
+const fdSrc = fs.readFileSync(path.join(path.dirname(appPath), "fightdebug.js"), "utf8");
 
 function grab(name) {
   const re = new RegExp(`^  function ${name}\\(`, "m"), m = re.exec(src);
@@ -28,6 +29,7 @@ let clock = 0;
 const ctx = { console, Date: { now: () => clock } };
 vm.createContext(ctx);
 vm.runInContext(tabsSrc, ctx, { filename: "fdtabs.js" });
+vm.runInContext(fdSrc, ctx, { filename: "fightdebug.js" });
 vm.runInContext([
   grab("cmdForgetCard"), grab("cmdRescueLayers"), grab("fdState"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
   grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"), grab("fdDaysLoad"), grab("fdFightHist"),
@@ -45,12 +47,14 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
 (async () => {
   // ---- 1. a live fight that ends hands the pick back ---------------------------------------------------------------
   ctx.worstPick = 1;
-  ctx.FightDebug = { worstIndex: () => ctx.worstPick };
+  ctx.FightDebug.worstIndex = () => ctx.worstPick;
   const rows = [{ key: "5-5" }, { key: "5-4" }, { key: "5-3" }];
   const detail = [null, { fight: {} }, { fight: {} }];
   ctx.rows = rows; ctx.detail = detail;
+  // A fight is running when a hostile unit is engaged with the group: damage dealt in the module's 10 s window.
+  const running = { bots: [{ guid: 1, id: "1" }], combat: { fight_ms: 2000, win_s: 10, bots: [{ g: 1, dps: 5 }] } };
   const fd = { sel: "live", userSel: true, bot: null, death: null, details: {}, failed: {}, loading: false, list: rows };
-  run("fdSyncSel(fd, bind, rows, detail, null)", { fd, bind: { combat: { fight_ms: 2000 } } });
+  run("fdSyncSel(fd, bind, rows, detail, null)", { fd, bind: running });
   assert.strictEqual(fd.sel, "live", "a running fight keeps the live pick");
 
   run("fdSyncSel(fd, bind, rows, detail, null)", { fd, bind: {} });

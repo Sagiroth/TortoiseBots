@@ -482,8 +482,26 @@
     });
   }
 
+  // A live fight is one with a hostile unit engaged with the group: a hostile mob whose victim is a group member, or
+  // damage the group dealt to a hostile inside the module's 10 s window (a bot's dps is that window's damage). Buffs,
+  // consumables and heals cast on a parked raid keep the module's book open but are not a fight.
+  function liveEngaged(bind) {
+    const ids = {};
+    ((bind && bind.bots) || []).forEach((b) => {
+      if (!b) return;
+      if (b.id) ids[String(b.id)] = true;
+      else if (b.guid != null) ids[String(b.guid)] = true; // a report from before bots carried their raw guid
+    });
+    const mobs = Array.isArray(bind && bind.mobs) ? bind.mobs : [];
+    for (const m of mobs) {
+      if (m && m.reaction === "h" && m.victim && ids[String(m.victim)]) return true;
+    }
+    const window = bind && bind.combat && Array.isArray(bind.combat.bots) ? bind.combat.bots : [];
+    return window.some((w) => w && (num(w.dps) || 0) > 0);
+  }
+
   function liveSummary(bind) {
-    if (!bind || !bind.combat) return null;
+    if (!bind || !bind.combat || !liveEngaged(bind)) return null;
     const combat = bind.combat;
     const window = Array.isArray(combat.bots) ? combat.bots : [];
     return {
@@ -553,7 +571,7 @@
   const api = {
     LIMITS, TAUNTS, DEBUFF_CHECKS,
     roleOf, spellCount, fmtInt, mainTank, offTanks, checks, verdict, worstIndex,
-    deathRecaps, timeline, raidFrames, roleTables, botPanel, railCards, liveSummary, liveChecks, liveTables,
+    deathRecaps, timeline, raidFrames, roleTables, botPanel, railCards, liveEngaged, liveSummary, liveChecks, liveTables,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightDebug = api;
 })(typeof self !== "undefined" ? self : this);

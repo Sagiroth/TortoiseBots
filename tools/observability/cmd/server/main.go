@@ -334,6 +334,16 @@ func main() {
 		log.Fatalf("Bad combat rules: %v", err)
 	}
 	combatStore := combat.NewStore(combatRules)
+	// A live row is a fight only while the module's snapshot shows a hostile unit engaged with the group: buffs,
+	// consumables and heals on a parked raid keep the module's book open but are not a fight.
+	combatStore.SetEngaged(func(commander string) bool {
+		for _, b := range store.Commanders().Commanders {
+			if b.Commander == commander {
+				return combat.Engaged(b)
+			}
+		}
+		return false
+	})
 	hub := ws.NewHub()
 	// The live stream's own fan-out: per-commander positions and fight events
 	// over Server-Sent Events (GET /api/v1/live). The WebSocket above keeps

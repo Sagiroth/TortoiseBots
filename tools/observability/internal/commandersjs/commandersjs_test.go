@@ -280,3 +280,11 @@ func TestFightPackParityJS(t *testing.T) {
 func TestFightHistoryJS(t *testing.T) {
 	runCheck(t, "fighthistory_check.js", "../../web/static/js/fighthistory.js", "../../web/static/js/app.js")
 }
+
+// TestFdLiveEngagedJS runs fd_live_engaged_check.js: a live fight exists only while a hostile unit is engaged with the
+// group (a hostile mob whose victim is a group member, or damage in the module's 10 s window). A parked raid casting
+// buffs and healing shows no Live card and gets no live pick (so no LIVE checks panel); an engaged mob shows both; and
+// with no hostile engaged for 10 s the fight closes.
+func TestFdLiveEngagedJS(t *testing.T) {
+	runCheck(t, "fd_live_engaged_check.js", "../../web/static/js/app.js", "../../web/static/js/fightdebug.js")
+}
