@@ -587,3 +587,24 @@ func TestLiveLogRingCappedPerKind(t *testing.T) {
 		t.Fatalf("newest cast t = %d, want 1199", got)
 	}
 }
+
+// The listener writes history from what AddFiled returns, not from the datagram: a delayed COMBAT_FIGHT that replaces a
+// provisional filing, and one that closes the live row, both come back with the retained cast log (Codex round 3).
+func TestAddFiledReturnsTheStoredLog(t *testing.T) {
+	s := newLiveStore(t)
+	s.ApplyEvents(liveEvents(liveHeader(), castEvent(1000, "Poison Cloud"), castEvent(2000, "Frenzy")), liveNow)
+	hb := liveHeader()
+	hb.ID = "55-7"
+	s.ApplyEvents(nextEvents(hb, castEvent(3000, "Frost Breath")), liveNow)
+
+	a := Fight{ID: "55-6", Commander: "Gbmage", Group: 55, Map: 409, Start: liveNow.Unix() - 30, DurMS: 30000, Outcome: "kill"}
+	_, stored, ok := s.AddFiled(7, a)
+	if !ok || len(stored.Log) != 2 {
+		t.Fatalf("replacement: ok=%v log=%d, want the 2 provisional events", ok, len(stored.Log))
+	}
+	b := Fight{ID: "55-7", Commander: "Gbmage", Group: 55, Map: 409, Start: liveNow.Unix() - 5, DurMS: 5000, Outcome: "kill"}
+	_, stored, ok = s.AddFiled(7, b)
+	if !ok || len(stored.Log) != 1 {
+		t.Fatalf("live close: ok=%v log=%d, want the live row's 1 event", ok, len(stored.Log))
+	}
+}

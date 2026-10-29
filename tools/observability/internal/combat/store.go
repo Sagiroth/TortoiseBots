@@ -111,12 +111,26 @@ func (s *Store) Add(session uint64, f Fight) bool {
 // stream pushes as the "fight" frame. Filing it closes the live row of the
 // same (session, id) the COMBAT_EVENTS datagrams opened.
 func (s *Store) AddSummary(session uint64, f Fight) (FightSummary, bool) {
+	summary, _, ok := s.AddFiled(session, f)
+	return summary, ok
+}
+
+// AddFiled is AddSummary that also returns the fight as stored: with the cast log the closed live row or a replaced
+// provisional filing handed it, which the caller writes to history (the datagram's own fight carries no log).
+func (s *Store) AddFiled(session uint64, f Fight) (FightSummary, Fight, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.addLocked(session, f, false) {
-		return FightSummary{}, false
+		return FightSummary{}, Fight{}, false
 	}
-	return s.summaryLocked(f.Commander, keptFight{session: session, fight: f}), true
+	stored := keptFight{session: session, fight: f}
+	for _, k := range s.fights[f.Commander] {
+		if k.session == session && k.fight.ID == f.ID {
+			stored = k
+			break
+		}
+	}
+	return s.summaryLocked(f.Commander, stored), stored.fight, true
 }
 
 // addLocked files one fight; called with the lock held. provisional marks a

@@ -294,13 +294,13 @@ func (l *Listener) processPacket(data []byte) {
 		if dg.Fight.ID == "" {
 			return
 		}
-		if summary, ok := l.combat.AddSummary(dg.Session, dg.Fight); ok {
+		if summary, stored, ok := l.combat.AddFiled(dg.Session, dg.Fight); ok {
 			l.hub.Broadcast("combat", dg.Fight)
 			if l.live != nil {
 				l.live.Publish(dg.Fight.Commander, "fight", summary)
 			}
 			if l.history != nil {
-				l.history.Enqueue(history.Item{Session: dg.Session, Fight: dg.Fight, Warnings: summary.Warnings, At: time.Now()})
+				l.history.Enqueue(history.Item{Session: dg.Session, Fight: stored, Warnings: summary.Warnings, At: time.Now()})
 			}
 		}
 
