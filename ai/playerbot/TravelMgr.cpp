@@ -3058,7 +3058,10 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         // Ordinary Grind passes floor 0 and is unchanged.
         if (grindZoneFloor > grindMinLevel)
             grindMinLevel = grindZoneFloor;
-        if ((int32)areaLevel <= grindMinLevel)
+        // A guild order farms where its source lives, however low the zone:
+        // the order planner already vetted the level (OutgrownFloorApplies).
+        if ((int32)areaLevel <= grindMinLevel &&
+            TortoiseBots::GuildOrders::OutgrownFloorApplies(info.IsOrderMode()))
             return false;
         // Zone migration (ZoneMigratePolicy.h): a leave-errand search must
         // not land back in the zone being left. The point's zone id comes
