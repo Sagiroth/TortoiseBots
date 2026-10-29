@@ -23,6 +23,7 @@
 - Prayer of Healing now fires when 3 or more members of the priest's own party within 30 yards are hurt, instead of counting the whole raid for a spell that only heals the priest's party.
 - Ascendance now fires only when someone actually needs healing (a party member low or the group hurt), instead of on the first quiet combat tick of its 5-minute cooldown.
 - Fixed: restoration druids no longer channel Tranquility for two scratches — it waits for group damage, so the 30-minute channel is there when the group needs it.
+- Fixed: restoration druids heal between 20 % and 70 % health with *Healing Touch* while *Regrowth* is still running on the target (its heal-over-time is not recast), instead of idling until someone drops to critical. Druids below level 12, who have no Regrowth yet, heal with it too.
 - Fixed: restoration druids hold Nature's Swiftness for critical health instead of popping it on the first quiet tick, so the instant Healing Touch lands when a life is on the line.
 - Fixed: resto shaman now hold Spirit Link until the tank drops to half health instead of linking on the pull.
 - Changed: resto shaman now hold Ancestral Swiftness for a dying target instead of popping it on the first quiet tick.
