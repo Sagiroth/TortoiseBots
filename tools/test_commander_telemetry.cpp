@@ -1029,6 +1029,65 @@ void TestPayloadTsMs()
     Check(!Has(plain, "\"ts_ms\""), "a zero ms timestamp omits the key");
 }
 
+// The ready check's wire shape (R4m): the bits, the cooldown counts and the
+// longest time left, on the bots whose facts were read; nothing without them.
+void TestReadyCheckPayload()
+{
+    BindingInfo b;
+    b.commander = "Zfmagea";
+    b.commanderGuid = 9;
+    BotInfo bot = Bot("Forthur", true);
+    bot.hasExtra = true;
+    bot.extra.hasReady = true;
+    bot.extra.readyBuffs = 13;
+    bot.extra.readyCons = 6;
+    bot.extra.cdReady = 2;
+    bot.extra.cdKnown = 3;
+    bot.extra.cdLongestS = 142;
+    b.bots.push_back(bot);
+    b.bots.push_back(Bot("Plain", false));
+    std::string const json = BuildPayload(9, 1, 1, 1, {b});
+    Check(Has(json, "\"rdy\":{\"b\":13,\"c\":6,\"cr\":2,\"cn\":3,\"cl\":142}"),
+        "a bot's ready check writes the bits, the counts and the longest left");
+
+    b.bots[0].extra.cdLongestS = 0;
+    std::string const noLeft = BuildPayload(9, 1, 1, 1, {b});
+    Check(Has(noLeft, "\"rdy\":{\"b\":13,\"c\":6,\"cr\":2,\"cn\":3}"), "a longest left of 0 omits cl");
+    Check(!Has(noLeft, "\"cl\":0"), "no zero cl key");
+
+    b.bots[0].extra.hasReady = false;
+    Check(!Has(BuildPayload(9, 1, 1, 1, {b}), "\"rdy\""), "no ready facts: no rdy key");
+
+    // A full raid with the facts: the 40-bot binding with everything written stays under the byte budget.
+    BindingInfo raid;
+    raid.commander = "C";
+    for (int i = 0; i < 40; ++i)
+    {
+        BotInfo x = Bot("Botname" + std::to_string(i), i == 0);
+        x.id = 0xFFFFFFFFFFFFFFFFull;
+        x.hasExtra = true;
+        x.extra.state = 'c';
+        x.extra.action = std::string(90, 'a');
+        x.extra.result = 'O';
+        x.extra.cast = std::string(90, 'c');
+        x.extra.cc = 's';
+        x.extra.rest = 'e';
+        x.extra.moving = true;
+        x.extra.targetName = std::string(90, 't');
+        x.extra.hasReady = true;
+        x.extra.readyBuffs = 0xFFFFFFFFu;
+        x.extra.readyCons = 0xFFFFFFFFu;
+        x.extra.cdReady = 8;
+        x.extra.cdKnown = 8;
+        x.extra.cdLongestS = 0xFFFFFFFFu;
+        raid.bots.push_back(x);
+    }
+    std::string const size = BuildPayload(9, 1, 1, 1, {raid});
+    Check(Count(size, "\"rdy\":") == 40, "every bot of the raid carries its facts");
+    Check(size.size() < kPayloadByteBudget, "a 40-bot raid with ready facts stays under the payload budget");
+    std::printf("40 bots with ready facts: %zu bytes\n", size.size());
+}
+
 } // namespace
 
 int main()
@@ -1052,6 +1111,7 @@ int main()
     TestControlCharacters();
     TestDashLayoutAndLabel();
     TestPayloadTsMs();
+    TestReadyCheckPayload();
     TestRaidPayload();
     if (g_failures)
     {

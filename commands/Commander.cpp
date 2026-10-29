@@ -63,6 +63,7 @@
 #include "../runtime/RemoteCommanderEnter.h"
 #include "../runtime/GossipOrderPolicy.h"
 #include "../runtime/CommanderTelemetry.h"
+#include "../runtime/ReadyCheckPolicy.h"
 #include "../runtime/DungeonRunPolicy.h"
 #include "../runtime/SystemRunPolicy.h"
 #include "../runtime/CombatMonitorService.h"
@@ -11867,6 +11868,143 @@ static std::unordered_map<uint64, CommanderMobWatch>& s_mobWatch()
     return watch;
 }
 
+// The ready check's facts per bound bot, read out of combat only: the auras
+// (raid buffs and consumables) every kReadyRefreshMs, which spells are key
+// cooldowns every kKeySpellsRefreshMs, and the cooldown state with each aura
+// read. In combat the cached values are sent as they are, so a fight costs no
+// aura or spell read. World thread only.
+struct ReadyCacheEntry
+{
+    uint32 atMs = 0;
+    uint32 keySpellsAtMs = 0;
+    std::vector<uint32> keySpells;
+    uint32 buffs = 0;
+    uint32 cons = 0;
+    uint8 cdReady = 0;
+    uint8 cdKnown = 0;
+    uint32 cdLongestS = 0;
+};
+
+static std::unordered_map<uint64, ReadyCacheEntry>& s_readyCache()
+{
+    static std::unordered_map<uint64, ReadyCacheEntry> cache;
+    return cache;
+}
+
+static void ApplyReadyCache(ReadyCacheEntry const& entry, CommanderTelemetry::BotExtra& extra)
+{
+    extra.hasReady = true;
+    extra.readyBuffs = entry.buffs;
+    extra.readyCons = entry.cons;
+    extra.cdReady = entry.cdReady;
+    extra.cdKnown = entry.cdKnown;
+    extra.cdLongestS = entry.cdLongestS;
+}
+
+// One AuraFact per effect of each live, non-passive aura holder (the same skip
+// as the fight monitor's aura read). Field reads only, no map access.
+static void ReadReadyAuras(Player* bot, ReadyCacheEntry& entry)
+{
+    std::vector<TortoiseBots::ReadyCheck::AuraFact> facts;
+    for (auto const& aura : bot->GetSpellAuraHolderMap())
+    {
+        SpellAuraHolder const* holder = aura.second;
+        if (!holder || holder->IsDeleted() || holder->IsPassive())
+            continue;
+        SpellEntry const* proto = holder->GetSpellProto();
+        if (!proto)
+            continue;
+        uint32 const mask = sSpellMgr.GetSpellElixirMask(proto->Id);
+        bool const positive = holder->IsPositive();
+        bool const fromPlayer = holder->GetCasterGuid().IsPlayer();
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+        {
+            if (!proto->EffectApplyAuraName[i])
+                continue;
+            TortoiseBots::ReadyCheck::AuraFact fact;
+            fact.auraType = proto->EffectApplyAuraName[i];
+            fact.misc = proto->EffectMiscValue[i];
+            fact.family = proto->SpellFamilyName;
+            fact.elixirMask = mask;
+            fact.positive = positive;
+            fact.fromPlayer = fromPlayer;
+            facts.push_back(fact);
+        }
+    }
+    entry.buffs = TortoiseBots::ReadyCheck::BuffBits(facts);
+    entry.cons = TortoiseBots::ReadyCheck::ConsumableBits(facts);
+}
+
+// The bot's known spells as SpellCd rows: the spell map is the learned set,
+// removed and disabled entries are not castable.
+static void ReadReadyKeySpells(Player* bot, ReadyCacheEntry& entry)
+{
+    std::vector<TortoiseBots::ReadyCheck::SpellCd> spells;
+    for (auto const& known : bot->GetSpellMap())
+    {
+        if (known.second.state == PLAYERSPELL_REMOVED || known.second.disabled)
+            continue;
+        SpellEntry const* proto = sSpellMgr.GetSpellEntry(known.first);
+        if (!proto)
+            continue;
+        TortoiseBots::ReadyCheck::SpellCd cd;
+        cd.spell = known.first;
+        cd.chainFirst = sSpellMgr.GetFirstSpellInChain(known.first);
+        cd.recoveryMs = proto->RecoveryTime;
+        cd.categoryRecoveryMs = proto->CategoryRecoveryTime;
+        cd.passive = proto->IsPassiveSpell();
+        cd.family = proto->SpellFamilyName;
+        spells.push_back(cd);
+    }
+    entry.keySpells = TortoiseBots::ReadyCheck::KeySpells(spells);
+}
+
+static void ReadReadyCooldowns(Player* bot, ReadyCacheEntry& entry)
+{
+    uint8 ready = 0;
+    uint8 known = 0;
+    uint32 longest = 0;
+    for (uint32 spell : entry.keySpells)
+    {
+        ++known;
+        if (bot->HasSpellCooldown(spell))
+            longest = std::max(longest, static_cast<uint32>(bot->GetSpellCooldownDelay(spell)));
+        else
+            ++ready;
+    }
+    entry.cdReady = ready;
+    entry.cdKnown = known;
+    entry.cdLongestS = longest;
+}
+
+static void ReadReadyFacts(Player* bot, CommanderTelemetry::BotExtra& extra, uint32 nowMs)
+{
+    uint64 const raw = bot->GetObjectGuid().GetRawValue();
+    auto it = s_readyCache().find(raw);
+    if (bot->IsInCombat())
+    {
+        if (it != s_readyCache().end())
+            ApplyReadyCache(it->second, extra);
+        return;
+    }
+    bool const fresh = it == s_readyCache().end();
+    if (fresh)
+        it = s_readyCache().emplace(raw, ReadyCacheEntry()).first;
+    ReadyCacheEntry& entry = it->second;
+    if (fresh || nowMs - entry.atMs >= TortoiseBots::ReadyCheck::kReadyRefreshMs)
+    {
+        ReadReadyAuras(bot, entry);
+        if (fresh || nowMs - entry.keySpellsAtMs >= TortoiseBots::ReadyCheck::kKeySpellsRefreshMs)
+        {
+            ReadReadyKeySpells(bot, entry);
+            entry.keySpellsAtMs = nowMs;
+        }
+        ReadReadyCooldowns(bot, entry);
+        entry.atMs = nowMs;
+    }
+    ApplyReadyCache(entry, extra);
+}
+
 // The map data of one binding for the dashboard (once per 2 s snapshot cycle, only while a binding stands): the commander's
 // position when it is online and in the world, and the hostile units the commander's perception feed would list for this binding
 // (the same builder: the bots' own cached lists, resolved by guid on the lead's map, capped at kMaxHostiles; no grid or world
@@ -11945,6 +12083,7 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         if (member.target && map)
             if (Unit* target = map->GetUnit(::ObjectGuid(member.target)))
                 extra.targetName = target->GetName();
+        ReadReadyFacts(bot, extra, WorldTimer::getMSTime());
         ref.botExtras.push_back(std::move(extra));
     }
     FillCommanderObjects(lead, ref);
@@ -11975,6 +12114,7 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
     {
         CommanderOrderLog().Clear();
         s_mobWatch().clear();
+        s_readyCache().clear();
         s_runFedAt().clear();
         s_leadAway().clear();
         return;
@@ -12067,8 +12207,15 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
         out.push_back(std::move(ref));
     }
     CommanderOrderLog().Retain(bound);
+    std::unordered_set<uint64> boundBots;
+    for (CommanderTelemetry::BindingRef const& ref : out)
+        for (Player* bot : ref.bots)
+            if (bot)
+                boundBots.insert(bot->GetObjectGuid().GetRawValue());
     for (auto it = s_mobWatch().begin(); it != s_mobWatch().end();)
         it = bound.count(it->first) ? std::next(it) : s_mobWatch().erase(it);
+    for (auto it = s_readyCache().begin(); it != s_readyCache().end();)
+        it = boundBots.count(it->first) ? std::next(it) : s_readyCache().erase(it);
     for (auto it = s_runFedAt().begin(); it != s_runFedAt().end();)
         it = bound.count(it->first) ? std::next(it) : s_runFedAt().erase(it);
     for (auto it = s_leadAway().begin(); it != s_leadAway().end();)

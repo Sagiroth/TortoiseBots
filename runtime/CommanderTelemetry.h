@@ -466,6 +466,12 @@ struct BotExtra
     bool moving = false;
     std::string targetName; // name of its target, empty = none or unknown
     uint64_t castTarget = 0; // the unit the spell being cast is aimed at (raw guid), 0 = none or not a unit
+    bool hasReady = false;  // the ready check facts were read (the fields below are valid)
+    uint32_t readyBuffs = 0; // raid buff bits: 1 stamina, 2 intellect, 4 spirit, 8 all stats, 16 attack power, 32 mana regen
+    uint32_t readyCons = 0;  // consumable bits: 1 flask, 2 elixir, 4 well fed
+    uint8_t cdReady = 0;     // key cooldowns ready
+    uint8_t cdKnown = 0;     // key cooldowns known (at most 8)
+    uint32_t cdLongestS = 0; // longest time left among the not-ready ones, seconds (0 = none)
 };
 
 // The raid layout the module applied to the binding's group (TBM:RAID_LAYOUT), so the card names the tanks and healers it placed.
@@ -771,6 +777,16 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
                     ss << ",\"mv\":true";
                 if (!x.targetName.empty())
                     ss << ",\"tname\":\"" << JsonEscape(Clip(x.targetName, kMaxTargetName)) << "\"";
+                if (x.hasReady)
+                {
+                    ss << ",\"rdy\":{\"b\":" << x.readyBuffs
+                       << ",\"c\":" << x.readyCons
+                       << ",\"cr\":" << static_cast<uint32_t>(x.cdReady)
+                       << ",\"cn\":" << static_cast<uint32_t>(x.cdKnown);
+                    if (x.cdLongestS)
+                        ss << ",\"cl\":" << x.cdLongestS;
+                    ss << "}";
+                }
             }
             ++botsTotal;
             ss << "}";
