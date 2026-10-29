@@ -535,6 +535,55 @@ static void TestSeatCancelOutcome()
     CHECK(NextSeatCancelAction(late) == SeatCancelAction::Refund);
 }
 
+// Review M1/M2/L1: a joined seat hire is not joined again and sends its intro; a loading screen is not offline;
+// a raid-hire job stops when the binding mode changes and never converts a party for a bound raid.
+static void TestSeatHireFollowUps()
+{
+    // M1: join once, then never again; a normal hire always reunites.
+    CHECK(DecideHireJoinStep(true, false) == SeatJoinStep::Join);
+    CHECK(DecideHireJoinStep(true, true) == SeatJoinStep::Joined);
+    CHECK(DecideHireJoinStep(false, false) == SeatJoinStep::Reunite);
+    CHECK(DecideHireJoinStep(false, true) == SeatJoinStep::Reunite);
+    // The intro of a joined seat hire goes out although its commander is outside the raid.
+    CHECK(HireIntroMayGo(false, true));
+    CHECK(HireIntroMayGo(true, false));
+    CHECK(!HireIntroMayGo(false, false));
+    // Simulated ticks: the joined seat hire's intro lands on the first tick the bot is in world, one join only.
+    int joins = 0;
+    bool joined = false;
+    bool introSent = false;
+    int ticks = 0;
+    for (; ticks < 60 && !introSent; ++ticks)
+    {
+        SeatJoinStep const step = DecideHireJoinStep(true, joined);
+        if (step == SeatJoinStep::Join)
+        {
+            ++joins;
+            joined = true;
+        }
+        bool const botInWorld = ticks >= 2; // a map transfer for two ticks
+        if (botInWorld && HireIntroMayGo(false, joined))
+            introSent = true;
+    }
+    CHECK(introSent && joins == 1 && ticks == 3);
+
+    // M2: in world: ready; a loading screen (out of world or teleporting far): wait; no session or headless: gone.
+    CHECK(DecideSeatMasterPresence(true, true, true, false) == SeatMasterPresence::Ready);
+    CHECK(DecideSeatMasterPresence(true, true, false, false) == SeatMasterPresence::Wait);
+    CHECK(DecideSeatMasterPresence(true, true, true, true) == SeatMasterPresence::Wait);
+    CHECK(DecideSeatMasterPresence(true, true, false, true) == SeatMasterPresence::Wait);
+    CHECK(DecideSeatMasterPresence(true, false, true, false) == SeatMasterPresence::Gone);
+    CHECK(DecideSeatMasterPresence(true, false, false, true) == SeatMasterPresence::Gone);
+    CHECK(DecideSeatMasterPresence(false, false, false, false) == SeatMasterPresence::Gone);
+
+    // L1: the job runs only in the mode it started in; a bound job never converts a party.
+    CHECK(RaidJobModeHolds(true, true) && RaidJobModeHolds(false, false));
+    CHECK(!RaidJobModeHolds(true, false) && !RaidJobModeHolds(false, true));
+    CHECK(RaidJobConvertsParty(false, true));
+    CHECK(!RaidJobConvertsParty(true, true));
+    CHECK(!RaidJobConvertsParty(false, false));
+}
+
 int main()
 {
     TestRoleCounts();
@@ -549,6 +598,7 @@ int main()
     TestBoundSeatRecheck();
     TestReleasePlan();
     TestSeatCancelOutcome();
+    TestSeatHireFollowUps();
     std::printf("hire raid policy: %d checks passed\n", checks);
     return 0;
 }

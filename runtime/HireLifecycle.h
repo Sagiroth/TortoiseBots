@@ -40,13 +40,14 @@ public:
     // companion and any other explicit release go through here; a bot that is
     // not a hire is left alone.
     void DismissNow(ObjectGuid botGuid, char const* reason);
-    // C6, a cancelled hire that refunds its fee: DismissNow, and true only when the character's deletion
-    // intent is durable (ledger row found and marked 'dismissed', deletion queued). False for a bot that is
-    // not a hire. The caller refunds only on true (HireRaidPolicy.h NextSeatCancelAction).
+    // C6, a cancelled hire that refunds its fee: DismissNow, and true only when the character's deletion is
+    // recorded: its ledger row found and marked 'dismissed', the deletion queued (a restart's ledger recovery
+    // deletes any row left). False for a bot that is not a hire. The caller refunds only on true
+    // (HireRaidPolicy.h NextSeatCancelAction).
     bool DismissForRefund(ObjectGuid botGuid, char const* reason);
-    // C6: the retry of that intent for a hire that has already ended (false for a live hire): true once the
-    // deletion is queued with its ledger row in place (also when it was queued before; a restart's ledger
-    // recovery deletes it), or the character is provably deleted already.
+    // C6: the retry of that record for a hire that has already ended (false for a live hire): true once the
+    // ledger row is marked 'dismissed' with the deletion queued (QueueDeletion writes the mark again for one
+    // queued before), or the character is provably deleted already.
     bool EnsureDeletionIntent(ObjectGuid botGuid, char const* reason);
 
     // Drop the lifecycle record without touching the character: the
@@ -183,7 +184,8 @@ private:
     // Durable hire ledger.
     bool LedgerRow(ObjectGuid botGuid, uint32_t& characterAccountId) const;
     // Guard, mark dismissed, and queue the character for deletion. True when
-    // the 'dismissed' mark was written (or the deletion was already queued).
+    // the 'dismissed' mark was written; a deletion already queued writes the
+    // mark again while the row still reads 'active' and returns that write.
     bool QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, char const* reason);
     // First ticks after startup: every ledger row is a stale hire (no hire
     // survives a restart), so it is recovered and deleted.

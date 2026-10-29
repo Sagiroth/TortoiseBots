@@ -58,7 +58,7 @@ class HireBoundRaidWiringTest(unittest.TestCase):
         into = prov.index("bool const intoBoundRaid = pending.seatMode == HireSeatMode::BoundRaidSeat;")
         skip = prov.index("if (intoBoundRaid)\n                pending.summonRequested = true;")
         summon = prov.index("RequestSummon(master, bot)")
-        join = prov.index("intoBoundRaid ? !BotCommands::JoinBoundRaid(master, bot) : !Reunite(bot, master)")
+        join = prov.index("(joinStep == SeatJoinStep::Join ? BotCommands::JoinBoundRaid(master, bot) : Reunite(bot, master))")
         grouped = prov.index("MarkGrouped(pending.botGuid)")
         self.assertLess(into, skip)
         self.assertLess(skip, summon)
@@ -70,13 +70,18 @@ class HireBoundRaidWiringTest(unittest.TestCase):
         # the mode decides, the binding is not asked for the mode again
         self.assertNotIn("HireIntoBoundRaid(", prov)
         order = [
+            "if (HireNeedsSeatRecheck(pending.seatMode, pending.boundSeatJoined))",
+            "switch (SeatMasterPresenceOf(pending.masterGuid))",
+            'case SeatMasterPresence::Gone:\n                CancelBoundSeatHire(pending, "you went offline before it arrived");\n                return true;',
+            "case SeatMasterPresence::Wait:\n                return false;",
             "if (masterOnline && SeatHireCancelled(bot, master, pending))\n        return true;",
-            "if (!masterOnline && HireNeedsSeatRecheck(pending.seatMode, pending.boundSeatJoined))",
-            'CancelBoundSeatHire(pending, "you went offline before it arrived");\n        return true;',
             "ProvisionHeavy(bot, pending, ai,",
             "PlayerConvenience::Instance().IsBusy(pending.botGuid)",
             "if (SeatHireCancelled(bot, master, pending))\n            return true;",
-            "intoBoundRaid ? !BotCommands::JoinBoundRaid(master, bot) : !Reunite(bot, master)",
+            "SeatJoinStep const joinStep = DecideHireJoinStep(intoBoundRaid, pending.boundSeatJoined);",
+            "bool const joined = joinStep == SeatJoinStep::Joined ||",
+            "(joinStep == SeatJoinStep::Join ? BotCommands::JoinBoundRaid(master, bot) : Reunite(bot, master))",
+            "if (!joined)",
             "pending.boundSeatJoined = true;",
             "MarkGrouped(pending.botGuid)",
             "provisioned while master offline",
@@ -97,7 +102,20 @@ class HireBoundRaidWiringTest(unittest.TestCase):
 
     def test_every_pending_drop_cancels_a_seat_hire(self):
         update = body(HIRE_SRC, "void HireProvisionService::Update(uint32_t diff)", "\n}\n")
-        self.assertEqual(update.count("if (HireNeedsSeatRecheck(it->seatMode, it->boundSeatJoined))"), 2)
+        self.assertEqual(update.count("if (HireNeedsSeatRecheck(it->seatMode, it->boundSeatJoined))"), 1)
+        # review M2: a commander behind a loading screen is waited for, attempts are not used up, nothing cancelled
+        order = ["bool const seatHire = HireNeedsSeatRecheck(it->seatMode, it->boundSeatJoined);",
+                 "seatHire ? SeatMasterPresenceOf(it->masterGuid) : SeatMasterPresence::Ready;",
+                 "if (!summoning && seatPresence != SeatMasterPresence::Wait && ++it->reuniteAttempts >= 60)",
+                 "if (seatHire && seatPresence == SeatMasterPresence::Wait)\n                ++it;",
+                 "else if (!master || !master->IsInWorld())",
+                 "if (seatHire)\n                    CancelBoundSeatHire(*it, \"you went offline before it arrived\");"]
+        at = [update.index(part) for part in order]
+        self.assertEqual(at, sorted(at))
+        presence = body(HIRE_SRC, "static SeatMasterPresence SeatMasterPresenceOf(ObjectGuid masterGuid)", "\n}\n")
+        self.assertIn("sObjectAccessor.FindPlayerNotInWorld(masterGuid)", presence)
+        self.assertIn("master && master->IsBeingTeleportedFar()", presence)
+        self.assertIn("!master->GetSession()->IsHeadless()", presence)
         attempts = update.index("never joined master after 60 reunite attempts")
         self.assertLess(attempts, update.index('CancelBoundSeatHire(*it, "it could not reach the bound raid");'))
         self.assertLess(update.index('CancelBoundSeatHire(*it, "it could not reach the bound raid");'),
@@ -106,6 +124,27 @@ class HireBoundRaidWiringTest(unittest.TestCase):
         self.assertLess(offline, update.index('CancelBoundSeatHire(*it, "you went offline before it arrived");'))
         stale = body(HIRE_SRC, "void HireProvisionService::DropStalePending()", "\n}\n")
         self.assertLess(stale.index("CancelBoundSeatHire(*it,"), stale.index("it = m_pending.erase(it);"))
+
+    def test_a_joined_seat_hire_sends_its_intro(self):
+        intro = body(HIRE_SRC, "void HireProvisionService::AnnounceIntro(", "\n}\n")
+        self.assertIn("if (!HireIntroMayGo(bot->IsInSameRaidWith(master), pending.boundSeatJoined))\n        return;", intro)
+        self.assertNotIn("if (!bot->IsInSameRaidWith(master))", intro)
+
+    def test_a_raid_hire_job_keeps_its_mode(self):
+        raid = body(HIRE_SRC, "HireRaidOutcome HireProvisionService::HireRaid(", "void HireProvisionService::StepRaidJobs(")
+        self.assertIn("job.intoBoundRaid = intoBoundRaid;", raid)
+        step = body(HIRE_SRC, "void HireProvisionService::StepRaidJobs()", "\nvoid HireProvisionService::ReportRaidJob(")
+        order = ["BotCommands::BoundRaidOf(master)",
+                 "if (!RaidJobModeHolds(job.intoBoundRaid, HireIntoBoundRaid(boundRaid.bound, boundRaid.commanderInGroup)))",
+                 'out.message = "your raid binding changed.";',
+                 "Group* group = job.intoBoundRaid ? nullptr : master->GetGroup();",
+                 "else if (job.hadGroup && !job.intoBoundRaid)",
+                 "if (RaidJobConvertsParty(job.intoBoundRaid, job.raidSized))",
+                 "HireOutcome one = Hire(master, sel, false);",
+                 "if (RaidJobConvertsParty(job.intoBoundRaid, job.raidSized) && !job.startedInRaid"]
+        at = [step.index(part) for part in order]
+        self.assertEqual(at, sorted(at))
+        self.assertNotIn("if (job.raidSized", step)
 
     def test_hire_records_the_authorization(self):
         hire = body(HIRE_SRC, "HireOutcome HireProvisionService::Hire(", "uint32_t HireProvisionService::QuoteHireFee(")
@@ -174,6 +213,10 @@ class HireBoundRaidWiringTest(unittest.TestCase):
         self.assertIn("if (!m_dismissing.insert(botGuidLow).second)\n        return false;", dismiss)
         queue = body(LIFECYCLE, "bool HireLifecycle::QueueDeletion(", "\n}\n")
         self.assertIn("bool const durable = CharacterDatabase.DirectPExecute(", queue)
+        # review L2: a deletion queued before writes its 'dismissed' mark again while the row is still 'active'
+        again = queue.index("if (pending.guidLow == guidLow)\n            return CharacterDatabase.DirectPExecute(")
+        self.assertLess(again, queue.index("AND `state` = 'active'"))
+        self.assertLess(queue.index("AND `state` = 'active'"), queue.index("bool const durable ="))
         self.assertIn("return durable;", queue)
         self.assertIn("if (!ledgerAccountId)", queue)
         retry = body(LIFECYCLE, "bool HireLifecycle::EnsureDeletionIntent(", "\n}\n")

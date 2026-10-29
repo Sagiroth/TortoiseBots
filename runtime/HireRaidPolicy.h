@@ -157,24 +157,24 @@ inline ReleasePlan PlanBindingRelease(std::vector<ReleaseHire> const& hires, uin
 }
 
 // C6: a cancelled bound-raid seat hire gives its fee back the way Hire() does on a failed hire: only once the
-// hire is durably undone. Here that is the deletion intent of its character recorded (ledger row marked
+// hire is undone. Here that is the deletion of its character recorded (ledger row marked
 // 'dismissed' and the deletion queued, HireLifecycle::DismissForRefund). Until then no gold moves and the
 // deletion is retried (Update, once a second); a refund is paid once and never again.
 constexpr uint32_t kSeatCancelMaxAttempts = 60;
 
 struct SeatCancelState
 {
-    bool deletionQueued = false; // the character's deletion intent is durable
+    bool deletionQueued = false; // the character's deletion is recorded
     bool refunded = false;       // the fee went back (in hand or by mail)
     uint32_t attempts = 0;       // deletion attempts so far (the first one included)
 };
 
 enum class SeatCancelAction : uint8_t
 {
-    Refund,        // deletion durable, fee not yet returned: return it now (once)
-    RetryDeletion, // deletion not durable yet: no refund, try again later
+    Refund,        // deletion recorded, fee not yet returned: return it now (once)
+    RetryDeletion, // deletion not recorded yet: no refund, try again later
     Done,          // refunded: nothing more, ever
-    GiveUp,        // the deletion never became durable: no refund (the hire left no live companion)
+    GiveUp,        // the deletion was never recorded: no refund (the hire left no live companion)
 };
 
 inline SeatCancelAction NextSeatCancelAction(SeatCancelState const& state)
@@ -184,6 +184,60 @@ inline SeatCancelAction NextSeatCancelAction(SeatCancelState const& state)
     if (state.deletionQueued)
         return SeatCancelAction::Refund;
     return state.attempts >= kSeatCancelMaxAttempts ? SeatCancelAction::GiveUp : SeatCancelAction::RetryDeletion;
+}
+
+// C6 review M1: a seat hire joins the bound raid once; later ticks (its intro waits for the bot to be in world)
+// never join it again, so an unbind + rebind meanwhile cannot pull it into another raid without a recheck.
+enum class SeatJoinStep : uint8_t
+{
+    Join,    // a seat hire not joined yet: JoinBoundRaid
+    Joined,  // a seat hire that already stands in the bound raid: nothing to join
+    Reunite, // a normal hire: the ordinary regroup with its master
+};
+
+inline SeatJoinStep DecideHireJoinStep(bool intoBoundRaid, bool boundSeatJoined)
+{
+    if (!intoBoundRaid)
+        return SeatJoinStep::Reunite;
+    return boundSeatJoined ? SeatJoinStep::Joined : SeatJoinStep::Join;
+}
+
+// The hire intro goes out once the hire is grouped with its master, or, for a seat hire, once it joined the
+// bound raid (its commander stands outside that raid by definition).
+inline bool HireIntroMayGo(bool sameRaidWithMaster, bool boundSeatJoined)
+{
+    return sameRaidWithMaster || boundSeatJoined;
+}
+
+// C6 review M2: a seat hire's commander behind a loading screen is not offline. Only a commander whose session
+// is gone (or headless) cancels the hire; one out of world or teleporting far is waited for.
+enum class SeatMasterPresence : uint8_t
+{
+    Ready,
+    Wait,
+    Gone,
+};
+
+inline SeatMasterPresence DecideSeatMasterPresence(bool found, bool liveSession, bool inWorld, bool teleportingFar)
+{
+    if (!found || !liveSession)
+        return SeatMasterPresence::Gone;
+    if (!inWorld || teleportingFar)
+        return SeatMasterPresence::Wait;
+    return SeatMasterPresence::Ready;
+}
+
+// C6 review L1: a `.bot hire raid` job hires in the mode it started in (into the bound raid or the hirer's own
+// group); when that changes (bound, unbound, the commander joined the group) the job stops. A bound job has no
+// party of the commander's to convert into a raid.
+inline bool RaidJobModeHolds(bool jobIntoBoundRaid, bool nowIntoBoundRaid)
+{
+    return jobIntoBoundRaid == nowIntoBoundRaid;
+}
+
+inline bool RaidJobConvertsParty(bool jobIntoBoundRaid, bool raidSized)
+{
+    return raidSized && !jobIntoBoundRaid;
 }
 
 // C6 H2: how a hire was authorized. A bound-raid seat is a hire of a bound raid's commander standing outside

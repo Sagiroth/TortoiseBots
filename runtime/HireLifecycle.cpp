@@ -909,14 +909,19 @@ bool HireLifecycle::QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, ch
             guidLow, reason ? reason : "released");
         return false;
     }
+    // Queued already (in memory): its 'dismissed' mark may have failed then, so it is written again while the
+    // row still reads 'active'; the result is that write's.
     for (PendingDeletion const& pending : m_pendingDeletions)
         if (pending.guidLow == guidLow)
-            return true;
+            return CharacterDatabase.DirectPExecute(
+                "UPDATE `tortoise_bots_hire` SET `state` = 'dismissed', `dismissed_at` = NOW() "
+                "WHERE `character_guid` = '%u' AND `state` = 'active'", guidLow);
 
     // Durable intent first: a crash between here and the deletion is resumed
-    // from this row on the next server start. The result says whether that
-    // intent is durable (C6: a cancelled hire refunds only then); the deletion
-    // is queued either way, as before.
+    // from this row on the next server start (RecoverStaleHires deletes every
+    // ledger row at startup, whatever its state). The result says whether the
+    // 'dismissed' mark was written (C6: a cancelled hire refunds only then);
+    // the deletion is queued either way, as before.
     bool const durable = CharacterDatabase.DirectPExecute(
         "UPDATE `tortoise_bots_hire` SET `state` = 'dismissed', `dismissed_at` = NOW() "
         "WHERE `character_guid` = '%u'", guidLow);

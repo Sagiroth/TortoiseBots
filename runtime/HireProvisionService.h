@@ -109,6 +109,9 @@ struct HireRaidJob
     // later group-less master left the group (#1014 then dismissed the
     // companions already hired), so the job stops instead of hiring on.
     bool hadGroup = false;
+    // C6: the job hires into its master's bound raid (he commands it from outside the group); a change of
+    // that mode stops the job, and a bound job never converts a party (RaidJobModeHolds, RaidJobConvertsParty).
+    bool intoBoundRaid = false;
     HireRaidOutcome progress;
 };
 
@@ -226,7 +229,7 @@ public:
     // the fee goes back to the master (in hand, or by mail when he is offline). A hire already ended is left.
     void CancelBoundSeatHire(PendingProvision const& pending, std::string const& why);
     // C6: a cancelled seat hire until its fee is settled: refunded once its character's deletion intent is
-    // durable, retried until then (HireRaidPolicy.h NextSeatCancelAction). In memory: a restart's ledger
+    // recorded, retried until then (HireRaidPolicy.h NextSeatCancelAction). In memory: a restart's ledger
     // recovery deletes the character, the refund of an unsettled cancel is not carried over.
     struct SeatCancel
     {
