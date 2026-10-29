@@ -38,6 +38,9 @@ struct BotTelemetrySnapshot
     uint32 power = 0;
     uint32 maxPower = 0;
     std::string powerType; // "mana", "rage", "energy", "focus", "happiness"
+    // Guild name the unit carries in its PLAYER_GUILDID field, looked up in
+    // the in-memory guild manager (no DB). Empty when guildless.
+    std::string guild;
     uint32 mapId = 0;
     uint32 zoneId = 0;
     // Instance copy the unit is in (Map::GetInstanceId(), issue #895): 0 in

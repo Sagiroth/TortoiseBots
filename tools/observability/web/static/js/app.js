@@ -2487,6 +2487,12 @@
       sort: r => (r.live ? getZoneName(r.live.zone, r.live.map).toLowerCase() : ''),
       cell: r => (r.live ? `<span class="mono">${esc(getZoneName(r.live.zone, r.live.map))}</span>` : DASH)
     },
+    guild: {
+      label: 'Guild',
+      title: 'Guild the bot is in (dash when guildless)',
+      sort: r => (r.live && r.live.guild ? r.live.guild.toLowerCase() : ''),
+      cell: r => (r.live && r.live.guild ? `<span class="mono">${esc(r.live.guild)}</span>` : DASH)
+    },
     xp: {
       label: 'XP',
       title: 'Progress into the current level, XP per hour and the age of the last gain (live bots)',
@@ -2543,7 +2549,7 @@
   };
 
   const BOT_VIEWS = {
-    live: ['name', 'class', 'level', 'state', 'hp', 'power', 'target', 'zone'],
+    live: ['name', 'class', 'level', 'state', 'hp', 'power', 'target', 'zone', 'guild'],
     progress: ['name', 'class', 'level', 'xp', 'gear', 'gold'],
     activity: ['name', 'class', 'level', 'quests', 'loot', 'notable', 'kills', 'deaths', 'money', 'vendors', 'repairs', 'giveups', 'gather', 'ah']
   };
@@ -2651,7 +2657,7 @@
     const text = words.filter((w, i) => !fields[i]);
     const tests = fields.filter(Boolean);
     const queryOk = r => tests.every(t => t(r)) &&
-      text.every(w => r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w) || r.kind.includes(w));
+      text.every(w => r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w) || r.kind.includes(w) || (r.live && r.live.guild || '').toLowerCase().includes(w));
     const stateOk = r => state.botsState === 'all' || (r.live && (r.live.state || 'idle') === state.botsState);
     const classOk = r => state.botsClass === 'all' || r.cls === state.botsClass;
     const specOk = r => state.botsClass === 'all' || state.botsSpec === 'all' || r.spec === state.botsSpec;
@@ -3668,6 +3674,7 @@
           ${kv('Status', stateTag(live.state))}
           ${live.kind || live.player || live.alt ? kv('Kind', kindBadge((live.kind || (live.player ? 'player' : (live.alt ? 'alt' : 'pool'))))) : ''}
           ${kv('Target', live.target ? `<strong class="target-cell">${esc(displayTarget(live))}</strong>${live.target_level ? ` <span class="cell-muted">L${esc(live.target_level)}</span>` : ''}` : DASH)}
+          ${live.guild ? kv('Guild', `<span class="mono">${esc(live.guild)}</span>`) : ''}
           ${live.travel_purpose ? kv('Travel', `<strong>${esc(live.travel_purpose)}</strong><span class="cell-muted"> → ${esc(live.travel_to || '')}</span>`) : ''}
           ${live.player ? '' : kv('Last action', kvMono(live.last_action))}
           ${live.player ? '' : kv('Trigger', kvMono(live.last_trigger))}
