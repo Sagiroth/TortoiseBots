@@ -138,10 +138,11 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
         uint32_t const chance = plan.zones.empty() ? 0 : plan.zones.front().chance;
         std::string const skill = plan.skillId ? std::to_string(plan.skillId) + ":" + std::to_string(plan.skillValue) : "-";
         std::string const verdict = plan.verdict == OrderReason::None ? "ok" : ReasonToken(plan.verdict);
-        handler->PSendSysMessage("TBM:ORDER_ITEM|%u|%s|%u|%s|%u|%s|%s|%s|%u",
+        std::string const difficulty = ai::PlanOrderDifficulty(bot, row->itemId, orderType, 1);
+        handler->PSendSysMessage("TBM:ORDER_ITEM|%u|%s|%u|%s|%u|%s|%s|%s|%u|%s",
             row->itemId, ProtocolSafe(row->name).c_str(), uint32_t(proto->Quality),
             SourcesToken(plan.sources).c_str(), plan.minLevel, skill.c_str(), verdict.c_str(),
-            ProtocolSafe(zone).c_str(), chance);
+            ProtocolSafe(zone).c_str(), chance, difficulty.c_str());
     }
     handler->PSendSysMessage("TBM:ORDER_ITEMS_END");
     return true;

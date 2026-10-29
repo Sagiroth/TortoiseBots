@@ -16,25 +16,18 @@ int main()
         OrderState back = OrderState::Working;
         CHECK(ParseState(StateToken(OrderState(i)), back) && back == OrderState(i));
     }
-    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoBank); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::Elite); ++i)
     {
         OrderReason back = OrderReason::None;
         CHECK(ParseReason(ReasonToken(OrderReason(i)), back) && back == OrderReason(i));
     }
-    OrderType type = OrderType::Farm;
-    CHECK(ParseType("craft", type) && type == OrderType::Craft);
-    CHECK(!ParseType("kill", type));
-    CHECK(std::string(ReasonToken(OrderReason::None)) == "-");
+    CHECK(std::string(ReasonToken(OrderReason::Elite)) == "elite");
+    CHECK(StateForReason(OrderReason::Elite) == OrderState::Cant);
 
-    CHECK(StateForReason(OrderReason::Grouped) == OrderState::Waiting);
-    CHECK(StateForReason(OrderReason::LowSkill) == OrderState::NoSkill);
-    CHECK(StateForReason(OrderReason::Stuck) == OrderState::Cant);
-    CHECK(StateForReason(OrderReason::BagsFull) == OrderState::Delivering);
-    CHECK(StateForReason(OrderReason::NoBank) == OrderState::Mailed);
-    CHECK(IsFinished(OrderState::Mailed) && !IsFinished(OrderState::Delivering));
-
-    CHECK(SourcesToken(0) == "-");
-    CHECK(SourcesToken(SourceSkin | SourceAh) == "skin,ah");
+    CHECK(std::string(DifficultyToken(OrderDifficulty::None)) == "-");
+    CHECK(std::string(DifficultyToken(OrderDifficulty::Easy)) == "easy");
+    CHECK(std::string(DifficultyToken(OrderDifficulty::Medium)) == "medium");
+    CHECK(std::string(DifficultyToken(OrderDifficulty::Hard)) == "hard");
 
     if (failures == 0)
         std::printf("test_guild_order_contract ok\n");

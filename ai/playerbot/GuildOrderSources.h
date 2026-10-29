@@ -17,15 +17,22 @@ namespace ai
 TortoiseBots::GuildOrders::SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId,
                                                            TortoiseBots::GuildOrders::OrderType type);
 
+// Difficulty estimate for the plan: farm uses the amount over the best chance
+// (one item for search rows, the full amount for order rows), craft the
+// hardest farmable reagent still missing, buy none. World thread only.
+std::string PlanOrderDifficulty(Player* bot, uint32_t itemId,
+                                TortoiseBots::GuildOrders::OrderType type, uint32_t amount);
+
 // One entry's usable sources for one item, read from the order source index.
 struct GuildOrderEntrySource
 {
-    int32_t entry = 0;      // drop-map sign: creature +, game object -
-    uint8_t flag = 0;       // SourceFlag bits usable from this entry
-    float chance = 0.0f;    // best farmable chance for the item
-    uint32_t level = 0;     // mob max level; 0 for game objects (graded per zone)
-    uint32_t skillId = 0;   // SKILL_NONE when no skill needed
+    int32_t entry = 0;       // drop-map sign: creature +, game object -
+    uint8_t flag = 0;        // SourceFlag bits usable from this entry
+    float chance = 0.0f;     // best farmable chance for the item
+    uint32_t level = 0;      // mob max level; 0 for game objects (graded per zone)
+    uint32_t skillId = 0;    // SKILL_NONE when no skill needed
     uint32_t reqSkill = 0;
+    uint32_t rank = 0;       // creature_template rank; 0 for game objects
 };
 
 // One zone slice of an entry's spawns: flat per-entry list in the index.

@@ -289,6 +289,48 @@ uint32 ai::GuildOrderCraftReagentFor(PlayerbotAI* ai, Player* bot, uint32 itemId
         });
 }
 
+double ai::GuildOrderCraftHardestReagentKills(PlayerbotAI* ai, Player* bot, uint32 itemId, uint32 amount,
+    uint32 delivered)
+{
+    if (!ai || !bot || !itemId || !amount)
+        return -1.0;
+
+    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + std::min(delivered, amount);
+    if (currentCount >= amount)
+        return -1.0;
+
+    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
+    if (!craftSpellId)
+        return -1.0;
+
+    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
+    if (!pSpellInfo)
+        return -1.0;
+
+    uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, amount - currentCount);
+    double hardest = -1.0;
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+        uint32 reagentId = pSpellInfo->Reagent[i];
+        uint32 need = pSpellInfo->ReagentCount[i] * casts;
+        uint32 have = ai->GetInventoryItemsCountWithId(reagentId);
+        if (have >= need)
+            continue;
+        ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
+        if (reagentProto && ItemUsageValue::IsItemSoldByAnyVendor(reagentProto) &&
+            !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(reagentProto))
+            continue;
+        TortoiseBots::GuildOrders::SourcePlan plan =
+            ai::PlanGuildOrderSources(bot, reagentId, TortoiseBots::GuildOrders::OrderType::Farm);
+        if (plan.verdict != TortoiseBots::GuildOrders::OrderReason::None || plan.zones.empty())
+            continue;
+        hardest = std::max(hardest,
+            TortoiseBots::GuildOrders::ExpectedKills(need - have, plan.bestChance));
+    }
+    return hardest;
+
 uint32 GuildOrderFarmItemValue::Calculate()
 {
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");

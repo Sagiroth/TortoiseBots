@@ -22,6 +22,14 @@ inline constexpr uint32_t kSourceLevelMargin = 3;
 // below that every errand is a walk through mobs the bot cannot fight.
 inline constexpr uint32_t kGatherTripMinLevel = 10;
 
+// A solo bot never plans elite, rare-elite or boss creatures as a farm
+// source (creature_template rank 1-3). Rare (non-elite) creatures (rank 4)
+// fight like normal mobs, so they stay allowed.
+inline bool CreatureRankExcludedFromSoloFarm(uint32_t rank)
+{
+    return rank == 1 || rank == 2 || rank == 3;
+}
+
 // Drops below this chance never look farmable: rare world drops would
 // otherwise win zones by spawn count while the bot grinds hundreds of kills.
 inline constexpr float kMinFarmDropChancePct = 1.0f;
@@ -88,12 +96,14 @@ inline float MemberChance(float rowChancePct, float equalSharePct)
 // beats too-low skill); then level range; a sub-chance source never upgrades
 // NoSource to NoRange. When the skill failure comes only from a fallback
 // source while an unskilled source failed range, range wins: the bot could
-// use the drop if it were in range, so the skill is not the blocker.
+// use the drop if it were in range, so the skill is not the blocker. Elite
+// sources are invisible to the planner; when every source is elite the bot
+// hears that instead of nosource.
 inline OrderReason OrderVerdict(bool lowGatherLevel, uint8_t skillFail, bool sawInRange, bool sawAny,
-    bool unskilledRangeFail = false)
+    bool unskilledRangeFail = false, bool sawElite = false)
 {
     if (!sawAny)
-        return OrderReason::NoSource;
+        return sawElite ? OrderReason::Elite : OrderReason::NoSource;
     if (lowGatherLevel)
         return OrderReason::LowLevel;
     if (!sawInRange && unskilledRangeFail)
@@ -105,6 +115,33 @@ inline OrderReason OrderVerdict(bool lowGatherLevel, uint8_t skillFail, bool saw
     if (sawInRange)
         return OrderReason::NoSource;
     return OrderReason::NoRange;
+}
+
+// Expected kills or gathers for an amount at the best source's chance.
+// Skinning chances count per kill, drop chances per kill, node chances per
+// gather. A zero chance never yields the item, so it estimates unbounded.
+inline double ExpectedKills(uint32_t amount, float chancePct)
+{
+    if (chancePct <= 0.0f)
+        return 1e9;
+    return double(amount) / (double(chancePct) / 100.0);
+}
+
+// Easy is an evening's farm (about 30 kills), medium several sessions, hard
+// a long grind. At a typical 40 % skinning chance Light Leather x10 needs 25
+// kills (easy) while Golden Pearl x5 at 0.22 % needs over two thousand (hard);
+// Copper Ore x20 at 100 % per vein needs 20 gathers (easy) but x200 crosses
+// into medium.
+inline constexpr double kDifficultyEasyMaxKills = 30.0;
+inline constexpr double kDifficultyMediumMaxKills = 200.0;
+
+inline OrderDifficulty EstimateDifficulty(double expectedKills)
+{
+    if (expectedKills <= kDifficultyEasyMaxKills)
+        return OrderDifficulty::Easy;
+    if (expectedKills <= kDifficultyMediumMaxKills)
+        return OrderDifficulty::Medium;
+    return OrderDifficulty::Hard;
 }
 
 // Whether an order-mode travel info skips the leisure IsPossible gates for

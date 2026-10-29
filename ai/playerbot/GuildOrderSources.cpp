@@ -197,6 +197,7 @@ void BuildGuildOrderSourceIndex()
             source.flag = SourceDrop;
             source.chance = chance;
             source.level = cInfo->level_max;
+            source.rank = cInfo->rank;
             AddEntrySource(index, itemId, source);
         }
         chances.clear();
@@ -208,6 +209,7 @@ void BuildGuildOrderSourceIndex()
             source.flag = SourceSkin;
             source.chance = chance;
             source.level = cInfo->level_max;
+            source.rank = cInfo->rank;
             source.skillId = SKILL_SKINNING;
             source.reqSkill = SkinningSkillForMobLevel(cInfo->level_max);
             AddEntrySource(index, itemId, source);
@@ -352,6 +354,8 @@ bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry)
     {
         if (source.entry != int32_t(creatureEntry) || !(source.flag & SourceSkin))
             continue;
+        if (CreatureRankExcludedFromSoloFarm(source.rank))
+            continue;
         if (bot->GetSkillValue(SKILL_SKINNING) >= source.reqSkill)
             return true;
     }
@@ -381,6 +385,8 @@ bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,
         for (GuildOrderEntrySource const& source : found->second)
         {
             if (source.entry != entry)
+                continue;
+            if (entry > 0 && CreatureRankExcludedFromSoloFarm(source.rank))
                 continue;
             uint32_t sourceLevel = entry > 0 ? source.level :
                 (slice.zoneLevel > 0 ? uint32_t(slice.zoneLevel) : 0);
@@ -458,6 +464,7 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
 
     bool sawAny = false;
     bool sawHerbOre = false;
+    bool sawElite = false;
     uint8_t skillFail = 0;
     bool sawInRange = false;
     bool unskilledRangeFail = false;
@@ -479,8 +486,15 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         auto slices = index.zonesByEntry.find(source.entry);
         if (slices == index.zonesByEntry.end())
             continue;
-        sawAny = true;
         bool const creature = source.entry > 0;
+        // Elite, rare-elite and boss mobs never farm for a solo bot. They
+        // still feed the fallback need below, so the search can say what the
+        // item comes from while the verdict says elite.
+        bool const elite = creature && CreatureRankExcludedFromSoloFarm(source.rank);
+        if (elite)
+            sawElite = true;
+        else
+            sawAny = true;
         bool const herbOrOre = source.flag == SourceHerb || source.flag == SourceOre;
         if (herbOrOre)
             sawHerbOre = true;
@@ -504,6 +518,9 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
                 fallbackSkillId = source.skillId;
                 fallbackSkillValue = source.reqSkill;
             }
+
+            if (elite)
+                continue;
 
             if (!SourceLevelFits(sourceLevel, botLevel))
             {
@@ -562,7 +579,8 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         plan.minLevel = fallbackMinLevel;
         plan.skillId = fallbackSkillId;
         plan.skillValue = fallbackSkillValue;
-        plan.verdict = OrderVerdict(lowGatherLevel && sawHerbOre, skillFail, sawInRange, sawAny, unskilledRangeFail);
+        plan.verdict = OrderVerdict(lowGatherLevel && sawHerbOre, skillFail, sawInRange, sawAny, unskilledRangeFail,
+            sawElite);
         return plan;
     }
 
@@ -595,7 +613,31 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         return a.zoneId < b.zoneId;
     });
 
+    plan.bestChance = zones.empty() ? 0.0f : zones[plan.zones.front().zoneId].chance;
+
     return plan;
+}
+
+std::string PlanOrderDifficulty(Player* bot, uint32_t itemId, OrderType type, uint32_t amount)
+{
+    if (!bot || !itemId || type == OrderType::Buy)
+        return DifficultyToken(OrderDifficulty::None);
+    if (type == OrderType::Craft)
+    {
+        std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
+        uint32_t delivered = (record && record->itemId == itemId) ? record->delivered : 0;
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+        if (!ai)
+            return DifficultyToken(OrderDifficulty::None);
+        double hardest = ai::GuildOrderCraftHardestReagentKills(ai, bot, itemId, amount, delivered);
+        if (hardest < 0.0)
+            return DifficultyToken(OrderDifficulty::Easy);
+        return DifficultyToken(EstimateDifficulty(hardest));
+    }
+    SourcePlan plan = PlanGuildOrderSources(bot, itemId, type);
+    if (plan.verdict != OrderReason::None || plan.zones.empty() || plan.bestChance <= 0.0f)
+        return DifficultyToken(OrderDifficulty::None);
+    return DifficultyToken(EstimateDifficulty(ExpectedKills(amount, plan.bestChance)));
 }
 
 } // namespace ai

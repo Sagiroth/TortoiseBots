@@ -50,6 +50,8 @@ int main()
     CHECK(ReferenceGate(0.0f, 0.0f) == 0.0f);
 
     CHECK(OrderVerdict(false, 0, false, false) == OrderReason::NoSource);
+    CHECK(OrderVerdict(false, 0, false, false, false, true) == OrderReason::Elite);
+    CHECK(OrderVerdict(false, 0, true, true, false, true) == OrderReason::NoSource);
     CHECK(OrderVerdict(true, 2, false, true) == OrderReason::LowLevel);
     CHECK(OrderVerdict(false, 2, false, true) == OrderReason::NoSkill);
     CHECK(OrderVerdict(false, 1, false, true) == OrderReason::LowSkill);
@@ -57,11 +59,31 @@ int main()
     CHECK(OrderVerdict(false, 0, true, true) == OrderReason::NoSource);
     CHECK(OrderVerdict(false, 2, false, true, true) == OrderReason::NoRange);
     CHECK(OrderVerdict(false, 1, true, true, true) == OrderReason::LowSkill);
-
     CHECK(OrderModeSkipsGates(true, true));
     CHECK(!OrderModeSkipsGates(true, false));
     CHECK(!OrderModeSkipsGates(false, true));
     CHECK(!OrderModeSkipsGates(false, false));
+
+    CHECK(CreatureRankExcludedFromSoloFarm(1));
+    CHECK(CreatureRankExcludedFromSoloFarm(2));
+    CHECK(CreatureRankExcludedFromSoloFarm(3));
+    CHECK(!CreatureRankExcludedFromSoloFarm(0));
+    CHECK(!CreatureRankExcludedFromSoloFarm(4));
+
+    CHECK(ExpectedKills(10, 40.0f) == 25.0);
+    CHECK(ExpectedKills(20, 100.0f) == 20.0);
+    CHECK(ExpectedKills(5, 0.22f) > 2000.0);
+    CHECK(ExpectedKills(10, 0.0f) > 200.0);
+
+    CHECK(EstimateDifficulty(20.0) == OrderDifficulty::Easy);
+    CHECK(EstimateDifficulty(30.0) == OrderDifficulty::Easy);
+    CHECK(EstimateDifficulty(31.0) == OrderDifficulty::Medium);
+    CHECK(EstimateDifficulty(200.0) == OrderDifficulty::Medium);
+    CHECK(EstimateDifficulty(201.0) == OrderDifficulty::Hard);
+    CHECK(EstimateDifficulty(ExpectedKills(10, 40.0f)) == OrderDifficulty::Easy);
+    CHECK(EstimateDifficulty(ExpectedKills(5, 0.22f)) == OrderDifficulty::Hard);
+    CHECK(EstimateDifficulty(ExpectedKills(20, 100.0f)) == OrderDifficulty::Easy);
+    CHECK(EstimateDifficulty(ExpectedKills(200, 100.0f)) == OrderDifficulty::Medium);
 
     CHECK(OutgrownFloorApplies(false));
     CHECK(!OutgrownFloorApplies(true));
