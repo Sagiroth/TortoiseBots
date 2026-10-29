@@ -108,6 +108,18 @@ const many = A.lanes(wrap([fr(1000, manyMobs), fr(1002, manyMobs)]), FIGHT, []);
 assert.strictEqual(many.lanes.length, 12);
 assert.strictEqual(many.more, 2);
 
+// The worst non-tank lane is graded over every lane, not only the 12 the strip shows: the 14-lane fixture's held lanes sort past
+// the display cap, and the daemon's stored seconds (internal/lanes) are graded from the same fixture.
+const l14 = JSON.parse(fs.readFileSync(path.join(__dirname, "testdata", "lanes-14.json"), "utf8"));
+const many14 = A.lanes(l14.track, l14.fight, l14.fight.bots);
+assert.strictEqual(many14.lanes.length, 12, "the strip keeps its 12 lanes");
+assert.strictEqual(many14.more, 2, "the rest are counted");
+assert.ok(many14.ntWorst && many14.ntWorst.id === l14.want.worstId,
+  "the worst lane is taken over all 14: " + (many14.ntWorst && many14.ntWorst.id));
+assert.strictEqual(many14.ntWorst.ntMs, l14.want.ntMs);
+assert.strictEqual(many14.ntWorst.ntLongestMs, l14.want.longestMs);
+assert.strictEqual(many14.ntWorst.label, "Warder", "the check row names a lane the strip did not draw");
+
 // A lane whose only engaged report falls on the fight's last instant has no segment: it is dropped, not sorted (its segs[0]
 // used to crash the order and the whole strip with it).
 const edge = A.lanes(wrap([fr(100, [m("m1", 1)]), fr(110, [m("m1", 1), m("m3", 1)])]), { start: 100, dur_ms: 10000, bots: BOTS }, []);

@@ -56,7 +56,13 @@ type fixtureFight struct {
 // frames state.Track returns and the fight the writer grades.
 func loadAttempt(t *testing.T) ([]state.TrackFrame, combat.Fight) {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "commandersjs", "testdata", "lanes-a2.json"))
+	return loadLanesFixture(t, "lanes-a2.json")
+}
+
+// loadLanesFixture loads a testdata fixture the page's aggrolanes_check.js reads too: the frames and the fight the writer grades.
+func loadLanesFixture(t *testing.T, name string) ([]state.TrackFrame, combat.Fight) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "commandersjs", "testdata", name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,6 +130,16 @@ func TestNonTankAttempt(t *testing.T) {
 	}
 	if ntMs != 23000 || longest != 12000 {
 		t.Fatalf("NonTank = (%d, %d), want (23000, 12000)", ntMs, longest)
+	}
+}
+
+// TestNonTankWorstLaneBeyondTheDisplayCap pins the 14-lane parity fixture (internal/commandersjs/testdata/lanes-14.json, read by
+// aggrolanes_check.js too): the page's strip shows 12 lanes, but both sides grade the worst non-tank lane over all 14.
+func TestNonTankWorstLaneBeyondTheDisplayCap(t *testing.T) {
+	frames, fight := loadLanesFixture(t, "lanes-14.json")
+	ntMs, longest, ok := NonTank(frames, fight)
+	if !ok || ntMs != 6000 || longest != 6000 {
+		t.Fatalf("NonTank = (%d, %d, %v), want (6000, 6000, true) over all 14 lanes", ntMs, longest, ok)
 	}
 }
 

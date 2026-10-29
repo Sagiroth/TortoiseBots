@@ -7034,7 +7034,7 @@
       if (!card.classList.contains('fd-on')) return;
       if (t.dataset.fdOpen != null) {
         // The pack table's time: that fight, on its own night.
-        fd.day = t.dataset.fdDay || '';
+        fd.day = typeof FightHistory !== 'undefined' ? FightHistory.rowDay(t.dataset.fdDay || '', Date.now()) : (t.dataset.fdDay || '');
         delete fd.hist[fd.day];
         fd.sel = fdDecodeKey(t.dataset.fdOpen);
         fd.userSel = true;
@@ -7426,6 +7426,9 @@
   }
 
   function fdDetailRow(fd) {
+    // The picked fight is asked for by key even when it is older than the fetched window (a pack row, or a day's
+    // older fight): its detail is what the debugger shows.
+    if (fd.sel && fd.sel !== 'live' && !fd.details[fd.sel] && !fdDetailFailed(fd, fd.sel)) return { key: fd.sel };
     // A live fight has no bot rows (it is drawn from its events until COMBAT_FIGHT arrives).
     return fd.list.slice(0, FD_DETAIL_MAX).find(r => r && r.key && !r.live && !fd.details[r.key] && !fdDetailFailed(fd, r.key)) || null;
   }
@@ -7529,7 +7532,7 @@
     const med = table.median || { durS: 0, deaths: 0 };
     const body = rows.map(r => `<tr${r.sel ? ' class="sel" aria-current="true"' : ''}>`
       + `<td>${esc(r.day || '')}</td>`
-      + `<td><button type="button" class="fd-packopen" data-fd-open="${esc(r.key)}" data-fd-day="${esc(r.day || '')}"`
+      + `<td><button type="button" class="fd-packopen" data-fd-open="${esc(encodeURIComponent(r.key))}" data-fd-day="${esc(r.day || '')}"`
       + ` aria-label="${esc('Open ' + (r.commander || 'the fight') + ' on ' + (r.when || '') + ' (' + (r.day || '') + ')')}">${esc(r.when || '')}</button></td>`
       + `<td class="n">${esc(String(r.durS))}</td><td class="n">${r.deaths}</td><td class="n">${r.ntS == null ? '—' : esc(String(r.ntS))}</td>`
       + `<td>${esc(r.outcome || '')}${r.best ? ' <span class="fd-best">best</span>' : ''}</td></tr>`).join('');
@@ -7609,6 +7612,13 @@
     return prev;
   }
 
+  // A selected fight has no kept positions: its night is past, its detail came from the history file (hist: true), or the
+  // fight belongs to another commander's binding (the card's track is not that fight's).
+  function fdFightHist(selRow, det, fight, bind) {
+    return !!(selRow && selRow.hist) || !!(det && det.hist)
+      || !!(fight && fight.commander && fight.commander !== (bind && bind.commander));
+  }
+
   function renderFightDebug(card, bind) {
     if (!card || !bind || typeof FightDebug === 'undefined') return;
     const key = bind.commander, fd = fdState(key), layout = bind.layout || null;
@@ -7628,7 +7638,7 @@
     // A fight of an earlier night: its summary says so, or the detail came from the history file (hist: true). It has no kept
     // positions and no lanes; the pack table carries the stored non-tank seconds instead.
     const selRow = !selLive && fd.sel ? list.find(r => r && r.key === fd.sel) || null : null;
-    const hist = !!(selRow && selRow.hist) || !!(det && det.hist);
+    const hist = fdFightHist(selRow, det, fight, bind);
     if (fd.death != null && fight && !(fight.deaths || [])[fd.death]) fd.death = null;
     const recaps = fight ? FightDebug.deathRecaps(fight) : [];
 

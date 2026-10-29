@@ -179,13 +179,17 @@
       };
     });
 
+    // The worst non-tank lane is taken over every lane, before the strip's display cap: the daemon's stored seconds grade the
+    // whole fight, not only the lanes that fit.
+    const ntWorst = out.reduce((best, lane) => (!best || ntWorse(lane, best) ? lane : best), null);
     const kept = out.slice(0, MAX_LANES);
     const perEntry = new Map();
     for (const lane of kept) perEntry.set(lane.e, (perEntry.get(lane.e) || 0) + 1);
     kept.forEach((lane, i) => {
       lane.label = perEntry.get(lane.e) > 1 ? lane.name + " " + (i + 1) : lane.name;
     });
-    const ntWorst = kept.reduce((best, lane) => (!best || ntWorse(lane, best) ? lane : best), null);
+    // The worst lane can sit past the display cap; its check row still names it.
+    if (ntWorst && !ntWorst.label) ntWorst.label = ntWorst.name;
     return { lanes: kept, more: out.length - kept.length, frames: frames.length, ntWorst, lane: LANE };
   }
 

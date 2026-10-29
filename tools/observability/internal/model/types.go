@@ -857,6 +857,7 @@ type DungeonMobsPayload struct {
 	Session uint64           `json:"session"`
 	Seq     uint64           `json:"seq"`
 	TS      int64            `json:"ts"`
+	TSMs    int64            `json:"ts_ms,omitempty"` // the millisecond report time when a sender provides it
 	Type    string           `json:"type"`
 	Part    int              `json:"part"`  // 0-based part of this cycle; informational
 	Parts   int              `json:"parts"` // parts of this cycle; informational

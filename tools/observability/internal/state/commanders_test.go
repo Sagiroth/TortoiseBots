@@ -576,6 +576,24 @@ func TestCommandersCarryBossOverlay(t *testing.T) {
 	}
 }
 
+// A report carrying the millisecond time uses it for a cast's end: the whole-second TS is the older module's fallback.
+func TestCommandersCastEndPrefersTSMs(t *testing.T) {
+	p := commandersPayload(5, 50, "Z")
+	p.TSMs = 50500
+	p.Commanders[0].Mobs = []model.CommanderMob{{ID: "5", Entry: 10184, Name: "Onyxia", HP: 80, Reaction: "h", Rank: "b",
+		CastID: 18435, CastLeftMS: 1200, CastTotalMS: 2000}}
+	s := newTestStore(newClock())
+	if !s.ApplyCommanders(p) {
+		t.Fatal("payload refused")
+	}
+	if got := s.Commanders().Commanders[0].Mobs[0].CastEndMS; got != 51700 {
+		t.Fatalf("CastEndMS = %d, want 51700 (TSMs 50500 + 1200, not TS 50 s)", got)
+	}
+	if p.Commanders[0].Mobs[0].CastEndMS != 0 {
+		t.Fatalf("the caller's payload must not be changed: %d", p.Commanders[0].Mobs[0].CastEndMS)
+	}
+}
+
 // R8: a cycle above the payload caps arrives in parts. Nothing changes until every part of the cycle is in, one view
 // change happens then, and the bindings follow part order whatever the datagram order was.
 func TestCommandersPartsAssemble(t *testing.T) {

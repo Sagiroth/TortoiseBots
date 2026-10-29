@@ -675,6 +675,74 @@ func (w *waitSource) Templates(context.Context, []uint32) ([]TemplateRow, error)
 
 func (w *waitSource) Spawns(context.Context, uint32, []uint32) ([]SpawnRow, error) { return nil, nil }
 
+// cancelOnceSource blocks its first Plan until that caller's context ends, then answers every later Plan: the shape of a
+// leader giving up on a slow read while a waiter stays.
+type cancelOnceSource struct {
+	calls   atomic.Int32
+	started chan struct{}
+}
+
+func (s *cancelOnceSource) Plan(ctx context.Context, name string) (PlanRow, bool, error) {
+	if s.calls.Add(1) == 1 {
+		close(s.started)
+		<-ctx.Done()
+		return PlanRow{}, false, ctx.Err()
+	}
+	return PlanRow{Plan: name, Map: 249}, true, nil
+}
+
+func (s *cancelOnceSource) Legs(context.Context, string) ([]LegRow, error) { return nil, nil }
+
+func (s *cancelOnceSource) Steps(context.Context, string) ([]StepRow, error) { return nil, nil }
+
+func (s *cancelOnceSource) Templates(context.Context, []uint32) ([]TemplateRow, error) {
+	return nil, nil
+}
+
+func (s *cancelOnceSource) Spawns(context.Context, uint32, []uint32) ([]SpawnRow, error) {
+	return nil, nil
+}
+
+// TestGetRetriesAWaiterWhoseLeaderWasCancelled: the leader's own context ending cancels the shared build, which says nothing
+// about the world database. A waiter whose own context is live asks once more instead of taking that cancellation.
+func TestGetRetriesAWaiterWhoseLeaderWasCancelled(t *testing.T) {
+	src := &cancelOnceSource{started: make(chan struct{})}
+	srv := NewService(src)
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	defer cancelLeader()
+	leader := make(chan error, 1)
+	go func() {
+		_, err := srv.Get(leaderCtx, "onyxias_lair")
+		leader <- err
+	}()
+	<-src.started
+	type answer struct {
+		p   *Plan
+		err error
+	}
+	waiter := make(chan answer, 1)
+	go func() {
+		p, err := srv.Get(context.Background(), "onyxias_lair")
+		waiter <- answer{p, err}
+	}()
+	time.Sleep(50 * time.Millisecond) // the waiter is in the in-flight select
+	cancelLeader()
+	if err := <-leader; !errors.Is(err, context.Canceled) {
+		t.Fatalf("leader Get = %v, want its own cancellation", err)
+	}
+	select {
+	case got := <-waiter:
+		if got.err != nil || got.p == nil {
+			t.Fatalf("waiter Get = %v, %v; a live waiter took the leader's cancellation", got.p, got.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the waiter never answered after its leader was cancelled")
+	}
+	if _, ok := srv.inflight["onyxias_lair"]; ok {
+		t.Fatal("the retry left its build in flight")
+	}
+}
+
 // TestGetStopsWithItsCaller pins the cancellation chain: the caller's context ends the world-database read, and a read the
 // caller abandoned is not cached as a database failure.
 func TestGetStopsWithItsCaller(t *testing.T) {

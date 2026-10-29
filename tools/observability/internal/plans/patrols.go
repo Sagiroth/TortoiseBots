@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"os"
@@ -29,6 +30,9 @@ const (
 	patrolMaxPeriodS = 900
 	// patrolMaxSrcBytes caps path_src on the wire.
 	patrolMaxSrcBytes = 80
+	// patrolMaxBytes caps one patrol file: a recording is a few hundred kilobytes, and a folder file that large is not a
+	// patrol table (the read stops at the cap instead of buffering it).
+	patrolMaxBytes = 4 << 20
 	// patrolCheckEvery is how often a Get checks the folder for changes.
 	patrolCheckEvery = time.Minute
 	patrolFormat     = "tb-patrols"
@@ -263,9 +267,17 @@ func logRejected(where string, rejected, before int) {
 }
 
 func readPatrolFile(path string, stamp patrolStamp) (*patrolFile, error) {
-	data, err := os.ReadFile(path)
+	fh, err := os.Open(path)
 	if err != nil {
 		return nil, err
+	}
+	defer fh.Close()
+	data, err := io.ReadAll(io.LimitReader(fh, patrolMaxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > patrolMaxBytes {
+		return nil, fmt.Errorf("file is larger than %d MiB", patrolMaxBytes>>20)
 	}
 	rows, rejected, recording, err := parsePatrolData(data)
 	if err != nil {

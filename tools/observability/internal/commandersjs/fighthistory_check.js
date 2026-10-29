@@ -24,7 +24,7 @@ vm.runInContext(fs.readFileSync(histPath, "utf8"), ctx, { filename: "fighthistor
 assert.ok(ctx.FightHistory && typeof ctx.FightHistory.dayOptions === "function", "fighthistory.js loads as the global FightHistory");
 vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, { filename: "fightdebug.js" });
 assert.ok(ctx.FightDebug && typeof ctx.FightDebug.railCards === "function", "fightdebug.js loads as the global FightDebug");
-vm.runInContext([grab("esc"), grab("fdRailHtml"), grab("fdDayOptionsHtml"), grab("fdPackHtml")].join("\n"), ctx,
+vm.runInContext([grab("esc"), grab("fdDecodeKey"), grab("fdRailHtml"), grab("fdDayOptionsHtml"), grab("fdPackHtml")].join("\n"), ctx,
   { filename: "app.js" });
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
@@ -33,7 +33,8 @@ const FH = ctx.FightHistory;
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
 // ---- the night picker -----------------------------------------------------------------------------------------------
-// 2026-10-28 is a Tuesday (the real weekday of the date); today's own file is Tonight, not a second entry.
+// 2026-10-29 is a Thursday; today's own file is listed too (its earlier fights live on disk after a restart), while a
+// future day is not.
 const TODAY = Date.UTC(2026, 9, 29, 12, 0, 0);
 const DAYS = { days: [
   { day: "2026-10-29", fights: 9 },
@@ -42,14 +43,23 @@ const DAYS = { days: [
 ] };
 assert.deepStrictEqual(plain(FH.dayOptions(DAYS, TODAY)), [
   { value: "", label: "Tonight" },
+  { value: "2026-10-29", label: "Thu 29 Oct · 9 fights" },
   { value: "2026-10-28", label: "Wed 28 Oct · 12 fights" },
   { value: "2026-10-27", label: "Tue 27 Oct · 1 fight" },
-], "the day labels, newest first, Today as Tonight");
+], "the day labels, newest first, today listed and Tonight first");
+assert.deepStrictEqual(plain(FH.dayOptions({ days: [{ day: "2026-10-30", fights: 2 }, { day: "2026-10-29", fights: 3 }] }, TODAY)),
+  [{ value: "", label: "Tonight" }, { value: "2026-10-29", label: "Thu 29 Oct · 3 fights" }],
+  "a future day is not offered, today's is");
 assert.deepStrictEqual(plain(FH.dayOptions(null, TODAY)), [{ value: "", label: "Tonight" }], "a history that is off still offers Tonight");
 assert.deepStrictEqual(plain(FH.dayOptions({ days: [{ day: "2026-13-01", fights: 2 }, { day: "bad", fights: 2 }] }, TODAY)),
   [{ value: "", label: "Tonight" }], "a malformed day is not offered");
 assert.deepStrictEqual(plain(FH.dayOptions({ days: [{ day: "2026-10-28", fights: 1 }, { day: "2026-10-28", fights: 4 }] }, TODAY)),
   [{ value: "", label: "Tonight" }, { value: "2026-10-28", label: "Wed 28 Oct · 1 fight" }], "a day is listed once");
+
+// A pack row's night as the picker's value: today is Tonight (the current live list), an older night keeps its own day.
+assert.strictEqual(FH.rowDay("2026-10-29", TODAY), "", "a fight from today opens the current list");
+assert.strictEqual(FH.rowDay("2026-10-28", TODAY), "2026-10-28", "an older fight keeps its night");
+assert.strictEqual(FH.rowDay("", TODAY), "", "a row without a day stays none");
 
 // ---- the same-pack table --------------------------------------------------------------------------------------------
 const at = (y, m, d, hh, mm) => Math.floor(Date.UTC(y, m - 1, d, hh, mm, 0) / 1000);
@@ -112,6 +122,18 @@ const evilPack = run("fdPackHtml(FightHistory.packTable(json, 'k'), false, packK
 assert.ok(!/<img/i.test(evilPack), "a commander name and a fight key cannot become markup: " + evilPack.slice(0, 300));
 assert.ok(evilPack.includes("&lt;img"), "the commander name is escaped as text");
 for (const m of evilPack.matchAll(/="([^"]*)"/g)) assert.ok(!/[<>]/.test(m[1]), "a pack attribute cannot break out: " + m[1]);
+
+// A fight key can hold a NUL (combat.Key joins with it): the HTML parser rewrites a raw NUL to U+FFFD, so the open button
+// carries the key percent-encoded and fdDecodeKey gives the exact key back.
+const NUL_KEY = "5-5\u0000pack\u0000Glacienne";
+const nulHtml = run("fdPackHtml(FightHistory.packTable(json, null), false, 'p')", { json: { rows: [
+  { key: NUL_KEY, commander: "Glacienne", start: at(2026, 10, 28, 22, 14), dur: 1000, outcome: "kill", deaths: 0 },
+] } });
+const nulAttr = /data-fd-open="([^"]*)"/.exec(nulHtml);
+assert.ok(nulAttr, "the open button is in the table");
+const nulParsed = nulAttr[1].replace(/\u0000/g, "\uFFFD"); // what the HTML parser makes of a raw NUL
+assert.strictEqual(run("fdDecodeKey(v)", { v: nulParsed }), NUL_KEY,
+  "a fight key with a NUL round-trips through the DOM: " + JSON.stringify(nulAttr[1]));
 
 // The Live card belongs to Tonight: a chosen past day shows no live row, even while the commander fights.
 const LIVE = { fightMs: 63000, alive: 5, active: 3, dps: 900 };

@@ -398,7 +398,9 @@ func (s *Store) newDayPath(dir, day string) string {
 	}
 }
 
-// appendRow files one index row; a duplicate key or a full index is dropped without a log line (the counter carries it).
+// appendRow files one index row; a duplicate key is dropped without a log line. A full index makes room by forgetting its oldest
+// row (the oldest night, then the earliest fight), the same newest-kept policy the startup scan applies; the fight file itself
+// stays on disk.
 func (s *Store) appendRow(row Row) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -406,11 +408,30 @@ func (s *Store) appendRow(row Row) {
 		return
 	}
 	if len(s.rows) >= s.cfg.MaxRows {
-		s.dropped("rows")
-		return
+		s.evictOldestRowLocked()
 	}
 	s.byKey[row.Key] = len(s.rows)
 	s.rows = append(s.rows, row)
+}
+
+// evictOldestRowLocked forgets the index row of the oldest night (the earliest start on a tie) and reindexes the rest. Called
+// with the lock held.
+func (s *Store) evictOldestRowLocked() {
+	if len(s.rows) == 0 {
+		return
+	}
+	oldest := 0
+	for i := 1; i < len(s.rows); i++ {
+		r, o := s.rows[i], s.rows[oldest]
+		if r.day < o.day || (r.day == o.day && r.Start < o.Start) {
+			oldest = i
+		}
+	}
+	s.rows = append(s.rows[:oldest], s.rows[oldest+1:]...)
+	s.byKey = make(map[string]int, len(s.rows))
+	for i := range s.rows {
+		s.byKey[s.rows[i].Key] = i
+	}
 }
 
 // enforceTotal deletes whole day files, the oldest day first across commanders, until the store plus extra fits its byte cap.

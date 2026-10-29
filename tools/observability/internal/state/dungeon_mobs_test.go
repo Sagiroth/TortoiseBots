@@ -434,3 +434,17 @@ func TestDungeonMobsCastEnd(t *testing.T) {
 		t.Fatalf("the caller's payload must not be changed: %d", (*p.Runs[0].Mobs)[0].CastEndMS)
 	}
 }
+
+// A payload carrying the millisecond time uses it for a cast's end: the whole-second TS is the older module's fallback.
+func TestDungeonMobsCastEndPrefersTSMs(t *testing.T) {
+	s := newTestStore(newClock())
+	boss := model.CommanderMob{ID: "5", Entry: 10184, Name: "Onyxia", HP: 80, Reaction: "h", Rank: "b",
+		CastID: 18435, CastLeftMS: 1200, CastTotalMS: 2000}
+	p := mobPayload(1, 1, mobRun(249, 7, nil, 1, boss))
+	p.TS, p.TSMs = 100, 100500
+	s.ApplyDungeonMobs(p)
+	mobs := *mobEntries(s)["249:7"].run.Mobs
+	if mobs[0].CastEndMS != 101700 {
+		t.Fatalf("CastEndMS = %d, want 101700 (TSMs 100500 + 1200, not TS 100 s)", mobs[0].CastEndMS)
+	}
+}

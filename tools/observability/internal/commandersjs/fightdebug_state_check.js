@@ -30,7 +30,7 @@ vm.createContext(ctx);
 vm.runInContext(tabsSrc, ctx, { filename: "fdtabs.js" });
 vm.runInContext([
   grab("cmdForgetCard"), grab("cmdRescueLayers"), grab("fdState"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
-  grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"), grab("fdDaysLoad"),
+  grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"), grab("fdDaysLoad"), grab("fdFightHist"),
   grabConst("FD_DETAIL_MAX"), grabConst("FD_DETAIL_BACKOFF"), grabConst("FD_DETAIL_FAIL_MAX"), grabConst("FD_DAYS_MS"),
   "var document = { getElementById: () => null };",
   "var cmdPageMode = () => 'debug';",
@@ -156,6 +156,22 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   run("fdLoad(card, bind)", { card, bind: { commander: "K" } });
   await settle();
   assert.deepStrictEqual(fdK.list.map((r) => r.key), ["keep"], "a failed list fetch does not wipe the known fights");
+
+  // ---- 2c. the picked fight's detail is fetched even when it is older than the newest 12 ---------------------------------
+  const oldList = Array.from({ length: 20 }, (_, i) => ({ key: "k" + i }));
+  const fdOld = { sel: "k19", details: {}, failed: {}, list: oldList };
+  assert.strictEqual(run("(fdDetailRow(fd) || {}).key", { fd: fdOld }), "k19",
+    "the picked fight is fetched by its key, beyond the 12-newest window");
+  const fdLivePick = { sel: "live", details: {}, failed: {}, list: oldList };
+  assert.strictEqual(run("(fdDetailRow(fd) || {}).key", { fd: fdLivePick }), "k0", "a live pick still walks the newest rows");
+
+  // A fight of another commander's binding has no kept positions on this card: it is read like a past night, never this
+  // card's track.
+  assert.strictEqual(run("fdFightHist({}, null, {commander:'B'}, bind)", { bind: { commander: "A" } }), true,
+    "another commander's fight is history on this card");
+  assert.strictEqual(run("fdFightHist({}, null, {commander:'A'}, bind)"), false, "the card's own fight keeps its positions");
+  assert.strictEqual(run("fdFightHist({hist:true}, null, null, bind)"), true, "a past night stays history");
+  assert.strictEqual(run("fdFightHist(null, {hist:true}, null, bind)"), true, "a history detail stays history");
 
   // ---- 3. a departed commander's card takes its cached state with it -------------------------------------------------
   run("cmdCards = new Map(); cmdMaps = {}; cmdAvail = {}; cmdFd = {}; cmdFightsCache = {}; cmdFightsPending = {}; removed = 0");

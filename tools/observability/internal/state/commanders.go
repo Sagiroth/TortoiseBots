@@ -228,8 +228,12 @@ func (st *commandersState) applyListLocked(list []model.CommanderBinding, p *mod
 			b.Mobs = b.Mobs[:maxCommanderMobs]
 		}
 		// The module sends the time left of a cast; the API and the fight track give the moment it ends, so a replayed frame
-		// needs no arithmetic of its own. The report's ts is whole seconds, so the end is within a second.
-		if p.TS > 0 {
+		// needs no arithmetic of its own. The report's ts is milliseconds when the module sends TSMs and whole seconds otherwise.
+		tsMs := p.TSMs
+		if tsMs == 0 {
+			tsMs = p.TS * 1000
+		}
+		if tsMs > 0 {
 			casting := false
 			for i := range b.Mobs {
 				casting = casting || b.Mobs[i].CastLeftMS > 0
@@ -239,7 +243,7 @@ func (st *commandersState) applyListLocked(list []model.CommanderBinding, p *mod
 				copy(mobs, b.Mobs)
 				for j := range mobs {
 					if mobs[j].CastLeftMS > 0 {
-						mobs[j].CastEndMS = p.TS*1000 + int64(mobs[j].CastLeftMS)
+						mobs[j].CastEndMS = tsMs + int64(mobs[j].CastLeftMS)
 					}
 				}
 				b.Mobs = mobs

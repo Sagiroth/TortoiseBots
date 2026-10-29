@@ -47,6 +47,21 @@ func writePatrolFile(t *testing.T, dir, name, body string) string {
 	return path
 }
 
+// A patrol file is read through a 4 MiB cap: a larger file is refused without parsing it, one exactly at the cap is read.
+func TestPatrolFileReadCap(t *testing.T) {
+	dir := t.TempDir()
+	body := `{"format":"tb-patrols","version":1,"patrols":[]}`
+	exact := body + strings.Repeat(" ", patrolMaxBytes-len(body))
+	exactPath := writePatrolFile(t, dir, "exact.json", exact)
+	if f, err := readPatrolFile(exactPath, patrolStamp{}); err != nil || f == nil || f.recording != true {
+		t.Fatalf("a file at the cap: %+v, %v", f, err)
+	}
+	overPath := writePatrolFile(t, dir, "over.json", exact+" ")
+	if f, err := readPatrolFile(overPath, patrolStamp{}); err == nil || !strings.Contains(err.Error(), "larger than 4 MiB") {
+		t.Fatalf("a file past the cap = %+v, %v, want a size error", f, err)
+	}
+}
+
 func getPlan(t *testing.T, src *memSource, name string) *Plan {
 	t.Helper()
 	p, err := NewService(src).Get(context.Background(), name)

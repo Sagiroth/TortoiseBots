@@ -46,8 +46,9 @@
     return d.getUTCDate() + " " + MONTHS[d.getUTCMonth()] + " " + pad2(d.getUTCHours()) + ":" + pad2(d.getUTCMinutes());
   }
 
-  // The night picker's options: Tonight first (the live list), then the stored days newest first. The day the daemon also
-  // files under today is Tonight, so it is not offered twice; a day that is not strict or not real is skipped.
+  // The night picker's options: Tonight first (the live list), then the stored days newest first, today included: after a
+  // restart the live list only holds the fights since then, and the earlier ones of today are on disk. A future day, or one
+  // that is not strict or not real, is skipped; a day is listed once.
   function dayOptions(daysJson, todayUtc) {
     const out = [{ value: "", label: "Tonight" }];
     const today = dayOf(todayUtc);
@@ -59,7 +60,7 @@
       const day = String(r.day || "");
       if (seen[day]) return;
       seen[day] = true;
-      if (!today || day >= today) return;
+      if (today && day > today) return;
       const p = parts(day);
       if (!p) return;
       const n = num(r.fights) || 0;
@@ -72,6 +73,14 @@
     rows.sort((a, b) => (a.day > b.day ? -1 : a.day < b.day ? 1 : 0));
     rows.forEach((r) => out.push({ value: r.value, label: r.label }));
     return out;
+  }
+
+  // The picker value a pack row opens: a fight of today is Tonight, whose live list is the current one (and the fight's detail
+  // is fetched by its key even when that list no longer holds it); an older row keeps its own night.
+  function rowDay(day, todayUtc) {
+    const today = dayOf(todayUtc);
+    const d = String(day || "");
+    return today && d === today ? "" : d;
   }
 
   function median(values) {
@@ -117,6 +126,6 @@
     };
   }
 
-  const api = { dayOptions, packTable, whenLabel, dayOf };
+  const api = { dayOptions, packTable, whenLabel, dayOf, rowDay };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightHistory = api;
 })(typeof self !== "undefined" ? self : this);

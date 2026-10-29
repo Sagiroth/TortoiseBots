@@ -667,6 +667,12 @@ func (s *Service) SetClock(now func() time.Time) {
 // does not query a broken or empty database on every draw. ctx cancels the wait and the build's own reads, so a caller that
 // stops needing the plan (a closed request, a shutting-down writer) is not held by a slow database.
 func (s *Service) Get(ctx context.Context, name string) (*Plan, error) {
+	return s.get(ctx, name, false)
+}
+
+// get is Get with the one-retry flag: a waiter that took the build leader's own cancellation asks again once, as long as its own
+// ctx is still live.
+func (s *Service) get(ctx context.Context, name string, retried bool) (*Plan, error) {
 	s.mu.Lock()
 	// The paths are built into every plan, so a changed patrol file drops the
 	// whole cache; the check itself is at most once a minute.
@@ -684,6 +690,9 @@ func (s *Service) Get(ctx context.Context, name string) (*Plan, error) {
 		case <-w.done:
 		case <-ctx.Done():
 			return nil, ctx.Err()
+		}
+		if !retried && canceled(w.err) && ctx.Err() == nil {
+			return s.get(ctx, name, true)
 		}
 		if w.plan == nil && w.err == nil {
 			return nil, errBuildAborted

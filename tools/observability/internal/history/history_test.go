@@ -140,6 +140,35 @@ func TestWriteThenListAndFight(t *testing.T) {
 	}
 }
 
+// A full index keeps the newest fights: one more append forgets the oldest row instead of dropping the new fight, the same
+// newest-kept policy the startup scan applies.
+func TestFullIndexEvictsTheOldestRow(t *testing.T) {
+	clock := &fakeClock{t: t0}
+	st := &stats{dropped: map[string]int{}}
+	s := open(t, Config{Dir: t.TempDir(), MaxRows: 2, Now: clock.Now})
+	s.SetMetrics(st)
+	f1 := mkFight("f1", "Glacienne", t0.Unix()-3*86400)
+	f2 := mkFight("f2", "Glacienne", t0.Unix()-2*86400)
+	f3 := mkFight("f3", "Glacienne", t0.Unix()-86400)
+	for _, f := range []combat.Fight{f1, f2, f3} {
+		deliver(t, s, clock, Item{Session: 7, Fight: f, At: clock.Now()})
+	}
+	if _, ok := s.Lookup(combat.Key("Glacienne", 7, "f1")); ok {
+		t.Fatal("the oldest fight's index row survived a full index")
+	}
+	for _, id := range []string{"f2", "f3"} {
+		if _, ok := s.Lookup(combat.Key("Glacienne", 7, id)); !ok {
+			t.Fatalf("the newest fight %s was dropped from a full index", id)
+		}
+	}
+	if days := s.Days("Glacienne"); len(days) != 2 {
+		t.Fatalf("Days = %+v, want the two newest nights", days)
+	}
+	if n := st.get("rows"); n != 0 {
+		t.Errorf("dropped rows = %d, want 0: a full index makes room", n)
+	}
+}
+
 func TestReopenRebuildsIndex(t *testing.T) {
 	dir := t.TempDir()
 	clock := &fakeClock{t: t0}
