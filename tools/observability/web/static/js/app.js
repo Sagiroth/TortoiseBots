@@ -5098,9 +5098,9 @@
   let cmdTrailsLoading = false;
 
   // ---- The live stream (GET /api/v1/live) ----
-  // Positions and fight events arrive as they happen instead of on the 2 s report: the dots glide between reports (glide.js)
-  // and a running fight shows while it runs. One glide state per card, one ring of the newest events per commander, and one
-  // scheduler that draws a marked map once per animation frame.
+  // Positions and fight events arrive as they happen instead of on the 2 s report: the dots are drawn in the server's past and
+  // interpolated between samples (glide.js), and a running fight shows while it runs. One glide state per card, one ring of
+  // the newest events per commander, and one scheduler that draws a marked map once per animation frame.
   const CMD_LIVE_EVENT_MAX = 12;
   const cmdGlide = {};        // commander -> Glide state
   const cmdLiveEvents = {};   // commander -> the newest fight events of the live stream, oldest first
@@ -5704,10 +5704,12 @@
         if (list === state.commanders.list) return;
         state.commanders.list = list;
         const st = cmdGlide[d.commander] || (cmdGlide[d.commander] = Glide.create());
-        const now = performance.now(), map = cmdFindBind(d.commander);
-        Glide.sampled(st, now); // the gap the dots glide over is the pos frame gap, not the 2 s report gap
-        (d.bots || []).forEach(b => { if (b && b.g != null) Glide.note(st, Glide.botKey(b.g), b.x, b.y, b.m, b.a === 1, now); });
-        (d.mobs || []).forEach(m => { if (m && m.id != null) Glide.note(st, Glide.mobKey(m.id), m.x, m.y, map ? map.mobs_map : null, true, now); });
+        const now = performance.now(), map = cmdFindBind(d.commander), ts = d.ts_ms;
+        Glide.sampled(st, now, ts); // the gap the dots are drawn behind is the pos frame gap, not the 2 s report gap
+        (d.bots || []).forEach(b => { if (b && b.g != null) Glide.note(st, Glide.botKey(b.g), b.x, b.y, b.m, b.a === 1, now, ts); });
+        (d.mobs || []).forEach(m => {
+          if (m && m.id != null) Glide.note(st, Glide.mobKey(m.id), m.x, m.y, map ? map.mobs_map : null, true, now, ts, typeof m.o === 'number' ? m.o : undefined);
+        });
         cmdSched.mark(d.commander, true);
       },
       events: d => {
@@ -5740,10 +5742,10 @@
   }
 
   // A binding of the stream merged by name, through the same gate path as a report (the WebSocket is down, so this is new).
+  // Its ts_ms stays: LiveView.noteReport hands it to Glide as the server time of these positions.
   function cmdLiveMergeBinding(d) {
     if (!d || typeof d.commander !== 'string') return;
     const bind = Object.assign({}, d);
-    delete bind.ts_ms;
     const list = (state.commanders.list || []).filter(b => b.commander !== d.commander);
     list.push(bind);
     applyCommanders({ commanders: list, fresh: true, updated_at: Math.round(Date.now() / 1000) });
@@ -6440,8 +6442,8 @@
     return { under, over };
   }
 
-  // How much room an enemy takes and whether it is the one to spot: a boss is 14 px across at any zoom (k is one screen px in
-  // drawing units), an elite takes a step up and an ordinary unit keeps its size. The caller multiplies by k.
+  // How much room an enemy takes and whether it is the one to spot: a boss's body has a 14 screen px radius at any zoom (k is
+  // one screen px in drawing units), an elite takes a step up and an ordinary unit keeps its size. The caller multiplies by k.
   function cmdMobLook(m, bossmark) {
     const rank = m && m.rank, cls = CmdView.mobClass(m);
     const boss = !!bossmark && rank === 'b', elite = !!bossmark && rank === 'e';
@@ -6683,7 +6685,7 @@
     const card = cmdCards.get(key);
     const liveBind = cmdFindBind(key);
     const rp = liveBind ? (fdReplayActive(key) || fdRunActive(key)) : null;
-    // Live: the positions glide between reports (no glide during a fight replay, which has its own track).
+    // Live: the positions are interpolated between samples (no glide during a fight replay, which has its own track).
     const bind = rp ? fdReplayBind(liveBind, rp.fight, rp.track, rp.tS) : Glide.apply(liveBind, cmdGlide[key] || (cmdGlide[key] = Glide.create()), performance.now());
     if (!card || !bind) return;
     const stage = card.querySelector('.cmd-stage'), svg = card.querySelector('svg.cmd-map');

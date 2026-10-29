@@ -288,7 +288,7 @@ How often a fighting commander group's positions are sent, in milliseconds.
 <details>
 <summary>How it works in detail</summary>
 
-While at least one bot of a bound group is in combat, the module sends one `COMMANDER_POS` datagram per group every this many milliseconds with the group's bots (place, facing, health, alive) and the enemies the lead's last 2 s report listed (place, health, victim). The dashboard glides its dots between reports, so the world tick never waits on it: the whole report is a few field reads and one guid lookup per watched enemy, with no grid or world scan. Casts do not ride this report; their start arrives as a `COMBAT_EVENTS` line and the time left is extrapolated between the 2 s reports.
+While at least one bot of a bound group is in combat, the module sends one `COMMANDER_POS` datagram per group every this many milliseconds with the group's bots (place, facing, health, alive) and the enemies the lead's last 2 s report listed (place, health, victim). The dashboard draws its dots in the past, interpolating between consecutive reports, so the world tick never waits on it and the dots never stop at a report: the whole report is a few field reads and one guid lookup per watched enemy, with no grid or world scan. Casts do not ride this report; their start arrives as a `COMBAT_EVENTS` line and the time left is extrapolated between the 2 s reports.
 
 Only acts with [`AiPlayerbot.ObservabilityRealtime`](#aiplayerbotobservabilityrealtime) on and needs [`AiPlayerbot.Observability`](#aiplayerbotobservability). At most 40 bots and 24 enemies per group per datagram.
 

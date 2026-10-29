@@ -40,15 +40,22 @@ assert.strictEqual(list[0].bots[0].x, 1, "the input list is not changed");
 assert.strictEqual(list[0].mobs[0].x, 3);
 assert.strictEqual(L.applyPos(list, { commander: "Z", bots: [] }), list, "an unknown commander changes nothing");
 
-// ---- noteReport: one glide state per commander, fed from the report; an empty map is fine
+// ---- noteReport: one glide state per commander, fed with the report's own server time; an empty map is fine
 {
   const states = {};
-  L.noteReport(states, [{ commander: "A", mobs_map: 209, bots: [{ guid: 1, x: 0, y: 0, map: 209, alive: true }], mobs: [{ id: "9", x: 3, y: 4 }] }], 0);
-  L.noteReport(states, [{ commander: "A", mobs_map: 209, bots: [{ guid: 1, x: 10, y: 0, map: 209, alive: true }], mobs: [{ id: "9", x: 5, y: 4 }] }], 1000);
+  L.noteReport(states, [{ commander: "A", mobs_map: 209, ts_ms: 5000000, bots: [{ guid: 1, x: 0, y: 0, map: 209, alive: true }], mobs: [{ id: "9", x: 3, y: 4, o: 1 }] }], 900);
+  L.noteReport(states, [{ commander: "A", mobs_map: 209, bots: [{ guid: 1, x: 10, y: 0, map: 209, alive: true }], mobs: [{ id: "9", x: 5, y: 4, o: 2 }] }], 1900);
   assert.ok(states.A && states.A.units, "the binding's own state is created");
-  assert.strictEqual(states.A.gap, 1000, "the report gap is sampled");
-  assert.strictEqual(states.A.units["b:1"].tx, 10, "the bot's target");
-  assert.strictEqual(states.A.units["m:9"].tx, 5, "the mob's target");
+  assert.deepStrictEqual(states.A.gaps, [1000], "the report gap is sampled");
+  assert.strictEqual(states.A.offset, 900 - 5000000, "a report without ts_ms falls back to the arrival time of the last server time");
+  let s = states.A.units["b:1"].samples;
+  assert.strictEqual(s[s.length - 1].x, 10, "the bot's newest sample");
+  s = states.A.units["m:9"].samples;
+  assert.strictEqual(s[s.length - 1].x, 5, "the mob's newest sample");
+  assert.strictEqual(s[s.length - 1].f, 2, "and its facing, for a boss's arrow");
+  // a later report carrying its own ts_ms moves the clock sample
+  L.noteReport(states, [{ commander: "A", mobs_map: 209, ts_ms: 5002000, bots: [], mobs: [] }], 2800);
+  assert.strictEqual(states.A.offset, 2800 - 5002000, "the smaller arrival-minus-server wins");
   L.noteReport({}, [], 0);
   L.noteReport(null, [{ commander: "A", bots: [] }], 0);
 }
@@ -63,7 +70,7 @@ assert.strictEqual(L.fallback([now - 61000, now - 2000, now - 1000], now), false
 assert.strictEqual(L.fallback([now - 30000, now - 2000, now - 1000], now), true, "three inside the minute");
 assert.strictEqual(L.fallback([], now), false);
 
-// ---- scheduler: one draw per key per animation frame, glide redraws at most every 33 ms
+// ---- scheduler: one draw per key per animation frame, glide redraws at most every Glide.FRAME_MS (16 ms)
 {
   const frames = [];
   const raf = (fn) => { frames.push(fn); return frames.length; };
@@ -77,9 +84,9 @@ assert.strictEqual(L.fallback([], now), false);
 
   t = 0; sched.mark("g", true); frames.shift()();
   t = 10; sched.mark("g", true); frames.shift()();
-  assert.deepStrictEqual(drawn, ["k", "g"], "a glide redraw inside 33 ms is skipped");
-  t = 33; sched.mark("g", true); frames.shift()();
-  assert.deepStrictEqual(drawn, ["k", "g", "g"], "the next one after 33 ms draws");
+  assert.deepStrictEqual(drawn, ["k", "g"], "a glide redraw inside 16 ms is skipped");
+  t = 16; sched.mark("g", true); frames.shift()();
+  assert.deepStrictEqual(drawn, ["k", "g", "g"], "the next one after 16 ms draws");
   t = 40; sched.mark("g"); frames.shift()();
   assert.deepStrictEqual(drawn, ["k", "g", "g", "g"], "a full draw is never throttled");
   assert.strictEqual(frames.length, 0);

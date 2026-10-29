@@ -104,20 +104,21 @@
     };
   }
 
-  // Feed one full report into the per-card glide states (commander -> state, created on first use): the gap first, then
-  // every bot and mob of that binding.
+  // Feed one full report into the per-card glide states (commander -> state, created on first use): the gap and the server
+  // time first, then every bot and mob of that binding (a boss's facing comes with it, so its arrow turns with its dot).
   function noteReport(states, list, nowMs) {
     if (!states) return;
     const G = glide();
     (Array.isArray(list) ? list : []).forEach((bind) => {
       if (!bind || typeof bind.commander !== "string") return;
       const st = states[bind.commander] || (states[bind.commander] = G.create());
-      G.sampled(st, nowMs);
+      const ts = typeof bind.ts_ms === "number" ? bind.ts_ms : undefined;
+      G.sampled(st, nowMs, ts);
       (bind.bots || []).forEach((b) => {
-        if (b && b.guid != null) G.note(st, G.botKey(b.guid), b.x, b.y, b.map, b.alive !== false, nowMs);
+        if (b && b.guid != null) G.note(st, G.botKey(b.guid), b.x, b.y, b.map, b.alive !== false, nowMs, ts);
       });
       (bind.mobs || []).forEach((m) => {
-        if (m && m.id != null) G.note(st, G.mobKey(m.id), m.x, m.y, bind.mobs_map, true, nowMs);
+        if (m && m.id != null) G.note(st, G.mobKey(m.id), m.x, m.y, bind.mobs_map, true, nowMs, ts, typeof m.o === "number" ? m.o : undefined);
       });
     });
   }
