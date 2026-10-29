@@ -322,6 +322,8 @@ Orders companion bots to sell all gray-quality junk items in their inventory to 
 
 Bots find a nearby stocked vendor NPC themselves (`UNIT_NPC_FLAG_VENDOR`) and sell trash items to free up bag space.
 
+If no bot sells anything, the reply says why: nothing grey to sell, no vendor in reach, or no grey item the bot will sell here.
+
 ### `.bot action rest`
 
 Orders companion bots to sit, eat food, and drink water until their health and mana are fully restored.

@@ -33,6 +33,8 @@
 #include "../ai/playerbot/PullOpeningPolicy.h"
 #include "../ai/playerbot/PullStartPolicy.h"
 #include "../ai/playerbot/PullRefusalPolicy.h"
+#include "../ai/playerbot/strategy/actions/SellAction.h"
+#include "../ai/playerbot/policy/gear/SellRefusalPolicy.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
 #include "../ai/playerbot/strategy/values/RtiTargetValue.h"
@@ -207,15 +209,21 @@ bool HandleSell(ChatHandler* handler, char const* args)
         return true;
     }
     uint32 succeeded = 0;
+    std::vector<std::string> refusals;
     for (Player* bot : scope)
     {
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
         if (!ai)
             continue;
-        if (ExecuteQuietAction(ai, "sell", ai::Event("bot command", "sell", requester)))
+        if (ExecuteQuietAction(ai, "sell", ai::Event("bot command", "", requester)))
             ++succeeded;
+        else
+            refusals.push_back(ai::SellAction::RefusalReason(ai));
     }
-    handler->PSendSysMessage("Commanded %u bot(s) to sell vendor trash.", succeeded);
+    if (succeeded)
+        handler->PSendSysMessage("Commanded %u bot(s) to sell vendor trash.", succeeded);
+    else
+        handler->PSendSysMessage("%s", ai::FormatSellRefusal(refusals).c_str());
     return true;
 }
 
