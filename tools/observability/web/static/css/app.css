@@ -3195,6 +3195,11 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
    it spans), leaving a blank band under every centred panel. */
 .fd-centre { display: contents; }
 .cmd-card.fd-on .fd-centre { grid-area: centre; display: grid; gap: 16px; align-content: start; min-width: 0; }
+/* The debugger's empty states: one centred line instead of blank panels (no raid bound in the All raids grid, no fight yet in
+   an open card). The card's line takes the centre column the hidden fight panels would fill. */
+.fd-nofight { grid-area: centre; margin: 0; padding: 48px 14px; text-align: center; color: var(--text-muted); font-size: 0.9rem; }
+.fd-nofight[hidden] { display: none; }
+.cmd-overview .fd-nofight { grid-column: 1 / -1; padding: 32px 14px; border: 1px dashed var(--border-color); border-radius: var(--radius); }
 
 /* The debugger's head: the prototype's commander kicker and title, the crumbs, and the refresh picker the page row would carry. */
 .cmd-headl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-width: 0; }

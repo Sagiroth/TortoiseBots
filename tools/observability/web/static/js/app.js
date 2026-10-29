@@ -5296,7 +5296,10 @@
     if (!open) {
       fdLeaveCard();
       if (listEl) { listEl.hidden = true; listEl.innerHTML = ''; }
-      if (grid) { grid.hidden = false; setHtml(grid, fdGridHtml(FdTabs.sortBinds(all), tabs)); }
+      if (grid) {
+        grid.hidden = false;
+        setHtml(grid, all.length ? fdGridHtml(FdTabs.sortBinds(all), tabs) : `<p class="fd-nofight">${esc(FD_EMPTY.noRaid)}</p>`);
+      }
       fdGridPoll(all);
       return;
     }
@@ -7013,6 +7016,7 @@
           <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><div class="fd-chips"></div></div><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
           <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
         </div>
+        <p class="fd-nofight" hidden></p>
         <div class="cmd-panels">
           <div class="cmd-panel"><h3 class="cmd-h">Notes</h3><div class="cmd-notes"></div></div>
           <div class="cmd-panel"><h3 class="cmd-h">Threat</h3><div class="cmd-threat"></div></div>
@@ -7208,7 +7212,9 @@
     set('cmd-kpi-bots', bots);
     set('cmd-kpi-dead', down);
     set('cmd-kpi-age', age >= 0 ? CmdView.ageText(age) + ' ago' : '–');
-    emptyEl.style.display = c.list.length ? 'none' : '';
+    const mode = cmdPageMode();
+    // The debugger has its own one-line empty state (the All raids grid says no raid is bound); the Live instructions are Live's.
+    emptyEl.style.display = c.list.length || mode === 'debug' ? 'none' : '';
     const why = document.getElementById('cmd-empty-why');
     if (why) {
       why.textContent = c.lost ? 'The game server has not reported for several minutes, so the last bindings were dropped.'
@@ -7219,7 +7225,6 @@
     // Only the commanders' cards live in #cmd-list; the Dungeons tab draws its own (the shared cmdCards map holds both).
     const all = cmdAllBinds().filter(b => !b.dungeon);
     fdTabsSync(all);
-    const mode = cmdPageMode();
     cmdPaintPageMode(mode);
     const tabs = fdTabsModel(all);
     fdTabPaint(tabs, mode);
@@ -7383,7 +7388,15 @@
   const FD_DAYS_MS = 300000;  // the night picker's list of stored days: asked once per card per 5 min
   const FD_HIST_MS = 10000;   // one past night's list, held as long as tonight's (the shared fights feed's window)
   const FD_PACK_MS = 60000;   // one pack's table, held a minute
+  const FD_EMPTY = { noRaid: 'No raid bound right now.', noFight: 'No fight yet: the first pull shows here.' };
   const cmdFd = {};
+
+  // The one line a debugger card shows in place of an empty fight view: no fight in the list and none live. Null once a fight
+  // (or a live one) exists, even while its detail is still loading.
+  function fdEmptyNote(list, fight, selLive) {
+    if (selLive || fight || (Array.isArray(list) && list.length)) return '';
+    return FD_EMPTY.noFight;
+  }
 
   function fdState(key) {
     if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
@@ -7665,6 +7678,13 @@
     const hist = fdFightHist(selRow, det, fight, bind);
     if (fd.death != null && fight && !(fight.deaths || [])[fd.death]) fd.death = null;
     const recaps = fight ? FightDebug.deathRecaps(fight) : [];
+    // No fight yet: one line where the fight panels would be, and none of their empty boxes (the run strip, checks, timeline
+    // and the role bars wait for a fight).
+    const emptyNote = fdEmptyNote(list, fight, selLive);
+    const noWin = !!emptyNote;
+    const noWinEl = card.querySelector('.fd-nofight');
+    if (noWinEl) { noWinEl.hidden = !noWin; noWinEl.textContent = emptyNote; }
+    card.querySelectorAll('.fd-runtl, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = noWin; });
 
     // The lanes and plan facts the checks read: one lanes result feeds the strip and the lane row, the plan's ring strays the
     // route row. The extra is kept on the detail, so the rail grades the fight the same way.

@@ -21,7 +21,13 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, { filename: "fightdebug.js" });
 vm.runInContext([grab("esc"), grab("numOr0"), grab("fdHeaderHtml"), grab("fdFrameStats"), grab("fdReadyHtml"), grab("fdLegendHtml"),
   grab("cmdHeadView")].join("\n"), ctx);
-
+function grabConst(name) {
+  const re = new RegExp(`^  const ${name} = `, "m"), m = re.exec(src);
+  assert.ok(m, `${name} not found`);
+  const end = src.indexOf(";\n", m.index);
+  return src.slice(m.index, end + 2);
+}
+vm.runInContext(grabConst("FD_EMPTY") + grab("fdEmptyNote"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const plain = (v) => JSON.parse(JSON.stringify(v));
 const fights = JSON.parse(fs.readFileSync(path.join(__dirname, "testdata", "walk2-fights.json"), "utf8"));
@@ -45,6 +51,15 @@ assert.deepStrictEqual(plain(run("cmdHeadView(false)")), { title: true, badges: 
 // ---- the page chrome goes in the page's Fight debugger mode ---------------------------------------------------------
 assert.ok(src.includes("cmdPageMode(") && src.includes("cmd-debug-only"), "the page's debugger mode turns its chrome off");
 assert.ok(src.includes("cmd-debug-grid"), "the All raids tab keeps a chrome of its own");
+
+// ---- the empty states: one line, no blank fight boxes ------------------------------------------------------------------
+assert.strictEqual(run("FD_EMPTY.noRaid"), "No raid bound right now.");
+assert.strictEqual(run("fdEmptyNote([], null, false)"), "No fight yet: the first pull shows here.", "no fight: the card says where it will show");
+assert.strictEqual(run("fdEmptyNote([], null, true)"), "", "a live fight is a fight");
+assert.strictEqual(run("fdEmptyNote([{ key: 'k' }], null, false)"), "", "a fight waiting for its detail is not empty");
+assert.strictEqual(run("fdEmptyNote([], { bots: [] }, false)"), "", "a loaded fight is not empty");
+assert.ok(src.includes('<p class="fd-nofight" hidden></p>'), "the card carries the line");
+assert.ok(src.includes("FD_EMPTY.noRaid"), "the All raids grid says no raid is bound");
 
 // ---- the header chips: the prototype's five, plus the run chip carrying the step -----------------------------------
 const head = run("fdHeaderHtml(bind, rows, details, layout, '19:29')", { bind: BIND, rows: ROWS, details: DETAILS, layout: LAYOUT });
