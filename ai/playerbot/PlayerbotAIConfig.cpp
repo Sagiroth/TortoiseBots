@@ -376,7 +376,6 @@ bool PlayerbotAIConfig::Initialize()
     worldPvpSeekRerollMinutes = config.GetIntDefault("AiPlayerbot.WorldPvpSeekRerollMinutes", 30);
 
 
-    LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.RandomBotQuestIds", "7848,3802,5505,6502,7761,9378"), randomBotQuestIds);
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.ImmuneSpellIds", "19428"), immuneSpellIds);
 
     randomBotAutologin = config.GetBoolDefault("AiPlayerbot.RandomBotAutologin", true);

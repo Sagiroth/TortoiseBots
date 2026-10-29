@@ -1173,9 +1173,6 @@ AiPlayerbot.LevelCheck = 30
 # Spells that won't affect bots
 AiPlayerbot.ImmuneSpellIds = 19428
 
-# Quest that will be completed and rewarded to all random bots
-AiPlayerbot.RandomBotQuestIds = 7848,3802,5505,6502,7761,9378
-
 # Randombots will invite players to groups/raids/guilds. (This can also be disabled by turning on DnD on your character)
 # AiPlayerbot.RandomBotInvitePlayer = 1
 

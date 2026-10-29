@@ -57,10 +57,6 @@ DISPLAY_FILES = ("runtime/ObservabilityEmitter.cpp",)
 # Members read into PlayerbotAIConfig that no engine code consumes yet.
 # One line of player words why reading it is still the better choice.
 ALLOWLIST = {
-    # The broader read scan (static_cast, clamps, LoadList containers)
-    # surfaced this pre-existing read with no engine consumer. Kept so the
-    # gate stays green; the owner decides wire-up or removal.
-    'randomBotQuestIds': 'pending owner decision #1315',
 }
 
 DISPLAY_ONLY_ALLOWLIST = {}

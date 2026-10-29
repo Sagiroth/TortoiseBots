@@ -114,7 +114,6 @@ public:
     std::list<uint32> randomBotAccounts;
     std::unordered_set<uint32> nonRandomBotAccounts;
     std::list<uint32> randomBotSpellIds;
-    std::list<uint32> randomBotQuestIds;
     std::list<uint32> immuneSpellIds;
     std::list<std::pair<uint32, uint32>> freeAltBots;
     std::list<std::string> toggleAlwaysOnlineAccounts;
