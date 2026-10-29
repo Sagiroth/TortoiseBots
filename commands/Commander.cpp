@@ -12361,9 +12361,11 @@ static void SampleBoundFights(uint32 diff)
             continue;
         Player* lead = FindCharacter(binding->leadGuid);
         Group* group = lead ? lead->GetGroup() : nullptr;
-        bool const leadUsable = lead && group && lead->IsInWorld();
-        // The lead is gone (out of world through a map transition, no group) and
-        // the sampler cannot feed: past the grace the fight it left open closes.
+        bool const leadUsable = BoundFight::LeadUsable(lead != nullptr, lead && lead->IsInWorld(),
+            group ? group->GetId() : 0, binding->groupId);
+        // The lead is gone (out of world through a map transition, no group or
+        // another one after a rejoin) and the sampler cannot feed: past the
+        // grace the fight it left open closes.
         if (s_leadAway()[commanderRaw].Overdue(leadUsable, now))
             CombatMonitorService::Instance().CloseUnfinished(binding->groupId, now);
         if (!leadUsable)

@@ -24,10 +24,20 @@ inline bool SamplerFeeds(bool bound, bool runFedEver, uint32_t runFedAtMs, uint3
     return bound && (!runFedEver || nowMs - runFedAtMs >= kRunFedWindowMs);
 }
 
+// A lead is usable for its binding's sampler tick while it is in world in the
+// group the binding was made with. A lead that left and rejoined elsewhere
+// resolves to another group id; that, and a missing group, is away, so the
+// grace closes the fight it left open instead of feeding a stranger's.
+inline bool LeadUsable(bool resolved, bool inWorld, uint32_t leadGroupId, uint32_t bindingGroupId)
+{
+    return resolved && inWorld && leadGroupId != 0 && leadGroupId == bindingGroupId;
+}
+
 // One binding's clock of its lead being unusable (gone from the world through a
-// map transition, no group, a character that cannot be resolved): until the
-// lead is back the sampler has nothing to feed the open fight with, so after
-// the grace the fight is closed as unfinished instead of kept alive forever.
+// map transition, no group, a character that cannot be resolved, a lead that
+// rejoined elsewhere): until the lead is back the sampler has nothing to feed
+// the open fight with, so after the grace the fight is closed as unfinished
+// instead of kept alive forever.
 struct LeadAway
 {
     bool sinceSet = false;

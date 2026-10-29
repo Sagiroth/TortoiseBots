@@ -35,6 +35,31 @@ static void TestSamplerFeeds()
     CHECK(!SamplerFeeds(true, true, 0xFFFFFF00u, 0x00000400u));   // 1280 ms across the tick wrap
 }
 
+// A lead is usable for its binding only in the group the binding was made
+// with: a lead that left and rejoined elsewhere resolves to another group id,
+// which is away like a missing one.
+static void TestLeadUsable()
+{
+    CHECK(LeadUsable(true, true, 7, 7));       // in world, in the binding's group
+    CHECK(!LeadUsable(false, false, 0, 7));    // the character cannot be resolved
+    CHECK(!LeadUsable(true, false, 7, 7));     // out of world (a map transition)
+    CHECK(!LeadUsable(true, true, 0, 7));      // no group any more
+    CHECK(!LeadUsable(true, true, 9, 7));      // rejoined in another group
+    CHECK(!LeadUsable(true, true, 7, 0));      // no binding group: never usable
+}
+
+static void TestLeadInAnotherGroupClosesTheFight()
+{
+    uint32_t const bindingGroup = 7;
+    LeadAway away;
+    uint32_t const now = 1000;
+    bool const usable = LeadUsable(true, true, 9, bindingGroup);
+    CHECK(!usable);                            // the sampler's feed gate is shut
+    CHECK(!away.Overdue(usable, now));         // the first away tick starts the grace
+    CHECK(!away.Overdue(usable, now + 29000)); // 29 s: the old fight is still open
+    CHECK(away.Overdue(usable, now + 30000));  // 30 s: it closes unfinished
+}
+
 // The open-fight clock: a lead away for the grace closes the fight it left
 // open (unfinished), a lead back inside the grace keeps it, and the subtraction
 // crosses a tick wrap.
@@ -93,6 +118,8 @@ static void TestPickBoss()
 int main()
 {
     TestSamplerFeeds();
+    TestLeadUsable();
+    TestLeadInAnotherGroupClosesTheFight();
     TestLeadAwayGrace();
     TestPickBoss();
     std::printf("bound fight policy: %d checks passed\n", checks);

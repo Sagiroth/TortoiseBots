@@ -166,6 +166,14 @@ class CombatMonitorWiringTest(unittest.TestCase):
         self.assertIn("SamplerFeeds(", sample)
         self.assertIn("FeedCombatMonitor(", sample)
         self.assertIn("NoteBoss(", sample)
+        # A lead in another group (it left and rejoined elsewhere) is away for
+        # this binding: it never feeds the fight, and the grace closes it.
+        self.assertIn("LeadUsable(", sample)
+        self.assertIn("group ? group->GetId() : 0, binding->groupId", sample)
+        self.assertLess(sample.index("LeadUsable("), sample.index(".Overdue("),
+                        "the away clock uses the group-matched lead, not any group")
+        self.assertLess(sample.index("if (!leadUsable)"), sample.index("FeedCombatMonitor("),
+                        "an unusable lead is never fed")
         enabled = sample.index("Enabled()")
         self.assertLess(enabled, sample.index("SamplerFeeds("), "nothing is sampled while the monitor is off")
         self.assertNotIn("DungeonRuns()", sample[:sample.index("SamplerFeeds(")],
