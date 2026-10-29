@@ -135,6 +135,8 @@ void DebugAction::FakeSpell(uint32 spellId, Unit* truecaster, Unit* caster, Obje
 
 void DebugAction::addAura(uint32 spellId, Unit* target)
 {
+    if (!target)
+        return;
     SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
     if (!spellInfo)
         return;
@@ -187,6 +189,8 @@ bool DebugAction::HandleDSpell(Event& event, Player* requester, const std::strin
         botPos.setZ(botPos.GetHeight(bot->GetInstanceId()) + 2);
 
         Creature* wpCreature = bot->SummonCreature(2334, botPos.getX(), botPos.getY(), botPos.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
+        if (!wpCreature)
+            continue;
 
         FakeSpell(spellEffect, wpCreature, wpCreature, prev->getObjectGuid(), {}, {}, botPos, botPos);
 
@@ -246,12 +250,11 @@ bool DebugAction::HandleASpell(Event& event, Player* requester, const std::strin
         botPos.setZ(botPos.GetHeight(bot->GetInstanceId()) + 2);
 
         Creature* wpCreature = bot->SummonCreature(2334, botPos.getX(), botPos.getY(), botPos.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 5000.0f + i * 100.0f);
+        if (!wpCreature)
+            continue;
         wpCreature->SetObjectScale(0.5f);
 
-        if (wpCreature)
-        {
-            addAura(spellEffect, wpCreature);
-        }
+        addAura(spellEffect, wpCreature);
     }
     return true;
 }
@@ -274,8 +277,13 @@ bool DebugAction::HandleCSpell(Event& event, Player* requester, const std::strin
         botPos.setZ(botPos.GetHeight(bot->GetInstanceId()) + 2);
 
         Creature* wpCreature = bot->SummonCreature(2334, botPos.getX(), botPos.getY(), botPos.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
+        if (!wpCreature)
+            continue;
         units.push_back(wpCreature->getObjectGuid());
     }
+
+    if (units.empty())
+        return true;
 
     WorldPosition botPos(bot);
 
@@ -512,7 +520,7 @@ bool DebugAction::HandleCSpellMap(Event& event, Player* requester, const std::st
                 wpCreature->CastSpell(lCreature, effect, TRIGGERED_OLD_TRIGGERED);
             }
 
-            lCreature = wpCreature;
+            lCreature = wpCreature ? wpCreature : lCreature;
         }
     }
     return true;
@@ -569,6 +577,8 @@ bool DebugAction::HandleGSpellMap(Event& event, Player* requester, const std::st
             botPos.setZ(botPos.GetHeight(bot->GetInstanceId()));
 
             Creature* wpCreature = bot->SummonCreature(2334, botPos.getX(), botPos.getY(), botPos.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
+            if (!wpCreature)
+                continue;
 
             all_targets.push_back(wpCreature->getObjectGuid());
         }
@@ -611,9 +621,9 @@ bool DebugAction::HandleGSpellMap(Event& event, Player* requester, const std::st
                         }
                     }
 
-                Unit* realCaster = ai->GetUnit(all_targets[i]);//ai->GetUnit(all_targets[urand(0, all_targets.size() - 1)]);
-                Unit* caster = ai->GetUnit(all_targets[i]);//ai->GetUnit(all_targets[urand(0, all_targets.size() - 1)]);
-                Unit* target = ai->GetUnit(all_targets[i + 1]);
+                Unit* realCaster = (i < all_targets.size()) ? ai->GetUnit(all_targets[i]) : nullptr;
+                Unit* caster = (i < all_targets.size()) ? ai->GetUnit(all_targets[i]) : nullptr;
+                Unit* target = (i + 1 < all_targets.size()) ? ai->GetUnit(all_targets[i + 1]) : nullptr;
 
                 if (!realCaster)
                     realCaster = bot;
@@ -647,6 +657,8 @@ bool DebugAction::HandleMSpellMap(Event& event, Player* requester, const std::st
             botPos.setZ(botPos.GetHeight(bot->GetInstanceId()));
 
             Creature* wpCreature = bot->SummonCreature(2334, botPos.getX(), botPos.getY(), botPos.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
+            if (!wpCreature)
+                continue;
 
             all_targets.push_back(wpCreature->getObjectGuid());
         }
@@ -688,9 +700,9 @@ bool DebugAction::HandleMSpellMap(Event& event, Player* requester, const std::st
                         }
                     }
 
-                Unit* realCaster = ai->GetUnit(all_targets[i]);//ai->GetUnit(all_targets[urand(0, all_targets.size() - 1)]);
-                Unit* caster = ai->GetUnit(all_targets[i]);//ai->GetUnit(all_targets[urand(0, all_targets.size() - 1)]);
-                Unit* target = ai->GetUnit(all_targets[i + 1]);
+                Unit* realCaster = (i < all_targets.size()) ? ai->GetUnit(all_targets[i]) : nullptr;
+                Unit* caster = (i < all_targets.size()) ? ai->GetUnit(all_targets[i]) : nullptr;
+                Unit* target = (i + 1 < all_targets.size()) ? ai->GetUnit(all_targets[i + 1]) : nullptr;
 
                 if (!realCaster)
                     realCaster = bot;
@@ -725,6 +737,8 @@ bool DebugAction::HandleSoundMap(Event& event, Player* requester, const std::str
             botPos.setZ(botPos.GetHeight(bot->GetInstanceId()));
 
             Creature* wpCreature = bot->SummonCreature(6, botPos.getX(), botPos.getY(), botPos.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
+            if (!wpCreature)
+                continue;
 
             wpCreature->PlayDistanceSound(effect);
         }

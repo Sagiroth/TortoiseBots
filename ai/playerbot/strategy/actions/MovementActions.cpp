@@ -176,6 +176,9 @@ void MovementAction::CreateWp(Player* wpOwner, float x, float y, float z, float 
     //    delay *= 0.25;
 
     Creature* wpCreature = wpOwner->SummonCreature(entry, x, y, z - 1, o, TEMPSPAWN_TIMED_DESPAWN, delay);
+    if (!wpCreature)
+        return;
+
     ai->AddAura(wpCreature, 246);
 
     if (!important)
@@ -355,6 +358,8 @@ bool MovementAction::MoveOnTransport(PlayerbotAI* ai, GenericTransport* transpor
         for (auto& p : path)
         {
             Creature* wpCreature = bot->SummonCreature(2334, p.getX(), p.getY(), p.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
+            if (!wpCreature)
+                continue;
 
             transport->AddPassenger(wpCreature);
 
@@ -1647,6 +1652,8 @@ MovementAction::SwimHandoffResult MovementAction::SwimHandoff(const WorldPositio
         for (auto& p : movePath.GetPath())
         {
             Creature* wpCreature = bot->SummonCreature(2334, p.point.getX(), p.point.getY(), p.point.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
+            if (!wpCreature)
+                continue;
             ai->AddAura(wpCreature, 246);
             if (p.point == movePath.GetBack())
                 ai->AddAura(wpCreature, 1130);
@@ -4292,6 +4299,9 @@ bool JumpAction::Execute(ai::Event &event)
                 if (showLanding)
                 {
                     Creature* wpCreature = bot->SummonCreature(2334, jumpPoint.getX(), jumpPoint.getY(), jumpPoint.getZ() - 1, bot->getOrientation(), TEMPSPAWN_TIMED_DESPAWN, 3000);
+                    if (!wpCreature)
+                        return true;
+
                     PlayerbotAI::AddAura(wpCreature, 246);
 
                     float pointAngle = src.GetAngleTo(jumpPoint);
@@ -4314,6 +4324,9 @@ bool JumpAction::Execute(ai::Event &event)
                 if (showLanding)
                 {
                     Creature* wpCreature = bot->SummonCreature(2334, possibleLanding.getX(), possibleLanding.getY(), possibleLanding.getZ() - 1, bot->getOrientation(), TEMPSPAWN_TIMED_DESPAWN, 3000);
+                    if (!wpCreature)
+                        return true;
+
                     PlayerbotAI::AddAura(wpCreature, 246);
 
                     float pointAngle = src.GetAngleTo(possibleLanding);
@@ -4369,6 +4382,8 @@ bool JumpAction::Execute(ai::Event &event)
         if (showLanding || ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
         {
             Creature* wpCreature = bot->SummonCreature(2334, jumpLanding.getX(), jumpLanding.getY(), jumpLanding.getZ() - 1, bot->getOrientation(), TEMPSPAWN_TIMED_DESPAWN, 3000);
+            if (!wpCreature)
+                return DoJump(jumpLanding, highestPoint, angle, sPlayerbotAIConfig.jumpVSpeed, jumpSpeed, timeToLand, distToLand, maxHeight, goodLanding, jumpInPlace, jumpBackward, showLanding);
             PlayerbotAI::AddAura(wpCreature, 246);
             if (showLanding)
             {
@@ -5065,7 +5080,8 @@ WorldPosition JumpAction::GetPossibleJumpStartForInRange(const WorldPosition& sr
         if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
         {
             Creature* wpCreature = bot->SummonCreature(15631, closest.getX(), closest.getY(), closest.getZ(), closest.getO(), TEMPSPAWN_TIMED_DESPAWN, 2000.0f);
-            wpCreature->SetObjectScale(0.2f);
+            if (wpCreature)
+                wpCreature->SetObjectScale(0.2f);
         }
 
         // recalculate to get landing and angle
