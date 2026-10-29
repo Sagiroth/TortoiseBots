@@ -140,4 +140,12 @@ assert.strictEqual(B.model(null, mob, ev, 0, 1), null);
 assert.strictEqual(B.render(null, p), "");
 assert.strictEqual(B.render(B.normalize({ bosses: [] }), p), "");
 
+// The committed table (tools/boss_data.py writes rules as objects): its phases must read as rules, not "[object Object]".
+const REAL = B.normalize(require(path.resolve(path.dirname(process.argv[2]), "../../data/boss_abilities.json")));
+const ven = (REAL.byEntry || REAL.bosses || REAL)["14507"];
+assert.deepStrictEqual(ven.phases.map((x) => x.rule), ["aura=23849", "hp<50", "start"]);
+assert.strictEqual(B.phaseOf(ven, { hp: 60, au: [] }).phase, "p1");
+assert.strictEqual(B.phaseOf(ven, { hp: 40, au: [] }).phase, "snake");
+assert.strictEqual(B.phaseOf(ven, { hp: 80, au: [{ id: 23849 }] }).phase, "snake");
+
 console.log("boss panel ok");

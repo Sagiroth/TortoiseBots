@@ -65,12 +65,26 @@
     };
   }
 
+  // The table (tools/boss_data.py) writes a rule as an object ({kind:"hp",hp:50}, {kind:"aura",aura:id},
+  // {kind:"flag",flag:"i"}, {kind:"start"}); the matcher reads the text form ("hp<50", "aura=id", "flag=i", "start").
+  function ruleText(rule) {
+    if (rule && typeof rule === "object") {
+      const kind = str(rule.kind).toLowerCase();
+      if (kind === "hp" && num(rule.hp) !== null) return "hp<" + num(rule.hp);
+      if (kind === "aura" && num(rule.aura) !== null) return "aura=" + num(rule.aura);
+      if (kind === "flag" && str(rule.flag)) return "flag=" + str(rule.flag);
+      if (kind === "start") return "start";
+      return "";
+    }
+    return str(rule);
+  }
+
   function phase(row) {
     if (row == null) return null;
     if (typeof row === "string") return { name: row, rule: "", order: 0 };
     if (typeof row !== "object") return null;
     const name = str(first(row.name, row.phase, row.key));
-    const rule = str(first(row.rule, row.a, ""));
+    const rule = ruleText(first(row.rule, row.a, ""));
     if (!name) return null;
     return { name, rule, order: num(first(row.order, row.b)) || 0 };
   }
@@ -166,6 +180,7 @@
       const id = num(r.slice(5));
       return id !== null && arr(mob && mob.au).some((a) => a && num(a.id) === id);
     }
+    if (r === "start") return true;
     if (r.indexOf("flag=") === 0) {
       const f = r.slice(5).trim();
       return !!f && str(mob && mob.uf).toLowerCase().indexOf(f) >= 0;
