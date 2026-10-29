@@ -259,9 +259,33 @@ const S0 = 1791990030000; // its server time
   near(older.delay, 625, "nor the delay");
 }
 
+// ---- units no report has carried for 15 s are pruned: a rotating pack leaves no trace on the card
+{
+  const st = G.create();
+  let next = 0, now = T0, ts = S0;
+  G.sampled(st, now, ts, undefined, false);
+  G.note(st, "b1", 0, 0, 209, true, now, ts);
+  for (let sec = 0; sec <= 3600; sec += 2) {
+    now = T0 + sec * 1000;
+    ts = S0 + sec * 1000;
+    G.sampled(st, now, ts, undefined, false);
+    G.note(st, "b1", sec, 0, 209, true, now, ts);
+    for (let i = 0; i < 10; i++) {
+      G.note(st, "m" + (next % 1000), i, i, 209, true, now, ts);
+      next += 1;
+    }
+  }
+  const units = Object.keys(st.units);
+  assert.ok(units.length <= 81, "only the units of the last 15 s are kept: " + units.length);
+  assert.ok(units.indexOf("b1") >= 0, "a unit the report keeps carrying stays");
+  assert.ok(units.indexOf("m" + ((next - 200 + 1000) % 1000)) < 0, "a mob last carried 40 s ago is gone");
+  assert.ok(next > 1000, "the ids really rotated");
+}
+
 // ---- the frame cap is 60 fps now (16 ms)
 assert.strictEqual(G.FRAME_MS, 16, "the dots redraw every animation frame");
 assert.strictEqual(G.BACK_MS, 2000, "a clock jump is measured against the newest server time");
+assert.strictEqual(G.PRUNE_MS, 15000, "a unit no report carried for 15 s is gone");
 assert.strictEqual(G.POS_WINDOW_MS, 3000, "position frames own the delay while they run");
 assert.strictEqual(G.SAMPLES, 4, "four samples a unit");
 assert.strictEqual(G.EXTRAP_MS, 300);

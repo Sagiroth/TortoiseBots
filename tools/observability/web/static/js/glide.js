@@ -14,6 +14,7 @@
   const DELAY_MIN_MS = 300, DELAY_MAX_MS = 2600;
   const EXTRAP_MS = 300;  // past the newest sample, walk on along the last velocity this long, then hold
   const BACK_MS = 2000;   // a frame this much older than the newest server time is a clock reset, not a reorder
+  const PRUNE_MS = 15000; // a unit no report has carried for this long is gone from the map
   const POS_WINDOW_MS = 3000; // while position frames run, only they say how far behind the map is drawn
   const TAU = Math.PI * 2;
   // The same jump rule as the trails (commanders.js, the daemon's JumpLimitYd): 12 yd of slack plus 20 yd for each second,
@@ -53,6 +54,17 @@
     st.lastClock = null;
     st.newestClock = null;
     st.posAt = null;
+  }
+
+  // On every report: a unit the report did not carry for PRUNE_MS is gone (the report lists every unit the card draws, so a
+  // rotating pack leaves no trace on the card).
+  function prune(st, nowMs) {
+    const units = st && st.units;
+    if (!units) return;
+    Object.keys(units).forEach((k) => {
+      const u = units[k];
+      if (u && typeof u.lastSeen === "number" && nowMs - u.lastSeen > PRUNE_MS) delete units[k];
+    });
   }
 
   const botKey = (guid) => "b:" + String(guid);
@@ -101,6 +113,7 @@
     if (!st) return;
     const t = clockOf(st, nowMs, tsMs, session);
     if (pos) st.posAt = nowMs;
+    prune(st, nowMs);
     if (typeof st.lastClock !== "number") {
       st.lastClock = t;
       return;
@@ -162,16 +175,16 @@
     const key = String(id), live = alive !== false, f = typeof face === "number" && isFinite(face) ? face : undefined;
     const t = clockOf(st, nowMs, tsMs), prev = st.units[key];
     if (!prev) {
-      st.units[key] = { samples: [{ t: t, x: x, y: y, f: f }], map: map, alive: live };
+      st.units[key] = { samples: [{ t: t, x: x, y: y, f: f }], map: map, alive: live, lastSeen: nowMs };
       return;
     }
     const last = prev.samples[prev.samples.length - 1];
-    if (t <= last.t) { prev.map = map; prev.alive = live; return; }
+    if (t <= last.t) { prev.map = map; prev.alive = live; prev.lastSeen = nowMs; return; }
     const gap = t - last.t;
     const snap = map !== prev.map || !live || gap > CAP_MS || Math.hypot(last.x - x, last.y - y) > jumpLimitYd(gap);
     const samples = snap ? [] : prev.samples.slice(-(SAMPLES - 1));
     samples.push({ t: t, x: x, y: y, f: f });
-    st.units[key] = { samples: samples, map: map, alive: live };
+    st.units[key] = { samples: samples, map: map, alive: live, lastSeen: nowMs };
   }
 
   // Whether any unit is still moving (the page keeps drawing every frame while this is true).
@@ -209,9 +222,9 @@
   }
 
   const api = {
-    CAP_MS, FRAME_MS, BACK_MS, POS_WINDOW_MS, SAMPLES, OFFSETS, GAPS, DELAY_FACTOR, DELAY_MIN_MS, DELAY_MAX_MS, EXTRAP_MS,
+    CAP_MS, FRAME_MS, BACK_MS, PRUNE_MS, POS_WINDOW_MS, SAMPLES, OFFSETS, GAPS, DELAY_FACTOR, DELAY_MIN_MS, DELAY_MAX_MS, EXTRAP_MS,
     SLACK_YD, YD_PER_SEC, MAX_GAP_SEC,
-    jumpLimitYd, create, botKey, mobKey, median, angleLerp, sampled, delayOf, renderTime, at, note, active, apply,
+    jumpLimitYd, create, botKey, mobKey, median, angleLerp, sampled, delayOf, renderTime, at, note, active, apply, prune,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Glide = api;
 })(typeof self !== "undefined" ? self : this);
