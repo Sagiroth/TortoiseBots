@@ -288,3 +288,9 @@ func TestFightHistoryJS(t *testing.T) {
 func TestFdLiveEngagedJS(t *testing.T) {
 	runCheck(t, "fd_live_engaged_check.js", "../../web/static/js/app.js", "../../web/static/js/fightdebug.js")
 }
+
+// TestCmdRouteJS runs cmd_route_check.js: the page's route in app.js. A profile opened from the Fight debugger keeps the raid
+// tab and its hash, so the drawer closes onto the same view; switching tabs drops it, and the All raids deep link keeps its form.
+func TestCmdRouteJS(t *testing.T) {
+	runCheck(t, "cmd_route_check.js", "../../web/static/js/app.js")
+}

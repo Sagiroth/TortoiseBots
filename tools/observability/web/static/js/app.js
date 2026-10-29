@@ -847,12 +847,14 @@
   }
 
   // Change the route: switching tab closes the profile unless a bot is given;
-  // switching only the profile tab replaces the history entry.
+  // switching only the profile tab replaces the history entry. A change that stays on the Commanders tab
+  // keeps the open raid tab it already shows, so a profile drawn over the Fight debugger closes back onto it.
   function go(partial, opts) {
-    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.dungeons.openKey, cmd: null }, partial);
+    const cur = parseRoute();
+    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.dungeons.openKey, cmd: cur.cmd }, partial);
     if (partial.tab && !('bot' in partial)) next.bot = null;
     if (partial.tab && !('run' in partial)) next.run = null;
-    if (partial.tab && !('cmd' in partial)) next.cmd = null;
+    if (partial.tab && partial.tab !== state.activeTab && !('cmd' in partial)) next.cmd = null;
     const hash = routeHash(next);
     if (opts && opts.replace) {
       history.replaceState(null, '', hash);
