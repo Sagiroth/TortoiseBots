@@ -43,7 +43,8 @@ const blockOf = (head) => {
   return css.slice(at, next < 0 ? css.length : next);
 };
 const later = blockOf("/* ---------- Dashboard phase A: plan layer, fight replay, aggro lanes ---------- */")
-  + blockOf("/* ---------- Ready check ---------- */");
+  + blockOf("/* ---------- Ready check ---------- */")
+  + blockOf("/* ---------- Fight history ---------- */");
 const missing = [...emitted].filter((c) => !new RegExp("\\." + c + "(?![\\w-])").test(block)
   && !new RegExp("\\." + c + "(?![\\w-])").test(later));
 assert.deepStrictEqual(missing, [], "classes without a rule: " + missing.join(", "));

@@ -30,8 +30,8 @@ vm.createContext(ctx);
 vm.runInContext(tabsSrc, ctx, { filename: "fdtabs.js" });
 vm.runInContext([
   grab("cmdForgetCard"), grab("cmdRescueLayers"), grab("fdState"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
-  grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"),
-  grabConst("FD_DETAIL_MAX"), grabConst("FD_DETAIL_BACKOFF"), grabConst("FD_DETAIL_FAIL_MAX"),
+  grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"), grab("fdDaysLoad"),
+  grabConst("FD_DETAIL_MAX"), grabConst("FD_DETAIL_BACKOFF"), grabConst("FD_DETAIL_FAIL_MAX"), grabConst("FD_DAYS_MS"),
   "var document = { getElementById: () => null };",
   "var cmdPageMode = () => 'debug';",
   "var fdPage = { open: null };",

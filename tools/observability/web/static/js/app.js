@@ -6959,8 +6959,8 @@
           <div class="fd-raidhead"><h3 class="cmd-h">Raid frames<span class="fd-dead"></span></h3><div class="fd-ready"></div></div>
           <div class="fd-frames" role="group" aria-label="Raid frames"></div>
         </section>
-        <div class="fd-railcol" hidden><h3 class="cmd-h">Fights</h3><nav class="fd-rail" aria-label="Fights"></nav></div>
-        <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><div class="fd-chips"></div></div><ol class="fd-checklist"></ol></section>
+        <div class="fd-railcol" hidden><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><nav class="fd-rail" aria-label="Fights"></nav></div>
+        <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><div class="fd-chips"></div></div><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
         <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
         <section class="fd-roles" aria-label="Roles" hidden><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
         <div class="cmd-left">
@@ -7027,11 +7027,25 @@
     // The debugger: the mode toggle, the fight rail, a tile, a check's show/recap and a timeline skull. Each one redraws the card's
     // sections and its map (the death marks and the ring follow the pick).
     card.addEventListener('click', e => {
-      const t = e.target.closest && e.target.closest('[data-fd-fight], [data-fd-bot], [data-fd-death], [data-fd-profile], [data-fd-ready]');
+      const t = e.target.closest && e.target.closest('[data-fd-fight], [data-fd-bot], [data-fd-death], [data-fd-profile], [data-fd-ready], [data-fd-open]');
       if (!t) return;
       const fd = cmdFd[key];
       if (!fd) return;
       if (!card.classList.contains('fd-on')) return;
+      if (t.dataset.fdOpen != null) {
+        // The pack table's time: that fight, on its own night.
+        fd.day = t.dataset.fdDay || '';
+        delete fd.hist[fd.day];
+        fd.sel = fdDecodeKey(t.dataset.fdOpen);
+        fd.userSel = true;
+        fd.death = null;
+        fd.list = [];
+        fdRunStopAll(fd);
+        const bind = cmdFindBind(key);
+        if (bind) fdLoad(card, bind);
+        fdRender(key);
+        return;
+      }
       if (t.dataset.fdReady != null) {
         fd.readyOpen = !fd.readyOpen;
         fdRender(key);
@@ -7073,6 +7087,31 @@
       if (i < 0 || j < 0 || j >= cards.length) return;
       e.preventDefault();
       cards[j].focus();
+    });
+    // The night picker lists that night's stored fights (Tonight is the live list again); the pack table's box widens it to
+    // every commander.
+    card.addEventListener('change', e => {
+      const fd = cmdFd[key];
+      if (!fd || !card.classList.contains('fd-on')) return;
+      const box = e.target && e.target.matches && e.target.matches('[data-fd-packall]');
+      if (box) {
+        fd.packAll = !!e.target.checked;
+        fd.packs = {};
+        fdRender(key);
+        return;
+      }
+      const day = e.target && e.target.matches && e.target.matches('[data-fd-day]');
+      if (!day) return;
+      fd.day = e.target.value || '';
+      delete fd.hist[fd.day];
+      fd.sel = null;
+      fd.userSel = false;
+      fd.death = null;
+      fd.list = [];
+      fdRunStopAll(fd);
+      const bind = cmdFindBind(key);
+      if (bind) fdLoad(card, bind);
+      fdRender(key);
     });
     // The run strip: a fight block selects that fight; the replay button plays the run from where the scrubber is.
     card.addEventListener('click', e => {
@@ -7318,10 +7357,13 @@
   // is per commander and remembered per browser; with nothing saved a raid opens on the debugger and a party on Live.
   const FD_DETAIL_MAX = 12;   // the newest fights whose details are fetched
   const FD_DETAIL_CACHE = 60; // finished fights kept per commander (one never changes)
+  const FD_DAYS_MS = 300000;  // the night picker's list of stored days: asked once per card per 5 min
+  const FD_HIST_MS = 10000;   // one past night's list, held as long as tonight's (the shared fights feed's window)
+  const FD_PACK_MS = 60000;   // one pack's table, held a minute
   const cmdFd = {};
 
   function fdState(key) {
-    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, list: [], tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
+    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
     return cmdFd[key];
   }
 
@@ -7335,7 +7377,7 @@
     const act = document.activeElement;
     let attr = '', val = '';
     if (act && node.contains(act)) {
-      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-fd-ready'].some(a => {
+      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-fd-ready', 'data-fd-open'].some(a => {
         if (!act.hasAttribute || !act.hasAttribute(a)) return false;
         attr = a;
         val = act.getAttribute(a);
@@ -7388,9 +7430,119 @@
     return fd.list.slice(0, FD_DETAIL_MAX).find(r => r && r.key && !r.live && !fd.details[r.key] && !fdDetailFailed(fd, r.key)) || null;
   }
 
+  // The stored nights for the picker: one request per card per 5 min, kept on the card. A chosen night the daemon no longer
+  // lists (aged out) hands the picker back to Tonight.
+  function fdDaysLoad(fd, bind) {
+    const now = Date.now();
+    if (fd.daysAt && now - fd.daysAt < FD_DAYS_MS) return;
+    fd.daysAt = now;
+    fetch('/api/v1/combat/history/days?commander=' + encodeURIComponent(bind.commander)).then(jsonOrThrow).then(v => {
+      fd.days = v && Array.isArray(v.days) ? v.days : [];
+      if (fd.day && !fd.days.some(d => d && d.day === fd.day)) {
+        fd.day = '';
+        fd.sel = null;
+        fd.userSel = false;
+        fd.list = [];
+      }
+    }).catch(() => { /* the picker keeps whatever it showed; Tonight always works */ });
+  }
+
+  // A chosen past night's fights (the same summaries as tonight's list, with hist set), held for the shared fights window so
+  // the 2 s redraw does not ask again.
+  function fdDayFights(fd, bind, cb) {
+    const day = fd.day, c = fd.hist[day];
+    if (c && Date.now() - c.at < FD_HIST_MS) { if (cb) cb(c.list); return; }
+    if (fd.histPending[day]) { if (cb) fd.histPending[day].push(cb); return; }
+    const cbs = fd.histPending[day] = cb ? [cb] : [];
+    const done = rows => {
+      const list = Array.isArray(rows) ? rows : (c ? c.list : null);
+      fd.hist[day] = { list, at: Date.now() };
+      delete fd.histPending[day];
+      cbs.forEach(f => { try { f(list); } catch (e) { /* a drawing error must not strand the queue */ } });
+    };
+    fetch('/api/v1/combat/history?commander=' + encodeURIComponent(bind.commander) + '&day=' + encodeURIComponent(day))
+      .then(jsonOrThrow).then(done).catch(() => done(null));
+  }
+
+  // The pack the selected fight belongs to, once per pack per minute; the box widens the table to every commander.
+  function fdPackLoad(card, bind, fd, packKey) {
+    const ck = packKey + (fd.packAll ? '|all' : '');
+    const c = fd.packs[ck];
+    if (c && Date.now() - c.at < FD_PACK_MS) return c.json;
+    if (!fd.packPending[ck]) {
+      fd.packPending[ck] = true;
+      fetch('/api/v1/combat/packs?pack=' + encodeURIComponent(packKey) + '&commander=' + encodeURIComponent(bind.commander)
+        + '&all=' + (fd.packAll ? '1' : '0')).then(jsonOrThrow)
+        .then(json => { fd.packs[ck] = { at: Date.now(), json: json || { pack_key: packKey, rows: [] } }; })
+        .catch(() => { fd.packs[ck] = { at: Date.now(), json: { pack_key: packKey, rows: [] } }; })
+        .then(() => {
+          delete fd.packPending[ck];
+          if (card.classList.contains('fd-on')) renderFightDebug(card, bind);
+        });
+    }
+    return c ? c.json : null;
+  }
+
+  // The night picker's options (fixed English labels over UTC) and the chosen night; rebuilt only when the list changes, so an
+  // open dropdown keeps its place.
+  function fdDayPaint(card, fd) {
+    if (typeof FightHistory === 'undefined') return;
+    const sel = card.querySelector('[data-fd-day]');
+    if (!sel) return;
+    const opts = FightHistory.dayOptions({ days: fd.days }, Date.now());
+    const sig = JSON.stringify(opts);
+    if (sel.dataset.fdOpts !== sig) { sel.dataset.fdOpts = sig; setHtml(sel, fdDayOptionsHtml(opts)); }
+    if (sel.value !== fd.day) sel.value = fd.day;
+  }
+
+  // The same pack across runs under the checks: only for a fight the history knows a pack of; the daemon's table, kept a
+  // minute per pack (and per the all-commanders box).
+  function fdPackShow(card, bind, fd, packKey) {
+    const node = card.querySelector('.fd-pack');
+    if (!node) return;
+    if (!packKey || typeof FightHistory === 'undefined') {
+      if (node.dataset.fdKey) { delete node.dataset.fdKey; delete node.dataset.fdHtml; fdSet(node, ''); }
+      node.hidden = true;
+      return;
+    }
+    const json = fdPackLoad(card, bind, fd, packKey);
+    const table = json ? FightHistory.packTable(json, fd.sel) : null;
+    const html = fdPackHtml(table, fd.packAll, packKey);
+    node.hidden = false;
+    if (node.dataset.fdHtml === html) return;
+    node.dataset.fdHtml = html;
+    fdSet(node, html);
+  }
+
+  function fdDayOptionsHtml(opts) {
+    return (Array.isArray(opts) ? opts : []).map(o => `<option value="${esc(o && o.value != null ? o.value : '')}">${esc(o && o.label != null ? o.label : '')}</option>`).join('');
+  }
+
+  // The pack table: Night, Time, Length s, Deaths, Non-tank s and Outcome per run of the same pack, with the best attempt said
+  // in words (text, not colour only). Each time opens that fight on its own night.
+  function fdPackHtml(table, all, packKey) {
+    const head = '<div class="fd-packhead"><h3 class="cmd-h">Same pack across runs</h3>'
+      + `<label class="fd-packall"><input type="checkbox" data-fd-packall${all ? ' checked' : ''}> All commanders</label></div>`;
+    if (!table) return head + '<p class="empty-hint">Loading the pack…</p>';
+    const rows = Array.isArray(table.rows) ? table.rows : [];
+    if (!rows.length) return head + '<p class="empty-hint">No fights recorded in this pack yet.</p>';
+    const med = table.median || { durS: 0, deaths: 0 };
+    const body = rows.map(r => `<tr${r.sel ? ' class="sel" aria-current="true"' : ''}>`
+      + `<td>${esc(r.day || '')}</td>`
+      + `<td><button type="button" class="fd-packopen" data-fd-open="${esc(r.key)}" data-fd-day="${esc(r.day || '')}"`
+      + ` aria-label="${esc('Open ' + (r.commander || 'the fight') + ' on ' + (r.when || '') + ' (' + (r.day || '') + ')')}">${esc(r.when || '')}</button></td>`
+      + `<td class="n">${esc(String(r.durS))}</td><td class="n">${r.deaths}</td><td class="n">${r.ntS == null ? '—' : esc(String(r.ntS))}</td>`
+      + `<td>${esc(r.outcome || '')}${r.best ? ' <span class="fd-best">best</span>' : ''}</td></tr>`).join('');
+    return head
+      + `<table class="data-table fd-table"><caption>${esc(packKey)} · median ${esc(String(med.durS))} s, ${esc(String(med.deaths))} deaths</caption>`
+      + '<thead><tr><th>Night</th><th>Time</th><th class="n">Length s</th><th class="n">Deaths</th><th class="n">Non-tank s</th><th>Outcome</th></tr></thead>'
+      + `<tbody>${body}</tbody></table>`;
+  }
+
   function fdLoad(card, bind) {
     const fd = fdState(bind.commander);
-    cmdRaidFights(bind, list => {
+    fdDaysLoad(fd, bind);
+    const gotList = list => {
       if (list) fd.list = list;
       if (fd.loading) return;
       const row = fdDetailRow(fd);
@@ -7416,7 +7568,10 @@
         drawCmdMap(bind.commander); // the newly loaded fight may be the one the debugger now shows
         fdLoad(card, bind);
       }).catch(failed);
-    });
+    };
+    // A chosen night lists that day's stored fights; Tonight is the live list the whole page shares.
+    if (fd.day) fdDayFights(fd, bind, gotList);
+    else cmdRaidFights(bind, gotList);
   }
 
   // The debugger's pick: the user's own click stands; otherwise the worst finished fight (the newest while no details are loaded),
@@ -7425,7 +7580,7 @@
     if (fd.sel === 'live' && !bind.combat) { fd.sel = null; fd.userSel = false; }
     if (fd.userSel) return;
     const worst = FightDebug.worstIndex(details, layout);
-    fd.sel = worst >= 0 ? list[worst].key : bind.combat ? 'live' : list.length ? list[0].key : null;
+    fd.sel = worst >= 0 ? list[worst].key : !fd.day && bind.combat ? 'live' : list.length ? list[0].key : null;
   }
 
   // The plan facts a finished fight's checks read: the plan's ring strays on the walk to the fight's pack, and that pack and
@@ -7457,7 +7612,8 @@
   function renderFightDebug(card, bind) {
     if (!card || !bind || typeof FightDebug === 'undefined') return;
     const key = bind.commander, fd = fdState(key), layout = bind.layout || null;
-    const list = (cmdFightsCache[key] && cmdFightsCache[key].list) || fd.list || [];
+    // A chosen night lists its own stored fights; Tonight is the shared live list the whole page holds.
+    const list = fd.day ? (fd.list || []) : (cmdFightsCache[key] && cmdFightsCache[key].list) || fd.list || [];
     fd.list = list;
     const details = list.map(r => fd.details[r.key] || null);
     fdSyncSel(fd, bind, list, details, layout);
@@ -7469,6 +7625,10 @@
     const selLive = fd.sel === 'live';
     const det = !selLive && fd.sel ? fd.details[fd.sel] : null;
     const fight = det && det.fight;
+    // A fight of an earlier night: its summary says so, or the detail came from the history file (hist: true). It has no kept
+    // positions and no lanes; the pack table carries the stored non-tank seconds instead.
+    const selRow = !selLive && fd.sel ? list.find(r => r && r.key === fd.sel) || null : null;
+    const hist = !!(selRow && selRow.hist) || !!(det && det.hist);
     if (fd.death != null && fight && !(fight.deaths || [])[fd.death]) fd.death = null;
     const recaps = fight ? FightDebug.deathRecaps(fight) : [];
 
@@ -7506,7 +7666,8 @@
     fdSet(card.querySelector('.fd-dead'), ' · ' + fdFrameStats(frames).dead + ' dead');
     fdSet(card.querySelector('.fd-ready'), fdReadyHtml(frames));
     const cards = FightDebug.railCards(list, fd.details, layout);
-    fdSet(card.querySelector('.fd-rail'), fdRailHtml(cards, live, fd.sel));
+    fdSet(card.querySelector('.fd-rail'), fdRailHtml(cards, live, fd.sel, fd.day));
+    fdDayPaint(card, fd);
 
     const checks = selLive ? FightDebug.liveChecks(bind) : fight ? FightDebug.checks(fight, layout, det.warnings || [], extra) : [];
     const guids = {};
@@ -7533,20 +7694,27 @@
     fdSet(card.querySelector('.fd-title'), esc(title));
     fdSet(card.querySelector('.fd-chips'), chips);
     fdSet(card.querySelector('.fd-checklist'), fdChecksHtml(checks, recaps, guids, fd.bot));
+    fdPackShow(card, bind, fd, selRow ? selRow.pack_key || (det && det.pack_key) || '' : '');
 
     fdSet(card.querySelector('.fd-tl'), selLive ? '<p class="empty-hint">The timeline and death recap come when the fight ends.</p>'
       : fight ? fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death) : '');
     fdSet(card.querySelector('.fd-recap'), !selLive && fight ? fdRecapHtml(recaps, fd.death) : '');
-    // The replay row: a fight's kept positions are fetched once by the daemon's buffer, then played over the card's map.
+    // The replay row: a fight's kept positions are fetched once by the daemon's buffer, then played over the card's map. A
+    // past night kept no positions (only the fight's numbers), so its row says so and no lanes are drawn.
     if (fight) {
-      if (track === undefined) fdTrackLoad(card, bind, fd.sel, fight);
-      fdPlaySync(card, fd, fight, track && track !== 'loading' ? track : null);
-      const lanes = card.querySelector('.fd-lanes');
-      if (lanesUntracked) {
-        fdSet(lanes, `<p class="empty-hint">${esc(FightReplay.UNTRACKED_TEXT)}</p>`); // this raid is past the dashboard's tracked set
-      } else if (track && track !== 'loading') fdSet(lanes, fdLanesHtml(lanesRes, fight.dur_ms));
-      else fdSet(lanes, `<p class="empty-hint">${track === 'loading' ? 'Loading positions…' : 'No positions kept for this fight (the dashboard keeps the last 30 min, from its own start).'}</p>`);
-      fdCursorSync(card, fd);
+      if (hist) {
+        fdPlayNote(card, fd.sel, 'No replay for past nights (positions are kept 30 min)');
+        fdSet(card.querySelector('.fd-lanes'), '');
+      } else {
+        if (track === undefined) fdTrackLoad(card, bind, fd.sel, fight);
+        fdPlaySync(card, fd, fight, track && track !== 'loading' ? track : null);
+        const lanes = card.querySelector('.fd-lanes');
+        if (lanesUntracked) {
+          fdSet(lanes, `<p class="empty-hint">${esc(FightReplay.UNTRACKED_TEXT)}</p>`); // this raid is past the dashboard's tracked set
+        } else if (track && track !== 'loading') fdSet(lanes, fdLanesHtml(lanesRes, fight.dur_ms));
+        else fdSet(lanes, `<p class="empty-hint">${track === 'loading' ? 'Loading positions…' : 'No positions kept for this fight (the dashboard keeps the last 30 min, from its own start).'}</p>`);
+        fdCursorSync(card, fd);
+      }
     } else {
       fdSet(card.querySelector('.fd-play'), '');
       fdSet(card.querySelector('.fd-lanes'), '');
@@ -7873,9 +8041,10 @@
     }).join('');
   }
 
-  function fdRailHtml(cards, live, sel) {
+  function fdRailHtml(cards, live, sel, day) {
     let html = '';
-    if (live) {
+    // The live card is Tonight's: a past night lists only its stored fights.
+    if (live && !day) {
       const t = Math.round((live.fightMs || 0) / 1000), on = sel === 'live';
       html += `<button type="button" class="fd-fight v-live${on ? ' on' : ''}" data-fd-fight="live" aria-pressed="${on ? 'true' : 'false'}">`
         + `<span class="fd-fl">Live</span>`
@@ -8037,6 +8206,16 @@
       + `<span class="fd-clock">${esc(FightReplay.clock(0, dur))}</span>`
       + `<button type="button" class="fd-exit" data-fd-exit${rp && rp.on ? '' : ' hidden'}>Live map</button>`
       + `<span class="fd-cov">${esc(FightReplay.coverageText(win))}</span>`;
+  }
+
+  // A past night kept no positions: the play row says so instead of offering controls that cannot work.
+  function fdPlayNote(card, key, text) {
+    const node = card && card.querySelector('.fd-play');
+    if (!node) return;
+    const sig = key + '|note';
+    if (node.dataset.fdKey === sig) return;
+    node.dataset.fdKey = sig;
+    node.innerHTML = `<p class="empty-hint">${esc(text)}</p>`;
   }
 
   // Rebuilds the play row only when the fight (or the arrival of its positions) changes; otherwise it moves the values, so a

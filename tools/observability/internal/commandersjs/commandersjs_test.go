@@ -273,3 +273,10 @@ func TestFightPackParityJS(t *testing.T) {
 	runCheck(t, "fightpack_parity_check.js", "../../web/static/js/planoverlay.js",
 		filepath.Join("..", "plans", "testdata", "fightpack-cases.json"))
 }
+
+// TestFightHistoryJS runs fighthistory_check.js: the fight history's night picker and same-pack table
+// (web/static/js/fighthistory.js) and the two builders app.js feeds from them (the day select, the pack rows that open a
+// past fight, the Live card that belongs to Tonight, and every name escaped).
+func TestFightHistoryJS(t *testing.T) {
+	runCheck(t, "fighthistory_check.js", "../../web/static/js/fighthistory.js", "../../web/static/js/app.js")
+}

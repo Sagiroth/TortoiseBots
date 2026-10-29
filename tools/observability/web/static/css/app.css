@@ -3565,3 +3565,16 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-map .patrol-path { fill: none; stroke: var(--accent-yellow); stroke-width: 1.4; stroke-dasharray: 5 4; stroke-linejoin: round; opacity: .85; vector-effect: non-scaling-stroke; }
 .cmd-map .patrol-path.est { opacity: .6; }
 .cmd-map .patrol-tick { fill: var(--accent-yellow); opacity: .8; pointer-events: none; }
+
+/* ---------- Fight history ---------- */
+/* The debugger's night picker and its same-pack table: an earlier night opens on the same card, and the pack's length, deaths
+   and non-tank seconds compare across runs. A row's time opens that fight on its own night; the best attempt is said in words.
+   Colours come from the theme tokens only. */
+.fd-daylab { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--text-muted); }
+.fd-day { min-width: 0; height: 26px; max-width: 100%; padding: 2px 6px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card); color: var(--text-main); font: inherit; font-size: 0.76rem; }
+.fd-pack { min-width: 0; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-color); }
+.fd-packhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 4px; }
+.fd-packall { display: inline-flex; align-items: center; gap: 5px; font-size: 0.72rem; color: var(--text-muted); }
+.fd-packopen { padding: 0; border: 0; background: none; color: var(--accent-blue-bright); font: inherit; cursor: pointer; text-decoration: underline; }
+.fd-packopen:hover, .fd-packopen:focus-visible { text-decoration: none; }
+.fd-best { padding: 1px 5px; border: 1px solid var(--fd-ok); border-radius: 999px; color: var(--fd-ok); font-size: 0.62rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
