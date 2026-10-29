@@ -23,6 +23,7 @@
 #include "playerbot/GuildOrderSources.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
+#include "runtime/GuildOrderFishingPolicy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "playerbot/GuildOrderCraft.h"
 #include "playerbot/ServerFacade.h"
@@ -2475,13 +2476,37 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 orderTarget = proto->Name1;
 
             // Only entries the planner accepts for this bot in the planned
-            // zone: same gates as the plan, read from the index slices.
+            // zone: same gates as the plan, read from the index slices. Fish
+            // sources name the zone directly and grant gear, so they skip
+            // the spawn-slice walk below.
             uint32_t botLevel = bot->GetLevel();
             Team botTeam = bot->GetTeam();
             bool lowGatherLevel = botLevel < TortoiseBots::GuildOrders::kGatherTripMinLevel;
             std::vector<int32_t> gatherEntries, mobEntries;
+            bool orderFishes = false;
             for (GuildOrderEntrySource const& source : GuildOrderSourcesFor(itemId))
             {
+                if (source.flag != TortoiseBots::GuildOrders::SourceFish)
+                    continue;
+                uint32_t fishZone = uint32_t(-(source.entry + ai::kFishingZoneEntryBias));
+                AreaTableEntry const* fishArea = AreaEntry::GetById(uint32_t(-(source.entry + ai::kFishingZoneEntryBias)));
+                if (fishArea && fishArea->ZoneId)
+                    fishZone = fishArea->ZoneId;
+                if (fishZone != farmZoneId)
+                    continue;
+                if (!bot->HasSkill(SKILL_FISHING))
+                    continue;
+                uint32_t fishingSkill = bot->GetSkillValue(SKILL_FISHING);
+                if (int32_t(source.reqSkill) > 0 &&
+                    !TortoiseBots::GuildOrders::FishingZoneReachable(int32_t(source.reqSkill), fishingSkill))
+                    continue;
+                orderFishes = true;
+                break;
+            }
+            for (GuildOrderEntrySource const& source : GuildOrderSourcesFor(itemId))
+            {
+                if (source.flag == TortoiseBots::GuildOrders::SourceFish)
+                    continue;
                 if (source.entry > 0 &&
                     TortoiseBots::GuildOrders::CreatureRankExcludedFromSoloFarm(source.rank))
                     continue;
@@ -2517,10 +2542,10 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 else
                     gatherEntries.push_back(source.entry);
             }
-            if (gatherEntries.empty() && mobEntries.empty())
+            if (gatherEntries.empty() && mobEntries.empty() && !orderFishes)
                 return false;
 
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, farmZoneId, gatherEntries, mobEntries, partitions = travelPartitions]()
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, farmZoneId, gatherEntries, mobEntries, orderFishes, partitions = travelPartitions]()
                 {
                     PartitionedTravelList list;
 
@@ -2567,6 +2592,13 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                             (uint32_t)TravelDestinationPurpose::Grind, mobEntries, false, 0.0f);
                         zonePinned(grindList);
                         append(std::move(grindList));
+                    }
+                    if (orderFishes)
+                    {
+                        PartitionedTravelList fishList = sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                            (uint32_t)TravelDestinationPurpose::GatherFishing, {}, false);
+                        zonePinned(fishList);
+                        append(std::move(fishList));
                     }
 
                     return list;

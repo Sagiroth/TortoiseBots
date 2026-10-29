@@ -35,6 +35,12 @@ struct GuildOrderEntrySource
     uint32_t rank = 0;       // creature_template rank; 0 for game objects
 };
 
+// Fishing entries in the index use a bias so they never collide with node
+// entries (negative game-object ids): a fishing zone area id or a pool
+// game-object entry stored as -(id + bias).
+inline constexpr int32_t kFishingZoneEntryBias = 1000000;
+inline constexpr uint32_t kMaxFishingZoneId = 100000;
+
 // One zone slice of an entry's spawns: flat per-entry list in the index.
 struct GuildOrderZoneSlice
 {
@@ -58,6 +64,10 @@ std::vector<GuildOrderZoneSlice> GuildOrderZonesFor(int32_t entry);
 // True when the creature entry can skin the bot's Working farm order item:
 // the narrow gate for emptying order-mob corpses (loot queue and store).
 bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry);
+
+// The pole a Working farm order's grant minted for the planned zone, 0 when
+// the order does not fish there.
+uint32_t GuildOrderFishingPoleFor(Player* bot);
 
 // The item and planned zone the bot currently farms for its Working order
 // (0 item = none): the farm order item, the buy fallback remainder, or the

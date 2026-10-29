@@ -21,6 +21,8 @@
 #include "../../runtime/BotActivityLease.h"
 #include "../../runtime/HireLifecycle.h"
 #include "../../runtime/GuildOrderStore.h"
+#include "../../runtime/GuildOrderFishingPolicy.h"
+#include "playerbot/GuildOrderSources.h"
 #include "../../runtime/HireMasterPolicy.h"
 #include "../../runtime/PoolBotTradePolicy.h"
 #include "../../runtime/QueuedOrderPolicy.h"
@@ -1491,6 +1493,52 @@ void PlayerbotAI::EnsureAutoToolsKit()
         bot->GetItemCount(TortoiseBots::AQUAL_QUINTESSENCE_ITEM_ID)))
     {
         EnsureCheatItem(TortoiseBots::QuintessenceEnsureId(bot->GetLevel()), 1);
+    }
+    // Guild fishing orders: the plan counts the best pole and lure, so the
+    // bot carries what the plan assumed. Real items, not cheats: the grant
+    // mints the cheapest pole that reaches the planned zone and a stack of
+    // lures, then stops - the fishing action equips and reapplies them.
+    if (bot->GetGuildId() && bot->HasSkill(SKILL_FISHING))
+    {
+        std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+            TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+        if (order && order->type == TortoiseBots::GuildOrders::OrderType::Farm &&
+            order->state == TortoiseBots::GuildOrders::OrderState::Working &&
+            order->farmZoneId)
+        {
+            bool fishes = false;
+            uint32_t zoneSkill = 0;
+            for (ai::GuildOrderEntrySource const& source : ai::GuildOrderSourcesFor(order->itemId))
+            {
+                if (source.flag != TortoiseBots::GuildOrders::SourceFish)
+                    continue;
+                uint32_t fishZone = uint32_t(-(source.entry + ai::kFishingZoneEntryBias));
+                AreaTableEntry const* fishArea =
+                    AreaEntry::GetById(uint32_t(-(source.entry + ai::kFishingZoneEntryBias)));
+                if (fishArea && fishArea->ZoneId)
+                    fishZone = fishArea->ZoneId;
+                if (fishZone != order->farmZoneId)
+                    continue;
+                fishes = true;
+                zoneSkill = std::max(zoneSkill, source.reqSkill);
+            }
+            if (fishes)
+            {
+                uint32_t fishingSkill = bot->GetSkillValue(SKILL_FISHING);
+                uint32_t pole = TortoiseBots::GuildOrders::FishingPoleFor(int32_t(zoneSkill), fishingSkill);
+                bool needLure = int32_t(zoneSkill) > int32_t(fishingSkill) &&
+                    TortoiseBots::GuildOrders::FishingZoneReachable(int32_t(zoneSkill), fishingSkill);
+                if (pole && !bot->HasItemCount(pole, 1))
+                {
+                    ItemPosCountVec dest;
+                    if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, pole, 1) == EQUIP_ERR_OK)
+                        bot->StoreNewItem(dest, pole, true, Item::GenerateItemRandomPropertyId(pole));
+                }
+                if (needLure)
+                    EnsureCheatItem(TortoiseBots::GuildOrders::kBestFishingLureItemId,
+                        TortoiseBots::GuildOrders::kFishingLureGrantCount);
+            }
+        }
     }
 }
 

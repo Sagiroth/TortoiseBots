@@ -40,13 +40,11 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 
 | Order | What the bot does |
 | :--- | :--- |
-| Farm | Gathers (herbs, ore, skinning) or kills mobs that drop the item, in one planned zone. |
+| Farm | Gathers (herbs, ore, skinning, fish) or kills mobs that drop the item, in one planned zone. |
 | Buy | Buys with its own gold on the auction house first; whatever is still missing it farms. |
 | Craft | Crafts from materials in its bags; missing materials are farmed first. |
 
-- **An order beats normal life:** a bot with an order drops questing and grinding to work on it. Exception: in a player's group the order waits until the bot leaves the group.
-- **The bot keeps ordered items:** it does not sell, auction or use them (or the materials of a craft order) while the order runs.
-- **Level safety:** only sources (mobs, nodes) up to the bot's level + 3 count. Herb and ore orders need level 10. Elite, rare-elite and boss creatures never count: a solo bot does not farm them, so an item that only drops from them ends at once. If there is nothing usable, the order ends at once.
+- **Fishing orders:** an order on a fish sends the bot to a fishing spot in the planned zone, on its own continent. It fishes there until the amount is reached, counting its pole and lure: the bot is granted the cheapest pole that still reaches the zone's skill and a stack of lures, and reapplies the lure while fishing. When even the best pole and lure cannot reach the zone, the search answers `lowskill` (or names a lower zone with the same fish).
 
 ## Delivery
 

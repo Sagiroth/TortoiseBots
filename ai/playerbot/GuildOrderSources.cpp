@@ -7,6 +7,7 @@
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/values/TravelValues.h"
 #include "playerbot/TravelMgr.h"
+#include "runtime/GuildOrderFishingPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/GuildOrderStore.h"
 
@@ -241,6 +242,64 @@ void BuildGuildOrderSourceIndex()
             AddEntrySource(index, itemId, source);
         }
     }
+    // Fishing loot per zone: the core rolls open-water catches from
+    // fishing_loot_template keyed by area id and pool catches from the
+    // pool's own gameobject loot. Fishing entries use -(entry +
+    // kFishingZoneEntryBias) so they never collide with node entries.
+    // Requirements come from skill_fishing_base_level; pools with a skill
+    // lock keep it, unlocked pools let the zone rule decide.
+    for (uint32_t entry = 0; entry < sGOStorage.GetMaxEntry(); ++entry)
+    {
+        GameObjectInfo const* goInfo = sObjectMgr.GetGameObjectInfo(entry);
+        if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_FISHINGHOLE || !goInfo->GetLootId())
+            continue;
+        uint32_t reqSkill = 0;
+        uint32_t const skillId = NodeLockSkill(goInfo, reqSkill);
+        if (skillId != SKILL_NONE && skillId != SKILL_FISHING)
+            continue;
+        chances.clear();
+        CollectLootChances(DropMapValue::GetLootTemplate(
+            ObjectGuid(HIGHGUID_GAMEOBJECT, entry, uint32_t(1)), LOOT_FISHINGHOLE), chances);
+        for (auto& [itemId, chance] : chances)
+        {
+            GuildOrderEntrySource source;
+            source.entry = -(int32_t(entry) + kFishingZoneEntryBias);
+            source.flag = SourceFish;
+            source.chance = chance;
+            source.skillId = SKILL_FISHING;
+            source.reqSkill = reqSkill;
+            AddEntrySource(index, itemId, source);
+        }
+    }
+    // Open-water fishing: one entry per fishable area id, chance from the
+    // zone template, requirement from skill_fishing_base_level. Cities and
+    // quest zones at -20/-70 keep reqSkill 0 and always count.
+    std::unordered_set<uint32_t> fishLootZones;
+    for (uint32_t zoneId = 0; zoneId <= kMaxFishingZoneId; ++zoneId)
+    {
+        if (!LootTemplates_Fishing.HaveLootFor(zoneId))
+            continue;
+        fishLootZones.insert(zoneId);
+    }
+    for (uint32_t lootZone : fishLootZones)
+    {
+        chances.clear();
+        if (LootTemplate const* tab = LootTemplates_Fishing.GetLootFor(lootZone))
+            CollectLootChances(reinterpret_cast<LootTemplateAccess const*>(tab), chances);
+        if (chances.empty())
+            continue;
+        int32_t const zoneSkill = sObjectMgr.GetFishingBaseSkillLevel(lootZone);
+        for (auto& [itemId, chance] : chances)
+        {
+            GuildOrderEntrySource source;
+            source.entry = -(int32_t(lootZone) + kFishingZoneEntryBias);
+            source.flag = SourceFish;
+            source.chance = chance;
+            source.skillId = SKILL_FISHING;
+            source.reqSkill = zoneSkill > 0 ? uint32_t(zoneSkill) : 0;
+            AddEntrySource(index, itemId, source);
+        }
+    }
     // Zone slices only for entries that drop something orderable: walk the
     // cached spawn positions once, grouped by zone, with a sample position
     // per zone for the nearer-wins-ties rule. Never force the cache: without
@@ -362,6 +421,36 @@ bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry)
     return false;
 }
 
+// The pole a Working farm order's grant minted for the planned zone, 0 when
+// the order does not fish there. The fishing action equips it over item
+// level: the grant picked exactly the cheapest pole that reaches the zone.
+uint32_t GuildOrderFishingPoleFor(Player* bot)
+{
+    if (!bot || !bot->HasSkill(SKILL_FISHING))
+        return 0;
+    std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
+    if (!record || record->type != OrderType::Farm || record->state != OrderState::Working ||
+        !record->itemId || !record->farmZoneId)
+        return 0;
+    uint32_t zoneSkill = 0;
+    bool fishes = false;
+    for (GuildOrderEntrySource const& source : GuildOrderSourcesFor(record->itemId))
+    {
+        if (source.flag != SourceFish)
+            continue;
+        uint32_t fishArea = uint32_t(-(source.entry + kFishingZoneEntryBias));
+        AreaTableEntry const* area = AreaEntry::GetById(fishArea);
+        uint32_t fishZone = (area && area->ZoneId) ? area->ZoneId : fishArea;
+        if (fishZone != record->farmZoneId)
+            continue;
+        fishes = true;
+        zoneSkill = std::max(zoneSkill, source.reqSkill);
+    }
+    if (!fishes)
+        return 0;
+    return FishingPoleFor(int32_t(zoneSkill), bot->GetSkillValue(SKILL_FISHING));
+}
+
 bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,
     uint32_t team, uint32_t zoneId, uint32_t skillValue, bool hasSkill)
 {
@@ -371,6 +460,24 @@ bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,
     auto found = index.byItem.find(itemId);
     if (found == index.byItem.end())
         return false;
+    // Fish sources name their zone directly: the planned zone matches when
+    // it equals the entry's own area (or its parent zone), and the skill
+    // counts the granted pole and lure, like the planner.
+    for (GuildOrderEntrySource const& source : found->second)
+    {
+        if (source.flag != SourceFish)
+            continue;
+        uint32_t fishArea = uint32_t(-(source.entry + kFishingZoneEntryBias));
+        AreaTableEntry const* area = AreaEntry::GetById(fishArea);
+        uint32_t fishZone = (area && area->ZoneId) ? area->ZoneId : fishArea;
+        if (fishZone != zoneId)
+            continue;
+        if (!hasSkill)
+            return false;
+        if (int32_t(source.reqSkill) <= 0)
+            return true;
+        return FishingZoneReachable(int32_t(source.reqSkill), skillValue);
+    }
     auto slices = index.zonesByEntry.find(entry);
     if (slices == index.zonesByEntry.end())
         return false;
@@ -481,8 +588,67 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
     uint32_t fallbackSkillValue = 0;
 
     std::map<uint32_t, ZoneAccum> zones;
+    // Fish sources plan by zone, not by spawn: the zone entry itself names
+    // the fishable area, and the travel leg walks to FISH_LOCATION spots
+    // there. Skill counts the bot's own skill plus the granted pole and
+    // lure; zones on the bot's own continent only, like everything else.
+    bool const botHasFishing = bot->HasSkill(SKILL_FISHING);
+    uint32_t const botFishing = botHasFishing ? bot->GetSkillValue(SKILL_FISHING) : 0;
+    uint32_t const botFishingMap = botPos.getMapId();
     for (GuildOrderEntrySource const& source : found->second)
     {
+        if (source.flag != SourceFish)
+            continue;
+        if (!botHasFishing)
+        {
+            skillFail = 2;
+            if (source.skillId != SKILL_NONE &&
+                (fallbackSkillId == 0 || source.reqSkill < fallbackSkillValue))
+            {
+                fallbackSkillId = source.skillId;
+                fallbackSkillValue = source.reqSkill;
+            }
+            continue;
+        }
+        if (!FishingZoneReachable(int32_t(source.reqSkill), botFishing))
+        {
+            if (source.reqSkill > 0)
+                skillFail = std::max(skillFail, uint8_t(1));
+            if (source.skillId != SKILL_NONE &&
+                (fallbackSkillId == 0 || source.reqSkill < fallbackSkillValue))
+            {
+                fallbackSkillId = source.skillId;
+                fallbackSkillValue = source.reqSkill;
+            }
+            continue;
+        }
+        uint32_t zoneId = uint32_t(-(source.entry + kFishingZoneEntryBias));
+        AreaTableEntry const* area = AreaEntry::GetById(uint32_t(-(source.entry + kFishingZoneEntryBias)));
+        if (area && area->ZoneId)
+            zoneId = area->ZoneId;
+        // Continent gate: areas carry the map in the DBC; the bot fishes
+        // only where it already is.
+        if (!area || area->MapId != int32_t(botFishingMap))
+            continue;
+        usableSources |= SourceFish;
+        if (usableSkillId == 0 || source.reqSkill > usableSkillValue)
+        {
+            usableSkillId = SKILL_FISHING;
+            usableSkillValue = source.reqSkill;
+        }
+        ZoneAccum& accum = zones[zoneId];
+        accum.spawns += 100;
+        accum.chance = std::max(accum.chance, source.chance);
+        if (area->MapId == int32_t(botFishingMap))
+        {
+            accum.hasNearest = true;
+            accum.nearest = 0.0f;
+        }
+    }
+    for (GuildOrderEntrySource const& source : found->second)
+    {
+        if (source.flag == SourceFish)
+            continue;
         auto slices = index.zonesByEntry.find(source.entry);
         if (slices == index.zonesByEntry.end())
             continue;
