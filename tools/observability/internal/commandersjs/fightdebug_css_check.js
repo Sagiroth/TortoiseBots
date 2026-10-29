@@ -75,6 +75,13 @@ assert.ok(/\.fd-frames\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/.test(phoneBody), 
 assert.ok(/\.fd-rail\s*\{[^}]*min-width:\s*0/.test(phoneBody), "the rail scrolls inside its column instead of widening the page");
 assert.ok(/\.cmd-card\.fd-on \.cmd-maptools\s*\{[^}]*flex-wrap:\s*wrap/.test(phoneBody), "the map toolbar wraps inside the map on a phone");
 
+// 390 px: nothing in the debugger widens the page. The same-pack table is the one wide row (six columns) and scrolls inside its
+// section; a rail card's name and damage row wrap or shrink.
+assert.ok(/\.cmd-card\.fd-on \.fd-pack\s*\{[^}]*overflow-x:\s*auto/.test(block), "the same-pack table scrolls inside its own section");
+assert.ok(/\.fd-fight \.fd-fl\s*\{[^}]*min-width:\s*0/.test(block) && /\.fd-fight \.fd-fl\s*\{[^}]*overflow-wrap:\s*anywhere/.test(block),
+  "a rail card's name shrinks and breaks instead of widening the page");
+assert.ok(/\.fd-fight \.fd-fd\s*\{[^}]*flex-wrap:\s*wrap/.test(block), "a rail card's damage row wraps");
+
 // the debugger's map is at least as tall as the prototype's
 const stage = block.match(/\.cmd-card\.fd-on \.cmd-stage\s*\{\s*height:\s*(\d+)px/);
 assert.ok(stage && Number(stage[1]) >= 440, "the desktop map is at least 440 px tall");

@@ -3296,11 +3296,11 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-rail { display: grid; gap: 6px; align-content: start; }
 .fd-fight { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 8px; width: 100%; padding: 6px 8px 7px; text-align: left; border: 1px solid var(--border-color); border-left: 3px solid var(--text-dim); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.8rem; cursor: pointer; }
 .fd-fight:hover { background: var(--bg-card-hover); }
-.fd-fight .fd-fl { font-weight: 600; }
+.fd-fight .fd-fl { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
 .fd-fight .fd-fv { justify-self: end; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
 .fd-fight .fd-fs { grid-column: 1 / -1; color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fd-fight .fd-fd { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.fd-fight .fd-fdmg { color: var(--text-main); }
+.fd-fight .fd-fd { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.fd-fight .fd-fdmg { min-width: 0; color: var(--text-main); white-space: nowrap; }
 .fd-fight.v-fail { border-left-color: var(--fd-fail); }
 .fd-fight.v-fail .fd-fv { color: var(--fd-fail); }
 .fd-fight.v-warn { border-left-color: var(--fd-warn); }
@@ -3313,6 +3313,9 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-len i { display: block; height: 100%; background: var(--text-muted); }
 
 .fd-checks { min-width: 0; }
+/* The same-pack table is the one wide row in the centre column: it scrolls inside its own section, so a phone's page never
+   gains a sideways scroll from its six columns. */
+.cmd-card.fd-on .fd-pack { overflow-x: auto; }
 .fd-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .fd-title { margin: 0; }
 .fd-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; color: var(--text-muted); font-size: 0.74rem; }
