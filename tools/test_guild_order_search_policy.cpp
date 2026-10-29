@@ -26,7 +26,8 @@ int main()
     CHECK(SplitQueryWords("   ").empty());
     std::vector<std::string> words = SplitQueryWords("  heavy   leather ");
     CHECK(words.size() == 2 && words[0] == "heavy" && words[1] == "leather");
-
+    CHECK(NormalizeQueryWords(words) == "heavy leather");
+    CHECK(NormalizeQueryWords(SplitQueryWords("")) == "");
     CHECK(Matches("heavy leather", "leather heavy"));
     CHECK(Matches("heavy leather", "heavy"));
     CHECK(Matches("heavy leather", "leather"));
@@ -44,7 +45,8 @@ int main()
     CHECK(SearchNameRank("leather", "eather") == 3);
     CHECK(SearchNameRank("rough heavy leather", "heavy l") == 2);
     CHECK(SearchNameRank("heavy leather", "leather heavy") == 3);
-
+    // Extra spaces rank exact: the needle is the normalized words.
+    CHECK(SearchNameRank("heavy leather", NormalizeQueryWords(SplitQueryWords("heavy   leather"))) == 0);
     if (failures == 0)
         std::printf("test_guild_order_search_policy ok\n");
     return failures ? 1 : 0;

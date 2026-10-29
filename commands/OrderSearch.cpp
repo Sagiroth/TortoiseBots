@@ -23,17 +23,20 @@ namespace TortoiseBots {
 namespace BotCommands {
 namespace {
 
+using TortoiseBots::GuildOrders::CategoryArgParse;
 using TortoiseBots::GuildOrders::OrderReason;
 using TortoiseBots::GuildOrders::OrderType;
 using TortoiseBots::GuildOrders::ReasonToken;
 using TortoiseBots::GuildOrders::SourcesToken;
 using TortoiseBots::GuildOrders::CategoryToken;
 using TortoiseBots::GuildOrders::ClassifyOrderCategory;
+using TortoiseBots::GuildOrders::IsTradeCloth;
+using TortoiseBots::GuildOrders::NormalizeQueryWords;
 using TortoiseBots::GuildOrders::OrderItemCategory;
-using TortoiseBots::GuildOrders::ParseCategory;
 using TortoiseBots::GuildOrders::SearchNameMatches;
 using TortoiseBots::GuildOrders::SearchNameRank;
 using TortoiseBots::GuildOrders::SplitQueryWords;
+using TortoiseBots::GuildOrders::StripCategoryArg;
 constexpr size_t kMinSearchChars = 3;
 constexpr size_t kMaxSearchResults = 30;
 struct SearchRow
@@ -79,27 +82,15 @@ std::string ZoneName(uint32_t zoneId)
     return area->Name;
 }
 
-bool IsTradeCloth(ItemPrototype const* proto)
+// Only the small gather kinds browse without text: drop and other hold
+// thousands of items, and the 30-row cut would show the same "A" slice
+// while the planner never sees the rest.
+bool IsBrowsableCategory(OrderItemCategory category)
 {
-    return proto && proto->Class == ITEM_CLASS_TRADE_GOODS && proto->SubClass == ITEM_SUBCLASS_CLOTH;
+    return category == OrderItemCategory::Herb || category == OrderItemCategory::Ore ||
+           category == OrderItemCategory::Leather || category == OrderItemCategory::Fish ||
+           category == OrderItemCategory::Cloth;
 }
-
-bool HasCategoryPrefix(std::string const& query)
-{
-    return query.size() >= 4 && ToLower(query.substr(0, 4)) == "cat=";
-}
-
-// Strips a leading "cat=<kind>" from the query. Caller checked the prefix.
-bool ParseCategoryArg(std::string& query, OrderItemCategory& category)
-{
-    std::string::size_type split = query.find_first_of(" \t", 4);
-    std::string const token = split == std::string::npos ? query.substr(4) : query.substr(4, split - 4);
-    if (!ParseCategory(ToLower(Trim(token)), category))
-        return false;
-    query = split == std::string::npos ? std::string() : Trim(query.substr(split + 1));
-    return true;
-}
-
 } // namespace
 
 bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std::string const& type,
@@ -117,51 +108,66 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
 
     std::string query = Trim(text);
     OrderItemCategory category = OrderItemCategory::Other;
-    bool hasCategory = false;
-    if (HasCategoryPrefix(query))
+    CategoryArgParse const catParse = StripCategoryArg(query, category);
+    if (catParse == CategoryArgParse::Bad)
     {
-        if (!ParseCategoryArg(query, category))
+        SendActionError(handler, "order", "invalid",
+            "Unknown kind. Use one of: herb, ore, leather, fish, cloth, drop, other.");
+        return true;
+    }
+    bool const hasCategory = catParse == CategoryArgParse::Ok;
+    if (query.empty())
+    {
+        // drop and other hold thousands of items: browsing them would show
+        // the same 30 alphabetical rows while the planner never sees the
+        // rest, so those kinds need search text.
+        if (hasCategory && !IsBrowsableCategory(category))
         {
             SendActionError(handler, "order", "invalid",
-                "Unknown kind. Use one of: herb, ore, leather, fish, cloth, drop, other.");
+                "That kind is too big to browse. Add at least 3 characters of search text.");
             return true;
         }
-        hasCategory = true;
     }
-    if ((!hasCategory || !query.empty()) && query.size() < kMinSearchChars)
+    else if (query.size() < kMinSearchChars)
     {
         SendActionError(handler, "order", "invalid", "Search text needs at least 3 characters.");
         return true;
     }
 
+    // The dispatch gates every search on GuildOrderSourcesReady, so the
+    // source flags below are final; still, an index built while sources
+    // are not ready must never be cached, or every kind freezes as Other.
+    bool const sourcesReady = ai::GuildOrderSourcesReady();
     {
         std::lock_guard<std::mutex> guard(SearchIndexLock());
         if (!SearchIndexBuilt())
         {
-            for (uint32_t itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+            // The item map, not the 0..max-entry range: transmog clones
+            // push the largest id far past the real templates.
+            for (auto const& [itemId, proto] : sObjectMgr.GetItemPrototypeMap())
             {
-                ItemPrototype const* proto = sItemStorage.LookupEntry<ItemPrototype>(itemId);
-                if (!TortoiseBots::GuildOrders::IsOrderableItem(proto))
+                if (!TortoiseBots::GuildOrders::IsOrderableItem(&proto))
                     continue;
                 SearchRow row;
                 row.itemId = itemId;
-                row.name = proto->Name1;
-                row.lower = ToLower(proto->Name1);
+                row.name = proto.Name1;
+                row.lower = ToLower(proto.Name1);
                 // Developer test items ("Test AQ Resource - ...") only add noise.
                 if (row.lower.rfind("test ", 0) == 0)
                     continue;
                 uint8_t flags = 0;
                 for (ai::GuildOrderEntrySource const& source : ai::GuildOrderSourcesFor(itemId))
                     flags |= source.flag;
-                row.category = ClassifyOrderCategory(SourcesToken(flags), IsTradeCloth(proto));
+                row.category = ClassifyOrderCategory(SourcesToken(flags), IsTradeCloth(proto.Class, row.lower));
                 SearchIndex().push_back(std::move(row));
             }
-            SearchIndexBuilt() = true;
+            if (sourcesReady)
+                SearchIndexBuilt() = true;
         }
     }
 
-    std::string const needle = ToLower(query);
-    std::vector<std::string> const words = SplitQueryWords(needle);
+    std::vector<std::string> const words = SplitQueryWords(ToLower(query));
+    std::string const needle = NormalizeQueryWords(words);
     struct ScoredRow
     {
         SearchRow const* row = nullptr;

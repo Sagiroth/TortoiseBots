@@ -46,6 +46,9 @@ int main()
     CHECK(ClassifyOrderCategory("ore,drop", false) == OrderItemCategory::Ore);
     CHECK(ClassifyOrderCategory("skin,drop", false) == OrderItemCategory::Leather);
     CHECK(ClassifyOrderCategory("fish", false) == OrderItemCategory::Fish);
+    // A fish that mobs also drop (Raw Slitherskin Mackerel 6303) still
+    // browses as fish: the fish token beats drop.
+    CHECK(ClassifyOrderCategory("fish,drop", false) == OrderItemCategory::Fish);
     // Trade Goods cloth only when no gather source claims the item.
     CHECK(ClassifyOrderCategory("drop", true) == OrderItemCategory::Cloth);
     CHECK(ClassifyOrderCategory("craft,ah", true) == OrderItemCategory::Cloth);
@@ -55,6 +58,60 @@ int main()
     // Skinning beats cloth: a skinned hide is leather even when filed as cloth.
     CHECK(ClassifyOrderCategory("skin,drop", true) == OrderItemCategory::Leather);
 
+    // Trade-goods cloth: the 1.12 cloth names (Linen to Mooncloth, bolts
+    // included) end in "cloth"; class 7 only, so armor never matches.
+    CHECK(IsTradeCloth(7, "linen cloth"));
+    CHECK(IsTradeCloth(7, "bolt of runecloth"));
+    CHECK(IsTradeCloth(7, "runecloth"));
+    CHECK(IsTradeCloth(7, "mooncloth"));
+    CHECK(!IsTradeCloth(7, "copper ore"));
+    CHECK(IsTradeCloth(7, "cloth"));
+    CHECK(!IsTradeCloth(4, "tattered cloth vest"));
+    CHECK(!IsTradeCloth(7, ""));
+
+    // cat=<kind> sits anywhere in the text and strips out of it.
+    {
+        OrderItemCategory cat = OrderItemCategory::Other;
+        std::string query = "cat=cloth linen";
+        CHECK(StripCategoryArg(query, cat) == CategoryArgParse::Ok);
+        CHECK(cat == OrderItemCategory::Cloth && query == "linen");
+    }
+    {
+        OrderItemCategory cat = OrderItemCategory::Other;
+        std::string query = "linen cat=cloth";
+        CHECK(StripCategoryArg(query, cat) == CategoryArgParse::Ok);
+        CHECK(cat == OrderItemCategory::Cloth && query == "linen");
+    }
+    {
+        OrderItemCategory cat = OrderItemCategory::Other;
+        std::string query = "linen cat= cloth";
+        CHECK(StripCategoryArg(query, cat) == CategoryArgParse::Ok);
+        CHECK(cat == OrderItemCategory::Cloth && query == "linen");
+    }
+    {
+        OrderItemCategory cat = OrderItemCategory::Other;
+        std::string query = "CAT=Ore iron";
+        CHECK(StripCategoryArg(query, cat) == CategoryArgParse::Ok);
+        CHECK(cat == OrderItemCategory::Ore && query == "iron");
+    }
+    {
+        OrderItemCategory cat = OrderItemCategory::Other;
+        std::string query = "cat=ore";
+        CHECK(StripCategoryArg(query, cat) == CategoryArgParse::Ok);
+        CHECK(cat == OrderItemCategory::Ore && query.empty());
+    }
+    {
+        OrderItemCategory cat = OrderItemCategory::Other;
+        std::string query = "cat=stone linen";
+        CHECK(StripCategoryArg(query, cat) == CategoryArgParse::Bad);
+        CHECK(query == "cat=stone linen");
+    }
+    {
+        OrderItemCategory cat = OrderItemCategory::Other;
+        std::string query = "linen";
+        CHECK(StripCategoryArg(query, cat) == CategoryArgParse::None);
+        CHECK(query == "linen");
+    }
     if (failures == 0)
         std::printf("test_guild_order_category_policy ok\n");
     return failures ? 1 : 0;
