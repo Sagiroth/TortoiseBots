@@ -2,7 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "ItemUsageValue.h"
 #include "CraftValues.h"
-#include "playerbot/policy/gear/EquipThresholdPolicy.h"
+#include "playerbot/policy/loot/QuestSourceItemPolicy.h"
 #include "MountValues.h"
 #include "runtime/policy/provision/AmmoCheatPolicy.h"
 #include "BudgetValues.h"
@@ -1303,6 +1303,23 @@ bool ItemUsageValue::IsNeededForQuest(Player* player, uint32 itemId, bool ignore
                 continue;
 
             return true;
+        }
+
+        for (int j = 0; j < QUEST_SOURCE_ITEM_IDS_COUNT; ++j)
+        {
+            if (quest->ReqSourceId[j] != itemId)
+                continue;
+
+            if (ignoreInventory)
+                return true;
+
+            ItemPrototype const* sourceProto = sObjectMgr.GetItemPrototype(itemId);
+            if (!sourceProto)
+                continue;
+
+            if (ai::QuestSourceItemStillNeeded(player->GetItemCount(itemId, true), sourceProto->MaxCount,
+                                              quest->ReqSourceCount[j], sourceProto->Stackable))
+                return true;
         }
     }
 
