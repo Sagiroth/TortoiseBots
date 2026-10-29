@@ -32,6 +32,76 @@ namespace TortoiseBots
 // clamps at the same number).
 constexpr uint32_t kHireRaidMaxCompanions = 39;
 
+// A bound raid's commander (`.bot commander bind <LeadBot> raid`) stands OUTSIDE the raid group, so the
+// group has 40 free seats for bots: one more companion than a player's own raid. This is
+// RemoteCommander::kMaxRaidBindSize (checked in HireProvisionService.cpp); the config clamp
+// (AiPlayerbot.HireMaxBotsPerPlayer <= 39) stays as it is for players.
+constexpr uint32_t kHireBoundRaidMaxCompanions = 40;
+
+// The requester commands a bound raid and is not a member of its group: his hires join the lead bot's
+// raid group and the binding, not a party of his own. A commander inside the group, an unbound
+// commander and every other player hire into their own raid (player + 39).
+inline bool HireIntoBoundRaid(bool commandsBoundRaid, bool inBoundRaidGroup)
+{
+    return commandsBoundRaid && !inBoundRaidGroup;
+}
+
+// How many companions the requester may command: the config value (already clamped to 39) for everyone;
+// the bound commander outside the group gets the 40th seat when the config allows the full 39. A lower
+// operator cap holds for him too.
+inline uint32_t HireMaxCompanions(uint32_t configMax, bool intoBoundRaid)
+{
+    uint32_t const base = configMax > kHireRaidMaxCompanions ? kHireRaidMaxCompanions : configMax;
+    return intoBoundRaid && base == kHireRaidMaxCompanions ? kHireBoundRaidMaxCompanions : base;
+}
+
+enum class HireSeatVerdict : uint8_t
+{
+    Ok,
+    CapReached, // owned >= the companion limit
+    RaidFull,   // the bound raid already holds 40 bots
+};
+
+struct HireSeatFacts
+{
+    uint32_t configMax = 0;               // AiPlayerbot.HireMaxBotsPerPlayer
+    uint32_t owned = 0;                   // the requester's hires, live and mustering (CountHired)
+    bool commandsBoundRaid = false;       // he is the commander of a raid binding
+    bool inBoundRaidGroup = false;        // ...and a member of that raid's group
+    uint32_t boundRaidSeatsTaken = 0;     // members of the bound raid's group plus his hires still mustering
+};
+
+struct HireSeatDecision
+{
+    HireSeatVerdict verdict = HireSeatVerdict::Ok;
+    uint32_t maxCompanions = 0;
+    bool intoBoundRaid = false;
+    std::string message; // player-facing, empty when Ok
+};
+
+// The one rule for "may this requester hire one more companion". The party and raid seat checks of
+// his own group stay in HireProvisionService::Hire; this decides the companion limit and, for the
+// bound commander, the 40 seats of the bound raid.
+inline HireSeatDecision DecideHireSeat(HireSeatFacts const& facts)
+{
+    HireSeatDecision decision;
+    decision.intoBoundRaid = HireIntoBoundRaid(facts.commandsBoundRaid, facts.inBoundRaidGroup);
+    decision.maxCompanions = HireMaxCompanions(facts.configMax, decision.intoBoundRaid);
+    if (decision.intoBoundRaid && facts.boundRaidSeatsTaken >= kHireBoundRaidMaxCompanions)
+    {
+        decision.verdict = HireSeatVerdict::RaidFull;
+        decision.message = "Your bound raid already holds the maximum of " + std::to_string(kHireBoundRaidMaxCompanions) +
+            " bots (" + std::to_string(facts.boundRaidSeatsTaken) + " seats taken).";
+        return decision;
+    }
+    if (facts.owned >= decision.maxCompanions)
+    {
+        decision.verdict = HireSeatVerdict::CapReached;
+        decision.message = "You already command the maximum number of companions.";
+    }
+    return decision;
+}
+
 // Defaults of AiPlayerbot.HireRaidSpread / AiPlayerbot.HireRaidPresets. The
 // shipped template carries the same strings (AGENTS.md: fallback == template).
 // Spread: per role, classes handed out round-robin; repeat a class to weight it.
@@ -425,10 +495,13 @@ inline bool ExpandHireRaidPreset(std::vector<HireRaidPreset> const& presets, std
 // fills its subgroups in join order, so tanks end up beside healers), each
 // role in request order. availableClassMask has bit (1 << classId) per class
 // the requester's faction can field. requested is the pre-cap total; the slots
-// are cut to cap from the dps end. False with a player-facing error.
+// are cut to cap from the dps end. maxTotal is the most the request may ask
+// for: 39 for a player's raid, kHireBoundRaidMaxCompanions for a bound
+// commander outside his raid. False with a player-facing error.
 inline bool BuildHireRaidRoster(HireRaidRequest const& request, HireRaidSpread const& spread,
     uint32_t availableClassMask, HireRaidClassRules const& rules, uint32_t cap,
-    std::vector<HireRaidSlot>& out, uint32_t& requested, std::string& error)
+    std::vector<HireRaidSlot>& out, uint32_t& requested, std::string& error,
+    uint32_t maxTotal = kHireRaidMaxCompanions)
 {
     out.clear();
     requested = 0;
@@ -446,9 +519,11 @@ inline bool BuildHireRaidRoster(HireRaidRequest const& request, HireRaidSpread c
         error = "Nothing to hire.";
         return false;
     }
-    if (total > kHireRaidMaxCompanions)
+    if (total > maxTotal)
     {
-        error = "A raid holds at most 39 companions plus you; you asked for " + std::to_string(total) + ".";
+        error = maxTotal == kHireBoundRaidMaxCompanions
+            ? "A bound raid holds at most 40 companions; you asked for " + std::to_string(total) + "."
+            : "A raid holds at most 39 companions plus you; you asked for " + std::to_string(total) + ".";
         return false;
     }
 

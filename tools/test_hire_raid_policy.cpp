@@ -227,6 +227,93 @@ static void TestRoster()
     CHECK(!BuildHireRaidRoster(r, spread, noPala, Rules(), 39, slots, requested, err));
 }
 
+// C6 (Onyxia kill plan): one more hire into a bound raid. A bound raid's commander
+// stands OUTSIDE its group, so the raid holds 40 bots; a player in his own raid keeps
+// player + 39 companions.
+static HireSeatFacts Seat(uint32_t configMax, uint32_t owned, bool commandsBoundRaid, bool inBoundRaidGroup, uint32_t raidSeatsTaken)
+{
+    HireSeatFacts f;
+    f.configMax = configMax;
+    f.owned = owned;
+    f.commandsBoundRaid = commandsBoundRaid;
+    f.inBoundRaidGroup = inBoundRaidGroup;
+    f.boundRaidSeatsTaken = raidSeatsTaken;
+    return f;
+}
+
+static void TestBoundRaidSeat()
+{
+    CHECK(kHireBoundRaidMaxCompanions == 40);
+
+    // Only the commander of a bound raid who stands outside its group hires into it.
+    CHECK(HireIntoBoundRaid(true, false));
+    CHECK(!HireIntoBoundRaid(true, true));   // inside the group: the ordinary raid
+    CHECK(!HireIntoBoundRaid(false, false)); // an unbound commander / a player
+    CHECK(!HireIntoBoundRaid(false, true));
+
+    // The companion limit: 39 for everyone but the bound commander outside, who gets 40.
+    CHECK(HireMaxCompanions(39, false) == 39);
+    CHECK(HireMaxCompanions(50, false) == 39);
+    CHECK(HireMaxCompanions(4, false) == 4);
+    CHECK(HireMaxCompanions(39, true) == 40);
+    CHECK(HireMaxCompanions(50, true) == 40);
+    CHECK(HireMaxCompanions(38, true) == 38); // an operator who capped lower stays capped
+    CHECK(HireMaxCompanions(4, true) == 4);
+    CHECK(HireMaxCompanions(0, true) == 0);
+
+    // A player in his own raid: the 40th companion is refused, the 39th allowed.
+    HireSeatDecision d = DecideHireSeat(Seat(39, 38, false, false, 0));
+    CHECK(d.verdict == HireSeatVerdict::Ok && d.maxCompanions == 39 && !d.intoBoundRaid);
+    d = DecideHireSeat(Seat(39, 39, false, false, 0));
+    CHECK(d.verdict == HireSeatVerdict::CapReached && d.maxCompanions == 39 && !d.message.empty());
+    // The same for a player who is in the bound raid's group (the commander inside it).
+    d = DecideHireSeat(Seat(39, 39, true, true, 39));
+    CHECK(d.verdict == HireSeatVerdict::CapReached && d.maxCompanions == 39 && !d.intoBoundRaid);
+    d = DecideHireSeat(Seat(39, 38, true, true, 39));
+    CHECK(d.verdict == HireSeatVerdict::Ok && d.maxCompanions == 39);
+    // An unbound commander: 39, whatever the raid-seat fact says.
+    d = DecideHireSeat(Seat(39, 39, false, false, 39));
+    CHECK(d.verdict == HireSeatVerdict::CapReached && d.maxCompanions == 39);
+    d = DecideHireSeat(Seat(39, 3, false, false, 40));
+    CHECK(d.verdict == HireSeatVerdict::Ok); // seats of a raid he does not command are not his concern here
+
+    // The bound commander outside the group: the 40th is allowed, a 41st is not.
+    d = DecideHireSeat(Seat(39, 38, true, false, 38));
+    CHECK(d.verdict == HireSeatVerdict::Ok && d.maxCompanions == 40 && d.intoBoundRaid);
+    d = DecideHireSeat(Seat(39, 39, true, false, 39));
+    CHECK(d.verdict == HireSeatVerdict::Ok && d.maxCompanions == 40 && d.intoBoundRaid);
+    d = DecideHireSeat(Seat(39, 40, true, false, 39));
+    CHECK(d.verdict == HireSeatVerdict::CapReached && d.maxCompanions == 40);
+    // The operator's lower cap holds for the commander too.
+    d = DecideHireSeat(Seat(10, 10, true, false, 10));
+    CHECK(d.verdict == HireSeatVerdict::CapReached && d.maxCompanions == 10);
+
+    // A raid already at 40 bots (members plus companions still mustering): refused, with a clear message.
+    d = DecideHireSeat(Seat(39, 35, true, false, 40));
+    CHECK(d.verdict == HireSeatVerdict::RaidFull);
+    CHECK(d.message.find("40") != std::string::npos && d.message.find("raid") != std::string::npos);
+    d = DecideHireSeat(Seat(39, 35, true, false, 39));
+    CHECK(d.verdict == HireSeatVerdict::Ok);
+    d = DecideHireSeat(Seat(39, 20, true, false, 45)); // never more than 40 seats
+    CHECK(d.verdict == HireSeatVerdict::RaidFull);
+
+    // The roster: a bound raid may plan 40 slots, everything else is cut at 39.
+    HireRaidSpread spread;
+    CHECK(ParseHireRaidSpread(kHireRaidSpreadDefault, spread));
+    HireRaidRequest r;
+    std::string err;
+    std::vector<HireRaidSlot> slots;
+    uint32_t requested = 0;
+    CHECK(Parse("4t 10h 26d", r, err));
+    CHECK(!BuildHireRaidRoster(r, spread, AllClasses(), Rules(), 40, slots, requested, err));
+    CHECK(requested == 40 && err.find("39") != std::string::npos);
+    CHECK(BuildHireRaidRoster(r, spread, AllClasses(), Rules(), 40, slots, requested, err, kHireBoundRaidMaxCompanions));
+    CHECK(requested == 40 && slots.size() == 40);
+    CHECK(Parse("4t 10h 27d", r, err));
+    CHECK(!BuildHireRaidRoster(r, spread, AllClasses(), Rules(), 40, slots, requested, err, kHireBoundRaidMaxCompanions));
+    CHECK(requested == 41 && err.find("40") != std::string::npos);
+}
+
 int main()
 {
     TestRoleCounts();
@@ -236,6 +323,7 @@ int main()
     TestDefaultsParse();
     TestPresetExpansion();
     TestRoster();
+    TestBoundRaidSeat();
     std::printf("hire raid policy: %d checks passed\n", checks);
     return 0;
 }

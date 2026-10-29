@@ -4,6 +4,8 @@
 #include "HireCost.h"
 #include "BotNameService.h"
 #include "HireLifecycle.h"
+#include "CommandedGroupQuery.h"
+#include "RemoteCommanderPolicy.h"
 #include "runtime/policy/hire/HireIntroPolicy.h"
 #include "HireSpecPolicy.h"
 #include "HireGearCache.h"
@@ -66,6 +68,10 @@
 
 namespace TortoiseBots
 {
+
+// The bound raid's 40 seats are the binding's own size limit (C6).
+static_assert(kHireBoundRaidMaxCompanions == RemoteCommander::kMaxRaidBindSize,
+    "a bound raid's hire limit is the binding size limit");
 
 namespace
 {
@@ -171,6 +177,23 @@ bool HireProvisionService::CheckHireAllowed(Player* requester, bool fromGossip, 
     return true;
 }
 
+// C6: this master's hires still mustering. Each takes a seat of the bound raid when it joins; one that
+// already stands in a group is counted by that group's member count.
+static uint32_t MusteringOutsideBoundRaid(std::vector<HireProvisionService::PendingProvision> const& pending, Player* master)
+{
+    uint32_t count = 0;
+    for (HireProvisionService::PendingProvision const& entry : pending)
+    {
+        if (entry.masterGuid != master->GetObjectGuid())
+            continue;
+        Player* bot = sObjectAccessor.FindPlayer(entry.botGuid);
+        if (bot && bot->GetGroup())
+            continue;
+        ++count;
+    }
+    return count;
+}
+
 HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& sel, bool fromGossip)
 {
     HireOutcome outcome;
@@ -216,9 +239,29 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     // (Dismiss/.bot remove always release the lifecycle record). Each alt
     // (master guid) has its own hire slots.
     uint32_t owned = HireProvisionService::Instance().CountHired(requester);
-    uint32_t maxHires = std::min<uint32_t>(sPlayerbotAIConfig.hireMaxBotsPerPlayer, 39);
+    // C6: the commander of a bound raid stands outside its group, so his hires join the lead bot's raid
+    // (40 seats) and not a party of his own; everyone else keeps player + 39 (HireRaidPolicy.h).
+    BotCommands::BoundRaidFacts const boundRaid = BotCommands::BoundRaidOf(requester);
+    bool const intoBoundRaid = HireIntoBoundRaid(boundRaid.bound, boundRaid.commanderInGroup);
+    uint32_t maxHires = HireMaxCompanions(sPlayerbotAIConfig.hireMaxBotsPerPlayer, intoBoundRaid);
+    if (intoBoundRaid)
+    {
+        HireSeatFacts seatFacts;
+        seatFacts.configMax = sPlayerbotAIConfig.hireMaxBotsPerPlayer;
+        seatFacts.owned = owned;
+        seatFacts.commandsBoundRaid = boundRaid.bound;
+        seatFacts.inBoundRaidGroup = boundRaid.commanderInGroup;
+        seatFacts.boundRaidSeatsTaken = boundRaid.members + MusteringOutsideBoundRaid(m_pending, requester);
+        HireSeatDecision const seat = DecideHireSeat(seatFacts);
+        if (seat.verdict != HireSeatVerdict::Ok)
+        {
+            outcome.status = seat.verdict == HireSeatVerdict::RaidFull ? HireStatus::GroupFull : HireStatus::CapReached;
+            outcome.message = seat.message;
+            return outcome;
+        }
+    }
 
-    Group* group = requester->GetGroup();
+    Group* group = intoBoundRaid ? nullptr : requester->GetGroup();
     if (group && group->isBGGroup())
         group = requester->GetOriginalGroup();
     bool inRaid = group && group->isRaidGroup();
@@ -492,7 +535,10 @@ HireRaidOutcome HireProvisionService::HireRaid(Player* requester, HireRaidReques
     result.tier = tier;
 
     uint32_t owned = CountHired(requester);
-    uint32_t maxHires = std::min<uint32_t>(sPlayerbotAIConfig.hireMaxBotsPerPlayer, kHireRaidMaxCompanions);
+    // C6: a bound raid's commander (outside its group) plans up to 40; see Hire().
+    BotCommands::BoundRaidFacts const boundRaid = BotCommands::BoundRaidOf(requester);
+    bool const intoBoundRaid = HireIntoBoundRaid(boundRaid.bound, boundRaid.commanderInGroup);
+    uint32_t maxHires = HireMaxCompanions(sPlayerbotAIConfig.hireMaxBotsPerPlayer, intoBoundRaid);
     if (owned >= maxHires)
         return refuse("You already command the maximum number of companions (" + std::to_string(owned) +
             " of " + std::to_string(maxHires) + ").");
@@ -506,20 +552,24 @@ HireRaidOutcome HireProvisionService::HireRaid(Player* requester, HireRaidReques
     for (HireRaidJob const& running : m_raidJobs)
         if (running.masterGuid == masterGuid)
             return refuse("A raid hire is already running. Wait for its summary line.");
-    Group* group = requester->GetGroup();
+    // The bound commander has no group of his own: the seats are the bound raid's members.
+    Group* group = intoBoundRaid ? nullptr : requester->GetGroup();
     if (group && group->isBGGroup())
         group = requester->GetOriginalGroup();
-    uint32_t members = group ? group->GetMembersCount() : 1;
+    uint32_t members = intoBoundRaid ? boundRaid.members : group ? group->GetMembersCount() : 1;
     uint32_t mustering = 0;
-    for (PendingProvision const& pending : m_pending)
-    {
-        if (pending.masterGuid != masterGuid)
-            continue;
-        Player* pendingBot = sObjectAccessor.FindPlayer(pending.botGuid);
-        if (group && pendingBot && group->IsMember(pendingBot->GetObjectGuid()))
-            continue;
-        ++mustering;
-    }
+    if (intoBoundRaid)
+        mustering = MusteringOutsideBoundRaid(m_pending, requester);
+    else
+        for (PendingProvision const& pending : m_pending)
+        {
+            if (pending.masterGuid != masterGuid)
+                continue;
+            Player* pendingBot = sObjectAccessor.FindPlayer(pending.botGuid);
+            if (group && pendingBot && group->IsMember(pendingBot->GetObjectGuid()))
+                continue;
+            ++mustering;
+        }
     uint32_t const raidSeats = kHireRaidMaxCompanions + 1;
     if (members + mustering >= raidSeats)
         return refuse("Your raid has no free seats (" + std::to_string(members + mustering) + " of " +
@@ -553,7 +603,8 @@ HireRaidOutcome HireProvisionService::HireRaid(Player* requester, HireRaidReques
     rules.defaultRole = &HireProvisionService::DefaultRoleForClass;
     std::vector<HireRaidSlot> roster;
     std::string error;
-    if (!BuildHireRaidRoster(request, spread, classMask, rules, room, roster, result.requested, error))
+    if (!BuildHireRaidRoster(request, spread, classMask, rules, room, roster, result.requested, error,
+            intoBoundRaid ? kHireBoundRaidMaxCompanions : kHireRaidMaxCompanions))
         return refuse(error);
     result.planned = static_cast<uint32_t>(roster.size());
     result.capped = result.planned < result.requested;
@@ -1065,17 +1116,26 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         // A new hire arrives like a summoned bot: grouped where it was made,
         // then the summon portal opens by the master and it steps out 3 s
         // later. A summon that cannot start falls back to Reunite's teleport.
+        // C6: the commander of a bound raid stands outside its group; his hire joins the lead bot's raid
+        // (and the binding) instead of a party with him, and no summon to the commander opens.
+        BotCommands::BoundRaidFacts const boundRaid = BotCommands::BoundRaidOf(master);
+        bool const intoBoundRaid = HireIntoBoundRaid(boundRaid.bound, boundRaid.commanderInGroup);
         if (!pending.summonRequested)
         {
-            if (!bot->IsInSameRaidWith(master) && !EnsureGrouped(master, bot))
-                return false;
-            pending.summonRequested = true;
-            if (PlayerConvenience::Instance().RequestSummon(master, bot))
-                return false;
+            if (intoBoundRaid)
+                pending.summonRequested = true;
+            else
+            {
+                if (!bot->IsInSameRaidWith(master) && !EnsureGrouped(master, bot))
+                    return false;
+                pending.summonRequested = true;
+                if (PlayerConvenience::Instance().RequestSummon(master, bot))
+                    return false;
+            }
         }
         if (PlayerConvenience::Instance().IsBusy(pending.botGuid))
             return false;
-        if (!Reunite(bot, master))
+        if (intoBoundRaid ? !BotCommands::JoinBoundRaid(master, bot) : !Reunite(bot, master))
         {
             sLog.outError("TortoiseBots: hired bot %s could not join master %s after provisioning",
                 bot->GetName(), master->GetName());

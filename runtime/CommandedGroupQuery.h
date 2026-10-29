@@ -80,5 +80,21 @@ void CommanderAutonomyMapChange(Player* bot, PlayerbotAI* ai);
 bool HasCommanderBinding(uint64_t commanderRaw);
 void SettleCommanderBinding(uint64_t commanderRaw);
 
+// A commander's raid binding as the hire service needs it (C6, one more hire into a bound raid): the
+// commander has a standing raid binding (the lead bot's group is the bound group), whether he is a member
+// of that group, and how many members it holds. Cheap; world thread only.
+struct BoundRaidFacts
+{
+    bool bound = false;
+    bool commanderInGroup = false;
+    uint32_t members = 0;
+};
+BoundRaidFacts BoundRaidOf(Player* commander);
+// A new hire of the commander joins his bound raid: into the lead bot's group, into the binding (follow
+// target, hire state) and into the raid layout, which is planned again. True once the bot is in the
+// bound group (also on later calls); false while it cannot join yet (not settled in the world, no
+// seat), the caller retries. The binding is never released or rebuilt. World thread only.
+bool JoinBoundRaid(Player* commander, Player* bot);
+
 } // namespace BotCommands
 } // namespace TortoiseBots

@@ -188,6 +188,13 @@ void HireLifecycle::ConfirmCommand(ObjectGuid commanderGuid)
             kv.second.commandState = HireCommandState::Bound;
 }
 
+void HireLifecycle::CancelCommand(ObjectGuid botGuid)
+{
+    auto it = m_hired.find(botGuid.GetCounter());
+    if (it != m_hired.end() && it->second.commandState == HireCommandState::Transition && !it->second.regroupOnReturn)
+        it->second.commandState = HireCommandState::None;
+}
+
 uint32_t HireLifecycle::CommandedHireCount(ObjectGuid commanderGuid) const
 {
     uint32_t count = 0;

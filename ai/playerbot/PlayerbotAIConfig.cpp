@@ -555,6 +555,7 @@ bool PlayerbotAIConfig::Initialize()
     if (hireMinAccountSecurity > 6)
         hireMinAccountSecurity = 6;
     hireMaxBotsPerPlayer = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireMaxBotsPerPlayer", 4));
+    // 39 stays the ceiling: the 40th seat of a bound raid is the commander's alone (HireMaxCompanions in HireRaidPolicy.h).
     if (hireMaxBotsPerPlayer > 39)
         hireMaxBotsPerPlayer = 39;
     // Read signed: a negative value must mean 0, not wrap to a huge allowance.

@@ -68,6 +68,9 @@ public:
     bool BeginCommand(ObjectGuid botGuid, ObjectGuid commanderGuid);
     // The bind succeeded: this commander's hires in transition are bound.
     void ConfirmCommand(ObjectGuid commanderGuid);
+    // A join into a standing binding (a new hire of the commander joining his bound raid) did not go
+    // through: this one hire leaves its transition. Unlike EndCommand it touches no other hire.
+    void CancelCommand(ObjectGuid botGuid);
     // The binding ended (or the bind failed): the commander's hires go back to
     // the commander's party if it is online, or wait for its return inside the
     // logout grace. Returns the hires handled; 0 for a commander with none.
