@@ -407,6 +407,51 @@ func TestExpiredLiveKeepsItsLog(t *testing.T) {
 		t.Fatalf("newest log event t = %d, want 2000", got)
 	}
 }
+// A new fight that arrives while the previous fight's end was lost must not
+// erase it: the replaced row is filed as unfinished with its own log, and
+// the new row keeps only its own events.
+func TestReplacedLiveRowFiledUnfinished(t *testing.T) {
+	s := newLiveStore(t)
+	s.ApplyEvents(liveEvents(liveHeader(), castEvent(1000, "Poison Cloud"), castEvent(2000, "Frenzy")), liveNow)
+
+	hb := liveHeader()
+	hb.ID = "55-7"
+	sum, changed, accepted := s.ApplyEvents(nextEvents(hb, castEvent(3000, "Frost Breath")), liveNow)
+	if !accepted || !changed || !sum.Live || sum.ID != "55-7" {
+		t.Fatalf("the new fight did not open its own row: %+v %v %v", sum, changed, accepted)
+	}
+
+	a, _, ok := s.Get("Gbmage", 7, "55-6")
+	if !ok {
+		t.Fatal("the replaced fight is missing")
+	}
+	if a.Outcome != "unfinished" {
+		t.Fatalf("replaced fight outcome = %q, want unfinished", a.Outcome)
+	}
+	if len(a.Log) != 2 {
+		t.Fatalf("replaced fight log = %d events, want 2", len(a.Log))
+	}
+	for i, want := range []uint32{1000, 2000} {
+		if got := eventT(t, a.Log[i]); got != want {
+			t.Fatalf("replaced log[%d] t = %d, want %d", i, got, want)
+		}
+	}
+
+	fb := Fight{ID: "55-7", Commander: "Gbmage", Group: 55, Map: 409, Start: liveNow.Unix(), DurMS: 5000, Outcome: "kill"}
+	if !s.Add(7, fb) {
+		t.Fatal("Add refused fight B")
+	}
+	b, _, ok := s.Get("Gbmage", 7, "55-7")
+	if !ok {
+		t.Fatal("fight B is missing")
+	}
+	if len(b.Log) != 1 {
+		t.Fatalf("fight B log = %d events, want 1: %s", len(b.Log), b.Log)
+	}
+	if got := eventT(t, b.Log[0]); got != 3000 {
+		t.Fatalf("fight B log t = %d, want 3000", got)
+	}
+}
 
 // The ring holds the log kinds up to LiveLogMax and every other kind up to LiveEventsMax, each dropping its own oldest event.
 func TestLiveLogRingCappedPerKind(t *testing.T) {

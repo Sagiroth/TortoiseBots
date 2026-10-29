@@ -142,11 +142,17 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 		case s.seenLocked(dg.Commander, dg.Session, h.ID):
 			// The finished fight is already filed: a late datagram of it.
 			return FightSummary{}, false, false
-		default:
-			row = &liveFight{session: dg.Session, seq: dg.Seq, id: h.ID, group: dg.Group, mapID: dg.Map, header: *h}
-			s.live[dg.Commander] = row
-			changed = true
-			s.evictLiveLocked()
+	default:
+		if row != nil {
+			// The new fight replaces the live row, whose own end may
+			// never arrive: file it the way the expiry path files a
+			// quiet row, so neither the fight nor its log is lost.
+			s.fileLiveLocked(dg.Commander, row, "unfinished")
+		}
+		row = &liveFight{session: dg.Session, seq: dg.Seq, id: h.ID, group: dg.Group, mapID: dg.Map, header: *h}
+		s.live[dg.Commander] = row
+		changed = true
+		s.evictLiveLocked()
 		}
 	} else {
 		// A datagram that opens no fight only continues the live row of its
