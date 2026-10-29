@@ -1773,7 +1773,6 @@ void ObservabilityEmitter::EmitServerInfo()
        << ",\"raid_nearby\":\"" << flag(sPlayerbotAIConfig.randomBotRaidNearby) << "\""
        << ",\"invite_player\":\"" << flag(sPlayerbotAIConfig.randomBotInvitePlayer) << "\""
        << ",\"timed_logout\":\"" << flag(sPlayerbotAIConfig.randomBotTimedLogout) << "\""
-       << ",\"disable_random_levels\":\"" << flag(sPlayerbotAIConfig.disableRandomLevels) << "\""
        << ",\"level_ladder\":\"" << flag(sPlayerbotAIConfig.levelLadder) << "\""
        << ",\"auto_do_quests\":\"" << flag(sPlayerbotAIConfig.autoDoQuests) << "\""
        << ",\"disable_activity\":\"" << flag(sPlayerbotAIConfig.disableActivityPriorities) << "\""
