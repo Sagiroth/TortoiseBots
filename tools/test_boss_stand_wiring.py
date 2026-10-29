@@ -283,8 +283,16 @@ class BossStandWiring(unittest.TestCase):
         self.assertNotIn("AssignStandSlot(", fn)
         declared = body(ACTIONS, "// The seat plan of an open window",
                         end="std::unordered_map<StandPlanKey, StandPlan, StandPlanKeyHash> g_standPlans;")
-        self.assertIn("struct StandPlanKey", declared)
-        self.assertIn("Guarded by\n// g_standHoldMutex.", declared)
+        self.assertIn("std::unordered_map<StandPlanKey, StandPlan, StandPlanKeyHash> g_standPlans;", ACTIONS)
+        self.assertIn("Guarded by g_standHoldMutex.", declared)
+        self.assertIn("struct StandPlanKey", POLICY)
+        # The plan is keyed by the boss instance (map and instance id, not only the spawn guid), and the live
+        # translation passes both; a stale plan is swept whatever its key.
+        self.assertIn("const StandPlanKey key{ boss->GetObjectGuid().GetRawValue(), boss->GetMapId(), "
+                      "boss->GetInstanceId(),\n                                points[0]->anchor, "
+                      "static_cast<uint8>(role) };", fn)
+        self.assertIn("old = StandPlanStale(nowMs, old->second.lastReadMs) ? g_standPlans.erase(old) : "
+                      "std::next(old);", fn)
 
     def test_generic_code_names_no_boss(self):
         for name, text in (("BossStandPolicy.h", POLICY), ("BossTacticsStand.h", STAND_H)):

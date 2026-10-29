@@ -867,6 +867,27 @@ int main()
     CHECK(StandPlanStale(3000, 0));
     CHECK(!StandPlanStale(5, 0xFFFFFFF0u));
 
+    // A plan is filed by boss instance: the same spawn guid, anchor and role in another instance (or on another map)
+    // is a different window and never reads the first one's seats.
+    {
+        const std::uint8_t ranged = static_cast<std::uint8_t>(StandRole::Ranged);
+        const StandPlanKey first{ 0x0000000000001234ULL, 249, 1, 7, ranged };
+        const StandPlanKey same{ 0x0000000000001234ULL, 249, 1, 7, ranged };
+        StandPlanKey otherInstance = first;
+        otherInstance.instanceId = 2;
+        StandPlanKey otherMap = first;
+        otherMap.mapId = 250;
+        CHECK(first == same);
+        CHECK(!(first == otherInstance));
+        CHECK(!(first == otherMap));
+        std::unordered_map<StandPlanKey, int, StandPlanKeyHash> plans;
+        plans[first] = 1;
+        CHECK(plans.find(otherInstance) == plans.end());
+        CHECK(plans.find(otherMap) == plans.end());
+        plans[otherInstance] = 2;  // two instances hold two plans at the same time
+        CHECK(plans.size() == 2 && plans[first] == 1 && plans[otherInstance] == 2);
+    }
+
     std::cout << "All boss stand policy tests passed.\n";
     return 0;
 }

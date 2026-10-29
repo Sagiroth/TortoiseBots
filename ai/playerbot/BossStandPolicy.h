@@ -26,6 +26,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -769,6 +770,36 @@ namespace ai
     {
         return static_cast<std::uint32_t>(nowMs - lastReadMs) >= kBossStandPlanIdleMs;
     }
+
+    // What a window's plan is filed under: the boss instance (raw guid, map and instance id), the window's anchor and
+    // the role. The raw guid alone names the spawn in the database, which a second instance of the same boss shares, so
+    // each instance needs its own plan. Guarded by the caller's lock.
+    struct StandPlanKey
+    {
+        std::uint64_t boss = 0;
+        std::uint32_t mapId = 0;
+        std::uint32_t instanceId = 0;
+        std::uint32_t anchor = 0;
+        std::uint8_t role = 0;
+        bool operator==(const StandPlanKey& other) const
+        {
+            return boss == other.boss && mapId == other.mapId && instanceId == other.instanceId &&
+                   anchor == other.anchor && role == other.role;
+        }
+    };
+
+    struct StandPlanKeyHash
+    {
+        std::size_t operator()(const StandPlanKey& key) const
+        {
+            std::size_t h = std::hash<std::uint64_t>()(key.boss);
+            h ^= std::hash<std::uint32_t>()(key.mapId) + 0x9e3779b9u + (h << 6) + (h >> 2);
+            h ^= std::hash<std::uint32_t>()(key.instanceId) + 0x9e3779b9u + (h << 6) + (h >> 2);
+            h ^= std::hash<std::uint32_t>()(key.anchor) + 0x9e3779b9u + (h << 6) + (h >> 2);
+            h ^= std::hash<std::uint8_t>()(key.role) + 0x9e3779b9u + (h << 6) + (h >> 2);
+            return h;
+        }
+    };
 
     // The slot of bot `selfId` among `bots` (every bot of the set, self
     // included) on `points` (ActiveStandPoints). The bots are seated in id
