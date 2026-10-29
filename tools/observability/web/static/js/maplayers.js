@@ -2,7 +2,7 @@
 // Commanders tab map layers: which things a map draws. One choice for every card (and every map), kept in the browser once, not per
 // map. Pure logic (no page, no markup) so a test can run it under node (internal/commandersjs). app.js draws and shows the panel.
 //
-// The panel offers 25 layers in 7 groups, the raid's order (Map, Party, Route, Threat, Raid, Events, Objects): the plan is three of
+// The panel offers 27 layers in 7 groups, the raid's order (Map, Party, Route, Threat, Raid, Events, Objects): the plan is three of
 // them (planroute, planstands and the aggro layer's planrings part), and raid presets (Pathing, Trash pull, Healing, Boss, All)
 // switch the raid's keys in one click. Several layers are merges of the finer switches the maps used before: `effective(state)`
 // returns those older keys (mobhostile, mobneutral, trail, threatcolors, ...) computed from the new ones, and app.js's drawing code
@@ -50,6 +50,8 @@
     aggro: { def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)", line: true },
     hostilenames: { def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
     bossmark: { def: true, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
+    facing: { def: true, needs: "facing", why: "no boss or elite reports where it faces (it needs the newer module)" },
+    mobcast: { def: true, needs: "mobcast", why: "no boss or elite is casting now" },
     threatcolors: { def: false, needs: "mobTargets", why: "the game server does not report mobs yet (it needs the newer module)" },
     threat: { def: false, needs: "mobTargets", why: "the game server does not report mobs yet (it needs the newer module)", line: true },
     bottarget: { def: false, needs: "botTargets", why: "the game server does not report bot targets yet (it needs the newer module)", line: true },
@@ -102,6 +104,10 @@
       tip: "Critters (small harmless units) the game server reports." },
     { key: "enemynames", label: "Enemy names and boss marker", group: "Threat", def: true, parts: ["hostilenames", "bossmark"],
       tip: "The name of every hostile unit; a boss is bigger, crowned and always named." },
+    { key: "facing", label: "Boss and elite facing", group: "Threat", def: true, parts: ["facing"],
+      tip: "An arrow where every boss and elite the game server reports looks (its own facing, not its movement)." },
+    { key: "mobcast", label: "Boss and elite casts and spell areas", group: "Threat", def: true, parts: ["mobcast"],
+      tip: "The spell a boss or elite is casting: its area (cone, back cone or line), a progress ring, and the time left and target." },
     { key: "threat", label: "Mob → its target (red: not a tank)", group: "Threat", def: true, line: true, styleFrom: "threat", parts: ["threatcolors", "threat"],
       tip: "A ring in the colour of whom the unit attacks and a line to that unit; red when it is not a tank of the raid layout." },
     { key: "aggro", label: "Aggro and wake rings", group: "Threat", def: true, line: true, styleFrom: "aggro", parts: ["aggro", "planrings"],
@@ -351,12 +357,14 @@
   }
 
   // A raid preset applied to a state: the RAID_KEYS on when the preset lists them, off otherwise; the preset's trail cut when it sets
-  // one; every other key, the dim, the path length and the styles untouched. An unknown name gives the normalized state.
+  // one; the boss overlay's two layers follow the enemies layer (a preset never touches it, so a party that shows enemies shows
+  // where its bosses look); every other key, the dim, the path length and the styles untouched. An unknown name gives the state.
   function applyPreset(state, name) {
     const out = normalize(state);
     const p = PRESETS.find((x) => x.name === name);
     if (!p) return out;
     RAID_KEYS.forEach((k) => { out[k] = p.on.indexOf(k) >= 0; });
+    out.facing = out.mobcast = out.enemies === true;
     if (typeof p.trailSec === "number") out.trailSec = clampTrailSec(p.trailSec);
     return out;
   }

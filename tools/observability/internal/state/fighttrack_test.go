@@ -300,7 +300,7 @@ func TestParseTrackWindow(t *testing.T) {
 func TestTrackCarriesBossOverlay(t *testing.T) {
 	facing := 1.5708
 	mobs := []model.CommanderMob{{ID: "5", Entry: 10184, Name: "Onyxia", X: 1, Y: 2, HP: 80, Rank: "b",
-		O: &facing, CastID: 18435, CastLeftMS: 1200, CastTotalMS: 2000, CastTarget: "814",
+		O: &facing, Cast: "Wing Buffet", CastID: 18435, CastLeftMS: 1200, CastTotalMS: 2000, CastTarget: "814",
 		Shape: &model.CommanderShape{Kind: "cone", Angle: 120, Length: 45}}}
 	s := newTestStore(newClock())
 	s.ApplyCommanders(trackPayload(1, 100, trackBinding("c", []model.CommanderBot{trackBot(814, 0, 0, 100, 100)}, mobs)))
@@ -309,17 +309,26 @@ func TestTrackCarriesBossOverlay(t *testing.T) {
 		t.Fatalf("frames = %+v", frames)
 	}
 	m := frames[0].Mobs[0]
-	if m.O == nil || *m.O != facing || m.CastID != 18435 || m.CastEnd != 101200 || m.CastTotal != 2000 || m.CastTarget != "814" || m.Channel != 0 || m.Shape == nil || m.Shape.Kind != "cone" {
+	if m.O == nil || *m.O != facing || m.CastID != 18435 || m.CastName != "Wing Buffet" || m.CastEnd != 101200 || m.CastTotal != 2000 || m.CastTarget != "814" || m.Channel != 0 || m.Shape == nil || m.Shape.Kind != "cone" {
 		t.Fatalf("frame overlay lost: %+v", m)
 	}
 	raw, err := json.Marshal(TrackJSON("c", frames, names, true))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"o":1.57`, `"cid":18435`, `"ce":101200`, `"ctot":2000`, `"ctg":"814"`, `"sh":{"k":"cone","a":120,"l":45}`} {
+	for _, want := range []string{`"o":1.57`, `"cid":18435`, `"cn":"Wing Buffet"`, `"ce":101200`, `"ctot":2000`, `"ctg":"814"`, `"sh":{"k":"cone","a":120,"l":45}`} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("track JSON lacks %s: %s", want, raw)
 		}
+	}
+	// The cast's name rides with the cast id only: a name without a cast to time is not a cast.
+	castOnly := []model.CommanderMob{{ID: "6", Entry: 10184, Name: "Onyxia", X: 1, Y: 2, HP: 80, Rank: "b", Cast: "Wing Buffet"}}
+	s2 := newTestStore(newClock())
+	s2.ApplyCommanders(trackPayload(1, 100, trackBinding("c", []model.CommanderBot{trackBot(814, 0, 0, 100, 100)}, castOnly)))
+	f2, n2 := s2.Track("c", 100, 100)
+	raw2, _ := json.Marshal(TrackJSON("c", f2, n2, true))
+	if strings.Contains(string(raw2), `"cn"`) {
+		t.Fatalf("a cast name without a cast id must not be sent: %s", raw2)
 	}
 	// A facing of 0 is a direction, not "not reported".
 	zero := 0.0
@@ -336,7 +345,7 @@ func TestTrackCarriesBossOverlay(t *testing.T) {
 	}
 	plain := trackMobJSON{}
 	out, _ := json.Marshal(plain)
-	if strings.Contains(string(out), `"o"`) || strings.Contains(string(out), `"sh"`) {
+	if strings.Contains(string(out), `"o"`) || strings.Contains(string(out), `"sh"`) || strings.Contains(string(out), `"cn"`) {
 		t.Fatalf("an ordinary mob must not grow the overlay fields: %s", out)
 	}
 }

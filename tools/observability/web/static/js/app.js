@@ -5031,6 +5031,9 @@
   const cmdTrails = CmdPaths.newTrails(); // every bot's path (the lead's is in cmdTracker.trail), kept from the 2 s reports
   const cmdStalls = CmdPaths.newStalls(); // where the run paused or an order was refused, fixed when first seen
   const cmdPlans = {};        // plan name -> {plan: the daemon's /api/v1/plans answer | null, err, at (unix ms of the answer), loading}
+  // commander -> mob id -> performance.now() of the report that carried the mob's cast (the module reports the time left at
+  // read time; the map counts it down from the report's arrival). A position frame carries no cast, so it never restarts it.
+  const cmdMobSeenAt = {};
   let cmdTrailsLoading = false;
 
   // ---- The live stream (GET /api/v1/live) ----
@@ -5392,6 +5395,7 @@
       CmdView.note(cmdTracker, b, now);
       UnitInfo.noteEvents(cmdEvents, b, now);
       cmdNotePaths(b, now);
+      cmdNoteMobTimes(b, performance.now());
     });
     cmdPruneAll();
     if (state.activeTab === 'commanders') renderCommanders();
@@ -5406,6 +5410,7 @@
     CmdPaths.pruneStalls(cmdStalls, keys);
     Object.keys(cmdGlide).forEach(k => { if (!keys.includes(k)) delete cmdGlide[k]; });
     Object.keys(cmdLiveEvents).forEach(k => { if (!keys.includes(k)) delete cmdLiveEvents[k]; });
+    Object.keys(cmdMobSeenAt).forEach(k => { if (!keys.includes(k)) delete cmdMobSeenAt[k]; });
   }
 
   function setCmdDemo(on, quiet) {
@@ -5491,6 +5496,10 @@
     if (view.fresh) {
       const list = Array.isArray(view.commanders) ? view.commanders : [];
       const updatedAt = view.updated_at || Math.round(Date.now() / 1000), receivedAt = Date.now();
+      // The cast clock starts when the report arrives, not when the refresh gate lets it on screen: the module read "time left"
+      // before the report was sent.
+      const nowMs = performance.now();
+      list.forEach(bind => cmdNoteMobTimes(bind, nowMs));
       // What the page remembers (paths, hp changes, events) keeps every report, so a slow refresh rate loses no part of a path; while
       // paused it is held too, so nothing on the map moves, and it is replayed in order on resume.
       refreshGate.note(() => list.forEach(bind => { CmdView.note(cmdTracker, bind, updatedAt); UnitInfo.noteEvents(cmdEvents, bind, updatedAt); cmdNotePaths(bind, updatedAt); }));
@@ -5522,6 +5531,14 @@
     const lead = CmdView.leadBot(bind), tr = cmdTracker.trail[bind.commander];
     const leadPts = lead && tr && tr.map === lead.map ? tr.pts : [];
     CmdPaths.noteStalls(cmdStalls, bind, nowSec, leadPts, lead ? { x: lead.x, y: lead.y } : null, CmdPaths.runSteps(bind.run), lead ? lead.map : null);
+  }
+
+  // When a report's mob arrived, so the map can count its cast down between the 2 s reports. A report replaces the mobs it
+  // knows; a mob it no longer carries loses its stamp.
+  function cmdNoteMobTimes(bind, atMs) {
+    if (!bind || typeof bind.commander !== 'string') return;
+    const seen = cmdMobSeenAt[bind.commander] = {};
+    (Array.isArray(bind.mobs) ? bind.mobs : []).forEach(m => { if (m && m.id != null) seen[m.id] = atMs; });
   }
 
   // A binding the page has not asked the daemon about yet gets its short stored history once: the paths then start with what happened
@@ -6064,6 +6081,8 @@
       + (o.commander ? '<span><i class="cmdr"></i>Commander</span>' : '')
       + (o.aggro ? '<span><i class="aggro"></i>Aggro range (by level)</span>' : '')
       + (o.bossmark ? '<span><i class="lboss"></i>Boss (crown, name shown)</span>' : '')
+      + (o.facing ? '<span><i class="facing"></i>Facing arrow: where a boss or elite looks</span>' : '')
+      + (o.mobcast ? '<span><i class="larea"></i>Red area: the spell being cast (cone, back cone or line)</span>' : '')
       + (o.hpbars ? '<span><i class="lhp"></i>Health bar</span>' : '')
       + (o.threatcolors ? '<span><i class="tc-tank"></i>On the tank</span><span><i class="tc-other"></i>On someone else</span><span><i class="tc-target"></i>Tank\'s target</span><span><i class="tc-pull"></i>Pull target</span>' : '')
       + (o.statusicons ? '<span class="lic">dead <svg viewBox="-6 -6 12 12" class="ic-skull">' + CMD_MAP_ICONS.skull + '</svg></span><span class="lic">casting <svg viewBox="-6 -6 12 12" class="ic-spark">' + CMD_MAP_ICONS.spark + '</svg></span>'
@@ -6142,6 +6161,7 @@
       zone: !!zr, zonesAround, bots: onMap.length > 0, lead: !!lead && onMap.indexOf(lead) >= 0,
       trail: trail.length >= 2, heading: !!heading, healer: onMap.some(b => b.role === 'healer' && b.alive !== false),
       commanderPos: !!commanderAt, mobs: reported, mobTargets: reported, botTargets: reported && onMap.some(b => !!b.id),
+      facing: mobs.some(m => typeof m.o === 'number'), mobcast: mobs.some(m => !!m.cid),
       activity: onMap.some(b => b.st != null) || mobs.some(m => m.cast || m.cc),
       events: UnitInfo.eventsOf(cmdEvents, bind.commander).length > 0,
     };
@@ -6276,6 +6296,36 @@
     if (on.healline) CmdPaths.healLines(onMap).forEach(l => { g += cmdLineSvg(c, 'actionlines', 'healline', l.from, l.to, 0.9); });
     if (on.ccline) CmdPaths.ccLines(onMap, mobs).forEach(l => { g += cmdLineSvg(c, 'actionlines', 'ccline', l.from, l.to, 0.9); });
     return g;
+  }
+
+  // The boss overlay of one mob row: the area of the spell it casts (under its dot, so the dot stays readable), then where it
+  // looks, the cast's progress ring and its label. Bosses and elites only, each part under its own layer. nowLeftMs is the time
+  // left at this moment: the report's own time counted down for a live map, the frame's time for a replay. A cast whose time has
+  // run out draws nothing (the report may be older than the cast). The caller draws `under` before the mob's dot, `over` after.
+  function cmdMobOverlaySvg(c, m, on, nowLeftMs, botsById) {
+    const o = on || {}, k = c.k, f = c.f, none = { under: '', over: '' };
+    if (!m || (m.rank !== 'b' && m.rank !== 'e')) return none;
+    const p = CmdView.project(m.x, m.y), facing = typeof m.o === 'number', casting = !!m.cid && nowLeftMs > 0;
+    let under = '', over = '';
+    if (o.mobcast && casting && facing && m.shape) {
+      const d = CmdView.shapePath(p.x, p.y, m.o, m.shape);
+      if (d) under += `<path class="mobshape s-${esc(m.shape.k)}" d="${d}"/>`;
+    }
+    if (o.facing && facing) {
+      const v = CmdView.facingVec(m.o), len = 18 * k, base = (len * 16) / 34, half = (len * 7) / 34, nx = -v.y, ny = v.x;
+      const pt = (a, b) => `${f(a)},${f(b)}`;
+      over += `<polygon class="facing" points="${pt(p.x + v.x * len, p.y + v.y * len)} `
+        + `${pt(p.x + v.x * base + nx * half, p.y + v.y * base + ny * half)} `
+        + `${pt(p.x + v.x * base - nx * half, p.y + v.y * base - ny * half)}"/>`;
+    }
+    if (o.mobcast && casting) {
+      const r = (m.rank === 'b' ? 11 : 7) * k, circ = 2 * Math.PI * r, frac = CmdView.castFrac(m, nowLeftMs);
+      const target = m.ctg && botsById && botsById[m.ctg] ? botsById[m.ctg].name : '';
+      const label = (m.cast || 'a spell') + ' ' + (nowLeftMs / 1000).toFixed(1) + ' s' + (target ? ' → ' + target : '');
+      over += `<circle class="castring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}" stroke-dasharray="${f(frac * circ)} ${f(circ)}" transform="rotate(-90 ${f(p.x)} ${f(p.y)})"/>`
+        + `<text class="mobcast" x="${f(p.x)}" y="${f(p.y - r - 8 * k)}" style="font-size:${f(10 * k)}px;stroke-width:${f(3 * k)}px" text-anchor="middle">${esc(label)}</text>`;
+    }
+    return { under, over };
   }
 
   // ---- the plan layer: the run leader's plan (read from the world database by the daemon) on the map ----
@@ -6542,18 +6592,24 @@
       return o;
     };
     const marks = on.threatcolors ? UnitInfo.targetMarks(mobs, onMap) : { tank: {}, pull: {} };
+    const botsById = {};
+    onMap.forEach(b => { if (b.id) botsById[b.id] = b; });
+    const mobSeen = cmdMobSeenAt[key] || {}, nowMs = performance.now();
     shown.forEach(m => {
       const p = CmdView.project(m.x, m.y), cls = CmdView.mobClass(m), boss = on.bossmark && m.rank === 'b';
       const r = (boss ? 9 : cls === 'critter' ? 3 : 5) * k, uid = 'm:' + m.id;
+      // the time left of its cast: the report's own value counted down from its arrival, or the replay's value at the cursor
+      const leftMs = rp ? (typeof m.cleft === 'number' ? m.cleft : 0) : CmdView.castLeft(m, mobSeen[m.id], nowMs);
+      const ov = cmdMobOverlaySvg(dc, m, on, leftMs, botsById);
       units[uid] = { kind: 'm', obj: m };
-      g += `<g class="mob ${cls}${boss ? ' boss' : ''}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(Math.max(r, 11 * k))}"/>`;
+      g += `<g class="mob ${cls}${boss ? ' boss' : ''}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(Math.max(r, 11 * k))}"/>${ov.under}`;
       if (on.threatcolors) {
         const tc = UnitInfo.threatClass(m, onMap);
         if (marks.pull[m.id]) g += `<circle class="tpull" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 9 * k)}"/>`;
         if (marks.tank[m.id]) g += `<circle class="ttarget" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 5.5 * k)}"/>`;
         if (tc !== 'none') g += `<circle class="tring ${tc}" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 2.2 * k)}"/>`;
       }
-      g += `<circle class="body" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/>`;
+      g += `<circle class="body" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/>${ov.over}`;
       if (boss) g += cmdMapIcon('crown', p.x, p.y, 12 * k).replace('class="ic ic-crown"', 'class="ic ic-crown crownmark"');
       g += overlay(m, 'mob', p, boss ? r + 8 * k : r);
       if (boss || (on.hostilenames && cls === 'hostile')) {
@@ -6676,7 +6732,8 @@
     const bind = cmdFindBind(key);
     const facts = bind ? cmdMapFacts(bind) : null;
     if (!facts) { tip.hidden = true; return; }
-    const ctx = { lead: facts.lead && facts.first && facts.lead.map === facts.first.map ? facts.lead : null, bots: facts.onMap, mobs: facts.mobs };
+    const ctx = { lead: facts.lead && facts.first && facts.lead.map === facts.first.map ? facts.lead : null, bots: facts.onMap, mobs: facts.mobs,
+      mobSeenAt: cmdMobSeenAt[key], nowMs: performance.now() };
     const d = u.kind === 'b' ? UnitInfo.describeBot(u.obj, ctx) : u.kind === 'm' ? UnitInfo.describeMob(u.obj, ctx)
       : u.kind === 'c' ? UnitInfo.describeCommander(u.obj.name, u.obj, ctx)
       : u.kind === 'o' ? UnitInfo.describeObject(u.obj, ctx)
@@ -7930,21 +7987,43 @@
         id: String(guid), target: '', st: '', act: '', cast: '', ctgt: '', mv: false,
       }));
     });
+    const frames = (track && track.prep && track.prep.frames) || [];
+    let map = 0, cursor = 0, frame = null, nextFrame = null;
+    if (frames.length) {
+      // The cursor itself may sit past the last report (the play head runs to the fight's end); only the frame search is clamped.
+      cursor = typeof tS === 'number' && isFinite(tS) ? tS : frames[frames.length - 1].t;
+      const t = Math.max(frames[0].t, Math.min(frames[frames.length - 1].t, cursor));
+      let i = 0;
+      while (i + 1 < frames.length && frames[i + 1].t <= t) i += 1;
+      map = frames[i].map;
+      frame = frames[i];
+      nextFrame = frames[i + 1] || null;
+    }
     const mobs = [];
     const mobAt = FightReplay.mobsAt(track && track.prep, tS);
     Object.keys(mobAt).forEach(id => {
       const m = mobAt[id];
-      mobs.push({ id, entry: m.e, name: m.n, hp: m.hp, x: m.x, y: m.y, victim: m.v ? String(m.v) : '', reaction: 'h', rank: m.rk || '' });
+      const mob = { id, entry: m.e, name: m.n, hp: m.hp, x: m.x, y: m.y, victim: m.v ? String(m.v) : '', reaction: 'h', rank: m.rk || '' };
+      // The boss overlay at the cursor: the frame at or before it carries the cast (its absolute end gives the time left there),
+      // and the facing turns the shorter way between two frames that both report it (else the nearest one that does).
+      const a = frame && frame.mobs ? frame.mobs[id] : null;
+      const b = nextFrame && nextFrame.mobs ? nextFrame.mobs[id] : null;
+      const ao = a && typeof a.o === 'number' ? a.o : null, bo = b && typeof b.o === 'number' ? b.o : null;
+      if (ao !== null && bo !== null && frame.map === nextFrame.map && nextFrame.t > frame.t) {
+        mob.o = CmdView.angleLerp(ao, bo, Math.min(1, Math.max(0, (cursor - frame.t) / (nextFrame.t - frame.t))));
+      } else if (ao !== null) mob.o = ao;
+      else if (bo !== null) mob.o = bo;
+      if (a && a.cid) {
+        mob.cid = a.cid;
+        mob.cleft = Math.max(0, a.ce - cursor * 1000);
+        mob.ctot = a.ctot;
+        mob.cast = a.cn || '';
+        mob.ctg = a.ctg || '';
+        mob.ch = a.ch || 0;
+        if (a.sh) mob.shape = a.sh;
+      }
+      mobs.push(mob);
     });
-    const frames = (track && track.prep && track.prep.frames) || [];
-    let map = 0;
-    if (frames.length) {
-      let t = typeof tS === 'number' && isFinite(tS) ? tS : frames[frames.length - 1].t;
-      t = Math.max(frames[0].t, Math.min(frames[frames.length - 1].t, t));
-      let i = 0;
-      while (i + 1 < frames.length && frames[i + 1].t <= t) i += 1;
-      map = frames[i].map;
-    }
     return Object.assign({}, bind, { bots, mobs, mobs_map: map, objects: [], orders: [], commander_pos: null });
   }
 

@@ -207,6 +207,12 @@ func TestGlideJS(t *testing.T) {
 	runCheck(t, "glide_check.js", "../../web/static/js/glide.js")
 }
 
+// TestBossOverlayJS runs bossoverlay_check.js: the boss overlay on the map and in the replay (the facing arrow, the spell's area,
+// the cast ring and label, the escaping), and the CSS block that styles them.
+func TestBossOverlayJS(t *testing.T) {
+	runCheck(t, "bossoverlay_check.js", "../../web/static/js/app.js", "../../web/static/css/app.css")
+}
+
 // TestLiveViewJS runs live_check.js: the live stream's pure half (the commanders' URL, the copy-on-write pos merge, the refresh
 // rates that may move the dots, the error fallback and the one-draw-per-frame scheduler).
 func TestLiveViewJS(t *testing.T) {

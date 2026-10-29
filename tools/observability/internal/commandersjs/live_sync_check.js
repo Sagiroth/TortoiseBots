@@ -52,12 +52,14 @@ function grab(name) {
     cmdTracker: { trail: {} }, cmdEvents: {}, cmdTrails: {}, cmdStalls: {},
     cmdGlide: { A: { units: {} }, B: { units: {} } },
     cmdLiveEvents: { A: [{ ev: {} }], B: [{ ev: {} }] },
+    cmdMobSeenAt: { A: { 5: 1 }, B: { 6: 1 } },
   };
   vm.createContext(ctx);
   vm.runInContext(grab("cmdPruneAll"), ctx);
   ctx.cmdPruneAll();
   assert.deepStrictEqual(Object.keys(ctx.cmdGlide), ["A"], "a gone commander's glide state is dropped");
   assert.deepStrictEqual(Object.keys(ctx.cmdLiveEvents), ["A"], "a gone commander's live events are dropped");
+  assert.deepStrictEqual(Object.keys(ctx.cmdMobSeenAt), ["A"], "a gone commander's cast clocks are dropped");
   assert.ok(ctx.cmdGlide.A && ctx.cmdLiveEvents.A, "the commanders still bound keep theirs");
 }
 console.log("live sync ok");

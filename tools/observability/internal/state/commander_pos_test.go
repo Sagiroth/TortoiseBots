@@ -134,3 +134,48 @@ func TestPosDoesNotMutateHandedOutView(t *testing.T) {
 		t.Fatalf("fresh view: %+v", a)
 	}
 }
+
+// TestPosMergesFacing: a position frame carries where a boss or elite looks (the module reads it with the boss overlay), the
+// merge takes it for the mob it names, a frame without one leaves the report's facing, and a view read before the merge keeps
+// the facing it was given.
+func TestPosMergesFacing(t *testing.T) {
+	s := newTestStore(newClock())
+	report := posCommanders(5, 5000)
+	facing := 0.5
+	report.Commanders[0].Mobs[0].O = &facing
+	if !s.ApplyCommanders(report) {
+		t.Fatal("COMMANDERS refused")
+	}
+	before := s.Commanders()
+	pos := posPayload(5, 6000)
+	turned := 1.57
+	pos.Mobs[0].O = &turned
+	if _, ok := s.ApplyCommanderPos(pos); !ok {
+		t.Fatal("pos refused")
+	}
+	after := s.Commanders()
+	if m := after.Commanders[0].Mobs[0]; m.O == nil || *m.O != turned {
+		t.Fatalf("the facing was not merged: %+v", m.O)
+	}
+	if m := before.Commanders[0].Mobs[0]; m.O == nil || *m.O != facing {
+		t.Fatalf("the earlier view changed: %+v", m.O)
+	}
+	// A frame without the field keeps the standing facing (the field is additive: an older module sends none).
+	plain := posPayload(5, 7000)
+	if _, ok := s.ApplyCommanderPos(plain); !ok {
+		t.Fatal("second pos refused")
+	}
+	if m := s.Commanders().Commanders[0].Mobs[0]; m.O == nil || *m.O != turned {
+		t.Fatalf("a frame without o cleared the facing: %+v", m.O)
+	}
+	// A facing of 0 is a direction: it is merged like any other.
+	pos = posPayload(5, 8000)
+	zero := 0.0
+	pos.Mobs[0].O = &zero
+	if _, ok := s.ApplyCommanderPos(pos); !ok {
+		t.Fatal("third pos refused")
+	}
+	if m := s.Commanders().Commanders[0].Mobs[0]; m.O == nil || *m.O != 0 {
+		t.Fatalf("a facing of 0 was dropped: %+v", m.O)
+	}
+}

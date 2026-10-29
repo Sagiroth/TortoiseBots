@@ -28,15 +28,15 @@ function grabConst(name) {
 
 const ctx = { console };
 vm.createContext(ctx);
-["fightdebug.js", "fightreplay.js", "aggrolanes.js"].forEach((f) => {
+["commanders.js", "fightdebug.js", "fightreplay.js", "aggrolanes.js"].forEach((f) => {
   vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f });
 });
+assert.ok(ctx.CmdView && typeof ctx.CmdView.project === "function", "commanders.js loads as CmdView");
 assert.ok(ctx.FightReplay && typeof ctx.FightReplay.botsAt === "function", "fightreplay.js loads as FightReplay");
 assert.ok(ctx.AggroLanes && typeof ctx.AggroLanes.lanes === "function", "aggrolanes.js loads as AggroLanes");
 vm.runInContext([grab("esc"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grabConst("cmdPt"), grab("cmdPlanSvg"),
   grab("cmdFloors"), grab("cmdFloorZs"), grabConst("CMD_FLOOR_GAP_YD"), grabConst("FD_REPLAY_OFF"), grab("fdPlayHtml"),
-  grab("fdLanesHtml"), grab("fdReplayBind")].join("\n")
-  + "\nvar CmdView = { project: (x, y) => ({ x: -y, y: -x }) };", ctx);
+  grab("fdLanesHtml"), grab("fdReplayBind")].join("\n"), ctx);
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const f = (n) => n.toFixed(2);

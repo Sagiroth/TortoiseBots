@@ -60,6 +60,11 @@
         if (e === null || x === null || y === null) return;
         const hp = num(m.hp);
         const v = num(m.v);
+        // The boss overlay rides along (the page draws it at the cursor): facing, the cast's absolute end and size, its name and
+        // target, and the spell's area. A frame without them stays as it was.
+        const o = num(m.o);
+        const ce = num(m.ce);
+        const cid = num(m.cid);
         mobs[String(m.id)] = {
           e: e,
           x: x,
@@ -68,6 +73,14 @@
           v: v === null ? 0 : v,
           vo: m.vo ? 1 : 0,
           rk: typeof m.rk === "string" ? m.rk : "",
+          o: o === null ? undefined : o,
+          cid: cid === null ? 0 : cid,
+          ce: ce === null ? 0 : ce,
+          ctot: num(m.ctot) === null ? 0 : m.ctot,
+          ctg: typeof m.ctg === "string" ? m.ctg : "",
+          ch: num(m.ch) === null ? 0 : m.ch,
+          cn: typeof m.cn === "string" ? m.cn : "",
+          sh: m.sh && typeof m.sh === "object" ? m.sh : undefined,
         };
       });
       frames.push({

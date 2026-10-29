@@ -982,12 +982,16 @@ type PosBot struct {
 
 // PosMob is one enemy near the lead: its guid as a decimal string, where it
 // stands, its health percent and the raw guid of the unit it targets ("" none).
+// O is where a boss or elite looks (radians, 0 = +x north, counter-clockwise
+// toward +y west); the module adds it with the boss overlay, so an older one
+// leaves it out and a nil keeps the full report's facing.
 type PosMob struct {
-	ID string  `json:"id"`
-	X  float64 `json:"x"`
-	Y  float64 `json:"y"`
-	HP uint32  `json:"hp"`
-	V  string  `json:"v"`
+	ID string   `json:"id"`
+	X  float64  `json:"x"`
+	Y  float64  `json:"y"`
+	HP uint32   `json:"hp"`
+	V  string   `json:"v"`
+	O  *float64 `json:"o,omitempty"`
 }
 
 // CommanderPosFrame is one accepted position datagram as the live stream

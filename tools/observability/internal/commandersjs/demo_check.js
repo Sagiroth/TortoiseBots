@@ -81,6 +81,8 @@ for (let sec = 1000; sec <= 1000 + 2 * D.LOOP; sec += 2) {
   mark("aggro", V.aggroMobs(mobs.filter((m) => V.mobClass(m) === "hostile")).length);
   mark("hostilenames", mobs.filter((m) => V.mobClass(m) === "hostile" && m.name).length);
   mark("bossmark", mobs.filter((m) => m.rank === "b").length);
+  mark("facing", mobs.filter((m) => typeof m.o === "number").length);
+  mark("mobcast", mobs.filter((m) => m.cid).length);
   mark("threatcolors", Object.keys(marks.tank).length > 0 && Object.keys(marks.pull).length > 0 ? 1 : 0);
   mark("threat", V.threatLines(mobs, onMap).length); mark("bottarget", V.botTargetLines(onMap, mobs).length);
   mark("healline", P.healLines(onMap).length); mark("ccline", P.ccLines(onMap, mobs).length);

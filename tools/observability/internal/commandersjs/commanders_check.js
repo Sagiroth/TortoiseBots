@@ -536,4 +536,41 @@ assert.strictEqual(C.layoutText({ layout: { mt: "", ot: [], th: [], rh: [] } }),
   assert.deepStrictEqual(C.threatLines([{ id: "1", x: 0, y: 0, reaction: "h", victim: "999" }], tb, { mt: "Ragemeister", ot: ["Ireni"] }), [],
     "a victim that is not a listed bot");
 }
+// ---- the boss overlay (fight debugger phase 2): where a boss looks, the area of its spell and the cast clock
+// the plane puts north up: a unit facing 0 (game +x) looks up (-y in the plane), a quarter turn looks west (-x)
+assert.deepStrictEqual(C.facingVec(0), { x: 0, y: -1 });
+const fv = C.facingVec(Math.PI / 2);
+assert.ok(Math.abs(fv.x + 1) < 1e-9 && Math.abs(fv.y) < 1e-9, JSON.stringify(fv));
+// a 120 degree cone of 20 yd ends 10 yd up and 17.32 yd to either side of the unit
+const cone = C.shapePath(0, 0, 0, { k: "cone", a: 120, l: 20 });
+assert.ok(cone.indexOf("17.32,-10.00") >= 0 && cone.indexOf("-17.32,-10.00") >= 0, cone);
+assert.ok(/^M0\.00,0\.00L/.test(cone) && /A20\.00 20\.00 0 0 1/.test(cone) && /Z$/.test(cone), cone);
+const back = C.shapePath(0, 0, 0, { k: "back-cone", a: 120, l: 20 });
+assert.ok(back.indexOf("17.32,10.00") >= 0 && back.indexOf("-17.32,10.00") >= 0, back);
+const wide = C.shapePath(0, 0, 0, { k: "cone", a: 240, l: 20 });
+assert.ok(/A20\.00 20\.00 0 1 1/.test(wide), "a cone past a half turn takes the large arc: " + wide);
+const band = C.shapePath(0, 0, 0, { k: "line", l: 60, w: 20 });
+["-10.00,0.00", "10.00,0.00", "-10.00,-60.00", "10.00,-60.00"].forEach((pt) => assert.ok(band.includes(pt), pt + " in " + band));
+assert.strictEqual(C.shapePath(0, 0, 0, { k: "cone", a: 120 }), "", "a cone without reach is not drawn");
+assert.strictEqual(C.shapePath(0, 0, 0, { k: "cone", a: 0, l: 20 }), "", "a cone without an arc is not drawn");
+assert.strictEqual(C.shapePath(0, 0, 0, { k: "wibble", l: 20, w: 10 }), "", "an unknown area is not drawn");
+assert.strictEqual(C.shapePath(0, 0, 0, null), "");
+const nw = C.facingVec(Math.PI / 4);
+assert.ok(Math.abs(nw.x + Math.SQRT1_2) < 1e-9 && Math.abs(nw.y + Math.SQRT1_2) < 1e-9, "a diagonal faces north-west");
+// the cast clock between two reports, never below zero
+assert.strictEqual(C.castLeft({ cleft: 2000 }, 1000, 2500), 500);
+assert.strictEqual(C.castLeft({ cleft: 2000 }, 1000, 4000), 0);
+assert.strictEqual(C.castLeft({ cleft: 0 }, 0, 0), 0);
+assert.strictEqual(C.castLeft({}, 0, 100), 0);
+assert.strictEqual(C.castLeft({ cleft: 1000 }, undefined, 500), 1000, "no arrival time: nothing is counted");
+assert.strictEqual(C.castFrac({ ctot: 2000 }, 500), 0.75);
+assert.strictEqual(C.castFrac({ ctot: 2000 }, 2500), 0, "clamped");
+assert.strictEqual(C.castFrac({ ctot: 0 }, 0), 0);
+assert.strictEqual(C.castFrac({}, 0), 0);
+// the shorter arc across the seam, never through zero
+const seam = C.angleLerp(3.1, -3.1, 0.5);
+assert.ok(Math.abs(Math.abs(seam) - Math.PI) < 0.05, String(seam));
+assert.strictEqual(C.angleLerp(0, Math.PI / 2, 0.5), Math.PI / 4);
+assert.ok(Math.abs(C.angleLerp(0, 0, 0.5)) < 1e-12);
+
  console.log("commanders.js ok");

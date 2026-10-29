@@ -68,6 +68,29 @@
     return Math.hypot(a.x - b.x, a.y - b.y);
   }
 
+  // The compass word of a facing (o in radians, 0 = north, counter-clockwise toward west): N, NW, W, SW, S, SE, E, NE.
+  const COMPASS = ["N", "NW", "W", "SW", "S", "SE", "E", "NE"];
+  function compass(o) {
+    if (!num(o)) return "";
+    const twoPi = Math.PI * 2;
+    let a = o % twoPi;
+    if (a < 0) a += twoPi;
+    return COMPASS[Math.round(a / (Math.PI / 4)) % 8];
+  }
+
+  // The spell a unit is casting, with the time left at the moment of the box (the report's cleft counted from the report's
+  // arrival, when ctx carries mobSeenAt and nowMs) and the bound bot it is aimed at (ctg, the bot's id). The plain name when
+  // the report brings no clock; null when nothing is cast.
+  function castRow(m, ctx) {
+    if (!m || (!m.cast && !m.cid)) return null;
+    const name = str(m.cast) || "a spell";
+    if (!num(m.cleft)) return ["Casting", name];
+    const c = ctx || {}, seen = c.mobSeenAt ? c.mobSeenAt[m.id] : null;
+    const waited = num(seen) && num(c.nowMs) ? Math.max(0, c.nowMs - seen) : 0;
+    const target = m.ctg ? byId(c.bots)[m.ctg] : null;
+    return ["Casting", name + " (" + (Math.max(0, m.cleft - waited) / 1000).toFixed(1) + " s left)" + (target ? " at " + target.name : "")];
+  }
+
   // ---- the hover box ---------------------------------------------------------------------------------------------------
 
   const HEALTH_LOW = 30;
@@ -95,13 +118,17 @@
     return { title: str(b.name) || "Bot", sub, tone: dead ? "dead" : "bot", rows };
   }
 
-  // A mob: name (or its entry), level, rank, reaction, health, what it casts, whom it attacks, crowd control, distance to the lead.
+  // A mob: name (or its entry), level, rank, reaction, health, what it casts and how long that has left, where it looks, whom it
+  // attacks, crowd control, distance to the lead. ctx may carry `mobSeenAt` (mob id -> arrival of the report that carried it) and
+  // `nowMs`, so the cast's time left counts down between reports.
   function describeMob(m, ctx) {
     const c = ctx || {}, bots = byId(c.bots), rows = [];
     const title = str(m.name) || (m.entry ? "Creature " + m.entry : "Unit");
     const sub = [m.lvl ? "level " + m.lvl : "", RANK_WORD[m.rank] || "", REACTION_WORD[m.reaction] || "", KIND_WORD[m.kind] || ""].filter(Boolean).join(" · ");
     rows.push(["Health", num(m.hp) ? m.hp + " %" : "unknown"]);
-    if (m.cast) rows.push(["Casting", m.cast]);
+    const cast = castRow(m, c);
+    if (cast) rows.push(cast);
+    if (num(m.o)) rows.push(["Facing", compass(m.o)]);
     if (m.victim) {
       const v = bots[m.victim];
       rows.push(["Attacking", v ? v.name : "someone outside the party"]);

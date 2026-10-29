@@ -45,6 +45,7 @@ type TrackMob struct {
 	Rank        string
 	O           *float64              // facing, radians; nil when not reported
 	CastID      uint32                // the spell being cast or channelled, 0 = none
+	CastName    string                // that spell's name, as the module clips it; empty = none
 	CastEnd     int64                 // when it ends, unix ms
 	CastTotal   uint32                // its own time, or the channel's duration, ms
 	CastTarget  string                // guid of the unit it is aimed at
@@ -111,7 +112,7 @@ func (st *commandersState) noteTracks(list []model.CommanderBinding, ts int64, n
 		}
 		for _, m := range b.Mobs {
 			mob := TrackMob{ID: m.ID, Entry: m.Entry, X: float32(m.X), Y: float32(m.Y), HP: uint8(m.HP), Rank: m.Rank,
-				O: m.O, CastID: m.CastID, CastEnd: m.CastEndMS, CastTotal: m.CastTotalMS, CastTarget: m.CastTarget,
+				O: m.O, CastID: m.CastID, CastName: m.Cast, CastEnd: m.CastEndMS, CastTotal: m.CastTotalMS, CastTarget: m.CastTarget,
 				Channel: m.Channel, Shape: m.Shape}
 			if m.Victim != "" {
 				if g, ok := ids[m.Victim]; ok {
@@ -252,8 +253,8 @@ func ParseTrackWindow(q url.Values) (commander string, from, to int64, err error
 }
 
 // trackMobJSON is one enemy of a frame in the wire shape: v is the targeted bound bot's guid, vo flags a victim that is not a
-// bound bot (the module sends 1, not true). The boss overlay: o facing in radians (2 decimals), cid cast id, ce cast end unix
-// ms, ctot cast total ms, ctg cast target guid, ch channel, sh the spell's area.
+// bound bot (the module sends 1, not true). The boss overlay: o facing in radians (2 decimals), cid cast id, cn that cast's name,
+// ce cast end unix ms, ctot cast total ms, ctg cast target guid, ch channel, sh the spell's area.
 type trackMobJSON struct {
 	ID    string                `json:"id"`
 	Entry uint32                `json:"e"`
@@ -265,6 +266,7 @@ type trackMobJSON struct {
 	RK    string                `json:"rk,omitempty"`
 	O     *float64              `json:"o,omitempty"`
 	CID   uint32                `json:"cid,omitempty"`
+	CN    string                `json:"cn,omitempty"`
 	CE    int64                 `json:"ce,omitempty"`
 	CT    uint32                `json:"ctot,omitempty"`
 	CTG   string                `json:"ctg,omitempty"`
@@ -309,6 +311,9 @@ func TrackJSON(commander string, frames []TrackFrame, names map[uint32]string, t
 		for _, m := range f.Mobs {
 			o := trackMobJSON{ID: m.ID, Entry: m.Entry, X: roundTenth(m.X), Y: roundTenth(m.Y), HP: m.HP, V: m.VictimBot, RK: m.Rank,
 				CID: m.CastID, CE: m.CastEnd, CT: m.CastTotal, CTG: m.CastTarget, CH: m.Channel, SH: m.Shape}
+			if m.CastID != 0 {
+				o.CN = m.CastName
+			}
 			if m.VictimOther {
 				o.VO = 1
 			}

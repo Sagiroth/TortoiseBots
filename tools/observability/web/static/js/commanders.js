@@ -564,6 +564,77 @@
   // The mobs that get an aggro ring: hostile ones that nobody fights yet, i.e. the next pull. (Critters and neutrals do not aggro.)
   function aggroMobs(mobs) { return (mobs || []).filter((m) => mobClass(m) === "hostile" && !m.victim && num(m.hp) && m.hp > 0); }
 
+  // ---- the boss overlay: where a boss or elite looks and the area of the spell it casts (fight debugger phase 2) -------------
+  // A game direction (cos o, sin o) in the drawing plane, where the plane is project(x, y) = (-y, -x): north, the game's +x, is up.
+  function facingVec(o) {
+    const a = num(o) ? o : 0;
+    return { x: 0 - Math.sin(a), y: 0 - Math.cos(a) };
+  }
+
+  const n2 = (n) => (isFinite(n) ? n : 0).toFixed(2);
+
+  // The facing vector turned by t radians (screen coordinates, y down).
+  function turn(v, t) {
+    const c = Math.cos(t), s = Math.sin(t);
+    return { x: v.x * c - v.y * s, y: v.x * s + v.y * c };
+  }
+
+  function unit(v) {
+    const d = Math.hypot(v.x, v.y);
+    return d > 0 ? { x: v.x / d, y: v.y / d } : v;
+  }
+
+  // The SVG path a shape covers around a unit at plane point (cx, cy) facing o, in yards: a cone with its apex at the unit, a back
+  // cone (the same behind it) or a line along the facing. "" when the shape has no reach or is unknown. k is the caller's
+  // user-space scale (1: the plane is already in yards).
+  function shapePath(cx, cy, o, shape, k) {
+    if (!shape || typeof shape !== "object") return "";
+    const l = num(shape.l) ? shape.l : 0;
+    if (!(l > 0) || !num(cx) || !num(cy)) return "";
+    const s = num(k) && k > 0 ? k : 1, x = cx * s, y = cy * s, len = l * s, dir = facingVec(o);
+    const pt = (p) => n2(p.x) + "," + n2(p.y);
+    if (shape.k === "cone" || shape.k === "back-cone") {
+      const a = num(shape.a) ? shape.a : 0;
+      if (!(a > 0)) return "";
+      const half = (a * Math.PI) / 360;
+      const v = shape.k === "back-cone" ? facingVec((num(o) ? o : 0) + Math.PI) : dir;
+      const p1 = { x: x + turn(v, -half).x * len, y: y + turn(v, -half).y * len };
+      const p2 = { x: x + turn(v, half).x * len, y: y + turn(v, half).y * len };
+      return `M${n2(x)},${n2(y)}L${pt(p1)}A${n2(len)} ${n2(len)} 0 ${a > 180 ? 1 : 0} 1 ${pt(p2)}Z`;
+    }
+    if (shape.k === "line") {
+      const w = num(shape.w) ? Math.max(0, shape.w) : 0;
+      const v = unit(dir), nx = -v.y, ny = v.x, half = (w * s) / 2;
+      const a = { x: x + nx * half, y: y + ny * half }, b = { x: x - nx * half, y: y - ny * half };
+      const c = { x: a.x + v.x * len, y: a.y + v.y * len }, d = { x: b.x + v.x * len, y: b.y + v.y * len };
+      return `M${pt(a)}L${pt(c)}L${pt(d)}L${pt(b)}Z`;
+    }
+    return "";
+  }
+
+  // The time left of a cast reported cleft ms before nowMs (receivedAtMs is when that report arrived); never below zero.
+  function castLeft(m, receivedAtMs, nowMs) {
+    const left = m && num(m.cleft) ? m.cleft : 0;
+    const dt = num(receivedAtMs) && num(nowMs) ? Math.max(0, nowMs - receivedAtMs) : 0;
+    return Math.max(0, left - dt);
+  }
+
+  // How much of the cast is done, 0..1 (a channel counts down from its duration the same way).
+  function castFrac(m, leftMs) {
+    const total = m && num(m.ctot) ? m.ctot : 0;
+    if (!(total > 0)) return 0;
+    return Math.min(1, Math.max(0, (total - (num(leftMs) ? leftMs : 0)) / total));
+  }
+
+  // The shorter way from angle a to angle b, t of the way; across the seam (-pi / +pi) it turns through pi, never through 0.
+  function angleLerp(a, b, t) {
+    const x = num(a) ? a : 0, y = num(b) ? b : 0, twoPi = Math.PI * 2;
+    let d = (y - x) % twoPi;
+    if (d > Math.PI) d -= twoPi;
+    else if (d < -Math.PI) d += twoPi;
+    return x + d * (num(t) ? t : 0);
+  }
+
   // The commander's own place when it stands on mapId: {x, y} (game coordinates) or null.
   function commanderPlace(bind, mapId) {
     const p = bind && bind.commander_pos;
@@ -749,6 +820,7 @@
     trailSegments, markGap, trailSegmentsBroken, trailRuns, trailMarks, trailEvent, jumpLimitYd, TRAVEL_MAX_YD_PER_SEC, TRAVEL_SLACK_YD, TRAVEL_MAX_GAP_SEC, clampScale, prependTrail, heading, trailStamps, scaleBar, zonesIn, pictureSlots, pictureChoice, pictureSelect, pictureRefreshAfter, PIC_RETRY_MS, PIC_MISSING_MS,
     raidBlocks, isRaid, layoutText, threatOffTanks, notesLog, deathsTimeline, controlLines, whyWaiting,
     AGGRO_RANGE_YD, followView, zoomFollow, pinchFollow, mobsOf, mobClass, threatLines, botTargetLines, aggroMobs, commanderPlace,
+    facingVec, shapePath, castLeft, castFrac, angleLerp,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.CmdView = api;
 })(typeof self !== "undefined" ? self : this);

@@ -80,6 +80,10 @@ func (s *Store) ApplyCommanderPos(p *model.CommanderPosPayload) (model.Commander
 		}
 		pm := mobs[idx]
 		nm[k].X, nm[k].Y, nm[k].HP, nm[k].Victim = pm.X, pm.Y, pm.HP, pm.V
+		if pm.O != nil {
+			facing := *pm.O
+			nm[k].O = &facing
+		}
 	}
 	b.Bots, b.Mobs = nb, nm
 	st.list[i] = b

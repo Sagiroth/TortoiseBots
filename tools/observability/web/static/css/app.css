@@ -3527,3 +3527,15 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-live-sub { margin-left: 6px; font-size: 0.78rem; font-weight: 400; color: var(--text-muted); }
 .cmd-live-events { display: grid; gap: 2px; max-height: 180px; overflow-y: auto; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 .cmd-live-row { overflow: hidden; color: var(--text-muted); white-space: nowrap; text-overflow: ellipsis; }
+
+/* ---------- Boss overlay (facing, casts, spell areas) ---------- */
+/* A boss or elite's facing arrow, the area of the spell it casts (drawn under its dot), the cast's progress ring and its label.
+   Colours come from the theme tokens only, so a light theme recolours them all. */
+.cmd-map .facing { fill: var(--accent-red); stroke: none; pointer-events: none; }
+.cmd-map .mobshape { fill: color-mix(in srgb, var(--accent-red) 22%, transparent); stroke: var(--accent-red); stroke-width: 1.2px; pointer-events: none; }
+.cmd-map .mobshape.s-cone, .cmd-map .mobshape.s-back-cone { stroke-width: 1.4px; }
+.cmd-map .mobshape.s-line { stroke-dasharray: 4 3; }
+.cmd-map .castring { fill: none; stroke: var(--accent-yellow); stroke-width: 2px; pointer-events: none; }
+.cmd-map .mobcast { fill: var(--text-main); font-weight: 600; paint-order: stroke; stroke: var(--bg-app); stroke-linejoin: round; text-anchor: middle; pointer-events: none; }
+.cmd-legend i.facing { display: inline-block; width: 0; height: 0; margin-right: 4px; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 8px solid var(--accent-red); vertical-align: middle; }
+.cmd-legend i.larea { display: inline-block; width: 10px; height: 8px; margin-right: 4px; border: 1px solid var(--accent-red); background: color-mix(in srgb, var(--accent-red) 22%, transparent); vertical-align: middle; }

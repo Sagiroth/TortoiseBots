@@ -73,6 +73,14 @@
   }
   const PACKS = packMobs();
 
+  // The boss overlay of the simulated units: the fake cast of every spell the story names (the module sends the real ids and the
+  // committed shapes; here they are made up with the story) and the areas a boss or elite draws. A spell not listed sends no area.
+  const DEMO_CAST_ID = { "Shadow Bolt": 6901, Fear: 6902, "Chain Lightning": 6903, Shatter: 6904 };
+  const DEMO_CAST_SHAPE = {
+    "Chain Lightning": { k: "line", l: 30, w: 4 },
+    Shatter: { k: "cone", a: 120, l: 12 },
+  };
+
   // One hostile unit at time t (null: not there).
   function mobAt(m, t, c) {
     let hp = 100, victim = "", cast = "", cc = "";
@@ -87,15 +95,23 @@
     if (m.sheep && within(t, m.sheep)) { cc = "c"; victim = ""; }
     if (m.flee && within(t, m.flee)) { cc = "f"; hp = Math.min(hp, 14); victim = ""; const k = (t - m.flee[0]) * 4; x += c.hx * k; y += c.hy * k; }
     (m.cast || []).forEach((w) => { if (t >= w[0] && t < w[1] && t % 2 < 1.6) cast = w[2]; });
-    if (m.rank === "b" && hp <= 0) { victim = ""; cast = ""; }
-    return mob(m, x, y, hp, victim, cast, cc);
+    if (m.rank === 'b' && hp <= 0) { victim = ""; cast = ""; }
+    const out = mob(m, x, y, hp, victim, cast, cc);
+    if (m.rank) out.o = Math.round((t % 8) * (Math.PI / 4) * 100) / 100;
+    return out;
   }
   function mob(m, x, y, hp, victim, cast, cc) {
     const o = { id: m.id, entry: m.entry, name: m.name, hp: Math.round(hp), x: round1(x), y: round1(y), reaction: m.reaction || "h", lvl: m.lvl };
     if (m.rank) o.rank = m.rank;
     if (m.kind) o.kind = m.kind;
     if (victim) o.victim = victim;
-    if (cast) o.cast = cast;
+    if (cast) {
+      o.cast = cast;
+      o.cid = DEMO_CAST_ID[cast] || 6900;
+      o.cleft = 1600;
+      o.ctot = 3000;
+      if (DEMO_CAST_SHAPE[cast]) o.shape = DEMO_CAST_SHAPE[cast];
+    }
     if (cc) o.cc = cc;
     return o;
   }
