@@ -85,7 +85,13 @@
     const tankDeaths = [];
     const otherDeaths = [];
     deaths.forEach((d, i) => { (tankNames[d.name] ? tankDeaths : otherDeaths).push({ d, i }); });
-    const deathEv = (list) => list.map((x) => x.d.name + " at " + (x.d.t_ms / 1000).toFixed(1) + " s to " + x.d.killer).join(" · ");
+    // The killer of each death of that life, by the same last-other-source rule the recaps use.
+    const life = {};
+    const deathEv = (list) => list.map((x) => {
+      const killer = killerOf(x.d, life[x.d.name]);
+      life[x.d.name] = x.d.t_ms;
+      return x.d.name + " at " + (x.d.t_ms / 1000).toFixed(1) + " s to " + killer;
+    }).join(" · ");
 
     if (tankDeaths.length) {
       const count = {};
@@ -297,6 +303,21 @@
     return best;
   }
 
+  // Who killed a bot: the last hit on it that came from another unit. The module's own killer field can name the dead bot (its
+  // last event was its own spell or a self-damage tick); with no other source known the killer is unknown, never the victim.
+  function killerOf(death, after) {
+    if (!death) return "unknown";
+    const end = num(death.t_ms) || 0;
+    const hits = (Array.isArray(death.hits) ? death.hits : [])
+      .filter((h) => h && num(h.t_ms) !== null && h.t_ms <= end && (after === undefined || h.t_ms > after));
+    for (let i = hits.length - 1; i >= 0; i--) {
+      const a = hits[i].a;
+      if (a && a !== death.name) return String(a);
+    }
+    const named = death.killer == null ? "" : String(death.killer);
+    return named && named !== death.name ? named : "unknown";
+  }
+
   // Death recaps with only the hits of that life: the module repeats hits from before the first death in the
   // second death's list, so keep what is after the same bot's previous death.
   function deathRecaps(fight) {
@@ -330,7 +351,7 @@
         name: d.name,
         guid: b && b.guid != null ? b.guid : undefined,
         t_ms: d.t_ms,
-        killer: d.killer,
+        killer: killerOf(d, after),
         x: d.x,
         y: d.y,
         hits,
@@ -612,7 +633,7 @@
 
   const api = {
     LIMITS, TAUNTS, DEBUFF_CHECKS,
-    roleOf, spellCount, fmtInt, mainTank, offTanks, checks, verdict, worstIndex,
+    roleOf, spellCount, fmtInt, mainTank, offTanks, checks, verdict, worstIndex, killerOf,
     deathRecaps, timeline, raidFrames, roleTables, botPanel, railCards, liveEngaged, liveSummary, liveChecks, liveTables,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightDebug = api;

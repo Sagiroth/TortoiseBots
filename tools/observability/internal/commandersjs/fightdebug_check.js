@@ -137,6 +137,31 @@ assert.strictEqual(recaps[1].hits[0].d, 3091);
 assert.strictEqual(recaps[1].spanMs, 0);
 assert.deepStrictEqual(F.deathRecaps({ deaths: [] }), []);
 
+// ---- the killer: the last hit that is not the dead bot; only self-damage known is "unknown" ------------------------
+const SELF_FIGHT = {
+  bots: [{ name: "Benedwin", guid: 7, class: "druid", role: "dps", dmg: 0, taken: 900, casts: 2, spells: [] }],
+  deaths: [{
+    name: "Benedwin", t_ms: 40200, x: 1, y: 2, killer: "Benedwin",
+    hits: [
+      { t_ms: 40000, a: "Benedwin", d: 120 },  // its own spell, the newest event
+      { t_ms: 39800, a: "Onyxian Warder", d: 820 },
+      { t_ms: 39000, a: "Benedwin", d: 90 },
+    ],
+  }],
+};
+assert.strictEqual(F.deathRecaps(SELF_FIGHT)[0].killer, "Onyxian Warder", "the last hit from another unit names the killer");
+assert.strictEqual(F.killerOf(SELF_FIGHT.deaths[0]), "Onyxian Warder");
+const selfOnly = { name: "Kild", t_ms: 59200, killer: "Kild", hits: [{ t_ms: 59000, a: "Kild", d: 44 }, { t_ms: 59100, a: "Kild", d: 40 }] };
+assert.strictEqual(F.killerOf(selfOnly), "unknown", "only self-damage known is unknown, never the victim");
+const noHits = { name: "Erelidael", t_ms: 30000, killer: "Erelidael", hits: [] };
+assert.strictEqual(F.killerOf(noHits), "unknown");
+assert.strictEqual(F.killerOf({ name: "A", t_ms: 1, killer: "Onyxia", hits: [] }), "Onyxia", "the module's killer stands when it is not the victim");
+// The checks' death line reads the same killer.
+const selfChecks = F.checks(SELF_FIGHT, null, [], null);
+const deathLine = selfChecks.find((c) => c.id === "other_death");
+assert.ok(deathLine && deathLine.ev.includes("to Onyxian Warder"), deathLine && deathLine.ev);
+assert.ok(!deathLine.ev.includes("to Benedwin"), "the dead bot is never its own killer: " + deathLine.ev);
+
 // ---- timeline -----------------------------------------------------------------------------------------------------
 const tl = F.timeline(byId("5-4"));
 assert.strictEqual(tl.durMs, 39111);
