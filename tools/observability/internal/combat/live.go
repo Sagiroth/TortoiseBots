@@ -72,6 +72,7 @@ type liveEvent struct {
 
 type liveFight struct {
 	session  uint64
+	seq      uint64
 	id       string
 	group    uint32
 	mapID    uint32
@@ -86,6 +87,10 @@ type liveFight struct {
 
 // ApplyEvents ingests one COMBAT_EVENTS datagram and reports the live row it
 // left and whether the row was created or changed (the fight_live frame).
+// Datagrams are ordered by (session, seq), the module's per-session counter:
+// a repeated or an older one is dropped before it can touch the header or the
+// events, so UDP duplication cannot double a death and reordering cannot roll
+// the fight back. A newer session starts over with that datagram's seq.
 func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, bool) {
 	if dg.FMT != 1 || dg.Commander == "" {
 		return FightSummary{}, false
@@ -98,23 +103,36 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 	s.expireLocked(now)
 
 	row := s.live[dg.Commander]
+	if row != nil {
+		if dg.Session < row.session {
+			return FightSummary{}, false // a datagram of an older game session
+		}
+		if dg.Session == row.session && dg.Seq <= row.seq {
+			return FightSummary{}, false // a duplicate or a reordered datagram
+		}
+	}
 	changed := false
 	if h := dg.Fight; h != nil && h.ID != "" {
 		switch {
 		case row != nil && row.session == dg.Session && row.id == h.ID:
 			row.header = *h
+			row.seq = dg.Seq
 		case s.seenLocked(dg.Commander, dg.Session, h.ID):
 			// The finished fight is already filed: a late datagram of it.
 			return FightSummary{}, false
 		default:
-			row = &liveFight{session: dg.Session, id: h.ID, group: dg.Group, mapID: dg.Map, header: *h}
+			row = &liveFight{session: dg.Session, seq: dg.Seq, id: h.ID, group: dg.Group, mapID: dg.Map, header: *h}
 			s.live[dg.Commander] = row
 			changed = true
 			s.evictLiveLocked()
 		}
-	}
-	if row == nil {
-		return FightSummary{}, false
+	} else {
+		// A datagram that opens no fight only continues the live row of its
+		// own session.
+		if row == nil || row.session != dg.Session {
+			return FightSummary{}, false
+		}
+		row.seq = dg.Seq
 	}
 	row.lastSeen = now
 

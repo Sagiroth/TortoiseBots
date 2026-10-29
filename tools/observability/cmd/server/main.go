@@ -441,13 +441,14 @@ func main() {
 
 	mux.HandleFunc("/api/v1/auth/logout", logoutHandler(authService))
 
-	requireAuth := func(next http.HandlerFunc) http.HandlerFunc {
+	requireSession := func(next func(http.ResponseWriter, *http.Request, *auth.SessionData)) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if *devNoAuth {
-				next(w, r)
+				next(w, r, nil)
 				return
 			}
-			if _, err := authService.GetSessionFromRequest(r); err != nil {
+			session, err := authService.GetSessionFromRequest(r)
+			if err != nil {
 				if strings.HasPrefix(r.URL.Path, "/api/") {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusUnauthorized)
@@ -457,8 +458,13 @@ func main() {
 				http.Redirect(w, r, "/login", http.StatusFound)
 				return
 			}
-			next(w, r)
+			next(w, r, session)
 		}
+	}
+	requireAuth := func(next http.HandlerFunc) http.HandlerFunc {
+		return requireSession(func(w http.ResponseWriter, r *http.Request, _ *auth.SessionData) {
+			next(w, r)
+		})
 	}
 
 	indexHTML, _ := web.FS.ReadFile("index.html")
@@ -676,9 +682,20 @@ func main() {
 		}
 		return []live.Frame{{Event: "snapshot", Data: data}}
 	}
-	mux.HandleFunc("GET /api/v1/live", requireAuth(live.Handler(liveHub,
-		live.Options{Heartbeat: 15 * time.Second, WriteTimeout: 10 * time.Second, Retry: 3 * time.Second},
-		initialFrames)))
+	mux.HandleFunc("GET /api/v1/live", requireSession(func(w http.ResponseWriter, r *http.Request, session *auth.SessionData) {
+		// The stream outlives this request's login check, so it carries the
+		// signed expiry and a rank revalidation of its own.
+		sess := live.Session{}
+		if session != nil {
+			sess = live.Session{
+				ExpiresAt: time.Unix(session.ExpiresAt, 0),
+				Check:     func() error { return authService.RecheckAccount(session.AccountID) },
+			}
+		}
+		live.Handler(liveHub,
+			live.Options{Heartbeat: 15 * time.Second, WriteTimeout: 10 * time.Second, Retry: 3 * time.Second, Recheck: 60 * time.Second},
+			sess, initialFrames)(w, r)
+	}))
 
 	// Real map pictures for the Commanders maps: the layer list of a map id, and the .png/.json files of the TBDASH_MAP_DIR folder
 	// (nothing else). Behind the same login as the rest of the API.

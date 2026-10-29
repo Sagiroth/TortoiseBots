@@ -14,10 +14,23 @@ import (
 
 // Options tunes one stream. The zero value is not usable: Handler's caller
 // passes the three durations (15 s heartbeat, 10 s write deadline, 3 s retry).
+// Recheck is how often a stream with a Check revalidates its login; zero means
+// 60 s, so a caller cannot leave revalidation off by omission.
 type Options struct {
 	Heartbeat    time.Duration
 	WriteTimeout time.Duration
 	Retry        time.Duration
+	Recheck      time.Duration
+}
+
+// Session is the login behind one stream: the signed token's expiry (zero
+// means no deadline) and a Check that revalidates the account. The stream
+// closes at ExpiresAt and on the first Check that fails, so a connection never
+// outlives the authorization that opened it: a revoked account or a rank
+// dropped below the minimum is cut off at the next recheck.
+type Session struct {
+	ExpiresAt time.Time
+	Check     func() error
 }
 
 var errBadCommanders = errors.New("bad commander list")
@@ -53,8 +66,9 @@ func ParseCommanders(q url.Values) ([]string, error) {
 
 // Handler serves one Server-Sent Events stream. initial builds the frames
 // written before the first live frame (the snapshot), from the commanders the
-// caller asked for.
-func Handler(h *Hub, opt Options, initial func(commanders []string) []Frame) http.HandlerFunc {
+// caller asked for. The stream is tied to sess: it ends at the session's
+// expiry and whenever its revalidation fails.
+func Handler(h *Hub, opt Options, sess Session, initial func(commanders []string) []Frame) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !ws.SameOrigin(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -113,10 +127,32 @@ func Handler(h *Hub, opt Options, initial func(commanders []string) []Frame) htt
 
 		heartbeat := time.NewTicker(opt.Heartbeat)
 		defer heartbeat.Stop()
+		var expires <-chan time.Time
+		if !sess.ExpiresAt.IsZero() {
+			expiry := time.NewTimer(time.Until(sess.ExpiresAt))
+			defer expiry.Stop()
+			expires = expiry.C
+		}
+		var recheck <-chan time.Time
+		if sess.Check != nil {
+			every := opt.Recheck
+			if every <= 0 {
+				every = 60 * time.Second
+			}
+			revalidating := time.NewTicker(every)
+			defer revalidating.Stop()
+			recheck = revalidating.C
+		}
 		for {
 			select {
 			case <-r.Context().Done():
 				return
+			case <-expires:
+				return
+			case <-recheck:
+				if sess.Check() != nil {
+					return
+				}
 			case <-heartbeat.C:
 				if !write(": ping\n\n") {
 					return

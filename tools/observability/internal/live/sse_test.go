@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -52,7 +54,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 
 func TestSSEHeadersAndSnapshotFirst(t *testing.T) {
 	h := NewHub()
-	srv := httptest.NewServer(Handler(h, testOptions(), snapshotFrames()))
+	srv := httptest.NewServer(Handler(h, testOptions(), Session{}, snapshotFrames()))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/?commander=b&commander=a")
@@ -81,7 +83,7 @@ func TestSSEHeadersAndSnapshotFirst(t *testing.T) {
 
 func TestSSEBadCommanders(t *testing.T) {
 	hh := NewHub()
-	handler := Handler(hh, testOptions(), nil)
+	handler := Handler(hh, testOptions(), Session{}, nil)
 	cases := map[string]string{
 		"none":     "/",
 		"21":       "/?" + strings.Repeat("commander=a&", 20) + "commander=t",
@@ -101,7 +103,7 @@ func TestSSEBadCommanders(t *testing.T) {
 }
 
 func TestSSECrossOrigin403(t *testing.T) {
-	handler := Handler(NewHub(), testOptions(), nil)
+	handler := Handler(NewHub(), testOptions(), Session{}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/?commander=a", nil)
 	req.Header.Set("Origin", "http://evil.example")
 	w := httptest.NewRecorder()
@@ -115,7 +117,7 @@ func TestSSEHeartbeat(t *testing.T) {
 	h := NewHub()
 	opt := testOptions()
 	opt.Heartbeat = 50 * time.Millisecond
-	srv := httptest.NewServer(Handler(h, opt, snapshotFrames()))
+	srv := httptest.NewServer(Handler(h, opt, Session{}, snapshotFrames()))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/?commander=a")
@@ -137,7 +139,7 @@ func TestSSEHeartbeat(t *testing.T) {
 
 func TestSSECleanupOnDisconnect(t *testing.T) {
 	h := NewHub()
-	srv := httptest.NewServer(Handler(h, testOptions(), snapshotFrames()))
+	srv := httptest.NewServer(Handler(h, testOptions(), Session{}, snapshotFrames()))
 	defer srv.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -157,13 +159,92 @@ func TestSSECleanupOnDisconnect(t *testing.T) {
 	waitFor(t, "the client to be unsubscribed", func() bool { return h.Clients() == 0 })
 }
 
+// readUntilClosed reads the body until the server ends it, and reports the
+// body's close within the deadline.
+func readUntilClosed(t *testing.T, r *bufio.Reader, what string) {
+	t.Helper()
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		for {
+			if _, err := r.ReadString('\n'); err != nil {
+				return
+			}
+		}
+	}()
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal(what)
+	}
+}
+
+// TestSSEExpiryClosesStream: the stream lasts as long as the signed login,
+// not as long as the connection (or its heartbeats) would live.
+func TestSSEExpiryClosesStream(t *testing.T) {
+	h := NewHub()
+	sess := Session{ExpiresAt: time.Now().Add(150 * time.Millisecond)}
+	srv := httptest.NewServer(Handler(h, testOptions(), sess, snapshotFrames()))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/?commander=a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	r := bufio.NewReader(resp.Body)
+	if got := readEvent(t, r); got != "retry: 3000\n\n" {
+		t.Fatalf("first block %q", got)
+	}
+	if got := readEvent(t, r); !strings.HasPrefix(got, "event: snapshot") {
+		t.Fatalf("snapshot block %q", got)
+	}
+	readUntilClosed(t, r, "the stream stayed open past the session expiry")
+	waitFor(t, "the expired stream to unsubscribe", func() bool { return h.Clients() == 0 })
+}
+
+// TestSSERecheckClosesStream: an account revoked or downgraded mid-stream is
+// cut off at the next revalidation, without waiting for its token to expire.
+func TestSSERecheckClosesStream(t *testing.T) {
+	h := NewHub()
+	opt := testOptions()
+	opt.Recheck = 40 * time.Millisecond
+	var checks atomic.Int32
+	sess := Session{Check: func() error {
+		if checks.Add(1) >= 2 {
+			return errors.New("rank revoked")
+		}
+		return nil
+	}}
+	srv := httptest.NewServer(Handler(h, opt, sess, snapshotFrames()))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/?commander=a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	r := bufio.NewReader(resp.Body)
+	if got := readEvent(t, r); got != "retry: 3000\n\n" {
+		t.Fatalf("first block %q", got)
+	}
+	if got := readEvent(t, r); !strings.HasPrefix(got, "event: snapshot") {
+		t.Fatalf("snapshot block %q", got)
+	}
+	readUntilClosed(t, r, "the stream stayed open after the account was revoked")
+	if got := checks.Load(); got < 2 {
+		t.Fatalf("revalidations before the close: %d, want at least 2", got)
+	}
+	waitFor(t, "the revoked stream to unsubscribe", func() bool { return h.Clients() == 0 })
+}
+
 // TestSSEOutlivesServerWriteTimeout: the server's WriteTimeout is 200 ms, so a
 // long-lived stream only survives if every write moves its own deadline.
 func TestSSEOutlivesServerWriteTimeout(t *testing.T) {
 	h := NewHub()
 	opt := testOptions()
 	opt.Heartbeat = 50 * time.Millisecond
-	srv := httptest.NewUnstartedServer(Handler(h, opt, snapshotFrames()))
+	srv := httptest.NewUnstartedServer(Handler(h, opt, Session{}, snapshotFrames()))
 	srv.Config.WriteTimeout = 200 * time.Millisecond
 	srv.Start()
 	defer srv.Close()
@@ -251,7 +332,7 @@ func TestSSEResyncAfterDrop(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/?commander=Alice", nil).WithContext(ctx)
 	done := make(chan struct{})
 	go func() {
-		Handler(h, testOptions(), snapshotFrames())(w, req)
+		Handler(h, testOptions(), Session{}, snapshotFrames())(w, req)
 		close(done)
 	}()
 	waitFor(t, "the client to subscribe", func() bool { return h.Clients() == 1 })
@@ -292,7 +373,7 @@ func (w *noFlushWriter) WriteHeader(int)             {}
 
 func TestSSENoFlusher500(t *testing.T) {
 	w := &noFlushWriter{header: http.Header{}}
-	Handler(NewHub(), testOptions(), nil)(w, httptest.NewRequest(http.MethodGet, "/?commander=a", nil))
+	Handler(NewHub(), testOptions(), Session{}, nil)(w, httptest.NewRequest(http.MethodGet, "/?commander=a", nil))
 	if w.header.Get("Content-Type") == "text/event-stream" {
 		t.Fatal("a writer without Flush must not start a stream")
 	}

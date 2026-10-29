@@ -28,6 +28,14 @@ func liveEvents(header *LiveHeader, events ...string) EventsDatagram {
 	return dg
 }
 
+// nextEvents builds the datagram that follows one from liveEvents: the same
+// session, one seq later (the module's counter rises with every datagram).
+func nextEvents(header *LiveHeader, events ...string) EventsDatagram {
+	dg := liveEvents(header, events...)
+	dg.Seq++
+	return dg
+}
+
 func liveHeader() *LiveHeader {
 	return &LiveHeader{
 		ID: "55-6", Start: liveNow.Unix() - 30, StartMs: liveNow.UnixMilli() - 30000,
@@ -62,7 +70,7 @@ func TestEventsOpenLiveRow(t *testing.T) {
 		t.Fatalf("list: %+v", list)
 	}
 	// A second datagram of the same fight updates it without a change edge.
-	sum, changed = s.ApplyEvents(liveEvents(liveHeader(), deathEvent(2200, "Healy")), liveNow)
+	sum, changed = s.ApplyEvents(nextEvents(liveHeader(), deathEvent(2200, "Healy")), liveNow)
 	if changed {
 		t.Fatal("an update of the open fight is not a state change")
 	}
@@ -92,7 +100,7 @@ func TestFinishedReplacesLive(t *testing.T) {
 func TestEndNotKeptRemovesLive(t *testing.T) {
 	s := newLiveStore(t)
 	s.ApplyEvents(liveEvents(liveHeader(), `{"k":"start","t":0}`), liveNow)
-	_, changed := s.ApplyEvents(liveEvents(nil, `{"k":"end","t":3000,"o":"wipe","dur":3000,"kept":false}`), liveNow)
+	_, changed := s.ApplyEvents(nextEvents(nil, `{"k":"end","t":3000,"o":"wipe","dur":3000,"kept":false}`), liveNow)
 	if !changed {
 		t.Fatal("the end of a live fight is a change")
 	}
@@ -107,7 +115,7 @@ func TestEndNotKeptRemovesLive(t *testing.T) {
 func TestEndKeptWaitsForTheFight(t *testing.T) {
 	s := newLiveStore(t)
 	s.ApplyEvents(liveEvents(liveHeader(), `{"k":"start","t":0}`), liveNow)
-	sum, changed := s.ApplyEvents(liveEvents(nil, `{"k":"end","t":31000,"o":"kill","dur":31000,"kept":true}`), liveNow)
+	sum, changed := s.ApplyEvents(nextEvents(nil, `{"k":"end","t":31000,"o":"kill","dur":31000,"kept":true}`), liveNow)
 	if !changed {
 		t.Fatal("the end of a live fight is a change")
 	}
@@ -208,5 +216,94 @@ func TestLiveRowsFiltered(t *testing.T) {
 	}
 	if rows := s.LiveRows(nil); len(rows) != 2 {
 		t.Fatalf("all rows: %+v", rows)
+	}
+}
+
+// A duplicated datagram (UDP may deliver one twice) must change neither the
+// header nor the events of the row it already produced.
+func TestEventsDuplicateIgnored(t *testing.T) {
+	s := newLiveStore(t)
+	dg := liveEvents(liveHeader(), `{"k":"start","t":0}`, deathEvent(1200, "Tanky"))
+	dg.Seq = 50
+	s.ApplyEvents(dg, liveNow)
+
+	// The duplicate carries a fight_ms the row has already moved past, so an
+	// early header update would show up as a regressed duration.
+	dup := liveEvents(liveHeader(), `{"k":"start","t":0}`, deathEvent(1200, "Tanky"))
+	dup.Seq = 50
+	dup.Fight.FightMs = 90000
+	sum, changed := s.ApplyEvents(dup, liveNow)
+	if changed || sum != (FightSummary{}) {
+		t.Fatalf("a duplicate datagram reported a change: %+v %v", sum, changed)
+	}
+	f, _, ok := s.GetKey(Key("Gbmage", 7, "55-6"))
+	if !ok {
+		t.Fatal("no live detail")
+	}
+	if len(f.Deaths) != 1 || f.Deaths[0].Name != "Tanky" {
+		t.Fatalf("the duplicate death was counted twice: %+v", f.Deaths)
+	}
+	if f.DurMS != 30000 {
+		t.Fatalf("the duplicate header overwrote the row: dur %d", f.DurMS)
+	}
+}
+
+// An older datagram that arrives after a newer one (UDP reordering) must not
+// append its events or roll the header back.
+func TestEventsReorderedIgnored(t *testing.T) {
+	s := newLiveStore(t)
+	first := liveEvents(liveHeader(), deathEvent(1000, "Tanky"))
+	first.Seq = 50
+	s.ApplyEvents(first, liveNow)
+	later := liveEvents(liveHeader(), deathEvent(2000, "Healy"))
+	later.Seq = 52
+	s.ApplyEvents(later, liveNow)
+
+	older := liveEvents(liveHeader(), deathEvent(1500, "Late"))
+	older.Seq = 51
+	older.Fight.FightMs = 99000
+	if sum, changed := s.ApplyEvents(older, liveNow); changed || sum != (FightSummary{}) {
+		t.Fatalf("a reordered datagram reported a change: %+v %v", sum, changed)
+	}
+	f, _, ok := s.GetKey(Key("Gbmage", 7, "55-6"))
+	if !ok {
+		t.Fatal("no live detail")
+	}
+	if len(f.Deaths) != 2 || f.Deaths[1].Name != "Healy" {
+		t.Fatalf("the late death was appended or replaced a newer one: %+v", f.Deaths)
+	}
+	if f.DurMS != 30000 {
+		t.Fatalf("the older header overwrote the row: dur %d", f.DurMS)
+	}
+}
+
+// A new game-server session starts a fight with its own, lower seq; a late
+// datagram of the previous session must not touch the new row.
+func TestEventsSessionTransitionResets(t *testing.T) {
+	s := newLiveStore(t)
+	old := liveEvents(liveHeader(), deathEvent(1000, "Tanky"))
+	old.Seq = 90
+	s.ApplyEvents(old, liveNow)
+
+	fresh := liveEvents(liveHeader(), deathEvent(100, "Fresh"))
+	fresh.Session = 8
+	fresh.Seq = 2
+	fresh.Fight.ID = "55-7"
+	sum, changed := s.ApplyEvents(fresh, liveNow)
+	if !changed || !sum.Live || sum.Session != 8 || sum.ID != "55-7" || sum.Deaths != 1 {
+		t.Fatalf("the new session did not open its own row: %+v %v", sum, changed)
+	}
+
+	late := liveEvents(liveHeader(), deathEvent(2000, "Late"))
+	late.Seq = 91
+	if sum, changed := s.ApplyEvents(late, liveNow); changed || sum != (FightSummary{}) {
+		t.Fatalf("a datagram of the older session touched the new row: %+v %v", sum, changed)
+	}
+	f, _, ok := s.GetKey(Key("Gbmage", 8, "55-7"))
+	if !ok {
+		t.Fatal("the new session's live fight is gone")
+	}
+	if len(f.Deaths) != 1 || f.Deaths[0].Name != "Fresh" {
+		t.Fatalf("deaths of the new session: %+v", f.Deaths)
 	}
 }
