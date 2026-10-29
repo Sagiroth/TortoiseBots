@@ -139,6 +139,7 @@ struct OrderRecord
     uint32_t farmZoneId = 0;   // 0 = not planned yet
     uint8_t farmChance = 0;    // percent at the best source in farmZoneId
     bool movedZone = false;    // already moved once to the second-best zone
+    bool farmRest = false;     // buy order whose AH attempt is over: farm what is missing
     uint32_t deaths = 0;
     uint32_t workedSinceNewItemSec = 0;
     uint32_t reportedHave = 0;   // last reported progress; reported have never drops below this

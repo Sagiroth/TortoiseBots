@@ -45,7 +45,7 @@ namespace ai
     };
 
     // True while the stored order still needs farm/craft work: not waiting,
-    // not delivering, and delivered plus bags below the amount.
+    // not delivering, and delivered plus bags plus mailbox below the amount.
     bool OrderStillNeedsWork(Player* bot, GuildOrder const& order);
 
     // First missing farmable reagent for a Working craft order: the same
@@ -54,26 +54,15 @@ namespace ai
     uint32 GuildOrderCraftReagentFor(PlayerbotAI* ai, Player* bot, uint32 itemId, uint32 amount,
         uint32 delivered);
 
+    // Order items waiting in the mailbox (bought AH items arrive by mail).
+    uint32 OrderMailboxItems(Player* bot, uint32 itemId);
+
     class HasGuildTravelOrderValue : public BoolCalculatedValue
     {
     public:
         HasGuildTravelOrderValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "has guild travel order", 10) {}
 
-        bool Calculate() override
-        {
-            GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-            // A craft order short on a farmable reagent travels like a farm order.
-            if (order.IsCraftOrder())
-                return AI_VALUE(uint32, "guild order farm item") != 0;
-            if (!order.IsTravelOrder())
-                return false;
-
-            // No order work while grouped with a player, delivering, or done
-            // with the amount (delivered plus bags).
-            if (ai->HasRealPlayerMaster())
-                return false;
-            return OrderStillNeedsWork(bot, order);
-        }
+        bool Calculate() override;
     };
 
     // The item the bot actually farms for its guild order: the order item for

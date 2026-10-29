@@ -55,7 +55,7 @@
 #include "GuildCreateActions.h"
 #include "GuildManagementActions.h"
 #include "GuildAcceptAction.h"
-#include "GuildShareAhBuyAction.h"
+#include "GuildOrderBuyAction.h"
 #include "GuildOrderVendorAction.h"
 #include "GuildBankAction.h"
 #include "RpgSubActions.h"
@@ -247,7 +247,7 @@ namespace ai
             creators["turn in petition"] = [](PlayerbotAI* ai) { return new PetitionTurnInAction(ai); };
             creators["buy tabard"] = [](PlayerbotAI* ai) { return new BuyTabardAction(ai); };
             creators["guild manage nearby"] = [](PlayerbotAI* ai) { return new GuildManageNearbyAction(ai); };
-            creators["guild ah buy"] = [](PlayerbotAI* ai) { return new GuildShareAhBuyAction(ai); };
+            creators["guild order buy"] = [](PlayerbotAI* ai) { return new GuildOrderBuyAction(ai); };
             creators["guild order vendor"] = [](PlayerbotAI* ai) { return new GuildOrderVendorAction(ai); };
             creators["guild order deliver"] = [](PlayerbotAI* ai) { return new GuildBankAction(ai); };
             creators["use trinket"] = [](PlayerbotAI* ai) { return new UseTrinketAction(ai); };

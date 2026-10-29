@@ -21,6 +21,10 @@
 #include "ObjectMgr.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Player.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Mail/Mail.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "MapNodes/MasterPlayer.h"
 
 #include <ctime>
 #include <mutex>
@@ -58,7 +62,7 @@ public:
         std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
             "SELECT `bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `delivered`, "
             "`state`, `reason`, `farm_zone`, `farm_chance`, `moved_zone`, `deaths`, `worked_sec`, "
-            "`reported`, `created_at`, `updated_at` FROM `tortoise_bots_guild_order`"));
+            "`reported`, `farm_rest`, `created_at`, `updated_at` FROM `tortoise_bots_guild_order`"));
 
         if (result)
         {
@@ -81,8 +85,9 @@ public:
                 record.deaths = fields[12].GetUInt32();
                 record.workedSinceNewItemSec = fields[13].GetUInt32();
                 record.reportedHave = fields[14].GetUInt32();
-                record.createdAt = fields[15].GetUInt64();
-                record.updatedAt = fields[16].GetUInt64();
+                record.farmRest = fields[15].GetUInt32() != 0;
+                record.createdAt = fields[16].GetUInt64();
+                record.updatedAt = fields[17].GetUInt64();
 
                 if (record.botGuidLow && record.itemId && record.amount)
                     m_orders[record.botGuidLow] = Stored{record};
@@ -135,15 +140,15 @@ public:
                 "REPLACE INTO `tortoise_bots_guild_order` "
                 "(`bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `delivered`, "
                 "`state`, `reason`, `farm_zone`, `farm_chance`, `moved_zone`, `deaths`, `worked_sec`, "
-                "`reported`, `created_at`, `updated_at`) "
+                "`reported`, `farm_rest`, `created_at`, `updated_at`) "
                 "VALUES ('%u', '%u', '%u', '%s', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
-                "'%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
+                "'%u', '%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
                 record.botGuidLow, record.guildId, record.giverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.delivered, StateToken(record.state),
                 ReasonToken(record.reason), record.farmZoneId, record.farmChance,
                 record.movedZone ? 1u : 0u, record.deaths, record.workedSinceNewItemSec,
-                record.reportedHave, static_cast<uint32_t>(record.createdAt),
-                static_cast<uint32_t>(record.updatedAt)))
+                record.reportedHave, record.farmRest ? 1u : 0u,
+                static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt)))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
@@ -207,6 +212,20 @@ public:
         MarkDirtyLocked(it->second);
     }
 
+    void NoteFarmRest(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || IsFinished(it->second.record.state))
+            return;
+        if (it->second.record.type != OrderType::Buy || it->second.record.farmRest)
+            return;
+        it->second.record.farmRest = true;
+        it->second.record.farmZoneId = 0;
+        it->second.record.farmChance = 0;
+        MarkDirtyLocked(it->second);
+    }
+
     void NoteBagsFull(uint32_t botGuidLow)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -249,6 +268,7 @@ public:
         bool botAlive = false;
         bool grouped = false;
         uint32_t bagCount = 0;
+        uint32_t mailboxCount = 0;
         uint32_t workedMs = 0;
         uint32_t nowMs = 0;
     };
@@ -309,24 +329,29 @@ public:
         else
             stored.workedCarryMs = 0;
 
-        // A real rise in bag count seen while online resets the give-up clock.
-        // A login after an offline gap never counts as new items.
+        // A real rise in owned count (bags plus mailbox) seen while online
+        // resets the give-up clock. A login after an offline gap never counts
+        // as new items.
+        uint32_t ownedNow = in.bagCount + in.mailboxCount;
         if (!wasFinished && in.botOnline)
         {
-            if (IsNewItemRise(in.botOnline, stored.sawOnline, in.bagCount, stored.lastBagCount) &&
+            if (IsNewItemRise(in.botOnline, stored.sawOnline, ownedNow, stored.lastOwnedCount) &&
                 record.workedSinceNewItemSec != 0)
             {
                 record.workedSinceNewItemSec = 0;
                 MarkDirtyLocked(stored);
             }
-            stored.lastBagCount = in.bagCount;
+            stored.lastOwnedCount = ownedNow;
             stored.sawOnline = true;
         }
         else if (!in.botOnline)
             stored.sawOnline = false;
 
-        // Amount reached: the bot heads for the guild bank (package 4 walks
-        // it there; until then the state alone marks it delivering).
+        // Amount reached in bags: the bot heads for the guild bank (the
+        // delivery action walks it there once package 4 lands; until then
+        // the state alone marks it delivering). Mailbox items count for
+        // progress and the give-up clock above, but delivery needs the
+        // items in the bags - the bank deposit cannot take them from mail.
         if (!wasFinished && record.state == OrderState::Working && record.amount > 0 &&
             record.delivered + in.bagCount >= record.amount)
         {
@@ -341,7 +366,7 @@ public:
 
         // Reported progress never drops: offline (or not yet re-seen) bots
         // keep max(delivered, last reported).
-        out.reportedHave = ReportedHave(record.delivered, in.bagCount, in.botOnline, record.reportedHave);
+        out.reportedHave = ReportedHave(record.delivered, ownedNow, in.botOnline, record.reportedHave);
 
         bool stateChanged = !stored.reportSeen || stored.reportState != record.state ||
                             stored.reportReason != record.reason;
@@ -373,7 +398,7 @@ private:
         bool dirty = false;
         uint32_t workedCarryMs = 0;
         uint32_t lastWorkedFlushMs = 0;
-        uint32_t lastBagCount = 0;
+        uint32_t lastOwnedCount = 0;
         bool sawOnline = false;
         bool reportSeen = false;
         OrderState reportState = OrderState::Working;
@@ -427,11 +452,12 @@ private:
         CharacterDatabase.PExecute(
             "UPDATE `tortoise_bots_guild_order` SET `delivered` = '%u', `state` = '%s', `reason` = '%s', "
             "`farm_zone` = '%u', `farm_chance` = '%u', `moved_zone` = '%u', `deaths` = '%u', "
-            "`worked_sec` = '%u', `reported` = '%u', `updated_at` = FROM_UNIXTIME('%u') "
+            "`worked_sec` = '%u', `reported` = '%u', `farm_rest` = '%u', "
+            "`updated_at` = FROM_UNIXTIME('%u') "
             "WHERE `bot_guid` = '%u'",
             record.delivered, StateToken(record.state), ReasonToken(record.reason), record.farmZoneId,
             record.farmChance, record.movedZone ? 1u : 0u, record.deaths,
-            record.workedSinceNewItemSec, record.reportedHave,
+            record.workedSinceNewItemSec, record.reportedHave, record.farmRest ? 1u : 0u,
             static_cast<uint32_t>(record.updatedAt), record.botGuidLow);
     }
 
@@ -462,6 +488,35 @@ std::string BotName(uint32_t botGuidLow)
     if (sObjectMgr.GetPlayerNameByGUID(guid, name))
         return name;
     return "?";
+}
+
+// Bought AH items arrive by mail: progress counts delivered plus bags plus
+// the order items waiting in the mailbox. World thread only, called from
+// Update and Progress where the live Player is already at hand.
+uint32_t MailboxItems(Player* bot, uint32_t itemId)
+{
+    if (!bot || !bot->GetSession() || !itemId)
+        return 0;
+    MasterPlayer* master = bot->GetSession()->GetMasterPlayer();
+    if (!master)
+        return 0;
+    uint32_t count = 0;
+    time_t curTime = time(nullptr);
+    for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
+    {
+        Mail* mail = *itr;
+        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
+            continue;
+        if (!mail->has_items)
+            continue;
+        for (MailItemInfoVec::const_iterator itemItr = mail->items.begin(); itemItr != mail->items.end(); ++itemItr)
+            if (itemItr->item_template == itemId)
+            {
+                Item* mailItem = master->GetMItem(itemItr->item_guid);
+                count += mailItem ? mailItem->GetCount() : 1;
+            }
+    }
+    return count;
 }
 
 void SendOrderLine(OrderRecord const& order, uint32_t have)
@@ -518,6 +573,11 @@ void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason)
     OrderStore::Instance().SetState(botGuidLow, state, reason);
 }
 
+void NoteFarmRest(uint32_t botGuidLow)
+{
+    OrderStore::Instance().NoteFarmRest(botGuidLow);
+}
+
 void NoteDeath(uint32_t botGuidLow)
 {
     OrderStore::Instance().NoteDeath(botGuidLow);
@@ -537,7 +597,7 @@ uint32_t Progress(Player* bot, OrderRecord const& order)
 {
     uint32_t have = order.delivered;
     if (bot && bot->IsInWorld() && order.itemId)
-        have += bot->GetItemCount(order.itemId);
+        have += bot->GetItemCount(order.itemId) + MailboxItems(bot, order.itemId);
     return have;
 }
 
@@ -578,6 +638,7 @@ void Update(uint32_t diff)
         in.botOnline = online;
         in.botAlive = online && bot->IsAlive();
         in.bagCount = online && snapshot.itemId ? bot->GetItemCount(snapshot.itemId) : 0;
+        in.mailboxCount = online && snapshot.itemId ? MailboxItems(bot, snapshot.itemId) : 0;
         in.workedMs = diff;
         in.nowMs = now;
         if (online)

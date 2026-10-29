@@ -10,6 +10,8 @@
 #include "runtime/GuildOrderStore.h"
 #include "runtime/policy/provision/CraftOrderPolicy.h"
 #include "Guild/GuildMgr.h"
+#include "Mail/Mail.h"
+#include "MapNodes/MasterPlayer.h"
 
 using namespace ai;
 
@@ -33,7 +35,7 @@ GuildOrder GuildOrderValue::Calculate()
             order.type = GuildOrderType::Farm;
             break;
         case TortoiseBots::GuildOrders::OrderType::Buy:
-            order.type = GuildOrderType::AuctionHouse;
+            order.type = stored->farmRest ? GuildOrderType::Farm : GuildOrderType::AuctionHouse;
             break;
         case TortoiseBots::GuildOrders::OrderType::Craft:
             order.type = GuildOrderType::Craft;
@@ -44,6 +46,32 @@ GuildOrder GuildOrderValue::Calculate()
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(stored->itemId);
     order.target = proto ? proto->Name1 : std::to_string(stored->itemId);
     return order;
+}
+
+uint32 ai::OrderMailboxItems(Player* bot, uint32 itemId)
+{
+    if (!bot || !bot->GetSession() || !itemId)
+        return 0;
+    MasterPlayer* master = bot->GetSession()->GetMasterPlayer();
+    if (!master)
+        return 0;
+    uint32 count = 0;
+    time_t curTime = time(nullptr);
+    for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
+    {
+        Mail* mail = *itr;
+        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
+            continue;
+        if (!mail->has_items)
+            continue;
+        for (MailItemInfoVec::const_iterator itemItr = mail->items.begin(); itemItr != mail->items.end(); ++itemItr)
+            if (itemItr->item_template == itemId)
+            {
+                Item* mailItem = master->GetMItem(itemItr->item_guid);
+                count += mailItem ? mailItem->GetCount() : 1;
+            }
+    }
+    return count;
 }
 
 bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
@@ -57,7 +85,35 @@ bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
     if (stored->state == TortoiseBots::GuildOrders::OrderState::Waiting ||
         stored->state == TortoiseBots::GuildOrders::OrderState::Delivering)
         return false;
-    return stored->delivered + bot->GetItemCount(order.itemId) < order.amount;
+    return stored->delivered + bot->GetItemCount(order.itemId) +
+        OrderMailboxItems(bot, order.itemId) < order.amount;
+}
+
+bool HasGuildTravelOrderValue::Calculate()
+{
+    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    // A craft order short on a farmable reagent travels like a farm order.
+    if (order.IsCraftOrder())
+        return AI_VALUE(uint32, "guild order farm item") != 0;
+    if (!order.IsTravelOrder())
+        return false;
+
+    // No order work while grouped with a player, delivering, or done
+    // with the amount (delivered plus bags plus mailbox).
+    if (ai->HasRealPlayerMaster())
+        return false;
+    if (!OrderStillNeedsWork(bot, order))
+        return false;
+    if (order.type != GuildOrderType::AuctionHouse || OrderMailboxItems(bot, order.itemId) == 0)
+        return true;
+    // A buy with mail waiting still finishes buying first: the AH visit
+    // concludes (enough owned, or farm fallback) before the bot walks to
+    // a mailbox, one listing per tick until then.
+    std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
+    for (ObjectGuid const& guid : npcs)
+        if (bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_AUCTIONEER))
+            return true;
+    return false;
 }
 
 uint32 GuildOrderVendorReagentValue::Calculate()

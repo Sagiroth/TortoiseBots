@@ -34,6 +34,8 @@ using GuildOrders::OrderType;
 
 inline constexpr uint32_t kMaxAmount = 200;
 inline constexpr uint32_t kMinAmount = 1;
+inline constexpr uint32_t kStormwindZone = 1519;
+inline constexpr uint32_t kOrgrimmarZone = 1637;
 
 void OrderError(ChatHandler* handler, char const* code, std::string const& message)
 {
@@ -247,6 +249,8 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
             record.farmZoneId = plan.zones[0].zoneId;
             record.farmChance = plan.zones[0].chance;
         }
+        if (type == OrderType::Buy && record.farmZoneId == 0)
+            record.farmZoneId = bot->GetTeam() == ALLIANCE ? kStormwindZone : kOrgrimmarZone;
     }
 
     if (!GuildOrders::Give(record))

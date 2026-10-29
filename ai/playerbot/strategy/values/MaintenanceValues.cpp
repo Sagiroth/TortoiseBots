@@ -6,7 +6,7 @@
 #include "runtime/policy/provision/NearbyServicePolicy.h"
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
-#include "playerbot/strategy/values/GuildValues.h"
+#include "runtime/GuildOrderStore.h"
 #include "playerbot/strategy/actions/AcceptQuestAction.h"
 #include "playerbot/strategy/triggers/RpgTriggers.h"
 #include "playerbot/RandomBotFacade.h"
@@ -701,8 +701,10 @@ bool ShouldGetMailValue::Calculate() {
     if (!master)
         return false;
 
-    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-    bool hasBuyOrder = order.type == GuildOrderType::AuctionHouse && !order.target.empty();
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> stored =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    bool hasBuyOrder = stored && stored->type == TortoiseBots::GuildOrders::OrderType::Buy &&
+        !TortoiseBots::GuildOrders::IsFinished(stored->state);
 
     for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
     {
@@ -711,17 +713,17 @@ bool ShouldGetMailValue::Calculate() {
 
         int32 waitingInBoxTime = cur_time - (*itr)->deliver_time;
 
+        if (hasBuyOrder && (*itr)->has_items && (*itr)->stationery == MAIL_STATIONERY_AUCTION)
+        {
+            return true;
+        }
+
         if (waitingInBoxTime < HOUR) //Let mail sit in the inbox for atleast 1 hour
         {
             return false;
         }
 
         if ((*itr)->has_items && waitingInBoxTime > HOUR * 4) //Items are allowed to sit in the mail for max 4 hours.
-        {
-            return true;
-        }
-
-        if (hasBuyOrder && (*itr)->has_items && (*itr)->stationery == MAIL_STATIONERY_AUCTION && waitingInBoxTime > MINUTE) //If bot has a buy order and mail is from AH, take mail immediately.
         {
             return true;
         }

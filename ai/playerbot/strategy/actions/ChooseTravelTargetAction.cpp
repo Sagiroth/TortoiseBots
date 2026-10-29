@@ -598,6 +598,18 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     if (futureTravelPurpose == std::to_string((uint32)TravelDestinationPurpose::Grind))
         SET_AI_VALUE2(int32, "manual int", "grind empty streak", 0);
 
+    if (AI_VALUE2(std::string, "manual string", "future travel condition") == "has guild travel order")
+    {
+        GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+        if (order.type == GuildOrderType::AuctionHouse && newTarget.getPosition())
+        {
+            AreaTableEntry const* area = newTarget.getPosition()->GetArea();
+            uint32 zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
+            if (zoneId)
+                TortoiseBots::GuildOrders::SetFarmZone(bot->GetGUIDLow(), zoneId, 0);
+        }
+    }
+
     setNewTarget(requester, &newTarget, travelTarget);
 
     return true;
