@@ -7,6 +7,7 @@
 (function (root) {
   const GONE_MS = 5 * 60 * 1000;   // a commander that disappears keeps its greyed tab this long
   const FIGHTS_MS = 10000;         // fight summaries are refetched at most this often
+  const TRACK_RETRY_MS = 30000;    // a fight's kept positions are asked for again this long after a failed ask
   const SEEN_MAX = 400;            // seen fight keys kept in the browser
   const SEEN_KEY = "tbdash.fdtabs.seen.v1";
   const PAGE_KEY = "tbdash.cmdpage.v1";
@@ -121,10 +122,13 @@
       const cbs = pending[key] = [];
       if (cb) cbs.push(cb);
       const done = (rows) => {
-        if (rows) cache[key] = { list: Array.isArray(rows) ? rows : [], at: now() };
+        // A failed fetch is remembered for the same window as an answer (a failing daemon is not asked again on every draw);
+        // it keeps the rows already shown.
+        const list = Array.isArray(rows) ? rows : cache[key] ? cache[key].list : null;
+        cache[key] = { list: list, at: now() };
         const out = pending[key] || [];
         delete pending[key];
-        out.forEach((f) => { try { f(cache[key] ? cache[key].list : null); } catch (e) { /* a drawing error must not strand the queue */ } });
+        out.forEach((f) => { try { f(list); } catch (e) { /* a drawing error must not strand the queue */ } });
       };
       let p;
       try { p = Promise.resolve(o.fetchRows ? o.fetchRows(key) : null); } catch (e) { p = Promise.reject(e); }
@@ -140,10 +144,19 @@
     return { cache, pending, list, detail };
   }
 
+  // ---- a fight's kept positions (GET /api/v1/commanders/track) -----------------------------------------------------
+  // entry is the page's own value for one fight: undefined (never asked), 'loading' (an ask in flight), an object (the answer,
+  // kept for the page's life) or null (the ask failed). failedAt is when that failure happened.
+  function trackDue(entry, failedAt, nowMs) {
+    if (entry === undefined) return true;
+    if (entry !== null) return false;
+    return typeof failedAt === "number" && nowMs - failedAt >= TRACK_RETRY_MS;
+  }
+
   const api = {
-    GONE_MS, FIGHTS_MS, SEEN_MAX, SEEN_KEY, PAGE_KEY,
+    GONE_MS, FIGHTS_MS, TRACK_RETRY_MS, SEEN_MAX, SEEN_KEY, PAGE_KEY,
     sortBinds, deadCount, stateOf, rowEnd, fightKey, problem, verdictWord, markSeen, loadSeen, saveSeen, model,
-    detailAllowed, hashFor, newFights,
+    detailAllowed, hashFor, newFights, trackDue,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FdTabs = api;
 })(typeof self !== "undefined" ? self : this);

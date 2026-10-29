@@ -108,6 +108,14 @@ const many = A.lanes(wrap([fr(1000, manyMobs), fr(1002, manyMobs)]), FIGHT, []);
 assert.strictEqual(many.lanes.length, 12);
 assert.strictEqual(many.more, 2);
 
+// A lane whose only engaged report falls on the fight's last instant has no segment: it is dropped, not sorted (its segs[0]
+// used to crash the order and the whole strip with it).
+const edge = A.lanes(wrap([fr(100, [m("m1", 1)]), fr(110, [m("m1", 1), m("m3", 1)])]), { start: 100, dur_ms: 10000, bots: BOTS }, []);
+assert.strictEqual(edge.frames, 2);
+assert.deepStrictEqual(edge.lanes.map((l) => l.id), ["m1"], "the lane with no segment is not a lane: " + JSON.stringify(edge.lanes.map((l) => l.id)));
+assert.deepStrictEqual(segsOf(edge.lanes[0]), [[0, 3000, "tank", false, "Tank"]], "the first frame's own segment survives");
+assert.strictEqual(edge.more, 0);
+
 // ---- walk 2: one warder on Irelanthe, 10 s into fight 5-3 -------------------------------------------------------------
 const w = A.lanes(track, byId("5-3"), []);
 assert.strictEqual(w.frames, 1);

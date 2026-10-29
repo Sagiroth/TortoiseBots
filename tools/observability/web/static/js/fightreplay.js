@@ -8,6 +8,9 @@
   const TICK_MS = 250;                 // one playback step; a setTimeout chain, never an interval
   const SPEEDS = [0.5, 1, 2, 4];
   const HOLD_S = 3;                    // how long a unit that left the report stays drawn
+  // The daemon keeps positions for four commanders at once (TrackMaxCommanders); a fifth fight has none to replay.
+  const UNTRACKED_TEXT = "Replay kept for the first 4 raids only (dashboard limit)";
+  const NO_TRACK_TEXT = "No positions kept for this fight";
   // Same trail-break numbers as the daemon's JumpLimitYd (internal/state/commanders.go): what a unit can walk in a gap.
   const TRAVEL_SLACK_YD = 12;
   const TRAVEL_MAX_YD_PER_SEC = 20;
@@ -84,6 +87,7 @@
     return {
       frames: frames,
       names: names,
+      untracked: !!json && json.tracked === false,
       t0: frames.length ? frames[0].t : 0,
       t1: frames.length ? frames[frames.length - 1].t : 0,
     };
@@ -104,11 +108,12 @@
       if (prev !== null) gapMaxS = Math.max(gapMaxS, f.t - prev);
       prev = f.t;
     });
-    return { startS: startS, endS: endS, frames: inside, gapMaxS: gapMaxS, ok: inside >= 2 };
+    return { startS: startS, endS: endS, frames: inside, gapMaxS: gapMaxS, ok: inside >= 2,
+      untracked: !!(track && track.untracked) };
   }
 
   function coverageText(win) {
-    if (!win || !win.ok) return "No positions kept for this fight";
+    if (!win || !win.ok) return win && win.untracked ? UNTRACKED_TEXT : NO_TRACK_TEXT;
     let s = "positions every 2 s · " + win.frames + " reports";
     if (win.gapMaxS > 3) s += " · gap " + Math.round(win.gapMaxS) + " s";
     return s;
@@ -188,7 +193,7 @@
   }
 
   const api = {
-    TICK_MS, SPEEDS, HOLD_S,
+    TICK_MS, SPEEDS, HOLD_S, UNTRACKED_TEXT, NO_TRACK_TEXT,
     jumpLimitYd, prep, window, botsAt, mobsAt, nextSpeed, clock, spanClock, coverageText,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightReplay = api;

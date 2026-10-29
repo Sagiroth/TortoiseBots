@@ -117,6 +117,23 @@ func TestAgentMapsJS(t *testing.T) {
 	runCheck(t, "agentmaps_check.js", "../../web/static/js/agentmaps.js")
 }
 
+// TestPlanOverlayMemoJS runs planoverlay_memo_check.js: the overlay kept per plan and step (the map draws it at about 30 fps)
+// with the memoized strays still equal to the walk of every mob, on both plans and on a 1000-step, 1000-mob plan.
+func TestPlanOverlayMemoJS(t *testing.T) {
+	runCheck(t, "planoverlay_memo_check.js", "../../web/static/js/planoverlay.js")
+}
+
+// TestLivePosJS runs livepos_check.js: a pos frame's real gap is the gap the dots glide over (500 ms, not the 2 s report gap).
+func TestLivePosJS(t *testing.T) {
+	runCheck(t, "livepos_check.js", "../../web/static/js/app.js")
+}
+
+// TestLiveSyncJS runs live_sync_check.js: every tab change syncs the live stream, and a departed commander's glide state and
+// live events are pruned with its trails.
+func TestLiveSyncJS(t *testing.T) {
+	runCheck(t, "live_sync_check.js", "../../web/static/js/app.js")
+}
+
 // TestFightDebugCSS runs fightdebug_css_check.js: the Fight debugger block in app.css (level tokens on the card, a rule for every
 // class the card emits, the theme's colours only, the phone column, focus kept).
 func TestFightDebugCSS(t *testing.T) {

@@ -29,9 +29,10 @@ const ctx = { console, Date: { now: () => clock } };
 vm.createContext(ctx);
 vm.runInContext(tabsSrc, ctx, { filename: "fdtabs.js" });
 vm.runInContext([
-  grab("cmdForgetCard"), grab("fdState"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
+  grab("cmdForgetCard"), grab("cmdRescueLayers"), grab("fdState"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
   grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"),
   grabConst("FD_DETAIL_MAX"), grabConst("FD_DETAIL_BACKOFF"), grabConst("FD_DETAIL_FAIL_MAX"),
+  "var document = { getElementById: () => null };",
   "var cmdPageMode = () => 'debug';",
   "var fdPage = { open: null };",
   "var fdFights = null, fdFightsCache = null, fdFightsPending = null;",

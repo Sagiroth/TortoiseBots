@@ -103,7 +103,9 @@
       }
     }
 
-    const sorted = [...byId.values()].sort((a, b) =>
+    // A lane whose only reports fell on the fight's last instant has no segment at all: it is no lane (and its segs[0] would
+    // break the order below).
+    const sorted = [...byId.values()].filter((lane) => lane.segs.length > 0).sort((a, b) =>
       (b.boss - a.boss) || (a.segs[0].fromMs - b.segs[0].fromMs) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
     const out = sorted.map((lane) => {

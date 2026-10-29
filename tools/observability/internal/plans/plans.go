@@ -41,6 +41,7 @@ const (
 	PlanMaxSpawns  = 400
 	PlanCacheTTL   = 10 * time.Minute
 	PlanMissTTL    = time.Minute
+	PlanErrorTTL   = 10 * time.Second
 	PlanCacheMax   = 64
 
 	creatureNoAggro = 0x2
@@ -615,11 +616,12 @@ func OpenWorld(host string, port int, user, pass, db string) (*sql.DB, error) {
 // Service caches built plans, so repeated map draws do not re-read the world
 // database.
 type Service struct {
-	src  Source
-	mu   sync.Mutex
-	now  func() time.Time
-	seq  uint64
-	byID map[string]*cacheEntry
+	src      Source
+	mu       sync.Mutex
+	now      func() time.Time
+	seq      uint64
+	byID     map[string]*cacheEntry
+	inflight map[string]*buildWaiter
 }
 
 type cacheEntry struct {
@@ -629,8 +631,15 @@ type cacheEntry struct {
 	at      uint64
 }
 
+// buildWaiter is the one build of a plan in flight; its callers wait on done for the same answer.
+type buildWaiter struct {
+	plan *Plan
+	err  error
+	done chan struct{}
+}
+
 func NewService(src Source) *Service {
-	return &Service{src: src, now: time.Now, byID: make(map[string]*cacheEntry, PlanCacheMax)}
+	return &Service{src: src, now: time.Now, byID: make(map[string]*cacheEntry, PlanCacheMax), inflight: make(map[string]*buildWaiter)}
 }
 
 // SetClock replaces the clock (tests only).
@@ -643,22 +652,54 @@ func (s *Service) SetClock(now func() time.Time) {
 	s.mu.Unlock()
 }
 
+// Get answers from the cache, else builds the plan outside the lock (a slow world database read must not block the other
+// plans), one build per name. A failure is kept for PlanErrorTTL and a miss for PlanMissTTL, so a page drawing maps at 30 fps
+// does not query a broken or empty database on every draw.
 func (s *Service) Get(name string) (*Plan, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := s.now()
-	if c, ok := s.byID[name]; ok && now.Before(c.expires) {
-		return c.plan, c.err
+	if c, ok := s.byID[name]; ok && s.now().Before(c.expires) {
+		p, err := c.plan, c.err
+		s.mu.Unlock()
+		return p, err
 	}
-	p, err := Build(s.src, name)
-	switch {
-	case errors.Is(err, ErrNotFound):
-		s.put(name, &cacheEntry{err: ErrNotFound, expires: now.Add(PlanMissTTL)})
-	case err == nil:
-		s.put(name, &cacheEntry{plan: p, expires: now.Add(PlanCacheTTL)})
+	if w, ok := s.inflight[name]; ok {
+		s.mu.Unlock()
+		<-w.done
+		if w.plan == nil && w.err == nil {
+			return nil, errBuildAborted
+		}
+		return w.plan, w.err
 	}
+	w := &buildWaiter{done: make(chan struct{})}
+	s.inflight[name] = w
+	s.mu.Unlock()
+
+	var p *Plan
+	var err error
+	func() {
+		// The cleanup is deferred so a panicking build still clears the in-flight entry and releases the callers waiting on it.
+		defer func() {
+			s.mu.Lock()
+			w.plan, w.err = p, err
+			delete(s.inflight, name)
+			now := s.now() // the build's own time, so a slow read does not shorten the entry's life
+			switch {
+			case err == nil && p != nil:
+				s.put(name, &cacheEntry{plan: p, expires: now.Add(PlanCacheTTL)})
+			case errors.Is(err, ErrNotFound):
+				s.put(name, &cacheEntry{err: ErrNotFound, expires: now.Add(PlanMissTTL)})
+			case err != nil:
+				s.put(name, &cacheEntry{err: err, expires: now.Add(PlanErrorTTL)})
+			}
+			s.mu.Unlock()
+			close(w.done)
+		}()
+		p, err = Build(s.src, name)
+	}()
 	return p, err
 }
+
+var errBuildAborted = errors.New("plan build aborted")
 
 func (s *Service) put(name string, c *cacheEntry) {
 	s.seq++

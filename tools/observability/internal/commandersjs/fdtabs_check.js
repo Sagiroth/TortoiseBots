@@ -89,6 +89,43 @@ assert.deepStrictEqual(plain(sorted), ["Zulu", "Alpha", "Bravo"], "a fighting co
   await list("Alpha");
   assert.strictEqual(calls.length, 4, "after 10 s the summary is asked again");
 
+  // A failed fetch is kept for the window too: a failing daemon is not asked again on every draw, and what was shown stays.
+  let failClock = 500000, failCalls = 0;
+  const failCache = {}, failPending = {};
+  const failing = ctx.FdTabs.newFights({
+    cache: failCache, pending: failPending, now: () => failClock, ms: 10000,
+    fetchRows: () => { failCalls += 1; return Promise.reject(new Error("down")); },
+  });
+  const failList = (key) => new Promise((ok) => failing.list(key, ok));
+  assert.strictEqual(await failList("Alpha"), null, "a failed fetch hands the callers null");
+  assert.strictEqual(failCalls, 1, "one request");
+  assert.strictEqual(await failList("Alpha"), null, "the failure is served from the cache");
+  assert.strictEqual(failCalls, 1, "a second draw inside 10 s sends no request");
+  assert.ok(failCache.Alpha && Math.abs(failCache.Alpha.at - failClock) < 1, "the failure carries the fetch time");
+  failClock += 10001;
+  await failList("Alpha");
+  assert.strictEqual(failCalls, 2, "after the window the summary is asked for again");
+  let keptClock = 600000, keptCalls = 0;
+  const keptCache = {}, keptPending = {};
+  const flaky = ctx.FdTabs.newFights({
+    cache: keptCache, pending: keptPending, now: () => keptClock, ms: 10000,
+    fetchRows: () => { keptCalls += 1; return keptCalls === 1 ? Promise.resolve([{ key: "k1" }]) : Promise.reject(new Error("down")); },
+  });
+  const keptList = (key) => new Promise((ok) => flaky.list(key, ok));
+  assert.deepStrictEqual(plain(await keptList("Alpha")), [{ key: "k1" }]);
+  keptClock += 10001;
+  assert.deepStrictEqual(plain(await keptList("Alpha")), [{ key: "k1" }], "a failed refetch keeps the rows already shown");
+  assert.strictEqual(keptCalls, 2);
+
+  // The kept positions of a fight: a failure is retried after 30 s, never sooner, and an answer is never asked for again.
+  assert.strictEqual(ctx.FdTabs.TRACK_RETRY_MS, 30000);
+  assert.strictEqual(ctx.FdTabs.trackDue(undefined, undefined, 0), true, "never asked: ask");
+  assert.strictEqual(ctx.FdTabs.trackDue("loading", undefined, 0), false, "an ask in flight: wait");
+  assert.strictEqual(ctx.FdTabs.trackDue({ raw: {}, prep: {} }, undefined, 0), false, "an answer is kept for the page's life");
+  assert.strictEqual(ctx.FdTabs.trackDue(null, 1000, 30999), false, "a failure is not retried inside 30 s");
+  assert.strictEqual(ctx.FdTabs.trackDue(null, 1000, 31000), true, "a failure is retried after 30 s");
+  assert.strictEqual(ctx.FdTabs.trackDue(null, undefined, 9e9), false, "a failure with no clock is not retried blindly");
+
   const detail = (k) => { detailCalls.push(k); return Promise.resolve({ fight: { id: k } }); };
   await feed.detail("Alpha", "Alpha-k1", ctx.FdTabs.detailAllowed("debug", "Alpha", "Alpha"), detail);
   assert.strictEqual(feed.detail("Bravo", "Bravo-k1", ctx.FdTabs.detailAllowed("debug", "Alpha", "Bravo"), detail), null,

@@ -101,7 +101,69 @@ assert.ok(src.includes('class="fd-crumbs"') && src.includes('class="cmd-legend f
 assert.ok(src.includes("fdReadyHtml(") && src.includes("fdFrameStats("), "the raid frames header counts its dead and low mana");
 assert.ok(src.includes("UnitInfo.clockText("), "the run chip gets the run clock");
 assert.ok(src.includes('class="refresh-picker fd-refresh"'), "the refresh picker sits in the card head");
-assert.ok(src.includes("cmdPlaceLayers("), "the one layer panel moves into the map for the debugger's Layers button");
+// ---- the one layer panel survives the tab switches ---------------------------------------------------------------
+// The debugger moves #cmd-layers into the open card's map; that card is removed on the next tab switch and on All raids, so
+// the panel must be taken back first (cmdRescueLayers) or it leaves the page inside the removed card. Run through the real
+// cmdPlaceLayers / renderFdPage / fdLeaveCard / cmdForgetCard under a fake DOM.
+{
+  const { createDocument } = require("./fakedom.js");
+  const dom = createDocument(), doc = dom.document;
+  const page = dom.element("div", "tab-commanders"), list = dom.element("div", "cmd-list"), grid = dom.element("div", "cmd-overview");
+  const layers = dom.element("details", "cmd-layers"), sum = dom.element("summary");
+  sum.textContent = "Layers and trails";
+  layers.appendChild(sum);
+  dom.attach(doc.body, page);
+  dom.attach(page, layers);
+  dom.attach(page, list);
+  dom.attach(doc.body, grid);
+
+  const h1 = { console, Array, Map, Set, clearTimeout, document: doc };
+  vm.createContext(h1);
+  vm.runInContext([grab("cmdRescueLayers"), grab("cmdPlaceLayers"), grab("renderFdPage"), grab("fdLeaveCard"),
+    grab("cmdForgetCard")].join("\n"), h1);
+  const binds = { A: { commander: "A", bots: [] }, B: { commander: "B", bots: [] } };
+  const cards = new Map();
+  Object.assign(h1, {
+    fdPage: { open: null }, fdTabGone: () => false, cmdFindBind: (k) => binds[k] || null, cmdCards: cards,
+    fdStopCard: () => {}, cmdFd: {}, cmdMaps: {}, cmdAvail: {}, cmdFightsCache: {}, cmdFightsPending: {},
+    setHtml: (el, html) => { el.innerHTML = html; }, esc: (v) => String(v), fdGridHtml: () => "", fdGridPoll: () => {},
+    FdTabs: { sortBinds: (l) => l },
+    newCmdCard: (key) => {
+      const card = doc.createElement("div");
+      card.className = "cmd-card";
+      card.dataset.commander = key;
+      card.appendChild(dom.element("div", "", "cmd-stage"));
+      return card;
+    },
+    cmdRenderCard: (card, bind, debug) => { card.classList.toggle("fd-on", !!debug); },
+  });
+  const open = (name) => { h1.fdPage.open = name; h1.renderFdPage([binds.A, binds.B], [], list); };
+  const stageOf = (key) => cards.get(key).querySelector(".cmd-stage");
+
+  open("A");
+  h1.cmdPlaceLayers(true);
+  assert.strictEqual(doc.getElementById("cmd-layers").parentElement, stageOf("A"), "the panel moves into the open card's map");
+
+  open("B"); // the card that holds the panel leaves
+  assert.ok(doc.getElementById("cmd-layers"), "the panel is still on the page after the previous card left");
+  h1.cmdPlaceLayers(true);
+  assert.strictEqual(doc.getElementById("cmd-layers").parentElement, stageOf("B"), "and sits in the newly open card's map");
+  assert.strictEqual(cards.has("A"), false, "the previous card is gone");
+
+  open(null); // All raids: every card leaves
+  h1.cmdPlaceLayers(false);
+  const back = doc.getElementById("cmd-layers");
+  assert.ok(back, "the panel is still on the page after All raids");
+  assert.strictEqual(back.parentElement, page, "and is back on the page, not inside a card");
+  assert.ok(!back.classList.contains("cmd-layers-map"), "with its page styling");
+  assert.strictEqual(back.querySelector("summary").textContent, "Layers and trails", "and its own label");
+  assert.ok(page.children.indexOf(back) < page.children.indexOf(list), "the panel still sits above the commander list");
+
+  open("B");
+  h1.cmdPlaceLayers(true);
+  h1.cmdForgetCard("B"); // a commander that unbound while its tab was open
+  assert.strictEqual(doc.getElementById("cmd-layers").parentElement, page, "a forgotten commander's card leaves the panel behind");
+}
 
 // ---- the stylesheet drops the page chrome and the Live legend, and keeps the map's Layers panel usable ---------------
 const css = fs.readFileSync(path.join(dir, "..", "css", "app.css"), "utf8");

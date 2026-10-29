@@ -42,9 +42,12 @@ func TestTrackWalk2MatchesFixture(t *testing.T) {
 	if !s.ApplyCommanders(trackPayload(1, snap.UpdatedAt, snap.Commanders...)) {
 		t.Fatal("payload refused")
 	}
-	frames, names := s.Track("Glacienne", snap.UpdatedAt, snap.UpdatedAt)
+	frames, names, tracked := s.TrackWindow("Glacienne", snap.UpdatedAt, snap.UpdatedAt)
 	if len(frames) != 1 {
 		t.Fatalf("frames = %d, want 1", len(frames))
+	}
+	if !tracked {
+		t.Fatal("tracked = false, want true for a commander that reported")
 	}
 	f := frames[0]
 	if len(f.Bots) != 39 {
@@ -56,7 +59,7 @@ func TestTrackWalk2MatchesFixture(t *testing.T) {
 	if f.Step != 20 {
 		t.Fatalf("step = %d, want 20", f.Step)
 	}
-	got, err := json.Marshal(TrackJSON("Glacienne", frames, names))
+	got, err := json.Marshal(TrackJSON("Glacienne", frames, names, true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,6 +191,37 @@ func TestTrackHPAndAlive(t *testing.T) {
 		if b.HP != wantHP[i] || b.Alive != wantAlive[i] {
 			t.Errorf("bot %d = hp %d alive %v, want hp %d alive %v", i, b.HP, b.Alive, wantHP[i], wantAlive[i])
 		}
+	}
+}
+
+// TestTrackSaysUntracked: a commander the daemon does not track answers with tracked false and no frames, while a tracked
+// commander whose window held no report answers tracked true with no frames. The page says "replay kept for the first 4
+// raids" for the first and "no positions kept for this fight" for the second.
+func TestTrackSaysUntracked(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	bots := []model.CommanderBot{trackBot(1, 1, 2, 10, 10)}
+	if !s.ApplyCommanders(trackPayload(1, 100, trackBinding("kept", bots, nil))) {
+		t.Fatal("payload refused")
+	}
+	frames, _, tracked := s.TrackWindow("kept", 5000, 6000)
+	if !tracked || len(frames) != 0 {
+		t.Fatalf("kept commander: tracked %v frames %d, want true and 0", tracked, len(frames))
+	}
+	frames, _, tracked = s.TrackWindow("gone", 0, 1000)
+	if tracked || len(frames) != 0 {
+		t.Fatalf("untracked commander: tracked %v frames %d, want false and 0", tracked, len(frames))
+	}
+	raw, err := json.Marshal(TrackJSON("gone", frames, nil, tracked))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := got["tracked"]; !ok || v != false {
+		t.Fatalf("the track answer says tracked %v (present %v), want false: %s", v, ok, raw)
 	}
 }
 

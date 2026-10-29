@@ -85,6 +85,18 @@ assert.strictEqual(R.coverageText(none), "No positions kept for this fight");
 assert.strictEqual(R.coverageText({ ok: true, frames: 5, gapMaxS: 8.4 }), "positions every 2 s · 5 reports · gap 8 s");
 assert.strictEqual(R.window(R.prep({}), { start: 1, dur_ms: 1 }).ok, false);
 
+// ---- a commander outside the daemon's tracked set says so, not "nothing kept for this fight" --------------------------
+const untracked = R.prep({ commander: "Fifth", tracked: false, frames: [], names: {} });
+assert.strictEqual(untracked.untracked, true, "the track answer's tracked flag reaches the page");
+assert.strictEqual(R.prep({ commander: "A", tracked: true, frames: [] }).untracked, false);
+assert.strictEqual(R.prep({ commander: "A", frames: [] }).untracked, false, "an old daemon without the flag keeps the old text");
+const untrackedWin = R.window(untracked, { start: 300, dur_ms: 4000 });
+assert.strictEqual(untrackedWin.ok, false);
+assert.strictEqual(untrackedWin.untracked, true);
+assert.strictEqual(R.coverageText(untrackedWin), "Replay kept for the first 4 raids only (dashboard limit)");
+assert.strictEqual(R.UNTRACKED_TEXT, "Replay kept for the first 4 raids only (dashboard limit)");
+assert.strictEqual(R.NO_TRACK_TEXT, "No positions kept for this fight");
+
 // ---- controls -------------------------------------------------------------------------------------------------------
 assert.strictEqual(R.nextSpeed(4), 0.5);
 assert.strictEqual(R.nextSpeed(1), 2);

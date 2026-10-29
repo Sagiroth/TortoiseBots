@@ -14,7 +14,7 @@ func TestTrackRouteWired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"GET /api/v1/commanders/track", "state.ParseTrackWindow(", "store.Track("} {
+	for _, want := range []string{"GET /api/v1/commanders/track", "state.ParseTrackWindow(", "store.TrackWindow("} {
 		if !strings.Contains(string(src), want) {
 			t.Errorf("main.go does not contain %q", want)
 		}

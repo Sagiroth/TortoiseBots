@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -356,15 +357,90 @@ func TestServiceCache(t *testing.T) {
 	broken := &memSource{srcErr: errors.New("boom")}
 	errSrv := NewService(broken)
 	errSrv.SetClock(clock)
+	now = base
 	for range 2 {
 		if _, err := errSrv.Get("x"); err == nil {
 			t.Fatal("erroring get returned nil error")
 		}
 	}
+	if broken.planCalls != 1 {
+		t.Fatalf("error plan calls = %d, want 1 (a failure is cached for PlanErrorTTL)", broken.planCalls)
+	}
+	now = base.Add(PlanErrorTTL + time.Second)
+	if _, err := errSrv.Get("x"); err == nil {
+		t.Fatal("erroring get after the error ttl returned nil error")
+	}
 	if broken.planCalls != 2 {
-		t.Fatalf("error plan calls = %d, want 2 (errors are not cached)", broken.planCalls)
+		t.Fatalf("error plan calls after the error ttl = %d, want 2", broken.planCalls)
 	}
 }
+
+// TestServiceBuildsOutsideTheLock: a plan whose world-database read is slow must not hold the service's lock, or every other
+// card's plan waits behind it (the map asks for its plan on every draw).
+func TestServiceBuildsOutsideTheLock(t *testing.T) {
+	src := &gatedSource{gate: make(chan struct{}), reached: make(chan struct{})}
+	srv := NewService(src)
+	slow := make(chan error, 1)
+	go func() { _, err := srv.Get("slow"); slow <- err }()
+	<-src.reached
+	fast := make(chan error, 1)
+	go func() { _, err := srv.Get("fast"); fast <- err }()
+	select {
+	case err := <-fast:
+		if err != nil {
+			t.Fatalf("fast get: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Get of another plan waited behind the slow build: the lock is held across Build")
+	}
+	close(src.gate)
+	if err := <-slow; err != nil {
+		t.Fatalf("slow get: %v", err)
+	}
+	if _, err := srv.Get("slow"); err != nil {
+		t.Fatalf("cached slow get: %v", err)
+	}
+	if src.calls("slow") != 1 {
+		t.Fatalf("slow builds = %d, want 1 (the second get is cached)", src.calls("slow"))
+	}
+}
+
+// gatedSource answers any plan; "slow" waits in Plan until gate closes.
+type gatedSource struct {
+	gate    chan struct{}
+	reached chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	built   map[string]int
+}
+
+func (g *gatedSource) calls(name string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.built[name]
+}
+
+func (g *gatedSource) Plan(name string) (PlanRow, bool, error) {
+	if name == "slow" {
+		g.once.Do(func() { close(g.reached) })
+		<-g.gate
+	}
+	g.mu.Lock()
+	if g.built == nil {
+		g.built = map[string]int{}
+	}
+	g.built[name]++
+	g.mu.Unlock()
+	return PlanRow{Plan: name, Map: 249}, true, nil
+}
+
+func (g *gatedSource) Legs(name string) ([]LegRow, error) { return nil, nil }
+
+func (g *gatedSource) Steps(name string) ([]StepRow, error) { return nil, nil }
+
+func (g *gatedSource) Templates(entries []uint32) ([]TemplateRow, error) { return nil, nil }
+
+func (g *gatedSource) Spawns(mapID uint32, entries []uint32) ([]SpawnRow, error) { return nil, nil }
 
 func TestHandler(t *testing.T) {
 	do := func(h http.Handler, path string) (*httptest.ResponseRecorder, string) {

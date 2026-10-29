@@ -49,6 +49,38 @@
     return "wakes at ~" + Math.round(num(yd) || 0) + " yd (scripted)";
   }
 
+  // ---- the draw-time memo ----------------------------------------------------------------------------------------------
+  // The map draws at about 30 fps, and every draw asks for the overlay again. The stands and the strays depend on the plan and
+  // the party level only, and the view on the plan, the current step, the fight's step and the numbering too, so each answer
+  // is kept per plan and handed back while the key holds.
+  const VIEW_MEMO_MAX = 24;
+  const viewMemo = new WeakMap();    // plan -> Map(key -> view)
+  const marginsMemo = new WeakMap(); // plan -> Map(party level -> standMargins)
+  const straysMemo = new WeakMap();  // plan -> Map(party level -> strays)
+  const mobIndex = new WeakMap();    // plan -> {mobs: the array indexed, byStep: Map(step -> mobs)}
+
+  const partyOf = (level) => (num(level) !== null && level > 0 ? level : PARTY_LEVEL_DEFAULT);
+  const memoFor = (memo, plan) => {
+    let m = memo.get(plan);
+    if (!m) { m = new Map(); memo.set(plan, m); }
+    return m;
+  };
+
+  // The plan's mobs by the step they belong to, built once per plan: the stands and the strays walk the packs, not every mob.
+  function mobsByStep(plan) {
+    const arr = plan && Array.isArray(plan.mobs) ? plan.mobs : null;
+    const hit = plan && typeof plan === "object" ? mobIndex.get(plan) : null;
+    if (hit && hit.mobs === arr) return hit.byStep;
+    const byStep = new Map();
+    (arr || []).forEach((m) => {
+      if (!m || num(m.step) === null) return;
+      const a = byStep.get(m.step);
+      if (a) a.push(m); else byStep.set(m.step, [m]);
+    });
+    if (plan && typeof plan === "object") mobIndex.set(plan, { mobs: arr, byStep });
+    return byStep;
+  }
+
   // The party's level: the lowest a bot reports (the widest ring), else the default.
   function partyLevel(bind) {
     let low = 0;
@@ -117,17 +149,19 @@
   // Each stand's margin to its pack: the pack mob the stand is closest to in 3D after subtracting that mob's ring
   // (a negative margin means the stand is already inside the ring). {i: {dist, ring, margin, name, wake}}.
   function standMargins(plan, partyLevel) {
+    const memo = plan && typeof plan === "object" ? memoFor(marginsMemo, plan) : null;
+    const party = partyOf(partyLevel);
+    if (memo && memo.has(party)) return memo.get(party);
     const out = {};
     const steps = list(plan && plan.steps);
-    const mobs = list(plan && plan.mobs);
+    const byStep = mobsByStep(plan);
     steps.forEach((s) => {
       if (!s.stand) return;
       const pack = nextPack(steps, s.i);
       if (!pack) return;
       let best = null;
-      mobs.forEach((m) => {
-        if (m.step !== pack.i) return;
-        const ring = ringYd(m, partyLevel);
+      (byStep.get(pack.i) || []).forEach((m) => {
+        const ring = ringYd(m, party);
         if (!(ring > 0)) return;
         const dist = dist3(s, m), margin = dist - ring;
         if (!best || margin < best.margin || (margin === best.margin && m.guid < best.guid)) {
@@ -136,6 +170,7 @@
       });
       if (best) out[s.i] = best;
     });
+    if (memo) memo.set(party, out);
     return out;
   }
 
@@ -143,17 +178,20 @@
   // whose ring the pull is made from — or inside any scripted wake ring (its own pack included). 3D distance, by
   // step then pack. [{i, pack, guid, name, dist, ring, wake}].
   function strays(plan, partyLevel) {
+    const memo = plan && typeof plan === "object" ? memoFor(straysMemo, plan) : null;
+    const party = partyOf(partyLevel);
+    if (memo && memo.has(party)) return memo.get(party);
     const out = [];
     const steps = list(plan && plan.steps);
-    const mobs = list(plan && plan.mobs);
+    const byStep = mobsByStep(plan);
+    const packs = steps.filter((p) => PACK_KINDS[p.k]);
     steps.forEach((s) => {
       if (!MOVE_KINDS[s.k]) return;
       const own = nextPack(steps, s.i);
-      steps.forEach((p) => {
-        if (!PACK_KINDS[p.k] || p.i <= s.i) return;
-        mobs.forEach((m) => {
-          if (m.step !== p.i) return;
-          const ring = ringYd(m, partyLevel);
+      packs.forEach((p) => {
+        if (p.i <= s.i) return;
+        (byStep.get(p.i) || []).forEach((m) => {
+          const ring = ringYd(m, party);
           if (!(ring > 0)) return;
           const dist = dist3(s, m);
           if (dist >= ring) return;
@@ -164,6 +202,7 @@
       });
     });
     out.sort((a, b) => a.i - b.i || a.pack - b.pack || a.guid - b.guid);
+    if (memo) memo.set(party, out);
     return out;
   }
 
@@ -173,12 +212,16 @@
   function view(plan, opts) {
     const o = opts || {};
     if (!plan || plan.map !== o.mapId) return null;
-    const steps = list(plan.steps);
     const numbering = numberingOk(plan, o.run);
     const cur = (num(o.cur) || 0) > 0 ? o.cur : 0;
-    const byState = numbering ? states(plan, cur) : states(plan, 0);
-    const party = num(o.partyLevel) !== null && o.partyLevel > 0 ? o.partyLevel : PARTY_LEVEL_DEFAULT;
+    const party = partyOf(o.partyLevel);
     const fightStep = num(o.fightStep) || 0;
+    const key = [o.mapId, cur, fightStep, party, numbering ? 1 : 0].join("|");
+    const memo = memoFor(viewMemo, plan);
+    const hit = memo.get(key);
+    if (hit) return hit;
+    const steps = list(plan.steps);
+    const byState = numbering ? states(plan, cur) : states(plan, 0);
     const pack = fightStep > 0 ? fightPack(plan, { step: fightStep }) : 0;
     const margins = standMargins(plan, party);
     const strayList = strays(plan, party);
@@ -213,7 +256,10 @@
       patrol: !!m.patrol, boss: !!(stepByI[m.step] && stepByI[m.step].k === "boss"),
     }));
 
-    return { numbering, route, steps: outSteps, rings, mobs, strays: strayList };
+    const out = { numbering, route, steps: outSteps, rings, mobs, strays: strayList };
+    if (memo.size >= VIEW_MEMO_MAX) memo.clear(); // a run walked far along a long plan: keep the newest keys
+    memo.set(key, out);
+    return out;
   }
 
   const api = {

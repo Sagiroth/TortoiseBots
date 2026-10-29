@@ -653,8 +653,8 @@ func main() {
 			_, _ = w.Write([]byte(`{"error":"bad window"}`))
 			return
 		}
-		frames, names := store.Track(c, from, to)
-		writeJSON(w, state.TrackJSON(c, frames, names))
+		frames, names, tracked := store.TrackWindow(c, from, to)
+		writeJSON(w, state.TrackJSON(c, frames, names, tracked))
 	}))
 
 	// The live stream (S1): Server-Sent Events for the commanders the open tab draws, so positions and fight events reach the

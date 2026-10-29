@@ -938,6 +938,7 @@
     if (tab === 'dungeons') fetchDungeons();
     if (tab === 'dungeon-runs') fetchDgRuns();
     if (tab === 'agentmaps') fetchAgentMaps();
+    cmdLiveSync(); // the stream serves the Commanders tab: it closes when it is left and reopens when it is shown
   }
 
   el.menuItems.forEach(item => item.addEventListener('click', closeNavDrawer));
@@ -5293,6 +5294,7 @@
     cmdCards.forEach((card, key) => {
       if (key === open) return;
       fdStopCard(key);
+      cmdRescueLayers();
       card.remove();
       cmdCards.delete(key);
     });
@@ -5306,6 +5308,7 @@
   function fdLeaveCard() {
     cmdCards.forEach((card, key) => {
       fdStopCard(key);
+      cmdRescueLayers();
       card.remove();
       cmdCards.delete(key);
     });
@@ -5319,7 +5322,7 @@
     const keys = all.map(b => b.commander);
     cmdCards.forEach((card, key) => {
       if (!keys.includes(key)) { cmdForgetCard(key); return; }
-      if (card.classList.contains('fd-on')) { fdStopCard(key); card.remove(); cmdCards.delete(key); }
+      if (card.classList.contains('fd-on')) { fdStopCard(key); cmdRescueLayers(); card.remove(); cmdCards.delete(key); }
     });
     all.forEach((bind, i) => {
       let card = cmdCards.get(bind.commander);
@@ -5335,15 +5338,7 @@
   function cmdForgetCard(key) {
     const card = cmdCards.get(key);
     if (card) {
-      // The debugger page moves the one layer panel into its map; take it back before its host card leaves the page.
-      const layers = card.querySelector('#cmd-layers');
-      if (layers) {
-        const page = document.getElementById('tab-commanders'), list = document.getElementById('cmd-list');
-        layers.classList.remove('cmd-layers-map');
-        const sum = layers.querySelector('summary');
-        if (sum && layers.dataset.liveLabel) sum.textContent = layers.dataset.liveLabel;
-        if (page) page.insertBefore(layers, list && list.parentElement === page ? list : null);
-      }
+      cmdRescueLayers();
       card.remove();
     }
     cmdCards.delete(key);
@@ -5409,6 +5404,8 @@
     UnitInfo.pruneEvents(cmdEvents, keys);
     CmdPaths.pruneTrails(cmdTrails, all);
     CmdPaths.pruneStalls(cmdStalls, keys);
+    Object.keys(cmdGlide).forEach(k => { if (!keys.includes(k)) delete cmdGlide[k]; });
+    Object.keys(cmdLiveEvents).forEach(k => { if (!keys.includes(k)) delete cmdLiveEvents[k]; });
   }
 
   function setCmdDemo(on, quiet) {
@@ -5582,6 +5579,7 @@
         state.commanders.list = list;
         const st = cmdGlide[d.commander] || (cmdGlide[d.commander] = Glide.create());
         const now = performance.now(), map = cmdFindBind(d.commander);
+        Glide.sampled(st, now); // the gap the dots glide over is the pos frame gap, not the 2 s report gap
         (d.bots || []).forEach(b => { if (b && b.g != null) Glide.note(st, Glide.botKey(b.g), b.x, b.y, b.m, b.a === 1, now); });
         (d.mobs || []).forEach(m => { if (m && m.id != null) Glide.note(st, Glide.mobKey(m.id), m.x, m.y, map ? map.mobs_map : null, true, now); });
         cmdSched.mark(d.commander, true);
@@ -6314,23 +6312,31 @@
     return null;
   }
 
+  // The plan's layers: its route and stands, and the rings (part of the aggro layer). With every one of them off nothing of the
+  // plan reaches the map, so its overlay is not rebuilt on each draw.
+  function cmdPlanWanted() {
+    return !!(cmdLayers.planroute || cmdLayers.planstands || cmdLayers.aggro);
+  }
+
   // What a card's map can draw of the plan: its view, or the reason the plan layers are greyed. The current step is the selected
   // finished fight's step in the debugger, else the run's; the fight's own step marks the pack it fought.
   function cmdPlanFacts(bind, first) {
-    if (!first) return { view: null, why: 'No bots on a map' };
+    if (!first) return { view: null, why: 'No bots on a map', ok: false };
     const name = cmdPlanName(bind);
-    if (!name) return { view: null, why: 'No plan: start a run (.bot run) or pick a fight of a run' };
+    if (!name) return { view: null, why: 'No plan: start a run (.bot run) or pick a fight of a run', ok: false };
     const plan = cmdPlanGet(name);
     const cached = cmdPlans[name] || {};
-    if (!plan) return { view: null, why: cached.err || 'Loading the plan…' };
-    if (plan.map !== first.map) return { view: null, why: 'The plan is for another map' };
+    if (!plan) return { view: null, why: cached.err || 'Loading the plan…', ok: false };
+    if (plan.map !== first.map) return { view: null, why: 'The plan is for another map', ok: false };
+    const zview = { steps: plan.steps, rings: plan.mobs }; // the floor split needs the plan's z levels, not its overlay
+    if (!cmdPlanWanted()) return { view: null, why: '', ok: true, zview }; // the panel can still offer the layers
     const fd = cmdFd[bind.commander];
     const det = fd && fd.mode === 'debug' && fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
     // a fight of another plan than the one drawn cannot say which step of it the run is on
     const fight = det && det.fight && det.fight.plan === name ? det.fight : null;
     const cur = fight && fight.step ? fight.step : (bind.run && bind.run.step) || 0;
     const fightStep = fight ? fight.step || 0 : 0;
-    return { view: PlanOverlay.view(plan, { mapId: first.map, cur, fightStep, partyLevel: PlanOverlay.partyLevel(bind), run: bind.run }), why: '' };
+    return { view: PlanOverlay.view(plan, { mapId: first.map, cur, fightStep, partyLevel: PlanOverlay.partyLevel(bind), run: bind.run }), why: '', ok: true, zview };
   }
 
   // The plan on a card's picture: the aggro and scripted-wake rings, the route (done dimmed, ahead bright) and the steps (the stands,
@@ -6408,7 +6414,7 @@
     const ms = cmdMaps[key] || (cmdMaps[key] = { follow: true, view: null, userScale: null, pic: '' });
     const facts = cmdMapFacts(bind);
     const pf = cmdPlanFacts(bind, facts.first);
-    facts.ctx.plan = !!pf.view;
+    facts.ctx.plan = !!pf.ok;
     facts.ctx.planWhy = pf.why;
     // the other data the raid layers draw from: subgroups of this map's party, the layout's healer->tank pairs, the selected fight's deaths
     const fdCtx = cmdFd[key];
@@ -6433,8 +6439,8 @@
     const pick = choice.slot;
     ms.pick = pick;
     // a multi-floor map's picture shows one floor: the plan and the deaths keep to it (nothing hidden when it has no floors)
-    if (pf.view) pf.view.floors = cmdFloors(slots, pick, cmdFloorZs(pf.view, fdFight));
-    const fl = pf.view ? pf.view.floors : null;
+    const fl = cmdFloors(slots, pick, cmdFloorZs(pf.view || pf.zview, fdFight));
+    if (pf.view) pf.view.floors = fl;
     const ui = CmdView.pictureSelect(slots, ms.pic);
     const picKey = on.bg && pick ? `${pick.url}|${pick.x}|${pick.y}|${pick.w}|${pick.h}` : '';
     const picG = svg.querySelector('g.pic');
@@ -7123,6 +7129,18 @@
     if (debug) { renderFightDebug(card, bind); fdLoad(card, bind); } else mountFightPanel(card, bind);
   }
 
+  // The debugger page moves the one layer panel into its map; take it back to the page before any card that may hold it leaves,
+  // or the panel leaves with the card and the Layers button has nothing to open.
+  function cmdRescueLayers() {
+    const layers = document.getElementById('cmd-layers');
+    if (!layers) return;
+    const page = document.getElementById('tab-commanders'), list = document.getElementById('cmd-list');
+    layers.classList.remove('cmd-layers-map');
+    const sum = layers.querySelector('summary');
+    if (sum && layers.dataset.liveLabel) sum.textContent = layers.dataset.liveLabel;
+    if (page) page.insertBefore(layers, list && list.parentElement === page ? list : null);
+  }
+
   function cmdPlaceLayers(debugOnly) {
     const box = document.getElementById('cmd-layers');
     if (!box) return;
@@ -7183,7 +7201,7 @@
   const cmdFd = {};
 
   function fdState(key) {
-    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, details: {}, failed: {}, loading: false, list: [], tracks: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
+    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, details: {}, failed: {}, loading: false, list: [], tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
     return cmdFd[key];
   }
 
@@ -7365,7 +7383,9 @@
       if (track === undefined) fdTrackLoad(card, bind, fd.sel, fight);
       fdPlaySync(card, fd, fight, track && track !== 'loading' ? track : null);
       const lanes = card.querySelector('.fd-lanes');
-      if (track && track !== 'loading') fdSet(lanes, fdLanesHtml(AggroLanes.lanes(track.raw, fight, bind.bots || []), fight.dur_ms));
+      if (track && track !== 'loading' && track.raw && track.raw.tracked === false) {
+        fdSet(lanes, `<p class="empty-hint">${esc(FightReplay.UNTRACKED_TEXT)}</p>`); // this raid is past the dashboard's tracked set
+      } else if (track && track !== 'loading') fdSet(lanes, fdLanesHtml(AggroLanes.lanes(track.raw, fight, bind.bots || []), fight.dur_ms));
       else fdSet(lanes, `<p class="empty-hint">${track === 'loading' ? 'Loading positions…' : 'No positions kept for this fight (the dashboard keeps the last 30 min, from its own start).'}</p>`);
       fdCursorSync(card, fd);
     } else {
@@ -7941,18 +7961,22 @@
     return { tS: (fight.start || 0) + tMs / 1000, tMs, track, fight };
   }
 
-  // Fetches a fight's kept positions once (the daemon keeps the last 30 min); a failure is remembered, not retried.
+  // Fetches a fight's kept positions once (the daemon keeps the last 30 min); a failure is asked for again after 30 s.
   function fdTrackLoad(card, bind, key, fight) {
     const fd = cmdFd[bind.commander];
-    if (!fd || !fight || fd.tracks[key] !== undefined) return;
+    if (!fd || !fight || !FdTabs.trackDue(fd.tracks[key], fd.trackAt[key], Date.now())) return;
     if (!FdTabs.detailAllowed(cmdPageMode(), fdPage.open, bind.commander)) return;
     if (Object.keys(fd.tracks).some(k => fd.tracks[k] === 'loading')) return;
     fd.tracks[key] = 'loading';
     const from = Math.floor(fight.start || 0) - 4, to = Math.ceil((fight.start || 0) + (fight.dur_ms || 0) / 1000) + 4;
     fetch('/api/v1/commanders/track?commander=' + encodeURIComponent(bind.commander) + '&from=' + from + '&to=' + to, { credentials: 'same-origin' })
       .then(r => (r.ok ? r.json() : null))
-      .then(json => { fd.tracks[key] = json && Array.isArray(json.frames) ? { raw: json, prep: FightReplay.prep(json) } : null; })
-      .catch(() => { fd.tracks[key] = null; })
+      .then(json => {
+        if (json && Array.isArray(json.frames)) { fd.tracks[key] = { raw: json, prep: FightReplay.prep(json) }; return; }
+        fd.tracks[key] = null;
+        fd.trackAt[key] = Date.now();
+      })
+      .catch(() => { fd.tracks[key] = null; fd.trackAt[key] = Date.now(); })
       .then(() => {
         const keys = Object.keys(fd.tracks);
         if (keys.length > FD_TRACK_MAX) keys.slice(0, keys.length - FD_TRACK_MAX).forEach(k => { delete fd.tracks[k]; });

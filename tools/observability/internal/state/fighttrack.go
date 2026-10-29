@@ -149,9 +149,23 @@ func hpPercent(hp, maxHP uint32) uint8 {
 // each is within TrackEdgeSec of the window, so both edges can be interpolated. The names map holds the entries of the returned
 // frames only. History outlives the binding: a finished fight stays replayable after the group has walked away.
 func (s *Store) Track(commander string, from, to int64) ([]TrackFrame, map[uint32]string) {
+	frames, names, _ := s.TrackWindow(commander, from, to)
+	return frames, names
+}
+
+// TrackWindow is Track plus whether the daemon keeps a track for that commander at all: false means the commander was never
+// sampled (it is outside the four the daemon tracks), not that the window held no report. Read under one lock so the answer
+// belongs to the frames.
+func (s *Store) TrackWindow(commander string, from, to int64) ([]TrackFrame, map[uint32]string, bool) {
 	st := &s.commanders
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	frames, names := st.trackLocked(commander, from, to)
+	return frames, names, st.tracks[commander] != nil
+}
+
+// trackLocked is Track's body with the lock held.
+func (st *commandersState) trackLocked(commander string, from, to int64) ([]TrackFrame, map[uint32]string) {
 	frames := []TrackFrame{}
 	names := map[uint32]string{}
 	t := st.tracks[commander]
@@ -240,13 +254,17 @@ type trackFrameJSON struct {
 }
 
 // TrackJSON is the wire shape of GET /api/v1/commanders/track: bots as [guid, x, y, hp %, alive, map], places rounded to 0.1 yd.
-func TrackJSON(commander string, frames []TrackFrame, names map[uint32]string) any {
+// tracked says whether the daemon keeps a track for that commander at all: a commander outside the four it tracks has no
+// positions to replay, which the page says instead of "nothing kept for this fight".
+func TrackJSON(commander string, frames []TrackFrame, names map[uint32]string, tracked bool) any {
 	out := struct {
 		Commander string            `json:"commander"`
+		Tracked   bool              `json:"tracked"`
 		Frames    []trackFrameJSON  `json:"frames"`
 		Names     map[string]string `json:"names"`
 	}{
 		Commander: commander,
+		Tracked:   tracked,
 		Frames:    make([]trackFrameJSON, 0, len(frames)),
 		Names:     make(map[string]string, len(names)),
 	}
