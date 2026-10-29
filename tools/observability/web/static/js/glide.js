@@ -13,6 +13,7 @@
   const DELAY_FACTOR = 1.25; // how many report gaps the map is behind
   const DELAY_MIN_MS = 300, DELAY_MAX_MS = 2600;
   const EXTRAP_MS = 300;  // past the newest sample, walk on along the last velocity this long, then hold
+  const BACK_MS = 2000;   // a frame this much older than the newest server time is a clock reset, not a reorder
   const TAU = Math.PI * 2;
   // The same jump rule as the trails (commanders.js, the daemon's JumpLimitYd): 12 yd of slack plus 20 yd for each second,
   // seconds counted from 1 to 30.
@@ -25,14 +26,31 @@
     return SLACK_YD + YD_PER_SEC * sec;
   }
 
+  // The render delay of a state with no gap yet: as for the idle 2 s feed.
+  const initialDelay = () => Math.min(DELAY_MAX_MS, Math.max(DELAY_MIN_MS, DELAY_FACTOR * 2000));
+
   // One glide state for one commander's card: the units' samples and the clock that turns the page's arrival times into the
   // server's.
   function create() {
     return {
       units: {},
       offsets: [], offset: 0, offsetTs: null,
-      gaps: [], delay: Math.min(DELAY_MAX_MS, Math.max(DELAY_MIN_MS, DELAY_FACTOR * 2000)),
+      gaps: [], delay: initialDelay(),
+      lastClock: null, newestClock: null, session: null,
     };
+  }
+
+  // The game server restarted or its clock was moved, or a new datagram session took over: the samples, the offset window
+  // and the gap history all belong to the old clock. They go, and the frame that brought the news is a snap.
+  function resetClock(st) {
+    st.units = {};
+    st.offsets = [];
+    st.offset = 0;
+    st.offsetTs = null;
+    st.gaps = [];
+    st.delay = initialDelay();
+    st.lastClock = null;
+    st.newestClock = null;
   }
 
   const botKey = (guid) => "b:" + String(guid);
@@ -45,16 +63,24 @@
   }
 
   // The server time of a sample: the datagram's own ts_ms when it has one (a position frame always does, the 2 s report while
-  // the stream carries it), else the arrival time moved onto the card's server clock.
-  function clockOf(st, nowMs, tsMs) {
-    if (typeof tsMs !== "number" || !isFinite(tsMs)) return nowMs - (st.offset || 0);
-    if (st.offsetTs !== tsMs) {
+  // the stream carries it), else the arrival time moved onto the card's server clock. A frame far behind the newest server
+  // time, or from another datagram session, means the clock was reset: the state forgets the old one first.
+  function clockOf(st, nowMs, tsMs, session) {
+    const sid = session == null ? null : String(session);
+    const hasTs = typeof tsMs === "number" && isFinite(tsMs);
+    const t = hasTs ? tsMs : nowMs - (st.offset || 0);
+    if ((sid != null && st.session != null && sid !== st.session) || (st.newestClock != null && t < st.newestClock - BACK_MS)) {
+      resetClock(st);
+    }
+    if (sid != null) st.session = sid;
+    if (hasTs && st.offsetTs !== tsMs) {
       st.offsetTs = tsMs;
       st.offsets.push(nowMs - tsMs);
       if (st.offsets.length > OFFSETS) st.offsets.shift();
       st.offset = Math.min.apply(null, st.offsets);
     }
-    return tsMs;
+    if (st.newestClock == null || t > st.newestClock) st.newestClock = t;
+    return t;
   }
 
   // How far behind the newest report the map draws: 1.25× the median gap of the last few, never under 300 ms (in combat, a
@@ -67,9 +93,9 @@
   const renderTime = (st, nowMs) => nowMs - (st.offset || 0) - (st.delay || delayOf(st));
 
   // Once per report: the gap the render delay follows, and the report's own server time when it has one.
-  function sampled(st, nowMs, tsMs) {
+  function sampled(st, nowMs, tsMs, session) {
     if (!st) return;
-    const t = clockOf(st, nowMs, tsMs);
+    const t = clockOf(st, nowMs, tsMs, session);
     if (typeof st.lastClock === "number") {
       const g = t - st.lastClock;
       if (g > 0) {
@@ -175,7 +201,7 @@
   }
 
   const api = {
-    CAP_MS, FRAME_MS, SAMPLES, OFFSETS, GAPS, DELAY_FACTOR, DELAY_MIN_MS, DELAY_MAX_MS, EXTRAP_MS,
+    CAP_MS, FRAME_MS, BACK_MS, SAMPLES, OFFSETS, GAPS, DELAY_FACTOR, DELAY_MIN_MS, DELAY_MAX_MS, EXTRAP_MS,
     SLACK_YD, YD_PER_SEC, MAX_GAP_SEC,
     jumpLimitYd, create, botKey, mobKey, median, angleLerp, sampled, delayOf, renderTime, at, note, active, apply,
   };

@@ -113,7 +113,7 @@
       if (!bind || typeof bind.commander !== "string") return;
       const st = states[bind.commander] || (states[bind.commander] = G.create());
       const ts = typeof bind.ts_ms === "number" ? bind.ts_ms : undefined;
-      G.sampled(st, nowMs, ts);
+      G.sampled(st, nowMs, ts, bind.session);
       (bind.bots || []).forEach((b) => {
         if (b && b.guid != null) G.note(st, G.botKey(b.guid), b.x, b.y, b.map, b.alive !== false, nowMs, ts);
       });

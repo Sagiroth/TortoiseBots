@@ -187,8 +187,46 @@ const S0 = 1791990030000; // its server time
   assert.strictEqual(G.median([4, 1, 3, 2]), 2.5);
 }
 
+// ---- a backward clock jump (a restarted game server) or a new datagram session starts the card over, and the frame that
+// brought the news is a snap; a small reorder is dropped as before
+{
+  const st = G.create();
+  for (let i = 0; i <= 3; i++) {
+    G.sampled(st, T0 + i * 500, S0 + i * 500, "s1");
+    G.note(st, "b1", i * 10, 0, 209, true, T0 + i * 500, S0 + i * 500);
+    G.note(st, "b2", i * 10, 5, 209, true, T0 + i * 500, S0 + i * 500);
+  }
+  near(st.delay, 625, "the 0.5 s feed sets the delay");
+  const before = G.at(st, "b1", T0 + 1600);
+  // half a second behind the newest frame: a reorder, dropped as today
+  G.sampled(st, T0 + 1600, S0 + 1000, "s1");
+  G.note(st, "b1", 999, 0, 209, true, T0 + 1600, S0 + 1000);
+  near(G.at(st, "b1", T0 + 1600).x, before.x, "a reorder does not move the dot");
+  near(st.delay, 625, "and does not move the delay");
+  // an hour back: the card starts over and the frame is a snap
+  const jumpNow = T0 + 2000, jumpTs = S0 - 3600000;
+  G.sampled(st, jumpNow, jumpTs, "s1");
+  G.note(st, "b1", 70, 0, 209, true, jumpNow, jumpTs);
+  assert.deepStrictEqual(st.gaps, [], "the gap history of the old clock is gone");
+  assert.strictEqual(st.offset, jumpNow - jumpTs, "the offset window starts over at the jump");
+  assert.ok(!st.units["b:2"], "the units of the old clock are gone");
+  near(G.at(st, "b1", jumpNow + st.delay).x, 70, "the frame after the jump is drawn at once");
+  // and the next frame walks again, on the new clock's own gap
+  G.sampled(st, jumpNow + 500, jumpTs + 500, "s1");
+  G.note(st, "b1", 80, 0, 209, true, jumpNow + 500, jumpTs + 500);
+  assert.deepStrictEqual(st.gaps, [500], "the new clock measures its own gap");
+  assert.strictEqual(G.active(st, jumpNow + 500 + st.delay), true, "the dot walks again");
+  // a new datagram session on the same clock starts the card over too
+  G.note(st, "b3", 1, 1, 209, true, jumpNow + 500, jumpTs + 500);
+  G.sampled(st, jumpNow + 1000, jumpTs + 1000, "s2");
+  G.note(st, "b1", 90, 0, 209, true, jumpNow + 1000, jumpTs + 1000);
+  assert.ok(!st.units["b:3"], "the old session's units are gone");
+  near(G.at(st, "b1", jumpNow + 1000 + st.delay).x, 90, "the new session's frame is a snap");
+}
+
 // ---- the frame cap is 60 fps now (16 ms)
 assert.strictEqual(G.FRAME_MS, 16, "the dots redraw every animation frame");
+assert.strictEqual(G.BACK_MS, 2000, "a clock jump is measured against the newest server time");
 assert.strictEqual(G.SAMPLES, 4, "four samples a unit");
 assert.strictEqual(G.EXTRAP_MS, 300);
 
