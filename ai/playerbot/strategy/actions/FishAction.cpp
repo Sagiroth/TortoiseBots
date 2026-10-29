@@ -11,11 +11,8 @@
 #include "playerbot/TravelMgr.h"
 #include "../../policy/loot/FishingSpotPolicy.h"
 #include "playerbot/GuildOrderSources.h"
-#include "runtime/GuildOrderFishingPolicy.h"
 #include "TellLosAction.h"
 #include "EquipAction.h"
-#include "UseItemAction.h"
-
 using namespace ai;
 
 bool MoveToFishAction::isUseful()
@@ -623,7 +620,8 @@ bool FishAction::Execute(Event& event)
             break;
         }
         if (lure && poleInHand && mainHand->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT) == 0)
-            UseAction::UseItem(ai, GetMaster(), lure->GetEntry(), mainHand);
+            ai->DoSpecificAction("use", Event("fish lure",
+                chat->formatQItem(lure->GetEntry()) + " " + chat->formatQItem(mainHand->GetEntry())));
     }
 
     Event fishCastEvent = Event("fish", "7731 " + chat->formatWorldobject(bot));
