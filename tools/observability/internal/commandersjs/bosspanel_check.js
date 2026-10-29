@@ -39,6 +39,8 @@ const jeklik = B.bossFor(T, 14517);
 
 // ---- the table loads from either the converter's object or raw CSV-shaped rows --------------------------------
 assert.strictEqual(T.bosses.length, 2);
+assert.strictEqual(B.normalize({ "14507": { name: "Venoxis", abilities: [] } }).bosses[0].entry, 14507, "a table keyed by entry loads too");
+assert.strictEqual(B.normalize({ entry: 14507, name: "Venoxis", abilities: [] }).bosses[0].name, "Venoxis", "a single boss object loads too");
 assert.strictEqual(venoxis.name, "Venoxis");
 assert.deepStrictEqual(venoxis.abilities[0].flags, { phase: "snake", ground: true });
 assert.strictEqual(B.bossFor(T, "14507").entry, 14507, "an entry from JSON is matched as a number");

@@ -117,6 +117,8 @@
       const b = data.bosses || data.boss || data.entries;
       if (Array.isArray(b)) rows = b;
       else if (b && typeof b === "object") rows = Object.keys(b).map((k) => (b[k] && typeof b[k] === "object" && b[k].entry == null ? Object.assign({ entry: k }, b[k]) : b[k]));
+      else if (num(data.entry) !== null) rows = [data];
+      else rows = Object.keys(data).map((k) => (data[k] && typeof data[k] === "object" && num(data[k].entry) === null ? Object.assign({ entry: k }, data[k]) : data[k]));
     }
     const bosses = rows.map(boss).filter(Boolean).sort((a, b) => (a.map || 0) - (b.map || 0) || (a.order - b.order) || a.entry - b.entry);
     const byEntry = {};
