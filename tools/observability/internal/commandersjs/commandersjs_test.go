@@ -332,6 +332,13 @@ func TestPageAssetsJS(t *testing.T) {
 	runCheck(t, "page_assets_check.js", "../../web/static/js/app.js")
 }
 
+// TestCmdOverflowCSS runs cmd_overflow_css_check.js: the Commanders cards never widen the page on a phone. The Fights panel
+// (six nowrap columns) scrolls inside the card, the panel and the card may shrink below it, and no card-scoped rule fixes a
+// width above 390 px.
+func TestCmdOverflowCSS(t *testing.T) {
+	runCheck(t, "cmd_overflow_css_check.js", "../../web/static/css/app.css")
+}
+
 // TestFDHistoryJS runs fd_history_check.js: the Fight debugger with no raid bound. The commanders with saved fights come from
 // the daemon (newest first, escaped), the one-line note stays above the list, and each opens a read-only history card.
 func TestFDHistoryJS(t *testing.T) {

@@ -2790,7 +2790,11 @@ select.input {
 }
 
 /* ---------- Commanders tab ---------- */
-.cmd-card { --role-tank: #2f80ff; --role-healer: #22c55e; --role-dps: #ff9f1c; --role-other: #bc8cff; --role-dead: #6b7280; margin-bottom: 16px; }
+.cmd-card { --role-tank: #2f80ff; --role-healer: #22c55e; --role-dps: #ff9f1c; --role-other: #bc8cff; --role-dead: #6b7280; margin-bottom: 16px; min-width: 0; }
+/* The Fights panel is a table of six nowrap columns; on a phone it scrolls inside the card instead of widening the page. */
+.cmd-card .cmd-fights, .cmd-card .fight-panel { min-width: 0; max-width: 100%; }
+.cmd-card .cmd-fights { overflow-x: auto; }
+.cmd-card .cmd-fights .data-table { width: max-content; min-width: 100%; }
 .cmd-card.stale { opacity: 0.7; }
 .cmd-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .cmd-title { font-size: 1.05rem; font-weight: 650; color: #fff; margin: 0; overflow-wrap: anywhere; }
