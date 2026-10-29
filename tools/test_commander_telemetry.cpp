@@ -640,6 +640,29 @@ void TestBotDebuffPayload()
     Check(Has(trimmed, "\"au\":[{\"id\":24169"), "trim level 1 keeps the boss's auras");
 }
 
+// An aura's name is free text from the spell data: a quote and a backslash in it must not break either list.
+void TestAuraNameEscaping()
+{
+    BindingInfo b;
+    b.commander = "Zfmagea";
+    b.lead = "Healbot";
+    b.mobsReported = true;
+    MobInfo boss = Mob(5, "Hakkar");
+    boss.entry = 14834;
+    boss.rank = 'b';
+    boss.hasO = true;
+    boss.auras.push_back(AuraInfo{24169, "Q\"\\x", 1, 0, 0});
+    b.mobs.push_back(boss);
+    BotInfo bot = Bot("Healbot", true);
+    bot.hasExtra = true;
+    bot.extra.debuffs.push_back(AuraInfo{24328, "Q\"\\x", 1, 0, 'm'});
+    b.bots.push_back(bot);
+
+    std::string const json = BuildPayload(9, 1, 1, 1, {b});
+    Check(Has(json, "\"au\":[{\"id\":24169,\"n\":\"Q\\\"\\\\x\"}"), "a quoted aura name in au is escaped");
+    Check(Has(json, "\"db\":[{\"id\":24328,\"n\":\"Q\\\"\\\\x\",\"dt\":\"m\"}"), "a quoted aura name in db is escaped");
+}
+
 // The 0.5 s position report (task S3/R3m): a bot row in one decimal with its facing at two, a dead bot at hp 0 and
 // alive 0, and the mob rows of the lead's last full report.
 void TestPosPayload()
@@ -1783,6 +1806,7 @@ int main()
     TestAuraSelection();
     TestBossStatePayload();
     TestBotDebuffPayload();
+    TestAuraNameEscaping();
     TestPosPayload();
     TestPosCapsAndSize();
     TestRunInfo();
