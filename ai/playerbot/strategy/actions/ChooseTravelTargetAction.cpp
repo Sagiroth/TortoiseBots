@@ -1322,6 +1322,19 @@ ai::TravelPickOutcome ChooseTravelTargetAction::SetBestTargetSliced(Player* requ
 
             if (target->IsForced() || (isActive[destination] = destination->IsActive(bot, travelInfo)))
             {
+                // A forced workshop pick skips the leisure gates below, but
+                // never its own memory: a forge this bot already failed to
+                // reach stays refused so the re-pick walks the next forge
+                // instead of back to the same point.
+                if (target->IsForced() && destination->GetPurpose() == TravelDestinationPurpose::SpellFocus &&
+                    position && ai->IsFocusPointAvoided(position->GetMapId(), position->getX(),
+                        position->getY(), WorldTimer::getMSTime()))
+                {
+                    ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - workshop already failed", "debug travel");
+                    ++rejects["focusfailed"];
+                    if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
+                    continue;
+                }
                 // Checked after IsActive so the area lookup only happens for
                 // the point that was actually selected.
                 if (!target->IsForced() && position)
@@ -1494,7 +1507,8 @@ ai::TravelPickOutcome ChooseTravelTargetAction::SetBestTargetSliced(Player* requ
                     TravelDestinationPurpose const pointPurpose = destination->GetPurpose();
                     bool const sieveApplies = pointPurpose == TravelDestinationPurpose::Grind ||
                         pointPurpose == TravelDestinationPurpose::GatherMining ||
-                        pointPurpose == TravelDestinationPurpose::GatherHerbalism;
+                        pointPurpose == TravelDestinationPurpose::GatherHerbalism ||
+                        pointPurpose == TravelDestinationPurpose::SpellFocus;
                     if (sieveApplies && !DestinationPointOnMesh(bot, position))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - off the navmesh", "debug travel");

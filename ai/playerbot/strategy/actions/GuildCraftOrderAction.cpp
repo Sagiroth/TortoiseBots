@@ -261,10 +261,10 @@ bool GuildCraftOrderAction::Execute(Event& event)
         ai->TellDebug(ai->GetMaster(), "Guild craft order: farming reagent " + std::to_string(farmItem), "debug travel");
         return false;
     }
-
+    GameObject* focus = nullptr;
     if (pSpellInfo->RequiresSpellFocus)
     {
-        GameObject* focus = FindFocusObject(pSpellInfo->RequiresSpellFocus, sPlayerbotAIConfig.sightDistance);
+        focus = FindFocusObject(pSpellInfo->RequiresSpellFocus, sPlayerbotAIConfig.sightDistance);
         if (!focus)
         {
             ai->TellDebug(ai->GetMaster(), "Guild craft order: no workshop in sight", "debug travel");
@@ -307,8 +307,11 @@ bool GuildCraftOrderAction::Execute(Event& event)
     }
 
     std::ostringstream cmd;
+    // Smelts target the forge itself: the core checks the focus object at
+    // cast time, and a targetless cast never names one.
+    if (focus)
+        cmd << chat->formatWorldobject(focus) << " ";
     cmd << "castnc " << craftSpellId << " " << batch;
-    ai->HandleCommand(CHAT_MSG_WHISPER, cmd.str(), *bot);
 
     ai->TellDebug(ai->GetMaster(), "Guild craft order: crafting " + std::to_string(batch) + "x " + std::string(proto ? proto->Name1 : order.target), "debug travel");
 

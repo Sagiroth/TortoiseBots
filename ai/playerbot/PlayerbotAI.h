@@ -14,6 +14,7 @@
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/CastKeepsRunningPolicy.h"
 #include "playerbot/GatherSpotPolicy.h"
+#include "playerbot/policy/travel/OrderFocusPolicy.h"
 #include "playerbot/PullJoinWindowPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/BotAreaTriggerPolicy.h"
@@ -955,6 +956,18 @@ public:
     bool IsEmptyGatherSpot(uint32 mapId, float x, float y, uint32 nowMs) const
     {
         return ai::IsDeathPositionAvoided(mapId, x, y, nowMs, emptyGatherSpots_, ai::kEmptyGatherSpots);
+    }
+    // Workshop points a craft-order leg failed to walk to. Same shape as the
+    // empty-gather book: the point stays refused for a while so the next
+    // order-focus pick walks another forge instead of back to this one.
+    ai::UnreachableFocusSpot unreachableFocusSpots_[ai::kUnreachableFocusSpots] = {};
+    void MarkUnreachableFocusSpot(uint32 mapId, float x, float y, uint32 nowMs)
+    {
+        ai::AddUnreachableFocusSpot(unreachableFocusSpots_, ai::kUnreachableFocusSpots, mapId, x, y, nowMs);
+    }
+    bool IsFocusPointAvoided(uint32 mapId, float x, float y, uint32 nowMs) const
+    {
+        return ai::IsFocusPointAvoided(mapId, x, y, nowMs, unreachableFocusSpots_, ai::kUnreachableFocusSpots);
     }
     // Errand death park (see OnDeath): the non-grind destination (purpose +
     // entry) the bot last died pursuing, how often in a row, and the
