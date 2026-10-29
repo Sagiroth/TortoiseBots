@@ -24,6 +24,14 @@
 // datagram is sent: these ride the mob rows of the 2 s report. At most kMaxMobOverlaysPerPayload rows per datagram carry
 // them (bosses first, then elites); the rest keep the old row, so a report full of boss rows stays inside the UDP limit.
 //
+// Boss state (additive, same rule; owner request 2026-10-29 "improve the dashboard with bosses spells and such"): an
+// overlay row also carries the unit's own auras (`au`: up to kMaxMobAuras, passive and deleted holders skipped; id, name,
+// stacks past one, time left while it runs out) and a short flag string (`uf`: n not selectable, i not attackable or
+// immune to players, h hovering or flying, d stand state dead, e evading), so the dashboard can label the phase and the
+// forms. Each bound bot row carries the boss debuffs it holds (`db`: up to kMaxBotDebuffs negative auras whose caster is
+// not its own group, dispellable first, then the one that runs out last; id, name, stacks, time left, dispel letter) and
+// `mc` when it is charmed, so the raid frames and the map can show what a healer has to cleanse and whom to free.
+//
 // Live positions (additive, same rule; task S3): while a bound group fights, its bots and the enemies its lead's last report
 // listed go out every 0.5 s (COMMANDER_POS), so the dashboard's dots glide between the 2 s reports; a group that stands
 // still is only in those 2 s reports unless a shorter idle period is configured.
@@ -75,6 +83,8 @@ constexpr size_t kMaxBotsPerPayload = 64;   // all bindings together: the heavie
 constexpr size_t kMaxMobsPerBinding = 24; // the perception feed's own cap (kMaxHostiles)
 constexpr size_t kMaxMobsPerPayload = 64; // all bindings together: the datagram stays well under 64 KiB
 constexpr size_t kMaxMobOverlaysPerPayload = 16; // boss/elite rows carrying facing, cast and shape: keeps the worst datagram under the UDP limit
+constexpr size_t kMaxMobAuras = 8;   // the auras an overlay row carries (a boss's forms and buffs)
+constexpr size_t kMaxBotDebuffs = 4; // the boss debuffs a bot row carries
 constexpr size_t kMaxMobName = 24;
 constexpr size_t kMaxCastName = 24;     // a spell name
 constexpr size_t kMaxActionName = 32;   // the bot's newest action name
@@ -96,18 +106,20 @@ constexpr size_t kPartByteCap = 60000;    // one serialized part stays at or und
 constexpr size_t kMaxOrderDetail = 80;
 constexpr size_t kMaxOrderResult = 120;
 
-// What a binding alone over the part byte cap gives up, in this fixed order: its boss/elite overlays, then its objects,
-// then its run's step notes, then its ready facts. The bot rows, mobs, orders, positions and the fight window stay.
-constexpr uint8_t kMaxTrimLevel = 4;
+// What a binding alone over the part byte cap gives up, in this fixed order: the boss debuffs its bots carry, then its
+// boss/elite overlays (with their auras and flags), then its objects, then its run's step notes, then its ready facts.
+// The bot rows, mobs, orders, positions and the fight window stay.
+constexpr uint8_t kMaxTrimLevel = 5;
 
 inline char const* TrimSectionName(uint8_t level)
 {
     switch (level)
     {
-    case 1: return "overlays";
-    case 2: return "objects";
-    case 3: return "step notes";
-    case 4: return "ready facts";
+    case 1: return "bot debuffs";
+    case 2: return "overlays";
+    case 3: return "objects";
+    case 4: return "step notes";
+    case 5: return "ready facts";
     default: return "none";
     }
 }
@@ -151,6 +163,80 @@ inline char RankKind(uint32_t rank, bool bindsInstance, bool planBoss)
     if (rank == 2 || rank == 4)
         return 'r';
     return 0;
+}
+
+// One aura the dashboard shows: a boss's own buff or form, or a boss debuff one of its bots carries. dispelType is the
+// letter the dashboard colours it by (m magic, c curse, p poison, d disease); 0 for one that cannot be dispelled.
+struct AuraInfo
+{
+    uint32_t id = 0;
+    std::string name;
+    uint32_t stacks = 1; // 1 = a single stack (the wire omits it)
+    uint32_t leftMs = 0; // 0 = permanent or unknown (the wire omits it)
+    char dispelType = 0;
+};
+
+// One aura as the module reads it off a unit's holder map and hands to the selectors below. The selectors are pure, so the
+// tests prove the skips and the order without a game unit.
+struct AuraRead
+{
+    AuraInfo aura;
+    bool passive = false;       // the holder is passive or already deleted
+    bool negative = false;      // !holder->IsPositive()
+    bool hostileCaster = false; // the caster is a creature or a player outside the bot's own group
+};
+
+// A boss's own auras for its overlay row, in holder map order, passive and deleted holders skipped, at most max.
+inline std::vector<AuraInfo> SelectUnitAuras(std::vector<AuraRead> const& reads, size_t max = kMaxMobAuras)
+{
+    std::vector<AuraInfo> out;
+    for (AuraRead const& r : reads)
+    {
+        if (r.aura.id == 0 || r.passive)
+            continue;
+        if (out.size() >= max)
+            break;
+        out.push_back(r.aura);
+    }
+    return out;
+}
+
+// The debuffs a boss put on a bot: a negative aura from outside its own group, the dispellable ones first and then the one
+// that runs out last, at most max.
+inline std::vector<AuraInfo> SelectBotDebuffs(std::vector<AuraRead> const& reads, size_t max = kMaxBotDebuffs)
+{
+    std::vector<AuraInfo> out;
+    for (AuraRead const& r : reads)
+        if (r.aura.id != 0 && !r.passive && r.negative && r.hostileCaster)
+            out.push_back(r.aura);
+    std::stable_sort(out.begin(), out.end(), [](AuraInfo const& a, AuraInfo const& b)
+    {
+        bool const da = a.dispelType != 0, db = b.dispelType != 0;
+        if (da != db)
+            return da;
+        return a.leftMs > b.leftMs;
+    });
+    if (out.size() > max)
+        out.resize(max);
+    return out;
+}
+
+// The short flag string of a boss or elite's state, letters in this fixed order: n not selectable, i not attackable or
+// immune to players, h hovering or flying, d stand state dead, e evading. Empty when none of them holds.
+inline std::string UnitFlags(bool notSelectable, bool unattackable, bool flying, bool dead, bool evading)
+{
+    std::string out;
+    if (notSelectable)
+        out += 'n';
+    if (unattackable)
+        out += 'i';
+    if (flying)
+        out += 'h';
+    if (dead)
+        out += 'd';
+    if (evading)
+        out += 'e';
+    return out;
 }
 
 // A UTF-8-safe clip: never cuts inside a multi-byte sequence.
@@ -249,6 +335,8 @@ struct MobInfo
     bool channel = false;     // the spell is channelled
     bool hasShape = false;    // shape holds the spell's area (SpellShape::For knew it)
     SpellShape::Shape shape;  // the area (cone, back cone or line) and its size
+    std::vector<AuraInfo> auras; // the unit's own auras (overlay rows only), up to kMaxMobAuras
+    std::string flags;        // UnitFlags letters (overlay rows only), empty = none
 };
 
 // One step of the run leader's plan, as the dashboard draws it (a dashed route for moves, numbered circles for pulls, marks for the rest).
@@ -497,6 +585,8 @@ struct BotExtra
     bool moving = false;
     std::string targetName; // name of its target, empty = none or unknown
     uint64_t castTarget = 0; // the unit the spell being cast is aimed at (raw guid), 0 = none or not a unit
+    std::vector<AuraInfo> debuffs; // boss debuffs it carries, up to kMaxBotDebuffs (dispellable first)
+    bool mc = false;        // charmed or mind-controlled
     bool hasReady = false;  // the ready check facts were read (the fields below are valid)
     uint32_t readyBuffs = 0; // raid buff bits: 1 stamina, 2 intellect, 4 spirit, 8 all stats, 16 attack power, 32 mana regen
     uint32_t readyCons = 0;  // consumable bits: 1 flask, 2 elixir, 4 well fed
@@ -670,8 +760,34 @@ inline std::string Fixed2(float v)
     return buf;
 }
 
+// One aura object: `st` only past a single stack, `l` only while the aura runs out, `dt` only for a boss debuff whose
+// dispel type the dashboard colours it by.
+inline void AppendAuraJson(std::ostringstream& ss, AuraInfo const& a, bool withDispel)
+{
+    ss << "{\"id\":" << a.id << ",\"n\":\"" << JsonEscape(Clip(a.name, kMaxCastName)) << "\"";
+    if (a.stacks > 1)
+        ss << ",\"st\":" << a.stacks;
+    if (a.leftMs)
+        ss << ",\"l\":" << a.leftMs;
+    if (withDispel && (a.dispelType == 'm' || a.dispelType == 'c' || a.dispelType == 'p' || a.dispelType == 'd'))
+        ss << ",\"dt\":\"" << a.dispelType << "\"";
+    ss << "}";
+}
+
+// The flag letters a row may carry, in the fixed order, unknown letters dropped: the collector's UnitFlags is the only
+// writer, and the wire keeps its grammar whatever it is handed.
+inline std::string CleanFlagLetters(std::string const& flags)
+{
+    std::string out;
+    for (char c : std::string("nihde"))
+        if (flags.find(c) != std::string::npos)
+            out += c;
+    return out;
+}
+
 // One mob object as COMMANDERS and DUNGEON_MOBS write it. The stream must be set to fixed, precision 1 (both builders do).
-// overlay: write the facing, cast and shape of a boss or elite row (BuildPayload leaves it out past its per-datagram cap).
+// overlay: write the facing, cast, shape, auras and state flags of a boss or elite row (BuildPayload leaves it out past its
+// per-datagram cap).
 inline void AppendMobJson(std::ostringstream& ss, MobInfo const& m, bool overlay = true)
 {
     ss << "{\"id\":\"" << m.id << "\",\"entry\":" << m.entry
@@ -714,6 +830,25 @@ inline void AppendMobJson(std::ostringstream& ss, MobInfo const& m, bool overlay
                    << Fixed2(m.shape.y1) << ']';
             ss << "}";
         }
+    }
+    if (overlay)
+    {
+        std::string const flags = CleanFlagLetters(m.flags);
+        if (!flags.empty())
+            ss << ",\"uf\":\"" << flags << "\"";
+        size_t listed = 0;
+        for (AuraInfo const& a : m.auras)
+        {
+            if (listed >= kMaxMobAuras)
+                break;
+            if (a.id == 0)
+                continue;
+            ss << (listed ? "," : ",\"au\":[");
+            ++listed;
+            AppendAuraJson(ss, a, false);
+        }
+        if (listed)
+            ss << "]";
     }
     ss << "}";
 }
@@ -822,7 +957,25 @@ inline std::string BuildPayloadOf(int protocolVersion, uint64_t session, uint64_
                     ss << ",\"mv\":true";
                 if (!x.targetName.empty())
                     ss << ",\"tname\":\"" << JsonEscape(Clip(x.targetName, kMaxTargetName)) << "\"";
-                if (x.hasReady && trim < 4)
+                if (trim < 1 && !x.debuffs.empty())
+                {
+                    size_t listed = 0;
+                    for (AuraInfo const& a : x.debuffs)
+                    {
+                        if (listed >= kMaxBotDebuffs)
+                            break;
+                        if (a.id == 0)
+                            continue;
+                        ss << (listed ? "," : ",\"db\":[");
+                        ++listed;
+                        AppendAuraJson(ss, a, true);
+                    }
+                    if (listed)
+                        ss << "]";
+                }
+                if (trim < 1 && x.mc)
+                    ss << ",\"mc\":1";
+                if (x.hasReady && trim < 5)
                 {
                     ss << ",\"rdy\":{\"b\":" << x.readyBuffs
                        << ",\"c\":" << x.readyCons
@@ -849,7 +1002,7 @@ inline std::string BuildPayloadOf(int protocolVersion, uint64_t session, uint64_
                << ",\"label\":\"" << JsonEscape(Clip(r.label, kMaxRunNote)) << "\""
                << ",\"note\":\"" << JsonEscape(Clip(r.note, kMaxRunNote)) << "\""
                << ",\"changed\":" << r.changedAt;
-            if (!r.notes.empty() && trim < 3)
+            if (!r.notes.empty() && trim < 4)
             {
                 ss << ",\"notes\":[";
                 size_t kept = r.notes.size() > kMaxRunNotes ? r.notes.size() - kMaxRunNotes : 0;
@@ -935,7 +1088,7 @@ inline std::string BuildPayloadOf(int protocolVersion, uint64_t session, uint64_
             size_t const room = mobsTotal < kMaxMobsPerPayload ? kMaxMobsPerPayload - mobsTotal : 0;
             size_t const listed = std::min({b.mobs.size(), kMaxMobsPerBinding, room});
             std::vector<char> overlay(listed, 0);
-            if (trim < 1)
+            if (trim < 2)
                 for (char rank : {'b', 'e'})
                     for (size_t i = 0; i < listed && overlaysTotal < kMaxMobOverlaysPerPayload; ++i)
                         if (!overlay[i] && b.mobs[i].rank == rank && (b.mobs[i].hasO || b.mobs[i].castId))
@@ -953,7 +1106,7 @@ inline std::string BuildPayloadOf(int protocolVersion, uint64_t session, uint64_
             }
             ss << "]";
         }
-        if (b.objectsReported && trim < 2)
+        if (b.objectsReported && trim < 3)
         {
             ss << ",\"objects\":[";
             size_t objs = 0;
