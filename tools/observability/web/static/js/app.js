@@ -1462,16 +1462,24 @@
     });
   }
 
+  // The client's continent pictures. The page requests one only when the world view draws it (the element starts with no
+  // source), so loading any other tab asks for no map file.
+  function worldArtFile(mapId) {
+    return mapId === 1 ? '/maps/kalimdor.webp' : '/maps/azeroth.webp';
+  }
+
   function setWorldTab(mapId) {
     state.worldMapId = mapId;
-    const files = { 0: '/maps/azeroth.webp', 1: '/maps/kalimdor.webp' };
-    if (el.worldImg && el.worldImg.getAttribute('src') !== files[mapId]) el.worldImg.src = files[mapId];
+    const file = worldArtFile(mapId);
+    if (el.worldImg && el.worldImg.getAttribute('src') !== file) el.worldImg.src = file;
     setMapView('world');
   }
 
 
   function renderWorld() {
     const mapId = state.worldMapId || 0;
+    const file = worldArtFile(mapId);
+    if (el.worldImg && el.worldImg.getAttribute('src') !== file) el.worldImg.src = file;
     const bots = renderWorldPanel(mapId);
     const off = state.bots.filter(b => b.map !== 0 && b.map !== 1);
     if (el.worldOffmap) {
@@ -6441,10 +6449,12 @@
   }
 
   // The plan behind a name, kept once fetched: a plan stays for the page's life (the daemon caches it for 10 min), a miss or a
-  // failure is asked for again after a minute. Starts one fetch at a time per name; null while there is nothing to draw yet.
-  function cmdPlanGet(name) {
+  // failure is asked for again after a minute. Starts one fetch at a time per name; null while there is nothing to draw yet. A
+  // demo group's plan is made up, so it is never asked of the world database.
+  function cmdPlanGet(name, demo) {
     const cached = cmdPlans[name] || (cmdPlans[name] = { plan: null, err: '', at: 0, loading: false });
     if (cached.plan) return cached.plan;
+    if (demo) { cached.err = 'The demo group has no plan in the world database'; return null; }
     if (cached.loading || (cached.at && cached.err && Date.now() - cached.at < CMD_PLAN_RETRY_MS)) return null;
     cached.loading = true;
     fetch('/api/v1/plans/' + encodeURIComponent(name), { credentials: 'same-origin' }).then(r => {
@@ -6484,7 +6494,7 @@
     if (!first) return { view: null, why: 'No bots on a map', ok: false };
     const name = cmdPlanName(bind);
     if (!name) return { view: null, why: 'No plan: start a run (.bot run) or pick a fight of a run', ok: false };
-    const plan = cmdPlanGet(name);
+    const plan = cmdPlanGet(name, !!bind.demo);
     const cached = cmdPlans[name] || {};
     if (!plan) return { view: null, why: cached.err || 'Loading the plan…', ok: false };
     if (plan.map !== first.map) return { view: null, why: 'The plan is for another map', ok: false };
@@ -7711,7 +7721,7 @@
     const extra = { lanes: lanesRes || null, strays: null, packI: 0, prevPackI: 0 };
     if (!fight) return extra;
     const name = cmdPlanName(bind);
-    const plan = name ? cmdPlanGet(name) : null;
+    const plan = name ? cmdPlanGet(name, !!bind.demo) : null;
     if (!plan || plan.map !== fight.map) return extra;
     const fightStep = fight.step || 0;
     const view = PlanOverlay.view(plan, {
@@ -8775,8 +8785,9 @@
       })
       .then(data => {
         state.agentMaps.probed = true;
-        if (!data) {
+        if (!data || data.enabled === false) {
           state.agentMaps.error = false;
+          applyAgentMapsEnabled(false);
           if (state.activeTab === 'agentmaps') renderAgentMaps();
           return;
         }

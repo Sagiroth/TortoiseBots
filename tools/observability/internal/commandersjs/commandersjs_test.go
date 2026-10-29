@@ -301,3 +301,10 @@ func TestCmdRouteJS(t *testing.T) {
 func TestProfileXPJS(t *testing.T) {
 	runCheck(t, "profile_ui_check.js", "../../web/static/js/app.js")
 }
+
+// TestPageAssetsJS runs page_assets_check.js: the page requests nothing the daemon does not serve. The map pictures start
+// sourceless and load when the world view draws them, the agent-maps probe reads the daemon's enabled flag (an older daemon's
+// 404 still hides the tab), and a demo group's made-up plan never reaches the plans API.
+func TestPageAssetsJS(t *testing.T) {
+	runCheck(t, "page_assets_check.js", "../../web/static/js/app.js")
+}

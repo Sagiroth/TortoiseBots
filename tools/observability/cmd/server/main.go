@@ -817,11 +817,9 @@ func main() {
 	// Dungeon runs (GET /api/v1/dungeon-runs; the live Dungeons tab is /api/v1/dungeons above): success rate, clear times, boss kill times and wipe spots from the run trace summaries. Files only; GET only.
 	dungeonIndex.Register(mux, requireAuth)
 	// Turtle-agent run maps (issue #1102): the list and the read-only files of --agent-maps-dir, behind the same login. The folder
-	// is off by default; when it is not set no route is registered, so the tab's URLs 404 and the page hides the tab.
-	if agentMaps != nil {
-		mux.HandleFunc(agentmaps.ListPrefix, requireAuth(agentMaps.HandleList))
-		mux.HandleFunc(agentmaps.FilePrefix, requireAuth(agentMaps.HandleFile))
-	}
+	// is off by default: the list then answers 200 with enabled=false (the page hides the tab) and every file 404s.
+	mux.HandleFunc(agentmaps.ListPrefix, requireAuth(agentMaps.HandleList))
+	mux.HandleFunc(agentmaps.FilePrefix, requireAuth(agentMaps.HandleFile))
 
 	mux.HandleFunc("/api/v1/server-info", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		if info := store.ServerInfo(); info != nil {
