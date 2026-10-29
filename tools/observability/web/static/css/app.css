@@ -3508,8 +3508,11 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-mini-verdict.v-clean { color: var(--accent-green-bright); }
 .cmd-gone-title { font-size: 1.2rem; margin: 0 0 6px; }
 
-/* All raids keeps the refresh row and the demo switch, but the tiles and the map-layer panel mean nothing there. */
+/* Every tab of the Fight debugger, All raids included, drops the page's tiles and boxes: the tab strip names the raids and
+   the debugger header keeps the refresh picker. */
 #tab-commanders.cmd-debug-grid > .kpi-row,
+#tab-commanders.cmd-debug-grid > .cmd-refresh-bar,
+#tab-commanders.cmd-debug-grid > .cmd-demo-bar,
 #tab-commanders.cmd-debug-grid > .cmd-layers,
 #tab-commanders.cmd-debug-grid > .cmd-external { display: none; }
 

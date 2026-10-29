@@ -143,6 +143,12 @@ assert.deepStrictEqual(plain(sorted), ["Zulu", "Alpha", "Bravo"], "a fighting co
   const phones = [...css.matchAll(/@media\s*\(max-width:\s*\d+px\)\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1]);
   assert.ok(phones.length, "the stylesheet has a phone breakpoint");
   assert.ok(phones.some((b) => /\.cmd-overview\s*\{[^}]*grid-template-columns:\s*1fr/.test(b)), "the phone stacks the grid in one column");
+  // The Fight debugger's rule holds on every tab: All raids drops the refresh explanation row and the demo box as well.
+  const gridHide = /#tab-commanders\.cmd-debug-grid\s*>\s*\.kpi-row[\s\S]*?\{[^}]*display:\s*none/.exec(css);
+  assert.ok(gridHide, "the All raids tab hides the page tiles");
+  for (const sel of [".cmd-refresh-bar", ".cmd-demo-bar"]) {
+    assert.ok(gridHide[0].includes(sel), "the All raids tab hides " + sel + " too: " + gridHide[0]);
+  }
 
   // ---- 6. every name is escaped ----------------------------------------------------------------------------------------
   const EVIL = '<img src=x onerror=alert(1)>"&';
