@@ -2451,6 +2451,11 @@ AiPlayerbot.AllowedLogFiles = bot_events.csv,deaths.csv
 # Requires bot_events.csv above. Hit health is a sample/estimate, not exact post-hit health.
 AiPlayerbot.RaidBossDiagnostics = 0
 
+# Per-fight combat numbers of every bound group for the observability dashboard: casts, damage, healing and overheal, damage taken, deaths with their last hits, and debuff uptime on the fought unit; one COMBAT_FIGHT datagram per fight and a rolling 10 s window. Costs a hash lookup per damage, heal and cast event while on. Needs AiPlayerbot.Observability.
+# 0 - off (Default)
+# 1 - on
+AiPlayerbot.CombatMonitor = 0
+
 # Days of bot logs to keep. The live file is plain text; every hour and at server start it is packed into
 # <name>_<date>_<time>.csv.gz next to it (named after the time it was closed), and packs older than this
 # are deleted. 0 = never delete. Only files listed in AiPlayerbot.AllowedLogFiles above are written, so
