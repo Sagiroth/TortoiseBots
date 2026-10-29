@@ -3,6 +3,7 @@
 
 #include "../runtime/BotManager.h"
 #include "../runtime/ClaimLifecycle.h"
+#include "../runtime/GuildOrderCategoryPolicy.h"
 #include "../runtime/GuildOrderGiveUpPolicy.h"
 #include "../runtime/GuildOrderStore.h"
 #include "../runtime/RandomBotAccountRegistry.h"
@@ -414,12 +415,13 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         std::string text;
         std::getline(in, text);
         text = Trim(text);
-        // A category-only search browses the whole kind; a short text still
-        // needs its 3 characters even with a category. The search command
-        // re-checks this and answers the usage errors.
-        bool const categoryPrefixed = text.size() >= 4 && (text[0] == 'c' || text[0] == 'C') &&
-            (text[1] == 'a' || text[1] == 'A') && (text[2] == 't' || text[2] == 'T') && text[3] == '=';
-        if (text.size() < 3 && !categoryPrefixed)
+        // The search command answers the usage errors; this only skips the
+        // bot lookups for text that is certainly too short. A cat= word
+        // anywhere may still leave browsable text behind.
+        GuildOrders::OrderItemCategory category = GuildOrders::OrderItemCategory::Other;
+        std::string query = text;
+        GuildOrders::CategoryArgParse const catParse = GuildOrders::StripCategoryArg(query, category);
+        if (text.size() < 3 && catParse == GuildOrders::CategoryArgParse::None)
         {
             OrderError(handler, "invalid", "Search text needs at least 3 characters.");
             return true;

@@ -36,6 +36,20 @@ inline std::vector<std::string> SplitQueryWords(std::string const& query)
     return words;
 }
 
+// One spaced string from the words: ranking then sees the query the
+// same way matching did, so "heavy   leather" still ranks exact.
+inline std::string NormalizeQueryWords(std::vector<std::string> const& words)
+{
+    std::string out;
+    for (std::string const& word : words)
+    {
+        if (!out.empty())
+            out += ' ';
+        out += word;
+    }
+    return out;
+}
+
 // Every word of the query must match somewhere in the name, in any order:
 // "leather heavy" finds Heavy Leather, "leather heav" does not force word
 // boundaries but keeps prefix order inside each word.
