@@ -573,4 +573,27 @@ assert.ok(Math.abs(Math.abs(seam) - Math.PI) < 0.05, String(seam));
 assert.strictEqual(C.angleLerp(0, Math.PI / 2, 0.5), Math.PI / 4);
 assert.ok(Math.abs(C.angleLerp(0, 0, 0.5)) < 1e-12);
 
+// ---- the labels a tight group can show: the lead's first, a colliding neighbour gives way, the hover box keeps the name ----
+const LABELS = [
+  { id: "b:lead", name: "Raidlead", x: 0, y: 0 },
+  { id: "b:tank3", name: "Raidtank3", x: 4, y: 2 },      // a tight group: its box lands on the lead's
+  { id: "b:mage2", name: "Raidmage2", x: 75, y: 0 },     // far enough away
+  { id: "b:lock1", name: "Raidlock1", x: 77, y: 2 },     // runs into Raidmage2's box
+  { id: "b:lock0", name: "Raidlock0", x: 77, y: 40 },    // its own line
+];
+assert.deepStrictEqual(C.labelFit(LABELS, 1), ["b:lead", "b:mage2", "b:lock0"],
+  "a label that would overlap one already drawn is left out, in draw order");
+const COLLIDE = [{ id: "x", name: "Raidleader", x: 0, y: 0 }, { id: "y", name: "Raidmage2", x: 20, y: 1 }];
+assert.deepStrictEqual(C.labelFit(COLLIDE, 1), ["x"], "the first of two colliding labels is the one kept");
+assert.deepStrictEqual(C.labelFit(COLLIDE.slice().reverse(), 1), ["y"],
+  "the caller's order is the priority (the call site puts the lead first)");
+assert.deepStrictEqual(C.labelFit([], 1), []);
+assert.deepStrictEqual(C.labelFit(null, 1), []);
+// Zoomed out, the same names fit on a smaller box; zoomed in they need more room.
+assert.deepStrictEqual(C.labelFit([{ id: "a", name: "AAAAAAAAAA", x: 0, y: 0 }, { id: "b", name: "BBBBBBBBBB", x: 40, y: 0 }], 0.25),
+  ["a", "b"], "at a quarter scale the two fit");
+assert.deepStrictEqual(C.labelFit([{ id: "a", name: "AAAAAAAAAA", x: 0, y: 0 }, { id: "b", name: "BBBBBBBBBB", x: 40, y: 0 }], 2),
+  ["a"], "at twice the scale they collide");
+assert.deepStrictEqual(C.labelFit([{ name: "no id" }, { id: "x", name: "X", x: 0, y: 0 }], 1), ["x"], "an entry without an id is skipped");
+
  console.log("commanders.js ok");

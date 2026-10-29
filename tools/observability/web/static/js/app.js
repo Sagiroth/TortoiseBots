@@ -5638,6 +5638,8 @@
     const now = Date.now() / 1000;
     const bind = CmdDemo.frame(now, cmdDemo.start), raidBind = CmdDemo.raidFrame(now, cmdDemo.start);
     cmdDemo.bind = bind; cmdDemo.raidBind = raidBind;
+    // The demo goes through the same glide as a live report, so its dots walk between the 2 s steps instead of jumping.
+    if (typeof LiveView !== 'undefined' && LiveView.noteReport) LiveView.noteReport(cmdGlide, [bind, raidBind], performance.now());
     [bind, raidBind].forEach(b => {
       cmdTrails.seeded[b.commander] = true; // the daemon has no history of it
       CmdView.note(cmdTracker, b, now);
@@ -7186,13 +7188,26 @@
     }
     const fdSelBot = fd && fd.mode === 'debug' ? fd.bot : null;
     const layoutNamed = (bind.layout ? [bind.layout.mt].concat(bind.layout.ot || []) : []).filter(Boolean);
+    // Which names fit: the lead and the tanks first, then everyone whose label the layer shows, each one dropped when its box
+    // would run into a label already drawn (the unit's name is still in the hover box).
+    const labelCand = [];
+    onMap.forEach(b => {
+      const isLead = b === lead && on.lead, isFd = fdSelBot && b.name === fdSelBot;
+      if (!(on.botnames || isLead || isFd || layoutNamed.indexOf(b.name) >= 0)) return;
+      const p = CmdView.project(b.x, b.y);
+      const rank = isLead || isFd ? 0 : CmdView.roleKey(b) === 'tank' ? 1 : 2;
+      labelCand.push({ b, rank, isLead, item: { id: 'b:' + (b.guid || b.name), name: (isLead ? '★ ' : '') + b.name, x: p.x, y: p.y } });
+    });
+    labelCand.sort((a, b) => a.rank - b.rank);
+    const labelIds = {};
+    CmdView.labelFit(labelCand.map(c => c.item), k).forEach(id => { labelIds[id] = true; });
     // dead first so a live bot is drawn over them
     onMap.slice().sort((a, b) => (a.alive === false ? 0 : 1) - (b.alive === false ? 0 : 1)).forEach(b => {
       const p = CmdView.project(b.x, b.y), role = CmdView.roleKey(b), isLead = b === lead && on.lead, uid = 'b:' + (b.guid || b.name);
       const isFd = fdSelBot && b.name === fdSelBot;
       const sg = on.subgroups && typeof b.sub === 'number' && b.sub >= 0 && b.sub <= 7 ? ' sg sg-' + b.sub : '';
-      // names off: the lead, the layout's tanks and the debugger's bot keep theirs
-      const named = on.botnames || isLead || isFd || layoutNamed.indexOf(b.name) >= 0;
+      // names off: the lead, the layout's tanks and the debugger's bot keep theirs; a name a neighbour's box took is left to hover
+      const named = !!labelIds[uid];
       units[uid] = { kind: 'b', obj: b };
       g += `<g class="bot ${role}${b.player ? ' player' : ''}${isFd ? ' fdsel' : ''}${sg}" data-u="${esc(uid)}"${CmdView.botHref(b.guid) ? ` data-guid="${esc(b.guid)}"` : ''}><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(12 * k)}"/>`
         + (isFd ? `<circle class="fdring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(14 * k)}"/>` : '')
