@@ -579,14 +579,16 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         zone.score = ZoneScore(accum.spawns, accum.chance);
         plan.zones.push_back(zone);
     }
+    // Zones on the bot's own map first: pool bots never get travel targets on
+    // another map, so a better-scored zone across the sea is unreachable.
     std::sort(plan.zones.begin(), plan.zones.end(), [&](FarmZone const& a, FarmZone const& b)
     {
-        if (a.score != b.score)
-            return a.score > b.score;
         ZoneAccum const& accA = zones[a.zoneId];
         ZoneAccum const& accB = zones[b.zoneId];
         if (accA.hasNearest != accB.hasNearest)
             return accA.hasNearest;
+        if (a.score != b.score)
+            return a.score > b.score;
         if (accA.hasNearest && accB.hasNearest && accA.nearest != accB.nearest)
             return accA.nearest < accB.nearest;
         return a.zoneId < b.zoneId;
