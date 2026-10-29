@@ -313,3 +313,134 @@ func TestEventsSessionTransitionResets(t *testing.T) {
 		t.Fatalf("deaths of the new session: %+v", f.Deaths)
 	}
 }
+
+func castEvent(tMs int, name string) string {
+	return `{"k":"cast","t":` + jsonInt(tMs) + `,"id":"814","e":14507,"n":"Venoxis","s":"` + name + `"}`
+}
+
+// eventT reads the time of a stored log event.
+func eventT(t *testing.T, raw json.RawMessage) uint32 {
+	t.Helper()
+	var ev struct {
+		K string `json:"k"`
+		T uint32 `json:"t"`
+	}
+	if err := json.Unmarshal(raw, &ev); err != nil {
+		t.Fatalf("log event %s: %v", raw, err)
+	}
+	return ev.T
+}
+
+// The fight that closes a live row keeps its casts, interrupts, taunts and deaths, in order, so the debugger can replay a
+// finished fight. A COMBAT_FIGHT the module sends twice must not double them.
+func TestFightLogKeepsTheLiveEvents(t *testing.T) {
+	s := newLiveStore(t)
+	s.ApplyEvents(liveEvents(liveHeader(), `{"k":"start","t":0}`, castEvent(1000, "Poison Cloud"),
+		`{"k":"interrupt","t":1800,"n":"Healy","s":"Venoxis"}`, castEvent(2500, "Frenzy"),
+		`{"k":"taunt","t":3000,"n":"Tanky"}`, deathEvent(3200, "Tanky")), liveNow)
+
+	f := Fight{ID: "55-6", Commander: "Gbmage", Group: 55, Map: 409, Start: liveNow.Unix() - 30, DurMS: 30000, Outcome: "kill"}
+	if !s.Add(7, f) {
+		t.Fatal("Add refused")
+	}
+	got, _, ok := s.Get("Gbmage", 7, "55-6")
+	if !ok {
+		t.Fatal("the filed fight is missing")
+	}
+	if len(got.Log) != 5 {
+		t.Fatalf("log = %d events, want 5 (the start is not a log kind): %s", len(got.Log), got.Log)
+	}
+	for i, want := range []uint32{1000, 1800, 2500, 3000, 3200} {
+		if gotT := eventT(t, got.Log[i]); gotT != want {
+			t.Fatalf("log[%d] t = %d, want %d", i, gotT, want)
+		}
+	}
+	if got.LogDropped != 0 {
+		t.Fatalf("log dropped = %d, want 0", got.LogDropped)
+	}
+
+	// The module's second take of the same fight: refused, and the log stays as it was.
+	if s.Add(7, f) {
+		t.Fatal("a duplicate COMBAT_FIGHT must be refused")
+	}
+	if again, _, ok := s.Get("Gbmage", 7, "55-6"); !ok || len(again.Log) != 5 {
+		t.Fatalf("the duplicate changed the log: %d events", len(again.Log))
+	}
+}
+
+// Events of one live fight must never land on another fight the module finishes.
+func TestFightLogStaysWithItsFight(t *testing.T) {
+	s := newLiveStore(t)
+	h := liveHeader()
+	h.ID = "1-7"
+	s.ApplyEvents(liveEvents(h, castEvent(1000, "Poison Cloud")), liveNow)
+
+	f := Fight{ID: "1-8", Commander: "Gbmage", Group: 55, Map: 409, Start: liveNow.Unix(), DurMS: 5000, Outcome: "kill"}
+	if !s.Add(7, f) {
+		t.Fatal("Add refused")
+	}
+	got, _, ok := s.Get("Gbmage", 7, "1-8")
+	if !ok {
+		t.Fatal("fight 1-8 is missing")
+	}
+	if len(got.Log) != 0 {
+		t.Fatalf("fight 1-8 grew the events of fight 1-7: %s", got.Log)
+	}
+	if rows := s.LiveRows([]string{"Gbmage"}); len(rows) != 1 || rows[0].ID != "1-7" {
+		t.Fatalf("fight 1-7 must stay open: %+v", rows)
+	}
+}
+
+// A live row that goes quiet is filed as unfinished, and it keeps its log too.
+func TestExpiredLiveKeepsItsLog(t *testing.T) {
+	s := newLiveStore(t)
+	s.ApplyEvents(liveEvents(liveHeader(), castEvent(1000, "Poison Cloud"), castEvent(2000, "Frenzy")), liveNow)
+	s.SetClock(func() time.Time { return liveNow.Add(LiveExpire + time.Second) })
+	f, _, ok := s.GetKey(Key("Gbmage", 7, "55-6"))
+	if !ok {
+		t.Fatal("the expired fight is missing")
+	}
+	if f.Outcome != "unfinished" || len(f.Log) != 2 {
+		t.Fatalf("expired fight: outcome %q, log %d events", f.Outcome, len(f.Log))
+	}
+	if got := eventT(t, f.Log[1]); got != 2000 {
+		t.Fatalf("newest log event t = %d, want 2000", got)
+	}
+}
+
+// The ring holds the log kinds up to LiveLogMax and every other kind up to LiveEventsMax, each dropping its own oldest event.
+func TestLiveLogRingCappedPerKind(t *testing.T) {
+	s := newLiveStore(t)
+	events := make([]string, 0, 1500)
+	for i := 0; i < 1200; i++ {
+		events = append(events, castEvent(i, "Poison Cloud"))
+	}
+	for i := 0; i < 300; i++ {
+		events = append(events, `{"k":"engage","t":`+jsonInt(i)+`,"e":1,"n":"Trash"}`)
+	}
+	s.ApplyEvents(liveEvents(liveHeader(), events...), liveNow)
+
+	lf := s.live["Gbmage"]
+	if lf == nil {
+		t.Fatal("the live row is missing")
+	}
+	if lf.logged != LiveLogMax || lf.other != LiveEventsMax || len(lf.events) != LiveLogMax+LiveEventsMax {
+		t.Fatalf("ring = %d logged, %d other, %d total; want %d, %d and %d",
+			lf.logged, lf.other, len(lf.events), LiveLogMax, LiveEventsMax, LiveLogMax+LiveEventsMax)
+	}
+
+	s.SetClock(func() time.Time { return liveNow.Add(LiveExpire + time.Second) })
+	f, _, ok := s.GetKey(Key("Gbmage", 7, "55-6"))
+	if !ok {
+		t.Fatal("the expired fight is missing")
+	}
+	if len(f.Log) != LiveLogMax {
+		t.Fatalf("log = %d events, want %d", len(f.Log), LiveLogMax)
+	}
+	if got := eventT(t, f.Log[0]); got != 200 {
+		t.Fatalf("oldest kept cast t = %d, want 200 (the newest %d survive)", got, LiveLogMax)
+	}
+	if got := eventT(t, f.Log[len(f.Log)-1]); got != 1199 {
+		t.Fatalf("newest cast t = %d, want 1199", got)
+	}
+}

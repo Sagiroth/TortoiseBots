@@ -125,6 +125,9 @@ func (s *Store) addLocked(session uint64, f Fight) bool {
 	}
 	seen[key] = true
 	if lf := s.live[f.Commander]; lf != nil && lf.session == session && lf.id == f.ID {
+		// The fight that closes the live row keeps its events: the debugger replays a finished fight from them, and the
+		// live row is gone from here on.
+		f.Log, f.LogDropped = lf.logForFile()
 		delete(s.live, f.Commander)
 	}
 	list := append([]keptFight{{session: session, fight: f}}, s.fights[f.Commander]...)

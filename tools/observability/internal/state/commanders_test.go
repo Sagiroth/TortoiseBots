@@ -837,3 +837,63 @@ func TestCommandersTwentyBindings(t *testing.T) {
 		t.Fatalf("%d bindings kept, last %s; want 20, C19", len(v.Commanders), v.Commanders[len(v.Commanders)-1].Commander)
 	}
 }
+
+// The boss auras and flags, and the boss debuffs and mind-control tag of a bot, survive the datagram's JSON and the API's
+// JSON: the typed model must carry them, or a field the module sends is dropped on the floor. An ordinary unit must not
+// grow them.
+func TestCommandersCarryAurasDebuffsAndFlags(t *testing.T) {
+	raw := `{"v":12,"session":3,"seq":1,"ts":50,"type":"COMMANDERS","commanders":[{"commander":"Z","online":true,"group":1,"lead":"Lead",
+"bots":[{"name":"Lead","lead":true,"alive":true,"db":[{"id":24328,"n":"Corrupted Blood","st":2,"l":8000,"dt":"p"},{"id":24314,"n":"Threatening Gaze","dt":"m"}],"mc":1}],
+"mobs_map":309,"mobs":[
+{"id":"5","entry":14507,"name":"Venoxis","hp":49,"x":1,"y":2,"reaction":"h","rank":"b","cast":"Poison Cloud","au":[{"id":23849,"n":"Snake Form","l":12000},{"id":8269,"n":"Frenzy","st":3}],"uf":"nh"},
+{"id":"6","entry":14884,"name":"Razzashi Serpent","hp":90,"x":3,"y":4,"reaction":"h"}],"orders":[]}]}`
+	var p model.CommandersPayload
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestStore(newClock())
+	if !s.ApplyCommanders(&p) {
+		t.Fatal("payload refused")
+	}
+	view := s.Commanders()
+	if len(view.Commanders) != 1 || len(view.Commanders[0].Mobs) != 2 {
+		t.Fatalf("view: %+v", view)
+	}
+	boss, serpent := view.Commanders[0].Mobs[0], view.Commanders[0].Mobs[1]
+	if len(boss.Auras) != 2 || boss.Auras[0].ID != 23849 || boss.Auras[0].Name != "Snake Form" || boss.Auras[0].LeftMS != 12000 ||
+		boss.Auras[0].Stacks != 0 || boss.Auras[1].Stacks != 3 || boss.Auras[1].LeftMS != 0 {
+		t.Fatalf("boss auras lost: %+v", boss.Auras)
+	}
+	if boss.Flags != "nh" {
+		t.Fatalf("boss flags = %q, want nh", boss.Flags)
+	}
+	if serpent.Auras != nil || serpent.Flags != "" {
+		t.Fatalf("an ordinary mob must carry no auras or flags: %+v", serpent)
+	}
+	bot := view.Commanders[0].Bots[0]
+	if len(bot.Debuffs) != 2 || bot.Debuffs[0].ID != 24328 || bot.Debuffs[0].Dispel != "p" || bot.Debuffs[0].Stacks != 2 ||
+		bot.Debuffs[1].Dispel != "m" || bot.MC != 1 {
+		t.Fatalf("bot debuffs lost: %+v mc %d", bot.Debuffs, bot.MC)
+	}
+
+	// The API's JSON carries the keys (the page reads them there, not from the payload).
+	out, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"au":[{"id":23849,"n":"Snake Form","l":12000}`, `"uf":"nh"`,
+		`"db":[{"id":24328,"n":"Corrupted Blood","st":2,"l":8000,"dt":"p"}`, `"mc":1`} {
+		if !strings.Contains(string(out), key) {
+			t.Fatalf("the API JSON lost %s: %s", key, out)
+		}
+	}
+	serpentJSON, err := json.Marshal(serpent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"au"`, `"uf"`} {
+		if strings.Contains(string(serpentJSON), key) {
+			t.Fatalf("an ordinary mob must not grow %s: %s", key, serpentJSON)
+		}
+	}
+}

@@ -706,6 +706,17 @@ type CommanderPos struct {
 	Y     float64 `json:"y"`
 }
 
+// CommanderAura is one aura the module saw on a unit: a boss's own buff or form, or a boss debuff on a bot. Stacks and
+// LeftMS are left out when they add nothing (one stack, a permanent aura); Dispel is the dispel type a healer must bring
+// (m magic, c curse, p poison, d disease) and is empty when the aura is not dispellable.
+type CommanderAura struct {
+	ID     uint32 `json:"id"`
+	Name   string `json:"n,omitempty"`
+	Stacks uint32 `json:"st,omitempty"`
+	LeftMS uint32 `json:"l,omitempty"`
+	Dispel string `json:"dt,omitempty"`
+}
+
 // CommanderMob is a unit near the lead of a binding. IDs are decimal strings: a creature guid is 64 bits, more than a JSON
 // number holds in a browser.
 type CommanderMob struct {
@@ -733,6 +744,11 @@ type CommanderMob struct {
 	Channel     int             `json:"ch,omitempty"`      // 1 when the spell is channelled
 	Shape       *CommanderShape `json:"shape,omitempty"`   // the area the spell covers; absent when the module has no shape for it
 	CastEndMS   int64           `json:"cend_ms,omitempty"` // when the cast ends, unix ms, filled by the daemon from the report's ts and the time left
+
+	// The auras and flags of a boss or elite unit (the overlay rows only): its non-passive auras in holder-map order, and
+	// the letters n not selectable, i not attackable, h hovering or flying, d dead (feigning), e evading, in that order.
+	Auras []CommanderAura `json:"au,omitempty"`
+	Flags string          `json:"uf,omitempty"` // absent: none of the flags above
 }
 
 // CommanderShape is the area a boss or elite spell covers, as the module's committed shape table knows it: k is cone (in
@@ -785,6 +801,11 @@ type CommanderBot struct {
 	Away bool `json:"away,omitempty"` // off the run's gather rule or the plan's map
 	// The ready check's facts, from a module that reports them (absent from an older one).
 	Ready *CommanderReady `json:"rdy,omitempty"`
+
+	// The boss debuffs on the bot (up to four, dispellable first) and whether it is charmed or mind-controlled; both absent
+	// from an older module.
+	Debuffs []CommanderAura `json:"db,omitempty"`
+	MC      int             `json:"mc,omitempty"` // 1: charmed / mind-controlled
 }
 
 // CommanderReady is what one bot brings to a ready check: the raid buffs it has (b), the consumables it has (c), and its

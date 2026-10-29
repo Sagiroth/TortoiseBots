@@ -920,3 +920,41 @@ func TestUnrepairableAppendStartsANewFile(t *testing.T) {
 		t.Fatalf("rows after reopen = %+v, want the fallback's fight", rows)
 	}
 }
+
+// The fight log the daemon attaches when a live fight is filed survives the writer and a restart: it is part of the fight
+// JSON the day file stores.
+func TestFightLogRoundTrips(t *testing.T) {
+	dir := t.TempDir()
+	clock := &fakeClock{t: t0}
+	s, err := Open(Config{Dir: dir, Now: clock.Now}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := mkFight("f1", "Glacienne", t0.Unix())
+	f.Log = []json.RawMessage{
+		json.RawMessage(`{"k":"cast","t":1000,"id":"814","e":14507,"n":"Venoxis","s":"Poison Cloud"}`),
+		json.RawMessage(`{"k":"death","t":2000,"n":"Tanky","by":"Venoxis"}`),
+	}
+	f.LogDropped = 3
+	deliver(t, s, clock, Item{Session: 7, Fight: f, At: clock.Now()})
+	s.Close(context.Background())
+
+	clock2 := &fakeClock{t: t0.Add(time.Minute)}
+	s2, err := Open(Config{Dir: dir, Now: clock2.Now}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close(context.Background())
+	got, _, ok := s2.Fight(combat.Key("Glacienne", 7, "f1"))
+	if !ok {
+		t.Fatal("Fight after reopen missed")
+	}
+	if len(got.Log) != len(f.Log) || got.LogDropped != 3 {
+		t.Fatalf("log after reopen: %d events (dropped %d), want %d (dropped 3)", len(got.Log), got.LogDropped, len(f.Log))
+	}
+	for i := range f.Log {
+		if string(got.Log[i]) != string(f.Log[i]) {
+			t.Fatalf("log[%d] = %s, want %s", i, got.Log[i], f.Log[i])
+		}
+	}
+}

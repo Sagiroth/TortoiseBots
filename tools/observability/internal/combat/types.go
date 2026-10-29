@@ -7,6 +7,8 @@
 // here.
 package combat
 
+import "encoding/json"
+
 // SpellCount is one spell line of a bot: name and casts.
 type SpellCount struct {
 	N string `json:"n"`
@@ -89,6 +91,11 @@ type Fight struct {
 	Bots          []FightBot     `json:"bots"`
 	Debuffs       FightDebuffs   `json:"debuffs"`
 	Deaths        []FightDeath   `json:"deaths"`
+
+	// The live events of the fight, in order: the casts, interrupts, taunts and deaths the module reported while it ran,
+	// copied from the live row when the fight is filed. LogDropped counts the oldest events past the cap.
+	Log        []json.RawMessage `json:"log,omitempty"`
+	LogDropped int               `json:"log_dropped,omitempty"`
 }
 
 // FightDatagram is the COMBAT_FIGHT datagram envelope. The module sends each
