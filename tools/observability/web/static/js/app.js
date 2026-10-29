@@ -835,28 +835,33 @@
   function parseRoute() {
     const [path, query] = window.location.hash.replace(/^#\/?/, '').split('?');
     const segs = path.split('/');
-    const tab = HASH_TO_TAB[segs[0]] || null;
+    while (segs.length && segs[segs.length - 1] === '') segs.pop();
+    const tab0 = HASH_TO_TAB[segs[0]] || null;
+    const dec = (s) => { try { return decodeURIComponent(s); } catch (e) { return s; } };
     // #/commanders/<name> opens that commander's tab, #/commanders/<name>/fight[/<fightId>] its Fight debugger with that
-    // fight picked, #/commanders/fight[/<fightId>] All raids in the Fight debugger; #/commanders is All raids.
-    let cmd = null, cmdMode = null, cmdFight = null;
-    if (tab === 'commanders' && segs.length > 1) {
+    // fight picked, #/fight[/<fightId>] All raids in the Fight debugger; #/commanders is All raids. One segment after
+    // #/commanders is always the commander tab, so a commander named "fight" keeps its own route (the All-raids debugger
+    // cannot live there).
+    let tab = tab0, cmd = null, cmdMode = null, cmdFight = null;
+    if (segs[0] === 'fight') {
+      tab = 'commanders';
+      cmdMode = 'debug';
+      if (segs[1]) cmdFight = dec(segs[1]);
+    } else if (tab === 'commanders' && segs.length > 1) {
       const rest = segs.slice(1);
-      while (rest.length && rest[rest.length - 1] === '') rest.pop();
-      const dec = (s) => { try { return decodeURIComponent(s); } catch (e) { return s; } };
-      if (rest[0] === 'fight') {
-        cmdMode = 'debug';
-        if (rest[1]) cmdFight = dec(rest[1]);
-      } else if (rest.length) {
+      if (rest.length === 1) {
+        cmd = dec(rest[0]);
+      } else {
         const at = rest.lastIndexOf('fight');
-        if (at >= 0 && at === rest.length - 1) {
+        if (at === rest.length - 1) {
           cmd = dec(rest.slice(0, at).join('/'));
           cmdMode = 'debug';
-        } else if (at >= 0 && at === rest.length - 2) {
+        } else if (at === rest.length - 2) {
           cmd = dec(rest.slice(0, at).join('/'));
           cmdMode = 'debug';
           cmdFight = dec(rest[rest.length - 1]);
         } else {
-          cmd = dec(rest.join('/'));
+          cmd = dec(rest.join('/')); // a legacy commander name that carries a literal slash
         }
       }
     }
@@ -875,15 +880,14 @@
     if (r.run) q.set('run', r.run);
     if (r.demo && r.tab === 'commanders') q.set('demo', '1');
     const qs = q.toString();
-    let cmd = '';
+    let hash = `#/${TABS[r.tab].hash}`;
     if (r.tab === 'commanders') {
-      if (r.cmd) cmd = '/' + encodeURIComponent(r.cmd);
-      if (r.cmdMode === 'debug') {
-        cmd += '/fight';
-        if (r.cmdFight) cmd += '/' + encodeURIComponent(r.cmdFight);
-      }
+      const debug = r.cmdMode === 'debug';
+      if (!r.cmd && debug) hash = '#/fight'; // All raids in the debugger has its own route, clear of a commander named "fight"
+      else if (r.cmd) hash += '/' + encodeURIComponent(r.cmd) + (debug ? '/fight' : '');
+      if (debug && r.cmdFight) hash += '/' + encodeURIComponent(r.cmdFight);
     }
-    return `#/${TABS[r.tab].hash}${cmd}${qs ? `?${qs}` : ''}`;
+    return `${hash}${qs ? `?${qs}` : ''}`;
   }
 
   // Change the route: switching tab closes the profile unless a bot is given;
@@ -5160,7 +5164,7 @@
   }
 
   // The hash decides the open tab and the Fight debugger mode: #/commanders/<name> (the old form) still opens the debugger,
-  // #/commanders/<name>/fight[/<fightId>] names the picked fight too, #/commanders/fight is All raids in the debugger.
+  // #/commanders/<name>/fight[/<fightId>] names the picked fight too, #/fight is All raids in the debugger.
   function cmdRouteTab(r) {
     const debug = r.cmdMode === 'debug' || !!r.cmd;
     if (debug) {

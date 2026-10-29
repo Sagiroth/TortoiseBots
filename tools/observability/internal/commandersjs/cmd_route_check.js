@@ -66,20 +66,57 @@ assert.strictEqual(location._hash, "#/commanders/Glacienne?bot=7&p=gear", "the p
 const route = (hash) => { location._hash = hash; return run("parseRoute()"); };
 let r = route("#/commanders/Glacienne/fight");
 assert.deepStrictEqual([r.cmd, r.cmdMode, r.cmdFight], ["Glacienne", "debug", null], "the old tab form's new shape opens the debugger");
+r = route("#/fight");
+assert.deepStrictEqual([r.tab, r.cmd, r.cmdMode, r.cmdFight], ["commanders", null, "debug", null], "All raids in the debugger");
 r = route("#/commanders/fight");
-assert.deepStrictEqual([r.cmd, r.cmdMode, r.cmdFight], [null, "debug", null], "All raids in the debugger");
+assert.deepStrictEqual([r.tab, r.cmd, r.cmdMode, r.cmdFight], ["commanders", "fight", null, null],
+  "one segment after #/commanders is always the commander tab, even named fight");
 const KEY = "Glacienne\u0000" + 7 + "\u0000f3";
 r = route("#/commanders/Glacienne/fight/" + encodeURIComponent(KEY));
 assert.deepStrictEqual([r.cmd, r.cmdMode, r.cmdFight], ["Glacienne", "debug", KEY], "the fight key survives its encoding");
+r = route("#/fight/" + encodeURIComponent(KEY));
+assert.deepStrictEqual([r.tab, r.cmd, r.cmdMode, r.cmdFight], ["commanders", null, "debug", KEY], "the All-raids route carries its fight too");
 r = route("#/commanders/A%2FB/fight");
 assert.deepStrictEqual([r.cmd, r.cmdMode, r.cmdFight], ["A/B", "debug", null], "a slash in a commander name still works");
 r = route("#/commanders/Glacienne"); // the old form keeps working
 assert.deepStrictEqual([r.cmd, r.cmdMode, r.cmdFight], ["Glacienne", null, null]);
+r = route("#/commanders/"); // a trailing slash stays All raids
+assert.deepStrictEqual([r.tab, r.cmd, r.cmdMode, r.cmdFight], ["commanders", null, null, null]);
 
-assert.strictEqual(run("routeHash({ tab: 'commanders', cmd: 'Glacienne', cmdMode: 'debug' })"), "#/commanders/Glacienne/fight");
-assert.strictEqual(run("routeHash({ tab: 'commanders', cmd: null, cmdMode: 'debug' })"), "#/commanders/fight");
+// Every route the page writes parses back to itself, a commander named "fight" in any case included.
+const roundTrip = (hash) => { location._hash = hash; assert.strictEqual(run("routeHash(parseRoute())"), hash, "the route round-trips: " + hash); };
+for (const name of ["fight", "Fight", "FIGHT", "Glacienne"]) roundTrip("#/commanders/" + encodeURIComponent(name));
+roundTrip("#/commanders");
+for (const hash of ["#/fight", "#/fight/K", "#/commanders/Glacienne/fight", "#/commanders/Glacienne/fight/K", "#/commanders/fight/fight"]) roundTrip(hash);
+assert.strictEqual(run("routeHash({ tab: 'commanders', cmd: 'fight', cmdMode: 'debug' })"), "#/commanders/fight/fight",
+  "the All-raids route never stands in for a commander named fight");
+assert.strictEqual(run("routeHash({ tab: 'commanders', cmd: null, cmdMode: 'debug' })"), "#/fight");
+assert.strictEqual(run("routeHash({ tab: 'commanders', cmd: null, cmdMode: 'debug', cmdFight: 'K' })"), "#/fight/K");
 assert.strictEqual(run("routeHash({ tab: 'commanders', cmd: 'Glacienne', cmdMode: 'debug', cmdFight: 'K' })"), "#/commanders/Glacienne/fight/K");
 assert.strictEqual(run("routeHash({ tab: 'commanders', cmd: 'Glacienne' })"), "#/commanders/Glacienne", "the old form is still written when no mode is given");
+
+// Back and forward between the two debugger routes: go() pushes the new hash, Back and Forward hand the same hashes back,
+// and each one parses to its own view and writes itself unchanged, so history never rewrites the route.
+const hist = ["#/fight"];
+let idx = 0;
+const visit = (hash) => {
+  location._hash = hash;
+  const p = run("parseRoute()");
+  assert.strictEqual(run("routeHash(parseRoute())"), hash, "history lands on the same route: " + hash);
+  return p;
+};
+run("go({ cmd: 'Glacienne', cmdMode: 'debug', cmdFight: null })");
+assert.strictEqual(location._hash, "#/commanders/Glacienne/fight", "All raids walks to a commander's debugger: " + location._hash);
+hist.push(location._hash); idx = 1;
+let back = visit(hist[--idx]);
+assert.deepStrictEqual([back.tab, back.cmd, back.cmdMode, back.cmdFight], ["commanders", null, "debug", null], "Back is All raids in the debugger");
+let fwd = visit(hist[++idx]);
+assert.deepStrictEqual([fwd.tab, fwd.cmd, fwd.cmdMode, fwd.cmdFight], ["commanders", "Glacienne", "debug", null], "Forward is the commander's debugger");
+run("go({ cmd: 'fight', cmdMode: null, cmdFight: null })");
+assert.strictEqual(location._hash, "#/commanders/fight", "a commander named fight is its own tab: " + location._hash);
+assert.strictEqual(visit(location._hash).cmd, "fight");
+run("go({ cmd: null, cmdMode: 'debug', cmdFight: null })");
+assert.strictEqual(location._hash, "#/fight", "and All raids stays clear of it: " + location._hash);
 
 // the whole view survives a profile: reloading #/commanders/Glacienne/fight/K then closing the drawer comes back to it
 ctx.state.activeTab = "commanders";
