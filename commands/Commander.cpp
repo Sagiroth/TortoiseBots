@@ -11656,9 +11656,9 @@ static void FillMobState(Unit* unit, CommanderTelemetry::MobInfo& mob)
         creature && creature->IsInEvadeMode());
 }
 
-// The boss debuffs one bound bot carries and whether it is charmed: the negative auras whose caster is a creature or a
-// player outside the binding's own group, read off the bot's holders it already has. memberLow: the low guids of the
-// binding's bots and its commander, so a debuff the group cast on itself is not the boss's work.
+// The boss debuffs one bound bot carries and whether it is charmed: the negative auras from outside its own group, read off
+// the bot's holders it already has. memberLow: the low guids of every player of the bot's group and of the binding, so a
+// debuff the group cast on itself is not the boss's work.
 static void FillBotDebuffs(Player* bot, std::unordered_set<uint32> const& memberLow,
     CommanderTelemetry::BotExtra& extra)
 {
@@ -11666,10 +11666,10 @@ static void FillBotDebuffs(Player* bot, std::unordered_set<uint32> const& member
     for (auto const& entry : bot->GetSpellAuraHolderMap())
     {
         SpellAuraHolder const* holder = entry.second;
-        if (!holder || holder->IsDeleted() || holder->IsPassive() || holder->IsPositive())
+        if (!holder || holder->IsDeleted() || holder->IsPassive())
             continue;
         ObjectGuid const caster = holder->GetCasterGuid();
-        if (!caster.IsCreature() && !(caster.IsPlayer() && !memberLow.count(caster.GetCounter())))
+        if (!CommanderTelemetry::IsBossDebuff(!holder->IsPositive(), caster.IsCreature(), caster.GetCounter(), memberLow))
             continue;
         CommanderTelemetry::AuraRead read = AuraReadOf(holder);
         read.hostileCaster = true;
@@ -12134,12 +12134,15 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
     }
     // What each bound bot is doing: the view snapshot already holds its state, newest action, cast and target; the rest are
     // field and aura reads (crowd control, drink/food, the boss debuffs it carries), once per bot per 2 s.
-    std::unordered_set<uint32> memberLow;
-    memberLow.reserve(ref.bots.size() + 1);
+    // A debuff the group cast on itself is not the boss's work: the binding's bots and commander are the floor, and each
+    // bot's own group adds the humans and any bot outside the report, all by low guid.
+    std::unordered_set<uint32> bindingLow;
+    bindingLow.reserve(ref.bots.size() + 1);
     for (Player* bot : ref.bots)
         if (bot)
-            memberLow.insert(bot->GetGUIDLow());
-    memberLow.insert(::ObjectGuid(binding.commanderGuid).GetCounter());
+            bindingLow.insert(bot->GetGUIDLow());
+    bindingLow.insert(::ObjectGuid(binding.commanderGuid).GetCounter());
+    std::unordered_set<uint32> memberLow;
     ref.botExtras.reserve(snapshot.partyCount);
     for (size_t i = 0; i < snapshot.partyCount; ++i)
     {
@@ -12147,6 +12150,11 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         Player* bot = FindCharacter(member.guid);
         if (!bot)
             continue;
+        memberLow = bindingLow;
+        memberLow.insert(bot->GetGUIDLow());
+        if (Group* group = bot->GetGroup())
+            for (Group::MemberSlot const& slot : group->GetMemberSlots())
+                memberLow.insert(slot.guid.GetCounter());
         CommanderTelemetry::BotExtra extra;
         extra.id = member.guid;
         extra.state = member.state;

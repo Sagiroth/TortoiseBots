@@ -29,9 +29,10 @@
 // auras before the negative ones so debuffs cannot hide a phase buff; id, name, stacks past one, time left while it runs out)
 // and a short flag string (`uf`: n not selectable, i not attackable or
 // immune to players, h hovering or flying, d stand state dead, e evading), so the dashboard can label the phase and the
-// forms. Each bound bot row carries the boss debuffs it holds (`db`: up to kMaxBotDebuffs negative auras whose caster is
-// not its own group, dispellable first, then the one that runs out last; id, name, stacks, time left, dispel letter) and
-// `mc` when it is charmed, so the raid frames and the map can show what a healer has to cleanse and whom to free.
+// forms. Each bound bot row carries the boss debuffs it holds (`db`: up to kMaxBotDebuffs negative auras cast by a creature
+// or by a player outside its own group, bots and humans alike, dispellable first, then the one that runs out last; id, name,
+// stacks, time left, dispel letter) and `mc` when it is charmed, so the raid frames and the map can show what a healer has
+// to cleanse and whom to free.
 //
 // Live positions (additive, same rule; task S3): while a bound group fights, its bots and the enemies its lead's last report
 // listed go out every 0.5 s (COMMANDER_POS), so the dashboard's dots glide between the 2 s reports; a group that stands
@@ -226,6 +227,17 @@ inline std::vector<AuraInfo> SelectBotDebuffs(std::vector<AuraRead> const& reads
     if (out.size() > max)
         out.resize(max);
     return out;
+}
+
+// Whether an aura a bot holds is a boss debuff the dashboard shows: negative, and cast by a creature or by a player outside the
+// bot's own group (memberLow: the low guids of every player in that group, bots and humans, and of the binding). A debuff the
+// group's own healer put on it is not the boss's work.
+inline bool IsBossDebuff(bool negative, bool casterCreature, uint32_t casterLow,
+    std::unordered_set<uint32_t> const& memberLow)
+{
+    if (!negative)
+        return false;
+    return casterCreature || memberLow.find(casterLow) == memberLow.end();
 }
 
 // The short flag string of a boss or elite's state, letters in this fixed order: n not selectable, i not attackable or

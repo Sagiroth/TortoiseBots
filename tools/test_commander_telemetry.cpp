@@ -536,6 +536,16 @@ void TestAuraSelection()
     for (AuraInfo const& a : out)
         Check(a.id != 105 && a.id != 106 && a.id != 107, "passive, positive and own-group auras are not boss debuffs");
 
+    // Which auras on a bot count as a boss debuff: a creature's is shown, a player's only from outside the bot's group. The
+    // set holds the bot (700), its healer bot (704) and a human group member (900).
+    std::unordered_set<uint32_t> const members{700, 704, 900};
+    Check(!IsBossDebuff(true, false, 704, members), "a debuff the group's own healer bot cast is not shown");
+    Check(!IsBossDebuff(true, false, 900, members), "a debuff a human group member cast is not shown");
+    Check(IsBossDebuff(true, true, 0, members), "a creature's debuff is shown");
+    Check(IsBossDebuff(true, false, 999, members), "a debuff from a player outside the group is shown");
+    Check(!IsBossDebuff(false, true, 0, members) && !IsBossDebuff(false, false, 999, members),
+        "a positive aura is never a boss debuff");
+
     Check(UnitFlags(false, false, false, false, false).empty(), "a calm unit has no flags");
     Check(UnitFlags(true, true, true, true, true) == "nihde", "the flags are in their fixed order");
     Check(UnitFlags(false, false, true, false, true) == "he", "only the flags that hold are written");
