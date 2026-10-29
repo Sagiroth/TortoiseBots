@@ -260,7 +260,7 @@ Gives a guild bot an order to fetch items for real: it farms, buys or crafts the
 .bot order <BotName> craft <item id> <amount>
 .bot order <BotName> cancel
 .bot order list
-.bot order search <BotName> farm <text>
+.bot order search <BotName> farm [cat=<kind>] <text>
 ```
 
 - **Who may give orders:** you must be a real player in the bot's guild, and your guild rank must be allowed to edit officer notes. Anyone else gets an error.

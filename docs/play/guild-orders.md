@@ -24,12 +24,11 @@ Open the TBM addon (`/tbm`), go to the **Guild** tab, press **Order** next to a 
 .bot order <BotName> craft <item link or id> <amount>
 .bot order <BotName> cancel
 .bot order list
-.bot order search <BotName> farm <text>
+.bot order search <BotName> farm [cat=<kind>] <text>
 ```
-
 - **One order per bot.** A new order replaces the old one. `cancel` removes it and the bot goes back to normal life.
 - **Amount:** 1-200. Only items that can go to the bank can be ordered (no bind-on-pickup, quest or temporary items); those never show up in the search.
-- **Search:** needs at least 3 characters and shows at most 30 matches, each with where that bot would farm it, its rough chance there, and a difficulty estimate for one item: easy (about 30 kills or gathers), medium (about 200), hard (more than that). Order rows show the same estimate for the full amount; craft orders use the hardest material still missing, and buy orders show none.
+- **Search:** shows at most 30 matches, each with where that bot would farm it, its rough chance there, and a difficulty estimate for one item: easy (about 30 kills or gathers), medium (about 200), hard (more than that). Order rows show the same estimate for the full amount; craft orders use the hardest material still missing, and buy orders show none. Every word of the query must match somewhere in the name in any order, and the best name matches come first. `.bot order search <BotName> farm cat=<kind>` (herb, ore, leather, fish, cloth, drop, other) browses a whole kind with no text; without a kind the text needs at least 3 characters. Each row shows the item's kind and drop rate, so a rare drop that may take many hours is visible before you order.
 - **The search needs the bot online;** giving an order does not. An order on an offline bot is kept and runs when it comes back online.
 
 ## Who may give orders
