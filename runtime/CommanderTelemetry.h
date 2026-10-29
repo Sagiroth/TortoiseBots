@@ -67,8 +67,9 @@ namespace TortoiseBots {
 namespace CommanderTelemetry {
 
 constexpr size_t kMaxOrdersPerCommander = 8;
-constexpr size_t kMaxTrackedCommanders = 16;
-constexpr size_t kMaxBindings = 8;     // per payload: keeps one datagram well under the loopback MTU
+constexpr size_t kMaxTrackedCommanders = 20;
+constexpr size_t kMaxCommandersReported = 20; // the collect loop's own cap: one commander per binding, up to twenty
+constexpr size_t kMaxBindings = 8;     // per part: keeps one datagram well under the loopback MTU
 constexpr size_t kMaxBotsPerBinding = 40;   // a raid binding is the only bound raid (kMaxRaidBindSize)
 constexpr size_t kMaxBotsPerPayload = 64;   // all bindings together: the heaviest raid plus a party, or four parties
 constexpr size_t kMaxMobsPerBinding = 24; // the perception feed's own cap (kMaxHostiles)
@@ -694,16 +695,21 @@ inline void AppendMobJson(std::ostringstream& ss, MobInfo const& m, bool overlay
 // The COMMANDERS datagram. An empty list is a valid payload: it tells the
 // daemon the last binding ended. The boss lists go in last, binding by binding, only while the datagram stays within
 // kPayloadByteBudget; a binding whose list does not fit leaves `bosses_map` and `bosses` out (the dashboard falls back).
-inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t seq, int64_t ts,
-                                std::vector<BindingInfo> const& bindings, int64_t tsMs = 0)
+// `part`/`parts` name the place of this datagram in a cycle the partition split, and are written only then, so a
+// single-part cycle is byte-identical to the payload before the split.
+inline std::string BuildPayloadOf(int protocolVersion, uint64_t session, uint64_t seq, int64_t ts,
+                                  std::vector<BindingInfo const*> const& bindings, int64_t tsMs = 0,
+                                  int part = 0, int parts = 1)
 {
     std::ostringstream ss;
     ss.setf(std::ios::fixed);
     ss.precision(1);
     ss << "{\"v\":" << protocolVersion
        << ",\"session\":" << session
-       << ",\"seq\":" << seq
-       << ",\"ts\":" << ts;
+       << ",\"seq\":" << seq;
+    if (parts > 1)
+        ss << ",\"part\":" << part << ",\"parts\":" << parts;
+    ss << ",\"ts\":" << ts;
     if (tsMs)
         ss << ",\"ts_ms\":" << tsMs;
     ss << ",\"type\":\"COMMANDERS\",\"commanders\":[";
@@ -720,8 +726,9 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
         size_t count;     // bosses in it
     };
     std::vector<BossList> bossLists;
-    for (BindingInfo const& b : bindings)
+    for (BindingInfo const* bp : bindings)
     {
+        BindingInfo const& b = *bp;
         if (shown >= kMaxBindings)
             break;
         if (shown++)
@@ -997,6 +1004,71 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
     for (size_t i = bossLists.size(); i-- > 0;)
         if (keep[i])
             out.insert(bossLists[i].at, bossLists[i].json);
+    return out;
+}
+
+// One COMMANDERS datagram over every binding given, in this order (the single-part cycle and the tests' entry point).
+inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t seq, int64_t ts,
+                                std::vector<BindingInfo> const& bindings, int64_t tsMs = 0, int part = 0, int parts = 1)
+{
+    std::vector<BindingInfo const*> all;
+    all.reserve(bindings.size());
+    for (BindingInfo const& b : bindings)
+        all.push_back(&b);
+    return BuildPayloadOf(protocolVersion, session, seq, ts, all, tsMs, part, parts);
+}
+
+// Up to twenty commanders stand at once, but one datagram holds eight bindings, 64 bots and 64 mobs. The bindings, in
+// the collector's order, are packed into parts that respect all three; a binding is never split, so one that alone goes
+// past a cap sits in a part of its own and BuildPayload caps it inside as before. Empty is no part: the caller sends
+// the "last binding ended" payload whole.
+inline std::vector<std::vector<size_t>> PartitionBindings(std::vector<BindingInfo> const& bindings)
+{
+    std::vector<std::vector<size_t>> parts;
+    size_t bots = 0;
+    size_t mobs = 0;
+    for (size_t i = 0; i < bindings.size() && i < kMaxCommandersReported; ++i) // at most one part each
+    {
+        // What BuildPayload will write of this binding: its bots, and its mob rows when the report carried them.
+        size_t const bindingBots = std::min(bindings[i].bots.size(), kMaxBotsPerBinding);
+        size_t const bindingMobs = bindings[i].mobsReported ? std::min(bindings[i].mobs.size(), kMaxMobsPerBinding) : 0;
+        bool const alone = bindingBots > kMaxBotsPerPayload || bindingMobs > kMaxMobsPerPayload;
+        if (parts.empty() || parts.back().size() >= kMaxBindings || alone ||
+            bots + bindingBots > kMaxBotsPerPayload || mobs + bindingMobs > kMaxMobsPerPayload)
+        {
+            parts.emplace_back();
+            bots = 0;
+            mobs = 0;
+        }
+        parts.back().push_back(i);
+        bots += bindingBots;
+        mobs += bindingMobs;
+    }
+    return parts;
+}
+
+// Every part of one cycle, in order, each built by BuildPayloadOf with the cycle's seq and millisecond timestamp and its
+// own `part`/`parts`. One part is the whole payload; no binding is one empty payload.
+inline std::vector<std::string> BuildPayloadParts(int protocolVersion, uint64_t session, uint64_t seq, int64_t ts,
+                                                  std::vector<BindingInfo> const& bindings, int64_t tsMs = 0)
+{
+    std::vector<std::vector<size_t>> const parts = PartitionBindings(bindings);
+    std::vector<std::string> out;
+    if (parts.empty())
+    {
+        out.push_back(BuildPayloadOf(protocolVersion, session, seq, ts, {}, tsMs));
+        return out;
+    }
+    out.reserve(parts.size());
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        std::vector<BindingInfo const*> slice;
+        slice.reserve(parts[i].size());
+        for (size_t const index : parts[i])
+            slice.push_back(&bindings[index]);
+        out.push_back(BuildPayloadOf(protocolVersion, session, seq, ts, slice, tsMs, static_cast<int>(i),
+                                     static_cast<int>(parts.size())));
+    }
     return out;
 }
 

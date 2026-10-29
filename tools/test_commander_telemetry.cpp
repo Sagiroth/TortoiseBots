@@ -1192,6 +1192,181 @@ void TestReadyCheckPayload()
     std::printf("40 bots with ready facts: %zu bytes\n", size.size());
 }
 
+// `count` bindings of `size` bots each, every commander, lead and bot named apart.
+std::vector<BindingInfo> Parties(size_t count, size_t size)
+{
+    std::vector<BindingInfo> out;
+    out.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        BindingInfo b;
+        b.commander = "Party" + std::to_string(i);
+        b.commanderGuid = static_cast<uint32_t>(100 + i);
+        b.groupId = static_cast<uint32_t>(500 + i);
+        b.lead = "Lead" + std::to_string(i);
+        for (size_t j = 0; j < size; ++j)
+            b.bots.push_back(Bot("Bot" + std::to_string(i) + "_" + std::to_string(j), j == 0));
+        out.push_back(std::move(b));
+    }
+    return out;
+}
+
+// More than eight bindings (task R8m): a cycle goes out in parts, each part built exactly as a whole cycle is today,
+// so a single-part cycle (eight bindings, 64 bots) is byte-identical to the payload before the split.
+void TestCommandersPartsSingle()
+{
+    std::vector<BindingInfo> const parties = Parties(8, 5);
+    std::vector<std::string> const parts = BuildPayloadParts(9, 7, 3, 1791990010, parties, 1791990010123);
+    Check(parts.size() == 1, "eight parties are one part");
+    Check(!Has(parts[0], "\"parts\""), "a single part writes no parts key");
+    Check(parts[0] == BuildPayload(9, 7, 3, 1791990010, parties, 1791990010123),
+        "a single part is byte-identical to the plain payload");
+    Check(Count(parts[0], "\"commander\":") == 8, "every binding is in it");
+}
+
+void TestCommandersPartsSplit()
+{
+    std::vector<std::string> const parts = BuildPayloadParts(9, 7, 3, 1791990010, Parties(9, 5), 1791990010123);
+    Check(parts.size() == 2, "nine parties are two parts");
+    if (parts.size() != 2)
+        return;
+    Check(Has(parts[0], "\"seq\":3,\"part\":0,\"parts\":2,\"ts\":1791990010,\"ts_ms\":1791990010123,\"type\":\"COMMANDERS\""),
+        "part 0 carries the cycle's seq and ts");
+    Check(Has(parts[1], "\"seq\":3,\"part\":1,\"parts\":2,\"ts\":1791990010,\"ts_ms\":1791990010123,\"type\":\"COMMANDERS\""),
+        "part 1 carries the same seq and ts");
+    Check(Count(parts[0], "\"commander\":") == 8 && Count(parts[1], "\"commander\":") == 1, "eight bindings, then the ninth");
+    Check(Count(parts[0], "\"guid\":") == 40 && Count(parts[1], "\"guid\":") == 5, "the bots follow their binding");
+}
+
+void TestCommandersPartsCaps()
+{
+    // Eight small parties at the bot cap still fit one part.
+    std::vector<std::string> const full = BuildPayloadParts(9, 1, 43, 1, Parties(8, 8), 0);
+    Check(full.size() == 1, "eight bindings of eight bots are one part");
+    if (!full.empty())
+        Check(Count(full[0], "\"guid\":") == 64, "and 64 bots in it");
+    // Two raids of 40: 64 bots per part, so each raid goes alone.
+    std::vector<std::string> const two = BuildPayloadParts(9, 1, 40, 1, Parties(2, 40), 0);
+    Check(two.size() == 2, "two 40-bot raids are two parts");
+    if (two.size() == 2)
+        Check(Count(two[0], "\"guid\":") == 40 && Count(two[1], "\"guid\":") == 40,
+            "each raid keeps its whole roster");
+    // A raid of 40 and five parties of 5: the raid and four parties (60 bots) go together.
+    std::vector<BindingInfo> mixed = Parties(1, 40);
+    std::vector<BindingInfo> const parties = Parties(5, 5);
+    mixed.insert(mixed.end(), parties.begin(), parties.end());
+    std::vector<std::string> const parts = BuildPayloadParts(9, 1, 41, 1, mixed, 0);
+    Check(parts.size() == 2, "a raid and five parties are two parts");
+    if (parts.size() == 2)
+    {
+        Check(Count(parts[0], "\"commander\":") == 5 && Count(parts[0], "\"guid\":") == 60, "the raid and four parties in part 0");
+        Check(Count(parts[1], "\"commander\":") == 1 && Count(parts[1], "\"guid\":") == 5, "the fifth party alone");
+    }
+    // Twenty 40-bot bindings: one part each, and no binding is ever split.
+    std::vector<std::string> const many = BuildPayloadParts(9, 1, 42, 1, Parties(20, 40), 0);
+    Check(many.size() == 20, "twenty raids are twenty parts");
+    bool whole = true;
+    for (std::string const& part : many)
+        whole = whole && Count(part, "\"commander\":") == 1 && Count(part, "\"guid\":") == 40;
+    Check(whole, "a binding is never split across parts");
+    // At most one part per binding, so no more than kMaxCommandersReported of them.
+    std::vector<std::string> const beyond = BuildPayloadParts(9, 1, 44, 1, Parties(21, 40), 0);
+    Check(beyond.size() == kMaxCommandersReported, "twenty-one bindings are twenty parts");
+    size_t reported = 0;
+    for (std::string const& part : beyond)
+        reported += Count(part, "\"commander\":");
+    Check(reported == kMaxCommandersReported, "the twenty-first binding is not reported");
+}
+
+void TestCommandersPartsBudget()
+{
+    // The worst datagram this module writes (the shape of TestUnitInfo's caps case, with the ready facts): 8 bindings,
+    // 48 bots and 64 mobs, ids at 20 digits and every name at its clip.
+    std::vector<BindingInfo> many;
+    for (int i = 0; i < 8; ++i)
+    {
+        BindingInfo b;
+        b.commander = std::string(40, 'C');
+        b.commanderGuid = 0xFFFFFFFFu;
+        b.boundAt = 1791990000;
+        b.lead = std::string(12, 'L');
+        for (int j = 0; j < 6; ++j)
+        {
+            BotInfo bot = Bot("Botname" + std::to_string(i * 8 + j), j == 0);
+            bot.id = 0xFFFFFFFFFFFFFFFFull;
+            bot.target = 0xFFFFFFFFFFFFFFFFull;
+            bot.hasExtra = true;
+            bot.extra.state = 'c';
+            bot.extra.action = std::string(kMaxActionName, 'a');
+            bot.extra.result = 'O';
+            bot.extra.cast = std::string(kMaxCastName, 'c');
+            bot.extra.targetName = std::string(kMaxTargetName, 't');
+            bot.extra.hasReady = true;
+            bot.extra.readyBuffs = 0xFFFFFFFFu;
+            bot.extra.readyCons = 0xFFFFFFFFu;
+            bot.extra.cdReady = 8;
+            bot.extra.cdKnown = 8;
+            bot.extra.cdLongestS = 0xFFFFFFFFu;
+            b.bots.push_back(bot);
+        }
+        b.mobsReported = true;
+        b.mobsMap = 249;
+        for (int j = 0; j < 8; ++j)
+        {
+            MobInfo m = Mob(0xFFFFFFFFFFFFFFFFull, std::string(kMaxMobName, 'M'), 'h', 'k', 0xFFFFFFFFFFFFFFFFull);
+            m.level = 63;
+            m.rank = 'b';
+            m.cast = std::string(kMaxCastName, 'c');
+            m.hasO = true;
+            m.o = -3.14159f;
+            m.castId = 4294967295u;
+            m.castLeftMs = 0xFFFFFFFFu;
+            m.castTotalMs = 0xFFFFFFFFu;
+            m.castTarget = 0xFFFFFFFFFFFFFFFFull;
+            m.hasShape = true;
+            m.shape.kind = TortoiseBots::SpellShape::Kind::Line;
+            m.shape.length = 154.0f;
+            m.shape.width = 60.0f;
+            b.mobs.push_back(m);
+        }
+        for (int j = 0; j < 8; ++j)
+            b.orders.push_back(Order(j, std::string(kMaxOrderResult / 15, 'v'), true, std::string(kMaxOrderResult, 'r'),
+                std::string(kMaxOrderDetail, 'd')));
+        many.push_back(std::move(b));
+    }
+    std::vector<std::string> const parts = BuildPayloadParts(9, 1, 77, 1791990010, many, 1791990010123);
+    Check(parts.size() == 1, "eight fat bindings with their mobs are still one part");
+    if (!parts.empty())
+    {
+        Check(Count(parts[0], "\"guid\":") == 48, "every bot is in it");
+        Check(Count(parts[0], "\"entry\":") == 64, "the part sits at the mob cap");
+    }
+    bool under = true;
+    size_t largest = 0;
+    for (std::string const& part : parts)
+    {
+        under = under && part.size() < kPayloadByteBudget;
+        largest = std::max(largest, part.size());
+    }
+    Check(under, "every part stays under the payload budget");
+    std::printf("worst part (%zu parts): %zu bytes\n", parts.size(), largest);
+
+    // Twenty full bindings: twenty parts, each under the budget.
+    std::vector<std::string> const raidParts = BuildPayloadParts(9, 1, 78, 1, Parties(20, 40), 0);
+    bool raidUnder = true;
+    for (std::string const& part : raidParts)
+        raidUnder = raidUnder && part.size() < kPayloadByteBudget;
+    Check(raidUnder, "every part of twenty raids stays under the payload budget");
+}
+
+void TestCommandersPartsEmpty()
+{
+    std::vector<std::string> const parts = BuildPayloadParts(9, 1, 2, 3, {}, 4);
+    Check(parts.size() == 1, "no binding is still one payload");
+    Check(parts[0] == BuildPayload(9, 1, 2, 3, {}, 4), "the last binding ended payload is unchanged");
+    Check(!Has(parts[0], "\"part\""), "no parts key on it");
+}
+
 } // namespace
 
 int main()
@@ -1218,6 +1393,11 @@ int main()
     TestDashLayoutAndLabel();
     TestPayloadTsMs();
     TestReadyCheckPayload();
+    TestCommandersPartsSingle();
+    TestCommandersPartsSplit();
+    TestCommandersPartsCaps();
+    TestCommandersPartsBudget();
+    TestCommandersPartsEmpty();
     TestRaidPayload();
     if (g_failures)
     {

@@ -12133,7 +12133,7 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
     {
         bound.insert(commanderRaw);
         RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commanderRaw);
-        if (!binding || out.size() >= CommanderTelemetry::kMaxBindings)
+        if (!binding || out.size() >= CommanderTelemetry::kMaxCommandersReported)
             continue;
         CommanderTelemetry::BindingRef ref;
         Player* commander = FindCharacter(commanderRaw);

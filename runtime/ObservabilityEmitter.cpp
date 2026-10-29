@@ -1784,7 +1784,6 @@ void ObservabilityEmitter::EmitCommanders()
 
     std::vector<CommanderTelemetry::BindingInfo> infos;
     infos.reserve(m_commanderRefs.size());
-    size_t botsTotal = 0; // bots over all bindings: stops at kMaxBotsPerPayload (one raid plus a party)
     for (CommanderTelemetry::BindingRef const& ref : m_commanderRefs)
     {
         CommanderTelemetry::BindingInfo info;
@@ -1817,8 +1816,7 @@ void ObservabilityEmitter::EmitCommanders()
         info.layout = ref.layout;
         for (Player* bot : ref.bots)
         {
-            if (!bot || !bot->IsInWorld() || info.bots.size() >= CommanderTelemetry::kMaxBotsPerBinding ||
-                botsTotal >= CommanderTelemetry::kMaxBotsPerPayload)
+            if (!bot || !bot->IsInWorld() || info.bots.size() >= CommanderTelemetry::kMaxBotsPerBinding)
                 continue;
             CommanderTelemetry::BotInfo b;
             b.name = bot->GetName();
@@ -1859,7 +1857,6 @@ void ObservabilityEmitter::EmitCommanders()
                     b.extra = extra;
                     break;
                 }
-            ++botsTotal;
             info.bots.push_back(std::move(b));
         }
         infos.push_back(std::move(info));
@@ -1873,8 +1870,12 @@ void ObservabilityEmitter::EmitCommanders()
         it = standing ? std::next(it) : m_commanderSince.erase(it);
     }
     m_commandersSent = !infos.empty();
-    SendDatagram(CommanderTelemetry::BuildPayload(kProtocolVersion, m_sessionId, m_snapshotSeq, time(nullptr), infos,
-                                                  NowUnixMs()));
+    // Twenty commanders are more bindings than one datagram holds: the partition keeps each part within the datagram
+    // caps (eight bindings, 64 bots, 64 mobs) and every part goes out with this cycle's seq and ts.
+    std::vector<std::string> const parts = CommanderTelemetry::BuildPayloadParts(kProtocolVersion, m_sessionId,
+        m_snapshotSeq, time(nullptr), infos, NowUnixMs());
+    for (std::string const& payload : parts)
+        SendDatagram(payload);
 }
 
 // Effective running settings for the dashboard Server panel. Reads live core

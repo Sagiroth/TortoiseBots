@@ -136,7 +136,7 @@ class CombatMonitorWiringTest(unittest.TestCase):
 
     def test_telemetry_writes_the_window_raw(self):
         self.assertIn("std::string combatJson", TELEMETRY)
-        payload = body(TELEMETRY, "inline std::string BuildPayload(", "\n}\n")
+        payload = body(TELEMETRY, "inline std::string BuildPayloadOf(", "\n}\n")
         self.assertIn('combat', payload)
         self.assertIn('<< b.combatJson', payload)
         self.assertIn("combatJson", payload)

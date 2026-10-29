@@ -218,7 +218,10 @@ server start, right after the plans were sealed and never inside a commander sna
 creature guid and one respawn time per spawn row; a boss once read killed in an instance stayed killed there until it was seen alive, the
 instance id changed or no binding had stood on that instance for 10 minutes. None of it runs per bot tick, scans
 the grid or touches the database; the datagram stays under 60 000 bytes in the worst case, the boss lists being left out of the
-bindings that would pass that budget (`tools/test_commander_telemetry.cpp`). A raid binding whose group went through the module's raid layout also carries `layout` (main tank, off-tanks, tank healer pairs and raid healers), and a run's current step its `label` (the plan row's comment, clipped to 80 bytes), with each `run.plan_steps[]` entry carrying its own `c`. An older module simply omits the fields.
+bindings that would pass that budget (`tools/test_commander_telemetry.cpp`). Up to 20 standing bindings are reported; a cycle
+that would need more than one datagram is split into parts that each keep those caps (eight bindings, 64 bots, 64 mobs), which carry
+`part` and `parts` after `seq` only when there is more than one, so a cycle of eight bindings or fewer is byte-identical to what an
+older module sent. A raid binding whose group went through the module's raid layout also carries `layout` (main tank, off-tanks, tank healer pairs and raid healers), and a run's current step its `label` (the plan row's comment, clipped to 80 bytes), with each `run.plan_steps[]` entry carrying its own `c`. An older module simply omits the fields.
 
 The core listener is generic; it does not call a PlayerBots singleton.
 
