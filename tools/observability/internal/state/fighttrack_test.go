@@ -5,10 +5,13 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"tortoise-observability/internal/model"
 )
@@ -357,132 +360,109 @@ func TestTrackCarriesBossOverlay(t *testing.T) {
 	}
 }
 
-// frameBytes is the estimate the daemon's memory budget uses (TrackMemBudget): the frame row and its slices, 24 bytes per
-// bot, and 80 bytes plus the id and the cast name per mob.
-func frameBytes(f TrackFrame) int64 {
-	n := int64(96) + 24*int64(len(f.Bots))
-	for _, m := range f.Mobs {
-		n += 80 + int64(len(m.ID)) + int64(len(m.CastName))
+// A frame's charge is what it retains, not a fixed guess per row: the rows and slices it holds at capacity, a mob's
+// rank, cast target, facing and shape, and a fifth more for the runtime's own bookkeeping.
+func TestTrackFrameBytesChargesRetainedState(t *testing.T) {
+	plain := TrackFrame{Bots: make([]TrackBot, 1), Mobs: make([]TrackMob, 1)}
+	plain.Mobs[0] = TrackMob{ID: "1"}
+	facing := 1.0
+	rich := TrackFrame{Bots: make([]TrackBot, 1), Mobs: make([]TrackMob, 1)}
+	rich.Mobs[0] = TrackMob{ID: "1", Rank: strings.Repeat("r", 40), CastTarget: strings.Repeat("t", 50),
+		O: &facing, Shape: &model.CommanderShape{Kind: strings.Repeat("k", 30)}}
+	const want = 40 + 50 + 8 + 40 + 30 // rank, cast target, facing, shape record and its kind
+	if got := trackFrameBytes(rich) - trackFrameBytes(plain); got < want {
+		t.Fatalf("rank, cast target, facing and shape add %d bytes to a frame's charge, want at least %d", got, want)
 	}
-	return n
+	// Capacity, not length: the backing array a frame's slices keep stays in memory even when the frame holds no rows.
+	spare := TrackFrame{Bots: make([]TrackBot, 0, 40), Mobs: make([]TrackMob, 0, 24)}
+	if got, want := trackFrameBytes(spare)-trackFrameBytes(TrackFrame{}), int64(40*unsafe.Sizeof(TrackBot{})+24*unsafe.Sizeof(TrackMob{})); got < want {
+		t.Fatalf("spare capacity costs %d, want at least the %d bytes the arrays hold", got, want)
+	}
+	// And the row structs themselves, not a fixed per-row number.
+	rows := TrackFrame{Bots: make([]TrackBot, 8), Mobs: make([]TrackMob, 3)}
+	if got, want := trackFrameBytes(rows), int64(unsafe.Sizeof(TrackFrame{}))+8*int64(unsafe.Sizeof(TrackBot{}))+3*int64(unsafe.Sizeof(TrackMob{})); got < want {
+		t.Fatalf("a frame's charge is %d, below the %d bytes its rows occupy", got, want)
+	}
 }
 
-// R8: 20 commanders at the full raid size stay under the 48 MiB track budget, every track above the 5 min floor, and the
-// newest report of each is the one kept.
-func TestTrackMemBudget(t *testing.T) {
-	const (
-		budget    = int64(48 << 20)
-		minFrames = 150
-		frames    = 900
-	)
-	c := newClock()
-	s := newTestStore(c)
-	bindings := make([]model.CommanderBinding, 0, 20)
-	names := make([]string, 0, 20)
-	for i := 0; i < 20; i++ {
-		name := "c" + strconv.Itoa(i)
-		names = append(names, name)
-		bots := make([]model.CommanderBot, 0, 40)
-		for g := 1; g <= 40; g++ {
-			bots = append(bots, trackBot(uint32(g), float64(g), 2, 10, 10))
+// The 48 MiB budget is spent in retained bytes, so twenty raids of the worst-case report (40 bots, 40 enemies, every
+// optional string and overlay set) stay under it with room to spare and no commander's replay is cut below its 5 min.
+func TestTrackHeapStaysUnderBudget(t *testing.T) {
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+
+	s := newTestStore(newClock())
+	const commanders, bots, mobs = 20, 40, 40
+	// Every cycle is decoded afresh, as the listener does: its strings and overlay objects are each frame's own.
+	cycle := func(ts int64) *model.CommandersPayload {
+		bindings := make([]model.CommanderBinding, 0, commanders)
+		for i := 0; i < commanders; i++ {
+			bs := make([]model.CommanderBot, 0, bots)
+			for g := 1; g <= bots; g++ {
+				bs = append(bs, trackBot(uint32(g), float64(g), 2, 10, 10))
+			}
+			ms := make([]model.CommanderMob, 0, mobs)
+			for m := 0; m < mobs; m++ {
+				facing := 1.5
+				ms = append(ms, model.CommanderMob{ID: "1737939109461" + strconv.Itoa(m), Entry: uint32(1000 + m), Name: "Onyxian Warder",
+					X: 1, Y: 2, HP: 50, Rank: "elite", Cast: "Shadow Bolt Volley", CastID: uint32(700 + m), CastLeftMS: 900,
+					CastTotalMS: 1500, CastTarget: "1737939109461", O: &facing,
+					Shape: &model.CommanderShape{Kind: "back-cone", Angle: 120, Length: 45, Width: 10}})
+			}
+			bindings = append(bindings, trackBinding("c"+strconv.Itoa(i), bs, ms))
 		}
-		mobs := make([]model.CommanderMob, 0, 24)
-		for m := 0; m < 24; m++ {
-			mobs = append(mobs, model.CommanderMob{ID: "17379391094613" + strconv.Itoa(m), Entry: uint32(1000 + m), Name: "Warden",
-				X: 1, Y: 2, HP: 50, Rank: "e", Cast: "Shadow Bolt", CastID: uint32(700 + m), CastLeftMS: 900, CastTotalMS: 1500})
-		}
-		bindings = append(bindings, trackBinding(name, bots, mobs))
+		return trackPayload(1, ts, bindings...)
 	}
-	for ts := int64(1); ts <= frames; ts++ {
-		if !s.ApplyCommanders(trackPayload(1, ts, bindings...)) {
+	for ts := int64(1); ts <= TrackMaxFrames; ts++ {
+		if !s.ApplyCommanders(cycle(ts)) {
 			t.Fatalf("payload ts %d refused", ts)
 		}
 	}
-	var total int64
-	for _, name := range names {
-		got, _ := s.Track(name, 1, frames)
-		if len(got) < minFrames || len(got) > frames {
-			t.Fatalf("%s keeps %d frames, want %d..%d", name, len(got), minFrames, frames)
+	for i := 0; i < commanders; i++ {
+		name := "c" + strconv.Itoa(i)
+		frames, _, tracked := s.TrackWindow(name, 1, TrackMaxFrames)
+		if !tracked || len(frames) < TrackMinFrames {
+			t.Fatalf("%s keeps %d frames, want at least the %d floor", name, len(frames), TrackMinFrames)
 		}
-		if got[len(got)-1].T != frames {
-			t.Fatalf("%s lost its newest frame: last T %d", name, got[len(got)-1].T)
-		}
-		for _, f := range got {
-			total += frameBytes(f)
+		if frames[len(frames)-1].T != TrackMaxFrames {
+			t.Fatalf("%s lost its newest frame: last T %d", name, frames[len(frames)-1].T)
 		}
 	}
-	if total > budget {
-		t.Fatalf("tracks hold an estimated %d bytes, over the %d budget", total, budget)
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	runtime.KeepAlive(s) // without it the store is dead by the collection above and its tracks are freed
+	growth := int64(after.HeapAlloc) - int64(before.HeapAlloc)
+	if limit := int64(TrackMemBudget) * 5 / 4; growth > limit {
+		t.Fatalf("the tracks grew the heap by %d bytes, over the %d the budget allows", growth, limit)
 	}
 }
 
-// R8: when every track stands at the 5 min floor and the budget is still passed, whole commanders are forgotten, least
-// recently seen first; the newest report never is.
-func TestTrackBudgetForgetsOldest(t *testing.T) {
-	c := newClock()
-	s := newTestStore(c)
-	bots := make([]model.CommanderBot, 0, 40)
-	for g := 1; g <= 40; g++ {
-		bots = append(bots, trackBot(uint32(g), float64(g), 2, 10, 10))
+// With every track at the 5 min floor and the budget still passed, whole commanders are forgotten, least recently seen
+// first, and the frames of the ones kept are never cut below the floor.
+func TestTrackBudgetForgetsAtTheFloor(t *testing.T) {
+	st := &commandersState{tracks: map[string]*commanderTrack{}}
+	at := time.Unix(1790000000, 0)
+	for i := 0; i < TrackMaxCommanders; i++ {
+		tr := &commanderTrack{frames: make([]TrackFrame, TrackMinFrames), lastSeen: at.Add(time.Duration(i) * time.Second)}
+		tr.bytes = TrackMemBudget / 10 // ten tracks fill the budget: twenty are twice over it
+		st.tracks["c"+strconv.Itoa(i)] = tr
 	}
-	mobs := make([]model.CommanderMob, 0, 24)
-	// 575-byte ids put a frame at 16776 estimated bytes: 20 tracks x 150 frames keep the total just under the 48 MiB
-	// budget (50328000 < 50331648). The track reported last carries a 4-byte cast name per mob, so its 150th frame alone
-	// passes the budget: the pressure then arrives when every track stands at the 5 min floor, where nothing below it may
-	// be cut.
-	for m := 0; m < 24; m++ {
-		mobs = append(mobs, model.CommanderMob{ID: strings.Repeat("7", 575), Entry: uint32(1000 + m), Name: "Warden", X: 1, Y: 2, HP: 50, Rank: "e"})
-	}
-	last := make([]model.CommanderMob, 0, 24)
-	for m := 0; m < 24; m++ {
-		last = append(last, model.CommanderMob{ID: strings.Repeat("7", 575), Entry: uint32(1000 + m), Name: "Warden", X: 1, Y: 2, HP: 50, Rank: "e",
-			Cast: "Fire", CastID: uint32(m + 1)})
-	}
-	bindings := make([]model.CommanderBinding, 0, 20)
-	names := make([]string, 0, 20)
-	for i := 0; i < 20; i++ {
-		name := "c" + strconv.Itoa(i)
-		names = append(names, name)
-		m := mobs
-		if i == 19 {
-			m = last
-		}
-		bindings = append(bindings, trackBinding(name, bots, m))
-	}
-	// One report per commander, in order, so their last-seen times are strictly ordered: the forgetting order is then
-	// the report order, not a tie.
-	for cycle := int64(1); cycle <= 150; cycle++ {
-		for i := range bindings {
-			if !s.ApplyCommanders(trackPayload(1, cycle, bindings[i])) {
-				t.Fatalf("cycle %d, commander %s refused", cycle, names[i])
-			}
-			c.Advance(100 * time.Millisecond)
-		}
-	}
-	missing := []string{}
-	kept := []string{}
+	st.trimTrackBudgetLocked()
+	kept := make([]string, 0, TrackMaxCommanders)
 	var total int64
-	for _, name := range names {
-		got, _, tracked := s.TrackWindow(name, 1, 150)
-		if !tracked {
-			missing = append(missing, name)
-			continue
-		}
+	for name, tr := range st.tracks {
 		kept = append(kept, name)
-		if len(got) < 150 || len(got) > 150 {
-			t.Fatalf("%s has %d frames, want the 5 min floor and no cut below it", name, len(got))
-		}
-		for _, f := range got {
-			total += frameBytes(f)
+		total += tr.bytes
+		if len(tr.frames) != TrackMinFrames {
+			t.Fatalf("%s keeps %d frames, want the %d floor", name, len(tr.frames), TrackMinFrames)
 		}
 	}
-	if total > 48<<20 {
-		t.Fatalf("tracks hold an estimated %d bytes, over the 48 MiB budget", total)
+	sort.Strings(kept)
+	if want := "c10,c11,c12,c13,c14,c15,c16,c17,c18,c19"; strings.Join(kept, ",") != want {
+		t.Fatalf("kept %v, want the ten seen last", kept)
 	}
-	if strings.Join(missing, ",") != names[0] {
-		t.Fatalf("forgotten %v, kept %v: only the oldest seen in the run (c0) may go", missing, kept)
-	}
-	if kept[len(kept)-1] != names[len(names)-1] {
-		t.Fatalf("the newest report was forgotten: kept %v", kept)
+	if total > TrackMemBudget {
+		t.Fatalf("the tracks still charge %d bytes, over the %d budget", total, TrackMemBudget)
 	}
 }

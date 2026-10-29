@@ -604,6 +604,94 @@ func TestCommandersPartialCarriesOver(t *testing.T) {
 	}
 }
 
+// R8: a cycle in parts belongs to one server session. A part of another session never joins the pending cycle, never
+// completes it, and the session a part arrived for is the newest from then on, so an old session's delayed packets are
+// refused even before its successor's list applies.
+func TestCommandersPartsStayInSession(t *testing.T) {
+	s := newTestStore(newClock())
+	part := func(session, seq uint64, idx, total int, names ...string) *model.CommandersPayload {
+		p := commandersPayload(session, 100, names...)
+		p.Seq, p.Part, p.Parts = seq, idx, total
+		return p
+	}
+	// Session 6 opens its cycle while session 5's part of the same seq is still in flight.
+	if s.ApplyCommanders(part(6, 7, 0, 2, "New")) {
+		t.Fatal("a part alone must not apply")
+	}
+	if s.ApplyCommanders(part(5, 7, 1, 2, "Old")) {
+		t.Fatal("a part of the session before the restart applied")
+	}
+	if v := s.Commanders(); len(v.Commanders) != 0 {
+		t.Fatalf("a binding of the restarted session's predecessor reached the view: %+v", v.Commanders)
+	}
+	if !s.ApplyCommanders(part(6, 7, 1, 2, "New2")) {
+		t.Fatal("the part of the new session did not complete its cycle")
+	}
+	if got := viewNames(s); strings.Join(got, ",") != "New,New2" {
+		t.Fatalf("assembled view = %v, want New,New2", got)
+	}
+	// A delayed whole report of the old session is refused too, even though its list never applied.
+	if s.ApplyCommanders(commandersPayload(5, 400, "OldServer")) {
+		t.Fatal("a whole report of an older session applied after a restart")
+	}
+	if got := viewNames(s); strings.Join(got, ",") != "New,New2" {
+		t.Fatalf("view = %v, want the new session only", got)
+	}
+}
+
+// R8: a part of a cycle already applied is refused: it must not open a new cycle that the next report would apply as a
+// partial (stale bindings over the standing view), and it must not disturb the cycle that follows.
+func TestCommandersStalePartAfterCompletion(t *testing.T) {
+	s := newTestStore(newClock())
+	part := func(seq uint64, ts int64, idx, total int, names ...string) *model.CommandersPayload {
+		p := commandersPayload(5, ts, names...)
+		p.Seq, p.Part, p.Parts = seq, idx, total
+		return p
+	}
+	if s.ApplyCommanders(part(5, 100, 0, 2, "A")) {
+		t.Fatal("a part alone must not apply")
+	}
+	if !s.ApplyCommanders(part(5, 100, 1, 2, "B")) {
+		t.Fatal("the complete cycle did not apply")
+	}
+	// A whole list of an older cycle is stale too, even when its ts is newer (the cycle number is the order).
+	old := commandersPayload(5, 110, "W")
+	old.Seq = 4
+	if s.ApplyCommanders(old) {
+		t.Fatal("a whole list of an older cycle applied")
+	}
+	// A duplicate of the part that just applied.
+	if s.ApplyCommanders(part(5, 100, 0, 2, "Z")) {
+		t.Fatal("a duplicate part applied")
+	}
+	if got := viewNames(s); strings.Join(got, ",") != "A,B" {
+		t.Fatalf("view after the duplicate = %v, want A,B", got)
+	}
+	// The duplicate must not turn the next cycle's first part into the flush of a stale partial.
+	if s.ApplyCommanders(part(6, 102, 0, 2, "A")) {
+		t.Fatal("the next cycle's first part applied a stale partial")
+	}
+	if !s.ApplyCommanders(part(6, 102, 1, 2, "C")) {
+		t.Fatal("the next cycle did not apply")
+	}
+	if got := viewNames(s); strings.Join(got, ",") != "A,C" {
+		t.Fatalf("view after the next cycle = %v, want A,C", got)
+	}
+	// The same after its own cycle applied; then a cycle whose parts arrive reversed still assembles.
+	if s.ApplyCommanders(part(6, 102, 0, 2, "Q")) {
+		t.Fatal("a duplicate part of the applied cycle applied")
+	}
+	if s.ApplyCommanders(part(7, 104, 1, 2, "D")) {
+		t.Fatal("a part alone must not apply")
+	}
+	if !s.ApplyCommanders(part(7, 104, 0, 2, "A")) {
+		t.Fatal("the reversed cycle did not assemble")
+	}
+	if got := viewNames(s); strings.Join(got, ",") != "A,D" {
+		t.Fatalf("view after the reversed cycle = %v, want A,D", got)
+	}
+}
+
 // viewNames is the commander names of the standing view, in order.
 func viewNames(s *Store) []string {
 	out := []string{}

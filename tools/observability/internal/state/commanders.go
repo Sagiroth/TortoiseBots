@@ -94,10 +94,13 @@ type BotTrail struct {
 // commandersState is the latest COMMANDERS payload. It has its own lock so a
 // 2 s datagram never waits on the roster lock.
 type commandersState struct {
-	mu      sync.Mutex
+	mu sync.Mutex
+	// session is the newest server session seen, bumped as soon as any valid datagram of it arrives: every packet of an
+	// older session is refused from then on, even one that was sent before the restart and is still in flight.
 	session uint64
-	ts      int64
-	tsMs    int64 // the last report's millisecond timestamp (TS*1000 from an older module)
+	seq     uint64 // the newest cycle (Seq) applied or given up on in `session`
+	ts      int64  // the ts of the list standing in `session`; zero until one applies
+	tsMs    int64  // the last report's millisecond timestamp (TS*1000 from an older module)
 	at      time.Time
 	list    []model.CommanderBinding
 	trails  map[string]map[uint32]*BotTrail // commander -> bot guid -> trail
@@ -114,7 +117,8 @@ type commandersState struct {
 }
 
 // commanderPending is a COMMANDERS cycle that arrived in parts and is not complete yet: the parts received so far,
-// keyed by 0-based part number (a duplicate part number replaces its earlier copy).
+// keyed by 0-based part number (a duplicate part number replaces its earlier copy). It belongs to the session it opened
+// in: a datagram of any other session never joins it or completes it.
 type commanderPending struct {
 	session uint64
 	seq     uint64
@@ -137,30 +141,41 @@ func (s *Store) ApplyCommanders(p *model.CommandersPayload) bool {
 	if p.Session < st.session {
 		return false
 	}
-	if p.Session == st.session && p.TS < st.ts {
-		return false
-	}
 	if p.Part < 0 || p.Parts < 0 {
 		return false
 	}
+	if p.Parts > 1 && (p.Parts > maxCommanderParts || p.Part >= p.Parts) {
+		return false
+	}
+	if p.Session == st.session && p.TS < st.ts {
+		return false
+	}
 	now := s.now()
-	if !st.at.IsZero() && p.Session > st.session {
-		// A restarted server: nothing of the previous session survives, neither an incomplete cycle nor a carried binding.
+	if p.Session > st.session {
+		// A restarted server: nothing of the previous session survives, neither an incomplete cycle nor a carried
+		// binding. The session is the newest from this datagram on, so every packet still in flight from the old one is
+		// refused above, whatever its list would have said.
+		st.session, st.seq, st.ts = p.Session, 0, 0
 		st.pending, st.carried = nil, nil
 	}
 	if p.Parts <= 1 {
+		if p.Seq < st.seq {
+			return false // a whole list of a cycle older than the one standing (a delayed report, not a newer one)
+		}
 		// The whole list in one datagram: every cycle up to 8 bindings and 64 bots, byte-identical to the payload before
 		// parts existed. A cycle that never completed is applied first, so its bindings are not lost.
 		st.applyPendingPartialLocked(now)
 		st.applyListLocked(p.Commanders, p, now)
 		return true
 	}
-	if p.Parts > maxCommanderParts || p.Part >= p.Parts {
-		return false
-	}
 	pend := st.pending
 	if pend != nil && p.Seq < pend.seq {
 		return false // a reordered part of an older cycle
+	}
+	if p.Seq <= st.seq && (pend == nil || pend.seq != p.Seq) {
+		// A part of a cycle already applied or given up on: its data is older than the standing view, it must not join a
+		// newer cycle, and it must not open a new one that a later packet would apply as a partial.
+		return false
 	}
 	applied := false
 	if pend != nil && (p.Seq > pend.seq || pend.parts != p.Parts) {
@@ -254,6 +269,9 @@ func (st *commandersState) applyListLocked(list []model.CommanderBinding, p *mod
 		out = append(out, b)
 	}
 	st.session, st.ts, st.at, st.list = p.Session, p.TS, now, out
+	if p.Seq > st.seq {
+		st.seq = p.Seq
+	}
 	st.tsMs = p.TSMs
 	if st.tsMs == 0 {
 		st.tsMs = p.TS * 1000

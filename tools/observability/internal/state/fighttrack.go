@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+	"unsafe"
 
 	"tortoise-observability/internal/model"
 )
@@ -26,8 +27,10 @@ const (
 	// pressure a track gives up its oldest frames down to this, and only when every track stands here is a whole commander
 	// forgotten.
 	TrackMinFrames = 150
-	// TrackMemBudget bounds all tracks together. Twenty raids at 900 frames of about 3 KB would be ~54 MB; a typical night
-	// (one raid and a few parties) never reaches this, so no replay is cut in practice.
+	// TrackMemBudget bounds all tracks together, in the charge trackFrameBytes and the track's own metadata put on them
+	// (the memory they retain, plus a fifth). Twenty raids at 900 worst-case frames would be far over it and are cut
+	// down to the floor; a typical night (one raid and a few parties) never reaches it, so no replay is cut in practice.
+	// Even at the floor the worst case is well inside it, so every tracked commander always keeps its 5 min.
 	TrackMemBudget = 48 << 20
 )
 
@@ -73,7 +76,7 @@ type TrackFrame struct {
 }
 
 // commanderTrack is one commander's frames plus the entry names seen in them (the frames carry entries, not names, to stay small).
-// bytes is the running estimate of what its frames hold (trackFrameBytes), so the budget check costs no scan.
+// bytes is the running charge of what its frames and names keep (trackFrameBytes), so the budget check costs no scan.
 type commanderTrack struct {
 	frames   []TrackFrame
 	names    map[uint32]string
@@ -90,13 +93,17 @@ func (st *commandersState) noteTracks(list []model.CommanderBinding, ts int64, n
 		t := st.tracks[b.Commander]
 		if t == nil {
 			t = &commanderTrack{names: map[uint32]string{}}
+			t.bytes = trackCharge(trackMetaBytes)
 			st.tracks[b.Commander] = t
 		}
 		t.lastSeen = now
 		if n := len(t.frames); n > 0 && t.frames[n-1].T == ts {
 			continue
 		}
-		f := TrackFrame{T: ts, Map: b.MobsMap, Fight: b.Combat != nil}
+		// The slices are sized to their length: with the frame's capacity charged to the budget, the growth sequence's
+		// spare space would be spent on nothing.
+		f := TrackFrame{T: ts, Map: b.MobsMap, Fight: b.Combat != nil,
+			Bots: make([]TrackBot, 0, len(b.Bots)), Mobs: make([]TrackMob, 0, len(b.Mobs))}
 		if f.Map == 0 {
 			for _, bot := range b.Bots {
 				if bot.Lead {
@@ -134,6 +141,7 @@ func (st *commandersState) noteTracks(list []model.CommanderBinding, ts int64, n
 			f.Mobs = append(f.Mobs, mob)
 			if _, ok := t.names[m.Entry]; !ok && len(t.names) < trackMaxNames {
 				t.names[m.Entry] = m.Name
+				t.bytes += trackCharge(int64(len(m.Name)) + trackNameBytes)
 			}
 		}
 		t.frames = append(t.frames, f)
@@ -161,15 +169,41 @@ func (st *commandersState) noteTracks(list []model.CommanderBinding, ts int64, n
 	}
 }
 
-// trackFrameBytes estimates what one frame holds: the frame and its slices, 24 bytes per bot row, and a row plus the id
-// it reports and its cast name per mob. The estimate is what the budget spends; it need not be exact, only stable.
+// trackFrameBytes charges what one frame keeps alive, so the budget spends the memory the tracks really hold: the frame
+// record, both slices at their capacity (not their length: the backing array is kept whole), and per enemy its row, the
+// strings it holds, and the facing and the shape it points at. The charge carries trackMemHeadroom (a fifth more) for
+// the allocator's size classes and the bookkeeping a count cannot see; a frame's charge is recomputed, never stored, so
+// dropping it subtracts exactly what adding it cost.
 func trackFrameBytes(f TrackFrame) int64 {
-	n := int64(96) + 24*int64(len(f.Bots))
-	for _, m := range f.Mobs {
-		n += 80 + int64(len(m.ID)) + int64(len(m.CastName))
+	n := int64(unsafe.Sizeof(f))
+	n += int64(cap(f.Bots)) * int64(unsafe.Sizeof(TrackBot{}))
+	n += int64(cap(f.Mobs)) * int64(unsafe.Sizeof(TrackMob{}))
+	for i := range f.Mobs {
+		m := &f.Mobs[i]
+		n += int64(len(m.ID)) + int64(len(m.Rank)) + int64(len(m.CastName)) + int64(len(m.CastTarget))
+		if m.O != nil {
+			n += int64(unsafe.Sizeof(*m.O))
+		}
+		if m.Shape != nil {
+			n += int64(unsafe.Sizeof(*m.Shape)) + int64(len(m.Shape.Kind))
+		}
 	}
-	return n
+	return trackCharge(n)
 }
+
+const trackMemHeadroom = 5 // the charge is this much more than the bytes counted: a fifth
+
+// trackCharge is the budget's price for n bytes a track keeps.
+func trackCharge(n int64) int64 {
+	return n + n/trackMemHeadroom
+}
+
+// trackMetaBytes is what a track costs besides its frames: its own record and the empty names map. Each remembered entry
+// name adds its characters plus trackNameBytes for the map's key, string header and bucket entry.
+const (
+	trackMetaBytes = int64(unsafe.Sizeof(commanderTrack{})) + 64
+	trackNameBytes = 64
+)
 
 // trimTrackBudgetLocked keeps the tracks under TrackMemBudget. The track holding the most bytes gives up its oldest frame,
 // never below TrackMinFrames; when every track stands at that floor, the commander seen least recently is forgotten with
