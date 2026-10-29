@@ -26,10 +26,6 @@ int main()
     CHECK(!BuyoutBeatsPerItem(100, 10, 50, 5));   // tie: keep the first seen
     CHECK(!BuyoutBeatsPerItem(1, 1, 4294967295u, 4294967295u));  // tie, no overflow
 
-    // No candidate: farm the rest, unless oversize stacks wait for later.
-    CHECK(BuyVisitDoneWithoutCandidate(false));
-    CHECK(!BuyVisitDoneWithoutCandidate(true));
-
     if (failures == 0)
         std::printf("guild order buy policy: all tests passed\n");
     return failures != 0;

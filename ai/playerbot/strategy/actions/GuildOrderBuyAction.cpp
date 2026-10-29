@@ -11,7 +11,6 @@
 using namespace ai;
 using TortoiseBots::GuildOrders::BuyOwnedCount;
 using TortoiseBots::GuildOrders::BuyStillMissing;
-using TortoiseBots::GuildOrders::BuyVisitDoneWithoutCandidate;
 using TortoiseBots::GuildOrders::BuyoutBeatsPerItem;
 
 bool GuildOrderBuyAction::isUseful()
@@ -103,7 +102,6 @@ bool GuildOrderBuyAction::Execute(Event& event)
             uint32 count = 0;
         };
         Candidate best;
-        bool oversizeOnly = false;
 
         for (auto const& auctionEntry : *auctionHouse->GetAuctions())
         {
@@ -125,12 +123,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
             if (auctionCount == 0)
                 continue;
             if (auctionCount > missing)
-            {
-                // Stacks bigger than the missing count may still split or be
-                // outbid later: do not farm-rest on those alone.
-                oversizeOnly = true;
                 continue;
-            }
 
             if (auction->buyout > budget)
                 continue;
@@ -144,10 +137,9 @@ bool GuildOrderBuyAction::Execute(Event& event)
                 best = { auction->Id, auction->itemGuidLow, auction->buyout, auctionCount };
         }
 
+        // Nothing that fits: the auction attempt is over, farm the rest.
         if (!best.auctionId)
-        {
-            visitDone = BuyVisitDoneWithoutCandidate(oversizeOnly);
-        }
+            visitDone = true;
         else
         {
             WorldPacket packet(CMSG_AUCTION_PLACE_BID, 8 + 4 + 4);
