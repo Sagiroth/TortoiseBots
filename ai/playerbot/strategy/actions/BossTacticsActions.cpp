@@ -1127,7 +1127,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     {
         std::lock_guard<std::mutex> lock(g_standHoldMutex);
         const StandPlanKey key{ boss->GetObjectGuid().GetRawValue(), boss->GetMapId(), boss->GetInstanceId(),
-                                points[0]->anchor, static_cast<uint8>(role) };
+                                points[0]->anchor, static_cast<uint8>(role), points[0]->windowSpell };
         auto it = g_standPlans.find(key);
         if (it == g_standPlans.end() || StandPlanStale(nowMs, it->second.lastReadMs))
         {

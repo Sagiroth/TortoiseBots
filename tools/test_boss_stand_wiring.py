@@ -286,13 +286,22 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("std::unordered_map<StandPlanKey, StandPlan, StandPlanKeyHash> g_standPlans;", ACTIONS)
         self.assertIn("Guarded by g_standHoldMutex.", declared)
         self.assertIn("struct StandPlanKey", POLICY)
-        # The plan is keyed by the boss instance (map and instance id, not only the spawn guid), and the live
-        # translation passes both; a stale plan is swept whatever its key.
+        # The plan is keyed by the boss instance (map and instance id, not only the spawn guid), the window's anchor,
+        # role and window spell; the live translation passes all of them; a stale plan is swept whatever its key.
         self.assertIn("const StandPlanKey key{ boss->GetObjectGuid().GetRawValue(), boss->GetMapId(), "
                       "boss->GetInstanceId(),\n                                points[0]->anchor, "
-                      "static_cast<uint8>(role) };", fn)
+                      "static_cast<uint8>(role), points[0]->windowSpell };", fn)
         self.assertIn("old = StandPlanStale(nowMs, old->second.lastReadMs) ? g_standPlans.erase(old) : "
                       "std::next(old);", fn)
+
+    def test_the_plan_is_filed_by_window_spell(self):
+        # Two rows of one anchor and role can open on different window spells inside the idle time: the plan of one
+        # window must not seat a bot of the other.
+        key = body(POLICY, "struct StandPlanKey", end="\n    };\n")
+        self.assertIn("std::uint32_t windowSpell = 0;", key)
+        self.assertIn("windowSpell == other.windowSpell", key)
+        hashed = body(POLICY, "struct StandPlanKeyHash", end="\n    };\n")
+        self.assertIn("key.windowSpell", hashed)
 
     def test_generic_code_names_no_boss(self):
         for name, text in (("BossStandPolicy.h", POLICY), ("BossTacticsStand.h", STAND_H)):

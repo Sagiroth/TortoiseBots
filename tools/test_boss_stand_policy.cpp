@@ -871,8 +871,8 @@ int main()
     // is a different window and never reads the first one's seats.
     {
         const std::uint8_t ranged = static_cast<std::uint8_t>(StandRole::Ranged);
-        const StandPlanKey first{ 0x0000000000001234ULL, 249, 1, 7, ranged };
-        const StandPlanKey same{ 0x0000000000001234ULL, 249, 1, 7, ranged };
+        const StandPlanKey first{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351 };
+        const StandPlanKey same{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351 };
         StandPlanKey otherInstance = first;
         otherInstance.instanceId = 2;
         StandPlanKey otherMap = first;
@@ -886,6 +886,28 @@ int main()
         CHECK(plans.find(otherMap) == plans.end());
         plans[otherInstance] = 2;  // two instances hold two plans at the same time
         CHECK(plans.size() == 2 && plans[first] == 1 && plans[otherInstance] == 2);
+    }
+
+    // The window spell names the window: two rows of one anchor and role that open on different spells are two
+    // windows, and the plan of one never seats a bot of the other inside the idle time.
+    {
+        const std::uint8_t ranged = static_cast<std::uint8_t>(StandRole::Ranged);
+        const StandPlanKey first{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351 };
+        const StandPlanKey same{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351 };
+        StandPlanKey otherWindow = first;
+        otherWindow.windowSpell = 18564;
+        StandPlanKey always = first;
+        always.windowSpell = 0;  // a row without a window spell
+        CHECK(first == same);
+        CHECK(!(first == otherWindow));
+        CHECK(!(first == always));
+        CHECK(StandPlanKeyHash()(first) != StandPlanKeyHash()(otherWindow));
+        CHECK(StandPlanKeyHash()(first) != StandPlanKeyHash()(always));
+        std::unordered_map<StandPlanKey, int, StandPlanKeyHash> plans;
+        plans[first] = 1;
+        plans[otherWindow] = 2;
+        plans[always] = 3;
+        CHECK(plans.size() == 3 && plans[first] == 1 && plans[otherWindow] == 2 && plans[always] == 3);
     }
 
     std::cout << "All boss stand policy tests passed.\n";
