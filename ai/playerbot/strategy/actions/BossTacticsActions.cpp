@@ -968,7 +968,10 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         if (it != g_standHolds.end())
             hold = it->second;
     }
+    // What the other bots can see of this one: its hold as of the last tick, before this tick arms it again.
+    const StandHold heldBefore = hold;
     bool sawBoss = false;
+    Unit* boss = nullptr;
     std::vector<const BossStandRow*> points;
     for (const ObjectGuid& guid : attackers)
     {
@@ -991,13 +994,71 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         points = StandPointsNow(*rows, role, unit->GetPositionX(), unit->GetPositionY(), casting,
                                 [unit](uint32 aura) { return unit->HasAura(aura); }, hold, nowMs);
         if (!points.empty())
+        {
+            boss = unit;
             break;
+        }
     }
+
+    // The bots that share the seats: this group's bots of the same role that take part, by one rule for every bot that
+    // evaluates the plan (StandMemberCounts: in the fight with THIS boss within range of the anchor, or already
+    // holding a stand for this boss and anchor), so all of them compute the same plan. A bot elsewhere in the
+    // instance, or one the boss is not fighting, reserves no seat.
+    bool selfCounts = false;
+    std::vector<StandBot> bots;
+    const ObjectGuid selfGuid = bot->GetObjectGuid();
+    if (boss)
+    {
+        const float anchorX = points[0]->anchorX;
+        const float anchorY = points[0]->anchorY;
+        const uint32 bossEntry = boss->GetEntry();
+        const uint32 anchor = points[0]->anchor;
+        const auto candidateOf = [&](Player* member, const StandHold& memberHold)
+        {
+            StandCandidate candidate;
+            candidate.id = member->GetObjectGuid().GetRawValue();
+            candidate.x = member->GetPositionX();
+            candidate.y = member->GetPositionY();
+            // On the boss's threat list (as AttackersValue.cpp:367 reads it), or the boss's victim.
+            candidate.engaged = boss->GetThreatManager().getThreat(member) > 0.0f || boss->GetVictim() == member;
+            candidate.holdsSameAnchor = memberHold.armed && memberHold.bossEntry == bossEntry && memberHold.anchor == anchor;
+            return candidate;
+        };
+        std::vector<StandCandidate> candidates;
+        const StandCandidate self = candidateOf(bot, heldBefore);
+        selfCounts = StandMemberCounts(self, anchorX, anchorY);
+        candidates.push_back(self);
+        if (Group* group = bot->GetGroup())
+        {
+            for (Player* member : LiveGroupMembers(group))
+            {
+                if (member == bot || !member->IsInWorld() || member->GetMapId() != mapId || !sServerFacade.IsAlive(member))
+                    continue;
+                PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+                if (!memberAi || !memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+                    continue;
+                if (StandRoleOf(PlayerbotAI::IsTank(member), PlayerbotAI::IsHeal(member), ai->IsRanged(member)) != role)
+                    continue;
+                StandHold memberHold;
+                {
+                    std::lock_guard<std::mutex> lock(g_standHoldMutex);
+                    auto it = g_standHolds.find(member->GetObjectGuid().GetRawValue());
+                    if (it != g_standHolds.end())
+                        memberHold = it->second;
+                }
+                candidates.push_back(candidateOf(member, memberHold));
+            }
+        }
+        bots = SelectStandBots(candidates, anchorX, anchorY);
+    }
+
     {
         std::lock_guard<std::mutex> lock(g_standHoldMutex);
-        // A tick that sees no boss with rows (it dropped off the attacker list for a moment) keeps the hold until its
-        // time is up; StandPointsNow clears it itself when a boss is seen and the hold is over.
-        const bool kept = hold.armed && (sawBoss || static_cast<uint32>(nowMs - hold.lastOpenMs) < hold.holdMs);
+        // The hold is kept for a bot that takes part (it is what the others read); a bot that does not count leaves
+        // none behind. A tick that sees no boss with rows (it dropped off the attacker list for a moment) keeps the
+        // hold until its time is up; StandPointsNow clears it itself when a boss is seen and the hold is over.
+        const bool kept = hold.armed &&
+            (boss ? selfCounts : (sawBoss || static_cast<uint32>(nowMs - hold.lastOpenMs) < hold.holdMs));
         if (kept)
             g_standHolds[selfKey] = hold;
         else
@@ -1005,34 +1066,6 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     }
     if (points.empty())
         return target;
-
-    // The bots that share the seats: this group's bots of the same role that are armed the same way. The plan is
-    // a function of their positions, so each of them reaches the same one.
-    std::vector<StandBot> bots;
-    const ObjectGuid selfGuid = bot->GetObjectGuid();
-    StandBot self;
-    self.id = selfGuid.GetRawValue();
-    self.x = bot->GetPositionX();
-    self.y = bot->GetPositionY();
-    bots.push_back(self);
-    if (Group* group = bot->GetGroup())
-    {
-        for (Player* member : LiveGroupMembers(group))
-        {
-            if (member == bot || !member->IsInWorld() || member->GetMapId() != mapId || !sServerFacade.IsAlive(member))
-                continue;
-            PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
-            if (!memberAi || !memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
-                continue;
-            if (StandRoleOf(PlayerbotAI::IsTank(member), PlayerbotAI::IsHeal(member), ai->IsRanged(member)) != role)
-                continue;
-            StandBot entry;
-            entry.id = member->GetObjectGuid().GetRawValue();
-            entry.x = member->GetPositionX();
-            entry.y = member->GetPositionY();
-            bots.push_back(entry);
-        }
-    }
 
     const StandSlot slot = AssignStandSlot(points, bots, selfGuid.GetRawValue());
     if (!slot.valid)

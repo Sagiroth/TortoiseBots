@@ -48,15 +48,22 @@ std::uint32_t ai::ReadBossStandRows(BossStandTable& table)
             {
                 ++skipped;
                 sLog.outError("ai_boss_stand: map %u boss %u anchor %u role '%s' side %u seq %u skipped (unknown role, a zero "
-                    "map or boss, no anchor radius, a side above 1, slots outside 1-%u, a release anchor equal to the anchor, an anchor id with two places, or a "
+                    "map or boss, no anchor radius, a side above 1, slots outside 1-%u, a release anchor equal to the anchor, a hold_ms outside 1000-15000, an anchor id with two places, or a "
                     "second row of the key)", row.map, row.bossEntry, row.anchor, fields[6].GetCppString().c_str(),
                     uint32(row.side), uint32(row.seq), uint32(kBossStandMaxSlots));
             }
         } while (result->NextRow());
     }
 
-    // Sealed even when the table is empty or missing: the stand sets then do nothing.
+    // Sealed even when the table is empty or missing: the stand sets then do nothing. The seal refuses the whole set of
+    // a boss whose rows disagree (a release anchor no row of the boss holds).
     table.Seal();
+    for (const BossStandRefused& refused : table.Refused())
+    {
+        ++skipped;
+        sLog.outError("ai_boss_stand: map %u boss %u refused as a whole (a release_anchor names an anchor no row of the "
+            "boss holds)", refused.map, refused.bossEntry);
+    }
     return skipped;
 }
 

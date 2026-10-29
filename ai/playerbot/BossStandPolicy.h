@@ -73,6 +73,12 @@ namespace ai
     constexpr std::uint8_t kBossStandDefaultSlots = 5;
     // How long a seat taken in a window outlives the window spell's cast by default (see StandHold).
     constexpr std::uint32_t kBossStandDefaultHoldMs = 8000;
+    // The bounds a row's hold time has to keep: a hold that is too long disables the caster reach and the reactive
+    // dodge for a bot for as long as it lasts.
+    constexpr std::uint32_t kBossStandMinHoldMs = 1000;
+    constexpr std::uint32_t kBossStandMaxHoldMs = 15000;
+    // A bot counts toward the seats of an anchor when it is in the fight with the boss within this many yards of it.
+    constexpr float kBossStandMemberRange = 80.0f;
 
     struct BossStandRow
     {
@@ -99,6 +105,13 @@ namespace ai
         std::uint32_t releaseAnchor = 0;
     };
 
+    // A boss whose whole stand set the seal refused.
+    struct BossStandRefused
+    {
+        std::uint32_t map = 0;
+        std::uint32_t bossEntry = 0;
+    };
+
     class BossStandTable
     {
     public:
@@ -118,6 +131,8 @@ namespace ai
                 return false;
             if (row.releaseAnchor != 0 && row.releaseAnchor == row.anchor)
                 return false;
+            if (row.holdMs < kBossStandMinHoldMs || row.holdMs > kBossStandMaxHoldMs)
+                return false;
             std::vector<BossStandRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossStandRow& have : rows)
             {
@@ -134,7 +149,37 @@ namespace ai
             return true;
         }
 
-        void Seal() { sealed_.store(true, std::memory_order_release); }
+        // Seals the table. Before the seal, the rows are checked against each other: a release anchor has to name an
+        // anchor of the same map and boss, or that boss's whole stand set is refused (dropped; Refused() names it).
+        // Readers see nothing before the seal.
+        void Seal()
+        {
+            if (sealed_.load(std::memory_order_acquire))
+                return;
+            for (auto it = rows_.begin(); it != rows_.end();)
+            {
+                if (ReleaseAnchorsResolve(it->second))
+                {
+                    ++it;
+                    continue;
+                }
+                BossStandRefused refused;
+                refused.map = static_cast<std::uint32_t>(it->first >> 32);
+                refused.bossEntry = static_cast<std::uint32_t>(it->first & 0xFFFFFFFFu);
+                refused_.push_back(refused);
+                size_ -= it->second.size();
+                it = rows_.erase(it);
+            }
+            std::sort(refused_.begin(), refused_.end(), [](const BossStandRefused& a, const BossStandRefused& b)
+                      { return a.map != b.map ? a.map < b.map : a.bossEntry < b.bossEntry; });
+            maps_.clear();
+            for (const auto& entry : rows_)
+                maps_[static_cast<std::uint32_t>(entry.first >> 32)] = true;
+            sealed_.store(true, std::memory_order_release);
+        }
+
+        // The boss stand sets the seal refused (read after the seal, by the loader's log).
+        const std::vector<BossStandRefused>& Refused() const { return refused_; }
         bool Sealed() const { return sealed_.load(std::memory_order_acquire); }
         std::size_t Size() const { return size_; }
 
@@ -159,6 +204,29 @@ namespace ai
             return (static_cast<std::uint64_t>(map) << 32) | bossEntry;
         }
 
+        // Every release anchor of one boss's rows names an anchor id some row of the same boss holds.
+        static bool ReleaseAnchorsResolve(const std::vector<BossStandRow>& rows)
+        {
+            for (const BossStandRow& row : rows)
+            {
+                if (row.releaseAnchor == 0)
+                    continue;
+                bool found = false;
+                for (const BossStandRow& other : rows)
+                {
+                    if (other.anchor == row.releaseAnchor)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    return false;
+            }
+            return true;
+        }
+
+        std::vector<BossStandRefused> refused_;
         std::unordered_map<std::uint64_t, std::vector<BossStandRow>> rows_;
         std::unordered_map<std::uint32_t, bool> maps_;
         std::size_t size_ = 0;
@@ -308,6 +376,29 @@ namespace ai
         return HeldStandPoints(rows, role, hold.anchor);
     }
 
+    // A group member of the bot's role, as the seat selection sees it. `engaged`: the boss has it on its threat list
+    // (the boss is in the fight with this bot); `holdsSameAnchor`: it already holds a stand for this boss and anchor.
+    struct StandCandidate
+    {
+        std::uint64_t id = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        bool engaged = false;
+        bool holdsSameAnchor = false;
+    };
+
+    // Whether a member takes part in the seat assignment of an anchor: it holds a stand for the same boss and anchor,
+    // or it is in the fight with the boss within kBossStandMemberRange of the anchor. A bot elsewhere in the
+    // instance, or one the boss is not fighting, reserves no seat.
+    inline bool StandMemberCounts(const StandCandidate& member, float anchorX, float anchorY)
+    {
+        if (member.holdsSameAnchor)
+            return true;
+        const float dx = member.x - anchorX;
+        const float dy = member.y - anchorY;
+        return member.engaged && dx * dx + dy * dy <= kBossStandMemberRange * kBossStandMemberRange;
+    }
+
     // A bot of the stand set, as the assignment sees it.
     struct StandBot
     {
@@ -315,6 +406,25 @@ namespace ai
         float x = 0.0f;
         float y = 0.0f;
     };
+
+    // The bots that share the seats: the members that count (StandMemberCounts), the same rule for every bot that
+    // evaluates the plan, so all of them compute the same one. A bot that does not count is absent from the result and
+    // AssignStandSlot gives it nothing.
+    inline std::vector<StandBot> SelectStandBots(const std::vector<StandCandidate>& members, float anchorX, float anchorY)
+    {
+        std::vector<StandBot> out;
+        for (const StandCandidate& member : members)
+        {
+            if (!StandMemberCounts(member, anchorX, anchorY))
+                continue;
+            StandBot bot;
+            bot.id = member.id;
+            bot.x = member.x;
+            bot.y = member.y;
+            out.push_back(bot);
+        }
+        return out;
+    }
 
     struct StandSlot
     {

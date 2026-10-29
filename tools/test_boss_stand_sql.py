@@ -116,6 +116,20 @@ class BossStandSql(unittest.TestCase):
             self.assertLess(row["seq"], 256, where)
             if row["release"]:
                 self.assertNotEqual(row["release"], row["anchor"], where)
+            # BossStandTable::Add bounds the hold: a longer one parks bots for as long as it lasts.
+            self.assertGreaterEqual(row["hold"], 1000, where)
+            self.assertLessEqual(row["hold"], 15000, where)
+
+    def test_release_anchors_name_an_anchor_of_the_same_boss(self):
+        # BossStandTable::Seal refuses a boss's whole stand set when one does not.
+        anchors = {}
+        for row in migration_rows():
+            anchors.setdefault((row["map"], row["boss"]), set()).add(row["anchor"])
+        for row in migration_rows():
+            if row["release"]:
+                self.assertIn(row["release"], anchors[(row["map"], row["boss"])],
+                              "%s anchor %d names release anchor %d, which the boss does not hold" % (
+                                  row["file"], row["anchor"], row["release"]))
 
     def test_primary_keys_are_unique(self):
         seen = set()

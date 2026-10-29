@@ -444,6 +444,136 @@ int main()
         }
     }
 
+    // The hold time is bounded: a row cannot park bots for days.
+    {
+        CHECK(kBossStandMinHoldMs == 1000 && kBossStandMaxHoldMs == 15000);
+        BossStandTable table;
+        BossStandRow row = Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0);
+        row.holdMs = 0;
+        CHECK(!table.Add(row));
+        row.holdMs = 99999999;
+        CHECK(!table.Add(row));
+        row.holdMs = kBossStandMinHoldMs - 1;
+        CHECK(!table.Add(row));
+        row.holdMs = kBossStandMaxHoldMs + 1;
+        CHECK(!table.Add(row));
+        row.holdMs = kBossStandMinHoldMs;
+        CHECK(table.Add(row));
+        row.seq = 1;
+        row.holdMs = kBossStandMaxHoldMs;
+        CHECK(table.Add(row));
+        row.seq = 2;
+        row.holdMs = kBossStandDefaultHoldMs;
+        CHECK(table.Add(row));
+    }
+
+    // The seal checks the rows against each other: a release anchor has to name an anchor of the same boss, or that
+    // boss's whole stand set is refused (every other boss's set stays).
+    {
+        BossStandTable table;
+        // Boss 10184: anchors 1 and 2 name each other: a valid set.
+        BossStandRow a = Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0);
+        a.releaseAnchor = 2;
+        BossStandRow b = Row(2, 100, 0, 8, StandRole::Ranged, 888, 0, 0, 100, 32, 1, 0);
+        b.releaseAnchor = 1;
+        CHECK(table.Add(a) && table.Add(b));
+        // Boss 9999 on the same map: one anchor names an anchor (3) that no row of this boss holds.
+        BossStandRow c = Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0);
+        c.bossEntry = 9999;
+        c.releaseAnchor = 3;
+        BossStandRow d = Row(2, 100, 0, 8, StandRole::Ranged, 888, 0, 0, 100, 32, 1, 0);
+        d.bossEntry = 9999;
+        d.releaseAnchor = 1;
+        CHECK(table.Add(c) && table.Add(d));
+        // Boss 7777 on another map names, as release anchor, an anchor that only boss 10184 has: not its own.
+        BossStandRow e = Row(5, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0);
+        e.map = 36;
+        e.bossEntry = 7777;
+        e.releaseAnchor = 2;
+        CHECK(table.Add(e));
+        // Boss 6666 names no release anchor at all: always fine.
+        BossStandRow f = Row(1, 0, 0, 8, StandRole::Healer, 0, 0, 0, 0, 32, 1, 0);
+        f.bossEntry = 6666;
+        CHECK(table.Add(f));
+        CHECK(table.Size() == 6);
+        CHECK(table.Refused().empty());
+        table.Seal();
+        // Refused whole: 9999 (anchor 3 missing) and 7777 (anchor 2 is no anchor of its own boss).
+        CHECK(table.Rows(249, 9999) == nullptr);
+        CHECK(table.Rows(36, 7777) == nullptr);
+        CHECK(!table.HasMap(36));
+        CHECK(table.HasMap(249));
+        CHECK(table.Rows(249, 10184) != nullptr && table.Rows(249, 10184)->size() == 2);
+        CHECK(table.Rows(249, 6666) != nullptr);
+        CHECK(table.Size() == 3);
+        CHECK(table.Refused().size() == 2);
+        bool saw9999 = false, saw7777 = false;
+        for (const BossStandRefused& r : table.Refused())
+        {
+            if (r.map == 249 && r.bossEntry == 9999)
+                saw9999 = true;
+            if (r.map == 36 && r.bossEntry == 7777)
+                saw7777 = true;
+        }
+        CHECK(saw9999 && saw7777);
+    }
+    // A valid set loads whole; the check does not touch a table with no release anchors.
+    {
+        BossStandTable table;
+        BossStandRow a = Row(1, 0, 0, 8, StandRole::Ranged, 777, 0, 0, 0, 32, 1, 0);
+        a.releaseAnchor = 2;
+        BossStandRow b = Row(2, 100, 0, 8, StandRole::Ranged, 888, 0, 0, 100, 32, 1, 0);
+        b.releaseAnchor = 1;
+        BossStandRow c = Row(2, 100, 0, 8, StandRole::Healer, 888, 0, 0, 100, 40, 1, 0);
+        c.releaseAnchor = 1;
+        CHECK(table.Add(a) && table.Add(b) && table.Add(c));
+        table.Seal();
+        CHECK(table.Refused().empty() && table.Size() == 3 && table.Rows(249, 10184)->size() == 3);
+        CHECK(table.Sealed());
+    }
+
+    // Who takes a seat: only the bots that are in the fight with this boss. A bot elsewhere in the instance, or one
+    // that is not engaged, takes none, however many of its role the group has.
+    {
+        const std::vector<BossStandRow> rows = LaneRows();
+        const std::vector<const BossStandRow*> points = Points(rows);
+        StandCandidate near1{ 1, 2, 10, true, false };
+        CHECK(StandMemberCounts(near1, 0, 0));
+        CHECK(StandMemberCounts({ 1, 0, 80, true, false }, 0, 0));           // 80 yd out counts
+        CHECK(!StandMemberCounts({ 1, 0, 81, true, false }, 0, 0));          // beyond the range
+        CHECK(!StandMemberCounts({ 1, 2, 10, false, false }, 0, 0));         // near but not in the fight
+        CHECK(StandMemberCounts({ 1, 500, 500, false, true }, 0, 0));        // holds a stand for this boss and anchor
+        CHECK(StandMemberCounts({ 1, 500, 500, true, true }, 0, 0));
+        CHECK(!StandMemberCounts({ 1, 500, 500, true, false }, 0, 0));
+        CHECK(kBossStandMemberRange == 80.0f);
+
+        std::vector<StandCandidate> group = { near1 };
+        for (std::uint64_t id = 2; id <= 13; ++id)
+            group.push_back({ id, 2.0f, 10.0f, false, false });              // right there, not engaged
+        for (std::uint64_t id = 14; id <= 20; ++id)
+            group.push_back({ id, 300.0f, 300.0f, true, false });            // engaged with something, far away
+        const std::vector<StandBot> bots = SelectStandBots(group, 0, 0);
+        CHECK(bots.size() == 1 && bots[0].id == 1);
+        const StandSlot mine = AssignStandSlot(points, bots, 1);
+        CHECK(mine.valid && mine.slot == 0 && points[mine.point]->side == 0 && points[mine.point]->seq == 0);
+        // The ones left out get nothing, from the same plan every bot computes.
+        CHECK(!AssignStandSlot(points, bots, 2).valid);
+        CHECK(!AssignStandSlot(points, bots, 14).valid);
+
+        // Over capacity among the bots that do count: overflow as before (15 seats, 2 left over).
+        std::vector<StandCandidate> crowd;
+        for (std::uint64_t id = 1; id <= 17; ++id)
+            crowd.push_back({ id, 2.0f, 10.0f, true, false });
+        for (std::uint64_t id = 18; id <= 30; ++id)
+            crowd.push_back({ id, 2.0f, 10.0f, false, false });
+        const std::vector<StandBot> counted = SelectStandBots(crowd, 0, 0);
+        CHECK(counted.size() == 17);
+        int seated = 0, unseated = 0;
+        for (std::uint64_t id = 1; id <= 30; ++id)
+            (AssignStandSlot(points, counted, id).valid ? seated : unseated)++;
+        CHECK(seated == 15 && unseated == 15);
+    }
+
     // Arrival: within the tolerance the bot stays put.
     CHECK(StandArrived(0, 0, 0, 0));
     CHECK(StandArrived(0, 0, kBossStandArrived, 0));

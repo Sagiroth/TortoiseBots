@@ -103,11 +103,18 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("const uint32 nowMs = WorldTimer::getMSTime();", fn)
         self.assertIn("const uint64 selfKey = bot->GetObjectGuid().GetRawValue();", fn)
         self.assertIn("std::lock_guard<std::mutex> lock(g_standHoldMutex);", fn)
-        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_standHoldMutex);"), 2)
+        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_standHoldMutex);"), 3)
         # A spent hold is dropped (no entry left behind for a bot that never sat again).
         self.assertIn("g_standHolds.erase(selfKey);", fn)
         # A tick without the boss keeps the hold only until its time is up.
         self.assertIn("(sawBoss || static_cast<uint32>(nowMs - hold.lastOpenMs) < hold.holdMs)", fn)
+
+    def test_the_loader_logs_a_refused_stand_set(self):
+        fn = body(MGR_CPP, "std::uint32_t ai::ReadBossStandRows(")
+        seal = fn.index("table.Seal();")
+        refused = fn.index("table.Refused()")
+        self.assertLess(seal, refused)
+        self.assertIn("refused as a whole", fn)
 
     def test_translation_seats_among_the_armed_bots_of_the_same_role(self):
         fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
@@ -116,8 +123,27 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn('memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fn)
         self.assertIn("StandRoleOf(PlayerbotAI::IsTank(member), PlayerbotAI::IsHeal(member), ai->IsRanged(member)) != role", fn)
         self.assertIn("AssignStandSlot(points, bots, selfGuid.GetRawValue())", fn)
-        # The bot itself is always among them.
-        self.assertLess(fn.index("bots.push_back(self);"), fn.index("LiveGroupMembers(group)"))
+        # The bot itself is judged by the same rule as the others, first.
+        self.assertLess(fn.index("const StandCandidate self = candidateOf(bot, heldBefore);"), fn.index("LiveGroupMembers(group)"))
+        self.assertIn("selfCounts = StandMemberCounts(self, anchorX, anchorY);", fn)
+
+    def test_only_bots_in_the_fight_with_the_boss_take_seats(self):
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        # One rule for every bot that evaluates the plan: engaged with THIS boss (its threat list or its victim) in
+        # range of the anchor, or holding a stand for the same boss and anchor.
+        self.assertIn("boss->GetThreatManager().getThreat(member) > 0.0f || boss->GetVictim() == member", fn)
+        self.assertIn("memberHold.armed && memberHold.bossEntry == bossEntry && memberHold.anchor == anchor", fn)
+        self.assertIn("bots = SelectStandBots(candidates, anchorX, anchorY);", fn)
+        # The anchor is the one the open window picked, and the boss the one that owns it.
+        self.assertIn("const float anchorX = points[0]->anchorX;", fn)
+        self.assertIn("boss = unit;", fn)
+        # Every member candidate is built by the one lambda; nobody is pushed unchecked.
+        self.assertNotIn("bots.push_back(", fn)
+        # The others read the hold the member left; the self-judgement reads its hold as of the last tick.
+        self.assertIn("const StandHold heldBefore = hold;", fn)
+        self.assertLess(fn.index("const StandHold heldBefore = hold;"), fn.index("StandPointsNow("))
+        # A bot that does not count leaves no hold behind.
+        self.assertIn("(boss ? selfCounts :", fn)
 
     def test_stand_action_snaps_the_seat_to_the_ground_before_the_move(self):
         fn = body(ACTIONS, "bool BossTacticsStandAction::Execute(Event& event)")
