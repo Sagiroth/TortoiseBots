@@ -91,6 +91,10 @@ bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
 
 bool HasGuildTravelOrderValue::Calculate()
 {
+    // No order work while grouped with a player, for any order type.
+    if (ai->HasRealPlayerMaster())
+        return false;
+
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
     // A craft order short on a farmable reagent travels like a farm order.
     if (order.IsCraftOrder())
@@ -98,10 +102,8 @@ bool HasGuildTravelOrderValue::Calculate()
     if (!order.IsTravelOrder())
         return false;
 
-    // No order work while grouped with a player, delivering, or done
-    // with the amount (delivered plus bags plus mailbox).
-    if (ai->HasRealPlayerMaster())
-        return false;
+    // No order work while delivering or done with the amount (delivered
+    // plus bags plus mailbox).
     if (!OrderStillNeedsWork(bot, order))
         return false;
     if (order.type != GuildOrderType::AuctionHouse || OrderMailboxItems(bot, order.itemId) == 0)

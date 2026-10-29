@@ -322,7 +322,7 @@ std::pair<uint32_t, uint32_t> GuildOrderFarmItemFor(Player* bot)
     std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
     if (!record || record->state != OrderState::Working || !record->itemId || !record->farmZoneId)
         return { 0, 0 };
-    if (record->type == OrderType::Farm)
+    if (record->type == OrderType::Farm || (record->type == OrderType::Buy && record->farmRest))
         return { record->itemId, record->farmZoneId };
     if (record->type != OrderType::Craft)
         return { 0, 0 };

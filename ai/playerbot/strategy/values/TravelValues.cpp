@@ -479,12 +479,12 @@ bool ShouldTravelNamedValue::Calculate()
     else if (name == "guild order")
     {
         bool delivering = AI_VALUE(bool, "has guild order delivery");
-        // The legs pin their targets to different conditions; a forced
-        // target of the leg that just ended ignores its dead condition
-        // while traveling, so expire it here and let the request pick the
-        // new leg's destination.
+        // The legs pin their targets to different conditions; the target of
+        // the leg that just ended would sit in cooldown (still active, so it
+        // blocks the next order request), so expire it here and let the
+        // request pick the new leg's destination.
         TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
-        if (target && target->IsActive() && target->IsForced())
+        if (target && target->IsActive())
         {
             bool wantDelivery = false, wantWork = false;
             for (std::string const& condition : target->GetConditions())
