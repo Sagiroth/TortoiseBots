@@ -55,7 +55,10 @@ func jsonInt(n int) string {
 
 func TestEventsOpenLiveRow(t *testing.T) {
 	s := newLiveStore(t)
-	sum, changed := s.ApplyEvents(liveEvents(liveHeader(), `{"k":"start","t":0}`, deathEvent(1200, "Tanky")), liveNow)
+	sum, changed, accepted := s.ApplyEvents(liveEvents(liveHeader(), `{"k":"start","t":0}`, deathEvent(1200, "Tanky")), liveNow)
+	if !accepted {
+		t.Fatal("a fresh datagram must be accepted")
+	}
 	if !changed {
 		t.Fatal("a new fight must be reported as changed")
 	}
@@ -70,7 +73,10 @@ func TestEventsOpenLiveRow(t *testing.T) {
 		t.Fatalf("list: %+v", list)
 	}
 	// A second datagram of the same fight updates it without a change edge.
-	sum, changed = s.ApplyEvents(nextEvents(liveHeader(), deathEvent(2200, "Healy")), liveNow)
+	sum, changed, accepted = s.ApplyEvents(nextEvents(liveHeader(), deathEvent(2200, "Healy")), liveNow)
+	if !accepted {
+		t.Fatal("the next datagram must be accepted")
+	}
 	if changed {
 		t.Fatal("an update of the open fight is not a state change")
 	}
@@ -100,9 +106,9 @@ func TestFinishedReplacesLive(t *testing.T) {
 func TestEndNotKeptRemovesLive(t *testing.T) {
 	s := newLiveStore(t)
 	s.ApplyEvents(liveEvents(liveHeader(), `{"k":"start","t":0}`), liveNow)
-	_, changed := s.ApplyEvents(nextEvents(nil, `{"k":"end","t":3000,"o":"wipe","dur":3000,"kept":false}`), liveNow)
-	if !changed {
-		t.Fatal("the end of a live fight is a change")
+	_, changed, accepted := s.ApplyEvents(nextEvents(nil, `{"k":"end","t":3000,"o":"wipe","dur":3000,"kept":false}`), liveNow)
+	if !changed || !accepted {
+		t.Fatal("the end of a live fight is an accepted change")
 	}
 	if list := s.List("Gbmage"); len(list) != 0 {
 		t.Fatalf("a fight shorter than the minimum must leave nothing: %+v", list)
@@ -115,9 +121,9 @@ func TestEndNotKeptRemovesLive(t *testing.T) {
 func TestEndKeptWaitsForTheFight(t *testing.T) {
 	s := newLiveStore(t)
 	s.ApplyEvents(liveEvents(liveHeader(), `{"k":"start","t":0}`), liveNow)
-	sum, changed := s.ApplyEvents(nextEvents(nil, `{"k":"end","t":31000,"o":"kill","dur":31000,"kept":true}`), liveNow)
-	if !changed {
-		t.Fatal("the end of a live fight is a change")
+	sum, changed, accepted := s.ApplyEvents(nextEvents(nil, `{"k":"end","t":31000,"o":"kill","dur":31000,"kept":true}`), liveNow)
+	if !changed || !accepted {
+		t.Fatal("the end of a live fight is an accepted change")
 	}
 	if !sum.Live || sum.Outcome != "kill" || sum.Dur != 31000 {
 		t.Fatalf("summary after the end: %+v", sum)
@@ -150,7 +156,7 @@ func TestUnknownFmtIgnored(t *testing.T) {
 	s := newLiveStore(t)
 	dg := liveEvents(liveHeader(), `{"k":"start","t":0}`)
 	dg.FMT = 2
-	if _, changed := s.ApplyEvents(dg, liveNow); changed {
+	if _, changed, accepted := s.ApplyEvents(dg, liveNow); changed || accepted {
 		t.Fatal("an unknown format must be ignored")
 	}
 	if list := s.List("Gbmage"); len(list) != 0 {
@@ -232,9 +238,9 @@ func TestEventsDuplicateIgnored(t *testing.T) {
 	dup := liveEvents(liveHeader(), `{"k":"start","t":0}`, deathEvent(1200, "Tanky"))
 	dup.Seq = 50
 	dup.Fight.FightMs = 90000
-	sum, changed := s.ApplyEvents(dup, liveNow)
-	if changed || sum != (FightSummary{}) {
-		t.Fatalf("a duplicate datagram reported a change: %+v %v", sum, changed)
+	sum, changed, accepted := s.ApplyEvents(dup, liveNow)
+	if changed || accepted || sum != (FightSummary{}) {
+		t.Fatalf("a duplicate datagram was accepted: %+v %v %v", sum, changed, accepted)
 	}
 	f, _, ok := s.GetKey(Key("Gbmage", 7, "55-6"))
 	if !ok {
@@ -262,8 +268,8 @@ func TestEventsReorderedIgnored(t *testing.T) {
 	older := liveEvents(liveHeader(), deathEvent(1500, "Late"))
 	older.Seq = 51
 	older.Fight.FightMs = 99000
-	if sum, changed := s.ApplyEvents(older, liveNow); changed || sum != (FightSummary{}) {
-		t.Fatalf("a reordered datagram reported a change: %+v %v", sum, changed)
+	if sum, changed, accepted := s.ApplyEvents(older, liveNow); changed || accepted || sum != (FightSummary{}) {
+		t.Fatalf("a reordered datagram was accepted: %+v %v %v", sum, changed, accepted)
 	}
 	f, _, ok := s.GetKey(Key("Gbmage", 7, "55-6"))
 	if !ok {
@@ -289,15 +295,15 @@ func TestEventsSessionTransitionResets(t *testing.T) {
 	fresh.Session = 8
 	fresh.Seq = 2
 	fresh.Fight.ID = "55-7"
-	sum, changed := s.ApplyEvents(fresh, liveNow)
-	if !changed || !sum.Live || sum.Session != 8 || sum.ID != "55-7" || sum.Deaths != 1 {
-		t.Fatalf("the new session did not open its own row: %+v %v", sum, changed)
+	sum, changed, accepted := s.ApplyEvents(fresh, liveNow)
+	if !accepted || !changed || !sum.Live || sum.Session != 8 || sum.ID != "55-7" || sum.Deaths != 1 {
+		t.Fatalf("the new session did not open its own row: %+v %v %v", sum, changed, accepted)
 	}
 
 	late := liveEvents(liveHeader(), deathEvent(2000, "Late"))
 	late.Seq = 91
-	if sum, changed := s.ApplyEvents(late, liveNow); changed || sum != (FightSummary{}) {
-		t.Fatalf("a datagram of the older session touched the new row: %+v %v", sum, changed)
+	if sum, changed, accepted := s.ApplyEvents(late, liveNow); changed || accepted || sum != (FightSummary{}) {
+		t.Fatalf("a datagram of the older session was accepted: %+v %v %v", sum, changed, accepted)
 	}
 	f, _, ok := s.GetKey(Key("Gbmage", 8, "55-7"))
 	if !ok {

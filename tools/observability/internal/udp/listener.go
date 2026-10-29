@@ -284,12 +284,13 @@ func (l *Listener) processPacket(data []byte) {
 		if l.combat == nil {
 			return
 		}
-		summary, changed := l.combat.ApplyEvents(dg, time.Now())
-		if l.live != nil {
-			l.live.Publish(dg.Commander, "events", dg)
-			if changed {
-				l.live.Publish(dg.Commander, "fight_live", summary)
-			}
+		summary, changed, accepted := l.combat.ApplyEvents(dg, time.Now())
+		if !accepted || l.live == nil {
+			return
+		}
+		l.live.Publish(dg.Commander, "events", dg)
+		if changed {
+			l.live.Publish(dg.Commander, "fight_live", summary)
 		}
 
 	case "COMMANDER_POS":

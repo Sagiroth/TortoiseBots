@@ -86,14 +86,17 @@ type liveFight struct {
 }
 
 // ApplyEvents ingests one COMBAT_EVENTS datagram and reports the live row it
-// left and whether the row was created or changed (the fight_live frame).
-// Datagrams are ordered by (session, seq), the module's per-session counter:
-// a repeated or an older one is dropped before it can touch the header or the
-// events, so UDP duplication cannot double a death and reordering cannot roll
-// the fight back. A newer session starts over with that datagram's seq.
-func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, bool) {
+// left, whether the row was created or changed (the fight_live frame) and
+// whether ingestion accepted the datagram at all. Datagrams are ordered by
+// (session, seq), the module's per-session counter: a repeated or an older
+// one is dropped before it can touch the header or the events, so UDP
+// duplication cannot double a death and reordering cannot roll the fight
+// back. A newer session starts over with that datagram's seq. A rejected
+// datagram must not reach the live stream either: its events are the same
+// ones the row already holds, or belong to a fight that is over.
+func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, bool, bool) {
 	if dg.FMT != 1 || dg.Commander == "" {
-		return FightSummary{}, false
+		return FightSummary{}, false, false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -105,10 +108,10 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 	row := s.live[dg.Commander]
 	if row != nil {
 		if dg.Session < row.session {
-			return FightSummary{}, false // a datagram of an older game session
+			return FightSummary{}, false, false // a datagram of an older game session
 		}
 		if dg.Session == row.session && dg.Seq <= row.seq {
-			return FightSummary{}, false // a duplicate or a reordered datagram
+			return FightSummary{}, false, false // a duplicate or a reordered datagram
 		}
 	}
 	changed := false
@@ -119,7 +122,7 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 			row.seq = dg.Seq
 		case s.seenLocked(dg.Commander, dg.Session, h.ID):
 			// The finished fight is already filed: a late datagram of it.
-			return FightSummary{}, false
+			return FightSummary{}, false, false
 		default:
 			row = &liveFight{session: dg.Session, seq: dg.Seq, id: h.ID, group: dg.Group, mapID: dg.Map, header: *h}
 			s.live[dg.Commander] = row
@@ -130,7 +133,7 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 		// A datagram that opens no fight only continues the live row of its
 		// own session.
 		if row == nil || row.session != dg.Session {
-			return FightSummary{}, false
+			return FightSummary{}, false, false
 		}
 		row.seq = dg.Seq
 	}
@@ -148,7 +151,7 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 				sum := s.liveSummaryLocked(dg.Commander, row)
 				sum.Outcome, sum.Live = ev.O, false
 				delete(s.live, dg.Commander)
-				return sum, true
+				return sum, true, true
 			}
 			row.ended, row.outcome, row.endDur = true, ev.O, ev.Dur
 			changed = true
@@ -164,7 +167,7 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 			}
 		}
 	}
-	return s.liveSummaryLocked(dg.Commander, row), changed
+	return s.liveSummaryLocked(dg.Commander, row), changed, true
 }
 
 // seenLocked reports whether a finished fight of this (session, id) is filed.

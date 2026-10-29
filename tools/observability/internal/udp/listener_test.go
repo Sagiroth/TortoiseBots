@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"tortoise-observability/internal/combat"
+	"tortoise-observability/internal/live"
 	zoneproject "tortoise-observability/internal/map"
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
@@ -289,5 +290,63 @@ func TestRealtimeTypesWithoutSink(t *testing.T) {
 	l.processPacket([]byte(combatEventsDatagram))
 	if v := store.Commanders(); len(v.Commanders) != 0 {
 		t.Fatalf("a pos for no standing binding must be ignored: %+v", v)
+	}
+}
+
+// drainLive takes every frame the hub queued for the client so far. Publish
+// is called on this goroutine, so nothing is in flight.
+func drainLive(c *live.Client) []live.Frame {
+	var frames []live.Frame
+	for {
+		select {
+		case f := <-c.Frames():
+			frames = append(frames, f)
+		default:
+			return frames
+		}
+	}
+}
+
+// The live stream must carry only the datagrams ingestion accepted: a
+// duplicate, a reordered one and one of an older game session are dropped by
+// ApplyEvents, and the browser appends whatever an events frame carries.
+func TestRejectedCombatEventsNeverReachTheStream(t *testing.T) {
+	l, _, _ := newTestListener()
+	l.combat = combat.NewStore(nil)
+	hub := live.NewHub()
+	c, err := hub.Subscribe([]string{"Zfmagea"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.SetLiveSink(hub)
+
+	l.processPacket([]byte(combatEventsDatagram))
+	if frames := drainLive(c); len(frames) != 2 || frames[0].Event != "events" || frames[1].Event != "fight_live" {
+		t.Fatalf("the first datagram must publish its events and the live row: %+v", frames)
+	}
+
+	l.processPacket([]byte(combatEventsDatagram))
+	if frames := drainLive(c); len(frames) != 0 {
+		t.Fatalf("a duplicate datagram reached the stream: %+v", frames)
+	}
+
+	reordered := strings.Replace(combatEventsDatagram, `"seq":9`, `"seq":8`, 1)
+	l.processPacket([]byte(reordered))
+	if frames := drainLive(c); len(frames) != 0 {
+		t.Fatalf("a reordered datagram reached the stream: %+v", frames)
+	}
+
+	stale := strings.Replace(combatEventsDatagram, `"session":77`, `"session":76`, 1)
+	l.processPacket([]byte(stale))
+	if frames := drainLive(c); len(frames) != 0 {
+		t.Fatalf("a stale-session datagram reached the stream: %+v", frames)
+	}
+
+	// The guard drops only what ingestion rejected: the next datagram of the
+	// live session still reaches the stream.
+	fresh := strings.Replace(combatEventsDatagram, `"seq":9`, `"seq":10`, 1)
+	l.processPacket([]byte(fresh))
+	if frames := drainLive(c); len(frames) != 1 || frames[0].Event != "events" {
+		t.Fatalf("an accepted update must publish its events: %+v", frames)
 	}
 }
