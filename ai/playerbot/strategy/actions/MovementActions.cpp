@@ -4382,9 +4382,8 @@ bool JumpAction::Execute(ai::Event &event)
         if (showLanding || ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
         {
             Creature* wpCreature = bot->SummonCreature(2334, jumpLanding.getX(), jumpLanding.getY(), jumpLanding.getZ() - 1, bot->getOrientation(), TEMPSPAWN_TIMED_DESPAWN, 3000);
-            if (!wpCreature)
-                return DoJump(jumpLanding, highestPoint, angle, sPlayerbotAIConfig.jumpVSpeed, jumpSpeed, timeToLand, distToLand, maxHeight, goodLanding, jumpInPlace, jumpBackward, showLanding);
-            PlayerbotAI::AddAura(wpCreature, 246);
+            if (wpCreature)
+                PlayerbotAI::AddAura(wpCreature, 246);
             if (showLanding)
             {
                 WorldPosition botPos = WorldPosition(bot);
