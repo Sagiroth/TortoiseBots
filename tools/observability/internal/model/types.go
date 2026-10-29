@@ -45,6 +45,9 @@ type BotSnapshot struct {
 	Power     uint32 `json:"power"`
 	MaxPower  uint32 `json:"max_power"`
 	PowerType string `json:"power_type,omitempty"` // mana, rage, energy, focus, happiness
+	// Guild is the guild name the unit carries (additive: an older module
+	// omits it and it reads empty). Empty = guildless.
+	Guild    string  `json:"guild,omitempty"`
 	MapID     uint32 `json:"map"`
 	ZoneID   uint32  `json:"zone"`
 	// Instance is the instance copy the unit is in (v12, issue #895): 0 in
