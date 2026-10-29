@@ -7816,8 +7816,8 @@
   // ---- Fight debugger (the Commanders card's second mode) ------------------
   // FightDebug (web/static/js/fightdebug.js) does the arithmetic; this turns its plain data into the card's markup. The mode
   // is per commander and remembered per browser; with nothing saved a raid opens on the debugger and a party on Live.
-  const FD_DETAIL_MAX = 12;   // the newest fights whose details are fetched
-  const FD_DETAIL_CACHE = 60; // finished fights kept per commander (one never changes)
+  const FD_DETAIL_MAX = 50;   // the newest fights whose details are fetched (the daemon keeps at most 50 per commander)
+  const FD_DETAIL_CACHE = 120; // finished fights kept per commander (one never changes)
   const FD_DAYS_MS = 300000;  // the night picker's list of stored days: asked once per card per 5 min
   const FD_HIST_MS = 10000;   // one past night's list, held as long as tonight's (the shared fights feed's window)
   const FD_PACK_MS = 60000;   // one pack's table, held a minute
@@ -7832,7 +7832,7 @@
   }
 
   function fdState(key) {
-    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
+    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, loadingKey: null, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
     return cmdFd[key];
   }
 
@@ -7877,20 +7877,19 @@
     return true;
   }
 
-  // One detail at a time, newest first. A fight that fails (an error, or an answer without a fight) waits 10 s, then 30 s, and is left
-  // alone after three tries, so one broken fight never blocks the rows after it.
-  const FD_DETAIL_BACKOFF = [10000, 30000];
-  const FD_DETAIL_FAIL_MAX = 3;
+  // One detail at a time, newest first. A fight that fails (an error, or an answer without a fight) is asked once more at
+  // once; after that second failure its card says "details not available" instead of loading for ever, and the rows after it
+  // still load.
+  const FD_DETAIL_TRIES = 2;
 
   function fdDetailFailed(fd, key) {
     const f = fd.failed[key];
-    return !!f && (f.n >= FD_DETAIL_FAIL_MAX || f.until > Date.now());
+    return !!f && f.n >= FD_DETAIL_TRIES;
   }
 
   function fdDetailFail(fd, key) {
-    const f = fd.failed[key] || { n: 0, until: 0 };
+    const f = fd.failed[key] || { n: 0 };
     f.n += 1;
-    f.until = f.n >= FD_DETAIL_FAIL_MAX ? Infinity : Date.now() + FD_DETAIL_BACKOFF[f.n - 1];
     fd.failed[key] = f;
   }
 
@@ -8038,10 +8037,14 @@
       const row = fdDetailRow(fd);
       if (!row) return;
       fd.loading = true;
+      fd.loadingKey = row.key;
       const failed = () => {
         fd.loading = false;
+        fd.loadingKey = null;
         fdDetailFail(fd, row.key);
-        if (card.classList.contains('fd-on')) fdLoad(card, bind);
+        if (!card.classList.contains('fd-on')) return;
+        renderFightDebug(card, bind); // the rail says "details not available" once the retry failed too
+        fdLoad(card, bind);
       };
       const req = fdFightsFeed().detail(bind.commander, row.key, FdTabs.detailAllowed(cmdPageMode(), fdPage.open, bind.commander),
         k => fetch('/api/v1/combat/fight/' + encodeURIComponent(k)).then(jsonOrThrow));
@@ -8049,6 +8052,7 @@
       req.then(res => {
         if (!res || !res.fight) { failed(); return; }
         fd.loading = false;
+        fd.loadingKey = null;
         delete fd.failed[row.key];
         fd.details[row.key] = res;
         const keys = Object.keys(fd.details);
@@ -8178,7 +8182,8 @@
     fdSet(card.querySelector('.fd-frames'), fdFramesHtml(frames, fd.bot, ready));
     fdSet(card.querySelector('.fd-dead'), ' · ' + fdFrameStats(frames).dead + ' dead');
     fdSet(card.querySelector('.fd-ready'), fdReadyHtml(frames));
-    const cards = FightDebug.railCards(list, fd.details, layout);
+    const cards = FightDebug.railCards(list, fd.details, layout,
+      { failed: fd.failed, loadingKey: fd.loadingKey, asked: FD_DETAIL_MAX, retry: FD_DETAIL_TRIES, sel: fd.sel });
     fdSet(card.querySelector('.fd-rail'), fdRailHtml(cards, live, fd.sel, fd.day));
     fdDayPaint(card, fd);
 
@@ -8268,7 +8273,7 @@
     const rows = Array.isArray(list) ? list : [];
     const frames = FightDebug.raidFrames(bind);
     const bots = (bind && bind.bots) || [];
-    const cards = FightDebug.railCards(rows, details || {}, layout || null);
+    const cards = FightDebug.railCards(rows, details || {}, layout || null, null);
     const judged = cards.filter(c => c.verdict);
     const need = judged.filter(c => c.verdict === 'fail').length;
     const run = bind && bind.run;
@@ -8591,7 +8596,10 @@
     // The daemon lists fights newest first; the rail reads oldest first, Pack 1 on top, under the live card.
     return html + (cards || []).slice().reverse().map(c => {
       const v = c.verdict;
-      const word = v === 'fail' ? 'problem' : v === 'warn' ? 'check' : v === 'ok' ? 'clean' : 'loading';
+      // No verdict yet: say why the card has none instead of loading for ever (a detail that failed twice, or a row the page
+      // never asked about).
+      const word = v === 'fail' ? 'problem' : v === 'warn' ? 'check' : v === 'ok' ? 'clean'
+        : c.detail === 'failed' ? 'details not available' : c.detail === 'unasked' ? 'details not loaded' : 'loading';
       const deaths = c.deaths ? c.deaths + (c.deaths === 1 ? ' death' : ' deaths') : 'no deaths';
       return `<button type="button" class="fd-fight v-${v || 'load'}" data-fd-fight="${esc(encodeURIComponent(c.key))}" aria-pressed="${c.key === sel ? 'true' : 'false'}">`
         + `<span class="fd-fl">${esc(c.label)}</span>`

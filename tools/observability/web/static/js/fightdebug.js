@@ -488,8 +488,13 @@
     };
   }
 
-  function railCards(list, detailsByKey, layout) {
+  // state tells a card whose detail has not arrived apart from one that will never arrive: {failed: {key: {n}}, loadingKey,
+  // asked} where asked is how many of the newest rows the page fetches. A row whose detail failed for good says so; one the page
+  // never asked (a long night's older rows) says that; everything else is still loading.
+  function railCards(list, detailsByKey, layout, state) {
     const rows = Array.isArray(list) ? list : [];
+    const st = state && typeof state === "object" ? state : null;
+    const asked = st ? num(st.asked) || 0 : rows.length;
     const maxDur = rows.reduce((m, r) => Math.max(m, num(r.dur) || 0), 0);
     return rows.map((row, i) => {
       const det = detailsByKey && detailsByKey[row.key];
@@ -497,6 +502,9 @@
       const dur = num(row.dur) || 0;
       const engaged = fight && fight.engaged && fight.engaged[0];
       const dmg = fight && Array.isArray(fight.bots) ? fight.bots.reduce((s, b) => s + (num(b && b.dmg) || 0), 0) : null;
+      const fail = st && st.failed && st.failed[row.key];
+      const failed = !!(fail && (num(fail.n) || 0) >= (num(st.retry) || 2));
+      const waiting = !det && !failed && (i < asked || row.key === (st && st.loadingKey) || row.key === (st && st.sel));
       return {
         key: row.key,
         // The daemon lists fights newest first; the oldest is the first pack of the fight.
@@ -508,6 +516,8 @@
         deaths: num(row.deaths) || 0,
         lenPct: maxDur > 0 ? (dur / maxDur) * 100 : 0,
         verdict: fight ? verdict(fight, layout, det.warnings || [], det.extra || null) : null,
+        // ready | loading | failed | unasked: what the rail's verdict word says while no verdict exists.
+        detail: det ? "ready" : failed ? "failed" : waiting ? "loading" : "unasked",
         // A row COMBAT_EVENTS opened, with no finished fight behind it yet: no bot rows, no detail to load.
         live: !!row.live,
       };
