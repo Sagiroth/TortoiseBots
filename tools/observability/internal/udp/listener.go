@@ -9,6 +9,7 @@ import (
 	"net"
 	"time"
 	"tortoise-observability/internal/combat"
+	"tortoise-observability/internal/history"
 	zoneproject "tortoise-observability/internal/map"
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
@@ -38,6 +39,7 @@ type Listener struct {
 	zoneProj   *zoneproject.Engine
 	hub        Hub
 	live       LiveSink
+	history    HistorySink
 	forwards   []*forwardTarget
 	stopChan   chan struct{}
 }
@@ -48,6 +50,14 @@ func (l *Listener) SetCombatStore(c *combat.Store) { l.combat = c }
 // SetLiveSink wires the realtime stream (COMMANDERS, COMMANDER_POS and the
 // fight events). Nil keeps the listener's old shape: nothing is pushed there.
 func (l *Listener) SetLiveSink(s LiveSink) { l.live = s }
+
+// HistorySink takes a finished fight for the on-disk history; Enqueue never blocks. Nil keeps the listener's old shape.
+type HistorySink interface {
+	Enqueue(history.Item) bool
+}
+
+// SetHistory wires the fight history. It is set before Start, like the combat store.
+func (l *Listener) SetHistory(h HistorySink) { l.history = h }
 
 func NewListener(host string, port int, store *state.Store, mr *metrics.Registry, zp *zoneproject.Engine, hub Hub) *Listener {
 	return &Listener{
@@ -272,6 +282,9 @@ func (l *Listener) processPacket(data []byte) {
 			l.hub.Broadcast("combat", dg.Fight)
 			if l.live != nil {
 				l.live.Publish(dg.Fight.Commander, "fight", summary)
+			}
+			if l.history != nil {
+				l.history.Enqueue(history.Item{Session: dg.Session, Fight: dg.Fight, Warnings: summary.Warnings, At: time.Now()})
 			}
 		}
 

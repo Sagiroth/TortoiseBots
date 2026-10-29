@@ -37,6 +37,11 @@ type Registry struct {
 	liveDropped       prometheus.Counter
 	realtimeDatagrams *prometheus.CounterVec
 	realtimeBytes     *prometheus.CounterVec
+	// The fight history (R6a): fights written to disk, fights that could
+	// not be, and stored lines the startup scan had to skip.
+	historyWritten prometheus.Counter
+	historyDropped *prometheus.CounterVec
+	historyBroken  prometheus.Counter
 }
 
 func New() *Registry {
@@ -113,6 +118,18 @@ func New() *Registry {
 			Name: "tortoisebots_realtime_bytes_total",
 			Help: "Bytes of realtime datagrams by type (COMBAT_EVENTS, COMMANDER_POS)",
 		}, []string{"type"}),
+		historyWritten: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "tortoisebots_fight_history_written_total",
+			Help: "Fights appended to the fight history",
+		}),
+		historyDropped: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "tortoisebots_fight_history_dropped_total",
+			Help: "Fights the fight history did not keep, by reason (queue, file_cap, rows)",
+		}, []string{"reason"}),
+		historyBroken: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "tortoisebots_fight_history_broken_total",
+			Help: "Stored history lines the index could not read",
+		}),
 	}
 
 	// Initialize server as offline until the first pulse.
@@ -199,6 +216,15 @@ func (r *Registry) RecordRealtimeDatagram(typ string, bytes int) {
 }
 
 // RecordGrinding mirrors the dashboard grinding panel so alerts can use it.
+// HistoryWritten counts one fight appended to the fight history.
+func (r *Registry) HistoryWritten() { r.historyWritten.Inc() }
+
+// HistoryDropped counts one fight the history did not keep, by reason.
+func (r *Registry) HistoryDropped(reason string) { r.historyDropped.WithLabelValues(reason).Inc() }
+
+// HistoryBroken counts stored history lines the startup scan had to skip.
+func (r *Registry) HistoryBroken(n int) { r.historyBroken.Add(float64(n)) }
+
 func (r *Registry) RecordGrinding(g model.GrindingSummary) {
 	r.grindingXpHour.Set(g.TotalXpHour)
 	r.grindingGaining.Set(float64(g.BotsGainingXP))

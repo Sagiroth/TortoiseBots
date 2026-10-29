@@ -119,6 +119,12 @@ type FightSummary struct {
 	// no COMBAT_FIGHT has arrived yet): it has no per-bot numbers and no
 	// detail to load, and the card shows it as it happens.
 	Live bool `json:"live,omitempty"`
+	// The fight history (past nights): the pack it belongs to across runs, the
+	// non-tank seconds the daemon stored when it wrote it, and Hist for a row
+	// that came from disk rather than the memory store.
+	PackKey   string `json:"pack_key,omitempty"`
+	NonTankMs *int64 `json:"nontank_ms,omitempty"`
+	Hist      bool   `json:"hist,omitempty"`
 }
 
 // Warning is one fired rule on one bot.

@@ -206,11 +206,15 @@ The daemon provides selected admin-relevant HTTP REST endpoints under `/api/v1`:
 - `GET /api/v1/server-info`: Server version metadata, active rates, and configuration status.
 - `GET /api/v1/anomalies/totals`: Cumulative session totals for anomalies and action loops.
 - `GET /api/v1/auctions`: Searchable listings currently posted on the auction house by bots and players.
+- `GET /api/v1/combat/fights`, `GET /api/v1/combat/fight/<key>`: The fights the daemon remembers, and one fight with its warnings; a fight only on disk is read from the history.
+- `GET /api/v1/combat/history/days?commander=`, `GET /api/v1/combat/history?commander=&day=`, `GET /api/v1/combat/packs?pack=&commander=&all=0|1`: The fight history: a commander's days, one day's fights, and the same pack across runs.
 - `GET /api/v1/agent-maps`: Turtle-agent run maps in the configured folder, newest first (only with `--agent-maps-dir`).
 - `GET /api/v1/agent-maps/files/<name>`: One run map, served inline (only with `--agent-maps-dir`).
 - `WS /api/v1/stream`: Real-time WebSocket event feed streaming live bot updates to connected clients.
 
 Activity counters are periodically saved to `activity-state.json` so statistics persist across daemon restarts.
+
+The fight history keeps fights for 30 days in `--fight-history-dir` (env `TBDASH_FIGHT_HISTORY_DIR`, default `<dir of --activity-state-file>/fight-history`, empty disables), one `<commander>/<YYYY-MM-DD>.jsonl` per commander per night, at most 256 MiB in all.
 
 <details>
 <summary>Agent maps API details</summary>

@@ -266,3 +266,10 @@ func TestBossOverlayJS(t *testing.T) {
 func TestLiveViewJS(t *testing.T) {
 	runCheck(t, "live_check.js", "../../web/static/js/live.js")
 }
+
+// TestFightPackParityJS runs fightpack_parity_check.js: web/static/js/planoverlay.js's fightPack and the Go port in
+// internal/plans/fightpack.go answer the same on the shared fixture (internal/plans/testdata/fightpack-cases.json).
+func TestFightPackParityJS(t *testing.T) {
+	runCheck(t, "fightpack_parity_check.js", "../../web/static/js/planoverlay.js",
+		filepath.Join("..", "plans", "testdata", "fightpack-cases.json"))
+}
