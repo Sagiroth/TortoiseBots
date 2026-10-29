@@ -3,8 +3,11 @@
 #include "BotCommandHandlers.h"
 #include "CommandShared.h"
 
+#include "../ai/playerbot/GuildOrderSources.h"
 #include "../runtime/GuildOrderCategoryPolicy.h"
+#include "../runtime/GuildOrderContract.h"
 #include "../runtime/GuildOrderSearchPolicy.h"
+#include "../runtime/GuildOrderStore.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Chat.h"
@@ -22,6 +25,8 @@ namespace {
 
 using TortoiseBots::GuildOrders::OrderReason;
 using TortoiseBots::GuildOrders::OrderType;
+using TortoiseBots::GuildOrders::ReasonToken;
+using TortoiseBots::GuildOrders::SourcesToken;
 using TortoiseBots::GuildOrders::CategoryToken;
 using TortoiseBots::GuildOrders::ClassifyOrderCategory;
 using TortoiseBots::GuildOrders::OrderItemCategory;
