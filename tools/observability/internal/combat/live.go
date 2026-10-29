@@ -291,8 +291,9 @@ func (s *Store) evictLiveLocked() {
 }
 
 // fileLiveLocked files a live row as a finished, summary-only fight so it
-// stays in the debugger. Its (session, id) is marked seen: the row and the
-// fight it describes must not both appear.
+// stays in the debugger. The filing is provisional: the fight's own
+// COMBAT_FIGHT still replaces it when it arrives late. Its (session, id) is
+// marked seen: the row and the fight it describes must not both appear.
 func (s *Store) fileLiveLocked(commander string, lf *liveFight, outcome string) {
 	h := lf.header
 	dur := h.FightMs
@@ -308,7 +309,7 @@ func (s *Store) fileLiveLocked(commander string, lf *liveFight, outcome string) 
 		Deaths: append([]FightDeath(nil), lf.deaths...),
 	}
 	// addLocked prepends: the row is the newest by the time it was filed.
-	s.addLocked(lf.session, f)
+	s.addLocked(lf.session, f, true)
 }
 
 // liveSummaryLocked builds the list row of a live fight.

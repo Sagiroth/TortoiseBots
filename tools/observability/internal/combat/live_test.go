@@ -318,6 +318,72 @@ func castEvent(tMs int, name string) string {
 	return `{"k":"cast","t":` + jsonInt(tMs) + `,"id":"814","e":14507,"n":"Venoxis","s":"` + name + `"}`
 }
 
+// A delayed COMBAT_FIGHT of a fight filed as unfinished must replace the
+// provisional entry (keeping its log) instead of being dropped; a second
+// COMBAT_FIGHT for the same key is still a duplicate. Expiry filings are
+// provisional too: the same delayed fight replaces them as well.
+func TestDelayedFightReplacesProvisional(t *testing.T) {
+	s := newLiveStore(t)
+	s.ApplyEvents(liveEvents(liveHeader(), castEvent(1000, "Poison Cloud"), castEvent(2000, "Frenzy")), liveNow)
+
+	hb := liveHeader()
+	hb.ID = "55-7"
+	if _, _, accepted := s.ApplyEvents(nextEvents(hb, castEvent(3000, "Frost Breath")), liveNow); !accepted {
+		t.Fatal("the new fight's datagram was not accepted")
+	}
+	if prov, _, ok := s.Get("Gbmage", 7, "55-6"); !ok || prov.Outcome != "unfinished" {
+		t.Fatalf("fight A was not filed provisional: %+v %v", prov, ok)
+	}
+
+	a := Fight{ID: "55-6", Commander: "Gbmage", Group: 55, Map: 409, Start: liveNow.Unix() - 30, DurMS: 30000, Outcome: "kill"}
+	if !s.Add(7, a) {
+		t.Fatal("the delayed COMBAT_FIGHT of fight A was dropped")
+	}
+	got, _, ok := s.Get("Gbmage", 7, "55-6")
+	if !ok {
+		t.Fatal("fight A is missing after the delayed COMBAT_FIGHT")
+	}
+	if got.Outcome != "kill" {
+		t.Fatalf("fight A outcome = %q, want kill", got.Outcome)
+	}
+	if len(got.Log) != 2 {
+		t.Fatalf("fight A log = %d events, want 2 (the provisional log kept)", len(got.Log))
+	}
+	for i, want := range []uint32{1000, 2000} {
+		if gotT := eventT(t, got.Log[i]); gotT != want {
+			t.Fatalf("fight A log[%d] t = %d, want %d", i, gotT, want)
+		}
+	}
+
+	if s.Add(7, a) {
+		t.Fatal("a second COMBAT_FIGHT of the same key was kept")
+	}
+}
+
+func TestDelayedFightReplacesExpiredProvisional(t *testing.T) {
+	s := newLiveStore(t)
+	s.ApplyEvents(liveEvents(liveHeader(), castEvent(1000, "Poison Cloud"), castEvent(2000, "Frenzy")), liveNow)
+	s.SetClock(func() time.Time { return liveNow.Add(LiveExpire + time.Second) })
+	if prov, _, ok := s.GetKey(Key("Gbmage", 7, "55-6")); !ok || prov.Outcome != "unfinished" {
+		t.Fatalf("fight A was not filed provisional: %+v %v", prov, ok)
+	}
+
+	a := Fight{ID: "55-6", Commander: "Gbmage", Group: 55, Map: 409, Start: liveNow.Unix() - 30, DurMS: 30000, Outcome: "kill"}
+	if !s.Add(7, a) {
+		t.Fatal("the delayed COMBAT_FIGHT of fight A was dropped")
+	}
+	got, _, ok := s.GetKey(Key("Gbmage", 7, "55-6"))
+	if !ok {
+		t.Fatal("fight A is missing after the delayed COMBAT_FIGHT")
+	}
+	if got.Outcome != "kill" || len(got.Log) != 2 {
+		t.Fatalf("fight A = outcome %q log %d events, want kill and 2", got.Outcome, len(got.Log))
+	}
+	if s.Add(7, a) {
+		t.Fatal("a second COMBAT_FIGHT of the same key was kept")
+	}
+}
+
 // eventT reads the time of a stored log event.
 func eventT(t *testing.T, raw json.RawMessage) uint32 {
 	t.Helper()
