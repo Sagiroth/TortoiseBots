@@ -38,6 +38,7 @@ vm.runInContext([
   "var cmdPageMode = () => 'debug';",
   "var fdPage = { open: null };",
   "var fdFights = null, fdFightsCache = null, fdFightsPending = null;",
+  "var cmdUnwatchStage = () => {};",
   "var fdTabListSeen = () => {};",
   "var fdFightHash = () => {};",
 ].join("\n"), ctx, { filename: "app.js state" });

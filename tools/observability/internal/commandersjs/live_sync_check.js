@@ -1,7 +1,8 @@
 "use strict";
 // Run by commandersjs_test.go under node: the Commanders tab's live stream and the browser state it keeps, from app.js.
-// showTab syncs the stream (it serves the Commanders tab only, so leaving it closes the stream), and cmdPruneAll forgets a
-// departed commander's glide state and live events along with its trails.
+// showTab syncs the stream (it serves the Commanders tab only, so leaving it closes the stream), cmdPruneAll forgets a
+// departed commander's glide state and live events along with its trails, and cmdGlideFocus names the one map that glides at
+// the screen's rate (the open debugger tab or the only card).
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
@@ -61,5 +62,27 @@ function grab(name) {
   assert.deepStrictEqual(Object.keys(ctx.cmdLiveEvents), ["A"], "a gone commander's live events are dropped");
   assert.deepStrictEqual(Object.keys(ctx.cmdMobSeenAt), ["A"], "a gone commander's cast clocks are dropped");
   assert.ok(ctx.cmdGlide.A && ctx.cmdLiveEvents.A, "the commanders still bound keep theirs");
+}
+// ---- cmdGlideFocus: the one map that glides at the screen's rate -----------------------------------------------------
+{
+  const ctx = {
+    console, Array, Map,
+    cmdPageMode: () => "live", fdPage: { open: null }, cmdCards: new Map(), state: { activeTab: "commanders" },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(grab("cmdGlideFocus"), ctx);
+  assert.strictEqual(ctx.cmdGlideFocus(), null, "the Live page with several cards has no focused map");
+  ctx.cmdCards.set("A", {});
+  ctx.cmdCards.set("dgn:1", {});
+  assert.strictEqual(ctx.cmdGlideFocus(), "A", "the only commander card is the one the viewer looks at (a dungeon card is not)");
+  ctx.cmdCards.set("B", {});
+  assert.strictEqual(ctx.cmdGlideFocus(), null, "two cards: every visible map glides at the grid rate");
+  ctx.cmdPageMode = () => "debug";
+  ctx.fdPage.open = "B";
+  assert.strictEqual(ctx.cmdGlideFocus(), "B", "the open Fight debugger tab is focused");
+  ctx.fdPage.open = null;
+  assert.strictEqual(ctx.cmdGlideFocus(), null, "the All raids grid has no focused map");
+  ctx.state.activeTab = "overview";
+  assert.strictEqual(ctx.cmdGlideFocus(), null, "off the Commanders tab nothing glides");
 }
 console.log("live sync ok");

@@ -141,6 +141,7 @@ assert.ok(src.includes('class="refresh-picker fd-refresh"'), "the refresh picker
   Object.assign(h1, {
     fdPage: { open: null }, fdTabGone: () => false, cmdFindBind: (k) => binds[k] || null, cmdCards: cards,
     fdStopCard: () => {}, cmdFd: {}, cmdMaps: {}, cmdAvail: {}, cmdFightsCache: {}, cmdFightsPending: {},
+    cmdUnwatchStage: () => {},
     setHtml: (el, html) => { el.innerHTML = html; }, esc: (v) => String(v), fdGridHtml: () => "", fdGridPoll: () => {},
     FdTabs: { sortBinds: (l) => l },
     newCmdCard: (key) => {

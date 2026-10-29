@@ -5112,6 +5112,41 @@
     () => performance.now(),
     key => drawCmdMap(key));
 
+  // A map off screen is not redrawn: the scheduler skips it and draws it once when it is back. The observer watches each
+  // card's stage (its map), so scrolling the Live stack past a card stops its redraws.
+  const cmdStageObs = typeof IntersectionObserver === 'function'
+    ? new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        const key = e.target.dataset.cmdKey;
+        if (key) cmdSched.visible(key, e.isIntersecting);
+      });
+    }, { rootMargin: '100px' })
+    : null;
+
+  function cmdWatchStage(card, key) {
+    const stage = card && card.querySelector('.cmd-stage');
+    if (!stage || !cmdStageObs) return;
+    stage.dataset.cmdKey = key;
+    cmdSched.visible(key, true); // a card re-made for a key whose map was off screen is on the page again
+    cmdStageObs.observe(stage);
+  }
+
+  function cmdUnwatchStage(card) {
+    const stage = card && card.querySelector('.cmd-stage');
+    if (!stage || !cmdStageObs) return;
+    cmdSched.visible(stage.dataset.cmdKey, false); // nothing to draw for a card that is gone
+    cmdStageObs.unobserve(stage);
+  }
+
+  // The one map the viewer is looking at glides at the screen's rate: the open Fight debugger tab, or the only card on the
+  // Live page. Every other visible map glides at the grid rate.
+  function cmdGlideFocus() {
+    if (state.activeTab !== 'commanders') return null;
+    if (cmdPageMode() === 'debug') return fdPage.open || null;
+    const keys = Array.from(cmdCards.keys()).filter(k => k.indexOf('dgn:') !== 0);
+    return keys.length === 1 ? keys[0] : null;
+  }
+
   // ---- Fight debugger mode: one tab per raid, All raids first ------------------------------
   // The Commanders page has two views, kept per browser: Live keeps today's stacked cards, the Fight debugger shows the tab
   // strip and renders the one open commander's card (or the All raids grid). The open tab is in the URL hash, so a reload,
@@ -5404,6 +5439,7 @@
       if (key === open) return;
       fdStopCard(key);
       cmdRescueLayers();
+      cmdUnwatchStage(card);
       card.remove();
       cmdCards.delete(key);
     });
@@ -5418,6 +5454,7 @@
     cmdCards.forEach((card, key) => {
       fdStopCard(key);
       cmdRescueLayers();
+      cmdUnwatchStage(card);
       card.remove();
       cmdCards.delete(key);
     });
@@ -5431,7 +5468,7 @@
     const keys = all.map(b => b.commander);
     cmdCards.forEach((card, key) => {
       if (!keys.includes(key)) { cmdForgetCard(key); return; }
-      if (card.classList.contains('fd-on')) { fdStopCard(key); cmdRescueLayers(); card.remove(); cmdCards.delete(key); }
+      if (card.classList.contains('fd-on')) { fdStopCard(key); cmdRescueLayers(); cmdUnwatchStage(card); card.remove(); cmdCards.delete(key); }
     });
     all.forEach((bind, i) => {
       let card = cmdCards.get(bind.commander);
@@ -5448,6 +5485,7 @@
     const card = cmdCards.get(key);
     if (card) {
       cmdRescueLayers();
+      cmdUnwatchStage(card);
       card.remove();
     }
     cmdCards.delete(key);
@@ -5683,6 +5721,7 @@
   }
 
   function cmdLiveSync() {
+    cmdSched.focus(cmdGlideFocus());
     if (cmdLiveOff) return;
     const names = cmdLiveNames();
     LiveView.connect(names, cmdLiveHandlers());
@@ -5806,11 +5845,11 @@
     setTimeout(() => { cmdLiveOff = false; if (state.activeTab === 'commanders') cmdLiveSync(); }, 60000);
   }
 
-  // Once per animation frame: draw the marked maps and the ones whose dots still glide (a hidden tab's rAF pauses by itself).
+  // Once per animation frame: ask the scheduler for the maps whose dots still glide (a hidden tab's rAF pauses by itself).
+  // The scheduler draws them in its own frame, at each map's rate and within the per-frame budget.
   function cmdLiveFrame() {
     const now = performance.now();
-    Object.keys(cmdGlide).forEach(key => { if (Glide.active(cmdGlide[key], now)) cmdSched.mark(key, true); });
-    cmdSched.frame();
+    Object.keys(cmdGlide).forEach(key => { if (cmdCards.has(key) && Glide.active(cmdGlide[key], now)) cmdSched.mark(key, true); });
     requestAnimationFrame(cmdLiveFrame);
   }
 
@@ -7366,6 +7405,7 @@
       fdReplayStop(fd);
       fdReplaySync(key);
     });
+    cmdWatchStage(card, key);
     return card;
   }
 
@@ -7482,7 +7522,8 @@
     if (fightsEl) fightsEl.hidden = debug;
     card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = !debug; });
     cmdLivePaintEvents(key);
-    drawCmdMap(key);
+    // A structural redraw: at once when the map is on screen (the layer panel reads what it worked out), else when it is back.
+    if (cmdSched.shown(key)) drawCmdMap(key); else cmdSched.mark(key);
     if (debug) { renderFightDebug(card, bind); fdLoad(card, bind); } else mountFightPanel(card, bind);
   }
 
@@ -8815,7 +8856,7 @@
     const key = 'dgn:' + open.key;
     cmdCards.forEach((cardEl, k) => {
       if (k.indexOf('dgn:') !== 0 || k === key) return;
-      cardEl.remove(); cmdCards.delete(k); delete cmdMaps[k]; delete cmdAvail[k];
+      cardEl.remove(); cmdUnwatchStage(cardEl); cmdCards.delete(k); delete cmdMaps[k]; delete cmdAvail[k];
     });
     let card = cmdCards.get(key);
     if (!card) { card = newCmdCard(key); cmdCards.set(key, card); }

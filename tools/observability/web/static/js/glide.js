@@ -6,7 +6,8 @@
 // Glide.apply; the report path feeds it through LiveView.noteReport.
 (function (root) {
   const CAP_MS = 2500;    // a longer silence (a lost report, a paused page) is a hole to snap over, never a slow walk across
-  const FRAME_MS = 16;    // the scheduler redraws one key's glide at most this often (about 60 fps)
+  const FRAME_MS = 16;    // the scheduler redraws the map the viewer is looking at at most this often (about 60 fps)
+  const GRID_FRAME_MS = 64; // every other visible map glides at most this often (about 15 fps)
   const SAMPLES = 4;      // samples kept per unit: the two around the render time and the one before them
   const OFFSETS = 10;     // arrival-minus-server offsets kept: the smallest is the clock offset (network spikes do not move it)
   const GAPS = 8;         // sample gaps the render delay is built from
@@ -222,7 +223,8 @@
   }
 
   const api = {
-    CAP_MS, FRAME_MS, BACK_MS, PRUNE_MS, POS_WINDOW_MS, SAMPLES, OFFSETS, GAPS, DELAY_FACTOR, DELAY_MIN_MS, DELAY_MAX_MS, EXTRAP_MS,
+    CAP_MS, FRAME_MS, GRID_FRAME_MS, BACK_MS, PRUNE_MS, POS_WINDOW_MS,
+    SAMPLES, OFFSETS, GAPS, DELAY_FACTOR, DELAY_MIN_MS, DELAY_MAX_MS, EXTRAP_MS,
     SLACK_YD, YD_PER_SEC, MAX_GAP_SEC,
     jumpLimitYd, create, botKey, mobKey, median, angleLerp, sampled, delayOf, renderTime, at, note, active, apply, prune,
   };

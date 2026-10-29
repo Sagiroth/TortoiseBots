@@ -143,8 +143,9 @@ func TestLivePosJS(t *testing.T) {
 	runCheck(t, "livepos_check.js", "../../web/static/js/app.js")
 }
 
-// TestLiveSyncJS runs live_sync_check.js: every tab change syncs the live stream, and a departed commander's glide state and
-// live events are pruned with its trails.
+// TestLiveSyncJS runs live_sync_check.js: every tab change syncs the live stream, a departed commander's glide state and
+// live events are pruned with its trails, and the focused map (the open debugger tab or the only card) glides at 60 fps
+// while every other visible map glides at 15.
 func TestLiveSyncJS(t *testing.T) {
 	runCheck(t, "live_sync_check.js", "../../web/static/js/app.js")
 }
@@ -250,7 +251,9 @@ func TestPhaseACSS(t *testing.T) {
 }
 
 // TestGlideJS runs glide_check.js: the interpolation of the reported positions (halfway, the gap cap and floor, a teleport, a map
-// change and a death snapping, a late sample starting from the shown position, and the shallow copy the map draws).
+// change and a death snapping, a late sample starting from the shown position, the shallow copy the map draws, a backward
+// clock jump or a new datagram session starting the card over, a reorder that never moves the clock back, position frames
+// owning the delay while they run, and units no report carried for 15 s dropped).
 func TestGlideJS(t *testing.T) {
 	runCheck(t, "glide_check.js", "../../web/static/js/glide.js")
 }
@@ -269,7 +272,8 @@ func TestBossMapJS(t *testing.T) {
 }
 
 // TestLiveViewJS runs live_check.js: the live stream's pure half (the commanders' URL, the copy-on-write pos merge, the refresh
-// rates that may move the dots, the error fallback and the one-draw-per-frame scheduler).
+// rates that may move the dots, the error fallback and the one-draw-per-frame scheduler: 60 fps for the focused map, 15 for
+// the other visible maps, none for a hidden one, at most 8 glide-only draws per frame round robin).
 func TestLiveViewJS(t *testing.T) {
 	runCheck(t, "live_check.js", "../../web/static/js/live.js")
 }

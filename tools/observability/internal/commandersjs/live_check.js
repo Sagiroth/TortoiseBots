@@ -70,7 +70,8 @@ assert.strictEqual(L.fallback([now - 61000, now - 2000, now - 1000], now), false
 assert.strictEqual(L.fallback([now - 30000, now - 2000, now - 1000], now), true, "three inside the minute");
 assert.strictEqual(L.fallback([], now), false);
 
-// ---- scheduler: one draw per key per animation frame, glide redraws at most every Glide.FRAME_MS (16 ms)
+// ---- scheduler: one draw per key per animation frame; the focused map at the screen's rate (16 ms), every other visible map
+// at the grid rate (64 ms)
 {
   const frames = [];
   const raf = (fn) => { frames.push(fn); return frames.length; };
@@ -82,14 +83,97 @@ assert.strictEqual(L.fallback([], now), false);
   frames.shift()();
   assert.deepStrictEqual(drawn, ["k"], "five marks in one frame draw once");
 
+  sched.focus("g");
   t = 0; sched.mark("g", true); frames.shift()();
   t = 10; sched.mark("g", true); frames.shift()();
   assert.deepStrictEqual(drawn, ["k", "g"], "a glide redraw inside 16 ms is skipped");
   t = 16; sched.mark("g", true); frames.shift()();
-  assert.deepStrictEqual(drawn, ["k", "g", "g"], "the next one after 16 ms draws");
+  assert.deepStrictEqual(drawn, ["k", "g", "g"], "the focused map draws at the next animation frame");
   t = 40; sched.mark("g"); frames.shift()();
   assert.deepStrictEqual(drawn, ["k", "g", "g", "g"], "a full draw is never throttled");
   assert.strictEqual(frames.length, 0);
+
+  // the same key without the focus glides at the grid rate
+  sched.focus(null);
+  t = 100; sched.mark("g", true); frames.shift()();
+  assert.deepStrictEqual(drawn, ["k", "g", "g", "g"], "a grid map is not redrawn inside 64 ms");
+  t = 104; sched.mark("g", true); frames.shift()();
+  assert.deepStrictEqual(drawn, ["k", "g", "g", "g", "g"], "the grid rate draws it at 64 ms");
+  t = 140; sched.mark("g", true); frames.shift()();
+  assert.deepStrictEqual(drawn, ["k", "g", "g", "g", "g"], "and not again inside the next 64 ms");
+
+  // a structural redraw of a map off screen waits until it is back in view
+  sched.visible("h", false);
+  assert.strictEqual(sched.shown("h"), false, "the observer's hidden map says so");
+  assert.strictEqual(sched.shown("g"), true, "a map nobody marked hidden is on screen");
+  t = 300; sched.mark("h"); frames.shift()();
+  assert.strictEqual(drawn.indexOf("h"), -1, "a hidden map does not redraw");
+  t = 400; sched.visible("h", true); frames.shift()();
+  assert.strictEqual(sched.shown("h"), true, "back in view");
+  assert.ok(drawn.indexOf("h") >= 0, "and it draws once");
+}
+
+// ---- S4: 20 active maps, 4 in view, 1 focused. Per simulated second the focused map redraws about 60 times, each visible
+// grid map at most 15, a hidden map never, and one animation frame never carries more than 8 glide-only draws.
+{
+  const keys = Array.from({ length: 20 }, (_, i) => "c" + i);
+  const visible = keys.slice(0, 4), focused = keys[0];
+  const frames = [];
+  const raf = (fn) => { frames.push(fn); return frames.length; };
+  let t = 0;
+  const draws = [];
+  const sched = L.scheduler(raf, () => t, (k) => draws.push(k));
+  sched.focus(focused);
+  keys.forEach((k) => sched.visible(k, false));
+  visible.forEach((k) => sched.visible(k, true));
+  while (frames.length) frames.shift()(); // the flush of the maps back in view is not part of the measured second
+  draws.length = 0;
+  let worst = 0;
+  for (let i = 0; i < 60; i++) {
+    t = i * 16;
+    keys.forEach((k) => sched.mark(k, true)); // every active key asks, as app.js's per-frame loop does
+    while (frames.length) {
+      let inFrame = 0;
+      const paint = frames.shift();
+      const before = draws.length;
+      paint();
+      inFrame = draws.length - before;
+      if (inFrame > worst) worst = inFrame;
+    }
+  }
+  const per = {};
+  draws.forEach((k) => { per[k] = (per[k] || 0) + 1; });
+  assert.ok(per[focused] >= 59 && per[focused] <= 61, "the focused map redraws about 60 times a second: " + per[focused]);
+  visible.slice(1).forEach((k) => {
+    assert.ok((per[k] || 0) >= 14 && (per[k] || 0) <= 15, "a visible grid map redraws at most 15 times a second: " + k + " " + per[k]);
+  });
+  keys.slice(4).forEach((k) => assert.strictEqual(per[k] || 0, 0, "a hidden map does not redraw: " + k));
+  assert.ok(worst <= L.GLIDE_BUDGET, "at most 8 glide-only draws in one frame: " + worst);
+}
+
+// ---- S4: the budget is shared round robin: with all 20 maps in view no frame draws more than 8, and every map is served
+{
+  const keys = Array.from({ length: 20 }, (_, i) => "g" + i);
+  const frames = [];
+  const raf = (fn) => { frames.push(fn); return frames.length; };
+  let t = 0;
+  const per = {};
+  let worst = 0;
+  const sched = L.scheduler(raf, () => t, (k) => { per[k] = (per[k] || 0) + 1; });
+  keys.forEach((k) => sched.visible(k, true));
+  for (let i = 0; i < 4; i++) {
+    t = i * 16;
+    keys.forEach((k) => sched.mark(k, true));
+    while (frames.length) {
+      const before = Object.values(per).reduce((n, x) => n + x, 0);
+      frames.shift()();
+      const drew = Object.values(per).reduce((n, x) => n + x, 0) - before;
+      if (drew > worst) worst = drew;
+    }
+  }
+  assert.ok(worst <= L.GLIDE_BUDGET, "no frame draws more than 8 glide-only maps: " + worst);
+  keys.forEach((k) => assert.ok((per[k] || 0) > 0, "the round robin reaches every map: " + k));
+  assert.ok(worst >= L.GLIDE_BUDGET, "and the budget is used: " + worst);
 }
 
 console.log("live_check.js ok");

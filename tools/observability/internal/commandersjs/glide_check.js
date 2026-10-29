@@ -283,7 +283,8 @@ const S0 = 1791990030000; // its server time
 }
 
 // ---- the frame cap is 60 fps now (16 ms)
-assert.strictEqual(G.FRAME_MS, 16, "the dots redraw every animation frame");
+assert.strictEqual(G.FRAME_MS, 16, "the focused map redraws every animation frame");
+assert.strictEqual(G.GRID_FRAME_MS, 64, "every other visible map redraws at most about 15 times a second");
 assert.strictEqual(G.BACK_MS, 2000, "a clock jump is measured against the newest server time");
 assert.strictEqual(G.PRUNE_MS, 15000, "a unit no report carried for 15 s is gone");
 assert.strictEqual(G.POS_WINDOW_MS, 3000, "position frames own the delay while they run");
