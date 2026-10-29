@@ -66,7 +66,7 @@ class SummonNullGuardTest(unittest.TestCase):
             with self.subTest(file=rel):
                 lines = (ROOT / rel).read_text().splitlines()
                 for n, line in enumerate(lines):
-                    if "SummonCreature(" not in line or "Creature*" not in line and "=" not in line:
+                    if "SummonCreature(" not in line or "=" not in line:
                         continue
                     if "Creature*" not in line and "wpCreature =" not in line and "lCreature =" not in line:
                         continue

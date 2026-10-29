@@ -4299,10 +4299,8 @@ bool JumpAction::Execute(ai::Event &event)
                 if (showLanding)
                 {
                     Creature* wpCreature = bot->SummonCreature(2334, jumpPoint.getX(), jumpPoint.getY(), jumpPoint.getZ() - 1, bot->getOrientation(), TEMPSPAWN_TIMED_DESPAWN, 3000);
-                    if (!wpCreature)
-                        return true;
-
-                    PlayerbotAI::AddAura(wpCreature, 246);
+                    if (wpCreature)
+                        PlayerbotAI::AddAura(wpCreature, 246);
 
                     float pointAngle = src.GetAngleTo(jumpPoint);
                     sServerFacade.SetFacingTo(bot, pointAngle, true);
@@ -4324,10 +4322,8 @@ bool JumpAction::Execute(ai::Event &event)
                 if (showLanding)
                 {
                     Creature* wpCreature = bot->SummonCreature(2334, possibleLanding.getX(), possibleLanding.getY(), possibleLanding.getZ() - 1, bot->getOrientation(), TEMPSPAWN_TIMED_DESPAWN, 3000);
-                    if (!wpCreature)
-                        return true;
-
-                    PlayerbotAI::AddAura(wpCreature, 246);
+                    if (wpCreature)
+                        PlayerbotAI::AddAura(wpCreature, 246);
 
                     float pointAngle = src.GetAngleTo(possibleLanding);
                     sServerFacade.SetFacingTo(bot, pointAngle, true);

@@ -489,7 +489,10 @@ bool DebugAction::HandlePathable(Event& event, Player* requester, const std::str
             std::vector<WorldPosition> path = pos.GetPathFrom(botPos, pathBot); //Use full pathstep to get proper paths on to transports.
 
             if (path.empty())
+            {
+                bot->SetTransport(botTrans);
                 continue;
+            }
 
             pos = path.back();
 
