@@ -14,6 +14,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/policy/travel/FlightErrandPolicy.h"
+#include "playerbot/policy/travel/OrderFocusPolicy.h"
 #include "playerbot/policy/travel/UndercityLiftPolicy.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
@@ -1179,6 +1180,14 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             // active target would instead freeze ALL travel (IsActive stays
             // true, requests gate on it) for the whole window.
             sPlayerbotAIConfig.logEvent(ai, "TravelTargetDropped", purpose, std::to_string(target->GetRetryCount(true)));
+            // A workshop leg remembers its own point: the purpose park below
+            // only delays the re-pick, which then offers the same forge
+            // again. Inside smelt range the bot crafts from where it stands,
+            // so only a still-distant drop writes the point off.
+            bool const orderFocusTrip = purpose == "order focus";
+            if (ai::FocusDropMarksSpot(orderFocusTrip, botLocation.distance(location)))
+                ai->MarkUnreachableFocusSpot(location.GetMapId(), location.getX(), location.getY(),
+                    WorldTimer::getMSTime());
             target->SetForced(false);
             sTravelMgr.SetNullTravelTarget(target);
             RESET_AI_VALUE(bool, "travel target active");
@@ -1189,9 +1198,12 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             // an empty purpose parks the quest errand instead of nothing.
             // The park survives picks of other purposes (no blanket
             // ClearValues on the pick path); only this purpose stands down.
+            // A dropped workshop leg re-picks after a minute: the order makes
+            // no progress while parked, so the next forge must come soon.
             std::string const parkKey = TravelPurposeParkKey(purpose);
             SET_AI_VALUE2(bool, "no active travel destinations", parkKey, true);
-            SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey, time(0) + 5 * MINUTE);
+            SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey,
+                time(0) + (orderFocusTrip ? ai::ORDER_FOCUS_PARK_SECONDS : 5 * MINUTE));
         }
     }
     else
