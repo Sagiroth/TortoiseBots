@@ -9,6 +9,7 @@
 #include "../../../../runtime/AltBotService.h"
 #include "../../../../runtime/AltBotPolicy.h"
 #include "../../../../runtime/RunGivenItemRegistry.h"
+#include "../../../../runtime/GuildOrderStore.h"
 
 using namespace ai;
 
@@ -175,6 +176,16 @@ bool SellAction::Sell(Player* requester, Item* item)
     // A dungeon run's given item is never sold: the run takes it back.
     if (item && TortoiseBots::RunGivenItems::Has(item->GetGUIDLow()))
         return false;
+    // A guild order's item is never sold: quality filters bypass usage.
+    if (item && ai->GetBot()->GetGuildId())
+    {
+        std::optional<TortoiseBots::GuildOrders::OrderRecord> orderStored =
+            TortoiseBots::GuildOrders::Find(ai->GetBot()->GetGUIDLow());
+        if (orderStored && orderStored->guildId == ai->GetBot()->GetGuildId() &&
+            !TortoiseBots::GuildOrders::IsFinished(orderStored->state) &&
+            orderStored->itemId == item->GetProto()->ItemId)
+            return false;
+    }
 
     std::ostringstream out;
     std::list<ObjectGuid> vendors = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest npcs")->Get();

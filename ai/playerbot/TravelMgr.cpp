@@ -3073,6 +3073,7 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         }
     }
     if ((purposeFlag & outgrownXPPurposes) && !grindZoneFloor &&
+        TortoiseBots::GuildOrders::OutgrownFloorApplies(info.IsOrderMode()) &&
         info.IsMasterlessRandom() && info.GetLevel() > 10)
     {
         uint32 pointZoneId = posArea ? (posArea->ZoneId ? posArea->ZoneId : posArea->Id) : 0;

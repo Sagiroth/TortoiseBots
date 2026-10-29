@@ -11,6 +11,7 @@
 using namespace ai;
 using TortoiseBots::GuildOrders::BuyOwnedCount;
 using TortoiseBots::GuildOrders::BuyStillMissing;
+using TortoiseBots::GuildOrders::BuyVisitDoneWithoutCandidate;
 using TortoiseBots::GuildOrders::BuyoutBeatsPerItem;
 
 bool GuildOrderBuyAction::isUseful()
@@ -22,7 +23,13 @@ bool GuildOrderBuyAction::isUseful()
         return false;
 
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-    if (order.type != GuildOrderType::AuctionHouse || order.target.empty())
+    // A buy in farm-rest still buys when new listings appear: the value maps
+    // it to Farm for travel, so re-check the stored type here.
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> buyStored =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    bool const isBuy = order.type == GuildOrderType::AuctionHouse ||
+        (buyStored && buyStored->type == TortoiseBots::GuildOrders::OrderType::Buy && buyStored->farmRest);
+    if (!isBuy || order.target.empty())
         return false;
 
     if (!FindNearbyAuctioneer())
@@ -49,9 +56,13 @@ Unit* GuildOrderBuyAction::FindNearbyAuctioneer()
 bool GuildOrderBuyAction::Execute(Event& event)
 {
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-    if (order.type != GuildOrderType::AuctionHouse || !order.itemId || !order.amount)
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> firstStored =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    bool const isBuy = order.type == GuildOrderType::AuctionHouse ||
+        (firstStored && firstStored->type == TortoiseBots::GuildOrders::OrderType::Buy && firstStored->farmRest);
+    if (!isBuy || !order.itemId || !order.amount)
         return false;
-    if (!TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
+    if (!firstStored)
         return false;
 
     Unit* auctioneer = FindNearbyAuctioneer();
@@ -92,6 +103,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
             uint32 count = 0;
         };
         Candidate best;
+        bool oversizeOnly = false;
 
         for (auto const& auctionEntry : *auctionHouse->GetAuctions())
         {
@@ -110,8 +122,15 @@ bool GuildOrderBuyAction::Execute(Event& event)
                 continue;
 
             uint32 auctionCount = item->GetCount();
-            if (auctionCount == 0 || auctionCount > missing)
+            if (auctionCount == 0)
                 continue;
+            if (auctionCount > missing)
+            {
+                // Stacks bigger than the missing count may still split or be
+                // outbid later: do not farm-rest on those alone.
+                oversizeOnly = true;
+                continue;
+            }
 
             if (auction->buyout > budget)
                 continue;
@@ -127,8 +146,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
 
         if (!best.auctionId)
         {
-            // Nothing affordable that fits the bags: farm the rest.
-            visitDone = true;
+            visitDone = BuyVisitDoneWithoutCandidate(oversizeOnly);
         }
         else
         {
