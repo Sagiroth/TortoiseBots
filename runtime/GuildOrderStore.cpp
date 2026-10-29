@@ -60,9 +60,9 @@ public:
         m_orders.clear();
 
         std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
-            "SELECT `bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `delivered`, "
-            "`state`, `reason`, `farm_zone`, `farm_chance`, `moved_zone`, `deaths`, `worked_sec`, "
-            "`reported`, `farm_rest`, `created_at`, `updated_at` FROM `tortoise_bots_guild_order`"));
+            "SELECT `bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
+            "`state`, `reason`, `farm_zone`, `farm_chance`, `zone_index`, `deaths_in_zone`, `worked_sec`, "
+            "`worked_total`, `reported`, `farm_rest`, `created_at`, `updated_at` FROM `tortoise_bots_guild_order`"));
 
         if (result)
         {
@@ -76,19 +76,23 @@ public:
                 ParseType(fields[3].GetCppString(), record.type);
                 record.itemId = fields[4].GetUInt32();
                 record.amount = fields[5].GetUInt32();
-                record.delivered = fields[6].GetUInt32();
-                ParseState(fields[7].GetCppString(), record.state);
-                ParseReason(fields[8].GetCppString(), record.reason);
-                record.farmZoneId = fields[9].GetUInt32();
-                record.farmChance = static_cast<uint8_t>(fields[10].GetUInt32());
-                record.movedZone = fields[11].GetUInt32() != 0;
-                record.deaths = fields[12].GetUInt32();
-                record.workedSinceNewItemSec = fields[13].GetUInt32();
-                record.reportedHave = fields[14].GetUInt32();
-                record.farmRest = fields[15].GetUInt32() != 0;
-                record.createdAt = fields[16].GetUInt64();
-                record.updatedAt = fields[17].GetUInt64();
+                record.hours = fields[6].GetUInt32();
+                record.delivered = fields[7].GetUInt32();
+                ParseState(fields[8].GetCppString(), record.state);
+                ParseReason(fields[9].GetCppString(), record.reason);
+                record.farmZoneId = fields[10].GetUInt32();
+                record.farmChance = static_cast<uint8_t>(fields[11].GetUInt32());
+                record.zoneIndex = fields[12].GetUInt32();
+                record.deathsInZone = fields[13].GetUInt32();
+                record.workedSinceNewItemSec = fields[14].GetUInt32();
+                record.workedTotalSec = fields[15].GetUInt32();
+                record.reportedHave = fields[16].GetUInt32();
+                record.farmRest = fields[17].GetUInt32() != 0;
+                record.createdAt = fields[18].GetUInt64();
+                record.updatedAt = fields[19].GetUInt64();
 
+                if (record.hours < kMinOrderHours || record.hours > kMaxOrderHours)
+                    record.hours = kDefaultOrderHours;
                 if (record.botGuidLow && record.itemId && record.amount)
                     m_orders[record.botGuidLow] = Stored{record};
             } while (result->NextRow());
@@ -138,16 +142,16 @@ public:
 
         if (!CharacterDatabase.DirectPExecute(
                 "REPLACE INTO `tortoise_bots_guild_order` "
-                "(`bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `delivered`, "
-                "`state`, `reason`, `farm_zone`, `farm_chance`, `moved_zone`, `deaths`, `worked_sec`, "
-                "`reported`, `farm_rest`, `created_at`, `updated_at`) "
-                "VALUES ('%u', '%u', '%u', '%s', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
-                "'%u', '%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
+                "(`bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
+                "`state`, `reason`, `farm_zone`, `farm_chance`, `zone_index`, `deaths_in_zone`, `worked_sec`, "
+                "`worked_total`, `reported`, `farm_rest`, `created_at`, `updated_at`) "
+                "VALUES ('%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
+                "'%u', '%u', '%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
                 record.botGuidLow, record.guildId, record.giverGuidLow, TypeToken(record.type),
-                record.itemId, record.amount, record.delivered, StateToken(record.state),
+                record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
                 ReasonToken(record.reason), record.farmZoneId, record.farmChance,
-                record.movedZone ? 1u : 0u, record.deaths, record.workedSinceNewItemSec,
-                record.reportedHave, record.farmRest ? 1u : 0u,
+                record.zoneIndex, record.deathsInZone, record.workedSinceNewItemSec,
+                record.workedTotalSec, record.reportedHave, record.farmRest ? 1u : 0u,
                 static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt)))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
@@ -175,7 +179,7 @@ public:
         return true;
     }
 
-    void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance)
+    void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t zoneIndex)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_orders.find(botGuidLow);
@@ -183,6 +187,7 @@ public:
             return;
         it->second.record.farmZoneId = zoneId;
         it->second.record.farmChance = chance;
+        it->second.record.zoneIndex = zoneIndex;
         MarkDirtyLocked(it->second);
     }
 
@@ -207,8 +212,8 @@ public:
             return;
         if (it->second.record.state != OrderState::Working)
             return;
-        ++it->second.record.deaths;
-        ApplyGiveUpLocked(it->second);
+        ++it->second.record.deathsInZone;
+        MoveZoneLocked(it->second);
         MarkDirtyLocked(it->second);
     }
 
@@ -223,6 +228,7 @@ public:
         it->second.record.farmRest = true;
         it->second.record.farmZoneId = 0;
         it->second.record.farmChance = 0;
+        it->second.record.zoneIndex = 0;
         MarkDirtyLocked(it->second);
     }
 
@@ -320,9 +326,17 @@ public:
             stored.workedCarryMs += in.workedMs;
             if (stored.workedCarryMs >= 1000)
             {
-                record.workedSinceNewItemSec += stored.workedCarryMs / 1000;
+                uint32_t workedSec = stored.workedCarryMs / 1000;
                 stored.workedCarryMs %= 1000;
-                ApplyGiveUpLocked(stored);
+                record.workedSinceNewItemSec += workedSec;
+                record.workedTotalSec += workedSec;
+                if (IsOrderTimeout(record.workedTotalSec, record.hours))
+                {
+                    record.state = OrderState::Cant;
+                    record.reason = OrderReason::Timeout;
+                }
+                else
+                    MoveZoneLocked(stored);
                 MaybeFlushWorkedLocked(stored, in.nowMs);
             }
         }
@@ -406,29 +420,21 @@ private:
         uint32_t reportMs = 0;
     };
 
-    // First threshold hit moves zone once, the second ends the order as stuck.
-    static void ApplyGiveUpLocked(Stored& stored)
+    // A zone move clears the zone so travel re-plans to the next zone of the
+    // plan (wrapping around when exhausted), and resets the per-zone clocks.
+    // Deaths never end the order; the hours budget in Tick does.
+    static void MoveZoneLocked(Stored& stored)
     {
         OrderRecord& record = stored.record;
         if (record.state != OrderState::Working)
             return;
-        GiveUpAction action =
-            ClassifyGiveUp(record.workedSinceNewItemSec, record.deaths, record.movedZone);
-        if (action == GiveUpAction::KeepWorking)
+        if (ClassifyZoneMove(record.workedSinceNewItemSec, record.deathsInZone) ==
+            ZoneMoveTrigger::None)
             return;
-        if (action == GiveUpAction::MoveZone)
-        {
-            record.movedZone = true;
-            record.farmZoneId = 0;
-            record.farmChance = 0;
-            record.workedSinceNewItemSec = 0;
-            record.deaths = 0;
-        }
-        else
-        {
-            record.state = OrderState::Cant;
-            record.reason = OrderReason::Stuck;
-        }
+        record.farmZoneId = 0;
+        record.farmChance = 0;
+        record.workedSinceNewItemSec = 0;
+        record.deathsInZone = 0;
         MarkDirtyLocked(stored);
     }
 
@@ -450,15 +456,15 @@ private:
         OrderRecord& record = stored.record;
         record.updatedAt = static_cast<uint64_t>(std::time(nullptr));
         CharacterDatabase.PExecute(
-            "UPDATE `tortoise_bots_guild_order` SET `delivered` = '%u', `state` = '%s', `reason` = '%s', "
-            "`farm_zone` = '%u', `farm_chance` = '%u', `moved_zone` = '%u', `deaths` = '%u', "
-            "`worked_sec` = '%u', `reported` = '%u', `farm_rest` = '%u', "
+            "UPDATE `tortoise_bots_guild_order` SET `hours` = '%u', `delivered` = '%u', `state` = '%s', `reason` = '%s', "
+            "`farm_zone` = '%u', `farm_chance` = '%u', `zone_index` = '%u', `deaths_in_zone` = '%u', "
+            "`worked_sec` = '%u', `worked_total` = '%u', `reported` = '%u', `farm_rest` = '%u', "
             "`updated_at` = FROM_UNIXTIME('%u') "
             "WHERE `bot_guid` = '%u'",
-            record.delivered, StateToken(record.state), ReasonToken(record.reason), record.farmZoneId,
-            record.farmChance, record.movedZone ? 1u : 0u, record.deaths,
-            record.workedSinceNewItemSec, record.reportedHave, record.farmRest ? 1u : 0u,
-            static_cast<uint32_t>(record.updatedAt), record.botGuidLow);
+            record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
+            record.farmZoneId, record.farmChance, record.zoneIndex, record.deathsInZone,
+            record.workedSinceNewItemSec, record.workedTotalSec, record.reportedHave,
+            record.farmRest ? 1u : 0u, static_cast<uint32_t>(record.updatedAt), record.botGuidLow);
     }
 
     std::mutex m_mutex;
@@ -563,9 +569,9 @@ bool Cancel(uint32_t botGuidLow)
     return gone;
 }
 
-void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance)
+void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t zoneIndex)
 {
-    OrderStore::Instance().SetFarmZone(botGuidLow, zoneId, chance);
+    OrderStore::Instance().SetFarmZone(botGuidLow, zoneId, chance, zoneIndex);
 }
 
 void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason)

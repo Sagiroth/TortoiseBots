@@ -141,14 +141,22 @@ bool ParseAmount(std::string const& token, uint32_t& amount)
     return amount >= kMinAmount && amount <= kMaxAmount;
 }
 
+bool ParseHours(std::string const& token, uint32_t& hours)
+{
+    hours = 0;
+    if (!ParseUintToken(token, hours))
+        return false;
+    return hours >= GuildOrders::kMinOrderHours && hours <= GuildOrders::kMaxOrderHours;
+}
+
 bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const& rest)
 {
-    // order <bot> <farm|buy|craft> <itemId or item link> <amount>
+    // order <bot> <farm|buy|craft> <itemId or item link> <amount> [hours]
     std::istringstream in(rest);
     std::string botName, typeToken;
     if (!(in >> botName >> typeToken))
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount>.");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours].");
         return true;
     }
     OrderType type;
@@ -160,7 +168,8 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
         return true;
     }
     typeToken = lowerType;
-    // The item link carries spaces; the amount is the last token.
+    // The item link carries spaces; the amount is the last token, with an
+    // optional trailing whole hours 1-24: the bot works that long in total.
     std::string itemPart, token, amountToken;
     while (in >> token)
     {
@@ -168,11 +177,33 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
             itemPart += " ";
         itemPart += token;
     }
+    uint32_t hours = GuildOrders::kDefaultOrderHours;
     size_t lastSpace = itemPart.rfind(' ');
     if (lastSpace == std::string::npos)
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount>.");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours].");
         return true;
+    }
+    // A trailing 1-24 is hours only when what is left still reads as an
+    // item plus an amount; otherwise it is the amount itself.
+    std::string maybeHours = itemPart.substr(lastSpace + 1);
+    uint32_t parsedHours = 0;
+    if (ParseHours(maybeHours, parsedHours))
+    {
+        std::string rest = itemPart.substr(0, lastSpace);
+        size_t amountSpace = rest.rfind(' ');
+        if (amountSpace != std::string::npos)
+        {
+            uint32_t restAmount = 0;
+            uint32_t restItem = 0;
+            if (ParseAmount(rest.substr(amountSpace + 1), restAmount) &&
+                ParseItemToken(rest.substr(0, amountSpace), restItem))
+            {
+                hours = parsedHours;
+                itemPart = rest;
+                lastSpace = amountSpace;
+            }
+        }
     }
     amountToken = itemPart.substr(lastSpace + 1);
     itemPart = itemPart.substr(0, lastSpace);
@@ -235,6 +266,7 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     record.type = type;
     record.itemId = itemId;
     record.amount = amount;
+    record.hours = hours;
 
     if (bot)
     {
@@ -395,7 +427,7 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         return HandleOrderSearch(handler, requester, bot, typeToken, text);
     }
 
-    // order <bot> cancel | order <bot> <type> <item> <amount>
+    // order <bot> cancel | order <bot> <type> <item> <amount> [hours]
     std::string second;
     if (!(in >> second))
     {

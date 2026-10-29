@@ -19,9 +19,9 @@ In your own guild you can send a bot to fetch items for real: it farms, buys or 
 Open the TBM addon (`/tbm`), go to the **Guild** tab, press **Order** next to a bot, search for an item, choose Farm, Buy or Craft and an amount. Without the addon, the same orders work from chat:
 
 ```text
-.bot order <BotName> farm <item link or id> <amount>
-.bot order <BotName> buy <item link or id> <amount>
-.bot order <BotName> craft <item link or id> <amount>
+.bot order <BotName> farm <item link or id> <amount> [hours]
+.bot order <BotName> buy <item link or id> <amount> [hours]
+.bot order <BotName> craft <item link or id> <amount> [hours]
 .bot order <BotName> cancel
 .bot order list
 .bot order search <BotName> farm <text>
@@ -29,6 +29,7 @@ Open the TBM addon (`/tbm`), go to the **Guild** tab, press **Order** next to a 
 
 - **One order per bot.** A new order replaces the old one. `cancel` removes it and the bot goes back to normal life.
 - **Amount:** 1-200. Only items that can go to the bank can be ordered (no bind-on-pickup, quest or temporary items); those never show up in the search.
+- **Hours:** optional whole hours 1-24, default 1. The bot farms for that long in total (worked time only, like today's clock); when the time runs out without reaching the amount, the order ends as `cant` with reason `timeout`. Bots farm like players: large amounts or rare drops can take very long or fail, so give reasonable orders.
 - **Search:** needs at least 3 characters and shows at most 30 matches, each with where that bot would farm it, its rough chance there, and a difficulty estimate for one item: easy (about 30 kills or gathers), medium (about 200), hard (more than that). Order rows show the same estimate for the full amount; craft orders use the hardest material still missing, and buy orders show none.
 - **The search needs the bot online;** giving an order does not. An order on an offline bot is kept and runs when it comes back online.
 
@@ -64,7 +65,7 @@ When the amount is reached, the bot walks to a guild banker in a capital city an
 | `done` | Deposited in the guild bank. |
 | `mailed` | The bank refused, mailed to the guild master. |
 | `noskill` | The item needs a profession the bot lacks, or its skill is too low. |
-| `cant` | No source in level range, no source at all, only elite sources, unknown recipe, or stuck after moving zone once. |
+| `cant` | No source in level range, no source at all, only elite sources, unknown recipe, farm time ran out (`timeout`), or stuck while crafting or delivering. |
 
 ## Requirements
 
