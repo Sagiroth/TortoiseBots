@@ -124,15 +124,19 @@ class BossTacticsSql(unittest.TestCase):
 
     def test_deleted_rows_are_gone(self):
         # pjerra/turtle-agent#246: the rows below are not interruptible under the
-        # core's rule (preventionType 0) and were deleted by a later migration.
+        # core's rule (preventionType 0, or interruptFlags without the damage bit)
+        # and were deleted by a later migration.
         live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])) for row in effective_rows()}
         self.assertNotIn((822, 63133, "interrupt", 0, 3143), live)
         self.assertNotIn((820, 62782, "interrupt", 62771, 36732), live)
+        self.assertNotIn((70, 4854, "interrupt", 0, 8292), live)
 
     def test_plan_interrupt_bosses_have_rows(self):
         # pjerra/turtle-agent#254: the turtle-agent plan JSON lists these
         # interrupts, and the module never read them. Fixed table, kept here
         # so the rows cannot silently disappear; do not read the plan repo.
+        # Grimlok's Chain Bolt 8292 is in the plan but has no row: the core
+        # cannot interrupt it (interruptFlags 0x9 lacks the damage bit).
         expected = [
             (43, 3673, 6778),
             (43, 3673, 700),
@@ -145,7 +149,6 @@ class BossTacticsSql(unittest.TestCase):
             (43, 3670, 9532),
             (43, 3674, 6254),
             (43, 3654, 7967),
-            (70, 4854, 8292),
             (70, 4854, 9532),
             (36, 647, 5208),
         ]
