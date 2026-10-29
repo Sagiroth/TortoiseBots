@@ -4,6 +4,7 @@
 #include "PlayerLagWindow.h"
 #include "CommanderTelemetry.h"
 #include "DungeonMobTelemetry.h"
+#include "RealtimeCadence.h"
 #include <cstdint>
 #include <ctime>
 #include <map>
@@ -189,6 +190,9 @@ public:
     void SetCombatEventProvider(std::function<void(std::vector<std::string>&, uint32_t nowMs)> provider);
     // The elite and boss cast poller, called every 250 ms while a fight runs.
     void SetEnemyCastPoller(std::function<void()> poller);
+    // The live positions (COMMANDER_POS, task S3): the position provider fills one ref per bound group on the world
+    // thread, asked every CombatMs while any group fights and on the idle period when one is configured.
+    void SetPositionProvider(std::function<void(std::vector<CommanderTelemetry::PosRef>&, bool wantIdle)> provider);
     uint32_t EventGapMs() const { return m_eventGapMs; }
     // `.reload config`: AiPlayerbot.ObservabilityRealtime* read again (world thread).
     void ReloadRealtimeKeys();
@@ -246,6 +250,25 @@ private:
     std::function<void(std::vector<std::string>&, uint32_t)> m_combatEventProvider;
     std::function<void()> m_enemyCastPoller;
     std::vector<std::string> m_eventPayloads; // reused between drains
+    // The position feed (COMMANDER_POS): its own clock and clamped periods, and one ref per group sent.
+    std::function<void(std::vector<CommanderTelemetry::PosRef>&, bool wantIdle)> m_positionProvider;
+    std::vector<CommanderTelemetry::PosRef> m_positionRefs; // reused between sends
+    RealtimeCadence::Cadence m_posCadence;
+    RealtimeCadence::Clock m_posClock;
+    // Timing aid for the live check: both realtime blocks measured on the world tick, logged at TortoiseBots.LogLevel 3
+    // (debug) once per 60 s.
+    struct RealtimeTiming
+    {
+        uint32 cycles = 0;
+        uint64 sumUs = 0;
+        uint64 maxUs = 0;
+        uint32 posDatagrams = 0;
+        uint64 posBytes = 0;
+        uint32 evDatagrams = 0;
+        uint64 evBytes = 0;
+    };
+    RealtimeTiming m_realtimeTiming;
+    uint32 m_realtimeLogMs = 0;
     bool m_realtimeOn = true;
     bool m_realtimeEvents = true;
     uint32_t m_eventGapMs = 250;

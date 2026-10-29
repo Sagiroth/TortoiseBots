@@ -463,6 +463,110 @@ void TestBossOverlay()
     Check(!Has(MobJson(old), "\"shape\""), "a shape without a cast is left out");
 }
 
+// The 0.5 s position report (task S3/R3m): a bot row in one decimal with its facing at two, a dead bot at hp 0 and
+// alive 0, and the mob rows of the lead's last full report, the facing of a boss or elite row after its hp.
+void TestPosPayload()
+{
+    PosRef ref;
+    ref.commander = "Glacienne";
+    ref.commanderGuid = 12;
+    ref.combat = true;
+    PosBot bot;
+    bot.g = 4021;
+    bot.map = 249;
+    bot.x = -12.34f;
+    bot.y = 45.65f;
+    bot.z = -80.14f;
+    bot.o = 3.14159f;
+    bot.hp = 5321;
+    bot.maxHp = 6000;
+    bot.alive = true;
+    ref.bots.push_back(bot);
+    PosBot dead = bot;
+    dead.g = 4022;
+    dead.alive = false;
+    dead.hp = 0;
+    ref.bots.push_back(dead);
+    PosMob boss;
+    boss.id = 17370386927380123ull;
+    boss.x = -20.14f;
+    boss.y = 40.26f;
+    boss.hpPct = 87;
+    boss.victim = 4021;
+    boss.hasO = true;
+    boss.o = 1.5708f;
+    ref.mobs.push_back(boss);
+
+    std::string const json = BuildPosPayload(12, 77, 4412, 1793210001, 1793210001500, ref);
+    Check(Has(json, "\"v\":12") && Has(json, "\"fmt\":1") && Has(json, "\"session\":77") && Has(json, "\"seq\":4412"),
+        "carries the protocol version, fmt, session and seq");
+    Check(Has(json, "\"ts\":1793210001") && Has(json, "\"ts_ms\":1793210001500"), "unix seconds and milliseconds");
+    Check(Has(json, "\"type\":\"COMMANDER_POS\"") && Has(json, "\"commander\":\"Glacienne\"") &&
+              Has(json, "\"commander_guid\":12"), "its type and commander");
+    Check(Has(json, "\"combat\":true"), "the combat flag");
+    Check(Has(json, "{\"g\":4021,\"m\":249,\"x\":-12.3,\"y\":45.7,\"z\":-80.1,\"o\":3.14,\"hp\":5321,\"mhp\":6000,\"a\":1}"),
+        "a bot row: x/y/z in one decimal, the facing at two, alive 1");
+    Check(Has(json, "{\"g\":4022,\"m\":249,\"x\":-12.3,\"y\":45.7,\"z\":-80.1,\"o\":3.14,\"hp\":0,\"mhp\":6000,\"a\":0}"),
+        "a dead bot: hp 0 and alive 0");
+    Check(Has(json, "{\"id\":\"17370386927380123\",\"x\":-20.1,\"y\":40.3,\"hp\":87,\"o\":1.57,\"v\":\"4021\"}"),
+        "a boss mob row with its facing after hp and its victim");
+    Check(json.find('\n') == std::string::npos, "the datagram is one line");
+
+    PosRef plain;
+    plain.commander = "Glacienne";
+    PosMob ordinary;
+    ordinary.id = 5;
+    ordinary.x = 1.0f;
+    ordinary.y = 2.0f;
+    ordinary.hpPct = 60;
+    plain.mobs.push_back(ordinary);
+    std::string const old = BuildPosPayload(12, 77, 4413, 1, 1, plain);
+    Check(!Has(old, "\"o\":"), "an ordinary mob row has no facing");
+    Check(Has(old, "{\"id\":\"5\",\"x\":1.0,\"y\":2.0,\"hp\":60,\"v\":\"\"}"), "a mob with no victim sends an empty v");
+}
+
+// The caps of the position report: 40 bots and 24 mobs per datagram, one decimal for a place and 20-digit ids, still
+// inside its byte budget (the +9 B a facing adds per mob included).
+void TestPosCapsAndSize()
+{
+    PosRef ref;
+    ref.commander = std::string(40, 'C');
+    for (int i = 0; i < 50; ++i)
+    {
+        PosBot bot;
+        bot.g = 4021 + i;
+        bot.map = 249;
+        bot.x = -1234.56f;
+        bot.y = 987.65f;
+        bot.z = -80.14f;
+        bot.o = 3.14159f;
+        bot.hp = 5321;
+        bot.maxHp = 6000;
+        bot.alive = i % 2 == 0;
+        if (!bot.alive)
+            bot.hp = 0;
+        ref.bots.push_back(bot);
+    }
+    for (int i = 0; i < 30; ++i)
+    {
+        PosMob mob;
+        mob.id = 17000000000000000000ull + i; // 20 digits, the widest a raw guid has
+        mob.x = -1234.56f;
+        mob.y = 987.65f;
+        mob.hpPct = 100;
+        mob.victim = 4021;
+        mob.hasO = true;
+        mob.o = 3.14159f;
+        ref.mobs.push_back(mob);
+    }
+    std::string const json = BuildPosPayload(12, 1, 1, 1, 1, ref);
+    Check(Count(json, "\"g\":") == kMaxPosBots, "bots are capped at 40");
+    Check(Count(json, "\"mhp\":") == kMaxPosBots, "only the capped bot rows are written");
+    Check(Count(json, "\"id\":\"") == kMaxPosMobs, "mobs are capped at 24");
+    Check(json.size() <= kPosByteBudget, "the worst case stays within the position budget");
+    Check(json.size() < 16384, "and under 16 KiB at the caps");
+}
+
 void TestRunInfo()
 {
     BindingInfo b;
@@ -1101,6 +1205,8 @@ int main()
     TestMapDataCapsAndSize();
     TestUnitInfo();
     TestBossOverlay();
+    TestPosPayload();
+    TestPosCapsAndSize();
     TestRunInfo();
     TestPathData();
     TestBosses();

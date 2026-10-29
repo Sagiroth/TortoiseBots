@@ -12105,6 +12105,15 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
     }
 }
 
+// The name the dashboard shows for a binding's commander that has a character: its name, or "offline #<n>" while it is not in
+// the world. A system binding's "system" is the COMMANDERS branch's own word (a committed test pins it), and the position
+// report names it the same way.
+static std::string CommanderDisplayName(RemoteCommander::Binding const& binding, Player* commander)
+{
+    return commander ? commander->GetName()
+                     : "offline #" + std::to_string(::ObjectGuid(binding.commanderGuid).GetCounter());
+}
+
 void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
 {
     out.clear();
@@ -12137,7 +12146,7 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
         }
         else
         {
-            ref.commander = commander ? commander->GetName() : "offline #" + std::to_string(::ObjectGuid(commanderRaw).GetCounter());
+            ref.commander = CommanderDisplayName(*binding, commander);
             ref.commanderGuid = ::ObjectGuid(commanderRaw).GetCounter();
             ref.commanderOnline = commander && commander->GetSession() && commander->GetSession()->HasNetworkTransport();
         }
@@ -12220,6 +12229,99 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
         it = bound.count(it->first) ? std::next(it) : s_runFedAt().erase(it);
     for (auto it = s_leadAway().begin(); it != s_leadAway().end();)
         it = bound.count(it->first) ? std::next(it) : s_leadAway().erase(it);
+}
+
+// The dashboard's live positions (task S3): the bots of a bound group and the enemies its lead's last full report listed,
+// sent every 0.5 s while the group fights (and on the idle period, when one is asked for). Field reads on the bound members
+// and one guid lookup per watched enemy on the lead's map: no grid, world or DB read, nothing per bot tick. At most
+// kMaxPosBindings bindings per call from a rotating start, so more bindings than that all get a turn.
+void CollectCommanderPositions(std::vector<CommanderTelemetry::PosRef>& out, bool wantIdle)
+{
+    out.clear();
+    // Nothing to read while no commander is bound: the common case costs a lookup.
+    if (CommanderBindings().Empty())
+        return;
+    std::vector<uint64> const commanders = CommanderBindings().Commanders();
+    static size_t start = 0;
+    size_t const first = commanders.size() > CommanderTelemetry::kMaxPosBindings ? start % commanders.size() : 0;
+    size_t const count = std::min(commanders.size(), CommanderTelemetry::kMaxPosBindings);
+    start = first + count;
+    for (size_t i = 0; i < count; ++i)
+    {
+        uint64 const commanderRaw = commanders[(first + i) % commanders.size()];
+        RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commanderRaw);
+        if (!binding)
+            continue;
+        Player* lead = FindCharacter(binding->leadGuid);
+        Group* group = lead ? lead->GetGroup() : nullptr;
+        if (!lead || !group || !lead->IsInWorld() || group->GetId() != binding->groupId)
+            continue;
+        std::vector<Player*> members;
+        FillCommandedBots(group, lead, members);
+        bool combat = false;
+        for (Player* bot : members)
+            if (bot && bot->IsInCombat())
+            {
+                combat = true;
+                break;
+            }
+        if (!combat && !wantIdle)
+            continue;
+        CommanderTelemetry::PosRef ref;
+        ref.commander = binding->system ? "system" : CommanderDisplayName(*binding, FindCharacter(commanderRaw));
+        ref.commanderGuid = ::ObjectGuid(commanderRaw).GetCounter();
+        ref.combat = combat;
+        ref.bots.reserve(std::min(members.size(), CommanderTelemetry::kMaxPosBots));
+        for (Player* bot : members)
+        {
+            if (ref.bots.size() >= CommanderTelemetry::kMaxPosBots)
+                break;
+            if (!bot || !bot->IsInWorld())
+                continue;
+            CommanderTelemetry::PosBot pos;
+            pos.g = bot->GetGUIDLow();
+            pos.map = bot->GetMapId();
+            pos.x = bot->GetPositionX();
+            pos.y = bot->GetPositionY();
+            pos.z = bot->GetPositionZ();
+            pos.o = bot->GetOrientation();
+            pos.alive = bot->IsAlive();
+            pos.hp = pos.alive ? bot->GetHealth() : 0;
+            pos.maxHp = bot->GetMaxHealth();
+            ref.bots.push_back(pos);
+        }
+        auto const watch = s_mobWatch().find(commanderRaw);
+        Map* map = lead->GetMap();
+        if (watch != s_mobWatch().end() && map)
+        {
+            ref.mobs.reserve(std::min(watch->second.mobs.size(), CommanderTelemetry::kMaxPosMobs));
+            for (auto const& row : watch->second.mobs)
+            {
+                if (ref.mobs.size() >= CommanderTelemetry::kMaxPosMobs)
+                    break;
+                uint64 const guid = std::get<0>(row);
+                char const rank = std::get<2>(row);
+                Unit* unit = map->GetUnit(::ObjectGuid(guid));
+                if (!unit)
+                    continue;
+                CommanderTelemetry::PosMob mob;
+                mob.id = guid;
+                mob.x = unit->GetPositionX();
+                mob.y = unit->GetPositionY();
+                mob.hpPct = unit->GetMaxHealth()
+                    ? static_cast<uint32>(unit->GetHealth() * 100ull / unit->GetMaxHealth()) : 0;
+                mob.victim = unit->GetTargetGuid().GetRawValue();
+                // Only a boss or elite turns on the map; an ordinary enemy keeps its last report's place and no facing.
+                if (rank == 'b' || rank == 'e')
+                {
+                    mob.hasO = true;
+                    mob.o = unit->GetOrientation();
+                }
+                ref.mobs.push_back(mob);
+            }
+        }
+        out.push_back(std::move(ref));
+    }
 }
 
 // One unit as the Dungeons tab shows it (issue #1101): field reads on the unit and its template, the seeing member's reaction to

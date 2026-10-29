@@ -24,6 +24,10 @@
 // kMaxMobOverlaysPerPayload rows per datagram carry them (bosses first, then elites); the rest keep the old row, so a
 // report full of boss rows stays inside the UDP limit.
 //
+// Live positions (additive, same rule; task S3): while a bound group fights, its bots and the enemies its lead's last report
+// listed go out every 0.5 s (COMMANDER_POS) with the boss and elite rows' facing, so the dashboard's dots glide between the
+// 2 s reports; a group that stands still is only in those 2 s reports unless a shorter idle period is configured.
+//
 // Map drawing (additive, same rule): the spell a bot is casting also names its target (a healer's heal target, a crowd-control
 // caster's mob), the game objects the bots have seen near them (doors, chests, altars, gongs: type and state, capped), and, for a run
 // leader's run, the plan's steps of the current section (capped, rebuilt only when the step moves). The dashboard draws paths,
@@ -991,6 +995,104 @@ inline std::string BuildPayload(int protocolVersion, uint64_t session, uint64_t 
         if (keep[i])
             out.insert(bossLists[i].at, bossLists[i].json);
     return out;
+}
+
+// The live position report (task S3). The dashboard receives one COMMANDER_POS per bound group every 0.5 s while the group
+// fights, so its dots move between the 2 s reports: the same bots and enemies the last COMMANDERS report carried, matched
+// by guid, with the boss and elite rows' facing read at this cadence too. An idle period under 2000 ms adds out-of-combat
+// reports on its own clock; at 2000 the 2 s report is that source.
+
+// One bot's place in the position report. `g` is a low guid as in COMMANDERS; a facing uses the mob `o` convention.
+struct PosBot
+{
+    uint32_t g = 0;
+    uint32_t map = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float o = 0.0f;   // facing, radians (0 = +x north, counter-clockwise toward +y west)
+    uint32_t hp = 0;  // 0 while dead
+    uint32_t maxHp = 0;
+    bool alive = false;
+};
+
+// One enemy near the binding's lead: a unit its last full report listed, resolved by guid on the lead's map. `id` is the
+// raw guid as a decimal string, `victim` the unit it targets (0 = none).
+struct PosMob
+{
+    uint64_t id = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    uint32_t hpPct = 0;
+    uint64_t victim = 0;
+    // A boss or elite turns while it fights, so its row carries where it looks (the overlay's `o`); an ordinary mob does
+    // not, and its row stays as it was.
+    bool hasO = false;
+    float o = 0.0f;
+};
+
+// One binding's positions: the COMMANDERS name, whether the group fights, and its bots and enemies.
+struct PosRef
+{
+    std::string commander;
+    uint32_t commanderGuid = 0;
+    bool combat = false;
+    std::vector<PosBot> bots;
+    std::vector<PosMob> mobs;
+};
+
+constexpr size_t kMaxPosBots = 40;     // a raid binding's cap, as in COMMANDERS
+constexpr size_t kMaxPosMobs = 24;     // the perception feed's own cap (kMaxMobsPerBinding)
+constexpr size_t kPosByteBudget = 16000; // one datagram's share of the 16 KiB UDP budget
+constexpr size_t kMaxPosBindings = 20; // one datagram per commander, 1..20 commanders
+
+// The COMMANDER_POS datagram (protocol v12, "fmt":1). x/y/z in one decimal, a facing in two, a dead bot at hp 0 and a 0.
+// Over kPosByteBudget (cannot happen at the caps) the enemies and then the bots are dropped from the end.
+inline std::string BuildPosPayload(int protocolVersion, uint64_t session, uint64_t seq, int64_t ts, int64_t tsMs,
+                                   PosRef const& ref)
+{
+    size_t bots = std::min(ref.bots.size(), kMaxPosBots);
+    size_t mobs = std::min(ref.mobs.size(), kMaxPosMobs);
+    for (;;)
+    {
+        std::ostringstream ss;
+        ss.setf(std::ios::fixed);
+        ss.precision(1);
+        ss << "{\"v\":" << protocolVersion << ",\"fmt\":1,\"session\":" << session << ",\"seq\":" << seq
+           << ",\"ts\":" << ts << ",\"ts_ms\":" << tsMs << ",\"type\":\"COMMANDER_POS\",\"commander\":\""
+           << JsonEscape(ref.commander) << "\",\"commander_guid\":" << ref.commanderGuid
+           << ",\"combat\":" << (ref.combat ? "true" : "false") << ",\"bots\":[";
+        for (size_t i = 0; i < bots; ++i)
+        {
+            PosBot const& bot = ref.bots[i];
+            if (i)
+                ss << ",";
+            ss << "{\"g\":" << bot.g << ",\"m\":" << bot.map << ",\"x\":" << bot.x << ",\"y\":" << bot.y
+               << ",\"z\":" << bot.z << ",\"o\":" << Fixed2(bot.o) << ",\"hp\":" << bot.hp
+               << ",\"mhp\":" << bot.maxHp << ",\"a\":" << (bot.alive ? 1 : 0) << "}";
+        }
+        ss << "],\"mobs\":[";
+        for (size_t i = 0; i < mobs; ++i)
+        {
+            PosMob const& mob = ref.mobs[i];
+            if (i)
+                ss << ",";
+            ss << "{\"id\":\"" << mob.id << "\",\"x\":" << mob.x << ",\"y\":" << mob.y << ",\"hp\":" << mob.hpPct;
+            if (mob.hasO)
+                ss << ",\"o\":" << Fixed2(mob.o);
+            ss << ",\"v\":\"" << (mob.victim ? std::to_string(mob.victim) : std::string()) << "\"}";
+        }
+        ss << "]}";
+        std::string out = ss.str();
+        if (out.size() <= kPosByteBudget)
+            return out;
+        if (mobs)
+            --mobs;
+        else if (bots)
+            --bots;
+        else
+            return out;
+    }
 }
 
 } // namespace CommanderTelemetry

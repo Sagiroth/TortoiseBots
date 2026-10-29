@@ -41,6 +41,8 @@ The native module has its own independent logging system. This allows administra
 | [`AiPlayerbot.ObservabilityRealtime`](#aiplayerbotobservabilityrealtime) | `1` | Streams the bound groups' fight events (deaths, pulls, taunts, interrupts, casts, kill/wipe) to the dashboard as they happen. |
 | [`AiPlayerbot.ObservabilityRealtime.Events`](#aiplayerbotobservabilityrealtimeevents) | `1` | Turns the fight-event stream on or off without touching the rest of the realtime feed. |
 | [`AiPlayerbot.ObservabilityRealtime.EventGapMs`](#aiplayerbotobservabilityrealtimeeventgapms) | `250` | Minimum milliseconds between two event datagrams of one commander (100..2000). |
+| [`AiPlayerbot.ObservabilityRealtime.CombatMs`](#aiplayerbotobservabilityrealtimecombatms) | `500` | Milliseconds between two position reports of a fighting commander group (250..2000). |
+| [`AiPlayerbot.ObservabilityRealtime.IdleMs`](#aiplayerbotobservabilityrealtimeidlems) | `2000` | Milliseconds between two position reports out of combat (250..2000; `2000` = only the regular 2 s report). |
 
 ## Settings
 
@@ -276,6 +278,32 @@ Minimum time between two event datagrams of the same commander group.
 <summary>How it works in detail</summary>
 
 Events are queued per group and drained every 100 ms, but one datagram per group goes out at most once per this interval; whatever happened in between rides the next one. A higher value means fewer, fuller datagrams; the fight header (state and `fight_ms`) rides every one. While a fight is open and nothing was sent for 5 s, a keepalive with an empty event list keeps the dashboard's timer live.
+
+</details>
+
+### `AiPlayerbot.ObservabilityRealtime.CombatMs`
+How often a fighting commander group's positions are sent, in milliseconds.
+**Default:** `500` · **Values:** `250`..`2000` (clamped) · **Restart:** not needed (`.reload config` applies live)
+
+<details>
+<summary>How it works in detail</summary>
+
+While at least one bot of a bound group is in combat, the module sends one `COMMANDER_POS` datagram per group every this many milliseconds with the group's bots (place, facing, health, alive) and the enemies the lead's last 2 s report listed (place, health, victim, and the facing of a boss or elite). The dashboard glides its dots between reports, so the world tick never waits on it: the whole report is a few field reads and one guid lookup per watched enemy, with no grid or world scan. Casts do not ride this report; their start arrives as a `COMBAT_EVENTS` line and the time left is extrapolated between the 2 s reports.
+
+Only acts with [`AiPlayerbot.ObservabilityRealtime`](#aiplayerbotobservabilityrealtime) on and needs [`AiPlayerbot.Observability`](#aiplayerbotobservability). At most 40 bots and 24 enemies per group per datagram.
+
+</details>
+
+### `AiPlayerbot.ObservabilityRealtime.IdleMs`
+How often positions are sent while a bound group does not fight, in milliseconds.
+**Default:** `2000` · **Values:** `250`..`2000` (clamped) · **Restart:** not needed (`.reload config` applies live)
+
+<details>
+<summary>How it works in detail</summary>
+
+The regular 2 s `COMMANDERS` report already carries every standing group, so the default `2000` sends no out-of-combat positions at all. A lower value adds `COMMANDER_POS` datagrams for the groups that are not fighting on their own period, which costs traffic on an idle server and is meant for a dashboard watching a group walk.
+
+Only acts with [`AiPlayerbot.ObservabilityRealtime`](#aiplayerbotobservabilityrealtime) on and needs [`AiPlayerbot.Observability`](#aiplayerbotobservability).
 
 </details>
 

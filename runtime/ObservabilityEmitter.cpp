@@ -580,6 +580,12 @@ void ObservabilityEmitter::Initialize()
         sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.EventGapMs", 250))));
     m_eventTimerMs = 0;
     m_castPollMs = 0;
+    // The position feed's periods: 500 ms in combat, and an idle period of 2000 that keeps the 2 s report the only idle source.
+    m_posCadence = RealtimeCadence::Clamp(sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.CombatMs", 500),
+        sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.IdleMs", 2000));
+    m_posClock.Set(m_posCadence);
+    m_realtimeTiming = RealtimeTiming();
+    m_realtimeLogMs = 0;
 
     m_port = sPlayerbotAIConfig.observabilityPort;
     if (m_port == 0)
@@ -719,12 +725,20 @@ void ObservabilityEmitter::SetEnemyCastPoller(std::function<void()> poller)
     m_enemyCastPoller = std::move(poller);
 }
 
+void ObservabilityEmitter::SetPositionProvider(std::function<void(std::vector<CommanderTelemetry::PosRef>&, bool)> provider)
+{
+    m_positionProvider = std::move(provider);
+}
+
 void ObservabilityEmitter::ReloadRealtimeKeys()
 {
     m_realtimeOn = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime", true);
     m_realtimeEvents = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime.Events", true);
     m_eventGapMs = static_cast<uint32_t>(std::max(100, std::min(2000,
         sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.EventGapMs", 250))));
+    m_posCadence = RealtimeCadence::Clamp(sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.CombatMs", 500),
+        sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.IdleMs", 2000));
+    m_posClock.Set(m_posCadence);
 }
 
 void ObservabilityEmitter::SetDungeonMobProvider(std::function<void(std::vector<DungeonMobTelemetry::RunRef>&)> provider)
@@ -1237,6 +1251,7 @@ void ObservabilityEmitter::Update(uint32 diff)
     // The live fight stream runs on its own cadence (100 ms drain, 250 ms
     // cast poll), not inside the 2 s snapshot gate, so events reach the page as
     // they happen. The per-group EventGapMs still limits datagrams.
+    auto const realtimeStart = std::chrono::steady_clock::now();
     if (m_realtimeOn && m_realtimeEvents)
     {
         m_eventTimerMs += diff;
@@ -1253,8 +1268,51 @@ void ObservabilityEmitter::Update(uint32 diff)
                 m_eventPayloads.clear();
                 m_combatEventProvider(m_eventPayloads, nowMs);
                 for (std::string const& payload : m_eventPayloads)
+                {
                     SendDatagram(payload);
+                    ++m_realtimeTiming.evDatagrams;
+                    m_realtimeTiming.evBytes += payload.size();
+                }
             }
+        }
+    }
+
+    // The position feed (COMMANDER_POS): every CombatMs while a bound group
+    // fights, before the 2 s gate. The idle period adds the groups that do
+    // not fight only when it is under 2000 ms; at 2000 the 2 s report is the
+    // idle source. The master switch and the provider gate it first.
+    if (m_realtimeOn && m_positionProvider && m_posClock.CombatDue(diff))
+    {
+        bool const wantIdle = RealtimeCadence::IdleSends(m_posCadence) && m_posClock.IdleDue(diff);
+        m_positionRefs.clear();
+        m_positionProvider(m_positionRefs, wantIdle);
+        for (CommanderTelemetry::PosRef const& ref : m_positionRefs)
+        {
+            std::string const payload = CommanderTelemetry::BuildPosPayload(kProtocolVersion, m_sessionId, NextSeq(),
+                NowUnix(), NowUnixMs(), ref);
+            SendDatagram(payload);
+            ++m_realtimeTiming.posDatagrams;
+            m_realtimeTiming.posBytes += payload.size();
+        }
+    }
+    if (m_realtimeOn)
+    {
+        RealtimeTiming& t = m_realtimeTiming;
+        uint64 const us = static_cast<uint64>(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - realtimeStart).count());
+        ++t.cycles;
+        t.sumUs += us;
+        t.maxUs = std::max(t.maxUs, us);
+        m_realtimeLogMs += diff;
+        if (m_realtimeLogMs >= 60000)
+        {
+            m_realtimeLogMs = 0;
+            if (t.cycles)
+                TB_LOG_DEBUG("TortoiseBots: realtime 60s: pos %u dg %llu B, events %u dg %llu B, avg %llu us max %llu us per tick",
+                    t.posDatagrams, static_cast<unsigned long long>(t.posBytes), t.evDatagrams,
+                    static_cast<unsigned long long>(t.evBytes), static_cast<unsigned long long>(t.sumUs / t.cycles),
+                    static_cast<unsigned long long>(t.maxUs));
+            t = RealtimeTiming();
         }
     }
 
