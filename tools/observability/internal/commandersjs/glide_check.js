@@ -192,41 +192,77 @@ const S0 = 1791990030000; // its server time
 {
   const st = G.create();
   for (let i = 0; i <= 3; i++) {
-    G.sampled(st, T0 + i * 500, S0 + i * 500, "s1");
+    G.sampled(st, T0 + i * 500, S0 + i * 500, "s1", true);
     G.note(st, "b1", i * 10, 0, 209, true, T0 + i * 500, S0 + i * 500);
     G.note(st, "b2", i * 10, 5, 209, true, T0 + i * 500, S0 + i * 500);
   }
   near(st.delay, 625, "the 0.5 s feed sets the delay");
   const before = G.at(st, "b1", T0 + 1600);
   // half a second behind the newest frame: a reorder, dropped as today
-  G.sampled(st, T0 + 1600, S0 + 1000, "s1");
+  G.sampled(st, T0 + 1600, S0 + 1000, "s1", true);
   G.note(st, "b1", 999, 0, 209, true, T0 + 1600, S0 + 1000);
   near(G.at(st, "b1", T0 + 1600).x, before.x, "a reorder does not move the dot");
   near(st.delay, 625, "and does not move the delay");
+  assert.strictEqual(st.lastClock, S0 + 1500, "nor the clock");
   // an hour back: the card starts over and the frame is a snap
   const jumpNow = T0 + 2000, jumpTs = S0 - 3600000;
-  G.sampled(st, jumpNow, jumpTs, "s1");
+  G.sampled(st, jumpNow, jumpTs, "s1", true);
   G.note(st, "b1", 70, 0, 209, true, jumpNow, jumpTs);
   assert.deepStrictEqual(st.gaps, [], "the gap history of the old clock is gone");
   assert.strictEqual(st.offset, jumpNow - jumpTs, "the offset window starts over at the jump");
   assert.ok(!st.units["b:2"], "the units of the old clock are gone");
   near(G.at(st, "b1", jumpNow + st.delay).x, 70, "the frame after the jump is drawn at once");
   // and the next frame walks again, on the new clock's own gap
-  G.sampled(st, jumpNow + 500, jumpTs + 500, "s1");
+  G.sampled(st, jumpNow + 500, jumpTs + 500, "s1", true);
   G.note(st, "b1", 80, 0, 209, true, jumpNow + 500, jumpTs + 500);
   assert.deepStrictEqual(st.gaps, [500], "the new clock measures its own gap");
   assert.strictEqual(G.active(st, jumpNow + 500 + st.delay), true, "the dot walks again");
   // a new datagram session on the same clock starts the card over too
   G.note(st, "b3", 1, 1, 209, true, jumpNow + 500, jumpTs + 500);
-  G.sampled(st, jumpNow + 1000, jumpTs + 1000, "s2");
+  G.sampled(st, jumpNow + 1000, jumpTs + 1000, "s2", true);
   G.note(st, "b1", 90, 0, 209, true, jumpNow + 1000, jumpTs + 1000);
   assert.ok(!st.units["b:3"], "the old session's units are gone");
   near(G.at(st, "b1", jumpNow + 1000 + st.delay).x, 90, "the new session's frame is a snap");
 }
 
+// ---- the 2 s COMMANDERS report interleaved between 0.5 s position frames never moves the delay
+{
+  const st = G.create();
+  let x = 0;
+  for (let i = 0; i <= 12; i++) {
+    const now = T0 + i * 500, ts = S0 + i * 500;
+    G.sampled(st, now, ts, undefined, true);
+    G.note(st, "b1", x, 0, 209, true, now, ts);
+    x += 10;
+    if (i % 4 === 2) G.sampled(st, now + 250, ts + 250, undefined, false); // a report, newer than the last position frame
+  }
+  near(st.delay, 625, "only the position frames feed the gap: 1.25 x 500 ms");
+  assert.ok(st.gaps.every((g) => g === 500), "every gap is a position frame's own: " + st.gaps.join(","));
+  // the report still moves the dots when it is newer
+  const rep = G.create();
+  G.sampled(rep, T0, S0, undefined, true);
+  G.note(rep, "b1", 0, 0, 209, true, T0, S0);
+  G.sampled(rep, T0 + 500, S0 + 500, undefined, true);
+  G.note(rep, "b1", 10, 0, 209, true, T0 + 500, S0 + 500);
+  G.sampled(rep, T0 + 750, S0 + 750, undefined, false);
+  G.note(rep, "b1", 15, 0, 209, true, T0 + 750, S0 + 750);
+  near(G.at(rep, "b1", T0 + 750 + rep.delay).x, 15, "a newer report still moves the dot");
+  near(rep.delay, 625, "but it does not feed the gap");
+  // a late, older report is ignored for the clock and the gaps
+  const older = G.create();
+  G.sampled(older, T0, S0, undefined, true);
+  G.note(older, "b1", 0, 0, 209, true, T0, S0);
+  G.sampled(older, T0 + 500, S0 + 500, undefined, true);
+  G.note(older, "b1", 10, 0, 209, true, T0 + 500, S0 + 500);
+  G.sampled(older, T0 + 700, S0 + 300, undefined, false);
+  assert.strictEqual(older.lastClock, S0 + 500, "an older frame never moves the clock back");
+  near(older.delay, 625, "nor the delay");
+}
+
 // ---- the frame cap is 60 fps now (16 ms)
 assert.strictEqual(G.FRAME_MS, 16, "the dots redraw every animation frame");
 assert.strictEqual(G.BACK_MS, 2000, "a clock jump is measured against the newest server time");
+assert.strictEqual(G.POS_WINDOW_MS, 3000, "position frames own the delay while they run");
 assert.strictEqual(G.SAMPLES, 4, "four samples a unit");
 assert.strictEqual(G.EXTRAP_MS, 300);
 

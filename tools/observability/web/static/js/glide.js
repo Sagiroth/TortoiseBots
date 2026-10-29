@@ -14,6 +14,7 @@
   const DELAY_MIN_MS = 300, DELAY_MAX_MS = 2600;
   const EXTRAP_MS = 300;  // past the newest sample, walk on along the last velocity this long, then hold
   const BACK_MS = 2000;   // a frame this much older than the newest server time is a clock reset, not a reorder
+  const POS_WINDOW_MS = 3000; // while position frames run, only they say how far behind the map is drawn
   const TAU = Math.PI * 2;
   // The same jump rule as the trails (commanders.js, the daemon's JumpLimitYd): 12 yd of slack plus 20 yd for each second,
   // seconds counted from 1 to 30.
@@ -36,7 +37,7 @@
       units: {},
       offsets: [], offset: 0, offsetTs: null,
       gaps: [], delay: initialDelay(),
-      lastClock: null, newestClock: null, session: null,
+      lastClock: null, newestClock: null, session: null, posAt: null,
     };
   }
 
@@ -51,6 +52,7 @@
     st.delay = initialDelay();
     st.lastClock = null;
     st.newestClock = null;
+    st.posAt = null;
   }
 
   const botKey = (guid) => "b:" + String(guid);
@@ -92,19 +94,25 @@
 
   const renderTime = (st, nowMs) => nowMs - (st.offset || 0) - (st.delay || delayOf(st));
 
-  // Once per report: the gap the render delay follows, and the report's own server time when it has one.
-  function sampled(st, nowMs, tsMs, session) {
+  // Once per report: the gap the render delay follows, and the report's own server time when it has one. Only a newer server
+  // time feeds it (a reordered frame never moves the clock back), and while position frames run only they do: the 2 s report
+  // still moves the dots, but its cadence must not stretch the delay the position stream set.
+  function sampled(st, nowMs, tsMs, session, pos) {
     if (!st) return;
     const t = clockOf(st, nowMs, tsMs, session);
-    if (typeof st.lastClock === "number") {
-      const g = t - st.lastClock;
-      if (g > 0) {
-        st.gaps.push(g);
-        if (st.gaps.length > GAPS) st.gaps.shift();
-        st.delay = delayOf(st);
-      }
+    if (pos) st.posAt = nowMs;
+    if (typeof st.lastClock !== "number") {
+      st.lastClock = t;
+      return;
     }
-    st.lastClock = t;
+    if (t <= st.lastClock) return;
+    const live = !!pos || st.posAt == null || nowMs - st.posAt > POS_WINDOW_MS;
+    if (live) {
+      st.gaps.push(t - st.lastClock);
+      if (st.gaps.length > GAPS) st.gaps.shift();
+      st.delay = delayOf(st);
+      st.lastClock = t;
+    }
   }
 
   // The angle the short way round, in [0, 2π): a unit turning from 350° to 10° passes 0, not 180.
@@ -201,7 +209,7 @@
   }
 
   const api = {
-    CAP_MS, FRAME_MS, BACK_MS, SAMPLES, OFFSETS, GAPS, DELAY_FACTOR, DELAY_MIN_MS, DELAY_MAX_MS, EXTRAP_MS,
+    CAP_MS, FRAME_MS, BACK_MS, POS_WINDOW_MS, SAMPLES, OFFSETS, GAPS, DELAY_FACTOR, DELAY_MIN_MS, DELAY_MAX_MS, EXTRAP_MS,
     SLACK_YD, YD_PER_SEC, MAX_GAP_SEC,
     jumpLimitYd, create, botKey, mobKey, median, angleLerp, sampled, delayOf, renderTime, at, note, active, apply,
   };

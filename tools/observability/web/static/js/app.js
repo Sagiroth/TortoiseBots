@@ -5705,7 +5705,7 @@
         state.commanders.list = list;
         const st = cmdGlide[d.commander] || (cmdGlide[d.commander] = Glide.create());
         const now = performance.now(), map = cmdFindBind(d.commander), ts = d.ts_ms;
-        Glide.sampled(st, now, ts, d.session); // the gap the dots are drawn behind is the pos frame gap, not the 2 s report gap
+        Glide.sampled(st, now, ts, d.session, true); // the gap the dots are drawn behind is the pos frame gap, not the 2 s report gap
         (d.bots || []).forEach(b => { if (b && b.g != null) Glide.note(st, Glide.botKey(b.g), b.x, b.y, b.m, b.a === 1, now, ts); });
         (d.mobs || []).forEach(m => {
           if (m && m.id != null) Glide.note(st, Glide.mobKey(m.id), m.x, m.y, map ? map.mobs_map : null, true, now, ts, typeof m.o === 'number' ? m.o : undefined);
