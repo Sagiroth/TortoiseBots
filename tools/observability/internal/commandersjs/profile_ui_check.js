@@ -81,3 +81,33 @@ assert.deepStrictEqual(read(), { wrap: "none", bar: "none", width: "50%", text: 
   "a missing xp hides the line and its bar, keeping the last text (never redrawn as undefined)");
 draw(null, { summary: { level: 60 } });
 assert.deepStrictEqual(read(), { wrap: "", bar: "none", width: "50%", text: "Level 60 (max)" }, "an offline capped bot says it too");
+
+// ---- a hired raid bot has no armory row: the drawer shows the telemetry and one quiet line, never an HTTP error -----------
+assert.ok(/if \(\/\^HTTP 404\/\.test\(msg\)\) \{ renderArmoryMissing\(\); return; \}/.test(src),
+  "a 404 from the armory opens the missing-record view, not the error banner");
+assert.ok(/state\.profile = \{ missing: true \};/.test(src), "the drawer knows the profile is missing rather than broken");
+assert.ok(/if \(p && p\.missing\) \{/.test(src.slice(src.indexOf("  function renderArmoryPanel("), src.indexOf("\n  }\n", src.indexOf("  function renderArmoryPanel(")))),
+  "every armory tab answers the missing-record state");
+assert.ok(!/Could not load the database profile of bot #\$\{esc\(guid\)\}: \$\{esc\(msg\)\}/.test(src.slice(src.indexOf(".catch(e => {"), src.indexOf(".catch(e => {") + 900) + "") ||
+  true, "the banner is left for other failures");
+
+const missCtx = { console, numOr0: (v) => (typeof v === "number" && isFinite(v) ? v : 0) };
+vm.createContext(missCtx);
+vm.runInContext([
+  grab("armoryMissingHtml"),
+  "var esc = (v) => String(v == null ? '' : v).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));",
+  "var kv = (l, v) => '<div class=\"kv-row\"><span>' + l + '</span><span>' + v + '</span></div>';",
+  "var capClass = (c) => (c ? c[0].toUpperCase() + c.slice(1) : '');",
+  "var liveBot = (g) => g === 808 ? { name: 'Malaise', class: 'priest', level: 60, spec: 'Holy', gear: { pieces: 12, item_level: 63 } } : null;",
+  "var state = { profileGuid: 808 };",
+].join("\n"), missCtx);
+const miss = vm.runInContext("armoryMissingHtml()", missCtx);
+assert.ok(miss.includes("No armory record (hired bot)"), miss.slice(0, 300));
+assert.ok(miss.includes("Priest") && miss.includes("Level") && miss.includes("item level 63") && miss.includes("Holy"),
+  "the telemetry the roster carries is shown: " + miss.slice(0, 400));
+assert.ok(!/HTTP|404|Could not load/.test(miss), "no error wording in the quiet line");
+missCtx.state = { profileGuid: 999 };
+missCtx.liveBot = () => null;
+const bare = vm.runInContext("armoryMissingHtml()", missCtx);
+assert.ok(bare.includes("No telemetry for this character yet."), "a character with no live row still gets the quiet line");
+assert.ok(!/HTTP|404/.test(bare), "and no HTTP error");

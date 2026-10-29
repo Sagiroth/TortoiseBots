@@ -3583,6 +3583,10 @@
       .catch(e => {
         if (state.profileGuid !== guid) return;
         const msg = String((e && e.message) || 'fetch failed');
+        if (el.armoryError) el.armoryError.style.display = 'none';
+        // The armory is the main-realm database; a hired raid bot lives in the game server and has no row there. The drawer then
+        // shows what the telemetry knows and one quiet line, not an HTTP error.
+        if (/^HTTP 404/.test(msg)) { renderArmoryMissing(); return; }
         if (el.armoryError) {
           el.armoryError.style.display = 'block';
           el.armoryError.innerHTML = msg.includes('401')
@@ -3749,6 +3753,8 @@
   function renderProfileOverview() {
     const host = document.getElementById('armory-content-overview');
     if (!host || state.profileTab !== 'overview' || state.profileGuid === null) return;
+    // A character without an armory row keeps the quiet note on every snapshot refresh, not the live overview.
+    if (state.profile && state.profile.missing) { host.innerHTML = armoryMissingHtml(); return; }
     const guid = state.profileGuid;
     const live = liveBot(guid);
     const mine = state.issues.active.filter(i => i.guid === guid);
@@ -3823,6 +3829,30 @@
     renderArmoryPanel(p, state.profileTab);
   }
 
+  // What the drawer shows for a character the armory does not know (a hired raid bot): its telemetry (class, level, gear tier the
+  // roster carries) and one quiet line. The gear paperdoll is cleared so a bot opened before this one never stays behind it.
+  function armoryMissingHtml() {
+    const live = liveBot(state.profileGuid);
+    const rows = [];
+    if (live) {
+      rows.push(kv('Class', esc(capClass(live.class) || '')));
+      if (live.level !== undefined && live.level !== null && live.level !== '') rows.push(kv('Level', esc(String(live.level))));
+      const g = live.gear;
+      if (g && numOr0(g.item_level) > 0) rows.push(kv('Gear', `item level ${esc(String(g.item_level))} · ${esc(String(numOr0(g.pieces)))} pieces`));
+      if (live.spec) rows.push(kv('Spec', esc(String(live.spec))));
+    }
+    return '<div class="profile-grid profile-section"><div class="kv-card"><div class="section-label">What the game server reports</div>'
+      + (rows.join('') || '<div class="empty-hint">No telemetry for this character yet.</div>')
+      + '</div></div><p class="empty-hint armory-missing">No armory record (hired bot): this character lives in the game server, not in the main-realm database.</p>';
+  }
+
+  function renderArmoryMissing() {
+    state.profile = { missing: true };
+    ['gearLeft', 'gearRight', 'gearWeapons', 'gearSummary'].forEach(k => { if (el[k]) el[k].innerHTML = ''; });
+    renderProfileHeader();
+    renderArmoryPanel(state.profile, state.profileTab);
+  }
+
   // Cheap per-snapshot refresh: bars and the live overview, nothing heavier.
   function renderProfileLive() {
     if (state.profileGuid === null) return;
@@ -3854,6 +3884,13 @@
       const panel = document.getElementById(`armory-content-${t}`);
       if (panel) panel.style.display = t === tab ? 'block' : 'none';
     });
+    if (p && p.missing) {
+      const html = armoryMissingHtml();
+      if (tab === 'gear') { if (el.gearSummary) el.gearSummary.innerHTML = html; return; }
+      const host = document.getElementById(`armory-content-${tab}`);
+      if (host) host.innerHTML = html;
+      return;
+    }
     if (tab === 'overview') { renderProfileOverview(); return; }
     if (!p) {
       const host = document.getElementById(`armory-content-${tab}`);
