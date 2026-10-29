@@ -41,6 +41,7 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | Handle wipe recovery and run back to the instance | [Wipe recovery](play/dungeons-and-raids.md#wipe-recovery--instance-navigation) |
 | Level my companion alts automatically with my character | [Sync alt level](server/settings/party.md#aiplayerbotsyncaltleveltomaster) |
 | Fill missing tank or healer roles in dungeon finder queues | [LFT autofill](world/queues.md#looking-for-turtles-lft-dungeon-autofill) |
+| Send a guild bot to farm, buy or craft items for the guild bank | [Guild orders](play/guild-orders.md) |
 | Enable bot trading and purchasing on the Auction House | [Living AH](world/economy.md#living-auction-house) |
 | Blacklist or override an item price on the Auction House | [Admin commands](server/admin-commands.md#autonomous-auction-house-administration-bot-ah--ahbot) |
 | Summon lost or stuck companion bots | [Summon alts](play/commands/roster-and-hiring.md#bot-summon) |
@@ -59,6 +60,7 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | [Command directory](play/commands/README.md) | Overview of all bot commands, permission levels, and channel syntax. |
 | [Tactical party actions](play/commands/party-actions.md) | Direct combat intents (`attack`, `pullback`, `interrupt`, `cc`, formations). |
 | [Remote commander](play/commands/commander.md) | Directing bot-only parties from anywhere in the world. |
+| [Guild orders](play/guild-orders.md) | Sending guild bots to fetch items, order states, and bank delivery. |
 | [Roster and hiring](play/commands/roster-and-hiring.md) | Adding alts, hiring mercenaries, recruiter buffs, and gear progression. |
 | [Bot panel and inspection](play/commands/bot-panel.md) | Equipment and inventory management, behavior toggles, and diagnostic views. |
 | [Whisper commands](play/commands/whispers.md) | Quick one-to-one bot orders grouped by combat, rest, trade, and town. |

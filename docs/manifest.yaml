@@ -112,6 +112,10 @@ nodes:
     path: play/commands/addon.md
     category: play
     summary: Installation, GUI features, and player transport protocol for the TortoiseBotsManager addon.
+  - id: play-guild-orders
+    path: play/guild-orders.md
+    category: play
+    summary: How to send guild bots to farm, buy or craft items for the guild bank, and what each order state means.
   - id: play-dungeons-and-raids
     path: play/dungeons-and-raids.md
     category: play

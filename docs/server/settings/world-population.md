@@ -63,6 +63,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.StuckTravelTeleport`](#aiplayerbotstucktravelteleport) | `1` | Teleports long-stuck masterless bots directly to their travel destinations. |
 | [`AiPlayerbot.UnstuckHearthMinDistance`](#aiplayerbotunstuckhearthmindistance) | `300` | Minimum distance from bind point before an unstuck bot casts hearthstone. |
 | [`AiPlayerbot.BotQuestLogUpkeep`](#aiplayerbotbotquestlogupkeep) | `1` | Enables autonomous quest log pruning, turn-in prioritization, and cleanup. |
+| [`AiPlayerbot.AutoDoQuests`](#aiplayerbotautodoquests) | `1` | Pool bots quest and travel on their own; off also disables guild orders. |
 | [`AiPlayerbot.LeaveOutgrownZones`](#aiplayerbotleaveoutgrownzones) | `1` | Forces bots to travel to level-appropriate zones when outleveling an area. |
 | [`AiPlayerbot.AllowIsolatedCustomStartingZones`](#aiplayerbotallowisolatedcustomstartingzones) | `0` | Normalizes bots created in isolated custom islands to mainland start zones. |
 | [`AiPlayerbot.EnableRandomTeleports`](#aiplayerbotenablerandomteleports) | `1` | Scatters newly seeded bots to level-appropriate overworld destinations. |
@@ -695,6 +696,15 @@ When enabled, masterless pool bots actively manage their quest logs:
 - War-effort item turn-ins and banned joke quests are declined.
 
 Banned quests are dropped across all bots including owned companions. Setting this to `0` restores legacy unmanaged questing behavior. Owned bots and alts are otherwise unaffected.
+
+### `AiPlayerbot.AutoDoQuests`
+Pool bots pick up quests on their own and try to complete them.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+With this off, pool bots get no quest travel data and never pick the travel, fishing-trip or RPG strategies, so they stop questing and roaming on their own. Guild orders need the same travel data: with this off the order source index stays empty and `.bot order` answers `disabled`. See [Guild Orders](../../play/guild-orders.md).
 
 </details>
 
