@@ -704,6 +704,8 @@ int main()
         f.elapsedSeconds = 1;
         CHECK(ai::PullLeadReleaseReason(f) == nullptr);
         f.elapsedSeconds = 2;
+        CHECK(ai::PullLeadReleaseReason(f) == nullptr);
+        f.elapsedSeconds = 3;
         CHECK(std::string(ai::PullLeadReleaseReason(f)) == "tank-first");
         f.elapsedSeconds = 1; f.botIsVictim = true;
         CHECK(std::string(ai::PullLeadReleaseReason(f)) == "hit");
