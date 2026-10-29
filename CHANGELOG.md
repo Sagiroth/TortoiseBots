@@ -29,6 +29,7 @@
 
 ### Commands
 - New `.autogear` command gears a real player the way a spawned bot gets geared: items picked for the level and spec from the same gear pool the bots use, upgrades only, replaced items to the bags or the mailbox. GameMasters can gear any player; `AiPlayerbot.PlayerAutogearForAll` (default `0`) lets every player gear themselves.
+- Fixed: `.bot sell` and the "Sell junk" button sold nothing. Bots now sell their grey junk to a vendor in reach, and a sell order that sells nothing says why. Autonomous alts still never sell soulbound or equipped items, whatever ordered the sale.
 
 ### Items & Loot
 - New `AiPlayerbot.HireLoot` (default `1`): set it to `0` and hired companions stop looting and pass on every roll, so the party keeps all the loot. Hired companions no longer take part in any quest, including orders from a player.

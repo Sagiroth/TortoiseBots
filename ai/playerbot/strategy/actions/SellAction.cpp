@@ -4,6 +4,7 @@
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/MaintenanceValues.h"
+#include "playerbot/policy/gear/SellRefusalPolicy.h"
 #include "../../../runtime/ClaimLifecycle.h"
 #include "../../../runtime/policy/hire/ClaimedBotPolicy.h"
 #include "../../../../runtime/AltBotService.h"
@@ -75,10 +76,7 @@ bool SellAction::Execute(Event& event)
             if (!TortoiseBots::MayClaimedBotAutoVendor(bot->GetLevel(), quality, true))
                 continue;
         }
-        // Issue #872: an autonomous alt sells only greys and unneeded
-        // whites, never soulbound or equipped items (B10). Non-autonomous
-        // alts keep today's behaviour.
-        if (isAltBot && event.GetSource() == "rpg action")
+        if (isAltBot)
         {
             Item* item = *i;
             ItemPrototype const* proto = item ? item->GetProto() : nullptr;
@@ -167,6 +165,24 @@ bool SellAction::HasVendorStock(Creature* vendor)
     VendorItemData const* items = vendor->GetVendorItems();
     VendorItemData const* templateItems = vendor->GetVendorTemplateItems();
     return (items && !items->Empty()) || (templateItems && !templateItems->Empty());
+}
+
+std::string SellAction::RefusalReason(PlayerbotAI* botAI)
+{
+    Player* player = botAI->GetBot();
+    std::string const greyFilter = "gray";
+    std::size_t const greyItems = botAI->InventoryParseItems(greyFilter, IterateItemsMask::ITERATE_ITEMS_IN_BAGS).size();
+    bool vendorInReach = false;
+    std::list<ObjectGuid> vendors = botAI->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest npcs")->Get();
+    for (ObjectGuid const& vendorguid : vendors)
+    {
+        if (HasVendorStock(player->GetNPCIfCanInteractWith(vendorguid, UNIT_NPC_FLAG_VENDOR)))
+        {
+            vendorInReach = true;
+            break;
+        }
+    }
+    return SellRefusalReason(greyItems, vendorInReach);
 }
 
 bool SellAction::Sell(Player* requester, Item* item)
