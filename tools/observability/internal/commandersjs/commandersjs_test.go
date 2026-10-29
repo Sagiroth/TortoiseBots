@@ -294,3 +294,10 @@ func TestFdLiveEngagedJS(t *testing.T) {
 func TestCmdRouteJS(t *testing.T) {
 	runCheck(t, "cmd_route_check.js", "../../web/static/js/app.js")
 }
+
+// TestProfileXPJS runs profile_ui_check.js: the bot profile's XP bar (app.js xpPct/xpView). The level cap is named in words
+// with no bar, below it the line is xp / next xp with the percent, and a missing field leaves the line out rather than
+// printing "undefined".
+func TestProfileXPJS(t *testing.T) {
+	runCheck(t, "profile_ui_check.js", "../../web/static/js/app.js")
+}

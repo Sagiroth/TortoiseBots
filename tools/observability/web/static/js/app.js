@@ -738,11 +738,25 @@
     return t;
   }
   // XP bar: next_xp == 0 means "no data" (old emitter, max level) — render
-  // nothing rather than a fake 0% or 100% bar.
+  // nothing rather than a fake 0% or 100% bar. A missing xp is no data too: the
+  // profile's lines are left out instead of printing "undefined".
   function xpPct(b) {
-    if (!b || !b.next_xp) return null;
-    const pct = Math.round((b.xp || 0) / b.next_xp * 100);
+    if (!b || b.xp == null) return null;
+    const xp = Number(b.xp), next = Number(b.next_xp);
+    if (!isFinite(xp) || !isFinite(next) || next <= 0) return null;
+    const pct = Math.round(xp / next * 100);
     return Math.min(100, Math.max(0, pct));
+  }
+
+  // The profile's XP bar line. At the level cap the bar has no fraction, so it
+  // says the level in words; below it, xp and next xp as the module sent them.
+  function xpView(live, level, maxLevel) {
+    const lv = Number(level), max = Number(maxLevel);
+    if (isFinite(lv) && isFinite(max) && max > 0 && lv >= max) return { text: `Level ${lv} (max)`, pct: null };
+    const pct = live ? xpPct(live) : null;
+    if (pct === null) return null;
+    const rate = fmtXpRate(live.xp_per_hour);
+    return { text: `${live.xp} / ${live.next_xp} XP (${pct}%)${rate !== '–' ? ` · ${rate}` : ''}`, pct };
   }
 
   function fmtXpRate(v) {
@@ -3592,15 +3606,18 @@
       }
     }
 
-    // XP bar: live telemetry only (the database has no per-level XP row).
+    // XP bar: live telemetry only (the database has no per-level XP row). At the level cap there is no
+    // fraction to draw: the line says the level and the bar stays hidden.
     if (el.armoryXpWrap) {
-      const pct = live ? xpPct(live) : null;
-      el.armoryXpWrap.style.display = pct === null ? 'none' : '';
-      if (pct !== null) {
-        const rate = fmtXpRate(live.xp_per_hour);
-        if (el.armoryXpBar) el.armoryXpBar.style.width = `${pct}%`;
-        if (el.armoryXpText) el.armoryXpText.textContent = `${live.xp} / ${live.next_xp} XP (${pct}%)${rate !== '–' ? ` · ${rate}` : ''}`;
+      const level = live && live.level != null ? live.level : (p && p.summary ? p.summary.level : null);
+      const cap = state.serverInfo && state.serverInfo.max_level ? state.serverInfo.max_level : 60;
+      const v = xpView(live, level, cap);
+      el.armoryXpWrap.style.display = v ? '' : 'none';
+      if (el.armoryXpBar) {
+        el.armoryXpBar.style.display = v && v.pct !== null ? '' : 'none';
+        if (v && v.pct !== null) el.armoryXpBar.style.width = `${v.pct}%`;
       }
+      if (v && el.armoryXpText) el.armoryXpText.textContent = v.text;
     }
   }
 
