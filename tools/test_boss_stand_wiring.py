@@ -37,6 +37,8 @@ STRATEGY_CPP = (STRATEGY / "generic/BossTacticsStrategy.cpp").read_text()
 ACTION_CONTEXT = (STRATEGY / "actions/ActionContext.h").read_text()
 TRIGGER_CONTEXT = (STRATEGY / "triggers/TriggerContext.h").read_text()
 REACH = (STRATEGY / "actions/ReachTargetActions.h").read_text()
+DUNGEON_ACTIONS = (STRATEGY / "actions/DungeonActions.cpp").read_text()
+DUNGEON_ACTIONS_H = (STRATEGY / "actions/DungeonActions.h").read_text()
 ONYXIA_ACTIONS = (STRATEGY / "actions/OnyxiasLairDungeonActions.cpp").read_text()
 ONYXIA_ACTIONS_H = (STRATEGY / "actions/OnyxiasLairDungeonActions.h").read_text()
 MIGRATIONS = sorted((ROOT / "data/sql/world").glob("*_world.sql"))
@@ -308,6 +310,18 @@ class BossStandWiring(unittest.TestCase):
         hashed = body(POLICY, "struct StandPlanKeyHash", end="\n    };\n")
         self.assertIn("key.windowSpell", hashed)
         self.assertIn("key.group", hashed)
+
+    def test_the_other_movement_reactions_give_way_to_the_seat(self):
+        # Same gate as the breath dodge (test_the_reactive_dodge_is_not_picked_while_a_seat_applies): the reaction
+        # engine stops the bot's move when it PICKS a movement reaction, so a flank or spread step must not be picked
+        # while a stand set seats the bot.
+        self.assertIn('#include "playerbot/BossTacticsStand.h"', DUNGEON_ACTIONS)
+        for cls in ("DragonFlankAction", "RaidSpreadAction"):
+            declared = body(DUNGEON_ACTIONS_H, "class %s" % cls, end="\n    };\n")
+            self.assertIn("bool isUseful() override;", declared)
+            fn = body(DUNGEON_ACTIONS, "bool %s::isUseful()" % cls)
+            self.assertIn("if (!MovementAction::isUseful())\n        return false;", fn)
+            self.assertIn("return !FindBossStand(ai, bot).valid;", fn)
 
     def test_generic_code_names_no_boss(self):
         for name, text in (("BossStandPolicy.h", POLICY), ("BossTacticsStand.h", STAND_H)):
