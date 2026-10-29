@@ -25,8 +25,9 @@
 // them (bosses first, then elites); the rest keep the old row, so a report full of boss rows stays inside the UDP limit.
 //
 // Boss state (additive, same rule; owner request 2026-10-29 "improve the dashboard with bosses spells and such"): an
-// overlay row also carries the unit's own auras (`au`: up to kMaxMobAuras, passive and deleted holders skipped; id, name,
-// stacks past one, time left while it runs out) and a short flag string (`uf`: n not selectable, i not attackable or
+// overlay row also carries the unit's own auras (`au`: up to kMaxMobAuras, passive and deleted holders skipped, its positive
+// auras before the negative ones so debuffs cannot hide a phase buff; id, name, stacks past one, time left while it runs out)
+// and a short flag string (`uf`: n not selectable, i not attackable or
 // immune to players, h hovering or flying, d stand state dead, e evading), so the dashboard can label the phase and the
 // forms. Each bound bot row carries the boss debuffs it holds (`db`: up to kMaxBotDebuffs negative auras whose caster is
 // not its own group, dispellable first, then the one that runs out last; id, name, stacks, time left, dispel letter) and
@@ -186,17 +187,23 @@ struct AuraRead
     bool hostileCaster = false; // the caster is a creature or a player outside the bot's own group
 };
 
-// A boss's own auras for its overlay row, in holder map order, passive and deleted holders skipped, at most max.
+// A boss's own auras for its overlay row: the positive ones (buffs, forms) before the negative ones, so a stack of debuffs a
+// player put on the boss cannot fill the cap and hide the phase buffs; holder map order inside each group, passive and
+// deleted holders skipped, at most max.
 inline std::vector<AuraInfo> SelectUnitAuras(std::vector<AuraRead> const& reads, size_t max = kMaxMobAuras)
 {
     std::vector<AuraInfo> out;
-    for (AuraRead const& r : reads)
+    for (int pass = 0; pass < 2; ++pass)
     {
-        if (r.aura.id == 0 || r.passive)
-            continue;
-        if (out.size() >= max)
-            break;
-        out.push_back(r.aura);
+        bool const negative = pass == 1;
+        for (AuraRead const& r : reads)
+        {
+            if (r.aura.id == 0 || r.passive || r.negative != negative)
+                continue;
+            if (out.size() >= max)
+                return out;
+            out.push_back(r.aura);
+        }
     }
     return out;
 }

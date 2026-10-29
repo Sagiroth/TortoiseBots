@@ -486,6 +486,27 @@ void TestAuraSelection()
         "a passive aura is skipped and the holder order is kept");
     Check(up.back().id == 24088, "the cap keeps the first eight live auras");
 
+    // A player's debuffs on the boss cannot hide its phase buff: the positive auras are taken first, holder order kept inside
+    // each group.
+    std::vector<AuraRead> mixed;
+    for (uint32_t i = 0; i < 10; ++i)
+    {
+        AuraRead r;
+        r.aura.id = 25000 + i;
+        r.aura.name = "Debuff" + std::to_string(i);
+        r.negative = true;
+        mixed.push_back(r);
+    }
+    AuraRead phase;
+    phase.aura.id = 25100;
+    phase.aura.name = "Spider Form";
+    mixed.push_back(phase);
+    std::vector<AuraInfo> const prio = SelectUnitAuras(mixed);
+    Check(prio.size() == kMaxMobAuras, "the cap still holds with debuffs listed first");
+    Check(prio[0].id == 25100, "the positive phase buff comes before ten negative holders");
+    Check(prio[1].id == 25000 && prio.back().id == 25006,
+        "the negative holders keep their order and fill the rest of the cap");
+
     std::vector<AuraRead> debuffs;
     auto add = [&debuffs](uint32_t id, char dispel, uint32_t leftMs, bool negative = true, bool hostile = true,
                           bool passive = false)
