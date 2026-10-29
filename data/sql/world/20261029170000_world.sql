@@ -64,8 +64,8 @@
 --   E  side 1: 47  /  -  /  -
 --   SE side 0: 13  /  -  /  33
 --   SE side 1: 54  /  -  /  36
---   S  side 0: -  /  64  /  39
---   S  side 1: -  /  51  /  68
+--   S  side 0: -  /  37  /  37
+--   S  side 1: -  /  28  /  35
 --   SW side 0: 53  /  39  /  -
 --   SW side 1: 12  /  31  /  -
 --   W  side 0: 48  /  -  /  61
@@ -145,6 +145,15 @@ INSERT INTO `ai_boss_stand` (`map`, `boss_entry`, `anchor`, `anchor_x`, `anchor_
 (249, 10184, 4, -65.8444, -213.8090, 8, 'ranged', 18351, 17131, 1, 0, -28.0, -248.0, -88.6, 1.000, -0.040, 3, 8000, 8, 'stopped_no_target', 'Onyxia S ranged side 1 point 0: 3 slots, stand to point 64 yd, path-check ok'),
 (249, 10184, 4, -65.8444, -213.8090, 8, 'healer', 18351, 17131, 0, 0, 14.0, -184.0, -85.0, 1.000, -0.040, 2, 8000, 8, 'stopped_no_target', 'Onyxia S healer side 0 point 0: 2 slots, stand to point 98 yd, path-check ok'),
 (249, 10184, 4, -65.8444, -213.8090, 8, 'healer', 18351, 17131, 1, 0, -1.0, -249.0, -85.6, 1.000, -0.040, 2, 8000, 8, 'stopped_no_target', 'Onyxia S healer side 1 point 0: 2 slots, stand to point 88 yd, path-check ok'),
+-- S near seats: the raid stand is behind the S point (-80 -211), but the lane-clear floor there is the tunnel-mouth
+-- ramp (z -75..-81, above the room floor): 34-44 yd from the S point, off the lane both sides, 18-28 yd from the stand.
+-- One seat per row, 9 yd or more apart; the far seats above stay as overflow on the same side. A seat's side is the
+-- sign of cross(S to N, S to seat): (-98 -214) is 1.4 yd south of the line, side 1.
+(249, 10184, 4, -65.8444, -213.8090, 8, 'ranged', 18351, 17131, 0, 2, -96.0, -204.0, -79.1, 0.000, 1.000, 1, 8000, 8, 'stopped_no_target', 'Onyxia S ranged side 0 near seat 2: behind the S point on the tunnel-mouth ramp, stand to seat 22 yd, path-check ok'),
+(249, 10184, 4, -65.8444, -213.8090, 8, 'ranged', 18351, 17131, 1, 1, -98.0, -214.0, -81.3, 0.000, 1.000, 1, 8000, 8, 'stopped_no_target', 'Onyxia S ranged side 1 near seat 1: behind the S point on the tunnel-mouth ramp, stand to seat 18 yd, path-check ok'),
+(249, 10184, 4, -65.8444, -213.8090, 8, 'ranged', 18351, 17131, 1, 2, -96.0, -224.0, -79.1, 0.000, 1.000, 1, 8000, 8, 'stopped_no_target', 'Onyxia S ranged side 1 near seat 2: behind the S point on the tunnel-mouth ramp, stand to seat 25 yd, path-check ok'),
+(249, 10184, 4, -65.8444, -213.8090, 8, 'healer', 18351, 17131, 0, 1, -106.0, -208.0, -75.4, 0.000, 1.000, 1, 8000, 8, 'stopped_no_target', 'Onyxia S healer side 0 near seat 1: behind the S point on the tunnel-mouth ramp, stand to seat 27 yd, path-check ok'),
+(249, 10184, 4, -65.8444, -213.8090, 8, 'healer', 18351, 17131, 1, 1, -106.0, -220.0, -76.1, 0.000, 1.000, 1, 8000, 8, 'stopped_no_target', 'Onyxia S healer side 1 near seat 1: behind the S point on the tunnel-mouth ramp, stand to seat 28 yd, path-check ok'),
 -- Hover point 4 SW (anchor 5) (-58.3 -189.0), breath 18596
 (249, 10184, 5, -58.2509, -189.0200, 8, 'ranged', 18596, 17131, 0, 0, -28.0, -174.0, -88.3, 0.760, -0.650, 5, 8000, 1, 'stopped_no_target', 'Onyxia SW ranged side 0 point 0: 5 slots, stand to point 64 yd, path-check ok'),
 (249, 10184, 5, -58.2509, -189.0200, 8, 'ranged', 18596, 17131, 0, 1, -26.0, -164.0, -87.2, 0.760, -0.650, 5, 8000, 1, 'stopped_no_target', 'Onyxia SW ranged side 0 point 1: 5 slots, stand to point 74 yd, path-check ok'),

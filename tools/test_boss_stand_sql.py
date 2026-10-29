@@ -216,6 +216,23 @@ class BossStandSql(unittest.TestCase):
                                  "anchor %d seat (%.1f, %.1f) is on side %d of the lane, labelled %d" % (
                                      anchor + 1, x, y, 0 if cross >= 0 else 1, row["side"]))
 
+    def test_onyxia_s_anchor_has_seats_near_the_raid_stand(self):
+        # The S point sits in front of the raid stand (-80 -211.4): its lane-clear floor on the raid's side is the
+        # tunnel-mouth ramp behind it. Each role has a seat there on each side of the S lane, so a bot walking
+        # from the stand does not cross the lane or cover 55-98 yd to a far seat.
+        stand = (-80.0, -211.4)
+        s_anchor = 4
+        for role in ("ranged", "healer"):
+            for side in (0, 1):
+                near = [
+                    (x, y)
+                    for r in onyxia_rows()
+                    if r["anchor"] == s_anchor and r["role"] == role and int(r["side"]) == side
+                    for x, y in slot_positions(r)
+                    if math.hypot(x - stand[0], y - stand[1]) <= 30.0
+                ]
+                self.assertTrue(near, "S anchor: no %s seat within 30 yd of the stand on side %d" % (role, side))
+
     def test_onyxia_every_slot_is_clear_of_the_breath_lane(self):
         for row in onyxia_rows():
             anchor = int(row["anchor"]) - 1
