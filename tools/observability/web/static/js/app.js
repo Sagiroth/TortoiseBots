@@ -6193,6 +6193,7 @@
     gong: '<circle class="ring" cx="0" cy="0" r="3.7"/><circle cx="0" cy="0" r="1.5"/>',
     swirl: '<path class="ln" d="M0 0.6a1 1 0 1 1 1.3 -1.1a2.3 2.3 0 1 1 -3.5 1.7a3.7 3.7 0 1 1 5.6 -2.3"/>',
     stop: '<path d="M-3.4 -3.4h6.8v6.8h-6.8z"/><path class="ln eyeln" d="M-1 -1.8v3.6M1 -1.8v3.6"/>',
+    eye: '<path class="ln" d="M-4.4 0a4.6 3.4 0 0 0 8.8 0a4.6 3.4 0 0 0 -8.8 0z"/><circle cx="0" cy="0" r="1.5"/>',
   };
   // One icon centred at plane point (x, y); size in drawing units (px * k) on a dark disc so it reads on any picture.
   function cmdMapIcon(name, x, y, size, title) {
@@ -6249,6 +6250,77 @@
     // loc_left/right are game y (west positive), loc_top/bottom game x (north positive)
     const a = CmdView.project(zb.loc_top, zb.loc_left), b = CmdView.project(zb.loc_bottom, zb.loc_right);
     return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y), name: displayZoneName(zb.name) };
+  }
+
+  // ---- boss abilities (web/static/js/bosspanel.js) ----
+  // The committed boss table is one file for every raid; its phase latch is remembered per fight, so a boss that healed back
+  // over an hp< threshold keeps the phase the group saw. Missing file or an older daemon: no panel and no map changes.
+  const cmdBossPhase = {};
+  function cmdBossTable() {
+    return typeof BossPanel !== 'undefined' && BossPanel.data ? BossPanel.data() : null;
+  }
+  function cmdBossPanels(bind, fight, mobs, events, startMs, nowMs) {
+    const panel = typeof BossPanel !== 'undefined' ? BossPanel : null, table = cmdBossTable();
+    if (!panel || !table || !bind) return [];
+    let rows = [];
+    if (fight) {
+      const seen = {};
+      if (fight.boss) seen[fight.boss] = fight.boss_name || ('creature ' + fight.boss);
+      (fight.engaged || []).forEach(e => { if (e && e.e && !(e.e in seen)) seen[e.e] = e.n || ('creature ' + e.e); });
+      rows = Object.keys(seen).map(e => ({ entry: Number(e), name: seen[e], hp: null, au: [], uf: '' }));
+    } else {
+      if (!bind.combat || !FightDebug.liveEngaged(bind)) return [];
+      rows = (mobs || []).filter(m => m && m.rank === 'b');
+    }
+    const out = [];
+    rows.forEach(m => {
+      const b = panel.bossFor(table, m.entry);
+      if (!b) return;
+      const live = !fight;
+      const adds = live ? (mobs || []).filter(x => x && x !== m && ((x.sum && String(x.sum) === String(m.id))
+        || b.adds.some(a => a.entry === x.entry))) : [];
+      const phaseKey = bind.commander + '|' + (fight ? fight.id : 'live') + '|' + m.entry;
+      const model = panel.model(table, Object.assign({}, m, { adds: adds }), events || [], startMs, nowMs, cmdBossPhase[phaseKey] || null);
+      if (!model) return;
+      if (model.phase) cmdBossPhase[phaseKey] = model.phase;
+      out.push(model);
+    });
+    return out.sort((a, b) => (a.boss.order - b.boss.order) || (a.boss.entry - b.boss.entry));
+  }
+  function cmdBossPanelsHtml(panels) {
+    if (typeof BossPanel === 'undefined' || !BossPanel.render) return '';
+    const table = cmdBossTable();
+    return (panels || []).map(p => BossPanel.render(table, p, { open: true, esc: esc })).join('');
+  }
+  function cmdPaintBosses(card, panels) {
+    if (!card) return;
+    const section = card.querySelector('.fd-bosses'), list = card.querySelector('.fd-bosslist');
+    if (!section || !list) return;
+    section.hidden = !(panels && panels.length);
+    const html = panels && panels.length ? cmdBossPanelsHtml(panels) : '';
+    if (list._k !== html) { list._k = html; setHtml(list, html); }
+  }
+  function cmdLiveBossPanels(bind) {
+    const now = Date.now();
+    const start = bind && bind.combat && bind.combat.fight_ms > 0 ? now - bind.combat.fight_ms * 1000 : now;
+    const evs = ((typeof cmdLiveEvents !== 'undefined' && cmdLiveEvents[bind.commander]) || []).map(x => x.ev).filter(Boolean);
+    return cmdBossPanels(bind, null, bind.mobs || [], evs, start, now);
+  }
+  function cmdFightBossPanels(bind, fight) {
+    if (!fight) return [];
+    const start = (fight.start || 0) * 1000;
+    return cmdBossPanels(bind, fight, [], fight.log || [], start, start + (fight.dur_ms || 0));
+  }
+  // The phase a boss row shows on the map; the label is data + hp/aura/flag, never a script variable.
+  function cmdBossMobView(bind, m) {
+    const table = cmdBossTable(), panel = typeof BossPanel !== 'undefined' ? BossPanel : null;
+    if (!table || !panel || !m || m.rank !== 'b') return m;
+    const b = panel.bossFor(table, m.entry);
+    if (!b) return m;
+    const key = bind.commander + '|' + (bind.combat ? 'live' : 'idle') + '|' + m.entry;
+    const ph = panel.phaseOf(b, m, cmdBossPhase[key] || null);
+    if (ph.phase) cmdBossPhase[key] = ph.phase;
+    return Object.assign({}, m, { phase: ph.phase });
   }
 
   // The picture slots of a map id, from the daemon's folder (TBDASH_MAP_DIR): undefined = no folder, 'loading' = the first answer is on
@@ -6496,8 +6568,10 @@
     const k = c.k, f = c.f, on = d.on || {}, p = CmdView.project(m.x, m.y);
     const cls = CmdView.mobClass(m), look = cmdMobLook(m, on.bossmark), r = look.r * k, uid = 'm:' + m.id;
     const ov = cmdMobOverlaySvg(c, m, on, d.leftMs, d.botsById);
+    // A boss nothing can target or that is off the floor (Thekal's fake death, Onyxia in the air) is drawn hollow.
+    const ghost = look.boss && typeof m.uf === 'string' && /[nh]/.test(m.uf);
     c.units[uid] = { kind: 'm', obj: m };
-    let g = `<g class="mob ${cls}${look.boss ? ' boss' : ''}${look.elite ? ' elite' : ''}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(Math.max(r, 11 * k))}"/>${ov.under}`;
+    let g = `<g class="mob ${cls}${look.boss ? ' boss' : ''}${look.elite ? ' elite' : ''}${ghost ? ' ghost' : ''}" data-u="${esc(uid)}"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(Math.max(r, 11 * k))}"/>${ov.under}`;
     if (on.threatcolors && d.marks) {
       const tc = UnitInfo.threatClass(m, d.onMap || []);
       if (d.marks.pull[m.id]) g += `<circle class="tpull" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 9 * k)}"/>`;
@@ -6514,9 +6588,9 @@
     // a boss's health bar sits above the crown (r + 16*k), so the crown is not drawn over it
     g += d.overlay(m, 'mob', p, look.boss ? r + 16 * k : r);
     if (look.boss || (on.hostilenames && cls === 'hostile')) {
-      // a boss carries its health: "Onyxia 63%", when the report knows it
+      // a boss carries its health: "Onyxia 63%", and the phase the table labels ("Venoxis 48% snake")
       const hp = look.boss && typeof m.hp === 'number' ? ' ' + Math.round(m.hp) + '%' : '';
-      const label = (m.name || (m.entry ? 'creature ' + m.entry : 'unit')) + hp;
+      const label = (m.name || (m.entry ? 'creature ' + m.entry : 'unit')) + hp + (look.boss && m.phase ? ' ' + m.phase : '');
       g += `<text class="mname${look.boss ? ' boss' : ''}" x="${f(p.x + (r + 4 * k))}" y="${f(p.y + 4 * k)}" style="font-size:${f((look.boss ? 13 : 10.5) * k)}px;stroke-width:${f((look.boss ? 4 : 3) * k)}px">${esc(label)}</text>`;
     }
     return g + '</g>';
@@ -6720,6 +6794,23 @@
     return g;
   }
 
+  // What the boss data puts on a bot's map dot: one coloured dot for its first boss debuff, a red ring for mind control and
+  // the "marked" eye for a table ability flagged mark (no spell id is named here).
+  function bossBotMarks(b, p, k) {
+    if (!b) return '';
+    const f = (n) => n.toFixed(2);
+    let g = '';
+    const dt = (typeof BossPanel !== 'undefined' && BossPanel.debuffColor) ? BossPanel.debuffColor(b.db) : '';
+    if (dt) {
+      const calm = { m: 'magic', c: 'curse', p: 'poison', d: 'disease' }[dt] || 'none';
+      g += `<circle class="bdbuff dt-${esc(calm)}" cx="${f(p.x + 7 * k)}" cy="${f(p.y - 10 * k)}" r="${f(2.6 * k)}"><title>${esc('boss debuff' + (calm !== 'none' ? ' (' + calm + ')' : ''))}</title></circle>`;
+    }
+    if (b.mc) g += `<circle class="mcring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(9 * k)}"/>`;
+    const table = cmdBossTable(), mark = table && typeof BossPanel !== 'undefined' && BossPanel.markedBy ? BossPanel.markedBy(table, b) : '';
+    if (mark) g += cmdMapIcon('eye', p.x - 10 * k, p.y - 12 * k, 10 * k, 'marked: ' + mark);
+    return g;
+  }
+
   function drawCmdMap(key) {
     const card = cmdCards.get(key);
     const liveBind = cmdFindBind(key);
@@ -6834,6 +6925,14 @@
     const boxCtx = { lead: lead2, bots: onMap, mobs };
     // mobs, their threat and the bots' targets sit under the party's dots
     const shown = mobs.filter(m => on['mob' + CmdView.mobClass(m)]);
+    // The data's adds: a thin dashed line to their boss while both are reported; a kill priority marks the add's ring.
+    const bossTable = cmdBossTable();
+    const bossLinks = on.bossmark && bossTable && typeof BossPanel !== 'undefined' ? BossPanel.addLinks(bossTable, mobs) : [];
+    bossLinks.forEach(l => {
+      const a = CmdView.project(l.from.x, l.from.y), b = CmdView.project(l.to.x, l.to.y);
+      g += `<line class="bossadd" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"><title>${esc((l.from.name || 'add') + ' belongs to ' + (l.to.name || 'the boss'))}</title></line>`;
+      if (l.priority > 0) g += `<circle class="addpri" cx="${f(a.x)}" cy="${f(a.y)}" r="${f(9 * k)}"><title>${esc('kill priority ' + l.priority)}</title></circle>`;
+    });
     if (on.aggro) {
       CmdView.aggroMobs(shown).forEach(m => {
         const p = CmdView.project(m.x, m.y), r = CmdPaths.aggroRadius(m.lvl, lead ? lead.level : 0);
@@ -6866,7 +6965,7 @@
     const botsById = {};
     onMap.forEach(b => { if (b.id) botsById[b.id] = b; });
     const mobSeen = cmdMobSeenAt[key] || {}, nowMs = performance.now();
-    const drawMob = m => cmdMobSvg(dc, m, {
+    const drawMob = m => cmdMobSvg(dc, cmdBossMobView(bind, m), {
       on, marks, botsById, onMap, overlay,
       // the time left of its cast: the report's own value counted down from its arrival, or the replay's value at the cursor
       leftMs: rp ? (typeof m.cleft === 'number' ? m.cleft : 0) : CmdView.castLeft(m, mobSeen[m.id], nowMs),
@@ -6924,6 +7023,7 @@
         + (isFd ? `<circle class="fdring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(14 * k)}"/>` : '')
         + (isLead ? `<circle class="leadring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(11 * k)}"/>` : '')
         + (on.bots ? `<circle class="dot" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(6 * k)}"/>` : '')
+        + (on.statusicons ? bossBotMarks(b, p, k) : '')
         + (on.bots ? overlay(b, 'bot', p, (isLead ? 11 : 6) * k) : '')
         + (named ? `<text x="${f(p.x + 10 * k)}" y="${f(p.y + 4 * k)}" style="font-size:${f(11.5 * k)}px;stroke-width:${f(3 * k)}px">${isLead ? '★ ' : ''}${esc(b.name)}</text>` : '')
         + '</g>';
@@ -7223,6 +7323,7 @@
           <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
         </div>
         <p class="fd-nofight" hidden></p>
+        <section class="fd-bosses" aria-label="Boss abilities" hidden><div class="fd-bosslist"></div></section>
         <div class="cmd-panels">
           <div class="cmd-panel"><h3 class="cmd-h">Notes</h3><div class="cmd-notes"></div></div>
           <div class="cmd-panel"><h3 class="cmd-h">Threat</h3><div class="cmd-threat"></div></div>
@@ -7380,6 +7481,16 @@
         else if (hit.dataset.fdExit != null) { fdReplayStop(fd); fd.rp.on = false; fdReplaySync(key); }
         return;
       }
+      // A boss-cast marker in the timeline scrubs the replay to that cast.
+      const bc = e.target.closest && e.target.closest('[data-fd-bosscast]');
+      if (bc) {
+        fd.rp.t = Math.max(0, parseFloat(bc.dataset.fdBosscast) || 0);
+        fd.rp.on = true;
+        fdRunStopAll(fd);
+        fdReplayStop(fd);
+        fdReplaySync(key);
+        return;
+      }
       const bar = e.target.closest && e.target.closest('[data-fd-seekbar]');
       if (!bar || (e.target.closest && e.target.closest('button'))) return; // a death's skull keeps its own click
       const scrub = card.querySelector('[data-fd-scrub]');
@@ -7524,7 +7635,8 @@
     cmdLivePaintEvents(key);
     // A structural redraw: at once when the map is on screen (the layer panel reads what it worked out), else when it is back.
     if (cmdSched.shown(key)) drawCmdMap(key); else cmdSched.mark(key);
-    if (debug) { renderFightDebug(card, bind); fdLoad(card, bind); } else mountFightPanel(card, bind);
+    if (debug) { renderFightDebug(card, bind); fdLoad(card, bind); }
+    else { mountFightPanel(card, bind); cmdPaintBosses(card, cmdLiveBossPanels(bind)); }
   }
 
   // The debugger page moves the one layer panel into its map; take it back to the page before any card that may hold it leaves,
@@ -7989,6 +8101,8 @@
       fdSet(card.querySelector('.fd-lanes'), '');
     }
 
+    cmdPaintBosses(card, selLive ? cmdLiveBossPanels(bind) : fight ? cmdFightBossPanels(bind, fight) : []);
+
     const tables = !selLive && fight ? FightDebug.roleTables(fight, layout) : null;
     if (selLive) {
       fdSet(card.querySelector('.fd-tanks'), fdLiveTableHtml(FightDebug.liveTables(bind), fd.bot, live ? live.winS : 0));
@@ -8312,11 +8426,21 @@
         const tag = t.tag === 'MT' ? ', main tank' : t.tag === 'OT' ? ', off-tank' : '';
         const rdy = readyBy[t.name];
         const rdyLabel = rdy ? 'Ready: ' + readyWord(rdy.lvl) + (rdy.reasons && rdy.reasons.length ? ', ' + rdy.reasons.join(', ') : '') : '';
-        const aria = `${t.name}, ${t.cls}, ${t.hpPct}% health${tag}${dead ? ', dead' : ''}`;
-        return `<button type="button" class="fd-tile r-${esc(t.role)}${dead ? ' dead' : ''}${sel ? ' sel' : ''}" data-fd-bot="${esc(t.name)}" aria-pressed="${sel ? 'true' : 'false'}" aria-label="${esc(aria)}">`
+        const DISP = { m: 'magic', c: 'curse', p: 'poison', d: 'disease' };
+        const dbs = (t.debuffs || []).slice(0, 4);
+        const chips = dbs.map(d => {
+          const dt = DISP[d.dt] || 'none';
+          const left = typeof d.l === 'number' && isFinite(d.l) ? ' ' + Math.ceil(d.l / 1000) + 's' : '';
+          return `<span class="fd-db dt-${esc(dt)}" title="${esc(d.n + (dt !== 'none' ? ' (' + dt + ')' : '') + (left ? ', ' + left.trim() + ' left' : ''))}">${esc(d.n)}${d.st > 1 ? ' ×' + d.st : ''}${left}</span>`;
+        }).join('');
+        const dispel = dbs.some(d => !!DISP[d.dt]);
+        const aria = `${t.name}, ${t.cls}, ${t.hpPct}% health${tag}${dead ? ', dead' : ''}${t.mc ? ', mind controlled' : ''}${dbs.length ? ', ' + dbs.map(d => d.n).join(', ') : ''}`;
+        return `<button type="button" class="fd-tile r-${esc(t.role)}${dead ? ' dead' : ''}${sel ? ' sel' : ''}${t.mc ? ' mc' : ''}${dispel ? ' hasdispel' : ''}" data-fd-bot="${esc(t.name)}" aria-pressed="${sel ? 'true' : 'false'}" aria-label="${esc(aria)}">`
           + `<span class="fd-fill" style="width:${t.hpPct}%"></span><span class="fd-nm">${esc(t.name)}</span>`
           + (t.tag ? `<span class="fd-tag">${esc(t.tag)}</span>` : '')
+          + (t.mc ? '<span class="fd-mc">MC</span>' : '')
           + (rdy ? `<span class="fd-rdy l-${esc(rdy.lvl)}" aria-label="${esc(rdyLabel)}"></span>` : '')
+          + (chips ? `<span class="fd-dbs">${chips}</span>` : '')
           + `<span class="fd-pw p-${esc(t.powerKind)}"><i style="width:${t.powerPct}%"></i></span></button>`;
       }).join('') + '</div>';
     }).join('');
@@ -8398,7 +8522,17 @@
     (tl.hits || []).forEach(h => {
       const r = (recaps || [])[h.i];
       const t = tl.durMs > 0 ? (h.pct / 100) * tl.durMs : 0;
-      html += `<i class="fd-hit" style="left:${h.pct.toFixed(2)}%;height:${Math.round(h.h)}px" title="${esc(h.a + ' hit ' + (r ? r.name : '') + ' for ' + h.d + ' at ' + (t / 1000).toFixed(1) + ' s')}"></i>`;
+      const spell = h.s ? ' with ' + h.s : '';
+      html += `<i class="fd-hit" style="left:${h.pct.toFixed(2)}%;height:${Math.round(h.h)}px" title="${esc(h.a + ' hit ' + (r ? r.name : '') + ' for ' + h.d + spell + ' at ' + (t / 1000).toFixed(1) + ' s')}"></i>`;
+    });
+    // The Boss lane: one marker per cast from the finished fight's log, coloured by the table's ability order. A click scrubs
+    // the replay to that cast; the marker carries the caster, the spell and its target in words.
+    const bossTable = typeof cmdBossTable === 'function' ? cmdBossTable() : (typeof BossPanel !== 'undefined' && BossPanel.data ? BossPanel.data() : null);
+    (tl.bossCasts || []).forEach(c => {
+      const slot = bossTable && typeof BossPanel !== 'undefined' && BossPanel.abilityBySpell ? BossPanel.abilityBySpell(bossTable, c.sid) : null;
+      const ci = slot ? slot.index % 8 : 0;
+      const label = c.n + ': ' + (c.s || 'a spell') + (c.target ? ' → ' + c.target : '');
+      html += `<button type="button" class="fd-bosscast bc-${ci}" data-fd-bosscast="${c.t_ms}" style="left:${c.pct.toFixed(2)}%" title="${esc(label + ' at ' + (c.t_ms / 1000).toFixed(1) + ' s')}" aria-label="${esc(label)}"></button>`;
     });
     if (!(tl.deaths || []).length) return html + '<p class="empty-hint">No deaths this fight.</p>';
     tl.deaths.forEach(d => {
@@ -8412,11 +8546,14 @@
     const list = recaps || [];
     const r = list[selDeath] || list[0];
     if (!r) return '';
-    const rows = r.hits.map(h => `<tr><td class="mono">${(h.t_ms / 1000).toFixed(1)} s</td><td>${esc(h.a)}</td><td class="n">${FightDebug.fmtInt(h.d)}</td></tr>`).join('');
+    const rows = r.hits.map(h => `<tr><td class="mono">${(h.t_ms / 1000).toFixed(1)} s</td><td>${esc(h.a)}${h.s ? ` <span class="fd-hit-spell">${esc(h.s)}</span>` : ''}</td><td class="n">${FightDebug.fmtInt(h.d)}</td></tr>`).join('');
     const who = r.guid != null
       ? `<button type="button" class="fd-botbtn" data-fd-profile="${esc(r.guid)}">${esc(r.name)}</button>`
       : `<b>${esc(r.name)}</b>`;
-    return `<p class="fd-recaphead">Died ${who} at ${(r.t_ms / 1000).toFixed(1)} s, killed by ${esc(r.killer)} · `
+    const sp = r.spell
+      ? ` — <b>${esc(r.spell.name)}</b>${r.spell.likely ? ' <span class="fd-likely" title="the newest boss cast in the 3 s before the death aimed at this bot or at nobody">likely</span>' : ''}`
+      : '';
+    return `<p class="fd-recaphead">Died ${who} at ${(r.t_ms / 1000).toFixed(1)} s, killed by ${esc(r.killer)}${sp} · `
       + `<span class="mono">${FightDebug.fmtInt(r.total)}</span> damage in <span class="mono">${(r.spanMs / 1000).toFixed(1)}</span> s</p>`
       + `<table class="data-table fd-recaptbl"><thead><tr><th>Time</th><th>From</th><th class="n">Damage</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
@@ -9471,6 +9608,8 @@
   refreshGate.onGap(() => { CmdView.markGap(cmdTracker); CmdPaths.markGap(cmdTrails); });
   refreshGate.onChange(() => { seedCmdTrails(state.commanders.list); if (cmdDemo.on) { clearInterval(cmdDemo.timer); cmdDemo.timer = setInterval(refreshGate.guard(cmdDemoTick), cmdDemoMs()); } });
   fetchCommanders();
+  // The boss table is one static file (a missing one leaves every panel and map mark away, never an error).
+  if (typeof BossPanel !== 'undefined' && BossPanel.load) BossPanel.load().then(() => { if (state.activeTab === 'commanders') renderCommanders(); });
   setInterval(fetchCommanders, 30000); // goes through the refresh gate like the stream's reports
   setInterval(refreshGate.guard(expireCommanders), 3000); // a paused page keeps what it froze
   setInterval(refreshGate.guard(fetchRoster), 60000);

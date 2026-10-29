@@ -3200,6 +3200,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
   grid-template-areas:
     "run run run"
     "frames frames frames"
+    "bosses bosses bosses"
     "rail centre roles";
   gap: 16px;
   align-items: start;
@@ -3398,7 +3399,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-map .fdring { fill: none; stroke: var(--accent-yellow); stroke-width: 2; vector-effect: non-scaling-stroke; }
 
 @media (max-width: 760px) {
-  .cmd-card.fd-on .cmd-body { grid-template-columns: 1fr; grid-template-areas: "run" "frames" "rail" "centre" "roles"; }
+  .cmd-card.fd-on .cmd-body { grid-template-columns: 1fr; grid-template-areas: "run" "frames" "bosses" "rail" "centre" "roles"; }
   .fd-frames { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fd-rail { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 4px; min-width: 0; }
   .fd-rail .fd-fight { min-width: 190px; }
@@ -3409,6 +3410,111 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
   .cmd-card.fd-on .cmd-maptools select { height: 28px; max-width: 100px; }
   .cmd-layers.cmd-layers-map .cmd-layers-body { max-height: 210px; }
   .fd-t { overflow-x: auto; }
+}
+
+/* Boss abilities: the panel, its auras and flags, the raid frames' debuff chips and the map marks. */
+/* One collapsible panel per engaged boss under the map: the phase and its hp ticks, the boss's auras and flags, every known
+   ability with its last seen and next window, the current cast, the adds and the data's notes. Plus the raid frames' boss
+   debuff chips and the map's marks (an add link, a bot's dispel dot, an MC ring, the eye of a marked bot). Theme tokens only. */
+.fd-bosses { grid-column: 1 / -1; min-width: 0; display: grid; gap: 8px; }
+.fd-bosses[hidden], .fd-bosslist[hidden] { display: none; }
+.cmd-card.fd-on .fd-bosses { grid-area: bosses; }
+.cmd-card.fd-on .fd-bosses { padding: 12px 14px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-card); }
+.fd-bosslist { display: grid; gap: 8px; min-width: 0; }
+.fd-boss-panel { border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); }
+.fd-boss-panel > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 10px; cursor: pointer; list-style: none; }
+.fd-boss-panel > summary::-webkit-details-marker { display: none; }
+.fd-boss-panel > summary::before { content: "▸"; color: var(--text-dim); font-size: 0.7rem; }
+.fd-boss-panel[open] > summary::before { content: "▾"; }
+.fd-boss-name { font-weight: 700; font-size: 0.9rem; color: var(--text-main); }
+.fd-boss-hp { position: relative; display: inline-block; width: 120px; height: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-app); overflow: visible; }
+.fd-boss-hpf { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px 0 0 4px; background: var(--accent-red); }
+.fd-boss-tick { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--text-main); opacity: 0.8; }
+.fd-boss-phase { padding: 1px 8px; border: 1px solid color-mix(in srgb, var(--accent-yellow) 45%, transparent); border-radius: 999px; color: var(--accent-yellow); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.fd-boss-seen { margin-left: auto; color: var(--text-dim); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+.fd-boss-body { padding: 2px 10px 9px; display: grid; gap: 7px; }
+.fd-boss-chips, .fd-boss-flags, .fd-boss-adds { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.fd-boss-aura { padding: 1px 7px; border: 1px solid color-mix(in srgb, var(--accent-blue-bright) 40%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent-blue-bright) 12%, transparent); color: var(--text-main); font-size: 0.72rem; }
+.fd-boss-aura em { color: var(--text-muted); font-style: normal; font-variant-numeric: tabular-nums; }
+.fd-boss-flag { padding: 1px 7px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); color: var(--accent-yellow); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.fd-boss-lab { color: var(--text-dim); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 2px; }
+.fd-boss-add { padding: 1px 7px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-muted); font-size: 0.72rem; }
+.fd-boss-add.pri { border-color: color-mix(in srgb, var(--accent-red) 55%, transparent); color: var(--accent-red); }
+.fd-boss-abilities { list-style: none; display: grid; gap: 0; margin: 0; padding: 0; }
+.fd-boss-ability { display: grid; grid-template-columns: 10px minmax(130px, 1fr) auto auto minmax(0, 1.2fr); align-items: center; gap: 4px 8px; padding: 3px 0; border-top: 1px solid var(--border-color); font-size: 0.8rem; }
+.fd-boss-ability:first-child { border-top: 0; }
+.fd-boss-swatch { width: 8px; height: 8px; border-radius: 2px; background: var(--text-dim); }
+.fd-boss-swatch.bc-0 { background: var(--grp-0); }
+.fd-boss-swatch.bc-1 { background: var(--grp-1); }
+.fd-boss-swatch.bc-2 { background: var(--grp-2); }
+.fd-boss-swatch.bc-3 { background: var(--grp-3); }
+.fd-boss-swatch.bc-4 { background: var(--grp-4); }
+.fd-boss-swatch.bc-5 { background: var(--grp-5); }
+.fd-boss-swatch.bc-6 { background: var(--grp-6); }
+.fd-boss-swatch.bc-7 { background: var(--grp-7); }
+.fd-boss-an { font-weight: 600; overflow-wrap: anywhere; }
+.fd-boss-last, .fd-boss-next { color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fd-boss-next { color: var(--accent-blue-bright); }
+.fd-boss-ability.unseen { opacity: 0.55; }
+.fd-boss-ability.unseen .fd-boss-last { font-style: italic; }
+.fd-boss-ability.casting { background: color-mix(in srgb, var(--accent-yellow) 8%, transparent); }
+.fd-boss-castwrap { min-width: 0; }
+.fd-boss-cast { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fd-boss-castbar { flex: 0 1 90px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--text-dim) 30%, transparent); overflow: hidden; }
+.fd-boss-castbar i { display: block; height: 100%; background: var(--accent-yellow); }
+.fd-boss-casttext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 0.72rem; }
+.fd-boss-casttext b { color: var(--text-main); font-variant-numeric: tabular-nums; }
+.fd-boss-other { margin-top: 2px; }
+.fd-boss-other > summary { cursor: pointer; color: var(--text-dim); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.fd-boss-notes { margin: 0; padding-left: 16px; color: var(--text-muted); font-size: 0.74rem; }
+.fd-boss-note { margin: 1px 0; }
+
+/* The boss lane of the timeline: a marker per cast, coloured by the table's ability order; a click scrubs the replay. */
+.fd-bosscast { position: absolute; top: 35px; width: 6px; height: 10px; padding: 0; border: 0; border-radius: 2px; background: var(--text-dim); transform: translateX(-50%); cursor: pointer; }
+.fd-bosscast:hover, .fd-bosscast:focus-visible { outline: 1px solid var(--text-main); }
+.fd-bosscast.bc-0 { background: var(--grp-0); }
+.fd-bosscast.bc-1 { background: var(--grp-1); }
+.fd-bosscast.bc-2 { background: var(--grp-2); }
+.fd-bosscast.bc-3 { background: var(--grp-3); }
+.fd-bosscast.bc-4 { background: var(--grp-4); }
+.fd-bosscast.bc-5 { background: var(--grp-5); }
+.fd-bosscast.bc-6 { background: var(--grp-6); }
+.fd-bosscast.bc-7 { background: var(--grp-7); }
+.fd-hit-spell { margin-left: 4px; color: var(--accent-blue-bright); font-size: 0.72rem; }
+.fd-likely { margin-left: 4px; padding: 0 5px; border: 1px dashed var(--accent-yellow); border-radius: 999px; color: var(--accent-yellow); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Raid frames: up to four boss-debuff chips, the dispel colour as the tile's thin border and a red MC tag. */
+.fd-tile .fd-dbs { position: absolute; left: 3px; right: 3px; bottom: 4px; display: flex; gap: 2px; overflow: hidden; pointer-events: none; }
+.fd-tile .fd-db { max-width: 46%; overflow: hidden; padding: 0 3px; border-radius: 2px; font-size: 0.56rem; line-height: 12px; text-overflow: ellipsis; white-space: nowrap; background: var(--bg-app); }
+.fd-tile .fd-db.dt-magic { color: var(--accent-blue-bright); border: 1px solid color-mix(in srgb, var(--accent-blue-bright) 55%, transparent); }
+.fd-tile .fd-db.dt-curse { color: var(--grp-3); border: 1px solid color-mix(in srgb, var(--grp-3) 55%, transparent); }
+.fd-tile .fd-db.dt-poison { color: var(--accent-green); border: 1px solid color-mix(in srgb, var(--accent-green) 55%, transparent); }
+.fd-tile .fd-db.dt-disease { color: var(--grp-2); border: 1px solid color-mix(in srgb, var(--grp-2) 55%, transparent); }
+.fd-tile .fd-db.dt-none { color: var(--text-muted); border: 1px solid var(--border-color); }
+.fd-tile.hasdispel { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue-bright) 45%, transparent); }
+.fd-tile .fd-mc { position: absolute; top: 1px; right: 4px; color: var(--accent-red); font-size: 0.58rem; font-weight: 700; letter-spacing: 0.04em; }
+.fd-tile.mc { border-color: color-mix(in srgb, var(--accent-red) 65%, transparent); }
+.fd-tile .fd-tag + .fd-mc { right: 20px; }
+
+/* The map: a hollow body for an untargetable or flying boss, an add's dashed link and priority ring, a bot's debuff dot, its
+   MC ring and the eye of a marked bot. */
+.cmd-map .mob.ghost circle.body { fill: transparent; stroke-dasharray: 3 3; }
+.cmd-map .bossadd { stroke: var(--text-dim); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; opacity: 0.8; pointer-events: none; }
+.cmd-map .addpri { fill: none; stroke: var(--accent-red); stroke-width: 1.5; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
+.cmd-map .bdbuff { stroke: var(--bg-app); stroke-width: 0.8; }
+.cmd-map .bdbuff.dt-magic { fill: var(--accent-blue-bright); }
+.cmd-map .bdbuff.dt-curse { fill: var(--grp-3); }
+.cmd-map .bdbuff.dt-poison { fill: var(--accent-green); }
+.cmd-map .bdbuff.dt-disease { fill: var(--grp-2); }
+.cmd-map .bdbuff.dt-none { fill: var(--text-muted); }
+.cmd-map .mcring { fill: none; stroke: var(--accent-red); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.cmd-map .ic-eye circle { fill: var(--accent-yellow); }
+
+@media (max-width: 760px) {
+  .fd-boss-ability { grid-template-columns: 10px minmax(90px, 1fr) auto; }
+  .fd-boss-last, .fd-boss-next { grid-column: 2; }
+  .fd-boss-castwrap { grid-column: 2 / -1; }
+  .fd-boss-hp { width: 90px; }
 }
 
 /* ---------- Dashboard phase A: plan layer, fight replay, aggro lanes ---------- */

@@ -307,10 +307,24 @@
       const after = previous[d.name];
       const hits = (d.hits || [])
         .filter((h) => h.t_ms <= d.t_ms && (after === undefined || h.t_ms > after))
-        .map((h) => ({ t_ms: h.t_ms, a: h.a, d: h.d }));
+        .map((h) => ({ t_ms: h.t_ms, a: h.a, d: h.d, s: h.s, sid: h.sid }));
       previous[d.name] = d.t_ms;
       const total = hits.reduce((s, h) => s + (num(h.d) || 0), 0);
       const b = bots.find((x) => x.name === d.name);
+      // The killing spell: the last hit that names one. Without one, the module could not see the instant casts of phase 1,
+      // so the newest boss cast in the 3 s before the death aimed at this bot (or at nobody) is shown, labelled likely.
+      let spell = null, likely = false;
+      for (let j = hits.length - 1; j >= 0; j--) {
+        if (hits[j].s) { spell = { name: hits[j].s, sid: hits[j].sid != null ? hits[j].sid : null, t_ms: hits[j].t_ms, likely: false }; break; }
+      }
+      if (!spell && Array.isArray(fight && fight.log)) {
+        const guid = b && b.guid != null ? String(b.guid) : null;
+        const cast = fight.log.map((e) => e || {}).filter((e) => e.k === "cast" && num(e.t) !== null
+          && e.t <= d.t_ms && e.t >= d.t_ms - 3000
+          && (!e.tg || (guid !== null && String(e.tg) === guid) || (e.tn && e.tn === d.name)))
+          .sort((x, y) => x.t - y.t).pop();
+        if (cast) { spell = { name: cast.s || "a spell", sid: cast.sid != null ? cast.sid : null, t_ms: cast.t, likely: true }; likely = true; }
+      }
       return {
         i,
         name: d.name,
@@ -322,6 +336,8 @@
         hits,
         total,
         spanMs: hits.length ? d.t_ms - hits[0].t_ms : 0,
+        spell,
+        likely,
       };
     });
   }
@@ -336,9 +352,22 @@
     const deaths = recaps.map((r) => ({ i: r.i, pct: clampPct(r.t_ms, durMs), name: r.name, t_ms: r.t_ms }));
     const hits = [];
     recaps.forEach((r) => r.hits.forEach((h) => hits.push({
-      i: r.i, pct: clampPct(h.t_ms, durMs), d: h.d, a: h.a, h: Math.min(44, 6 + h.d / 70),
+      i: r.i, pct: clampPct(h.t_ms, durMs), d: h.d, a: h.a, h: Math.min(44, 6 + h.d / 70), s: h.s || "",
     })));
-    return { durMs, ticks, deaths, hits };
+    // The boss lane: every cast the module saw, from the finished fight's log (an older daemon has none).
+    const bossCasts = [];
+    (Array.isArray(fight.log) ? fight.log : []).forEach((e) => {
+      if (!e || (e.k !== "cast" && e.k !== "ab") || num(e.t) === null) return;
+      bossCasts.push({
+        t_ms: e.t,
+        pct: clampPct(e.t, durMs),
+        n: e.n || "boss",
+        s: e.s || "",
+        sid: e.sid != null ? e.sid : null,
+        target: e.tn || "",
+      });
+    });
+    return { durMs, ticks, deaths, hits, bossCasts };
   }
 
   function frameRole(b) {
@@ -384,6 +413,9 @@
         alive: b.alive !== false,
         tag: layout && b.name === layout.mt ? "MT"
           : layout && Array.isArray(layout.ot) && layout.ot.indexOf(b.name) >= 0 ? "OT" : "",
+        // The boss's debuffs on this bot (a newer module): the tile's chips, the dispel colour and the MC tag.
+        debuffs: (Array.isArray(b.db) ? b.db : []).map((d) => ({ id: d && d.id, n: (d && d.n) || "", st: num(d && d.st) || 1, l: num(d && d.l), dt: (d && d.dt) || "" })),
+        mc: !!b.mc,
       });
     });
     return order.filter((k) => k !== "party").map((k) => groups[k])

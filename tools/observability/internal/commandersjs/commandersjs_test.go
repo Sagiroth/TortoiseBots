@@ -277,6 +277,12 @@ func TestBossPanelJS(t *testing.T) {
 	runCheck(t, "bosspanel_check.js", "../../web/static/js/bosspanel.js")
 }
 
+// TestBossUIJS runs bossui_check.js: the page's boss pieces — raid-frame debuff chips and MC tag, the killing spell (and the
+// labelled 3 s guess), the timeline's Boss lane, the map's hollow boss and phase word, and a bot's debuff/MC/mark icons.
+func TestBossUIJS(t *testing.T) {
+	runCheck(t, "bossui_check.js", "../../web/static/js/app.js", "../../web/static/css/app.css")
+}
+
 // TestLiveViewJS runs live_check.js: the live stream's pure half (the commanders' URL, the copy-on-write pos merge, the refresh
 // rates that may move the dots, the error fallback and the one-draw-per-frame scheduler: 60 fps for the focused map, 15 for
 // the other visible maps, none for a hidden one, at most 8 glide-only draws per frame round robin).

@@ -94,6 +94,26 @@
   // ---- the hover box ---------------------------------------------------------------------------------------------------
 
   const HEALTH_LOW = 30;
+  const DISPEL_WORD = { m: "magic", c: "curse", p: "poison", d: "disease" };
+  const FLAG_WORD = { n: "untargetable", i: "cannot be attacked", h: "flying", d: "feigning death", e: "evading" };
+
+  function secsLeft(ms) { return typeof ms === "number" && isFinite(ms) ? Math.ceil(ms / 1000) + " s" : ""; }
+
+  // One aura or boss debuff as "Name ×2 8 s" (+ its dispel class in words), or "" for a row without an id.
+  function auraChip(a) {
+    if (!a || (a.id == null && !a.n)) return "";
+    const name = str(a.n) || ("spell " + a.id);
+    return name + (typeof a.st === "number" && a.st > 1 ? " ×" + a.st : "") + (secsLeft(a.l) ? " " + secsLeft(a.l) : "");
+  }
+  function debuffChip(a) {
+    if (!a || (a.id == null && !a.n)) return "";
+    const w = DISPEL_WORD[str(a.dt)];
+    return (str(a.n) || ("spell " + a.id)) + (w ? " (" + w + ")" : "") + (typeof a.st === "number" && a.st > 1 ? " ×" + a.st : "") + (secsLeft(a.l) ? " " + secsLeft(a.l) : "");
+  }
+  function flagWords(uf) {
+    const s = str(uf);
+    return ["n", "i", "h", "d", "e"].filter((f) => s.indexOf(f) >= 0).map((f) => FLAG_WORD[f]);
+  }
 
   function hpText(b) { return b.max_hp > 0 ? pct(b.hp, b.max_hp) + " % (" + b.hp + " / " + b.max_hp + ")" : ""; }
 
@@ -112,6 +132,11 @@
     if (!dead && b.cc) rows.push(["Crowd control", CC_LONG[b.cc] || b.cc]);
     if (b.max_power > 0 && !dead) rows.push([b.power_type === "rage" || b.power_type === "energy" ? b.power_type[0].toUpperCase() + b.power_type.slice(1) : "Mana", pct(b.power, b.max_power) + " %"]);
     if (!dead && b.act) rows.push(["Last action", b.act + (RES_WORD[b.res] ? " (" + RES_WORD[b.res] + ")" : "")]);
+    // The boss's debuffs on this bot: one chip per aura, with the dispel class and the seconds left (a newer module).
+    const db = (Array.isArray(b.db) ? b.db : []).map((a) => debuffChip(a)).filter(Boolean);
+    if (db.length) rows.push(["Boss debuffs", db.join(" · ")]);
+    if (b.mc) rows.push(["Mind controlled", "charmed by an enemy: it fights its own group"]);
+    if (b.marked) rows.push(["Marked", str(b.marked)]);
     const d = b === c.lead ? null : dist(b, c.lead);
     if (b === c.lead) rows.push(["Role", "the lead of the party"]);
     else if (d != null) rows.push(["From the lead", Math.round(d) + " yd"]);
@@ -136,6 +161,12 @@
       rows.push(["Attacking", "nobody"]);
     }
     if (m.cc) rows.push(["Crowd control", CC_LONG[m.cc] || m.cc]);
+    // The boss's own auras, its movement/selectable state and the phase the panel labels (a newer module + the boss data).
+    const au = (Array.isArray(m.au) ? m.au : []).map((a) => auraChip(a)).filter(Boolean);
+    if (au.length) rows.push(["Auras", au.join(" · ")]);
+    const fl = flagWords(m.uf);
+    if (fl.length) rows.push(["State", fl.join(" · ")]);
+    if (m.phase) rows.push(["Phase", str(m.phase)]);
     const d = dist(m, c.lead);
     if (d != null) rows.push(["From the lead", Math.round(d) + " yd"]);
     if (m.entry) rows.push(["Entry", String(m.entry)]);
@@ -371,6 +402,7 @@
     runBrief,
     activity, actionPhrase, describeBot, describeMob, describeCommander, describeObject, describeNote, describeEvent, boxPosition, hpBar, hpClass, threatClass, targetMarks, statusIcons,
     newEvents, noteEvents, eventsOf, firstSeen, pruneEvents, clockText, feedLine, pinsOn, runInfo, dist, CC_WORD,
+    auraChip, debuffChip, flagWords,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.UnitInfo = api;
 })(typeof self !== "undefined" ? self : this);
