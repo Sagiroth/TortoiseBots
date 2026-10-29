@@ -13,8 +13,8 @@
 #include "../ai/playerbot/strategy/values/BudgetValues.h"
 #include "../ai/playerbot/strategy/values/TravelValues.h"
 #include "../ai/playerbot/strategy/actions/ChooseTravelTargetAction.h"
+#include "../ai/playerbot/strategy/actions/SellAction.h"
 #include "../ai/playerbot/TravelMgr.h"
-
 #include <sstream>
 #include "Bag.h"
 #include "Chat.h"
@@ -495,9 +495,10 @@ DowntimeStartVerdict DowntimeService::Start(Player* bot, Player* master, std::st
     {
         // ArmNextErrand re-arms the walker for the leg it picked; a refusal
         // must leave the bot untouched.
+        AiObjectContext* context = ai->GetAiObjectContext();
         if (TravelTarget* target = AI_VALUE(TravelTarget*, "travel target"))
             sTravelMgr.SetNullTravelTarget(target);
-        if (!window.before.travelOnce && ai->HasStrategy("travel once", BotState::BOT_STATE_NON_COMBAT))
+        if (!window.before.nonCombat.travelOnce && ai->HasStrategy("travel once", BotState::BOT_STATE_NON_COMBAT))
             ai->ChangeStrategy("-travel once", BotState::BOT_STATE_NON_COMBAT);
         reply = anyNeed ? "cannot reach a class trainer or vendor from here: nothing in range."
                         : "needs nothing: no affordable spell rank, no junk, no repairs.";
