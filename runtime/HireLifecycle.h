@@ -124,6 +124,9 @@ private:
         time_t regroupDeadline = 0;
         // Battleground queue entry was warned once for the current queue stay.
         bool bgQueueWarned = false;
+        // C6: when the hire was made, in hire order (Claim); the newest leaves first when a binding ends
+        // with the hirer above the ordinary companion limit.
+        uint64_t hireOrder = 0;
     };
 
     // A dismissed hire whose character is waiting for its asynchronous
@@ -162,6 +165,9 @@ private:
     // hire's group, so the hire is over. Pure-rule wrapper (HireDeparturePolicy.h).
     bool MasterLeftGroup(HiredRecord const& record) const;
     void Reunite(HiredRecord& record, Player* master);
+    // C6 H1: a commander whose binding ends hires as a player again: the companions above the ordinary limit
+    // (the 40th of a bound raid) are dismissed, the most recently hired first, as `.bot remove` does.
+    void DismissSurplusAfterBinding(ObjectGuid commanderGuid);
     void SweepGracePeriod(time_t now);
 
     // Durable hire ledger.
@@ -179,6 +185,7 @@ private:
     std::vector<PendingDeletion> m_pendingDeletions;
     std::vector<PendingDismissal> m_pendingDismissals;
     bool m_ledgerRecovered = false;
+    uint64_t m_nextHireOrder = 0;
     time_t m_recoveryRetryAt = 0;
     uint32_t m_updateElapsedMs = 0;
     uint32_t m_restockElapsedMs = 0;

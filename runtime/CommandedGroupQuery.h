@@ -88,6 +88,9 @@ struct BoundRaidFacts
     bool bound = false;
     bool commanderInGroup = false;
     uint32_t members = 0;
+    // The binding's identity (a seat hire is rechecked against it before it joins).
+    uint64_t leadGuid = 0;
+    uint32_t groupId = 0;
 };
 BoundRaidFacts BoundRaidOf(Player* commander);
 // A new hire of the commander joins his bound raid: into the lead bot's group, into the binding (follow

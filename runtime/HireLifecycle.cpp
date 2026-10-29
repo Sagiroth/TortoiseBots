@@ -17,8 +17,10 @@
 #include "../ai/playerbot/PlayerbotFactory.h"
 #include "../ai/playerbot/strategy/Event.h"
 #include "CommandedGroupQuery.h"
+#include "HireRaidPolicy.h"
 
 #include "ObjectAccessor.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "WorldSession.h"
 #include "Chat.h"
@@ -94,6 +96,7 @@ bool HireLifecycle::Claim(ObjectGuid botGuid, ObjectGuid masterGuid, uint32_t ow
     record.ownerAccountId = ownerAccountId;
     record.masterOfflineSince = 0;
     record.greeted = false;
+    record.hireOrder = ++m_nextHireOrder;
     m_hired[botGuidLow] = record;
     return true;
 }
@@ -236,6 +239,42 @@ void HireLifecycle::KeepInstanceAfterPartyMove(Player* bot)
     }
 }
 
+void HireLifecycle::DismissSurplusAfterBinding(ObjectGuid commanderGuid)
+{
+    if (commanderGuid.IsEmpty())
+        return;
+    // Every hire he owns counts, live or still mustering (a hire is claimed before it musters).
+    std::vector<ObjectGuid> owned;
+    std::vector<uint64_t> order;
+    for (auto const& kv : m_hired)
+        if (kv.second.masterGuid == commanderGuid)
+        {
+            owned.push_back(kv.second.botGuid);
+            order.push_back(kv.second.hireOrder);
+        }
+    uint32_t const cap = HireMaxCompanions(sPlayerbotAIConfig.hireMaxBotsPerPlayer, false);
+    std::vector<size_t> const leave = PickSurplusHires(order, cap);
+    if (leave.empty())
+        return;
+    std::string names;
+    for (size_t index : leave)
+    {
+        ObjectGuid const guid = owned[index];
+        std::string name;
+        if (!sObjectMgr.GetPlayerNameByGUID(guid, name))
+            name = guid.GetString();
+        names += (names.empty() ? "" : ", ") + name;
+        // The normal dismiss (`.bot remove`): the hire ends, its character is deleted, no refund.
+        DismissNow(guid, "bound raid ended above the companion limit");
+    }
+    TB_LOG_BASIC("TortoiseBots: commander %s's raid binding ended with %u companions over the limit of %u: %s dismissed",
+        commanderGuid.GetString().c_str(), static_cast<uint32>(leave.size()), cap, names.c_str());
+    Player* master = sObjectAccessor.FindPlayer(commanderGuid);
+    if (master && master->IsInWorld() && master->GetSession())
+        ChatHandler(master).PSendSysMessage("%s left: your bound raid ended and outside one you command at most %u companions.",
+            names.c_str(), cap);
+}
+
 uint32_t HireLifecycle::EndCommand(ObjectGuid commanderGuid)
 {
     // The whole set enters its transition first: pulling one hire out of the
@@ -252,6 +291,9 @@ uint32_t HireLifecycle::EndCommand(ObjectGuid commanderGuid)
     }
     if (hires.empty())
         return 0;
+    // C6 H1: the 40th seat of a bound raid ends with the binding (every release reaches here: ReleaseBinding,
+    // SettleCommanderBinding, a failed bind). Before any hire goes back: a dismissed one is skipped below.
+    DismissSurplusAfterBinding(commanderGuid);
 
     Player* master = sObjectAccessor.FindPlayer(commanderGuid);
     uint32_t handled = 0;

@@ -6,6 +6,8 @@
 //  - the shipped default spread and presets parse,
 //  - preset expansion (a later tier word overrides the preset's),
 //  - the roster: role order, round-robin spread, faction filtering, cap cut.
+//  - C6: the bound raid's 40th seat ends with the binding (PickSurplusHires: the newest leaves) and a
+//    seat hire is rechecked before it joins (RecheckBoundSeat: unbind, commander in group, last seat).
 //
 // Build and run (from the repo root):
 //   g++ -std=c++17 -Wall -Wextra tools/test_hire_raid_policy.cpp -o /tmp/test_hire_raid_policy
@@ -13,6 +15,7 @@
 
 #include "../runtime/HireRaidPolicy.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 
@@ -314,6 +317,134 @@ static void TestBoundRaidSeat()
     CHECK(requested == 41 && err.find("40") != std::string::npos);
 }
 
+// C6 H1: hire 40 into a bound raid, release the binding: 39 stay, the newest one leaves.
+static void TestSurplusOnRelease()
+{
+    uint32_t const cap = HireMaxCompanions(39, false);
+    CHECK(cap == 39);
+    // Hire order numbers as HireLifecycle::Claim gives them, stored in map order (not hire order).
+    std::vector<uint64_t> owned;
+    for (uint64_t n = 1; n <= 40; ++n)
+        owned.push_back((n * 17) % 41); // 1..40 shuffled, unique
+    std::vector<size_t> leave = PickSurplusHires(owned, cap);
+    CHECK(leave.size() == 1);
+    CHECK(owned[leave[0]] == 40); // the most recently hired
+    // Apply the pick: 39 owned stay, the newest is gone.
+    std::vector<uint64_t> kept;
+    for (size_t i = 0; i < owned.size(); ++i)
+        if (std::find(leave.begin(), leave.end(), i) == leave.end())
+            kept.push_back(owned[i]);
+    CHECK(kept.size() == 39);
+    CHECK(std::find(kept.begin(), kept.end(), 40u) == kept.end());
+    CHECK(std::find(kept.begin(), kept.end(), 39u) != kept.end());
+    // Within the limit: nobody leaves.
+    kept.pop_back();
+    CHECK(PickSurplusHires(kept, cap).empty());
+    CHECK(PickSurplusHires(std::vector<uint64_t>(39, 1), cap).empty());
+    // Two over (a lower operator cap): the two newest, newest first.
+    std::vector<uint64_t> few = { 5, 9, 2, 7 };
+    leave = PickSurplusHires(few, 2);
+    CHECK(leave.size() == 2 && few[leave[0]] == 9 && few[leave[1]] == 7);
+    CHECK(PickSurplusHires({}, 0).empty());
+}
+
+static BoundSeatGrant Grant()
+{
+    BoundSeatGrant g;
+    g.commanderGuid = 100;
+    g.leadGuid = 200;
+    g.groupId = 7;
+    return g;
+}
+
+// The binding as it stood when the 40th hire was authorized: unchanged, commander outside, 39 bots seated.
+static BoundSeatNow Standing()
+{
+    BoundSeatNow n;
+    n.commanderGuid = 100;
+    n.commanderOnline = true;
+    n.bound = true;
+    n.leadGuid = 200;
+    n.groupId = 7;
+    n.commanderInGroup = false;
+    n.members = 39;
+    n.botInGroup = false;
+    n.owned = 40;
+    n.configMax = 39;
+    return n;
+}
+
+// C6 H2: a bound-raid seat hire is revalidated right before it joins; anything changed cancels it.
+static void TestBoundSeatRecheck()
+{
+    CHECK(RecheckBoundSeat(Grant(), Standing()).verdict == BoundSeatVerdict::Join);
+    CHECK(RecheckBoundSeat(Grant(), Standing()).reason.empty());
+
+    // Mustering + unbind: cancelled.
+    BoundSeatNow n = Standing();
+    n.bound = false;
+    BoundSeatCheck c = RecheckBoundSeat(Grant(), n);
+    CHECK(c.verdict == BoundSeatVerdict::Cancel && !c.reason.empty());
+    // Mustering + the commander joins the raid group: cancelled.
+    n = Standing();
+    n.commanderInGroup = true;
+    CHECK(RecheckBoundSeat(Grant(), n).verdict == BoundSeatVerdict::Cancel);
+    // Another binding (unbind + bind another lead or group): cancelled.
+    n = Standing();
+    n.leadGuid = 201;
+    CHECK(RecheckBoundSeat(Grant(), n).verdict == BoundSeatVerdict::Cancel);
+    n = Standing();
+    n.groupId = 8;
+    CHECK(RecheckBoundSeat(Grant(), n).verdict == BoundSeatVerdict::Cancel);
+    n = Standing();
+    n.commanderGuid = 101;
+    CHECK(RecheckBoundSeat(Grant(), n).verdict == BoundSeatVerdict::Cancel);
+    // The commander went offline: cancelled.
+    n = Standing();
+    n.commanderOnline = false;
+    CHECK(RecheckBoundSeat(Grant(), n).verdict == BoundSeatVerdict::Cancel);
+    // Over the 40 entitlement, or the entitlement shrank (operator cap lowered): cancelled.
+    n = Standing();
+    n.owned = 41;
+    CHECK(RecheckBoundSeat(Grant(), n).verdict == BoundSeatVerdict::Cancel);
+    n = Standing();
+    n.configMax = 38;
+    n.owned = 39;
+    CHECK(RecheckBoundSeat(Grant(), n).verdict == BoundSeatVerdict::Cancel);
+    // No free seat: cancelled; a bot already seated in the raid takes no new seat.
+    n = Standing();
+    n.members = 40;
+    c = RecheckBoundSeat(Grant(), n);
+    CHECK(c.verdict == BoundSeatVerdict::Cancel && c.reason.find("full") != std::string::npos);
+    n.botInGroup = true;
+    CHECK(RecheckBoundSeat(Grant(), n).verdict == BoundSeatVerdict::Join);
+
+    // Last-seat race: two pending seat hires for the one free seat. The first passes and joins (the seat is
+    // taken), the second fails the same recheck and is cancelled.
+    BoundSeatNow raid = Standing();
+    raid.owned = 40;
+    int joined = 0;
+    int cancelled = 0;
+    for (int hire = 0; hire < 2; ++hire)
+    {
+        if (RecheckBoundSeat(Grant(), raid).verdict == BoundSeatVerdict::Join)
+        {
+            ++joined;
+            ++raid.members; // JoinBoundRaid seats it
+        }
+        else
+            ++cancelled;
+    }
+    CHECK(joined == 1 && cancelled == 1 && raid.members == 40);
+
+    // A normal hire is never rechecked: the mode it was authorized in decides.
+    CHECK(!HireNeedsSeatRecheck(HireSeatMode::Normal, false));
+    CHECK(HireNeedsSeatRecheck(HireSeatMode::BoundRaidSeat, false));
+    CHECK(!HireNeedsSeatRecheck(HireSeatMode::BoundRaidSeat, true)); // already joined: a bound hire now
+    CHECK(HireSeatModeFor(true) == HireSeatMode::BoundRaidSeat);
+    CHECK(HireSeatModeFor(false) == HireSeatMode::Normal);
+}
+
 int main()
 {
     TestRoleCounts();
@@ -324,6 +455,8 @@ int main()
     TestPresetExpansion();
     TestRoster();
     TestBoundRaidSeat();
+    TestSurplusOnRelease();
+    TestBoundSeatRecheck();
     std::printf("hire raid policy: %d checks passed\n", checks);
     return 0;
 }

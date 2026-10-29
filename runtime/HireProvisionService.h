@@ -203,11 +203,22 @@ public:
         bool introSent = false;
         // The arrival summon went out once (or could not start).
         bool summonRequested = false;
+        // C6: how the hire was authorized (HireRaidPolicy.h). A bound-raid seat joins only the binding in
+        // seatGrant: it is rechecked right before the join and cancelled (deleted, fee refunded) when anything
+        // changed, never grouped with its master instead. cost is the fee charged; boundSeatJoined is set once
+        // it stands in the bound raid (a bound hire from then on).
+        HireSeatMode seatMode = HireSeatMode::Normal;
+        BoundSeatGrant seatGrant;
+        uint32_t cost = 0;
+        bool boundSeatJoined = false;
     };
     // Every hire creates its own character on a managed pool account; the
     // character is deleted when the hire ends.
     bool CreateCandidate(HireSelection const& sel, uint32_t requesterTeam, uint32_t& accountId, ObjectGuid& guid);
     bool ProvisionNow(Player* bot, PendingProvision& pending);
+    // C6: a bound-raid seat hire that may not join: the hire ends (its character is deleted, as a dismiss) and
+    // the fee goes back to the master (in hand, or by mail when he is offline). A hire already ended is left.
+    void CancelBoundSeatHire(PendingProvision const& pending, std::string const& why);
     static void SnapshotKnownSpells(Player* bot, std::vector<uint32_t>& out);
     static void DropPendingLevelupEcho(PlayerbotAI* ai);
     static void AnnounceIntro(Player* bot, Player* master, PendingProvision& pending);

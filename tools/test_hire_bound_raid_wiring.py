@@ -55,7 +55,7 @@ class HireBoundRaidWiringTest(unittest.TestCase):
 
     def test_provisioning_joins_the_lead_raid_without_a_summon_to_the_commander(self):
         prov = body(HIRE_SRC, "bool HireProvisionService::ProvisionNow(", "void HireProvisionService::ProvisionHeavy(")
-        into = prov.index("bool const intoBoundRaid = HireIntoBoundRaid(boundRaid.bound, boundRaid.commanderInGroup);")
+        into = prov.index("bool const intoBoundRaid = pending.seatMode == HireSeatMode::BoundRaidSeat;")
         skip = prov.index("if (intoBoundRaid)\n                pending.summonRequested = true;")
         summon = prov.index("RequestSummon(master, bot)")
         join = prov.index("intoBoundRaid ? !BotCommands::JoinBoundRaid(master, bot) : !Reunite(bot, master)")
@@ -64,6 +64,90 @@ class HireBoundRaidWiringTest(unittest.TestCase):
         self.assertLess(skip, summon)
         self.assertLess(summon, join)
         self.assertLess(join, grouped)
+
+    def test_a_seat_hire_is_rechecked_right_before_the_join_and_cancelled_never_reunited(self):
+        prov = body(HIRE_SRC, "bool HireProvisionService::ProvisionNow(", "void HireProvisionService::ProvisionHeavy(")
+        # the mode decides, the binding is not asked for the mode again
+        self.assertNotIn("HireIntoBoundRaid(", prov)
+        order = [
+            "PlayerConvenience::Instance().IsBusy(pending.botGuid)",
+            "if (HireNeedsSeatRecheck(pending.seatMode, pending.boundSeatJoined))",
+            "BotCommands::BoundRaidOf(master)",
+            "now.owned = CountHired(master);",
+            "RecheckBoundSeat(pending.seatGrant, now)",
+            "if (check.verdict == BoundSeatVerdict::Cancel)",
+            "CancelBoundSeatHire(pending, check.reason);",
+            "intoBoundRaid ? !BotCommands::JoinBoundRaid(master, bot) : !Reunite(bot, master)",
+            "pending.boundSeatJoined = true;",
+            "MarkGrouped(pending.botGuid)",
+        ]
+        at = [prov.index(part) for part in order]
+        self.assertEqual(at, sorted(at))
+        cancel_return = prov.index("CancelBoundSeatHire(pending, check.reason);\n                return true;")
+        self.assertLess(cancel_return, prov.index("JoinBoundRaid(master, bot)"))
+        # the commander offline at provision: cancelled before the grace path's ordinary regroup
+        offline = prov.index("else if (HireNeedsSeatRecheck(pending.seatMode, pending.boundSeatJoined))")
+        self.assertLess(offline, prov.index("provisioned while master offline"))
+        self.assertIn('CancelBoundSeatHire(pending, "you went offline before it arrived");\n        return true;', prov)
+
+    def test_every_pending_drop_cancels_a_seat_hire(self):
+        update = body(HIRE_SRC, "void HireProvisionService::Update(uint32_t diff)", "\n}\n")
+        self.assertEqual(update.count("if (HireNeedsSeatRecheck(it->seatMode, it->boundSeatJoined))"), 2)
+        attempts = update.index("never joined master after 60 reunite attempts")
+        self.assertLess(attempts, update.index('CancelBoundSeatHire(*it, "it could not reach the bound raid");'))
+        self.assertLess(update.index('CancelBoundSeatHire(*it, "it could not reach the bound raid");'),
+                        update.index("it = m_pending.erase(it);", attempts))
+        offline = update.index("if (!master || !master->IsInWorld())")
+        self.assertLess(offline, update.index('CancelBoundSeatHire(*it, "you went offline before it arrived");'))
+        stale = body(HIRE_SRC, "void HireProvisionService::DropStalePending()", "\n}\n")
+        self.assertLess(stale.index("CancelBoundSeatHire(*it,"), stale.index("it = m_pending.erase(it);"))
+
+    def test_hire_records_the_authorization(self):
+        hire = body(HIRE_SRC, "HireOutcome HireProvisionService::Hire(", "uint32_t HireProvisionService::QuoteHireFee(")
+        order = [
+            "pending.seatMode = HireSeatModeFor(intoBoundRaid);",
+            "pending.seatGrant.commanderGuid = masterGuid.GetRawValue();",
+            "pending.seatGrant.leadGuid = boundRaid.leadGuid;",
+            "pending.seatGrant.groupId = boundRaid.groupId;",
+            "pending.cost = cost;",
+            "m_pending.push_back(pending);",
+        ]
+        at = [hire.index(part) for part in order]
+        self.assertEqual(at, sorted(at))
+        of = body(CMD_SRC, "BoundRaidFacts BoundRaidOf(Player* commander)", "\n}\n")
+        self.assertIn("facts.leadGuid = binding->leadGuid;", of)
+        self.assertIn("facts.groupId = binding->groupId;", of)
+
+    def test_cancel_is_the_failed_hire_path(self):
+        cancel = body(HIRE_SRC, "void HireProvisionService::CancelBoundSeatHire(", "\n}\n")
+        order = [
+            "if (!HireLifecycle::Instance().IsHired(pending.botGuid))",
+            "HireLifecycle::Instance().DismissNow(pending.botGuid,",
+            "master->ModifyMoney(static_cast<int32>(pending.cost));",
+            ".SetMoney(pending.cost)",
+            "ChatHandler(master).PSendSysMessage(",
+        ]
+        at = [cancel.index(part) for part in order]
+        self.assertEqual(at, sorted(at))
+        self.assertNotIn("Reunite", cancel)
+        self.assertNotIn("EnsureGrouped", cancel)
+
+    def test_release_dismisses_the_surplus_before_hires_go_back(self):
+        end = body(LIFECYCLE, "uint32_t HireLifecycle::EndCommand(ObjectGuid commanderGuid)", "\n}\n")
+        order = ["if (hires.empty())", "DismissSurplusAfterBinding(commanderGuid);", "for (ObjectGuid const& guid : hires)",
+                 "continue; // dismissed meanwhile", "Reunite(record, master);"]
+        at = [end.index(part) for part in order]
+        self.assertEqual(at, sorted(at))
+        surplus = body(LIFECYCLE, "void HireLifecycle::DismissSurplusAfterBinding(", "\n}\n")
+        order = ["HireMaxCompanions(sPlayerbotAIConfig.hireMaxBotsPerPlayer, false)", "PickSurplusHires(order, cap)",
+                 'DismissNow(guid, "bound raid ended above the companion limit");', "ChatHandler(master).PSendSysMessage("]
+        at = [surplus.index(part) for part in order]
+        self.assertEqual(at, sorted(at))
+        claim = body(LIFECYCLE, "bool HireLifecycle::Claim(", "\n}\n")
+        self.assertLess(claim.index("record.hireOrder = ++m_nextHireOrder;"), claim.index("m_hired[botGuidLow] = record;"))
+        # every binding release reaches EndCommand
+        release = body(CMD_SRC, "uint32 ReleaseBinding(uint64 commanderRaw, RemoteCommander::ReleaseReason reason, bool notify)", "\n}\n")
+        self.assertIn("HireLifecycle::Instance().EndCommand(::ObjectGuid(commanderRaw));", release)
 
     def test_the_bound_raid_limit_is_the_binding_size(self):
         self.assertIn("kHireBoundRaidMaxCompanions == RemoteCommander::kMaxRaidBindSize", HIRE_SRC)

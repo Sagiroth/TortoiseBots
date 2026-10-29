@@ -21,6 +21,8 @@
 #include "HireSpecPolicy.h"
 #include "HireTierRequestPolicy.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -100,6 +102,99 @@ inline HireSeatDecision DecideHireSeat(HireSeatFacts const& facts)
         decision.message = "You already command the maximum number of companions.";
     }
     return decision;
+}
+
+// C6 H1: a commander whose binding ends (unbind, his logout, the binding dropped) hires as a player again, so
+// the companions above the ordinary limit (HireMaxCompanions(configMax, false)) leave, the most recently hired
+// first. hireOrder holds one number per hire he owns, in any order (higher = hired later, HireLifecycle::Claim).
+// Returns the indexes into hireOrder of the hires that leave, newest first; empty within the limit.
+inline std::vector<size_t> PickSurplusHires(std::vector<uint64_t> const& hireOrder, uint32_t ordinaryCap)
+{
+    std::vector<size_t> leave;
+    if (hireOrder.size() <= ordinaryCap)
+        return leave;
+    for (size_t i = 0; i < hireOrder.size(); ++i)
+        leave.push_back(i);
+    std::stable_sort(leave.begin(), leave.end(),
+        [&hireOrder](size_t a, size_t b) { return hireOrder[a] > hireOrder[b]; });
+    leave.resize(hireOrder.size() - ordinaryCap);
+    return leave;
+}
+
+// C6 H2: how a hire was authorized. A bound-raid seat is a hire of a bound raid's commander standing outside
+// its group (it may be his 40th): it joins only that binding's raid, never a party with the commander.
+enum class HireSeatMode : uint8_t
+{
+    Normal,
+    BoundRaidSeat,
+};
+
+inline HireSeatMode HireSeatModeFor(bool intoBoundRaid)
+{
+    return intoBoundRaid ? HireSeatMode::BoundRaidSeat : HireSeatMode::Normal;
+}
+
+// A seat hire is rechecked before every join attempt until it stands in the bound raid; a normal hire never.
+inline bool HireNeedsSeatRecheck(HireSeatMode mode, bool joined)
+{
+    return mode == HireSeatMode::BoundRaidSeat && !joined;
+}
+
+// The binding a seat hire was authorized for, recorded at hire time.
+struct BoundSeatGrant
+{
+    uint64_t commanderGuid = 0;
+    uint64_t leadGuid = 0;
+    uint32_t groupId = 0;
+};
+
+// The same facts right before the join (world thread, in the same call as the join).
+struct BoundSeatNow
+{
+    uint64_t commanderGuid = 0;
+    bool commanderOnline = false;
+    bool bound = false;            // a standing raid binding whose lead bot is in the bound group
+    uint64_t leadGuid = 0;
+    uint32_t groupId = 0;
+    bool commanderInGroup = false;
+    uint32_t members = 0;          // members of the bound group now
+    bool botInGroup = false;       // the hire already stands in it (takes no new seat)
+    uint32_t owned = 0;            // the commander's hires, this one included (CountHired)
+    uint32_t configMax = 0;        // AiPlayerbot.HireMaxBotsPerPlayer
+};
+
+enum class BoundSeatVerdict : uint8_t
+{
+    Join,
+    Cancel,
+};
+
+struct BoundSeatCheck
+{
+    BoundSeatVerdict verdict = BoundSeatVerdict::Cancel;
+    std::string reason; // player-facing, empty on Join
+};
+
+// Join only when nothing changed since the hire was authorized: the same standing binding (commander, lead bot,
+// group), the commander online and still outside the group, a free seat, and his companions within the 40 of a
+// bound raid. Anything else cancels the hire (the caller never falls back to an ordinary party).
+inline BoundSeatCheck RecheckBoundSeat(BoundSeatGrant const& grant, BoundSeatNow const& now)
+{
+    BoundSeatCheck check;
+    if (!now.commanderOnline)
+        check.reason = "you went offline before it arrived";
+    else if (!now.bound || now.commanderGuid != grant.commanderGuid || now.leadGuid != grant.leadGuid ||
+        now.groupId != grant.groupId)
+        check.reason = "the raid binding it was hired for has ended";
+    else if (now.commanderInGroup)
+        check.reason = "you joined the raid group, so the extra seat is gone";
+    else if (!now.botInGroup && now.members >= kHireBoundRaidMaxCompanions)
+        check.reason = "the bound raid is full (" + std::to_string(kHireBoundRaidMaxCompanions) + " bots)";
+    else if (now.owned > HireMaxCompanions(now.configMax, true))
+        check.reason = "you command more companions than a bound raid allows";
+    else
+        check.verdict = BoundSeatVerdict::Join;
+    return check;
 }
 
 // Defaults of AiPlayerbot.HireRaidSpread / AiPlayerbot.HireRaidPresets. The

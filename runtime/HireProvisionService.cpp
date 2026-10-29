@@ -38,6 +38,7 @@
 #include "ObjectAccessor.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectMgr.h"
+#include "Mail/Mail.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Player.h"
 #include "World.h"
@@ -440,6 +441,12 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     pending.specIndex = sel.specIndex;
     pending.gearTier = gearTier;
     pending.queuedAt = time(nullptr);
+    // C6: the authorization this hire was charged under; a bound-raid seat is rechecked before it joins.
+    pending.seatMode = HireSeatModeFor(intoBoundRaid);
+    pending.seatGrant.commanderGuid = masterGuid.GetRawValue();
+    pending.seatGrant.leadGuid = boundRaid.leadGuid;
+    pending.seatGrant.groupId = boundRaid.groupId;
+    pending.cost = cost;
     m_pending.push_back(pending);
 
     PlayerCacheData const* data = sObjectMgr.GetPlayerDataByGUID(guid.GetCounter());
@@ -1116,10 +1123,10 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         // A new hire arrives like a summoned bot: grouped where it was made,
         // then the summon portal opens by the master and it steps out 3 s
         // later. A summon that cannot start falls back to Reunite's teleport.
-        // C6: the commander of a bound raid stands outside its group; his hire joins the lead bot's raid
-        // (and the binding) instead of a party with him, and no summon to the commander opens.
-        BotCommands::BoundRaidFacts const boundRaid = BotCommands::BoundRaidOf(master);
-        bool const intoBoundRaid = HireIntoBoundRaid(boundRaid.bound, boundRaid.commanderInGroup);
+        // C6: a hire authorized as a bound-raid seat (its master commands a bound raid from outside the group)
+        // joins the lead bot's raid (and the binding) instead of a party with him, and no summon to the
+        // commander opens. The mode was fixed when the hire was charged; the binding is not asked again here.
+        bool const intoBoundRaid = pending.seatMode == HireSeatMode::BoundRaidSeat;
         if (!pending.summonRequested)
         {
             if (intoBoundRaid)
@@ -1135,12 +1142,40 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         }
         if (PlayerConvenience::Instance().IsBusy(pending.botGuid))
             return false;
+        // Right before the join, in the same world-thread call: the binding it was hired for still stands, the
+        // commander is still outside its group, a seat is free and he is within the 40. Anything changed (an
+        // unbind, he joined the group, another hire took the last seat): the hire is cancelled, never grouped
+        // with him instead.
+        if (HireNeedsSeatRecheck(pending.seatMode, pending.boundSeatJoined))
+        {
+            BotCommands::BoundRaidFacts const boundRaid = BotCommands::BoundRaidOf(master);
+            BoundSeatNow now;
+            now.commanderGuid = master->GetObjectGuid().GetRawValue();
+            now.commanderOnline = true;
+            now.bound = boundRaid.bound;
+            now.leadGuid = boundRaid.leadGuid;
+            now.groupId = boundRaid.groupId;
+            now.commanderInGroup = boundRaid.commanderInGroup;
+            now.members = boundRaid.members;
+            Group* const botGroup = bot->GetGroup();
+            now.botInGroup = boundRaid.bound && botGroup && botGroup->GetId() == boundRaid.groupId;
+            now.owned = CountHired(master);
+            now.configMax = sPlayerbotAIConfig.hireMaxBotsPerPlayer;
+            BoundSeatCheck const check = RecheckBoundSeat(pending.seatGrant, now);
+            if (check.verdict == BoundSeatVerdict::Cancel)
+            {
+                CancelBoundSeatHire(pending, check.reason);
+                return true;
+            }
+        }
         if (intoBoundRaid ? !BotCommands::JoinBoundRaid(master, bot) : !Reunite(bot, master))
         {
             sLog.outError("TortoiseBots: hired bot %s could not join master %s after provisioning",
                 bot->GetName(), master->GetName());
             return false;
         }
+        if (intoBoundRaid)
+            pending.boundSeatJoined = true;
         // Issue #378: the hire is confirmed grouped, so leaving the party now
         // ends the hire (never treated as a provisioning artefact).
         HireLifecycle::Instance().MarkGrouped(pending.botGuid);
@@ -1158,6 +1193,13 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         TB_LOG_BASIC("TortoiseBots: hired companion %s (level %u role %u) joined %s (provision %lldms, total %lldms)",
             bot->GetName(), bot->GetLevel(), forcedRole, master->GetName(),
             (long long)provisionElapsedMs, (long long)totalElapsedMs);
+    }
+    else if (HireNeedsSeatRecheck(pending.seatMode, pending.boundSeatJoined))
+    {
+        // C6: a bound-raid seat whose commander went offline cannot join now, and the grace path would group
+        // it with him as an ordinary hire: cancelled instead.
+        CancelBoundSeatHire(pending, "you went offline before it arrived");
+        return true;
     }
     else
     {
@@ -1342,6 +1384,40 @@ bool HireProvisionService::Reunite(Player* bot, Player* master)
     return bot->IsInSameRaidWith(master);
 }
 
+void HireProvisionService::CancelBoundSeatHire(PendingProvision const& pending, std::string const& why)
+{
+    // Once, and only for a hire still standing: one ended meanwhile (the release's surplus rule, `.bot remove`)
+    // keeps the rules of that end.
+    if (!HireLifecycle::Instance().IsHired(pending.botGuid))
+        return;
+    std::string name;
+    if (!sObjectMgr.GetPlayerNameByGUID(pending.botGuid, name))
+        name = "your companion";
+    // The failed-hire path: the hire ends and its character is deleted (as `.bot remove`), the fee goes back.
+    HireLifecycle::Instance().DismissNow(pending.botGuid, "bound raid seat hire cancelled");
+    Player* master = sObjectAccessor.FindPlayer(pending.masterGuid);
+    bool const inHand = master && master->IsInWorld() && master->GetSession();
+    if (pending.cost)
+    {
+        if (inHand)
+        {
+            master->ModifyMoney(static_cast<int32>(pending.cost));
+            master->SaveToDB();
+        }
+        else
+            MailDraft("Hire refund", "The companion " + name + " you hired for your bound raid was cancelled: " +
+                why + ". Your fee is returned.")
+                .SetMoney(pending.cost)
+                .SendMailTo(MailReceiver(pending.masterGuid), MailSender(MAIL_NORMAL, pending.masterGuid.GetCounter(), MAIL_STATIONERY_GM));
+    }
+    if (inHand)
+        ChatHandler(master).PSendSysMessage("Your hire of %s was cancelled: %s.%s", name.c_str(), why.c_str(),
+            pending.cost ? " Your fee was returned." : "");
+    TB_LOG_BASIC("TortoiseBots: bound raid seat hire %s of %s cancelled (%s); fee %u %s", name.c_str(),
+        pending.masterGuid.GetString().c_str(), why.c_str(), pending.cost,
+        !pending.cost ? "none" : inHand ? "refunded" : "mailed");
+}
+
 void HireProvisionService::DropStalePending()
 {
     time_t now = time(nullptr);
@@ -1351,7 +1427,12 @@ void HireProvisionService::DropStalePending()
         bool gone = !BotManager::Instance().FindBot(it->botGuid) &&
             BotSessionAdapter::GetHeadlessSessionState(it->botGuid) == HeadlessSessionState::NotFound;
         if (stale || gone)
+        {
+            // C6: a bound-raid seat that never joined does not stay on as an ordinary hire.
+            if (HireNeedsSeatRecheck(it->seatMode, it->boundSeatJoined))
+                CancelBoundSeatHire(*it, "it did not arrive in time");
             it = m_pending.erase(it);
+        }
         else
             ++it;
     }
@@ -1412,6 +1493,9 @@ void HireProvisionService::Update(uint32_t diff)
             {
                 sLog.outError("TortoiseBots: hired bot %s never joined master after 60 reunite attempts; leaving grouped on return",
                     bot->GetName());
+                // C6: a bound-raid seat is never left for the ordinary regroup: cancelled.
+                if (HireNeedsSeatRecheck(it->seatMode, it->boundSeatJoined))
+                    CancelBoundSeatHire(*it, "it could not reach the bound raid");
                 it = m_pending.erase(it);
                 ++completed;
                 continue;
@@ -1421,6 +1505,9 @@ void HireProvisionService::Update(uint32_t diff)
             Player* master = sObjectAccessor.FindPlayer(it->masterGuid);
             if (!master || !master->IsInWorld())
             {
+                // C6: the grace path would group a bound-raid seat with its master as an ordinary hire.
+                if (HireNeedsSeatRecheck(it->seatMode, it->boundSeatJoined))
+                    CancelBoundSeatHire(*it, "you went offline before it arrived");
                 it = m_pending.erase(it);
                 ++completed;
             }

@@ -13596,6 +13596,8 @@ BoundRaidFacts BoundRaidOf(Player* commander)
     facts.bound = true;
     facts.commanderInGroup = group->IsMember(commander->GetObjectGuid());
     facts.members = group->GetMembersCount();
+    facts.leadGuid = binding->leadGuid;
+    facts.groupId = binding->groupId;
     return facts;
 }
 
