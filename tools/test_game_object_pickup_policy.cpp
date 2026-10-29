@@ -1,6 +1,6 @@
-// Automatic game-object pickup: open world props (Empty Festive Mug) stay
-// on the ground unless a quest needs them; nodes, locked chests and player
-// orders keep working.
+// Automatic game-object pickup: open world props holding only common items
+// (Empty Festive Mug) stay on the ground unless a quest needs them; nodes,
+// locked chests and open chests with better loot keep working.
 //
 //   g++ -std=c++17 -Wall -Wextra tools/test_game_object_pickup_policy.cpp -o /tmp/test_game_object_pickup
 
@@ -29,25 +29,23 @@ static GameObjectPickupFacts OpenChest()
 
 int main()
 {
-    CHECK(!AllowGameObjectPickup(OpenChest()));
+    GameObjectPickupFacts mug = OpenChest();
+    mug.onlyCommonLoot = true;
+    CHECK(!AllowGameObjectPickup(mug));
 
-    GameObjectPickupFacts quest = OpenChest();
-    quest.questObject = true;
-    CHECK(AllowGameObjectPickup(quest));
+    GameObjectPickupFacts questMug = mug;
+    questMug.questObject = true;
+    CHECK(AllowGameObjectPickup(questMug));
 
-    GameObjectPickupFacts node = OpenChest();
-    node.gatheringNode = true;
+    GameObjectPickupFacts treasure = OpenChest();
+    CHECK(AllowGameObjectPickup(treasure));
+
+    GameObjectPickupFacts node = mug;
+    node.keyOrSkillLocked = true;
     CHECK(AllowGameObjectPickup(node));
 
-    GameObjectPickupFacts locked = OpenChest();
-    locked.keyOrSkillLocked = true;
-    CHECK(AllowGameObjectPickup(locked));
-
-    GameObjectPickupFacts ordered = OpenChest();
-    ordered.orderedByPlayer = true;
-    CHECK(AllowGameObjectPickup(ordered));
-
     GameObjectPickupFacts notChest;
+    notChest.onlyCommonLoot = true;
     CHECK(AllowGameObjectPickup(notChest));
 
     std::printf("OK (%d checks)\n", checks);

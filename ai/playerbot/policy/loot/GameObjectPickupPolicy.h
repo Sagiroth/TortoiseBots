@@ -1,25 +1,24 @@
 #pragma once
 
-// Automatic game-object pickup. Bots open a world object only when it is
-// needed for one of their quests, a gathering node they can work, or a chest
-// that asks for a key or a skill (locked treasure, lockboxes). Open world
-// props that anyone can take (festive mugs, feast food, tomes) stay where
-// they are unless a quest needs them or a player ordered the pickup.
+// Automatic game-object pickup. Open world props anyone can take (festive
+// mugs, feast food, goblets) hold only common or poor items; bots leave them
+// unless one of their quests needs the object or an item in it. Gathering
+// nodes, chests that ask for a key or a skill, and open chests that can hold
+// something better than common (treasure, tomes) are picked up as before.
 namespace ai
 {
     struct GameObjectPickupFacts
     {
         bool isChest = false;            // GAMEOBJECT_TYPE_CHEST
-        bool keyOrSkillLocked = false;   // lock asks for an item or a lockpick/treasure skill
-        bool gatheringNode = false;      // herb / ore / fishing lock
+        bool keyOrSkillLocked = false;   // lock asks for an item or a gathering/lockpick skill
         bool questObject = false;        // the object or one of its loot items is needed for a quest
-        bool orderedByPlayer = false;    // explicit player order ("add all loot")
+        bool onlyCommonLoot = false;     // every possible item is common or poor quality
     };
 
     inline bool AllowGameObjectPickup(GameObjectPickupFacts const& facts)
     {
-        if (facts.orderedByPlayer || !facts.isChest)
+        if (!facts.isChest || facts.keyOrSkillLocked || facts.questObject)
             return true;
-        return facts.questObject || facts.gatheringNode || facts.keyOrSkillLocked;
+        return !facts.onlyCommonLoot;
     }
 }
