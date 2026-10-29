@@ -22,6 +22,7 @@
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/GuildOrderSources.h"
 #include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderGiveUpPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "playerbot/GuildOrderCraft.h"
@@ -656,7 +657,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
             AreaTableEntry const* area = newTarget.getPosition()->GetArea();
             uint32 zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
             if (zoneId)
-                TortoiseBots::GuildOrders::SetFarmZone(bot->GetGUIDLow(), zoneId, 0, 0);
+                TortoiseBots::GuildOrders::SetFarmZone(bot->GetGUIDLow(), zoneId, 0, 0, 0);
         }
     }
 
@@ -2459,8 +2460,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             bool const acrossSea = listed && !listedOnBotMap && !plan.zones.empty() && plan.zones[0].onBotMap;
             if (farmZoneId == 0 || !listed || outgrown || acrossSea)
             {
-                size_t start = listed ? listedIndex + 1 : record->zoneIndex;
-                size_t pick = plan.zones.empty() ? 0 : start % plan.zones.size();
+                size_t pick = TortoiseBots::GuildOrders::NextZonePick(listed, listedIndex, record->zoneIndex,
+                    plan.zones.size());
                 if (plan.zones.size() <= pick)
                 {
                     OrderReason reason = plan.verdict == OrderReason::None ? OrderReason::NoSource : plan.verdict;
@@ -2468,7 +2469,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                     return false;
                 }
                 farmZoneId = plan.zones[pick].zoneId;
-                SetFarmZone(bot->GetGUIDLow(), farmZoneId, plan.zones[pick].chance, uint32_t(pick));
+                SetFarmZone(bot->GetGUIDLow(), farmZoneId, plan.zones[pick].chance, uint32_t(pick), itemId);
             }
 
             if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId))

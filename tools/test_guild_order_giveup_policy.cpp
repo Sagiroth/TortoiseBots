@@ -25,8 +25,18 @@ int main()
     // Three deaths in the zone move, even with fresh progress.
     CHECK(ClassifyZoneMove(0, 3) == ZoneMoveTrigger::Deaths);
     CHECK(ClassifyZoneMove(3599, 3) == ZoneMoveTrigger::Deaths);
-
-    // An hour worked without a new item moves for progress, not danger.
+    // The pick wraps around the plan: 0 -> 1 -> 2 -> 0.
+    CHECK(NextZonePick(false, 0, 0, 3) == 0);
+    CHECK(NextZonePick(false, 0, 1, 3) == 1);
+    CHECK(NextZonePick(false, 0, 2, 3) == 2);
+    CHECK(NextZonePick(false, 0, 3, 3) == 0);
+    CHECK(NextZonePick(false, 0, 4, 3) == 1);
+    // A listed zone moves to the one after it; a single-zone plan stays.
+    CHECK(NextZonePick(true, 0, 0, 3) == 1);
+    CHECK(NextZonePick(true, 2, 0, 3) == 0);
+    CHECK(NextZonePick(false, 0, 7, 1) == 0);
+    // An empty plan picks nothing: the caller ends the order as no source.
+    CHECK(NextZonePick(false, 0, 0, 0) == 0);
     CHECK(ClassifyZoneMove(3600, 0) == ZoneMoveTrigger::NoProgress);
     CHECK(ClassifyZoneMove(7200, 2) == ZoneMoveTrigger::NoProgress);
 

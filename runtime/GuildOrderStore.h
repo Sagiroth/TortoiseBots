@@ -38,8 +38,9 @@ std::vector<OrderRecord> All();
 // Remove the bot's order (cancel, character deleted, guild left).
 bool Cancel(uint32_t botGuidLow);
 // Remember the zone the bot farms in (0 = re-plan next time), with its
-// position in the current farm plan for the wrap-around zone move.
-void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t zoneIndex);
+// position in the current farm plan and the item actually farmed there (the
+// order item, or the reagent of the current craft leg; 0 = the order item).
+void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t zoneIndex, uint32_t farmItemId);
 
 // Change state and reason (the next Update reports it to the giver).
 void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason);

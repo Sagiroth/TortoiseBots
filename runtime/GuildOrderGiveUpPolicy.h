@@ -6,6 +6,7 @@
 // and free of core/database types on purpose: the thresholds are exercised
 // standalone in tools/test_guild_order_giveup_policy.cpp. The order store
 // feeds this function plain counters it already keeps per order.
+#include <cstddef>
 #include <cstdint>
 
 namespace TortoiseBots
@@ -40,6 +41,19 @@ inline ZoneMoveTrigger ClassifyZoneMove(uint32_t workedSinceNewItemSec, uint32_t
     if (workedSinceNewItemSec >= kZoneMoveWorkedSeconds)
         return ZoneMoveTrigger::NoProgress;
     return ZoneMoveTrigger::None;
+}
+
+// Next zone of the plan after a move, re-plan or outgrown zone: the zone
+// after the listed one, or the stored index when the current zone is cleared
+// (a farm-rule move bumps the stored index first) or no longer planned.
+// Wraps around to the first when the list is exhausted; the caller treats
+// an empty plan as no source.
+inline size_t NextZonePick(bool listed, size_t listedIndex, uint32_t zoneIndex, size_t zoneCount)
+{
+    if (zoneCount == 0)
+        return 0;
+    size_t start = listed ? listedIndex + 1 : zoneIndex;
+    return start % zoneCount;
 }
 
 // The order ends once the bot has worked its chosen hours in total without
