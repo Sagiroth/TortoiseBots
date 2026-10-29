@@ -1233,6 +1233,7 @@ void BotManager::OnPlayerBeforeLogout(::Player* player)
     if (!session || !session->IsHeadless())
     {
         AltBotService::Instance().OnOwnerLogout(player);
+        TortoiseBots::DowntimeService::OnOwnerLogout(player);
         DetachOwnedBots(player);
     }
     else

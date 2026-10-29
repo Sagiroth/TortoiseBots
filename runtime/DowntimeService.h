@@ -18,6 +18,11 @@
 class Player;
 class PlayerbotAI;
 
+namespace ai
+{
+class GuidPosition;
+}
+
 namespace TortoiseBots
 {
 
@@ -31,6 +36,7 @@ struct DowntimeEngineKit
     bool guard = false;
     bool free = false;
     bool travelOnce = false;
+    bool rpg = false;
     bool rpgMaintenance = false;
 };
 
@@ -63,32 +69,47 @@ public:
 
     // Called from the bot logout/shutdown path so an active window restores
     // the kit while the AI still exists instead of relying on the next tick.
+    // Sweep owner logouts too: active windows owned by the leaving account end
+    // quietly instead of waiting for the master-gone poll.
     static void OnBotLogout(Player* bot);
+    static void OnOwnerLogout(Player* owner);
+
+    // True when the downtime flag is up: quest accept/turn-in verbs stay off
+    // while an errand window runs.
+    static bool IsDowntimeActive(PlayerbotAI* ai);
+
+    // Pure movement-mode comparison for the unit test: the real snapshot ->
+    // enter -> tick sequence must not read as retaken, an owner stay must.
+    static bool MovementModeRetaken(DowntimeEngineKit const& expected, DowntimeEngineKit const& now);
 
 private:
     struct Window
     {
         ObjectGuid masterGuid;
+        uint32_t masterAccountId = 0;
         time_t startedAt = 0;
         DowntimeErrand current = DowntimeErrand::None;
         std::vector<DowntimeErrand> tried;
         DowntimeStrategySnapshot before;
+        // The kit the window set: retaken compares live state against this,
+        // not against the pre-window snapshot it replaced.
+        DowntimeStrategySnapshot expected;
         uint32_t lastTickMs = 0;
-        uint32_t lastArrivalMs = 0;
         uint32_t visitDeadlineMs = 0;
     };
 
     DowntimeService() = default;
 
     static DowntimeStrategySnapshot SnapshotStrategies(PlayerbotAI* ai);
-    // True when the owner's movement mode changed since the snapshot:
-    // follow/wander/stay/guard/free deltas all end the window.
-    static bool MovementModeRetaken(PlayerbotAI* ai, DowntimeStrategySnapshot const& before);
+    static DowntimeStrategySnapshot ExpectedErrandKit(DowntimeStrategySnapshot const& before);
+    // Live NON_COMBAT kit, same shape as the snapshot, for the retaken check.
+    static DowntimeEngineKit CurrentMovementKit(PlayerbotAI* ai);
     void EnterErrandKit(Player* bot, Window& window);
     void RestoreMovement(Player* bot, Window& window);
     // Restores the bot's movement kit and tells the master; the caller erases
-    // the window entry.
-    void End(uint32_t guidLow, Window& window, char const* note);
+    // the window entry. Silent skips the master whisper (logout path).
+    void End(uint32_t guidLow, Window& window, char const* note, bool silent = false);
+    void EndWindowsForOwner(uint32_t masterAccountId, bool silent);
 
     std::unordered_map<uint32_t, Window> m_windows; // key = bot guid counter
 };

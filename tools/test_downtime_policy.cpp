@@ -72,9 +72,10 @@ static void TestJunkPredicate()
     assert(!DowntimeJunkProbe(0, false, false, false));
 }
 
-// Any owner movement-mode delta ends the window (follow/wander/stay/guard and
-// the free bit), so stay/guard orders cannot strand the bot. Fed plain values
-// like the snapshot above.
+// The retaken check compares live state against the kit the window SET, not
+// against the pre-window snapshot it replaced. Simulates the real sequence:
+// snapshot (follow on, free off) -> enter parks follow and grants free ->
+// first tick must NOT read as retaken; an owner stay order must.
 struct DowntimeMovementKit
 {
     bool follow = false;
@@ -84,24 +85,28 @@ struct DowntimeMovementKit
     bool free = false;
 };
 
-static bool DowntimeMovementRetaken(DowntimeMovementKit const& before, DowntimeMovementKit const& now)
+static bool DowntimeMovementRetaken(DowntimeMovementKit const& expected, DowntimeMovementKit const& now)
 {
-    return now.follow != before.follow || now.wander != before.wander || now.stay != before.stay ||
-        now.guard != before.guard || now.free != before.free;
+    return now.follow != expected.follow || now.wander != expected.wander || now.stay != expected.stay ||
+        now.guard != expected.guard || now.free != expected.free;
 }
 
 static void TestMovementModeRetaken()
 {
-    DowntimeMovementKit const out = { false, false, false, false, true };
-    // Unchanged kit: the window continues.
-    assert(!DowntimeMovementRetaken(out, out));
-    // Follow, stay, guard and wander orders all end it.
-    assert(DowntimeMovementRetaken(out, { true, false, false, false, true }));
-    assert(DowntimeMovementRetaken(out, { false, true, false, false, true }));
-    assert(DowntimeMovementRetaken(out, { false, false, true, false, true }));
-    assert(DowntimeMovementRetaken(out, { false, false, false, true, true }));
-    // A dropped free bit (another path touching the mode) ends it too.
-    assert(DowntimeMovementRetaken(out, { false, false, false, false, false }));
+    DowntimeMovementKit const before = { true, false, false, false, false };
+    // The window parks follow and grants free; that is the expected kit.
+    DowntimeMovementKit const errand = { false, false, false, false, true };
+    // snapshot -> enter -> first tick: no owner order landed, not retaken.
+    assert(!DowntimeMovementRetaken(errand, errand));
+    // The old check (live vs pre-window snapshot) misfires here: parked
+    // follow and granted free both differ from `before`.
+    assert(DowntimeMovementRetaken(before, errand));
+    // Owner orders end it: stay, guard, follow, wander, or a dropped free bit.
+    assert(DowntimeMovementRetaken(errand, { false, false, true, false, true }));
+    assert(DowntimeMovementRetaken(errand, { false, false, false, true, true }));
+    assert(DowntimeMovementRetaken(errand, { true, false, false, false, true }));
+    assert(DowntimeMovementRetaken(errand, { false, true, false, false, true }));
+    assert(DowntimeMovementRetaken(errand, { false, false, false, false, false }));
 }
 
 static void TestWindowCap()
