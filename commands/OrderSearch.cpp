@@ -105,6 +105,9 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
                 row.itemId = itemId;
                 row.name = proto->Name1;
                 row.lower = ToLower(proto->Name1);
+                // Developer test items ("Test AQ Resource - ...") only add noise.
+                if (row.lower.rfind("test ", 0) == 0)
+                    continue;
                 SearchIndex().push_back(std::move(row));
             }
             SearchIndexBuilt() = true;
