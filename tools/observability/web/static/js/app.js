@@ -6914,6 +6914,48 @@
     return g;
   }
 
+  // Each plan view is memoized by PlanOverlay.view, so its identity is its inputs: a counter names it in the static key.
+  const cmdViewIds = new WeakMap();
+  let cmdViewSeq = 0;
+  function cmdViewId(view) {
+    if (!view || typeof view !== 'object') return 0;
+    let id = cmdViewIds.get(view);
+    if (!id) { id = ++cmdViewSeq; cmdViewIds.set(view, id); }
+    return id;
+  }
+
+  // What the static group draws from: the view (the box: a zoom or pan, the grid step), the layer switches that own static
+  // marks, the floor, the plan's identity, the zone under the party and the zones data. Equal keys draw the same picture.
+  function cmdStaticKey(o) {
+    const v = o || {};
+    const box = Array.isArray(v.box) ? v.box : [];
+    const on = v.on || {};
+    const first = v.first || null;
+    const zr = v.zr || null;
+    const num = n => (typeof n === "number" && isFinite(n) ? n.toFixed(2) : "");
+    return [box.map(num).join(','), num(v.step), on.grid ? 1 : 0, on.zonelabels ? 1 : 0, on.zone ? 1 : 0,
+      on.planroute ? 1 : 0, on.planstands ? 1 : 0, on.planrings ? 1 : 0, on.patrols ? 1 : 0, v.flKey || '',
+      v.viewId || 0, first ? first.map + ':' + (first.zone || '') + ':' + (v.zones ? 1 : 0) : '',
+      zr ? [num(zr.x), num(zr.y), num(zr.w), num(zr.h), zr.name].join(',') : ''].join('|');
+  }
+
+  // The static group of a card's map: rebuilt only when its key changed. build() gets the units its marks answer hover with;
+  // they are copied into this frame's units either way, so a cached plan still hovers. Returns whether it rebuilt (the check's
+  // counter).
+  function cmdStaticLayer(node, key, build, units) {
+    if (!node) return false;
+    let rebuilt = false;
+    if (node._k !== key) {
+      node._k = key;
+      const own = {};
+      node.innerHTML = build(own) || '';
+      node._units = own;
+      rebuilt = true;
+    }
+    if (units && node._units) Object.assign(units, node._units);
+    return rebuilt;
+  }
+
   function drawCmdMap(key) {
     const card = cmdCards.get(key);
     const liveBind = cmdFindBind(key);
@@ -6983,31 +7025,41 @@
     const picWhy = card.querySelector('.cmd-picwhy');
     if (picWhy) { picWhy.hidden = !ui.reason; picWhy.textContent = ui.reason || ''; }
 
+    // units: every thing that can be hovered gets a key; the hover box looks it up here, so it follows the 2 s refresh.
+    const units = ms.units = {};
+    const dc = { f, k, units };
+    // The static layers (the grid, the zone marks and the whole plan) sit in a group of their own and are rebuilt only when
+    // something they draw changes: the map, the plan and its step, a layer switch, the zoom/pan or the floor. A glide frame
+    // only redraws the units and overlays in g.dyn; the plan's hover entries are re-registered from the group's last build.
+    const flKey = fl ? Array.from(fl).sort().join(',') : '';
+    const staticKey = cmdStaticKey({ box, step, on, flKey, viewId: cmdViewId(pf.view), first, zones: !!ZONE_BOUNDS, zr });
+    cmdStaticLayer(svg.querySelector('g.static'), staticKey, su => {
+      const sc = { f, k, units: su };
+      let html = '';
+      if (on.grid) {
+        grid.xs.forEach(x => { html += `<line class="grid" x1="${f(x)}" y1="${f(box[1])}" x2="${f(x)}" y2="${f(box[1] + box[3])}"/>`; });
+        grid.ys.forEach(y => { html += `<line class="grid" x1="${f(box[0])}" y1="${f(y)}" x2="${f(box[0] + box[2])}" y2="${f(y)}"/>`; });
+      }
+      if (on.zonelabels && first) {
+        CmdView.zonesIn(ZONE_BOUNDS, first.map, box, first.zone).slice(0, 12).forEach(z => {
+          html += `<rect class="zone2" x="${f(z.x)}" y="${f(z.y)}" width="${f(z.w)}" height="${f(z.h)}"/>`
+            + `<text class="zone2" x="${f(z.x + 6 * k)}" y="${f(z.y + 14 * k)}" style="font-size:${f(10.5 * k)}px">${esc(displayZoneName(z.name))}</text>`;
+        });
+      }
+      if (on.zone && zr) {
+        html += `<rect class="zone" x="${f(zr.x)}" y="${f(zr.y)}" width="${f(zr.w)}" height="${f(zr.h)}"/>`
+          + `<text class="zone" x="${f(zr.x + 6 * k)}" y="${f(zr.y + 14 * k)}" style="font-size:${f(11 * k)}px">${esc(zr.name)}</text>`;
+      }
+      if (pf.view && (on.planroute || on.planstands || on.planrings || on.patrols)) html += cmdPlanSvg(sc, pf.view, on);
+      return html;
+    }, units);
     let g = '';
-    if (on.grid) {
-      grid.xs.forEach(x => { g += `<line class="grid" x1="${f(x)}" y1="${f(box[1])}" x2="${f(x)}" y2="${f(box[1] + box[3])}"/>`; });
-      grid.ys.forEach(y => { g += `<line class="grid" x1="${f(box[0])}" y1="${f(y)}" x2="${f(box[0] + box[2])}" y2="${f(y)}"/>`; });
-    }
-    if (on.zonelabels && first) {
-      CmdView.zonesIn(ZONE_BOUNDS, first.map, box, first.zone).slice(0, 12).forEach(z => {
-        g += `<rect class="zone2" x="${f(z.x)}" y="${f(z.y)}" width="${f(z.w)}" height="${f(z.h)}"/>`
-          + `<text class="zone2" x="${f(z.x + 6 * k)}" y="${f(z.y + 14 * k)}" style="font-size:${f(10.5 * k)}px">${esc(displayZoneName(z.name))}</text>`;
-      });
-    }
-    if (on.zone && zr) {
-      g += `<rect class="zone" x="${f(zr.x)}" y="${f(zr.y)}" width="${f(zr.w)}" height="${f(zr.h)}"/>`
-        + `<text class="zone" x="${f(zr.x + 6 * k)}" y="${f(zr.y + 14 * k)}" style="font-size:${f(11 * k)}px">${esc(zr.name)}</text>`;
-    }
     if (on.healring) {
       onMap.filter(b => b.role === 'healer' && b.alive !== false).forEach(b => {
         const p = CmdView.project(b.x, b.y);
         g += `<circle class="range heal" cx="${f(p.x)}" cy="${f(p.y)}" r="${CmdView.HEAL_RANGE_YD}"><title>${esc(b.name)}: healing range ${CmdView.HEAL_RANGE_YD} yd</title></circle>`;
       });
     }
-    // units: every thing that can be hovered gets a key; the hover box looks it up here, so it follows the 2 s refresh.
-    const units = ms.units = {};
-    const dc = { f, k, units };
-    if (pf.view && (on.planroute || on.planstands || on.planrings || on.patrols)) g += cmdPlanSvg(dc, pf.view, on);
     if (on.runsteps) g += cmdRunStepsSvg(dc, steps, lead && first && lead.map === first.map ? lead : null);
     const nowSec = cmdNowFor(bind), trailDrawn = CmdPaths.cutByAge(trail, nowSec, cmdLayers.trailSec);
     if (on.membertrails && first) g += cmdMemberTrailsSvg(dc, bind, first.map, nowSec);
@@ -7402,7 +7454,7 @@
           <div class="cmd-mapbox">
             <div class="cmd-legend fd-legend" role="note"></div>
             <div class="cmd-stage">
-              <svg class="cmd-map" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet"><g class="pic"></g><g class="dyn"></g></svg>
+              <svg class="cmd-map" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet"><g class="pic"></g><g class="static"></g><g class="dyn"></g></svg>
               <div class="cmd-maptools">
                 <select class="cmd-pic" hidden title="Which picture of this map to draw under the party" aria-label="Map picture"></select>
                 <button type="button" data-act="layers" title="Which things the map draws (the one Maps layer panel)">Layers</button>

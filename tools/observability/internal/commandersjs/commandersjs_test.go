@@ -332,6 +332,13 @@ func TestPageAssetsJS(t *testing.T) {
 	runCheck(t, "page_assets_check.js", "../../web/static/js/app.js")
 }
 
+// TestStaticLayerJS runs static_layer_check.js: the map's static group (grid, zone marks, the whole plan) is rebuilt only when
+// its key changes. Sixty glide frames rebuild it zero times, a zoom, a pan, a layer switch, a new plan step or floor rebuild it
+// once, and the plan's hover entries are re-registered every frame without a rebuild.
+func TestStaticLayerJS(t *testing.T) {
+	runCheck(t, "static_layer_check.js", "../../web/static/js/app.js")
+}
+
 // TestCmdOverflowCSS runs cmd_overflow_css_check.js: the Commanders cards never widen the page on a phone. The Fights panel
 // (six nowrap columns) scrolls inside the card, the panel and the card may shrink below it, and no card-scoped rule fixes a
 // width above 390 px.
