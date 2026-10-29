@@ -2,7 +2,10 @@
 package commandersjs
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -174,6 +177,39 @@ func TestFightReplayJS(t *testing.T) {
 // TestAggroLanesJS runs aggrolanes_check.js: the aggro lanes of a fight (who each enemy targeted, sampled every 2 s).
 func TestAggroLanesJS(t *testing.T) {
 	runCheck(t, "aggrolanes_check.js", "../../web/static/js/aggrolanes.js")
+}
+
+// TestAggroLanesAttempts runs aggrolanes_attempts_check.js on attempts 1 and 3 of the recorded Onyxia attempts, regenerated
+// into a temp dir by testdata/mk_lanes_fixture.py (attempt 2 is committed as lanes-a2.json). Skipped without the recordings.
+func TestAggroLanesAttempts(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory: " + err.Error())
+	}
+	root := filepath.Join(home, "TortoiseBots-audit", "tests", "onyxia-attempts")
+	if _, err := os.Stat(root); err != nil {
+		t.Skip("the recorded attempts are not on this machine: " + root)
+	}
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 is not installed")
+	}
+	dir := t.TempDir()
+	for _, c := range []struct {
+		attempt         string
+		ntMs, longestMs int64
+	}{
+		{"attempt-1", 52000, 8000},
+		{"attempt-3", 20000, 14000},
+	} {
+		out := filepath.Join(dir, c.attempt+".json")
+		if b, err := exec.Command(python, "-I", filepath.Join("testdata", "mk_lanes_fixture.py"),
+			filepath.Join(root, c.attempt), out).CombinedOutput(); err != nil {
+			t.Fatalf("mk_lanes_fixture.py %s: %v\n%s", c.attempt, err, b)
+		}
+		runCheck(t, "aggrolanes_attempts_check.js", "../../web/static/js/aggrolanes.js", out,
+			strconv.FormatInt(c.ntMs, 10), strconv.FormatInt(c.longestMs, 10))
+	}
 }
 
 // TestPlanOverlayJS runs planoverlay_check.js: the plan's route, stands, pack mobs and rings (scripted wakes from the

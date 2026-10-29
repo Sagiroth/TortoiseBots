@@ -3,10 +3,16 @@
 // track answer (GET /api/v1/commanders/track) and one finished fight, and turns the sampled mob victims into one lane
 // per engaged enemy: tank, healer, damage dealer, other, dead or none, in milliseconds from the fight's start. A lane
 // segment lasts until the next report of that enemy, capped at HOLD_S so a stale report cannot paint the rest of the
-// fight. No DOM, no fetch: unit-tested by internal/commandersjs/aggrolanes_check.js under node.
+// fight. A segment is also *held* (nt) when the enemy is on a living non-tank within LANE.reachYd in that frame: the lane
+// keeps the total and the longest run of held segments for the debugger's lane check. No DOM, no fetch: unit-tested by
+// internal/commandersjs/aggrolanes_check.js under node.
 (function (root) {
   const MAX_LANES = 12;
   const HOLD_S = 3;
+  // The non-tank lane rule (fight debugger B4, from three recorded Onyxia attempts): 1-3 reports on a healer or damage
+  // dealer anywhere are a taunt bounce the 2 s samples cannot resolve; a victim standing within 30 yd of its enemy for 8 s
+  // or 12 s is lost threat. The lanes result carries these numbers, so the checks grade with the same thresholds.
+  const LANE = { reachYd: 30, warnMs: 8000, failMs: 12000 };
 
   const isNum = (v) => typeof v === "number" && isFinite(v);
 
@@ -41,6 +47,24 @@
     }
     if (mob.vo) return { kind: "other", victim: "" };
     return { kind: "none", victim: "" };
+  }
+
+  // A held segment: the enemy is on a bound non-tank (the existing bad: healer or damage dealer) that stands alive within
+  // reach of it in this frame. row is the track frame's bot row, [guid, x, y, hp %, alive, map].
+  function heldBy(mob, row) {
+    if (!row || row[4] !== 1) return false;
+    const bx = row[1], by = row[2];
+    if (!isNum(bx) || !isNum(by) || !isNum(mob.x) || !isNum(mob.y)) return false;
+    return Math.hypot(bx - mob.x, by - mob.y) <= LANE.reachYd;
+  }
+
+  // The worst lane of the strip: the longest held stint; ties go to the boss lane, then the larger held total, then the
+  // lower id.
+  function ntWorse(a, b) {
+    if (a.ntLongestMs !== b.ntLongestMs) return a.ntLongestMs > b.ntLongestMs;
+    if (a.boss !== b.boss) return a.boss;
+    if (a.ntMs !== b.ntMs) return a.ntMs > b.ntMs;
+    return String(a.id) < String(b.id);
   }
 
   function lanes(json, fight, bindBots) {
@@ -78,6 +102,10 @@
     for (let i = 0; i < frames.length; i++) {
       const f = frames[i];
       const nextT = i + 1 < frames.length ? frames[i + 1].t : null;
+      const rows = new Map();
+      for (const r of (Array.isArray(f.bots) ? f.bots : [])) {
+        if (Array.isArray(r)) rows.set(String(r[0]), r);
+      }
       for (const mob of (Array.isArray(f.mobs) ? f.mobs : [])) {
         if (!mob || mob.id == null) continue;
         const id = String(mob.id);
@@ -93,9 +121,11 @@
         const toMs = Math.min(durMs, (endT - startS) * 1000);
         if (!(toMs > fromMs)) continue;
         const k = kindOf(mob, maps);
-        const seg = { fromMs, toMs, kind: k.kind, bad: k.kind === "healer" || k.kind === "dps", victim: k.victim };
+        const bad = k.kind === "healer" || k.kind === "dps";
+        const nt = bad && heldBy(mob, rows.get(String(mob.v)));
+        const seg = { fromMs, toMs, kind: k.kind, bad, victim: k.victim, nt };
         const prev = lane.segs[lane.segs.length - 1];
-        if (prev && prev.kind === seg.kind && prev.victim === seg.victim && prev.toMs === seg.fromMs) {
+        if (prev && prev.kind === seg.kind && prev.victim === seg.victim && prev.nt === seg.nt && prev.toMs === seg.fromMs) {
           prev.toMs = seg.toMs;
         } else {
           lane.segs.push(seg);
@@ -110,6 +140,10 @@
 
     const out = sorted.map((lane) => {
       let badMs = 0;
+      let ntMs = 0;
+      let ntLongestMs = 0;
+      let stint = 0;
+      let heldTo = null;
       const byKind = { tank: 0, healer: 0, dps: 0, other: 0 };
       const badNames = [];
       for (const s of lane.segs) {
@@ -118,6 +152,15 @@
         if (s.bad) {
           badMs += ms;
           if (s.victim && badNames.indexOf(s.victim) < 0) badNames.push(s.victim);
+        }
+        if (s.nt) {
+          ntMs += ms;
+          stint = heldTo === s.fromMs ? stint + ms : ms;
+          if (stint > ntLongestMs) ntLongestMs = stint;
+          heldTo = s.toMs;
+        } else {
+          stint = 0;
+          heldTo = null;
         }
       }
       const total = byKind.tank + byKind.healer + byKind.dps + byKind.other;
@@ -129,6 +172,8 @@
         boss: lane.boss,
         segs: lane.segs,
         badMs,
+        ntMs,
+        ntLongestMs,
         onTankPct: total > 0 ? Math.round((byKind.tank / total) * 100) : 0,
         badNames,
       };
@@ -140,9 +185,10 @@
     kept.forEach((lane, i) => {
       lane.label = perEntry.get(lane.e) > 1 ? lane.name + " " + (i + 1) : lane.name;
     });
-    return { lanes: kept, more: out.length - kept.length, frames: frames.length };
+    const ntWorst = kept.reduce((best, lane) => (!best || ntWorse(lane, best) ? lane : best), null);
+    return { lanes: kept, more: out.length - kept.length, frames: frames.length, ntWorst, lane: LANE };
   }
 
-  const api = { MAX_LANES, HOLD_S, lanes };
+  const api = { MAX_LANES, HOLD_S, LANE, lanes };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.AggroLanes = api;
 })(typeof self !== "undefined" ? self : this);

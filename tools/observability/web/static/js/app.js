@@ -7381,6 +7381,32 @@
     fd.sel = worst >= 0 ? list[worst].key : bind.combat ? 'live' : list.length ? list[0].key : null;
   }
 
+  // The plan facts a finished fight's checks read: the plan's ring strays on the walk to the fight's pack, and that pack and
+  // the one before it. Only a plan on the fight's own map counts; a fight without a plan (a pocket fight) has no ring row.
+  function fdFightExtra(bind, fight, lanesRes) {
+    const extra = { lanes: lanesRes || null, strays: null, packI: 0, prevPackI: 0 };
+    if (!fight) return extra;
+    const name = cmdPlanName(bind);
+    const plan = name ? cmdPlanGet(name) : null;
+    if (!plan || plan.map !== fight.map) return extra;
+    const fightStep = fight.step || 0;
+    const view = PlanOverlay.view(plan, {
+      mapId: fight.map, cur: fightStep, fightStep, partyLevel: PlanOverlay.partyLevel(bind), run: bind.run,
+    });
+    const packI = PlanOverlay.fightPack(plan, fight);
+    extra.strays = (view && view.strays) || [];
+    extra.packI = packI;
+    extra.prevPackI = fdPrevPackI(view, packI);
+    return extra;
+  }
+
+  // The plan's last pack step before packI (0 when there is none).
+  function fdPrevPackI(view, packI) {
+    let prev = 0;
+    ((view && view.steps) || []).forEach(s => { if (s.pack && s.i > prev && s.i < packI) prev = s.i; });
+    return prev;
+  }
+
   function renderFightDebug(card, bind) {
     if (!card || !bind || typeof FightDebug === 'undefined') return;
     const key = bind.commander, fd = fdState(key), layout = bind.layout || null;
@@ -7398,6 +7424,18 @@
     const fight = det && det.fight;
     if (fd.death != null && fight && !(fight.deaths || [])[fd.death]) fd.death = null;
     const recaps = fight ? FightDebug.deathRecaps(fight) : [];
+
+    // The lanes and plan facts the checks read: one lanes result feeds the strip and the lane row, the plan's ring strays the
+    // route row. The extra is kept on the detail, so the rail grades the fight the same way.
+    const track = fight ? fd.tracks[fd.sel] : undefined;
+    let lanesRes = null;
+    let lanesUntracked = false;
+    if (fight && track && track !== 'loading') {
+      if (track.raw && track.raw.tracked === false) lanesUntracked = true;
+      else lanesRes = AggroLanes.lanes(track.raw, fight, bind.bots || []);
+    }
+    const extra = fight ? fdFightExtra(bind, fight, lanesRes) : null;
+    if (det) det.extra = extra;
 
     // The run strip above the raid frames: its blocks, the death marks and the replay scrubber.
     const run = fdRunModel(bind, list, fd.details, cmdNowFor(bind));
@@ -7423,7 +7461,7 @@
     const cards = FightDebug.railCards(list, fd.details, layout);
     fdSet(card.querySelector('.fd-rail'), fdRailHtml(cards, live, fd.sel));
 
-    const checks = selLive ? FightDebug.liveChecks(bind) : fight ? FightDebug.checks(fight, layout, det.warnings || []) : [];
+    const checks = selLive ? FightDebug.liveChecks(bind) : fight ? FightDebug.checks(fight, layout, det.warnings || [], extra) : [];
     const guids = {};
     (bind.bots || []).concat((fight && fight.bots) || []).forEach(b => { if (b && b.name && b.guid != null) guids[b.name] = b.guid; });
     let title = 'Fight';
@@ -7454,13 +7492,12 @@
     fdSet(card.querySelector('.fd-recap'), !selLive && fight ? fdRecapHtml(recaps, fd.death) : '');
     // The replay row: a fight's kept positions are fetched once by the daemon's buffer, then played over the card's map.
     if (fight) {
-      const track = fd.tracks[fd.sel];
       if (track === undefined) fdTrackLoad(card, bind, fd.sel, fight);
       fdPlaySync(card, fd, fight, track && track !== 'loading' ? track : null);
       const lanes = card.querySelector('.fd-lanes');
-      if (track && track !== 'loading' && track.raw && track.raw.tracked === false) {
+      if (lanesUntracked) {
         fdSet(lanes, `<p class="empty-hint">${esc(FightReplay.UNTRACKED_TEXT)}</p>`); // this raid is past the dashboard's tracked set
-      } else if (track && track !== 'loading') fdSet(lanes, fdLanesHtml(AggroLanes.lanes(track.raw, fight, bind.bots || []), fight.dur_ms));
+      } else if (track && track !== 'loading') fdSet(lanes, fdLanesHtml(lanesRes, fight.dur_ms));
       else fdSet(lanes, `<p class="empty-hint">${track === 'loading' ? 'Loading positions…' : 'No positions kept for this fight (the dashboard keeps the last 30 min, from its own start).'}</p>`);
       fdCursorSync(card, fd);
     } else {

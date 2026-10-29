@@ -55,8 +55,9 @@
 
   const LEVEL = { fail: 0, warn: 1, ok: 2 };
 
-  function checks(fight, layout, warnings) {
+  function checks(fight, layout, warnings, extra) {
     fight = fight || {};
+    extra = extra || null;
     const bots = Array.isArray(fight.bots) ? fight.bots : [];
     const deaths = Array.isArray(fight.deaths) ? fight.deaths : [];
     const durMs = num(fight.dur_ms) || 0;
@@ -134,6 +135,70 @@
       });
     }
 
+    // A non-tank holding an enemy: 1-3 reports are a taunt bounce, a long stint inside 30 yd is lost threat. The lanes result
+    // carries the thresholds and the named victims of the strip the card already drew.
+    const lanes = extra && extra.lanes;
+    if (lanes && Array.isArray(lanes.lanes) && lanes.lanes.length && durMs >= LIMITS.minFightMs) {
+      const worst = lanes.ntWorst;
+      const limits = lanes.lane || {};
+      const longest = worst ? (num(worst.ntLongestMs) || 0) : 0;
+      const secs = Math.round(longest / 1000);
+      const warnMs = num(limits.warnMs), failMs = num(limits.failMs);
+      const lvl = failMs !== null && longest >= failMs ? "fail" : warnMs !== null && longest >= warnMs ? "warn" : "ok";
+      const badNames = (worst && Array.isArray(worst.badNames)) ? worst.badNames : [];
+      if (lvl === "ok") {
+        out.push({
+          id: "lane_nontank",
+          lvl,
+          title: "Enemies stayed on the tanks",
+          num: secs + " s",
+          ev: secs > 0
+            ? "Longest stretch on a non-tank within 30 yd: " + secs + " s (" + worst.label + ")."
+            : "Longest stretch on a non-tank within 30 yd: none.",
+        });
+      } else {
+        out.push({
+          id: "lane_nontank",
+          lvl,
+          title: "Enemy on a non-tank: " + worst.label,
+          num: secs + " s",
+          ev: worst.label + " was on " + (badNames.join(", ") || "a non-tank") + " for " + secs + " s in a row ("
+            + Math.round((num(worst.ntMs) || 0) / 1000) + " s in all) within 30 yd of its target."
+            + " Under 8 s is a taunt bounce the 2 s samples cannot show.",
+          bot: badNames[0],
+        });
+      }
+    }
+
+    // The plan's move steps between the pack before the fight's and its own that pass inside a later pack's ring: a scripted
+    // wake means the walk wakes that pack, an aggro ring only narrows the margin.
+    const strays = extra && Array.isArray(extra.strays) ? extra.strays : null;
+    const packI = extra ? (num(extra.packI) || 0) : 0;
+    if (strays && packI > 0) {
+      const prevPackI = num(extra.prevPackI) || 0;
+      const inRange = strays.filter((s) => s && num(s.i) !== null && num(s.i) > prevPackI && num(s.i) < packI);
+      if (!inRange.length) {
+        out.push({
+          id: "plan_strays",
+          lvl: "ok",
+          title: "Route to this pack stays out of other packs' rings",
+          num: "",
+          ev: "No move point between the previous pack and this one falls inside a later pack's ring.",
+        });
+      } else {
+        const ev = inRange.slice(0, 4).map((s) => "step " + s.i + " is " + (num(s.dist) || 0).toFixed(1) + " yd from "
+          + (s.name || "a mob") + " (ring " + Math.round(num(s.ring) || 0) + " yd" + (s.wake ? ", scripted wake" : "") + ")")
+          .join(" · ");
+        out.push({
+          id: "plan_strays",
+          lvl: inRange.some((s) => s.wake) ? "fail" : "warn",
+          title: "Route crosses " + inRange.length + " ring(s) on the way here",
+          num: inRange.length,
+          ev: ev + (inRange.length > 4 ? " · +" + (inRange.length - 4) + " more" : ""),
+        });
+      }
+    }
+
     const healers = bots.filter((b) => roleOf(b) === "heal");
     const effective = healers.reduce((s, b) => s + (num(b.heal) || 0), 0);
     const overheal = healers.reduce((s, b) => s + (num(b.over) || 0), 0);
@@ -204,8 +269,8 @@
       .map((x) => x.c);
   }
 
-  function verdict(fight, layout, warnings) {
-    const list = checks(fight, layout, warnings);
+  function verdict(fight, layout, warnings, extra) {
+    const list = checks(fight, layout, warnings, extra);
     if (list.some((c) => c.lvl === "fail")) return "fail";
     if (list.some((c) => c.lvl === "warn")) return "warn";
     return "ok";
@@ -217,7 +282,7 @@
     let bestScore = null;
     (Array.isArray(details) ? details : []).forEach((det, i) => {
       if (!det || !det.fight) return;
-      const list = checks(det.fight, layout, det.warnings || []);
+      const list = checks(det.fight, layout, det.warnings || [], det.extra || null);
       const score = [
         list.filter((c) => c.lvl === "fail").length,
         list.filter((c) => c.lvl === "warn").length,
@@ -410,7 +475,7 @@
         dmg: dmg,
         deaths: num(row.deaths) || 0,
         lenPct: maxDur > 0 ? (dur / maxDur) * 100 : 0,
-        verdict: fight ? verdict(fight, layout, det.warnings || []) : null,
+        verdict: fight ? verdict(fight, layout, det.warnings || [], det.extra || null) : null,
         // A row COMBAT_EVENTS opened, with no finished fight behind it yet: no bot rows, no detail to load.
         live: !!row.live,
       };

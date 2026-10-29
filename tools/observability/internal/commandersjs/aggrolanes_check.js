@@ -128,5 +128,77 @@ assert.strictEqual(w.lanes[0].onTankPct, 100);
 assert.deepStrictEqual(w.lanes[0].badNames, []);
 
 // An empty or missing track answers with nothing (no throw).
-assert.deepStrictEqual(A.lanes({ frames: [], names: {} }, FIGHT, []), { lanes: [], more: 0, frames: 0 });
-assert.deepStrictEqual(A.lanes(null, FIGHT, []), { lanes: [], more: 0, frames: 0 });
+assert.deepStrictEqual(A.lanes({ frames: [], names: {} }, FIGHT, []), { lanes: [], more: 0, frames: 0, ntWorst: null, lane: A.LANE });
+assert.deepStrictEqual(A.lanes(null, FIGHT, []), { lanes: [], more: 0, frames: 0, ntWorst: null, lane: A.LANE });
+
+// ---- the non-tank lane rule: held segments, stints and the worst lane ------------------------------------------------
+assert.deepStrictEqual(A.LANE, { reachYd: 30, warnMs: 8000, failMs: 12000 });
+assert.strictEqual(l1.ntMs, 4000);
+assert.strictEqual(l1.ntLongestMs, 4000);
+assert.strictEqual(res.ntWorst, l1);
+assert.strictEqual(res.lane, A.LANE);
+
+// Attempt 2, the committed fixture: Onyxia's lane was held by non-tanks 12 s in a row inside 30 yd, 23 s in all.
+const a2 = JSON.parse(fs.readFileSync(path.join(__dirname, "testdata", "lanes-a2.json"), "utf8"));
+const a2res = A.lanes(a2.track, a2.fight, a2.fight.bots);
+assert.strictEqual(a2res.frames, 163);
+const ony = a2res.lanes.find((l) => l.label === "Onyxia");
+assert.ok(ony, "the Onyxia lane is in the strip");
+assert.strictEqual(ony.ntMs, 23000);
+assert.strictEqual(ony.ntLongestMs, 12000);
+assert.deepStrictEqual(ony.badNames, ["Quelin", "Sael", "Aelia", "Venomwind", "Shadowfall", "Pozzle", "Ironcaller", "Beardster",
+  "Hald", "Lorenthil", "Garic", "Frostz", "Shadowbrand", "Soulmane", "Blackwalker", "Impz", "Ravenbringer", "Brrtastic", "Basicie",
+  "Kaelis", "Beastcrest"]);
+assert.strictEqual(a2res.ntWorst, ony);
+
+// Two warders on the main tank for 30 s; one 2-sample bounce to a healer 5 yd from the enemy is 4 s, under the 8 s warn.
+const strayBot = (guid, x, alive) => [guid, x, 0, 100, alive, 249];
+const trashBots = [strayBot(1, 0, 1), strayBot(2, 5, 1), strayBot(3, 40, 1)];
+const trashFrames = [];
+for (let t = 2000; t <= 2030; t += 2) {
+  const bounce = t === 2010 || t === 2012;
+  trashFrames.push({ t, map: 249, step: 1, fight: true, bots: trashBots, mobs: [m("w1", bounce ? 2 : 1), m("w2", 1)] });
+}
+const trash = A.lanes({ commander: "T", frames: trashFrames, names: { 7: "Warder" } }, { start: 2000, dur_ms: 30000, bots: BOTS }, []);
+assert.strictEqual(trash.lanes.length, 2);
+const w1lane = trash.lanes.find((l) => l.id === "w1");
+assert.strictEqual(w1lane.ntMs, 4000);
+assert.strictEqual(w1lane.ntLongestMs, 4000);
+assert.strictEqual(trash.ntWorst, w1lane);
+
+// Reach is 30 yd: a healer 31 yd away is never held; neither is a dead one.
+const farFrames = [];
+const deadFrames = [];
+for (let t = 2000; t <= 2020; t += 2) {
+  farFrames.push({ t, map: 249, step: 1, fight: true, bots: [strayBot(2, 31, 1)], mobs: [m("w1", 2)] });
+  deadFrames.push({ t, map: 249, step: 1, fight: true, bots: [strayBot(2, 5, 0)], mobs: [m("w1", 2)] });
+}
+const far = A.lanes({ frames: farFrames, names: { 7: "Warder" } }, { start: 2000, dur_ms: 20000, bots: BOTS }, []);
+assert.strictEqual(far.lanes[0].ntMs, 0);
+assert.strictEqual(far.lanes[0].ntLongestMs, 0);
+const dead = A.lanes({ frames: deadFrames, names: { 7: "Warder" } }, { start: 2000, dur_ms: 20000, bots: BOTS }, []);
+assert.strictEqual(dead.lanes[0].ntMs, 0);
+assert.strictEqual(dead.lanes[0].ntLongestMs, 0);
+
+// Two healers within reach, alternating: their segments stay apart, the stint (any victim) is 10 s.
+const twoHealFrames = [];
+for (let t = 2000; t <= 2008; t += 2) {
+  const victim = t === 2004 || t === 2008 ? 4 : 2;
+  twoHealFrames.push({ t, map: 249, step: 1, fight: true, bots: [strayBot(2, 5, 1), strayBot(4, 6, 1)], mobs: [m("w1", victim)] });
+}
+const twoHealBots = BOTS.concat([{ name: "Heal2", guid: 4, role: "healer" }]);
+const twoHeal = A.lanes({ frames: twoHealFrames, names: { 7: "Warder" } }, { start: 2000, dur_ms: 10000, bots: twoHealBots }, []);
+assert.strictEqual(twoHeal.lanes[0].segs.length, 4, "each victim is its own segment: " + JSON.stringify(segsOf(twoHeal.lanes[0])));
+assert.strictEqual(twoHeal.lanes[0].ntMs, 10000);
+assert.strictEqual(twoHeal.lanes[0].ntLongestMs, 10000);
+
+// The hold flag is part of a segment: the same healer in reach for 4 s, then walking out of it, is two segments (a merge would
+// paint all 8 s as held).
+const walkFrames = [];
+for (let t = 2000; t <= 2006; t += 2) {
+  walkFrames.push({ t, map: 249, step: 1, fight: true, bots: [strayBot(2, t <= 2002 ? 5 : 40, 1)], mobs: [m("w1", 2)] });
+}
+const walk = A.lanes({ frames: walkFrames, names: { 7: "Warder" } }, { start: 2000, dur_ms: 8000, bots: BOTS }, []);
+assert.strictEqual(walk.lanes[0].segs.length, 2, "held and not held stay apart: " + JSON.stringify(walk.lanes[0].segs));
+assert.strictEqual(walk.lanes[0].ntMs, 4000);
+assert.strictEqual(walk.lanes[0].ntLongestMs, 4000);

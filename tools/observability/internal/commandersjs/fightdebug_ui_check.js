@@ -202,4 +202,40 @@ assert.ok(html.includes('data-page-mode="debug"'), "the page offers the debugger
 assert.ok(src.includes('data-act="whole"'), "the map offers the whole picture");
 assert.ok(html.indexOf("/static/js/fightdebug.js") > 0 && html.indexOf("/static/js/fightdebug.js") < html.indexOf("/static/js/app.js"),
   "index.html loads fightdebug.js before app.js");
+
+// ---- the plan facts a finished fight's checks get (the lanes result, the ring strays, the pack pair) ------------------
+vm.runInContext([grab("fdFightExtra"), grab("fdPrevPackI")].join("\n"), ctx);
+vm.runInContext(fs.readFileSync(path.join(dir, "planoverlay.js"), "utf8"), ctx);
+assert.ok(ctx.PlanOverlay && typeof ctx.PlanOverlay.strays === "function", "planoverlay.js loaded for the real plan view");
+const planJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "plans", "testdata", "onyxias_lair.plan.json"), "utf8"));
+ctx.cmdPlanName = (bind) => bind.planName || "";
+ctx.cmdPlanGet = (name) => (name === "onyxias_lair" ? planJson : null);
+const bind18 = { commander: "C", bots: [{ level: 60 }], run: { step: 18 }, planName: "onyxias_lair" };
+const extra18 = run("fdFightExtra(bind, fight, null)", { bind: bind18, fight: { map: 249, plan: "onyxias_lair", step: 18, dur_ms: 20000 } });
+assert.strictEqual(extra18.packI, 21, "the fight's own pack");
+assert.strictEqual(extra18.prevPackI, 17, "the pack before it");
+assert.strictEqual(extra18.strays.length, 0, "the plan's own strays (this plan is clean)");
+assert.strictEqual(extra18.lanes, null, "no positions loaded yet");
+const noPlan = run("fdFightExtra(bind, fight, null)", { bind: { commander: "C", bots: [] }, fight: { map: 249, plan: "", step: 5 } });
+assert.strictEqual(noPlan.packI, 0);
+assert.strictEqual(noPlan.strays, null, "a fight without a plan has no ring row");
+assert.strictEqual(run("FightDebug.checks(fight, null, [], extra).some(c => c.id === 'plan_strays')",
+  { fight: { map: 249, plan: "", step: 5, dur_ms: 20000, bots: [], deaths: [], debuffs: {} }, extra: noPlan }), false);
+assert.strictEqual(run("fdFightExtra(bind, fight, null)", { bind: bind18, fight: { map: 409, plan: "onyxias_lair", step: 5 } }).strays,
+  null, "a plan on another map is no plan facts");
+assert.strictEqual((src.match(/AggroLanes\.lanes\(/g) || []).length, 1, "one lanes result feeds the strip and the checks");
+assert.ok(src.includes("det.extra = extra"), "the fight's extra reaches the rail's verdict too");
+assert.ok(src.includes("FightDebug.checks(fight, layout, det.warnings || [], extra)"), "one checks call with the extra");
+
+// The lane row on the card: attempt 2's checks render as a PROBLEM with the bot's name and the seconds.
+const Fd = require(path.join(dir, "fightdebug.js"));
+const AggroHost = require(path.join(dir, "aggrolanes.js"));
+const a2Fixture = JSON.parse(fs.readFileSync(path.join(__dirname, "testdata", "lanes-a2.json"), "utf8"));
+const a2Checks = Fd.checks(a2Fixture.fight, { mt: "Bonevale", ot: [] }, [], {
+  lanes: AggroHost.lanes(a2Fixture.track, a2Fixture.fight, a2Fixture.fight.bots), strays: null, packI: 0, prevPackI: 0,
+});
+const a2Html = run("fdChecksHtml(checks, [], {}, '')", { checks: a2Checks });
+assert.ok(a2Html.includes("Enemy on a non-tank: Onyxia"), "the lane row renders: " + a2Html.slice(0, 200));
+assert.ok(a2Html.includes('<span class="fd-num">12 s</span>'), "the longest hold in seconds");
+assert.ok(a2Html.includes("PROBLEM"), "a 12 s hold is a problem");
 console.log("fight debugger ui ok");

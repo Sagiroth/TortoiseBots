@@ -380,4 +380,113 @@ assert.strictEqual(markupCheck.ev, "<b>x</b> at 1.0 s to <i>k</i>");
 assert.strictEqual(F.railCards([{ key: "k", dur: 1, deaths: 0, step: 1, boss_name: "<img src=x>" }], {}, null)[0].mob,
   "<img src=x>");
 
+// ---- lane_nontank and plan_strays: the rows read what the card already has -------------------------------------------
+const jsDir = path.dirname(path.resolve(process.argv[2]));
+const Aggro = require(path.join(jsDir, "aggrolanes.js"));
+const P = require(path.join(jsDir, "planoverlay.js"));
+const a2 = JSON.parse(fs.readFileSync(path.join(__dirname, "testdata", "lanes-a2.json"), "utf8"));
+const a2Lanes = Aggro.lanes(a2.track, a2.fight, a2.fight.bots);
+const A2EXTRA = { lanes: a2Lanes, strays: null, packI: 0, prevPackI: 0 };
+const a2Checks = F.checks(a2.fight, LAYOUT, [], A2EXTRA);
+const laneRow = a2Checks.find((c) => c.id === "lane_nontank");
+assert.strictEqual(laneRow.lvl, "fail");
+assert.strictEqual(laneRow.title, "Enemy on a non-tank: Onyxia");
+assert.strictEqual(laneRow.num, "12 s");
+assert.strictEqual(laneRow.bot, "Quelin");
+assert.strictEqual(laneRow.ev,
+  "Onyxia was on Quelin, Sael, Aelia, Venomwind, Shadowfall, Pozzle, Ironcaller, Beardster, Hald, Lorenthil, Garic, Frostz,"
+  + " Shadowbrand, Soulmane, Blackwalker, Impz, Ravenbringer, Brrtastic, Basicie, Kaelis, Beastcrest for 12 s in a row"
+  + " (23 s in all) within 30 yd of its target. Under 8 s is a taunt bounce the 2 s samples cannot show.");
+assert.strictEqual(F.verdict(a2.fight, LAYOUT, [], A2EXTRA), "fail");
+assert.strictEqual(F.worstIndex([{ fight: a2.fight, extra: A2EXTRA }, detail("5-3")], LAYOUT), 0);
+assert.strictEqual(F.railCards([{ key: "a2", dur: 323000, step: 0, deaths: 0 }],
+  { a2: { fight: a2.fight, warnings: [], extra: A2EXTRA } }, null)[0].verdict, "fail");
+// Without the extra (the old call, or a fight whose positions never loaded) there is no lane row at all.
+assert.strictEqual(F.checks(a2.fight, LAYOUT, [], null).some((c) => c.id === "lane_nontank"), false);
+assert.deepStrictEqual(F.checks(byId("5-4"), LAYOUT, [], { lanes: null, strays: null, packI: 0, prevPackI: 0 }).map((c) => c.id),
+  c54.map((c) => c.id));
+
+// The thresholds are inclusive: exactly 8000 ms is a warn (attempt 1's longest stint), exactly 12000 ms a fail (attempt 2).
+const laneAt = (ms) => ({
+  lanes: [{ id: "x" }],
+  ntWorst: { id: "x", label: "Warder", ntMs: ms, ntLongestMs: ms, badNames: ["Tanky"] },
+  lane: Aggro.LANE,
+});
+const atWarn = F.checks(fight({ dur_ms: 20000 }), null, [], { lanes: laneAt(8000), strays: null, packI: 0, prevPackI: 0 })
+  .find((c) => c.id === "lane_nontank");
+assert.strictEqual(atWarn.lvl, "warn");
+assert.strictEqual(atWarn.num, "8 s");
+assert.strictEqual(atWarn.bot, "Tanky");
+const below = F.checks(fight({ dur_ms: 20000 }), null, [], { lanes: laneAt(7999), strays: null, packI: 0, prevPackI: 0 })
+  .find((c) => c.id === "lane_nontank");
+assert.strictEqual(below.lvl, "ok");
+// A short fight is not judged: the samples cannot show a hold.
+assert.strictEqual(F.checks(fight({ dur_ms: 5000 }), null, [], { lanes: laneAt(12000), strays: null, packI: 0, prevPackI: 0 })
+  .some((c) => c.id === "lane_nontank"), false);
+
+// A trash fight: a 4 s bounce is under the 8 s warn, so the row passes.
+const tb = (guid, x, alive) => [guid, x, 0, 100, alive, 249];
+const trashFrames = [];
+for (let t = 2000; t <= 2030; t += 2) {
+  const bounce = t === 2010 || t === 2012;
+  trashFrames.push({ t, map: 249, step: 1, fight: true, bots: [tb(1, 0, 1), tb(2, 5, 1), tb(3, 40, 1)],
+    mobs: [{ id: "w1", e: 7, x: 0, y: 0, hp: 100, v: bounce ? 2 : 1 }, { id: "w2", e: 7, x: 0, y: 0, hp: 100, v: 1 }] });
+}
+const trashLanes = Aggro.lanes({ frames: trashFrames, names: { 7: "Warder" } },
+  { start: 2000, dur_ms: 30000, bots: [{ name: "T", guid: 1, role: "tank" }, { name: "H", guid: 2, role: "healer" }, { name: "D", guid: 3, role: "dps" }] }, []);
+const trashRow = F.checks(fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "tank" })] }), null, [],
+  { lanes: trashLanes, strays: null, packI: 0, prevPackI: 0 }).find((c) => c.id === "lane_nontank");
+assert.strictEqual(trashRow.lvl, "ok");
+assert.strictEqual(trashRow.title, "Enemies stayed on the tanks");
+assert.strictEqual(trashRow.num, "4 s");
+assert.strictEqual(trashRow.ev, "Longest stretch on a non-tank within 30 yd: 4 s (Warder 1).");
+
+// ---- plan_strays: the move steps between the previous pack and the fight's own ---------------------------------------
+const plan = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "plans", "testdata", "onyxias_lair.plan.json"), "utf8"));
+const mc = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "plans", "testdata", "molten_core.plan.json"), "utf8"));
+const planCopy = () => JSON.parse(JSON.stringify(plan));
+const emptyFight = fight({ dur_ms: 20000 });
+const straysRow = (extra) => F.checks(emptyFight, null, [], extra).find((c) => c.id === "plan_strays");
+
+// The move step before pack 21, moved 10 yd from the warder of pack 23: the route crosses its 23 yd ring on the way there.
+const strayPlan = planCopy();
+Object.assign(strayPlan.steps.find((s) => s.i === 18), { x: -166.62, y: -186, z: -66.26 });
+const strayStrays = P.strays(strayPlan, 60);
+assert.deepStrictEqual(strayStrays.map((s) => [s.i, s.pack]), [[18, 23]]);
+const strayRow = straysRow({ lanes: null, strays: strayStrays, packI: 21, prevPackI: 17 });
+assert.strictEqual(strayRow.lvl, "warn");
+assert.strictEqual(strayRow.title, "Route crosses 1 ring(s) on the way here");
+assert.strictEqual(strayRow.num, 1);
+assert.strictEqual(strayRow.ev, "step 18 is 10.0 yd from Onyxian Warder (ring 23 yd)");
+
+// The same step inside Onyxia's scripted wake (62 yd): a wake is a fail, not a warn.
+const wakePlan = planCopy();
+Object.assign(wakePlan.steps.find((s) => s.i === 26), { x: 10.7, y: -211.97, z: -86.08 });
+const wakeStrays = P.strays(wakePlan, 60);
+assert.deepStrictEqual(wakeStrays.map((s) => [s.i, s.pack, s.wake]), [[26, 29, true]]);
+const wakeRow = straysRow({ lanes: null, strays: wakeStrays, packI: 29, prevPackI: 25 });
+assert.strictEqual(wakeRow.lvl, "fail");
+assert.strictEqual(wakeRow.ev, "step 26 is 10.0 yd from Onyxia (ring 62 yd, scripted wake)");
+
+// Only the move steps strictly between the previous pack and this one count: the pack's own step does not.
+const ignored = straysRow({ lanes: null, strays: [{ i: 3, pack: 21, name: "x", dist: 1, ring: 5, wake: true },
+  { i: 21, pack: 29, name: "x", dist: 1, ring: 62, wake: true }], packI: 21, prevPackI: 17 });
+assert.strictEqual(ignored.lvl, "ok");
+assert.strictEqual(ignored.title, "Route to this pack stays out of other packs' rings");
+assert.strictEqual(straysRow({ lanes: null, strays: null, packI: 0, prevPackI: 0 }), undefined);
+
+// A non-Onyxia, multi-leg plan (Molten Core): a move step inside a later pack's ring, between its own packs.
+const mcPlan = JSON.parse(JSON.stringify(mc));
+mcPlan.mobs.push({ step: 44, guid: 99001, e: 999, n: "Core Hound", x: 1126.09, y: -1009.41, z: -187.25, lvl: 63, det: 20, wake_yd: 30 });
+const mcStrays = P.strays(mcPlan, 60);
+assert.deepStrictEqual(mcStrays.map((s) => [s.i, s.pack, s.wake]), [[43, 44, true]]);
+const mcFight = fight({ dur_ms: 30000, step: 43, plan: "molten core" });
+assert.strictEqual(P.fightPack(mcPlan, mcFight), 44);
+const mcRow = straysRow({ lanes: null, strays: mcStrays, packI: 44, prevPackI: 42 });
+assert.strictEqual(mcRow.lvl, "fail");
+assert.strictEqual(mcRow.ev, "step 43 is 10.0 yd from Core Hound (ring 30 yd, scripted wake)");
+// A fight without a plan (R1's pocket fights) has no ring row: no strays are passed.
+assert.strictEqual(F.checks(mcFight, null, [], { lanes: null, strays: null, packI: P.fightPack(mcPlan, mcFight), prevPackI: 42 })
+  .some((c) => c.id === "plan_strays"), false);
+
 console.log("fightdebug_check: ok");
