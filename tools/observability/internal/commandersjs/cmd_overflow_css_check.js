@@ -42,4 +42,19 @@ for (const m of body.matchAll(/(@media[^{]*\{)|(\})|([^{}]+)\{([^}]*)\}/g)) {
 }
 assert.deepStrictEqual(offenders, [], "a card rule wider than a phone: " + offenders.join("; "));
 
+// ---- the phone's top bar and map toolbar fit by design ---------------------------------------------------------------
+// "Commanders" was ellipsised to "Com..." by a nowrap title rule.
+const db = css.indexOf("@media (max-width: 600px)");
+assert.ok(db > 0, "the phone media query exists");
+const phone = css.slice(db, css.indexOf("\n}", db) + 2);
+assert.ok(/\.page-head \{[^}]*order: 2/.test(phone) && /\.page-title \{[^}]*white-space: normal/.test(phone),
+  "the page title gets its own row on a phone instead of being clipped: " + phone.slice(0, 400));
+assert.ok(!/\.page-title \{[^}]*white-space: nowrap/.test(phone), "and is not clipped");
+// The map toolbar (picture picker, Layers, zoom, Follow, Whole map) wraps inside the map box.
+const mt = css.indexOf("@media (max-width: 640px)", css.indexOf(".cmd-maptools button { white-space: nowrap; }"));
+assert.ok(mt > 0, "the toolbar has a phone rule");
+const mtRule = css.slice(mt, css.indexOf("\n}", mt) + 2);
+assert.ok(/\.cmd-maptools \{[^}]*flex-wrap: wrap/.test(mtRule), "the toolbar wraps: " + mtRule);
+assert.ok(/\.cmd-maptools button \{[^}]*white-space: nowrap/.test(css), "a button label never breaks mid-word (\"Whole map\")");
+
 console.log("cmd overflow css ok");

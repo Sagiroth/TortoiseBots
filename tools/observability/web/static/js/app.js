@@ -918,6 +918,9 @@
   function applyRoute() {
     const r = parseRoute();
     const tab = r.tab || state.activeTab;
+    // The demo group comes on before the first render: a hash naming a demo commander then finds its tab instead of flashing
+    // "DEMO (simulated) is gone" for a second.
+    if (r.demo && tab === 'commanders') setCmdDemo(true, true);
     const prevRunKey = state.dungeons.openKey;
     state.dungeons.openKey = tab === 'dungeons' && r.run ? r.run : null;
     // The Commanders page's Fight debugger mode, its open tab and its picked fight come from the hash before the tab renders.
@@ -927,7 +930,6 @@
     else if (tab === 'dungeons' && state.dungeons.openKey !== prevRunKey) renderDungeons();
     else if (tab === 'commanders' && (fdPage.open !== prevCmd || fdPage.fight !== prevFight)) renderCommanders();
     routeApplied = true;
-    if (r.demo && tab === 'commanders') setCmdDemo(true, true); // #/commanders?demo=1
     if (r.map && tab === 'dungeon-runs') dgSelect(r.map); // #/dungeon-runs?map=209 (the glance panel's links)
     if (r.bot !== null) {
       state.profileTab = PROFILE_TABS.includes(r.ptab) ? r.ptab : 'overview';
@@ -5200,10 +5202,17 @@
     try { if (fdPageStore) fdPageStore.setItem(FdTabs.PAGE_KEY, fdPage.mode); } catch (e) { /* nothing to remember */ }
     if (opts && opts.quiet) return;
     if (same) { cmdPageHash(fdPage.open, next, fdPage.fight, true); cmdPaintPageMode(next); return; } // clicking the view that is already on only remembers it
-    fdStopCard(fdPage.open);
+    const open = fdPage.open;
+    // Live keeps the commander in the route: #/commanders/<name> is that commander's Live card, not All raids.
+    if (next === 'live' && open) { fdStopCard(open); fdPage.fight = null; cmdPageHash(open, 'live', null, true); renderCommanders(); return; }
+    const cur = parseRoute();
+    const named = cur.cmdMode === 'debug' || !!cur.cmd;
+    fdStopCard(open);
     fdPage.open = null;
     fdPage.fight = null;
-    cmdPageHash(null, next, null, true);
+    // With nothing bound the debugger is a view of this page (the saved-fights list), not a route of its own: clicking the
+    // button keeps the hash instead of jumping to a bare #/fight.
+    if (!(next === 'debug' && !named)) cmdPageHash(null, next, null, true);
     renderCommanders();
   }
 

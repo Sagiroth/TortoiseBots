@@ -2678,10 +2678,21 @@ select.input {
     display: none;
   }
 
+  /* The page name gets a line of its own (a word as short as "Commanders" was ellipsised to "Com..."): the controls keep the
+     first row, the title the second and the search field the third. */
+  .page-head {
+    flex: 1 1 100%;
+    order: 2;
+  }
+
+  .quick-find {
+    order: 3;
+    flex: 1 1 100%;
+  }
+
   .page-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 1.05rem;
+    white-space: normal;
   }
 
   .kpi-row .kpi:last-child:nth-child(odd) {
@@ -2910,6 +2921,14 @@ select.input {
 .cmd-map .stamp text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-linejoin: round; }
 .cmd-maptools select { height: 32px; max-width: 120px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(14, 19, 27, 0.85); color: var(--text-main); font: inherit; }
 .cmd-maptools select[hidden] { display: none; }
+.cmd-maptools button { white-space: nowrap; }
+/* A phone's map toolbar is a second row by design: it wraps inside the map box instead of overflowing it (the picture picker
+   is only there when the map has pictures, which is when the row needs the width most). */
+@media (max-width: 640px) {
+  .cmd-maptools { left: 8px; right: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .cmd-maptools button { min-width: 30px; height: 28px; padding: 0 8px; }
+  .cmd-maptools select { height: 28px; max-width: 100%; }
+}
 .cmd-picwhy { margin: 6px 0 0; font-size: 0.74rem; color: var(--accent-yellow); }
 .cmd-picwhy[hidden] { display: none; }
 .cmd-scale { position: absolute; right: 8px; bottom: 6px; display: flex; flex-direction: column; align-items: flex-end; font-size: 0.7rem; color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; }

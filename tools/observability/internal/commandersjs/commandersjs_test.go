@@ -346,6 +346,13 @@ func TestCmdOverflowCSS(t *testing.T) {
 	runCheck(t, "cmd_overflow_css_check.js", "../../web/static/css/app.css")
 }
 
+// TestFDModeRouteJS runs fd_mode_route_check.js: the Live / Fight debugger switch keeps the route sensible. With nothing bound
+// the debugger button keeps the hash (no bare #/fight), Live keeps the open commander in the URL, and the demo flag is applied
+// before the first render so a demo deep link never flashes "is gone".
+func TestFDModeRouteJS(t *testing.T) {
+	runCheck(t, "fd_mode_route_check.js", "../../web/static/js/app.js")
+}
+
 // TestDungeonsPollJS runs dungeons_poll_check.js: /api/v1/dungeons is asked with every snapshot only while the Dungeons tab or
 // a dungeon card is on screen, and once every 30 s anywhere else (the audit saw 30 requests a minute on a Commanders tab).
 func TestDungeonsPollJS(t *testing.T) {
