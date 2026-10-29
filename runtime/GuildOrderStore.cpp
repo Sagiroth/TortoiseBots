@@ -61,8 +61,9 @@ public:
 
         std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
             "SELECT `bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
-            "`state`, `reason`, `farm_zone`, `farm_chance`, `zone_index`, `deaths_in_zone`, `worked_sec`, "
-            "`worked_total`, `reported`, `farm_rest`, `created_at`, `updated_at` FROM `tortoise_bots_guild_order`"));
+            "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
+            "`worked_sec`, `worked_total`, `reported`, `farm_rest`, `created_at`, `updated_at` "
+            "FROM `tortoise_bots_guild_order`"));
 
         if (result)
         {
@@ -82,14 +83,15 @@ public:
                 ParseReason(fields[9].GetCppString(), record.reason);
                 record.farmZoneId = fields[10].GetUInt32();
                 record.farmChance = static_cast<uint8_t>(fields[11].GetUInt32());
-                record.zoneIndex = fields[12].GetUInt32();
-                record.deathsInZone = fields[13].GetUInt32();
-                record.workedSinceNewItemSec = fields[14].GetUInt32();
-                record.workedTotalSec = fields[15].GetUInt32();
-                record.reportedHave = fields[16].GetUInt32();
-                record.farmRest = fields[17].GetUInt32() != 0;
-                record.createdAt = fields[18].GetUInt64();
-                record.updatedAt = fields[19].GetUInt64();
+                record.farmItemId = fields[12].GetUInt32();
+                record.zoneIndex = fields[13].GetUInt32();
+                record.deathsInZone = fields[14].GetUInt32();
+                record.workedSinceNewItemSec = fields[15].GetUInt32();
+                record.workedTotalSec = fields[16].GetUInt32();
+                record.reportedHave = fields[17].GetUInt32();
+                record.farmRest = fields[18].GetUInt32() != 0;
+                record.createdAt = fields[19].GetUInt64();
+                record.updatedAt = fields[20].GetUInt64();
 
                 if (record.hours < kMinOrderHours || record.hours > kMaxOrderHours)
                     record.hours = kDefaultOrderHours;
@@ -143,13 +145,13 @@ public:
         if (!CharacterDatabase.DirectPExecute(
                 "REPLACE INTO `tortoise_bots_guild_order` "
                 "(`bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
-                "`state`, `reason`, `farm_zone`, `farm_chance`, `zone_index`, `deaths_in_zone`, `worked_sec`, "
-                "`worked_total`, `reported`, `farm_rest`, `created_at`, `updated_at`) "
+                "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
+                "`worked_sec`, `worked_total`, `reported`, `farm_rest`, `created_at`, `updated_at`) "
                 "VALUES ('%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
-                "'%u', '%u', '%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
+                "'%u', '%u', '%u', '%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
                 record.botGuidLow, record.guildId, record.giverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
-                ReasonToken(record.reason), record.farmZoneId, record.farmChance,
+                ReasonToken(record.reason), record.farmZoneId, record.farmChance, record.farmItemId,
                 record.zoneIndex, record.deathsInZone, record.workedSinceNewItemSec,
                 record.workedTotalSec, record.reportedHave, record.farmRest ? 1u : 0u,
                 static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt)))
@@ -179,7 +181,7 @@ public:
         return true;
     }
 
-    void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t zoneIndex)
+    void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t zoneIndex, uint32_t farmItemId)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_orders.find(botGuidLow);
@@ -188,6 +190,7 @@ public:
         it->second.record.farmZoneId = zoneId;
         it->second.record.farmChance = chance;
         it->second.record.zoneIndex = zoneIndex;
+        it->second.record.farmItemId = farmItemId;
         MarkDirtyLocked(it->second);
     }
 
@@ -213,7 +216,8 @@ public:
         if (it->second.record.state != OrderState::Working)
             return;
         ++it->second.record.deathsInZone;
-        MoveZoneLocked(it->second);
+        if (MoveZoneLocked(it->second))
+            it->second.zoneMovePending = true;
         MarkDirtyLocked(it->second);
     }
 
@@ -273,8 +277,10 @@ public:
         bool botOnline = false;
         bool botAlive = false;
         bool grouped = false;
-        uint32_t bagCount = 0;
-        uint32_t mailboxCount = 0;
+        uint32_t bagCount = 0;       // order item in bags (delivery gate, reporting)
+        uint32_t mailboxCount = 0;   // order item in the mailbox
+        uint32_t farmItemId = 0;     // item actually farmed (0 = the order item)
+        uint32_t farmBagCount = 0;   // farm-leg item in bags (no-progress clock)
         uint32_t workedMs = 0;
         uint32_t nowMs = 0;
     };
@@ -300,6 +306,15 @@ public:
         out.haveRow = true;
 
         bool wasFinished = IsFinished(record.state);
+
+        // A deaths-driven zone move happened off the world thread: expire the
+        // old travel target so the bot re-plans instead of walking on.
+        if (stored.zoneMovePending)
+        {
+            stored.zoneMovePending = false;
+            out.legChanged = true;
+            MarkDirtyLocked(stored);
+        }
 
         // Group gate: no order work while in a group with a player.
         if (!wasFinished)
@@ -334,28 +349,37 @@ public:
                 {
                     record.state = OrderState::Cant;
                     record.reason = OrderReason::Timeout;
+                    out.legChanged = true;
                 }
-                else
-                    MoveZoneLocked(stored);
+                else if (MoveZoneLocked(stored))
+                    out.legChanged = true;
                 MaybeFlushWorkedLocked(stored, in.nowMs);
             }
         }
         else
             stored.workedCarryMs = 0;
-
-        // A real rise in owned count (bags plus mailbox) seen while online
-        // resets the give-up clock. A login after an offline gap never counts
-        // as new items.
+        // A real rise in the order item (bags plus mailbox) or in the
+        // farm-leg item (bags: reagents never arrive by mail) seen while
+        // online resets the no-progress clock. A login after an offline gap
+        // never counts as new items. The farm-leg tracker re-snaps when the
+        // leg changes so a fresh reagent starts from its own count.
         uint32_t ownedNow = in.bagCount + in.mailboxCount;
         if (!wasFinished && in.botOnline)
         {
-            if (IsNewItemRise(in.botOnline, stored.sawOnline, ownedNow, stored.lastOwnedCount) &&
-                record.workedSinceNewItemSec != 0)
+            if (in.farmItemId != stored.lastFarmItemId)
+            {
+                stored.lastFarmItemId = in.farmItemId;
+                stored.lastFarmCount = in.farmBagCount;
+            }
+            bool orderRise = IsNewItemRise(in.botOnline, stored.sawOnline, ownedNow, stored.lastOwnedCount);
+            bool farmRise = IsNewItemRise(in.botOnline, stored.sawOnline, in.farmBagCount, stored.lastFarmCount);
+            if ((orderRise || farmRise) && record.workedSinceNewItemSec != 0)
             {
                 record.workedSinceNewItemSec = 0;
                 MarkDirtyLocked(stored);
             }
             stored.lastOwnedCount = ownedNow;
+            stored.lastFarmCount = in.farmBagCount;
             stored.sawOnline = true;
         }
         else if (!in.botOnline)
@@ -413,6 +437,9 @@ private:
         uint32_t workedCarryMs = 0;
         uint32_t lastWorkedFlushMs = 0;
         uint32_t lastOwnedCount = 0;
+        uint32_t lastFarmItemId = 0;
+        uint32_t lastFarmCount = 0;
+        bool zoneMovePending = false; // NoteDeath moved zone off the world thread: expire the target next Tick
         bool sawOnline = false;
         bool reportSeen = false;
         OrderState reportState = OrderState::Working;
@@ -420,22 +447,25 @@ private:
         uint32_t reportMs = 0;
     };
 
-    // A zone move clears the zone so travel re-plans to the next zone of the
-    // plan (wrapping around when exhausted), and resets the per-zone clocks.
-    // Deaths never end the order; the hours budget in Tick does.
-    static void MoveZoneLocked(Stored& stored)
+    // A zone move advances to the next zone of the plan (the wrap-around is
+    // at pick time in the travel code) and resets the per-zone clocks.
+    // Deaths never end the order; the hours budget in Tick does. Returns true
+    // when the zone actually moved so the caller can expire the old target.
+    static bool MoveZoneLocked(Stored& stored)
     {
         OrderRecord& record = stored.record;
         if (record.state != OrderState::Working)
-            return;
+            return false;
         if (ClassifyZoneMove(record.workedSinceNewItemSec, record.deathsInZone) ==
             ZoneMoveTrigger::None)
-            return;
+            return false;
+        ++record.zoneIndex;
         record.farmZoneId = 0;
         record.farmChance = 0;
         record.workedSinceNewItemSec = 0;
         record.deathsInZone = 0;
         MarkDirtyLocked(stored);
+        return true;
     }
 
     static void MarkDirtyLocked(Stored& stored) { stored.dirty = true; }
@@ -457,12 +487,12 @@ private:
         record.updatedAt = static_cast<uint64_t>(std::time(nullptr));
         CharacterDatabase.PExecute(
             "UPDATE `tortoise_bots_guild_order` SET `hours` = '%u', `delivered` = '%u', `state` = '%s', `reason` = '%s', "
-            "`farm_zone` = '%u', `farm_chance` = '%u', `zone_index` = '%u', `deaths_in_zone` = '%u', "
-            "`worked_sec` = '%u', `worked_total` = '%u', `reported` = '%u', `farm_rest` = '%u', "
-            "`updated_at` = FROM_UNIXTIME('%u') "
+            "`farm_zone` = '%u', `farm_chance` = '%u', `farm_item` = '%u', `zone_index` = '%u', "
+            "`deaths_in_zone` = '%u', `worked_sec` = '%u', `worked_total` = '%u', `reported` = '%u', "
+            "`farm_rest` = '%u', `updated_at` = FROM_UNIXTIME('%u') "
             "WHERE `bot_guid` = '%u'",
             record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
-            record.farmZoneId, record.farmChance, record.zoneIndex, record.deathsInZone,
+            record.farmZoneId, record.farmChance, record.farmItemId, record.zoneIndex, record.deathsInZone,
             record.workedSinceNewItemSec, record.workedTotalSec, record.reportedHave,
             record.farmRest ? 1u : 0u, static_cast<uint32_t>(record.updatedAt), record.botGuidLow);
     }
@@ -569,9 +599,9 @@ bool Cancel(uint32_t botGuidLow)
     return gone;
 }
 
-void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t zoneIndex)
+void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t zoneIndex, uint32_t farmItemId)
 {
-    OrderStore::Instance().SetFarmZone(botGuidLow, zoneId, chance, zoneIndex);
+    OrderStore::Instance().SetFarmZone(botGuidLow, zoneId, chance, zoneIndex, farmItemId);
 }
 
 void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason)
@@ -652,13 +682,13 @@ void Update(uint32_t diff)
         in.botAlive = online && bot->IsAlive();
         in.bagCount = online && snapshot.itemId ? bot->GetItemCount(snapshot.itemId) : 0;
         in.mailboxCount = online && snapshot.itemId ? MailboxItems(bot, snapshot.itemId) : 0;
+        // The no-progress clock watches what the bot actually farms: the
+        // reagent of the current craft leg, else the order item itself.
+        // Delivery, reporting and mailbox progress stay on the order item.
+        in.farmItemId = (snapshot.type == OrderType::Craft && snapshot.farmItemId) ? snapshot.farmItemId : 0;
+        in.farmBagCount = online && in.farmItemId ? bot->GetItemCount(in.farmItemId) : in.bagCount;
         in.workedMs = diff;
         in.nowMs = now;
-        if (online)
-        {
-            ::PlayerbotAI* ai = ::PlayerbotAIStorage::Instance().GetAI(bot);
-            in.grouped = ai && ai->HasRealPlayerMaster();
-        }
 
         OrderStore::TickOut out = OrderStore::Instance().Tick(guidLow, in);
         if (!out.haveRow)

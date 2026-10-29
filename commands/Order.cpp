@@ -188,6 +188,7 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     // item plus an amount; otherwise it is the amount itself.
     std::string maybeHours = itemPart.substr(lastSpace + 1);
     uint32_t parsedHours = 0;
+    bool hoursGiven = false;
     if (ParseHours(maybeHours, parsedHours))
     {
         std::string rest = itemPart.substr(0, lastSpace);
@@ -200,14 +201,33 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
                 ParseItemToken(rest.substr(0, amountSpace), restItem))
             {
                 hours = parsedHours;
+                hoursGiven = true;
                 itemPart = rest;
                 lastSpace = amountSpace;
             }
         }
     }
+    // A trailing number outside 1-24 after an item plus an amount is an
+    // hours attempt, not an amount: say so instead of misreading it.
+    if (!hoursGiven)
+    {
+        uint32_t parsedUint = 0;
+        std::string rest = itemPart.substr(0, lastSpace);
+        size_t amountSpace = rest.rfind(' ');
+        if (ParseUintToken(maybeHours, parsedUint) && amountSpace != std::string::npos)
+        {
+            uint32_t restAmount = 0;
+            uint32_t restItem = 0;
+            if (ParseAmount(rest.substr(amountSpace + 1), restAmount) &&
+                ParseItemToken(rest.substr(0, amountSpace), restItem))
+            {
+                OrderError(handler, "invalid", "Hours must be 1-24.");
+                return true;
+            }
+        }
+    }
     amountToken = itemPart.substr(lastSpace + 1);
     itemPart = itemPart.substr(0, lastSpace);
-
     uint32_t itemId = 0;
     if (!ParseItemToken(itemPart, itemId))
     {
