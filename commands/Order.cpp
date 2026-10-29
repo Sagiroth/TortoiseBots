@@ -384,17 +384,22 @@ bool HandleOrder(ChatHandler* handler, char const* args)
 
     if (lower == "search")
     {
-        // order search <bot> <farm|buy|craft> <text>
+        // order search <bot> <farm|buy|craft> [cat=<kind>] <text>
         std::string botName, typeToken;
         if (!(in >> botName >> typeToken))
         {
-            OrderError(handler, "invalid", "Usage: order search <bot> <farm|buy|craft> <text>.");
+            OrderError(handler, "invalid", "Usage: order search <bot> <farm|buy|craft> [cat=<kind>] <text>.");
             return true;
         }
         std::string text;
         std::getline(in, text);
         text = Trim(text);
-        if (text.size() < 3)
+        // A category-only search browses the whole kind; a short text still
+        // needs its 3 characters even with a category. The search command
+        // re-checks this and answers the usage errors.
+        bool const categoryPrefixed = text.size() >= 4 && (text[0] == 'c' || text[0] == 'C') &&
+            (text[1] == 'a' || text[1] == 'A') && (text[2] == 't' || text[2] == 'T') && text[3] == '=';
+        if (text.size() < 3 && !categoryPrefixed)
         {
             OrderError(handler, "invalid", "Search text needs at least 3 characters.");
             return true;
