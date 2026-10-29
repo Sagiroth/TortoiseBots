@@ -241,6 +241,7 @@ private:
     std::function<void(std::vector<CommanderTelemetry::BindingRef>&)> m_commanderProvider;
     std::vector<CommanderTelemetry::BindingRef> m_commanderRefs; // reused between cycles
     std::unordered_map<uint32_t, int64_t> m_commanderSince; // commander guid -> unix seconds its binding was first seen
+    std::unordered_map<uint32_t, int64_t> m_commanderTrimLoggedAt; // commander guid -> unix seconds its trim was last logged
     bool m_commandersSent = false; // the last COMMANDERS datagram listed at least one binding
     // The finished COMBAT_FIGHT datagrams of the bound groups: one provider
     // call per snapshot cycle, each string sent with SendDatagram.

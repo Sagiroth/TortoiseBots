@@ -1359,6 +1359,209 @@ void TestCommandersPartsBudget()
     Check(raidUnder, "every part of twenty raids stays under the payload budget");
 }
 
+// One bot carrying every per-bot section at its cap: unit info, cast target, ready facts.
+BotInfo CombinedBot(std::string name, bool lead)
+{
+    BotInfo b = Bot(std::move(name), lead);
+    b.id = 0xFFFFFFFFFFFFFFFFull;
+    b.target = 0xFFFFFFFFFFFFFFFFull;
+    b.hasExtra = true;
+    b.extra.state = 'c';
+    b.extra.action = std::string(kMaxActionName, 'a');
+    b.extra.result = 'O';
+    b.extra.cast = std::string(kMaxCastName, 'c');
+    b.extra.castTarget = 0xFFFFFFFFFFFFFFFFull;
+    b.extra.cc = 's';
+    b.extra.rest = 'e';
+    b.extra.moving = true;
+    b.extra.targetName = std::string(kMaxTargetName, 't');
+    b.extra.hasReady = true;
+    b.extra.readyBuffs = 0xFFFFFFFFu;
+    b.extra.readyCons = 0xFFFFFFFFu;
+    b.extra.cdReady = 8;
+    b.extra.cdKnown = 8;
+    b.extra.cdLongestS = 0xFFFFFFFFu;
+    b.subgroup = 0;
+    return b;
+}
+
+// One binding with the sections that can coexist, each at its cap: bots with ready facts, the run with its step list and
+// its notes ring, orders, objects, an overlay on every mob, and a fight window of `combat` bytes (the window itself is
+// not one of the sections a trim drops).
+BindingInfo CombinedBinding(size_t bots, size_t notes, size_t mobs, std::string combat = "")
+{
+    BindingInfo b;
+    b.commander = std::string(40, 'C');
+    b.commanderGuid = 0xFFFFFFFFu;
+    b.boundAt = 1791990000;
+    b.commanderOnline = true;
+    b.viewOn = true;
+    b.groupId = 0xFFFFFFFFu;
+    b.lead = std::string(12, 'L');
+    b.commanderPlaced = true;
+    b.commanderMap = 249;
+    b.commanderX = b.commanderY = -12345.67f;
+    for (size_t i = 0; i < bots; ++i)
+        b.bots.push_back(CombinedBot("Botname" + std::to_string(i), i == 0));
+    b.run.present = true;
+    b.run.plan = std::string(kMaxRunWord, 'p');
+    b.run.state = "running";
+    b.run.step = 4000000000u;
+    b.run.steps = 4000000000u;
+    b.run.leg = std::string(kMaxRunWord, 'l');
+    b.run.kind = std::string(kMaxRunWord, 'k');
+    b.run.phase = std::string(kMaxRunWord, 'h');
+    b.run.label = std::string(kMaxRunNote, 'L');
+    b.run.note = std::string(kMaxRunNote, 'n');
+    b.run.changedAt = 1791990000;
+    for (size_t i = 0; i < notes; ++i)
+    {
+        RunNoteInfo n;
+        n.at = 1791990000;
+        n.step = 4000000000u;
+        n.leg = std::string(kMaxRunWord, 'l');
+        n.kind = std::string(kMaxRunWord, 'k');
+        n.phase = std::string(kMaxRunWord, 'h');
+        n.state = std::string(kMaxRunWord, 's');
+        n.note = std::string(kMaxRunNote, 'n');
+        b.run.notes.push_back(n);
+    }
+    for (uint32_t i = 0; i < kMaxRunSteps; ++i)
+    {
+        RunStepInfo st;
+        st.index = 4000000000u + i;
+        st.kind = "move_direct";
+        st.x = st.y = -12345.67f;
+        st.radius = 100.0f;
+        st.entry = 4000000000u;
+        st.name = std::string(kMaxMobName, 'S');
+        st.label = std::string(kMaxRunNote, 'c');
+        st.skipped = true;
+        b.run.stepList.push_back(st);
+    }
+    b.mobsReported = true;
+    b.mobsMap = 249;
+    for (size_t i = 0; i < mobs; ++i)
+    {
+        MobInfo m = Mob(0xFFFFFFFFFFFFFFFFull, std::string(kMaxMobName, 'M'), 'h', 'k', 0xFFFFFFFFFFFFFFFFull);
+        m.level = 63;
+        m.rank = 'b';
+        m.cast = std::string(kMaxCastName, 'c');
+        m.hasO = true;
+        m.o = -3.14159f;
+        m.castId = 4294967295u;
+        m.castLeftMs = 0xFFFFFFFFu;
+        m.castTotalMs = 0xFFFFFFFFu;
+        m.castTarget = 0xFFFFFFFFFFFFFFFFull;
+        m.hasShape = true;
+        m.shape.kind = TortoiseBots::SpellShape::Kind::Line;
+        m.shape.length = 154.0f;
+        m.shape.width = 60.0f;
+        b.mobs.push_back(m);
+    }
+    b.objectsReported = true;
+    for (size_t i = 0; i < kMaxObjectsPerBinding; ++i)
+    {
+        ObjectInfo o;
+        o.id = 0xFFFFFFFFFFFFFFFFull;
+        o.entry = 4294967295u;
+        o.name = std::string(kMaxObjectName, 'O');
+        o.x = o.y = -12345.67f;
+        o.type = 'c';
+        o.state = 'u';
+        b.objects.push_back(o);
+    }
+    for (int i = 0; i < 8; ++i)
+        b.orders.push_back(Order(1791990000, std::string(10, 'v'), true, std::string(kMaxOrderResult, 'r'),
+                                 std::string(kMaxOrderDetail, 'd')));
+    b.combatJson = std::move(combat);
+    return b;
+}
+
+// The byte cap holds on the fully serialized part, not on its counts: every section a binding can carry rides along,
+// and a part that would go past kPartByteCap moves bindings to a new part (never splits one).
+void TestCommandersPartsCombinedCap()
+{
+    // Twenty commanders, 40 bots each: every section at its cap, and each part (one binding) under the cap.
+    std::vector<BindingInfo> raids;
+    for (int i = 0; i < 20; ++i)
+        raids.push_back(CombinedBinding(40, kMaxRunNotes, kMaxMobsPerBinding, std::string(4000, 'x')));
+    std::vector<std::string> const raidParts = BuildPayloadParts(9, 1, 91, 1, raids, 0);
+    Check(raidParts.size() == 20, "twenty 40-bot bindings are twenty parts");
+    bool under = true;
+    for (std::string const& part : raidParts)
+        under = under && part.size() <= kPartByteCap && part.size() <= kDatagramByteLimit;
+    Check(under, "every part of twenty full commanders is at or under the datagram cap");
+
+    // Twenty commanders, 40 bots in all (2 each) with the payload's 64 mobs and 16 overlays filled: the counts alone
+    // packed eight such bindings (173,034 bytes) into one datagram.
+    std::vector<BindingInfo> combined;
+    for (int i = 0; i < 20; ++i)
+        combined.push_back(CombinedBinding(2, kMaxRunNotes, 8, std::string(4000, 'x')));
+    std::vector<BindingInfo> firstEight(combined.begin(), combined.begin() + 8);
+    std::string const countsOnly = BuildPayload(9, 1, 91, 1, firstEight);
+    std::printf("eight combined bindings by counts alone: %zu bytes\n", countsOnly.size());
+    Check(countsOnly.size() > kDatagramByteLimit, "the counts-only packing would exceed the UDP limit");
+    std::vector<TrimEvent> packTrims;
+    std::vector<std::string> const parts = BuildPayloadParts(9, 1, 91, 1, combined, 0, &packTrims);
+    size_t largest = 0;
+    size_t listed = 0;
+    bool fit = true;
+    for (std::string const& part : parts)
+    {
+        fit = fit && part.size() <= kPartByteCap && part.size() <= kDatagramByteLimit;
+        largest = std::max(largest, part.size());
+        listed += Count(part, "\"commander\":");
+    }
+    Check(fit, "every combined part is at or under the datagram cap");
+    Check(listed == 20, "every commander is still reported");
+    Check(parts.size() > 2, "the byte cap moved bindings to new parts");
+    Check(packTrims.empty(), "a part over the cap moves bindings to a new part instead of trimming them");
+    std::printf("twenty combined commanders (40 bots): %zu parts, largest %zu bytes\n", parts.size(), largest);
+
+    // A part that is one binding still over the cap drops its optional sections in the fixed order, and keeps the rest.
+    std::vector<BindingInfo> single{CombinedBinding(40, kMaxRunNotes, kMaxMobsPerBinding, std::string(15000, 'x'))};
+    std::vector<BindingInfo const*> refs{&single[0]};
+    static char const* const kSectionNames[] = {"none", "overlays", "objects", "step notes", "ready facts"};
+    for (uint8_t level = 0; level <= kMaxTrimLevel; ++level)
+    {
+        std::vector<uint8_t> const levels{level};
+        std::string const json = BuildPayloadOf(9, 1, 91, 1, refs, 0, 0, 1, &levels);
+        bool const overlay = Has(json, "\"cid\":");
+        bool const objects = Has(json, "\"objects\":[");
+        bool const notes = Has(json, "\"notes\":[");
+        bool const ready = Has(json, "\"rdy\":{");
+        Check(overlay == (level < 1), "overlays are the first section a trim drops");
+        Check(objects == (level < 2), "objects go after the overlays");
+        Check(notes == (level < 3), "the step notes go after the objects");
+        Check(ready == (level < 4), "the ready facts go last");
+        Check(Has(json, "\"plan_steps\":["), "the run's step list stays at every trim level");
+        Check(Has(json, "\"trimmed\":true") == (level > 0), "a trimmed binding says so");
+        Check(std::string(TrimSectionName(level)) == kSectionNames[level], "the trim level names the section it dropped");
+    }
+
+    // The cap picks the first level that fits, and reports it once in the trim log.
+    std::vector<TrimEvent> trimLog;
+    std::vector<std::string> const trimmed = BuildPayloadParts(9, 1, 91, 1, single, 0, &trimLog);
+    Check(trimmed.size() == 1, "a binding alone over the cap is still one part");
+    Check(trimmed[0].size() <= kPartByteCap, "the trimmed part fits the datagram cap");
+    Check(Has(trimmed[0], "\"trimmed\":true"), "the trimmed binding is marked");
+    Check(!Has(trimmed[0], "\"cid\":") && !Has(trimmed[0], "\"objects\":[") && !Has(trimmed[0], "\"notes\":["),
+        "overlays, objects and the notes are gone");
+    Check(Has(trimmed[0], "\"rdy\":{"), "the ready facts are kept when the earlier trims were enough");
+    Check(trimLog.size() == 1 && trimLog[0].level == 3, "the log names the last section dropped");
+    Check(trimLog.size() == 1 && trimLog[0].commanderGuid == 0xFFFFFFFFu && trimLog[0].commander == std::string(40, 'C'),
+        "the log names the binding");
+    Check(std::string(TrimSectionName(3)) == "step notes", "the level-3 section is the step notes");
+
+    // A binding that fits is not trimmed and logs nothing.
+    std::vector<BindingInfo> const small{CombinedBinding(2, 3, 2)};
+    trimLog.clear();
+    std::vector<std::string> const plain = BuildPayloadParts(9, 1, 91, 1, small, 0, &trimLog);
+    Check(plain.size() == 1 && !Has(plain[0], "\"trimmed\":true"), "a binding under the cap is not trimmed");
+    Check(trimLog.empty(), "no trim, no log line");
+}
+
 void TestCommandersPartsEmpty()
 {
     std::vector<std::string> const parts = BuildPayloadParts(9, 1, 2, 3, {}, 4);
@@ -1397,6 +1600,7 @@ int main()
     TestCommandersPartsSplit();
     TestCommandersPartsCaps();
     TestCommandersPartsBudget();
+    TestCommandersPartsCombinedCap();
     TestCommandersPartsEmpty();
     TestRaidPayload();
     if (g_failures)

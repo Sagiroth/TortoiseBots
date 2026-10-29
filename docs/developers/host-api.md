@@ -217,9 +217,11 @@ with each snapshot, so no binding was left out every time); the spawn points cam
 server start, right after the plans were sealed and never inside a commander snapshot (its duration logged), and each report then read one
 creature guid and one respawn time per spawn row; a boss once read killed in an instance stayed killed there until it was seen alive, the
 instance id changed or no binding had stood on that instance for 10 minutes. None of it runs per bot tick, scans
-the grid or touches the database; the datagram stays under 60 000 bytes in the worst case, the boss lists being left out of the
-bindings that would pass that budget (`tools/test_commander_telemetry.cpp`). Up to 20 standing bindings are reported; a cycle
-that would need more than one datagram is split into parts that each keep those caps (eight bindings, 64 bots, 64 mobs), which carry
+the grid or touches the database. Up to 20 standing bindings are reported. A cycle that would need more than one datagram is split into
+parts: besides the count caps (eight bindings, 64 bots, 64 mobs) every part is measured as it will go out and kept at or under 60 000 bytes
+(UDP's 65 507-byte limit with room to spare), and a binding is never split, so one that alone is still too large drops its mob overlays,
+then its objects, then its run's step notes, then its ready facts, and carries `trimmed: true` (the module logs it once a binding per
+minute; `tools/test_commander_telemetry.cpp` pins the cap and the order). Parts carry
 `part` and `parts` after `seq` only when there is more than one, so a cycle of eight bindings or fewer is byte-identical to what an
 older module sent. A raid binding whose group went through the module's raid layout also carries `layout` (main tank, off-tanks, tank healer pairs and raid healers), and a run's current step its `label` (the plan row's comment, clipped to 80 bytes), with each `run.plan_steps[]` entry carrying its own `c`. An older module simply omits the fields.
 
