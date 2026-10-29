@@ -38,6 +38,7 @@ ACTION_CONTEXT = (STRATEGY / "actions/ActionContext.h").read_text()
 TRIGGER_CONTEXT = (STRATEGY / "triggers/TriggerContext.h").read_text()
 REACH = (STRATEGY / "actions/ReachTargetActions.h").read_text()
 ONYXIA_ACTIONS = (STRATEGY / "actions/OnyxiasLairDungeonActions.cpp").read_text()
+ONYXIA_ACTIONS_H = (STRATEGY / "actions/OnyxiasLairDungeonActions.h").read_text()
 MIGRATIONS = sorted((ROOT / "data/sql/world").glob("*_world.sql"))
 
 
@@ -252,6 +253,26 @@ class BossStandWiring(unittest.TestCase):
         far_spots = fn.index("kBreathSafeSpots[axis]")
         self.assertLess(stand, far_spots)
         self.assertIn("if (FindBossStand(ai, bot).valid)\n        return false;", fn)
+
+    def test_the_reactive_dodge_is_not_picked_while_a_seat_applies(self):
+        # The reaction engine stops the bot's move when it PICKS a movement reaction (before Execute), so the stand
+        # gate has to sit in isUseful, which the engine reads before it picks.
+        cls = body(ONYXIA_ACTIONS_H, "class OnyxiaBreathSafeZoneAction", end="\n    };\n")
+        self.assertIn("bool isUseful() override;", cls)
+        fn = body(ONYXIA_ACTIONS, "bool OnyxiaBreathSafeZoneAction::isUseful()")
+        self.assertIn("if (!MovementAction::isUseful())\n        return false;", fn)
+        self.assertIn("return !FindBossStand(ai, bot).valid;", fn)
+
+    def test_a_picked_movement_reaction_stops_the_bot(self):
+        # The mechanism the gate above answers: if this stops being true the gate may be moved back to Execute.
+        engine = (AI / "strategy/ReactionEngine.cpp").read_text()
+        find = body(engine, "bool ReactionEngine::FindReaction(bool isStunned)")
+        self.assertLess(find.index("reaction->isUseful()"), find.index("incomingReaction.SetAction(reaction);"))
+        ai_cpp = (AI / "PlayerbotAI.cpp").read_text()
+        react = body(ai_cpp, "bool PlayerbotAI::UpdateAIReaction(")
+        self.assertIn("if (reaction->ShouldInterruptMovement())", react)
+        movement_h = (STRATEGY / "actions/MovementActions.h").read_text()
+        self.assertIn("bool ShouldReactionInterruptMovement() const override { return true; }", movement_h)
 
     def test_generic_code_names_no_boss(self):
         for name, text in (("BossStandPolicy.h", POLICY), ("BossTacticsStand.h", STAND_H)):

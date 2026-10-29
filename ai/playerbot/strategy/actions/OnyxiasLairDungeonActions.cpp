@@ -24,6 +24,13 @@ BreathSafeSpot const kBreathSafeSpots[4][2] =
 };
 } // namespace
 
+bool OnyxiaBreathSafeZoneAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    return !FindBossStand(ai, bot).valid;
+}
+
 bool OnyxiaBreathSafeZoneAction::Execute(Event& event)
 {
     (void)event;
