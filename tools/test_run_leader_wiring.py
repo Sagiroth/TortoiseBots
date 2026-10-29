@@ -1101,6 +1101,12 @@ class RunHoldsItsDeadWiringTest(unittest.TestCase):
         self.assertIn("SettleRejoin(botRaw, bot, true, false);\n        answer = \"failed: the teleport was refused\";", fn[tele:])
         self.assertIn("SettleRejoin(botRaw, bot, true, false);\n        answer = \"failed: the bind still points at another copy\";", fn)
         self.assertLess(fn.index("SettleRejoin(botRaw, bot, false, false) == RejoinSettle::Wait"), fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"))
+        # cold review (2026-10-29): the lead bot alone in another copy refuses before any bind is read or written.
+        self.assertIn("if (TortoiseBots::DungeonRun::LeadInAnotherCopy(copies))", fn)
+        self.assertLess(fn.index("TortoiseBots::DungeonRun::LeadInAnotherCopy(copies)"), fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"))
+        self.assertIn("m.otherCopy = !m.offPlanMap && member->GetInstanceId() != lead->GetInstanceId();", fn)
+        rejoinTick = body((ROOT / "runtime/DungeonRunPolicy.h").read_text(), "inline bool InstanceRejoinTick(Run& r, const Facts& f, std::string& order)", "\n}\n")
+        self.assertLess(rejoinTick.index("LeadInAnotherCopy(f)"), rejoinTick.index("if (!order.empty() ||"))
         settle = body(code, "TortoiseBots::DungeonRun::RejoinSettle SettleRejoin(uint64 raw, Player* bot, bool refused, bool settleNow)\n{", "\n}\n")
         self.assertIn("TortoiseBots::DungeonRun::PlanRejoinSettle(facts)", settle)
         self.assertIn("bot->GetInstanceId() == p.leadInstanceId", settle)

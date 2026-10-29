@@ -6901,6 +6901,25 @@ bool RunInstanceRejoin(Player* commander, std::string const& order, std::string&
     for (Player* member : CommandedBots(group, lead))
         if (member && member != lead && std::string(member->GetName()) == name)
             bot = member;
+    // Cold review (2026-10-29): the lead bot alone in another copy than the party (DungeonRun::LeadInAnotherCopy, the
+    // run pauses on it): no bot is moved into the lead bot's copy, also by an order that did not come from that tick.
+    TortoiseBots::DungeonRun::Facts copies;
+    copies.carrier = lead->GetName();
+    for (Player* member : CommandedBots(group, lead))
+    {
+        if (!member || member == lead || !member->IsInWorld() || !member->IsAlive())
+            continue;
+        TortoiseBots::DungeonRun::MemberFact m;
+        m.name = member->GetName();
+        m.offPlanMap = member->GetMapId() != lead->GetMapId();
+        m.otherCopy = !m.offPlanMap && member->GetInstanceId() != lead->GetInstanceId();
+        copies.members.push_back(m);
+    }
+    if (TortoiseBots::DungeonRun::LeadInAnotherCopy(copies))
+    {
+        answer = "lead-copy: the lead bot is in another copy of this instance than the party";
+        return false;
+    }
     uint64 const botRaw = bot ? bot->GetObjectGuid().GetRawValue() : 0;
     // The last rejoin of this bot first: undone if it did not arrive, else still in flight (no second write).
     if (bot && SettleRejoin(botRaw, bot, false, false) == RejoinSettle::Wait)

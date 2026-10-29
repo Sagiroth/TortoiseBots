@@ -12749,6 +12749,26 @@ inline RejoinRestore PlanRejoinRestore(const RejoinRestoreFacts& r)
     return r.oldStateFound ? RejoinRestore::Rebind : RejoinRestore::KeepOldGone;
 }
 
+// ta252 cold review (2026-10-29): the lead bot's own corpse run can land IT in a fresh copy of the instance (on entry
+// the core binds an unbound group there, DungeonMap::BindPlayerOrGroupOnEnter), and every other bot then reads
+// otherCopy: rejoining them would move the whole party into the lead bot's respawned copy and lose the run's progress.
+// True when every other living bot on the plan's map, at least 2 of them, is in another copy than the lead bot's
+// (the glue lists living bots only; one outside the instance, offPlanMap, does not count). With one such bot the lead
+// bot's copy is taken as the party's, as before.
+inline bool LeadInAnotherCopy(const Facts& f)
+{
+    std::size_t onMap = 0, otherCopy = 0;
+    for (const MemberFact& m : f.members)
+    {
+        if (m.name.empty() || m.name == f.carrier || m.offPlanMap)
+            continue;
+        ++onMap;
+        if (m.otherCopy)
+            ++otherCopy;
+    }
+    return onMap >= 2 && otherCopy == onMap;
+}
+
 // ta252: a living bot of the party in another copy of the instance is moved into the lead bot's copy
 // (`rejoin <name>`, the glue's RunInstanceRejoin): the regroup's summon cannot reach it there. With a real player
 // in the party the run does not rebind anyone: it pauses naming the bot. True when it set the order or paused.
@@ -12758,6 +12778,15 @@ inline bool InstanceRejoinTick(Run& r, const Facts& f, std::string& order)
     {
         r.rejoinStep = r.step;
         r.rejoinTries.clear();
+    }
+    if (r.state == State::Running && r.plan && f.leadAlive && LeadInAnotherCopy(f))
+    {
+        // Any order of this tick goes too: a regroup summon of such a bot would be rerouted to a rejoin by the glue.
+        order.clear();
+        Pause(r, "the lead bot is in another copy of this instance than the party (every other bot is in one copy, "
+            "the lead bot alone in another, after its own corpse run): the run does not move the party into it; "
+            "bring the lead bot to the party, then .bot run resume");
+        return true;
     }
     if (!order.empty() || r.state != State::Running || !r.plan || !f.leadAlive || r.strandDue || r.strandOn)
         return false;

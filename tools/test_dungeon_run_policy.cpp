@@ -18556,6 +18556,45 @@ static void TestOtherCopyBotIsRejoinedNotSummoned()
     CHECK(Has(r.note, "(try 1 of 3 at this step)"));
     CHECK(r.rejoinTries["Aimboi"] == 1);
 }
+// ta252 cold review (2026-10-29): the lead bot's own corpse run can land IT in a fresh copy; on entry the core binds an
+// unbound group there, and rejoining every other bot would move the whole party into the respawned copy. When every
+// other living bot on the plan's map (at least 2) is in another copy, the lead bot is the odd one out: pause.
+static void TestLeadInAnotherCopyPausesNotRejoins()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    BeginRegroup(r);
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 3;
+    f.total = 3;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi"), OtherCopy("Brakk")};
+    f.maxMemberYd = kOtherMapYd;
+    std::string order = Tick(r, f);
+    CHECK(order.empty());
+    CHECK(r.state == State::Paused);
+    CHECK(Has(r.note, "the lead bot is in another copy of this instance than the party"));
+    CHECK(r.rejoinTries.empty());
+    // the tick body's regroup summon of such a bot is dropped too (the glue would reroute it to a rejoin).
+    Run r2 = Start(&plan);
+    std::string summon = "summon Aimboi";
+    CHECK(InstanceRejoinTick(r2, f, summon));
+    CHECK(summon.empty() && r2.state == State::Paused);
+    // a bot outside the instance is no member on the plan's map: it does not hide the lead bot's copy.
+    MemberFact outside = Mem("Cleo", kOtherMapYd);
+    outside.offPlanMap = true;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi"), OtherCopy("Brakk"), outside};
+    CHECK(LeadInAnotherCopy(f));
+    // one in the lead's copy with them: the two are the odd ones, rejoined as before.
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi"), OtherCopy("Brakk"), Mem("Cleo", 3)};
+    CHECK(!LeadInAnotherCopy(f));
+    // a single other bot in another copy: rejoined as before (cannot tell which side is wrong; the lead bot leads).
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi")};
+    CHECK(!LeadInAnotherCopy(f));
+    Run r3 = Start(&plan);
+    std::string order3;
+    CHECK(InstanceRejoinTick(r3, f, order3) && order3 == "rejoin Aimboi" && r3.state == State::Running);
+}
 static void TestRejoinRepeatAndPause()
 {
     DungeonPlan plan = GraveyardPlan();
@@ -22504,6 +22543,7 @@ int main()
     TestRejoinWithARealPlayerPauses();
     TestRejoinRefusalIsNoPause();
     TestOtherCopyFightIsNoPartyFight();
+    TestLeadInAnotherCopyPausesNotRejoins();
     TestPlanRejoinBind();
     TestRejoinSettle();
     TestRejoinSettleAcrossLogout();
