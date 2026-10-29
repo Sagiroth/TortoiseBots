@@ -1,6 +1,7 @@
 #include "RandomBotService.h"
 #include "BotActivityLease.h"
 #include "BotManager.h"
+#include "GuildOrderStore.h"
 #include "PlayerbotAIStorage.h"
 #include "playerbot/PlayerbotAI.h"
 #include "GearSeedingGuard.h"
@@ -1210,10 +1211,13 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
                 XpProgress& progress = m_xpProgress[candidate.characterGuid.GetCounter()];
                 uint32_t const level = player->GetLevel();
                 uint32_t const xp = player->GetUInt32Value(PLAYER_XP);
-                // Battlegrounds give no XP and a bot playing with a real
-                // player follows that player: neither is a stall.
+                // Battlegrounds give no XP, a bot playing with a real player
+                // follows that player, and a guild order (long farm or
+                // delivery walks) pays none either: none of them is a stall.
                 ::PlayerbotAI* stallAi = PlayerbotAIStorage::Instance().GetAI(player);
-                bool const busyNoXp = player->InBattleGround() || (stallAi && stallAi->HasRealPlayerMaster());
+                std::optional<GuildOrders::OrderRecord> order = GuildOrders::Find(candidate.characterGuid.GetCounter());
+                bool const onOrder = order && !GuildOrders::IsFinished(order->state);
+                bool const busyNoXp = player->InBattleGround() || (stallAi && stallAi->HasRealPlayerMaster()) || onOrder;
                 if (busyNoXp || level != progress.level || xp != progress.xp)
                     progress = XpProgress{ level, xp, 0 };
                 else
