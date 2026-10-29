@@ -114,5 +114,12 @@ inline bool OrderModeSkipsGates(bool orderMode, bool isOrderSource)
     return orderMode && isOrderSource;
 }
 
+// Whether the outgrown-zone leisure floor applies to a travel point: order
+// mode plans its zone by the level + 3 rule, which may sit below the floor.
+inline bool OutgrownFloorApplies(bool orderMode)
+{
+    return !orderMode;
+}
+
 } // namespace GuildOrders
 } // namespace TortoiseBots

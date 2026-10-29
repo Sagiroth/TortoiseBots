@@ -63,6 +63,9 @@ int main()
     CHECK(!OrderModeSkipsGates(false, true));
     CHECK(!OrderModeSkipsGates(false, false));
 
+    CHECK(OutgrownFloorApplies(false));
+    CHECK(!OutgrownFloorApplies(true));
+
     if (failures == 0)
         std::printf("test_guild_order_sources_policy ok\n");
     return failures ? 1 : 0;

@@ -1251,7 +1251,9 @@ bool MoveToTravelTargetAction::isUseful()
 
     TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
 
-    if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT))
+    // Follow bots stay with their master instead of walking order legs, but a
+    // masterless bot's wander is free movement, not a leash: it must walk them.
+    if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || (ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT) && ai->HasRealPlayerMaster()))
     {
         auto conditions = travelTarget->GetConditions();
         for (auto& cond : conditions)

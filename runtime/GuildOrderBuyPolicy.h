@@ -26,6 +26,13 @@ inline uint32_t BuyStillMissing(uint32_t want, uint32_t owned)
     return owned >= want ? 0 : want - owned;
 }
 
+// No candidate this visit: farm the rest, unless oversize stacks exist that
+// a later visit could take once the missing count grows or listings change.
+inline bool BuyVisitDoneWithoutCandidate(bool oversizeOnly)
+{
+    return !oversizeOnly;
+}
+
 // One auction beats another when its per-item price is lower. Auction
 // counts are stack sizes (>= 1), so the divisor is never zero.
 inline bool BuyoutBeatsPerItem(uint32_t buyout, uint32_t count, uint32_t bestBuyout, uint32_t bestCount)
