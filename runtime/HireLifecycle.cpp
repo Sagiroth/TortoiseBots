@@ -116,6 +116,31 @@ void HireLifecycle::DismissNow(ObjectGuid botGuid, char const* reason)
     Dismiss(record, reason ? reason : "released", false);
 }
 
+bool HireLifecycle::DismissForRefund(ObjectGuid botGuid, char const* reason)
+{
+    auto it = m_hired.find(botGuid.GetCounter());
+    if (it == m_hired.end())
+        return false; // not a hire (any more): its end is not this caller's to refund
+    HiredRecord record = it->second;
+    return Dismiss(record, reason ? reason : "released", false);
+}
+
+bool HireLifecycle::EnsureDeletionIntent(ObjectGuid botGuid, char const* reason)
+{
+    // Only for a hire that has already ended: a live hire is never deleted here.
+    if (m_hired.find(botGuid.GetCounter()) != m_hired.end())
+        return false;
+    uint32_t characterAccountId = 0;
+    if (LedgerRow(botGuid, characterAccountId))
+        return QueueDeletion(botGuid.GetCounter(), characterAccountId, reason ? reason : "released");
+    // No ledger row: the deletion already finished (ProcessDeletion clears the row last), or the row is missing.
+    // Only a character that is provably gone counts; COUNT(*) always returns a row, so a null result is a read
+    // error, not "gone".
+    std::unique_ptr<QueryResult> count(CharacterDatabase.PQuery(
+        "SELECT COUNT(*) FROM `characters` WHERE `guid` = '%u'", botGuid.GetCounter()));
+    return count && count->Fetch()[0].GetUInt32() == 0;
+}
+
 bool HireLifecycle::IsHired(ObjectGuid botGuid) const
 {
     return m_hired.find(botGuid.GetCounter()) != m_hired.end();
@@ -489,11 +514,11 @@ void HireLifecycle::SweepBattlegroundBoundary()
     }
 }
 
-void HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup)
+bool HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup)
 {
     uint32_t botGuidLow = record.botGuid.GetCounter();
     if (!m_dismissing.insert(botGuidLow).second)
-        return;
+        return false;
 
     // Issue #243: Erase from active hired registry up-front so that any subsequent
     // group callbacks (e.g. Group::Disband triggered by RemoveMember) do not see this bot as an active hire.
@@ -511,8 +536,9 @@ void HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool 
     BotManager::Instance().ClearBotMaster(record.botGuid);
     BotActivityLeaseManager::Instance().ReleaseMaster(botGuidLow);
     uint32_t characterAccountId = 0;
+    bool deletionDurable = false;
     if (LedgerRow(record.botGuid, characterAccountId))
-        QueueDeletion(botGuidLow, characterAccountId, reason ? reason : "released");
+        deletionDurable = QueueDeletion(botGuidLow, characterAccountId, reason ? reason : "released");
     else
         sLog.outError("TortoiseBots: hired bot %s has no hire ledger row; its character is left in place",
             record.botGuid.GetString().c_str());
@@ -521,6 +547,7 @@ void HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool 
         record.botGuid.GetString().c_str(), reason ? reason : "released");
     BotManager::Instance().RemoveBot(record.botGuid, false);
     m_dismissing.erase(botGuidLow);
+    return deletionDurable;
 }
 
 void HireLifecycle::OnGroupMemberRemoved(Group* group, ObjectGuid guid)
@@ -872,7 +899,7 @@ bool HireLifecycle::LedgerRow(ObjectGuid botGuid, uint32_t& characterAccountId) 
     return true;
 }
 
-void HireLifecycle::QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, char const* reason)
+bool HireLifecycle::QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, char const* reason)
 {
     // Hard guard: the ledger row is the only proof that this character was
     // created by Hire(). Without it nothing is deleted, ever.
@@ -880,15 +907,17 @@ void HireLifecycle::QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, ch
     {
         sLog.outError("TortoiseBots: refusing to delete character %u after '%s': no hire ledger row",
             guidLow, reason ? reason : "released");
-        return;
+        return false;
     }
     for (PendingDeletion const& pending : m_pendingDeletions)
         if (pending.guidLow == guidLow)
-            return;
+            return true;
 
     // Durable intent first: a crash between here and the deletion is resumed
-    // from this row on the next server start.
-    CharacterDatabase.DirectPExecute(
+    // from this row on the next server start. The result says whether that
+    // intent is durable (C6: a cancelled hire refunds only then); the deletion
+    // is queued either way, as before.
+    bool const durable = CharacterDatabase.DirectPExecute(
         "UPDATE `tortoise_bots_hire` SET `state` = 'dismissed', `dismissed_at` = NOW() "
         "WHERE `character_guid` = '%u'", guidLow);
 
@@ -899,6 +928,7 @@ void HireLifecycle::QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, ch
     m_pendingDeletions.push_back(pending);
     TB_LOG_BASIC("TortoiseBots: hired character %u scheduled for deletion (%s)",
         guidLow, pending.reason.c_str());
+    return durable;
 }
 
 bool HireLifecycle::RecoverStaleHires()

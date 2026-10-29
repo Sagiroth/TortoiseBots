@@ -483,6 +483,58 @@ static void TestReleasePlan()
     CHECK(PlanBindingRelease({}, cap).cancel.empty());
 }
 
+// C6: a cancelled seat hire refunds its fee once, and only after its deletion is durably queued.
+static void TestSeatCancelOutcome()
+{
+    // Deleted (durable intent recorded): refund once, then done.
+    SeatCancelState st;
+    st.deletionQueued = true;
+    CHECK(NextSeatCancelAction(st) == SeatCancelAction::Refund);
+    st.refunded = true;
+    CHECK(NextSeatCancelAction(st) == SeatCancelAction::Done);
+
+    // Delete failed: no refund, retried later; the retry succeeds: refund once; another pass: no second refund.
+    SeatCancelState failed;
+    failed.deletionQueued = false;
+    failed.attempts = 1;
+    CHECK(NextSeatCancelAction(failed) == SeatCancelAction::RetryDeletion);
+    int refunds = 0;
+    for (int pass = 0; pass < 5; ++pass)
+    {
+        switch (NextSeatCancelAction(failed))
+        {
+            case SeatCancelAction::RetryDeletion:
+                ++failed.attempts;
+                failed.deletionQueued = pass >= 1; // the second retry gets the ledger
+                break;
+            case SeatCancelAction::Refund:
+                ++refunds;
+                failed.refunded = true;
+                break;
+            case SeatCancelAction::Done:
+            case SeatCancelAction::GiveUp:
+                break;
+        }
+    }
+    CHECK(refunds == 1 && failed.refunded);
+    CHECK(NextSeatCancelAction(failed) == SeatCancelAction::Done);
+
+    // A deletion that never gets durable: bounded retries, then given up without a refund.
+    SeatCancelState never;
+    never.attempts = kSeatCancelMaxAttempts - 1;
+    CHECK(NextSeatCancelAction(never) == SeatCancelAction::RetryDeletion);
+    never.attempts = kSeatCancelMaxAttempts;
+    CHECK(NextSeatCancelAction(never) == SeatCancelAction::GiveUp);
+    // Refunded already: never anything again, however the deletion state reads.
+    never.refunded = true;
+    CHECK(NextSeatCancelAction(never) == SeatCancelAction::Done);
+    // Durable at the last attempt: still refunded.
+    SeatCancelState late;
+    late.attempts = kSeatCancelMaxAttempts;
+    late.deletionQueued = true;
+    CHECK(NextSeatCancelAction(late) == SeatCancelAction::Refund);
+}
+
 int main()
 {
     TestRoleCounts();
@@ -496,6 +548,7 @@ int main()
     TestSurplusOnRelease();
     TestBoundSeatRecheck();
     TestReleasePlan();
+    TestSeatCancelOutcome();
     std::printf("hire raid policy: %d checks passed\n", checks);
     return 0;
 }

@@ -139,15 +139,50 @@ class HireBoundRaidWiringTest(unittest.TestCase):
         cancel = body(HIRE_SRC, "void HireProvisionService::CancelBoundSeatHire(", "\n}\n")
         order = [
             "if (!HireLifecycle::Instance().IsHired(pending.botGuid))",
-            "HireLifecycle::Instance().DismissNow(pending.botGuid,",
-            "master->ModifyMoney(static_cast<int32>(pending.cost));",
-            ".SetMoney(pending.cost)",
-            "ChatHandler(master).PSendSysMessage(",
+            "cancel.state.deletionQueued = HireLifecycle::Instance().DismissForRefund(pending.botGuid, kSeatCancelReason);",
+            "if (!SettleSeatCancel(cancel))\n        m_seatCancels.push_back(cancel);",
         ]
         at = [cancel.index(part) for part in order]
         self.assertEqual(at, sorted(at))
-        self.assertNotIn("Reunite", cancel)
-        self.assertNotIn("EnsureGrouped", cancel)
+        # no gold moves here: only the policy's Refund step pays
+        for forbidden in ("ModifyMoney", "SetMoney", "RefundSeatCancel", "DismissNow(", "Reunite", "EnsureGrouped"):
+            self.assertNotIn(forbidden, cancel)
+        settle = body(HIRE_SRC, "bool HireProvisionService::SettleSeatCancel(", "\n}\n")
+        self.assertIn("switch (NextSeatCancelAction(cancel.state))", settle)
+        self.assertLess(settle.index("RefundSeatCancel(cancel);"), settle.index("cancel.state.refunded = true;"))
+        self.assertEqual(settle.count("RefundSeatCancel("), 1)
+        refund = body(HIRE_SRC, "void HireProvisionService::RefundSeatCancel(", "\n}\n")
+        self.assertIn("master->ModifyMoney(static_cast<int32>(cancel.cost));\n            master->SaveToDB();", refund)
+        self.assertIn(".SetMoney(cancel.cost)", refund)
+        sweep = body(HIRE_SRC, "void HireProvisionService::SweepSeatCancels()", "\n}\n")
+        order = ["if (NextSeatCancelAction(it->state) == SeatCancelAction::RetryDeletion)", "++it->state.attempts;",
+                 "HireLifecycle::Instance().EnsureDeletionIntent(it->botGuid, kSeatCancelReason)",
+                 "if (SettleSeatCancel(*it))", "it = m_seatCancels.erase(it);"]
+        at = [sweep.index(part) for part in order]
+        self.assertEqual(at, sorted(at))
+        self.assertNotIn("RefundSeatCancel", sweep)
+        update = body(HIRE_SRC, "void HireProvisionService::Update(uint32_t diff)", "\n}\n")
+        self.assertLess(update.index("SweepSeatCancels();"), update.index("if (m_pending.empty())"))
+
+    def test_the_refund_waits_for_durable_deletion_intent(self):
+        refund = body(LIFECYCLE, "bool HireLifecycle::DismissForRefund(", "\n}\n")
+        self.assertIn("if (it == m_hired.end())\n        return false;", refund)
+        self.assertIn('return Dismiss(record, reason ? reason : "released", false);', refund)
+        dismiss = body(LIFECYCLE, "bool HireLifecycle::Dismiss(HiredRecord const& record", "\n}\n")
+        self.assertIn("deletionDurable = QueueDeletion(botGuidLow, characterAccountId,", dismiss)
+        self.assertIn("return deletionDurable;", dismiss)
+        self.assertIn("if (!m_dismissing.insert(botGuidLow).second)\n        return false;", dismiss)
+        queue = body(LIFECYCLE, "bool HireLifecycle::QueueDeletion(", "\n}\n")
+        self.assertIn("bool const durable = CharacterDatabase.DirectPExecute(", queue)
+        self.assertIn("return durable;", queue)
+        self.assertIn("if (!ledgerAccountId)", queue)
+        retry = body(LIFECYCLE, "bool HireLifecycle::EnsureDeletionIntent(", "\n}\n")
+        order = ["if (m_hired.find(botGuid.GetCounter()) != m_hired.end())\n        return false;",
+                 "if (LedgerRow(botGuid, characterAccountId))\n        return QueueDeletion(",
+                 "SELECT COUNT(*) FROM `characters` WHERE `guid` = '%u'",
+                 "return count && count->Fetch()[0].GetUInt32() == 0;"]
+        at = [retry.index(part) for part in order]
+        self.assertEqual(at, sorted(at))
 
     def test_release_dismisses_the_surplus_before_hires_go_back(self):
         end = body(LIFECYCLE, "uint32_t HireLifecycle::EndCommand(ObjectGuid commanderGuid)", "\n}\n")

@@ -156,6 +156,36 @@ inline ReleasePlan PlanBindingRelease(std::vector<ReleaseHire> const& hires, uin
     return plan;
 }
 
+// C6: a cancelled bound-raid seat hire gives its fee back the way Hire() does on a failed hire: only once the
+// hire is durably undone. Here that is the deletion intent of its character recorded (ledger row marked
+// 'dismissed' and the deletion queued, HireLifecycle::DismissForRefund). Until then no gold moves and the
+// deletion is retried (Update, once a second); a refund is paid once and never again.
+constexpr uint32_t kSeatCancelMaxAttempts = 60;
+
+struct SeatCancelState
+{
+    bool deletionQueued = false; // the character's deletion intent is durable
+    bool refunded = false;       // the fee went back (in hand or by mail)
+    uint32_t attempts = 0;       // deletion attempts so far (the first one included)
+};
+
+enum class SeatCancelAction : uint8_t
+{
+    Refund,        // deletion durable, fee not yet returned: return it now (once)
+    RetryDeletion, // deletion not durable yet: no refund, try again later
+    Done,          // refunded: nothing more, ever
+    GiveUp,        // the deletion never became durable: no refund (the hire left no live companion)
+};
+
+inline SeatCancelAction NextSeatCancelAction(SeatCancelState const& state)
+{
+    if (state.refunded)
+        return SeatCancelAction::Done;
+    if (state.deletionQueued)
+        return SeatCancelAction::Refund;
+    return state.attempts >= kSeatCancelMaxAttempts ? SeatCancelAction::GiveUp : SeatCancelAction::RetryDeletion;
+}
+
 // C6 H2: how a hire was authorized. A bound-raid seat is a hire of a bound raid's commander standing outside
 // its group (it may be his 40th): it joins only that binding's raid, never a party with the commander.
 enum class HireSeatMode : uint8_t

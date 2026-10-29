@@ -40,6 +40,14 @@ public:
     // companion and any other explicit release go through here; a bot that is
     // not a hire is left alone.
     void DismissNow(ObjectGuid botGuid, char const* reason);
+    // C6, a cancelled hire that refunds its fee: DismissNow, and true only when the character's deletion
+    // intent is durable (ledger row found and marked 'dismissed', deletion queued). False for a bot that is
+    // not a hire. The caller refunds only on true (HireRaidPolicy.h NextSeatCancelAction).
+    bool DismissForRefund(ObjectGuid botGuid, char const* reason);
+    // C6: the retry of that intent for a hire that has already ended (false for a live hire): true once the
+    // deletion is queued with its ledger row in place (also when it was queued before; a restart's ledger
+    // recovery deletes it), or the character is provably deleted already.
+    bool EnsureDeletionIntent(ObjectGuid botGuid, char const* reason);
 
     // Drop the lifecycle record without touching the character: the
     // managed-pool reset deletes the character (and the ledger row) itself.
@@ -159,7 +167,8 @@ private:
     // Native leave-queue path for a queued hire (action=0 port packet).
     void LeaveBattlegroundQueue(Player* bot);
 
-    void Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup = true);
+    // True when the character's deletion intent is durable (C6 refund rule); callers that do not refund ignore it.
+    bool Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup = true);
     bool MasterOnline(HiredRecord const& record) const;
     // Issue #378: the record's master is online but no longer shares the
     // hire's group, so the hire is over. Pure-rule wrapper (HireDeparturePolicy.h).
@@ -173,8 +182,9 @@ private:
 
     // Durable hire ledger.
     bool LedgerRow(ObjectGuid botGuid, uint32_t& characterAccountId) const;
-    // Guard, mark dismissed, and queue the character for deletion.
-    void QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, char const* reason);
+    // Guard, mark dismissed, and queue the character for deletion. True when
+    // the 'dismissed' mark was written (or the deletion was already queued).
+    bool QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, char const* reason);
     // First ticks after startup: every ledger row is a stale hire (no hire
     // survives a restart), so it is recovered and deleted.
     bool RecoverStaleHires();

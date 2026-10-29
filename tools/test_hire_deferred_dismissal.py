@@ -38,7 +38,7 @@ struct ObjectGuid {
         source = (ROOT / 'runtime/HireLifecycle.cpp').read_text()
         signatures = ['bool HireLifecycle::MasterOnline(',
                       'bool HireLifecycle::MasterLeftGroup(',
-                      'void HireLifecycle::Dismiss(',
+                      'bool HireLifecycle::Dismiss(',
                       'void HireLifecycle::OnGroupMemberRemoved(',
                       'void HireLifecycle::OnGroupDisband(']
         queued = 'void HireLifecycle::DrainDismissals(' in source

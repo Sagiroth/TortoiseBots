@@ -225,6 +225,22 @@ public:
     // C6: a bound-raid seat hire that may not join: the hire ends (its character is deleted, as a dismiss) and
     // the fee goes back to the master (in hand, or by mail when he is offline). A hire already ended is left.
     void CancelBoundSeatHire(PendingProvision const& pending, std::string const& why);
+    // C6: a cancelled seat hire until its fee is settled: refunded once its character's deletion intent is
+    // durable, retried until then (HireRaidPolicy.h NextSeatCancelAction). In memory: a restart's ledger
+    // recovery deletes the character, the refund of an unsettled cancel is not carried over.
+    struct SeatCancel
+    {
+        ObjectGuid botGuid;
+        ObjectGuid masterGuid;
+        uint32_t cost = 0;
+        std::string name;
+        std::string why;
+        SeatCancelState state;
+    };
+    // Runs the policy: refunds when due; true when the cancel is finished (refunded or given up).
+    bool SettleSeatCancel(SeatCancel& cancel);
+    void RefundSeatCancel(SeatCancel const& cancel);
+    void SweepSeatCancels();
     // C6: rechecks a seat hire (RecheckBoundSeat) against its binding now; true when it was cancelled.
     // False for a normal hire or one already joined. master is online.
     bool SeatHireCancelled(Player* bot, Player* master, PendingProvision& pending);
@@ -252,6 +268,7 @@ public:
     void DropStalePending();
 
     std::vector<PendingProvision> m_pending;
+    std::vector<SeatCancel> m_seatCancels;
     // Issue #900: queued raid hires, one step every kRaidStepMs.
     std::vector<HireRaidJob> m_raidJobs;
     uint32_t m_raidStepElapsedMs = 0;

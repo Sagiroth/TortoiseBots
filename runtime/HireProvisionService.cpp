@@ -77,6 +77,7 @@ static_assert(kHireBoundRaidMaxCompanions == RemoteCommander::kMaxRaidBindSize,
 namespace
 {
 constexpr uint32 kPendingProvisionTimeoutSec = 300;
+constexpr char const* kSeatCancelReason = "bound raid seat hire cancelled";
 // Issue #900: a raid hire job runs two Hire() calls every this many ms.
 constexpr uint32 kRaidStepMs = 250;
 
@@ -1418,32 +1419,88 @@ void HireProvisionService::CancelBoundSeatHire(PendingProvision const& pending, 
     // keeps the rules of that end.
     if (!HireLifecycle::Instance().IsHired(pending.botGuid))
         return;
-    std::string name;
-    if (!sObjectMgr.GetPlayerNameByGUID(pending.botGuid, name))
-        name = "your companion";
-    // The failed-hire path: the hire ends and its character is deleted (as `.bot remove`), the fee goes back.
-    HireLifecycle::Instance().DismissNow(pending.botGuid, "bound raid seat hire cancelled");
-    Player* master = sObjectAccessor.FindPlayer(pending.masterGuid);
-    bool const inHand = master && master->IsInWorld() && master->GetSession();
-    if (pending.cost)
+    SeatCancel cancel;
+    cancel.botGuid = pending.botGuid;
+    cancel.masterGuid = pending.masterGuid;
+    cancel.cost = pending.cost;
+    cancel.why = why;
+    if (!sObjectMgr.GetPlayerNameByGUID(pending.botGuid, cancel.name))
+        cancel.name = "your companion";
+    // The hire ends now (as `.bot remove`: master cleared, logged off). As on Hire()'s failed paths the fee goes
+    // back only once the hire is durably undone: here once the character's deletion intent is recorded.
+    cancel.state.deletionQueued = HireLifecycle::Instance().DismissForRefund(pending.botGuid, kSeatCancelReason);
+    cancel.state.attempts = 1;
+    if (Player* master = sObjectAccessor.FindPlayer(pending.masterGuid))
+        if (master->IsInWorld() && master->GetSession())
+            ChatHandler(master).PSendSysMessage("Your hire of %s was cancelled: %s.", cancel.name.c_str(), why.c_str());
+    TB_LOG_BASIC("TortoiseBots: bound raid seat hire %s of %s cancelled (%s); deletion %s", cancel.name.c_str(),
+        pending.masterGuid.GetString().c_str(), why.c_str(), cancel.state.deletionQueued ? "queued" : "not durable yet, retried");
+    if (!SettleSeatCancel(cancel))
+        m_seatCancels.push_back(cancel);
+}
+
+bool HireProvisionService::SettleSeatCancel(SeatCancel& cancel)
+{
+    for (;;)
     {
+        switch (NextSeatCancelAction(cancel.state))
+        {
+            case SeatCancelAction::RetryDeletion:
+                return false; // SweepSeatCancels tries the deletion again; no gold moves until it is durable
+            case SeatCancelAction::Refund:
+                RefundSeatCancel(cancel);
+                cancel.state.refunded = true;
+                continue; // -> Done: never a second refund
+            case SeatCancelAction::Done:
+                return true;
+            case SeatCancelAction::GiveUp:
+                sLog.outError("TortoiseBots: cancelled seat hire %s of %s: its deletion never became durable after %u "
+                    "attempts; no refund (the hire has ended, its character is left for the ledger recovery)",
+                    cancel.name.c_str(), cancel.masterGuid.GetString().c_str(), cancel.state.attempts);
+                return true;
+        }
+        return true;
+    }
+}
+
+void HireProvisionService::RefundSeatCancel(SeatCancel const& cancel)
+{
+    Player* master = sObjectAccessor.FindPlayer(cancel.masterGuid);
+    bool const inHand = master && master->IsInWorld() && master->GetSession();
+    if (cancel.cost)
+    {
+        // Hire()'s refund: in hand, saved at once. A master who is offline gets it by mail.
         if (inHand)
         {
-            master->ModifyMoney(static_cast<int32>(pending.cost));
+            master->ModifyMoney(static_cast<int32>(cancel.cost));
             master->SaveToDB();
         }
         else
-            MailDraft("Hire refund", "The companion " + name + " you hired for your bound raid was cancelled: " +
-                why + ". Your fee is returned.")
-                .SetMoney(pending.cost)
-                .SendMailTo(MailReceiver(pending.masterGuid), MailSender(MAIL_NORMAL, pending.masterGuid.GetCounter(), MAIL_STATIONERY_GM));
+            MailDraft("Hire refund", "The companion " + cancel.name + " you hired for your bound raid was cancelled: " +
+                cancel.why + ". Your fee is returned.")
+                .SetMoney(cancel.cost)
+                .SendMailTo(MailReceiver(cancel.masterGuid), MailSender(MAIL_NORMAL, cancel.masterGuid.GetCounter(), MAIL_STATIONERY_GM));
+        if (inHand)
+            ChatHandler(master).PSendSysMessage("Your fee for %s was returned.", cancel.name.c_str());
     }
-    if (inHand)
-        ChatHandler(master).PSendSysMessage("Your hire of %s was cancelled: %s.%s", name.c_str(), why.c_str(),
-            pending.cost ? " Your fee was returned." : "");
-    TB_LOG_BASIC("TortoiseBots: bound raid seat hire %s of %s cancelled (%s); fee %u %s", name.c_str(),
-        pending.masterGuid.GetString().c_str(), why.c_str(), pending.cost,
-        !pending.cost ? "none" : inHand ? "refunded" : "mailed");
+    TB_LOG_BASIC("TortoiseBots: cancelled seat hire %s of %s: fee %u %s", cancel.name.c_str(),
+        cancel.masterGuid.GetString().c_str(), cancel.cost, !cancel.cost ? "none" : inHand ? "refunded" : "mailed");
+}
+
+void HireProvisionService::SweepSeatCancels()
+{
+    for (auto it = m_seatCancels.begin(); it != m_seatCancels.end();)
+    {
+        if (NextSeatCancelAction(it->state) == SeatCancelAction::RetryDeletion)
+        {
+            ++it->state.attempts;
+            it->state.deletionQueued = HireLifecycle::Instance().EnsureDeletionIntent(it->botGuid, kSeatCancelReason);
+        }
+        if (SettleSeatCancel(*it))
+            it = m_seatCancels.erase(it);
+        else
+            ++it;
+    }
 }
 
 void HireProvisionService::DropStalePending()
@@ -1481,6 +1538,9 @@ void HireProvisionService::Update(uint32_t diff)
     if (m_updateElapsedMs < 1000)
         return;
     m_updateElapsedMs = 0;
+    // C6: cancelled seat hires whose deletion is not durable yet: retried, refunded once it is.
+    if (!m_seatCancels.empty())
+        SweepSeatCancels();
     if (m_pending.empty())
         return;
 
