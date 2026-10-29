@@ -176,13 +176,14 @@ enum SourceFlag : uint8_t
     SourceOre   = 1 << 3,
     SourceCraft = 1 << 4,
     SourceAh    = 1 << 5,
+    SourceFish  = 1 << 6,
 };
 
 inline std::string SourcesToken(uint8_t flags)
 {
-    static char const* const names[] = {"drop", "skin", "herb", "ore", "craft", "ah"};
+    static char const* const names[] = {"drop", "skin", "herb", "ore", "craft", "ah", "fish"};
     std::string out;
-    for (uint8_t i = 0; i < 6; ++i)
+    for (uint8_t i = 0; i < 7; ++i)
     {
         if (!(flags & (1 << i)))
             continue;

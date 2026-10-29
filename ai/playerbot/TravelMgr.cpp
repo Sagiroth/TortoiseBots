@@ -1025,8 +1025,10 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     // Order mode: an order source of the carried item skips the leisure
     // gates (skill-up cap, grey, closest-point level, outgrown) and
-    // applies the order's own gates instead. Fishing never orders.
-    bool const orderSource = GetPurpose() != TravelDestinationPurpose::GatherFishing && GetEntry() < 0;
+    // applies the order's own gates instead. Fish sources route to fishing
+    // spots in the planned zone.
+    bool const orderSource = GetEntry() < 0 ||
+        (GetPurpose() == TravelDestinationPurpose::GatherFishing && info.GetOrderItem());
     if (TortoiseBots::GuildOrders::OrderModeSkipsGates(info.IsOrderMode(), orderSource))
     {
         uint32_t skillValue = 0;

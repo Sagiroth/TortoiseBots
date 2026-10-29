@@ -10,8 +10,11 @@
 #include "FishAction.h"
 #include "playerbot/TravelMgr.h"
 #include "../../policy/loot/FishingSpotPolicy.h"
+#include "playerbot/GuildOrderSources.h"
+#include "runtime/GuildOrderFishingPolicy.h"
 #include "TellLosAction.h"
 #include "EquipAction.h"
+#include "UseItemAction.h"
 
 using namespace ai;
 
@@ -578,9 +581,25 @@ bool FishAction::Execute(Event& event)
     // one, and its first entry was a spare more often than not: equipping it swapped the two
     // poles, the next tick swapped them back - 140,000 swaps in half an hour for four bots
     // that carried a second pole. Without a pole in hand the best one is taken.
+    // A guild fishing order names its pole: the grant minted exactly the
+    // cheapest pole that reaches the planned zone, so it wins over item
+    // level - an old pole outranks nothing when the zone needs the grant.
     Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
-    bool const poleInHand = mainHand && mainHand->GetProto()->Class == ITEM_CLASS_WEAPON &&
+    bool poleInHand = mainHand && mainHand->GetProto()->Class == ITEM_CLASS_WEAPON &&
         mainHand->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_FISHING_POLE;
+    uint32_t orderPole = ai::GuildOrderFishingPoleFor(bot);
+    if (orderPole && (!poleInHand || mainHand->GetEntry() != orderPole))
+    {
+        for (Item* candidate : poles)
+            if (candidate->GetEntry() == orderPole)
+            {
+                EquipAction::EquipItem(ai, GetMaster(), candidate);
+                mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+                poleInHand = mainHand && mainHand->GetProto()->Class == ITEM_CLASS_WEAPON &&
+                    mainHand->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_FISHING_POLE;
+                break;
+            }
+    }
     if (!poleInHand)
     {
         Item* pole = poles.front();
@@ -588,6 +607,23 @@ bool FishAction::Execute(Event& event)
             if (candidate->GetProto()->ItemLevel > pole->GetProto()->ItemLevel)
                 pole = candidate;
         EquipAction::EquipItem(ai, GetMaster(), pole);
+    }
+
+    // A guild fishing order fishes with the lure the plan counted: the
+    // grant keeps a stack in the bags, and the temp enchant goes back on
+    // while the order works the zone. Lures are consumed, so a missing
+    // stack simply fishes unlured.
+    if (ai::GuildOrderFishingPoleFor(bot))
+    {
+        Item* lure = nullptr;
+        for (Item* candidate : AI_VALUE2(std::list<Item*>, "inventory items",
+            chat->formatQItem(TortoiseBots::GuildOrders::kBestFishingLureItemId)))
+        {
+            lure = candidate;
+            break;
+        }
+        if (lure && poleInHand && mainHand->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT) == 0)
+            UseAction::UseItem(ai, GetMaster(), lure->GetEntry(), mainHand);
     }
 
     Event fishCastEvent = Event("fish", "7731 " + chat->formatWorldobject(bot));

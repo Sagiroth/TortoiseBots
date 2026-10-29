@@ -92,7 +92,7 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 | `TBM:ORDER_BEGIN\|<n>` / `TBM:ORDER_END` | Delimits the guild order list from `.bot order list`. |
 | `TBM:ORDER\|<bot>\|<type>\|<itemId>\|<item>\|<have>\|<want>\|<state>\|<reason>\|<zone>\|<difficulty>` | Emits one guild order row; also sent alone as a live update to the giver on state changes and progress (at most every 5 s). |
 | `TBM:ORDER_ITEMS_BEGIN\|<n>` / `TBM:ORDER_ITEMS_END` | Delimits the `.bot order search` result list. |
-| `TBM:ORDER_ITEM\|<itemId>\|<item>\|<quality>\|<sources>\|<minLevel>\|<skill>\|<verdict>\|<zone>\|<chance>\|<difficulty>` | Emits one searchable item with the bot's verdict and farm zone. |
+| `TBM:ORDER_ITEM\|<itemId>\|<item>\|<quality>\|<sources>\|<minLevel>\|<skill>\|<verdict>\|<zone>\|<chance>\|<difficulty>` | Emits one searchable item with the bot's verdict and farm zone. `<sources>` lists `drop`, `skin`, `herb`, `ore`, `fish`, `craft`, `ah` (`fish` means the item comes from fishing loot; the bot walks to a fishing spot in the planned zone and fishes until the amount is reached). |
 | `TBM:ALTBOTS\|<names>` | Comma-separated list of owned characters active as autonomous alt-bots. |
 | `TBM:VERSION\|<version>` | Handshakes server module version (e.g. `2026-10-20-v1` or `dev`). |
 | `TBM:VIEW` | Real-time perception frame lines for Remote Commander. |
