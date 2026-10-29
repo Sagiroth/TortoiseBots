@@ -24,8 +24,10 @@ vm.runInContext(fs.readFileSync(histPath, "utf8"), ctx, { filename: "fighthistor
 assert.ok(ctx.FightHistory && typeof ctx.FightHistory.dayOptions === "function", "fighthistory.js loads as the global FightHistory");
 vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, { filename: "fightdebug.js" });
 assert.ok(ctx.FightDebug && typeof ctx.FightDebug.railCards === "function", "fightdebug.js loads as the global FightDebug");
-vm.runInContext([grab("esc"), grab("fdDecodeKey"), grab("fdRailHtml"), grab("fdDayOptionsHtml"), grab("fdPackHtml")].join("\n"), ctx,
+vm.runInContext([grab("esc"), grab("fdDecodeKey"), grab("fdRailHtml"), grab("fdDayOptionsHtml"), grab("fdPackHtml"),
+  grab("numOr0"), grab("fdMergeRows"), grab("fdTodayDay"), grab("fdTonightRows")].join("\n"), ctx,
   { filename: "app.js" });
+ctx.cmdFightsCache = {};
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const FH = ctx.FightHistory;
@@ -33,8 +35,8 @@ const FH = ctx.FightHistory;
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
 // ---- the night picker -----------------------------------------------------------------------------------------------
-// 2026-10-29 is a Thursday; today's own file is listed too (its earlier fights live on disk after a restart), while a
-// future day is not.
+// 2026-10-29 is a Thursday. Tonight is today's own list (the rail draws today's stored fights with the live ones on top), so
+// today appears once, with its count in the Tonight label; a future day is not offered.
 const TODAY = Date.UTC(2026, 9, 29, 12, 0, 0);
 const DAYS = { days: [
   { day: "2026-10-29", fights: 9 },
@@ -42,14 +44,13 @@ const DAYS = { days: [
   { day: "2026-10-27", fights: 1 },
 ] };
 assert.deepStrictEqual(plain(FH.dayOptions(DAYS, TODAY)), [
-  { value: "", label: "Tonight" },
-  { value: "2026-10-29", label: "Thu 29 Oct · 9 fights" },
+  { value: "", label: "Tonight · 9 fights" },
   { value: "2026-10-28", label: "Wed 28 Oct · 12 fights" },
   { value: "2026-10-27", label: "Tue 27 Oct · 1 fight" },
-], "the day labels, newest first, today listed and Tonight first");
+], "one entry per night, newest first, today's count on Tonight");
 assert.deepStrictEqual(plain(FH.dayOptions({ days: [{ day: "2026-10-30", fights: 2 }, { day: "2026-10-29", fights: 3 }] }, TODAY)),
-  [{ value: "", label: "Tonight" }, { value: "2026-10-29", label: "Thu 29 Oct · 3 fights" }],
-  "a future day is not offered, today's is");
+  [{ value: "", label: "Tonight · 3 fights" }],
+  "a future day is not offered, today's is merged into Tonight");
 assert.deepStrictEqual(plain(FH.dayOptions(null, TODAY)), [{ value: "", label: "Tonight" }], "a history that is off still offers Tonight");
 assert.deepStrictEqual(plain(FH.dayOptions({ days: [{ day: "2026-13-01", fights: 2 }, { day: "bad", fights: 2 }] }, TODAY)),
   [{ value: "", label: "Tonight" }], "a malformed day is not offered");
@@ -63,6 +64,37 @@ assert.strictEqual(FH.rowDay("", TODAY), "", "a row without a day stays none");
 
 // ---- the same-pack table --------------------------------------------------------------------------------------------
 const at = (y, m, d, hh, mm) => Math.floor(Date.UTC(y, m - 1, d, hh, mm, 0) / 1000);
+const sec = at;
+// ---- Tonight's rail is today's day: the live list merged with today's stored fights, one row per fight -----------------
+const liveRows = [
+  { key: "g\u00003\u00003-9", start: sec(2026, 10, 29, 23, 50), dur: 30000, session: 3 },
+  { key: "g\u00003\u00003-8", start: sec(2026, 10, 29, 23, 40), dur: 20000, session: 3 },
+];
+const storedRows = [
+  { key: "g\u00003\u00003-9", start: sec(2026, 10, 29, 23, 50), dur: 30000, session: 3, hist: true },
+  { key: "g\u00002\u00002-6", start: sec(2026, 10, 29, 22, 4), dur: 60000, session: 2, hist: true },
+];
+const merged = plain(run("fdMergeRows(live, hist)", { live: liveRows, hist: storedRows }));
+assert.deepStrictEqual(merged.map((r) => r.key), [liveRows[0].key, liveRows[1].key, storedRows[1].key],
+  "one row per fight (the live row wins), newest first, and today's older stored fights are there: " + JSON.stringify(merged.map((r) => r.key)));
+assert.strictEqual(merged[0].hist, undefined, "the live row keeps its detail and positions");
+assert.strictEqual(merged[2].hist, true, "a fight only on disk stays history");
+assert.strictEqual(plain(run("fdMergeRows(null, null)")).length, 0, "nothing either side is an empty rail");
+
+const todayDay = plain(run("fdTodayDay(todayMs)", { todayMs: TODAY }));
+assert.strictEqual(todayDay, "2026-10-29", "Tonight's day is the daemon's UTC day");
+run("cmdFightsCache = { G: { list: live, at: 0 } }; fdHistToday = {}", { live: liveRows });
+const tonightRows = plain(run("fdTonightRows({ hist: fdHistToday }, 'G')", { fdHistToday: { [todayDay]: { list: storedRows, at: 0 } } }));
+assert.deepStrictEqual(tonightRows.map((r) => r.key), [liveRows[0].key, liveRows[1].key, storedRows[1].key],
+  "the rail draws the same day the picker counts");
+// The card's render reads that list, not the live one alone: Tonight with a restart behind it still shows today's stored fights.
+const appSrc = fs.readFileSync(appPath, "utf8");
+assert.ok(/const list = fd\.day \? \(fd\.list \|\| \[\]\) : \(bind\.history \? \(fd\.list \|\| \[\]\) : fdTonightRows\(fd, key\)\);/.test(appSrc),
+  "the debugger's rail lists fdTonightRows for Tonight");
+assert.ok(/fdDayFights\(fd, bind, l => \{ hist = l; both\(\); \}\)/.test(appSrc),
+  "Tonight asks for today's stored fights too, not just the live list");
+assert.ok(fs.readFileSync(path.resolve(process.argv[2]), "utf8").includes('"Tonight · " +'), "the picker labels today as Tonight with its count");
+
 const PACK = { pack_key: "onyxias_lair#12", rows: [
   { key: "wipe", commander: "Glacienne", start: at(2026, 10, 25, 21, 5), dur: 60000, outcome: "wipe", deaths: 0, nontank_ms: null },
   { key: "a", commander: "Glacienne", start: at(2026, 10, 26, 22, 0), dur: 400000, outcome: "kill", deaths: 1, nontank_ms: 23000 },
@@ -94,7 +126,7 @@ assert.strictEqual(onlyWipes.rows.every((r) => !r.best), true, "no wipe row is m
 // ---- the builders ---------------------------------------------------------------------------------------------------
 const DAY_OPTIONS = FH.dayOptions(DAYS, TODAY);
 const selectHtml = run("fdDayOptionsHtml(opts)", { opts: DAY_OPTIONS });
-assert.ok(selectHtml.includes('<option value="">Tonight</option>'), "Tonight is the first option");
+assert.ok(selectHtml.includes('<option value="">Tonight · 9 fights</option>'), "Tonight is the first option, with today's count");
 assert.ok(selectHtml.includes('<option value="2026-10-28">Wed 28 Oct · 12 fights</option>'), "a past night keeps its label");
 
 const EVIL = '<img src=x onerror=alert(1)>"&';

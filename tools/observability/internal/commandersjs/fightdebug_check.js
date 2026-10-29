@@ -137,6 +137,25 @@ assert.strictEqual(recaps[1].hits[0].d, 3091);
 assert.strictEqual(recaps[1].spanMs, 0);
 assert.deepStrictEqual(F.deathRecaps({ deaths: [] }), []);
 
+// ---- pack numbers count inside a day and a run, not across the whole list ------------------------------------------
+const secAt = (y, m, d, hh, mm) => Math.floor(Date.UTC(y, m - 1, d, hh, mm, 0) / 1000);
+const packRows = [
+  { key: "new-2", session: 9, start: secAt(2026, 10, 29, 23, 40) },
+  { key: "new-1", session: 9, start: secAt(2026, 10, 29, 23, 10) },
+  { key: "old-3", session: 4, start: secAt(2026, 10, 29, 22, 0) },
+  { key: "old-2", session: 4, start: secAt(2026, 10, 29, 21, 30) },
+  { key: "old-1", session: 4, start: secAt(2026, 10, 29, 21, 0) },
+  { key: "prev-night", session: 4, start: secAt(2026, 10, 28, 23, 0) },
+];
+assert.deepStrictEqual(F.packNumbers(packRows), [2, 1, 3, 2, 1, 1],
+  "a new run (session) restarts at Pack 1, and so does a new UTC day");
+assert.deepStrictEqual(F.packNumbers([]), []);
+assert.deepStrictEqual(F.packNumbers([{ key: "a" }, { key: "b" }]), [2, 1], "rows without a session still count per day");
+// The rail reads the same numbers: two runs on one night do not continue each other's count.
+const multiRail = F.railCards(packRows, {}, null, null);
+assert.deepStrictEqual(multiRail.map((c) => c.label), ["Pack 2", "Pack 1", "Pack 3", "Pack 2", "Pack 1", "Pack 1"],
+  "the rail's Pack N restarts with the run and the day");
+
 // ---- the killer: the last hit that is not the dead bot; only self-damage known is "unknown" ------------------------
 const SELF_FIGHT = {
   bots: [{ name: "Benedwin", guid: 7, class: "druid", role: "dps", dmg: 0, taken: 900, casts: 2, spells: [] }],

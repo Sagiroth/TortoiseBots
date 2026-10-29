@@ -7936,6 +7936,31 @@
       .then(jsonOrThrow).then(done).catch(() => done(null));
   }
 
+  // One row per fight: the live list first (a fight that just ended keeps its detail and its kept positions), then the day's
+  // stored fights the live list no longer holds (a restart, or a fight older than the daemon's fifty). Newest first.
+  function fdMergeRows(live, hist) {
+    const seen = {};
+    const out = [];
+    (Array.isArray(live) ? live : []).forEach(r => { if (r && r.key && !seen[r.key]) { seen[r.key] = true; out.push(r); } });
+    (Array.isArray(hist) ? hist : []).forEach(r => { if (r && r.key && !seen[r.key]) { seen[r.key] = true; out.push(r); } });
+    out.sort((a, b) => (numOr0(b.start) - numOr0(a.start)) || (String(a.key) < String(b.key) ? -1 : 1));
+    return out;
+  }
+
+  // The day a row of "Tonight" belongs to is today (UTC), the daemon's day files are UTC too.
+  function fdTodayDay(nowMs) {
+    return typeof FightHistory !== 'undefined' ? FightHistory.dayOf(nowMs) : '';
+  }
+
+  // Tonight's rail: today's stored fights and the live list, one row per fight. The day selector's count is that same day's
+  // stored count, so the two never tell different stories again.
+  function fdTonightRows(fd, key) {
+    const day = fdTodayDay(Date.now());
+    const hist = day && fd.hist[day] ? fd.hist[day].list : null;
+    const live = cmdFightsCache[key] && cmdFightsCache[key].list;
+    return fdMergeRows(live, hist);
+  }
+
   // The pack the selected fight belongs to, once per pack per minute; the box widens the table to every commander.
   function fdPackLoad(card, bind, fd, packKey) {
     const ck = packKey + (fd.packAll ? '|all' : '');
@@ -8033,6 +8058,12 @@
     }
     const gotList = list => {
       if (list) fd.list = list;
+      // The rail paints as soon as the list (or a newly merged row) arrives, not only when the first detail does.
+      const sig = list ? list.length + '|' + list.map(r => (r && r.key) || '').join(',') : '';
+      if (list && sig !== fd.listSig) {
+        fd.listSig = sig;
+        if (card.classList.contains('fd-on')) renderFightDebug(card, bind);
+      }
       if (fd.loading) return;
       const row = fdDetailRow(fd);
       if (!row) return;
@@ -8063,9 +8094,15 @@
         fdLoad(card, bind);
       }).catch(failed);
     };
-    // A chosen night lists that day's stored fights; Tonight is the live list the whole page shares.
-    if (fd.day) fdDayFights(fd, bind, gotList);
-    else cmdRaidFights(bind, gotList);
+    // A chosen night lists that day's stored fights; Tonight is today's stored fights with the live list on top.
+    if (fd.day) { fdDayFights(fd, bind, gotList); return; }
+    const today = fdTodayDay(Date.now());
+    if (!today) { cmdRaidFights(bind, gotList); return; }
+    let live = null, hist = null, left = 2;
+    // Both halves failed: answer null so the rows already shown stay (an empty answer would wipe them).
+    const both = () => { if (--left) return; gotList(live || hist ? fdMergeRows(live, hist) : null); };
+    cmdRaidFights(bind, l => { live = l; both(); });
+    fdDayFights(fd, bind, l => { hist = l; both(); });
   }
 
   // The debugger's pick: the user's own click stands; otherwise the worst finished fight (the newest while no details are loaded),
@@ -8118,8 +8155,8 @@
   function renderFightDebug(card, bind) {
     if (!card || !bind || typeof FightDebug === 'undefined') return;
     const key = bind.commander, fd = fdState(key), layout = bind.layout || null;
-    // A chosen night lists its own stored fights; Tonight is the shared live list the whole page holds.
-    const list = fd.day ? (fd.list || []) : (cmdFightsCache[key] && cmdFightsCache[key].list) || fd.list || [];
+    // A chosen night lists its own stored fights; Tonight is today's stored fights with the live list on top.
+    const list = fd.day ? (fd.list || []) : (bind.history ? (fd.list || []) : fdTonightRows(fd, key));
     fd.list = list;
     const details = list.map(r => fd.details[r.key] || null);
     fdSyncSel(fd, bind, list, details, layout);

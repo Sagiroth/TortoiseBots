@@ -33,6 +33,7 @@ vm.runInContext(fdSrc, ctx, { filename: "fightdebug.js" });
 vm.runInContext([
   grab("cmdForgetCard"), grab("cmdRescueLayers"), grab("fdState"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
   grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"), grab("fdDaysLoad"), grab("fdFightHist"),
+  grab("fdMergeRows"), grab("numOr0"), grab("fdTodayDay"), grab("fdTonightRows"),
   grabConst("FD_DETAIL_MAX"), grabConst("FD_DETAIL_TRIES"), grabConst("FD_DAYS_MS"),
   "var document = { getElementById: () => null };",
   "var cmdPageMode = () => 'debug';",
@@ -41,6 +42,9 @@ vm.runInContext([
   "var cmdUnwatchStage = () => {};",
   "var fdTabListSeen = () => {};",
   "var fdFightHash = () => {};",
+  "var renderFightDebug = () => {};",
+  "var fdDayFights = (fd, bind, cb) => { if (cb) cb(null); };",
+  "var FightHistory = { dayOf: () => \"2026-10-29\" };",
 ].join("\n"), ctx, { filename: "app.js state" });
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };

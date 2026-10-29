@@ -509,6 +509,31 @@
     };
   }
 
+  const utcDay = (t) => {
+    const n = num(t);
+    if (n === null) return "";
+    const d = new Date(n * 1000);
+    return d.getUTCFullYear() + "-" + ("0" + (d.getUTCMonth() + 1)).slice(-2) + "-" + ("0" + d.getUTCDate()).slice(-2);
+  };
+
+  // Pack numbers count inside a run, not across the whole list: a night restarts at Pack 1 when the session does (a new bind is
+  // a new run), and so does a new day. rows are newest first, as the daemon lists them; walking them backwards gives the oldest
+  // fight of each group Pack 1.
+  function packNumbers(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const out = new Array(list.length);
+    const count = {};
+    for (let i = list.length - 1; i >= 0; i--) {
+      const r = list[i] || {};
+      const day = utcDay(r.start);
+      const run = r.session != null && r.session !== "" ? String(r.session) : "";
+      const group = day + "|" + run;
+      count[group] = (count[group] || 0) + 1;
+      out[i] = count[group];
+    }
+    return out;
+  }
+
   // state tells a card whose detail has not arrived apart from one that will never arrive: {failed: {key: {n}}, loadingKey,
   // asked} where asked is how many of the newest rows the page fetches. A row whose detail failed for good says so; one the page
   // never asked (a long night's older rows) says that; everything else is still loading.
@@ -517,6 +542,7 @@
     const st = state && typeof state === "object" ? state : null;
     const asked = st ? num(st.asked) || 0 : rows.length;
     const maxDur = rows.reduce((m, r) => Math.max(m, num(r.dur) || 0), 0);
+    const packs = packNumbers(rows);
     return rows.map((row, i) => {
       const det = detailsByKey && detailsByKey[row.key];
       const fight = det && det.fight;
@@ -528,8 +554,8 @@
       const waiting = !det && !failed && (i < asked || row.key === (st && st.loadingKey) || row.key === (st && st.sel));
       return {
         key: row.key,
-        // The daemon lists fights newest first; the oldest is the first pack of the fight.
-        label: "Pack " + (rows.length - i),
+        // Pack N inside the fight's own day and run: the oldest of that group is Pack 1.
+        label: "Pack " + packs[i],
         mob: row.boss_name || (fight && fight.boss_name) || (engaged && engaged.n) || "trash",
         step: num(row.step) || 0,
         durMs: dur,
@@ -633,7 +659,7 @@
 
   const api = {
     LIMITS, TAUNTS, DEBUFF_CHECKS,
-    roleOf, spellCount, fmtInt, mainTank, offTanks, checks, verdict, worstIndex, killerOf,
+    roleOf, spellCount, fmtInt, mainTank, offTanks, checks, verdict, worstIndex, killerOf, packNumbers,
     deathRecaps, timeline, raidFrames, roleTables, botPanel, railCards, liveEngaged, liveSummary, liveChecks, liveTables,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightDebug = api;
