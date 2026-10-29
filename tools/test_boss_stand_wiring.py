@@ -287,21 +287,27 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("Guarded by g_standHoldMutex.", declared)
         self.assertIn("struct StandPlanKey", POLICY)
         # The plan is keyed by the boss instance (map and instance id, not only the spawn guid), the window's anchor,
-        # role and window spell; the live translation passes all of them; a stale plan is swept whatever its key.
+        # role and window spell, and the bot's group; the live translation passes all of them; a stale plan is swept
+        # whatever its key.
+        self.assertIn("Group* group = bot->GetGroup();\n        const uint64 groupGuid = group ? "
+                      "group->GetLeaderGuid().GetRawValue() : 0;", fn)
         self.assertIn("const StandPlanKey key{ boss->GetObjectGuid().GetRawValue(), boss->GetMapId(), "
                       "boss->GetInstanceId(),\n                                points[0]->anchor, "
-                      "static_cast<uint8>(role), points[0]->windowSpell };", fn)
+                      "static_cast<uint8>(role), points[0]->windowSpell, groupGuid };", fn)
         self.assertIn("old = StandPlanStale(nowMs, old->second.lastReadMs) ? g_standPlans.erase(old) : "
                       "std::next(old);", fn)
 
-    def test_the_plan_is_filed_by_window_spell(self):
+    def test_the_plan_is_filed_by_window_spell_and_group(self):
         # Two rows of one anchor and role can open on different window spells inside the idle time: the plan of one
-        # window must not seat a bot of the other.
+        # window must not seat a bot of the other. The group keeps a bot outside the raid from reading the raid's plan.
         key = body(POLICY, "struct StandPlanKey", end="\n    };\n")
         self.assertIn("std::uint32_t windowSpell = 0;", key)
+        self.assertIn("std::uint64_t group = 0;", key)
         self.assertIn("windowSpell == other.windowSpell", key)
+        self.assertIn("group == other.group", key)
         hashed = body(POLICY, "struct StandPlanKeyHash", end="\n    };\n")
         self.assertIn("key.windowSpell", hashed)
+        self.assertIn("key.group", hashed)
 
     def test_generic_code_names_no_boss(self):
         for name, text in (("BossStandPolicy.h", POLICY), ("BossTacticsStand.h", STAND_H)):

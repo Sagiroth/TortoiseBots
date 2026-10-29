@@ -871,8 +871,8 @@ int main()
     // is a different window and never reads the first one's seats.
     {
         const std::uint8_t ranged = static_cast<std::uint8_t>(StandRole::Ranged);
-        const StandPlanKey first{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351 };
-        const StandPlanKey same{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351 };
+        const StandPlanKey first{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351, 0x40000000000000a1ULL };
+        const StandPlanKey same{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351, 0x40000000000000a1ULL };
         StandPlanKey otherInstance = first;
         otherInstance.instanceId = 2;
         StandPlanKey otherMap = first;
@@ -892,8 +892,8 @@ int main()
     // windows, and the plan of one never seats a bot of the other inside the idle time.
     {
         const std::uint8_t ranged = static_cast<std::uint8_t>(StandRole::Ranged);
-        const StandPlanKey first{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351 };
-        const StandPlanKey same{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351 };
+        const StandPlanKey first{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351, 0x40000000000000a1ULL };
+        const StandPlanKey same{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351, 0x40000000000000a1ULL };
         StandPlanKey otherWindow = first;
         otherWindow.windowSpell = 18564;
         StandPlanKey always = first;
@@ -908,6 +908,26 @@ int main()
         plans[otherWindow] = 2;
         plans[always] = 3;
         CHECK(plans.size() == 3 && plans[first] == 1 && plans[otherWindow] == 2 && plans[always] == 3);
+    }
+
+    // The group names the seats' owners: a bot outside the raid (no group, raw guid 0) never reads a group's plan.
+    {
+        const std::uint8_t ranged = static_cast<std::uint8_t>(StandRole::Ranged);
+        const StandPlanKey noGroup{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351, 0 };
+        const StandPlanKey groupA{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351, 0x40000000000000a1ULL };
+        const StandPlanKey same{ 0x0000000000001234ULL, 249, 1, 7, ranged, 18351, 0x40000000000000a1ULL };
+        StandPlanKey groupB = groupA;
+        groupB.group = 0x40000000000000a2ULL;
+        CHECK(groupA == same);
+        CHECK(!(groupA == groupB));
+        CHECK(!(noGroup == groupA));
+        CHECK(StandPlanKeyHash()(groupA) != StandPlanKeyHash()(groupB));
+        CHECK(StandPlanKeyHash()(noGroup) != StandPlanKeyHash()(groupA));
+        std::unordered_map<StandPlanKey, int, StandPlanKeyHash> plans;
+        plans[groupA] = 1;
+        plans[groupB] = 2;
+        plans[noGroup] = 3;
+        CHECK(plans.size() == 3 && plans[groupA] == 1 && plans[groupB] == 2 && plans[noGroup] == 3);
     }
 
     std::cout << "All boss stand policy tests passed.\n";

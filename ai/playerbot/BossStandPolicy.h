@@ -774,7 +774,8 @@ namespace ai
     // What a window's plan is filed under: the boss instance (raw guid, map and instance id), the window's anchor,
     // the role and the window spell the row opens on. The raw guid alone names the spawn in the database, which a second
     // instance of the same boss shares, so each instance needs its own plan; two rows of one anchor and role can name
-    // different window spells, and a plan built for one window must not seat a bot of the other. Guarded by the
+    // different window spells, and a plan built for one window must not seat a bot of the other. The group is its
+    // leader's raw guid (0 for none): a bot outside the raid never reads or builds the raid's seats. Guarded by the
     // caller's lock.
     struct StandPlanKey
     {
@@ -784,10 +785,12 @@ namespace ai
         std::uint32_t anchor = 0;
         std::uint8_t role = 0;
         std::uint32_t windowSpell = 0;
+        std::uint64_t group = 0;
         bool operator==(const StandPlanKey& other) const
         {
             return boss == other.boss && mapId == other.mapId && instanceId == other.instanceId &&
-                   anchor == other.anchor && role == other.role && windowSpell == other.windowSpell;
+                   anchor == other.anchor && role == other.role && windowSpell == other.windowSpell &&
+                   group == other.group;
         }
     };
 
@@ -801,6 +804,7 @@ namespace ai
             h ^= std::hash<std::uint32_t>()(key.anchor) + 0x9e3779b9u + (h << 6) + (h >> 2);
             h ^= std::hash<std::uint8_t>()(key.role) + 0x9e3779b9u + (h << 6) + (h >> 2);
             h ^= std::hash<std::uint32_t>()(key.windowSpell) + 0x9e3779b9u + (h << 6) + (h >> 2);
+            h ^= std::hash<std::uint64_t>()(key.group) + 0x9e3779b9u + (h << 6) + (h >> 2);
             return h;
         }
     };
