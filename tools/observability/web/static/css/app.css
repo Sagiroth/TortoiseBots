@@ -3215,6 +3215,17 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-nofight { grid-area: centre; margin: 0; padding: 48px 14px; text-align: center; color: var(--text-muted); font-size: 0.9rem; }
 .fd-nofight[hidden] { display: none; }
 .cmd-overview .fd-nofight { grid-column: 1 / -1; padding: 32px 14px; border: 1px dashed var(--border-color); border-radius: var(--radius); }
+/* Nothing bound: the commanders that still have saved fights, newest first (each opens read-only). */
+.fd-histlist { grid-column: 1 / -1; display: grid; gap: 8px; min-width: 0; }
+.fd-histlist .cmd-h { margin: 0; }
+.fd-histlist ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.fd-histcmd { display: flex; flex-direction: column; gap: 4px; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-card); color: var(--text-main); font: inherit; text-align: left; cursor: pointer; }
+.fd-histcmd:hover { background: var(--bg-card-hover); border-color: var(--border-strong); }
+.fd-histcmd:focus-visible { outline: 2px solid var(--accent-blue-bright); outline-offset: 2px; }
+.fd-histcmd b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-histcmd span { color: var(--text-muted); font-size: 0.76rem; overflow-wrap: anywhere; }
+/* A read-only history card has nothing live to place: no map, no party column, no raid frames. */
+.cmd-card.cmd-history .cmd-mapbox, .cmd-card.cmd-history .fd-raid, .cmd-card.cmd-history .fd-runtl { display: none; }
 
 /* The debugger's head: the prototype's commander kicker and title, the crumbs, and the refresh picker the page row would carry. */
 .cmd-headl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-width: 0; }

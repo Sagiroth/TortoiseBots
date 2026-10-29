@@ -331,3 +331,10 @@ func TestProfileXPJS(t *testing.T) {
 func TestPageAssetsJS(t *testing.T) {
 	runCheck(t, "page_assets_check.js", "../../web/static/js/app.js")
 }
+
+// TestFDHistoryJS runs fd_history_check.js: the Fight debugger with no raid bound. The commanders with saved fights come from
+// the daemon (newest first, escaped), the one-line note stays above the list, and each opens a read-only history card.
+func TestFDHistoryJS(t *testing.T) {
+	runCheck(t, "fd_history_check.js", "../../web/static/js/app.js")
+}
+

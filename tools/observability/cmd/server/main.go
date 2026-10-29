@@ -722,6 +722,7 @@ func main() {
 	// The fight history across nights: the night picker's days, one day's fights, and the same pack across runs. Fights the
 	// daemon still remembers and ones only on disk answer alike; the history disabled answers the empty shapes.
 	mux.HandleFunc("GET /api/v1/combat/history/days", requireAuth(history.DaysHandler(historyStore)))
+	mux.HandleFunc("GET /api/v1/combat/history/commanders", requireAuth(history.CommandersHandler(historyStore)))
 	mux.HandleFunc("GET /api/v1/combat/history", requireAuth(history.ListHandler(historyStore)))
 	mux.HandleFunc("GET /api/v1/combat/packs", requireAuth(history.PackHandler(historyStore)))
 
