@@ -41,7 +41,7 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 | Order | What the bot does |
 | :--- | :--- |
 | Farm | Gathers (herbs, ore, skinning, fish) or kills mobs that drop the item, in one planned zone. |
-| Buy | Buys with its own gold on the auction house first; whatever is still missing it farms. |
+| Buy | Buys with its own gold on the auction house first, collecting bought items from the mailbox (they arrive by mail); whatever is still missing it farms. |
 | Craft | Crafts from materials in its bags; missing materials are farmed first. |
 
 - **Fishing orders:** an order on a fish sends the bot to a fishing spot in the planned zone, on its own continent. It fishes there until the amount is reached, counting its pole and lure: the bot is granted the cheapest pole that still reaches the zone's skill and a stack of lures, and reapplies the lure while fishing. When even the best pole and lure cannot reach the zone, the search answers `lowskill` (or names a lower zone with the same fish).

@@ -77,12 +77,15 @@ inline bool IsTradeCloth(uint8_t itemClass, std::string const& lowerName)
     return lowerName.compare(lowerName.size() - 5, 5, "cloth") == 0;
 }
 
-// Kind of one item: the planner's source tokens first (herb, ore, skinning,
-// fishing), then Trade Goods cloth by class and name, then a plain creature
-// drop, else other. sourcesToken is the comma list from SourcesToken;
-// isCloth is IsTradeCloth off the prototype.
+// Kind of one item: Trade Goods cloth by class and name first (in 1.12 a
+// cloth drop can also skin, e.g. Wool Cloth from Sheep: it stays cloth),
+// then the planner's source tokens (herb, ore, skinning, fishing), then a
+// plain creature drop, else other. sourcesToken is the comma list from
+// SourcesToken; isCloth is IsTradeCloth off the prototype.
 inline OrderItemCategory ClassifyOrderCategory(std::string const& sourcesToken, bool isCloth)
 {
+    if (isCloth)
+        return OrderItemCategory::Cloth;
     if (SourcesTokenHas(sourcesToken, "herb"))
         return OrderItemCategory::Herb;
     if (SourcesTokenHas(sourcesToken, "ore"))
@@ -91,8 +94,6 @@ inline OrderItemCategory ClassifyOrderCategory(std::string const& sourcesToken, 
         return OrderItemCategory::Leather;
     if (SourcesTokenHas(sourcesToken, "fish"))
         return OrderItemCategory::Fish;
-    if (isCloth)
-        return OrderItemCategory::Cloth;
     if (SourcesTokenHas(sourcesToken, "drop"))
         return OrderItemCategory::Drop;
     return OrderItemCategory::Other;
