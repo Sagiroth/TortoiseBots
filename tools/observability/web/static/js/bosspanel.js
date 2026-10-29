@@ -28,9 +28,9 @@
     h: "flying",
     d: "feigning death",
     e: "evading",
+    v: "not visible",
   };
-  const FLAG_ORDER = ["n", "i", "h", "d", "e"];
-  const DISPEL_WORD = { m: "magic", c: "curse", p: "poison", d: "disease" };
+  const FLAG_ORDER = ["n", "i", "h", "d", "e", "v"];
 
   // ---- the table -------------------------------------------------------------------------------------------------------
 
@@ -81,6 +81,7 @@
     if (entry === null) return null;
     return {
       entry,
+      name: str(first(row.name, row.n, row.creature, "")),
       role: str(first(row.role, row.a === undefined ? "" : row.a, "")),
       priority: num(first(row.priority, row.b)) || 0,
     };
@@ -150,13 +151,6 @@
     const s = num(sid);
     return t && s !== null ? t.bySpell[s] || null : null;
   }
-  // The colour slot of a spell for the timeline and the panel: its position among its boss's abilities.
-  function abilityIndex(table, entry, sid) {
-    const b = bossFor(table, entry);
-    if (!b) return -1;
-    return b.abilities.findIndex((a) => a.sid === num(sid));
-  }
-
   // ---- phases ----------------------------------------------------------------------------------------------------------
 
   function ruleMatches(rule, mob) {
@@ -178,20 +172,33 @@
   }
 
   // The label of the first rule (in order) that matches. An hp< phase latches: a boss does not heal back into an earlier
-  // phase, so the phase already shown is kept while the boss is alive (rc.hp > 0). prior is the phase this fight last showed
-  // for the boss (the page keeps it per fight); an aura or flag phase is re-read every report.
+  // phase, so an hp rule with a higher threshold than the one already shown is ignored while the boss is alive. A more severe
+  // threshold (p1 at 20% -> p2 at 10%) and an aura or flag phase still apply. prior is the phase this fight last showed for
+  // the boss (the page keeps it per fight; an aura or flag phase is re-read every report).
+  function hpRule(rule) {
+    const m = /^\s*hp<(\d+(?:\.\d+)?)/i.exec(rule || "");
+    return m ? Number(m[1]) : null;
+  }
   function phaseOf(b, mob, prior) {
     const rules = (b && b.phases) || [];
-    if (!rules.length) return { phase: null, mature: false };
+    if (!rules.length) return { phase: null, latched: false };
     const sorted = rules.map((p, i) => ({ p: p, i: i })).sort((a, b2) => (a.p.order - b2.p.order) || (a.i - b2.i)).map((x) => x.p);
     const hit = sorted.find((p) => ruleMatches(p.rule, mob));
     const hp = num(mob && mob.hp);
     const alive = hp === null || hp > 0;
     const prev = prior ? sorted.find((p) => p.name === prior) : null;
-    if (prev && alive && /^\s*hp</i.test(prev.rule || "")) return { phase: prev.name, latched: true };
+    const prevHp = prev ? hpRule(prev.rule) : null;
+    if (prev && alive) {
+      if (!hit) return { phase: prev.name, latched: prevHp !== null };
+      const hitHp = hpRule(hit.rule);
+      if (prevHp !== null && hitHp !== null) {
+        if (hitHp < prevHp) return { phase: hit.name, latched: false };
+        return { phase: prev.name, latched: true };
+      }
+      return { phase: hit.name, latched: false };
+    }
     if (hit) return { phase: hit.name, latched: false };
-    if (prior && alive) return { phase: prior, latched: false };
-    return { phase: rules[0] ? rules[0].name : null, latched: false };
+    return { phase: null, latched: false };
   }
 
   // ---- the model -------------------------------------------------------------------------------------------------------
@@ -232,6 +239,7 @@
     if (!b) return null;
     const evs = eventList(events);
     const start = num(fightStartMs) || 0, now = num(nowMs) == null ? start : num(nowMs);
+    const elapsed = Math.max(0, now - start);
     const ph = phaseOf(b, mob, priorPhase);
     const seenAt = {};
     evs.forEach((e) => {
@@ -242,24 +250,28 @@
     const currentSid = num(mob.cid);
     const left = num(mob.cleft);
     const total = num(mob.ctot);
-    const targetName = str(first(mob.ctn, mob.castTargetName, mob.ctarget, ""));
+    const targetName = str(first(mob.ctn, mob.ctargetName, mob.castTargetName, mob.ctarget, ""));
     let lastCast = null;
     evs.forEach((e) => { if (e.k === "cast" && (lastCast === null || e.t > lastCast.t)) lastCast = e; });
 
     const abilities = b.abilities.map((a, i) => {
       const seenAtMs = a.sid in seenAt ? seenAt[a.sid] : null;
-      const seen = seenAtMs !== null;
+      const castingNow = currentSid === a.sid && left !== null && left > 0;
+      // A cast the report carries right now is a sighting even when no event has arrived yet (the live panel before the
+      // first event datagram): last is 0 s and the next window counts from this moment.
+      const at = seenAtMs !== null ? seenAtMs : castingNow ? Math.max(0, now - start) : null;
+      const seen = at !== null;
       const flags = a.flags || {};
       const inPhase = !flags.phase || !ph.phase || flags.phase === ph.phase;
-      const lastMs = seen ? Math.max(0, now - (start + seenAtMs)) : null;
+      const lastMs = seen ? Math.max(0, now - (start + at)) : null;
       let next = null;
       if (!flags.hpBelow) {
         if (seen) {
-          if (a.repeatMax > 0) next = { lo: seenAtMs + a.repeatMin, hi: seenAtMs + a.repeatMax, at: now };
-        } else if (a.first > 0) next = { lo: a.first, hi: a.first, at: now };
+          if (a.repeatMax > 0) next = { lo: at + a.repeatMin, hi: at + a.repeatMax, at: elapsed };
+        } else if (a.first > 0) next = { lo: a.first, hi: a.first, at: elapsed };
       }
       let casting = null;
-      if (currentSid === a.sid && left !== null && left > 0) {
+      if (castingNow) {
         const tn = (lastCast && lastCast.sid === a.sid && lastCast.tn) || targetName;
         casting = {
           leftMs: left,
@@ -276,7 +288,10 @@
 
     const adds = b.adds.map((x) => {
       const live = arr(first(mob.adds, mob.add)).find((m) => m && num(m.entry) === x.entry);
-      return { entry: x.entry, role: x.role, priority: x.priority, alive: live ? num(live.hp) !== 0 : null, hp: live ? num(live.hp) : null, count: live ? 1 : 0 };
+      return {
+        entry: x.entry, name: (live && str(live.name)) || x.name || "", role: x.role, priority: x.priority,
+        alive: live ? num(live.hp) !== 0 : null, hp: live ? num(live.hp) : null, count: live ? 1 : 0,
+      };
     });
     const liveCounts = {};
     arr(first(mob.adds, mob.add)).forEach((m) => { const e = num(m && m.entry); if (e !== null) liveCounts[e] = (liveCounts[e] || 0) + 1; });
@@ -328,14 +343,11 @@
     return ms == null ? "" : (ms / 1000).toFixed(1) + " s";
   }
 
-  function nextText(a, nowAt) {
+  function nextText(a) {
     if (!a.next) return a.hpBelow != null ? "HP " + a.hpBelow + "%" : "—";
-    if (a.seen) {
-      const lo = Math.round(a.next.lo / 1000), hi = Math.round(a.next.hi / 1000);
-      const late = typeof a.next.at === "number" && a.next.at > a.next.hi + 5000;
-      return "≈ " + (lo === hi ? lo + " s" : lo + "–" + hi + " s") + (late ? " (late)" : "");
-    }
-    return "≈ " + Math.round(a.next.lo / 1000) + " s";
+    const lo = Math.round(a.next.lo / 1000), hi = Math.round(a.next.hi / 1000);
+    const late = typeof a.next.at === "number" && a.next.at > a.next.hi + 5000;
+    return "≈ " + (lo === hi ? lo + " s" : lo + "–" + hi + " s") + (late ? " (late)" : "");
   }
 
   function castHtml(a) {
@@ -377,7 +389,7 @@
       const state = a.alive === null ? "" : a.alive ? " · alive" + (a.hp != null ? " " + Math.round(a.hp) + "%" : "") : " · dead";
       const count = a.count > 1 ? " ×" + a.count : "";
       const pri = a.priority > 0 ? " · kill " + a.priority : "";
-      return '<span class="fd-boss-add' + (a.priority > 0 ? " pri" : "") + '">' + e(a.entry ? "entry " + a.entry : "") + role + state + count + pri + "</span>";
+      return '<span class="fd-boss-add' + (a.priority > 0 ? " pri" : "") + '">' + e(a.name || (a.entry ? "creature " + a.entry : "")) + role + state + count + pri + "</span>";
     }).join("");
     const notes = (panel.notes || []).map((n) => '<li class="fd-boss-note">' + e(n) + "</li>").join("");
     const inPhase = (panel.abilities || []).filter((a) => a.inPhase);
@@ -404,27 +416,6 @@
 
   // The short words of a uf string ("n" -> "untargetable").
   function flagsText(uf) { return flagText(uf); }
-  function dispelWord(dt) { return DISPEL_WORD[str(dt)] || ""; }
-
-  // "Adds: Ohgan (alive, 63%), Chained Spirit x3" from the data's add rows and the reported mobs.
-  function addLine(table, entry, mobs) {
-    const b = bossFor(table, entry);
-    if (!b || !b.adds.length) return "";
-    const byEntry = {};
-    arr(mobs).forEach((m) => {
-      const e = num(m && m.entry);
-      if (e === null) return;
-      const row = byEntry[e] || (byEntry[e] = { count: 0, alive: 0, hp: null });
-      row.count++;
-      if (num(m.hp) !== 0) { row.alive++; row.hp = m.hp; }
-    });
-    return b.adds.map((a) => {
-      const r = byEntry[a.entry];
-      if (!r) return "entry " + a.entry;
-      const st = r.alive ? "alive" + (r.hp != null ? ", " + Math.round(r.hp) + "%" : "") : "dead";
-      return (mobs.find((m) => num(m && m.entry) === a.entry) || {}).name || "entry " + a.entry;
-    }).join(""); // the panel's own add rows carry the state; this line is for the compact card text
-  }
 
   // The dashed map links of the data's adds: one per reported add row that stands next to its boss. sum (a summoner guid) wins
   // over the data's entry link when the module sends both.
@@ -468,9 +459,9 @@
   }
 
   const api = {
-    normalize, load, data, bossFor, abilityBySpell, abilityIndex, phaseOf, markIds, hpTicks,
-    model, render, flagsText, dispelWord, addLine, addLinks, debuffColor, markedBy,
-    FLAG_WORD, DISPEL_WORD, _esc: esc,
+    normalize, load, data, bossFor, abilityBySpell, phaseOf, markIds, hpTicks,
+    model, render, flagsText, addLinks, debuffColor, markedBy,
+    FLAG_WORD, _esc: esc,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.BossPanel = api;
 })(typeof self !== "undefined" ? self : this);

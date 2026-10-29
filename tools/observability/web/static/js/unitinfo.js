@@ -95,7 +95,7 @@
 
   const HEALTH_LOW = 30;
   const DISPEL_WORD = { m: "magic", c: "curse", p: "poison", d: "disease" };
-  const FLAG_WORD = { n: "untargetable", i: "cannot be attacked", h: "flying", d: "feigning death", e: "evading" };
+  const FLAG_WORD = { n: "untargetable", i: "cannot be attacked", h: "flying", d: "feigning death", e: "evading", v: "not visible" };
 
   function secsLeft(ms) { return typeof ms === "number" && isFinite(ms) ? Math.ceil(ms / 1000) + " s" : ""; }
 
@@ -112,7 +112,7 @@
   }
   function flagWords(uf) {
     const s = str(uf);
-    return ["n", "i", "h", "d", "e"].filter((f) => s.indexOf(f) >= 0).map((f) => FLAG_WORD[f]);
+    return ["n", "i", "h", "d", "e", "v"].filter((f) => s.indexOf(f) >= 0).map((f) => FLAG_WORD[f]);
   }
 
   function hpText(b) { return b.max_hp > 0 ? pct(b.hp, b.max_hp) + " % (" + b.hp + " / " + b.max_hp + ")" : ""; }

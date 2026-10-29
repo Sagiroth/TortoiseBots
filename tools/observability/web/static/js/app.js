@@ -6256,6 +6256,7 @@
   // The committed boss table is one file for every raid; its phase latch is remembered per fight, so a boss that healed back
   // over an hp< threshold keeps the phase the group saw. Missing file or an older daemon: no panel and no map changes.
   const cmdBossPhase = {};
+  const cmdBossSeen = {}; // commander -> entry -> {name, seenAt}: a boss the fight had and the reports now leave out
   function cmdBossTable() {
     return typeof BossPanel !== 'undefined' && BossPanel.data ? BossPanel.data() : null;
   }
@@ -6292,9 +6293,12 @@
     const table = cmdBossTable();
     return (panels || []).map(p => BossPanel.render(table, p, { open: true, esc: esc })).join('');
   }
+  // The debugger shows the panels in its rail, the Live card under the map; one panel, painted where the view puts it.
   function cmdPaintBosses(card, panels) {
     if (!card) return;
-    const section = card.querySelector('.fd-bosses'), list = card.querySelector('.fd-bosslist');
+    const debug = card.classList.contains('fd-on');
+    const section = card.querySelector(debug ? '.fd-railbosses' : '.fd-bosses');
+    const list = card.querySelector(debug ? '.fd-railbosses' : '.fd-bosslist');
     if (!section || !list) return;
     section.hidden = !(panels && panels.length);
     const html = panels && panels.length ? cmdBossPanelsHtml(panels) : '';
@@ -6302,9 +6306,24 @@
   }
   function cmdLiveBossPanels(bind) {
     const now = Date.now();
-    const start = bind && bind.combat && bind.combat.fight_ms > 0 ? now - bind.combat.fight_ms * 1000 : now;
+    if (!bind || !bind.combat) { if (bind) delete cmdBossSeen[bind.commander]; return []; }
+    const mobs = bind.mobs || [];
+    const mem = cmdBossSeen[bind.commander] || (cmdBossSeen[bind.commander] = {});
+    const present = {};
+    mobs.forEach(m => {
+      if (!m || m.rank !== 'b' || m.entry == null) return;
+      present[m.entry] = true;
+      mem[m.entry] = { name: m.name || ('creature ' + m.entry), seenAt: now };
+    });
+    // A boss the fight had and the module no longer reports (Arlokk vanished) is shown as not visible after two 2 s reports.
+    const vanished = Object.keys(mem).filter(e => !present[e] && now - mem[e].seenAt >= 4000)
+      .map(e => ({ entry: Number(e), name: mem[e].name, hp: null, au: [], uf: 'v' }));
+    const byId = {};
+    (bind.bots || []).forEach(b => { if (b && (b.id != null || b.guid != null)) byId[String(b.id != null ? b.id : b.guid)] = b.name; });
+    const named = mobs.map(m => (m && m.ctg && byId[String(m.ctg)] ? Object.assign({}, m, { ctargetName: byId[String(m.ctg)] }) : m));
+    const start = bind.combat.fight_ms > 0 ? now - bind.combat.fight_ms * 1000 : now;
     const evs = ((typeof cmdLiveEvents !== 'undefined' && cmdLiveEvents[bind.commander]) || []).map(x => x.ev).filter(Boolean);
-    return cmdBossPanels(bind, null, bind.mobs || [], evs, start, now);
+    return cmdBossPanels(bind, null, named.concat(vanished), evs, start, now);
   }
   function cmdFightBossPanels(bind, fight) {
     if (!fight) return [];
@@ -7288,7 +7307,7 @@
           <div class="fd-raidhead"><h3 class="cmd-h">Raid frames<span class="fd-dead"></span></h3><div class="fd-ready"></div></div>
           <div class="fd-frames" role="group" aria-label="Raid frames"></div>
         </section>
-        <div class="fd-railcol" hidden><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><nav class="fd-rail" aria-label="Fights"></nav></div>
+        <div class="fd-railcol" hidden><div class="fd-railbosses" aria-label="Boss abilities" hidden></div><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><nav class="fd-rail" aria-label="Fights"></nav></div>
         <section class="fd-roles" aria-label="Roles" hidden><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
         <div class="cmd-left">
           <div class="cmd-party"></div>

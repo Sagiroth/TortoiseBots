@@ -59,6 +59,8 @@ const frenzy = p.abilities.find((a) => a.sid === 8269);
 assert.strictEqual(frenzy.next, null, "a=0 and never seen: no next, not NaN");
 const dispel = p.abilities.find((a) => a.sid === 23859);
 assert.strictEqual(dispel.next, null);
+const overdue = B.model(T, mob, [], 0, 100000);
+assert.ok(B.render(T, overdue, {}).includes("≈ 10 s (late)"), "a first-cast window 90 s past is late, not silently current");
 
 // ---- phase filter: p=bat is out of phase while the phase is troll -------------------------------------------
 const troll = B.model(T, { entry: 14507, hp: 40, au: [] }, [], 0, 0);
@@ -75,6 +77,7 @@ assert.strictEqual(renamed.abilities.find((a) => a.name === "Frenzy").seen, fals
 assert.strictEqual(B.phaseOf(venoxis, { hp: 60 }).phase, "p1");
 assert.strictEqual(B.phaseOf(venoxis, { hp: 49 }).phase, "snake");
 assert.strictEqual(B.phaseOf(venoxis, { hp: 55 }, "snake").phase, "snake", "the hp<50 rule latches");
+assert.strictEqual(B.phaseOf(venoxis, { hp: 49 }, "p1").phase, "snake", "a more severe hp threshold still applies after p1");
 assert.strictEqual(B.phaseOf(venoxis, { hp: 100 }, "snake").phase, "snake", "a heal back does not undo the phase");
 assert.strictEqual(B.phaseOf(jeklik, { hp: 100, au: [{ id: 23966 }] }).phase, "bat");
 assert.strictEqual(B.phaseOf(jeklik, { hp: 40, au: [{ id: 23966 }] }).phase, "bat", "the aura rule is listed before the hp rule");
@@ -91,9 +94,15 @@ assert.deepStrictEqual(p.auras, [{ id: 24169, name: "Tiger Form", stacks: 2, lef
 assert.deepStrictEqual(p.flagWords, ["untargetable", "flying"]);
 assert.strictEqual(p.adds[0].entry, 14884);
 assert.strictEqual(p.adds[0].alive, true);
+assert.strictEqual(p.abilities.find((a) => a.sid === 23861).seen, true);
+assert.strictEqual(p.abilities.find((a) => a.sid === 23861).lastMs, 20000);
 assert.strictEqual(p.abilities.find((a) => a.sid === 23861).casting.frac, 0.5);
+const freshCast = B.model(T, Object.assign({}, mob, { cid: 23861, cleft: 1500, ctot: 3000 }), [], 0, 50000, "snake");
+assert.strictEqual(freshCast.abilities.find((a) => a.sid === 23861).seen, true, "a cast the report carries is a sighting");
+assert.strictEqual(freshCast.abilities.find((a) => a.sid === 23861).lastMs, 0);
+assert.strictEqual(B.model(T, Object.assign({}, mob, { cid: 23861, cleft: 1500, ctot: 3000, ctargetName: "Healbot" }), [], 0, 50000, "snake").abilities.find((a) => a.sid === 23861).casting.target, "Healbot", "the cast names its target");
+assert.deepStrictEqual([freshCast.abilities.find((a) => a.sid === 23861).next.lo, freshCast.abilities.find((a) => a.sid === 23861).next.hi], [65000, 70000]);
 assert.strictEqual(p.abilities.find((a) => a.sid === 23861).casting.leftMs, 1500);
-assert.strictEqual(B.addLine(T, 14507, [{ entry: 14884, hp: 55 }]), "entry 14884", "the compact line never invents a name");
 
 // ---- render: escaped, phase and ticks, unseen grey, other phases folded -------------------------------------
 const html = B.render(T, p, { open: true });
@@ -103,6 +112,7 @@ assert.ok(html.includes('class="fd-boss-tick" style="left:50%"'), "an hp<50 tick
 assert.ok(/class="fd-boss-ability unseen/.test(html), "a never-seen ability is grey");
 assert.ok(html.includes("Other phases"), "an ability of another phase is folded");
 assert.ok(html.includes("untargetable") && html.includes("flying"), "the flag words");
+assert.ok(B.render(T, Object.assign({}, p, { flags: "v", flagWords: B.flagsText("v") }), {}).includes("not visible"), "a vanished boss says so");
 assert.ok(html.includes("Poison Cloud needs the snake phase."), "the note");
 const evil = B.render(T, Object.assign({}, p, { boss: { entry: 14507 }, notes: ["<img src=x>"] }), {});
 assert.ok(!/<img/.test(evil) && evil.includes("&lt;img"), evil);
