@@ -115,45 +115,29 @@ static bool MayLootCorpse(Player* bot, Creature* creature)
 
     return loot.hasItemFor(bot);                            // another member's turn: personal loot only
 }
-// Whether an open (LOCK_KEY_NONE/OPEN-style) chest is decorative clutter:
-// its whole loot table is one common item with no quest link for this bot
-// (Festive Mug 180905 -> item 21174, quality 1). Multi-row tables (real
-// treasure chests, Dusty Tomes), better-than-common loot and quest items
-// all pass. Group rows mean a rolled table, never the single-item shape.
-// Reads the template through LootTemplateAccess, the module's cheat-class
-// copy of the core LootTemplate layout (LootValues.h; same reinterpret_cast
-// DropMapValue::GetLootTemplate uses).
-static bool IsDecorativeOpenChest(Player* bot, uint32 goEntry, uint32 lootId)
+// An open chest (no key, no skill) is picked up only when a quest needs the
+// object or one of its loot items.
+static bool IsOpenChestForQuest(Player* bot, uint32 goEntry, uint32 lootId)
 {
+    if (sObjectMgr.IsGameObjectForQuests(goEntry))
+        return true;
     LootTemplate const* pickupLoot = LootTemplates_Gameobject.GetLootFor(lootId);
     if (!pickupLoot)
         return false;
     LootTemplateAccess const* access = reinterpret_cast<LootTemplateAccess const*>(pickupLoot);
-    std::vector<std::uint32_t> qualities;
-    bool hasRows = false;
-    bool questLinked = sObjectMgr.IsGameObjectForQuests(goEntry);
     for (LootStoreItem const& row : access->Entries)
-    {
-        if (row.itemid == 0)
-            continue;
-        hasRows = true;
-        ItemPrototype const* rowProto = sObjectMgr.GetItemPrototype(row.itemid);
-        if (!rowProto || rowProto->Quality > ITEM_QUALITY_NORMAL)
-            return false;
-        qualities.push_back(rowProto->Quality);
-        questLinked = questLinked || ItemUsageValue::IsNeededForQuest(bot, row.itemid);
-        if (questLinked)
-            return false;
-    }
-    if (!hasRows)
-        return false;
+        if (row.itemid && ItemUsageValue::IsNeededForQuest(bot, row.itemid))
+            return true;
     for (LootLootGroupAccess const& group : access->Groups)
-        if (!group.ExplicitlyChanced.empty() || !group.EqualChanced.empty())
-            return false;
-    ai::GameObjectPickupFacts facts;
-    facts.isChest = true;
-    facts.singleCommonItem = ai::LootTableLooksDecorative(qualities, questLinked);
-    return !ai::AllowGameObjectPickup(facts);
+    {
+        for (LootStoreItem const& row : group.ExplicitlyChanced)
+            if (row.itemid && ItemUsageValue::IsNeededForQuest(bot, row.itemid))
+                return true;
+        for (LootStoreItem const& row : group.EqualChanced)
+            if (row.itemid && ItemUsageValue::IsNeededForQuest(bot, row.itemid))
+                return true;
+    }
+    return false;
 }
 
 void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
@@ -250,18 +234,6 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
         {
             if (debug)
                 ai->TellDebug(ai->GetMaster(), "Go is a Bone Chew Toy pile.", "debug loot");
-            return;
-        }
-        // Decorative open chests (Festive Mug and peers) never even classify.
-        // IsLootPossible re-checks the same rule, so a stale queue entry can
-        // never sneak back in. A quest object always classifies: the helper
-        // returns false while ActivateToQuest says yes.
-        if (go->GetGoType() == GAMEOBJECT_TYPE_CHEST && go->GetGOInfo() &&
-            go->GetGOInfo()->GetLootId() != 0 &&
-            IsDecorativeOpenChest(bot, goId, go->GetGOInfo()->GetLootId()))
-        {
-            if (debug)
-                ai->TellDebug(ai->GetMaster(), "Go is a decorative open chest.", "debug loot");
             return;
         }
         std::set<uint32>& skipGoLootList = ai->GetAiObjectContext()->GetValue<std::set<uint32>&>("skip go loot list")->Get();
@@ -433,22 +405,19 @@ bool LootObject::IsLootPossible(Player* bot)
     // got one above. Queue them only when the bot has somewhere to put the loot.
     if ((skillId != SKILL_NONE || guid.IsGameObject()) && !HasBagRoomForLoot(ai, bot))
         return false;
-    // Decorative open chests (Festive Mug and peers): unlocked-by-animation
-    // chests whose whole table is one common item with no quest link walk
-    // past the sweep. Gathering nodes (skillId), keyed/lockpicked treasure
-    // (reqItem, or a lockpick/treasure skill Refresh mapped onto skillId) and
-    // quest objects (the guard below) never reach this branch.
     if (guid.IsGameObject() && skillId == SKILL_NONE && !reqItem)
     {
         GameObject* pickupGo = ai->GetGameObject(guid);
-        if (pickupGo && pickupGo->GetGoType() == GAMEOBJECT_TYPE_CHEST &&
-            !sObjectMgr.IsGameObjectForQuests(guid.GetEntry()) && !pickupGo->ActivateToQuest(bot) &&
-            pickupGo->GetGOInfo() && pickupGo->GetGOInfo()->GetLootId() != 0 &&
-            IsDecorativeOpenChest(bot, guid.GetEntry(), pickupGo->GetGOInfo()->GetLootId()))
-            return false;
+        if (pickupGo && pickupGo->GetGoType() == GAMEOBJECT_TYPE_CHEST && pickupGo->GetGOInfo())
+        {
+            ai::GameObjectPickupFacts facts;
+            facts.isChest = true;
+            facts.questObject = pickupGo->ActivateToQuest(bot) ||
+                IsOpenChestForQuest(bot, guid.GetEntry(), pickupGo->GetGOInfo()->GetLootId());
+            if (!ai::AllowGameObjectPickup(facts))
+                return false;
+        }
     }
-
-
 
     // Bone Chew Toy piles never queue even if ActivateToQuest says yes:
     // Refresh (the open path) already refuses them, and this Add path would
