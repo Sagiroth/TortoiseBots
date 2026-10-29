@@ -1,5 +1,6 @@
 #include "GuildOrderStore.h"
 
+#include "GuildOrderDelivery.h"
 #include "GuildOrderGiveUpPolicy.h"
 #include "../commands/CommandShared.h"
 #include "../host/ModuleLog.h"
@@ -258,6 +259,7 @@ public:
         uint32_t reportedHave = 0;
         bool sendLine = false;
         bool finishedEdge = false;
+        bool legChanged = false;
     };
 
     TickOut Tick(uint32_t botGuidLow, TickIn const& in)
@@ -330,6 +332,7 @@ public:
         {
             record.state = OrderState::Delivering;
             record.reason = OrderReason::None;
+            out.legChanged = true;
             MarkDirtyLocked(stored);
         }
 
@@ -499,7 +502,10 @@ bool Give(OrderRecord record)
 
 bool Cancel(uint32_t botGuidLow)
 {
-    return OrderStore::Instance().Cancel(botGuidLow);
+    bool gone = OrderStore::Instance().Cancel(botGuidLow);
+    if (gone)
+        OnDeliveryOrderGone(botGuidLow);
+    return gone;
 }
 
 void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance)
@@ -585,7 +591,10 @@ void Update(uint32_t diff)
             continue;
         if (out.sendLine)
             SendOrderLine(out.record, out.reportedHave);
+        if (out.legChanged)
+            ExpireGuildOrderTarget(guidLow);
     }
+    UpdateDeliveries();
 }
 
 void OnGuildDelMember(uint32_t botGuidLow)

@@ -268,6 +268,7 @@ Gives a guild bot an order to fetch items for real: it farms, buys or crafts the
 - **Progress:** `.bot order list` shows every order in your guild with have/want counts and the farm zone; the order giver also gets live updates while it runs.
 - **States:** `working` (farming, buying or crafting), `waiting` (the bot is grouped with a player; the order resumes when it leaves), `delivering` (amount reached or bags full, on the way to the guild bank), `done`, `mailed`, `noskill` (missing profession skill) and `cant` (no source, no recipe, or stuck after moving zone once).
 - **Needs travel data:** guild orders only work while `AiPlayerbot.AutoDoQuests = 1` (the default). With quest travel off, the source index stays empty, `guild-orders` disappears from `TBM:CAPS`, and `.bot order` answers `disabled`.
+- **Guild bank:** the guild needs an unlocked bank with at least one tab the bots' rank may deposit into; otherwise the bot mails the items to the guild master instead (`mailed`). Bots usually have the lowest rank, so open a tab to that rank if you want bank deposits.
 
 ---
 

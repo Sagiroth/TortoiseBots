@@ -478,6 +478,30 @@ bool ShouldTravelNamedValue::Calculate()
     }
     else if (name == "guild order")
     {
+        bool delivering = AI_VALUE(bool, "has guild order delivery");
+        // The legs pin their targets to different conditions; a forced
+        // target of the leg that just ended ignores its dead condition
+        // while traveling, so expire it here and let the request pick the
+        // new leg's destination.
+        TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
+        if (target && target->IsActive() && target->IsForced())
+        {
+            bool wantDelivery = false, wantWork = false;
+            for (std::string const& condition : target->GetConditions())
+            {
+                if (condition == "has guild order delivery")
+                    wantDelivery = true;
+                if (condition == "has guild travel order")
+                    wantWork = true;
+            }
+            if ((wantDelivery && !delivering) || (wantWork && delivering))
+            {
+                target->SetForced(false);
+                target->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
+            }
+        }
+        if (delivering)
+            return true;
         return AI_VALUE(bool, "has guild travel order");
     }
     else if (name == "order focus")

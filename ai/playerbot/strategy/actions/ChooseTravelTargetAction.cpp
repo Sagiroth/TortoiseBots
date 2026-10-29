@@ -35,11 +35,46 @@
 
 using namespace ai;
 
+namespace
+{
+    bool IsGuildBankerDestination(EntryTravelDestination* dest)
+    {
+        CreatureInfo const* info = dest ? dest->GetCreatureInfo() : nullptr;
+        if (!info)
+            return false;
+        switch (dest->GetEntry())
+        {
+            case 62008:
+            case 62009:
+            case 62010:
+            case 62011:
+            case 62012:
+            case 80917:
+            case 80918:
+                return true;
+            default:
+                break;
+        }
+        if (!(info->npc_flags & UNIT_NPC_FLAG_GOSSIP))
+            return false;
+        GossipMenuItemsMapBounds menuItems = sObjectMgr.GetGossipMenuItemsMapBounds(info->gossip_menu_id);
+        if (menuItems.first == menuItems.second)
+            menuItems = sObjectMgr.GetGossipMenuItemsMapBounds(0);
+        for (auto itr = menuItems.first; itr != menuItems.second; ++itr)
+        {
+            GossipMenuItems const& item = itr->second;
+            if (item.option_id == GOSSIP_OPTION_GUILD_BANKER && (item.npc_option_npcflag & info->npc_flags))
+                return true;
+        }
+        return false;
+    }
+}
+
 // Every leg of a guild order (farm, focus, vendor, delivery) counts as order
 // travel: one leg must never expire another as if it were a leisure trip.
 static bool IsGuildOrderTravelCondition(std::string const& condition)
 {
-    return condition.find("guild order") != std::string::npos ||
+    return condition == "has guild travel order" || condition == "has guild order delivery" ||
            condition.rfind("should travel named::order ", 0) == 0;
 }
 
@@ -408,7 +443,8 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         newTarget.SetForced(true);
         newTarget.SetRelevance(std::max<uint32>(targetRelevance, 199u));
     }
-    else if (AI_VALUE2(std::string, "manual string", "future travel condition") == "should travel named::guild order")
+    else if (AI_VALUE2(std::string, "manual string", "future travel condition") == "has guild order delivery" ||
+             AI_VALUE2(std::string, "manual string", "future travel condition") == "has guild travel order")
     {
         // Order targets stay unforced on purpose: a forced target skips the
         // despawn and outgrown checks, so the bot would stand at a mined
@@ -1981,7 +2017,8 @@ bool RequestTravelTargetAction::isUseful() {
         // A newly working order jumps the queue: the request runs so
         // Execute can expire the leisure target it preempts.
         if (IsGuildOrderTravelName(getQualifier()) &&
-            (getQualifier() != "guild order" || AI_VALUE(bool, "has guild travel order")))
+            (getQualifier() != "guild order" || AI_VALUE(bool, "has guild travel order") ||
+             AI_VALUE(bool, "has guild order delivery")))
         {
             TravelTarget* current = AI_VALUE(TravelTarget*, "travel target");
             if (current)
@@ -2117,7 +2154,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
     // A newly working order jumps the queue: expire a non-order travel
     // target so the farm request does not wait behind a leisure trip.
     if (IsGuildOrderTravelName(travelName) && AI_VALUE(bool, "travel target active") &&
-        (travelName != "guild order" || AI_VALUE(bool, "has guild travel order")))
+        (travelName != "guild order" || AI_VALUE(bool, "has guild travel order") ||
+         AI_VALUE(bool, "has guild order delivery")))
     {
         TravelTarget* current = AI_VALUE(TravelTarget*, "travel target");
         bool isOrderTarget = false;
@@ -2226,6 +2264,44 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 return list;
             }
         );
+    }
+    // Delivering outranks working: a bot carrying finished order items walks
+    // to a guild banker first, whatever the order type.
+    else if (travelName == "guild order" && AI_VALUE(bool, "has guild order delivery"))
+    {
+        Team team = bot->GetTeam();
+        uint32 botFaction = bot->GetFactionTemplateId();
+        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, botFaction]()
+            {
+                PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg);
+
+                for (auto& [partition, travelPoints] : list)
+                {
+                    travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [team, botFaction](TravelPoint point)
+                        {
+                            EntryTravelDestination* dest = (EntryTravelDestination*)std::get<TravelDestination*>(point);
+                            if (!dest->GetCreatureInfo())
+                                return true;
+                            if (!IsGuildBankerDestination(dest))
+                                return true;
+                            WorldPosition* position = std::get<WorldPosition*>(point);
+                            if (!position || !position->HasAreaFlag(AREA_FLAG_CAPITAL))
+                                return true;
+                            if (position->IsEnemyHomeZoneFor(team))
+                                return true;
+                            FactionTemplateEntry const* bankerFaction =
+                                sObjectMgr.GetFactionTemplateEntry(dest->GetCreatureInfo()->faction);
+                            FactionTemplateEntry const* botTemplate =
+                                sObjectMgr.GetFactionTemplateEntry(botFaction);
+                            if (bankerFaction && botTemplate &&
+                                PlayerbotAI::GetFactionReaction(botTemplate, bankerFaction) < REP_NEUTRAL)
+                                return true;
+                            return false;
+                        }), travelPoints.end());
+                }
+                return list;
+            });
+        SET_AI_VALUE2(std::string, "manual string", "future travel detail", "guild banker");
     }
     else if (travelName == "guild order")
     {
@@ -2608,9 +2684,16 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 
     AI_VALUE(TravelTarget*, "travel target")->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
     SET_AI_VALUE2(std::string, "manual string", "future travel purpose", getQualifier());
+    // Guild orders pin their target to the leg that picked it: farm/buy targets
+    // expire when work ends, banker targets when the delivery ends. A shared
+    // condition would stay true across the Working <-> Delivering flip and pin
+    // the bot on the wrong leg's destination.
+    std::string orderCondition;
+    if (travelName == "guild order")
+        orderCondition = AI_VALUE(bool, "has guild order delivery") ? "has guild order delivery" : "has guild travel order";
     SET_AI_VALUE2(std::string, "manual string", "future travel condition",
         travelName == "guild meeting" ? "should travel named::guild meeting" :
-        travelName == "guild order" ? "should travel named::guild order" :
+        travelName == "guild order" ? orderCondition :
         travelName == "order focus" ? "should travel named::order focus" :
         travelName == "order vendor" ? "should travel named::order vendor" :
         event.GetSource());
