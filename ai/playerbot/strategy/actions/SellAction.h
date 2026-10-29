@@ -17,6 +17,8 @@ namespace ai
         // Flagged-but-stockless NPCs (issue #404: entry 1650) would only print a core
         // "empty trading item list" error on gossip, so both sell and buy skip them here.
         static bool HasVendorStock(Creature* vendor);
+        // What a sell order that sold nothing says why: `.bot sell`, TBM "Sell junk".
+        static std::string RefusalReason(PlayerbotAI* botAI);
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "sell"; } //Must equal iternal name

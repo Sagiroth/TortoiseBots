@@ -3,7 +3,9 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
+#include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/policy/quest/QuestLogPolicy.h"
+#include "playerbot/policy/loot/GameObjectPickupPolicy.h"
 #include "../../runtime/policy/provision/GatherToolPolicy.h"
 #include "../../runtime/CommandedGroupQuery.h"
 #include "../../runtime/HireLifecycle.h"
@@ -112,6 +114,65 @@ static bool MayLootCorpse(Player* bot, Creature* creature)
         return true;
 
     return loot.hasItemFor(bot);                            // another member's turn: personal loot only
+}
+// Collects every item an open chest can hold, following reference tables
+// one level deep. Returns false as soon as one item is better than common.
+static bool CollectCommonChestLoot(LootTemplateAccess const* access, std::vector<uint32>& items, int depth)
+{
+    auto visit = [&](LootStoreItem const& row) -> bool
+    {
+        if (row.mincountOrRef < 0)
+        {
+            if (depth > 0)
+                return true;
+            LootTemplate const* referenced = LootTemplates_Reference.GetLootFor(uint32(-row.mincountOrRef));
+            return !referenced || CollectCommonChestLoot(
+                reinterpret_cast<LootTemplateAccess const*>(referenced), items, depth + 1);
+        }
+        if (!row.itemid)
+            return true;
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(row.itemid);
+        if (!proto || proto->Quality > ITEM_QUALITY_NORMAL)
+            return false;
+        items.push_back(row.itemid);
+        return true;
+    };
+    for (LootStoreItem const& row : access->Entries)
+        if (!visit(row))
+            return false;
+    for (LootLootGroupAccess const& group : access->Groups)
+    {
+        for (LootStoreItem const& row : group.ExplicitlyChanced)
+            if (!visit(row))
+                return false;
+        for (LootStoreItem const& row : group.EqualChanced)
+            if (!visit(row))
+                return false;
+    }
+    return true;
+}
+
+// An open chest holding only common/poor items and nothing a quest of this
+// bot needs: a world prop (festive mug, feast food).
+static bool IsCommonWorldProp(Player* bot, GameObject* go)
+{
+    if (go->GetGoType() != GAMEOBJECT_TYPE_CHEST || !go->GetGOInfo())
+        return false;
+    LootTemplate const* pickupLoot = LootTemplates_Gameobject.GetLootFor(go->GetGOInfo()->GetLootId());
+    if (!pickupLoot)
+        return false;
+    ai::GameObjectPickupFacts facts;
+    facts.isChest = true;
+    std::vector<uint32> items;
+    facts.onlyCommonLoot = CollectCommonChestLoot(
+        reinterpret_cast<LootTemplateAccess const*>(pickupLoot), items, 0);
+    if (facts.onlyCommonLoot)
+    {
+        facts.questObject = sObjectMgr.IsGameObjectForQuests(go->GetEntry()) || go->ActivateToQuest(bot);
+        for (uint32 itemId : items)
+            facts.questObject = facts.questObject || ItemUsageValue::IsNeededForQuest(bot, itemId);
+    }
+    return !ai::AllowGameObjectPickup(facts);
 }
 
 void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
@@ -267,6 +328,17 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
 
     if (debug && guid && !this->guid)
         ai->TellDebug(ai->GetMaster(), "Go has bad lock.", "debug loot");
+
+    if (this->guid.IsGameObject() && skillId == SKILL_NONE && !reqItem)
+    {
+        GameObject* go = ai->GetGameObject(this->guid);
+        if (go && IsCommonWorldProp(bot, go))
+        {
+            if (debug)
+                ai->TellDebug(ai->GetMaster(), "Go is a common world prop.", "debug loot");
+            this->guid = ObjectGuid();
+        }
+    }
 }
 
 WorldObject* LootObject::GetWorldObject(Player* bot)
@@ -379,7 +451,6 @@ bool LootObject::IsLootPossible(Player* bot)
     // got one above. Queue them only when the bot has somewhere to put the loot.
     if ((skillId != SKILL_NONE || guid.IsGameObject()) && !HasBagRoomForLoot(ai, bot))
         return false;
-
     // Bone Chew Toy piles never queue even if ActivateToQuest says yes:
     // Refresh (the open path) already refuses them, and this Add path would
     // otherwise re-queue the same junk pile every sweep.

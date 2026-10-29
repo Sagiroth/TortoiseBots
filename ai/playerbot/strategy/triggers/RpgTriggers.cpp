@@ -1,4 +1,3 @@
-
 #include "playerbot/playerbot.h"
 #include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include "RpgTriggers.h"
@@ -11,7 +10,7 @@
 #include "../../runtime/HireLifecycle.h"
 #include "../../runtime/policy/hire/HireQuestPolicy.h"
 #include "../../../runtime/AltBotService.h"
-
+#include "../../../runtime/DowntimeService.h"
 using namespace ai;
 
 bool RpgTrigger::IsActive()
@@ -89,6 +88,9 @@ bool RpgDiscoverTrigger::IsActive()
 
 bool RpgStartQuestTrigger::IsActive()
 {
+    // Ordered errand window: trainer, junk and repair only.
+    if (TortoiseBots::DowntimeService::IsDowntimeActive(ai))
+        return false;
     GuidPosition guidP(getGuidP());
 
     if (AI_VALUE(uint8, "free quest log slots") == 0)
@@ -131,6 +133,8 @@ bool RpgStartQuestTrigger::IsActive()
 
 bool RpgEndQuestTrigger::IsActive()
 {
+    if (TortoiseBots::DowntimeService::IsDowntimeActive(ai))
+        return false;
     GuidPosition guidP(getGuidP());
 
     if (!guidP.IsCreature() && !guidP.IsGameObject())
@@ -149,6 +153,8 @@ bool RpgEndQuestTrigger::IsActive()
 
 bool RpgRepeatQuestTrigger::IsActive()
 {
+    if (TortoiseBots::DowntimeService::IsDowntimeActive(ai))
+        return false;
     GuidPosition guidP(getGuidP());
 
     if (AI_VALUE(uint8, "free quest log slots") < 10)

@@ -497,6 +497,7 @@ static BotCommandEntry const botCommands[] = {
     {"lootlog", HandleLootLog, "lootlog [cursor]", {}, AlwaysVisible},
     {"repair", HandleRepair, "repair", {}, AlwaysVisible},
     {"sell", HandleSell, "sell", {}, AlwaysVisible},
+    {"downtime", HandleDowntime, "downtime [online bot name]", {}, AlwaysVisible},
     {"rest", HandleRest, "rest", {"drink", "eat"}, AlwaysVisible},
     {"release", HandleRelease, "release", {}, AlwaysVisible},
     {"corpse", HandleCorpseShortcut, "corpse run", {}, AlwaysVisible},

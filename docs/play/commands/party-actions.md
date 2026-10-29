@@ -77,6 +77,7 @@ Companion bots follow special navigation rules inside dungeons and raids to avoi
 | [`.bot repair`](#bot-repair) | Controller | Bot / None | Orders targeted bot or party to repair gear. |
 | [`.bot sell`](#bot-sell) | Controller | Bot / None | Orders targeted bot or party to sell gray junk. |
 | [`.bot rest`](#bot-rest) | Controller | Bot / None | Orders bots to sit and consume food and drink. |
+| [`.bot downtime`](#bot-downtime) | Controller | Bot / None | Orders own alt bots to run town errands (trainer, junk, repair). |
 
 ---
 
@@ -321,6 +322,8 @@ Orders companion bots to sell all gray-quality junk items in their inventory to 
 ```
 
 Bots find a nearby stocked vendor NPC themselves (`UNIT_NPC_FLAG_VENDOR`) and sell trash items to free up bag space.
+
+If no bot sells anything, the reply says why: nothing grey to sell, no vendor in reach, or no grey item the bot will sell here.
 
 ### `.bot action rest`
 
@@ -657,6 +660,34 @@ Shorthand rest command. See [`.bot action rest`](#bot-action-rest).
 ```
 
 Aliased as `.bot drink` and `.bot eat`.
+
+### `.bot downtime` <a id="bot-downtime"></a>
+
+Orders one of your own alt bots to run its town errands by itself: walk to the
+nearest reachable class trainer and learn every rank it can afford, sell its
+gray junk at a vendor, and repair its gear. Afterwards it walks back and
+resumes following you.
+
+```text
+.bot downtime [botName]
+```
+
+Without a name the order applies to your selected alt bot, or to all of your
+own alt bots in the party. Hired companions and pool bots are refused.
+
+The alt only walks when something is reachable: with no trainer or vendor in
+range (for example out in the wild) it answers so and nothing changes, and an
+alt that needs nothing answers that too. The errand is bounded: it never
+touches the auction house or mail, never sells soulbound or equipped items,
+spends its own gold only on trainer ranks, repairs and flight paths, and it
+gives up and comes back if the errands cannot be finished.
+
+> [!NOTE]
+> **Downtime Notes:**
+> - The command is on order only: nothing runs by itself, and a follow or stay
+>   order while the alt is out cancels the errands immediately.
+> - Alt bots that already play on their own (`.bot add` alts that left the
+>   party) refuse: they already run these errands on their own.
 
 > [!NOTE]
 > **Pet Stance, Autocast, and Boost Notes:**

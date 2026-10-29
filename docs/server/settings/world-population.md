@@ -27,7 +27,6 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotAccountPrefix`](#aiplayerbotrandombotaccountprefix) | `RNDBOT` | Prefix string used to name newly created managed bot pool accounts. |
 | [`AiPlayerbot.PinnedBots`](#aiplayerbotpinnedbots) | `(empty)` | Comma-separated bot character names pinned to stay online permanently. |
 | [`AiPlayerbot.RandomBotStartLevelMin` / `RandomBotStartLevelMax`](#aiplayerbotrandombotstartlevelmin--randombotstartlevelmax) | `1` / `60` | Sets level range randomly assigned to a newly seeded bot on creation. |
-| [`AiPlayerbot.DisableRandomLevels`](#aiplayerbotdisablerandomlevels) | `0` | Dead knob (read but unused); initial levels follow StartLevelMin/Max. |
 | [`AiPlayerbot.LevelLadder`](#aiplayerbotlevelladder) | `1` | Rotates online pool bots across level bands instead of flat round-robin. |
 | [`AiPlayerbot.LevelLadderBandSize`](#aiplayerbotlevelladderbandsize) | `5` | Number of character levels grouped into each ladder band. |
 | [`AiPlayerbot.LevelLadderMaxLevelShare`](#aiplayerbotlevelladdermaxlevelshare) | `10` | Maximum percentage share of total online bot population at level 60. |
@@ -48,7 +47,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.EnableGreet`](#aiplayerbotenablegreet) | `1` | Enables text emote greetings when a bot encounters a human player. |
 | [`AiPlayerbot.GreetCooldown`](#aiplayerbotgreetcooldown) | `600` | Cooldown in seconds before a bot may greet the same player again. |
 | [`AiPlayerbot.RandomBotGreet`](#aiplayerbotrandombotgreet) | `0` | Allows masterless pool bots to greet players in addition to owned bots. |
-| [`AiPlayerbot.RandomBotShowHelmet` / `RandomBotShowCloak`](#aiplayerbotrandombotshowhelmet--randombotshowcloak) | `1` / `1` | Dead knobs (read but unused); managed per bot with the `flag` chat command. |
+| [`AiPlayerbot.RandomBotShowHelmet` / `RandomBotShowCloak`](#aiplayerbotrandombotshowhelmet--randombotshowcloak) | `1` / `1` | Helmet/cloak visibility for pool bots; `0` hides them on the bots' next login. |
 | [`AiPlayerbot.PoolBotTradeMode`](#aiplayerbotpoolbottrademode) | `0` | Governs whether masterless pool bots accept trade requests from players. |
 | [`AiPlayerbot.TradeActionExcludedPrefixes`](#aiplayerbottradeactionexcludedprefixes) | `RPLL_H_,DBMv4` | Chat prefixes ignored by bots so addons do not trigger trade windows. |
 | [`AiPlayerbot.TurtleMountAtLevel`](#aiplayerbotturtlemountatlevel) | `18` | Level where bots learn the custom Swift Riding Turtle slow mount. |
@@ -223,17 +222,6 @@ To test specific level brackets, you can narrow this range (for example `10` / `
 
 </details>
 
-### `AiPlayerbot.DisableRandomLevels`
-Historical switch intended to force all new bots to level 1.
-**Default:** `0` · **Values:** `0` off, `1` on (dead knob) · **Restart:** needed
-
-<details>
-<summary>How it works in detail</summary>
-
-Currently has no effect in the bot engine (read but unused; see [Settings with no effect](../configuration.md#settings-with-no-effect)). Initial bot levels are seeded strictly by `RandomBotStartLevelMin` and `RandomBotStartLevelMax`.
-
-</details>
-
 ### `AiPlayerbot.LevelLadder`
 Rotates the active online bot population across structured level bands.
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
@@ -314,7 +302,7 @@ Maximum duration in seconds a random bot remains logged into the world before se
 
 Configures the upper session duration limit (default 6 hours) an autonomous pool bot may stay online before being cycled out for another character from the offline pool.
 
-Requires `AiPlayerbot.RandomBotTimedLogout = 1`. Note that `MinRandomBotInWorldTime` has no effect in the engine (read but unused; see [Settings with no effect](../configuration.md#settings-with-no-effect)).
+Requires `AiPlayerbot.RandomBotTimedLogout = 1`.
 
 </details>
 
@@ -493,13 +481,13 @@ Set to `1` to allow all masterless open-world pool bots to greet players.
 </details>
 
 ### `AiPlayerbot.RandomBotShowHelmet` / `RandomBotShowCloak`
-Historical switches intended to toggle visual display of helmets and cloaks.
-**Default:** `1` / `1` · **Values:** `0` hide, `1` show (dead knobs) · **Restart:** needed
+Controls whether pool bots wear their helmet and cloak.
+**Default:** `1` / `1` · **Values:** `0` hide, `1` show · **Restart:** needed (takes effect on the bots' next login after restart; no database reset required)
 
 <details>
 <summary>How it works in detail</summary>
 
-Currently has no effect in the bot engine (read but unused; see [Settings with no effect](../configuration.md#settings-with-no-effect)). Bot character display flags for head and cloak are managed per bot with the `flag helm|cloak on|off|toggle` chat command.
+Set to `0` and pool bots (the masterless bots of the shared pool) hide their helmet and/or cloak on their next login. The setting does not touch other characters: hired companions and a player's own bots keep the display flags of the character, which individual players manage per character with the `flag helm|cloak on|off|toggle` chat command. The setting lives in the character's flags, so it survives restarts and follows the bot.
 
 </details>
 

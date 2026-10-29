@@ -68,7 +68,7 @@ The web interface provides real-time operational visibility into your realm's bo
 | Tab | Key Questions Answered | Primary Features |
 | :--- | :--- | :--- |
 | **Overview** | Is the server healthy? | Active population, world tick rate, population graphs, and state census. |
-| **Bots** | Who is online and what are they doing? | Complete roster list, filterable by level, class, spec, gold, or average item level (`iLvl`). |
+| **Bots** | Who is online and what are they doing? | Complete roster list, filterable by level, class, spec, gold, average item level (`iLvl`), or guild (`guild:name` in the search box, or the sortable **Guild** column; also shown in the bot detail view, dash when guildless). |
 | **Map** | Where is the fleet distributed? | 2D world and zone map with player and bot markers and breadcrumb paths. |
 | **Commanders** | Who is leading bot groups? | Party health bars, tactical warnings, commander orders, and fight status. |
 | **Progress** | Are bots levelling up smoothly? | XP per hour KPIs, level-up timelines, and average gear item level by level band. |

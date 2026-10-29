@@ -980,7 +980,8 @@ static bool RouteLegIsSurvivable(Player* bot, WorldPosition const& from, WorldPo
 // the Burning Steppes to get there). The route is the travel-node route the bot would
 // follow, checked both at its waypoints and along the legs between them; a route that
 // does not exist at all (another continent without a transfer) is rejected too.
-static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, WorldPosition* position, std::string& blocker)
+static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, WorldPosition* position,
+    std::string& blocker, bool avoidTowns)
 {
     std::vector<WorldPosition> beginPath, endPath;
     TravelNodeRoute route = sTravelNodeMap.getRoute(start, *position, beginPath, endPath, bot);
@@ -990,10 +991,8 @@ static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, W
         return false;
     }
     bool ok = true;
-    // Random masterless bots only; the town check needs an ai for the master
-    // gate, so callers pass it in.
-    PlayerbotAI* routeAi = PlayerbotAIStorage::Instance().GetAI(bot);
-    bool const avoidTowns = sPlayerbotAIConfig.avoidHostileTowns && routeAi && !routeAi->HasRealPlayerMaster();
+    // Pool rule: masterless bots only; the town check needs an ai for the
+    // master gate. Callers pass the resolved flag in.
     if (route.isEmpty())
     {
         // Same map without a node route: the pathfinder walks straight there,
@@ -1106,7 +1105,8 @@ static bool DestinationPointOnMesh(Player* bot, WorldPosition* position)
 // short hop is exactly how a bot walks into the camp next door: live pool
 // 2026-10-21, bots picked grind/gather points a few hundred yards away and
 // died to mobs 8-15 levels above them on the way.
-static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string& blocker)
+bool ai::SharedRouteIsSurvivable(Player* bot, WorldPosition* position, std::string& blocker,
+    int avoidTownsOverride)
 {
     if (!position)
         return false;
@@ -1123,7 +1123,9 @@ static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string&
     static std::unordered_map<std::string, Verdict> cache;
 
     PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot);
-    bool const avoidTowns = sPlayerbotAIConfig.avoidHostileTowns && botAi && !botAi->HasRealPlayerMaster();
+    bool const avoidTowns = avoidTownsOverride < 0
+        ? (sPlayerbotAIConfig.avoidHostileTowns && botAi && !botAi->HasRealPlayerMaster())
+        : (avoidTownsOverride != 0 && sPlayerbotAIConfig.avoidHostileTowns);
 
     std::ostringstream key;
     key << bot->GetGUIDLow() << ':' << bot->GetLevel() << ':' << avoidTowns << ':'
@@ -1141,8 +1143,7 @@ static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string&
         }
     }
 
-    bool const ok = RouteIsSurvivableUncached(bot, start, position, blocker);
-
+    bool const ok = RouteIsSurvivableUncached(bot, start, position, blocker, avoidTowns);
     std::lock_guard<std::mutex> lock(cacheMutex);
     if (cache.size() > 50000)
     {
@@ -1385,7 +1386,7 @@ ai::TravelPickOutcome ChooseTravelTargetAction::SetBestTargetSliced(Player* requ
                     // bypass that a below-level-10 hand-in used to dodge is gone):
                     // waypoints and the legs between them, one travel-node A* plus
                     // one leg scan, cached five minutes per candidate.
-                    if (!RouteIsSurvivable(bot, position, blocker))
+                    if (!ai::SharedRouteIsSurvivable(bot, position, blocker))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - route crosses " + blocker, "debug travel");
                         if (sPlayerbotAIConfig.hasLog("travel_route_gate.csv"))

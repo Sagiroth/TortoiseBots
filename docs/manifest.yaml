@@ -159,7 +159,7 @@ nodes:
   - id: server-configuration
     path: server/configuration.md
     category: server
-    summary: Configuration files, templates, restart rules, recommended presets, settings index, and keys with no effect.
+    summary: Configuration files, templates, restart rules, recommended presets, settings index, and removed dead keys.
   - id: server-settings-party
     path: server/settings/party.md
     category: server

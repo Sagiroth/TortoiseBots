@@ -4,8 +4,8 @@
 #include "playerbot/strategy/values/MaintenanceValues.h"
 #include "playerbot/strategy/actions/AcceptQuestAction.h"
 #include "playerbot/strategy/triggers/RpgTriggers.h"
+#include "../../../runtime/DowntimeService.h"
 using namespace ai;
-
 bool ServiceNearbyNpcAction::isUseful()
 {
     return AI_VALUE(bool, "should service nearby npc");
@@ -59,12 +59,14 @@ bool ServiceNearbyNpcAction::Execute(Event& event)
     // (NearbyServicePolicy.h) - and a verb parked after repeated failures is
     // skipped in place, so the NPC's remaining verbs still run (issue #407
     // review: a parked hand-in must never hide a vendor on the same NPC).
-    // A finished quest comes first: the reward item and its XP are the only
-    // organic gear a low-level bot gets, and the hand-in frees the log slot
-    // the next accept needs.
-    if (TryVerb(event, target, NearbyServiceKind::TurnIn, "turn in quest") ||
-        TryVerb(event, target, NearbyServiceKind::Accept, "accept quest") ||
-        TryVerb(event, target, NearbyServiceKind::Vendor, "sell") ||
+    // Ordered errand window: trainer, junk and repair only. A bot walking to
+    // its trainer must not accept or turn in quests on the way past.
+    bool const downtime = TortoiseBots::DowntimeService::IsDowntimeActive(ai);
+    if (!downtime && TryVerb(event, target, NearbyServiceKind::TurnIn, "turn in quest"))
+        return true;
+    if (!downtime && TryVerb(event, target, NearbyServiceKind::Accept, "accept quest"))
+        return true;
+    if (TryVerb(event, target, NearbyServiceKind::Vendor, "sell") ||
         TryVerb(event, target, NearbyServiceKind::Trainer, "trainer"))
         return true;
 

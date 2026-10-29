@@ -42,6 +42,7 @@
 #include "Battlegrounds/BattleGround.h"
 #include "Battlegrounds/BattleGroundMgr.h"
 #include "Group/Group.h"
+#include "Guild/GuildMgr.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -437,6 +438,10 @@ void FillLiveUnitSnapshot(Player* unit, BotTelemetrySnapshot& snap)
         snap.maxPower /= 10;
     }
     snap.powerType = GetPowerTypeName(unit->GetPowerType());
+    // Guild name from the in-memory manager: a member read plus a locked
+    // map lookup, no DB, safe on this thread.
+    if (uint32 guildId = unit->GetGuildId())
+        snap.guild = sGuildMgr.GetGuildNameById(guildId);
     snap.mapId = unit->GetMapId();
     snap.zoneId = unit->GetCachedZoneId();
     snap.x = unit->GetPositionX();
@@ -1458,6 +1463,7 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
                 << ",\"power\":" << b.power
                 << ",\"max_power\":" << b.maxPower
                 << ",\"power_type\":\"" << EscapeJson(b.powerType) << "\""
+                << ",\"guild\":\"" << EscapeJson(b.guild) << "\""
                 << ",\"map\":" << b.mapId
                 << ",\"zone\":" << b.zoneId
                 << ",\"instance\":" << b.instanceId
@@ -1773,7 +1779,6 @@ void ObservabilityEmitter::EmitServerInfo()
        << ",\"raid_nearby\":\"" << flag(sPlayerbotAIConfig.randomBotRaidNearby) << "\""
        << ",\"invite_player\":\"" << flag(sPlayerbotAIConfig.randomBotInvitePlayer) << "\""
        << ",\"timed_logout\":\"" << flag(sPlayerbotAIConfig.randomBotTimedLogout) << "\""
-       << ",\"disable_random_levels\":\"" << flag(sPlayerbotAIConfig.disableRandomLevels) << "\""
        << ",\"level_ladder\":\"" << flag(sPlayerbotAIConfig.levelLadder) << "\""
        << ",\"auto_do_quests\":\"" << flag(sPlayerbotAIConfig.autoDoQuests) << "\""
        << ",\"disable_activity\":\"" << flag(sPlayerbotAIConfig.disableActivityPriorities) << "\""
