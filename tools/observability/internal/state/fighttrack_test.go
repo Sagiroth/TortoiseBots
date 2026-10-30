@@ -485,7 +485,7 @@ func TestTrackKeepsALaneSegment(t *testing.T) {
 	if len(seg) != 4 || seg[0] != 20.730539 || seg[1] != -215.237610 || seg[2] != -130.788300 || seg[3] != -213.424026 {
 		t.Fatalf("lane segment lost: %v", frames[0].Mobs[0].Shape)
 	}
-	raw, err := json.Marshal(TrackJSON("c", frames, names))
+	raw, err := json.Marshal(TrackJSON("c", frames, names, true))
 	if err != nil {
 		t.Fatal(err)
 	}
