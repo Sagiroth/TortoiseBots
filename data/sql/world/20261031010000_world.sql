@@ -10,7 +10,7 @@ DELETE FROM `ai_dungeon_step` WHERE `plan` = 'dragonmaw_retreat';
 DELETE FROM `ai_dungeon_leg` WHERE `plan` = 'dragonmaw_retreat';
 DELETE FROM `ai_dungeon_plan` WHERE `plan` = 'dragonmaw_retreat';
 INSERT INTO `ai_dungeon_plan` (`plan`, `map`, `cc_priority`, `cc_always`, `kill_first`, `source`, `comment`) VALUES
-('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent f2e92bf0 dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');
+('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c8d76ab4 dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');
 INSERT INTO `ai_dungeon_leg` (`plan`, `leg`, `name`, `comment`) VALUES
 ('dragonmaw_retreat', 0, 'bogpaw_truthsay', ''),
 ('dragonmaw_retreat', 1, 'gowlfang', ''),
@@ -310,9 +310,9 @@ INSERT INTO `ai_dungeon_step` (`plan`, `leg`, `seq`, `kind`, `entry`, `x`, `y`, 
 ('dragonmaw_retreat', 3, 46, 'pull', 0, -5979.77, -4464.33, 316.28, 13.9, 0, 0, 0, 0, '62041,62040,62045,62051', 'pull group 14'),
 ('dragonmaw_retreat', 3, 47, 'pull', 0, -5980.16, -4428.8, 319.73, 16, 0, 0, 0, 0, '62047', 'pull group 15'),
 ('dragonmaw_retreat', 3, 48, 'move', 0, -5978.4, -4407.9, 322.2, 0, 0, 0, 0, 0, '', 'pull group 16 approach'),
-('dragonmaw_retreat', 3, 49, 'pull', 0, -5972.43, -4385.9, 322.69, 10, 0, 0, 0, 0, '62041', 'pull group 16'),
+('dragonmaw_retreat', 3, 49, 'pull', 0, -5972.43, -4385.9, 322.69, 10, 0, 60, 8192, 0, '62041', 'pull group 16; stand pull'),
 ('dragonmaw_retreat', 3, 50, 'move', 0, -5987.5, -4389.7, 322.2, 0, 0, 0, 0, 0, '', 'pull group 17 approach'),
-('dragonmaw_retreat', 3, 51, 'pull', 0, -5997.54, -4365.7, 322.1, 13.4, 0, 0, 0, 0, '62036,62051,62040,62041', 'pull group 17'),
+('dragonmaw_retreat', 3, 51, 'pull', 0, -5997.54, -4365.7, 322.1, 13.4, 0, 60, 8192, 0, '62036,62051,62040,62041', 'pull group 17; stand pull'),
 ('dragonmaw_retreat', 3, 52, 'move', 0, -5941.3, -4382.4, 322.2, 0, 0, 0, 0, 0, '', 'pull group 18 approach'),
 ('dragonmaw_retreat', 3, 53, 'pull', 0, -5931.32, -4397.38, 322.69, 10, 0, 0, 0, 0, '62041', 'pull group 18'),
 ('dragonmaw_retreat', 3, 54, 'move', 0, -5931.9, -4383, 322.2, 0, 0, 0, 0, 0, '', 'pull group 19 approach'),

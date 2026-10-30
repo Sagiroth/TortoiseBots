@@ -2949,7 +2949,7 @@ class DungeonPlanSql(unittest.TestCase):
         # alive (step 307; a 29 min fight). A stand off the patrol is not enough: the fight happens at the pack. So no pack within
         # 38 yd of the patrol (his ~18 yd reach on a level-34 bot plus ~20 yd of party spread) is pulled before him, except the two
         # at the hall's mouth that no way in can pass (the 62041 at -5972.4 -4385.9, 28 yd; the 62036/62051/62040/62041 at
-        # -5997.5 -4365.7, 16 yd: pulled first, from stands south of them). The other five near the line and the alcove are a leg
+        # -5997.5 -4365.7, 16 yd: pulled first, from stands south of them, as stand pulls held while he is near). The other five near the line and the alcove are a leg
         # of their own after the boss (searistrasz_line); the boss row stands on his patrol at -5980.45 -4314.5, the point of it
         # farthest from those packs (28-30 yd), and the party comes to it from the west (stands -6061.1 -4242.8, -6039.8 -4350.6).
         # 20261030200000 (2026-10-30, after the fix-8 live run on tortoise-test2: the pocket passed, but Searistrasz aggroed on the
@@ -3034,7 +3034,7 @@ class DungeonPlanSql(unittest.TestCase):
         # patrol check below fails an export that brings the walk back.
         name, text = newest_plan_text("dragonmaw_retreat")
         self.assertEqual(name, "20261031010000_world.sql")
-        self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent f2e92bf0 dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c8d76ab4 dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');", text)
         legs = leg_rows(text, "dragonmaw_retreat")
         self.assertEqual(sorted(legs), list(range(11)))
         self.assertEqual([legs[i][0] for i in range(11)],
@@ -3225,6 +3225,16 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual({(r["x"], r["y"]) for r in pulls[:30] if (r["x"], r["y"]) in mouth}, mouth, "the mouth packs are not pulled early")
         self.assertEqual([(r["x"], r["y"]) for r in pulls if (r["x"], r["y"]) in mouth],
                          [("-5972.43", "-4385.9"), ("-5997.54", "-4365.7")])
+        # ... and they are stand pulls (flag 8192, param = clear yd 60; TortoiseBots feat/rl-patrol-timed-pull): the shot waits at
+        # the stand while Searistrasz, a waypoint patroller, is within 60 yd of the lead bot or 30 yd of the pulled unit's way.
+        self.assertEqual([(r["flags"], r["param"], r["comment"]) for r in pulls if (r["x"], r["y"]) in mouth],
+                         [("8192", "60", "pull group 16; stand pull"), ("8192", "60", "pull group 17; stand pull")])
+        self.assertEqual([r for r in rows if int(r["flags"]) & 8192 and (r["x"], r["y"]) not in mouth], [],
+                         "a stand pull other than the mouth packs")
+        for r in pulls:
+            if (r["x"], r["y"]) in mouth:
+                prev = sear[sear.index(r) - 1]
+                self.assertEqual((prev["kind"], prev["comment"].endswith("approach")), ("move", True), "a stand pull needs its stand row")
         last_pull = max(i for i, r in enumerate(sear) if r["kind"] == "pull")
         # (the walk to the boss after the last pull goes to his patrol on purpose)
         near = [(r["x"], r["y"], round(patrol_yd(r), 1)) for r in sear[:last_pull] if r["kind"] == "move" and patrol_yd(r) < 28.0]
