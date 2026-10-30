@@ -35,14 +35,14 @@ assert.strictEqual(run("dgnPollDue(false, 0, now)", { now: T0 }), true, "a page 
 assert.strictEqual(run("dgnPollDue(false, now - 29000, now)", { now: T0 }), false, "off screen: not before the 30 s are up");
 assert.strictEqual(run("dgnPollDue(false, now - 30000, now)", { now: T0 }), true, "off screen: again after 30 s");
 
-// On screen: the Dungeons tab, a dungeon card in the Commanders page, or the live runs drawn there.
+// On screen: the Dungeons tab and the Commanders tab (even with no dungeon cached yet, so a new run's card is not late).
 ctx.state = { activeTab: "overview", dungeons: { binds: [] } };
 ctx.cmdCards = new Map();
 assert.strictEqual(run("dgnOnScreen()"), false, "the overview shows no dungeon");
 ctx.state.activeTab = "dungeons";
 assert.strictEqual(run("dgnOnScreen()"), true, "the Dungeons tab shows the rollup");
 ctx.state.activeTab = "commanders";
-assert.strictEqual(run("dgnOnScreen()"), false, "a Commanders tab with no dungeon card");
+assert.strictEqual(run("dgnOnScreen()"), true, "the Commanders tab counts as on screen with no dungeon card yet");
 ctx.cmdCards.set("dgn:1:2", {});
 assert.strictEqual(run("dgnOnScreen()"), true, "a dungeon card is on the Commanders page");
 ctx.cmdCards.delete("dgn:1:2");

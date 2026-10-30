@@ -9232,14 +9232,13 @@
   }
 
   // The Dungeons rollup is on screen on its own tab and wherever a dungeon card draws (the Commanders page shows the live
-  // runs as cards too). Off screen it is asked once every 30 s, not twice a second.
+  // runs as cards too). The Commanders tab itself counts as on screen even with no dungeon cached yet, so a new run's first
+  // card is not late. Off screen it is asked once every 30 s, not twice a second.
   const DGN_POLL_MS = 30000;
   function dgnOnScreen() {
     if (state.activeTab === 'dungeons') return true;
     if (state.activeTab !== 'commanders') return false;
-    let dgnCard = false;
-    cmdCards.forEach((card, key) => { if (key.indexOf('dgn:') === 0) dgnCard = true; });
-    return dgnCard || (state.dungeons.binds || []).length > 0;
+    return true;
   }
   function dgnPollDue(onScreen, at, nowMs) {
     if (onScreen) return true;
