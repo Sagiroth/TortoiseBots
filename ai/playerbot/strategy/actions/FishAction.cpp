@@ -326,7 +326,8 @@ bool MoveToFishAction::Execute(Event& event)
     if (!fishSpot && qualifier == "travel") //Get travel fish spot if available.
     {
         TravelTarget* target = AI_VALUE(TravelTarget*, "leader travel target");
-        fishSpot = *target->getPosition();
+        if (target && target->getPosition())
+            fishSpot = *target->getPosition();
 
         if (AI_VALUE(TravelTarget*, "travel target") != target) //Do not fish ontop of master.
         {
@@ -450,8 +451,9 @@ bool FishAction::isUseful()
             return false;
 
         TravelTarget* target = AI_VALUE(TravelTarget*, "leader travel target");
+        TravelDestination* dest = target ? target->GetDestination() : nullptr;
 
-        if (target->GetDestination()->GetPurpose() != TravelDestinationPurpose::GatherFishing)
+        if (!dest || dest->GetPurpose() != TravelDestinationPurpose::GatherFishing)
             return false;
 
         if (!bot->GetGroup() || ai->IsGroupLeader() || target->GetTimeLeft() < 0)
