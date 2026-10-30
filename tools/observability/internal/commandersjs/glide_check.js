@@ -77,7 +77,7 @@ const S0 = 1791990030000; // its server time
   assert.ok(behind.x < 30, "drawn in the server's past, behind the t = 1500 sample at x = 30: " + behind.x);
 }
 
-// ---- the buffer runs dry: walk on along the last velocity for at most 300 ms, then hold
+// ---- the buffer runs dry: hold at the newest sample, never walk past it (extrapolating then snapping back read as backward jumps)
 {
   const st = G.create();
   G.sampled(st, T0, S0);
@@ -85,16 +85,14 @@ const S0 = 1791990030000; // its server time
   G.sampled(st, T0 + 500, S0 + 500);
   G.note(st, "b1", 10, 0, 209, true, T0 + 500, S0 + 500);
   near(st.delay, 625, "one gap of 500 ms puts the map 625 ms behind");
-  // the newest sample is at S0+500; the render time passes it 300 ms later
+  // the newest sample is at S0+500; past it the dot holds where the unit was last seen
   const atNewest = G.at(st, "b1", T0 + 500 + st.delay);
   near(atNewest.x, 10);
   const after = G.at(st, "b1", T0 + 500 + st.delay + 100);
-  near(after.x, 12, "100 ms past the newest sample: still walking");
-  const held = G.at(st, "b1", T0 + 500 + st.delay + 300);
+  near(after.x, 10, "100 ms past the newest sample: holding, not guessing ahead");
   const later = G.at(st, "b1", T0 + 500 + st.delay + 5000);
-  near(held.x, 16, "300 ms is as far as it extrapolates");
-  near(later.x, 16, "then it holds");
-  assert.strictEqual(G.active(st, T0 + 500 + st.delay + 301), false, "and the page may stop drawing");
+  near(later.x, 10, "still holding");
+  assert.strictEqual(G.active(st, T0 + 500 + st.delay + 1), false, "and the page may stop drawing");
 }
 
 // ---- a teleport, a map change and a death snap; a late report never walks the dot back
@@ -216,7 +214,7 @@ const S0 = 1791990030000; // its server time
   G.sampled(st, jumpNow + 500, jumpTs + 500, "s1", true);
   G.note(st, "b1", 80, 0, 209, true, jumpNow + 500, jumpTs + 500);
   assert.deepStrictEqual(st.gaps, [500], "the new clock measures its own gap");
-  assert.strictEqual(G.active(st, jumpNow + 500 + st.delay), true, "the dot walks again");
+  assert.strictEqual(G.active(st, jumpNow + 500), true, "the dot walks again while the render is behind the newest sample");
   // a new datagram session on the same clock starts the card over too
   G.note(st, "b3", 1, 1, 209, true, jumpNow + 500, jumpTs + 500);
   G.sampled(st, jumpNow + 1000, jumpTs + 1000, "s2", true);
@@ -285,10 +283,44 @@ const S0 = 1791990030000; // its server time
 // ---- the frame cap is 60 fps now (16 ms)
 assert.strictEqual(G.FRAME_MS, 16, "the focused map redraws every animation frame");
 assert.strictEqual(G.GRID_FRAME_MS, 64, "every other visible map redraws at most about 15 times a second");
-assert.strictEqual(G.BACK_MS, 2000, "a clock jump is measured against the newest server time");
+assert.strictEqual(G.BACK_MS, 30000, "only a frame 30 s older than the newest server time resets the clock; a stalled report is dropped");
 assert.strictEqual(G.PRUNE_MS, 15000, "a unit no report carried for 15 s is gone");
 assert.strictEqual(G.POS_WINDOW_MS, 3000, "position frames own the delay while they run");
 assert.strictEqual(G.SAMPLES, 4, "four samples a unit");
-assert.strictEqual(G.EXTRAP_MS, 300);
+assert.strictEqual(G.EXTRAP_MS, undefined, "no extrapolation past the newest sample: the dot holds");
+
+// ---- walk 2: a 0.5 s feed with arrival jitter and an occasional seconds-old report frame never walks a monotonic unit back
+{
+  const st = G.create();
+  const speed = 1.2 / 500; // yd per ms, the walk-2 lead's pace
+  let prev = null, backs = 0, worst = 0, frames = 0;
+  // reports every 2 s, one of them 4 s stale (a stalled fetch under load); pos frames carry the true server time
+  for (let now = T0; now <= T0 + 40000; now += 16) {
+    const el = now - T0;
+    if (el > 0 && el % 500 < 16) {
+      const t = S0 + el, arr = now + ((el * 137) % 240 - 120);
+      if (arr <= now) {
+        G.sampled(st, arr, t, undefined, true);
+        G.note(st, G.botKey(1), 1420 + el * speed, 0, 209, true, arr, t);
+      }
+    }
+    if (el > 1000 && el % 2000 < 16) {
+      const stale = el % 8000 < 16 ? 4000 : 0; // every fourth report is 4 s late with 4 s old positions
+      const t = S0 + el - stale, arr = now;
+      G.sampled(st, arr, t, undefined, false);
+      G.note(st, G.botKey(1), 1420 + (el - stale) * speed, 0, 209, true, arr, t);
+    }
+    if (el < 3000) continue;
+    const p = G.at(st, G.botKey(1), now);
+    assert.ok(p, "the dot is drawn");
+    if (prev) {
+      const dx = p.x - prev.x;
+      if (dx < -0.3) { backs += 1; worst = Math.min(worst, dx); }
+    }
+    prev = p; frames += 1;
+  }
+  assert.strictEqual(backs, 0, "no backward step over 0.3 yd in " + frames + " frames (worst " + worst.toFixed(2) + " yd)");
+  assert.ok(frames > 2000, "it really sampled every frame: " + frames);
+}
 
 console.log("glide_check.js ok");
