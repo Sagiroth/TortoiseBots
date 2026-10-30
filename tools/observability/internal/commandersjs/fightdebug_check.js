@@ -403,7 +403,7 @@ assert.strictEqual(sunderOf(fight({ dur_ms: 30000, bots: [bot({ name: "T", role:
 
 // The main tank's own activity: under 0.3 casts per second over 20 s or more is a problem, whatever it cast.
 const idleT = (casts, dur) => fight({ dur_ms: dur, bots: [bot({
-  name: "T", role: "tank", taken: 100,
+  name: "T", role: "tank", taken: 100, casts,
   spells: casts === 2 ? [{ n: "Sunder Armor", c: 1 }, { n: "Taunt", c: 1 }] : [{ n: "Sunder Armor", c: casts }],
 })]});
 const idleOf = (f) => F.checks(f, MTLAYOUT, []).find((c) => c.id === "mt_idle");
@@ -419,6 +419,10 @@ assert.strictEqual(idleOf(idleT(0, 15000)), undefined); // too short to judge
 assert.strictEqual(idleOf(idleT(0, 20000)).lvl, "fail");
 assert.strictEqual(idleOf(idleT(0, 20000)).ev, "T cast 0× in 20 s; top spells: none.");
 assert.strictEqual(idleOf(fight({ dur_ms: 30000, bots: [bot({ name: "D", role: "dps", spells: [{ n: "Fireball", c: 1 }] })] })), undefined);
+// A big fight's payload cuts the spell rows to a few (or none); the bot's casts total is what counts.
+const trimmedT = (spells) => fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "tank", taken: 100, casts: 20, spells })] });
+assert.strictEqual(idleOf(trimmedT([])), undefined);
+assert.strictEqual(idleOf(trimmedT([{ n: "Sunder Armor", c: 1 }, { n: "Revenge", c: 1 }, { n: "Taunt", c: 1 }])), undefined);
 
 const outside = fight({ bots: [bot({ name: "T", role: "tank", taken: 100 }), bot({ name: "D", role: "dps", taken: 25 })] });
 const outsideCheck = F.checks(outside, { mt: "T", ot: [] }, []).find((c) => c.id === "taken_outside");

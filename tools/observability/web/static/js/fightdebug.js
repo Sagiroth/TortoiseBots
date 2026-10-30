@@ -95,8 +95,9 @@
 
     // A tank that barely casts is not holding the pull; the Sunder rate alone cannot say that.
     if (mt && durMs >= LIMITS.idleMinMs) {
+      // casts is the bot's whole count; spells may be cut to a few rows (or none) to fit a big fight's payload.
       const spells = (mt.spells || []).filter((x) => x && (num(x.c) || 0) > 0);
-      const casts = spells.reduce((s, x) => s + (num(x.c) || 0), 0);
+      const casts = num(mt.casts) !== null ? num(mt.casts) : spells.reduce((s, x) => s + (num(x.c) || 0), 0);
       if (casts / secs < LIMITS.idleCastsPerSec) {
         const top = spells.slice().sort((a, b) => (num(b.c) || 0) - (num(a.c) || 0)).slice(0, 3);
         out.push({
