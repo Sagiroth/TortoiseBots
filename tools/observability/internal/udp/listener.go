@@ -214,6 +214,7 @@ func (l *Listener) processPacket(data []byte) {
 
 	if header.Replay && !l.acceptReplay.Load() {
 		l.replayDropped.Add(1)
+		l.metricsReg.RecordUDPDropped("replay")
 		// A looping replay would otherwise write one line per datagram.
 		now := time.Now().UnixNano()
 		if last := l.replayLogAt.Load(); now-last >= int64(60*time.Second) && l.replayLogAt.CompareAndSwap(last, now) {

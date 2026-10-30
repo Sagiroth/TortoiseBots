@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"tortoise-observability/internal/combat"
 	"tortoise-observability/internal/live"
 	zoneproject "tortoise-observability/internal/map"
@@ -380,8 +382,31 @@ func TestCommandersPartsOneBroadcast(t *testing.T) {
 // "replay":true) must not mix into a dashboard's state unless the operator
 // asked for replays: a recording's session is newer than a live module's, so a
 // stray replay would shadow the real roster until the module restarts.
+// udpDroppedCount reads tortoisebots_udp_dropped_total{reason} off the process-wide registry.
+func udpDroppedCount(t *testing.T, reason string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	for _, fam := range families {
+		if fam.GetName() != "tortoisebots_udp_dropped_total" {
+			continue
+		}
+		for _, m := range fam.GetMetric() {
+			for _, lp := range m.GetLabel() {
+				if lp.GetName() == "reason" && lp.GetValue() == reason {
+					return m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	return 0
+}
+
 func TestReplayDatagramsNeedAcceptReplay(t *testing.T) {
 	l, store, hub := newTestListener()
+	metricBefore := udpDroppedCount(t, "replay")
 	replayed := strings.Replace(commandersDatagram, `{"v":9,`, `{"v":9,"replay":true,`, 1)
 
 	l.processPacket([]byte(replayed))
@@ -393,6 +418,9 @@ func TestReplayDatagramsNeedAcceptReplay(t *testing.T) {
 	}
 	if got := l.replayDropped.Load(); got != 1 {
 		t.Fatalf("dropped replays = %d, want 1", got)
+	}
+	if got := udpDroppedCount(t, "replay"); got != metricBefore+1 {
+		t.Fatalf("tortoisebots_udp_dropped_total{reason=replay} = %v, want %v", got, metricBefore+1)
 	}
 
 	l.SetAcceptReplay(true)

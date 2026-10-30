@@ -44,6 +44,7 @@ type Registry struct {
 	historyBroken  prometheus.Counter
 	// COMMANDERS cycles that arrived in parts and were applied incomplete (their missing bindings carried over).
 	commandersPartials prometheus.Counter
+	udpDropped         *prometheus.CounterVec
 }
 
 func New() *Registry {
@@ -136,6 +137,10 @@ func New() *Registry {
 			Name: "tortoisebots_commanders_partial_total",
 			Help: "COMMANDERS cycles applied incomplete, their bindings completed from the previous report",
 		}),
+		udpDropped: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "tortoisebots_udp_dropped_total",
+			Help: "Datagrams the listener refused, by reason (replay: a replayed run sent without -accept-replay)",
+		}, []string{"reason"}),
 	}
 
 	// Initialize server as offline until the first pulse.
@@ -226,6 +231,11 @@ func (r *Registry) AddCommandersPartials(n uint64) {
 	if n > 0 {
 		r.commandersPartials.Add(float64(n))
 	}
+}
+
+// RecordUDPDropped counts one datagram the listener refused (reason: replay).
+func (r *Registry) RecordUDPDropped(reason string) {
+	r.udpDropped.WithLabelValues(reason).Inc()
 }
 
 // RecordGrinding mirrors the dashboard grinding panel so alerts can use it.
