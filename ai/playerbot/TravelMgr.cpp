@@ -21,6 +21,7 @@
 #include "TravelNode.h"
 #include "PlayerbotAI.h"
 #include "playerbot/RandomBotFacade.h"
+#include "runtime/GuildOrderGiveUpPolicy.h"
 #include "ObjectAccessor.h"
 #include "Formulas.h"
 
@@ -1578,10 +1579,18 @@ void TravelTarget::CheckStatus()
                 for (std::string const& condition : travelConditions)
                     if (condition == "has guild travel order" || condition == "has guild order delivery")
                         orderTarget = true;
-                std::string const parkKey = ai::TravelCooldownParkKey(orderTarget,
-                    static_cast<uint32>(tDestination->GetPurpose()));
-                context->GetValue<bool>("no active travel destinations", parkKey)->Set(true);
-                context->GetValue<time_t>("manual time", "no travel purpose until::" + parkKey)->Set(time(0) + ai::TRAVEL_COOLDOWN_PARK_SECONDS);
+                // An order leg that ended (its conditions flipped) is not a dead
+                // spot: the next leg, often the delivery, shares the order's
+                // purpose and must not wait. A dead order spot parks briefly.
+                if (!orderTarget || destinationInactive)
+                {
+                    std::string const parkKey = ai::TravelCooldownParkKey(orderTarget,
+                        static_cast<uint32>(tDestination->GetPurpose()));
+                    time_t const parkFor = orderTarget ? time_t(TortoiseBots::GuildOrders::kOrderLegParkSeconds) :
+                        ai::TRAVEL_COOLDOWN_PARK_SECONDS;
+                    context->GetValue<bool>("no active travel destinations", parkKey)->Set(true);
+                    context->GetValue<time_t>("manual time", "no travel purpose until::" + parkKey)->Set(time(0) + parkFor);
+                }
             }
             SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
             return;
