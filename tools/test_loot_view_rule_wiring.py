@@ -58,6 +58,13 @@ class LootViewRuleWiringTest(unittest.TestCase):
         self.assertIn("ObjectGuid(loot->roundRobinPlayer).GetCounter()", fn)
         self.assertIn("maps[m]->find(turnHolder)", fn)
 
+    def test_the_refusal_line_reports_the_reservation(self):
+        fn = body(STACK, "void LootObject::Refresh(", "\n}\n")
+        call = fn.index("ai::CorpseRefusalReason(")
+        args = fn[call:fn.index('"debug loot");', call)]
+        self.assertIn("bool const reserved = loot.hasItemFor(bot) && !ai::HasVisiblePersonalItemFor(loot, bot);", fn)
+        self.assertIn("otherTurn, reserved", args)
+
 
 if __name__ == "__main__":
     unittest.main()

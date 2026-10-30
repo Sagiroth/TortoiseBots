@@ -1,5 +1,6 @@
 #include "LootObjectStack.h"
 #include "policy/loot/CorpseLootPolicy.h"
+#include "policy/loot/CorpseRefusalReasonPolicy.h"
 #include "playerbot.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -150,7 +151,14 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
             }
 
             if (debug)
-                ai->TellDebug(ai->GetMaster(), "Creature lootable but not this bot's to loot.", "debug loot");
+            {
+                Loot const& loot = creature->loot;
+                bool const otherTurn = loot.roundRobinPlayer != 0 && loot.roundRobinPlayer != bot->GetObjectGuid();
+                bool const reserved = loot.hasItemFor(bot) && !ai::HasVisiblePersonalItemFor(loot, bot);
+                ai->TellDebug(ai->GetMaster(), "Creature lootable but not this bot's to loot: " +
+                    ai::CorpseRefusalReason(loot.IsAllowedLooter(bot->GetObjectGuid(), false), !loot.m_questItems.empty(),
+                                            loot.hasItemFor(bot), otherTurn, reserved), "debug loot");
+            }
         }
 
         // Skinnable only once the corpse loot is gone (same condition the core applies to the
