@@ -131,6 +131,8 @@ class AvoidCastIsLogged(unittest.TestCase):
         self.assertIn("AvoidCastIsNewCast(g_avoidCastLog[bot->GetObjectGuid().GetRawValue()]", fn)
         # The throttle comes before any string is built.
         self.assertLess(fn.index("AvoidCastIsNewCast("), fn.index("snprintf("))
+        # The cast instance (the caster's current Spell object) is part of the identity, not only a time gap.
+        self.assertIn("reinterpret_cast<std::uintptr_t>(spell)", fn)
         policy = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
         self.assertIn("inline bool AvoidCastIsNewCast(", policy)
 

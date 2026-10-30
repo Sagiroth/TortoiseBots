@@ -255,17 +255,19 @@ int main()
     // not, and another caster, another spell or a long silence start a new cast.
     {
         AvoidCastLogState state;
-        CHECK(AvoidCastIsNewCast(state, 0x1111, 24024, 1000));                    // first sight
-        CHECK(!AvoidCastIsNewCast(state, 0x1111, 24024, 1500));                   // the next tick of the cast
-        CHECK(!AvoidCastIsNewCast(state, 0x1111, 24024, 3400));                   // a 3 s blast kept alive tick by tick
-        CHECK(AvoidCastIsNewCast(state, 0x2222, 24024, 3500));                    // another caster, same spell
-        CHECK(AvoidCastIsNewCast(state, 0x2222, 23511, 3600));                    // same caster, another spell
-        CHECK(AvoidCastIsNewCast(state, 0x2222, 23511, 3600 + kAvoidCastLogGapMs));  // the cast ended, a new one
-        CHECK(!AvoidCastIsNewCast(state, 0x2222, 23511, 3600 + kAvoidCastLogGapMs + 10));
+        CHECK(AvoidCastIsNewCast(state, 0x1111, 24024, 100, 1000));                    // first sight
+        CHECK(!AvoidCastIsNewCast(state, 0x1111, 24024, 100, 1500));                   // the next tick of the cast
+        CHECK(!AvoidCastIsNewCast(state, 0x1111, 24024, 100, 3400));                   // a 3 s blast kept alive tick by tick
+        CHECK(AvoidCastIsNewCast(state, 0x2222, 24024, 100, 3500));                    // another caster, same spell
+        CHECK(AvoidCastIsNewCast(state, 0x2222, 23511, 100, 3600));                    // same caster, another spell
+        CHECK(AvoidCastIsNewCast(state, 0x2222, 23511, 100, 3600 + kAvoidCastLogGapMs));  // the cast ended, a new one
+        CHECK(!AvoidCastIsNewCast(state, 0x2222, 23511, 100, 3600 + kAvoidCastLogGapMs + 10));
+        // Same caster and spell but a new Spell object (a recast inside the gap) is a new cast.
+        CHECK(AvoidCastIsNewCast(state, 0x2222, 23511, 200, 3600 + kAvoidCastLogGapMs + 20));
         // The millisecond clock wraps: 4294967000 -> 100 is 396 ms, still the same cast.
         AvoidCastLogState wrap;
-        CHECK(AvoidCastIsNewCast(wrap, 7, 1, 4294967000u));
-        CHECK(!AvoidCastIsNewCast(wrap, 7, 1, 100u));
+        CHECK(AvoidCastIsNewCast(wrap, 7, 1, 100, 4294967000u));
+        CHECK(!AvoidCastIsNewCast(wrap, 7, 1, 100, 100u));
     }
 
     std::cout << "All boss tactics policy tests passed.\n";

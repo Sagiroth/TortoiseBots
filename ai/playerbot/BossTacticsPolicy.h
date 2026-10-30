@@ -209,8 +209,9 @@ namespace ai
     }
 
     // One bot's last avoid_cast walk-out, kept to log a cast once per bot. A cast is the same while the
-    // bot keeps meeting it (same caster, same spell, the walk-out seen again within kAvoidCastLogGapMs):
-    // the action runs every tick of the cast, and a new cast comes seconds after the old one ended.
+    // bot keeps meeting it: same caster, same spell, same cast instance (the address of the caster's current Spell
+    // object, new for every cast) and the walk-out seen again within kAvoidCastLogGapMs. The gap covers an
+    // allocator handing a finished cast's address to the next one.
     constexpr std::uint32_t kAvoidCastLogGapMs = 2000;
 
     struct AvoidCastLogState
@@ -218,18 +219,21 @@ namespace ai
         bool known = false;
         std::uint64_t casterGuid = 0;
         std::uint32_t spellId = 0;
+        std::uint64_t instance = 0;
         std::uint32_t lastSeenMs = 0;
     };
 
     // True when this walk-out is the first of its cast for the bot; always records that it was seen now.
     inline bool AvoidCastIsNewCast(AvoidCastLogState& state, std::uint64_t casterGuid, std::uint32_t spellId,
-                                   std::uint32_t nowMs)
+                                   std::uint64_t instance, std::uint32_t nowMs)
     {
         bool const same = state.known && state.casterGuid == casterGuid && state.spellId == spellId &&
+                          state.instance == instance &&
                           static_cast<std::uint32_t>(nowMs - state.lastSeenMs) < kAvoidCastLogGapMs;
         state.known = true;
         state.casterGuid = casterGuid;
         state.spellId = spellId;
+        state.instance = instance;
         state.lastSeenMs = nowMs;
         return !same;
     }

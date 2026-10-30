@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <mutex>
@@ -278,14 +279,14 @@ std::unordered_map<uint64, AvoidCastLogState> g_avoidCastLog;
 //            none>,stopped=<1 when the walk-out broke the bot's own cast>"
 // A no-op unless bot_events.csv is in AiPlayerbot.AllowedLogFiles, like the hunter telemetry; the throttle is checked
 // before any string is built.
-void LogAvoidCast(PlayerbotAI* ai, Player* bot, Unit* caster, uint32 spellId, float radius, float distBefore, float destDistance,
+void LogAvoidCast(PlayerbotAI* ai, Player* bot, Unit* caster, Spell* spell, uint32 spellId, float radius, float distBefore, float destDistance,
                   bool stopped)
 {
     uint32 const nowMs = WorldTimer::getMSTime();
     {
         std::lock_guard<std::mutex> lock(g_avoidCastLogMutex);
         if (!AvoidCastIsNewCast(g_avoidCastLog[bot->GetObjectGuid().GetRawValue()], caster->GetObjectGuid().GetRawValue(),
-                                spellId, nowMs))
+                                spellId, static_cast<uint64>(reinterpret_cast<std::uintptr_t>(spell)), nowMs))
             return;
     }
     char info1[64];
@@ -343,7 +344,7 @@ bool BossTacticsAvoidCastAction::Execute(Event& event)
     if (logIt)
     {
         Spell* spell = caster->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-        LogAvoidCast(ai, bot, caster, spell && spell->m_spellInfo ? spell->m_spellInfo->Id : 0, danger.radius, distBefore,
+        LogAvoidCast(ai, bot, caster, spell, spell && spell->m_spellInfo ? spell->m_spellInfo->Id : 0, danger.radius, distBefore,
                      destDistance, stopped);
     }
     return moved;
