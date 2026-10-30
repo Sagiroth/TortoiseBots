@@ -7,6 +7,7 @@
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/values/TravelValues.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/policy/travel/TravelRouteDangerPolicy.h"
 #include "runtime/GuildOrderFishingPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/GuildOrderStore.h"
@@ -659,6 +660,14 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
                 if (AreaEntry const* zone = AreaEntry::GetById(area->ZoneId))
                     areaTeam = zone->Team;
             if ((team == ALLIANCE && areaTeam == AREATEAM_HORDE) || (team == HORDE && areaTeam == AREATEAM_ALLY))
+                continue;
+        }
+        // Water in a zone far above the bot is as deadly as its mobs: the
+        // route gate refuses the trip, so never plan it.
+        {
+            int32 zoneLevel = 0;
+            if (sTravelMgr.TryGetValidatedAreaLevel(zoneId, zoneLevel) &&
+                ai::TravelRouteAreaTooHigh(zoneLevel, bot->GetLevel()))
                 continue;
         }
         // The travel leg walks to FISH_LOCATION spots in the planned zone:
