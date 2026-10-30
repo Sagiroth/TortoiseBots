@@ -93,6 +93,17 @@ bool GuildCraftOrderAction::Execute(Event& event)
     if (!itemId || !orderAmount)
         return false;
 
+    // The recipe gates everything, including the quota short-circuit below:
+    // pre-owned stock must never deliver a craft the bot cannot cast.
+    uint32 craftSpellId = FindCraftSpell(itemId);
+    if (!craftSpellId)
+    {
+        ai->TellDebug(ai->GetMaster(), "Guild craft order: I don't know how to craft: " + order.target, "debug travel");
+        if (record)
+            TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Cant, OrderReason::NoRecipe);
+        return false;
+    }
+
     uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + delivered;
     if (currentCount >= orderAmount)
     {
@@ -103,15 +114,6 @@ bool GuildCraftOrderAction::Execute(Event& event)
 
     if (bot->IsNonMeleeSpellCasted(false, true, true))
         return false;
-
-    uint32 craftSpellId = FindCraftSpell(itemId);
-    if (!craftSpellId)
-    {
-        ai->TellDebug(ai->GetMaster(), "Guild craft order: I don't know how to craft: " + order.target, "debug travel");
-        if (record)
-            TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Cant, OrderReason::NoRecipe);
-        return false;
-    }
 
     const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
     if (!pSpellInfo)
