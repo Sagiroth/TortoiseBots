@@ -5,6 +5,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/WandPolicy.h"
 #include "../../../../runtime/TotemSpellPolicy.h"
+#include "../../../../runtime/SpellSchoolImmunePolicy.h"
 #include "GenericActions.h"
 #include "UseItemAction.h"
 #include "playerbot/strategy/values/TargetValue.h"
@@ -399,6 +400,23 @@ bool CastSpellAction::isUseful()
             if (!TortoiseBots::SpellWorksOnTotem(info->Effect, info->EffectApplyAuraName,
                     info->EffectImplicitTargetA, MAX_EFFECT_INDEX, info->IsPositiveSpell()))
                 return false;
+    }
+
+    // A creature's template can be immune to a whole spell school
+    // (school_immune_mask), not just to mechanics. A non-positive spell of
+    // that school takes nothing from it, so the rotation skips it and falls
+    // through to a school the target takes (the core's
+    // Creature::IsImmuneToSpell; runtime/SpellSchoolImmunePolicy.h).
+    if (spellTarget != bot && spellTarget->IsCreature())
+    {
+        if (SpellEntry const* info = sServerFacade.LookupSpellInfo(spellId))
+        {
+            CreatureInfo const* creatureInfo = static_cast<Creature*>(spellTarget)->GetCreatureInfo();
+            if (creatureInfo && !info->IsPositiveSpell() &&
+                TortoiseBots::SpellSchoolImmune(static_cast<uint32>(info->GetSpellSchoolMask()),
+                    creatureInfo->school_immune_mask))
+                return false;
+        }
     }
 
     // Never splash crowd control: an enemy-area spell whose blast would reach
