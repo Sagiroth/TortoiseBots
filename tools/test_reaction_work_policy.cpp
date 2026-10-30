@@ -36,7 +36,7 @@ int main()
     // A bot in a fight whose boss tactics are armed: a listed blast can be cast next to it while it stands idle at
     // full health with no victim and nobody on it (a held healer or ranged bot), so the pass runs.
     CHECK(BossTacticsReactionPass(true, false, true));
-    // Out of combat itself while the group has attackers (Codex adversarial review): the pass still runs.
+    // Out of combat itself while the group has attackers: the pass still runs.
     CHECK(BossTacticsReactionPass(false, true, true));
     CHECK(!BossTacticsReactionPass(false, false, true));
     CHECK(!BossTacticsReactionPass(true, true, false));

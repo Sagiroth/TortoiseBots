@@ -328,7 +328,7 @@ bool BossTacticsAvoidCastAction::Execute(Event& event)
             continue;
         // A cast of the bot's own would hold it in the blast. MoveTo breaks a running cast itself once it commits to
         // the walk (MoveTo2); what is left (a wand's auto-repeat) is stopped only after the walk started, so a bot with
-        // no way out keeps its heal or bolt (Codex adversarial review).
+        // no way out keeps its heal or bolt.
         bool const casting = bot->IsNonMeleeSpellCasted(true);
         if (MoveTo(bot->GetMapId(), points[i].x, points[i].y, z, false, false, false, true))
         {

@@ -116,7 +116,7 @@ class AvoidCastIsLogged(unittest.TestCase):
         # The distance before the move is read before the own cast is stopped and before MoveTo.
         self.assertLess(fn.index("distBefore ="), fn.index("CastStop()"))
         # The own cast is stopped only once MoveTo took a point that passed the blast and sight checks: a bot with no
-        # way out keeps its cast (Codex adversarial review).
+        # way out keeps its cast.
         self.assertLess(fn.index("InsideCastDanger(fight, points[i]"), fn.index("MoveTo("))
         self.assertLess(fn.index("IsWithinLOS("), fn.index("MoveTo("))
         self.assertLess(fn.index("MoveTo("), fn.index("CastStop()"))
@@ -175,7 +175,7 @@ class AvoidCastRunsForHeldBots(unittest.TestCase):
     def test_the_reaction_fast_path_runs_for_armed_tactics(self):
         fn = body((STRATEGY / "ReactionEngine.cpp").read_text(), "bool ReactionEngine::HasReactionWork() const")
         # The map probe before the strategy lookup, and the group's attackers count as well as the bot's own
-        # combat flag: a held bot out of combat itself still walks out (Codex adversarial review).
+        # combat flag: a held bot out of combat itself still walks out.
         self.assertLess(fn.index("GetBossTactics().HasMap(bot->GetMapId())"),
                         fn.index('ai->HasStrategy("boss tactics", BotState::BOT_STATE_REACTION)'))
         self.assertIn('GetValue<std::list<ObjectGuid>>("attackers")', fn)
