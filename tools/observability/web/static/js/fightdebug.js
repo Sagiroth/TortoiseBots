@@ -303,17 +303,19 @@
     return best;
   }
 
-  // Who killed a bot: the last hit on it that came from another unit. The module's own killer field can name the dead bot (its
+  // Who killed a bot: the non-self hit with the greatest t_ms (the hits are stored newest-first, so array order
+  // says nothing about time). The module's own killer field can name the dead bot (its
   // last event was its own spell or a self-damage tick); with no other source known the killer is unknown, never the victim.
   function killerOf(death, after) {
     if (!death) return "unknown";
     const end = num(death.t_ms) || 0;
-    const hits = (Array.isArray(death.hits) ? death.hits : [])
-      .filter((h) => h && num(h.t_ms) !== null && h.t_ms <= end && (after === undefined || h.t_ms > after));
-    for (let i = hits.length - 1; i >= 0; i--) {
-      const a = hits[i].a;
-      if (a && a !== death.name) return String(a);
-    }
+    let best = null, bestT = -Infinity;
+    (Array.isArray(death.hits) ? death.hits : []).forEach((h) => {
+      if (!h || num(h.t_ms) === null || h.t_ms > end || (after !== undefined && h.t_ms <= after)) return;
+      if (!h.a || h.a === death.name) return;
+      if (best === null || h.t_ms > bestT) { best = h; bestT = h.t_ms; }
+    });
+    if (best) return String(best.a);
     const named = death.killer == null ? "" : String(death.killer);
     return named && named !== death.name ? named : "unknown";
   }

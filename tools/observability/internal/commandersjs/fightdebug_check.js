@@ -175,6 +175,18 @@ assert.strictEqual(F.killerOf(selfOnly), "unknown", "only self-damage known is u
 const noHits = { name: "Erelidael", t_ms: 30000, killer: "Erelidael", hits: [] };
 assert.strictEqual(F.killerOf(noHits), "unknown");
 assert.strictEqual(F.killerOf({ name: "A", t_ms: 1, killer: "Onyxia", hits: [] }), "Onyxia", "the module's killer stands when it is not the victim");
+// The hits are stored newest-first: the killer is the non-self hit with the greatest t_ms, whatever the array order.
+const newestFirst = {
+  name: "V", t_ms: 20000, killer: "OldMob",
+  hits: [
+    { t_ms: 19000, a: "NewMob", d: 500 },
+    { t_ms: 15000, a: "OldMob", d: 900 },
+    { t_ms: 18000, a: "V", d: 50 },
+  ],
+};
+assert.strictEqual(F.killerOf(newestFirst), "NewMob", "a backward scan would return the oldest attacker");
+assert.strictEqual(F.killerOf({ name: "V", t_ms: 20000, killer: "x", hits: newestFirst.hits.slice().reverse() }), "NewMob",
+  "array order never decides");
 // The checks' death line reads the same killer.
 const selfChecks = F.checks(SELF_FIGHT, null, [], null);
 const deathLine = selfChecks.find((c) => c.id === "other_death");
