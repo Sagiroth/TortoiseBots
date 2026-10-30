@@ -2657,7 +2657,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                     if (orderFishes)
                     {
                         PartitionedTravelList fishList = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                            (uint32_t)TravelDestinationPurpose::GatherFishing, {}, true);
+                            (uint32_t)TravelDestinationPurpose::GatherFishing, {}, true, 0.0f);
                         zonePinned(fishList);
                         append(std::move(fishList));
                     }

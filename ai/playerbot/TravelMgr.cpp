@@ -1033,7 +1033,13 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     {
         uint32_t skillValue = 0;
         bool hasSkill = false;
-        if (GameObjectInfo const* goInfo = GetGoInfo())
+        // A fishing spot is water, not a locked object: its skill is fishing.
+        if (GetPurpose() == TravelDestinationPurpose::GatherFishing)
+        {
+            skillValue = info.GetCurrentSkill(SKILL_FISHING);
+            hasSkill = skillValue > 0;
+        }
+        else if (GameObjectInfo const* goInfo = GetGoInfo())
         {
             if (LockEntry const* lockInfo = sLockStore.LookupEntry(goInfo->GetLockId()))
             {

@@ -651,6 +651,16 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         // only where it already is.
         if (!area || area->MapId != int32_t(botFishingMap))
             continue;
+        // Enemy home zones are never fishing grounds, same rule as the
+        // other sources' slices.
+        {
+            uint32_t areaTeam = area->Team;
+            if (areaTeam == AREATEAM_NONE && area->ZoneId)
+                if (AreaEntry const* zone = AreaEntry::GetById(area->ZoneId))
+                    areaTeam = zone->Team;
+            if ((team == ALLIANCE && areaTeam == AREATEAM_HORDE) || (team == HORDE && areaTeam == AREATEAM_ALLY))
+                continue;
+        }
         // The travel leg walks to FISH_LOCATION spots in the planned zone:
         // skip zones the dataset cannot serve, so the plan never strands
         // the bot where every search comes back empty.
