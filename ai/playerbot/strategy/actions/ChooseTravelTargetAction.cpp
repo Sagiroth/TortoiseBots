@@ -22,6 +22,7 @@
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/GuildOrderSources.h"
 #include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderDeliveryPolicy.h"
 #include "runtime/GuildOrderGiveUpPolicy.h"
 #include "runtime/GuildOrderMailPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
