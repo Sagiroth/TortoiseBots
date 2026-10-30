@@ -8974,10 +8974,10 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             !CommanderTasks().count(bot->GetObjectGuid().GetRawValue()))
             f.raid.offTanksAlive.push_back(member.name);
         // ... and with AiPlayerbot.DungeonRunRaidBossRules the boss fight's off-tanks, raid-wide: within
-        // kRaidBossGuardYd of the lead bot (its body when it is dead), so one at an add's spawn point counts
-        // (DungeonRun::RaidGuardTick).
+        // kRaidBossGuardYd of the lead bot, so one at an add's spawn point counts (DungeonRun::RaidGuardTick). With
+        // the lead bot dead, any on its map: the fight may have moved off its body (the anchor is one of them).
         if (f.raid.on && f.raid.bossRules && isTank && bot != lead && bot->GetMap() == lead->GetMap() &&
-            yd <= TortoiseBots::DungeonRun::kRaidBossGuardYd &&
+            (yd <= TortoiseBots::DungeonRun::kRaidBossGuardYd || !lead->IsAlive()) &&
             !CommanderTasks().count(bot->GetObjectGuid().GetRawValue()))
             f.raid.bossOffTanksAlive.push_back(member.name);
         member.core = isTank || isHeal; // the raid's gather (the glue reads roles on raid ticks only)

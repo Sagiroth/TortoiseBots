@@ -71,7 +71,7 @@ class RaidConfigWiringTest(unittest.TestCase):
 
     def test_boss_off_tanks_are_raid_wide(self):
         code = strip_comments(COMMANDER)
-        self.assertIn("yd <= TortoiseBots::DungeonRun::kRaidBossGuardYd &&", code)
+        self.assertIn("(yd <= TortoiseBots::DungeonRun::kRaidBossGuardYd || !lead->IsAlive()) &&", code)
         self.assertIn("f.raid.bossOffTanksAlive.push_back(member.name);", code)
         # The trash fights' off-tanks keep kGuardYd.
         self.assertIn("bot->GetMap() == lead->GetMap() && yd <= kGuardYd &&", code)
