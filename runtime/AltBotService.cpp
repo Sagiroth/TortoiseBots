@@ -293,9 +293,11 @@ void AltBotService::TryStart(ObjectGuid guid)
 
     // Drop everything it was doing for its master (follow target, orders) and
     // rebuild the strategies: IsFreeBot now gives it the pool's leisure set.
+    // No snapshot replay: its saved kit is the follower one (follow/return,
+    // no travel/guild/rpg/grind) and would wipe the pool kit just rebuilt.
     ai->Reset(true);
     bot->StopMoving();
-    ai->ResetStrategies();
+    ai->ResetStrategies(false);
 
     // C19: alone, it goes to a zone that fits its level, like a pool bot's
     // login scatter. Below level 10 its quests are where it stands. Logged
