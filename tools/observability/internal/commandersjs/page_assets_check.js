@@ -40,6 +40,17 @@ assert.ok(/worldImg\.src = file/.test(renderWorld), "the world view sets the pic
 assert.ok(/worldImg\.src = file/.test(src.slice(src.indexOf("  function setWorldTab("), src.indexOf("\n  }\n", src.indexOf("  function setWorldTab(")))),
   "switching continent sets the picture");
 
+// ---- no zone art on another tab: it is asked for only while the Map tab shows that zone -------------------------------
+const paintZone = src.slice(src.indexOf("  function paintZoneArt()"), src.indexOf("\n  }\n", src.indexOf("  function paintZoneArt()")));
+assert.ok(/state\.activeTab === 'map' && state\.mapView === 'zone'/.test(paintZone), "the zone picture is asked for only on the Map tab's zone view");
+assert.ok(/mapImg\.src = `\/maps\/\$\{zone\.file\}`/.test(paintZone), "and that is where it is set");
+const loadZone = src.slice(src.indexOf("  function loadZoneMap("), src.indexOf("\n  }\n", src.indexOf("  function loadZoneMap(")));
+assert.ok(!/mapImg\.(setAttribute\('src'|src =)/.test(loadZone), "loadZoneMap (called on every page load) asks for no picture");
+const renderMapSrc = src.slice(src.indexOf("  function renderMap()"), src.indexOf("\n  }\n", src.indexOf("  function renderMap()")));
+assert.ok(/paintZoneArt\(\);/.test(renderMapSrc), "renderMap paints the zone art");
+assert.ok(/if \(state\.mapView === 'world' && state\.activeTab === 'map'\) renderMap\(\);/.test(src),
+  "the zones data redraws the continents only on the Map tab (no /maps/ request on a Commanders load)");
+
 // ---- the agent-maps probe reads the daemon's flag, not a 404 ----------------------------------------------------------
 assert.ok(src.includes("data.enabled === false"), "the probe hides the tab on the daemon's enabled=false");
 assert.ok(src.includes("r.status === 404"), "an older daemon's 404 still hides it");

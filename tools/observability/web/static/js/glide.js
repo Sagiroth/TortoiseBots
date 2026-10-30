@@ -13,8 +13,8 @@
   const GAPS = 8;         // sample gaps the render delay is built from
   const DELAY_FACTOR = 1.25; // how many report gaps the map is behind
   const DELAY_MIN_MS = 300, DELAY_MAX_MS = 2600;
-  const EXTRAP_MS = 300;  // past the newest sample, walk on along the last velocity this long, then hold
-  const BACK_MS = 2000;   // a frame this much older than the newest server time is a clock reset, not a reorder
+  const BACK_MS = 30000;  // a frame this much older than the newest server time is a clock reset, not a stall: a stalled
+  // report or a reordered position frame (seconds late under load) is dropped, never a snap of the whole card backwards
   const PRUNE_MS = 15000; // a unit no report has carried for this long is gone from the map
   const POS_WINDOW_MS = 3000; // while position frames run, only they say how far behind the map is drawn
   const TAU = Math.PI * 2;
@@ -109,10 +109,12 @@
 
   // Once per report: the gap the render delay follows, and the report's own server time when it has one. Only a newer server
   // time feeds it (a reordered frame never moves the clock back), and while position frames run only they do: the 2 s report
-  // still moves the dots, but its cadence must not stretch the delay the position stream set.
+  // still moves the dots, but its cadence must not stretch the delay the position stream set. The datagram session rides
+  // along only when the caller knows it (a clock reset, never a boolean); the pos flag only marks position frames.
   function sampled(st, nowMs, tsMs, session, pos) {
     if (!st) return;
-    const t = clockOf(st, nowMs, tsMs, session);
+    const sid = typeof session === "string" || typeof session === "number" ? session : undefined;
+    const t = clockOf(st, nowMs, tsMs, sid);
     if (pos) st.posAt = nowMs;
     prune(st, nowMs);
     if (typeof st.lastClock !== "number") {
@@ -143,12 +145,7 @@
     if (!s.length) return null;
     if (s.length === 1 || t <= s[0].t) return { x: s[0].x, y: s[0].y, face: faceOf(s[0]) };
     const last = s[s.length - 1];
-    if (t >= last.t) {
-      // The buffer ran dry: keep walking along the last velocity for a moment (a lost report does not stop the dot), then hold.
-      const prev = s[s.length - 2], span = last.t - prev.t, over = Math.min(EXTRAP_MS, t - last.t);
-      const f = span > 0 ? over / span : 0;
-      return { x: last.x + (last.x - prev.x) * f, y: last.y + (last.y - prev.y) * f, face: faceOf(last) };
-    }
+    if (t >= last.t) return { x: last.x, y: last.y, face: faceOf(last) };
     let i = 0;
     while (i < s.length - 2 && s[i + 1].t <= t) i += 1;
     const a = s[i], b = s[i + 1], span = b.t - a.t, f = span > 0 ? Math.min(1, Math.max(0, (t - a.t) / span)) : 1;
@@ -196,7 +193,7 @@
       if (!s || s.length < 2 || u.alive === false) return false;
       const a = s[s.length - 2], b = s[s.length - 1];
       if (a.x === b.x && a.y === b.y && a.f === b.f) return false;
-      return t < b.t + EXTRAP_MS;
+      return t < b.t;
     });
   }
 
@@ -224,7 +221,7 @@
 
   const api = {
     CAP_MS, FRAME_MS, GRID_FRAME_MS, BACK_MS, PRUNE_MS, POS_WINDOW_MS,
-    SAMPLES, OFFSETS, GAPS, DELAY_FACTOR, DELAY_MIN_MS, DELAY_MAX_MS, EXTRAP_MS,
+    SAMPLES, OFFSETS, GAPS, DELAY_FACTOR, DELAY_MIN_MS, DELAY_MAX_MS,
     SLACK_YD, YD_PER_SEC, MAX_GAP_SEC,
     jumpLimitYd, create, botKey, mobKey, median, angleLerp, sampled, delayOf, renderTime, at, note, active, apply, prune,
   };

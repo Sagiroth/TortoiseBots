@@ -2678,10 +2678,21 @@ select.input {
     display: none;
   }
 
+  /* The page name gets a line of its own (a word as short as "Commanders" was ellipsised to "Com..."): the controls keep the
+     first row, the title the second and the search field the third. */
+  .page-head {
+    flex: 1 1 100%;
+    order: 2;
+  }
+
+  .quick-find {
+    order: 3;
+    flex: 1 1 100%;
+  }
+
   .page-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 1.05rem;
+    white-space: normal;
   }
 
   .kpi-row .kpi:last-child:nth-child(odd) {
@@ -2790,7 +2801,11 @@ select.input {
 }
 
 /* ---------- Commanders tab ---------- */
-.cmd-card { --role-tank: #2f80ff; --role-healer: #22c55e; --role-dps: #ff9f1c; --role-other: #bc8cff; --role-dead: #6b7280; margin-bottom: 16px; }
+.cmd-card { --role-tank: #2f80ff; --role-healer: #22c55e; --role-dps: #ff9f1c; --role-other: #bc8cff; --role-dead: #6b7280; margin-bottom: 16px; min-width: 0; }
+/* The Fights panel is a table of six nowrap columns; on a phone it scrolls inside the card instead of widening the page. */
+.cmd-card .cmd-fights, .cmd-card .fight-panel { min-width: 0; max-width: 100%; }
+.cmd-card .cmd-fights { overflow-x: auto; }
+.cmd-card .cmd-fights .data-table { width: max-content; min-width: 100%; }
 .cmd-card.stale { opacity: 0.7; }
 .cmd-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .cmd-title { font-size: 1.05rem; font-weight: 650; color: #fff; margin: 0; overflow-wrap: anywhere; }
@@ -2906,6 +2921,14 @@ select.input {
 .cmd-map .stamp text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-linejoin: round; }
 .cmd-maptools select { height: 32px; max-width: 120px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(14, 19, 27, 0.85); color: var(--text-main); font: inherit; }
 .cmd-maptools select[hidden] { display: none; }
+.cmd-maptools button { white-space: nowrap; }
+/* A phone's map toolbar is a second row by design: it wraps inside the map box instead of overflowing it (the picture picker
+   is only there when the map has pictures, which is when the row needs the width most). */
+@media (max-width: 640px) {
+  .cmd-maptools { left: 8px; right: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .cmd-maptools button { min-width: 30px; height: 28px; padding: 0 8px; }
+  .cmd-maptools select { height: 28px; max-width: 100%; }
+}
 .cmd-picwhy { margin: 6px 0 0; font-size: 0.74rem; color: var(--accent-yellow); }
 .cmd-picwhy[hidden] { display: none; }
 .cmd-scale { position: absolute; right: 8px; bottom: 6px; display: flex; flex-direction: column; align-items: flex-end; font-size: 0.7rem; color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; }
@@ -3215,6 +3238,17 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-nofight { grid-area: centre; margin: 0; padding: 48px 14px; text-align: center; color: var(--text-muted); font-size: 0.9rem; }
 .fd-nofight[hidden] { display: none; }
 .cmd-overview .fd-nofight { grid-column: 1 / -1; padding: 32px 14px; border: 1px dashed var(--border-color); border-radius: var(--radius); }
+/* Nothing bound: the commanders that still have saved fights, newest first (each opens read-only). */
+.fd-histlist { grid-column: 1 / -1; display: grid; gap: 8px; min-width: 0; }
+.fd-histlist .cmd-h { margin: 0; }
+.fd-histlist ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.fd-histcmd { display: flex; flex-direction: column; gap: 4px; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-card); color: var(--text-main); font: inherit; text-align: left; cursor: pointer; }
+.fd-histcmd:hover { background: var(--bg-card-hover); border-color: var(--border-strong); }
+.fd-histcmd:focus-visible { outline: 2px solid var(--accent-blue-bright); outline-offset: 2px; }
+.fd-histcmd b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-histcmd span { color: var(--text-muted); font-size: 0.76rem; overflow-wrap: anywhere; }
+/* A read-only history card has nothing live to place: no map, no party column, no raid frames. */
+.cmd-card.cmd-history .cmd-mapbox, .cmd-card.cmd-history .fd-raid, .cmd-card.cmd-history .fd-runtl { display: none; }
 
 /* The debugger's head: the prototype's commander kicker and title, the crumbs, and the refresh picker the page row would carry. */
 .cmd-headl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-width: 0; }
@@ -3315,10 +3349,10 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-tile.sel:focus-visible { outline-color: var(--accent-blue-bright); }
 
 .fd-rail { display: grid; gap: 6px; align-content: start; }
-.fd-fight { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 8px; width: 100%; padding: 6px 8px 7px; text-align: left; border: 1px solid var(--border-color); border-left: 3px solid var(--text-dim); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.8rem; cursor: pointer; }
+.fd-fight { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); align-items: baseline; gap: 2px 8px; width: 100%; padding: 6px 8px 7px; text-align: left; border: 1px solid var(--border-color); border-left: 3px solid var(--text-dim); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.8rem; cursor: pointer; }
 .fd-fight:hover { background: var(--bg-card-hover); }
 .fd-fight .fd-fl { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
-.fd-fight .fd-fv { justify-self: end; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
+.fd-fight .fd-fv { justify-self: end; max-width: 100%; text-align: right; overflow-wrap: anywhere; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
 .fd-fight .fd-fs { grid-column: 1 / -1; color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fd-fight .fd-fd { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
 .fd-fight .fd-fdmg { min-width: 0; color: var(--text-main); white-space: nowrap; }
@@ -3491,7 +3525,6 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-bosscast.bc-5 { background: var(--grp-5); }
 .fd-bosscast.bc-6 { background: var(--grp-6); }
 .fd-bosscast.bc-7 { background: var(--grp-7); }
-.fd-hit-spell { margin-left: 4px; color: var(--accent-blue-bright); font-size: 0.72rem; }
 .fd-likely { margin-left: 4px; padding: 0 5px; border: 1px dashed var(--accent-yellow); border-radius: 999px; color: var(--accent-yellow); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; }
 
 /* Raid frames: up to four boss-debuff chips, the dispel colour as the tile's thin border and a red MC tag. */

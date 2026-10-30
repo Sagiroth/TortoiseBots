@@ -90,6 +90,14 @@ type DayCount struct {
 	Fights int    `json:"fights"`
 }
 
+// CommanderCount is one row of the list of commanders with saved fights (the debugger's list while no raid is bound).
+type CommanderCount struct {
+	Commander string `json:"commander"`
+	Fights    int    `json:"fights"`
+	Days      int    `json:"days"`
+	Last      int64  `json:"last"` // unix seconds of the newest fight's start
+}
+
 // Item is one finished fight handed to the writer.
 type Item struct {
 	Session  uint64
@@ -349,6 +357,40 @@ func (s *Store) Flush() {
 	}
 }
 
+// Commanders lists the commanders the store holds fights for, the newest fight first, with that commander's fight and day counts.
+func (s *Store) Commanders() []CommanderCount {
+	s.mu.RLock()
+	by := map[string]*CommanderCount{}
+	days := map[string]map[string]bool{}
+	for i := range s.rows {
+		r := &s.rows[i]
+		c := by[r.Commander]
+		if c == nil {
+			c = &CommanderCount{Commander: r.Commander}
+			by[r.Commander] = c
+			days[r.Commander] = map[string]bool{}
+		}
+		c.Fights++
+		if r.Start > c.Last {
+			c.Last = r.Start
+		}
+		days[r.Commander][r.day] = true
+	}
+	s.mu.RUnlock()
+	out := make([]CommanderCount, 0, len(by))
+	for name, c := range by {
+		c.Days = len(days[name])
+		out = append(out, *c)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Last != out[j].Last {
+			return out[i].Last > out[j].Last
+		}
+		return out[i].Commander < out[j].Commander
+	})
+	return out
+}
+
 // Days lists a commander's days, newest first, with the fights indexed per day.
 func (s *Store) Days(commander string) []DayCount {
 	s.mu.RLock()
@@ -536,6 +578,20 @@ func hasControl(s string) bool {
 		}
 	}
 	return false
+}
+
+// CommandersHandler serves GET /api/v1/combat/history/commanders: the commanders with saved fights, newest first, so the
+// debugger can list what is left to analyse while no raid is bound.
+func CommandersHandler(s *Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rows := []CommanderCount{}
+		if s != nil {
+			rows = s.Commanders()
+		}
+		writeJSON(w, struct {
+			Commanders []CommanderCount `json:"commanders"`
+		}{rows})
+	}
 }
 
 // DaysHandler serves GET /api/v1/combat/history/days?commander=.

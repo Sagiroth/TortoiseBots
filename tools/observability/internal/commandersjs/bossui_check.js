@@ -74,8 +74,10 @@ assert.strictEqual(spellRecaps[0].spell.name, "Corrupted Blood");
 assert.strictEqual(spellRecaps[0].likely, false);
 assert.strictEqual(spellRecaps[0].hits[0].s, "Corrupted Blood", "the hit keeps its spell");
 const spellHtml = run("fdRecapHtml(recaps, 0)", { recaps: spellRecaps });
-assert.ok(spellHtml.includes("killed by Hakkar — <b>Corrupted Blood</b>"), spellHtml);
+assert.ok(spellHtml.includes("killed by Hakkar's <b>Corrupted Blood</b>"), spellHtml);
 assert.ok(!spellHtml.includes("likely"), "a named spell needs no guess");
+assert.ok(spellHtml.includes("<th>Spell</th>"), "the recap table names the spell column");
+assert.ok(spellHtml.includes("<td>Corrupted Blood</td>"), "the hit's spell is in its own column: " + spellHtml);
 
 const HEURISTIC_FIGHT = {
   dur_ms: 20000, bots: [{ name: "Healbot", guid: 7, role: "healer" }],
@@ -90,10 +92,31 @@ const guessed = run("FightDebug.deathRecaps(f)", { f: HEURISTIC_FIGHT });
 assert.strictEqual(guessed[0].spell.name, "Blood Siphon", "the newest cast in 3 s aimed at the bot: " + JSON.stringify(guessed[0].spell));
 assert.strictEqual(guessed[0].likely, true);
 const guessedHtml = run("fdRecapHtml(recaps, 0)", { recaps: guessed });
-assert.ok(guessedHtml.includes("— <b>Blood Siphon</b> <span class=\"fd-likely\""), guessedHtml);
+assert.ok(guessedHtml.includes("killed by Hakkar's <b>Blood Siphon</b> <span class=\"fd-likely\""), guessedHtml);
+assert.ok(guessedHtml.includes("<td>Blood Siphon"), "the matched spell is the hit's SPELL cell too: " + guessedHtml);
 const noGuess = run("FightDebug.deathRecaps(f)", { f: Object.assign({}, HEURISTIC_FIGHT, { log: [] }) });
 assert.strictEqual(noGuess[0].spell, null);
 assert.strictEqual(noGuess[0].likely, false);
+assert.strictEqual(noGuess[0].hits[0].sp, "", "with no cast log the hit's spell is unknown (blank)");
+
+// ---- the SPELL column's three states: the hit's spell, melee for a white hit, blank when unknown ----------------------
+const MELEE_FIGHT = {
+  dur_ms: 20000, bots: [{ name: "Healbot", guid: 7, role: "healer" }],
+  log: [{ k: "cast", t: 1000, n: "Hakkar", s: "Blood Siphon", sid: 24315, tg: "7", tn: "Healbot" }],
+  deaths: [{ name: "Healbot", t_ms: 9000, x: 1, y: 2, killer: "Hakkar", hits: [{ a: "Hakkar", d: 900, t_ms: 8800 }] }],
+};
+const meleeRecaps = run("FightDebug.deathRecaps(f)", { f: MELEE_FIGHT });
+assert.strictEqual(meleeRecaps[0].hits[0].sp, "melee", "a logged fight with no matching cast is a white hit");
+assert.strictEqual(meleeRecaps[0].spell, null, "melee is not a killing spell for the summary");
+const meleeHtml = run("fdRecapHtml(recaps, 0)", { recaps: meleeRecaps });
+assert.ok(meleeHtml.includes("<td>melee</td>"), meleeHtml);
+assert.ok(meleeHtml.includes("killed by Hakkar ·"), "no spell, no guess: " + meleeHtml);
+assert.deepStrictEqual(run("FightDebug.spellForHit(h, bot, names, log)", {
+  h: { a: "Hakkar", d: 1, t_ms: 8800 }, bot: { name: "Healbot", guid: 7 }, names: { Healbot: true }, log: null }), null,
+  "no log: unknown, never melee");
+assert.strictEqual(run("FightDebug.spellForHit(h, bot, names, log)", {
+  h: { a: "Healbot", d: 1, t_ms: 8800 }, bot: { name: "Healbot", guid: 7 }, names: { Healbot: true }, log: MELEE_FIGHT.log }), null,
+  "a fellow bot's hit is never melee");
 
 // ---- the timeline's Boss lane: one marker per logged cast, coloured by the table and scrubbing to its time -------------
 const tl = run("FightDebug.timeline(f)", { f: HEURISTIC_FIGHT });
@@ -145,3 +168,15 @@ assert.ok(mobRows.includes("Auras") && mobRows.includes("Snake Form 12 s"), mobR
 assert.ok(mobRows.includes("untargetable") && mobRows.includes("flying") && mobRows.includes("snake"), mobRows);
 
 console.log("boss ui ok");
+
+// Codex round 2: the likely-spell fallback reads only the killing attacker's casts; another mob casting at the bot in the
+// last 3 s is not the killing spell.
+{
+  const TWO = JSON.parse(JSON.stringify(MELEE_FIGHT));
+  const d0 = TWO.deaths && TWO.deaths[0];
+  if (d0 && Array.isArray(TWO.log)) {
+    TWO.log.push({ k: "cast", t: d0.t_ms - 500, n: "Some Other Mob", s: "Shadow Bolt", sid: 9613, tn: d0.name });
+    const r = run("FightDebug.deathRecaps(f)", { f: TWO });
+    assert.notStrictEqual(r[0].spell && r[0].spell.name, "Shadow Bolt", "another mob's cast is not the killing spell");
+  }
+}

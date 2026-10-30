@@ -137,6 +137,62 @@ assert.strictEqual(recaps[1].hits[0].d, 3091);
 assert.strictEqual(recaps[1].spanMs, 0);
 assert.deepStrictEqual(F.deathRecaps({ deaths: [] }), []);
 
+// ---- pack numbers count inside a day and a run, not across the whole list ------------------------------------------
+const secAt = (y, m, d, hh, mm) => Math.floor(Date.UTC(y, m - 1, d, hh, mm, 0) / 1000);
+const packRows = [
+  { key: "new-2", session: 9, start: secAt(2026, 10, 29, 23, 40) },
+  { key: "new-1", session: 9, start: secAt(2026, 10, 29, 23, 10) },
+  { key: "old-3", session: 4, start: secAt(2026, 10, 29, 22, 0) },
+  { key: "old-2", session: 4, start: secAt(2026, 10, 29, 21, 30) },
+  { key: "old-1", session: 4, start: secAt(2026, 10, 29, 21, 0) },
+  { key: "prev-night", session: 4, start: secAt(2026, 10, 28, 23, 0) },
+];
+assert.deepStrictEqual(F.packNumbers(packRows), [2, 1, 3, 2, 1, 1],
+  "a new run (session) restarts at Pack 1, and so does a new UTC day");
+assert.deepStrictEqual(F.packNumbers([]), []);
+assert.deepStrictEqual(F.packNumbers([{ key: "a" }, { key: "b" }]), [2, 1], "rows without a session still count per day");
+// The rail reads the same numbers: two runs on one night do not continue each other's count.
+const multiRail = F.railCards(packRows, {}, null, null);
+assert.deepStrictEqual(multiRail.map((c) => c.label), ["Pack 2", "Pack 1", "Pack 3", "Pack 2", "Pack 1", "Pack 1"],
+  "the rail's Pack N restarts with the run and the day");
+
+// ---- the killer: the last hit that is not the dead bot; only self-damage known is "unknown" ------------------------
+const SELF_FIGHT = {
+  bots: [{ name: "Benedwin", guid: 7, class: "druid", role: "dps", dmg: 0, taken: 900, casts: 2, spells: [] }],
+  deaths: [{
+    name: "Benedwin", t_ms: 40200, x: 1, y: 2, killer: "Benedwin",
+    hits: [
+      { t_ms: 40000, a: "Benedwin", d: 120 },  // its own spell, the newest event
+      { t_ms: 39800, a: "Onyxian Warder", d: 820 },
+      { t_ms: 39000, a: "Benedwin", d: 90 },
+    ],
+  }],
+};
+assert.strictEqual(F.deathRecaps(SELF_FIGHT)[0].killer, "Onyxian Warder", "the last hit from another unit names the killer");
+assert.strictEqual(F.killerOf(SELF_FIGHT.deaths[0]), "Onyxian Warder");
+const selfOnly = { name: "Kild", t_ms: 59200, killer: "Kild", hits: [{ t_ms: 59000, a: "Kild", d: 44 }, { t_ms: 59100, a: "Kild", d: 40 }] };
+assert.strictEqual(F.killerOf(selfOnly), "unknown", "only self-damage known is unknown, never the victim");
+const noHits = { name: "Erelidael", t_ms: 30000, killer: "Erelidael", hits: [] };
+assert.strictEqual(F.killerOf(noHits), "unknown");
+assert.strictEqual(F.killerOf({ name: "A", t_ms: 1, killer: "Onyxia", hits: [] }), "Onyxia", "the module's killer stands when it is not the victim");
+// The hits are stored newest-first: the killer is the non-self hit with the greatest t_ms, whatever the array order.
+const newestFirst = {
+  name: "V", t_ms: 20000, killer: "OldMob",
+  hits: [
+    { t_ms: 19000, a: "NewMob", d: 500 },
+    { t_ms: 15000, a: "OldMob", d: 900 },
+    { t_ms: 18000, a: "V", d: 50 },
+  ],
+};
+assert.strictEqual(F.killerOf(newestFirst), "NewMob", "a backward scan would return the oldest attacker");
+assert.strictEqual(F.killerOf({ name: "V", t_ms: 20000, killer: "x", hits: newestFirst.hits.slice().reverse() }), "NewMob",
+  "array order never decides");
+// The checks' death line reads the same killer.
+const selfChecks = F.checks(SELF_FIGHT, null, [], null);
+const deathLine = selfChecks.find((c) => c.id === "other_death");
+assert.ok(deathLine && deathLine.ev.includes("to Onyxian Warder"), deathLine && deathLine.ev);
+assert.ok(!deathLine.ev.includes("to Benedwin"), "the dead bot is never its own killer: " + deathLine.ev);
+
 // ---- timeline -----------------------------------------------------------------------------------------------------
 const tl = F.timeline(byId("5-4"));
 assert.strictEqual(tl.durMs, 39111);

@@ -918,6 +918,9 @@
   function applyRoute() {
     const r = parseRoute();
     const tab = r.tab || state.activeTab;
+    // The demo group comes on before the first render: a hash naming a demo commander then finds its tab instead of flashing
+    // "DEMO (simulated) is gone" for a second.
+    if (r.demo && tab === 'commanders') setCmdDemo(true, true);
     const prevRunKey = state.dungeons.openKey;
     state.dungeons.openKey = tab === 'dungeons' && r.run ? r.run : null;
     // The Commanders page's Fight debugger mode, its open tab and its picked fight come from the hash before the tab renders.
@@ -927,7 +930,6 @@
     else if (tab === 'dungeons' && state.dungeons.openKey !== prevRunKey) renderDungeons();
     else if (tab === 'commanders' && (fdPage.open !== prevCmd || fdPage.fight !== prevFight)) renderCommanders();
     routeApplied = true;
-    if (r.demo && tab === 'commanders') setCmdDemo(true, true); // #/commanders?demo=1
     if (r.map && tab === 'dungeon-runs') dgSelect(r.map); // #/dungeon-runs?map=209 (the glance panel's links)
     if (r.bot !== null) {
       state.profileTab = PROFILE_TABS.includes(r.ptab) ? r.ptab : 'overview';
@@ -1253,14 +1255,23 @@
     }
   }
 
+  // The zone's client art, asked for only while the Map tab shows that zone: the element starts with no source, so a load on
+  // any other tab (a Commanders reload) asks the daemon for no picture at all.
+  function paintZoneArt() {
+    const zone = ZONE_CONFIG[state.currentZoneId];
+    const art = zone && zone.file;
+    if (!el.mapImg) return;
+    if (art && state.activeTab === 'map' && state.mapView === 'zone') {
+      if (el.mapImg.getAttribute('src') !== `/maps/${zone.file}`) el.mapImg.src = `/maps/${zone.file}`;
+      el.mapImg.style.display = 'block';
+    }
+  }
+
   function loadZoneMap(zoneId) {
     const zone = ZONE_CONFIG[zoneId];
     const art = zone && zone.file;
     if (el.mapImg) {
-      if (art) {
-        if (el.mapImg.getAttribute('src') !== `/maps/${zone.file}`) el.mapImg.src = `/maps/${zone.file}`;
-        el.mapImg.style.display = 'block';
-      } else {
+      if (!art) {
         el.mapImg.removeAttribute('src');
         el.mapImg.style.display = 'none';
         resetZoneArt();
@@ -1402,7 +1413,8 @@
       .then(cfg => {
         if (cfg && Object.keys(cfg).length > 0) {
           ZONE_BOUNDS = cfg;
-          if (state.mapView === 'world') renderMap();
+          // Only the Map tab draws the continents; any other tab asks for no map art on a data load.
+          if (state.mapView === 'world' && state.activeTab === 'map') renderMap();
           if (state.activeTab === 'commanders') renderCommanders();
         }
       })
@@ -2335,6 +2347,7 @@
       : ((ZONE_CONFIG[state.currentZoneId] || {}).map ?? state.worldMapId ?? 0);
     renderWorldZones(chipMap);
     if (state.mapView === 'world') { renderWorld(); return; }
+    paintZoneArt();
     if (!el.mapOverlay) return;
     el.mapOverlay.innerHTML = '';
 
@@ -3570,6 +3583,10 @@
       .catch(e => {
         if (state.profileGuid !== guid) return;
         const msg = String((e && e.message) || 'fetch failed');
+        if (el.armoryError) el.armoryError.style.display = 'none';
+        // The armory is the main-realm database; a hired raid bot lives in the game server and has no row there. The drawer then
+        // shows what the telemetry knows and one quiet line, not an HTTP error.
+        if (/^HTTP 404/.test(msg)) { renderArmoryMissing(); return; }
         if (el.armoryError) {
           el.armoryError.style.display = 'block';
           el.armoryError.innerHTML = msg.includes('401')
@@ -3736,6 +3753,8 @@
   function renderProfileOverview() {
     const host = document.getElementById('armory-content-overview');
     if (!host || state.profileTab !== 'overview' || state.profileGuid === null) return;
+    // A character without an armory row keeps the quiet note on every snapshot refresh, not the live overview.
+    if (state.profile && state.profile.missing) { host.innerHTML = armoryMissingHtml(); return; }
     const guid = state.profileGuid;
     const live = liveBot(guid);
     const mine = state.issues.active.filter(i => i.guid === guid);
@@ -3810,6 +3829,30 @@
     renderArmoryPanel(p, state.profileTab);
   }
 
+  // What the drawer shows for a character the armory does not know (a hired raid bot): its telemetry (class, level, gear tier the
+  // roster carries) and one quiet line. The gear paperdoll is cleared so a bot opened before this one never stays behind it.
+  function armoryMissingHtml() {
+    const live = liveBot(state.profileGuid);
+    const rows = [];
+    if (live) {
+      rows.push(kv('Class', esc(capClass(live.class) || '')));
+      if (live.level !== undefined && live.level !== null && live.level !== '') rows.push(kv('Level', esc(String(live.level))));
+      const g = live.gear;
+      if (g && numOr0(g.item_level) > 0) rows.push(kv('Gear', `item level ${esc(String(g.item_level))} · ${esc(String(numOr0(g.pieces)))} pieces`));
+      if (live.spec) rows.push(kv('Spec', esc(String(live.spec))));
+    }
+    return '<div class="profile-grid profile-section"><div class="kv-card"><div class="section-label">What the game server reports</div>'
+      + (rows.join('') || '<div class="empty-hint">No telemetry for this character yet.</div>')
+      + '</div></div><p class="empty-hint armory-missing">No armory record (hired bot): this character lives in the game server, not in the main-realm database.</p>';
+  }
+
+  function renderArmoryMissing() {
+    state.profile = { missing: true };
+    ['gearLeft', 'gearRight', 'gearWeapons', 'gearSummary'].forEach(k => { if (el[k]) el[k].innerHTML = ''; });
+    renderProfileHeader();
+    renderArmoryPanel(state.profile, state.profileTab);
+  }
+
   // Cheap per-snapshot refresh: bars and the live overview, nothing heavier.
   function renderProfileLive() {
     if (state.profileGuid === null) return;
@@ -3841,6 +3884,13 @@
       const panel = document.getElementById(`armory-content-${t}`);
       if (panel) panel.style.display = t === tab ? 'block' : 'none';
     });
+    if (p && p.missing) {
+      const html = armoryMissingHtml();
+      if (tab === 'gear') { if (el.gearSummary) el.gearSummary.innerHTML = html; return; }
+      const host = document.getElementById(`armory-content-${tab}`);
+      if (host) host.innerHTML = html;
+      return;
+    }
     if (tab === 'overview') { renderProfileOverview(); return; }
     if (!p) {
       const host = document.getElementById(`armory-content-${tab}`);
@@ -4890,9 +4940,9 @@
 
         renderLive();
 
-        // The Dungeons view is a rollup of the roster; refresh it with each
-        // snapshot (the profile's run link and the world map's link read it too).
-        fetchDungeons();
+        // The Dungeons view is a rollup of the roster: refresh it with each snapshot only while it is on screen, else once
+        // every 30 s (the profile's run link and the world map's link read it too, and a snapshot is every 2 s).
+        if (dgnPollDue(dgnOnScreen(), state.dungeons.at, Date.now())) fetchDungeons();
 
         if (state.bots.length !== prevCount) {
           appendConsoleLog(time, 'roster', `Snapshot #${esc(state.snapshotSeq)}: ${state.bots.length} bots active.`);
@@ -5161,6 +5211,11 @@
     gridQueued: false,
   };
   const fdPageSeen = FdTabs.loadSeen(fdPageStore);
+  // The commanders with saved fights (GET /api/v1/combat/history/commanders): the debugger's list while no raid is bound, and
+  // how an unbound commander's tab knows it has a history to show. Asked once per minute; a failure keeps the last list.
+  const fdHistCmd = { list: null, at: 0, pending: false };
+  const FD_HISTCMD_MS = 60000;
+  const fdHistNamed = name => !!(fdHistCmd.list && fdHistCmd.list.some(r => r && r.commander === name));
 
   function cmdPageMode() {
     if (!fdPage.loaded) {
@@ -5184,10 +5239,17 @@
     try { if (fdPageStore) fdPageStore.setItem(FdTabs.PAGE_KEY, fdPage.mode); } catch (e) { /* nothing to remember */ }
     if (opts && opts.quiet) return;
     if (same) { cmdPageHash(fdPage.open, next, fdPage.fight, true); cmdPaintPageMode(next); return; } // clicking the view that is already on only remembers it
-    fdStopCard(fdPage.open);
+    const open = fdPage.open;
+    // Live keeps the commander in the route: #/commanders/<name> is that commander's Live card, not All raids.
+    if (next === 'live' && open) { fdStopCard(open); fdPage.fight = null; cmdPageHash(open, 'live', null, true); renderCommanders(); return; }
+    const cur = parseRoute();
+    const named = cur.cmdMode === 'debug' || !!cur.cmd;
+    fdStopCard(open);
     fdPage.open = null;
     fdPage.fight = null;
-    cmdPageHash(null, next, null, true);
+    // With nothing bound the debugger is a view of this page (the saved-fights list), not a route of its own: clicking the
+    // button keeps the hash instead of jumping to a bare #/fight.
+    if (!(next === 'debug' && !named)) cmdPageHash(null, next, null, true);
     renderCommanders();
   }
 
@@ -5326,7 +5388,7 @@
       delete fdPage.known[k];
       delete fdPage.last[k];
       delete fdPage.openedAt[k];
-      if (fdPage.open === k) { fdStopCard(k); fdPage.open = null; fdTabHash(null, true); }
+      if (fdPage.open === k && !fdHistNamed(k)) { fdStopCard(k); fdPage.open = null; fdTabHash(null, true); }
     });
   }
 
@@ -5377,7 +5439,7 @@
     const tabs = fdTabsModel(all);
     fdTabPaint(tabs, 'debug');
     const grid = document.getElementById('cmd-overview');
-    if (grid && !grid.hidden) setHtml(grid, fdGridHtml(FdTabs.sortBinds(all), tabs));
+    if (grid && !grid.hidden) setHtml(grid, fdOverviewHtml(all, tabs));
   }
 
   function fdGridPoll(all) {
@@ -5385,6 +5447,63 @@
       if (bind.demo) return;
       cmdRaidFights(bind, () => fdGridPaintSoon());
     });
+  }
+
+  // ---- the commanders with saved fights (no raid bound) ------------------------------------------------------------
+  // GET /api/v1/combat/history/commanders: who has fights on disk, newest first. The Fight debugger lists them when nothing is
+  // bound (the moment a run is usually analysed), and a tab that names one of them opens its history read-only.
+  function fdHistCmdLoad(cb) {
+    const now = Date.now();
+    if (fdHistCmd.list && now - fdHistCmd.at < FD_HISTCMD_MS) { if (cb) cb(); return; }
+    if (fdHistCmd.pending) { if (cb) fdHistCmd.waiting.push(cb); return; }
+    fdHistCmd.pending = true;
+    fdHistCmd.waiting = cb ? [cb] : [];
+    const done = list => {
+      if (Array.isArray(list)) { fdHistCmd.list = list; fdHistCmd.at = Date.now(); }
+      else if (!fdHistCmd.list) fdHistCmd.list = [];
+      fdHistCmd.pending = false;
+      const wait = fdHistCmd.waiting || [];
+      fdHistCmd.waiting = [];
+      wait.forEach(f => { try { f(); } catch (e) { /* a drawing error must not strand the queue */ } });
+    };
+    fetch('/api/v1/combat/history/commanders').then(jsonOrThrow)
+      .then(v => done(v && Array.isArray(v.commanders) ? v.commanders : []))
+      .catch(() => done(null));
+  }
+
+  const fdHistRow = name => (fdHistCmd.list || []).find(r => r && r.commander === name) || null;
+
+  // A synthetic binding for a commander that has left the world: its history is read-only, with no live party, map or run.
+  function cmdHistoryBind(name) {
+    const row = fdHistRow(name) || {};
+    return {
+      commander: name, bots: [], online: false, view: false, group: '', layout: null, run: null,
+      history: true, histFights: numOr0(row.fights), histDays: numOr0(row.days),
+    };
+  }
+
+  function fdHistoryListHtml() {
+    const rows = Array.isArray(fdHistCmd.list) ? fdHistCmd.list : [];
+    if (!rows.length) return '';
+    const items = rows.map(r => {
+      const n = numOr0(r.fights);
+      const when = typeof FightHistory !== 'undefined' && r.last > 0 ? FightHistory.whenLabel(r.last * 1000) : '';
+      return `<li><button type="button" class="fd-histcmd" data-fdtab="${esc(encodeURIComponent(r.commander))}" title="Open ${esc(r.commander)}'s saved fights">`
+        + `<b>${esc(r.commander)}</b>`
+        + `<span>${n} fight${n === 1 ? '' : 's'} · ${numOr0(r.days)} night${numOr0(r.days) === 1 ? '' : 's'}${when ? ' · last ' + esc(when) : ''}</span></button></li>`;
+    }).join('');
+    return `<section class="fd-histlist" aria-label="Commanders with saved fights"><h3 class="cmd-h">Saved fights</h3>`
+      + `<p class="empty-hint">Read-only: pick a commander to open its fights of any night, whether or not it is bound now.</p>`
+      + `<ul>${items}</ul></section>`;
+  }
+
+  // The grid's content: the bound raids, or (nothing bound) the one-line note and the commanders that still have saved fights.
+  function fdOverviewHtml(all, tabs) {
+    if (all.length) return fdGridHtml(FdTabs.sortBinds(all), tabs);
+    const note = `<p class="fd-nofight">${esc(FD_EMPTY.noRaid)}</p>`;
+    if (fdHistCmd.list === null) return note + '<p class="empty-hint">Loading the saved fights…</p>';
+    const list = fdHistoryListHtml();
+    return note + (list || '<p class="empty-hint">No fight has been saved yet.</p>');
   }
 
   // A small, static map for an All raids card: the picture and the party's dots, no layers, trails or replay.
@@ -5417,24 +5536,46 @@
       if (listEl) { listEl.hidden = true; listEl.innerHTML = ''; }
       if (grid) {
         grid.hidden = false;
-        setHtml(grid, all.length ? fdGridHtml(FdTabs.sortBinds(all), tabs) : `<p class="fd-nofight">${esc(FD_EMPTY.noRaid)}</p>`);
+        setHtml(grid, fdOverviewHtml(all, tabs));
       }
+      if (!all.length) fdHistCmdLoad(() => { if (state.activeTab === 'commanders' && !fdPage.open) fdGridPaint(); });
       fdGridPoll(all);
       return;
     }
     if (grid) { grid.hidden = true; setHtml(grid, ''); }
     if (listEl) listEl.hidden = false;
+    const liveBind = cmdFindBind(open);
+    // Nothing bound: a commander the history knows opens read-only (a run ends, then it is analysed). The history list is a
+    // request of its own, so the first visit shows the loading line until it answers.
+    if (!liveBind) {
+      if (fdHistCmd.list === null) {
+        fdLeaveCard();
+        if (listEl) listEl.innerHTML = `<div class="card cmd-gone"><h2 class="cmd-gone-title">${esc(open)}</h2><p class="empty-hint">Loading the saved fights…</p></div>`;
+        fdHistCmdLoad(() => { if (state.activeTab === 'commanders') renderCommanders(); });
+        return;
+      }
+      if (fdHistNamed(open)) {
+        const card = fdOpenCard(open, listEl);
+        cmdRenderCard(card, cmdHistoryBind(open), true);
+        return;
+      }
+    }
     if (fdTabGone(open)) {
       fdLeaveCard();
       if (listEl) listEl.innerHTML = `<div class="card cmd-gone"><h2 class="cmd-gone-title">${esc(open)} is gone</h2><p class="empty-hint">The commander unbound or logged out. Its tab stays greyed for five minutes, then drops and this page goes back to All raids.</p></div>`;
       return;
     }
-    const bind = cmdFindBind(open);
-    if (!bind) {
+    if (!liveBind) {
       fdLeaveCard();
       if (listEl) listEl.innerHTML = `<div class="card cmd-gone"><h2 class="cmd-gone-title">${esc(open)}</h2><p class="empty-hint">Waiting for this commander in the next report from the game server.</p></div>`;
       return;
     }
+    const card = fdOpenCard(open, listEl);
+    cmdRenderCard(card, liveBind, true);
+  }
+
+  // The one card of an open tab: every other card leaves, this one is created and placed first in the list.
+  function fdOpenCard(open, listEl) {
     cmdCards.forEach((card, key) => {
       if (key === open) return;
       fdStopCard(key);
@@ -5447,7 +5588,7 @@
     if (!card) { card = newCmdCard(open); cmdCards.set(open, card); }
     Array.from(listEl.children).forEach(el => { if (el !== card) el.remove(); });
     if (listEl.firstChild !== card) listEl.insertBefore(card, listEl.firstChild || null);
-    cmdRenderCard(card, bind, true);
+    return card;
   }
 
   function fdLeaveCard() {
@@ -5534,6 +5675,8 @@
     const now = Date.now() / 1000;
     const bind = CmdDemo.frame(now, cmdDemo.start), raidBind = CmdDemo.raidFrame(now, cmdDemo.start);
     cmdDemo.bind = bind; cmdDemo.raidBind = raidBind;
+    // The demo goes through the same glide as a live report, so its dots walk between the 2 s steps instead of jumping.
+    if (typeof LiveView !== 'undefined' && LiveView.noteReport) LiveView.noteReport(cmdGlide, [bind, raidBind], performance.now());
     [bind, raidBind].forEach(b => {
       cmdTrails.seeded[b.commander] = true; // the daemon has no history of it
       CmdView.note(cmdTracker, b, now);
@@ -6830,6 +6973,48 @@
     return g;
   }
 
+  // Each plan view is memoized by PlanOverlay.view, so its identity is its inputs: a counter names it in the static key.
+  const cmdViewIds = new WeakMap();
+  let cmdViewSeq = 0;
+  function cmdViewId(view) {
+    if (!view || typeof view !== 'object') return 0;
+    let id = cmdViewIds.get(view);
+    if (!id) { id = ++cmdViewSeq; cmdViewIds.set(view, id); }
+    return id;
+  }
+
+  // What the static group draws from: the view (the box: a zoom or pan, the grid step), the layer switches that own static
+  // marks, the floor, the plan's identity, the zone under the party and the zones data. Equal keys draw the same picture.
+  function cmdStaticKey(o) {
+    const v = o || {};
+    const box = Array.isArray(v.box) ? v.box : [];
+    const on = v.on || {};
+    const first = v.first || null;
+    const zr = v.zr || null;
+    const num = n => (typeof n === "number" && isFinite(n) ? n.toFixed(2) : "");
+    return [box.map(num).join(','), num(v.step), on.grid ? 1 : 0, on.zonelabels ? 1 : 0, on.zone ? 1 : 0,
+      on.planroute ? 1 : 0, on.planstands ? 1 : 0, on.planrings ? 1 : 0, on.patrols ? 1 : 0, v.flKey || '',
+      v.viewId || 0, first ? first.map + ':' + (first.zone || '') + ':' + (v.zones ? 1 : 0) : '',
+      zr ? [num(zr.x), num(zr.y), num(zr.w), num(zr.h), zr.name].join(',') : ''].join('|');
+  }
+
+  // The static group of a card's map: rebuilt only when its key changed. build() gets the units its marks answer hover with;
+  // they are copied into this frame's units either way, so a cached plan still hovers. Returns whether it rebuilt (the check's
+  // counter).
+  function cmdStaticLayer(node, key, build, units) {
+    if (!node) return false;
+    let rebuilt = false;
+    if (node._k !== key) {
+      node._k = key;
+      const own = {};
+      node.innerHTML = build(own) || '';
+      node._units = own;
+      rebuilt = true;
+    }
+    if (units && node._units) Object.assign(units, node._units);
+    return rebuilt;
+  }
+
   function drawCmdMap(key) {
     const card = cmdCards.get(key);
     const liveBind = cmdFindBind(key);
@@ -6899,31 +7084,41 @@
     const picWhy = card.querySelector('.cmd-picwhy');
     if (picWhy) { picWhy.hidden = !ui.reason; picWhy.textContent = ui.reason || ''; }
 
+    // units: every thing that can be hovered gets a key; the hover box looks it up here, so it follows the 2 s refresh.
+    const units = ms.units = {};
+    const dc = { f, k, units };
+    // The static layers (the grid, the zone marks and the whole plan) sit in a group of their own and are rebuilt only when
+    // something they draw changes: the map, the plan and its step, a layer switch, the zoom/pan or the floor. A glide frame
+    // only redraws the units and overlays in g.dyn; the plan's hover entries are re-registered from the group's last build.
+    const flKey = fl ? Array.from(fl).sort().join(',') : '';
+    const staticKey = cmdStaticKey({ box, step, on, flKey, viewId: cmdViewId(pf.view), first, zones: !!ZONE_BOUNDS, zr });
+    cmdStaticLayer(svg.querySelector('g.static'), staticKey, su => {
+      const sc = { f, k, units: su };
+      let html = '';
+      if (on.grid) {
+        grid.xs.forEach(x => { html += `<line class="grid" x1="${f(x)}" y1="${f(box[1])}" x2="${f(x)}" y2="${f(box[1] + box[3])}"/>`; });
+        grid.ys.forEach(y => { html += `<line class="grid" x1="${f(box[0])}" y1="${f(y)}" x2="${f(box[0] + box[2])}" y2="${f(y)}"/>`; });
+      }
+      if (on.zonelabels && first) {
+        CmdView.zonesIn(ZONE_BOUNDS, first.map, box, first.zone).slice(0, 12).forEach(z => {
+          html += `<rect class="zone2" x="${f(z.x)}" y="${f(z.y)}" width="${f(z.w)}" height="${f(z.h)}"/>`
+            + `<text class="zone2" x="${f(z.x + 6 * k)}" y="${f(z.y + 14 * k)}" style="font-size:${f(10.5 * k)}px">${esc(displayZoneName(z.name))}</text>`;
+        });
+      }
+      if (on.zone && zr) {
+        html += `<rect class="zone" x="${f(zr.x)}" y="${f(zr.y)}" width="${f(zr.w)}" height="${f(zr.h)}"/>`
+          + `<text class="zone" x="${f(zr.x + 6 * k)}" y="${f(zr.y + 14 * k)}" style="font-size:${f(11 * k)}px">${esc(zr.name)}</text>`;
+      }
+      if (pf.view && (on.planroute || on.planstands || on.planrings || on.patrols)) html += cmdPlanSvg(sc, pf.view, on);
+      return html;
+    }, units);
     let g = '';
-    if (on.grid) {
-      grid.xs.forEach(x => { g += `<line class="grid" x1="${f(x)}" y1="${f(box[1])}" x2="${f(x)}" y2="${f(box[1] + box[3])}"/>`; });
-      grid.ys.forEach(y => { g += `<line class="grid" x1="${f(box[0])}" y1="${f(y)}" x2="${f(box[0] + box[2])}" y2="${f(y)}"/>`; });
-    }
-    if (on.zonelabels && first) {
-      CmdView.zonesIn(ZONE_BOUNDS, first.map, box, first.zone).slice(0, 12).forEach(z => {
-        g += `<rect class="zone2" x="${f(z.x)}" y="${f(z.y)}" width="${f(z.w)}" height="${f(z.h)}"/>`
-          + `<text class="zone2" x="${f(z.x + 6 * k)}" y="${f(z.y + 14 * k)}" style="font-size:${f(10.5 * k)}px">${esc(displayZoneName(z.name))}</text>`;
-      });
-    }
-    if (on.zone && zr) {
-      g += `<rect class="zone" x="${f(zr.x)}" y="${f(zr.y)}" width="${f(zr.w)}" height="${f(zr.h)}"/>`
-        + `<text class="zone" x="${f(zr.x + 6 * k)}" y="${f(zr.y + 14 * k)}" style="font-size:${f(11 * k)}px">${esc(zr.name)}</text>`;
-    }
     if (on.healring) {
       onMap.filter(b => b.role === 'healer' && b.alive !== false).forEach(b => {
         const p = CmdView.project(b.x, b.y);
         g += `<circle class="range heal" cx="${f(p.x)}" cy="${f(p.y)}" r="${CmdView.HEAL_RANGE_YD}"><title>${esc(b.name)}: healing range ${CmdView.HEAL_RANGE_YD} yd</title></circle>`;
       });
     }
-    // units: every thing that can be hovered gets a key; the hover box looks it up here, so it follows the 2 s refresh.
-    const units = ms.units = {};
-    const dc = { f, k, units };
-    if (pf.view && (on.planroute || on.planstands || on.planrings || on.patrols)) g += cmdPlanSvg(dc, pf.view, on);
     if (on.runsteps) g += cmdRunStepsSvg(dc, steps, lead && first && lead.map === first.map ? lead : null);
     const nowSec = cmdNowFor(bind), trailDrawn = CmdPaths.cutByAge(trail, nowSec, cmdLayers.trailSec);
     if (on.membertrails && first) g += cmdMemberTrailsSvg(dc, bind, first.map, nowSec);
@@ -7030,13 +7225,26 @@
     }
     const fdSelBot = fd && fd.mode === 'debug' ? fd.bot : null;
     const layoutNamed = (bind.layout ? [bind.layout.mt].concat(bind.layout.ot || []) : []).filter(Boolean);
+    // Which names fit: the lead and the tanks first, then everyone whose label the layer shows, each one dropped when its box
+    // would run into a label already drawn (the unit's name is still in the hover box).
+    const labelCand = [];
+    onMap.forEach(b => {
+      const isLead = b === lead && on.lead, isFd = fdSelBot && b.name === fdSelBot;
+      if (!(on.botnames || isLead || isFd || layoutNamed.indexOf(b.name) >= 0)) return;
+      const p = CmdView.project(b.x, b.y);
+      const rank = isLead || isFd ? 0 : CmdView.roleKey(b) === 'tank' ? 1 : 2;
+      labelCand.push({ b, rank, isLead, item: { id: 'b:' + (b.guid || b.name), name: (isLead ? '★ ' : '') + b.name, x: p.x, y: p.y } });
+    });
+    labelCand.sort((a, b) => a.rank - b.rank);
+    const labelIds = {};
+    CmdView.labelFit(labelCand.map(c => c.item), k).forEach(id => { labelIds[id] = true; });
     // dead first so a live bot is drawn over them
     onMap.slice().sort((a, b) => (a.alive === false ? 0 : 1) - (b.alive === false ? 0 : 1)).forEach(b => {
       const p = CmdView.project(b.x, b.y), role = CmdView.roleKey(b), isLead = b === lead && on.lead, uid = 'b:' + (b.guid || b.name);
       const isFd = fdSelBot && b.name === fdSelBot;
       const sg = on.subgroups && typeof b.sub === 'number' && b.sub >= 0 && b.sub <= 7 ? ' sg sg-' + b.sub : '';
-      // names off: the lead, the layout's tanks and the debugger's bot keep theirs
-      const named = on.botnames || isLead || isFd || layoutNamed.indexOf(b.name) >= 0;
+      // names off: the lead, the layout's tanks and the debugger's bot keep theirs; a name a neighbour's box took is left to hover
+      const named = !!labelIds[uid];
       units[uid] = { kind: 'b', obj: b };
       g += `<g class="bot ${role}${b.player ? ' player' : ''}${isFd ? ' fdsel' : ''}${sg}" data-u="${esc(uid)}"${CmdView.botHref(b.guid) ? ` data-guid="${esc(b.guid)}"` : ''}><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(12 * k)}"/>`
         + (isFd ? `<circle class="fdring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(14 * k)}"/>` : '')
@@ -7318,7 +7526,7 @@
           <div class="cmd-mapbox">
             <div class="cmd-legend fd-legend" role="note"></div>
             <div class="cmd-stage">
-              <svg class="cmd-map" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet"><g class="pic"></g><g class="dyn"></g></svg>
+              <svg class="cmd-map" role="img" aria-label="Map of the party" preserveAspectRatio="xMidYMid meet"><g class="pic"></g><g class="static"></g><g class="dyn"></g></svg>
               <div class="cmd-maptools">
                 <select class="cmd-pic" hidden title="Which picture of this map to draw under the party" aria-label="Map picture"></select>
                 <button type="button" data-act="layers" title="Which things the map draws (the one Maps layer panel)">Layers</button>
@@ -7592,6 +7800,7 @@
     const fd = fdState(key);
     fd.mode = debug ? 'debug' : 'live';
     card.classList.toggle('fd-on', debug);
+    card.classList.toggle('cmd-history', !!bind.history);
     // Debugger: its own kicker, title and chips in place of the Live title, badges, lead/run line and warnings. Live keeps them.
     const hv = cmdHeadView(debug);
     card.querySelector('.cmd-title').hidden = !hv.title;
@@ -7601,7 +7810,13 @@
     card.querySelector('.fd-headmain').hidden = !hv.crumbs;
     card.querySelector('.fd-crumbs').hidden = !hv.crumbs;
     card.querySelector('.fd-refresh').hidden = !hv.refresh;
-    if (hv.crumbs) {
+    if (bind.history) {
+      const n = numOr0(bind.histFights);
+      setHtml(card.querySelector('.fd-kicker'), 'Saved fights · ' + esc(bind.commander));
+      setHtml(card.querySelector('.fd-crumbs'),
+        '<span class="fd-crumb">Read-only · no raid bound right now</span>'
+        + `<span class="fd-crumb">${n} saved fight${n === 1 ? '' : 's'} · ${numOr0(bind.histDays)} night${numOr0(bind.histDays) === 1 ? '' : 's'}</span>`);
+    } else if (hv.crumbs) {
       const runText = UnitInfo.clockText(UnitInfo.runInfo(bind, cmdEvents, nowSec).elapsed);
       setHtml(card.querySelector('.fd-kicker'), 'Commander · ' + esc(bind.commander));
       setHtml(card.querySelector('.fd-crumbs'),
@@ -7725,23 +7940,23 @@
   // ---- Fight debugger (the Commanders card's second mode) ------------------
   // FightDebug (web/static/js/fightdebug.js) does the arithmetic; this turns its plain data into the card's markup. The mode
   // is per commander and remembered per browser; with nothing saved a raid opens on the debugger and a party on Live.
-  const FD_DETAIL_MAX = 12;   // the newest fights whose details are fetched
-  const FD_DETAIL_CACHE = 60; // finished fights kept per commander (one never changes)
+  const FD_DETAIL_MAX = 50;   // the newest fights whose details are fetched (the daemon keeps at most 50 per commander)
+  const FD_DETAIL_CACHE = 120; // finished fights kept per commander (one never changes)
   const FD_DAYS_MS = 300000;  // the night picker's list of stored days: asked once per card per 5 min
   const FD_HIST_MS = 10000;   // one past night's list, held as long as tonight's (the shared fights feed's window)
   const FD_PACK_MS = 60000;   // one pack's table, held a minute
-  const FD_EMPTY = { noRaid: 'No raid bound right now.', noFight: 'No fight yet: the first pull shows here.' };
+  const FD_EMPTY = { noRaid: 'No raid bound right now.', noFight: 'No fight yet: the first pull shows here.', noSaved: 'No saved fights in this commander\'s history.' };
   const cmdFd = {};
 
   // The one line a debugger card shows in place of an empty fight view: no fight in the list and none live. Null once a fight
   // (or a live one) exists, even while its detail is still loading.
-  function fdEmptyNote(list, fight, selLive) {
+  function fdEmptyNote(list, fight, selLive, history) {
     if (selLive || fight || (Array.isArray(list) && list.length)) return '';
-    return FD_EMPTY.noFight;
+    return history ? FD_EMPTY.noSaved : FD_EMPTY.noFight;
   }
 
   function fdState(key) {
-    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
+    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, loadingKey: null, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
     return cmdFd[key];
   }
 
@@ -7786,20 +8001,19 @@
     return true;
   }
 
-  // One detail at a time, newest first. A fight that fails (an error, or an answer without a fight) waits 10 s, then 30 s, and is left
-  // alone after three tries, so one broken fight never blocks the rows after it.
-  const FD_DETAIL_BACKOFF = [10000, 30000];
-  const FD_DETAIL_FAIL_MAX = 3;
+  // One detail at a time, newest first. A fight that fails (an error, or an answer without a fight) is asked once more at
+  // once; after that second failure its card says "details not available" instead of loading for ever, and the rows after it
+  // still load.
+  const FD_DETAIL_TRIES = 2;
 
   function fdDetailFailed(fd, key) {
     const f = fd.failed[key];
-    return !!f && (f.n >= FD_DETAIL_FAIL_MAX || f.until > Date.now());
+    return !!f && f.n >= FD_DETAIL_TRIES;
   }
 
   function fdDetailFail(fd, key) {
-    const f = fd.failed[key] || { n: 0, until: 0 };
+    const f = fd.failed[key] || { n: 0 };
     f.n += 1;
-    f.until = f.n >= FD_DETAIL_FAIL_MAX ? Infinity : Date.now() + FD_DETAIL_BACKOFF[f.n - 1];
     fd.failed[key] = f;
   }
 
@@ -7813,7 +8027,7 @@
 
   // The stored nights for the picker: one request per card per 5 min, kept on the card. A chosen night the daemon no longer
   // lists (aged out) hands the picker back to Tonight.
-  function fdDaysLoad(fd, bind) {
+  function fdDaysLoad(fd, bind, onLoaded) {
     const now = Date.now();
     if (fd.daysAt && now - fd.daysAt < FD_DAYS_MS) return;
     fd.daysAt = now;
@@ -7825,6 +8039,7 @@
         fd.userSel = false;
         fd.list = [];
       }
+      if (onLoaded) onLoaded();
     }).catch(() => { /* the picker keeps whatever it showed; Tonight always works */ });
   }
 
@@ -7843,6 +8058,31 @@
     };
     fetch('/api/v1/combat/history?commander=' + encodeURIComponent(bind.commander) + '&day=' + encodeURIComponent(day))
       .then(jsonOrThrow).then(done).catch(() => done(null));
+  }
+
+  // One row per fight: the live list first (a fight that just ended keeps its detail and its kept positions), then the day's
+  // stored fights the live list no longer holds (a restart, or a fight older than the daemon's fifty). Newest first.
+  function fdMergeRows(live, hist) {
+    const seen = {};
+    const out = [];
+    (Array.isArray(live) ? live : []).forEach(r => { if (r && r.key && !seen[r.key]) { seen[r.key] = true; out.push(r); } });
+    (Array.isArray(hist) ? hist : []).forEach(r => { if (r && r.key && !seen[r.key]) { seen[r.key] = true; out.push(r); } });
+    out.sort((a, b) => (numOr0(b.start) - numOr0(a.start)) || (String(a.key) < String(b.key) ? -1 : 1));
+    return out;
+  }
+
+  // The day a row of "Tonight" belongs to is today (UTC), the daemon's day files are UTC too.
+  function fdTodayDay(nowMs) {
+    return typeof FightHistory !== 'undefined' ? FightHistory.dayOf(nowMs) : '';
+  }
+
+  // Tonight's rail: today's stored fights and the live list, one row per fight. The day selector's count is that same day's
+  // stored count, so the two never tell different stories again.
+  function fdTonightRows(fd, key) {
+    const day = fdTodayDay(Date.now());
+    const hist = day && fd.hist[day] ? fd.hist[day].list : null;
+    const live = cmdFightsCache[key] && cmdFightsCache[key].list;
+    return fdMergeRows(live, hist);
   }
 
   // The pack the selected fight belongs to, once per pack per minute; the box widens the table to every commander.
@@ -7922,17 +8162,44 @@
 
   function fdLoad(card, bind) {
     const fd = fdState(bind.commander);
-    fdDaysLoad(fd, bind);
+    // A read-only history card has no live list: it opens on the newest stored night, as soon as the picker knows the days. The
+    // newest day may be today, which the picker calls Tonight (the rail reads today's stored fights there).
+    const wantDay = () => bind.history && !fd.day && Array.isArray(fd.days) && fd.days.length > 0;
+    const pickDay = () => {
+      const day = fd.days[0].day;
+      fd.day = typeof FightHistory !== 'undefined' ? FightHistory.rowDay(day, Date.now()) : day;
+      fd.sel = null;
+      fd.userSel = false;
+      fd.list = [];
+    };
+    fdDaysLoad(fd, bind, () => {
+      if (!wantDay()) return;
+      pickDay();
+      if (!card.classList.contains('fd-on')) return;
+      renderFightDebug(card, bind);
+      fdLoad(card, bind);
+    });
+    if (wantDay()) pickDay();
     const gotList = list => {
       if (list) fd.list = list;
+      // The rail paints as soon as the list (or a newly merged row) arrives, not only when the first detail does.
+      const sig = list ? list.length + '|' + list.map(r => (r && r.key) || '').join(',') : '';
+      if (list && sig !== fd.listSig) {
+        fd.listSig = sig;
+        if (card.classList.contains('fd-on')) renderFightDebug(card, bind);
+      }
       if (fd.loading) return;
       const row = fdDetailRow(fd);
       if (!row) return;
       fd.loading = true;
+      fd.loadingKey = row.key;
       const failed = () => {
         fd.loading = false;
+        fd.loadingKey = null;
         fdDetailFail(fd, row.key);
-        if (card.classList.contains('fd-on')) fdLoad(card, bind);
+        if (!card.classList.contains('fd-on')) return;
+        renderFightDebug(card, bind); // the rail says "details not available" once the retry failed too
+        fdLoad(card, bind);
       };
       const req = fdFightsFeed().detail(bind.commander, row.key, FdTabs.detailAllowed(cmdPageMode(), fdPage.open, bind.commander),
         k => fetch('/api/v1/combat/fight/' + encodeURIComponent(k)).then(jsonOrThrow));
@@ -7940,6 +8207,7 @@
       req.then(res => {
         if (!res || !res.fight) { failed(); return; }
         fd.loading = false;
+        fd.loadingKey = null;
         delete fd.failed[row.key];
         fd.details[row.key] = res;
         const keys = Object.keys(fd.details);
@@ -7950,9 +8218,15 @@
         fdLoad(card, bind);
       }).catch(failed);
     };
-    // A chosen night lists that day's stored fights; Tonight is the live list the whole page shares.
-    if (fd.day) fdDayFights(fd, bind, gotList);
-    else cmdRaidFights(bind, gotList);
+    // A chosen night lists that day's stored fights; Tonight is today's stored fights with the live list on top.
+    if (fd.day) { fdDayFights(fd, bind, gotList); return; }
+    const today = fdTodayDay(Date.now());
+    if (!today) { cmdRaidFights(bind, gotList); return; }
+    let live = null, hist = null, left = 2;
+    // Both halves failed: answer null so the rows already shown stay (an empty answer would wipe them).
+    const both = () => { if (--left) return; gotList(live || hist ? fdMergeRows(live, hist) : null); };
+    cmdRaidFights(bind, l => { live = l; both(); });
+    fdDayFights(fd, bind, l => { hist = l; both(); });
   }
 
   // The debugger's pick: the user's own click stands; otherwise the worst finished fight (the newest while no details are loaded),
@@ -8005,8 +8279,8 @@
   function renderFightDebug(card, bind) {
     if (!card || !bind || typeof FightDebug === 'undefined') return;
     const key = bind.commander, fd = fdState(key), layout = bind.layout || null;
-    // A chosen night lists its own stored fights; Tonight is the shared live list the whole page holds.
-    const list = fd.day ? (fd.list || []) : (cmdFightsCache[key] && cmdFightsCache[key].list) || fd.list || [];
+    // A chosen night lists its own stored fights; Tonight is today's stored fights with the live list on top.
+    const list = fd.day ? (fd.list || []) : (bind.history ? (fd.list || []) : fdTonightRows(fd, key));
     fd.list = list;
     const details = list.map(r => fd.details[r.key] || null);
     fdSyncSel(fd, bind, list, details, layout);
@@ -8026,11 +8300,15 @@
     const recaps = fight ? FightDebug.deathRecaps(fight) : [];
     // No fight yet: one line where the fight panels would be, and none of their empty boxes (the run strip, checks, timeline
     // and the role bars wait for a fight).
-    const emptyNote = fdEmptyNote(list, fight, selLive);
+    const emptyNote = fdEmptyNote(list, fight, selLive, !!bind.history);
     const noWin = !!emptyNote;
     const noWinEl = card.querySelector('.fd-nofight');
     if (noWinEl) { noWinEl.hidden = !noWin; noWinEl.textContent = emptyNote; }
     card.querySelectorAll('.fd-runtl, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = noWin; });
+    // A read-only history card has no live party and no run of its own: the raid frames and the run strip would only be empty.
+    if (bind.history) {
+      card.querySelectorAll('.fd-runtl, .fd-raid').forEach(el => { el.hidden = true; });
+    }
 
     // The lanes and plan facts the checks read: one lanes result feeds the strip and the lane row, the plan's ring strays the
     // route row. The extra is kept on the detail, so the rail grades the fight the same way.
@@ -8045,7 +8323,7 @@
     if (det) det.extra = extra;
 
     // The run strip above the raid frames: its blocks, the death marks and the replay scrubber.
-    const run = fdRunModel(bind, list, fd.details, cmdNowFor(bind));
+    const run = bind.history ? null : fdRunModel(bind, list, fd.details, cmdNowFor(bind));
     fd.run.model = run;
     const runKey = run ? run.t0 + '|' + run.segs.filter(sg => sg.kind !== 'walk').map(sg => sg.key + ':' + sg.fromS + ':' + sg.toS).join(',') : '';
     if (fd.run.key !== runKey) {
@@ -8065,7 +8343,8 @@
     fdSet(card.querySelector('.fd-frames'), fdFramesHtml(frames, fd.bot, ready));
     fdSet(card.querySelector('.fd-dead'), ' · ' + fdFrameStats(frames).dead + ' dead');
     fdSet(card.querySelector('.fd-ready'), fdReadyHtml(frames));
-    const cards = FightDebug.railCards(list, fd.details, layout);
+    const cards = FightDebug.railCards(list, fd.details, layout,
+      { failed: fd.failed, loadingKey: fd.loadingKey, asked: FD_DETAIL_MAX, retry: FD_DETAIL_TRIES, sel: fd.sel });
     fdSet(card.querySelector('.fd-rail'), fdRailHtml(cards, live, fd.sel, fd.day));
     fdDayPaint(card, fd);
 
@@ -8155,7 +8434,7 @@
     const rows = Array.isArray(list) ? list : [];
     const frames = FightDebug.raidFrames(bind);
     const bots = (bind && bind.bots) || [];
-    const cards = FightDebug.railCards(rows, details || {}, layout || null);
+    const cards = FightDebug.railCards(rows, details || {}, layout || null, null);
     const judged = cards.filter(c => c.verdict);
     const need = judged.filter(c => c.verdict === 'fail').length;
     const run = bind && bind.run;
@@ -8411,10 +8690,12 @@
     fd.run.timer = setTimeout(() => fdRunTick(key), FightReplay.TICK_MS);
   }
 
-  // A ready check that has not answered yet: no bots, or not one row with a verdict (a row at the neutral "check" level has
-  // said nothing). Any ok, warn or fail row is a real result, even when every bot is only a warning. The header then says so.
+  // A ready check that has not run: the raid is on the move (every bot is far from the next stand, which is no readiness
+  // verdict), or no row carries one (a neutral "check" row has said nothing). Any ok, warn or fail row at the gather is a real
+  // result, even when every bot is only a warning. The header then says so.
   function fdReadyNotRun(ready) {
     if (!ready) return true;
+    if (ready.gathered === false) return true;
     const bots = ready.bots || [];
     return !bots.length || bots.every(r => !r || (r.lvl !== 'ok' && r.lvl !== 'warn' && r.lvl !== 'fail'));
   }
@@ -8478,7 +8759,10 @@
     // The daemon lists fights newest first; the rail reads oldest first, Pack 1 on top, under the live card.
     return html + (cards || []).slice().reverse().map(c => {
       const v = c.verdict;
-      const word = v === 'fail' ? 'problem' : v === 'warn' ? 'check' : v === 'ok' ? 'clean' : 'loading';
+      // No verdict yet: say why the card has none instead of loading for ever (a detail that failed twice, or a row the page
+      // never asked about).
+      const word = v === 'fail' ? 'problem' : v === 'warn' ? 'check' : v === 'ok' ? 'clean'
+        : c.detail === 'failed' ? 'details not available' : c.detail === 'unasked' ? 'details not loaded' : 'loading';
       const deaths = c.deaths ? c.deaths + (c.deaths === 1 ? ' death' : ' deaths') : 'no deaths';
       return `<button type="button" class="fd-fight v-${v || 'load'}" data-fd-fight="${esc(encodeURIComponent(c.key))}" aria-pressed="${c.key === sel ? 'true' : 'false'}">`
         + `<span class="fd-fl">${esc(c.label)}</span>`
@@ -8565,16 +8849,22 @@
     const list = recaps || [];
     const r = list[selDeath] || list[0];
     if (!r) return '';
-    const rows = r.hits.map(h => `<tr><td class="mono">${(h.t_ms / 1000).toFixed(1)} s</td><td>${esc(h.a)}${h.s ? ` <span class="fd-hit-spell">${esc(h.s)}</span>` : ''}</td><td class="n">${FightDebug.fmtInt(h.d)}</td></tr>`).join('');
+    const spellCell = h => {
+      const name = h.s || h.sp || '';
+      if (!name) return '<td></td>';
+      const likely = !h.s && h.spLikely ? ' <span class="fd-likely" title="the newest cast in the 3 s before this hit aimed at this bot or at nobody">likely</span>' : '';
+      return `<td>${esc(name)}${likely}</td>`;
+    };
+    const rows = r.hits.map(h => `<tr><td class="mono">${(h.t_ms / 1000).toFixed(1)} s</td><td>${esc(h.a)}</td>${spellCell(h)}<td class="n">${FightDebug.fmtInt(h.d)}</td></tr>`).join('');
     const who = r.guid != null
       ? `<button type="button" class="fd-botbtn" data-fd-profile="${esc(r.guid)}">${esc(r.name)}</button>`
       : `<b>${esc(r.name)}</b>`;
     const sp = r.spell
-      ? ` — <b>${esc(r.spell.name)}</b>${r.spell.likely ? ' <span class="fd-likely" title="the newest boss cast in the 3 s before the death aimed at this bot or at nobody">likely</span>' : ''}`
+      ? `'s <b>${esc(r.spell.name)}</b>${r.spell.likely || r.likely ? ' <span class="fd-likely" title="the newest boss cast in the 3 s before the death aimed at this bot or at nobody">likely</span>' : ''}`
       : '';
     return `<p class="fd-recaphead">Died ${who} at ${(r.t_ms / 1000).toFixed(1)} s, killed by ${esc(r.killer)}${sp} · `
       + `<span class="mono">${FightDebug.fmtInt(r.total)}</span> damage in <span class="mono">${(r.spanMs / 1000).toFixed(1)}</span> s</p>`
-      + `<table class="data-table fd-recaptbl"><thead><tr><th>Time</th><th>From</th><th class="n">Damage</th></tr></thead><tbody>${rows}</tbody></table>`;
+      + `<table class="data-table fd-recaptbl"><thead><tr><th>Time</th><th>From</th><th>Spell</th><th class="n">Damage</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   // Three tables: tanks (main first), healers (by healing), damage (by damage). The name cell opens the bot's profile.
@@ -8945,6 +9235,20 @@
     return DgnView.memberGroups(rows).map(g =>
       (g.label ? `<h4 class="dgn-subgroup">${esc(g.label)}</h4>` : '') + g.rows.map(row).join('')
     ).join('');
+  }
+
+  // The Dungeons rollup is on screen on its own tab and wherever a dungeon card draws (the Commanders page shows the live
+  // runs as cards too). The Commanders tab itself counts as on screen even with no dungeon cached yet, so a new run's first
+  // card is not late. Off screen it is asked once every 30 s, not twice a second.
+  const DGN_POLL_MS = 30000;
+  function dgnOnScreen() {
+    if (state.activeTab === 'dungeons') return true;
+    if (state.activeTab !== 'commanders') return false;
+    return true;
+  }
+  function dgnPollDue(onScreen, at, nowMs) {
+    if (onScreen) return true;
+    return !at || nowMs - at >= DGN_POLL_MS;
   }
 
   function fetchDungeons() {

@@ -813,6 +813,30 @@
     return have < slots.length ? PIC_MISSING_MS : null;
   }
 
+  // Which unit labels a map can draw without them running into each other. items are the candidates in draw order (the lead
+  // and the tanks first, so a tight group keeps their names), each {id, name, x, y} in the plane; k is the drawing scale (the
+  // label is 11.5k high, about 6.8k a character and 6k of air). A label whose box meets one already kept is left out: the unit's full name
+  // is still the hover box's. Returns the kept ids in draw order.
+  function labelFit(items, k) {
+    const kk = k > 0 && isFinite(k) ? k : 1;
+    const h = 13 * kk;
+    const boxes = [];
+    const kept = [];
+    (Array.isArray(items) ? items : []).forEach((it) => {
+      if (!it || it.id == null) return;
+      const name = String(it.name == null ? "" : it.name);
+      const w = (Math.max(2, name.length) * 6.8 + 6) * kk;
+      const x = (Number(it.x) || 0) + 10 * kk, y = (Number(it.y) || 0) - h / 2;
+      for (let i = 0; i < boxes.length; i++) {
+        const b = boxes[i];
+        if (x < b.x + b.w && x + w > b.x && y < b.y + b.h && y + h > b.y) return;
+      }
+      boxes.push({ x, y, w, h });
+      kept.push(it.id);
+    });
+    return kept;
+  }
+
   // The picture picker of a card: hidden when no slot has a picture; else one option per slot, a missing one disabled with "(none)" and
   // its reason as the tooltip. `reason` is the missing stored choice's reason, for the line under the picker ("" when the picker is hidden).
   function pictureSelect(slots, stored) {
@@ -836,7 +860,7 @@
     HEAL_RANGE_YD, FAR_YD, LOW_HP_PCT, STALE_WARN_SEC, pretty, plural, ageText, roleKey, roleLabel, distance, leadBot, partyRows, orderText, stateWord,
     headerText, headerParts, botHref, warnings, newTracker, note, context, prune, project, fitView, viewBox, zoomAt, panBy, pinch, gridStep, gridLines,
     trailSegments, markGap, trailSegmentsBroken, trailRuns, trailMarks, trailEvent, jumpLimitYd, TRAVEL_MAX_YD_PER_SEC, TRAVEL_SLACK_YD, TRAVEL_MAX_GAP_SEC, clampScale, prependTrail, heading, trailStamps, scaleBar, zonesIn, pictureSlots, pictureChoice, pictureSelect, pictureRefreshAfter, PIC_RETRY_MS, PIC_MISSING_MS,
-    raidBlocks, isRaid, layoutText, threatOffTanks, notesLog, deathsTimeline, controlLines, whyWaiting,
+    raidBlocks, isRaid, layoutText, threatOffTanks, notesLog, deathsTimeline, controlLines, whyWaiting, labelFit,
     AGGRO_RANGE_YD, followView, zoomFollow, pinchFollow, mobsOf, mobClass, threatLines, botTargetLines, aggroMobs, commanderPlace,
     facingVec, shapePath, shapeSeg, castLeft, castFrac, angleLerp,
   };

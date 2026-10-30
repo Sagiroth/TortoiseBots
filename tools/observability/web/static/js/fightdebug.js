@@ -85,7 +85,13 @@
     const tankDeaths = [];
     const otherDeaths = [];
     deaths.forEach((d, i) => { (tankNames[d.name] ? tankDeaths : otherDeaths).push({ d, i }); });
-    const deathEv = (list) => list.map((x) => x.d.name + " at " + (x.d.t_ms / 1000).toFixed(1) + " s to " + x.d.killer).join(" · ");
+    // The killer of each death of that life, by the same last-other-source rule the recaps use.
+    const life = {};
+    const deathEv = (list) => list.map((x) => {
+      const killer = killerOf(x.d, life[x.d.name]);
+      life[x.d.name] = x.d.t_ms;
+      return x.d.name + " at " + (x.d.t_ms / 1000).toFixed(1) + " s to " + killer;
+    }).join(" · ");
 
     if (tankDeaths.length) {
       const count = {};
@@ -297,30 +303,78 @@
     return best;
   }
 
-  // Death recaps with only the hits of that life: the module repeats hits from before the first death in the
-  // second death's list, so keep what is after the same bot's previous death.
+  // Who killed a bot: the non-self hit with the greatest t_ms (the hits are stored newest-first, so array order
+  // says nothing about time). The module's own killer field can name the dead bot (its
+  // last event was its own spell or a self-damage tick); with no other source known the killer is unknown, never the victim.
+  function killerOf(death, after) {
+    if (!death) return "unknown";
+    const end = num(death.t_ms) || 0;
+    let best = null, bestT = -Infinity;
+    (Array.isArray(death.hits) ? death.hits : []).forEach((h) => {
+      if (!h || num(h.t_ms) === null || h.t_ms > end || (after !== undefined && h.t_ms <= after)) return;
+      if (!h.a || h.a === death.name) return;
+      if (best === null || h.t_ms > bestT) { best = h; bestT = h.t_ms; }
+    });
+    if (best) return String(best.a);
+    const named = death.killer == null ? "" : String(death.killer);
+    return named && named !== death.name ? named : "unknown";
+  }
+
+  // One hit's spell for the recap's SPELL column: the hit's own spell name when it carries one; else, when the fight
+  // kept a cast log, the attacker's newest cast in the 3 s before the hit aimed at this bot (or at nobody); a logged
+  // fight where nobody cast at the bot means a white hit ("melee"); with no log the spell is unknown (blank). A hit
+  // from a fellow bot is never melee: its spell is unknown unless the hit names it.
+  function spellForHit(h, bot, botNames, log) {
+    if (!h) return null;
+    if (h.s) return { name: h.s, sid: h.sid != null ? h.sid : null, t_ms: h.t_ms, likely: false };
+    if (!Array.isArray(log) || !log.length) return null;
+    const guid = bot && bot.guid != null ? String(bot.guid) : null;
+    const cast = log.map((e) => e || {}).filter((e) => e.k === "cast" && num(e.t) !== null
+      && e.t <= h.t_ms && e.t >= h.t_ms - 3000 && e.n === h.a
+      && (!e.tg || (guid !== null && String(e.tg) === guid) || (e.tn && e.tn === bot.name)))
+      .sort((x, y) => x.t - y.t).pop();
+    if (cast) return { name: cast.s || "a spell", sid: cast.sid != null ? cast.sid : null, t_ms: cast.t, likely: true };
+    if (h.a && h.a !== bot.name && (!botNames || !botNames[h.a])) return { name: "melee", sid: null, t_ms: h.t_ms, likely: false };
+    return null;
+  }
+
   function deathRecaps(fight) {
     const deaths = (fight && fight.deaths) || [];
     const bots = (fight && fight.bots) || [];
     const previous = {};
     return deaths.map((d, i) => {
       const after = previous[d.name];
+      const b = bots.find((x) => x.name === d.name);
+      const botNames = {};
+      bots.forEach((x) => { if (x && x.name) botNames[x.name] = true; });
+      const log = fight && fight.log;
       const hits = (d.hits || [])
         .filter((h) => h.t_ms <= d.t_ms && (after === undefined || h.t_ms > after))
-        .map((h) => ({ t_ms: h.t_ms, a: h.a, d: h.d, s: h.s, sid: h.sid }));
+        .map((h) => {
+          const sp = spellForHit(h, { name: d.name, guid: b && b.guid != null ? b.guid : undefined }, botNames, log);
+          return { t_ms: h.t_ms, a: h.a, d: h.d, s: h.s, sid: h.sid,
+            sp: sp ? sp.name : "", spSid: sp ? sp.sid : null, spT: sp ? sp.t_ms : null, spLikely: !!(sp && sp.likely) };
+        });
       previous[d.name] = d.t_ms;
       const total = hits.reduce((s, h) => s + (num(h.d) || 0), 0);
-      const b = bots.find((x) => x.name === d.name);
-      // The killing spell: the last hit that names one. Without one, the module could not see the instant casts of phase 1,
-      // so the newest boss cast in the 3 s before the death aimed at this bot (or at nobody) is shown, labelled likely.
+      // The killing spell: the killing blow's spell when it names or matches one, else the last hit that names one.
+      // Without either, the module could not see the instant casts of phase 1, so the newest boss cast in the 3 s
+      // before the death aimed at this bot (or at nobody) is shown, labelled likely.
       let spell = null, likely = false;
-      for (let j = hits.length - 1; j >= 0; j--) {
+      let killing = null;
+      hits.forEach((h) => { if (!killing || h.t_ms > killing.t_ms) killing = h; });
+      if (killing && killing.sp && killing.sp !== "melee") spell = { name: killing.sp, sid: killing.spSid, t_ms: killing.spT, likely: killing.spLikely };
+      const killedByMelee = !!(killing && killing.sp === "melee");
+      if (spell) likely = !!spell.likely;
+      for (let j = hits.length - 1; !spell && j >= 0; j--) {
         if (hits[j].s) { spell = { name: hits[j].s, sid: hits[j].sid != null ? hits[j].sid : null, t_ms: hits[j].t_ms, likely: false }; break; }
       }
-      if (!spell && Array.isArray(fight && fight.log)) {
+      if (!spell && !killedByMelee && Array.isArray(log)) {
         const guid = b && b.guid != null ? String(b.guid) : null;
-        const cast = fight.log.map((e) => e || {}).filter((e) => e.k === "cast" && num(e.t) !== null
+        const cast = log.map((e) => e || {}).filter((e) => e.k === "cast" && num(e.t) !== null
           && e.t <= d.t_ms && e.t >= d.t_ms - 3000
+          // only the killing blow's own attacker: another mob's cast near the death is not the killing spell
+          && (!killing || !killing.a || !e.n || e.n === killing.a)
           && (!e.tg || (guid !== null && String(e.tg) === guid) || (e.tn && e.tn === d.name)))
           .sort((x, y) => x.t - y.t).pop();
         if (cast) { spell = { name: cast.s || "a spell", sid: cast.sid != null ? cast.sid : null, t_ms: cast.t, likely: true }; likely = true; }
@@ -330,7 +384,7 @@
         name: d.name,
         guid: b && b.guid != null ? b.guid : undefined,
         t_ms: d.t_ms,
-        killer: d.killer,
+        killer: killerOf(d, after),
         x: d.x,
         y: d.y,
         hits,
@@ -488,19 +542,53 @@
     };
   }
 
-  function railCards(list, detailsByKey, layout) {
+  const utcDay = (t) => {
+    const n = num(t);
+    if (n === null) return "";
+    const d = new Date(n * 1000);
+    return d.getUTCFullYear() + "-" + ("0" + (d.getUTCMonth() + 1)).slice(-2) + "-" + ("0" + d.getUTCDate()).slice(-2);
+  };
+
+  // Pack numbers count inside a run, not across the whole list: a night restarts at Pack 1 when the session does (a new bind is
+  // a new run), and so does a new day. rows are newest first, as the daemon lists them; walking them backwards gives the oldest
+  // fight of each group Pack 1.
+  function packNumbers(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const out = new Array(list.length);
+    const count = {};
+    for (let i = list.length - 1; i >= 0; i--) {
+      const r = list[i] || {};
+      const day = utcDay(r.start);
+      const run = r.session != null && r.session !== "" ? String(r.session) : "";
+      const group = day + "|" + run;
+      count[group] = (count[group] || 0) + 1;
+      out[i] = count[group];
+    }
+    return out;
+  }
+
+  // state tells a card whose detail has not arrived apart from one that will never arrive: {failed: {key: {n}}, loadingKey,
+  // asked} where asked is how many of the newest rows the page fetches. A row whose detail failed for good says so; one the page
+  // never asked (a long night's older rows) says that; everything else is still loading.
+  function railCards(list, detailsByKey, layout, state) {
     const rows = Array.isArray(list) ? list : [];
+    const st = state && typeof state === "object" ? state : null;
+    const asked = st ? num(st.asked) || 0 : rows.length;
     const maxDur = rows.reduce((m, r) => Math.max(m, num(r.dur) || 0), 0);
+    const packs = packNumbers(rows);
     return rows.map((row, i) => {
       const det = detailsByKey && detailsByKey[row.key];
       const fight = det && det.fight;
       const dur = num(row.dur) || 0;
       const engaged = fight && fight.engaged && fight.engaged[0];
       const dmg = fight && Array.isArray(fight.bots) ? fight.bots.reduce((s, b) => s + (num(b && b.dmg) || 0), 0) : null;
+      const fail = st && st.failed && st.failed[row.key];
+      const failed = !!(fail && (num(fail.n) || 0) >= (num(st.retry) || 2));
+      const waiting = !det && !failed && (i < asked || row.key === (st && st.loadingKey) || row.key === (st && st.sel));
       return {
         key: row.key,
-        // The daemon lists fights newest first; the oldest is the first pack of the fight.
-        label: "Pack " + (rows.length - i),
+        // Pack N inside the fight's own day and run: the oldest of that group is Pack 1.
+        label: "Pack " + packs[i],
         mob: row.boss_name || (fight && fight.boss_name) || (engaged && engaged.n) || "trash",
         step: num(row.step) || 0,
         durMs: dur,
@@ -508,6 +596,8 @@
         deaths: num(row.deaths) || 0,
         lenPct: maxDur > 0 ? (dur / maxDur) * 100 : 0,
         verdict: fight ? verdict(fight, layout, det.warnings || [], det.extra || null) : null,
+        // ready | loading | failed | unasked: what the rail's verdict word says while no verdict exists.
+        detail: det ? "ready" : failed ? "failed" : waiting ? "loading" : "unasked",
         // A row COMBAT_EVENTS opened, with no finished fight behind it yet: no bot rows, no detail to load.
         live: !!row.live,
       };
@@ -602,8 +692,8 @@
 
   const api = {
     LIMITS, TAUNTS, DEBUFF_CHECKS,
-    roleOf, spellCount, fmtInt, mainTank, offTanks, checks, verdict, worstIndex,
-    deathRecaps, timeline, raidFrames, roleTables, botPanel, railCards, liveEngaged, liveSummary, liveChecks, liveTables,
+    roleOf, spellCount, fmtInt, mainTank, offTanks, checks, verdict, worstIndex, killerOf, packNumbers,
+    spellForHit, deathRecaps, timeline, raidFrames, roleTables, botPanel, railCards, liveEngaged, liveSummary, liveChecks, liveTables,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightDebug = api;
 })(typeof self !== "undefined" ? self : this);

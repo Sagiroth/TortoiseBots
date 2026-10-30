@@ -134,7 +134,7 @@ assert.ok(src.includes('class="refresh-picker fd-refresh"'), "the refresh picker
 
   const h1 = { console, Array, Map, Set, clearTimeout, document: doc };
   vm.createContext(h1);
-  vm.runInContext([grab("cmdRescueLayers"), grab("cmdPlaceLayers"), grab("renderFdPage"), grab("fdLeaveCard"),
+  vm.runInContext([grab("cmdRescueLayers"), grab("cmdPlaceLayers"), grab("renderFdPage"), grab("fdOpenCard"), grab("fdLeaveCard"),
     grab("cmdForgetCard")].join("\n"), h1);
   const binds = { A: { commander: "A", bots: [] }, B: { commander: "B", bots: [] } };
   const cards = new Map();
@@ -143,6 +143,7 @@ assert.ok(src.includes('class="refresh-picker fd-refresh"'), "the refresh picker
     fdStopCard: () => {}, cmdFd: {}, cmdMaps: {}, cmdAvail: {}, cmdFightsCache: {}, cmdFightsPending: {},
     cmdUnwatchStage: () => {},
     setHtml: (el, html) => { el.innerHTML = html; }, esc: (v) => String(v), fdGridHtml: () => "", fdGridPoll: () => {},
+    fdOverviewHtml: () => "", fdHistCmd: { list: [] }, fdHistNamed: () => false, fdHistCmdLoad: () => {},
     FdTabs: { sortBinds: (l) => l },
     newCmdCard: (key) => {
       const card = doc.createElement("div");

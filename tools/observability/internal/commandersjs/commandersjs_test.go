@@ -331,3 +331,37 @@ func TestProfileXPJS(t *testing.T) {
 func TestPageAssetsJS(t *testing.T) {
 	runCheck(t, "page_assets_check.js", "../../web/static/js/app.js")
 }
+
+// TestStaticLayerJS runs static_layer_check.js: the map's static group (grid, zone marks, the whole plan) is rebuilt only when
+// its key changes. Sixty glide frames rebuild it zero times, a zoom, a pan, a layer switch, a new plan step or floor rebuild it
+// once, and the plan's hover entries are re-registered every frame without a rebuild.
+func TestStaticLayerJS(t *testing.T) {
+	runCheck(t, "static_layer_check.js", "../../web/static/js/app.js")
+}
+
+// TestCmdOverflowCSS runs cmd_overflow_css_check.js: the Commanders cards never widen the page on a phone. The Fights panel
+// (six nowrap columns) scrolls inside the card, the panel and the card may shrink below it, and no card-scoped rule fixes a
+// width above 390 px.
+func TestCmdOverflowCSS(t *testing.T) {
+	runCheck(t, "cmd_overflow_css_check.js", "../../web/static/css/app.css")
+}
+
+// TestFDModeRouteJS runs fd_mode_route_check.js: the Live / Fight debugger switch keeps the route sensible. With nothing bound
+// the debugger button keeps the hash (no bare #/fight), Live keeps the open commander in the URL, and the demo flag is applied
+// before the first render so a demo deep link never flashes "is gone".
+func TestFDModeRouteJS(t *testing.T) {
+	runCheck(t, "fd_mode_route_check.js", "../../web/static/js/app.js")
+}
+
+// TestDungeonsPollJS runs dungeons_poll_check.js: /api/v1/dungeons is asked with every snapshot only while the Dungeons tab or
+// a dungeon card is on screen, and once every 30 s anywhere else (the audit saw 30 requests a minute on a Commanders tab).
+func TestDungeonsPollJS(t *testing.T) {
+	runCheck(t, "dungeons_poll_check.js", "../../web/static/js/app.js")
+}
+
+// TestFDHistoryJS runs fd_history_check.js: the Fight debugger with no raid bound. The commanders with saved fights come from
+// the daemon (newest first, escaped), the one-line note stays above the list, and each opens a read-only history card.
+func TestFDHistoryJS(t *testing.T) {
+	runCheck(t, "fd_history_check.js", "../../web/static/js/app.js")
+}
+

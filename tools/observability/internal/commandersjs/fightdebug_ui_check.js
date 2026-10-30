@@ -147,6 +147,19 @@ const NUL_KEY = "Glacienne\u000017\u00005-5";
 const nulHtml = run("fdRailHtml(cards, null, null)", { cards: run("FightDebug.railCards(rows, null, null)", { rows: [{ key: NUL_KEY, dur: 9000, step: 1, deaths: 0, boss_name: "Naxx" }] }) });
 assert.ok(nulHtml.includes('data-fd-fight="Glacienne%0017%005-5"'), "the key is percent-encoded: " + nulHtml.slice(0, 140));
 assert.ok(!nulHtml.includes("\u0000"), "no raw NUL in the markup");
+// A card whose detail has not arrived must say why, never "loading" for ever: the second failure, an unasked older row and
+// the one detail still on its way each read differently.
+const stateRows = [{ key: "fail", dur: 1000 }, { key: "asked", dur: 1000 }, { key: "sel", dur: 1000 }, { key: "old", dur: 1000 }];
+const stateCards = run("FightDebug.railCards(rows, {}, null, st)", {
+  rows: stateRows,
+  st: { failed: { fail: { n: 2 } }, loadingKey: "asked", asked: 2, retry: 2, sel: null },
+});
+assert.deepStrictEqual(stateCards.map((c) => c.detail), ["failed", "loading", "unasked", "unasked"], "the detail states: " + JSON.stringify(stateCards.map((c) => c.detail)));
+const stateHtml = run("fdRailHtml(cards, null, null)", { cards: stateCards });
+assert.ok(stateHtml.includes(">details not available<"), "a failed detail says so: " + stateHtml.slice(0, 400));
+assert.ok(stateHtml.includes(">loading<"), "the card on its way still says loading");
+assert.ok(stateHtml.includes(">details not loaded<"), "an older row the page never asked says so");
+assert.ok(!stateHtml.includes(">loading<") || stateHtml.indexOf(">loading<") < stateHtml.indexOf(">details not available<"), "no card loads for ever");
 
 // ---- map marks: one skull per death, the selected one bigger and named ---------------------------------------------
 const marks = run("cmdFightMarksSvg(dc, recaps, 1)", { dc: { f: (n) => n.toFixed(2), k: 0.5, units: {} }, recaps: RECAPS });

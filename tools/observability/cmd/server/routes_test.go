@@ -30,9 +30,11 @@ func TestHistoryRoutesWired(t *testing.T) {
 	}
 	for _, want := range []string{
 		"GET /api/v1/combat/history/days",
+		"GET /api/v1/combat/history/commanders",
 		"GET /api/v1/combat/history\"",
 		"GET /api/v1/combat/packs",
 		"requireAuth(history.DaysHandler(historyStore))",
+		"requireAuth(history.CommandersHandler(historyStore))",
 		"requireAuth(history.ListHandler(historyStore))",
 		"requireAuth(history.PackHandler(historyStore))",
 		"fight-history-dir",

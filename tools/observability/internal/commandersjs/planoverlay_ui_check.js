@@ -142,12 +142,13 @@ assert.ok(/^Step 20: /.test(ctx.CmdPaths.stepText(ctx.u.units["p:20"].obj)));
 
 // ---- the wiring: the plan is fetched once per name, the card's facts feed availability, the plan is drawn under the bots
 assert.ok(src.includes("'/api/v1/plans/' + encodeURIComponent("), "the plan URL is encoded");
-assert.ok(src.includes("g += cmdPlanSvg(dc, pf.view, on)"), "drawCmdMap draws the plan");
+assert.ok(src.includes("html += cmdPlanSvg(sc, pf.view, on)"), "drawCmdMap draws the plan into the static group");
 assert.ok(src.includes("facts.ctx.planWhy = pf.why"), "the card's plan reason reaches the panel");
 assert.ok(src.includes("facts.ctx.patrols = "), "the card says whether the plan's mobs have patrol paths");
 const wanted = src.slice(src.indexOf("  function cmdPlanWanted()"), src.indexOf("\n  }\n", src.indexOf("  function cmdPlanWanted()")));
 assert.ok(/cmdLayers\.patrols/.test(wanted), "only patrol paths on still build the plan overlay");
 assert.ok(src.includes("pf.view && (on.planroute || on.planstands || on.planrings || on.patrols)"), "and it is drawn for them");
+assert.ok(src.includes("cmdStaticLayer(svg.querySelector('g.static'), staticKey"), "the plan and the grid are a cached static layer");
 assert.ok(src.includes("(Array.isArray(p) ? p[2] : p && p.z)"), "the floor split sees the path points");
 const overlaySrc = fs.readFileSync(path.join(dir, "planoverlay.js"), "utf8");
 assert.ok(overlaySrc.includes("path: m.path") && overlaySrc.includes("period_s: num(m.period_s)"), "the view passes the path through");

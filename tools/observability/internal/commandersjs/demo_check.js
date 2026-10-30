@@ -128,4 +128,11 @@ assert.ok(seen.bg, "the demo card has a picture slot to draw");
 ["death", "boss", "wipe", "open", "loot"].forEach((k) => assert.ok(events.has(k), `no ${k} event in the demo`));
 ["dr", "da", "br", "ba", "cr", "cu", "gr", "ga"].forEach((k) => assert.ok(ctx.objStates.has(k), `no object ${k}`));
 assert.ok(new Set(D.frame(1040, 1000).mobs.map((m) => m.reaction)).size === 3, "hostile, neutral and friendly units");
+// ---- the demo walks between its 2 s steps through the same glide as a live report ------------------------------------
+const tick = src.slice(src.indexOf("  function cmdDemoTick("), src.indexOf("\n  }\n", src.indexOf("  function cmdDemoTick(")));
+assert.ok(/LiveView\.noteReport\(cmdGlide, \[bind, raidBind\], performance\.now\(\)\)/.test(tick),
+  "cmdDemoTick feeds both demo bindings to the glide, so the dots interpolate at the screen's rate");
+assert.ok(/const bind = CmdDemo\.frame\(now, cmdDemo\.start\), raidBind = CmdDemo\.raidFrame\(now, cmdDemo\.start\);/.test(tick),
+  "the same two bindings the card draws");
+
 console.log("demo ok", Object.keys(seen).length, "things seen");

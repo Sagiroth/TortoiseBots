@@ -46,24 +46,33 @@
     return d.getUTCDate() + " " + MONTHS[d.getUTCMonth()] + " " + pad2(d.getUTCHours()) + ":" + pad2(d.getUTCMinutes());
   }
 
-  // The night picker's options: Tonight first (the live list), then the stored days newest first, today included: after a
-  // restart the live list only holds the fights since then, and the earlier ones of today are on disk. A future day, or one
-  // that is not strict or not real, is skipped; a day is listed once.
+  // The night picker's options: Tonight first, then the stored days newest first. Tonight is today's own list: the rail draws
+  // today's stored fights with the live ones on top, so the day is not listed a second time (its count belongs in the label).
+  // A future day, or one that is not strict or not real, is skipped; a day is listed once.
   function dayOptions(daysJson, todayUtc) {
     const out = [{ value: "", label: "Tonight" }];
     const today = dayOf(todayUtc);
     const list = daysJson && Array.isArray(daysJson.days) ? daysJson.days : [];
     const seen = {};
-    const rows = [];
     list.forEach((r) => {
       if (!r) return;
       const day = String(r.day || "");
       if (seen[day]) return;
       seen[day] = true;
       if (today && day > today) return;
+      if (today && day === today) {
+        const n = num(r.fights) || 0;
+        if (n > 0) out[0].label = "Tonight · " + n + (n === 1 ? " fight" : " fights");
+        return;
+      }
+    });
+    const rows = [];
+    Object.keys(seen).forEach((day) => {
+      if (today && (day >= today)) return;
       const p = parts(day);
       if (!p) return;
-      const n = num(r.fights) || 0;
+      const hit = list.find((r) => r && String(r.day || "") === day);
+      const n = num(hit && hit.fights) || 0;
       rows.push({
         value: day,
         label: DAYS[p.weekday] + " " + p.d + " " + MONTHS[p.m - 1] + " · " + n + (n === 1 ? " fight" : " fights"),

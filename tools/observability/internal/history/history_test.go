@@ -502,6 +502,42 @@ func TestPackKeyRules(t *testing.T) {
 	}
 }
 
+// TestHistoryCommanders pins the list the debugger shows while no raid is bound: each commander with saved fights once, newest
+// fight first, with the fight and day counts; a disabled history answers the empty shape.
+func TestHistoryCommanders(t *testing.T) {
+	clock := &fakeClock{t: t0}
+	s := open(t, Config{Dir: t.TempDir(), Now: clock.Now})
+	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("f1", "Glacienne", t0.Unix()-7200), At: clock.Now()})
+	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("f2", "Glacienne", t0.Unix()-60), At: clock.Now()})
+	yesterday := mkFight("f3", "Benedwin", t0.Unix()-86400)
+	deliver(t, s, clock, Item{Session: 2, Fight: yesterday, At: clock.Now()})
+
+	got := s.Commanders()
+	if len(got) != 2 || got[0].Commander != "Glacienne" || got[1].Commander != "Benedwin" {
+		t.Fatalf("commanders = %+v", got)
+	}
+	if got[0].Fights != 2 || got[0].Days != 1 || got[0].Last != t0.Unix()-60 {
+		t.Errorf("Glacienne = %+v", got[0])
+	}
+	if got[1].Days != 1 || got[1].Last != t0.Unix()-86400 {
+		t.Errorf("Benedwin = %+v", got[1])
+	}
+
+	do := func(h http.HandlerFunc) (int, string) {
+		rec := httptest.NewRecorder()
+		h(rec, httptest.NewRequest(http.MethodGet, "/api/v1/combat/history/commanders", nil))
+		return rec.Code, rec.Body.String()
+	}
+	if code, body := do(CommandersHandler(s)); code != 200 ||
+		!strings.Contains(body, `{"commanders":[{"commander":"Glacienne","fights":2,"days":1,"last":`) ||
+		strings.Index(body, `"Glacienne"`) > strings.Index(body, `"Benedwin"`) {
+		t.Errorf("commanders: %d %s", code, body)
+	}
+	if code, body := do(CommandersHandler(nil)); code != 200 || strings.TrimSpace(body) != `{"commanders":[]}` {
+		t.Errorf("disabled commanders: %d %s", code, body)
+	}
+}
+
 func TestWriterWaitsForFrames(t *testing.T) {
 	clock := &fakeClock{t: t0}
 	var mu sync.Mutex
