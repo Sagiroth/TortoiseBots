@@ -2942,6 +2942,16 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual(leg6[g12 + 1]["z"], "-92.52249")
 
     def test_dragonmaw_retreat_is_the_plan_with_the_census_fixes(self):
+        # 20261030120000 (2026-10-30, after the fix-8 live run on tortoise-test2: the pocket passed, but Searistrasz aggroed on the
+        # walk at step 260 and took 24 min with all six Dragonmaw Enchanters alive): 20261025002000's rows with leg 3 walked round
+        # the boss's patrol. Searistrasz (62072, guid 2584790) walks 42 waypoints up and down x -5980.2..-5981.7, y -4191.5..
+        # -4358.9 (tortoise-wow 20260630194548_world.sql); the exporter's walk to the leg's `to` (-5978.8 -4137.4) ran along that
+        # very line (steps 258-264), so any walk-in meets him wherever he is on it. The hall's two halves meet only south of the
+        # patrol (y < -4385) and through the alcove past its north turn, the one way into the alcove. So leg 3 now pulls the south
+        # corridor, the west half south to north, walks back through the south, the east half south to north, then the boss,
+        # every pull from a stand 28+ yd off the patrol (the closest server path between two rows is 30.8 yd; navq over
+        # turtle-agent internal/navmesh, sight by the core's vmap); the six enchanters (whose Enchanting Flames he keeps until the
+        # sixth dies) all come before the boss row. The alcove's three packs are leg 4's first pulls, after the boss.
         # 20261025002000 (turtle-agent c19713b, 2026-10-25, after live run r41s2 slotA2 needed a skip and a GM move at searistrasz
         # steps 267-273): the pull of 62040 at -6028.7 -4176.9 (leg searistrasz group 2) stood beside a 22 x 19 yd hall room whose
         # 6 navmesh polygons are an island (bbox -6022.1 -4192.0 .. -6000.0 -4173.3, z 322.19, no link in or out; the WMO floor is
@@ -3008,10 +3018,10 @@ class DungeonPlanSql(unittest.TestCase):
         # (5) The hall_clear landing (-6190.1 -3962.4 215.8) is a plain direct step with a check_skip now: 7.4 yd across and
         # 5.1 yd down over a 9.0 yd navmesh gap (ServerPath answers no route across it), inside the direct limits, and the run
         # walked the same move_direct live at step 200 (from -6191.8 -3954.9 221.6 to -6186.7 -3964.3 215.2, no death).
-        # 10 legs, 835 steps (827 + the 7 stand rows of the searistrasz pocket less the 3 exporter cut rows they replace; leg 3
-        # goes 121 -> 129 rows), pulls unchanged (28+6+12+60+23+17+25+10+22+3), bosses in leg order, no door or event step.
+        # 10 legs, 846 steps (20261025002000's 835: leg 3 128 -> 132 rows, leg 4 116 -> 123), the same 83 pulls of legs 3 and 4
+        # (28+6+12+57+26+17+25+10+22+3: the alcove's 3 moved from leg 3 to leg 4), bosses in leg order, no door or event step.
         name, text = newest_plan_text("dragonmaw_retreat")
-        self.assertEqual(name, "20261025002000_world.sql")
+        self.assertEqual(name, "20261030120000_world.sql")
         self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c19713b dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');", text)
         legs = leg_rows(text, "dragonmaw_retreat")
         self.assertEqual(sorted(legs), list(range(10)))
@@ -3020,9 +3030,9 @@ class DungeonPlanSql(unittest.TestCase):
                           "zuluhed_approach", "zuluhed_mid", "zuluhed_floor", "zuluhed_the_whacked"])
         self.assertIn("leave (not read by the run leader yet): 62046 at -6190.56 -3919.91", legs[7][1])
         rows = [r for r in self.step_rows(text) if r["plan"] == "dragonmaw_retreat"]
-        self.assertEqual(len(rows), 835)
+        self.assertEqual(len(rows), 846)
         self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(10)],
-                         [28, 6, 12, 60, 23, 17, 25, 10, 22, 3])
+                         [28, 6, 12, 57, 26, 17, 25, 10, 22, 3])
         self.assertEqual([(int(r["leg"]), int(r["entry"])) for r in rows if r["kind"] == "boss"],
                          [(0, 62056), (1, 62057), (3, 62072), (5, 62069), (9, 62037)])
         # The landing of leg 2 is the one straight walk of the plan (the run leader has no GM move, and no gm_cross is left in
@@ -3167,22 +3177,46 @@ class DungeonPlanSql(unittest.TestCase):
                                                            ("-6003.2", "-4212.2666", "322.189"))],
                          "an exporter cut row of the pocket walk is back")
         for pack, group, chain in (
-                (("-6028.72", "-4176.9", "322.69"), "2",
-                 [("-5986.9", "-4160", "322.2"), ("-5986.9", "-4178.1", "322.2"), ("-5998.9", "-4193.1", "322.2"),
-                  ("-6021", "-4199", "322.2")]),
-                (("-6050.79", "-4199.42", "322.1"), "4", [("-6030", "-4199", "322.2")]),
-                (("-6072.09", "-4224.85", "322.13"), "5", [("-6067", "-4206", "322.2")]),
-                (("-6028.71", "-4254.44", "322.69"), "6", [("-6067.2", "-4230.7", "322.2"), ("-6046", "-4240", "322.2")]),
-                (("-6040.23", "-4274.5", "322.1"), "7", [("-6040", "-4254", "322.2")]),
-                (("-6021.87", "-4217.88", "323.96"), "56", [("-6003", "-4212", "322.2")]),
-                (("-5981.44", "-4179.05", "322.1"), "57", [("-5994", "-4196", "322.2")])):
+                (("-6028.72", "-4176.9", "322.69"), "2", [("-6046.7", "-4190.9", "322.2")]),
+                (("-6050.79", "-4199.42", "322.1"), "4", [("-6073.8", "-4208.4", "322.2")]),
+                (("-6072.09", "-4224.85", "322.13"), "5", [("-6061.1", "-4242.8", "322.2")]),
+                (("-6028.71", "-4254.44", "322.69"), "6", [("-6022.7", "-4276.4", "322.2")]),
+                (("-6040.23", "-4274.5", "322.1"), "7", [("-6019.2", "-4287.5", "322.2")]),
+                (("-6021.87", "-4217.88", "323.96"), "56", [("-6027.9", "-4195.9", "322.2")])):
             i = next(j for j, r in enumerate(sear) if r["kind"] == "pull" and (r["x"], r["y"], r["z"]) == pack)
             self.assertEqual([(r["x"], r["y"], r["z"], r["comment"]) for r in sear[i - len(chain):i]],
                              [(x, y, z, "pull group %s approach" % group) for x, y, z in chain],
                              "the stand chain of the pull at %s is missing" % (pack,))
             d = _math.dist((float(chain[-1][0]), float(chain[-1][1]), float(chain[-1][2])),
                            (float(pack[0]), float(pack[1]), float(pack[2])))
-            self.assertTrue(18.0 <= d <= 24.5, "the stand of the pull at %s is %.1f yd off" % (pack, d))
+            self.assertTrue(18.0 <= d <= 26.0, "the stand of the pull at %s is %.1f yd off" % (pack, d))
+        # Searistrasz's patrol (guid 2584790; every waypoint lies within 0.8 yd of this segment): no row of leg 3 before the
+        # boss row stands within 28 yd of it (the fix-8 run's walk went along it, steps 258-264), the boss row is the leg's
+        # last, the six Dragonmaw Enchanters (62453) are pulled before it, and the alcove past the patrol's north turn is the
+        # head of leg 4, its stands as fix 8 had them, pulled once he is dead.
+        pa, pb = (-5981.68, -4191.49), (-5980.23, -4358.90)
+
+        def patrol_yd(r):
+            x, y = float(r["x"]), float(r["y"])
+            t = max(0.0, min(1.0, ((x - pa[0]) * (pb[0] - pa[0]) + (y - pa[1]) * (pb[1] - pa[1])) /
+                             ((pb[0] - pa[0]) ** 2 + (pb[1] - pa[1]) ** 2)))
+            return _math.hypot(x - pa[0] - t * (pb[0] - pa[0]), y - pa[1] - t * (pb[1] - pa[1]))
+        self.assertEqual((sear[-1]["kind"], sear[-1]["entry"]), ("boss", "62072"))
+        near = [(r["x"], r["y"], round(patrol_yd(r), 1)) for r in sear[:-1] if r["kind"] == "move" and patrol_yd(r) < 28.0]
+        self.assertFalse(near, "leg 3 stands on Searistrasz's patrol before his boss row: %s" % (near,))
+        self.assertEqual(len([r for r in sear if r["kind"] == "pull" and r["entries"] == "62453"]), 6)
+        self.assertFalse([r for r in leg_steps(rows, 4) if "62453" in r["entries"].split(",")])
+        self.assertEqual([(r["kind"], r["x"], r["y"], r["z"], r["comment"]) for r in leg_steps(rows, 4)[:7]], [
+            ("move", "-5994", "-4196", "322.2", "searistrasz pull group 57 approach"),
+            ("pull", "-5981.44", "-4179.05", "322.1", "searistrasz pull group 57"),
+            ("move", "-5986.9", "-4178.1", "322.2", "searistrasz pull group 0 approach"),
+            ("move", "-5986.9", "-4160", "322.2", "searistrasz pull group 0 approach"),
+            ("pull", "-5980.78", "-4140.34", "322.1", "searistrasz pull group 0"),
+            ("move", "-5989.4", "-4145.1", "322.2", "searistrasz pull group 1 approach"),
+            ("pull", "-6011.39", "-4140.09", "322.1", "searistrasz pull group 1")])
+        self.assertFalse([r for r in sear if (r["x"], r["y"]) in (("-5981.44", "-4179.05"), ("-5980.78", "-4140.34"),
+                                                                  ("-6011.39", "-4140.09"), ("-5978.82", "-4137.36"))],
+                         "an alcove pack or the old `to` on the far side of the patrol is back in leg 3")
         self.assertFalse([r for r in halgan if r["kind"] == "pull" and abs(float(r["x"]) + 6360.97) < 0.01],
                          "the 62035 that stands in the lava sheet is still a pull")
         self.assertFalse([r for r in halgan if r["kind"] == "pull" and abs(float(r["x"]) + 6357.21) < 0.01
