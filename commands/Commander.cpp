@@ -11597,7 +11597,7 @@ static void FillMobFacingAndCast(Unit* unit, CommanderTelemetry::MobInfo& mob)
         mob.castTotalMs = mob.channel ? static_cast<uint32>(spell->m_spellInfo->GetDuration())
                                       : static_cast<uint32>(spell->GetCastTime());
         mob.castTarget = spell->m_targets.getUnitTargetGuid().GetRawValue();
-        if (CommanderTelemetry::SpellShape::Shape const* shape = CommanderTelemetry::SpellShape::For(mob.castId))
+        if (TortoiseBots::SpellShape::Shape const* shape = TortoiseBots::SpellShape::For(mob.castId))
         {
             mob.hasShape = true;
             mob.shape = *shape;
@@ -12428,7 +12428,7 @@ void PollEnemyCasts()
                 uint32 const spellId = unit ? CurrentSpellId(unit) : 0;
                 if (spellId && spellId != watch.lastCast[guid])
                     TortoiseBots::CombatMonitorService::Instance().NoteEnemyCast(watch.groupId, std::get<1>(mob), guid,
-                        unit->GetName(), SpellNameOf(spellId), rank);
+                        unit->GetName(), SpellNameOf(spellId).c_str(), rank);
                 watch.lastCast[guid] = spellId;
             }
         }
