@@ -552,6 +552,9 @@ struct UnitFact
     // (-1: not read).
     bool spawnOwned = false;
     float spawnYd = -1.0f;
+    // Residue only by the flier rule (PullReadIn::airborne over the centre's floor, above kPackResidueZYd): a flier the
+    // re-pulls did not bring down is left for the step at the re-pull cap, not paused for (PackResidueTick).
+    bool aloft = false;
     // Pull step units only, when Facts::joinerCeiling is set: how many other
     // creatures an estimate (ai::EstimateAggro) says come if this one is pulled.
     std::uint32_t joiners = 0;
@@ -1335,6 +1338,11 @@ struct Run
     std::uint64_t standPullShotGuid = 0;
     std::uint32_t patrolWaitMs = 0; // a pull step: time spent waiting for a patroller outside the radius (WaitForPatroller)
     std::uint32_t packRepulls = 0;  // ... and residue pulls this step (PackResidueTick)
+    std::uint64_t residuePullGuid = 0; // ... the residue unit the pull out now is for (0: a step unit's, or none)
+    std::uint32_t residuePullEntry = 0; // ... and its entry (the refusal's note)
+    // ... residue units left for this step, out of the party's reach, and why (PullbackRefusedUnreachable: its
+    // pullback refused unreachable; PackResidueTick: a flier the re-pulls did not bring down). Named in the clear note.
+    std::unordered_map<std::uint64_t, std::string> residueOutOfReach;
     std::unordered_set<std::uint64_t> patrolSeen; // ... the patrollers this step saw (a pass of one is remembered run-wide)
     // A big pack's stand walk (BigPackWalkGate): the walk's unit, stand and
     // joiner count; the hold for the party, its time, and whether its ceiling
@@ -2302,6 +2310,8 @@ inline void ResetStep(Run& r)
     ClearFightProgress(r);
     r.patrolWaitMs = 0;
     r.packRepulls = 0;
+    r.residuePullGuid = 0;
+    r.residueOutOfReach.clear();
     r.patrolSeen.clear();
     EndBigWalk(r);
     r.joinerSeen.clear();
@@ -7879,6 +7889,7 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     ++(walkBack ? r.walkBackPulls : r.pulls);
     r.pullGuid = u.guid;
     r.pullHop = hop;
+    r.residuePullGuid = 0; // a residue pull marks its unit after this (PackResidueTick)
     r.reachStopped = false;
     EndBigWalk(r);
     EnterPhase(r, Phase::AwaitPull);
@@ -8088,6 +8099,18 @@ inline bool PullbackRefusedUnreachable(Run& r, const std::string& order, const s
     if (!text.empty() && text.back() == '.')
         text.pop_back();
     std::string const why = "cmd " + order + " refused: " + text;
+    // ZG walk 5 steps 26 and 37: the pull was a residue unit's (a Bloodseeker Bat hovering over the centre's floor),
+    // the step's own units dead. The approach's way searches a stand around the pull centre, which says nothing of
+    // that unit, and paused the run. The unit is left for the step (named in the clear note), no re-pull counted.
+    if (r.residuePullGuid == guid && s->kind == PlanStepKind::Pull)
+    {
+        r.residuePullGuid = 0;
+        if (r.packRepulls > 0)
+            --r.packRepulls;
+        r.residueOutOfReach[guid] = "its pullback refused unreachable";
+        r.note = "residue " + std::to_string(r.residuePullEntry) + " " + GuidArg(guid) + " left for this step: " + why;
+        return true;
+    }
     // Where the lead bot stood on the tick the order went out (the approach pause keeps it: ApproachResumeInPlace).
     Facts here;
     here.leadX = r.leadLastX;
@@ -9985,7 +10008,8 @@ inline PullRead ClassifyPullRead(const PullReadIn& in, float radius, float margi
 // not standing where another step fights it (unless it spawned in this step's radius).
 inline bool PackResidueOpenUnit(const Run& r, const Facts& f, const UnitFact& u)
 {
-    if (!u.hostile || !u.attackable || r.passed.count(u.guid) || r.unreachable.count(u.guid))
+    if (!u.hostile || !u.attackable || r.passed.count(u.guid) || r.unreachable.count(u.guid) ||
+        r.residueOutOfReach.count(u.guid))
         return false;
     return u.spawnOwned || !(r.plan && ai::OwnedByOtherStep(*r.plan, r.step, u.entry, u.x, u.y, u.z, f.team));
 }
@@ -10008,23 +10032,29 @@ inline std::string PassedResidueNote(const Run& r, const Facts& f, const PlanSte
 {
     if (f.packClearMarginYd <= 0.0f || s.kind != PlanStepKind::Pull)
         return std::string();
-    std::string list;
-    std::size_t n = 0;
+    std::string list, reach;
+    std::size_t n = 0, nReach = 0;
     for (const UnitFact& u : f.packResidue)
     {
-        if (!u.hostile || !(r.passed.count(u.guid) || r.unreachable.count(u.guid)))
+        auto const out = r.residueOutOfReach.find(u.guid);
+        bool const left = out != r.residueOutOfReach.end();
+        if (!u.hostile || !(left || r.passed.count(u.guid) || r.unreachable.count(u.guid)))
             continue;
         if (!u.spawnOwned && r.plan && ai::OwnedByOtherStep(*r.plan, r.step, u.entry, u.x, u.y, u.z, f.team))
             continue;
-        ++n;
-        if (!list.empty())
-            list += ", ";
-        list += std::to_string(u.entry) + " " + GuidArg(u.guid);
+        std::string& to = left ? reach : list;
+        ++(left ? nReach : n);
+        if (!to.empty())
+            to += ", ";
+        to += std::to_string(u.entry) + " " + GuidArg(u.guid) + (left ? ": " + out->second : std::string());
     }
-    if (!n)
-        return std::string();
-    return "; " + std::to_string(n) + " left within " + Num(s.radius + f.packClearMarginYd) +
-        " yd that pulls drew no fight (" + list + ")";
+    std::string note;
+    std::string const band = Num(s.radius + f.packClearMarginYd);
+    if (n)
+        note += "; " + std::to_string(n) + " left within " + band + " yd that pulls drew no fight (" + list + ")";
+    if (nReach)
+        note += "; " + std::to_string(nReach) + " left within " + band + " yd out of the party's reach (" + reach + ")";
+    return note;
 }
 
 // A pull step cleared with no pull at all (the gate's own diagnostic): the nearest living unit of its entries the
@@ -10059,6 +10089,18 @@ inline bool PackResidueTick(Run& r, const Facts& f, const PlanStep& s, std::uint
         " yd of the pull centre";
     if (r.packRepulls >= f.packClearRepulls)
     {
+        // A flier above the height bound the re-pulls did not bring down (ZG walk 5 step 37: a hovering Bloodseeker
+        // Bat, three pullbacks out, never in reach) is left for the step, not paused for: the party cannot reach it.
+        // A ground unit in the band keeps the pause.
+        for (const UnitFact& u : f.packResidue)
+            if (u.aloft && PackResidueOpenUnit(r, f, u))
+                r.residueOutOfReach[u.guid] = "flying, " + std::to_string(f.packClearRepulls) +
+                    " re-pulls did not bring it down";
+        std::size_t const ground = PackResidueOpen(r, f, s);
+        if (ground == 0)
+            return false;
+        std::string const groundLeft = std::to_string(ground) + " left within " +
+            Num(s.radius + f.packClearMarginYd) + " yd of the pull centre";
         std::vector<const UnitFact*> units;
         for (const UnitFact& u : f.packResidue)
             if (PackResidueOpenUnit(r, f, u))
@@ -10074,7 +10116,7 @@ inline bool PackResidueTick(Run& r, const Facts& f, const PlanStep& s, std::uint
                 list += ", ";
             list += std::to_string(u->entry) + " " + GuidArg(u->guid) + " " + Num(u->distSpot) + " yd";
         }
-        Pause(r, "pack not cleared after " + std::to_string(f.packClearRepulls) + " re-pulls: " + left + " (" + list +
+        Pause(r, "pack not cleared after " + std::to_string(f.packClearRepulls) + " re-pulls: " + groundLeft + " (" + list +
             "): clear it, then .bot run resume, or .bot run skip");
         return true;
     }
@@ -10100,6 +10142,8 @@ inline bool PackResidueTick(Run& r, const Facts& f, const PlanStep& s, std::uint
     PullUnit(r, f, *pick, order, 0, false, dt);
     if (r.pulls == before)
         return true; // no pull went out (a gather, a death, a sap): not a re-pull
+    r.residuePullGuid = pick->guid; // a refusal of it leaves it for the step (PullbackRefusedUnreachable)
+    r.residuePullEntry = pick->entry;
     ++r.packRepulls;
     r.note = "pack not cleared: " + left + " (re-pull " + std::to_string(r.packRepulls) + " of " +
         std::to_string(f.packClearRepulls) + "); " + r.note;

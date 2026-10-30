@@ -16616,6 +16616,140 @@ static void TestPackResidueCapPauses()
         "(11368 0x000000000000c001 23.2 yd, 11368 0x000000000000bfff 24.0 yd): clear it, then .bot run resume, or .bot run skip");
 }
 
+// --- Zul'Gurub walk 5 (2026-10-30, run.log 352-367 and 592-614): Bloodseeker Bats (11368) hovering over the centre's
+// floor, residue by the flier rule (above the 10 yd height bound), were re-pulled; the tank found no firing position
+// ('cmd pullback ... refused: unreachable'), the refusal took the approach's way (a stand search around the pull
+// centre, whose units were all dead) and paused the run (step 26, twice); at step 37 three re-pulls did not bring the
+// bat down and the cap paused. A residue unit whose pullback is refused unreachable, and a flier above the height
+// bound the re-pulls did not bring down, are left for the step (named in the clear note), no pause. A reachable flier
+// still re-pulls.
+
+static const char* const kWalk5Refusal = "unreachable: The tank could not start moving to a firing position for the pull.";
+
+static UnitFact Walk5Bat(std::uint64_t guid, float distLead, float distSpot)
+{
+    UnitFact u = Residue(guid, 11368, distLead, distSpot, -12160.4f, -1484.6f, 150.9f);
+    u.aloft = true; // residue only by the flier rule: above the height bound, over the centre's floor
+    return u;
+}
+
+static void TestRefusedResidueFlierIsLeftNotPaused()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Walk5Bat(0xc001, 34.2f, 25.0f)};
+    CHECK(Tick(r, f) == "pullback 49153");
+    CHECK(r.packRepulls == 1 && r.pulls == 1);
+    OrderRefused(r, "pullback 49153", kWalk5Refusal);
+    CHECK(r.state == State::Running && r.step == 0);
+    CHECK(!r.approachStandWanted && r.approachStandStep != 0); // not the approach's way: no stand search, no pause
+    CHECK(r.packRepulls == 0 && r.pulls == 0 && r.pullGuid == 0 && r.phase == Phase::Begin);
+    CHECK(r.note == "residue 11368 0x000000000000c001 left for this step: cmd pullback 49153 refused: unreachable: "
+                    "The tank could not start moving to a firing position for the pull");
+    // No re-pull of it again: the step clears and names it.
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.step == 1);
+    CHECK(r.note == "pack cleared; 1 left within 30.5 yd out of the party's reach (11368 0x000000000000c001: "
+                    "its pullback refused unreachable)");
+    // A ground residue unit the tank cannot reach is left the same way (the gate off never pulled it).
+    {
+        Run g = Start(&plan);
+        Facts gf = ZgParty();
+        gf.packResidue = {Residue(0xc002, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f)};
+        CHECK(Tick(g, gf) == "pullback 49154");
+        OrderRefused(g, "pullback 49154", kWalk5Refusal);
+        CHECK(g.state == State::Running && !g.approachStandWanted);
+        CHECK(Tick(g, gf).empty());
+        CHECK(g.step == 1 && Has(g.note, "out of the party's reach (11368 0x000000000000c002: its pullback refused"));
+    }
+    // A resume (ResetStep) reads it afresh: one more pullback, its refusal leaves it again (no pause).
+    {
+        Run p = Start(&plan);
+        Facts pf = ZgParty();
+        pf.packResidue = {Walk5Bat(0xc001, 34.2f, 25.0f)};
+        CHECK(Tick(p, pf) == "pullback 49153");
+        OrderRefused(p, "pullback 49153", kWalk5Refusal);
+        ResetStep(p);
+        CHECK(Tick(p, pf) == "pullback 49153");
+        OrderRefused(p, "pullback 49153", kWalk5Refusal);
+        CHECK(p.state == State::Running);
+        CHECK(Tick(p, pf).empty());
+        CHECK(p.step == 1);
+    }
+}
+
+// The step's own pull refused after a residue pull went out: the approach's way as before (the residue mark is the
+// residue pull's only).
+static void TestStepUnitRefusalAfterResiduePullKeepsTheApproach()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Walk5Bat(0xc001, 34.2f, 25.0f)};
+    CHECK(Tick(r, f) == "pullback 49153");
+    r.phase = Phase::Begin; // that pull drew a fight that is over
+    f.packResidue.clear();
+    f.units = {Unit(0xc003, 11368, 15.0f)};
+    CHECK(Tick(r, f) == "pullback 49155");
+    CHECK(r.residuePullGuid == 0);
+    OrderRefused(r, "pullback 49155", kWalk5Refusal);
+    CHECK(r.approachStandWanted && r.approachStandStep == 0);
+}
+
+static void TestAloftResidueAtTheCapIsLeftNotPaused()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Walk5Bat(0xc001, 20.0f, 9.4f)};
+    for (int i = 0; i < 3; ++i)
+    {
+        CHECK(Tick(r, f) == "pullback 49153"); // a reachable-looking flier is re-pulled up to the cap
+        r.phase = Phase::Begin;
+    }
+    CHECK(r.packRepulls == 3);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.step == 1);
+    CHECK(r.note == "pack cleared; 1 left within 30.5 yd out of the party's reach (11368 0x000000000000c001: "
+                    "flying, 3 re-pulls did not bring it down)");
+    // With a ground unit left too, the cap pauses for the ground unit only.
+    {
+        Run m = Start(&plan);
+        Facts mf = ZgParty();
+        mf.packResidue = {Walk5Bat(0xc001, 20.0f, 9.4f),
+                          Residue(0xbfff, 11368, 30.0f, 24.0f, -12152.0f, -1453.0f, 130.7f)};
+        for (int i = 0; i < 3; ++i)
+        {
+            CHECK(Tick(m, mf).compare(0, 9, "pullback ") == 0);
+            m.phase = Phase::Begin;
+        }
+        CHECK(Tick(m, mf).empty());
+        CHECK(m.state == State::Paused);
+        CHECK(m.note == "pack not cleared after 3 re-pulls: 1 left within 30.5 yd of the pull centre "
+            "(11368 0x000000000000bfff 24.0 yd): clear it, then .bot run resume, or .bot run skip");
+    }
+}
+
+// The owner's rule for a reachable flier over the same floor: it is re-pulled, and a pull that brings it down
+// (it dies) clears the step with no residue note.
+static void TestReachableFlierStillRepulls()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Walk5Bat(0xc001, 21.0f, 6.7f)};
+    CHECK(Tick(r, f) == "pullback 49153");
+    CHECK(r.note == "pack not cleared: 1 left within 30.5 yd of the pull centre (re-pull 1 of 3); pulling 11368");
+    r.phase = Phase::Begin; // no refusal: the pull drew no fight this time
+    CHECK(Tick(r, f) == "pullback 49153");
+    CHECK(r.packRepulls == 2 && r.state == State::Running);
+    f.packResidue.clear(); // it came down and died
+    r.phase = Phase::Begin;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note == "pack cleared");
+}
+
 static void TestPackClearGateOff()
 {
     DungeonPlan plan = ZgPlateauPlan();
@@ -24455,6 +24589,10 @@ int main()
     TestPackResidueIsPulledBeforePackCleared();
     TestGatherTicksAreNoRepulls();
     TestPackResidueCapPauses();
+    TestRefusedResidueFlierIsLeftNotPaused();
+    TestStepUnitRefusalAfterResiduePullKeepsTheApproach();
+    TestAloftResidueAtTheCapIsLeftNotPaused();
+    TestReachableFlierStillRepulls();
     TestPackClearGateOff();
     TestResidueInAnotherStepsRadiusIsLeft();
     TestPassedResidueIsNamed();

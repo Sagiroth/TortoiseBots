@@ -9150,6 +9150,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                         unit.distSpot = read.fromPoint2d;
                         unit.spawnOwned = SpawnOwned(read, step->radius);
                         unit.spawnYd = read.spawnYd;
+                        // Residue only by the flier rule: left at the re-pull cap, not paused for (ZG walk 5).
+                        unit.aloft = read.airborne && read.airborneSameFloor && std::fabs(read.dz) > kPackResidueZYd;
                         f.packResidue.push_back(unit);
                         continue;
                     }
