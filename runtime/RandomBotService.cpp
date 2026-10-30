@@ -1200,13 +1200,12 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
             continue;
         // An unfinished guild order keeps its bot online: order legs pay no
         // XP, so the timed logout below would park the order mid-farm.
-        if (GuildOrders::IsAvailable() && GuildOrders::KeepOrderBotOnline(GuildOrders::Find(candidate.characterGuid.GetCounter())))
-        {
+        bool const onOrder = GuildOrders::IsAvailable() &&
+            GuildOrders::KeepOrderBotOnline(GuildOrders::Find(candidate.characterGuid.GetCounter()));
+        if (onOrder)
             m_ageMs[i] = 0;
-            continue;
-        }
-
-        m_ageMs[i] += diff;
+        else
+            m_ageMs[i] += diff;
 
         // Stall watchdog: about 5% of a fresh pool went idle right after an
         // early ding and stayed online without a single XP point for hours,
@@ -1223,8 +1222,6 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
                 // follows that player, and a guild order (long farm or
                 // delivery walks) pays none either: none of them is a stall.
                 ::PlayerbotAI* stallAi = PlayerbotAIStorage::Instance().GetAI(player);
-                std::optional<GuildOrders::OrderRecord> order = GuildOrders::Find(candidate.characterGuid.GetCounter());
-                bool const onOrder = order && !GuildOrders::IsFinished(order->state);
                 bool const busyNoXp = player->InBattleGround() || (stallAi && stallAi->HasRealPlayerMaster()) || onOrder;
                 if (busyNoXp || level != progress.level || xp != progress.xp)
                     progress = XpProgress{ level, xp, 0 };
@@ -1253,6 +1250,9 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
                 if (masterAi->HasRealPlayerMaster())
                     continue;
         }
+
+        if (onOrder)
+            continue;
 
         if (!sPlayerbotAIConfig.randomBotTimedLogout || !sPlayerbotAIConfig.maxRandomBotInWorldTime)
             continue;
