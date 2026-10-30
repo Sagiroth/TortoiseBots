@@ -92,7 +92,7 @@ assert.deepStrictEqual(tonightRows.map((r) => r.key), [liveRows[0].key, liveRows
 const appSrc = fs.readFileSync(appPath, "utf8");
 assert.ok(/const list = fd\.day \? \(fd\.list \|\| \[\]\) : \(bind\.history \? \(fd\.list \|\| \[\]\) : fdTonightRows\(fd, key\)\);/.test(appSrc),
   "the debugger's rail lists fdTonightRows for Tonight");
-assert.ok(/fdDayFights\(fd, bind, l => \{ hist = l; both\(\); \}\)/.test(appSrc),
+assert.ok(/fdDayFights\(fd, bind, today, l => \{ hist = l; both\(\); \}\)/.test(appSrc),
   "Tonight asks for today's stored fights too, not just the live list");
 assert.ok(fs.readFileSync(path.resolve(process.argv[2]), "utf8").includes('"Tonight · " +'), "the picker labels today as Tonight with its count");
 

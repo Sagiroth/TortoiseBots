@@ -43,7 +43,7 @@ vm.runInContext([
   "var fdTabListSeen = () => {};",
   "var fdFightHash = () => {};",
   "var renderFightDebug = () => {};",
-  "var fdDayFights = (fd, bind, cb) => { if (cb) cb(null); };",
+  "var fdDayFights = (fd, bind, day, cb) => { if (cb) cb(null); };",
   "var FightHistory = { dayOf: () => \"2026-10-29\", rowDay: (day) => (day === \"2026-10-29\" ? \"\" : day) };",
 ].join("\n"), ctx, { filename: "app.js state" });
 

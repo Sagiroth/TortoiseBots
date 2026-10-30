@@ -30,7 +30,7 @@ const ctx = { console, Date: { now: () => clock }, encodeURIComponent, decodeURI
 vm.createContext(ctx);
 vm.runInContext([
   grab("esc"), grab("numOr0"), grab("fdHistCmdLoad"), grab("cmdHistoryBind"), grab("fdHistoryListHtml"), grab("fdOverviewHtml"),
-  grab("fdEmptyNote"),
+  grab("fdEmptyNote"), grab("fdDayFights"), "var FD_HIST_MS = 10000;",
   grabLine("fdHistCmd"), grabLine("fdHistRow"), grabLine("FD_HISTCMD_MS"), grabLine("FD_EMPTY"), grabLine("fdHistNamed"),
   "var state = { commanders: { list: [] } };",
   "var fdPage = { open: null };",
@@ -39,7 +39,8 @@ vm.runInContext([
   "var FightHistory = { whenLabel: (msv) => '28 Oct ' + String(Math.floor(msv / 3600000) % 24) + ':14' };",
   // The daemon's answer, kept in the same realm as the code under test: a promise made by another realm confuses the vm.
   "var fetchCalls = 0, fetchPayload = null, fetchFail = false;",
-  "function fetch() { fetchCalls += 1; return fetchFail ? Promise.reject(new Error('500')) : Promise.resolve({ ok: true, json: () => Promise.resolve(fetchPayload) }); }",
+  "var fetchUrls = [];",
+  "function fetch(u) { fetchUrls.push(u); fetchCalls += 1; return fetchFail ? Promise.reject(new Error('500')) : Promise.resolve({ ok: true, json: () => Promise.resolve(fetchPayload) }); }",
   "function jsonOrThrow(r) { if (!r || r.ok === false) throw new Error('http'); return r.json(); }",
 ].join("\n"), ctx);
 
@@ -102,6 +103,20 @@ const settle = async () => { for (let i = 0; i < 6; i++) await new Promise((r) =
   await settle();
   assert.strictEqual(calls(), 2, "the list is asked again once the minute passed");
   assert.strictEqual(plain(run("fdHistCmd.list.length")), 2, "a failed refresh keeps the commanders already known");
+
+  // ---- 5. the day history call never carries an empty day (the daemon answers that with 400) ----------------------------
+  run("fetchFail = false; fetchPayload = []; fetchUrls.length = 0");
+  const fd = { hist: {}, histPending: {} };
+  let got = "unset";
+  run("fdDayFights(fd, { commander: 'Glacienne' }, '', (l) => { got = l; })", { fd, got: null });
+  await settle();
+  assert.deepStrictEqual(plain(run("fetchUrls")), [], "an empty day asks nothing");
+  run("fdDayFights(fd, { commander: 'Glacienne' }, '2026-10-30', () => {})", { fd });
+  await settle();
+  assert.deepStrictEqual(plain(run("fetchUrls")), ["/api/v1/combat/history?commander=Glacienne&day=2026-10-30"]);
+  assert.ok(!/day=(&|$)/.test(run("fetchUrls[0]")), "no empty day param");
+  assert.ok(/fdDayFights\(fd, bind, today, /.test(src) && /fdDayFights\(fd, bind, fd\.day, /.test(src),
+    "both callers pass a real day (today for Tonight, the chosen night otherwise)");
 
   console.log("fd history ok");
 })().catch((e) => { console.error(e); process.exit(1); });
