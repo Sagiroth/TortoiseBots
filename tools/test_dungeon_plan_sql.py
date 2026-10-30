@@ -2942,7 +2942,7 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual(leg6[g12 + 1]["z"], "-92.52249")
 
     def test_dragonmaw_retreat_is_the_plan_with_the_census_fixes(self):
-        # 20261030120000 (2026-10-30, after the fix-8 live run on tortoise-test2: the pocket passed, but Searistrasz aggroed on the
+        # 20261030200000 (2026-10-30, after the fix-8 live run on tortoise-test2: the pocket passed, but Searistrasz aggroed on the
         # walk at step 260 and took 24 min with all six Dragonmaw Enchanters alive): 20261025002000's rows with leg 3 walked round
         # the boss's patrol. Searistrasz (62072, guid 2584790) walks 42 waypoints up and down x -5980.2..-5981.7, y -4191.5..
         # -4358.9 (tortoise-wow 20260630194548_world.sql); the exporter's walk to the leg's `to` (-5978.8 -4137.4) ran along that
@@ -3023,8 +3023,8 @@ class DungeonPlanSql(unittest.TestCase):
         # The rows are not the export of turtle-agent c19713b's plan file (it still walks the patrol): the source says so, and the
         # patrol check below fails a later export that brings the walk back.
         name, text = newest_plan_text("dragonmaw_retreat")
-        self.assertEqual(name, "20261030120000_world.sql")
-        self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c19713b + leg 3/4 by hand (20261030120000)', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual(name, "20261030200000_world.sql")
+        self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c19713b + leg 3/4 by hand (20261030200000)', 'plan v1, draft (not mapped, not live-checked)');", text)
         legs = leg_rows(text, "dragonmaw_retreat")
         self.assertEqual(sorted(legs), list(range(10)))
         self.assertEqual([legs[i][0] for i in range(10)],

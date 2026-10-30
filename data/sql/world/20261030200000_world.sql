@@ -22,7 +22,7 @@ DELETE FROM `ai_dungeon_step` WHERE `plan` = 'dragonmaw_retreat';
 DELETE FROM `ai_dungeon_leg` WHERE `plan` = 'dragonmaw_retreat';
 DELETE FROM `ai_dungeon_plan` WHERE `plan` = 'dragonmaw_retreat';
 INSERT INTO `ai_dungeon_plan` (`plan`, `map`, `cc_priority`, `cc_always`, `kill_first`, `source`, `comment`) VALUES
-('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c19713b + leg 3/4 by hand (20261030120000)', 'plan v1, draft (not mapped, not live-checked)');
+('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c19713b + leg 3/4 by hand (20261030200000)', 'plan v1, draft (not mapped, not live-checked)');
 INSERT INTO `ai_dungeon_leg` (`plan`, `leg`, `name`, `comment`) VALUES
 ('dragonmaw_retreat', 0, 'bogpaw_truthsay', ''),
 ('dragonmaw_retreat', 1, 'gowlfang', ''),
