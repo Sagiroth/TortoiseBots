@@ -2512,14 +2512,13 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                     listedOnBotMap = plan.zones[i].onBotMap;
                     listedIndex = i;
                 }
-            int32_t zoneLevel = 0;
-            bool outgrown = listed && sTravelMgr.TryGetValidatedAreaLevel(farmZoneId, zoneLevel) &&
-                ai::OutgrownZoneRefusesPoint(zoneLevel, bot->GetLevel(),
-                    sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster());
+            // An outgrown zone is no reason to move: the item drops where the
+            // plan says, and moving on every request cycled the whole plan
+            // in a minute into zones far above the bot.
             // A zone across the sea (the bot changed continent) is unreachable
             // for pool travel: move to one on this map when the plan has one.
             bool const acrossSea = listed && !listedOnBotMap && !plan.zones.empty() && plan.zones[0].onBotMap;
-            if (farmZoneId == 0 || !listed || outgrown || acrossSea)
+            if (farmZoneId == 0 || !listed || acrossSea)
             {
                 size_t pick = TortoiseBots::GuildOrders::NextZonePick(listed, listedIndex, record->zoneIndex,
                     plan.zones.size());
