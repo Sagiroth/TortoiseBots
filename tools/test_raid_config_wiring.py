@@ -44,5 +44,37 @@ class RaidConfigWiringTest(unittest.TestCase):
         self.assertIn("f.raid.bossRules = sPlayerbotAIConfig.dungeonRunRaidBossRules;", raid)
 
 
+    def test_guard_read_fills_the_raid_attackers_with_the_lead_dead(self):
+        # DungeonRun::RaidGuardTick's dead-lead branch needs Facts::partyAttackers: in a raid's boss fight the glue's
+        # guard read goes on past a dead (or non-tank) lead bot, around a living anchor (DungeonRun::GuardReadMode).
+        code = strip_comments(COMMANDER)
+        read = body(code, "void ReadGuardFacts(Player* lead,", "\n}\n")
+        self.assertIn("ai::PlanStep const* hold, bool raidBoss)", read)
+        mode = read.index("GuardRead const mode = GuardReadMode(lead->IsAlive(), f.leadIsTank, raidBoss);")
+        fill = read.index("f.partyAttackers.push_back(fact);")
+        self.assertLess(mode, fill)
+        before = read[:mode]
+        # No return on a dead or non-tank lead bot before the mode decides.
+        self.assertNotIn("!lead->IsAlive()", before)
+        self.assertNotIn("if (!f.leadIsTank)", read)
+        self.assertIn("if (mode == GuardRead::None)\n        return;", read)
+        # The attackers are read around the anchor, within the raid boss range when it is one.
+        self.assertIn("float const range = raidBoss ? kRaidBossGuardYd : kGuardYd;", read)
+        self.assertIn("bot->GetDistance(anchor) > range", read)
+        self.assertIn("fact.distLead = anchor->GetDistance(attacker);", read)
+        self.assertIn("for (std::string const& name : f.raid.bossOffTanksAlive)", read)
+        self.assertIn("fact.victimName = victim->GetName();", read)
+        self.assertIn("f.leadHeldEntries.push_back(attacker->GetEntry());", read)
+        # Both call sites say whether it is a raid's boss fight.
+        self.assertEqual(code.count("TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f)"), 2)
+
+    def test_boss_off_tanks_are_raid_wide(self):
+        code = strip_comments(COMMANDER)
+        self.assertIn("yd <= TortoiseBots::DungeonRun::kRaidBossGuardYd &&", code)
+        self.assertIn("f.raid.bossOffTanksAlive.push_back(member.name);", code)
+        # The trash fights' off-tanks keep kGuardYd.
+        self.assertIn("bot->GetMap() == lead->GetMap() && yd <= kGuardYd &&", code)
+
+
 if __name__ == "__main__":
     unittest.main()

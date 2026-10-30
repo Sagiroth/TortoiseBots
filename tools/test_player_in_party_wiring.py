@@ -145,7 +145,9 @@ class PlayerInPartyWiringTest(unittest.TestCase):
         self.assertIn("p.gm = IsBotAdministrator(member);", fn)
         self.assertIn("if (p.inCombat)\n            fighting.push_back(member);", fn)
         self.assertIn("ReadEngagedUnits(lead, fighting, f);", fn)
-        self.assertIn("if (fresh)\n        ReadGuardFacts(lead, bots, f, hold);", fn)
+        self.assertIn(
+            "if (fresh)\n        ReadGuardFacts(lead, bots, f, hold, TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f));",
+            fn)
         self.assertIn("AddPlayerAttackers(lead, fighting, f, hold);", fn)
         add = strip_comments(body(COMMANDS, "void AddPlayerAttackers(Player* lead,", "\n}\n"))
         self.assertIn("attacker->GetVictim() != player", add)

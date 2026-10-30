@@ -8028,63 +8028,94 @@ void ReadReachFacts(Player* lead, PlayerbotAI* leadAi, std::vector<Player*> cons
 // casting: a pullback's mobs running in do not count) and whether that bot is a
 // healer, and during a hold (`hold` not null) each one's distance from the
 // hold spot. Read off each bot's own attacker set: no grid or world scan.
+// `raidBoss`: a raid's boss fight under AiPlayerbot.DungeonRunRaidBossRules (DungeonRun::RaidBossRulesFight): the
+// attackers within kRaidBossGuardYd count, each with its victim's name, and with the lead bot dead (or no tank) the
+// raid's attackers are still read, around a living anchor (DungeonRun::GuardReadMode), so an off-tank takes the boss
+// off a non-tank (DungeonRun::RaidGuardTick).
 void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts& f,
-    ai::PlanStep const* hold)
+    ai::PlanStep const* hold, bool raidBoss)
 {
     using namespace TortoiseBots::DungeonRun;
     PlayerbotAI* leadAi = PlayerbotAIStorage::Instance().GetAI(lead);
-    if (!leadAi || !lead->IsAlive() || !lead->IsInWorld())
+    if (!leadAi || !lead->IsInWorld())
         return;
-    ReadReachFacts(lead, leadAi, bots, f);
-    f.leadIsTank = PlayerbotAI::IsTank(lead);
-    if (!f.leadIsTank)
-        return;
-    f.leadStaying = leadAi->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
-        leadAi->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT);
-    if (f.leadStaying)
+    if (lead->IsAlive())
     {
-        // The stand it holds (the pullback's or SetStayAnchor's "stay"
-        // point): the guard's walk back goes there, not to where a tank still
-        // dragging its pull in stands at the pick-up.
-        ai::PositionMap& posMap = leadAi->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
-        auto const stay = posMap.find("stay");
-        if (stay != posMap.end() && stay->second.isSet() && stay->second.mapId == lead->GetMapId())
-        {
-            f.leadStayKnown = true;
-            f.leadStayX = stay->second.x;
-            f.leadStayY = stay->second.y;
-            f.leadStayZ = stay->second.z;
-        }
+        ReadReachFacts(lead, leadAi, bots, f);
+        f.leadIsTank = PlayerbotAI::IsTank(lead);
     }
-    // The nearest mob on the lead bot in melee reach (EngageTarget): what the
-    // tank on "stay" is sent at on arrival.
-    Unit* nearestHit = nullptr;
-    float nearestHitYd = 0.0f;
-    for (Unit* attacker : lead->GetAttackers())
-        if (attacker && attacker->IsAlive() && attacker->GetVictim() == lead &&
-            attacker->CanReachWithMeleeAutoAttack(lead))
+    GuardRead const mode = GuardReadMode(lead->IsAlive(), f.leadIsTank, raidBoss);
+    if (mode == GuardRead::None)
+        return;
+    // Whose distance, attack rules and friendliness the attackers are read by: the lead bot, or in a raid's boss fight
+    // with it dead its first living off-tank in range (else any living bot on its map).
+    Player* anchor = lead->IsAlive() ? lead : nullptr;
+    if (!anchor)
+        for (std::string const& name : f.raid.bossOffTanksAlive)
+            for (Player* bot : bots)
+                if (!anchor && bot->GetName() == name && bot->IsAlive() && bot->IsInWorld() &&
+                    bot->GetMap() == lead->GetMap())
+                    anchor = bot;
+    if (!anchor)
+        for (Player* bot : bots)
+            if (!anchor && bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == lead->GetMap())
+                anchor = bot;
+    if (!anchor)
+        return;
+    float const range = raidBoss ? kRaidBossGuardYd : kGuardYd;
+    if (raidBoss && lead->IsAlive())
+        for (Unit* attacker : lead->GetAttackers())
+            if (attacker && attacker->IsAlive() && attacker->GetVictim() == lead)
+                f.leadHeldEntries.push_back(attacker->GetEntry()); // DungeonRun::LeadHoldsPlanBoss
+    if (mode == GuardRead::Lead)
+    {
+        f.leadStaying = leadAi->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
+            leadAi->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT);
+        if (f.leadStaying)
         {
-            f.leadHit = true;
-            float const yd = lead->GetDistance(attacker);
-            if (attacker->IsCreature() && !sServerFacade.IsFriendlyTo(attacker, lead) &&
-                (!nearestHit || yd < nearestHitYd))
+            // The stand it holds (the pullback's or SetStayAnchor's "stay"
+            // point): the guard's walk back goes there, not to where a tank still
+            // dragging its pull in stands at the pick-up.
+            ai::PositionMap& posMap = leadAi->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
+            auto const stay = posMap.find("stay");
+            if (stay != posMap.end() && stay->second.isSet() && stay->second.mapId == lead->GetMapId())
             {
-                nearestHit = attacker;
-                nearestHitYd = yd;
+                f.leadStayKnown = true;
+                f.leadStayX = stay->second.x;
+                f.leadStayY = stay->second.y;
+                f.leadStayZ = stay->second.z;
             }
         }
-    if (nearestHit)
-    {
-        UnitFact& fact = f.leadAttacker;
-        fact.guid = nearestHit->GetObjectGuid().GetRawValue();
-        fact.entry = nearestHit->GetEntry();
-        fact.distLead = nearestHitYd;
-        fact.evading = static_cast<Creature*>(nearestHit)->IsInEvadeMode();
-        fact.polymorphed = RunCcHeld(nearestHit);
-        fact.engaged = true;
-        fact.hitting = true;
-        fact.attackable = GroupCanAttack(lead, nearestHit); // never engaged when it cannot be attacked
-        f.leadHasAttacker = true;
+        // The nearest mob on the lead bot in melee reach (EngageTarget): what the
+        // tank on "stay" is sent at on arrival.
+        Unit* nearestHit = nullptr;
+        float nearestHitYd = 0.0f;
+        for (Unit* attacker : lead->GetAttackers())
+            if (attacker && attacker->IsAlive() && attacker->GetVictim() == lead &&
+                attacker->CanReachWithMeleeAutoAttack(lead))
+            {
+                f.leadHit = true;
+                float const yd = lead->GetDistance(attacker);
+                if (attacker->IsCreature() && !sServerFacade.IsFriendlyTo(attacker, lead) &&
+                    (!nearestHit || yd < nearestHitYd))
+                {
+                    nearestHit = attacker;
+                    nearestHitYd = yd;
+                }
+            }
+        if (nearestHit)
+        {
+            UnitFact& fact = f.leadAttacker;
+            fact.guid = nearestHit->GetObjectGuid().GetRawValue();
+            fact.entry = nearestHit->GetEntry();
+            fact.distLead = nearestHitYd;
+            fact.evading = static_cast<Creature*>(nearestHit)->IsInEvadeMode();
+            fact.polymorphed = RunCcHeld(nearestHit);
+            fact.engaged = true;
+            fact.hitting = true;
+            fact.attackable = GroupCanAttack(lead, nearestHit); // never engaged when it cannot be attacked
+            f.leadHasAttacker = true;
+        }
     }
     std::unordered_set<uint64> seen;
     // The mobs that have `victim` (a bot or a pet) as their victim, each once.
@@ -8095,12 +8126,12 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
         {
             if (!attacker || !attacker->IsAlive() || attacker->GetVictim() != victim ||
                 !seen.insert(attacker->GetObjectGuid().GetRawValue()).second ||
-                sServerFacade.IsFriendlyTo(attacker, lead))
+                sServerFacade.IsFriendlyTo(attacker, anchor))
                 continue;
             UnitFact fact;
             fact.guid = attacker->GetObjectGuid().GetRawValue();
             fact.entry = attacker->GetEntry();
-            fact.distLead = lead->GetDistance(attacker);
+            fact.distLead = anchor->GetDistance(attacker);
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
             fact.engaged = true;
@@ -8108,11 +8139,13 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.hitting = melee || (!attacker->IsMoving() && attacker->IsNonMeleeSpellCasted(false));
             fact.castingAtRange = fact.hitting && !melee;
             if (fact.castingAtRange && fact.distLead > TortoiseBots::DungeonRun::kGuardNoWalkYd)
-                fact.campIdle = IdleHostilesNear(lead, attacker, TortoiseBots::DungeonRun::kGuardCampYd);
+                fact.campIdle = IdleHostilesNear(anchor, attacker, TortoiseBots::DungeonRun::kGuardCampYd);
             fact.victimHealer = healer;
             fact.victimPet = petVictim;
             fact.victimTank = tankVictim;
-            fact.attackable = GroupCanAttack(lead, attacker); // never picked up when it cannot be attacked
+            if (raidBoss && !petVictim)
+                fact.victimName = victim->GetName(); // RaidGuardTick: never the off-tank holding the boss
+            fact.attackable = GroupCanAttack(anchor, attacker); // never picked up when it cannot be attacked
             if (hold)
                 fact.distSpot = DistanceTo(attacker, hold->x, hold->y, hold->z);
             f.partyAttackers.push_back(fact);
@@ -8121,7 +8154,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
     for (Player* bot : bots)
     {
         if (!bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != lead->GetMap() ||
-            (bot != lead && bot->GetDistance(lead) > kGuardYd))
+            (bot != anchor && bot->GetDistance(anchor) > range))
             continue;
         // The lead bot's own mobs are leadHit / leadAttacker, not partyAttackers.
         if (bot != lead)
@@ -8934,6 +8967,13 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         if (f.raid.on && isTank && bot != lead && bot->GetMap() == lead->GetMap() && yd <= kGuardYd &&
             !CommanderTasks().count(bot->GetObjectGuid().GetRawValue()))
             f.raid.offTanksAlive.push_back(member.name);
+        // ... and with AiPlayerbot.DungeonRunRaidBossRules the boss fight's off-tanks, raid-wide: within
+        // kRaidBossGuardYd of the lead bot (its body when it is dead), so one at an add's spawn point counts
+        // (DungeonRun::RaidGuardTick).
+        if (f.raid.on && f.raid.bossRules && isTank && bot != lead && bot->GetMap() == lead->GetMap() &&
+            yd <= TortoiseBots::DungeonRun::kRaidBossGuardYd &&
+            !CommanderTasks().count(bot->GetObjectGuid().GetRawValue()))
+            f.raid.bossOffTanksAlive.push_back(member.name);
         member.core = isTank || isHeal; // the raid's gather (the glue reads roles on raid ticks only)
         member.offPlanMap = bot->GetMapId() != slot.run.plan->map; // outside the instance (DungeonRun::PlanMapFightView)
         // ta252: same map id, another instance id than the lead bot's (another copy of the instance): a summon cannot
@@ -9058,8 +9098,10 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     {
         // In a hold: the attackers' distance from its spot (DungeonRun::HoldGuardTarget).
         ai::PlanStep const* current = FactStep(slot.run);
+        // A raid's boss fight under AiPlayerbot.DungeonRunRaidBossRules (after ReadEngagedUnits: EngagedPlanBoss).
         ReadGuardFacts(lead, bots, f,
-            current && current->kind == ai::PlanStepKind::Hold ? current : nullptr);
+            current && current->kind == ai::PlanStepKind::Hold ? current : nullptr,
+            TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f));
     }
 
     // A hold's done condition on every tick, its spot in sight or not
@@ -10072,7 +10114,7 @@ void ReadRunPlayers(DungeonRunSlot const& slot, uint64 commanderRaw, Player* lea
     ai::PlanStep const* current = TortoiseBots::DungeonRun::FactStep(slot.run);
     ai::PlanStep const* hold = current && current->kind == ai::PlanStepKind::Hold ? current : nullptr;
     if (fresh)
-        ReadGuardFacts(lead, bots, f, hold);
+        ReadGuardFacts(lead, bots, f, hold, TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f));
     AddPlayerAttackers(lead, fighting, f, hold);
 }
 

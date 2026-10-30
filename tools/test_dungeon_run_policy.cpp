@@ -21293,7 +21293,9 @@ static void TestRaidBossFightSurvivesItsDeaths()
     for (std::uint32_t s = 0; s <= 1500; ++s)
     {
         std::uint32_t const down = s >= 1300 ? 4u : s >= 1250 ? 3u : s >= 450 ? 2u : s >= 400 ? 1u : 0u;
-        Tick(r, RaidBossFightFacts(s, true, down, 5000));
+        Facts f = RaidBossFightFacts(s, true, down, 5000);
+        f.engagedUnits.push_back(HpUnit(0xF130000000200000ull + s / 30, 11262, 1000, 1000)); // whelps come and die too
+        Tick(r, f);
         CHECK(r.state == State::Running);
         if (s == 1300)
             CHECK(r.note.find("past the 1200 s ceiling: an engaged unit lost hp in the last 60 s") != std::string::npos);
@@ -21387,6 +21389,7 @@ static Facts RaidBossGuardFacts()
     f.raid.on = true;
     f.raid.bossRules = true;
     f.raid.offTanksAlive = {"Offy", "Offz"};
+    f.raid.bossOffTanksAlive = f.raid.offTanksAlive;
     f.leadIsTank = true;
     f.leadStaying = true;
     return f;
@@ -21400,11 +21403,16 @@ static void TestRaidBossWhelpsGoToAnOffTank()
     f.partyAttackers = {Hitter(45001, 11262, 20, true)};
     CHECK(Tick(r, f) == "attack 45001 Offy");
     CHECK(r.note == "fighting: the off-tank Offy takes 11262 off the healer (20.0 yd)");
-    // The next whelp waits its kGuardRepeatMs and goes to the next off-tank.
+    // The next whelp, on a DPS, waits the guard's kGuardWaitMs and goes to the next off-tank.
     CHECK(Tick(r, f).empty());
     Facts g = RaidBossGuardFacts();
     g.partyAttackers = {Hitter(45002, 11262, 18, false)};
-    CHECK(Tick(r, g) == "attack 45002 Offz");
+    std::string next;
+    std::uint32_t waited = 0;
+    for (; waited < 10000 && next.empty(); waited += kTickMs)
+        next = Tick(r, g);
+    CHECK(next == "attack 45002 Offz");
+    CHECK(waited > kGuardRepeatMs); // the wait, not the spacing alone (TestRaidBossAddWaitsTheGuardDwell)
 }
 
 static void TestRaidBossWhelpsGoPastTheFightOrderCap()
@@ -21415,7 +21423,7 @@ static void TestRaidBossWhelpsGoPastTheFightOrderCap()
     for (std::uint32_t i = 0; i < 15; ++i)
     {
         Facts f = RaidBossGuardFacts();
-        f.partyAttackers = {Hitter(46000 + i, 11262, 15, false)};
+        f.partyAttackers = {Hitter(46000 + i, 11262, 15, true)}; // on a healer: no wait
         for (int k = 0; k < 2; ++k)
             if (!Tick(r, f).empty())
                 ++orders;
@@ -21470,8 +21478,236 @@ static void TestRaidBossBossOffANonTankWithTheLeadDead()
     Run q = RaidBossRun(plan);
     Facts g = f;
     g.partyAttackers[0].victimTank = true;
+    g.partyAttackers[0].victimName = "Offz";
     for (int k = 0; k < 5; ++k)
-        CHECK(Tick(q, g).find("Offy") == std::string::npos);
+        CHECK(Tick(q, g).empty());
+}
+
+// The glue's guard read (ReadGuardFacts) by GuardReadMode: a living tank lead bot reads the party guard's facts as before;
+// in a raid's boss fight a dead (or not a tank) lead bot still has the raid's attackers read around a living anchor, so
+// RaidGuardTick's dead-lead branch sees the boss on a non-tank. Outside one, nothing is read then (as before).
+static void TestRaidBossGuardReadModes()
+{
+    CHECK(GuardReadMode(true, true, false) == GuardRead::Lead);
+    CHECK(GuardReadMode(true, true, true) == GuardRead::Lead);
+    CHECK(GuardReadMode(false, false, false) == GuardRead::None);
+    CHECK(GuardReadMode(true, false, false) == GuardRead::None);
+    CHECK(GuardReadMode(false, false, true) == GuardRead::RaidAnchor);
+    CHECK(GuardReadMode(true, false, true) == GuardRead::RaidAnchor);
+}
+
+// The facts as the glue reads them with the lead bot dead (GuardRead::RaidAnchor): leadAlive, leadIsTank and
+// leadStaying all false, the attackers' distance from the anchor. The boss on the healer 55 yd away (past kGuardYd,
+// inside kRaidBossGuardYd) goes to an off-tank at once.
+static void TestRaidBossOffTankTakesTheBossWithTheGlueFactsOfADeadLead()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadAlive = false;
+    f.leadIsTank = false;
+    f.leadStaying = false;
+    f.partyAttackers = {Hitter(0xF1300027C8000001ull, 10184, 55, true)};
+    f.partyAttackers[0].victimName = "Healy";
+    CHECK(Tick(r, f) == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Offy");
+}
+
+// Adds that die keep the hp watch losing, but only the plan boss's own loss holds a raid's boss fight through its
+// deaths: a flat boss with whelps dying every 20 s pauses on the first death past the 1200 s ceiling.
+static void TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    std::uint32_t s = 0;
+    for (; s <= 1700 && r.state == State::Running; ++s)
+    {
+        Facts f = RaidBossFightFacts(0, true, s >= 1300 ? 4u : s >= 1250 ? 3u : 0u, 0); // her hp flat at 100 %
+        f.engagedUnits.push_back(HpUnit(0xF130000000100000ull + s / 20, 11262, 1000, 1000)); // a whelp, gone 20 s later
+        Tick(r, f);
+    }
+    CHECK(r.state == State::Paused && r.ceilingPaused);
+    CHECK(r.fightMs == 1251000);
+    CHECK(r.note.find("a fight lasted more than 1200 s and a party member died in the last 60 s") == 0);
+}
+
+// The raid's wipe level in its boss fight regroups past the 420 s boss ceiling, not the raid's 1200 s one: that one is
+// for a fight being won.
+static void TestRaidBossWipeRegroupKeepsTheBossCeiling()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    for (std::uint32_t s = 0; s <= 1500 && r.note.find("regrouping") == std::string::npos; ++s)
+        Tick(r, RaidBossFightFacts(s, true, s >= 100 ? 15u : 0u, 5000));
+    CHECK(r.fightMs == 421000);
+    CHECK(r.note.find("15 dead and the fight went past 420 s") == 0);
+}
+
+// The off-tank holding the boss (the lead bot dead) is never sent at a whelp; a whelp goes to an off-tank nobody hits
+// first, then to one holding an add.
+static void TestRaidBossOffTankHoldingTheBossIsNotSentToAnAdd()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadAlive = false;
+    f.leadIsTank = false;
+    f.leadStaying = false;
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 12, false);
+    boss.victimTank = true;
+    boss.victimName = "Offy";
+    f.partyAttackers = {boss, Hitter(45001, 11262, 20, true), Hitter(45002, 11262, 22, true)};
+    f.partyAttackers[1].victimName = "Healy";
+    f.partyAttackers[2].victimName = "Healy";
+    for (int k = 0; k < 10; ++k)
+    {
+        std::string const o = Tick(r, f);
+        CHECK(o.find("Offy") == std::string::npos);
+    }
+    // Offz holds an add, Offw is free: the whelp goes to Offw, also on the turn after.
+    Run q = RaidBossRun(plan);
+    Facts g = f;
+    g.raid.bossOffTanksAlive = {"Offy", "Offz", "Offw"};
+    UnitFact held = Hitter(45003, 11262, 25, false);
+    held.victimTank = true;
+    held.victimName = "Offz";
+    g.partyAttackers.push_back(held);
+    std::vector<std::string> orders;
+    for (int k = 0; k < 6; ++k)
+    {
+        std::string const o = Tick(q, g);
+        if (!o.empty())
+            orders.push_back(o);
+    }
+    CHECK(orders.size() >= 2);
+    for (const std::string& o : orders)
+        CHECK(o.size() > 5 && o.compare(o.size() - 5, 5, " Offw") == 0);
+    // Every off-tank holds a plan boss: no order.
+    Run u = RaidBossRun(plan);
+    Facts h = f;
+    h.raid.bossOffTanksAlive = {"Offy"};
+    for (int k = 0; k < 6; ++k)
+        CHECK(Tick(u, h).empty());
+}
+
+// A mob that had its two orders gets two more kRaidGuardRearmMs after the last one: it is never left on the raid.
+static void TestRaidBossCappedAddIsReArmed()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.partyAttackers = {Hitter(45101, 11262, 15, true)};
+    int orders = 0;
+    for (int k = 0; k < 15; ++k)
+        if (!Tick(r, f).empty())
+            ++orders;
+    CHECK(orders == static_cast<int>(kGuardOrdersPerUnit));
+    for (int k = 0; k < 15; ++k)
+        if (!Tick(r, f).empty())
+            ++orders;
+    CHECK(orders == 2 * static_cast<int>(kGuardOrdersPerUnit));
+}
+
+// A whelp 60 yd from the main tank (past kGuardYd, inside kRaidBossGuardYd) still goes to an off-tank.
+static void TestRaidBossFarAddGoesToAnOffTank()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.partyAttackers = {Hitter(45301, 11262, 60, true)};
+    CHECK(Tick(r, f) == "attack 45301 Offy");
+}
+
+// No off-tank left in range, the main tank holding the boss: it is never sent off her, at a whelp on the healer or one
+// on itself.
+static void TestRaidBossNoOffTankKeepsTheMainTankOnTheBoss()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.raid.offTanksAlive.clear();
+    f.raid.bossOffTanksAlive.clear();
+    f.leadHeldEntries = {10184, 11262};
+    f.leadHit = true;
+    f.leadHasAttacker = true;
+    f.leadAttacker = Hitter(45402, 11262, 2);
+    f.partyAttackers = {Hitter(45401, 11262, 20, true)};
+    for (int k = 0; k < 10; ++k)
+        CHECK(Tick(r, f).empty());
+    // The boss on it is still engaged on arrival.
+    Run q = RaidBossRun(plan);
+    Facts g = f;
+    g.leadAttacker = Hitter(0xF1300027C8000001ull, 10184, 2);
+    CHECK(Tick(q, g) == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+    // Key off: the party guard as before (the main tank picks the whelp off the healer).
+    Run k0 = RaidBossRun(plan);
+    Facts h = f;
+    h.raid.bossRules = false;
+    h.leadHasAttacker = false;
+    h.leadHit = false;
+    CHECK(Tick(k0, h) == "attack 45401 Tanky");
+}
+
+// Once a raid's boss fight, always for that fight: the boss engaged on a pull step turning unattackable for a phase
+// (EngagedPlanBoss needs it attackable) keeps the raid boss rules; with them a death while she still loses hp does not
+// pause it.
+static void TestRaidBossFightStaysABossFightWhileTheBossIsUnattackable()
+{
+    for (bool rules : {true, false})
+    {
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        r.step = 0;
+        std::uint32_t s = 0;
+        for (; s <= 700 && r.state == State::Running; ++s)
+        {
+            Facts f = RaidBossFightFacts(s, true, s >= 450 ? 1u : 0u, 5000, rules);
+            if (s >= 200)
+                f.engagedUnits[0].attackable = false; // her air phase: the party's hits still land (partyHits)
+            Tick(r, f);
+        }
+        CHECK(rules ? r.state == State::Running : r.state == State::Paused);
+        CHECK(rules == r.raidBossFight);
+    }
+}
+
+// In an event (InEvent) the raid boss rules are off (RaidBossRulesFight), and so is their ceiling: the boss step's
+// fight there keeps the 420 s one.
+static void TestRaidBossCeilingNotInAnEvent()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    std::uint32_t s = 0;
+    for (; s <= 1400 && r.state == State::Running; ++s)
+    {
+        r.eventOn = true;
+        Tick(r, RaidBossFightFacts(s, true, 0, 0));
+    }
+    CHECK(r.state == State::Paused);
+    CHECK(r.note.find("a fight lasted more than 420 s") == 0);
+}
+
+// The adds wait the party guard's kGuardWaitMs on a DPS (at once on a healer), and a caster hitting the raid from its
+// own camp (GuardLeavesCampAlone) is left to the DPS.
+static void TestRaidBossAddWaitsTheGuardDwell()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.partyAttackers = {Hitter(45501, 11262, 20, false)};
+    std::uint32_t waited = 0;
+    std::string o;
+    for (; waited < 10000 && o.empty(); waited += kTickMs)
+        o = Tick(r, f);
+    CHECK(o == "attack 45501 Offy");
+    CHECK(waited >= kGuardWaitMs);
+    Run q = RaidBossRun(plan);
+    Facts g = RaidBossGuardFacts();
+    UnitFact caster = Hitter(45502, 11262, 30, true);
+    caster.castingAtRange = true;
+    caster.campIdle = 3;
+    g.partyAttackers = {caster};
+    for (int k = 0; k < 10; ++k)
+        CHECK(Tick(q, g).empty());
 }
 
 static void TestRaidBossGuardUnchangedOutsideARaid()
@@ -25470,6 +25706,17 @@ int main()
     TestRaidBossWhelpOnlyTwiceAtTheSameMob();
     TestRaidBossMainTankOnStayEngagesItsOwnMob();
     TestRaidBossBossOffANonTankWithTheLeadDead();
+    TestRaidBossGuardReadModes();
+    TestRaidBossOffTankTakesTheBossWithTheGlueFactsOfADeadLead();
+    TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp();
+    TestRaidBossWipeRegroupKeepsTheBossCeiling();
+    TestRaidBossOffTankHoldingTheBossIsNotSentToAnAdd();
+    TestRaidBossCappedAddIsReArmed();
+    TestRaidBossFarAddGoesToAnOffTank();
+    TestRaidBossNoOffTankKeepsTheMainTankOnTheBoss();
+    TestRaidBossFightStaysABossFightWhileTheBossIsUnattackable();
+    TestRaidBossCeilingNotInAnEvent();
+    TestRaidBossAddWaitsTheGuardDwell();
     TestRaidBossGuardUnchangedOutsideARaid();
     TestRaidBossGuardKeyOffSendsTheMainTank();
     TestStragglerLadderWalksThenSummonsBeforeThePause();
