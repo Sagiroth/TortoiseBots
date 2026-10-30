@@ -27,6 +27,12 @@ class GuildOrderTickPersistenceTest(unittest.TestCase):
         window = body[idx:idx + 600]
         self.assertIn("MarkDirtyLocked(stored);", window)
 
+    def test_noprogress_marks_dirty(self):
+        body = tick_body()
+        idx = body.index("record.reason = OrderReason::NoProgress;")
+        window = body[idx:idx + 600]
+        self.assertIn("MarkDirtyLocked(stored);", window)
+
     def test_quota_delivery_marks_dirty(self):
         body = tick_body()
         idx = body.index("record.reason = OrderReason::None;\n            out.legChanged = true;")

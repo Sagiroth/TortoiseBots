@@ -362,7 +362,7 @@ private:
             ClassifyDelivery(stored->delivered, stored->amount, mailedAny, movedThisDelivery);
         if (DeliveryTimeoutEnds(stored->reason, outcome))
         {
-            SetState(request.botGuidLow, OrderState::Cant, OrderReason::Timeout);
+            SetState(request.botGuidLow, OrderState::Cant, stored->reason);
             ExpireTargetFor(ai);
             return;
         }

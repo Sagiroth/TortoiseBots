@@ -31,6 +31,7 @@ enum class OrderReason : uint8_t
     NoBank,
     Elite,
     Timeout,
+    NoProgress,
 };
 
 inline char const* TypeToken(OrderType type)
@@ -92,13 +93,14 @@ inline char const* ReasonToken(OrderReason reason)
         case OrderReason::NoBank:   return "nobank";
         case OrderReason::Elite:    return "elite";
         case OrderReason::Timeout:  return "timeout";
+        case OrderReason::NoProgress: return "noprogress";
     }
     return "-";
 }
 
 inline bool ParseReason(std::string const& token, OrderReason& out)
 {
-    for (uint8_t i = 0; i <= uint8_t(OrderReason::Timeout); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoProgress); ++i)
         if (token == ReasonToken(OrderReason(i))) { out = OrderReason(i); return true; }
     return false;
 }
@@ -117,7 +119,8 @@ inline OrderState StateForReason(OrderReason reason)
         case OrderReason::NoRecipe:
         case OrderReason::Elite:
         case OrderReason::Stuck:
-        case OrderReason::Timeout:  return OrderState::Cant;
+        case OrderReason::Timeout:
+        case OrderReason::NoProgress: return OrderState::Cant;
         case OrderReason::BagsFull: return OrderState::Delivering;
         case OrderReason::NoBank:   return OrderState::Mailed;
         case OrderReason::None:     break;
@@ -172,7 +175,7 @@ struct OrderRecord
     OrderType type = OrderType::Farm;
     uint32_t itemId = 0;
     uint32_t amount = 0;       // current round quota; re-armed per round for keep orders
-    uint32_t hours = 1;        // player-chosen farm time per round: whole hours 1-24, 0 = no time limit
+    uint32_t hours = 0;        // player-chosen farm time per round: whole hours 1-24, 0 = no time limit (the default)
     bool keep = false;         // keep the stock target filled: new rounds while the bank holds less
     uint32_t stockTarget = 0;  // keep level in the bank (the ordered amount)
     uint32_t lastBankCheckMs = 0; // last keep bank look, in server uptime ms
@@ -188,6 +191,7 @@ struct OrderRecord
     uint32_t searchFailsInZone = 0; // consecutive rejected/empty order-leg searches in farmZoneId
     uint32_t workedSinceNewItemSec = 0;
     uint32_t workedTotalSec = 0; // worked time over the whole order, ends it at hours
+    uint32_t workedNoGainSec = 0; // worked time since the bot last gained an order item (the progress watchdog)
     uint32_t reportedHave = 0;   // last reported progress; reported have never drops below this
     uint64_t createdAt = 0;
     uint64_t updatedAt = 0;

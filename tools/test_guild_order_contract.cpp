@@ -16,13 +16,15 @@ int main()
         OrderState back = OrderState::Working;
         CHECK(ParseState(StateToken(OrderState(i)), back) && back == OrderState(i));
     }
-    for (uint8_t i = 0; i <= uint8_t(OrderReason::Timeout); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoProgress); ++i)
     {
         OrderReason back = OrderReason::None;
         CHECK(ParseReason(ReasonToken(OrderReason(i)), back) && back == OrderReason(i));
     }
     CHECK(std::string(ReasonToken(OrderReason::Timeout)) == "timeout");
     CHECK(StateForReason(OrderReason::Timeout) == OrderState::Cant);
+    CHECK(std::string(ReasonToken(OrderReason::NoProgress)) == "noprogress");
+    CHECK(StateForReason(OrderReason::NoProgress) == OrderState::Cant);
     CHECK(std::string(ReasonToken(OrderReason::Elite)) == "elite");
     CHECK(StateForReason(OrderReason::Elite) == OrderState::Cant);
 

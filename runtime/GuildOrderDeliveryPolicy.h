@@ -85,12 +85,12 @@ inline DeliveryOutcome ClassifyDelivery(uint32_t delivered, uint32_t amount, boo
     return DeliveryOutcome::BackToWork;
 }
 
-// A timed-out delivery never goes back to work: the farm time is spent,
-// so whatever reached the guild is the final count and the order ends
-// with the timeout reason kept.
+// A timed-out (or gain-stalled) delivery never goes back to work: the farm
+// time is spent or the watchdog bit, so whatever reached the guild is the
+// final count and the order ends with the reason kept.
 inline bool DeliveryTimeoutEnds(OrderReason reason, DeliveryOutcome outcome)
 {
-    return reason == OrderReason::Timeout &&
+    return (reason == OrderReason::Timeout || reason == OrderReason::NoProgress) &&
         (outcome == DeliveryOutcome::BackToWork || outcome == DeliveryOutcome::Stuck);
 }
 
