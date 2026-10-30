@@ -3,6 +3,7 @@
 #include "GuildOrderBuyAction.h"
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/TravelMgr.h"
+#include "MailAction.h"
 #include "runtime/GuildOrderBuyPolicy.h"
 #include "runtime/GuildOrderStore.h"
 
@@ -196,4 +197,25 @@ bool GuildOrderBuyAction::Execute(Event& event)
         }
     }
     return bought;
+}
+
+bool GuildOrderTakeMailAction::isUseful()
+{
+    if (!bot->GetGuildId() || bot->IsInCombat())
+        return false;
+
+    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    if (!order.itemId || !OrderMailboxItems(bot, order.itemId))
+        return false;
+
+    if (AI_VALUE(uint8, "bag space") > 95)
+        return false;
+
+    return !MailProcessor::FindMailbox(ai).IsEmpty();
+}
+
+bool GuildOrderTakeMailAction::Execute(Event& event)
+{
+    Event take("rpg action", "take");
+    return ai->DoSpecificAction("mail", take, true);
 }
