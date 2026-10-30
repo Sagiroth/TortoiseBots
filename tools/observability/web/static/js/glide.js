@@ -195,21 +195,28 @@
   // A new sample for one unit. It snaps (no interpolation towards it) when the map changed, the unit died, or the distance is
   // more than walking or riding explains (a summon, a portal, a spirit release). A sample the daemon already superseded is
   // dropped, so a late report never walks the dot backwards. `pos` marks a position frame's sample: for POS_WINDOW_MS after
-  // one, the 2 s report only keeps the unit on the card (its position is older than the frame's, and stamped late), and a unit
-  // the frames do not carry (a new one, a mob off their watch list) is moved by the report as before.
+  // one, the 2 s report only keeps the unit on the card (its position is older than the frame's, and stamped late) and is held
+  // back, the newest one, for the moment the window ends (promote); a unit the frames do not carry (a new one, a mob off their
+  // watch list) is moved by the report as before.
   function note(st, id, x, y, map, alive, nowMs, tsMs, face, pos) {
     if (!st || id == null) return;
     if (!st.units) st.units = {};
     const key = String(id), live = alive !== false, f = typeof face === "number" && isFinite(face) ? face : undefined;
     const prev = st.units[key];
-    if (!pos && prev && typeof prev.posAt === "number" && nowMs - prev.posAt <= POS_WINDOW_MS) { prev.lastSeen = nowMs; return; }
+    if (!pos && prev && typeof prev.posAt === "number") {
+      // inside the window: held back; past it (no frame drew the end of the window): this newer report is the one promoted
+      prev.lastSeen = nowMs;
+      prev.held = { t: clockOf(st, nowMs, tsMs), x: x, y: y, f: f, map: map, alive: live };
+      if (nowMs - prev.posAt > POS_WINDOW_MS) promoteDue(st, nowMs, key);
+      return;
+    }
     const t = clockOf(st, nowMs, tsMs), posAt = pos ? nowMs : prev ? prev.posAt : undefined;
     if (!prev) {
       st.units[key] = { samples: [{ t: t, x: x, y: y, f: f }], map: map, alive: live, lastSeen: nowMs, posAt: posAt };
       return;
     }
     const last = prev.samples[prev.samples.length - 1];
-    if (t <= last.t) { prev.map = map; prev.alive = live; prev.lastSeen = nowMs; prev.posAt = posAt; return; }
+    if (t <= last.t) { prev.map = map; prev.alive = live; prev.lastSeen = nowMs; prev.posAt = posAt; if (pos) prev.held = null; return; }
     const gap = t - last.t;
     const snap = map !== prev.map || !live || gap > CAP_MS || Math.hypot(last.x - x, last.y - y) > jumpLimitYd(gap);
     const samples = snap ? [] : prev.samples.slice(-(SAMPLES - 1));
@@ -217,8 +224,34 @@
     st.units[key] = { samples: samples, map: map, alive: live, lastSeen: nowMs, posAt: posAt };
   }
 
+  // The position frames stopped carrying a unit (a mob left their watch list, a bot left the cap): POS_WINDOW_MS after its last
+  // one, the newest report held back meanwhile becomes its sample at once, not on the next report (which could come 2 s later
+  // and then snap over the hole). The dot glides there from where it is drawn now, over at least one render delay; only a map
+  // change, a death or a jump the walking rule cannot explain snaps. `only` limits it to one unit.
+  function promoteDue(st, nowMs, only) {
+    const units = st && st.units;
+    if (!units) return;
+    const keys = only != null ? [String(only)] : Object.keys(units);
+    let rt = null;
+    keys.forEach((k) => {
+      const u = units[k], h = u && u.held;
+      if (!h || typeof u.posAt !== "number" || nowMs - u.posAt <= POS_WINDOW_MS) return;
+      u.held = null;
+      if (rt == null) rt = clock(st, nowMs);
+      const shown = pointAt(u.samples || [], rt);
+      const t = Math.max(h.t, rt + (st.delay || delayOf(st)));
+      const snap = !shown || h.map !== u.map || !h.alive || Math.hypot(shown.x - h.x, shown.y - h.y) > jumpLimitYd(t - rt);
+      const at = { t: t, x: h.x, y: h.y, f: h.f };
+      u.samples = snap ? [at] : [{ t: rt, x: shown.x, y: shown.y, f: shown.face }, at];
+      u.map = h.map;
+      u.alive = h.alive;
+      u.posAt = undefined; // the report feeds it now, until a position frame carries it again
+    });
+  }
+
   // Whether any unit is still moving (the page keeps drawing every frame while this is true).
   function active(st, nowMs) {
+    if (st) promoteDue(st, nowMs);
     const units = (st && st.units) || {}, t = st ? clock(st, nowMs) : 0;
     return Object.keys(units).some(k => {
       const u = units[k], s = u.samples;
@@ -234,6 +267,7 @@
   // what the next report replaces.
   function apply(bind, st, nowMs) {
     if (!bind) return bind;
+    promoteDue(st, nowMs);
     const rt = clock(st, nowMs);
     const bots = Array.isArray(bind.bots)
       ? bind.bots.map((b) => {
@@ -257,7 +291,7 @@
     CAP_MS, FRAME_MS, GRID_FRAME_MS, BACK_MS, PRUNE_MS, POS_WINDOW_MS, SLEW, SLEW_JUMP_MS,
     SAMPLES, OFFSETS, GAPS, DELAY_FACTOR, DELAY_MIN_MS, DELAY_MAX_MS,
     SLACK_YD, YD_PER_SEC, MAX_GAP_SEC,
-    jumpLimitYd, create, botKey, mobKey, median, angleLerp, sampled, delayOf, renderTime, clock, at, note, active, apply, prune,
+    jumpLimitYd, create, botKey, mobKey, median, angleLerp, sampled, delayOf, renderTime, clock, at, note, promoteDue, active, apply, prune,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Glide = api;
 })(typeof self !== "undefined" ? self : this);

@@ -372,4 +372,62 @@ assert.strictEqual(G.EXTRAP_MS, undefined, "no extrapolation past the newest sam
   near(st.rtAt, now + 32, "apply advances the card's clock");
 }
 
+// ---- the position frames stop carrying a unit: the report held back during their 3 s window moves it at the window's end,
+// gliding from where it is drawn (no snap over the hole), whatever the report's phase against the last frame
+[100, 1000, 1900].forEach((phase) => {
+  const st = G.create();
+  const LAG = 40;                       // the page gets a frame 40 ms after the server sent it
+  const xAt = (t) => (7 * t) / 1000;    // the bot walks on at 7 yd/s all along
+  const events = [];
+  for (let t = 0; t <= 5000; t += 1000) events.push({ at: T0 + t + LAG, pos: true, t });
+  for (let t = 5000 + phase; t <= 14000; t += 2000) events.push({ at: T0 + t + LAG, pos: false, t });
+  events.sort((a, b) => a.at - b.at);
+  const lastPosAt = T0 + 5000 + LAG, deadline = lastPosAt + G.POS_WINDOW_MS;
+  let ei = 0, prev = null, worstStep = 0, backs = 0, before = null, after = null;
+  for (let now = T0; now <= T0 + 17000; now += 16) {
+    while (ei < events.length && events[ei].at <= now) {
+      const e = events[ei++];
+      if (e.pos) {
+        G.sampled(st, e.at, S0 + e.t, undefined, true);
+        G.note(st, "b1", xAt(e.t), 0, 209, true, e.at, S0 + e.t, undefined, true);
+      } else {
+        G.sampled(st, e.at, undefined, undefined, false); // the WebSocket report: no server time
+        G.note(st, "b1", xAt(e.t), 0, 209, true, e.at, undefined);
+      }
+    }
+    if (!st.units.b1) continue;
+    const p = G.apply({ commander: "P", bots: [{ guid: 1, x: 0, y: 0 }], mobs: [] }, st, now); // the map's draw: promotes, clocks
+    const x = G.at(st, "b1", now, st.rt).x;
+    if (now <= deadline && now > deadline - 16) before = x;
+    if (now > deadline + 16 && now <= deadline + 32) after = x;
+    // from the last frame until the promoted report is drawn (later, the 2 s report alone moves it, as for any unit off the frames)
+    if (prev != null && now > lastPosAt && now <= deadline + 2000) {
+      worstStep = Math.max(worstStep, Math.abs(x - prev));
+      if (x < prev - 1e-9) backs += 1;
+    }
+    prev = x;
+    assert.ok(p, "drawn");
+  }
+  assert.ok(after > before, "phase " + phase + " ms: the dot moves again within 3 s and one frame of the last position frame (" + before + " -> " + after + ")");
+  assert.ok(worstStep < 1, "phase " + phase + " ms: no snap, the largest frame step is " + worstStep.toFixed(2) + " yd");
+  assert.strictEqual(backs, 0, "phase " + phase + " ms: never backwards");
+  const lastReport = events.filter((e) => !e.pos).pop();
+  near(prev, xAt(lastReport.t), "phase " + phase + " ms: it ends on the newest report", 1e-6);
+});
+
+// a position frame clears what the report held back: the frames resume before the window ends
+{
+  const st = G.create();
+  G.sampled(st, T0, S0, undefined, true);
+  G.note(st, "b1", 0, 0, 209, true, T0, S0, undefined, true);
+  G.sampled(st, T0 + 500, undefined, undefined, false);
+  G.note(st, "b1", -3, 0, 209, true, T0 + 500, undefined);
+  assert.ok(st.units.b1.held, "the report is held back");
+  G.sampled(st, T0 + 1000, S0 + 1000, undefined, true);
+  G.note(st, "b1", 7, 0, 209, true, T0 + 1000, S0 + 1000, undefined, true);
+  assert.ok(!st.units.b1.held, "the next position frame drops it");
+  G.promoteDue(st, T0 + 5000);
+  near(st.units.b1.samples[st.units.b1.samples.length - 1].x, 7, "and nothing is promoted later");
+}
+
 console.log("glide_check.js ok");
