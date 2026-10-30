@@ -63,6 +63,7 @@
 #include "../runtime/RemoteCommanderEnter.h"
 #include "../runtime/GossipOrderPolicy.h"
 #include "../runtime/CommanderTelemetry.h"
+#include "../runtime/BossWindowSignal.h"
 #include "../runtime/ReadyCheckPolicy.h"
 #include "../runtime/DungeonRunPolicy.h"
 #include "../runtime/SystemRunPolicy.h"
@@ -11932,19 +11933,65 @@ static uint64 CurrentSpellTargetGuid(Unit* unit)
     return 0;
 }
 
+// The breath windows being timed (runtime/BossWindowSignal.h), by map, instance and raw guid. World thread only, like
+// the rest of the commander snapshot; both reports that fill a boss's cast prune it.
+static TortoiseBots::BossWindow::Countdowns s_breathWindows;
+
+// The breath window a boss is in, as its cast: a breath cast triggered never shows as the current spell
+// (Spells/Spell.cpp:3640-3642), so the committed rows of runtime/BossWindowData.h are read from the boss's entry, map,
+// position, window aura, stopped state and empty target (runtime/BossWindowSignal.h), and an open window fills the mob
+// row the way a cast-slot spell would. Dashboard only. Core: Unit::IsStopped (Objects/Unit.h:1544), Unit::GetTargetGuid
+// (Objects/Unit.h:1358).
+static void FillBreathWindow(Unit* unit, TortoiseBots::BossWindow::Key const& key, CommanderTelemetry::MobInfo& mob)
+{
+    namespace BossWindow = TortoiseBots::BossWindow;
+    BossWindow::Facts facts;
+    facts.map = unit->GetMapId();
+    facts.entry = unit->GetEntry();
+    facts.x = unit->GetPositionX();
+    facts.y = unit->GetPositionY();
+    facts.stopped = unit->IsStopped();
+    facts.hasTarget = !unit->GetTargetGuid().IsEmpty();
+    BossWindow::BreathPoint const* point =
+        BossWindow::OpenPoint(facts, [unit](uint32_t aura) { return unit->HasAura(aura); });
+    if (!point)
+    {
+        s_breathWindows.Forget(key);
+        return;
+    }
+    uint32_t leftMs = 0;
+    if (!s_breathWindows.Left(key, WorldTimer::getMSTime(), point->windowMs, leftMs))
+        return;
+    mob.cast = SpellNameOf(point->spell);
+    mob.castId = point->spell;
+    mob.castLeftMs = leftMs;
+    mob.castTotalMs = point->windowMs;
+    mob.channel = false;
+    mob.castTarget = 0;
+    if (TortoiseBots::SpellShape::Shape const* shape = TortoiseBots::SpellShape::For(mob.castId))
+    {
+        mob.hasShape = true;
+        mob.shape = *shape;
+    }
+}
+
 // The facing and the cast a boss or elite is running, for the dashboard's boss overlay: the unit's orientation, its
 // current spell's id and time left and total, the spell's unit target, whether it channels, and the area the spell
-// covers from the committed shape table (runtime/SpellShape.h; a spell absent from it sends no shape). Read from what
-// the unit already holds, no scan. Core: Objects/Object.h:835 and :1145, Spells/Spell.h:428-429, SpellEntry.h:1110.
+// covers from the committed shape table (runtime/SpellShape.h; a spell absent from it sends no shape). With no cast-slot
+// spell, a boss in a breath window reports the breath (FillBreathWindow). Read from what the unit already holds, no scan.
+// Core: Objects/Object.h:835 and :1145, Spells/Spell.h:428-429, SpellEntry.h:1110.
 static void FillMobFacingAndCast(Unit* unit, CommanderTelemetry::MobInfo& mob)
 {
     mob.hasO = true;
     mob.o = unit->GetOrientation();
+    TortoiseBots::BossWindow::Key const windowKey{unit->GetMapId(), unit->GetInstanceId(),
+                                                  unit->GetObjectGuid().GetRawValue()};
     for (CurrentSpellTypes type : { CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL })
     {
         Spell* spell = unit->GetCurrentSpell(type);
         if (!spell || !spell->m_spellInfo)
             continue;
+        s_breathWindows.Forget(windowKey);
         mob.castId = spell->m_spellInfo->Id;
         mob.castLeftMs = spell->GetCastedTime();
         mob.channel = type == CURRENT_CHANNELED_SPELL;
@@ -11958,6 +12005,7 @@ static void FillMobFacingAndCast(Unit* unit, CommanderTelemetry::MobInfo& mob)
         }
         return;
     }
+    FillBreathWindow(unit, windowKey, mob);
 }
 
 // What the dashboard calls a game object: a letter for its type, or 0 for the kinds it does not draw (mailboxes, fishing holes ...).
@@ -12471,6 +12519,7 @@ static std::string CommanderDisplayName(RemoteCommander::Binding const& binding,
 void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
 {
     out.clear();
+    s_breathWindows.Prune(WorldTimer::getMSTime());
     ForgetReleasedCombatGroups();
     // Nothing to read while no commander is bound: the common case costs a lookup.
     if (CommanderBindings().Empty())
@@ -13029,6 +13078,7 @@ static void SampleBoundFights(uint32 diff)
 void CollectDungeonMobs(std::vector<DungeonMobTelemetry::RunRef>& runs)
 {
     using namespace DungeonMobTelemetry;
+    s_breathWindows.Prune(WorldTimer::getMSTime());
     // World thread only (the emitter's snapshot cycle, outside the map update): reused between runs and cycles.
     static std::unordered_set<uint64> tried;
     static std::list<ObjectGuid> cached;
