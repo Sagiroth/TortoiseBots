@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/policy/combat/CombatIdlePolicy.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "BotStateTriggers.h"
 
@@ -42,7 +43,27 @@ bool CombatEndTrigger::IsActive()
         }
 
         // Check if any member of the group (near this bot) is getting attacked
-        return !AI_VALUE(bool, "has attackers");
+        if (AI_VALUE(bool, "has attackers"))
+            return false;
+
+        // The order cleared with the switch: "attack target" may hold a guid
+        // the map no longer resolves, and "current target" a corpse kept for
+        // loot. Leaving either behind re-arms the latch above on the next
+        // fight's first quiet tick. Cleared only once the core agrees there
+        // is no fight and the idle window has passed, the way .combatstop
+        // does; the normal path above keeps its instant switch.
+        time_t const combatStart = AI_VALUE(time_t, "combat start time");
+        uint32 const idleSeconds = combatStart ? uint32(time(0) - combatStart) : 0;
+        if (CombatIdleExitDue(sServerFacade.IsInCombat(bot), false, false, idleSeconds))
+        {
+            AiObjectContext* context = ai->GetAiObjectContext();
+            context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
+            context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
+            context->GetValue<Unit*>("current target")->Set(nullptr);
+            bot->AttackStop();
+        }
+
+        return true;
     }
 
     return false;

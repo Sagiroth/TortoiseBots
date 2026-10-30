@@ -2243,11 +2243,11 @@ void PlayerbotAI::Reset(bool full)
     if (strategy)
         strategy->OnPullEnded();
 
-    RESET_AI_VALUE(Unit*,"old target");
-    RESET_AI_VALUE(Unit*,"current target");
-    RESET_AI_VALUE(Unit*,"pull target");
-    RESET_AI_VALUE(ObjectGuid,"attack target");
-    RESET_AI_VALUE(ObjectGuid,"explicit attack target");
+    context->GetValue<Unit*>("old target")->Set(nullptr);
+    context->GetValue<Unit*>("current target")->Set(nullptr);
+    context->GetValue<Unit*>("pull target")->Set(nullptr);
+    context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
+    context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
     RESET_AI_VALUE(GuidPosition,"rpg target");
     RESET_AI_VALUE(LootObject,"loot target");
     RESET_AI_VALUE(time_t,"combat start time");
