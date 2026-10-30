@@ -22,10 +22,12 @@ namespace GuildOrders
 inline constexpr uint32_t kZoneMoveWorkedSeconds = 3600;
 inline constexpr uint32_t kZoneMoveDeaths = 3;
 
-// Player-chosen farm time on `.bot order ... [hours]`: whole hours.
+// Player-chosen farm time on `.bot order ... [hours|inf]`: whole hours 1-24,
+// or 0 for no time limit (the hours slot carries `inf` on the wire).
 inline constexpr uint32_t kMinOrderHours = 1;
 inline constexpr uint32_t kMaxOrderHours = 24;
 inline constexpr uint32_t kDefaultOrderHours = 1;
+inline constexpr uint32_t kUnlimitedOrderHours = 0;
 
 enum class ZoneMoveTrigger : uint8_t
 {
@@ -70,9 +72,12 @@ inline bool SearchFailsMoveZone(uint32_t searchFailsInZone)
 }
 
 // The order ends once the bot has worked its chosen hours in total without
-// reaching the amount. Out-of-range hours fall back to the default.
+// reaching the amount. An unlimited order (hours 0) never times out; the
+// other out-of-range hours fall back to the default.
 inline bool IsOrderTimeout(uint32_t workedTotalSec, uint32_t hours)
 {
+    if (hours == kUnlimitedOrderHours)
+        return false;
     if (hours < kMinOrderHours || hours > kMaxOrderHours)
         hours = kDefaultOrderHours;
     return workedTotalSec >= hours * 3600;

@@ -27,6 +27,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "MapNodes/MasterPlayer.h"
 
+#include <cstdint>
 #include <ctime>
 #include <mutex>
 #include <unordered_map>
@@ -98,7 +99,8 @@ public:
                 record.createdAt = fields[22].GetUInt64();
                 record.updatedAt = fields[23].GetUInt64();
 
-                if (record.hours < kMinOrderHours || record.hours > kMaxOrderHours)
+                if (record.hours != kUnlimitedOrderHours &&
+                    (record.hours < kMinOrderHours || record.hours > kMaxOrderHours))
                     record.hours = kDefaultOrderHours;
                 if (record.botGuidLow && record.itemId && record.amount)
                     m_orders[record.botGuidLow] = Stored{record};
@@ -448,8 +450,16 @@ public:
             {
                 uint32_t workedSec = stored.workedCarryMs / 1000;
                 stored.workedCarryMs %= 1000;
-                record.workedSinceNewItemSec += workedSec;
-                record.workedTotalSec += workedSec;
+                // Saturate: an unlimited order runs for hundreds of days
+                // without wrapping its clocks back into a fresh hour.
+                if (record.workedSinceNewItemSec > UINT32_MAX - workedSec)
+                    record.workedSinceNewItemSec = UINT32_MAX;
+                else
+                    record.workedSinceNewItemSec += workedSec;
+                if (record.workedTotalSec > UINT32_MAX - workedSec)
+                    record.workedTotalSec = UINT32_MAX;
+                else
+                    record.workedTotalSec += workedSec;
                 if (IsOrderTimeout(record.workedTotalSec, record.hours))
                 {
                     // The farm time ran out: what the bot holds still goes to
@@ -846,7 +856,7 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
            BotCommands::ProtocolSafe(itemName) + "|" + std::to_string(have) + "|" +
            std::to_string(order.amount) + "|" + StateToken(order.state) + "|" +
            ReasonToken(order.reason) + "|" + BotCommands::ProtocolSafe(zone) + "|" + difficulty +
-           "|" + std::to_string(order.hours) + "|" + KeepToken(order.keep);
+           "|" + HoursToken(order.hours) + "|" + KeepToken(order.keep);
 }
 
 void Initialize()

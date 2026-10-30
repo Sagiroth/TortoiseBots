@@ -145,6 +145,10 @@ bool ParseAmount(std::string const& token, uint32_t& amount)
 bool ParseHours(std::string const& token, uint32_t& hours)
 {
     hours = 0;
+    std::string lower = token;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    if (lower == "inf")
+        return true;
     if (!ParseUintToken(token, hours))
         return false;
     return hours >= GuildOrders::kMinOrderHours && hours <= GuildOrders::kMaxOrderHours;
@@ -152,12 +156,12 @@ bool ParseHours(std::string const& token, uint32_t& hours)
 
 bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const& rest)
 {
-    // order <bot> <farm|buy|craft> <itemId or item link> <amount> [hours] [keep]
+    // order <bot> <farm|buy|craft> <itemId or item link> <amount> [hours|inf] [keep]
     std::istringstream in(rest);
     std::string botName, typeToken;
     if (!(in >> botName >> typeToken))
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours] [keep].");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours|inf] [keep].");
         return true;
     }
     OrderType type;
@@ -170,8 +174,9 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     }
     typeToken = lowerType;
     // The item link carries spaces; the amount is the last token, with an
-    // optional trailing whole hours 1-24 and a trailing `keep` word: the bot
-    // works that long in total per round and, with keep, restocks the bank.
+    // optional trailing whole hours 1-24 or `inf` and a trailing `keep`
+    // word: the bot works that long in total per round and, with keep,
+    // restocks the bank.
     std::string itemPart, token, amountToken;
     while (in >> token)
     {
@@ -199,11 +204,11 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     size_t lastSpace = itemPart.rfind(' ');
     if (lastSpace == std::string::npos)
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours] [keep].");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours|inf] [keep].");
         return true;
     }
-    // A trailing 1-24 is hours only when what is left still reads as an
-    // item plus an amount; otherwise it is the amount itself.
+    // A trailing 1-24 or `inf` is hours only when what is left still reads
+    // as an item plus an amount; otherwise it is the amount itself.
     std::string maybeHours = itemPart.substr(lastSpace + 1);
     uint32_t parsedHours = 0;
     bool hoursGiven = false;
@@ -239,7 +244,7 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
             if (ParseAmount(rest.substr(amountSpace + 1), restAmount) &&
                 ParseItemToken(rest.substr(0, amountSpace), restItem))
             {
-                OrderError(handler, "invalid", "Hours must be 1-24.");
+                OrderError(handler, "invalid", "Hours must be 1-24 or inf.");
                 return true;
             }
         }

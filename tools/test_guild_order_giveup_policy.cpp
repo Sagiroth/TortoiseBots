@@ -17,6 +17,7 @@ int main()
     CHECK(kMinOrderHours == 1);
     CHECK(kMaxOrderHours == 24);
     CHECK(kDefaultOrderHours == 1);
+    CHECK(kUnlimitedOrderHours == 0);
 
     // Below both thresholds: keep working in this zone.
     CHECK(ClassifyZoneMove(0, 0) == ZoneMoveTrigger::None);
@@ -58,9 +59,12 @@ int main()
     CHECK(IsOrderTimeout(2 * 3600, 2));
     CHECK(IsOrderTimeout(24 * 3600, 24));
     CHECK(!IsOrderTimeout(23 * 3600 + 3599, 24));
-    // Out-of-range hours fall back to one hour.
-    CHECK(IsOrderTimeout(3600, 0));
+    // Out-of-range hours fall back to one hour; unlimited never times out.
+    CHECK(IsOrderTimeout(3600, 25));
     CHECK(IsOrderTimeout(3600, 99));
+    CHECK(!IsOrderTimeout(0, kUnlimitedOrderHours));
+    CHECK(!IsOrderTimeout(24 * 3600, kUnlimitedOrderHours));
+    CHECK(!IsOrderTimeout(0xFFFFFFFFu, kUnlimitedOrderHours));
 
     // Reported progress never drops.
     CHECK(ReportedHave(0, 5, true, 0) == 5);

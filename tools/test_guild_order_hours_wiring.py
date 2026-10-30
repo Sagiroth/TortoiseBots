@@ -14,13 +14,16 @@ ADDON = (ROOT / "docs/play/commands/addon.md").read_text()
 
 class GuildOrderHoursWiringTest(unittest.TestCase):
     def test_order_line_ends_with_hours(self):
-        self.assertIn('"|" + std::to_string(order.hours) + "|" + KeepToken(order.keep)', STORE)
+        self.assertIn('"|" + HoursToken(order.hours) + "|" + KeepToken(order.keep)', STORE)
 
     def test_order_line_keeps_older_fields(self):
         self.assertIn('ReasonToken(order.reason) + "|" + BotCommands::ProtocolSafe(zone) + "|" + difficulty', STORE)
 
     def test_addon_documents_hours_last(self):
         self.assertIn("`TBM:ORDER\\|<bot>\\|<type>\\|<itemId>\\|<item>\\|<have>\\|<want>\\|<state>\\|<reason>\\|<zone>\\|<difficulty>\\|<hours>\\|<keep>`", ADDON)
+
+    def test_addon_documents_inf_hours(self):
+        self.assertIn("`inf`", ADDON)
 
 
 if __name__ == "__main__":
