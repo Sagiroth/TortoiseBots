@@ -208,6 +208,32 @@ namespace ai
         return kAvoidCastPoints;
     }
 
+    // One bot's last avoid_cast walk-out, kept to log a cast once per bot. A cast is the same while the
+    // bot keeps meeting it (same caster, same spell, the walk-out seen again within kAvoidCastLogGapMs):
+    // the action runs every tick of the cast, and a new cast comes seconds after the old one ended.
+    constexpr std::uint32_t kAvoidCastLogGapMs = 2000;
+
+    struct AvoidCastLogState
+    {
+        bool known = false;
+        std::uint64_t casterGuid = 0;
+        std::uint32_t spellId = 0;
+        std::uint32_t lastSeenMs = 0;
+    };
+
+    // True when this walk-out is the first of its cast for the bot; always records that it was seen now.
+    inline bool AvoidCastIsNewCast(AvoidCastLogState& state, std::uint64_t casterGuid, std::uint32_t spellId,
+                                   std::uint32_t nowMs)
+    {
+        bool const same = state.known && state.casterGuid == casterGuid && state.spellId == spellId &&
+                          static_cast<std::uint32_t>(nowMs - state.lastSeenMs) < kAvoidCastLogGapMs;
+        state.known = true;
+        state.casterGuid = casterGuid;
+        state.spellId = spellId;
+        state.lastSeenMs = nowMs;
+        return !same;
+    }
+
     // A live creature in the fight, as the kill-first pick sees it.
     struct TacticCandidate
     {

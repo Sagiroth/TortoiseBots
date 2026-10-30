@@ -251,6 +251,23 @@ int main()
         CHECK(std::fabs(points[0].y - 20.0f) < 0.01f);
     }
 
+    // One log line per bot per cast: the first walk-out of a cast is new, the ticks that follow within the gap are
+    // not, and another caster, another spell or a long silence start a new cast.
+    {
+        AvoidCastLogState state;
+        CHECK(AvoidCastIsNewCast(state, 0x1111, 24024, 1000));                    // first sight
+        CHECK(!AvoidCastIsNewCast(state, 0x1111, 24024, 1500));                   // the next tick of the cast
+        CHECK(!AvoidCastIsNewCast(state, 0x1111, 24024, 3400));                   // a 3 s blast kept alive tick by tick
+        CHECK(AvoidCastIsNewCast(state, 0x2222, 24024, 3500));                    // another caster, same spell
+        CHECK(AvoidCastIsNewCast(state, 0x2222, 23511, 3600));                    // same caster, another spell
+        CHECK(AvoidCastIsNewCast(state, 0x2222, 23511, 3600 + kAvoidCastLogGapMs));  // the cast ended, a new one
+        CHECK(!AvoidCastIsNewCast(state, 0x2222, 23511, 3600 + kAvoidCastLogGapMs + 10));
+        // The millisecond clock wraps: 4294967000 -> 100 is 396 ms, still the same cast.
+        AvoidCastLogState wrap;
+        CHECK(AvoidCastIsNewCast(wrap, 7, 1, 4294967000u));
+        CHECK(!AvoidCastIsNewCast(wrap, 7, 1, 100u));
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }

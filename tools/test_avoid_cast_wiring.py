@@ -100,6 +100,41 @@ class AvoidCastWiring(unittest.TestCase):
         self.assertIn("an avoid_cast without a spell or a radius", LOADER)
 
 
+class AvoidCastIsLogged(unittest.TestCase):
+    """ZG walk 7: a 3 s sampler of each bot's action never saw avoid_cast, so nothing proved it ran.
+
+    The walk-out writes one bot_events.csv row per bot per cast (BossTacticsAvoidCast,
+    caster=<entry>:<guid low>,spell=<id> / dist=,radius=,dest=,stopped=), through the same
+    sPlayerbotAIConfig.logEvent the hunter telemetry uses, gated by bot_events.csv in
+    AiPlayerbot.AllowedLogFiles.
+    """
+
+    def test_the_walk_out_emits_a_gated_row(self):
+        fn = body(ACTIONS, "bool BossTacticsAvoidCastAction::Execute(")
+        self.assertIn('sPlayerbotAIConfig.hasLog("bot_events.csv")', fn)
+        self.assertIn("LogAvoidCast(ai, bot, caster,", fn)
+        # The distance before the move is read before the own cast is stopped and before MoveTo.
+        self.assertLess(fn.index("distBefore ="), fn.index("CastStop()"))
+        self.assertLess(fn.index("CastStop()"), fn.index("MoveTo("))
+        # Every outcome logs, the walk that found no way out too.
+        self.assertLess(fn.index("MoveTo("), fn.index("LogAvoidCast("))
+
+    def test_the_row_format_and_the_event_name(self):
+        fn = body(ACTIONS, "void LogAvoidCast(")
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsAvoidCast", info1, info2);', fn)
+        self.assertIn('"caster=%u:%u,spell=%u"', fn)
+        self.assertIn('"dist=%.1f,radius=%.1f,dest=%.1f,stopped=%d"', fn)
+        self.assertIn('"dist=%.1f,radius=%.1f,dest=none,stopped=%d"', fn)
+
+    def test_one_row_per_bot_per_cast(self):
+        fn = body(ACTIONS, "void LogAvoidCast(")
+        self.assertIn("AvoidCastIsNewCast(g_avoidCastLog[bot->GetObjectGuid().GetRawValue()]", fn)
+        # The throttle comes before any string is built.
+        self.assertLess(fn.index("AvoidCastIsNewCast("), fn.index("snprintf("))
+        policy = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
+        self.assertIn("inline bool AvoidCastIsNewCast(", policy)
+
+
 class AvoidCastRunsForHeldBots(unittest.TestCase):
     """ZG walk 6: 11 Bat Rider blasts, 5-12 bots in each, and not one walk out.
 

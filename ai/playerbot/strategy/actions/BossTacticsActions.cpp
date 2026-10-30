@@ -1,5 +1,10 @@
 #include "playerbot/playerbot.h"
 #include <algorithm>
+#include <atomic>
+#include <cstdio>
+#include <functional>
+#include <mutex>
+#include <unordered_map>
 #include "BossTacticsActions.h"
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/ServerFacade.h"
@@ -259,6 +264,42 @@ bool BossTacticsAvoidCastAction::isPossible()
     return MovementAction::isPossible() && ai->CanMove();
 }
 
+namespace
+{
+// Each bot's last walk-out (BossTacticsPolicy.h AvoidCastLogState), by bot guid, so one cast logs one line per bot.
+// Only touched while bot_events.csv is on; a mutex guards it because every bot's engine reaches it.
+std::mutex g_avoidCastLogMutex;
+std::unordered_map<uint64, AvoidCastLogState> g_avoidCastLog;
+
+// One bot_events.csv row per bot per cast (the audit of the boss tactics' avoid_cast walk-out; the walk-6/7 sampler of
+// the bots' current action missed a walk that lasts less than its poll). Row: event BossTacticsAvoidCast, then
+//   info1 = "caster=<entry>:<guid low>,spell=<id>"
+//   info2 = "dist=<bot to caster centre before the move>,radius=<row radius>,dest=<distance of the chosen point, or
+//            none>,stopped=<1 when the walk-out broke the bot's own cast>"
+// A no-op unless bot_events.csv is in AiPlayerbot.AllowedLogFiles, like the hunter telemetry; the throttle is checked
+// before any string is built.
+void LogAvoidCast(PlayerbotAI* ai, Player* bot, Unit* caster, uint32 spellId, float radius, float distBefore, float destDistance,
+                  bool stopped)
+{
+    uint32 const nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_avoidCastLogMutex);
+        if (!AvoidCastIsNewCast(g_avoidCastLog[bot->GetObjectGuid().GetRawValue()], caster->GetObjectGuid().GetRawValue(),
+                                spellId, nowMs))
+            return;
+    }
+    char info1[64];
+    snprintf(info1, sizeof(info1), "caster=%u:%u,spell=%u", caster->GetEntry(), caster->GetGUIDLow(), spellId);
+    char info2[96];
+    if (destDistance >= 0.0f)
+        snprintf(info2, sizeof(info2), "dist=%.1f,radius=%.1f,dest=%.1f,stopped=%d", distBefore, radius, destDistance,
+                 stopped ? 1 : 0);
+    else
+        snprintf(info2, sizeof(info2), "dist=%.1f,radius=%.1f,dest=none,stopped=%d", distBefore, radius, stopped ? 1 : 0);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsAvoidCast", info1, info2);
+}
+}
+
 bool BossTacticsAvoidCastAction::Execute(Event& event)
 {
     (void)event;
@@ -267,13 +308,22 @@ bool BossTacticsAvoidCastAction::Execute(Event& event)
     if (!danger.caster)
         return false;
     Unit* caster = danger.caster;
+    const bool logIt = sPlayerbotAIConfig.hasLog("bot_events.csv");
+    const float distBefore = logIt ? CenterDistance(caster, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ())
+                                   : 0.0f;
     AvoidCastPoint points[kAvoidCastPoints];
     const int count = AvoidCastDestinations(caster->GetPositionX(), caster->GetPositionY(), bot->GetPositionX(),
                                             bot->GetPositionY(), danger.radius, bot->GetOrientation() + M_PI_F, points);
     // A cast of the bot's own would hold it in the blast.
+    bool stopped = false;
     if (bot->IsNonMeleeSpellCasted(true))
+    {
         bot->CastStop();
-    for (int i = 0; i < count; ++i)
+        stopped = true;
+    }
+    float destDistance = -1.0f;
+    bool moved = false;
+    for (int i = 0; i < count && !moved; ++i)
     {
         float z = std::max(caster->GetPositionZ(), bot->GetPositionZ()) + 2.0f;
         bot->UpdateGroundPositionZ(points[i].x, points[i].y, z);
@@ -284,9 +334,19 @@ bool BossTacticsAvoidCastAction::Execute(Event& event)
         if (!bot->IsWithinLOS(points[i].x, points[i].y, z + bot->GetCollisionHeight()))
             continue;
         if (MoveTo(bot->GetMapId(), points[i].x, points[i].y, z, false, false, false, true))
-            return true;
+        {
+            moved = true;
+            if (logIt)
+                destDistance = CenterDistance(caster, points[i].x, points[i].y, z);
+        }
     }
-    return false;
+    if (logIt)
+    {
+        Spell* spell = caster->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+        LogAvoidCast(ai, bot, caster, spell && spell->m_spellInfo ? spell->m_spellInfo->Id : 0, danger.radius, distBefore,
+                     destDistance, stopped);
+    }
+    return moved;
 }
 
 bool BossTacticsStepBehindAction::isPossible()
