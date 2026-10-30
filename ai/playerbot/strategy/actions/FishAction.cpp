@@ -23,8 +23,10 @@ bool MoveToFishAction::isUseful()
     {
         // The travel-table spot is primary; the open-water path below only
         // runs when the travel target is idle (levelling first - never while
-        // an errand is being walked or worked).
-        if (AI_VALUE(bool, "travel target active"))
+        // an errand is being walked). At WORK the move sets the spot and
+        // hands over to the cast; without it the spot stays empty and the
+        // cast below never fires.
+        if (AI_VALUE(bool, "travel target active") && !AI_VALUE(bool, "travel target working"))
             return false;
     }
     else if (AI_VALUE2(bool, "manual bool", "no fish water"))
