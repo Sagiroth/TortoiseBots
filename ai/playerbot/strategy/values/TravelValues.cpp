@@ -541,6 +541,11 @@ bool ShouldTravelNamedValue::Calculate()
     }
     else if (name.find("trainer") == 0)
     {
+        // A guild order owns the bot's travel while it still needs work: a
+        // trainer trip started during an order leg's 15 s park would win the
+        // race and keep the bot busy, since the parked order never competes.
+        if (AI_VALUE(bool, "has guild travel order") || AI_VALUE(bool, "has guild order delivery"))
+            return false;
         // Issue #872 (B11): autonomous alts train class spells only.
         if (name != "trainer class" &&
             TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()))
