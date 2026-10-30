@@ -101,3 +101,17 @@ zulgurub,14834,ability,24686,12000,10000,10000,t=victim;aura,src/scripts/dungeon
 zulgurub,14834,ability,24689,8000,15000,15000,t=self;self,src/scripts/dungeons/zulgurub/boss_hakkar.cpp:64;src/scripts/dungeons/zulgurub/boss_hakkar.cpp:111;src/scripts/dungeons/zulgurub/boss_hakkar.cpp:264-269
 zulgurub,14834,ability,24690,18000,10000,15000,t=self,src/scripts/dungeons/zulgurub/boss_hakkar.cpp:65;src/scripts/dungeons/zulgurub/boss_hakkar.cpp:112;src/scripts/dungeons/zulgurub/boss_hakkar.cpp:276-281
 zulgurub,14834,note,,Each Aspect is cast only while that high priest is alive; the panel cannot see which priests are dead.,,,,src/scripts/dungeons/zulgurub/boss_hakkar.cpp:227-284;kb:instances/zulgurub.md#bosses
+onyxia,10184,ability,18435,10000,10000,20000,t=victim,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:44;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:163;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:360-365
+onyxia,10184,ability,19983,2000,2000,5000,t=victim,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:45;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:164;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:371-374
+onyxia,10184,ability,18500,10000,15000,30000,t=victim,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:43;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:165;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:379-386
+onyxia,10184,ability,19633,15000,15000,30000,t=victim,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:47;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:166;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:393-403
+onyxia,10184,ability,15847,5000,3500,3500,t=aoe,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:46;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:167;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:410-413
+onyxia,10184,ability,18392,3000,3000,3000,p=air;t=victim,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:50;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:169;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:453-463
+onyxia,10184,ability,18431,10000,15000,30000,p=p3;t=aoe,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:48;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:182;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:538-543
+onyxia,10184,phase,p3,hp<40,1,,,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:721
+onyxia,10184,phase,air,hp<65,2,,,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:729
+onyxia,10184,phase,p1,start,3,,,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:158
+onyxia,10184,add,11262,summon,0,,,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:68;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:477
+onyxia,10184,add,12129,linked,0,,,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:69;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:298-302
+onyxia,10184,note,,Deep Breath is one of eight directional breath spells chosen from aMoveData; it has no timer so the panel shows no next window.,,,,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:56-66;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:95-105;src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:515-528
+onyxia,10184,note,,Version 1.18.1 adds a second dragon and Hatchers that are not in this script; they show only as mobs that carry a summoner.,,,,src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:43-70;kb:instances/onyxias-lair.md#onyxia
