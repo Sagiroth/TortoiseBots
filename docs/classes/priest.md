@@ -49,7 +49,7 @@ The bot verifies that the target does not have the *Weakened Soul* debuff before
 4. Casts *Mind Blast* on cooldown.
 5. Channels *Mind Flay* as primary filler, stacking *Shadow Weaving* where talented.
 6. Casts *Silence* to interrupt dangerous enemy spellcasters and healers.
-
+7. Off-heals wounded allies (*Power Word: Shield*, *Flash Heal*, *Greater Heal*, *Renew* by wound band) per [off-healing rules](overview.md#dps-off-healing-offheal).
 <details>
 <summary>Healer off-spec damage and wand stops</summary>
 
