@@ -13,7 +13,12 @@ These pins prove the live code calls them:
    action outranks the generic ground-effect step (avoid aoe, ACTION_EMERGENCY + 5);
  - while the cast runs, a reach towards the caster is held, so a melee bot does
    not walk straight back in; the hold ends with the cast and the reach resumes;
- - the loader's skip message names the new rule.
+ - the loader's skip message names the new rule;
+ - the walk out runs for a bot the run holds: on a stay (a pull's anchor hold,
+   a healer's stand), in a pull's join window ("wait for attack"), and while
+   the bot is casting itself (the reaction engine runs it and breaks the cast;
+   the combat engine sleeps through a cast, longer than the 3 s blast); a stay
+   does not walk the bot back into the blast while the cast runs.
 
 Run: python3 -m unittest tools/test_avoid_cast_wiring.py
 """
@@ -30,6 +35,9 @@ TRIGGERS_H = (STRATEGY / "triggers/BossTacticsTriggers.h").read_text()
 TACTICS_STRATEGY = (STRATEGY / "generic/BossTacticsStrategy.cpp").read_text()
 ACTION_CONTEXT = (STRATEGY / "actions/ActionContext.h").read_text()
 TRIGGER_CONTEXT = (STRATEGY / "triggers/TriggerContext.h").read_text()
+TACTICS_STRATEGY_H = (STRATEGY / "generic/BossTacticsStrategy.h").read_text()
+COMBAT_STRATEGY = (STRATEGY / "generic/CombatStrategy.cpp").read_text()
+MOVEMENT = (STRATEGY / "actions/MovementActions.cpp").read_text()
 LOADER = (ROOT / "ai/playerbot/BossTacticsMgr.cpp").read_text()
 
 
@@ -90,6 +98,48 @@ class AvoidCastWiring(unittest.TestCase):
 
     def test_loader_names_the_rule(self):
         self.assertIn("an avoid_cast without a spell or a radius", LOADER)
+
+
+class AvoidCastRunsForHeldBots(unittest.TestCase):
+    """ZG walk 6: 11 Bat Rider blasts, 5-12 bots in each, and not one walk out.
+
+    The bots of a run sit on a stay (the pull's anchor hold, the healers'
+    stands) inside a pull's join window, and the casters are mid-cast most of
+    the fight. A MovementAction is useless on a stay (MovementAction::isUseful),
+    the join window's multiplier zeroes every action it does not list, and the
+    combat engine does not run while the bot casts.
+    """
+
+    def test_a_stay_does_not_make_the_walk_useless(self):
+        # The base rule this has to get past.
+        self.assertIn('return !ai->HasStrategy("stay", ai->GetState());', body(MOVEMENT, "bool MovementAction::isUseful()"))
+        decl = body(ACTIONS_H, "class BossTacticsAvoidCastAction", "};")
+        self.assertIn("bool isUseful() override;", decl)
+        fn = body(ACTIONS, "bool BossTacticsAvoidCastAction::isUseful()")
+        self.assertNotIn("MovementAction::isUseful", fn)
+        self.assertNotIn('"stay"', fn)
+
+    def test_the_join_window_lets_the_walk_through(self):
+        fn = body(COMBAT_STRATEGY, "float WaitForAttackMultiplier::GetValue(")
+        self.assertIn('(actionName != "boss tactics avoid cast")', fn)
+
+    def test_the_reaction_engine_runs_the_walk(self):
+        self.assertIn("void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;", TACTICS_STRATEGY_H)
+        fn = body(TACTICS_STRATEGY, "void BossTacticsStrategy::InitReactionTriggers(")
+        self.assertIn('new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6)', node(fn, "boss tactics avoid cast"))
+        # The reaction breaks the bot's own cast first (MovementAction's reaction flags).
+        self.assertIn("bool ShouldReactionInterruptCast() const override { return true; }",
+                      (STRATEGY / "actions/MovementActions.h").read_text())
+
+    def test_the_reaction_fast_path_runs_for_armed_tactics(self):
+        fn = body((STRATEGY / "ReactionEngine.cpp").read_text(), "bool ReactionEngine::HasReactionWork() const")
+        self.assertIn('TortoiseBots::BossTacticsReactionPass(true, ai->HasStrategy("boss tactics", BotState::BOT_STATE_REACTION))', fn)
+        self.assertLess(fn.index("bot->IsInCombat() &&"), fn.index("BossTacticsReactionPass("))
+
+    def test_a_stay_does_not_walk_back_into_the_blast(self):
+        fn = body(ACTIONS, "float BossTacticsCastHoldMultiplier::GetValue(")
+        self.assertIn("dynamic_cast<ReturnToStayPositionAction*>(action)", fn)
+        self.assertIn("InsideCastDanger(", fn)
 
 
 if __name__ == "__main__":

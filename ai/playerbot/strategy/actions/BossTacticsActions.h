@@ -82,7 +82,8 @@ namespace ai
         float GetValue(Action* action) override;
     };
 
-    // While a listed cast runs, a reach towards its caster would walk a melee bot straight back into the blast.
+    // While a listed cast runs, a reach towards its caster would walk a melee bot straight back into the blast, and
+    // a stay whose spot lies in the blast would walk a held bot back onto it.
     class BossTacticsCastHoldMultiplier : public Multiplier
     {
     public:
@@ -94,6 +95,7 @@ namespace ai
     {
     public:
         BossTacticsAvoidCastAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics avoid cast") {}
+        bool isUseful() override;
         bool isPossible() override;
         bool Execute(Event& event) override;
     };

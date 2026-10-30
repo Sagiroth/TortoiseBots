@@ -33,6 +33,13 @@ int main()
     CHECK(ReactionPassForced(false, 1));
     CHECK(ReactionPassForced(false, 5));
 
+    // A bot in a fight whose boss tactics are armed: a listed blast can be cast next to it while it stands idle at
+    // full health with no victim and nobody on it (a held healer or ranged bot), so the pass runs.
+    CHECK(BossTacticsReactionPass(true, true));
+    CHECK(!BossTacticsReactionPass(true, false));
+    CHECK(!BossTacticsReactionPass(false, true));
+    CHECK(!BossTacticsReactionPass(false, false));
+
     std::printf("test_reaction_work_policy: %d checks passed\n", checks);
     return 0;
 }

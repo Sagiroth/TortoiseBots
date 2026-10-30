@@ -22,4 +22,12 @@ inline bool ReactionPassForced(bool hasRealPlayerMaster, std::size_t queuedChatC
     return hasRealPlayerMaster || queuedChatCommands > 0;
 }
 
+// True when a fighting bot's armed boss tactics need the pass: their reaction trigger (the walk out of a listed
+// blast, BossTacticsStrategy) reads the group's attackers, so an idle bot at full health with no victim and nobody
+// on it can still stand in the blast.
+inline bool BossTacticsReactionPass(bool inCombat, bool bossTacticsArmed)
+{
+    return inCombat && bossTacticsArmed;
+}
+
 } // namespace TortoiseBots

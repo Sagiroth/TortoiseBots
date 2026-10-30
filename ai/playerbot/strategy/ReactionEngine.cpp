@@ -366,6 +366,10 @@ bool ReactionEngine::HasReactionWork() const
     // cure runs on the combat/non-combat engines, never here.
     if (HasReactionAuraWork(bot))
         return true;
+    // The strategy lookup only for a bot in a fight.
+    if (bot->IsInCombat() &&
+        TortoiseBots::BossTacticsReactionPass(true, ai->HasStrategy("boss tactics", BotState::BOT_STATE_REACTION)))
+        return true;
     return false;
 }
 

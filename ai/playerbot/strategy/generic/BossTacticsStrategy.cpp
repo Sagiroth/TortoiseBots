@@ -40,6 +40,15 @@ void BossTacticsStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigger
         NextAction::array(0, new NextAction("disable boss tactics strategy", 100.0f), NULL)));
 }
 
+// The combat engine sleeps through the bot's own cast (PlayerbotAI::UpdateAI), and a heal or a bolt outlasts the
+// warning of a 3 s blast. The reaction engine runs every update and breaks the cast for a movement action.
+void BossTacticsStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "boss tactics avoid cast",
+        NextAction::array(0, new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6), NULL)));
+}
+
 void BossTacticsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
     multipliers.push_back(new BossTacticsHoldMultiplier(ai));

@@ -5,6 +5,7 @@
 #include "playerbot/ServerFacade.h"
 #include "ChooseTargetActions.h"
 #include "ReachTargetActions.h"
+#include "PositionAction.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
 using namespace ai;
@@ -227,12 +228,30 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
 
 float BossTacticsCastHoldMultiplier::GetValue(Action* action)
 {
-    if (!action || !dynamic_cast<ReachTargetAction*>(action))
+    if (!action)
+        return 1.0f;
+    if (dynamic_cast<ReturnToStayPositionAction*>(action))
+    {
+        AiObjectContext* context = ai->GetAiObjectContext();
+        PositionMap& positions = AI_VALUE(PositionMap&, "position");
+        auto stay = positions.find("stay");
+        if (stay == positions.end() || !stay->second.isSet() || stay->second.mapId != bot->GetMapId())
+            return 1.0f;
+        return InsideCastDanger(ScanBossTactics(ai, bot), stay->second.x, stay->second.y, stay->second.z) ? 0.0f : 1.0f;
+    }
+    if (!dynamic_cast<ReachTargetAction*>(action))
         return 1.0f;
     Unit* target = action->GetTarget();
     if (!target || HoldsCaster(bot, target))
         return 1.0f;
     return CastDangerOf(ScanBossTactics(ai, bot), target) > 0.0f ? 0.0f : 1.0f;
+}
+
+// Not MovementAction::isUseful: that one is false on a stay, and the bots of a run fight on one (a pull's anchor hold,
+// a healer's stand). The blast kills in one hit; the stay walks the bot back once the cast is over.
+bool BossTacticsAvoidCastAction::isUseful()
+{
+    return true;
 }
 
 bool BossTacticsAvoidCastAction::isPossible()
