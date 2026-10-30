@@ -37,6 +37,11 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunLightRest`](#aiplayerbotdungeonrunlightrest) | `1` | Before a small pull the party rests to light lines (60/35/25 to 75/60/45); before a boss, an event or a big pull the full ones. |
 | [`AiPlayerbot.DungeonRunLootFfa`](#aiplayerbotdungeonrunlootffa) | `0` | A run leader loot step whose item is another member's under the group loot rules sets free-for-all for the carrier's loot, then puts the method back. |
 | [`AiPlayerbot.DungeonRunMaxMinutes`](#aiplayerbotdungeonrunmaxminutes) | `180` | Time limit of a run leader run (`0` = none). |
+| [`AiPlayerbot.DungeonRunNearWipeStop`](#aiplayerbotdungeonrunnearwipestop) | `2` | Wipe events within the window that pause a raid run once the fight is over (`0` = off). |
+| [`AiPlayerbot.DungeonRunNearWipeStopMinutes`](#aiplayerbotdungeonrunnearwipestopminutes) | `10` | The near-wipe stop's window, in minutes of running time. |
+| [`AiPlayerbot.DungeonRunNearWipeStopParty`](#aiplayerbotdungeonrunnearwipestopparty) | `0` | `1`: party bindings get the near-wipe stop too; `0`: raids only. |
+| [`AiPlayerbot.DungeonRunPackClearMarginYd`](#aiplayerbotdungeonrunpackclearmarginyyd) | `10` | A pull step is done only when nothing of its entries is left within its radius plus this band (`0` = off). |
+| [`AiPlayerbot.DungeonRunPackClearRepulls`](#aiplayerbotdungeonrunpackclearrepulls) | `3` | Residue pulls a pull step may send before it pauses for a human. |
 | [`AiPlayerbot.DungeonRunPlayerLed`](#aiplayerbotdungeonrunplayerled) | `0` | Lets a player who leads his own party start a player-led run (`.bot run start ... player`): he walks, the run leader pulls the packs near him. |
 | [`AiPlayerbot.DungeonRunPlayerLedAwayMinutes`](#aiplayerbotdungeonrunplayerledawayminutes) | `10` | How long the leading player of a player-led run may be out of the plan's dungeon before the run stops. |
 | [`AiPlayerbot.DungeonRunPlayerLedPullYd`](#aiplayerbotdungeonrunplayerledpullyd) | `40` | How close the leading player stands to a plan pack or boss for the player-led run to pull it. |
@@ -252,6 +257,61 @@ How long a run leader run (`.bot run`) may last before it ends by itself.
 <summary>How it works in detail</summary>
 
 **Run leader time limit:** a `.bot run` that has lasted this many minutes since `run start` (a pause counts) ends with the status note `time limit reached (3h)`, the bots staying bound. `0` = no limit. Only read while `AiPlayerbot.DungeonSelfClear = 1`. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+
+</details>
+
+### `AiPlayerbot.DungeonRunNearWipeStop`
+How many wipe events within the window pause a raid run once the fight is over.
+**Default:** `2` · **Values:** `0` off, `1`-`10` events · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Near-wipe stop:** only read while `AiPlayerbot.DungeonSelfClear = 1`, and only for a raid binding (`AiPlayerbot.DungeonRunRaid = 1`) unless `AiPlayerbot.DungeonRunNearWipeStopParty = 1`. A *wipe event* is one mark: it starts on the tick the party first reaches the wipe level (a raid: `ceil(40 % of the members)`, at least 3, or every tank dead, or more than half the healers dead), every bot dead, or a window wipe, and ends when none of those hold, so a near wipe that becomes a wipe and the revive after it are one mark. The marks older than `AiPlayerbot.DungeonRunNearWipeStopMinutes` are dropped; at this many the run stops once the fight is over (out of combat, or only a GameMaster pinned in a fight), before any regroup. During the fight the note reads `11 dead: fighting on, the run stops after the fight (2 near wipes within 10 min)`; the pause reads `14 dead: 2 near wipes within 10 min (steps 21 and 32, 5 min 50 s apart; 2 near wipes this run): the run stops here. Regroup (cmd revive party), then .bot run resume, or .bot run stop`. A fight that goes past its ceiling with the stop due pauses with the same line and `; the fight went past 180 s`. `.bot run resume` clears the marks. Zul'Gurub walk 2 (2026-10-29): near wipe 1 began at display 21, near wipe 2 at display 32, 5 min 50 s later; the second regrouped by itself (`1 of 2 at this step`) and the run walked on into the wipe at display 35. Party runs keep their self-regroup: the 2-in-10-min stop would turn many recoverable party runs into pauses, so it is opt-in for them.
+
+</details>
+
+### `AiPlayerbot.DungeonRunNearWipeStopMinutes`
+The near-wipe stop's window, in minutes of running time.
+**Default:** `10` · **Values:** `1`-`60` minutes · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The window:** a mark older than this many minutes of the run's own clock is dropped before the count is compared, so two events exactly this far apart still count and one millisecond more does not. The clock counts running time only, so a pause does not age the marks. Only read while `AiPlayerbot.DungeonRunNearWipeStop` is above `0`. See [`AiPlayerbot.DungeonRunNearWipeStop`](#aiplayerbotdungeonrunnearwipestop).
+
+</details>
+
+### `AiPlayerbot.DungeonRunNearWipeStopParty`
+Whether a party binding gets the near-wipe stop too.
+**Default:** `0` · **Values:** `0` raids only (as before), `1` parties too · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Party opt-in:** in a party the wipe level is 3 of 5, and the self-regroup is the designed recovery that runs often in unattended runs; the per-step cap (2 regroups a step) already pauses a step that keeps failing. Nothing in the party evidence called for the stop: in walk 2 the trigger was the raid's costly 8+ dead events. So a party gets it only with this key. Only read while `AiPlayerbot.DungeonRunNearWipeStop` is above `0`.
+
+</details>
+
+### `AiPlayerbot.DungeonRunPackClearMarginYd`
+The band around a pull step's radius in which a living unit of its entries still counts.
+**Default:** `10` · **Values:** `0` off (the old radius-only rule), `1`-`30` yards · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Pack-cleared gate:** only read while `AiPlayerbot.DungeonSelfClear = 1`. A `pull` step is done only when nothing of its entries is left: no living unit in its radius; none in the band outside it (2D distance within radius + this margin, height within 10 yd of the step point, so a unit on another floor is no residue) unless another step's radius holds it; no waypoint patroller or formation follower of one; and no unit that spawned inside the radius still walking its loop (spawn ownership: its DB spawn row lies within radius + 1 yd, so it belongs to the step wherever its patrol has taken it, is listed up to 60 yd out, and is not left to a later step). A residue unit is pulled nearest first, up to `AiPlayerbot.DungeonRunPackClearRepulls`; then the run pauses with the units' entries, guids and distances. A residue unit whose pulls drew no fight is named in the clear note (`; 1 left within 30.5 yd that pulls drew no fight (11368 0x…)`); one only evading or stealthed is waited for (`waiting for the pack to settle (…)`). With `0` every part is off and the old rule runs byte for byte; a `boss` step is unchanged. A step cleared with no pull at all names its nearest unlisted unit (`; nearest of its units left: 14750 0x… 64.0 yd from the centre`). Zul'Gurub walk 2, display 31: the bat pack's leader was 52.1 yd out on its loop and its formation bats are not waypoint movers, so the step said `pack cleared` in 1 s with 3 bats and the rider alive, and the next move walked into them (14 dead).
+
+</details>
+
+### `AiPlayerbot.DungeonRunPackClearRepulls`
+How many residue pulls a pull step may send before it pauses for a human.
+**Default:** `3` · **Values:** `1`-`10` pulls · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The cap:** each residue pull (the band's units, nearest first, with the same way back and `pullback` as the step's own) counts one. At the cap with residue still open the run pauses with `pack not cleared after 3 re-pulls: 2 left within 30.5 yd of the pull centre (11368 0x… 23.2 yd, …): clear it, then .bot run resume, or .bot run skip`. Only read while `AiPlayerbot.DungeonRunPackClearMarginYd` is above `0`. See [`AiPlayerbot.DungeonRunPackClearMarginYd`](#aiplayerbotdungeonrunpackclearmarginyyd).
 
 </details>
 
