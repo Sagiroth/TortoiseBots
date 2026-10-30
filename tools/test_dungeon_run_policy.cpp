@@ -23974,6 +23974,33 @@ static void TestNearWipeStopPastCeiling()
         "the run stops here. Regroup (cmd revive party), then .bot run resume, or .bot run stop; the fight went past 180 s");
 }
 
+// With AiPlayerbot.DungeonRunRaidBossRules a raid's boss fight runs to kRaidBossFightCapMs, but a near-wipe stop that
+// is already due keeps the 420 s boss ceiling it had before (Codex adversarial review): the operator's stop is not put
+// off by 13 minutes.
+static void TestNearWipeStopKeepsTheBossCeilingWithRaidBossRules()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    plan.steps[31].kind = PlanStepKind::Boss;
+    plan.steps[31].entry = 10184;
+    Run r = NearWipeRun(plan);
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 60000 - kTickMs;
+    Facts eight = NearWipeRaid(8);
+    eight.raid.bossRules = true;
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    CHECK(r.wipeStopDue);
+    r.fighting = true;
+    r.fightMs = kBossFightCapMs + 1000;
+    Facts twelve = NearWipeRaid(12);
+    twelve.raid.bossRules = true;
+    twelve.anyInCombat = true;
+    CHECK(Tick(r, twelve).empty());
+    CHECK(r.state == State::Paused);
+    CHECK(r.note.find("the run stops here") != std::string::npos);
+    CHECK(r.note.find("; the fight went past 420 s") != std::string::npos);
+}
+
 static void TestNearWipeStopWithGmPinned()
 {
     DungeonPlan plan = MoveRowPlan(40);
@@ -25491,6 +25518,7 @@ int main()
     TestResumeClearsTheNearWipeCount();
     TestResumeWhileStillWipedCountsThatWipe();
     TestNearWipeStopPastCeiling();
+    TestNearWipeStopKeepsTheBossCeilingWithRaidBossRules();
     TestNearWipeStopWithGmPinned();
     TestNearWipeStopGating();
     TestRaidRegroupNotRestartedByOneMoreDeath();
