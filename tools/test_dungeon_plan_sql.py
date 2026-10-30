@@ -258,6 +258,15 @@ NOT_BOSSES.update({15963, 15957, 15475, 15896, 15378, 15379, 15380, 15502, 15503
 BOSS_PLANS["emerald_sanctum"] = 807
 SEEDED_BOSSES.update({(807, 60747): "Erennius", (807, 60748): "Solnius"})
 NOT_BOSSES.update({883, 1420})
+# Lower Karazhan Halls (20261028100000), the 10-man raid of map 532: its five boss steps, names from the core's creature_template
+# (all rank 3). Lord Blackwald II 61222 has no creature spawn row: the instance script (instance_lower_karazhan_halls.cpp Update)
+# summons him at -11088.2 -1995.74 76.1774 when the Dark Rider Champion 61204 is DONE, and the plan's boss step is him. A
+# summonted unit is not seeded: the Champion 61204 is a trash pull, the Dark Rider Apprentice 61203 and the Skitterweb Egg 30008
+# are summons.
+BOSS_PLANS["lower_karazhan_halls"] = 532
+SEEDED_BOSSES.update({(532, 61221): "Brood Queen Araxxna", (532, 61222): "Lord Blackwald II",
+                      (532, 61223): "Clawlord Howlfang", (532, 61224): "Grizikil", (532, 61225): "Moroes"})
+NOT_BOSSES.update({61204, 61203, 30008})
 
 def migrations():
     for path in sorted(glob.glob(os.path.join(ROOT, "data/sql/world/*_world.sql"))):
@@ -589,6 +598,13 @@ class DungeonPlanSql(unittest.TestCase):
                         if prev is not None and prev["kind"] == "gossip" and prev["entry"] != "0":
                             allowed.add(prev["entry"])
                     hit = listed & (event_entries - allowed)
+                    hit = listed & event_entries
+                    # A boss the plan wakes with its own gossip is talked to and then fought: the step before it in the
+                    # same leg is that gossip (lower_karazhan_halls' Moroes 61225, hostile only after menu index 0).
+                    if hit and r["kind"] == "boss":
+                        before = [s for s in leg_steps(rows, int(r["leg"])) if int(s["seq"]) < int(r["seq"])]
+                        if before and before[-1]["kind"] == "gossip" and before[-1]["entry"] in hit:
+                            hit = hit - {before[-1]["entry"]}
                     self.assertEqual(hit, set(), "%s %s: %s/%s lists its own event unit(s) %s in a %s row" %
                                      (name, plan, r["leg"], r["seq"], sorted(hit), r["kind"]))
                 for m in re.finditer(r"^\('%s', \d+, '([^']*)', '([^']*)', '([^']*)'," % plan, text, re.M):
@@ -979,6 +995,42 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual((last["entries"], float(last["radius"])), ("1708", 7.0))
         self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["stormwind_stockade"])
         self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (34);", text)
+
+    def test_lower_karazhan_halls_is_the_raid_prep(self):
+        # 20261028100000 (turtle-agent prep/raid-lkh 954d1af, 2026-10-28): the 10-man LKH draft with the B1 prep of
+        # RAID-PREP-lkh.md, no row hand-set. 13 legs, 257 steps (158 move, 93 pull, 5 boss, 1 gossip), the raid's five
+        # bosses in leg order (Blackwald II first after the Dark Rider Champion's hall, Moroes last), and Moroes' gossip
+        # (menu index 0 -> cmd gossip param 1) right before his boss row. The pulls are merged packs (at most 4 units a
+        # row in the rows' `entries`; the plan caps a merged pack at 8), the radius at most 35.
+        name, text = newest_plan_text("lower_karazhan_halls")
+        self.assertEqual(name, "20261028100000_world.sql")
+        self.assertIn("('lower_karazhan_halls', 532, '', '', '', 'turtle-agent 954d1af dungeons/lower_karazhan_halls.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual([v[0] for v in leg_rows(text, "lower_karazhan_halls").values()],
+                         ["entrance_hall_ring", "entrance_hall_west", "entrance_hall_dining", "entrance_hall_east",
+                          "brood_queen_araxxna", "spider_wing", "north_bridge", "north_bridge_east", "grizikil",
+                          "clawlord_howlfang", "karazhan_terrace", "moroes_wing", "moroes"])
+        rows = [r for r in self.step_rows(text) if r["plan"] == "lower_karazhan_halls"]
+        self.assertEqual(len(rows), 257)
+        self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(13)],
+                         [20, 1, 2, 2, 18, 7, 1, 5, 19, 3, 4, 7, 4])
+        self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"], ["61222", "61221", "61224", "61223", "61225"])
+        self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss", "gossip"})
+        # Every boss is the last step of its leg; the gossip is the step before Moroes' boss row.
+        for leg in (0, 4, 8, 9, 12):
+            self.assertEqual(leg_steps(rows, leg)[-1]["kind"], "boss", leg)
+        moroes = leg_steps(rows, 12)
+        self.assertEqual([r["kind"] for r in moroes[-2:]], ["gossip", "boss"])
+        self.assertEqual((moroes[-2]["entry"], moroes[-2]["param"]), ("61225", "1"))
+        pulls = [r for r in rows if r["kind"] == "pull"]
+        self.assertEqual(len(pulls), 93)
+        self.assertLessEqual(max(float(r["radius"]) for r in pulls), 35.0)
+        self.assertLessEqual(max(len(r["entries"].split(",")) for r in pulls), 8)
+        # The runts are in no pull (they are level 1, faction 28 'Prey' and 148 'Ambient'), and the unreachable drakonid is not either.
+        for entry in ("4075", "14881", "14261"):
+            self.assertFalse([r for r in pulls if entry in r["entries"].split(",")], entry)
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["lower_karazhan_halls"])
+        self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (532) AND `entry` IN (61221, 61222, 61223, 61224, 61225);", text)
+        self.assertIn("(532, 61224, 'interrupt', 0, 57094, 0, 0, 'Grizikil: Grellkin Fireball (boss_grizikil.cpp, every 4-6 s)');", text)
 
     def test_stormwind_vault_is_the_plan_with_the_leg0_split(self):
         # 20261024151700 (turtle-agent 33dcce5, 2026-10-24): 20261024010200 again, with leg-0 pull group 0 split in
