@@ -1133,6 +1133,12 @@ void RandomBotService::ForgetDeliberateLogout(ObjectGuid guid)
 
 void RandomBotService::RemoveExpiredBots(uint32_t diff)
 {
+    std::set<uint32_t> unfinishedOrderBots;
+    if (GuildOrders::IsAvailable())
+        for (GuildOrders::OrderRecord const& order : GuildOrders::All())
+            if (!GuildOrders::IsFinished(order.state))
+                unfinishedOrderBots.insert(order.botGuidLow);
+
     for (size_t i = 0; i < m_candidates.size(); ++i)
     {
         Candidate const& candidate = m_candidates[i];
@@ -1200,8 +1206,7 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
             continue;
         // An unfinished guild order keeps its bot online: order legs pay no
         // XP, so the timed logout below would park the order mid-farm.
-        bool const onOrder = GuildOrders::IsAvailable() &&
-            GuildOrders::KeepOrderBotOnline(GuildOrders::Find(candidate.characterGuid.GetCounter()));
+        bool const onOrder = unfinishedOrderBots.count(candidate.characterGuid.GetCounter()) != 0;
         if (onOrder)
             m_ageMs[i] = 0;
         else
