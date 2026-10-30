@@ -308,15 +308,18 @@ private:
 
         uint32_t& emptyPasses = m_emptyPasses[request.botGuidLow];
         bool mailedAny = stored->reason == OrderReason::NoBank;
-        bool movedAny = false;
-
         uint32_t delivered = stored->delivered;
+        // Anything already banked or mailed reached the guild during this
+        // delivery: delivered only rises inside the drain and resets to 0
+        // when the delivery leg ends.
+        bool movedThisDelivery = delivered > 0;
+
         uint32_t banked = DepositPass(bot, guild, banker, stored->itemId, delivered, stored->amount);
         if (banked > 0)
         {
             AddDelivered(request.botGuidLow, banked);
             emptyPasses = 0;
-            movedAny = true;
+            movedThisDelivery = true;
             delivered += banked;
         }
         else
@@ -333,7 +336,7 @@ private:
                 if (count > 0)
                 {
                     AddDelivered(request.botGuidLow, count);
-                    movedAny = true;
+                    movedThisDelivery = true;
                     delivered += count;
                 }
                 if (mailed)
@@ -350,18 +353,14 @@ private:
             m_emptyPasses.erase(request.botGuidLow);
             return;
         }
-        bool finished = bankDone || BankRefused(emptyPasses);
+        bool finished = DeliveryFinished(emptyPasses, bot->GetItemCount(stored->itemId),
+                                         stored->delivered, stored->amount);
         if (!finished)
             return;
         m_emptyPasses.erase(request.botGuidLow);
-        bool movedTotal = movedAny || stored->delivered >= stored->amount;
         DeliveryOutcome outcome =
-            ClassifyDelivery(stored->delivered, stored->amount, mailedAny, movedTotal);
-        // A timed-out delivery never goes back to work: the farm time is
-        // spent, so whatever reached the guild is the final count and the
-        // order ends with the timeout reason kept.
-        if (stored->reason == OrderReason::Timeout &&
-            (outcome == DeliveryOutcome::BackToWork || outcome == DeliveryOutcome::Stuck))
+            ClassifyDelivery(stored->delivered, stored->amount, mailedAny, movedThisDelivery);
+        if (DeliveryTimeoutEnds(stored->reason, outcome))
         {
             SetState(request.botGuidLow, OrderState::Cant, OrderReason::Timeout);
             ExpireTargetFor(ai);
