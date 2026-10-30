@@ -156,6 +156,7 @@ class PlayerInPartyWiringTest(unittest.TestCase):
         self.assertIn("fact.distLead = anchor->GetDistance(attacker);", add)
         self.assertIn("fact.attackable = GroupCanAttack(anchor, attacker);", add)
         self.assertIn("fact.victimName = player->GetName();", add)
+        self.assertIn("fact.victimTank = PlayerbotAI::IsTank(player);", add)
         self.assertIn("attacker->GetVictim() != player", add)
         self.assertIn("f.partyAttackers.push_back(fact);", add)
 

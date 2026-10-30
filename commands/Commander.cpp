@@ -10049,7 +10049,11 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             if (fact.castingAtRange && fact.distLead > TortoiseBots::DungeonRun::kGuardNoWalkYd)
                 fact.campIdle = IdleHostilesNear(anchor, attacker, TortoiseBots::DungeonRun::kGuardCampYd);
             if (raidBoss)
+            {
                 fact.victimName = player->GetName();
+                // A player tank holding the boss (or an add) keeps it: RaidGuardTick takes the boss only off a non-tank.
+                fact.victimTank = PlayerbotAI::IsTank(player);
+            }
             fact.attackable = GroupCanAttack(anchor, attacker);
             if (hold)
                 fact.distSpot = DistanceTo(attacker, hold->x, hold->y, hold->z);

@@ -21520,6 +21520,13 @@ static void TestRaidBossOffTankTakesTheBossWithTheGlueFactsOfADeadLead()
     g.partyAttackers[0].distLead = 2;
     CHECK(Tick(q, g) == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Offy");
     CHECK(q.note.find("the lead bot is no tank, the off-tank Offy takes 10184 off the party") != std::string::npos);
+    // A real player tank holding her (the glue sets victimTank for a player tank) keeps her.
+    Run u = RaidBossRun(plan);
+    Facts h = f;
+    h.partyAttackers[0].victimName = "Playertank";
+    h.partyAttackers[0].victimTank = true;
+    for (int k = 0; k < 5; ++k)
+        CHECK(Tick(u, h).empty());
 }
 
 // Adds that die keep the hp watch losing, but only the plan boss's own loss holds a raid's boss fight through its
