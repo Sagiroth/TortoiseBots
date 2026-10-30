@@ -5,8 +5,13 @@
 // DATA (runtime/SpellShapeData.h, a committed CSV with a source per row); this header only parses it and looks a spell
 // up. A spell absent from the table has no shape and the module sends none: a new raid is rows, never a branch.
 //
+// A line row may carry the segment it covers in absolute map coordinates (`x0,y0` to `x1,y1`) instead of a length from
+// the caster: a boss's damaging lane does not start at its own feet, so the two ends are truth and the reach is their
+// distance.
+//
 // Standard library only, so tools/test_spell_shapes.cpp compiles it without a game header.
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -23,7 +28,7 @@ enum class Kind : uint8_t
     None = 0,
     Cone,     // in front of the caster (the core's PUSH_IN_FRONT, 120 degrees by default)
     BackCone, // behind the caster (PUSH_IN_BACK, 75 degrees)
-    Line,     // along the caster's facing, width wide
+    Line,     // along the caster's facing, width wide, or between an absolute start and end
 };
 
 struct Shape
@@ -31,8 +36,13 @@ struct Shape
     uint32_t spell = 0;
     Kind kind = Kind::None;
     uint16_t angle = 0;  // full arc in degrees (cone and back-cone); 0 for a line
-    float length = 0.0f; // reach in yards along the facing
+    float length = 0.0f; // reach in yards: along the facing, or the distance between the segment's ends
     float width = 0.0f;  // the band across a line in yards; 0 for a cone
+    bool hasSegment = false; // the line's ends are known in map coordinates (x0,y0) to (x1,y1)
+    float x0 = 0.0f;
+    float y0 = 0.0f;
+    float x1 = 0.0f;
+    float y1 = 0.0f;
 };
 
 struct Row
@@ -107,9 +117,10 @@ inline bool ParseFloat(std::string const& text, float& out)
 }
 
 // Parse the committed table: one row per line, blank lines and `#` comments skipped, columns
-// `spell,shape,angle,reach,width[,source]`. A row that does not carry a usable shape is dropped whole (never half-read),
-// so a typo removes one shape instead of drawing a wrong one. A cone needs angle 1..359, a reach and no width; a line
-// needs no arc, a reach and a width.
+// `spell,shape,angle,reach,width,x0,y0,x1,y1[,source]`. A row that does not carry a usable shape is dropped whole
+// (never half-read), so a typo removes one shape instead of drawing a wrong one. A cone needs angle 1..359, a reach, no
+// width and no ends; a line needs no arc and a width, and either a reach along the facing or (all four columns set,
+// reach 0) its two ends, whose distance becomes its reach.
 inline std::vector<Row> Parse(std::string const& text)
 {
     std::vector<Row> out;
@@ -131,26 +142,55 @@ inline std::vector<Row> Parse(std::string const& text)
                 break;
             start = comma + 1;
         }
-        if (fields.size() < 5)
+        if (fields.size() < 9)
             continue;
         Row row;
         uint32_t spell = 0, angle = 0;
         Kind kind = Kind::None;
-        float length = 0.0f, width = 0.0f;
+        float length = 0.0f, width = 0.0f, x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
         if (!ParseU32(fields[0], spell) || spell == 0 || !ParseKind(fields[1], kind) || !ParseU32(fields[2], angle) ||
-            !ParseFloat(fields[3], length) || !ParseFloat(fields[4], width))
+            !ParseFloat(fields[3], length) || !ParseFloat(fields[4], width) || !ParseFloat(fields[5], x0) ||
+            !ParseFloat(fields[6], y0) || !ParseFloat(fields[7], x1) || !ParseFloat(fields[8], y1))
             continue;
-        if (kind == Kind::Line ? (angle != 0 || !(length > 0.0f) || !(width > 0.0f))
-                               : (angle == 0 || angle >= 360 || !(length > 0.0f) || width != 0.0f))
+        float const stated = length;
+        // None of the four ends, or all four: half a segment is a typo (and a lane end on a map axis is written by
+        // shifting the chain's ends, never by leaving a column empty).
+        unsigned const set = (x0 != 0.0f ? 1u : 0u) + (y0 != 0.0f ? 1u : 0u) + (x1 != 0.0f ? 1u : 0u) +
+                             (y1 != 0.0f ? 1u : 0u);
+        bool const ends = set == 4;
+        if (set != 0 && set != 4)
+            continue;
+        if (kind == Kind::Line)
+        {
+            if (angle != 0 || !(width > 0.0f))
+                continue;
+            if (ends)
+            {
+                // The two ends are the line; the reach column stays 0 so the length has one source.
+                float const dx = x1 - x0;
+                float const dy = y1 - y0;
+                length = std::sqrt(dx * dx + dy * dy);
+                if (!(length > 0.0f) || stated != 0.0f)
+                    continue;
+            }
+            else if (!(length > 0.0f))
+                continue;
+        }
+        else if (angle == 0 || angle >= 360 || !(length > 0.0f) || width != 0.0f || ends)
             continue;
         row.shape.spell = spell;
         row.shape.kind = kind;
         row.shape.angle = static_cast<uint16_t>(angle);
         row.shape.length = length;
         row.shape.width = width;
-        for (size_t i = 5; i < fields.size(); ++i)
+        row.shape.hasSegment = ends;
+        row.shape.x0 = x0;
+        row.shape.y0 = y0;
+        row.shape.x1 = x1;
+        row.shape.y1 = y1;
+        for (size_t i = 9; i < fields.size(); ++i)
         {
-            if (i > 5)
+            if (i > 9)
                 row.source += ',';
             row.source += fields[i];
         }

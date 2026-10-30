@@ -324,6 +324,7 @@ func copyFrame(f TrackFrame) TrackFrame {
 		}
 		if sh := out.Mobs[i].Shape; sh != nil {
 			copied := *sh
+			copied.Segment = append([]float64(nil), sh.Segment...)
 			out.Mobs[i].Shape = &copied
 		}
 	}

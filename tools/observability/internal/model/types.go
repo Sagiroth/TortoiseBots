@@ -736,13 +736,16 @@ type CommanderMob struct {
 }
 
 // CommanderShape is the area a boss or elite spell covers, as the module's committed shape table knows it: k is cone (in
-// front), back-cone (behind) or line (along the facing); a the full arc in degrees (cones), l the reach in yards along the
-// facing, w the band across a line in yards. An unknown spell has no shape at all.
+// front), back-cone (behind) or line (along the facing, or between two map points); a the full arc in degrees (cones), l
+// the reach in yards along the facing (a line with a segment: the ends' distance), w the band across a line in yards. seg
+// is a line's two ends as [x0,y0,x1,y1] in map coordinates when the module pins them (a damaging lane does not start at
+// the boss's feet); a line without it runs along the facing. An unknown spell has no shape at all.
 type CommanderShape struct {
-	Kind   string  `json:"k"`
-	Angle  uint16  `json:"a,omitempty"`
-	Length float64 `json:"l,omitempty"`
-	Width  float64 `json:"w,omitempty"`
+	Kind    string    `json:"k"`
+	Angle   uint16    `json:"a,omitempty"`
+	Length  float64   `json:"l,omitempty"`
+	Width   float64   `json:"w,omitempty"`
+	Segment []float64 `json:"seg,omitempty"`
 }
 
 // CommanderBot is a bot of a bound party.

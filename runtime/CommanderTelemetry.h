@@ -19,10 +19,10 @@
 // Boss overlay (additive, same rule; owner request 2026-10-29 "the boss doesnt show on the map its direction or when
 // it does the breath"): a boss or elite unit also carries its facing (`o`, radians), the cast it runs (`cid`, `cleft`
 // left and `ctot` total in ms, `ctg` its unit target, `ch` for a channel) and the area that spell covers (`shape`: a
-// cone, a back cone or a line, with arc, reach and width), read from runtime/SpellShape.h's committed table by spell
-// id. Unknown spells send no shape, and no extra datagram is sent: these ride the mob rows of the 2 s report. At most
-// kMaxMobOverlaysPerPayload rows per datagram carry them (bosses first, then elites); the rest keep the old row, so a
-// report full of boss rows stays inside the UDP limit.
+// cone, a back cone or a line, with arc, reach and width; a line can instead carry its two ends in map coordinates as
+// `seg`), read from runtime/SpellShape.h's committed table by spell id. Unknown spells send no shape, and no extra
+// datagram is sent: these ride the mob rows of the 2 s report. At most kMaxMobOverlaysPerPayload rows per datagram carry
+// them (bosses first, then elites); the rest keep the old row, so a report full of boss rows stays inside the UDP limit.
 //
 // Live positions (additive, same rule; task S3): while a bound group fights, its bots and the enemies its lead's last report
 // listed go out every 0.5 s (COMMANDER_POS), so the dashboard's dots glide between the 2 s reports; a group that stands
@@ -682,6 +682,9 @@ inline void AppendMobJson(std::ostringstream& ss, MobInfo const& m, bool overlay
                 ss << ",\"l\":" << m.shape.length;
             if (m.shape.width > 0.0f)
                 ss << ",\"w\":" << m.shape.width;
+            if (m.shape.hasSegment)
+                ss << ",\"seg\":[" << Fixed2(m.shape.x0) << ',' << Fixed2(m.shape.y0) << ',' << Fixed2(m.shape.x1) << ','
+                   << Fixed2(m.shape.y1) << ']';
             ss << "}";
         }
     }

@@ -466,3 +466,36 @@ func TestTrackBudgetForgetsAtTheFloor(t *testing.T) {
 		t.Fatalf("the tracks still charge %d bytes, over the %d budget", total, TrackMemBudget)
 	}
 }
+
+// A line whose damage is a lane between two map points carries those ends: a Deep Breath does not start at the boss's
+// feet, so the replay must draw the segment, not a reach from the boss's facing. The segment is copied with the frame.
+func TestTrackKeepsALaneSegment(t *testing.T) {
+	facing := 3.14
+	mobs := []model.CommanderMob{{ID: "5", Entry: 10184, Name: "Onyxia", X: 1, Y: 2, HP: 80, Rank: "b",
+		O: &facing, CastID: 17086, CastLeftMS: 1200, CastTotalMS: 5000,
+		Shape: &model.CommanderShape{Kind: "line", Length: 151.53, Width: 60,
+			Segment: []float64{20.730539, -215.237610, -130.788300, -213.424026}}}}
+	s := newTestStore(newClock())
+	s.ApplyCommanders(trackPayload(1, 100, trackBinding("c", []model.CommanderBot{trackBot(814, 0, 0, 100, 100)}, mobs)))
+	frames, names := s.Track("c", 100, 100)
+	if len(frames) != 1 || len(frames[0].Mobs) != 1 || frames[0].Mobs[0].Shape == nil {
+		t.Fatalf("frames = %+v", frames)
+	}
+	seg := frames[0].Mobs[0].Shape.Segment
+	if len(seg) != 4 || seg[0] != 20.730539 || seg[1] != -215.237610 || seg[2] != -130.788300 || seg[3] != -213.424026 {
+		t.Fatalf("lane segment lost: %v", frames[0].Mobs[0].Shape)
+	}
+	raw, err := json.Marshal(TrackJSON("c", frames, names))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `"sh":{"k":"line","l":151.53,"w":60,"seg":[20.730539,-215.23761,-130.7883,-213.424026]}`; !strings.Contains(string(raw), want) {
+		t.Fatalf("track JSON lacks %s: %s", want, raw)
+	}
+	// The frames are copies, the segment slice too.
+	frames[0].Mobs[0].Shape.Segment[0] = 0
+	again, _ := s.Track("c", 100, 100)
+	if got := again[0].Mobs[0].Shape.Segment[0]; got != 20.730539 {
+		t.Fatalf("a frame's lane segment must be a copy, got %v", got)
+	}
+}
