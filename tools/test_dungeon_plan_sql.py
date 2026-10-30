@@ -642,28 +642,16 @@ class DungeonPlanSql(unittest.TestCase):
                     if r["plan"] != plan or r["kind"] not in UNIT_KINDS:
                         continue
                     listed = set(e for e in r["entries"].split(",") if e.strip()) if r["entries"] else set()
-                    allowed = set()
-                    if r["kind"] == "boss" and r["entry"] != "0":
-                        listed.add(r["entry"])
-                        before = [p for p in rows if p["plan"] == plan and p["leg"] == r["leg"] and p["seq"] == str(int(r["seq"]) - 1)]
-                        if before and before[0]["kind"] == "gossip" and before[0]["entry"] == r["entry"]:
-                            allowed.add(r["entry"])
-                    hit = (listed & event_entries) - allowed
                     # A boss row may name the entry of the gossip step right before it in its leg: that gossip is its
                     # start (Moroes, Solnius), not a unit anybody pulls.
-                    allowed = set()
+                    if r["kind"] == "boss" and r["entry"] != "0":
+                        listed.add(r["entry"])
+                    gossip_start = set()
                     if r["kind"] == "boss":
                         prev = by_step.get((r["leg"], str(int(r["seq"]) - 1)))
                         if prev is not None and prev["kind"] == "gossip" and prev["entry"] != "0":
-                            allowed.add(prev["entry"])
-                    hit = listed & (event_entries - allowed)
-                    hit = listed & event_entries
-                    # A boss the plan wakes with its own gossip is talked to and then fought: the step before it in the
-                    # same leg is that gossip (lower_karazhan_halls' Moroes 61225, hostile only after menu index 0).
-                    if hit and r["kind"] == "boss":
-                        before = [s for s in leg_steps(rows, int(r["leg"])) if int(s["seq"]) < int(r["seq"])]
-                        if before and before[-1]["kind"] == "gossip" and before[-1]["entry"] in hit:
-                            hit = hit - {before[-1]["entry"]}
+                            gossip_start.add(prev["entry"])
+                    hit = (listed & event_entries) - gossip_start
                     hit -= {e for p, e in allowed if p == plan}
                     self.assertEqual(hit, set(), "%s %s: %s/%s lists its own event unit(s) %s in a %s row" %
                                      (name, plan, r["leg"], r["seq"], sorted(hit), r["kind"]))
