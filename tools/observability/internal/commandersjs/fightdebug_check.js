@@ -427,6 +427,8 @@ assert.strictEqual(idleOf(idleT(15, 30000)), undefined);
 assert.strictEqual(idleOf(idleT(0, 15000)), undefined); // too short to judge
 assert.strictEqual(idleOf(idleT(0, 20000)).lvl, "fail");
 assert.strictEqual(idleOf(idleT(0, 20000)).ev, "T cast 0× in 20 s; top spells: none.");
+assert.strictEqual(idleOf(Object.assign(idleT(2, 30000), { kind: "commander" })), undefined);
+assert.strictEqual(idleOf(Object.assign(idleT(2, 30000), { kind: "move" })).lvl, "fail");
 assert.strictEqual(idleOf(fight({ dur_ms: 30000, bots: [bot({ name: "D", role: "dps", spells: [{ n: "Fireball", c: 1 }] })] })), undefined);
 // A big fight's payload cuts the spell rows to a few (or none); the bot's casts total is what counts.
 const trimmedT = (spells) => fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "tank", taken: 100, casts: 20, spells })] });

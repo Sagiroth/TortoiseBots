@@ -95,7 +95,8 @@
 
     // A tank that barely casts is not holding the pull; the Sunder rate alone cannot say that. casts counts spells only
     // (no melee swings): a working tank casts 0.22-0.47 a second, the idle ones of the 165-fight census 0.16 or less.
-    if (mt && durMs >= LIMITS.idleMinMs) {
+    // A commander fight is one the operator drives by hand (bots may be held on purpose).
+    if (mt && durMs >= LIMITS.idleMinMs && String(fight.kind || "") !== "commander") {
       // casts is the bot's whole count; spells may be cut to a few rows (or none) to fit a big fight's payload.
       const spells = (mt.spells || []).filter((x) => x && (num(x.c) || 0) > 0);
       const casts = num(mt.casts) !== null ? num(mt.casts) : spells.reduce((s, x) => s + (num(x.c) || 0), 0);
