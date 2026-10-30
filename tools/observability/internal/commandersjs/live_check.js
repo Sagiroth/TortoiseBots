@@ -176,4 +176,28 @@ assert.strictEqual(L.fallback([], now), false);
   assert.ok(worst >= L.GLIDE_BUDGET, "and the budget is used: " + worst);
 }
 
+// ---- walk 2's 14.8 s freeze: a visible focused map that the observer marks hidden during a layout shift (a fight
+// opens the live-events strip, the card grows, the stage scrolls out) redraws once, with everything, as soon as it
+// is back in view — a full draw, never throttled by the glide budget, and never lost.
+{
+  const frames = [];
+  const raf = (fn) => { frames.push(fn); return frames.length; };
+  let t = 0;
+  const drawn = [];
+  const sched = L.scheduler(raf, () => t, (k) => drawn.push([t, k]));
+  sched.focus("lead");
+  t = 1000; sched.mark("lead", true); frames.shift()();
+  assert.deepStrictEqual(drawn, [[1000, "lead"]], "the focused map glides");
+  // the layout shifts mid-fight: the observer calls the map off screen while reports keep marking it
+  t = 1016; sched.visible("lead", false);
+  for (let i = 1; i <= 10; i++) { t = 1016 + i * 16; sched.mark("lead", true); frames.shift()(); }
+  assert.deepStrictEqual(drawn, [[1000, "lead"]], "off screen: no glide redraw, and nothing is lost");
+  // back in view: one full draw at once, then the glide resumes at the screen's rate
+  t = 1200; sched.visible("lead", true); frames.shift()();
+  assert.deepStrictEqual(drawn, [[1000, "lead"], [1200, "lead"]], "back in view draws once at once");
+  t = 1216; sched.mark("lead", true); frames.shift()();
+  assert.deepStrictEqual(drawn, [[1000, "lead"], [1200, "lead"], [1216, "lead"]], "and glides on the next frame");
+  assert.strictEqual(sched.shown("lead"), true);
+}
+
 console.log("live_check.js ok");
