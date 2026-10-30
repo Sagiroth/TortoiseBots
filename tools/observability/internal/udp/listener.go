@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 	"tortoise-observability/internal/combat"
 	"tortoise-observability/internal/history"
@@ -45,6 +46,14 @@ type Listener struct {
 	stopChan   chan struct{}
 	stopOnce   sync.Once
 	wg         sync.WaitGroup
+
+	// A turtle-agent dashboard-replay marks every datagram it sends with
+	// "replay":true, and rewrites its session ahead of the live module's, so a
+	// recording that reached a production daemon would shadow the real roster
+	// until the module restarts. Off unless the operator asked for replays.
+	acceptReplay  atomic.Bool
+	replayDropped atomic.Int64
+	replayLogAt   atomic.Int64 // unix nanoseconds of the last drop log line
 }
 
 // SetCombatStore wires the fight store the COMBAT_FIGHT case files into.
@@ -61,6 +70,10 @@ type HistorySink interface {
 
 // SetHistory wires the fight history. It is set before Start, like the combat store.
 func (l *Listener) SetHistory(h HistorySink) { l.history = h }
+
+// SetAcceptReplay lets replayed datagrams into the store (the dashboard's
+// -accept-replay flag); call it before Start.
+func (l *Listener) SetAcceptReplay(on bool) { l.acceptReplay.Store(on) }
 
 func NewListener(host string, port int, store *state.Store, mr *metrics.Registry, zp *zoneproject.Engine, hub Hub) *Listener {
 	return &Listener{
@@ -191,10 +204,22 @@ func (l *Listener) publishSnapshot() {
 
 func (l *Listener) processPacket(data []byte) {
 	var header struct {
-		V    int    `json:"v"`
-		Type string `json:"type"`
+		V      int    `json:"v"`
+		Type   string `json:"type"`
+		Replay bool   `json:"replay"`
 	}
 	if err := json.Unmarshal(data, &header); err != nil {
+		return
+	}
+
+	if header.Replay && !l.acceptReplay.Load() {
+		l.replayDropped.Add(1)
+		l.metricsReg.RecordUDPDropped("replay")
+		// A looping replay would otherwise write one line per datagram.
+		now := time.Now().UnixNano()
+		if last := l.replayLogAt.Load(); now-last >= int64(60*time.Second) && l.replayLogAt.CompareAndSwap(last, now) {
+			log.Printf("[UDP] dropped replayed datagram (start with -accept-replay to take them)")
+		}
 		return
 	}
 

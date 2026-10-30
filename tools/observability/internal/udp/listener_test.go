@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"tortoise-observability/internal/combat"
 	"tortoise-observability/internal/live"
 	zoneproject "tortoise-observability/internal/map"
@@ -373,5 +375,75 @@ func TestCommandersPartsOneBroadcast(t *testing.T) {
 	v := store.Commanders()
 	if len(v.Commanders) != 2 || v.Commanders[0].Commander != "A" || v.Commanders[1].Commander != "B" {
 		t.Fatalf("assembled view: %+v", v.Commanders)
+	}
+}
+
+// A replay (turtle-agent dashboard-replay marks every datagram it sends with
+// "replay":true) must not mix into a dashboard's state unless the operator
+// asked for replays: a recording's session is newer than a live module's, so a
+// stray replay would shadow the real roster until the module restarts.
+// udpDroppedCount reads tortoisebots_udp_dropped_total{reason} off the process-wide registry.
+func udpDroppedCount(t *testing.T, reason string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	for _, fam := range families {
+		if fam.GetName() != "tortoisebots_udp_dropped_total" {
+			continue
+		}
+		for _, m := range fam.GetMetric() {
+			for _, lp := range m.GetLabel() {
+				if lp.GetName() == "reason" && lp.GetValue() == reason {
+					return m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func TestReplayDatagramsNeedAcceptReplay(t *testing.T) {
+	l, store, hub := newTestListener()
+	metricBefore := udpDroppedCount(t, "replay")
+	replayed := strings.Replace(commandersDatagram, `{"v":9,`, `{"v":9,"replay":true,`, 1)
+
+	l.processPacket([]byte(replayed))
+	if v := store.Commanders(); v.UpdatedAt != 0 || len(v.Commanders) != 0 {
+		t.Fatalf("a replayed datagram reached the store without -accept-replay: %+v", v)
+	}
+	if len(hub.events) != 0 {
+		t.Fatalf("a dropped replay reached the stream: %v", hub.events)
+	}
+	if got := l.replayDropped.Load(); got != 1 {
+		t.Fatalf("dropped replays = %d, want 1", got)
+	}
+	if got := udpDroppedCount(t, "replay"); got != metricBefore+1 {
+		t.Fatalf("tortoisebots_udp_dropped_total{reason=replay} = %v, want %v", got, metricBefore+1)
+	}
+
+	l.SetAcceptReplay(true)
+	l.processPacket([]byte(replayed))
+	if v := store.Commanders(); !v.Fresh || len(v.Commanders) != 1 {
+		t.Fatalf("with -accept-replay the replay must apply: %+v", v)
+	}
+	if got := l.replayDropped.Load(); got != 1 {
+		t.Fatalf("an accepted datagram counted as dropped: %d", got)
+	}
+}
+
+// "replay" is the only marker: a live module sends no such key, so its
+// datagrams apply whether or not replays are accepted.
+func TestDatagramWithoutReplayKeyAppliesEitherWay(t *testing.T) {
+	l, store, _ := newTestListener()
+	l.processPacket([]byte(commandersDatagram))
+	if v := store.Commanders(); !v.Fresh || len(v.Commanders) != 1 {
+		t.Fatalf("default: %+v", v)
+	}
+	l.SetAcceptReplay(true)
+	l.processPacket([]byte(commandersDatagram))
+	if v := store.Commanders(); !v.Fresh || len(v.Commanders) != 1 {
+		t.Fatalf("accept: %+v", v)
 	}
 }

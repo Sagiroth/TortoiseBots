@@ -90,6 +90,7 @@ func main() {
 	udpHost := flag.String("udp-host", getEnv("UDP_HOST", "127.0.0.1"), "UDP telemetry listen address")
 	udpPort := flag.Int("udp-port", getEnvInt("UDP_PORT", 9195), "UDP telemetry listener port")
 	forwardUDP := flag.String("forward-udp", getEnv("FORWARD_UDP", ""), "Comma-separated host:port list; every telemetry datagram is also sent to each (empty = no forwarding)")
+	acceptReplay := flag.Bool("accept-replay", getEnv("TBDASH_ACCEPT_REPLAY", "") == "1", "Accept replayed telemetry (`turtle-agent dashboard-replay` marks it with \"replay\":true); off by default so a recording never shadows a live module (env TBDASH_ACCEPT_REPLAY=1)")
 	dbHost := flag.String("db-host", getEnv("DB_HOST", "127.0.0.1"), "MariaDB / MySQL host")
 	dbPort := flag.Int("db-port", getEnvInt("DB_PORT", 3306), "MariaDB / MySQL port")
 	dbUser := flag.String("db-user", getEnv("DB_USER", "mangos"), "MariaDB / MySQL user")
@@ -392,6 +393,10 @@ func main() {
 	udpListener.SetLiveSink(liveHub)
 	if historyStore != nil {
 		udpListener.SetHistory(historyStore)
+	}
+	udpListener.SetAcceptReplay(*acceptReplay)
+	if *acceptReplay {
+		log.Printf("[UDP] Accepting replayed datagrams (-accept-replay)")
 	}
 	var forwards []string
 	for _, f := range strings.Split(*forwardUDP, ",") {
