@@ -289,11 +289,25 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     record.amount = amount;
     record.hours = hours;
 
+    if (type == OrderType::Craft && !bot)
+    {
+        // No live spellbook offline: a craft order stored now could never be
+        // recipe-checked, and pre-owned stock would flip it to delivering.
+        OrderError(handler, "norecipe", "The bot is offline: its recipes cannot be checked.");
+        return true;
+    }
     if (bot)
     {
         GuildOrders::SourcePlan plan = ai::PlanGuildOrderSources(bot, itemId, type);
         if (plan.verdict != OrderReason::None)
         {
+            if (type == OrderType::Craft && plan.verdict == OrderReason::NoRecipe)
+            {
+                // Refuse at give, like search does: storing Cant would still
+                // ACK the giver and start the reporting round-trip.
+                OrderError(handler, "norecipe", "The bot does not know that recipe.");
+                return true;
+            }
             record.state = GuildOrders::StateForReason(plan.verdict);
             record.reason = plan.verdict;
         }

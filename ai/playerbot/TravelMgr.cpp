@@ -1415,6 +1415,10 @@ namespace
     // bot's level band, so the spot can never come back and the bot must walk on. The
     // band test is the same one the destination filter uses - this only asks whether
     // the level window is the reason (see the other gates in IsPossible).
+    // Order mode farms where the source lives, however low the zone: the order
+    // planner vetted the level itself (SourceLevelFits, mob <= bot + 3), and
+    // expiring an order-mode grind on the leisure band would drop every wool
+    // mob a level-40 bot farms for its order.
     bool GrindSpotOutgrown(TravelDestination* destination, Player* bot)
     {
         GrindTravelDestination* grind = dynamic_cast<GrindTravelDestination*>(destination);
@@ -1423,6 +1427,8 @@ namespace
             return false;
 
         PlayerTravelInfo info(bot);
+        if (info.IsOrderMode())
+            return false;
 
         return !GrindLevelFits(GetGrindLevelBand((uint32)info.GetLevel(), info.GetUint8Value("durability"), info.IsMasterlessRandom()),
             (int32)grind->GetCreatureInfo()->level_max);
@@ -1568,7 +1574,12 @@ void TravelTarget::CheckStatus()
                 ai::TravelCooldownParksPurpose(sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster(),
                 GetStatus() == TravelStatus::TRAVEL_STATUS_TRAVEL))
             {
-                std::string const parkKey = std::to_string(static_cast<uint32>(tDestination->GetPurpose()));
+                bool orderTarget = false;
+                for (std::string const& condition : travelConditions)
+                    if (condition == "has guild travel order" || condition == "has guild order delivery")
+                        orderTarget = true;
+                std::string const parkKey = ai::TravelCooldownParkKey(orderTarget,
+                    static_cast<uint32>(tDestination->GetPurpose()));
                 context->GetValue<bool>("no active travel destinations", parkKey)->Set(true);
                 context->GetValue<time_t>("manual time", "no travel purpose until::" + parkKey)->Set(time(0) + ai::TRAVEL_COOLDOWN_PARK_SECONDS);
             }

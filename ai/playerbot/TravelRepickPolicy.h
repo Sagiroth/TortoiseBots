@@ -234,6 +234,15 @@ namespace ai
         return masterlessRandom && wasTraveling;
     }
 
+    // Park key for a never-arrived cooldown: the request gate reads the order
+    // leg back under "guild order", not the numeric grind id, so an order
+    // target parks its purpose key - otherwise the cooldown never holds the
+    // order leg back and it re-picks the same dead zone at once.
+    inline std::string TravelCooldownParkKey(bool orderTarget, uint32_t purposeId)
+    {
+        return orderTarget ? "guild order" : std::to_string(purposeId);
+    }
+
 
 
     // May a stuck reset keep its travel target - the same keep rule the
