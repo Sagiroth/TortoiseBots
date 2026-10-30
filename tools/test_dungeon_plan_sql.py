@@ -267,6 +267,16 @@ BOSS_PLANS["lower_karazhan_halls"] = 532
 SEEDED_BOSSES.update({(532, 61221): "Brood Queen Araxxna", (532, 61222): "Lord Blackwald II",
                       (532, 61223): "Clawlord Howlfang", (532, 61224): "Grizikil", (532, 61225): "Moroes"})
 NOT_BOSSES.update({61204, 61203, 30008})
+# Molten Core (20261028150000, task B1): the first raid plan's boss rows, map 409. The 13 boss steps and their names from the
+# world DB templates (rank 3, level 63): the seven classic fights of the draft, the two Turtle golems as one step (65020 with
+# 65021 first), Thaurissan, Incindis, and the two summoned bosses 12018 and 11502 (no spawn row).
+BOSS_PLANS["molten_core"] = 409
+SEEDED_BOSSES.update({(409, 12118): "Lucifron", (409, 11982): "Magmadar", (409, 12259): "Gehennas",
+                      (409, 12057): "Garr", (409, 12264): "Shazzrah", (409, 12056): "Baron Geddon",
+                      (409, 12098): "Sulfuron Harbinger", (409, 11988): "Golemagg the Incinerator",
+                      (409, 65020): "Basalthar", (409, 65021): "Smoldaris",
+                      (409, 57642): "Sorcerer-Thane Thaurissan", (409, 52145): "Incindis",
+                      (409, 12018): "Majordomo Executus", (409, 11502): "Ragnaros"})
 
 def migrations():
     for path in sorted(glob.glob(os.path.join(ROOT, "data/sql/world/*_world.sql"))):
@@ -571,6 +581,10 @@ class DungeonPlanSql(unittest.TestCase):
         # not fixed here.
         EVENT_KINDS = {"gossip", "open"}
         UNIT_KINDS = ("pull", "boss")
+        # molten_core: 12018 is two units, one entry. The boss row of leg 10 is the hostile Majordomo Executus the seventh rune
+        # summons; the three gossip rows of leg 11 talk to his friendly clone in Ragnaros' chamber (DomoTP), a different spawn.
+        # The pin exists to stop a run from pulling the unit it must talk to; here it is not that unit.
+        allowed = {("molten_core", "12018")}
         for name, text in migrations():
             rows = list(self.step_rows(text))
             plans = sorted({r["plan"] for r in rows})
@@ -605,11 +619,13 @@ class DungeonPlanSql(unittest.TestCase):
                         before = [s for s in leg_steps(rows, int(r["leg"])) if int(s["seq"]) < int(r["seq"])]
                         if before and before[-1]["kind"] == "gossip" and before[-1]["entry"] in hit:
                             hit = hit - {before[-1]["entry"]}
+                    hit -= {e for p, e in allowed if p == plan}
                     self.assertEqual(hit, set(), "%s %s: %s/%s lists its own event unit(s) %s in a %s row" %
                                      (name, plan, r["leg"], r["seq"], sorted(hit), r["kind"]))
                 for m in re.finditer(r"^\('%s', \d+, '([^']*)', '([^']*)', '([^']*)'," % plan, text, re.M):
                     for listed, what in ((m.group(1), "cc_priority"), (m.group(2), "cc_always"), (m.group(3), "kill_first")):
                         hit = set(e.strip() for e in listed.split(",") if e.strip()) & event_entries
+                        hit -= {e for p, e in allowed if p == plan}
                         self.assertEqual(hit, set(), "%s %s: the plan row lists its own event unit(s) %s in %s" %
                                          (name, plan, sorted(hit), what))
         # shadowfang_keep pinned: the gossip names 3849 and no pull/boss row (or plan list) lists it (or 3850).
@@ -4962,6 +4978,40 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (531) AND `entry` IN (15263, 15544, 15511, 15543, 15516, 15510, 15299, 15509, 15275, 15276, 15727, 15517);", text)
         self.assertIn("(531, 15543, 'interrupt', 0, 25807, 0, 0,", text)
         self.assertIn("(531, 15299, 'kill_first', 15667, 0, 1, 0,", text)
+    def test_molten_core_is_the_raid_prep(self):
+        # 20261028150000 (turtle-agent 78b80b4, task B1): the first raid plan, map 409, 13 legs, 684 steps
+        # (563 move, 98 pull, 13 boss, 7 rune open, 3 gossip), bosses in route order, 98 pulls (16 + 2 + 25 + 9 + 2 + 8 + 9 +
+        # 6 + 2 + 4 + 3 + 0 + 12). The boss adds are the boss rows' entries, the seven runes are open rows after their
+        # bosses (Zeth, Geddon's 176952, stands in Golemagg's room and is doused there), and the three gossip rows on the
+        # friendly Domo summon Ragnaros. The Scorpid 62750 is in no pull; every radius is <= 35 yd. Thaurissan's leg is last
+        # with its boss named as the blocker: no mesh path reaches it.
+        name, text = newest_plan_text("molten_core")
+        self.assertEqual(name, "20261028150000_world.sql")
+        self.assertIn("('molten_core', 409, '', '', '', 'turtle-agent 78b80b4 dungeons/molten_core.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        rows = [r for r in self.step_rows(text) if r["plan"] == "molten_core"]
+        self.assertEqual(len(leg_rows(text, "molten_core")), 13)
+        self.assertEqual(len(rows), 684)
+        self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(13)],
+                         [16, 2, 25, 9, 2, 8, 9, 6, 2, 4, 3, 0, 12])
+        self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
+                         ["12118", "11982", "12259", "12057", "12264", "12056", "12098", "11988", "65020", "52145",
+                          "12018", "11502", "57642"])
+        self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss", "open", "gossip"})
+        # The runes: one open row per rune, after its boss (Geddon's Zeth in the Golemagg leg).
+        self.assertEqual([(r["leg"], r["entry"]) for r in rows if r["kind"] == "open"],
+                         [("1", "176956"), ("2", "176957"), ("3", "176955"), ("4", "176953"), ("6", "176951"),
+                          ("7", "176954"), ("7", "176952")])
+        # The Domo dialogue: three gossip rows, menu index 0, option 1, on 12018.
+        self.assertEqual([(r["leg"], r["seq"], r["entry"], r["param"]) for r in rows if r["kind"] == "gossip"],
+                         [("11", "100", "12018", "1"), ("11", "101", "12018", "1"), ("11", "102", "12018", "1")])
+        # Boss adds: Lucifron's Protectors, Gehennas' two Flamewakers, Garr's Firesworn, Sulfuron's Priests; the twin step.
+        self.assertEqual([r["entries"] for r in rows if r["kind"] == "boss" and r["entries"]],
+                         ["12119", "11661", "12099", "11662", "65021"])
+        pulls = [r for r in rows if r["kind"] == "pull"]
+        self.assertFalse([r for r in pulls if "62750" in r["entries"].split(",")])
+        self.assertTrue(all(float(r["radius"]) <= 35 for r in pulls))
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["molten_core"])
+        self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (409) AND `entry` IN (", text)
 
 if __name__ == "__main__":
     unittest.main()
