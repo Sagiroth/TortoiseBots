@@ -665,8 +665,12 @@ bool FishAction::Execute(Event& event)
         SET_AI_VALUE2(int, "manual int", "fish session casts", castsNow);
         // Budget spent (5 casts or 5 min): the session ends now and the pole
         // comes off at once - no waiting for the next tick's audit.
+        // Only a started open-water session has a budget: travel and order
+        // fishing never start one, and an unstarted session reads as expired,
+        // which pulled the pole off right after every cast.
         uint32 const sessionStart = uint32(AI_VALUE2(int, "manual int", "fish session start"));
-        if (ai::FishingSessionExpired(sessionStart, castsNow, WorldTimer::getMSTime()))
+        if (sessionStart != 0 && !ai::IsOrderFishing(ai) &&
+            ai::FishingSessionExpired(sessionStart, castsNow, WorldTimer::getMSTime()))
         {
             EndFishingSession(ai, "budget spent");
             if (ai->CanDoSpecificAction("equip upgrades"))
