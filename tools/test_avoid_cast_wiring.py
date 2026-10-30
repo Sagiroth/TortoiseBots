@@ -115,11 +115,11 @@ class AvoidCastIsLogged(unittest.TestCase):
         self.assertIn("LogAvoidCast(ai, bot, caster,", fn)
         # The distance before the move is read before the own cast is stopped and before MoveTo.
         self.assertLess(fn.index("distBefore ="), fn.index("CastStop()"))
-        self.assertLess(fn.index("CastStop()"), fn.index("MoveTo("))
-        # The own cast is stopped only for a point that passed the blast and sight checks: a bot with no way out
-        # keeps its cast (Codex adversarial review).
-        self.assertLess(fn.index("InsideCastDanger(fight, points[i]"), fn.index("CastStop()"))
-        self.assertLess(fn.index("IsWithinLOS("), fn.index("CastStop()"))
+        # The own cast is stopped only once MoveTo took a point that passed the blast and sight checks: a bot with no
+        # way out keeps its cast (Codex adversarial review).
+        self.assertLess(fn.index("InsideCastDanger(fight, points[i]"), fn.index("MoveTo("))
+        self.assertLess(fn.index("IsWithinLOS("), fn.index("MoveTo("))
+        self.assertLess(fn.index("MoveTo("), fn.index("CastStop()"))
         # Every outcome logs, the walk that found no way out too.
         self.assertLess(fn.index("MoveTo("), fn.index("LogAvoidCast("))
 

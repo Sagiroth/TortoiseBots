@@ -326,16 +326,19 @@ bool BossTacticsAvoidCastAction::Execute(Event& event)
             continue;
         if (!bot->IsWithinLOS(points[i].x, points[i].y, z + bot->GetCollisionHeight()))
             continue;
-        // A cast of the bot's own would hold it in the blast; it is stopped only once a usable way out is found, so a
-        // bot with none keeps its heal or bolt (Codex adversarial review).
-        if (!stopped && bot->IsNonMeleeSpellCasted(true))
-        {
-            bot->CastStop();
-            stopped = true;
-        }
+        // A cast of the bot's own would hold it in the blast. MoveTo breaks a running cast itself once it commits to
+        // the walk (MoveTo2); what is left (a wand's auto-repeat) is stopped only after the walk started, so a bot with
+        // no way out keeps its heal or bolt (Codex adversarial review).
+        bool const casting = bot->IsNonMeleeSpellCasted(true);
         if (MoveTo(bot->GetMapId(), points[i].x, points[i].y, z, false, false, false, true))
         {
             moved = true;
+            if (casting)
+            {
+                if (bot->IsNonMeleeSpellCasted(true))
+                    bot->CastStop();
+                stopped = true;
+            }
             if (logIt)
                 destDistance = CenterDistance(caster, points[i].x, points[i].y, z);
         }
