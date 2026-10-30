@@ -104,6 +104,9 @@ public:
         TB_LOG_BASIC("TortoiseBots: loaded %zu guild order(s) from database.", m_orders.size());
     }
 
+    // The pool reads the store before the startup sequence may have loaded
+    // it; an unloaded store reports empty instead of the table rows.
+    bool IsAvailable() { return m_initialized; }
     std::optional<OrderRecord> Find(uint32_t botGuidLow)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -605,6 +608,11 @@ void SendOrderLine(OrderRecord const& order, uint32_t have)
 }
 
 } // namespace
+
+bool IsAvailable()
+{
+    return OrderStore::Instance().IsAvailable();
+}
 
 std::optional<OrderRecord> Find(uint32_t botGuidLow)
 {
