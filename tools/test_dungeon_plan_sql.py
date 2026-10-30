@@ -2942,6 +2942,16 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual(leg6[g12 + 1]["z"], "-92.52249")
 
     def test_dragonmaw_retreat_is_the_plan_with_the_census_fixes(self):
+        # 20261030230000 (turtle-agent prep/dragonmaw_retreat, after the fix-9 live run on tortoise-test2, 2026-10-30): the lead shot
+        # the 62039/62040/62041 pack at -5996 -4275 from its stand -6011.4 -4295.1 (28+ yd off the patrol, as planned), but the
+        # pack's casters held their ground, the tank closed on them and the party spread round it (the hunter 21.5 yd from the
+        # tank, 16.5 yd from the patrol line), and Searistrasz, walking past 15 yd from that pack, joined with four enchanters
+        # alive (step 307; a 29 min fight). A stand off the patrol is not enough: the fight happens at the pack. So no pack within
+        # 38 yd of the patrol (his ~18 yd reach on a level-34 bot plus ~20 yd of party spread) is pulled before him, except the two
+        # at the hall's mouth that no way in can pass (the 62041 at -5972.4 -4385.9, 28 yd; the 62036/62051/62040/62041 at
+        # -5997.5 -4365.7, 16 yd: pulled first, from stands south of them). The other five near the line and the alcove are a leg
+        # of their own after the boss (searistrasz_line); the boss row stands on his patrol at -5980.45 -4314.5, the point of it
+        # farthest from those packs (28-30 yd), and the party comes to it from the west (stands -6061.1 -4242.8, -6039.8 -4350.6).
         # 20261030200000 (2026-10-30, after the fix-8 live run on tortoise-test2: the pocket passed, but Searistrasz aggroed on the
         # walk at step 260 and took 24 min with all six Dragonmaw Enchanters alive): 20261025002000's rows with leg 3 walked round
         # the boss's patrol. Searistrasz (62072, guid 2584790) walks 42 waypoints up and down x -5980.2..-5981.7, y -4191.5..
@@ -3023,18 +3033,18 @@ class DungeonPlanSql(unittest.TestCase):
         # The rows are plan-export's (--approach-hops, --mmaps) of the plan file with leg 3 in this order and the alcove leg; the
         # patrol check below fails an export that brings the walk back.
         name, text = newest_plan_text("dragonmaw_retreat")
-        self.assertEqual(name, "20261030200000_world.sql")
-        self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent 7ffc3ed7 dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual(name, "20261030230000_world.sql")
+        self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent f2e92bf0 dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');", text)
         legs = leg_rows(text, "dragonmaw_retreat")
         self.assertEqual(sorted(legs), list(range(11)))
         self.assertEqual([legs[i][0] for i in range(11)],
-                         ["bogpaw_truthsay", "gowlfang", "hall_clear", "searistrasz", "searistrasz_alcove", "halgan_approach", "halgan_redbrand",
+                         ["bogpaw_truthsay", "gowlfang", "hall_clear", "searistrasz", "searistrasz_line", "halgan_approach", "halgan_redbrand",
                           "zuluhed_approach", "zuluhed_mid", "zuluhed_floor", "zuluhed_the_whacked"])
         self.assertIn("leave (not read by the run leader yet): 62046 at -6190.56 -3919.91", legs[8][1])
         rows = [r for r in self.step_rows(text) if r["plan"] == "dragonmaw_retreat"]
-        self.assertEqual(len(rows), 863)
+        self.assertEqual(len(rows), 875)
         self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(11)],
-                         [28, 6, 12, 57, 3, 23, 17, 25, 10, 22, 3])
+                         [28, 6, 12, 53, 7, 23, 17, 25, 10, 22, 3])
         self.assertEqual([(int(r["leg"]), int(r["entry"])) for r in rows if r["kind"] == "boss"],
                          [(0, 62056), (1, 62057), (3, 62072), (6, 62069), (10, 62037)])
         # The landing of leg 2 is the one straight walk of the plan (the run leader has no GM move, and no gm_cross is left in
@@ -3179,12 +3189,12 @@ class DungeonPlanSql(unittest.TestCase):
                                                            ("-6003.2", "-4212.2666", "322.189"))],
                          "an exporter cut row of the pocket walk is back")
         for pack, group, chain in (
-                (("-6028.72", "-4176.9", "322.69"), "32", [("-6046.7", "-4190.9", "322.2")]),
-                (("-6050.79", "-4199.42", "322.1"), "30", [("-6073.8", "-4208.4", "322.2")]),
-                (("-6072.09", "-4224.85", "322.13"), "29", [("-6061.1", "-4242.8", "322.2")]),
-                (("-6028.71", "-4254.44", "322.69"), "28", [("-6022.7", "-4276.4", "322.2")]),
-                (("-6040.23", "-4274.5", "322.1"), "27", [("-6019.2", "-4287.5", "322.2")]),
-                (("-6021.87", "-4217.88", "323.96"), "33", [("-6027.9", "-4195.9", "322.2")])):
+                (("-6028.72", "-4176.9", "322.69"), "51", [("-6046.7", "-4190.9", "322.2")]),
+                (("-6050.79", "-4199.42", "322.1"), "49", [("-6073.8", "-4208.4", "322.2")]),
+                (("-6072.09", "-4224.85", "322.13"), "48", [("-6061.1", "-4242.8", "322.2")]),
+                (("-6028.71", "-4254.44", "322.69"), "47", [("-6034.7", "-4276.4", "322.2")]),
+                (("-6040.23", "-4274.5", "322.1"), "46", [("-6037.2", "-4298.5", "322.2")]),
+                (("-6021.87", "-4217.88", "323.96"), "52", [("-6027.9", "-4195.9", "322.2")])):
             i = next(j for j, r in enumerate(sear) if r["kind"] == "pull" and (r["x"], r["y"], r["z"]) == pack)
             self.assertEqual([(r["x"], r["y"], r["z"], r["comment"]) for r in sear[i - len(chain):i]],
                              [(x, y, z, "pull group %s approach" % group) for x, y, z in chain],
@@ -3203,23 +3213,34 @@ class DungeonPlanSql(unittest.TestCase):
             t = max(0.0, min(1.0, ((x - pa[0]) * (pb[0] - pa[0]) + (y - pa[1]) * (pb[1] - pa[1])) /
                              ((pb[0] - pa[0]) ** 2 + (pb[1] - pa[1]) ** 2)))
             return _math.hypot(x - pa[0] - t * (pb[0] - pa[0]), y - pa[1] - t * (pb[1] - pa[1]))
-        self.assertEqual((sear[-1]["kind"], sear[-1]["entry"]), ("boss", "62072"))
-        near = [(r["x"], r["y"], round(patrol_yd(r), 1)) for r in sear[:-1] if r["kind"] == "move" and patrol_yd(r) < 28.0]
+        self.assertEqual((sear[-1]["kind"], sear[-1]["entry"], sear[-1]["x"], sear[-1]["y"]), ("boss", "62072", "-5980.45", "-4314.5"))
+        self.assertEqual([(r["x"], r["y"]) for r in sear if r["comment"] == "boss approach"], [("-6061.1", "-4242.8"), ("-6039.8", "-4350.6")])
+        # The fix-9 failure: every pull before the boss has its pack 38+ yd off the patrol (the fight is where the pack is),
+        # but the two at the hall's mouth, which come first. The pull row's point is the pack's.
+        mouth = {("-5972.43", "-4385.9"), ("-5997.54", "-4365.7")}
+        boss_i = len(sear) - 1
+        pulls = [r for r in sear[:boss_i] if r["kind"] == "pull"]
+        close = [(r["x"], r["y"], round(patrol_yd(r), 1)) for r in pulls if patrol_yd(r) < 38.0 and (r["x"], r["y"]) not in mouth]
+        self.assertFalse(close, "a pack this near Searistrasz's patrol is pulled before him: %s" % (close,))
+        self.assertEqual({(r["x"], r["y"]) for r in pulls[:30] if (r["x"], r["y"]) in mouth}, mouth, "the mouth packs are not pulled early")
+        self.assertEqual([(r["x"], r["y"]) for r in pulls if (r["x"], r["y"]) in mouth],
+                         [("-5972.43", "-4385.9"), ("-5997.54", "-4365.7")])
+        last_pull = max(i for i, r in enumerate(sear) if r["kind"] == "pull")
+        # (the walk to the boss after the last pull goes to his patrol on purpose)
+        near = [(r["x"], r["y"], round(patrol_yd(r), 1)) for r in sear[:last_pull] if r["kind"] == "move" and patrol_yd(r) < 28.0]
         self.assertFalse(near, "leg 3 stands on Searistrasz's patrol before his boss row: %s" % (near,))
         self.assertEqual(len([r for r in sear if r["kind"] == "pull" and r["entries"] == "62453"]), 6)
-        alcove = leg_steps(rows, 4)
-        self.assertFalse([r for r in alcove if "62453" in r["entries"].split(",")])
-        self.assertEqual([(r["kind"], r["x"], r["y"], r["z"], r["comment"]) for r in alcove], [
-            ("move", "-5994", "-4196", "322.2", "to"),
-            ("pull", "-5981.44", "-4179.05", "322.1", "pull group 0"),
-            ("move", "-5986.9", "-4178.1", "322.2", "pull group 1 approach"),
-            ("move", "-5986.9", "-4160", "322.2", "pull group 1 approach"),
-            ("pull", "-5980.78", "-4140.34", "322.1", "pull group 1"),
-            ("move", "-5989.4", "-4145.1", "322.2", "pull group 2 approach"),
-            ("pull", "-6011.39", "-4140.09", "322.1", "pull group 2")])
+        line = leg_steps(rows, 4)
+        self.assertFalse([r for r in line if "62453" in r["entries"].split(",")])
+        self.assertEqual([(r["x"], r["y"], r["comment"]) for r in line if r["kind"] == "pull"], [
+            ("-5964.55", "-4341.05", "pull group 0"), ("-5965.53", "-4289.1", "pull group 1"), ("-5996.41", "-4275.07", "pull group 2"),
+            ("-5965.36", "-4234.25", "pull group 3"), ("-5981.44", "-4179.05", "pull group 4"), ("-5980.78", "-4140.34", "pull group 5"),
+            ("-6011.39", "-4140.09", "pull group 6")])
+        self.assertTrue(all(patrol_yd(r) < 38.0 or float(r["y"]) > -4191.5 for r in line if r["kind"] == "pull"))
         self.assertFalse([r for r in sear if (r["x"], r["y"]) in (("-5981.44", "-4179.05"), ("-5980.78", "-4140.34"),
                                                                   ("-6011.39", "-4140.09"), ("-5978.82", "-4137.36"))],
                          "an alcove pack or the old `to` on the far side of the patrol is back in leg 3")
+        self.assertFalse([r for r in sear if r["kind"] == "pull" and (r["x"], r["y"]) in (("-5964.55", "-4341.05"), ("-5965.53", "-4289.1"), ("-5996.41", "-4275.07"), ("-5965.36", "-4234.25"))], "a pack by the patrol line is pulled in leg 3 again")
         self.assertFalse([r for r in halgan if r["kind"] == "pull" and abs(float(r["x"]) + 6360.97) < 0.01],
                          "the 62035 that stands in the lava sheet is still a pull")
         self.assertFalse([r for r in halgan if r["kind"] == "pull" and abs(float(r["x"]) + 6357.21) < 0.01
