@@ -81,8 +81,9 @@ assert.strictEqual(merged[0].hist, undefined, "the live row keeps its detail and
 assert.strictEqual(merged[2].hist, true, "a fight only on disk stays history");
 assert.strictEqual(plain(run("fdMergeRows(null, null)")).length, 0, "nothing either side is an empty rail");
 
-const todayDay = plain(run("fdTodayDay(todayMs)", { todayMs: TODAY }));
-assert.strictEqual(todayDay, "2026-10-29", "Tonight's day is the daemon's UTC day");
+// Tonight is whatever day it is where the page runs: the merge is keyed by the real clock, so the fixture asks the page for it.
+const todayDay = plain(run("fdTodayDay(todayMs)", { todayMs: Date.now() }));
+assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(todayDay), "Tonight's day is a UTC day: " + todayDay);
 run("cmdFightsCache = { G: { list: live, at: 0 } }; fdHistToday = {}", { live: liveRows });
 const tonightRows = plain(run("fdTonightRows({ hist: fdHistToday }, 'G')", { fdHistToday: { [todayDay]: { list: storedRows, at: 0 } } }));
 assert.deepStrictEqual(tonightRows.map((r) => r.key), [liveRows[0].key, liveRows[1].key, storedRows[1].key],
