@@ -517,6 +517,10 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
     ai::TravelPickOutcome const pickOutcome =
         SetBestTargetSliced(requester, &newTarget, scanList, true, scan, pickBudgetUs, visitStart);
+    if (IsGuildOrderTravelName(futureTravelPurpose))
+        sLog.outBasic("[ORDERDIAG] %s pick '%s' outcome=%u ranges=%u cond=%s", bot->GetName(), futureTravelPurpose.c_str(),
+            uint32(pickOutcome), uint32(scanList.size()),
+            AI_VALUE2(std::string, "manual string", "future travel condition").c_str());
 
     if (pickOutcome == ai::TravelPickOutcome::Yielded)
     {
@@ -653,6 +657,9 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         //gather, trainer and camp searches park silently every minute.
         LogTravelSearchEmpty(ai, bot, purposeKey,
             scanList.empty() ? "empty" : "rejected[" + lastRejectReasons + "]", scanList.size());
+        if (IsGuildOrderTravelName(purposeKey))
+            sLog.outBasic("[ORDERDIAG] %s notfound '%s' rejects=[%s] blocker=%s", bot->GetName(), purposeKey.c_str(),
+                lastRejectReasons.c_str(), "-");
 
         WanderOnEmptyPick(ai, bot);
 
@@ -1571,6 +1578,8 @@ ai::TravelPickOutcome ChooseTravelTargetAction::SetBestTargetSliced(Player* requ
                             out << bot->GetName() << "," << bot->GetLevel() << "," << destination->GetTitle() << "," << blocker;
                             sPlayerbotAIConfig.log("travel_route_gate.csv", out.str().c_str());
                         }
+                        if (sRandomBotFacade.IsFreeBot(bot) && TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
+                            sLog.outBasic("[ORDERDIAG] %s route reject %s: %s", bot->GetName(), destination->GetTitle().c_str(), blocker.c_str());
                         ++rejects["route"];
                         if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
                         continue;
