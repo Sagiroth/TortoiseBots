@@ -3329,14 +3329,14 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 /* One group spans the row and lays its own tiles out; a raid's five bots fill five columns instead of one. */
 .fd-grp { grid-column: 1 / -1; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 8px; align-content: start; }
 .fd-gl { grid-column: 1 / -1; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
-.fd-tile { position: relative; height: 34px; width: 100%; min-width: 0; padding: 0 7px; overflow: hidden; text-align: left; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.76rem; cursor: pointer; }
+.fd-tile { position: relative; display: flex; flex-direction: column; justify-content: flex-start; height: 46px; width: 100%; min-width: 0; padding: 0 7px; overflow: hidden; text-align: left; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.76rem; cursor: pointer; }
 .fd-tile:hover { border-color: var(--border-strong); }
 .fd-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: color-mix(in srgb, var(--role-other) 35%, transparent); pointer-events: none; }
 .fd-tile.r-tank .fd-fill { background: color-mix(in srgb, var(--role-tank) 35%, transparent); }
 .fd-tile.r-healer .fd-fill { background: color-mix(in srgb, var(--role-healer) 35%, transparent); }
 .fd-tile.r-dps .fd-fill { background: color-mix(in srgb, var(--role-dps) 35%, transparent); }
 .fd-tile.r-other .fd-fill { background: color-mix(in srgb, var(--role-other) 35%, transparent); }
-.fd-nm { position: relative; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; line-height: 26px; }
+.fd-nm { position: relative; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; line-height: 24px; }
 .fd-tile .fd-pw { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: color-mix(in srgb, var(--text-dim) 35%, transparent); }
 .fd-pw i { display: block; height: 100%; background: var(--text-muted); }
 .fd-pw.p-rage i { background: var(--accent-red); }
@@ -3527,10 +3527,10 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-bosscast.bc-7 { background: var(--grp-7); }
 .fd-likely { margin-left: 4px; padding: 0 5px; border: 1px dashed var(--accent-yellow); border-radius: 999px; color: var(--accent-yellow); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; }
 
-/* Raid frames: up to four boss-debuff chips, the dispel colour as the tile's thin border and a red MC tag. */
-.fd-tile.hasdispel, .fd-tile.mc { height: 64px; }
-.fd-tile.hasdispel .fd-nm, .fd-tile.mc .fd-nm { line-height: 18px; }
-.fd-tile .fd-dbs { position: absolute; left: 3px; right: 3px; bottom: 5px; display: flex; flex-wrap: wrap; gap: 2px; max-height: 30px; overflow: hidden; pointer-events: none; }
+/* Raid frames: up to four boss-debuff chips, the dispel colour as the tile's thin border and a red MC tag. Every tile keeps
+   one height and one chip row under the name, so a debuff never resizes the frames or covers the name; the chips that do
+   not fit are named in the tile's aria label. */
+.fd-tile .fd-dbs { position: absolute; left: 3px; right: 3px; bottom: 5px; display: flex; flex-wrap: nowrap; gap: 2px; height: 14px; overflow: hidden; pointer-events: none; }
 .fd-tile .fd-db { max-width: 48%; overflow: hidden; padding: 0 3px; border-radius: 2px; font-size: 0.56rem; line-height: 12px; text-overflow: ellipsis; white-space: nowrap; background: var(--bg-app); }
 .fd-tile .fd-db.dt-magic { color: var(--accent-blue-bright); border: 1px solid color-mix(in srgb, var(--accent-blue-bright) 55%, transparent); }
 .fd-tile .fd-db.dt-curse { color: var(--grp-3); border: 1px solid color-mix(in srgb, var(--grp-3) 55%, transparent); }
