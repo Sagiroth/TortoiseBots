@@ -656,7 +656,10 @@ bool Cancel(uint32_t botGuidLow)
 {
     bool gone = OrderStore::Instance().Cancel(botGuidLow);
     if (gone)
+    {
         OnDeliveryOrderGone(botGuidLow);
+        ExpireGuildOrderTarget(botGuidLow);
+    }
     return gone;
 }
 
