@@ -13819,17 +13819,18 @@ static void TestRaidHeldSummons()
     BeginRegroup(r);
     Facts f = Party(200);
     f.raid.on = true;
+    f.total = f.alive = 40; // lead + 39 bots: the real raid size
     f.members = {Mem("Tanky", 0)};
-    for (int i = 0; i < 12; ++i)
+    for (int i = 0; i < 39; ++i)
     {
         std::string const name = "B" + std::to_string(i);
         r.hold.push_back(name);
         f.members.push_back(Mem(name, 100.0f + i));
     }
-    f.maxMemberYd = 111;
+    f.maxMemberYd = 139;
     std::set<std::string> seen;
     std::string order;
-    for (int i = 0; i < 12; ++i)
+    for (int i = 0; i < 39; ++i)
     {
         order.clear();
         CHECK(SummonHeldToLead(r, f, order));
@@ -13837,7 +13838,7 @@ static void TestRaidHeldSummons()
     }
     order.clear();
     CHECK(!SummonHeldToLead(r, f, order) && order.empty());
-    CHECK(r.hold.size() == 12 && r.heldSummons.size() == 12); // all sent, none there yet
+    CHECK(r.hold.size() == 39 && r.heldSummons.size() == 39); // all sent, none there yet
 }
 
 // The run's own time limit and the stop note: the 3 h cap used to read as a plain stop.
