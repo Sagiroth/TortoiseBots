@@ -70,9 +70,9 @@ assert.deepStrictEqual(chips, [
   "Run 19:29 · step 20/29",
   "Main tank Ragemeister",
   "Off-tanks Brun, Irelanthe",
-  "2 of 5 fights need a look",
+  "1 of 5 fights need a look",
 ], "the header chips: " + head);
-assert.ok(head.includes('<span class="fd-crumb fail">2 of 5 fights need a look</span>'), "a fight needs a look, so the chip is red");
+assert.ok(head.includes('<span class="fd-crumb fail">1 of 5 fights need a look</span>'), "a fight needs a look, so the chip is red");
 const cleanHead = run("fdHeaderHtml(bind, rows, details, layout, '')", { bind: Object.assign({}, BIND, { run: null }), rows: [], details: {}, layout: null });
 assert.ok(cleanHead.includes('<span class="fd-crumb">39 bots · 8 groups</span>'), cleanHead);
 assert.ok(!cleanHead.includes("Main tank") && !cleanHead.includes("fights need a look") && !cleanHead.includes("Run "), "no layout and no fights leave those chips out");

@@ -13,7 +13,7 @@
   const TAUNTS = ["Taunt", "Growl", "Hand of Reckoning", "Mocking Blow", "Challenging Shout", "Challenging Roar"];
   // First guesses from walk 2; tune after raid nights (see the spec's backlog).
   const LIMITS = { sunderOk: 1.5, sunderWarn: 0.8, sunderFail: 0.4, sunderFailMinMs: 30000,
-    idleCastsPerSec: 0.3, idleMinMs: 20000, takenShare: 0.15, overheal: 0.45, debuffOk: 0.6, minFightMs: 10000,
+    idleCastsPerSec: 0.15, idleMinMs: 20000, takenShare: 0.15, overheal: 0.45, debuffOk: 0.6, minFightMs: 10000,
     shortPullMs: 30000 };
 
   const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
@@ -93,7 +93,8 @@
       });
     }
 
-    // A tank that barely casts is not holding the pull; the Sunder rate alone cannot say that.
+    // A tank that barely casts is not holding the pull; the Sunder rate alone cannot say that. casts counts spells only
+    // (no melee swings): a working tank casts 0.22-0.47 a second, the idle ones of the 165-fight census 0.16 or less.
     if (mt && durMs >= LIMITS.idleMinMs) {
       // casts is the bot's whole count; spells may be cut to a few rows (or none) to fit a big fight's payload.
       const spells = (mt.spells || []).filter((x) => x && (num(x.c) || 0) > 0);

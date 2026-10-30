@@ -16,7 +16,7 @@ assert.deepStrictEqual(F.DEBUFF_CHECKS.map((d) => d.key), ["faerie_fire", "coe",
 assert.deepStrictEqual(F.DEBUFF_CHECKS.map((d) => d.name), ["Faerie Fire", "Curse of the Elements", "Expose Armor"]);
 assert.deepStrictEqual(F.TAUNTS, ["Taunt", "Growl", "Hand of Reckoning", "Mocking Blow", "Challenging Shout", "Challenging Roar"]);
 assert.deepStrictEqual(F.LIMITS, { sunderOk: 1.5, sunderWarn: 0.8, sunderFail: 0.4, sunderFailMinMs: 30000,
-  idleCastsPerSec: 0.3, idleMinMs: 20000, takenShare: 0.15, overheal: 0.45, debuffOk: 0.6, minFightMs: 10000,
+  idleCastsPerSec: 0.15, idleMinMs: 20000, takenShare: 0.15, overheal: 0.45, debuffOk: 0.6, minFightMs: 10000,
   shortPullMs: 30000 });
 assert.strictEqual(F.fmtInt(175083), "175,083");
 assert.strictEqual(F.fmtInt(0), "0");
@@ -122,15 +122,15 @@ assert.strictEqual(c53.find((c) => c.id === "ot_taunt:Irelanthe").ev, "druid: no
 
 // ---- verdicts, worst pick -----------------------------------------------------------------------------------------
 const details = fights.map((f) => ({ fight: f, warnings: [] }));
-assert.deepStrictEqual(details.map((d) => F.verdict(d.fight, LAYOUT, [])), ["warn", "fail", "fail", "warn", "ok"]);
+assert.deepStrictEqual(details.map((d) => F.verdict(d.fight, LAYOUT, [])), ["warn", "fail", "warn", "warn", "ok"]);
 assert.strictEqual(F.verdict({ bots: [], deaths: [], debuffs: {}, dur_ms: 1 }, null, []), "ok");
-assert.strictEqual(F.worstIndex(details, LAYOUT), 2); // 5-3: 1 fail, 3 warns
+assert.strictEqual(F.worstIndex(details, LAYOUT), 1);
 assert.strictEqual(F.worstIndex([null, null], LAYOUT), -1);
 const partial = details.slice();
 partial[1] = null;
 const worstPartial = F.worstIndex(partial, LAYOUT);
 assert.notStrictEqual(worstPartial, 1);
-assert.strictEqual(F.verdict(details[worstPartial].fight, LAYOUT, []), "fail");
+assert.strictEqual(F.verdict(details[worstPartial].fight, LAYOUT, []), "warn");
 // Equal scores keep the earliest (newest) fight.
 assert.strictEqual(F.worstIndex([detail("5-5"), detail("5-5")], LAYOUT), 0);
 
@@ -273,7 +273,7 @@ const list = [
 const dmap = { k5: detail("5-5"), k4: detail("5-4"), k3: detail("5-3") };
 const cards = F.railCards(list, dmap, LAYOUT);
 assert.deepStrictEqual(cards.map((c) => c.key), ["k5", "k4", "k3"]);
-assert.deepStrictEqual(cards.map((c) => c.verdict), ["warn", "fail", "fail"]);
+assert.deepStrictEqual(cards.map((c) => c.verdict), ["warn", "fail", "warn"]);
 assert.strictEqual(cards[0].label, "Pack 3");
 assert.strictEqual(cards[0].mob, "Onyxian Warder");
 assert.strictEqual(cards[1].label, "Pack 2");
@@ -392,6 +392,7 @@ assert.strictEqual(sunderOf(warriorMT(1, 30000)).lvl, "fail");
 assert.strictEqual(sunderOf(warriorMT(1, 30000)).num, "0.3/10 s");
 assert.strictEqual(sunderOf(warriorMT(3, 100000)).lvl, "fail"); // exactly 0.3/10 s
 assert.strictEqual(sunderOf(warriorMT(2, 30000)).lvl, "warn");
+assert.strictEqual(sunderOf(warriorMT(4, 100000)).lvl, "warn"); // exactly 0.4/10 s is not under the fail limit
 assert.strictEqual(sunderOf(warriorMT(2, 30000)).num, "0.7/10 s");
 assert.strictEqual(sunderOf(warriorMT(3, 30000)).lvl, "warn");
 assert.strictEqual(sunderOf(warriorMT(3, 30000)).num, "1.0/10 s");
@@ -401,7 +402,7 @@ assert.strictEqual(sunderOf(warriorMT(2, 9000)), undefined);
 assert.strictEqual(sunderOf(fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "tank", class: "druid" })] })), undefined);
 assert.strictEqual(sunderOf(fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "dps", class: "warrior" })] })), undefined);
 
-// The main tank's own activity: under 0.3 casts per second over 20 s or more is a problem, whatever it cast.
+// The main tank's own activity: under 0.15 casts per second over 20 s or more is a problem, whatever it cast.
 const idleT = (casts, dur) => fight({ dur_ms: dur, bots: [bot({
   name: "T", role: "tank", taken: 100, casts,
   spells: casts === 2 ? [{ n: "Sunder Armor", c: 1 }, { n: "Taunt", c: 1 }] : [{ n: "Sunder Armor", c: casts }],
@@ -413,7 +414,9 @@ assert.strictEqual(idle30.title, "Main tank barely acted");
 assert.strictEqual(idle30.num, "2 casts in 30 s");
 assert.strictEqual(idle30.ev, "T cast 2× in 30 s; top spells: Sunder Armor 1, Taunt 1.");
 assert.strictEqual(idle30.bot, "T");
-assert.strictEqual(idleOf(idleT(9, 30000)), undefined); // exactly 0.3/s is not under the limit
+assert.strictEqual(idleOf(idleT(4, 30000)).lvl, "fail"); // 0.13/s
+assert.strictEqual(idleOf(idleT(5, 30000)), undefined); // 0.17/s
+assert.strictEqual(idleOf(idleT(6, 40000)), undefined); // exactly 0.15/s is not under the limit
 assert.strictEqual(idleOf(idleT(15, 30000)), undefined);
 assert.strictEqual(idleOf(idleT(0, 15000)), undefined); // too short to judge
 assert.strictEqual(idleOf(idleT(0, 20000)).lvl, "fail");
