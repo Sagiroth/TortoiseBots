@@ -152,12 +152,12 @@ bool ParseHours(std::string const& token, uint32_t& hours)
 
 bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const& rest)
 {
-    // order <bot> <farm|buy|craft> <itemId or item link> <amount> [hours]
+    // order <bot> <farm|buy|craft> <itemId or item link> <amount> [hours] [keep]
     std::istringstream in(rest);
     std::string botName, typeToken;
     if (!(in >> botName >> typeToken))
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours].");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours] [keep].");
         return true;
     }
     OrderType type;
@@ -170,7 +170,8 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     }
     typeToken = lowerType;
     // The item link carries spaces; the amount is the last token, with an
-    // optional trailing whole hours 1-24: the bot works that long in total.
+    // optional trailing whole hours 1-24 and a trailing `keep` word: the bot
+    // works that long in total per round and, with keep, restocks the bank.
     std::string itemPart, token, amountToken;
     while (in >> token)
     {
@@ -178,11 +179,27 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
             itemPart += " ";
         itemPart += token;
     }
+    // A trailing `keep` word marks a keep-in-stock order; hours still sit
+    // between the amount and keep.
+    bool keep = false;
+    {
+        size_t keepSpace = itemPart.rfind(' ');
+        if (keepSpace != std::string::npos)
+        {
+            std::string maybeKeep = itemPart.substr(keepSpace + 1);
+            std::transform(maybeKeep.begin(), maybeKeep.end(), maybeKeep.begin(), ::tolower);
+            if (maybeKeep == "keep")
+            {
+                keep = true;
+                itemPart = itemPart.substr(0, keepSpace);
+            }
+        }
+    }
     uint32_t hours = GuildOrders::kDefaultOrderHours;
     size_t lastSpace = itemPart.rfind(' ');
     if (lastSpace == std::string::npos)
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours].");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours] [keep].");
         return true;
     }
     // A trailing 1-24 is hours only when what is left still reads as an
@@ -288,6 +305,8 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     record.itemId = itemId;
     record.amount = amount;
     record.hours = hours;
+    record.keep = keep;
+    record.stockTarget = keep ? amount : 0;
 
     if (type == OrderType::Craft && !bot)
     {
@@ -310,6 +329,10 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
             }
             record.state = GuildOrders::StateForReason(plan.verdict);
             record.reason = plan.verdict;
+            // An order that starts noskill/cant never works a round: a keep
+            // flag on it would watch a bank for a dead order.
+            record.keep = false;
+            record.stockTarget = 0;
         }
         else if (!plan.zones.empty())
         {
@@ -468,7 +491,7 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         return HandleOrderSearch(handler, requester, bot, typeToken, text);
     }
 
-    // order <bot> cancel | order <bot> <type> <item> <amount> [hours]
+    // order <bot> cancel | order <bot> <type> <item> <amount> [hours] [keep]
     std::string second;
     if (!(in >> second))
     {

@@ -2,6 +2,7 @@
 
 #include "GuildOrderDelivery.h"
 #include "GuildOrderGiveUpPolicy.h"
+#include "GuildOrderKeepPolicy.h"
 #include "GuildOrderSourcesPolicy.h"
 #include "../commands/CommandShared.h"
 #include "../host/ModuleLog.h"
@@ -62,7 +63,8 @@ public:
         std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
             "SELECT `bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
             "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
-            "`worked_sec`, `worked_total`, `reported`, `farm_rest`, `created_at`, `updated_at` "
+            "`worked_sec`, `worked_total`, `reported`, `farm_rest`, `keep`, `stock_target`, `last_bank_check`, "
+            "`created_at`, `updated_at` "
             "FROM `tortoise_bots_guild_order`"));
 
         if (result)
@@ -90,8 +92,11 @@ public:
                 record.workedTotalSec = fields[16].GetUInt32();
                 record.reportedHave = fields[17].GetUInt32();
                 record.farmRest = fields[18].GetUInt32() != 0;
-                record.createdAt = fields[19].GetUInt64();
-                record.updatedAt = fields[20].GetUInt64();
+                record.keep = fields[19].GetUInt32() != 0;
+                record.stockTarget = fields[20].GetUInt32();
+                record.lastBankCheckMs = fields[21].GetUInt32();
+                record.createdAt = fields[22].GetUInt64();
+                record.updatedAt = fields[23].GetUInt64();
 
                 if (record.hours < kMinOrderHours || record.hours > kMaxOrderHours)
                     record.hours = kDefaultOrderHours;
@@ -149,14 +154,16 @@ public:
                 "REPLACE INTO `tortoise_bots_guild_order` "
                 "(`bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
                 "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
-                "`worked_sec`, `worked_total`, `reported`, `farm_rest`, `created_at`, `updated_at`) "
+                "`worked_sec`, `worked_total`, `reported`, `farm_rest`, `keep`, `stock_target`, `last_bank_check`, "
+                "`created_at`, `updated_at`) "
                 "VALUES ('%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
-                "'%u', '%u', '%u', '%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
+                "'%u', '%u', '%u', '%u', '%u', '%u', '%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
                 record.botGuidLow, record.guildId, record.giverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
                 ReasonToken(record.reason), record.farmZoneId, record.farmChance, record.farmItemId,
                 record.zoneIndex, record.deathsInZone, record.workedSinceNewItemSec,
                 record.workedTotalSec, record.reportedHave, record.farmRest ? 1u : 0u,
+                record.keep ? 1u : 0u, record.stockTarget, record.lastBankCheckMs,
                 static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt)))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
@@ -207,6 +214,34 @@ public:
             return;
         it->second.record.state = state;
         it->second.record.reason = reason;
+        MarkDirtyLocked(it->second);
+    }
+
+    void StartKeepWatch(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        OrderRecord& record = it->second.record;
+        if (!record.keep || !record.stockTarget)
+            return;
+        record.state = OrderState::Stocked;
+        record.reason = OrderReason::None;
+        record.amount = record.stockTarget;
+        record.delivered = 0;
+        record.lastBankCheckMs = nowMs;
+        MarkDirtyLocked(it->second);
+    }
+
+    void DropKeep(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !it->second.record.keep)
+            return;
+        it->second.record.keep = false;
+        it->second.record.stockTarget = 0;
         MarkDirtyLocked(it->second);
     }
 
@@ -310,6 +345,8 @@ public:
         uint32_t mailboxCount = 0;   // order item in the mailbox
         uint32_t farmItemId = 0;     // item actually farmed (0 = the order item)
         uint32_t farmBagCount = 0;   // farm-leg item in bags (no-progress clock)
+        uint32_t bankCount = 0;      // guild bank stock, valid when bankChecked
+        bool bankChecked = false;    // a fresh bank look came with this tick
         uint32_t workedMs = 0;
         uint32_t nowMs = 0;
     };
@@ -335,7 +372,38 @@ public:
         out.haveRow = true;
 
         bool wasFinished = IsFinished(record.state);
+        bool wasStocked = record.state == OrderState::Stocked;
 
+        // Keep watch: a fresh bank look below the stock target re-arms the
+        // round (new quota, reset clocks, fresh plan) whether the bot is on
+        // or off; the pool logs it back in like any unfinished order.
+        if (wasStocked && record.keep && in.bankChecked)
+        {
+            record.lastBankCheckMs = in.nowMs;
+            uint32_t missing = KeepMissing(record.stockTarget, in.bankCount);
+            if (missing > 0)
+            {
+                record.state = OrderState::Working;
+                record.reason = OrderReason::None;
+                record.amount = missing;
+                record.delivered = 0;
+                record.farmZoneId = 0;
+                record.farmChance = 0;
+                record.zoneIndex = 0;
+                record.farmItemId = 0;
+                record.farmRest = false;
+                record.deathsInZone = 0;
+                record.searchFailsInZone = 0;
+                record.workedSinceNewItemSec = 0;
+                record.workedTotalSec = 0;
+                record.reportedHave = 0;
+                stored.lastOwnedCount = 0;
+                stored.lastFarmCount = 0;
+                stored.lastFarmItemId = 0;
+                out.legChanged = true;
+            }
+            MarkDirtyLocked(stored);
+        }
         // A deaths-driven zone move happened off the world thread: expire the
         // old travel target so the bot re-plans instead of walking on.
         if (stored.zoneMovePending)
@@ -379,7 +447,8 @@ public:
                     // The farm time ran out: what the bot holds still goes to
                     // the guild (bags now, mailbox via the mail leg), and the
                     // order ends once the delivery drain reports back. With
-                    // nothing held at all it ends right away.
+                    // nothing held at all it ends right away, and a keep round
+                    // ends the keep with it.
                     if (record.delivered + in.bagCount + in.mailboxCount > 0)
                     {
                         record.state = OrderState::Delivering;
@@ -387,6 +456,11 @@ public:
                     }
                     else
                     {
+                        if (record.keep)
+                        {
+                            record.keep = false;
+                            record.stockTarget = 0;
+                        }
                         record.state = OrderState::Cant;
                         record.reason = OrderReason::Timeout;
                     }
@@ -444,8 +518,11 @@ public:
         out.finishedEdge = !wasFinished && IsFinished(record.state);
 
         // Reported progress never drops: offline (or not yet re-seen) bots
-        // keep max(delivered, last reported).
+        // keep max(delivered, last reported). A stocked order reports the
+        // bank stock the last look saw: owned counting means nothing there.
         out.reportedHave = ReportedHave(record.delivered, ownedNow, in.botOnline, record.reportedHave);
+        if (record.state == OrderState::Stocked && in.bankChecked)
+            out.reportedHave = in.bankCount > record.stockTarget ? record.stockTarget : in.bankCount;
 
         bool stateChanged = !stored.reportSeen || stored.reportState != record.state ||
                             stored.reportReason != record.reason;
@@ -542,15 +619,18 @@ private:
         OrderRecord& record = stored.record;
         record.updatedAt = static_cast<uint64_t>(std::time(nullptr));
         CharacterDatabase.PExecute(
-            "UPDATE `tortoise_bots_guild_order` SET `hours` = '%u', `delivered` = '%u', `state` = '%s', `reason` = '%s', "
+            "UPDATE `tortoise_bots_guild_order` SET `amount` = '%u', `hours` = '%u', `delivered` = '%u', "
+            "`state` = '%s', `reason` = '%s', "
             "`farm_zone` = '%u', `farm_chance` = '%u', `farm_item` = '%u', `zone_index` = '%u', "
             "`deaths_in_zone` = '%u', `worked_sec` = '%u', `worked_total` = '%u', `reported` = '%u', "
-            "`farm_rest` = '%u', `updated_at` = FROM_UNIXTIME('%u') "
+            "`farm_rest` = '%u', `keep` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', "
+            "`updated_at` = FROM_UNIXTIME('%u') "
             "WHERE `bot_guid` = '%u'",
-            record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
+            record.amount, record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
             record.farmZoneId, record.farmChance, record.farmItemId, record.zoneIndex, record.deathsInZone,
             record.workedSinceNewItemSec, record.workedTotalSec, record.reportedHave,
-            record.farmRest ? 1u : 0u, static_cast<uint32_t>(record.updatedAt), record.botGuidLow);
+            record.farmRest ? 1u : 0u, record.keep ? 1u : 0u, record.stockTarget, record.lastBankCheckMs,
+            static_cast<uint32_t>(record.updatedAt), record.botGuidLow);
     }
 
     std::mutex m_mutex;
@@ -609,6 +689,23 @@ uint32_t MailboxItems(Player* bot, uint32_t itemId)
             }
     }
     return count;
+}
+
+// Guild bank stock of one item for a keep watch: a single summed read. The
+// bank lives only in memory, so the count goes through its table (saved on
+// every change) while the guild object itself is the existence check.
+uint32_t BankItemCount(uint32_t guildId, uint32_t itemId)
+{
+    if (!guildId || !itemId || !sGuildMgr.GetGuildById(guildId))
+        return 0;
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
+        "SELECT SUM(`count`) FROM `guild_bank` WHERE `guildid` = '%u' AND `isInferno` = '0' AND "
+        "`item_template` = '%u'",
+        guildId, itemId));
+    if (!result)
+        return 0;
+    Field* fields = result->Fetch();
+    return fields ? fields[0].GetUInt32() : 0;
 }
 
 void SendOrderLine(OrderRecord const& order, uint32_t have)
@@ -673,6 +770,16 @@ void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason)
     OrderStore::Instance().SetState(botGuidLow, state, reason);
 }
 
+void StartKeepWatch(uint32_t botGuidLow)
+{
+    OrderStore::Instance().StartKeepWatch(botGuidLow, WorldTimer::getMSTime());
+}
+
+void DropKeep(uint32_t botGuidLow)
+{
+    OrderStore::Instance().DropKeep(botGuidLow);
+}
+
 void NoteFarmRest(uint32_t botGuidLow)
 {
     OrderStore::Instance().NoteFarmRest(botGuidLow);
@@ -731,7 +838,7 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
            BotCommands::ProtocolSafe(itemName) + "|" + std::to_string(have) + "|" +
            std::to_string(order.amount) + "|" + StateToken(order.state) + "|" +
            ReasonToken(order.reason) + "|" + BotCommands::ProtocolSafe(zone) + "|" + difficulty +
-           "|" + std::to_string(order.hours);
+           "|" + std::to_string(order.hours) + "|" + KeepToken(order.keep);
 }
 
 void Initialize()
@@ -764,6 +871,14 @@ void Update(uint32_t diff)
         in.farmBagCount = online && in.farmItemId ? bot->GetItemCount(in.farmItemId) : in.bagCount;
         in.workedMs = diff;
         in.nowMs = now;
+        // Keep watch, due at most every 10 min per stocked order: one summed
+        // bank read on the world thread, never per bot tick, bot online or not.
+        if (snapshot.state == OrderState::Stocked && snapshot.keep &&
+            KeepCheckDue(now, snapshot.lastBankCheckMs))
+        {
+            in.bankCount = BankItemCount(snapshot.guildId, snapshot.itemId);
+            in.bankChecked = true;
+        }
 
         OrderStore::TickOut out = OrderStore::Instance().Tick(guidLow, in);
         if (!out.haveRow)
