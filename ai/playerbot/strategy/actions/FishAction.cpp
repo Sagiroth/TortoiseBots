@@ -328,7 +328,14 @@ bool MoveToFishAction::Execute(Event& event)
     if (qualifier == "travel") //Get travel fish spot if available.
     {
         TravelTarget* target = AI_VALUE(TravelTarget*, "leader travel target");
+        // WORK arrives at the destination's nearest point (IsIn vs radiusMin),
+        // while the target holds the one point picked at search: on a wide
+        // fishing destination those differ by ~1 km, and the bot would walk
+        // off its arrival to the far point. Fish the nearest point instead.
         WorldPosition const* targetPos = target ? target->getPosition() : nullptr;
+        if (target && target->GetDestination())
+            if (WorldPosition* near = target->GetDestination()->GetClosestPoint(WorldPosition(bot)))
+                targetPos = near;
         // The stored spot outlives its travel target: after a re-pick the bot
         // works the new point while the spot still names the old one, so the
         // cast never comes in range. A spot far from (or off the map of) the
