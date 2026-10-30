@@ -147,6 +147,16 @@ namespace ai
     {
         return cachedAtMs != 0 && (nowMs - cachedAtMs) < FISH_WATER_CACHE_MS;
     }
+    // A stored travel fish spot survives its travel target: after a re-pick
+    // the bot stands at WORK at the new point while the spot still names the
+    // old one, and the cast never comes in range. A spot on another map or
+    // further than this from the current target is stale and re-taken.
+    float const FISH_SPOT_STALE_YD = 50.0f;
+
+    inline bool FishingSpotStale(float spotToTargetYd, bool sameMap)
+    {
+        return !sameMap || spotToTargetYd > FISH_SPOT_STALE_YD;
+    }
 
     // Shared water-result cache key: one entry per map cell. Cell ids fit in
     // 10 bits each (512 cells per map axis), the map id in the high bits.

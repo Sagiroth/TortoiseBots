@@ -22,6 +22,7 @@ using ai::FishingSpotApplies;
 using ai::FishingStandDry;
 using ai::FishingWaterCacheFresh;
 using ai::FishingWaterDeepEnough;
+using ai::FishingSpotStale;
 using ai::FishingZoneSkillOk;
 
 int main()
@@ -156,6 +157,19 @@ int main()
         CHECK(FishingCellKey(0, 1, 2) != FishingCellKey(1, 1, 2));
         CHECK(FishingCellKey(0, 1, 2) == FishingCellKey(0, 1, 2));
         std::cout << "  [PASS] cell keys separate map cells\n";
+    }
+
+    // -------------------------------------------------------------
+    // (10) Stale travel spot: the stored spot outlives its target, so a
+    // spot far from (or off the map of) the current target is re-taken.
+    // -------------------------------------------------------------
+    {
+        CHECK(!FishingSpotStale(0.0f, true));
+        CHECK(!FishingSpotStale(50.0f, true));
+        CHECK(FishingSpotStale(50.1f, true));
+        CHECK(FishingSpotStale(0.0f, false));
+        CHECK(FishingSpotStale(4000.0f, true));
+        std::cout << "  [PASS] stale travel spot re-taken\n";
     }
 
     std::cout << "All fishing-spot policy tests passed.\n";

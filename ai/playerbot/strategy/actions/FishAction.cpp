@@ -323,11 +323,19 @@ bool MoveToFishAction::Execute(Event& event)
 
     fishSpot = AI_VALUE2(WorldPosition, "custom position", "fish spot");
 
-    if (!fishSpot && qualifier == "travel") //Get travel fish spot if available.
+    if (qualifier == "travel") //Get travel fish spot if available.
     {
         TravelTarget* target = AI_VALUE(TravelTarget*, "leader travel target");
-        if (target && target->getPosition())
-            fishSpot = *target->getPosition();
+        WorldPosition const* targetPos = target ? target->getPosition() : nullptr;
+        // The stored spot outlives its travel target: after a re-pick the bot
+        // works the new point while the spot still names the old one, so the
+        // cast never comes in range. A spot far from (or off the map of) the
+        // current target is re-taken from the target.
+        if (fishSpot && targetPos && *targetPos &&
+            ai::FishingSpotStale(fishSpot.distance(*targetPos), fishSpot.GetMapId() == targetPos->GetMapId()))
+            fishSpot = WorldPosition();
+        if (!fishSpot && targetPos)
+            fishSpot = *targetPos;
 
         if (AI_VALUE(TravelTarget*, "travel target") != target) //Do not fish ontop of master.
         {
