@@ -9006,7 +9006,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             float packNearestYd = -1.0f; // the nearest unit listed nowhere this tick (Facts::packNearestLeft)
             auto addPatroller = [&](Creature* creature, float fromPoint, PullReadIn const& read)
             {
-                bool const spawnOwned = SpawnOwned(read, step->radius);
+                bool const spawnOwned = f.packClearMarginYd > 0.0f && SpawnOwned(read, step->radius);
                 if (!spawnOwned && ai::OwnedByLaterStep(*slot.run.plan, slot.run.step, creature->GetEntry(),
                         creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(), f.team))
                     return;

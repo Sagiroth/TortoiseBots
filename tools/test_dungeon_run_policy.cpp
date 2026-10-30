@@ -16594,6 +16594,35 @@ static void TestSpawnOwnedPatrollerCapPauses()
     CHECK(r.step == 1 && r.note == "pack cleared");
 }
 
+// The gate off (margin 0) restores the old patroller rule exactly: a spawn-owned patroller standing in a later
+// step's radius is that step's and the run walks on; with the gate on its spawn ownership wins and it is waited for.
+static void TestSpawnOwnedPatrollerGateOffUsesTheOldRule()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    UnitFact u = Unit(0xc025, 14750, 59.9f);
+    u.distSpot = 52.1f;
+    u.x = -12211.8f; // 7.4 yd from plan 33's centre: in its radius
+    u.y = -1477.26f;
+    u.z = 130.9f;
+    u.spawnOwned = true;
+    u.spawnYd = 15.1f;
+    {
+        Run r = Start(&plan);
+        Facts f = ZgParty();
+        f.patrollers = {u};
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 0 && r.note == "waiting for the patroller 14750 0x000000000000c025 (outside the 20.5 yd radius, spawned 15.1 yd from the centre; up to 60 s)");
+    }
+    {
+        Run r = Start(&plan);
+        Facts f = ZgParty();
+        f.packClearMarginYd = 0.0f;
+        f.patrollers = {u};
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 1 && r.note == "pack cleared");
+    }
+}
+
 static void TestFightStepEndWaitsOnResidue()
 {
     DungeonPlan plan = ZgPlateauPlan();
@@ -24307,6 +24336,7 @@ int main()
     TestResidueInAnotherStepsRadiusIsLeft();
     TestPassedResidueIsNamed();
     TestSpawnOwnedPatrollerCapPauses();
+    TestSpawnOwnedPatrollerGateOffUsesTheOldRule();
     TestFightStepEndWaitsOnResidue();
     TestZeroPullClearNamesNearestLeft();
     TestNoPatrollerWaitWithoutALivingHostilePatroller();

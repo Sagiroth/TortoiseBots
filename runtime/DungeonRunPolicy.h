@@ -10093,7 +10093,7 @@ inline bool PatrollerToWaitFor(const Run& r, const Facts& f, const UnitFact& u)
     if (!u.hostile || r.passed.count(u.guid) || r.unreachable.count(u.guid) || r.patrolGaveUp.count(u.guid) ||
         r.spawnPatrolGaveUp.count(u.guid))
         return false;
-    if (u.spawnOwned)
+    if (f.packClearMarginYd > 0.0f && u.spawnOwned)
         return true; // it spawned in this step's radius: the step's wherever it walked, whatever a later step holds
     return !(r.plan && ai::OwnedByLaterStep(*r.plan, r.step, u.entry, u.x, u.y, u.z, f.team));
 }
@@ -10117,7 +10117,7 @@ inline bool WaitForPatroller(Run& r, const Facts& f, const PlanStep& s, std::uin
     std::string const what = std::to_string(p->entry) + " " + GuidArg(p->guid);
     if (r.patrolWaitMs >= capMs)
     {
-        if (p->spawnOwned)
+        if (f.packClearMarginYd > 0.0f && p->spawnOwned)
         {
             // It spawned in this step's radius and the wait is over: not "cleared", a pause that says so (the step
             // no longer waits for it after a resume).
@@ -10132,7 +10132,7 @@ inline bool WaitForPatroller(Run& r, const Facts& f, const PlanStep& s, std::uin
         return false;
     }
     r.patrolWaitMs += dt;
-    r.note = "waiting for the patroller " + what + (p->spawnOwned
+    r.note = "waiting for the patroller " + what + (f.packClearMarginYd > 0.0f && p->spawnOwned
         ? " (outside the " + Num(s.radius) + " yd radius, spawned " + Num(p->spawnYd) + " yd from the centre; up to " +
             std::to_string(capMs / 1000) + " s)"
         : " (outside the " + Num(s.radius) + " yd radius; up to " + std::to_string(capMs / 1000) + " s)");
