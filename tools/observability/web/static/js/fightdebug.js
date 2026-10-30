@@ -60,17 +60,20 @@
 
   // Deaths right after an enemy's cast, from a finished fight's log: one row per caster name and spell, with how often it
   // was cast and every death in the windowMs after one of those casts (each death once per row, measured from the newest
-  // such cast before it). Rows with the most deaths first; a fight without a cast log has none.
+  // such cast before it). Rows with the most deaths first; a fight without a cast log has none. When the fight dropped
+  // older log events at its cap (log_dropped) every row is partial: casts counts only the kept casts, and a death after a
+  // dropped cast is not matched.
   function castDeaths(fight, windowMs) {
     fight = fight || {};
     const win = num(windowMs) === null ? CAST_DEATH_MS : windowMs;
+    const partial = (num(fight.log_dropped) || 0) > 0;
     const rows = [];
     const byKey = {};
     (Array.isArray(fight.log) ? fight.log : []).forEach((e) => {
       if (!e || (e.k !== "cast" && e.k !== "ab") || num(e.t) === null || !e.s) return;
       const caster = e.n ? String(e.n) : "enemy";
       const key = caster + "\u0000" + e.s;
-      if (!byKey[key]) { byKey[key] = { caster, spell: String(e.s), casts: 0, times: [], deaths: [] }; rows.push(byKey[key]); }
+      if (!byKey[key]) { byKey[key] = { caster, spell: String(e.s), casts: 0, partial, times: [], deaths: [] }; rows.push(byKey[key]); }
       byKey[key].casts++;
       byKey[key].times.push(e.t);
     });
@@ -162,9 +165,11 @@
         id: "cast_deaths:" + r.caster + ":" + r.spell,
         lvl: "warn",
         title: r.deaths.length + " death(s) within " + CAST_DEATH_MS / 1000 + " s of " + r.caster + "'s " + r.spell,
-        num: r.deaths.length + "/" + r.casts,
+        num: r.deaths.length + "/" + (r.partial ? "≥" : "") + r.casts,
         ev: r.deaths.map((d) => d.name + " at " + (d.t_ms / 1000).toFixed(1) + " s (" + (d.after_ms / 1000).toFixed(1)
-          + " s after the cast)").join(" · ") + "; " + r.spell + " was cast " + r.casts + "× in the fight.",
+          + " s after the cast)").join(" · ") + "; " + r.spell + (r.partial
+          ? " was cast at least " + r.casts + "× (the fight dropped " + fight.log_dropped + " older log events, so earlier casts and the deaths after them are missing)."
+          : " was cast " + r.casts + "× in the fight."),
         bot: r.deaths[0].name,
         death: r.deaths[0].i,
       });

@@ -574,6 +574,14 @@ assert.strictEqual(F.checks(mcFight, null, [], { lanes: null, strays: null, pack
   assert.strictEqual(row.ev, "Joric at 33.5 s (3.5 s after the cast) · Vex at 47.0 s (1.0 s after the cast); Unstable Concoction was cast 3× in the fight.");
   assert.strictEqual(row.bot, "Joric");
   assert.strictEqual(row.death, 1);
+  assert.strictEqual(F.castDeaths(zg)[0].partial, false);
+  // A fight that dropped older log events at its cap: the first blast is gone, so the counts are only a floor.
+  const cut = Object.assign({}, zg, { log_dropped: 40, log: zg.log.slice(1) });
+  const cutRows = F.castDeaths(cut);
+  assert.deepStrictEqual(cutRows.map((r) => [r.spell, r.casts, r.partial]), [["Unstable Concoction", 2, true], ["Shrink", 1, true]]);
+  const cutRow = F.checks(cut, null, []).find((c) => c.id === "cast_deaths:Gurubashi Bat Rider:Unstable Concoction");
+  assert.strictEqual(cutRow.num, "2/≥2");
+  assert.ok(cutRow.ev.endsWith("Unstable Concoction was cast at least 2× (the fight dropped 40 older log events, so earlier casts and the deaths after them are missing)."));
 }
 
 console.log("fightdebug_check: ok");
