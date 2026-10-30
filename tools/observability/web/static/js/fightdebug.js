@@ -142,9 +142,19 @@
       });
     }
 
+    // One or two deaths happen in a clean kill; three or a wipe is a real problem.
+    const wiped = String(fight.outcome || "") === "wipe";
+    // A wipe whose deaths the telemetry missed still fails: no death row would say so.
+    if (wiped && !deaths.length) {
+      out.push({
+        id: "wipe",
+        lvl: "fail",
+        title: "The fight ended in a wipe",
+        num: "",
+        ev: "The fight ended in a wipe and no bot death was recorded.",
+      });
+    }
     if (otherDeaths.length) {
-      // One or two deaths happen in a clean kill; three or a wipe is a real problem.
-      const wiped = String(fight.outcome || "") === "wipe";
       out.push({
         id: "other_death",
         lvl: otherDeaths.length >= 3 || wiped ? "fail" : "warn",

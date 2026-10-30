@@ -402,6 +402,12 @@ assert.strictEqual(sunderOf(warriorMT(2, 9000)), undefined);
 assert.strictEqual(sunderOf(fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "tank", class: "druid" })] })), undefined);
 assert.strictEqual(sunderOf(fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "dps", class: "warrior" })] })), undefined);
 
+// A wipe fails even when the telemetry recorded no death.
+const wipeNoDeaths = fight({ dur_ms: 30000, outcome: "wipe", deaths: [], bots: [bot({ name: "T", role: "tank", taken: 100, casts: 20 })] });
+assert.strictEqual(F.verdict(wipeNoDeaths, MTLAYOUT, []), "fail");
+assert.strictEqual(F.checks(wipeNoDeaths, MTLAYOUT, []).find((c) => c.id === "wipe").lvl, "fail");
+assert.strictEqual(F.checks(fight({ dur_ms: 30000, outcome: "end", deaths: [], bots: [] }), null, []).find((c) => c.id === "wipe"), undefined);
+
 // The main tank's own activity: under 0.15 casts per second over 20 s or more is a problem, whatever it cast.
 const idleT = (casts, dur) => fight({ dur_ms: dur, bots: [bot({
   name: "T", role: "tank", taken: 100, casts,
