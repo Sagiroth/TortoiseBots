@@ -168,11 +168,12 @@ namespace ai
         return radius;
     }
 
-    // Whether a bot `distance` yd from such a caster has to leave. The tank stays: it holds the
-    // caster and whatever else is on it, and walking it out drags them along.
-    inline bool MustLeaveCast(bool tank, float radius, float distance)
+    // Whether a bot `distance` yd from such a caster has to leave. The tank holding the caster stays
+    // (it holds the caster and whatever else is on it, and walking it out drags them along); an
+    // off-tank the caster is not on leaves like anyone else.
+    inline bool MustLeaveCast(bool holdsCaster, float radius, float distance)
     {
-        return !tank && radius > 0.0f && distance < radius;
+        return !holdsCaster && radius > 0.0f && distance < radius;
     }
 
     // The escape points lie this far past the radius, so a caster shifting a little between

@@ -52,7 +52,14 @@ class AvoidCastWiring(unittest.TestCase):
         self.assertIn("AvoidCastRadius(fight.rows", danger)
         fn = body(ACTIONS, "BossCastDanger ai::FindBossCastDanger(")
         self.assertIn("CastDangerOf(fight, unit)", fn)
-        self.assertIn("MustLeaveCast(PlayerbotAI::IsTank(bot)", fn)
+        self.assertIn("MustLeaveCast(HoldsCaster(bot, unit)", fn)
+
+    def test_only_the_tank_holding_the_caster_stays(self):
+        helper = body(ACTIONS, "bool HoldsCaster(")
+        self.assertIn("PlayerbotAI::IsTank(bot)", helper)
+        self.assertIn("caster->GetVictim() == bot", helper)
+        hold = body(ACTIONS, "float BossTacticsCastHoldMultiplier::GetValue(")
+        self.assertIn("HoldsCaster(bot, target)", hold)
 
     def test_action_walks_to_a_policy_point_outside_every_cast(self):
         fn = body(ACTIONS, "bool BossTacticsAvoidCastAction::Execute(")

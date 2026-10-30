@@ -223,7 +223,7 @@ int main()
         CHECK(MustLeaveCast(false, 13.0f, 12.9f));
         CHECK(!MustLeaveCast(false, 13.0f, 13.0f));   // on the edge is out
         CHECK(!MustLeaveCast(false, 13.0f, 20.0f));
-        CHECK(!MustLeaveCast(true, 13.0f, 2.0f));     // the tank holds the caster
+        CHECK(!MustLeaveCast(true, 13.0f, 2.0f));     // the tank holding the caster
         CHECK(!MustLeaveCast(false, 0.0f, 2.0f));     // no row
     }
 

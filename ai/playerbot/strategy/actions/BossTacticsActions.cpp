@@ -155,6 +155,15 @@ bool ai::InsideCastDanger(const BossTacticsFight& fight, float x, float y, float
     return false;
 }
 
+namespace
+{
+// A tank-role bot the caster is on (or that nothing is on yet) stays in the blast; an off-tank leaves.
+bool HoldsCaster(Player* bot, Unit* caster)
+{
+    return PlayerbotAI::IsTank(bot) && (!caster->GetVictim() || caster->GetVictim() == bot);
+}
+}
+
 BossCastDanger ai::FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
 {
     (void)ai;
@@ -168,7 +177,7 @@ BossCastDanger ai::FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTa
         if (radius <= 0.0f)
             continue;
         const float distance = CenterDistance(unit, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
-        if (!MustLeaveCast(PlayerbotAI::IsTank(bot), radius, distance))
+        if (!MustLeaveCast(HoldsCaster(bot, unit), radius, distance))
             continue;
         if (!danger.caster || distance < nearest)
         {
@@ -218,10 +227,10 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
 
 float BossTacticsCastHoldMultiplier::GetValue(Action* action)
 {
-    if (!action || !dynamic_cast<ReachTargetAction*>(action) || PlayerbotAI::IsTank(bot))
+    if (!action || !dynamic_cast<ReachTargetAction*>(action))
         return 1.0f;
     Unit* target = action->GetTarget();
-    if (!target)
+    if (!target || HoldsCaster(bot, target))
         return 1.0f;
     return CastDangerOf(ScanBossTactics(ai, bot), target) > 0.0f ? 0.0f : 1.0f;
 }
