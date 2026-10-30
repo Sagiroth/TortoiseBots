@@ -376,8 +376,20 @@ public:
                 record.workedTotalSec += workedSec;
                 if (IsOrderTimeout(record.workedTotalSec, record.hours))
                 {
-                    record.state = OrderState::Cant;
-                    record.reason = OrderReason::Timeout;
+                    // The farm time ran out: what the bot holds still goes to
+                    // the guild (bags now, mailbox via the mail leg), and the
+                    // order ends once the delivery drain reports back. With
+                    // nothing held at all it ends right away.
+                    if (record.delivered + in.bagCount + in.mailboxCount > 0)
+                    {
+                        record.state = OrderState::Delivering;
+                        record.reason = OrderReason::Timeout;
+                    }
+                    else
+                    {
+                        record.state = OrderState::Cant;
+                        record.reason = OrderReason::Timeout;
+                    }
                     out.legChanged = true;
                 }
                 else if (MoveZoneLocked(stored))

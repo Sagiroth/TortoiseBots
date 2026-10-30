@@ -354,7 +354,19 @@ private:
             return;
         m_emptyPasses.erase(request.botGuidLow);
         bool movedTotal = movedAny || stored->delivered >= stored->amount;
-        switch (ClassifyDelivery(stored->delivered, stored->amount, mailedAny, movedTotal))
+        DeliveryOutcome outcome =
+            ClassifyDelivery(stored->delivered, stored->amount, mailedAny, movedTotal);
+        // A timed-out delivery never goes back to work: the farm time is
+        // spent, so whatever reached the guild is the final count and the
+        // order ends with the timeout reason kept.
+        if (stored->reason == OrderReason::Timeout &&
+            (outcome == DeliveryOutcome::BackToWork || outcome == DeliveryOutcome::Stuck))
+        {
+            SetState(request.botGuidLow, OrderState::Cant, OrderReason::Timeout);
+            ExpireTargetFor(ai);
+            return;
+        }
+        switch (outcome)
         {
             case DeliveryOutcome::Done:
                 SetState(request.botGuidLow, OrderState::Done, OrderReason::None);
