@@ -9134,6 +9134,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                         unit.losLead = lead->IsWithinLOSInMap(creature);
                     if (residue)
                     {
+                        unit.x = creature->GetPositionX();
+                        unit.y = creature->GetPositionY();
                         unit.distSpot = read.fromPoint2d;
                         unit.spawnOwned = SpawnOwned(read, step->radius);
                         unit.spawnYd = read.spawnYd;

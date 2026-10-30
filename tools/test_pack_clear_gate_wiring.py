@@ -39,6 +39,14 @@ class PackClearGateWiringTest(unittest.TestCase):
         self.assertIn("data->position.x", pull)
         self.assertNotIn("GetRespawnCoord(", pull)
 
+    def test_residue_units_carry_their_position(self):
+        # OwnedByOtherStep reads a residue unit's point: x and y must come from the creature, not stay (0, 0).
+        facts = body(COMMANDS, "void ReadRunFacts(", "\n}\n")
+        pull = body(facts, "case ai::PlanStepKind::Pull:", "case ai::PlanStepKind::Move:")
+        residue = body(pull, "if (residue)\n                    {", "f.packResidue.push_back(unit);")
+        self.assertIn("unit.x = creature->GetPositionX();", residue)
+        self.assertIn("unit.y = creature->GetPositionY();", residue)
+
     def test_formation_followers_are_read_from_the_group(self):
         facts = body(COMMANDS, "void ReadRunFacts(", "\n}\n")
         pull = body(facts, "case ai::PlanStepKind::Pull:", "case ai::PlanStepKind::Move:")

@@ -695,7 +695,9 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("f.pullStand = sPlayerbotAIConfig.dungeonRunPullStand;", read)
         # The step units (pull/boss) and the residue units carry losLead, from the lead bot's own sight test.
         self.assertIn("if (f.pullStand || StandThisBoss(slot))\n                        unit.losLead = lead->IsWithinLOSInMap(creature);", read)
-        self.assertIn("if (residue)\n                    {\n                        unit.distSpot = read.fromPoint2d;", read)
+        self.assertIn("if (residue)\n                    {\n                        unit.x = creature->GetPositionX();\n"
+                      "                        unit.y = creature->GetPositionY();\n"
+                      "                        unit.distSpot = read.fromPoint2d;", read)
         self.assertIn("f.units.push_back(unit);", read)
         self.assertIn("if (f.pullStand)\n                    fact.losLead = lead->IsWithinLOSInMap(unit);\n"
                       "                f.hopUnits.push_back(fact);", read)
