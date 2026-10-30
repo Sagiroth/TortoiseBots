@@ -880,6 +880,11 @@ AiPlayerbot.DungeonSelfClear = 1
 # 1 - on
 AiPlayerbot.DungeonRunRaid = 0
 
+# A raid binding's boss fight rules (only read with AiPlayerbot.DungeonRunRaid = 1): a boss fight (a boss step, or a plan boss engaged on any step) gets a 1200 s fight ceiling instead of 420 s, a member's death does not pause it while an engaged unit still loses hp (the raid's wipe level and the 1800 s hard cap still do), and the adds that hit the raid go to the living off-tanks in turn instead of drawing the main tank (the lead bot) off the boss; with the lead bot dead an off-tank takes the boss off a non-tank. With no off-tank alive the dungeon guard applies.
+# 0 - off: a raid's boss fight keeps the dungeon rules (Default)
+# 1 - on
+AiPlayerbot.DungeonRunRaidBossRules = 0
+
 # Bot LFG dungeon groups: online, idle world bots of one faction and of a proven
 # dungeon's level band (table ai_bot_lfg_plan; the band is the LFT addon's) form a
 # group of four, tank, healer and damage, with one role left open for a player.

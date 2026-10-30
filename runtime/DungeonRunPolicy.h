@@ -284,6 +284,10 @@ constexpr std::uint32_t kBossFightCapMs = 420000;
 constexpr std::uint32_t kFightProgressWindowMs = 60000;
 constexpr std::uint32_t kFightProgressPermille = 20; // 2 percentage points
 constexpr std::uint32_t kFightHardCapMs = 1800000;
+// With AiPlayerbot.DungeonRunRaidBossRules (RaidFacts::bossRules) a raid's boss fight gets this ceiling in place of
+// kBossFightCapMs: the community's Onyxia kills ran 408-806 s, and a raid loses members routinely (FightProgressTick:
+// while the fight still loses hp, a death in the window does not pause it; the raid's wipe level catches a real loss).
+constexpr std::uint32_t kRaidBossFightCapMs = 1200000;
 constexpr std::uint32_t kCeilingQuietMs = 5000; // a ceiling pause whose party stays out of combat this long goes on by itself
 constexpr std::uint32_t kLeadBackSettleMs = 5000; // a lead bot back on the plan's map this long resumes its off-map pause
 constexpr std::uint32_t kPlayerHoldBackSettleMs = 5000; // a player back with the party this long resumes his hold pause
@@ -763,6 +767,9 @@ struct RaidFacts
     bool on = false;                                                    // a raid binding with AiPlayerbot.DungeonRunRaid
     std::uint32_t tanksTotal = 0, tanksDead = 0;                        // tanks, and dead tanks (the wipe level)
     std::uint32_t healersTotal = 0, healersDead = 0;                    // healers, and dead healers (the wipe level)
+    // AiPlayerbot.DungeonRunRaidBossRules (default off): a raid's boss fight gets kRaidBossFightCapMs, a death in it
+    // does not pause it while it still loses hp (FightProgressTick), and its guard is RaidGuardTick.
+    bool bossRules = false;
     // Living tanks other than the lead bot, on its map within kGuardYd of it and out of a commander task, in the
     // layout's order: the raid trash fights send a loose mob to them (RaidTrashFight, CheckGuard).
     std::vector<std::string> offTanksAlive;
@@ -12333,6 +12340,81 @@ inline bool RaidTrashFight(const Run& r, const Facts& f)
     return f.raid.on && Current(r) && Current(r)->kind != PlanStepKind::Boss && !EngagedPlanBoss(r, f) && !InEvent(r);
 }
 
+// A raid's boss fight under AiPlayerbot.DungeonRunRaidBossRules: a boss step, or a boss of the plan engaged on any
+// step (RaidTrashFight's other side), never in a hold or an event. Its guard is RaidGuardTick and its ceiling
+// kRaidBossFightCapMs. With the key off (the default) a raid's boss fight keeps the party rules.
+inline bool RaidBossRulesFight(const Run& r, const Facts& f)
+{
+    return f.raid.on && f.raid.bossRules && Current(r) &&
+        (Current(r)->kind == PlanStepKind::Boss || EngagedPlanBoss(r, f)) && !InEvent(r);
+}
+
+// A unit entry one of the plan's boss steps names.
+inline bool PlanBossEntry(const Run& r, std::uint32_t entry)
+{
+    if (!r.plan || !entry)
+        return false;
+    for (const PlanStep& s : r.plan->steps)
+        if (s.kind == PlanStepKind::Boss && s.entry && s.entry == entry)
+            return true;
+    return false;
+}
+
+// One fight tick of the guard in a raid's boss fight (RaidBossRulesFight, CheckGuard): the main tank (the lead bot)
+// stays on the boss, and the whelps and adds that hit the party go to an off-tank in turn (`attack <guid> <offTank>`,
+// RaidFacts::offTanksAlive, Run::offTankTurn), bounded by kGuardOrdersPerUnit a unit and kGuardRepeatMs between
+// orders, not by the fight's order cap: a raid's whelps keep coming, and the lead bot is never drawn off the boss
+// (Onyxia walk 1: the whelps took the healers while the main tank held her). With the lead bot dead, the boss itself
+// on a party member that is no tank is taken off him by an off-tank (one an off-tank holds, UnitFact::victimTank, is
+// left there). No off-tank: the party guard's rules (false, CheckGuard goes on). True when `order` holds it.
+inline bool RaidGuardTick(Run& r, const Facts& f, std::string& order)
+{
+    if (f.raid.offTanksAlive.empty() ||
+        ((r.offTankTurn > 0 || r.fightOrders > 0) && r.guardSinceOrderMs < kGuardRepeatMs))
+        return false;
+    auto const capped = [&r](const UnitFact& u)
+    {
+        auto const had = r.guardUnitOrders.find(u.guid);
+        return had != r.guardUnitOrders.end() && had->second >= kGuardOrdersPerUnit;
+    };
+    const UnitFact* pick = nullptr;
+    bool boss = false;
+    if (!f.leadAlive)
+        for (const UnitFact& u : f.partyAttackers)
+        {
+            if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || !u.hitting || u.evading ||
+                u.polymorphed || u.victimTank || u.victimPet || u.distLead > kGuardYd || capped(u))
+                continue;
+            pick = &u;
+            boss = true;
+            break;
+        }
+    if (!pick)
+        for (const UnitFact& u : f.partyAttackers)
+        {
+            if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kGuardYd)
+                continue;
+            if (PlanBossEntry(r, u.entry) || u.victimTank)
+                continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
+            if (capped(u) || CcOrderOut(r, u.guid))
+                continue;
+            if (!pick || u.distLead < pick->distLead)
+                pick = &u;
+        }
+    if (!pick)
+        return false;
+    // Not counted in fightOrders: kGuardOrdersFightCap bounds the party guard, which takes over when the off-tanks fall.
+    std::string const& tank = f.raid.offTanksAlive[r.offTankTurn++ % f.raid.offTanksAlive.size()];
+    ++r.guardUnitOrders[pick->guid];
+    r.guardSinceOrderMs = 0;
+    r.note = std::string("fighting: ") + (boss ? "the lead bot is dead, the off-tank " : "the off-tank ") + tank +
+        " takes " + std::to_string(pick->entry) + " off " +
+        (pick->victimHealer ? "the healer" : pick->victimPet ? "a pet" : "the party") + " (" + Num(pick->distLead) +
+        " yd)";
+    order = "attack " + std::to_string(pick->guid) + " " + tank;
+    return true;
+}
+
 inline const UnitFact* GuardPick(const Facts& f, float holdRadius, const Run* capped = nullptr, const Run* ccRun = nullptr,
     bool raidTrash = false)
 {
@@ -12496,10 +12578,12 @@ inline const UnitFact* EngageTarget(const Run& r, const Facts& f)
 {
     if (!f.leadAlive || !f.leadIsTank || !f.leadStaying || InEvent(r) || f.carrier.empty())
         return nullptr;
+    // A raid's boss fight with an off-tank (RaidBossRulesFight): the mob on the healer is an off-tank's (RaidGuardTick).
+    bool const raidBoss = RaidBossRulesFight(r, f) && !f.raid.offTanksAlive.empty();
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
-        if (!u.victimHealer || !u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
+        if (raidBoss || !u.victimHealer || !u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
             u.distLead > kGuardYd)
             continue;
         if (GuardUnitCapped(r, u.guid))
@@ -12682,6 +12766,14 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
                 Num(arrival->distLead) + " yd)" + RefillNote(r);
             order = "attack " + std::to_string(arrival->guid) + " " + f.carrier;
             return true;
+        }
+        // A raid's boss fight under AiPlayerbot.DungeonRunRaidBossRules has its own pick-ups (RaidGuardTick): the
+        // lead bot never leaves the boss for them, the adds go to the off-tanks. The engage on arrival above stays
+        // for the mob on the lead bot itself (EngageTarget). With no off-tank alive the party guard below goes on.
+        if (RaidBossRulesFight(r, f) && !f.raid.offTanksAlive.empty())
+        {
+            r.guardMs = 0;
+            return RaidGuardTick(r, f, order);
         }
     }
     const UnitFact* u = hold ? HoldGuardTarget(r, f) : GuardTarget(r, f);
@@ -14057,7 +14149,9 @@ inline FightProgress FightProgressTick(Run& r, const Facts& f, std::uint32_t dt)
     }
     if (!read)
         return FightProgress::Unread;
-    if (r.fightHpDeath && now - r.fightHpDeathAt < kFightProgressWindowMs)
+    // A raid loses members routinely: with AiPlayerbot.DungeonRunRaidBossRules, while the fight still loses hp a death
+    // in the window is no reason to pause it (the raid's wipe level catches a real loss).
+    if (r.fightHpDeath && now - r.fightHpDeathAt < kFightProgressWindowMs && !(f.raid.on && f.raid.bossRules && losing))
         return FightProgress::Dying;
     if (losing)
         return FightProgress::Losing;
@@ -15172,9 +15266,13 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         const PlanStep* const event = s->kind == PlanStepKind::Hold ? s : EventHoldAhead(r);
         std::uint32_t const holdCap = event && event->timeoutS * 1000u > kBossFightCapMs ? event->timeoutS * 1000u
                                                                                        : kBossFightCapMs;
-        // A boss step's entry engaged on any step gets the boss ceiling too (EngagedPlanBoss).
-        std::uint32_t const cap = event ? holdCap
-                                : s->kind == PlanStepKind::Boss || EngagedPlanBoss(r, f) ? kBossFightCapMs : kFightCapMs;
+        // A boss step's entry engaged on any step gets the boss ceiling too (EngagedPlanBoss), and in a raid with
+        // AiPlayerbot.DungeonRunRaidBossRules the raid's own (kRaidBossFightCapMs).
+        bool const bossStep = s->kind == PlanStepKind::Boss || EngagedPlanBoss(r, f);
+        std::uint32_t const cap = event      ? holdCap
+                                : !bossStep ? kFightCapMs
+                                : f.raid.on && f.raid.bossRules ? kRaidBossFightCapMs
+                                                                 : kBossFightCapMs;
         FightProgress const progress = FightProgressTick(r, f, dt);
         // A unit the party hits that cannot die now (HpHeldTick) pauses before any ceiling: the ceiling's pause
         // would be resumed into the same fight. Not in a wipe (kWipeDead or more dead): the regroup that follows

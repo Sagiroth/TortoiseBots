@@ -46,6 +46,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunPlayerLedAwayMinutes`](#aiplayerbotdungeonrunplayerledawayminutes) | `10` | How long the leading player of a player-led run may be out of the plan's dungeon before the run stops. |
 | [`AiPlayerbot.DungeonRunPlayerLedPullYd`](#aiplayerbotdungeonrunplayerledpullyd) | `40` | How close the leading player stands to a plan pack or boss for the player-led run to pull it. |
 | [`AiPlayerbot.DungeonRunRaid`](#aiplayerbotdungeonrunraid) | `0` | Lets the run leader bind the commander's raid of 6 to 40 bots and runs it with the raid rules (needs `AiPlayerbot.DungeonSelfClear` and `AiPlayerbot.RemoteCommander`). |
+| [`AiPlayerbot.DungeonRunRaidBossRules`](#aiplayerbotdungeonrunraidbossrules) | `0` | `1`: a raid's boss fight runs up to 1200 s, survives its deaths while the boss still loses hp, and sends its adds to the off-tanks instead of the main tank. |
 | [`AiPlayerbot.DungeonRunPullStand`](#aiplayerbotdungeonrunpullstand) | `0` | For a tank that pulls with a ranged weapon, the run leader orders `pullback` only when it can shoot from where it stands, else it walks the party to a firing stand first. |
 | [`AiPlayerbot.DungeonRunRezHold`](#aiplayerbotdungeonrunrezhold) | `0` | The run leader's regroup waits for a living resurrector to raise the fallen (and for its mana) before it revives the party at the spirit healer. |
 | [`AiPlayerbot.DungeonRunRetreatAt2Dead`](#aiplayerbotdungeonrunretreatat2dead) | `0` | `1`: with two dead in a fight the party is losing, the living pull back to the run's last stand once before a third death makes it a wipe. |
@@ -355,6 +356,17 @@ Raid bindings for the run leader: `.bot commander bind <LeadBot> raid` binds the
 <summary>How it works in detail</summary>
 
 **Raid bindings for the run leader:** `.bot commander bind <LeadBot> raid` binds the commander's own raid of 6 to 40 bots (he leaves it; the lead bot is the main tank), and the run leader uses the raid rules (wipe level, gathering and rest scaled to the raid's size). Needs AiPlayerbot.DungeonSelfClear = 1 and AiPlayerbot.RemoteCommander = 1. Switching it off releases every raid binding. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+
+</details>
+
+### `AiPlayerbot.DungeonRunRaidBossRules`
+A raid binding's boss fight rules: a longer fight ceiling, deaths that do not pause a fight still being won, and the adds sent to the off-tanks.
+**Default:** `0` · **Values:** `0` off (a raid's boss fight keeps the dungeon rules), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Raid boss fight rules:** only read with `AiPlayerbot.DungeonRunRaid = 1`, on a raid binding. Added 2026-10-30 from Onyxia walk 1 (2026-10-28: the community's kills ran 408-806 s, past the 420 s boss ceiling, and the whelps took the healers while the main tank held her). A raid's boss fight is a `boss` step, or a plan boss engaged on any step, outside a scripted event. With `1`: its fight ceiling is 1200 s instead of 420 s; past it, a member's death in the last 60 s does not pause the fight while an engaged unit still lost hp in that window (a fight with no hp loss in 60 s still pauses, the raid's wipe level still regroups, and the 1800 s hard cap still pauses); and the mobs that hit the raid (in melee reach of their victim, or standing and casting, within 40 yd of the lead bot) go to the living off-tanks (tanks other than the lead bot, within 40 yd of it and out of a commander task) in turn, one `cmd attack <guid> <off-tank>` at a time, no sooner than 2 s after the last order and at most twice at the same mob in a fight, with no 12-orders-a-fight cap; a mob an off-tank holds already is left to it, and the boss is never one of them. The main tank (the lead bot) is never sent off the boss; on `stay` it is still sent at a mob on itself. With the lead bot dead, the boss on a raid member who is no tank is taken by an off-tank. With no off-tank alive the dungeon guard applies. With `0` the boss fight keeps the 420 s ceiling, a death in the window pauses it past the ceiling, and the guard sends the main tank. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
 
 </details>
 

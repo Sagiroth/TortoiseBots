@@ -21255,6 +21255,227 @@ static void TestPlanBossOnAMoveStepGetsTheBossCeiling()
         ev.note.find("a fight lasted more than 420 s") == 0);
 }
 
+// Onyxia walk 1 (2026-10-28): her kills ran 408-806 s, so with AiPlayerbot.DungeonRunRaidBossRules a raid's boss
+// fight gets kRaidBossFightCapMs in place of the 420 s boss ceiling, and a death in the raid does not pause it while
+// her hp still falls (the raid loses members routinely; its wipe level catches a real loss). The facts: her hit points
+// lose 2 % every 50 s until `loseUntilS`, then stay; `dead` party members of a raid of 20.
+static Facts RaidBossFightFacts(std::uint32_t s, bool raid, std::uint32_t dead, std::uint32_t loseUntilS,
+    bool bossRules = true)
+{
+    std::uint32_t const maxHp = 1000000;
+    std::uint32_t const lost = std::min(s, loseUntilS) / 50 * (maxHp / 50);
+    Facts f = FightFacts({HpUnit(0xF1300027C8000001ull, 10184, maxHp - lost, maxHp)});
+    f.total = 20;
+    f.alive = f.total - dead;
+    f.dead = dead;
+    f.raid.on = raid;
+    f.raid.bossRules = raid && bossRules;
+    return f;
+}
+
+static Run RaidBossRun(DungeonPlan& plan)
+{
+    PlanStep boss = Step(PlanStepKind::Boss, 80);
+    boss.entry = 10184;
+    plan.steps = {PullStep(10, {1}), boss};
+    Run r = Start(&plan);
+    r.step = 1;
+    return r;
+}
+
+static void TestRaidBossFightSurvivesItsDeaths()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    // Her hp loses 2 % every 50 s while a party member dies every 50 s from 400 s and again from 1250 s: the deaths
+    // in the last 60 s would pause a party's fight at its 420 s ceiling, and they would pause a raid's one past the
+    // 1200 s raid ceiling if a death alone counted. The raid keeps fighting.
+    for (std::uint32_t s = 0; s <= 1500; ++s)
+    {
+        std::uint32_t const down = s >= 1300 ? 4u : s >= 1250 ? 3u : s >= 450 ? 2u : s >= 400 ? 1u : 0u;
+        Tick(r, RaidBossFightFacts(s, true, down, 5000));
+        CHECK(r.state == State::Running);
+        if (s == 1300)
+            CHECK(r.note.find("past the 1200 s ceiling: an engaged unit lost hp in the last 60 s") != std::string::npos);
+    }
+    CHECK(r.fightMs == 1501000);
+}
+
+static void TestBossFightDeathsPauseOutsideARaid()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    std::uint32_t s = 0;
+    for (; s <= 500 && r.state == State::Running; ++s)
+        Tick(r, RaidBossFightFacts(s, false, s >= 450 ? 2u : s >= 400 ? 1u : 0u, 5000));
+    CHECK(r.state == State::Paused && r.ceilingPaused);
+    CHECK(r.fightMs == 421000);
+    CHECK(r.note.find("a fight lasted more than 420 s and a party member died in the last 60 s") == 0);
+}
+
+// AiPlayerbot.DungeonRunRaidBossRules = 0 (the default): a raid's boss fight keeps the 420 s boss ceiling and a death
+// in the window still pauses it, as before the key.
+static void TestRaidBossFightKeyOffKeepsTheBossCeiling()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    std::uint32_t s = 0;
+    for (; s <= 500 && r.state == State::Running; ++s)
+        Tick(r, RaidBossFightFacts(s, true, s >= 450 ? 2u : s >= 400 ? 1u : 0u, 5000, false));
+    CHECK(r.state == State::Paused && r.ceilingPaused);
+    CHECK(r.fightMs == 421000);
+    CHECK(r.note.find("a fight lasted more than 420 s and a party member died in the last 60 s") == 0);
+}
+
+static void TestRaidBossFightFlatHpPausesPastTheRaidCap()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    std::uint32_t s = 0;
+    for (; s <= 1400 && r.state == State::Running; ++s)
+        Tick(r, RaidBossFightFacts(s, true, 0, 1200));
+    CHECK(r.state == State::Paused && r.ceilingPaused);
+    CHECK(r.fightMs == 1262000);
+    CHECK(r.note.find("a fight lasted more than 1200 s and no engaged unit lost hp in 60 s") == 0);
+}
+
+static void TestRaidBossFightHardCapPauses()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    std::uint32_t s = 0;
+    bool sawRaidCeiling = false;
+    for (; s <= 2000 && r.state == State::Running; ++s)
+    {
+        Tick(r, RaidBossFightFacts(s, true, 0, 5000));
+        if (s == 1300)
+            sawRaidCeiling = r.note.find("past the 1200 s ceiling: an engaged unit lost hp in the last 60 s") !=
+                std::string::npos;
+    }
+    CHECK(sawRaidCeiling);
+    CHECK(r.state == State::Paused && r.ceilingPaused);
+    CHECK(r.fightMs == 1801000);
+    CHECK(r.note.find("a fight lasted more than 1800 s, the hard cap") == 0);
+}
+
+// Onyxia walk 1: with AiPlayerbot.DungeonRunRaidBossRules, in a raid's boss fight the adds that hit the party go to
+// an off-tank in turn (the lead bot, the main tank, is never drawn off her), past the fight's 12-order cap, and with
+// the lead bot dead the boss itself on a non-tank is taken by an off-tank. With the key off, or off the raid binding,
+// the boss fight's guard stays the main tank's (TestRaidGuardOnABossStepSendsTheMainTank).
+static Facts RaidBossGuardFacts()
+{
+    Facts f = FightFacts({HpUnit(0xF1300027C8000001ull, 10184, 1000000, 1000000)});
+    f.raid.on = true;
+    f.raid.bossRules = true;
+    f.raid.offTanksAlive = {"Offy", "Offz"};
+    f.leadIsTank = true;
+    f.leadStaying = true;
+    return f;
+}
+
+static void TestRaidBossWhelpsGoToAnOffTank()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.partyAttackers = {Hitter(45001, 11262, 20, true)};
+    CHECK(Tick(r, f) == "attack 45001 Offy");
+    CHECK(r.note == "fighting: the off-tank Offy takes 11262 off the healer (20.0 yd)");
+    // The next whelp waits its kGuardRepeatMs and goes to the next off-tank.
+    CHECK(Tick(r, f).empty());
+    Facts g = RaidBossGuardFacts();
+    g.partyAttackers = {Hitter(45002, 11262, 18, false)};
+    CHECK(Tick(r, g) == "attack 45002 Offz");
+}
+
+static void TestRaidBossWhelpsGoPastTheFightOrderCap()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    int orders = 0;
+    for (std::uint32_t i = 0; i < 15; ++i)
+    {
+        Facts f = RaidBossGuardFacts();
+        f.partyAttackers = {Hitter(46000 + i, 11262, 15, false)};
+        for (int k = 0; k < 2; ++k)
+            if (!Tick(r, f).empty())
+                ++orders;
+    }
+    CHECK(orders == 15);
+    CHECK(orders > static_cast<int>(kGuardOrdersFightCap));
+}
+
+static void TestRaidBossWhelpOnlyTwiceAtTheSameMob()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.partyAttackers = {Hitter(45101, 11262, 15, false)};
+    int orders = 0;
+    for (int k = 0; k < 20; ++k)
+        if (!Tick(r, f).empty())
+            ++orders;
+    CHECK(orders == static_cast<int>(kGuardOrdersPerUnit));
+}
+
+// The main tank on stay is still engaged on the mob on itself (the boss), first and at once; the whelp on the healer
+// goes to an off-tank after the order spacing, never to the main tank.
+static void TestRaidBossMainTankOnStayEngagesItsOwnMob()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadHasAttacker = true;
+    f.leadAttacker = Hitter(0xF1300027C8000001ull, 10184, 2);
+    f.partyAttackers = {Hitter(45201, 11262, 20, true)};
+    CHECK(Tick(r, f) == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Tanky");
+    CHECK(r.note == "fighting: the tank engages 10184 on arrival (2.0 yd)");
+    f.leadStaying = false;
+    std::string next;
+    for (int k = 0; k < 5 && next.empty(); ++k)
+        next = Tick(r, f);
+    CHECK(next == "attack 45201 Offy");
+}
+
+static void TestRaidBossBossOffANonTankWithTheLeadDead()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.leadAlive = false;
+    f.leadStaying = false;
+    f.partyAttackers = {Hitter(0xF1300027C8000001ull, 10184, 12, true)};
+    CHECK(Tick(r, f) == "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Offy");
+    CHECK(r.note.find("the lead bot is dead, the off-tank Offy takes 10184 off the healer") != std::string::npos);
+    // The boss on an off-tank already is left there.
+    Run q = RaidBossRun(plan);
+    Facts g = f;
+    g.partyAttackers[0].victimTank = true;
+    for (int k = 0; k < 5; ++k)
+        CHECK(Tick(q, g).find("Offy") == std::string::npos);
+}
+
+static void TestRaidBossGuardUnchangedOutsideARaid()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.raid.on = false;
+    f.raid.bossRules = false;
+    f.partyAttackers = {Hitter(47001, 11262, 20, true)};
+    CHECK(Tick(r, f) == "attack 47001 Tanky");
+}
+
+static void TestRaidBossGuardKeyOffSendsTheMainTank()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.raid.bossRules = false;
+    f.partyAttackers = {Hitter(47002, 11262, 20, true)};
+    CHECK(Tick(r, f) == "attack 47002 Tanky");
+}
+
 // Shadowfang Keep r26 slot 7 step 46 (tests/r26/slot7): after the wipe and a Sap that did not land, Thunderward
 // went back and forth on the stair between (-263 2304 z 78) and (-290 2307 z 91), 35-38 yd from the lead bot at the
 // top (z 96.8), on its own follow and formation station; a summon to the top was undone by its formation station,
@@ -25192,6 +25413,18 @@ int main()
     TestSlowSteadyBossFightNeverPausesBeforeTheHardCap();
     TestFightWithNoHpLossPastTheCeilingPauses();
     TestPlanBossOnAMoveStepGetsTheBossCeiling();
+    TestRaidBossFightSurvivesItsDeaths();
+    TestBossFightDeathsPauseOutsideARaid();
+    TestRaidBossFightKeyOffKeepsTheBossCeiling();
+    TestRaidBossFightFlatHpPausesPastTheRaidCap();
+    TestRaidBossFightHardCapPauses();
+    TestRaidBossWhelpsGoToAnOffTank();
+    TestRaidBossWhelpsGoPastTheFightOrderCap();
+    TestRaidBossWhelpOnlyTwiceAtTheSameMob();
+    TestRaidBossMainTankOnStayEngagesItsOwnMob();
+    TestRaidBossBossOffANonTankWithTheLeadDead();
+    TestRaidBossGuardUnchangedOutsideARaid();
+    TestRaidBossGuardKeyOffSendsTheMainTank();
     TestStragglerLadderWalksThenSummonsBeforeThePause();
     TestStragglerLadderClocks();
     TestStragglerWalkRefusedSummonsNext();
