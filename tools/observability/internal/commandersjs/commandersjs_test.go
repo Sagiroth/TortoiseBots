@@ -373,3 +373,29 @@ func TestFDHistoryJS(t *testing.T) {
 	runCheck(t, "fd_history_check.js", "../../web/static/js/app.js")
 }
 
+// TestCoverageJS runs coverage_check.js: web/static/js/coverage.js against the shared fixture
+// data/boss/testdata/coverage_cases.json (the parity half with tools/boss_coverage.py), the coverage route round-trips and
+// the guard that no boss entry or spell id is written in the code.
+func TestCoverageJS(t *testing.T) {
+	runCheck(t, "coverage_check.js", "../../web/static/js/coverage.js",
+		filepath.Join("..", "..", "..", "..", "data", "boss", "testdata", "coverage_cases.json"))
+}
+
+// TestCoverageUIJS runs coverage_ui_check.js: the raid coverage view's markup ("missing only" hides answered and not-needed
+// lines and keeps the counts, an empty boss card is hidden, an untrusted row comment is escaped, the rows=null banner, a
+// chip's aria label and the boss= card).
+func TestCoverageUIJS(t *testing.T) {
+	runCheck(t, "coverage_ui_check.js", "../../web/static/js/coverage.js")
+}
+
+// TestCoverageTruncatedJS runs coverage_truncated_check.js: a snapshot the daemon cut at a query cap marks every
+// database-answered need unknown, keeps the rows out of the proof and shows the incomplete-coverage banner.
+func TestCoverageTruncatedJS(t *testing.T) {
+	runCheck(t, "coverage_truncated_check.js", "../../web/static/js/coverage.js")
+}
+
+// TestCoverageCSS runs coverage_css_check.js: the Raid coverage block in app.css (a rule for every class it emits, theme
+// colours only, the one-column phone line, no fixed width above 358 px) and the boss panel's chip colours.
+func TestCoverageCSS(t *testing.T) {
+	runCheck(t, "coverage_css_check.js", "../../web/static/css/app.css", "../../web/static/js/coverage.js")
+}

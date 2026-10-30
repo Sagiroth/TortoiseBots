@@ -129,6 +129,7 @@
       entry,
       name: str(first(row.name, row.boss, row.n, "creature " + entry)),
       map: num(first(row.map, row.mapId, row.map_id)),
+      mapKey: typeof row.map === "string" && !isFinite(Number(row.map)) ? row.map : "",
       order: num(first(row.order, row.i)) == null ? i : num(first(row.order, row.i)),
       abilities: arr(first(row.abilities, row.spells, row.ability)).map(ability).filter(Boolean),
       phases: arr(first(row.phases, row.phaseRows, row.phase)).map(phase).filter(Boolean),
@@ -156,7 +157,7 @@
     return { bosses: bosses, byEntry: byEntry, bySpell: bySpell };
   }
 
-  let cache = null, loading = null, loaded = null;
+  let cache = null, loading = null, loaded = null, rawDoc = null;
   // Fetch the table once; a missing file (an old daemon) resolves to null and the page draws no boss panels.
   function load(url) {
     if (cache) return Promise.resolve(cache);
@@ -164,12 +165,14 @@
     if (typeof fetch !== "function") return Promise.resolve(null);
     loading = fetch(url || "/data/boss_abilities.json", { credentials: "same-origin" })
       .then((r) => (r && r.ok ? r.json() : null))
-      .then((d) => { loaded = normalize(d); cache = loaded.bosses.length ? loaded : null; return cache; })
+      .then((d) => { rawDoc = d; loaded = normalize(d); cache = loaded.bosses.length ? loaded : null; return cache; })
       .catch(() => { cache = null; return null; })
       .then((v) => { loading = null; return v; });
     return loading;
   }
   function data() { return cache; }
+  // The document as fetched: maps[] and codeAnswers[] the normalized index drops, which the coverage view needs.
+  function raw() { return rawDoc; }
   function bossFor(table, entry) {
     const t = table === undefined ? cache : table;
     if (!t) return null;
@@ -329,7 +332,7 @@
     adds.forEach((x) => { if (liveCounts[x.entry]) x.count = liveCounts[x.entry]; });
 
     return {
-      boss: { entry: b.entry, name: b.name, map: b.map, order: b.order },
+      boss: { entry: b.entry, name: b.name, map: b.map, mapKey: b.mapKey, order: b.order },
       phase: ph.phase,
       phaseLatched: !!ph.latched,
       auras: auraList(mob),
@@ -389,11 +392,23 @@
       + ' <b>' + secs(a.casting.leftMs) + "</b></span></span>";
   }
 
-  function abilityRow(a) {
+  // The coverage chip in front of an ability name (web/static/js/coverage.js forBoss answers it): one letter, its status in
+  // the title as one line per need, and the aria label. No coverage map (the rows are not loaded yet) leaves the row as it was.
+  const COV_GLYPH = { answered: "✓", partly: "◐", missing: "✗", notneeded: "–", unknown: "?" };
+  function covChip(cov, sid, e) {
+    if (!cov) return "";
+    const c = cov[sid] || cov[String(sid)];
+    if (!c) return "";
+    const status = COV_GLYPH[c.status] ? c.status : "unknown";
+    return '<span class="fd-cov fd-cov-' + status + '" title="' + e(c.title || "") + '" aria-label="' + e("coverage: " + status) + '">'
+      + COV_GLYPH[status] + "</span>";
+  }
+
+  function abilityRow(a, cov, e) {
     const cls = "fd-boss-ability" + (a.seen ? "" : " unseen") + (a.inPhase ? "" : " otherphase") + (a.casting ? " casting" : "");
     const last = a.seen ? secs(a.lastMs) + " ago" : "not seen";
     return '<li class="' + cls + '"><i class="fd-boss-swatch bc-' + (a.color % 8) + '"></i>'
-      + '<span class="fd-boss-an">' + esc(a.name) + "</span>"
+      + '<span class="fd-boss-an">' + covChip(cov, a.sid, e) + esc(a.name) + "</span>"
       + '<span class="fd-boss-last">' + esc(last) + "</span>"
       + '<span class="fd-boss-next">' + esc(nextText(a)) + "</span>"
       + '<span class="fd-boss-castwrap">' + castHtml(a) + "</span></li>";
@@ -426,12 +441,16 @@
     const inPhase = (panel.abilities || []).filter((a) => a.inPhase);
     const other = (panel.abilities || []).filter((a) => !a.inPhase);
     const seen = (a) => a.seen;
-    const rows = inPhase.map(abilityRow).join("");
+    const rows = inPhase.map((a) => abilityRow(a, o.coverage, e)).join("");
     const hidden = other.length
-      ? '<details class="fd-boss-other"><summary>' + ("Other phases (" + other.length + ")") + '</summary><ul class="fd-boss-abilities">' + other.map(abilityRow).join("") + "</ul></details>"
+      ? '<details class="fd-boss-other"><summary>' + ("Other phases (" + other.length + ")") + '</summary><ul class="fd-boss-abilities">' + other.map((a) => abilityRow(a, o.coverage, e)).join("") + "</ul></details>"
+      : "";
+    const covLink = o.coverage && b.mapKey
+      ? '<a class="fd-boss-cov" href="#/coverage/' + e(encodeURIComponent(b.mapKey)) + "?boss=" + e(b.entry) + '">coverage</a>'
       : "";
     return '<details class="fd-boss-panel" data-entry="' + e(b.entry) + '"' + (o.open ? " open" : "") + ">"
       + '<summary class="fd-boss-head"><span class="fd-boss-name">' + e(b.name) + "</span>" + (" " + bar) + phase
+      + covLink
       + '<span class="fd-boss-seen">' + (inPhase.some(seen) ? "seen " + (inPhase.filter(seen).length) + "/" + inPhase.length : "") + "</span></summary>"
       + '<div class="fd-boss-body">'
       + (chips ? '<div class="fd-boss-chips">' + chips + "</div>" : "")
@@ -490,7 +509,7 @@
   }
 
   const api = {
-    normalize, load, data, bossFor, abilityBySpell, phaseOf, markIds, hpTicks,
+    normalize, load, data, raw, bossFor, abilityBySpell, phaseOf, markIds, hpTicks,
     model, render, flagsText, addLinks, debuffColor, markedBy,
     FLAG_WORD, _esc: esc,
   };

@@ -21,6 +21,24 @@ func TestTrackRouteWired(t *testing.T) {
 	}
 }
 
+// TestBossTacticsRouteWired guards the coverage route: it must stay behind
+// the GM session and read the world database the plans already opened.
+func TestBossTacticsRouteWired(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"GET /api/v1/boss/tactics",
+		"requireAuth(bosstactics.Handler(",
+		"bosstactics.NewSQLSource(worldDB)",
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("main.go does not contain %q", want)
+		}
+	}
+}
+
 // TestHistoryRoutesWired guards the fight history's wiring: the three routes, the handlers behind them, the store opened from
 // its flag and handed to the listener before Start, and the detail route's fallback to disk.
 func TestHistoryRoutesWired(t *testing.T) {

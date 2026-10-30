@@ -809,6 +809,7 @@
     agentmaps: { hash: 'agent-maps', title: 'Agent maps' },
     commanders: { hash: 'commanders', title: 'Commanders' },
     'dungeon-runs': { hash: 'dungeon-runs', title: 'Dungeon runs' },
+    coverage: { hash: 'coverage', title: 'Raid coverage' },
     progress: { hash: 'progress', title: 'Progress' },
     activity: { hash: 'activity', title: 'Activity' },
     auctions: { hash: 'auctions', title: 'Auction House' },
@@ -868,10 +869,15 @@
     const q = new URLSearchParams(query || '');
     const bot = parseInt(q.get('bot'), 10);
     const map = parseInt(q.get('map'), 10);
-    return { tab, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1', run: q.get('run'), map: Number.isFinite(map) && map > 0 ? map : null, cmd, cmdMode, cmdFight };
+    // #/coverage[/<raid>][?missing=1][&boss=<entry>] is parsed by coverage.js, the one owner of the coverage route.
+    const cov = tab === 'coverage' && typeof Coverage !== 'undefined' && Coverage.parseHash
+      ? Coverage.parseHash(window.location.hash) : null;
+    return { tab, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1', run: q.get('run'), map: Number.isFinite(map) && map > 0 ? map : null, cmd, cmdMode, cmdFight, cov };
   }
 
   function routeHash(r) {
+    // The coverage route has its own query (missing, boss), owned by coverage.js.
+    if (r.tab === 'coverage' && typeof Coverage !== 'undefined' && Coverage.hash) return Coverage.hash(r.cov || {});
     const q = new URLSearchParams();
     if (r.bot !== null && r.bot !== undefined) {
       q.set('bot', r.bot);
@@ -895,9 +901,10 @@
   // keeps the open raid tab it already shows, so a profile drawn over the Fight debugger closes back onto it.
   function go(partial, opts) {
     const cur = parseRoute();
-    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.dungeons.openKey, demo: cur.demo, cmd: cur.cmd, cmdMode: cur.cmdMode, cmdFight: cur.cmdFight }, partial);
+    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.dungeons.openKey, demo: cur.demo, cmd: cur.cmd, cmdMode: cur.cmdMode, cmdFight: cur.cmdFight, cov: cur.cov }, partial);
     if (partial.tab && !('bot' in partial)) next.bot = null;
     if (partial.tab && !('run' in partial)) next.run = null;
+    if (partial.tab && partial.tab !== 'coverage' && !('cov' in partial)) next.cov = null;
     if (partial.tab && partial.tab !== state.activeTab && !('cmd' in partial)) {
       next.cmd = null;
       next.cmdMode = null;
@@ -929,6 +936,7 @@
     if (tab !== state.activeTab || !routeApplied) showTab(tab);
     else if (tab === 'dungeons' && state.dungeons.openKey !== prevRunKey) renderDungeons();
     else if (tab === 'commanders' && (fdPage.open !== prevCmd || fdPage.fight !== prevFight)) renderCommanders();
+    else if (tab === 'coverage') renderCoverage();
     routeApplied = true;
     if (r.map && tab === 'dungeon-runs') dgSelect(r.map); // #/dungeon-runs?map=209 (the glance panel's links)
     if (r.bot !== null) {
@@ -955,6 +963,7 @@
     else if (tab === 'commanders') renderCommanders();
     else if (tab === 'dungeons') renderDungeons();
     else if (tab === 'dungeon-runs') renderDgRuns();
+    else if (tab === 'coverage') renderCoverage();
     else if (tab === 'agentmaps') renderAgentMaps();
     else if (tab === 'roster') renderBotsTab();
     else if (tab === 'progress') renderProgress();
@@ -989,6 +998,7 @@
     if (tab === 'commanders') fetchCommanders();
     if (tab === 'dungeons') fetchDungeons();
     if (tab === 'dungeon-runs') fetchDgRuns();
+    if (tab === 'coverage' || tab === 'commanders') { if (typeof covLoad === 'function') covLoad(); }
     if (tab === 'agentmaps') fetchAgentMaps();
     cmdLiveSync(); // the stream serves the Commanders tab: it closes when it is left and reopens when it is shown
   }
@@ -6396,6 +6406,61 @@
     return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y), name: displayZoneName(zb.name) };
   }
 
+  // ---- raid coverage (web/static/js/coverage.js) ----
+  // The boss table plus the world DB's tactic rows, read once when the table is loaded and on the view's Reload button (never
+  // polled). rows === undefined means "not asked yet"; null means the read failed, and the view shows the unknown-statuses
+  // banner. The table is the raw document because coverage needs maps[] and codeAnswers[].
+  let covRows;
+  let covResult = null;
+  function covTable() {
+    return typeof BossPanel !== 'undefined' && BossPanel.raw ? BossPanel.raw() : null;
+  }
+  function covCompute() {
+    const table = covTable();
+    if (!table || typeof Coverage === 'undefined' || !Coverage.compute) return null;
+    covResult = Coverage.compute(table, covRows === undefined ? null : covRows);
+    return covResult;
+  }
+  function covFetch(force) {
+    if (!force && covRows !== undefined) { covCompute(); return Promise.resolve(covRows); }
+    return fetch('/api/v1/boss/tactics', { credentials: 'same-origin' })
+      .then(r => (r && r.ok ? r.json() : null))
+      .then(d => { covRows = d || null; covCompute(); return covRows; })
+      .catch(() => { covRows = null; covCompute(); return null; });
+  }
+  function covLoad() {
+    return covFetch(false).then(() => {
+      if (state.activeTab === 'coverage') renderCoverage();
+      else if (state.activeTab === 'commanders') renderCommanders();
+    });
+  }
+  function covForBoss(entry) {
+    if (covRows === undefined) return undefined;
+    if (!covResult) covCompute();
+    return covResult && typeof Coverage !== 'undefined' && Coverage.forBoss ? Coverage.forBoss(covResult, entry) : undefined;
+  }
+  function covBind(root, covState) {
+    const box = root.querySelector('#cov-missing');
+    if (box) box.addEventListener('change', () => { window.location.hash = Coverage.hash(Object.assign({}, covState, { missing: box.checked })); });
+    const reload = root.querySelector('#cov-reload');
+    if (reload) reload.addEventListener('click', () => { reload.disabled = true; covFetch(true).then(() => renderCoverage()); });
+  }
+  function renderCoverage() {
+    const root = document.getElementById('cov-root');
+    if (!root) return;
+    if (typeof Coverage === 'undefined' || !Coverage.renderRaid) { root.innerHTML = '<p class="cov-empty">The coverage script did not load.</p>'; return; }
+    const table = covTable();
+    if (!table) { root.innerHTML = '<p class="cov-empty">The boss table is not loaded.</p>'; return; }
+    if (!covResult) covCompute();
+    const covState = parseRoute().cov || { raid: null, missing: false, boss: null };
+    root.innerHTML = Coverage.renderRaid(covResult, covState, { esc: esc });
+    covBind(root, covState);
+    if (covState.boss) {
+      const card = root.querySelector('.cov-boss[data-entry="' + Number(covState.boss) + '"]');
+      if (card) card.scrollIntoView({ block: 'start' });
+    }
+  }
+
   // ---- boss abilities (web/static/js/bosspanel.js) ----
   // The committed boss table is one file for every raid; its phase latch is remembered per fight, so a boss that healed back
   // over an hp< threshold keeps the phase the group saw. Missing file or an older daemon: no panel and no map changes.
@@ -6435,7 +6500,7 @@
   function cmdBossPanelsHtml(panels) {
     if (typeof BossPanel === 'undefined' || !BossPanel.render) return '';
     const table = cmdBossTable();
-    return (panels || []).map(p => BossPanel.render(table, p, { open: true, esc: esc })).join('');
+    return (panels || []).map(p => BossPanel.render(table, p, { open: true, esc: esc, coverage: covForBoss(p.boss.entry) })).join('');
   }
   // The debugger shows the panels in its rail, the Live card under the map; one panel, painted where the view puts it.
   function cmdPaintBosses(card, panels) {
@@ -9933,7 +9998,11 @@
   refreshGate.onChange(() => { seedCmdTrails(state.commanders.list); if (cmdDemo.on) { clearInterval(cmdDemo.timer); cmdDemo.timer = setInterval(refreshGate.guard(cmdDemoTick), cmdDemoMs()); } });
   fetchCommanders();
   // The boss table is one static file (a missing one leaves every panel and map mark away, never an error).
-  if (typeof BossPanel !== 'undefined' && BossPanel.load) BossPanel.load().then(() => { if (state.activeTab === 'commanders') renderCommanders(); });
+  if (typeof BossPanel !== 'undefined' && BossPanel.load) BossPanel.load().then(() => {
+    covCompute();
+    if (state.activeTab === 'commanders') renderCommanders();
+    else if (state.activeTab === 'coverage') renderCoverage();
+  });
   setInterval(fetchCommanders, 30000); // goes through the refresh gate like the stream's reports
   setInterval(refreshGate.guard(expireCommanders), 3000); // a paused page keeps what it froze
   setInterval(refreshGate.guard(fetchRoster), 60000);

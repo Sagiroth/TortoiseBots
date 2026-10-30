@@ -3756,3 +3756,86 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-packopen { padding: 0; border: 0; background: none; color: var(--accent-blue-bright); font: inherit; cursor: pointer; text-decoration: underline; }
 .fd-packopen:hover, .fd-packopen:focus-visible { text-decoration: none; }
 .fd-best { padding: 1px 5px; border: 1px solid var(--fd-ok); border-radius: 999px; color: var(--fd-ok); font-size: 0.62rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* ---------- Raid coverage (tactics coverage) ---------- */
+/* The coverage tab: raid chips, the counts bar, one fold per boss and its lines, the rows without an ability. And the chip
+   the boss panel puts in front of an ability. Colours come from the theme tokens only. */
+.cov-root { display: grid; gap: 12px; min-width: 0; }
+.cov-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cov-chip { padding: 3px 10px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-card); color: var(--text-muted); font-size: 0.76rem; text-decoration: none; overflow-wrap: anywhere; }
+.cov-chip:hover, .cov-chip:focus-visible { border-color: var(--border-strong); color: var(--text-main); }
+.cov-chip.on { border-color: var(--accent-blue); color: var(--text-main); background: color-mix(in srgb, var(--accent-blue) 14%, transparent); }
+.cov-empty, .cov-notice { margin: 0; color: var(--text-muted); font-size: 0.82rem; }
+.cov-notice b { color: var(--text-main); }
+.cov-ban { margin: 0; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--accent-red) 45%, transparent); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--accent-red) 10%, transparent); color: var(--accent-red); font-size: 0.78rem; }
+.cov-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card); }
+.cov-cname { font-weight: 700; color: var(--text-main); }
+.cov-counts { color: var(--text-muted); font-size: 0.76rem; font-variant-numeric: tabular-nums; }
+.cov-toggle { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: 0.76rem; cursor: pointer; }
+.cov-reload { padding: 2px 9px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.76rem; cursor: pointer; }
+.cov-reload:hover, .cov-reload:focus-visible { border-color: var(--border-strong); }
+.cov-src { color: var(--text-dim); font-size: 0.72rem; }
+.cov-src code { font: inherit; color: var(--text-muted); }
+.cov-note { margin: 0; color: var(--text-dim); font-size: 0.72rem; }
+.cov-bar { display: flex; flex: 1 1 90px; align-items: stretch; gap: 2px; height: 8px; min-width: 0; }
+.cov-seg { display: block; height: 100%; border-radius: 2px; }
+.cov-seg-answered { background: var(--accent-green); }
+.cov-seg-partly { background: var(--accent-yellow); }
+.cov-seg-missing { background: var(--accent-red); }
+.cov-seg-notneeded { background: var(--text-dim); }
+.cov-seg-unknown { background: var(--text-muted); opacity: 0.5; }
+.cov-boss { border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); }
+.cov-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 10px; cursor: pointer; list-style: none; }
+.cov-head::-webkit-details-marker { display: none; }
+.cov-head::before { content: "▸"; color: var(--text-dim); font-size: 0.7rem; }
+.cov-boss[open] > .cov-head::before { content: "▾"; }
+.cov-name { font-weight: 700; color: var(--text-main); overflow-wrap: anywhere; }
+.cov-entry { color: var(--text-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.cov-body { padding: 2px 10px 9px; display: grid; gap: 7px; }
+.cov-lines { list-style: none; display: grid; gap: 0; margin: 0; padding: 0; }
+.cov-line { display: grid; grid-template-columns: 16px auto auto auto minmax(0, 1fr) auto; align-items: baseline; gap: 3px 8px; padding: 4px 0; border-top: 1px solid var(--border-color); font-size: 0.8rem; }
+.cov-lines .cov-line:first-child { border-top: 0; }
+.cov-st { justify-self: center; font-weight: 700; text-align: center; }
+.cov-st-answered { color: var(--accent-green); }
+.cov-st-partly { color: var(--accent-yellow); }
+.cov-st-missing { color: var(--accent-red); }
+.cov-st-notneeded { color: var(--text-dim); }
+.cov-st-unknown { color: var(--text-muted); }
+.cov-an { font-weight: 600; overflow-wrap: anywhere; }
+.cov-sid { color: var(--text-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.cov-phase { justify-self: start; padding: 0 6px; border: 1px solid color-mix(in srgb, var(--accent-yellow) 45%, transparent); border-radius: 999px; color: var(--accent-yellow); font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.cov-needs { display: flex; flex-wrap: wrap; gap: 2px 4px; min-width: 0; }
+.cov-need { padding: 0 5px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-muted); font-size: 0.66rem; }
+.cov-need-full { border-color: color-mix(in srgb, var(--accent-green) 50%, transparent); color: var(--accent-green); }
+.cov-need-partly { border-color: color-mix(in srgb, var(--accent-yellow) 50%, transparent); color: var(--accent-yellow); }
+.cov-need-none { border-color: color-mix(in srgb, var(--accent-red) 45%, transparent); color: var(--accent-red); }
+.cov-need-unknown { border-color: var(--border-strong); color: var(--text-muted); }
+.cov-need-ok { border-color: var(--border-color); color: var(--text-dim); }
+.cov-answers { color: var(--text-muted); font-size: 0.74rem; min-width: 0; overflow-wrap: anywhere; }
+.cov-warns { margin: 0; color: var(--text-dim); font-size: 0.72rem; overflow-wrap: anywhere; }
+.cov-extra { display: grid; gap: 3px; }
+.cov-lab { display: block; margin-bottom: 2px; color: var(--text-dim); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.cov-extras { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.cov-extra-row { color: var(--text-muted); font-size: 0.74rem; overflow-wrap: anywhere; }
+.cov-xid { color: var(--text-main); font-variant-numeric: tabular-nums; }
+.cov-why { color: var(--text-muted); }
+.cov-unknown { display: grid; gap: 6px; padding: 8px 10px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); }
+.cov-uboss { display: grid; gap: 2px; }
+
+/* The boss panel's coverage chip (before the ability name) and its link to the coverage view. */
+.fd-cov { display: inline-block; margin-right: 5px; font-weight: 700; font-size: 0.74rem; }
+.fd-cov-answered { color: var(--accent-green); }
+.fd-cov-partly { color: var(--accent-yellow); }
+.fd-cov-missing { color: var(--accent-red); }
+.fd-cov-notneeded { color: var(--text-dim); }
+.fd-cov-unknown { color: var(--text-muted); }
+.fd-boss-cov { margin-left: auto; color: var(--accent-blue-bright); font-size: 0.7rem; text-decoration: none; }
+.fd-boss-cov:hover, .fd-boss-cov:focus-visible { text-decoration: underline; }
+
+@media (max-width: 500px) {
+  .cov-root { gap: 10px; }
+  .cov-line { grid-template-columns: 1fr; gap: 2px; }
+  .cov-needs, .cov-answers { grid-column: 1; }
+  .cov-head { gap: 4px 6px; }
+  .cov-summary { gap: 4px 8px; }
+}

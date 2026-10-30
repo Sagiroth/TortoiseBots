@@ -64,6 +64,10 @@
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21V10a9 9 0 0 1 18 0v11"/><path d="M9 21v-6a3 3 0 0 1 6 0v6"/><line x1="2" y1="21" x2="22" y2="21"/></svg>
         <span>Dungeon runs</span>
       </a>
+      <a class="menu-item" data-tab="coverage" href="#/coverage" title="Raid coverage: which boss abilities the bots have an answer for, and which gaps are still open">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><polyline points="8.5 12 11 14.5 15.5 9.5"/></svg>
+        <span>Raid coverage</span>
+      </a>
       <a class="menu-item" data-tab="progress" href="#/progress" title="Levelling speed, XP and gear behind level">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
         <span>Progress</span>
@@ -490,6 +494,11 @@
         <div id="dg-root"></div>
       </section>
 
+      <!-- TAB: RAID COVERAGE — which boss abilities the bots have an answer for, boss by boss, and what the table does not classify -->
+      <section id="tab-coverage" class="tab-view" style="display: none;">
+        <div id="cov-root" class="cov-root"></div>
+      </section>
+
       <!-- TAB: DUNGEONS — every live instance copy (dungeon or raid) that has bots in it, one run per copy (issue #895) -->
       <section id="tab-dungeons" class="tab-view" style="display: none;">
         <div id="dgn-empty" class="card cmd-empty">
@@ -813,6 +822,7 @@
 <script src="/static/js/readycheck.js?v=1"></script>
 <script src="/static/js/live.js?v=1"></script>
 <script src="/static/js/fighthistory.js?v=1"></script>
+<script src="/static/js/coverage.js?v=1"></script>
 <script src="/static/js/app.js?v=30"></script>
 </body>
 </html>
