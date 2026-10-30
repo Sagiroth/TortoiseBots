@@ -10089,17 +10089,20 @@ inline bool PackResidueTick(Run& r, const Facts& f, const PlanStep& s, std::uint
         " yd of the pull centre";
     if (r.packRepulls >= f.packClearRepulls)
     {
-        // A flier above the height bound the re-pulls did not bring down (ZG walk 5 step 37: a hovering Bloodseeker
-        // Bat, three pullbacks out, never in reach) is left for the step, not paused for: the party cannot reach it.
-        // A ground unit in the band keeps the pause.
+        // A flier above the height bound that re-pulls went out for and did not bring down (ZG walk 5 step 37: a
+        // hovering Bloodseeker Bat, pullbacks out, never in reach) is left for the step, not paused for: the party
+        // cannot reach it. A flier no re-pull went out for (the cap spent on others) and a ground unit keep the pause.
         for (const UnitFact& u : f.packResidue)
-            if (u.aloft && PackResidueOpenUnit(r, f, u))
+        {
+            auto const tried = r.pullTries.find(u.guid);
+            if (u.aloft && tried != r.pullTries.end() && tried->second > 0 && PackResidueOpenUnit(r, f, u))
                 r.residueOutOfReach[u.guid] = "flying, " + std::to_string(f.packClearRepulls) +
                     " re-pulls did not bring it down";
-        std::size_t const ground = PackResidueOpen(r, f, s);
-        if (ground == 0)
+        }
+        std::size_t const kept = PackResidueOpen(r, f, s);
+        if (kept == 0)
             return false;
-        std::string const groundLeft = std::to_string(ground) + " left within " +
+        std::string const keptLeft = std::to_string(kept) + " left within " +
             Num(s.radius + f.packClearMarginYd) + " yd of the pull centre";
         std::vector<const UnitFact*> units;
         for (const UnitFact& u : f.packResidue)
@@ -10116,7 +10119,7 @@ inline bool PackResidueTick(Run& r, const Facts& f, const PlanStep& s, std::uint
                 list += ", ";
             list += std::to_string(u->entry) + " " + GuidArg(u->guid) + " " + Num(u->distSpot) + " yd";
         }
-        Pause(r, "pack not cleared after " + std::to_string(f.packClearRepulls) + " re-pulls: " + groundLeft + " (" + list +
+        Pause(r, "pack not cleared after " + std::to_string(f.packClearRepulls) + " re-pulls: " + keptLeft + " (" + list +
             "): clear it, then .bot run resume, or .bot run skip");
         return true;
     }

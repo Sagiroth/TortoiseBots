@@ -16729,6 +16729,23 @@ static void TestAloftResidueAtTheCapIsLeftNotPaused()
         CHECK(m.note == "pack not cleared after 3 re-pulls: 1 left within 30.5 yd of the pull centre "
             "(11368 0x000000000000bfff 24.0 yd): clear it, then .bot run resume, or .bot run skip");
     }
+    // Two fliers: the nearest takes all three re-pulls; the other, never pulled, is not waived: the cap pauses for
+    // it (Codex review of the walk 5 fix).
+    {
+        Run m = Start(&plan);
+        Facts mf = ZgParty();
+        mf.packResidue = {Walk5Bat(0xc001, 20.0f, 9.4f), Walk5Bat(0xc004, 33.0f, 22.0f)};
+        for (int i = 0; i < 3; ++i)
+        {
+            CHECK(Tick(m, mf) == "pullback 49153");
+            m.phase = Phase::Begin;
+        }
+        CHECK(Tick(m, mf).empty());
+        CHECK(m.state == State::Paused);
+        CHECK(m.note == "pack not cleared after 3 re-pulls: 1 left within 30.5 yd of the pull centre "
+            "(11368 0x000000000000c004 22.0 yd): clear it, then .bot run resume, or .bot run skip");
+        CHECK(m.residueOutOfReach.count(0xc001) && !m.residueOutOfReach.count(0xc004));
+    }
 }
 
 // The owner's rule for a reachable flier over the same floor: it is re-pulled, and a pull that brings it down
