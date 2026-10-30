@@ -23186,6 +23186,237 @@ static void TestRaidNearWipeLatch()
     CHECK(!r.nearWiped);
 }
 
+// --- The near-wipe stop (AiPlayerbot.DungeonRunNearWipeStop). Walk 2: near wipe 1 began at display 21, near wipe 2
+// at display 32, 5 min 50 s later, and the run walked on into the wipe at display 35.
+
+static DungeonPlan MoveRowPlan(std::size_t rows)
+{
+    DungeonPlan plan;
+    for (std::size_t i = 0; i < rows; ++i)
+        plan.steps.push_back(Step(PlanStepKind::Move, 40.0f + static_cast<float>(i), 0, 0));
+    return plan;
+}
+
+static Facts NearWipeRaid(std::uint32_t dead)
+{
+    Facts f = RaidDead(dead);
+    f.nearWipeStopCount = 2;
+    f.nearWipeStopWindowMs = 600000;
+    return f;
+}
+
+// Walk 2's first event: 8 dead in a fight, the regroup by itself, then everyone up.
+static Run NearWipeRun(DungeonPlan& plan)
+{
+    Run r = Start(&plan);
+    r.step = 20;
+    Facts eight = NearWipeRaid(8);
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    eight.anyInCombat = false;
+    Tick(r, eight);
+    Tick(r, Raid());
+    return r;
+}
+
+static void TestRaidPausesAfterTwoNearWipesInTenMinutes()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = NearWipeRun(plan);
+    CHECK(r.nearWipeMarks.size() == 1 && !r.wipeStopDue && r.state == State::Running);
+    // The second event 5 min 50 s after the first. The run's clock counts running time and each tick adds its dt, so
+    // the next tick starts 350000 ms after the first mark.
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 350000 - kTickMs;
+    Facts eleven = NearWipeRaid(11);
+    eleven.anyInCombat = true;
+    CHECK(Tick(r, eleven).empty());
+    CHECK(r.nearWipeMarks.size() == 2 && r.wipeStopDue);
+    CHECK(r.state == State::Running && !r.regroup);
+    CHECK(r.note == "11 dead: fighting on, the run stops after the fight (2 near wipes within 10 min)");
+    Facts fourteen = NearWipeRaid(14);
+    CHECK(Tick(r, fourteen).empty());
+    CHECK(r.state == State::Paused);
+    CHECK(r.note == "14 dead: 2 near wipes within 10 min (steps 21 and 32, 5 min 50 s apart; 2 near wipes this run): "
+        "the run stops here. Regroup (cmd revive party), then .bot run resume, or .bot run stop");
+}
+
+static void TestNearWipeStopWindowBoundary()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    // Exactly 10 min: the first mark is still in the window, the stop is due.
+    {
+        Run r = NearWipeRun(plan);
+        r.step = 31;
+        r.runMs = r.nearWipeMarks.front().runMs + 600000 - kTickMs;
+        Facts eight = NearWipeRaid(8);
+        eight.anyInCombat = true;
+        Tick(r, eight);
+        CHECK(r.wipeStopDue);
+        eight.anyInCombat = false;
+        Tick(r, eight);
+        CHECK(r.state == State::Paused);
+    }
+    // One ms more: the first mark is out, the count is 1, the run regroups by itself.
+    {
+        Run r = NearWipeRun(plan);
+        r.step = 31;
+        r.runMs = r.nearWipeMarks.front().runMs + 600001 - kTickMs;
+        Facts eight = NearWipeRaid(8);
+        eight.anyInCombat = true;
+        Tick(r, eight);
+        CHECK(!r.wipeStopDue);
+        eight.anyInCombat = false;
+        Tick(r, eight);
+        CHECK(r.state == State::Running && r.regroup);
+        CHECK(r.note.find("regrouping by itself") != std::string::npos);
+    }
+}
+
+static void TestOneEventOneMark()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = Start(&plan);
+    r.step = 20;
+    Facts eight = NearWipeRaid(8);
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    CHECK(r.nearWipeMarks.size() == 1);
+    // The wipe and the revive one by one after it are the same event.
+    Facts all = NearWipeRaid(20);
+    all.anyInCombat = true;
+    Tick(r, all);
+    all.anyInCombat = false;
+    for (std::uint32_t dead = 19; dead >= 8; --dead)
+        Tick(r, NearWipeRaid(dead));
+    CHECK(r.nearWipeMarks.size() == 1 && !r.wipeStopDue);
+    Tick(r, Raid());
+    // The second event 1 min later marks and pauses.
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 60000 - kTickMs;
+    Facts again = NearWipeRaid(8);
+    again.anyInCombat = true;
+    Tick(r, again);
+    CHECK(r.nearWipeMarks.size() == 2 && r.wipeStopDue);
+    again.anyInCombat = false;
+    Tick(r, again);
+    CHECK(r.state == State::Paused);
+}
+
+static void TestDirectWipeIsOneMark()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = Start(&plan);
+    r.step = 20;
+    Facts all = NearWipeRaid(20);
+    all.anyInCombat = true;
+    Tick(r, all);
+    CHECK(r.nearWipeMarks.size() == 1);
+    all.anyInCombat = false;
+    for (std::uint32_t dead = 19; dead >= 8; --dead)
+        Tick(r, NearWipeRaid(dead));
+    CHECK(r.nearWipeMarks.size() == 1 && !r.wipeStopDue);
+    Tick(r, Raid());
+    CHECK(r.nearWipeMarks.size() == 1 && !r.wipeStopDue);
+}
+
+static void TestNearWipeStopOffAtZero()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = Start(&plan);
+    r.step = 20;
+    Facts eight = RaidDead(8); // the key at its default 0
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    CHECK(r.note == "8 dead: fighting on, a regroup follows");
+    eight.anyInCombat = false;
+    Tick(r, eight);
+    CHECK(r.state == State::Running && r.regroup && r.autoRegroups == 1);
+    CHECK(r.note.find("regrouping by itself") != std::string::npos);
+    CHECK(!r.wipeStopDue);
+}
+
+static void TestResumeClearsTheNearWipeCount()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = NearWipeRun(plan);
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 60000 - kTickMs;
+    Facts eight = NearWipeRaid(8);
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    eight.anyInCombat = false;
+    Tick(r, eight);
+    CHECK(r.state == State::Paused);
+    CHECK(Resume(r));
+    CHECK(r.nearWipeMarks.empty() && !r.wipeStopDue);
+    Tick(r, Raid()); // the resume's regroup ends (a walk back starts)
+    r.walkBack = false;
+    r.walkBackDue = false;
+    r.step = 31;
+    r.runMs += 60000;
+    // A third event is the first of the fresh count: it regroups by itself.
+    Facts again = NearWipeRaid(8);
+    again.anyInCombat = true;
+    Tick(r, again);
+    CHECK(r.nearWipeMarks.size() == 1 && !r.wipeStopDue);
+    again.anyInCombat = false;
+    Tick(r, again);
+    CHECK(r.state == State::Running && r.regroup);
+    CHECK(r.note.find("regrouping by itself") != std::string::npos);
+}
+
+static void TestNearWipeStopPastCeiling()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = NearWipeRun(plan);
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 60000 - kTickMs;
+    Facts eight = NearWipeRaid(8);
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    CHECK(r.wipeStopDue);
+    r.fighting = true;
+    r.fightMs = kFightCapMs + 1000;
+    Facts twelve = NearWipeRaid(12);
+    twelve.anyInCombat = true;
+    CHECK(Tick(r, twelve).empty());
+    CHECK(r.state == State::Paused);
+    CHECK(r.note == "12 dead: 2 near wipes within 10 min (steps 21 and 32, 1 min 0 s apart; 2 near wipes this run): "
+        "the run stops here. Regroup (cmd revive party), then .bot run resume, or .bot run stop; the fight went past 180 s");
+}
+
+static void TestNearWipeStopWithGmPinned()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = NearWipeRun(plan);
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 60000 - kTickMs;
+    Facts eight = NearWipeRaid(8);
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    CHECK(r.wipeStopDue);
+    // Every bot dead and only a GameMaster fighting: the fight is not the party's, so the run stops.
+    Facts pinned = NearWipeRaid(20);
+    PlayerFact gm;
+    gm.name = "Gm";
+    gm.commander = true;
+    gm.gm = true;
+    gm.inCombat = true;
+    pinned.players = {gm};
+    pinned.anyInCombat = true;
+    Tick(r, pinned);
+    CHECK(r.state == State::Paused);
+    CHECK(r.note.find("2 near wipes within 10 min") != std::string::npos);
+}
+
+static void TestNearWipeStopGating()
+{
+    CHECK(NearWipeStopCount(false, false, 2) == 0);
+    CHECK(NearWipeStopCount(true, false, 2) == 2);
+    CHECK(NearWipeStopCount(false, true, 2) == 2);
+}
+
 // M2: the raid's regroup restart compares against the raid's wipe level (the
 // mutation under test puts it back on the party rule): with 4 dead the fallen
 // wait regroups (revive and gather) instead of handing over to the regroup by
@@ -24631,6 +24862,15 @@ int main()
     TestRaidRegroupWaitsForWipeLevel();
     TestRaidNoRetreatAtTwoDead();
     TestRaidNearWipeLatch();
+    TestRaidPausesAfterTwoNearWipesInTenMinutes();
+    TestNearWipeStopWindowBoundary();
+    TestOneEventOneMark();
+    TestDirectWipeIsOneMark();
+    TestNearWipeStopOffAtZero();
+    TestResumeClearsTheNearWipeCount();
+    TestNearWipeStopPastCeiling();
+    TestNearWipeStopWithGmPinned();
+    TestNearWipeStopGating();
     TestRaidRegroupNotRestartedByOneMoreDeath();
     TestRaidRegroupGatherDone();
     TestRaidCcRegatherDone();

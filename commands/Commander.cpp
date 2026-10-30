@@ -8774,6 +8774,11 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     // Task A5: a raid binding with AiPlayerbot.DungeonRunRaid scales the run's gather, wipe level and rest floor.
     if (raid && sPlayerbotAIConfig.dungeonRunRaid)
         f.raid.on = true;
+    // The near-wipe stop: config reads only, no world read (DungeonRun::NearWipeStopCount keeps it to raids unless
+    // AiPlayerbot.DungeonRunNearWipeStopParty is on).
+    f.nearWipeStopCount = TortoiseBots::DungeonRun::NearWipeStopCount(f.raid.on,
+        sPlayerbotAIConfig.dungeonRunNearWipeStopParty, sPlayerbotAIConfig.dungeonRunNearWipeStop);
+    f.nearWipeStopWindowMs = sPlayerbotAIConfig.dungeonRunNearWipeStopMinutes * 60000u;
     std::vector<uint32> raidHealths, raidManas; // every living bot's health, non-healer mana (the raid's rest floor)
     for (Player* bot : bots)
     {

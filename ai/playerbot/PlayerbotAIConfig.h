@@ -580,6 +580,12 @@ public:
     float dungeonRunPackClearMarginYd;
     // ... and how many residue pulls a step may send before it pauses.
     uint32 dungeonRunPackClearRepulls;
+    // The run leader's near-wipe stop: this many wipe events (a near wipe, a wipe, the revive after either) within
+    // dungeonRunNearWipeStopMinutes of running time pause the run once the fight is over. 0: off.
+    uint32 dungeonRunNearWipeStop;
+    uint32 dungeonRunNearWipeStopMinutes;
+    // ... and whether a party binding gets it too (a raid binding gets it by default).
+    bool dungeonRunNearWipeStopParty;
     // The run leader's regroup holds for a living resurrector to raise the fallen (RezHoldPolicy.h; default off).
     bool dungeonRunRezHold;
     // The run leader orders `pullback` only when the tank can shoot from where it stands, else it walks the

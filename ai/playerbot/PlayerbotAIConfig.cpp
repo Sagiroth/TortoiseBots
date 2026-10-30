@@ -146,6 +146,11 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
         config.GetFloatDefault("AiPlayerbot.DungeonRunPackClearMarginYd", 10.0f)));
     dungeonRunPackClearRepulls = static_cast<uint32>(std::min(10, std::max(1,
         config.GetIntDefault("AiPlayerbot.DungeonRunPackClearRepulls", 3))));
+    dungeonRunNearWipeStop = static_cast<uint32>(std::min(10, std::max(0,
+        config.GetIntDefault("AiPlayerbot.DungeonRunNearWipeStop", 2))));
+    dungeonRunNearWipeStopMinutes = static_cast<uint32>(std::min(60, std::max(1,
+        config.GetIntDefault("AiPlayerbot.DungeonRunNearWipeStopMinutes", 10))));
+    dungeonRunNearWipeStopParty = config.GetBoolDefault("AiPlayerbot.DungeonRunNearWipeStopParty", false);
     dungeonRunRezHold = config.GetBoolDefault("AiPlayerbot.DungeonRunRezHold", false);
     dungeonRunPullStand = config.GetBoolDefault("AiPlayerbot.DungeonRunPullStand", false);
     dungeonRunWalkBackAfterWonFight = config.GetBoolDefault("AiPlayerbot.DungeonRunWalkBackAfterWonFight", false);

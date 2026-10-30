@@ -801,6 +801,10 @@ struct Facts
     // The party (the commander's bound bots, the lead bot included).
     std::uint32_t total = 0, alive = 0, dead = 0;
     RaidFacts raid;                       // set on a raid binding with AiPlayerbot.DungeonRunRaid (off: every rule below as before)
+    // The near-wipe stop (AiPlayerbot.DungeonRunNearWipeStop): this many near-wipe events within nearWipeStopWindowMs
+    // pause the run once the fight is over (0: off; NearWipeStopCount keeps it to raids unless the party key is on).
+    std::uint32_t nearWipeStopCount = 0;
+    std::uint32_t nearWipeStopWindowMs = 0;
     bool leadAlive = true;
     // The instance's doors (every area trigger into the plan's map), read by the glue from the core's trigger table
     // once per map. A living lead bot on one of them far from every point of the plan revived in another part of the
@@ -1853,6 +1857,16 @@ struct Run
     bool wiped = false;
     std::uint32_t nearWipes = 0; // kWipeDead or more dead with someone alive, counted once each time
     bool nearWiped = false;
+    // The near-wipe stop: one mark per wipe event (a near wipe, a wipe, the revive after either: the event latch
+    // holds until the party is below the wipe level). A resume clears the marks.
+    struct WipeMark
+    {
+        std::uint64_t runMs = 0;
+        std::size_t step = 0;
+    };
+    std::vector<WipeMark> nearWipeMarks;
+    bool wipeEventOn = false;    // the party was at the wipe level on the last running tick
+    bool wipeStopDue = false;    // enough marks in the window: the run pauses once the fight is over
     std::uint32_t leadDeaths = 0;   // the lead bot's deaths (a living to dead edge of Facts::leadAlive), run-wide
     bool leadDown = false;          // ... the lead bot was dead on the last running tick
     bool windowWiped = false;       // a window wipe was counted; re-armed once fewer than kWipeDead are dead
@@ -4439,6 +4453,8 @@ inline bool Resume(Run& r)
     r.doorPaused = false;
     r.fighting = false;
     r.autoRegroups = 0;
+    r.nearWipeMarks.clear(); // the commander's resume starts a fresh near-wipe count
+    r.wipeStopDue = false;
     r.otherPartRescues = 0; // a resume gives the lead bot in another part fresh rescue teleports
     r.offMapReturnTries.clear();
     r.rejoinTries.clear();
@@ -14523,6 +14539,49 @@ inline bool WindowWipe(const Run& r, const Facts& f)
     return true;
 }
 
+// The near-wipe stop's gating: a raid binding gets it (AiPlayerbot.DungeonRunNearWipeStop), a party only with the
+// party key (self-regroup is the designed party recovery and the per-step cap already pauses a failing step).
+inline std::uint32_t NearWipeStopCount(bool raidOn, bool partyOn, std::uint32_t key)
+{
+    return raidOn || partyOn ? key : 0;
+}
+
+// Prunes the marks older than the window and says whether the run has had enough of them.
+inline bool NearWipeStopDue(Run& r, const Facts& f)
+{
+    if (f.nearWipeStopCount == 0 || f.nearWipeStopWindowMs == 0)
+        return false;
+    r.nearWipeMarks.erase(std::remove_if(r.nearWipeMarks.begin(), r.nearWipeMarks.end(),
+        [&](const Run::WipeMark& m) { return r.runMs - m.runMs > f.nearWipeStopWindowMs; }),
+        r.nearWipeMarks.end());
+    return r.nearWipeMarks.size() >= f.nearWipeStopCount;
+}
+
+// "21 and 32", "21, 32 and 35": the marked steps, 1-based in mark order.
+inline std::string WipeStepsList(const std::vector<Run::WipeMark>& marks)
+{
+    std::string out;
+    for (std::size_t i = 0; i < marks.size(); ++i)
+    {
+        if (i > 0)
+            out += i + 1 == marks.size() ? " and " : ", ";
+        out += std::to_string(marks[i].step + 1);
+    }
+    return out;
+}
+
+// The stop's pause line: the dead, the marks in the window, their steps, the span, and the run's counts.
+inline std::string NearWipeStopNote(const Run& r, const Facts& f, std::uint32_t partyDead)
+{
+    std::uint64_t const gapMs = r.nearWipeMarks.empty() ? 0 : r.nearWipeMarks.back().runMs - r.nearWipeMarks.front().runMs;
+    std::string const counts = WipeCounts(r);
+    return std::to_string(partyDead) + " dead: " + std::to_string(r.nearWipeMarks.size()) + " near wipe" +
+        (r.nearWipeMarks.size() == 1 ? "" : "s") + " within " + std::to_string(f.nearWipeStopWindowMs / 60000) +
+        " min (steps " + WipeStepsList(r.nearWipeMarks) + ", " + std::to_string(gapMs / 60000) + " min " +
+        std::to_string((gapMs % 60000) / 1000) + " s apart" + (counts.empty() ? "" : "; " + counts + " this run") +
+        "): the run stops here. Regroup (cmd revive party), then .bot run resume, or .bot run stop";
+}
+
 // The run's wipe, near-wipe and lead-death counts for the report, once per running tick (TickBody).
 inline void NoteWipes(Run& r, const Facts& f)
 {
@@ -14558,6 +14617,16 @@ inline void NoteWipes(Run& r, const Facts& f)
         r.nearWiped = true;
     else if (!WipeLevel(f, partyDead))
         r.nearWiped = false;
+    // The near-wipe stop's events: a near wipe, a wipe, and the revive after either are one mark (the latch holds
+    // until the party is below the wipe level again). runMs counts running time only, so a pause does not age them.
+    bool const eventNow = partyWiped || windowWipe || WipeLevel(f, partyDead);
+    if (eventNow && !r.wipeEventOn)
+    {
+        r.nearWipeMarks.push_back({r.runMs, r.step});
+        if (NearWipeStopDue(r, f))
+            r.wipeStopDue = true;
+    }
+    r.wipeEventOn = eventNow;
 }
 
 inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const RestLines& lines)
@@ -14644,6 +14713,16 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     // A wipe also ends the run's own fight below (the bots' all-dead: a dead player cannot be revived by the run).
     bool const allDead = f.total > 0 && f.alive == 0;
     std::uint32_t const partyDead = PartyDead(f);
+    // The near-wipe stop: enough wipe events in the window pause the run once the fight is over, before any regroup
+    // (a regroup would only walk the party back into the same cost).
+    if (r.wipeStopDue && (!f.anyInCombat || OnlyGmFightOverDeadBots(f) || (f.staleCombat && r.staleMs > kStaleCombatGraceMs)))
+    {
+        r.wipeStopDue = false;
+        r.fighting = false;
+        RearmRescueAfterDeath(r);
+        Pause(r, NearWipeStopNote(r, f, partyDead));
+        return order;
+    }
 
     // A party member coming back with attackers runs on to the party; the run
     // waits for it where it stands (RunBack): no regroup or step order, but
@@ -14903,8 +14982,8 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     // The party's dead, the players counted: three of them (or every bot) are a wipe the run regroups after. The
     // regroup waits for a dead player too (RegroupPlayerWait), so it is not started over while he is down.
     bool const wipe = WipeLevel(f, partyDead) || allDead;
-    bool const autoRegroup = wipe && r.autoRegroups < kAutoRegroupsPerStep;
-    if (wipe && !autoRegroup)
+    bool const autoRegroup = wipe && r.autoRegroups < kAutoRegroupsPerStep && !r.wipeStopDue;
+    if (wipe && !autoRegroup && !r.wipeStopDue)
     {
         RearmRescueAfterDeath(r); // a death: the resume's walk back may teleport once more
         Pause(r, std::to_string(partyDead) + " dead: regroup (cmd revive party), then .bot run resume (" +
@@ -15021,6 +15100,16 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
             r.hpWatch.clear();
         else if (HpHeldTick(r, f, dt))
             return order;
+        if (r.fightMs > cap && r.wipeStopDue)
+        {
+            // The stop is due and the fight goes on past its ceiling: pause with the stop's line rather than the old
+            // mid-fight regroup pause (the resume regroups).
+            r.wipeStopDue = false;
+            r.fighting = false;
+            RearmRescueAfterDeath(r);
+            Pause(r, NearWipeStopNote(r, f, partyDead) + "; the fight went past " + std::to_string(cap / 1000) + " s");
+            return order;
+        }
         if (r.fightMs > cap && autoRegroup)
         {
             // kWipeDead or more dead and one left fighting past the ceiling:
@@ -15065,8 +15154,13 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         if (RetreatTick(r, f, *s, dt, order))
             return order;
         r.note = autoRegroup ? std::to_string(f.dead) + " dead: fighting on, a regroup follows"
-               : !f.leadAlive ? std::string("the lead bot is dead: the others fight on") : std::string("fighting");
-        if (runBackWait && !autoRegroup)
+               : r.wipeStopDue
+                     ? std::to_string(f.dead) + " dead: fighting on, the run stops after the fight (" +
+                           std::to_string(r.nearWipeMarks.size()) + " near wipes within " +
+                           std::to_string(f.nearWipeStopWindowMs / 60000) + " min)"
+                     : !f.leadAlive ? std::string("the lead bot is dead: the others fight on")
+                                    : std::string("fighting");
+        if (runBackWait && !autoRegroup && !r.wipeStopDue)
             r.note = runBackNote;
         if (pastCeiling)
             r.note += "; past the " + std::to_string(cap / 1000) + " s ceiling: " +
