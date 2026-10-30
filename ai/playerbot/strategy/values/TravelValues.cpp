@@ -9,6 +9,7 @@
 #include "QuestValues.h"
 #include "SharedValueContext.h"
 #include "runtime/AltBotService.h"
+#include "runtime/GuildOrderStore.h"
 #include "BudgetValues.h"
 #include "GuildValues.h"
 #include "Guild/GuildMgr.h"
@@ -714,6 +715,12 @@ bool ShouldLeaveOutgrownZoneValue::Calculate()
 
     if (bot->GetLevel() < 10)
         return false;
+
+    // A guild order owns the bot's travel: its legs pick their own zones.
+    if (std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+            TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
+        if (!TortoiseBots::GuildOrders::IsFinished(order->state))
+            return false;
 
     // Targetless leave (ZoneMigratePolicy.h): two minutes of back-to-back
     // `reset travel target` mean no errand below is going to start, so the
