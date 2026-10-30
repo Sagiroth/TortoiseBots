@@ -53,6 +53,7 @@
 - Fixed: the raid entry waiver now works for a bound raid, whose commander stands outside the group.
 - New: `.bot run start ... until boss|step N|leg X` ends the run before that step, so a trash walk stops at the boss stand.
 - Fixed: a player's ghost outside no longer pulls the run's bots in and out through the portal; the lead-off-map pause resumes by itself.
+- Fixed: a run bot stuck in another copy of the dungeon (same map, other instance) is moved into the lead bot's copy instead of the regroup waiting for it forever.
 - New: GameMasters can start bot-only dungeon test runs at up to 3x walking speed (`.bot run start ... speed=2`); fights stay at normal speed and the status line marks the run as a test.
 - Fixed: at test speed the lead bot waits for the party when a bot falls 25 yd behind, so the party no longer reaches packs split.
 - The run leader is on by default and no longer needs the remote commander: players start runs in their own party (`inparty` bind or player-led); the remote commander only drives parties from outside.

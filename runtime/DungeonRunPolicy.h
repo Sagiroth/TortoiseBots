@@ -684,6 +684,10 @@ struct MemberFact
     // own wording; the rest (battleground, instance map, transport) is the open-world check. Unread: OpenWorld.
     enum class OffMapBlock : std::uint8_t { Busy, OpenWorld };
     OffMapBlock offMapBlock = OffMapBlock::OpenWorld;
+    // ta252 (Dire Maul West rf-B-4, 2026-10-25): the bot is on the plan's map id but in another copy of it (another
+    // instance id than the lead bot's); the glue gives it kOtherMapYd. A summon cannot reach it there (a same-map
+    // teleport stays in its copy): InstanceRejoinTick moves it. Unread: false.
+    bool otherCopy = false;
 };
 
 // An instance door: where an area trigger into the plan's map puts a player
@@ -1689,6 +1693,11 @@ struct Run
     // per bot per step, and an earlier copy of the same note is replaced, not appended to).
     std::size_t offMapNotedStep = static_cast<std::size_t>(-1);
     std::unordered_set<std::string> offMapNoted;
+    // ta252: the rejoin of a bot in another copy of the instance (InstanceRejoinTick): each bot's last rejoin (runMs)
+    // and its rejoins at the step rejoinStep (kRejoinTries a step and bot; Resume starts the count over).
+    std::unordered_map<std::string, std::uint64_t> rejoinAt;
+    std::size_t rejoinStep = static_cast<std::size_t>(-1);
+    std::unordered_map<std::string, std::uint32_t> rejoinTries;
     // The walk-back point last sent, from where, and how often (kWalkBackResends).
     std::size_t resendIdx = static_cast<std::size_t>(-1);
     float resendX = 0.0f, resendY = 0.0f, resendZ = 0.0f;
@@ -3182,7 +3191,7 @@ inline std::string WaitNote(const Run& r, const Facts& f)
     for (const MemberFact& m : f.members)
         if (!m.name.empty() && (m.yd > kGatherYd || m.dz > kStragglerDzYd) &&
             (r.waitFor.count(m.name) || r.regroup))
-            add(m.name, m.offPlanMap ? "outside the instance" : "running back");
+            add(m.name, m.offPlanMap ? "outside the instance" : m.otherCopy ? "in another copy of the instance" : "running back");
     if (out.empty() && f.dead)
         out = std::to_string(f.dead) + " dead";
     return out.empty() ? std::string("waiting for the party") : "waiting for " + out;
@@ -4374,6 +4383,7 @@ inline bool Resume(Run& r)
     r.autoRegroups = 0;
     r.otherPartRescues = 0; // a resume gives the lead bot in another part fresh rescue teleports
     r.offMapReturnTries.clear();
+    r.rejoinTries.clear();
     r.offMapNoted.clear();
     ResetStep(r);
     r.standPullShotGuid = 0; // a resume never keeps a stale in-shot authorization
@@ -5680,6 +5690,8 @@ inline bool PullbackRefusedUnreachable(Run& r, const std::string& order, const s
 
 constexpr std::uint64_t kOffMapReturnRepeatMs = 30000; // one bot's returns at least this far apart
 constexpr std::uint32_t kOffMapReturnTries = 3;        // returns a step per bot, then the pause naming it
+constexpr std::uint64_t kRejoinRepeatMs = 15000; // one bot's rejoins at least this far apart
+constexpr std::uint32_t kRejoinTries = 3;        // rejoins a step per bot, then the pause naming it
 
 inline bool OffMapReturnTick(Run& r, const Facts& f, std::string& order);
 
@@ -5819,6 +5831,13 @@ inline void OrderRefused(Run& r, const std::string& order, const std::string& an
     {
         r.note = order + " refused: " + answer + ": tried again in " + std::to_string(kOffMapReturnRepeatMs / 1000) +
             " s";
+        return;
+    }
+    // The rejoin of a bot in another copy of the instance (InstanceRejoinTick): never a pause; the next one after
+    // its 15 s.
+    if (order.compare(0, 7, "rejoin ") == 0)
+    {
+        r.note = order + " refused: " + answer + ": tried again in " + std::to_string(kRejoinRepeatMs / 1000) + " s";
         return;
     }
     // The run leader's walk of one bot (the straggler ladder, a rogue back from a failed Sap): help, never a pause.
@@ -12908,7 +12927,7 @@ inline bool PlanMapFightView(const Facts& f, Facts& out)
     for (const MemberFact& m : f.members)
         if (m.inCombat)
         {
-            if (m.offPlanMap)
+            if (m.offPlanMap || m.otherCopy)
                 offMapFight = true;
             else
                 onMapFight = true;
@@ -13027,6 +13046,236 @@ inline bool OffMapReturnTick(Run& r, const Facts& f, std::string& order)
         order = "return " + m.name + " " + std::to_string(r.plan->map);
         r.note += (r.note.empty() ? "" : "; ") + m.name + " is outside the instance: teleported back to the lead bot " +
             "(try " + std::to_string(tries + 1) + " of " + std::to_string(kOffMapReturnTries) + " at this step)";
+        return true;
+    }
+    return false;
+}
+
+// ta252: what the glue may change so the core puts a bot into the lead bot's copy. The copy a far teleport enters
+// is Player::GetBoundInstanceSaveForSelfOrGroup's: a permanent solo bind first, else the group's, else the solo one.
+// Round 2 (Codex HIGH, 2026-10-29: a failed rejoin left binds mutated): the core's own entry checks run first (the
+// glue's preflight, RejoinBindFacts::entry) and nothing is written when they fail; the GROUP's bind is never written
+// (a group bound to another copy refuses); the only write is the bot's own solo bind, when the group has none, and
+// the glue undoes it (PlanRejoinSettle, PlanRejoinRestore) when the bot is not in the lead bot's copy
+// kRejoinArriveMs later.
+enum class RejoinEntryCheck
+{
+    Ok,
+    CanPlayerEnter, // MapManager::CanPlayerEnter: the raid group rule and the count of the bot's current bind
+    InstanceCount,  // Player::CheckInstanceCount for the lead bot's instance id: one instance too many
+    MapCanEnter,    // DungeonMap::CanEnter: the player cap, a reset in progress, a raid encounter in progress
+};
+inline char const* RejoinEntryCheckName(RejoinEntryCheck c)
+{
+    switch (c)
+    {
+        case RejoinEntryCheck::CanPlayerEnter:
+            return "can-player-enter";
+        case RejoinEntryCheck::InstanceCount:
+            return "instance-count";
+        case RejoinEntryCheck::MapCanEnter:
+            return "map-can-enter";
+        case RejoinEntryCheck::Ok:
+            break;
+    }
+    return "ok";
+}
+struct RejoinBindFacts
+{
+    RejoinEntryCheck entry = RejoinEntryCheck::Ok;                // which of the core's entry checks failed
+    bool soloBind = false, soloPerm = false, soloIsLeads = false; // the bot's own bind on the map
+    bool groupBind = false, groupIsLeads = false;                 // its group's bind on the map
+};
+enum class RejoinBindPlan
+{
+    EntryRefused,   // the core would refuse the entry: refused, nothing written
+    Locked,         // a permanent solo bind to another copy (a saved lockout): refused, nothing written
+    GroupElsewhere, // the group is bound to another copy: only a group rebind would help, refused, nothing written
+    Teleport,       // the binds already lead into the lead bot's copy: the forced map change only
+    BindSolo,       // the group has no bind: Player::BindToInstance(lead's state, false), undone on a failure
+};
+inline RejoinBindPlan PlanRejoinBind(const RejoinBindFacts& b)
+{
+    if (b.entry != RejoinEntryCheck::Ok)
+        return RejoinBindPlan::EntryRefused;
+    if (b.soloBind && b.soloPerm)
+        return b.soloIsLeads ? RejoinBindPlan::Teleport : RejoinBindPlan::Locked;
+    if (b.groupBind)
+        return b.groupIsLeads ? RejoinBindPlan::Teleport : RejoinBindPlan::GroupElsewhere;
+    return RejoinBindPlan::BindSolo;
+}
+inline bool RejoinBindWrites(RejoinBindPlan p)
+{
+    return p == RejoinBindPlan::BindSolo;
+}
+// What refused the rejoin, for the [RUN] line and the run's note. The plan tests the entry check first, so an
+// EntryRefused would otherwise hide the group's own bind: both are named. botCopy and groupCopy are the instance ids
+// the glue read (groupCopy 0 when the group has no bind on the map).
+inline std::string RejoinBindRefusal(const RejoinBindFacts& b, std::uint32_t botCopy, std::uint32_t groupCopy)
+{
+    std::string reason;
+    if (b.entry != RejoinEntryCheck::Ok)
+        reason = std::string("entry check: ") + RejoinEntryCheckName(b.entry);
+    if (b.groupBind && !b.groupIsLeads)
+    {
+        if (!reason.empty())
+            reason += "; ";
+        if (botCopy && groupCopy == botCopy)
+            reason += "group bound to the bot's copy " + std::to_string(botCopy);
+        else if (groupCopy)
+            reason += "group bound to another copy " + std::to_string(groupCopy);
+        else
+            reason += "group bound to another copy";
+    }
+    return reason;
+}
+inline std::string RejoinBindVerdictText(const RejoinBindFacts& b, std::uint32_t botCopy, std::uint32_t groupCopy)
+{
+    switch (PlanRejoinBind(b))
+    {
+        case RejoinBindPlan::EntryRefused:
+        case RejoinBindPlan::GroupElsewhere:
+            return "refused (" + RejoinBindRefusal(b, botCopy, groupCopy) + ")";
+        case RejoinBindPlan::Locked:
+            return "refused (saved lockout)";
+        case RejoinBindPlan::BindSolo:
+            return "bind solo";
+        case RejoinBindPlan::Teleport:
+            break;
+    }
+    return "no bind change";
+}
+
+// ta252 round 2: a rejoin that wrote the solo bind waits for the bot in the lead bot's copy. TeleportTo returning
+// true does not mean it arrived: the far teleport can still fail later (Player::ExecuteTeleportFar's entry checks,
+// DungeonMap::Add in the worldport ack, then HandleReturnOnTeleportFail). Undone before the run's next try.
+constexpr std::uint32_t kRejoinArriveMs = 10000;
+static_assert(kRejoinArriveMs < kRejoinRepeatMs, "a failed rejoin is undone before the run tries that bot again");
+struct RejoinSettleFacts
+{
+    bool pending = false; // a solo bind the rejoin wrote waits for the arrival
+    bool refused = false; // TeleportTo returned false
+    bool arrived = false; // in the world on the map, in the lead bot's instance id, not teleporting
+    std::uint32_t msSince = 0;
+    // Round 3 (Codex HIGH, 2026-10-29: a logout mid-rejoin dropped the only snapshot): online = the Player exists
+    // (the undo needs it); settleNow = the logout hook or the next login, no more waiting.
+    bool online = true;
+    bool settleNow = false;
+};
+enum class RejoinSettle
+{
+    None,    // nothing pending
+    Wait,    // in flight
+    Done,    // in the lead bot's copy: the snapshot goes
+    Restore, // undo the write, then the snapshot goes
+    Hold,    // offline: keep the snapshot until the logout hook or the next login can undo it
+};
+inline RejoinSettle PlanRejoinSettle(const RejoinSettleFacts& s)
+{
+    if (!s.pending)
+        return RejoinSettle::None;
+    if (!s.online)
+        return RejoinSettle::Hold;
+    if (s.refused)
+        return RejoinSettle::Restore;
+    if (s.arrived)
+        return RejoinSettle::Done;
+    if (s.settleNow)
+        return RejoinSettle::Restore;
+    return s.msSince < kRejoinArriveMs ? RejoinSettle::Wait : RejoinSettle::Restore;
+}
+
+// ta252 round 2: the undo of the solo bind a failed rejoin wrote.
+struct RejoinRestoreFacts
+{
+    bool soloIsOurs = false;    // its solo bind is still the one the rejoin wrote (lead's instance id, not permanent)
+    bool hadSolo = false;       // it had a solo bind before (to the other copy)
+    bool oldStateFound = false; // that bind's save still exists (MapPersistentStateManager::GetPersistentState)
+};
+enum class RejoinRestore
+{
+    Unbind,      // it had none: Player::UnbindInstance(map)
+    Rebind,      // Player::BindToInstance(old save, old permanence)
+    KeepOldGone, // the old copy's save is gone: nothing to go back to
+    KeepChanged, // the bind changed since (the core): not ours to undo
+};
+inline RejoinRestore PlanRejoinRestore(const RejoinRestoreFacts& r)
+{
+    if (!r.soloIsOurs)
+        return RejoinRestore::KeepChanged;
+    if (!r.hadSolo)
+        return RejoinRestore::Unbind;
+    return r.oldStateFound ? RejoinRestore::Rebind : RejoinRestore::KeepOldGone;
+}
+
+// ta252 cold review (2026-10-29): the lead bot's own corpse run can land IT in a fresh copy of the instance (on entry
+// the core binds an unbound group there, DungeonMap::BindPlayerOrGroupOnEnter), and every other bot then reads
+// otherCopy: rejoining them would move the whole party into the lead bot's respawned copy and lose the run's progress.
+// True when every other living bot on the plan's map, at least 2 of them, is in another copy than the lead bot's
+// (the glue lists living bots only; one outside the instance, offPlanMap, does not count). With one such bot the lead
+// bot's copy is taken as the party's, as before.
+inline bool LeadInAnotherCopy(const Facts& f)
+{
+    std::size_t onMap = 0, otherCopy = 0;
+    for (const MemberFact& m : f.members)
+    {
+        if (m.name.empty() || m.name == f.carrier || m.offPlanMap)
+            continue;
+        ++onMap;
+        if (m.otherCopy)
+            ++otherCopy;
+    }
+    return onMap >= 2 && otherCopy == onMap;
+}
+
+// ta252: a living bot of the party in another copy of the instance is moved into the lead bot's copy
+// (`rejoin <name>`, the glue's RunInstanceRejoin): the regroup's summon cannot reach it there. With a real player
+// in the party the run does not rebind anyone: it pauses naming the bot. True when it set the order or paused.
+inline bool InstanceRejoinTick(Run& r, const Facts& f, std::string& order)
+{
+    if (r.rejoinStep != r.step)
+    {
+        r.rejoinStep = r.step;
+        r.rejoinTries.clear();
+    }
+    if (r.state == State::Running && r.plan && f.leadAlive && LeadInAnotherCopy(f))
+    {
+        // Any order of this tick goes too: a regroup summon of such a bot would be rerouted to a rejoin by the glue.
+        order.clear();
+        Pause(r, "the lead bot is in another copy of this instance than the party (every other bot is in one copy, "
+            "the lead bot alone in another, after its own corpse run): the run does not move the party into it; "
+            "bring the lead bot to the party, then .bot run resume");
+        return true;
+    }
+    if (!order.empty() || r.state != State::Running || !r.plan || !f.leadAlive || r.strandDue || r.strandOn)
+        return false;
+    for (const MemberFact& m : f.members)
+    {
+        if (m.name.empty() || !m.otherCopy || m.name == f.carrier)
+            continue;
+        if (!f.players.empty())
+        {
+            Pause(r, m.name + " is in another copy of this instance (the lead bot's summon cannot reach it there) and a "
+                "real player is in the party, so the run does not move it: bring it to the lead bot, then .bot run resume");
+            return true;
+        }
+        auto const last = r.rejoinAt.find(m.name);
+        if (last != r.rejoinAt.end() && r.runMs < last->second + kRejoinRepeatMs)
+            continue;
+        std::uint32_t const tries = r.rejoinTries.count(m.name) ? r.rejoinTries[m.name] : 0;
+        if (tries >= kRejoinTries)
+        {
+            Pause(r, m.name + " is still in another copy of this instance after " + std::to_string(kRejoinTries) +
+                " moves at this step: bring it to the lead bot, then .bot run resume");
+            return true;
+        }
+        r.rejoinTries[m.name] = tries + 1;
+        r.rejoinAt[m.name] = r.runMs;
+        r.reviveSummons.erase(m.name); // its revive summon landed in the wrong copy: the rejoin replaces it
+        order = "rejoin " + m.name;
+        r.note += (r.note.empty() ? "" : "; ") + m.name + " is in another copy of this instance (a summon cannot "
+            "reach it there): moved into the lead bot's (try " + std::to_string(tries + 1) + " of " +
+            std::to_string(kRejoinTries) + " at this step)";
         return true;
     }
     return false;
@@ -13617,6 +13866,7 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
         return std::string(); // the step the tick reached was the stop
     }
     OffMapReturnTick(r, f, order); // a bot outside the instance in a bot-only run (lead decision 2026-10-24)
+    InstanceRejoinTick(r, f, order); // ta252: a bot in another copy of the instance
     if (!r.shotGateRan)
         EndShotHold(r); // the pull stand's hold ends with any tick its gate did not run on
     ArmReachedTriggers(r); // the steps this tick reached

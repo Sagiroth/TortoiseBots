@@ -18788,6 +18788,299 @@ static void TestOutsideBotNotReturnableBusyWording()
     CHECK(Has(o.note, "Pozzle is outside the instance but cannot be returned (not in the open world): left alone"));
     CHECK(o.note.find("and busy") == std::string::npos);
 }
+// ta252 (Dire Maul West rf-B-4, 2026-10-25): a living bot on the plan's map id in another copy of the instance (the
+// glue gives it kOtherMapYd).
+static MemberFact OtherCopy(const char* name)
+{
+    MemberFact m = Mem(name, kOtherMapYd);
+    m.otherCopy = true;
+    return m;
+}
+static void TestOtherCopyBotIsNamedNotRunningBack()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    BeginRegroup(r);
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 2;
+    f.total = 2;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi")};
+    f.maxMemberYd = kOtherMapYd;
+    std::string const note = WaitNote(r, f);
+    CHECK(Has(note, "Aimboi (in another copy of the instance)"));
+    CHECK(!Has(note, "running back"));
+}
+static void TestOtherCopyBotIsRejoinedNotSummoned()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    BeginRegroup(r);
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 2;
+    f.total = 2;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi")};
+    f.maxMemberYd = kOtherMapYd;
+    std::string order;
+    bool rejoined = false;
+    for (int i = 0; i < 5 && !rejoined; ++i)
+    {
+        order = Tick(r, f);
+        CHECK(order != "summon Aimboi");
+        rejoined = order == "rejoin Aimboi";
+    }
+    CHECK(rejoined);
+    CHECK(Has(r.note, "(try 1 of 3 at this step)"));
+    CHECK(r.rejoinTries["Aimboi"] == 1);
+}
+// ta252 cold review (2026-10-29): the lead bot's own corpse run can land IT in a fresh copy; on entry the core binds an
+// unbound group there, and rejoining every other bot would move the whole party into the respawned copy. When every
+// other living bot on the plan's map (at least 2) is in another copy, the lead bot is the odd one out: pause.
+static void TestLeadInAnotherCopyPausesNotRejoins()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    BeginRegroup(r);
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 3;
+    f.total = 3;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi"), OtherCopy("Brakk")};
+    f.maxMemberYd = kOtherMapYd;
+    std::string order = Tick(r, f);
+    CHECK(order.empty());
+    CHECK(r.state == State::Paused);
+    CHECK(Has(r.note, "the lead bot is in another copy of this instance than the party"));
+    CHECK(r.rejoinTries.empty());
+    // the tick body's regroup summon of such a bot is dropped too (the glue would reroute it to a rejoin).
+    Run r2 = Start(&plan);
+    std::string summon = "summon Aimboi";
+    CHECK(InstanceRejoinTick(r2, f, summon));
+    CHECK(summon.empty() && r2.state == State::Paused);
+    // a bot outside the instance is no member on the plan's map: it does not hide the lead bot's copy.
+    MemberFact outside = Mem("Cleo", kOtherMapYd);
+    outside.offPlanMap = true;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi"), OtherCopy("Brakk"), outside};
+    CHECK(LeadInAnotherCopy(f));
+    // one in the lead's copy with them: the two are the odd ones, rejoined as before.
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi"), OtherCopy("Brakk"), Mem("Cleo", 3)};
+    CHECK(!LeadInAnotherCopy(f));
+    // a single other bot in another copy: rejoined as before (cannot tell which side is wrong; the lead bot leads).
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi")};
+    CHECK(!LeadInAnotherCopy(f));
+    Run r3 = Start(&plan);
+    std::string order3;
+    CHECK(InstanceRejoinTick(r3, f, order3) && order3 == "rejoin Aimboi" && r3.state == State::Running);
+}
+static void TestRejoinRepeatAndPause()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 2;
+    f.total = 2;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi")};
+    f.maxMemberYd = kOtherMapYd;
+    std::string order;
+    CHECK(InstanceRejoinTick(r, f, order) && order == "rejoin Aimboi");
+    order.clear();
+    r.runMs += kRejoinRepeatMs - 1;
+    CHECK(!InstanceRejoinTick(r, f, order) && order.empty());
+    r.runMs += 1;
+    CHECK(InstanceRejoinTick(r, f, order) && order == "rejoin Aimboi");
+    order.clear();
+    r.runMs += kRejoinRepeatMs;
+    CHECK(InstanceRejoinTick(r, f, order) && order == "rejoin Aimboi");
+    CHECK(r.rejoinTries["Aimboi"] == kRejoinTries);
+    order.clear();
+    r.runMs += kRejoinRepeatMs;
+    CHECK(InstanceRejoinTick(r, f, order) && order.empty() && r.state == State::Paused);
+    CHECK(r.note.find("Aimboi is still in another copy of this instance after 3 moves") == 0);
+    CHECK(Resume(r) && r.rejoinTries.empty());
+}
+static void TestRejoinWithARealPlayerPauses()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 2;
+    f.total = 2;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi")};
+    f.maxMemberYd = kOtherMapYd;
+    PlayerFact player;
+    player.name = "Perzi";
+    f.players = {player};
+    std::string order;
+    CHECK(InstanceRejoinTick(r, f, order) && order.empty() && r.state == State::Paused);
+    CHECK(Has(r.note, "a real player is in the party"));
+}
+static void TestRejoinRefusalIsNoPause()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    OrderRefused(r, "rejoin Aimboi", "failed: x");
+    CHECK(r.state == State::Running);
+    CHECK(Has(r.note, "tried again in 15 s"));
+}
+static void TestOtherCopyFightIsNoPartyFight()
+{
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 2;
+    f.total = 2;
+    MemberFact aimboi = OtherCopy("Aimboi");
+    aimboi.inCombat = true;
+    f.members = {Mem("Nara", 0), aimboi};
+    f.anyInCombat = true;
+    f.leadInCombat = false;
+    Facts view;
+    CHECK(PlanMapFightView(f, view));
+    CHECK(!view.anyInCombat && !view.staleCombat);
+}
+static void TestPlanRejoinBind()
+{
+    // ta252 round 2 (Codex HIGH): fields {entry, soloBind, soloPerm, soloIsLeads, groupBind, groupIsLeads}.
+    using P = RejoinBindPlan;
+    using E = RejoinEntryCheck;
+    // (a) the normal case: the group is bound to the lead bot's copy. The group's bind wins over a solo one that is
+    // not permanent (Player::GetBoundInstanceSaveForSelfOrGroup), so nothing is written, the stale solo bind included.
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, true, true}) == P::Teleport);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, true, true}) == P::Teleport);
+    // (b) the group has no bind (Dire Maul West rf-B-4): only the bot's own solo bind moves.
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, false, false}) == P::BindSolo);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, false, false}) == P::BindSolo);
+    // (c) the group is bound to another copy: the group's bind would have to change, so it refuses (never rebinds a
+    // party), permanent or not.
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, false, false, false, true, false}) == P::GroupElsewhere);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, false, false, true, false}) == P::GroupElsewhere);
+    // (d) a permanent solo bind to another copy: a saved lockout, refused, also with the group on the lead's copy.
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, false, true, true}) == P::Locked);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, false, false, false}) == P::Locked);
+    // (e) a permanent solo bind to the lead bot's copy: it already wins, nothing is written.
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::Ok, true, true, true, false, false}) == P::Teleport);
+    // (f) the preflight (the core's own entry checks) failed: refused before anything else, so no bind is touched.
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::CanPlayerEnter, true, false, false, false, false}) == P::EntryRefused);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::InstanceCount, false, false, false, true, true}) == P::EntryRefused);
+    CHECK(PlanRejoinBind(RejoinBindFacts{E::MapCanEnter, true, true, false, false, false}) == P::EntryRefused);
+    // Only BindSolo writes a bind.
+    CHECK(!RejoinBindWrites(P::EntryRefused) && !RejoinBindWrites(P::Locked) && !RejoinBindWrites(P::GroupElsewhere) &&
+        !RejoinBindWrites(P::Teleport) && RejoinBindWrites(P::BindSolo));
+}
+static void TestRejoinBindReason()
+{
+    // ta252-log: the [RUN] line and the run's note name the entry sub-check that refused, and the group's own bind
+    // with it even when the entry check refused first (live: bot 113, lead 112, group 113).
+    using E = RejoinEntryCheck;
+    RejoinBindFacts f;
+    f.entry = E::CanPlayerEnter;
+    CHECK(RejoinBindVerdictText(f, 113, 0) == "refused (entry check: can-player-enter)");
+    f.entry = E::InstanceCount;
+    CHECK(RejoinBindVerdictText(f, 113, 0) == "refused (entry check: instance-count)");
+    f.entry = E::MapCanEnter;
+    CHECK(RejoinBindVerdictText(f, 113, 0) == "refused (entry check: map-can-enter)");
+    CHECK(RejoinBindRefusal(f, 113, 0) == "entry check: map-can-enter");
+    CHECK(std::string(RejoinEntryCheckName(E::Ok)) == "ok");
+    // The live shape: the instance count refused and the group is bound to the bot's own copy.
+    RejoinBindFacts live;
+    live.entry = E::InstanceCount;
+    live.groupBind = true;
+    live.groupIsLeads = false;
+    CHECK(PlanRejoinBind(live) == RejoinBindPlan::EntryRefused);
+    CHECK(RejoinBindVerdictText(live, 113, 113) ==
+        "refused (entry check: instance-count; group bound to the bot's copy 113)");
+    // The group's bind in a third copy: named by its id.
+    CHECK(RejoinBindVerdictText(live, 113, 114) ==
+        "refused (entry check: instance-count; group bound to another copy 114)");
+    // The spec's GroupElsewhere on its own: the entry checks pass, the group leads to the bot's copy.
+    RejoinBindFacts elsewhere;
+    elsewhere.groupBind = true;
+    elsewhere.groupIsLeads = false;
+    CHECK(PlanRejoinBind(elsewhere) == RejoinBindPlan::GroupElsewhere);
+    CHECK(RejoinBindVerdictText(elsewhere, 113, 113) == "refused (group bound to the bot's copy 113)");
+    // The plan's other verdicts keep their text.
+    RejoinBindFacts locked;
+    locked.soloBind = true;
+    locked.soloPerm = true;
+    CHECK(RejoinBindVerdictText(locked, 113, 0) == "refused (saved lockout)");
+    CHECK(RejoinBindVerdictText(RejoinBindFacts{}, 113, 0) == "bind solo");
+    RejoinBindFacts teleport;
+    teleport.soloBind = true;
+    teleport.soloPerm = true;
+    teleport.soloIsLeads = true;
+    CHECK(RejoinBindVerdictText(teleport, 113, 0) == "no bind change");
+}
+static void TestRejoinSettle()
+{
+    // ta252 round 2: a rejoin that moved the solo bind is checked until the bot is in the lead bot's copy.
+    // Fields {pending, refused, arrived, msSince}.
+    using S = RejoinSettle;
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{false, false, false, 0}) == S::None);
+    // TeleportTo returned false: undone at once.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, true, false, 0}) == S::Restore);
+    // arrived: nothing to undo.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, true, 300}) == S::Done);
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, true, kRejoinArriveMs + 5000}) == S::Done);
+    // in flight: waits up to kRejoinArriveMs, then undone (the far teleport failed in ExecuteTeleportFar or at the
+    // map's Add, where TeleportTo had already returned true).
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, 0}) == S::Wait);
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, kRejoinArriveMs - 1}) == S::Wait);
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, kRejoinArriveMs}) == S::Restore);
+    // the undo comes before the run's next try of the same bot.
+    CHECK(kRejoinArriveMs < kRejoinRepeatMs);
+}
+static void TestRejoinSettleAcrossLogout()
+{
+    // ta252 round 3 (Codex HIGH, 2026-10-29): a bot that logs out mid-rejoin must not lose the snapshot.
+    // Fields {pending, refused, arrived, msSince, online, settleNow}.
+    using S = RejoinSettle;
+    // offline (no Player to undo with): the snapshot is held, never dropped, at any age.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, 0, false, false}) == S::Hold);
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, kRejoinArriveMs * 100, false, false}) == S::Hold);
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, true, false, 0, false, false}) == S::Hold);
+    // the logout hook (the Player still valid, its pending far teleport already finished by LogoutPlayer) and the next
+    // login: settleNow, no more waiting. Not in the lead bot's copy: undone at once, also inside kRejoinArriveMs.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, 0, true, true}) == S::Restore);
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, kRejoinArriveMs - 1, true, true}) == S::Restore);
+    // settleNow and arrived: nothing to undo.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, true, 0, true, true}) == S::Done);
+    // nothing pending: nothing, online or not.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{false, false, false, 0, false, true}) == S::None);
+    // the defaults (online, not settleNow) keep the in-flight wait.
+    CHECK(PlanRejoinSettle(RejoinSettleFacts{true, false, false, 0}) == S::Wait);
+}
+static void TestRejoinRestore()
+{
+    // ta252 round 2: the undo of the solo bind. Fields {soloIsOurs, hadSolo, oldStateFound}.
+    using R = RejoinRestore;
+    // it had no solo bind: the one the rejoin made goes.
+    CHECK(PlanRejoinRestore(RejoinRestoreFacts{true, false, false}) == R::Unbind);
+    CHECK(PlanRejoinRestore(RejoinRestoreFacts{true, false, true}) == R::Unbind);
+    // its old solo bind's save still exists: bound back to it (with its old permanence).
+    CHECK(PlanRejoinRestore(RejoinRestoreFacts{true, true, true}) == R::Rebind);
+    // the old save is gone (that copy no longer exists): nothing to go back to, kept.
+    CHECK(PlanRejoinRestore(RejoinRestoreFacts{true, true, false}) == R::KeepOldGone);
+    // the solo bind is no longer the one the rejoin made (the core changed it): never touched.
+    CHECK(PlanRejoinRestore(RejoinRestoreFacts{false, false, false}) == R::KeepChanged);
+    CHECK(PlanRejoinRestore(RejoinRestoreFacts{false, true, true}) == R::KeepChanged);
+}
+static void TestOtherCopyNeverWithTheLeadDead()
+{
+    DungeonPlan plan = GraveyardPlan();
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.carrier = "Nara";
+    f.alive = 2;
+    f.total = 2;
+    f.members = {Mem("Nara", 0), OtherCopy("Aimboi")};
+    f.maxMemberYd = kOtherMapYd;
+    f.leadAlive = false;
+    std::string order;
+    CHECK(!InstanceRejoinTick(r, f, order) && order.empty());
+}
+
 // Round 1 finding 3: the lead bot's own fact off the plan's map is never returned (the m.name == f.carrier skip).
 static void TestOutsideLeadBotIsNeverReturned()
 {
@@ -23626,6 +23919,19 @@ int main()
     TestOutsideBotNotReturnableNotedAgainOnNewStep();
     TestOutsideBotNotReturnableBusyWording();
     TestOutsideLeadBotIsNeverReturned();
+    TestOtherCopyBotIsNamedNotRunningBack();
+    TestOtherCopyBotIsRejoinedNotSummoned();
+    TestRejoinRepeatAndPause();
+    TestRejoinWithARealPlayerPauses();
+    TestRejoinRefusalIsNoPause();
+    TestOtherCopyFightIsNoPartyFight();
+    TestLeadInAnotherCopyPausesNotRejoins();
+    TestPlanRejoinBind();
+    TestRejoinBindReason();
+    TestRejoinSettle();
+    TestRejoinSettleAcrossLogout();
+    TestRejoinRestore();
+    TestOtherCopyNeverWithTheLeadDead();
     TestBossNotAtHisSpotIsSearchedForInTheInstance();
     TestPassedBossAtHisSpotPausesAtOnce();
     TestAliveSearchPauseSaysWhereTheLeadBotIs();

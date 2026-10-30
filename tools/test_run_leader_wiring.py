@@ -1068,6 +1068,96 @@ class RunHoldsItsDeadWiringTest(unittest.TestCase):
         self.assertLess(refused.index('order.compare(0, 7, "return ") == 0'),
                         refused.index('Pause(r, "cmd " + order + " refused: " + answer + MissingHint(r));'))
 
+    def test_a_bot_in_another_copy_is_rejoined(self):
+        # ta252 (Dire Maul West rf-B-4): a bot on the lead bot's map id in another instance id. Its revive/regroup
+        # summon lands in its own copy (a same-map teleport is a near one), so the summon is rerouted to a rejoin that
+        # moves its bind to the lead bot's copy and forces the map change (DungeonRun::InstanceRejoinTick).
+        code = strip_comments(COMMANDS)
+        issue = body(code, "bool IssueRunOrder(Player* commander, std::string const& text, std::string& answer,", "\n}\n")
+        self.assertIn('if (text.compare(0, 7, "rejoin ") == 0)\n        return RunInstanceRejoin(commander, text, answer);', issue)
+        self.assertIn('text.compare(0, 7, "summon ") == 0 && RunOrderBotInOtherCopy(commander, text.substr(7))', issue)
+        self.assertLess(issue.index("RunOrderBotInOtherCopy(commander, text.substr(7))"),
+                        issue.index("HandleCommanderOrder(handler.get(), text.c_str());"))
+        fn = body(code, "bool RunInstanceRejoin(Player* commander, std::string const& order, std::string& answer)\n{", "\n}\n")
+        for needed in ("TortoiseBots::DungeonRun::PlanRejoinBind(facts)", "TELE_TO_FORCE_MAP_CHANGE",
+                       "bot->GetBoundInstanceSaveForSelfOrGroup(mapId)", 'answer = "player: a real player is in the party";',
+                       'sLog.outBasic("[RUN] rejoin', "bot->BindToInstance(leadState, false);"):
+            self.assertIn(needed, fn)
+        self.assertLess(fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"), fn.index("[RUN] rejoin"))
+        self.assertLess(fn.index("bot->GetBoundInstanceSaveForSelfOrGroup(mapId)"), fn.index("bot->TeleportTo(mapId,"))
+        self.assertLess(fn.index("bot->CombatStop();"), fn.index("bot->TeleportTo(mapId,"))
+        # round 2 (Codex HIGH, 2026-10-29): failure-atomic. The group's bind is never written and the solo bind is
+        # never dropped outright; the core's own entry checks run before the one write; the write is snapshotted
+        # first and undone when TeleportTo refuses (and later by the per-update settle).
+        self.assertNotIn("group->BindToInstance", fn)
+        self.assertNotIn("group->UnbindInstance", fn)
+        self.assertNotIn("bot->UnbindInstance", fn)
+        # ta252-log: the glue keeps WHICH core entry check failed (the plan tests the preflight first, so the verdict
+        # alone cannot name it); the verdict text names it and the group's own bind, in the [RUN] line and in the
+        # refusal the run notes.
+        checks = ("CanPlayerEnter", "InstanceCount", "MapCanEnter")
+        for check in checks:
+            self.assertIn("facts.entry = TortoiseBots::DungeonRun::RejoinEntryCheck::" + check + ";", fn)
+        self.assertLess(fn.index("RejoinEntryCheck::CanPlayerEnter"), fn.index("RejoinEntryCheck::InstanceCount"))
+        self.assertLess(fn.index("RejoinEntryCheck::InstanceCount"), fn.index("RejoinEntryCheck::MapCanEnter"))
+        self.assertLess(fn.index("RejoinEntryCheck::MapCanEnter"),
+                        fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"))
+        self.assertIn("TortoiseBots::DungeonRun::RejoinBindVerdictText(facts, bot->GetInstanceId(), groupCopy)", fn)
+        self.assertIn("TortoiseBots::DungeonRun::RejoinBindRefusal(facts, bot->GetInstanceId(), groupCopy)", fn)
+        self.assertLess(fn.index("TortoiseBots::DungeonRun::RejoinBindVerdictText(facts"), fn.index("[RUN] rejoin"))
+        self.assertLess(fn.index("case RejoinBindPlan::EntryRefused:"), fn.index("bot->BindToInstance(leadState, false);"))
+        self.assertLess(fn.index("PendingRejoins()[botRaw] = snapshot;"), fn.index("bot->BindToInstance(leadState, false);"))
+        self.assertLess(fn.index("if (TortoiseBots::DungeonRun::RejoinBindWrites(plan))"),
+                        fn.index("bot->BindToInstance(leadState, false);"))
+        tele = fn.index("bot->TeleportTo(mapId,")
+        self.assertIn("SettleRejoin(botRaw, bot, true, false);\n        answer = \"failed: the teleport was refused\";", fn[tele:])
+        self.assertIn("SettleRejoin(botRaw, bot, true, false);\n        answer = \"failed: the bind still points at another copy\";", fn)
+        self.assertLess(fn.index("SettleRejoin(botRaw, bot, false, false) == RejoinSettle::Wait"), fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"))
+        # cold review (2026-10-29): the lead bot alone in another copy refuses before any bind is read or written.
+        self.assertIn("if (TortoiseBots::DungeonRun::LeadInAnotherCopy(copies))", fn)
+        self.assertLess(fn.index("TortoiseBots::DungeonRun::LeadInAnotherCopy(copies)"), fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"))
+        self.assertIn("m.otherCopy = !m.offPlanMap && member->GetInstanceId() != lead->GetInstanceId();", fn)
+        rejoinTick = body((ROOT / "runtime/DungeonRunPolicy.h").read_text(), "inline bool InstanceRejoinTick(Run& r, const Facts& f, std::string& order)", "\n}\n")
+        self.assertLess(rejoinTick.index("LeadInAnotherCopy(f)"), rejoinTick.index("if (!order.empty() ||"))
+        settle = body(code, "TortoiseBots::DungeonRun::RejoinSettle SettleRejoin(uint64 raw, Player* bot, bool refused, bool settleNow)\n{", "\n}\n")
+        self.assertIn("TortoiseBots::DungeonRun::PlanRejoinSettle(facts)", settle)
+        self.assertIn("bot->GetInstanceId() == p.leadInstanceId", settle)
+        self.assertIn("RestoreRejoinBind(bot, p)", settle)
+        restore = body(code, "std::string RestoreRejoinBind(Player* bot, PendingRejoin const& p)\n{", "\n}\n")
+        for needed in ("TortoiseBots::DungeonRun::PlanRejoinRestore(facts)", "bot->UnbindInstance(p.mapId);",
+                       "bot->BindToInstance(old, p.oldPerm);", "sMapPersistentStateMgr.GetPersistentState(p.mapId, p.oldInstanceId)",
+                       "solo->state->GetInstanceId() == p.leadInstanceId && !solo->perm"):
+            self.assertIn(needed, restore)
+        # round 3 (Codex HIGH, 2026-10-29): an offline bot keeps its snapshot (Hold, never erased before the undo);
+        # the logout hook (Player still valid) and the next login settle it at once, before any new rejoin.
+        self.assertIn("facts.online = bot != nullptr;", settle)
+        self.assertIn("facts.settleNow = settleNow;", settle)
+        self.assertLess(settle.index("if (verdict == RejoinSettle::Hold)"), settle.index("PendingRejoins().erase(it);"))
+        self.assertNotIn("if (!bot)", settle)
+        sweep = body(code, "void SettleInstanceRejoins()\n{", "\n}\n")
+        self.assertIn("SettleRejoin(raw, FindCharacter(raw), false, false);", sweep)
+        now = body(code, "void SettleRunRejoinNow(Player* player)\n{", "\n}\n")
+        self.assertIn("SettleRejoin(player->GetObjectGuid().GetRawValue(), player, false, true);", now)
+        self.assertIn("void SettleRunRejoinOnLogout(Player* player) { SettleRunRejoinNow(player); }", code)
+        self.assertIn("void SettleRunRejoinOnLogin(Player* player) { SettleRunRejoinNow(player); }", code)
+        adapter = strip_comments((ROOT / "host/BotPlayerAdapter.cpp").read_text())
+        logout = body(adapter, "void BotPlayerAdapter::OnLogout(Player* player)\n{", "\n}\n")
+        self.assertIn("BotCommands::SettleRunRejoinOnLogout(player);", logout)
+        login = body(adapter, "void BotPlayerAdapter::OnLogin(Player* player)\n{", "\n}\n")
+        self.assertIn("BotCommands::SettleRunRejoinOnLogin(player);", login)
+        self.assertIn("PLAYERHOOK_ON_LOGOUT", adapter)
+        self.assertIn("PLAYERHOOK_ON_LOGIN", adapter)
+        update = body(code, "static void UpdateDungeonRuns(uint32 diff)\n{", "\n}\n")
+        self.assertIn("if (!PendingRejoins().empty())\n        SettleInstanceRejoins();", update)
+        self.assertLess(update.index("SettleInstanceRejoins();"), update.index("if (DungeonRuns().empty())"))
+        facts = body(code, "void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,", "\n}\n")
+        self.assertIn("bool otherCopy = false;", (ROOT / "runtime/DungeonRunPolicy.h").read_text())
+        self.assertIn("member.otherCopy = bot->IsInWorld() && bot->GetMapId() == lead->GetMapId() &&\n"
+                      "            bot->GetInstanceId() != lead->GetInstanceId();", facts)
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        tick = body(policy, "inline std::string Tick(Run& r, const Facts& raw,", "\n}\n")
+        self.assertLess(tick.index("OffMapReturnTick(r, f, order);"), tick.index("InstanceRejoinTick(r, f, order);"))
+
 
 
 class WaitObjectGoneWiringTest(unittest.TestCase):
