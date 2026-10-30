@@ -15,7 +15,9 @@ const LAYOUT = { mt: "Ragemeister", ot: ["Brun", "Irelanthe"] };
 assert.deepStrictEqual(F.DEBUFF_CHECKS.map((d) => d.key), ["faerie_fire", "coe", "expose_armor"]);
 assert.deepStrictEqual(F.DEBUFF_CHECKS.map((d) => d.name), ["Faerie Fire", "Curse of the Elements", "Expose Armor"]);
 assert.deepStrictEqual(F.TAUNTS, ["Taunt", "Growl", "Hand of Reckoning", "Mocking Blow", "Challenging Shout", "Challenging Roar"]);
-assert.deepStrictEqual(F.LIMITS, { sunderOk: 1.5, sunderWarn: 0.8, takenShare: 0.15, overheal: 0.45, debuffOk: 0.6, minFightMs: 10000 });
+assert.deepStrictEqual(F.LIMITS, { sunderOk: 1.5, sunderWarn: 0.8, sunderFail: 0.4, sunderFailMinMs: 30000,
+  idleCastsPerSec: 0.3, idleMinMs: 20000, takenShare: 0.15, overheal: 0.45, debuffOk: 0.6, minFightMs: 10000,
+  shortPullMs: 30000 });
 assert.strictEqual(F.fmtInt(175083), "175,083");
 assert.strictEqual(F.fmtInt(0), "0");
 assert.strictEqual(F.fmtInt(999), "999");
@@ -37,6 +39,16 @@ const noLayoutFight = {
 };
 assert.strictEqual(F.mainTank(noLayoutFight, null).name, "TB");
 assert.deepStrictEqual(F.offTanks(noLayoutFight, null).map((b) => b.name), ["TA"]);
+// No layout: the tank the mobs hit most is the main tank, not the first in the list. A layout MT still wins.
+const takenFight = {
+  bots: [
+    { name: "TA", role: "tank", taken: 100 },
+    { name: "TB", role: "tank", taken: 900 },
+    { name: "D", role: "dps", taken: 5000 },
+  ],
+};
+assert.strictEqual(F.mainTank(takenFight, null).name, "TB");
+assert.strictEqual(F.mainTank(takenFight, { mt: "TA", ot: [] }).name, "TA");
 
 // ---- the checks of fight 5-4 --------------------------------------------------------------------------------------
 const c54 = F.checks(byId("5-4"), LAYOUT, []);
@@ -110,15 +122,15 @@ assert.strictEqual(c53.find((c) => c.id === "ot_taunt:Irelanthe").ev, "druid: no
 
 // ---- verdicts, worst pick -----------------------------------------------------------------------------------------
 const details = fights.map((f) => ({ fight: f, warnings: [] }));
-assert.deepStrictEqual(details.map((d) => F.verdict(d.fight, LAYOUT, [])), ["warn", "fail", "warn", "warn", "ok"]);
+assert.deepStrictEqual(details.map((d) => F.verdict(d.fight, LAYOUT, [])), ["warn", "fail", "fail", "warn", "ok"]);
 assert.strictEqual(F.verdict({ bots: [], deaths: [], debuffs: {}, dur_ms: 1 }, null, []), "ok");
-assert.strictEqual(F.worstIndex(details, LAYOUT), 1);
+assert.strictEqual(F.worstIndex(details, LAYOUT), 2); // 5-3: 1 fail, 3 warns
 assert.strictEqual(F.worstIndex([null, null], LAYOUT), -1);
 const partial = details.slice();
 partial[1] = null;
 const worstPartial = F.worstIndex(partial, LAYOUT);
 assert.notStrictEqual(worstPartial, 1);
-assert.strictEqual(F.verdict(details[worstPartial].fight, LAYOUT, []), "warn");
+assert.strictEqual(F.verdict(details[worstPartial].fight, LAYOUT, []), "fail");
 // Equal scores keep the earliest (newest) fight.
 assert.strictEqual(F.worstIndex([detail("5-5"), detail("5-5")], LAYOUT), 0);
 
@@ -261,7 +273,7 @@ const list = [
 const dmap = { k5: detail("5-5"), k4: detail("5-4"), k3: detail("5-3") };
 const cards = F.railCards(list, dmap, LAYOUT);
 assert.deepStrictEqual(cards.map((c) => c.key), ["k5", "k4", "k3"]);
-assert.deepStrictEqual(cards.map((c) => c.verdict), ["warn", "fail", "warn"]);
+assert.deepStrictEqual(cards.map((c) => c.verdict), ["warn", "fail", "fail"]);
 assert.strictEqual(cards[0].label, "Pack 3");
 assert.strictEqual(cards[0].mob, "Onyxian Warder");
 assert.strictEqual(cards[1].label, "Pack 2");
@@ -375,13 +387,38 @@ const warriorMT = (n, dur) => fight({
 });
 const MTLAYOUT = { mt: "T", ot: [] };
 const sunderOf = (f) => F.checks(f, MTLAYOUT, []).find((c) => c.id === "mt_sunder");
-assert.strictEqual(sunderOf(warriorMT(2, 30000)).lvl, "fail");
+// Below 0.4 per 10 s is a problem only in a fight of 30 s or more; 0.4-0.8 is a warn at any length.
+assert.strictEqual(sunderOf(warriorMT(1, 30000)).lvl, "fail");
+assert.strictEqual(sunderOf(warriorMT(1, 30000)).num, "0.3/10 s");
+assert.strictEqual(sunderOf(warriorMT(3, 100000)).lvl, "fail"); // exactly 0.3/10 s
+assert.strictEqual(sunderOf(warriorMT(2, 30000)).lvl, "warn");
 assert.strictEqual(sunderOf(warriorMT(2, 30000)).num, "0.7/10 s");
 assert.strictEqual(sunderOf(warriorMT(3, 30000)).lvl, "warn");
 assert.strictEqual(sunderOf(warriorMT(3, 30000)).num, "1.0/10 s");
+assert.strictEqual(sunderOf(warriorMT(0, 25000)).lvl, "warn"); // a 25 s pull cannot reach 0.4
+assert.strictEqual(sunderOf(warriorMT(0, 30000)).lvl, "fail");
 assert.strictEqual(sunderOf(warriorMT(2, 9000)), undefined);
 assert.strictEqual(sunderOf(fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "tank", class: "druid" })] })), undefined);
 assert.strictEqual(sunderOf(fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "dps", class: "warrior" })] })), undefined);
+
+// The main tank's own activity: under 0.3 casts per second over 20 s or more is a problem, whatever it cast.
+const idleT = (casts, dur) => fight({ dur_ms: dur, bots: [bot({
+  name: "T", role: "tank", taken: 100,
+  spells: casts === 2 ? [{ n: "Sunder Armor", c: 1 }, { n: "Taunt", c: 1 }] : [{ n: "Sunder Armor", c: casts }],
+})]});
+const idleOf = (f) => F.checks(f, MTLAYOUT, []).find((c) => c.id === "mt_idle");
+const idle30 = idleOf(idleT(2, 30000));
+assert.strictEqual(idle30.lvl, "fail");
+assert.strictEqual(idle30.title, "Main tank barely acted");
+assert.strictEqual(idle30.num, "2 casts in 30 s");
+assert.strictEqual(idle30.ev, "T cast 2× in 30 s; top spells: Sunder Armor 1, Taunt 1.");
+assert.strictEqual(idle30.bot, "T");
+assert.strictEqual(idleOf(idleT(9, 30000)), undefined); // exactly 0.3/s is not under the limit
+assert.strictEqual(idleOf(idleT(15, 30000)), undefined);
+assert.strictEqual(idleOf(idleT(0, 15000)), undefined); // too short to judge
+assert.strictEqual(idleOf(idleT(0, 20000)).lvl, "fail");
+assert.strictEqual(idleOf(idleT(0, 20000)).ev, "T cast 0× in 20 s; top spells: none.");
+assert.strictEqual(idleOf(fight({ dur_ms: 30000, bots: [bot({ name: "D", role: "dps", spells: [{ n: "Fireball", c: 1 }] })] })), undefined);
 
 const outside = fight({ bots: [bot({ name: "T", role: "tank", taken: 100 }), bot({ name: "D", role: "dps", taken: 25 })] });
 const outsideCheck = F.checks(outside, { mt: "T", ot: [] }, []).find((c) => c.id === "taken_outside");
@@ -413,9 +450,17 @@ const deathFight = fight({
   deaths: [{ name: "D", t_ms: 4000, killer: "mob", x: 1, y: 2, hits: [] }],
 });
 const otherDeath = F.checks(deathFight, { mt: "T", ot: [] }, []).find((c) => c.id === "other_death");
-assert.strictEqual(otherDeath.lvl, "fail");
+assert.strictEqual(otherDeath.lvl, "warn"); // one death in a clean fight
 assert.strictEqual(otherDeath.num, 1);
 assert.strictEqual(otherDeath.death, 0);
+const deathsOf = (list, outcome) => F.checks(fight({ outcome, bots: [bot({ name: "T", role: "tank" })],
+  deaths: list }), { mt: "T", ot: [] }, []).find((c) => c.id === "other_death");
+const twoDeaths = [{ name: "A", t_ms: 1000, hits: [] }, { name: "B", t_ms: 2000, hits: [] }];
+const threeDeaths = twoDeaths.concat([{ name: "C", t_ms: 3000, hits: [] }]);
+assert.strictEqual(deathsOf(twoDeaths).lvl, "warn");
+assert.strictEqual(deathsOf(threeDeaths).lvl, "fail");
+assert.strictEqual(deathsOf(twoDeaths, "wipe").lvl, "fail"); // a wipe fails at any death count
+assert.strictEqual(deathsOf(twoDeaths, "end").lvl, "warn");
 
 const ruled = F.checks(byId("5-4"), LAYOUT,
   [{ rule: "healer_no_heals", level: "red", bot: "X", text: "X (healer) cast no heals" }]);
@@ -424,6 +469,15 @@ assert.strictEqual(ruleCheck.lvl, "fail");
 assert.strictEqual(ruleCheck.bot, "X");
 assert.strictEqual(ruleCheck.title, "X (healer) cast no heals");
 assert.strictEqual(ruleCheck.ev, "Server rule healer_no_heals");
+assert.strictEqual(ruleCheck.num, "");
+// A red rule on a pull under 30 s is a warn: the bot barely had a global to act in.
+const shortRule = (dur, level) => F.checks(fight({ dur_ms: dur, bots: [bot({ name: "T", role: "tank" })] }), { mt: "T", ot: [] },
+  [{ rule: "dps_no_damage", level, bot: "X", text: "X did nothing" }]).find((c) => c.id === "rule:dps_no_damage:X");
+assert.strictEqual(shortRule(20000, "red").lvl, "warn");
+assert.strictEqual(shortRule(20000, "red").num, "(short pull)");
+assert.strictEqual(shortRule(30000, "red").lvl, "fail");
+assert.strictEqual(shortRule(20000, "yellow").lvl, "warn");
+assert.strictEqual(shortRule(20000, "yellow").num, "");
 
 // ---- no HTML in data: names come back verbatim, the renderer escapes them -------------------------------------------
 const markupFight = fight({

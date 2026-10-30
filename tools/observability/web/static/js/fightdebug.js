@@ -12,7 +12,9 @@
   // The taunts of the 1.12 game: a warrior, druid, paladin or bear off-tank has at least one of them.
   const TAUNTS = ["Taunt", "Growl", "Hand of Reckoning", "Mocking Blow", "Challenging Shout", "Challenging Roar"];
   // First guesses from walk 2; tune after raid nights (see the spec's backlog).
-  const LIMITS = { sunderOk: 1.5, sunderWarn: 0.8, takenShare: 0.15, overheal: 0.45, debuffOk: 0.6, minFightMs: 10000 };
+  const LIMITS = { sunderOk: 1.5, sunderWarn: 0.8, sunderFail: 0.4, sunderFailMinMs: 30000,
+    idleCastsPerSec: 0.3, idleMinMs: 20000, takenShare: 0.15, overheal: 0.45, debuffOk: 0.6, minFightMs: 10000,
+    shortPullMs: 30000 };
 
   const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
   const round1 = (v) => Math.round(v * 10) / 10;
@@ -40,8 +42,14 @@
     const bots = (fight && fight.bots) || [];
     const named = layout && layout.mt ? bots.find((b) => b.name === layout.mt) : null;
     if (named && roleOf(named) === "tank") return named;
-    const first = bots.find((b) => roleOf(b) === "tank");
-    return first || null;
+    // Without a layout the first tank in the list is often not the one holding the pull: the role tables' "taken"
+    // says which tank the mobs actually hit. Ties keep the bot list's order.
+    let best = null;
+    bots.forEach((b) => {
+      if (roleOf(b) !== "tank") return;
+      if (!best || (num(b.taken) || 0) > (num(best.taken) || 0)) best = b;
+    });
+    return best;
   }
 
   function offTanks(fight, layout) {
@@ -67,19 +75,40 @@
     bots.forEach((b) => { if (roleOf(b) === "tank") tankNames[b.name] = true; });
     const out = [];
 
-    // The main tank's Sunder Armor stack: under 0.8 per 10 s it never reaches 5 in a real fight.
+    // The main tank's Sunder Armor stack: under 0.8 per 10 s it never reaches 5 in a real fight. Below 0.4 is a
+    // problem, but only past 30 s: a trash pull that short cannot be judged on a 10 s rate.
     if (mt && mt.class === "warrior" && durMs >= LIMITS.minFightMs) {
       const n = spellCount(mt, "Sunder Armor");
       const shieldSlam = spellCount(mt, "Shield Slam");
       const rate = (n / secs) * 10;
+      const lvl = rate >= LIMITS.sunderOk ? "ok"
+        : rate < LIMITS.sunderFail && durMs >= LIMITS.sunderFailMinMs ? "fail" : "warn";
       out.push({
         id: "mt_sunder",
-        lvl: rate >= LIMITS.sunderOk ? "ok" : rate >= LIMITS.sunderWarn ? "warn" : "fail",
+        lvl,
         title: "Main tank Sunder rate",
         num: rate.toFixed(1) + "/10 s",
         ev: mt.name + " cast Sunder Armor " + n + "× in " + Math.round(secs) + " s (Shield Slam " + shieldSlam
           + "×). Under 0.8 per 10 s the stack never reaches 5.",
       });
+    }
+
+    // A tank that barely casts is not holding the pull; the Sunder rate alone cannot say that.
+    if (mt && durMs >= LIMITS.idleMinMs) {
+      const spells = (mt.spells || []).filter((x) => x && (num(x.c) || 0) > 0);
+      const casts = spells.reduce((s, x) => s + (num(x.c) || 0), 0);
+      if (casts / secs < LIMITS.idleCastsPerSec) {
+        const top = spells.slice().sort((a, b) => (num(b.c) || 0) - (num(a.c) || 0)).slice(0, 3);
+        out.push({
+          id: "mt_idle",
+          lvl: "fail",
+          title: "Main tank barely acted",
+          num: casts + " casts in " + Math.round(secs) + " s",
+          ev: mt.name + " cast " + casts + "× in " + Math.round(secs) + " s; top spells: "
+            + (top.length ? top.map((x) => x.n + " " + x.c).join(", ") : "none") + ".",
+          bot: mt.name,
+        });
+      }
     }
 
     const tankDeaths = [];
@@ -112,9 +141,11 @@
     }
 
     if (otherDeaths.length) {
+      // One or two deaths happen in a clean kill; three or a wipe is a real problem.
+      const wiped = String(fight.outcome || "") === "wipe";
       out.push({
         id: "other_death",
-        lvl: "fail",
+        lvl: otherDeaths.length >= 3 || wiped ? "fail" : "warn",
         title: otherDeaths.length + " death(s) outside the tanks",
         num: otherDeaths.length,
         ev: deathEv(otherDeaths),
@@ -258,12 +289,15 @@
       });
     });
 
+    // A red server rule on a pull shorter than 30 s judges a bot that barely had a global: warn, not fail.
+    const shortPull = durMs < LIMITS.shortPullMs;
     (Array.isArray(warnings) ? warnings : []).forEach((w) => {
+      const red = w.level === "red";
       out.push({
         id: "rule:" + w.rule + ":" + (w.bot || ""),
-        lvl: w.level === "red" ? "fail" : w.level === "yellow" ? "warn" : "ok",
+        lvl: red ? (shortPull ? "warn" : "fail") : w.level === "yellow" ? "warn" : "ok",
         title: String(w.text == null ? "" : w.text),
-        num: "",
+        num: red && shortPull ? "(short pull)" : "",
         ev: "Server rule " + w.rule,
         bot: w.bot,
       });
