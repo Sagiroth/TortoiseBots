@@ -10,6 +10,7 @@
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/policy/provision/CraftOrderPolicy.h"
+#include "runtime/AltBotService.h"
 #include "Guild/GuildMgr.h"
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
@@ -75,6 +76,21 @@ uint32 ai::OrderMailboxItems(Player* bot, uint32 itemId)
     return count;
 }
 
+bool ai::OrderBotMayTravel(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot)
+        return false;
+    // An autonomous alt travels like a pool bot even though it is counted
+    // as an owned bot (live: Mothwing idled with the follower kit and zero
+    // order travel until this gate knew her). Checked first: the master
+    // test below would keep her out while her owner is online.
+    if (TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()))
+        return true;
+    if (ai->HasRealPlayerMaster())
+        return false;
+    return sRandomBotFacade.IsFreeBot(bot);
+}
+
 bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
 {
     if (!bot || !order.itemId || !order.amount)
@@ -92,8 +108,9 @@ bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
 
 bool HasGuildTravelOrderValue::Calculate()
 {
-    // No order work while grouped with a player, for any order type.
-    if (ai->HasRealPlayerMaster())
+    // No order work while grouped with a player, for any order type. An
+    // autonomous alt still travels: it plays on its own like a pool bot.
+    if (!OrderBotMayTravel(ai, bot))
         return false;
 
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
@@ -359,7 +376,7 @@ bool ai::OrderNeedsDelivery(Player* bot)
 
 bool HasGuildOrderDeliveryValue::Calculate()
 {
-    if (ai->HasRealPlayerMaster())
+    if (!OrderBotMayTravel(ai, bot))
         return false;
     return OrderNeedsDelivery(bot);
 }

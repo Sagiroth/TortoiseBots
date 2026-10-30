@@ -60,7 +60,7 @@ bool GuildBankAction::isUseful()
         return false;
     if (bot->IsInCombat() || bot->IsDead())
         return false;
-    if (ai->HasRealPlayerMaster())
+    if (!ai::OrderBotMayTravel(ai, bot))
         return false;
     std::optional<OrderRecord> stored = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
     if (!stored || stored->guildId != bot->GetGuildId())

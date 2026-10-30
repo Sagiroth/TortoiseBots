@@ -36,6 +36,13 @@ namespace ai
         }
     };
 
+    // True when the bot may walk order legs like a pool bot: a masterless
+    // pool bot, or an autonomous alt (the alt service's autonomy flag — the
+    // strategy kit alone cannot tell, an alt keeps the follower kit until
+    // its next rebuild). Owned companions and hires stay out: they follow
+    // their master and never run their own travel. World thread only.
+    bool OrderBotMayTravel(PlayerbotAI* ai, Player* bot);
+
     class GuildOrderValue : public CalculatedValue<GuildOrder>
     {
     public:
