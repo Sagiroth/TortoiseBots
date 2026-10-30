@@ -80,10 +80,9 @@ bool ai::OrderBotMayTravel(PlayerbotAI* ai, Player* bot)
 {
     if (!ai || !bot)
         return false;
-    // An autonomous alt travels like a pool bot even though it is counted
-    // as an owned bot (live: Mothwing idled with the follower kit and zero
-    // order travel until this gate knew her). Checked first: the master
-    // test below would keep her out while her owner is online.
+    // An autonomous alt travels like a pool bot even though it stays an
+    // owned bot. Checked first: the master test below would keep it out
+    // while its owner is online.
     if (TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()))
         return true;
     if (ai->HasRealPlayerMaster())
