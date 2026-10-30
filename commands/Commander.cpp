@@ -6953,9 +6953,14 @@ bool RunInstanceRejoin(Player* commander, std::string const& order, std::string&
     // current bind), the instance count for the lead bot's instance id itself (Player::CheckInstanceCount,
     // Player.cpp:19083), and DungeonMap::CanEnter on the lead bot's map (Map.cpp:2037: the player cap, a reset in
     // progress, a raid encounter in progress). The bot is in another copy, so CanEnter's already-in-map assert
-    // (Map.cpp:2039) cannot fire.
-    facts.enterOk = sMapMgr.CanPlayerEnter(mapId, bot) && bot->CheckInstanceCount(lead->GetInstanceId()) &&
-        leadMap->CanEnter(bot);
+    // (Map.cpp:2039) cannot fire. The check that failed is kept: the plan tests the preflight first, so its verdict
+    // alone cannot name it.
+    if (!sMapMgr.CanPlayerEnter(mapId, bot))
+        facts.entry = TortoiseBots::DungeonRun::RejoinEntryCheck::CanPlayerEnter;
+    else if (!bot->CheckInstanceCount(lead->GetInstanceId()))
+        facts.entry = TortoiseBots::DungeonRun::RejoinEntryCheck::InstanceCount;
+    else if (!leadMap->CanEnter(bot))
+        facts.entry = TortoiseBots::DungeonRun::RejoinEntryCheck::MapCanEnter;
     // The binds Player::GetBoundInstanceSaveForSelfOrGroup (Player.cpp:17984) picks for the entry.
     InstancePlayerBind* const solo = bot->GetBoundInstance(mapId);
     InstanceGroupBind* const groupBind = group->GetBoundInstance(mapId);
@@ -6964,27 +6969,28 @@ bool RunInstanceRejoin(Player* commander, std::string const& order, std::string&
     facts.soloIsLeads = solo && solo->state == leadState;
     facts.groupBind = groupBind != nullptr;
     facts.groupIsLeads = groupBind && groupBind->state == leadState;
+    uint32 const groupCopy = groupBind && groupBind->state ? groupBind->state->GetInstanceId() : 0u;
     RejoinBindPlan const plan = TortoiseBots::DungeonRun::PlanRejoinBind(facts);
-    char const* const planText = plan == RejoinBindPlan::EntryRefused ? "refused (entry checks)" :
-        plan == RejoinBindPlan::Locked ? "refused (saved lockout)" :
-        plan == RejoinBindPlan::GroupElsewhere ? "refused (group bound to another copy)" :
-        plan == RejoinBindPlan::BindSolo ? "bind solo" : "no bind change";
+    std::string const planText =
+        TortoiseBots::DungeonRun::RejoinBindVerdictText(facts, bot->GetInstanceId(), groupCopy);
     // The next occurrence names the cause: the bot's own bind and its group's, with the permanence, and the plan.
     sLog.outBasic("[RUN] rejoin %s: bot instance %u lead instance %u solo %u%s group %u%s -> %s", bot->GetName(),
         bot->GetInstanceId(), lead->GetInstanceId(), solo && solo->state ? solo->state->GetInstanceId() : 0u,
-        solo && solo->perm ? " (permanent)" : "", groupBind && groupBind->state ? groupBind->state->GetInstanceId() : 0u,
-        groupBind && groupBind->perm ? " (permanent)" : "", planText);
+        solo && solo->perm ? " (permanent)" : "", groupCopy, groupBind && groupBind->perm ? " (permanent)" : "",
+        planText.c_str());
     switch (plan)
     {
         case RejoinBindPlan::EntryRefused:
-            answer = "refused: the core would not let it into the lead bot's copy (full, resetting, an encounter in "
-                "progress or too many instances)";
+            answer = "refused: the core would not let it into the lead bot's copy (" +
+                TortoiseBots::DungeonRun::RejoinBindRefusal(facts, bot->GetInstanceId(), groupCopy) + ")";
             return false;
         case RejoinBindPlan::Locked:
             answer = "locked: a saved lockout ties it to another copy";
             return false;
         case RejoinBindPlan::GroupElsewhere:
-            answer = "group: the party is bound to another copy than the lead bot's (the run never rebinds a party)";
+            answer = "group: the party is bound to another copy than the lead bot's (" +
+                TortoiseBots::DungeonRun::RejoinBindRefusal(facts, bot->GetInstanceId(), groupCopy) +
+                "; the run never rebinds a party)";
             return false;
         case RejoinBindPlan::Teleport:
         case RejoinBindPlan::BindSolo:

@@ -1090,9 +1090,19 @@ class RunHoldsItsDeadWiringTest(unittest.TestCase):
         self.assertNotIn("group->BindToInstance", fn)
         self.assertNotIn("group->UnbindInstance", fn)
         self.assertNotIn("bot->UnbindInstance", fn)
-        preflight = "facts.enterOk = sMapMgr.CanPlayerEnter(mapId, bot) && bot->CheckInstanceCount(lead->GetInstanceId()) &&\n        leadMap->CanEnter(bot);"
-        self.assertIn(preflight, fn)
-        self.assertLess(fn.index(preflight), fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"))
+        # ta252-log: the glue keeps WHICH core entry check failed (the plan tests the preflight first, so the verdict
+        # alone cannot name it); the verdict text names it and the group's own bind, in the [RUN] line and in the
+        # refusal the run notes.
+        checks = ("CanPlayerEnter", "InstanceCount", "MapCanEnter")
+        for check in checks:
+            self.assertIn("facts.entry = TortoiseBots::DungeonRun::RejoinEntryCheck::" + check + ";", fn)
+        self.assertLess(fn.index("RejoinEntryCheck::CanPlayerEnter"), fn.index("RejoinEntryCheck::InstanceCount"))
+        self.assertLess(fn.index("RejoinEntryCheck::InstanceCount"), fn.index("RejoinEntryCheck::MapCanEnter"))
+        self.assertLess(fn.index("RejoinEntryCheck::MapCanEnter"),
+                        fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"))
+        self.assertIn("TortoiseBots::DungeonRun::RejoinBindVerdictText(facts, bot->GetInstanceId(), groupCopy)", fn)
+        self.assertIn("TortoiseBots::DungeonRun::RejoinBindRefusal(facts, bot->GetInstanceId(), groupCopy)", fn)
+        self.assertLess(fn.index("TortoiseBots::DungeonRun::RejoinBindVerdictText(facts"), fn.index("[RUN] rejoin"))
         self.assertLess(fn.index("case RejoinBindPlan::EntryRefused:"), fn.index("bot->BindToInstance(leadState, false);"))
         self.assertLess(fn.index("PendingRejoins()[botRaw] = snapshot;"), fn.index("bot->BindToInstance(leadState, false);"))
         self.assertLess(fn.index("if (TortoiseBots::DungeonRun::RejoinBindWrites(plan))"),

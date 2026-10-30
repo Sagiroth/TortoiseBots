@@ -12655,12 +12655,35 @@ inline bool OffMapReturnTick(Run& r, const Facts& f, std::string& order)
 // ta252: what the glue may change so the core puts a bot into the lead bot's copy. The copy a far teleport enters
 // is Player::GetBoundInstanceSaveForSelfOrGroup's: a permanent solo bind first, else the group's, else the solo one.
 // Round 2 (Codex HIGH, 2026-10-29: a failed rejoin left binds mutated): the core's own entry checks run first (the
-// glue's preflight, enterOk) and nothing is written when they fail; the GROUP's bind is never written (a group bound
-// to another copy refuses); the only write is the bot's own solo bind, when the group has none, and the glue undoes
-// it (PlanRejoinSettle, PlanRejoinRestore) when the bot is not in the lead bot's copy kRejoinArriveMs later.
+// glue's preflight, RejoinBindFacts::entry) and nothing is written when they fail; the GROUP's bind is never written
+// (a group bound to another copy refuses); the only write is the bot's own solo bind, when the group has none, and
+// the glue undoes it (PlanRejoinSettle, PlanRejoinRestore) when the bot is not in the lead bot's copy
+// kRejoinArriveMs later.
+enum class RejoinEntryCheck
+{
+    Ok,
+    CanPlayerEnter, // MapManager::CanPlayerEnter: the raid group rule and the count of the bot's current bind
+    InstanceCount,  // Player::CheckInstanceCount for the lead bot's instance id: one instance too many
+    MapCanEnter,    // DungeonMap::CanEnter: the player cap, a reset in progress, a raid encounter in progress
+};
+inline char const* RejoinEntryCheckName(RejoinEntryCheck c)
+{
+    switch (c)
+    {
+        case RejoinEntryCheck::CanPlayerEnter:
+            return "can-player-enter";
+        case RejoinEntryCheck::InstanceCount:
+            return "instance-count";
+        case RejoinEntryCheck::MapCanEnter:
+            return "map-can-enter";
+        case RejoinEntryCheck::Ok:
+            break;
+    }
+    return "ok";
+}
 struct RejoinBindFacts
 {
-    bool enterOk = false;                                         // the core's entry checks for the lead's copy
+    RejoinEntryCheck entry = RejoinEntryCheck::Ok;                // which of the core's entry checks failed
     bool soloBind = false, soloPerm = false, soloIsLeads = false; // the bot's own bind on the map
     bool groupBind = false, groupIsLeads = false;                 // its group's bind on the map
 };
@@ -12674,7 +12697,7 @@ enum class RejoinBindPlan
 };
 inline RejoinBindPlan PlanRejoinBind(const RejoinBindFacts& b)
 {
-    if (!b.enterOk)
+    if (b.entry != RejoinEntryCheck::Ok)
         return RejoinBindPlan::EntryRefused;
     if (b.soloBind && b.soloPerm)
         return b.soloIsLeads ? RejoinBindPlan::Teleport : RejoinBindPlan::Locked;
@@ -12685,6 +12708,43 @@ inline RejoinBindPlan PlanRejoinBind(const RejoinBindFacts& b)
 inline bool RejoinBindWrites(RejoinBindPlan p)
 {
     return p == RejoinBindPlan::BindSolo;
+}
+// What refused the rejoin, for the [RUN] line and the run's note. The plan tests the entry check first, so an
+// EntryRefused would otherwise hide the group's own bind: both are named. botCopy and groupCopy are the instance ids
+// the glue read (groupCopy 0 when the group has no bind on the map).
+inline std::string RejoinBindRefusal(const RejoinBindFacts& b, std::uint32_t botCopy, std::uint32_t groupCopy)
+{
+    std::string reason;
+    if (b.entry != RejoinEntryCheck::Ok)
+        reason = std::string("entry check: ") + RejoinEntryCheckName(b.entry);
+    if (b.groupBind && !b.groupIsLeads)
+    {
+        if (!reason.empty())
+            reason += "; ";
+        if (botCopy && groupCopy == botCopy)
+            reason += "group bound to the bot's copy " + std::to_string(botCopy);
+        else if (groupCopy)
+            reason += "group bound to another copy " + std::to_string(groupCopy);
+        else
+            reason += "group bound to another copy";
+    }
+    return reason;
+}
+inline std::string RejoinBindVerdictText(const RejoinBindFacts& b, std::uint32_t botCopy, std::uint32_t groupCopy)
+{
+    switch (PlanRejoinBind(b))
+    {
+        case RejoinBindPlan::EntryRefused:
+        case RejoinBindPlan::GroupElsewhere:
+            return "refused (" + RejoinBindRefusal(b, botCopy, groupCopy) + ")";
+        case RejoinBindPlan::Locked:
+            return "refused (saved lockout)";
+        case RejoinBindPlan::BindSolo:
+            return "bind solo";
+        case RejoinBindPlan::Teleport:
+            break;
+    }
+    return "no bind change";
 }
 
 // ta252 round 2: a rejoin that wrote the solo bind waits for the bot in the lead bot's copy. TeleportTo returning
