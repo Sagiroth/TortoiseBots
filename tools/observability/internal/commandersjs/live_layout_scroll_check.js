@@ -16,7 +16,12 @@ const src = fs.readFileSync(process.argv[3], "utf8");
 const body = css.match(/\.cmd-card\.fd-on \.cmd-body \{([^}]*)\}/);
 assert.ok(body, "the debugger's card body rule exists");
 assert.ok(/"rail centre roles"\s*"rail live roles"/.test(body[1]), "live sits under the centre column, between rail and roles");
-assert.ok(/grid-template-rows:[^;]*1fr/.test(body[1]), "a flexible closing row takes the height of the tall rail and roles columns");
+const rowsDecl = body[1].match(/grid-template-rows:\s*([^;]*);/);
+assert.ok(rowsDecl, "the body states its rows");
+const tracks = rowsDecl[1].trim().split(/\s+/);
+assert.deepStrictEqual(tracks, ["auto", "auto", "auto", "auto", "auto", "1fr"],
+  "six tracks for the six area rows, only the closing one flexible (a 1fr that is not last, or fewer tracks than rows, brings the stretch back)");
+assert.strictEqual(body[1].match(/"[^"]*"/g).length, tracks.length, "one track per area row (run, frames, bosses, centre, live, filler)");
 assert.ok(/\.cmd-card\.fd-on \.cmd-live \{[^}]*grid-area:\s*live/.test(css), "the strip has the live grid area in debug mode");
 const phone = css.slice(css.indexOf("@media (max-width: 760px) {\n  .cmd-card.fd-on .cmd-body"));
 assert.ok(/"centre" "live" "roles"/.test(phone.slice(0, 400)), "on a phone the strip follows the map column");
@@ -82,6 +87,32 @@ ctx.cmdLivePaintEvents("C");
 assert.strictEqual(box.scrollTop, 0, "at the top it stays at the top");
 ctx.cmdLivePaintEvents("C"); // nothing new: no change
 assert.strictEqual(box.scrollTop, 0);
+
+// ---- a card first drawn on the Live page: ensureFightMount moves the strip out of .cmd-body to the card's end; the debugger must
+// take it back into the body, or grid-area: live has no grid item to place
+function node(cls, parent) {
+  const n = { cls, parent: null, kids: [], get parentElement() { return this.parent; },
+    get previousElementSibling() { const i = this.parent ? this.parent.kids.indexOf(this) : -1; return i > 0 ? this.parent.kids[i - 1] : null; },
+    appendChild(c) { if (c.parent) c.parent.kids.splice(c.parent.kids.indexOf(c), 1); c.parent = this; this.kids.push(c); return c; },
+    querySelector(sel) { const c = sel.slice(1); const walk = (x) => { for (const k of x.kids) { if (k.cls === c || k.className === c) return k; const r = walk(k); if (r) return r; } return null; }; return walk(this); } };
+  if (parent) parent.appendChild(n);
+  return n;
+}
+const mcard = node("card"), mbody = node("cmd-body", mcard), mlive = node("cmd-live", mbody);
+const mctx = { document: { createElement: () => node("") } };
+vm.createContext(mctx);
+vm.runInContext([grab("ensureFightMount"), grab("cmdPlaceLiveStrip")].join("\n"), mctx);
+// the Live render of a card: mountFightPanel's ensureFightMount puts the fights panel at the card's end and the strip after it
+mctx.ensureFightMount(mcard);
+assert.strictEqual(mlive.parentElement, mcard, "on the Live page the strip sits under the fights panel, outside .cmd-body (as before)");
+mctx.cmdPlaceLiveStrip(mcard, true); // the same card, switched to the debugger
+assert.strictEqual(mlive.parentElement, mbody, "in the debugger the strip is a grid item of .cmd-body again");
+mctx.cmdPlaceLiveStrip(mcard, true);
+assert.strictEqual(mlive.parentElement, mbody, "and stays there");
+mctx.cmdPlaceLiveStrip(mcard, false); // back to Live
+assert.strictEqual(mlive.parentElement, mcard, "back on the Live page the strip returns under the fights panel");
+assert.strictEqual(mlive.previousElementSibling.className, "cmd-fights");
+assert.ok(/cmdPlaceLiveStrip\(card, debug\);\s*\n\s*cmdLivePaintEvents\(key\)/.test(src), "the card paint places the strip before it paints the events");
 
 // ---- the page must not scroll by itself
 const calls = [];

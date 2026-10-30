@@ -7969,6 +7969,7 @@
     const fightsEl = card.querySelector('.cmd-fights');
     if (fightsEl) fightsEl.hidden = debug;
     card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = !debug; });
+    cmdPlaceLiveStrip(card, debug);
     cmdLivePaintEvents(key);
     // A structural redraw: at once when the map is on screen (the layer panel reads what it worked out), else when it is back.
     if (cmdSched.shown(key)) drawCmdMap(key); else cmdSched.mark(key);
@@ -8025,6 +8026,16 @@
       card.dataset.fightState = (Array.isArray(list) && list.length) ? 'done' : 'idle';
       Fights.render(mount, bind.commander, list);
     }).catch(() => { card.dataset.fightState = 'idle'; });
+  }
+
+  // Where the live events strip sits. In the debugger it is a grid item of .cmd-body (grid-area: live, the foot of the centre column), but a card
+  // first drawn on the Live page had the strip moved out to the card's end by ensureFightMount, so the debugger takes it back into
+  // the body. On the Live page it stays under the fights panel, as before.
+  function cmdPlaceLiveStrip(card, debug) {
+    const live = card.querySelector('.cmd-live'), body = card.querySelector('.cmd-body');
+    if (!live || !body) return;
+    if (debug) { if (live.parentElement !== body) body.appendChild(live); }
+    else if (card.querySelector('.cmd-fights')) ensureFightMount(card);
   }
 
   function ensureFightMount(card) {

@@ -3228,7 +3228,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
     "rail live roles"
     "rail . roles";
   /* The last row is the flexible one: the rail and the roles column span rows 4-6, and a taller column spreads its extra height
-     over the tracks it spans. With the closing 1fr row taking it, the live events stay directly under the map. */
+     over the tracks it spans. With the closing 1fr row taking it, the live events stay at the foot of the centre column. */
   grid-template-rows: auto auto auto auto auto 1fr;
   gap: 16px;
   align-items: start;
@@ -3237,7 +3237,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
    with the rail and the roles column, and a taller roles table stretched those rows (its height is spread over the rows
    it spans), leaving a blank band under every centred panel. */
 .fd-centre { display: contents; }
-/* The live events strip sits under the map in the centre column (its own row), not in an auto-placed row of the rail column. */
+/* The live events strip sits at the foot of the centre column, under the map, the checks and the timeline (its own row), not in an auto-placed row of the rail column. */
 .cmd-card.fd-on .cmd-live { grid-area: live; margin-top: 0; min-width: 0; }
 .cmd-card.fd-on .fd-centre { grid-area: centre; display: grid; gap: 16px; align-content: start; min-width: 0; }
 /* The debugger's empty states: one centred line instead of blank panels (no raid bound in the All raids grid, no fight yet in
