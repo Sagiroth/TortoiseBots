@@ -94,6 +94,14 @@ int main() {
     loot.roundRobinPlayer = 1;
     assert((access.GetLootContentFor(&first) ==
             std::vector<LootItem*>{&loot.items[0], &loot.m_questItems[0]}));
+    // The conditional list follows the same rule (m == 2 stays gated): with the
+    // turn held by the other member the viewer's live conditional copy hides.
+    firstConditional[0].is_looted = false;
+    loot.roundRobinPlayer = 2;
+    assert((access.GetLootContentFor(&first) == std::vector<LootItem*>{&loot.items[0]}));
+    loot.roundRobinPlayer = 1;
+    assert((access.GetLootContentFor(&first) ==
+            std::vector<LootItem*>{&loot.items[0], &loot.m_questItems[0], &loot.items[3]}));
 }
 '''
         with tempfile.TemporaryDirectory(prefix="loot-content-") as folder:
