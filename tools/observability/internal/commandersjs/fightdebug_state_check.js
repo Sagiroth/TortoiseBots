@@ -44,7 +44,7 @@ vm.runInContext([
   "var fdFightHash = () => {};",
   "var renderFightDebug = () => {};",
   "var fdDayFights = (fd, bind, cb) => { if (cb) cb(null); };",
-  "var FightHistory = { dayOf: () => \"2026-10-29\" };",
+  "var FightHistory = { dayOf: () => \"2026-10-29\", rowDay: (day) => (day === \"2026-10-29\" ? \"\" : day) };",
 ].join("\n"), ctx, { filename: "app.js state" });
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
@@ -156,6 +156,27 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   run("fdLoad(card, bind)", { card, bind: { commander: "K" } });
   await settle();
   assert.deepStrictEqual(fdK.list.map((r) => r.key), ["keep"], "a failed list fetch does not wipe the known fights");
+
+  // ---- 2d. a read-only history card opens on its newest stored night (today is Tonight) -------------------------------
+  run("cmdFd = {}");
+  const fdH = run("fdState('H')");
+  fdH.days = [{ day: "2026-10-29", fights: 3 }, { day: "2026-10-27", fights: 1 }];
+  fdH.daysAt = clock;
+  ctx.cmdRaidFights = (b, cb) => cb([]);
+  run("fdLoad(card, hbind)", { card, hbind: { commander: "H", history: true, bots: [] } });
+  await settle();
+  assert.strictEqual(fdH.day, "", "the newest night is today: the picker calls it Tonight");
+  assert.deepStrictEqual(Object.keys(fdH.details), [], "no detail for an empty day list");
+  assert.strictEqual(fdH.sel, null);
+
+  // A past newest night keeps its own value.
+  run("cmdFd = {}");
+  const fdP = run("fdState('P')");
+  fdP.days = [{ day: "2026-10-27", fights: 1 }];
+  fdP.daysAt = clock;
+  run("fdLoad(card, hbind)", { card, hbind: { commander: "P", history: true, bots: [] } });
+  await settle();
+  assert.strictEqual(fdP.day, "2026-10-27", "a past night is selected by its own day");
 
   // ---- 2c. the picked fight's detail is fetched even when it is older than the newest 50 --------------------------------
   const oldList = Array.from({ length: 60 }, (_, i) => ({ key: "k" + i }));

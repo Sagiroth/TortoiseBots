@@ -8162,24 +8162,24 @@
 
   function fdLoad(card, bind) {
     const fd = fdState(bind.commander);
-    // A read-only history card has no live list: it opens on the newest stored night, as soon as the picker knows the days.
+    // A read-only history card has no live list: it opens on the newest stored night, as soon as the picker knows the days. The
+    // newest day may be today, which the picker calls Tonight (the rail reads today's stored fights there).
     const wantDay = () => bind.history && !fd.day && Array.isArray(fd.days) && fd.days.length > 0;
-    fdDaysLoad(fd, bind, () => {
-      if (!wantDay()) return;
-      fd.day = fd.days[0].day;
+    const pickDay = () => {
+      const day = fd.days[0].day;
+      fd.day = typeof FightHistory !== 'undefined' ? FightHistory.rowDay(day, Date.now()) : day;
       fd.sel = null;
       fd.userSel = false;
       fd.list = [];
+    };
+    fdDaysLoad(fd, bind, () => {
+      if (!wantDay()) return;
+      pickDay();
       if (!card.classList.contains('fd-on')) return;
       renderFightDebug(card, bind);
       fdLoad(card, bind);
     });
-    if (wantDay()) {
-      fd.day = fd.days[0].day;
-      fd.sel = null;
-      fd.userSel = false;
-      fd.list = [];
-    }
+    if (wantDay()) pickDay();
     const gotList = list => {
       if (list) fd.list = list;
       // The rail paints as soon as the list (or a newly merged row) arrives, not only when the first detail does.
