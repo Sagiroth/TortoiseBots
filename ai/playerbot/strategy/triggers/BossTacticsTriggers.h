@@ -37,6 +37,14 @@ namespace ai
         bool IsActive() override;
     };
 
+    // A creature in the fight casts a spell an avoid_cast row lists and this bot (not a tank) stands inside its radius.
+    class BossTacticsAvoidCastTrigger : public Trigger
+    {
+    public:
+        BossTacticsAvoidCastTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics avoid cast", 1) {}
+        bool IsActive() override;
+    };
+
     // The bot stands in the front of a boss with a listed frontal attack.
     class BossTacticsFrontTrigger : public Trigger
     {

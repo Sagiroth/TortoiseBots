@@ -43,6 +43,22 @@ namespace ai
     // The boss whose front this bot should leave, or null.
     Unit* FindBossFrontDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
+    // A creature in the fight casting a spell an avoid_cast row lists, and the radius to keep from it.
+    struct BossCastDanger
+    {
+        Unit* caster = nullptr;
+        float radius = 0.0f;
+    };
+
+    // The radius `unit` must be kept at right now (its current cast is listed), or 0.
+    float CastDangerOf(const BossTacticsFight& fight, Unit* unit);
+
+    // Whether a point lies inside the radius of any listed cast in progress.
+    bool InsideCastDanger(const BossTacticsFight& fight, float x, float y, float z);
+
+    // The nearest listed cast this bot stands inside and has to leave (never a tank), or no caster.
+    BossCastDanger FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
     class BossTacticsInterruptAction : public Action
     {
     public:
@@ -64,6 +80,22 @@ namespace ai
     public:
         BossTacticsHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics hold") {}
         float GetValue(Action* action) override;
+    };
+
+    // While a listed cast runs, a reach towards its caster would walk a melee bot straight back into the blast.
+    class BossTacticsCastHoldMultiplier : public Multiplier
+    {
+    public:
+        BossTacticsCastHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics cast hold") {}
+        float GetValue(Action* action) override;
+    };
+
+    class BossTacticsAvoidCastAction : public MovementAction
+    {
+    public:
+        BossTacticsAvoidCastAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics avoid cast") {}
+        bool isPossible() override;
+        bool Execute(Event& event) override;
     };
 
     class BossTacticsStepBehindAction : public MovementAction

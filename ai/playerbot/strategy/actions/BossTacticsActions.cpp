@@ -4,6 +4,7 @@
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "ChooseTargetActions.h"
+#include "ReachTargetActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
 using namespace ai;
@@ -119,6 +120,66 @@ Unit* ai::FindBossFrontDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFig
     return nullptr;
 }
 
+float ai::CastDangerOf(const BossTacticsFight& fight, Unit* unit)
+{
+    if (!unit)
+        return 0.0f;
+    Spell* spell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    if (!spell || !spell->m_spellInfo)
+        return 0.0f;
+    return AvoidCastRadius(fight.rows, unit->GetEntry(), spell->m_spellInfo->Id);
+}
+
+namespace
+{
+// The core hits a player whose centre is within the radius of the blast's source, in 3D and with no size factor
+// (Spell.cpp SpellNotifierCreatureAndPlayer, PUSH_SRC_CENTER / PUSH_SELF_CENTER); a self-centred cast's source is
+// the caster's position.
+float CenterDistance(Unit* caster, float x, float y, float z)
+{
+    const float dx = caster->GetPositionX() - x;
+    const float dy = caster->GetPositionY() - y;
+    const float dz = caster->GetPositionZ() - z;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+}
+
+bool ai::InsideCastDanger(const BossTacticsFight& fight, float x, float y, float z)
+{
+    for (Unit* unit : fight.units)
+    {
+        const float radius = CastDangerOf(fight, unit);
+        if (radius > 0.0f && CenterDistance(unit, x, y, z) < radius)
+            return true;
+    }
+    return false;
+}
+
+BossCastDanger ai::FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    (void)ai;
+    BossCastDanger danger;
+    if (fight.rows.empty())
+        return danger;
+    float nearest = 0.0f;
+    for (Unit* unit : fight.units)
+    {
+        const float radius = CastDangerOf(fight, unit);
+        if (radius <= 0.0f)
+            continue;
+        const float distance = CenterDistance(unit, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
+        if (!MustLeaveCast(PlayerbotAI::IsTank(bot), radius, distance))
+            continue;
+        if (!danger.caster || distance < nearest)
+        {
+            danger.caster = unit;
+            danger.radius = radius;
+            nearest = distance;
+        }
+    }
+    return danger;
+}
+
 bool BossTacticsInterruptAction::Execute(Event& event)
 {
     (void)event;
@@ -153,6 +214,51 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     if (!current)
         return 1.0f;
     return FindBossKillFirst(ai, bot, ScanBossTactics(ai, bot)) == current ? 0.0f : 1.0f;
+}
+
+float BossTacticsCastHoldMultiplier::GetValue(Action* action)
+{
+    if (!action || !dynamic_cast<ReachTargetAction*>(action) || PlayerbotAI::IsTank(bot))
+        return 1.0f;
+    Unit* target = action->GetTarget();
+    if (!target)
+        return 1.0f;
+    return CastDangerOf(ScanBossTactics(ai, bot), target) > 0.0f ? 0.0f : 1.0f;
+}
+
+bool BossTacticsAvoidCastAction::isPossible()
+{
+    return MovementAction::isPossible() && ai->CanMove();
+}
+
+bool BossTacticsAvoidCastAction::Execute(Event& event)
+{
+    (void)event;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    const BossCastDanger danger = FindBossCastDanger(ai, bot, fight);
+    if (!danger.caster)
+        return false;
+    Unit* caster = danger.caster;
+    AvoidCastPoint points[kAvoidCastPoints];
+    const int count = AvoidCastDestinations(caster->GetPositionX(), caster->GetPositionY(), bot->GetPositionX(),
+                                            bot->GetPositionY(), danger.radius, bot->GetOrientation() + M_PI_F, points);
+    // A cast of the bot's own would hold it in the blast.
+    if (bot->IsNonMeleeSpellCasted(true))
+        bot->CastStop();
+    for (int i = 0; i < count; ++i)
+    {
+        float z = std::max(caster->GetPositionZ(), bot->GetPositionZ()) + 2.0f;
+        bot->UpdateGroundPositionZ(points[i].x, points[i].y, z);
+        // The ground under a ring point can lie on another floor (a ledge, the stairs below) and so inside the 3D
+        // radius again; another caster's blast is no way out either.
+        if (InsideCastDanger(fight, points[i].x, points[i].y, z))
+            continue;
+        if (!bot->IsWithinLOS(points[i].x, points[i].y, z + bot->GetCollisionHeight()))
+            continue;
+        if (MoveTo(bot->GetMapId(), points[i].x, points[i].y, z, false, false, false, true))
+            return true;
+    }
+    return false;
 }
 
 bool BossTacticsStepBehindAction::isPossible()

@@ -69,3 +69,11 @@ bool BossTacticsFrontTrigger::IsActive()
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     return !fight.rows.empty() && FindBossFrontDanger(ai, bot, fight) != nullptr;
 }
+
+bool BossTacticsAvoidCastTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    return FindBossCastDanger(ai, bot, ScanBossTactics(ai, bot)).caster != nullptr;
+}
+

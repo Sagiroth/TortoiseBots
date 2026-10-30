@@ -187,6 +187,70 @@ int main()
         CHECK(!InsideBossFront(0, 0, 0.0f, x, y, 20));
     }
 
+    // avoid_cast: the text form, and a row needs the spell and a radius.
+    {
+        CHECK(ParseBossTacticKind("avoid_cast") == BossTacticKind::AvoidCast);
+        BossTacticTable table;
+        CHECK(!table.Add(Row(309, 14750, BossTacticKind::AvoidCast, 0, 0, 0, 13.0f)));      // no spell
+        CHECK(!table.Add(Row(309, 14750, BossTacticKind::AvoidCast, 0, 24024, 0, 0.0f)));   // no radius
+        CHECK(!table.Add(Row(309, 14750, BossTacticKind::AvoidCast, 0, 24024, 0, -1.0f)));
+        CHECK(table.Add(Row(309, 14750, BossTacticKind::AvoidCast, 0, 24024, 0, 13.0f)));
+        CHECK(!table.Add(Row(309, 14750, BossTacticKind::AvoidCast, 0, 24024, 0, 15.0f)));  // same key
+        table.Seal();
+        CHECK(table.HasMap(309));
+    }
+
+    // avoid_cast radius: only the listed spell of the listed caster; the widest row wins.
+    {
+        const std::vector<BossTacticRow> rows = {
+            Row(309, 14750, BossTacticKind::AvoidCast, 0, 24024, 0, 13.0f),
+            Row(309, 14750, BossTacticKind::Interrupt, 0, 16006),
+            Row(309, 14517, BossTacticKind::AvoidCast, 14965, 23970, 0, 8.0f),
+            Row(309, 14518, BossTacticKind::AvoidCast, 14965, 23970, 0, 11.0f),
+        };
+        const ActiveBossRows active = Active(rows);
+        CHECK(AvoidCastRadius(active, 14750, 24024) == 13.0f);
+        CHECK(AvoidCastRadius(active, 14750, 23511) == 0.0f);   // another spell of the same caster
+        CHECK(AvoidCastRadius(active, 14751, 24024) == 0.0f);   // the same spell from another caster
+        CHECK(AvoidCastRadius(active, 14750, 16006) == 0.0f);   // an interrupt row is not an avoid row
+        CHECK(AvoidCastRadius(active, 14965, 23970) == 11.0f);  // the add named by two rows: the wider one
+        CHECK(AvoidCastRadius(ActiveBossRows(), 14750, 24024) == 0.0f);
+    }
+
+    // Who leaves: everyone inside the radius except a tank.
+    {
+        CHECK(MustLeaveCast(false, 13.0f, 2.0f));
+        CHECK(MustLeaveCast(false, 13.0f, 12.9f));
+        CHECK(!MustLeaveCast(false, 13.0f, 13.0f));   // on the edge is out
+        CHECK(!MustLeaveCast(false, 13.0f, 20.0f));
+        CHECK(!MustLeaveCast(true, 13.0f, 2.0f));     // the tank holds the caster
+        CHECK(!MustLeaveCast(false, 0.0f, 2.0f));     // no row
+    }
+
+    // Escape points: on a circle a step past the radius around the caster, the bot's own bearing first,
+    // then alternating sides; every point is outside the radius.
+    {
+        AvoidCastPoint points[kAvoidCastPoints];
+        const int n = AvoidCastDestinations(10.0f, 20.0f, 14.0f, 20.0f, 13.0f, 0.0f, points);
+        CHECK(n == kAvoidCastPoints);
+        const float ring = 13.0f + kAvoidCastStepOut;
+        CHECK(std::fabs(points[0].x - (10.0f + ring)) < 0.01f);   // straight away from the caster (+x)
+        CHECK(std::fabs(points[0].y - 20.0f) < 0.01f);
+        for (int i = 0; i < n; ++i)
+        {
+            const float dx = points[i].x - 10.0f;
+            const float dy = points[i].y - 20.0f;
+            CHECK(std::fabs(std::sqrt(dx * dx + dy * dy) - ring) < 0.01f);
+            CHECK(!MustLeaveCast(false, 13.0f, std::sqrt(dx * dx + dy * dy)));
+        }
+        CHECK(points[1].y > 20.0f && points[2].y < 20.0f);        // 45 degrees to one side, then the other
+        CHECK(std::fabs(points[1].y - 20.0f + (points[2].y - 20.0f)) < 0.01f);
+        // A bot on top of the caster has no bearing: the fallback angle is used.
+        AvoidCastDestinations(10.0f, 20.0f, 10.0f, 20.0f, 13.0f, 3.14159265f, points);
+        CHECK(points[0].x < 10.0f - ring + 0.01f);
+        CHECK(std::fabs(points[0].y - 20.0f) < 0.01f);
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }

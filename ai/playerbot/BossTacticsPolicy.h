@@ -36,6 +36,7 @@ namespace ai
         Interrupt = 1,  // interrupt `spell_id` while the caster casts it
         KillFirst = 2,  // DPS bots kill `target_entry` before anything else; lowest `priority` first
         Behind = 3,     // non-tank bots stay out of the boss's front within `param` yd (frontal cleave)
+        AvoidCast = 4,  // non-tank bots leave `param` yd around the caster while it casts `spell_id`
     };
 
     inline BossTacticKind ParseBossTacticKind(const std::string& text)
@@ -46,6 +47,8 @@ namespace ai
             return BossTacticKind::KillFirst;
         if (text == "behind")
             return BossTacticKind::Behind;
+        if (text == "avoid_cast")
+            return BossTacticKind::AvoidCast;
         return BossTacticKind::None;
     }
 
@@ -55,9 +58,9 @@ namespace ai
         std::uint32_t bossEntry = 0;    // creature whose presence in the fight activates the row
         BossTacticKind kind = BossTacticKind::None;
         std::uint32_t targetEntry = 0;  // creature the row is about; 0 = the boss itself
-        std::uint32_t spellId = 0;      // interrupt: the spell
+        std::uint32_t spellId = 0;      // interrupt, avoid_cast: the spell
         std::uint8_t priority = 0;      // kill_first: lower is killed first
-        float param = 0.0f;             // behind: radius in yards
+        float param = 0.0f;             // behind, avoid_cast: radius in yards
     };
 
     // The creature a row is about.
@@ -81,6 +84,8 @@ namespace ai
             if (row.kind == BossTacticKind::Interrupt && row.spellId == 0)
                 return false;
             if (row.kind == BossTacticKind::Behind && !(row.param > 0.0f))
+                return false;
+            if (row.kind == BossTacticKind::AvoidCast && (row.spellId == 0 || !(row.param > 0.0f)))
                 return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
@@ -147,6 +152,59 @@ namespace ai
                 return true;
         }
         return false;
+    }
+
+    // The radius to keep from a creature of `casterEntry` while it casts `spellId`: the widest
+    // avoid_cast row that lists the pair, or 0 when none does.
+    inline float AvoidCastRadius(const ActiveBossRows& active, std::uint32_t casterEntry, std::uint32_t spellId)
+    {
+        float radius = 0.0f;
+        for (const BossTacticRow* row : active)
+        {
+            if (row->kind == BossTacticKind::AvoidCast && row->spellId == spellId &&
+                TacticSubjectEntry(*row) == casterEntry && row->param > radius)
+                radius = row->param;
+        }
+        return radius;
+    }
+
+    // Whether a bot `distance` yd from such a caster has to leave. The tank stays: it holds the
+    // caster and whatever else is on it, and walking it out drags them along.
+    inline bool MustLeaveCast(bool tank, float radius, float distance)
+    {
+        return !tank && radius > 0.0f && distance < radius;
+    }
+
+    // The escape points lie this far past the radius, so a caster shifting a little between
+    // ticks does not put the bot back on the edge.
+    constexpr float kAvoidCastStepOut = 2.0f;
+    constexpr int kAvoidCastPoints = 7;
+
+    struct AvoidCastPoint
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+    };
+
+    // Escape points on a circle of radius + kAvoidCastStepOut around the caster: straight out
+    // along the caster->bot bearing first (the shortest walk), then 45, 90 and 135 degrees to
+    // either side, alternating. A bot standing on the caster has no bearing and uses
+    // `fallbackAngle`. Returns the number of points written (kAvoidCastPoints).
+    inline int AvoidCastDestinations(float casterX, float casterY, float botX, float botY, float radius,
+                                     float fallbackAngle, AvoidCastPoint* out)
+    {
+        float const dx = botX - casterX;
+        float const dy = botY - casterY;
+        float const bearing = (dx * dx + dy * dy) < 0.01f ? fallbackAngle : std::atan2(dy, dx);
+        float const ring = radius + kAvoidCastStepOut;
+        float const step = 3.14159265f / 4.0f;
+        float const offsets[kAvoidCastPoints] = { 0.0f, step, -step, 2 * step, -2 * step, 3 * step, -3 * step };
+        for (int i = 0; i < kAvoidCastPoints; ++i)
+        {
+            out[i].x = casterX + ring * std::cos(bearing + offsets[i]);
+            out[i].y = casterY + ring * std::sin(bearing + offsets[i]);
+        }
+        return kAvoidCastPoints;
     }
 
     // A live creature in the fight, as the kill-first pick sees it.

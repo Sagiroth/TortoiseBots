@@ -43,7 +43,8 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
             {
                 ++skipped;
                 sLog.outError("ai_boss_tactic: map %u boss %u kind '%s' target %u spell %u skipped (unknown kind, a zero map "
-                    "or boss, an interrupt without a spell, a behind without a radius, or a second row of the key)", row.map,
+                    "or boss, an interrupt without a spell, a behind without a radius, an avoid_cast without a spell or a "
+                    "radius, or a second row of the key)", row.map,
                     row.bossEntry, fields[2].GetCppString().c_str(), row.targetEntry, row.spellId);
             }
         } while (result->NextRow());

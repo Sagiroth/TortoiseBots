@@ -17,6 +17,12 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics kill first",
         NextAction::array(0, new NextAction("boss tactics kill first", ACTION_HIGH + 1), NULL)));
 
+    // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
+    // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
+    triggers.push_back(new TriggerNode(
+        "boss tactics avoid cast",
+        NextAction::array(0, new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6), NULL)));
+
     triggers.push_back(new TriggerNode(
         "boss tactics front",
         NextAction::array(0, new NextAction("boss tactics step behind", ACTION_HIGH), NULL)));
@@ -37,4 +43,5 @@ void BossTacticsStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigger
 void BossTacticsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
     multipliers.push_back(new BossTacticsHoldMultiplier(ai));
+    multipliers.push_back(new BossTacticsCastHoldMultiplier(ai));
 }
