@@ -21,6 +21,9 @@ namespace GuildOrders
 // sends live updates.
 std::optional<OrderRecord> Find(uint32_t botGuidLow);
 
+// False before the startup load ran: an order lookup before then misses rows
+// that are still only in the table.
+bool IsAvailable();
 // True when the item can go to the guild bank (search and give share it).
 bool IsOrderableItem(ItemPrototype const* proto);
 
