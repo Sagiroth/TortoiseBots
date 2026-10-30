@@ -291,6 +291,15 @@ NOT_BOSSES.update({15974, 15975, 15976, 15977, 15978, 15979, 15980, 15981, 16017
                    16025, 16029, 16034, 16036, 16037, 16056, 16057, 16067, 16145, 16146, 16154, 16156, 16157, 16158,
                    16163, 16164, 16165, 16167, 16168, 16193, 16194, 16215, 16216, 16243, 16244, 16297, 16368, 16446,
                    16447, 16448, 16449, 16451, 16452, 16453, 16861})
+# Timbermaw Hold (map 819, 20-man raid, B1 prep): nine legs, eight boss steps. Karrsh the Sentinel (62934) and
+# Selenaxx Foulheart (62940) are raid encounters of the map's staff list, not of the hire unlock list; Kodiak (62937)
+# is Rotgrowl's boss.first add and is not seeded.
+BOSS_PLANS["timbermaw_hold"] = 819
+SEEDED_BOSSES.update({(819, 2139): "Loktanag the Vile", (819, 62934): "Karrsh the Sentinel",
+                      (819, 62935): "Ormanos the Cracked", (819, 62936): "Rotgrowl",
+                      (819, 62938): "Archdruid Kronn", (819, 62940): "Selenaxx Foulheart",
+                      (819, 62941): "Chieftain Partath", (819, 62946): "Trioch the Devourer"})
+NOT_BOSSES.update({62937})
 
 def migrations():
     for path in sorted(glob.glob(os.path.join(ROOT, "data/sql/world/*_world.sql"))):
@@ -5075,6 +5084,35 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertTrue(all(float(r["radius"]) <= 35 for r in pulls))
         self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["molten_core"])
         self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (409) AND `entry` IN (", text)
+    def test_timbermaw_hold_is_the_raid_prep(self):
+        # 20261028130000 (turtle-agent b0152b5, 2026-10-28, B1 of the raid plan): the 150-group dungeongen draft becomes
+        # 93 packs in nine legs by boss and floor. The 62874 Vile Skitterer spawns are neutral wildlife and skipped; the
+        # z 310-364 balcony (18 units) and the z 270-281 upper ledge (19 units) have no navmesh route and are in no pull;
+        # Karrsh and Selenaxx are boss steps; Kodiak is Rotgrowl's first add. Every pin fails when its rows are cut.
+        name, text = newest_plan_text("timbermaw_hold")
+        self.assertEqual(name, "20261028130000_world.sql")
+        rows = [r for r in self.step_rows(text) if r["plan"] == "timbermaw_hold"]
+        self.assertEqual(len(rows), 745)
+        self.assertEqual(sorted({r["kind"] for r in rows}), ["boss", "move", "pull"])
+        self.assertEqual([sum(1 for r in rows if r["kind"] == "pull" and int(r["leg"]) == leg) for leg in range(9)],
+                         [6, 9, 7, 8, 7, 17, 18, 5, 16])
+        self.assertEqual(sum(1 for r in rows if r["kind"] == "pull"), 93)
+        self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
+                         ["62934", "62936", "2139", "62935", "62940", "62946", "62938", "62941"])
+        rotgrowl = next(r for r in rows if r["kind"] == "boss" and r["entry"] == "62936")
+        self.assertEqual(rotgrowl["entries"], "62937")
+        for r in rows:
+            if r["kind"] not in ("pull", "boss"):
+                continue
+            listed = {e for e in r["entries"].split(",") if e}
+            if r["entry"] != "0":
+                listed.add(r["entry"])
+            self.assertFalse(listed & {"62874", "62947", "60686"},
+                             "timbermaw_hold %s/%s lists a skipped or unspawned unit" % (r["leg"], r["seq"]))
+            if r["kind"] == "pull":
+                self.assertLessEqual(len(r["entries"].split(",")), 12)
+                self.assertLessEqual(float(r["radius"]), 35)
+        self.assertIn("'turtle-agent b0152b5 dungeons/timbermaw_hold.json'", text)
 
 if __name__ == "__main__":
     unittest.main()
