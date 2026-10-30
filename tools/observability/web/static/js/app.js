@@ -8045,8 +8045,10 @@
 
   // A chosen past night's fights (the same summaries as tonight's list, with hist set), held for the shared fights window so
   // the 2 s redraw does not ask again.
-  function fdDayFights(fd, bind, cb) {
-    const day = fd.day, c = fd.hist[day];
+  function fdDayFights(fd, bind, day, cb) {
+    // The day is always a real YYYY-MM-DD (the chosen night, or today for Tonight): the daemon answers an empty day with 400.
+    if (!day) { if (cb) cb(null); return; }
+    const c = fd.hist[day];
     if (c && Date.now() - c.at < FD_HIST_MS) { if (cb) cb(c.list); return; }
     if (fd.histPending[day]) { if (cb) fd.histPending[day].push(cb); return; }
     const cbs = fd.histPending[day] = cb ? [cb] : [];
@@ -8219,14 +8221,14 @@
       }).catch(failed);
     };
     // A chosen night lists that day's stored fights; Tonight is today's stored fights with the live list on top.
-    if (fd.day) { fdDayFights(fd, bind, gotList); return; }
+    if (fd.day) { fdDayFights(fd, bind, fd.day, gotList); return; }
     const today = fdTodayDay(Date.now());
     if (!today) { cmdRaidFights(bind, gotList); return; }
     let live = null, hist = null, left = 2;
     // Both halves failed: answer null so the rows already shown stay (an empty answer would wipe them).
     const both = () => { if (--left) return; gotList(live || hist ? fdMergeRows(live, hist) : null); };
     cmdRaidFights(bind, l => { live = l; both(); });
-    fdDayFights(fd, bind, l => { hist = l; both(); });
+    fdDayFights(fd, bind, today, l => { hist = l; both(); });
   }
 
   // The debugger's pick: the user's own click stands; otherwise the worst finished fight (the newest while no details are loaded),
