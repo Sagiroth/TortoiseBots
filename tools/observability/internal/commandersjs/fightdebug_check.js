@@ -545,4 +545,35 @@ assert.strictEqual(mcRow.ev, "step 43 is 10.0 yd from Core Hound (ring 30 yd, sc
 assert.strictEqual(F.checks(mcFight, null, [], { lanes: null, strays: null, packI: P.fightPack(mcPlan, mcFight), prevPackI: 42 })
   .some((c) => c.id === "plan_strays"), false);
 
+// ---- deaths after a named enemy cast (ZG walks 6-9 counted these by hand) -------------------------------------------
+{
+  const blast = (t) => ({ k: "cast", t, e: 14750, n: "Gurubashi Bat Rider", s: "Unstable Concoction", r: "e", sid: 24024 });
+  const zg = {
+    id: "2-8", dur_ms: 93000,
+    bots: [{ name: "Joric", role: "dps", class: "rogue" }, { name: "Vex", role: "dps", class: "rogue" }, { name: "Thor", role: "dps", class: "warlock" }],
+    log: [blast(18000), blast(30000), blast(46000), { k: "cast", t: 45000, n: "Hakkari Witch Doctor", s: "Shrink", r: "e" }, { k: "taunt", t: 46500, n: "Shandrin" }],
+    deaths: [
+      { name: "Thor", t_ms: 10000, killer: "Bloodseeker Bat", hits: [] },   // before any cast: no row
+      { name: "Joric", t_ms: 33500, killer: "Gurubashi Bat Rider", hits: [] },
+      { name: "Vex", t_ms: 47000, killer: "Gurubashi Bat Rider", hits: [] },
+      { name: "Thor", t_ms: 36000, killer: "Bloodseeker Bat", hits: [] },   // 6 s after the 30 s blast: outside 5 s
+    ],
+  };
+  const rows = F.castDeaths(zg);
+  assert.deepStrictEqual(rows.map((r) => [r.caster, r.spell, r.casts, r.deaths.map((d) => [d.name, d.i, d.after_ms])]), [
+    ["Gurubashi Bat Rider", "Unstable Concoction", 3, [["Joric", 1, 3500], ["Vex", 2, 1000]]],
+    ["Hakkari Witch Doctor", "Shrink", 1, [["Vex", 2, 2000]]],
+  ]);
+  assert.strictEqual(F.castDeaths(zg, 1000).length, 1);   // only Vex, 1 s after the third blast
+  assert.deepStrictEqual(F.castDeaths({ deaths: zg.deaths }), []);   // no cast log: nothing to pair
+  const row = F.checks(zg, null, []).find((c) => c.id === "cast_deaths:Gurubashi Bat Rider:Unstable Concoction");
+  assert.ok(row);
+  assert.strictEqual(row.lvl, "warn");
+  assert.strictEqual(row.title, "2 death(s) within 5 s of Gurubashi Bat Rider's Unstable Concoction");
+  assert.strictEqual(row.num, "2/3");
+  assert.strictEqual(row.ev, "Joric at 33.5 s (3.5 s after the cast) · Vex at 47.0 s (1.0 s after the cast); Unstable Concoction was cast 3× in the fight.");
+  assert.strictEqual(row.bot, "Joric");
+  assert.strictEqual(row.death, 1);
+}
+
 console.log("fightdebug_check: ok");

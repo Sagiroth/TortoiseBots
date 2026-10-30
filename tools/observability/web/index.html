@@ -565,7 +565,7 @@
         <div id="cmd-empty" class="card cmd-empty">
           <h2 class="cmd-empty-title">No commander is bound right now</h2>
           <p id="cmd-empty-why" class="empty-hint"></p>
-          <p class="empty-hint">A card appears here within a couple of seconds of a binding. A commander binds a bot-only party of up to five with <code>.bot commander bind &lt;LeadBot&gt; [&lt;Bot&gt; ...]</code> (a GM, or a player who controls every bot of the party; the server needs <code>AiPlayerbot.RemoteCommander = 1</code>). The card goes away when the commander unbinds with <code>.bot commander unbind</code>, logs out, or the party breaks up.</p>
+          <p class="empty-hint">A card appears here within a couple of seconds of a binding. A commander binds a bot-only party of up to five with <code>.bot commander bind &lt;LeadBot&gt; [&lt;Bot&gt; ...]</code> (a GM, or a player who controls every bot of the party; the server needs <code>AiPlayerbot.RemoteCommander = 1</code>), or his own raid of bots with <code>.bot commander bind &lt;TankBot&gt; raid</code>. <code>.bot commander view on</code> is not needed for the card. The card goes away when the commander unbinds with <code>.bot commander unbind</code>, logs out, or the party breaks up; a party or raid hired again is a new group and needs a new bind.</p>
         </div>
         <!-- The page's one view: Live keeps the stacked cards, Fight debugger the raid tabs. Kept in this browser. -->
         <div class="card cmd-view-bar">
