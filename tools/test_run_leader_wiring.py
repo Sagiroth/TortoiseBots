@@ -421,6 +421,40 @@ class RunLeaderWiringTest(unittest.TestCase):
         # 1. `cmd move` takes the floor at or below the point before a surface above it (a low ceiling).
         move = body(COMMANDS, "static bool CommanderMove(", "\n}\n")
         self.assertIn("RemoteCommander::ChooseFloorZ(point.z, belowZ,", move)
+        # 1b. Karazhan Crypt kc316 step 292: a water point is not lifted out of the water onto a surface the
+        # lead bot cannot reach. The glue reads the point's liquid (the swim line's own test) only when the
+        # search from above counts; the core is asked for the raised point's path and the water point's
+        # swim depth only inside WaterSnapAsksPath's rare branch (Codex review of 3ad0950d: a pier keeps the
+        # old snap when the lead bot has a path onto it); every fact is passed to the policy.
+        self.assertIn("aboveZ, aboveZ > INVALID_HEIGHT, pointInWater, waterLevel, waterSwimmable, raisedReachable);",
+                      move)
+        above = move[move.index("if (!RemoteCommander::FloorBelowUsable(point.z, belowZ"):
+                     move.index("float const snapped = RemoteCommander::ChooseFloorZ(")]
+        self.assertIn("ai::kSwimLiquidRequest, &liquid));", above)
+        self.assertIn("pointInWater = ai::SwimSampleInWater(status,", above)
+        self.assertIn("waterLevel = liquid.level;", above)
+        rare_at = above.index("if (RemoteCommander::WaterSnapAsksPath(point.z, belowZ")
+        open_at = above.index("{", rare_at)
+        depth, close_at = 0, None
+        for i in range(open_at, len(above)):
+            depth += {"{": 1, "}": -1}.get(above[i], 0)
+            if depth == 0:
+                close_at = i
+                break
+        rare = above[open_at:close_at + 1]  # the rare branch's own block, brace-matched
+        self.assertIn("waterSwimmable = lead->GetMap()->GetTerrain()->IsSwimmable(point.x, point.y, point.z);", rare)
+        self.assertIn("raisedPath.calculate(point.x, point.y, aboveZ, false);", rare)
+        # ... and only for a swimmable water point (a shallow one keeps the old rule without a path query).
+        self.assertIn("if (waterSwimmable)\n", rare)
+        self.assertLess(rare.index("if (waterSwimmable)\n"), rare.index("PathFinder raisedPath(lead);"))
+        self.assertIn("raisedReachable = RemoteCommander::RaisedFloorPathUsable(raisedPathType, raisedEndOffset, atLead);",
+                      rare)
+        # The raised point's path query happens nowhere else: once in the function, inside the rare branch.
+        self.assertEqual(move.count("PathFinder raisedPath(lead);"), 1)
+        self.assertEqual(move.count("WaterSnapAsksPath("), 1)
+        self.assertLess(move.index("if (RemoteCommander::WaterSnapAsksPath("), move.index("PathFinder raisedPath(lead);"))
+        self.assertLess(move.index("PathFinder raisedPath(lead);"), move.index("float const snapped = RemoteCommander::ChooseFloorZ("))
+        self.assertIn('#include "../ai/playerbot/SwimPathPolicy.h"', COMMANDS)
         # 2. A follower off the lead bot's line walks its own; the refusal still names the bot for the summon.
         direct = body(COMMANDS, "static bool CommanderMoveDirect(ChatHandler* handler, CommanderOrder const& order,\n"
                       "    RemoteCommander::MovePoint const& point, std::string const& intent)\n{", "\n}\n")

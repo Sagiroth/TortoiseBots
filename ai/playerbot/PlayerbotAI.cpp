@@ -2983,6 +2983,14 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
     // 8; the death writer reads it only if fresh (30 s window).
     NoteFightAttackers();
 
+    // A leftover walk flag would both walk this tick's splines and leave the
+    // client's walking view of the bot stuck (the core sends a launch's
+    // walk/run change with the pre-launch mode restored last, so a run spline
+    // launched on walk flags leaves watching clients walking until they
+    // reload). Clear it before any move of the new tick is dispatched.
+    if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE))
+        bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_WALK_MODE);
+
     SC_PHASE("DoNextAction.engineDoNextAction", bot ? bot->GetName() : "(null)");
     currentEngine->DoNextAction(NULL, 0, (minimal || min), bot->IsTaxiFlying());
     SC_PHASE("DoNextAction.afterEngine", bot ? bot->GetName() : "(null)");
@@ -3181,8 +3189,6 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
 
     if (master && master->IsInWorld())
 	{
-		if (master->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE) && sServerFacade.getDistance2d(bot, master) < 20.0f) bot->m_movementInfo.AddMovementFlag(MOVEFLAG_WALK_MODE);
-		else bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_WALK_MODE);
 
         // Mirror the master sitting only out of combat. Live H11 (Patchwerk):
         // the player sat after eating, so every fire mage within 10 yd was
@@ -3219,8 +3225,7 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
                     bot->GetName());
         }
 	}
-	else if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE)) bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_WALK_MODE);
-    else if ((aiInternalUpdateDelay < 1000) && bot->GetStandState() == UNIT_STAND_STATE_SIT) bot->SetStandState(UNIT_STAND_STATE_STAND);
+	else if ((aiInternalUpdateDelay < 1000) && bot->GetStandState() == UNIT_STAND_STATE_SIT) bot->SetStandState(UNIT_STAND_STATE_STAND);
 
 
     if (bot->IsTaxiFlying())

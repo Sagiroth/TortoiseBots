@@ -204,7 +204,6 @@ struct MockConfig
     uint32 ahMarketVariance = 10;
     uint32 ahMarketBidMin = 75;
     uint32 ahMarketBidMax = 90;
-    bool ahMarketValueVendor = true;
 };
 
 struct ItemOverride

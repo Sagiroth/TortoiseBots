@@ -9,6 +9,7 @@
 #include "HireLifecycle.h"
 #include "ClaimLifecycle.h"
 #include "AltBotService.h"
+#include "DowntimeService.h"
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
 #include "RandomBotAccountRegistry.h"
@@ -1066,6 +1067,25 @@ void BotManager::OnPlayerLogin(::Player* player)
     // 15/35 in the armory instead of 15/36. Idempotent and O(spellbook).
     PlayerbotFactory::EnsureTalentSpellsSaved(player);
 
+    // Helmet and cloak display on pool bots (RandomBotShowHelmet/ShowCloak):
+    // the flags live in PLAYER_FLAGS, so re-applying them each login keeps
+    // existing characters in step after a config change. Hired companions and
+    // claimed bots read their visibility settings on the master's login path;
+    // their characters are never touched here.
+    if (record.random && !HireLifecycle::Instance().IsHired(player->GetObjectGuid()) &&
+        !ClaimLifecycle::Instance().IsClaimed(player->GetGUIDLow()))
+    {
+        if (sPlayerbotAIConfig.randomBotShowHelmet)
+            player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_HELM);
+        else
+            player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_HELM);
+
+        if (sPlayerbotAIConfig.randomBotShowCloak)
+            player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_CLOAK);
+        else
+            player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_CLOAK);
+    }
+
     // Normalize Goblin and High Elf (and any random bot in custom isolated
     // starting zones lacking navmesh/transport to mainland) to standard faction
     // starting zones: Valley of Trials and Northshire. RandomBotEvenStartZones
@@ -1198,7 +1218,7 @@ void BotManager::OnPlayerLogin(::Player* player)
         TB_LOG_DETAIL("TortoiseBots: seeded starter gear for fresh bot %s.", player->GetName());
     }
 
-    // Skills are separate from gear seeding. With DisableRandomLevels=1 a bot never passes
+    // Skills are separate from gear seeding. A level-1 pool bot never passes
     // through a level pipeline: it would keep weapon
     // skill 1 for good and never get a profession, so grind, craft and gather have
     // nothing to work with. Give such a bot the level-bound skill set once, at any
@@ -1270,11 +1290,12 @@ void BotManager::OnPlayerBeforeLogout(::Player* player)
     if (!session || !session->IsHeadless())
     {
         AltBotService::Instance().OnOwnerLogout(player);
+        TortoiseBots::DowntimeService::OnOwnerLogout(player);
         DetachOwnedBots(player);
     }
     else
         AltBotService::Instance().OnBotLogout(player);
-
+    TortoiseBots::DowntimeService::OnBotLogout(player);
     auto it = m_bots.find(player->GetObjectGuid().GetCounter());
     if (it == m_bots.end())
         return;
@@ -2305,6 +2326,7 @@ void BotManager::UpdateBots(uint32_t diff)
 void BotManager::OnWorldUpdate(uint32_t diff)
 {
     AltBotService::Instance().Update();
+    TortoiseBots::DowntimeService::Instance().Update();
     // Core owns Headless session lifecycle (queue, LoginPlayer dispatch, reclaim).
     // Module only tracks BotRecord and polls adapter state. No pending promotion.
     for (auto it = m_bots.begin(); it != m_bots.end(); )

@@ -2,7 +2,7 @@
 id: server-configuration
 title: How Configuration Works
 category: server
-summary: Configuration files, templates, restart rules, recommended presets, settings index, and keys with no effect.
+summary: Configuration files, templates, restart rules, recommended presets, settings index, and removed dead keys.
 tags: [config, server, administration]
 relates_to:
   - server-settings-party
@@ -20,7 +20,7 @@ relates_to:
 
 # How Configuration Works
 
-TortoiseBots provides configuration files to customize bot intelligence, party behavior, world immersion, and server performance. This page explains how configuration files work, their lifecycle, recommended presets, and which settings have no effect.
+TortoiseBots provides configuration files to customize bot intelligence, party behavior, world immersion, and server performance. This page explains how configuration files work, their lifecycle, recommended presets, and which dead settings were removed.
 
 ## Configuration philosophy
 
@@ -96,36 +96,9 @@ Every configuration setting is documented across specialized settings pages:
 | [Bot chatter & broadcasts](settings/chat.md) | `aiplayerbot.conf` | Channel chat rates, emote lines, say-without-master, and broadcast chances. |
 | [Diagnostic logging](settings/logging.md) | `aiplayerbot.conf` + `tortoise_bots.conf` | Module log levels, telemetry streams, CSV logs, and per-bot action log rotation. |
 
-## Settings with no effect
+## Removed keys
 
-These keys are read into configuration so older configuration files continue loading, but nothing in the bot engine consumes them. Most are marked in `aiplayerbot.conf.dist.in` with "Currently has no effect (read but unused)"; all are listed here so administrators do not tune a dead knob:
-
-- `AhMarketValueVendor`
-- `AllowGuildBots`
-- `AllowMultiAccountAltBots`
-- `BotAutologin`
-- `BotsSilent`
-- `DiffEmpty`
-- `DiffWithPlayer`
-- [`DisableBotOptimizations`](settings/performance.md#aiplayerbotdisablebotoptimizations)
-- `DisableRandomLevels`
-- `ErrorDelay`
-- `FreeMoveDelay`
-- `GroupMemberLootDistanceWithActiveMaster`
-- `LLMApiKey`
-- `MaxFreeMoveDistance`
-- `MinRandomBotInWorldTime`
-- `MinRandomBotReviveTime`, `MaxRandomReviveTime`
-- `MinRandomBotsPriceChangeInterval`
-- `PreQuests`
-- `RandomBotRandomPassword`
-- `RandomBotShowHelmet`, `RandomBotShowCloak`
-- `randombotStartingLevel`
-- `RandomBotTimedOffline`
-- `RandomGearTabardsUnobtainable`
-- `RandombotsWalkingRPG.InDoors`
-- `RespawnModNeutral`, `RespawnModHostile`, `RespawnModThreshold`, `RespawnModMax`, `RespawnModForPlayerBots`, `RespawnModForInstances`
-- `TweakValue`
+`aiplayerbot.conf.dist.in` once carried keys that were read into configuration and never used; they are gone now. An older `aiplayerbot.conf` that still sets one of them keeps loading, because the config reader ignores unknown keys. Nothing these keys appeared to control ever changed, so there is nothing to migrate: delete the lines. The one pair from that list that now has an effect is `RandomBotShowHelmet` / `RandomBotShowCloak`: they hide the helmet and cloak of pool bots (default: shown).
 
 Raid diagnostics are separately opt-in through
 [`AiPlayerbot.RaidBossDiagnostics`](settings/logging.md#aiplayerbotraidbossdiagnostics)

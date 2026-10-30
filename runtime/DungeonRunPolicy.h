@@ -285,6 +285,15 @@ constexpr std::uint32_t kOpenProofWaitMs = 5000; // open_proof: after the task a
 constexpr float kUseOnSummonYd = 150.0f;          // use_on: how far around the lead bot the glue looks for the summoned boss
 constexpr std::uint32_t kStepIdleCapMs = 300000;  // out-of-combat time one step may take
 constexpr std::uint32_t kBossSearchMs = 60000;    // a boss not at his spot (a patrol) is waited for this long, then pause
+// ... unless his row says longer: a boss step's `timeout_s` (the plan's `wait_s`) is the wait at his point before
+// the instance search and the pause (1-kPlanMaxTimeoutS, 600 s; 0: kBossSearchMs). The rows carry no patrol path,
+// so the party can only stand where the patrol passes and wait for it: Wailing Caverns' Kresh walks a 525.9 yd
+// round in the river (about 210 s at the walk speed), and the 60 s default missed him 9 runs in 10.
+inline std::uint32_t BossAwayWaitMs(const PlanStep& s)
+{
+    std::uint32_t const secs = s.timeoutS ? std::min(s.timeoutS, ai::kPlanMaxTimeoutS) : kBossSearchMs / 1000u;
+    return secs * 1000u;
+}
 constexpr std::uint32_t kStandPullWaitMs = 600000;
 constexpr float kStandPullMarginYd = 1.0f;
 // A unit a party member has as its victim that stays at 1 hp (or at 1 % or less, unchanged) this long cannot die
@@ -890,7 +899,7 @@ struct Facts
     // lies, not where the plan says he spawns (Revelosh dies 50-60 yd from his spot).
     std::uint64_t bossCorpseGuid = 0;
     float bossCorpseX = 0.0f, bossCorpseY = 0.0f, bossCorpseZ = 0.0f;
-    // boss: the instance-wide search for the boss's entry (Run::bossSearchWanted, once per kBossSearchMs window):
+    // boss: the instance-wide search for the boss's entry (Run::bossSearchWanted, once per BossAwayWaitMs window):
     // read (bossSearchRead) by the glue on the tick after the policy asked, from the entry's spawns on the lead
     // bot's map, wherever they stand. Alive: one of them lives (where); dead: one lies dead (that corpse).
     // Scarlet Cathedral r23 slot 5: Mograine died at the door, 290 yd from his spot, and the boss step paused
@@ -1220,7 +1229,7 @@ struct Run
     std::uint32_t fruitlessPulls = 0;
     std::uint32_t bossWaitMs = 0;   // a boss step: time at the spot with the boss neither alive nor dead in sight
     bool bossSeenAlive = false;     // a boss step: the boss was among the step's living units
-    // A boss step past kBossSearchMs with the boss neither alive nor dead in sight asked the glue for the
+    // A boss step past BossAwayWaitMs with the boss neither alive nor dead in sight asked the glue for the
     // instance-wide search (Facts::bossSearchRead, next tick); one per window (ResetStep clears it).
     bool bossSearchWanted = false;
     // A stand-pull boss step: time waited out of combat with the boss in the radius but out of the tank's shot
@@ -1508,6 +1517,7 @@ struct Run
     bool speedLeash = false;
     std::uint32_t speedLeashMs = 0;
     bool speedLeashSpent = false;
+    std::string speedLeashOrder; // the hold's own move on the lead bot's spot (OrderRefused tells it from the walk's)
     // Times a straight walk back moved its target to an earlier point after its path passed an uncleared pack
     // (ClearPointBefore, kStraightBackoffs), this walk back.
     std::uint32_t straightBackoffs = 0;
@@ -2237,6 +2247,7 @@ inline void ResetStep(Run& r)
     r.speedLeash = false;
     r.speedLeashMs = 0;
     r.speedLeashSpent = false;
+    r.speedLeashOrder.clear();
 }
 
 // "N wipe(s), M near wipe(s)", or "" for none.
@@ -5374,6 +5385,20 @@ inline void OrderRefused(Run& r, const std::string& order, const std::string& an
         r.note = "retreat refused (" + answer + "): fighting";
         return;
     }
+    // The test speed leash's hold on the lead bot's own spot (SpeedLeashTick) refused: cmd move refuses before it
+    // touches the lead bot, so its walk is still under way. The walk goes on, the leash spent for the step; never a
+    // pause (Karazhan Crypt kcleg6-t1028 step 293: the lead bot swam under the shaft's ramp lip, the floor snap lifted
+    // its spot onto the ramp above and the path from the water to it was refused unreachable).
+    if (r.speedLeash && !r.speedLeashOrder.empty() && order == r.speedLeashOrder)
+    {
+        r.speedLeash = false;
+        r.speedLeashMs = 0;
+        r.speedLeashSpent = true;
+        r.speedLeashOrder.clear();
+        r.walkStillMs = 0;
+        r.note = "test speed: the hold for the party was refused (" + answer + "): walking on";
+        return;
+    }
     // The stranded lead bot's teleport (StrandedTeleportTick): nothing changed on
     // the lead bot. "wait" (a fight, the lead bot moved since the facts were read)
     // keeps it due, kStrandWaits times a step, then pauses; any other refusal is a
@@ -6179,6 +6204,7 @@ inline bool SpeedLeashTick(Run& r, const Facts& f, float x, float y, float z, bo
     r.speedLeashMs = 0;
     r.walkStillMs = 0;
     order = MoveOrder(f.leadX, f.leadY, f.leadZ, false); // the lead bot holds where it stands (as the firing-stand hold)
+    r.speedLeashOrder = order;
     r.note = "test speed: the walk waits for the party (" + who + ")";
     return true;
 }
@@ -9470,7 +9496,7 @@ inline bool BigPackWalkGate(Run& r, const Facts& f, std::uint32_t dt, std::strin
 // step 66: the Stone Steward's lane reaches the 10 yd radius only at its north
 // end; the step said "pack cleared" in 0 s, and the Steward came into the
 // Keeper's fight two steps later. A hostile patroller is waited for, like a
-// boss away from his spot (kBossSearchMs), up to kPatrolWaitMs or the step's
+// boss away from his spot (BossAwayWaitMs), up to kPatrolWaitMs or the step's
 // shorter timeout_s, until it walks into the radius: there it is one of the
 // step's units and the usual pick takes it (the way back, the aggro estimate,
 // the fruitless count). Never in a fight, never for a friendly unit, one a
@@ -9876,16 +9902,19 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
             }
         // Not seen alive and not seen dead: he is away (a patrol, Theka in
         // Zul'Farrak), not killed. The plan rows carry no patrol path: the
-        // party waits at his spot for him to come by, then pauses.
+        // party waits at his spot for him to come by (the row's timeout_s, or
+        // kBossSearchMs when it is 0: a round longer than that needs the
+        // plan's wait_s), then pauses.
+        std::uint32_t const awayMs = BossAwayWaitMs(s);
         r.bossWaitMs += dt;
         r.note = "boss " + std::to_string(s.entry) + " not at his spot: waiting for him";
-        if (r.bossWaitMs < kBossSearchMs)
+        if (r.bossWaitMs < awayMs)
             return;
         // The window is over: the glue searches the whole instance for him once (next tick, Facts::bossSearch*).
         if (!r.bossSearchWanted)
         {
             r.bossSearchWanted = true;
-            r.note = "boss " + std::to_string(s.entry) + " not at his spot for " + std::to_string(kBossSearchMs / 1000) +
+            r.note = "boss " + std::to_string(s.entry) + " not at his spot for " + std::to_string(awayMs / 1000) +
                 " s: searching the instance for him";
             return;
         }
@@ -9897,7 +9926,7 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
             NextStep(r, "boss down: his corpse lies at " + Num(f.bossSearchCorpseX) + " " + Num(f.bossSearchCorpseY) + " " +
                 Num(f.bossSearchCorpseZ) + ", " +
                 Num(ai::PlanDistance(f.bossSearchCorpseX, f.bossSearchCorpseY, f.bossSearchCorpseZ, s.x, s.y, s.z)) +
-                " yd from his spot (an instance search after " + std::to_string(kBossSearchMs / 1000) + " s)");
+                " yd from his spot (an instance search after " + std::to_string(awayMs / 1000) + " s)");
             return;
         }
         if (f.bossSearchRead && f.bossSearchAlive)
@@ -9906,7 +9935,7 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
             // instance); the pause says where he stands.
             std::string const aliveAt = "boss " + std::to_string(s.entry) + " is alive at " + Num(f.bossAliveX) + " " + Num(f.bossAliveY) +
                 " " + Num(f.bossAliveZ) + ", " + Num(ai::PlanDistance(f.bossAliveX, f.bossAliveY, f.bossAliveZ, s.x, s.y, s.z)) +
-                " yd from his spot (an instance search after " + std::to_string(kBossSearchMs / 1000) + " s), " +
+                " yd from his spot (an instance search after " + std::to_string(awayMs / 1000) + " s), " +
                 FromLeadBot(ai::PlanDistance(f.leadX, f.leadY, f.leadZ, f.bossAliveX, f.bossAliveY, f.bossAliveZ),
                     f.bossAliveZ - f.leadZ);
             if (s.flags & ai::kPlanFlagSkipUnreachable)
@@ -9925,7 +9954,7 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
             NextStep(r, "boss down: his corpse lies at " + Num(f.bossSearchCorpseX) + " " + Num(f.bossSearchCorpseY) + " " +
                 Num(f.bossSearchCorpseZ) + ", " +
                 Num(ai::PlanDistance(f.bossSearchCorpseX, f.bossSearchCorpseY, f.bossSearchCorpseZ, s.x, s.y, s.z)) +
-                " yd from his spot (an instance search after " + std::to_string(kBossSearchMs / 1000) + " s)");
+                " yd from his spot (an instance search after " + std::to_string(awayMs / 1000) + " s)");
             return;
         }
         // Seen neither alive nor dead, and every spawn of his belongs to a game event that is not active: he cannot be
@@ -9943,7 +9972,7 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
                                    : std::string(" nor anywhere in the instance");
         Pause(r, "boss " + std::to_string(s.entry) + " not found: not alive or dead within " + Num(s.radius) +
             " yd of " + Num(s.x) + " " + Num(s.y) + " " + Num(s.z) + " for " +
-            std::to_string(kBossSearchMs / 1000) + " s" + searched + " (.bot run skip if he is already dead)");
+            std::to_string(awayMs / 1000) + " s" + searched + " (.bot run skip if he is already dead)");
     }
 }
 
@@ -12339,7 +12368,10 @@ inline std::uint32_t StepIdleCapMs(const PlanStep& s)
 {
     bool const wait = s.kind == PlanStepKind::WaitObject || s.kind == PlanStepKind::WaitClear ||
         s.kind == PlanStepKind::Hold;
-    std::uint32_t const own = wait ? s.timeoutS * 1000 + 60000 : 0;
+    // A boss's wait for him at his point (BossAwayWaitMs) counts as a wait too: the plan's wait_s may exceed the
+    // 300 s idle ceiling (Wailing Caverns' Kresh, 300 s), and the idle pause must not end the step before it.
+    std::uint32_t const own = wait ? s.timeoutS * 1000 + 60000
+        : s.kind == PlanStepKind::Boss ? BossAwayWaitMs(s) + 60000 : 0;
     return own > kStepIdleCapMs ? own : kStepIdleCapMs;
 }
 

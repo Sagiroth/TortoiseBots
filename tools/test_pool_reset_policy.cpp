@@ -139,6 +139,17 @@ static void TestAdoptionChallenge()
     CHECK(!AdoptionChallengeMatches("", ""));
 }
 
+static void TestAccountScanVerdict()
+{
+    // The core returns a null result for zero rows and for a failed query
+    // alike; the COUNT probe's answer decides between the two.
+    CHECK(VerdictForAccountScanProbe(false, 0) == AccountScanVerdict::Failed);
+    CHECK(VerdictForAccountScanProbe(false, 42) == AccountScanVerdict::Failed);
+    CHECK(VerdictForAccountScanProbe(true, 0) == AccountScanVerdict::Empty);
+    CHECK(VerdictForAccountScanProbe(true, 1) == AccountScanVerdict::Populate);
+    CHECK(VerdictForAccountScanProbe(true, 5000) == AccountScanVerdict::Populate);
+}
+
 static void TestModeNames()
 {
     CHECK(std::string(PoolResetModeName(PoolResetMode::Off)) == "off");
@@ -152,6 +163,7 @@ int main()
     TestSettingParsing();
     TestGenerationDecision();
     TestUsernameRules();
+    TestAccountScanVerdict();
     TestAdoptionChallenge();
     TestModeNames();
     std::printf("OK: %d checks passed\n", checks);

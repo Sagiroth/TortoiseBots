@@ -55,6 +55,7 @@
 #include "playerbot/policy/combat/RunnerFinishPolicy.h"
 #include "runtime/OwnedBotQolPolicy.h"
 #include "../runtime/RemoteCommanderPolicy.h"
+#include "../ai/playerbot/SwimPathPolicy.h" // ChooseFloorZ's water fact (cmd move keeps a water point in the water)
 #include "../ai/playerbot/AiFactory.h"
 #include "../runtime/RemoteCommanderView.h"
 #include "../runtime/RemoteCommanderTasks.h"
@@ -2670,12 +2671,61 @@ static bool CommanderMove(ChatHandler* handler, CommanderOrder const& order, std
         float const belowZ = lead->GetMap()->GetHeight(point.x, point.y, point.z, true,
             RemoteCommander::kFloorBelowBand + RemoteCommander::kFloorBelowHeadroom);
         float aboveZ = INVALID_HEIGHT;
+        // A point in water is not lifted out of it onto a surface the lead bot cannot reach (Karazhan Crypt
+        // kc316 step 292; RemoteCommander::WaterSnapAsksPath). Its liquid is read only when the search from
+        // above counts, with the swim line's own test (all liquids, water or ocean by type flags, in or under
+        // the surface: SwimPathPolicy.h). Only in the rare case (that floor would lift a water point out of
+        // the water) is the core asked for the lead bot's path to the raised point and whether the water
+        // point is swimmable: a pier the lead bot has a path onto keeps the old snap.
+        bool pointInWater = false;
+        float waterLevel = 0.0f;
+        bool waterSwimmable = false;
+        bool raisedReachable = true;
+        uint32 raisedPathType = 0;
         if (!RemoteCommander::FloorBelowUsable(point.z, belowZ, belowZ > INVALID_HEIGHT))
+        {
             aboveZ = lead->GetMap()->GetHeight(point.x, point.y,
                 point.z + RemoteCommander::kFloorSnapRange, true,
                 2.0f * RemoteCommander::kFloorSnapRange);
+            if (aboveZ > INVALID_HEIGHT)
+            {
+                GridMapLiquidData liquid{};
+                uint32 const status = static_cast<uint32>(lead->GetMap()->GetTerrain()->getLiquidStatus(point.x,
+                    point.y, point.z, ai::kSwimLiquidRequest, &liquid));
+                pointInWater = ai::SwimSampleInWater(status, status != LIQUID_MAP_NO_WATER ? liquid.type_flags : 0);
+                waterLevel = liquid.level;
+            }
+            if (RemoteCommander::WaterSnapAsksPath(point.z, belowZ, belowZ > INVALID_HEIGHT, aboveZ,
+                    aboveZ > INVALID_HEIGHT, pointInWater, waterLevel))
+            {
+                waterSwimmable = lead->GetMap()->GetTerrain()->IsSwimmable(point.x, point.y, point.z);
+                if (waterSwimmable)
+                {
+                    float const rx = point.x - lead->GetPositionX();
+                    float const ry = point.y - lead->GetPositionY();
+                    float const rz = aboveZ - lead->GetPositionZ();
+                    bool const atLead = RemoteCommander::IsAtLead(std::sqrt(rx * rx + ry * ry + rz * rz));
+                    float raisedEndOffset = 0.0f;
+                    if (!atLead)
+                    {
+                        PathFinder raisedPath(lead);
+                        raisedPath.calculate(point.x, point.y, aboveZ, false);
+                        raisedPathType = static_cast<uint32>(raisedPath.getPathType());
+                        Vector3 const raisedEnd = raisedPath.getActualEndPosition();
+                        float const ex = raisedEnd.x - point.x;
+                        float const ey = raisedEnd.y - point.y;
+                        float const ez = raisedEnd.z - aboveZ;
+                        raisedEndOffset = std::sqrt(ex * ex + ey * ey + ez * ez);
+                    }
+                    raisedReachable = RemoteCommander::RaisedFloorPathUsable(raisedPathType, raisedEndOffset, atLead);
+                }
+            }
+        }
         float const snapped = RemoteCommander::ChooseFloorZ(point.z, belowZ, belowZ > INVALID_HEIGHT,
-            aboveZ, aboveZ > INVALID_HEIGHT);
+            aboveZ, aboveZ > INVALID_HEIGHT, pointInWater, waterLevel, waterSwimmable, raisedReachable);
+        if (snapped == point.z && !raisedReachable && waterSwimmable)
+            handler->PSendSysMessage("Move point kept in the water: %.1f %.1f %.1f (surface %.1f; the floor above it at "
+                "%.1f has no usable path: type 0x%x)", point.x, point.y, point.z, waterLevel, aboveZ, raisedPathType);
         if (snapped != point.z)
         {
             point.z = snapped;

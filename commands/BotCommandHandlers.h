@@ -70,6 +70,7 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
 bool HandleLootLog(ChatHandler* handler, char const* args);
 bool HandleRepair(ChatHandler* handler, char const* args);
 bool HandleSell(ChatHandler* handler, char const* args);
+bool HandleDowntime(ChatHandler* handler, char const* args);
 bool HandleRest(ChatHandler* handler, char const* args);
 bool HandleRelease(ChatHandler* handler, char const* args);
 bool HandleCorpseRun(ChatHandler* handler, char const* args);

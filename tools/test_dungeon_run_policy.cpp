@@ -9181,6 +9181,56 @@ static void TestBossDownNeedsASeenDeath()
     CHECK(p.state == State::Paused && p.step == 0 && p.note.find("boss 7272 not found") == 0);
 }
 
+// Wailing Caverns' Kresh (3653): he walks a 525.9 yd round in the river, about 210 s at the walk speed, and passes the
+// plan's boss point (his third waypoint) within the row's 30 yd radius at least every 96 s. The plan carries wait_s 300,
+// which plan-export writes as the row's timeout_s: the away wait at his point is that, not the 60 s default (which
+// missed him 9 runs in 10 and paused), and the step's idle ceiling grows with it. A boss without a timeout keeps 60 s.
+static void TestBossAwayWaitIsTheRowsTimeout()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 30);
+    boss.entry = 3653;
+    boss.timeoutS = 300;
+    ai::NormalizePlanStep(boss);
+    CHECK(boss.timeoutS == 300);
+    CHECK(StepIdleCapMs(boss) == 300000u + 60000u);
+    plan.steps = {boss, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 0 && r.state == State::Running && r.note.find("not at his spot") != std::string::npos);
+    // 200 s in he is still waited for: the default 60 s would have paused the run by now.
+    for (std::uint32_t i = 0; i < 200 && r.state == State::Running; ++i)
+        Tick(r, f);
+    CHECK(r.state == State::Running && r.step == 0 && r.note.find("not at his spot") != std::string::npos);
+    // He walks in on his beat: pulled as usual.
+    f.units = {Unit(9, 3653, 20)};
+    CHECK(Tick(r, f) == "pullback 9");
+    f.anyInCombat = true;
+    Tick(r, f);
+    f.anyInCombat = false;
+    f.units.clear();
+    f.bossDeadNearSpot = true;
+    Tick(r, f);
+    CHECK(r.step == 1 && r.note == "boss down");
+
+    // Never there: the instance search and the pause come after the row's 300 s, and the note says so.
+    Run p = Start(&plan);
+    Facts g = Party(0);
+    for (std::uint32_t i = 0; i < 300 && p.state == State::Running; ++i)
+        Tick(p, g);
+    CHECK(p.state == State::Running);
+    for (std::uint32_t i = 0; i < 5 && p.state == State::Running; ++i)
+        Tick(p, g);
+    CHECK(p.state == State::Paused && p.step == 0 && p.note.find("for 300 s") != std::string::npos);
+
+    // The default row (timeout 0 before the loader): 60 s, as before.
+    PlanStep plain = Step(PlanStepKind::Boss, 30);
+    plain.entry = 7272;
+    ai::NormalizePlanStep(plain);
+    CHECK(plain.timeoutS == ai::kPlanDefaultTimeoutS && BossAwayWaitMs(plain) == kBossSearchMs);
+}
+
 // Fourth observe run (step 43 -> 45) and 19z5 step 57 (Sul'lithuz Hatchlings
 // 8130): a pullback refused invalid-target. The unit is left out for the
 // run without a pause; the pack is skipped as out of reach, and a later step
@@ -20590,6 +20640,35 @@ static void TestSpeedLeashIgnoresOffMapBots()
     CHECK(!r.speedLeash); // an off-map bot never holds the lead
 }
 
+// Karazhan Crypt kcleg6-t1028 step 293: the leash's hold on the lead bot's own spot (swimming under the shaft's ramp
+// lip, -11209.8 -1496.3 1.0) was snapped onto the floor above and refused unreachable, and the refusal paused the run.
+// The refused hold changed nothing on the lead bot (cmd move refuses before it touches it): the walk goes on, the
+// leash is spent for the step, never a pause.
+static void TestSpeedLeashRefusedHoldWalksOn()
+{
+    DungeonPlan plan;
+    Facts f;
+    Run r = SpeedLeashRun(plan, f, 10);
+    CHECK(Tick(r, f) == "move 400.0 0.0 0.0");
+    f.leadX = 40;
+    SpeedLeashStraggler(f, 30);
+    CHECK(Tick(r, f) == "move 40.0 0.0 0.0");
+    CHECK(r.speedLeash);
+    OrderRefused(r, "move 40.0 0.0 0.0",
+        "unreachable: The lead bot has no walkable path to that point (no navmesh route reaches it).");
+    CHECK(r.state == State::Running);
+    CHECK(!r.speedLeash);
+    CHECK(r.speedLeashSpent);
+    CHECK(r.phase == Phase::Walk);
+    CHECK(r.note.find("the hold for the party was refused") != std::string::npos);
+    CHECK(Tick(r, f) == ""); // the walk to 400 is still under way: no new hold, no pause
+    CHECK(!r.speedLeash);
+    CHECK(r.state == State::Running);
+    // Any other refused move on the walk still pauses as before.
+    OrderRefused(r, "move 40.0 0.0 0.0", "unreachable: The lead bot has no walkable path to that point.");
+    CHECK(r.state == State::Paused);
+}
+
 static void TestSpeedLeashNeedsSpeedWalking()
 {
     DungeonPlan plan;
@@ -21915,6 +21994,7 @@ int main()
     TestStuckSummonCountsFromTheGather();
     TestWalkBackRefusalKinds();
     TestBossDownNeedsASeenDeath();
+    TestBossAwayWaitIsTheRowsTimeout();
     TestSkipDropsTheRefusedPullTarget();
     TestBossKilledAwayFromHisSpot();
     TestWalkBackFarPointIsApproached();
@@ -22259,6 +22339,7 @@ int main()
     TestSpeedLeashHoldsAFastWalkForAStraggler();
     TestSpeedLeashNeedsNoRealPlayerThisTick();
     TestSpeedLeashIgnoresOffMapBots();
+    TestSpeedLeashRefusedHoldWalksOn();
     TestSpeedLeashNeedsSpeedWalking();
     TestSpeedLeashLeavesOtherRunsAlone();
     TestSpeedLeashSkipsDirectWaterFightsAndEvents();

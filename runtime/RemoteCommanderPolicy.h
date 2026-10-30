@@ -1645,11 +1645,61 @@ inline bool FloorBelowUsable(float pointZ, float belowZ, bool belowValid)
         pointZ - belowZ <= kFloorBelowBand;
 }
 
-inline float ChooseFloorZ(float pointZ, float belowZ, bool belowValid, float aboveZ, bool aboveValid)
+// Karazhan Crypt kc316 (2026-10-28, step 292): the plan's water row S2 lay in open water 3.5 yd under the
+// shaft's surface (3.0), the floor 46 yd below, a model surface at 5.2 within kFloorSnapRange above; the
+// search from above lifted the point onto it, out of the water and off the navmesh, so the lead bot
+// floating in the shaft was sent to a dry spot no path reaches and the run paused. Height and liquid alone
+// cannot tell that surface from a pier, a dock, a boat deck or a bridge over the water (a point a little
+// under a pier must still go onto the pier: Codex review of 3ad0950d), so reachability decides.
+//
+// WaterSnapAsksPath: the rare case where the search from above is about to lift a point that lies in
+// water (pointInWater: the core's liquid status at the point is in or under water or ocean, waterLevel its
+// surface) out of the water: no floor in the below band, the floor from above within kFloorSnapRange and
+// above the surface. Only then does the glue ask the core for the lead bot's path to the raised point
+// (RaisedFloorPathUsable) and whether the water point is swimmable (TerrainInfo::IsSwimmable).
+constexpr uint32_t kPathNotUsingPath = 0x0010;
+
+inline bool WaterSnapAsksPath(float pointZ, float belowZ, bool belowValid, float aboveZ, bool aboveValid,
+    bool pointInWater, float waterLevel)
+{
+    if (FloorBelowUsable(pointZ, belowZ, belowValid))
+        return false;
+    bool const above = aboveValid && std::isfinite(aboveZ);
+    return above && pointInWater && std::isfinite(waterLevel) && aboveZ > waterLevel &&
+        SnapToFloorZ(pointZ, aboveZ, true) != pointZ;
+}
+
+// The lead bot's path to the raised point is usable as `cmd move` walks one: not NOPATH, not the core's
+// straight NOT_USING_PATH shortcut (no navmesh under it: 0x11 is what the Karazhan model surface got), and
+// ending within kMaxMoveEndOffset of the point (an incomplete path is the path finder's length cap and is
+// walked in legs, as CheckMove takes it). atLead: the lead bot already stands on it (the path finder answers
+// NOPATH for a zero-length path).
+inline bool RaisedFloorPathUsable(uint32_t pathType, float endOffset, bool atLead)
+{
+    if (atLead)
+        return true;
+    if (pathType & (kPathNoPath | kPathNotUsingPath))
+        return false;
+    if (pathType & kPathIncomplete)
+        return true;
+    return endOffset <= kMaxMoveEndOffset;
+}
+
+// The floor z for a `cmd move` point. The water point keeps its z only in WaterSnapAsksPath's case, and
+// only when the raised point is unusable (raisedReachable false) and the water point is swimmable
+// (waterSwimmable): a swim move then ends in the water. A pier the lead bot has a path onto keeps the old
+// snap, and so does a point neither way serves (the old rule: the move's own check then refuses it). A
+// caller with no water facts (the defaults) keeps the old rule.
+inline float ChooseFloorZ(float pointZ, float belowZ, bool belowValid, float aboveZ, bool aboveValid,
+    bool pointInWater = false, float waterLevel = 0.0f, bool waterSwimmable = false, bool raisedReachable = true)
 {
     if (FloorBelowUsable(pointZ, belowZ, belowValid))
         return belowZ;
-    return SnapToFloorZ(pointZ, aboveZ, aboveValid && std::isfinite(aboveZ));
+    bool const above = aboveValid && std::isfinite(aboveZ);
+    if (WaterSnapAsksPath(pointZ, belowZ, belowValid, aboveZ, aboveValid, pointInWater, waterLevel) &&
+        !raisedReachable && waterSwimmable)
+        return pointZ;
+    return SnapToFloorZ(pointZ, aboveZ, above);
 }
 
 struct MoveFacts
