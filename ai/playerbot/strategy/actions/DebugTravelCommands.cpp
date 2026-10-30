@@ -292,6 +292,8 @@ bool DebugAction::HandleShowNode(Event& event, Player* requester, const std::str
             for (auto p : ppath)
             {
                 Creature* wpCreature = bot->SummonCreature(2334, p.getX(), p.getY(), p.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 20000.0f);
+                if (!wpCreature)
+                    continue;
                 //addAura(246, wpCreature);
                 units.push_back(wpCreature->getObjectGuid());
 

@@ -4806,6 +4806,9 @@ ReputationRank PlayerbotAI::GetFactionReaction(FactionTemplateEntry const* thisT
 
 bool PlayerbotAI::AddAura(Unit* unit, uint32 spellId)
 {
+    // Debug marker summons fail once the core summon cap is reached.
+    if (!unit)
+        return false;
     // number or [name] Shift-click form |color|Hspell:spell_id|h[name]|h|r or Htalent form
 
     SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
