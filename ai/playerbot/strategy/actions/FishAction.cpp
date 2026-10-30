@@ -411,7 +411,12 @@ bool MoveToFishAction::Execute(Event& event)
 
     SET_AI_VALUE2(WorldPosition, "custom position", "fish spot", fishSpot);
 
-    if (fishSpot.distance(bot) < 1.0f)
+    // The spot is a water point; the bot casts standing on the bank beside
+    // it, never on the point itself. One yard never arrives (the travel
+    // leg already stops up to 5 yd out), so the move re-fires every tick
+    // and the cast below never runs. Five yards matches the travel arrival
+    // radius (INTERACTION_DISTANCE) and hands over to the cast.
+    if (fishSpot.distance(bot) < INTERACTION_DISTANCE)
         return false;
 
     return MoveTo(fishSpot);
@@ -468,7 +473,7 @@ bool FishAction::isUseful()
     if (!AI_VALUE(bool, "can fish"))
         return false;
 
-    if (fishSpot.distance(bot) > 1.0f)
+    if (fishSpot.distance(bot) > INTERACTION_DISTANCE)
         return false;
 
     return true;
