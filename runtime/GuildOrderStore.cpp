@@ -214,6 +214,14 @@ public:
             return;
         it->second.record.state = state;
         it->second.record.reason = reason;
+        // A round that ends cant or noskill ends the keep with it; mailed is
+        // dropped by the delivery drain with the same rule. Keep survives on
+        // working, waiting, delivering and stocked.
+        if (it->second.record.keep && (state == OrderState::NoSkill || state == OrderState::Cant))
+        {
+            it->second.record.keep = false;
+            it->second.record.stockTarget = 0;
+        }
         MarkDirtyLocked(it->second);
     }
 

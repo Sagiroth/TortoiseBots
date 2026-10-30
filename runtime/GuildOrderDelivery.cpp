@@ -380,16 +380,13 @@ private:
                 break;
             case DeliveryOutcome::Mailed:
                 // Mailed means no usable bank: the keep is dropped with the order.
-                if (stored->keep)
-                    DropKeep(request.botGuidLow);
                 SetState(request.botGuidLow, OrderState::Mailed, OrderReason::NoBank);
+                DropKeep(request.botGuidLow);
                 break;
             case DeliveryOutcome::BackToWork:
                 SetState(request.botGuidLow, OrderState::Working, OrderReason::None);
                 break;
             case DeliveryOutcome::Stuck:
-                if (stored->keep)
-                    DropKeep(request.botGuidLow);
                 SetState(request.botGuidLow, OrderState::Cant, OrderReason::Stuck);
                 break;
         }
