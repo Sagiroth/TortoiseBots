@@ -141,6 +141,11 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunMaxMinutes = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.DungeonRunMaxMinutes", 180)));
     dungeonRunAggroEstimate = config.GetBoolDefault("AiPlayerbot.DungeonRunAggroEstimate", false);
     dungeonRunAggroCeiling = static_cast<uint32>(std::max(1, config.GetIntDefault("AiPlayerbot.DungeonRunAggroCeiling", 6)));
+    // The margin's ceiling is kPackClearMarginMaxYd (30, kPatrolSeeYd in DungeonRunPolicy.h); the policy reads 0 as off.
+    dungeonRunPackClearMarginYd = std::min(30.0f, std::max(0.0f,
+        config.GetFloatDefault("AiPlayerbot.DungeonRunPackClearMarginYd", 10.0f)));
+    dungeonRunPackClearRepulls = static_cast<uint32>(std::min(10, std::max(1,
+        config.GetIntDefault("AiPlayerbot.DungeonRunPackClearRepulls", 3))));
     dungeonRunRezHold = config.GetBoolDefault("AiPlayerbot.DungeonRunRezHold", false);
     dungeonRunPullStand = config.GetBoolDefault("AiPlayerbot.DungeonRunPullStand", false);
     dungeonRunWalkBackAfterWonFight = config.GetBoolDefault("AiPlayerbot.DungeonRunWalkBackAfterWonFight", false);

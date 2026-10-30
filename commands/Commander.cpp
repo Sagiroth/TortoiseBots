@@ -8675,6 +8675,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f = Facts();
     // The pull aggro estimate (PullAggroEstimatePolicy.h): off at 0, nothing is read and no pull waits for it.
     f.joinerCeiling = sPlayerbotAIConfig.dungeonRunAggroEstimate ? sPlayerbotAIConfig.dungeonRunAggroCeiling : 0;
+    // The pack-cleared gate (DungeonRun::ClassifyPullRead): read every tick, so a reload switches it mid-run.
+    f.packClearMarginYd = sPlayerbotAIConfig.dungeonRunPackClearMarginYd;
+    f.packClearRepulls = sPlayerbotAIConfig.dungeonRunPackClearRepulls;
     // The pull stand (DungeonRun::HoldForShot): off, no sight ray, range or stand is read.
     f.pullStand = sPlayerbotAIConfig.dungeonRunPullStand;
     // The guard's walk back after a won fight (DungeonRun::GuardWalkBackWanted): read every tick, so a config
@@ -8989,16 +8992,17 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 entries.push_back(step->entry);
             float const range = std::min(toPoint + step->radius, 2.0f * kSeeYd);
             float bossCorpseFromSpot = 0.0f;
-            // A pull step's patrollers (DungeonRun::WaitForPatroller): living units of its entries on a waypoint
-            // patrol, outside the radius and within kPatrolSeeYd beyond it, none a later step owns (the hop units'
-            // rule); the grid search of a pull step reaches that far.
+            // A pull step's read (DungeonRun::ClassifyPullRead): the policy decides the radius, the residue band,
+            // spawn ownership and the waypoint followers; the glue only measures. The grid search reaches as far as
+            // a spawn-owned patroller may be listed, and only while the gate is on.
             bool const pullStep = step->kind == ai::PlanStepKind::Pull;
-            auto addPatroller = [&](Creature* creature, float fromPoint)
+            float const packRange = std::min(toPoint + step->radius +
+                (f.packClearMarginYd > 0.0f ? kSpawnPatrolSeeYd : kPatrolSeeYd), 2.0f * kSeeYd);
+            float packNearestYd = -1.0f; // the nearest unit listed nowhere this tick (Facts::packNearestLeft)
+            auto addPatroller = [&](Creature* creature, float fromPoint, PullReadIn const& read)
             {
-                if (!pullStep || fromPoint <= step->radius || fromPoint > step->radius + kPatrolSeeYd ||
-                    creature->GetDefaultMovementType() != WAYPOINT_MOTION_TYPE)
-                    return;
-                if (ai::OwnedByLaterStep(*slot.run.plan, slot.run.step, creature->GetEntry(),
+                bool const spawnOwned = SpawnOwned(read, step->radius);
+                if (!spawnOwned && ai::OwnedByLaterStep(*slot.run.plan, slot.run.step, creature->GetEntry(),
                         creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(), f.team))
                     return;
                 for (UnitFact const& have : f.patrollers)
@@ -9014,6 +9018,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 unit.z = creature->GetPositionZ();
                 unit.hostile = !sServerFacade.IsFriendlyTo(creature, lead);
                 unit.evading = creature->IsInEvadeMode();
+                unit.spawnOwned = spawnOwned;
+                unit.spawnYd = read.spawnYd;
                 f.patrollers.push_back(unit);
             };
             for (uint32 entry : entries)
@@ -9024,7 +9030,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 std::list<Creature*> found;
                 lead->GetCreatureListWithEntryInGrid(found, entry,
                     bossEntry ? std::min(toPoint + step->radius + kSeeYd, 2.0f * kSeeYd)
-                              : pullStep ? std::min(toPoint + step->radius + kPatrolSeeYd, 2.0f * kSeeYd) : range);
+                              : pullStep ? packRange : range);
                 for (Creature* creature : found)
                 {
                     float const fromPoint = DistanceTo(creature, step->x, step->y, step->z);
@@ -9047,14 +9053,61 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                         }
                         continue;
                     }
-                    if (fromPoint > step->radius)
+                    PullReadIn read;
+                    bool residue = false;
+                    if (pullStep)
                     {
-                        addPatroller(creature, fromPoint);
-                        continue;
+                        read.fromPoint = fromPoint;
+                        float const dx = creature->GetPositionX() - step->x;
+                        float const dy = creature->GetPositionY() - step->y;
+                        read.fromPoint2d = std::sqrt(dx * dx + dy * dy);
+                        read.dz = creature->GetPositionZ() - step->z;
+                        // The DB row's spawn, not GetRespawnCoord (the core may move the home position).
+                        if (CreatureData const* data = creature->GetCreatureData())
+                        {
+                            read.hasSpawn = true;
+                            read.spawnYd = ai::PlanDistance(data->position.x, data->position.y, data->position.z,
+                                step->x, step->y, step->z);
+                        }
+                        read.ownWaypoint = creature->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
+                        if (CreatureGroup* group = creature->GetCreatureGroup())
+                            if (group->IsFormation() && group->GetLeaderGuid() != creature->GetObjectGuid())
+                                if (Creature* leader = creature->GetMap()->GetCreature(group->GetLeaderGuid()))
+                                    read.followsWaypointLeader = leader->IsAlive() &&
+                                        leader->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
+                        switch (ClassifyPullRead(read, step->radius, f.packClearMarginYd))
+                        {
+                            case PullRead::Patroller:
+                                addPatroller(creature, fromPoint, read);
+                                continue;
+                            case PullRead::Left:
+                                // The gate's diagnostic: the nearest living unit of the entries it listed nowhere.
+                                if (packNearestYd < 0.0f || fromPoint < packNearestYd)
+                                {
+                                    packNearestYd = fromPoint;
+                                    f.packNearestLeft.guid = creature->GetObjectGuid().GetRawValue();
+                                    f.packNearestLeft.entry = creature->GetEntry();
+                                    f.packNearestLeft.distSpot = read.fromPoint2d;
+                                    f.packNearestLeft.x = creature->GetPositionX();
+                                    f.packNearestLeft.y = creature->GetPositionY();
+                                    f.packNearestLeft.z = creature->GetPositionZ();
+                                }
+                                continue;
+                            case PullRead::Unit:
+                                break;
+                            case PullRead::Residue:
+                                residue = true;
+                                break;
+                        }
                     }
+                    else if (fromPoint > step->radius)
+                        continue; // a boss step lists no patrollers: addPatroller is the pull step's
                     bool known = false;
                     for (UnitFact const& have : f.units)
                         known = known || have.guid == creature->GetObjectGuid().GetRawValue();
+                    if (residue)
+                        for (UnitFact const& have : f.packResidue)
+                            known = known || have.guid == creature->GetObjectGuid().GetRawValue();
                     if (known)
                         continue;
                     UnitFact unit;
@@ -9074,6 +9127,14 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     // stand-pull boss step whatever the key says).
                     if (f.pullStand || StandThisBoss(slot))
                         unit.losLead = lead->IsWithinLOSInMap(creature);
+                    if (residue)
+                    {
+                        unit.distSpot = read.fromPoint2d;
+                        unit.spawnOwned = SpawnOwned(read, step->radius);
+                        unit.spawnYd = read.spawnYd;
+                        f.packResidue.push_back(unit);
+                        continue;
+                    }
                     f.units.push_back(unit);
                 }
             }
