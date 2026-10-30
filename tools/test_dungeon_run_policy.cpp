@@ -16375,6 +16375,569 @@ static void TestPatrollerOwnedByALaterStepIsLeftToIt()
     CHECK(!r.patrolGaveUp.count(0x6b52));
 }
 
+// --- Zul'Gurub walk 2, display 31 (plan 30 re-indexed 0): the bat pack's leader 49189 walks a 176.8 yd loop whose
+// far point lies 52.1 yd from the step's centre and 7.3 yd inside plan 33's radius; its formation bats' default
+// movement is not WAYPOINT. The step said "pack cleared" in 1 s and the next move walked into the pack (14 dead).
+
+static DungeonPlan ZgPlateauPlan()
+{
+    DungeonPlan plan;
+    plan.name = "zul_gurub";
+    PlanStep p0 = PullStep(-12159.66f, {11368, 14750});
+    p0.y = -1477.94f;
+    p0.z = 130.91f;
+    p0.radius = 20.5f;
+    PlanStep m1 = Step(PlanStepKind::Move, -12199.351f, -1467.1476f, 131.15826f);
+    PlanStep p2 = PullStep(-12219.2f, {11351});
+    p2.y = -1464.7f;
+    p2.z = 130.65f;
+    p2.radius = 1.0f;
+    PlanStep p3 = PullStep(-12219.11f, {11368, 11351, 11831, 14750});
+    p3.y = -1478.14f;
+    p3.z = 131.29f;
+    p3.radius = 13.4f;
+    plan.steps = {p0, m1, p2, p3};
+    return plan;
+}
+
+static Facts ZgParty()
+{
+    Facts f = Party(0);
+    f.leadX = -12152.3f;
+    f.leadY = -1484.2f;
+    f.leadZ = 131.3f;
+    f.packClearMarginYd = 10.0f;
+    f.packClearRepulls = 3;
+    return f;
+}
+
+static UnitFact Residue(std::uint64_t guid, std::uint32_t entry, float distLead, float distSpot, float x, float y, float z)
+{
+    UnitFact u = Unit(guid, entry, distLead);
+    u.distSpot = distSpot;
+    u.x = x;
+    u.y = y;
+    u.z = z;
+    return u;
+}
+
+static void TestClassifyPullRead()
+{
+    PullReadIn in;
+    in.fromPoint = 15.0f;
+    in.fromPoint2d = 15.0f;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Unit);
+    in = PullReadIn();
+    in.fromPoint = 23.2f;
+    in.fromPoint2d = 23.2f;
+    in.dz = -0.3f;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Residue);
+    // The band is 2D: 30.0 on the ground is residue though the 3D distance is 31.0.
+    in = PullReadIn();
+    in.fromPoint = 31.0f;
+    in.fromPoint2d = 30.0f;
+    in.dz = 8.0f;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Residue);
+    // ... and its height is bounded: 15 yd up is another floor.
+    in = PullReadIn();
+    in.fromPoint = 29.2f;
+    in.fromPoint2d = 25.0f;
+    in.dz = 15.0f;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Left);
+    // A spawn inside the radius owns the unit wherever its loop has walked it.
+    in = PullReadIn();
+    in.fromPoint = 52.1f;
+    in.fromPoint2d = 52.1f;
+    in.hasSpawn = true;
+    in.spawnYd = 15.1f;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Patroller);
+    in = PullReadIn();
+    in.fromPoint = 52.1f;
+    in.fromPoint2d = 52.1f;
+    in.hasSpawn = true;
+    in.spawnYd = 25.0f;
+    in.ownWaypoint = true;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Left); // not spawn-owned, beyond radius + kPatrolSeeYd
+    // Formation followers of a waypoint leader count as patrollers while the gate is on, not with it off.
+    in = PullReadIn();
+    in.fromPoint = 40.0f;
+    in.fromPoint2d = 40.0f;
+    in.followsWaypointLeader = true;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Patroller);
+    CHECK(ClassifyPullRead(in, 20.5f, 0.0f) == PullRead::Left);
+    in = PullReadIn();
+    in.fromPoint = 40.0f;
+    in.fromPoint2d = 40.0f;
+    in.ownWaypoint = true;
+    CHECK(ClassifyPullRead(in, 20.5f, 0.0f) == PullRead::Patroller);
+}
+
+// --- Zul'Gurub walk 3 (2026-10-30, run.log 252-253, 400-401): two Bloodseeker Bats (11368) flew 12-20 yd above a
+// pull centre, 6.7 and 14.2 yd from it on the ground. The 10 yd height bound judged them another floor ("Left"), the
+// step cleared with no pull, and the bats joined a later pull. A flying unit counts as residue whatever its height
+// when the floor under it is the centre's floor; over a ledge or a lower floor it keeps the old rule.
+
+static PullReadIn Walk3Bat()
+{
+    PullReadIn in;
+    in.fromPoint = 21.1f;   // sqrt(6.7^2 + 20^2)
+    in.fromPoint2d = 6.7f;
+    in.dz = 20.0f;
+    in.airborne = true;
+    return in;
+}
+
+static void TestFlyingUnitOverTheCentresFloorIsResidue()
+{
+    PullReadIn in = Walk3Bat();
+    CHECK(AirborneFloorAsked(in, 20.5f, 10.0f));
+    // The map height under the bat: the plateau floor, 0.1 yd off the centre's z (130.91).
+    CHECK(SameFloorUnder(true, 131.0f, 130.91f));
+    in.airborneSameFloor = SameFloorUnder(true, 131.0f, 130.91f);
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Residue);
+    CHECK(ClassifyPullRead(in, 20.5f, 0.0f) == PullRead::Left); // the gate off: unchanged
+    // So the step re-pulls it before "pack cleared".
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Residue(0xc001, 11368, 21.0f, 6.7f, -12160.4f, -1484.6f, 150.9f)};
+    CHECK(Tick(r, f) == "pullback 49153");
+    CHECK(r.step == 0);
+    CHECK(r.note == "pack not cleared: 1 left within 30.5 yd of the pull centre (re-pull 1 of 3); pulling 11368");
+}
+
+static void TestFlyingUnitOverAnotherFloorIsNotResidue()
+{
+    PullReadIn in = Walk3Bat();
+    CHECK(AirborneFloorAsked(in, 20.5f, 10.0f));
+    CHECK(!SameFloorUnder(true, 146.0f, 130.91f));   // a ledge 15.1 yd above the centre, under the bat
+    CHECK(!SameFloorUnder(true, 115.0f, 130.91f));   // a lower floor
+    CHECK(!SameFloorUnder(false, 131.0f, 130.91f));  // no floor found: the old rule
+    CHECK(SameFloorUnder(true, 140.91f, 130.91f));   // the bound itself is the same floor
+    CHECK(!SameFloorUnder(true, 141.0f, 130.91f));
+    in.airborneSameFloor = false;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Left);
+    // The clear note says how far, how high and why it was no residue.
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packNearestLeft = Unit(0xc001, 11368, 21.0f);
+    f.packNearestLeft.distSpot = 6.7f;
+    f.packNearestLeftRead = in;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1);
+    CHECK(r.note == "pack cleared; nearest of its units left: 11368 0x000000000000c001 6.7 yd from the centre, "
+                    "21.1 yd in 3D, 20.0 yd above (flying over another floor)");
+}
+
+static void TestGroundUnitAboveTheBandIsUnchanged()
+{
+    PullReadIn in = Walk3Bat();
+    in.airborne = false;
+    CHECK(!AirborneFloorAsked(in, 20.5f, 10.0f)); // no height query for a ground unit
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Left);
+    in.airborneSameFloor = true; // a stray fact without the flag changes nothing
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Left);
+    in.airborneSameFloor = false;
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packNearestLeft = Unit(0xc001, 11368, 21.0f);
+    f.packNearestLeft.distSpot = 6.7f;
+    f.packNearestLeftRead = in;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note == "pack cleared; nearest of its units left: 11368 0x000000000000c001 6.7 yd from the centre, "
+                    "21.1 yd in 3D, 20.0 yd above (other floor)");
+}
+
+static void TestAirborneFloorAskedOnlyAboveTheBand()
+{
+    PullReadIn in = Walk3Bat();
+    CHECK(!AirborneFloorAsked(in, 20.5f, 0.0f)); // the gate off
+    in.dz = 8.0f;
+    in.fromPoint = 10.6f;
+    CHECK(!AirborneFloorAsked(in, 20.5f, 10.0f)); // within the radius: a unit
+    in.fromPoint = 22.0f;
+    in.fromPoint2d = 20.6f;
+    CHECK(!AirborneFloorAsked(in, 20.5f, 10.0f)); // within the height bound: residue already
+    in = Walk3Bat();
+    in.fromPoint2d = 31.0f;
+    in.fromPoint = 37.0f;
+    CHECK(!AirborneFloorAsked(in, 20.5f, 10.0f)); // beyond the band on the ground
+    in = Walk3Bat();
+    in.dz = -20.0f;
+    CHECK(AirborneFloorAsked(in, 20.5f, 10.0f)); // below the centre: asked, and its floor is lower still
+}
+
+static void TestPullStepWaitsForItsOwnPatrolAtTheFarEnd()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    UnitFact u = Unit(0xc025, 14750, 59.9f);
+    u.distSpot = 52.1f;
+    u.x = -12211.8f;
+    u.y = -1477.26f;
+    u.z = 130.9f;
+    u.spawnOwned = true;
+    u.spawnYd = 15.1f;
+    f.patrollers = {u};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 0 && r.state == State::Running);
+    CHECK(r.note == "waiting for the patroller 14750 0x000000000000c025 (outside the 20.5 yd radius, spawned 15.1 yd from the centre; up to 60 s)");
+    // It walks into the radius: one of the step's units now, pulled by the usual pick.
+    f.patrollers.clear();
+    f.units = {Unit(0xc025, 14750, 15.0f)};
+    CHECK(Tick(r, f) == "pullback 49189");
+    CHECK(r.step == 0 && r.phase == Phase::AwaitPull);
+}
+
+static void TestPackResidueIsPulledBeforePackCleared()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Residue(0xc001, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f)};
+    CHECK(Tick(r, f) == "pullback 49153");
+    CHECK(r.step == 0);
+    CHECK(r.note == "pack not cleared: 1 left within 30.5 yd of the pull centre (re-pull 1 of 3); pulling 11368");
+    f.packResidue.clear();
+    r.phase = Phase::Begin;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note == "pack cleared");
+}
+
+// A residue tick that only gathers (the party is spread out, so PullUnit sends no pull) is not a re-pull: after
+// five gather ticks the step must still be running, not paused at the re-pull cap.
+static void TestGatherTicksAreNoRepulls()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.maxMemberYd = 40.0f; // not gathered: the pull ticks gather instead of pulling
+    f.packResidue = {Residue(0xc001, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f)};
+    for (int i = 0; i < 5; ++i)
+    {
+        Tick(r, f);
+        CHECK(r.state == State::Running);
+        CHECK(r.packRepulls == 0);
+        CHECK(r.note.find("pack not cleared") == std::string::npos);
+    }
+}
+
+static void TestPackResidueCapPauses()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Residue(0xc001, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f),
+                     Residue(0xbfff, 11368, 30.0f, 24.0f, -12152.0f, -1453.0f, 130.7f)};
+    int pulls = 0;
+    for (int i = 0; i < 3; ++i)
+    {
+        std::string const order = Tick(r, f);
+        CHECK(order.compare(0, 9, "pullback ") == 0);
+        ++pulls;
+        r.phase = Phase::Begin;
+    }
+    CHECK(pulls == 3 && r.state == State::Running);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Paused);
+    CHECK(r.note == "pack not cleared after 3 re-pulls: 2 left within 30.5 yd of the pull centre "
+        "(11368 0x000000000000c001 23.2 yd, 11368 0x000000000000bfff 24.0 yd): clear it, then .bot run resume, or .bot run skip");
+}
+
+// --- Zul'Gurub walk 5 (2026-10-30, run.log 352-367 and 592-614): Bloodseeker Bats (11368) hovering over the centre's
+// floor, residue by the flier rule (above the 10 yd height bound), were re-pulled; the tank found no firing position
+// ('cmd pullback ... refused: unreachable'), the refusal took the approach's way (a stand search around the pull
+// centre, whose units were all dead) and paused the run (step 26, twice); at step 37 three re-pulls did not bring the
+// bat down and the cap paused. A residue unit whose pullback is refused unreachable, and a flier above the height
+// bound the re-pulls did not bring down, are left for the step (named in the clear note), no pause. A reachable flier
+// still re-pulls.
+
+static const char* const kWalk5Refusal = "unreachable: The tank could not start moving to a firing position for the pull.";
+
+static UnitFact Walk5Bat(std::uint64_t guid, float distLead, float distSpot)
+{
+    UnitFact u = Residue(guid, 11368, distLead, distSpot, -12160.4f, -1484.6f, 150.9f);
+    u.aloft = true; // residue only by the flier rule: above the height bound, over the centre's floor
+    return u;
+}
+
+static void TestRefusedResidueFlierIsLeftNotPaused()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Walk5Bat(0xc001, 34.2f, 25.0f)};
+    CHECK(Tick(r, f) == "pullback 49153");
+    CHECK(r.packRepulls == 1 && r.pulls == 1);
+    OrderRefused(r, "pullback 49153", kWalk5Refusal);
+    CHECK(r.state == State::Running && r.step == 0);
+    CHECK(!r.approachStandWanted && r.approachStandStep != 0); // not the approach's way: no stand search, no pause
+    CHECK(r.packRepulls == 0 && r.pulls == 0 && r.pullGuid == 0 && r.phase == Phase::Begin);
+    CHECK(r.note == "residue 11368 0x000000000000c001 left for this step: cmd pullback 49153 refused: unreachable: "
+                    "The tank could not start moving to a firing position for the pull");
+    // No re-pull of it again: the step clears and names it.
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.step == 1);
+    CHECK(r.note == "pack cleared; 1 left within 30.5 yd out of the party's reach (11368 0x000000000000c001: "
+                    "its pullback refused unreachable)");
+    // A ground residue unit the tank cannot reach is left the same way (the gate off never pulled it).
+    {
+        Run g = Start(&plan);
+        Facts gf = ZgParty();
+        gf.packResidue = {Residue(0xc002, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f)};
+        CHECK(Tick(g, gf) == "pullback 49154");
+        OrderRefused(g, "pullback 49154", kWalk5Refusal);
+        CHECK(g.state == State::Running && !g.approachStandWanted);
+        CHECK(Tick(g, gf).empty());
+        CHECK(g.step == 1 && Has(g.note, "out of the party's reach (11368 0x000000000000c002: its pullback refused"));
+    }
+    // A resume (ResetStep) reads it afresh: one more pullback, its refusal leaves it again (no pause).
+    {
+        Run p = Start(&plan);
+        Facts pf = ZgParty();
+        pf.packResidue = {Walk5Bat(0xc001, 34.2f, 25.0f)};
+        CHECK(Tick(p, pf) == "pullback 49153");
+        OrderRefused(p, "pullback 49153", kWalk5Refusal);
+        ResetStep(p);
+        CHECK(Tick(p, pf) == "pullback 49153");
+        OrderRefused(p, "pullback 49153", kWalk5Refusal);
+        CHECK(p.state == State::Running);
+        CHECK(Tick(p, pf).empty());
+        CHECK(p.step == 1);
+    }
+}
+
+// The step's own pull refused after a residue pull went out: the approach's way as before (the residue mark is the
+// residue pull's only).
+static void TestStepUnitRefusalAfterResiduePullKeepsTheApproach()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Walk5Bat(0xc001, 34.2f, 25.0f)};
+    CHECK(Tick(r, f) == "pullback 49153");
+    r.phase = Phase::Begin; // that pull drew a fight that is over
+    f.packResidue.clear();
+    f.units = {Unit(0xc003, 11368, 15.0f)};
+    CHECK(Tick(r, f) == "pullback 49155");
+    CHECK(r.residuePullGuid == 0);
+    OrderRefused(r, "pullback 49155", kWalk5Refusal);
+    CHECK(r.approachStandWanted && r.approachStandStep == 0);
+}
+
+static void TestAloftResidueAtTheCapIsLeftNotPaused()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Walk5Bat(0xc001, 20.0f, 9.4f)};
+    for (int i = 0; i < 3; ++i)
+    {
+        CHECK(Tick(r, f) == "pullback 49153"); // a reachable-looking flier is re-pulled up to the cap
+        r.phase = Phase::Begin;
+    }
+    CHECK(r.packRepulls == 3);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.step == 1);
+    CHECK(r.note == "pack cleared; 1 left within 30.5 yd out of the party's reach (11368 0x000000000000c001: "
+                    "flying, 3 re-pulls did not bring it down)");
+    // With a ground unit left too, the cap pauses for the ground unit only.
+    {
+        Run m = Start(&plan);
+        Facts mf = ZgParty();
+        mf.packResidue = {Walk5Bat(0xc001, 20.0f, 9.4f),
+                          Residue(0xbfff, 11368, 30.0f, 24.0f, -12152.0f, -1453.0f, 130.7f)};
+        for (int i = 0; i < 3; ++i)
+        {
+            CHECK(Tick(m, mf).compare(0, 9, "pullback ") == 0);
+            m.phase = Phase::Begin;
+        }
+        CHECK(Tick(m, mf).empty());
+        CHECK(m.state == State::Paused);
+        CHECK(m.note == "pack not cleared after 3 re-pulls: 1 left within 30.5 yd of the pull centre "
+            "(11368 0x000000000000bfff 24.0 yd): clear it, then .bot run resume, or .bot run skip");
+    }
+    // Two fliers: the nearest takes all three re-pulls; the other, never pulled, is not waived: the cap pauses for
+    // it (Codex review of the walk 5 fix).
+    {
+        Run m = Start(&plan);
+        Facts mf = ZgParty();
+        mf.packResidue = {Walk5Bat(0xc001, 20.0f, 9.4f), Walk5Bat(0xc004, 33.0f, 22.0f)};
+        for (int i = 0; i < 3; ++i)
+        {
+            CHECK(Tick(m, mf) == "pullback 49153");
+            m.phase = Phase::Begin;
+        }
+        CHECK(Tick(m, mf).empty());
+        CHECK(m.state == State::Paused);
+        CHECK(m.note == "pack not cleared after 3 re-pulls: 1 left within 30.5 yd of the pull centre "
+            "(11368 0x000000000000c004 22.0 yd): clear it, then .bot run resume, or .bot run skip");
+        CHECK(m.residueOutOfReach.count(0xc001) && !m.residueOutOfReach.count(0xc004));
+    }
+}
+
+// The owner's rule for a reachable flier over the same floor: it is re-pulled, and a pull that brings it down
+// (it dies) clears the step with no residue note.
+static void TestReachableFlierStillRepulls()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Walk5Bat(0xc001, 21.0f, 6.7f)};
+    CHECK(Tick(r, f) == "pullback 49153");
+    CHECK(r.note == "pack not cleared: 1 left within 30.5 yd of the pull centre (re-pull 1 of 3); pulling 11368");
+    r.phase = Phase::Begin; // no refusal: the pull drew no fight this time
+    CHECK(Tick(r, f) == "pullback 49153");
+    CHECK(r.packRepulls == 2 && r.state == State::Running);
+    f.packResidue.clear(); // it came down and died
+    r.phase = Phase::Begin;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note == "pack cleared");
+}
+
+static void TestPackClearGateOff()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packClearMarginYd = 0.0f;
+    f.packResidue = {Residue(0xc001, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f)};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note == "pack cleared");
+}
+
+static void TestResidueInAnotherStepsRadiusIsLeft()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    UnitFact u = Residue(0xc001, 11368, 40.0f, 60.0f, -12215.0f, -1478.0f, 131.2f); // inside plan 33's radius
+    {
+        Run r = Start(&plan);
+        Facts f = ZgParty();
+        f.packResidue = {u};
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 1 && r.note == "pack cleared");
+    }
+    // ... unless it spawned in this step's radius: then this step pulls it wherever it walks.
+    {
+        Run r = Start(&plan);
+        Facts f = ZgParty();
+        u.spawnOwned = true;
+        f.packResidue = {u};
+        CHECK(Tick(r, f) == "pullback 49153");
+        CHECK(r.step == 0);
+    }
+}
+
+static void TestPassedResidueIsNamed()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Residue(0xc001, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f)};
+    CHECK(Tick(r, f) == "pullback 49153");
+    r.passed.insert(0xc001); // its pulls drew no fight
+    r.phase = Phase::Begin;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1);
+    CHECK(r.note == "pack cleared; 1 left within 30.5 yd that pulls drew no fight (11368 0x000000000000c001)");
+}
+
+static void TestSpawnOwnedPatrollerCapPauses()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    UnitFact u = Unit(0xc025, 14750, 59.9f);
+    u.distSpot = 52.1f;
+    u.x = -12211.8f;
+    u.y = -1477.26f;
+    u.z = 130.9f;
+    u.spawnOwned = true;
+    u.spawnYd = 15.1f;
+    f.patrollers = {u};
+    for (int i = 0; i < 60; ++i)
+    {
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 0 && r.state == State::Running);
+    }
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Paused);
+    CHECK(r.note == "pack not cleared: 14750 0x000000000000c025 of this pack (spawned 15.1 yd from the centre) is "
+        "52.1 yd out and did not come within 60 s: pull it, then .bot run resume (the step no longer waits for it), or .bot run skip");
+    // A resume clears it: the step no longer waits for it.
+    CHECK(Resume(r));
+    Tick(r, f);
+    CHECK(r.step == 1 && r.note == "pack cleared");
+}
+
+// The gate off (margin 0) restores the old patroller rule exactly: a spawn-owned patroller standing in a later
+// step's radius is that step's and the run walks on; with the gate on its spawn ownership wins and it is waited for.
+static void TestSpawnOwnedPatrollerGateOffUsesTheOldRule()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    UnitFact u = Unit(0xc025, 14750, 59.9f);
+    u.distSpot = 52.1f;
+    u.x = -12211.8f; // 7.4 yd from plan 33's centre: in its radius
+    u.y = -1477.26f;
+    u.z = 130.9f;
+    u.spawnOwned = true;
+    u.spawnYd = 15.1f;
+    {
+        Run r = Start(&plan);
+        Facts f = ZgParty();
+        f.patrollers = {u};
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 0 && r.note == "waiting for the patroller 14750 0x000000000000c025 (outside the 20.5 yd radius, spawned 15.1 yd from the centre; up to 60 s)");
+    }
+    {
+        Run r = Start(&plan);
+        Facts f = ZgParty();
+        f.packClearMarginYd = 0.0f;
+        f.patrollers = {u};
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 1 && r.note == "pack cleared");
+    }
+}
+
+static void TestFightStepEndWaitsOnResidue()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Residue(0xc001, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f)};
+    CHECK(FightStepEnd(r, f, plan.steps[0]) == FightEnd::NotYet);
+    f.packResidue.clear();
+    CHECK(FightStepEnd(r, f, plan.steps[0]) == FightEnd::Cleared);
+}
+
+static void TestZeroPullClearNamesNearestLeft()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Facts f = ZgParty();
+    f.packNearestLeft = Unit(0xc025, 14750, 59.9f);
+    f.packNearestLeft.distSpot = 64.0f;
+    f.packNearestLeftRead.fromPoint = 64.0f;
+    f.packNearestLeftRead.fromPoint2d = 64.0f;
+    f.packNearestLeftRead.dz = -0.4f;
+    {
+        Run r = Start(&plan);
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 1);
+        CHECK(r.note == "pack cleared; nearest of its units left: 14750 0x000000000000c025 64.0 yd from the centre, "
+                        "64.0 yd in 3D, 0.4 yd below (outside the 30.5 yd band)");
+    }
+    // A step that pulled something is no diagnostic: no suffix.
+    {
+        Run r = Start(&plan);
+        r.pulls = 1;
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 1 && r.note == "pack cleared");
+    }
+}
+
 // --- Uldaman r10-19z29 step 79: pull 7405 x10 (9 joiners expected) from a firing stand 10 yd from the pack,
 // up a ramp. The healer (Vist) and the mage (Dizzy) were 27-30 yd behind when the lead reached the stand.
 
@@ -22953,6 +23516,255 @@ static void TestRaidNearWipeLatch()
     CHECK(!r.nearWiped);
 }
 
+// --- The near-wipe stop (AiPlayerbot.DungeonRunNearWipeStop). Walk 2: near wipe 1 began at display 21, near wipe 2
+// at display 32, 5 min 50 s later, and the run walked on into the wipe at display 35.
+
+static DungeonPlan MoveRowPlan(std::size_t rows)
+{
+    DungeonPlan plan;
+    for (std::size_t i = 0; i < rows; ++i)
+        plan.steps.push_back(Step(PlanStepKind::Move, 40.0f + static_cast<float>(i), 0, 0));
+    return plan;
+}
+
+static Facts NearWipeRaid(std::uint32_t dead)
+{
+    Facts f = RaidDead(dead);
+    f.nearWipeStopCount = 2;
+    f.nearWipeStopWindowMs = 600000;
+    return f;
+}
+
+// Walk 2's first event: 8 dead in a fight, the regroup by itself, then everyone up.
+static Run NearWipeRun(DungeonPlan& plan)
+{
+    Run r = Start(&plan);
+    r.step = 20;
+    Facts eight = NearWipeRaid(8);
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    eight.anyInCombat = false;
+    Tick(r, eight);
+    Tick(r, Raid());
+    return r;
+}
+
+static void TestRaidPausesAfterTwoNearWipesInTenMinutes()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = NearWipeRun(plan);
+    CHECK(r.nearWipeMarks.size() == 1 && !r.wipeStopDue && r.state == State::Running);
+    // The second event 5 min 50 s after the first. The run's clock counts running time and each tick adds its dt, so
+    // the next tick starts 350000 ms after the first mark.
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 350000 - kTickMs;
+    Facts eleven = NearWipeRaid(11);
+    eleven.anyInCombat = true;
+    CHECK(Tick(r, eleven).empty());
+    CHECK(r.nearWipeMarks.size() == 2 && r.wipeStopDue);
+    CHECK(r.state == State::Running && !r.regroup);
+    CHECK(r.note == "11 dead: fighting on, the run stops after the fight (2 near wipes within 10 min)");
+    Facts fourteen = NearWipeRaid(14);
+    CHECK(Tick(r, fourteen).empty());
+    CHECK(r.state == State::Paused);
+    CHECK(r.note == "14 dead: 2 near wipes within 10 min (steps 21 and 32, 5 min 50 s apart; 2 near wipes this run): "
+        "the run stops here. Regroup (cmd revive party), then .bot run resume, or .bot run stop");
+}
+
+static void TestNearWipeStopWindowBoundary()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    // Exactly 10 min: the first mark is still in the window, the stop is due.
+    {
+        Run r = NearWipeRun(plan);
+        r.step = 31;
+        r.runMs = r.nearWipeMarks.front().runMs + 600000 - kTickMs;
+        Facts eight = NearWipeRaid(8);
+        eight.anyInCombat = true;
+        Tick(r, eight);
+        CHECK(r.wipeStopDue);
+        eight.anyInCombat = false;
+        Tick(r, eight);
+        CHECK(r.state == State::Paused);
+    }
+    // One ms more: the first mark is out, the count is 1, the run regroups by itself.
+    {
+        Run r = NearWipeRun(plan);
+        r.step = 31;
+        r.runMs = r.nearWipeMarks.front().runMs + 600001 - kTickMs;
+        Facts eight = NearWipeRaid(8);
+        eight.anyInCombat = true;
+        Tick(r, eight);
+        CHECK(!r.wipeStopDue);
+        eight.anyInCombat = false;
+        Tick(r, eight);
+        CHECK(r.state == State::Running && r.regroup);
+        CHECK(r.note.find("regrouping by itself") != std::string::npos);
+    }
+}
+
+static void TestOneEventOneMark()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = Start(&plan);
+    r.step = 20;
+    Facts eight = NearWipeRaid(8);
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    CHECK(r.nearWipeMarks.size() == 1);
+    // The wipe and the revive one by one after it are the same event.
+    Facts all = NearWipeRaid(20);
+    all.anyInCombat = true;
+    Tick(r, all);
+    all.anyInCombat = false;
+    for (std::uint32_t dead = 19; dead >= 8; --dead)
+        Tick(r, NearWipeRaid(dead));
+    CHECK(r.nearWipeMarks.size() == 1 && !r.wipeStopDue);
+    Tick(r, Raid());
+    // The second event 1 min later marks and pauses.
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 60000 - kTickMs;
+    Facts again = NearWipeRaid(8);
+    again.anyInCombat = true;
+    Tick(r, again);
+    CHECK(r.nearWipeMarks.size() == 2 && r.wipeStopDue);
+    again.anyInCombat = false;
+    Tick(r, again);
+    CHECK(r.state == State::Paused);
+}
+
+static void TestDirectWipeIsOneMark()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = Start(&plan);
+    r.step = 20;
+    Facts all = NearWipeRaid(20);
+    all.anyInCombat = true;
+    Tick(r, all);
+    CHECK(r.nearWipeMarks.size() == 1);
+    all.anyInCombat = false;
+    for (std::uint32_t dead = 19; dead >= 8; --dead)
+        Tick(r, NearWipeRaid(dead));
+    CHECK(r.nearWipeMarks.size() == 1 && !r.wipeStopDue);
+    Tick(r, Raid());
+    CHECK(r.nearWipeMarks.size() == 1 && !r.wipeStopDue);
+}
+
+static void TestNearWipeStopOffAtZero()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = Start(&plan);
+    r.step = 20;
+    Facts eight = RaidDead(8); // the key at its default 0
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    CHECK(r.note == "8 dead: fighting on, a regroup follows");
+    eight.anyInCombat = false;
+    Tick(r, eight);
+    CHECK(r.state == State::Running && r.regroup && r.autoRegroups == 1);
+    CHECK(r.note.find("regrouping by itself") != std::string::npos);
+    CHECK(!r.wipeStopDue);
+}
+
+static void TestResumeWhileStillWipedCountsThatWipe()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = NearWipeRun(plan);
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 60000 - kTickMs;
+    Facts eight = NearWipeRaid(8);
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    eight.anyInCombat = false;
+    Tick(r, eight);
+    CHECK(r.state == State::Paused);
+    CHECK(Resume(r)); // resumed with the party still at the wipe level
+    CHECK(!r.wipeEventOn);
+    Tick(r, eight);
+    CHECK(r.nearWipeMarks.size() == 1); // the wipe in progress is the first mark of the fresh count
+}
+
+static void TestResumeClearsTheNearWipeCount()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = NearWipeRun(plan);
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 60000 - kTickMs;
+    Facts eight = NearWipeRaid(8);
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    eight.anyInCombat = false;
+    Tick(r, eight);
+    CHECK(r.state == State::Paused);
+    CHECK(Resume(r));
+    CHECK(r.nearWipeMarks.empty() && !r.wipeStopDue);
+    Tick(r, Raid()); // the resume's regroup ends (a walk back starts)
+    r.walkBack = false;
+    r.walkBackDue = false;
+    r.step = 31;
+    r.runMs += 60000;
+    // A third event is the first of the fresh count: it regroups by itself.
+    Facts again = NearWipeRaid(8);
+    again.anyInCombat = true;
+    Tick(r, again);
+    CHECK(r.nearWipeMarks.size() == 1 && !r.wipeStopDue);
+    again.anyInCombat = false;
+    Tick(r, again);
+    CHECK(r.state == State::Running && r.regroup);
+    CHECK(r.note.find("regrouping by itself") != std::string::npos);
+}
+
+static void TestNearWipeStopPastCeiling()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = NearWipeRun(plan);
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 60000 - kTickMs;
+    Facts eight = NearWipeRaid(8);
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    CHECK(r.wipeStopDue);
+    r.fighting = true;
+    r.fightMs = kFightCapMs + 1000;
+    Facts twelve = NearWipeRaid(12);
+    twelve.anyInCombat = true;
+    CHECK(Tick(r, twelve).empty());
+    CHECK(r.state == State::Paused);
+    CHECK(r.note == "12 dead: 2 near wipes within 10 min (steps 21 and 32, 1 min 0 s apart; 2 near wipes this run): "
+        "the run stops here. Regroup (cmd revive party), then .bot run resume, or .bot run stop; the fight went past 180 s");
+}
+
+static void TestNearWipeStopWithGmPinned()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = NearWipeRun(plan);
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 60000 - kTickMs;
+    Facts eight = NearWipeRaid(8);
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    CHECK(r.wipeStopDue);
+    // Every bot dead and only a GameMaster fighting: the fight is not the party's, so the run stops.
+    Facts pinned = NearWipeRaid(20);
+    PlayerFact gm;
+    gm.name = "Gm";
+    gm.commander = true;
+    gm.gm = true;
+    gm.inCombat = true;
+    pinned.players = {gm};
+    pinned.anyInCombat = true;
+    Tick(r, pinned);
+    CHECK(r.state == State::Paused);
+    CHECK(r.note.find("2 near wipes within 10 min") != std::string::npos);
+}
+
+static void TestNearWipeStopGating()
+{
+    CHECK(NearWipeStopCount(false, false, 2) == 0);
+    CHECK(NearWipeStopCount(true, false, 2) == 2);
+    CHECK(NearWipeStopCount(false, true, 2) == 2);
+}
+
 // M2: the raid's regroup restart compares against the raid's wipe level (the
 // mutation under test puts it back on the party rule): with 4 dead the fallen
 // wait regroups (revive and gather) instead of handing over to the regroup by
@@ -23825,6 +24637,26 @@ int main()
     TestPatrollerWaitIsBounded();
     TestPatrollerGiveUpIsRunWide();
     TestPatrollerOwnedByALaterStepIsLeftToIt();
+    TestClassifyPullRead();
+    TestFlyingUnitOverTheCentresFloorIsResidue();
+    TestFlyingUnitOverAnotherFloorIsNotResidue();
+    TestGroundUnitAboveTheBandIsUnchanged();
+    TestAirborneFloorAskedOnlyAboveTheBand();
+    TestPullStepWaitsForItsOwnPatrolAtTheFarEnd();
+    TestPackResidueIsPulledBeforePackCleared();
+    TestGatherTicksAreNoRepulls();
+    TestPackResidueCapPauses();
+    TestRefusedResidueFlierIsLeftNotPaused();
+    TestStepUnitRefusalAfterResiduePullKeepsTheApproach();
+    TestAloftResidueAtTheCapIsLeftNotPaused();
+    TestReachableFlierStillRepulls();
+    TestPackClearGateOff();
+    TestResidueInAnotherStepsRadiusIsLeft();
+    TestPassedResidueIsNamed();
+    TestSpawnOwnedPatrollerCapPauses();
+    TestSpawnOwnedPatrollerGateOffUsesTheOldRule();
+    TestFightStepEndWaitsOnResidue();
+    TestZeroPullClearNamesNearestLeft();
     TestNoPatrollerWaitWithoutALivingHostilePatroller();
     TestBigPackStandWalkWaitsForTheParty();
     TestBigPackGateHoldsOnAJoinerRestTick();
@@ -24398,6 +25230,16 @@ int main()
     TestRaidRegroupWaitsForWipeLevel();
     TestRaidNoRetreatAtTwoDead();
     TestRaidNearWipeLatch();
+    TestRaidPausesAfterTwoNearWipesInTenMinutes();
+    TestNearWipeStopWindowBoundary();
+    TestOneEventOneMark();
+    TestDirectWipeIsOneMark();
+    TestNearWipeStopOffAtZero();
+    TestResumeClearsTheNearWipeCount();
+    TestResumeWhileStillWipedCountsThatWipe();
+    TestNearWipeStopPastCeiling();
+    TestNearWipeStopWithGmPinned();
+    TestNearWipeStopGating();
     TestRaidRegroupNotRestartedByOneMoreDeath();
     TestRaidRegroupGatherDone();
     TestRaidCcRegatherDone();

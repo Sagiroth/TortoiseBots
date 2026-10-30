@@ -992,6 +992,37 @@ AiPlayerbot.DungeonRunAggroEstimate = 0
 # 6 - default; 1 and up. Only read while AiPlayerbot.DungeonRunAggroEstimate = 1.
 AiPlayerbot.DungeonRunAggroCeiling = 6
 
+# The run leader's pack-cleared gate. A `pull` step is done only when nothing of its
+# entries is left: no living unit in its radius, no unit in the band around it
+# (radius + this many yards on the ground, 10 yd of height), no patroller, and no
+# unit that spawned inside its radius still walking its loop. A unit left in the band
+# is pulled (nearest first), up to DungeonRunPackClearRepulls times; then the run pauses
+# with the units' entries, guids and distances so a human can clear it.
+# 10 - the band, in yards (Default); 0 - off, today's radius-only rule
+# 30 - the most (a patrol is read 30 yd beyond the radius)
+# Only read while AiPlayerbot.DungeonSelfClear = 1.
+AiPlayerbot.DungeonRunPackClearMarginYd = 10
+
+# How many residue pulls a pull step may send before it pauses for a human.
+# 3 - default; 1 to 10. Only read while AiPlayerbot.DungeonRunPackClearMarginYd is above 0.
+AiPlayerbot.DungeonRunPackClearRepulls = 3
+
+# The run leader's near-wipe stop: this many wipe events (a near wipe, a wipe, the
+# revive after either) within the window below pause the run once the fight is over,
+# instead of regrouping and walking into the same cost again. A resume starts a
+# fresh count.
+# 2 - default; 0 - off; 1 to 10
+# Only a raid binding (`AiPlayerbot.DungeonRunRaid = 1`) gets it by default.
+AiPlayerbot.DungeonRunNearWipeStop = 2
+
+# The near-wipe stop's window, in minutes of running time (a pause does not age it).
+# 10 - default; 1 to 60. Only read while AiPlayerbot.DungeonRunNearWipeStop is above 0.
+AiPlayerbot.DungeonRunNearWipeStopMinutes = 10
+
+# 1 - a party binding gets the near-wipe stop too; 0 - raids only (Default).
+# Parties regroup by themselves as their designed recovery.
+AiPlayerbot.DungeonRunNearWipeStopParty = 0
+
 # The run leader's regroup after a death: how long it waits for a living priest,
 # paladin or shaman (a druid's Rebirth only when none of those lives) to raise the
 # fallen where they lie before `cmd revive party` sends them to the spirit healer.

@@ -381,6 +381,33 @@ static void TestLaterOwner()
     CHECK(!OwnedByLaterStep(plan, 0, 100, 62, 0, 0, kPlanFlagAlliance));
 }
 
+static void TestOtherOwner()
+{
+    DungeonPlan plan;
+    PlanStep a = Step(0, 1, PlanStepKind::Pull, 0, 0, 0);
+    a.entries = {100};
+    a.radius = 10;
+    PlanStep b = Step(0, 2, PlanStepKind::Move, 50, 0, 0);
+    PlanStep c = Step(0, 3, PlanStepKind::Pull, 60, 0, 0);
+    c.entries = {100, 101};
+    c.radius = 10;
+    plan.steps = {a, b, c};
+    // From step 0: the second pack's unit is another step's, earlier or later.
+    CHECK(OwnedByOtherStep(plan, 0, 100, 62, 0, 0));
+    CHECK(!OwnedByOtherStep(plan, 2, 100, 62, 0, 0));
+    // ... and the first pack's unit from step 2 (an earlier step).
+    CHECK(OwnedByOtherStep(plan, 2, 100, 1, 0, 0));
+    CHECK(!OwnedByOtherStep(plan, 0, 100, 1, 0, 0));
+    // The step itself is skipped.
+    CHECK(!OwnedByOtherStep(plan, 0, 100, 0, 0, 0));
+    CHECK(!OwnedByOtherStep(plan, 2, 101, 60, 0, 0));
+    // A step for the other team owns nothing for this party (an unknown team sees every step).
+    plan.steps[2].flags = kPlanFlagHorde;
+    CHECK(OwnedByOtherStep(plan, 0, 100, 62, 0, 0));
+    CHECK(OwnedByOtherStep(plan, 0, 100, 62, 0, 0, kPlanFlagHorde));
+    CHECK(!OwnedByOtherStep(plan, 0, 100, 62, 0, 0, kPlanFlagAlliance));
+}
+
 static void TestLongHops()
 {
     DungeonPlan plan;
@@ -773,6 +800,7 @@ int main()
     TestBossEntries();
     TestBossRows();
     TestLaterOwner();
+    TestOtherOwner();
     TestLongHops();
     std::cout << "test_dungeon_plan_policy: ok\n";
     return 0;

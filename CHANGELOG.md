@@ -50,6 +50,8 @@
 - Debug loot now says why a corpse is not the bot's to loot.
 
 ### Dungeons & Maps
+- The run leader no longer counts a pull as cleared while part of its pack is still alive: a pull step waits for any unit of its mobs left within 10 yards of the pack (on the ground, same floor), for mobs that spawned in the pack wherever their patrol has walked, and for followers of a patrolling leader. Leftover mobs are pulled, three tries at most, then the run pauses and names them. `AiPlayerbot.DungeonRunPackClearMarginYd` (default 10, 0 turns it off) and `AiPlayerbot.DungeonRunPackClearRepulls` (default 3).
+- Raids stop after repeated near wipes instead of walking into the next one: two near wipes or wipes within 10 minutes of running time pause the run once the fight is over, with the steps, the time between them and the run's counts in the status line. `.bot run resume` regroups and starts a fresh count. `AiPlayerbot.DungeonRunNearWipeStop` (default 2), `AiPlayerbot.DungeonRunNearWipeStopMinutes` (default 10), and `AiPlayerbot.DungeonRunNearWipeStopParty` (default 0: parties keep regrouping by themselves).
 - New `AiPlayerbot.RaidEntryByCommander` (default `1`): a commanded raid can enter a raid whose entrance asks for something only a player has (Onyxia's Lair and its Drakefire Amulet) when the commander is a real player of the same raid and meets the requirement himself; the entrance's other checks are unchanged, and a five-player dungeon's or a scripted entrance's condition is never waived.
 - Fixed: the raid entry waiver now works for a bound raid, whose commander stands outside the group.
 - New: `.bot run start ... until boss|step N|leg X` ends the run before that step, so a trash walk stops at the boss stand.
