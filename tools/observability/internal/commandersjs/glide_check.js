@@ -323,4 +323,53 @@ assert.strictEqual(G.EXTRAP_MS, undefined, "no extrapolation past the newest sam
   assert.ok(frames > 2000, "it really sampled every frame: " + frames);
 }
 
+// ---- the 2 s report does not move a unit the position frames carry: its position is older and, on the WebSocket, stamped late
+{
+  const st = G.create();
+  G.sampled(st, T0, S0, undefined, true);
+  G.note(st, "b1", 0, 0, 209, true, T0, S0, undefined, true);
+  G.sampled(st, T0 + 1000, S0 + 1000, undefined, true);
+  G.note(st, "b1", 7, 0, 209, true, T0 + 1000, S0 + 1000, undefined, true);
+  // the report from S0 + 50 arrives 1.3 s late through the refresh gate, without a server time: stamped S0 + 1350, at x 0.4
+  G.sampled(st, T0 + 1350, undefined, undefined, false);
+  G.note(st, "b1", 0.4, 0, 209, true, T0 + 1350, undefined);
+  G.note(st, "m9", 3, 3, 209, true, T0 + 1350, undefined); // a unit the frames do not carry: the report still moves it
+  const s = st.units.b1.samples;
+  near(s[s.length - 1].x, 7, "the late report adds no sample to a unit with a position frame in the last 3 s");
+  assert.ok(st.units.m9, "the report still adds a unit the frames do not carry");
+  assert.strictEqual(st.units.b1.lastSeen, T0 + 1350, "and keeps the carried one on the card");
+  // after 3 s without a position frame the report moves it again
+  G.sampled(st, T0 + 4500, undefined, undefined, false);
+  G.note(st, "b1", 9, 0, 209, true, T0 + 4500, undefined);
+  near(st.units.b1.samples[st.units.b1.samples.length - 1].x, 9, "the report takes over once the frames stop");
+}
+
+// ---- the render clock never goes back: a longer delay (a fight ends, the feed slows) slows it down, a shorter one speeds it up
+{
+  const st = G.create();
+  for (let i = 0; i <= 8; i++) G.sampled(st, T0 + i * 500, S0 + i * 500, undefined, true);
+  near(st.delay, 625, "a 0.5 s feed");
+  let prev = G.clock(st, T0 + 4000), now = T0 + 4000;
+  near(prev, S0 + 4000 - 625, "the first read is the render time");
+  for (let i = 1; i <= 8; i++) G.sampled(st, T0 + 4000 + i * 1000, S0 + 4000 + i * 1000, undefined, true);
+  near(st.delay, 1250, "now a 1 s feed: the target is 625 ms further back");
+  let minRate = Infinity;
+  for (now = T0 + 4016; now <= T0 + 9000; now += 16) {
+    const c = G.clock(st, now);
+    assert.ok(c >= prev, "never backwards");
+    minRate = Math.min(minRate, (c - prev) / 16);
+    prev = c;
+  }
+  near(minRate, 1 - G.SLEW, "it slows to 0.75x while the delay grows", 1e-6);
+  near(prev, G.renderTime(st, now - 16), "and is back on the render time after 2.5 s");
+  assert.strictEqual(G.clock(st, now - 500), prev, "an older now does not move it");
+  // far behind (a hidden tab's catch-up): a jump forward, at once
+  st.rt -= 10000;
+  near(G.clock(st, now + 16), G.renderTime(st, now + 16), "more than 3 s behind jumps forward");
+  // apply draws every unit at that one clock
+  const bind = { commander: "Z", bots: [], mobs: [] };
+  G.apply(bind, st, now + 32);
+  near(st.rtAt, now + 32, "apply advances the card's clock");
+}
+
 console.log("glide_check.js ok");

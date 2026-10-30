@@ -16,7 +16,11 @@
   const BACK_MS = 30000;  // a frame this much older than the newest server time is a clock reset, not a stall: a stalled
   // report or a reordered position frame (seconds late under load) is dropped, never a snap of the whole card backwards
   const PRUNE_MS = 15000; // a unit no report has carried for this long is gone from the map
-  const POS_WINDOW_MS = 3000; // while position frames run, only they say how far behind the map is drawn
+  const POS_WINDOW_MS = 3000; // while position frames run, only they say how far behind the map is drawn, and only they move
+  // the units they carry: the 2 s report's position of such a unit is ignored (it reaches the page through the refresh gate,
+  // without a server time on the WebSocket, so it is stamped late and is older than the newest position frame)
+  const SLEW = 0.25;      // the render clock runs at 0.75x..1.25x while it catches up with a changed delay or clock offset
+  const SLEW_JUMP_MS = 3000; // further behind than this (a hidden tab, a new clock), it jumps forward; it never goes back
   const TAU = Math.PI * 2;
   // The same jump rule as the trails (commanders.js, the daemon's JumpLimitYd): 12 yd of slack plus 20 yd for each second,
   // seconds counted from 1 to 30.
@@ -40,6 +44,7 @@
       offsets: [], offset: 0, offsetTs: null,
       gaps: [], delay: initialDelay(),
       lastClock: null, newestClock: null, session: null, posAt: null,
+      rt: null, rtAt: null,
     };
   }
 
@@ -55,6 +60,8 @@
     st.lastClock = null;
     st.newestClock = null;
     st.posAt = null;
+    st.rt = null;
+    st.rtAt = null;
   }
 
   // On every report: a unit the report did not carry for PRUNE_MS is gone (the report lists every unit the card draws, so a
@@ -107,6 +114,27 @@
 
   const renderTime = (st, nowMs) => nowMs - (st.offset || 0) - (st.delay || delayOf(st));
 
+  // The card's render clock as the map draws it: renderTime, but never backwards. A changed delay (a fight starts or ends and
+  // the feed gap with it) or clock offset moves the target; the clock then runs a little faster or slower until it is there,
+  // instead of jumping, and a target behind the clock is waited for, never walked back to. Far behind (a hidden tab, the first
+  // frame of a new clock) it jumps forward at once.
+  function clock(st, nowMs) {
+    if (!st) return 0;
+    const target = renderTime(st, nowMs);
+    if (typeof st.rt !== "number" || typeof st.rtAt !== "number") {
+      st.rt = target;
+      st.rtAt = nowMs;
+      return target;
+    }
+    const dt = nowMs - st.rtAt;
+    if (dt <= 0) return st.rt;
+    const free = st.rt + dt, err = target - free;
+    const next = err > SLEW_JUMP_MS ? target : free + Math.max(-SLEW * dt, Math.min(SLEW * dt, err));
+    st.rt = Math.max(st.rt, next);
+    st.rtAt = nowMs;
+    return st.rt;
+  }
+
   // Once per report: the gap the render delay follows, and the report's own server time when it has one. Only a newer server
   // time feeds it (a reordered frame never moves the clock back), and while position frames run only they do: the 2 s report
   // still moves the dots, but its cadence must not stretch the delay the position stream set. The datagram session rides
@@ -157,37 +185,41 @@
     };
   }
 
-  // The position drawn for a unit now.
-  function at(st, id, nowMs) {
+  // The position drawn for a unit now (at the given render time, else at renderTime: the checks read it unclamped).
+  function at(st, id, nowMs, rt) {
     const u = st && st.units && st.units[String(id)];
     if (!u || !u.samples || !u.samples.length) return null;
-    return pointAt(u.samples, renderTime(st, nowMs));
+    return pointAt(u.samples, typeof rt === "number" ? rt : renderTime(st, nowMs));
   }
 
   // A new sample for one unit. It snaps (no interpolation towards it) when the map changed, the unit died, or the distance is
   // more than walking or riding explains (a summon, a portal, a spirit release). A sample the daemon already superseded is
-  // dropped, so a late report never walks the dot backwards.
-  function note(st, id, x, y, map, alive, nowMs, tsMs, face) {
+  // dropped, so a late report never walks the dot backwards. `pos` marks a position frame's sample: for POS_WINDOW_MS after
+  // one, the 2 s report only keeps the unit on the card (its position is older than the frame's, and stamped late), and a unit
+  // the frames do not carry (a new one, a mob off their watch list) is moved by the report as before.
+  function note(st, id, x, y, map, alive, nowMs, tsMs, face, pos) {
     if (!st || id == null) return;
     if (!st.units) st.units = {};
     const key = String(id), live = alive !== false, f = typeof face === "number" && isFinite(face) ? face : undefined;
-    const t = clockOf(st, nowMs, tsMs), prev = st.units[key];
+    const prev = st.units[key];
+    if (!pos && prev && typeof prev.posAt === "number" && nowMs - prev.posAt <= POS_WINDOW_MS) { prev.lastSeen = nowMs; return; }
+    const t = clockOf(st, nowMs, tsMs), posAt = pos ? nowMs : prev ? prev.posAt : undefined;
     if (!prev) {
-      st.units[key] = { samples: [{ t: t, x: x, y: y, f: f }], map: map, alive: live, lastSeen: nowMs };
+      st.units[key] = { samples: [{ t: t, x: x, y: y, f: f }], map: map, alive: live, lastSeen: nowMs, posAt: posAt };
       return;
     }
     const last = prev.samples[prev.samples.length - 1];
-    if (t <= last.t) { prev.map = map; prev.alive = live; prev.lastSeen = nowMs; return; }
+    if (t <= last.t) { prev.map = map; prev.alive = live; prev.lastSeen = nowMs; prev.posAt = posAt; return; }
     const gap = t - last.t;
     const snap = map !== prev.map || !live || gap > CAP_MS || Math.hypot(last.x - x, last.y - y) > jumpLimitYd(gap);
     const samples = snap ? [] : prev.samples.slice(-(SAMPLES - 1));
     samples.push({ t: t, x: x, y: y, f: f });
-    st.units[key] = { samples: samples, map: map, alive: live, lastSeen: nowMs };
+    st.units[key] = { samples: samples, map: map, alive: live, lastSeen: nowMs, posAt: posAt };
   }
 
   // Whether any unit is still moving (the page keeps drawing every frame while this is true).
   function active(st, nowMs) {
-    const units = (st && st.units) || {}, t = renderTime(st, nowMs);
+    const units = (st && st.units) || {}, t = st ? clock(st, nowMs) : 0;
     return Object.keys(units).some(k => {
       const u = units[k], s = u.samples;
       if (!s || s.length < 2 || u.alive === false) return false;
@@ -198,18 +230,20 @@
   }
 
   // A shallow copy of a binding whose bots' and mobs' x/y (and a boss's facing) are the interpolated positions (the reported
-  // ones where nothing is kept). The binding itself is never changed: the state list is what the next report replaces.
+  // ones where nothing is kept), all at the card's one render clock. The binding itself is never changed: the state list is
+  // what the next report replaces.
   function apply(bind, st, nowMs) {
     if (!bind) return bind;
+    const rt = clock(st, nowMs);
     const bots = Array.isArray(bind.bots)
       ? bind.bots.map((b) => {
-        const p = b ? at(st, botKey(b.guid), nowMs) : null;
+        const p = b ? at(st, botKey(b.guid), nowMs, rt) : null;
         return p ? Object.assign({}, b, { x: p.x, y: p.y }) : b;
       })
       : bind.bots;
     const mobs = Array.isArray(bind.mobs)
       ? bind.mobs.map((m) => {
-        const p = m ? at(st, mobKey(m.id), nowMs) : null;
+        const p = m ? at(st, mobKey(m.id), nowMs, rt) : null;
         if (!p) return m;
         const o = Object.assign({}, m, { x: p.x, y: p.y });
         if (typeof p.face === "number") o.o = p.face;
@@ -220,10 +254,10 @@
   }
 
   const api = {
-    CAP_MS, FRAME_MS, GRID_FRAME_MS, BACK_MS, PRUNE_MS, POS_WINDOW_MS,
+    CAP_MS, FRAME_MS, GRID_FRAME_MS, BACK_MS, PRUNE_MS, POS_WINDOW_MS, SLEW, SLEW_JUMP_MS,
     SAMPLES, OFFSETS, GAPS, DELAY_FACTOR, DELAY_MIN_MS, DELAY_MAX_MS,
     SLACK_YD, YD_PER_SEC, MAX_GAP_SEC,
-    jumpLimitYd, create, botKey, mobKey, median, angleLerp, sampled, delayOf, renderTime, at, note, active, apply, prune,
+    jumpLimitYd, create, botKey, mobKey, median, angleLerp, sampled, delayOf, renderTime, clock, at, note, active, apply, prune,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Glide = api;
 })(typeof self !== "undefined" ? self : this);
