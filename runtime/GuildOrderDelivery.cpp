@@ -357,13 +357,13 @@ private:
         bool movedTotal = movedAny || stored->delivered >= stored->amount;
         DeliveryOutcome outcome =
             ClassifyDelivery(stored->delivered, stored->amount, mailedAny, movedTotal);
-        // A timed-out delivery never goes back to work: the farm time is
-        // spent, so whatever reached the guild is the final count and the
-        // order ends with the timeout reason kept.
-        if (stored->reason == OrderReason::Timeout &&
+        // A timed-out (or gain-stalled) delivery never goes back to work:
+        // the farm time is spent or the watchdog bit, so whatever reached
+        // the guild is the final count and the order ends with the reason kept.
+        if ((stored->reason == OrderReason::Timeout || stored->reason == OrderReason::NoProgress) &&
             (outcome == DeliveryOutcome::BackToWork || outcome == DeliveryOutcome::Stuck))
         {
-            SetState(request.botGuidLow, OrderState::Cant, OrderReason::Timeout);
+            SetState(request.botGuidLow, OrderState::Cant, stored->reason);
             ExpireTargetFor(ai);
             return;
         }

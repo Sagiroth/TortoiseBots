@@ -2,7 +2,8 @@
 
 // Farm-time rules for guild orders: deaths never end an order, they move the
 // bot to the next zone of its plan, and so does an hour worked without a new
-// item. The order itself ends once its chosen farm time runs out. Header-only
+// item. The order itself ends once its chosen farm time runs out - or, capped
+// or not, after 3 worked hours without gaining a single item. Header-only
 // and free of core/database types on purpose: the thresholds are exercised
 // standalone in tools/test_guild_order_giveup_policy.cpp. The order store
 // feeds this function plain counters it already keeps per order.
@@ -23,11 +24,12 @@ inline constexpr uint32_t kZoneMoveWorkedSeconds = 3600;
 inline constexpr uint32_t kZoneMoveDeaths = 3;
 
 // Player-chosen farm time on `.bot order ... [hours|inf]`: whole hours 1-24,
-// or 0 for no time limit (the hours slot carries `inf` on the wire).
+// or 0 for no time limit (the hours slot carries `inf` on the wire). No
+// hours given means no time limit.
 inline constexpr uint32_t kMinOrderHours = 1;
 inline constexpr uint32_t kMaxOrderHours = 24;
-inline constexpr uint32_t kDefaultOrderHours = 1;
 inline constexpr uint32_t kUnlimitedOrderHours = 0;
+inline constexpr uint32_t kDefaultOrderHours = kUnlimitedOrderHours;
 
 enum class ZoneMoveTrigger : uint8_t
 {
@@ -73,14 +75,25 @@ inline bool SearchFailsMoveZone(uint32_t searchFailsInZone)
 
 // The order ends once the bot has worked its chosen hours in total without
 // reaching the amount. An unlimited order (hours 0) never times out; the
-// other out-of-range hours fall back to the default.
+// other out-of-range hours fall back to the default (no limit).
 inline bool IsOrderTimeout(uint32_t workedTotalSec, uint32_t hours)
 {
+    if (hours != kUnlimitedOrderHours && (hours < kMinOrderHours || hours > kMaxOrderHours))
+        hours = kDefaultOrderHours;
     if (hours == kUnlimitedOrderHours)
         return false;
-    if (hours < kMinOrderHours || hours > kMaxOrderHours)
-        hours = kDefaultOrderHours;
     return workedTotalSec >= hours * 3600;
+}
+
+// Progress watchdog: worked hours without gaining a single order item (or
+// craft-leg reagent) that end the order, capped or not. Only worked time
+// counts, like the zone-move clock; any new item resets it, a zone move
+// does not.
+inline constexpr uint32_t kNoGainWorkedSeconds = 3 * 3600;
+
+inline bool IsOrderNoProgress(uint32_t workedNoGainSec)
+{
+    return workedNoGainSec >= kNoGainWorkedSeconds;
 }
 
 // Reported progress never drops: offline (or not yet re-seen) bots keep

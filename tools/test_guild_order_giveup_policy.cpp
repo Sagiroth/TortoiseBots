@@ -1,6 +1,6 @@
-// Standalone test for runtime/GuildOrderGiveUpPolicy.h (guild order zone moves
-// and the player-chosen farm time). No core, no DB: feeds the policy plain
-// counters.
+// Standalone test for runtime/GuildOrderGiveUpPolicy.h (guild order zone moves,
+// the player-chosen farm time and the progress watchdog). No core, no DB:
+// feeds the policy plain counters.
 #include "../runtime/GuildOrderGiveUpPolicy.h"
 
 #include <cstdio>
@@ -16,7 +16,7 @@ int main()
     CHECK(kZoneMoveDeaths == 3);
     CHECK(kMinOrderHours == 1);
     CHECK(kMaxOrderHours == 24);
-    CHECK(kDefaultOrderHours == 1);
+    CHECK(kDefaultOrderHours == 0);
     CHECK(kUnlimitedOrderHours == 0);
 
     // Below both thresholds: keep working in this zone.
@@ -59,12 +59,19 @@ int main()
     CHECK(IsOrderTimeout(2 * 3600, 2));
     CHECK(IsOrderTimeout(24 * 3600, 24));
     CHECK(!IsOrderTimeout(23 * 3600 + 3599, 24));
-    // Out-of-range hours fall back to one hour; unlimited never times out.
-    CHECK(IsOrderTimeout(3600, 25));
-    CHECK(IsOrderTimeout(3600, 99));
+    // Out-of-range hours fall back to the default (no limit); unlimited never times out.
+    CHECK(!IsOrderTimeout(3600, 25));
+    CHECK(!IsOrderTimeout(99 * 3600, 99));
     CHECK(!IsOrderTimeout(0, kUnlimitedOrderHours));
     CHECK(!IsOrderTimeout(24 * 3600, kUnlimitedOrderHours));
     CHECK(!IsOrderTimeout(0xFFFFFFFFu, kUnlimitedOrderHours));
+
+    // The progress watchdog ends orders that gain nothing, capped or not.
+    CHECK(kNoGainWorkedSeconds == 3 * 3600);
+    CHECK(!IsOrderNoProgress(0));
+    CHECK(!IsOrderNoProgress(3 * 3600 - 1));
+    CHECK(IsOrderNoProgress(3 * 3600));
+    CHECK(IsOrderNoProgress(0xFFFFFFFFu));
 
     // Reported progress never drops.
     CHECK(ReportedHave(0, 5, true, 0) == 5);

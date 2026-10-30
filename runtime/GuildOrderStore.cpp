@@ -64,7 +64,7 @@ public:
         std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
             "SELECT `bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
             "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
-            "`worked_sec`, `worked_total`, `reported`, `farm_rest`, `keep`, `stock_target`, `last_bank_check`, "
+            "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `stock_target`, `last_bank_check`, "
             "`created_at`, `updated_at` "
             "FROM `tortoise_bots_guild_order`"));
 
@@ -91,13 +91,14 @@ public:
                 record.deathsInZone = fields[14].GetUInt32();
                 record.workedSinceNewItemSec = fields[15].GetUInt32();
                 record.workedTotalSec = fields[16].GetUInt32();
-                record.reportedHave = fields[17].GetUInt32();
-                record.farmRest = fields[18].GetUInt32() != 0;
-                record.keep = fields[19].GetUInt32() != 0;
-                record.stockTarget = fields[20].GetUInt32();
-                record.lastBankCheckMs = fields[21].GetUInt32();
-                record.createdAt = fields[22].GetUInt64();
-                record.updatedAt = fields[23].GetUInt64();
+                record.workedNoGainSec = fields[17].GetUInt32();
+                record.reportedHave = fields[18].GetUInt32();
+                record.farmRest = fields[19].GetUInt32() != 0;
+                record.keep = fields[20].GetUInt32() != 0;
+                record.stockTarget = fields[21].GetUInt32();
+                record.lastBankCheckMs = fields[22].GetUInt32();
+                record.createdAt = fields[23].GetUInt64();
+                record.updatedAt = fields[24].GetUInt64();
 
                 if (record.hours != kUnlimitedOrderHours &&
                     (record.hours < kMinOrderHours || record.hours > kMaxOrderHours))
@@ -156,15 +157,15 @@ public:
                 "REPLACE INTO `tortoise_bots_guild_order` "
                 "(`bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
                 "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
-                "`worked_sec`, `worked_total`, `reported`, `farm_rest`, `keep`, `stock_target`, `last_bank_check`, "
+                "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `stock_target`, `last_bank_check`, "
                 "`created_at`, `updated_at`) "
                 "VALUES ('%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
-                "'%u', '%u', '%u', '%u', '%u', '%u', '%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
+                "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
                 record.botGuidLow, record.guildId, record.giverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
                 ReasonToken(record.reason), record.farmZoneId, record.farmChance, record.farmItemId,
                 record.zoneIndex, record.deathsInZone, record.workedSinceNewItemSec,
-                record.workedTotalSec, record.reportedHave, record.farmRest ? 1u : 0u,
+                record.workedTotalSec, record.workedNoGainSec, record.reportedHave, record.farmRest ? 1u : 0u,
                 record.keep ? 1u : 0u, record.stockTarget, record.lastBankCheckMs,
                 static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt)))
         {
@@ -406,6 +407,7 @@ public:
                 record.searchFailsInZone = 0;
                 record.workedSinceNewItemSec = 0;
                 record.workedTotalSec = 0;
+                record.workedNoGainSec = 0;
                 record.reportedHave = 0;
                 stored.lastOwnedCount = 0;
                 stored.lastFarmCount = 0;
@@ -460,6 +462,10 @@ public:
                     record.workedTotalSec = UINT32_MAX;
                 else
                     record.workedTotalSec += workedSec;
+                if (record.workedNoGainSec > UINT32_MAX - workedSec)
+                    record.workedNoGainSec = UINT32_MAX;
+                else
+                    record.workedNoGainSec += workedSec;
                 if (IsOrderTimeout(record.workedTotalSec, record.hours))
                 {
                     // The farm time ran out: what the bot holds still goes to
@@ -485,6 +491,28 @@ public:
                     MarkDirtyLocked(stored);
                     out.legChanged = true;
                 }
+                else if (IsOrderNoProgress(record.workedNoGainSec))
+                {
+                    // Same deliver-first end as the timeout: the bot brings
+                    // what it holds, then the order ends cant/noprogress.
+                    if (record.delivered + in.bagCount + in.mailboxCount > 0)
+                    {
+                        record.state = OrderState::Delivering;
+                        record.reason = OrderReason::NoProgress;
+                    }
+                    else
+                    {
+                        if (record.keep)
+                        {
+                            record.keep = false;
+                            record.stockTarget = 0;
+                        }
+                        record.state = OrderState::Cant;
+                        record.reason = OrderReason::NoProgress;
+                    }
+                    MarkDirtyLocked(stored);
+                    out.legChanged = true;
+                }
                 else if (MoveZoneLocked(stored))
                     out.legChanged = true;
                 MaybeFlushWorkedLocked(stored, in.nowMs);
@@ -494,9 +522,10 @@ public:
             stored.workedCarryMs = 0;
         // A real rise in the order item (bags plus mailbox) or in the
         // farm-leg item (bags: reagents never arrive by mail) seen while
-        // online resets the no-progress clock. A login after an offline gap
-        // never counts as new items. The farm-leg tracker re-snaps when the
-        // leg changes so a fresh reagent starts from its own count.
+        // online resets the zone-move clock and the progress watchdog. A
+        // login after an offline gap never counts as new items. The
+        // farm-leg tracker re-snaps when the leg changes so a fresh reagent
+        // starts from its own count.
         uint32_t ownedNow = in.bagCount + in.mailboxCount;
         if (!wasFinished && in.botOnline)
         {
@@ -510,6 +539,11 @@ public:
             if ((orderRise || farmRise) && record.workedSinceNewItemSec != 0)
             {
                 record.workedSinceNewItemSec = 0;
+                MarkDirtyLocked(stored);
+            }
+            if ((orderRise || farmRise) && record.workedNoGainSec != 0)
+            {
+                record.workedNoGainSec = 0;
                 MarkDirtyLocked(stored);
             }
             stored.lastOwnedCount = ownedNow;
@@ -641,13 +675,13 @@ private:
             "UPDATE `tortoise_bots_guild_order` SET `amount` = '%u', `hours` = '%u', `delivered` = '%u', "
             "`state` = '%s', `reason` = '%s', "
             "`farm_zone` = '%u', `farm_chance` = '%u', `farm_item` = '%u', `zone_index` = '%u', "
-            "`deaths_in_zone` = '%u', `worked_sec` = '%u', `worked_total` = '%u', `reported` = '%u', "
+            "`deaths_in_zone` = '%u', `worked_sec` = '%u', `worked_total` = '%u', `worked_nogain` = '%u', `reported` = '%u', "
             "`farm_rest` = '%u', `keep` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', "
             "`updated_at` = FROM_UNIXTIME('%u') "
             "WHERE `bot_guid` = '%u'",
             record.amount, record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
             record.farmZoneId, record.farmChance, record.farmItemId, record.zoneIndex, record.deathsInZone,
-            record.workedSinceNewItemSec, record.workedTotalSec, record.reportedHave,
+            record.workedSinceNewItemSec, record.workedTotalSec, record.workedNoGainSec, record.reportedHave,
             record.farmRest ? 1u : 0u, record.keep ? 1u : 0u, record.stockTarget, record.lastBankCheckMs,
             static_cast<uint32_t>(record.updatedAt), record.botGuidLow);
     }
