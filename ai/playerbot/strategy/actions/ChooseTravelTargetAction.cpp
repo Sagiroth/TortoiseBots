@@ -22,6 +22,7 @@
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/GuildOrderSources.h"
 #include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderDeliveryPolicy.h"
 #include "runtime/GuildOrderGiveUpPolicy.h"
 #include "runtime/GuildOrderMailPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
@@ -589,6 +590,14 @@ bool ChooseTravelTargetAction::Execute(Event& event)
                 TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
                 orderZoneForSearch = orderRecord->farmZoneId;
             TortoiseBots::GuildOrders::NoteSearchFailed(bot->GetGUIDLow(), orderZoneForSearch);
+            if (purposeKey == "guild order" &&
+                AI_VALUE2(std::string, "manual string", "future travel detail") == "guild banker")
+            {
+                // The banker search offered nothing usable: after repeated
+                // empty searches the delivery walks to a mailbox instead.
+                SET_AI_VALUE2(int32, "manual int", "guild order no banker",
+                    AI_VALUE2(int32, "manual int", "guild order no banker") + 1);
+            }
             SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey,
                 time(0) + TortoiseBots::GuildOrders::kOrderLegParkSeconds);
@@ -673,7 +682,12 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     // A landed order search breaks the failed-search streak: the zone serves
     // the order, so the next rejection starts counting from zero.
     if (IsGuildOrderTravelName(futureTravelPurpose))
+    {
         TortoiseBots::GuildOrders::NoteSearchLanded(bot->GetGUIDLow());
+        if (futureTravelPurpose == "guild order" &&
+            AI_VALUE2(std::string, "manual string", "future travel detail") == "guild banker")
+            SET_AI_VALUE2(int32, "manual int", "guild order no banker", 0);
+    }
 
     if (AI_VALUE2(std::string, "manual string", "future travel condition") == "has guild travel order")
     {
@@ -2377,44 +2391,60 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         );
     }
     // Delivering outranks working: a bot carrying finished order items walks
-    // to a guild banker first, whatever the order type.
+    // to a guild banker first, whatever the order type. After repeated
+    // searches that offer no banker at all the bot walks to a mailbox and
+    // mails the guild master instead.
     else if (travelName == "guild order" && AI_VALUE(bool, "has guild order delivery"))
     {
         Team team = bot->GetTeam();
         uint32 botFaction = bot->GetFactionTemplateId();
-        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, botFaction, entries = GuildBankerEntries()]()
-            {
-                // Order legs search the whole continent (0 = no cap); the zone
-                // pin and the route gate still scope safety.
-                PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg, entries, true, 0.0f);
-
-                for (auto& [partition, travelPoints] : list)
+        bool mailLeg = TortoiseBots::GuildOrders::DeliveryMailsAfterNoBanker(
+            uint32(AI_VALUE2(int32, "manual int", "guild order no banker")));
+        if (mailLeg)
+        {
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
                 {
-                    travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [team, botFaction](TravelPoint point)
-                        {
-                            EntryTravelDestination* dest = (EntryTravelDestination*)std::get<TravelDestination*>(point);
-                            if (!dest->GetCreatureInfo())
-                                return true;
-                            if (!IsGuildBankerDestination(dest))
-                                return true;
-                            WorldPosition* position = std::get<WorldPosition*>(point);
-                            if (!position || !position->HasAreaFlag(AREA_FLAG_CAPITAL))
-                                return true;
-                            if (position->IsEnemyHomeZoneFor(team))
-                                return true;
-                            FactionTemplateEntry const* bankerFaction =
-                                sObjectMgr.GetFactionTemplateEntry(dest->GetCreatureInfo()->faction);
-                            FactionTemplateEntry const* botTemplate =
-                                sObjectMgr.GetFactionTemplateEntry(botFaction);
-                            if (bankerFaction && botTemplate &&
-                                PlayerbotAI::GetFactionReaction(botTemplate, bankerFaction) < REP_NEUTRAL)
-                                return true;
-                            return false;
-                        }), travelPoints.end());
-                }
-                return list;
-            });
-        SET_AI_VALUE2(std::string, "manual string", "future travel detail", "guild banker");
+                    return sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                        (uint32)TravelDestinationPurpose::Mail, {}, true, 0.0f);
+                });
+            SET_AI_VALUE2(std::string, "manual string", "future travel detail", "guild mail");
+        }
+        else
+        {
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, botFaction, entries = GuildBankerEntries()]()
+                {
+                    // Order legs search the whole continent (0 = no cap); the zone
+                    // pin and the route gate still scope safety.
+                    PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg, entries, true, 0.0f);
+
+                    for (auto& [partition, travelPoints] : list)
+                    {
+                        travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [team, botFaction](TravelPoint point)
+                            {
+                                EntryTravelDestination* dest = (EntryTravelDestination*)std::get<TravelDestination*>(point);
+                                if (!dest->GetCreatureInfo())
+                                    return true;
+                                if (!IsGuildBankerDestination(dest))
+                                    return true;
+                                WorldPosition* position = std::get<WorldPosition*>(point);
+                                if (!position || !position->HasAreaFlag(AREA_FLAG_CAPITAL))
+                                    return true;
+                                if (position->IsEnemyHomeZoneFor(team))
+                                    return true;
+                                FactionTemplateEntry const* bankerFaction =
+                                    sObjectMgr.GetFactionTemplateEntry(dest->GetCreatureInfo()->faction);
+                                FactionTemplateEntry const* botTemplate =
+                                    sObjectMgr.GetFactionTemplateEntry(botFaction);
+                                if (bankerFaction && botTemplate &&
+                                    PlayerbotAI::GetFactionReaction(botTemplate, bankerFaction) < REP_NEUTRAL)
+                                    return true;
+                                return false;
+                            }), travelPoints.end());
+                    }
+                    return list;
+                });
+            SET_AI_VALUE2(std::string, "manual string", "future travel detail", "guild banker");
+        }
     }
     else if (travelName == "guild order")
     {

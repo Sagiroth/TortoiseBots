@@ -93,6 +93,18 @@ inline bool DeliveryTimeoutEnds(OrderReason reason, DeliveryOutcome outcome)
     return (reason == OrderReason::Timeout || reason == OrderReason::NoProgress) &&
         (outcome == DeliveryOutcome::BackToWork || outcome == DeliveryOutcome::Stuck);
 }
+// A delivering bot whose banker search keeps coming back empty walks to a
+// mailbox and mails the guild master instead: the items still reach the
+// guild, and the bot never parks on an unreachable banker.
+inline constexpr uint32_t kDeliveryNoBankerMails = 3;
+
+// Whether the empty-banker-search count flips the delivery to the mail
+// leg. Counts only consecutive failures: a banker search that offers
+// anything resets it.
+inline bool DeliveryMailsAfterNoBanker(uint32_t noBankerSearches)
+{
+    return noBankerSearches >= kDeliveryNoBankerMails;
+}
 
 // One stack per mail; the server takes a single item per mail.
 inline uint32_t DeliveryMailCount(size_t stacksLeft) { return uint32_t(stacksLeft); }
