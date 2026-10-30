@@ -206,6 +206,14 @@
     if (!pos && prev && typeof prev.posAt === "number") {
       // inside the window: held back; past it (no frame drew the end of the window): this newer report is the one promoted
       prev.lastSeen = nowMs;
+      if (map !== prev.map || !live) {
+        // a map change or a death is not a late position: it snaps at once, not when the window ends
+        prev.samples = [{ t: clockOf(st, nowMs, tsMs), x: x, y: y, f: f }];
+        prev.map = map;
+        prev.alive = live;
+        prev.held = null;
+        return;
+      }
       prev.held = { t: clockOf(st, nowMs, tsMs), x: x, y: y, f: f, map: map, alive: live };
       if (nowMs - prev.posAt > POS_WINDOW_MS) promoteDue(st, nowMs, key);
       return;
