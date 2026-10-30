@@ -62,11 +62,11 @@ class RaidConfigWiringTest(unittest.TestCase):
         self.assertIn("float const range = raidBoss ? kRaidBossGuardYd : kGuardYd;", read)
         self.assertIn("bot->GetDistance(anchor) > range", read)
         self.assertIn("fact.distLead = anchor->GetDistance(attacker);", read)
-        self.assertIn("for (std::string const& name : f.raid.bossOffTanksAlive)", read)
         self.assertIn("fact.victimName = victim->GetName();", read)
         self.assertIn("f.leadHeldEntries.push_back(attacker->GetEntry());", read)
         # Both call sites say whether it is a raid's boss fight.
         self.assertEqual(code.count("TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f)"), 2)
+        self.assertIn("Player* const anchor = RaidGuardAnchor(lead, bots, f);", read)
 
     def test_boss_off_tanks_are_raid_wide(self):
         code = strip_comments(COMMANDER)

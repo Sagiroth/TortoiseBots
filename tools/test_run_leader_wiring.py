@@ -167,8 +167,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertEqual(clear.count("PendingRunCcIcons().push_back(pending);"), 2)  # cc loop + focus loop
         self.assertEqual(COMMANDS.count("fact.castingAtRange = fact.hitting && !melee;"), 2)
         # The guard's read (around its anchor: the lead bot, or in a raid boss fight a living bot) and the players'.
-        self.assertEqual(COMMANDS.count("IdleHostilesNear(lead, attacker, TortoiseBots::DungeonRun::kGuardCampYd)"), 1)
-        self.assertEqual(COMMANDS.count("IdleHostilesNear(anchor, attacker, TortoiseBots::DungeonRun::kGuardCampYd)"), 1)
+        self.assertEqual(COMMANDS.count("IdleHostilesNear(anchor, attacker, TortoiseBots::DungeonRun::kGuardCampYd)"), 2)
         caster = body(COMMANDS, "uint32 IdleHostilesNear(Player* lead, Unit* unit, float range)\n{", "\n}\n")
         self.assertIn("other != unit &&", caster)
         self.assertIn("GroupCanAttack(lead, other)", caster)

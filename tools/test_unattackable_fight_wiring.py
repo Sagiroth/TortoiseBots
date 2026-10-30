@@ -69,7 +69,7 @@ class UnattackableFightWiringTest(unittest.TestCase):
         self.assertIn("fact.attackable = GroupCanAttack(lead, nearestHit);", guard)
         # The anchor is the lead bot, or with it dead in a raid's boss fight a living bot (DungeonRun::GuardReadMode).
         self.assertIn("fact.attackable = GroupCanAttack(anchor, attacker);", guard)
-        self.assertIn("Player* anchor = lead->IsAlive() ? lead : nullptr;", guard)
+        self.assertIn("Player* const anchor = RaidGuardAnchor(lead, bots, f);", guard)
         kill = body(CODE, "void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead,")
         self.assertIn("fact.attackable = GroupCanAttack(judge, unit);", kill)
 
