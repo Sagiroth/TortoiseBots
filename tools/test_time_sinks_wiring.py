@@ -136,7 +136,7 @@ class TimeSinksWiringTest(unittest.TestCase):
         for start, pause in (
                 ("inline bool LeadRevivedAway(Run& r, const Facts& f)", 'Pause(r, "the lead bot died and came back "'),
                 ("inline bool WaitForFallen(Run& r, const Facts& f)", 'Pause(r, "the lead bot is dead: revive it, then .bot run resume ("'),
-                ("    if (wipe && !autoRegroup)\n", 'Pause(r, std::to_string(partyDead) + " dead: regroup (cmd revive party), then .bot run resume ("')):
+                ("    if (wipe && !autoRegroup && !r.wipeStopDue)\n", 'Pause(r, std::to_string(partyDead) + " dead: regroup (cmd revive party), then .bot run resume ("')):
             block = body(POLICY, start, pause)
             self.assertTrue(block.rstrip().endswith("RearmRescueAfterDeath(r); // a death: the resume's walk back may teleport once more"), start)
         # Resume and ResetStep still never re-arm (test_self_regroups_rearm_the_rescue), nor Pause itself.
