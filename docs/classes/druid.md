@@ -40,6 +40,7 @@ Druids fulfill Tank, Healer, Melee DPS, or Ranged Caster roles using flexible sh
 - Fires *Ferocious Bite* early on targets below 25% health with 1 or more combo points (against targets under 4000 health; bosses keep Rip), avoiding clipping active *Rip* bleeds.
 - Out of combat or in battlegrounds, prowling cats maintain normal objective movement and routines.
 - A prowling druid still ends a pull's join window on time.
+- Off-heals wounded allies (*Regrowth*, *Healing Touch* by wound band) per [off-healing rules](overview.md#dps-off-healing-offheal).
 
 ### Restoration (Healer)
 - Maintains *Rejuvenation* and *Regrowth* HoTs (Heal-over-Time spells) on injured allies.
@@ -54,6 +55,7 @@ Druids fulfill Tank, Healer, Melee DPS, or Ranged Caster roles using flexible sh
 - Maintains *Moonkin Form* and attacks from range with *Moonfire*, *Wrath*, *Starfire*, and *Insect Swarm*.
 - Casts *Hurricane* against packs of 3 or more clustered enemies.
 - Honors [party threat back-off](overview.md#party-threat-back-off), pausing AoE spells if holding 50% or more of tank threat.
+- Off-heals wounded allies (*Regrowth*, *Healing Touch* by wound band) per [off-healing rules](overview.md#dps-off-healing-offheal).
 
 ### Leveling (Below Level 10)
 - Fights in melee using auto-attacks, keeping *Moonfire* applied and healing self with *Healing Touch* and *Rejuvenation*.
