@@ -76,7 +76,8 @@ uint32_t GuildOrderFishingPoleFor(Player* bot);
 std::pair<uint32_t, uint32_t> GuildOrderFarmItemFor(Player* bot);
 
 // Order-mode destination gate over the index: the entry is an order source
-// of the item and usable in the planned zone (level + 3, skill, team).
+// of the item and usable in the planned zone (level + 3, +4 for mobs in the
+// travel leg's fallback window, skill, team).
 // hasSkill/skillValue carry the bot's skill for the entry's gate; team is
 // the bot's Team as a number (0 = no team filter).
 bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,

@@ -54,6 +54,18 @@ inline bool SourceLevelFits(uint32_t sourceLevel, uint32_t botLevel)
     return sourceLevel > 0 && sourceLevel <= botLevel + kSourceLevelMargin;
 }
 
+// Fallback window for the travel leg's second tier: one level past the plan
+// (+4), the standing cap the bot's own grind orders obey. The planner keeps
+// the stricter +3 for its verdicts and zones; the leg only reaches here when
+// the planned entries yield no spot in the planned zone, so a red mob one
+// level up beats cycling zones past a farmable source.
+inline constexpr uint32_t kFallbackLevelMargin = 4;
+
+inline bool FallbackSourceLevelFits(uint32_t sourceLevel, uint32_t botLevel)
+{
+    return sourceLevel > 0 && sourceLevel <= botLevel + kFallbackLevelMargin;
+}
+
 // A creature the bot cannot attack is no farm source: the grind hostility
 // gate (GrindTravelDestination::IsActive) would refuse it as inactive, so the
 // plan must not name it. Hostile means the faction-template reaction between
@@ -195,6 +207,14 @@ inline bool OrderModeSkipsGates(bool orderMode, bool isOrderSource)
 // Whether the outgrown-zone leisure floor applies to a travel point: order
 // mode plans its zone by the level + 3 rule, which may sit below the floor.
 inline bool OutgrownFloorApplies(bool orderMode)
+{
+    return !orderMode;
+}
+
+// Whether the pick's 10 % far-partition skip applies: an order leg farms a
+// planned zone, so it takes the nearest servable point instead of wandering
+// to a farther band for variety.
+inline bool FarPartitionSkipApplies(bool orderMode)
 {
     return !orderMode;
 }

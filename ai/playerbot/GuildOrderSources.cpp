@@ -541,7 +541,12 @@ bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,
                 continue;
             uint32_t sourceLevel = entry > 0 ? source.level :
                 (slice.zoneLevel > 0 ? uint32_t(slice.zoneLevel) : 0);
-            if (!SourceLevelFits(sourceLevel, botLevel))
+            // Mobs also pass in the travel leg's fallback window (+4): the
+            // leg searches those when the planned entries yield no spot, so
+            // the pick gate must admit what the search offers.
+            bool const levelFits = SourceLevelFits(sourceLevel, botLevel) ||
+                (entry > 0 && FallbackSourceLevelFits(sourceLevel, botLevel));
+            if (!levelFits)
                 continue;
             if (source.skillId == SKILL_NONE)
                 return true;

@@ -3240,6 +3240,71 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
     return pointMap;
 }
 
+PartitionedTravelList TravelMgr::GetOrderZonePartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries, uint32 zoneId, bool onlyPossible, float maxDistance) const
+{
+    sTravelMgr.GetPartitionsLock();
+
+    PartitionedTravelList pointMap;
+    if (zoneId == 0 || distancePartitions.empty() || entries.empty())
+    {
+        sTravelMgr.GetPartitionsLock(false);
+        return pointMap;
+    }
+    DestinationList destinations = GetDestinations(info, purposeFlag, entries, onlyPossible, maxDistance);
+
+    unsigned seed = GetStableTravelSelectionSeed(info.GetIdentitySeed(), purposeFlag,
+        center.GetMapId(), center.getX(), center.getY());
+    std::shuffle(destinations.begin(), destinations.end(), std::default_random_engine(seed));
+
+    for (auto& dest : destinations)
+    {
+        std::vector<WorldPosition*> points = dest->GetPoints();
+        unsigned const pointSeed = MixTravelRouteSeed(seed ^ uint32(points.size() + 1));
+        std::shuffle(points.begin(), points.end(), std::default_random_engine(pointSeed));
+
+        // Nearest valid in-zone point per distance band: the band walk (not
+        // just the closest band) is what keeps a planned zone servable when
+        // another zone's spawns of the same entry sit nearer the bot.
+        std::map<uint32, TravelPoint> bestByBand;
+        for (auto& position : points)
+        {
+            if (!position)
+                continue;
+            AreaTableEntry const* area = position->GetArea();
+            uint32 pointZoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
+            if (pointZoneId != zoneId)
+                continue;
+            float distance = position->distance(center);
+            if (maxDistance > 0 && distance > maxDistance)
+                continue;
+            if (info.GetLevel() <= 5 && distance > 1500.0f)
+                continue;
+            if (!IsLocationLevelValid(*position, info, purposeFlag))
+                continue;
+            float sqDist = distance * distance;
+            uint32 band = 0;
+            for (uint32 partition : distancePartitions)
+            {
+                uint32 sqPartition = partition * partition;
+                if (partition == distancePartitions.back() || sqDist < float(sqPartition))
+                {
+                    band = sqPartition;
+                    break;
+                }
+            }
+            auto found = bestByBand.find(band);
+            if (found == bestByBand.end() || distance < std::get<2>(found->second))
+                bestByBand[band] = TravelPoint(dest, position, distance);
+        }
+        for (auto& [band, point] : bestByBand)
+            pointMap[band].push_back(point);
+    }
+
+    sTravelMgr.GetPartitionsLock(false);
+
+    return pointMap;
+}
+
 void TravelMgr::ShuffleTravelPoints(std::vector<TravelPoint>&points)
 {
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
