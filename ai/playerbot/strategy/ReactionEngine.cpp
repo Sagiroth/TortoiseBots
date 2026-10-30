@@ -3,6 +3,7 @@
 
 #include "ReactionEngine.h"
 #include "playerbot/BombRunoutPolicy.h"
+#include "playerbot/BossTacticsMgr.h"
 #include "../../../runtime/ReactionWorkPolicy.h"
 #include <iomanip>
 
@@ -366,10 +367,17 @@ bool ReactionEngine::HasReactionWork() const
     // cure runs on the combat/non-combat engines, never here.
     if (HasReactionAuraWork(bot))
         return true;
-    // The strategy lookup only for a bot in a fight.
-    if (bot->IsInCombat() &&
-        TortoiseBots::BossTacticsReactionPass(true, ai->HasStrategy("boss tactics", BotState::BOT_STATE_REACTION)))
-        return true;
+    // Armed boss tactics on a map with rows (the map probe first, then the strategy lookup): the walk out of a listed
+    // blast reads the group's attackers, and a held healer or ranged bot can stand out of combat itself, idle at full
+    // health, while a group attacker casts next to it. So the pass runs for a bot in combat or with group attackers.
+    if (GetBossTactics().HasMap(bot->GetMapId()) && ai->HasStrategy("boss tactics", BotState::BOT_STATE_REACTION))
+    {
+        bool const inCombat = bot->IsInCombat();
+        bool const groupAttackers = !inCombat &&
+            !ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get().empty();
+        if (TortoiseBots::BossTacticsReactionPass(inCombat, groupAttackers, true))
+            return true;
+    }
     return false;
 }
 

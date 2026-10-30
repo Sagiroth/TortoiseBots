@@ -313,13 +313,7 @@ bool BossTacticsAvoidCastAction::Execute(Event& event)
     AvoidCastPoint points[kAvoidCastPoints];
     const int count = AvoidCastDestinations(caster->GetPositionX(), caster->GetPositionY(), bot->GetPositionX(),
                                             bot->GetPositionY(), danger.radius, bot->GetOrientation() + M_PI_F, points);
-    // A cast of the bot's own would hold it in the blast.
     bool stopped = false;
-    if (bot->IsNonMeleeSpellCasted(true))
-    {
-        bot->CastStop();
-        stopped = true;
-    }
     float destDistance = -1.0f;
     bool moved = false;
     for (int i = 0; i < count && !moved; ++i)
@@ -332,6 +326,13 @@ bool BossTacticsAvoidCastAction::Execute(Event& event)
             continue;
         if (!bot->IsWithinLOS(points[i].x, points[i].y, z + bot->GetCollisionHeight()))
             continue;
+        // A cast of the bot's own would hold it in the blast; it is stopped only once a usable way out is found, so a
+        // bot with none keeps its heal or bolt (Codex adversarial review).
+        if (!stopped && bot->IsNonMeleeSpellCasted(true))
+        {
+            bot->CastStop();
+            stopped = true;
+        }
         if (MoveTo(bot->GetMapId(), points[i].x, points[i].y, z, false, false, false, true))
         {
             moved = true;
