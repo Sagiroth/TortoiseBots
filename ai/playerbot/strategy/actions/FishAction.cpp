@@ -532,9 +532,11 @@ bool FishAction::Execute(Event& event)
     ai->StopMoving();
 
     // The zone must be fishable for this bot (same rule as the travel fish
-    // errand): no base skill means no fish here, otherwise skill covers the
-    // requirement with the errand's -5 head start. Checked at cast time so a
-    // bot that walks to water in a zone it cannot fish never casts.
+    // errand): a missing or negative base skill never blocks - the core
+    // rolls open-water catches from fishing_loot_template regardless, and
+    // the success chance runs inside its loot roll. Positive requirements
+    // keep the errand's -5 head start. Checked at cast time so a bot that
+    // walks to water in a zone it cannot fish never casts.
     if (water)
     {
         WorldPosition const waterPos(water);
