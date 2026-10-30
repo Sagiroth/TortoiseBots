@@ -306,16 +306,15 @@ bool GuildCraftOrderAction::Execute(Event& event)
         return false;
     }
 
-    std::ostringstream cmd;
-    // Smelts target the forge itself: the core checks the focus object at
-    // cast time, and a targetless cast never names one.
-    if (focus)
-        cmd << chat->formatWorldobject(focus) << " ";
-    cmd << "castnc " << craftSpellId << " " << batch;
+    // The core focus check runs at cast time: name the forge, not the void.
+    // One call casts once; the trigger refires for the rest of the batch.
+    uint32 spellDuration = 0;
+    bool castOk = focus ? ai->CastSpell(craftSpellId, focus, nullptr, true, &spellDuration)
+        : ai->CastSpell(craftSpellId, bot, nullptr, true, &spellDuration);
 
     ai->TellDebug(ai->GetMaster(), "Guild craft order: crafting " + std::to_string(batch) + "x " + std::string(proto ? proto->Name1 : order.target), "debug travel");
 
-    return true;
+    return castOk;
 }
 
 bool GuildCraftOrderAction::isUseful()

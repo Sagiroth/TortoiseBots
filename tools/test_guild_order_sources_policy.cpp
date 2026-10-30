@@ -59,6 +59,8 @@ int main()
     CHECK(OrderVerdict(false, 0, true, true) == OrderReason::NoSource);
     CHECK(OrderVerdict(false, 2, false, true, true) == OrderReason::NoRange);
     CHECK(OrderVerdict(false, 1, true, true, true) == OrderReason::LowSkill);
+    CHECK(CraftRecipeVerdict(true) == OrderReason::None);
+    CHECK(CraftRecipeVerdict(false) == OrderReason::NoRecipe);
     CHECK(OrderModeSkipsGates(true, true));
     CHECK(!OrderModeSkipsGates(true, false));
     CHECK(!OrderModeSkipsGates(false, true));
