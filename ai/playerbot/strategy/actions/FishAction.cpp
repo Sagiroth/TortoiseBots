@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/values/FishValues.h"
 #include "Timer.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/GuidPosition.h"
@@ -429,7 +430,8 @@ bool FishAction::isUseful()
     int const casts = AI_VALUE2(int, "manual int", "fish session casts");
     int const start = AI_VALUE2(int, "manual int", "fish session start");
     int const ended = AI_VALUE2(int, "manual int", "fish session end");
-    bool const poolPath = ai::FishingSpotApplies(sRandomBotFacade.IsFreeBot(bot), ai->HasRealPlayerMaster());
+    bool const poolPath = ai::FishingSpotApplies(sRandomBotFacade.IsFreeBot(bot), ai->HasRealPlayerMaster()) &&
+        !ai::IsOrderFishing(ai);
     if (poolPath && uint32(start) != 0 && ai::FishingSessionExpired(uint32(start), casts, nowUseful))
     {
         EndFishingSession(ai, "budget spent");
