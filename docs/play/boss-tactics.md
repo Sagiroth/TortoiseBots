@@ -20,7 +20,7 @@ A boss fight has a few mechanics that generic combat AI cannot know: which spell
 It is **off by default**. A normal player's bots play exactly as before.
 
 
-> **Interrupt rule (corrected 2026-10-20):** the core stops a cast only when the spell has preventionType silence (1) AND, for a generic cast, interruptFlags with the damage bit 0x02 (SpellEffects.cpp, Spell::EffectInterruptCast), plus castingTimeIndex > 1. Earlier phases checked castingTimeIndex and flag bits only; the audit in pjerra/turtle-agent#246 removed the two rows that failed (Tan'sha 3143, Shalk's add 36732).
+> **Interrupt rule (corrected 2026-10-20):** the core stops a cast only when the spell has preventionType silence (1) AND, for a generic cast, interruptFlags with the damage bit 0x02 (SpellEffects.cpp, Spell::EffectInterruptCast), plus castingTimeIndex > 1. Earlier phases checked castingTimeIndex and flag bits only; the audit in pjerra/turtle-agent#246 removed the rows that failed (Tan'sha 3143, Shalk's add 36732, and on 2026-10-29 Grimlok's Chain Bolt 8292).
 
 ## When it is active
 
@@ -48,7 +48,7 @@ Why the commander binding counts: those runs are the ones that exist to clear a 
 | `param` | `behind`: yards around the boss in which its front is kept clear. |
 | `comment` | Free text; where the row came from. |
 
-The primary key is `(map, boss_entry, kind, target_entry, spell_id)`. The loader skips a row it cannot use (unknown kind, an `interrupt` without a spell, a `behind` without a radius, a duplicate key) and logs how many it skipped; `tools/test_boss_tactics_sql.py` rejects the same rows at commit time.
+The primary key is `(map, boss_entry, kind, target_entry, spell_id)`. The loader skips a row it cannot use (unknown kind, an `interrupt` without a spell, a `behind` without a radius, a duplicate key) and logs how many it skipped; `tools/test_boss_tactics_sql.py` rejects the same rows at commit time. With `TORTOISE_CORE=~/tortoise-wow` set, the same test also checks every live `interrupt` row against the core's data: that the spell exists and the core's interrupt rule can stop it, that the boss and target templates exist, and that the boss spawns on its map; without the variable those checks are skipped.
 
 ### Kinds
 
@@ -70,7 +70,7 @@ Every creature and spell was read from Turtle's own data (`tortoise-wow`: `creat
 | Baelog 6906, Eric "The Swift" 6907, Olaf 6908 | `kill_first` Baelog (1), Eric (2), Olaf (3), under all three entries | Baelog is the only dwarf with a ranged attack (*Shoot* 15620) and flees at 15 % health (event 690601); Eric opens with *Rushing Charge* 6268; Olaf has the most health (5867) and the *Shield Slam* stun 8242. The order is a judgement from that data, not something the core states. |
 | Ironaya (7228) | `behind`, 10 yd, spell 8374 | `boss_ironaya` casts *Arcing Smash* 8374 on herself every 13 s; it is a cone (effect target 24) with radius index 8, which is the *War Stomp* radius (8 yd by its tooltip; the client DBC was not available, so 8 yd plus a 2 yd margin). Her *Knock Away* 10101 below 50 % health wipes the victim's threat and is not handled yet. |
 | Obsidian Sentinel (7023) | `kill_first` Obsidian Shard 7209 | EventAI events 702301-702304 cast *Summon Obsidian Shard* 10061 (creature 7209) and *Splintered Obsidian* 10072 at 80, 60, 40 and 20 % health. |
-| Grimlok (4854) | `interrupt` Chain Bolt 8292 and Lightning Bolt 9532 | Spell list 48540 casts Chain Bolt 8292 (castingTimeIndex 19) and Lightning Bolt 9532 (castingTimeIndex 14), both silence-prevented (preventionType 1). Shrink 11892 gets no row (not in the plan interrupt list); Tremor Totem 8143 is instant (castingTimeIndex 1). |
+| Grimlok (4854) | `interrupt` Lightning Bolt 9532 (the `interrupt` Chain Bolt 8292 row was removed 2026-10-29: interruptFlags 0x9 lacks the damage bit 0x02, a kick cannot stop it) | Spell list 48540 casts Chain Bolt 8292 (castingTimeIndex 19, interruptFlags 9) and Lightning Bolt 9532 (castingTimeIndex 14, interruptFlags 15), both silence-prevented (preventionType 1); only 9532 carries the kick bits. Shrink 11892 gets no row (not in the plan interrupt list); Tremor Totem 8143 is instant (castingTimeIndex 1). |
 
 What needs a live check (not verified in game): the Lost Dwarves order and whether the three can be pulled apart, that 10 yd is right for the Arcing Smash cone, that the interrupt fires in time on Chain Lightning.
 
