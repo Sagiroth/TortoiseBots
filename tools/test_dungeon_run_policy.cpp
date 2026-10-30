@@ -13810,6 +13810,36 @@ static void TestHeldSummonWaitsForStrandAndOtherPart()
     CHECK(!SummonHeldToLead(r, f, order) && r.hold.size() == 2 && order.empty());
 }
 
+// ta263: a 40-bot raid binding summons every held bot, one a tick, no repeat.
+static void TestRaidHeldSummons()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    Facts f = Party(200);
+    f.raid.on = true;
+    f.members = {Mem("Tanky", 0)};
+    for (int i = 0; i < 12; ++i)
+    {
+        std::string const name = "B" + std::to_string(i);
+        r.hold.push_back(name);
+        f.members.push_back(Mem(name, 100.0f + i));
+    }
+    f.maxMemberYd = 111;
+    std::set<std::string> seen;
+    std::string order;
+    for (int i = 0; i < 12; ++i)
+    {
+        order.clear();
+        CHECK(SummonHeldToLead(r, f, order));
+        CHECK(order.compare(0, 7, "summon ") == 0 && seen.insert(order.substr(7)).second);
+    }
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+    CHECK(r.hold.size() == 12 && r.heldSummons.size() == 12); // all sent, none there yet
+}
+
 // The run's own time limit and the stop note: the 3 h cap used to read as a plain stop.
 static void TestRunTimeLimitAndStopNote()
 {
@@ -23074,6 +23104,15 @@ static void TestRaidHoldRegroupGathers()
     Tick(r, h);
     CHECK(r.hold.size() == 4);
     CHECK(PartyGathered(HoldView(r, h)));
+    // The four far bots held at the fight spot are summoned to the lead bot,
+    // one a tick; the gather sees only the rest meanwhile.
+    for (int i = 0; i < 4; ++i)
+        CHECK(Tick(r, h).compare(0, 7, "summon ") == 0);
+    CHECK(r.hold.size() == 4 && r.heldSummons.size() == 4); // sent, none there yet
+    // Summoned in, the party is whole: the regroup ends and the run walks back.
+    for (MemberFact& m : h.members)
+        m.yd = 0.0f;
+    h.maxMemberYd = 0.0f;
     Tick(r, h);
     CHECK(!r.regroup && (r.walkBack || r.walkBackDue));
 }
@@ -24083,6 +24122,7 @@ int main()
     TestHeldBotInAFightLeavesTheHold();
     TestHeldSummonsOneATick();
     TestHeldSummonWaitsForStrandAndOtherPart();
+    TestRaidHeldSummons();
     TestRefusedHeldSummonStaysHeld();
     TestRefusedHeldSummonInCombatStaysHeld();
     TestHeldSummonReleasedOnArrival();
