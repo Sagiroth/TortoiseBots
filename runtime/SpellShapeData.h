@@ -18,7 +18,7 @@ namespace TortoiseBots {
 // cone whose arc the core picks by spellVisual (src/game/Spells/Spell.cpp:2751-2768) and fills with HasInArc
 // (Spell.cpp:8258-8272): 2*pi/3 = 120 degrees in front, 75 degrees behind for spellVisual 3879. Target 54 is a narrower
 // cone: Spell.cpp:2771-2840 fills a 90 degree arc unless the spell id is one of its own rotated 120 degree cases. The
-// reach is effectRadiusIndex -> SpellRadius.dbc yards (9=20, 10=30, 11=45, 13=10, 21=35, 23=40). A spell whose target is a
+// reach is effectRadiusIndex -> SpellRadius.dbc yards (9=20, 10=30, 11=45, 12=100, 13=10, 21=35, 23=40). A spell whose target is a
 // single unit (effectImplicitTargetA 6, e.g. Cleave) or a circle around the caster has no row: there is no arc to draw.
 //
 // The Deep Breath lanes are chains of link spells fired along a straight lane, each link hitting a 30 yd radius (radius
@@ -36,6 +36,7 @@ inline char const* const kSpellShapeCsv = R"(
 24839,cone,120,20,0,0,0,0,0,spell_template 24839 Acid Breath: target 24 x2; radius 9 = 20 yd; front 120
 25814,cone,120,10,0,0,0,0,0,spell_template 25814 Wide Slash: target 24; radius 13 = 10 yd; front 120
 26102,cone,90,40,0,0,0,0,0,spell_template 26102 Sand Blast: target 54 x2 (90 degree arc); radius 23 = 40 yd; front
+26029,cone,15,100,0,0,0,0,0,spell_template 26029 Dark Glare: target 24; spellVisual 7441 = PUSH_IN_FRONT_15 (Spell.cpp:2760-2761, HasInArc pi/12 at Spell.cpp:8276-8277) = front 15; radius 12 = 100 yd
 17086,line,0,0,60,20.730539,-215.237610,-130.788300,-213.424026,spell_target_position 17086 chain (north to south, 20 links, first point 17086 to last 21139 in the tunnel; 151.53 yd); radius 10 = 30 yd each side
 18351,line,0,0,60,-68.834236,-215.036163,20.730539,-215.237610,spell_target_position 18351 chain (south to north, 11 links; 89.57 yd); radius 10 = 30 yd each side
 18576,line,0,0,60,-37.743851,-243.667923,-37.728523,-188.616806,spell_target_position 18576 chain (east to west, 7 links; 55.05 yd); radius 10 = 30 yd each side

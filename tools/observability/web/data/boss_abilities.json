@@ -24,6 +24,19 @@
       "bosses": [
         10184
       ]
+    },
+    {
+      "key": "aq40",
+      "bosses": [
+        15263,
+        15516,
+        15510,
+        15509,
+        15276,
+        15275,
+        15589,
+        15727
+      ]
     }
   ],
   "bosses": {
@@ -1652,6 +1665,893 @@
       "notes": [
         "Deep Breath is one of eight directional breath spells chosen from aMoveData; it has no timer so the panel shows no next window.",
         "Version 1.18.1 adds a second dragon and Hatchers that are not in this script; they show only as mobs that carry a summoner."
+      ]
+    },
+    "15263": {
+      "entry": 15263,
+      "name": "The Prophet Skeram",
+      "map": "aq40",
+      "order": 10,
+      "abilities": [
+        {
+          "sid": 26192,
+          "name": "Arcane Explosion",
+          "castMs": 0,
+          "a": 6000,
+          "b": 8000,
+          "c": 18000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 26194,
+          "name": "Earth Shock",
+          "castMs": 0,
+          "a": 2000,
+          "b": 1000,
+          "c": 2000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 785,
+          "name": "True Fulfillment",
+          "castMs": 0,
+          "a": 15000,
+          "b": 20000,
+          "c": 30000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 4801,
+          "name": "Teleport",
+          "castMs": 0,
+          "a": 15000,
+          "b": 10000,
+          "c": 30000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 8195,
+          "name": "Teleport",
+          "castMs": 0,
+          "a": 15000,
+          "b": 10000,
+          "c": 30000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 20449,
+          "name": "Teleport",
+          "castMs": 0,
+          "a": 15000,
+          "b": 10000,
+          "c": 30000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 747,
+          "name": "Summon Images",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 75
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Skeram splits at 75, 50 and 25 percent into himself and two images; the images have 10, 20 and then 50 percent of his health.",
+        "Earth Shock is cast only while his victim is out of melee reach; Arcane Explosion only while more players than allowed stand in melee reach."
+      ]
+    },
+    "15516": {
+      "entry": 15516,
+      "name": "Battleguard Sartura",
+      "map": "aq40",
+      "order": 11,
+      "abilities": [
+        {
+          "sid": 26083,
+          "name": "Whirlwind",
+          "castMs": 0,
+          "a": 8000,
+          "b": 5000,
+          "c": 10000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 25174,
+          "name": "Sundering Cleave",
+          "castMs": 0,
+          "a": 4000,
+          "b": 3000,
+          "c": 4000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 8269,
+          "name": "Enrage",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 20
+        },
+        {
+          "sid": 27680,
+          "name": "Berserk",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        }
+      ],
+      "phases": [
+        {
+          "name": "berserk",
+          "order": 1,
+          "rule": {
+            "kind": "aura",
+            "aura": 27680
+          }
+        },
+        {
+          "name": "enraged",
+          "order": 2,
+          "rule": {
+            "kind": "aura",
+            "aura": 8269
+          }
+        },
+        {
+          "name": "fight",
+          "order": 3,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 15984,
+          "name": "Sartura's Royal Guard",
+          "role": "linked",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "The next Whirlwind timer starts when the 15 second Whirlwind ends; she goes berserk 10 minutes after the pull."
+      ]
+    },
+    "15510": {
+      "entry": 15510,
+      "name": "Fankriss the Unyielding",
+      "map": "aq40",
+      "order": 12,
+      "abilities": [
+        {
+          "sid": 25646,
+          "name": "Mortal Wound",
+          "castMs": 0,
+          "a": 4000,
+          "b": 4000,
+          "c": 8000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 720,
+          "name": "Entangle",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 731,
+          "name": "Entangle",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 1121,
+          "name": "Entangle",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 15630,
+          "name": "Spawn of Fankriss",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 15962,
+          "name": "Vekniss Hatchling",
+          "role": "summon",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "Entangle: three webs, each on a random player, inside a 45 second rotation; hatchlings spawn at the web the player was sent to.",
+        "Spawn of Fankriss: the first comes 20-30 s after the pull; each wave is 1-3 spawns 4-8 s apart, the next wave 18-37 s later; each spawn enrages after 15, 20 or 25 s."
+      ]
+    },
+    "15509": {
+      "entry": 15509,
+      "name": "Princess Huhuran",
+      "map": "aq40",
+      "order": 13,
+      "abilities": [
+        {
+          "sid": 26051,
+          "name": "Frenzy",
+          "castMs": 0,
+          "a": 10000,
+          "b": 10000,
+          "c": 20000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 26180,
+          "name": "Wyvern Sting",
+          "castMs": 0,
+          "a": 18000,
+          "b": 15000,
+          "c": 32000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 26050,
+          "name": "Acid Spit",
+          "castMs": 0,
+          "a": 8000,
+          "b": 5000,
+          "c": 10000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 26053,
+          "name": "Noxious Poison",
+          "castMs": 0,
+          "a": 10000,
+          "b": 12000,
+          "c": 24000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 26068,
+          "name": "Berserk",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 30
+        }
+      ],
+      "phases": [
+        {
+          "name": "berserk",
+          "order": 1,
+          "rule": {
+            "kind": "aura",
+            "aura": 26068
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": []
+    },
+    "15276": {
+      "entry": 15276,
+      "name": "Emperor Vek'lor",
+      "map": "aq40",
+      "order": 14,
+      "abilities": [
+        {
+          "sid": 26006,
+          "name": "Shadow Bolt",
+          "castMs": 0,
+          "a": 0,
+          "b": 1800,
+          "c": 2500,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 568,
+          "name": "Arcane Burst",
+          "castMs": 0,
+          "a": 0,
+          "b": 5000,
+          "c": 10000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 26607,
+          "name": "Blizzard",
+          "castMs": 0,
+          "a": 15000,
+          "b": 15000,
+          "c": 20000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": true,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 804,
+          "name": "Explode Bug",
+          "castMs": 0,
+          "a": 7000,
+          "b": 7000,
+          "c": 10000,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 800,
+          "name": "Twin Teleport",
+          "castMs": 0,
+          "a": 30000,
+          "b": 30000,
+          "c": 40000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 7393,
+          "name": "Heal Brother",
+          "castMs": 0,
+          "a": 0,
+          "b": 1500,
+          "c": 1500,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 26662,
+          "name": "Berserk",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 15316,
+          "name": "Qiraji Scarab",
+          "role": "linked",
+          "priority": 0
+        },
+        {
+          "entry": 15317,
+          "name": "Qiraji Scorpion",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "Vek'lor takes no physical damage and Vek'nilash no spell damage; both teleport to swap places every 30-40 s."
+      ]
+    },
+    "15275": {
+      "entry": 15275,
+      "name": "Emperor Vek'nilash",
+      "map": "aq40",
+      "order": 15,
+      "abilities": [
+        {
+          "sid": 802,
+          "name": "Mutate Bug",
+          "castMs": 0,
+          "a": 10000,
+          "b": 10000,
+          "c": 15000,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 18943,
+          "name": "Double Attack",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 26662,
+          "name": "Berserk",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 15316,
+          "name": "Qiraji Scarab",
+          "role": "linked",
+          "priority": 0
+        },
+        {
+          "entry": 15317,
+          "name": "Qiraji Scorpion",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
+      "notes": []
+    },
+    "15589": {
+      "entry": 15589,
+      "name": "Eye of C'Thun",
+      "map": "aq40",
+      "order": 16,
+      "abilities": [
+        {
+          "sid": 26134,
+          "name": "Eye Beam",
+          "castMs": 0,
+          "a": 3000,
+          "b": 3000,
+          "c": 3000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 26137,
+          "name": "Rotate Trigger",
+          "castMs": 0,
+          "a": 45000,
+          "b": 45000,
+          "c": 45000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 26029,
+          "name": "Dark Glare",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 16245,
+          "name": "Freeze Anim",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        }
+      ],
+      "phases": [
+        {
+          "name": "glare",
+          "order": 1,
+          "rule": {
+            "kind": "aura",
+            "aura": 16245
+          }
+        },
+        {
+          "name": "beam",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 15726,
+          "name": "Eye Tentacle",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 15725,
+          "name": "Claw Tentacle",
+          "role": "summon",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "The first three Eye Beams go to the puller, then to random targets; Dark Glare starts 45 s after the beam phase begins and lasts 38 s, and the next beam phase follows 1 s after it ends."
+      ]
+    },
+    "15727": {
+      "entry": 15727,
+      "name": "C'Thun",
+      "map": "aq40",
+      "order": 17,
+      "abilities": [
+        {
+          "sid": 26156,
+          "name": "Carapace of C'Thun",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 26235,
+          "name": "Cthun Vulnerable",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        },
+        {
+          "sid": 26332,
+          "name": "Summon Mouth Tentacle",
+          "castMs": 0,
+          "a": 0,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0
+        }
+      ],
+      "phases": [
+        {
+          "name": "weakened",
+          "order": 1,
+          "rule": {
+            "kind": "aura",
+            "aura": 26235
+          }
+        },
+        {
+          "name": "shielded",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 15726,
+          "name": "Eye Tentacle",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 15334,
+          "name": "Giant Eye Tentacle",
+          "role": "summon",
+          "priority": 2
+        },
+        {
+          "entry": 15728,
+          "name": "Giant Claw Tentacle",
+          "role": "summon",
+          "priority": 3
+        },
+        {
+          "entry": 15802,
+          "name": "Flesh Tentacle",
+          "role": "summon",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "Phase 2: the first stomach grab comes 18 s minus the 3.25 s grab after he emerges, then every 10 s; killing both Flesh Tentacles in the stomach weakens him for 45 s."
       ]
     }
   }

@@ -292,8 +292,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 9)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 75)
+        self.assertEqual(len(doc["bosses"]), 17)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 112)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)

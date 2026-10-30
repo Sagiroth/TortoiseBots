@@ -1,11 +1,59 @@
 {
   "spells": {
+    "568": {
+      "name": "Arcane Burst",
+      "castMs": 0
+    },
+    "720": {
+      "name": "Entangle",
+      "castMs": 0
+    },
+    "731": {
+      "name": "Entangle",
+      "castMs": 0
+    },
+    "747": {
+      "name": "Summon Images",
+      "castMs": 0
+    },
+    "785": {
+      "name": "True Fulfillment",
+      "castMs": 0
+    },
+    "800": {
+      "name": "Twin Teleport",
+      "castMs": 0
+    },
+    "802": {
+      "name": "Mutate Bug",
+      "castMs": 0
+    },
+    "804": {
+      "name": "Explode Bug",
+      "castMs": 0
+    },
+    "1121": {
+      "name": "Entangle",
+      "castMs": 0
+    },
     "3391": {
       "name": "Thrash",
       "castMs": 0
     },
+    "4801": {
+      "name": "Teleport",
+      "castMs": 0
+    },
     "6605": {
       "name": "Terrifying Screech",
+      "castMs": 0
+    },
+    "7393": {
+      "name": "Heal Brother",
+      "castMs": 0
+    },
+    "8195": {
+      "name": "Teleport",
       "castMs": 0
     },
     "8269": {
@@ -40,6 +88,10 @@
       "name": "Curse of Blood",
       "castMs": 2000
     },
+    "16245": {
+      "name": "Freeze Anim",
+      "castMs": 0
+    },
     "16856": {
       "name": "Mortal Strike",
       "castMs": 0
@@ -64,6 +116,10 @@
       "name": "Wing Buffet",
       "castMs": 0
     },
+    "18943": {
+      "name": "Double Attack",
+      "castMs": 0
+    },
     "19134": {
       "name": "Intimidating Shout",
       "castMs": 0
@@ -74,6 +130,10 @@
     },
     "19983": {
       "name": "Cleave",
+      "castMs": 0
+    },
+    "20449": {
+      "name": "Teleport",
       "castMs": 0
     },
     "22666": {
@@ -276,6 +336,82 @@
       "name": "Aspect of Arlokk",
       "castMs": 0
     },
+    "25174": {
+      "name": "Sundering Cleave",
+      "castMs": 0
+    },
+    "25646": {
+      "name": "Mortal Wound",
+      "castMs": 0
+    },
+    "26006": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "26029": {
+      "name": "Dark Glare",
+      "castMs": 0
+    },
+    "26050": {
+      "name": "Acid Spit",
+      "castMs": 0
+    },
+    "26051": {
+      "name": "Frenzy",
+      "castMs": 0
+    },
+    "26053": {
+      "name": "Noxious Poison",
+      "castMs": 0
+    },
+    "26068": {
+      "name": "Berserk",
+      "castMs": 0
+    },
+    "26083": {
+      "name": "Whirlwind",
+      "castMs": 0
+    },
+    "26134": {
+      "name": "Eye Beam",
+      "castMs": 0
+    },
+    "26137": {
+      "name": "Rotate Trigger",
+      "castMs": 0
+    },
+    "26156": {
+      "name": "Carapace of C'Thun",
+      "castMs": 0
+    },
+    "26180": {
+      "name": "Wyvern Sting",
+      "castMs": 0
+    },
+    "26192": {
+      "name": "Arcane Explosion",
+      "castMs": 0
+    },
+    "26194": {
+      "name": "Earth Shock",
+      "castMs": 0
+    },
+    "26235": {
+      "name": "Cthun Vulnerable",
+      "castMs": 0
+    },
+    "26332": {
+      "name": "Summon Mouth Tentacle",
+      "castMs": 0
+    },
+    "26607": {
+      "name": "Blizzard",
+      "castMs": 0
+    },
+    "26662": {
+      "name": "Berserk",
+      "castMs": 0
+    },
     "27680": {
       "name": "Berserk",
       "castMs": 0
@@ -359,6 +495,60 @@
     },
     "15117": {
       "name": "Chained Spirit"
+    },
+    "15263": {
+      "name": "The Prophet Skeram"
+    },
+    "15275": {
+      "name": "Emperor Vek'nilash"
+    },
+    "15276": {
+      "name": "Emperor Vek'lor"
+    },
+    "15316": {
+      "name": "Qiraji Scarab"
+    },
+    "15317": {
+      "name": "Qiraji Scorpion"
+    },
+    "15334": {
+      "name": "Giant Eye Tentacle"
+    },
+    "15509": {
+      "name": "Princess Huhuran"
+    },
+    "15510": {
+      "name": "Fankriss the Unyielding"
+    },
+    "15516": {
+      "name": "Battleguard Sartura"
+    },
+    "15589": {
+      "name": "Eye of C'Thun"
+    },
+    "15630": {
+      "name": "Spawn of Fankriss"
+    },
+    "15725": {
+      "name": "Claw Tentacle"
+    },
+    "15726": {
+      "name": "Eye Tentacle"
+    },
+    "15727": {
+      "name": "C'Thun"
+    },
+    "15728": {
+      "name": "Giant Claw Tentacle"
+    },
+    "15802": {
+      "name": "Flesh Tentacle"
+    },
+    "15962": {
+      "name": "Vekniss Hatchling"
+    },
+    "15984": {
+      "name": "Sartura's Royal Guard"
     }
   }
 }

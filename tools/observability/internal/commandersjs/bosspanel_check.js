@@ -148,4 +148,13 @@ assert.strictEqual(B.phaseOf(ven, { hp: 60, au: [] }).phase, "p1");
 assert.strictEqual(B.phaseOf(ven, { hp: 40, au: [] }).phase, "snake");
 assert.strictEqual(B.phaseOf(ven, { hp: 80, au: [{ id: 23849 }] }).phase, "snake");
 
+// AQ40: the Eye of C'Thun is in Dark Glare while it carries the freeze aura, and Sartura's berserk outranks her enrage.
+const eye = (REAL.byEntry || REAL.bosses || REAL)["15589"];
+assert.deepStrictEqual(eye.phases.map((x) => x.rule), ["aura=16245", "start"]);
+assert.strictEqual(B.phaseOf(eye, { hp: 90, au: [] }).phase, "beam");
+assert.strictEqual(B.phaseOf(eye, { hp: 90, au: [{ id: 16245 }] }).phase, "glare");
+const sartura = (REAL.byEntry || REAL.bosses || REAL)["15516"];
+assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }] }).phase, "enraged");
+assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }, { id: 27680 }] }).phase, "berserk");
+
 console.log("boss panel ok");
