@@ -14149,9 +14149,10 @@ inline FightProgress FightProgressTick(Run& r, const Facts& f, std::uint32_t dt)
     }
     if (!read)
         return FightProgress::Unread;
-    // A raid loses members routinely: with AiPlayerbot.DungeonRunRaidBossRules, while the fight still loses hp a death
-    // in the window is no reason to pause it (the raid's wipe level catches a real loss).
-    if (r.fightHpDeath && now - r.fightHpDeathAt < kFightProgressWindowMs && !(f.raid.on && f.raid.bossRules && losing))
+    // A raid loses members routinely: in its boss fight with AiPlayerbot.DungeonRunRaidBossRules (RaidBossRulesFight;
+    // not its trash or an event), while the fight still loses hp a death in the window is no reason to pause it (the
+    // raid's wipe level catches a real loss).
+    if (r.fightHpDeath && now - r.fightHpDeathAt < kFightProgressWindowMs && !(losing && RaidBossRulesFight(r, f)))
         return FightProgress::Dying;
     if (losing)
         return FightProgress::Losing;

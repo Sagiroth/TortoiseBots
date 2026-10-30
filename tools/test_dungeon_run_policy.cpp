@@ -21313,6 +21313,25 @@ static void TestBossFightDeathsPauseOutsideARaid()
     CHECK(r.note.find("a fight lasted more than 420 s and a party member died in the last 60 s") == 0);
 }
 
+// The death exception is the boss fight's alone: a raid's trash fight with AiPlayerbot.DungeonRunRaidBossRules on keeps
+// its 180 s ceiling and a death in the window still pauses it, though its mob's hp still falls.
+static void TestRaidTrashFightDeathsStillPauseWithBossRules()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    r.step = 0;
+    std::uint32_t s = 0;
+    for (; s <= 300 && r.state == State::Running; ++s)
+    {
+        Facts f = RaidBossFightFacts(s, true, s >= 150 ? 1u : 0u, 5000);
+        f.engagedUnits[0].entry = 4300; // a trash mob, no plan boss
+        Tick(r, f);
+    }
+    CHECK(r.state == State::Paused && r.ceilingPaused);
+    CHECK(r.fightMs == kFightCapMs + kTickMs);
+    CHECK(r.note.find("a fight lasted more than 180 s and a party member died in the last 60 s") == 0);
+}
+
 // AiPlayerbot.DungeonRunRaidBossRules = 0 (the default): a raid's boss fight keeps the 420 s boss ceiling and a death
 // in the window still pauses it, as before the key.
 static void TestRaidBossFightKeyOffKeepsTheBossCeiling()
@@ -25415,6 +25434,7 @@ int main()
     TestPlanBossOnAMoveStepGetsTheBossCeiling();
     TestRaidBossFightSurvivesItsDeaths();
     TestBossFightDeathsPauseOutsideARaid();
+    TestRaidTrashFightDeathsStillPauseWithBossRules();
     TestRaidBossFightKeyOffKeepsTheBossCeiling();
     TestRaidBossFightFlatHpPausesPastTheRaidCap();
     TestRaidBossFightHardCapPauses();
