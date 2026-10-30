@@ -7879,12 +7879,17 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
 
 // In a fight: whether the lead bot's own pull is still reaching its target (the
 // pull command is active, the target has not come for any party bot, the
-// return leg has not started), and how many living, not friendly mobs have a
-// party bot as their victim (DungeonRun::CheckReach). Read off each bot's own
-// attacker set: no grid or world scan.
+// return leg has not started), and how many mobs outside the pull target's pack
+// have a party bot as their victim (DungeonRun::CheckReach). Read off each bot's
+// own attacker set: no grid or world scan.
 void ReadReachFacts(Player* lead, PlayerbotAI* leadAi, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f)
 {
+    PullStrategy* pull = PullStrategy::Get(leadAi);
+    Unit* target = pull && pull->IsCommandActive() && pull->HasTarget() && pull->GetReturnStartTime() == 0
+        ? pull->GetTarget() : nullptr;
+    if (!target)
+        return;
     std::unordered_set<uint64> party;
     for (Player* bot : bots)
         party.insert(bot->GetObjectGuid().GetRawValue());
@@ -7900,15 +7905,13 @@ void ReadReachFacts(Player* lead, PlayerbotAI* leadAi, std::vector<Player*> cons
                 continue;
             Unit* victim = attacker->GetVictim();
             if (victim && party.count(victim->GetObjectGuid().GetRawValue()) &&
+                attacker != target &&
+                TortoiseBots::DungeonRun::ReachAggroCounts(attacker->GetDistance(target)) &&
                 seen.insert(attacker->GetObjectGuid().GetRawValue()).second)
                 ++f.reachAggro;
         }
     }
-    PullStrategy* pull = PullStrategy::Get(leadAi);
-    if (!pull || !pull->IsCommandActive() || !pull->HasTarget() || pull->GetReturnStartTime() != 0)
-        return;
     // The target has come for a party bot: the reach is over (the pull lands, the tank turns back).
-    Unit* target = pull->GetTarget();
     Unit* victim = target->GetVictim();
     f.leadReaching = !(victim && party.count(victim->GetObjectGuid().GetRawValue()));
 }
