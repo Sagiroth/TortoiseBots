@@ -13592,6 +13592,19 @@ bool IsInCommandedGroup(Player* bot)
     return false;
 }
 
+bool IsInOwnBindingGroup(Player* commander, Player* bot)
+{
+    if (!commander || !bot)
+        return false;
+    RemoteCommander::Binding const* binding =
+        CommanderBindings().FindByCommander(commander->GetObjectGuid().GetRawValue());
+    if (!binding)
+        return false;
+    Player* lead = FindCharacter(binding->leadGuid);
+    Group* group = lead ? lead->GetGroup() : nullptr;
+    return group && group->GetId() == binding->groupId && group->IsMember(bot->GetObjectGuid());
+}
+
 bool NoteHumanChatOrder(Player* bot, Player& from, std::string const& text, bool whisper)
 {
     if (!bot || CommanderBindings().Empty())

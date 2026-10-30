@@ -540,10 +540,10 @@ static void TestSeatCancelOutcome()
 static void TestSeatHireFollowUps()
 {
     // M1: join once, then never again; a normal hire always reunites.
-    CHECK(DecideHireJoinStep(true, false) == SeatJoinStep::Join);
-    CHECK(DecideHireJoinStep(true, true) == SeatJoinStep::Joined);
-    CHECK(DecideHireJoinStep(false, false) == SeatJoinStep::Reunite);
-    CHECK(DecideHireJoinStep(false, true) == SeatJoinStep::Reunite);
+    CHECK(DecideHireJoinStep(true, false, false) == SeatJoinStep::Join);
+    CHECK(DecideHireJoinStep(true, true, false) == SeatJoinStep::Joined);
+    CHECK(DecideHireJoinStep(false, false, false) == SeatJoinStep::Reunite);
+    CHECK(DecideHireJoinStep(false, true, false) == SeatJoinStep::Reunite);
     // The intro of a joined seat hire goes out although its commander is outside the raid.
     CHECK(HireIntroMayGo(false, true));
     CHECK(HireIntroMayGo(true, false));
@@ -555,7 +555,7 @@ static void TestSeatHireFollowUps()
     int ticks = 0;
     for (; ticks < 60 && !introSent; ++ticks)
     {
-        SeatJoinStep const step = DecideHireJoinStep(true, joined);
+        SeatJoinStep const step = DecideHireJoinStep(true, joined, false);
         if (step == SeatJoinStep::Join)
         {
             ++joins;
@@ -584,6 +584,55 @@ static void TestSeatHireFollowUps()
     CHECK(!RaidJobConvertsParty(false, false));
 }
 
+// #1367: a normal hire the bind took in while its join summon was open stands in its hirer's bound group;
+// it is not reunited (which would remove it from the raid, and that removal ends the hire).
+static void TestNormalHireHeldByBinding()
+{
+    // The failing case before the fix: the normal hire the bind took in is not pulled out.
+    CHECK(DecideHireJoinStep(false, false, true) == SeatJoinStep::Joined);
+    CHECK(DecideHireJoinStep(false, false, false) == SeatJoinStep::Reunite);
+    CHECK(DecideHireJoinStep(false, true, false) == SeatJoinStep::Reunite);
+    // Seat hires are untouched: still rechecked and joined by JoinBoundRaid.
+    CHECK(DecideHireJoinStep(true, false, true) == SeatJoinStep::Join);
+    CHECK(DecideHireJoinStep(true, true, false) == SeatJoinStep::Joined);
+
+    // All three are required: normal, Bound, and already a member of its hirer's binding group.
+    CHECK(HireHeldByOwnBinding(false, true, true));
+    CHECK(!HireHeldByOwnBinding(true, true, true));   // a seat hire
+    CHECK(!HireHeldByOwnBinding(false, false, true)); // not Bound (Transition or None)
+    CHECK(!HireHeldByOwnBinding(false, true, false)); // kicked: never held, never re-added
+
+    // The intro of a held hire goes out although its commander stands outside the bound group.
+    CHECK(HireIntroMayGo(false, false || true));
+    // Simulated ticks: held, the bot out of world for two ticks; Joined every tick, no Reunite, intro on tick 3.
+    int reunites = 0;
+    bool introSent = false;
+    int ticks = 0;
+    for (; ticks < 60 && !introSent; ++ticks)
+    {
+        SeatJoinStep const step = DecideHireJoinStep(false, false, true);
+        if (step == SeatJoinStep::Reunite)
+            ++reunites;
+        bool const botInWorld = ticks >= 2; // a map transfer for two ticks
+        if (botInWorld && HireIntroMayGo(false, false || true))
+            introSent = true;
+    }
+    CHECK(introSent && reunites == 0 && ticks == 3);
+
+    // The 40th seat keeps its rule: 39 ordinary hires (6..19 the late joiners the bind took in) plus the seat
+    // hire. Joined, the seat is the newest and leaves on release; still mustering, it is cancelled, not dismissed.
+    uint32_t const cap = HireMaxCompanions(39, false);
+    std::vector<ReleaseHire> hires;
+    for (uint64_t n = 1; n <= 39; ++n)
+        hires.push_back({ n, false });
+    hires.push_back({ 40, false });
+    ReleasePlan plan = PlanBindingRelease(hires, cap);
+    CHECK(plan.dismiss.size() == 1 && plan.dismiss[0] == 39 && plan.cancel.empty());
+    hires.back().musteringSeat = true;
+    plan = PlanBindingRelease(hires, cap);
+    CHECK(plan.cancel.size() == 1 && plan.cancel[0] == 39 && plan.dismiss.empty());
+}
+
 int main()
 {
     TestRoleCounts();
@@ -599,6 +648,7 @@ int main()
     TestReleasePlan();
     TestSeatCancelOutcome();
     TestSeatHireFollowUps();
+    TestNormalHireHeldByBinding();
     std::printf("hire raid policy: %d checks passed\n", checks);
     return 0;
 }

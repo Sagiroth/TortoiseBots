@@ -1170,6 +1170,7 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         // C6: a hire authorized as a bound-raid seat (its master commands a bound raid from outside the group)
         // joins the lead bot's raid (and the binding) instead of a party with him, and no summon to the
         // commander opens. The mode was fixed when the hire was charged; the binding is not asked again here.
+        // A normal hire the hirer's own binding took in while it mustered is not regrouped (#1367).
         bool const intoBoundRaid = pending.seatMode == HireSeatMode::BoundRaidSeat;
         if (!pending.summonRequested)
         {
@@ -1192,9 +1193,13 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         // with him instead.
         if (SeatHireCancelled(bot, master, pending))
             return true;
+        // #1367: a normal hire the bind took in while its join summon was open stands in its hirer's bound
+        // group; a Reunite would pull it out of the raid, and that removal ends the hire.
+        bool const heldByBinding = HireHeldByOwnBinding(intoBoundRaid,
+            HireLifecycle::Instance().IsBoundByHirer(pending.botGuid), BotCommands::IsInOwnBindingGroup(master, bot));
         // C6 review M1: a seat hire joins once; while its intro waits for the bot to be in world it is not
         // joined again (no re-join into a rebound raid without the recheck above).
-        SeatJoinStep const joinStep = DecideHireJoinStep(intoBoundRaid, pending.boundSeatJoined);
+        SeatJoinStep const joinStep = DecideHireJoinStep(intoBoundRaid, pending.boundSeatJoined, heldByBinding);
         bool const joined = joinStep == SeatJoinStep::Joined ||
             (joinStep == SeatJoinStep::Join ? BotCommands::JoinBoundRaid(master, bot) : Reunite(bot, master));
         if (!joined)
@@ -1211,7 +1216,7 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         // Issue #382: the dedicated spec+spells intro. The provision jump's
         // queued levelup packets were drained in ProvisionHeavy, so this is
         // the only post - and it goes out exactly once, only grouped.
-        AnnounceIntro(bot, master, pending);
+        AnnounceIntro(bot, master, pending, heldByBinding);
         // The group join can land while the bot is still in a map transfer
         // (not in world yet), where AnnounceIntro stays silent. Keep the
         // entry so the next tick retries; the reunite attempt cap bounds it.
@@ -1944,12 +1949,13 @@ void HireProvisionService::AnnounceForGraceHire(Player* bot, Player* master, boo
     introSent = scratch.introSent;
 }
 
-void HireProvisionService::AnnounceIntro(Player* bot, Player* master, PendingProvision& pending)
+void HireProvisionService::AnnounceIntro(Player* bot, Player* master, PendingProvision& pending, bool heldByBinding)
 {
     if (!bot || !master || !bot->IsInWorld() || !master->IsInWorld())
         return;
     // C6 review M1: a seat hire's commander stands outside the bound raid; its intro goes once it joined.
-    if (!HireIntroMayGo(bot->IsInSameRaidWith(master), pending.boundSeatJoined))
+    // #1367: so does a normal hire its hirer's binding holds.
+    if (!HireIntroMayGo(bot->IsInSameRaidWith(master), pending.boundSeatJoined || heldByBinding))
         return;
     if (!ShouldAnnounceHireIntro(pending.introSent, true, true))
         return;

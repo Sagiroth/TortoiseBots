@@ -154,6 +154,12 @@ ObjectGuid HireLifecycle::GetMaster(ObjectGuid botGuid) const
     return it->second.masterGuid;
 }
 
+bool HireLifecycle::IsBoundByHirer(ObjectGuid botGuid) const
+{
+    auto it = m_hired.find(botGuid.GetCounter());
+    return it != m_hired.end() && it->second.commandState == HireCommandState::Bound;
+}
+
 void HireLifecycle::MarkGrouped(ObjectGuid botGuid)
 {
     auto it = m_hired.find(botGuid.GetCounter());

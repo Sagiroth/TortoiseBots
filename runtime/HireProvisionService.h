@@ -249,7 +249,7 @@ public:
     bool SeatHireCancelled(Player* bot, Player* master, PendingProvision& pending);
     static void SnapshotKnownSpells(Player* bot, std::vector<uint32_t>& out);
     static void DropPendingLevelupEcho(PlayerbotAI* ai);
-    static void AnnounceIntro(Player* bot, Player* master, PendingProvision& pending);
+    static void AnnounceIntro(Player* bot, Player* master, PendingProvision& pending, bool heldByBinding = false);
     // Grace-path entry: same intro for hires grouped by HireLifecycle::Reunite
     // (master was offline at provision). introSent is the HiredRecord guard.
     static void AnnounceForGraceHire(Player* bot, Player* master, bool& introSent);
