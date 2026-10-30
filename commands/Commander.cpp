@@ -12008,6 +12008,79 @@ static void FillMobFacingAndCast(Unit* unit, CommanderTelemetry::MobInfo& mob)
     FillBreathWindow(unit, windowKey, mob);
 }
 
+// A spell's dispel type as the dashboard's letter: m magic, c curse, d disease, p poison (none: 0).
+static char DispelLetter(uint32 dispel)
+{
+    switch (dispel)
+    {
+        case DISPEL_MAGIC: return 'm';
+        case DISPEL_CURSE: return 'c';
+        case DISPEL_DISEASE: return 'd';
+        case DISPEL_POISON: return 'p';
+        default: return 0;
+    }
+}
+
+// One aura holder as the telemetry selectors read it. A permanent aura's duration is negative, sent as 0 so the wire leaves
+// the time left out.
+static CommanderTelemetry::AuraRead AuraReadOf(SpellAuraHolder const* holder)
+{
+    CommanderTelemetry::AuraRead read;
+    SpellEntry const* proto = holder->GetSpellProto();
+    if (!proto)
+        return read;
+    read.aura.id = proto->Id;
+    read.aura.name = proto->SpellName[0];
+    read.aura.stacks = holder->GetStackAmount();
+    int32 const left = holder->GetAuraDuration();
+    read.aura.leftMs = left > 0 ? static_cast<uint32>(left) : 0;
+    read.aura.dispelType = DispelLetter(proto->Dispel);
+    read.passive = holder->IsDeleted() || holder->IsPassive();
+    read.negative = !holder->IsPositive();
+    return read;
+}
+
+// The boss or elite's own auras (its forms and buffs) and state flags for its overlay row: field reads on the holders and
+// flags it already has, no scan. The dashboard labels the phase from them.
+static void FillMobState(Unit* unit, CommanderTelemetry::MobInfo& mob)
+{
+    std::vector<CommanderTelemetry::AuraRead> reads;
+    for (auto const& entry : unit->GetSpellAuraHolderMap())
+        if (SpellAuraHolder const* holder = entry.second)
+            reads.push_back(AuraReadOf(holder));
+    mob.auras = CommanderTelemetry::SelectUnitAuras(reads);
+    Creature* creature = unit->ToCreature();
+    mob.flags = CommanderTelemetry::UnitFlags(
+        unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE),
+        unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE_2 | UNIT_FLAG_IMMUNE_TO_PLAYER),
+        unit->IsHovering() || unit->IsFlying(),
+        unit->GetStandState() == UNIT_STAND_STATE_DEAD,
+        creature && creature->IsInEvadeMode());
+}
+
+// The boss debuffs one bound bot carries and whether it is charmed: the negative auras from outside its own group, read off
+// the bot's holders it already has. memberLow: the low guids of every player of the bot's group and of the binding, so a
+// debuff the group cast on itself is not the boss's work.
+static void FillBotDebuffs(Player* bot, std::unordered_set<uint32> const& memberLow,
+    CommanderTelemetry::BotExtra& extra)
+{
+    std::vector<CommanderTelemetry::AuraRead> reads;
+    for (auto const& entry : bot->GetSpellAuraHolderMap())
+    {
+        SpellAuraHolder const* holder = entry.second;
+        if (!holder || holder->IsDeleted() || holder->IsPassive())
+            continue;
+        ObjectGuid const caster = holder->GetCasterGuid();
+        if (!CommanderTelemetry::IsBossDebuff(!holder->IsPositive(), caster.IsCreature(), caster.GetCounter(), memberLow))
+            continue;
+        CommanderTelemetry::AuraRead read = AuraReadOf(holder);
+        read.hostileCaster = true;
+        reads.push_back(std::move(read));
+    }
+    extra.debuffs = CommanderTelemetry::SelectBotDebuffs(reads);
+    extra.mc = bot->IsCharmed();
+}
+
 // What the dashboard calls a game object: a letter for its type, or 0 for the kinds it does not draw (mailboxes, fishing holes ...).
 static char DashboardObjectType(GameObject const* go)
 {
@@ -12434,6 +12507,8 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
     ref.mobsMap = lead->GetMapId();
     size_t const count = std::min(snapshot.hostileCount, CommanderTelemetry::kMaxMobsPerBinding);
     ref.mobs.reserve(count);
+    std::vector<Unit*> units;
+    units.reserve(count);
     for (size_t i = 0; i < count; ++i)
     {
         RemoteCommander::View::Hostile const& h = snapshot.hostiles[i];
@@ -12457,9 +12532,32 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         if (unit && (mob.rank == 'b' || mob.rank == 'e'))
             FillMobFacingAndCast(unit, mob);
         ref.mobs.push_back(std::move(mob));
+        units.push_back(unit);
     }
+    // The auras and state flags are holder and flag reads: fill them only for the rows that carry the overlay, the first
+    // kMaxMobOverlaysPerPayload boss or elite rows with a facing, bosses first (the payload's own order), not every boss and
+    // elite in view.
+    size_t overlays = 0;
+    for (char rank : {'b', 'e'})
+        for (size_t i = 0; i < ref.mobs.size() && overlays < CommanderTelemetry::kMaxMobOverlaysPerPayload; ++i)
+        {
+            CommanderTelemetry::MobInfo& mob = ref.mobs[i];
+            if (!units[i] || mob.rank != rank || (!mob.hasO && !mob.castId))
+                continue;
+            FillMobState(units[i], mob);
+            ++overlays;
+        }
     // What each bound bot is doing: the view snapshot already holds its state, newest action, cast and target; the rest are
-    // field and aura reads (crowd control, drink/food), once per bot per 2 s.
+    // field and aura reads (crowd control, drink/food, the boss debuffs it carries), once per bot per 2 s.
+    // A debuff the group cast on itself is not the boss's work: the binding's bots and commander are the floor, and each
+    // bot's own group adds the humans and any bot outside the report, all by low guid.
+    std::unordered_set<uint32> bindingLow;
+    bindingLow.reserve(ref.bots.size() + 1);
+    for (Player* bot : ref.bots)
+        if (bot)
+            bindingLow.insert(bot->GetGUIDLow());
+    bindingLow.insert(::ObjectGuid(binding.commanderGuid).GetCounter());
+    std::unordered_set<uint32> memberLow;
     ref.botExtras.reserve(snapshot.partyCount);
     for (size_t i = 0; i < snapshot.partyCount; ++i)
     {
@@ -12467,6 +12565,11 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         Player* bot = FindCharacter(member.guid);
         if (!bot)
             continue;
+        memberLow = bindingLow;
+        memberLow.insert(bot->GetGUIDLow());
+        if (Group* group = bot->GetGroup())
+            for (Group::MemberSlot const& slot : group->GetMemberSlots())
+                memberLow.insert(slot.guid.GetCounter());
         CommanderTelemetry::BotExtra extra;
         extra.id = member.guid;
         extra.state = member.state;
@@ -12485,6 +12588,7 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         if (member.target && map)
             if (Unit* target = map->GetUnit(::ObjectGuid(member.target)))
                 extra.targetName = target->GetName();
+        FillBotDebuffs(bot, memberLow, extra);
         ReadReadyFacts(bot, extra, WorldTimer::getMSTime());
         ref.botExtras.push_back(std::move(extra));
     }
@@ -12830,8 +12934,15 @@ void PollEnemyCasts()
                 Unit* unit = map->GetUnit(::ObjectGuid(guid));
                 uint32 const spellId = unit ? CurrentSpellId(unit) : 0;
                 if (spellId && spellId != watch.lastCast[guid])
+                {
+                    uint64 const target = CurrentSpellTargetGuid(unit);
+                    std::string targetName;
+                    if (target)
+                        if (Unit* aimed = map->GetUnit(::ObjectGuid(target)))
+                            targetName = aimed->GetName();
                     TortoiseBots::CombatMonitorService::Instance().NoteEnemyCast(watch.groupId, std::get<1>(mob), guid,
-                        unit->GetName(), SpellNameOf(spellId).c_str(), rank);
+                        unit->GetName(), SpellNameOf(spellId).c_str(), rank, spellId, target, targetName.c_str());
+                }
                 watch.lastCast[guid] = spellId;
             }
         }

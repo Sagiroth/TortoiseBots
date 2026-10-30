@@ -45,7 +45,8 @@ public:
     void OnCast(uint32_t casterGuidLow, char const* spell, bool heal, char castKind = 0, uint64_t target = 0,
                 char const* targetName = "");
     // world thread: an elite or boss creature's cast start, seen by the commander cast poller
-    void NoteEnemyCast(uint32_t groupId, uint32_t entry, uint64_t guid, char const* name, char const* spell, char rank);
+    void NoteEnemyCast(uint32_t groupId, uint32_t entry, uint64_t guid, char const* name, char const* spell, char rank,
+                       uint32_t spellId = 0, uint64_t castTarget = 0, char const* castTargetName = "");
     void OnDamage(uint32_t attackerOwnerGuidLow, uint32_t victimOwnerGuidLow, uint32_t amount, char const* attackerName,
                   uint32_t enemyEntry, uint64_t enemyGuid, char const* enemyName);
     void OnHeal(uint32_t healerOwnerGuidLow, uint32_t amount, uint32_t overheal);

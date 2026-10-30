@@ -744,6 +744,33 @@ static void TestEventsJsonBoundsHugeNames()
     CHECK(Contains(keepalive, "\"fight\":{"));
 }
 
+// A boss cast carries its spell id and the unit it is aimed at, so the dashboard matches the ability by id (a renamed
+// spell still matches) and names the target; a cast read without them keeps the old shape.
+static void TestEnemyCastCarriesSpellAndTarget()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(1000, 1700000000, BossCtx(), 7);
+    b.NoteEnemyCast(11502, 777, "Magmadar", "Corrupted Blood", 'b', 1500, 24328, 4660, "Tanky");
+    b.NoteEnemyCast(11502, 777, "Magmadar", "Frenzy", 'b', 1600);
+    std::vector<LiveEvent> events;
+    uint32_t dropped = 0;
+    b.TakeEvents(events, dropped);
+    CHECK(events.size() == 3);   // the start, then the two casts
+    EventsFightHeader header;
+    header.inFight = true;
+    header.number = 7;
+    header.startMs = 1000;
+    header.startUnix = 1700000000;
+    header.fightMs = 600;
+    header.ctx = BossCtx();
+    std::string const json = BuildEventsJson(1, 9, 1, 1700000001, 0, "Cmdr", 5, 9, 249, header, events, 0);
+    CHECK(Contains(json, "\"k\":\"cast\""));
+    CHECK(Contains(json, "\"s\":\"Corrupted Blood\",\"r\":\"b\",\"sid\":24328,\"tg\":\"4660\",\"tn\":\"Tanky\""));
+    CHECK(Contains(json, "\"s\":\"Frenzy\",\"r\":\"b\"}"));
+    CHECK(!Contains(json, "\"sid\":0") && Count(json, "\"tg\":") == 1 && Count(json, "\"tn\":") == 1);
+}
+
 // The datagram budget shrinks the count; the events taken but not serialized
 // are requeued at the front, in order, so repeating take/shrink/requeue hands
 // every event out exactly once, oldest first.
@@ -821,6 +848,7 @@ int main()
     TestEngagedNowListsEntries();
     TestEventsJsonHalvesUnderBudget();
     TestEventsJsonBoundsHugeNames();
+    TestEnemyCastCarriesSpellAndTarget();
     TestEventsRequeueKeepsOrder();
     std::printf("combat monitor policy: %d checks passed\n", checks);
     return 0;

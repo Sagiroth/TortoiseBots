@@ -468,6 +468,201 @@ void TestBossOverlay()
     Check(!Has(MobJson(old), "\"shape\""), "a shape without a cast is left out");
 }
 
+// The aura selectors are pure: these prove the passive skip, the caps and the debuff order without a game unit.
+void TestAuraSelection()
+{
+    std::vector<AuraRead> auras;
+    for (uint32_t i = 0; i < 10; ++i)
+    {
+        AuraRead r;
+        r.aura.id = 24080 + i;
+        r.aura.name = "Aura" + std::to_string(i);
+        auras.push_back(r);
+    }
+    auras[3].passive = true;
+    std::vector<AuraInfo> const up = SelectUnitAuras(auras);
+    Check(up.size() == kMaxMobAuras, "a boss row carries at most 8 auras");
+    Check(up[0].id == 24080 && up[2].id == 24082 && up[3].id == 24084,
+        "a passive aura is skipped and the holder order is kept");
+    Check(up.back().id == 24088, "the cap keeps the first eight live auras");
+
+    // A player's debuffs on the boss cannot hide its phase buff: the positive auras are taken first, holder order kept inside
+    // each group.
+    std::vector<AuraRead> mixed;
+    for (uint32_t i = 0; i < 10; ++i)
+    {
+        AuraRead r;
+        r.aura.id = 25000 + i;
+        r.aura.name = "Debuff" + std::to_string(i);
+        r.negative = true;
+        mixed.push_back(r);
+    }
+    AuraRead phase;
+    phase.aura.id = 25100;
+    phase.aura.name = "Spider Form";
+    mixed.push_back(phase);
+    std::vector<AuraInfo> const prio = SelectUnitAuras(mixed);
+    Check(prio.size() == kMaxMobAuras, "the cap still holds with debuffs listed first");
+    Check(prio[0].id == 25100, "the positive phase buff comes before ten negative holders");
+    Check(prio[1].id == 25000 && prio.back().id == 25006,
+        "the negative holders keep their order and fill the rest of the cap");
+
+    std::vector<AuraRead> debuffs;
+    auto add = [&debuffs](uint32_t id, char dispel, uint32_t leftMs, bool negative = true, bool hostile = true,
+                          bool passive = false)
+    {
+        AuraRead r;
+        r.aura.id = id;
+        r.aura.name = "Debuff" + std::to_string(id);
+        r.aura.dispelType = dispel;
+        r.aura.leftMs = leftMs;
+        r.negative = negative;
+        r.hostileCaster = hostile;
+        r.passive = passive;
+        debuffs.push_back(r);
+    };
+    add(101, 'm', 3000);
+    add(102, 0, 9000);
+    add(103, 'p', 7000);
+    add(104, 'c', 12000);
+    add(105, 'p', 100, true, true, true);   // passive
+    add(106, 'm', 8000, false);             // positive
+    add(107, 'm', 8000, true, false);       // the bot's own group cast it
+    add(108, 'd', 500);
+    std::vector<AuraInfo> const out = SelectBotDebuffs(debuffs);
+    Check(out.size() == kMaxBotDebuffs, "a bot carries at most 4 boss debuffs");
+    Check(out[0].id == 104 && out[1].id == 103 && out[2].id == 101 && out[3].id == 108,
+        "dispellable first, then the one that runs out last");
+    for (AuraInfo const& a : out)
+        Check(a.id != 105 && a.id != 106 && a.id != 107, "passive, positive and own-group auras are not boss debuffs");
+
+    // Which auras on a bot count as a boss debuff: a creature's is shown, a player's only from outside the bot's group. The
+    // set holds the bot (700), its healer bot (704) and a human group member (900).
+    std::unordered_set<uint32_t> const members{700, 704, 900};
+    Check(!IsBossDebuff(true, false, 704, members), "a debuff the group's own healer bot cast is not shown");
+    Check(!IsBossDebuff(true, false, 900, members), "a debuff a human group member cast is not shown");
+    Check(IsBossDebuff(true, true, 0, members), "a creature's debuff is shown");
+    Check(IsBossDebuff(true, false, 999, members), "a debuff from a player outside the group is shown");
+    Check(!IsBossDebuff(false, true, 0, members) && !IsBossDebuff(false, false, 999, members),
+        "a positive aura is never a boss debuff");
+
+    Check(UnitFlags(false, false, false, false, false).empty(), "a calm unit has no flags");
+    Check(UnitFlags(true, true, true, true, true) == "nihde", "the flags are in their fixed order");
+    Check(UnitFlags(false, false, true, false, true) == "he", "only the flags that hold are written");
+}
+
+// The boss state rides an overlay row only: its auras (capped) and flag letters; an ordinary mob carries neither.
+void TestBossStatePayload()
+{
+    BindingInfo b;
+    b.commander = "Zfmagea";
+    b.lead = "Forthur";
+    b.bots.push_back(Bot("Forthur", true));
+    b.mobsReported = true;
+    MobInfo boss = Mob(5, "Venoxis");
+    boss.entry = 14507;
+    boss.rank = 'b';
+    boss.hasO = true;
+    boss.o = 0.5f;
+    for (uint32_t i = 0; i < 10; ++i)
+    {
+        AuraInfo a;
+        a.id = 23849 + i;
+        a.name = "Aura" + std::to_string(i);
+        a.stacks = i == 0 ? 3 : 1;
+        a.leftMs = i == 1 ? 8000 : 0;
+        boss.auras.push_back(a);
+    }
+    boss.flags = "nhe";
+    b.mobs.push_back(boss);
+    MobInfo trash = Mob(6, "Rat");
+    trash.auras.push_back(AuraInfo{24084, "Spider Form", 1, 0, 0});
+    trash.flags = "n";
+    b.mobs.push_back(trash);
+    std::string const json = BuildPayload(9, 1, 1, 1, {b});
+
+    Check(Count(json, "\"n\":\"Aura") == kMaxMobAuras, "a boss row writes at most 8 auras");
+    Check(Has(json, "\"au\":[{\"id\":23849,\"n\":\"Aura0\",\"st\":3}"), "the first aura keeps its stacks");
+    Check(Has(json, "\"id\":23850,\"n\":\"Aura1\",\"l\":8000"), "a running aura carries its time left");
+    Check(Has(json, "\"uf\":\"nhe\""), "the boss flags ride the row");
+    Check(!Has(json, "Spider Form") && !Has(json, "\"uf\":\"n\""), "an ordinary mob carries no auras and no flags");
+
+    // A row without the overlay writes neither, even when the caller set them.
+    std::ostringstream ss;
+    ss.setf(std::ios::fixed);
+    ss.precision(1);
+    AppendMobJson(ss, boss, false);
+    Check(!Has(ss.str(), "\"au\"") && !Has(ss.str(), "\"uf\""), "a non-overlay row leaves the boss state out");
+}
+
+// A bot's boss debuffs and its charm state ride its row, with the dispel letter, and trim level 1 drops them first.
+void TestBotDebuffPayload()
+{
+    BindingInfo b;
+    b.commander = "Zfmagea";
+    b.lead = "Healbot";
+    BotInfo bot = Bot("Healbot", true);
+    bot.hasExtra = true;
+    bot.extra.mc = true;
+    char const kinds[] = {'d', 'm', 'p', 'c', 0};
+    for (int i = 0; i < 5; ++i)
+    {
+        AuraInfo a;
+        a.id = 24328 + static_cast<uint32_t>(i);
+        a.name = "Debuff" + std::to_string(i);
+        a.leftMs = i == 0 ? 8000 : 0;
+        a.dispelType = kinds[i];
+        bot.extra.debuffs.push_back(a);
+    }
+    b.bots.push_back(bot);
+    b.mobsReported = true;
+    MobInfo boss = Mob(5, "Hakkar");
+    boss.entry = 14834;
+    boss.rank = 'b';
+    boss.hasO = true;
+    AuraInfo form;
+    form.id = 24169;
+    form.name = "Tiger Form";
+    boss.auras.push_back(form);
+    b.mobs.push_back(boss);
+    std::string const json = BuildPayload(9, 1, 1, 1, {b});
+
+    Check(Count(json, "\"dt\":") == kMaxBotDebuffs, "a bot row writes at most 4 boss debuffs");
+    Check(Has(json, "\"db\":[{\"id\":24328,\"n\":\"Debuff0\",\"l\":8000,\"dt\":\"d\"}"),
+        "a debuff carries its time left and its dispel letter");
+    Check(Has(json, "\"mc\":1"), "a charmed bot is flagged");
+    Check(!Has(json, "\"id\":24332"), "the fifth debuff is not written");
+
+    std::vector<BindingInfo const*> refs{&b};
+    std::vector<uint8_t> const level1{1};
+    std::string const trimmed = BuildPayloadOf(9, 1, 1, 1, refs, 0, 0, 1, &level1);
+    Check(!Has(trimmed, "\"db\":") && !Has(trimmed, "\"mc\":1"), "trim level 1 drops the bot debuffs");
+    Check(Has(trimmed, "\"au\":[{\"id\":24169"), "trim level 1 keeps the boss's auras");
+}
+
+// An aura's name is free text from the spell data: a quote and a backslash in it must not break either list.
+void TestAuraNameEscaping()
+{
+    BindingInfo b;
+    b.commander = "Zfmagea";
+    b.lead = "Healbot";
+    b.mobsReported = true;
+    MobInfo boss = Mob(5, "Hakkar");
+    boss.entry = 14834;
+    boss.rank = 'b';
+    boss.hasO = true;
+    boss.auras.push_back(AuraInfo{24169, "Q\"\\x", 1, 0, 0});
+    b.mobs.push_back(boss);
+    BotInfo bot = Bot("Healbot", true);
+    bot.hasExtra = true;
+    bot.extra.debuffs.push_back(AuraInfo{24328, "Q\"\\x", 1, 0, 'm'});
+    b.bots.push_back(bot);
+
+    std::string const json = BuildPayload(9, 1, 1, 1, {b});
+    Check(Has(json, "\"au\":[{\"id\":24169,\"n\":\"Q\\\"\\\\x\"}"), "a quoted aura name in au is escaped");
+    Check(Has(json, "\"db\":[{\"id\":24328,\"n\":\"Q\\\"\\\\x\",\"dt\":\"m\"}"), "a quoted aura name in db is escaped");
+}
+
 // The 0.5 s position report (task S3/R3m): a bot row in one decimal with its facing at two, a dead bot at hp 0 and
 // alive 0, and the mob rows of the lead's last full report.
 void TestPosPayload()
@@ -1359,7 +1554,7 @@ void TestCommandersPartsBudget()
     Check(raidUnder, "every part of twenty raids stays under the payload budget");
 }
 
-// One bot carrying every per-bot section at its cap: unit info, cast target, ready facts.
+// One bot carrying every per-bot section at its cap: unit info, cast target, boss debuffs, ready facts.
 BotInfo CombinedBot(std::string name, bool lead)
 {
     BotInfo b = Bot(std::move(name), lead);
@@ -1375,6 +1570,17 @@ BotInfo CombinedBot(std::string name, bool lead)
     b.extra.rest = 'e';
     b.extra.moving = true;
     b.extra.targetName = std::string(kMaxTargetName, 't');
+    for (uint32_t i = 0; i < kMaxBotDebuffs; ++i)
+    {
+        AuraInfo a;
+        a.id = 4294967295u - i;
+        a.name = std::string(kMaxCastName, 'd');
+        a.stacks = 4294967295u;
+        a.leftMs = 4294967295u;
+        a.dispelType = i % 2 ? 'm' : 0;
+        b.extra.debuffs.push_back(a);
+    }
+    b.extra.mc = true;
     b.extra.hasReady = true;
     b.extra.readyBuffs = 0xFFFFFFFFu;
     b.extra.readyCons = 0xFFFFFFFFu;
@@ -1457,6 +1663,16 @@ BindingInfo CombinedBinding(size_t bots, size_t notes, size_t mobs, std::string 
         m.shape.kind = TortoiseBots::SpellShape::Kind::Line;
         m.shape.length = 154.0f;
         m.shape.width = 60.0f;
+        for (uint32_t j = 0; j < kMaxMobAuras; ++j)
+        {
+            AuraInfo a;
+            a.id = 4294967295u - j;
+            a.name = std::string(kMaxCastName, 'a');
+            a.stacks = 4294967295u;
+            a.leftMs = 4294967295u;
+            m.auras.push_back(a);
+        }
+        m.flags = "nihde";
         b.mobs.push_back(m);
     }
     b.objectsReported = true;
@@ -1522,19 +1738,22 @@ void TestCommandersPartsCombinedCap()
     // A part that is one binding still over the cap drops its optional sections in the fixed order, and keeps the rest.
     std::vector<BindingInfo> single{CombinedBinding(40, kMaxRunNotes, kMaxMobsPerBinding, std::string(15000, 'x'))};
     std::vector<BindingInfo const*> refs{&single[0]};
-    static char const* const kSectionNames[] = {"none", "overlays", "objects", "step notes", "ready facts"};
+    static char const* const kSectionNames[] = {"none", "bot debuffs", "overlays", "objects", "step notes", "ready facts"};
     for (uint8_t level = 0; level <= kMaxTrimLevel; ++level)
     {
         std::vector<uint8_t> const levels{level};
         std::string const json = BuildPayloadOf(9, 1, 91, 1, refs, 0, 0, 1, &levels);
+        bool const debuffs = Has(json, "\"db\":[");
         bool const overlay = Has(json, "\"cid\":");
         bool const objects = Has(json, "\"objects\":[");
         bool const notes = Has(json, "\"notes\":[");
         bool const ready = Has(json, "\"rdy\":{");
-        Check(overlay == (level < 1), "overlays are the first section a trim drops");
-        Check(objects == (level < 2), "objects go after the overlays");
-        Check(notes == (level < 3), "the step notes go after the objects");
-        Check(ready == (level < 4), "the ready facts go last");
+        Check(debuffs == (level < 1), "the bot debuffs are the first section a trim drops");
+        Check(overlay == (level < 2), "overlays go after the bot debuffs");
+        Check(objects == (level < 3), "objects go after the overlays");
+        Check(notes == (level < 4), "the step notes go after the objects");
+        Check(ready == (level < 5), "the ready facts go last");
+        Check(Has(json, "\"au\":[") == (level < 2), "the boss auras ride the overlays and go with them");
         Check(Has(json, "\"plan_steps\":["), "the run's step list stays at every trim level");
         Check(Has(json, "\"trimmed\":true") == (level > 0), "a trimmed binding says so");
         Check(std::string(TrimSectionName(level)) == kSectionNames[level], "the trim level names the section it dropped");
@@ -1546,13 +1765,14 @@ void TestCommandersPartsCombinedCap()
     Check(trimmed.size() == 1, "a binding alone over the cap is still one part");
     Check(trimmed[0].size() <= kPartByteCap, "the trimmed part fits the datagram cap");
     Check(Has(trimmed[0], "\"trimmed\":true"), "the trimmed binding is marked");
-    Check(!Has(trimmed[0], "\"cid\":") && !Has(trimmed[0], "\"objects\":[") && !Has(trimmed[0], "\"notes\":["),
-        "overlays, objects and the notes are gone");
+    Check(!Has(trimmed[0], "\"db\":[") && !Has(trimmed[0], "\"au\":[") && !Has(trimmed[0], "\"cid\":") &&
+              !Has(trimmed[0], "\"objects\":[") && !Has(trimmed[0], "\"notes\":["),
+        "the bot debuffs and overlays went first, and with them the objects and the notes");
     Check(Has(trimmed[0], "\"rdy\":{"), "the ready facts are kept when the earlier trims were enough");
-    Check(trimLog.size() == 1 && trimLog[0].level == 3, "the log names the last section dropped");
+    Check(trimLog.size() == 1 && trimLog[0].level == 4,
+        "the log names the level that fit (the debuffs, overlays, objects and notes went)");
     Check(trimLog.size() == 1 && trimLog[0].commanderGuid == 0xFFFFFFFFu && trimLog[0].commander == std::string(40, 'C'),
         "the log names the binding");
-    Check(std::string(TrimSectionName(3)) == "step notes", "the level-3 section is the step notes");
 
     // A binding that fits is not trimmed and logs nothing.
     std::vector<BindingInfo> const small{CombinedBinding(2, 3, 2)};
@@ -1583,6 +1803,10 @@ int main()
     TestMapDataCapsAndSize();
     TestUnitInfo();
     TestBossOverlay();
+    TestAuraSelection();
+    TestBossStatePayload();
+    TestBotDebuffPayload();
+    TestAuraNameEscaping();
     TestPosPayload();
     TestPosCapsAndSize();
     TestRunInfo();

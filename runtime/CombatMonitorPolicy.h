@@ -128,6 +128,9 @@ struct LiveEvent
     Outcome outcome = Outcome::End;
     uint32_t durMs = 0;
     bool kept = false;
+    uint32_t spellId = 0;        // cast: the spell's id, 0 = not read
+    uint64_t castTarget = 0;     // cast: the unit the spell is aimed at (raw guid), 0 = none or not a unit
+    std::string castTargetName;  // cast: that unit's name, empty = none
 };
 
 struct MemberInfo
@@ -312,7 +315,14 @@ inline std::string BuildEventsJson(int protocolVersion, uint64_t session, uint64
             case EventKind::Cast:
                 ss << "{\"k\":\"cast\",\"t\":" << t << ",\"id\":\"" << e.target << "\",\"e\":" << e.entry
                    << ",\"n\":\"" << text(e.name) << "\",\"s\":\"" << text(e.spell) << "\",\"r\":\""
-                   << (e.rank == 'e' ? 'e' : 'b') << "\"}";
+                   << (e.rank == 'e' ? 'e' : 'b') << "\"";
+                if (e.spellId)
+                    ss << ",\"sid\":" << e.spellId;
+                if (e.castTarget)
+                    ss << ",\"tg\":\"" << e.castTarget << "\"";
+                if (!e.castTargetName.empty())
+                    ss << ",\"tn\":\"" << text(e.castTargetName) << "\"";
+                ss << "}";
                 break;
             case EventKind::End:
                 ss << "{\"k\":\"end\",\"t\":" << t << ",\"o\":\"" << OutcomeName(e.outcome) << "\",\"dur\":" << e.durMs
@@ -639,9 +649,11 @@ public:
         return out;
     }
 
-    // A creature's cast start seen by the poller: only elite and boss units, only in a fight.
+    // A creature's cast start seen by the poller: only elite and boss units, only in a fight. `spellId` and the unit target
+    // ride the event, so the dashboard matches the ability by id and names whom it is aimed at.
     void NoteEnemyCast(uint32_t entry, uint64_t guid, std::string const& name, std::string const& spell, char rank,
-                       uint32_t nowMs)
+                       uint32_t nowMs, uint32_t spellId = 0, uint64_t castTarget = 0,
+                       std::string const& castTargetName = std::string())
     {
         if (!inFight_ || (rank != 'b' && rank != 'e'))
             return;
@@ -653,6 +665,9 @@ public:
         ev.name = name;
         ev.spell = spell;
         ev.rank = rank;
+        ev.spellId = spellId;
+        ev.castTarget = castTarget;
+        ev.castTargetName = castTargetName;
         Push(std::move(ev));
     }
 

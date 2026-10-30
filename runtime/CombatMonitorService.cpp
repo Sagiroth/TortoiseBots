@@ -293,7 +293,8 @@ void CombatMonitorService::OnCast(uint32_t casterGuidLow, char const* spell, boo
 }
 
 void CombatMonitorService::NoteEnemyCast(uint32_t groupId, uint32_t entry, uint64_t guid, char const* name,
-                                          char const* spell, char rank)
+                                          char const* spell, char rank, uint32_t spellId, uint64_t castTarget,
+                                          char const* castTargetName)
 {
     if (!Enabled() || groupId == 0)
         return;
@@ -301,7 +302,8 @@ void CombatMonitorService::NoteEnemyCast(uint32_t groupId, uint32_t entry, uint6
     auto const book = m_books.find(groupId);
     if (book == m_books.end())
         return;
-    book->second.NoteEnemyCast(entry, guid, name ? name : "", spell ? spell : "", rank, m_lastNowMs);
+    book->second.NoteEnemyCast(entry, guid, name ? name : "", spell ? spell : "", rank, m_lastNowMs, spellId,
+                               castTarget, castTargetName ? castTargetName : "");
 }
 
 void CombatMonitorService::OnDamage(uint32_t attackerOwnerGuidLow, uint32_t victimOwnerGuidLow, uint32_t amount,

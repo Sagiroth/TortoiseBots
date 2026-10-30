@@ -96,7 +96,7 @@ class ReadyCheckWiring(unittest.TestCase):
     def test_the_writer_sends_the_ready_object_only_inside_a_bot_extra(self):
         # hasReady gates the object; it rides the same bot object as the other extra fields
         self.assertIn("bool hasReady = false;", TELEMETRY)
-        self.assertIn('if (x.hasReady && trim < 4)', TELEMETRY)
+        self.assertIn('if (x.hasReady && trim < 5)', TELEMETRY)
         writer = body(TELEMETRY, "inline std::string BuildPayloadOf(")
         self.assertIn('\\"rdy\\"', writer)
 
