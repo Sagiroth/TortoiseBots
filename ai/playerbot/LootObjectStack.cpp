@@ -112,7 +112,7 @@ static bool MayLootCorpse(Player* bot, Creature* creature)
     if (group->GetLootMethod() == MASTER_LOOT && group->GetLooterGuid() == bot->GetObjectGuid())
         return true;
 
-    return loot.hasItemFor(bot);                            // another member's turn: personal loot only
+    return ai::HasVisiblePersonalItemFor(loot, bot);        // another member's turn: personal loot it will show
 }
 
 void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)

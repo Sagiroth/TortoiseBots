@@ -21,7 +21,13 @@ class LootContentTest(unittest.TestCase):
 #include <vector>
 using uint8 = uint8_t;
 using uint32 = uint32_t;
-struct Player { uint32 guid; uint32 GetGUIDLow() const { return guid; } };
+struct ObjectGuid {
+    uint64_t value;
+    ObjectGuid(uint64_t v) : value(v) {}
+    operator uint64_t() const { return value; }
+    uint32 GetCounter() const { return uint32(value); }
+};
+struct Player { uint32 guid; uint32 GetGUIDLow() const { return guid; } ObjectGuid GetGUID() const { return ObjectGuid(guid); } };
 struct LootItem { bool is_looted = false; bool freeforall = false; uint32 conditionId = 0; };
 struct QuestItem { uint8 index; bool is_looted; };
 using LootItemList = std::vector<LootItem>;
@@ -30,6 +36,7 @@ using QuestItemMap = std::map<uint32, QuestItemList*>;
 struct Loot {
     LootItemList items, m_questItems;
     QuestItemMap quests, ffa, conditional;
+    uint64_t roundRobinPlayer = 0;
     QuestItemMap const& GetPlayerQuestItems() const { return quests; }
     QuestItemMap const& GetPlayerFFAItems() const { return ffa; }
     QuestItemMap const& GetPlayerNonQuestNonFFAConditionalItems() const { return conditional; }
@@ -39,6 +46,8 @@ struct LootAccess {
     std::vector<LootItem*> GetLootContentFor(Player* player) const;
 };
 '''
+        # The production rule the accessor asks (no core headers, so it builds here).
+        fixture += '#include "' + str(root / "ai/playerbot/policy/loot/LootViewRulePolicy.h") + '"\n'
         fixture += method + r'''
 int main() {
     Player first{1}, second{2}, absent{3};
@@ -74,6 +83,17 @@ int main() {
     assert(access.GetLootContentFor(&first).empty());
     // Another player's remaining copies must still be available.
     assert(access.GetLootContentFor(&second).size() == 3);
+    // The round-robin reservation: while another member holds the turn and has a
+    // quest list on the corpse, the viewer's non-FFA quest copies are hidden.
+    loot.items[0].is_looted = false;
+    loot.m_questItems[0].is_looted = false;
+    firstQuest[0].is_looted = false;
+    loot.roundRobinPlayer = 2;
+    assert((access.GetLootContentFor(&first) == std::vector<LootItem*>{&loot.items[0]}));
+    // The holder of the turn sees its own copies again (m_questItems[1] is taken).
+    loot.roundRobinPlayer = 1;
+    assert((access.GetLootContentFor(&first) ==
+            std::vector<LootItem*>{&loot.items[0], &loot.m_questItems[0]}));
 }
 '''
         with tempfile.TemporaryDirectory(prefix="loot-content-") as folder:
