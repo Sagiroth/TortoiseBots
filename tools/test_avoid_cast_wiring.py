@@ -3,22 +3,23 @@
 A creature in the fight casting a spell an `avoid_cast` row lists (ai_boss_tactic:
 the caster's entry, the spell, the radius in `param`) sends every bot that is not
 a tank and stands inside the radius out of it until the cast ends or the caster
-dies. The rules live in ai/playerbot/BossTacticsPolicy.h (AvoidCastRadius,
-MustLeaveCast, AvoidCastDestinations; tested by tools/test_boss_tactics_policy.cpp).
-These pins prove the live code calls them:
+dies. The rules live in ai/playerbot/BossTacticsPolicy.h (AvoidCastRadius, HoldsCaster,
+MustLeaveCast, AvoidCastEscapes, CastHoldsMove, HasAvoidCastMap; their behaviour is
+tested in tools/test_boss_tactics_policy.cpp). These pins only prove the live code
+calls them:
 
  - the scan reads the caster's current generic spell (a cast with a cast time),
    the same slot the interrupt scan reads;
  - the trigger is registered, armed only for a bot whose tactics are on, and its
    action outranks the generic ground-effect step (avoid aoe, ACTION_EMERGENCY + 5);
- - while the cast runs, a reach towards the caster is held, so a melee bot does
-   not walk straight back in; the hold ends with the cast and the reach resumes;
+ - while the cast runs, a move whose destination stands in a blast is held (on the
+   combat and the non-combat engine), so a bot does not walk straight back in;
  - the loader's skip message names the new rule;
  - the walk out runs for a bot the run holds: on a stay (a pull's anchor hold,
    a healer's stand), in a pull's join window ("wait for attack"), and while
-   the bot is casting itself (the reaction engine runs it and breaks the cast;
-   the combat engine sleeps through a cast, longer than the 3 s blast); a stay
-   does not walk the bot back into the blast while the cast runs.
+   the bot is casting itself (the reaction engine runs it; the combat engine
+   sleeps through a cast, longer than the 3 s blast). The reaction does not
+   break the cast beforehand: the walk-out breaks it once a walk is under way.
 
 Run: python3 -m unittest tools/test_avoid_cast_wiring.py
 """
@@ -60,20 +61,27 @@ class AvoidCastWiring(unittest.TestCase):
         self.assertIn("AvoidCastRadius(fight.rows", danger)
         fn = body(ACTIONS, "BossCastDanger ai::FindBossCastDanger(")
         self.assertIn("CastDangerOf(fight, unit)", fn)
-        self.assertIn("MustLeaveCast(HoldsCaster(bot, unit)", fn)
+        self.assertIn("MustLeaveCast(BotHoldsCaster(bot, unit)", fn)
 
     def test_only_the_tank_holding_the_caster_stays(self):
-        helper = body(ACTIONS, "bool HoldsCaster(")
-        self.assertIn("PlayerbotAI::IsTank(bot)", helper)
-        self.assertIn("caster->GetVictim() == bot", helper)
-        hold = body(ACTIONS, "float BossTacticsCastHoldMultiplier::GetValue(")
-        self.assertIn("HoldsCaster(bot, target)", hold)
+        helper = body(ACTIONS, "bool BotHoldsCaster(")
+        self.assertIn("HoldsCaster(PlayerbotAI::IsTank(bot), caster->GetVictim() == bot)", helper)
+        # The held casters' blasts are left out of the zones the hold and the walk-out read.
+        zones = body(ACTIONS, "std::vector<CastDangerZone> ai::CastDangerZones(")
+        self.assertIn("BotHoldsCaster(bot, unit)", zones)
 
     def test_action_walks_to_a_policy_point_outside_every_cast(self):
+        spots = body(ACTIONS, "int AvoidCastSpots(")
+        self.assertIn("AvoidCastEscapes(", spots)
+        self.assertIn("InsideAnyCastZone(zones,", spots)
+        self.assertLess(spots.index("UpdateGroundPositionZ("), spots.index("InsideAnyCastZone("))
+        self.assertIn("IsWithinLOS(", spots)
         fn = body(ACTIONS, "bool BossTacticsAvoidCastAction::Execute(")
-        self.assertIn("AvoidCastDestinations(", fn)
-        self.assertIn("InsideCastDanger(", fn)
+        self.assertIn("AvoidCastSpots(bot, caster,", fn)
         self.assertIn("MoveTo(", fn)
+        # Possible only with a usable way out, so the reaction engine does not pick it for a bot that has none.
+        possible = body(ACTIONS, "bool BossTacticsAvoidCastAction::isPossible()")
+        self.assertIn("AvoidCastSpots(bot, danger.caster,", possible)
 
     def test_trigger_is_armed_by_the_tactics(self):
         self.assertIn('Trigger(ai, "boss tactics avoid cast", 1)', TRIGGERS_H)
@@ -92,9 +100,22 @@ class AvoidCastWiring(unittest.TestCase):
     def test_reach_to_the_caster_is_held_during_the_cast(self):
         self.assertIn("class BossTacticsCastHoldMultiplier : public Multiplier", ACTIONS_H)
         fn = body(ACTIONS, "float BossTacticsCastHoldMultiplier::GetValue(")
-        self.assertIn("dynamic_cast<ReachTargetAction*>(action)", fn)
-        self.assertIn("CastDangerOf(", fn)
-        self.assertIn("multipliers.push_back(new BossTacticsCastHoldMultiplier(ai));", TACTICS_STRATEGY)
+        # Every movement action, the walk-out aside, by its target's position.
+        self.assertIn("dynamic_cast<MovementAction*>(action)", fn)
+        self.assertIn("dynamic_cast<BossTacticsAvoidCastAction*>(action)", fn)
+        self.assertIn("CastHoldsMove(false, target == bot, true,", fn)
+        # Only on a map with an avoid_cast row.
+        self.assertLess(fn.index("HasAvoidCastMap(bot->GetMapId())"), fn.index("ScanBossTactics("))
+        # On the combat and the non-combat engine.
+        self.assertIn("multipliers.push_back(new BossTacticsCastHoldMultiplier(ai));",
+                      body(TACTICS_STRATEGY, "void BossTacticsStrategy::InitCombatMultipliers("))
+        self.assertIn("multipliers.push_back(new BossTacticsCastHoldMultiplier(ai));",
+                      body(TACTICS_STRATEGY, "void BossTacticsStrategy::InitNonCombatMultipliers("))
+        self.assertIn("void InitNonCombatMultipliers(std::list<Multiplier*>& multipliers) override;", TACTICS_STRATEGY_H)
+
+    def test_the_non_combat_engine_runs_the_walk(self):
+        fn = body(TACTICS_STRATEGY, "void BossTacticsStrategy::InitNonCombatTriggers(")
+        self.assertIn('new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6)', node(fn, "boss tactics avoid cast"))
 
     def test_loader_names_the_rule(self):
         self.assertIn("an avoid_cast without a spell or a radius", LOADER)
@@ -104,7 +125,7 @@ class AvoidCastIsLogged(unittest.TestCase):
     """ZG walk 7: a 3 s sampler of each bot's action never saw avoid_cast, so nothing proved it ran.
 
     The walk-out writes one bot_events.csv row per bot per cast (BossTacticsAvoidCast,
-    caster=<entry>:<guid low>,spell=<id> / dist=,radius=,dest=,stopped=), through the same
+    caster=<entry>:<guid low>,spell=<id> / dist=,radius=,dest=,stopped=,walk=), through the same
     sPlayerbotAIConfig.logEvent the hunter telemetry uses, gated by bot_events.csv in
     AiPlayerbot.AllowedLogFiles.
     """
@@ -115,11 +136,14 @@ class AvoidCastIsLogged(unittest.TestCase):
         self.assertIn("LogAvoidCast(ai, bot, caster,", fn)
         # The distance before the move is read before the own cast is stopped and before MoveTo.
         self.assertLess(fn.index("distBefore ="), fn.index("CastStop()"))
-        # The own cast is stopped only once MoveTo took a point that passed the blast and sight checks: a bot with no
-        # way out keeps its cast.
-        self.assertLess(fn.index("InsideCastDanger(fight, points[i]"), fn.index("MoveTo("))
-        self.assertLess(fn.index("IsWithinLOS("), fn.index("MoveTo("))
-        self.assertLess(fn.index("MoveTo("), fn.index("CastStop()"))
+        # The own cast is stopped only once a walk is under way (MoveTo can say yes without one): a bot with no way
+        # out keeps its cast.
+        self.assertLess(fn.index("MoveTo("), fn.index("WalkUnderWay(bot)"))
+        self.assertLess(fn.index("WalkUnderWay(bot)"), fn.index("CastStop()"))
+        self.assertIn("walk = AvoidCastWalk::Deferred;", fn)
+        self.assertIn("return walk == AvoidCastWalk::Started;", fn)
+        under = body(ACTIONS, "bool WalkUnderWay(")
+        self.assertIn("!bot->movespline->Finalized()", under)
         # Every outcome logs, the walk that found no way out too.
         self.assertLess(fn.index("MoveTo("), fn.index("LogAvoidCast("))
 
@@ -127,8 +151,9 @@ class AvoidCastIsLogged(unittest.TestCase):
         fn = body(ACTIONS, "void LogAvoidCast(")
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsAvoidCast", info1, info2);', fn)
         self.assertIn('"caster=%u:%u,spell=%u"', fn)
-        self.assertIn('"dist=%.1f,radius=%.1f,dest=%.1f,stopped=%d"', fn)
-        self.assertIn('"dist=%.1f,radius=%.1f,dest=none,stopped=%d"', fn)
+        self.assertIn('"dist=%.1f,radius=%.1f,dest=%.1f,stopped=%d,walk=%s"', fn)
+        self.assertIn('"dist=%.1f,radius=%.1f,dest=none,stopped=%d,walk=%s"', fn)
+        self.assertIn("AvoidCastWalkName(walk)", fn)
 
     def test_one_row_per_bot_per_cast(self):
         fn = body(ACTIONS, "void LogAvoidCast(")
@@ -168,23 +193,26 @@ class AvoidCastRunsForHeldBots(unittest.TestCase):
         self.assertIn("void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;", TACTICS_STRATEGY_H)
         fn = body(TACTICS_STRATEGY, "void BossTacticsStrategy::InitReactionTriggers(")
         self.assertIn('new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6)', node(fn, "boss tactics avoid cast"))
-        # The reaction breaks the bot's own cast first (MovementAction's reaction flags).
-        self.assertIn("bool ShouldReactionInterruptCast() const override { return true; }",
-                      (STRATEGY / "actions/MovementActions.h").read_text())
+        # The reaction engine would break the bot's cast and stop its walk before Execute (PlayerbotAI::UpdateAIReaction,
+        # MovementAction's flags); the walk-out turns both off and does it itself once a walk is under way.
+        decl = body(ACTIONS_H, "class BossTacticsAvoidCastAction", "};")
+        self.assertIn("bool ShouldReactionInterruptCast() const override { return false; }", decl)
+        self.assertIn("bool ShouldReactionInterruptMovement() const override { return false; }", decl)
 
     def test_the_reaction_fast_path_runs_for_armed_tactics(self):
         fn = body((STRATEGY / "ReactionEngine.cpp").read_text(), "bool ReactionEngine::HasReactionWork() const")
         # The map probe before the strategy lookup, and the group's attackers count as well as the bot's own
         # combat flag: a held bot out of combat itself still walks out.
-        self.assertLess(fn.index("GetBossTactics().HasMap(bot->GetMapId())"),
+        # Only on a map with an avoid_cast row, the map probe before the strategy lookup.
+        self.assertLess(fn.index("GetBossTactics().HasAvoidCastMap(bot->GetMapId())"),
                         fn.index('ai->HasStrategy("boss tactics", BotState::BOT_STATE_REACTION)'))
         self.assertIn('GetValue<std::list<ObjectGuid>>("attackers")', fn)
-        self.assertIn("TortoiseBots::BossTacticsReactionPass(inCombat, groupAttackers, true)", fn)
+        self.assertIn("TortoiseBots::BossTacticsReactionPass(inCombat, groupAttackers)", fn)
 
     def test_a_stay_does_not_walk_back_into_the_blast(self):
         fn = body(ACTIONS, "float BossTacticsCastHoldMultiplier::GetValue(")
         self.assertIn("dynamic_cast<ReturnToStayPositionAction*>(action)", fn)
-        self.assertIn("InsideCastDanger(", fn)
+        self.assertIn("CastHoldsMove(false, false, true, stay->second.x, stay->second.y, stay->second.z, zones)", fn)
 
 
 if __name__ == "__main__":

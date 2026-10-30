@@ -367,15 +367,17 @@ bool ReactionEngine::HasReactionWork() const
     // cure runs on the combat/non-combat engines, never here.
     if (HasReactionAuraWork(bot))
         return true;
-    // Armed boss tactics on a map with rows (the map probe first, then the strategy lookup): the walk out of a listed
-    // blast reads the group's attackers, and a held healer or ranged bot can stand out of combat itself, idle at full
-    // health, while a group attacker casts next to it. So the pass runs for a bot in combat or with group attackers.
-    if (GetBossTactics().HasMap(bot->GetMapId()) && ai->HasStrategy("boss tactics", BotState::BOT_STATE_REACTION))
+    // Armed boss tactics on a map with an avoid_cast row (the map probe first, then the strategy lookup): the walk out
+    // of a listed blast reads the group's attackers, and a held healer or ranged bot can stand out of combat itself,
+    // idle at full health, while a group attacker casts next to it. So the pass runs for a bot in combat or with group
+    // attackers.
+    if (GetBossTactics().HasAvoidCastMap(bot->GetMapId()) &&
+        ai->HasStrategy("boss tactics", BotState::BOT_STATE_REACTION))
     {
         bool const inCombat = bot->IsInCombat();
         bool const groupAttackers = !inCombat &&
             !ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get().empty();
-        if (TortoiseBots::BossTacticsReactionPass(inCombat, groupAttackers, true))
+        if (TortoiseBots::BossTacticsReactionPass(inCombat, groupAttackers))
             return true;
     }
     return false;

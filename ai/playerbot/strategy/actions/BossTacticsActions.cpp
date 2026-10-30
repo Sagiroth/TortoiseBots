@@ -8,7 +8,6 @@
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "ChooseTargetActions.h"
-#include "ReachTargetActions.h"
 #include "PositionAction.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
@@ -147,26 +146,30 @@ float CenterDistance(Unit* caster, float x, float y, float z)
     const float dz = caster->GetPositionZ() - z;
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
+
+// A tank the caster is on stays in the blast (BossTacticsPolicy.h HoldsCaster).
+bool BotHoldsCaster(Player* bot, Unit* caster)
+{
+    return HoldsCaster(PlayerbotAI::IsTank(bot), caster->GetVictim() == bot);
+}
 }
 
-bool ai::InsideCastDanger(const BossTacticsFight& fight, float x, float y, float z)
+std::vector<CastDangerZone> ai::CastDangerZones(const BossTacticsFight& fight, Player* bot)
 {
+    std::vector<CastDangerZone> zones;
     for (Unit* unit : fight.units)
     {
         const float radius = CastDangerOf(fight, unit);
-        if (radius > 0.0f && CenterDistance(unit, x, y, z) < radius)
-            return true;
+        if (radius <= 0.0f || (bot && BotHoldsCaster(bot, unit)))
+            continue;
+        CastDangerZone zone;
+        zone.x = unit->GetPositionX();
+        zone.y = unit->GetPositionY();
+        zone.z = unit->GetPositionZ();
+        zone.radius = radius;
+        zones.push_back(zone);
     }
-    return false;
-}
-
-namespace
-{
-// A tank-role bot the caster is on (or that nothing is on yet) stays in the blast; an off-tank leaves.
-bool HoldsCaster(Player* bot, Unit* caster)
-{
-    return PlayerbotAI::IsTank(bot) && (!caster->GetVictim() || caster->GetVictim() == bot);
-}
+    return zones;
 }
 
 BossCastDanger ai::FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
@@ -182,7 +185,7 @@ BossCastDanger ai::FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTa
         if (radius <= 0.0f)
             continue;
         const float distance = CenterDistance(unit, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
-        if (!MustLeaveCast(HoldsCaster(bot, unit), radius, distance))
+        if (!MustLeaveCast(BotHoldsCaster(bot, unit), radius, distance))
             continue;
         if (!danger.caster || distance < nearest)
         {
@@ -232,23 +235,38 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
 
 float BossTacticsCastHoldMultiplier::GetValue(Action* action)
 {
-    if (!action)
+    if (!action || !GetBossTactics().HasAvoidCastMap(bot->GetMapId()))
         return 1.0f;
+    MovementAction* move = dynamic_cast<MovementAction*>(action);
+    if (!move)
+        return 1.0f;
+    bool const walkOut = dynamic_cast<BossTacticsAvoidCastAction*>(action) != nullptr;
+    if (walkOut)
+        return 1.0f;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    if (fight.rows.empty())
+        return 1.0f;
+    const std::vector<CastDangerZone> zones = CastDangerZones(fight, bot);
+    if (zones.empty())
+        return 1.0f;
+    // A stay walks the bot back to its spot: held while that spot lies in a blast.
     if (dynamic_cast<ReturnToStayPositionAction*>(action))
     {
         AiObjectContext* context = ai->GetAiObjectContext();
         PositionMap& positions = AI_VALUE(PositionMap&, "position");
         auto stay = positions.find("stay");
-        if (stay == positions.end() || !stay->second.isSet() || stay->second.mapId != bot->GetMapId())
-            return 1.0f;
-        return InsideCastDanger(ScanBossTactics(ai, bot), stay->second.x, stay->second.y, stay->second.z) ? 0.0f : 1.0f;
+        bool const has = stay != positions.end() && stay->second.isSet() && stay->second.mapId == bot->GetMapId();
+        return has && CastHoldsMove(false, false, true, stay->second.x, stay->second.y, stay->second.z, zones) ? 0.0f
+                                                                                                             : 1.0f;
     }
-    if (!dynamic_cast<ReachTargetAction*>(action))
-        return 1.0f;
+    // Any other move towards a unit (a reach, a chase, a heal walk, a follow): held while that unit stands in a blast.
     Unit* target = action->GetTarget();
-    if (!target || HoldsCaster(bot, target))
+    if (!target || !target->IsInWorld() || target->GetMapId() != bot->GetMapId())
         return 1.0f;
-    return CastDangerOf(ScanBossTactics(ai, bot), target) > 0.0f ? 0.0f : 1.0f;
+    return CastHoldsMove(false, target == bot, true, target->GetPositionX(), target->GetPositionY(),
+                         target->GetPositionZ(), zones)
+               ? 0.0f
+               : 1.0f;
 }
 
 // Not MovementAction::isUseful: that one is false on a stay, and the bots of a run fight on one (a pull's anchor hold,
@@ -258,9 +276,52 @@ bool BossTacticsAvoidCastAction::isUseful()
     return true;
 }
 
+namespace
+{
+// The walk-out's candidate points: the clear ring points (AvoidCastEscapes, shortest walk first), each on the ground
+// and checked against every blast in 3D and for sight. Writes up to kAvoidCastPoints points; returns how many.
+struct AvoidCastSpot
+{
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+};
+
+int AvoidCastSpots(Player* bot, Unit* caster, float radius, const std::vector<CastDangerZone>& zones, AvoidCastSpot* out)
+{
+    AvoidCastPoint points[kAvoidCastPoints];
+    const int count = AvoidCastEscapes(caster->GetPositionX(), caster->GetPositionY(), bot->GetPositionX(),
+                                       bot->GetPositionY(), radius, bot->GetOrientation() + M_PI_F, zones, points);
+    int n = 0;
+    for (int i = 0; i < count; ++i)
+    {
+        float z = std::max(caster->GetPositionZ(), bot->GetPositionZ()) + 2.0f;
+        bot->UpdateGroundPositionZ(points[i].x, points[i].y, z);
+        // The ground under a ring point can lie on another floor (a ledge, the stairs below) and so inside the 3D
+        // radius again; another caster's blast is no way out either.
+        if (InsideAnyCastZone(zones, points[i].x, points[i].y, z))
+            continue;
+        if (!bot->IsWithinLOS(points[i].x, points[i].y, z + bot->GetCollisionHeight()))
+            continue;
+        out[n].x = points[i].x;
+        out[n].y = points[i].y;
+        out[n].z = z;
+        ++n;
+    }
+    return n;
+}
+}
+
+// Possible only with a usable way out, so the reaction engine does not pick the walk-out for a bot that has none (it
+// would keep its cast; see ShouldReactionInterruptCast).
 bool BossTacticsAvoidCastAction::isPossible()
 {
-    return MovementAction::isPossible() && ai->CanMove();
+    if (!MovementAction::isPossible() || !ai->CanMove())
+        return false;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    const BossCastDanger danger = FindBossCastDanger(ai, bot, fight);
+    if (!danger.caster)
+        return false;
+    AvoidCastSpot spots[kAvoidCastPoints];
+    return AvoidCastSpots(bot, danger.caster, danger.radius, CastDangerZones(fight, bot), spots) > 0;
 }
 
 namespace
@@ -273,12 +334,13 @@ std::unordered_map<uint64, AvoidCastLogState> g_avoidCastLog;
 // One bot_events.csv row per bot per cast (the audit of the boss tactics' avoid_cast walk-out; the walk-6/7 sampler of
 // the bots' current action missed a walk that lasts less than its poll). Row: event BossTacticsAvoidCast, then
 //   info1 = "caster=<entry>:<guid low>,spell=<id>"
-//   info2 = "dist=<bot to caster centre before the move>,radius=<row radius>,dest=<distance of the chosen point, or
-//            none>,stopped=<1 when the walk-out broke the bot's own cast>"
-// A no-op unless bot_events.csv is in AiPlayerbot.AllowedLogFiles, like the hunter telemetry; the throttle is checked
-// before any string is built.
-void LogAvoidCast(PlayerbotAI* ai, Player* bot, Unit* caster, Spell* spell, uint32 spellId, float radius, float distBefore, float destDistance,
-                  bool stopped)
+//   info2 = "dist=<bot to caster centre before the move>,radius=<row radius>,dest=<distance of the point MoveTo took,
+//            or none>,stopped=<1 when the walk-out broke the bot's own cast>,walk=<started|deferred|none>"
+// walk: started = a walk is under way; deferred = MoveTo took the point but no walk started (a collapsed path, a
+// transport or teleport wait); none = no usable point. A no-op unless bot_events.csv is in AiPlayerbot.AllowedLogFiles,
+// like the hunter telemetry; the throttle is checked before any string is built.
+void LogAvoidCast(PlayerbotAI* ai, Player* bot, Unit* caster, Spell* spell, uint32 spellId, float radius, float distBefore,
+                  float destDistance, bool stopped, AvoidCastWalk walk)
 {
     uint32 const nowMs = WorldTimer::getMSTime();
     {
@@ -289,13 +351,19 @@ void LogAvoidCast(PlayerbotAI* ai, Player* bot, Unit* caster, Spell* spell, uint
     }
     char info1[64];
     snprintf(info1, sizeof(info1), "caster=%u:%u,spell=%u", caster->GetEntry(), caster->GetGUIDLow(), spellId);
-    char info2[96];
+    char info2[112];
     if (destDistance >= 0.0f)
-        snprintf(info2, sizeof(info2), "dist=%.1f,radius=%.1f,dest=%.1f,stopped=%d", distBefore, radius, destDistance,
-                 stopped ? 1 : 0);
+        snprintf(info2, sizeof(info2), "dist=%.1f,radius=%.1f,dest=%.1f,stopped=%d,walk=%s", distBefore, radius,
+                 destDistance, stopped ? 1 : 0, AvoidCastWalkName(walk));
     else
-        snprintf(info2, sizeof(info2), "dist=%.1f,radius=%.1f,dest=none,stopped=%d", distBefore, radius, stopped ? 1 : 0);
+        snprintf(info2, sizeof(info2), "dist=%.1f,radius=%.1f,dest=none,stopped=%d,walk=%s", distBefore, radius,
+                 stopped ? 1 : 0, AvoidCastWalkName(walk));
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsAvoidCast", info1, info2);
+}
+
+bool WalkUnderWay(Player* bot)
+{
+    return sServerFacade.isMoving(bot) || !bot->movespline->Finalized();
 }
 }
 
@@ -310,46 +378,43 @@ bool BossTacticsAvoidCastAction::Execute(Event& event)
     const bool logIt = sPlayerbotAIConfig.hasLog("bot_events.csv");
     const float distBefore = logIt ? CenterDistance(caster, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ())
                                    : 0.0f;
-    AvoidCastPoint points[kAvoidCastPoints];
-    const int count = AvoidCastDestinations(caster->GetPositionX(), caster->GetPositionY(), bot->GetPositionX(),
-                                            bot->GetPositionY(), danger.radius, bot->GetOrientation() + M_PI_F, points);
+    AvoidCastSpot spots[kAvoidCastPoints];
+    const int count = AvoidCastSpots(bot, caster, danger.radius, CastDangerZones(fight, bot), spots);
     bool stopped = false;
     float destDistance = -1.0f;
-    bool moved = false;
-    for (int i = 0; i < count && !moved; ++i)
+    AvoidCastWalk walk = AvoidCastWalk::None;
+    for (int i = 0; i < count && walk != AvoidCastWalk::Started; ++i)
     {
-        float z = std::max(caster->GetPositionZ(), bot->GetPositionZ()) + 2.0f;
-        bot->UpdateGroundPositionZ(points[i].x, points[i].y, z);
-        // The ground under a ring point can lie on another floor (a ledge, the stairs below) and so inside the 3D
-        // radius again; another caster's blast is no way out either.
-        if (InsideCastDanger(fight, points[i].x, points[i].y, z))
-            continue;
-        if (!bot->IsWithinLOS(points[i].x, points[i].y, z + bot->GetCollisionHeight()))
-            continue;
-        // A cast of the bot's own would hold it in the blast. MoveTo breaks a running cast itself once it commits to
-        // the walk (MoveTo2); what is left (a wand's auto-repeat) is stopped only after the walk started, so a bot with
+        // A cast of the bot's own would hold it in the blast. MoveTo breaks a running cast itself once it launches the
+        // walk (MoveTo2); what is left (a wand's auto-repeat) is stopped only once a walk is under way, so a bot with
         // no way out keeps its heal or bolt.
         bool const casting = bot->IsNonMeleeSpellCasted(true);
-        if (MoveTo(bot->GetMapId(), points[i].x, points[i].y, z, false, false, false, true))
+        if (!MoveTo(bot->GetMapId(), spots[i].x, spots[i].y, spots[i].z, false, false, false, true))
+            continue;
+        // MoveTo can say yes without a walk (a collapsed path rebuilt next tick, a transport or teleport wait): only a
+        // walk under way counts; otherwise the next point is tried.
+        if (!WalkUnderWay(bot))
         {
-            moved = true;
-            if (casting)
-            {
-                if (bot->IsNonMeleeSpellCasted(true))
-                    bot->CastStop();
-                stopped = true;
-            }
-            if (logIt)
-                destDistance = CenterDistance(caster, points[i].x, points[i].y, z);
+            walk = AvoidCastWalk::Deferred;
+            continue;
         }
+        walk = AvoidCastWalk::Started;
+        if (casting)
+        {
+            if (bot->IsNonMeleeSpellCasted(true))
+                bot->CastStop();
+            stopped = true;
+        }
+        if (logIt)
+            destDistance = CenterDistance(caster, spots[i].x, spots[i].y, spots[i].z);
     }
     if (logIt)
     {
         Spell* spell = caster->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-        LogAvoidCast(ai, bot, caster, spell, spell && spell->m_spellInfo ? spell->m_spellInfo->Id : 0, danger.radius, distBefore,
-                     destDistance, stopped);
+        LogAvoidCast(ai, bot, caster, spell, spell && spell->m_spellInfo ? spell->m_spellInfo->Id : 0, danger.radius,
+                     distBefore, destDistance, stopped, walk);
     }
-    return moved;
+    return walk == AvoidCastWalk::Started;
 }
 
 bool BossTacticsStepBehindAction::isPossible()
