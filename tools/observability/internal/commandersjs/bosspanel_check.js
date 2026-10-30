@@ -157,4 +157,17 @@ const sartura = (REAL.byEntry || REAL.bosses || REAL)["15516"];
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }] }).phase, "enraged");
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }, { id: 27680 }] }).phase, "berserk");
 
+// The committed table names one field per flag instead of a flags string: the panel must read those too.
+const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];
+assert.strictEqual(jeklikReal.abilities.find((a) => a.sid === 23919).flags.phase, "bat");
+assert.strictEqual(jeklikReal.abilities.find((a) => a.sid === 23953).flags.interruptible, true);
+const arlokkMark = (REAL.byEntry || REAL.bosses || REAL)["14515"].abilities.find((a) => a.sid === 24210);
+assert.strictEqual(arlokkMark.flags.mark, true);
+assert.strictEqual(B.markIds(REAL)[24210], "Mark of Arlokk");
+assert.ok(Object.keys(B.markIds(REAL)).length > 0);
+assert.ok(REAL.bosses.some((b) => b.abilities.some((a) => a.flags.summon)), "some ability summons");
+const batPhase = B.model(REAL, { entry: 14517, hp: 100, au: [] }, [], 0, 0);
+assert.strictEqual(batPhase.phase, "bat");
+assert.strictEqual(batPhase.abilities.find((a) => a.sid === 23919).inPhase, true);
+assert.strictEqual(batPhase.abilities.find((a) => a.sid === 23953).inPhase, false, "Mind Flay is a troll-phase ability");
 console.log("boss panel ok");
