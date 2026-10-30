@@ -41,6 +41,11 @@
 - `AiPlayerbot.RandomGearBlacklist` is now a hard ban on every auto-gear path: the empty-slot fallback, shirts and tabards, and the level-60 hire gear sets all skip blocked items. A blocked item also wins over the whitelist, and a pool or hired bot already wearing one gets it replaced or removed on its next gear pass. Real players and owned bots never have their own gear taken off, and found loot is unaffected.
 - Loot history rows in the bot event log now carry the item quality and where the loot came from (source type and name).
 - The companion app can now page through the last day of loot picked up by your party bots, 40 rows at a time.
+- Fixed: bots now pick up quest source items (like the Gnarlpine Necklace that starts Ferocitas the Dream Eater) instead of leaving them on the corpse.
+
+- Fixed: bots now walk to corpses that hold only their own quest item, which can miss the lootable flag the corpse shows you.
+- Fixed: bots no longer walk to a corpse whose quest item the game keeps for the member whose loot turn it is, so they stop opening an empty window and queuing that corpse again.
+- Debug loot now says why a corpse is not the bot's to loot.
 
 ### Dungeons & Maps
 - Fixed: a player's ghost outside no longer pulls the run's bots in and out through the portal; the lead-off-map pause resumes by itself.
