@@ -64,6 +64,7 @@ class RaidConfigWiringTest(unittest.TestCase):
         self.assertIn("fact.distLead = anchor->GetDistance(attacker);", read)
         self.assertIn("fact.victimName = victim->GetName();", read)
         self.assertIn("f.leadHeldEntries.push_back(attacker->GetEntry());", read)
+        self.assertIn("if (bot != lead || mode == GuardRead::RaidAnchor)", read)
         # Both call sites say whether it is a raid's boss fight.
         self.assertEqual(code.count("TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f)"), 2)
         self.assertIn("Player* const anchor = RaidGuardAnchor(lead, bots, f);", read)

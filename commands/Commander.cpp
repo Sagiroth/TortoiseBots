@@ -8161,9 +8161,10 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
         if (!bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != lead->GetMap() ||
             (bot != anchor && bot->GetDistance(anchor) > range))
             continue;
-        // The lead bot's own mobs are leadHit / leadAttacker, not partyAttackers.
-        if (bot != lead)
-            addAttackers(bot, PlayerbotAI::IsHeal(bot), false, PlayerbotAI::IsTank(bot));
+        // The lead bot's own mobs are leadHit / leadAttacker, not partyAttackers; a living lead bot that is no tank
+        // (GuardRead::RaidAnchor) is one of the raid an off-tank takes its mobs off.
+        if (bot != lead || mode == GuardRead::RaidAnchor)
+            addAttackers(bot, PlayerbotAI::IsHeal(bot), false, bot != lead && PlayerbotAI::IsTank(bot));
         // A living pet in the world (a hunter's or warlock's, the lead's too):
         // the mobs on it come last in GuardPick, after every mob on a bot.
         Unit* pet = bot->GetPet();

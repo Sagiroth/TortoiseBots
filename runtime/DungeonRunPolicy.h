@@ -12427,8 +12427,8 @@ inline bool LeadHoldsPlanBoss(const Run& r, const Facts& f)
 // is never drawn off the boss (Onyxia walk 1: the whelps took the healers while the main tank held her). A caster
 // hitting the raid from its own camp is left to the DPS (GuardLeavesCampAlone). The off-tank sent is never one holding
 // a plan boss (UnitFact::victimName), and one nobody hits comes before one holding an add; in turn among them. With the
-// lead bot dead, the boss itself on a raid member that is no tank is taken off him at once (one an off-tank holds is
-// left there). No off-tank: the party guard's rules (false, CheckGuard goes on). True when `order` holds it.
+// lead bot dead or no tank, the boss itself on a raid member that is no tank is taken off him at once (one an off-tank
+// holds is left there). No off-tank: the party guard's rules (false, CheckGuard goes on). True when `order` holds it.
 inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
     if (f.raid.bossOffTanksAlive.empty())
@@ -12456,7 +12456,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
     };
     const UnitFact* pick = nullptr;
     bool boss = false;
-    if (!f.leadAlive)
+    if (!f.leadAlive || !f.leadIsTank) // no main tank: the lead bot dead, or a living one that is no tank
         for (const UnitFact& u : f.partyAttackers)
         {
             if (!PlanBossEntry(r, u.entry) || !u.hostile || !u.attackable || !u.hitting || u.evading ||
@@ -12497,7 +12497,8 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
     mark.at = r.fightMs;
     r.guardMs = 0;
     r.guardSinceOrderMs = 0;
-    r.note = std::string("fighting: ") + (boss ? "the lead bot is dead, the off-tank " : "the off-tank ") + tank +
+    r.note = std::string("fighting: ") +
+        (!boss ? "the off-tank " : f.leadAlive ? "the lead bot is no tank, the off-tank " : "the lead bot is dead, the off-tank ") + tank +
         " takes " + std::to_string(pick->entry) + " off " +
         (pick->victimHealer ? "the healer" : pick->victimPet ? "a pet" : "the party") + " (" + Num(pick->distLead) +
         " yd)";
