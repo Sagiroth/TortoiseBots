@@ -1,9 +1,7 @@
 #include "playerbot/playerbot.h"
 #include <algorithm>
-#include <atomic>
 #include <cstdint>
 #include <cstdio>
-#include <functional>
 #include <mutex>
 #include <unordered_map>
 #include "BossTacticsActions.h"

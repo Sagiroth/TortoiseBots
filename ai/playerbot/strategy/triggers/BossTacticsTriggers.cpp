@@ -76,4 +76,3 @@ bool BossTacticsAvoidCastTrigger::IsActive()
         return false;
     return FindBossCastDanger(ai, bot, ScanBossTactics(ai, bot)).caster != nullptr;
 }
-
