@@ -94,7 +94,7 @@ When an enemy mob flees below 30% health (either flee state or flee-for-assistan
 In groups with the `threat` strategy active, damage dealers (including Druids, Hunters, Mages, Shamans, and Warlocks) monitor relative threat against the tank. When AoE threat reaches 50% of the tank's, or single-target threat reaches 80% (high threat), they pause high-threat single-target nukes or area-of-effect spells (*Volley*, *Multi-Shot*, *Blizzard*, *Flamestrike*, *Rain of Fire*, *Chain Lightning*, *Earthquake*) until threat stabilizes.
 
 ### Healer Off-DPS (`offdps`)
-Healing specs get `offdps` by default (Discipline and Holy priests, Restoration shamans and druids; Holy paladins carry the name but currently gain no damage kit from it). When it is on, the healer only attacks when every condition holds:
+Healing specs get `offdps` by default (Discipline and Holy priests, Restoration shamans and druids, Holy paladins). When it is on, the healer only attacks when every condition holds:
 - Nobody needs healing: the heal target (worst-off member, tank favored) is at or above 90% health.
 - The healer's own mana is above the fight reserve: 85% in hard fights, 70% in even or easy fights, 95% in raids.
 - The mob already fights the group (or the player explicitly ordered the attack on it); healers never open on a fresh mob.
@@ -102,7 +102,7 @@ Healing specs get `offdps` by default (Discipline and Holy priests, Restoration 
 
 Casting yields to healing instantly: damage rows sit at the lowest priority, so any firing heal outbids them. Solo or far from the group, the healer fights like a normal bot.
 
-What each class casts: priests use *Shadow Word: Pain*, *Holy Fire*, *Smite*, *Starshards*, *Mind Blast* (*Holy Nova* into packed melee, wand when mana is spent); druids shift out of Tree of Life for *Moonfire*, *Wrath*, *Starfire*; shamans use *Flame Shock* and *Lightning Bolt* (*Chain Lightning* into packs). See the class pages for details.
+What each class casts: priests use *Shadow Word: Pain*, *Holy Fire*, *Smite*, *Starshards*, *Mind Blast* (*Holy Nova* into packed melee, wand when mana is spent); druids shift out of Tree of Life for *Moonfire*, *Wrath*, *Starfire*; shamans use *Flame Shock* and *Lightning Bolt* (*Chain Lightning* into packs); paladins use *Hammer of Wrath* on dying targets, *Holy Shock*, *Judgement* and *Exorcism* on Undead or Demon targets (*Consecration* into packed melee). See the class pages for details.
 
 ### DPS Off-Healing (`offheal`)
 Damage specs of hybrid classes get `offheal` by default (Shadow priests, Elemental and Enhancement shamans, Retribution paladins, Cat and Balance druids). When it is on, the damage dealer stops attacking and heals once an ally falls into a wound band:
