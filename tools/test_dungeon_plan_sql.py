@@ -2942,7 +2942,7 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual(leg6[g12 + 1]["z"], "-92.52249")
 
     def test_dragonmaw_retreat_is_the_plan_with_the_census_fixes(self):
-        # 20261030230000 (turtle-agent prep/dragonmaw_retreat, after the fix-9 live run on tortoise-test2, 2026-10-30): the lead shot
+        # 20261031010000 (turtle-agent prep/dragonmaw_retreat, after the fix-9 live run on tortoise-test2, 2026-10-30): the lead shot
         # the 62039/62040/62041 pack at -5996 -4275 from its stand -6011.4 -4295.1 (28+ yd off the patrol, as planned), but the
         # pack's casters held their ground, the tank closed on them and the party spread round it (the hunter 21.5 yd from the
         # tank, 16.5 yd from the patrol line), and Searistrasz, walking past 15 yd from that pack, joined with four enchanters
@@ -3033,7 +3033,7 @@ class DungeonPlanSql(unittest.TestCase):
         # The rows are plan-export's (--approach-hops, --mmaps) of the plan file with leg 3 in this order and the alcove leg; the
         # patrol check below fails an export that brings the walk back.
         name, text = newest_plan_text("dragonmaw_retreat")
-        self.assertEqual(name, "20261030230000_world.sql")
+        self.assertEqual(name, "20261031010000_world.sql")
         self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent f2e92bf0 dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');", text)
         legs = leg_rows(text, "dragonmaw_retreat")
         self.assertEqual(sorted(legs), list(range(11)))
