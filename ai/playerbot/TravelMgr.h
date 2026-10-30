@@ -483,6 +483,14 @@ namespace ai
 		void GetPartitionsLock(bool getLock = true);
 		static bool IsLocationLevelValid(const WorldPosition& position, const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, int32 grindZoneFloor = 0, uint32 excludeZoneId = 0);
 		PartitionedTravelList GetPartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f, int32 grindZoneFloor = 0, uint32 excludeZoneId = 0) const;
+		// Zone-scoped order-leg search: like GetPartitions, but the point walk
+		// only considers points inside zoneId and walks every distance band,
+		// not just the closest one. A planned zone whose spawns sit farther
+		// than another zone's would otherwise come back empty after the
+		// caller pins the nearest-point list to the zone. Points stay
+		// nearest-first inside each band, so the pick still prefers near.
+		// Bounded by the entries' own spawn points; no world scan.
+		PartitionedTravelList GetOrderZonePartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries, uint32 zoneId, bool onlyPossible = false, float maxDistance = 0.0f) const;
 		static void ShuffleTravelPoints(std::vector<TravelPoint>& points);
 
 		// Grind-spot demand: how many travel targets currently hold a destination.

@@ -1603,9 +1603,12 @@ ai::TravelPickOutcome ChooseTravelTargetAction::SetBestTargetSliced(Player* requ
                 // 10% chance to skip to a longer partition. The outcome is
                 // cached per partition while slicing so a resumed visit replays
                 // the same skip instead of re-drawing (the accept below must
-                // land on the same candidate as an uninterrupted scan).
+                // land on the same candidate as an uninterrupted scan). Order
+                // legs never skip: the list is already scoped to the planned
+                // zone, and wandering to a farther band wastes the farm walk.
                 bool skipPartition = false;
-                if (partition != std::prev(partitionedList.end())->first)
+                if (partition != std::prev(partitionedList.end())->first &&
+                    TortoiseBots::GuildOrders::FarPartitionSkipApplies(travelInfo.IsOrderMode()))
                 {
                     auto rollIt = slicing ? scan.partitionSkipRolled.find(partition) : scan.partitionSkipRolled.end();
                     skipPartition = (rollIt != scan.partitionSkipRolled.end()) ? rollIt->second : !urand(0, 10);
@@ -2542,7 +2545,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             uint32_t botLevel = bot->GetLevel();
             Team botTeam = bot->GetTeam();
             bool lowGatherLevel = botLevel < TortoiseBots::GuildOrders::kGatherTripMinLevel;
-            std::vector<int32_t> gatherEntries, mobEntries;
+            std::vector<int32_t> gatherEntries, mobEntries, fallbackEntries;
             bool orderFishes = false;
             for (GuildOrderEntrySource const& source : GuildOrderSourcesFor(itemId))
             {
@@ -2585,6 +2588,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 if (herbOrOre && lowGatherLevel)
                     continue;
                 bool zoneUsable = false;
+                bool zoneFallback = false;
                 for (GuildOrderZoneSlice const& slice : GuildOrderZonesFor(source.entry))
                 {
                     if (slice.zoneId != farmZoneId || slice.spawns == 0)
@@ -2595,28 +2599,65 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                         continue;
                     uint32_t level = source.entry > 0 ? source.level :
                         (slice.zoneLevel > 0 ? uint32_t(slice.zoneLevel) : 0);
-                    if (level == 0 || !TortoiseBots::GuildOrders::SourceLevelFits(level, botLevel))
+                    if (level == 0)
+                        continue;
+                    // Second tier for the search below: mobs one level past
+                    // the plan (+4, the grind cap) still farm when the planned
+                    // entries yield no spot in this zone.
+                    if (source.entry > 0 && !TortoiseBots::GuildOrders::SourceLevelFits(level, botLevel) &&
+                        TortoiseBots::GuildOrders::FallbackSourceLevelFits(level, botLevel))
+                        zoneFallback = true;
+                    if (!TortoiseBots::GuildOrders::SourceLevelFits(level, botLevel))
                         continue;
                     zoneUsable = true;
                     break;
                 }
-                if (!zoneUsable)
+                if (!zoneUsable && !zoneFallback)
                     continue;
                 if (source.entry > 0)
-                    mobEntries.push_back(source.entry);
-                else
+                    (zoneUsable ? mobEntries : fallbackEntries).push_back(source.entry);
+                else if (zoneUsable)
                     gatherEntries.push_back(source.entry);
             }
             if (gatherEntries.empty() && mobEntries.empty() && !orderFishes)
                 return false;
 
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, farmZoneId, gatherEntries, mobEntries, orderFishes, partitions = travelPartitions]()
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, farmZoneId, gatherEntries, mobEntries, fallbackEntries, orderFishes, partitions = travelPartitions]()
                 {
                     PartitionedTravelList list;
 
-                    auto zonePinned = [farmZoneId](PartitionedTravelList& found)
+                    auto append = [&list](PartitionedTravelList&& found)
                     {
                         for (auto& [partition, points] : found)
+                            list[partition].insert(list[partition].end(), points.begin(), points.end());
+                    };
+
+                    // Zone-scoped search: points are picked among the planned
+                    // zone's own spawns across every distance band, not pinned
+                    // after a nearest-point pick that may sit in another zone.
+                    // Order sources bypass the skill-up filters: the entries
+                    // above already passed the planner's skill gate, so
+                    // onlyPossible=false keeps maxed-skill and grey nodes.
+                    if (!gatherEntries.empty())
+                    {
+                        append(sTravelMgr.GetOrderZonePartitions(center, partitions, travelInfo,
+                            (uint32_t)TravelDestinationPurpose::GatherHerbalism, gatherEntries, farmZoneId));
+                        append(sTravelMgr.GetOrderZonePartitions(center, partitions, travelInfo,
+                            (uint32_t)TravelDestinationPurpose::GatherMining, gatherEntries, farmZoneId));
+                    }
+                    if (!mobEntries.empty())
+                        append(sTravelMgr.GetOrderZonePartitions(center, partitions, travelInfo,
+                            (uint32_t)TravelDestinationPurpose::Grind, mobEntries, farmZoneId));
+                    // Second tier: mobs one level past the plan still farm the
+                    // zone when the planned entries yield no spot in it.
+                    if (list.empty() && !fallbackEntries.empty())
+                        append(sTravelMgr.GetOrderZonePartitions(center, partitions, travelInfo,
+                            (uint32_t)TravelDestinationPurpose::Grind, fallbackEntries, farmZoneId));
+                    if (orderFishes)
+                    {
+                        PartitionedTravelList fishList = sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                            (uint32_t)TravelDestinationPurpose::GatherFishing, {}, true, 0.0f);
+                        for (auto& [partition, points] : fishList)
                         {
                             points.erase(std::remove_if(points.begin(), points.end(),
                                 [farmZoneId](TravelPoint point)
@@ -2629,40 +2670,6 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                                     return zoneId != farmZoneId;
                                 }), points.end());
                         }
-                    };
-
-                    auto append = [&list](PartitionedTravelList&& found)
-                    {
-                        for (auto& [partition, points] : found)
-                            list[partition].insert(list[partition].end(), points.begin(), points.end());
-                    };
-
-                    // Order sources bypass the skill-up filters: the entries
-                    // above already passed the planner's skill gate, so
-                    // onlyPossible=false keeps maxed-skill and grey nodes.
-                    if (!gatherEntries.empty())
-                    {
-                        PartitionedTravelList herbList = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                            (uint32_t)TravelDestinationPurpose::GatherHerbalism, gatherEntries, false, 0.0f);
-                        zonePinned(herbList);
-                        append(std::move(herbList));
-                        PartitionedTravelList oreList = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                            (uint32_t)TravelDestinationPurpose::GatherMining, gatherEntries, false, 0.0f);
-                        zonePinned(oreList);
-                        append(std::move(oreList));
-                    }
-                    if (!mobEntries.empty())
-                    {
-                        PartitionedTravelList grindList = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                            (uint32_t)TravelDestinationPurpose::Grind, mobEntries, false, 0.0f);
-                        zonePinned(grindList);
-                        append(std::move(grindList));
-                    }
-                    if (orderFishes)
-                    {
-                        PartitionedTravelList fishList = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                            (uint32_t)TravelDestinationPurpose::GatherFishing, {}, true, 0.0f);
-                        zonePinned(fishList);
                         append(std::move(fishList));
                     }
 

@@ -107,6 +107,17 @@ int main()
     CHECK(OutgrownFloorApplies(false));
     CHECK(!OutgrownFloorApplies(true));
 
+    // Fallback tier: one level past the plan, still inside the grind cap.
+    CHECK(kFallbackLevelMargin == 4);
+    CHECK(FallbackSourceLevelFits(34, 30));
+    CHECK(FallbackSourceLevelFits(27, 24));
+    CHECK(!FallbackSourceLevelFits(35, 30));
+    CHECK(!FallbackSourceLevelFits(0, 30));
+    CHECK(!SourceLevelFits(34, 30) && FallbackSourceLevelFits(34, 30));
+
+    CHECK(FarPartitionSkipApplies(false));
+    CHECK(!FarPartitionSkipApplies(true));
+
     if (failures == 0)
         std::printf("test_guild_order_sources_policy ok\n");
     return failures ? 1 : 0;
