@@ -2942,6 +2942,21 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual(leg6[g12 + 1]["z"], "-92.52249")
 
     def test_dragonmaw_retreat_is_the_plan_with_the_census_fixes(self):
+        # 20261025002000 (turtle-agent c19713b, 2026-10-25, after live run r41s2 slotA2 needed a skip and a GM move at searistrasz
+        # steps 267-273): the pull of 62040 at -6028.7 -4176.9 (leg searistrasz group 2) stood beside a 22 x 19 yd hall room whose
+        # 6 navmesh polygons are an island (bbox -6022.1 -4192.0 .. -6000.0 -4173.3, z 322.19, no link in or out; the WMO floor is
+        # one dry plane at 322.10, so this is not the step-453 lava clamp). The band's firing stands had no sight ('firing stands
+        # used up (2)'), so the tank walked straight at the unit, crossed the room's threshold and stopped on the island's west
+        # edge (-6022.1 -4176.9, then -6022.1 -4192.0): every Detour query there answers NOPATH ('unreachable start poly'), the
+        # packs of steps 269/270 were deferred ('no safe stand 17.8-25.0 yd from it the lead bot has a path to'), the 271 cut row
+        # was refused ('no navmesh route reaches it') and 273's pack had 'no walkable path'; a GM move to -6060.2 -4231.4 freed
+        # the run. Group 2 now walks round the room's east and south sides (-5986.9 -4160, -5986.9 -4178.1, -5998.9 -4193.1) and
+        # stands at -6021 -4199 322.2: 23.4 yd from 62040, in sight, on the 4272-poly component, so the shot goes out from the
+        # stand. Groups 4 and 5 (the deferred packs), group 6 (the refused 271 point -6067.2 -4230.7 is its first approach row,
+        # then the stand -6046 -4240) and group 7 get stands 19-23 yd off, in sight of every member. Group 56 (the 62453 at
+        # -6021.9 -4217.9) and group 57 (the pack east of the room) replace the exporter's two cut rows there with stands
+        # -6003 -4212 and -5994 -4196. Every hop of every chain is a complete server path and every stand is reachable and
+        # leavable (navq over turtle-agent internal/navmesh; the sight rays are the core's vmap LOS, specs/dmr-step453-tools).
         # 20261025001900 (turtle-agent 1116b84, 2026-10-25, after live run r41s2 slotA stopped at step 755 with 4 pauses): the
         # pull of 62073 at -6100.5 -3971.4 (leg zuluhed_floor group 10) had no approach, so the run leader walked the lead from
         # the group-9 pull (-6103 -4004.5) over the thin floor at -6122.6..-6129 -4000.5..-3988.7, where the core's
@@ -2993,10 +3008,11 @@ class DungeonPlanSql(unittest.TestCase):
         # (5) The hall_clear landing (-6190.1 -3962.4 215.8) is a plain direct step with a check_skip now: 7.4 yd across and
         # 5.1 yd down over a 9.0 yd navmesh gap (ServerPath answers no route across it), inside the direct limits, and the run
         # walked the same move_direct live at step 200 (from -6191.8 -3954.9 221.6 to -6186.7 -3964.3 215.2, no death).
-        # 10 legs, 827 steps (28+6+12+60+23+17+25+10+22+3 pulls), bosses in leg order, no door or event step.
+        # 10 legs, 835 steps (827 + the 7 stand rows of the searistrasz pocket less the 3 exporter cut rows they replace; leg 3
+        # goes 121 -> 129 rows), pulls unchanged (28+6+12+60+23+17+25+10+22+3), bosses in leg order, no door or event step.
         name, text = newest_plan_text("dragonmaw_retreat")
-        self.assertEqual(name, "20261025001900_world.sql")
-        self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent 1116b84 dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual(name, "20261025002000_world.sql")
+        self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c19713b dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');", text)
         legs = leg_rows(text, "dragonmaw_retreat")
         self.assertEqual(sorted(legs), list(range(10)))
         self.assertEqual([legs[i][0] for i in range(10)],
@@ -3004,7 +3020,7 @@ class DungeonPlanSql(unittest.TestCase):
                           "zuluhed_approach", "zuluhed_mid", "zuluhed_floor", "zuluhed_the_whacked"])
         self.assertIn("leave (not read by the run leader yet): 62046 at -6190.56 -3919.91", legs[7][1])
         rows = [r for r in self.step_rows(text) if r["plan"] == "dragonmaw_retreat"]
-        self.assertEqual(len(rows), 827)
+        self.assertEqual(len(rows), 835)
         self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(10)],
                          [28, 6, 12, 60, 23, 17, 25, 10, 22, 3])
         self.assertEqual([(int(r["leg"]), int(r["entry"])) for r in rows if r["kind"] == "boss"],
@@ -3136,6 +3152,37 @@ class DungeonPlanSql(unittest.TestCase):
             self.assertEqual([(r["x"], r["y"], r["z"], r["comment"]) for r in floor[i - len(chain):i]],
                              [(x, y, z, "pull group %s approach" % group) for x, y, z in chain],
                              "the solid-floor approach of the pull at %s is missing" % (pack,))
+        # r41s2 slotA2 steps 267-273, the isolated hall room: every pull of the pocket has its stand row, and no row stands in
+        # the room itself. The room is the 6-poly navmesh island -6022.1 -4192.0 .. -6000.0 -4173.3 at z 322.19 (no link in or
+        # out, the WMO floor a dry plane) right beside the group-2 pull; the lead that walked into it lost every path ('no
+        # navmesh route reaches it', the 269/270 packs deferred, 271 refused, 273 no walkable path). A row inside it, or the
+        # stand chains gone, brings that back: each stand is 18-24.5 yd from its pack and in sight (the pin's distances are the
+        # plan rows', the sight and path checks are in specs/dmr-fix8-tools/).
+        sear = leg_steps(rows, 3)
+        self.assertFalse([r for r in rows if -6022.1 <= float(r["x"]) <= -6000.0 and -4192.0 <= float(r["y"]) <= -4173.3
+                          and 321.5 <= float(r["z"]) <= 323.0], "a plan row stands in the isolated hall room")
+        self.assertFalse([r for r in sear if r["comment"] == "approach path"
+                          and (r["x"], r["y"], r["z"]) in (("-6067.2", "-4230.6665", "322.189"),
+                                                           ("-5994.667", "-4224", "322.189"),
+                                                           ("-6003.2", "-4212.2666", "322.189"))],
+                         "an exporter cut row of the pocket walk is back")
+        for pack, group, chain in (
+                (("-6028.72", "-4176.9", "322.69"), "2",
+                 [("-5986.9", "-4160", "322.2"), ("-5986.9", "-4178.1", "322.2"), ("-5998.9", "-4193.1", "322.2"),
+                  ("-6021", "-4199", "322.2")]),
+                (("-6050.79", "-4199.42", "322.1"), "4", [("-6030", "-4199", "322.2")]),
+                (("-6072.09", "-4224.85", "322.13"), "5", [("-6067", "-4206", "322.2")]),
+                (("-6028.71", "-4254.44", "322.69"), "6", [("-6067.2", "-4230.7", "322.2"), ("-6046", "-4240", "322.2")]),
+                (("-6040.23", "-4274.5", "322.1"), "7", [("-6040", "-4254", "322.2")]),
+                (("-6021.87", "-4217.88", "323.96"), "56", [("-6003", "-4212", "322.2")]),
+                (("-5981.44", "-4179.05", "322.1"), "57", [("-5994", "-4196", "322.2")])):
+            i = next(j for j, r in enumerate(sear) if r["kind"] == "pull" and (r["x"], r["y"], r["z"]) == pack)
+            self.assertEqual([(r["x"], r["y"], r["z"], r["comment"]) for r in sear[i - len(chain):i]],
+                             [(x, y, z, "pull group %s approach" % group) for x, y, z in chain],
+                             "the stand chain of the pull at %s is missing" % (pack,))
+            d = _math.dist((float(chain[-1][0]), float(chain[-1][1]), float(chain[-1][2])),
+                           (float(pack[0]), float(pack[1]), float(pack[2])))
+            self.assertTrue(18.0 <= d <= 24.5, "the stand of the pull at %s is %.1f yd off" % (pack, d))
         self.assertFalse([r for r in halgan if r["kind"] == "pull" and abs(float(r["x"]) + 6360.97) < 0.01],
                          "the 62035 that stands in the lava sheet is still a pull")
         self.assertFalse([r for r in halgan if r["kind"] == "pull" and abs(float(r["x"]) + 6357.21) < 0.01
