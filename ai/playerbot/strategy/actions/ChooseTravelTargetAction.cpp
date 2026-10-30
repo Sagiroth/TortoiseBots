@@ -687,6 +687,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         }
     }
 
+    setNewTarget(requester, &newTarget, travelTarget);
 
     return true;
 }
