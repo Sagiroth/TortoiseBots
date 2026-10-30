@@ -156,6 +156,13 @@ inline char const* KeepToken(bool keep)
     return keep ? "keep" : "-";
 }
 
+// The hours slot of TBM:ORDER: the chosen whole hours, or `inf` for no time
+// limit (stored as 0 in memory and in the database).
+inline std::string HoursToken(uint32_t hours)
+{
+    return hours == 0 ? "inf" : std::to_string(hours);
+}
+
 // One order, as the store keeps it in memory (one per bot).
 struct OrderRecord
 {
@@ -165,7 +172,7 @@ struct OrderRecord
     OrderType type = OrderType::Farm;
     uint32_t itemId = 0;
     uint32_t amount = 0;       // current round quota; re-armed per round for keep orders
-    uint32_t hours = 1;        // player-chosen farm time per round, whole hours 1-24
+    uint32_t hours = 1;        // player-chosen farm time per round: whole hours 1-24, 0 = no time limit
     bool keep = false;         // keep the stock target filled: new rounds while the bank holds less
     uint32_t stockTarget = 0;  // keep level in the bank (the ordered amount)
     uint32_t lastBankCheckMs = 0; // last keep bank look, in server uptime ms

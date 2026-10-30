@@ -31,6 +31,10 @@ int main()
     CHECK(std::string(DifficultyToken(OrderDifficulty::Medium)) == "medium");
     CHECK(std::string(DifficultyToken(OrderDifficulty::Hard)) == "hard");
 
+    CHECK(HoursToken(0) == "inf");
+    CHECK(HoursToken(1) == "1");
+    CHECK(HoursToken(24) == "24");
+
     if (failures == 0)
         std::printf("test_guild_order_contract ok\n");
     return failures ? 1 : 0;
