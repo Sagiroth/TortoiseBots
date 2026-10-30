@@ -338,7 +338,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("slot.taskReply = 0;", retire)
         tick = body(COMMANDS, "void TickDungeonRun(uint64 commanderRaw, uint32 dt)", "\n}\n")
         self.assertIn("RetireLostCarrier(slot, lead, bots);\n    TortoiseBots::DungeonRun::Facts facts;\n"
-                      "    ReadRunFacts(slot, lead, bots, facts);", tick)
+                      "    ReadRunFacts(slot, lead, bots, facts, binding->raid);", tick)
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
         retire_order = body(policy, "inline void RetireOrder(Run& r)", "\n}\n")
         self.assertIn("r.orderSent = false;", retire_order)
@@ -530,7 +530,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         engine = (ROOT / "ai/playerbot/strategy/ReactionEngine.cpp").read_text()
         self.assertIn("ReactionPassForced(ai->HasRealPlayerMaster(), ai->QueuedChatCommandCount())", engine)
         # 4. `run start ... from ...` resolves the step and guards a start partway.
-        start = body(COMMANDS, "bool HandleDungeonRun(", "\nvoid UpdateRemoteCommanders(")
+        start = body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
         self.assertIn("ResolveStartStep(*plan, startArgs.from, startArgs.value, startStep, &movedBack)", start)
         self.assertIn("CheckPartialStart(OnInstanceMap(lead), members.size(), withLead)", start)
         self.assertIn("slot.run = Start(plan, startStep);", start)
@@ -842,7 +842,9 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("void LoadDungeonRunKeys();", header)
         self.assertIn("bool ReloadDungeonRunKeys();", header)
         on_load = body(host, "void BotHostAdapter::OnAfterConfigLoad(bool reload)\n{", "\n}\n")
-        self.assertIn("if (reload)\n        s_dungeonRunKeysDue.store(true);", on_load)
+        self.assertIn("if (reload)", on_load)
+        self.assertIn("s_dungeonRunKeysDue.store(true);", on_load)
+        self.assertIn("s_realtimeKeysDue.store(true);", on_load)
         self.assertNotIn("ReloadDungeonRunKeys", on_load)  # world thread only
         on_update = body(host, "void BotHostAdapter::OnUpdate(uint32 diff)\n{", "\n}\n")
         self.assertIn("if (s_dungeonRunKeysDue.exchange(false))\n        sPlayerbotAIConfig.ReloadDungeonRunKeys();", on_update)
@@ -1202,9 +1204,9 @@ class RunTestSpeedWiringTest(unittest.TestCase):
 
     def test_the_start_takes_and_guards_the_speed(self):
         code = strip_comments(COMMANDS)
-        run = body(code, "bool HandleDungeonRun(ChatHandler* handler, char const* args)", "\n}\n")
+        run = body(code, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
         start = run[run.index('if (verb == "start")\n'):]
-        self.assertIn("CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(commander))", start)
+        self.assertIn("CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(Requester(handler)))", start)
         self.assertIn("if (!playerLedStart.playerLed)", start)
         self.assertIn("arg = LowerCopy(speedArgs.rest);", start)
         self.assertLess(start.index("CheckTestSpeed(speedArgs.rate,"), start.index("arg = LowerCopy(speedArgs.rest);"))

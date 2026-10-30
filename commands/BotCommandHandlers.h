@@ -24,6 +24,8 @@ bool IsLfgWorldBot(Player* bot);                       // IsWorldBot(bot)
 bool JoinBotToLeadGroup(Player* lead, Player* member); // JoinLeadGroup(lead, member)
 bool IsBotBound(Player* bot);                          // bot && CommanderBindings().FindByBot(raw) != nullptr
 uint64 GroupBindingKey(uint32 groupId);                // the binding's commanderGuid, or 0
+bool IsGmCliHandler(ChatHandler* handler);           // console/remote GM (Commander.cpp; no session, GM rank)
+Group* GearRaidGroup(Player* commander);             // lead bot's group of his binding, else his own group
 // Item-leg skip glue (spec D): the crash ledger's login cleanup, called from
 // host/BotPlayerAdapter.cpp (OnLogin) and host/BotHostAdapter.cpp (first world
 // tick). The rest of the glue (party read, give/take, erase) is file-local to
@@ -59,6 +61,7 @@ bool HandleRole(ChatHandler* handler, char const* args);
 bool HandleSummon(ChatHandler* handler, char const* args);
 bool HandleMaintenance(ChatHandler* handler, char const* args);
 bool HandleAutogear(ChatHandler* handler, char const* args);
+bool HandleBotGear(ChatHandler* handler, char const* args);
 bool HandleHire(ChatHandler* handler, char const* args);
 bool HandlePool(ChatHandler* handler, char const* args);
 bool HandleLoot(ChatHandler* handler, char const* args);

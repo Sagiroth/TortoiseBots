@@ -573,6 +573,20 @@ void ObservabilityEmitter::Initialize()
     m_dungeonRunOffset = 0;
     m_dungeonMobsTiming = DungeonMobsTiming();
 
+    // The live fight stream and the cast poller; a `.reload config` re-reads them.
+    m_realtimeOn = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime", true);
+    m_realtimeEvents = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime.Events", true);
+    m_eventGapMs = static_cast<uint32_t>(std::max(100, std::min(2000,
+        sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.EventGapMs", 250))));
+    m_eventTimerMs = 0;
+    m_castPollMs = 0;
+    // The position feed's periods: 500 ms in combat, and an idle period of 2000 that keeps the 2 s report the only idle source.
+    m_posCadence = RealtimeCadence::Clamp(sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.CombatMs", 500),
+        sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.IdleMs", 2000));
+    m_posClock.Set(m_posCadence);
+    m_realtimeTiming = RealtimeTiming();
+    m_realtimeLogMs = 0;
+
     m_port = sPlayerbotAIConfig.observabilityPort;
     if (m_port == 0)
         m_port = 9195;
@@ -684,6 +698,48 @@ void ObservabilityEmitter::SetExternalRosterProvider(std::function<void(std::vec
 void ObservabilityEmitter::SetCommanderProvider(std::function<void(std::vector<CommanderTelemetry::BindingRef>&)> provider)
 {
     m_commanderProvider = std::move(provider);
+}
+
+int ObservabilityEmitter::ProtocolVersion() const { return kProtocolVersion; }
+uint64_t ObservabilityEmitter::SessionId() const { return m_sessionId; }
+uint64_t ObservabilityEmitter::NextSeq() { return ++m_snapshotSeq; }
+int64_t ObservabilityEmitter::NowUnix() const { return static_cast<int64_t>(time(nullptr)); }
+int64_t ObservabilityEmitter::NowUnixMs() const
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+void ObservabilityEmitter::SetCombatProvider(std::function<void(std::vector<std::string>&)> provider)
+{
+    m_combatProvider = std::move(provider);
+}
+
+void ObservabilityEmitter::SetCombatEventProvider(std::function<void(std::vector<std::string>&, uint32_t)> provider)
+{
+    m_combatEventProvider = std::move(provider);
+}
+
+void ObservabilityEmitter::SetEnemyCastPoller(std::function<void()> poller)
+{
+    m_enemyCastPoller = std::move(poller);
+}
+
+void ObservabilityEmitter::SetPositionProvider(
+    std::function<void(std::vector<CommanderTelemetry::PosRef>&, bool wantCombat, bool wantIdle)> provider)
+{
+    m_positionProvider = std::move(provider);
+}
+
+void ObservabilityEmitter::ReloadRealtimeKeys()
+{
+    m_realtimeOn = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime", true);
+    m_realtimeEvents = sConfig.GetBoolDefault("AiPlayerbot.ObservabilityRealtime.Events", true);
+    m_eventGapMs = static_cast<uint32_t>(std::max(100, std::min(2000,
+        sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.EventGapMs", 250))));
+    m_posCadence = RealtimeCadence::Clamp(sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.CombatMs", 500),
+        sConfig.GetIntDefault("AiPlayerbot.ObservabilityRealtime.IdleMs", 2000));
+    m_posClock.Set(m_posCadence);
 }
 
 void ObservabilityEmitter::SetDungeonMobProvider(std::function<void(std::vector<DungeonMobTelemetry::RunRef>&)> provider)
@@ -1193,6 +1249,79 @@ void ObservabilityEmitter::Update(uint32 diff)
         EmitServerInfo();
     }
 
+    // The live fight stream runs on its own cadence (100 ms drain, 250 ms
+    // cast poll), not inside the 2 s snapshot gate, so events reach the page as
+    // they happen. The per-group EventGapMs still limits datagrams.
+    auto const realtimeStart = std::chrono::steady_clock::now();
+    if (m_realtimeOn && m_realtimeEvents)
+    {
+        m_eventTimerMs += diff;
+        if (m_eventTimerMs >= 100)
+        {
+            m_eventTimerMs = 0;
+            if (m_enemyCastPoller && (m_castPollMs += 100) >= 250)
+            {
+                m_castPollMs = 0;
+                m_enemyCastPoller();
+            }
+            if (m_combatEventProvider)
+            {
+                m_eventPayloads.clear();
+                m_combatEventProvider(m_eventPayloads, nowMs);
+                for (std::string const& payload : m_eventPayloads)
+                {
+                    SendDatagram(payload);
+                    ++m_realtimeTiming.evDatagrams;
+                    m_realtimeTiming.evBytes += payload.size();
+                }
+            }
+        }
+    }
+
+    // The position feed (COMMANDER_POS): both periods advance on every world
+    // tick, each on its own, so the faster one never starves the other; the
+    // provider runs once when either is due, before the 2 s gate, and reports
+    // each period's own groups. The idle period asks for the groups that do not
+    // fight only when it is under 2000 ms; at 2000 the 2 s report is the idle
+    // source. The master switch and the provider gate it first.
+    if (m_realtimeOn && m_positionProvider)
+    {
+        RealtimeCadence::Due const due = m_posClock.Advance(diff);
+        if (due.Any())
+        {
+            m_positionRefs.clear();
+            m_positionProvider(m_positionRefs, due.combat, due.idle);
+            for (CommanderTelemetry::PosRef const& ref : m_positionRefs)
+            {
+                std::string const payload = CommanderTelemetry::BuildPosPayload(kProtocolVersion, m_sessionId, NextSeq(),
+                    NowUnix(), NowUnixMs(), ref);
+                SendDatagram(payload);
+                ++m_realtimeTiming.posDatagrams;
+                m_realtimeTiming.posBytes += payload.size();
+            }
+        }
+    }
+    if (m_realtimeOn)
+    {
+        RealtimeTiming& t = m_realtimeTiming;
+        uint64 const us = static_cast<uint64>(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - realtimeStart).count());
+        ++t.cycles;
+        t.sumUs += us;
+        t.maxUs = std::max(t.maxUs, us);
+        m_realtimeLogMs += diff;
+        if (m_realtimeLogMs >= 60000)
+        {
+            m_realtimeLogMs = 0;
+            if (t.cycles)
+                TB_LOG_DEBUG("TortoiseBots: realtime 60s: pos %u dg %llu B, events %u dg %llu B, avg %llu us max %llu us per tick",
+                    t.posDatagrams, static_cast<unsigned long long>(t.posBytes), t.evDatagrams,
+                    static_cast<unsigned long long>(t.evBytes), static_cast<unsigned long long>(t.sumUs / t.cycles),
+                    static_cast<unsigned long long>(t.maxUs));
+            t = RealtimeTiming();
+        }
+    }
+
     m_snapshotTimerMs += diff;
     if (m_snapshotTimerMs < kSnapshotIntervalMs)
         return;
@@ -1214,6 +1343,13 @@ void ObservabilityEmitter::Update(uint32 diff)
     CollectOnlinePlayers(onlinePlayers);
     EmitSnapshotCycle(activeBots, onlinePlayers, diff);
     EmitCommanders();
+    if (m_combatProvider)
+    {
+        m_combatPayloads.clear();
+        m_combatProvider(m_combatPayloads);
+        for (std::string const& payload : m_combatPayloads)
+            SendDatagram(payload);
+    }
 
     // Issue #872: real players' online characters get their exact-stats row
     // too (same round-robin rate limit as bots, a few per snapshot, never per
@@ -1670,12 +1806,14 @@ void ObservabilityEmitter::EmitCommanders()
         info.bossesReported = ref.bossesReported;
         info.bossesMap = ref.bossesMap;
         info.bosses = ref.bosses; // at most kMaxBossesPerBinding, copied once per 2 s
+        info.combatJson = ref.combatJson; // the live window, written raw; copied once per 2 s
         // Since when the binding has stood (first seen here), for the dashboard's run timer; forgotten with the binding.
         int64_t& since = m_commanderSince[ref.commanderGuid];
         if (!since)
             since = static_cast<int64_t>(time(nullptr));
         info.boundAt = since;
         info.run = ref.run;
+        info.layout = ref.layout;
         for (Player* bot : ref.bots)
         {
             if (!bot || !bot->IsInWorld() || info.bots.size() >= CommanderTelemetry::kMaxBotsPerBinding)
@@ -1697,6 +1835,7 @@ void ObservabilityEmitter::EmitCommanders()
                 b.maxPower /= 10;
             }
             b.powerType = GetPowerTypeName(bot->GetPowerType());
+            b.subgroup = bot->GetGroup() && bot->GetGroup()->isRaidGroup() ? static_cast<int>(bot->GetSubGroup()) : -1;
             b.lead = ref.lead && bot == ref.lead;
             b.mapId = bot->GetMapId();
             b.zoneId = bot->GetCachedZoneId();
@@ -1704,6 +1843,7 @@ void ObservabilityEmitter::EmitCommanders()
             b.y = bot->GetPositionY();
             b.z = bot->GetPositionZ();
             b.id = bot->GetObjectGuid().GetRawValue();
+            b.away = ref.awayBots.count(bot->GetObjectGuid().GetRawValue()) != 0;
             // What it has selected, else what it fights: two field reads.
             ::ObjectGuid target = bot->GetTargetGuid();
             if (target.IsEmpty())
@@ -1729,8 +1869,32 @@ void ObservabilityEmitter::EmitCommanders()
             standing = standing || ref.commanderGuid == it->first;
         it = standing ? std::next(it) : m_commanderSince.erase(it);
     }
+    for (auto it = m_commanderTrimLoggedAt.begin(); it != m_commanderTrimLoggedAt.end();)
+    {
+        bool standing = false;
+        for (CommanderTelemetry::BindingRef const& ref : m_commanderRefs)
+            standing = standing || ref.commanderGuid == it->first;
+        it = standing ? std::next(it) : m_commanderTrimLoggedAt.erase(it);
+    }
     m_commandersSent = !infos.empty();
-    SendDatagram(CommanderTelemetry::BuildPayload(kProtocolVersion, m_sessionId, m_snapshotSeq, time(nullptr), infos));
+    // Twenty commanders are more bindings than one datagram holds: the partition keeps each part within the datagram
+    // caps (eight bindings, 64 bots, 64 mobs, kPartByteCap serialized bytes) and every part goes out with this cycle's
+    // seq and ts. A binding that alone cannot fit gives up its optional sections; the log says so once a minute.
+    std::vector<CommanderTelemetry::TrimEvent> trims;
+    time_t const now = time(nullptr);
+    std::vector<std::string> const parts = CommanderTelemetry::BuildPayloadParts(kProtocolVersion, m_sessionId,
+        m_snapshotSeq, now, infos, NowUnixMs(), &trims);
+    for (std::string const& payload : parts)
+        SendDatagram(payload);
+    for (CommanderTelemetry::TrimEvent const& trim : trims)
+    {
+        int64_t& loggedAt = m_commanderTrimLoggedAt[trim.commanderGuid];
+        if (loggedAt && now - loggedAt < 60)
+            continue;
+        loggedAt = now;
+        TB_LOG_BASIC("TortoiseBots: COMMANDERS binding '%s' (commander %u) did not fit one datagram; its %s were left out",
+            trim.commander.c_str(), trim.commanderGuid, CommanderTelemetry::TrimSectionName(trim.level));
+    }
 }
 
 // Effective running settings for the dashboard Server panel. Reads live core

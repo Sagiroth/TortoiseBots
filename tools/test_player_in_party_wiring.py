@@ -127,7 +127,7 @@ class PlayerInPartyWiringTest(unittest.TestCase):
 
     def test_run_reads_every_player(self):
         tick = strip_comments(body(COMMANDS, "void TickDungeonRun(uint64 commanderRaw, uint32 dt)", "\n}\n"))
-        read = tick.index("ReadRunFacts(slot, lead, bots, facts);")
+        read = tick.index("ReadRunFacts(slot, lead, bots, facts, binding->raid);")
         players = tick.index("ReadRunPlayers(slot, commanderRaw, lead, group, bots, facts);")
         health = tick.index("TortoiseBots::DungeonRun::ApplyPlayerFacts(facts);")
         order = tick.index("TortoiseBots::DungeonRun::Tick(slot.run, facts, dt)")

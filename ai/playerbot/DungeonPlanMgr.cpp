@@ -80,7 +80,7 @@ static void ReadDungeonPlanRows(DungeonPlanTable& table, PlanLoadCounts& counts,
     std::uint32_t& skippedSteps = counts.skippedSteps;
     if (std::unique_ptr<QueryResult> result{WorldDatabase.Query(
         "SELECT `plan`, `leg`, `seq`, `kind`, `entry`, `x`, `y`, `z`, `radius`, `item`, `param`, `flags`, "
-        "`timeout_s`, `entries` FROM `ai_dungeon_step`")})
+        "`timeout_s`, `entries`, `comment` FROM `ai_dungeon_step`")})
     {
         do
         {
@@ -100,6 +100,7 @@ static void ReadDungeonPlanRows(DungeonPlanTable& table, PlanLoadCounts& counts,
             step.param = fields[10].GetUInt32();
             step.flags = fields[11].GetUInt32();
             step.timeoutS = fields[12].GetUInt16();
+            step.label = fields[14].GetCppString();
             PlanStepRefusal refusal = ParsePlanEntries(fields[13].GetCppString(), step.entries)
                 ? table.AddStep(plan, step) : PlanStepRefusal::BadEntries;
             if (refusal != PlanStepRefusal::None)

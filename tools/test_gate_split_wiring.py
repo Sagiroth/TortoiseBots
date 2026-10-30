@@ -83,7 +83,7 @@ class GateSplitWiringTest(unittest.TestCase):
         self.assertIn("RemoteCommander::BindingKindEnabled(RemoteCommander::BindingKind::PlayerLed,", bind)
 
     def test_run_gate(self):
-        run = body(strip_comments(COMMANDER), "bool HandleDungeonRun(", "\n}\n")
+        run = body(strip_comments(COMMANDER), "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
         self.assertIn("RemoteCommander::RunSurfaceOn(", run)
 
     def test_config_keys(self):

@@ -29,11 +29,14 @@ using uint32 = uint32_t;
 struct { bool enabled = false; unsigned reloads = 0; bool ReloadDungeonRunKeys() { ++reloads; return enabled; } } sPlayerbotAIConfig;
 namespace TortoiseBots {
 std::atomic<bool> s_dungeonRunKeysDue{false};
+// The dashboard's live stream keys use the same reload path.
+std::atomic<bool> s_realtimeKeysDue{false};
 std::vector<unsigned> calls;
 template<unsigned Id> struct Service {
     static Service& Instance() { static Service service; return service; }
     void Update(uint32 diff) { assert(diff == 50); calls.push_back(Id); }
     void OnWorldUpdate(uint32 diff) { Update(diff); }
+    void ReloadRealtimeKeys() {}
     static uint64_t DrainQueuedCommands() { calls.push_back(Id); return 7; }
     static void DrainDeferredPackets(uint64_t limit, bool endOfTick) { assert(limit == 7 && endOfTick); calls.push_back(Id); }
     static void MarkWorldThread() {}

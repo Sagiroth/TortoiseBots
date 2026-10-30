@@ -20,6 +20,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | Setting | Default | What it does |
 | :--- | :---: | :--- |
 | [`AiPlayerbot.AvoidCreatureAuras`](#aiplayerbotavoidcreatureauras) | `1` | Steers bots away from permanent damaging creature auras and hazardous monsters. |
+| [`AiPlayerbot.CombatMonitor`](#aiplayerbotcombatmonitor) | `0` | Per-fight combat numbers of every bound group for the observability dashboard (needs `AiPlayerbot.Observability`). |
 | [`AiPlayerbot.BombRunoutDistance`](#aiplayerbotbombrunoutdistance) | `30.0` | Distance in yards bomb debuff carriers run clear of the living group. |
 | [`AiPlayerbot.BotAreaTriggers`](#aiplayerbotbotareatriggers) | *(empty)* | Audited allowlist of scripted area triggers a bot party may fire (off when empty; opt in with `962`). |
 | [`AiPlayerbot.BotLfgChat`](#aiplayerbotbotlfgchat) | `1` | A waiting group posts in LookingForGroup and invites a player who whispers "inv". |
@@ -39,6 +40,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunPlayerLed`](#aiplayerbotdungeonrunplayerled) | `0` | Lets a player who leads his own party start a player-led run (`.bot run start ... player`): he walks, the run leader pulls the packs near him. |
 | [`AiPlayerbot.DungeonRunPlayerLedAwayMinutes`](#aiplayerbotdungeonrunplayerledawayminutes) | `10` | How long the leading player of a player-led run may be out of the plan's dungeon before the run stops. |
 | [`AiPlayerbot.DungeonRunPlayerLedPullYd`](#aiplayerbotdungeonrunplayerledpullyd) | `40` | How close the leading player stands to a plan pack or boss for the player-led run to pull it. |
+| [`AiPlayerbot.DungeonRunRaid`](#aiplayerbotdungeonrunraid) | `0` | Lets the run leader bind the commander's raid of 6 to 40 bots and runs it with the raid rules (needs `AiPlayerbot.DungeonSelfClear` and `AiPlayerbot.RemoteCommander`). |
 | [`AiPlayerbot.DungeonRunPullStand`](#aiplayerbotdungeonrunpullstand) | `0` | For a tank that pulls with a ranged weapon, the run leader orders `pullback` only when it can shoot from where it stands, else it walks the party to a firing stand first. |
 | [`AiPlayerbot.DungeonRunRezHold`](#aiplayerbotdungeonrunrezhold) | `0` | The run leader's regroup waits for a living resurrector to raise the fallen (and for its mana) before it revives the party at the spirit healer. |
 | [`AiPlayerbot.DungeonRunRetreatAt2Dead`](#aiplayerbotdungeonrunretreatat2dead) | `0` | `1`: with two dead in a fight the party is losing, the living pull back to the run's last stand once before a third death makes it a wipe. |
@@ -49,6 +51,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.EnableCustomRaidTactics`](#aiplayerbotenablecustomraidtactics) | `1` | Gates scripted encounter tactics and transition strategies for custom raids. |
 | [`AiPlayerbot.HazardEvasionDistance`](#aiplayerbothazardevasiondistance) | `12.0` | Cap in yards on the step bots take when spreading for spacing. |
 | [`AiPlayerbot.OnyxiaWhelpsAndEggs`](#aiplayerbotonyxiawhelpsandeggs) | `1` | Prioritizes whelp clearing and egg avoidance during Onyxia phase two. |
+| [`AiPlayerbot.RaidEntryByCommander`](#aiplayerbotraidentrybycommander) | `1` | Waives a bot's failed entrance condition at a raid entrance with no area-trigger script when its commander is a real player who commands the raid (in the group, or through the binding of a bound raid) and meets it. |
 
 ## Settings
 
@@ -66,6 +69,17 @@ When enabled, bots actively steer clear of hazardous creatures that damage or ki
 Gap-closer abilities such as Charge, Intercept, and Feral Charge verify that the destination landing point is outside the hazard ring before executing. An explicit attack order on that target is never avoided, gap-closer-vetoed, or set aside. Positions are tracked via local proximity scans and periodic grid snapshots.
 
 When set to `0`, bots treat hazardous creatures like standard mobs, chasing into melee range without avoiding dangerous proximity auras.
+
+</details>
+
+### `AiPlayerbot.CombatMonitor`
+Collects per-fight combat numbers of every bound group for the observability dashboard.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+**Combat monitor:** per-fight combat numbers of every bound group for the observability dashboard: casts, damage, healing and overheal, damage taken, deaths with their last hits, and debuff uptime on the fought unit; one COMBAT_FIGHT datagram per fight and a rolling 10 s window. The live window is sent with the commanders snapshot but the dashboard does not read it yet (a later daemon task). While on, a damage, heal or cast event of a player outside every bound group costs one atomic bit test (no lock); a member's event takes the monitor's lock. A fight past 500 distinct engaged creatures counts the rest in `fight.dropped` (distinct creatures, the count stops at 4096). A fight too big for the 60 KB datagram is first sent with fewer spells and death-recap hits, then as a short form marked `"truncated":true` (texts cut to 48 bytes, names and classes to 24, at most 40 bot rows and 64 planned entries, no spells, engaged list, debuff times or deaths); a fight that fits in no form is dropped with an error line in the server log. Each finished fight is sent twice; a bound group's fights are recorded with or without a run (a run tick feeds the groups with a running run, a bound-group sampler feeds the rest, so a fight pulled by hand or after `.bot run stop` is still recorded); a fight whose lead stays away (out of the world across a map transition, no group) for 30 s is closed as `unfinished` (a wipe or a boss already down still wins), a boss death seen before the sampler picked the boss still makes the fight a kill, and turning the monitor off drops a finished fight not yet sent. Needs AiPlayerbot.Observability.
 
 </details>
 
@@ -273,6 +287,17 @@ How close the leading player of a player-led run stands to a plan pack or boss b
 
 </details>
 
+### `AiPlayerbot.DungeonRunRaid`
+Raid bindings for the run leader: `.bot commander bind <LeadBot> raid` binds the commander's own raid of 6 to 40 bots.
+**Default:** `0` · **Values:** `0` off (every raid bind refused), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Raid bindings for the run leader:** `.bot commander bind <LeadBot> raid` binds the commander's own raid of 6 to 40 bots (he leaves it; the lead bot is the main tank), and the run leader uses the raid rules (wipe level, gathering and rest scaled to the raid's size). Needs AiPlayerbot.DungeonSelfClear = 1 and AiPlayerbot.RemoteCommander = 1. Switching it off releases every raid binding. See [Dungeon Run Leader](../../play/dungeon-run-leader.md).
+
+</details>
+
 ### `AiPlayerbot.DungeonRunPullStand`
 Makes the run leader put the tank where its ranged weapon can fire before it orders `pullback`.
 **Default:** `0` · **Values:** `0` off (the run leader pulls exactly as before), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
@@ -386,5 +411,27 @@ Active on map 249 (Onyxia's Lair) only while the `onyxia` fight strategy is acti
 - All bots in the encounter back away toward the nearest cave mouth (`-10,-180` north, `-16,-250` south) if they find themselves within 12 yards of unbroken Onyxia eggs.
 
 An explicit attack order always takes precedence over automated whelp targeting. When set to `0`, bots use standard target selection and ignore egg proximity.
+
+</details>
+
+### `AiPlayerbot.RaidEntryByCommander`
+Waives a bot's failed entrance condition at a raid entrance that has no area-trigger script, when the commander who bound it is a real player who commands the bot's raid and meets that condition himself.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Some entrances ask for something a bot character never has. Onyxia's Lair asks for the Drakefire Amulet, so a bound bot raid was refused at the entrance even while its commander stood inside with the amulet.
+
+With `1`, `.bot cmd enter` reads the entrance's condition for the commander too. A bot whose only failed check is that condition goes in when all of these hold:
+- the entrance leads into a raid: a five-player dungeon's condition is never waived;
+- the entrance trigger runs no area-trigger script (no script id is bound to it);
+- its commander is a real player (not a bot) with a character in the world;
+- he commands the bot's raid: he is a member of the bot's raid group when the bots stand at the entrance, or the commander of the bot's binding (`.bot commander bind ... raid` takes him out of the group, so a bound raid never has him listed as a member);
+- the entrance's condition is met for him.
+
+The other entrance checks are never waived: the content phase, the level, the raid group and the per-account instance limit still refuse the bot, and the core's own player teleport still checks the instance (full, locked by an encounter, the map's own refusal). A scripted entrance is refused as if the key were off: that fallback teleport skips the trigger's script, so a zone or instance script that denies entry on the trigger itself is not re-checked by it (only the map's own admission checks are).
+
+The commander's condition is evaluated once per bot at the moment the bot sends the entrance trigger. With `0`, the bot's own condition decides, as before.
 
 </details>

@@ -1,0 +1,283 @@
+// The combat fight store: per commander the last fights, newest first,
+// deduped by (session, id). The module sends each finished fight in two
+// consecutive snapshot cycles (UDP loss); the second take is dropped here.
+//
+// Fight ids repeat across commanders and sessions (a per-run counter), so
+// the store keys every fight by (commander, session, id): the detail route
+// takes all three and Get requires all three.
+package combat
+
+import (
+	"sort"
+	"strconv"
+	"sync"
+	"time"
+)
+
+// maxFightsPerCommander bounds memory: a raid night is a handful of fights,
+// and the daemon never pages this to disk.
+const maxFightsPerCommander = 50
+
+// keptFight is one filed fight: provisional marks a filing made without the
+// fight's COMBAT_FIGHT (the replacement and expiry paths file the live row as
+// unfinished), and the delayed COMBAT_FIGHT for the same (session, id) still
+// replaces it instead of being dropped as a duplicate.
+type keptFight struct {
+	session     uint64
+	fight       Fight
+	provisional bool
+}
+
+// Store keeps finished fights per commander, newest first. Reads served by
+// the HTTP routes; Add from the UDP listener. One mutex: UDP ingestion never
+// blocks on a client.
+type Store struct {
+	mu      sync.Mutex
+	rules   []Rule
+	fights  map[string][]keptFight // commander -> newest first
+	seenIDs map[string]map[string]bool
+	live    map[string]*liveFight // commander -> the one open fight (live.go)
+	engaged EngagedFunc           // whether a live row is a real fight now (nil: every row is listed)
+	now     func() time.Time      // tests inject a clock; nil is time.Now
+}
+
+// EngagedFunc tells whether a commander's group has a hostile unit engaged right now (Engaged over the module's
+// snapshot). It must not call back into the store.
+type EngagedFunc func(commander string) bool
+
+// NewStore builds a store judging with rules (nil rules: store only, every
+// summary reads 0 warnings).
+func NewStore(rules []Rule) *Store {
+	return &Store{
+		rules:   rules,
+		fights:  make(map[string][]keptFight),
+		seenIDs: make(map[string]map[string]bool),
+		live:    make(map[string]*liveFight),
+	}
+}
+
+// SetClock replaces the store's clock (live-fight expiry); nil restores time.Now.
+func (s *Store) SetClock(now func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.now = now
+}
+
+// SetEngaged installs the check that keeps a live row off the lists while no hostile is engaged (Engaged over the
+// module's snapshot); nil lists every open row. A row the check refuses is kept, not filed: the fight may still be
+// the one it opens, and COMBAT_FIGHT closes it either way.
+func (s *Store) SetEngaged(fn EngagedFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.engaged = fn
+}
+
+// liveListedLocked reports whether the open row of commander is a fight now; called with the lock held.
+func (s *Store) liveListedLocked(commander string) bool {
+	return s.engaged == nil || s.engaged(commander)
+}
+
+func (s *Store) nowLocked() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
+}
+
+// Rules returns the table the store judges with.
+func (s *Store) Rules() []Rule {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]Rule(nil), s.rules...)
+}
+
+// Key composes the public fight key: commander, session and id. The detail
+// route passes it through opaquely; the ids it joins may repeat across
+// commanders and sessions.
+func Key(commander string, session uint64, id string) string {
+	return commander + "\x00" + strconv.FormatUint(session, 10) + "\x00" + id
+}
+
+// Add files a fight under its commander. False when the (session, id) was
+// seen before: the module's second take of the same fight. True when the
+// fight arrives late for a provisional entry: the stored unfinished filing
+// is replaced and filed like any other.
+func (s *Store) Add(session uint64, f Fight) bool {
+	_, ok := s.AddSummary(session, f)
+	return ok
+}
+
+// AddSummary files a fight like Add and returns its list row, which the live
+// stream pushes as the "fight" frame. Filing it closes the live row of the
+// same (session, id) the COMBAT_EVENTS datagrams opened.
+func (s *Store) AddSummary(session uint64, f Fight) (FightSummary, bool) {
+	summary, _, ok := s.AddFiled(session, f)
+	return summary, ok
+}
+
+// AddFiled is AddSummary that also returns the fight as stored: with the cast log the closed live row or a replaced
+// provisional filing handed it, which the caller writes to history (the datagram's own fight carries no log).
+func (s *Store) AddFiled(session uint64, f Fight) (FightSummary, Fight, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.addLocked(session, f, false) {
+		return FightSummary{}, Fight{}, false
+	}
+	stored := keptFight{session: session, fight: f}
+	for _, k := range s.fights[f.Commander] {
+		if k.session == session && k.fight.ID == f.ID {
+			stored = k
+			break
+		}
+	}
+	return s.summaryLocked(f.Commander, stored), stored.fight, true
+}
+
+// addLocked files one fight; called with the lock held. provisional marks a
+// filing made without the fight's own COMBAT_FIGHT (the replacement and
+// expiry paths); a COMBAT_FIGHT arriving for a provisional (session, id)
+// replaces the stored entry and keeps its log instead of being dropped.
+func (s *Store) addLocked(session uint64, f Fight, provisional bool) bool {
+	seen := s.seenIDs[f.Commander]
+	if seen == nil {
+		seen = make(map[string]bool)
+		s.seenIDs[f.Commander] = seen
+	}
+	key := strconv.FormatUint(session, 10) + "\x00" + f.ID
+	if seen[key] && !provisional {
+		if s.replaceLocked(f.Commander, session, f) {
+			return true
+		}
+		return false
+	}
+	seen[key] = true
+	if lf := s.live[f.Commander]; lf != nil && lf.session == session && lf.id == f.ID {
+		// The fight that closes the live row keeps its events: the debugger replays a finished fight from them, and the
+		// live row is gone from here on.
+		f.Log, f.LogDropped = lf.logForFile()
+		delete(s.live, f.Commander)
+	}
+	list := append([]keptFight{{session: session, fight: f, provisional: provisional}}, s.fights[f.Commander]...)
+	if len(list) > maxFightsPerCommander {
+		for _, dropped := range list[maxFightsPerCommander:] {
+			delete(seen, strconv.FormatUint(dropped.session, 10)+"\x00"+dropped.fight.ID)
+		}
+		list = list[:maxFightsPerCommander]
+	}
+	s.fights[f.Commander] = list
+	return true
+}
+
+// replaceLocked swaps a provisional entry for the fight's own COMBAT_FIGHT,
+// keeping the provisional entry's retained log. Called with the lock held.
+// False when no provisional entry of this (session, id) is stored: the
+// COMBAT_FIGHT is the module's second take and stays a duplicate.
+func (s *Store) replaceLocked(commander string, session uint64, f Fight) bool {
+	for i, k := range s.fights[commander] {
+		if k.session != session || k.fight.ID != f.ID || !k.provisional {
+			continue
+		}
+		if len(f.Log) == 0 && f.LogDropped == 0 {
+			f.Log, f.LogDropped = k.fight.Log, k.fight.LogDropped
+		}
+		s.fights[commander][i] = keptFight{session: session, fight: f}
+		if lf := s.live[commander]; lf != nil && lf.session == session && lf.id == f.ID {
+			delete(s.live, commander)
+		}
+		return true
+	}
+	return false
+}
+
+// List returns the newest-first summaries of a commander's kept fights, the
+// live fight first while one runs.
+func (s *Store) List(commander string) []FightSummary {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expireLocked(s.nowLocked())
+	out := make([]FightSummary, 0, len(s.fights[commander])+1)
+	if lf := s.live[commander]; lf != nil && s.liveListedLocked(commander) {
+		out = append(out, s.liveSummaryLocked(commander, lf))
+	}
+	for _, k := range s.fights[commander] {
+		out = append(out, s.summaryLocked(commander, k))
+	}
+	return out
+}
+
+// summaryLocked builds one list row; called with the lock held.
+func (s *Store) summaryLocked(commander string, k keptFight) FightSummary {
+	return FightSummary{
+		ID:       k.fight.ID,
+		Key:      Key(commander, k.session, k.fight.ID),
+		Session:  k.session,
+		Start:    k.fight.Start,
+		Dur:      k.fight.DurMS,
+		Outcome:  k.fight.Outcome,
+		BossName: k.fight.BossName,
+		Leg:      k.fight.Leg,
+		Step:     k.fight.Step,
+		Deaths:   len(k.fight.Deaths),
+		Warnings: len(Judge(k.fight, s.rules)),
+	}
+}
+
+// LiveRows returns the summaries of the open fights, of the given commanders
+// or of all of them when names is empty (the SSE snapshot frame).
+func (s *Store) LiveRows(names []string) []FightSummary {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expireLocked(s.nowLocked())
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		want[n] = true
+	}
+	out := make([]FightSummary, 0, len(s.live))
+	for c, lf := range s.live {
+		if len(want) > 0 && !want[c] {
+			continue
+		}
+		if !s.liveListedLocked(c) {
+			continue
+		}
+		out = append(out, s.liveSummaryLocked(c, lf))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}
+
+// Get returns a fight and its warnings by commander, session and id.
+func (s *Store) Get(commander string, session uint64, id string) (Fight, []Warning, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expireLocked(s.nowLocked())
+	if lf := s.live[commander]; lf != nil && lf.session == session && lf.id == id {
+		return s.liveFightLocked(commander, lf), nil, true
+	}
+	for _, k := range s.fights[commander] {
+		if k.session == session && k.fight.ID == id {
+			return k.fight, Judge(k.fight, s.rules), true
+		}
+	}
+	return Fight{}, nil, false
+}
+
+// GetKey returns a fight and its warnings by the composed public key.
+func (s *Store) GetKey(key string) (Fight, []Warning, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expireLocked(s.nowLocked())
+	for commander, lf := range s.live {
+		if Key(commander, lf.session, lf.id) == key {
+			return s.liveFightLocked(commander, lf), nil, true
+		}
+	}
+	for commander, list := range s.fights {
+		for _, k := range list {
+			if Key(commander, k.session, k.fight.ID) == key {
+				return k.fight, Judge(k.fight, s.rules), true
+			}
+		}
+	}
+	return Fight{}, nil, false
+}

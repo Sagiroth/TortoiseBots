@@ -35,6 +35,7 @@
 ### Commands
 - New `.autogear` command gears a real player the way a spawned bot gets geared: items picked for the level and spec from the same gear pool the bots use, upgrades only, replaced items to the bags or the mailbox. GameMasters can gear any player; `AiPlayerbot.PlayerAutogearForAll` (default `0`) lets every player gear themselves.
 - Fixed: `.bot sell` and the "Sell junk" button sold nothing. Bots now sell their grey junk to a vendor in reach, and a sell order that sells nothing says why. Autonomous alts still never sell soulbound or equipped items, whatever ordered the sale.
+- `.bot hire raid` accepts `level=<n>` like `.bot hire` (the whole roster arrives at that level), and its `onyxia` preset now hires tier 3 gear to match the `onyxia` gear preset.
 
 ### Items & Loot
 - New `AiPlayerbot.HireLoot` (default `1`): set it to `0` and hired companions stop looting and pass on every roll, so the party keeps all the loot. Hired companions no longer take part in any quest, including orders from a player.
@@ -48,6 +49,9 @@
 - Debug loot now says why a corpse is not the bot's to loot.
 
 ### Dungeons & Maps
+- New `AiPlayerbot.RaidEntryByCommander` (default `1`): a commanded raid can enter a raid whose entrance asks for something only a player has (Onyxia's Lair and its Drakefire Amulet) when the commander is a real player of the same raid and meets the requirement himself; the entrance's other checks are unchanged, and a five-player dungeon's or a scripted entrance's condition is never waived.
+- Fixed: the raid entry waiver now works for a bound raid, whose commander stands outside the group.
+- New: `.bot run start ... until boss|step N|leg X` ends the run before that step, so a trash walk stops at the boss stand.
 - Fixed: a player's ghost outside no longer pulls the run's bots in and out through the portal; the lead-off-map pause resumes by itself.
 - New: GameMasters can start bot-only dungeon test runs at up to 3x walking speed (`.bot run start ... speed=2`); fights stay at normal speed and the status line marks the run as a test.
 - Fixed: at test speed the lead bot waits for the party when a bot falls 25 yd behind, so the party no longer reaches packs split.
@@ -71,6 +75,32 @@
 
 ### Behind the scenes
 - Fixed: a startup error about listing prefix-matching accounts no longer appears on a server whose login database holds no accounts yet; an empty account list is now treated as normal, and a real database failure is still reported.
+- Raids: in trash fights the run leader now sends a loose mob to an off-tank instead of the main tank, turn by turn; the main tank keeps its stand, and a mob an off-tank already holds is left to it.
+- Raids: a bot left far behind the lead (for example after a teleport) is now summoned to it after about 8 seconds instead of the run's waits taking turns for a minute and a half, at most twice per step.
+- Fixed: in a raid trash fight the main tank no longer stands idle while an off-tank holds the pack; it joins in (no taunt).
+
+### Dashboard
+- The Commanders cards now update live: positions and fight events stream to the open tab and the bots glide between reports instead of jumping.
+- The Fight debugger now tracks many raids at once: an All raids tab with a small card for each group (its plan and step, what it is doing, its dead, the last fight's result and a small map) and one tab per group that opens that raid's full debugger, with the open tab kept in the address, the arrow keys switching tabs, a red dot for a new fight that needs a look, and a greyed tab for five minutes after a raid ends.
+- Fixed: a fight that goes on after `.bot run stop` is now recorded and listed.
+- Deaths, pulls, taunts, interrupts, elite and boss casts and kills or wipes reach the dashboard as they happen.
+- The dashboard now reads a dungeon or raid plan straight from the world database — its legs, steps, stands and each pull's pack mobs — so the raid map can show where the run leader means to go and which enemies belong to which pack.
+- The Fight debugger numbers the group's fights Pack 1, 2, 3 from the oldest up and names the mob on each card, a bot's name in the checks, the role tables, a death recap or the member panel opens that character's gear and talents, a fight that ends while watched live falls back to the finish that went worst, and one broken fight no longer holds back the others or the rest of the page.
+- The dashboard's raid card now names the raid's layout in one row: the main tank, the off-tanks, which healer follows which tank, and the raid healers. The run line also names the current step in its own words, from the plan.
+- The Commanders page switches as a whole to a Fight debugger: finished fights in a rail with the worst one opened first, plain-language checks (tank deaths, the main tank's Sunder rate, missed debuffs, overheal, idle bots, off-tank taunts, server rule warnings), a damage timeline with death recaps and skulls on the map, raid frames and per-role tables, plus a live view while the group is fighting.
+- The Live / Fight debugger switch is remembered for the page: Live stays as it was, the debugger opens on the fight that went worst and draws its deaths as skulls on the same map (one click frames a death), and picking a member rings them on the map and opens what they cast.
+- The dashboard now receives a commanders raid's live fight numbers while it fights: each bot's damage, healing, casts and last spell in the last ten seconds, so a fight can be read before it ends.
+- The Fight debugger card view has its own dark layout: raid frames with health and mana, the fight rail, the checks, the map with the fight's death spots, the timeline with the death recap, and the role tables; on a phone it reads as one column.
+- The Fight debugger keeps the last half hour of a raid's positions: where each bot and each enemy near the lead stood, every two seconds, plus who each enemy was attacking, so a fight can be replayed on the map afterwards.
+- A finished fight in the Fight debugger can be replayed on the map: play, speed and scrub controls over the raid's kept positions, sampled every 2 s, with health and the deaths where they happened, and a plain note when no positions were kept for that fight.
+- The Fight debugger now shows, for each enemy in a finished fight, who it targeted over time (sampled every 2 s); the stretches where it was on a healer or a damage dealer are marked red.
+- The new raid map and fight replay read at a glance: a dashed plan route with its stands, packs and aggro rings, layer presets as chips in the existing Layers panel, subgroup colours and healer-to-tank lines on the raid, and a scrub bar with one coloured lane per enemy under the timeline.
+- On a raid's map the bot trails can be cut to the last 30 seconds, the healer → tank links come from the raid's saved layout instead of subgroups, and a mob's line to a party member who is not a tank is drawn red.
+- The Fight debugger now opens with a run timeline: the walking stretches, every trash pack and boss as a numbered block, the deaths marked, and a Replay button with a scrubber that plays the raid across the run; each fight card shows the fight's total damage, the checks print the number that matters in bold ("57% of the fight", "2.0 per 10 s"), and the map keeps one Layers panel.
+- The map's layer panel now has raid presets (Pathing, Trash pull, Healing, Boss, All) and the plan's route, stand and aggro/wake rings as separate layers; a boss that wakes by script, like Onyxia, draws its own dashed wake ring from the server's data.
+- A Deep Breath lane on the raid map is drawn where it really lands: a 60-yard-wide red band between the two points the spell strikes, on the live map and in a fight replay, under the boss's cast countdown ring.
+- Every raid map now draws its plan under the party as its own layers, and a Layers button on the map opens the presets panel where Pathing, Trash pull, Healing, Boss and All switch them.
+- A finished fight in the Fight debugger now plays on the map, with Play, speed and a scrub bar that move the raid and a cursor along the timeline, and one lane per enemy under it; on a raid map with several floor pictures only the plan and the deaths of the floor on screen are drawn.
 
 ## v1.8.0 (2026-10-22)
 

@@ -8,6 +8,7 @@
 #include "HireSpecPolicy.h"
 #include "HireGearCache.h"
 #include "runtime/policy/hire/HireGearPolicy.h"
+#include "policy/hire/BotGearPolicy.h"
 #include "runtime/policy/provision/GearBlacklistPolicy.h"
 #include "../ai/playerbot/RandomItemMgr.h"
 #include "HireLevelPolicy.h"
@@ -472,8 +473,9 @@ HireRaidOutcome HireProvisionService::HireRaid(Player* requester, HireRaidReques
     if (!CheckHireAllowed(requester, false, gate))
         return refuse(gate.message);
 
-    // No level request: the same rule Hire() applies (the hirer's level, #936).
-    uint32_t level = ResolveHireLevel(requester->GetLevel(), 0,
+    // The level the whole roster hires at: `level=<n>` clamped by the same rule Hire()
+    // applies (#936), else the hirer's own level.
+    uint32_t level = ResolveHireLevel(requester->GetLevel(), request.level,
         sPlayerbotAIConfig.hireMaxLevelAboveHirer,
         requester->GetSession()->GetSecurity() >= static_cast<int>(SEC_GAMEMASTER)).level;
     // Same tier rule as Hire(): validated at 60, ignored below.
@@ -605,6 +607,7 @@ HireRaidOutcome HireProvisionService::HireRaid(Player* requester, HireRaidReques
     HireRaidJob job;
     job.masterGuid = masterGuid;
     job.roster = roster;
+    job.level = static_cast<uint8_t>(level);
     job.raidSized = raidSized;
     job.hadGroup = group != nullptr;
     job.startedInRaid = group && group->isRaidGroup();
@@ -677,6 +680,7 @@ void HireProvisionService::StepRaidJobs()
             sel.classId = slot.classId;
             sel.role = slot.role;
             sel.gearTier = out.tier;
+            sel.level = job.level;
             // Same druid defaults as `.bot hire`: bear tank, restoration
             // healer, cat DPS.
             if (slot.classId == CLASS_DRUID)
@@ -1556,7 +1560,8 @@ void HireProvisionService::ProvisionHireGear(Player* bot, PendingProvision const
     }
 }
 
-bool HireProvisionService::EquipHireGearSet(Player* bot, PlayerbotAI* ai, uint8_t classId, char const* specKey, uint8_t race, uint8_t tier)
+bool HireProvisionService::EquipHireGearSet(Player* bot, PlayerbotAI* ai, uint8_t classId, char const* specKey, uint8_t race, uint8_t tier,
+    uint32_t ilvlCap, bool enchants, std::vector<uint8_t>* cappedSlots)
 {
     if (!bot || !ai || !specKey)
         return false;
@@ -1567,6 +1572,16 @@ bool HireProvisionService::EquipHireGearSet(Player* bot, PlayerbotAI* ai, uint8_
         HireGearRow const* row = nullptr;
         if (!HireGearCache::Instance().FindRow(classId, specKey, race, tier, slot, row) || !row)
             continue;
+        if (ilvlCap)
+        {
+            ItemPrototype const* rowProto = sObjectMgr.GetItemPrototype(row->itemId);
+            if (rowProto && !BotGear::RowAllowed(rowProto->ItemLevel, ilvlCap))
+            {
+                if (cappedSlots)
+                    cappedSlots->push_back(slot);
+                continue;
+            }
+        }
         Item* oldItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
         if (row->itemId == 0)
         {
@@ -1596,7 +1611,7 @@ bool HireProvisionService::EquipHireGearSet(Player* bot, PlayerbotAI* ai, uint8_
             if (!bot->EquipNewItem(eDest, row->itemId, true))
                 continue;
         }
-        if (row->enchantSpell)
+        if (enchants && row->enchantSpell)
         {
             if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
                 ai->EnchantItemT(row->enchantSpell, slot, item);

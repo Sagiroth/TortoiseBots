@@ -8,6 +8,7 @@
 #include "../../runtime/HireLevelPolicy.h"
 #include "../../runtime/HireFeePolicy.h"
 #include "../../runtime/HireRaidPolicy.h"
+#include "../../runtime/policy/hire/BotGearPolicy.h"
 #include "../../runtime/HireUnlockPolicy.h"
 #include "../../runtime/RemoteCommanderView.h"
 #include <algorithm>
@@ -136,6 +137,7 @@ inline ParsedUrl parseUrl(const std::string& url) {
 void PlayerbotAIConfig::LoadDungeonRunKeys()
 {
     dungeonSelfClear = config.GetBoolDefault("AiPlayerbot.DungeonSelfClear", true);
+    dungeonRunRaid = config.GetBoolDefault("AiPlayerbot.DungeonRunRaid", false);
     dungeonRunMaxMinutes = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.DungeonRunMaxMinutes", 180)));
     dungeonRunAggroEstimate = config.GetBoolDefault("AiPlayerbot.DungeonRunAggroEstimate", false);
     dungeonRunAggroCeiling = static_cast<uint32>(std::max(1, config.GetIntDefault("AiPlayerbot.DungeonRunAggroCeiling", 6)));
@@ -609,6 +611,13 @@ bool PlayerbotAIConfig::Initialize()
             hireRaidPresets = TortoiseBots::kHireRaidPresetsDefault;
         }
     }
+    botGearPresets = config.GetStringDefault("AiPlayerbot.BotGearPresets", TortoiseBots::BotGear::kPresetsDefault);
+    if (TortoiseBots::BotGear::ParsePresets(botGearPresets).empty())
+    {
+        sLog.outError("AiPlayerbot.BotGearPresets '%s' is malformed (name=t<tier> [ilvl=<cap>];...); using the default",
+            botGearPresets.c_str());
+        botGearPresets = TortoiseBots::BotGear::kPresetsDefault;
+    }
     // Issue #490: static hire-gear tiers. Fallbacks equal the shipped
     // template values.
     hireGearTiersEnabled = config.GetBoolDefault("AiPlayerbot.HireGearTiersEnabled", true);
@@ -687,6 +696,7 @@ bool PlayerbotAIConfig::Initialize()
     remoteCommanderViewMs = TortoiseBots::RemoteCommander::View::ClampIntervalMs(
         config.GetIntDefault("AiPlayerbot.RemoteCommanderViewMs",
             static_cast<int>(TortoiseBots::RemoteCommander::View::kDefaultIntervalMs)));
+    raidEntryByCommander = config.GetBoolDefault("AiPlayerbot.RaidEntryByCommander", true);
     // Run trace (opt-in): see docs/server/run-trace.md.
     runTrace = config.GetBoolDefault("AiPlayerbot.RunTrace.Enabled", false);
     runTraceIntervalMs = TortoiseBots::RunTrace::ClampIntervalMs(
@@ -853,6 +863,7 @@ bool PlayerbotAIConfig::Initialize()
 
     rndBotCheatMask = uint32(CheatAction::GetCheatMask(config.GetStringDefault("AiPlayerbot.RndBotCheats", "repair,breath,item")));
 
+    combatMonitor = config.GetBoolDefault("AiPlayerbot.CombatMonitor", false);
     raidBossDiagnostics = config.GetBoolDefault("AiPlayerbot.RaidBossDiagnostics", false);
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.AllowedLogFiles", "bot_events.csv,deaths.csv"), allowedLogFiles);
     logRetentionDays = uint32(std::max(0, config.GetIntDefault("AiPlayerbot.LogRetentionDays", 3)));

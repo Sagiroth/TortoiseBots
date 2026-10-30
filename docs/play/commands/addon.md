@@ -91,8 +91,9 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 | `TBM:ALTBOTS\|<names>` | Comma-separated list of owned characters active as autonomous alt-bots. |
 | `TBM:VERSION\|<version>` | Handshakes server module version (e.g. `2026-10-20-v1` or `dev`). |
 | `TBM:VIEW` | Real-time perception frame lines for Remote Commander. |
-| `TBM:ACTION_ACK\|<intent>\|<scope>\|<count>\|<detail>` | Confirms action execution (`<scope>` is `party` or `bot:<Name>`). |
+| `TBM:ACTION_ACK\|<intent>\|<scope>\|<count>\|<detail>` | Confirms action execution (`<scope>` is `party`, `raid`, or `bot:<Name>`). |
 | `TBM:ACTION_ERR\|<intent>\|<code>\|<message>` | Notifies action failure with structured error code. |
+| `TBM:RAID_LAYOUT\|<bots>\|<tanks>\|<tankHealers>\|<raidHealers>\|<groups>` | Raid layout applied by `.bot commander bind <LeadBot> raid` (`<tanks>` main first, comma list; `<groups>` the real subgroups, e.g. `1=a,b;2=...`). `TBM:RAID_LAYOUT\|warning\|<text>` warns (a member not where planned) instead of an error. |
 
 ### Protocol Grammar & Semantics
 
@@ -103,6 +104,7 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
   TBM:BOTSTATE|<bot>|move=<follow|stay|guard|free|flee|custom>,loot=<on|off>,aoe=<on|off>,autocc=<on|off>,savemana=<on|off>,boost=<on|off>,threat=<on|off>,potions=<on|off>,mimic=<on|off>,spread=<on|off>,sap=<on|off>[,specs=<strategy>+<strategy>...]
   ```
   `specs` lists the spec strategies the bot fights with (for example `retribution`, `balance`, `holy+offdps`), so the addon shows the real spec.
+- **Raid Layout (`TBM:RAID_LAYOUT`):** `.bot commander bind <LeadBot> raid` sends one `TBM:RAID_LAYOUT|<bots>|<tanks>|<tankHealers>|<raidHealers>|<groups>` built from the real subgroups read back after the moves (never the plan alone); `<tanks>` lists the main tank first. Members not where planned ride a separate `TBM:RAID_LAYOUT|warning|<text>` line (a warning, not a `TBM:ACTION_ERR`). The bind ACK scope is `raid` for a raid bind (`party` otherwise).
 - **CC Assignments (`TBM:CC_ASSIGN`):** Broadcasts assigned raid marks for controllable party bots (owned alts and hires). A bot is included only if it is in your party and has the `cc` combat strategy active with an assigned raid mark (including Moon; a mark assigned without the `cc` strategy active is excluded). Ungrouped alts are excluded.
 - **Message Length Cap:** `TBM:VIEW` perception lines are packed to 250 bytes (within the WoW client addon message buffer limit of 255 bytes); `TBM:LOOT` rows shorten their two name fields to fit the same 250 bytes; other protocol lines send without truncation.
 - **Delivery Guarantees:** Drained commands run in arrival order on the world tick before the bot update; deferred bot chat and packets queued ahead of each command run first.

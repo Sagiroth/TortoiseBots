@@ -18,6 +18,7 @@
 //
 // Plain data and the standard library only.
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
@@ -31,8 +32,10 @@
 namespace TortoiseBots {
 namespace RemoteCommander {
 
-// A party is five; a bound group is never a raid.
+// A party is five; a raid binding is the only bound raid (kMaxRaidBindSize).
 constexpr size_t kMaxGroupSize = 5;
+constexpr size_t kMaxRaidBindSize = 40; // bots in a raid binding, the lead bot included
+constexpr size_t kMinRaidBindSize = 6;  // fewer: bind the party without `raid`
 // The release sweep runs at most this often, and only while a binding exists.
 constexpr uint32_t kSweepIntervalMs = 1000;
 // A move point further than this from the walkable end of its path is not on
@@ -65,12 +68,24 @@ struct Binding
     // bots, the lead bot always a bot). Real players in the group do not end
     // this binding; the lead bot still leads it.
     bool inParty = false;
+    // `.bot commander bind <LeadBot> raid`
+    bool raid = false;
     // Player-led run (`.bot run start ... player`, 2026-10-24; PlayerLedPolicy.h): the binding the start made. The
     // commander leads the party and walks it; the lead bot is the run's tank (the puller). Always inParty too.
     bool playerLed = false;
     // The server's own binding of a bot-only party (SystemRunPolicy.h): no commander; its key is the lead bot's guid; never inParty or playerLed.
     bool system = false;
 };
+
+// The binding commands this bot: its lead, or one of its followers, in the bot's own group.
+// A raid binding takes the commander out of the group, so the binding, not the group's
+// membership, is what says who commands the bot there.
+inline bool BindingCommandsBot(Binding const& b, uint64_t botGuid, uint32_t botGroupId)
+{
+    return !b.system && b.groupId != 0 && b.groupId == botGroupId &&
+        (b.leadGuid == botGuid ||
+            std::find(b.followers.begin(), b.followers.end(), botGuid) != b.followers.end());
+}
 
 enum class BindResult : uint8_t
 {
@@ -204,6 +219,8 @@ private:
 struct BindingState
 {
     bool enabled = true;          // AiPlayerbot.RemoteCommander
+    bool raidAllowed = false;   // AiPlayerbot.DungeonRunRaid (with the run leader gate)
+    bool leadGroupIsBg = false; // the lead bot's group is a battleground group
     bool commanderOnline = false; // live player with a network session
     bool leadOnline = false;      // lead bot in world
     uint32_t leadGroupId = 0;     // the lead bot's current group, 0 = none
@@ -242,6 +259,8 @@ inline ReleaseReason CheckBinding(Binding const& binding, BindingState const& st
 {
     if (!state.enabled)
         return ReleaseReason::Disabled;
+    if (binding.raid && !state.raidAllowed)
+        return ReleaseReason::Disabled;
     if (!state.commanderOnline && !binding.system)
         return ReleaseReason::CommanderLeft;
     if (!state.leadOnline)
@@ -258,14 +277,14 @@ inline ReleaseReason CheckBinding(Binding const& binding, BindingState const& st
     if (!binding.playerLed && !state.leadIsLeader)
         return ReleaseReason::LeaderChanged;
     // A bound party is never a raid, even one of five: a conversion ends the binding.
-    if (state.leadGroupIsRaidOrBg)
+    if (state.leadGroupIsRaidOrBg && (!binding.raid || state.leadGroupIsBg))
         return ReleaseReason::GroupRaid;
     // An in-party binding holds real players by design; a classic one (the
     // commander outside) ends when another player joins. The commander coming
     // back into his own bound group is no join (the glue does not count him).
     if (state.realPlayerInGroup && !binding.inParty && !binding.system)
         return ReleaseReason::PlayerJoined;
-    if (state.memberCount > kMaxGroupSize)
+    if (state.memberCount > (binding.raid ? kMaxRaidBindSize : kMaxGroupSize))
         return ReleaseReason::GroupTooLarge;
     return ReleaseReason::None;
 }
@@ -438,6 +457,7 @@ struct BindFacts
     // it. The lead bot must be in that party (leadInCommanderParty), and
     // partyPlayers counts the real players in it, the commander too.
     bool inParty = false;
+    bool raid = false; bool raidAllowed = false; bool leadIsTank = false; bool leadGroupIsBg = false;
     bool leadInCommanderParty = false;
     std::size_t partyPlayers = 0;
     // ... and the commander leads that party now: a plain member never takes the lead from its leader through a bind.
@@ -466,14 +486,70 @@ enum class BindRefusal : uint8_t
     NotInParty,
     NotLeader,
     InPartyOnly,
+    RaidOff,
+    RaidInParty,
+    RaidNotInRaid,
+    RaidLeadNotTank,
+    RaidTooSmall,
 };
 
 // The bind is refused (fail closed) unless the commander controls every bot,
 // no bot is another player's hired companion (its hire ends when it leaves
 // its hirer's party; the commander's own hires may be bound), the result is a bot-only party of two to five, and nobody else
 // commands it.
+// a raid is the commander's own raid of bots, bound with him outside it; the lead bot is its main tank
+inline BindRefusal CheckRaidBind(BindFacts const& facts)
+{
+    if (!facts.enabled)
+        return BindRefusal::Disabled;
+    if (!facts.raidAllowed)
+        return BindRefusal::RaidOff;
+    if (facts.inParty)
+        return BindRefusal::RaidInParty;
+    if (facts.commanderIsBot)
+        return BindRefusal::CommanderIsBot;
+    if (facts.commanderAlreadyBound)
+        return BindRefusal::AlreadyBound;
+    if (!facts.lead.controllable || !facts.lead.liveBot)
+        return BindRefusal::LeadNotControllable;
+    if (facts.lead.hired)
+        return BindRefusal::LeadHired;
+    if (facts.lead.inOtherBinding)
+        return BindRefusal::BotInOtherBinding;
+    if (!facts.leadInCommanderParty || !facts.leadGroupIsRaidOrBg || facts.leadGroupIsBg)
+        return BindRefusal::RaidNotInRaid;
+    if (!facts.leadIsTank)
+        return BindRefusal::RaidLeadNotTank;
+    // A raid with another real player in it is refused: the binding takes
+    // the commander out and commands the raid, never a human in it.
+    if (facts.leadGroupHasRealPlayer)
+        return BindRefusal::GroupHasPlayer;
+    if (facts.leadGroupBound)
+        return BindRefusal::GroupBound;
+    if (facts.leadBindWouldReplaceGroupBind)
+        return BindRefusal::LeadBound;
+    if (facts.members.size() + 1 < kMinRaidBindSize)
+        return BindRefusal::RaidTooSmall;
+    if (facts.members.size() + 1 > kMaxRaidBindSize)
+        return BindRefusal::GroupTooLarge;
+    for (BindMember const& member : facts.members)
+    {
+        if (!member.controllable || !member.liveBot)
+            return BindRefusal::MemberNotControllable;
+        if (member.hired)
+            return BindRefusal::MemberHired;
+        if (member.inOtherGroup)
+            return BindRefusal::MemberInOtherGroup;
+        if (member.inOtherBinding)
+            return BindRefusal::BotInOtherBinding;
+    }
+    return BindRefusal::None;
+}
+
 inline BindRefusal CheckBind(BindFacts const& facts)
 {
+    if (facts.raid)
+        return CheckRaidBind(facts);
     if (!facts.enabled)
         return facts.inPartyAllowed && !facts.inParty ? BindRefusal::InPartyOnly : BindRefusal::Disabled;
     if (facts.commanderIsBot)
@@ -550,6 +626,11 @@ inline char const* BindRefusalCode(BindRefusal refusal)
         case BindRefusal::NotInParty: return "not-in-party";
         case BindRefusal::NotLeader: return "not-leader";
         case BindRefusal::InPartyOnly: return "inparty-only";
+        case BindRefusal::RaidOff: return "raid-off";
+        case BindRefusal::RaidInParty: return "raid-inparty";
+        case BindRefusal::RaidNotInRaid: return "raid-not-raid";
+        case BindRefusal::RaidLeadNotTank: return "raid-lead-not-tank";
+        case BindRefusal::RaidTooSmall: return "raid-too-small";
     }
     return "rejected";
 }
@@ -578,6 +659,11 @@ inline char const* BindRefusalText(BindRefusal refusal)
         case BindRefusal::NotInParty: return "With inparty the lead bot must be in your party: invite it first.";
         case BindRefusal::NotLeader: return "With inparty you must lead your party: only its leader can hand the lead to a bot.";
         case BindRefusal::InPartyOnly: return "The remote commander is off (AiPlayerbot.RemoteCommander = 0): bind your own party with .bot commander bind <LeadBot> [<Bot>...] inparty for the run leader.";
+        case BindRefusal::RaidOff: return "Raid bindings are off (AiPlayerbot.DungeonRunRaid = 0).";
+        case BindRefusal::RaidInParty: return "A raid is bound with the commander outside it: drop inparty.";
+        case BindRefusal::RaidNotInRaid: return "With raid the lead bot must be in your raid group (convert your party to a raid first, e.g. .bot hire raid).";
+        case BindRefusal::RaidLeadNotTank: return "The lead bot of a raid must be a tank: it is the main tank.";
+        case BindRefusal::RaidTooSmall: return "A raid binding holds 6 to 39 bots; bind a party of five without raid.";
     }
     return "Request rejected.";
 }
@@ -610,6 +696,7 @@ enum class BindGroupPlan : uint8_t
     // group or holds another player: the old behaviour (the bots leave it and
     // form a new group).
     ReformFromCommanderParty,
+    KeepCommanderRaid,
 };
 
 struct BindPlanFacts
@@ -618,6 +705,7 @@ struct BindPlanFacts
     bool leadInOwnGroup = false;        // the lead bot is in some other group
     bool partyIsRaidOrBg = false;       // the commander's party (when shared)
     bool partyHasOtherPlayer = false;   // a human other than the commander (when shared)
+    bool raidBind = false;
 };
 
 // `.bot commander bind <LeadBot> [<Bot>...] inparty`: the last word (any case)
@@ -630,6 +718,19 @@ inline bool TakeBindInParty(std::vector<std::string>& names)
     for (char& c : last)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     if (last != "inparty")
+        return false;
+    names.pop_back();
+    return true;
+}
+
+inline bool TakeBindRaid(std::vector<std::string>& names)
+{
+    if (names.empty())
+        return false;
+    std::string last = names.back();
+    for (char& c : last)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (last != "raid")
         return false;
     names.pop_back();
     return true;
@@ -663,6 +764,7 @@ inline RunOrderVerdict ClassifyRunBoundOrder(bool bound, bool runExists, bool ru
     return runRunning ? RunOrderVerdict::IgnoreChat : RunOrderVerdict::Obey;
 }
 
+
 inline std::string RunBoundRefusalText(std::string const& commanderName)
 {
     return "These bots are bound to " + commanderName + " (.bot commander bind): only " + commanderName +
@@ -671,6 +773,8 @@ inline std::string RunBoundRefusalText(std::string const& commanderName)
 
 inline BindGroupPlan DecideBindGroup(BindPlanFacts const& facts)
 {
+    if (facts.raidBind && facts.leadInCommanderParty && facts.partyIsRaidOrBg)
+        return BindGroupPlan::KeepCommanderRaid;
     if (facts.leadInCommanderParty)
         return (facts.partyIsRaidOrBg || facts.partyHasOtherPlayer)
             ? BindGroupPlan::ReformFromCommanderParty
@@ -1525,6 +1629,57 @@ inline std::string OwnerOrderBotName(std::string const& verb, std::vector<std::s
     if ((verb == "loot" || verb == "open" || verb == "use" || verb == "gossip") && parts.size() >= 2)
         return parts[1];
     return std::string();
+}
+
+// `.bot run for <Commander> <verb> [args]`: a GameMaster drives another
+// commander's run from the console. First word the commander's name (letters
+// only, 2-12), second the run verb lower-cased (start/pause/resume/skip/stop/
+// status), the rest its arguments trimmed. A start never carries the
+// player-led word (that run is the commander's own).
+inline bool ParseRunFor(std::string const& args, std::string& commander, std::string& verb, std::string& rest)
+{
+    size_t at = 0;
+    while (at < args.size() && (args[at] == ' ' || args[at] == '\t'))
+        ++at;
+    size_t nameEnd = at;
+    while (nameEnd < args.size() && args[nameEnd] != ' ' && args[nameEnd] != '\t')
+        ++nameEnd;
+    if (nameEnd - at < 2 || nameEnd - at > 12)
+        return false;
+    for (size_t i = at; i < nameEnd; ++i)
+        if (!std::isalpha(static_cast<unsigned char>(args[i])))
+            return false;
+    commander = args.substr(at, nameEnd - at);
+    at = nameEnd;
+    while (at < args.size() && (args[at] == ' ' || args[at] == '\t'))
+        ++at;
+    size_t verbEnd = at;
+    while (verbEnd < args.size() && args[verbEnd] != ' ' && args[verbEnd] != '\t')
+        ++verbEnd;
+    verb = args.substr(at, verbEnd - at);
+    for (char& c : verb)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (verb != "start" && verb != "pause" && verb != "resume" && verb != "skip" && verb != "stop" &&
+        verb != "status")
+        return false;
+    rest.clear();
+    at = verbEnd;
+    while (at < args.size() && (args[at] == ' ' || args[at] == '\t'))
+        ++at;
+    if (at < args.size())
+    {
+        size_t end = args.size();
+        while (end > at && (args[end - 1] == ' ' || args[end - 1] == '\t'))
+            --end;
+        rest = args.substr(at, end - at);
+    }
+    if (verb == "start")
+    {
+        for (std::string const& word : SplitOrderArgs(rest))
+            if (RitualNameKey(word) == "player")
+                return false;
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------

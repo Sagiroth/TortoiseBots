@@ -17,7 +17,7 @@ def body(text, start, end="\n}\n"):
 
 class StartWiringTest(unittest.TestCase):
     def start_block(self):
-        return body(COMMANDS, "bool HandleDungeonRun(ChatHandler* handler, char const* args)")
+        return body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
 
     def test_refusal_sends_the_refusal_line(self):
         # Codex fix 3: the bot-only refusal sends the verdict's text (PlanStart's refusal), never the empty warning.
@@ -160,13 +160,13 @@ class DoorAndLegFactsWiringTest(unittest.TestCase):
         self.assertIn("TortoiseBots::DungeonRun::DoorOpenWhilePaused(slot.run, doorFacts)", block)
 
     def test_resume_goes_through_resume_checked(self):
-        run = body(COMMANDS, "bool HandleDungeonRun(ChatHandler* handler, char const* args)")
+        run = body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
         resume = body(run, 'else if (verb == "resume")', "\n    }\n")
         self.assertIn("done = ResumeChecked(slot.run, spot, refusal, door);", resume)
         self.assertNotIn("Resume(slot.run)", resume.replace("ResumeChecked(slot.run", ""))
 
     def test_resume_tells_door_not_found_from_closed(self):
-        run = body(COMMANDS, "bool HandleDungeonRun(ChatHandler* handler, char const* args)")
+        run = body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
         resume = body(run, 'else if (verb == "resume")', "\n    }\n")
         self.assertIn("ReadRunNeedFacts(slot, doorLead, doorFacts);", resume)
         self.assertIn("ResumeChecked(slot.run, spot, refusal, door)", resume)

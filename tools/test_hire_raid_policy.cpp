@@ -93,6 +93,29 @@ static void TestExplicit()
     CHECK(Parse("2 pally:healer 1 lock", r, err) && r.entries[0].classId == kHireClassPaladin && r.entries[1].classId == kHireClassWarlock);
 }
 
+static void TestLevel()
+{
+    HireRaidRequest r;
+    std::string err;
+    // `level=60` in the raid grammar, read as the single hire reads it.
+    CHECK(Parse("3t 9h 27d level=60", r, err));
+    CHECK(r.level == 60 && r.entries.size() == 3);
+    CHECK(Parse("3t 9h 27d t3 lvl:42", r, err) && r.level == 42 && r.tier == 3);
+    CHECK(Parse("3t 9h 27d level 55", r, err) && r.level == 55);
+    CHECK(Parse("3t 9h 27d", r, err) && r.level == 0);
+    // A bad level word refuses like the single hire; one level only.
+    CHECK(!Parse("3t 9h 27d level=0", r, err));
+    CHECK(!Parse("3t 9h 27d level=abc", r, err));
+    CHECK(!Parse("3t 9h 27d level=60 level=59", r, err));
+    CHECK(!Parse("3t 9h 27d level", r, err));
+    // A preset keeps a level word typed after it.
+    std::vector<HireRaidPreset> presets;
+    CHECK(ParseHireRaidPresets(kHireRaidPresetsDefault, presets));
+    std::vector<std::string> tokens = HireRaidWords("onyxia level=60");
+    CHECK(ExpandHireRaidPreset(presets, tokens));
+    CHECK(ParseHireRaidSpec(tokens, r, err) && r.level == 60 && r.tier == 3);
+}
+
 static void TestErrors()
 {
     HireRaidRequest r;
@@ -142,6 +165,10 @@ static void TestPresetExpansion()
     tokens = HireRaidWords("aq40");
     CHECK(ExpandHireRaidPreset(presets, tokens));
     CHECK(ParseHireRaidSpec(tokens, r, err) && r.entries.size() == 3 && r.tier == 5);
+    // The onyxia hire preset carries tier 3, like the gear preset of the same name.
+    tokens = HireRaidWords("onyxia");
+    CHECK(ExpandHireRaidPreset(presets, tokens));
+    CHECK(ParseHireRaidSpec(tokens, r, err) && r.entries.size() == 3 && r.tier == 3);
     uint32_t total = 0;
     for (HireRaidEntry const& e : r.entries)
         total += e.count;
@@ -204,6 +231,7 @@ int main()
 {
     TestRoleCounts();
     TestExplicit();
+    TestLevel();
     TestErrors();
     TestDefaultsParse();
     TestPresetExpansion();

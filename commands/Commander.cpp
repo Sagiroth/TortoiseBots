@@ -54,6 +54,7 @@
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/policy/combat/RunnerFinishPolicy.h"
 #include "runtime/OwnedBotQolPolicy.h"
+#include "../runtime/RaidLayoutPolicy.h"
 #include "../runtime/RemoteCommanderPolicy.h"
 #include "../ai/playerbot/SwimPathPolicy.h" // ChooseFloorZ's water fact (cmd move keeps a water point in the water)
 #include "../ai/playerbot/AiFactory.h"
@@ -62,8 +63,13 @@
 #include "../runtime/RemoteCommanderEnter.h"
 #include "../runtime/GossipOrderPolicy.h"
 #include "../runtime/CommanderTelemetry.h"
+#include "../runtime/ReadyCheckPolicy.h"
 #include "../runtime/DungeonRunPolicy.h"
 #include "../runtime/SystemRunPolicy.h"
+#include "../runtime/CombatMonitorService.h"
+#include "../runtime/CombatMonitorPolicy.h"
+#include "../runtime/BoundFightPolicy.h"
+#include "../runtime/ObservabilityEmitter.h"
 #include "../runtime/RunItemNeedPolicy.h" // item-leg skip (spec C1/D): needs + ledger, namespace TortoiseBots::RunItemNeed
 #include "../runtime/RunItemNeedFacts.h" // the leg's need facts from the party's bags (item-leg skip review round 2)
 #include "../runtime/RunGivenItemRegistry.h" // the run's given item instances (item-leg skip review round 2)
@@ -89,6 +95,8 @@
 #include "Chat.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectMgr.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "ScriptMgr.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "GameEventMgr.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -131,6 +139,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
+#include <deque>
 #include <initializer_list>
 #include <memory>
 #include <mutex>
@@ -138,6 +147,7 @@
 #include <sstream>
 #include <set>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -162,6 +172,12 @@ namespace BotCommands {
 // bot through their per-bot "manual follow target" value (the AI's own
 // FollowTargetValue override, the value behind the whispered `follow target`),
 // which the binding sets and puts back on release.
+// The raid layout (defined with ApplyRaidLayout below), used by the release
+// paths above it. A departed follower of a raid binding also leaves the
+// layout record: its focus heal targets go and it drops out of the record.
+static void ClearRaidLayout(uint32 groupId);
+static void ForgetDepartedRaidMember(uint64 followerRaw, uint32 groupId);
+
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -222,6 +238,8 @@ struct DungeonRunSlot
 {
     TortoiseBots::DungeonRun::Run run;
     std::string lastLine;     // the last TBM:RUN line sent (a line goes out on change)
+    std::deque<CommanderTelemetry::RunNoteInfo> notes; // the run's last status lines, oldest first
+    int64_t changedAt = 0;                             // unix seconds the last line went out
     uint64 carrierRaw = 0;    // the bot of the run's last loot/open/use order
     int taskReply = 0;        // its task's answer since then: 0 none, 1 ACK, 2 ERR
     std::string taskText;
@@ -742,7 +760,9 @@ void TakeRunItems(DungeonRunSlot& slot, uint64_t guid /*0 = all*/)
     }
 }
 // Every place a run slot goes away routes through this (it takes back the
-// given items first); the only caller of DungeonRuns().erase.
+// given items first); the only caller of DungeonRuns().erase. The group's
+// combat book stays: a binding still standing has its open fight fed by the
+// bound-group sampler, and only the binding's release forgets it.
 void EraseRunSlot(uint64_t commanderRaw)
 {
     auto it = DungeonRuns().find(commanderRaw);
@@ -897,6 +917,7 @@ RemoteCommander::BindingState ReadBindingState(RemoteCommander::Binding const& b
 {
     RemoteCommander::BindingState state;
     state.enabled = RemoteCommander::BindingKindEnabled(RemoteCommander::KindOf(binding), CurrentCommanderGates());
+    state.raidAllowed = sPlayerbotAIConfig.dungeonRunRaid && sPlayerbotAIConfig.dungeonSelfClear;
     Player* commander = FindCharacter(binding.commanderGuid);
     state.commanderOnline = commander && commander->GetSession() &&
         commander->GetSession()->HasNetworkTransport();
@@ -907,6 +928,7 @@ RemoteCommander::BindingState ReadBindingState(RemoteCommander::Binding const& b
         state.leadGroupId = group->GetId();
         state.leadIsLeader = group->IsLeader(lead->GetObjectGuid());
         state.leadGroupIsRaidOrBg = group->isRaidGroup() || group->isBGGroup();
+        state.leadGroupIsBg = group->isBGGroup();
         state.memberCount = group->GetMembersCount();
         // A player-led binding stands while the commander leads the party (RemoteCommander::CheckBinding).
         state.commanderIsLeader = group->IsLeader(::ObjectGuid(binding.commanderGuid));
@@ -1082,6 +1104,8 @@ uint32 ReleaseBinding(uint64 commanderRaw, RemoteCommander::ReleaseReason reason
     EraseRunSlot(commanderRaw);
     if (!removed.commanderGuid)
         return 0;
+    if (removed.raid)
+        ClearRaidLayout(removed.groupId);
     for (uint64 follower : removed.followers)
     {
         RestoreFollower(follower, removed.leadGuid);
@@ -1185,6 +1209,8 @@ uint32 ReleaseBinding(uint64 commanderRaw, RemoteCommander::ReleaseReason reason
     // After the follow targets and the threat back-off above were restored,
     // while the hires are still in the bound party.
     HireLifecycle::Instance().EndCommand(::ObjectGuid(commanderRaw));
+    if (removed.groupId)
+        TortoiseBots::CombatMonitorService::Instance().Forget(removed.groupId);
     TB_LOG_DETAIL("TortoiseBots: %s %s released group of %s: %s",
         removed.system ? "system run" : "remote commander",
         commander ? commander->GetName() : "(offline)", lead ? lead->GetName() : "(offline)",
@@ -1217,10 +1243,11 @@ void ReleaseDepartedFollowers(uint64 commanderRaw, RemoteCommander::Binding cons
         RestoreFollower(follower, leadRaw);
         RestoreCommanderThreatBackoff(follower);
         RestoreCommanderAutonomy(follower);
+        if (binding.raid)
+            ForgetDepartedRaidMember(follower, binding.groupId);
         CommanderBindings().RemoveFollower(commanderRaw, follower);
     }
 }
-
 // The requester's binding if it still stands (a stale one is released here,
 // a follower that left the group is let go).
 RemoteCommander::Binding const* StandingBinding(uint64 commanderRaw)
@@ -1647,15 +1674,52 @@ void UpdateCommanderViews(uint32 diff)
 
 } // namespace
 
+// What ApplyRaidLayout recorded, per group id, so the release undoes exactly
+// that: the previous main tank, every member's original subgroup, assistants
+// ONLY for members that were not assistants before, and the focus healers the
+// layout set. A tank healer keeps its previous focus heal snapshot (whether
+// "focus heal targets" was on and its value list); the previous main
+// assistant is kept because SetMainTank clears it when the new tank held it.
+struct RaidFocusHealer
+{
+    ObjectGuid guid;
+    bool hadStrategy = false;
+    std::list<ObjectGuid> previousTargets;
+};
+struct RaidLayoutApplied
+{
+    ObjectGuid previousMainTank;
+    bool hadMainTank = false;
+    ObjectGuid setMainTank;
+    ObjectGuid previousMainAssistant;
+    uint64_t commanderRaw = 0;
+    bool system = false;
+    // What the layout placed, as the dashboard names it (the same names the TBM:RAID_LAYOUT line carries).
+    std::string mainTank;
+    std::vector<std::string> offTanks;
+    std::vector<std::pair<std::string, std::string>> tankHealers;
+    std::vector<std::string> raidHealers;
+    std::vector<std::pair<ObjectGuid, uint8_t>> originalSubgroups;
+    std::vector<ObjectGuid> assistants;
+    std::vector<RaidFocusHealer> focusHealers;
+};
+static std::unordered_map<uint32, RaidLayoutApplied>& RaidLayouts();
+// Applies RaidLayout::Plan to the bound raid: subgroups, main tank, assist tanks, tank healers' focus heal targets.
+static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> const& bots, ChatHandler* handler, uint64_t commanderRaw);
+// Undoes it for the binding's group (or what is left of it): every member the layout changed.
+static void ClearRaidLayout(uint32 groupId);
+
 static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::string const& args)
 {
     std::string const intent = "commander bind";
     std::vector<std::string> names = RemoteCommander::SplitOrderArgs(args);
-    // `inparty` (last word): the commander and the other real players of his party stay in it (2026-10-23).
+    // `inparty` (last word): the commander and the other real players of his party stay in it (2026-10-23); `raid`
+    // (last word): the commander's own raid of bots is bound with him outside it.
     bool const inParty = RemoteCommander::TakeBindInParty(names);
-    if (names.empty() || names.size() > RemoteCommander::kMaxGroupSize)
+    bool const raidBind = RemoteCommander::TakeBindRaid(names);
+    if (names.empty() || (raidBind ? names.size() != 1 : names.size() > RemoteCommander::kMaxGroupSize))
     {
-        SendActionError(handler, intent, "invalid", "Usage: .bot commander bind <LeadBot> [<Bot> ...] [inparty] (a party of up to five)");
+        SendActionError(handler, intent, "invalid", "Usage: .bot commander bind <LeadBot> [<Bot> ...] [inparty] (a party of up to five) / .bot commander bind <LeadBot> raid (your raid of 6-39 bots)");
         return true;
     }
 
@@ -1681,6 +1745,7 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
     RemoteCommander::BindPlanFacts planFacts;
     planFacts.leadInCommanderParty = leadGroup && leadGroup == commanderParty;
     planFacts.leadInOwnGroup = leadGroup && !planFacts.leadInCommanderParty;
+    planFacts.raidBind = raidBind;
     if (planFacts.leadInCommanderParty)
     {
         planFacts.partyIsRaidOrBg = leadGroup->isRaidGroup() || leadGroup->isBGGroup();
@@ -1695,10 +1760,14 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
                                           : RemoteCommander::BindGroupPlan::FormNew)
         : RemoteCommander::DecideBindGroup(planFacts);
     facts.inParty = inParty;
+    facts.raid = raidBind;
+    facts.raidAllowed = sPlayerbotAIConfig.dungeonRunRaid && sPlayerbotAIConfig.dungeonSelfClear;
+    facts.leadIsTank = lead && PlayerbotAI::IsTank(lead);
+    facts.leadGroupIsBg = leadGroup && leadGroup->isBGGroup();
     facts.leadInCommanderParty = planFacts.leadInCommanderParty;
     // In-party: only the party's leader may hand its lead to a bot (BindRefusal::NotLeader, before anything moves).
     facts.commanderLeadsParty = commanderParty && commanderParty->IsLeader(commander->GetObjectGuid());
-    bool const keepParty = plan == RemoteCommander::BindGroupPlan::KeepCommanderParty;
+    bool const keepParty = plan == RemoteCommander::BindGroupPlan::KeepCommanderParty || plan == RemoteCommander::BindGroupPlan::KeepCommanderRaid;
     bool const leadLeavesParty = plan == RemoteCommander::BindGroupPlan::ReformFromCommanderParty;
     if (leadGroup && (keepParty || plan == RemoteCommander::BindGroupPlan::AdoptLeadGroup))
     {
@@ -1715,8 +1784,9 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
                     ++facts.partyPlayers;
 
         // A kept party is commanded as a whole: every bot in it must have been
-        // named (a bot is never taken under command without being asked).
-        if (keepParty)
+        // named (a bot is never taken under command without being asked). A
+        // kept raid is bound by the word `raid`: every bot of it is asked for.
+        if (keepParty && !raidBind)
         {
             std::vector<ObjectGuid> named;
             for (size_t i = 1; i < names.size(); ++i)
@@ -1880,6 +1950,7 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
     binding.leadGuid = lead->GetObjectGuid().GetRawValue();
     binding.groupId = group->GetId();
     binding.inParty = inParty;
+    binding.raid = raidBind;
     RemoteCommander::BindResult result = CommanderBindings().Bind(binding);
     if (result != RemoteCommander::BindResult::Bound)
     {
@@ -1896,6 +1967,8 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
     CommanderViews()[commanderRaw] = CommanderView();
 
     std::vector<Player*> bots = CommandedBots(group, lead);
+    if (raidBind)
+        ApplyRaidLayout(group, lead, bots, handler, commanderRaw);
     // Bots moved between parties inside a dungeon stay in it (no hearth 60 s later).
     for (Player* bot : bots)
         HireLifecycle::KeepInstanceAfterPartyMove(bot);
@@ -1912,8 +1985,292 @@ static bool HandleCommanderBind(ChatHandler* handler, Player* commander, std::st
         roster += (roster.empty() ? "" : ", ") + std::string(bot->GetName());
     handler->PSendSysMessage("You command %s's group: %s.%s Orders: .bot cmd <order>.", lead->GetName(), roster.c_str(),
         inParty ? " You stay in the party: the run leader orders the bots only." : "");
-    SendActionAck(handler, intent, "party", static_cast<uint32>(bots.size()), lead->GetName());
+    SendActionAck(handler, intent, raidBind ? "raid" : "party", static_cast<uint32>(bots.size()), lead->GetName());
     return true;
+}
+
+static std::unordered_map<uint32, RaidLayoutApplied>& RaidLayouts()
+{
+    static std::unordered_map<uint32, RaidLayoutApplied> layouts;
+    return layouts;
+}
+
+static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> const& bots, ChatHandler* handler, uint64_t commanderRaw)
+{
+    if (!group || !lead)
+        return;
+    std::vector<TortoiseBots::RaidLayout::Member> members;
+    members.reserve(bots.size());
+    for (Player* bot : bots)
+    {
+        if (!bot)
+            continue;
+        TortoiseBots::RaidLayout::Member member;
+        member.name = bot->GetName();
+        member.role = PlayerbotAI::IsTank(bot) ? TortoiseBots::RaidLayout::Role::Tank
+            : PlayerbotAI::IsHeal(bot) ? TortoiseBots::RaidLayout::Role::Healer
+            : TortoiseBots::RaidLayout::Role::Damage;
+        member.lead = bot == lead;
+        members.push_back(member);
+    }
+    TortoiseBots::RaidLayout::Layout layout = TortoiseBots::RaidLayout::Plan(members);
+    if (!layout.ok)
+    {
+        handler->PSendSysMessage("TBM:RAID_LAYOUT|warning|raid layout not applied: %s", ProtocolSafe(layout.error).c_str());
+        return;
+    }
+    ObjectGuid const leadGuid = lead->GetObjectGuid();
+    std::unordered_map<std::string, Player*> byName;
+    for (Player* bot : bots)
+        if (bot)
+            byName[bot->GetName()] = bot;
+    RaidLayoutApplied applied;
+    applied.hadMainTank = !group->GetMainTankGuid().IsEmpty();
+    applied.previousMainTank = group->GetMainTankGuid();
+    applied.setMainTank = leadGuid;
+    applied.previousMainAssistant = group->GetMainAssistantGuid();
+    applied.commanderRaw = commanderRaw;
+    applied.system = IsSystemBinding(commanderRaw);
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        applied.originalSubgroups.push_back({slot.guid, group->GetMemberGroup(slot.guid)});
+    std::vector<std::string> tanks;
+    std::vector<std::string> offTanks;
+    std::vector<std::string> tankHealers;
+    std::vector<std::string> raidHealers;
+    std::vector<std::string> groupLines(TortoiseBots::RaidLayout::kSubgroups);
+    std::vector<TortoiseBots::RaidLayout::SubgroupMember> moves;
+    moves.reserve(layout.placements.size());
+    std::unordered_map<uint64_t, uint8_t> plannedByGuid;
+    for (TortoiseBots::RaidLayout::Placement const& placement : layout.placements)
+    {
+        auto it = byName.find(placement.name);
+        if (it == byName.end() || !it->second || placement.subgroup >= TortoiseBots::RaidLayout::kSubgroups)
+            continue;
+        plannedByGuid[it->second->GetObjectGuid().GetRawValue()] = placement.subgroup;
+        if (placement.role == TortoiseBots::RaidLayout::Role::Tank)
+            tanks.push_back(placement.name);
+    }
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+    {
+        uint8_t current = group->GetMemberGroup(slot.guid);
+        auto planned = plannedByGuid.find(slot.guid.GetRawValue());
+        moves.push_back({slot.guid.GetRawValue(), current, planned != plannedByGuid.end() ? planned->second : current});
+    }
+    for (TortoiseBots::RaidLayout::SubgroupOp const& op : TortoiseBots::RaidLayout::PlanSubgroupMoves(moves))
+    {
+        if (op.swap)
+        {
+            Player* a = ObjectAccessor::FindPlayer(ObjectGuid(op.member));
+            Player* b = ObjectAccessor::FindPlayer(ObjectGuid(op.other));
+            if (a && b)
+                group->SwapMembersGroup(a, b);
+            else
+                group->SwapMembersGroup(ObjectGuid(op.member), ObjectGuid(op.other));
+        }
+        else if (Player* bot = ObjectAccessor::FindPlayer(ObjectGuid(op.member)))
+            group->ChangeMembersGroup(bot, op.sub);
+    }
+    for (TortoiseBots::RaidLayout::Placement const& placement : layout.placements)
+    {
+        auto it = byName.find(placement.name);
+        if (it == byName.end() || !it->second)
+            continue;
+        Player* bot = it->second;
+        ObjectGuid const guid = bot->GetObjectGuid();
+        if (placement.tankIndex >= 1 && !group->IsAssistant(guid))
+        {
+            group->SetAssistant(guid, true);
+            applied.assistants.push_back(guid);
+        }
+    }
+    group->SetMainTank(leadGuid);
+    std::unordered_map<ObjectGuid, uint8_t> realGroups;
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        realGroups[slot.guid] = group->GetMemberGroup(slot.guid);
+    std::string misplaced;
+    for (TortoiseBots::RaidLayout::Placement const& placement : layout.placements)
+    {
+        auto it = byName.find(placement.name);
+        if (it == byName.end() || !it->second)
+            continue;
+        Player* bot = it->second;
+        ObjectGuid const guid = bot->GetObjectGuid();
+        auto seen = realGroups.find(guid);
+        uint8_t const real = seen != realGroups.end() ? seen->second : placement.subgroup;
+        if (placement.tankIndex >= 1)
+            offTanks.push_back(placement.name);
+        if (real < groupLines.size())
+            groupLines[real] += (groupLines[real].empty() ? "" : ", ") + placement.name;
+        if (seen == realGroups.end() || seen->second != placement.subgroup)
+            misplaced += (misplaced.empty() ? "" : ", ") + placement.name;
+        if (placement.healsTank >= 0)
+        {
+            size_t tank = static_cast<size_t>(placement.healsTank);
+            std::string const tankName = tank < tanks.size() ? tanks[tank] : lead->GetName();
+            ObjectGuid tankGuid = leadGuid;
+            auto found = byName.find(tankName);
+            if (found != byName.end() && found->second)
+                tankGuid = found->second->GetObjectGuid();
+            tankHealers.push_back(placement.name + " -> " + tankName);
+            applied.tankHealers.emplace_back(placement.name, tankName);
+            PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+            RaidFocusHealer record;
+            record.guid = bot->GetObjectGuid();
+            if (ai && ai->GetAiObjectContext())
+            {
+                record.hadStrategy = ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT);
+                record.previousTargets =
+                    ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Get();
+                ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Set({tankGuid, bot->GetObjectGuid()});
+                ai->ChangeStrategy("+focus heal targets", BotState::BOT_STATE_COMBAT);
+            }
+            applied.focusHealers.push_back(record);
+        }
+        else if (placement.role == TortoiseBots::RaidLayout::Role::Healer)
+            raidHealers.push_back(placement.name);
+    }
+    applied.mainTank = lead->GetName();
+    applied.offTanks = offTanks;
+    applied.raidHealers = raidHealers;
+    RaidLayouts()[group->GetId()] = applied;
+    auto join = [](std::vector<std::string> const& names) -> std::string
+    {
+        if (names.empty())
+            return "-";
+        std::string out = names[0];
+        for (size_t i = 1; i < names.size(); ++i)
+            out += ", " + names[i];
+        return out;
+    };
+    std::string tanksLine = lead->GetName();
+    tanksLine += offTanks.empty() ? "" : "," + join(offTanks);
+    std::string groups;
+    for (uint8_t sub = 0; sub < TortoiseBots::RaidLayout::kSubgroups; ++sub)
+    {
+        if (groupLines[sub].empty())
+            continue;
+        groups += (groups.empty() ? "" : ";") + std::to_string(sub + 1) + "=" + groupLines[sub];
+    }
+    handler->PSendSysMessage("Raid layout: main tank %s; off-tanks %s; tank healers %s; raid healers %s; subgroups %s",
+        lead->GetName(), join(offTanks).c_str(), join(tankHealers).c_str(), join(raidHealers).c_str(), groups.c_str());
+    if (!misplaced.empty())
+        handler->PSendSysMessage("TBM:RAID_LAYOUT|warning|could not place: %s", ProtocolSafe(misplaced).c_str());
+    handler->PSendSysMessage("TBM:RAID_LAYOUT|%s|%s|%s|%s|%s", ProtocolSafe(std::to_string(bots.size())).c_str(),
+        ProtocolSafe(tanksLine).c_str(), ProtocolSafe(join(tankHealers)).c_str(), ProtocolSafe(join(raidHealers)).c_str(),
+        ProtocolSafe(groups).c_str());
+}
+
+static void RestoreRaidFocusHealer(Player* bot, RaidFocusHealer const& record)
+{
+    PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+    if (ai && ai->GetAiObjectContext())
+    {
+        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Set(record.previousTargets);
+        if (!record.hadStrategy)
+            ai->ChangeStrategy("-focus heal targets", BotState::BOT_STATE_COMBAT);
+    }
+}
+
+static void ForgetDepartedRaidMember(uint64 followerRaw, uint32 groupId)
+{
+    auto it = RaidLayouts().find(groupId);
+    if (it == RaidLayouts().end())
+        return;
+    RaidLayoutApplied& applied = it->second;
+    ObjectGuid const guid(followerRaw);
+    auto heals = std::find_if(applied.focusHealers.begin(), applied.focusHealers.end(),
+        [&](RaidFocusHealer const& record) { return record.guid == guid; });
+    if (heals != applied.focusHealers.end())
+    {
+        if (Player* bot = FindCharacter(followerRaw))
+            RestoreRaidFocusHealer(bot, *heals);
+        applied.focusHealers.erase(heals);
+    }
+    applied.assistants.erase(std::remove(applied.assistants.begin(), applied.assistants.end(), guid), applied.assistants.end());
+    applied.originalSubgroups.erase(
+        std::remove_if(applied.originalSubgroups.begin(), applied.originalSubgroups.end(),
+            [&](std::pair<ObjectGuid, uint8_t> const& entry) { return entry.first == guid; }),
+        applied.originalSubgroups.end());
+}
+
+bool IsRaidFocusHealer(Player* bot)
+{
+    if (!bot)
+        return false;
+    ObjectGuid const guid = bot->GetObjectGuid();
+    for (auto const& entry : RaidLayouts())
+    {
+        auto const& healers = entry.second.focusHealers;
+        if (std::find_if(healers.begin(), healers.end(),
+                [&](RaidFocusHealer const& record) { return record.guid == guid; }) != healers.end())
+            return true;
+    }
+    return false;
+}
+
+static void ClearRaidLayout(uint32 groupId)
+{
+    auto& layouts = RaidLayouts();
+    auto it = layouts.find(groupId);
+    if (it == layouts.end())
+        return;
+    RaidLayoutApplied applied = it->second;
+    layouts.erase(it);
+    for (RaidFocusHealer const& record : applied.focusHealers)
+        if (Player* bot = FindCharacter(record.guid.GetRawValue()))
+            RestoreRaidFocusHealer(bot, record);
+    if (Group* group = sObjectMgr.GetGroupById(groupId))
+    {
+        for (ObjectGuid const& guid : applied.assistants)
+            if (group->IsMember(guid))
+                group->SetAssistant(guid, false);
+        std::vector<TortoiseBots::RaidLayout::SubgroupMember> members;
+        auto planned = [&](ObjectGuid guid, uint8_t current) -> uint8_t
+        {
+            for (auto const& entry : applied.originalSubgroups)
+                if (entry.first == guid)
+                    return entry.second;
+            return current;
+        };
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+            members.push_back({slot.guid.GetRawValue(), group->GetMemberGroup(slot.guid), planned(slot.guid, group->GetMemberGroup(slot.guid))});
+        for (TortoiseBots::RaidLayout::SubgroupOp const& op :
+            TortoiseBots::RaidLayout::PlanSubgroupMoves(members))
+        {
+            if (op.swap)
+            {
+                Player* a = ObjectAccessor::FindPlayer(ObjectGuid(op.member));
+                Player* b = ObjectAccessor::FindPlayer(ObjectGuid(op.other));
+                if (a && b)
+                    group->SwapMembersGroup(a, b);
+                else
+                    group->SwapMembersGroup(ObjectGuid(op.member), ObjectGuid(op.other));
+            }
+            else if (Player* bot = ObjectAccessor::FindPlayer(ObjectGuid(op.member)))
+                group->ChangeMembersGroup(bot, op.sub);
+        }
+        std::string stray;
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+            for (auto const& entry : applied.originalSubgroups)
+                if (entry.first == slot.guid && group->GetMemberGroup(slot.guid) != entry.second)
+                    stray += (stray.empty() ? "" : ", ") + slot.name;
+        if (!stray.empty())
+            if (std::unique_ptr<ChatHandler> const chat = CommanderReplyHandler(applied.commanderRaw, applied.system))
+                chat->PSendSysMessage("TBM:RAID_LAYOUT|warning|subgroups not restored: %s", ProtocolSafe(stray).c_str());
+        // Read the assistant slot before the tank is restored: the core's tank
+        // flag clears the assistant when that player becomes main tank.
+        ObjectGuid const assistantNow = group->GetMainAssistantGuid();
+        // Only a main tank the layout set is put back (an empty previous one
+        // clears it); a later change by anyone else stands, and so does a later
+        // main assistant who was the saved tank (restoring him would clear it).
+        if (!applied.setMainTank.IsEmpty() && group->GetMainTankGuid() == applied.setMainTank &&
+            (applied.previousMainTank.IsEmpty() || assistantNow != applied.previousMainTank))
+            group->SetMainTank(applied.previousMainTank);
+        // The assistant goes back only into a slot that was empty before this
+        // restore, so a later choice by anyone else stands.
+        if (!applied.previousMainAssistant.IsEmpty() && assistantNow.IsEmpty())
+            group->SetMainAssistant(applied.previousMainAssistant);
+    }
 }
 
 namespace {
@@ -1942,6 +2299,19 @@ uint64 GroupBindingKey(uint32 groupId)
     return binding ? binding->commanderGuid : 0;
 }
 
+// `.bot gear raid`: the bots of the commander's bound group (through the lead
+// bot, whose group outlives the binding's cached id), else the commander's
+// own group when he runs unbound.
+Group* GearRaidGroup(Player* commander)
+{
+    if (!commander)
+        return nullptr;
+    if (RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commander->GetObjectGuid().GetRawValue()))
+        if (Player* lead = ObjectAccessor::FindPlayer(ObjectGuid(binding->leadGuid)))
+            if (lead->GetGroup())
+                return lead->GetGroup();
+    return commander->GetGroup();
+}
 
 // A server-owned binding of a bot-only party (SystemRunPolicy.h): the lead bot
 // is its own commander key. The key (or 0 with code/message set).
@@ -4269,14 +4639,19 @@ void CompleteCommanderTask(CommanderTask& task)
 // session the same packet a client sends, WorldSession::HandleAreaTriggerOpcode, which
 // runs the core's own entry path (the trigger's phase, level and condition, the raid group,
 // the per-account instance limit in MapManager::CanPlayerEnter, Player::TeleportTo with
-// the instance and group binds, Map::CanEnter). Nothing is skipped or reimplemented
-// there; JudgeEntry below only names the reason of a refusal. The lead bot goes first
+// the instance and group binds, Map::CanEnter). JudgeEntry below only names the reason of
+// a refusal, save for the commander's condition waiver (AiPlayerbot.RaidEntryByCommander):
+// a bot that fails only the trigger's condition at a raid entrance that has no area-trigger
+// script, and whose commander meets it, goes in by the same Player::TeleportTo the core
+// would use, since the core cannot be told the commander's condition for a bot. The lead
+// bot goes first
 // (it creates the group's instance bind); the followers hold at the trigger until it
 // stands in the dungeon.
 // ---------------------------------------------------------------------------
 
 // What the core's entry path asks of this bot at this trigger, for the readable reason of a refusal.
-RemoteCommander::EntryFacts GatherEntryFacts(Player* bot, AreaTriggerTeleport const* tele, MapEntry const* targetMap)
+RemoteCommander::EntryFacts GatherEntryFacts(Player* bot, uint32 triggerId, AreaTriggerTeleport const* tele,
+    MapEntry const* targetMap)
 {
     RemoteCommander::EntryFacts facts;
     facts.gm = bot->IsGameMaster();
@@ -4294,6 +4669,27 @@ RemoteCommander::EntryFacts GatherEntryFacts(Player* bot, AreaTriggerTeleport co
         !sObjectMgr.IsConditionSatisfied(tele->requiredCondition, bot, bot->GetMap(), bot, CONDITION_FROM_AREATRIGGER);
     facts.conditionMessage = tele->message;
     facts.raidMap = targetMap->IsDungeon() && targetMap->IsRaid();
+    bool const unscriptedTrigger = sScriptMgr.GetAreaTriggerScriptId(triggerId) == 0;
+    // AiPlayerbot.RaidEntryByCommander: the commander's own condition stands for the bot's when he commands the
+    // bot's raid (its member, or the binding's commander, whom a raid binding keeps out of the group) and meets
+    // it himself (the amulet Onyxia's lair asks for). A raid's entrance only, and only one with no
+    // area-trigger script: the fallback teleport would skip the script.
+    if (facts.conditionFailed && facts.raidMap && unscriptedTrigger && sPlayerbotAIConfig.raidEntryByCommander)
+    {
+        Group* group = bot->GetGroup();
+        RemoteCommander::Binding const* binding = group ? CommanderBindings().FindByGroup(group->GetId()) : nullptr;
+        Player* commander = binding ? FindCharacter(binding->commanderGuid) : nullptr;
+        bool const commanderIsRealPlayer = commander && !BotManager::Instance().IsBot(commander->GetObjectGuid());
+        // commanderIsRealPlayer implies the binding and the commander: both are found through it.
+        bool const inRaid = commanderIsRealPlayer && group && group->isRaidGroup();
+        bool const commanderOfRaid = inRaid && (group->IsMember(commander->GetObjectGuid()) ||
+            RemoteCommander::BindingCommandsBot(*binding, bot->GetObjectGuid().GetRawValue(), group->GetId()));
+        bool const commanderMeets = commanderOfRaid && commander->GetMap() &&
+            sObjectMgr.IsConditionSatisfied(tele->requiredCondition, commander, commander->GetMap(), commander,
+                CONDITION_FROM_AREATRIGGER);
+        facts.conditionWaived = RemoteCommander::WaiveCondition(sPlayerbotAIConfig.raidEntryByCommander,
+            facts.raidMap, unscriptedTrigger, commanderIsRealPlayer, commanderOfRaid, commanderMeets);
+    }
     facts.ignoreRaid = sWorld.getConfig(CONFIG_BOOL_INSTANCE_IGNORE_RAID);
     Group* group = bot->GetGroup();
     facts.inRaidGroup = group && group->isRaidGroup();
@@ -4322,7 +4718,8 @@ AreaTriggerTeleport const* InstanceEntranceOf(AreaTriggerEntry const* trigger, M
 bool SendEnterTrigger(CommanderTask& task, Player* bot, PlayerbotAI* ai, AreaTriggerTeleport const* tele,
     MapEntry const* targetMap)
 {
-    RemoteCommander::EntryVerdict const verdict = RemoteCommander::JudgeEntry(GatherEntryFacts(bot, tele, targetMap));
+    RemoteCommander::EntryFacts const facts = GatherEntryFacts(bot, task.triggerId, tele, targetMap);
+    RemoteCommander::EntryVerdict const verdict = RemoteCommander::JudgeEntry(facts);
     if (!verdict.ok)
     {
         FinishCommanderTask(task, false, 0, "", verdict.code, verdict.message);
@@ -4335,9 +4732,15 @@ bool SendEnterTrigger(CommanderTask& task, Player* bot, PlayerbotAI* ai, AreaTri
     bot->GetSession()->HandleAreaTriggerOpcode(packet);
     if (bot->IsBeingTeleported())
         return false;
+    // The core judges the bot's own trigger condition and cannot be told the commander meets it; when
+    // that waiver is what let the checks above pass, the bot goes in by the core's own teleport
+    // (MapManager::CanPlayerEnter, the instance count and Map::CanEnter still decide).
+    if (facts.conditionWaived && bot->TeleportTo(tele->destination))
+        return false;
     // The core refused: say why when the reason can be read now (the bot's state may have
     // changed with the attempt), else name the checks that only the core sees.
-    RemoteCommander::EntryVerdict const again = RemoteCommander::JudgeEntry(GatherEntryFacts(bot, tele, targetMap));
+    RemoteCommander::EntryVerdict const again = RemoteCommander::JudgeEntry(
+        GatherEntryFacts(bot, task.triggerId, tele, targetMap));
     if (!again.ok)
         FinishCommanderTask(task, false, 0, "", again.code, again.message);
     else
@@ -5352,7 +5755,8 @@ static bool CommanderEnter(ChatHandler* handler, CommanderOrder const& order,
                 (name + " is farther from the entrance than AiPlayerbot.ReactDistance. Move the group closer first.").c_str());
             return true;
         }
-        RemoteCommander::EntryVerdict const verdict = RemoteCommander::JudgeEntry(GatherEntryFacts(bot, tele, targetMap));
+        RemoteCommander::EntryVerdict const verdict = RemoteCommander::JudgeEntry(
+            GatherEntryFacts(bot, triggerId, tele, targetMap));
         if (!verdict.ok)
         {
             SendActionError(handler, intent, verdict.code, (name + ": " + verdict.message).c_str());
@@ -5906,6 +6310,19 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
 // DungeonRun::kSeeYd of it (a pack, a boss, a spot to clear, the next hop).
 // ---------------------------------------------------------------------------
 
+// Combat monitor glue (task A8b): the 1 Hz sample in the run tick and the
+// snapshot's window read, and the bound-group sampler for the groups no run
+// tick feeds (task R1).
+static void FillCommanderCombat(RemoteCommander::Binding const& binding, Player* lead,
+    CommanderTelemetry::BindingRef& ref);
+static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding const& binding, Player* lead,
+    std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& facts, DungeonRunSlot const& slot);
+static void SampleBoundFights(uint32 diff);
+static void ForgetReleasedCombatGroups(void);
+// The sampler's per-binding state, pruned beside the snapshot that fed it.
+static std::unordered_map<uint64, uint32>& s_runFedAt();
+static std::unordered_map<uint64, TortoiseBots::BoundFight::LeadAway>& s_leadAway();
+
 namespace {
 
 void SendRunLine(Player* commander, DungeonRunSlot& slot, bool force)
@@ -5914,6 +6331,20 @@ void SendRunLine(Player* commander, DungeonRunSlot& slot, bool force)
     if (!force && line == slot.lastLine)
         return;
     slot.lastLine = line;
+    // The notes ring: every line the commander's chat would get, so the dashboard shows the run's last lines.
+    TortoiseBots::DungeonRun::StatusFields const fields = TortoiseBots::DungeonRun::StatusParts(slot.run);
+    CommanderTelemetry::RunNoteInfo note;
+    note.at = static_cast<int64_t>(time(nullptr));
+    note.step = static_cast<uint32_t>(fields.step);
+    note.leg = fields.leg;
+    note.kind = fields.kind;
+    note.phase = fields.phase;
+    note.state = fields.state;
+    note.note = fields.note;
+    slot.changedAt = note.at;
+    slot.notes.push_back(std::move(note));
+    while (slot.notes.size() > CommanderTelemetry::kMaxRunNotes)
+        slot.notes.pop_front();
     if (commander && IsSystemBinding(commander->GetObjectGuid().GetRawValue()))
     {
         TB_LOG_BASIC("%s", TortoiseBots::SystemRun::LogLine(commander->GetName(), line).c_str());
@@ -7218,7 +7649,8 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
     }
     std::unordered_set<uint64> seen;
     // The mobs that have `victim` (a bot or a pet) as their victim, each once.
-    auto const addAttackers = [&](Unit* victim, bool healer, bool petVictim)
+    // `tankVictim`: the victim is a tank (an off-tank holding the mob).
+    auto const addAttackers = [&](Unit* victim, bool healer, bool petVictim, bool tankVictim)
     {
         for (Unit* attacker : victim->GetAttackers())
         {
@@ -7240,6 +7672,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
                 fact.campIdle = IdleHostilesNear(lead, attacker, TortoiseBots::DungeonRun::kGuardCampYd);
             fact.victimHealer = healer;
             fact.victimPet = petVictim;
+            fact.victimTank = tankVictim;
             fact.attackable = GroupCanAttack(lead, attacker); // never picked up when it cannot be attacked
             if (hold)
                 fact.distSpot = DistanceTo(attacker, hold->x, hold->y, hold->z);
@@ -7253,12 +7686,12 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             continue;
         // The lead bot's own mobs are leadHit / leadAttacker, not partyAttackers.
         if (bot != lead)
-            addAttackers(bot, PlayerbotAI::IsHeal(bot), false);
+            addAttackers(bot, PlayerbotAI::IsHeal(bot), false, PlayerbotAI::IsTank(bot));
         // A living pet in the world (a hunter's or warlock's, the lead's too):
         // the mobs on it come last in GuardPick, after every mob on a bot.
         Unit* pet = bot->GetPet();
         if (pet && pet->IsAlive() && pet->IsInWorld())
-            addAttackers(pet, false, true);
+            addAttackers(pet, false, true, false);
     }
 }
 
@@ -7901,7 +8334,7 @@ std::vector<TortoiseBots::DungeonRun::DoorFact> const& InstanceDoors(uint32 mapI
 static void ReadRunNeedFacts(DungeonRunSlot const& slot, Player* lead, TortoiseBots::DungeonRun::Facts& f);
 
 void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
-    TortoiseBots::DungeonRun::Facts& f)
+    TortoiseBots::DungeonRun::Facts& f, bool raid)
 {
     using namespace TortoiseBots::DungeonRun;
     f = Facts();
@@ -8000,9 +8433,33 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     }
     f.directJoinSupported = true; // a direct order waits a tick for the read (DungeonRun::HoldForDirectJoin)
     f.directJoinRead = joinWanted;
+    // Task A5: a raid binding with AiPlayerbot.DungeonRunRaid scales the run's gather, wipe level and rest floor.
+    if (raid && sPlayerbotAIConfig.dungeonRunRaid)
+        f.raid.on = true;
+    std::vector<uint32> raidHealths, raidManas; // every living bot's health, non-healer mana (the raid's rest floor)
     for (Player* bot : bots)
     {
         ++f.total;
+        bool isTank = false, isHeal = false;
+        if (f.raid.on)
+        {
+            isTank = PlayerbotAI::IsTank(bot);
+            isHeal = !isTank && PlayerbotAI::IsHeal(bot);
+        }
+        if (f.raid.on)
+        {
+            if (isTank)
+                ++f.raid.tanksTotal;
+            else if (isHeal)
+                ++f.raid.healersTotal;
+            if (!bot->IsAlive())
+            {
+                if (isTank)
+                    ++f.raid.tanksDead;
+                else if (isHeal)
+                    ++f.raid.healersDead;
+            }
+        }
         if (!bot->IsAlive())
         {
             ++f.dead;
@@ -8021,6 +8478,12 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         MemberFact member;
         member.name = bot->GetName();
         member.yd = yd;
+        // The raid trash guard sends a loose mob to a living off-tank near the
+        // lead bot and not busy with a commander task (DungeonRun::RaidTrashFight).
+        if (f.raid.on && isTank && bot != lead && bot->GetMap() == lead->GetMap() && yd <= kGuardYd &&
+            !CommanderTasks().count(bot->GetObjectGuid().GetRawValue()))
+            f.raid.offTanksAlive.push_back(member.name);
+        member.core = isTank || isHeal; // the raid's gather (the glue reads roles on raid ticks only)
         member.offPlanMap = bot->GetMapId() != slot.run.plan->map; // outside the instance (DungeonRun::PlanMapFightView)
         // Round 1 (2026-10-24): a return teleport can reach the bot only in the open world: not in a battleground,
         // its map no instance/dungeon/battleground (Map::Instanceable on the core's map entry), not on a transport,
@@ -8078,6 +8541,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             f.rezzer = true;
         uint32 const health = bot->GetMaxHealth() ? bot->GetHealth() * 100 / bot->GetMaxHealth() : 100;
         f.minHealthPct = std::min(f.minHealthPct, health);
+        if (f.raid.on)
+            raidHealths.push_back(health);
         if (bot->GetPowerType() == POWER_MANA && bot->GetMaxPower(POWER_MANA))
         {
             uint32 const mana = bot->GetPower(POWER_MANA) * 100 / bot->GetMaxPower(POWER_MANA);
@@ -8085,7 +8550,15 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 f.minHealerManaPct = std::min(f.minHealerManaPct, mana);
             else
                 f.minManaPct = std::min(f.minManaPct, mana);
+            if (f.raid.on && !PlayerbotAI::IsHeal(bot))
+                raidManas.push_back(mana);
         }
+    }
+    if (f.raid.on)
+    {
+        f.minHealthPct = TortoiseBots::RaidLayout::RestFloor(raidHealths, TortoiseBots::RaidLayout::kRaidRestIgnorePct);
+        if (!raidManas.empty())
+            f.minManaPct = TortoiseBots::RaidLayout::RestFloor(raidManas, TortoiseBots::RaidLayout::kRaidRestIgnorePct);
     }
 
     if (sPlayerbotAIConfig.dungeonRunRezHold && f.dead > 0)
@@ -9362,7 +9835,7 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
         {
             TortoiseBots::DungeonRun::Facts holdFacts;
             std::vector<Player*> const holdBots = CommandedBots(holdLead->GetGroup(), holdLead);
-            ReadRunFacts(slot, holdLead, holdBots, holdFacts);
+            ReadRunFacts(slot, holdLead, holdBots, holdFacts, binding->raid);
             ReadRunPlayers(slot, commanderRaw, holdLead, holdLead->GetGroup(), holdBots, holdFacts);
             TortoiseBots::DungeonRun::ApplyPlayerFacts(holdFacts);
             if (TortoiseBots::DungeonRun::PlayerHoldBackWhilePaused(slot.run, holdFacts, dt))
@@ -9431,13 +9904,15 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
     }
     RetireLostCarrier(slot, lead, bots);
     TortoiseBots::DungeonRun::Facts facts;
-    ReadRunFacts(slot, lead, bots, facts);
+    ReadRunFacts(slot, lead, bots, facts, binding->raid);
     // The tactic rows the server reads now (a reload may have swapped them under this run's old plan): the deferral
     // gate reads them beside the plan's own (DungeonRun::PullMayBeDeferred), in the tick and in the stand's answer below.
     slot.run.liveTactics = &ai::GetBossTactics();
     // The real players of the party (the commander and others): deaths, wipes, the regroup, the pull hold, health.
     ReadRunPlayers(slot, commanderRaw, lead, group, bots, facts);
     TortoiseBots::DungeonRun::ApplyPlayerFacts(facts);
+    // The combat monitor's 1 Hz sample of this run's fight (task A8b).
+    RefreshCombatMonitor(commanderRaw, *binding, lead, bots, facts, slot);
     // The step Tick saw: facts (and f.seen) were read for it, but the order below walks the step after it.
     std::size_t const stepBeforeTick = slot.run.step;
     std::string const order = slot.playerLed.on
@@ -10125,7 +10600,7 @@ static bool RebuildBossSpawnCache(uint32& ms, uint32& maps);
 
 // A console, remote-access or SOAP command (no session) of an account of GameMaster rank or the server console itself.
 // Such a handler runs in the world's CLI pass, on the world thread.
-static bool IsGmCliHandler(ChatHandler* handler)
+bool IsGmCliHandler(ChatHandler* handler)
 {
     if (!handler || handler->GetSession())
         return false;
@@ -10492,36 +10967,56 @@ static bool HandleBotLfgRun(ChatHandler* handler, std::string const& args, std::
     return true;
 }
 
-bool HandleDungeonRun(ChatHandler* handler, char const* args)
+// `.bot run for <Commander> <verb>`: a GameMaster drives another commander's
+// run from the console. The gate, the argument parse and the name lookup stay
+// here; the verb itself runs as the commander in RunVerbAs.
+static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,
+    std::string const& intent);
+
+static bool HandleRunFor(ChatHandler* handler, std::string const& args, std::string const& intent)
+{
+    Player* requester = Requester(handler);
+    if (requester ? !IsBotAdministrator(requester) : !IsGmCliHandler(handler))
+    {
+        SendActionError(handler, intent, "forbidden", "Only a GameMaster may drive another commander's run.");
+        return true;
+    }
+    std::string commanderName, verb, rest;
+    if (!RemoteCommander::ParseRunFor(args, commanderName, verb, rest))
+    {
+        SendActionError(handler, intent, "invalid",
+            "Usage: .bot run for <Commander> <start [plan] [from <leg|step N>] [speed=<x>]|pause|resume|skip|stop|status>");
+        return true;
+    }
+    normalizePlayerName(commanderName);
+    Player* commander = sObjectAccessor.FindPlayerByName(commanderName.c_str());
+    if (!commander || !commander->IsInWorld() || !commander->GetSession())
+    {
+        SendActionError(handler, intent, "no-commander", "That commander is not online.");
+        return true;
+    }
+    // A system binding's key is its lead bot: driving it would reach the
+    // server-owned run, so refuse it by name too.
+    if (IsSystemBinding(commander->GetObjectGuid().GetRawValue()) ||
+        BotManager::Instance().IsBot(commander->GetObjectGuid()))
+    {
+        SendActionError(handler, intent, "not-commander", "That name is a bot, not a commander.");
+        return true;
+    }
+    return RunVerbAs(handler, commander, verb, rest, "run " + verb);
+}
+
+static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,
+    std::string const& intent)
 {
     using namespace TortoiseBots::DungeonRun;
-    std::string text = Trim(args ? args : "");
-    size_t const split = text.find_first_of(" \t");
-    std::string verb = text.substr(0, split);
-    for (char& c : verb)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    std::string const rawArg = split == std::string::npos ? std::string() : Trim(text.substr(split + 1));
     std::string arg = rawArg;
     for (char& c : arg)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    std::string const intent = "run " + (verb.empty() ? std::string("unknown") : ProtocolSafe(verb));
 
-
-    // Before the in-game and run-leader checks: a GameMaster reloads from the console too, with the run leader off.
-    if (verb == "reloadplans")
-        return HandleReloadPlans(handler, intent);
-    if (verb == "lfg")
-        return HandleBotLfgRun(handler, rawArg, intent);
-    if (verb == "system")
-        return HandleSystemRun(handler, rawArg, intent);
-
-    if (verb != "start" && verb != "pause" && verb != "resume" && verb != "skip" && verb != "stop" &&
-        verb != "status" && verb != "list" && verb != "mode" && verb != "here")
-    {
-        SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from <leg|step N>] [speed=<1.0-3.0>] [player [tank <Bot>]] / pause / resume / skip / stop [reason] / status / mode / list / reloadplans (GameMaster)");
-        return true;
-    }
-    Player* commander = Requester(handler);
+    // HandleDungeonRun filters the verbs before dispatching here; the `for`
+    // path is limited to its six verbs by ParseRunFor. Every other verb
+    // reaches its branch below (list/mode/here need no binding).
     if (!commander || !commander->GetSession())
     {
         SendActionError(handler, intent, "requester", "You must be in-game.");
@@ -10651,7 +11146,7 @@ bool HandleDungeonRun(ChatHandler* handler, char const* args)
         // first that holds for anyone (DungeonRunPolicy.h CheckTestSpeed).
         if (!speedArgs.ok)
         {
-            SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from ...] [speed=<1.0-3.0>] (a test run's walking speed)");
+            SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from <leg|step N>] [until boss|step N|leg <name|N>] [speed=<1.0-3.0>] (a test run's walking speed)");
             return true;
         }
         std::string realPlayer;
@@ -10663,8 +11158,10 @@ bool HandleDungeonRun(ChatHandler* handler, char const* args)
                         realPlayer = member.name;
                         break;
                     }
+        // With `for`, the GM driving the run is the sender (the console/GM
+        // handler), not the commander the run runs as.
         SpeedRefusal const speedRefusal =
-            CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(commander));
+            CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(Requester(handler)));
         if (!speedRefusal.code.empty())
         {
             SendActionError(handler, intent, speedRefusal.code.c_str(), speedRefusal.text.c_str());
@@ -10672,11 +11169,26 @@ bool HandleDungeonRun(ChatHandler* handler, char const* args)
         }
         if (!playerLedStart.playerLed)
             arg = LowerCopy(speedArgs.rest);
+        // The until clause (`.bot run start ... until boss|step N|leg X`): a bot-led run's stop before a step.
+        // `arg` is the player-led start's rest for that mode, already lower-cased.
+        UntilArgs const untilArgs = TakeUntil(arg);
+        arg = untilArgs.rest;
+        if (playerLedStart.playerLed && untilArgs.given)
+        {
+            SendActionError(handler, intent, "invalid", "until is for bot-led runs: a player-led run follows the player.");
+            return true;
+        }
+        if (!untilArgs.ok)
+        {
+            SendActionError(handler, intent, "invalid",
+                "Usage: .bot run start [plan] [from <leg|step N>] [until boss|step N|leg <name|N>] [speed=<1.0-3.0>]");
+            return true;
+        }
         StartArgs const startArgs = ParseStartArgs(arg);
         if (!startArgs.ok)
         {
             SendActionError(handler, intent, "invalid",
-                "Usage: .bot run start [plan] [from <leg name|leg number|step N>] [speed=<1.0-3.0>] (.bot run list)");
+                "Usage: .bot run start [plan] [from <leg name|leg number|step N>] [until boss|step N|leg <name|N>] [speed=<1.0-3.0>] (.bot run list)");
             return true;
         }
         std::string name = startArgs.plan;
@@ -10721,6 +11233,41 @@ bool HandleDungeonRun(ChatHandler* handler, char const* args)
                     : ("The plan has steps 1 to " + std::to_string(plan->steps.size()) + ".").c_str());
             return true;
         }
+        // The stop the run ends before (ResolveUntilStep), from the step it starts at: the gossip that starts an
+        // event is never sent, so the stop is the step that starts it.
+        std::size_t untilStop = 0;
+        if (untilArgs.given)
+        {
+            UntilResult const until = ResolveUntilStep(*plan, untilArgs.kind, untilArgs.value, startStep,
+                [plan](std::uint32_t entry) { return ai::GetDungeonPlans().IsBossEntry(plan->map, entry); }, untilStop);
+            if (until != UntilResult::Ok)
+            {
+                switch (until)
+                {
+                    case UntilResult::NoBoss:
+                        SendActionError(handler, intent, "no-boss",
+                            ("No boss step from step " + std::to_string(startStep + 1) + " on.").c_str());
+                        break;
+                    case UntilResult::NoSuchLeg:
+                        SendActionError(handler, intent, "no-leg",
+                            "The plan has no such leg (a leg name or number from .bot run status).");
+                        break;
+                    case UntilResult::NoSuchStep:
+                        SendActionError(handler, intent, "no-step",
+                            ("The plan has steps 1 to " + std::to_string(plan->steps.size()) + ".").c_str());
+                        break;
+                    case UntilResult::AtStart:
+                        SendActionError(handler, intent, "until-at-start",
+                            ("The run would stop before its first step: until names step " +
+                                std::to_string(untilStop + 1) + ", the start is step " +
+                                std::to_string(startStep + 1) + ".").c_str());
+                        break;
+                    case UntilResult::Ok:
+                        break;
+                }
+                return true;
+            }
+        }
         // A start partway is only for a party that already stands in the instance: the steps before
         // are neither done nor checked here (the retry after a failed run, or a hand-walked party).
         if (startStep > 0)
@@ -10759,6 +11306,11 @@ bool HandleDungeonRun(ChatHandler* handler, char const* args)
         slot.run = Start(plan, startStep);
         slot.run.startStep = startStep; // a walk back never goes before it (DungeonRun::ReplayFloor)
         slot.run.testSpeed = speedArgs.rate; // 1.0 unless speed= (DungeonRun::SpeedLabel marks every line)
+        if (untilArgs.given)
+        {
+            slot.run.untilStep = untilStop;
+            slot.run.untilText = untilArgs.text;
+        }
         slot.playerLed.on = playerLedStart.playerLed;
         if (slot.playerLed.on)
             slot.playerLed.tank = lead->GetName();
@@ -10793,6 +11345,15 @@ bool HandleDungeonRun(ChatHandler* handler, char const* args)
         if (stored.run.testSpeed > 1.0f)
             handler->PSendSysMessage("Test speed %s: the party walks %s times as fast between fights (1.0 in a fight, a pull, a rest); this run is a test, never a clear.",
                 TortoiseBots::DungeonRun::Num(stored.run.testSpeed).c_str(), TortoiseBots::DungeonRun::Num(stored.run.testSpeed).c_str());
+        if (untilArgs.given)
+        {
+            ai::PlanStep const& stopStep = plan->steps[untilStop];
+            std::string const stopLeg = plan->LegName(stopStep.leg);
+            handler->PSendSysMessage("The run stops before step %u of %u (%s, %s): the party stays where it stands.",
+                static_cast<uint32>(untilStop + 1), static_cast<uint32>(plan->steps.size()),
+                ai::PlanStepKindName(stopStep.kind),
+                stopLeg.empty() ? std::to_string(stopStep.leg).c_str() : stopLeg.c_str());
+        }
         if (stored.playerLed.on)
             handler->PSendSysMessage("Run mode: %s.", TortoiseBots::PlayerLed::ModeText(stored.playerLed, true).c_str());
         SendActionAck(handler, intent, "party", static_cast<uint32>(plan->steps.size()), plan->name);
@@ -10903,6 +11464,34 @@ bool HandleDungeonRun(ChatHandler* handler, char const* args)
     SendRunLine(commander, slot, true);
     return true;
 }
+
+bool HandleDungeonRun(ChatHandler* handler, char const* args)
+{
+    std::string text = Trim(args ? args : "");
+    size_t const split = text.find_first_of(" \t");
+    std::string verb = text.substr(0, split);
+    for (char& c : verb)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    std::string const rawArg = split == std::string::npos ? std::string() : Trim(text.substr(split + 1));
+    std::string const intent = "run " + (verb.empty() ? std::string("unknown") : ProtocolSafe(verb));
+    // Before the in-game and run-leader checks: a GameMaster reloads from the console too, with the run leader off.
+    if (verb == "reloadplans")
+        return HandleReloadPlans(handler, intent);
+    if (verb == "lfg")
+        return HandleBotLfgRun(handler, rawArg, intent);
+    if (verb == "system")
+        return HandleSystemRun(handler, rawArg, intent);
+    if (verb == "for")
+        return HandleRunFor(handler, rawArg, intent);
+    if (verb != "start" && verb != "pause" && verb != "resume" && verb != "skip" && verb != "stop" &&
+        verb != "status" && verb != "list" && verb != "mode" && verb != "here")
+    {
+        SendActionError(handler, intent, "invalid", "Usage: .bot run start [plan] [from <leg|step N>] [until boss|step N|leg <name|N>] [speed=<1.0-3.0>] [player [tank <Bot>]] / pause / resume / skip / stop [reason] / status / mode / list / reloadplans (GameMaster)");
+        return true;
+    }
+    return RunVerbAs(handler, Requester(handler), verb, rawArg, intent);
+}
+
 void UpdateRemoteCommanders(uint32_t diff)
 {
     // The run's raid icons a run's end could not clear yet (its group not found then).
@@ -10942,6 +11531,8 @@ void UpdateRemoteCommanders(uint32_t diff)
     UpdateCommanderTasks(diff);
     // The run leaders (`.bot run`), after the tasks so they see this tick's answers.
     UpdateDungeonRuns(diff);
+    // The combat books of the bound groups whose run did not feed them this second.
+    SampleBoundFights(diff);
 }
 
 void NoteCommanderOrderResult(ChatHandler* handler, std::string const& intent, bool ok,
@@ -10985,6 +11576,34 @@ static uint64 CurrentSpellTargetGuid(Unit* unit)
         if (Spell* spell = unit->GetCurrentSpell(type))
             return spell->m_targets.getUnitTargetGuid().GetRawValue();
     return 0;
+}
+
+// The facing and the cast a boss or elite is running, for the dashboard's boss overlay: the unit's orientation, its
+// current spell's id and time left and total, the spell's unit target, whether it channels, and the area the spell
+// covers from the committed shape table (runtime/SpellShape.h; a spell absent from it sends no shape). Read from what
+// the unit already holds, no scan. Core: Objects/Object.h:835 and :1145, Spells/Spell.h:428-429, SpellEntry.h:1110.
+static void FillMobFacingAndCast(Unit* unit, CommanderTelemetry::MobInfo& mob)
+{
+    mob.hasO = true;
+    mob.o = unit->GetOrientation();
+    for (CurrentSpellTypes type : { CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL })
+    {
+        Spell* spell = unit->GetCurrentSpell(type);
+        if (!spell || !spell->m_spellInfo)
+            continue;
+        mob.castId = spell->m_spellInfo->Id;
+        mob.castLeftMs = spell->GetCastedTime();
+        mob.channel = type == CURRENT_CHANNELED_SPELL;
+        mob.castTotalMs = mob.channel ? static_cast<uint32>(spell->m_spellInfo->GetDuration())
+                                      : static_cast<uint32>(spell->GetCastTime());
+        mob.castTarget = spell->m_targets.getUnitTargetGuid().GetRawValue();
+        if (TortoiseBots::SpellShape::Shape const* shape = TortoiseBots::SpellShape::For(mob.castId))
+        {
+            mob.hasShape = true;
+            mob.shape = *shape;
+        }
+        return;
+    }
 }
 
 // What the dashboard calls a game object: a letter for its type, or 0 for the kinds it does not draw (mailboxes, fishing holes ...).
@@ -11232,6 +11851,160 @@ static void FillCommanderObjects(Player* lead, CommanderTelemetry::BindingRef& r
         ref.objects.push_back(std::move(found[i].second));
 }
 
+// The live cast poller's watch, one per bound commander: the mobs of its last
+// full report (guid, entry, rank) and the spell each was last seen casting, so
+// an elite or boss cast is announced once when it starts. World thread only.
+struct CommanderMobWatch
+{
+    uint32 groupId = 0;
+    uint64 leadRaw = 0;
+    std::vector<std::tuple<uint64, uint32, char>> mobs;
+    std::unordered_map<uint64, uint32> lastCast;
+};
+
+static std::unordered_map<uint64, CommanderMobWatch>& s_mobWatch()
+{
+    static std::unordered_map<uint64, CommanderMobWatch> watch;
+    return watch;
+}
+
+// The ready check's facts per bound bot, read out of combat only: the auras
+// (raid buffs and consumables) every kReadyRefreshMs, which spells are key
+// cooldowns every kKeySpellsRefreshMs, and the cooldown state with each aura
+// read. In combat the cached values are sent as they are, so a fight costs no
+// aura or spell read. World thread only.
+struct ReadyCacheEntry
+{
+    uint32 atMs = 0;
+    uint32 keySpellsAtMs = 0;
+    std::vector<uint32> keySpells;
+    uint32 buffs = 0;
+    uint32 cons = 0;
+    uint8 cdReady = 0;
+    uint8 cdKnown = 0;
+    uint32 cdLongestS = 0;
+};
+
+static std::unordered_map<uint64, ReadyCacheEntry>& s_readyCache()
+{
+    static std::unordered_map<uint64, ReadyCacheEntry> cache;
+    return cache;
+}
+
+static void ApplyReadyCache(ReadyCacheEntry const& entry, CommanderTelemetry::BotExtra& extra)
+{
+    extra.hasReady = true;
+    extra.readyBuffs = entry.buffs;
+    extra.readyCons = entry.cons;
+    extra.cdReady = entry.cdReady;
+    extra.cdKnown = entry.cdKnown;
+    extra.cdLongestS = entry.cdLongestS;
+}
+
+// One AuraFact per effect of each live, non-passive aura holder (the same skip
+// as the fight monitor's aura read). Field reads only, no map access.
+static void ReadReadyAuras(Player* bot, ReadyCacheEntry& entry)
+{
+    std::vector<TortoiseBots::ReadyCheck::AuraFact> facts;
+    for (auto const& aura : bot->GetSpellAuraHolderMap())
+    {
+        SpellAuraHolder const* holder = aura.second;
+        if (!holder || holder->IsDeleted() || holder->IsPassive())
+            continue;
+        SpellEntry const* proto = holder->GetSpellProto();
+        if (!proto)
+            continue;
+        uint32 const mask = sSpellMgr.GetSpellElixirMask(proto->Id);
+        bool const positive = holder->IsPositive();
+        bool const fromPlayer = holder->GetCasterGuid().IsPlayer();
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+        {
+            if (!proto->EffectApplyAuraName[i])
+                continue;
+            TortoiseBots::ReadyCheck::AuraFact fact;
+            fact.auraType = proto->EffectApplyAuraName[i];
+            fact.misc = proto->EffectMiscValue[i];
+            fact.family = proto->SpellFamilyName;
+            fact.elixirMask = mask;
+            fact.positive = positive;
+            fact.fromPlayer = fromPlayer;
+            facts.push_back(fact);
+        }
+    }
+    entry.buffs = TortoiseBots::ReadyCheck::BuffBits(facts);
+    entry.cons = TortoiseBots::ReadyCheck::ConsumableBits(facts);
+}
+
+// The bot's known spells as SpellCd rows: the spell map is the learned set,
+// removed and disabled entries are not castable.
+static void ReadReadyKeySpells(Player* bot, ReadyCacheEntry& entry)
+{
+    std::vector<TortoiseBots::ReadyCheck::SpellCd> spells;
+    for (auto const& known : bot->GetSpellMap())
+    {
+        if (known.second.state == PLAYERSPELL_REMOVED || known.second.disabled)
+            continue;
+        SpellEntry const* proto = sSpellMgr.GetSpellEntry(known.first);
+        if (!proto)
+            continue;
+        TortoiseBots::ReadyCheck::SpellCd cd;
+        cd.spell = known.first;
+        cd.chainFirst = sSpellMgr.GetFirstSpellInChain(known.first);
+        cd.recoveryMs = proto->RecoveryTime;
+        cd.categoryRecoveryMs = proto->CategoryRecoveryTime;
+        cd.passive = proto->IsPassiveSpell();
+        cd.family = proto->SpellFamilyName;
+        spells.push_back(cd);
+    }
+    entry.keySpells = TortoiseBots::ReadyCheck::KeySpells(spells);
+}
+
+static void ReadReadyCooldowns(Player* bot, ReadyCacheEntry& entry)
+{
+    uint8 ready = 0;
+    uint8 known = 0;
+    uint32 longest = 0;
+    for (uint32 spell : entry.keySpells)
+    {
+        ++known;
+        if (bot->HasSpellCooldown(spell))
+            longest = std::max(longest, static_cast<uint32>(bot->GetSpellCooldownDelay(spell)));
+        else
+            ++ready;
+    }
+    entry.cdReady = ready;
+    entry.cdKnown = known;
+    entry.cdLongestS = longest;
+}
+
+static void ReadReadyFacts(Player* bot, CommanderTelemetry::BotExtra& extra, uint32 nowMs)
+{
+    uint64 const raw = bot->GetObjectGuid().GetRawValue();
+    auto it = s_readyCache().find(raw);
+    if (bot->IsInCombat())
+    {
+        if (it != s_readyCache().end())
+            ApplyReadyCache(it->second, extra);
+        return;
+    }
+    bool const fresh = it == s_readyCache().end();
+    if (fresh)
+        it = s_readyCache().emplace(raw, ReadyCacheEntry()).first;
+    ReadyCacheEntry& entry = it->second;
+    if (fresh || nowMs - entry.atMs >= TortoiseBots::ReadyCheck::kReadyRefreshMs)
+    {
+        ReadReadyAuras(bot, entry);
+        if (fresh || nowMs - entry.keySpellsAtMs >= TortoiseBots::ReadyCheck::kKeySpellsRefreshMs)
+        {
+            ReadReadyKeySpells(bot, entry);
+            entry.keySpellsAtMs = nowMs;
+        }
+        ReadReadyCooldowns(bot, entry);
+        entry.atMs = nowMs;
+    }
+    ApplyReadyCache(entry, extra);
+}
+
 // The map data of one binding for the dashboard (once per 2 s snapshot cycle, only while a binding stands): the commander's
 // position when it is online and in the world, and the hostile units the commander's perception feed would list for this binding
 // (the same builder: the bots' own cached lists, resolved by guid on the lead's map, capped at kMaxHostiles; no grid or world
@@ -11239,6 +12012,10 @@ static void FillCommanderObjects(Player* lead, CommanderTelemetry::BindingRef& r
 static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player* commander, Player* lead,
     CommanderTelemetry::BindingRef& ref)
 {
+    CommanderMobWatch& watch = s_mobWatch()[binding.commanderGuid];
+    watch.groupId = ref.groupId;
+    watch.leadRaw = binding.leadGuid;
+    watch.mobs.clear();
     if (commander && ref.commanderOnline && commander->IsInWorld())
     {
         ref.commanderPlaced = true;
@@ -11261,7 +12038,8 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         CommanderTelemetry::MobInfo mob;
         mob.id = h.guid;
         mob.entry = h.entry;
-        if (Unit* unit = map ? map->GetUnit(::ObjectGuid(h.guid)) : nullptr)
+        Unit* unit = map ? map->GetUnit(::ObjectGuid(h.guid)) : nullptr;
+        if (unit)
             mob.name = unit->GetName();
         mob.hpPct = h.hpPct;
         mob.x = h.x;
@@ -11274,6 +12052,8 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         mob.cc = h.ccKind;
         if (h.casting)
             mob.cast = SpellNameOf(h.casting);
+        if (unit && (mob.rank == 'b' || mob.rank == 'e'))
+            FillMobFacingAndCast(unit, mob);
         ref.mobs.push_back(std::move(mob));
     }
     // What each bound bot is doing: the view snapshot already holds its state, newest action, cast and target; the rest are
@@ -11303,19 +12083,49 @@ static void FillCommanderMapData(RemoteCommander::Binding const& binding, Player
         if (member.target && map)
             if (Unit* target = map->GetUnit(::ObjectGuid(member.target)))
                 extra.targetName = target->GetName();
+        ReadReadyFacts(bot, extra, WorldTimer::getMSTime());
         ref.botExtras.push_back(std::move(extra));
     }
     FillCommanderObjects(lead, ref);
     FillCommanderBosses(lead, ref);
+    // The cast poller watches the mobs of this report only; the rank rides along for its boss-first order.
+    for (CommanderTelemetry::MobInfo const& mob : ref.mobs)
+        watch.mobs.emplace_back(mob.id, mob.entry, mob.rank);
+    // Forget the last-seen casts of mobs no longer reported: the map stays bounded by one report.
+    for (auto it = watch.lastCast.begin(); it != watch.lastCast.end();)
+    {
+        bool listed = false;
+        for (auto const& mob : watch.mobs)
+            if (std::get<0>(mob) == it->first)
+            {
+                listed = true;
+                break;
+            }
+        it = listed ? std::next(it) : watch.lastCast.erase(it);
+    }
+}
+
+// The name the dashboard shows for a binding's commander that has a character: its name, or "offline #<n>" while it is not in
+// the world. A system binding's "system" is the COMMANDERS branch's own word (a committed test pins it), and the position
+// report names it the same way.
+static std::string CommanderDisplayName(RemoteCommander::Binding const& binding, Player* commander)
+{
+    return commander ? commander->GetName()
+                     : "offline #" + std::to_string(::ObjectGuid(binding.commanderGuid).GetCounter());
 }
 
 void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
 {
     out.clear();
+    ForgetReleasedCombatGroups();
     // Nothing to read while no commander is bound: the common case costs a lookup.
     if (CommanderBindings().Empty())
     {
         CommanderOrderLog().Clear();
+        s_mobWatch().clear();
+        s_readyCache().clear();
+        s_runFedAt().clear();
+        s_leadAway().clear();
         return;
     }
     std::unordered_set<uint64_t> bound;
@@ -11323,7 +12133,7 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
     {
         bound.insert(commanderRaw);
         RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commanderRaw);
-        if (!binding || out.size() >= CommanderTelemetry::kMaxBindings)
+        if (!binding || out.size() >= CommanderTelemetry::kMaxCommandersReported)
             continue;
         CommanderTelemetry::BindingRef ref;
         Player* commander = FindCharacter(commanderRaw);
@@ -11336,22 +12146,175 @@ void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out)
         }
         else
         {
-            ref.commander = commander ? commander->GetName() : "offline #" + std::to_string(::ObjectGuid(commanderRaw).GetCounter());
+            ref.commander = CommanderDisplayName(*binding, commander);
             ref.commanderGuid = ::ObjectGuid(commanderRaw).GetCounter();
             ref.commanderOnline = commander && commander->GetSession() && commander->GetSession()->HasNetworkTransport();
         }
         ref.groupId = binding->groupId;
+        if (auto const laid = RaidLayouts().find(binding->groupId); laid != RaidLayouts().end())
+        {
+            ref.layout.present = true;
+            ref.layout.mainTank = laid->second.mainTank;
+            ref.layout.offTanks = laid->second.offTanks;
+            ref.layout.tankHealers = laid->second.tankHealers;
+            ref.layout.raidHealers = laid->second.raidHealers;
+        }
         auto const view = CommanderViews().find(commanderRaw);
         ref.viewOn = view != CommanderViews().end() && view->second.enabled;
         Group* group = lead ? lead->GetGroup() : nullptr;
         ref.lead = lead;
         if (group && group->GetId() == binding->groupId)
             FillCommandedBots(group, lead, ref.bots);
+        // The layout names follow the group: a bot that left it is not among the commanded bots any more, so its name
+        // drops out of the payload rather than aging in the stored record (the group is the truth for who is bound).
+        if (ref.layout.present && !ref.bots.empty())
+        {
+            std::vector<std::string> members;
+            members.reserve(ref.bots.size());
+            for (Player* bot : ref.bots)
+                members.push_back(bot->GetName());
+            ref.layout = CommanderTelemetry::CurrentRaidLayout(ref.layout, members);
+        }
         ref.orders = CommanderOrderLog().Recent(commanderRaw);
         FillCommanderMapData(*binding, commander, lead, ref);
+        FillCommanderCombat(*binding, lead, ref);
+        // The run leader's run of this binding (the dashboard's "why it waits"):
+        // StatusParts reads the run's fields, so the JSON carries the same run the chat line shows.
+        if (auto const run = DungeonRuns().find(commanderRaw); run != DungeonRuns().end())
+        {
+            TortoiseBots::DungeonRun::StatusFields const fields = TortoiseBots::DungeonRun::StatusParts(run->second.run);
+            ref.run.present = true;
+            ref.run.plan = fields.plan;
+            ref.run.state = fields.state;
+            ref.run.step = static_cast<uint32_t>(fields.step);
+            ref.run.steps = static_cast<uint32_t>(fields.steps);
+            ref.run.leg = fields.leg;
+            ref.run.kind = fields.kind;
+            ref.run.phase = fields.phase;
+            ref.run.note = fields.note;
+            ref.run.changedAt = run->second.changedAt;
+            ref.run.notes.assign(run->second.notes.begin(), run->second.notes.end());
+            if (const ai::PlanStep* step = TortoiseBots::DungeonRun::Current(run->second.run))
+                ref.run.label = step->label;
+            // Bots off the run's gather rule or the lead's map: above the gather
+            // radius of the lead bot (a party's kGatherYd, 30 yd for a raid binding)
+            // or on another map. Distance reads only, the run policy is untouched.
+            bool const raid = lead && lead->GetGroup() && lead->GetGroup()->isRaidGroup();
+            float const gatherYd = raid ? 30.0f : TortoiseBots::DungeonRun::kGatherYd;
+            for (Player* bot : ref.bots)
+            {
+                if (!bot || !lead || bot->GetMap() != lead->GetMap())
+                {
+                    if (bot)
+                        ref.awayBots.insert(bot->GetObjectGuid().GetRawValue());
+                    continue;
+                }
+                if (bot != lead && bot->GetDistance(lead) > gatherYd)
+                    ref.awayBots.insert(bot->GetObjectGuid().GetRawValue());
+            }
+        }
         out.push_back(std::move(ref));
     }
     CommanderOrderLog().Retain(bound);
+    std::unordered_set<uint64> boundBots;
+    for (CommanderTelemetry::BindingRef const& ref : out)
+        for (Player* bot : ref.bots)
+            if (bot)
+                boundBots.insert(bot->GetObjectGuid().GetRawValue());
+    for (auto it = s_mobWatch().begin(); it != s_mobWatch().end();)
+        it = bound.count(it->first) ? std::next(it) : s_mobWatch().erase(it);
+    for (auto it = s_readyCache().begin(); it != s_readyCache().end();)
+        it = boundBots.count(it->first) ? std::next(it) : s_readyCache().erase(it);
+    for (auto it = s_runFedAt().begin(); it != s_runFedAt().end();)
+        it = bound.count(it->first) ? std::next(it) : s_runFedAt().erase(it);
+    for (auto it = s_leadAway().begin(); it != s_leadAway().end();)
+        it = bound.count(it->first) ? std::next(it) : s_leadAway().erase(it);
+}
+
+// The dashboard's live positions (task S3): the bots of a bound group and the enemies its lead's last full report listed,
+// sent every 0.5 s while the group fights (and on the idle period, when one is asked for). Field reads on the bound members
+// and one guid lookup per watched enemy on the lead's map: no grid, world or DB read, nothing per bot tick. At most
+// kMaxPosBindings bindings per call from a rotating start, so more bindings than that all get a turn.
+void CollectCommanderPositions(std::vector<CommanderTelemetry::PosRef>& out, bool wantCombat, bool wantIdle)
+{
+    out.clear();
+    // Nothing to read while no commander is bound: the common case costs a lookup.
+    if (CommanderBindings().Empty())
+        return;
+    std::vector<uint64> const commanders = CommanderBindings().Commanders();
+    static size_t start = 0;
+    size_t const first = commanders.size() > CommanderTelemetry::kMaxPosBindings ? start % commanders.size() : 0;
+    size_t const count = std::min(commanders.size(), CommanderTelemetry::kMaxPosBindings);
+    start = first + count;
+    for (size_t i = 0; i < count; ++i)
+    {
+        uint64 const commanderRaw = commanders[(first + i) % commanders.size()];
+        RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commanderRaw);
+        if (!binding)
+            continue;
+        Player* lead = FindCharacter(binding->leadGuid);
+        Group* group = lead ? lead->GetGroup() : nullptr;
+        if (!lead || !group || !lead->IsInWorld() || group->GetId() != binding->groupId)
+            continue;
+        std::vector<Player*> members;
+        FillCommandedBots(group, lead, members);
+        bool combat = false;
+        for (Player* bot : members)
+            if (bot && bot->IsInCombat())
+            {
+                combat = true;
+                break;
+            }
+        if (combat ? !wantCombat : !wantIdle)
+            continue;
+        CommanderTelemetry::PosRef ref;
+        ref.commander = binding->system ? "system" : CommanderDisplayName(*binding, FindCharacter(commanderRaw));
+        ref.commanderGuid = ::ObjectGuid(commanderRaw).GetCounter();
+        ref.combat = combat;
+        ref.bots.reserve(std::min(members.size(), CommanderTelemetry::kMaxPosBots));
+        for (Player* bot : members)
+        {
+            if (ref.bots.size() >= CommanderTelemetry::kMaxPosBots)
+                break;
+            if (!bot || !bot->IsInWorld())
+                continue;
+            CommanderTelemetry::PosBot pos;
+            pos.g = bot->GetGUIDLow();
+            pos.map = bot->GetMapId();
+            pos.x = bot->GetPositionX();
+            pos.y = bot->GetPositionY();
+            pos.z = bot->GetPositionZ();
+            pos.o = bot->GetOrientation();
+            pos.alive = bot->IsAlive();
+            pos.hp = pos.alive ? bot->GetHealth() : 0;
+            pos.maxHp = bot->GetMaxHealth();
+            ref.bots.push_back(pos);
+        }
+        auto const watch = s_mobWatch().find(commanderRaw);
+        Map* map = lead->GetMap();
+        if (watch != s_mobWatch().end() && map)
+        {
+            ref.mobs.reserve(std::min(watch->second.mobs.size(), CommanderTelemetry::kMaxPosMobs));
+            for (auto const& row : watch->second.mobs)
+            {
+                if (ref.mobs.size() >= CommanderTelemetry::kMaxPosMobs)
+                    break;
+                uint64 const guid = std::get<0>(row);
+                Unit* unit = map->GetUnit(::ObjectGuid(guid));
+                if (!unit)
+                    continue;
+                CommanderTelemetry::PosMob mob;
+                mob.id = guid;
+                mob.x = unit->GetPositionX();
+                mob.y = unit->GetPositionY();
+                mob.hpPct = unit->GetMaxHealth()
+                    ? static_cast<uint32>(unit->GetHealth() * 100ull / unit->GetMaxHealth()) : 0;
+                mob.victim = unit->GetTargetGuid().GetRawValue();
+                ref.mobs.push_back(mob);
+            }
+        }
+        out.push_back(std::move(ref));
+    }
 }
 
 // One unit as the Dungeons tab shows it (issue #1101): field reads on the unit and its template, the seeing member's reaction to
@@ -11383,6 +12346,330 @@ static void FillDungeonMob(Player* seer, Unit* unit, CommanderTelemetry::MobInfo
         unit->HasUnitState(UNIT_STAT_FLEEING), unit->HasUnitState(UNIT_STAT_ROOT));
     if (uint32 const spellId = CurrentSpellId(unit))
         mob.cast = SpellNameOf(spellId);
+    if (mob.rank == 'b' || mob.rank == 'e')
+        FillMobFacingAndCast(unit, mob);
+}
+
+// The combat monitor's 1 Hz run tick (task A8b): the bound bots, in-combat
+// state, aura sample; only when Enabled(). Other workers edit the bind code.
+// The run tick stamps the commander it fed, so the bound-group sampler leaves
+// that binding to it; both are cleared with the binding.
+static std::unordered_map<uint64, uint32>& s_runFedAt()
+{
+    static std::unordered_map<uint64, uint32> fed;
+    return fed;
+}
+
+// The sampler's clock of each binding's lead being unusable, kept only while
+// its binding stands (CollectCommanderTelemetry prunes it).
+static std::unordered_map<uint64, TortoiseBots::BoundFight::LeadAway>& s_leadAway()
+{
+    static std::unordered_map<uint64, TortoiseBots::BoundFight::LeadAway> away;
+    return away;
+}
+
+// Groups the snapshot has fed before: a released binding's book is forgotten
+// here (the bind code is owned by parallel workers).
+static std::unordered_set<uint32_t>& s_combatGroups()
+{
+    static std::unordered_set<uint32_t> groups;
+    return groups;
+}
+
+// A released binding's book is forgotten here, beside the snapshot that fed
+// it (the bind code is owned by parallel workers).
+static void ForgetReleasedCombatGroups()
+{
+    for (auto it = s_combatGroups().begin(); it != s_combatGroups().end();)
+    {
+        bool standing = false;
+        for (uint64 raw : CommanderBindings().Commanders())
+            if (RemoteCommander::Binding const* b = CommanderBindings().FindByCommander(raw))
+                standing = standing || b->groupId == *it;
+        if (standing)
+            ++it;
+        else
+        {
+            TortoiseBots::CombatMonitorService::Instance().Forget(*it);
+            it = s_combatGroups().erase(it);
+        }
+    }
+}
+
+// The elite and boss cast starts of the bound groups (once per 250 ms on the
+// world thread, only while a fight runs): a guid lookup on the lead's map per
+// watched unit, no grid or world scan, at most 8 units per binding.
+void PollEnemyCasts()
+{
+    if (!TortoiseBots::CombatMonitorService::Instance().AnyInFight() || s_mobWatch().empty())
+        return;
+    for (auto& entry : s_mobWatch())
+    {
+        CommanderMobWatch& watch = entry.second;
+        if (!TortoiseBots::CombatMonitorService::Instance().InFight(watch.groupId))
+            continue;
+        Player* lead = FindCharacter(watch.leadRaw);
+        if (!lead || !lead->IsInWorld())
+            continue;
+        Map* map = lead->GetMap();
+        size_t polled = 0;
+        for (int pass = 0; pass < 2 && polled < 8; ++pass)   // rank b first, then e
+        {
+            for (auto const& mob : watch.mobs)
+            {
+                if (polled >= 8)
+                    break;
+                char const rank = std::get<2>(mob);
+                if ((rank == 'b' ? 0 : rank == 'e' ? 1 : -1) != pass)
+                    continue;
+                ++polled;
+                uint64 const guid = std::get<0>(mob);
+                Unit* unit = map->GetUnit(::ObjectGuid(guid));
+                uint32 const spellId = unit ? CurrentSpellId(unit) : 0;
+                if (spellId && spellId != watch.lastCast[guid])
+                    TortoiseBots::CombatMonitorService::Instance().NoteEnemyCast(watch.groupId, std::get<1>(mob), guid,
+                        unit->GetName(), SpellNameOf(spellId).c_str(), rank);
+                watch.lastCast[guid] = spellId;
+            }
+        }
+    }
+}
+
+static void FillCommanderCombat(RemoteCommander::Binding const& binding, Player* lead,
+    CommanderTelemetry::BindingRef& ref)
+{
+    TortoiseBots::CombatMonitorService::Instance().SyncConfig(sPlayerbotAIConfig.combatMonitor &&
+        TortoiseBots::ObservabilityEmitter::Instance().IsEnabled());
+    if (!TortoiseBots::CombatMonitorService::Instance().Enabled() || !lead)
+        return;
+    TortoiseBots::CombatMonitorService::Instance().NoteBinding(ref.groupId, ref.commander, ref.commanderGuid,
+        lead->GetMapId());
+    s_combatGroups().insert(ref.groupId);
+    ref.combatJson = TortoiseBots::CombatMonitorService::Instance().WindowJson(ref.groupId);
+}
+
+// The group's members as the combat monitor aggregates them.
+static std::vector<TortoiseBots::CombatMonitor::MemberInfo> CombatMonitorMembers(std::vector<Player*> const& bots)
+{
+    std::vector<TortoiseBots::CombatMonitor::MemberInfo> members;
+    members.reserve(bots.size());
+    for (Player* bot : bots)
+    {
+        if (!bot)
+            continue;
+        TortoiseBots::CombatMonitor::MemberInfo member;
+        member.guid = bot->GetGUIDLow();
+        member.name = bot->GetName();
+        switch (bot->GetClass())
+        {
+            case CLASS_WARRIOR: member.cls = "warrior"; break;
+            case CLASS_PALADIN: member.cls = "paladin"; break;
+            case CLASS_HUNTER: member.cls = "hunter"; break;
+            case CLASS_ROGUE: member.cls = "rogue"; break;
+            case CLASS_PRIEST: member.cls = "priest"; break;
+            case CLASS_SHAMAN: member.cls = "shaman"; break;
+            case CLASS_MAGE: member.cls = "mage"; break;
+            case CLASS_WARLOCK: member.cls = "warlock"; break;
+            case CLASS_DRUID: member.cls = "druid"; break;
+            default: member.cls = "unknown"; break;
+        }
+        member.role = PlayerbotAI::IsTank(bot) ? TortoiseBots::CombatMonitor::Role::Tank
+            : PlayerbotAI::IsHeal(bot) ? TortoiseBots::CombatMonitor::Role::Healer
+            : TortoiseBots::CombatMonitor::Role::Damage;
+        member.subgroup = bot->GetGroup() && bot->GetGroup()->isRaidGroup()
+            ? static_cast<int>(bot->GetSubGroup()) : -1;
+        members.push_back(std::move(member));
+    }
+    return members;
+}
+
+// One combat sample of a bound group (task R1): the focus unit's tracked
+// debuffs and one Refresh. The run tick hands its own engaged facts; the
+// bound-group sampler hands none and finds the fight's boss (the entry its
+// context carries) among the book's engaged creatures.
+static void FeedCombatMonitor(RemoteCommander::Binding const& binding, Player* lead,
+    std::vector<Player*> const& bots, bool anyInCombat, bool allDead,
+    TortoiseBots::CombatMonitor::FightContext const& ctx,
+    std::vector<TortoiseBots::DungeonRun::UnitFact> const* engaged)
+{
+    using namespace TortoiseBots;
+    // The focus unit (L15): the run's boss when the step is a boss step and it
+    // is engaged, else the engaged unit with the most maximum health; without
+    // engaged facts (the sampler), the fight's boss.
+    uint64_t focusGuid = 0;
+    uint32_t focusMaxHealth = 0;
+    if (engaged)
+        for (DungeonRun::UnitFact const& u : *engaged)
+        {
+            if (ctx.bossEntry && u.entry == ctx.bossEntry)
+            {
+                focusGuid = u.guid;
+                break;
+            }
+            if (u.maxHealth > focusMaxHealth)
+            {
+                focusMaxHealth = u.maxHealth;
+                focusGuid = u.guid;
+            }
+        }
+    else
+        for (CombatMonitor::EngagedUnit const& u : CombatMonitorService::Instance().EngagedNow(binding.groupId))
+            if (ctx.bossEntry && u.entry == ctx.bossEntry)
+            {
+                focusGuid = u.guid;
+                break;
+            }
+    std::vector<std::string> debuffKeysUp;
+    if (focusGuid)
+        if (Unit* focus = ObjectAccessor::GetUnit(*lead, ::ObjectGuid(focusGuid)))
+            for (auto const& entry : focus->GetSpellAuraHolderMap())
+            {
+                SpellAuraHolder const* holder = entry.second;
+                if (!holder || holder->IsDeleted() || holder->IsPassive())
+                    continue;
+                SpellEntry const* proto = holder->GetSpellProto();
+                if (!proto)
+                    continue;
+                for (std::string const& key : CombatMonitor::DebuffKeys(proto->SpellName[0],
+                    holder->GetStackAmount()))
+                    debuffKeysUp.push_back(key);
+            }
+    CombatMonitorService::Instance().Refresh(binding.groupId, CombatMonitorMembers(bots), anyInCombat, allDead,
+        ctx, debuffKeysUp, WorldTimer::getMSTime());
+}
+
+// The 1 Hz run tick's combat sample (task A8b): the bound bots, in-combat
+// state, run context and one focus unit's aura sample; only when Enabled().
+// The stamp tells the bound-group sampler this binding is the run's.
+static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding const& binding, Player* lead,
+    std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts const& facts, DungeonRunSlot const& slot)
+{
+    using namespace TortoiseBots;
+    CombatMonitorService::Instance().SyncConfig(sPlayerbotAIConfig.combatMonitor &&
+        ObservabilityEmitter::Instance().IsEnabled());
+    if (!CombatMonitorService::Instance().Enabled() || !lead || !lead->IsInWorld())
+        return;
+    s_runFedAt()[commanderRaw] = WorldTimer::getMSTime();
+    DungeonRun::StatusFields const fields = DungeonRun::StatusParts(slot.run);
+    CombatMonitor::FightContext ctx;
+    ctx.plan = fields.plan;
+    ctx.leg = fields.leg;
+    ctx.kind = fields.kind;
+    ctx.step = static_cast<uint32_t>(fields.step);
+    if (ai::PlanStep const* step = FactStep(slot.run))
+    {
+        if (step->kind == ai::PlanStepKind::Boss)
+        {
+            ctx.bossEntry = step->entry;
+            if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(step->entry))
+                ctx.bossName = info->name;
+        }
+        ctx.planned = step->entries;
+    }
+    bool const allDead = facts.total > 0 && facts.alive == 0;
+    FeedCombatMonitor(binding, lead, bots, facts.anyInCombat, allDead, ctx, &facts.engagedUnits);
+}
+
+// The bound-group sampler (task R1): every standing binding whose run did not
+// feed the combat monitor in the last kRunFedWindowMs gets a 1 Hz sample, so a
+// fight pulled without a run (or after `.bot run stop`) is recorded. The run
+// path is untouched; one sampler per second feeds the rest. A binding whose
+// lead is unusable is not sampled, and the fight it left open is closed as
+// unfinished after the lead-away grace.
+static void SampleBoundFights(uint32 diff)
+{
+    using namespace TortoiseBots;
+    static uint32 s_boundFightMs = 0;
+    static uint64 s_samples = 0, s_sumUs = 0, s_maxUs = 0;
+    static uint32 s_loggedAt = 0;
+    s_boundFightMs += diff;
+    if (s_boundFightMs < BoundFight::kSampleMs)
+        return;
+    s_boundFightMs = 0;
+    CombatMonitorService::Instance().SyncConfig(sPlayerbotAIConfig.combatMonitor &&
+        ObservabilityEmitter::Instance().IsEnabled());
+    if (!CombatMonitorService::Instance().Enabled())
+        return;
+    std::chrono::steady_clock::time_point const started = std::chrono::steady_clock::now();
+    uint32 const now = WorldTimer::getMSTime();
+    for (uint64 commanderRaw : CommanderBindings().Commanders())
+    {
+        RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commanderRaw);
+        if (!binding)
+            continue;
+        auto const fed = s_runFedAt().find(commanderRaw);
+        bool const fedEver = fed != s_runFedAt().end();
+        if (!BoundFight::SamplerFeeds(true, fedEver, fedEver ? fed->second : 0, now))
+            continue;
+        Player* lead = FindCharacter(binding->leadGuid);
+        Group* group = lead ? lead->GetGroup() : nullptr;
+        bool const leadUsable = BoundFight::LeadUsable(lead != nullptr, lead && lead->IsInWorld(),
+            group ? group->GetId() : 0, binding->groupId);
+        // The lead is gone (out of world through a map transition, no group or
+        // another one after a rejoin) and the sampler cannot feed: past the
+        // grace the fight it left open closes.
+        if (s_leadAway()[commanderRaw].Overdue(leadUsable, now))
+            CombatMonitorService::Instance().CloseUnfinished(binding->groupId, now);
+        if (!leadUsable)
+            continue;
+        std::vector<Player*> const bots = CommandedBots(group, lead);
+        bool anyInCombat = false;
+        bool allDead = !bots.empty();
+        for (Player* bot : bots)
+        {
+            anyInCombat = anyInCombat || MemberInCombat(bot);
+            allDead = allDead && !bot->IsAlive();
+        }
+        // A paused or done run keeps its plan on the fight; otherwise none.
+        CombatMonitor::FightContext ctx;
+        ctx.kind = "commander";
+        if (auto const slot = DungeonRuns().find(commanderRaw); slot != DungeonRuns().end())
+        {
+            DungeonRun::StatusFields const fields = DungeonRun::StatusParts(slot->second.run);
+            ctx.plan = fields.plan;
+            ctx.leg = fields.leg;
+            ctx.step = static_cast<uint32_t>(fields.step);
+        }
+        FeedCombatMonitor(*binding, lead, bots, anyInCombat, allDead, ctx, nullptr);
+        if (!CombatMonitorService::Instance().InFight(binding->groupId))
+            continue;
+        // The boss from data: world-boss rank, an instance-bind flag, or a plan
+        // boss step of the lead's map (the boss list's rule), most health first.
+        std::vector<BoundFight::BossCandidate> candidates;
+        for (CombatMonitor::EngagedUnit const& u : CombatMonitorService::Instance().EngagedNow(binding->groupId))
+        {
+            BoundFight::BossCandidate c;
+            c.entry = u.entry;
+            c.guid = u.guid;
+            c.name = u.name;
+            if (CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(u.entry))
+                c.boss = info->rank == CREATURE_ELITE_WORLDBOSS ||
+                    (info->flags_extra & CREATURE_FLAG_EXTRA_INSTANCE_BIND);
+            c.boss = c.boss || ai::GetDungeonPlans().IsBossEntry(lead->GetMapId(), u.entry);
+            if (Unit* unit = ObjectAccessor::GetUnit(*lead, ::ObjectGuid(u.guid)))
+                c.maxHealth = unit->GetMaxHealth();
+            candidates.push_back(std::move(c));
+        }
+        int const picked = BoundFight::PickBoss(candidates);
+        if (picked >= 0)
+            CombatMonitorService::Instance().NoteBoss(binding->groupId, candidates[picked].entry,
+                candidates[picked].name.c_str());
+    }
+    int64_t const us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - started).count();
+    ++s_samples;
+    s_sumUs += static_cast<uint64>(us);
+    s_maxUs = std::max(s_maxUs, static_cast<uint64>(us));
+    if (now - s_loggedAt >= 60000)
+    {
+        TB_LOG_DEBUG("TortoiseBots: bound fights 60s: %u samples, avg %llu us max %llu us",
+            static_cast<uint32>(s_samples), static_cast<unsigned long long>(s_sumUs / std::max<uint64>(s_samples, 1)),
+            static_cast<unsigned long long>(s_maxUs));
+        s_loggedAt = now;
+        s_samples = 0;
+        s_sumUs = 0;
+        s_maxUs = 0;
+    }
 }
 
 void CollectDungeonMobs(std::vector<DungeonMobTelemetry::RunRef>& runs)
@@ -11986,7 +13273,12 @@ bool HandleTrace(ChatHandler* handler, char const* args)
 void ClearRemoteCommanders()
 {
     CommanderOrderLog().Clear();
+    for (uint64 commanderRaw : CommanderBindings().Commanders())
+        if (RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commanderRaw))
+            if (binding->raid)
+                ClearRaidLayout(binding->groupId);
     CommanderBindings().Clear();
+    RaidLayouts().clear();
     CommanderViews().clear();
     EraseAllRunSlots(); // the given items go back first
     if (!RunSpeedBots().empty())

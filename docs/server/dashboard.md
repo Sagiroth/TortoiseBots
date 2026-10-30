@@ -29,6 +29,7 @@ Go Observability Daemon (tools/observability)
     │
     ├──► Prometheus Metrics HTTP Endpoint (:8095/metrics)
     ├──► REST API (/api/v1/status, /api/v1/bots, /api/v1/issues, /api/v1/commanders)
+    ├──► Live stream (/api/v1/live: Server-Sent Events with positions and fight events as they happen)
     └──► Embedded Web SPA Dashboard (:8095/dashboard)
 ```
 
@@ -115,6 +116,7 @@ The **Dungeons** tab provides a dedicated live overview of all active dungeon an
 Every Commanders card and Dungeons run draws a live map of its party.
 
 - **Map layers:** A collapsible **Map layers** panel above the cards chooses what every map draws. The choice is one setting for all cards and both tabs, kept in this browser (`localStorage` key `tbdash.mapLayers.v3`; a saved v2 or v1 choice is migrated once, a merged layer is on when any of its old switches was), with a **Reset to defaults** button. Eighteen rows in five groups: **Map** (map picture, grid and scale bar, zone names), **Party** (bots and lead mark, health bars and status icons, lead path, other members' paths, healer range ring and commander line), **Enemies** (enemies = hostile + neutral, critters, enemy names and boss marker, threat colours and lines, aggro range), **Lines and run** (target/heal/crowd-control lines, run events, stalls and refused orders, run timer and boss checklist) and **Objects** (doors, chests, levers, altars and gongs). Enemies, their names and the threat colours and lines are on by default; other members' paths, the healer ring, critters, aggro range, the action lines, stalls and objects are off. A layer is greyed out only when none of the data it merges is there, with the reason beside it; its saved choice is kept for when the data arrives. Each row's tooltip explains it.
+- **Boss direction and spell areas:** A boss or elite enemy also reports where it faces and the cast it is running, with the spell's own area when it has one (a cone in front, a cone behind, or a straight line through the room, such as a Deep Breath lane), so the card can draw which way the boss looks, a casting bar and the ground its spell will hit. The area comes from a table of spell ids shipped with the module, not from the boss's name; a spell the table does not know draws no area. These fields ride the existing reports (no extra traffic) and the fight replay keeps them frame by frame. See [`tools/observability/README.md`](../../tools/observability/README.md) for the field names.
 - **Enemies on a Commanders card:** When a card's party is one of the Dungeons runs (same map and a shared bot), the card draws the union by guid of the commander feed's mobs and the run's `DUNGEON_MOBS` list, so it shows every enemy the run knows rather than the feed's 24; the commander feed wins on the fields it carries (threat and targets), and the card says `N of M enemies shown` when the run's list was cut. A card with no matching run draws only the commander feed.
 - **Map pictures (`--map-dir` / `TBDASH_MAP_DIR`):** With a folder of pictures written by `turtle-agent minimap-extract` from your own client, the maps draw the game's map under the party. Every map offers the same three pictures in this order: **World map** (one entry per floor, the default), **Minimap** and **Navmesh**. A picture the folder lacks is still listed, disabled as e.g. `Minimap (none)` with its reason as the tooltip; a stored choice of a missing picture falls back to the World map and the line under the picker says why. An optional `<map id>.status.json` in the folder (at most 64 KiB, never served) gives the reason per picture, e.g. `{"minimap":{"reason":"no WMO minimap yet"}}`; without it built-in reasons are used (indoor dungeon: no minimap; extractor run without `--mmaps`: no navmesh; no `WorldMapArea` row: no world map). With no picture at all the picker is hidden and the **Map picture** layer is greyed. These are extracted game assets: never commit them.
 
@@ -133,7 +135,9 @@ It is not the live **Dungeons** tab above: that one shows the instance copies bo
 
 ### Run Leader Runs on the Commanders Tab
 
-**A run leader's run ("observe").** A party that clears a dungeon plan by itself (`.bot run`, see [Dungeon Run Leader](../play/dungeon-run-leader.md)) is a card like any other, with an `observe` badge (`observe · paused` when it stopped), its plan, step and section in the card's second line (`uldaman · step 78/205 · ancient stone keeper · pull · rest`; hover for the note and the time of the last change), and a `Run paused: <reason>` warning, so a stuck run shows its reason. It needs a module that sends the run (`run` in the `COMMANDERS` report); an older one shows the party without it.
+**A run leader's run ("observe").** A party that clears a dungeon plan by itself (`.bot run`, see [Dungeon Run Leader](../play/dungeon-run-leader.md)) is a card like any other, with an `observe` badge (`observe · paused` when it stopped), its plan, step and section in the card's second line (`uldaman · step 78/205 · ancient stone keeper · pull · rest`, or `step 78/205 · <the plan step's own description>` when the plan row carries a comment; hover for the note and the time of the last change), and a `Run paused: <reason>` warning, so a stuck run shows its reason. It needs a module that sends the run (`run` in the `COMMANDERS` report); an older one shows the party without it.
+
+**Raid layout.** A bound raid whose group the module laid out (`.bot commander bind ... raid`) shows one `Layout` row above its subgroup blocks: the main tank, the off-tanks, each tank healer as `healer -> tank` and the raid healers. It needs the layout in the `COMMANDERS` report (`layout`); an older module or a group that was never laid out shows no row.
 
 **Run steps** (a party the run leader clears, "observe"): the plan's steps for the current section - a dashed route (grey = done, blue = ahead), numbered circles for pulls and bosses (green = cleared, yellow = the step it is on, struck out = skipped), a crown and name for bosses, icons for loot, doors, rituals and stops - need a module that sends `run.plan_steps`; an older one leaves the layer greyed.
 
@@ -202,11 +206,15 @@ The daemon provides selected admin-relevant HTTP REST endpoints under `/api/v1`:
 - `GET /api/v1/server-info`: Server version metadata, active rates, and configuration status.
 - `GET /api/v1/anomalies/totals`: Cumulative session totals for anomalies and action loops.
 - `GET /api/v1/auctions`: Searchable listings currently posted on the auction house by bots and players.
+- `GET /api/v1/combat/fights`, `GET /api/v1/combat/fight/<key>`: The fights the daemon remembers, and one fight with its warnings; a fight only on disk is read from the history.
+- `GET /api/v1/combat/history/days?commander=`, `GET /api/v1/combat/history?commander=&day=`, `GET /api/v1/combat/packs?pack=&commander=&all=0|1`: The fight history: a commander's days, one day's fights, and the same pack across runs.
 - `GET /api/v1/agent-maps`: Turtle-agent run maps in the configured folder, newest first (only with `--agent-maps-dir`).
 - `GET /api/v1/agent-maps/files/<name>`: One run map, served inline (only with `--agent-maps-dir`).
 - `WS /api/v1/stream`: Real-time WebSocket event feed streaming live bot updates to connected clients.
 
 Activity counters are periodically saved to `activity-state.json` so statistics persist across daemon restarts.
+
+The fight history keeps fights for 30 days in `--fight-history-dir` (env `TBDASH_FIGHT_HISTORY_DIR`, default `<dir of --activity-state-file>/fight-history`, empty disables), one `<commander>/<YYYY-MM-DD>.jsonl` per commander per night, at most 256 MiB in all. A normal stop (SIGTERM, Ctrl+C — including a container restart) writes the fights still waiting before the daemon exits, within ten seconds: a world-database lookup still running at that point is abandoned, and the log names the fights it left unwritten. A line that cannot be written whole is cut back off the file, and when even that fails the night continues in `<YYYY-MM-DD>-1.jsonl`.
 
 <details>
 <summary>Agent maps API details</summary>

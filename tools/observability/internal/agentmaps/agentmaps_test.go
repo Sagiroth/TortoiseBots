@@ -139,11 +139,12 @@ func TestHandleList(t *testing.T) {
 		Files       []Entry `json:"files"`
 		MaxFiles    int     `json:"max_files"`
 		MaxFileSize int64   `json:"max_file_size"`
+		Enabled     bool    `json:"enabled"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload.Files) != 3 || payload.MaxFiles != MaxFiles || payload.MaxFileSize != MaxFileSize {
+	if len(payload.Files) != 3 || payload.MaxFiles != MaxFiles || payload.MaxFileSize != MaxFileSize || !payload.Enabled {
 		t.Fatalf("payload = %+v", payload)
 	}
 	if rec := get(d.HandleList, ListPrefix+"/"); rec.Code != 404 {
@@ -156,9 +157,24 @@ func TestHandleList(t *testing.T) {
 			t.Errorf("%s -> %d", method, rec.Code)
 		}
 	}
+	// No folder: the probe answers 200 with enabled=false and no files, so a page load makes no failing request.
 	var none *Dir
-	if rec := get(none.HandleList, ListPrefix); rec.Code != 404 {
-		t.Errorf("no folder -> %d", rec.Code)
+	off := get(none.HandleList, ListPrefix)
+	if off.Code != 200 {
+		t.Fatalf("no folder -> %d %s", off.Code, off.Body)
+	}
+	var disabled struct {
+		Files   []Entry `json:"files"`
+		Enabled bool    `json:"enabled"`
+	}
+	if err := json.Unmarshal(off.Body.Bytes(), &disabled); err != nil {
+		t.Fatal(err)
+	}
+	if disabled.Enabled || len(disabled.Files) != 0 || !strings.Contains(off.Body.String(), `"enabled":false`) {
+		t.Fatalf("no folder payload = %q", off.Body)
+	}
+	if rec := get(none.HandleFile, FilePrefix+"run.svg"); rec.Code != 404 {
+		t.Errorf("no folder, a file -> %d", rec.Code)
 	}
 }
 

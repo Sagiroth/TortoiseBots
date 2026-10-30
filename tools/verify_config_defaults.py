@@ -49,6 +49,10 @@ ALLOWLIST = {
         "default is the constant TortoiseBots::kHireRaidPresetsDefault "
         "(runtime/HireRaidPolicy.h); asserted equal to the template value by "
         "tools/test_verify_config_defaults.py",
+    "AiPlayerbot.BotGearPresets":
+        "default is the constant TortoiseBots::BotGear::kPresetsDefault "
+        "(runtime/policy/hire/BotGearPolicy.h); asserted equal to the template value by "
+        "tools/test_bot_gear_wiring.py",
     "AiPlayerbot.HireRaidSpread":
         "default is the constant TortoiseBots::kHireRaidSpreadDefault "
         "(runtime/HireRaidPolicy.h); asserted equal to the template value by "

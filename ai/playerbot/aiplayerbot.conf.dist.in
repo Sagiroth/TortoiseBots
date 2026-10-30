@@ -399,7 +399,11 @@ AiPlayerbot.TravelPickBudgetUs = 4000
 # composition may end in a tier word (a tier typed after the name wins).
 # The values below are the values that actually run.
 #AiPlayerbot.HireRaidSpread = tank=warrior,druid,paladin;healer=priest,priest,paladin,shaman,druid;dps=mage,warlock,rogue,hunter,warrior,mage,warlock,rogue,hunter,shaman
-#AiPlayerbot.HireRaidPresets = zg=2t 4h 13d t2;aq20=2t 4h 13d t5;onyxia=3t 10h 26d t1;mc=3t 10h 26d t3;bwl=3t 10h 26d t4;aq40=3t 10h 26d t5;naxx=3t 10h 26d t6
+#AiPlayerbot.HireRaidPresets = zg=2t 4h 13d t2;aq20=2t 4h 13d t5;onyxia=3t 10h 26d t3;mc=3t 10h 26d t3;bwl=3t 10h 26d t4;aq40=3t 10h 26d t5;naxx=3t 10h 26d t6
+# Named gear presets for `.bot gear <target> preset <name>`: `name=t<tier> [ilvl=<cap>]`, `;`-separated. The tier is the hire gear tier
+# (1 pre-raid, 2 ZG/AQ20/Lower Karazhan, 3 Molten Core/Onyxia/Timbermaw, 4 BWL/Emerald Sanctum, 5 AQ40, 6 Naxxramas, 7 Tower of Karazhan);
+# the cap keeps every item at or under that item level.
+AiPlayerbot.BotGearPresets = prebis=t1 ilvl=63;lkh=t2 ilvl=63;zg=t2 ilvl=63;aq20=t2 ilvl=63;t1=t3 ilvl=66;timbermaw=t3 ilvl=66;onyxia=t3 ilvl=66;mc=t3 ilvl=66;t2=t4 ilvl=76;bwl=t4 ilvl=76;es=t4 ilvl=76;aq40=t5 ilvl=78;naxx=t6 ilvl=83;kara40=t7 ilvl=88
 # Issue #490: static best-in-slot sets for level-60 hires (tiers 1-7 from
 # the tortoise_bots_hire_gear table). 0 = today's random hire gear only.
 # HireGearStartTier (0..7) is the tier every player has. Higher tiers are
@@ -503,6 +507,20 @@ AiPlayerbot.TravelPickBudgetUs = 4000
 # engaged hostile's threat list) every this many milliseconds. Built from what
 # the bots already track; no extra world scan. Clamped to 250..60000.
 #AiPlayerbot.RemoteCommanderViewMs = 1000
+
+# Raid entry by the commander. A raid's entrance can ask a player for something a bot
+# never has (Onyxia's lair asks for the Drakefire Amulet quest reward). With 1, a bot's
+# failed entrance condition is waived when the commander who bound it is a real player who
+# commands the bot's raid (a member of it, or the binding's commander, whom a raid binding
+# keeps outside the group) and meets that condition himself; with 0 the bot is refused as
+# before.
+# A five-player dungeon's condition is never waived, and neither is a scripted entrance's
+# (the fallback teleport would skip the trigger's script). The entrance's other
+# requirements (level, content phase, raid group, instance limit) are never waived, the
+# commander must stand in the world, and the core still checks the instance itself.
+# 0 - off: the bot's own condition decides
+# 1 - on (Default)
+#AiPlayerbot.RaidEntryByCommander = 1
 
 # Work in progress. These features are not officially released and not supported yet. Enable them at your own risk.
 # Until the official release, bug reports and feedback about them are not handled through the issue tracker; contact Hypeer directly.
@@ -854,6 +872,11 @@ AiPlayerbot.DungeonTactics = 0
 # 0 - `.bot run` is refused
 # 1 - the run leader is on (Default)
 AiPlayerbot.DungeonSelfClear = 1
+
+# Raid bindings for the run leader: `.bot commander bind <LeadBot> raid` binds the commander's own raid of 6 to 40 bots (he leaves it; the lead bot is the main tank), and the run leader uses the raid rules (wipe level, gathering and rest scaled to the raid's size). Needs AiPlayerbot.DungeonSelfClear = 1 and AiPlayerbot.RemoteCommander = 1. Switching it off releases every raid binding.
+# 0 - off (Default)
+# 1 - on
+AiPlayerbot.DungeonRunRaid = 0
 
 # Bot LFG dungeon groups: online, idle world bots of one faction and of a proven
 # dungeon's level band (table ai_bot_lfg_plan; the band is the LFT addon's) form a
@@ -2450,6 +2473,11 @@ AiPlayerbot.AllowedLogFiles = bot_events.csv,deaths.csv
 # Opt-in engaged raid boss threat snapshots (2 s) and spell-damage packet observations.
 # Requires bot_events.csv above. Hit health is a sample/estimate, not exact post-hit health.
 AiPlayerbot.RaidBossDiagnostics = 0
+
+# Per-fight combat numbers of every bound group for the observability dashboard: casts, damage, healing and overheal, damage taken, deaths with their last hits, and debuff uptime on the fought unit; one COMBAT_FIGHT datagram per fight and a rolling 10 s window. While on, a damage, heal or cast event of a player outside every bound group costs one atomic bit test (no lock); a member's event takes the monitor's lock. Needs AiPlayerbot.Observability.
+# 0 - off (Default)
+# 1 - on
+AiPlayerbot.CombatMonitor = 0
 
 # Days of bot logs to keep. The live file is plain text; every hour and at server start it is packed into
 # <name>_<date>_<time>.csv.gz next to it (named after the time it was closed), and packs older than this

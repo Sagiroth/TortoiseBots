@@ -330,6 +330,24 @@ static void TestTable()
     CHECK(table.StepCount() == 3 && table.PlanCount() == 1 && table.All().size() == 1);
 }
 
+static void TestStepLabel()
+{
+    // The row's comment is the dashboard's step label: clipped at kPlanMaxLabel bytes, never inside a UTF-8 character.
+    CHECK(PlanStepLabel("") == "");
+    CHECK(PlanStepLabel(std::string(kPlanMaxLabel, 'c')) == std::string(kPlanMaxLabel, 'c'));
+    CHECK(PlanStepLabel(std::string(kPlanMaxLabel + 40, 'c')).size() == kPlanMaxLabel);
+    CHECK(PlanStepLabel(std::string(kPlanMaxLabel - 1, 'x') + "\xC3\xA9").size() == kPlanMaxLabel - 1);
+
+    DungeonPlanTable table;
+    CHECK(table.AddPlan("onyxias_lair", 249));
+    PlanStep step = Step(0, 1, PlanStepKind::Move, -80.0f, -211.4f, -83.0f);
+    step.label = std::string(kPlanMaxLabel + 40, 'L');
+    CHECK(table.AddStep("onyxias_lair", step) == PlanStepRefusal::None);
+    table.Seal();
+    const DungeonPlan* plan = table.Find("onyxias_lair");
+    CHECK(plan && plan->steps.size() == 1 && plan->steps[0].label.size() == kPlanMaxLabel);
+}
+
 static void TestLaterOwner()
 {
     DungeonPlan plan;
@@ -751,6 +769,7 @@ int main()
     TestEntries();
     TestNormalize();
     TestTable();
+    TestStepLabel();
     TestBossEntries();
     TestBossRows();
     TestLaterOwner();

@@ -12,6 +12,7 @@
 #include "../runtime/BattlegroundQueueService.h"
 #include "../runtime/BotLfgService.h"
 #include "../runtime/ObservabilityEmitter.h"
+#include "../runtime/CombatMonitorService.h"
 #include "../runtime/RunTrace.h"
 #include "BotChatAdapter.h"
 #include "BotPacketAdapter.h"
@@ -85,12 +86,17 @@ BotHostAdapter::BotHostAdapter()
 // command); the next world tick reads the run leader's keys again (OnUpdate),
 // on the thread that reads them.
 static std::atomic<bool> s_dungeonRunKeysDue{false};
+// The same for the dashboard's live stream keys: read on the world thread.
+static std::atomic<bool> s_realtimeKeysDue{false};
 
 void BotHostAdapter::OnAfterConfigLoad(bool reload)
 {
     ModuleLog::Instance().ApplyConfig();
     if (reload)
+    {
         s_dungeonRunKeysDue.store(true);
+        s_realtimeKeysDue.store(true);
+    }
 }
 
 void BotHostAdapter::OnStartup()
@@ -155,6 +161,31 @@ void BotHostAdapter::OnStartup()
     // The dashboard's Commanders tab: the standing remote-commander bindings.
     ObservabilityEmitter::Instance().SetCommanderProvider(
         [](std::vector<CommanderTelemetry::BindingRef>& out) { BotCommands::CollectCommanderTelemetry(out); });
+    // Finished combat fights: the monitor's TakePayloads fills the payloads, the emitter sends each one.
+    // The monitor's flag follows its config key and the emitter only: ungated here, retaken on the 1 Hz tick below.
+    CombatMonitorService::Instance().SyncConfig(sPlayerbotAIConfig.combatMonitor &&
+        ObservabilityEmitter::Instance().IsEnabled());
+    ObservabilityEmitter::Instance().SetCombatProvider(
+        [](std::vector<std::string>& out) {
+            ObservabilityEmitter& emitter = ObservabilityEmitter::Instance();
+            CombatMonitorService::Instance().TakePayloads(out, emitter.ProtocolVersion(), emitter.SessionId(),
+                [&emitter]() { return emitter.SessionId() ? emitter.NextSeq() : 0; }, emitter.NowUnix());
+        });
+    // The live fight stream (COMBAT_EVENTS) on its own 100 ms cadence, and the
+    // elite/boss cast poller every 250 ms while a fight runs.
+    ObservabilityEmitter::Instance().SetCombatEventProvider(
+        [](std::vector<std::string>& out, uint32_t nowMs) {
+            ObservabilityEmitter& emitter = ObservabilityEmitter::Instance();
+            CombatMonitorService::Instance().TakeEventPayloads(out, emitter.ProtocolVersion(), emitter.SessionId(),
+                [&emitter]() { return emitter.SessionId() ? emitter.NextSeq() : 0; }, emitter.NowUnix(),
+                emitter.NowUnixMs(), nowMs, emitter.EventGapMs());
+        });
+    ObservabilityEmitter::Instance().SetEnemyCastPoller([]() { BotCommands::PollEnemyCasts(); });
+    // The live positions (COMMANDER_POS, task S3): the bound groups' bots and the lead's last-reported enemies.
+    ObservabilityEmitter::Instance().SetPositionProvider(
+        [](std::vector<CommanderTelemetry::PosRef>& out, bool wantCombat, bool wantIdle) {
+            BotCommands::CollectCommanderPositions(out, wantCombat, wantIdle);
+        });
     // The Dungeons tab (issue #1101): the mobs of every dungeon run.
     ObservabilityEmitter::Instance().SetDungeonMobProvider(
         [](std::vector<DungeonMobTelemetry::RunRef>& runs) { BotCommands::CollectDungeonMobs(runs); });
@@ -170,6 +201,9 @@ void BotHostAdapter::OnUpdate(uint32 diff)
     // AiPlayerbot.DungeonRun*) are read again from aiplayerbot.conf, only those.
     if (s_dungeonRunKeysDue.exchange(false))
         sPlayerbotAIConfig.ReloadDungeonRunKeys();
+    // The dashboard's live stream keys: read on this thread, live on `.reload config`.
+    if (s_realtimeKeysDue.exchange(false))
+        ObservabilityEmitter::Instance().ReloadRealtimeKeys();
 
     // Initialization stops before service configuration when AI is disabled.
     // Do not tick those services against an uninitialized registry/config.

@@ -412,6 +412,10 @@ public:
     // runtime/HireRaidPolicy.h and equal the shipped template.
     std::string hireRaidSpread;
     std::string hireRaidPresets;
+    // Named gear presets for `.bot gear <target> preset <name>`; parsed at
+    // use, the default lives in runtime/policy/hire/BotGearPolicy.h and
+    // equals the shipped template.
+    std::string botGearPresets;
     // Issue #490: static best-in-slot sets for level-60 hires (tiers 1-7).
     // The master switch gates the static pass; tier 0 always keeps today's
     // random hire gear. A player may hire at any tier from 0 up to the
@@ -482,6 +486,10 @@ public:
     // commander whose feed is on (`.bot commander view on|off`). Clamped to
     // 250..60000; default 1000.
     uint32 remoteCommanderViewMs = 1000;
+    // A bot's failed dungeon entrance condition (Onyxia's lair asks for the Drakefire
+    // Amulet) is waived when its commander is a real player who commands the bot's raid
+    // (a member of it, or the binding's commander) and meets it himself. On by default.
+    bool raidEntryByCommander = true;
     // Run trace (docs/server/run-trace.md): `.bot trace start <run_id>` records
     // the party's bots as bt-trace v1 JSONL. Off by default; with 0 the command
     // answers that the feature is off.
@@ -558,6 +566,8 @@ public:
     bool dungeonTactics;
     // `.bot run`: the run leader (default on).
     bool dungeonSelfClear;
+    // Raid bindings for the run leader (`.bot commander bind <LeadBot> raid`); read with dungeonSelfClear.
+    bool dungeonRunRaid = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party
@@ -851,6 +861,8 @@ public:
     // Hour (unix time / 3600) each live log was opened in.
     std::unordered_map<std::string, time_t> logHour;
 
+    // Per-fight combat numbers of every bound group for the observability dashboard.
+    bool combatMonitor = false;
     bool raidBossDiagnostics = false;
     std::list<std::string> allowedLogFiles;
     std::list<std::string> debugFilter;

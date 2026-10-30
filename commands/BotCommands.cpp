@@ -14,6 +14,9 @@
 #include "../runtime/HireSpecPolicy.h"
 #include "../runtime/HireLevelPolicy.h"
 #include "../runtime/HireTierRequestPolicy.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "../runtime/BotGearService.h"
+#include "../runtime/policy/hire/BotGearPolicy.h"
 #include "BotCommandContext.h"
 #include "../behavior/PlayerConvenience.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -232,6 +235,77 @@ bool HandleAutogear(ChatHandler* handler, char const* args)
         handler->PSendSysMessage("Warning: %s has %s equipped but no %s in the bags - auto shot will not fire until %s gets some (owned-bot maintenance or hand them over).",
             name.c_str(), rangedProto->Name1, gun ? "bullets" : "arrows", name.c_str());
     }
+    return true;
+}
+
+static char const* kBotGearUsage = "Usage: .bot gear <Name> tier <0-7> [ilvl=<N>] [noenchants] | "
+    ".bot gear raid <Commander> tier <0-7> [ilvl=<N>] [noenchants] | "
+    ".bot gear <Name|raid <Commander>> preset <name>";
+
+bool HandleBotGear(ChatHandler* handler, char const* args)
+{
+    using TortoiseBots::BotGearService;
+    Player* requester = Requester(handler);
+    if (requester ? !IsBotAdministrator(requester) : !IsGmCliHandler(handler))
+    {
+        SendActionError(handler, "gear", "forbidden", "Only a GameMaster may gear bots with .bot gear.");
+        return true;
+    }
+    TortoiseBots::BotGear::Args parsed = TortoiseBots::BotGear::Parse(Trim(args ? args : ""), sPlayerbotAIConfig.botGearPresets);
+    if (!parsed.error.empty())
+    {
+        SendActionError(handler, "gear", parsed.error.c_str(), kBotGearUsage);
+        return true;
+    }
+    std::vector<ObjectGuid> bots;
+    if (parsed.target == TortoiseBots::BotGear::Target::Bot)
+    {
+        std::string name = parsed.name;
+        Player* bot = nullptr;
+        if (normalizePlayerName(name))
+            bot = sObjectMgr.GetPlayer(name.c_str());
+        if (!bot)
+            bot = sObjectAccessor.FindPlayerByName(name.c_str());
+        if (!bot || !TortoiseBots::BotManager::Instance().IsBot(bot->GetObjectGuid()))
+        {
+            SendActionError(handler, "gear", "not-bot", "Name an online bot.");
+            return true;
+        }
+        bots.push_back(bot->GetObjectGuid());
+    }
+    else
+    {
+        std::string name = parsed.name;
+        Player* commander = nullptr;
+        if (normalizePlayerName(name))
+            commander = sObjectMgr.GetPlayer(name.c_str());
+        if (!commander)
+            commander = sObjectAccessor.FindPlayerByName(name.c_str());
+        if (!commander)
+        {
+            SendActionError(handler, "gear", "no-commander", "The commander is not online.");
+            return true;
+        }
+        Group* group = GearRaidGroup(commander);
+        if (group)
+            for (Group::MemberSlot const& slot : group->GetMemberSlots())
+                if (TortoiseBots::BotManager::Instance().IsBot(slot.guid))
+                    bots.push_back(slot.guid);
+        if (bots.empty())
+        {
+            SendActionError(handler, "gear", "no-bots", "The commander's group holds no bots.");
+            return true;
+        }
+    }
+    uint64_t requesterGuid = requester ? requester->GetObjectGuid().GetRawValue() : 0;
+    if (!BotGearService::Instance().Queue(requesterGuid, bots, parsed))
+    {
+        SendActionError(handler, "gear", "busy", "A gear job is already running.");
+        return true;
+    }
+    if (!requester)
+        handler->PSendSysMessage("Gearing %u bots: tier %u, ilvl cap %u", static_cast<uint32_t>(bots.size()),
+            static_cast<uint32_t>(parsed.tier), parsed.ilvlCap);
     return true;
 }
 
@@ -491,6 +565,7 @@ static BotCommandEntry const botCommands[] = {
     {"summon", HandleSummon, "summon <online bot name>", {}, AlwaysVisible},
     {"maintenance", HandleMaintenance, "maintenance <online bot name>", {}, AlwaysVisible},
     {"autogear", HandleAutogear, "autogear <online bot name> [quality|ilvl]", {}, AlwaysVisible},
+    {"gear", HandleBotGear, "gear <bot|raid commander> tier|preset", {}, AlwaysVisible},
     {"hire", HandleHire, "hire <class> [dps/tank/healer] ... | hire raid <preset> [tier]", {}, AlwaysVisible},
     {"pool", HandlePool, "pool <status|accounts|adopt ...>", {}, AlwaysVisible},
     {"loot", HandleLoot, "loot [on/off]", {}, AlwaysVisible},

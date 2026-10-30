@@ -94,6 +94,9 @@ struct HireRaidJob
 {
     ObjectGuid masterGuid;
     std::vector<HireRaidSlot> roster;
+    // The resolved hire level of the whole roster (HireLevelPolicy.h; the
+    // requester's level unless `level=` asked for another).
+    uint8_t level = 0;
     size_t cursor = 0;
     // The finished raid outgrows a party (members + mustering + plan > 5).
     // A solo master has no group to convert when the job starts; the group
@@ -220,7 +223,8 @@ public:
     // Same pass by explicit class/spec key (PR 3 respec): equips the tier's
     // set for the new spec over whatever the hire wears. False when there is
     // no set for the key, so the caller keeps the current kit.
-    static bool EquipHireGearSet(Player* bot, PlayerbotAI* ai, uint8_t classId, char const* specKey, uint8_t race, uint8_t tier);
+    static bool EquipHireGearSet(Player* bot, PlayerbotAI* ai, uint8_t classId, char const* specKey, uint8_t race, uint8_t tier,
+        uint32_t ilvlCap = 0, bool enchants = true, std::vector<uint8_t>* cappedSlots = nullptr);
     // Issue #281: heavy one-shot work (level/talents/spells/gear/SaveToDB).
     void ProvisionHeavy(Player* bot, PendingProvision const& pending, PlayerbotAI* ai, Player* master);
     // Issue #281: teleport + grouping only; safe to retry every tick.

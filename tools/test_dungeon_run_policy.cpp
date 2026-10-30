@@ -13565,6 +13565,284 @@ static void TestStartFromResolve()
     CHECK(r.step == 2 && r.state == State::Running);
 }
 
+// ---------------------------------------------------------------------------
+// `.bot run start ... until boss|step N|leg X`: the run ends before that step. The plans shaped like the raids the
+// until clause is for: MC's first three legs (37 steps then Lucifron, 5 then Magmadar, 120 then Gehennas, 166 steps
+// in all), and a hold that is a boss's event (BWL's Vaelastrasz: a hold naming his entry).
+// ---------------------------------------------------------------------------
+static DungeonPlan McShapedPlan()
+{
+    DungeonPlan plan;
+    plan.name = "molten_core";
+    plan.map = 409;
+    plan.legs.push_back(ai::PlanLeg{0, "lucifron"});
+    plan.legs.push_back(ai::PlanLeg{1, "magmadar"});
+    plan.legs.push_back(ai::PlanLeg{2, "gehennas"});
+    auto const add = [&plan](std::uint8_t leg, PlanStepKind kind, std::uint32_t entry, float x) {
+        PlanStep st = Step(kind, x, 0, 0);
+        st.leg = leg;
+        st.entry = entry;
+        plan.steps.push_back(st);
+    };
+    for (std::size_t i = 0; i < 37; ++i)
+        add(0, PlanStepKind::Move, 0, static_cast<float>(i));
+    add(0, PlanStepKind::Boss, 12118, 37);  // step 38
+    for (std::size_t i = 0; i < 5; ++i)
+        add(1, PlanStepKind::Move, 0, static_cast<float>(38 + i));
+    add(1, PlanStepKind::Boss, 11982, 43);  // step 44
+    for (std::size_t i = 0; i < 121; ++i)
+        add(2, PlanStepKind::Move, 0, static_cast<float>(44 + i));
+    add(2, PlanStepKind::Boss, 12259, 165); // step 166
+    return plan;
+}
+
+// A hold that names a boss entry is a boss step: the event that starts it must never be sent.
+static DungeonPlan HoldBossPlan()
+{
+    DungeonPlan plan;
+    plan.name = "bwl_hold";
+    plan.map = 469;
+    plan.legs.push_back(ai::PlanLeg{0, "vaelastrasz"});
+    plan.steps = {Step(PlanStepKind::Move, 0, 0, 0), Step(PlanStepKind::Gossip, 0, 0, 0), Step(PlanStepKind::Move, 2, 0, 0)};
+    PlanStep hold = Step(PlanStepKind::Hold, 3, 0, 0);
+    hold.entries = {13020};
+    plan.steps.push_back(hold);
+    plan.steps.push_back(Step(PlanStepKind::Move, 4, 0, 0));
+    PlanStep boss = Step(PlanStepKind::Boss, 5, 0, 0);
+    boss.entry = 11583;
+    plan.steps.push_back(boss);
+    for (PlanStep& st : plan.steps)
+        st.leg = 0;
+    return plan;
+}
+
+static void TestUntilParsing()
+{
+    UntilArgs a = TakeUntil("until boss");
+    CHECK(a.given && a.ok && a.kind == UntilKind::Boss && a.value.empty() && a.text == "until boss" && a.rest.empty());
+    a = TakeUntil("molten_core until boss from step 40");
+    CHECK(a.given && a.ok && a.kind == UntilKind::Boss && a.rest == "molten_core from step 40");
+    StartArgs s = ParseStartArgs(a.rest);
+    CHECK(s.ok && s.plan == "molten_core" && s.from == StartFrom::Step && s.value == "40");
+    a = TakeUntil("until step 29");
+    CHECK(a.given && a.ok && a.kind == UntilKind::Step && a.value == "29" && a.text == "until step 29");
+    a = TakeUntil("until leg gehennas");
+    CHECK(a.given && a.ok && a.kind == UntilKind::Leg && a.value == "gehennas" && a.text == "until leg gehennas");
+    a = TakeUntil("until leg 2");
+    CHECK(a.given && a.ok && a.kind == UntilKind::Leg && a.value == "2");
+    a = TakeUntil("onyxias_lair from leg gehennas speed=3 until boss");
+    CHECK(a.given && a.ok && a.kind == UntilKind::Boss && a.rest == "onyxias_lair from leg gehennas speed=3");
+    for (std::string const bad : {"until", "until 5", "until step", "until step x", "until foo", "until boss until step 3"})
+        CHECK(!TakeUntil(bad).ok);
+    CHECK(!TakeUntil("").given); // no clause: the words go to ParseStartArgs unchanged
+    CHECK(TakeUntil("molten_core").rest == "molten_core");
+}
+
+static void TestUntilResolve()
+{
+    DungeonPlan plan = McShapedPlan();
+    auto const boss = [](std::uint32_t entry) { return entry == 12118 || entry == 11982 || entry == 12259; };
+    std::size_t stop = 99;
+    CHECK(ResolveUntilStep(plan, UntilKind::Boss, "", 0, boss, stop) == UntilResult::Ok && stop == 37);
+    CHECK(ResolveUntilStep(plan, UntilKind::Boss, "", 38, boss, stop) == UntilResult::Ok && stop == 43);
+    CHECK(ResolveUntilStep(plan, UntilKind::Boss, "", 39, boss, stop) == UntilResult::Ok && stop == 43);
+    CHECK(ResolveUntilStep(plan, UntilKind::Boss, "", 43, boss, stop) == UntilResult::AtStart); // the boss is the start
+    CHECK(ResolveUntilStep(plan, UntilKind::Leg, "gehennas", 0, boss, stop) == UntilResult::Ok && stop == 44);
+    CHECK(ResolveUntilStep(plan, UntilKind::Leg, "2", 0, boss, stop) == UntilResult::Ok && stop == 44);
+    CHECK(ResolveUntilStep(plan, UntilKind::Leg, "gehennas", 44, boss, stop) == UntilResult::AtStart);
+    CHECK(ResolveUntilStep(plan, UntilKind::Step, "166", 0, boss, stop) == UntilResult::Ok && stop == 165);
+    CHECK(ResolveUntilStep(plan, UntilKind::Step, "999", 0, boss, stop) == UntilResult::NoSuchStep);
+    CHECK(ResolveUntilStep(plan, UntilKind::Step, "x", 0, boss, stop) == UntilResult::NoSuchStep);
+    CHECK(ResolveUntilStep(plan, UntilKind::Leg, "nope", 0, boss, stop) == UntilResult::NoSuchLeg);
+    DungeonPlan quiet;
+    quiet.steps = {Step(PlanStepKind::Move, 0, 0, 0), Step(PlanStepKind::Pull, 1, 0, 0)};
+    CHECK(ResolveUntilStep(quiet, UntilKind::Boss, "", 0, boss, stop) == UntilResult::NoBoss);
+
+    // A hold naming a boss entry is a boss step, and the stop goes back to the gossip that starts its event.
+    DungeonPlan hold = HoldBossPlan();
+    auto const bosses = [](std::uint32_t entry) { return entry == 13020 || entry == 11583; };
+    CHECK(ResolveUntilStep(hold, UntilKind::Boss, "", 0, bosses, stop) == UntilResult::Ok && stop == 1);
+    CHECK(ResolveUntilStep(hold, UntilKind::Step, "4", 0, bosses, stop) == UntilResult::Ok && stop == 1);
+    CHECK(ResolveUntilStep(hold, UntilKind::Boss, "", 0, {}, stop) == UntilResult::Ok && stop == 5); // Boss rows only
+    CHECK(IsBossStep(hold.steps[3], bosses) && !IsBossStep(hold.steps[3], {}));
+}
+
+// Walk 3 (Onyxia, 2026-10-28): step 28 (the stand) arrived and step 29 (the boss) began in the same second, and the
+// boss approach went out before the guard's `.bot run stop` arrived. The run stops before the step's first order.
+static void TestUntilStopsBeforeTheBossStep()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 5, 0, 0), Step(PlanStepKind::Move, 10, 0, 0), Step(PlanStepKind::Boss, 15, 0, 0)};
+    plan.steps[2].entry = 10184;
+    Run r = Start(&plan);
+    r.untilStep = 2;
+    r.untilText = "until boss";
+    Facts f = Party(0);
+    CHECK(Tick(r, f) == "move 5.0 0.0 0.0");
+    f.leadX = 5;
+    CHECK(Tick(r, f).empty()); // step 1: the stand
+    CHECK(r.state == State::Running && r.step == 1);
+    CHECK(Tick(r, f) == "move 10.0 0.0 0.0");
+    f.leadX = 10;
+    CHECK(Tick(r, f).empty()); // the stand's arrival: no order of the boss step
+    CHECK(r.state == State::Done && r.step == 2);
+    CHECK(r.note.find("stopped before step 3 (until boss): the party stays where it stands") == 0);
+    std::string const note = r.note;
+    CHECK(Tick(r, f).empty() && r.state == State::Done && r.step == 2 && r.note == note);
+}
+
+static void TestUntilSkipAndJumpStop()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 5, 0, 0), Step(PlanStepKind::Pull, 10, 0, 0), Step(PlanStepKind::Move, 15, 0, 0)};
+    plan.steps[1].entries = {1};
+    ai::NormalizePlanStep(plan.steps[1]);
+    // A skip into the stop: paused on the step before it.
+    Run r = Start(&plan, 1);
+    r.state = State::Paused;
+    r.untilStep = 2;
+    r.untilText = "until step 3";
+    CHECK(Skip(r));
+    CHECK(r.state == State::Done && r.step == 2);
+    CHECK(r.note.find("stopped before step 3 (until step 3): the party stays where it stands") == 0);
+    // A jump that sets the step straight at the stop (AbandonDeferRetry): no order that tick.
+    DungeonPlan jumps;
+    jumps.steps = {Step(PlanStepKind::Move, 5, 0, 0), Step(PlanStepKind::Move, 10, 0, 0), Step(PlanStepKind::Move, 15, 0, 0)};
+    Run j = Start(&jumps, 0);
+    j.untilStep = 1;
+    j.untilText = "until step 2";
+    j.step = 1;
+    Facts f = Party(0);
+    CHECK(Tick(j, f).empty());
+    CHECK(j.state == State::Done && j.step == 1 && j.untilHit);
+    CHECK(j.note.find("stopped before step 2 (until step 2)") == 0);
+}
+
+// The stop's check at the tick's start saw the retry's pull step; inside the tick the regroup's walk back gave the
+// retry up (AbandonDeferRetry set the step straight at the boss, the stop), the lead bot stood on the walk back's last
+// point so no walk back started, and the boss step built its pullback in the same tick. The stop is taken at the tick's
+// end too: the run ends Done at the stop step with no order.
+static void TestUntilStopsAJumpInTheTickBody()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 300, 0, 0);
+    boss.entry = 9;
+    boss.entries = {9};
+    ai::NormalizePlanStep(boss);
+    plan.steps = {Step(PlanStepKind::Move, 5, 0, 0), PullStep(10, {7078}), Step(PlanStepKind::Move, 300, 0, 0), boss};
+    Run r = Start(&plan, 1);
+    r.restDue = false;
+    r.deferRetryStep = 1;
+    r.deferReturnStep = 3;
+    r.deferLeg = 0;
+    r.untilStep = 3;
+    r.untilText = "until boss";
+    Pause(r, "fight ceiling");
+    CHECK(Resume(r) && r.regroup && r.walkBackDue);
+    // The lead bot 2 yd from the walk back's point (step 3's move), 290 yd from the deferred pack: the retry is given
+    // up and the boss step, in sight, would pull at once.
+    Facts f = Party(298);
+    f.units = {Unit(9, 9, 8)};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Done && r.step == 3 && r.untilHit);
+    CHECK(r.note.find("stopped before step 4 (until boss): the party stays where it stands") == 0);
+    CHECK(r.deferGivenUp == std::vector<std::size_t>{1});
+    CHECK(r.note.find("(1 pack left alive") != std::string::npos);
+    std::string const note = r.note;
+    CHECK(Tick(r, f).empty() && r.state == State::Done && r.note == note);
+}
+
+// The item-leg skip set the step at the leg's last row, past the stop (LegNeedGate -> NextStep): the stop's clamp
+// brings the run back to the stop step, and it ends Done.
+static void TestUntilClampsAfterALegSkipLandsPastIt()
+{
+    DungeonPlan plan;
+    plan.name = "zf";
+    ai::PlanLeg leg9;
+    leg9.leg = 9;
+    leg9.name = "gahzrilla";
+    plan.legs.push_back(leg9);
+    PlanStep move = Step(PlanStepKind::Move, 0, 0, 0);
+    move.leg = 9;
+    PlanStep pull = PullStep(10, {7580});
+    pull.leg = 9;
+    PlanStep gong = GongRow();
+    gong.leg = 9;
+    PlanStep boss = Step(PlanStepKind::Boss, 20, 0, 0);
+    boss.leg = 9;
+    boss.entry = 7273;
+    boss.entries = {7273};
+    ai::NormalizePlanStep(boss);
+    PlanStep next = Step(PlanStepKind::Move, 100, 0, 0);
+    next.leg = 10;
+    plan.steps = {move, pull, gong, boss, next};
+    ai::PlanLegNeed need;
+    need.leg = 9;
+    need.item = 9240;
+    need.mode = ai::LegNeedMode::Optional;
+    need.name = "Mallet of Zul'Farrak";
+    plan.needs.push_back(need);
+    Run r = Start(&plan);
+    r.untilStep = 2;
+    r.untilText = "until step 3";
+    Facts f = Party(0);
+    f.legNeedRead = true;
+    f.legNeedHolders = {{9240, ""}};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Done && r.step == 2 && r.untilHit);
+    CHECK(r.note.find("stopped before step 3 (until step 3)") == 0);
+    CHECK(r.note.find("(optional leg skipped: gahzrilla (item 9240))") != std::string::npos);
+}
+
+static void TestUntilStopsFightForward()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(0, {1}), Step(PlanStepKind::Move, 5, 0, 0), Step(PlanStepKind::Move, 10, 0, 0),
+        PullStep(20, {2})};
+    Run r = Start(&plan);
+    r.step = 1;
+    Facts f = Party(5);
+    CHECK(r.untilStep == static_cast<std::size_t>(-1));
+    CHECK(FightForwardTarget(r, f) == 3);
+    for (std::size_t stop : {std::size_t(1), std::size_t(2), std::size_t(3)})
+    {
+        r.untilStep = stop;
+        CHECK(FightForwardTarget(r, f) == static_cast<std::size_t>(-1)); // the scan reaches the stop at or before the pull
+    }
+    r.untilStep = 4;
+    CHECK(FightForwardTarget(r, f) == 3); // the stop lies past the pull
+}
+
+static void TestUntilStatusLabel()
+{
+    DungeonPlan plan = McShapedPlan();
+    Run r = Start(&plan);
+    r.untilStep = 37;
+    r.untilText = "until boss";
+    auto const ends = [](const std::string& line, const std::string& suffix) {
+        return line.size() >= suffix.size() && line.compare(line.size() - suffix.size(), suffix.size(), suffix) == 0;
+    };
+    r.testSpeed = 3.0f;
+    CHECK(ends(StatusLine(r), "|speed 3.0 (test); until boss (step 38)"));
+    r.testSpeed = 1.0f;
+    CHECK(ends(StatusLine(r), "|until boss (step 38)"));
+    // The stop: the label drops the until clause and keeps the test speed; the note says the stop.
+    r.testSpeed = 3.0f;
+    r.step = 37;
+    CHECK(StopAtUntil(r));
+    CHECK(ends(StatusLine(r), "|speed 3.0 (test)"));
+    CHECK(!ends(StatusLine(r), "(step 38)"));
+    CHECK(r.note.find("(until boss)") != std::string::npos);
+    // No until: the label field stays empty and the plan's end says "plan done" as before.
+    Run plain = Start(&plan);
+    plain.step = plain.plan->steps.size() - 1;
+    plain.state = State::Done;
+    plain.note = DoneNote(plain);
+    CHECK(plain.note == "plan done");
+    CHECK(StatusLine(plain).find("|boss|") != std::string::npos);
+    CHECK(ends(StatusLine(plain), "|plan done"));
+}
+
 // The Uldaman Keepers: the ritual ends leg 10, the hold opens leg 11. A start on the hold goes back
 // to the ritual, or the event never starts.
 static DungeonPlan EventPlan()
@@ -20731,6 +21009,46 @@ static void TestSpeedLeashClearedByANewStep()
     CHECK(!r.speedLeash && r.speedLeashMs == 0 && !r.speedLeashSpent);
 }
 
+// Rebuilds the status line from the fields with the old format: StatusParts
+// must carry exactly what StatusLine prints.
+static std::string RebuildLine(StatusFields const& f)
+{
+    return "TBM:RUN|" + (f.plan.empty() ? "-" : f.plan) + "|" + f.state + "|" +
+        std::to_string(f.step) + "/" + std::to_string(f.steps) + "|" + (f.leg.empty() ? "-" : f.leg) + "|" +
+        (f.kind.empty() ? "-" : f.kind) + "|" + (f.phase.empty() ? "-" : f.phase) + "|" +
+        (f.note.empty() ? "-" : f.note) +
+        (f.left ? "|left " + std::to_string(f.left) : std::string()) +
+        (f.speed.empty() ? std::string() : "|" + f.speed);
+}
+
+// A6: the dashboard reads the run through StatusParts (Commander.cpp's
+// SendRunLine and CollectCommanderTelemetry), so a StatusLine change must be
+// a StatusParts change too: the fields rebuild the line byte for byte.
+static void TestStatusPartsMatchLine()
+{
+    DungeonPlan plan;
+    plan.name = "t";
+    plan.steps = {PullStep(10, {1}), PullStep(20, {2})};
+    // Before the first step.
+    Run fresh = Start(&plan);
+    CHECK(StatusLine(fresh) == RebuildLine(StatusParts(fresh)));
+    // Mid-run on a pull with a left count and a test speed.
+    Run pulling = Start(&plan, 1);
+    pulling.testSpeed = 2.0f;
+    pulling.deferredPulls.push_back(0);
+    CHECK(StatusLine(pulling) == RebuildLine(StatusParts(pulling)));
+    CHECK(StatusParts(pulling).step == 2 && StatusParts(pulling).left == 1);
+    // Paused, the note carrying the protocol separator.
+    Run held = Start(&plan);
+    Pause(held, "a|b");
+    CHECK(StatusParts(held).note == "a b");
+    CHECK(StatusLine(held) == RebuildLine(StatusParts(held)));
+    int bars = 0;
+    for (char c : StatusLine(held))
+        bars += c == '|';
+    CHECK(bars == 7);
+}
+
 static void TestSpeedShowsInTheLines()
 {
     DungeonPlan plan;
@@ -21798,6 +22116,1026 @@ static void TestRefusedFiringPositionNeverLoops()
     CHECK(second >= 1 && second <= 2 && r.state == State::Paused);
 }
 
+// Task A5: raid rules. A raid of 20 (raid.on) scales the wipe level to 40 %
+// (WipeDead = 8), gathers 90 % within kRaidGatherYd, and waits for wipes only
+// at that level; the few dead are revived before the pull as in a party.
+// Members carry the gather: one entry per living bot (the raid's gather counts
+// them after HoldView, held bots already left out).
+static Facts Raid(float maxYd = 0.0f, std::uint32_t count = 20, std::uint32_t far = 0, bool farCore = false)
+{
+    Facts f = Party(0);
+    f.total = count;
+    f.alive = count;
+    f.raid.on = true;
+    f.raid.tanksTotal = 3;
+    f.raid.healersTotal = 5;
+    f.maxMemberYd = maxYd;
+    for (std::uint32_t i = 0; i < count; ++i)
+    {
+        MemberFact m = Mem("Bot" + std::to_string(i), i < far ? maxYd : 0.0f);
+        m.core = i < 8; // the first eight are tanks and healers
+        if (i < far)
+            m.core = farCore;
+        f.members.push_back(m);
+    }
+    return f;
+}
+
+static void TestRaidWipeLevel()
+{
+    Facts f = Raid();
+    CHECK(WipeDead(f) == 8);
+    CHECK(!WipeLevel(f, 7));
+    CHECK(WipeLevel(f, 8));
+    Facts noTanks = Raid();
+    noTanks.raid.tanksTotal = 3;
+    noTanks.raid.tanksDead = 3;
+    CHECK(WipeLevel(noTanks, 3));
+    Facts healers = Raid();
+    healers.raid.healersDead = 3;
+    CHECK(WipeLevel(healers, 3));
+    Facts party = Party(0);
+    CHECK(WipeDead(party) == kWipeDead);
+    CHECK(WipeLevel(party, 3));
+    CHECK(!WipeLevel(party, 2));
+}
+
+static void TestRaidGathered()
+{
+    // 19 of 20 within 30 yd, none of them core: gathered, though one bot is 45 yd out.
+    CHECK(PartyGathered(Raid(45.0f, 20, 1, false)));
+    // ... but one straggler too many (only 17 of 20 within): not gathered.
+    CHECK(!PartyGathered(Raid(45.0f, 20, 3, false)));
+    // ... and the far bot being a tank holds the gather whatever the count.
+    CHECK(!PartyGathered(Raid(45.0f, 20, 1, true)));
+    Facts party = Party(0);
+    party.maxMemberYd = 21;
+    CHECK(!PartyGathered(party));
+    party.maxMemberYd = 20;
+    CHECK(PartyGathered(party));
+}
+
+static void TestRaidPullGateNotHeldByOneStraggler()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(40, {4851, 4852})};
+    Facts f = Raid(45.0f, 20, 1, false);
+    f.seen = true;
+    f.units = {Unit(11, 4851, 45), Unit(12, 4852, 38)};
+    Run r = Start(&plan);
+    CHECK(Tick(r, f) == "pullback 12");
+    CHECK(r.phase != Phase::Gather);
+    Facts party = Party(0);
+    party.seen = true;
+    party.units = {Unit(11, 4851, 45), Unit(12, 4852, 38)};
+    party.maxMemberYd = 45;
+    Run q = Start(&plan);
+    CHECK(Tick(q, party) == "move 0.0 0.0 0.0");
+    CHECK(q.phase == Phase::Gather);
+}
+
+static Facts RaidDead(std::uint32_t dead)
+{
+    Facts f = Raid();
+    f.dead = dead;
+    f.alive = 20 - dead;
+    f.members.clear();
+    for (std::uint32_t i = 0; i < f.alive; ++i)
+    {
+        MemberFact m = Mem("Bot" + std::to_string(i), 0.0f);
+        m.core = i < 8;
+        f.members.push_back(m);
+    }
+    return f;
+}
+
+static void TestRaidRegroupWaitsForWipeLevel()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    // Four dead after a fight: no wipe regroup by itself (the wipe level is 8).
+    Facts f = RaidDead(4);
+    Run r = Start(&plan);
+    f.anyInCombat = true;
+    CHECK(Tick(r, f).empty());
+    f.anyInCombat = false;
+    Tick(r, f);
+    CHECK(r.state == State::Running && r.autoRegroups == 0);
+    CHECK(r.note.find("regrouping by itself") == std::string::npos);
+    // ... but the few dead still hold the next pull until they are back.
+    DungeonPlan pullPlan;
+    pullPlan.steps = {PullStep(40, {4851})};
+    Facts pull = RaidDead(4);
+    pull.seen = true;
+    pull.units = {Unit(11, 4851, 38)};
+    Run pr = Start(&pullPlan);
+    CHECK(Tick(pr, pull).empty());
+    CHECK(pr.phase != Phase::AwaitPull);
+    // Eight dead are a wipe: the run regroups by itself.
+    Facts w = RaidDead(8);
+    Run wr = Start(&plan);
+    w.anyInCombat = true;
+    CHECK(Tick(wr, w).empty());
+    w.anyInCombat = false;
+    Tick(wr, w);
+    CHECK(wr.state == State::Running && wr.regroup && wr.autoRegroups == 1);
+}
+
+// M1: a raid never pulls back at two dead (the retreat is a party rule): in a
+// losing fight with 2 dead, 18 alive and the lead bot up, no retreat goes out.
+static void TestRaidNoRetreatAtTwoDead()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(40, {4851})};
+    Facts f = RaidDead(2);
+    f.retreatAt2Dead = true;
+    f.anyInCombat = true;
+    f.leadInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {HpUnit(0xF130001836000001ull, 4851, 500, 1000)};
+    f.leadX = 10.0f; // 10 yd off the last stand: close enough to pull back to
+    Run r = Start(&plan);
+    r.anchorKnown = true;
+    for (std::uint32_t t = 0; t <= kRetreatQuietMs + 2 * kTickMs; t += kTickMs)
+        Tick(r, f);
+    CHECK(FightBeingLost(r));
+    CHECK(!r.retreatOn && r.retreatMs == 0);
+}
+
+// M3: the raid's near-wipe latch follows the wipe level (8 dead): 4 dead count
+// nothing, 8 dead count one near wipe.
+static void TestRaidNearWipeLatch()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    Run r = Start(&plan);
+    Facts four = RaidDead(4);
+    Tick(r, four);
+    CHECK(r.nearWipes == 0 && !r.nearWiped);
+    Facts eight = RaidDead(8);
+    Tick(r, eight);
+    CHECK(r.nearWipes == 1 && r.nearWiped);
+    Tick(r, eight);
+    CHECK(r.nearWipes == 1);
+    Tick(r, four);
+    CHECK(!r.nearWiped);
+}
+
+// M2: the raid's regroup restart compares against the raid's wipe level (the
+// mutation under test puts it back on the party rule): with 4 dead the fallen
+// wait regroups (revive and gather) instead of handing over to the regroup by
+// itself, and one more death out of combat keeps that regroup (regroupDead
+// stays 4) instead of restarting it.
+static void TestRaidRegroupNotRestartedByOneMoreDeath()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    Facts four = RaidDead(4);
+    Run r = Start(&plan);
+    four.anyInCombat = true;
+    Tick(r, four);
+    four.anyInCombat = false;
+    Tick(r, four);
+    Tick(r, four);
+    CHECK(r.regroup && r.regroupDead == 4);
+    Facts five = RaidDead(5);
+    Tick(r, five);
+    CHECK(r.regroup && r.regroupDead == 4);
+}
+
+// M5: a raid regroup's gather ends with 19 of 20 within 30 yd (the far bot is
+// not held against the raid): the regroup ends and the walk back starts.
+static void TestRaidRegroupGatherDone()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40), Step(PlanStepKind::Move, 90)};
+    Run r = Start(&plan);
+    Facts w = RaidDead(8);
+    w.anyInCombat = true;
+    Tick(r, w);
+    w.anyInCombat = false;
+    Tick(r, w);
+    CHECK(r.regroup);
+    Facts g = Raid(45.0f, 20, 1, false);
+    g.dead = 0;
+    g.alive = 20;
+    Tick(r, g);
+    CHECK(!r.regroup);
+}
+
+// M7: the cc regather ends the same way: one far bot does not hold it.
+static void TestRaidCcRegatherDone()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    Run r = Start(&plan);
+    Facts g = Raid(45.0f, 20, 1, false);
+    r.ccRegather = true;
+    std::string order;
+    CHECK(!SapWait(r, g, kTickMs, order) && order.empty() && !r.ccRegather);
+}
+
+// M4: a member with attackers runs back with 4 dead in a raid (below the wipe
+// level of 8), but not with 8 dead.
+static void TestRaidRunBackBelowWipeLevel()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    auto raid = [&](int alive, int dead)
+    {
+        Facts f;
+        f.total = 20;
+        f.alive = alive;
+        f.dead = dead;
+        f.raid.on = true;
+        f.raid.tanksTotal = 3;
+        f.raid.healersTotal = 5;
+        f.carrier = "Tanky";
+        f.leadAlive = true;
+        for (int i = 0; i < alive; ++i)
+        {
+            MemberFact m = Mem("Bot" + std::to_string(i), 50.0f);
+            m.core = i < 8;
+            m.attackers = (i == 1) ? 1 : 0;
+            f.members.push_back(m);
+        }
+        return f;
+    };
+    Run r = Start(&plan);
+    r.phase = Phase::Gather;
+    CHECK(RunBack(r, raid(16, 4), kTickMs) && r.runBack.size() == 1);
+    Run q = Start(&plan);
+    q.phase = Phase::Gather;
+    CHECK(!RunBack(q, raid(12, 8), kTickMs) && q.runBack.empty());
+}
+
+// HIGH: a raid regroup that holds bots at the fight spot gathers from the rest:
+// the far held bots neither count nor hold the gather, so it ends and the run
+// walks back.
+static void TestRaidHoldRegroupGathers()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    Facts f;
+    f.total = 20;
+    f.alive = 20;
+    f.raid.on = true;
+    f.raid.tanksTotal = 3;
+    f.raid.healersTotal = 5;
+    f.carrier = "Tanky";
+    f.leadX = 210.0f;
+    f.seen = true;
+    for (int i = 0; i < 20; ++i)
+    {
+        MemberFact m = Mem("Bot" + std::to_string(i), 0.0f);
+        m.core = i < 8;
+        f.members.push_back(m);
+    }
+    f.anyInCombat = true;
+    Tick(r, f);
+    f.leadAlive = false;
+    f.dead = 8;
+    f.alive = 12;
+    f.deadNames = {"Bot0", "Bot1", "Bot2", "Bot3", "Bot4", "Bot5", "Bot6", "Bot7"};
+    f.members.clear();
+    for (int i = 8; i < 20; ++i)
+    {
+        MemberFact m = Mem("Bot" + std::to_string(i), 5.0f);
+        m.x = 215.0f;
+        m.core = false;
+        f.members.push_back(m);
+    }
+    Tick(r, f);
+    f.anyInCombat = false;
+    Tick(r, f);
+    CHECK(r.regroup && r.holdDue);
+    // The lead bot up at the entrance, 300 yd from where it fell: the four far
+    // bots at the fight spot hold, and the gather sees only the rest.
+    Facts h;
+    h.total = 20;
+    h.alive = 20;
+    h.raid.on = true;
+    h.raid.tanksTotal = 3;
+    h.raid.healersTotal = 5;
+    h.carrier = "Tanky";
+    h.leadAlive = true;
+    h.leadX = -90.0f;
+    for (int i = 0; i < 20; ++i)
+    {
+        bool const far = i < 4;
+        MemberFact m = Mem("Bot" + std::to_string(i), far ? 305.0f : 0.0f);
+        m.x = far ? 215.0f : -90.0f;
+        m.core = !far && i < 12;
+        h.members.push_back(m);
+    }
+    h.maxMemberYd = 305.0f;
+    Tick(r, h);
+    CHECK(r.hold.size() == 4);
+    CHECK(PartyGathered(HoldView(r, h)));
+    Tick(r, h);
+    CHECK(!r.regroup && (r.walkBack || r.walkBackDue));
+}
+
+// Task F3: raid trash. An off-tank holds the pack's mob (UnitFact::victimTank):
+// the guard never sends the main tank off its stand for a mob already held, and
+// a loose mob goes to a living off-tank round-robin instead of the carrier.
+static Facts RaidTrashFacts(bool offTanks = true)
+{
+    Facts f = Raid();
+    f.leadIsTank = true;
+    f.leadStaying = true;
+    if (offTanks)
+        f.raid.offTanksAlive = {"Brun", "Irelanthe"};
+    return f;
+}
+
+static UnitFact TankHeld(std::uint64_t guid, std::uint32_t entry, float dist)
+{
+    UnitFact u = Hitter(guid, entry, dist);
+    u.victimTank = true;
+    return u;
+}
+
+// A raid pull step with the tank on stay at the stand point, its only pack unit
+// on the pullback, and the fight on.
+static Run StartRaidTrashFight(DungeonPlan& plan, Facts& f, std::uint32_t entry = 12129)
+{
+    plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {entry})};
+    Run r = Start(&plan);
+    Tick(r, f);
+    CHECK(r.step == 1);
+    f.units = {Unit(31, entry, 40)};
+    CHECK(Tick(r, f) == "pullback 31");
+    f.anyInCombat = true;
+    return r;
+}
+
+static void TestRaidMainTankHelpsOnAMobAnOffTankHolds()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 12129, 30)};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 41 Tanky");
+    CHECK(r.note == "fighting: the main tank helps on 12129 held by an off-tank (30.0 yd)");
+    CHECK(r.guardOrders == 0);
+    CHECK(r.guardReturn);
+    CHECK(GuardPick(f, 0.0f, &r, &r, true) == nullptr);
+    // The order ends its stay: its own AI fights the pack from there.
+    f.leadStaying = false;
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.guardOrders == 0);
+}
+
+static void TestRaidGuardRoundRobinsTheOffTanks()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {Hitter(41, 12129, 30)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 41 Brun");
+    CHECK(r.note == "fighting: off-tank Brun picks up 12129 off the party (30.0 yd)");
+    CHECK(!r.guardReturn);
+    // The off-tank holds it; a second loose mob waits its kGuardWaitMs.
+    f.partyAttackers = {TankHeld(41, 12129, 30), Hitter(51, 12130, 32)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 51 Irelanthe");
+    CHECK(r.note.find("off-tank Irelanthe picks up 12130 off the party") != std::string::npos);
+    CHECK(!r.guardReturn && r.guardOrders == 2);
+}
+
+static void TestRaidGuardOnABossStepSendsTheMainTank()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 10);
+    boss.entry = 12129;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {boss};
+    Run r = Start(&plan);
+    Facts f = RaidTrashFacts();
+    CHECK(!RaidTrashFight(r, f)); // the boss step itself
+    f.anyInCombat = true;
+    f.partyAttackers = {Hitter(61, 12129, 20)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 61 Tanky");
+    CHECK(r.guardReturn);
+}
+
+static void TestRaidGuardWithoutAnOffTankSendsTheMainTank()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts(false);
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {Hitter(41, 12129, 30)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 41 Tanky");
+    CHECK(r.guardReturn);
+}
+
+static void TestPartyGuardStillTakesAMobHeldByItsTank()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {4853})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.leadIsTank = true;
+    f.leadStaying = true;
+    f.raid.offTanksAlive = {"Brun", "Irelanthe"}; // only f.raid.on decides (a binding switched off mid-run)
+    Tick(r, f);
+    f.units = {Unit(31, 4853, 40)};
+    CHECK(Tick(r, f) == "pullback 31");
+    f.anyInCombat = true;
+    f.partyAttackers = {TankHeld(81, 4853, 20)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 81 Tanky"); // a party run: the carrier, as before
+    CHECK(r.guardReturn);
+}
+
+static void TestRaidGuardAHealerMobGoesToAnOffTankWithoutTheWait()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    // The fight's first order is the arrival engage, the main tank's: unchanged,
+    // and it ends the tank's stay.
+    f.leadHasAttacker = true;
+    f.leadAttacker = Hitter(61, 12129, 5);
+    CHECK(Tick(r, f) == "attack 61 Tanky");
+    f.leadStaying = false;
+    f.leadHasAttacker = false;
+    f.partyAttackers = {Hitter(71, 12129, 20, true)};
+    CHECK(Tick(r, f).empty()); // kGuardRepeatMs after it
+    CHECK(Tick(r, f) == "attack 71 Brun"); // no kGuardWaitMs
+}
+
+// A raid trash pack with several mobs an off-tank holds (MC Molten Giant pair, 11658/11659): the main tank helps on the
+// nearest one, and once more on the next after it leaves its stand again; never twice at the same unit in one fight.
+static void TestRaidMainTankHelpsOnASecondMobOfThePack()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 11658, 12), TankHeld(42, 11659, 8)};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 42 Tanky");
+    CHECK(r.note == "fighting: the main tank helps on 11659 held by an off-tank (8.0 yd)");
+    // Off its stay (the order ended it), then on it again: the other unit waits the assist wait again, and the order
+    // spacing (kGuardRepeatMs) keeps it off the very next tick.
+    f.leadStaying = false;
+    for (int i = 0; i < 2; ++i)
+        CHECK(Tick(r, f).empty());
+    f.leadStaying = true;
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 41 Tanky");
+    CHECK(r.note.find("helps on 11658") != std::string::npos);
+    for (std::uint32_t ms = 0; ms < 20000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.fightOrders == 2);
+}
+
+// A loose mob goes to an off-tank first (F3): the main tank is not sent at the held one while a pick-up is due.
+static void TestRaidMainTankLeavesALooseMobToTheOffTankFirst()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 11671, 10), Hitter(51, 11671, 12)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 51 Brun");
+    CHECK(r.note == "fighting: off-tank Brun picks up 11671 off the party (12.0 yd)");
+    CHECK(r.note.find("the main tank helps") == std::string::npos);
+}
+
+// The main tank has a mob of its own (a pullback's unit on it): the arrival engage sends it as today, and no assist follows.
+static void TestRaidMainTankWithAMobOfItsOwnIsNotAssisted()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.leadHasAttacker = true;
+    f.leadAttacker = Hitter(61, 12129, 3);
+    CHECK(Tick(r, f) == "attack 61 Tanky");
+    CHECK(r.note.find("the tank engages 12129 on arrival") != std::string::npos);
+    f.partyAttackers = {TankHeld(41, 12129, 20)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+}
+
+// The assist's wait belongs to one mob: once the pick is gone from the fight, the nearest held mob takes over and gets its
+// own full wait, so the off-tank holds it before the main tank comes.
+static void TestRaidAssistWaitRestartsForANewMob()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 12129, 30)};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty()); // A almost waited out
+    f.partyAttackers = {TankHeld(42, 12129, 10)}; // A left the fight: B is the pick now
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty()); // B's own full wait: no order yet
+    CHECK(Tick(r, f) == "attack 42 Tanky");
+}
+
+// Two held mobs trading which one is nearer every tick (a pack the off-tanks hold side by side): the pick stays the same
+// mob of the fight, so its wait runs out instead of starting over at each swap.
+static void TestRaidAssistPickIsStickyAcrossANearestSwap()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    std::string order;
+    for (std::uint32_t ms = kTickMs; ms <= kRaidAssistWaitMs + kTickMs; ms += kTickMs)
+    {
+        bool const firstNearer = (ms / kTickMs) % 2 == 1;
+        f.partyAttackers = {TankHeld(41, 11658, firstNearer ? 10.0f : 11.0f),
+            TankHeld(42, 11659, firstNearer ? 11.0f : 10.0f)};
+        std::string const ticked = Tick(r, f);
+        if (!ticked.empty())
+        {
+            CHECK(order.empty());
+            order = ticked;
+        }
+    }
+    CHECK(order == "attack 41 Tanky");
+}
+
+// A loose mob (no off-tank holds it) is never the assist's pick: even with its per-unit cap spent, so that the party guard
+// passes it over and RaidAssist is reached, the main tank stays on its stand and the off-tanks take it.
+static void TestRaidAssistNeverOnALooseMob()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    r.guardRefills = 1;
+    r.guardUnitOrders[51] = kGuardOrdersPerUnit;
+    f.partyAttackers = {Hitter(51, 11671, 10)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.fightOrders == 0);
+    CHECK(r.note.find("the main tank helps") == std::string::npos);
+}
+
+// A held mob that is not hitting anyone (a runner, one not yet in reach) is no assist: the off-tank handles it.
+static void TestRaidAssistNeverOnAHeldMobThatIsNotHitting()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    UnitFact held = TankHeld(41, 11671, 10);
+    held.hitting = false;
+    f.partyAttackers = {held};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.fightOrders == 0);
+}
+
+// Two assists in one fight keep kGuardRepeatMs apart: the next held mob's wait is already met, so only the spacing (the
+// last order just out) holds the order back one more tick.
+static void TestRaidAssistKeepsTheOrderSpacing()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 11658, 10)};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 41 Tanky");
+    // The next held mob's wait was met meanwhile; the last order went out this tick.
+    f.partyAttackers = {TankHeld(42, 11659, 10)};
+    r.raidAssistGuid = 42;
+    r.raidAssistMs = kRaidAssistWaitMs - kTickMs;
+    CHECK(Tick(r, f).empty()); // kGuardRepeatMs after the first: not yet
+    CHECK(Tick(r, f) == "attack 42 Tanky");
+}
+
+// The next fight starts over: the fight's end (the run back to the step) clears the assist's mob and the units it was sent at.
+static void TestRaidAssistClearsForTheNextFight()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 11658, 10)};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 41 Tanky");
+    CHECK(r.raidAssistGuid == 41 && r.raidAssisted.count(41) == 1);
+    f.anyInCombat = false;
+    f.partyAttackers.clear();
+    Tick(r, f);
+    CHECK(r.raidAssistGuid == 0 && r.raidAssisted.empty());
+}
+
+// Not on stay: its own AI fights, and the run sends nothing at the held mob.
+static void TestRaidMainTankOffStayFightsByItself()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    f.leadStaying = false;
+    Run r = StartRaidTrashFight(plan, f);
+    f.partyAttackers = {TankHeld(41, 12129, 20)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+}
+
+// A boss step hands the held mob to the carrier as today (RaidTrashFight false): no assist.
+static void TestRaidMainTankOnABossStepIgnoresAHeldMob()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 10);
+    boss.entry = 12129;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {boss};
+    Run r = Start(&plan);
+    Facts f = RaidTrashFacts();
+    f.anyInCombat = true;
+    f.partyAttackers = {TankHeld(61, 12129, 20)};
+    for (std::uint32_t ms = kTickMs; ms < kGuardWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 61 Tanky");
+    CHECK(r.guardOrders == 1);
+    CHECK(r.guardReturn);
+    CHECK(r.note.find("held by an off-tank") == std::string::npos);
+}
+
+// A hold's fight is not a raid trash fight: HoldGuardTarget's rules are unchanged, no assist.
+static void TestRaidAssistNeverInAHold()
+{
+    DungeonPlan plan;
+    PlanStep hold = Step(PlanStepKind::Hold);
+    hold.radius = 30;
+    ai::NormalizePlanStep(hold);
+    plan.steps = {hold};
+    Run r = Start(&plan);
+    r.eventOn = true;
+    Facts f = RaidTrashFacts();
+    f.anyInCombat = true;
+    f.partyAttackers = {TankHeld(41, 12129, 20)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.note.find("held by an off-tank") == std::string::npos);
+}
+
+// The assist is a raid trash fight's alone (RaidAssistTarget's RaidTrashFight gate): a party run never gets it, even for a
+// held mob the party guard's per-unit cap makes it pass over (which is when RaidAssist would be reached).
+static void TestRaidAssistIsRaidTrashOnly()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {4853})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.leadIsTank = true;
+    f.leadStaying = true;
+    Tick(r, f);
+    f.units = {Unit(31, 4853, 40)};
+    CHECK(Tick(r, f) == "pullback 31");
+    f.anyInCombat = true;
+    r.guardRefills = 1;
+    r.guardUnitOrders[81] = kGuardOrdersPerUnit;
+    f.partyAttackers = {TankHeld(81, 4853, 20)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.fightOrders == 0);
+}
+
+// Task F3: a raid's trash fight hands the mobs to the off-tanks; on a boss step
+// (or a boss's fight) and in a party run the guard's order is the main tank's.
+static void TestRaidTrashFightGate()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(40, {12129}), Step(PlanStepKind::Boss, 60)};
+    Run r = Start(&plan);
+    Facts f = RaidTrashFacts();
+    CHECK(RaidTrashFight(r, f));
+    f.raid.on = false;
+    CHECK(!RaidTrashFight(r, f));
+    f = RaidTrashFacts();
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(91, 12130, 20)};
+    plan.steps[1].entry = 12130;
+    ai::NormalizePlanStep(plan.steps[1]);
+    CHECK(!RaidTrashFight(r, f)); // the plan's boss engaged on a trash step
+}
+
+// Task F4: a raid bot left far behind the lead bot (a stale follow after a teleport) is
+// summoned once it has been out of reach kRunawayMs, at most kRunawaySummonsPerStep a
+// step, never in a fight and never in a party run.
+static Facts RunawayFacts(float xYd = 374.0f)
+{
+    Facts f = Party(0);
+    f.total = 3;
+    f.alive = 3;
+    f.raid.on = true;
+    f.members = {Mem("Tanky", 0.0f), Mem("Healer", 3.0f), Mem("X", xYd)};
+    f.maxMemberYd = xYd;
+    return f;
+}
+
+// The lead bot takes its walk at 10 yd a tick: progress, so the walk never stalls or resends.
+static void WalkOn(Facts& f)
+{
+    f.leadX += 10.0f;
+}
+
+static void TestRunawaySummonInARaid()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    CHECK(Tick(r, f) == "move 2000.0 0.0 0.0");
+    for (int i = 0; i < 6; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    WalkOn(f);
+    CHECK(Tick(r, f) == "summon X"); // 8 s out of reach
+    CHECK(r.note == "X is 374.0 yd from the lead bot (8 s out of reach): summoned");
+    CHECK(r.runawaySummons == 1);
+}
+
+static void TestRunawayTimerResetsWhenTheBotComesBack()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    Tick(r, f); // the walk's order
+    for (int i = 0; i < 4; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    f.members[2].yd = 90.0f; // back in reach: its clock starts over
+    WalkOn(f);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.runawayMs.count("X") == 0);
+    for (int i = 0; i < 7; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    CHECK(r.runawayMs.count("X") == 0); // still in reach: no clock runs
+    f.members[2].yd = 150.0f; // out again: the 8 s start over
+    for (int i = 0; i < 7; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    WalkOn(f);
+    CHECK(Tick(r, f) == "summon X");
+}
+
+static void TestRunawayNeverForABotInAFight()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    Tick(r, f);
+    f.members[2].inCombat = true;
+    for (int i = 0; i < 15; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    CHECK(r.runawaySummons == 0);
+    f.members[2].inCombat = false;
+    f.members[2].attackers = 1;
+    for (int i = 0; i < 15; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    CHECK(r.runawaySummons == 0);
+}
+
+static void TestRunawaySummonsABotOnAnotherMap()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    f.members[2].offPlanMap = true;
+    f.members[2].offMapReturnable = false; // the return teleport's own case, not this one
+    f.members[2].yd = 1000.0f;
+    CHECK(Tick(r, f) == "move 2000.0 0.0 0.0");
+    for (int i = 0; i < 6; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    WalkOn(f);
+    CHECK(Tick(r, f) == "summon X");
+    CHECK(r.note.find("on another map") != std::string::npos);
+}
+
+static void TestRunawaySummonCapAndStepReset()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000), Step(PlanStepKind::Move, 3000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    for (int i = 0; i < 8; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.runawaySummons == 1);
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.runawaySummons == 2);
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty()); // the third would be due, the step's cap is spent
+    }
+    CHECK(r.runawaySummons == 2);
+    NextStep(r, "test");
+    CHECK(r.step == 1 && r.runawaySummons == 0 && r.runawayLastMs == 0 && r.runawayMs.empty());
+    CHECK(Tick(r, f) == "move 3000.0 0.0 0.0");
+    for (int i = 0; i < 6; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    WalkOn(f);
+    CHECK(Tick(r, f) == "summon X"); // a new step: allowed again
+}
+
+// Codex r3: a pause/resume or a wipe recovery restarts the SAME step (ResetStep) and must keep the step's
+// runaway budget: the cap and the 30 s between summons hold across it.
+static void TestRunawayBudgetSurvivesASameStepReset()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000), Step(PlanStepKind::Move, 3000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    for (int i = 0; i < 8; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.runawaySummons == 1);
+    ResetStep(r); // a resume of the same step
+    CHECK(r.step == 0 && r.runawaySummons == 1 && r.runawayLastMs != 0);
+    for (int i = 0; i < 12; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f) != "summon X"); // within 30 s of the first: no second summon
+    }
+    for (int i = 0; i < 30; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.runawaySummons == 2);
+    ResetStep(r); // a wipe recovery on the same step
+    for (int i = 0; i < 40; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f) != "summon X"); // the cap stays spent
+    }
+    CHECK(r.runawaySummons == 2);
+}
+
+static void TestRunawayOnlyInARaid()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    f.raid.on = false;
+    for (int i = 0; i < 20; ++i)
+    {
+        WalkOn(f);
+        Tick(r, f);
+    }
+    CHECK(r.runawaySummons == 0);
+}
+
+static void TestRunawayNeverInAFight()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    f.anyInCombat = true;
+    for (int i = 0; i < 12; ++i)
+    {
+        WalkOn(f);
+        CHECK(Tick(r, f).empty());
+    }
+    CHECK(r.runawaySummons == 0);
+}
+
+// A boss step never summons a runaway: the summon would drop the bot on the boss (RaidTrashFight's own protection).
+static void TestRunawayNeverOnABossStep()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 10, 0, 0);
+    boss.entry = 62072;
+    plan.steps = {boss};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    f.leadX = 10.0f;
+    for (int i = 0; i < 60; ++i)
+    {
+        std::string const order = Tick(r, f);
+        CHECK(order.compare(0, 7, "summon ") != 0);
+    }
+}
+
+// A plan boss engaged on a move step gets the same protection (EngagedPlanBoss).
+static void TestRunawayNeverWithAPlanBossEngaged()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 900, 0, 0);
+    boss.entry = 62072;
+    plan.steps = {Step(PlanStepKind::Move, 2000), boss};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    f.engagedRead = true;
+    UnitFact u = Unit(91, 62072, 20);
+    u.attackable = true;
+    f.engagedUnits = {u};
+    for (int i = 0; i < 60; ++i)
+    {
+        WalkOn(f);
+        std::string const order = Tick(r, f);
+        CHECK(order.compare(0, 7, "summon ") != 0);
+    }
+}
+
+// Three raid bots out of reach at once: the step gives two of them its summons, the second no sooner than
+// kRunawayResummonMs after the first, and the third never comes.
+static void TestRunawaySummonStepLimits()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Run r = Start(&plan);
+    Facts f = RunawayFacts();
+    f.total = 6;
+    f.alive = 6;
+    f.members = {Mem("Tanky", 0.0f), Mem("A", 200.0f), Mem("B", 300.0f), Mem("C", 400.0f)};
+    f.maxMemberYd = 400.0f;
+    CHECK(Tick(r, f) == "move 2000.0 0.0 0.0");
+    std::vector<std::uint64_t> at;
+    std::vector<std::string> orders;
+    for (int i = 0; i < 120; ++i)
+    {
+        WalkOn(f);
+        std::string const order = Tick(r, f);
+        if (order.compare(0, 7, "summon ") == 0)
+        {
+            at.push_back(r.runMs);
+            orders.push_back(order);
+            for (MemberFact& m : f.members) // the summon brought it to the lead bot
+                if (order == "summon " + m.name)
+                    m.yd = 3.0f;
+        }
+    }
+    CHECK(orders.size() == 2);
+    CHECK(orders[0] == "summon C");
+    CHECK(orders[1] == "summon B"); // the farthest still out; A never gets one, the step is spent
+    CHECK(at[0] == kRunawayMs);
+    CHECK(at[1] - at[0] == kRunawayResummonMs);
+}
+
+static void TestPartyRulesUnchanged()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 40)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.dead = 3;
+    f.alive = 2;
+    f.leadAlive = false;
+    f.anyInCombat = true;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && !r.regroup && r.note.find("regroup follows") != std::string::npos);
+    f.anyInCombat = false;
+    Tick(r, f);
+    CHECK(r.state == State::Running && r.regroup && r.wipes == 0 && r.nearWipes == 1);
+}
+
 int main()
 {
     TestRunGossipStepOfReadsTheCurrentStep();
@@ -22348,6 +23686,60 @@ int main()
     TestSpeedLeashResumesWhenTheRateDrops();
     TestSpeedLeashResumesTheLegOnALegWalk();
     TestSpeedLeashClearedByANewStep();
+    TestRaidWipeLevel();
+    TestRaidGathered();
+    TestRaidPullGateNotHeldByOneStraggler();
+    TestRaidRegroupWaitsForWipeLevel();
+    TestRaidNoRetreatAtTwoDead();
+    TestRaidNearWipeLatch();
+    TestRaidRegroupNotRestartedByOneMoreDeath();
+    TestRaidRegroupGatherDone();
+    TestRaidCcRegatherDone();
+    TestRaidRunBackBelowWipeLevel();
+    TestRaidHoldRegroupGathers();
+    TestRaidMainTankHelpsOnAMobAnOffTankHolds();
+    TestRaidGuardRoundRobinsTheOffTanks();
+    TestRaidGuardOnABossStepSendsTheMainTank();
+    TestRaidGuardWithoutAnOffTankSendsTheMainTank();
+    TestPartyGuardStillTakesAMobHeldByItsTank();
+    TestRaidGuardAHealerMobGoesToAnOffTankWithoutTheWait();
+    TestRaidTrashFightGate();
+    TestRunawaySummonInARaid();
+    TestRunawayTimerResetsWhenTheBotComesBack();
+    TestRunawayNeverForABotInAFight();
+    TestRunawaySummonsABotOnAnotherMap();
+    TestRunawaySummonCapAndStepReset();
+    TestRunawayBudgetSurvivesASameStepReset();
+    TestRunawayOnlyInARaid();
+    TestRunawayNeverInAFight();
+    TestRunawayNeverOnABossStep();
+    TestRunawayNeverWithAPlanBossEngaged();
+    TestRunawaySummonStepLimits();
+    TestPartyRulesUnchanged();
+    TestStatusPartsMatchLine();
+    // item 1 until
+    TestUntilParsing();
+    TestUntilResolve();
+    TestUntilStopsBeforeTheBossStep();
+    TestUntilSkipAndJumpStop();
+    TestUntilStopsAJumpInTheTickBody();
+    TestUntilClampsAfterALegSkipLandsPastIt();
+    TestUntilStopsFightForward();
+    TestUntilStatusLabel();
+    // item 2 raid assist
+    TestRaidMainTankHelpsOnASecondMobOfThePack();
+    TestRaidMainTankLeavesALooseMobToTheOffTankFirst();
+    TestRaidAssistWaitRestartsForANewMob();
+    TestRaidMainTankWithAMobOfItsOwnIsNotAssisted();
+    TestRaidAssistPickIsStickyAcrossANearestSwap();
+    TestRaidAssistNeverOnALooseMob();
+    TestRaidAssistNeverOnAHeldMobThatIsNotHitting();
+    TestRaidAssistKeepsTheOrderSpacing();
+    TestRaidAssistClearsForTheNextFight();
+    TestRaidMainTankOffStayFightsByItself();
+    TestRaidMainTankOnABossStepIgnoresAHeldMob();
+    TestRaidAssistNeverInAHold();
+    TestRaidAssistIsRaidTrashOnly();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;
 }

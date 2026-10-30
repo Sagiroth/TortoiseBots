@@ -129,6 +129,15 @@
     return out;
   }
 
+  // A trail cut to its newest sec seconds: the points stamped at or after nowSec - sec; a point without a numeric time is kept. sec <= 0
+  // keeps the trail as it is (0 is "no cut", the raid's pathing preset cuts to 30 s).
+  function cutByAge(pts, nowSec, sec) {
+    const list = Array.isArray(pts) ? pts : [];
+    if (!(sec > 0)) return list;
+    const from = nowSec - sec;
+    return list.filter((p) => Array.isArray(p) && (!num(p[2]) || p[2] >= from));
+  }
+
   // ---- run steps -----------------------------------------------------------------------------------------------------
 
   const KINDS = { move: 1, move_direct: 1, pull: 1, boss: 1, loot: 1, open: 1, use_item: 1, wait_object: 1, wait_clear: 1, rest: 1, ritual: 1 };
@@ -318,6 +327,27 @@
     return out;
   }
 
+  // Healer -> tank lines from the raid layout (bind.layout.th, [{h: healer, t: tank}]): the two bots are found by name among those on the
+  // same map, both with a position; a pair with one missing is dropped, and the layout's raid healers (rh) draw no line. [{from, to,
+  // healer, tank, dist, far, dead}] with the 2D distance, far past the healer's range, dead when either is down.
+  function layoutHealLines(bind, bots) {
+    const layout = bind && bind.layout;
+    const list = bots || [];
+    const out = [];
+    (layout && Array.isArray(layout.th) ? layout.th : []).forEach((p) => {
+      if (!p || typeof p.h !== "string" || typeof p.t !== "string") return;
+      const healer = list.find((b) => b && b.name === p.h && num(b.x) && num(b.y));
+      const tank = list.find((b) => b && b.name === p.t && num(b.x) && num(b.y));
+      if (!healer || !tank || healer.map !== tank.map) return;
+      const dist = Math.hypot(healer.x - tank.x, healer.y - tank.y);
+      out.push({
+        from: { x: healer.x, y: healer.y }, to: { x: tank.x, y: tank.y }, healer: healer.name, tank: tank.name,
+        dist, far: dist > CV.HEAL_RANGE_YD, dead: healer.alive === false || tank.alive === false,
+      });
+    });
+    return out;
+  }
+
   // Crowd-control lines: [{from: bot, to: mob}] for each living bot casting at a mob that is crowd controlled (stunned, confused,
   // fleeing, rooted - the mob's `cc`).
   function ccLines(bots, mobs) {
@@ -337,10 +367,10 @@
 
   const api = {
     TRAIL_MAX, TRAIL_STEP_YD, TRAIL_LEN_DEFAULT, TRAIL_LEN_MIN, STALL_KEEP_SEC, STALL_MAX, AGGRO_BASE_YD,
-    newTrails, markGap, seedTargets, trailOf, noteTrails, seedTrails, pruneTrails, trailPoints, memberTrails, cleanPoints,
+    newTrails, markGap, seedTargets, trailOf, noteTrails, seedTrails, pruneTrails, trailPoints, memberTrails, cutByAge, cleanPoints,
     runSteps, routeSegments, numberedSteps, stepIcon, stepText,
     newStalls, noteStalls, stallsOf, pruneStalls, stallText, orderPoint, placeAt, refusedReason,
-    objectsOf, objectText, aggroRadius, healLines, ccLines, hasCastTargets,
+    objectsOf, objectText, aggroRadius, healLines, layoutHealLines, ccLines, hasCastTargets,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.CmdPaths = api;
 })(typeof self !== "undefined" ? self : this);
