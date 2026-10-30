@@ -11,7 +11,7 @@ static int failures = 0;
 
 int main()
 {
-    for (uint8_t i = 0; i <= uint8_t(OrderState::Cant); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderState::Stocked); ++i)
     {
         OrderState back = OrderState::Working;
         CHECK(ParseState(StateToken(OrderState(i)), back) && back == OrderState(i));

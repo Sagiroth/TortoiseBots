@@ -14,7 +14,7 @@ namespace GuildOrders
 
 enum class OrderType : uint8_t { Farm, Buy, Craft };
 
-enum class OrderState : uint8_t { Working, Waiting, Delivering, Done, Mailed, NoSkill, Cant };
+enum class OrderState : uint8_t { Working, Waiting, Delivering, Done, Mailed, NoSkill, Cant, Stocked };
 
 enum class OrderReason : uint8_t
 {
@@ -63,13 +63,14 @@ inline char const* StateToken(OrderState state)
         case OrderState::Mailed:     return "mailed";
         case OrderState::NoSkill:    return "noskill";
         case OrderState::Cant:       return "cant";
+        case OrderState::Stocked:    return "stocked";
     }
     return "working";
 }
 
 inline bool ParseState(std::string const& token, OrderState& out)
 {
-    for (uint8_t i = 0; i <= uint8_t(OrderState::Cant); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderState::Stocked); ++i)
         if (token == StateToken(OrderState(i))) { out = OrderState(i); return true; }
     return false;
 }
@@ -143,8 +144,16 @@ inline char const* DifficultyToken(OrderDifficulty difficulty)
 
 inline bool IsFinished(OrderState state)
 {
+    // Stocked counts as finished: nothing runs (no travel, no timers, no
+    // pool hold), the store just watches the bank for the next round.
     return state == OrderState::Done || state == OrderState::Mailed || state == OrderState::NoSkill ||
-           state == OrderState::Cant;
+           state == OrderState::Cant || state == OrderState::Stocked;
+}
+
+// Trailing TBM:ORDER field: whether the order was given with `keep`.
+inline char const* KeepToken(bool keep)
+{
+    return keep ? "keep" : "-";
 }
 
 // One order, as the store keeps it in memory (one per bot).
@@ -155,8 +164,11 @@ struct OrderRecord
     uint32_t giverGuidLow = 0;
     OrderType type = OrderType::Farm;
     uint32_t itemId = 0;
-    uint32_t amount = 0;
-    uint32_t hours = 1;          // player-chosen farm time, whole hours 1-24
+    uint32_t amount = 0;       // current round quota; re-armed per round for keep orders
+    uint32_t hours = 1;        // player-chosen farm time per round, whole hours 1-24
+    bool keep = false;         // keep the stock target filled: new rounds while the bank holds less
+    uint32_t stockTarget = 0;  // keep level in the bank (the ordered amount)
+    uint32_t lastBankCheckMs = 0; // last keep bank look, in server uptime ms
     uint32_t delivered = 0;
     OrderState state = OrderState::Working;
     OrderReason reason = OrderReason::None;

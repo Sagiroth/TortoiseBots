@@ -48,6 +48,16 @@ void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t 
 // Change state and reason (the next Update reports it to the giver).
 void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason);
 
+// A keep round landed in the bank: the order watches it from now on. Sets
+// the stocked state, the stock target back as the round's quota, and the
+// last bank look to now so the first re-check waits a full interval.
+// World thread only (the delivery drain).
+void StartKeepWatch(uint32_t botGuidLow);
+
+// Drop the keep flag (a round that ended without a bank, or without skill):
+// the order ends like a one-shot one. World thread only.
+void DropKeep(uint32_t botGuidLow);
+
 // The buy order's auction attempt is over (no gold, no listings): farm what
 // is still missing. Keeps type Buy; GuildOrderValue maps it to Farm.
 void NoteFarmRest(uint32_t botGuidLow);

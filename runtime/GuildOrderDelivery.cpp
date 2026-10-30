@@ -2,6 +2,7 @@
 
 #include "GuildOrderDeliveryPolicy.h"
 #include "GuildOrderDeliveryQueue.h"
+#include "GuildOrderKeepPolicy.h"
 #include "GuildOrderStore.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/TravelMgr.h"
@@ -369,10 +370,18 @@ private:
         switch (outcome)
         {
             case DeliveryOutcome::Done:
-                SetState(request.botGuidLow, OrderState::Done, OrderReason::None);
+                // A keep order that landed in the bank watches it from now on
+                // instead of ending: the store re-arms the next round when
+                // the bank drops below the stock target.
+                if (KeepWatchesBank(stored->keep, stored->stockTarget))
+                    StartKeepWatch(request.botGuidLow);
+                else
+                    SetState(request.botGuidLow, OrderState::Done, OrderReason::None);
                 break;
             case DeliveryOutcome::Mailed:
+                // Mailed means no usable bank: the keep is dropped with the order.
                 SetState(request.botGuidLow, OrderState::Mailed, OrderReason::NoBank);
+                DropKeep(request.botGuidLow);
                 break;
             case DeliveryOutcome::BackToWork:
                 SetState(request.botGuidLow, OrderState::Working, OrderReason::None);

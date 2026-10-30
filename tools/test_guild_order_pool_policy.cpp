@@ -27,6 +27,9 @@ int main()
     OrderRecord done;
     done.state = OrderState::Done;
     CHECK(!KeepOrderBotOnline(done));
+    OrderRecord stocked;
+    stocked.state = OrderState::Stocked;
+    CHECK(!KeepOrderBotOnline(stocked));
     OrderRecord mailed;
     mailed.state = OrderState::Mailed;
     CHECK(!KeepOrderBotOnline(mailed));
