@@ -326,7 +326,8 @@ bool MoveToFishAction::Execute(Event& event)
     if (!fishSpot && qualifier == "travel") //Get travel fish spot if available.
     {
         TravelTarget* target = AI_VALUE(TravelTarget*, "leader travel target");
-        fishSpot = *target->getPosition();
+        if (target && target->getPosition())
+            fishSpot = *target->getPosition();
 
         if (AI_VALUE(TravelTarget*, "travel target") != target) //Do not fish ontop of master.
         {
@@ -410,7 +411,12 @@ bool MoveToFishAction::Execute(Event& event)
 
     SET_AI_VALUE2(WorldPosition, "custom position", "fish spot", fishSpot);
 
-    if (fishSpot.distance(bot) < 1.0f)
+    // The spot is a water point; the bot casts standing on the bank beside
+    // it, never on the point itself. One yard never arrives (the travel
+    // leg already stops up to 5 yd out), so the move re-fires every tick
+    // and the cast below never runs. Five yards matches the travel arrival
+    // radius (INTERACTION_DISTANCE) and hands over to the cast.
+    if (fishSpot.distance(bot) < INTERACTION_DISTANCE)
         return false;
 
     return MoveTo(fishSpot);
@@ -450,8 +456,9 @@ bool FishAction::isUseful()
             return false;
 
         TravelTarget* target = AI_VALUE(TravelTarget*, "leader travel target");
+        TravelDestination* dest = target ? target->GetDestination() : nullptr;
 
-        if (target->GetDestination()->GetPurpose() != TravelDestinationPurpose::GatherFishing)
+        if (!dest || dest->GetPurpose() != TravelDestinationPurpose::GatherFishing)
             return false;
 
         if (!bot->GetGroup() || ai->IsGroupLeader() || target->GetTimeLeft() < 0)
@@ -466,7 +473,7 @@ bool FishAction::isUseful()
     if (!AI_VALUE(bool, "can fish"))
         return false;
 
-    if (fishSpot.distance(bot) > 1.0f)
+    if (fishSpot.distance(bot) > INTERACTION_DISTANCE)
         return false;
 
     return true;
@@ -525,9 +532,11 @@ bool FishAction::Execute(Event& event)
     ai->StopMoving();
 
     // The zone must be fishable for this bot (same rule as the travel fish
-    // errand): no base skill means no fish here, otherwise skill covers the
-    // requirement with the errand's -5 head start. Checked at cast time so a
-    // bot that walks to water in a zone it cannot fish never casts.
+    // errand): a missing or negative base skill never blocks - the core
+    // rolls open-water catches from fishing_loot_template regardless, and
+    // the success chance runs inside its loot roll. Positive requirements
+    // keep the errand's -5 head start. Checked at cast time so a bot that
+    // walks to water in a zone it cannot fish never casts.
     if (water)
     {
         WorldPosition const waterPos(water);

@@ -1597,11 +1597,14 @@ void TravelTarget::CheckStatus()
     // mod-playerbots shape (GO_GRIND/WANDER_NPC return to IDLE with no
     // target instead of holding). Both signals are already-cached engine
     // reads ("grind target" 2 s, core attacker set + combat flag free), so
-    // no DB hit, world scan or graph rebuild here. Pool upkeep bots only;
+    // no DB hit, world scan or graph rebuild here. Fishing never releases:
+    // its WORK is a cast wait (no prey, no attackers by design), so the
+    // two signals always read empty at a fish spot. Pool upkeep bots only;
     // owned/hired bots keep the full WORK clock.
     if (GetStatus() == TravelStatus::TRAVEL_STATUS_WORK &&
         !IsForced() && !IsGroupCopy() &&
-        sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster())
+        sRandomBotFacade.IsFreeBot(bot) && !ai->HasRealPlayerMaster() &&
+        (!tDestination || tDestination->GetPurpose() != TravelDestinationPurpose::GatherFishing))
     {
         AiObjectContext* workContext = ai->GetAiObjectContext();
         Unit* grindPrey = workContext->GetValue<Unit*>("grind target")->Get();
