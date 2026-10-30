@@ -3020,9 +3020,11 @@ class DungeonPlanSql(unittest.TestCase):
         # walked the same move_direct live at step 200 (from -6191.8 -3954.9 221.6 to -6186.7 -3964.3 215.2, no death).
         # 10 legs, 846 steps (20261025002000's 835: leg 3 128 -> 132 rows, leg 4 116 -> 123), the same 83 pulls of legs 3 and 4
         # (28+6+12+57+26+17+25+10+22+3: the alcove's 3 moved from leg 3 to leg 4), bosses in leg order, no door or event step.
+        # The rows are not the export of turtle-agent c19713b's plan file (it still walks the patrol): the source says so, and the
+        # patrol check below fails a later export that brings the walk back.
         name, text = newest_plan_text("dragonmaw_retreat")
         self.assertEqual(name, "20261030120000_world.sql")
-        self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c19713b dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c19713b + leg 3/4 by hand (20261030120000)', 'plan v1, draft (not mapped, not live-checked)');", text)
         legs = leg_rows(text, "dragonmaw_retreat")
         self.assertEqual(sorted(legs), list(range(10)))
         self.assertEqual([legs[i][0] for i in range(10)],

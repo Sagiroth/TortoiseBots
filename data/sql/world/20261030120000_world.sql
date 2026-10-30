@@ -12,7 +12,8 @@
 -- boss row last, after the six enchanters. The alcove north of the patrol's turn (the packs 62047/62039 at -5981.4 -4179.1,
 -- 62039/62051/62041/62040 at -5980.8 -4140.3 and 62047 at -6011.4 -4140.1) has its only way in past that turn, so it is
 -- pulled at the head of leg 4 (halgan_approach), once the boss is dead. Hand-made from the plan's rows: the plan file in
--- turtle-agent (branch prep/dragonmaw_retreat) still has the old order and needs the same change before its next export.
+-- turtle-agent (branch prep/dragonmaw_retreat) still has the old order and needs the same change before its next export
+-- (the source column says so; tools/test_dungeon_plan_sql.py fails an export that walks the patrol again).
 --
 -- Idempotent: each plan's rows are deleted, then inserted. The tables come from 20261014150000_world.sql.
 
@@ -21,7 +22,7 @@ DELETE FROM `ai_dungeon_step` WHERE `plan` = 'dragonmaw_retreat';
 DELETE FROM `ai_dungeon_leg` WHERE `plan` = 'dragonmaw_retreat';
 DELETE FROM `ai_dungeon_plan` WHERE `plan` = 'dragonmaw_retreat';
 INSERT INTO `ai_dungeon_plan` (`plan`, `map`, `cc_priority`, `cc_always`, `kill_first`, `source`, `comment`) VALUES
-('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c19713b dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');
+('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c19713b + leg 3/4 by hand (20261030120000)', 'plan v1, draft (not mapped, not live-checked)');
 INSERT INTO `ai_dungeon_leg` (`plan`, `leg`, `name`, `comment`) VALUES
 ('dragonmaw_retreat', 0, 'bogpaw_truthsay', ''),
 ('dragonmaw_retreat', 1, 'gowlfang', ''),
