@@ -526,32 +526,24 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
 
     if (type == OrderType::Craft)
     {
-        for (auto& [spellId, spellState] : bot->GetSpellMap())
+        // One scan for planner, action and values: the same check the craft
+        // action casts with, so search, give and cast never disagree on
+        // whether the bot knows the recipe.
+        uint32_t craftSpellId = FindCraftSpellFor(bot, itemId);
+        plan.verdict = TortoiseBots::GuildOrders::CraftRecipeVerdict(craftSpellId != 0);
+        if (plan.verdict != OrderReason::None)
+            return plan;
+        plan.sources = SourceCraft;
+        SkillLineAbilityMapBounds bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(craftSpellId);
+        for (SkillLineAbilityMap::const_iterator it = bounds.first; it != bounds.second; ++it)
         {
-            if (spellState.state == PLAYERSPELL_REMOVED || spellState.disabled || IsPassiveSpell(spellId))
-                continue;
-            SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
-            if (!spell)
-                continue;
-            for (int i = 0; i < 3; ++i)
+            if (it->second && it->second->skillId)
             {
-                if (spell->Effect[i] != SPELL_EFFECT_CREATE_ITEM || spell->EffectItemType[i] != itemId)
-                    continue;
-                plan.sources = SourceCraft;
-                SkillLineAbilityMapBounds bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(spellId);
-                for (SkillLineAbilityMap::const_iterator it = bounds.first; it != bounds.second; ++it)
-                {
-                    if (it->second && it->second->skillId)
-                    {
-                        plan.skillId = it->second->skillId;
-                        plan.skillValue = it->second->min_value;
-                        break;
-                    }
-                }
-                return plan;
+                plan.skillId = it->second->skillId;
+                plan.skillValue = it->second->min_value;
+                break;
             }
         }
-        plan.verdict = OrderReason::NoRecipe;
         return plan;
     }
 

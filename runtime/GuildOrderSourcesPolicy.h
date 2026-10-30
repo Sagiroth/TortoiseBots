@@ -117,6 +117,14 @@ inline OrderReason OrderVerdict(bool lowGatherLevel, uint8_t skillFail, bool saw
     return OrderReason::NoRange;
 }
 
+// Craft recipe gate: the planner only promises a craft the bot itself can
+// cast. `knowsRecipe` is the shared spell scan (FindCraftSpellFor) read as
+// a bool, so the verdict never disagrees with the craft action.
+inline OrderReason CraftRecipeVerdict(bool knowsRecipe)
+{
+    return knowsRecipe ? OrderReason::None : OrderReason::NoRecipe;
+}
+
 // Expected kills or gathers for an amount at the best source's chance.
 // Skinning chances count per kill, drop chances per kill, node chances per
 // gather. A zero chance never yields the item, so it estimates unbounded.

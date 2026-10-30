@@ -306,10 +306,8 @@ bool GuildCraftOrderAction::Execute(Event& event)
         return false;
     }
 
-    // Cast at the forge itself: the core focus check runs at cast time and
-    // a targetless cast never names one. The old code built a chat string
-    // and returned without sending it, so no cast ever fired. One direct
-    // call per tick; the trigger refires for the rest of the batch.
+    // The core focus check runs at cast time: name the forge, not the void.
+    // One call casts once; the trigger refires for the rest of the batch.
     uint32 spellDuration = 0;
     bool castOk = focus ? ai->CastSpell(craftSpellId, focus, nullptr, true, &spellDuration)
         : ai->CastSpell(craftSpellId, bot, nullptr, true, &spellDuration);
