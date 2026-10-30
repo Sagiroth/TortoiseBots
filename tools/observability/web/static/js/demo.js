@@ -73,6 +73,14 @@
   }
   const PACKS = packMobs();
 
+  // The boss overlay of the simulated units: the fake cast of every spell the story names (the module sends the real ids and the
+  // committed shapes; here they are made up with the story) and the areas a boss or elite draws. A spell not listed sends no area.
+  const DEMO_CAST_ID = { "Shadow Bolt": 6901, Fear: 6902, "Chain Lightning": 6903, Shatter: 6904 };
+  const DEMO_CAST_SHAPE = {
+    "Chain Lightning": { k: "line", l: 30, w: 4 },
+    Shatter: { k: "cone", a: 120, l: 12 },
+  };
+
   // One hostile unit at time t (null: not there).
   function mobAt(m, t, c) {
     let hp = 100, victim = "", cast = "", cc = "";
@@ -87,15 +95,23 @@
     if (m.sheep && within(t, m.sheep)) { cc = "c"; victim = ""; }
     if (m.flee && within(t, m.flee)) { cc = "f"; hp = Math.min(hp, 14); victim = ""; const k = (t - m.flee[0]) * 4; x += c.hx * k; y += c.hy * k; }
     (m.cast || []).forEach((w) => { if (t >= w[0] && t < w[1] && t % 2 < 1.6) cast = w[2]; });
-    if (m.rank === "b" && hp <= 0) { victim = ""; cast = ""; }
-    return mob(m, x, y, hp, victim, cast, cc);
+    if (m.rank === 'b' && hp <= 0) { victim = ""; cast = ""; }
+    const out = mob(m, x, y, hp, victim, cast, cc);
+    if (m.rank) out.o = Math.round((t % 8) * (Math.PI / 4) * 100) / 100;
+    return out;
   }
   function mob(m, x, y, hp, victim, cast, cc) {
     const o = { id: m.id, entry: m.entry, name: m.name, hp: Math.round(hp), x: round1(x), y: round1(y), reaction: m.reaction || "h", lvl: m.lvl };
     if (m.rank) o.rank = m.rank;
     if (m.kind) o.kind = m.kind;
     if (victim) o.victim = victim;
-    if (cast) o.cast = cast;
+    if (cast) {
+      o.cast = cast;
+      o.cid = DEMO_CAST_ID[cast] || 6900;
+      o.cleft = 1600;
+      o.ctot = 3000;
+      if (DEMO_CAST_SHAPE[cast]) o.shape = DEMO_CAST_SHAPE[cast];
+    }
     if (cc) o.cc = cc;
     return o;
   }
@@ -233,6 +249,48 @@
       run: runAt(t, base), objects: objectsAt(t),
     };
   }
+  // A 20-bot raid binding (4 subgroups of 5) on the same map, so the raid card has something to draw without a live raid: one dead bot,
+  // one mob held by a healer, run notes and a paused run. `frame` stays the 5-man party; the page shows both while the demo is on.
+  const RAID_COMMANDER = "DEMORAID (simulated)";
+  const RAID_BOTS = [
+    ["Raidtank", "warrior", "tank", "rage", 4200, 100], ["Raidheal", "priest", "healer", "mana", 2600, 3000],
+    ["Raidmage", "mage", "dps", "mana", 2300, 3400], ["Raidhunt", "hunter", "dps", "mana", 2900, 2400], ["Raidlock", "warlock", "dps", "mana", 2400, 3200],
+  ];
+  const RAID_CLASSES = ["warrior", "paladin", "priest", "mage", "warlock", "druid", "hunter", "rogue", "shaman", "warrior", "priest", "mage", "warlock", "druid", "hunter"];
+  function raidFrame(sec, start) {
+    const t = (((sec - start) % LOOP) + LOOP) % LOOP, base = sec - t;
+    const c = partyAt(100), cp = ahead(partyAt(0), -40, -60);
+    const bots = [];
+    for (let s = 0; s < 4; s++) for (let i = 0; i < 5; i++) {
+      const n = s * 5 + i, dead = n === 7;
+      const p = ahead(c, 8 - s * 7 + (i % 2) * 4, -10 + i * 5);
+      const spec = RAID_BOTS[i];
+      bots.push({
+        name: n === 0 ? "Raidlead" : spec[0] + s,
+        guid: 9101 + n, class: i === 0 ? spec[1] : RAID_CLASSES[n % RAID_CLASSES.length], role: spec[2], level: 60,
+        hp: dead ? 0 : Math.round(spec[4] * 0.85), max_hp: spec[4], power: dead ? 0 : Math.round(spec[5] * 0.7), max_power: spec[5],
+        power_type: spec[3], alive: !dead, lead: n === 0, map: MAP, zone: ZONE, x: round1(p.x), y: round1(p.y), z: 0,
+        id: String(9101 + n), sub: s, st: dead ? "d" : "c", act: dead ? undefined : "attack", res: "O",
+      });
+    }
+    const whelp = { id: "70001", entry: 100, name: "Whelp", hp: 80, x: round1(c.x + 6), y: round1(c.y + 4), reaction: "h", victim: "9102" };
+    return {
+      commander: RAID_COMMANDER, commander_guid: 9100, online: true, view: true, group: 4243, lead: "Raidlead", demo: "raid", bots,
+      orders: ordersAt(t, base), commander_pos: { map: MAP, x: round1(cp.x), y: round1(cp.y) }, mobs_map: MAP, mobs: [whelp],
+      bound_at: Math.floor(start),
+      run: {
+        plan: "molten_core", state: within(t, T.rest) ? "paused" : "running", step: 5, steps: 20, leg: "garr", kind: "boss", phase: "fight",
+        note: within(t, T.rest) ? "waiting for mana: healer 40%" : "fighting Garr", changed: Math.floor(base) + 40,
+        notes: [
+          { at: Math.floor(base) + 20, step: 4, leg: "garr", kind: "move", phase: "walk", state: "running", note: "walking in" },
+          { at: Math.floor(base) + 40, step: 5, leg: "garr", kind: "boss", phase: "fight", state: "running", note: "fighting Garr" },
+        ],
+        plan_steps: [{ i: 5, k: "boss", x: round1(c.x + 6), y: round1(c.y + 4), r: 30, e: 100, n: "Whelp" }],
+      },
+      objects: objectsAt(t),
+    };
+  }
+
 
   // The picture slots of the demo card, shaped like the daemon's GET /api/v1/maps/<id> answer: the reference Zul'Farrak layout with all
   // three pictures, and Uldaman as the indoor dungeon the demo walks, which has no minimap picture. The rectangles span the demo route
@@ -254,6 +312,6 @@
     return (PIC_MAPS[id] || []).map((s) => Object.assign({}, s));
   }
 
-  const api = { frame, pictures, LOOP, MAP, COMMANDER, ROUTE: () => ROUTE, T };
+  const api = { frame, raidFrame, RAID_COMMANDER, pictures, LOOP, MAP, COMMANDER, ROUTE: () => ROUTE, T };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.CmdDemo = api;
 })(typeof self !== "undefined" ? self : this);

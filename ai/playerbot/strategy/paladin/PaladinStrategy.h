@@ -254,6 +254,49 @@ namespace ai
         void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
     };
 
+    class PaladinOffdpsStrategy : public OffdpsStrategy
+    {
+    public:
+        PaladinOffdpsStrategy(PlayerbotAI* ai) : OffdpsStrategy(ai) {}
+
+    protected:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+
+    class PaladinOffdpsPvpStrategy : public PaladinOffdpsStrategy
+    {
+    public:
+        PaladinOffdpsPvpStrategy(PlayerbotAI* ai) : PaladinOffdpsStrategy(ai) {}
+        std::string getName() override { return "offdps pvp"; }
+
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+
+    class PaladinOffdpsPveStrategy : public PaladinOffdpsStrategy
+    {
+    public:
+        PaladinOffdpsPveStrategy(PlayerbotAI* ai) : PaladinOffdpsStrategy(ai) {}
+        std::string getName() override { return "offdps pve"; }
+
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+
+    class PaladinOffdpsRaidStrategy : public PaladinOffdpsStrategy
+    {
+    public:
+        PaladinOffdpsRaidStrategy(PlayerbotAI* ai) : PaladinOffdpsStrategy(ai) {}
+        std::string getName() override { return "offdps raid"; }
+
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+
     class PaladinAuraStrategy : public Strategy
     {
     public:

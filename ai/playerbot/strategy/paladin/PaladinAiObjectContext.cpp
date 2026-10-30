@@ -23,6 +23,7 @@ namespace ai
                 creators["cc"] = [](PlayerbotAI* ai) { return new CcPlaceholderStrategy(ai); };
                 creators["offheal"] = [](PlayerbotAI* ai) { return new OffhealPlaceholderStrategy(ai); };
                 creators["boost"] = [](PlayerbotAI* ai) { return new BoostPlaceholderStrategy(ai); };
+                creators["offdps"] = [](PlayerbotAI* ai) { return new OffdpsPlaceholderStrategy(ai); };
                 creators["pull"] = [](PlayerbotAI* ai) { return new PullStrategy(ai, "judgement", "seal of righteousness"); };
             }
         };
@@ -103,6 +104,17 @@ namespace ai
                 creators["offheal pve"] = [](PlayerbotAI* ai) { return new PaladinOffhealPveStrategy(ai); };
                 creators["offheal pvp"] = [](PlayerbotAI* ai) { return new PaladinOffhealPvpStrategy(ai); };
                 creators["offheal raid"] = [](PlayerbotAI* ai) { return new PaladinOffhealRaidStrategy(ai); };
+            }
+        };
+
+        class OffdpsSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            OffdpsSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["offdps pve"] = [](PlayerbotAI* ai) { return new PaladinOffdpsPveStrategy(ai); };
+                creators["offdps pvp"] = [](PlayerbotAI* ai) { return new PaladinOffdpsPvpStrategy(ai); };
+                creators["offdps raid"] = [](PlayerbotAI* ai) { return new PaladinOffdpsRaidStrategy(ai); };
             }
         };
 
@@ -287,6 +299,7 @@ namespace ai
                 creators["turn undead"] = [](PlayerbotAI* ai) { return new TurnUndeadTrigger(ai); };
                 creators["consecration"] = [](PlayerbotAI* ai) { return new ConsecrationTrigger(ai); };
                 creators["exorcism"] = [](PlayerbotAI* ai) { return new ExorcismTrigger(ai); };
+                creators["exorcism and healer should attack"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "exorcism", "healer should attack"); };
                 creators["repentance on enemy healer"] = [](PlayerbotAI* ai) { return new RepentanceOnHealerTrigger(ai); };
                 creators["repentance on snare target"] = [](PlayerbotAI* ai) { return new RepentanceSnareTrigger(ai); };
                 creators["repentance interrupt"] = [](PlayerbotAI* ai) { return new RepentanceInterruptTrigger(ai); };
@@ -434,6 +447,7 @@ PaladinAiObjectContext::PaladinAiObjectContext(PlayerbotAI* ai) : AiObjectContex
     strategyContexts.Add(new ai::paladin::BuffSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::paladin::BoostSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::paladin::OffhealSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::paladin::OffdpsSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::paladin::CcSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::paladin::AuraManualStrategyFactoryInternal());
     strategyContexts.Add(new ai::paladin::AuraSituationStrategyFactoryInternal());

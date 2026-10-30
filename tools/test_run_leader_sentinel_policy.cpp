@@ -125,6 +125,18 @@ static void TestReachStopsOnAggro()
     CHECK(next == "pullback 8" && !r.reachStopped);
 }
 
+// ta265 r4: a mob within kReachPackYd of the pull target is the target's own pack (the core's assistance radius);
+// its aggro does not stop the tank's reach, so the pullback still brings the pack to the party. One farther away
+// (another camp, the sentinel at 15.7 yd) still stops it.
+static void TestReachIgnoresThePullTargetsPack()
+{
+    CHECK(!ReachAggroCounts(0));
+    CHECK(!ReachAggroCounts(9.9f));
+    CHECK(!ReachAggroCounts(kReachPackYd));
+    CHECK(ReachAggroCounts(10.1f));
+    CHECK(ReachAggroCounts(15.7f));
+}
+
 // Run 4, 13:5x: after the tank's revive the walk back replayed the plan from step 1 (528 yd) through Baelog's wing;
 // only the navmesh hole (the direct steps) needs the plan's points.
 static void TestWalkBackStartsBeforeTheFirstDirectStep()
@@ -499,6 +511,7 @@ static void TestDeadBotIsRevivedBeforeAWalkBackOrADirectStep()
 int main()
 {
     TestReachStopsOnAggro();
+    TestReachIgnoresThePullTargetsPack();
     TestWalkBackStartsBeforeTheFirstDirectStep();
     TestFoldedRouteReplaysTheEarlierHole();
     TestEntranceReviveReplaysEveryHole();

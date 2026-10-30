@@ -2,10 +2,15 @@ package udp
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
+	"tortoise-observability/internal/combat"
+	"tortoise-observability/internal/live"
 	zoneproject "tortoise-observability/internal/map"
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
@@ -203,5 +208,242 @@ func TestDungeonMobsDatagramJoinsTheDungeonsView(t *testing.T) {
 	}
 	if got := store.Dungeons().Runs[0]; got.Mobs == nil || len(*got.Mobs) != 2 {
 		t.Fatalf("last good datagram lost: %+v", got)
+	}
+}
+
+// ---- realtime types (S1): COMMANDER_POS and COMBAT_EVENTS reach the live sink and never the WebSocket.
+
+type fakeLiveSink struct {
+	got []string
+}
+
+func (s *fakeLiveSink) Publish(commander, event string, _ interface{}) {
+	s.got = append(s.got, commander+":"+event)
+}
+
+func (s *fakeLiveSink) has(want string) bool {
+	for _, g := range s.got {
+		if g == want {
+			return true
+		}
+	}
+	return false
+}
+
+const commanderPosDatagram = `{"v":12,"fmt":1,"session":77,"seq":8,"ts":1791990030,"ts_ms":1791990030500,"type":"COMMANDER_POS",
+ "commander":"Zfmagea","commander_guid":12,"combat":true,
+ "bots":[{"g":700,"m":209,"x":1213.5,"y":842.0,"z":8.9,"o":3.14,"hp":2706,"mhp":2706,"a":1}],
+ "mobs":[{"id":"17370386927380123","x":-20.1,"y":40.2,"hp":87,"v":"700"}]}`
+
+const combatEventsDatagram = `{"v":12,"fmt":1,"session":77,"seq":9,"ts":1791990031,"ts_ms":1791990031250,"type":"COMBAT_EVENTS",
+ "commander":"Zfmagea","commander_guid":12,"group":55,"map":249,
+ "fight":{"id":"55-6","start":1791990000,"start_ms":1791990000120,"plan":"onyxias_lair","leg":"2","step":24,"kind":"boss","boss":10184,"boss_name":"Onyxia","fight_ms":53130},
+ "dropped":0,
+ "events":[{"k":"start","t":0},{"k":"death","t":53000,"g":4021,"n":"Bot","by":"Onyxia","x":-12.3,"y":45.6}]}`
+
+func TestRealtimeTypesReachLiveSink(t *testing.T) {
+	l, store, _ := newTestListener()
+	combatStore := combat.NewStore(nil)
+	l.combat = combatStore
+	sink := &fakeLiveSink{}
+	l.SetLiveSink(sink)
+
+	l.processPacket([]byte(commandersDatagram))
+	if !sink.has("Zfmagea:commander") {
+		t.Fatalf("COMMANDERS did not reach the live sink: %v", sink.got)
+	}
+	l.processPacket([]byte(commanderPosDatagram))
+	if !sink.has("Zfmagea:pos") {
+		t.Fatalf("COMMANDER_POS did not reach the live sink: %v", sink.got)
+	}
+	if v := store.Commanders(); v.Commanders[0].Bots[0].X != 1213.5 {
+		t.Fatalf("pos not merged into the store: %+v", v.Commanders[0].Bots[0])
+	}
+	l.processPacket([]byte(combatEventsDatagram))
+	if !sink.has("Zfmagea:events") || !sink.has("Zfmagea:fight_live") {
+		t.Fatalf("COMBAT_EVENTS did not reach the live sink: %v", sink.got)
+	}
+	l.processPacket([]byte(strings.Replace(combatFightDatagram, `"id":"55-1"`, `"id":"55-6"`, 1)))
+	if !sink.has("Zfmagea:fight") {
+		t.Fatalf("COMBAT_FIGHT did not reach the live sink: %v", sink.got)
+	}
+	if rows := combatStore.List("Zfmagea"); len(rows) != 1 || rows[0].Live {
+		t.Fatalf("the finished fight must replace the live row: %+v", rows)
+	}
+}
+
+func TestNewTypesNoWebSocketBroadcast(t *testing.T) {
+	l, _, hub := newTestListener()
+	l.combat = combat.NewStore(nil)
+	l.SetLiveSink(&fakeLiveSink{})
+	before := len(hub.events)
+	l.processPacket([]byte(commanderPosDatagram))
+	l.processPacket([]byte(combatEventsDatagram))
+	for _, e := range hub.events[before:] {
+		if e == "pos" || e == "events" || e == "fight_live" {
+			t.Fatalf("a realtime type reached the WebSocket: %v", hub.events)
+		}
+	}
+}
+
+// Without a live sink nothing panics and the store still takes the data.
+func TestRealtimeTypesWithoutSink(t *testing.T) {
+	l, store, _ := newTestListener()
+	l.processPacket([]byte(commanderPosDatagram))
+	l.processPacket([]byte(combatEventsDatagram))
+	if v := store.Commanders(); len(v.Commanders) != 0 {
+		t.Fatalf("a pos for no standing binding must be ignored: %+v", v)
+	}
+}
+
+// drainLive takes every frame the hub queued for the client so far. Publish
+// is called on this goroutine, so nothing is in flight.
+func drainLive(c *live.Client) []live.Frame {
+	var frames []live.Frame
+	for {
+		select {
+		case f := <-c.Frames():
+			frames = append(frames, f)
+		default:
+			return frames
+		}
+	}
+}
+
+// The live stream must carry only the datagrams ingestion accepted: a
+// duplicate, a reordered one and one of an older game session are dropped by
+// ApplyEvents, and the browser appends whatever an events frame carries.
+func TestRejectedCombatEventsNeverReachTheStream(t *testing.T) {
+	l, _, _ := newTestListener()
+	l.combat = combat.NewStore(nil)
+	hub := live.NewHub()
+	c, err := hub.Subscribe([]string{"Zfmagea"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.SetLiveSink(hub)
+
+	l.processPacket([]byte(combatEventsDatagram))
+	if frames := drainLive(c); len(frames) != 2 || frames[0].Event != "events" || frames[1].Event != "fight_live" {
+		t.Fatalf("the first datagram must publish its events and the live row: %+v", frames)
+	}
+
+	l.processPacket([]byte(combatEventsDatagram))
+	if frames := drainLive(c); len(frames) != 0 {
+		t.Fatalf("a duplicate datagram reached the stream: %+v", frames)
+	}
+
+	reordered := strings.Replace(combatEventsDatagram, `"seq":9`, `"seq":8`, 1)
+	l.processPacket([]byte(reordered))
+	if frames := drainLive(c); len(frames) != 0 {
+		t.Fatalf("a reordered datagram reached the stream: %+v", frames)
+	}
+
+	stale := strings.Replace(combatEventsDatagram, `"session":77`, `"session":76`, 1)
+	l.processPacket([]byte(stale))
+	if frames := drainLive(c); len(frames) != 0 {
+		t.Fatalf("a stale-session datagram reached the stream: %+v", frames)
+	}
+
+	// The guard drops only what ingestion rejected: the next datagram of the
+	// live session still reaches the stream.
+	fresh := strings.Replace(combatEventsDatagram, `"seq":9`, `"seq":10`, 1)
+	l.processPacket([]byte(fresh))
+	if frames := drainLive(c); len(frames) != 1 || frames[0].Event != "events" {
+		t.Fatalf("an accepted update must publish its events: %+v", frames)
+	}
+}
+
+// R8: a COMMANDERS cycle split into parts reaches the store and the stream once, when the last part is in.
+func TestCommandersPartsOneBroadcast(t *testing.T) {
+	l, store, hub := newTestListener()
+	part := func(idx int, name string) []byte {
+		return []byte(`{"v":12,"session":77,"seq":30,"ts":1791990100,"type":"COMMANDERS","part":` + strconv.Itoa(idx) +
+			`,"parts":2,"commanders":[{"commander":"` + name + `","online":true,"group":1,"lead":"L","bots":[],"orders":[]}]}`)
+	}
+	l.processPacket(part(1, "B"))
+	if len(hub.events) != 0 {
+		t.Fatalf("a part alone must not broadcast: %v", hub.events)
+	}
+	if v := store.Commanders(); len(v.Commanders) != 0 {
+		t.Fatalf("a part alone changed the view: %+v", v.Commanders)
+	}
+	l.processPacket(part(0, "A"))
+	if len(hub.events) != 1 || hub.events[0] != "commanders" {
+		t.Fatalf("one part completed the cycle; events %v", hub.events)
+	}
+	v := store.Commanders()
+	if len(v.Commanders) != 2 || v.Commanders[0].Commander != "A" || v.Commanders[1].Commander != "B" {
+		t.Fatalf("assembled view: %+v", v.Commanders)
+	}
+}
+
+// A replay (turtle-agent dashboard-replay marks every datagram it sends with
+// "replay":true) must not mix into a dashboard's state unless the operator
+// asked for replays: a recording's session is newer than a live module's, so a
+// stray replay would shadow the real roster until the module restarts.
+// udpDroppedCount reads tortoisebots_udp_dropped_total{reason} off the process-wide registry.
+func udpDroppedCount(t *testing.T, reason string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	for _, fam := range families {
+		if fam.GetName() != "tortoisebots_udp_dropped_total" {
+			continue
+		}
+		for _, m := range fam.GetMetric() {
+			for _, lp := range m.GetLabel() {
+				if lp.GetName() == "reason" && lp.GetValue() == reason {
+					return m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func TestReplayDatagramsNeedAcceptReplay(t *testing.T) {
+	l, store, hub := newTestListener()
+	metricBefore := udpDroppedCount(t, "replay")
+	replayed := strings.Replace(commandersDatagram, `{"v":9,`, `{"v":9,"replay":true,`, 1)
+
+	l.processPacket([]byte(replayed))
+	if v := store.Commanders(); v.UpdatedAt != 0 || len(v.Commanders) != 0 {
+		t.Fatalf("a replayed datagram reached the store without -accept-replay: %+v", v)
+	}
+	if len(hub.events) != 0 {
+		t.Fatalf("a dropped replay reached the stream: %v", hub.events)
+	}
+	if got := l.replayDropped.Load(); got != 1 {
+		t.Fatalf("dropped replays = %d, want 1", got)
+	}
+	if got := udpDroppedCount(t, "replay"); got != metricBefore+1 {
+		t.Fatalf("tortoisebots_udp_dropped_total{reason=replay} = %v, want %v", got, metricBefore+1)
+	}
+
+	l.SetAcceptReplay(true)
+	l.processPacket([]byte(replayed))
+	if v := store.Commanders(); !v.Fresh || len(v.Commanders) != 1 {
+		t.Fatalf("with -accept-replay the replay must apply: %+v", v)
+	}
+	if got := l.replayDropped.Load(); got != 1 {
+		t.Fatalf("an accepted datagram counted as dropped: %d", got)
+	}
+}
+
+// "replay" is the only marker: a live module sends no such key, so its
+// datagrams apply whether or not replays are accepted.
+func TestDatagramWithoutReplayKeyAppliesEitherWay(t *testing.T) {
+	l, store, _ := newTestListener()
+	l.processPacket([]byte(commandersDatagram))
+	if v := store.Commanders(); !v.Fresh || len(v.Commanders) != 1 {
+		t.Fatalf("default: %+v", v)
+	}
+	l.SetAcceptReplay(true)
+	l.processPacket([]byte(commandersDatagram))
+	if v := store.Commanders(); !v.Fresh || len(v.Commanders) != 1 {
+		t.Fatalf("accept: %+v", v)
 	}
 }

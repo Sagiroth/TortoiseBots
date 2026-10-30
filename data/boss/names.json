@@ -1,0 +1,554 @@
+{
+  "spells": {
+    "568": {
+      "name": "Arcane Burst",
+      "castMs": 0
+    },
+    "720": {
+      "name": "Entangle",
+      "castMs": 0
+    },
+    "731": {
+      "name": "Entangle",
+      "castMs": 0
+    },
+    "747": {
+      "name": "Summon Images",
+      "castMs": 0
+    },
+    "785": {
+      "name": "True Fulfillment",
+      "castMs": 0
+    },
+    "800": {
+      "name": "Twin Teleport",
+      "castMs": 0
+    },
+    "802": {
+      "name": "Mutate Bug",
+      "castMs": 0
+    },
+    "804": {
+      "name": "Explode Bug",
+      "castMs": 0
+    },
+    "1121": {
+      "name": "Entangle",
+      "castMs": 0
+    },
+    "3391": {
+      "name": "Thrash",
+      "castMs": 0
+    },
+    "4801": {
+      "name": "Teleport",
+      "castMs": 0
+    },
+    "6605": {
+      "name": "Terrifying Screech",
+      "castMs": 0
+    },
+    "7393": {
+      "name": "Heal Brother",
+      "castMs": 0
+    },
+    "8195": {
+      "name": "Teleport",
+      "castMs": 0
+    },
+    "8269": {
+      "name": "Enrage",
+      "castMs": 0
+    },
+    "12097": {
+      "name": "Pierce Armor",
+      "castMs": 0
+    },
+    "12540": {
+      "name": "Gouge",
+      "castMs": 0
+    },
+    "13736": {
+      "name": "Whirlwind",
+      "castMs": 0
+    },
+    "15582": {
+      "name": "Backstab",
+      "castMs": 0
+    },
+    "15589": {
+      "name": "Whirlwind",
+      "castMs": 0
+    },
+    "15847": {
+      "name": "Tail Sweep",
+      "castMs": 0
+    },
+    "16098": {
+      "name": "Curse of Blood",
+      "castMs": 2000
+    },
+    "16245": {
+      "name": "Freeze Anim",
+      "castMs": 0
+    },
+    "16856": {
+      "name": "Mortal Strike",
+      "castMs": 0
+    },
+    "17172": {
+      "name": "Hex",
+      "castMs": 0
+    },
+    "18392": {
+      "name": "Fireball",
+      "castMs": 0
+    },
+    "18431": {
+      "name": "Bellowing Roar",
+      "castMs": 0
+    },
+    "18435": {
+      "name": "Flame Breath",
+      "castMs": 0
+    },
+    "18500": {
+      "name": "Wing Buffet",
+      "castMs": 0
+    },
+    "18943": {
+      "name": "Double Attack",
+      "castMs": 0
+    },
+    "19134": {
+      "name": "Intimidating Shout",
+      "castMs": 0
+    },
+    "19633": {
+      "name": "Knock Away",
+      "castMs": 0
+    },
+    "19983": {
+      "name": "Cleave",
+      "castMs": 0
+    },
+    "20449": {
+      "name": "Teleport",
+      "castMs": 0
+    },
+    "22666": {
+      "name": "Silence",
+      "castMs": 0
+    },
+    "22859": {
+      "name": "Mortal Cleave",
+      "castMs": 0
+    },
+    "22911": {
+      "name": "Charge",
+      "castMs": 0
+    },
+    "23849": {
+      "name": "Venoxis Transform",
+      "castMs": 0
+    },
+    "23858": {
+      "name": "Holy Nova",
+      "castMs": 0
+    },
+    "23859": {
+      "name": "Dispel Magic",
+      "castMs": 0
+    },
+    "23860": {
+      "name": "Holy Fire",
+      "castMs": 0
+    },
+    "23861": {
+      "name": "Poison Cloud",
+      "castMs": 0
+    },
+    "23862": {
+      "name": "Venom Spit",
+      "castMs": 0
+    },
+    "23865": {
+      "name": "Parasitic Serpent",
+      "castMs": 0
+    },
+    "23895": {
+      "name": "Renew",
+      "castMs": 0
+    },
+    "23918": {
+      "name": "Sonic Burst",
+      "castMs": 0
+    },
+    "23919": {
+      "name": "Swoop",
+      "castMs": 0
+    },
+    "23952": {
+      "name": "Shadow Word: Pain",
+      "castMs": 0
+    },
+    "23953": {
+      "name": "Mind Flay",
+      "castMs": 0
+    },
+    "23954": {
+      "name": "Great Heal",
+      "castMs": 4000
+    },
+    "23966": {
+      "name": "Jeklik Transform",
+      "castMs": 0
+    },
+    "23979": {
+      "name": "Holy Wrath",
+      "castMs": 0
+    },
+    "24084": {
+      "name": "Mar'li Transform",
+      "castMs": 0
+    },
+    "24085": {
+      "name": "Transform Visual",
+      "castMs": 0
+    },
+    "24099": {
+      "name": "Poison Bolt Volley",
+      "castMs": 0
+    },
+    "24109": {
+      "name": "Enlarge",
+      "castMs": 0
+    },
+    "24110": {
+      "name": "Enveloping Webs",
+      "castMs": 0
+    },
+    "24111": {
+      "name": "Corrosive Poison",
+      "castMs": 0
+    },
+    "24169": {
+      "name": "Thekal Transform",
+      "castMs": 0
+    },
+    "24185": {
+      "name": "Bloodlust",
+      "castMs": 0
+    },
+    "24189": {
+      "name": "Force Punch",
+      "castMs": 0
+    },
+    "24190": {
+      "name": "Arlokk Transform",
+      "castMs": 0
+    },
+    "24210": {
+      "name": "Mark of Arlokk",
+      "castMs": 0
+    },
+    "24212": {
+      "name": "Shadow Word: Pain",
+      "castMs": 0
+    },
+    "24213": {
+      "name": "Ravage",
+      "castMs": 0
+    },
+    "24262": {
+      "name": "Summon Brain Wash Totem",
+      "castMs": 0
+    },
+    "24300": {
+      "name": "Drain Life",
+      "castMs": 0
+    },
+    "24306": {
+      "name": "Delusions of Jin'do",
+      "castMs": 0
+    },
+    "24308": {
+      "name": "Summon Shade of Jin'Do",
+      "castMs": 0
+    },
+    "24309": {
+      "name": "Powerful Healing Ward",
+      "castMs": 0
+    },
+    "24312": {
+      "name": "Level Up",
+      "castMs": 0
+    },
+    "24314": {
+      "name": "Threatening Gaze",
+      "castMs": 0
+    },
+    "24315": {
+      "name": "Charge",
+      "castMs": 0
+    },
+    "24318": {
+      "name": "Enrage",
+      "castMs": 0
+    },
+    "24324": {
+      "name": "Blood Siphon",
+      "castMs": 0
+    },
+    "24327": {
+      "name": "Cause Insanity",
+      "castMs": 0
+    },
+    "24328": {
+      "name": "Corrupted Blood",
+      "castMs": 0
+    },
+    "24408": {
+      "name": "Charge",
+      "castMs": 0
+    },
+    "24466": {
+      "name": "Banish",
+      "castMs": 0
+    },
+    "24686": {
+      "name": "Aspect of Mar'li",
+      "castMs": 0
+    },
+    "24687": {
+      "name": "Aspect of Jeklik",
+      "castMs": 0
+    },
+    "24688": {
+      "name": "Aspect of Venoxis",
+      "castMs": 0
+    },
+    "24689": {
+      "name": "Aspect of Thekal",
+      "castMs": 0
+    },
+    "24690": {
+      "name": "Aspect of Arlokk",
+      "castMs": 0
+    },
+    "25174": {
+      "name": "Sundering Cleave",
+      "castMs": 0
+    },
+    "25646": {
+      "name": "Mortal Wound",
+      "castMs": 0
+    },
+    "26006": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "26029": {
+      "name": "Dark Glare",
+      "castMs": 0
+    },
+    "26050": {
+      "name": "Acid Spit",
+      "castMs": 0
+    },
+    "26051": {
+      "name": "Frenzy",
+      "castMs": 0
+    },
+    "26053": {
+      "name": "Noxious Poison",
+      "castMs": 0
+    },
+    "26068": {
+      "name": "Berserk",
+      "castMs": 0
+    },
+    "26083": {
+      "name": "Whirlwind",
+      "castMs": 0
+    },
+    "26134": {
+      "name": "Eye Beam",
+      "castMs": 0
+    },
+    "26137": {
+      "name": "Rotate Trigger",
+      "castMs": 0
+    },
+    "26156": {
+      "name": "Carapace of C'Thun",
+      "castMs": 0
+    },
+    "26180": {
+      "name": "Wyvern Sting",
+      "castMs": 0
+    },
+    "26192": {
+      "name": "Arcane Explosion",
+      "castMs": 0
+    },
+    "26194": {
+      "name": "Earth Shock",
+      "castMs": 0
+    },
+    "26235": {
+      "name": "Cthun Vulnerable",
+      "castMs": 0
+    },
+    "26332": {
+      "name": "Summon Mouth Tentacle",
+      "castMs": 0
+    },
+    "26607": {
+      "name": "Blizzard",
+      "castMs": 0
+    },
+    "26662": {
+      "name": "Berserk",
+      "castMs": 0
+    },
+    "27680": {
+      "name": "Berserk",
+      "castMs": 0
+    }
+  },
+  "creatures": {
+    "10184": {
+      "name": "Onyxia"
+    },
+    "11262": {
+      "name": "Onyxian Whelp"
+    },
+    "11347": {
+      "name": "Zealot Lor'Khan"
+    },
+    "11348": {
+      "name": "Zealot Zath"
+    },
+    "11368": {
+      "name": "Bloodseeker Bat"
+    },
+    "11373": {
+      "name": "Razzashi Cobra"
+    },
+    "11380": {
+      "name": "Jin'do the Hexxer"
+    },
+    "11382": {
+      "name": "Bloodlord Mandokir"
+    },
+    "12129": {
+      "name": "Onyxian Warder"
+    },
+    "14507": {
+      "name": "High Priest Venoxis"
+    },
+    "14510": {
+      "name": "High Priestess Mar'li"
+    },
+    "14515": {
+      "name": "High Priestess Arlokk"
+    },
+    "14517": {
+      "name": "High Priestess Jeklik"
+    },
+    "14599": {
+      "name": "High Priest Thekal"
+    },
+    "14826": {
+      "name": "Sacrificed Troll"
+    },
+    "14834": {
+      "name": "Hakkar"
+    },
+    "14884": {
+      "name": "Parasitic Serpent"
+    },
+    "14965": {
+      "name": "Frenzied Bloodseeker Bat"
+    },
+    "14986": {
+      "name": "Shade of Jin'do"
+    },
+    "14987": {
+      "name": "Powerful Healing Ward"
+    },
+    "14988": {
+      "name": "Ohgan"
+    },
+    "15041": {
+      "name": "Spawn of Mar'li"
+    },
+    "15068": {
+      "name": "Zulian Guardian"
+    },
+    "15101": {
+      "name": "Zulian Prowler"
+    },
+    "15112": {
+      "name": "Brain Wash Totem"
+    },
+    "15117": {
+      "name": "Chained Spirit"
+    },
+    "15263": {
+      "name": "The Prophet Skeram"
+    },
+    "15275": {
+      "name": "Emperor Vek'nilash"
+    },
+    "15276": {
+      "name": "Emperor Vek'lor"
+    },
+    "15316": {
+      "name": "Qiraji Scarab"
+    },
+    "15317": {
+      "name": "Qiraji Scorpion"
+    },
+    "15334": {
+      "name": "Giant Eye Tentacle"
+    },
+    "15509": {
+      "name": "Princess Huhuran"
+    },
+    "15510": {
+      "name": "Fankriss the Unyielding"
+    },
+    "15516": {
+      "name": "Battleguard Sartura"
+    },
+    "15589": {
+      "name": "Eye of C'Thun"
+    },
+    "15630": {
+      "name": "Spawn of Fankriss"
+    },
+    "15725": {
+      "name": "Claw Tentacle"
+    },
+    "15726": {
+      "name": "Eye Tentacle"
+    },
+    "15727": {
+      "name": "C'Thun"
+    },
+    "15728": {
+      "name": "Giant Claw Tentacle"
+    },
+    "15802": {
+      "name": "Flesh Tentacle"
+    },
+    "15962": {
+      "name": "Vekniss Hatchling"
+    },
+    "15984": {
+      "name": "Sartura's Royal Guard"
+    }
+  }
+}

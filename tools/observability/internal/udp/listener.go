@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
+	"sync/atomic"
 	"time"
-
+	"tortoise-observability/internal/combat"
+	"tortoise-observability/internal/history"
 	zoneproject "tortoise-observability/internal/map"
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
@@ -20,17 +23,57 @@ type Hub interface {
 	Broadcast(event string, payload interface{})
 }
 
+// LiveSink is the realtime fan-out (the SSE hub): positions and fight events,
+// filtered per commander. It never blocks the read loop.
+type LiveSink interface {
+	Publish(commander, event string, payload interface{})
+}
+
 // Listener owns the UDP socket and the janitor that evicts stale state.
+// Combat, when set, receives the module's COMBAT_FIGHT datagrams; nil keeps
+// the listener's old shape (an older module sends none and nothing stores).
 type Listener struct {
 	addr       string
 	conn       *net.UDPConn
 	store      *state.Store
+	combat     *combat.Store
 	metricsReg *metrics.Registry
 	zoneProj   *zoneproject.Engine
 	hub        Hub
+	live       LiveSink
+	history    HistorySink
 	forwards   []*forwardTarget
 	stopChan   chan struct{}
+	stopOnce   sync.Once
+	wg         sync.WaitGroup
+
+	// A turtle-agent dashboard-replay marks every datagram it sends with
+	// "replay":true, and rewrites its session ahead of the live module's, so a
+	// recording that reached a production daemon would shadow the real roster
+	// until the module restarts. Off unless the operator asked for replays.
+	acceptReplay  atomic.Bool
+	replayDropped atomic.Int64
+	replayLogAt   atomic.Int64 // unix nanoseconds of the last drop log line
 }
+
+// SetCombatStore wires the fight store the COMBAT_FIGHT case files into.
+func (l *Listener) SetCombatStore(c *combat.Store) { l.combat = c }
+
+// SetLiveSink wires the realtime stream (COMMANDERS, COMMANDER_POS and the
+// fight events). Nil keeps the listener's old shape: nothing is pushed there.
+func (l *Listener) SetLiveSink(s LiveSink) { l.live = s }
+
+// HistorySink takes a finished fight for the on-disk history; Enqueue never blocks. Nil keeps the listener's old shape.
+type HistorySink interface {
+	Enqueue(history.Item) bool
+}
+
+// SetHistory wires the fight history. It is set before Start, like the combat store.
+func (l *Listener) SetHistory(h HistorySink) { l.history = h }
+
+// SetAcceptReplay lets replayed datagrams into the store (the dashboard's
+// -accept-replay flag); call it before Start.
+func (l *Listener) SetAcceptReplay(on bool) { l.acceptReplay.Store(on) }
 
 func NewListener(host string, port int, store *state.Store, mr *metrics.Registry, zp *zoneproject.Engine, hub Hub) *Listener {
 	return &Listener{
@@ -63,20 +106,27 @@ func (l *Listener) Start() error {
 
 	log.Printf("[UDP] Listening for TortoiseBots telemetry on %s", l.addr)
 
+	l.wg.Add(2)
 	go l.readLoop()
 	go l.janitorLoop()
 	return nil
 }
 
+// Stop shuts ingestion down and waits for it: once Stop returns, no datagram is in flight and nothing can enqueue a fight any
+// more. It is safe to call twice.
 func (l *Listener) Stop() {
-	close(l.stopChan)
-	if l.conn != nil {
-		_ = l.conn.Close()
-	}
-	l.closeForwards()
+	l.stopOnce.Do(func() {
+		close(l.stopChan)
+		if l.conn != nil {
+			_ = l.conn.Close()
+		}
+		l.closeForwards()
+	})
+	l.wg.Wait()
 }
 
 func (l *Listener) readLoop() {
+	defer l.wg.Done()
 	buf := make([]byte, 65535)
 
 	for {
@@ -115,6 +165,7 @@ func (l *Listener) readLoop() {
 // refreshed by a snapshot, incomplete cycles, and the online/offline edge.
 // It also re-broadcasts the roster when eviction changed it.
 func (l *Listener) janitorLoop() {
+	defer l.wg.Done()
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
@@ -153,10 +204,22 @@ func (l *Listener) publishSnapshot() {
 
 func (l *Listener) processPacket(data []byte) {
 	var header struct {
-		V    int    `json:"v"`
-		Type string `json:"type"`
+		V      int    `json:"v"`
+		Type   string `json:"type"`
+		Replay bool   `json:"replay"`
 	}
 	if err := json.Unmarshal(data, &header); err != nil {
+		return
+	}
+
+	if header.Replay && !l.acceptReplay.Load() {
+		l.replayDropped.Add(1)
+		l.metricsReg.RecordUDPDropped("replay")
+		// A looping replay would otherwise write one line per datagram.
+		now := time.Now().UnixNano()
+		if last := l.replayLogAt.Load(); now-last >= int64(60*time.Second) && l.replayLogAt.CompareAndSwap(last, now) {
+			log.Printf("[UDP] dropped replayed datagram (start with -accept-replay to take them)")
+		}
 		return
 	}
 
@@ -223,10 +286,76 @@ func (l *Listener) processPacket(data []byte) {
 		if err := json.Unmarshal(data, &cmd); err != nil {
 			return
 		}
+		partials := l.store.CommandersPartials()
 		if l.store.ApplyCommanders(&cmd) {
-			l.hub.Broadcast("commanders", l.store.Commanders())
+			// The applied list, not this datagram's bindings: a cycle that arrived in parts applied everything, and a
+			// partial carried bindings this datagram does not hold.
+			view := l.store.Commanders()
+			l.hub.Broadcast("commanders", view)
+			if l.live != nil {
+				tsMs := cmd.TSMs
+				if tsMs == 0 {
+					tsMs = cmd.TS * 1000 // a module before ts_ms (2.3 is additive)
+				}
+				for i := range view.Commanders {
+					b := view.Commanders[i]
+					l.live.Publish(b.Commander, "commander", struct {
+						model.CommanderBinding
+						TSMs int64 `json:"ts_ms"`
+					}{b, tsMs})
+				}
+			}
+		}
+		l.metricsReg.AddCommandersPartials(l.store.CommandersPartials() - partials)
+
+	case "COMBAT_FIGHT":
+		if l.combat == nil {
+			return
+		}
+		var dg combat.FightDatagram
+		if err := json.Unmarshal(data, &dg); err != nil {
+			return
+		}
+		if dg.Fight.ID == "" {
+			return
+		}
+		if summary, stored, ok := l.combat.AddFiled(dg.Session, dg.Fight); ok {
+			l.hub.Broadcast("combat", dg.Fight)
+			if l.live != nil {
+				l.live.Publish(dg.Fight.Commander, "fight", summary)
+			}
+			if l.history != nil {
+				l.history.Enqueue(history.Item{Session: dg.Session, Fight: stored, Warnings: summary.Warnings, At: time.Now()})
+			}
 		}
 
+	case "COMBAT_EVENTS":
+		var dg combat.EventsDatagram
+		if err := json.Unmarshal(data, &dg); err != nil {
+			return
+		}
+		l.metricsReg.RecordRealtimeDatagram("COMBAT_EVENTS", len(data))
+		if l.combat == nil {
+			return
+		}
+		summary, changed, accepted := l.combat.ApplyEvents(dg, time.Now())
+		if !accepted || l.live == nil {
+			return
+		}
+		l.live.Publish(dg.Commander, "events", dg)
+		if changed {
+			l.live.Publish(dg.Commander, "fight_live", summary)
+		}
+
+	case "COMMANDER_POS":
+		var p model.CommanderPosPayload
+		if err := json.Unmarshal(data, &p); err != nil {
+			return
+		}
+		l.metricsReg.RecordRealtimeDatagram("COMMANDER_POS", len(data))
+		if frame, ok := l.store.ApplyCommanderPos(&p); ok && l.live != nil {
+			l.live.Publish(p.Commander, "pos", frame)
+		}
 	default:
 		var anomaly model.AnomalyPayload
 		if err := json.Unmarshal(data, &anomaly); err != nil {

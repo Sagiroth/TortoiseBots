@@ -1,0 +1,6 @@
+[
+ {"id":"tank_no_sunder","level":"red","role":"tank","class":"warrior","min_fight_s":20,"condition":"spell_count_zero:Sunder Armor","text":"{bot} (warrior tank) cast no Sunder Armor in this fight"},
+ {"id":"tank_no_maul_swipe","level":"red","role":"tank","class":"druid","min_fight_s":20,"condition":"spells_count_zero:Maul,Swipe","text":"{bot} (druid tank) cast no Maul or Swipe"},
+ {"id":"healer_no_heals","level":"red","role":"healer","min_fight_s":20,"condition":"no_healing","text":"{bot} (healer) cast no heals and healed nothing"},
+ {"id":"dps_no_damage","level":"red","role":"dps","min_fight_s":20,"condition":"no_damage","text":"{bot} did no damage"}
+]

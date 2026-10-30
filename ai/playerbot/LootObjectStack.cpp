@@ -1,4 +1,6 @@
 #include "LootObjectStack.h"
+#include "policy/loot/CorpseLootPolicy.h"
+#include "policy/loot/CorpseRefusalReasonPolicy.h"
 #include "playerbot.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -114,7 +116,7 @@ static bool MayLootCorpse(Player* bot, Creature* creature)
     if (group->GetLootMethod() == MASTER_LOOT && group->GetLooterGuid() == bot->GetObjectGuid())
         return true;
 
-    return loot.hasItemFor(bot);                            // another member's turn: personal loot only
+    return ai::HasVisiblePersonalItemFor(loot, bot);        // another member's turn: personal loot it will show
 }
 // Collects every item an open chest can hold, following reference tables
 // one level deep. Returns false as soon as one item is better than common.
@@ -192,7 +194,10 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
         // corpse is refused (Spell::CheckCast -> SPELL_FAILED_TARGET_NOT_LOOTED while
         // !loot.isLooted()), so preferring the skin path here parked skinners next to an
         // unlootable-and-unskinnable beast casting Skinning every tick.
-        if (creature->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE))
+        // A corpse whose only loot left is this bot's quest item can lack the raw flag (the core masks
+        // it per viewer), so ai::CorpseHasBodyLootFor opens the branch on the viewer's own answer too;
+        // MayLootCorpse stays the gate.
+        if (ai::CorpseHasBodyLootFor(bot, creature))
         {
             // The lootable flag is not a right: the core masks it per viewer with Player::IsAllowedToLoot
             // (Object::BuildValuesUpdate), where the round-robin rule lives. Without that test every
@@ -208,7 +213,14 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
             }
 
             if (debug)
-                ai->TellDebug(ai->GetMaster(), "Creature lootable but not this bot's to loot.", "debug loot");
+            {
+                Loot const& loot = creature->loot;
+                bool const otherTurn = loot.roundRobinPlayer != 0 && loot.roundRobinPlayer != bot->GetObjectGuid();
+                bool const reserved = loot.hasItemFor(bot) && !ai::HasVisiblePersonalItemFor(loot, bot);
+                ai->TellDebug(ai->GetMaster(), "Creature lootable but not this bot's to loot: " +
+                    ai::CorpseRefusalReason(loot.IsAllowedLooter(bot->GetObjectGuid(), false), !loot.m_questItems.empty(),
+                                            loot.hasItemFor(bot), otherTurn, reserved), "debug loot");
+            }
         }
 
         // Skinnable only once the corpse loot is gone (same condition the core applies to the
@@ -235,6 +247,15 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
             ai->TellDebug(ai->GetMaster(), "Creature without loot or skin flag.", "debug loot");
 
         return;
+    }
+
+    if (debug && guid.IsCreatureOrPet())
+    {
+        if (!creature)
+            ai->TellDebug(ai->GetMaster(), "Creature not found on the bot's map.", "debug loot");
+        else
+            ai->TellDebug(ai->GetMaster(), "Creature is not a corpse (death state " +
+                std::to_string((int)sServerFacade.GetDeathState(creature)) + ").", "debug loot");
     }
 
     GameObject* go = ai->GetGameObject(guid);
@@ -327,7 +348,7 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
         }
     }
 
-    if (debug && guid && !this->guid)
+    if (debug && guid && !this->guid && guid.IsGameObject())
         ai->TellDebug(ai->GetMaster(), "Go has bad lock.", "debug loot");
 
     if (this->guid.IsGameObject() && skillId == SKILL_NONE && !reqItem)

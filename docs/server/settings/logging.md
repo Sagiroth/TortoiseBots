@@ -38,6 +38,11 @@ The native module has its own independent logging system. This allows administra
 | [`AiPlayerbot.RunTrace.Dir`](#aiplayerbotruntracedir) | `traces` | Folder for run traces and their summaries (relative to `LogsDir`). |
 | [`AiPlayerbot.RunTrace.MaxFileMb`](#aiplayerbotruntracemaxfilemb) | `64` | Size cap of one run trace file in megabytes. |
 | [`AiPlayerbot.ObservabilityDungeonMobs`](#aiplayerbotobservabilitydungeonmobs) | `1` | Sends the mobs, threat and target lines of every dungeon run to the dashboard's Dungeons tab. |
+| [`AiPlayerbot.ObservabilityRealtime`](#aiplayerbotobservabilityrealtime) | `1` | Streams the bound groups' fight events (deaths, pulls, taunts, interrupts, casts, kill/wipe) to the dashboard as they happen. |
+| [`AiPlayerbot.ObservabilityRealtime.Events`](#aiplayerbotobservabilityrealtimeevents) | `1` | Turns the fight-event stream on or off without touching the rest of the realtime feed. |
+| [`AiPlayerbot.ObservabilityRealtime.EventGapMs`](#aiplayerbotobservabilityrealtimeeventgapms) | `250` | Minimum milliseconds between two event datagrams of one commander (100..2000). |
+| [`AiPlayerbot.ObservabilityRealtime.CombatMs`](#aiplayerbotobservabilityrealtimecombatms) | `500` | Milliseconds between two position reports of a fighting commander group (250..2000). |
+| [`AiPlayerbot.ObservabilityRealtime.IdleMs`](#aiplayerbotobservabilityrealtimeidlems) | `2000` | Milliseconds between two position reports out of combat (250..2000; `2000` = only the regular 2 s report). |
 
 ## Settings
 
@@ -240,6 +245,65 @@ Sends the mobs of every dungeon run (with their threat and the bots' target line
 Only acts while [`AiPlayerbot.Observability`](#aiplayerbotobservability) is on. Setting it to `0` in either `modules/tortoise_bots.conf` or `aiplayerbot.conf` switches it off.
 
 Once per 2 s telemetry cycle the server sends a `DUNGEON_MOBS` datagram built from the run members' own victims, attackers and cached lists, without a world scan: up to 48 mobs per party run and 64 per raid run, fewer when many runs share the 384-mob cycle budget, packed by whole runs into parts of at most 96 mobs and 8 runs. The limits live in `runtime/DungeonMobTelemetry.h` ([#1101](https://github.com/Sagiroth/TortoiseBots/issues/1101)).
+
+</details>
+
+### `AiPlayerbot.ObservabilityRealtime`
+Streams a commander group's fight events to the dashboard as they happen.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** not needed (`.reload config` applies live)
+
+<details>
+<summary>How it works in detail</summary>
+
+Only acts while [`AiPlayerbot.Observability`](#aiplayerbotobservability) is on and needs `AiPlayerbot.CombatMonitor = 1` in `aiplayerbot.conf` for the fights themselves. While a bound group fights, the module sends `COMBAT_EVENTS` datagrams every `EventGapMs` with the fight's start, pulls, deaths, taunts, interrupts, elite and boss casts and its kill or wipe, often before the fight's `COMBAT_FIGHT` summary arrives. `0` switches all of it off at once (this key and the two below), which is the way to stop the extra traffic on a busy server. A fight that outlives `.bot run stop` is still followed to its end and recorded.
+
+</details>
+
+### `AiPlayerbot.ObservabilityRealtime.Events`
+Turns the fight-event stream on or off on its own.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** not needed (`.reload config` applies live)
+
+<details>
+<summary>How it works in detail</summary>
+
+Only acts with [`AiPlayerbot.ObservabilityRealtime`](#aiplayerbotobservabilityrealtime) on. With it at `0` the module keeps the regular 2 s telemetry (and any faster position reports) but sends no `COMBAT_EVENTS`; the finished fight still arrives as a `COMBAT_FIGHT` summary.
+
+</details>
+
+### `AiPlayerbot.ObservabilityRealtime.EventGapMs`
+Minimum time between two event datagrams of the same commander group.
+**Default:** `250` · **Values:** `100`..`2000` (milliseconds, clamped) · **Restart:** not needed (`.reload config` applies live)
+
+<details>
+<summary>How it works in detail</summary>
+
+Events are queued per group and drained every 100 ms, but one datagram per group goes out at most once per this interval; whatever happened in between rides the next one. A higher value means fewer, fuller datagrams; the fight header (state and `fight_ms`) rides every one. While a fight is open and nothing was sent for 5 s, a keepalive with an empty event list keeps the dashboard's timer live.
+
+</details>
+
+### `AiPlayerbot.ObservabilityRealtime.CombatMs`
+How often a fighting commander group's positions are sent, in milliseconds.
+**Default:** `500` · **Values:** `250`..`2000` (clamped) · **Restart:** not needed (`.reload config` applies live)
+
+<details>
+<summary>How it works in detail</summary>
+
+While at least one bot of a bound group is in combat, the module sends one `COMMANDER_POS` datagram per group every this many milliseconds with the group's bots (place, facing, health, alive) and the enemies the lead's last 2 s report listed (place, health, victim). The dashboard draws its dots in the past, interpolating between consecutive reports, so the world tick never waits on it and the dots never stop at a report: the whole report is a few field reads and one guid lookup per watched enemy, with no grid or world scan. Casts do not ride this report; their start arrives as a `COMBAT_EVENTS` line and the time left is extrapolated between the 2 s reports.
+
+Only acts with [`AiPlayerbot.ObservabilityRealtime`](#aiplayerbotobservabilityrealtime) on and needs [`AiPlayerbot.Observability`](#aiplayerbotobservability). At most 40 bots and 24 enemies per group per datagram.
+
+</details>
+
+### `AiPlayerbot.ObservabilityRealtime.IdleMs`
+How often positions are sent while a bound group does not fight, in milliseconds.
+**Default:** `2000` · **Values:** `250`..`2000` (clamped) · **Restart:** not needed (`.reload config` applies live)
+
+<details>
+<summary>How it works in detail</summary>
+
+The regular 2 s `COMMANDERS` report already carries every standing group, so the default `2000` sends no out-of-combat positions at all. A lower value adds `COMMANDER_POS` datagrams for the groups that are not fighting on their own period, which costs traffic on an idle server and is meant for a dashboard watching a group walk.
+
+Only acts with [`AiPlayerbot.ObservabilityRealtime`](#aiplayerbotobservabilityrealtime) on and needs [`AiPlayerbot.Observability`](#aiplayerbotobservability).
 
 </details>
 

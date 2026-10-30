@@ -13,7 +13,7 @@ const html = fs.readFileSync(path.join(path.dirname(appPath), "..", "..", "index
 const timers = src.split("\n").filter((l) => /setInterval\(/.test(l));
 const guarded = timers.filter((l) => /setInterval\(refreshGate\.guard\(/.test(l));
 const others = timers.filter((l) => !/setInterval\(refreshGate\.guard\(/.test(l));
-assert.strictEqual(guarded.length, 6, "activity, roster, expire, the Dungeon runs poll and the demo's two timers are guarded: " + guarded.length);
+assert.strictEqual(guarded.length, 7, "activity, roster, expire, the Dungeon runs poll, the demo's two timers and the live stream's fallback poll are guarded: " + guarded.length);
 assert.deepStrictEqual(others.map((l) => l.trim().replace(/\s+/g, " ").replace(/ \/\/.*$/, "")), ["setInterval(() => {", "setInterval(fetchCommanders, 30000);"],
   "only the health watchdog and the gated Commanders fallback run while paused:\n" + others.join("\n"));
 assert.ok(/setInterval\(\(\) => \{\n\s+updateSnapshotAge\(\);/.test(src), "the unguarded arrow timer is the health watchdog");

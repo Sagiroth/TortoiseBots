@@ -51,6 +51,11 @@ bool NoteHumanChatOrder(Player* bot, Player& from, std::string const& text, bool
 void NoteCommanderThreat(Player* bot);
 bool IsCommanderThreat(Player* bot);
 
+// A tank healer of a bound raid's layout (the raid layout record in
+// commands/Commander.cpp): its "focus heal targets" is the layout's, not
+// the bot's, so the snapshot save leaves it out like the binding's "threat".
+bool IsRaidFocusHealer(Player* bot);
+
 // A bound bot moves only on the commander's orders (RemoteCommander::
 // CommanderAutonomyLedger): the open-world kit (grind, travel, rpg...) comes
 // off it while it is bound and goes back on release. The bind calls this, and
@@ -74,6 +79,25 @@ void CommanderAutonomyMapChange(Player* bot, PlayerbotAI* ai);
 // hires returned to the hirer - before any hire is judged.
 bool HasCommanderBinding(uint64_t commanderRaw);
 void SettleCommanderBinding(uint64_t commanderRaw);
+
+// A commander's raid binding as the hire service needs it (C6, one more hire into a bound raid): the
+// commander has a standing raid binding (the lead bot's group is the bound group), whether he is a member
+// of that group, and how many members it holds. Cheap; world thread only.
+struct BoundRaidFacts
+{
+    bool bound = false;
+    bool commanderInGroup = false;
+    uint32_t members = 0;
+    // The binding's identity (a seat hire is rechecked against it before it joins).
+    uint64_t leadGuid = 0;
+    uint32_t groupId = 0;
+};
+BoundRaidFacts BoundRaidOf(Player* commander);
+// A new hire of the commander joins his bound raid: into the lead bot's group, into the binding (follow
+// target, hire state) and into the raid layout, where only the new bot is placed: nobody else moves. True once the bot is in the
+// bound group (also on later calls); false while it cannot join yet (not settled in the world, no
+// seat), the caller retries. The binding is never released or rebuilt. World thread only.
+bool JoinBoundRaid(Player* commander, Player* bot);
 
 } // namespace BotCommands
 } // namespace TortoiseBots

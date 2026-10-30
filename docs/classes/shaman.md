@@ -37,6 +37,7 @@ Shamans provide unmatched group utility through versatile totem sets, elemental 
 - Casts *Stormstrike* before *Lightning Strike* to amplify nature burst.
 - Cycles *Flame Shock* for periodic damage and *Earth Shock* for burst damage.
 - Triggers *Bloodlust* (custom Turtle ability): self frenzy; party melee crits spread the haste across the group.
+- Off-heals allies at 20–50% health with *Healing Wave* per [off-healing rules](overview.md#dps-off-healing-offheal).
 
 ### Elemental (Ranged DPS)
 - Attacks from range with *Lightning Bolt* and casts *Chain Lightning* against enemy packs.
@@ -44,6 +45,7 @@ Shamans provide unmatched group utility through versatile totem sets, elemental 
 - Activates *Elemental Mastery* for guaranteed critical strikes.
 - Saves *Earth Shock* as a finishing execute below 25% health and below 1500 absolute HP while reserving interrupts for casting targets.
 - Respects [party threat back-off](overview.md#party-threat-back-off) on *Chain Lightning* and *Earthquake* when holding ≥50% tank threat.
+- Off-heals allies at 20–50% health with *Healing Wave* per [off-healing rules](overview.md#dps-off-healing-offheal).
 
 ### Tank (experimental)
 - **Setup:** slow one-handed axe, mace or fist weapon with *Rockbiter Weapon* (the shaman tank's threat stance: +35% threat), a shield, and *Lightning Shield* for the pull. Switches to *Water Shield* at about two thirds mana.

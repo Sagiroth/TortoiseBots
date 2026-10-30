@@ -625,7 +625,7 @@ zero bots changed. No new configuration or automatic behavior is enabled.
 Arguments must begin with `+`, `-`, or `~`. (The prefixes `co`, `nc`, and `de` select combat, non-combat, and dead engines in whisper commands, e.g. `/w <Bot> co +focus`).
 
 - **Single-Target Burn (`+focus` / `-focus`):** Suppresses multi-target attacks while keeping traps and totems intact (use `ss` / skip spell to exclude specific spells).
-- **AoE Fear Toggle (`+aoe fear` / `-aoe fear`):** Suppresses Priest *Psychic Scream*, Warlock *Howl of Terror*, and Warrior *Intimidating Shout* inside dungeons and raids, and in the open world while grouped with you.
+- **Off-spec kits (`+offdps` / `-offdps`, `+offheal` / `-offheal`):** Switches healer damage spells and DPS off-healing per [off-spec rules](../../classes/overview.md#healer-off-dps-offdps), for example `.bot strategy -offdps @heal` or `.bot strategy +offheal @dps`.
 
 ### `.bot loot`
 

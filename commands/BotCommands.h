@@ -34,6 +34,15 @@ void ClearRemoteCommanders();
 // commander, lead bot, bound bots and the commander's last orders. World
 // thread; read-only (nothing is settled or released); empty while none stands.
 void CollectCommanderTelemetry(std::vector<CommanderTelemetry::BindingRef>& out);
+// The live positions of every bound group for the dashboard's map (task S3): the bots and the enemies its lead's last full
+// report listed, sent every 500 ms while the group fights. Field and guid reads only, no grid or world scan. `wantCombat`
+// selects the groups that fight, `wantIdle` the ones that do not (the emitter asks each on its own period, and both on a
+// tick where both are due).
+void CollectCommanderPositions(std::vector<CommanderTelemetry::PosRef>& out, bool wantCombat, bool wantIdle);
+// The elite and boss cast starts of the bound groups, once per 250 ms on
+// the world thread from the emitter (only while a fight runs). Reads the mobs
+// of each binding's last full report; a guid lookup per unit, no world scan.
+void PollEnemyCasts();
 // The dashboard's boss spawn cache (every known boss of each dungeon and raid map, from one pass over the core's creature spawn data):
 // built once, from BotHostAdapter::OnStartup right after sPlayerbotAIConfig.Initialize() sealed the dungeon plans, never inside a
 // commander snapshot; logs how long it took. Does nothing before the seal or a second time.

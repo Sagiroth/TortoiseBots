@@ -4,6 +4,7 @@
 #include "PlayerLagWindow.h"
 #include "CommanderTelemetry.h"
 #include "DungeonMobTelemetry.h"
+#include "RealtimeCadence.h"
 #include <cstdint>
 #include <ctime>
 #include <map>
@@ -174,7 +175,28 @@ public:
     // The standing remote-commander bindings (issue #884) for the dashboard's
     // Commanders tab, filled by the commands layer on the world thread. Read
     // once per snapshot cycle; the provider returns at once while none exists.
+    int ProtocolVersion() const;
+    uint64_t SessionId() const;
+    uint64_t NextSeq();
+    int64_t NowUnix() const;
+    int64_t NowUnixMs() const;
     void SetCommanderProvider(std::function<void(std::vector<CommanderTelemetry::BindingRef>&)> provider);
+    // The finished combat fights of the bound groups (task A8b) for the
+    // dashboard's combat log, filled by the combat monitor service on the
+    // world thread. Called once per snapshot cycle after EmitCommanders.
+    void SetCombatProvider(std::function<void(std::vector<std::string>&)> provider);
+    // The live fight stream: the monitor's COMBAT_EVENTS datagrams, drained
+    // every 100 ms on the world thread (not inside the 2 s snapshot gate).
+    void SetCombatEventProvider(std::function<void(std::vector<std::string>&, uint32_t nowMs)> provider);
+    // The elite and boss cast poller, called every 250 ms while a fight runs.
+    void SetEnemyCastPoller(std::function<void()> poller);
+    // The live positions (COMMANDER_POS, task S3): the position provider fills one ref per bound group on the world
+    // thread, asked when either period is due, with that period's groups (CombatMs for the groups that fight, IdleMs for
+    // the ones that do not when it is configured).
+    void SetPositionProvider(std::function<void(std::vector<CommanderTelemetry::PosRef>&, bool wantCombat, bool wantIdle)> provider);
+    uint32_t EventGapMs() const { return m_eventGapMs; }
+    // `.reload config`: AiPlayerbot.ObservabilityRealtime* read again (world thread).
+    void ReloadRealtimeKeys();
 
     // The mobs of every dungeon run (issue #1101) for the dashboard's Dungeons tab, filled by the commands layer on the world
     // thread once per snapshot cycle for the runs the emitter groups (see EmitDungeonMobs).
@@ -219,7 +241,41 @@ private:
     std::function<void(std::vector<CommanderTelemetry::BindingRef>&)> m_commanderProvider;
     std::vector<CommanderTelemetry::BindingRef> m_commanderRefs; // reused between cycles
     std::unordered_map<uint32_t, int64_t> m_commanderSince; // commander guid -> unix seconds its binding was first seen
+    std::unordered_map<uint32_t, int64_t> m_commanderTrimLoggedAt; // commander guid -> unix seconds its trim was last logged
     bool m_commandersSent = false; // the last COMMANDERS datagram listed at least one binding
+    // The finished COMBAT_FIGHT datagrams of the bound groups: one provider
+    // call per snapshot cycle, each string sent with SendDatagram.
+    std::function<void(std::vector<std::string>&)> m_combatProvider;
+    std::vector<std::string> m_combatPayloads; // reused between cycles
+    // The live fight stream (AiPlayerbot.ObservabilityRealtime): a 100 ms
+    // drain and a 250 ms cast poll on every world tick, before the 2 s gate.
+    std::function<void(std::vector<std::string>&, uint32_t)> m_combatEventProvider;
+    std::function<void()> m_enemyCastPoller;
+    std::vector<std::string> m_eventPayloads; // reused between drains
+    // The position feed (COMMANDER_POS): its own clock and clamped periods, and one ref per group sent.
+    std::function<void(std::vector<CommanderTelemetry::PosRef>&, bool wantCombat, bool wantIdle)> m_positionProvider;
+    std::vector<CommanderTelemetry::PosRef> m_positionRefs; // reused between sends
+    RealtimeCadence::Cadence m_posCadence;
+    RealtimeCadence::Clock m_posClock;
+    // Timing aid for the live check: both realtime blocks measured on the world tick, logged at TortoiseBots.LogLevel 3
+    // (debug) once per 60 s.
+    struct RealtimeTiming
+    {
+        uint32 cycles = 0;
+        uint64 sumUs = 0;
+        uint64 maxUs = 0;
+        uint32 posDatagrams = 0;
+        uint64 posBytes = 0;
+        uint32 evDatagrams = 0;
+        uint64 evBytes = 0;
+    };
+    RealtimeTiming m_realtimeTiming;
+    uint32 m_realtimeLogMs = 0;
+    bool m_realtimeOn = true;
+    bool m_realtimeEvents = true;
+    uint32_t m_eventGapMs = 250;
+    uint32_t m_eventTimerMs = 0;
+    uint32_t m_castPollMs = 0;
     // Effective running settings for the dashboard Server panel (Addendum 2):
     // core rate getters + AiPlayerbot flags, sent at startup and on a slow
     // cadence. No strings from config files, no secrets — numbers and on/off.

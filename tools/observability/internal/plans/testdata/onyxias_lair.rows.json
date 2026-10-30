@@ -1,0 +1,448 @@
+{
+ "plan": {
+  "plan": "onyxias_lair",
+  "map": 249,
+  "source": "turtle-agent 1e4e066 dungeons/onyxias_lair.json",
+  "comment": "plan v1, draft (not mapped, not live-checked)"
+ },
+ "legs": [
+  {
+   "leg": 0,
+   "name": "onyxia"
+  }
+ ],
+ "steps": [
+  {
+   "leg": 0,
+   "seq": 0,
+   "kind": "move",
+   "entry": 0,
+   "x": 59.46,
+   "y": -103.12,
+   "z": -22.98,
+   "radius": 0,
+   "entries": "",
+   "comment": "to"
+  },
+  {
+   "leg": 0,
+   "seq": 1,
+   "kind": "pull",
+   "entry": 0,
+   "x": 49.82,
+   "y": -114.61,
+   "z": -24.31,
+   "radius": 1,
+   "entries": "12129",
+   "comment": "pull group 0"
+  },
+  {
+   "leg": 0,
+   "seq": 2,
+   "kind": "move",
+   "entry": 0,
+   "x": 48.799988,
+   "y": -101.06677,
+   "z": -23.947386,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 3,
+   "kind": "move",
+   "entry": 0,
+   "x": 47.999985,
+   "y": -94.66677,
+   "z": -24.347387,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 4,
+   "kind": "move",
+   "entry": 0,
+   "x": 47.199986,
+   "y": -92.26677,
+   "z": -25.047386,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 5,
+   "kind": "move",
+   "entry": 0,
+   "x": 46.399986,
+   "y": -90.66677,
+   "z": -25.447386,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 6,
+   "kind": "move",
+   "entry": 0,
+   "x": 42.666656,
+   "y": -85.33344,
+   "z": -25.947386,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 7,
+   "kind": "move",
+   "entry": 0,
+   "x": 41.33332,
+   "y": -82.66677,
+   "z": -25.847387,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 8,
+   "kind": "move",
+   "entry": 0,
+   "x": 39.99999,
+   "y": -82.13344,
+   "z": -25.547386,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 9,
+   "kind": "move",
+   "entry": 0,
+   "x": 38.39999,
+   "y": -81.600105,
+   "z": -25.747387,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 10,
+   "kind": "move",
+   "entry": 0,
+   "x": 28.533325,
+   "y": -78.40011,
+   "z": -28.547386,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 11,
+   "kind": "move",
+   "entry": 0,
+   "x": 18.933329,
+   "y": -77.866776,
+   "z": -25.947386,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 12,
+   "kind": "move",
+   "entry": 0,
+   "x": 14.666662,
+   "y": -78.13344,
+   "z": -25.247387,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 13,
+   "kind": "move",
+   "entry": 0,
+   "x": 3.9999988,
+   "y": -81.600105,
+   "z": -24.947386,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 14,
+   "kind": "move",
+   "entry": 0,
+   "x": -18.13346,
+   "y": -92.26677,
+   "z": -30.247387,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 15,
+   "kind": "move",
+   "entry": 0,
+   "x": -33.05,
+   "y": -95.14,
+   "z": -36.06,
+   "radius": 0,
+   "entries": "",
+   "comment": "pull group 1 approach"
+  },
+  {
+   "leg": 0,
+   "seq": 16,
+   "kind": "pull",
+   "entry": 0,
+   "x": -52.97,
+   "y": -96.88,
+   "z": -38.64,
+   "radius": 1,
+   "entries": "12129",
+   "comment": "pull group 1"
+  },
+  {
+   "leg": 0,
+   "seq": 17,
+   "kind": "move",
+   "entry": 0,
+   "x": -82.40011,
+   "y": -106.13343,
+   "z": -35.247387,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 18,
+   "kind": "move",
+   "entry": 0,
+   "x": -92.00011,
+   "y": -112.0001,
+   "z": -37.947388,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 19,
+   "kind": "move",
+   "entry": 0,
+   "x": -113.88,
+   "y": -127.47,
+   "z": -48.98,
+   "radius": 0,
+   "entries": "",
+   "comment": "pull group 2 approach"
+  },
+  {
+   "leg": 0,
+   "seq": 20,
+   "kind": "pull",
+   "entry": 0,
+   "x": -131.2,
+   "y": -137.47,
+   "z": -52.52,
+   "radius": 1,
+   "entries": "12129",
+   "comment": "pull group 2"
+  },
+  {
+   "leg": 0,
+   "seq": 21,
+   "kind": "move",
+   "entry": 0,
+   "x": -163.15,
+   "y": -176.31,
+   "z": -63.21,
+   "radius": 0,
+   "entries": "",
+   "comment": "pull group 3 approach"
+  },
+  {
+   "leg": 0,
+   "seq": 22,
+   "kind": "pull",
+   "entry": 0,
+   "x": -166.62,
+   "y": -196,
+   "z": -66.26,
+   "radius": 1,
+   "entries": "12129",
+   "comment": "pull group 3"
+  },
+  {
+   "leg": 0,
+   "seq": 23,
+   "kind": "move",
+   "entry": 0,
+   "x": -184.95,
+   "y": -195.68,
+   "z": -67.15,
+   "radius": 0,
+   "entries": "",
+   "comment": "pull group 4 approach"
+  },
+  {
+   "leg": 0,
+   "seq": 24,
+   "kind": "pull",
+   "entry": 0,
+   "x": -199.1,
+   "y": -209.83,
+   "z": -68.91,
+   "radius": 1,
+   "entries": "12129",
+   "comment": "pull group 4"
+  },
+  {
+   "leg": 0,
+   "seq": 25,
+   "kind": "move",
+   "entry": 0,
+   "x": -149.43553,
+   "y": -210.43495,
+   "z": -74.41231,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 26,
+   "kind": "move",
+   "entry": 0,
+   "x": -99.77106,
+   "y": -211.03992,
+   "z": -80.16332,
+   "radius": 0,
+   "entries": "",
+   "comment": "path"
+  },
+  {
+   "leg": 0,
+   "seq": 27,
+   "kind": "move",
+   "entry": 0,
+   "x": -62,
+   "y": -211.5,
+   "z": -84.54,
+   "radius": 0,
+   "entries": "",
+   "comment": "boss stand outside her 58 yd aggro"
+  },
+  {
+   "leg": 0,
+   "seq": 28,
+   "kind": "boss",
+   "entry": 10184,
+   "x": 0.69628,
+   "y": -211.972,
+   "z": -86.075,
+   "radius": 0,
+   "entries": "",
+   "comment": "boss"
+  }
+ ],
+ "spawns": [
+  {
+   "guid": 47572,
+   "id": 10184,
+   "x": 0.69628,
+   "y": -211.972,
+   "z": -86.075,
+   "movement_type": 0
+  },
+  {
+   "guid": 52048,
+   "id": 12129,
+   "x": -166.623,
+   "y": -196.003,
+   "z": -66.2619,
+   "movement_type": 2
+  },
+  {
+   "guid": 52049,
+   "id": 12129,
+   "x": -52.9699,
+   "y": -96.8813,
+   "z": -38.6419,
+   "movement_type": 2
+  },
+  {
+   "guid": 52050,
+   "id": 12129,
+   "x": 49.8206,
+   "y": -114.607,
+   "z": -24.3112,
+   "movement_type": 2
+  },
+  {
+   "guid": 52052,
+   "id": 12129,
+   "x": -131.203,
+   "y": -137.47,
+   "z": -52.5151,
+   "movement_type": 2
+  },
+  {
+   "guid": 52053,
+   "id": 12129,
+   "x": -199.097,
+   "y": -209.826,
+   "z": -68.9112,
+   "movement_type": 0
+  },
+  {
+   "guid": 99901,
+   "id": 12129,
+   "x": -52.9699,
+   "y": -96.8813,
+   "z": -28.6419,
+   "movement_type": 0
+  },
+  {
+   "guid": 99902,
+   "id": 12129,
+   "x": 0.0,
+   "y": 0.0,
+   "z": 0.0,
+   "movement_type": 0
+  }
+ ],
+ "templates": [
+  {
+   "entry": 10184,
+   "name": "Onyxia",
+   "level_max": 63,
+   "detection_range": 20,
+   "rank": 3,
+   "flags_extra": 2129921
+  },
+  {
+   "entry": 12129,
+   "name": "Onyxian Warder",
+   "level_max": 63,
+   "detection_range": 20,
+   "rank": 1,
+   "flags_extra": 2097152
+  }
+ ]
+}

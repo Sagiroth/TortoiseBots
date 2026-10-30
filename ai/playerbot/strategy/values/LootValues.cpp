@@ -3,6 +3,7 @@
 #include "LootValues.h"
 #include "playerbot/strategy/actions/LootAction.h"
 #include "../../policy/loot/SkinningLootPolicy.h"
+#include "../../policy/loot/LootViewRulePolicy.h"
 
 using namespace ai;
 
@@ -46,6 +47,9 @@ std::vector<LootItem*> LootAccess::GetLootContentFor(Player* player) const
 	uint32 const guidLow = player->GetGUIDLow();
 
 	QuestItemMap const* maps[3] = { &loot->GetPlayerQuestItems(), &loot->GetPlayerFFAItems(), &loot->GetPlayerNonQuestNonFFAConditionalItems() };
+	bool const turnAssigned = loot->roundRobinPlayer != 0;
+	bool const viewerHoldsTurn = loot->roundRobinPlayer == player->GetGUID();
+	uint32 const turnHolder = ObjectGuid(loot->roundRobinPlayer).GetCounter();
 	for (uint8 m = 0; m < 3; ++m)
 	{
 		QuestItemMap::const_iterator it = maps[m]->find(guidLow);
@@ -61,6 +65,13 @@ std::vector<LootItem*> LootAccess::GetLootContentFor(Player* player) const
 
 			LootItem* item = const_cast<LootItem*>(&store[qi.index]);
 			if (qi.is_looted || item->is_looted)
+				continue;
+
+			// "Should loot object" must agree with the window: the core hides a personal
+			// non-FFA copy while another member holds the turn (m == 1 is the FFA list,
+			// which the core always shows).
+			if (m != 1 && !ai::PersonalCopyVisible(item->freeforall, turnAssigned, viewerHoldsTurn,
+			                                       maps[m]->find(turnHolder) != maps[m]->end()))
 				continue;
 
 			if (!isQuestMap)

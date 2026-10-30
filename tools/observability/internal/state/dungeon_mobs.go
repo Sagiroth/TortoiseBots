@@ -88,15 +88,16 @@ func (s *Store) ApplyDungeonMobs(p *model.DungeonMobsPayload) {
 
 	for _, r := range p.Runs {
 		key := DungeonKey(r.Map, r.Instance)
-		st.runs[key] = dungeonMobsEntry{seq: p.Seq, at: now, run: trimDungeonMobsRun(r)}
+		st.runs[key] = dungeonMobsEntry{seq: p.Seq, at: now, run: trimDungeonMobsRun(r, p.TS, p.TSMs)}
 	}
 	st.pruneLocked(now)
 }
 
 // trimDungeonMobsRun caps one run to what the daemon keeps. The module already
 // sends less; this is the belt to its braces (a hostile or buggy sender must
-// not grow the store).
-func trimDungeonMobsRun(r model.DungeonMobsRun) model.DungeonMobsRun {
+// not grow the store). A boss's cast also gets the moment it ends (the report's
+// time plus the time left the module reported), as the commanders view notes it.
+func trimDungeonMobsRun(r model.DungeonMobsRun, ts, tsMs int64) model.DungeonMobsRun {
 	if len(r.Members) > maxDungeonMobsMembers {
 		r.Members = r.Members[:maxDungeonMobsMembers]
 	}
@@ -104,6 +105,23 @@ func trimDungeonMobsRun(r model.DungeonMobsRun) model.DungeonMobsRun {
 		mobs := *r.Mobs
 		if len(mobs) > maxDungeonMobsPerRun {
 			mobs = mobs[:maxDungeonMobsPerRun]
+		}
+		casting := false
+		for i := range mobs {
+			casting = casting || mobs[i].CastLeftMS > 0
+		}
+		if tsMs == 0 {
+			tsMs = ts * 1000
+		}
+		if casting && tsMs > 0 {
+			copied := make([]model.CommanderMob, len(mobs)) // a copy: the payload's own rows are not changed
+			copy(copied, mobs)
+			for i := range copied {
+				if copied[i].CastLeftMS > 0 {
+					copied[i].CastEndMS = tsMs + int64(copied[i].CastLeftMS)
+				}
+			}
+			mobs = copied
 		}
 		r.Mobs = &mobs
 	}

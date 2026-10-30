@@ -330,6 +330,24 @@ static void TestTable()
     CHECK(table.StepCount() == 3 && table.PlanCount() == 1 && table.All().size() == 1);
 }
 
+static void TestStepLabel()
+{
+    // The row's comment is the dashboard's step label: clipped at kPlanMaxLabel bytes, never inside a UTF-8 character.
+    CHECK(PlanStepLabel("") == "");
+    CHECK(PlanStepLabel(std::string(kPlanMaxLabel, 'c')) == std::string(kPlanMaxLabel, 'c'));
+    CHECK(PlanStepLabel(std::string(kPlanMaxLabel + 40, 'c')).size() == kPlanMaxLabel);
+    CHECK(PlanStepLabel(std::string(kPlanMaxLabel - 1, 'x') + "\xC3\xA9").size() == kPlanMaxLabel - 1);
+
+    DungeonPlanTable table;
+    CHECK(table.AddPlan("onyxias_lair", 249));
+    PlanStep step = Step(0, 1, PlanStepKind::Move, -80.0f, -211.4f, -83.0f);
+    step.label = std::string(kPlanMaxLabel + 40, 'L');
+    CHECK(table.AddStep("onyxias_lair", step) == PlanStepRefusal::None);
+    table.Seal();
+    const DungeonPlan* plan = table.Find("onyxias_lair");
+    CHECK(plan && plan->steps.size() == 1 && plan->steps[0].label.size() == kPlanMaxLabel);
+}
+
 static void TestLaterOwner()
 {
     DungeonPlan plan;
@@ -361,6 +379,33 @@ static void TestLaterOwner()
     CHECK(OwnedByLaterStep(plan, 0, 100, 62, 0, 0));
     CHECK(OwnedByLaterStep(plan, 0, 100, 62, 0, 0, kPlanFlagHorde));
     CHECK(!OwnedByLaterStep(plan, 0, 100, 62, 0, 0, kPlanFlagAlliance));
+}
+
+static void TestOtherOwner()
+{
+    DungeonPlan plan;
+    PlanStep a = Step(0, 1, PlanStepKind::Pull, 0, 0, 0);
+    a.entries = {100};
+    a.radius = 10;
+    PlanStep b = Step(0, 2, PlanStepKind::Move, 50, 0, 0);
+    PlanStep c = Step(0, 3, PlanStepKind::Pull, 60, 0, 0);
+    c.entries = {100, 101};
+    c.radius = 10;
+    plan.steps = {a, b, c};
+    // From step 0: the second pack's unit is another step's, earlier or later.
+    CHECK(OwnedByOtherStep(plan, 0, 100, 62, 0, 0));
+    CHECK(!OwnedByOtherStep(plan, 2, 100, 62, 0, 0));
+    // ... and the first pack's unit from step 2 (an earlier step).
+    CHECK(OwnedByOtherStep(plan, 2, 100, 1, 0, 0));
+    CHECK(!OwnedByOtherStep(plan, 0, 100, 1, 0, 0));
+    // The step itself is skipped.
+    CHECK(!OwnedByOtherStep(plan, 0, 100, 0, 0, 0));
+    CHECK(!OwnedByOtherStep(plan, 2, 101, 60, 0, 0));
+    // A step for the other team owns nothing for this party (an unknown team sees every step).
+    plan.steps[2].flags = kPlanFlagHorde;
+    CHECK(OwnedByOtherStep(plan, 0, 100, 62, 0, 0));
+    CHECK(OwnedByOtherStep(plan, 0, 100, 62, 0, 0, kPlanFlagHorde));
+    CHECK(!OwnedByOtherStep(plan, 0, 100, 62, 0, 0, kPlanFlagAlliance));
 }
 
 static void TestLongHops()
@@ -751,9 +796,11 @@ int main()
     TestEntries();
     TestNormalize();
     TestTable();
+    TestStepLabel();
     TestBossEntries();
     TestBossRows();
     TestLaterOwner();
+    TestOtherOwner();
     TestLongHops();
     std::cout << "test_dungeon_plan_policy: ok\n";
     return 0;

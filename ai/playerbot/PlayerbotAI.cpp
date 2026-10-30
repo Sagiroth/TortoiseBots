@@ -1293,7 +1293,7 @@ void PlayerbotAI::StartFightStartHold()
     const char* skip = ai::FightStartHoldSkipReason(facts);
     if (skip == nullptr)
     {
-        StartPullWindow(ai::kFightStartHoldSeconds, true, 0, true);
+        StartPullWindow(ai::kFightStartHoldSeconds, true, ai::kFightStartMinSeconds, true);
         RestampPullWindow(true);
         sLog.outBasic("[BOT] fight-start-hold open %s", bot->GetName());
     }
@@ -4911,6 +4911,9 @@ ReputationRank PlayerbotAI::GetFactionReaction(FactionTemplateEntry const* thisT
 
 bool PlayerbotAI::AddAura(Unit* unit, uint32 spellId)
 {
+    // Debug marker summons fail once the core summon cap is reached.
+    if (!unit)
+        return false;
     // number or [name] Shift-click form |color|Hspell:spell_id|h[name]|h|r or Htalent form
 
     SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);

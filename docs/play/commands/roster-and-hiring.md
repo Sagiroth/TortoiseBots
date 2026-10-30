@@ -23,13 +23,14 @@ TortoiseBots provides tools to manage owned alternate characters (alts) as bots,
 | [`.bot add`](#bot-add) | `<Name>` | Logs in an owned alt as an active companion bot. |
 | [`.bot remove`](#bot-remove) | `<Name>` | Logs out an owned bot or dismisses a hired companion. |
 | [`.bot hire`](#bot-hire) | `<class> [role] [race] [gender] [tier] [level=<n>]` | Recruits a mercenary companion from a recruiter. |
-| [`.bot hire raid`](#bot-hire-raid) | `<preset\|composition> [tier]` | Recruits up to 39 mercenary companions for a raid. |
+| [`.bot hire raid`](#bot-hire-raid) | `<preset\|composition> [tier] [level=<n>]` | Recruits up to 39 mercenary companions for a raid. |
 | [`.bot role`](#bot-role) | `<Name\|self> <tank\|healer\|dps\|clear>` | Sets group role overrides for bots or the player. |
 | [`.bot invite`](#bot-invite) | `<Name>` | Sends a party invite to an online owned bot. |
 | [`.bot uninvite`](#bot-uninvite) | `<Name>` | Removes an owned bot or dismisses a companion. |
 | [`.bot summon`](#bot-summon) | `<Name>` | Teleports an owned bot or hire to your coordinates. |
 | [`.bot maintenance`](#bot-maintenance) | `<Name>` | Refreshes bot reagents, ammunition, and gear repairs. |
 | [`.bot autogear`](#bot-autogear) | `<Name> [quality\|ilvl]` | Automatically upgrades gear to level-appropriate items. |
+| [`.bot gear`](#bot-gear) | `<Name\|raid Commander> tier\|preset` | Gears a bot or a bound raid to a hire tier under an item-level cap (GM). |
 | [`.bot release`](#bot-release) | None | Commands dead companion bots to release spirit. |
 | [`.bot corpse run`](#bot-corpse-run) | None | Commands spirit bots to return to their corpses. |
 | [`.bot learn`](#bot-learn) | None | Commands nearby companion bots to train new spells. |
@@ -96,10 +97,10 @@ By default (`AiPlayerbot.HireAnywhere = 0`), the `.bot hire` chat command always
 Recruits up to 39 mercenary companions for a raid in a single operation.
 
 ```text
-.bot hire raid <preset|composition> [tier]
+.bot hire raid <preset|composition> [tier] [level=<1-60>]
 ```
 
-Requires [`AiPlayerbot.HireAnywhere = 1`](../../server/settings/hiring.md#aiplayerbothireanywhere) even at a recruiter (proximity alone does not enable it). The command requires party leader permissions when the party must be converted to a raid (a party that would overflow 5); otherwise no leadership needed. It converts your group to a raid if needed, and checks available raid capacity and seats.
+Requires [`AiPlayerbot.HireAnywhere = 1`](../../server/settings/hiring.md#aiplayerbothireanywhere) even at a recruiter (proximity alone does not enable it). The command requires party leader permissions when the party must be converted to a raid (a party that would overflow 5); otherwise no leadership needed. It converts your group to a raid if needed, and checks available raid capacity and seats. An optional `level=` (or `level <n>`, `lvl=`) hires the whole roster at that level, clamped by the same rule as [`.bot hire`](#bot-hire); without it the companions arrive at your level.
 
 <details>
 <summary>Raid compositions, batching, and quotes</summary>
@@ -108,6 +109,7 @@ Requires [`AiPlayerbot.HireAnywhere = 1`](../../server/settings/hiring.md#aiplay
 - **Upfront Quote:** Total cost is quoted upfront. If you lack sufficient gold, the command reports `Nothing was hired` and aborts without creating partial bots.
 - **Batching & Pause:** Bots are spawned 2 per 250 ms in priority order: tanks first, then healers, then DPS. Spawning automatically pauses while the player is on a loading screen and stops if the player leaves the group.
 - **Summary:** Emits a final `Hired N...` message and `TBM:HIRE_RAID` protocol summary.
+- **The 40th bot of a bound raid:** a raid you play in holds you and 39 companions. The commander of a [bound raid](commander.md) (`.bot commander bind <LeadBot> raid`) stands outside the raid group, so the raid holds 40 bots: his `.bot hire` (or `.bot hire raid`) joins the lead bot's raid and the binding, only the new bot is placed in the layout (a free seat in the subgroup of its role; nobody else moves), and the 40th hire is accepted (needs `AiPlayerbot.HireMaxBotsPerPlayer = 39`). A commander who stands inside the group, or has no raid bound, keeps the limit of 39. A bound raid that already holds 40 bots refuses the hire with a message. The 40th seat ends with the binding: when the binding is released (unbind, the commander logs out, the binding drops) and he owns more than 39 companions, the most recently hired leave (dismissed as `.bot remove`, no refund) with a chat line naming them. A hire still mustering when the binding changes (unbound, the commander joined the group, another hire took the last seat, he went offline) is cancelled: its character is deleted and the fee returned (by mail when he is offline); it never joins him as an ordinary party.
 
 </details>
 
@@ -173,6 +175,20 @@ Evaluates a bot's level and automatically equips level-appropriate equipment up 
 Requires [`AiPlayerbot.OwnedBotAutogearEnabled`](../../server/settings/party.md#aiplayerbotownedbotautogearenabled) to be enabled (1). Defaults to uncommon (green) gear unless specified (e.g. `blue` or `200`). Ranged weapons are selected to match existing ammunition in the bot's bags. Note: autogear hands out no ammo; hunter ammunition must be stocked separately.
 
 For real players, use [`.autogear`](#autogear) instead — `.bot autogear` only works on owned or hired bots.
+
+### `.bot gear`
+
+Gears one bot, or every bot of a commander's bound group, to a hire gear tier under an item-level cap. GameMaster only, in game or from the console.
+
+```text
+.bot gear <Name> tier <0-7> [ilvl=<N>] [noenchants]
+.bot gear raid <Commander> tier <0-7> [ilvl=<N>] [noenchants]
+.bot gear <Name|raid <Commander>> preset <name>
+```
+
+The named bot must be online and a bot; `raid <Commander>` gears every bot of the commander's bound group (the lead bot's group when bound, else the commander's own group). Each bot must be level 60, alive and in the world; the kit is the hire tier for the bot's class and role, skipped slots are reported as capped when the cap holds them back. Bag items the bot had before the call are never destroyed: above-cap pieces already in the bags stay (kept N items above the cap in the bags) and only a created-then-unused piece is removed. A worn piece the kit replaces is destroyed, the same way hire provisioning swaps a hire's gear (bots only; real players are refused); and anything still worn above the cap is unequipped to the bags. The pin holds afterwards: the bot will not auto-equip an above-cap piece again until it logs out. Real players are never targets.
+
+Named presets live in [`AiPlayerbot.BotGearPresets`](../../server/settings/hiring.md#aiplayerbotbotgearpresets) (`lkh`, `zg`, `aq20`, `timbermaw`, `onyxia`, `mc`, `bwl`, `es`, `aq40`, `naxx`, `kara40`, `prebis`, `t1`, `t2`).
 
 ### `.autogear`
 

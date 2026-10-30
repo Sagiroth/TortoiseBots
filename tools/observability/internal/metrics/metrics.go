@@ -31,6 +31,20 @@ type Registry struct {
 	grindingGaining prometheus.Gauge
 	grindingDeaths  prometheus.Gauge
 	grindingCombat  prometheus.Gauge
+	// The live stream (S1): open SSE clients, the frames dropped to a slow
+	// one, and the realtime datagrams that feed it, by type.
+	liveClients       prometheus.Gauge
+	liveDropped       prometheus.Counter
+	realtimeDatagrams *prometheus.CounterVec
+	realtimeBytes     *prometheus.CounterVec
+	// The fight history (R6a): fights written to disk, fights that could
+	// not be, and stored lines the startup scan had to skip.
+	historyWritten prometheus.Counter
+	historyDropped *prometheus.CounterVec
+	historyBroken  prometheus.Counter
+	// COMMANDERS cycles that arrived in parts and were applied incomplete (their missing bindings carried over).
+	commandersPartials prometheus.Counter
+	udpDropped         *prometheus.CounterVec
 }
 
 func New() *Registry {
@@ -91,6 +105,42 @@ func New() *Registry {
 			Name: "tortoisebots_grinding_pct_in_combat",
 			Help: "Percent of the roster in combat state (0-100)",
 		}),
+		liveClients: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "tortoisebots_live_clients",
+			Help: "Open Server-Sent Events streams on GET /api/v1/live",
+		}),
+		liveDropped: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "tortoisebots_live_dropped_total",
+			Help: "Live frames dropped for a slow stream (the client is told to resync)",
+		}),
+		realtimeDatagrams: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "tortoisebots_realtime_datagrams_total",
+			Help: "Realtime datagrams accepted by type (COMBAT_EVENTS, COMMANDER_POS)",
+		}, []string{"type"}),
+		realtimeBytes: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "tortoisebots_realtime_bytes_total",
+			Help: "Bytes of realtime datagrams by type (COMBAT_EVENTS, COMMANDER_POS)",
+		}, []string{"type"}),
+		historyWritten: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "tortoisebots_fight_history_written_total",
+			Help: "Fights appended to the fight history",
+		}),
+		historyDropped: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "tortoisebots_fight_history_dropped_total",
+			Help: "Fights the fight history did not keep, by reason (queue, file_cap, rows)",
+		}, []string{"reason"}),
+		historyBroken: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "tortoisebots_fight_history_broken_total",
+			Help: "Stored history lines the index could not read",
+		}),
+		commandersPartials: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "tortoisebots_commanders_partial_total",
+			Help: "COMMANDERS cycles applied incomplete, their bindings completed from the previous report",
+		}),
+		udpDropped: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "tortoisebots_udp_dropped_total",
+			Help: "Datagrams the listener refused, by reason (replay: a replayed run sent without -accept-replay)",
+		}, []string{"reason"}),
 	}
 
 	// Initialize server as offline until the first pulse.
@@ -155,7 +205,49 @@ func (r *Registry) RecordSnapshot() {
 	r.snapshotsTotal.Inc()
 }
 
+// SetLiveClients mirrors the open live streams.
+func (r *Registry) SetLiveClients(n int) {
+	r.liveClients.Set(float64(n))
+}
+
+// AddLiveDropped adds frames that a slow stream lost since the last call.
+func (r *Registry) AddLiveDropped(n uint64) {
+	if n > 0 {
+		r.liveDropped.Add(float64(n))
+	}
+}
+
+// RecordRealtimeDatagram counts one accepted realtime datagram and its bytes,
+// by type; S3's measurement reads these.
+func (r *Registry) RecordRealtimeDatagram(typ string, bytes int) {
+	r.realtimeDatagrams.WithLabelValues(typ).Inc()
+	if bytes > 0 {
+		r.realtimeBytes.WithLabelValues(typ).Add(float64(bytes))
+	}
+}
+
+// AddCommandersPartials adds COMMANDERS cycles applied as partials since the last call.
+func (r *Registry) AddCommandersPartials(n uint64) {
+	if n > 0 {
+		r.commandersPartials.Add(float64(n))
+	}
+}
+
+// RecordUDPDropped counts one datagram the listener refused (reason: replay).
+func (r *Registry) RecordUDPDropped(reason string) {
+	r.udpDropped.WithLabelValues(reason).Inc()
+}
+
 // RecordGrinding mirrors the dashboard grinding panel so alerts can use it.
+// HistoryWritten counts one fight appended to the fight history.
+func (r *Registry) HistoryWritten() { r.historyWritten.Inc() }
+
+// HistoryDropped counts one fight the history did not keep, by reason.
+func (r *Registry) HistoryDropped(reason string) { r.historyDropped.WithLabelValues(reason).Inc() }
+
+// HistoryBroken counts stored history lines the startup scan had to skip.
+func (r *Registry) HistoryBroken(n int) { r.historyBroken.Add(float64(n)) }
+
 func (r *Registry) RecordGrinding(g model.GrindingSummary) {
 	r.grindingXpHour.Set(g.TotalXpHour)
 	r.grindingGaining.Set(float64(g.BotsGainingXP))

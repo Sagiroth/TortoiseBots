@@ -91,6 +91,17 @@ MobInfo WorstMob(uint64_t i)
     m.rank = 'b';
     m.cc = 's';
     m.cast = std::string(40, '\x02');
+    m.hasO = true;
+    m.o = -3.14159f;
+    m.castId = 4294967295u;
+    m.castLeftMs = 4294967295u;
+    m.castTotalMs = 4294967295u;
+    m.castTarget = 18446744073709551615ull;
+    m.channel = true;
+    m.hasShape = true;
+    m.shape.kind = TortoiseBots::SpellShape::Kind::Line;
+    m.shape.length = 4294967295.0f;
+    m.shape.width = 4294967295.0f;
     return m;
 }
 

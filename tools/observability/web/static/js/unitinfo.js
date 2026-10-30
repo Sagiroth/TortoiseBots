@@ -68,9 +68,52 @@
     return Math.hypot(a.x - b.x, a.y - b.y);
   }
 
+  // The compass word of a facing (o in radians, 0 = north, counter-clockwise toward west): N, NW, W, SW, S, SE, E, NE.
+  const COMPASS = ["N", "NW", "W", "SW", "S", "SE", "E", "NE"];
+  function compass(o) {
+    if (!num(o)) return "";
+    const twoPi = Math.PI * 2;
+    let a = o % twoPi;
+    if (a < 0) a += twoPi;
+    return COMPASS[Math.round(a / (Math.PI / 4)) % 8];
+  }
+
+  // The spell a unit is casting, with the time left at the moment of the box (the report's cleft counted from the report's
+  // arrival, when ctx carries mobSeenAt and nowMs) and the bound bot it is aimed at (ctg, the bot's id). The plain name when
+  // the report brings no clock; null when nothing is cast.
+  function castRow(m, ctx) {
+    if (!m || (!m.cast && !m.cid)) return null;
+    const name = str(m.cast) || "a spell";
+    if (!num(m.cleft)) return ["Casting", name];
+    const c = ctx || {}, seen = c.mobSeenAt ? c.mobSeenAt[m.id] : null;
+    const waited = num(seen) && num(c.nowMs) ? Math.max(0, c.nowMs - seen) : 0;
+    const target = m.ctg ? byId(c.bots)[m.ctg] : null;
+    return ["Casting", name + " (" + (Math.max(0, m.cleft - waited) / 1000).toFixed(1) + " s left)" + (target ? " at " + target.name : "")];
+  }
+
   // ---- the hover box ---------------------------------------------------------------------------------------------------
 
   const HEALTH_LOW = 30;
+  const DISPEL_WORD = { m: "magic", c: "curse", p: "poison", d: "disease" };
+  const FLAG_WORD = { n: "untargetable", i: "cannot be attacked", h: "flying", d: "feigning death", e: "evading", v: "not visible" };
+
+  function secsLeft(ms) { return typeof ms === "number" && isFinite(ms) ? Math.ceil(ms / 1000) + " s" : ""; }
+
+  // One aura or boss debuff as "Name ×2 8 s" (+ its dispel class in words), or "" for a row without an id.
+  function auraChip(a) {
+    if (!a || (a.id == null && !a.n)) return "";
+    const name = str(a.n) || ("spell " + a.id);
+    return name + (typeof a.st === "number" && a.st > 1 ? " ×" + a.st : "") + (secsLeft(a.l) ? " " + secsLeft(a.l) : "");
+  }
+  function debuffChip(a) {
+    if (!a || (a.id == null && !a.n)) return "";
+    const w = DISPEL_WORD[str(a.dt)];
+    return (str(a.n) || ("spell " + a.id)) + (w ? " (" + w + ")" : "") + (typeof a.st === "number" && a.st > 1 ? " ×" + a.st : "") + (secsLeft(a.l) ? " " + secsLeft(a.l) : "");
+  }
+  function flagWords(uf) {
+    const s = str(uf);
+    return ["n", "i", "h", "d", "e", "v"].filter((f) => s.indexOf(f) >= 0).map((f) => FLAG_WORD[f]);
+  }
 
   function hpText(b) { return b.max_hp > 0 ? pct(b.hp, b.max_hp) + " % (" + b.hp + " / " + b.max_hp + ")" : ""; }
 
@@ -89,19 +132,28 @@
     if (!dead && b.cc) rows.push(["Crowd control", CC_LONG[b.cc] || b.cc]);
     if (b.max_power > 0 && !dead) rows.push([b.power_type === "rage" || b.power_type === "energy" ? b.power_type[0].toUpperCase() + b.power_type.slice(1) : "Mana", pct(b.power, b.max_power) + " %"]);
     if (!dead && b.act) rows.push(["Last action", b.act + (RES_WORD[b.res] ? " (" + RES_WORD[b.res] + ")" : "")]);
+    // The boss's debuffs on this bot: one chip per aura, with the dispel class and the seconds left (a newer module).
+    const db = (Array.isArray(b.db) ? b.db : []).map((a) => debuffChip(a)).filter(Boolean);
+    if (db.length) rows.push(["Boss debuffs", db.join(" · ")]);
+    if (b.mc) rows.push(["Mind controlled", "charmed by an enemy: it fights its own group"]);
+    if (b.marked) rows.push(["Marked", str(b.marked)]);
     const d = b === c.lead ? null : dist(b, c.lead);
     if (b === c.lead) rows.push(["Role", "the lead of the party"]);
     else if (d != null) rows.push(["From the lead", Math.round(d) + " yd"]);
     return { title: str(b.name) || "Bot", sub, tone: dead ? "dead" : "bot", rows };
   }
 
-  // A mob: name (or its entry), level, rank, reaction, health, what it casts, whom it attacks, crowd control, distance to the lead.
+  // A mob: name (or its entry), level, rank, reaction, health, what it casts and how long that has left, where it looks, whom it
+  // attacks, crowd control, distance to the lead. ctx may carry `mobSeenAt` (mob id -> arrival of the report that carried it) and
+  // `nowMs`, so the cast's time left counts down between reports.
   function describeMob(m, ctx) {
     const c = ctx || {}, bots = byId(c.bots), rows = [];
     const title = str(m.name) || (m.entry ? "Creature " + m.entry : "Unit");
     const sub = [m.lvl ? "level " + m.lvl : "", RANK_WORD[m.rank] || "", REACTION_WORD[m.reaction] || "", KIND_WORD[m.kind] || ""].filter(Boolean).join(" · ");
     rows.push(["Health", num(m.hp) ? m.hp + " %" : "unknown"]);
-    if (m.cast) rows.push(["Casting", m.cast]);
+    const cast = castRow(m, c);
+    if (cast) rows.push(cast);
+    if (num(m.o)) rows.push(["Facing", compass(m.o)]);
     if (m.victim) {
       const v = bots[m.victim];
       rows.push(["Attacking", v ? v.name : "someone outside the party"]);
@@ -109,6 +161,12 @@
       rows.push(["Attacking", "nobody"]);
     }
     if (m.cc) rows.push(["Crowd control", CC_LONG[m.cc] || m.cc]);
+    // The boss's own auras, its movement/selectable state and the phase the panel labels (a newer module + the boss data).
+    const au = (Array.isArray(m.au) ? m.au : []).map((a) => auraChip(a)).filter(Boolean);
+    if (au.length) rows.push(["Auras", au.join(" · ")]);
+    const fl = flagWords(m.uf);
+    if (fl.length) rows.push(["State", fl.join(" · ")]);
+    if (m.phase) rows.push(["Phase", str(m.phase)]);
     const d = dist(m, c.lead);
     if (d != null) rows.push(["From the lead", Math.round(d) + " yd"]);
     if (m.entry) rows.push(["Entry", String(m.entry)]);
@@ -324,6 +382,7 @@
     const leg = str(r.leg).replace(/[_\-]+/g, " ").trim();
     const parts = [];
     if (num(r.steps) && r.steps > 0) parts.push("step " + (r.step || 0) + "/" + r.steps);
+    if (typeof r.label === "string" && r.label.trim()) parts.push(r.label.trim());
     if (leg && leg !== "-") parts.push(leg);
     if (r.state === "done") parts.push("done");
     else if (r.state === "paused") parts.push("paused");
@@ -343,6 +402,7 @@
     runBrief,
     activity, actionPhrase, describeBot, describeMob, describeCommander, describeObject, describeNote, describeEvent, boxPosition, hpBar, hpClass, threatClass, targetMarks, statusIcons,
     newEvents, noteEvents, eventsOf, firstSeen, pruneEvents, clockText, feedLine, pinsOn, runInfo, dist, CC_WORD,
+    auraChip, debuffChip, flagWords,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.UnitInfo = api;
 })(typeof self !== "undefined" ? self : this);

@@ -2678,10 +2678,21 @@ select.input {
     display: none;
   }
 
+  /* The page name gets a line of its own (a word as short as "Commanders" was ellipsised to "Com..."): the controls keep the
+     first row, the title the second and the search field the third. */
+  .page-head {
+    flex: 1 1 100%;
+    order: 2;
+  }
+
+  .quick-find {
+    order: 3;
+    flex: 1 1 100%;
+  }
+
   .page-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 1.05rem;
+    white-space: normal;
   }
 
   .kpi-row .kpi:last-child:nth-child(odd) {
@@ -2790,7 +2801,11 @@ select.input {
 }
 
 /* ---------- Commanders tab ---------- */
-.cmd-card { --role-tank: #2f80ff; --role-healer: #22c55e; --role-dps: #ff9f1c; --role-other: #bc8cff; --role-dead: #6b7280; margin-bottom: 16px; }
+.cmd-card { --role-tank: #2f80ff; --role-healer: #22c55e; --role-dps: #ff9f1c; --role-other: #bc8cff; --role-dead: #6b7280; margin-bottom: 16px; min-width: 0; }
+/* The Fights panel is a table of six nowrap columns; on a phone it scrolls inside the card instead of widening the page. */
+.cmd-card .cmd-fights, .cmd-card .fight-panel { min-width: 0; max-width: 100%; }
+.cmd-card .cmd-fights { overflow-x: auto; }
+.cmd-card .cmd-fights .data-table { width: max-content; min-width: 100%; }
 .cmd-card.stale { opacity: 0.7; }
 .cmd-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .cmd-title { font-size: 1.05rem; font-weight: 650; color: #fff; margin: 0; overflow-wrap: anywhere; }
@@ -2906,6 +2921,14 @@ select.input {
 .cmd-map .stamp text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-linejoin: round; }
 .cmd-maptools select { height: 32px; max-width: 120px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(14, 19, 27, 0.85); color: var(--text-main); font: inherit; }
 .cmd-maptools select[hidden] { display: none; }
+.cmd-maptools button { white-space: nowrap; }
+/* A phone's map toolbar is a second row by design: it wraps inside the map box instead of overflowing it (the picture picker
+   is only there when the map has pictures, which is when the row needs the width most). */
+@media (max-width: 640px) {
+  .cmd-maptools { left: 8px; right: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .cmd-maptools button { min-width: 30px; height: 28px; padding: 0 8px; }
+  .cmd-maptools select { height: 28px; max-width: 100%; }
+}
 .cmd-picwhy { margin: 6px 0 0; font-size: 0.74rem; color: var(--accent-yellow); }
 .cmd-picwhy[hidden] { display: none; }
 .cmd-scale { position: absolute; right: 8px; bottom: 6px; display: flex; flex-direction: column; align-items: flex-end; font-size: 0.7rem; color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; }
@@ -2958,6 +2981,26 @@ select.input {
 .cmd-run { color: var(--text-main); font-size: 0.8rem; font-weight: 600; margin: -4px 0 8px; font-variant-numeric: tabular-nums; }
 .cmd-run[hidden], .cmd-feed[hidden], .cmd-tip[hidden] { display: none; }
 .cmd-feed { margin-top: 6px; padding: 4px 8px; max-height: 8.6em; overflow: auto; background: var(--bg-card-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 0.76rem; }
+/* Raid card (A11): subgroup blocks, notes, threat, deaths and run controls under the map. The party tab keeps its own look. */
+.cmd-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 8px 18px; margin-top: 12px; }
+.cmd-panels[hidden] { display: none; }
+.cmd-subgroup { margin: 10px 0 2px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
+.cmd-layout { margin: 8px 0 2px; font-size: 0.8rem; color: var(--text-dim); overflow-wrap: anywhere; }
+.cmd-notes { max-height: 30em; overflow: auto; font-size: 0.8rem; }
+.cmd-note { padding: 1px 0; border-top: 1px solid var(--border-color); overflow-wrap: anywhere; }
+.cmd-threat-row { padding: 2px 0; font-size: 0.84rem; }
+.cmd-threat-row.hot { color: var(--accent-red); font-weight: 600; }
+.cmd-death { padding: 2px 0; font-size: 0.84rem; cursor: pointer; }
+.cmd-death:hover { color: var(--accent-blue-bright); }
+.cmd-controls[hidden] { display: none; }
+.cmd-controls-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cmd-controls-row .btn:disabled { opacity: 0.45; cursor: default; }
+.cmd-controls-row select, .cmd-controls-row input { height: 30px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; padding: 0 8px; }
+.cmd-controls-row input[type="number"] { width: 5em; }
+.cmd-controls-row input[type="checkbox"] { height: auto; padding: 0; margin: 0; }
+.cmd-controls-row label.cmd-until { display: flex; align-items: center; gap: 4px; font-size: 0.8rem; color: var(--text-muted); }
+.cmd-controls-note { min-height: 1.2em; margin-top: 6px; font-size: 0.8rem; color: var(--text-muted); overflow-wrap: anywhere; }
+.cmd-waiting { color: var(--accent-yellow); font-weight: 600; }
 .cmd-feed .ev { display: grid; grid-template-columns: 4.6em minmax(0, 1fr); gap: 6px; padding: 1px 0; }
 .cmd-feed .ev b { color: var(--text-dim); font-weight: 500; font-variant-numeric: tabular-nums; }
 .cmd-feed .ev span { overflow-wrap: anywhere; }
@@ -2985,9 +3028,22 @@ select.input {
 .cmd-map .mob.hostile circle.body { fill: #ef4444; }
 .cmd-map .mob.neutral circle.body { fill: #9ca3af; }
 .cmd-map .mob.critter circle.body { fill: #a8a29e; stroke: rgba(0, 0, 0, 0.5); }
-.cmd-map .mob.boss circle.body { stroke: #facc15; stroke-width: 2; }
-.cmd-map text.mname { fill: #fecaca; font-weight: 600; paint-order: stroke; stroke: #000; stroke-linejoin: round; pointer-events: none; }
+.cmd-map .mob.boss circle.body { fill: #7c3aed; stroke: #facc15; stroke-width: 3; }
+.cmd-map .mob.elite circle.body { stroke: #c0c0c0; stroke-width: 1.6; }
+/* A boss's gold ring pulses just outside the body; with reduced motion it is a static double ring instead. */
+.cmd-map .mob circle.bossring, .cmd-map .mob circle.bossring2 { fill: none; stroke: #facc15; vector-effect: non-scaling-stroke; }
+.cmd-map .mob circle.bossring { stroke-width: 2; animation: bossring 1.6s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+.cmd-map .mob circle.bossring2 { display: none; stroke-width: 1; opacity: 0.45; }
+@keyframes bossring { 0% { transform: scale(1); opacity: 0.9; } 100% { transform: scale(1.5); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .cmd-map .mob circle.bossring { animation: none; opacity: 0.55; }
+  .cmd-map .mob circle.bossring2 { display: inline; }
+}
 .cmd-map text.mname.boss { fill: #facc15; font-weight: 700; }
+/* A boss off the part of the map in view: a gold arrow and a crown at the edge, which a click centres on. */
+.cmd-map g.bosspoint { cursor: pointer; }
+.cmd-map .bosspoint-arrow { fill: #facc15; stroke: #000; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.cmd-map text.mname { fill: #fecaca; font-weight: 600; paint-order: stroke; stroke: #000; stroke-linejoin: round; pointer-events: none; }
 .cmd-map .bot text, .cmd-map .cmdr text { pointer-events: none; }
 .cmd-map circle.tring { fill: none; stroke-width: 2.4; vector-effect: non-scaling-stroke; }
 .cmd-map circle.tring.tank { stroke: #2f80ff; }
@@ -3024,7 +3080,8 @@ select.input {
 .cmd-legend svg.ic-skull { fill: #e5e7eb; } .cmd-legend svg.ic-spark { fill: #facc15; } .cmd-legend svg.ic-sheep { fill: #f9a8d4; }
 .cmd-legend svg.ic-cup { fill: #7dd3fc; color: #7dd3fc; } .cmd-legend svg.ic-arrow { color: #fb923c; } .cmd-legend svg.ic-crown { fill: #facc15; }
 .cmd-legend svg.ic-door { fill: #93c5fd; } .cmd-legend svg.ic-coin { fill: #fcd34d; }
-.cmd-legend i.lboss { background: #ef4444; border-color: #facc15; width: 14px; height: 14px; }
+.cmd-legend i.lboss { background: #7c3aed; border: 3px solid #facc15; width: 16px; height: 16px; }
+.cmd-legend i.lelite { background: #ef4444; border: 2px solid #c0c0c0; }
 .cmd-legend i.lhp { width: 16px; height: 4px; border: 0; border-radius: 2px; background: linear-gradient(90deg, #22c55e 65%, rgba(0, 0, 0, 0.7) 65%); vertical-align: 2px; }
 .cmd-legend i.tc-tank, .cmd-legend i.tc-other { background: #9ca3af; border-width: 2.5px; }
 .cmd-legend i.tc-tank { border-color: #2f80ff; } .cmd-legend i.tc-other { border-color: #ef4444; }
@@ -3151,3 +3208,634 @@ svg.dg-map .dg-scale text { fill: #fff; paint-order: stroke; stroke: #000; strok
 body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-refresh-bar { margin-bottom: 12px; padding: 10px 16px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 @media (max-width: 720px) { .topbar-right .refresh-picker > span { display: none; } }
+
+/* ---------- Fight debugger (Commanders card) ---------- */
+/* The card's second view: raid frames, a fight rail, the checks, the map with the fight's deaths, the timeline and the role
+   tables. Colours come from the card's tokens; a light theme overrides three variables and the role colours. */
+.cmd-card {
+  --fd-fail: var(--accent-red);
+  --fd-warn: var(--accent-yellow);
+  --fd-ok: var(--accent-green);
+}
+.cmd-card.fd-on .cmd-body {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) minmax(280px, 360px);
+  grid-template-areas:
+    "run run run"
+    "frames frames frames"
+    "bosses bosses bosses"
+    "rail centre roles";
+  gap: 16px;
+  align-items: start;
+}
+/* The centre column's own grid: map, checks and timeline packed top-down. In the page grid they shared the three rows
+   with the rail and the roles column, and a taller roles table stretched those rows (its height is spread over the rows
+   it spans), leaving a blank band under every centred panel. */
+.fd-centre { display: contents; }
+.cmd-card.fd-on .fd-centre { grid-area: centre; display: grid; gap: 16px; align-content: start; min-width: 0; }
+/* The debugger's empty states: one centred line instead of blank panels (no raid bound in the All raids grid, no fight yet in
+   an open card). The card's line takes the centre column the hidden fight panels would fill. */
+.fd-nofight { grid-area: centre; margin: 0; padding: 48px 14px; text-align: center; color: var(--text-muted); font-size: 0.9rem; }
+.fd-nofight[hidden] { display: none; }
+.cmd-overview .fd-nofight { grid-column: 1 / -1; padding: 32px 14px; border: 1px dashed var(--border-color); border-radius: var(--radius); }
+/* Nothing bound: the commanders that still have saved fights, newest first (each opens read-only). */
+.fd-histlist { grid-column: 1 / -1; display: grid; gap: 8px; min-width: 0; }
+.fd-histlist .cmd-h { margin: 0; }
+.fd-histlist ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.fd-histcmd { display: flex; flex-direction: column; gap: 4px; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-card); color: var(--text-main); font: inherit; text-align: left; cursor: pointer; }
+.fd-histcmd:hover { background: var(--bg-card-hover); border-color: var(--border-strong); }
+.fd-histcmd:focus-visible { outline: 2px solid var(--accent-blue-bright); outline-offset: 2px; }
+.fd-histcmd b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-histcmd span { color: var(--text-muted); font-size: 0.76rem; overflow-wrap: anywhere; }
+/* A read-only history card has nothing live to place: no map, no party column, no raid frames. */
+.cmd-card.cmd-history .cmd-mapbox, .cmd-card.cmd-history .fd-raid, .cmd-card.cmd-history .fd-runtl { display: none; }
+
+/* The debugger's head: the prototype's commander kicker and title, the crumbs, and the refresh picker the page row would carry. */
+.cmd-headl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-width: 0; }
+.cmd-headr { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fd-headmain { display: flex; flex-direction: column; gap: 2px; }
+.fd-headmain[hidden], .fd-crumbs[hidden], .fd-refresh[hidden] { display: none; }
+.fd-kicker { font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; color: var(--text-muted); }
+.fd-bigtitle { margin: 0; font-size: 1.65rem; line-height: 1.15; font-weight: 700; color: var(--text-main); }
+.fd-crumbs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.fd-crumb { display: inline-flex; align-items: center; padding: 5px 8px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-card-subtle); color: var(--text-muted); font: 600 0.66rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
+.fd-crumb.fail { color: var(--fd-fail); border-color: color-mix(in srgb, var(--fd-fail) 45%, transparent); background: color-mix(in srgb, var(--fd-fail) 12%, transparent); }
+.fd-crumb.ok { color: var(--fd-ok); border-color: color-mix(in srgb, var(--fd-ok) 45%, transparent); background: color-mix(in srgb, var(--fd-ok) 12%, transparent); }
+.cmd-card.fd-on .cmd-badges[hidden], .cmd-card.fd-on .cmd-sub[hidden], .cmd-card.fd-on .cmd-warn[hidden] { display: none; }
+
+/* The prototype's panels: the debugger page drops the outer card and each section carries its own board. */
+.cmd-card.fd-on { background: none; border-color: transparent; padding: 0; }
+.cmd-card.fd-on .fd-runtl,
+.cmd-card.fd-on .fd-raid,
+.cmd-card.fd-on .fd-checks,
+.cmd-card.fd-on .fd-timeline,
+.cmd-card.fd-on .fd-t,
+.cmd-card.fd-on .cmd-mapbox {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+}
+.cmd-card.fd-on .fd-timeline { padding-top: 10px; }
+
+/* The page's own tiles and boxes belong to Live; every card in the debugger drops them. */
+#tab-commanders.cmd-debug-only > .kpi-row,
+#tab-commanders.cmd-debug-only > .cmd-refresh-bar,
+#tab-commanders.cmd-debug-only > .cmd-demo-bar,
+#tab-commanders.cmd-debug-only > .cmd-layers,
+#tab-commanders.cmd-debug-only > .cmd-external { display: none; }
+.cmd-layers.cmd-layers-map { position: absolute; left: 8px; top: 8px; z-index: 3; width: auto; max-width: min(320px, 78%); margin: 0; padding: 0; border: 0; background: none; }
+.cmd-layers.cmd-layers-map > summary { display: inline-block; padding: 5px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--bg-app) 85%, transparent); color: var(--text-main); font-weight: 600; }
+.cmd-layers.cmd-layers-map > .empty-hint { display: none; }
+.cmd-layers.cmd-layers-map .cmd-layers-body { width: min(320px, 70vw); max-height: 330px; overflow: auto; margin: 6px 0 0; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg-card); }
+.cmd-layers.cmd-layers-map > .btn { margin-top: 6px; }
+
+.fd-runtl { grid-area: run; min-width: 0; }
+.fd-rthead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 14px; margin-bottom: 4px; }
+.fd-rthead .cmd-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0; }
+.fd-rtsub { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 0.72rem; color: var(--text-muted); }
+.fd-rtlegend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.fd-rtlegend span { display: inline-flex; align-items: center; gap: 4px; }
+.fd-rtlegend i.sw { width: 10px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--text-dim) 45%, transparent); }
+.fd-rtlegend i.sw-fight { background: var(--accent-yellow); }
+.fd-rtlegend i.sw-boss { background: var(--fd-fail); }
+/* The strip: grey walking, gold trash blocks, a red boss block, the deaths above it and the replay cursor. */
+.fd-rt { position: relative; height: 26px; margin-top: 12px; border-radius: 3px; background: var(--bg-card-subtle); }
+.fd-rtwalk { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--text-dim) 38%, transparent); }
+.fd-rtfight { position: absolute; top: 0; bottom: 0; padding: 0 2px; overflow: hidden; border: 0; border-radius: 2px; background: var(--accent-yellow); color: var(--bg-app); font: 600 0.66rem/26px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: center; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.fd-rtfight.boss { background: var(--fd-fail); color: var(--text-main); }
+.fd-rtfight:hover { filter: brightness(1.1); }
+.fd-rtfight.on { outline: 2px solid var(--text-main); outline-offset: 1px; }
+.fd-rtdeath { position: absolute; top: -12px; transform: translateX(-50%); color: var(--fd-fail); font-size: 0.7rem; font-weight: 700; line-height: 1; }
+.fd-rtcur { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text-main); pointer-events: none; }
+.fd-rtplay { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.fd-rtplay .fd-playbtn { white-space: nowrap; }
+/* One layer control: the map's "Layers ▾" panel; the toolbar's button belongs to Live mode only. */
+.cmd-card.fd-on .cmd-maptools [data-act="layers"] { display: none; }
+
+.fd-raid { grid-area: frames; min-width: 0; }
+.fd-railcol { grid-area: rail; min-width: 0; display: grid; gap: 6px; align-content: start; }
+.fd-raidhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 8px; }
+.fd-raidhead .cmd-h { margin: 0; }
+.fd-dead { color: inherit; }
+.fd-ready { display: flex; flex-wrap: wrap; gap: 6px; }
+.fd-ready .fd-chip { padding: 3px 8px; font: 600 0.62rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: 0.05em; }
+.fd-ready .fd-chip.ok { color: var(--fd-ok); border-color: color-mix(in srgb, var(--fd-ok) 45%, transparent); background: color-mix(in srgb, var(--fd-ok) 12%, transparent); }
+.fd-ready .fd-chip.warn { color: var(--fd-warn); border-color: color-mix(in srgb, var(--fd-warn) 45%, transparent); background: color-mix(in srgb, var(--fd-warn) 12%, transparent); }
+.fd-ready .fd-chip.fail { color: var(--fd-fail); border-color: color-mix(in srgb, var(--fd-fail) 45%, transparent); background: color-mix(in srgb, var(--fd-fail) 12%, transparent); }
+.fd-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px 8px; }
+.fd-runtl[hidden], .fd-frames[hidden], .fd-raid[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-timeline[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
+/* One group spans the row and lays its own tiles out; a raid's five bots fill five columns instead of one. */
+.fd-grp { grid-column: 1 / -1; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 8px; align-content: start; }
+.fd-gl { grid-column: 1 / -1; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
+.fd-tile { position: relative; height: 34px; width: 100%; min-width: 0; padding: 0 7px; overflow: hidden; text-align: left; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.76rem; cursor: pointer; }
+.fd-tile:hover { border-color: var(--border-strong); }
+.fd-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: color-mix(in srgb, var(--role-other) 35%, transparent); pointer-events: none; }
+.fd-tile.r-tank .fd-fill { background: color-mix(in srgb, var(--role-tank) 35%, transparent); }
+.fd-tile.r-healer .fd-fill { background: color-mix(in srgb, var(--role-healer) 35%, transparent); }
+.fd-tile.r-dps .fd-fill { background: color-mix(in srgb, var(--role-dps) 35%, transparent); }
+.fd-tile.r-other .fd-fill { background: color-mix(in srgb, var(--role-other) 35%, transparent); }
+.fd-nm { position: relative; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; line-height: 26px; }
+.fd-tile .fd-pw { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: color-mix(in srgb, var(--text-dim) 35%, transparent); }
+.fd-pw i { display: block; height: 100%; background: var(--text-muted); }
+.fd-pw.p-rage i { background: var(--accent-red); }
+.fd-pw.p-energy i { background: var(--accent-yellow); }
+.fd-pw.p-mana i { background: var(--accent-blue-bright); }
+.fd-tag { position: absolute; top: 1px; right: 4px; font-size: 0.58rem; letter-spacing: 0.06em; font-weight: 700; text-transform: uppercase; color: var(--text-muted); }
+.fd-tile.dead { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--role-dead) 30%, transparent) 0 6px, transparent 6px 12px); }
+.fd-tile.dead .fd-nm { color: var(--text-dim); text-decoration: line-through; }
+.fd-tile.sel { outline: 2px solid var(--accent-yellow); outline-offset: -2px; }
+.fd-tile.sel:focus-visible { outline-color: var(--accent-blue-bright); }
+
+.fd-rail { display: grid; gap: 6px; align-content: start; }
+.fd-fight { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); align-items: baseline; gap: 2px 8px; width: 100%; padding: 6px 8px 7px; text-align: left; border: 1px solid var(--border-color); border-left: 3px solid var(--text-dim); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.8rem; cursor: pointer; }
+.fd-fight:hover { background: var(--bg-card-hover); }
+.fd-fight .fd-fl { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.fd-fight .fd-fv { justify-self: end; max-width: 100%; text-align: right; overflow-wrap: anywhere; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
+.fd-fight .fd-fs { grid-column: 1 / -1; color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-fight .fd-fd { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.fd-fight .fd-fdmg { min-width: 0; color: var(--text-main); white-space: nowrap; }
+.fd-fight.v-fail { border-left-color: var(--fd-fail); }
+.fd-fight.v-fail .fd-fv { color: var(--fd-fail); }
+.fd-fight.v-warn { border-left-color: var(--fd-warn); }
+.fd-fight.v-warn .fd-fv { color: var(--fd-warn); }
+.fd-fight.v-ok { border-left-color: var(--fd-ok); }
+.fd-fight.v-ok .fd-fv { color: var(--fd-ok); }
+.fd-fight.v-load { border-left-color: var(--text-dim); }
+.fd-fight[aria-pressed="true"] { background: var(--bg-card-hover); border-color: var(--border-strong); border-left-color: var(--accent-yellow); }
+.fd-len { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--text-dim) 30%, transparent); overflow: hidden; }
+.fd-len i { display: block; height: 100%; background: var(--text-muted); }
+
+.fd-checks { min-width: 0; }
+/* The same-pack table is the one wide row in the centre column: it scrolls inside its own section, so a phone's page never
+   gains a sideways scroll from its six columns. */
+.cmd-card.fd-on .fd-pack { overflow-x: auto; }
+.fd-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.fd-title { margin: 0; }
+.fd-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; color: var(--text-muted); font-size: 0.74rem; }
+.fd-chip { padding: 1px 8px; border: 1px solid var(--border-color); border-radius: 999px; }
+.fd-checklist { list-style: none; display: grid; gap: 0; }
+.fd-check { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 2px 8px; padding: 6px 0; border-top: 1px solid var(--border-color); font-size: 0.84rem; }
+.fd-lvl { padding: 1px 6px; border-radius: var(--radius-sm); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.05em; white-space: nowrap; color: var(--text-muted); background: color-mix(in srgb, var(--text-muted) 15%, transparent); }
+.fd-check.l-fail .fd-lvl { color: var(--fd-fail); background: color-mix(in srgb, var(--fd-fail) 15%, transparent); }
+.fd-check.l-warn .fd-lvl { color: var(--fd-warn); background: color-mix(in srgb, var(--fd-warn) 15%, transparent); }
+.fd-check.l-ok .fd-lvl { color: var(--fd-ok); background: color-mix(in srgb, var(--fd-ok) 15%, transparent); }
+.fd-why { min-width: 0; }
+.fd-ttl { font-weight: 600; }
+.fd-hi { font-weight: 600; }
+.fd-num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8rem; font-weight: 600; color: var(--text-main); font-variant-numeric: tabular-nums; }
+.fd-ev { margin-top: 2px; color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.fd-link { margin-left: 6px; padding: 0 7px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-card-subtle); color: var(--text-muted); font: inherit; font-size: 0.7rem; cursor: pointer; }
+.fd-link:hover { color: var(--text-main); border-color: var(--border-strong); }
+.fd-death { cursor: pointer; }
+
+.fd-timeline { min-width: 0; }
+.fd-tl { position: relative; height: 64px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); }
+.fd-tick { position: absolute; top: 0; bottom: 0; padding: 2px 0 0 3px; border-left: 1px solid var(--border-color); font-size: 0.6rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.fd-hit { position: absolute; bottom: 0; width: 3px; background: color-mix(in srgb, var(--fd-fail) 70%, transparent); pointer-events: none; }
+.fd-skull { position: absolute; top: -10px; z-index: 2; width: 22px; height: 22px; margin-left: -11px; padding: 0; border: 1px solid var(--fd-fail); border-radius: 50%; background: var(--bg-card); color: var(--fd-fail); font: inherit; font-size: 0.68rem; line-height: 20px; text-align: center; cursor: pointer; }
+.fd-skull.on { background: var(--fd-fail); color: var(--bg-card); }
+.fd-recap { margin-top: 10px; font-size: 0.8rem; }
+.fd-recaphead { margin: 0 0 4px; }
+.fd-recap h4 { margin: 0 0 4px; font-size: 0.78rem; color: var(--text-muted); font-weight: 600; }
+.fd-recaptbl { width: 100%; font-size: 0.78rem; }
+.fd-recaptbl th, .fd-recaptbl td { padding: 2px 6px; }
+.fd-recaptbl td.n { text-align: right; font-variant-numeric: tabular-nums; }
+
+.fd-roles { grid-area: roles; min-width: 0; display: grid; gap: 14px; align-content: start; }
+.fd-t, .fd-tanks, .fd-heals, .fd-dps { min-width: 0; }
+.fd-cls { color: var(--text-muted); font-size: 0.7rem; }
+.fd-table { width: 100%; font-size: 0.78rem; }
+.fd-table caption { caption-side: top; text-align: left; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); padding-bottom: 3px; }
+.fd-table th, .fd-table td { padding: 3px 6px; }
+.fd-table .n { text-align: right; font-variant-numeric: tabular-nums; }
+.fd-table tr.sel td { background: var(--bg-card-hover); }
+.fd-botbtn { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.fd-botbtn:hover, .fd-botbtn:focus-visible { text-decoration: underline; }
+.fd-bar { display: inline-block; height: 6px; border-radius: 3px; vertical-align: middle; }
+.fd-bar.b-dps { background: var(--role-dps); }
+.fd-bar.b-heal { background: var(--role-healer); }
+.fd-bot { padding: 8px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); font-size: 0.8rem; }
+.fd-both { margin: 0 0 2px; font-size: 0.86rem; font-weight: 600; }
+.fd-botl { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.fd-bot .fd-table { width: 100%; margin-top: 6px; font-size: 0.76rem; }
+.fd-open { margin: 6px 0 0; }
+.fd-open .fd-link { margin-left: 0; }
+
+.cmd-card.fd-on .cmd-stage { height: 440px; }
+.fd-legend { display: none; }
+.cmd-card.fd-on .cmd-legend { display: none; }
+.cmd-card.fd-on .cmd-legend.fd-legend { display: flex; margin: 0 0 8px; }
+.cmd-legend i.fdmob { background: var(--fd-fail); }
+.cmd-card.fd-on .cmd-left[hidden], .cmd-card.fd-on .cmd-panels[hidden], .cmd-card.fd-on .cmd-fights[hidden] { display: none; }
+.cmd-map .fdmark { cursor: help; }
+.cmd-map .fdmark text.fdlabel { fill: var(--fd-fail); font-weight: 600; paint-order: stroke; stroke: var(--bg-app); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.cmd-map .fdring { fill: none; stroke: var(--accent-yellow); stroke-width: 2; vector-effect: non-scaling-stroke; }
+
+@media (max-width: 760px) {
+  .cmd-card.fd-on .cmd-body { grid-template-columns: 1fr; grid-template-areas: "run" "frames" "bosses" "rail" "centre" "roles"; }
+  .fd-frames { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fd-rail { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 4px; min-width: 0; }
+  .fd-rail .fd-fight { min-width: 190px; }
+  .fd-rtlegend { display: none; }
+  .cmd-card.fd-on .cmd-stage { height: 320px; }
+  .cmd-card.fd-on .cmd-maptools { left: 8px; right: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .cmd-card.fd-on .cmd-maptools button { min-width: 30px; height: 28px; padding: 0 8px; }
+  .cmd-card.fd-on .cmd-maptools select { height: 28px; max-width: 100px; }
+  .cmd-layers.cmd-layers-map .cmd-layers-body { max-height: 210px; }
+  .fd-t { overflow-x: auto; }
+}
+
+/* Boss abilities: the panel, its auras and flags, the raid frames' debuff chips and the map marks. */
+/* One collapsible panel per engaged boss under the map: the phase and its hp ticks, the boss's auras and flags, every known
+   ability with its last seen and next window, the current cast, the adds and the data's notes. Plus the raid frames' boss
+   debuff chips and the map's marks (an add link, a bot's dispel dot, an MC ring, the eye of a marked bot). Theme tokens only. */
+.fd-bosses { grid-column: 1 / -1; min-width: 0; display: grid; gap: 8px; }
+.fd-bosses[hidden], .fd-bosslist[hidden] { display: none; }
+.cmd-card.fd-on .fd-bosses { display: none; }
+.fd-railbosses { min-width: 0; display: grid; gap: 6px; }
+.fd-railbosses[hidden] { display: none; }
+.fd-railbosses .fd-boss-panel > summary { padding: 5px 7px; gap: 4px 6px; }
+.fd-railbosses .fd-boss-name { font-size: 0.82rem; }
+.fd-railbosses .fd-boss-hp { width: 70px; }
+.fd-railbosses .fd-boss-body { padding: 2px 7px 7px; }
+.fd-railbosses .fd-boss-ability { grid-template-columns: 8px minmax(0, 1fr); }
+.fd-railbosses .fd-boss-last, .fd-railbosses .fd-boss-next { grid-column: 2; text-align: left; }
+.fd-railbosses .fd-boss-castwrap { grid-column: 2; }
+.fd-railbosses .fd-boss-aura, .fd-railbosses .fd-boss-add { font-size: 0.66rem; }
+.fd-railbosses .fd-boss-other > summary { font-size: 0.66rem; }
+.fd-bosslist { display: grid; gap: 8px; min-width: 0; }
+.fd-boss-panel { border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); }
+.fd-boss-panel > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 10px; cursor: pointer; list-style: none; }
+.fd-boss-panel > summary::-webkit-details-marker { display: none; }
+.fd-boss-panel > summary::before { content: "▸"; color: var(--text-dim); font-size: 0.7rem; }
+.fd-boss-panel[open] > summary::before { content: "▾"; }
+.fd-boss-name { font-weight: 700; font-size: 0.9rem; color: var(--text-main); }
+.fd-boss-hp { position: relative; display: inline-block; width: 120px; height: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-app); overflow: visible; }
+.fd-boss-hpf { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px 0 0 4px; background: var(--accent-red); }
+.fd-boss-tick { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--text-main); opacity: 0.8; }
+.fd-boss-phase { padding: 1px 8px; border: 1px solid color-mix(in srgb, var(--accent-yellow) 45%, transparent); border-radius: 999px; color: var(--accent-yellow); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.fd-boss-seen { margin-left: auto; color: var(--text-dim); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+.fd-boss-body { padding: 2px 10px 9px; display: grid; gap: 7px; }
+.fd-boss-chips, .fd-boss-flags, .fd-boss-adds { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.fd-boss-aura { padding: 1px 7px; border: 1px solid color-mix(in srgb, var(--accent-blue-bright) 40%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent-blue-bright) 12%, transparent); color: var(--text-main); font-size: 0.72rem; }
+.fd-boss-aura em { color: var(--text-muted); font-style: normal; font-variant-numeric: tabular-nums; }
+.fd-boss-flag { padding: 1px 7px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); color: var(--accent-yellow); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.fd-boss-lab { color: var(--text-dim); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 2px; }
+.fd-boss-add { padding: 1px 7px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-muted); font-size: 0.72rem; }
+.fd-boss-add.pri { border-color: color-mix(in srgb, var(--accent-red) 55%, transparent); color: var(--accent-red); }
+.fd-boss-abilities { list-style: none; display: grid; gap: 0; margin: 0; padding: 0; }
+.fd-boss-ability { display: grid; grid-template-columns: 10px minmax(130px, 1fr) auto auto minmax(0, 1.2fr); align-items: center; gap: 4px 8px; padding: 3px 0; border-top: 1px solid var(--border-color); font-size: 0.8rem; }
+.fd-boss-ability:first-child { border-top: 0; }
+.fd-boss-swatch { width: 8px; height: 8px; border-radius: 2px; background: var(--text-dim); }
+.fd-boss-swatch.bc-0 { background: var(--grp-0); }
+.fd-boss-swatch.bc-1 { background: var(--grp-1); }
+.fd-boss-swatch.bc-2 { background: var(--grp-2); }
+.fd-boss-swatch.bc-3 { background: var(--grp-3); }
+.fd-boss-swatch.bc-4 { background: var(--grp-4); }
+.fd-boss-swatch.bc-5 { background: var(--grp-5); }
+.fd-boss-swatch.bc-6 { background: var(--grp-6); }
+.fd-boss-swatch.bc-7 { background: var(--grp-7); }
+.fd-boss-an { font-weight: 600; overflow-wrap: anywhere; }
+.fd-boss-last, .fd-boss-next { color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fd-boss-next { color: var(--accent-blue-bright); }
+.fd-boss-ability.unseen { opacity: 0.55; }
+.fd-boss-ability.unseen .fd-boss-last { font-style: italic; }
+.fd-boss-ability.casting { background: color-mix(in srgb, var(--accent-yellow) 8%, transparent); }
+.fd-boss-castwrap { min-width: 0; }
+.fd-boss-cast { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fd-boss-castbar { flex: 0 1 90px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--text-dim) 30%, transparent); overflow: hidden; }
+.fd-boss-castbar i { display: block; height: 100%; background: var(--accent-yellow); }
+.fd-boss-casttext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 0.72rem; }
+.fd-boss-casttext b { color: var(--text-main); font-variant-numeric: tabular-nums; }
+.fd-boss-other { margin-top: 2px; }
+.fd-boss-other > summary { cursor: pointer; color: var(--text-dim); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.fd-boss-notes { margin: 0; padding-left: 16px; color: var(--text-muted); font-size: 0.74rem; }
+.fd-boss-note { margin: 1px 0; }
+
+/* The boss lane of the timeline: a marker per cast, coloured by the table's ability order; a click scrubs the replay. */
+.fd-bosscast { position: absolute; top: 35px; width: 6px; height: 10px; padding: 0; border: 0; border-radius: 2px; background: var(--text-dim); transform: translateX(-50%); cursor: pointer; }
+.fd-bosscast:hover, .fd-bosscast:focus-visible { outline: 1px solid var(--text-main); }
+.fd-bosscast.bc-0 { background: var(--grp-0); }
+.fd-bosscast.bc-1 { background: var(--grp-1); }
+.fd-bosscast.bc-2 { background: var(--grp-2); }
+.fd-bosscast.bc-3 { background: var(--grp-3); }
+.fd-bosscast.bc-4 { background: var(--grp-4); }
+.fd-bosscast.bc-5 { background: var(--grp-5); }
+.fd-bosscast.bc-6 { background: var(--grp-6); }
+.fd-bosscast.bc-7 { background: var(--grp-7); }
+.fd-likely { margin-left: 4px; padding: 0 5px; border: 1px dashed var(--accent-yellow); border-radius: 999px; color: var(--accent-yellow); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Raid frames: up to four boss-debuff chips, the dispel colour as the tile's thin border and a red MC tag. */
+.fd-tile.hasdispel, .fd-tile.mc { height: 64px; }
+.fd-tile.hasdispel .fd-nm, .fd-tile.mc .fd-nm { line-height: 18px; }
+.fd-tile .fd-dbs { position: absolute; left: 3px; right: 3px; bottom: 5px; display: flex; flex-wrap: wrap; gap: 2px; max-height: 30px; overflow: hidden; pointer-events: none; }
+.fd-tile .fd-db { max-width: 48%; overflow: hidden; padding: 0 3px; border-radius: 2px; font-size: 0.56rem; line-height: 12px; text-overflow: ellipsis; white-space: nowrap; background: var(--bg-app); }
+.fd-tile .fd-db.dt-magic { color: var(--accent-blue-bright); border: 1px solid color-mix(in srgb, var(--accent-blue-bright) 55%, transparent); }
+.fd-tile .fd-db.dt-curse { color: var(--grp-3); border: 1px solid color-mix(in srgb, var(--grp-3) 55%, transparent); }
+.fd-tile .fd-db.dt-poison { color: var(--accent-green); border: 1px solid color-mix(in srgb, var(--accent-green) 55%, transparent); }
+.fd-tile .fd-db.dt-disease { color: var(--grp-2); border: 1px solid color-mix(in srgb, var(--grp-2) 55%, transparent); }
+.fd-tile .fd-db.dt-none { color: var(--text-muted); border: 1px solid var(--border-color); }
+.fd-tile.hasdispel { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue-bright) 45%, transparent); }
+.fd-tile .fd-mc { position: absolute; top: 1px; right: 4px; color: var(--accent-red); font-size: 0.58rem; font-weight: 700; letter-spacing: 0.04em; }
+.fd-tile.mc { border-color: color-mix(in srgb, var(--accent-red) 65%, transparent); }
+.fd-tile .fd-tag + .fd-mc { right: 20px; }
+
+/* The map: a hollow body for an untargetable or flying boss, an add's dashed link and priority ring, a bot's debuff dot, its
+   MC ring and the eye of a marked bot. */
+.cmd-map .mob.ghost circle.body { fill: transparent; stroke-dasharray: 3 3; }
+.cmd-map .bossadd { stroke: var(--text-dim); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; opacity: 0.8; pointer-events: none; }
+.cmd-map .addpri { fill: none; stroke: var(--accent-red); stroke-width: 1.5; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
+.cmd-map .bdbuff { stroke: var(--bg-app); stroke-width: 0.8; }
+.cmd-map .bdbuff.dt-magic { fill: var(--accent-blue-bright); }
+.cmd-map .bdbuff.dt-curse { fill: var(--grp-3); }
+.cmd-map .bdbuff.dt-poison { fill: var(--accent-green); }
+.cmd-map .bdbuff.dt-disease { fill: var(--grp-2); }
+.cmd-map .bdbuff.dt-none { fill: var(--text-muted); }
+.cmd-map .mcring { fill: none; stroke: var(--accent-red); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.cmd-map .ic-eye circle { fill: var(--accent-yellow); }
+
+@media (max-width: 760px) {
+  .fd-boss-ability { grid-template-columns: 10px minmax(0, 1fr) auto; }
+  .fd-boss-an { grid-column: 2; }
+  .fd-boss-last { grid-column: 2; }
+  .fd-boss-next { grid-column: 3; text-align: right; }
+  .fd-boss-castwrap { grid-column: 2 / -1; }
+  .fd-boss-hp { width: 90px; }
+}
+
+/* ---------- Dashboard phase A: plan layer, fight replay, aggro lanes ---------- */
+/* The raid map's plan layer and raid layers, the debugger's replay row and aggro lanes, and the layer presets. Apart from the
+   eight raid group colours the prototype fixes, every colour comes from the dashboard's tokens. */
+.cmd-card { --grp-0: #6d9cff; --grp-1: #47c37f; --grp-2: #ee9a4a; --grp-3: #c77dff; --grp-4: #ff6b9a; --grp-5: #3fd0d4; --grp-6: #e2d14b; --grp-7: #a3a8b8; }
+
+.cmd-map .plan-route { fill: none; stroke-linejoin: round; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.cmd-map .plan-route.ahead { stroke: var(--accent-blue-bright); }
+.cmd-map .plan-route.done { stroke: var(--text-dim); opacity: .55; }
+.cmd-map .plan-ring { fill: none; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.cmd-map .plan-ring.aggro { stroke: var(--accent-red); opacity: .55; fill: color-mix(in srgb, var(--accent-red) 7%, transparent); }
+.cmd-map .plan-ring.wake { stroke: var(--fd-fail); stroke-width: 2; stroke-dasharray: 6 4; fill: none; }
+.cmd-map .plan-ring.s-done { opacity: .2; }
+.cmd-map .plan-ring.patrol { stroke-dasharray: 2 3; }
+.cmd-map .plan-ring.wake.patrol { stroke-dasharray: 6 4; }
+.cmd-map .plan-mob { fill: none; stroke: var(--accent-red); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.cmd-map .plan-mob.boss { stroke-width: 2; }
+.cmd-map .plan-stand { fill: var(--accent-yellow); opacity: .85; }
+.cmd-map .plan-step { cursor: help; }
+.cmd-map .plan-step .plan-num { fill: var(--text-main); font-weight: 600; text-anchor: middle; paint-order: stroke; stroke: var(--bg-app); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.cmd-map .plan-step.s-done { opacity: .4; }
+.cmd-map .plan-step.s-cur > circle:not(.hit), .cmd-map .plan-step.s-cur > rect { stroke: var(--accent-yellow); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.cmd-map .plan-fight > circle:not(.hit) { stroke: var(--fd-fail); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.cmd-map .plan-stray > circle:not(.hit), .cmd-map .plan-stray > rect { stroke: var(--fd-warn); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.cmd-map .plan-move { fill: var(--text-dim); }
+
+.cmd-map .bot.sg-0 .dot { fill: var(--grp-0); }
+.cmd-map .bot.sg-1 .dot { fill: var(--grp-1); }
+.cmd-map .bot.sg-2 .dot { fill: var(--grp-2); }
+.cmd-map .bot.sg-3 .dot { fill: var(--grp-3); }
+.cmd-map .bot.sg-4 .dot { fill: var(--grp-4); }
+.cmd-map .bot.sg-5 .dot { fill: var(--grp-5); }
+.cmd-map .bot.sg-6 .dot { fill: var(--grp-6); }
+.cmd-map .bot.sg-7 .dot { fill: var(--grp-7); }
+.cmd-map line.threat.nontank { stroke: var(--fd-fail); }
+.cmd-map line.healtank { stroke: var(--role-healer); stroke-width: 1.6; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.cmd-map line.healtank.far { stroke: var(--fd-warn); }
+.cmd-map line.healtank.dead { opacity: .35; }
+
+.cmd-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 3px; }
+.cmd-presets button { padding: 0 7px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-card-subtle); color: var(--text-muted); font: inherit; font-size: 0.7rem; cursor: pointer; }
+.cmd-presets button:hover { color: var(--text-main); border-color: var(--border-strong); }
+.cmd-presets button[aria-pressed="true"] { border-color: var(--accent-yellow); color: var(--text-main); }
+.cmd-legend i.plan { width: 16px; height: 0; border: 0; border-radius: 0; border-top: 2px dashed var(--accent-blue-bright); vertical-align: 3px; }
+.cmd-legend i.ring.wake { background: color-mix(in srgb, var(--accent-red) 7%, transparent); border-color: var(--fd-fail); }
+.cmd-legend i.nontank { width: 16px; height: 0; border: 0; border-radius: 0; border-top: 2px solid var(--fd-fail); vertical-align: 3px; }
+.cmd-legend i.healtank { width: 16px; height: 0; border: 0; border-radius: 0; border-top: 2px dashed var(--role-healer); vertical-align: 3px; }
+.cmd-legend i.subgroups { background: conic-gradient(var(--grp-0), var(--grp-1), var(--grp-2), var(--grp-3), var(--grp-4), var(--grp-5), var(--grp-6), var(--grp-7), var(--grp-0)); border-color: var(--border-strong); }
+
+.fd-play { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.fd-scrub { flex: 1 1 160px; accent-color: var(--accent-yellow); }
+.fd-clock { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.fd-cov { color: var(--text-muted); font-size: 12px; }
+.fd-playbtn, .fd-speed, .fd-exit { padding: 0 7px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-card-subtle); color: var(--text-muted); font: inherit; font-size: 0.7rem; cursor: pointer; }
+.fd-playbtn:hover, .fd-speed:hover, .fd-exit:hover { color: var(--text-main); border-color: var(--border-strong); }
+.fd-playbtn[aria-pressed="true"] { background: var(--bg-card-hover); color: var(--text-main); }
+.fd-playbtn:disabled, .fd-speed:disabled { opacity: .5; cursor: default; }
+.fd-cursor { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent-yellow); pointer-events: none; }
+
+.fd-lanes { margin-top: 8px; }
+.fd-lanecap { margin: 0 0 4px; color: var(--text-muted); font-size: 12px; }
+.fd-lane { display: grid; grid-template-columns: minmax(90px, 140px) 1fr auto; gap: 8px; align-items: center; min-height: 18px; font-size: 12px; }
+.fd-lanel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-lanebar { position: relative; height: 12px; border: 1px solid var(--border-color); border-radius: 2px; background: var(--bg-card-subtle); overflow: hidden; }
+.fd-seg { position: absolute; top: 0; bottom: 0; }
+.fd-seg.k-tank { background: var(--role-tank); }
+.fd-seg.k-healer { background: var(--fd-fail); box-shadow: inset 0 3px 0 var(--role-healer); }
+.fd-seg.k-dps { background: var(--fd-fail); box-shadow: inset 0 3px 0 var(--role-dps); }
+.fd-seg.k-other { background: var(--text-dim); }
+.fd-seg.k-none, .fd-seg.k-dead { background: transparent; }
+.fd-lanesum { color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+[data-fd-seekbar] { cursor: pointer; }
+
+@media (max-width: 760px) {
+  .fd-lane { grid-template-columns: 1fr; }
+  .fd-lanel, .fd-lanesum { grid-column: 1; }
+  .fd-scrub { flex-basis: 100%; }
+}
+
+/* ---------- Fight debugger mode: raid tabs and the All raids grid ---------- */
+.cmd-view-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; }
+.cmd-page-seg { margin-right: auto; }
+.cmd-page-seg .seg-btn[aria-pressed="true"] { background: #1f2937; color: #fff; box-shadow: 0 0 0 1px var(--border-strong); }
+
+/* The strip never wraps: twenty raids scroll sideways, on a phone too. */
+.cmd-tabs { display: flex; flex-wrap: nowrap; align-items: stretch; gap: 6px; margin: 0 0 12px; padding: 2px 2px 8px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.cmd-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; max-width: 280px; overflow: hidden; padding: 7px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card); color: var(--text-main); font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer; }
+.cmd-tab:hover { background: var(--bg-card-hover); border-color: var(--border-strong); }
+.cmd-tab.on { border-color: var(--accent-blue); background: var(--bg-card-hover); box-shadow: inset 0 -2px 0 var(--accent-blue); }
+.cmd-tab:focus-visible { outline: 2px solid var(--accent-blue-bright); outline-offset: 1px; }
+.cmd-tab-label, .cmd-tab-name { font-weight: 600; white-space: nowrap; }
+.cmd-tab-place { color: var(--text-muted); font-size: 0.74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+.cmd-tab-sep { color: var(--text-dim); }
+.cmd-tab.gone, .cmd-tab:has(.cmd-tab-gone) { opacity: 0.55; }
+.cmd-tab-gone { color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.cmd-chip { flex: 0 0 auto; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border-strong); font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.cmd-chip.s-fighting { color: var(--accent-red); border-color: color-mix(in srgb, var(--accent-red) 45%, transparent); background: color-mix(in srgb, var(--accent-red) 12%, transparent); }
+.cmd-chip.s-wiped { color: var(--accent-red); border-color: color-mix(in srgb, var(--accent-red) 60%, transparent); background: color-mix(in srgb, var(--accent-red) 20%, transparent); }
+.cmd-chip.s-walking { color: var(--accent-blue-bright); border-color: color-mix(in srgb, var(--accent-blue) 45%, transparent); background: color-mix(in srgb, var(--accent-blue) 12%, transparent); }
+.cmd-chip.s-done { color: var(--accent-green-bright); border-color: color-mix(in srgb, var(--accent-green) 45%, transparent); background: color-mix(in srgb, var(--accent-green) 12%, transparent); }
+.cmd-tab-dead { color: var(--accent-red); font-size: 0.72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cmd-tab-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-red); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-red) 25%, transparent); }
+
+/* All raids: one responsive grid; a phone stacks it in one column. */
+.cmd-overview { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin: 0 0 12px; --role-tank: #2f80ff; --role-healer: #22c55e; --role-dps: #ff9f1c; --role-other: #bc8cff; --role-dead: #6b7280; }
+.cmd-mini { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-card); color: var(--text-main); font: inherit; text-align: left; cursor: pointer; }
+.cmd-mini:hover { background: var(--bg-card-hover); border-color: var(--border-strong); }
+.cmd-mini:focus-visible { outline: 2px solid var(--accent-blue-bright); outline-offset: 2px; }
+.cmd-mini.gone { opacity: 0.55; }
+.cmd-mini-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cmd-mini-name { font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-mini-sub { color: var(--text-muted); font-size: 0.76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-mini-map { display: block; height: 132px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); overflow: hidden; }
+.cmd-minimap { position: static; inset: auto; width: 100%; height: 100%; display: block; cursor: default; }
+.cmd-mini-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-dim); font-size: 0.76rem; }
+.cmd-mini-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 18px; font-size: 0.74rem; }
+.cmd-mini-dead { color: var(--accent-red); font-variant-numeric: tabular-nums; }
+.cmd-mini-verdict { margin-left: auto; color: var(--text-muted); }
+.cmd-mini-verdict.v-problem { color: var(--accent-red); font-weight: 600; }
+.cmd-mini-verdict.v-clean { color: var(--accent-green-bright); }
+.cmd-gone-title { font-size: 1.2rem; margin: 0 0 6px; }
+
+/* Every tab of the Fight debugger, All raids included, drops the page's tiles and boxes: the tab strip names the raids and
+   the debugger header keeps the refresh picker. */
+#tab-commanders.cmd-debug-grid > .kpi-row,
+#tab-commanders.cmd-debug-grid > .cmd-refresh-bar,
+#tab-commanders.cmd-debug-grid > .cmd-demo-bar,
+#tab-commanders.cmd-debug-grid > .cmd-layers,
+#tab-commanders.cmd-debug-grid > .cmd-external { display: none; }
+
+@media (max-width: 760px) {
+  .cmd-overview { grid-template-columns: 1fr; }
+  .cmd-tabs { padding-bottom: 10px; }
+  .cmd-tab { max-width: 230px; }
+}
+
+/* ---------- Live stream: the card's live events strip ---------- */
+.cmd-live { margin-top: 12px; }
+.cmd-live-sub { margin-left: 6px; font-size: 0.78rem; font-weight: 400; color: var(--text-muted); }
+.cmd-live-events { display: grid; gap: 2px; max-height: 180px; overflow-y: auto; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.cmd-live-row { overflow: hidden; color: var(--text-muted); white-space: nowrap; text-overflow: ellipsis; }
+
+/* ---------- Boss overlay (facing, casts, spell areas) ---------- */
+/* A boss or elite's facing arrow, the area of the spell it casts (drawn under its dot), the cast's progress ring and its label.
+   Colours come from the theme tokens only, so a light theme recolours them all. */
+.cmd-map .facing { fill: var(--accent-red); stroke: none; pointer-events: none; }
+.cmd-map .mobshape { fill: color-mix(in srgb, var(--accent-red) 22%, transparent); stroke: var(--accent-red); stroke-width: 1.2px; pointer-events: none; }
+.cmd-map .mobshape.s-cone, .cmd-map .mobshape.s-back-cone { stroke-width: 1.4px; }
+.cmd-map .mobshape.s-line { stroke-dasharray: 4 3; }
+.cmd-map .castring { fill: none; stroke: var(--accent-yellow); stroke-width: 2px; pointer-events: none; }
+.cmd-map .mobcast { fill: var(--text-main); font-weight: 600; paint-order: stroke; stroke: var(--bg-app); stroke-linejoin: round; text-anchor: middle; pointer-events: none; }
+.cmd-legend i.facing { display: inline-block; width: 0; height: 0; margin-right: 4px; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 8px solid var(--accent-red); vertical-align: middle; }
+.cmd-legend i.larea { display: inline-block; width: 10px; height: 8px; margin-right: 4px; border: 1px solid var(--accent-red); background: color-mix(in srgb, var(--accent-red) 22%, transparent); vertical-align: middle; }
+
+/* ---------- Ready check ---------- */
+/* The debugger's frames header: how many of the raid are ready, how many need a check and how many are not ready, and on a
+   click the reasons of every bot that is not ready. The same level is a dot on each tile. */
+.fd-readyhead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; grid-column: 1 / -1; margin: 0 0 2px; }
+.fd-readyhead .fd-chip { padding: 3px 8px; font: 600 0.62rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; }
+.fd-readyhead .fd-chip.l-ok { color: var(--fd-ok); border-color: color-mix(in srgb, var(--fd-ok) 45%, transparent); background: color-mix(in srgb, var(--fd-ok) 12%, transparent); }
+.fd-readyhead .fd-chip.l-warn { color: var(--fd-warn); border-color: color-mix(in srgb, var(--fd-warn) 45%, transparent); background: color-mix(in srgb, var(--fd-warn) 12%, transparent); }
+.fd-readyhead .fd-chip.l-fail { color: var(--fd-fail); border-color: color-mix(in srgb, var(--fd-fail) 45%, transparent); background: color-mix(in srgb, var(--fd-fail) 12%, transparent); }
+.fd-readysub { color: var(--text-muted); font-size: 0.72rem; }
+.fd-readylist { grid-column: 1 / -1; list-style: none; display: grid; gap: 2px; margin: 0 0 4px; padding: 0; font-size: 0.76rem; color: var(--text-muted); }
+.fd-readylist li.l-warn { color: var(--fd-warn); }
+.fd-readylist li.l-fail { color: var(--fd-fail); }
+.fd-readynm { margin-right: 6px; font-weight: 600; color: var(--text-main); }
+.fd-tile:has(.fd-rdy) { padding-left: 14px; }
+.fd-rdy { position: absolute; top: 4px; left: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
+.fd-rdy.l-ok { background: var(--fd-ok); }
+.fd-rdy.l-warn { background: var(--fd-warn); }
+.fd-rdy.l-fail { background: var(--fd-fail); }
+
+/* ---------- Patrol paths ---------- */
+/* The loop a patrolling pack walks, drawn under the plan's rings and steps: a dashed yellow line and a direction tick every
+   few points; a recorded (estimated) loop is dimmed. Segments that would cross a floor change are left out. */
+.cmd-map .patrol-path { fill: none; stroke: var(--accent-yellow); stroke-width: 1.4; stroke-dasharray: 5 4; stroke-linejoin: round; opacity: .85; vector-effect: non-scaling-stroke; }
+.cmd-map .patrol-path.est { opacity: .6; }
+.cmd-map .patrol-tick { fill: var(--accent-yellow); opacity: .8; pointer-events: none; }
+
+/* ---------- Fight history ---------- */
+/* The debugger's night picker and its same-pack table: an earlier night opens on the same card, and the pack's length, deaths
+   and non-tank seconds compare across runs. A row's time opens that fight on its own night; the best attempt is said in words.
+   Colours come from the theme tokens only. */
+.fd-daylab { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--text-muted); }
+.fd-day { min-width: 0; height: 26px; max-width: 100%; padding: 2px 6px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card); color: var(--text-main); font: inherit; font-size: 0.76rem; }
+.fd-pack { min-width: 0; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-color); }
+.fd-packhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 4px; }
+.fd-packall { display: inline-flex; align-items: center; gap: 5px; font-size: 0.72rem; color: var(--text-muted); }
+.fd-packopen { padding: 0; border: 0; background: none; color: var(--accent-blue-bright); font: inherit; cursor: pointer; text-decoration: underline; }
+.fd-packopen:hover, .fd-packopen:focus-visible { text-decoration: none; }
+.fd-best { padding: 1px 5px; border: 1px solid var(--fd-ok); border-radius: 999px; color: var(--fd-ok); font-size: 0.62rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* ---------- Raid coverage (tactics coverage) ---------- */
+/* The coverage tab: raid chips, the counts bar, one fold per boss and its lines, the rows without an ability. And the chip
+   the boss panel puts in front of an ability. Colours come from the theme tokens only. */
+.cov-root { display: grid; gap: 12px; min-width: 0; }
+.cov-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cov-chip { padding: 3px 10px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-card); color: var(--text-muted); font-size: 0.76rem; text-decoration: none; overflow-wrap: anywhere; }
+.cov-chip:hover, .cov-chip:focus-visible { border-color: var(--border-strong); color: var(--text-main); }
+.cov-chip.on { border-color: var(--accent-blue); color: var(--text-main); background: color-mix(in srgb, var(--accent-blue) 14%, transparent); }
+.cov-empty, .cov-notice { margin: 0; color: var(--text-muted); font-size: 0.82rem; }
+.cov-notice b { color: var(--text-main); }
+.cov-ban { margin: 0; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--accent-red) 45%, transparent); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--accent-red) 10%, transparent); color: var(--accent-red); font-size: 0.78rem; }
+.cov-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card); }
+.cov-cname { font-weight: 700; color: var(--text-main); }
+.cov-counts { color: var(--text-muted); font-size: 0.76rem; font-variant-numeric: tabular-nums; }
+.cov-toggle { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: 0.76rem; cursor: pointer; }
+.cov-reload { padding: 2px 9px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.76rem; cursor: pointer; }
+.cov-reload:hover, .cov-reload:focus-visible { border-color: var(--border-strong); }
+.cov-src { color: var(--text-dim); font-size: 0.72rem; }
+.cov-src code { font: inherit; color: var(--text-muted); }
+.cov-note { margin: 0; color: var(--text-dim); font-size: 0.72rem; }
+.cov-bar { display: flex; flex: 1 1 90px; align-items: stretch; gap: 2px; height: 8px; min-width: 0; }
+.cov-seg { display: block; height: 100%; border-radius: 2px; }
+.cov-seg-answered { background: var(--accent-green); }
+.cov-seg-partly { background: var(--accent-yellow); }
+.cov-seg-missing { background: var(--accent-red); }
+.cov-seg-notneeded { background: var(--text-dim); }
+.cov-seg-unknown { background: var(--text-muted); opacity: 0.5; }
+.cov-boss { border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); }
+.cov-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 10px; cursor: pointer; list-style: none; }
+.cov-head::-webkit-details-marker { display: none; }
+.cov-head::before { content: "▸"; color: var(--text-dim); font-size: 0.7rem; }
+.cov-boss[open] > .cov-head::before { content: "▾"; }
+.cov-name { font-weight: 700; color: var(--text-main); overflow-wrap: anywhere; }
+.cov-entry { color: var(--text-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.cov-body { padding: 2px 10px 9px; display: grid; gap: 7px; }
+.cov-lines { list-style: none; display: grid; gap: 0; margin: 0; padding: 0; }
+.cov-line { display: grid; grid-template-columns: 16px auto auto auto minmax(0, 1fr) auto; align-items: baseline; gap: 3px 8px; padding: 4px 0; border-top: 1px solid var(--border-color); font-size: 0.8rem; }
+.cov-lines .cov-line:first-child { border-top: 0; }
+.cov-st { justify-self: center; font-weight: 700; text-align: center; }
+.cov-st-answered { color: var(--accent-green); }
+.cov-st-partly { color: var(--accent-yellow); }
+.cov-st-missing { color: var(--accent-red); }
+.cov-st-notneeded { color: var(--text-dim); }
+.cov-st-unknown { color: var(--text-muted); }
+.cov-an { font-weight: 600; overflow-wrap: anywhere; }
+.cov-sid { color: var(--text-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.cov-phase { justify-self: start; padding: 0 6px; border: 1px solid color-mix(in srgb, var(--accent-yellow) 45%, transparent); border-radius: 999px; color: var(--accent-yellow); font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.cov-needs { display: flex; flex-wrap: wrap; gap: 2px 4px; min-width: 0; }
+.cov-need { padding: 0 5px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-muted); font-size: 0.66rem; }
+.cov-need-full { border-color: color-mix(in srgb, var(--accent-green) 50%, transparent); color: var(--accent-green); }
+.cov-need-partly { border-color: color-mix(in srgb, var(--accent-yellow) 50%, transparent); color: var(--accent-yellow); }
+.cov-need-none { border-color: color-mix(in srgb, var(--accent-red) 45%, transparent); color: var(--accent-red); }
+.cov-need-unknown { border-color: var(--border-strong); color: var(--text-muted); }
+.cov-need-ok { border-color: var(--border-color); color: var(--text-dim); }
+.cov-answers { color: var(--text-muted); font-size: 0.74rem; min-width: 0; overflow-wrap: anywhere; }
+.cov-warns { margin: 0; color: var(--text-dim); font-size: 0.72rem; overflow-wrap: anywhere; }
+.cov-extra { display: grid; gap: 3px; }
+.cov-lab { display: block; margin-bottom: 2px; color: var(--text-dim); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.cov-extras { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.cov-extra-row { color: var(--text-muted); font-size: 0.74rem; overflow-wrap: anywhere; }
+.cov-xid { color: var(--text-main); font-variant-numeric: tabular-nums; }
+.cov-why { color: var(--text-muted); }
+.cov-unknown { display: grid; gap: 6px; padding: 8px 10px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); }
+.cov-uboss { display: grid; gap: 2px; }
+
+/* The boss panel's coverage chip (before the ability name) and its link to the coverage view. */
+.fd-cov { display: inline-block; margin-right: 5px; font-weight: 700; font-size: 0.74rem; }
+.fd-cov-answered { color: var(--accent-green); }
+.fd-cov-partly { color: var(--accent-yellow); }
+.fd-cov-missing { color: var(--accent-red); }
+.fd-cov-notneeded { color: var(--text-dim); }
+.fd-cov-unknown { color: var(--text-muted); }
+.fd-boss-cov { margin-left: auto; color: var(--accent-blue-bright); font-size: 0.7rem; text-decoration: none; }
+.fd-boss-cov:hover, .fd-boss-cov:focus-visible { text-decoration: underline; }
+
+@media (max-width: 500px) {
+  .cov-root { gap: 10px; }
+  .cov-line { grid-template-columns: 1fr; gap: 2px; }
+  .cov-needs, .cov-answers { grid-column: 1; }
+  .cov-head { gap: 4px 6px; }
+  .cov-summary { gap: 4px 8px; }
+}

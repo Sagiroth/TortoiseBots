@@ -338,7 +338,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("slot.taskReply = 0;", retire)
         tick = body(COMMANDS, "void TickDungeonRun(uint64 commanderRaw, uint32 dt)", "\n}\n")
         self.assertIn("RetireLostCarrier(slot, lead, bots);\n    TortoiseBots::DungeonRun::Facts facts;\n"
-                      "    ReadRunFacts(slot, lead, bots, facts);", tick)
+                      "    ReadRunFacts(slot, lead, bots, facts, binding->raid);", tick)
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
         retire_order = body(policy, "inline void RetireOrder(Run& r)", "\n}\n")
         self.assertIn("r.orderSent = false;", retire_order)
@@ -530,7 +530,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         engine = (ROOT / "ai/playerbot/strategy/ReactionEngine.cpp").read_text()
         self.assertIn("ReactionPassForced(ai->HasRealPlayerMaster(), ai->QueuedChatCommandCount())", engine)
         # 4. `run start ... from ...` resolves the step and guards a start partway.
-        start = body(COMMANDS, "bool HandleDungeonRun(", "\nvoid UpdateRemoteCommanders(")
+        start = body(COMMANDS, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
         self.assertIn("ResolveStartStep(*plan, startArgs.from, startArgs.value, startStep, &movedBack)", start)
         self.assertIn("CheckPartialStart(OnInstanceMap(lead), members.size(), withLead)", start)
         self.assertIn("slot.run = Start(plan, startStep);", start)
@@ -602,6 +602,12 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("f.reachAggro", reach)
         self.assertIn("f.leadReaching", reach)
         self.assertIn("pull->IsCommandActive()", reach)
+        # Only a mob outside the pull target's own pack stops the reach: the target is read first, and each attacker
+        # is counted only when it is not the target and farther from it than kReachPackYd.
+        self.assertIn("ReachAggroCounts(", reach)
+        self.assertIn("attacker != target", reach)
+        self.assertIn("++f.reachAggro", reach)
+        self.assertLess(reach.index("pull->GetTarget()"), reach.index("++f.reachAggro"))
         stop = body(COMMANDS, "void StopLeadReach(", "\n}\n")
         self.assertIn('"pull end"', stop)
         tick = body(COMMANDS, "void TickDungeonRun(", "\n}\n")
@@ -634,22 +640,24 @@ class RunLeaderWiringTest(unittest.TestCase):
 
 
     def test_pull_step_patrollers_reach_the_policy(self):
-        # DungeonRun::WaitForPatroller (Uldaman r10 step 66): a pull step's living entries on a waypoint patrol outside
-        # the radius, within kPatrolSeeYd beyond it, none a later step owns; the grid search of a pull step reaches that far.
+        # DungeonRun::ClassifyPullRead and WaitForPatroller: the policy decides the radius, the residue band and the
+        # movement (a waypoint mover, a follower of one, a spawn-owned unit of any movement); the glue lists what it
+        # said. The grid search of a pull step reaches as far as a spawn-owned patroller may be listed.
         read = body(COMMANDS, "void ReadRunFacts(DungeonRunSlot const& slot,", "\n}\n")
         add = read[read.index("auto addPatroller"):read.index("f.patrollers.push_back(unit);")]
         self.assertIn("bool const pullStep = step->kind == ai::PlanStepKind::Pull;", read)
-        self.assertIn("creature->GetDefaultMovementType() != WAYPOINT_MOTION_TYPE", add)
-        self.assertIn("fromPoint <= step->radius || fromPoint > step->radius + kPatrolSeeYd", add)
+        self.assertIn("PullReadIn const& read", add)
+        self.assertIn("SpawnOwned(read, step->radius)", add)
         self.assertIn("ai::OwnedByLaterStep(*slot.run.plan, slot.run.step, creature->GetEntry(),", add)
-        self.assertIn("pullStep ? std::min(toPoint + step->radius + kPatrolSeeYd, 2.0f * kSeeYd) : range", read)
+        self.assertIn("unit.spawnOwned = spawnOwned;", add)
+        self.assertIn("pullStep ? packRange : range", read)
+        self.assertIn("ClassifyPullRead(read, step->radius, f.packClearMarginYd)", read)
         self.assertIn("unit.z = creature->GetPositionZ();", add)
         self.assertIn("unit.distSpot = fromPoint;", add)
         # Only living ones: the corpse branch lists none (the policy never sees a dead patroller).
-        self.assertEqual(read.count("addPatroller(creature, fromPoint)"), 1)
+        self.assertEqual(read.count("addPatroller(creature, fromPoint, read)"), 1)
         alive = read.index("if (!creature->IsAlive())")
-        self.assertLess(alive, read.index("addPatroller(creature, fromPoint)"))
-        self.assertNotIn("addPatroller", read[alive:read.index("if (fromPoint > step->radius)", alive)])
+        self.assertLess(alive, read.index("addPatroller(creature, fromPoint, read)"))
         # The wait and the pull are the policy's: the glue never orders a patroller.
         self.assertNotIn("pullback", add)
 
@@ -685,9 +693,12 @@ class RunLeaderWiringTest(unittest.TestCase):
         # the key on; the policy holds the pullback for them only when the facts say the key is on.
         read = body(COMMANDS, "void ReadRunFacts(DungeonRunSlot const& slot,", "\n}\n")
         self.assertIn("f.pullStand = sPlayerbotAIConfig.dungeonRunPullStand;", read)
-        # The step units (pull/boss) and the hop units carry losLead, from the lead bot's own sight test.
-        self.assertIn("if (f.pullStand || StandThisBoss(slot))\n                        unit.losLead = lead->IsWithinLOSInMap(creature);\n"
-                      "                    f.units.push_back(unit);", read)
+        # The step units (pull/boss) and the residue units carry losLead, from the lead bot's own sight test.
+        self.assertIn("if (f.pullStand || StandThisBoss(slot))\n                        unit.losLead = lead->IsWithinLOSInMap(creature);", read)
+        self.assertIn("if (residue)\n                    {\n                        unit.x = creature->GetPositionX();\n"
+                      "                        unit.y = creature->GetPositionY();\n"
+                      "                        unit.distSpot = read.fromPoint2d;", read)
+        self.assertIn("f.units.push_back(unit);", read)
         self.assertIn("if (f.pullStand)\n                    fact.losLead = lead->IsWithinLOSInMap(unit);\n"
                       "                f.hopUnits.push_back(fact);", read)
         self.assertTrue(read.rstrip().endswith("ReadRunNeedFacts(slot, lead, f);"))
@@ -842,7 +853,9 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("void LoadDungeonRunKeys();", header)
         self.assertIn("bool ReloadDungeonRunKeys();", header)
         on_load = body(host, "void BotHostAdapter::OnAfterConfigLoad(bool reload)\n{", "\n}\n")
-        self.assertIn("if (reload)\n        s_dungeonRunKeysDue.store(true);", on_load)
+        self.assertIn("if (reload)", on_load)
+        self.assertIn("s_dungeonRunKeysDue.store(true);", on_load)
+        self.assertIn("s_realtimeKeysDue.store(true);", on_load)
         self.assertNotIn("ReloadDungeonRunKeys", on_load)  # world thread only
         on_update = body(host, "void BotHostAdapter::OnUpdate(uint32 diff)\n{", "\n}\n")
         self.assertIn("if (s_dungeonRunKeysDue.exchange(false))\n        sPlayerbotAIConfig.ReloadDungeonRunKeys();", on_update)
@@ -1066,6 +1079,96 @@ class RunHoldsItsDeadWiringTest(unittest.TestCase):
         self.assertLess(refused.index('order.compare(0, 7, "return ") == 0'),
                         refused.index('Pause(r, "cmd " + order + " refused: " + answer + MissingHint(r));'))
 
+    def test_a_bot_in_another_copy_is_rejoined(self):
+        # ta252 (Dire Maul West rf-B-4): a bot on the lead bot's map id in another instance id. Its revive/regroup
+        # summon lands in its own copy (a same-map teleport is a near one), so the summon is rerouted to a rejoin that
+        # moves its bind to the lead bot's copy and forces the map change (DungeonRun::InstanceRejoinTick).
+        code = strip_comments(COMMANDS)
+        issue = body(code, "bool IssueRunOrder(Player* commander, std::string const& text, std::string& answer,", "\n}\n")
+        self.assertIn('if (text.compare(0, 7, "rejoin ") == 0)\n        return RunInstanceRejoin(commander, text, answer);', issue)
+        self.assertIn('text.compare(0, 7, "summon ") == 0 && RunOrderBotInOtherCopy(commander, text.substr(7))', issue)
+        self.assertLess(issue.index("RunOrderBotInOtherCopy(commander, text.substr(7))"),
+                        issue.index("HandleCommanderOrder(handler.get(), text.c_str());"))
+        fn = body(code, "bool RunInstanceRejoin(Player* commander, std::string const& order, std::string& answer)\n{", "\n}\n")
+        for needed in ("TortoiseBots::DungeonRun::PlanRejoinBind(facts)", "TELE_TO_FORCE_MAP_CHANGE",
+                       "bot->GetBoundInstanceSaveForSelfOrGroup(mapId)", 'answer = "player: a real player is in the party";',
+                       'sLog.outBasic("[RUN] rejoin', "bot->BindToInstance(leadState, false);"):
+            self.assertIn(needed, fn)
+        self.assertLess(fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"), fn.index("[RUN] rejoin"))
+        self.assertLess(fn.index("bot->GetBoundInstanceSaveForSelfOrGroup(mapId)"), fn.index("bot->TeleportTo(mapId,"))
+        self.assertLess(fn.index("bot->CombatStop();"), fn.index("bot->TeleportTo(mapId,"))
+        # round 2 (Codex HIGH, 2026-10-29): failure-atomic. The group's bind is never written and the solo bind is
+        # never dropped outright; the core's own entry checks run before the one write; the write is snapshotted
+        # first and undone when TeleportTo refuses (and later by the per-update settle).
+        self.assertNotIn("group->BindToInstance", fn)
+        self.assertNotIn("group->UnbindInstance", fn)
+        self.assertNotIn("bot->UnbindInstance", fn)
+        # ta252-log: the glue keeps WHICH core entry check failed (the plan tests the preflight first, so the verdict
+        # alone cannot name it); the verdict text names it and the group's own bind, in the [RUN] line and in the
+        # refusal the run notes.
+        checks = ("CanPlayerEnter", "InstanceCount", "MapCanEnter")
+        for check in checks:
+            self.assertIn("facts.entry = TortoiseBots::DungeonRun::RejoinEntryCheck::" + check + ";", fn)
+        self.assertLess(fn.index("RejoinEntryCheck::CanPlayerEnter"), fn.index("RejoinEntryCheck::InstanceCount"))
+        self.assertLess(fn.index("RejoinEntryCheck::InstanceCount"), fn.index("RejoinEntryCheck::MapCanEnter"))
+        self.assertLess(fn.index("RejoinEntryCheck::MapCanEnter"),
+                        fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"))
+        self.assertIn("TortoiseBots::DungeonRun::RejoinBindVerdictText(facts, bot->GetInstanceId(), groupCopy)", fn)
+        self.assertIn("TortoiseBots::DungeonRun::RejoinBindRefusal(facts, bot->GetInstanceId(), groupCopy)", fn)
+        self.assertLess(fn.index("TortoiseBots::DungeonRun::RejoinBindVerdictText(facts"), fn.index("[RUN] rejoin"))
+        self.assertLess(fn.index("case RejoinBindPlan::EntryRefused:"), fn.index("bot->BindToInstance(leadState, false);"))
+        self.assertLess(fn.index("PendingRejoins()[botRaw] = snapshot;"), fn.index("bot->BindToInstance(leadState, false);"))
+        self.assertLess(fn.index("if (TortoiseBots::DungeonRun::RejoinBindWrites(plan))"),
+                        fn.index("bot->BindToInstance(leadState, false);"))
+        tele = fn.index("bot->TeleportTo(mapId,")
+        self.assertIn("SettleRejoin(botRaw, bot, true, false);\n        answer = \"failed: the teleport was refused\";", fn[tele:])
+        self.assertIn("SettleRejoin(botRaw, bot, true, false);\n        answer = \"failed: the bind still points at another copy\";", fn)
+        self.assertLess(fn.index("SettleRejoin(botRaw, bot, false, false) == RejoinSettle::Wait"), fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"))
+        # cold review (2026-10-29): the lead bot alone in another copy refuses before any bind is read or written.
+        self.assertIn("if (TortoiseBots::DungeonRun::LeadInAnotherCopy(copies))", fn)
+        self.assertLess(fn.index("TortoiseBots::DungeonRun::LeadInAnotherCopy(copies)"), fn.index("TortoiseBots::DungeonRun::PlanRejoinBind(facts)"))
+        self.assertIn("m.otherCopy = !m.offPlanMap && member->GetInstanceId() != lead->GetInstanceId();", fn)
+        rejoinTick = body((ROOT / "runtime/DungeonRunPolicy.h").read_text(), "inline bool InstanceRejoinTick(Run& r, const Facts& f, std::string& order)", "\n}\n")
+        self.assertLess(rejoinTick.index("LeadInAnotherCopy(f)"), rejoinTick.index("if (!order.empty() ||"))
+        settle = body(code, "TortoiseBots::DungeonRun::RejoinSettle SettleRejoin(uint64 raw, Player* bot, bool refused, bool settleNow)\n{", "\n}\n")
+        self.assertIn("TortoiseBots::DungeonRun::PlanRejoinSettle(facts)", settle)
+        self.assertIn("bot->GetInstanceId() == p.leadInstanceId", settle)
+        self.assertIn("RestoreRejoinBind(bot, p)", settle)
+        restore = body(code, "std::string RestoreRejoinBind(Player* bot, PendingRejoin const& p)\n{", "\n}\n")
+        for needed in ("TortoiseBots::DungeonRun::PlanRejoinRestore(facts)", "bot->UnbindInstance(p.mapId);",
+                       "bot->BindToInstance(old, p.oldPerm);", "sMapPersistentStateMgr.GetPersistentState(p.mapId, p.oldInstanceId)",
+                       "solo->state->GetInstanceId() == p.leadInstanceId && !solo->perm"):
+            self.assertIn(needed, restore)
+        # round 3 (Codex HIGH, 2026-10-29): an offline bot keeps its snapshot (Hold, never erased before the undo);
+        # the logout hook (Player still valid) and the next login settle it at once, before any new rejoin.
+        self.assertIn("facts.online = bot != nullptr;", settle)
+        self.assertIn("facts.settleNow = settleNow;", settle)
+        self.assertLess(settle.index("if (verdict == RejoinSettle::Hold)"), settle.index("PendingRejoins().erase(it);"))
+        self.assertNotIn("if (!bot)", settle)
+        sweep = body(code, "void SettleInstanceRejoins()\n{", "\n}\n")
+        self.assertIn("SettleRejoin(raw, FindCharacter(raw), false, false);", sweep)
+        now = body(code, "void SettleRunRejoinNow(Player* player)\n{", "\n}\n")
+        self.assertIn("SettleRejoin(player->GetObjectGuid().GetRawValue(), player, false, true);", now)
+        self.assertIn("void SettleRunRejoinOnLogout(Player* player) { SettleRunRejoinNow(player); }", code)
+        self.assertIn("void SettleRunRejoinOnLogin(Player* player) { SettleRunRejoinNow(player); }", code)
+        adapter = strip_comments((ROOT / "host/BotPlayerAdapter.cpp").read_text())
+        logout = body(adapter, "void BotPlayerAdapter::OnLogout(Player* player)\n{", "\n}\n")
+        self.assertIn("BotCommands::SettleRunRejoinOnLogout(player);", logout)
+        login = body(adapter, "void BotPlayerAdapter::OnLogin(Player* player)\n{", "\n}\n")
+        self.assertIn("BotCommands::SettleRunRejoinOnLogin(player);", login)
+        self.assertIn("PLAYERHOOK_ON_LOGOUT", adapter)
+        self.assertIn("PLAYERHOOK_ON_LOGIN", adapter)
+        update = body(code, "static void UpdateDungeonRuns(uint32 diff)\n{", "\n}\n")
+        self.assertIn("if (!PendingRejoins().empty())\n        SettleInstanceRejoins();", update)
+        self.assertLess(update.index("SettleInstanceRejoins();"), update.index("if (DungeonRuns().empty())"))
+        facts = body(code, "void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,", "\n}\n")
+        self.assertIn("bool otherCopy = false;", (ROOT / "runtime/DungeonRunPolicy.h").read_text())
+        self.assertIn("member.otherCopy = bot->IsInWorld() && bot->GetMapId() == lead->GetMapId() &&\n"
+                      "            bot->GetInstanceId() != lead->GetInstanceId();", facts)
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        tick = body(policy, "inline std::string Tick(Run& r, const Facts& raw,", "\n}\n")
+        self.assertLess(tick.index("OffMapReturnTick(r, f, order);"), tick.index("InstanceRejoinTick(r, f, order);"))
+
 
 
 class WaitObjectGoneWiringTest(unittest.TestCase):
@@ -1202,9 +1305,9 @@ class RunTestSpeedWiringTest(unittest.TestCase):
 
     def test_the_start_takes_and_guards_the_speed(self):
         code = strip_comments(COMMANDS)
-        run = body(code, "bool HandleDungeonRun(ChatHandler* handler, char const* args)", "\n}\n")
+        run = body(code, "static bool RunVerbAs(ChatHandler* handler, Player* commander, std::string const& verb, std::string const& rawArg,\n    std::string const& intent)\n{", "\n}\n")
         start = run[run.index('if (verb == "start")\n'):]
-        self.assertIn("CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(commander))", start)
+        self.assertIn("CheckTestSpeed(speedArgs.rate, playerLedStart.playerLed, realPlayer, IsBotAdministrator(Requester(handler)))", start)
         self.assertIn("if (!playerLedStart.playerLed)", start)
         self.assertIn("arg = LowerCopy(speedArgs.rest);", start)
         self.assertLess(start.index("CheckTestSpeed(speedArgs.rate,"), start.index("arg = LowerCopy(speedArgs.rest);"))

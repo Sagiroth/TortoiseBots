@@ -142,6 +142,7 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot summon`](roster-and-hiring.md#bot-summon) | Roster & Hiring | Teleports an owned bot or hire to your location. |
 | [`.bot maintenance`](roster-and-hiring.md#bot-maintenance) | Roster & Hiring | Refreshes kit items, reagents, ammo, and repairs. |
 | [`.bot autogear`](roster-and-hiring.md#bot-autogear) | Roster & Hiring | Equips level-appropriate gear up to quality caps. |
+| [`.bot gear`](roster-and-hiring.md#bot-gear) | Roster & Hiring | Gears a bot or a bound raid to a hire tier under an item-level cap (GM). |
 | [`.autogear`](roster-and-hiring.md#autogear) | Roster & Hiring | Gears a real player like a spawned bot (GM, or self with `PlayerAutogearForAll`). |
 | [`.bot release`](roster-and-hiring.md#bot-release) | Roster & Hiring | Commands dead bots to release spirit to graveyard. |
 | [`.bot corpse run`](roster-and-hiring.md#bot-corpse-run) | Roster & Hiring | Commands ghost bots to run back to their corpse. |

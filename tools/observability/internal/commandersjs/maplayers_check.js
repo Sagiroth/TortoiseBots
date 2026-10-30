@@ -1,7 +1,8 @@
 "use strict";
-// Run by commandersjs_test.go under node: the Commanders tab's map layer state: the 18 layers and their defaults, the migration from
-// the 32-switch v2 (and the v1 booleans), effective() (the old keys the drawing code reads), the per-layer greying rule, the mob
-// union of a commander card with its dungeon run, and the "N of M" note.
+// Run by commandersjs_test.go under node: the Commanders tab's map layer state: the 28 layers in 7 groups and their
+// defaults, the migration from the 32-switch v2 (and the v1 booleans), effective() (the old keys the drawing code reads),
+// the per-layer greying rule, the raid presets, the trail time cut, the mob union of a commander card with its dungeon
+// run, and the "N of M" note.
 const assert = require("assert");
 const L = require(require("path").resolve(process.argv[2]));
 
@@ -10,16 +11,20 @@ const mem = () => { const d = {}; return { d, getItem: (k) => (k in d ? d[k] : n
 const oldAll = (v) => { const o = {}; L.OLD_KEYS.forEach((k) => { o[k] = v; }); return o; };
 const oldDefaults = () => { const o = {}; L.OLD_KEYS.forEach((k) => { o[k] = L.OLD_LAYERS[k].def; }); return o; };
 
-// ---- the 18 layers, 5 groups, and the defaults the brief asks for
+// ---- the 28 layers, 7 groups, and the defaults the brief asks for
+const KEYS = ["bg", "grid", "zone", "bots", "botnames", "hpbars", "leadpath", "memberpaths", "commanderline", "planroute",
+  "planstands", "stalls", "runinfo", "enemies", "critters", "enemynames", "facing", "mobcast", "threat", "aggro", "patrols", "actionlines", "subgroups",
+  "healtank", "healrange", "deaths", "events", "objects"];
 const def = L.defaults();
-assert.deepStrictEqual(Object.keys(def).sort(), L.keys().concat(["dim", "trailLen", "style"]).sort());
-assert.strictEqual(L.keys().length, 18);
-assert.deepStrictEqual(L.groups(), ["Map", "Party", "Enemies", "Lines and run", "Objects"]);
-assert.deepStrictEqual(L.keys(), ["bg", "grid", "zone", "bots", "hpbars", "leadpath", "memberpaths", "partyextras", "enemies", "critters", "enemynames", "threat", "aggro",
-  "actionlines", "events", "stalls", "runinfo", "objects"]);
-["bg", "grid", "zone", "bots", "hpbars", "leadpath", "enemies", "enemynames", "threat", "events", "runinfo"].forEach((k) => assert.strictEqual(def[k], true, k));
-["memberpaths", "partyextras", "critters", "aggro", "actionlines", "stalls", "objects"].forEach((k) => assert.strictEqual(def[k], false, k));
-assert.strictEqual(L.DEFS.filter((d) => d.def).length, 11);
+assert.deepStrictEqual(Object.keys(def).sort(), KEYS.concat(["dim", "trailLen", "trailSec", "style"]).sort());
+assert.strictEqual(L.keys().length, 28);
+assert.deepStrictEqual(L.groups(), ["Map", "Party", "Route", "Threat", "Raid", "Events", "Objects"]);
+assert.deepStrictEqual(L.keys(), KEYS, "the panel's order");
+["bg", "grid", "zone", "bots", "botnames", "hpbars", "leadpath", "planroute", "planstands", "runinfo", "enemies", "enemynames",
+  "facing", "mobcast", "threat", "aggro", "patrols", "deaths", "events"].forEach((k) => assert.strictEqual(def[k], true, k));
+["memberpaths", "commanderline", "critters", "stalls", "actionlines", "subgroups", "healtank", "healrange", "objects"]
+  .forEach((k) => assert.strictEqual(def[k], false, k));
+assert.strictEqual(L.DEFS.filter((d) => d.def).length, 19);
 assert.strictEqual(new Set(L.keys()).size, L.keys().length);
 L.DEFS.forEach((d) => {
   assert.ok(d.label && d.group && d.tip, d.key + " has a label, a group and a tooltip");
@@ -31,31 +36,81 @@ L.DEFS.forEach((d) => {
 const owned = L.DEFS.reduce((a, d) => a.concat(d.parts), []);
 assert.deepStrictEqual(owned.slice().sort(), L.OLD_KEYS.slice().sort());
 assert.strictEqual(new Set(owned).size, owned.length);
+// the new parts the raid layers add
+["planroute", "planstands", "planrings", "subgroups", "healtank", "deaths"].forEach((k) => assert.ok(L.OLD_LAYERS[k], k + " is an old part"));
+assert.strictEqual(L.OLD_LAYERS.planroute.def, true);
+assert.strictEqual(L.OLD_LAYERS.planstands.def, true);
+assert.strictEqual(L.OLD_LAYERS.planrings.def, true);
+assert.strictEqual(L.OLD_LAYERS.subgroups.def, false);
+assert.strictEqual(L.OLD_LAYERS.healtank.def, false);
+assert.strictEqual(L.OLD_LAYERS.deaths.def, true);
+["planroute", "planstands", "planrings"].forEach((k) => {
+  assert.strictEqual(L.OLD_LAYERS[k].needs, "plan", k);
+  assert.ok(L.OLD_LAYERS[k].why.length > 5, k + " says why");
+});
+assert.strictEqual(L.OLD_LAYERS.subgroups.needs, "subgroups");
+assert.strictEqual(L.OLD_LAYERS.healtank.needs, "layoutHealers");
+assert.strictEqual(L.OLD_LAYERS.deaths.needs, "fightDeaths");
+// the boss overlay's two layers: their own data, and what the cast one says when nothing casts
+assert.strictEqual(L.OLD_LAYERS.facing.needs, "facing");
+assert.strictEqual(L.OLD_LAYERS.mobcast.needs, "mobcast");
+assert.strictEqual(L.OLD_LAYERS.facing.def, true);
+assert.strictEqual(L.OLD_LAYERS.mobcast.def, true);
+assert.strictEqual(L.OLD_LAYERS.mobcast.why, "no boss or elite is casting now");
+assert.ok(L.OLD_LAYERS.facing.why.length > 5);
 
 // ---- effective(): the old keys the drawing code reads, computed from the new ones
 const eff = L.effective(def);
 assert.deepStrictEqual(Object.keys(eff).sort(), L.OLD_KEYS.concat(["runsteps"]).sort());
-["bg", "grid", "scale", "zone", "zonelabels", "bots", "botnames", "lead", "trail", "trailtime", "heading", "hpbars", "statusicons", "mobhostile", "mobneutral",
-  "hostilenames", "bossmark", "threatcolors", "threat", "events", "feed", "runinfo"].forEach((k) => assert.strictEqual(eff[k], true, k));
-["membertrails", "healring", "commander", "mobcritter", "aggro", "bottarget", "healline", "ccline", "stalls", "objects"].forEach((k) => assert.strictEqual(eff[k], false, k));
+["bg", "grid", "scale", "zone", "zonelabels", "bots", "botnames", "lead", "trail", "trailtime", "heading", "hpbars", "statusicons",
+  "mobhostile", "mobneutral", "hostilenames", "bossmark", "facing", "mobcast", "threatcolors", "threat", "aggro", "events", "feed", "runinfo",
+  "planroute", "planstands", "planrings", "deaths"].forEach((k) => assert.strictEqual(eff[k], true, k));
+["membertrails", "healring", "commander", "mobcritter", "bottarget", "healline", "ccline", "stalls", "objects", "subgroups", "healtank"]
+  .forEach((k) => assert.strictEqual(eff[k], false, k));
 assert.strictEqual(eff.runsteps, false, "the run route is not offered (the run leader is on its own branch)");
 const e2 = L.effective(L.set(L.set(L.set(def, "enemies", false), "critters", true), "bots", false));
 assert.strictEqual(e2.mobhostile, false); assert.strictEqual(e2.mobneutral, false); assert.strictEqual(e2.mobcritter, true);
-assert.strictEqual(e2.bots, false); assert.strictEqual(e2.botnames, false); assert.strictEqual(e2.lead, false);
+assert.strictEqual(e2.bots, false); assert.strictEqual(e2.lead, false);
+assert.strictEqual(e2.botnames, true, "all bot names has its own layer now");
 
 // ---- availability: greyed only when NONE of a layer's parts has data
 let av = L.availability({});
 assert.deepStrictEqual(Object.keys(av).sort(), L.keys().slice().sort());
-["grid", "hpbars", "runinfo"].forEach((k) => assert.strictEqual(av[k].ok, true, k));
-let grey = ["bg", "zone", "bots", "leadpath", "memberpaths", "partyextras", "enemies", "critters", "enemynames", "threat", "aggro", "actionlines", "events", "stalls", "objects"];
-grey.forEach((k) => { assert.strictEqual(av[k].ok, false, k); assert.ok(av[k].why.length > 5, k + " says why"); });
+assert.deepStrictEqual(L.keys().filter((k) => av[k].ok).sort(), ["grid", "hpbars", "runinfo"], "only the layers that need nothing are drawn without data");
+L.keys().filter((k) => !av[k].ok).forEach((k) => assert.ok(av[k].why.length > 5, k + " says why"));
 // the map folder's own reason (the missing minimap's) stands in for the built-in one of the map picture
 assert.strictEqual(L.availability({ pictureWhy: "No minimap picture: indoor dungeon" }).bg.why, "No minimap picture: indoor dungeon");
 assert.strictEqual(L.availability({ picture: true, pictureWhy: "ignored" }).bg.ok, true);
 assert.strictEqual(L.availability({ pictureWhy: "" }).bg.why, L.OLD_LAYERS.bg.why);
-// bots: the dots and names need bots, the lead mark needs the lead; any one is enough
+// the plan layers say the card's own reason when it has one
+assert.strictEqual(av.planroute.why, L.OLD_LAYERS.planroute.why);
+assert.strictEqual(L.availability({ planWhy: "No plan named x" }).planroute.why, "No plan named x");
+assert.strictEqual(L.availability({ planWhy: "No plan named x" }).planstands.why, "No plan named x");
+assert.ok(L.availability({ planWhy: "No plan named x" }).aggro.why.indexOf("No plan named x") >= 0, "the rings part says it too");
+assert.strictEqual(L.availability({ plan: true, planWhy: "ignored" }).planroute.ok, true);
+assert.strictEqual(L.availability({ plan: true }).planstands.ok, true);
+assert.strictEqual(L.availability({ plan: true }).aggro.ok, true, "the wake/aggro rings have their plan");
+assert.strictEqual(L.availability({ layoutHealers: true }).healtank.ok, true);
+assert.strictEqual(L.availability({ subgroups: true }).subgroups.ok, true);
+assert.strictEqual(L.availability({ fightDeaths: true }).deaths.ok, true);
+assert.strictEqual(L.availability({ facing: true }).facing.ok, true, "a reported facing makes the facing layer available");
+assert.strictEqual(L.availability({ mobcast: true }).mobcast.ok, true, "a reported cast makes the cast layer available");
+assert.strictEqual(L.availability({ mobs: true }).facing.ok, false, "mobs alone say nothing about facing");
+assert.strictEqual(L.availability({ mobs: true }).mobcast.why, "no boss or elite is casting now");
+// patrol paths: the plan's own data (a mob with a path), not the plan itself
+assert.strictEqual(L.OLD_LAYERS.patrols.needs, "patrols");
+assert.strictEqual(L.OLD_LAYERS.patrols.def, true);
+assert.ok(L.OLD_LAYERS.patrols.why.length > 5);
+assert.strictEqual(L.availability({}).patrols.ok, false);
+assert.strictEqual(L.availability({ plan: true }).patrols.ok, false, "a plan without patrol paths has no path layer");
+assert.strictEqual(L.availability({ patrols: true }).patrols.ok, true);
+assert.strictEqual(L.availability({ patrols: true }).patrols.why, "");
+assert.strictEqual(L.availability({}).healtank.why, "no tank healers in the raid layout");
+// bots: the dots and the lead mark need bots or a lead; the names need a bot
 av = L.availability({ lead: true });
 assert.strictEqual(av.bots.ok, true, "the lead mark alone makes the party layer available");
+assert.strictEqual(av.botnames.ok, false, "names need a bot");
+assert.strictEqual(L.availability({ bots: true }).botnames.ok, true);
 av = L.availability({ mobs: true });
 ["enemies", "critters", "enemynames", "aggro"].forEach((k) => assert.strictEqual(av[k].ok, true, k));
 assert.strictEqual(av.threat.ok, false, "threat colours need the targets, not just the mobs");
@@ -66,8 +121,8 @@ av = L.availability({ zone: true });
 assert.strictEqual(av.zone.ok, true);
 assert.strictEqual(L.availability({ zonesAround: true }).zone.ok, true, "either zone source is enough");
 av = L.availability({ healer: true });
-assert.strictEqual(av.partyextras.ok, true);
-assert.strictEqual(L.availability({ commanderPos: true }).partyextras.ok, true);
+assert.strictEqual(av.healrange.ok, true);
+assert.strictEqual(L.availability({ commanderPos: true }).commanderline.ok, true);
 // several maps: available when any can draw it
 const m = L.mergeAvailability([L.availability({}), L.availability({ mobs: true })]);
 assert.strictEqual(m.enemies.ok, true); assert.strictEqual(m.grid.ok, true); assert.strictEqual(m.threat.ok, false);
@@ -85,8 +140,14 @@ assert.strictEqual(part.hpbars, true); assert.strictEqual(part.statusicons, fals
 assert.strictEqual(part.hostilenames, true); assert.strictEqual(part.bossmark, true);
 part = L.active(def, L.availability({ lead: true }), { lead: true });
 assert.strictEqual(part.lead, true); assert.strictEqual(part.bots, false); assert.strictEqual(part.botnames, false, "no bot on this map");
-part = L.active(L.set(def, "partyextras", true), L.availability({ healer: true }), { healer: true });
+part = L.active(L.set(def, "healrange", true), L.availability({ healer: true }), { healer: true });
 assert.strictEqual(part.healring, true); assert.strictEqual(part.commander, false, "only a healer: no commander mark");
+part = L.active(L.set(def, "commanderline", true), L.availability({ commanderPos: true }), { commanderPos: true });
+assert.strictEqual(part.commander, true); assert.strictEqual(part.healring, false, "the commander line is its own layer now");
+part = L.active(L.set(L.set(def, "planstands", false), "planroute", true), L.availability({ plan: true }), { plan: true });
+assert.strictEqual(part.planroute, true); assert.strictEqual(part.planstands, false, "each plan layer has its own switch");
+part = L.active(L.set(L.set(def, "planroute", false), "aggro", true), L.availability({ plan: true }), { plan: true });
+assert.strictEqual(part.planrings, true); assert.strictEqual(part.planroute, false, "the rings are the aggro layer's part");
 part = L.active(def, L.availability({ trail: true }), { trail: true });
 assert.strictEqual(part.trail, true); assert.strictEqual(part.trailtime, true); assert.strictEqual(part.heading, false, "no heading");
 part = L.active(L.set(def, "enemies", true), L.availability({ mobs: true }), {});
@@ -123,6 +184,20 @@ assert.strictEqual(jl.trail, undefined, "old v2 keys stored in v3 are ignored");
 junk.d[L.STORAGE_KEY] = "[1,2]";
 assert.deepStrictEqual(L.load(junk), def);
 
+// ---- v3 users keep their healer layer: partyextras carried over when the split layers have no value of their own
+let carry = L.normalize({ partyextras: true });
+assert.strictEqual(carry.healrange, true);
+assert.strictEqual(carry.commanderline, true);
+carry = L.normalize({ partyextras: true, healrange: false });
+assert.strictEqual(carry.healrange, false, "an explicit healrange wins");
+assert.strictEqual(carry.commanderline, true);
+assert.strictEqual(L.normalize({ partyextras: false }).healrange, false);
+assert.strictEqual(L.normalize({ partyextras: "yes" }).healrange, def.healrange, "a non-boolean partyextras is ignored");
+const v3 = mem();
+v3.d[L.STORAGE_KEY] = JSON.stringify({ partyextras: true });
+assert.strictEqual(L.load(v3).healrange, true);
+assert.strictEqual(L.load(v3).commanderline, true);
+
 // ---- v2 -> v3: a merged layer is on when ANY of its old layers was; dim, path length and line styles carry over
 const v2 = mem();
 v2.d[L.PREV_STORAGE_KEY] = JSON.stringify(oldDefaults());
@@ -130,7 +205,9 @@ let mig = L.load(v2);
 L.keys().forEach((k) => assert.strictEqual(mig[k], def[k], "untouched v2 defaults: the new default of " + k));
 assert.strictEqual(mig.enemies, true, "a v2 that never touched the mob switches gets the new enemies default");
 assert.strictEqual(mig.threat, true); assert.strictEqual(mig.events, true); assert.strictEqual(mig.runinfo, true);
-assert.strictEqual(mig.dim, 30); assert.strictEqual(mig.trailLen, 120);
+assert.strictEqual(mig.aggro, true, "the aggro rings are on by default now");
+assert.strictEqual(mig.deaths, true); assert.strictEqual(mig.planroute, true); assert.strictEqual(mig.healtank, false);
+assert.strictEqual(mig.dim, 30); assert.strictEqual(mig.trailLen, 120); assert.strictEqual(mig.trailSec, 0);
 assert.deepStrictEqual(mig.style.leadpath, { op: 100, th: 100 }, "no old style: the normal look");
 
 v2.d[L.PREV_STORAGE_KEY] = JSON.stringify(oldAll(false));
@@ -149,9 +226,11 @@ Object.assign(mixed, { grid: false, botnames: false, lead: false, mobhostile: tr
 mixed.dim = 55; mixed.trailLen = 60; mixed.style = { trail: { op: 40, th: 250 }, membertrails: { op: 70, th: 150 }, threat: { op: 60, th: 300 }, bottarget: { op: 20, th: 90 } };
 v2.d[L.PREV_STORAGE_KEY] = JSON.stringify(mixed);
 mig = L.load(v2);
-assert.deepStrictEqual(["bg", "zone", "bots", "leadpath", "hpbars", "memberpaths", "enemies", "enemynames", "threat", "events", "runinfo"].map((k) => mig[k]),
-  [true, true, true, true, true, true, true, true, true, true, true], "the mixed fixture's on bits carry");
-["grid", "partyextras", "critters", "aggro", "actionlines", "stalls", "objects"].forEach((k) => assert.strictEqual(mig[k], false, k));
+assert.deepStrictEqual(["bg", "zone", "bots", "leadpath", "hpbars", "memberpaths", "planroute", "planstands", "runinfo", "enemies",
+  "enemynames", "threat", "aggro", "deaths", "events"].map((k) => mig[k]),
+  [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true], "the mixed fixture's on bits carry");
+["grid", "botnames", "commanderline", "stalls", "critters", "actionlines", "subgroups", "healtank", "healrange", "objects"]
+  .forEach((k) => assert.strictEqual(mig[k], false, k));
 assert.strictEqual(mig.dim, 55); assert.strictEqual(mig.trailLen, 60);
 assert.deepStrictEqual(mig.style.leadpath, { op: 40, th: 250 }, "leadpath takes the old trail style (its first old line key)");
 assert.deepStrictEqual(mig.style.memberpaths, { op: 70, th: 150 });
@@ -165,9 +244,17 @@ chosen.trail = false; chosen.bots = false; chosen.botnames = false; chosen.lead 
 v2.d[L.PREV_STORAGE_KEY] = JSON.stringify(chosen);
 mig = L.load(v2);
 assert.strictEqual(mig.leadpath, false, "trail off in v2 survives (trailtime/heading were default off)");
-assert.strictEqual(mig.bots, false, "all three bots switches off in v2 survive (the merged layer stays off)");
+assert.strictEqual(mig.bots, false, "both bots switches off in v2 survive (the merged layer stays off)");
+assert.strictEqual(mig.botnames, false, "the names switch off in v2 survives");
 assert.strictEqual(mig.critters, true, "a critter switch the user turned on survives");
 assert.strictEqual(mig.enemies, true, "the untouched mob switches still get the new default");
+// the v2 pins the spec adds: aggro touched on is on; untouched is the new default (on)
+const aggroOn = oldDefaults(); aggroOn.aggro = true;
+v2.d[L.PREV_STORAGE_KEY] = JSON.stringify(aggroOn);
+assert.strictEqual(L.load(v2).aggro, true);
+const aggroOff = oldDefaults(); delete aggroOff.aggro; delete aggroOff.planrings;
+v2.d[L.PREV_STORAGE_KEY] = JSON.stringify(aggroOff);
+assert.strictEqual(L.load(v2).aggro, true, "untouched: the new default");
 // the next save writes v3 and v3 then wins
 assert.strictEqual(L.save(v2, L.setDim(mig, 10)), true);
 assert.ok(L.STORAGE_KEY in v2.d);
@@ -180,6 +267,7 @@ mig = L.load(older);
 assert.strictEqual(mig.grid, false); assert.strictEqual(mig.zone, true); assert.strictEqual(mig.bossmark, undefined);
 assert.strictEqual(mig.enemynames, true, "bossmark was on by default in v2, so the merged layer keeps its new default");
 assert.strictEqual(mig.hpbars, true); assert.strictEqual(mig.threat, true, "the untouched threat switches get the new default");
+assert.strictEqual(mig.aggro, true); assert.strictEqual(mig.deaths, true); assert.strictEqual(mig.planroute, true);
 
 // ---- v1 still migrates, v2 wins over v1, and a broken one gives the defaults
 const v1 = mem();
@@ -215,6 +303,72 @@ L.save(dst, L.setTrailLen(L.setDim(L.set(def, "grid", false), 65), 50));
 assert.strictEqual(Object.keys(dst.d).length, 1);
 assert.strictEqual(L.load(dst).dim, 65); assert.strictEqual(L.load(dst).grid, false); assert.strictEqual(L.load(dst).trailLen, 50);
 
+// ---- the trail time cut: 0 (no cut) or 10-300 s, saved with the rest
+assert.strictEqual(def.trailSec, 0);
+assert.strictEqual(L.setTrailSec(def, 5).trailSec, 0);
+assert.strictEqual(L.setTrailSec(def, 9).trailSec, 0);
+assert.strictEqual(L.setTrailSec(def, 10).trailSec, 10);
+assert.strictEqual(L.setTrailSec(def, 30).trailSec, 30);
+assert.strictEqual(L.setTrailSec(def, "60").trailSec, 60);
+assert.strictEqual(L.setTrailSec(def, 300).trailSec, 300);
+assert.strictEqual(L.setTrailSec(def, 301).trailSec, 0);
+assert.strictEqual(L.setTrailSec(def, 0).trailSec, 0);
+assert.strictEqual(L.setTrailSec(def, "abc").trailSec, 0);
+const ts = mem();
+L.save(ts, L.setTrailSec(L.set(def, "grid", false), 120));
+assert.strictEqual(L.load(ts).trailSec, 120);
+assert.strictEqual(L.load(ts).grid, false);
+
+// ---- the raid presets
+assert.deepStrictEqual(L.PRESETS.map((p) => p.name), ["pathing", "pull", "heal", "boss", "all"]);
+assert.deepStrictEqual(L.PRESET_LABELS, ["Pathing", "Trash pull", "Healing", "Boss", "All"]);
+assert.deepStrictEqual(L.RAID_KEYS, ["planroute", "planstands", "leadpath", "memberpaths", "aggro", "threat", "enemynames",
+  "subgroups", "botnames", "healtank", "healrange", "deaths"]);
+L.RAID_KEYS.forEach((k) => assert.ok(def[k] === true || def[k] === false, k + " is a layer"));
+assert.strictEqual(L.RAID_KEYS.indexOf("bg"), -1);
+let h = L.applyPreset(L.defaults(), "heal");
+["healtank", "healrange", "subgroups", "threat", "deaths"].forEach((k) => assert.strictEqual(h[k], true, k));
+["planroute", "aggro", "leadpath", "planstands", "memberpaths", "enemynames", "botnames"].forEach((k) => assert.strictEqual(h[k], false, k));
+assert.strictEqual(h.bg, true, "a preset never touches a non-raid key");
+assert.strictEqual(h.runinfo, true, "a non-raid key keeps its value");
+assert.strictEqual(h.stalls, false, "a non-raid key keeps its value");
+assert.strictEqual(h.dim, 30);
+assert.strictEqual(h.trailSec, 0);
+assert.strictEqual(L.presetOf(h), "heal");
+assert.strictEqual(L.presetOf(L.set(h, "bots", false)), "heal", "bots is not a raid key");
+assert.strictEqual(L.presetOf(L.set(h, "aggro", true)), "");
+assert.strictEqual(L.presetOf(L.setDim(h, 10)), "heal");
+assert.strictEqual(L.applyPreset(L.defaults(), "pathing").trailSec, 30);
+assert.strictEqual(L.presetOf(L.applyPreset(L.defaults(), "pathing")), "pathing");
+assert.strictEqual(L.applyPreset(L.setTrailSec(L.defaults(), 60), "pull").trailSec, 60, "pull keeps the old cut");
+assert.strictEqual(L.presetOf(L.setTrailSec(L.applyPreset(L.defaults(), "pathing"), 60)), "", "pathing sets 30 s");
+const all = L.applyPreset(L.defaults(), "all");
+L.RAID_KEYS.forEach((k) => assert.strictEqual(all[k], true, k));
+assert.strictEqual(all.trailSec, 30);
+assert.strictEqual(all.bg, true);
+assert.strictEqual(L.presetOf(all), "all");
+assert.strictEqual(L.presetOf(L.setTrailSec(all, 0)), "", "the cut is part of the preset");
+assert.deepStrictEqual(L.applyPreset(L.defaults(), "nope"), L.defaults());
+assert.strictEqual(L.applyPreset(L.set(L.defaults(), "bg", false), "heal").bg, false, "a preset leaves a non-raid key alone");
+assert.strictEqual(L.applyPreset(L.set(L.defaults(), "stalls", true), "boss").stalls, true);
+// the boss overlay's two layers follow enemies when a preset is applied: a preset that leaves the enemies on shows them
+assert.strictEqual(L.applyPreset(L.defaults(), "boss").facing, true);
+assert.strictEqual(L.applyPreset(L.defaults(), "boss").mobcast, true);
+assert.strictEqual(L.applyPreset(L.defaults(), "all").facing, true);
+// patrol paths follow the plan route in a preset
+assert.strictEqual(L.applyPreset(L.defaults(), "pathing").patrols, true);
+assert.strictEqual(L.applyPreset(L.defaults(), "all").patrols, true, "the all preset has the plan route on");
+assert.strictEqual(L.applyPreset(L.defaults(), "heal").patrols, false, "no plan route, no patrol paths");
+assert.strictEqual(L.applyPreset(L.defaults(), "boss").patrols, false);
+assert.strictEqual(L.presetOf(L.applyPreset(L.defaults(), "pathing")), "pathing", "patrols is not a raid key");
+const noEnemies = L.applyPreset(L.set(L.defaults(), "enemies", false), "heal");
+assert.strictEqual(noEnemies.facing, false); assert.strictEqual(noEnemies.mobcast, false);
+assert.strictEqual(L.presetOf(L.applyPreset(L.defaults(), "boss")), "boss", "the overlay layers are not raid keys");
+// a preset is a whole state: the saved choice round-trips it
+const ps = mem();
+L.save(ps, L.applyPreset(L.defaults(), "boss"));
+assert.strictEqual(L.presetOf(L.load(ps)), "boss");
+
 // ---- line styles: 5 line layers, opacity 10-100 %, thickness 50-300 %
 const lines = L.DEFS.filter((d) => d.line).map((d) => d.key);
 assert.deepStrictEqual(lines, ["leadpath", "memberpaths", "threat", "aggro", "actionlines"]);
@@ -231,11 +385,12 @@ assert.strictEqual(L.styleOf(L.setStyle(def, "leadpath", "th", 1), "leadpath").t
 assert.strictEqual(L.styleOf(L.setStyle(def, "leadpath", "op", "junk"), "leadpath").op, 1, "junk falls back");
 assert.deepStrictEqual(L.setStyle(def, "grid", "op", 20).style, def.style, "grid is no line layer");
 assert.deepStrictEqual(L.setStyle(def, "trail", "op", 20).style, def.style, "the old key is not a line layer any more");
+assert.deepStrictEqual(L.setStyle(def, "planroute", "op", 20).style, def.style, "the plan route has no style");
 assert.deepStrictEqual(L.setStyle(def, "leadpath", "bad", 20).style, def.style);
 const sst = mem();
 L.save(sst, sty);
 assert.deepStrictEqual(L.styleOf(L.load(sst), "leadpath"), { op: 0.4, th: 2.5 });
-assert.strictEqual(L.normalize({ style: { leadpath: { op: "x", th: 99999 }, grid: { op: 5 } } }).style.leadpath.op, 100);
+assert.strictEqual(L.normalize({ style: { leadpath: { op: "x", th: 99999 } } }).style.leadpath.op, 100);
 assert.strictEqual(L.normalize({ style: { leadpath: { op: "x", th: 99999 } } }).style.leadpath.th, 300);
 assert.ok(!("grid" in L.normalize({ style: { grid: { op: 5 } } }).style), "styles of other keys are dropped");
 assert.strictEqual(L.normalize({ style: [1, 2] }).style.leadpath.op, 100);
@@ -250,9 +405,7 @@ const feed = [
 const run = [
   { id: "1", name: "A-run", hp: 80, level: 40, rank: "e" },
   { id: "3", name: "C", hp: 10 },
-  { id: "", name: "no guid" },
-  { name: "also no guid" },
-  null,
+  { name: "no guid", hp: 90 },
 ];
 const u = L.mobUnion(feed, run);
 assert.deepStrictEqual(u.map((m) => m.id), ["1", "2", "3"]);

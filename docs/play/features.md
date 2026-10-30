@@ -69,6 +69,7 @@ For hiring fees, summon cooldowns, and follow distances, see [Party settings](..
 | Paladin Judgement coordination on bosses | Yes | [`AiPlayerbot.PaladinJudgementUpkeep`](../server/settings/class-behaviour.md#aiplayerbotpaladinjudgementupkeep) | [Paladin AI](../classes/paladin.md#utility--interrupts) |
 | Rogue Feint and Vanish threat drops | Yes | [`AiPlayerbot.RogueDungeonThreatDrops`](../server/settings/class-behaviour.md#aiplayerbotroguedungeonthreatdrops) | [Rogue AI](../classes/rogue.md#utility--interrupts) |
 | Warlock demon summons tailored to spec | Yes | [`AiPlayerbot.WarlockPetBySpec`](../server/settings/class-behaviour.md#aiplayerbotwarlockpetbyspec) | [Warlock AI](../classes/warlock.md#utility--interrupts) |
+| Healer damage spells and DPS off-healing | Yes | [`AiPlayerbot.EnableOffSpecStrategies`](../server/settings/class-behaviour.md#aiplayerbotenableoffspecstrategies) | [Off-spec rules](../classes/overview.md#healer-off-dps-offdps) |
 
 For health and mana thresholds, engagement distances, and casting pacing, see [Combat settings](../server/settings/combat.md) and [Class behaviour settings](../server/settings/class-behaviour.md).
 

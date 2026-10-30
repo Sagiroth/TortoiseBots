@@ -17,8 +17,10 @@
 #include "../ai/playerbot/PlayerbotFactory.h"
 #include "../ai/playerbot/strategy/Event.h"
 #include "CommandedGroupQuery.h"
+#include "HireRaidPolicy.h"
 
 #include "ObjectAccessor.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "WorldSession.h"
 #include "Chat.h"
@@ -94,6 +96,7 @@ bool HireLifecycle::Claim(ObjectGuid botGuid, ObjectGuid masterGuid, uint32_t ow
     record.ownerAccountId = ownerAccountId;
     record.masterOfflineSince = 0;
     record.greeted = false;
+    record.hireOrder = ++m_nextHireOrder;
     m_hired[botGuidLow] = record;
     return true;
 }
@@ -111,6 +114,31 @@ void HireLifecycle::DismissNow(ObjectGuid botGuid, char const* reason)
     HiredRecord record = it->second;
     // The bot is being logged off anyway, so no group surgery is needed.
     Dismiss(record, reason ? reason : "released", false);
+}
+
+bool HireLifecycle::DismissForRefund(ObjectGuid botGuid, char const* reason)
+{
+    auto it = m_hired.find(botGuid.GetCounter());
+    if (it == m_hired.end())
+        return false; // not a hire (any more): its end is not this caller's to refund
+    HiredRecord record = it->second;
+    return Dismiss(record, reason ? reason : "released", false);
+}
+
+bool HireLifecycle::EnsureDeletionIntent(ObjectGuid botGuid, char const* reason)
+{
+    // Only for a hire that has already ended: a live hire is never deleted here.
+    if (m_hired.find(botGuid.GetCounter()) != m_hired.end())
+        return false;
+    uint32_t characterAccountId = 0;
+    if (LedgerRow(botGuid, characterAccountId))
+        return QueueDeletion(botGuid.GetCounter(), characterAccountId, reason ? reason : "released");
+    // No ledger row: the deletion already finished (ProcessDeletion clears the row last), or the row is missing.
+    // Only a character that is provably gone counts; COUNT(*) always returns a row, so a null result is a read
+    // error, not "gone".
+    std::unique_ptr<QueryResult> count(CharacterDatabase.PQuery(
+        "SELECT COUNT(*) FROM `characters` WHERE `guid` = '%u'", botGuid.GetCounter()));
+    return count && count->Fetch()[0].GetUInt32() == 0;
 }
 
 bool HireLifecycle::IsHired(ObjectGuid botGuid) const
@@ -188,6 +216,13 @@ void HireLifecycle::ConfirmCommand(ObjectGuid commanderGuid)
             kv.second.commandState = HireCommandState::Bound;
 }
 
+void HireLifecycle::CancelCommand(ObjectGuid botGuid)
+{
+    auto it = m_hired.find(botGuid.GetCounter());
+    if (it != m_hired.end() && it->second.commandState == HireCommandState::Transition && !it->second.regroupOnReturn)
+        it->second.commandState = HireCommandState::None;
+}
+
 uint32_t HireLifecycle::CommandedHireCount(ObjectGuid commanderGuid) const
 {
     uint32_t count = 0;
@@ -229,6 +264,53 @@ void HireLifecycle::KeepInstanceAfterPartyMove(Player* bot)
     }
 }
 
+void HireLifecycle::DismissSurplusAfterBinding(ObjectGuid commanderGuid)
+{
+    if (commanderGuid.IsEmpty())
+        return;
+    // Only once the binding is gone (ReleaseBinding unbinds before EndCommand): an EndCommand while a raid
+    // binding still stands (a refused second bind) leaves its 40th seat alone.
+    if (BotCommands::HasCommanderBinding(commanderGuid.GetRawValue()))
+        return;
+    // Every hire he owns, live or still mustering (a hire is claimed before it musters).
+    std::vector<ObjectGuid> owned;
+    std::vector<ReleaseHire> hires;
+    HireProvisionService const& provision = HireProvisionService::Instance();
+    for (auto const& kv : m_hired)
+        if (kv.second.masterGuid == commanderGuid)
+        {
+            owned.push_back(kv.second.botGuid);
+            ReleaseHire hire;
+            hire.hireOrder = kv.second.hireOrder;
+            hire.musteringSeat = provision.IsMusteringSeatHire(kv.second.botGuid);
+            hires.push_back(hire);
+        }
+    uint32_t const cap = HireMaxCompanions(sPlayerbotAIConfig.hireMaxBotsPerPlayer, false);
+    ReleasePlan const plan = PlanBindingRelease(hires, cap);
+    // First the seat hires still mustering: cancelled as a failed hire, the fee refunded.
+    for (size_t index : plan.cancel)
+        HireProvisionService::Instance().CancelMusteringSeatHire(owned[index], "your raid binding ended before it arrived");
+    if (plan.dismiss.empty())
+        return;
+    std::string names;
+    for (size_t index : plan.dismiss)
+    {
+        ObjectGuid const guid = owned[index];
+        std::string name;
+        if (!sObjectMgr.GetPlayerNameByGUID(guid, name))
+            name = guid.GetString();
+        names += (names.empty() ? "" : ", ") + name;
+        // The normal dismiss (`.bot remove`): the hire ends, its character is deleted, no refund.
+        DismissNow(guid, "bound raid ended above the companion limit");
+    }
+    TB_LOG_BASIC("TortoiseBots: commander %s's raid binding ended with %u companions over the limit of %u: %s dismissed",
+        commanderGuid.GetString().c_str(), static_cast<uint32>(plan.dismiss.size()), cap, names.c_str());
+    Player* master = sObjectAccessor.FindPlayer(commanderGuid);
+    if (master && master->IsInWorld() && master->GetSession())
+        ChatHandler(master).PSendSysMessage("%s left: your bound raid ended and outside one you command at most %u companions.",
+            names.c_str(), cap);
+}
+
 uint32_t HireLifecycle::EndCommand(ObjectGuid commanderGuid)
 {
     // The whole set enters its transition first: pulling one hire out of the
@@ -245,6 +327,9 @@ uint32_t HireLifecycle::EndCommand(ObjectGuid commanderGuid)
     }
     if (hires.empty())
         return 0;
+    // C6 H1: the 40th seat of a bound raid ends with the binding (every release reaches here: ReleaseBinding,
+    // SettleCommanderBinding, a failed bind). Before any hire goes back: a dismissed one is skipped below.
+    DismissSurplusAfterBinding(commanderGuid);
 
     Player* master = sObjectAccessor.FindPlayer(commanderGuid);
     uint32_t handled = 0;
@@ -429,11 +514,11 @@ void HireLifecycle::SweepBattlegroundBoundary()
     }
 }
 
-void HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup)
+bool HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup)
 {
     uint32_t botGuidLow = record.botGuid.GetCounter();
     if (!m_dismissing.insert(botGuidLow).second)
-        return;
+        return false;
 
     // Issue #243: Erase from active hired registry up-front so that any subsequent
     // group callbacks (e.g. Group::Disband triggered by RemoveMember) do not see this bot as an active hire.
@@ -451,8 +536,9 @@ void HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool 
     BotManager::Instance().ClearBotMaster(record.botGuid);
     BotActivityLeaseManager::Instance().ReleaseMaster(botGuidLow);
     uint32_t characterAccountId = 0;
+    bool deletionDurable = false;
     if (LedgerRow(record.botGuid, characterAccountId))
-        QueueDeletion(botGuidLow, characterAccountId, reason ? reason : "released");
+        deletionDurable = QueueDeletion(botGuidLow, characterAccountId, reason ? reason : "released");
     else
         sLog.outError("TortoiseBots: hired bot %s has no hire ledger row; its character is left in place",
             record.botGuid.GetString().c_str());
@@ -461,6 +547,7 @@ void HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool 
         record.botGuid.GetString().c_str(), reason ? reason : "released");
     BotManager::Instance().RemoveBot(record.botGuid, false);
     m_dismissing.erase(botGuidLow);
+    return deletionDurable;
 }
 
 void HireLifecycle::OnGroupMemberRemoved(Group* group, ObjectGuid guid)
@@ -812,7 +899,7 @@ bool HireLifecycle::LedgerRow(ObjectGuid botGuid, uint32_t& characterAccountId) 
     return true;
 }
 
-void HireLifecycle::QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, char const* reason)
+bool HireLifecycle::QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, char const* reason)
 {
     // Hard guard: the ledger row is the only proof that this character was
     // created by Hire(). Without it nothing is deleted, ever.
@@ -820,15 +907,22 @@ void HireLifecycle::QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, ch
     {
         sLog.outError("TortoiseBots: refusing to delete character %u after '%s': no hire ledger row",
             guidLow, reason ? reason : "released");
-        return;
+        return false;
     }
+    // Queued already (in memory): its 'dismissed' mark may have failed then, so it is written again while the
+    // row still reads 'active'; the result is that write's.
     for (PendingDeletion const& pending : m_pendingDeletions)
         if (pending.guidLow == guidLow)
-            return;
+            return CharacterDatabase.DirectPExecute(
+                "UPDATE `tortoise_bots_hire` SET `state` = 'dismissed', `dismissed_at` = NOW() "
+                "WHERE `character_guid` = '%u' AND `state` = 'active'", guidLow);
 
     // Durable intent first: a crash between here and the deletion is resumed
-    // from this row on the next server start.
-    CharacterDatabase.DirectPExecute(
+    // from this row on the next server start (RecoverStaleHires deletes every
+    // ledger row at startup, whatever its state). The result says whether the
+    // 'dismissed' mark was written (C6: a cancelled hire refunds only then);
+    // the deletion is queued either way, as before.
+    bool const durable = CharacterDatabase.DirectPExecute(
         "UPDATE `tortoise_bots_hire` SET `state` = 'dismissed', `dismissed_at` = NOW() "
         "WHERE `character_guid` = '%u'", guidLow);
 
@@ -839,6 +933,7 @@ void HireLifecycle::QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, ch
     m_pendingDeletions.push_back(pending);
     TB_LOG_BASIC("TortoiseBots: hired character %u scheduled for deletion (%s)",
         guidLow, pending.reason.c_str());
+    return durable;
 }
 
 bool HireLifecycle::RecoverStaleHires()

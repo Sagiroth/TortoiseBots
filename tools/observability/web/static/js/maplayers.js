@@ -2,13 +2,15 @@
 // Commanders tab map layers: which things a map draws. One choice for every card (and every map), kept in the browser once, not per
 // map. Pure logic (no page, no markup) so a test can run it under node (internal/commandersjs). app.js draws and shows the panel.
 //
-// The panel offers 18 layers in 5 groups. Several of them are merges of the finer switches the maps used before: `effective(state)`
+// The panel offers 28 layers in 7 groups, the raid's order (Map, Party, Route, Threat, Raid, Events, Objects): the plan is three of
+// them (planroute, planstands and the aggro layer's planrings part), and raid presets (Pathing, Trash pull, Healing, Boss, All)
+// switch the raid's keys in one click. Several layers are merges of the finer switches the maps used before: `effective(state)`
 // returns those older keys (mobhostile, mobneutral, trail, threatcolors, ...) computed from the new ones, and app.js's drawing code
 // reads them, so the draw code did not have to change shape.
 //
-// Besides the on/off choices the state holds `dim`: how much the real map picture is darkened, 0-80 %; `trailLen`: how many positions of
-// a path are drawn (10-240); and for each line layer (`line: true`) `style[key] = {op, th}`: its opacity (10-100 %) and thickness (50-300 %
-// of the normal width).
+// Besides the on/off choices the state holds `dim`: how much the real map picture is darkened, 0-80 %; `trailLen`: how many
+// positions of a path are drawn (10-240); `trailSec`: the newest seconds of a path to draw (0 = no cut, else 10-300); and for each
+// line layer (`line: true`) `style[key] = {op, th}`: its opacity (10-100 %) and thickness (50-300 % of the normal width).
 //
 // A layer has a key, a short label, a group, a tooltip (`tip`, the long explanation), a default, the old keys it merges (`parts`) and
 // `needs`: the data each part can only be drawn from. A layer is greyed out in the panel only when NONE of its parts has data; the
@@ -19,6 +21,7 @@
   const OLD_STORAGE_KEY = "tbdash.mapLayers.v1"; // booleans only; read once when v2 and v3 are missing (the picture was darkened 30 % then)
   const DIM_MAX = 80, DIM_DEFAULT = 30;
   const TRAIL_LEN_MIN = 10, TRAIL_LEN_MAX = 240, TRAIL_LEN_DEFAULT = 120;
+  const TRAIL_SEC_MIN = 10, TRAIL_SEC_MAX = 300, TRAIL_SEC_DEFAULT = 0; // 0 = no cut
   const OP_MIN = 10, OP_MAX = 100, TH_MIN = 50, TH_MAX = 300, STYLE_DEFAULT = 100;
 
   // The keys the drawing code used before the merge, with what each was drawn from. Kept so effective() can hand app.js the old
@@ -38,12 +41,18 @@
     heading: { def: false, needs: "heading", why: "the lead has not moved enough to tell" },
     healring: { def: false, needs: "healer", why: "no living healer on this map" },
     commander: { def: false, needs: "commanderPos", why: "the commander is not online on the map of the party" },
+    planroute: { def: true, needs: "plan", why: "no plan for this map: start a run (.bot run) or pick a fight of a run" },
+    planstands: { def: true, needs: "plan", why: "no plan for this map: start a run (.bot run) or pick a fight of a run" },
+    planrings: { def: true, needs: "plan", why: "no plan for this map: start a run (.bot run) or pick a fight of a run" },
     mobhostile: { def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
     mobneutral: { def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
     mobcritter: { def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
     aggro: { def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)", line: true },
+    patrols: { def: true, needs: "patrols", why: "no patrol path for this plan (the plan needs a patrols file)" },
     hostilenames: { def: false, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
     bossmark: { def: true, needs: "mobs", why: "the game server does not report mobs yet (it needs the newer module)" },
+    facing: { def: true, needs: "facing", why: "no boss or elite reports where it faces (it needs the newer module)" },
+    mobcast: { def: true, needs: "mobcast", why: "no boss or elite is casting now" },
     threatcolors: { def: false, needs: "mobTargets", why: "the game server does not report mobs yet (it needs the newer module)" },
     threat: { def: false, needs: "mobTargets", why: "the game server does not report mobs yet (it needs the newer module)", line: true },
     bottarget: { def: false, needs: "botTargets", why: "the game server does not report bot targets yet (it needs the newer module)", line: true },
@@ -51,6 +60,9 @@
     ccline: { def: false, needs: "activity", why: "the game server does not report what units do yet (it needs the newer module)", line: true },
     hpbars: { def: true },
     statusicons: { def: false, needs: "activity", why: "the game server does not report what units do yet (it needs the newer module)" },
+    subgroups: { def: false, needs: "subgroups", why: "no raid subgroups reported" },
+    healtank: { def: false, needs: "layoutHealers", why: "no tank healers in the raid layout" },
+    deaths: { def: true, needs: "fightDeaths", why: "no fight with deaths selected in the fight debugger" },
     stalls: { def: false, needs: "stalls", why: "nothing has stalled or been refused since this page started watching" },
     events: { def: false, needs: "events", why: "nothing has happened since this page started watching" },
     feed: { def: false, needs: "events", why: "nothing has happened since this page started watching" },
@@ -58,8 +70,8 @@
     objects: { def: false, needs: "objects", why: "the game server does not report objects yet (it needs the newer module)" },
   };
 
-  // The 18 layers the panel offers. `parts` are the old switches each one replaces; `styleFrom` is the old line key whose opacity and
-  // thickness a merged line layer takes over (its first old key that had a style).
+  // The 28 layers the panel offers, in panel order. `parts` are the old switches each one replaces; `styleFrom` is the old line key
+  // whose opacity and thickness a merged line layer takes over (its first old key that had a style).
   const DEFS = [
     { key: "bg", label: "Map picture", group: "Map", def: true, parts: ["bg"],
       tip: "The real game-map picture under the party (the daemon needs TBDASH_MAP_DIR). The Dim slider below darkens it." },
@@ -67,34 +79,54 @@
       tip: "The distance grid over the map and the scale bar under it." },
     { key: "zone", label: "Zone names", group: "Map", def: true, parts: ["zone", "zonelabels"],
       tip: "The outline and name of the party's zone, and the names of the zones around." },
-    { key: "bots", label: "Bots and lead mark", group: "Party", def: true, parts: ["bots", "botnames", "lead"],
-      tip: "A dot with its name for every bot on the map; the lead's name is starred and ringed." },
+    { key: "bots", label: "Bots and lead mark", group: "Party", def: true, parts: ["bots", "lead"],
+      tip: "A dot for every bot on the map; the lead's name is starred and ringed." },
+    { key: "botnames", label: "All bot names", group: "Party", def: true, parts: ["botnames"],
+      tip: "The name beside every bot on the map. Off: only the lead, the tanks of the raid layout and the debugger's bot." },
     { key: "hpbars", label: "Health bars and status icons", group: "Party", def: true, parts: ["hpbars", "statusicons"],
       tip: "A health bar over every unit, and icons for dead, casting, crowd controlled, drinking or eating, and fleeing." },
     { key: "leadpath", label: "Lead path", group: "Party", def: true, line: true, styleFrom: "trail", parts: ["trail", "trailtime", "heading"],
       tip: "Where the lead has walked, with the times on the path and its heading arrow (from its movement)." },
     { key: "memberpaths", label: "Other members paths", group: "Party", def: false, line: true, styleFrom: "membertrails", parts: ["membertrails"],
       tip: "Where the other group members have walked, coloured by role." },
-    { key: "partyextras", label: "Healer range ring and commander line", group: "Party", def: false, parts: ["healring", "commander"],
-      tip: "A 40 yd ring around each living healer, and the commander with a line to the lead." },
-    { key: "enemies", label: "Enemies", group: "Enemies", def: true, parts: ["mobhostile", "mobneutral"],
-      tip: "Hostile and neutral units the game server reports near the party." },
-    { key: "critters", label: "Critters", group: "Enemies", def: false, parts: ["mobcritter"],
-      tip: "Critters (small harmless units) the game server reports." },
-    { key: "enemynames", label: "Enemy names and boss marker", group: "Enemies", def: true, parts: ["hostilenames", "bossmark"],
-      tip: "The name of every hostile unit; a boss is bigger, crowned and always named." },
-    { key: "threat", label: "Threat colours and lines", group: "Enemies", def: true, line: true, styleFrom: "threat", parts: ["threatcolors", "threat"],
-      tip: "A ring in the colour of whom the unit attacks (tank blue, others red), the tank's and the pull target marked, and a line to the unit it attacks." },
-    { key: "aggro", label: "Aggro range", group: "Enemies", def: false, line: true, styleFrom: "aggro", parts: ["aggro"],
-      tip: "The area in which a pull target would notice the party (20 yd, one more per level above the lead)." },
-    { key: "actionlines", label: "Target, heal and crowd-control lines", group: "Lines and run", def: false, line: true, styleFrom: "bottarget", parts: ["bottarget", "healline", "ccline"],
-      tip: "A line from each bot to its target, from a healer to whom it heals, and from a caster to the unit it controls." },
-    { key: "events", label: "Run events (pins and feed)", group: "Lines and run", def: true, parts: ["events", "feed"],
-      tip: "Pins where a unit died, a boss fell, a wipe happened or an object was opened or looted, and the feed under the map. Shown when there is an event." },
-    { key: "stalls", label: "Stalls and refused orders", group: "Lines and run", def: false, parts: ["stalls"],
+    { key: "commanderline", label: "Commander line", group: "Party", def: false, parts: ["commander"],
+      tip: "The commander's marker and its line to the lead." },
+    { key: "planroute", label: "Plan route and steps", group: "Route", def: true, parts: ["planroute"],
+      tip: "The plan's route: done steps dimmed, the current step highlighted, the rest ahead." },
+    { key: "planstands", label: "Stands and pull spots", group: "Route", def: true, parts: ["planstands"],
+      tip: "Each pack's pull spot, the stand beside it, the pack mobs and a boss's crown." },
+    { key: "stalls", label: "Stalls and refused orders", group: "Route", def: false, parts: ["stalls"],
       tip: "A red cross where the run paused or an order was refused, with the reason." },
-    { key: "runinfo", label: "Run timer and boss checklist", group: "Lines and run", def: true, parts: ["runinfo"],
+    { key: "runinfo", label: "Run timer and boss checklist", group: "Route", def: true, parts: ["runinfo"],
       tip: "The run line under the map: how long the binding has been standing and the bosses down." },
+    { key: "enemies", label: "Enemies", group: "Threat", def: true, parts: ["mobhostile", "mobneutral"],
+      tip: "Hostile and neutral units the game server reports near the party." },
+    { key: "critters", label: "Critters", group: "Threat", def: false, parts: ["mobcritter"],
+      tip: "Critters (small harmless units) the game server reports." },
+    { key: "enemynames", label: "Enemy names and boss marker", group: "Threat", def: true, parts: ["hostilenames", "bossmark"],
+      tip: "The name of every hostile unit; a boss is bigger, purple with a gold ring, crowned, and always named with its health." },
+    { key: "facing", label: "Boss and elite facing", group: "Threat", def: true, parts: ["facing"],
+      tip: "An arrow where every boss and elite the game server reports looks (its own facing, not its movement)." },
+    { key: "mobcast", label: "Boss and elite casts and spell areas", group: "Threat", def: true, parts: ["mobcast"],
+      tip: "The spell a boss or elite is casting: its area (cone, back cone or line), a progress ring, and the time left and target." },
+    { key: "threat", label: "Mob → its target (red: not a tank)", group: "Threat", def: true, line: true, styleFrom: "threat", parts: ["threatcolors", "threat"],
+      tip: "A ring in the colour of whom the unit attacks and a line to that unit; red when it is not a tank of the raid layout." },
+    { key: "aggro", label: "Aggro and wake rings", group: "Threat", def: true, line: true, styleFrom: "aggro", parts: ["aggro", "planrings"],
+      tip: "The area in which a unit notices the party, the plan's mobs and a boss's scripted wake ring (dashed)." },
+    { key: "patrols", label: "Patrol paths", group: "Threat", def: true, parts: ["patrols"],
+      tip: "The loop a patrolling pack walks, as the plan records it, with its round time; the check for straying move points measures the whole loop." },
+    { key: "actionlines", label: "Target, heal and crowd-control lines", group: "Threat", def: false, line: true, styleFrom: "bottarget", parts: ["bottarget", "healline", "ccline"],
+      tip: "A line from each bot to its target, from a healer to whom it heals, and from a caster to the unit it controls." },
+    { key: "subgroups", label: "Colour by subgroup", group: "Raid", def: false, parts: ["subgroups"],
+      tip: "Colour each bot's dot by its raid subgroup (0-7)." },
+    { key: "healtank", label: "Healer → tank (raid layout)", group: "Raid", def: false, parts: ["healtank"],
+      tip: "A line from each raid healer to the tank it heals; another colour when the tank is out of range." },
+    { key: "healrange", label: "Healer range (40 yd)", group: "Raid", def: false, parts: ["healring"],
+      tip: "A 40 yd ring around each living healer." },
+    { key: "deaths", label: "Deaths (fight debugger)", group: "Events", def: true, parts: ["deaths"],
+      tip: "Where each bot died in the fight selected in the fight debugger." },
+    { key: "events", label: "Run events (pins and feed)", group: "Events", def: true, parts: ["events", "feed"],
+      tip: "Pins where a unit died, a boss fell, a wipe happened or an object was opened or looted, and the feed under the map. Shown when there is an event." },
     { key: "objects", label: "Doors, chests, levers, altars and gongs", group: "Objects", def: false, parts: ["objects"],
       tip: "Game objects the bots have seen near them, with what they are and whether they are used." },
   ];
@@ -106,6 +138,18 @@
   // The run-route layer left the panel with the run leader (feat/dungeon-self-clear), but app.js still reads its key.
   const DEAD_OLD_KEYS = ["runsteps"];
 
+  // The raid presets: RAID_KEYS are the only keys a preset touches; `trailSec` only the presets that set it.
+  const RAID_KEYS = ["planroute", "planstands", "leadpath", "memberpaths", "aggro", "threat", "enemynames", "subgroups", "botnames",
+    "healtank", "healrange", "deaths"];
+  const PRESETS = [
+    { name: "pathing", on: ["planroute", "planstands", "leadpath", "memberpaths", "aggro"], trailSec: 30 },
+    { name: "pull", on: ["planstands", "aggro", "threat", "enemynames", "deaths"] },
+    { name: "heal", on: ["threat", "subgroups", "healtank", "healrange", "deaths"] },
+    { name: "boss", on: ["planstands", "aggro", "threat", "enemynames", "healtank", "deaths"] },
+    { name: "all", on: RAID_KEYS.slice(), trailSec: 30 },
+  ];
+  const PRESET_LABELS = ["Pathing", "Trash pull", "Healing", "Boss", "All"];
+
   const keys = () => DEFS.map((d) => d.key);
 
   function defaults() {
@@ -113,6 +157,7 @@
     DEFS.forEach((d) => { o[d.key] = d.def; });
     o.dim = DIM_DEFAULT;
     o.trailLen = TRAIL_LEN_DEFAULT;
+    o.trailSec = TRAIL_SEC_DEFAULT;
     o.style = {};
     DEFS.forEach((d) => { if (d.line) o.style[d.key] = { op: STYLE_DEFAULT, th: STYLE_DEFAULT }; });
     return o;
@@ -126,13 +171,27 @@
     return typeof n === "number" && isFinite(n) ? Math.min(DIM_MAX, Math.max(0, Math.round(n))) : DIM_DEFAULT;
   }
 
-  // Whatever was stored, as a full set: unknown keys are dropped, non-booleans fall back to the default.
+  // The trail time cut: 0 (no cut) or 10..300 s; anything else is 0 (the default).
+  function clampTrailSec(n) {
+    const v = Number(n);
+    if (!isFinite(v)) return TRAIL_SEC_DEFAULT;
+    const sec = Math.round(v);
+    return sec === 0 || (sec >= TRAIL_SEC_MIN && sec <= TRAIL_SEC_MAX) ? sec : TRAIL_SEC_DEFAULT;
+  }
+
+  // Whatever was stored, as a full set: unknown keys are dropped, non-booleans fall back to the default. A v3 saved with the old
+  // combined healer layer carries that choice into the two layers it split into (an explicit value wins).
   function normalize(raw) {
     const out = defaults();
     if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      if (typeof raw.partyextras === "boolean") {
+        if (typeof raw.healrange !== "boolean") out.healrange = raw.partyextras;
+        if (typeof raw.commanderline !== "boolean") out.commanderline = raw.partyextras;
+      }
       DEFS.forEach((d) => { if (typeof raw[d.key] === "boolean") out[d.key] = raw[d.key]; });
       if ("dim" in raw) out.dim = clampDim(raw.dim);
       if ("trailLen" in raw) out.trailLen = clampTrailLen(raw.trailLen);
+      if ("trailSec" in raw) out.trailSec = clampTrailSec(raw.trailSec);
       if (raw.style && typeof raw.style === "object" && !Array.isArray(raw.style)) {
         DEFS.forEach((d) => {
           const r = raw.style[d.key];
@@ -146,7 +205,7 @@
   // A stored v1/v2 choice in the old keys' shape: booleans for every old layer (missing ones get their old default), the dim, the path
   // length and the per-line styles.
   function normalizeOld(raw) {
-    const out = { dim: DIM_DEFAULT, trailLen: TRAIL_LEN_DEFAULT, style: {} };
+    const out = { dim: DIM_DEFAULT, trailLen: TRAIL_LEN_DEFAULT, trailSec: TRAIL_SEC_DEFAULT, style: {} };
     OLD_KEYS.forEach((k) => { out[k] = OLD_LAYERS[k].def; });
     if (raw && typeof raw === "object" && !Array.isArray(raw)) {
       OLD_KEYS.forEach((k) => { if (typeof raw[k] === "boolean") out[k] = raw[k]; });
@@ -162,9 +221,9 @@
     return out;
   }
 
-  // v1/v2 -> v3: a merged layer whose old switches are all still at their v2 defaults was never touched, so it takes the NEW default
-  // (that is how existing users get enemies, threat, events and the run line on); otherwise it is on when any of its old switches was.
-  // A merged line layer takes its first old line key's style.
+  // v1/v2 -> v3: a merged layer whose old switches are all still at their old defaults was never touched, so it takes the NEW default
+  // (that is how existing users get enemies, threat, events, the run line, the plan and the rings on); otherwise it is on when any of
+  // its old switches was. A merged line layer takes its first old line key's style.
   function fromOld(raw) {
     const old = normalizeOld(raw), out = defaults();
     DEFS.forEach((d) => {
@@ -236,22 +295,32 @@
     return out;
   }
 
+  function setTrailSec(state, n) {
+    const out = normalize(state);
+    out.trailSec = clampTrailSec(n);
+    return out;
+  }
+
   function setDim(state, pct) {
     const out = normalize(state);
     out.dim = clampDim(Number(pct));
     return out;
   }
 
-  // What each of the 18 layers can be drawn from, for one map (one card): {key: {ok, why}}. ctx has the booleans named in
+  // What each of the 28 layers can be drawn from, for one map (one card): {key: {ok, why}}. ctx has the booleans named in
   // OLD_LAYERS' `needs`; a missing one counts as false. ok when ANY of the layer's parts has its data (the rest is simply not drawn);
   // why lists the missing parts' reasons.
   function availability(ctx) {
     const c = ctx || {}, out = {};
+    const whyOf = (p) => {
+      // the card's own reasons stand in: the map folder's minimap reason for the picture, the card's plan reason for the plan
+      if (p === "bg" && typeof c.pictureWhy === "string" && c.pictureWhy) return c.pictureWhy;
+      if ((p === "planroute" || p === "planstands" || p === "planrings") && typeof c.planWhy === "string" && c.planWhy) return c.planWhy;
+      return OLD_LAYERS[p].why || "no data";
+    };
     DEFS.forEach((d) => {
       const missing = d.parts.filter((p) => OLD_LAYERS[p].needs && !c[OLD_LAYERS[p].needs]);
-      // a map with no picture at all says why: the map folder's own minimap reason (ctx.pictureWhy) when there is one
-      const why = missing.map((p) => (p === "bg" && typeof c.pictureWhy === "string" && c.pictureWhy) || OLD_LAYERS[p].why || "no data")
-        .filter((w, i, a) => a.indexOf(w) === i).join("; ");
+      const why = missing.map(whyOf).filter((w, i, a) => a.indexOf(w) === i).join("; ");
       out[d.key] = missing.length === d.parts.length ? { ok: false, why: why || "no data" } : { ok: true, why: "" };
     });
     return out;
@@ -288,6 +357,29 @@
     });
     DEAD_OLD_KEYS.forEach((k) => { out[k] = false; });
     return out;
+  }
+
+  // A raid preset applied to a state: the RAID_KEYS on when the preset lists them, off otherwise; the preset's trail cut when it sets
+  // one; the boss overlay's two layers follow the enemies layer (a preset never touches it, so a party that shows enemies shows
+  // where its bosses look); the patrol paths follow the plan route; every other key, the dim, the path length and the styles
+  // untouched. An unknown name gives the state.
+  function applyPreset(state, name) {
+    const out = normalize(state);
+    const p = PRESETS.find((x) => x.name === name);
+    if (!p) return out;
+    RAID_KEYS.forEach((k) => { out[k] = p.on.indexOf(k) >= 0; });
+    out.facing = out.mobcast = out.enemies === true;
+    out.patrols = out.planroute === true;
+    if (typeof p.trailSec === "number") out.trailSec = clampTrailSec(p.trailSec);
+    return out;
+  }
+
+  // The first preset the state matches (its RAID_KEYS values, and its trail cut when it sets one), else "".
+  function presetOf(state) {
+    const st = normalize(state);
+    const p = PRESETS.find((x) => RAID_KEYS.every((k) => st[k] === (x.on.indexOf(k) >= 0))
+      && (typeof x.trailSec !== "number" || st.trailSec === x.trailSec));
+    return p ? p.name : "";
   }
 
   // The union of the commander feed's mobs and a dungeon run's mobs, by guid: the feed comes first and wins every field it carries
@@ -338,8 +430,9 @@
 
   const groups = () => DEFS.reduce((g, d) => (g.indexOf(d.group) < 0 ? g.concat(d.group) : g), []);
 
-  const api = { STORAGE_KEY, PREV_STORAGE_KEY, OLD_STORAGE_KEY, DIM_MAX, DIM_DEFAULT, clampDim, setDim, TRAIL_LEN_MIN, TRAIL_LEN_MAX, TRAIL_LEN_DEFAULT, OP_MIN, OP_MAX, TH_MIN, TH_MAX,
-    styleOf, setStyle, setTrailLen, clampTrailLen, DEFS, OLD_LAYERS, OLD_KEYS, keys, defaults, normalize, normalizeOld, fromOld, load, save, set, availability, mergeAvailability,
-    effective, active, groups, mobUnion, findRun, enemiesText };
+  const api = { STORAGE_KEY, PREV_STORAGE_KEY, OLD_STORAGE_KEY, DIM_MAX, DIM_DEFAULT, clampDim, setDim, TRAIL_LEN_MIN, TRAIL_LEN_MAX, TRAIL_LEN_DEFAULT,
+    TRAIL_SEC_MIN, TRAIL_SEC_MAX, TRAIL_SEC_DEFAULT, clampTrailSec, setTrailSec, OP_MIN, OP_MAX, TH_MIN, TH_MAX,
+    styleOf, setStyle, setTrailLen, clampTrailLen, DEFS, OLD_LAYERS, OLD_KEYS, keys, defaults, normalize, normalizeOld, fromOld, load, save, set, availability,
+    mergeAvailability, effective, active, RAID_KEYS, PRESETS, PRESET_LABELS, applyPreset, presetOf, groups, mobUnion, findRun, enemiesText };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MapLayers = api;
 })(typeof self !== "undefined" ? self : this);

@@ -148,6 +148,123 @@ static void TestRequirements()
     CHECK(!JudgeEntry(facts).ok);
 }
 
+static void TestConditionWaiver()
+{
+    // AiPlayerbot.RaidEntryByCommander: key, a raid's entrance, no trigger script, a real commander, the
+    // bot's raid, the commander's own condition.
+    CHECK(WaiveCondition(true, true, true, true, true, true));
+    CHECK(!WaiveCondition(false, true, true, true, true, true));  // key off
+    CHECK(!WaiveCondition(true, false, true, true, true, true));  // a five-player dungeon
+    CHECK(!WaiveCondition(true, true, false, true, true, true));  // the trigger runs a script
+    CHECK(!WaiveCondition(true, true, true, false, true, true));  // the commander is a bot
+    CHECK(!WaiveCondition(true, true, true, true, false, true));  // not in the bot's raid
+    CHECK(!WaiveCondition(true, true, true, true, true, false));  // the commander fails too
+
+    // A bot that fails only the condition at a raid's entrance: the commander's check lets it in.
+    EntryFacts base = Ready();
+    base.conditionFailed = true;
+    EntryVerdict const today = JudgeEntry(base);
+    CHECK(!today.ok && std::strcmp(today.code, kCodeRequirement) == 0);
+    EntryFacts raid = base;
+    raid.raidMap = true;
+    raid.inRaidGroup = true;
+    raid.conditionWaived = WaiveCondition(true, true, true, true, true, true);
+    CHECK(JudgeEntry(raid).ok);
+
+    // A five-player dungeon: the commander's own condition never waives the bot's.
+    EntryFacts dungeon = base;
+    dungeon.conditionWaived = WaiveCondition(true, false, true, true, true, true);
+    EntryVerdict const dungeonVerdict = JudgeEntry(dungeon);
+    CHECK(!dungeonVerdict.ok && std::strcmp(dungeonVerdict.code, today.code) == 0 &&
+        dungeonVerdict.message == today.message);
+
+    // A raid whose entrance trigger runs a script: the fallback teleport would skip it, so the refusal stands.
+    EntryFacts scripted = raid;
+    scripted.conditionWaived = WaiveCondition(true, true, false, true, true, true);
+    CHECK(!JudgeEntry(scripted).ok);
+
+    // The commander fails too: the same refusal as today, message included.
+    EntryFacts refused = raid;
+    refused.conditionWaived = WaiveCondition(true, true, true, true, true, false);
+    EntryVerdict const verdict = JudgeEntry(refused);
+    CHECK(!verdict.ok && std::strcmp(verdict.code, today.code) == 0 && verdict.message == today.message);
+
+    // The key off: today's refusal.
+    EntryFacts keyOff = raid;
+    keyOff.conditionWaived = WaiveCondition(false, true, true, true, true, true);
+    CHECK(!JudgeEntry(keyOff).ok);
+
+    // The waiver lifts the condition only: the level, raid group and instance limit stay.
+    EntryFacts facts = raid;
+    facts.level = 1;
+    CHECK(!JudgeEntry(facts).ok);
+    facts = raid;
+    facts.inRaidGroup = false;
+    CHECK(!JudgeEntry(facts).ok);
+    facts.inRaidGroup = true;
+    facts.instanceCountOk = false;
+    CHECK(!JudgeEntry(facts).ok);
+    facts.instanceCountOk = true;
+    CHECK(JudgeEntry(facts).ok);
+
+    // A bound raid: `.bot commander bind ... raid` takes the commander out of the group, so the binding, not
+    // group membership, is what makes him the raid's commander.
+    Binding boundRaid;
+    boundRaid.commanderGuid = 100;
+    boundRaid.leadGuid = 11;
+    boundRaid.groupId = 42;
+    boundRaid.raid = true;
+    boundRaid.followers = { 12, 13 };
+    bool const commanderOfRaid = BindingCommandsBot(boundRaid, 12, 42);
+    CHECK(commanderOfRaid);
+    EntryFacts bound = raid;
+    bound.conditionWaived = WaiveCondition(true, true, true, true, commanderOfRaid, true);
+    CHECK(JudgeEntry(bound).ok);
+
+    // The bound commander lacks the amulet: the entrance's own refusal, message included.
+    EntryFacts lacks = raid;
+    lacks.conditionWaived = WaiveCondition(true, true, true, true, commanderOfRaid, false);
+    EntryVerdict const lacksVerdict = JudgeEntry(lacks);
+    CHECK(!lacksVerdict.ok && std::strcmp(lacksVerdict.code, today.code) == 0 &&
+        lacksVerdict.message == today.message);
+
+    // Another commander's binding: this bot is not in the binding's group.
+    bool const otherBinding = BindingCommandsBot(boundRaid, 12, 43);
+    CHECK(!otherBinding);
+    EntryFacts other = raid;
+    other.conditionWaived = WaiveCondition(true, true, true, true, otherBinding, true);
+    EntryVerdict const otherVerdict = JudgeEntry(other);
+    CHECK(!otherVerdict.ok && std::strcmp(otherVerdict.code, today.code) == 0 &&
+        otherVerdict.message == today.message);
+}
+
+static void TestBindingCommandsBot()
+{
+    Binding binding;
+    binding.commanderGuid = 100;
+    binding.leadGuid = 11;
+    binding.groupId = 42;
+    binding.followers = { 12, 13 };
+    CHECK(BindingCommandsBot(binding, 11, 42));   // the lead bot
+    CHECK(BindingCommandsBot(binding, 13, 42));   // a listed follower
+    CHECK(!BindingCommandsBot(binding, 14, 42));  // a bot of the group the binding does not list
+    CHECK(!BindingCommandsBot(binding, 11, 43));  // another commander's binding
+    CHECK(!BindingCommandsBot(binding, 13, 43));
+
+    Binding system;  // the server's own bot-only party: no commander, its key is the lead bot's guid
+    system.commanderGuid = 11;
+    system.leadGuid = 11;
+    system.groupId = 42;
+    system.system = true;
+    CHECK(!BindingCommandsBot(system, 11, 42));
+
+    Binding unbound;  // no group yet
+    unbound.commanderGuid = 100;
+    unbound.leadGuid = 11;
+    CHECK(!BindingCommandsBot(unbound, 11, 0));
+    CHECK(!BindingCommandsBot(unbound, 11, 42));
+}
+
 static EnterFacts Far(float distance)
 {
     EnterFacts facts;
@@ -366,6 +483,8 @@ int main()
     TestParse();
     TestEntranceAndNearest();
     TestRequirements();
+    TestConditionWaiver();
+    TestBindingCommandsBot();
     TestBudgets();
     TestLeadWalksThenArrives();
     TestAlreadyInRange();

@@ -76,6 +76,128 @@
     rows.forEach((r) => delete r._o);
     return rows;
   }
+  // ---- the raid card (A11) --------------------------------------------------------------------------------------------
+
+  // A binding with more than 6 bots (or any bot with a subgroup) is a raid: the card shows subgroup blocks.
+  function isRaid(bind) {
+    const bots = (bind && bind.bots) || [];
+    return bots.length > 6 || bots.some((b) => b && typeof b.sub === "number");
+  }
+
+  // The party as subgroup blocks: [{subgroup: 0..7, label, rows}] with the lead first in its block. A binding whose bots
+  // carry no subgroup is one unlabelled block ("Party") in the party order.
+  function raidBlocks(bind) {
+    const rows = partyRows(bind);
+    const byBot = {};
+    ((bind && bind.bots) || []).forEach((b) => { byBot[b.guid] = typeof b.sub === "number" ? b.sub : -1; });
+    if (!rows.some((r) => byBot[r.guid] >= 0)) return [{ subgroup: -1, label: "Party", rows }];
+    const subs = {};
+    rows.forEach((r) => {
+      const s = byBot[r.guid];
+      const sub = s >= 0 && s <= 7 ? s : 7;
+      (subs[sub] || (subs[sub] = [])).push(r);
+    });
+    return Object.keys(subs).map(Number).sort((a, b) => a - b).map((s) => {
+      const rs = subs[s];
+      rs.sort((a, b) => (a.lead ? -1 : 0) - (b.lead ? -1 : 0));
+      return { subgroup: s, label: "Group " + (s + 1), rows: rs };
+    });
+  }
+
+  // The bound raid's layout (the module's TBM:RAID_LAYOUT), in words: "MT <name> · OTs <a>, <b> · tank healers <h> -> <t> ·
+  // raid healers <n>"; null when the module reported none (an older one) or every part is empty. The card shows it as one row.
+  function layoutText(bind) {
+    const l = bind && bind.layout;
+    if (!l || typeof l !== "object") return null;
+    const names = (v) => (Array.isArray(v) ? v.filter((n) => typeof n === "string" && n) : []);
+    const pairs = (Array.isArray(l.th) ? l.th : [])
+      .filter((p) => p && typeof p === "object" && p.h && p.t)
+      .map((p) => p.h + " -> " + p.t);
+    const parts = [];
+    if (typeof l.mt === "string" && l.mt) parts.push("MT " + l.mt);
+    const off = names(l.ot);
+    if (off.length) parts.push("OTs " + off.join(", "));
+    if (pairs.length) parts.push("tank healers " + pairs.join(", "));
+    const healers = names(l.rh);
+    if (healers.length) parts.push("raid healers " + healers.join(", "));
+    return parts.length ? parts.join(" · ") : null;
+  }
+
+  // Mobs whose victim is a bound bot that is not a tank (by role), held at least 2 s since the tracker first saw the
+  // victim on that mob: [{mob, victim, role, seconds}]. A mob with no victim or on a tank is not listed.
+  function threatOffTanks(bind, tr, nowSec) {
+    const out = [];
+    const bots = {};
+    ((bind && bind.bots) || []).forEach((b) => { if (b && b.id) bots[b.id] = b; });
+    const scoped = (tr.threat || (tr.threat = {}));
+    const seen = scoped[bind.commander] || (scoped[bind.commander] = {});
+    ((bind && bind.mobs) || []).forEach((m) => {
+      const v = m && m.victim && bots[m.victim];
+      if (!v || v.role === "tank") { if (m && m.id) delete seen[m.id]; return; }
+      const key = m.id || (m.name + "@" + (m.x || 0) + "," + (m.y || 0));
+      if (seen[key] == null) seen[key] = nowSec;
+      const seconds = Math.max(0, Math.round((nowSec || 0) - seen[key]));
+      if (seconds >= 2) out.push({ mob: m, victim: v.name, role: v.role || "other", seconds });
+    });
+    return out;
+  }
+
+  // The run's status lines (oldest first on the wire) newest first: [{at, text: "<step> <leg> <kind> <phase>: <note>", state}].
+  function notesLog(bind) {
+    const notes = bind && bind.run && Array.isArray(bind.run.notes) ? bind.run.notes : [];
+    return notes.slice().reverse().map((n) => ({
+      at: n.at,
+      text: [n.step, n.leg, n.kind, n.phase].join(" ") + ": " + n.note,
+      state: n.state,
+    }));
+  }
+
+  // Deaths of the last fights (the A12 combat data) plus the bots now dead first: [{t, name, killer, fight, x, y}].
+  function deathsTimeline(fights, bind) {
+    const dead = ((bind && bind.bots) || []).filter((b) => b.alive === false);
+    const out = dead.map((b) => ({ t: null, name: b.name, killer: "", fight: "", x: b.x || 0, y: b.y || 0 }));
+    (Array.isArray(fights) ? fights : []).forEach((f) => {
+      (f.deaths || []).forEach((d) => {
+        out.push({
+          t: f.start != null && d.t_ms != null ? Math.round(f.start + d.t_ms / 1000) : null,
+          name: d.name, killer: d.killer || "", fight: f.boss_name || "", x: d.x || 0, y: d.y || 0,
+        });
+      });
+    });
+    return out;
+  }
+
+  // The buttons' GM lines for this binding. startFromLeg takes the plan's leg name or step number; reviveDead lists one
+  // .revive line per dead bound bot; gearPreset gears the raid (a raid binding) or the commander's bot (a party).
+  function controlLines(bind) {
+    const name = bind && bind.commander;
+    const raid = isRaid(bind);
+    const dead = ((bind && bind.bots) || []).filter((b) => b.alive === false).map((b) => b.name);
+    return {
+      pause: ".bot run for " + name + " pause",
+      resume: ".bot run for " + name + " resume",
+      skip: ".bot run for " + name + " skip",
+      stop: ".bot run for " + name + " stop",
+      status: ".bot run for " + name + " status",
+      // a bare number is a step (`from 4` alone would be read as leg 4), anything else a leg name
+      startFromLeg: (leg, untilBoss) => ".bot run for " + name + " start from " + (/^\d+$/.test(String(leg).trim()) ? "step " + String(leg).trim() : "leg " + String(leg).trim()) + (untilBoss ? " until boss" : ""),
+      // the trash walk that stops at the boss stand, from the plan's first step
+      startUntilBoss: ".bot run for " + name + " start until boss",
+      reviveDead: dead.map((n) => ".revive " + n),
+      reloadPlans: ".bot run reloadplans",
+      gearPreset: (preset) => raid ? ".bot gear raid " + name + " preset " + preset : ".bot gear " + name + " preset " + preset,
+    };
+  }
+
+  // One sentence: the run's state and the seconds since it changed; "stalled" past 120 s, "stuck" past 300 s.
+  function whyWaiting(bind, nowSec) {
+    const r = bind && bind.run;
+    if (!r || typeof r !== "object") return "";
+    const ago = r.changed != null && nowSec ? Math.max(0, Math.round(nowSec - r.changed)) : 0;
+    const flag = ago > 300 ? "stuck" : ago > 120 ? "stalled" : "";
+    return [r.state, r.note, ageText(ago) + " ago", flag].filter(Boolean).join(" \u00b7 ");
+  }
+
 
   // The dashboard's own link to a character's detail view (the route app.js parses: #/<tab>?bot=<guid>), or '' for a guid that is not one.
   // The Commanders tab stays the tab underneath, as it does for a bot picked anywhere else.
@@ -418,11 +540,18 @@
     return m.reaction === "h" ? "hostile" : "neutral";
   }
 
-  // Lines from each mob to the bot it targets: [{mob, bot}] (both with game x, y). Only bots on the list count.
-  function threatLines(mobs, bots) {
+  // Lines from each mob to the bot it targets: [{mob, bot, nonTank}] (both with game x, y). Only bots on the list count. With the raid's
+  // layout (F5), a victim that is not a tank by role and is neither the main tank nor an off-tank is marked nonTank (the map draws it
+  // red); without a layout only the role counts.
+  function threatLines(mobs, bots, layout) {
+    const l = layout || {};
+    const off = Array.isArray(l.ot) ? l.ot : [];
     const byId = {};
     (bots || []).forEach((b) => { if (b.id) byId[b.id] = b; });
-    return (mobs || []).filter((m) => m.victim && byId[m.victim] && mobClass(m) !== "").map((m) => ({ mob: m, bot: byId[m.victim] }));
+    return (mobs || []).filter((m) => m.victim && byId[m.victim] && mobClass(m) !== "").map((m) => {
+      const bot = byId[m.victim];
+      return { mob: m, bot, nonTank: bot.role !== "tank" && bot.name !== l.mt && off.indexOf(bot.name) < 0 };
+    });
   }
 
   // Lines from each bot to its target when that is a listed mob: [{bot, mob}].
@@ -434,6 +563,95 @@
 
   // The mobs that get an aggro ring: hostile ones that nobody fights yet, i.e. the next pull. (Critters and neutrals do not aggro.)
   function aggroMobs(mobs) { return (mobs || []).filter((m) => mobClass(m) === "hostile" && !m.victim && num(m.hp) && m.hp > 0); }
+
+  // ---- the boss overlay: where a boss or elite looks and the area of the spell it casts (fight debugger phase 2) -------------
+  // A game direction (cos o, sin o) in the drawing plane, where the plane is project(x, y) = (-y, -x): north, the game's +x, is up.
+  function facingVec(o) {
+    const a = num(o) ? o : 0;
+    return { x: 0 - Math.sin(a), y: 0 - Math.cos(a) };
+  }
+
+  const n2 = (n) => (isFinite(n) ? n : 0).toFixed(2);
+
+  // The facing vector turned by t radians (screen coordinates, y down).
+  function turn(v, t) {
+    const c = Math.cos(t), s = Math.sin(t);
+    return { x: v.x * c - v.y * s, y: v.x * s + v.y * c };
+  }
+
+  function unit(v) {
+    const d = Math.hypot(v.x, v.y);
+    return d > 0 ? { x: v.x / d, y: v.y / d } : v;
+  }
+
+  // A line's pinned ends [x0, y0, x1, y1] in map coordinates, or null: exactly four finite numbers, nothing else.
+  function shapeSeg(seg) {
+    return Array.isArray(seg) && seg.length === 4 && seg.every((v) => num(v)) ? seg : null;
+  }
+
+  // The SVG path a shape covers: a cone with its apex at the unit (cx, cy) facing o, a back cone (the same behind it), or a line
+  // along the facing; a line that pins its two ends (`seg`) draws the band between them instead, wherever the unit stands. In
+  // yards; "" when the shape has no reach or is unknown. k is the caller's user-space scale (1: the plane is already in yards).
+  function shapePath(cx, cy, o, shape, k) {
+    if (!shape || typeof shape !== "object") return "";
+    const s = num(k) && k > 0 ? k : 1, x = cx * s, y = cy * s, dir = facingVec(o);
+    const pt = (p) => n2(p.x) + "," + n2(p.y);
+    const w = num(shape.w) ? Math.max(0, shape.w) : 0;
+    if (shape.k === "line" && w > 0) {
+      const seg = shapeSeg(shape.seg);
+      if (seg) {
+        const a = project(seg[0], seg[1]), b = project(seg[2], seg[3]);
+        const ax = a.x * s, ay = a.y * s, bx = b.x * s, by = b.y * s, span = Math.hypot(bx - ax, by - ay);
+        if (!(span > 0)) return "";
+        const nx = -(by - ay) / span, ny = (bx - ax) / span, half = (w * s) / 2;
+        const p1 = { x: ax + nx * half, y: ay + ny * half }, p2 = { x: ax - nx * half, y: ay - ny * half };
+        const p3 = { x: bx - nx * half, y: by - ny * half }, p4 = { x: bx + nx * half, y: by + ny * half };
+        return `M${pt(p1)}L${pt(p2)}L${pt(p3)}L${pt(p4)}Z`;
+      }
+    }
+    const l = num(shape.l) ? shape.l : 0;
+    if (!(l > 0) || !num(cx) || !num(cy)) return "";
+    const len = l * s;
+    if (shape.k === "cone" || shape.k === "back-cone") {
+      const a = num(shape.a) ? shape.a : 0;
+      if (!(a > 0)) return "";
+      const half = (a * Math.PI) / 360;
+      const v = shape.k === "back-cone" ? facingVec((num(o) ? o : 0) + Math.PI) : dir;
+      const p1 = { x: x + turn(v, -half).x * len, y: y + turn(v, -half).y * len };
+      const p2 = { x: x + turn(v, half).x * len, y: y + turn(v, half).y * len };
+      return `M${n2(x)},${n2(y)}L${pt(p1)}A${n2(len)} ${n2(len)} 0 ${a > 180 ? 1 : 0} 1 ${pt(p2)}Z`;
+    }
+    if (shape.k === "line") {
+      const v = unit(dir), nx = -v.y, ny = v.x, half = (w * s) / 2;
+      const a = { x: x + nx * half, y: y + ny * half }, b = { x: x - nx * half, y: y - ny * half };
+      const c = { x: a.x + v.x * len, y: a.y + v.y * len }, d = { x: b.x + v.x * len, y: b.y + v.y * len };
+      return `M${pt(a)}L${pt(c)}L${pt(d)}L${pt(b)}Z`;
+    }
+    return "";
+  }
+
+  // The time left of a cast reported cleft ms before nowMs (receivedAtMs is when that report arrived); never below zero.
+  function castLeft(m, receivedAtMs, nowMs) {
+    const left = m && num(m.cleft) ? m.cleft : 0;
+    const dt = num(receivedAtMs) && num(nowMs) ? Math.max(0, nowMs - receivedAtMs) : 0;
+    return Math.max(0, left - dt);
+  }
+
+  // How much of the cast is done, 0..1 (a channel counts down from its duration the same way).
+  function castFrac(m, leftMs) {
+    const total = m && num(m.ctot) ? m.ctot : 0;
+    if (!(total > 0)) return 0;
+    return Math.min(1, Math.max(0, (total - (num(leftMs) ? leftMs : 0)) / total));
+  }
+
+  // The shorter way from angle a to angle b, t of the way; across the seam (-pi / +pi) it turns through pi, never through 0.
+  function angleLerp(a, b, t) {
+    const x = num(a) ? a : 0, y = num(b) ? b : 0, twoPi = Math.PI * 2;
+    let d = (y - x) % twoPi;
+    if (d > Math.PI) d -= twoPi;
+    else if (d < -Math.PI) d += twoPi;
+    return x + d * (num(t) ? t : 0);
+  }
 
   // The commander's own place when it stands on mapId: {x, y} (game coordinates) or null.
   function commanderPlace(bind, mapId) {
@@ -595,6 +813,30 @@
     return have < slots.length ? PIC_MISSING_MS : null;
   }
 
+  // Which unit labels a map can draw without them running into each other. items are the candidates in draw order (the lead
+  // and the tanks first, so a tight group keeps their names), each {id, name, x, y} in the plane; k is the drawing scale (the
+  // label is 11.5k high, about 6.8k a character and 6k of air). A label whose box meets one already kept is left out: the unit's full name
+  // is still the hover box's. Returns the kept ids in draw order.
+  function labelFit(items, k) {
+    const kk = k > 0 && isFinite(k) ? k : 1;
+    const h = 13 * kk;
+    const boxes = [];
+    const kept = [];
+    (Array.isArray(items) ? items : []).forEach((it) => {
+      if (!it || it.id == null) return;
+      const name = String(it.name == null ? "" : it.name);
+      const w = (Math.max(2, name.length) * 6.8 + 6) * kk;
+      const x = (Number(it.x) || 0) + 10 * kk, y = (Number(it.y) || 0) - h / 2;
+      for (let i = 0; i < boxes.length; i++) {
+        const b = boxes[i];
+        if (x < b.x + b.w && x + w > b.x && y < b.y + b.h && y + h > b.y) return;
+      }
+      boxes.push({ x, y, w, h });
+      kept.push(it.id);
+    });
+    return kept;
+  }
+
   // The picture picker of a card: hidden when no slot has a picture; else one option per slot, a missing one disabled with "(none)" and
   // its reason as the tooltip. `reason` is the missing stored choice's reason, for the line under the picker ("" when the picker is hidden).
   function pictureSelect(slots, stored) {
@@ -618,7 +860,9 @@
     HEAL_RANGE_YD, FAR_YD, LOW_HP_PCT, STALE_WARN_SEC, pretty, plural, ageText, roleKey, roleLabel, distance, leadBot, partyRows, orderText, stateWord,
     headerText, headerParts, botHref, warnings, newTracker, note, context, prune, project, fitView, viewBox, zoomAt, panBy, pinch, gridStep, gridLines,
     trailSegments, markGap, trailSegmentsBroken, trailRuns, trailMarks, trailEvent, jumpLimitYd, TRAVEL_MAX_YD_PER_SEC, TRAVEL_SLACK_YD, TRAVEL_MAX_GAP_SEC, clampScale, prependTrail, heading, trailStamps, scaleBar, zonesIn, pictureSlots, pictureChoice, pictureSelect, pictureRefreshAfter, PIC_RETRY_MS, PIC_MISSING_MS,
+    raidBlocks, isRaid, layoutText, threatOffTanks, notesLog, deathsTimeline, controlLines, whyWaiting, labelFit,
     AGGRO_RANGE_YD, followView, zoomFollow, pinchFollow, mobsOf, mobClass, threatLines, botTargetLines, aggroMobs, commanderPlace,
+    facingVec, shapePath, shapeSeg, castLeft, castFrac, angleLerp,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.CmdView = api;
 })(typeof self !== "undefined" ? self : this);

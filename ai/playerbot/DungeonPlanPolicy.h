@@ -173,11 +173,24 @@ namespace ai
     constexpr std::uint32_t kPlanDefaultTimeoutS = 60;
     constexpr std::uint32_t kPlanMaxTimeoutS = 600;
     constexpr std::size_t kPlanMaxEntries = 16;
+    // A step row's comment as the dashboard shows it: the row's `comment`, clipped at this many bytes.
+    constexpr std::size_t kPlanMaxLabel = 80;
     // gossip: `param` is the option the way `.bot cmd gossip` takes it, counted from 1 at the top of the NPC's
     // menu (runtime/GossipOrderPolicy.h kMaxIndex: a 1.12 menu holds 15 options). The NPC is searched within
     // kGossipSearchYd of x,y,z (GossipOrder::kSearchYards).
     constexpr std::uint32_t kPlanMaxGossipOption = 15;
     constexpr float kGossipSearchYd = 40.0f;
+
+    // A row's `comment` as a step label: a UTF-8-safe clip at kPlanMaxLabel (never cut inside a multi-byte sequence).
+    inline std::string PlanStepLabel(const std::string& comment)
+    {
+        if (comment.size() <= kPlanMaxLabel)
+            return comment;
+        std::size_t cut = kPlanMaxLabel;
+        while (cut > 0 && (static_cast<unsigned char>(comment[cut]) & 0xC0) == 0x80)
+            --cut;
+        return comment.substr(0, cut);
+    }
 
     struct PlanStep
     {
@@ -197,6 +210,8 @@ namespace ai
         bool exactLaunch = false;
         // The row's kind was "open_proof" (kPlanKindOpenProof): an Open done by its proof (radius, the one `entries` entry).
         bool openProof = false;
+        // The row's `comment`, clipped to kPlanMaxLabel bytes: the dashboard's short name of the step.
+        std::string label;
         // boss only, filled at load (DungeonPlanTable::JoinBossTactics): the creatures the `ai_boss_tactic` rows of the
         // plan's map keyed on the step's boss (or one of its entries) are about (TacticSubjectEntry: kill_first targets,
         // interrupt casters, the boss itself), so the run leader never leaves such a creature alive in an earlier pack
@@ -536,6 +551,7 @@ namespace ai
             step.param = kPlanDefaultRitualBots;
         if (step.timeoutS == 0)
             step.timeoutS = kPlanDefaultTimeoutS;
+        step.label = PlanStepLabel(step.label);
         return PlanStepRefusal::None;
     }
 
@@ -815,6 +831,17 @@ namespace ai
         return teams == 0 || team == 0 || (teams & team) != 0;
     }
 
+    // Whether a pull, boss or hold step owns a unit of `entry` standing at x,y,z: the step lists the entry (a hold's
+    // `entry` is its done condition, instance data or object, not a unit) and the point lies in its radius.
+    inline bool StepOwnsUnit(const PlanStep& step, std::uint32_t entry, float x, float y, float z)
+    {
+        if (step.kind != PlanStepKind::Pull && step.kind != PlanStepKind::Boss && step.kind != PlanStepKind::Hold)
+            return false;
+        bool listed = (step.kind != PlanStepKind::Hold && step.entry == entry) ||
+            std::find(step.entries.begin(), step.entries.end(), entry) != step.entries.end();
+        return listed && PlanDistance(x, y, z, step.x, step.y, step.z) <= step.radius;
+    }
+
     // Whether a unit of `entry` standing at x,y,z belongs to a pull, boss or
     // hold step AFTER step index `from` (the run leader never pulls what a later
     // step owns: the plan's order says when it is fought; a hold owns its
@@ -825,14 +852,27 @@ namespace ai
         for (std::size_t i = from + 1; i < plan.steps.size(); ++i)
         {
             const PlanStep& step = plan.steps[i];
-            if (step.kind != PlanStepKind::Pull && step.kind != PlanStepKind::Boss && step.kind != PlanStepKind::Hold)
-                continue;
             if (!StepForTeam(step, team))
                 continue;
-            // A hold's `entry` is its done condition (instance data, object), not a unit.
-            bool listed = (step.kind != PlanStepKind::Hold && step.entry == entry) ||
-                std::find(step.entries.begin(), step.entries.end(), entry) != step.entries.end();
-            if (listed && PlanDistance(x, y, z, step.x, step.y, step.z) <= step.radius)
+            if (StepOwnsUnit(step, entry, x, y, z))
+                return true;
+        }
+        return false;
+    }
+
+    // Whether a unit of `entry` standing at x,y,z belongs to any pull, boss or hold step of the plan other than step
+    // index `self`, earlier or later (the pack-cleared gate leaves a residue unit where another step fights it).
+    inline bool OwnedByOtherStep(const DungeonPlan& plan, std::size_t self, std::uint32_t entry,
+        float x, float y, float z, std::uint32_t team = 0)
+    {
+        for (std::size_t i = 0; i < plan.steps.size(); ++i)
+        {
+            if (i == self)
+                continue;
+            const PlanStep& step = plan.steps[i];
+            if (!StepForTeam(step, team))
+                continue;
+            if (StepOwnsUnit(step, entry, x, y, z))
                 return true;
         }
         return false;

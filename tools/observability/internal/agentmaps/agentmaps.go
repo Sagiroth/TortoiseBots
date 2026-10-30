@@ -39,7 +39,7 @@ const (
 type Dir struct{ root string }
 
 const (
-	// ListPrefix answers the list (and the feature probe: 404 when the tab is off).
+	// ListPrefix answers the list (and the feature probe: a 200 with enabled=false when the tab is off).
 	ListPrefix = "/api/v1/agent-maps"
 	// FilePrefix serves the maps of the folder from.
 	FilePrefix = "/api/v1/agent-maps/files/"
@@ -53,8 +53,8 @@ type Entry struct {
 	Kind  string `json:"kind"`
 }
 
-// New opens the folder. An empty path gives a nil Dir (the tab is off and every request 404s); a path that is not a directory is
-// an error.
+// New opens the folder. An empty path gives a nil Dir (the tab is off: the list answers enabled=false and no file is served); a
+// path that is not a directory is an error.
 func New(root string) (*Dir, error) {
 	if strings.TrimSpace(root) == "" {
 		return nil, nil
@@ -224,22 +224,38 @@ func (d *Dir) List() []Entry {
 	return files
 }
 
-// HandleList answers GET /api/v1/agent-maps with {"files":[...],"max_files":N,"max_file_size":N}, newest first. No folder: 404,
-// which is also how the page learns the tab is off.
+// The list's answer. enabled is how the page learns the tab is off: no folder answers 200 with an empty list and enabled=false,
+// so a dashboard load makes no failing request; a folder that stopped being usable still 404s, like its files.
+type listPayload struct {
+	Files       []Entry `json:"files"`
+	MaxFiles    int     `json:"max_files"`
+	MaxFileSize int64   `json:"max_file_size"`
+	Enabled     bool    `json:"enabled"`
+}
+
+// HandleList answers GET /api/v1/agent-maps with {"files":[...],"max_files":N,"max_file_size":N,"enabled":true}, newest first.
+// No folder: 200 with enabled=false and no files.
 func (d *Dir) HandleList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if r.URL.Path != ListPrefix || d == nil || !d.rootOK() {
+	if r.URL.Path != ListPrefix {
 		http.NotFound(w, r)
 		return
 	}
-	payload := struct {
-		Files       []Entry `json:"files"`
-		MaxFiles    int     `json:"max_files"`
-		MaxFileSize int64   `json:"max_file_size"`
-	}{Files: d.List(), MaxFiles: MaxFiles, MaxFileSize: MaxFileSize}
+	if d == nil {
+		writeList(w, listPayload{Files: []Entry{}})
+		return
+	}
+	if !d.rootOK() {
+		http.NotFound(w, r)
+		return
+	}
+	writeList(w, listPayload{Files: d.List(), MaxFiles: MaxFiles, MaxFileSize: MaxFileSize, Enabled: true})
+}
+
+func writeList(w http.ResponseWriter, payload listPayload) {
 	// json.Marshal escapes <, > and & in strings, so a file named "<script>.svg" cannot break out when a client inserts the
 	// decoded name into markup; the page additionally renders names as text, never as markup.
 	b, err := json.Marshal(payload)

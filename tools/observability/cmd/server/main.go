@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,9 +14,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -23,11 +27,18 @@ import (
 	"tortoise-observability/internal/agentmaps"
 	"tortoise-observability/internal/armory"
 	"tortoise-observability/internal/auth"
+	"tortoise-observability/internal/bosstactics"
+	"tortoise-observability/internal/combat"
+	"tortoise-observability/internal/control"
 	"tortoise-observability/internal/dungeons"
+	"tortoise-observability/internal/history"
+	"tortoise-observability/internal/lanes"
+	"tortoise-observability/internal/live"
 	zoneproject "tortoise-observability/internal/map"
 	"tortoise-observability/internal/mapdir"
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
+	"tortoise-observability/internal/plans"
 	"tortoise-observability/internal/ringbuf"
 	"tortoise-observability/internal/state"
 	"tortoise-observability/internal/udp"
@@ -40,6 +51,25 @@ func getEnv(key, fallback string) string {
 		return val
 	}
 	return fallback
+}
+
+// flagSet reports whether the command line set a flag (an explicit empty value included).
+func flagSet(name string) bool {
+	set := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+	return set
+}
+
+// defaultHistoryDir is the history folder beside the activity state file (the writable mount); "" keeps the history off.
+func defaultHistoryDir(stateFile string) string {
+	if stateFile == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(stateFile), "fight-history")
 }
 
 func getEnvInt(key string, fallback int) int {
@@ -60,6 +90,7 @@ func main() {
 	udpHost := flag.String("udp-host", getEnv("UDP_HOST", "127.0.0.1"), "UDP telemetry listen address")
 	udpPort := flag.Int("udp-port", getEnvInt("UDP_PORT", 9195), "UDP telemetry listener port")
 	forwardUDP := flag.String("forward-udp", getEnv("FORWARD_UDP", ""), "Comma-separated host:port list; every telemetry datagram is also sent to each (empty = no forwarding)")
+	acceptReplay := flag.Bool("accept-replay", getEnv("TBDASH_ACCEPT_REPLAY", "") == "1", "Accept replayed telemetry (`turtle-agent dashboard-replay` marks it with \"replay\":true); off by default so a recording never shadows a live module (env TBDASH_ACCEPT_REPLAY=1)")
 	dbHost := flag.String("db-host", getEnv("DB_HOST", "127.0.0.1"), "MariaDB / MySQL host")
 	dbPort := flag.Int("db-port", getEnvInt("DB_PORT", 3306), "MariaDB / MySQL port")
 	dbUser := flag.String("db-user", getEnv("DB_USER", "mangos"), "MariaDB / MySQL user")
@@ -84,6 +115,17 @@ func main() {
 	// Optional folder of turtle-agent run maps (`turtle-agent map`: one SVG per run, plus the single-file HTML replay with --html).
 	// Read-only and off by default: unset, the Agent maps tab is hidden and its routes 404.
 	agentMapsDirRaw := flag.String("agent-maps-dir", getEnv("TBDASH_AGENT_MAPS_DIR", ""), "Optional folder of turtle-agent run maps (`turtle-agent map` .svg and .html replays) listed in the Agent maps tab (env TBDASH_AGENT_MAPS_DIR)")
+	// Optional folder of patrol paths for the plan layer (turtle-agent `trash-check --dash-out`, or a `patrol-record` tb-patrols file).
+	// Unset: the committed internal/plans/patrols.json only.
+	patrolsDir := flag.String("patrols-dir", getEnv("TBDASH_PATROLS_DIR", ""), "Optional folder of patrol path files (turtle-agent trash-check --dash-out, or a tb-patrols patrol-record file) drawn on the plan layer (env TBDASH_PATROLS_DIR)")
+	// The raid control relay (task A10): an authenticated SOAP forwarder for
+	// allow-listed GM run, gear and revive lines. Off unless a SOAP URL, a
+	// SOAP user and a mode-0600 password file are all configured.
+	soapURL := flag.String("soap-url", getEnv("TBDASH_SOAP_URL", ""), "Game server SOAP URL for the raid control relay (env TBDASH_SOAP_URL; empty = controls off)")
+	soapUser := flag.String("soap-user", getEnv("TBDASH_SOAP_USER", ""), "Game server SOAP account for the relay, rank 4 on test servers (env TBDASH_SOAP_USER; empty = controls off)")
+	soapPasswordFile := flag.String("soap-password-file", getEnv("TBDASH_SOAP_PASSWORD_FILE", ""), "File holding the SOAP account password, mode 0600 or stricter (env TBDASH_SOAP_PASSWORD_FILE; empty = controls off)")
+	controlMinGM := flag.Int("control-min-gm", getEnvInt("TBDASH_CONTROL_MIN_GM", 3), "Minimum dashboard session rank that may use the control relay (env TBDASH_CONTROL_MIN_GM)")
+	controlAudit := flag.String("control-audit", getEnv("TBDASH_CONTROL_AUDIT", ""), "Where the control relay appends its audit lines (env TBDASH_CONTROL_AUDIT; empty = next to the activity state file)")
 	devNoAuth := flag.Bool("dev-no-auth", false, "Disable Game Master authentication check for local dev testing")
 	// The activity rollup is in-memory, so without this a dashboard restart
 	// resets every counter. The file sits in the mounted icon-cache directory
@@ -92,6 +134,11 @@ func main() {
 	activityStateFile := flag.String("activity-state-file",
 		getEnv("ACTIVITY_STATE_FILE", filepath.Join(getEnv("ICON_CACHE_DIR", filepath.Join(os.TempDir(), "tortoise_icons")), "activity-state.json")),
 		"Where to persist the per-bot activity counters across dashboard restarts (empty disables)")
+	// The fight history sits next to the activity state file by default (the same writable mount); an empty path turns it off.
+	// The default is filled after Parse: it depends on this run's -activity-state-file, which the flag package cannot see while
+	// the defaults are built.
+	fightHistoryDir := flag.String("fight-history-dir", getEnv("TBDASH_FIGHT_HISTORY_DIR", ""),
+		"Where the fight history keeps its day files (<dir>/<commander>/<YYYY-MM-DD>.jsonl); default next to the activity state file, empty disables (env TBDASH_FIGHT_HISTORY_DIR)")
 	// Client zone art is not shipped: operators generate it from their own
 	// client with scripts/gen_zone_maps.py into maps/ next to the binary.
 	defaultMapsDir := "maps"
@@ -101,6 +148,9 @@ func main() {
 	mapsDir := flag.String("maps-dir", getEnv("MAPS_DIR", defaultMapsDir),
 		"Zone art generated by scripts/gen_zone_maps.py")
 	flag.Parse()
+	if !flagSet("fight-history-dir") && os.Getenv("TBDASH_FIGHT_HISTORY_DIR") == "" {
+		*fightHistoryDir = defaultHistoryDir(*activityStateFile)
+	}
 	if art, _ := filepath.Glob(filepath.Join(*mapsDir, "*.webp")); len(art) > 0 {
 		log.Printf("[Map] Serving %d generated zone maps from %s", len(art), *mapsDir)
 	} else {
@@ -269,9 +319,85 @@ func main() {
 		log.Printf("[AgentMaps] run maps served from %s (at most %d files, %d MiB each)", agentMaps.Root(), agentmaps.MaxFiles, agentmaps.MaxFileSize>>20)
 	}
 
+	// Dungeon and raid plans (the run leader's ai_dungeon_* rows, read-only, cached) for the map's plan layer, and the boss
+	// tactic rows the coverage view reads: opened here so the fight history's pack lookup can read them before the telemetry
+	// listener starts, and both services share the one small pool.
+	plans.SetPatrolsDir(*patrolsDir)
+	var planSvc *plans.Service
+	var tacticSvc *bosstactics.Service
+	worldDB, worldErr := plans.OpenWorld(*dbHost, *dbPort, *dbUser, *dbPass, *dbWorld)
+	if worldErr != nil {
+		log.Printf("[Plans] world database: %v (the plan layer and the boss coverage rows are off)", worldErr)
+	} else {
+		planSvc = plans.NewService(plans.NewSQLSource(worldDB))
+		tacticSvc = bosstactics.NewService(bosstactics.NewSQLSource(worldDB))
+	}
+
 	// 5. WebSocket hub and UDP ingestion
+	// Combat fights: the module's per-fight numbers (COMBAT_FIGHT datagrams), judged here by rules.json.
+	combatRules, err := combat.LoadRules(combat.DefaultRules())
+	if err != nil {
+		log.Fatalf("Bad combat rules: %v", err)
+	}
+	combatStore := combat.NewStore(combatRules)
+	// A live row is a fight only while the module's snapshot shows a hostile unit engaged with the group: buffs,
+	// consumables and heals on a parked raid keep the module's book open but are not a fight.
+	combatStore.SetEngaged(func(commander string) bool {
+		for _, b := range store.Commanders().Commanders {
+			if b.Commander == commander {
+				return combat.Engaged(b)
+			}
+		}
+		return false
+	})
 	hub := ws.NewHub()
+	// The live stream's own fan-out: per-commander positions and fight events
+	// over Server-Sent Events (GET /api/v1/live). The WebSocket above keeps
+	// carrying the roster, the Commanders snapshots and the finished fights.
+	liveHub := live.NewHub()
+
+	// The fight history (C1): one JSONL file per commander per UTC day, indexed for the debugger's night picker and same-pack
+	// table. The writer waits six seconds for a fight's last frames and runs off the UDP goroutine, which only enqueues.
+	var historyStore *history.Store
+	if *fightHistoryDir != "" {
+		packOf := func(ctx context.Context, plan string, f combat.Fight) int {
+			if planSvc == nil || plan == "" {
+				return 0
+			}
+			p, err := planSvc.Get(ctx, plan)
+			if err != nil || p == nil || p.Map != f.Map {
+				return 0
+			}
+			engaged := make([]uint32, 0, len(f.Engaged))
+			for _, e := range f.Engaged {
+				engaged = append(engaged, e.E)
+			}
+			return plans.FightPack(p, f.Step, f.Boss, engaged)
+		}
+		lanesOf := func(commander string, f combat.Fight) (int64, int64, bool) {
+			frames, _ := store.Track(commander, f.Start-state.TrackEdgeSec, f.Start+int64(f.DurMS)/1000+state.TrackEdgeSec)
+			return lanes.NonTank(frames, f)
+		}
+		historyStore, err = history.Open(history.Config{Dir: *fightHistoryDir}, packOf, lanesOf)
+		if err != nil {
+			log.Printf("[History] fight history off: %v", err)
+			historyStore = nil
+		} else {
+			historyStore.SetMetrics(metricsRegistry)
+			log.Printf("[History] fights kept in %s (at most %d days, %d MiB)", *fightHistoryDir, history.HistoryDays, history.HistoryMaxBytes>>20)
+		}
+	}
+
 	udpListener := udp.NewListener(*udpHost, *udpPort, store, metricsRegistry, projectionEngine, hub)
+	udpListener.SetCombatStore(combatStore)
+	udpListener.SetLiveSink(liveHub)
+	if historyStore != nil {
+		udpListener.SetHistory(historyStore)
+	}
+	udpListener.SetAcceptReplay(*acceptReplay)
+	if *acceptReplay {
+		log.Printf("[UDP] Accepting replayed datagrams (-accept-replay)")
+	}
 	var forwards []string
 	for _, f := range strings.Split(*forwardUDP, ",") {
 		if f = strings.TrimSpace(f); f != "" {
@@ -287,7 +413,21 @@ func main() {
 	if err := udpListener.Start(); err != nil {
 		log.Fatalf("Failed to start UDP listener: %v", err)
 	}
-	defer udpListener.Stop()
+
+	// The live stream's gauge and dropped counter for Prometheus; a once-a-
+	// second sample is enough for a gauge and keeps the read loop free.
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		var dropped uint64
+		for range ticker.C {
+			metricsRegistry.SetLiveClients(liveHub.Clients())
+			if d := liveHub.Dropped(); d != dropped {
+				metricsRegistry.AddLiveDropped(d - dropped)
+				dropped = d
+			}
+		}
+	}()
 
 	// 6. HTTP router
 	mux := http.NewServeMux()
@@ -402,13 +542,14 @@ func main() {
 
 	mux.HandleFunc("/api/v1/auth/logout", logoutHandler(authService))
 
-	requireAuth := func(next http.HandlerFunc) http.HandlerFunc {
+	requireSession := func(next func(http.ResponseWriter, *http.Request, *auth.SessionData)) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if *devNoAuth {
-				next(w, r)
+				next(w, r, nil)
 				return
 			}
-			if _, err := authService.GetSessionFromRequest(r); err != nil {
+			session, err := authService.GetSessionFromRequest(r)
+			if err != nil {
 				if strings.HasPrefix(r.URL.Path, "/api/") {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusUnauthorized)
@@ -418,8 +559,13 @@ func main() {
 				http.Redirect(w, r, "/login", http.StatusFound)
 				return
 			}
-			next(w, r)
+			next(w, r, session)
 		}
+	}
+	requireAuth := func(next http.HandlerFunc) http.HandlerFunc {
+		return requireSession(func(w http.ResponseWriter, r *http.Request, _ *auth.SessionData) {
+			next(w, r)
+		})
 	}
 
 	indexHTML, _ := web.FS.ReadFile("index.html")
@@ -531,6 +677,69 @@ func main() {
 		writeJSON(w, store.Dungeons())
 	}))
 
+	mux.HandleFunc("GET /api/v1/plans/{plan}", requireAuth(plans.Handler(planSvc)))
+
+	// The boss tactic rows the coverage view compares with the boss table:
+	// read-only, one cached snapshot, filtered per map on the cached copy.
+	mux.HandleFunc("GET /api/v1/boss/tactics", requireAuth(bosstactics.Handler(tacticSvc)))
+
+	// Combat fights ("a light Turtle Logs"): the module's per-fight numbers
+	// (COMBAT_FIGHT datagrams), judged here by rules.json. The list is per
+	// commander, newest first; each fight carries the v1 warnings with it.
+	mux.HandleFunc("/api/v1/combat/fights", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		rows := combatStore.List(r.URL.Query().Get("commander"))
+		if historyStore != nil {
+			for i := range rows {
+				if row, ok := historyStore.Lookup(rows[i].Key); ok {
+					rows[i].PackKey, rows[i].NonTankMs = row.PackKey, row.NonTankMs
+				}
+			}
+		}
+		writeJSON(w, rows)
+	}))
+	mux.HandleFunc("/api/v1/combat/fight/", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		// The detail key is (commander, session, id): fight ids repeat
+		// across commanders and sessions. The list rows carry the composed
+		// key; callers may also pass the three parts as query params.
+		q := r.URL.Query()
+		key := strings.TrimPrefix(r.URL.Path, "/api/v1/combat/fight/")
+		f, warnings, ok := combatStore.GetKey(key)
+		if !ok {
+			if commander, session, id, qok := combatFightKey(q); qok {
+				f, warnings, ok = combatStore.Get(commander, session, id)
+			}
+		}
+		if !ok {
+			// Not in memory: a past night's fight, re-read from its history file and judged now with the same rules.
+			if historyStore != nil {
+				if hf, row, hok := historyStore.Fight(key); hok {
+					writeJSON(w, struct {
+						Fight    combat.Fight     `json:"fight"`
+						Warnings []combat.Warning `json:"warnings"`
+						Hist     bool             `json:"hist,omitempty"`
+						PackKey  string           `json:"pack_key,omitempty"`
+					}{hf, combat.Judge(hf, combatStore.Rules()), true, row.PackKey})
+					return
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"no such fight"}`))
+			return
+		}
+		writeJSON(w, struct {
+			Fight    combat.Fight     `json:"fight"`
+			Warnings []combat.Warning `json:"warnings"`
+		}{f, warnings})
+	}))
+
+	// The fight history across nights: the night picker's days, one day's fights, and the same pack across runs. Fights the
+	// daemon still remembers and ones only on disk answer alike; the history disabled answers the empty shapes.
+	mux.HandleFunc("GET /api/v1/combat/history/days", requireAuth(history.DaysHandler(historyStore)))
+	mux.HandleFunc("GET /api/v1/combat/history/commanders", requireAuth(history.CommandersHandler(historyStore)))
+	mux.HandleFunc("GET /api/v1/combat/history", requireAuth(history.ListHandler(historyStore)))
+	mux.HandleFunc("GET /api/v1/combat/packs", requireAuth(history.PackHandler(historyStore)))
+
 	// The bound bots' recent paths (a short bounded history kept in memory), so a page opened mid-run starts with the trails drawn:
 	// {"<commander>": {"<bot guid>": {"map": 209, "pts": [[x, y, unix seconds], ...]}}}, oldest point first. A point where something
 	// happened carries a fourth element: "d" the bot died here, "t" it teleported (a jump no walking explains), "r" the same while dead
@@ -559,6 +768,60 @@ func main() {
 		writeJSON(w, out)
 	}))
 
+	// The bound bots' and nearby enemies' places over time (one frame per COMMANDERS report, the last 30 min), for the fight
+	// debugger's replay and aggro lanes: ?commander=&from=&to= (unix seconds, at most 1800 s apart).
+	mux.HandleFunc("GET /api/v1/commanders/track", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		c, from, to, err := state.ParseTrackWindow(r.URL.Query())
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"bad window"}`))
+			return
+		}
+		frames, names, tracked := store.TrackWindow(c, from, to)
+		writeJSON(w, state.TrackJSON(c, frames, names, tracked))
+	}))
+
+	// The live stream (S1): Server-Sent Events for the commanders the open tab draws, so positions and fight events reach the
+	// page as they happen instead of on the next report. The first frame is the state at connect (snapshot), then one frame per
+	// accepted datagram. Same login and same-origin rule as the rest of the API; see tools/observability/README.md.
+	initialFrames := func(commanders []string) []live.Frame {
+		asked := make(map[string]bool, len(commanders))
+		for _, c := range commanders {
+			asked[c] = true
+		}
+		view := store.Commanders()
+		binds := make([]model.CommanderBinding, 0, len(commanders))
+		for _, b := range view.Commanders {
+			if asked[b.Commander] {
+				binds = append(binds, b)
+			}
+		}
+		data, err := json.Marshal(struct {
+			Commanders []model.CommanderBinding `json:"commanders"`
+			Live       []combat.FightSummary    `json:"live"`
+			UpdatedAt  int64                    `json:"updated_at"`
+		}{binds, combatStore.LiveRows(commanders), view.UpdatedAt})
+		if err != nil {
+			return nil
+		}
+		return []live.Frame{{Event: "snapshot", Data: data}}
+	}
+	mux.HandleFunc("GET /api/v1/live", requireSession(func(w http.ResponseWriter, r *http.Request, session *auth.SessionData) {
+		// The stream outlives this request's login check, so it carries the
+		// signed expiry and a rank revalidation of its own.
+		sess := live.Session{}
+		if session != nil {
+			sess = live.Session{
+				ExpiresAt: time.Unix(session.ExpiresAt, 0),
+				Check:     func() error { return authService.RecheckAccount(session.AccountID) },
+			}
+		}
+		live.Handler(liveHub,
+			live.Options{Heartbeat: 15 * time.Second, WriteTimeout: 10 * time.Second, Retry: 3 * time.Second, Recheck: 60 * time.Second},
+			sess, initialFrames)(w, r)
+	}))
+
 	// Real map pictures for the Commanders maps: the layer list of a map id, and the .png/.json files of the TBDASH_MAP_DIR folder
 	// (nothing else). Behind the same login as the rest of the API.
 	if mapPics != nil {
@@ -569,11 +832,9 @@ func main() {
 	// Dungeon runs (GET /api/v1/dungeon-runs; the live Dungeons tab is /api/v1/dungeons above): success rate, clear times, boss kill times and wipe spots from the run trace summaries. Files only; GET only.
 	dungeonIndex.Register(mux, requireAuth)
 	// Turtle-agent run maps (issue #1102): the list and the read-only files of --agent-maps-dir, behind the same login. The folder
-	// is off by default; when it is not set no route is registered, so the tab's URLs 404 and the page hides the tab.
-	if agentMaps != nil {
-		mux.HandleFunc(agentmaps.ListPrefix, requireAuth(agentMaps.HandleList))
-		mux.HandleFunc(agentmaps.FilePrefix, requireAuth(agentMaps.HandleFile))
-	}
+	// is off by default: the list then answers 200 with enabled=false (the page hides the tab) and every file 404s.
+	mux.HandleFunc(agentmaps.ListPrefix, requireAuth(agentMaps.HandleList))
+	mux.HandleFunc(agentmaps.FilePrefix, requireAuth(agentMaps.HandleFile))
 
 	mux.HandleFunc("/api/v1/server-info", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		if info := store.ServerInfo(); info != nil {
@@ -674,6 +935,39 @@ func main() {
 		}
 		writeJSON(w, page)
 	}))
+	// The raid control relay: allow-listed GM lines forwarded to the game
+	// server over SOAP. Only when a SOAP URL, user and a mode-0600 password
+	// file are all configured; otherwise the route answers 404 and the log
+	// names the missing setting, never the credential.
+	auditPath := *controlAudit
+	if auditPath == "" && *activityStateFile != "" {
+		auditPath = filepath.Join(filepath.Dir(*activityStateFile), "control-audit.log")
+	}
+	if auditPath == "" {
+		auditPath = "control-audit.log"
+	}
+	controlCfg, _ := control.Configure(*soapURL, *soapUser, *soapPasswordFile, uint32(*controlMinGM), auditPath, func(r *http.Request) (string, uint32, error) {
+		sd, err := authService.GetSessionFromRequest(r)
+		if err != nil {
+			return "", 0, err
+		}
+		return sd.Username, sd.Rank, nil
+	})
+	if controlCfg.Enabled {
+		mux.Handle("/api/v1/control", requireAuth(controlCfg.Relay.ServeHTTP))
+		mux.HandleFunc("GET /api/v1/control", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, map[string]bool{"enabled": true})
+		}))
+		log.Printf("[Control] relay on (min GM rank %d, audit %s)", *controlMinGM, auditPath)
+	} else {
+		log.Printf("[Control] %s", controlCfg.Reason)
+		mux.HandleFunc("/api/v1/control", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		}))
+		mux.HandleFunc("GET /api/v1/control", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, map[string]bool{"enabled": false})
+		}))
+	}
 
 	upgrader := websocket.Upgrader{
 		// Only the dashboard's own pages may open an authenticated stream
@@ -714,9 +1008,54 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	// A container restart sends SIGTERM (Ctrl+C, SIGINT): without a handler the process would die and lose the fights still
+	// waiting in the history writer.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := serve(ctx, server, udpListener, historyStore); err != nil {
 		log.Fatalf("HTTP server failed: %v", err)
 	}
+}
+
+// shutdownTimeout bounds the HTTP drain (an open SSE stream may never go idle; the rest of the shutdown still runs), and
+// historyShutdownTimeout bounds the history writer, whose pack lookup reads the world database: a hung read must delay the
+// process by seconds, not forever.
+const (
+	shutdownTimeout        = 5 * time.Second
+	historyShutdownTimeout = 10 * time.Second
+)
+
+// shutdown stops the daemon in the order that keeps a finished fight: the HTTP server first (no new requests), then UDP
+// ingestion (and waits for its read loop, so nothing enqueues afterwards), then the history writer, whose Close writes what is
+// still queued or reports what a slow lookup kept from being written. Every step tolerates a second call.
+func shutdown(server *http.Server, udpListener *udp.Listener, fights *history.Store) {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("[HTTP] Shutdown: %v", err)
+		_ = server.Close()
+	}
+	udpListener.Stop()
+	deadline, stopWrites := context.WithTimeout(context.Background(), historyShutdownTimeout)
+	defer stopWrites()
+	fights.Close(deadline)
+}
+
+// serve runs the HTTP server until it fails or ctx is cancelled, then shuts everything down and returns the server's error.
+func serve(ctx context.Context, server *http.Server, udpListener *udp.Listener, fights *history.Store) error {
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.ListenAndServe() }()
+	var err error
+	select {
+	case err = <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+	case <-ctx.Done():
+		log.Printf("[HTTP] Stopping on %v", ctx.Err())
+	}
+	shutdown(server, udpListener, fights)
+	return err
 }
 
 // logoutHandler ends the session. Logout is POST-only: a GET or HEAD must not
@@ -750,6 +1089,29 @@ func logoutHandler(authService *auth.Service) http.HandlerFunc {
 func writeJSON(w http.ResponseWriter, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+// combatFightKey reads the triple (commander, session, id) from the detail
+// query params. Fight ids repeat across commanders and sessions, so the
+// detail route requires all three.
+func combatFightKey(q map[string][]string) (string, uint64, string, bool) {
+	commanders, ok := q["commander"]
+	if !ok || len(commanders) == 0 || commanders[0] == "" {
+		return "", 0, "", false
+	}
+	sessions, ok := q["session"]
+	if !ok || len(sessions) == 0 || sessions[0] == "" {
+		return "", 0, "", false
+	}
+	session, err := strconv.ParseUint(sessions[0], 10, 64)
+	if err != nil {
+		return "", 0, "", false
+	}
+	ids, ok := q["id"]
+	if !ok || len(ids) == 0 || ids[0] == "" {
+		return "", 0, "", false
+	}
+	return commanders[0], session, ids[0], true
 }
 
 // qUint parses an optional unsigned query parameter; absent or malformed

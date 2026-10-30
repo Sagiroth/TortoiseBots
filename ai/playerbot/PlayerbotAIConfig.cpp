@@ -8,6 +8,7 @@
 #include "../../runtime/HireLevelPolicy.h"
 #include "../../runtime/HireFeePolicy.h"
 #include "../../runtime/HireRaidPolicy.h"
+#include "../../runtime/policy/hire/BotGearPolicy.h"
 #include "../../runtime/HireUnlockPolicy.h"
 #include "../../runtime/RemoteCommanderView.h"
 #include <algorithm>
@@ -137,9 +138,20 @@ inline ParsedUrl parseUrl(const std::string& url) {
 void PlayerbotAIConfig::LoadDungeonRunKeys()
 {
     dungeonSelfClear = config.GetBoolDefault("AiPlayerbot.DungeonSelfClear", true);
+    dungeonRunRaid = config.GetBoolDefault("AiPlayerbot.DungeonRunRaid", false);
     dungeonRunMaxMinutes = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.DungeonRunMaxMinutes", 180)));
     dungeonRunAggroEstimate = config.GetBoolDefault("AiPlayerbot.DungeonRunAggroEstimate", false);
     dungeonRunAggroCeiling = static_cast<uint32>(std::max(1, config.GetIntDefault("AiPlayerbot.DungeonRunAggroCeiling", 6)));
+    // The margin's ceiling is kPackClearMarginMaxYd (30, kPatrolSeeYd in DungeonRunPolicy.h); the policy reads 0 as off.
+    dungeonRunPackClearMarginYd = std::min(30.0f, std::max(0.0f,
+        config.GetFloatDefault("AiPlayerbot.DungeonRunPackClearMarginYd", 10.0f)));
+    dungeonRunPackClearRepulls = static_cast<uint32>(std::min(10, std::max(1,
+        config.GetIntDefault("AiPlayerbot.DungeonRunPackClearRepulls", 3))));
+    dungeonRunNearWipeStop = static_cast<uint32>(std::min(10, std::max(0,
+        config.GetIntDefault("AiPlayerbot.DungeonRunNearWipeStop", 2))));
+    dungeonRunNearWipeStopMinutes = static_cast<uint32>(std::min(60, std::max(1,
+        config.GetIntDefault("AiPlayerbot.DungeonRunNearWipeStopMinutes", 10))));
+    dungeonRunNearWipeStopParty = config.GetBoolDefault("AiPlayerbot.DungeonRunNearWipeStopParty", false);
     dungeonRunRezHold = config.GetBoolDefault("AiPlayerbot.DungeonRunRezHold", false);
     dungeonRunPullStand = config.GetBoolDefault("AiPlayerbot.DungeonRunPullStand", false);
     dungeonRunWalkBackAfterWonFight = config.GetBoolDefault("AiPlayerbot.DungeonRunWalkBackAfterWonFight", false);
@@ -554,6 +566,7 @@ bool PlayerbotAIConfig::Initialize()
     if (hireMinAccountSecurity > 6)
         hireMinAccountSecurity = 6;
     hireMaxBotsPerPlayer = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireMaxBotsPerPlayer", 4));
+    // 39 stays the ceiling: the 40th seat of a bound raid is the commander's alone (HireMaxCompanions in HireRaidPolicy.h).
     if (hireMaxBotsPerPlayer > 39)
         hireMaxBotsPerPlayer = 39;
     // Read signed: a negative value must mean 0, not wrap to a huge allowance.
@@ -609,6 +622,13 @@ bool PlayerbotAIConfig::Initialize()
             sLog.outError("AiPlayerbot.HireRaidPresets '%s' is malformed (name=composition;name=composition); using the default", hireRaidPresets.c_str());
             hireRaidPresets = TortoiseBots::kHireRaidPresetsDefault;
         }
+    }
+    botGearPresets = config.GetStringDefault("AiPlayerbot.BotGearPresets", TortoiseBots::BotGear::kPresetsDefault);
+    if (TortoiseBots::BotGear::ParsePresets(botGearPresets).empty())
+    {
+        sLog.outError("AiPlayerbot.BotGearPresets '%s' is malformed (name=t<tier> [ilvl=<cap>];...); using the default",
+            botGearPresets.c_str());
+        botGearPresets = TortoiseBots::BotGear::kPresetsDefault;
     }
     // Issue #490: static hire-gear tiers. Fallbacks equal the shipped
     // template values.
@@ -688,6 +708,7 @@ bool PlayerbotAIConfig::Initialize()
     remoteCommanderViewMs = TortoiseBots::RemoteCommander::View::ClampIntervalMs(
         config.GetIntDefault("AiPlayerbot.RemoteCommanderViewMs",
             static_cast<int>(TortoiseBots::RemoteCommander::View::kDefaultIntervalMs)));
+    raidEntryByCommander = config.GetBoolDefault("AiPlayerbot.RaidEntryByCommander", true);
     // Run trace (opt-in): see docs/server/run-trace.md.
     runTrace = config.GetBoolDefault("AiPlayerbot.RunTrace.Enabled", false);
     runTraceIntervalMs = TortoiseBots::RunTrace::ClampIntervalMs(
@@ -854,6 +875,7 @@ bool PlayerbotAIConfig::Initialize()
 
     rndBotCheatMask = uint32(CheatAction::GetCheatMask(config.GetStringDefault("AiPlayerbot.RndBotCheats", "repair,breath,item")));
 
+    combatMonitor = config.GetBoolDefault("AiPlayerbot.CombatMonitor", false);
     raidBossDiagnostics = config.GetBoolDefault("AiPlayerbot.RaidBossDiagnostics", false);
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.AllowedLogFiles", "bot_events.csv,deaths.csv"), allowedLogFiles);
     logRetentionDays = uint32(std::max(0, config.GetIntDefault("AiPlayerbot.LogRetentionDays", 3)));

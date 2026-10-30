@@ -534,6 +534,77 @@ void PaladinOffhealRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& 
     OffhealRaidStrategy::InitNonCombatTriggers(triggers);
 }
 
+void PaladinOffdpsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    OffdpsStrategy::InitCombatTriggers(triggers);
+
+    // Holy healer damage (priest/shaman offdps pattern): only while nobody
+    // needs healing and mana is comfortable (`healer should attack` gate),
+    // at the lowest relevance so every heal outbids it. Hammer of Wrath
+    // only executes (core refuses it above 20% target health); Holy Shock
+    // needs the talent; Judgement spends the seal, so its own usefulness
+    // keeps it out below medium mana. Exorcism fires only on Undead/Demon
+    // (its trigger) - core rejects other types.
+    triggers.push_back(new TriggerNode(
+        "healer should attack",
+        NextAction::array(0,
+            new NextAction("hammer of wrath", ACTION_DEFAULT + 0.5f),
+            new NextAction("holy shock", ACTION_DEFAULT + 0.4f),
+            new NextAction("judgement", ACTION_DEFAULT + 0.3f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "exorcism and healer should attack",
+        NextAction::array(0, new NextAction("exorcism", ACTION_DEFAULT + 0.2f), NULL)));
+
+    // Consecration pays on a pack and on nothing else (CastConsecrationAction
+    // counts attackers in its 8 yd radius itself); the pack gate keys off a
+    // melee-range cluster so the healer does not paint empty ground.
+    triggers.push_back(new TriggerNode(
+        "melee medium aoe and healer should attack",
+        NextAction::array(0, new NextAction("consecration", ACTION_DEFAULT + 0.6f), NULL)));
+}
+
+void PaladinOffdpsStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    OffdpsStrategy::InitNonCombatTriggers(triggers);
+}
+
+void PaladinOffdpsPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    PaladinOffdpsStrategy::InitCombatTriggers(triggers);
+    OffdpsPvpStrategy::InitCombatTriggers(triggers);
+}
+
+void PaladinOffdpsPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    PaladinOffdpsStrategy::InitNonCombatTriggers(triggers);
+    OffdpsPvpStrategy::InitNonCombatTriggers(triggers);
+}
+
+void PaladinOffdpsPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    PaladinOffdpsStrategy::InitCombatTriggers(triggers);
+    OffdpsPveStrategy::InitCombatTriggers(triggers);
+}
+
+void PaladinOffdpsPveStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    PaladinOffdpsStrategy::InitNonCombatTriggers(triggers);
+    OffdpsPveStrategy::InitNonCombatTriggers(triggers);
+}
+
+void PaladinOffdpsRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    PaladinOffdpsStrategy::InitCombatTriggers(triggers);
+    OffdpsRaidStrategy::InitCombatTriggers(triggers);
+}
+
+void PaladinOffdpsRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    PaladinOffdpsStrategy::InitNonCombatTriggers(triggers);
+    OffdpsRaidStrategy::InitNonCombatTriggers(triggers);
+}
+
 void PaladinAuraStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
 

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
   <title>TortoiseBots — Server & Bot Observability</title>
-  <link rel="stylesheet" href="/static/css/app.css?v=13">
+  <link rel="stylesheet" href="/static/css/app.css?v=17">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%232ea043%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polygon points=%2212 2 2 7 12 12 22 7 12 2%22/><polyline points=%222 17 12 22 22 17%22/><polyline points=%222 12 12 17 22 12%22/></svg>">
 </head>
 <body>
@@ -63,6 +63,10 @@
       <a class="menu-item" data-tab="dungeon-runs" href="#/dungeon-runs" title="Dungeon runs: success rate, clear times, boss kill times and where the party wiped (run trace summaries)">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21V10a9 9 0 0 1 18 0v11"/><path d="M9 21v-6a3 3 0 0 1 6 0v6"/><line x1="2" y1="21" x2="22" y2="21"/></svg>
         <span>Dungeon runs</span>
+      </a>
+      <a class="menu-item" data-tab="coverage" href="#/coverage" title="Raid coverage: which boss abilities the bots have an answer for, and which gaps are still open">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><polyline points="8.5 12 11 14.5 15.5 9.5"/></svg>
+        <span>Raid coverage</span>
       </a>
       <a class="menu-item" data-tab="progress" href="#/progress" title="Levelling speed, XP and gear behind level">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
@@ -353,7 +357,7 @@
           <!-- WORLD VIEW (default): one continent at a time, all its bots -->
           <div id="world-view">
             <div class="map-viewport" id="world-viewport">
-              <img class="map-img" id="world-img" src="/maps/azeroth.webp" alt="Continent Map">
+              <img class="map-img" id="world-img" alt="Continent Map" style="display: none;">
               <canvas id="world-canvas" class="map-overlay" style="pointer-events: none;"></canvas>
               <div id="world-overlay" class="map-overlay"></div>
               <div id="world-noart" class="zone-noart" style="display: none;"></div>
@@ -363,7 +367,7 @@
           <!-- ZONE VIEW (drill-down) -->
           <div id="zone-view" style="display: none;">
             <div class="map-viewport" id="zone-viewport">
-              <img id="map-img" class="map-img" src="/maps/elwynn.webp" alt="Zone Map">
+              <img id="map-img" class="map-img" alt="Zone Map" style="display: none;">
               <canvas id="map-canvas" class="map-overlay" style="pointer-events: none;"></canvas>
               <div id="map-overlay" class="map-overlay"></div>
               <div id="zone-noart" class="zone-noart" style="display: none;"></div>
@@ -490,6 +494,11 @@
         <div id="dg-root"></div>
       </section>
 
+      <!-- TAB: RAID COVERAGE — which boss abilities the bots have an answer for, boss by boss, and what the table does not classify -->
+      <section id="tab-coverage" class="tab-view" style="display: none;">
+        <div id="cov-root" class="cov-root"></div>
+      </section>
+
       <!-- TAB: DUNGEONS — every live instance copy (dungeon or raid) that has bots in it, one run per copy (issue #895) -->
       <section id="tab-dungeons" class="tab-view" style="display: none;">
         <div id="dgn-empty" class="card cmd-empty">
@@ -558,6 +567,13 @@
           <p id="cmd-empty-why" class="empty-hint"></p>
           <p class="empty-hint">A card appears here within a couple of seconds of a binding. A commander binds a bot-only party of up to five with <code>.bot commander bind &lt;LeadBot&gt; [&lt;Bot&gt; ...]</code> (a GM, or a player who controls every bot of the party; the server needs <code>AiPlayerbot.RemoteCommander = 1</code>). The card goes away when the commander unbinds with <code>.bot commander unbind</code>, logs out, or the party breaks up.</p>
         </div>
+        <!-- The page's one view: Live keeps the stacked cards, Fight debugger the raid tabs. Kept in this browser. -->
+        <div class="card cmd-view-bar">
+          <div class="seg cmd-page-seg" id="cmd-page-mode" role="group" aria-label="Commanders view">
+            <button type="button" class="seg-btn" data-page-mode="live" aria-pressed="false">Live</button>
+            <button type="button" class="seg-btn" data-page-mode="debug" aria-pressed="false">Fight debugger</button>
+          </div>
+        </div>
         <!-- Refresh rate: the same choice as in the top bar (one setting for every live view, kept in this browser). -->
         <div class="card cmd-refresh-bar">
           <label class="refresh-picker">
@@ -584,6 +600,10 @@
           <div id="cmd-layers-body" class="cmd-layers-body"></div>
           <button type="button" id="cmd-layers-reset" class="btn">Reset to defaults</button>
         </details>
+        <!-- Fight debugger mode: All raids first, then one tab per commander. #/commanders/<name> opens a tab. -->
+        <div id="cmd-tabs" class="cmd-tabs" role="tablist" aria-label="Raids" hidden></div>
+        <!-- The All raids tab: one small card per commander. -->
+        <div id="cmd-overview" class="cmd-overview" hidden></div>
         <div id="cmd-list"></div>
         <!-- Only present when the operator set TBDASH_COMMANDER_URL; the frame is not loaded until it is opened. -->
         <details id="cmd-external" class="card cmd-external" hidden>
@@ -790,7 +810,19 @@
 <script src="/static/js/unitinfo.js?v=2"></script>
 <script src="/static/js/paths.js?v=2"></script>
 <script src="/static/js/dungeon-runs.js?v=1"></script>
+<script src="/static/js/fights.js?v=1"></script>
+<script src="/static/js/fightdebug.js?v=2"></script>
+<script src="/static/js/bosspanel.js?v=1"></script>
+<script src="/static/js/fdtabs.js?v=1"></script>
+<script src="/static/js/planoverlay.js?v=1"></script>
+<script src="/static/js/fightreplay.js?v=2"></script>
+<script src="/static/js/aggrolanes.js?v=1"></script>
 <script src="/static/js/demo.js?v=2"></script>
-<script src="/static/js/app.js?v=22"></script>
+<script src="/static/js/glide.js?v=1"></script>
+<script src="/static/js/readycheck.js?v=1"></script>
+<script src="/static/js/live.js?v=1"></script>
+<script src="/static/js/fighthistory.js?v=1"></script>
+<script src="/static/js/coverage.js?v=1"></script>
+<script src="/static/js/app.js?v=30"></script>
 </body>
 </html>
