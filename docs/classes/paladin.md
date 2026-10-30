@@ -30,7 +30,7 @@ Paladins provide resilient group utility, customizable auras, coordinated blessi
 - Downranks direct heals (*Holy Light*, *Flash of Light*) to match wounds per [shared downranking rules](overview.md#spell-downranking).
 - Casts *Holy Shock* on allies below 50% health.
 - Weaves *Crusader Strike* only when already in melee reach, without moving out of healing position.
-- Carries the `offdps` strategy name by default, but it currently adds no damage kit (see [healer off-DPS rules](overview.md#healer-off-dps-offdps)).
+- Deals off-spec damage (*Hammer of Wrath* on dying targets, *Holy Shock*, *Judgement*, *Exorcism* on Undead or Demon targets, *Consecration* into packs) per [healer off-DPS rules](overview.md#healer-off-dps-offdps).
 - Casts *Divine Shield* (Bubble) when personally critically wounded, continuing to heal while immune.
 
 ### Protection (Tank)
