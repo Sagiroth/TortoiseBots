@@ -334,8 +334,8 @@ bool MoveToFishAction::Execute(Event& event)
         // off its arrival to the far point. Fish the nearest point instead.
         WorldPosition const* targetPos = target ? target->getPosition() : nullptr;
         if (target && target->GetDestination())
-            if (WorldPosition* near = target->GetDestination()->GetClosestPoint(WorldPosition(bot)))
-                targetPos = near;
+            if (WorldPosition* closest = target->GetDestination()->GetClosestPoint(WorldPosition(bot)))
+                targetPos = closest;
         // The stored spot outlives its travel target: after a re-pick the bot
         // works the new point while the spot still names the old one, so the
         // cast never comes in range. A spot far from (or off the map of) the
