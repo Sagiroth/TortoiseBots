@@ -16441,6 +16441,103 @@ static void TestClassifyPullRead()
     CHECK(ClassifyPullRead(in, 20.5f, 0.0f) == PullRead::Patroller);
 }
 
+// --- Zul'Gurub walk 3 (2026-10-30, run.log 252-253, 400-401): two Bloodseeker Bats (11368) flew 12-20 yd above a
+// pull centre, 6.7 and 14.2 yd from it on the ground. The 10 yd height bound judged them another floor ("Left"), the
+// step cleared with no pull, and the bats joined a later pull. A flying unit counts as residue whatever its height
+// when the floor under it is the centre's floor; over a ledge or a lower floor it keeps the old rule.
+
+static PullReadIn Walk3Bat()
+{
+    PullReadIn in;
+    in.fromPoint = 21.1f;   // sqrt(6.7^2 + 20^2)
+    in.fromPoint2d = 6.7f;
+    in.dz = 20.0f;
+    in.airborne = true;
+    return in;
+}
+
+static void TestFlyingUnitOverTheCentresFloorIsResidue()
+{
+    PullReadIn in = Walk3Bat();
+    CHECK(AirborneFloorAsked(in, 20.5f, 10.0f));
+    // The map height under the bat: the plateau floor, 0.1 yd off the centre's z (130.91).
+    CHECK(SameFloorUnder(true, 131.0f, 130.91f));
+    in.airborneSameFloor = SameFloorUnder(true, 131.0f, 130.91f);
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Residue);
+    CHECK(ClassifyPullRead(in, 20.5f, 0.0f) == PullRead::Left); // the gate off: unchanged
+    // So the step re-pulls it before "pack cleared".
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Residue(0xc001, 11368, 21.0f, 6.7f, -12160.4f, -1484.6f, 150.9f)};
+    CHECK(Tick(r, f) == "pullback 49153");
+    CHECK(r.step == 0);
+    CHECK(r.note == "pack not cleared: 1 left within 30.5 yd of the pull centre (re-pull 1 of 3); pulling 11368");
+}
+
+static void TestFlyingUnitOverAnotherFloorIsNotResidue()
+{
+    PullReadIn in = Walk3Bat();
+    CHECK(AirborneFloorAsked(in, 20.5f, 10.0f));
+    CHECK(!SameFloorUnder(true, 146.0f, 130.91f));   // a ledge 15.1 yd above the centre, under the bat
+    CHECK(!SameFloorUnder(true, 115.0f, 130.91f));   // a lower floor
+    CHECK(!SameFloorUnder(false, 131.0f, 130.91f));  // no floor found: the old rule
+    CHECK(SameFloorUnder(true, 140.91f, 130.91f));   // the bound itself is the same floor
+    CHECK(!SameFloorUnder(true, 141.0f, 130.91f));
+    in.airborneSameFloor = false;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Left);
+    // The clear note says how far, how high and why it was no residue.
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packNearestLeft = Unit(0xc001, 11368, 21.0f);
+    f.packNearestLeft.distSpot = 6.7f;
+    f.packNearestLeftRead = in;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1);
+    CHECK(r.note == "pack cleared; nearest of its units left: 11368 0x000000000000c001 6.7 yd from the centre, "
+                    "21.1 yd in 3D, 20.0 yd above (flying over another floor)");
+}
+
+static void TestGroundUnitAboveTheBandIsUnchanged()
+{
+    PullReadIn in = Walk3Bat();
+    in.airborne = false;
+    CHECK(!AirborneFloorAsked(in, 20.5f, 10.0f)); // no height query for a ground unit
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Left);
+    in.airborneSameFloor = true; // a stray fact without the flag changes nothing
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Left);
+    in.airborneSameFloor = false;
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packNearestLeft = Unit(0xc001, 11368, 21.0f);
+    f.packNearestLeft.distSpot = 6.7f;
+    f.packNearestLeftRead = in;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.note == "pack cleared; nearest of its units left: 11368 0x000000000000c001 6.7 yd from the centre, "
+                    "21.1 yd in 3D, 20.0 yd above (other floor)");
+}
+
+static void TestAirborneFloorAskedOnlyAboveTheBand()
+{
+    PullReadIn in = Walk3Bat();
+    CHECK(!AirborneFloorAsked(in, 20.5f, 0.0f)); // the gate off
+    in.dz = 8.0f;
+    in.fromPoint = 10.6f;
+    CHECK(!AirborneFloorAsked(in, 20.5f, 10.0f)); // within the radius: a unit
+    in.fromPoint = 22.0f;
+    in.fromPoint2d = 20.6f;
+    CHECK(!AirborneFloorAsked(in, 20.5f, 10.0f)); // within the height bound: residue already
+    in = Walk3Bat();
+    in.fromPoint2d = 31.0f;
+    in.fromPoint = 37.0f;
+    CHECK(!AirborneFloorAsked(in, 20.5f, 10.0f)); // beyond the band on the ground
+    in = Walk3Bat();
+    in.dz = -20.0f;
+    CHECK(AirborneFloorAsked(in, 20.5f, 10.0f)); // below the centre: asked, and its floor is lower still
+}
+
 static void TestPullStepWaitsForItsOwnPatrolAtTheFarEnd()
 {
     DungeonPlan plan = ZgPlateauPlan();
@@ -16640,11 +16737,15 @@ static void TestZeroPullClearNamesNearestLeft()
     Facts f = ZgParty();
     f.packNearestLeft = Unit(0xc025, 14750, 59.9f);
     f.packNearestLeft.distSpot = 64.0f;
+    f.packNearestLeftRead.fromPoint = 64.0f;
+    f.packNearestLeftRead.fromPoint2d = 64.0f;
+    f.packNearestLeftRead.dz = -0.4f;
     {
         Run r = Start(&plan);
         CHECK(Tick(r, f).empty());
         CHECK(r.step == 1);
-        CHECK(r.note == "pack cleared; nearest of its units left: 14750 0x000000000000c025 64.0 yd from the centre");
+        CHECK(r.note == "pack cleared; nearest of its units left: 14750 0x000000000000c025 64.0 yd from the centre, "
+                        "64.0 yd in 3D, 0.4 yd below (outside the 30.5 yd band)");
     }
     // A step that pulled something is no diagnostic: no suffix.
     {
@@ -24328,6 +24429,10 @@ int main()
     TestPatrollerGiveUpIsRunWide();
     TestPatrollerOwnedByALaterStepIsLeftToIt();
     TestClassifyPullRead();
+    TestFlyingUnitOverTheCentresFloorIsResidue();
+    TestFlyingUnitOverAnotherFloorIsNotResidue();
+    TestGroundUnitAboveTheBandIsUnchanged();
+    TestAirborneFloorAskedOnlyAboveTheBand();
     TestPullStepWaitsForItsOwnPatrolAtTheFarEnd();
     TestPackResidueIsPulledBeforePackCleared();
     TestGatherTicksAreNoRepulls();

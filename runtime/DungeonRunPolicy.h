@@ -765,6 +765,25 @@ struct RaidFacts
     std::vector<std::string> offTanksAlive;
 };
 
+// The pack-cleared gate's read of one living creature of a pull step's entries (the glue calls this inside the
+// existing per-entry grid loop; the tests pin it). `fromPoint`/`fromPoint2d`/`dz`: the creature's current position
+// against the step's point; the spawn fields: its DB row; the movement fields: how it walks.
+enum class PullRead : std::uint8_t { Unit, Residue, Patroller, Left };
+struct PullReadIn
+{
+    float fromPoint = 0.0f;   // 3D, current position to the step centre
+    float fromPoint2d = 0.0f; // 2D, the same
+    float dz = 0.0f;          // current z - centre z
+    bool hasSpawn = false;    // a DB spawn row (CreatureData)
+    float spawnYd = -1.0f;    // 3D, spawn to the step centre
+    bool ownWaypoint = false; // its default movement type is WAYPOINT
+    bool followsWaypointLeader = false; // formation member (not the leader), its living leader on WAYPOINT
+    bool airborne = false;    // the creature flies (Creature::CanFly: InhabitType air, or flying/levitating now)
+    // ... and the floor under it (the map height at its x,y from its z down) is within kPackResidueZYd of the
+    // centre's z: no other floor between it and the pull. Read only where AirborneFloorAsked says (one height query).
+    bool airborneSameFloor = false;
+};
+
 // What the glue reads once a tick for the run's current step.
 struct Facts
 {
@@ -951,10 +970,12 @@ struct Facts
     std::vector<UnitFact> patrollers;
     // The pack-cleared gate (AiPlayerbot.DungeonRunPackClearMarginYd; 0: off, every list below empty).
     std::vector<UnitFact> packResidue; // living units of a pull step's entries outside its radius, 2D within
-                                       // radius + packClearMarginYd and |dz| <= kPackResidueZYd (ClassifyPullRead)
+                                       // radius + packClearMarginYd and |dz| <= kPackResidueZYd, or flying over the
+                                       // centre's floor at any height (ClassifyPullRead)
     float packClearMarginYd = 0.0f;    // the key, read every tick (a reload switches it mid-run)
     std::uint32_t packClearRepulls = 0; // AiPlayerbot.DungeonRunPackClearRepulls
-    UnitFact packNearestLeft;           // nearest living unit of the entries the read listed nowhere (guid 0: none)
+    UnitFact packNearestLeft;           // nearest (3D) living unit of the entries the read listed nowhere (guid 0: none)
+    PullReadIn packNearestLeftRead;     // ... its read (2D, 3D, dz, airborne): the note says why it is no residue
     std::vector<UnitFact> hopUnits;     // move: living hostile units within kHopPullYd of the point, not owned by a later step
     // boss: a dead unit (corpse) of the boss's entry within the step's radius
     // plus kSeeYd of its point (a pullback drags him toward the party), or
@@ -9924,23 +9945,22 @@ inline bool BigPackWalkGate(Run& r, const Facts& f, std::uint32_t dt, std::strin
     return true;
 }
 
-// The pack-cleared gate's read of one living creature of a pull step's entries (the glue calls this inside the
-// existing per-entry grid loop; the tests pin it). `fromPoint`/`fromPoint2d`/`dz`: the creature's current position
-// against the step's point; the spawn fields: its DB row; the movement fields: how it walks.
-enum class PullRead : std::uint8_t { Unit, Residue, Patroller, Left };
-struct PullReadIn
-{
-    float fromPoint = 0.0f;   // 3D, current position to the step centre
-    float fromPoint2d = 0.0f; // 2D, the same
-    float dz = 0.0f;          // current z - centre z
-    bool hasSpawn = false;    // a DB spawn row (CreatureData)
-    float spawnYd = -1.0f;    // 3D, spawn to the step centre
-    bool ownWaypoint = false; // its default movement type is WAYPOINT
-    bool followsWaypointLeader = false; // formation member (not the leader), its living leader on WAYPOINT
-};
 inline bool SpawnOwned(const PullReadIn& in, float radius)
 {
     return in.hasSpawn && in.spawnYd >= 0.0f && in.spawnYd <= radius + kSpawnOwnTolYd;
+}
+// A flying unit 2D within the residue band but beyond its height bound: the glue asks the map for the floor under it
+// (one height query, only for such a unit) and fills PullReadIn::airborneSameFloor with SameFloorUnder.
+inline bool AirborneFloorAsked(const PullReadIn& in, float radius, float marginYd)
+{
+    return marginYd > 0.0f && in.airborne && in.fromPoint > radius && in.fromPoint2d <= radius + marginYd &&
+        std::fabs(in.dz) > kPackResidueZYd;
+}
+// The floor found under the unit is the pull centre's floor: within kPackResidueZYd of its z. No floor found: false
+// (the old height rule).
+inline bool SameFloorUnder(bool groundFound, float groundZ, float centreZ)
+{
+    return groundFound && std::fabs(groundZ - centreZ) <= kPackResidueZYd;
 }
 inline PullRead ClassifyPullRead(const PullReadIn& in, float radius, float marginYd)
 {
@@ -9948,7 +9968,10 @@ inline PullRead ClassifyPullRead(const PullReadIn& in, float radius, float margi
         return PullRead::Unit;
     if (marginYd <= 0.0f) // the gate off: today's patroller rule exactly
         return in.ownWaypoint && in.fromPoint <= radius + kPatrolSeeYd ? PullRead::Patroller : PullRead::Left;
-    if (in.fromPoint2d <= radius + marginYd && std::fabs(in.dz) <= kPackResidueZYd)
+    // A flying unit over the centre's own floor is residue at any height (ZG walk 3's bats); over another floor, or
+    // a ground unit, keeps the height bound.
+    if (in.fromPoint2d <= radius + marginYd &&
+        (std::fabs(in.dz) <= kPackResidueZYd || (in.airborne && in.airborneSameFloor)))
         return PullRead::Residue;
     if (SpawnOwned(in, radius) && in.fromPoint <= radius + kSpawnPatrolSeeYd)
         return PullRead::Patroller;
@@ -10004,13 +10027,22 @@ inline std::string PassedResidueNote(const Run& r, const Facts& f, const PlanSte
 }
 
 // A pull step cleared with no pull at all (the gate's own diagnostic): the nearest living unit of its entries the
-// read listed nowhere. Read before NextStep (its ResetStep zeroes Run::pulls).
-inline std::string NearestLeftNote(const Run& r, const Facts& f)
+// read listed nowhere, how far (2D and 3D), how high, and why it was no residue (beyond the band on the ground, or
+// beyond its height bound: another floor, or flying over another floor). Read before NextStep (its ResetStep zeroes
+// Run::pulls).
+inline std::string NearestLeftNote(const Run& r, const Facts& f, const PlanStep& s)
 {
     if (f.packClearMarginYd <= 0.0f || r.pulls != 0 || !f.packNearestLeft.guid)
         return std::string();
+    PullReadIn const& in = f.packNearestLeftRead;
+    std::string why;
+    if (in.fromPoint2d > s.radius + f.packClearMarginYd)
+        why = "outside the " + Num(s.radius + f.packClearMarginYd) + " yd band";
+    else
+        why = in.airborne ? "flying over another floor" : "other floor";
     return "; nearest of its units left: " + std::to_string(f.packNearestLeft.entry) + " " +
-        GuidArg(f.packNearestLeft.guid) + " " + Num(f.packNearestLeft.distSpot) + " yd from the centre";
+        GuidArg(f.packNearestLeft.guid) + " " + Num(in.fromPoint2d) + " yd from the centre, " + Num(in.fromPoint) +
+        " yd in 3D, " + Num(std::fabs(in.dz)) + (in.dz < 0.0f ? " yd below (" : " yd above (") + why + ")";
 }
 
 // The residue band around a pull step (ClassifyPullRead's Residue): the units are pulled nearest first, like the
@@ -10468,7 +10500,7 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         bool const fought = r.pulls > 0;
         // Read before NextStep: its ResetStep clears the step's passes and zeroes its pulls.
         std::string const passedNote = PassedResidueNote(r, f, s);
-        std::string const nearestNote = NearestLeftNote(r, f);
+        std::string const nearestNote = NearestLeftNote(r, f, s);
         NextStep(r, "pack cleared" + timedOut + passedNote + nearestNote);
         r.fightForwardDue = fought; // FightForwardTick
     }

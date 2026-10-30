@@ -9080,13 +9080,23 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                                 if (Creature* leader = creature->GetMap()->GetCreature(group->GetLeaderGuid()))
                                     read.followsWaypointLeader = leader->IsAlive() &&
                                         leader->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
+                        // A flier above the band's height bound: one height query for the floor under it, from its z
+                        // down far enough to reach the centre's floor (ZG walk 3's bats, 20 yd over the pull).
+                        read.airborne = creature->CanFly() || creature->IsFlying() || creature->IsLevitating();
+                        if (AirborneFloorAsked(read, step->radius, f.packClearMarginYd))
+                        {
+                            float const ground = creature->GetMap()->GetHeight(creature->GetPositionX(),
+                                creature->GetPositionY(), creature->GetPositionZ(), true,
+                                std::fabs(read.dz) + kPackResidueZYd + 2.0f);
+                            read.airborneSameFloor = SameFloorUnder(ground > INVALID_HEIGHT, ground, step->z);
+                        }
                         switch (ClassifyPullRead(read, step->radius, f.packClearMarginYd))
                         {
                             case PullRead::Patroller:
                                 addPatroller(creature, fromPoint, read);
                                 continue;
                             case PullRead::Left:
-                                // The gate's diagnostic: the nearest living unit of the entries it listed nowhere.
+                                // The gate's diagnostic: the nearest (3D) living unit of the entries it listed nowhere.
                                 if (packNearestYd < 0.0f || fromPoint < packNearestYd)
                                 {
                                     packNearestYd = fromPoint;
@@ -9096,6 +9106,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                                     f.packNearestLeft.x = creature->GetPositionX();
                                     f.packNearestLeft.y = creature->GetPositionY();
                                     f.packNearestLeft.z = creature->GetPositionZ();
+                                    f.packNearestLeftRead = read;
                                 }
                                 continue;
                             case PullRead::Unit:
