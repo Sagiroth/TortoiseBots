@@ -482,6 +482,7 @@ public:
                         record.state = OrderState::Cant;
                         record.reason = OrderReason::Timeout;
                     }
+                    MarkDirtyLocked(stored);
                     out.legChanged = true;
                 }
                 else if (MoveZoneLocked(stored))
