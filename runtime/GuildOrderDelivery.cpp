@@ -88,6 +88,14 @@ Unit* FindNearbyGuildBanker(Player* bot, ::PlayerbotAI* ai)
     return nullptr;
 }
 
+uint32_t NoBankerSearches(::PlayerbotAI* ai)
+{
+    if (!ai || !ai->GetAiObjectContext())
+        return 0;
+    int32 count = ai->GetAiObjectContext()->GetValue<int32>("manual int", "guild order no banker")->Get();
+    return count > 0 ? uint32_t(count) : 0;
+}
+
 // Client numbering the bank message expects: backpack 0 with slots from 1,
 // other bags 1-4 with slots from 1. Returns false for anything worn.
 bool ClientBagSlot(Item* item, uint8_t& bag, uint8_t& slot)
@@ -296,7 +304,8 @@ private:
             return;
         ::PlayerbotAI* ai = ::PlayerbotAIStorage::Instance().GetAI(bot);
         Unit* banker = FindNearbyGuildBanker(bot, ai);
-        if (!banker)
+        bool mailLeg = !banker && DeliveryMailsAfterNoBanker(NoBankerSearches(ai));
+        if (!banker && !mailLeg)
         {
             // Left the banker (or the banker despawned): the map action
             // re-queues when the bot stands at one again.
@@ -314,19 +323,23 @@ private:
         // when the delivery leg ends.
         bool movedThisDelivery = delivered > 0;
 
-        uint32_t banked = DepositPass(bot, guild, banker, stored->itemId, delivered, stored->amount);
-        if (banked > 0)
+        uint32_t banked = 0;
+        if (!mailLeg)
         {
-            AddDelivered(request.botGuidLow, banked);
-            emptyPasses = 0;
-            movedThisDelivery = true;
-            delivered += banked;
+            banked = DepositPass(bot, guild, banker, stored->itemId, delivered, stored->amount);
+            if (banked > 0)
+            {
+                AddDelivered(request.botGuidLow, banked);
+                emptyPasses = 0;
+                movedThisDelivery = true;
+                delivered += banked;
+            }
+            else
+                ++emptyPasses;
         }
-        else
-            ++emptyPasses;
 
         bool bankDone = delivered >= stored->amount;
-        if (!bankDone && BankRefused(emptyPasses))
+        if (!bankDone && (mailLeg || BankRefused(emptyPasses)))
         {
             ObjectGuid receiver = MailReceiverGuid(*stored, bot->getObjectGuid());
             if (receiver)

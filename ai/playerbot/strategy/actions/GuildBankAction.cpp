@@ -2,7 +2,9 @@
 #include "playerbot/playerbot.h"
 #include "GuildBankAction.h"
 
+#include "MailAction.h"
 #include "playerbot/strategy/values/GuildValues.h"
+#include "runtime/GuildOrderDeliveryPolicy.h"
 #include "runtime/GuildOrderDeliveryQueue.h"
 #include "runtime/GuildOrderStore.h"
 
@@ -72,7 +74,11 @@ bool GuildBankAction::isUseful()
     // Only at a banker: the travel leg brings the bot here, and the drain
     // re-checks before touching the bank. Anywhere else the action stays
     // quiet so the bot keeps walking instead of mailing from the field.
-    return FindNearbyGuildBanker() != nullptr;
+    if (FindNearbyGuildBanker() != nullptr)
+        return true;
+    // No banker in reach after repeated searches: a mailbox does, and the
+    // drain mails the guild master from there.
+    return MailLegActive() && !MailProcessor::FindMailbox(ai).IsEmpty();
 }
 
 Unit* GuildBankAction::FindNearbyGuildBanker()
@@ -87,6 +93,12 @@ Unit* GuildBankAction::FindNearbyGuildBanker()
     return nullptr;
 }
 
+bool GuildBankAction::MailLegActive() const
+{
+    return TortoiseBots::GuildOrders::DeliveryMailsAfterNoBanker(
+        uint32(AI_VALUE2(int32, "manual int", "guild order no banker")));
+}
+
 bool GuildBankAction::Execute(Event& event)
 {
     (void)event;
@@ -95,7 +107,8 @@ bool GuildBankAction::Execute(Event& event)
         return false;
     if (!stored->itemId || bot->GetItemCount(stored->itemId) == 0)
         return false;
-    if (!FindNearbyGuildBanker())
+    if (!FindNearbyGuildBanker() &&
+        !(MailLegActive() && !MailProcessor::FindMailbox(ai).IsEmpty()))
         return false;
     // One request per bot pending; the drain runs one bank pass per world
     // tick and re-checks bot, guild and banker before each pass.

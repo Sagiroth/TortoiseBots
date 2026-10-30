@@ -3,6 +3,7 @@
 #include "playerbot/strategy/values/GuildValues.h"
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/ChooseTravelTargetAction.h"
 #include "playerbot/strategy/values/LootValues.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/values/TravelValues.h"
@@ -188,6 +189,27 @@ struct ZoneAccum
     float nearest = 0.0f;
     bool hasNearest = false;
 };
+
+// Whether the travel route gate leaves the fish zone reachable: probes the
+// zone's fish destination with the same check the pick applies to every
+// spot. One destination lookup plus one cached verdict per planned zone.
+bool FishZoneRouteOpen(Player* bot, uint32_t zoneId)
+{
+    if (!bot || !zoneId)
+        return false;
+    PlayerTravelInfo info(bot);
+    for (TravelDestination* dest : sTravelMgr.GetDestinations(info,
+        (uint32)TravelDestinationPurpose::GatherFishing, { int32(zoneId) }, true, 0.0f))
+    {
+        WorldPosition* point = dest ? dest->GetClosestPoint(WorldPosition(bot)) : nullptr;
+        if (!point)
+            continue;
+        std::string blocker;
+        if (SharedRouteIsSurvivable(bot, point, blocker))
+            return true;
+    }
+    return false;
+}
 
 } // namespace
 
@@ -702,8 +724,12 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         }
         // The travel leg walks to FISH_LOCATION spots in the planned zone:
         // skip zones the dataset cannot serve, so the plan never strands
-        // the bot where every search comes back empty.
+        // the bot where every search comes back empty. The route gate then
+        // judges the same spots, so probe one: a zone the gate refuses for
+        // every spot plans a trip the leg can never take.
         if (!sTravelMgr.FishZoneHasSpots(zoneId))
+            continue;
+        if (!FishZoneRouteOpen(bot, zoneId))
             continue;
         usableSources |= SourceFish;
         if (usableSkillId == 0 || source.reqSkill > usableSkillValue)

@@ -101,6 +101,14 @@ int main()
     CHECK(DeliveryMailCount(1) == 1);
     CHECK(DeliveryMailCount(7) == 7);
 
+    // Three banker searches in a row that offer nothing flip the delivery
+    // to the mail leg; anything offered resets the count.
+    CHECK(kDeliveryNoBankerMails == 3);
+    CHECK(!DeliveryMailsAfterNoBanker(0));
+    CHECK(!DeliveryMailsAfterNoBanker(2));
+    CHECK(DeliveryMailsAfterNoBanker(3));
+    CHECK(DeliveryMailsAfterNoBanker(9));
+
     // One request per bot pending; the drain takes all in arrival order.
     DeliveryQueue queue;
     CHECK(queue.PendingCount() == 0);
