@@ -16344,6 +16344,270 @@ static void TestPatrollerOwnedByALaterStepIsLeftToIt()
     CHECK(!r.patrolGaveUp.count(0x6b52));
 }
 
+// --- Zul'Gurub walk 2, display 31 (plan 30 re-indexed 0): the bat pack's leader 49189 walks a 176.8 yd loop whose
+// far point lies 52.1 yd from the step's centre and 7.3 yd inside plan 33's radius; its formation bats' default
+// movement is not WAYPOINT. The step said "pack cleared" in 1 s and the next move walked into the pack (14 dead).
+
+static DungeonPlan ZgPlateauPlan()
+{
+    DungeonPlan plan;
+    plan.name = "zul_gurub";
+    PlanStep p0 = PullStep(-12159.66f, {11368, 14750});
+    p0.y = -1477.94f;
+    p0.z = 130.91f;
+    p0.radius = 20.5f;
+    PlanStep m1 = Step(PlanStepKind::Move, -12199.351f, -1467.1476f, 131.15826f);
+    PlanStep p2 = PullStep(-12219.2f, {11351});
+    p2.y = -1464.7f;
+    p2.z = 130.65f;
+    p2.radius = 1.0f;
+    PlanStep p3 = PullStep(-12219.11f, {11368, 11351, 11831, 14750});
+    p3.y = -1478.14f;
+    p3.z = 131.29f;
+    p3.radius = 13.4f;
+    plan.steps = {p0, m1, p2, p3};
+    return plan;
+}
+
+static Facts ZgParty()
+{
+    Facts f = Party(0);
+    f.leadX = -12152.3f;
+    f.leadY = -1484.2f;
+    f.leadZ = 131.3f;
+    f.packClearMarginYd = 10.0f;
+    f.packClearRepulls = 3;
+    return f;
+}
+
+static UnitFact Residue(std::uint64_t guid, std::uint32_t entry, float distLead, float distSpot, float x, float y, float z)
+{
+    UnitFact u = Unit(guid, entry, distLead);
+    u.distSpot = distSpot;
+    u.x = x;
+    u.y = y;
+    u.z = z;
+    return u;
+}
+
+static void TestClassifyPullRead()
+{
+    PullReadIn in;
+    in.fromPoint = 15.0f;
+    in.fromPoint2d = 15.0f;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Unit);
+    in = PullReadIn();
+    in.fromPoint = 23.2f;
+    in.fromPoint2d = 23.2f;
+    in.dz = -0.3f;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Residue);
+    // The band is 2D: 30.0 on the ground is residue though the 3D distance is 31.0.
+    in = PullReadIn();
+    in.fromPoint = 31.0f;
+    in.fromPoint2d = 30.0f;
+    in.dz = 8.0f;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Residue);
+    // ... and its height is bounded: 15 yd up is another floor.
+    in = PullReadIn();
+    in.fromPoint = 29.2f;
+    in.fromPoint2d = 25.0f;
+    in.dz = 15.0f;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Left);
+    // A spawn inside the radius owns the unit wherever its loop has walked it.
+    in = PullReadIn();
+    in.fromPoint = 52.1f;
+    in.fromPoint2d = 52.1f;
+    in.hasSpawn = true;
+    in.spawnYd = 15.1f;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Patroller);
+    in = PullReadIn();
+    in.fromPoint = 52.1f;
+    in.fromPoint2d = 52.1f;
+    in.hasSpawn = true;
+    in.spawnYd = 25.0f;
+    in.ownWaypoint = true;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Left); // not spawn-owned, beyond radius + kPatrolSeeYd
+    // Formation followers of a waypoint leader count as patrollers while the gate is on, not with it off.
+    in = PullReadIn();
+    in.fromPoint = 40.0f;
+    in.fromPoint2d = 40.0f;
+    in.followsWaypointLeader = true;
+    CHECK(ClassifyPullRead(in, 20.5f, 10.0f) == PullRead::Patroller);
+    CHECK(ClassifyPullRead(in, 20.5f, 0.0f) == PullRead::Left);
+    in = PullReadIn();
+    in.fromPoint = 40.0f;
+    in.fromPoint2d = 40.0f;
+    in.ownWaypoint = true;
+    CHECK(ClassifyPullRead(in, 20.5f, 0.0f) == PullRead::Patroller);
+}
+
+static void TestPullStepWaitsForItsOwnPatrolAtTheFarEnd()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    UnitFact u = Unit(0xc025, 14750, 59.9f);
+    u.distSpot = 52.1f;
+    u.x = -12211.8f;
+    u.y = -1477.26f;
+    u.z = 130.9f;
+    u.spawnOwned = true;
+    u.spawnYd = 15.1f;
+    f.patrollers = {u};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 0 && r.state == State::Running);
+    CHECK(r.note == "waiting for the patroller 14750 0x000000000000c025 (outside the 20.5 yd radius, spawned 15.1 yd from the centre; up to 60 s)");
+    // It walks into the radius: one of the step's units now, pulled by the usual pick.
+    f.patrollers.clear();
+    f.units = {Unit(0xc025, 14750, 15.0f)};
+    CHECK(Tick(r, f) == "pullback 49189");
+    CHECK(r.step == 0 && r.phase == Phase::AwaitPull);
+}
+
+static void TestPackResidueIsPulledBeforePackCleared()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Residue(0xc001, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f)};
+    CHECK(Tick(r, f) == "pullback 49153");
+    CHECK(r.step == 0);
+    CHECK(r.note == "pack not cleared: 1 left within 30.5 yd of the pull centre (re-pull 1 of 3); pulling 11368");
+    f.packResidue.clear();
+    r.phase = Phase::Begin;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note == "pack cleared");
+}
+
+static void TestPackResidueCapPauses()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Residue(0xc001, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f),
+                     Residue(0xbfff, 11368, 30.0f, 24.0f, -12152.0f, -1453.0f, 130.7f)};
+    int pulls = 0;
+    for (int i = 0; i < 3; ++i)
+    {
+        std::string const order = Tick(r, f);
+        CHECK(order.compare(0, 9, "pullback ") == 0);
+        ++pulls;
+        r.phase = Phase::Begin;
+    }
+    CHECK(pulls == 3 && r.state == State::Running);
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Paused);
+    CHECK(r.note == "pack not cleared after 3 re-pulls: 2 left within 30.5 yd of the pull centre "
+        "(11368 0x000000000000c001 23.2 yd, 11368 0x000000000000bfff 24.0 yd): clear it, then .bot run resume, or .bot run skip");
+}
+
+static void TestPackClearGateOff()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packClearMarginYd = 0.0f;
+    f.packResidue = {Residue(0xc001, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f)};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1 && r.note == "pack cleared");
+}
+
+static void TestResidueInAnotherStepsRadiusIsLeft()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    UnitFact u = Residue(0xc001, 11368, 40.0f, 60.0f, -12215.0f, -1478.0f, 131.2f); // inside plan 33's radius
+    {
+        Run r = Start(&plan);
+        Facts f = ZgParty();
+        f.packResidue = {u};
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 1 && r.note == "pack cleared");
+    }
+    // ... unless it spawned in this step's radius: then this step pulls it wherever it walks.
+    {
+        Run r = Start(&plan);
+        Facts f = ZgParty();
+        u.spawnOwned = true;
+        f.packResidue = {u};
+        CHECK(Tick(r, f) == "pullback 49153");
+        CHECK(r.step == 0);
+    }
+}
+
+static void TestPassedResidueIsNamed()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Residue(0xc001, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f)};
+    CHECK(Tick(r, f) == "pullback 49153");
+    r.passed.insert(0xc001); // its pulls drew no fight
+    r.phase = Phase::Begin;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 1);
+    CHECK(r.note == "pack cleared; 1 left within 30.5 yd that pulls drew no fight (11368 0x000000000000c001)");
+}
+
+static void TestSpawnOwnedPatrollerCapPauses()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    UnitFact u = Unit(0xc025, 14750, 59.9f);
+    u.distSpot = 52.1f;
+    u.x = -12211.8f;
+    u.y = -1477.26f;
+    u.z = 130.9f;
+    u.spawnOwned = true;
+    u.spawnYd = 15.1f;
+    f.patrollers = {u};
+    for (int i = 0; i < 60; ++i)
+    {
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 0 && r.state == State::Running);
+    }
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Paused);
+    CHECK(r.note == "pack not cleared: 14750 0x000000000000c025 of this pack (spawned 15.1 yd from the centre) is "
+        "52.1 yd out and did not come within 60 s: pull it, then .bot run resume (the step no longer waits for it), or .bot run skip");
+    // A resume clears it: the step no longer waits for it.
+    CHECK(Resume(r));
+    Tick(r, f);
+    CHECK(r.step == 1 && r.note == "pack cleared");
+}
+
+static void TestFightStepEndWaitsOnResidue()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.packResidue = {Residue(0xc001, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f)};
+    CHECK(FightStepEnd(r, f, plan.steps[0]) == FightEnd::NotYet);
+    f.packResidue.clear();
+    CHECK(FightStepEnd(r, f, plan.steps[0]) == FightEnd::Cleared);
+}
+
+static void TestZeroPullClearNamesNearestLeft()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Facts f = ZgParty();
+    f.packNearestLeft = Unit(0xc025, 14750, 59.9f);
+    f.packNearestLeft.distSpot = 64.0f;
+    {
+        Run r = Start(&plan);
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 1);
+        CHECK(r.note == "pack cleared; nearest of its units left: 14750 0x000000000000c025 64.0 yd from the centre");
+    }
+    // A step that pulled something is no diagnostic: no suffix.
+    {
+        Run r = Start(&plan);
+        r.pulls = 1;
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 1 && r.note == "pack cleared");
+    }
+}
+
 // --- Uldaman r10-19z29 step 79: pull 7405 x10 (9 joiners expected) from a firing stand 10 yd from the pack,
 // up a ramp. The healer (Vist) and the mage (Dizzy) were 27-30 yd behind when the lead reached the stand.
 
@@ -23785,6 +24049,16 @@ int main()
     TestPatrollerWaitIsBounded();
     TestPatrollerGiveUpIsRunWide();
     TestPatrollerOwnedByALaterStepIsLeftToIt();
+    TestClassifyPullRead();
+    TestPullStepWaitsForItsOwnPatrolAtTheFarEnd();
+    TestPackResidueIsPulledBeforePackCleared();
+    TestPackResidueCapPauses();
+    TestPackClearGateOff();
+    TestResidueInAnotherStepsRadiusIsLeft();
+    TestPassedResidueIsNamed();
+    TestSpawnOwnedPatrollerCapPauses();
+    TestFightStepEndWaitsOnResidue();
+    TestZeroPullClearNamesNearestLeft();
     TestNoPatrollerWaitWithoutALivingHostilePatroller();
     TestBigPackStandWalkWaitsForTheParty();
     TestBigPackGateHoldsOnAJoinerRestTick();

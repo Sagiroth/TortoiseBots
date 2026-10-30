@@ -831,6 +831,17 @@ namespace ai
         return teams == 0 || team == 0 || (teams & team) != 0;
     }
 
+    // Whether a pull, boss or hold step owns a unit of `entry` standing at x,y,z: the step lists the entry (a hold's
+    // `entry` is its done condition, instance data or object, not a unit) and the point lies in its radius.
+    inline bool StepOwnsUnit(const PlanStep& step, std::uint32_t entry, float x, float y, float z)
+    {
+        if (step.kind != PlanStepKind::Pull && step.kind != PlanStepKind::Boss && step.kind != PlanStepKind::Hold)
+            return false;
+        bool listed = (step.kind != PlanStepKind::Hold && step.entry == entry) ||
+            std::find(step.entries.begin(), step.entries.end(), entry) != step.entries.end();
+        return listed && PlanDistance(x, y, z, step.x, step.y, step.z) <= step.radius;
+    }
+
     // Whether a unit of `entry` standing at x,y,z belongs to a pull, boss or
     // hold step AFTER step index `from` (the run leader never pulls what a later
     // step owns: the plan's order says when it is fought; a hold owns its
@@ -841,14 +852,27 @@ namespace ai
         for (std::size_t i = from + 1; i < plan.steps.size(); ++i)
         {
             const PlanStep& step = plan.steps[i];
-            if (step.kind != PlanStepKind::Pull && step.kind != PlanStepKind::Boss && step.kind != PlanStepKind::Hold)
-                continue;
             if (!StepForTeam(step, team))
                 continue;
-            // A hold's `entry` is its done condition (instance data, object), not a unit.
-            bool listed = (step.kind != PlanStepKind::Hold && step.entry == entry) ||
-                std::find(step.entries.begin(), step.entries.end(), entry) != step.entries.end();
-            if (listed && PlanDistance(x, y, z, step.x, step.y, step.z) <= step.radius)
+            if (StepOwnsUnit(step, entry, x, y, z))
+                return true;
+        }
+        return false;
+    }
+
+    // Whether a unit of `entry` standing at x,y,z belongs to any pull, boss or hold step of the plan other than step
+    // index `self`, earlier or later (the pack-cleared gate leaves a residue unit where another step fights it).
+    inline bool OwnedByOtherStep(const DungeonPlan& plan, std::size_t self, std::uint32_t entry,
+        float x, float y, float z, std::uint32_t team = 0)
+    {
+        for (std::size_t i = 0; i < plan.steps.size(); ++i)
+        {
+            if (i == self)
+                continue;
+            const PlanStep& step = plan.steps[i];
+            if (!StepForTeam(step, team))
+                continue;
+            if (StepOwnsUnit(step, entry, x, y, z))
                 return true;
         }
         return false;
