@@ -226,6 +226,15 @@ SEEDED_BOSSES.update({(229, 9196): "Highlord Omokk", (229, 9236): "Shadow Hunter
                       (229, 9568): "Overlord Wyrmthalak"})
 NOT_BOSSES.update({9217, 9218, 9219, 9718, 10376, 16080, 16044})
 
+# Ruins of Ahn'Qiraj (20261028120000): its map and its six bosses, names from the core's creature_template (all rank 3).
+# General Rajaxx (15341) has no boss row (his leg ends in the event's hold) and is in the list all the same; the seven
+# wave captains, their Swarmguard Needler / Qiraji Warrior escorts and Andorov's Kaldorei Elite are event units, not bosses.
+BOSS_PLANS["ruins_of_ahnqiraj"] = 509
+SEEDED_BOSSES.update({(509, 15348): "Kurinnaxx", (509, 15341): "General Rajaxx", (509, 15340): "Moam",
+                      (509, 15370): "Buru the Gorger", (509, 15369): "Ayamiss the Hunter",
+                      (509, 15339): "Ossirian the Unscarred"})
+NOT_BOSSES.update({15344, 15385, 15386, 15387, 15388, 15389, 15390, 15391, 15392, 15471, 15473})
+
 def migrations():
     for path in sorted(glob.glob(os.path.join(ROOT, "data/sql/world/*_world.sql"))):
         with open(path, encoding="utf-8") as handle:
@@ -4689,6 +4698,47 @@ class DungeonPlanSql(unittest.TestCase):
                          ["10505", "10507", "10901", "10502", "10503", "11622", "10432", "10508", "11261", "10504"])
         self.assertFalse([r for r in rows if r["kind"] == "pull" and r["leg"] != "6" and "10475" in r["entries"].split(",")])
         self.assertEqual(sum(1 for r in leg6 if r["kind"] == "pull"), 26)
+
+    def test_ruins_of_ahnqiraj_is_the_raid_prep(self):
+        # 20261028120000 (turtle-agent prep/raid-aq20 71d2148): the 20-man AQ20 draft with the B1 prep of RAID-PREP-aq20.md,
+        # no row hand-set. 8 legs, 650 steps (541 move, 102 pull, 5 boss, 1 hold, 1 gossip), the raid's five boss steps in
+        # leg order (Kurinnaxx, Moam, Buru, Ayamiss, Ossirian) and Rajaxx as the event's hold in leg 3: the gossip (15471,
+        # menu index 0 -> cmd gossip param 1) is leg 2's only step, and the hold reads instance data 2 with flag 8 alone (a
+        # plain data value: the encounter's DONE only comes with Rajaxx, the seventh wave, so the loader's 30 s start check
+        # would abort a flag-40 hold). The pulls are merged packs (at most 12 units a row, the raid cap), the radius at most
+        # 35; the 49 event units, Andorov's squad and the 19 Canal Frenzy are in no pull.
+        name, text = newest_plan_text("ruins_of_ahnqiraj")
+        self.assertEqual(name, "20261028120000_world.sql")
+        self.assertIn("('ruins_of_ahnqiraj', 509, '', '', '', 'turtle-agent 71d2148 dungeons/ruins_of_ahnqiraj.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual([v[0] for v in leg_rows(text, "ruins_of_ahnqiraj").values()],
+                         ["entrance_hall", "kurinnaxx", "andorov_camp", "general_rajaxx", "moam", "buru_the_gorger",
+                          "ayamiss_the_hunter", "ossirian_the_unscarred"])
+        rows = [r for r in self.step_rows(text) if r["plan"] == "ruins_of_ahnqiraj"]
+        self.assertEqual(len(rows), 650)
+        self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(8)],
+                         [19, 6, 0, 3, 29, 10, 27, 8])
+        self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"], ["15348", "15340", "15370", "15369", "15339"])
+        self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss", "hold", "gossip"})
+        gossip = [(r["leg"], r["seq"], r["entry"], r["param"]) for r in rows if r["kind"] == "gossip"]
+        self.assertEqual(gossip, [("2", gossip[0][1], "15471", "1")])
+        holds = [r for r in rows if r["kind"] == "hold"]
+        self.assertEqual([(r["leg"], r["entry"], r["param"], r["flags"], r["timeout_s"], r["radius"]) for r in holds],
+                         [("3", "2", "3", "8", "600", "40")])
+        # The hold fights the seven captains, their escorts and Rajaxx himself.
+        self.assertEqual(holds[0]["entries"].split(","),
+                         ["15341", "15385", "15386", "15388", "15389", "15390", "15391", "15392", "15344", "15387"])
+        pulls = [r for r in rows if r["kind"] == "pull"]
+        self.assertEqual(len(pulls), 102)
+        self.assertLessEqual(max(float(r["radius"]) for r in pulls), 35.0)
+        self.assertLessEqual(max(len(r["entries"].split(",")) for r in pulls), 12)
+        # No pull lists an event unit, Andorov's squad or a Canal Frenzy; the six bosses are only boss rows.
+        for entry in ("15341", "15344", "15385", "15386", "15387", "15388", "15389", "15390", "15391", "15392",
+                      "15471", "15473", "15505"):
+            self.assertFalse([r for r in pulls if entry in r["entries"].split(",")], entry)
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["ruins_of_ahnqiraj"])
+        self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (509) AND `entry` IN (15339, 15340, 15341, 15348, 15369, 15370);", text)
+        self.assertIn("(509, 15348, 'behind', 0, 25814, 0, 10,", text)
+        self.assertIn("(509, 15369, 'kill_first', 15555, 0, 1, 0,", text)
 
 if __name__ == "__main__":
     unittest.main()
