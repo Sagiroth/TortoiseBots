@@ -13215,24 +13215,23 @@ static void TestLeadOnlyDeathRecovers()
     Tick(r, f);
     CHECK(r.regroup && r.walkBackDue && r.autoRegroups == 1 && r.state == State::Running);
     CHECK(r.note.find("the lead bot died and came back") == 0);
-    // The living party holds; the lead bot walks back to it, nobody is
-    // gathered on (or summoned to) the entrance.
+    // The living party is held at the fight spot; the next tick summons it to
+    // the revived lead bot, one a tick (no gather onto the entrance).
     CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran");
     f.seen = false;
     f.approachKnown = true;
     f.approachX = -50;
-    std::string order;
-    for (int i = 0; i < 3; ++i)
-    {
-        order = Tick(r, f);
-        CHECK(order.find("summon") != 0 && order != "move -90.0 0.0 0.0");
-    }
-    CHECK(!r.regroup && r.walkBack && r.hold.size() == 1);
+    std::string order = Tick(r, f);
+    CHECK(order == "summon Fyran");
+    // Sent, not there yet: it stays held with its summon pending.
+    CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran" && r.summoned.count("Fyran"));
+    CHECK(r.heldSummons.count("Fyran") == 1 && r.heldSummons["Fyran"].pending);
+    CHECK(r.note.find("Fyran summoned to it") != std::string::npos);
     // Back with it: the hold ends.
     f.leadX = 200;
     f.members[1].yd = 15;
     Tick(r, f);
-    CHECK(r.hold.empty());
+    CHECK(r.hold.empty() && r.heldSummons.empty());
     // Bounded: past kAutoRegroupsPerStep it pauses.
     Run p = Start(&plan, 2);
     p.autoRegroups = kAutoRegroupsPerStep;
@@ -13418,8 +13417,8 @@ static void TestDeathDuringRegroup()
 
 // Review of #1060: the common case, the fight ends while the lead bot is
 // still a ghost. The regroup revives it; once it is up at the entrance the
-// living party deep inside holds (no gather to the entrance, no summon there).
-static void TestLeadDeadAfterTheFightHolds()
+// living party deep inside is summoned to it.
+static void TestLeadDeadAfterTheFightSummonsTheParty()
 {
     DungeonPlan plan;
     plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
@@ -13454,12 +13453,11 @@ static void TestLeadDeadAfterTheFightHolds()
     f.seen = false;
     f.approachKnown = true;
     f.approachX = -50;
-    for (int i = 0; i < 20; ++i)
-    {
-        std::string const order = Tick(r, f);
-        CHECK(order.find("summon") != 0 && order != "move -90.0 0.0 0.0");
-    }
-    CHECK(r.state == State::Running && !r.regroup && r.walkBack && r.hold.size() == 1);
+    CHECK(Tick(r, f) == "summon Fyran");
+    // Sent, not there yet: the bot stays held until the facts show it arrived.
+    CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran" && r.summoned.count("Fyran"));
+    CHECK(r.heldSummons.count("Fyran") == 1 && r.heldSummons["Fyran"].pending);
+    CHECK(r.note.find("Fyran summoned to it") != std::string::npos);
     // A player's order pauses the run: the hold ends (the glue lets them go).
     CHECK(PauseForPlayer(r, "follow"));
     CHECK(r.hold.empty() && !r.holdDue);
@@ -13482,6 +13480,334 @@ static void TestLeadDeadAfterTheFightHolds()
     h.alive = 5;
     Tick(q, h);
     CHECK(q.hold.empty() && !q.holdDue);
+}
+
+// ta263 (Opus cold review, round 4): the walk back started before the summoned
+// bots landed. HoldView leaves the held bots out of the step, so the regroup
+// completed at once while their summons were still in flight: the walk back
+// ran, PlayerConvenience fixed each summon's spot where the lead bot stood when
+// the order went out and the bot landed there ~3 s later, and the glue anchored
+// it at the entrance while the party walked away. While a held summon is in
+// flight the tick sends no order and runs no step. The no-gate mutation starts
+// the walk back on the first pending tick.
+static void TestNoWalkBackBeforeHeldSummonsLand()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 1);
+    r.step = 2;
+    BeginRegroup(r);
+    r.walkBackDue = true;
+    r.hold = {"Fyran", "Walky"};
+    Facts f = Party(-90); // the lead bot came back to life at the entrance
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 305), Mem("Walky", 310)};
+    f.maxMemberYd = 310;
+    CHECK(Tick(r, f) == "summon Fyran");
+    CHECK(Tick(r, f) == "summon Walky");
+    CHECK(!r.walkBack && r.hold.size() == 2);
+    // Both in flight: no order and no walk back, the note names the bot waited for.
+    for (int i = 0; i < 5; ++i)
+    {
+        CHECK(Tick(r, f).empty());
+        CHECK(!r.walkBack && r.regroup && r.hold.size() == 2);
+        CHECK(r.note == "waiting for the summoned Fyran");
+    }
+    // Fyran lands: the wait goes on for Walky, still no walk back.
+    f.members[1].yd = f.members[1].x = 5;
+    f.maxMemberYd = 310;
+    CHECK(Tick(r, f).empty());
+    CHECK(!r.walkBack && r.hold.size() == 1 && r.hold[0] == "Walky");
+    CHECK(r.note == "waiting for the summoned Walky");
+    // Walky lands too: the regroup is over and the walk back runs with both.
+    f.members[2].yd = f.members[2].x = 6;
+    f.maxMemberYd = 6;
+    CHECK(Tick(r, f).empty()); // the walk back starts; the next tick reads the facts for its point
+    CHECK(!r.regroup && r.walkBack && r.hold.empty() && r.heldSummons.empty());
+    CHECK(Tick(r, f).compare(0, 5, "move ") == 0);
+}
+
+// ta263 (round 4): the wait for a held summon is bounded by the summon's own
+// clock. Each expiry counts a failed try and sends it again; at kHeldSummonTries
+// the bot stays held and the walk back goes on without it. The frozen-clock
+// mutation never expires and never walks back here.
+static void TestHeldSummonWaitIsBounded()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 1);
+    r.step = 2;
+    BeginRegroup(r);
+    r.walkBackDue = true;
+    r.hold = {"Fyran"};
+    Facts f = Party(-90);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 305)};
+    f.maxMemberYd = 305;
+    CHECK(Tick(r, f) == "summon Fyran");
+    auto const expire = [&]() {
+        // The tick that sends a summon does not run the step's clock; each
+        // waiting tick adds it, so the expiry fires on the tick after the clock
+        // passes kHeldSummonExpiryMs.
+        for (std::uint32_t i = 0; i < kHeldSummonExpiryMs / kTickMs + 1; ++i)
+            CHECK(Tick(r, f).empty());
+        CHECK(!r.walkBack);
+        return Tick(r, f);
+    };
+    CHECK(expire() == "summon Fyran"); // past its clock: the try counts, sent again
+    CHECK(r.heldSummons["Fyran"].refusals == 1 && r.heldSummons["Fyran"].pending);
+    CHECK(expire() == "summon Fyran");
+    CHECK(r.heldSummons["Fyran"].refusals == 2);
+    CHECK(expire().empty()); // at the cap no summon goes out: the walk back runs without it
+    CHECK(r.heldSummons["Fyran"].refusals == kHeldSummonTries && !r.heldSummons["Fyran"].pending);
+    CHECK(!r.regroup && r.walkBack && r.hold.size() == 1);
+}
+
+// ta263: a bot held where the lead bot fell that gets into a fight leaves the
+// hold at once (the guard and the gather see it again).
+static void TestHeldBotInAFightLeavesTheHold()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    r.hold = {"Fyran"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100)};
+    f.members[1].inCombat = true;
+    f.anyInCombat = true;
+    std::string order;
+    CHECK(!SummonHeldToLead(r, f, order));
+    CHECK(r.hold.empty() && order.empty());
+}
+
+// ta263: one held bot is summoned a tick, each once (they stay held until they
+// arrive), then nothing.
+static void TestHeldSummonsOneATick()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    r.hold = {"Fyran", "Walky"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100), Mem("Walky", 120)};
+    f.maxMemberYd = 120;
+    std::string order;
+    CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+    CHECK(r.hold.size() == 2 && r.summoned.count("Fyran") && r.heldSummons["Fyran"].pending);
+    order.clear();
+    CHECK(SummonHeldToLead(r, f, order) && order == "summon Walky");
+    CHECK(r.hold.size() == 2 && r.summoned.count("Walky") && r.heldSummons["Walky"].pending);
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+}
+
+// ta263: a held bot whose summon to the revived lead bot is refused stays in
+// the hold and is sent again on a later tick (the order alone takes nobody to
+// the lead bot). The erase-before-arrival mutation loses it here.
+static void TestRefusedHeldSummonStaysHeld()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    r.hold = {"Fyran"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100)};
+    f.maxMemberYd = 100;
+    std::string order;
+    CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+    CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran");
+    CHECK(r.heldSummons.count("Fyran") == 1 && r.heldSummons["Fyran"].pending);
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty()); // one summon in flight
+    OrderRefused(r, "summon Fyran", "busy");
+    // Busy is "that bot has a summon pending already": still held, still in
+    // flight, no try of its own, and no resend every tick: the first summon's
+    // own clock bounds the backoff.
+    CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran");
+    CHECK(r.heldSummons.count("Fyran") == 1 && r.heldSummons["Fyran"].pending);
+    CHECK(r.heldSummons["Fyran"].refusals == 0);
+    CHECK(r.note.find("refused") != std::string::npos && r.note.find("already pending") != std::string::npos);
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+    r.runMs = r.heldSummons["Fyran"].ms + kHeldSummonExpiryMs + kTickMs;
+    order.clear();
+    CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+    CHECK(r.heldSummons["Fyran"].pending && r.heldSummons["Fyran"].refusals == 1);
+}
+
+// ta263: a summon refused because the bot got into a fight leaves it held where
+// it stands; once the facts show the fight the hold's own rule drops it, and no
+// summon goes out to a bot in combat.
+static void TestRefusedHeldSummonInCombatStaysHeld()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    r.hold = {"Fyran"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100)};
+    f.maxMemberYd = 100;
+    std::string order;
+    CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+    OrderRefused(r, order, "unavailable");
+    CHECK(r.hold.size() == 1 && r.heldSummons.count("Fyran") == 1 && !r.heldSummons["Fyran"].pending);
+    CHECK(r.heldSummons["Fyran"].refusals == 1);
+    CHECK(r.note.find("summoning it again") != std::string::npos);
+    // The next facts show the fight: a held bot in a fight leaves the hold at
+    // once (it fights where it stands), and nothing summons it meanwhile.
+    f.members[1].inCombat = true;
+    f.anyInCombat = true;
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+    CHECK(r.hold.empty() && r.heldSummons.empty());
+}
+
+// ta263: a summoned held bot leaves the hold and its mark only once the facts
+// show it at the lead bot (the loop closes on arrival, not on the order).
+static void TestHeldSummonReleasedOnArrival()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    r.hold = {"Fyran"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100)};
+    f.maxMemberYd = 100;
+    std::string order;
+    CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+    CHECK(r.hold.size() == 1 && r.heldSummons.count("Fyran") == 1);
+    // Almost at the clock's end, the bot lands: released, no try counted.
+    r.runMs = r.heldSummons["Fyran"].ms + kHeldSummonExpiryMs - kTickMs;
+    f.members[1].yd = 2.0f; // within kArriveYd: there
+    f.maxMemberYd = 2;
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+    CHECK(r.hold.empty() && r.heldSummons.empty());
+}
+
+// ta263: kHeldSummonTries refusals leave the bot held and the party walking
+// back without it; no further summon is sent. The no-retry-cap mutation sends
+// a fourth.
+static void TestHeldSummonRefusalCapWalksBack()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    r.hold = {"Fyran"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100)};
+    f.maxMemberYd = 100;
+    std::string order;
+    for (std::uint32_t i = 0; i < kHeldSummonTries; ++i)
+    {
+        order.clear();
+        CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+        OrderRefused(r, order, "unavailable");
+    }
+    CHECK(r.heldSummons.count("Fyran") == 1 && r.heldSummons["Fyran"].refusals == kHeldSummonTries);
+    CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran");
+    CHECK(r.note.find("could not be summoned") != std::string::npos);
+    CHECK(r.note.find("walks back without it") != std::string::npos);
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+}
+
+// ta263: PlayerConvenience accepts a summon before its delayed teleport and can
+// drop it later without an answer (the bot, its anchor or its master changed,
+// the teleport was refused, the arrival timed out), so no OrderRefused ever
+// comes. Past the summon subsystem's own clock (its delay + arrival timeout +
+// a margin) the bot is not at the lead bot: the mark clears and the try counts,
+// as a refusal does. The no-expiry mutation leaves it pending forever here; the
+// uncounted one loses the failed try.
+static void TestHeldSummonExpiresAndCountsATry()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    r.hold = {"Fyran"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100)};
+    f.maxMemberYd = 100;
+    std::string order;
+    CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+    std::uint64_t const sentAt = r.heldSummons["Fyran"].ms;
+    CHECK(sentAt == r.runMs && r.heldSummons["Fyran"].pending);
+    // The subsystem's clock at its end: still in flight, nothing counted.
+    r.runMs = sentAt + kHeldSummonExpiryMs;
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+    CHECK(r.heldSummons.count("Fyran") == 1 && r.heldSummons["Fyran"].pending);
+    CHECK(r.heldSummons["Fyran"].refusals == 0);
+    // Past it: not there, so the mark clears and the try counts; the same tick
+    // sends the summon again.
+    r.runMs = sentAt + kHeldSummonExpiryMs + kTickMs;
+    order.clear();
+    CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+    CHECK(r.heldSummons["Fyran"].pending && r.heldSummons["Fyran"].refusals == 1);
+    CHECK(r.heldSummons["Fyran"].ms == r.runMs && r.hold.size() == 1);
+}
+
+// ta263: summons that never land count toward kHeldSummonTries like refusals;
+// at the cap no further one goes out and the bot stays held while the party
+// walks back without it.
+static void TestExpiredHeldSummonsReachTheCap()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    r.hold = {"Fyran"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100)};
+    f.maxMemberYd = 100;
+    std::string order;
+    for (std::uint32_t i = 0; i < kHeldSummonTries; ++i)
+    {
+        order.clear();
+        CHECK(SummonHeldToLead(r, f, order) && order == "summon Fyran");
+        r.runMs = r.heldSummons["Fyran"].ms + kHeldSummonExpiryMs + kTickMs;
+    }
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+    CHECK(r.heldSummons.count("Fyran") == 1 && !r.heldSummons["Fyran"].pending);
+    CHECK(r.heldSummons["Fyran"].refusals == kHeldSummonTries);
+    CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran");
+    CHECK(r.note.find("could not be summoned") != std::string::npos);
+    CHECK(r.note.find("walks back without it") != std::string::npos);
+    // Long past every clock: still no fourth summon.
+    r.runMs += kHeldSummonExpiryMs * 10;
+    order.clear();
+    CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+}
+
+// ta263: no held summon while the lead bot's strand teleport runs, while the
+// run is paused for another part, or with the lead bot dead.
+static void TestHeldSummonWaitsForStrandAndOtherPart()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+    Run r = Start(&plan, 2);
+    BeginRegroup(r);
+    r.hold = {"Fyran", "Walky"};
+    Facts f = Party(200);
+    f.members = {Mem("Tanky", 0), Mem("Fyran", 100), Mem("Walky", 120)};
+    f.maxMemberYd = 120;
+    std::string order;
+    r.strandDue = true;
+    CHECK(!SummonHeldToLead(r, f, order) && r.hold.size() == 2 && order.empty());
+    r.strandDue = false;
+    r.holdWhilePaused = true;
+    CHECK(!SummonHeldToLead(r, f, order) && r.hold.size() == 2 && order.empty());
+    r.holdWhilePaused = false;
+    r.walkBack = true; // a direct step's own summon wait owns the hold then
+    CHECK(!SummonHeldToLead(r, f, order) && r.hold.size() == 2 && order.empty());
+    r.walkBack = false;
+    f.leadAlive = false;
+    CHECK(!SummonHeldToLead(r, f, order) && r.hold.size() == 2 && order.empty());
 }
 
 // The run's own time limit and the stop note: the 3 h cap used to read as a plain stop.
@@ -16235,8 +16561,9 @@ static std::vector<DoorFact> TwoDoors()
 
 // A near wipe with the lead bot among the dead: the fight over, the regroup
 // arms the hold as WaitForFallen does (the living stay at the fight spot), and
-// once the lead bot is up at the entrance the living bot there holds.
-static void TestNearWipeHoldsTheLivingAtTheFightSpot()
+// once the lead bot is up at the entrance the living bot there is summoned to
+// it.
+static void TestNearWipeSummonsTheLivingToTheLead()
 {
     DungeonPlan plan;
     plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
@@ -16272,18 +16599,30 @@ static void TestNearWipeHoldsTheLivingAtTheFightSpot()
     CHECK(Tick(r, f).empty());
     CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran" && !r.holdDue && r.state == State::Running);
     CHECK(!r.leadOtherPart); // the entry door, 100 yd from the plan: the run's own part
-    // The others up at the entry door too: the regroup never gathers or summons Fyran.
+    // The others up at the entry door too: the regroup summons Fyran once and
+    // never gathers him at the door; he stays held until the facts show him
+    // there (the order alone takes nobody to the lead bot).
     f.dead = 0;
     f.alive = 5;
     f.deadNames.clear();
     f.members = {Mem("Tanky", 0), Mem("Healy", 3), Mem("Magey", 3), Mem("Fyran", 305)};
     f.members[3].x = 215;
-    for (int i = 0; i < 40 && r.regroup; ++i)
+    int summons = 0;
+    for (int i = 0; i < 10; ++i)
     {
         std::string const order = Tick(r, f);
-        CHECK(order != "summon Fyran");
+        if (order == "summon Fyran")
+            ++summons;
+        else
+            CHECK(order.empty()); // nothing else (no gather at the door, no walk back) while he is in flight
     }
-    CHECK(r.state == State::Running && r.hold.size() == 1 && r.hold[0] == "Fyran");
+    CHECK(summons == 1 && r.state == State::Running && r.regroup);
+    CHECK(r.hold.size() == 1 && r.hold[0] == "Fyran" && r.heldSummons["Fyran"].pending);
+    // Arrived: out of the hold, the mark gone.
+    f.members[3].yd = 2;
+    f.maxMemberYd = 3;
+    Tick(r, f);
+    CHECK(r.hold.empty() && r.heldSummons.empty());
 }
 
 // The lead bot up at another wing's door: no gather, summon or island hop can
@@ -17202,13 +17541,22 @@ static void TestScarletLibraryR20Replay()
     g.members.push_back(At("Ribbon", 254.0f, -207.0f, 18.7f, 253.7f, -206.6f, 18.7f));
     g.members.push_back(At("Duskstorm", 253.5f, -206.0f, 18.7f, 253.7f, -206.6f, 18.7f));
     bool walked = false;
+    int summoned = 0;
     for (int i = 0; i < 10 && !walked; ++i)
     {
         std::string const order = Tick(q, g);
-        CHECK(order.find("summon") != 0);
+        if (order == "summon Nightcrest")
+            ++summoned;
+        else
+            CHECK(order.find("summon") != 0);
+        if (summoned)
+        {
+            g.members[1] = At("Nightcrest", 253.7f, -206.6f, 18.7f, 253.7f, -206.6f, 18.7f); // the summon lands him
+            g.maxMemberYd = 0;
+        }
         walked = q.walkBack;
     }
-    CHECK(walked && q.state == State::Running && q.hold.size() == 1 && q.hold[0] == "Nightcrest");
+    CHECK(walked && q.state == State::Running && summoned == 1 && q.hold.empty());
 }
 
 // Gnomeregan r21-19z40e step 180: the Alarm-a-bomb 2600 (7897, 0xF130001ED90075B6) kept the party in combat,
@@ -23728,8 +24076,19 @@ int main()
     TestNoPullWithADeadMember();
     TestRegroupWaitsForTheFight();
     TestDeathDuringRegroup();
-    TestLeadDeadAfterTheFightHolds();
-    TestNearWipeHoldsTheLivingAtTheFightSpot();
+    TestLeadDeadAfterTheFightSummonsTheParty();
+    TestNoWalkBackBeforeHeldSummonsLand();
+    TestHeldSummonWaitIsBounded();
+    TestNearWipeSummonsTheLivingToTheLead();
+    TestHeldBotInAFightLeavesTheHold();
+    TestHeldSummonsOneATick();
+    TestHeldSummonWaitsForStrandAndOtherPart();
+    TestRefusedHeldSummonStaysHeld();
+    TestRefusedHeldSummonInCombatStaysHeld();
+    TestHeldSummonReleasedOnArrival();
+    TestHeldSummonExpiresAndCountsATry();
+    TestExpiredHeldSummonsReachTheCap();
+    TestHeldSummonRefusalCapWalksBack();
     TestLeadInOtherPartPausesWithTheTrueReason();
     TestRunHoldsItsDeadUntilItEnds();
     TestOtherPartResumeIsRefusedWhileTheLeadIsAway();
