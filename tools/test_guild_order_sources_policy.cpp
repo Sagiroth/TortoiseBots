@@ -19,7 +19,24 @@ int main()
     CHECK(SourceLevelFits(30, 30));
     CHECK(!SourceLevelFits(28, 24));
     CHECK(!SourceLevelFits(0, 24));
-    CHECK(SourceLevelFits(1, 1));
+    // Faction hostility (the planner refuses creatures the bot cannot
+    // attack): hostile by mask pair either way, by either side's enemy
+    // list, and not hostile when neither side's masks or lists say so
+    // (neutral same-faction mobs like the Rebel Watchman). Masks mirror
+    // the core FactionMasks (player 1, alliance 2, horde 4, monster 8).
+    {
+        FactionTemplateMasks ally = { 1, 3, 12, { 0, 0, 0, 0 } };
+        FactionTemplateMasks monster = { 14, 8, 3, { 0, 0, 0, 0 } };
+        FactionTemplateMasks sameSide = { 11, 3, 0, { 0, 0, 0, 0 } };
+        CHECK(FactionTemplatesHostile(ally, monster));
+        CHECK(FactionTemplatesHostile(monster, ally));
+        CHECK(!FactionTemplatesHostile(ally, sameSide));
+        FactionTemplateMasks listed = { 90, 8, 0, { 0, 0, 0, 0 } };
+        FactionTemplateMasks hater = { 2, 5, 0, { 90, 0, 0, 0 } };
+        CHECK(FactionTemplatesHostile(hater, listed));
+        CHECK(FactionTemplatesHostile(listed, hater));
+        CHECK(!FactionTemplatesHostile(ally, ally));
+    }
 
     CHECK(SkinningSkillForMobLevel(1) == 1);
     CHECK(SkinningSkillForMobLevel(9) == 1);

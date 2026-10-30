@@ -2570,6 +2570,11 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 if (source.entry > 0 &&
                     TortoiseBots::GuildOrders::CreatureRankExcludedFromSoloFarm(source.rank))
                     continue;
+                // Same hostility rule as the planner: only creatures hostile
+                // to the bot become grind entries, or the pick rejects them as
+                // inactive and the leg parks on a zone it can never farm.
+                if (source.entry > 0 && !ai::GuildOrderPreyHostileToBot(bot, source.entry))
+                    continue;
                 if (source.skillId != SKILL_NONE)
                 {
                     if (!bot->HasSkill(source.skillId) ||

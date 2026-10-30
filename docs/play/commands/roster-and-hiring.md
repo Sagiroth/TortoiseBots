@@ -252,7 +252,7 @@ Opens a direct trading window with your targeted companion bot. Also available a
 
 ### `.bot order`
 
-Gives a guild bot an order to fetch items for real: it farms, buys or crafts them and brings them to the guild bank. One order per bot; a new order replaces the old one. Orders survive restarts, and an order on an offline bot runs when it comes back online. Full guide: [Guild Orders](../guild-orders.md).
+Gives a guild bot an order to fetch items for real: it farms, buys or crafts them and brings them to the guild bank. One order per bot; a new order replaces the old one. Orders survive restarts, and an order on an offline bot runs when it comes back online (craft orders need the bot online: its recipes cannot be checked while it is offline, so those are refused with `norecipe`). Full guide: [Guild Orders](../guild-orders.md).
 
 ```text
 .bot order <BotName> farm <shift-clicked item link> <amount> [hours]
