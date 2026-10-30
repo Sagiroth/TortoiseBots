@@ -21,6 +21,8 @@
 #include "HireSpecPolicy.h"
 #include "HireTierRequestPolicy.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -31,6 +33,288 @@ namespace TortoiseBots
 // A 40-man raid holds the player and 39 companions (AiPlayerbot.HireMaxBotsPerPlayer
 // clamps at the same number).
 constexpr uint32_t kHireRaidMaxCompanions = 39;
+
+// A bound raid's commander (`.bot commander bind <LeadBot> raid`) stands OUTSIDE the raid group, so the
+// group has 40 free seats for bots: one more companion than a player's own raid. This is
+// RemoteCommander::kMaxRaidBindSize (checked in HireProvisionService.cpp); the config clamp
+// (AiPlayerbot.HireMaxBotsPerPlayer <= 39) stays as it is for players.
+constexpr uint32_t kHireBoundRaidMaxCompanions = 40;
+
+// The requester commands a bound raid and is not a member of its group: his hires join the lead bot's
+// raid group and the binding, not a party of his own. A commander inside the group, an unbound
+// commander and every other player hire into their own raid (player + 39).
+inline bool HireIntoBoundRaid(bool commandsBoundRaid, bool inBoundRaidGroup)
+{
+    return commandsBoundRaid && !inBoundRaidGroup;
+}
+
+// How many companions the requester may command: the config value (already clamped to 39) for everyone;
+// the bound commander outside the group gets the 40th seat when the config allows the full 39. A lower
+// operator cap holds for him too.
+inline uint32_t HireMaxCompanions(uint32_t configMax, bool intoBoundRaid)
+{
+    uint32_t const base = configMax > kHireRaidMaxCompanions ? kHireRaidMaxCompanions : configMax;
+    return intoBoundRaid && base == kHireRaidMaxCompanions ? kHireBoundRaidMaxCompanions : base;
+}
+
+enum class HireSeatVerdict : uint8_t
+{
+    Ok,
+    CapReached, // owned >= the companion limit
+    RaidFull,   // the bound raid already holds 40 bots
+};
+
+struct HireSeatFacts
+{
+    uint32_t configMax = 0;               // AiPlayerbot.HireMaxBotsPerPlayer
+    uint32_t owned = 0;                   // the requester's hires, live and mustering (CountHired)
+    bool commandsBoundRaid = false;       // he is the commander of a raid binding
+    bool inBoundRaidGroup = false;        // ...and a member of that raid's group
+    uint32_t boundRaidSeatsTaken = 0;     // members of the bound raid's group plus his hires still mustering
+};
+
+struct HireSeatDecision
+{
+    HireSeatVerdict verdict = HireSeatVerdict::Ok;
+    uint32_t maxCompanions = 0;
+    bool intoBoundRaid = false;
+    std::string message; // player-facing, empty when Ok
+};
+
+// The one rule for "may this requester hire one more companion". The party and raid seat checks of
+// his own group stay in HireProvisionService::Hire; this decides the companion limit and, for the
+// bound commander, the 40 seats of the bound raid.
+inline HireSeatDecision DecideHireSeat(HireSeatFacts const& facts)
+{
+    HireSeatDecision decision;
+    decision.intoBoundRaid = HireIntoBoundRaid(facts.commandsBoundRaid, facts.inBoundRaidGroup);
+    decision.maxCompanions = HireMaxCompanions(facts.configMax, decision.intoBoundRaid);
+    if (decision.intoBoundRaid && facts.boundRaidSeatsTaken >= kHireBoundRaidMaxCompanions)
+    {
+        decision.verdict = HireSeatVerdict::RaidFull;
+        decision.message = "Your bound raid already holds the maximum of " + std::to_string(kHireBoundRaidMaxCompanions) +
+            " bots (" + std::to_string(facts.boundRaidSeatsTaken) + " seats taken).";
+        return decision;
+    }
+    if (facts.owned >= decision.maxCompanions)
+    {
+        decision.verdict = HireSeatVerdict::CapReached;
+        decision.message = "You already command the maximum number of companions.";
+    }
+    return decision;
+}
+
+// C6 H1: a commander whose binding ends (unbind, his logout, the binding dropped) hires as a player again, so
+// the companions above the ordinary limit (HireMaxCompanions(configMax, false)) leave, the most recently hired
+// first. hireOrder holds one number per hire he owns, in any order (higher = hired later, HireLifecycle::Claim).
+// Returns the indexes into hireOrder of the hires that leave, newest first; empty within the limit.
+inline std::vector<size_t> PickSurplusHires(std::vector<uint64_t> const& hireOrder, uint32_t ordinaryCap)
+{
+    std::vector<size_t> leave;
+    if (hireOrder.size() <= ordinaryCap)
+        return leave;
+    for (size_t i = 0; i < hireOrder.size(); ++i)
+        leave.push_back(i);
+    std::stable_sort(leave.begin(), leave.end(),
+        [&hireOrder](size_t a, size_t b) { return hireOrder[a] > hireOrder[b]; });
+    leave.resize(hireOrder.size() - ordinaryCap);
+    return leave;
+}
+
+// C6: what a binding's release does with the commander's hires. A bound-raid seat hire still mustering (not
+// joined yet) is cancelled first, its fee refunded (HireProvisionService::CancelBoundSeatHire); only then are
+// the rest counted, and the newest above the ordinary limit are dismissed (PickSurplusHires, no refund).
+struct ReleaseHire
+{
+    uint64_t hireOrder = 0;
+    bool musteringSeat = false; // a bound-raid seat hire that has not joined the raid
+};
+
+struct ReleasePlan
+{
+    std::vector<size_t> cancel;  // indexes into the hires: cancelled with refund, first
+    std::vector<size_t> dismiss; // then dismissed, newest first
+};
+
+inline ReleasePlan PlanBindingRelease(std::vector<ReleaseHire> const& hires, uint32_t ordinaryCap)
+{
+    ReleasePlan plan;
+    std::vector<size_t> kept;
+    std::vector<uint64_t> keptOrder;
+    for (size_t i = 0; i < hires.size(); ++i)
+    {
+        if (hires[i].musteringSeat)
+            plan.cancel.push_back(i);
+        else
+        {
+            kept.push_back(i);
+            keptOrder.push_back(hires[i].hireOrder);
+        }
+    }
+    for (size_t index : PickSurplusHires(keptOrder, ordinaryCap))
+        plan.dismiss.push_back(kept[index]);
+    return plan;
+}
+
+// C6: a cancelled bound-raid seat hire gives its fee back the way Hire() does on a failed hire: only once the
+// hire is undone. Here that is the deletion of its character recorded (ledger row marked
+// 'dismissed' and the deletion queued, HireLifecycle::DismissForRefund). Until then no gold moves and the
+// deletion is retried (Update, once a second); a refund is paid once and never again.
+constexpr uint32_t kSeatCancelMaxAttempts = 60;
+
+struct SeatCancelState
+{
+    bool deletionQueued = false; // the character's deletion is recorded
+    bool refunded = false;       // the fee went back (in hand or by mail)
+    uint32_t attempts = 0;       // deletion attempts so far (the first one included)
+};
+
+enum class SeatCancelAction : uint8_t
+{
+    Refund,        // deletion recorded, fee not yet returned: return it now (once)
+    RetryDeletion, // deletion not recorded yet: no refund, try again later
+    Done,          // refunded: nothing more, ever
+    GiveUp,        // the deletion was never recorded: no refund (the hire left no live companion)
+};
+
+inline SeatCancelAction NextSeatCancelAction(SeatCancelState const& state)
+{
+    if (state.refunded)
+        return SeatCancelAction::Done;
+    if (state.deletionQueued)
+        return SeatCancelAction::Refund;
+    return state.attempts >= kSeatCancelMaxAttempts ? SeatCancelAction::GiveUp : SeatCancelAction::RetryDeletion;
+}
+
+// C6 review M1: a seat hire joins the bound raid once; later ticks (its intro waits for the bot to be in world)
+// never join it again, so an unbind + rebind meanwhile cannot pull it into another raid without a recheck.
+enum class SeatJoinStep : uint8_t
+{
+    Join,    // a seat hire not joined yet: JoinBoundRaid
+    Joined,  // a seat hire that already stands in the bound raid: nothing to join
+    Reunite, // a normal hire: the ordinary regroup with its master
+};
+
+inline SeatJoinStep DecideHireJoinStep(bool intoBoundRaid, bool boundSeatJoined)
+{
+    if (!intoBoundRaid)
+        return SeatJoinStep::Reunite;
+    return boundSeatJoined ? SeatJoinStep::Joined : SeatJoinStep::Join;
+}
+
+// The hire intro goes out once the hire is grouped with its master, or, for a seat hire, once it joined the
+// bound raid (its commander stands outside that raid by definition).
+inline bool HireIntroMayGo(bool sameRaidWithMaster, bool boundSeatJoined)
+{
+    return sameRaidWithMaster || boundSeatJoined;
+}
+
+// C6 review M2: a seat hire's commander behind a loading screen is not offline. Only a commander whose session
+// is gone (or headless) cancels the hire; one out of world or teleporting far is waited for.
+enum class SeatMasterPresence : uint8_t
+{
+    Ready,
+    Wait,
+    Gone,
+};
+
+inline SeatMasterPresence DecideSeatMasterPresence(bool found, bool liveSession, bool inWorld, bool teleportingFar)
+{
+    if (!found || !liveSession)
+        return SeatMasterPresence::Gone;
+    if (!inWorld || teleportingFar)
+        return SeatMasterPresence::Wait;
+    return SeatMasterPresence::Ready;
+}
+
+// C6 review L1: a `.bot hire raid` job hires in the mode it started in (into the bound raid or the hirer's own
+// group); when that changes (bound, unbound, the commander joined the group) the job stops. A bound job has no
+// party of the commander's to convert into a raid.
+inline bool RaidJobModeHolds(bool jobIntoBoundRaid, bool nowIntoBoundRaid)
+{
+    return jobIntoBoundRaid == nowIntoBoundRaid;
+}
+
+inline bool RaidJobConvertsParty(bool jobIntoBoundRaid, bool raidSized)
+{
+    return raidSized && !jobIntoBoundRaid;
+}
+
+// C6 H2: how a hire was authorized. A bound-raid seat is a hire of a bound raid's commander standing outside
+// its group (it may be his 40th): it joins only that binding's raid, never a party with the commander.
+enum class HireSeatMode : uint8_t
+{
+    Normal,
+    BoundRaidSeat,
+};
+
+inline HireSeatMode HireSeatModeFor(bool intoBoundRaid)
+{
+    return intoBoundRaid ? HireSeatMode::BoundRaidSeat : HireSeatMode::Normal;
+}
+
+// A seat hire is rechecked before every join attempt until it stands in the bound raid; a normal hire never.
+inline bool HireNeedsSeatRecheck(HireSeatMode mode, bool joined)
+{
+    return mode == HireSeatMode::BoundRaidSeat && !joined;
+}
+
+// The binding a seat hire was authorized for, recorded at hire time.
+struct BoundSeatGrant
+{
+    uint64_t commanderGuid = 0;
+    uint64_t leadGuid = 0;
+    uint32_t groupId = 0;
+};
+
+// The same facts right before the join (world thread, in the same call as the join).
+struct BoundSeatNow
+{
+    uint64_t commanderGuid = 0;
+    bool commanderOnline = false;
+    bool bound = false;            // a standing raid binding whose lead bot is in the bound group
+    uint64_t leadGuid = 0;
+    uint32_t groupId = 0;
+    bool commanderInGroup = false;
+    uint32_t members = 0;          // members of the bound group now
+    bool botInGroup = false;       // the hire already stands in it (takes no new seat)
+    uint32_t owned = 0;            // the commander's hires, this one included (CountHired)
+    uint32_t configMax = 0;        // AiPlayerbot.HireMaxBotsPerPlayer
+};
+
+enum class BoundSeatVerdict : uint8_t
+{
+    Join,
+    Cancel,
+};
+
+struct BoundSeatCheck
+{
+    BoundSeatVerdict verdict = BoundSeatVerdict::Cancel;
+    std::string reason; // player-facing, empty on Join
+};
+
+// Join only when nothing changed since the hire was authorized: the same standing binding (commander, lead bot,
+// group), the commander online and still outside the group, a free seat, and his companions within the 40 of a
+// bound raid. Anything else cancels the hire (the caller never falls back to an ordinary party).
+inline BoundSeatCheck RecheckBoundSeat(BoundSeatGrant const& grant, BoundSeatNow const& now)
+{
+    BoundSeatCheck check;
+    if (!now.commanderOnline)
+        check.reason = "you went offline before it arrived";
+    else if (!now.bound || now.commanderGuid != grant.commanderGuid || now.leadGuid != grant.leadGuid ||
+        now.groupId != grant.groupId)
+        check.reason = "the raid binding it was hired for has ended";
+    else if (now.commanderInGroup)
+        check.reason = "you joined the raid group, so the extra seat is gone";
+    else if (!now.botInGroup && now.members >= kHireBoundRaidMaxCompanions)
+        check.reason = "the bound raid is full (" + std::to_string(kHireBoundRaidMaxCompanions) + " bots)";
+    else if (now.owned > HireMaxCompanions(now.configMax, true))
+        check.reason = "you command more companions than a bound raid allows";
+    else
+        check.verdict = BoundSeatVerdict::Join;
+    return check;
+}
 
 // Defaults of AiPlayerbot.HireRaidSpread / AiPlayerbot.HireRaidPresets. The
 // shipped template carries the same strings (AGENTS.md: fallback == template).
@@ -425,10 +709,13 @@ inline bool ExpandHireRaidPreset(std::vector<HireRaidPreset> const& presets, std
 // fills its subgroups in join order, so tanks end up beside healers), each
 // role in request order. availableClassMask has bit (1 << classId) per class
 // the requester's faction can field. requested is the pre-cap total; the slots
-// are cut to cap from the dps end. False with a player-facing error.
+// are cut to cap from the dps end. maxTotal is the most the request may ask
+// for: 39 for a player's raid, kHireBoundRaidMaxCompanions for a bound
+// commander outside his raid. False with a player-facing error.
 inline bool BuildHireRaidRoster(HireRaidRequest const& request, HireRaidSpread const& spread,
     uint32_t availableClassMask, HireRaidClassRules const& rules, uint32_t cap,
-    std::vector<HireRaidSlot>& out, uint32_t& requested, std::string& error)
+    std::vector<HireRaidSlot>& out, uint32_t& requested, std::string& error,
+    uint32_t maxTotal = kHireRaidMaxCompanions)
 {
     out.clear();
     requested = 0;
@@ -446,9 +733,11 @@ inline bool BuildHireRaidRoster(HireRaidRequest const& request, HireRaidSpread c
         error = "Nothing to hire.";
         return false;
     }
-    if (total > kHireRaidMaxCompanions)
+    if (total > maxTotal)
     {
-        error = "A raid holds at most 39 companions plus you; you asked for " + std::to_string(total) + ".";
+        error = maxTotal == kHireBoundRaidMaxCompanions
+            ? "A bound raid holds at most 40 companions; you asked for " + std::to_string(total) + "."
+            : "A raid holds at most 39 companions plus you; you asked for " + std::to_string(total) + ".";
         return false;
     }
 

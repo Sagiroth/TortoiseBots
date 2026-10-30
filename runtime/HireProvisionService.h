@@ -109,6 +109,9 @@ struct HireRaidJob
     // later group-less master left the group (#1014 then dismissed the
     // companions already hired), so the job stops instead of hiring on.
     bool hadGroup = false;
+    // C6: the job hires into its master's bound raid (he commands it from outside the group); a change of
+    // that mode stops the job, and a bound job never converts a party (RaidJobModeHolds, RaidJobConvertsParty).
+    bool intoBoundRaid = false;
     HireRaidOutcome progress;
 };
 
@@ -159,6 +162,12 @@ public:
     // Live hired companions owned by master (grace-period resilient).
     uint32_t CountHired(Player* master) const;
 
+    // C6: the hire is a bound-raid seat still mustering (charged for a bound raid, not joined yet).
+    bool IsMusteringSeatHire(ObjectGuid botGuid) const;
+    // C6: the binding it was hired for was released: cancel that mustering seat hire (character deleted, fee
+    // refunded; CancelBoundSeatHire). The pending entry goes on the next Update. No-op for any other hire.
+    void CancelMusteringSeatHire(ObjectGuid botGuid, std::string const& why);
+
     // Issue #490 PR 2: highest gear tier the player may hire at (start tier
     // or highest rewarded unlock quest). One small lookup per page/command.
     static uint8_t HighestUnlockedHireTierFor(Player* player);
@@ -203,11 +212,41 @@ public:
         bool introSent = false;
         // The arrival summon went out once (or could not start).
         bool summonRequested = false;
+        // C6: how the hire was authorized (HireRaidPolicy.h). A bound-raid seat joins only the binding in
+        // seatGrant: it is rechecked right before the join and cancelled (deleted, fee refunded) when anything
+        // changed, never grouped with its master instead. cost is the fee charged; boundSeatJoined is set once
+        // it stands in the bound raid (a bound hire from then on).
+        HireSeatMode seatMode = HireSeatMode::Normal;
+        BoundSeatGrant seatGrant;
+        uint32_t cost = 0;
+        bool boundSeatJoined = false;
     };
     // Every hire creates its own character on a managed pool account; the
     // character is deleted when the hire ends.
     bool CreateCandidate(HireSelection const& sel, uint32_t requesterTeam, uint32_t& accountId, ObjectGuid& guid);
     bool ProvisionNow(Player* bot, PendingProvision& pending);
+    // C6: a bound-raid seat hire that may not join: the hire ends (its character is deleted, as a dismiss) and
+    // the fee goes back to the master (in hand, or by mail when he is offline). A hire already ended is left.
+    void CancelBoundSeatHire(PendingProvision const& pending, std::string const& why);
+    // C6: a cancelled seat hire until its fee is settled: refunded once its character's deletion intent is
+    // recorded, retried until then (HireRaidPolicy.h NextSeatCancelAction). In memory: a restart's ledger
+    // recovery deletes the character, the refund of an unsettled cancel is not carried over.
+    struct SeatCancel
+    {
+        ObjectGuid botGuid;
+        ObjectGuid masterGuid;
+        uint32_t cost = 0;
+        std::string name;
+        std::string why;
+        SeatCancelState state;
+    };
+    // Runs the policy: refunds when due; true when the cancel is finished (refunded or given up).
+    bool SettleSeatCancel(SeatCancel& cancel);
+    void RefundSeatCancel(SeatCancel const& cancel);
+    void SweepSeatCancels();
+    // C6: rechecks a seat hire (RecheckBoundSeat) against its binding now; true when it was cancelled.
+    // False for a normal hire or one already joined. master is online.
+    bool SeatHireCancelled(Player* bot, Player* master, PendingProvision& pending);
     static void SnapshotKnownSpells(Player* bot, std::vector<uint32_t>& out);
     static void DropPendingLevelupEcho(PlayerbotAI* ai);
     static void AnnounceIntro(Player* bot, Player* master, PendingProvision& pending);
@@ -232,6 +271,7 @@ public:
     void DropStalePending();
 
     std::vector<PendingProvision> m_pending;
+    std::vector<SeatCancel> m_seatCancels;
     // Issue #900: queued raid hires, one step every kRaidStepMs.
     std::vector<HireRaidJob> m_raidJobs;
     uint32_t m_raidStepElapsedMs = 0;

@@ -2162,6 +2162,110 @@ static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> con
         ProtocolSafe(groups).c_str());
 }
 
+// A hire joined the bound raid (JoinBoundRaid): only the new bot is placed, nobody else moves. It takes a free
+// seat in the subgroup of its role (RaidLayout::PlanJoinerSubgroup); a tank is an off-tank (assistant); a healer
+// heals the tank with the fewest healers (PickJoinerHealTank) or is a raid healer. The record of the bind's plan
+// gets this one bot added, so the release undoes it with the rest. Without a record (no layout was planned) the
+// bot stays where the group put it.
+static void PlaceJoinerInRaidLayout(Group* group, Player* lead, Player* bot, ChatHandler* handler)
+{
+    if (!group || !lead || !bot || bot == lead)
+        return;
+    auto const found = RaidLayouts().find(group->GetId());
+    if (found == RaidLayouts().end())
+        return;
+    RaidLayoutApplied& applied = found->second;
+    ObjectGuid const botGuid = bot->GetObjectGuid();
+    TortoiseBots::RaidLayout::JoinFacts facts;
+    facts.role = PlayerbotAI::IsTank(bot) ? TortoiseBots::RaidLayout::Role::Tank
+        : PlayerbotAI::IsHeal(bot) ? TortoiseBots::RaidLayout::Role::Healer
+        : TortoiseBots::RaidLayout::Role::Damage;
+    std::vector<std::string> memberNames;
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+    {
+        if (slot.guid == botGuid)
+            continue;
+        memberNames.push_back(slot.name);
+        uint8_t const sub = group->GetMemberGroup(slot.guid);
+        if (sub >= TortoiseBots::RaidLayout::kSubgroups)
+            continue;
+        ++facts.seated[sub];
+        Player* member = ObjectAccessor::FindPlayer(slot.guid);
+        if (!member)
+            continue;
+        if (PlayerbotAI::IsTank(member))
+            facts.tankIn[sub] = true;
+        else if (PlayerbotAI::IsHeal(member))
+            facts.healerIn[sub] = true;
+    }
+    uint8_t const before = group->GetMemberGroup(botGuid);
+    applied.originalSubgroups.push_back({botGuid, before});
+    TortoiseBots::RaidLayout::JoinSeat const seat = TortoiseBots::RaidLayout::PlanJoinerSubgroup(facts);
+    if (seat.ok && seat.subgroup != before)
+        group->ChangeMembersGroup(bot, seat.subgroup);
+    std::string what = "damage dealer";
+    if (facts.role == TortoiseBots::RaidLayout::Role::Tank)
+    {
+        if (!group->IsAssistant(botGuid))
+        {
+            group->SetAssistant(botGuid, true);
+            applied.assistants.push_back(botGuid);
+        }
+        applied.offTanks.push_back(bot->GetName());
+        what = "off-tank";
+    }
+    else if (facts.role == TortoiseBots::RaidLayout::Role::Healer)
+    {
+        auto const present = [&](std::string const& name)
+        {
+            return std::find(memberNames.begin(), memberNames.end(), name) != memberNames.end();
+        };
+        std::vector<std::string> tanks;
+        tanks.push_back(lead->GetName());
+        tanks.insert(tanks.end(), applied.offTanks.begin(), applied.offTanks.end());
+        std::vector<uint32_t> perTank(tanks.size(), 0);
+        for (auto const& pair : applied.tankHealers)
+            for (size_t t = 0; t < tanks.size(); ++t)
+                if (pair.second == tanks[t] && present(pair.first))
+                    ++perTank[t];
+        uint32_t raidHealers = 0;
+        for (std::string const& name : applied.raidHealers)
+            if (present(name))
+                ++raidHealers;
+        int const heals = TortoiseBots::RaidLayout::PickJoinerHealTank(perTank, raidHealers);
+        if (heals < 0)
+        {
+            applied.raidHealers.push_back(bot->GetName());
+            what = "raid healer";
+        }
+        else
+        {
+            std::string const tankName = tanks[static_cast<size_t>(heals)];
+            ObjectGuid tankGuid = lead->GetObjectGuid();
+            for (Group::MemberSlot const& slot : group->GetMemberSlots())
+                if (slot.name == tankName)
+                    tankGuid = slot.guid;
+            applied.tankHealers.emplace_back(bot->GetName(), tankName);
+            PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+            RaidFocusHealer record;
+            record.guid = botGuid;
+            if (ai && ai->GetAiObjectContext())
+            {
+                record.hadStrategy = ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT);
+                record.previousTargets =
+                    ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Get();
+                ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Set({tankGuid, botGuid});
+                ai->ChangeStrategy("+focus heal targets", BotState::BOT_STATE_COMBAT);
+            }
+            applied.focusHealers.push_back(record);
+            what = "tank healer for " + tankName;
+        }
+    }
+    if (handler)
+        handler->PSendSysMessage("Raid layout: %s joined subgroup %u as %s; the rest of the raid stays as it is.",
+            bot->GetName(), static_cast<uint32>(group->GetMemberGroup(botGuid)) + 1, what.c_str());
+}
+
 static void RestoreRaidFocusHealer(Player* bot, RaidFocusHealer const& record)
 {
     PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
@@ -13556,6 +13660,77 @@ uint64 BoundForeignCommander(Player* player)
 bool HasCommanderBinding(uint64_t commanderRaw)
 {
     return CommanderBindings().FindByCommander(commanderRaw) != nullptr;
+}
+
+BoundRaidFacts BoundRaidOf(Player* commander)
+{
+    BoundRaidFacts facts;
+    if (!commander || CommanderBindings().Empty())
+        return facts;
+    RemoteCommander::Binding const* binding = CommanderBindings().FindByCommander(commander->GetObjectGuid().GetRawValue());
+    if (!binding || !binding->raid)
+        return facts;
+    Player* lead = FindCharacter(binding->leadGuid);
+    Group* group = lead ? lead->GetGroup() : nullptr;
+    if (!group || group->GetId() != binding->groupId)
+        return facts;
+    facts.bound = true;
+    facts.commanderInGroup = group->IsMember(commander->GetObjectGuid());
+    facts.members = group->GetMembersCount();
+    facts.leadGuid = binding->leadGuid;
+    facts.groupId = binding->groupId;
+    return facts;
+}
+
+bool JoinBoundRaid(Player* commander, Player* bot)
+{
+    // A bot mid-teleport is out of world: the group accept reads live map state (HireProvisionService::Reunite).
+    if (!commander || !bot || !bot->IsInWorld() || bot->IsBeingTeleported())
+        return false;
+    RemoteCommander::Binding const* binding =
+        CommanderBindings().FindByCommander(commander->GetObjectGuid().GetRawValue());
+    Player* lead = binding && binding->raid ? FindCharacter(binding->leadGuid) : nullptr;
+    Group* group = lead && lead->IsInWorld() ? lead->GetGroup() : nullptr;
+    // The commander inside the group is the ordinary hire (the caller's rule), and a group that is not the
+    // bound one is a binding that has changed under us.
+    if (!group || group->GetId() != binding->groupId || group->IsMember(commander->GetObjectGuid()))
+        return false;
+    if (bot->GetGroup() == group)
+        return true;
+    if (group->GetMembersCount() >= RemoteCommander::kMaxRaidBindSize)
+        return false;
+    // The hire moves between parties without ending: it is in transition until it stands in the bound group
+    // (HireDeparturePolicy.h). Only this one hire; the binding and the other hires are not touched.
+    HireLifecycle& hires = HireLifecycle::Instance();
+    ::ObjectGuid const botGuid = bot->GetObjectGuid();
+    if (!hires.BeginCommand(botGuid, commander->GetObjectGuid()))
+        return false; // not a hire of this commander
+    if (Group* old = bot->GetGroup())
+        old->RemoveMember(botGuid, 0);
+    if (!JoinLeadGroup(lead, bot))
+    {
+        hires.CancelCommand(botGuid);
+        return false;
+    }
+    hires.ConfirmCommand(commander->GetObjectGuid());
+
+    // Only the new bot is placed in the layout (nobody else moves), and it is put under the binding like the
+    // bots of the bind: follows the lead bot, threat back-off, no own walks.
+    uint64 const commanderRaw = commander->GetObjectGuid().GetRawValue();
+    std::unique_ptr<ChatHandler> const chat = CommanderReplyHandler(commanderRaw, false);
+    PlaceJoinerInRaidLayout(group, lead, bot, chat.get());
+    HireLifecycle::KeepInstanceAfterPartyMove(bot);
+    FormUpOnLead(commander, lead, std::vector<Player*>{ bot }, false);
+    GiveCommanderThreatBackoff(bot);
+    HoldCommanderAutonomy(bot, PlayerbotAIStorage::Instance().GetAI(bot), false);
+    // The new member stands where the raid is (a map change is the group's own summon path: the instance
+    // bind of the group lets it in).
+    if (bot->GetMapId() != lead->GetMapId() || bot->GetDistance(lead) > 100.0f)
+        bot->TeleportTo(lead->GetMapId(), lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ(),
+            lead->GetOrientation(), 0);
+    TB_LOG_BASIC("TortoiseBots: hire %s joined %s's bound raid (%u of %u seats)", bot->GetName(), lead->GetName(),
+        group->GetMembersCount(), static_cast<uint32>(RemoteCommander::kMaxRaidBindSize));
+    return true;
 }
 
 // Release a binding that no longer holds (its hires go back to the hirer), or,

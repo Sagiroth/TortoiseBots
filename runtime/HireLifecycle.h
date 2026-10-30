@@ -40,6 +40,15 @@ public:
     // companion and any other explicit release go through here; a bot that is
     // not a hire is left alone.
     void DismissNow(ObjectGuid botGuid, char const* reason);
+    // C6, a cancelled hire that refunds its fee: DismissNow, and true only when the character's deletion is
+    // recorded: its ledger row found and marked 'dismissed', the deletion queued (a restart's ledger recovery
+    // deletes any row left). False for a bot that is not a hire. The caller refunds only on true
+    // (HireRaidPolicy.h NextSeatCancelAction).
+    bool DismissForRefund(ObjectGuid botGuid, char const* reason);
+    // C6: the retry of that record for a hire that has already ended (false for a live hire): true once the
+    // ledger row is marked 'dismissed' with the deletion queued (QueueDeletion writes the mark again for one
+    // queued before), or the character is provably deleted already.
+    bool EnsureDeletionIntent(ObjectGuid botGuid, char const* reason);
 
     // Drop the lifecycle record without touching the character: the
     // managed-pool reset deletes the character (and the ledger row) itself.
@@ -68,6 +77,9 @@ public:
     bool BeginCommand(ObjectGuid botGuid, ObjectGuid commanderGuid);
     // The bind succeeded: this commander's hires in transition are bound.
     void ConfirmCommand(ObjectGuid commanderGuid);
+    // A join into a standing binding (a new hire of the commander joining his bound raid) did not go
+    // through: this one hire leaves its transition. Unlike EndCommand it touches no other hire.
+    void CancelCommand(ObjectGuid botGuid);
     // The binding ended (or the bind failed): the commander's hires go back to
     // the commander's party if it is online, or wait for its return inside the
     // logout grace. Returns the hires handled; 0 for a commander with none.
@@ -121,6 +133,9 @@ private:
         time_t regroupDeadline = 0;
         // Battleground queue entry was warned once for the current queue stay.
         bool bgQueueWarned = false;
+        // C6: when the hire was made, in hire order (Claim); the newest leaves first when a binding ends
+        // with the hirer above the ordinary companion limit.
+        uint64_t hireOrder = 0;
     };
 
     // A dismissed hire whose character is waiting for its asynchronous
@@ -153,18 +168,25 @@ private:
     // Native leave-queue path for a queued hire (action=0 port packet).
     void LeaveBattlegroundQueue(Player* bot);
 
-    void Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup = true);
+    // True when the character's deletion intent is durable (C6 refund rule); callers that do not refund ignore it.
+    bool Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup = true);
     bool MasterOnline(HiredRecord const& record) const;
     // Issue #378: the record's master is online but no longer shares the
     // hire's group, so the hire is over. Pure-rule wrapper (HireDeparturePolicy.h).
     bool MasterLeftGroup(HiredRecord const& record) const;
     void Reunite(HiredRecord& record, Player* master);
+    // C6 H1: a commander whose binding ends hires as a player again: his bound-raid seat hires still mustering
+    // are cancelled with refund first, then the companions above the ordinary limit (the 40th of a bound raid)
+    // are dismissed, the most recently hired first, as `.bot remove` does.
+    void DismissSurplusAfterBinding(ObjectGuid commanderGuid);
     void SweepGracePeriod(time_t now);
 
     // Durable hire ledger.
     bool LedgerRow(ObjectGuid botGuid, uint32_t& characterAccountId) const;
-    // Guard, mark dismissed, and queue the character for deletion.
-    void QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, char const* reason);
+    // Guard, mark dismissed, and queue the character for deletion. True when
+    // the 'dismissed' mark was written; a deletion already queued writes the
+    // mark again while the row still reads 'active' and returns that write.
+    bool QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, char const* reason);
     // First ticks after startup: every ledger row is a stale hire (no hire
     // survives a restart), so it is recovered and deleted.
     bool RecoverStaleHires();
@@ -176,6 +198,7 @@ private:
     std::vector<PendingDeletion> m_pendingDeletions;
     std::vector<PendingDismissal> m_pendingDismissals;
     bool m_ledgerRecovered = false;
+    uint64_t m_nextHireOrder = 0;
     time_t m_recoveryRetryAt = 0;
     uint32_t m_updateElapsedMs = 0;
     uint32_t m_restockElapsedMs = 0;

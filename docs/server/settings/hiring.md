@@ -108,6 +108,8 @@ Limits how many active mercenary companions an individual player can command at 
 
 The default of `4` supports a full five-player dungeon group. For raid environments, increase this value up to `39` to allow assembling full 40-player raid rosters.
 
+The commander of a bound raid (`.bot commander bind <LeadBot> raid`) stands outside the raid group, so his raid holds 40 bots. At `39` he may hire a 40th companion into the bound raid; a lower value caps him too, and players in their own raid keep 39.
+
 </details>
 
 ### `AiPlayerbot.HireMaxLevelAboveHirer`
