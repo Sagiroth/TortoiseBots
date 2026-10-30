@@ -172,6 +172,13 @@ SEEDED_BOSSES.update({(808, 60735): "High Foreman Bargul Blackhammer", (808, 608
                       (808, 60737): "Har'gesh Doomcaller", (808, 60736): "Engineer Figgles",
                       (808, 60734): "Hatereaver Annihilator"})
 
+# Blackwing Lair (20261028160000): the 40-man raid of map 469, its six boss steps and the two event holds (Vaelastrasz is
+# talked to and held on instance data 1, Nefarian is summoned and held on data 7), names from the core's creature_template.
+BOSS_PLANS["blackwing_lair"] = 469
+SEEDED_BOSSES.update({(469, 12435): "Razorgore the Untamed", (469, 13020): "Vaelastrasz the Corrupt",
+                      (469, 12017): "Broodlord Lashlayer", (469, 11983): "Firemaw", (469, 14601): "Ebonroc",
+                      (469, 11981): "Flamegor", (469, 14020): "Chromaggus", (469, 11583): "Nefarian"})
+
 # The Black Morass (20261024020900): its map and its four boss steps, names from the core's creature_template. Medivh 50105 is
 # faction 35 (friendly to the party) and is a destination marker, not a kill; the plan still carries him as the leg 1 boss.
 BOSS_PLANS["black_morass"] = 269
@@ -542,7 +549,9 @@ class DungeonPlanSql(unittest.TestCase):
         # 4 h 36 min). No plan lists, in a pull/boss row's `entries` (or a boss row's `entry`) or the plan row's
         # cc_priority/cc_always/kill_first, an entry that one of its own gossip/open steps names: such a unit is
         # talked to, not fought. (A hold's entries are its scripted event's units: Zul'Farrak's Bly hold fights
-        # Sergeant Bly 7604 after his gossip wakes the event, so holds are out of this pin.) Run over every plan in
+        # Sergeant Bly 7604 after his gossip wakes the event, so holds are out of this pin. A boss row may name the
+        # entry of its own gossip step when that gossip is the row right before it in the same leg: the gossip opens
+        # the menu whose later selection starts the fight, as Vaelastrasz' does.) Run over every plan in
         # the repo; shadowfang_keep is pinned clean (3849 in the gossip row only), other failing plans are listed,
         # not fixed here.
         EVENT_KINDS = {"gossip", "open"}
@@ -558,9 +567,13 @@ class DungeonPlanSql(unittest.TestCase):
                     if r["plan"] != plan or r["kind"] not in UNIT_KINDS:
                         continue
                     listed = set(e for e in r["entries"].split(",") if e.strip()) if r["entries"] else set()
+                    allowed = set()
                     if r["kind"] == "boss" and r["entry"] != "0":
                         listed.add(r["entry"])
-                    hit = listed & event_entries
+                        before = [p for p in rows if p["plan"] == plan and p["leg"] == r["leg"] and p["seq"] == str(int(r["seq"]) - 1)]
+                        if before and before[0]["kind"] == "gossip" and before[0]["entry"] == r["entry"]:
+                            allowed.add(r["entry"])
+                    hit = (listed & event_entries) - allowed
                     self.assertEqual(hit, set(), "%s %s: %s/%s lists its own event unit(s) %s in a %s row" %
                                      (name, plan, r["leg"], r["seq"], sorted(hit), r["kind"]))
                 for m in re.finditer(r"^\('%s', \d+, '([^']*)', '([^']*)', '([^']*)'," % plan, text, re.M):
@@ -4406,6 +4419,61 @@ class DungeonPlanSql(unittest.TestCase):
         keys = list(seed)
         self.assertEqual(seed, SEEDED_BOSSES)
         self.assertFalse({e for _m, e in keys} & NOT_BOSSES, "an add, an event unit or a rare is seeded as a boss")
+
+    def test_blackwing_lair_is_the_raid_prep(self):
+        # 20261028160000 (turtle-agent fbd9922, 2026-10-28): the map-469 draft (8 legs, 64 pulls, 275 units) with the
+        # RAID-PREP-bwl merge, the boss rows in instance order and the two event holds. 43 pulls (273 units), 8 legs,
+        # 120 steps, no patrol block (no map-469 spawn has a waypoint path) and no door step (all nine doors start
+        # open). Razorgore is a pull of Grethok's trio and a boss row; Vaelastrasz and Nefarius are the first gossip
+        # level and a hold on instance data 1 and 7; Nefarian is the last leg's hold entry. Every pin fails when its
+        # row is cut.
+        name, text = newest_plan_text("blackwing_lair")
+        self.assertEqual(name, "20261028160000_world.sql")
+        self.assertIn("('blackwing_lair', 469, '', '', '', 'turtle-agent fbd9922 dungeons/blackwing_lair.json', "
+                      "'plan v1, draft (not mapped, not live-checked)');", text)
+        legs = leg_rows(text, "blackwing_lair")
+        self.assertEqual([legs[i][0] for i in range(8)],
+                         ["razorgore_the_untamed", "vaelastrasz_the_corrupt", "broodlord_lashlayer", "firemaw",
+                          "ebonroc", "flamegor", "chromaggus", "nefarian"])
+        rows = [r for r in self.step_rows(text) if r["plan"] == "blackwing_lair"]
+        self.assertEqual(len(rows), 120)
+        self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(8)],
+                         [1, 2, 24, 4, 11, 0, 1, 0])
+        self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss", "gossip", "hold"})
+        self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
+                         ["12435", "12017", "11983", "14601", "11981", "14020"])
+        # The two event holds: the instance data, DONE read as an encounter state (flags 40), the 600 s ceiling, and the
+        # event's units (Vaelastrasz himself; Nefarian with his phase-1 drakonids). Nefarian's spot is the hall's centre
+        # with 90 yd, so his landing point (-7495.96 -1252.40) and Nefarius (-7588.27 -1261.92) are both inside it.
+        self.assertEqual([(r["leg"], r["entry"], r["param"], r["flags"], r["timeout_s"], r["radius"], r["entries"])
+                          for r in rows if r["kind"] == "hold"],
+                         [("1", "1", "3", "40", "600", "45", "13020"),
+                          ("7", "7", "3", "40", "600", "90", "11583,14261,14262,14263,14264,14265,14302")])
+        # The gossip rows: menu index 0, which the run leader's order takes as option 1.
+        self.assertEqual([(r["leg"], r["entry"], r["param"], r["flags"]) for r in rows if r["kind"] == "gossip"],
+                         [("1", "13020", "1", "0"), ("7", "10162", "1", "0")])
+        # Leg 0: Grethok the Controller and his two guardsmen are one pull (their enter-combat starts instance data 0).
+        first = leg_steps(rows, 0)
+        self.assertEqual(first[0]["kind"], "move")
+        self.assertEqual((first[1]["kind"], sorted(first[1]["entries"].split(","))), ("pull", ["12557", "14456"]))
+        self.assertEqual(first[-1]["kind"], "boss")
+        # Flamegor has no spawn of its own: one move and the boss, no pull.
+        self.assertEqual([r["kind"] for r in leg_steps(rows, 5)], ["move", "boss"])
+        # No pull carries the decor (13976, 14401) or a boss; no pull is over the 16-unit cap; no radius over 18.
+        pulls = [r for r in rows if r["kind"] == "pull"]
+        bosses = {"12435", "13020", "12017", "11983", "14601", "11981", "14020", "11583"}
+        for r in pulls:
+            listed = set(r["entries"].split(","))
+            self.assertFalse(listed & ({"13976", "14401"} | bosses), "%s/%s" % (r["leg"], r["seq"]))
+            self.assertLessEqual(len(listed), 16, "%s/%s" % (r["leg"], r["seq"]))
+            self.assertTrue(0 < float(r["radius"]) <= 18, "%s/%s radius %s" % (r["leg"], r["seq"], r["radius"]))
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["blackwing_lair"])
+        self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (469) AND `entry` IN "
+                      "(12435, 13020, 12017, 11983, 14601, 11981, 14020, 11583);", text)
+        for entry, boss in ((12435, "Razorgore the Untamed"), (13020, "Vaelastrasz the Corrupt"),
+                            (12017, "Broodlord Lashlayer"), (11983, "Firemaw"), (14601, "Ebonroc"),
+                            (11981, "Flamegor"), (14020, "Chromaggus"), (11583, "Nefarian")):
+            self.assertIn("(469, %d, '%s')" % (entry, boss), text)
 
     def test_boss_table_lists_every_plan_boss(self):
         # The newest migration that inserts a plan's boss steps holds its bosses (later ones replace single legs).
