@@ -2951,7 +2951,7 @@ class DungeonPlanSql(unittest.TestCase):
         # corridor, the west half south to north, walks back through the south, the east half south to north, then the boss,
         # every pull from a stand 28+ yd off the patrol (the closest server path between two rows is 30.8 yd; navq over
         # turtle-agent internal/navmesh, sight by the core's vmap); the six enchanters (whose Enchanting Flames he keeps until the
-        # sixth dies) all come before the boss row. The alcove's three packs are leg 4's first pulls, after the boss.
+        # sixth dies) all come before the boss row. The alcove's three packs are a leg of their own after it (searistrasz_alcove, leg 4).
         # 20261025002000 (turtle-agent c19713b, 2026-10-25, after live run r41s2 slotA2 needed a skip and a GM move at searistrasz
         # steps 267-273): the pull of 62040 at -6028.7 -4176.9 (leg searistrasz group 2) stood beside a 22 x 19 yd hall room whose
         # 6 navmesh polygons are an island (bbox -6022.1 -4192.0 .. -6000.0 -4173.3, z 322.19, no link in or out; the WMO floor is
@@ -3018,25 +3018,25 @@ class DungeonPlanSql(unittest.TestCase):
         # (5) The hall_clear landing (-6190.1 -3962.4 215.8) is a plain direct step with a check_skip now: 7.4 yd across and
         # 5.1 yd down over a 9.0 yd navmesh gap (ServerPath answers no route across it), inside the direct limits, and the run
         # walked the same move_direct live at step 200 (from -6191.8 -3954.9 221.6 to -6186.7 -3964.3 215.2, no death).
-        # 10 legs, 846 steps (20261025002000's 835: leg 3 128 -> 132 rows, leg 4 116 -> 123), the same 83 pulls of legs 3 and 4
-        # (28+6+12+57+26+17+25+10+22+3: the alcove's 3 moved from leg 3 to leg 4), bosses in leg order, no door or event step.
-        # The rows are not the export of turtle-agent c19713b's plan file (it still walks the patrol): the source says so, and the
-        # patrol check below fails a later export that brings the walk back.
+        # 11 legs, 863 steps, the same 206 pulls as 20261025002000 (28+6+12+57+3+23+17+25+10+22+3: the alcove's 3 are leg 4,
+        # searistrasz_alcove, and the legs after it move up by one), bosses in leg order, no door or event step.
+        # The rows are plan-export's (--approach-hops, --mmaps) of the plan file with leg 3 in this order and the alcove leg; the
+        # patrol check below fails an export that brings the walk back.
         name, text = newest_plan_text("dragonmaw_retreat")
         self.assertEqual(name, "20261030200000_world.sql")
-        self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent c19713b + leg 3/4 by hand (20261030200000)', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertIn("('dragonmaw_retreat', 816, '62077,62036,62047,62046', '62077', '62053,62039,62071,62070,8853', 'turtle-agent 7ffc3ed7 dungeons/dragonmaw_retreat.json', 'plan v1, draft (not mapped, not live-checked)');", text)
         legs = leg_rows(text, "dragonmaw_retreat")
-        self.assertEqual(sorted(legs), list(range(10)))
-        self.assertEqual([legs[i][0] for i in range(10)],
-                         ["bogpaw_truthsay", "gowlfang", "hall_clear", "searistrasz", "halgan_approach", "halgan_redbrand",
+        self.assertEqual(sorted(legs), list(range(11)))
+        self.assertEqual([legs[i][0] for i in range(11)],
+                         ["bogpaw_truthsay", "gowlfang", "hall_clear", "searistrasz", "searistrasz_alcove", "halgan_approach", "halgan_redbrand",
                           "zuluhed_approach", "zuluhed_mid", "zuluhed_floor", "zuluhed_the_whacked"])
-        self.assertIn("leave (not read by the run leader yet): 62046 at -6190.56 -3919.91", legs[7][1])
+        self.assertIn("leave (not read by the run leader yet): 62046 at -6190.56 -3919.91", legs[8][1])
         rows = [r for r in self.step_rows(text) if r["plan"] == "dragonmaw_retreat"]
-        self.assertEqual(len(rows), 846)
-        self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(10)],
-                         [28, 6, 12, 57, 26, 17, 25, 10, 22, 3])
+        self.assertEqual(len(rows), 863)
+        self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(11)],
+                         [28, 6, 12, 57, 3, 23, 17, 25, 10, 22, 3])
         self.assertEqual([(int(r["leg"]), int(r["entry"])) for r in rows if r["kind"] == "boss"],
-                         [(0, 62056), (1, 62057), (3, 62072), (5, 62069), (9, 62037)])
+                         [(0, 62056), (1, 62057), (3, 62072), (6, 62069), (10, 62037)])
         # The landing of leg 2 is the one straight walk of the plan (the run leader has no GM move, and no gm_cross is left in
         # the plan: plan-export takes it without --gm-cross-direct), with its own comment;
         # and the server-path `via` of leg 3 (after the corridor camp is clear).
@@ -3044,7 +3044,7 @@ class DungeonPlanSql(unittest.TestCase):
                          [("-6190.1", "-3962.4", "215.8", "via")])
         # r39s2 slotA2 step 614: the ramp up to the z 290-303 ledge, as pull group 19's and group 22's approach rows, in walk
         # order, the last point of each on the floor its packs stand on.
-        ledge = [(r["kind"], r["x"], r["y"], r["z"], r["comment"]) for r in leg_steps(rows, 6)
+        ledge = [(r["kind"], r["x"], r["y"], r["z"], r["comment"]) for r in leg_steps(rows, 7)
                  if r["comment"] in ("pull group 19 approach", "pull group 22 approach")]
         self.assertEqual(ledge, [
             ("move", "-6293.33", "-4349.07", "274.39", "pull group 19 approach"),
@@ -3059,7 +3059,7 @@ class DungeonPlanSql(unittest.TestCase):
         # row right before it is that stand: the run leader pulls what it sees within 60 yd, so a stand on the ledge is what
         # makes these pulls reachable (on the corridor they were deferred as 'not reachable from this floor').
         import math as _math
-        zuluhed = leg_steps(rows, 6)
+        zuluhed = leg_steps(rows, 7)
         for pack, entries in ((("-6300.44", "-4380.81", "290.84"), "62078"), (("-6305.22", "-4372.68", "290.16"), "62039"),
                               (("-6304.99", "-4390.02", "290.16"), "62051"), (("-6266.44", "-4407.07", "303.03"), "62078")):
             i = next(j for j, r in enumerate(zuluhed)
@@ -3125,7 +3125,7 @@ class DungeonPlanSql(unittest.TestCase):
             self.assertFalse([r for r in rows
                               if abs(float(r["x"]) - old[0]) < 0.01 and abs(float(r["y"]) - old[1]) < 0.01],
                              "the stand %s over the magma is back" % (old,))
-        halgan = leg_steps(rows, 4)
+        halgan = leg_steps(rows, 5)
         stand = [r for r in halgan if r["kind"] == "pull" and abs(float(r["x"]) + 6308.27) < 0.01]
         self.assertEqual(len(stand), 1, "the group-16 62035 pull is missing")
         i = halgan.index(stand[0])
@@ -3146,7 +3146,7 @@ class DungeonPlanSql(unittest.TestCase):
         m = halgan.index(moved[0])
         self.assertEqual([(r["x"], r["y"], r["z"], r["comment"]) for r in halgan[m - 1:m]],
                          [("-6264", "-3914", "72.6", "pull group 18 approach")], "the moved pack's stand is missing")
-        self.assertFalse([r for r in leg_steps(rows, 8)
+        self.assertFalse([r for r in leg_steps(rows, 9)
                           if (r["x"], r["y"], r["z"]) == ("-6261.17", "-3932.36", "72.6")],
                          "the 62035/62036/62046 pack is still pulled in leg 8")
         # r41s2 slotA step 755: the group-10 pull of 62073 has its own approach now, and the group-17 pull's approach replaces
@@ -3154,7 +3154,7 @@ class DungeonPlanSql(unittest.TestCase):
         # from the pack (inside the 24.5 yd shot rule), and every hop of both chains is a complete server path with no sinking
         # point (sinkgate.py, standpath.py). Remove a row and this fails: it pins the only stands that keep the lead out of
         # the pocket.
-        floor = leg_steps(rows, 8)
+        floor = leg_steps(rows, 9)
         for pack, group, chain in (
                 (("-6100.52", "-3971.36", "73.22"), "10",
                  [("-6130", "-4005", "72.6"), ("-6135", "-3990", "72.6"), ("-6119", "-3966", "72.6")]),
@@ -3179,12 +3179,12 @@ class DungeonPlanSql(unittest.TestCase):
                                                            ("-6003.2", "-4212.2666", "322.189"))],
                          "an exporter cut row of the pocket walk is back")
         for pack, group, chain in (
-                (("-6028.72", "-4176.9", "322.69"), "2", [("-6046.7", "-4190.9", "322.2")]),
-                (("-6050.79", "-4199.42", "322.1"), "4", [("-6073.8", "-4208.4", "322.2")]),
-                (("-6072.09", "-4224.85", "322.13"), "5", [("-6061.1", "-4242.8", "322.2")]),
-                (("-6028.71", "-4254.44", "322.69"), "6", [("-6022.7", "-4276.4", "322.2")]),
-                (("-6040.23", "-4274.5", "322.1"), "7", [("-6019.2", "-4287.5", "322.2")]),
-                (("-6021.87", "-4217.88", "323.96"), "56", [("-6027.9", "-4195.9", "322.2")])):
+                (("-6028.72", "-4176.9", "322.69"), "32", [("-6046.7", "-4190.9", "322.2")]),
+                (("-6050.79", "-4199.42", "322.1"), "30", [("-6073.8", "-4208.4", "322.2")]),
+                (("-6072.09", "-4224.85", "322.13"), "29", [("-6061.1", "-4242.8", "322.2")]),
+                (("-6028.71", "-4254.44", "322.69"), "28", [("-6022.7", "-4276.4", "322.2")]),
+                (("-6040.23", "-4274.5", "322.1"), "27", [("-6019.2", "-4287.5", "322.2")]),
+                (("-6021.87", "-4217.88", "323.96"), "33", [("-6027.9", "-4195.9", "322.2")])):
             i = next(j for j, r in enumerate(sear) if r["kind"] == "pull" and (r["x"], r["y"], r["z"]) == pack)
             self.assertEqual([(r["x"], r["y"], r["z"], r["comment"]) for r in sear[i - len(chain):i]],
                              [(x, y, z, "pull group %s approach" % group) for x, y, z in chain],
@@ -3195,7 +3195,7 @@ class DungeonPlanSql(unittest.TestCase):
         # Searistrasz's patrol (guid 2584790; every waypoint lies within 0.8 yd of this segment): no row of leg 3 before the
         # boss row stands within 28 yd of it (the fix-8 run's walk went along it, steps 258-264), the boss row is the leg's
         # last, the six Dragonmaw Enchanters (62453) are pulled before it, and the alcove past the patrol's north turn is the
-        # head of leg 4, its stands as fix 8 had them, pulled once he is dead.
+        # leg after it (searistrasz_alcove), its stands as fix 8 had them, pulled once he is dead.
         pa, pb = (-5981.68, -4191.49), (-5980.23, -4358.90)
 
         def patrol_yd(r):
@@ -3207,15 +3207,16 @@ class DungeonPlanSql(unittest.TestCase):
         near = [(r["x"], r["y"], round(patrol_yd(r), 1)) for r in sear[:-1] if r["kind"] == "move" and patrol_yd(r) < 28.0]
         self.assertFalse(near, "leg 3 stands on Searistrasz's patrol before his boss row: %s" % (near,))
         self.assertEqual(len([r for r in sear if r["kind"] == "pull" and r["entries"] == "62453"]), 6)
-        self.assertFalse([r for r in leg_steps(rows, 4) if "62453" in r["entries"].split(",")])
-        self.assertEqual([(r["kind"], r["x"], r["y"], r["z"], r["comment"]) for r in leg_steps(rows, 4)[:7]], [
-            ("move", "-5994", "-4196", "322.2", "searistrasz pull group 57 approach"),
-            ("pull", "-5981.44", "-4179.05", "322.1", "searistrasz pull group 57"),
-            ("move", "-5986.9", "-4178.1", "322.2", "searistrasz pull group 0 approach"),
-            ("move", "-5986.9", "-4160", "322.2", "searistrasz pull group 0 approach"),
-            ("pull", "-5980.78", "-4140.34", "322.1", "searistrasz pull group 0"),
-            ("move", "-5989.4", "-4145.1", "322.2", "searistrasz pull group 1 approach"),
-            ("pull", "-6011.39", "-4140.09", "322.1", "searistrasz pull group 1")])
+        alcove = leg_steps(rows, 4)
+        self.assertFalse([r for r in alcove if "62453" in r["entries"].split(",")])
+        self.assertEqual([(r["kind"], r["x"], r["y"], r["z"], r["comment"]) for r in alcove], [
+            ("move", "-5994", "-4196", "322.2", "to"),
+            ("pull", "-5981.44", "-4179.05", "322.1", "pull group 0"),
+            ("move", "-5986.9", "-4178.1", "322.2", "pull group 1 approach"),
+            ("move", "-5986.9", "-4160", "322.2", "pull group 1 approach"),
+            ("pull", "-5980.78", "-4140.34", "322.1", "pull group 1"),
+            ("move", "-5989.4", "-4145.1", "322.2", "pull group 2 approach"),
+            ("pull", "-6011.39", "-4140.09", "322.1", "pull group 2")])
         self.assertFalse([r for r in sear if (r["x"], r["y"]) in (("-5981.44", "-4179.05"), ("-5980.78", "-4140.34"),
                                                                   ("-6011.39", "-4140.09"), ("-5978.82", "-4137.36"))],
                          "an alcove pack or the old `to` on the far side of the patrol is back in leg 3")
@@ -3226,12 +3227,12 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertFalse([r for r in rows if abs(float(r["x"]) + 6404.5337) < 0.01 and abs(float(r["y"]) + 3950.9333) < 0.01],
                          "the old step 475 dip point is still exported")
         self.assertIn(("move", "-6387.47", "-3977.33", "72.69"),
-                      [(r["kind"], r["x"], r["y"], r["z"]) for r in leg_steps(rows, 5)],
+                      [(r["kind"], r["x"], r["y"], r["z"]) for r in leg_steps(rows, 6)],
                       "the east-rim row of the halgan climb is missing")
         # The long walks are `via` chains, one row per ~45 yd of the server's own path (the refused-hop fix).
-        self.assertGreaterEqual(len([r for r in leg_steps(rows, 5) if r["comment"] == "via"]), 19)
-        self.assertGreaterEqual(len([r for r in leg_steps(rows, 9) if r["comment"] == "via"]), 44)
-        self.assertEqual([r["kind"] for r in leg_steps(rows, 9)][-1], "boss")
+        self.assertGreaterEqual(len([r for r in leg_steps(rows, 6) if r["comment"] == "via"]), 19)
+        self.assertGreaterEqual(len([r for r in leg_steps(rows, 10) if r["comment"] == "via"]), 44)
+        self.assertEqual([r["kind"] for r in leg_steps(rows, 10)][-1], "boss")
         pulls = [r for r in rows if r["kind"] == "pull"]
         self.assertFalse({e for r in pulls for e in r["entries"].split(",")} & {"4075", "14881"}, "a critter is still a pull member")
         self.assertEqual((pulls[0]["entries"], float(pulls[0]["radius"])), ("62052", 5.0))
