@@ -196,10 +196,8 @@ For log verbosity, retention limits, CSV streams, and tick budgets, see [Logging
 
 ## What Bots Cannot Do (Yet)
 
-- [Self-botting](known-limitations.md#blocked--incomplete-features): you cannot convert your currently logged-in character into an automated bot.
 - [Autonomous dungeon clearing](dungeon-run-leader.md): an opt-in option, off by default (`AiPlayerbot.DungeonSelfClear = 0`). Turned on, a bound party clears a stored dungeon plan by itself; its limits are in [Known limitations](known-limitations.md#opt-in-dungeon-clearing).
 - [No dedicated 1v1-duel mode](known-limitations.md#blocked--incomplete-features): bots accept duels and fight duel opponents, but lack dedicated competitive player versus player skirmish logic.
-- [Expansion features](known-limitations.md#explicit-non-goals): no Death Knights, glyphs, vehicles, Outland zones, or multi-tab guild banks.
 - [Pre-movement node queries](known-limitations.md#blocked--incomplete-features): bots cannot check loot rights before walking toward a herb or ore vein.
 - [Stair pathfinding desync](known-limitations.md#known-quirks-and-workarounds): pathfinding can desync on steep multi-tiered stairs; use `.bot summon` to snap bots to your location.
 - [Dungeon queue teleportation](../world/queues.md#looking-for-turtles-lft-dungeon-autofill): Looking for Turtles forms groups without teleports; bots walk to the instance portal.
