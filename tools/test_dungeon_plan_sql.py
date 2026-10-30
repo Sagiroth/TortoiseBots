@@ -234,6 +234,17 @@ SEEDED_BOSSES.update({(509, 15348): "Kurinnaxx", (509, 15341): "General Rajaxx",
                       (509, 15370): "Buru the Gorger", (509, 15369): "Ayamiss the Hunter",
                       (509, 15339): "Ossirian the Unscarred"})
 NOT_BOSSES.update({15344, 15385, 15386, 15387, 15388, 15389, 15390, 15391, 15392, 15471, 15473})
+# Temple of Ahn'Qiraj (20261028190000): its map and its twelve boss entries, names from the core's creature_template (all rank 3).
+# Ouro (15517) has no boss row (his leg ends in the Ouro Spawner's hold on instance data 8) and is in the list all the same. The
+# Master's Eye 15963, the Ouro Spawner 15957, the Beetle 15475, the C'Thun Portal 15896 and the six friendly NPCs (the three
+# aspects and the three tier-2.5 vendors) are scripted or friendly, not bosses.
+BOSS_PLANS["temple_of_ahnqiraj"] = 531
+SEEDED_BOSSES.update({(531, 15263): "The Prophet Skeram", (531, 15544): "Vem", (531, 15511): "Lord Kri",
+                      (531, 15543): "Princess Yauj", (531, 15516): "Battleguard Sartura",
+                      (531, 15510): "Fankriss the Unyielding", (531, 15299): "Viscidus",
+                      (531, 15509): "Princess Huhuran", (531, 15275): "Emperor Vek'nilash",
+                      (531, 15276): "Emperor Vek'lor", (531, 15727): "C'Thun", (531, 15517): "Ouro"})
+NOT_BOSSES.update({15963, 15957, 15475, 15896, 15378, 15379, 15380, 15502, 15503, 15504})
 
 def migrations():
     for path in sorted(glob.glob(os.path.join(ROOT, "data/sql/world/*_world.sql"))):
@@ -4739,6 +4750,44 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (509) AND `entry` IN (15339, 15340, 15341, 15348, 15369, 15370);", text)
         self.assertIn("(509, 15348, 'behind', 0, 25814, 0, 10,", text)
         self.assertIn("(509, 15369, 'kill_first', 15555, 0, 1, 0,", text)
+    def test_temple_of_ahnqiraj_is_the_raid_prep(self):
+        # 20261028190000 (turtle-agent prep/raid-aq40 8f42c87): the 40-man AQ40 draft with the B1 prep of RAID-PREP-aq40.md, no row
+        # hand-set. 10 legs, 900 steps (729 move, 159 pull, 8 boss, 3 wait_object, 1 hold); the boss steps in route order (Skeram,
+        # Vem with Kri and Yauj first, Sartura, Fankriss, Viscidus, Huhuran, Vek'lor with Vek'nilash first, C'Thun); the three
+        # instance doors waited on after the kill that opens them (180636 after Skeram, 180634 after Huhuran, 180635 after the
+        # Twins); Ouro as the last leg's hold on instance data 8 (his entry 15517, no spawn row). The pulls are merged packs (at
+        # most 16 units, the 40-man cap) with the radius at most 35; the twelve scripted and friendly units are in no pull.
+        name, text = newest_plan_text("temple_of_ahnqiraj")
+        self.assertEqual(name, "20261028190000_world.sql")
+        self.assertIn("('temple_of_ahnqiraj', 531, '', '', '', 'turtle-agent 8f42c87 dungeons/temple_of_ahnqiraj.json', 'plan v1, draft (not mapped, not live-checked)');", text)
+        self.assertEqual([v[0] for v in leg_rows(text, "temple_of_ahnqiraj").values()],
+                         ["entrance", "skeram", "silithid", "sartura", "fankriss", "viscidus", "huhuran", "twins",
+                          "cthun", "ouro"])
+        rows = [r for r in self.step_rows(text) if r["plan"] == "temple_of_ahnqiraj"]
+        self.assertEqual(len(rows), 900)
+        self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(10)],
+                         [13, 0, 18, 1, 34, 0, 20, 51, 22, 0])
+        self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
+                         ["15263", "15544", "15516", "15510", "15299", "15509", "15276", "15727"])
+        self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss", "wait_object", "hold"})
+        # The three doors are waited on at the end of the leg of the kill that opens them, 60 s.
+        self.assertEqual([(r["leg"], r["entry"], r["timeout_s"]) for r in rows if r["kind"] == "wait_object"],
+                         [("1", "180636", "60"), ("6", "180634", "60"), ("7", "180635", "60")])
+        # Ouro: the last leg is a hold on instance data 8 (TYPE_OURO) with his entry, 600 s, radius 40.
+        holds = [r for r in rows if r["kind"] == "hold"]
+        self.assertEqual([(r["leg"], r["entry"], r["param"], r["flags"], r["timeout_s"], r["radius"], r["entries"]) for r in holds],
+                         [("9", "8", "3", "40", "600", "40", "15517")])
+        pulls = [r for r in rows if r["kind"] == "pull"]
+        self.assertEqual(len(pulls), 159)
+        self.assertLessEqual(max(float(r["radius"]) for r in pulls), 35.0)
+        self.assertLessEqual(max(len(r["entries"].split(",")) for r in pulls), 16)
+        # No pull lists the Master's Eye, the Beetle, the C'Thun Portal, the Ouro Spawner or a friendly NPC.
+        for entry in ("15963", "15957", "15475", "15896", "15378", "15379", "15380", "15502", "15503", "15504"):
+            self.assertFalse([r for r in pulls if entry in r["entries"].split(",")], entry)
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["temple_of_ahnqiraj"])
+        self.assertIn("DELETE FROM `ai_dungeon_boss` WHERE `map` IN (531) AND `entry` IN (15263, 15544, 15511, 15543, 15516, 15510, 15299, 15509, 15275, 15276, 15727, 15517);", text)
+        self.assertIn("(531, 15543, 'interrupt', 0, 25807, 0, 0,", text)
+        self.assertIn("(531, 15299, 'kill_first', 15667, 0, 1, 0,", text)
 
 if __name__ == "__main__":
     unittest.main()
