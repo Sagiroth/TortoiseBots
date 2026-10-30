@@ -4475,6 +4475,7 @@ inline bool Resume(Run& r)
     r.fighting = false;
     r.autoRegroups = 0;
     r.nearWipeMarks.clear(); // the commander's resume starts a fresh near-wipe count
+    r.wipeEventOn = false;   // a party still at the wipe level on resume is the first mark of it
     r.wipeStopDue = false;
     r.otherPartRescues = 0; // a resume gives the lead bot in another part fresh rescue teleports
     r.offMapReturnTries.clear();

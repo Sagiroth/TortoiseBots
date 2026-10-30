@@ -23484,6 +23484,24 @@ static void TestNearWipeStopOffAtZero()
     CHECK(!r.wipeStopDue);
 }
 
+static void TestResumeWhileStillWipedCountsThatWipe()
+{
+    DungeonPlan plan = MoveRowPlan(40);
+    Run r = NearWipeRun(plan);
+    r.step = 31;
+    r.runMs = r.nearWipeMarks.front().runMs + 60000 - kTickMs;
+    Facts eight = NearWipeRaid(8);
+    eight.anyInCombat = true;
+    Tick(r, eight);
+    eight.anyInCombat = false;
+    Tick(r, eight);
+    CHECK(r.state == State::Paused);
+    CHECK(Resume(r)); // resumed with the party still at the wipe level
+    CHECK(!r.wipeEventOn);
+    Tick(r, eight);
+    CHECK(r.nearWipeMarks.size() == 1); // the wipe in progress is the first mark of the fresh count
+}
+
 static void TestResumeClearsTheNearWipeCount()
 {
     DungeonPlan plan = MoveRowPlan(40);
@@ -25022,6 +25040,7 @@ int main()
     TestDirectWipeIsOneMark();
     TestNearWipeStopOffAtZero();
     TestResumeClearsTheNearWipeCount();
+    TestResumeWhileStillWipedCountsThatWipe();
     TestNearWipeStopPastCeiling();
     TestNearWipeStopWithGmPinned();
     TestNearWipeStopGating();
