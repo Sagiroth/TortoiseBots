@@ -108,6 +108,9 @@ class AvoidCastWiring(unittest.TestCase):
         self.assertIn("dynamic_cast<FollowAction*>(action)", fn)
         self.assertLess(fn.index("dynamic_cast<FollowAction*>(action)"), fn.index('AI_VALUE(Unit*, "follow target")'))
         self.assertIn('#include "FollowActions.h"', ACTIONS)
+        # ...and the bot's formation spot around it, where the follow actually walks.
+        self.assertIn('AI_VALUE(WorldPosition, "formation position")', fn)
+        self.assertIn("CastHoldsMove(false, false, true, spot.getX(), spot.getY(), spot.getZ(), zones)", fn)
         # Only on a map with an avoid_cast row.
         self.assertLess(fn.index("HasAvoidCastMap(bot->GetMapId())"), fn.index("ScanBossTactics("))
         # On the combat and the non-combat engine.

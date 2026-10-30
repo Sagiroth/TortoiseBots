@@ -261,13 +261,17 @@ float BossTacticsCastHoldMultiplier::GetValue(Action* action)
                                                                                                              : 1.0f;
     }
     // Any other move towards a unit (a reach, a chase, a heal walk, a follow): held while that unit stands in a blast.
-    // A follow does not name its unit as the action's target (it reads "follow target" in Execute), so that one is
-    // read here too.
+    // A follow does not name its unit as the action's target (it reads "follow target" in Execute), and it walks to
+    // the bot's formation spot around that unit: held while either the unit or that spot stands in a blast.
     Unit* target = nullptr;
     if (dynamic_cast<FollowAction*>(action))
     {
         AiObjectContext* context = ai->GetAiObjectContext();
         target = AI_VALUE(Unit*, "follow target");
+        WorldPosition const spot = AI_VALUE(WorldPosition, "formation position");
+        if (spot.GetMapId() == bot->GetMapId() &&
+            CastHoldsMove(false, false, true, spot.getX(), spot.getY(), spot.getZ(), zones))
+            return 0.0f;
     }
     else
         target = action->GetTarget();
