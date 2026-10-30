@@ -208,13 +208,14 @@ namespace ai
         return kAvoidCastPoints;
     }
 
-    // One bot's last avoid_cast walk-out, kept to log a cast once per bot. A cast is the same while the
-    // bot keeps meeting it: same caster, same spell, same cast instance (the address of the caster's current Spell
-    // object, new for every cast) and the walk-out seen again within kAvoidCastLogGapMs. The gap covers an
-    // allocator handing a finished cast's address to the next one.
+    // The avoid_cast walk-outs a bot met lately, kept to log a cast once per bot. A cast is the same while the bot keeps
+    // meeting it: same caster, same spell, same cast instance (the address of the caster's current Spell object, new
+    // for every cast) and seen again within kAvoidCastLogGapMs; the gap covers an allocator handing a finished cast's
+    // address to the next one. The bot keeps several, since the nearest of two casters at once can alternate.
     constexpr std::uint32_t kAvoidCastLogGapMs = 2000;
+    constexpr int kAvoidCastLogCasts = 4;
 
-    struct AvoidCastLogState
+    struct AvoidCastLogEntry
     {
         bool known = false;
         std::uint64_t casterGuid = 0;
@@ -223,19 +224,45 @@ namespace ai
         std::uint32_t lastSeenMs = 0;
     };
 
+    struct AvoidCastLogState
+    {
+        AvoidCastLogEntry casts[kAvoidCastLogCasts];
+    };
+
     // True when this walk-out is the first of its cast for the bot; always records that it was seen now.
     inline bool AvoidCastIsNewCast(AvoidCastLogState& state, std::uint64_t casterGuid, std::uint32_t spellId,
                                    std::uint64_t instance, std::uint32_t nowMs)
     {
-        bool const same = state.known && state.casterGuid == casterGuid && state.spellId == spellId &&
-                          state.instance == instance &&
-                          static_cast<std::uint32_t>(nowMs - state.lastSeenMs) < kAvoidCastLogGapMs;
-        state.known = true;
-        state.casterGuid = casterGuid;
-        state.spellId = spellId;
-        state.instance = instance;
-        state.lastSeenMs = nowMs;
-        return !same;
+        AvoidCastLogEntry* slot = nullptr;
+        for (AvoidCastLogEntry& e : state.casts)
+        {
+            if (!e.known || static_cast<std::uint32_t>(nowMs - e.lastSeenMs) >= kAvoidCastLogGapMs)
+            {
+                // Free, or a cast not seen for the gap: the slot can be reused (matching it counts as new).
+                if (!slot || (slot->known && !e.known))
+                    slot = &e;
+                continue;
+            }
+            if (e.casterGuid == casterGuid && e.spellId == spellId && e.instance == instance)
+            {
+                e.lastSeenMs = nowMs;
+                return false;
+            }
+        }
+        if (!slot)
+        {
+            // All four are live: drop the one seen longest ago.
+            slot = &state.casts[0];
+            for (AvoidCastLogEntry& e : state.casts)
+                if (static_cast<std::uint32_t>(nowMs - e.lastSeenMs) > static_cast<std::uint32_t>(nowMs - slot->lastSeenMs))
+                    slot = &e;
+        }
+        slot->known = true;
+        slot->casterGuid = casterGuid;
+        slot->spellId = spellId;
+        slot->instance = instance;
+        slot->lastSeenMs = nowMs;
+        return true;
     }
 
     // A live creature in the fight, as the kill-first pick sees it.

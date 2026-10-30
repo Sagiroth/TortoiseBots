@@ -264,6 +264,19 @@ int main()
         CHECK(!AvoidCastIsNewCast(state, 0x2222, 23511, 100, 3600 + kAvoidCastLogGapMs + 10));
         // Same caster and spell but a new Spell object (a recast inside the gap) is a new cast.
         CHECK(AvoidCastIsNewCast(state, 0x2222, 23511, 200, 3600 + kAvoidCastLogGapMs + 20));
+        // Two casters at once, the nearest one alternating between ticks: one row each.
+        AvoidCastLogState two;
+        CHECK(AvoidCastIsNewCast(two, 0xA, 24024, 1, 10000));
+        CHECK(AvoidCastIsNewCast(two, 0xB, 24024, 2, 10100));
+        CHECK(!AvoidCastIsNewCast(two, 0xA, 24024, 1, 10200));
+        CHECK(!AvoidCastIsNewCast(two, 0xB, 24024, 2, 10300));
+        CHECK(!AvoidCastIsNewCast(two, 0xA, 24024, 1, 10400));
+        // More live casts than slots evicts the one seen longest ago.
+        AvoidCastLogState many;
+        for (std::uint64_t g = 1; g <= kAvoidCastLogCasts; ++g)
+            CHECK(AvoidCastIsNewCast(many, g, 24024, g, 20000 + 10 * static_cast<std::uint32_t>(g)));
+        CHECK(AvoidCastIsNewCast(many, 99, 24024, 99, 20100));
+        CHECK(AvoidCastIsNewCast(many, 1, 24024, 1, 20110));   // caster 1 was the evicted one
         // The millisecond clock wraps: 4294967000 -> 100 is 396 ms, still the same cast.
         AvoidCastLogState wrap;
         CHECK(AvoidCastIsNewCast(wrap, 7, 1, 100, 4294967000u));
