@@ -16479,6 +16479,24 @@ static void TestPackResidueIsPulledBeforePackCleared()
     CHECK(r.step == 1 && r.note == "pack cleared");
 }
 
+// A residue tick that only gathers (the party is spread out, so PullUnit sends no pull) is not a re-pull: after
+// five gather ticks the step must still be running, not paused at the re-pull cap.
+static void TestGatherTicksAreNoRepulls()
+{
+    DungeonPlan plan = ZgPlateauPlan();
+    Run r = Start(&plan);
+    Facts f = ZgParty();
+    f.maxMemberYd = 40.0f; // not gathered: the pull ticks gather instead of pulling
+    f.packResidue = {Residue(0xc001, 11368, 29.3f, 23.2f, -12155.5f, -1455.09f, 130.6f)};
+    for (int i = 0; i < 5; ++i)
+    {
+        Tick(r, f);
+        CHECK(r.state == State::Running);
+        CHECK(r.packRepulls == 0);
+        CHECK(r.note.find("pack not cleared") == std::string::npos);
+    }
+}
+
 static void TestPackResidueCapPauses()
 {
     DungeonPlan plan = ZgPlateauPlan();
@@ -24283,6 +24301,7 @@ int main()
     TestClassifyPullRead();
     TestPullStepWaitsForItsOwnPatrolAtTheFarEnd();
     TestPackResidueIsPulledBeforePackCleared();
+    TestGatherTicksAreNoRepulls();
     TestPackResidueCapPauses();
     TestPackClearGateOff();
     TestResidueInAnotherStepsRadiusIsLeft();

@@ -10063,8 +10063,11 @@ inline bool PackResidueTick(Run& r, const Facts& f, const PlanStep& s, std::uint
         r.note = "checking the way back to " + Num(r.anchorX) + " " + Num(r.anchorY) + " " + Num(r.anchorZ);
         return true;
     }
-    ++r.packRepulls;
+    auto const before = r.pulls;
     PullUnit(r, f, *pick, order, 0, false, dt);
+    if (r.pulls == before)
+        return true; // no pull went out (a gather, a death, a sap): not a re-pull
+    ++r.packRepulls;
     r.note = "pack not cleared: " + left + " (re-pull " + std::to_string(r.packRepulls) + " of " +
         std::to_string(f.packClearRepulls) + "); " + r.note;
     return true;
