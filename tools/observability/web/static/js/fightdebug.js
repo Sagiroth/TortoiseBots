@@ -364,14 +364,17 @@
       let killing = null;
       hits.forEach((h) => { if (!killing || h.t_ms > killing.t_ms) killing = h; });
       if (killing && killing.sp && killing.sp !== "melee") spell = { name: killing.sp, sid: killing.spSid, t_ms: killing.spT, likely: killing.spLikely };
+      const killedByMelee = !!(killing && killing.sp === "melee");
       if (spell) likely = !!spell.likely;
       for (let j = hits.length - 1; !spell && j >= 0; j--) {
         if (hits[j].s) { spell = { name: hits[j].s, sid: hits[j].sid != null ? hits[j].sid : null, t_ms: hits[j].t_ms, likely: false }; break; }
       }
-      if (!spell && Array.isArray(log)) {
+      if (!spell && !killedByMelee && Array.isArray(log)) {
         const guid = b && b.guid != null ? String(b.guid) : null;
         const cast = log.map((e) => e || {}).filter((e) => e.k === "cast" && num(e.t) !== null
           && e.t <= d.t_ms && e.t >= d.t_ms - 3000
+          // only the killing blow's own attacker: another mob's cast near the death is not the killing spell
+          && (!killing || !killing.a || !e.n || e.n === killing.a)
           && (!e.tg || (guid !== null && String(e.tg) === guid) || (e.tn && e.tn === d.name)))
           .sort((x, y) => x.t - y.t).pop();
         if (cast) { spell = { name: cast.s || "a spell", sid: cast.sid != null ? cast.sid : null, t_ms: cast.t, likely: true }; likely = true; }

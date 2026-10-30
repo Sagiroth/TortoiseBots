@@ -168,3 +168,15 @@ assert.ok(mobRows.includes("Auras") && mobRows.includes("Snake Form 12 s"), mobR
 assert.ok(mobRows.includes("untargetable") && mobRows.includes("flying") && mobRows.includes("snake"), mobRows);
 
 console.log("boss ui ok");
+
+// Codex round 2: the likely-spell fallback reads only the killing attacker's casts; another mob casting at the bot in the
+// last 3 s is not the killing spell.
+{
+  const TWO = JSON.parse(JSON.stringify(MELEE_FIGHT));
+  const d0 = TWO.deaths && TWO.deaths[0];
+  if (d0 && Array.isArray(TWO.log)) {
+    TWO.log.push({ k: "cast", t: d0.t_ms - 500, n: "Some Other Mob", s: "Shadow Bolt", sid: 9613, tn: d0.name });
+    const r = run("FightDebug.deathRecaps(f)", { f: TWO });
+    assert.notStrictEqual(r[0].spell && r[0].spell.name, "Shadow Bolt", "another mob's cast is not the killing spell");
+  }
+}
