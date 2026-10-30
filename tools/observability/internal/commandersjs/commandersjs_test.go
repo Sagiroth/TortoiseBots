@@ -258,6 +258,14 @@ func TestGlideJS(t *testing.T) {
 	runCheck(t, "glide_check.js", "../../web/static/js/glide.js")
 }
 
+// TestGlideReplayJS runs glide_replay_check.js: a raid walk's live frames (testdata/walk-live-trace.json, built by
+// mk_walk_trace.py) replayed in arrival order through app.js's handlers, the refresh gate and the glide, drawn every 16 ms:
+// no unit is drawn stepping back more than 0.3 yd by the page (a late report, the render clock, a snap) and no dot jumps
+// away and back; the server's own turn back is still drawn.
+func TestGlideReplayJS(t *testing.T) {
+	runCheck(t, "glide_replay_check.js", "../../web/static/js/app.js", "testdata/walk-live-trace.json")
+}
+
 // TestBossOverlayJS runs bossoverlay_check.js: the boss overlay on the map and in the replay (the facing arrow, the spell's area,
 // the cast ring and label, the escaping), and the CSS block that styles them.
 func TestBossOverlayJS(t *testing.T) {

@@ -53,6 +53,20 @@
       else if (k === "mark") flags.mark = true;
       else if (k === "int") flags.interruptible = true;
     });
+    // The converter's JSON names one field per flag instead of a flags string; those fields win when both name a flag.
+    const fieldPhase = str(row.phase).trim();
+    if (fieldPhase) flags.phase = fieldPhase;
+    const fieldTarget = str(row.target).trim();
+    if (fieldTarget) flags.target = fieldTarget;
+    if (row.aura) flags.aura = true;
+    if (row.self) flags.self = true;
+    if (row.ground) flags.ground = true;
+    if (row.mark) flags.mark = true;
+    if (row.int) flags.interruptible = true;
+    const fieldSummon = num(row.summon);
+    if (fieldSummon) flags.summon = fieldSummon;
+    const fieldHp = num(row.hp);
+    if (fieldHp) flags.hpBelow = fieldHp;
     return {
       sid: spell,
       name: str(first(row.name, row.n, row.spellName, row.spell_name, "spell " + spell)),
