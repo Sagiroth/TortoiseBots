@@ -6423,7 +6423,7 @@
   }
   function covFetch(force) {
     if (!force && covRows !== undefined) { covCompute(); return Promise.resolve(covRows); }
-    return fetch('/api/v1/boss/tactics', { credentials: 'same-origin' })
+    return fetch('/api/v1/boss/tactics' + (force ? '?refresh=1' : ''), { credentials: 'same-origin' })
       .then(r => (r && r.ok ? r.json() : null))
       .then(d => { covRows = d || null; covCompute(); return covRows; })
       .catch(() => { covRows = null; covCompute(); return null; });

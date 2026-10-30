@@ -456,6 +456,15 @@ func (s *Service) Get(ctx context.Context) (*Snapshot, error) {
 	return snap, err
 }
 
+// Refresh drops the cached answer and reads again (the page's Reload button), so a changed tactic table shows at once
+// instead of after CacheTTL. Concurrent callers still share the one read in flight.
+func (s *Service) Refresh(ctx context.Context) (*Snapshot, error) {
+	s.mu.Lock()
+	s.expires = time.Time{}
+	s.mu.Unlock()
+	return s.Get(ctx)
+}
+
 // canceled reports a read its caller stopped waiting for: it says nothing
 // about the world database, so it is not cached.
 func canceled(err error) bool {
@@ -597,7 +606,11 @@ func Handler(s *Service) http.HandlerFunc {
 			}
 			mapID = uint32(n)
 		}
-		snap, err := s.Get(r.Context())
+		get := s.Get
+		if r.URL.Query().Get("refresh") == "1" {
+			get = s.Refresh
+		}
+		snap, err := get(r.Context())
 		if err != nil {
 			log.Printf("[BossTactics] world database: %v", err)
 			w.WriteHeader(http.StatusServiceUnavailable)

@@ -46,23 +46,25 @@ NEED_ORDER = (
 DB_NEEDS = frozenset(("interrupt", "kill", "front", "tail", "avoid", "mark"))
 LEVEL_ORDER = {"none": 0, "unknown": 1, "partly": 2, "full": 3}
 
+ROW_CAPS = {"tactic": 5000, "stand": 5000, "plan": 1000, "step": 20000}  # the daemon's Tactics/Stands/Plans/StepsLimit
+
 QUERY_TACTICS = (
     "SELECT `map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`, `comment` "
-    "FROM `ai_boss_tactic` ORDER BY `map`, `boss_entry`, `kind`, `target_entry`, `spell_id` LIMIT 5000"
+    "FROM `ai_boss_tactic` ORDER BY `map`, `boss_entry`, `kind`, `target_entry`, `spell_id` LIMIT " + str(ROW_CAPS["tactic"] + 1)
 )
 QUERY_STANDS = (
     "SELECT `map`, `boss_entry`, `window_spell`, `aura`, `role`, `window_signal`, SUM(`slots`) "
     "FROM `ai_boss_stand` GROUP BY `map`, `boss_entry`, `window_spell`, `aura`, `role`, `window_signal` "
-    "ORDER BY `map`, `boss_entry`, `window_spell`, `role` LIMIT 5000"
+    "ORDER BY `map`, `boss_entry`, `window_spell`, `role` LIMIT " + str(ROW_CAPS["stand"] + 1)
 )
 QUERY_PLAN_KILL_FIRST = (
-    "SELECT `plan`, `map`, `kill_first` FROM `ai_dungeon_plan` ORDER BY `plan` LIMIT 1000"
+    "SELECT `plan`, `map`, `kill_first` FROM `ai_dungeon_plan` ORDER BY `plan` LIMIT " + str(ROW_CAPS["plan"] + 1)
 )
 
 QUERY_STEPS = (
     "SELECT s.`plan`, p.`map`, s.`kind`, s.`entry`, s.`entries` "
     "FROM `ai_dungeon_step` s JOIN `ai_dungeon_plan` p ON p.`plan` = s.`plan` "
-    "ORDER BY s.`plan`, s.`leg`, s.`seq` LIMIT 20000"
+    "ORDER BY s.`plan`, s.`leg`, s.`seq` LIMIT " + str(ROW_CAPS["step"] + 1)
 )
 
 SQL_TABLES = ("ai_boss_tactic", "ai_boss_stand", "ai_dungeon_plan", "ai_dungeon_step")
@@ -660,17 +662,24 @@ def _bundle(tactics, stands, plans, source, files, boss_steps=()):
     }
 
 
-def _db_query(connect, query):
+def _db_query(connect, query, cap):
+    """The rows of one read; more than `cap` means the table was cut, and a partial read must not look complete."""
     connection = connect()
     try:
         cursor = connection.cursor()
         try:
             cursor.execute(query)
-            return cursor.fetchall()
+            rows = cursor.fetchall()
         except Exception as exc:
             if _missing_table(exc):
                 return None
             raise
+        if len(rows) > cap:
+            raise boss_data.DataError(
+                f"the world DB read hit its {cap}-row cap: the snapshot would be partial, "
+                "so coverage is not reported (the dashboard shows it as cut)"
+            )
+        return rows
     finally:
         connection.close()
 
@@ -678,7 +687,7 @@ def _db_query(connect, query):
 def db_rows(connect):
     """The same three reads as the daemon, through a boss_data.db_connect factory."""
     tactics = []
-    for row in _db_query(connect, QUERY_TACTICS) or ():
+    for row in _db_query(connect, QUERY_TACTICS, ROW_CAPS["tactic"]) or ():
         tactics.append(
             {
                 "map": int(row[0]),
@@ -692,7 +701,7 @@ def db_rows(connect):
             }
         )
     stands = []
-    for row in _db_query(connect, QUERY_STANDS) or ():
+    for row in _db_query(connect, QUERY_STANDS, ROW_CAPS["stand"]) or ():
         stands.append(
             {
                 "map": int(row[0]),
@@ -705,10 +714,10 @@ def db_rows(connect):
             }
         )
     plans = []
-    for row in _db_query(connect, QUERY_PLAN_KILL_FIRST) or ():
+    for row in _db_query(connect, QUERY_PLAN_KILL_FIRST, ROW_CAPS["plan"]) or ():
         plans.append({"plan": row[0], "map": int(row[1]), "killFirst": row[2] or ""})
     boss_steps = []
-    for row in _db_query(connect, QUERY_STEPS) or ():
+    for row in _db_query(connect, QUERY_STEPS, ROW_CAPS["step"]) or ():
         if row[2] == "boss":
             boss_steps.append(
                 {"plan": row[0], "map": int(row[1]), "boss": int(row[3]), "killFirst": row[4] or ""}

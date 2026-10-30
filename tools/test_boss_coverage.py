@@ -389,6 +389,26 @@ class CoverageTest(unittest.TestCase):
         )
         self.assertEqual(rows["source"], "world")
 
+    def test_db_read_at_its_cap_is_refused(self):
+        class Cursor:
+            def execute(self, sql):
+                self.sql = sql
+
+            def fetchall(self):
+                if "ai_dungeon_plan" in self.sql and "ai_dungeon_step" not in self.sql:
+                    return [("p%d" % i, 900, "") for i in range(boss_coverage.ROW_CAPS["plan"] + 1)]
+                return []
+
+        class Connection:
+            def cursor(self):
+                return Cursor()
+
+            def close(self):
+                pass
+
+        with self.assertRaises(boss_data.DataError):
+            boss_coverage.db_rows(lambda: Connection())
+
     def test_db_missing_table_is_empty(self):
         class Error(Exception):
             pass

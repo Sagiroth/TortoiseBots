@@ -120,7 +120,7 @@ raid, the abilities the bots have no answer for, plus the tactic and stand rows
 that answer nothing. Rows come from replaying `data/sql/world` in file-name order
 (`--sql-dir`), or from the world DB with `--db`; the abilities come from the CSV,
 so an uncommitted row shows up at once. `--all` prints every line, `--json` the
-machine form, `--fail-on-missing` exits 1 when anything is missing. The page's
+machine form, `--fail-on-missing` exits 1 when anything is missing. `--db` refuses (exit 2) a table that hits the daemon's row cap, as a partial read would look complete. The page's
 "Raid coverage" tab reads the same rule from the running world DB.
 
 ## Citations

@@ -135,6 +135,39 @@ func TestServiceCache(t *testing.T) {
 	}
 }
 
+func TestServiceRefresh(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	src := newFake()
+	srv := NewService(src)
+	srv.SetClock(func() time.Time { return now })
+	if _, err := srv.Get(context.Background()); err != nil {
+		t.Fatalf("first get: %v", err)
+	}
+	now = now.Add(time.Second) // well inside the TTL
+	if _, err := srv.Get(context.Background()); err != nil || src.callCount() != 1 {
+		t.Fatalf("a get inside the TTL must stay cached (calls %d, err %v)", src.callCount(), err)
+	}
+	snap, err := srv.Refresh(context.Background())
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if src.callCount() != 2 {
+		t.Fatalf("refresh inside the TTL read the source %d times, want 2", src.callCount())
+	}
+	if again, _ := srv.Get(context.Background()); again.LoadedAt != snap.LoadedAt || src.callCount() != 2 {
+		t.Fatalf("the refreshed snapshot is the cached one afterwards")
+	}
+	h := Handler(srv)
+	h(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/v1/boss/tactics?refresh=1", nil))
+	if src.callCount() != 3 {
+		t.Fatalf("?refresh=1 read the source %d times in all, want 3", src.callCount())
+	}
+	h(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/v1/boss/tactics", nil))
+	if src.callCount() != 3 {
+		t.Fatalf("a plain request must use the cache, source read %d times", src.callCount())
+	}
+}
+
 func TestServiceErrorTTL(t *testing.T) {
 	now := time.Unix(1700000000, 0)
 	src := newFake()
