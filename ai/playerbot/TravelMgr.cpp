@@ -3264,22 +3264,19 @@ PartitionedTravelList TravelMgr::GetOrderZonePartitions(const WorldPosition& cen
 
         // Nearest valid in-zone point per distance band: the band walk (not
         // just the closest band) is what keeps a planned zone servable when
-        // another zone's spawns of the same entry sit nearer the bot.
+        // another zone's spawns of the same entry sit nearer the bot. Cheap
+        // tests first: distance and band are plain math, while the area and
+        // level checks can load terrain, so they only run for a point that
+        // would beat its band's best.
         std::map<uint32, TravelPoint> bestByBand;
         for (auto& position : points)
         {
             if (!position)
                 continue;
-            AreaTableEntry const* area = position->GetArea();
-            uint32 pointZoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
-            if (pointZoneId != zoneId)
-                continue;
             float distance = position->distance(center);
             if (maxDistance > 0 && distance > maxDistance)
                 continue;
             if (info.GetLevel() <= 5 && distance > 1500.0f)
-                continue;
-            if (!IsLocationLevelValid(*position, info, purposeFlag))
                 continue;
             float sqDist = distance * distance;
             uint32 band = 0;
@@ -3293,8 +3290,15 @@ PartitionedTravelList TravelMgr::GetOrderZonePartitions(const WorldPosition& cen
                 }
             }
             auto found = bestByBand.find(band);
-            if (found == bestByBand.end() || distance < std::get<2>(found->second))
-                bestByBand[band] = TravelPoint(dest, position, distance);
+            if (found != bestByBand.end() && distance >= std::get<2>(found->second))
+                continue;
+            AreaTableEntry const* area = position->GetArea();
+            uint32 pointZoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
+            if (pointZoneId != zoneId)
+                continue;
+            if (!IsLocationLevelValid(*position, info, purposeFlag))
+                continue;
+            bestByBand[band] = TravelPoint(dest, position, distance);
         }
         for (auto& [band, point] : bestByBand)
             pointMap[band].push_back(point);
