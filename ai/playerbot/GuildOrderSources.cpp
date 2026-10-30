@@ -191,6 +191,31 @@ struct ZoneAccum
 
 } // namespace
 
+// Planner-side mirror of the grind hostility gate: the creature entry is a
+// farm source only when hostile to the bot's own faction template. Cheapest
+// correct check: creature_template faction -> FactionTemplateEntry on both
+// sides, masks and enemy lists via the pure policy. Missing rows fail closed
+// (no source planned) - a template the core never loaded cannot be aimed at
+// either, and planning it would only buy an inactive travel search.
+bool GuildOrderPreyHostileToBot(Player* bot, int32_t entry)
+{
+    if (!bot || entry <= 0)
+        return false;
+    CreatureInfo const* preyInfo = sObjectMgr.GetCreatureTemplate(uint32_t(entry));
+    FactionTemplateEntry const* botTemplate = bot->GetFactionTemplateEntry();
+    FactionTemplateEntry const* preyTemplate =
+        preyInfo ? sObjectMgr.GetFactionTemplateEntry(preyInfo->faction) : nullptr;
+    if (!botTemplate || !preyTemplate)
+        return false;
+    FactionTemplateMasks botMasks{ botTemplate->faction, botTemplate->ourMask, botTemplate->hostileMask,
+        { botTemplate->enemyFaction[0], botTemplate->enemyFaction[1],
+          botTemplate->enemyFaction[2], botTemplate->enemyFaction[3] } };
+    FactionTemplateMasks preyMasks{ preyTemplate->faction, preyTemplate->ourMask, preyTemplate->hostileMask,
+        { preyTemplate->enemyFaction[0], preyTemplate->enemyFaction[1],
+          preyTemplate->enemyFaction[2], preyTemplate->enemyFaction[3] } };
+    return FactionTemplatesHostile(botMasks, preyMasks);
+}
+
 // Built once at startup, after the travel data is ready. When quest travel
 // is off, "entry guidps" was never built and the travel tables are empty:
 // the index stays empty instead of forcing a world-wide terrain load, and
@@ -698,6 +723,11 @@ SourcePlan PlanGuildOrderSources(Player* bot, uint32_t itemId, OrderType type)
         if (slices == index.zonesByEntry.end())
             continue;
         bool const creature = source.entry > 0;
+        // Only creatures hostile to the bot: a same-faction mob (faction-11
+        // Rebel Watchman, Mountaineers, Tidewater crew) would plan a zone the
+        // travel leg then rejects as inactive. Nodes have no faction to fight.
+        if (creature && !GuildOrderPreyHostileToBot(bot, source.entry))
+            continue;
         // Elite, rare-elite and boss mobs never farm for a solo bot. They
         // still feed the fallback need below, so the search can say what the
         // item comes from while the verdict says elite.

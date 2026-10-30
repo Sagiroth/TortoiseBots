@@ -82,4 +82,10 @@ std::pair<uint32_t, uint32_t> GuildOrderFarmItemFor(Player* bot);
 bool GuildOrderEntryUsableFor(uint32_t itemId, int32_t entry, uint32_t botLevel,
     uint32_t team, uint32_t zoneId, uint32_t skillValue, bool hasSkill);
 
+// Whether the creature entry is hostile to the bot's own faction template:
+// the planner-side mirror of the grind hostility gate. The planner and the
+// travel leg both refuse non-hostile creatures, so planned zones only hold
+// mobs the leg can actually attack. World thread only.
+bool GuildOrderPreyHostileToBot(Player* bot, int32_t entry);
+
 } // namespace ai

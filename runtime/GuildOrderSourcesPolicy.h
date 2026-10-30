@@ -54,6 +54,39 @@ inline bool SourceLevelFits(uint32_t sourceLevel, uint32_t botLevel)
     return sourceLevel > 0 && sourceLevel <= botLevel + kSourceLevelMargin;
 }
 
+// A creature the bot cannot attack is no farm source: the grind hostility
+// gate (GrindTravelDestination::IsActive) would refuse it as inactive, so the
+// plan must not name it. Hostile means the faction-template reaction between
+// the bot's own template and the creature's template is hostile - the same
+// verdict the travel gate reads, minus the live unit (reputation at-war,
+// contested-PvP guards) it cannot see at plan time. Plain values in, so the
+// core lookups stay at the call site and the rule stays unit tested.
+struct FactionTemplateMasks
+{
+    uint32_t faction = 0;
+    uint32_t ourMask = 0;
+    uint32_t hostileMask = 0;
+    uint32_t enemyFaction[4] = { 0, 0, 0, 0 };
+};
+
+// Mirror of the core reaction read (PlayerbotAI::GetFactionReaction, copied
+// from the reputation code): hostile when the mask pairs or either side's
+// enemy list says so. A neutral (non-hostile) creature is no farm source.
+inline bool FactionTemplatesHostile(FactionTemplateMasks const& bot, FactionTemplateMasks const& prey)
+{
+    if (prey.ourMask & bot.hostileMask)
+        return true;
+    for (uint32_t enemy : bot.enemyFaction)
+        if (enemy && enemy == prey.faction)
+            return true;
+    if (bot.ourMask & prey.hostileMask)
+        return true;
+    for (uint32_t enemy : prey.enemyFaction)
+        if (enemy && enemy == bot.faction)
+            return true;
+    return false;
+}
+
 // Zone score: spawns x chance. A zone with twice the mobs at half the chance
 // pays the same per walk, so both rank equal and the tie-break decides.
 inline double ZoneScore(uint32_t spawns, float chancePct)
