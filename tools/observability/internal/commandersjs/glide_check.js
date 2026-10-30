@@ -430,4 +430,22 @@ assert.strictEqual(G.EXTRAP_MS, undefined, "no extrapolation past the newest sam
   near(st.units.b1.samples[st.units.b1.samples.length - 1].x, 7, "and nothing is promoted later");
 }
 
+// a map change or a death in a report is not held back by the position-frame window: it snaps at once
+{
+  const st = G.create();
+  G.sampled(st, T0, S0, undefined, true);
+  G.note(st, "b1", 0, 0, 209, true, T0, S0, undefined, true);
+  G.note(st, "d1", 0, 0, 209, true, T0, S0, undefined, true);
+  G.sampled(st, T0 + 500, undefined, undefined, false);
+  G.note(st, "b1", 50, 60, 530, true, T0 + 500, undefined);
+  G.note(st, "d1", 0, 0, 209, false, T0 + 500, undefined);
+  const b = st.units.b1, d = st.units.d1;
+  assert.strictEqual(b.map, 530, "the new map is taken at once");
+  assert.strictEqual(b.samples.length, 1, "the old map's samples are dropped");
+  near(b.samples[0].x, 50, "and the unit stands where the new map says");
+  assert.ok(!b.held, "nothing is held for a map change");
+  assert.strictEqual(d.alive, false, "a death is taken at once");
+  assert.strictEqual(d.samples.length, 1, "and snaps");
+}
+
 console.log("glide_check.js ok");
