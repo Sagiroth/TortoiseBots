@@ -27,6 +27,7 @@ import (
 	"tortoise-observability/internal/agentmaps"
 	"tortoise-observability/internal/armory"
 	"tortoise-observability/internal/auth"
+	"tortoise-observability/internal/bosstactics"
 	"tortoise-observability/internal/combat"
 	"tortoise-observability/internal/control"
 	"tortoise-observability/internal/dungeons"
@@ -317,14 +318,18 @@ func main() {
 		log.Printf("[AgentMaps] run maps served from %s (at most %d files, %d MiB each)", agentMaps.Root(), agentmaps.MaxFiles, agentmaps.MaxFileSize>>20)
 	}
 
-	// Dungeon and raid plans (the run leader's ai_dungeon_* rows, read-only, cached) for the map's plan layer: opened here so
-	// the fight history's pack lookup can read them before the telemetry listener starts.
+	// Dungeon and raid plans (the run leader's ai_dungeon_* rows, read-only, cached) for the map's plan layer, and the boss
+	// tactic rows the coverage view reads: opened here so the fight history's pack lookup can read them before the telemetry
+	// listener starts, and both services share the one small pool.
 	plans.SetPatrolsDir(*patrolsDir)
 	var planSvc *plans.Service
-	if worldDB, err := plans.OpenWorld(*dbHost, *dbPort, *dbUser, *dbPass, *dbWorld); err != nil {
-		log.Printf("[Plans] world database: %v (the plan layer is off)", err)
+	var tacticSvc *bosstactics.Service
+	worldDB, worldErr := plans.OpenWorld(*dbHost, *dbPort, *dbUser, *dbPass, *dbWorld)
+	if worldErr != nil {
+		log.Printf("[Plans] world database: %v (the plan layer and the boss coverage rows are off)", worldErr)
 	} else {
 		planSvc = plans.NewService(plans.NewSQLSource(worldDB))
+		tacticSvc = bosstactics.NewService(bosstactics.NewSQLSource(worldDB))
 	}
 
 	// 5. WebSocket hub and UDP ingestion
@@ -668,6 +673,10 @@ func main() {
 	}))
 
 	mux.HandleFunc("GET /api/v1/plans/{plan}", requireAuth(plans.Handler(planSvc)))
+
+	// The boss tactic rows the coverage view compares with the boss table:
+	// read-only, one cached snapshot, filtered per map on the cached copy.
+	mux.HandleFunc("GET /api/v1/boss/tactics", requireAuth(bosstactics.Handler(tacticSvc)))
 
 	// Combat fights ("a light Turtle Logs"): the module's per-fight numbers
 	// (COMBAT_FIGHT datagrams), judged here by rules.json. The list is per

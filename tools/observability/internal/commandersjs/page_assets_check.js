@@ -71,4 +71,12 @@ vm.runInContext("cmdPlanGet('onyxias_lair', false)", planCtx);
 assert.deepStrictEqual(JSON.parse(JSON.stringify(vm.runInContext("calls", planCtx))), ["/api/v1/plans/onyxias_lair"],
   "a real plan is asked for once");
 
+// ---- the coverage view's script is loaded before app.js ---------------------------------------------------------------
+const covTag = /<script src="\/static\/js\/coverage\.js\?v=1"><\/script>/.exec(indexHtml);
+const appTag = /<script src="\/static\/js\/app\.js\?v=[\d]+"><\/script>/.exec(indexHtml);
+assert.ok(covTag, "index.html loads coverage.js versioned");
+assert.ok(appTag, "index.html loads app.js versioned");
+assert.ok(indexHtml.indexOf(covTag[0]) < indexHtml.indexOf(appTag[0]), "coverage.js comes before app.js");
+assert.ok(indexHtml.includes('id="tab-coverage"') && indexHtml.includes('id="cov-root"'), "the coverage tab has its root");
+
 console.log("page assets ok");

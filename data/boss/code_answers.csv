@@ -1,0 +1,11 @@
+map,boss,key,need,level,name,text,source
+onyxia,10184,18435,front,full,dragon flank,everyone but the tank leaves her front and tail cones and works the flanks,ai/playerbot/strategy/generic/ReactionStrategy.cpp;ai/playerbot/strategy/triggers/DungeonTriggers.cpp
+onyxia,10184,15847,tail,full,dragon flank,everyone but the tank leaves her front and tail cones and works the flanks,ai/playerbot/strategy/generic/ReactionStrategy.cpp;ai/playerbot/strategy/triggers/DungeonTriggers.cpp
+onyxia,10184,18500,front,full,dragon flank,everyone but the tank leaves her front and tail cones and works the flanks,ai/playerbot/strategy/generic/ReactionStrategy.cpp;ai/playerbot/strategy/triggers/DungeonTriggers.cpp
+onyxia,10184,18435,resist,partly,boss protection potion,Greater Fire Protection Potion while she is an attacker,ai/playerbot/strategy/generic/OnyxiasLairDungeonStrategies.cpp;ai/playerbot/ProtectionPotionPolicy.h
+onyxia,10184,18392,avoid,partly,onyxia airborne,"the raid spreads while she flies, so Fireball's splash hits one bot",ai/playerbot/strategy/generic/OnyxiasLairDungeonStrategies.cpp;ai/playerbot/strategy/triggers/OnyxiasLairDungeonTriggers.cpp
+onyxia,10184,18392,resist,partly,boss protection potion,Greater Fire Protection Potion while she is an attacker,ai/playerbot/strategy/generic/OnyxiasLairDungeonStrategies.cpp;ai/playerbot/ProtectionPotionPolicy.h
+aq40,15509,flag=aura,resist,partly,boss protection potion,Greater Nature Protection Potion while she is an attacker,ai/playerbot/strategy/generic/ClassicRaidDungeonStrategies.cpp;ai/playerbot/ProtectionPotionPolicy.h
+*,*,flag=ground,avoid,partly,avoid aoe,generic: steps out of a persistent area of 15 yd or less,ai/playerbot/strategy/generic/CombatStrategy.cpp;ai/playerbot/AvoidAoePolicy.h
+*,*,flag=aura,dispel,partly,dispel magic on party,"generic: class dispels, if the aura's dispel type matches a healer's",ai/playerbot/strategy/priest/GenericPriestStrategy.cpp
+*,*,flag=self,purge,partly,tranquilizing shot,"generic: hunters tranquilize an enrage, shamans purge a magic buff",ai/playerbot/strategy/hunter/GenericHunterStrategy.cpp;ai/playerbot/strategy/shaman/ShamanStrategy.cpp

@@ -170,4 +170,17 @@ const batPhase = B.model(REAL, { entry: 14517, hp: 100, au: [] }, [], 0, 0);
 assert.strictEqual(batPhase.phase, "bat");
 assert.strictEqual(batPhase.abilities.find((a) => a.sid === 23919).inPhase, true);
 assert.strictEqual(batPhase.abilities.find((a) => a.sid === 23953).inPhase, false, "Mind Flay is a troll-phase ability");
+
+// ---- coverage chip: only when opts.coverage names the spell, one glyph per status, and never without it --------------
+const cov = { 23861: { status: "missing", title: "avoid: no row" }, 23966: { status: "notneeded", title: "self: ok: nopurge" } };
+const chipHtml = B.render(T, p, { open: true, coverage: cov });
+assert.ok(chipHtml.includes('<span class="fd-cov fd-cov-missing" title="avoid: no row" aria-label="coverage: missing">✗</span>'),
+  "a missing chip with its need in the title");
+assert.ok(chipHtml.includes('<span class="fd-cov fd-cov-notneeded"'), "a not-needed chip");
+assert.strictEqual((chipHtml.match(/class="fd-cov /g) || []).length, 2, "only the answered spells get a chip");
+assert.ok(!B.render(T, p, { open: true }).includes("fd-cov"), "no opts.coverage: the row is unchanged");
+assert.ok(!B.render(T, p, { open: true, coverage: cov }).includes("fd-boss-cov"), "a numeric map keeps the head without a coverage link");
+const venReal = B.model(REAL, { entry: 14507, hp: 60, au: [] }, [], 0, 0);
+assert.ok(B.render(REAL, venReal, { open: true, coverage: cov }).includes('href="#/coverage/zulgurub?boss=14507"'),
+  "the head links to the raid's coverage card");
 console.log("boss panel ok");

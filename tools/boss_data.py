@@ -7,6 +7,8 @@ Usage:
                                      [--core-dir DIR] [--kb-dir DIR]
                                      [--db-host H] [--db-user U] [--db-pass P]
                                      [--db-name tw_world] [--db-defaults FILE]
+    python3 tools/boss_data.py coverage [<raid>] [--boss ENTRY] [--all] [--json]
+                                     [--sql-dir DIR] [--db] [--fail-on-missing]
 
 The CSV (data/boss/boss_abilities.csv) is the source; `build` writes
 tools/observability/web/data/boss_abilities.json, which the dashboard serves at
@@ -24,9 +26,13 @@ Rows (columns map,boss,row,key,a,b,c,d,source):
                               self         leaves an aura on the boss
                               mark         draws the marked icon (Gaze, Mark of Arlokk)
                               ground       persistent area spell (drawn on the ground)
+                              cone         frontal cone (the coverage rule needs `front`)
+                              tail         rear cone / tail sweep (needs `tail`)
                               int          cast time / channel, interruptible
                               summon=<creature entry>  must have an add row
                               hp<N>        one-shot below N percent health
+                              ok=<reason>  the whole ability needs no answer
+                              ok.<need>=<reason>  that one need needs no answer
     phase    key=name       a=rule: hp<N | aura=<spell id> | flag=<letter> | start
                             b=order (1 = checked first); a `start` rule always
                             matches and must be the last one (the pull phase)
@@ -38,15 +44,30 @@ paths are relative to the core checkout (--core-dir, default $TORTOISE_CORE_DIR
 or ~/tortoise-wow). A knowledge-base citation is `kb:<file>#<heading-slug>` under
 --kb-dir (default $TURTLE_KB_DIR or ~/TortoiseBots-audit/turtle-kb).
 
+`ok` reasons are a closed list (see data/boss/README.md): tank, heal, phase,
+script, and the DB-verified nokick/nodispel/nopurge, which are only valid on
+their own need. An ok.<need> must name a need the row's own flags derive.
+
+data/boss/raids.csv maps every map slug to its map id (the JSON `maps[]`), and
+data/boss/code_answers.csv lists the answers that live in C++ rather than in a
+world table (the JSON `codeAnswers[]`).
+
 Checks:
     1. Every ability row cites the line that defines its spell (id or constant)
        and every timer value; phase hp/aura/flag rules and add entries likewise.
        A value of N is also accepted as N//1000 on a line using IN_MILLISECONDS.
     2. Ability spell ids, summon= entries and add entries are unique per boss;
-       every summon= entry has an add row; every p= phase exists.
-    3. The committed JSON equals a fresh build.
-    4. --db: every spell id exists in spell_template and every add entry in
-       creature_template. Without --db it prints "db check skipped".
+       every summon= entry has an add row; every p= phase exists; every map slug
+       has a raids.csv row and every raids.csv row has a boss.
+    3. Every code answer cites a file of this repo that registers its name and
+       names its boss entry; its spell/add key is a row of that boss; a `*` row
+       is partly. No two rows make the same claim.
+    4. The committed JSON equals a fresh build.
+    5. --db: every spell id exists in spell_template and every add entry in
+       creature_template; a `ground` flag has effect 27; a `cone` flag has
+       implicit target 24; ok.interrupt=nokick is not kickable, ok.dispel=nodispel
+       has dispel 0, ok.purge=nopurge has dispel 0. Without --db it prints
+       "db check skipped".
 
 Citations need a core checkout; CI has none and prints "core source check
 skipped" instead. The same is true for the KB. Names come from the committed
@@ -66,15 +87,36 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CSV = ROOT / "data" / "boss" / "boss_abilities.csv"
 DEFAULT_JSON = ROOT / "tools" / "observability" / "web" / "data" / "boss_abilities.json"
 DEFAULT_NAMES = ROOT / "data" / "boss" / "names.json"
+DEFAULT_RAIDS = ROOT / "data" / "boss" / "raids.csv"
+DEFAULT_CODE_ANSWERS = ROOT / "data" / "boss" / "code_answers.csv"
 DEFAULT_CORE = Path(os.environ.get("TORTOISE_CORE_DIR", Path.home() / "tortoise-wow"))
 DEFAULT_KB = Path(
     os.environ.get("TURTLE_KB_DIR", Path.home() / "TortoiseBots-audit" / "turtle-kb")
 )
 
 CSV_COLUMNS = ["map", "boss", "row", "key", "a", "b", "c", "d", "source"]
+RAID_COLUMNS = ["key", "map_id", "name"]
+CODE_COLUMNS = ["map", "boss", "key", "need", "level", "name", "text", "source"]
 ROW_KINDS = {"ability", "phase", "add", "note"}
 TARGETS = {"victim", "random", "self", "aoe", "ally"}
 ADD_ROLES = {"summon", "linked", "ward", "totem", "trigger"}
+NEEDS = (
+    "interrupt",
+    "kill",
+    "front",
+    "tail",
+    "avoid",
+    "mark",
+    "dispel",
+    "purge",
+    "resist",
+    "classify",
+)
+OK_REASONS = ("tank", "heal", "phase", "script", "nokick", "nodispel", "nopurge")
+# The DB-verified reasons are only valid on their own need.
+OK_REASON_NEED = {"nokick": "interrupt", "nodispel": "dispel", "nopurge": "purge"}
+# The flags a `flag=` code answer may scope to (§2.3).
+ANSWER_FLAGS = ("ground", "aura", "self", "cone", "tail", "mark", "int")
 FLAG_LETTERS = {
     "n": "UNIT_FLAG_NOT_SELECTABLE",
     "i": "UNIT_FLAG_IMMUNE_TO_PLAYER",
@@ -128,6 +170,200 @@ def read_rows(path):
 def _row_id(row):
     return f"line {row['_line']} ({row['row']} {row['key'] or row['boss']})"
 
+def read_raids(path):
+    """Return the raid rows as dicts {key, mapId, name}; every problem raises DataError."""
+    try:
+        handle = open(path, newline="", encoding="utf-8")
+    except OSError:
+        raise DataError(f"raids file not found: {path}")
+    with handle:
+        reader = csv.reader(handle)
+        try:
+            header = next(reader)
+        except StopIteration:
+            raise DataError(f"{path}: empty file")
+        if header != RAID_COLUMNS:
+            raise DataError(
+                f"{path}: header must be {','.join(RAID_COLUMNS)}, got {','.join(header)}"
+            )
+        raids = []
+        seen_keys = set()
+        seen_ids = set()
+        for lineno, fields in enumerate(reader, start=2):
+            if not fields or all(not f.strip() for f in fields):
+                continue
+            if len(fields) != len(RAID_COLUMNS):
+                raise DataError(
+                    f"{path}:{lineno}: {len(fields)} fields, expected {len(RAID_COLUMNS)}"
+                )
+            key, map_id, name = (field.strip() for field in fields)
+            if not MAP_RE.match(key):
+                raise DataError(f"{path}:{lineno}: bad raid key {key!r}")
+            if not re.fullmatch(r"\d+", map_id):
+                raise DataError(f"{path}:{lineno}: map_id must be an integer, got {map_id!r}")
+            if not name:
+                raise DataError(f"{path}:{lineno}: raid {key!r} has no name")
+            if key in seen_keys:
+                raise DataError(f"{path}:{lineno}: duplicate raid key {key!r}")
+            if int(map_id) in seen_ids:
+                raise DataError(f"{path}:{lineno}: duplicate map id {map_id}")
+            seen_keys.add(key)
+            seen_ids.add(int(map_id))
+            raids.append({"key": key, "mapId": int(map_id), "name": name})
+    return raids
+
+
+def read_code_answers(path):
+    """Return the code-answer rows; every structural problem raises DataError."""
+    try:
+        handle = open(path, newline="", encoding="utf-8")
+    except OSError:
+        raise DataError(f"code answers file not found: {path}")
+    with handle:
+        reader = csv.reader(handle)
+        try:
+            header = next(reader)
+        except StopIteration:
+            raise DataError(f"{path}: empty file")
+        if header != CODE_COLUMNS:
+            raise DataError(
+                f"{path}: header must be {','.join(CODE_COLUMNS)}, got {','.join(header)}"
+            )
+        answers = []
+        seen = set()
+        for lineno, fields in enumerate(reader, start=2):
+            if not fields or all(not f.strip() for f in fields):
+                continue
+            if len(fields) != len(CODE_COLUMNS):
+                raise DataError(
+                    f"{path}:{lineno}: {len(fields)} fields, expected {len(CODE_COLUMNS)}"
+                )
+            where = f"{path}:{lineno}"
+            answer = _code_answer({k: v.strip() for k, v in zip(CODE_COLUMNS, fields)}, where)
+            duplicate = (
+                answer["map"],
+                answer["boss"],
+                answer["key"],
+                answer["need"],
+                answer["name"],
+            )
+            if duplicate in seen:
+                raise DataError(
+                    f"{where}: duplicate code answer {answer['key']} {answer['need']} "
+                    f"for {answer['map']} {answer['name']}"
+                )
+            seen.add(duplicate)
+            answers.append(answer)
+    return answers
+
+
+def _code_answer(row, where):
+    """One code-answer row, parsed; the fields follow §2.3 of the coverage spec."""
+    if row["map"] != "*" and not MAP_RE.match(row["map"]):
+        raise DataError(f"{where}: bad map {row['map']!r}; expected a raid key or *")
+    if row["boss"] == "*":
+        boss = 0
+    elif re.fullmatch(r"\d+", row["boss"]):
+        boss = int(row["boss"])
+    else:
+        raise DataError(f"{where}: boss must be a creature entry or *, got {row['boss']!r}")
+    key = row["key"]
+    spell = add = 0
+    flag = ""
+    if re.fullmatch(r"\d+", key):
+        spell = int(key)
+    elif key.startswith("add=") and re.fullmatch(r"\d+", key[4:]):
+        add = int(key[4:])
+    elif key.startswith("flag=") and key[5:]:
+        flag = key[5:]
+    else:
+        raise DataError(
+            f"{where}: key must be a spell id, add=<entry> or flag=<flag>, got {key!r}"
+        )
+    need = row["need"]
+    if need not in NEEDS or need == "classify":
+        raise DataError(
+            f"{where}: need must be one of {', '.join(n for n in NEEDS if n != 'classify')}, "
+            f"got {need!r}"
+        )
+    if row["level"] not in ("full", "partly"):
+        raise DataError(f"{where}: level must be full or partly, got {row['level']!r}")
+    for column in ("name", "text", "source"):
+        if not row[column]:
+            raise DataError(f"{where}: {column} is empty")
+    source = [part.strip() for part in row["source"].split(";")]
+    if not all(source):
+        raise DataError(f"{where}: empty citation in {row['source']!r}")
+    return {
+        "map": row["map"],
+        "boss": boss,
+        "key": key,
+        "spell": spell,
+        "add": add,
+        "flag": flag,
+        "need": need,
+        "level": row["level"],
+        "name": row["name"],
+        "text": row["text"],
+        "source": source,
+    }
+
+
+def check_code_answers(answers, map_doc, bosses, root):
+    """Yield the errors of §2.3 for the parsed code-answer rows."""
+    table_maps = {raid["key"] for raid in map_doc}
+    cache = {}
+    for answer in answers:
+        where = "code answer %s %s %s %s" % (
+            answer["map"],
+            answer["boss"] or "*",
+            answer["key"],
+            answer["need"],
+        )
+        if answer["map"] == "*" and answer["level"] != "partly":
+            yield f"{where}: a * row must be partly, generic code is never a full answer"
+        if answer["map"] != "*" and answer["map"] not in table_maps:
+            yield f"{where}: map {answer['map']!r} is no raid of the boss table"
+        if answer["map"] == "*" and answer["boss"]:
+            yield f"{where}: a * map takes no boss entry"
+        if answer["map"] != "*" and not answer["boss"] and not answer["flag"]:
+            yield f"{where}: a * boss needs map * or a flag= key"
+        if answer["flag"] and answer["flag"] not in ANSWER_FLAGS:
+            yield f"{where}: unknown flag {answer['flag']!r}; expected one of {', '.join(ANSWER_FLAGS)}"
+
+        boss = bosses.get(answer["boss"]) if answer["boss"] else None
+        if answer["boss"] and boss is None:
+            yield f"{where}: boss {answer['boss']} is not in the boss table"
+        if answer["spell"]:
+            if boss is None:
+                yield f"{where}: a spell key needs a boss entry of the boss table"
+            elif answer["spell"] not in {ability["sid"] for ability in boss["abilities"]}:
+                yield f"{where}: spell {answer['spell']} is no ability of boss {answer['boss']}"
+        if answer["add"]:
+            if boss is None:
+                yield f"{where}: an add key needs a boss entry of the boss table"
+            elif not any(add["entry"] == answer["add"] for add in boss["adds"]):
+                yield f"{where}: entry {answer['add']} is no add row of boss {answer['boss']}"
+
+        lines = []
+        missing = False
+        for path in answer["source"]:
+            resolved = Path(root) / path
+            if not resolved.is_file():
+                yield f"{where}: cited source {path} does not exist"
+                missing = True
+                continue
+            lines.extend(read_lines(resolved, cache) or [])
+        if missing:
+            continue
+        text = "\n".join(lines)
+        if f'"{answer["name"]}"' not in text:
+            yield f'{where}: the cited files do not register "{answer["name"]}"'
+        if answer["boss"]:
+            consts = constant_values(lines)
+            if not _has_id(list(enumerate(lines, start=1)), answer["boss"], consts):
+                yield f"{where}: the cited files do not name creature {answer['boss']}"
+
 
 def _int_field(row, name, *, minimum=0):
     text = row[name]
@@ -147,9 +383,13 @@ def parse_flags(text):
         "self": False,
         "mark": False,
         "ground": False,
+        "cone": False,
+        "tail": False,
         "int": False,
         "summon": 0,
         "hp": 0,
+        "ok": "",
+        "okNeeds": {},
     }
     seen = set()
     if not text:
@@ -171,13 +411,22 @@ def parse_flags(text):
             if target not in TARGETS:
                 raise DataError(f"bad target {target!r} in {text!r}")
             flags["target"] = target
-        elif token in ("aura", "self", "mark", "ground", "int"):
+        elif token in ("aura", "self", "mark", "ground", "cone", "tail", "int"):
             flags[token] = True
         elif token.startswith("summon="):
             value = token[7:]
             if not re.fullmatch(r"\d+", value):
                 raise DataError(f"bad summon entry {value!r} in {text!r}")
             flags["summon"] = int(value)
+        elif token.startswith("ok="):
+            flags["ok"] = token[3:]
+        elif token.startswith("ok."):
+            need, sep, reason = token[3:].partition("=")
+            if not sep:
+                raise DataError(f"ok.{need} needs =<reason> in {text!r}")
+            if need in flags["okNeeds"]:
+                raise DataError(f"duplicate ok.{need} in {text!r}")
+            flags["okNeeds"][need] = reason
         elif token.startswith("hp"):
             value = token[2:]
             if not re.fullmatch(r"\d+", value) or not 1 <= int(value) <= 99:
@@ -185,7 +434,70 @@ def parse_flags(text):
             flags["hp"] = int(value)
         else:
             raise DataError(f"unknown flag {token!r} in {text!r}")
+    _check_ok(flags, text)
     return flags
+
+
+def derived_needs(flags):
+    """The needs a row's own flags derive, in the coverage rule's order."""
+    needs = []
+    if flags["int"]:
+        needs.append("interrupt")
+    if flags["summon"]:
+        needs.append("kill")
+    if flags["cone"]:
+        needs.append("front")
+    if flags["tail"]:
+        needs.append("tail")
+    if flags["ground"]:
+        needs.append("avoid")
+    if flags["mark"]:
+        needs.append("mark")
+    if flags["aura"]:
+        needs.append("dispel")
+    if flags["self"]:
+        needs.append("purge")
+    return needs
+
+
+def spells_with_ok(rows, need, reason):
+    """Spell ids whose row marks one need `ok.<need>=<reason>`."""
+    return {
+        int(row["key"])
+        for row in rows
+        if row["row"] == "ability"
+        and parse_flags(row["d"])["okNeeds"].get(need) == reason
+    }
+
+
+def _check_ok(flags, text):
+    """The `ok=`/`ok.<need>=` rules that need only this row's flags."""
+    ok = flags["ok"]
+    ok_needs = flags["okNeeds"]
+    if ok and ok_needs:
+        raise DataError(f"ok={ok} cannot be combined with ok.<need> in {text!r}")
+    if ok:
+        if ok not in OK_REASONS:
+            raise DataError(
+                f"unknown ok reason {ok!r} in {text!r}; expected one of {', '.join(OK_REASONS)}"
+            )
+        if ok in OK_REASON_NEED:
+            raise DataError(f"ok={ok} is only valid as ok.{OK_REASON_NEED[ok]}={ok} in {text!r}")
+    for need, reason in ok_needs.items():
+        if reason not in OK_REASONS:
+            raise DataError(
+                f"unknown ok reason {reason!r} in {text!r}; expected one of {', '.join(OK_REASONS)}"
+            )
+        if need not in derived_needs(flags):
+            raise DataError(f"ok.{need} on a row whose flags do not derive {need} in {text!r}")
+        owner = OK_REASON_NEED.get(reason)
+        if owner and owner != need:
+            raise DataError(
+                f"ok.{need}={reason} is only valid as ok.{owner}={reason} in {text!r}"
+            )
+    reasons = [ok, *ok_needs.values()]
+    if "tank" in reasons and flags["target"] != "victim":
+        raise DataError(f"ok reason tank needs a t=victim row in {text!r}")
 
 
 def parse_phase_rule(text):
@@ -375,8 +687,10 @@ def check_citations(row, citations, core, kb, cache):
 # Model
 
 
-def make_bosses(rows, names):
+def make_bosses(rows, names, raids=None):
     """Validate rows and return (maps, bosses, abilities_by_boss, phase_names)."""
+    if raids is None:
+        raids = read_raids(DEFAULT_RAIDS)
     bosses = {}
     order = []
     maps = []
@@ -527,14 +841,48 @@ def make_bosses(rows, names):
                         f"boss {entry}: summon {ability['summon']} used by two ability rows"
                     )
                 seen_summons.add(ability["summon"])
+        phase_auras = {
+            phase["rule"]["aura"] for phase in phases if phase["rule"]["kind"] == "aura"
+        }
+        for ability in boss["abilities"]:
+            reasons = [ability["ok"], *ability["okNeeds"].values()]
+            if (
+                "phase" in reasons
+                and not ability["hp"]
+                and ability["sid"] not in phase_auras
+            ):
+                raise DataError(
+                    f"boss {entry}: ability {ability['sid']} says ok reason phase but it is "
+                    "no aura= rule of the boss and carries no hp<N"
+                )
         boss["phases"] = phases
 
-    map_doc = [{"key": m, "bosses": [e for e in order if bosses[e]["map"] == m]} for m in maps]
+    by_key = {raid["key"]: raid for raid in raids}
+    for key in maps:
+        if key not in by_key:
+            raise DataError(f"map {key!r} has no row in raids.csv")
+    for raid in raids:
+        if raid["key"] not in maps:
+            raise DataError(f"raids.csv row {raid['key']!r} has no boss in the CSV")
+    map_doc = [
+        {
+            "key": m,
+            "mapId": by_key[m]["mapId"],
+            "name": by_key[m]["name"],
+            "bosses": [e for e in order if bosses[e]["map"] == m],
+        }
+        for m in maps
+    ]
     return map_doc, bosses
 
 
-def build_document(rows, names):
-    map_doc, bosses = make_bosses(rows, names)
+def build_document(rows, names, raids=None, code_answers=None, root=None):
+    map_doc, bosses = make_bosses(rows, names, raids)
+    if code_answers is None:
+        code_answers = read_code_answers(DEFAULT_CODE_ANSWERS)
+    errors = list(check_code_answers(code_answers, map_doc, bosses, root or ROOT))
+    if errors:
+        raise DataError("\n".join(errors))
     doc = {
         "version": 1,
         "note": "Generated by tools/boss_data.py build from data/boss/boss_abilities.csv; do not edit.",
@@ -544,6 +892,7 @@ def build_document(rows, names):
         },
         "maps": map_doc,
         "bosses": {str(e): bosses[e] for e in sorted(bosses, key=lambda e: bosses[e]["order"])},
+        "codeAnswers": code_answers,
     }
     return doc
 
@@ -616,6 +965,54 @@ def not_persistent_area(connect, spell_ids):
     return sorted(sid for sid in spell_ids if 27 not in rows.get(sid, ()))
 
 
+def spell_facts(connect, spell_ids):
+    """preventionType, interruptFlags, castingTimeIndex and dispel per spell id."""
+    if not spell_ids:
+        return {}
+    conn = connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT entry, preventionType, interruptFlags, castingTimeIndex, dispel "
+            "FROM spell_template WHERE entry IN (%s)"
+            % ",".join(["%s"] * len(spell_ids)),
+            tuple(sorted(spell_ids)),
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    return {
+        row[0]: {
+            "preventionType": row[1],
+            "interruptFlags": row[2],
+            "castingTimeIndex": row[3],
+            "dispel": row[4],
+        }
+        for row in rows
+    }
+
+
+def cone_spells_without_cone_target(connect, spell_ids):
+    """Spell ids flagged `cone` whose effects contain no TARGET_UNIT_CONE_ENEMY (24)."""
+    if not spell_ids:
+        return []
+    conn = connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT entry, effectImplicitTargetA1, effectImplicitTargetB1, "
+            "effectImplicitTargetA2, effectImplicitTargetB2, "
+            "effectImplicitTargetA3, effectImplicitTargetB3 "
+            "FROM spell_template WHERE entry IN (%s)"
+            % ",".join(["%s"] * len(spell_ids)),
+            tuple(sorted(spell_ids)),
+        )
+        rows = {row[0]: row[1:] for row in cur.fetchall()}
+    finally:
+        conn.close()
+    return sorted(sid for sid in spell_ids if 24 not in rows.get(sid, ()))
+
+
 def refresh_names(connect, rows, names):
     """Fill missing names (and spell cast ms) from the world DB."""
     spell_ids = {int(r["key"]) for r in rows if r["row"] == "ability"}
@@ -658,6 +1055,9 @@ def add_common(parser):
     parser.add_argument("--csv", default=str(DEFAULT_CSV))
     parser.add_argument("--json", default=str(DEFAULT_JSON))
     parser.add_argument("--names", default=str(DEFAULT_NAMES))
+    parser.add_argument("--raids", default=str(DEFAULT_RAIDS))
+    parser.add_argument("--code-answers", default=str(DEFAULT_CODE_ANSWERS))
+    parser.add_argument("--repo-root", default=str(ROOT))
     parser.add_argument("--core-dir", default=str(DEFAULT_CORE))
     parser.add_argument("--kb-dir", default=str(DEFAULT_KB))
 
@@ -677,7 +1077,13 @@ def cmd_build(args):
         names = refresh_names(db_connect(args), rows, names)
         with open(args.names, "w", encoding="utf-8") as f:
             f.write(json.dumps(names, indent=2, sort_keys=True) + "\n")
-    doc = build_document(rows, names)
+    doc = build_document(
+        rows,
+        names,
+        read_raids(Path(args.raids)),
+        read_code_answers(Path(args.code_answers)),
+        args.repo_root,
+    )
     with open(args.json, "w", encoding="utf-8") as f:
         f.write(dump_json(doc))
     print(f"wrote {args.json}: {len(doc['bosses'])} bosses")
@@ -699,7 +1105,12 @@ def validate(args):
     except DataError as exc:
         return [str(exc)], notes
     try:
-        doc = build_document(rows, names)
+        raids = read_raids(Path(args.raids))
+        code_answers = read_code_answers(Path(args.code_answers))
+    except DataError as exc:
+        return [str(exc)], notes
+    try:
+        doc = build_document(rows, names, raids, code_answers, args.repo_root)
     except DataError as exc:
         return [str(exc)], notes
 
@@ -739,10 +1150,18 @@ def validate(args):
         ground_ids = {
             int(r["key"]) for r in rows if r["row"] == "ability" and "ground" in r["d"].split(";")
         }
+        cone_ids = {
+            int(r["key"]) for r in rows if r["row"] == "ability" and "cone" in r["d"].split(";")
+        }
+        nokick_ids = spells_with_ok(rows, "interrupt", "nokick")
+        nodispel_ids = spells_with_ok(rows, "dispel", "nodispel")
+        nopurge_ids = spells_with_ok(rows, "purge", "nopurge")
         try:
             connect = lambda: db_connect(args)
             missing_spells, missing_creatures = missing_rows(connect, spell_ids, creature_ids)
             bad_ground = not_persistent_area(connect, ground_ids)
+            bad_cone = cone_spells_without_cone_target(connect, cone_ids)
+            facts = spell_facts(connect, nokick_ids | nodispel_ids | nopurge_ids)
         except Exception as exc:  # connection/driver errors are check failures
             errors.append(f"db check failed: {exc}")
         else:
@@ -752,6 +1171,25 @@ def validate(args):
                 errors.append(f"creature {entry} is not in creature_template")
             for sid in bad_ground:
                 errors.append(f"spell {sid} is flagged ground but has no persistent-area effect (27)")
+            for sid in bad_cone:
+                errors.append(f"spell {sid} is flagged cone but has no cone target (24)")
+            for sid in sorted(nokick_ids):
+                info = facts.get(sid)
+                if (
+                    info
+                    and info["preventionType"] == 1
+                    and info["interruptFlags"] & 0x02
+                    and info["castingTimeIndex"] > 1
+                ):
+                    errors.append(f"spell {sid} is kickable, so ok.interrupt=nokick is wrong")
+            for sid in sorted(nodispel_ids):
+                info = facts.get(sid)
+                if info and info["dispel"]:
+                    errors.append(f"spell {sid} can be dispelled, so ok.dispel=nodispel is wrong")
+            for sid in sorted(nopurge_ids):
+                info = facts.get(sid)
+                if info and info["dispel"]:
+                    errors.append(f"spell {sid} can be purged, so ok.purge=nopurge is wrong")
     else:
         notes.append("db check skipped")
 
@@ -774,6 +1212,13 @@ def cmd_check(args):
     return 0
 
 
+def cmd_coverage_hook(args):
+    """Hand the report to boss_coverage.py, imported here so the other commands run alone."""
+    from boss_coverage import cmd_coverage
+
+    return cmd_coverage(args)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -787,6 +1232,24 @@ def main(argv=None):
     add_db(check)
     check.add_argument("--db", action="store_true", help="also check entries in the world DB")
     check.set_defaults(func=cmd_check)
+    coverage = sub.add_parser(
+        "coverage", help="show, boss by boss, which abilities the bots have no answer for"
+    )
+    coverage.add_argument("raid", nargs="?", default="", help="raid key or map id (default: all)")
+    coverage.add_argument("--boss", type=int, default=0, help="only this creature entry")
+    coverage.add_argument("--all", action="store_true", help="print every line, not only the gaps")
+    coverage.add_argument("--json", action="store_true", help="print the machine form")
+    coverage.add_argument("--csv", default=str(DEFAULT_CSV))
+    coverage.add_argument("--names", default=str(DEFAULT_NAMES))
+    coverage.add_argument("--raids", default=str(DEFAULT_RAIDS))
+    coverage.add_argument("--code-answers", default=str(DEFAULT_CODE_ANSWERS))
+    coverage.add_argument("--sql-dir", default=str(ROOT / "data" / "sql" / "world"))
+    coverage.add_argument("--repo-root", default=str(ROOT))
+    coverage.add_argument("--fail-on-missing", action="store_true",
+                          help="exit 1 when any line is missing")
+    add_db(coverage)
+    coverage.add_argument("--db", action="store_true", help="read the rows from the world DB")
+    coverage.set_defaults(func=cmd_coverage_hook)
     args = parser.parse_args(argv)
     return args.func(args)
 
