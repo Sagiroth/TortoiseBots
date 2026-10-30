@@ -9,6 +9,7 @@
 #include "playerbot/ServerFacade.h"
 #include "ChooseTargetActions.h"
 #include "PositionAction.h"
+#include "FollowActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
 using namespace ai;
@@ -260,7 +261,16 @@ float BossTacticsCastHoldMultiplier::GetValue(Action* action)
                                                                                                              : 1.0f;
     }
     // Any other move towards a unit (a reach, a chase, a heal walk, a follow): held while that unit stands in a blast.
-    Unit* target = action->GetTarget();
+    // A follow does not name its unit as the action's target (it reads "follow target" in Execute), so that one is
+    // read here too.
+    Unit* target = nullptr;
+    if (dynamic_cast<FollowAction*>(action))
+    {
+        AiObjectContext* context = ai->GetAiObjectContext();
+        target = AI_VALUE(Unit*, "follow target");
+    }
+    else
+        target = action->GetTarget();
     if (!target || !target->IsInWorld() || target->GetMapId() != bot->GetMapId())
         return 1.0f;
     return CastHoldsMove(false, target == bot, true, target->GetPositionX(), target->GetPositionY(),
