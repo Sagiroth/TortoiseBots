@@ -545,7 +545,9 @@ bool FishAction::Execute(Event& event)
         int32 baseSkill = sObjectMgr.GetFishingBaseSkillLevel(areaId ? areaId : zoneId);
         if (!baseSkill && areaId && areaId != zoneId)
             baseSkill = sObjectMgr.GetFishingBaseSkillLevel(zoneId);
-        if (!ai::FishingZoneSkillOk(baseSkill, bot->GetSkillValue(SKILL_FISHING)))
+        // An order bot is judged on its granted pole and lure, which it puts
+        // on only below this check; the order planner vetted that sum.
+        if (!ai::IsOrderFishing(ai) && !ai::FishingZoneSkillOk(baseSkill, bot->GetSkillValue(SKILL_FISHING)))
         {
             RESET_AI_VALUE2(WorldPosition, "custom position", "fish spot");
             SET_AI_VALUE2(bool, "manual bool", "no fish water", true);
