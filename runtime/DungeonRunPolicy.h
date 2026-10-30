@@ -15275,7 +15275,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
                                 : f.raid.on && f.raid.bossRules ? kRaidBossFightCapMs
                                                                  : kBossFightCapMs;
         // The near-wipe stop keeps the ceiling it had before the raid's boss rules: the raid's longer one is for a
-        // fight being won, not for one the stop is already due in (Codex adversarial review).
+        // fight being won, not for one the stop is already due in.
         std::uint32_t const stopCap = !event && bossStep ? kBossFightCapMs : cap;
         FightProgress const progress = FightProgressTick(r, f, dt);
         // A unit the party hits that cannot die now (HpHeldTick) pauses before any ceiling: the ceiling's pause

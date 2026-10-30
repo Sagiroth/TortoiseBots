@@ -23975,7 +23975,7 @@ static void TestNearWipeStopPastCeiling()
 }
 
 // With AiPlayerbot.DungeonRunRaidBossRules a raid's boss fight runs to kRaidBossFightCapMs, but a near-wipe stop that
-// is already due keeps the 420 s boss ceiling it had before (Codex adversarial review): the operator's stop is not put
+// is already due keeps the 420 s boss ceiling it had before: the operator's stop is not put
 // off by 13 minutes.
 static void TestNearWipeStopKeepsTheBossCeilingWithRaidBossRules()
 {
