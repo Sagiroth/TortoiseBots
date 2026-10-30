@@ -44,6 +44,37 @@ int main()
     CHECK(ClassifyDelivery(9, 10, true, false) == DeliveryOutcome::Stuck);
     CHECK(ClassifyDelivery(0, 1, false, false) == DeliveryOutcome::Stuck);
 
+    // The delivery ends when the quota is reached, when the bank refused
+    // after retries, or when the bot holds no more of the order item.
+    CHECK(DeliveryFinished(0, 5, 10, 10));
+    CHECK(DeliveryFinished(0, 5, 12, 10));
+    CHECK(!DeliveryFinished(0, 5, 9, 10));
+    CHECK(!DeliveryFinished(2, 5, 9, 10));
+    CHECK(DeliveryFinished(3, 5, 9, 10));
+    CHECK(DeliveryFinished(3, 5, 0, 10));
+
+    // Partial delivery over several passes: the last stack banked in an
+    // earlier pass, so this pass moves nothing, yet the bank accepted
+    // items during the delivery. Empty bags end the delivery at once and
+    // the order goes back to work for the missing remainder.
+    CHECK(DeliveryFinished(1, 0, 80, 100));
+    CHECK(ClassifyDelivery(80, 100, false, true) == DeliveryOutcome::BackToWork);
+    // Same shape when the pass moved the last carried stack itself.
+    CHECK(DeliveryFinished(0, 0, 80, 100));
+
+    // A bank that took nothing over the retries still mails or ends
+    // stuck: held items mean more passes (or the mail leg), never work.
+    CHECK(ClassifyDelivery(0, 10, false, false) == DeliveryOutcome::Stuck);
+    CHECK(ClassifyDelivery(0, 10, true, false) == DeliveryOutcome::Stuck);
+
+    // A timed-out delivery never goes back to work.
+    CHECK(DeliveryTimeoutEnds(OrderReason::Timeout, DeliveryOutcome::BackToWork));
+    CHECK(DeliveryTimeoutEnds(OrderReason::Timeout, DeliveryOutcome::Stuck));
+    CHECK(!DeliveryTimeoutEnds(OrderReason::Timeout, DeliveryOutcome::Done));
+    CHECK(!DeliveryTimeoutEnds(OrderReason::Timeout, DeliveryOutcome::Mailed));
+    CHECK(!DeliveryTimeoutEnds(OrderReason::BagsFull, DeliveryOutcome::BackToWork));
+    CHECK(!DeliveryTimeoutEnds(OrderReason::None, DeliveryOutcome::BackToWork));
+
     // The drain never touches more than the order still needs.
     CHECK(DeliveryNeeded(0, 10) == 10);
     CHECK(DeliveryNeeded(7, 10) == 3);

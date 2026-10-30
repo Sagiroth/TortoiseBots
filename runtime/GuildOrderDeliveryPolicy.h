@@ -6,6 +6,7 @@
 // The bank/mail code feeds this header plain counters it already keeps.
 #include <cstddef>
 #include <cstdint>
+#include "GuildOrderContract.h"
 
 namespace TortoiseBots
 {
@@ -64,13 +65,33 @@ enum class DeliveryOutcome : uint8_t
     Stuck,       // nothing moved and nothing can: cant / stuck
 };
 
-inline DeliveryOutcome ClassifyDelivery(uint32_t delivered, uint32_t amount, bool mailedAny, bool movedAny)
+// Whether the delivery ends after this pass: the quota is reached, the
+// bank refused after retries, or the bot holds no more of the order item.
+// Empty bags end it at once: the bank action only re-queues while the bot
+// carries the item, so waiting for refused passes would idle instead.
+inline bool DeliveryFinished(uint32_t emptyPasses, uint32_t carried, uint32_t delivered, uint32_t amount)
+{
+    return delivered >= amount || BankRefused(emptyPasses) || carried == 0;
+}
+
+// movedThisDelivery covers the whole delivery, not just this pass: the
+// last stack may have moved in an earlier pass.
+inline DeliveryOutcome ClassifyDelivery(uint32_t delivered, uint32_t amount, bool mailedAny, bool movedThisDelivery)
 {
     if (delivered >= amount)
         return mailedAny ? DeliveryOutcome::Mailed : DeliveryOutcome::Done;
-    if (!movedAny)
+    if (!movedThisDelivery)
         return DeliveryOutcome::Stuck;
     return DeliveryOutcome::BackToWork;
+}
+
+// A timed-out delivery never goes back to work: the farm time is spent,
+// so whatever reached the guild is the final count and the order ends
+// with the timeout reason kept.
+inline bool DeliveryTimeoutEnds(OrderReason reason, DeliveryOutcome outcome)
+{
+    return reason == OrderReason::Timeout &&
+        (outcome == DeliveryOutcome::BackToWork || outcome == DeliveryOutcome::Stuck);
 }
 
 // One stack per mail; the server takes a single item per mail.
