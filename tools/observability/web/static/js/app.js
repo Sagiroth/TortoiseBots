@@ -8849,16 +8849,22 @@
     const list = recaps || [];
     const r = list[selDeath] || list[0];
     if (!r) return '';
-    const rows = r.hits.map(h => `<tr><td class="mono">${(h.t_ms / 1000).toFixed(1)} s</td><td>${esc(h.a)}${h.s ? ` <span class="fd-hit-spell">${esc(h.s)}</span>` : ''}</td><td class="n">${FightDebug.fmtInt(h.d)}</td></tr>`).join('');
+    const spellCell = h => {
+      const name = h.s || h.sp || '';
+      if (!name) return '<td></td>';
+      const likely = !h.s && h.spLikely ? ' <span class="fd-likely" title="the newest cast in the 3 s before this hit aimed at this bot or at nobody">likely</span>' : '';
+      return `<td>${esc(name)}${likely}</td>`;
+    };
+    const rows = r.hits.map(h => `<tr><td class="mono">${(h.t_ms / 1000).toFixed(1)} s</td><td>${esc(h.a)}</td>${spellCell(h)}<td class="n">${FightDebug.fmtInt(h.d)}</td></tr>`).join('');
     const who = r.guid != null
       ? `<button type="button" class="fd-botbtn" data-fd-profile="${esc(r.guid)}">${esc(r.name)}</button>`
       : `<b>${esc(r.name)}</b>`;
     const sp = r.spell
-      ? ` — <b>${esc(r.spell.name)}</b>${r.spell.likely ? ' <span class="fd-likely" title="the newest boss cast in the 3 s before the death aimed at this bot or at nobody">likely</span>' : ''}`
+      ? `'s <b>${esc(r.spell.name)}</b>${r.spell.likely || r.likely ? ' <span class="fd-likely" title="the newest boss cast in the 3 s before the death aimed at this bot or at nobody">likely</span>' : ''}`
       : '';
     return `<p class="fd-recaphead">Died ${who} at ${(r.t_ms / 1000).toFixed(1)} s, killed by ${esc(r.killer)}${sp} · `
       + `<span class="mono">${FightDebug.fmtInt(r.total)}</span> damage in <span class="mono">${(r.spanMs / 1000).toFixed(1)}</span> s</p>`
-      + `<table class="data-table fd-recaptbl"><thead><tr><th>Time</th><th>From</th><th class="n">Damage</th></tr></thead><tbody>${rows}</tbody></table>`;
+      + `<table class="data-table fd-recaptbl"><thead><tr><th>Time</th><th>From</th><th>Spell</th><th class="n">Damage</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   // Three tables: tanks (main first), healers (by healing), damage (by damage). The name cell opens the bot's profile.

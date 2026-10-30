@@ -3525,7 +3525,6 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-bosscast.bc-5 { background: var(--grp-5); }
 .fd-bosscast.bc-6 { background: var(--grp-6); }
 .fd-bosscast.bc-7 { background: var(--grp-7); }
-.fd-hit-spell { margin-left: 4px; color: var(--accent-blue-bright); font-size: 0.72rem; }
 .fd-likely { margin-left: 4px; padding: 0 5px; border: 1px dashed var(--accent-yellow); border-radius: 999px; color: var(--accent-yellow); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; }
 
 /* Raid frames: up to four boss-debuff chips, the dispel colour as the tile's thin border and a red MC tag. */
