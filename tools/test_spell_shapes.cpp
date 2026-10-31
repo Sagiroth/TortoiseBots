@@ -74,7 +74,7 @@ Lane const kLanes[] = {
 void TestCommittedTable()
 {
     std::vector<Row> const& table = Table();
-    Check(table.size() == 17, "the committed table has every row");
+    Check(table.size() == 20, "the committed table has every row");
     std::unordered_set<uint32_t> ids;
     for (Row const& row : table)
     {
@@ -109,6 +109,15 @@ void TestKnownShapes()
     Shape const* glare = For(26029);
     Check(glare && glare->kind == Kind::Cone && glare->angle == 15 && Near(glare->length, 100.0f) && glare->width == 0.0f,
         "Dark Glare is the core's 15 degree front cone of 100 yd (spellVisual 7441)");
+    Shape const* impale = For(28783);
+    Check(impale && impale->kind == Kind::Cone && impale->angle == 15 && Near(impale->length, 45.0f) && impale->width == 0.0f,
+        "Anub'Rekhan's Impale is the core's 15 degree front cone of 45 yd (spellVisual 7619)");
+    Shape const* spray = For(28157);
+    Check(spray && spray->kind == Kind::Cone && spray->angle == 120 && Near(spray->length, 45.0f),
+        "Grobbulus' Slime Spray is a 120 degree front cone of 45 yd");
+    Shape const* shock = For(28741);
+    Check(shock && shock->kind == Kind::Cone && shock->angle == 120 && Near(shock->length, 30.0f),
+        "Maexxna's Poison Shock is a 120 degree front cone of 30 yd");
 }
 
 // Every Deep Breath row is the complete damaging footprint of its chain: a line from the first to the last damage point,
