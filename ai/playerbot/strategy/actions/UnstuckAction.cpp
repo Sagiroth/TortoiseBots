@@ -111,9 +111,9 @@ static bool LongStuckFallbackTeleport(PlayerbotAI* ai, Player* bot, Player* mast
 
     // "combat long stuck" also lands here: drop the old fight like
     // RepopAction::Execute does, or the bot arrives still chasing it.
-    RESET_AI_VALUE(Unit*, "old target");
-    RESET_AI_VALUE(Unit*, "current target");
-    RESET_AI_VALUE(Unit*, "pull target");
+    SET_AI_VALUE(Unit*, "old target", nullptr);
+    SET_AI_VALUE(Unit*, "current target", nullptr);
+    SET_AI_VALUE(Unit*, "pull target", nullptr);
     RESET_AI_VALUE(bool, "combat::self target");
     bot->SetSelectionGuid(ObjectGuid());
 
