@@ -16,7 +16,7 @@ namespace ai
         virtual std::string GetHelpDescription()
         {
             return "This action makes the bot automatically check its mailbox when not in combat or battlegrounds.\n"
-                   "Any items received will be returned to sender unless they were specifically requested.\n"
+                   "Items from guild members are taken into the bags; any other items are returned to sender unless they were specifically requested.\n"
                    "The bot only checks mail when it has no active master controlling it.";
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
@@ -28,5 +28,7 @@ namespace ai
     private:
         void ProcessMail(Mail* mail, Player* owner);
         static Player* GetProcessableOwner(Mail* mail, Player* bot);
+        static bool IsGuildMail(Mail* mail, Player* bot);
+        void TakeGuildMail(Mail* mail);
     };
 }

@@ -3,6 +3,8 @@
 #include "CheckMailAction.h"
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
+#include "Guild/GuildMgr.h"
+#include "Guild/Guild.h"
 
 #include "playerbot/PlayerbotAIConfig.h"
 using namespace ai;
@@ -29,6 +31,12 @@ bool CheckMailAction::Execute(Event& event)
     {
         if (!mail || mail->state == MAIL_STATE_DELETED)
             continue;
+
+        if (IsGuildMail(mail, bot))
+        {
+            TakeGuildMail(mail);
+            continue;
+        }
 
         Player* owner = GetProcessableOwner(mail, bot);
         if (!owner)
@@ -62,6 +70,8 @@ bool CheckMailAction::isUseful()
     {
         if (GetProcessableOwner(*i, bot))
             return true;
+        if (IsGuildMail(*i, bot) && !(*i)->items.empty() && !(*i)->COD && AI_VALUE(uint8, "bag space") < 95)
+            return true;
     }
 
     return false;
@@ -84,11 +94,56 @@ Player* CheckMailAction::GetProcessableOwner(Mail* mail, Player* bot)
     if (sPlayerbotAIConfig.IsInRandomAccountList(account))
         return nullptr;
 
-    // Guild members mail reagents for guild orders: the bot keeps them.
-    if (bot->GetGuildId() && owner->GetGuildId() == bot->GetGuildId())
+    if (IsGuildMail(mail, bot))
         return nullptr;
 
     return owner;
+}
+
+// Guild members mail reagents, recipes and supplies to guild bots: the bot
+// keeps them (recipes are learned from the bags), whether the sender is
+// online or not.
+bool CheckMailAction::IsGuildMail(Mail* mail, Player* bot)
+{
+    if (!mail || mail->state == MAIL_STATE_DELETED || !bot->GetGuildId() ||
+        mail->messageType != MAIL_NORMAL || mail->stationery == MAIL_STATIONERY_AUCTION)
+        return false;
+    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
+    return guild && guild->GetMemberSlot(ObjectGuid(HIGHGUID_PLAYER, mail->sender)) != nullptr;
+}
+
+// Takes a guild mail's items into the bags without a mailbox trip, as the
+// core's take-item handler does; cash-on-delivery mail stays untouched.
+void CheckMailAction::TakeGuildMail(Mail* mail)
+{
+    MasterPlayer* master = bot->GetSession() ? bot->GetSession()->GetMasterPlayer() : nullptr;
+    if (!master || mail->COD || mail->items.empty())
+        return;
+    bool taken = false;
+    while (!mail->items.empty())
+    {
+        uint32 itemGuid = mail->items[0].item_guid;
+        Item* item = master->GetMItem(itemGuid);
+        if (!item)
+            break;
+        ItemPosCountVec dest;
+        if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) != EQUIP_ERR_OK)
+            break;
+        mail->RemoveItem(itemGuid);
+        mail->removedItems.push_back(itemGuid);
+        master->RemoveMItem(itemGuid);
+        item->SetState(ITEM_UNCHANGED);
+        bot->MoveItemToInventory(dest, item, true);
+        taken = true;
+    }
+    if (!taken)
+        return;
+    mail->state = MAIL_STATE_CHANGED;
+    master->MarkMailsUpdated();
+    CharacterDatabase.BeginTransaction(bot->GetGUIDLow());
+    bot->SaveInventoryAndGoldToDB();
+    master->SaveMails();
+    CharacterDatabase.CommitTransaction();
 }
 
 
