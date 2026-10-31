@@ -412,8 +412,88 @@
       "name": "Berserk",
       "castMs": 0
     },
+    "27564": {
+      "name": "Reflection",
+      "castMs": 0
+    },
     "27680": {
       "name": "Berserk",
+      "castMs": 0
+    },
+    "57056": {
+      "name": "Leeching Bite",
+      "castMs": 0
+    },
+    "57063": {
+      "name": "Brood Venom Volley",
+      "castMs": 0
+    },
+    "57066": {
+      "name": "Reaver Storm",
+      "castMs": 0
+    },
+    "57073": {
+      "name": "Blackwalds Boon",
+      "castMs": 0
+    },
+    "57074": {
+      "name": "Blackwald's Blessing",
+      "castMs": 0
+    },
+    "57075": {
+      "name": "Empowered Soul",
+      "castMs": 0
+    },
+    "57076": {
+      "name": "Slavering Bite",
+      "castMs": 0
+    },
+    "57082": {
+      "name": "Bloodfrenzy",
+      "castMs": 0
+    },
+    "57083": {
+      "name": "Terrifying Presence",
+      "castMs": 0
+    },
+    "57084": {
+      "name": "Shadowbane Curse",
+      "castMs": 0
+    },
+    "57091": {
+      "name": "Flamewave",
+      "castMs": 0
+    },
+    "57093": {
+      "name": "Grellkin Rain of Fire",
+      "castMs": 0
+    },
+    "57094": {
+      "name": "Grellkin Fireball",
+      "castMs": 0
+    },
+    "57095": {
+      "name": "Glittering Dust",
+      "castMs": 0
+    },
+    "57096": {
+      "name": "Smoke Bomb",
+      "castMs": 0
+    },
+    "57097": {
+      "name": "Shuffle Kick",
+      "castMs": 0
+    },
+    "57098": {
+      "name": "Agonizing Concussion",
+      "castMs": 0
+    },
+    "57099": {
+      "name": "Shadow Blast",
+      "castMs": 0
+    },
+    "57100": {
+      "name": "Moroes Curse",
       "castMs": 0
     }
   },
@@ -549,6 +629,54 @@
     },
     "15984": {
       "name": "Sartura's Royal Guard"
+    },
+    "30008": {
+      "name": "Skitterweb Egg"
+    },
+    "61192": {
+      "name": "Shadowbane Darkcaster"
+    },
+    "61193": {
+      "name": "Shadowbane Ambusher"
+    },
+    "61194": {
+      "name": "Shadowbane Ragefang"
+    },
+    "61195": {
+      "name": "Grellkin Shadow Weaver"
+    },
+    "61196": {
+      "name": "Grellkin Primalist"
+    },
+    "61197": {
+      "name": "Grellkin Channeler"
+    },
+    "61206": {
+      "name": "Skitterweb Crawler"
+    },
+    "61207": {
+      "name": "Skitterweb Darkfang"
+    },
+    "61209": {
+      "name": "Skitterweb Leaper"
+    },
+    "61211": {
+      "name": "Shadowbane Glutton"
+    },
+    "61221": {
+      "name": "Brood Queen Araxxna"
+    },
+    "61222": {
+      "name": "Lord Blackwald II"
+    },
+    "61223": {
+      "name": "Clawlord Howlfang"
+    },
+    "61224": {
+      "name": "Grizikil"
+    },
+    "61225": {
+      "name": "Moroes"
     }
   }
 }

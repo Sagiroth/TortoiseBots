@@ -157,6 +157,33 @@ const sartura = (REAL.byEntry || REAL.bosses || REAL)["15516"];
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }] }).phase, "enraged");
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }, { id: 27680 }] }).phase, "berserk");
 
+// Lower Karazhan: Howlfang's frenzy is the Bloodfrenzy aura, Moroes' below-50 abilities appear only under 50 percent.
+const howlfang = (REAL.byEntry || REAL.bosses || REAL)["61223"];
+assert.deepStrictEqual(howlfang.phases.map((x) => x.rule), ["aura=57082", "start"]);
+assert.strictEqual(B.phaseOf(howlfang, { hp: 31, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(howlfang, { hp: 31, au: [{ id: 57082 }] }).phase, "frenzy");
+const howlfangFrenzy = B.model(REAL, { entry: 61223, hp: 20, au: [{ id: 57082 }] }, [], 0, 0);
+assert.strictEqual(howlfangFrenzy.phase, "frenzy");
+assert.strictEqual(howlfangFrenzy.abilities.find((a) => a.sid === 57076).inPhase, true,
+  "an untagged ability still shows in the frenzy phase");
+const moroes = (REAL.byEntry || REAL.bosses || REAL)["61225"];
+assert.deepStrictEqual(moroes.phases.map((x) => x.rule), ["hp<50", "start"]);
+assert.strictEqual(B.phaseOf(moroes, { hp: 60, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(moroes, { hp: 49, au: [] }).phase, "below");
+assert.strictEqual(B.phaseOf(moroes, { hp: 40 }, "below").phase, "below", "the hp<50 rule latches");
+const moroesAbove = B.model(REAL, { entry: 61225, hp: 60, au: [] }, [], 0, 0);
+assert.strictEqual(moroesAbove.abilities.find((a) => a.sid === 57095).inPhase, true,
+  "an untagged ability is in every phase");
+assert.strictEqual(moroesAbove.abilities.find((a) => a.sid === 57099).inPhase, false,
+  "Shadow Blast is below-50 only");
+const moroesBelow = B.model(REAL, { entry: 61225, hp: 49, au: [] }, [], 0, 0);
+assert.strictEqual(moroesBelow.phase, "below");
+assert.strictEqual(moroesBelow.abilities.find((a) => a.sid === 57099).inPhase, true);
+assert.strictEqual(moroesBelow.abilities.find((a) => a.sid === 57100).inPhase, true);
+assert.strictEqual(moroesBelow.abilities.find((a) => a.sid === 27564).inPhase, true);
+assert.strictEqual(moroesBelow.abilities.find((a) => a.sid === 57097).inPhase, true,
+  "Shuffle Kick runs in both phases");
+
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];
 assert.strictEqual(jeklikReal.abilities.find((a) => a.sid === 23919).flags.phase, "bat");
