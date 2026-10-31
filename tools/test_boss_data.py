@@ -635,7 +635,7 @@ class BossDataTest(unittest.TestCase):
         61225: {
             57095: (0, 20000, 26000, "victim", True, False, False, False, False,
                     False, 0, 0, "", "", {"dispel": "nodispel"}, 0),
-            57096: (0, 15000, 18000, "random", True, False, False, False, False,
+            57096: (0, 15000, 18000, "aoe", True, False, False, False, False,
                     False, 0, 0, "", "", {}, 0),
             57097: (0, 0, 0, "random", True, False, False, False, False, False,
                     0, 0, "", "", {"dispel": "nodispel"}, 0),

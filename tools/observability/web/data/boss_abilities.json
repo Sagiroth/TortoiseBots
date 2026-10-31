@@ -3198,7 +3198,7 @@
         },
         {
           "sid": 57074,
-          "name": "Blackwald's Blessing",
+          "name": "Blackwalds Blessing",
           "castMs": 0,
           "a": 0,
           "b": 0,
@@ -3527,7 +3527,7 @@
           "b": 15000,
           "c": 18000,
           "phase": "",
-          "target": "random",
+          "target": "aoe",
           "aura": true,
           "self": false,
           "mark": false,
@@ -3672,6 +3672,7 @@
         "Glittering Dust drops 100 percent of the tank's threat and moves him to the second-highest player: the tank swap is the real mechanic. It comes first at 20-26 s and then every 20-26 s.",
         "Shuffle Kick comes first at 7-13 s and then every 7-13 s above 50 percent; below 50 percent it re-arms at 9-15 s. The same timer and target also get Agonizing Concussion, and the kick knocks the target back.",
         "Below 50 percent Shadow Blast, Moroes Curse and Reflection turn on; their first timers (10-16, 35-48 and 25 s) count from the drop below 50 percent because they do not tick above it. Shadow Blast is instant, so it cannot be kicked. Smoke Bomb comes first at 15-18 s and then every 15-18 s.",
+        "Smoke Bomb lands on a random player and silences everyone within its area around that player (implicit target 28, an area at the destination): spread out.",
         "The director's-cut branch (teleport 12980, a second interlude and a 10 percent heal) is compiled out; the rows above are the health-based fight. Ghost Visual 9617 is applied directly every tick, with no cast event."
       ]
     }
