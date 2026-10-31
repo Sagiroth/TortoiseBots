@@ -11,6 +11,8 @@
 #include "runtime/GuildOrderFishingPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderSupplyPolicy.h"
+#include "runtime/GuildOrderRefundPolicy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -442,6 +444,24 @@ std::pair<uint32_t, uint32_t> GuildOrderFarmItemFor(Player* bot)
     if (!reagent)
         return { 0, 0 };
     return { reagent, record->farmZoneId };
+}
+
+bool GuildOrderMailWaiting(Player* bot)
+{
+    if (!bot || !bot->GetGuildId())
+        return false;
+    std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
+    if (!record || record->state != OrderState::Working)
+        return false;
+    // Same mail item the mailbox leg walks for (the supply leg's mail
+    // item): the travel search gates on this snapshot, so both agree on
+    // what waits. A skipped (unreachable) leg stays skipped.
+    uint32_t mailItemId = TortoiseBots::GuildOrders::SupplyMailItemId(record->supplyStep,
+        record->supplyItemId, record->itemId);
+    if (!mailItemId || !ai::OrderMailboxItems(bot, mailItemId))
+        return false;
+    return !TortoiseBots::GuildOrders::MailLegSkipped(mailItemId, record->mailEmptyItemId,
+        WorldTimer::getMSTime(), record->mailEmptyMs);
 }
 
 bool GuildOrderSkinMobFor(Player* bot, uint32_t creatureEntry)

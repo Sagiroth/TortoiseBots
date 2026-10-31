@@ -55,6 +55,15 @@ int main()
     CHECK(GuildGoldShortfall(300, 300, 100, 200) == 0);
     CHECK(GuildGoldShortfall(500, 300, 100, 50) == 50);
 
+    // A full bag yields the mail leg to the vendor trip: the take gate
+    // refuses above 95, so at 95 the leg already detours instead of walking
+    // to a mailbox it cannot use. No mail waiting, no yield.
+    CHECK(OrderMailYieldsToVendor(95, true));
+    CHECK(OrderMailYieldsToVendor(100, true));
+    CHECK(!OrderMailYieldsToVendor(94, true));
+    CHECK(!OrderMailYieldsToVendor(100, false));
+    CHECK(!OrderMailYieldsToVendor(0, false));
+
     if (failures == 0)
         std::printf("guild order supply policy: all tests passed\n");
     return failures != 0;

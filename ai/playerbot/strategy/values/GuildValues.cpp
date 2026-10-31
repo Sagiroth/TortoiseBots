@@ -464,8 +464,17 @@ bool HasGuildTravelOrderValue::Calculate()
     // No order work while delivering or done with the amount (delivered
     // plus bags plus mailbox). Mail waiting never blocks the leg: the
     // travel code walks to a mailbox and collects it before farming, buying
-    // or delivering, since bought items arrive by mail.
+    // or delivering, since bought items arrive by mail. One exception: bags
+    // too full to lift the mail. The take gate refuses above 95, so the leg
+    // would walk to a mailbox it cannot use; it yields to the vendor trip
+    // instead and runs again after the sale.
     if (!OrderStillNeedsWork(bot, order))
+        return false;
+    if (TortoiseBots::GuildOrders::OrderMailYieldsToVendor(AI_VALUE(uint8, "bag space"),
+        current->supplyStep == SupplyStep::Bags && ai::OrderMailboxItems(bot,
+            TortoiseBots::GuildOrders::SupplyMailItemId(current->supplyStep,
+                current->supplyItemId, current->itemId)) > 0) &&
+        AI_VALUE(bool, "can sell"))
         return false;
     return true;
 }

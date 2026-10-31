@@ -237,7 +237,14 @@ bool GuildOrderTakeMailAction::isUseful()
         stored->supplyItemId, stored->itemId);
     if (!itemId || !OrderMailboxItems(bot, itemId) || AI_VALUE(uint8, "bag space") > 95)
         return false;
-    return !MailProcessor::FindMailbox(ai).IsEmpty();
+    // Only at the mailbox, not while walking past one: the core refuses the
+    // take past interact range, and a refused take still costs a server
+    // round trip every tick of the walk. FindMailbox scans sight range
+    // (60 yd), far past the 5 yd interact check the handler enforces.
+    ObjectGuid mailbox = MailProcessor::FindMailbox(ai);
+    if (mailbox.IsEmpty())
+        return false;
+    return bot->GetGameObjectIfCanInteractWith(mailbox, GAMEOBJECT_TYPE_MAILBOX) != nullptr;
 }
 
 bool GuildOrderTakeMailAction::Execute(Event& event)
