@@ -578,8 +578,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 17)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 112)
+        self.assertEqual(len(doc["bosses"]), 32)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 161)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -591,6 +591,131 @@ class BossDataTest(unittest.TestCase):
                 self.assertTrue(entry["name"], entry)
             for phase in boss["phases"]:
                 self.assertIn(phase["rule"]["kind"], ("hp", "aura", "flag", "start"))
+
+
+class DungeonTrollValueTest(unittest.TestCase):
+    """Pins every Zul'Farrak and Sunken Temple row read off the core sources.
+
+    The fixture below is written from the world dumps and scripts, not generated
+    from the CSV: creature_spells seconds are 0 in the columns, EventAI timers are
+    ms, and neither dungeon has a phase rule (the transform and enrage auras stop
+    no ability).
+    """
+
+    ABILITIES = {
+        (8127, 11314): ("0", "0", "0", "t=self;summon=7844"),
+        (8127, 10413): ("0", "0", "0", "t=victim;ok=tank"),
+        (8127, 8376): ("0", "0", "0", "t=self;summon=6066"),
+        (8127, 11899): ("0", "0", "0", "t=self;summon=8179;int"),
+        (8127, 11894): ("0", "0", "0", "t=self;summon=8156;hp25"),
+        (8127, 11895): ("0", "0", "0", "t=ally;int;hp20"),
+        (8127, 10915): ("0", "0", "0", "t=ally;int;hp60"),
+        (7272, 8600): ("0", "0", "0", "t=random;aura;int"),
+        (7272, 11089): ("0", "0", "0", "t=self;self;hp30;ok.purge=nopurge"),
+        (7795, 12491): ("0", "0", "0", "t=ally;int"),
+        (7795, 11086): ("0", "0", "0", "t=self;summon=7785"),
+        (7795, 15245): ("0", "0", "0", "t=aoe;int"),
+        (7795, 12739): ("0", "0", "0", "t=victim;int"),
+        (7273, 11836): ("0", "0", "0", "t=random;aura;int"),
+        (7273, 11902): ("0", "0", "0", "t=aoe;ok=heal"),
+        (7273, 11131): ("0", "0", "0", "t=random;aura;int;ok.dispel=nodispel"),
+        (7271, 10731): ("0", "18000", "18000", "t=self;ok=script"),
+        (7271, 12739): ("0", "0", "0", "t=random;int"),
+        (7271, 15245): ("0", "0", "0", "t=aoe;int"),
+        (7271, 11086): ("0", "0", "0", "t=self;summon=7785"),
+        (7271, 12491): ("0", "0", "0", "t=ally;int"),
+        (7604, 11972): ("5000", "15000", "15000", "t=victim;ok=tank"),
+        (7604, 12170): ("8000", "10000", "10000", "t=victim;ok=tank"),
+        (7267, 7366): ("0", "0", "0", "t=self;self;ok.purge=nopurge"),
+        (7267, 15496): ("0", "0", "0", "t=victim;ok=tank"),
+        (7267, 11837): ("0", "0", "0", "t=aoe;cone"),
+        (7267, 8269): ("0", "0", "0", "t=self;self;hp30;ok.purge=nopurge"),
+        (7274, 7366): ("0", "0", "0", "t=self;self;ok.purge=nopurge"),
+        (7274, 15496): ("0", "0", "0", "t=victim;ok=tank"),
+        (7274, 7160): ("0", "30000", "30000", "t=victim;ok=tank"),
+        (7275, 13704): ("0", "0", "0", "t=aoe;aura;ok.dispel=nodispel"),
+        (7275, 12039): ("0", "0", "0", "t=ally;int"),
+        (7275, 8362): ("0", "0", "0", "t=ally;aura;int"),
+        (7275, 15537): ("0", "0", "0", "t=victim;int"),
+        (8580, 12887): ("0", "0", "0", "t=aoe;cone"),
+        (8580, 6524): ("0", "0", "0", "t=aoe;aura;ok.dispel=nodispel"),
+        (5720, 12884): ("0", "0", "0", "t=aoe;cone;aura;ok.dispel=nodispel"),
+        (5720, 12882): ("0", "0", "0", "t=aoe;cone"),
+        (5721, 12884): ("0", "0", "0", "t=aoe;cone;aura;ok.dispel=nodispel"),
+        (5721, 12882): ("0", "0", "0", "t=aoe;cone"),
+        (5710, 12468): ("0", "0", "0", "t=aoe;ground;int;aura;ok.dispel=nodispel"),
+        (5710, 8376): ("0", "0", "0", "t=self;summon=6066"),
+        (5710, 12479): ("0", "20000", "25000", "t=victim;aura;ok.dispel=nodispel"),
+        (5710, 12492): ("0", "0", "0", "t=ally;int"),
+        (5719, 12884): ("0", "0", "0", "t=aoe;cone;aura;ok.dispel=nodispel"),
+        (5719, 12882): ("0", "0", "0", "t=aoe;cone"),
+        (5709, 3391): ("0", "0", "0", "t=victim;ok=tank"),
+        (5709, 12890): ("0", "0", "0", "t=random;aura;int"),
+        (5709, 11876): ("0", "0", "0", "t=aoe;aura;ok.dispel=nodispel"),
+    }
+
+    ADDS = {
+        8127: [(8138, "summon", 0), (8156, "summon", 1), (7844, "totem", 1),
+               (6066, "totem", 1), (8179, "ward", 1)],
+        7795: [(7785, "ward", 1), (7786, "summon", 0)],
+        7271: [(7286, "summon", 1), (7276, "summon", 1), (7785, "ward", 1),
+               (7786, "summon", 0)],
+        7604: [(7605, "linked", 3), (7606, "linked", 2), (7608, "linked", 1)],
+        7267: [(7797, "linked", 1)],
+        7275: [(7796, "linked", 1), (7787, "summon", 0), (7788, "summon", 0),
+               (8876, "summon", 0)],
+        5710: [(6066, "totem", 1), (5711, "linked", 1), (5263, "linked", 0),
+               (5271, "linked", 0), (5273, "linked", 0)],
+        5719: [(5722, "linked", 1)],
+        5709: [(5277, "linked", 0), (5280, "linked", 0), (8319, "linked", 0),
+               (5283, "linked", 0)],
+    }
+
+    MAPS = ("zulfarrak", "sunken_temple")
+
+    def rows(self):
+        return [r for r in boss_data.read_rows(boss_data.DEFAULT_CSV) if r["map"] in self.MAPS]
+
+    def test_abilities_match_source(self):
+        got = {}
+        for row in self.rows():
+            if row["row"] == "ability":
+                got[(int(row["boss"]), int(row["key"]))] = (row["a"], row["b"], row["c"], row["d"])
+        self.assertEqual(got, self.ABILITIES)
+
+    def test_adds_and_no_phase_rules(self):
+        adds = {}
+        for row in self.rows():
+            if row["row"] == "add":
+                adds.setdefault(int(row["boss"]), []).append(
+                    (int(row["key"]), row["a"], int(row["b"]))
+                )
+            self.assertNotEqual(row["row"], "phase", "neither dungeon stops an ability in a phase")
+        self.assertEqual(adds, self.ADDS)
+
+    def test_event_timers_and_creature_spell_zeroes(self):
+        rows = {
+            (int(r["boss"]), int(r["key"])): r
+            for r in self.rows() if r["row"] == "ability"
+        }
+        # EventAI values are ms and stay in the columns.
+        self.assertEqual((rows[(7271, 10731)]["b"], rows[(7271, 10731)]["c"]), ("18000", "18000"))
+        self.assertEqual((rows[(5710, 12479)]["b"], rows[(5710, 12479)]["c"]), ("20000", "25000"))
+        self.assertEqual((rows[(7274, 7160)]["b"], rows[(7274, 7160)]["c"]), ("30000", "30000"))
+        # Script timers are literals in the C++ file.
+        self.assertEqual((rows[(7604, 11972)]["a"], rows[(7604, 11972)]["b"]), ("5000", "15000"))
+        # Deep Slumber is a creature_spells entry: seconds, so no timer in the columns.
+        self.assertEqual((rows[(5709, 12890)]["b"], rows[(5709, 12890)]["c"]), ("0", "0"))
+
+    def test_document_carries_no_phases(self):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        doc = boss_data.build_document(rows, names)
+        for boss in doc["bosses"].values():
+            if boss["map"] in self.MAPS:
+                self.assertEqual(boss["phases"], [], boss["name"])
+                for ability in boss["abilities"]:
+                    self.assertEqual(ability["castMs"], 0, ability["name"])
 
 
 if __name__ == "__main__":

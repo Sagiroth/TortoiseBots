@@ -35,6 +35,9 @@ inline char const* const kSpellShapeCsv = R"(
 19272,cone,90,35,0,0,0,0,0,spell_template 19272 Lava Breath: target 54 (90 degree arc); radius 21 = 35 yd; front
 24839,cone,120,20,0,0,0,0,0,spell_template 24839 Acid Breath: target 24 x2; radius 9 = 20 yd; front 120
 25814,cone,120,10,0,0,0,0,0,spell_template 25814 Wide Slash: target 24; radius 13 = 10 yd; front 120
+11837,cone,120,10,0,0,0,0,0,spell_template 11837 Wide Slash: target 24; radius 13 = 10 yd; front 120
+12884,cone,120,10,0,0,0,0,0,spell_template 12884 Acid Breath: target 24 x2; radius 13 = 10 yd; front 120
+12882,cone,120,10,0,0,0,0,0,spell_template 12882 Wing Flap: target 24; radius 13 = 10 yd; front 120
 26102,cone,90,40,0,0,0,0,0,spell_template 26102 Sand Blast: target 54 x2 (90 degree arc); radius 23 = 40 yd; front
 26029,cone,15,100,0,0,0,0,0,spell_template 26029 Dark Glare: target 24; spellVisual 7441 = PUSH_IN_FRONT_15 (Spell.cpp:2760-2761, HasInArc pi/12 at Spell.cpp:8276-8277) = front 15; radius 12 = 100 yd
 17086,line,0,0,60,20.730539,-215.237610,-130.788300,-213.424026,spell_target_position 17086 chain (north to south, 20 links, first point 17086 to last 21139 in the tunnel; 151.53 yd); radius 10 = 30 yd each side

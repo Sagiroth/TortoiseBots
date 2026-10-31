@@ -44,8 +44,20 @@
       "name": "Teleport",
       "castMs": 0
     },
+    "6524": {
+      "name": "Ground Tremor",
+      "castMs": 0
+    },
     "6605": {
       "name": "Terrifying Screech",
+      "castMs": 0
+    },
+    "7160": {
+      "name": "Execute",
+      "castMs": 0
+    },
+    "7366": {
+      "name": "Berserker Stance",
       "castMs": 0
     },
     "7393": {
@@ -60,16 +72,156 @@
       "name": "Enrage",
       "castMs": 0
     },
+    "8362": {
+      "name": "Renew",
+      "castMs": 0
+    },
+    "8376": {
+      "name": "Earthgrab Totem",
+      "castMs": 0
+    },
+    "8600": {
+      "name": "Fevered Plague",
+      "castMs": 0
+    },
+    "10413": {
+      "name": "Earth Shock",
+      "castMs": 0
+    },
+    "10731": {
+      "name": "Awaken Zul'Farrak Zombie",
+      "castMs": 0
+    },
+    "10915": {
+      "name": "Flash Heal",
+      "castMs": 0
+    },
+    "11086": {
+      "name": "Ward of Zum'rah",
+      "castMs": 0
+    },
+    "11088": {
+      "name": "Ward of Zum'rah",
+      "castMs": 0
+    },
+    "11089": {
+      "name": "Theka Transform",
+      "castMs": 0
+    },
+    "11131": {
+      "name": "Icicle",
+      "castMs": 0
+    },
+    "11314": {
+      "name": "Fire Nova Totem",
+      "castMs": 0
+    },
+    "11836": {
+      "name": "Freeze Solid",
+      "castMs": 0
+    },
+    "11837": {
+      "name": "Wide Slash",
+      "castMs": 0
+    },
+    "11876": {
+      "name": "War Stomp",
+      "castMs": 0
+    },
+    "11894": {
+      "name": "Antu'sul's Minion",
+      "castMs": 0
+    },
+    "11895": {
+      "name": "Healing Wave of Antu'sul",
+      "castMs": 0
+    },
+    "11899": {
+      "name": "Healing Ward",
+      "castMs": 0
+    },
+    "11902": {
+      "name": "Gahz'rilla Slam",
+      "castMs": 0
+    },
+    "11972": {
+      "name": "Shield Bash",
+      "castMs": 0
+    },
+    "12039": {
+      "name": "Heal",
+      "castMs": 0
+    },
     "12097": {
       "name": "Pierce Armor",
+      "castMs": 0
+    },
+    "12170": {
+      "name": "Revenge",
+      "castMs": 0
+    },
+    "12468": {
+      "name": "Flamestrike",
+      "castMs": 0
+    },
+    "12479": {
+      "name": "Hex of Jammal'an",
+      "castMs": 0
+    },
+    "12491": {
+      "name": "Healing Wave",
+      "castMs": 0
+    },
+    "12492": {
+      "name": "Healing Wave",
       "castMs": 0
     },
     "12540": {
       "name": "Gouge",
       "castMs": 0
     },
+    "12739": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "12882": {
+      "name": "Wing Flap",
+      "castMs": 0
+    },
+    "12884": {
+      "name": "Acid Breath",
+      "castMs": 0
+    },
+    "12887": {
+      "name": "Sweeping Slam",
+      "castMs": 0
+    },
+    "12890": {
+      "name": "Deep Slumber",
+      "castMs": 0
+    },
+    "13540": {
+      "name": "Green Channeling",
+      "castMs": 0
+    },
+    "13704": {
+      "name": "Psychic Scream",
+      "castMs": 0
+    },
     "13736": {
       "name": "Whirlwind",
+      "castMs": 0
+    },
+    "15245": {
+      "name": "Shadow Bolt Volley",
+      "castMs": 0
+    },
+    "15496": {
+      "name": "Cleave",
+      "castMs": 0
+    },
+    "15537": {
+      "name": "Shadow Bolt",
       "castMs": 0
     },
     "15582": {
@@ -418,6 +570,138 @@
     }
   },
   "creatures": {
+    "5263": {
+      "name": "Mummified Atal'ai"
+    },
+    "5271": {
+      "name": "Atal'ai Deathwalker"
+    },
+    "5273": {
+      "name": "Atal'ai High Priest"
+    },
+    "5277": {
+      "name": "Nightmare Scalebane"
+    },
+    "5280": {
+      "name": "Nightmare Wyrmkin"
+    },
+    "5283": {
+      "name": "Nightmare Wanderer"
+    },
+    "5709": {
+      "name": "Shade of Eranikus"
+    },
+    "5710": {
+      "name": "Jammal'an the Prophet"
+    },
+    "5711": {
+      "name": "Ogom the Wretched"
+    },
+    "5719": {
+      "name": "Morphaz"
+    },
+    "5720": {
+      "name": "Weaver"
+    },
+    "5721": {
+      "name": "Dreamscythe"
+    },
+    "5722": {
+      "name": "Hazzas"
+    },
+    "6066": {
+      "name": "Earthgrab Totem"
+    },
+    "7267": {
+      "name": "Chief Ukorz Sandscalp"
+    },
+    "7271": {
+      "name": "Witch Doctor Zum'rah"
+    },
+    "7272": {
+      "name": "Theka the Martyr"
+    },
+    "7273": {
+      "name": "Gahz'rilla"
+    },
+    "7274": {
+      "name": "Sandfury Executioner"
+    },
+    "7275": {
+      "name": "Shadowpriest Sezz'ziz"
+    },
+    "7276": {
+      "name": "Zul'Farrak Dead Hero"
+    },
+    "7286": {
+      "name": "Zul'Farrak Zombie"
+    },
+    "7604": {
+      "name": "Sergeant Bly"
+    },
+    "7605": {
+      "name": "Raven"
+    },
+    "7606": {
+      "name": "Oro Eyegouge"
+    },
+    "7607": {
+      "name": "Weegli Blastfuse"
+    },
+    "7608": {
+      "name": "Murta Grimgut"
+    },
+    "7785": {
+      "name": "Ward of Zum'rah"
+    },
+    "7786": {
+      "name": "Skeleton of Zum'rah"
+    },
+    "7787": {
+      "name": "Sandfury Slave"
+    },
+    "7788": {
+      "name": "Sandfury Drudge"
+    },
+    "7789": {
+      "name": "Sandfury Cretin"
+    },
+    "7795": {
+      "name": "Hydromancer Velratha"
+    },
+    "7796": {
+      "name": "Nekrum Gutchewer"
+    },
+    "7797": {
+      "name": "Ruuzlu"
+    },
+    "7844": {
+      "name": "Fire Nova Totem IV"
+    },
+    "8127": {
+      "name": "Antu'sul"
+    },
+    "8138": {
+      "name": "Sul'lithuz Broodling"
+    },
+    "8156": {
+      "name": "Servant of Antu'sul"
+    },
+    "8179": {
+      "name": "Greater Healing Ward"
+    },
+    "8319": {
+      "name": "Nightmare Whelp"
+    },
+    "8580": {
+      "name": "Atal'alarion"
+    },
+    "8876": {
+      "name": "Sandfury Acolyte"
+    },
+    "8877": {
+      "name": "Sandfury Zealot"
+    },
     "10184": {
       "name": "Onyxia"
     },

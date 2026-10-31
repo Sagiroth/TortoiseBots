@@ -43,6 +43,35 @@
         15589,
         15727
       ]
+    },
+    {
+      "key": "zulfarrak",
+      "mapId": 209,
+      "name": "Zul'Farrak",
+      "bosses": [
+        8127,
+        7272,
+        7795,
+        7273,
+        7271,
+        7604,
+        7267,
+        7274,
+        7275
+      ]
+    },
+    {
+      "key": "sunken_temple",
+      "mapId": 109,
+      "name": "Sunken Temple",
+      "bosses": [
+        8580,
+        5720,
+        5721,
+        5710,
+        5719,
+        5709
+      ]
     }
   ],
   "bosses": {
@@ -3054,6 +3083,1463 @@
       ],
       "notes": [
         "Phase 2: the first stomach grab comes 18 s minus the 3.25 s grab after he emerges, then every 10 s; killing both Flesh Tentacles in the stomach weakens him for 45 s."
+      ]
+    },
+    "8127": {
+      "entry": 8127,
+      "name": "Antu'sul",
+      "map": "zulfarrak",
+      "order": 18,
+      "abilities": [
+        {
+          "sid": 11314,
+          "name": "Fire Nova Totem",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 7844,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 10413,
+          "name": "Earth Shock",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 8376,
+          "name": "Earthgrab Totem",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 6066,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 11899,
+          "name": "Healing Ward",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 8179,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 11894,
+          "name": "Antu'sul's Minion",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 8156,
+          "hp": 25,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 11895,
+          "name": "Healing Wave of Antu'sul",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 20,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 10915,
+          "name": "Flash Heal",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 60,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 8138,
+          "name": "Sul'lithuz Broodling",
+          "role": "summon",
+          "priority": 0
+        },
+        {
+          "entry": 8156,
+          "name": "Servant of Antu'sul",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 7844,
+          "name": "Fire Nova Totem IV",
+          "role": "totem",
+          "priority": 1
+        },
+        {
+          "entry": 6066,
+          "name": "Earthgrab Totem",
+          "role": "totem",
+          "priority": 1
+        },
+        {
+          "entry": 8179,
+          "name": "Greater Healing Ward",
+          "role": "ward",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "Earthgrab Totem 8376 and Healing Ward 11899 share one EventAI timer: the first at 11.6 s, then every 13.3-21.7 s, one of the two chosen at random.",
+        "Four Sul'lithuz Broodlings 8138 spawn 3 s after the pull from four script summon commands; the three Hatchlings 8130 by his spawn are not attackable and are not adds.",
+        "Antu'sul's Minion 11894 is cast once at 75 percent (one Servant of Antu'sul 8156) and twice at 25 percent (two servants); the Servant is faction 107 and joins the fight.",
+        "Healing Wave of Antu'sul 11895 is cast once below 20 percent and then every 12 s below 30 percent; Flash Heal 10915 heals a friendly target every 17-20 s below 60 percent; both are kickable.",
+        "creature_spells 81270 stores seconds: Fire Nova Totem 11314 first 7-11 s then every 10-13 s; Earth Shock 10413 first and every 7 s. Only one due spell is cast per 1.2 s update."
+      ]
+    },
+    "7272": {
+      "entry": 7272,
+      "name": "Theka the Martyr",
+      "map": "zulfarrak",
+      "order": 19,
+      "abilities": [
+        {
+          "sid": 8600,
+          "name": "Fevered Plague",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 11089,
+          "name": "Theka Transform",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 30,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "creature_spells 72720 stores seconds: Fevered Plague 8600 first 15-18 s then every 10-22 s, only when the target has no Fevered Plague aura; the plague is a disease.",
+        "Theka Transform 11089 below 30 percent is a 30 s model change on the boss; he keeps fighting and no ability stops, so it is a one-shot tick, not a phase."
+      ]
+    },
+    "7795": {
+      "entry": 7795,
+      "name": "Hydromancer Velratha",
+      "map": "zulfarrak",
+      "order": 20,
+      "abilities": [
+        {
+          "sid": 12491,
+          "name": "Healing Wave",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 11086,
+          "name": "Ward of Zum'rah",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 7785,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 15245,
+          "name": "Shadow Bolt Volley",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 12739,
+          "name": "Shadow Bolt",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 7785,
+          "name": "Ward of Zum'rah",
+          "role": "ward",
+          "priority": 1
+        },
+        {
+          "entry": 7786,
+          "name": "Skeleton of Zum'rah",
+          "role": "summon",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "creature_spells 77950 stores seconds: Healing Wave 12491 every 9-22 s from the pull; Ward of Zum'rah 11086 first 2-5 s then every 13-28 s; Shadow Bolt Volley 15245 first 5-10 s then every 17-22 s; Shadow Bolt 12739 every 2 s at 90 percent chance.",
+        "The Ward of Zum'rah 7785 summons a Skeleton of Zum'rah 7786 every 5 s (11088); kill the Ward first."
+      ]
+    },
+    "7273": {
+      "entry": 7273,
+      "name": "Gahz'rilla",
+      "map": "zulfarrak",
+      "order": 21,
+      "abilities": [
+        {
+          "sid": 11836,
+          "name": "Freeze Solid",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 11902,
+          "name": "Gahz'rilla Slam",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 11131,
+          "name": "Icicle",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Gahz'rilla is summoned by event 2488 when the Gong of Zul'Farrak is rung; his own 33007 sends event 2489, six one-second move commands that walk him out of the pit.",
+        "creature_spells 72730 stores seconds: Freeze Solid 11836 first and every 5-15 s on the second-highest aggro target; Slam 11902 first 3-10 s then every 3-10 s; Icicle 11131 first 7-20 s then every 7-20 s on a random player.",
+        "Slam knocks everyone within 9 yd into the air; Freeze Solid freezes its target; Icicle slows its target."
+      ]
+    },
+    "7271": {
+      "entry": 7271,
+      "name": "Witch Doctor Zum'rah",
+      "map": "zulfarrak",
+      "order": 22,
+      "abilities": [
+        {
+          "sid": 10731,
+          "name": "Awaken Zul'Farrak Zombie",
+          "castMs": 0,
+          "a": 0,
+          "b": 18000,
+          "c": 18000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "script",
+          "okNeeds": {}
+        },
+        {
+          "sid": 12739,
+          "name": "Shadow Bolt",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 15245,
+          "name": "Shadow Bolt Volley",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 11086,
+          "name": "Ward of Zum'rah",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 7785,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 12491,
+          "name": "Healing Wave",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 7286,
+          "name": "Zul'Farrak Zombie",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 7276,
+          "name": "Zul'Farrak Dead Hero",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 7785,
+          "name": "Ward of Zum'rah",
+          "role": "ward",
+          "priority": 1
+        },
+        {
+          "entry": 7786,
+          "name": "Skeleton of Zum'rah",
+          "role": "summon",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "creature_spells 72710 stores seconds: Shadow Bolt 12739 every 3-5 s on a random player; Shadow Bolt Volley 15245 first 6-30 s then every 10-18 s; Ward of Zum'rah 11086 first 7-20 s then every 15-32 s; Healing Wave 12491 first 10-15 s then every 15-23 s on the most injured friendly below 40 percent.",
+        "Awaken Zul'Farrak Zombie 10731 runs 1-5 s after the pull and every 18 s after: it activates the nearest unopened 128403 grave within 100 yd, which releases a Zombie 7286 or a Dead Hero 7276 with no spell cast.",
+        "He is friendly until area trigger 962 fires. The Ward of Zum'rah 7785 summons a Skeleton of Zum'rah 7786 every 5 s (11088)."
+      ]
+    },
+    "7604": {
+      "entry": 7604,
+      "name": "Sergeant Bly",
+      "map": "zulfarrak",
+      "order": 23,
+      "abilities": [
+        {
+          "sid": 11972,
+          "name": "Shield Bash",
+          "castMs": 0,
+          "a": 5000,
+          "b": 15000,
+          "c": 15000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 12170,
+          "name": "Revenge",
+          "castMs": 0,
+          "a": 8000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 7605,
+          "name": "Raven",
+          "role": "linked",
+          "priority": 3
+        },
+        {
+          "entry": 7606,
+          "name": "Oro Eyegouge",
+          "role": "linked",
+          "priority": 2
+        },
+        {
+          "entry": 7608,
+          "name": "Murta Grimgut",
+          "role": "linked",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "He stays friendly with a gossip menu until the fight option is taken; 10 s later he turns hostile and attacks the player who talked. Raven 7605, Oro Eyegouge 7606 and Murta Grimgut 7608 turn hostile; Weegli 7607 does not.",
+        "Shield Bash stuns its target and Revenge hits it; the script casts Revenge on a fixed timer although its comment says it should wait for a dodge or block."
+      ]
+    },
+    "7267": {
+      "entry": 7267,
+      "name": "Chief Ukorz Sandscalp",
+      "map": "zulfarrak",
+      "order": 24,
+      "abilities": [
+        {
+          "sid": 7366,
+          "name": "Berserker Stance",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 15496,
+          "name": "Cleave",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 11837,
+          "name": "Wide Slash",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 8269,
+          "name": "Enrage",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 30,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 7797,
+          "name": "Ruuzlu",
+          "role": "linked",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "creature_spells 72670 stores seconds: Berserker Stance 7366 first 0-3 s then every 240-245 s; Cleave 15496 first 6-20 s then every 8-19 s; Wide Slash 11837 first 12-16 s then every 7-24 s.",
+        "Frenzy 8269 is two independent EventAI timers: once below 60 percent and once below 30 percent, each repeating after 120-125 s; each enrage lasts 120 s (duration index 4) and is a self aura, not a phase.",
+        "Ruuzlu 7797 cleaves and executes a target below 20 percent; kill him first."
+      ]
+    },
+    "7274": {
+      "entry": 7274,
+      "name": "Sandfury Executioner",
+      "map": "zulfarrak",
+      "order": 25,
+      "abilities": [
+        {
+          "sid": 7366,
+          "name": "Berserker Stance",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 15496,
+          "name": "Cleave",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 7160,
+          "name": "Execute",
+          "castMs": 0,
+          "a": 0,
+          "b": 30000,
+          "c": 30000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "creature_spells 72740 stores seconds: Berserker Stance 7366 first 0-3 s then every 243 s; Cleave 15496 first 7-13 s then every 7-23 s.",
+        "Execute 7160 is cast on a target below 20 percent health every 30 s.",
+        "After the Executioner dies a Troll Cage starts the stairs event: waves 1 and 2 walk up the stairs, wave 3 spawns at the bottom and is not sent up."
+      ]
+    },
+    "7275": {
+      "entry": 7275,
+      "name": "Shadowpriest Sezz'ziz",
+      "map": "zulfarrak",
+      "order": 26,
+      "abilities": [
+        {
+          "sid": 13704,
+          "name": "Psychic Scream",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 12039,
+          "name": "Heal",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 8362,
+          "name": "Renew",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "ally",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 15537,
+          "name": "Shadow Bolt",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 7796,
+          "name": "Nekrum Gutchewer",
+          "role": "linked",
+          "priority": 1
+        },
+        {
+          "entry": 7787,
+          "name": "Sandfury Slave",
+          "role": "summon",
+          "priority": 0
+        },
+        {
+          "entry": 7788,
+          "name": "Sandfury Drudge",
+          "role": "summon",
+          "priority": 0
+        },
+        {
+          "entry": 8876,
+          "name": "Sandfury Acolyte",
+          "role": "summon",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "Wave 3 spawns her with Nekrum Gutchewer 7796 and five Sandfury adds at the foot of the stairs; Nekrum is melee and dies first. She flees at 15 percent.",
+        "creature_spells 72750 stores seconds: Psychic Scream 13704 first 11-16 s then every 22-32 s; Heal 12039 every 14-25 s; Renew 8362 every 28-35 s; Shadow Bolt 15537 is listed twice, every 2-4 s either only in melee at 50 percent chance or only out of melee."
+      ]
+    },
+    "8580": {
+      "entry": 8580,
+      "name": "Atal'alarion",
+      "map": "sunken_temple",
+      "order": 27,
+      "abilities": [
+        {
+          "sid": 12887,
+          "name": "Sweeping Slam",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 6524,
+          "name": "Ground Tremor",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "He is invisible and unselectable until the six Atal'ai statues are used in the order 148830, 148831, 148832, 148833, 148834, 148835; a wrong statue triggers a trap.",
+        "creature_spells 85800 stores seconds: Sweeping Slam 12887 first 10-14 s then every 21-41 s; Ground Tremor 6524 first 9-18 s then every 20-32 s. Ground Tremor stuns everything within 20 yd.",
+        "Sweeping Slam is a 120 degree front cone (target 24); its radius index is 8 and no local SpellRadius.dbc gives the reach, so it has no shape row yet. The statue positions are -515.6 95.3, -419.8 94.5, -491.4 136.0, -491.5 53.5, -443.9 136.1 and -443.4 53.8 at z -148.7."
+      ]
+    },
+    "5720": {
+      "entry": 5720,
+      "name": "Weaver",
+      "map": "sunken_temple",
+      "order": 28,
+      "abilities": [
+        {
+          "sid": 12884,
+          "name": "Acid Breath",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 12882,
+          "name": "Wing Flap",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "creature_spells 57200 stores seconds: Acid Breath 12884 first 2-6 s then every 6-21 s; Wing Flap 12882 first 8-13 s then every 19-34 s. Both are 120 degree front cones of 10 yd; Wing Flap knocks targets back.",
+        "She is invisible and unselectable until Jammal'an dies."
+      ]
+    },
+    "5721": {
+      "entry": 5721,
+      "name": "Dreamscythe",
+      "map": "sunken_temple",
+      "order": 29,
+      "abilities": [
+        {
+          "sid": 12884,
+          "name": "Acid Breath",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 12882,
+          "name": "Wing Flap",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "creature_spells 57210 stores seconds: Acid Breath 12884 first 2-6 s then every 8-17 s; Wing Flap 12882 first 8-13 s then every 19-34 s. Both are 120 degree front cones of 10 yd; Wing Flap knocks targets back.",
+        "She is invisible and unselectable until Jammal'an dies, then walks the room on waypoints."
+      ]
+    },
+    "5710": {
+      "entry": 5710,
+      "name": "Jammal'an the Prophet",
+      "map": "sunken_temple",
+      "order": 30,
+      "abilities": [
+        {
+          "sid": 12468,
+          "name": "Flamestrike",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": true,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 8376,
+          "name": "Earthgrab Totem",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 6066,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 12479,
+          "name": "Hex of Jammal'an",
+          "castMs": 0,
+          "a": 0,
+          "b": 20000,
+          "c": 25000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 12492,
+          "name": "Healing Wave",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 6066,
+          "name": "Earthgrab Totem",
+          "role": "totem",
+          "priority": 1
+        },
+        {
+          "entry": 5711,
+          "name": "Ogom the Wretched",
+          "role": "linked",
+          "priority": 1
+        },
+        {
+          "entry": 5263,
+          "name": "Mummified Atal'ai",
+          "role": "linked",
+          "priority": 0
+        },
+        {
+          "entry": 5271,
+          "name": "Atal'ai Deathwalker",
+          "role": "linked",
+          "priority": 0
+        },
+        {
+          "entry": 5273,
+          "name": "Atal'ai High Priest",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "creature_spells 57100 stores seconds: Flamestrike 12468 first 10-15 s then every 10-15 s on a random player; Earthgrab Totem 8376 first and every 8-15 s.",
+        "Hex of Jammal'an 12479 first 7-12 s then every 20-25 s. Healing Wave 12492 has two independent EventAI timers: the most injured friendly within 40 yd every 3-10 s from the pull, and himself below 80 percent every 5-15 s. Green Channeling 13540 is out of combat only and removed on aggro.",
+        "Ogom the Wretched 5711, the Mummified Atal'ai 5263, Deathwalkers 5271 and High Priests 5273 within 150 yd are set in combat with him."
+      ]
+    },
+    "5719": {
+      "entry": 5719,
+      "name": "Morphaz",
+      "map": "sunken_temple",
+      "order": 31,
+      "abilities": [
+        {
+          "sid": 12884,
+          "name": "Acid Breath",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 12882,
+          "name": "Wing Flap",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 5722,
+          "name": "Hazzas",
+          "role": "linked",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "creature_spells 57190 stores seconds: Acid Breath 12884 first 2-6 s then every 8-17 s; Wing Flap 12882 first 8-13 s then every 19-34 s. Both are 120 degree front cones of 10 yd; Wing Flap knocks targets back.",
+        "He is invisible and unselectable until Jammal'an dies; Hazzas 5722 is killed first."
+      ]
+    },
+    "5709": {
+      "entry": 5709,
+      "name": "Shade of Eranikus",
+      "map": "sunken_temple",
+      "order": 32,
+      "abilities": [
+        {
+          "sid": 3391,
+          "name": "Thrash",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 12890,
+          "name": "Deep Slumber",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 11876,
+          "name": "War Stomp",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 5277,
+          "name": "Nightmare Scalebane",
+          "role": "linked",
+          "priority": 0
+        },
+        {
+          "entry": 5280,
+          "name": "Nightmare Wyrmkin",
+          "role": "linked",
+          "priority": 0
+        },
+        {
+          "entry": 8319,
+          "name": "Nightmare Whelp",
+          "role": "linked",
+          "priority": 0
+        },
+        {
+          "entry": 5283,
+          "name": "Nightmare Wanderer",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "He sleeps and is unselectable until Jammal'an dies. Deep Slumber 12890 first 5-6 s then every 20-25 s on a random player; War Stomp 11876 fires once on the first combat tick; Thrash 3391 is a 10 percent extra-attack proc.",
+        "Nightmare Scalebanes 5277, Wyrmkin 5280, Whelps 8319 and Wanderers 5283 within 300 yd are set in combat with him; Deep Slumber is a magic sleep."
       ]
     }
   },
