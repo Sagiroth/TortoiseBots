@@ -260,9 +260,13 @@ inline void LogTravelSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const
     std::string const throttleKey = "travel search empty log::" + parkKey;
     if (AI_VALUE2(time_t, "manual time", throttleKey) > time(0))
         return;
-    SET_AI_VALUE2(time_t, "manual time", throttleKey, time(0) + 10 * MINUTE);
-    sPlayerbotAIConfig.logEvent(ai, "TravelSearchEmpty", GetTravelPurposeName(parkKey),
-        std::to_string(ranges) + ":" + reason);
+    // Order legs log every minute: their ladder exits hang on these streaks.
+    SET_AI_VALUE2(time_t, "manual time", throttleKey,
+        time(0) + (IsGuildOrderTravelName(parkKey) ? MINUTE : 10 * MINUTE));
+    std::string detail = std::to_string(ranges) + ":" + reason;
+    if (IsGuildOrderTravelName(parkKey))
+        detail += ":" + AI_VALUE2(std::string, "manual string", "future travel detail");
+    sPlayerbotAIConfig.logEvent(ai, "TravelSearchEmpty", GetTravelPurposeName(parkKey), detail);
 }
 
 // A masterless pool bot whose every search came back empty stood where it was
@@ -2362,6 +2366,17 @@ bool RequestTravelTargetAction::isAllowed() const
 bool RequestNamedTravelTargetAction::Execute(Event& event)
 {
     std::string travelName = getQualifier();
+
+    if (IsGuildOrderTravelName(travelName) &&
+        AI_VALUE2(time_t, "manual time", "order request log::" + travelName) <= time(0))
+    {
+        SET_AI_VALUE2(time_t, "manual time", "order request log::" + travelName, time(0) + MINUTE);
+        std::optional<TortoiseBots::GuildOrders::OrderRecord> logged =
+            TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+        sPlayerbotAIConfig.logEvent(ai, "GuildOrderRequest", travelName,
+            logged ? std::string(TortoiseBots::GuildOrders::SupplyStepToken(logged->supplyStep)) + ":" +
+                std::to_string(logged->supplyItemId) : std::string("-"));
+    }
 
     // A newly working order jumps the queue: expire a non-order travel
     // target so the farm request does not wait behind a leisure trip.
