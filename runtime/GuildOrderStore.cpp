@@ -273,7 +273,13 @@ public:
                     "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", guidLow);
             }
             else
+            {
+                // Parked stubs never reach Tick (All skips them): this is
+                // their persist path for the cancelled row.
+                if (it->second.record.cancelled)
+                    FlushLocked(it->second);
                 ++it;
+            }
         }
     }
     bool Cancel(uint32_t botGuidLow)
@@ -886,6 +892,25 @@ public:
         moved.farmChance = 0;
         moved.zoneIndex = 0;
         moved.reportedHave = 0;
+        moved.supplyStep = SupplyStep::None;
+        moved.supplyReturnStep = SupplyStep::None;
+        moved.supplyItemId = 0;
+        moved.supplyCount = 0;
+        moved.supplyGoldCount = 0;
+        moved.supplyGains.clear();
+        moved.farmRest = false;
+        moved.needItems.clear();
+        moved.needWhispered = false;
+        moved.needBankDenied = false;
+        moved.farmItemId = 0;
+        moved.workedSinceNewItemSec = 0;
+        moved.workedTotalSec = 0;
+        moved.workedNoGainSec = 0;
+        moved.deathsInZone = 0;
+        moved.searchFailsInZone = 0;
+        moved.bankEmptyItemId = 0;
+        moved.bankEmptyMs = 0;
+        moved.guildGoldWithdrawn = 0;
         m_orders[newBotGuidLow] = Stored{moved};
         MarkDirtyLocked(m_orders[newBotGuidLow]);
         // Grandchildren follow the moved row: re-point their parent link to
@@ -943,7 +968,10 @@ public:
         // timers, no delivery. The refund drain pays it; FinishRepaid clears
         // the row once the gold is back.
         if (record.cancelled)
+        {
+            FlushLocked(stored);
             return out;
+        }
 
         bool wasFinished = IsFinished(record.state);
         bool wasStocked = record.state == OrderState::Stocked;
@@ -1695,14 +1723,14 @@ bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
     if (!parent)
         return false;
     std::optional<OrderRecord> existing;
-    // Parked refund stubs are invisible here: BranchBots skips them, and a
-    // stub never counts as a running row for the busy check either.
+    // A parked refund stub is not a running row: it never counts here, so
+    // a dead stub cannot stall the parent waiting on it.
     for (uint32_t child : OrderStore::Instance().BranchBots(parentBotGuidLow))
     {
         if (child == parentBotGuidLow)
             continue;
         std::optional<OrderRecord> row = Find(child);
-        if (row && row->itemId == itemId && !IsFinished(row->state))
+        if (row && !row->cancelled && row->itemId == itemId && !IsFinished(row->state))
             existing = row;
     }
     if (existing)
@@ -2004,16 +2032,13 @@ void Update(uint32_t diff)
     }
     for (OrderRecord const& snapshot : OrderStore::Instance().All())
     {
-        if (!snapshot.parentBotGuidLow || snapshot.state != OrderState::Cant)
+        // A finished sub-order that did not deliver fails the parent: the
+        // full cancel path reaps its branch (queues, travel target) and
+        // puts the item on the parent's need list.
+        if (!snapshot.parentBotGuidLow || snapshot.state == OrderState::Done ||
+            !IsFinished(snapshot.state))
             continue;
-        std::optional<OrderRecord> parent = Find(snapshot.parentBotGuidLow);
-        if (!parent || IsFinished(parent->state))
-        {
-            OrderStore::Instance().Cancel(snapshot.botGuidLow);
-            continue;
-        }
-        NoteSubOrderFailed(snapshot.parentBotGuidLow, snapshot.itemId, snapshot.amount);
-        OrderStore::Instance().Cancel(snapshot.botGuidLow);
+        Cancel(snapshot.botGuidLow);
     }
     WakeParentsOfDeliveredChildren();
     UpdateDeliveries();

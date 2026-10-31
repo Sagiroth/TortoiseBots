@@ -47,8 +47,8 @@ bool Cancel(uint32_t botGuidLow);
 // map-thread action; only the lock is touched there, the world thread does
 // the player and planner work in Update.
 bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count);
-// A working sub-order (or its whole branch, recursively) ended in cant or
-// was cancelled: the parent gets the item on its need list. World thread only.
+// A working sub-order (or its whole branch, recursively) ended without
+// delivering, or was cancelled: the parent gets the item on its need list. World thread only.
 void NoteSubOrderFailed(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count);
 // Move a sub-order to another guild bot (`.bot order reassign`), recomputing
 // the order type for the new bot (craft when it knows the recipe, else
