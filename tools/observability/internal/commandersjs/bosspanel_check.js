@@ -509,4 +509,34 @@ const ktFight = B.model(REAL, { entry: 15990, hp: 80, au: [], uf: "" }, [], 0, 0
 assert.strictEqual(ktFight.phase, "fight");
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 28478).inPhase, true);
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 29423).inPhase, false);
+// Dire Maul: Alzzin's normal/wolf/tree forms are exclusive. Each form's abilities are p= tagged, so a wolf
+// hides the normal and tree rows; the aura rules are listed before the start rule.
+const alzzin = REAL.byEntry || REAL.bosses || REAL;
+const alzzinBoss = alzzin["11492"];
+assert.deepStrictEqual(alzzinBoss.phases.map((x) => x.rule), ["aura=22688", "aura=22660", "start"]);
+assert.strictEqual(B.phaseOf(alzzinBoss, { hp: 90, au: [] }).phase, "normal");
+assert.strictEqual(B.phaseOf(alzzinBoss, { hp: 90, au: [{ id: 22660 }] }).phase, "wolf");
+assert.strictEqual(B.phaseOf(alzzinBoss, { hp: 90, au: [{ id: 22688 }] }).phase, "tree");
+const alzzinWolf = B.model(REAL, { entry: 11492, hp: 90, au: [{ id: 22660 }] }, [], 0, 0);
+assert.strictEqual(alzzinWolf.phase, "wolf");
+assert.strictEqual(alzzinWolf.abilities.find((a) => a.sid === 22689).inPhase, true, "Mangle is a wolf ability");
+assert.strictEqual(alzzinWolf.abilities.find((a) => a.sid === 22662).inPhase, false, "Wither is normal-form");
+assert.strictEqual(alzzinWolf.abilities.find((a) => a.sid === 7948).inPhase, false, "Wild Regeneration is tree-form");
+const alzzinTree = B.model(REAL, { entry: 11492, hp: 90, au: [{ id: 22688 }] }, [], 0, 0);
+assert.strictEqual(alzzinTree.phase, "tree");
+assert.strictEqual(alzzinTree.abilities.find((a) => a.sid === 7948).inPhase, true, "Wild Regeneration is a tree ability");
+assert.strictEqual(alzzinTree.abilities.find((a) => a.sid === 19319).inPhase, false, "Vicious Bite is wolf-form");
+assert.strictEqual(alzzinTree.abilities.find((a) => a.sid === 10101).inPhase, true, "Knock Away is a tree ability");
+// Wild Regeneration only fires below 50 % in tree form: the row carries that gate, the panel shows no
+// window for it, and it is active only while the boss is under the gate and the tree aura is up.
+const regen = (m) => {
+  const a = m.abilities.find((x) => x.sid === 7948);
+  return { hpBelow: a.hpBelow, active: a.inPhase && (a.hpBelow == null || m.hp < a.hpBelow), next: a.next };
+};
+const regenHigh = regen(B.model(REAL, { entry: 11492, hp: 90, au: [{ id: 22688 }] }, [], 0, 0));
+assert.strictEqual(regenHigh.hpBelow, 50, "Wild Regeneration carries the below-50 % gate");
+assert.strictEqual(regenHigh.next, null, "an hp-gated row has no next window");
+assert.strictEqual(regenHigh.active, false, "Wild Regeneration is inactive at 90 %");
+const regenLow = regen(B.model(REAL, { entry: 11492, hp: 40, au: [{ id: 22688 }] }, [], 0, 0));
+assert.strictEqual(regenLow.active, true, "Wild Regeneration is active below 50 % in tree form");
 console.log("boss panel ok");
