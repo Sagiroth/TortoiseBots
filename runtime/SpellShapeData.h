@@ -48,7 +48,7 @@ inline char const* const kSpellShapeCsv = R"(
 22539,cone,120,45,0,0,0,0,0,spell_template 22539 Shadow Flame: target 24 x2; spellVisual 6559 = front 120 (Spell.cpp:2751-2768); radius 11 = 45 yd
 23339,cone,120,20,0,0,0,0,0,spell_template 23339 Wing Buffet: target 24 x2; visual 0 = front 120 (Spell.cpp:2751-2768); radius 9 = 20 yd
 23023,cone,120,30,0,0,0,0,0,spell_template 23023 Conflagration: target 24 x3; visual 4326 = front 120 (Spell.cpp:2751-2768); radius 10 = 30 yd; max 4 targets
-23364,back-cone,75,20,0,0,0,0,0,spell_template 23364 Tail Lash: target 24 x3; spellVisual 3879 = back 75 (Spell.cpp:2753-2754, 8276-8277); radius 9 = 20 yd for the stun and the damage, 10 = 30 yd only for the dropped weapon (effect 2)
+23364,back-cone,75,20,0,0,0,0,0,spell_template 23364 Tail Lash: target 24 x3; spellVisual 3879 = back 75 (Spell.cpp:2753-2754, 8276-8277); radius 9 = 20 yd for the stun and the damage (spell_effect_mod 23364 "Tail Lash : dist fix à 20 yd"); the Dropped Weapon trigger 23365 reads radius index 10 = 30 yd in spell_template
 )";
 
 } // namespace TortoiseBots

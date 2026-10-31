@@ -162,6 +162,12 @@ assert.strictEqual(B.phaseOf(chromaggus, { hp: 15, au: [{ id: 28747 }] }).phase,
 const nefarian = (REAL.byEntry || REAL.bosses || REAL)["11583"];
 assert.strictEqual(B.phaseOf(nefarian, { hp: 90, au: [{ id: 17131 }] }).phase, "air");
 assert.strictEqual(B.phaseOf(nefarian, { hp: 90, au: [] }).phase, "grounded");
+// The Bone Construct spawn below 20 percent is a note, not a phase: an hp<20 phase row would win the exclusive phase
+// and hide every p=grounded ability, though the core keeps casting them all.
+const nefLow = B.model(REAL, { entry: 11583, hp: 15, au: [] }, [], 0, 0);
+assert.strictEqual(nefLow.phase, "grounded");
+assert.strictEqual(nefLow.abilities.filter((a) => a.flags.phase === "grounded" && !a.inPhase).length, 0,
+  "no ground ability is hidden at 15 percent");
 
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];

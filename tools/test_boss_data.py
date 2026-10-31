@@ -672,8 +672,9 @@ BWL_ABILITY_VALUES = {
     (10162, 22667): (25000, 25000, 40000, "random", "aura", "", 0, 0, 0),
     (10162, 22664): (1000, 20000, 25000, "random", "", "", 0, 0, 0),
     # boss_nefarian.cpp: 22539 40/80/302-309; 22686 41/81/311-318; 22687 42/82/320-327; 20691 43/83/329-336;
-    # 23364 44/84/338-345; 22992 39/258-267; 17131 55/281-289; the nine class calls 45-53/165-240 (every
-    # living player of the class, self-cast); 23603 54/367-408 (the random polymorph target); totem summons 665-679.
+    # 23364 44/84/338-345; 22992 39/258-267; 17131 55/281-289; the nine class calls 45-53/184-237 (class-wide;
+    # only paladin, hunter and warlock are casts, the rest apply the aura with AddAura); 23603 54/367-408 (a random
+    # target from Nefarian's threat list); totem summons 665-679.
     (11583, 22539): (0, 18000, 25000, "aoe", "cone", "grounded", 0, 0, 0),
     (11583, 22686): (0, 25000, 30000, "aoe", "aura", "grounded", 0, 0, 0),
     (11583, 22687): (15000, 10000, 15000, "victim", "aura", "grounded", 0, 0, 0),
@@ -697,8 +698,9 @@ BWL_ABILITY_VALUES = {
     (11583, 23422): (0, 0, 0, "self", "", "grounded", 14664, 0, 0),
 }
 
-# Phase rules in rule order: (name, order, rule). Nefarian's ground phase is hp<20 now, so the start rule moved
-# to order 3; Chromaggus' enrage is an aura rule, not a health rule.
+# Phase rules in rule order: (name, order, rule). Nefarian's ground phase is the start rule: the Bone Construct
+# spawn below 20 percent is a note, because the panel's phases are exclusive and an hp<20 row would hide his ground
+# abilities; Chromaggus' enrage is an aura rule, not a health rule.
 BWL_PHASE_VALUES = {
     12435: [("eggs", 1, {"kind": "start"})],
     13020: [("fight", 1, {"kind": "start"})],
@@ -710,8 +712,7 @@ BWL_PHASE_VALUES = {
     10162: [("barrier", 1, {"kind": "aura", "aura": 22663}), ("fight", 2, {"kind": "start"})],
     11583: [
         ("air", 1, {"kind": "aura", "aura": 17131}),
-        ("bones", 2, {"kind": "hp", "hp": 20}),
-        ("grounded", 3, {"kind": "start"}),
+        ("grounded", 2, {"kind": "start"}),
     ],
 }
 

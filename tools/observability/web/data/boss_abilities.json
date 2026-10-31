@@ -5007,16 +5007,8 @@
           }
         },
         {
-          "name": "bones",
-          "order": 2,
-          "rule": {
-            "kind": "hp",
-            "hp": 20
-          }
-        },
-        {
           "name": "grounded",
-          "order": 3,
+          "order": 2,
           "rule": {
             "kind": "start"
           }
@@ -5064,11 +5056,11 @@
         "Nefarian is summoned when 40 drakonids are dead; he starts flying and there is no 10 s landing timer: a 100 ms transition tick starts the flight, then he lands and pauses for 1000 ms before he fights on the ground.",
         "Paralyze teleports the called rogue to Nefarian and roots them.",
         "One random class is called every 25-35 s including the first; a class with no living player is dropped and retried on the next tick.",
-        "The class calls are class-wide: every living player of the called class receives the effect and casts it on themself; only Wild Polymorph picks a random secondary target.",
-        "The first Shadow Flame is 18-25 s; the first Bellowing Roar is 25-30 s; the first Cleave is 7-10 s; those first values are random and stay out of the timer columns.",
-        "The mage call makes each mage polymorph a random unit within 60 yd every 5 s; the mage is the caster.",
+        "The class calls are class-wide: every living player of the called class receives the effect. Only the paladin, hunter and warlock calls are casts (each player casts it on themself) and leave a cast event; the warrior, rogue, priest, shaman, mage and druid calls apply the aura directly with AddAura and leave no cast event. Only Wild Polymorph picks a random secondary target.",
+        "The first Shadow Flame is 18-25 s; the first Bellowing Roar is 25-30 s; the first Cleave is 7-10 s; those first values are random and stay out of the timer columns. The first Veil of Shadow is 15 s and the first Tail Lash 10 s; every timer counts from landing, not from the pull.",
+        "Every 5 s each called mage polymorphs a random unit from Nefarian's threat list within 60 yd of the mage: never a totem and never a unit already polymorphed; the mage is the caster.",
         "The corrupted totems' own effects are cast by the totem adds, not by Nefarian: Stoneskin 10405, Healing Stream 10461, Windfury Totem Passive 10612 and Fire Nova 11311 triggering 11307. The schema has no add-caster row, so they are listed here; the shaman's Corrupted Totems 23425 picks one of the four totems at random.",
-        "Bone Constructs rise from every Drakonid Bones game object (179804) within 200 yd when he drops below 20 percent.",
+        "Bone Constructs rise from every Drakonid Bones game object (179804) within 200 yd when he drops below 20 percent. This is a note and not a phase: the panel's phases are exclusive, and he keeps his ground abilities below 20 percent.",
         "The initial Shadow Flame 22992 is a self aura cast in transition stage 0 when he starts flying; the 18-25 s Shadow Flame timer only starts once he has landed."
       ]
     }
