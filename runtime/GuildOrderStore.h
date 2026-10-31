@@ -55,6 +55,17 @@ void SetSupply(uint32_t botGuidLow, SupplyStep step, uint32_t itemId, uint32_t c
 void SetNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& items, bool bankDenied = false);
 void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount);
 void ConsumeGuildGoldHeld(uint32_t botGuidLow, uint32_t amount);
+// A refund pass moved `deposited` copper of held guild gold back into the
+// bank. Order-caused inflow per item for the leftover cap. World thread
+// only (the drains).
+void RefundGuildGold(uint32_t botGuidLow, uint32_t deposited);
+void NoteSupplyGain(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
+void NoteSupplySpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
+// A bank, AH, mail or vendor pickup landed: the no-progress watchdog starts
+// over, like any farmed item. World thread only (the drains) or the bot's
+// map-thread action.
+void NoteSupplyProgress(uint32_t botGuidLow);
+void FinishRepaid();
 
 // A sub-order was placed or already exists. Worker C replaces the separate
 // false stub with the hierarchy-aware store implementation when merging.

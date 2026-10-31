@@ -10,7 +10,7 @@
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/GuildOrderSupplyPolicy.h"
-#include "runtime/policy/provision/CraftOrderPolicy.h"
+#include "runtime/GuildOrderRefundPolicy.h"
 #include "runtime/AltBotService.h"
 #include "Guild/GuildMgr.h"
 #include "Mail/Mail.h"
@@ -43,6 +43,35 @@ bool IsUnlimitedVendorItem(uint32_t itemId)
         !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(proto);
 }
 
+// Every reagent the bot still needs for `count` casts of the output, one
+// entry per reagent: the need list and its whisper name them all at once
+// instead of asking the player again after each delivery.
+void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t count,
+    std::vector<NeedItem>& out)
+{
+    if (!ai || !bot || !itemId || !count)
+        return;
+    uint32_t spellId = ai::FindCraftSpellFor(bot, itemId);
+    if (!spellId || IsUnlimitedVendorItem(itemId))
+    {
+        uint32_t owned = ai->GetInventoryItemsCountWithId(itemId) + ai::OrderMailboxItems(bot, itemId);
+        if (owned < count)
+            out.push_back(NeedItem{ itemId, count - owned });
+        return;
+    }
+    SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+    if (!spell)
+        return;
+    uint32_t casts = ai::CraftCastsForRemaining(spellId, itemId, count);
+    for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+            continue;
+        uint32_t reagentId = uint32_t(spell->Reagent[i]);
+        CollectMissingReagents(ai, bot, reagentId, spell->ReagentCount[i] * casts, out);
+    }
+}
+
 bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t count,
     std::vector<uint32_t>& path, uint32_t depth, SupplyCandidate& out)
 {
@@ -69,6 +98,7 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
 
     path.push_back(itemId);
     uint32_t casts = ai::CraftCastsForRemaining(spellId, itemId, count);
+    std::vector<NeedItem> missingAll;
     for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
     {
         if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
@@ -87,14 +117,15 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
         if (owned >= required)
             continue;
         SupplyCandidate nested;
-        if (FindSupplyCandidate(ai, bot, reagentId, required - owned, path, depth + 1, nested))
-        {
-            path.pop_back();
-            out = nested;
-            return true;
-        }
+        if (FindSupplyCandidate(ai, bot, reagentId, required - owned, path, depth + 1, nested) && !nested.craft)
+            missingAll.push_back(NeedItem{ nested.itemId, nested.count });
     }
     path.pop_back();
+    if (!missingAll.empty())
+    {
+        out = { missingAll.front().itemId, missingAll.front().count, false };
+        return true;
+    }
     out = { itemId, count, true };
     return true;
 }
@@ -103,7 +134,10 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
 {
     if (candidate.craft)
         return SupplyStep::Craft;
-
+    // A banker visit that found none of this item skips the bank leg until
+    // the cooldown, so the ladder moves down instead of walking back.
+    bool bankSkipped = BankLegSkipped(candidate.itemId, order.bankEmptyItemId,
+        WorldTimer::getMSTime(), order.bankEmptyMs);
     bool sameItem = order.supplyItemId == candidate.itemId;
     SupplyStep current = sameItem ? order.supplyStep : SupplyStep::None;
     bool canFarm = IsUnlimitedVendorItem(candidate.itemId) && order.reason != OrderReason::NoSource;
@@ -124,14 +158,13 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
             return current;
         if (current == SupplyStep::Bags && order.supplyReturnStep != SupplyStep::None)
             return order.supplyReturnStep;
-        if (current == SupplyStep::Bank && sPlayerbotAIConfig.guildOrderBankWithdraw)
+        if (current == SupplyStep::Bank && sPlayerbotAIConfig.guildOrderBankWithdraw && !bankSkipped)
             return current;
     }
-
     SupplyOptions options;
-    options.bankEnabled = sPlayerbotAIConfig.guildOrderBankWithdraw;
-    options.bankAttempted = sameItem && (current == SupplyStep::AuctionHouse || current == SupplyStep::Farm ||
-        current == SupplyStep::Craft || current == SupplyStep::Sub || current == SupplyStep::Need);
+    options.bankEnabled = sPlayerbotAIConfig.guildOrderBankWithdraw && !bankSkipped;
+    options.bankAttempted = bankSkipped || (sameItem && (current == SupplyStep::AuctionHouse || current == SupplyStep::Farm ||
+        current == SupplyStep::Craft || current == SupplyStep::Sub || current == SupplyStep::Need));
     options.auctionHouseAttempted = sameItem && (current == SupplyStep::Farm || current == SupplyStep::Craft ||
         current == SupplyStep::Sub || current == SupplyStep::Need);
     options.selfCanCraft = candidate.craft;
@@ -165,14 +198,22 @@ void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Supp
                 candidate.itemId, candidate.count, SupplyStep::None, order.reason);
             return;
         }
+        std::vector<NeedItem> missing;
+        CollectMissingReagents(ai, bot, order.itemId, order.amount > order.delivered ? order.amount - order.delivered : 0, missing);
+        if (missing.empty())
+            missing.push_back(NeedItem{ candidate.itemId, candidate.count });
         TortoiseBots::GuildOrders::SetNeedItems(order.botGuidLow,
-            { NeedItem{ candidate.itemId, candidate.count } }, order.reason == OrderReason::BankDenied);
+            missing, order.reason == OrderReason::BankDenied);
         return;
     }
     if (step == SupplyStep::Need)
     {
+        std::vector<NeedItem> missing;
+        CollectMissingReagents(ai, bot, order.itemId, order.amount > order.delivered ? order.amount - order.delivered : 0, missing);
+        if (missing.empty())
+            missing.push_back(NeedItem{ candidate.itemId, candidate.count });
         TortoiseBots::GuildOrders::SetNeedItems(order.botGuidLow,
-            { NeedItem{ candidate.itemId, candidate.count } }, order.reason == OrderReason::BankDenied);
+            missing, order.reason == OrderReason::BankDenied);
         return;
     }
     (void)ai;
@@ -217,14 +258,19 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
                     order.itemId, missing, afterMail, order.reason);
             return;
         }
+        // Farm and buy orders never take their own order item from the bank:
+        // the bank holds reagents, and withdrawing the finished item would
+        // just deposit it back on delivery. Craft reagents below still use
+        // the bank first.
         SupplyStep step = ChooseSourceStep(bot, order, candidate);
-        SupplyStep fallback = step == SupplyStep::Bank ? SupplyStep::AuctionHouse :
-            step == SupplyStep::AuctionHouse ? TortoiseBots::GuildOrders::NextSupplyStep(
-                SupplyOptions{ false, true, true, false,
-                    IsUnlimitedVendorItem(order.itemId) ||
-                        (ai::PlanGuildOrderSources(bot, order.itemId, OrderType::Farm).verdict == OrderReason::None &&
-                         !ai::PlanGuildOrderSources(bot, order.itemId, OrderType::Farm).zones.empty()), false }) :
-                SupplyStep::None;
+        if (step == SupplyStep::Bank)
+            step = SupplyStep::AuctionHouse;
+        SupplyStep fallback = step == SupplyStep::AuctionHouse ? TortoiseBots::GuildOrders::NextSupplyStep(
+            SupplyOptions{ false, true, true, false,
+                IsUnlimitedVendorItem(order.itemId) ||
+                    (ai::PlanGuildOrderSources(bot, order.itemId, OrderType::Farm).verdict == OrderReason::None &&
+                     !ai::PlanGuildOrderSources(bot, order.itemId, OrderType::Farm).zones.empty()), false }) :
+            SupplyStep::None;
         SetSupplyStage(ai, bot, order, candidate, step, fallback);
         return;
     }
@@ -276,7 +322,7 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
     SupplyOptions fallbackOptions;
     fallbackOptions.bankEnabled = false;
     fallbackOptions.bankAttempted = true;
-    fallbackOptions.auctionHouseAttempted = true;
+    fallbackOptions.auctionHouseAttempted = false;
     fallbackOptions.selfCanCraft = candidate.craft;
     fallbackOptions.selfCanFarm = IsUnlimitedVendorItem(candidate.itemId);
     if (!fallbackOptions.selfCanFarm)

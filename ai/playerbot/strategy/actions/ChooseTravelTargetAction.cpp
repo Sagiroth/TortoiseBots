@@ -598,6 +598,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
                 TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
                 orderZoneForSearch = orderRecord->farmZoneId;
             TortoiseBots::GuildOrders::NoteSearchFailed(bot->GetGUIDLow(), orderZoneForSearch);
+            bool orderLegSwitched = false;
             if (purposeKey == "guild order" &&
                 AI_VALUE2(std::string, "manual string", "future travel detail") == "guild banker")
             {
@@ -605,15 +606,26 @@ bool ChooseTravelTargetAction::Execute(Event& event)
                     TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
                     if (orderRecord->state == TortoiseBots::GuildOrders::OrderState::Working &&
                         orderRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Bank)
+                    {
                         TortoiseBots::GuildOrders::SetSupply(bot->GetGUIDLow(),
                             TortoiseBots::GuildOrders::SupplyStep::AuctionHouse,
                             orderRecord->supplyItemId, orderRecord->supplyCount,
                             TortoiseBots::GuildOrders::SupplyStep::Farm,
                             TortoiseBots::GuildOrders::OrderReason::BankDenied);
+                        orderLegSwitched = true;
+                    }
                 // The banker search offered nothing usable: after repeated
                 // empty searches the delivery walks to a mailbox instead.
                 SET_AI_VALUE2(int32, "manual int", "guild order no banker",
                     AI_VALUE2(int32, "manual int", "guild order no banker") + 1);
+            }
+            if (orderLegSwitched)
+            {
+                // The order moved to a new leg (AH): parking "guild order"
+                // would idle the bot for the park window on a leg that was
+                // never searched. The new leg travels at once.
+                SET_AI_VALUE2(time_t, "manual time", ai::RpgMixerUntilKey(), time_t(0));
+                return;
             }
             SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey,

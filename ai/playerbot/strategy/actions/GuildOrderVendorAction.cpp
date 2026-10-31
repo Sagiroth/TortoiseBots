@@ -148,10 +148,13 @@ bool GuildOrderVendorAction::Execute(Event& event)
         }
 
         RESET_AI_VALUE(uint32, "guild order vendor reagent");
+        if (bought > 0)
+        {
+            TortoiseBots::GuildOrders::NoteSupplyGain(botGuidLow, reagentId, bought);
+            TortoiseBots::GuildOrders::NoteSupplyProgress(botGuidLow);
+        }
         TortoiseBots::GuildOrders::SetSupply(botGuidLow, SupplyStep::Farm, reagentId,
             shortfall > bought ? shortfall - bought : 0, SupplyStep::None);
-        ai->TellDebug(ai->GetMaster(), "Guild order: bought " + std::to_string(bought) + "x " + reagentProto->Name1 + " from vendor", "debug travel");
-        return bought > 0;
     }
 
     TortoiseBots::GuildOrders::SetSupply(botGuidLow, SupplyStep::Farm, reagentId,

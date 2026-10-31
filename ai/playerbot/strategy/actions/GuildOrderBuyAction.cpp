@@ -7,10 +7,9 @@
 #include "playerbot/TravelMgr.h"
 #include "MailAction.h"
 #include "runtime/GuildOrderBuyPolicy.h"
+#include "runtime/GuildOrderRefundPolicy.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderSupplyPolicy.h"
-
-#include <mutex>
 #include <algorithm>
 #include <climits>
 #include <sstream>
@@ -171,11 +170,18 @@ bool GuildOrderBuyAction::Execute(Event& event)
     {
         uint32_t shortfall = best.buyout - cash;
         uint32_t cappedShortfall = GuildGoldShortfall(best.buyout, ownedGold, heldGuildGold, capRemaining);
-        if (sPlayerbotAIConfig.guildOrderBankGold && stored->reason != OrderReason::BankDenied &&
+        // One top-up try per listing: the bank leg already failed for the
+        // remembered auction id, so the ladder moves down instead of walking
+        // back to the banker for the same listing. A new listing may try
+        // again; the bank may have funds by then.
+        int triedAuction = AI_VALUE2(int, "manual int", "order buy gold tried");
+        if (GoldTopUpAllowed(best.auctionId, uint32_t(triedAuction), cappedShortfall,
+            sPlayerbotAIConfig.guildOrderBankGold) &&
             cappedShortfall >= shortfall && shortfall > 0 &&
             uint64_t(cash) + shortfall <= uint32_t(INT32_MAX))
         {
             ahLock.unlock();
+            SET_AI_VALUE2(int, "manual int", "order buy gold tried", int(best.auctionId));
             SetSupply(botGuidLow, SupplyStep::Bank, itemId, missing, SupplyStep::AuctionHouse,
                 OrderReason::None, shortfall);
             return false;
@@ -199,7 +205,9 @@ bool GuildOrderBuyAction::Execute(Event& event)
         sPlayerbotAIConfig.logEvent(ai, "GuildAhBuy", proto ? proto->Name1 : "item", std::to_string(itemId));
         uint32_t guildUsed = best.buyout > ownedGold ? best.buyout - ownedGold : 0;
         ConsumeGuildGoldHeld(botGuidLow, std::min(guildUsed, heldGuildGold));
-        SET_AI_VALUE2(int, "manual int", "order buy failed bid", 0);
+        NoteSupplyGain(botGuidLow, itemId, best.count);
+        NoteSupplyProgress(botGuidLow);
+        SET_AI_VALUE2(int, "manual int", "order buy gold tried", 0);
         SetSupply(botGuidLow, SupplyStep::Bags, itemId, missing, SupplyStep::AuctionHouse, stored->reason);
     }
     else
@@ -237,8 +245,18 @@ bool GuildOrderTakeMailAction::Execute(Event& event)
     if (!stored || stored->state != OrderState::Working || stored->supplyStep != SupplyStep::Bags)
         return false;
     uint32_t itemId = stored->supplyItemId ? stored->supplyItemId : stored->itemId;
+    uint32_t before = itemId ? ai->GetInventoryItemsCountWithId(itemId) : 0;
     Event take("rpg action", "take");
     bool result = ai->DoSpecificAction("mail", take, true);
+    if (itemId)
+    {
+        uint32_t after = ai->GetInventoryItemsCountWithId(itemId);
+        if (after > before)
+        {
+            NoteSupplyGain(bot->GetGUIDLow(), itemId, after - before);
+            NoteSupplyProgress(bot->GetGUIDLow());
+        }
+    }
     if (!OrderMailboxItems(bot, itemId))
     {
         SupplyStep next = stored->supplyReturnStep;
