@@ -15,14 +15,15 @@ namespace GuildOrders
 {
 
 // A member counts as a bot for the rank rule when the module owns it as a
-// bot and no real player owns the character: random-pool characters
-// (claimed, hired or wandering), live module bot sessions, and durable
-// ownership rows pointing at a module-owned account. Same-account
-// characters of a real player and autonomous alt-bots never count: the
-// rank rule must never move a player's own character.
-inline bool IsGuildOrderBot(bool isModuleBot, bool ownedByPlayer)
+// bot: claimed into a guild or living on a random-pool account. Autonomous
+// alt-bots and any other character on a real player's account never count:
+// the rank rule must never move a player's own character. Online and
+// offline members use this same durable rule.
+inline bool IsGuildOrderBot(bool claimed, bool onPoolAccount, bool autonomousAlt)
 {
-    return isModuleBot && !ownedByPlayer;
+    if (autonomousAlt)
+        return false;
+    return claimed || onPoolAccount;
 }
 
 // The rank newly joined bots get, and the startup sweep falls back to:
@@ -46,6 +47,22 @@ inline uint32_t ClampBotRank(uint32_t wanted, uint32_t rankCount)
     if (wanted >= rankCount)
         return rankCount - 1;
     return wanted;
+}
+
+// The guild master is never moved: in bot-led guilds the leader is a bot at
+// rank 0, and moving it would leave the guild without a leader.
+inline bool BotRankMayMoveMember(uint32_t currentRank)
+{
+    return currentRank != 0;
+}
+
+// The bot rank applies only in guilds with at least one real player member:
+// all-bot pool guilds keep their ranks untouched (nobody gives orders there,
+// and the bots' own guild management runs on those ranks). A disabled
+// feature (rank 0) applies nowhere.
+inline bool BotRankAppliesInGuild(bool hasRealPlayerMember, uint32_t botRank)
+{
+    return hasRealPlayerMember && botRank != 0;
 }
 
 // One bank tab's reachability for the ORDER_ACCESS line: tab numbers are

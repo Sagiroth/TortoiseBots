@@ -40,7 +40,7 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 
 ## Guild bank access
 
-Every bot in the guild holds the guild's **bot rank**: by default the highest rank below the guild master, so all bots share one rank you can open bank tabs to. A bot that joins the guild gets the bot rank at once; bots already in the guild are moved there once when the server starts. Your own characters are never touched: only bot characters get the bot rank.
+Every bot in a guild with at least one real player in it holds the guild's **bot rank**: by default the highest rank below the guild master, so all bots share one rank you can open bank tabs to. A bot that joins the guild gets the bot rank at once; bots already in the guild are moved there once when the server starts. Guilds made up only of bots keep their own ranks (including a bot guild master, which is never moved). Your own characters are never touched: only bot characters get the bot rank, and bots in such guilds no longer promote, demote, kick or invite anyone.
 
 ```text
 .bot order rank <rankIndex>
@@ -82,5 +82,5 @@ When the amount is reached, the bot walks to a guild banker in a capital city an
 
 ## Requirements
 
-- The guild needs an unlocked guild bank and a tab the bots' rank may deposit into (otherwise items come by mail to the guild master). Bots hold the guild's bot rank (by default the rank below the guild master), so open a tab to that rank if you want bank deposits.
+- The guild needs an unlocked guild bank and a tab the bots' rank may deposit into (otherwise items come by mail to the guild master). Bots in a guild with a real player hold the guild's bot rank (by default the rank below the guild master), so open a tab to that rank if you want bank deposits; all-bot guilds keep their own ranks.
 - Guild orders only work while `AiPlayerbot.AutoDoQuests = 1` (the default). With quest travel off, `.bot order` answers `disabled`.

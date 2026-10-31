@@ -25,13 +25,15 @@ void ClaimGuildAdapter::OnAddMember(Guild* guild, Player* player, uint8& rank)
         rank = static_cast<uint8>(*botRank);
 }
 
-void ClaimGuildAdapter::OnRemoveMember(Guild* /*guild*/, Player* player, bool /*isDisbanding*/, bool /*isKicked*/)
+void ClaimGuildAdapter::OnRemoveMember(Guild* guild, Player* player, bool /*isDisbanding*/, bool /*isKicked*/)
 {
     if (!player)
         return;
 
     ClaimLifecycle::Instance().OnGuildDelMember(player->GetGUIDLow());
     GuildOrders::OnGuildDelMember(player->GetGUIDLow());
+    if (guild)
+        GuildOrders::MarkBotRankGuildStale(guild->GetId());
 }
 
 void ClaimGuildAdapter::OnDisband(Guild* guild)

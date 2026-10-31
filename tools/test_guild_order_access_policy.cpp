@@ -13,12 +13,13 @@ static int failures = 0;
 
 int main()
 {
-    // Only module-owned bots with no player owner count; a player's own
-    // character (alt or main) never does, even on a bot session.
-    CHECK(IsGuildOrderBot(true, false));
-    CHECK(!IsGuildOrderBot(true, true));
-    CHECK(!IsGuildOrderBot(false, false));
-    CHECK(!IsGuildOrderBot(false, true));
+    // Durable bot rule, online and offline alike: claimed or on a pool
+    // account counts; autonomous alt-bots never do, even when claimed.
+    CHECK(IsGuildOrderBot(true, false, false));
+    CHECK(IsGuildOrderBot(false, true, false));
+    CHECK(!IsGuildOrderBot(false, false, false));
+    CHECK(!IsGuildOrderBot(true, true, true));
+    CHECK(!IsGuildOrderBot(false, false, true));
 
     // Default is the rank below the master; a master-only guild keeps rank 0.
     CHECK(DefaultBotRank(5) == 1);
@@ -33,6 +34,18 @@ int main()
     CHECK(ClampBotRank(4, 5) == 4);
     CHECK(ClampBotRank(9, 5) == 4);
     CHECK(ClampBotRank(0, 1) == 0);
+
+    // The guild master is never moved, even when it is a bot.
+    CHECK(!BotRankMayMoveMember(0));
+    CHECK(BotRankMayMoveMember(1));
+    CHECK(BotRankMayMoveMember(4));
+
+    // The bot rank applies only in guilds with a real player member, and
+    // never when the feature is off.
+    CHECK(BotRankAppliesInGuild(true, 1));
+    CHECK(!BotRankAppliesInGuild(false, 1));
+    CHECK(!BotRankAppliesInGuild(true, 0));
+    CHECK(!BotRankAppliesInGuild(false, 0));
 
     // Tabs at or above the bot rank (lower index wins) are reachable.
     std::vector<uint32_t> tabsOk, tabsDenied;

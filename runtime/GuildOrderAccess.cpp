@@ -2,12 +2,9 @@
 
 #include "GuildOrderAccessPolicy.h"
 #include "AltBotService.h"
-#include "BotManager.h"
 #include "ClaimLifecycle.h"
-#include "HireLifecycle.h"
 #include "RandomBotAccountRegistry.h"
 #include "../commands/CommandShared.h"
-#include "../host/ModuleLog.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotAIStorage.h"
 #include "Database/DatabaseEnv.h"
@@ -105,37 +102,73 @@ public:
             "DELETE FROM `tortoise_bots_guild_bot_rank` WHERE `guild_id` = '%u'", guildId);
     }
 
+    // Whether bots in the guild must not manage it right now (cached: no
+    // database read on the AI tick). Missing or false means either not
+    // blocked or not yet computed; MarkManagementStale forces a recompute
+    // on the next query.
+    void SetManagementBlocked(uint32_t guildId, bool blocked)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_managementBlocked[guildId] = blocked;
+    }
+
+    void MarkManagementStale(uint32_t guildId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_managementBlocked.erase(guildId);
+    }
+
+    std::optional<bool> ManagementBlocked(uint32_t guildId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_managementBlocked.find(guildId);
+        if (it == m_managementBlocked.end())
+            return std::nullopt;
+        return it->second;
+    }
+
 private:
     std::mutex m_mutex;
     std::unordered_map<uint32_t, uint32_t> m_ranks;
+    std::unordered_map<uint32_t, bool> m_managementBlocked;
     bool m_initialized = false;
 };
-
-// A guild member the rank rule may touch: a module-owned bot character and
-// never a real player's own character. Online, the live session decides
-// (Headless without a network transport, like the order giver check);
-// offline, the durable marks decide the same way `.bot order` does: claimed
-// into a guild or living on a random-pool account. Owned characters of a
-// real player's account and autonomous alt-bots are players' own and stay
-// out, even when they run on a bot session.
-bool IsRankableBot(Player* bot, ObjectGuid guid)
+// A guild member the rank rule may touch. The same durable rule online and
+// offline: claimed into a guild or living on a random-pool account. The
+// account lookup hits the online player or the cached player data, never
+// the database. Autonomous alt-bots and any other character on a real
+// player's account stay out, even when they run on a bot session.
+bool IsRankableBot(ObjectGuid guid)
 {
     uint32_t guidLow = guid.GetCounter();
+    if (!guidLow)
+        return false;
     if (AltBotService::Instance().IsAutonomous(guidLow))
         return false;
-    if (bot)
-    {
-        if (BotManager::Instance().IsBot(guid))
-            return true;
-        WorldSession* session = bot->GetSession();
-        if (!session || session->HasNetworkTransport())
-            return false;
-        return false;
-    }
     if (ClaimLifecycle::Instance().IsClaimed(guidLow))
         return true;
     uint32_t accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid);
     return accountId && RandomBotAccountRegistry::Instance().IsRegistered(accountId);
+}
+
+// True when at least one member of the guild is a real player's character:
+// anyone the durable rule does not count as a bot. All-bot pool guilds
+// have none, so the rank rule leaves them alone.
+bool GuildHasRealPlayerMember(Guild* guild)
+{
+    if (!guild)
+        return false;
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
+        "SELECT `guid` FROM `guild_member` WHERE `guildid` = '%u'", guild->GetId()));
+    if (!result)
+        return false;
+    do
+    {
+        uint32_t guidLow = result->Fetch()[0].GetUInt32();
+        if (guidLow && !IsRankableBot(ObjectGuid(HIGHGUID_PLAYER, guidLow)))
+            return true;
+    } while (result->NextRow());
+    return false;
 }
 
 // Minimum ranks of the unlocked bank tabs, 1-based tab order, from the
@@ -164,7 +197,7 @@ void MoveMemberToRank(Guild* guild, ObjectGuid guid, uint32_t rank)
     if (!guild)
         return;
     MemberSlot* slot = guild->GetMemberSlot(guid);
-    if (!slot || slot->RankId == rank)
+    if (!slot || slot->RankId == rank || !BotRankMayMoveMember(slot->RankId))
         return;
     slot->ChangeRank(rank);
 }
@@ -178,7 +211,10 @@ std::optional<uint32_t> StoredBotRank(uint32_t guildId)
 
 bool StoreBotRank(uint32_t guildId, uint32_t rank)
 {
-    return BotRankStore::Instance().Store(guildId, rank);
+    bool stored = BotRankStore::Instance().Store(guildId, rank);
+    if (stored)
+        BotRankStore::Instance().MarkManagementStale(guildId);
+    return stored;
 }
 
 uint32_t WantedBotRank(uint32_t guildId, uint32_t rankCount)
@@ -198,31 +234,15 @@ std::optional<uint32_t> JoinBotRank(uint32_t guildId, uint32_t botGuidLow)
     Guild* guild = sGuildMgr.GetGuildById(guildId);
     if (!guild)
         return std::nullopt;
+    // Membership is about to change (the core inserts the row right after
+    // this hook): drop the cached management verdict so the next query
+    // recomputes it from the new roster.
+    BotRankStore::Instance().MarkManagementStale(guildId);
     uint32_t rank = WantedBotRank(guildId, guild->GetRanksSize());
-    if (!rank)
-        return std::nullopt;
     ObjectGuid guid(HIGHGUID_PLAYER, botGuidLow);
-    Player* bot = sObjectAccessor.FindPlayer(guid);
-    if (!IsRankableBot(bot, guid))
+    if (!BotRankAppliesInGuild(GuildHasRealPlayerMember(guild), rank) || !IsRankableBot(guid))
         return std::nullopt;
     return rank;
-}
-
-void EnsureBotRank(uint32_t guildId, uint32_t botGuidLow)
-{
-    if (!botGuidLow)
-        return;
-    Guild* guild = sGuildMgr.GetGuildById(guildId);
-    if (!guild)
-        return;
-    uint32_t rank = WantedBotRank(guildId, guild->GetRanksSize());
-    if (!rank)
-        return;
-    ObjectGuid guid(HIGHGUID_PLAYER, botGuidLow);
-    Player* bot = sObjectAccessor.FindPlayer(guid);
-    if (!IsRankableBot(bot, guid))
-        return;
-    MoveMemberToRank(guild, guid, rank);
 }
 
 void ApplyBotRankToGuild(uint32_t guildId)
@@ -231,7 +251,7 @@ void ApplyBotRankToGuild(uint32_t guildId)
     if (!guild)
         return;
     uint32_t rank = WantedBotRank(guildId, guild->GetRanksSize());
-    if (!rank)
+    if (!BotRankAppliesInGuild(GuildHasRealPlayerMember(guild), rank))
         return;
     std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
         "SELECT `guid` FROM `guild_member` WHERE `guildid` = '%u'", guildId));
@@ -239,12 +259,8 @@ void ApplyBotRankToGuild(uint32_t guildId)
         return;
     do
     {
-        uint32_t guidLow = result->Fetch()[0].GetUInt32();
-        if (!guidLow)
-            continue;
-        ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
-        Player* bot = sObjectAccessor.FindPlayer(guid);
-        if (!IsRankableBot(bot, guid))
+        ObjectGuid guid(HIGHGUID_PLAYER, result->Fetch()[0].GetUInt32());
+        if (!IsRankableBot(guid))
             continue;
         MoveMemberToRank(guild, guid, rank);
     } while (result->NextRow());
@@ -255,39 +271,72 @@ void ApplyBotRanksAtStartup()
     BotRankStore::Instance().Initialize();
     if (!sPlayerbotAIConfig.guildOrderBotRank)
         return;
+    // One pass over the whole member table, grouped per guild in memory:
+    // a guild is swept only when it holds a real player member.
     std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
-        "SELECT `guildid`, `guid` FROM `guild_member`"));
+        "SELECT `guildid`, `guid` FROM `guild_member` ORDER BY `guildid`"));
     if (!result)
         return;
-    uint32_t lastGuildId = 0;
-    Guild* guild = nullptr;
-    uint32_t rank = 0;
+    std::unordered_map<uint32_t, std::vector<uint32_t>> membersByGuild;
     do
     {
         Field* fields = result->Fetch();
-        uint32_t guildId = fields[0].GetUInt32();
-        uint32_t guidLow = fields[1].GetUInt32();
-        if (!guildId || !guidLow)
-            continue;
-        if (guildId != lastGuildId)
-        {
-            lastGuildId = guildId;
-            guild = sGuildMgr.GetGuildById(guildId);
-            rank = guild ? WantedBotRank(guildId, guild->GetRanksSize()) : 0;
-        }
-        if (!guild || !rank)
-            continue;
-        ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
-        Player* bot = sObjectAccessor.FindPlayer(guid);
-        if (!IsRankableBot(bot, guid))
-            continue;
-        MoveMemberToRank(guild, guid, rank);
+        if (fields[0].GetUInt32() && fields[1].GetUInt32())
+            membersByGuild[fields[0].GetUInt32()].push_back(fields[1].GetUInt32());
     } while (result->NextRow());
+    for (auto const& [guildId, members] : membersByGuild)
+    {
+        Guild* guild = sGuildMgr.GetGuildById(guildId);
+        if (!guild)
+            continue;
+        uint32_t rank = WantedBotRank(guildId, guild->GetRanksSize());
+        bool realPlayer = false;
+        for (uint32_t guidLow : members)
+        {
+            if (!IsRankableBot(ObjectGuid(HIGHGUID_PLAYER, guidLow)))
+            {
+                realPlayer = true;
+                break;
+            }
+        }
+        if (!BotRankAppliesInGuild(realPlayer, rank))
+        {
+            BotRankStore::Instance().SetManagementBlocked(guildId, false);
+            continue;
+        }
+        BotRankStore::Instance().SetManagementBlocked(guildId, true);
+        for (uint32_t guidLow : members)
+        {
+            ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
+            if (!IsRankableBot(guid))
+                continue;
+            MoveMemberToRank(guild, guid, rank);
+        }
+    }
 }
 
 void OnBotRankDisband(uint32_t guildId)
 {
     BotRankStore::Instance().Forget(guildId);
+    BotRankStore::Instance().MarkManagementStale(guildId);
+}
+
+void MarkBotRankGuildStale(uint32_t guildId)
+{
+    BotRankStore::Instance().MarkManagementStale(guildId);
+}
+
+bool BotRankBlocksManagement(uint32_t guildId)
+{
+    if (!guildId)
+        return false;
+    if (std::optional<bool> cached = BotRankStore::Instance().ManagementBlocked(guildId))
+        return *cached;
+    Guild* guild = sGuildMgr.GetGuildById(guildId);
+    bool blocked = guild && BotRankAppliesInGuild(GuildHasRealPlayerMember(guild),
+        WantedBotRank(guildId, guild->GetRanksSize()));
+    BotRankStore::Instance().SetManagementBlocked(guildId, blocked);
+    return blocked;
 }
 
 std::string FormatAccessLine(uint32_t guildId, uint32_t askerGuidLow)
