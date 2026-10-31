@@ -442,6 +442,33 @@ assert.strictEqual(p1.abilities.find((a) => a.sid === 27249).inPhase, true);
 assert.strictEqual(p1.abilities.find((a) => a.sid === 27286).inPhase, true, "Shadow Wrath is phase 1");
 assert.strictEqual(p1.abilities.find((a) => a.sid === 27382).inPhase, false);
 
+// Dungeon batch 1: Krastinov's enrage aura outranks the fight phase; Dathrohan's transform changes the entry to 10813,
+// whose own block is demon-only and starts at full health.
+const krastinov = (REAL.byEntry || REAL.bosses || REAL)["11261"];
+assert.deepStrictEqual(krastinov.phases.map((x) => x.rule), ["aura=8269", "start"]);
+assert.strictEqual(B.phaseOf(krastinov, { hp: 70, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(krastinov, { hp: 20, au: [{ id: 8269 }] }).phase, "enraged");
+const krasFight = B.model(REAL, { entry: 11261, hp: 70, au: [] }, [], 0, 0);
+assert.strictEqual(krasFight.abilities.find((a) => a.sid === 8269).inPhase, false, "Enrage is hidden outside its aura phase");
+const krasEnraged = B.model(REAL, { entry: 11261, hp: 20, au: [{ id: 8269 }] }, [], 0, 0);
+assert.strictEqual(krasEnraged.abilities.find((a) => a.sid === 8269).inPhase, true);
+assert.strictEqual(krasEnraged.abilities.find((a) => a.sid === 16509).inPhase, true, "Rend runs in every phase");
+
+const dathrohan = (REAL.byEntry || REAL.bosses || REAL)["10812"];
+assert.deepStrictEqual(dathrohan.phases.map((x) => x.rule), ["start"]);
+assert.strictEqual(B.phaseOf(dathrohan, { hp: 30, au: [] }).phase, "human", "10812 is the human form for its whole life");
+const dathHuman = B.model(REAL, { entry: 10812, hp: 90, au: [] }, [], 0, 0);
+assert.strictEqual(dathHuman.abilities.find((a) => a.sid === 17286).inPhase, true);
+assert.strictEqual(dathHuman.abilities.some((a) => a.sid === 17399), false, "Shadow Shock lives in the 10813 block");
+assert.strictEqual(dathHuman.abilities.find((a) => a.sid === 17288).inPhase, true, "the hp40 transform marker stays on 10812");
+
+const balnazzar = (REAL.byEntry || REAL.bosses || REAL)["10813"];
+assert.deepStrictEqual(balnazzar.phases.map((x) => x.rule), ["start"], "the transform heals him to full, so no hp rule");
+const bal = B.model(REAL, { entry: 10813, hp: 100, au: [] }, [], 0, 0);
+assert.strictEqual(bal.phase, "demon");
+assert.strictEqual(bal.abilities.find((a) => a.sid === 17399).inPhase, true);
+assert.strictEqual(bal.abilities.find((a) => a.sid === 17287).inPhase, true, "Mind Blast runs in both forms");
+
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];
 assert.strictEqual(jeklikReal.abilities.find((a) => a.sid === 23919).flags.phase, "bat");

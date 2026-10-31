@@ -681,8 +681,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 148)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 705)
+        self.assertEqual(len(doc["bosses"]), 176)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 806)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -2905,6 +2905,353 @@ class UbrsValueTest(unittest.TestCase):
         drak_notes = " ".join(self.boss("10363")["notes"])
         self.assertIn("8-40", drak_notes)
         self.assertIn("10-30", drak_notes)
+
+
+class DungeonPlaguelandsValueTest(unittest.TestCase):
+    """The first dungeon batch, pinned from the core scripts rather than the CSV.
+
+    Every tuple is (first ms, repeat min ms, repeat max ms, flags) read off the
+    cited line in the Scholo/Stratholme script (or the tw_world rows for the
+    EventAI/creature_spells bosses). A wrong timer, flag or phase fails here
+    even when the CSV and JSON agree with each other.
+    """
+
+    ABILITIES = {
+        "scholomance": {
+            10505: {
+                17831: (4000, 65000, 65000, "t=aoe;aura"),
+                11672: (8000, 24000, 24000, "t=random;aura"),
+                10929: (15000, 10000, 10000, "t=self;self"),
+                10917: (22000, 5000, 30000, "t=self;int"),
+                9889: (25000, 30000, 30000, "t=self;int"),
+            },
+            11261: {
+                16509: (8000, 10000, 10000, "t=victim;aura;ok.dispel=nodispel"),
+                18103: (9000, 10000, 10000, "t=victim;aura;ok.dispel=nodispel"),
+                8269: (0, 120000, 120000, "t=self;self;ok.purge=nopurge;p=enraged"),
+            },
+            10901: {
+                12038: (0, 0, 0, "t=self;self"),
+                24928: (38000, 32000, 32000, "t=victim;aura"),
+                8245: (45000, 25000, 25000, "t=aoe;aura;int"),
+                18151: (35000, 38000, 38000, "t=victim;aura"),
+            },
+            10507: {
+                15550: (24000, 10000, 10000, "t=aoe;ok=heal"),
+                20691: (15000, 7000, 7000, "t=victim;ok=tank"),
+                25174: (40000, 20000, 20000, "t=victim;aura;ok.dispel=nodispel"),
+                10101: (32000, 12000, 12000, "t=victim;ok=tank"),
+            },
+            10504: {
+                15570: (7000, 12000, 12000, "t=random;aura"),
+                17820: (15000, 20000, 20000, "t=aoe;aura;int"),
+            },
+            10502: {
+                18671: (18000, 30000, 30000, "t=aoe;aura"),
+                20603: (9000, 12000, 12000, "t=aoe;ok=heal"),
+                15487: (5000, 14000, 14000, "t=victim;aura"),
+                6215: (30000, 30000, 30000, "t=victim;aura;int"),
+            },
+            10503: {
+                16098: (10000, 30000, 30000, "t=aoe;aura;int"),
+            },
+            11622: {
+                10101: (0, 0, 0, "t=victim;ok=tank"),
+                18368: (0, 0, 0, "t=victim;ok=tank"),
+                16727: (0, 0, 0, "t=aoe;aura;ok.dispel=nodispel"),
+            },
+            10432: {
+                18399: (2000, 30000, 30000, "t=aoe;ground;aura;int;ok.dispel=nodispel"),
+                16046: (14000, 12000, 12000, "t=aoe;aura;ok.dispel=nodispel"),
+            },
+            10433: {
+                17228: (0, 0, 0, "t=aoe;ok=heal"),
+                15284: (0, 0, 0, "t=victim;ok=tank"),
+                12040: (0, 0, 0, "t=self;self"),
+                17695: (0, 0, 0, "t=self;self;ok.purge=nopurge"),
+            },
+            10508: {
+                18100: (2000, 180000, 180000, "t=self;self"),
+                21369: (8000, 8000, 8000, "t=random;aura;int"),
+                18763: (18000, 24000, 24000, "t=victim;aura;int"),
+                26070: (45000, 30000, 30000, "t=aoe;aura;int"),
+                18099: (12000, 14000, 14000, "t=aoe;aura"),
+                8398: (24000, 15000, 15000, "t=aoe;aura;int"),
+            },
+            1853: {
+                15790: (4500, 10000, 16000, "t=victim;int"),
+                22417: (12000, 10000, 12000, "t=self;self"),
+                18702: (2000, 15000, 27000, "t=victim;aura;int"),
+                17950: (16000, 20000, 35000, "t=random"),
+            },
+            10506: {
+                18144: (0, 0, 0, "t=victim;cone;aura;ok.dispel=nodispel"),
+                12882: (0, 0, 0, "t=victim;cone"),
+                6016: (0, 0, 0, "t=victim;aura;ok.dispel=nodispel"),
+                8379: (0, 0, 0, "t=victim;aura;ok.dispel=nodispel"),
+                17228: (0, 0, 0, "t=aoe;ok=heal"),
+                12889: (0, 0, 0, "t=aoe;aura"),
+                14515: (0, 0, 0, "t=victim;aura;int;ok.interrupt=nokick"),
+            },
+            16118: {
+                27690: (0, 0, 0, "t=self;summon=16119"),
+                17228: (0, 0, 0, "t=aoe;ok=heal"),
+                27696: (0, 0, 0, "t=self;summon=16120;hp51"),
+                27688: (0, 20000, 25000, "t=self;self"),
+                8269: (0, 0, 0, "t=self;self;hp20;ok.purge=nopurge;p=enraged"),
+            },
+            14695: {
+                20735: (1000, 2000, 2000, "t=victim;ok=tank"),
+                11972: (8000, 8000, 8000, "t=victim;ok=tank"),
+            },
+        },
+        "stratholme": {
+            10435: {
+                16793: (16000, 15000, 15000, "t=victim;ok=tank"),
+                10887: (12000, 15000, 15000, "t=aoe;ok=heal"),
+                14099: (8000, 20000, 20000, "t=victim;ok=tank"),
+                16791: (5000, 4000, 4000, "t=self;self;ok.purge=nopurge"),
+            },
+            10437: {
+                4962: (7000, 10000, 15000, "t=victim;aura;int;ok.interrupt=nokick;ok.dispel=nodispel"),
+                6016: (15000, 15000, 20000, "t=victim;aura;ok.dispel=nodispel"),
+            },
+            10438: {
+                17503: (1000, 3500, 4500, "t=victim;aura;int"),
+                16869: (12000, 20000, 25000, "t=victim;aura;int;ok.dispel=nodispel"),
+                17238: (0, 0, 0, "t=victim;int"),
+                17243: (0, 0, 0, "t=victim;int"),
+            },
+            10436: {
+                16565: (1000, 4000, 4000, "t=victim;int"),
+                16867: (11000, 18000, 18000, "t=aoe;aura"),
+                18327: (13000, 13000, 18000, "t=aoe;aura;int"),
+                17244: (20000, 13000, 18000, "t=random;aura;ok.dispel=nodispel"),
+            },
+            10440: {
+                15537: (0, 0, 0, "t=random;int"),
+                15284: (0, 0, 0, "t=victim;ok=tank"),
+                19643: (0, 0, 0, "t=victim;aura;ok.dispel=nodispel"),
+                17473: (0, 0, 0, "t=self;summon=11197;int;ok.interrupt=nokick"),
+            },
+            10811: {
+                17366: (0, 0, 0, "t=aoe;ok=heal"),
+                17274: (0, 0, 0, "t=victim;int"),
+                17293: (13000, 15000, 18000, "t=victim;int;aura"),
+            },
+            10812: {
+                17286: (8000, 12000, 12000, "t=aoe;aura;p=human"),
+                17281: (12000, 15000, 15000, "t=victim;aura;p=human"),
+                17284: (18000, 15000, 15000, "t=victim;ok=tank;p=human"),
+                17287: (6000, 15000, 20000, "t=victim;int"),
+                17288: (0, 0, 0, "t=self;hp40;ok=phase"),
+            },
+            10813: {
+                17287: (0, 15000, 20000, "t=victim;int"),
+                17399: (0, 11000, 11000, "t=aoe;ok=heal"),
+                13704: (0, 20000, 20000, "t=aoe;aura;ok.dispel=nodispel"),
+                12098: (0, 15000, 15000, "t=random;aura;int"),
+                17405: (0, 25000, 30000, "t=random;aura;int;ok.interrupt=nokick;ok.dispel=nodispel"),
+            },
+            10997: {
+                10101: (0, 15000, 20000, "t=victim;ok=tank"),
+                15615: (0, 12000, 12000, "t=victim;ok=tank"),
+                20463: (1000, 2500, 3500, "t=victim;ok=tank"),
+            },
+            10439: {
+                5568: (3000, 7000, 7000, "t=aoe;ok=heal"),
+                17307: (12000, 10000, 10000, "t=victim;aura;ok.dispel=nodispel"),
+            },
+            11143: {
+                7713: (19000, 19000, 19000, "t=aoe;aura"),
+                6253: (8000, 8000, 8000, "t=victim;aura;ok.dispel=nodispel"),
+                8552: (20000, 20000, 20000, "t=victim;aura;int;ok.interrupt=nokick"),
+                12889: (22000, 22000, 22000, "t=victim;aura"),
+                17831: (25000, 25000, 25000, "t=aoe;aura"),
+            },
+            10808: {
+                17470: (7000, 12000, 12000, "t=victim;ok=tank"),
+                8269: (0, 0, 0, "t=self;self;hp10;ok.purge=nopurge;p=enraged"),
+            },
+            14684: {
+                16799: (0, 0, 0, "t=victim;aura;int"),
+                12096: (0, 0, 0, "t=victim;aura;int;hp30"),
+            },
+        },
+    }
+
+    BOSSES = {
+        "scholomance": {
+            10505, 11261, 10901, 10507, 10504, 10502, 10503, 11622, 10432, 10433,
+            10508, 1853, 10506, 16118, 14695,
+        },
+        "stratholme": {
+            10435, 10437, 10438, 10436, 10440, 10811, 10812, 10813, 10997,
+            10439, 11143, 10808, 14684,
+        },
+    }
+
+    PHASES = {
+        (11261, "scholomance"): [
+            ("enraged", "aura=8269", 1),
+            ("fight", "start", 2),
+        ],
+        (10812, "stratholme"): [
+            ("human", "start", 1),
+        ],
+        (10813, "stratholme"): [
+            ("demon", "start", 1),
+        ],
+        (16118, "scholomance"): [
+            ("enraged", "aura=8269", 1),
+            ("fight", "start", 2),
+        ],
+        (10808, "stratholme"): [
+            ("enraged", "aura=8269", 1),
+            ("fight", "start", 2),
+        ],
+    }
+
+    CAST_MS = {16098: 2000, 17293: 1000}
+
+    ADDS = {
+        (10503, "scholomance"): {11439: ("summon", 1)},
+        (10432, "scholomance"): {10475: ("linked", 0), 10433: ("linked", 1)},
+        (10437, "stratholme"): {10577: ("summon", 1), 10876: ("summon", 2)},
+        (10440, "stratholme"): {11197: ("summon", 1), 10394: ("linked", 1)},
+        (10813, "stratholme"): {10391: ("summon", 0), 10390: ("summon", 0)},
+        (10997, "stratholme"): {11054: ("summon", 1)},
+        (1853, "scholomance"): {
+            entry: ("summon", 1) for entry in range(30000, 30006)
+        },
+        (16118, "scholomance"): {16119: ("summon", 1), 16120: ("summon", 1)},
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        cls.doc = boss_data.build_document(rows, names)
+
+    def boss(self, map_key, entry):
+        return next(
+            b for b in self.doc["bosses"].values()
+            if b["map"] == map_key and b["entry"] == entry
+        )
+
+    def test_every_boss_of_the_batch_is_present(self):
+        for map_key, expected in self.BOSSES.items():
+            got = {
+                b["entry"] for b in self.doc["bosses"].values() if b["map"] == map_key
+            }
+            self.assertEqual(got, expected, f"{map_key} boss entries")
+
+    def test_every_ability_matches_its_source_line(self):
+        for map_key, bosses in self.ABILITIES.items():
+            for entry, abilities in bosses.items():
+                doc = self.boss(map_key, entry)
+                seen = {a["sid"]: a for a in doc["abilities"]}
+                self.assertEqual(set(seen), set(abilities), f"{map_key} {entry} abilities")
+                for sid, (first, repeat_min, repeat_max, flag_text) in abilities.items():
+                    ability = seen[sid]
+                    self.assertEqual(
+                        (ability["a"], ability["b"], ability["c"]),
+                        (first, repeat_min, repeat_max),
+                        f"{map_key} {entry} {sid} timers",
+                    )
+                    want = boss_data.parse_flags(flag_text)
+                    got = boss_data.parse_flags(
+                        ";".join(
+                            part
+                            for part in (
+                                f"p={ability['phase']}" if ability["phase"] else "",
+                                f"t={ability['target']}" if ability["target"] else "",
+                                "aura" if ability["aura"] else "",
+                                "self" if ability["self"] else "",
+                                "mark" if ability["mark"] else "",
+                                "ground" if ability["ground"] else "",
+                                "cone" if ability["cone"] else "",
+                                "tail" if ability["tail"] else "",
+                                f"int" if ability["int"] else "",
+                                f"summon={ability['summon']}" if ability["summon"] else "",
+                                f"hp{ability['hp']}" if ability["hp"] else "",
+                                f"ok={ability['ok']}" if ability["ok"] else "",
+                                *[
+                                    f"ok.{need}={reason}"
+                                    for need, reason in ability["okNeeds"].items()
+                                ],
+                            )
+                            if part
+                        )
+                    )
+                    self.assertEqual(got, want, f"{map_key} {entry} {sid} flags")
+                    self.assertEqual(
+                        ability["castMs"], self.CAST_MS.get(sid, 0),
+                        f"{map_key} {entry} {sid} castMs",
+                    )
+
+    def test_every_phase_rule_matches_its_source_line(self):
+        for (entry, map_key), phases in self.PHASES.items():
+            doc = self.boss(map_key, entry)
+            self.assertEqual(
+                [(p["name"], p["rule"], p["order"]) for p in doc["phases"]],
+                [(name, boss_data.parse_phase_rule(rule), order) for name, rule, order in phases],
+                f"{map_key} {entry} phases",
+            )
+
+    def test_every_add_matches_its_source_line(self):
+        for (entry, map_key), adds in self.ADDS.items():
+            doc = self.boss(map_key, entry)
+            self.assertEqual(
+                {a["entry"]: (a["role"], a["priority"]) for a in doc["adds"]}, adds,
+                f"{map_key} {entry} adds",
+            )
+
+    def test_area_and_shared_timer_choices(self):
+        # Implicit target 22 + 15 is an AOE around the caster, even when the
+        # cast passes a victim (Call of the Grave, Curse of Agony, Trample...).
+        for entry, sid in ((10505, 17831), (10502, 18671), (10507, 15550), (10508, 26070)):
+            self.assertEqual(self.boss("scholomance", entry)["abilities"][
+                next(i for i, a in enumerate(self.boss("scholomance", entry)["abilities"])
+                     if a["sid"] == sid)]["target"], "aoe")
+        # Maleki's two drains share one timer and are conditional: no columns.
+        maleki = self.boss("stratholme", 10438)
+        drains = [a for a in maleki["abilities"] if a["sid"] in (17238, 17243)]
+        self.assertEqual([(a["a"], a["b"], a["c"]) for a in drains], [(0, 0, 0)] * 2)
+        # Non-kickable cast times say so; kickable ones carry only int.
+        flags = {a["sid"]: a for a in self.boss("stratholme", 10437)["abilities"]}
+        self.assertEqual(
+            flags[4962]["okNeeds"], {"interrupt": "nokick", "dispel": "nodispel"}
+        )
+        self.assertFalse(flags[6016]["int"])
+        # The transform changes the entry, so the demon rows live under 10813; their
+        # timers only start after the 4 s stun, and the transform heals him to full.
+        dath = {a["sid"]: a for a in self.boss("stratholme", 10812)["abilities"]}
+        self.assertNotIn(17399, dath)
+        self.assertEqual(dath[17287]["phase"], "")
+        self.assertEqual(dath[17288]["hp"], 40)
+        bal = {a["sid"]: a for a in self.boss("stratholme", 10813)["abilities"]}
+        for sid in (17287, 17399, 13704, 12098, 17405):
+            self.assertEqual(bal[sid]["a"], 0)
+        self.assertEqual(
+            [p["rule"]["kind"] for p in self.boss("stratholme", 10813)["phases"]],
+            ["start"],
+            "the transformed entry starts at full health, so it has no hp rule",
+        )
+
+    def test_phase_rule_visible_signals(self):
+        # 8269 and the hp latch are visible; no passive aura is used as a rule.
+        kras = {a["sid"]: a for a in self.boss("scholomance", 11261)["abilities"]}
+        self.assertTrue(kras[8269]["self"])
+        self.assertEqual(kras[8269]["phase"], "enraged")
+        self.assertEqual(
+            [p["rule"] for p in self.boss("stratholme", 10812)["phases"]],
+            [boss_data.parse_phase_rule("start")],
+        )
+        self.assertEqual(
+            [(p["name"], p["rule"]) for p in self.boss("stratholme", 10813)["phases"]],
+            [("demon", boss_data.parse_phase_rule("start"))],
+        )
 
 
 if __name__ == "__main__":
