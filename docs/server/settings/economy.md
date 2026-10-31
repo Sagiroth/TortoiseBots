@@ -270,7 +270,7 @@ Item ids bots never post to the auction house.
 <details>
 <summary>How it works in detail</summary>
 
-Bots also never post items a vendor sells without a limited stock: any player can buy those at the vendor buy price, so no auction listing can be fair. The blacklist covers anything else odd the owner finds.
+Bots also never post items any vendor sells without a stock limit, even if other vendors limit the same item: any player can buy those at the vendor buy price, so no auction listing can be fair. Vendor-buy-to-flip uses the same rule, refusing the item whenever the visited vendor's own stock is unlimited. The blacklist covers anything else odd the owner finds and also blocks synthetic market supply.
 
 </details>
 

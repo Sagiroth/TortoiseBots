@@ -118,6 +118,7 @@ namespace ai
 
         static std::unordered_set<uint32> m_allItemIdsSoldByAnyVendors;
         static std::unordered_set<uint32> m_itemIdsSoldByAnyVendorsWithLimitedMaxCount;
+        static std::unordered_set<uint32> m_itemIdsSoldByAnyVendorsWithoutLimit;
 
         static double GetLevelPriceMultiplier(ItemPrototype const* proto);
 
@@ -143,6 +144,7 @@ namespace ai
 
         static bool IsItemSoldByAnyVendor(ItemPrototype const* proto);
         static bool IsItemSoldByAnyVendorButHasLimitedMaxCount(ItemPrototype const* proto);
+        static bool IsItemSoldByAnyVendorWithoutLimit(ItemPrototype const* proto);
 
         static bool IsItemUsedBySkill(ItemPrototype const* proto, SkillType skillType);
         static bool IsItemUsedToCraftAnything(ItemPrototype const* proto);
