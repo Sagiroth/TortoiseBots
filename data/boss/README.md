@@ -77,7 +77,7 @@ fails `check`). The reasons are closed:
 
 | Reason | Meaning | `check --db` verifies |
 |:--|:--|:--|
-| `tank` | hits the tank or the current victim only and is healed through (plain strikes, sunders) | the row has `t=victim` (no DB) |
+| `tank` | hits the tank or the current victim only and is healed through (plain strikes, sunders); `t=random` only when the note names the closed melee set it picks from | the row has `t=victim` or `t=random` (no DB) |
 | `heal` | raid or random damage the healers take | no |
 | `phase` | a transform or phase marker (the panel shows the phase) | the spell is the `aura=` of a phase rule of that boss, or the row has `hp<N` (no DB) |
 | `script` | a script-internal spell with no player effect | no |

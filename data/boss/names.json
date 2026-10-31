@@ -84,12 +84,12 @@
       "name": "Whirlwind",
       "castMs": 0
     },
-    "15550": {
-      "name": "Trample",
-      "castMs": 0
-    },
     "15284": {
       "name": "Cleave",
+      "castMs": 0
+    },
+    "15550": {
+      "name": "Trample",
       "castMs": 0
     },
     "15582": {
@@ -152,6 +152,46 @@
       "name": "Intimidating Shout",
       "castMs": 0
     },
+    "19272": {
+      "name": "Lava Breath",
+      "castMs": 0
+    },
+    "19408": {
+      "name": "Panic",
+      "castMs": 0
+    },
+    "19411": {
+      "name": "Lava Bomb",
+      "castMs": 0
+    },
+    "19449": {
+      "name": "Magma Spit",
+      "castMs": 0
+    },
+    "19451": {
+      "name": "Frenzy",
+      "castMs": 0
+    },
+    "19460": {
+      "name": "Shadow Shock",
+      "castMs": 0
+    },
+    "19484": {
+      "name": "Majordomo Teleport Visual",
+      "castMs": 0
+    },
+    "19492": {
+      "name": "Antimagic Pulse",
+      "castMs": 0
+    },
+    "19496": {
+      "name": "Magma Shackles",
+      "castMs": 0
+    },
+    "19516": {
+      "name": "Enrage",
+      "castMs": 0
+    },
     "19632": {
       "name": "Cleave",
       "castMs": 0
@@ -160,24 +200,180 @@
       "name": "Knock Away",
       "castMs": 0
     },
+    "19659": {
+      "name": "Ignite Mana",
+      "castMs": 0
+    },
+    "19695": {
+      "name": "Inferno",
+      "castMs": 0
+    },
+    "19698": {
+      "name": "Inferno",
+      "castMs": 0
+    },
+    "19702": {
+      "name": "Impending Doom",
+      "castMs": 0
+    },
+    "19703": {
+      "name": "Lucifron's Curse",
+      "castMs": 0
+    },
+    "19712": {
+      "name": "Arcane Explosion",
+      "castMs": 0
+    },
+    "19713": {
+      "name": "Shazzrah's Curse",
+      "castMs": 0
+    },
+    "19714": {
+      "name": "Deaden Magic",
+      "castMs": 0
+    },
+    "19715": {
+      "name": "Counterspell",
+      "castMs": 0
+    },
+    "19716": {
+      "name": "Gehennas' Curse",
+      "castMs": 0
+    },
+    "19717": {
+      "name": "Rain of Fire",
+      "castMs": 0
+    },
+    "19728": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "19729": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "19774": {
+      "name": "Summon Ragnaros",
+      "castMs": 0
+    },
+    "19777": {
+      "name": "Dark Strike",
+      "castMs": 0
+    },
+    "19778": {
+      "name": "Demoralizing Shout",
+      "castMs": 0
+    },
+    "19779": {
+      "name": "Inspire",
+      "castMs": 0
+    },
+    "19780": {
+      "name": "Hand of Ragnaros",
+      "castMs": 0
+    },
+    "19781": {
+      "name": "Flame Spear",
+      "castMs": 0
+    },
+    "19798": {
+      "name": "Earthquake",
+      "castMs": 0
+    },
     "19832": {
       "name": "Possess",
+      "castMs": 0
+    },
+    "19953": {
+      "name": "Enrage",
       "castMs": 0
     },
     "19983": {
       "name": "Cleave",
       "castMs": 0
     },
+    "20228": {
+      "name": "Pyroblast",
+      "castMs": 0
+    },
+    "20229": {
+      "name": "Blast Wave",
+      "castMs": 0
+    },
     "20449": {
       "name": "Teleport",
+      "castMs": 0
+    },
+    "20474": {
+      "name": "Lava Bomb",
+      "castMs": 0
+    },
+    "20475": {
+      "name": "Living Bomb",
+      "castMs": 0
+    },
+    "20478": {
+      "name": "Armageddon",
+      "castMs": 0
+    },
+    "20482": {
+      "name": "Firesworn Eruption Trigger",
       "castMs": 0
     },
     "20512": {
       "name": "Creeping Plague",
       "castMs": 0
     },
+    "20553": {
+      "name": "Golemagg's Trust",
+      "castMs": 0
+    },
+    "20563": {
+      "name": "Elemental Fire",
+      "castMs": 0
+    },
+    "20565": {
+      "name": "Magma Blast",
+      "castMs": 0
+    },
+    "20566": {
+      "name": "Wrath of Ragnaros",
+      "castMs": 0
+    },
+    "20568": {
+      "name": "Ragnaros Emerge",
+      "castMs": 0
+    },
+    "20618": {
+      "name": "Teleport",
+      "castMs": 0
+    },
+    "20619": {
+      "name": "Magic Reflection",
+      "castMs": 0
+    },
+    "20620": {
+      "name": "Aegis of Ragnaros",
+      "castMs": 0
+    },
     "20691": {
       "name": "Cleave",
+      "castMs": 0
+    },
+    "21075": {
+      "name": "Damage Shield",
+      "castMs": 0
+    },
+    "21107": {
+      "name": "Ragnaros Submerge Fade",
+      "castMs": 0
+    },
+    "21154": {
+      "name": "Might of Ragnaros",
+      "castMs": 0
+    },
+    "21387": {
+      "name": "Melt Weapon",
       "castMs": 0
     },
     "22277": {
@@ -262,6 +458,10 @@
     },
     "23128": {
       "name": "Frenzy",
+      "castMs": 0
+    },
+    "23138": {
+      "name": "Gate of Shazzrah",
       "castMs": 0
     },
     "23153": {
@@ -720,6 +920,10 @@
       "name": "Earth Shock",
       "castMs": 0
     },
+    "26234": {
+      "name": "Submerge Visual",
+      "castMs": 0
+    },
     "26235": {
       "name": "Cthun Vulnerable",
       "castMs": 0
@@ -732,6 +936,10 @@
       "name": "Blizzard",
       "castMs": 0
     },
+    "26613": {
+      "name": "Unbalancing Strike",
+      "castMs": 0
+    },
     "26662": {
       "name": "Berserk",
       "castMs": 0
@@ -740,220 +948,400 @@
       "name": "Berserk",
       "castMs": 0
     },
-    "19702": {
-      "name": "Impending Doom",
+    "27808": {
+      "name": "Frost Blast",
       "castMs": 0
     },
-    "19703": {
-      "name": "Lucifron's Curse",
+    "27810": {
+      "name": "Shadow Fissure",
       "castMs": 0
     },
-    "19460": {
-      "name": "Shadow Shock",
+    "27812": {
+      "name": "Void Blast",
       "castMs": 0
     },
-    "19272": {
-      "name": "Lava Breath",
+    "27819": {
+      "name": "Detonate Mana",
       "castMs": 0
     },
-    "19451": {
+    "28025": {
+      "name": "Teleport Left",
+      "castMs": 0
+    },
+    "28026": {
+      "name": "Teleport Right",
+      "castMs": 0
+    },
+    "28059": {
+      "name": "Positive Charge",
+      "castMs": 0
+    },
+    "28084": {
+      "name": "Negative Charge",
+      "castMs": 0
+    },
+    "28089": {
+      "name": "Polarity Shift",
+      "castMs": 0
+    },
+    "28125": {
+      "name": "War Stomp",
+      "castMs": 0
+    },
+    "28131": {
+      "name": "Enrage",
+      "castMs": 0
+    },
+    "28134": {
+      "name": "Power Surge",
+      "castMs": 0
+    },
+    "28135": {
+      "name": "Static Field",
+      "castMs": 0
+    },
+    "28137": {
+      "name": "Slime Stream",
+      "castMs": 0
+    },
+    "28157": {
+      "name": "Slime Spray",
+      "castMs": 0
+    },
+    "28160": {
+      "name": "Thadius Spawn",
+      "castMs": 0
+    },
+    "28167": {
+      "name": "Chain Lightning",
+      "castMs": 0
+    },
+    "28169": {
+      "name": "Mutating Injection",
+      "castMs": 0
+    },
+    "28240": {
+      "name": "Poison Cloud",
+      "castMs": 0
+    },
+    "28299": {
+      "name": "Ball Lightning",
+      "castMs": 0
+    },
+    "28308": {
+      "name": "Hateful Strike",
+      "castMs": 0
+    },
+    "28337": {
+      "name": "Magnetic Pull",
+      "castMs": 0
+    },
+    "28371": {
       "name": "Frenzy",
       "castMs": 0
     },
-    "19449": {
-      "name": "Magma Spit",
+    "28374": {
+      "name": "Decimate",
       "castMs": 0
     },
-    "19408": {
-      "name": "Panic",
+    "28375": {
+      "name": "Decimate",
       "castMs": 0
     },
-    "19411": {
-      "name": "Lava Bomb",
+    "28408": {
+      "name": "Chains of KelThuzad",
       "castMs": 0
     },
-    "20474": {
-      "name": "Lava Bomb",
+    "28457": {
+      "name": "Dark Blast",
       "castMs": 0
     },
-    "19716": {
-      "name": "Gehennas' Curse",
+    "28458": {
+      "name": "Dark Blast",
       "castMs": 0
     },
-    "19717": {
+    "28460": {
+      "name": "Wail of Souls",
+      "castMs": 0
+    },
+    "28478": {
+      "name": "Frostbolt",
+      "castMs": 0
+    },
+    "28479": {
+      "name": "Frostbolt",
+      "castMs": 0
+    },
+    "28498": {
+      "name": "Berserk",
+      "castMs": 0
+    },
+    "28522": {
+      "name": "Icebolt",
+      "castMs": 0
+    },
+    "28524": {
+      "name": "Frost Breath",
+      "castMs": 0
+    },
+    "28529": {
+      "name": "Frost Aura",
+      "castMs": 0
+    },
+    "28542": {
+      "name": "Life Drain",
+      "castMs": 0
+    },
+    "28547": {
+      "name": "Chill",
+      "castMs": 0
+    },
+    "28622": {
+      "name": "Web Wrap",
+      "castMs": 0
+    },
+    "28679": {
+      "name": "Harvest Soul",
+      "castMs": 0
+    },
+    "28741": {
+      "name": "Poison Shock",
+      "castMs": 0
+    },
+    "28747": {
+      "name": "Enrage",
+      "castMs": 0
+    },
+    "28776": {
+      "name": "Necrotic Poison",
+      "castMs": 0
+    },
+    "28783": {
+      "name": "Impale",
+      "castMs": 0
+    },
+    "28785": {
+      "name": "Locust Swarm",
+      "castMs": 0
+    },
+    "28794": {
       "name": "Rain of Fire",
       "castMs": 0
     },
-    "19728": {
-      "name": "Shadow Bolt",
+    "28796": {
+      "name": "Poison Bolt Volley",
       "castMs": 0
     },
-    "19729": {
-      "name": "Shadow Bolt",
-      "castMs": 0
-    },
-    "19492": {
-      "name": "Antimagic Pulse",
-      "castMs": 0
-    },
-    "19496": {
-      "name": "Magma Shackles",
-      "castMs": 0
-    },
-    "19516": {
+    "28798": {
       "name": "Enrage",
       "castMs": 0
     },
-    "20482": {
-      "name": "Firesworn Eruption Trigger",
+    "28832": {
+      "name": "Mark of Korthazz",
       "castMs": 0
     },
-    "19712": {
-      "name": "Arcane Explosion",
+    "28833": {
+      "name": "Mark of Blaumeux",
       "castMs": 0
     },
-    "19713": {
-      "name": "Shazzrah's Curse",
+    "28834": {
+      "name": "Mark of Mograine",
       "castMs": 0
     },
-    "19714": {
-      "name": "Deaden Magic",
+    "28835": {
+      "name": "Mark of Zeliek",
       "castMs": 0
     },
-    "19715": {
-      "name": "Counterspell",
+    "28863": {
+      "name": "Void Zone",
       "castMs": 0
     },
-    "23138": {
-      "name": "Gate of Shazzrah",
+    "28881": {
+      "name": "Righteous Fire",
       "castMs": 0
     },
-    "19659": {
-      "name": "Ignite Mana",
+    "28882": {
+      "name": "Righteous Fire",
       "castMs": 0
     },
-    "20475": {
-      "name": "Living Bomb",
+    "28883": {
+      "name": "Holy Wrath",
       "castMs": 0
     },
-    "19695": {
-      "name": "Inferno",
+    "28884": {
+      "name": "Meteor",
       "castMs": 0
     },
-    "19698": {
-      "name": "Inferno",
+    "28928": {
+      "name": "Summon Spirit of Mograine",
       "castMs": 0
     },
-    "20478": {
-      "name": "Armageddon",
+    "28931": {
+      "name": "Summon Spirit of Blaumeux",
       "castMs": 0
     },
-    "19777": {
-      "name": "Dark Strike",
+    "28932": {
+      "name": "Summon Spirit of Korthazz",
       "castMs": 0
     },
-    "19778": {
-      "name": "Demoralizing Shout",
+    "28934": {
+      "name": "Summon Spirit of Zeliek",
       "castMs": 0
     },
-    "19779": {
-      "name": "Inspire",
+    "29051": {
+      "name": "Mind Exhaustion",
       "castMs": 0
     },
-    "19780": {
-      "name": "Hand of Ragnaros",
+    "29061": {
+      "name": "Shield Wall",
       "castMs": 0
     },
-    "19781": {
-      "name": "Flame Spear",
+    "29107": {
+      "name": "Disrupting Shout",
       "castMs": 0
     },
-    "20228": {
-      "name": "Pyroblast",
+    "29125": {
+      "name": "Hopeless",
       "castMs": 0
     },
-    "20553": {
-      "name": "Golemagg's Trust",
+    "29194": {
+      "name": "Corrupted Mind",
       "castMs": 0
     },
-    "19953": {
-      "name": "Enrage",
+    "29196": {
+      "name": "Corrupted Mind",
       "castMs": 0
     },
-    "19798": {
-      "name": "Earthquake",
+    "29198": {
+      "name": "Corrupted Mind",
       "castMs": 0
     },
-    "20619": {
-      "name": "Magic Reflection",
+    "29201": {
+      "name": "Corrupted Mind",
       "castMs": 0
     },
-    "21075": {
-      "name": "Damage Shield",
+    "29204": {
+      "name": "Inevitable Doom",
       "castMs": 0
     },
-    "20229": {
-      "name": "Blast Wave",
+    "29208": {
+      "name": "Blink",
       "castMs": 0
     },
-    "20620": {
-      "name": "Aegis of Ragnaros",
+    "29209": {
+      "name": "Blink",
       "castMs": 0
     },
-    "20618": {
+    "29210": {
+      "name": "Blink",
+      "castMs": 0
+    },
+    "29211": {
+      "name": "Blink",
+      "castMs": 0
+    },
+    "29212": {
+      "name": "Cripple",
+      "castMs": 0
+    },
+    "29213": {
+      "name": "Curse of the Plaguebringer",
+      "castMs": 0
+    },
+    "29216": {
       "name": "Teleport",
       "castMs": 0
     },
-    "19774": {
-      "name": "Summon Ragnaros",
+    "29217": {
+      "name": "Summon Skeleton",
       "castMs": 0
     },
-    "19484": {
-      "name": "Majordomo Teleport Visual",
+    "29226": {
+      "name": "Summon Skeleton",
       "castMs": 0
     },
-    "20566": {
-      "name": "Wrath of Ragnaros",
+    "29230": {
+      "name": "Immune All",
       "castMs": 0
     },
-    "20565": {
-      "name": "Magma Blast",
+    "29231": {
+      "name": "Teleport Return",
       "castMs": 0
     },
-    "21154": {
-      "name": "Might of Ragnaros",
+    "29247": {
+      "name": "Summon Skeleton",
       "castMs": 0
     },
-    "20563": {
-      "name": "Elemental Fire",
+    "29307": {
+      "name": "Infected Wound",
       "castMs": 0
     },
-    "21387": {
-      "name": "Melt Weapon",
+    "29310": {
+      "name": "Mana Burn",
       "castMs": 0
     },
-    "26234": {
-      "name": "Submerge Visual",
+    "29317": {
+      "name": "Shadow Bolt",
       "castMs": 0
     },
-    "21107": {
-      "name": "Ragnaros Submerge Fade",
+    "29327": {
+      "name": "Sapphirons Wing Buffet",
       "castMs": 0
     },
-    "20568": {
-      "name": "Ragnaros Emerge",
+    "29328": {
+      "name": "Sapphirons Wing Buffet",
       "castMs": 0
     },
-    "47375": {
-      "name": "Molten Bulwark",
+    "29350": {
+      "name": "Plague Cloud",
       "castMs": 0
     },
-    "47373": {
-      "name": "Wide Backhand",
+    "29371": {
+      "name": "Eruption",
       "castMs": 0
     },
-    "47374": {
-      "name": "Crushing Slam",
+    "29407": {
+      "name": "Mind Flay",
+      "castMs": 0
+    },
+    "29423": {
+      "name": "KelThuzad Channel",
+      "castMs": 0
+    },
+    "29434": {
+      "name": "Summon Maexxna Spiderling",
+      "castMs": 0
+    },
+    "29484": {
+      "name": "Web Spray",
+      "castMs": 0
+    },
+    "29685": {
+      "name": "Terrifying Roar",
+      "castMs": 0
+    },
+    "29865": {
+      "name": "Poison Aura",
+      "castMs": 0
+    },
+    "29998": {
+      "name": "Decrepit Fever",
+      "castMs": 0
+    },
+    "30101": {
+      "name": "Frost Breath",
+      "castMs": 0
+    },
+    "30211": {
+      "name": "Teleport Self",
+      "castMs": 0
+    },
+    "30281": {
+      "name": "Remove Curse",
+      "castMs": 0
+    },
+    "32309": {
+      "name": "Slime Bolt",
       "castMs": 0
     },
     "42036": {
@@ -968,6 +1356,18 @@
       "name": "Molten Bite",
       "castMs": 0
     },
+    "47373": {
+      "name": "Wide Backhand",
+      "castMs": 0
+    },
+    "47374": {
+      "name": "Crushing Slam",
+      "castMs": 0
+    },
+    "47375": {
+      "name": "Molten Bulwark",
+      "castMs": 0
+    },
     "52722": {
       "name": "Arcane Rupture",
       "castMs": 0
@@ -976,15 +1376,7 @@
       "name": "Arcane Barrage",
       "castMs": 0
     },
-    "52727": {
-      "name": "Mirror Image",
-      "castMs": 0
-    },
     "52724": {
-      "name": "Rune of Power",
-      "castMs": 0
-    },
-    "52729": {
       "name": "Rune of Power",
       "castMs": 0
     },
@@ -996,8 +1388,12 @@
       "name": "Rune of Combustion",
       "castMs": 0
     },
-    "28747": {
-      "name": "Enrage",
+    "52727": {
+      "name": "Mirror Image",
+      "castMs": 0
+    },
+    "52729": {
+      "name": "Rune of Power",
       "castMs": 0
     }
   },
@@ -1029,20 +1425,80 @@
     "11382": {
       "name": "Bloodlord Mandokir"
     },
+    "11502": {
+      "name": "Ragnaros"
+    },
     "11583": {
       "name": "Nefarian"
+    },
+    "11661": {
+      "name": "Flamewaker"
+    },
+    "11662": {
+      "name": "Flamewaker Priest"
+    },
+    "11663": {
+      "name": "Flamewaker Healer"
+    },
+    "11664": {
+      "name": "Flamewaker Elite"
+    },
+    "11671": {
+      "name": "Core Hound"
+    },
+    "11672": {
+      "name": "Core Rager"
+    },
+    "11673": {
+      "name": "Ancient Core Hound"
     },
     "11981": {
       "name": "Flamegor"
     },
+    "11982": {
+      "name": "Magmadar"
+    },
     "11983": {
       "name": "Firemaw"
+    },
+    "11988": {
+      "name": "Golemagg the Incinerator"
     },
     "12017": {
       "name": "Broodlord Lashlayer"
     },
+    "12018": {
+      "name": "Majordomo Executus"
+    },
+    "12056": {
+      "name": "Baron Geddon"
+    },
+    "12057": {
+      "name": "Garr"
+    },
+    "12098": {
+      "name": "Sulfuron Harbinger"
+    },
+    "12099": {
+      "name": "Firesworn"
+    },
+    "12118": {
+      "name": "Lucifron"
+    },
+    "12119": {
+      "name": "Flamewaker Protector"
+    },
     "12129": {
       "name": "Onyxian Warder"
+    },
+    "12143": {
+      "name": "Son of Flame"
+    },
+    "12259": {
+      "name": "Gehennas"
+    },
+    "12264": {
+      "name": "Shazzrah"
     },
     "12416": {
       "name": "Blackwing Legionnaire"
@@ -1061,6 +1517,9 @@
     },
     "13020": {
       "name": "Vaelastrasz the Corrupt"
+    },
+    "13148": {
+      "name": "Flame of Ragnaros"
     },
     "14020": {
       "name": "Chromaggus"
@@ -1209,9 +1668,6 @@
     "15516": {
       "name": "Battleguard Sartura"
     },
-    "15589": {
-      "name": "Eye of C'Thun"
-    },
     "15521": {
       "name": "Hive'Zara Hatchling"
     },
@@ -1223,6 +1679,9 @@
     },
     "15555": {
       "name": "Hive'Zara Larva"
+    },
+    "15589": {
+      "name": "Eye of C'Thun"
     },
     "15630": {
       "name": "Spawn of Fankriss"
@@ -1242,8 +1701,41 @@
     "15802": {
       "name": "Flesh Tentacle"
     },
+    "15904": {
+      "name": "Tentacle Portal"
+    },
+    "15928": {
+      "name": "Thaddius"
+    },
+    "15929": {
+      "name": "Stalagg"
+    },
+    "15930": {
+      "name": "Feugen"
+    },
+    "15931": {
+      "name": "Grobbulus"
+    },
+    "15932": {
+      "name": "Gluth"
+    },
     "15934": {
       "name": "Hive'Zara Hornet"
+    },
+    "15936": {
+      "name": "Heigan the Unclean"
+    },
+    "15952": {
+      "name": "Maexxna"
+    },
+    "15953": {
+      "name": "Grand Widow Faerlina"
+    },
+    "15954": {
+      "name": "Noth the Plaguebringer"
+    },
+    "15956": {
+      "name": "Anub'Rekhan"
     },
     "15962": {
       "name": "Vekniss Hatchling"
@@ -1251,80 +1743,149 @@
     "15984": {
       "name": "Sartura's Royal Guard"
     },
-    "12118": {
-      "name": "Lucifron"
+    "15989": {
+      "name": "Sapphiron"
     },
-    "11982": {
-      "name": "Magmadar"
+    "15990": {
+      "name": "Kel'Thuzad"
     },
-    "12259": {
-      "name": "Gehennas"
+    "16011": {
+      "name": "Loatheb"
     },
-    "12057": {
-      "name": "Garr"
+    "16028": {
+      "name": "Patchwerk"
     },
-    "12264": {
-      "name": "Shazzrah"
+    "16060": {
+      "name": "Gothik the Harvester"
     },
-    "12056": {
-      "name": "Baron Geddon"
+    "16061": {
+      "name": "Instructor Razuvious"
     },
-    "12098": {
-      "name": "Sulfuron Harbinger"
+    "16062": {
+      "name": "Highlord Mograine"
     },
-    "11988": {
-      "name": "Golemagg the Incinerator"
+    "16063": {
+      "name": "Sir Zeliek"
     },
-    "65020": {
-      "name": "Basalthar"
+    "16064": {
+      "name": "Thane Korth'azz"
+    },
+    "16065": {
+      "name": "Lady Blaumeux"
+    },
+    "16124": {
+      "name": "Unrelenting Trainee"
+    },
+    "16125": {
+      "name": "Unrelenting Deathknight"
+    },
+    "16126": {
+      "name": "Unrelenting Rider"
+    },
+    "16127": {
+      "name": "Spectral Trainee"
+    },
+    "16129": {
+      "name": "Shadow Fissure"
+    },
+    "16137": {
+      "name": "Naxxramas Military Sub-Boss Trigger"
+    },
+    "16148": {
+      "name": "Spectral Deathknight"
+    },
+    "16149": {
+      "name": "Spectral Horse"
+    },
+    "16150": {
+      "name": "Spectral Rider"
+    },
+    "16218": {
+      "name": "Tesla Coil"
+    },
+    "16236": {
+      "name": "Eye Stalk"
+    },
+    "16286": {
+      "name": "Spore"
+    },
+    "16290": {
+      "name": "Fallout Slime"
+    },
+    "16360": {
+      "name": "Zombie Chow"
+    },
+    "16363": {
+      "name": "Grobbulus Cloud"
+    },
+    "16427": {
+      "name": "Soldier of the Frozen Wastes"
+    },
+    "16428": {
+      "name": "Unstoppable Abomination"
+    },
+    "16429": {
+      "name": "Soul Weaver"
+    },
+    "16441": {
+      "name": "Guardian of Icecrown"
+    },
+    "16474": {
+      "name": "Blizzard"
+    },
+    "16486": {
+      "name": "Web Wrap"
+    },
+    "16505": {
+      "name": "Naxxramas Follower"
+    },
+    "16506": {
+      "name": "Naxxramas Worshipper"
+    },
+    "16573": {
+      "name": "Crypt Guard"
+    },
+    "16697": {
+      "name": "Void Zone"
+    },
+    "16698": {
+      "name": "Corpse Scarab"
+    },
+    "16775": {
+      "name": "Spirit of Mograine"
+    },
+    "16776": {
+      "name": "Spirit of Blaumeux"
+    },
+    "16777": {
+      "name": "Spirit of Zeliek"
+    },
+    "16778": {
+      "name": "Spirit of Korth'azz"
+    },
+    "16803": {
+      "name": "Deathknight Understudy"
+    },
+    "16981": {
+      "name": "Plagued Guardian"
+    },
+    "16982": {
+      "name": "Plagued Construct"
+    },
+    "16983": {
+      "name": "Plagued Champion"
+    },
+    "16984": {
+      "name": "Plagued Warrior"
+    },
+    "17025": {
+      "name": "Sapphiron's Wing buffet"
+    },
+    "17055": {
+      "name": "Maexxna Spiderling"
     },
     "52145": {
       "name": "Incindis"
-    },
-    "12018": {
-      "name": "Majordomo Executus"
-    },
-    "11502": {
-      "name": "Ragnaros"
-    },
-    "57642": {
-      "name": "Sorcerer-Thane Thaurissan"
-    },
-    "11671": {
-      "name": "Core Hound"
-    },
-    "11673": {
-      "name": "Ancient Core Hound"
-    },
-    "12119": {
-      "name": "Flamewaker Protector"
-    },
-    "11661": {
-      "name": "Flamewaker"
-    },
-    "12099": {
-      "name": "Firesworn"
-    },
-    "11662": {
-      "name": "Flamewaker Priest"
-    },
-    "11672": {
-      "name": "Core Rager"
-    },
-    "11663": {
-      "name": "Flamewaker Healer"
-    },
-    "11664": {
-      "name": "Flamewaker Elite"
-    },
-    "12143": {
-      "name": "Son of Flame"
-    },
-    "13148": {
-      "name": "Flame of Ragnaros"
-    },
-    "65021": {
-      "name": "Smoldaris"
     },
     "52146": {
       "name": "Small Incendic Egg"
@@ -1332,8 +1893,23 @@
     "52147": {
       "name": "Large Incendic Egg"
     },
+    "57642": {
+      "name": "Sorcerer-Thane Thaurissan"
+    },
     "57643": {
       "name": "Image of Sorcerer-Thane Thaurissan"
+    },
+    "65020": {
+      "name": "Basalthar"
+    },
+    "65021": {
+      "name": "Smoldaris"
+    },
+    "533001": {
+      "name": "Plague Fissure"
+    },
+    "533002": {
+      "name": "Plague Cloud"
     }
   }
 }

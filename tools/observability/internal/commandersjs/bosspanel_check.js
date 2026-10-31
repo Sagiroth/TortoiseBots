@@ -251,4 +251,45 @@ assert.ok(!B.render(T, p, { open: true, coverage: cov }).includes("fd-boss-cov")
 const venReal = B.model(REAL, { entry: 14507, hp: 60, au: [] }, [], 0, 0);
 assert.ok(B.render(REAL, venReal, { open: true, coverage: cov }).includes('href="#/coverage/zulgurub?boss=14507"'),
   "the head links to the raid's coverage card");
+
+// ---- Naxxramas phases: Noth and Gothik have no aura phase (29230 is passive and never sent), so every
+// ---- ability shows; Thaddius, Sapphiron and Kel'Thuzad still hide the other side's abilities.
+const noth = B.model(REAL, { entry: 15954, hp: 80, au: [] }, [], 0, 0);
+assert.strictEqual(noth.phase, "ground");
+assert.ok(noth.abilities.every((a) => a.inPhase), "no Noth aura phase: every ability shows");
+assert.strictEqual(noth.abilities.find((a) => a.sid === 29213).inPhase, true, "Curse shows");
+assert.strictEqual(noth.abilities.find((a) => a.sid === 29217).inPhase, true, "a champion summon shows");
+
+const gothik = B.model(REAL, { entry: 16060, hp: 80, au: [] }, [], 0, 0);
+assert.strictEqual(gothik.phase, "ground");
+assert.ok(gothik.abilities.every((a) => a.inPhase), "no Gothik aura phase: every ability shows");
+assert.strictEqual(gothik.abilities.find((a) => a.sid === 29317).inPhase, true, "Shadow Bolt shows");
+assert.strictEqual(gothik.abilities.find((a) => a.sid === 28679).inPhase, true, "Harvest Soul shows");
+
+const thaddAdds = B.model(REAL, { entry: 15928, hp: 100, au: [{ id: 28160 }] }, [], 0, 0);
+assert.strictEqual(thaddAdds.phase, "adds");
+assert.strictEqual(thaddAdds.abilities.find((a) => a.sid === 28125).inPhase, true, "War Stomp is an add-phase ability");
+assert.strictEqual(thaddAdds.abilities.find((a) => a.sid === 28089).inPhase, false, "Polarity Shift waits for Thaddius");
+const thaddFight = B.model(REAL, { entry: 15928, hp: 100, au: [] }, [], 0, 0);
+assert.strictEqual(thaddFight.phase, "fight");
+assert.strictEqual(thaddFight.abilities.find((a) => a.sid === 28089).inPhase, true);
+assert.strictEqual(thaddFight.abilities.find((a) => a.sid === 28125).inPhase, false);
+
+const sappAir = B.model(REAL, { entry: 15989, hp: 80, au: [], uf: "h" }, [], 0, 0);
+assert.strictEqual(sappAir.phase, "air");
+assert.strictEqual(sappAir.abilities.find((a) => a.sid === 28522).inPhase, true, "Icebolt is an air-phase ability");
+assert.strictEqual(sappAir.abilities.find((a) => a.sid === 19983).inPhase, false, "Cleave is ground-only");
+const sappGround = B.model(REAL, { entry: 15989, hp: 80, au: [], uf: "" }, [], 0, 0);
+assert.strictEqual(sappGround.phase, "ground");
+assert.strictEqual(sappGround.abilities.find((a) => a.sid === 19983).inPhase, true);
+assert.strictEqual(sappGround.abilities.find((a) => a.sid === 28522).inPhase, false);
+
+const ktAdds = B.model(REAL, { entry: 15990, hp: 100, au: [], uf: "i" }, [], 0, 0);
+assert.strictEqual(ktAdds.phase, "adds");
+assert.strictEqual(ktAdds.abilities.find((a) => a.sid === 29423).inPhase, true, "the channel is a phase-one ability");
+assert.strictEqual(ktAdds.abilities.find((a) => a.sid === 28478).inPhase, false, "Frostbolt waits for phase two");
+const ktFight = B.model(REAL, { entry: 15990, hp: 80, au: [], uf: "" }, [], 0, 0);
+assert.strictEqual(ktFight.phase, "fight");
+assert.strictEqual(ktFight.abilities.find((a) => a.sid === 28478).inPhase, true);
+assert.strictEqual(ktFight.abilities.find((a) => a.sid === 29423).inPhase, false);
 console.log("boss panel ok");
