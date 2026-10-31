@@ -56,6 +56,7 @@ zulgurub,14599,phase,p1,start,3,,,src/scripts/dungeons/zulgurub/boss_thekal.cpp:
 zulgurub,14599,add,11347,linked,0,,,src/scripts/dungeons/zulgurub/boss_thekal.cpp:58
 zulgurub,14599,add,11348,linked,0,,,src/scripts/dungeons/zulgurub/boss_thekal.cpp:59
 zulgurub,14599,add,15068,summon,0,,,src/scripts/dungeons/zulgurub/boss_thekal.cpp:41;src/scripts/dungeons/zulgurub/boss_thekal.cpp:413
+zulgurub,14599,alias,14509,,,,,src/scripts/dungeons/zulgurub/boss_thekal.cpp:358
 zulgurub,14599,note,,A dead high priest is resurrected after seven seconds unless the other two are dead too; all three must die inside one window.,,,,src/scripts/dungeons/zulgurub/boss_thekal.cpp:61;src/scripts/dungeons/zulgurub/boss_thekal.cpp:129-148
 zulgurub,14515,ability,24212,8000,15000,15000,p=troll;t=victim;aura,src/scripts/dungeons/zulgurub/boss_arlokk.cpp:47;src/scripts/dungeons/zulgurub/boss_arlokk.cpp:108;src/scripts/dungeons/zulgurub/boss_arlokk.cpp:214-217
 zulgurub,14515,ability,15582,6000,6000,12000,p=troll;t=victim;ok=tank,src/scripts/dungeons/zulgurub/boss_arlokk.cpp:52;src/scripts/dungeons/zulgurub/boss_arlokk.cpp:115;src/scripts/dungeons/zulgurub/boss_arlokk.cpp:222-225

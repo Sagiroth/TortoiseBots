@@ -92,6 +92,7 @@
 - Fixed: in a raid's walk, the main tank now joins a fight that broke out behind it (up to 55 yd) instead of standing parked.
 
 ### Dashboard
+- Fixed: Thekal keeps his boss panel and phase after he rises as his second form, his fight replay shows one panel instead of a second copy of it, and an add's link line finds him in either form; Skeram's images stay one panel marked ×N instead of one panel each.
 - Fixed: Emberseer's and Thaddius's ability timers count from the moment the fight phase starts, and Sartura's next Whirlwind counts from the end of the current one, so the boss panel's windows match the scripts.
 - Fixed: a priest who dies at the end of Spirit of Redemption is no longer named as his own killer (the enemy that hit him last is), and the Fight debugger's checks now list the deaths within 5 s of a named enemy cast, such as a Bat Rider's Unstable Concoction.
 - Fixed: the raid frames keep one size: a boss debuff no longer makes a tile taller, and its chips no longer cover the bot's name.

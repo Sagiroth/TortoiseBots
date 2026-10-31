@@ -31,6 +31,7 @@ CORE = [
     "void UpdateAI() { A_Timer = urand(14000, 16000); }",
     "SummonCreature(NPC_ADD, x);",
     "if (GetHealthPercent() < 50) m_bPhaseTwo = true;",
+    "m_creature->SetEntry(14509);",
 ]
 
 NAMES = {
@@ -151,6 +152,22 @@ def add(**kw):
         "c": "",
         "d": "",
         "source": "boss.cpp:2;boss.cpp:5",
+    }
+    row.update(kw)
+    return row
+
+
+def alias(**kw):
+    row = {
+        "map": "zulgurub",
+        "boss": "14517",
+        "row": "alias",
+        "key": "14509",
+        "a": "",
+        "b": "",
+        "c": "",
+        "d": "",
+        "source": "boss.cpp:7",
     }
     row.update(kw)
     return row
@@ -308,6 +325,81 @@ class BossDataTest(unittest.TestCase):
         errors, notes = fx.validate()
         self.assertEqual(errors, [])
         self.assertIn("db check skipped", notes)
+
+    def test_alias_row_builds(self):
+        # Spec failing case 1: today the build rejects the row kind, so the boss carries no alias.
+        rows = [ability(), add(), phase("p1", "start", 1, source="boss.cpp:3"), alias()]
+        fx = self.make(rows)
+        fx.rebuild()
+        self.assertEqual(boss_data.build_document(
+            boss_data.read_rows(fx.csv), boss_data.read_names(fx.names),
+            boss_data.read_raids(fx.raids), boss_data.read_code_answers(fx.answers), fx.dir,
+        )["bosses"]["14517"]["aliases"], [14509])
+        errors, _ = fx.validate()
+        self.assertEqual(errors, [])
+
+    def test_alias_that_is_a_boss_fails(self):
+        rows = [ability(), add(), phase("p1", "start", 1, source="boss.cpp:3"),
+                alias(key="14517", source="boss.cpp:7")]
+        fx = self.make(rows)
+        with self.assertRaises(boss_data.DataError) as caught:
+            boss_data.build_document(
+                boss_data.read_rows(fx.csv), boss_data.read_names(fx.names),
+                boss_data.read_raids(fx.raids), boss_data.read_code_answers(fx.answers), fx.dir)
+        self.assertIn("alias 14517 is itself a boss", str(caught.exception))
+
+    def test_alias_used_twice_fails(self):
+        rows = [ability(), add(), phase("p1", "start", 1, source="boss.cpp:3"), alias(),
+                alias(boss="14884", source="boss.cpp:2;boss.cpp:7")]
+        fx = self.make(rows)
+        with self.assertRaises(boss_data.DataError) as caught:
+            boss_data.build_document(
+                boss_data.read_rows(fx.csv), boss_data.read_names(fx.names),
+                boss_data.read_raids(fx.raids), boss_data.read_code_answers(fx.answers), fx.dir)
+        self.assertIn("alias 14509 already names boss 14517", str(caught.exception))
+
+    def test_duplicate_alias_fails(self):
+        rows = [ability(), add(), phase("p1", "start", 1, source="boss.cpp:3"), alias(), alias()]
+        fx = self.make(rows)
+        with self.assertRaises(boss_data.DataError) as caught:
+            boss_data.build_document(
+                boss_data.read_rows(fx.csv), boss_data.read_names(fx.names),
+                boss_data.read_raids(fx.raids), boss_data.read_code_answers(fx.answers), fx.dir)
+        self.assertIn("duplicate alias 14509", str(caught.exception))
+
+    def test_alias_that_is_an_add_fails(self):
+        rows = [ability(), add(), phase("p1", "start", 1, source="boss.cpp:3"),
+                alias(key="14884", source="boss.cpp:2;boss.cpp:5")]
+        fx = self.make(rows)
+        with self.assertRaises(boss_data.DataError) as caught:
+            boss_data.build_document(
+                boss_data.read_rows(fx.csv), boss_data.read_names(fx.names),
+                boss_data.read_raids(fx.raids), boss_data.read_code_answers(fx.answers), fx.dir)
+        self.assertIn("alias 14884 is an add of boss 14517", str(caught.exception))
+
+    def test_alias_with_values_fails(self):
+        rows = [ability(), add(), phase("p1", "start", 1, source="boss.cpp:3"), alias(a="summon")]
+        fx = self.make(rows)
+        with self.assertRaises(boss_data.DataError) as caught:
+            boss_data.build_document(
+                boss_data.read_rows(fx.csv), boss_data.read_names(fx.names),
+                boss_data.read_raids(fx.raids), boss_data.read_code_answers(fx.answers), fx.dir)
+        self.assertIn("alias rows use only key", str(caught.exception))
+
+    def test_alias_must_be_cited(self):
+        rows = [ability(), add(), phase("p1", "start", 1, source="boss.cpp:3"),
+                alias(source="boss.cpp:1")]
+        fx = self.make(rows)
+        fx.rebuild()
+        errors, _ = fx.validate()
+        self.assertTrue(any("cited lines do not define creature 14509" in e for e in errors), errors)
+
+    def test_committed_thekal_alias(self):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        bosses = boss_data.build_document(rows, names)["bosses"]
+        self.assertEqual(bosses["14599"]["aliases"], [14509])
+        self.assertNotIn("14509", bosses, "the second form is no boss of its own")
 
     def test_timer_must_match_its_cited_line(self):
         # Spec failing case 1: a=15000 citing a line that says 14000.

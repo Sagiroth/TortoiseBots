@@ -47,7 +47,10 @@ trigger header for map 249); it needs no citation column.
 | `ability` | spell id | first ms after pull, `0` = no timer | repeat min ms | repeat max ms (`b=c` constant, `0/0` one-shot) | flags |
 | `phase` | phase name | `hp<N>`, `aura=<spell>`, `flag=<letter>`, `start` | order, 1 checked first | | |
 | `add` | creature entry | `summon`/`linked`/`ward`/`totem`/`trigger` | kill priority, `0` none | | |
+| `alias` | creature entry | | | | |
 | `note` | | text shown under the panel | | | |
+
+An `alias` row names the boss under another entry (a mid-fight `SetEntry`/`UpdateEntry`); the page shows it on the boss's panel; cite the script line. An entry is one alias of one boss: a duplicate in the same block, an entry that is itself a boss, and an entry that is an add of any boss are refused.
 
 Ability flags, `;`-joined: `p=<phase>` (must be a phase row), `t=victim|random|self|aoe|ally`,
 `aura` (leaves an aura on players), `self` (an aura on the boss), `mark` (marked

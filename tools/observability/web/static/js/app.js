@@ -6525,25 +6525,29 @@
     let rows = [];
     if (fight) {
       const seen = {};
-      if (fight.boss) seen[fight.boss] = fight.boss_name || ('creature ' + fight.boss);
-      (fight.engaged || []).forEach(e => { if (e && e.e && !(e.e in seen)) seen[e.e] = e.n || ('creature ' + e.e); });
-      rows = Object.keys(seen).map(e => ({ entry: Number(e), name: seen[e], hp: null, au: [], uf: '' }));
+      if (fight.boss) seen[fight.boss] = { name: fight.boss_name || ('creature ' + fight.boss), c: 1 };
+      (fight.engaged || []).forEach(e => {
+        if (!e || !e.e) return;
+        const have = seen[e.e], c = Number(e.c) > 0 ? Number(e.c) : 1;
+        if (!have) { seen[e.e] = { name: e.n || ('creature ' + e.e), c: c }; return; }
+        if (!have.name || have.name === 'creature ' + e.e) have.name = e.n || have.name;
+        if (c > have.c) have.c = c;
+      });
+      rows = Object.keys(seen).map(e => ({ entry: Number(e), name: seen[e].name, hp: null, au: [], uf: '', c: seen[e].c }));
     } else {
       if (!bind.combat || !FightDebug.liveEngaged(bind)) return [];
       rows = (mobs || []).filter(m => m && (m.rank === 'b' || m.ghost));
     }
     const out = [];
-    rows.forEach(m => {
-      const b = panel.bossFor(table, m.entry);
-      if (!b) return;
+    panel.bossRows(table, rows).forEach(({ boss: b, row: m, copies }) => {
       const live = !fight;
-      const adds = live ? (mobs || []).filter(x => x && x !== m && ((x.sum && String(x.sum) === String(m.id))
+      const adds = live ? (mobs || []).filter(x => x && x !== m && panel.bossFor(table, x.entry) !== b && ((x.sum && String(x.sum) === String(m.id))
         || b.adds.some(a => a.entry === x.entry))) : [];
-      const phaseKey = bind.commander + '|' + (fight ? fight.id : 'live') + '|' + m.entry;
+      const phaseKey = bind.commander + '|' + (fight ? fight.id : 'live') + '|' + b.entry;
       const kept = fight ? null : cmdBossPhaseAt[phaseKey];
       // A kept phase-start map belongs to the fight that recorded it: a new pull starts more than 5 s from it.
       const phaseAt = fight ? null : kept && Math.abs(kept.start - startMs) > 5000 ? {} : (kept && kept.times) || {};
-      const model = panel.model(table, Object.assign({}, m, { adds: adds }), events || [], startMs, nowMs,
+      const model = panel.model(table, Object.assign({}, m, { adds: adds, copies: copies }), events || [], startMs, nowMs,
         { priorPhase: cmdBossPhase[phaseKey] || null, phaseAt: phaseAt });
       if (!model) return;
       if (model.phase) cmdBossPhase[phaseKey] = model.phase;
@@ -6581,10 +6585,13 @@
     const mobs = bind.mobs || [];
     const mem = cmdBossSeen[bind.commander] || (cmdBossSeen[bind.commander] = {});
     const present = {};
+    const panel = typeof BossPanel !== 'undefined' ? BossPanel : null;
     mobs.forEach(m => {
       if (!m || m.rank !== 'b' || m.entry == null) return;
-      present[m.entry] = true;
-      mem[m.entry] = { name: m.name || ('creature ' + m.entry), seenAt: now };
+      const b = panel && panel.bossFor ? panel.bossFor(cmdBossTable(), m.entry) : null;
+      const key = b ? b.entry : m.entry;
+      present[key] = true;
+      mem[key] = { name: (b && b.name) || m.name || ('creature ' + m.entry), seenAt: now };
     });
     // A boss the fight had and the module no longer reports (Arlokk vanished) is shown as not visible after two 2 s reports.
     const vanished = Object.keys(mem).filter(e => !present[e] && now - mem[e].seenAt >= 4000)
@@ -6607,9 +6614,13 @@
     if (!table || !panel || !m || m.rank !== 'b') return m;
     const b = panel.bossFor(table, m.entry);
     if (!b) return m;
-    const key = bind.commander + '|' + (bind.combat ? 'live' : 'idle') + '|' + m.entry;
+    const key = bind.commander + '|' + (bind.combat ? 'live' : 'idle') + '|' + b.entry;
     const ph = panel.phaseOf(b, m, cmdBossPhase[key] || null);
-    if (ph.phase) cmdBossPhase[key] = ph.phase;
+    // One latch per boss: only the row the panel follows (the lowest guid) may move it, or an image's own hp would rewrite
+    // the phase the original is in.
+    const kept = panel.bossRows(table, (bind.mobs || []).filter(x => x && (x.rank === 'b' || x.ghost))).find(r => r.boss.entry === b.entry);
+    const mine = kept && (kept.row === m || (kept.row.id != null && m.id != null && String(kept.row.id) === String(m.id)));
+    if (ph.phase && mine) cmdBossPhase[key] = ph.phase;
     return Object.assign({}, m, { phase: ph.phase });
   }
 

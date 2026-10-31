@@ -139,6 +139,18 @@ assert.strictEqual(links.length, 2);
 assert.strictEqual(links.find((l) => l.from.id === "7").to.id, "5", "the data's add entry links to the boss");
 assert.strictEqual(links.find((l) => l.from.id === "8").to.id, "5", "the summoner guid links an unknown add by itself");
 assert.strictEqual(links.find((l) => l.from.id === "7").priority, 0);
+// An add links to its boss in whatever form the boss is reported: Thekal is alive as his second entry (14509).
+const ZG = B.normalize({ bosses: [
+  { entry: 14599, name: "Thekal", map: 309, aliases: [14509], abilities: [], phases: [], notes: [],
+    adds: [{ entry: 15068, role: "summon", priority: 2 }] },
+] });
+const thekal = { id: "5", entry: 14509, name: "Thekal", rank: "b", hp: 60 };
+const tiger = { id: "9", entry: 15068, name: "Zulian Tiger", hp: 80 };
+const aliasLinks = B.addLinks(ZG, [thekal, tiger]);
+assert.strictEqual(aliasLinks.length, 1, "an add links to a boss reported under an alias entry");
+assert.strictEqual(aliasLinks[0].to.id, "5");
+assert.strictEqual(aliasLinks[0].priority, 2, "the data's kill priority is the boss's own row");
+assert.strictEqual(aliasLinks[0].role, "summon");
 
 // ---- marked: from a mark flag in the table, never a spell id in the page --------------------------------------
 const markTable = B.normalize({ bosses: [{ entry: 1, abilities: [{ spell: 24314, name: "Threatening Gaze", flags: "aura;mark" }] }] });
@@ -150,6 +162,41 @@ assert.strictEqual(B.markedBy(markTable, { db: [{ id: 1, n: "Sunder Armor" }] })
 assert.strictEqual(B.model(null, mob, ev, 0, 1), null);
 assert.strictEqual(B.render(null, p), "");
 assert.strictEqual(B.render(B.normalize({ bosses: [] }), p), "");
+
+// ---- one panel per boss: an alias entry is the boss in another form, same-entry copies join the lowest guid --------
+const ALIAS = B.normalize({ bosses: [
+  { entry: 14599, name: "Thekal", map: 309, aliases: [14509], abilities: [], phases: [], adds: [], notes: [] },
+  { entry: 15263, name: "Skeram", map: 531, aliases: [14507], abilities: [], phases: [], adds: [], notes: [] },
+  { entry: 14507, name: "Venoxis", map: 309, abilities: [], phases: [], adds: [], notes: [] },
+] });
+assert.strictEqual(B.bossFor(ALIAS, 14509).entry, 14599, "an alias entry resolves to its boss");
+assert.strictEqual(B.bossFor(ALIAS, 14507).entry, 14507, "a real boss entry wins over another boss's alias");
+assert.strictEqual(B.bossFor(ALIAS, "14509").entry, 14599, "an alias from JSON is matched as a number");
+const copies = B.bossRows(ALIAS, [{ id: "900", entry: 15263 }, { id: "12", entry: 15263 }, { id: "1000", entry: 15263 }]);
+assert.strictEqual(copies.length, 1, "three copies of one entry are one panel");
+assert.strictEqual(copies[0].row.id, "12", "the lowest guid is kept (length first, then the digits)");
+assert.strictEqual(copies[0].copies, 3);
+const aliased = B.bossRows(ALIAS, [{ id: "5", entry: 14509 }, { id: "4", entry: 14599 }]);
+assert.strictEqual(aliased.length, 1, "an alias and its boss are one panel");
+assert.strictEqual(aliased[0].boss.entry, 14599);
+assert.strictEqual(aliased[0].row.id, "4", "the original spawn is the row the panel follows");
+assert.strictEqual(aliased[0].copies, 1, "the alias form of the same unit adds no copy");
+// A finished fight's engaged entries carry no guid: their c is the count, and an alias entry is still the same unit.
+const thekalFight = B.bossRows(ALIAS, [{ entry: 14599, name: "Thekal", c: 1 }, { entry: 14509, name: "Thekal", c: 1 }]);
+assert.strictEqual(thekalFight.length, 1, "Thekal's two forms are one panel");
+assert.strictEqual(thekalFight[0].copies, 1, "two forms of one Thekal are not two copies");
+const images3 = B.bossRows(ALIAS, [{ entry: 15263, name: "Skeram", c: 3 }]);
+assert.strictEqual(images3.length, 1);
+assert.strictEqual(images3[0].copies, 3, "an id-less row carries the report's count");
+assert.strictEqual(B.bossRows(ALIAS, [{ entry: 15263, name: "Skeram" }])[0].copies, 1, "no count is one unit");
+assert.strictEqual(B.bossRows(ALIAS, [{ entry: 15263 }, { id: "7", entry: 15263 }])[0].row.id, "7",
+  "a row without a guid sorts last and never hides the original");
+assert.strictEqual(B.bossRows(ALIAS, [{ id: "1", entry: 1 }]).length, 0, "a row the table does not know is dropped");
+const copy3 = B.model(ALIAS, { entry: 15263, hp: 100, au: [], copies: 3 }, [], 0, 0);
+assert.strictEqual(copy3.copies, 3);
+assert.ok(B.render(ALIAS, copy3, {}).includes("×3"), "three in view are marked");
+assert.ok(!B.render(ALIAS, B.model(ALIAS, { entry: 15263, hp: 100, au: [] }, [], 0, 0), {}).includes("×"),
+  "one copy is not marked");
 
 // The committed table (tools/boss_data.py writes rules as objects): its phases must read as rules, not "[object Object]".
 const REAL = B.normalize(require(path.resolve(path.dirname(process.argv[2]), "../../data/boss_abilities.json")));
@@ -566,4 +613,8 @@ const jsonFlags = B.normalize({ bosses: [{ entry: 9004, abilities: [
   { key: "7", a: 0, b: 0, c: 0, d: "", dur: 15000, from: "fight" }], phases: [] }] });
 assert.deepStrictEqual(B.bossFor(jsonFlags, 9004).abilities[0].flags, { dur: 15000, from: "fight" },
   "the converter's dur/from fields reach the flags");
+
+// The committed table's alias: Thekal keeps one panel after he rises as his second form.
+assert.strictEqual(B.bossFor(REAL, 14509).entry, 14599, "the committed alias 14509 resolves to Thekal");
+assert.strictEqual(B.model(REAL, { entry: 14509, hp: 40, au: [] }, [], 0, 0).boss.entry, 14599);
 console.log("boss panel ok");
