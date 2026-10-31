@@ -38,8 +38,32 @@ bool Give(OrderRecord record);
 // All orders, for the per-tick update. World thread only.
 std::vector<OrderRecord> All();
 
-// Remove the bot's order (cancel, character deleted, guild left).
+// Remove the bot's order (cancel, character deleted, guild left). Cancelling
+// a parent removes its whole branch; children keep what they gathered (the
+// bank deposit path stands alone per order).
 bool Cancel(uint32_t botGuidLow);
+// A sub-order was placed or is already running: the giver becomes the
+// parent bot, the row goes live to the root giver. Called from a bot's
+// map-thread action; only the lock is touched there, the world thread does
+// the player and planner work in Update.
+bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count);
+// A working sub-order (or its whole branch, recursively) ended in cant or
+// was cancelled: the parent gets the item on its need list. World thread only.
+void NoteSubOrderFailed(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count);
+// Move a sub-order to another guild bot (`.bot order reassign`), recomputing
+// the order type for the new bot (craft when it knows the recipe, else
+// farm). World thread only (the `.bot order` command).
+bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, OrderType type);
+// Bot guids of a branch (the bot itself plus every sub-order below it).
+std::vector<uint32_t> BranchBots(uint32_t botGuidLow);
+// Durable module bots only for sub-order work: pool-account or claimed,
+// never autonomous alts or hires. Same-guild membership is checked live at
+// each call site (member rows plus GetGuildId()). World thread only.
+bool IsDurableOrderBot(uint32_t guidLow);
+// Whether a live bot can take a sub-order for the item: knows the recipe or
+// has a usable farm plan. Reads only the passed player; the world-thread
+// drain and the reassign path share it.
+bool SubOrderCandidateUsable(Player* bot, uint32_t itemId, bool& canMake, bool& canFarm);
 // Remember the zone the bot farms in (0 = re-plan next time), with its
 // position in the current farm plan and the item actually farmed there (the
 // order item, or the reagent of the current craft leg; 0 = the order item).
@@ -71,10 +95,6 @@ void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId);
 void ClearBankEmpty(uint32_t botGuidLow);
 // Drop parked refund stubs whose gold is back. World thread only (Update).
 void FinishRepaid();
-// A sub-order was placed or already exists. Worker C replaces the separate
-// false stub with the hierarchy-aware store implementation when merging.
-bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count);
-
 // A keep round landed in the bank: the order watches it from now on. Sets
 // the stocked state, the stock target back as the round's quota, and the
 // last bank look to now so the first re-check waits a full interval.

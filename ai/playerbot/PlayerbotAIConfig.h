@@ -661,6 +661,8 @@ public:
     bool guildOrderAlwaysActive;
     bool guildOrderBankWithdraw;
     bool guildOrderBankGold;
+    bool guildOrderSubOrders;
+    uint32_t guildOrderSubOrderDepth;
     uint32 botActiveAlone;
     uint32 minEnchantingBotLevel;
     // Ordered pull: DPS hold after the tank's pull lands (pull) or after the

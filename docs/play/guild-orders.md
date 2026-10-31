@@ -26,8 +26,10 @@ Open the TBM addon (`/tbm`), go to the **Guild** tab, press **Order** next to a 
 .bot order <BotName> cancel
 .bot order list
 .bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text>
+.bot order reassign <SubOrderBot> <NewBot>
 ```
-- **One order per bot.** A new order replaces the old one. `cancel` removes it and the bot goes back to normal life.
+- **One order per bot.** A new order replaces the old one. `cancel` removes it (and its whole sub-order branch) and the bot goes back to normal life.
+- **Sub-orders:** when the bot cannot get a material itself, it asks another bot in the guild to make or farm it. These show indented under the parent in the addon and deliver into the guild bank like normal orders, up to 3 levels deep (see [sub-order settings](../server/settings/guild-orders.md)). Cancelling a parent cancels its whole branch, but whatever the bots already gathered still reaches the guild bank. If a sub-order fails, its item goes on the parent's need list instead of failing the parent. Hand a sub-order to a different bot with `reassign` (same permission as giving orders).
 - **Amount:** 1-200. Only items that can go to the bank can be ordered (no bind-on-pickup, quest or temporary items); those never show up in the search.
 - **Hours:** optional whole hours 1-24; no hours given (or `inf`: `... 20 inf`, or `... 20 inf keep` with keep) means no time limit: the bot farms until it has the amount, however long it takes. A capped order farms that long in total per round (worked time only, like today's clock); when the time runs out without reaching the amount, the bot still brings what it has to the guild bank (or mails it to the guild master) and the order ends as `cant` with reason `timeout`. Bots farm like players: large amounts or rare drops can take very long or fail, so give reasonable orders.
 - **No progress:** every order, capped or not, ends when the bot worked 3 hours without gaining a single order item (a craft order watches its current reagent): the bot still brings what it holds to the guild bank (or mails it to the guild master) and the order ends as `cant` with reason `noprogress`. Any new item resets the 3 hours; a zone move does not.
@@ -64,7 +66,7 @@ When the amount is reached, the bot walks to a guild banker in a capital city an
 
 ## States
 
-`.bot order list` shows every order in your guild with have/want counts and the farm zone; the giver also gets live updates while it runs. A finished order stays visible until you cancel it or give a new one. Keep orders show `keep` after the hours field; other orders show `-` there.
+`.bot order list` shows every order in your guild with have/want counts and the farm zone, including sub-orders (indented under their parent by the addon); the giver also gets live updates while it runs. A finished order stays visible until you cancel it or give a new one. Keep orders show `keep` after the hours field; other orders show `-` there.
 
 | State | Meaning |
 | :--- | :--- |

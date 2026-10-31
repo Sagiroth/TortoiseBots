@@ -322,6 +322,7 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     record.botGuidLow = guid.GetCounter();
     record.guildId = guildId;
     record.giverGuidLow = requester->GetGUIDLow();
+    record.rootGiverGuidLow = requester->GetGUIDLow();
     record.type = type;
     record.itemId = itemId;
     record.amount = amount;
@@ -369,6 +370,67 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     // The next world-thread Update reports the new row to the giver.
 
     SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, typeToken);
+    return true;
+}
+bool HandleOrderReassign(ChatHandler* handler, Player* requester, std::string const& subBotName,
+    std::string const& newBotName)
+{
+    Player* subBot = nullptr;
+    ObjectGuid subGuid;
+    if (!ResolveOrderBot(subBotName, subBot, subGuid) || !IsOrderBot(subBot, subGuid))
+    {
+        OrderError(handler, "no-bot", "No such sub-order bot.");
+        return true;
+    }
+    Player* newBot = nullptr;
+    ObjectGuid newGuid;
+    if (!ResolveOrderBot(newBotName, newBot, newGuid) || !IsOrderBot(newBot, newGuid))
+    {
+        OrderError(handler, "no-bot", "No such bot.");
+        return true;
+    }
+    if (!CheckGiver(handler, requester, GuildOf(subBot, subGuid)))
+        return true;
+    std::optional<OrderRecord> sub = GuildOrders::Find(subGuid.GetCounter());
+    if (!sub || !sub->parentBotGuidLow)
+    {
+        OrderError(handler, "invalid", "That bot has no sub-order.");
+        return true;
+    }
+    if (GuildOf(newBot, newGuid) != sub->guildId)
+    {
+        OrderError(handler, "not-guild", "The new bot is not in the order's guild.");
+        return true;
+    }
+    if (GuildOrders::Find(newGuid.GetCounter()))
+    {
+        OrderError(handler, "invalid", "The new bot already has an order.");
+        return true;
+    }
+    Player* live = sObjectAccessor.FindPlayer(newGuid);
+    if (!live || !live->IsInWorld() || live->GetGuildId() != sub->guildId)
+    {
+        OrderError(handler, "no-bot", "The new bot is offline or not in the order's guild.");
+        return true;
+    }
+    if (!GuildOrders::IsDurableOrderBot(newGuid.GetCounter()))
+    {
+        OrderError(handler, "no-bot", "Only guild bots take sub-orders: never alts or hires.");
+        return true;
+    }
+    bool canMake = false, canFarm = false;
+    if (!GuildOrders::SubOrderCandidateUsable(live, sub->itemId, canMake, canFarm))
+    {
+        OrderError(handler, "noskill", "The new bot can neither make nor farm that item.");
+        return true;
+    }
+    if (!GuildOrders::ReassignSubOrder(subGuid.GetCounter(), newGuid.GetCounter(),
+        canMake ? GuildOrders::OrderType::Craft : GuildOrders::OrderType::Farm))
+    {
+        OrderError(handler, "invalid", "The sub-order could not be moved.");
+        return true;
+    }
+    SendActionAck(handler, "order", "bot:" + (subBot ? subBot->GetName() : subBotName), 1, "reassign");
     return true;
 }
 
@@ -508,6 +570,17 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         return HandleOrderSearch(handler, requester, bot, typeToken, text);
     }
 
+    // order reassign <subOrderBot> <newBot> | order <bot> cancel | order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
+    if (lower == "reassign")
+    {
+        std::string subBotName, newBotName;
+        if (!(in >> subBotName >> newBotName))
+        {
+            OrderError(handler, "invalid", "Usage: order reassign <subOrderBot> <newBot>.");
+            return true;
+        }
+        return HandleOrderReassign(handler, requester, subBotName, newBotName);
+    }
     // order <bot> cancel | order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
     std::string second;
     if (!(in >> second))
@@ -519,6 +592,7 @@ bool HandleOrder(ChatHandler* handler, char const* args)
     std::transform(lowerSecond.begin(), lowerSecond.end(), lowerSecond.begin(), ::tolower);
     if (lowerSecond == "cancel")
         return HandleOrderCancel(handler, requester, first);
+
 
     return HandleOrderGive(handler, requester, rest);
 }

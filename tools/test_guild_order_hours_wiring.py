@@ -1,8 +1,9 @@
-"""Guild order row carries the chosen farm time, keep flag and supply status.
+"""Guild order row carries the chosen farm time, keep flag, parent and supply status.
 
-runtime/GuildOrderStore.cpp appends <hours>, <keep>, parent, gold cap, step and
+runtime/GuildOrderStore.cpp appends <hours>, <keep>, <parent>, gold cap, step and
 need to TBM:ORDER while keeping every older field in place; the addon docs
 document the same shape. A give with no hours token stores no time limit.
+"""
 """
 import pathlib
 import unittest
@@ -14,7 +15,10 @@ ADDON = (ROOT / "docs/play/commands/addon.md").read_text()
 
 class GuildOrderHoursWiringTest(unittest.TestCase):
     def test_order_line_ends_with_hours(self):
-        self.assertIn('"|" + HoursToken(order.hours) + "|" + KeepToken(order.keep) + "|-|"', STORE)
+        self.assertIn('"|" + HoursToken(order.hours) + "|" + KeepToken(order.keep) + "|"', STORE)
+
+    def test_order_line_appends_parent(self):
+        self.assertIn('BotCommands::ProtocolSafe(order.parentBotGuidLow ? BotName(order.parentBotGuidLow) : "-")', STORE)
 
     def test_order_line_keeps_older_fields(self):
         self.assertIn('ReasonToken(order.reason) + "|" + BotCommands::ProtocolSafe(zone) + "|" + difficulty', STORE)

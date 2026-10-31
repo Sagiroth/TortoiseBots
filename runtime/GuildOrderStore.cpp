@@ -4,10 +4,18 @@
 #include "GuildOrderGiveUpPolicy.h"
 #include "GuildOrderKeepPolicy.h"
 #include "GuildOrderSourcesPolicy.h"
+#include "GuildOrderSubOrderPolicy.h"
 #include "../commands/CommandShared.h"
 #include "../host/ModuleLog.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/GuildOrderSources.h"
+#include "../ai/playerbot/GuildOrderCraft.h"
+#include "../ai/playerbot/PlayerbotAIConfig.h"
+#include "../runtime/BotManager.h"
+#include "../runtime/AltBotService.h"
+#include "../runtime/ClaimLifecycle.h"
+#include "../runtime/HireLifecycle.h"
+#include "../runtime/RandomBotAccountRegistry.h"
 #include "PlayerbotAIStorage.h"
 #include "Database/DatabaseEnv.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -39,6 +47,8 @@ namespace GuildOrders
 {
 namespace
 {
+using ::ai::FindCraftSpellFor;
+using ::ai::PlanGuildOrderSources;
 
 // Progress lines at most every 5 s per order; state changes always go out.
 inline constexpr uint32_t kProgressReportMs = 5000;
@@ -90,7 +100,7 @@ public:
         m_orders.clear();
 
         std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
-            "SELECT `bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
+            "SELECT `bot_guid`, `guild_id`, `giver_guid`, `parent_bot`, `root_giver`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
             "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
             "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
             "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
@@ -105,46 +115,49 @@ public:
                 record.botGuidLow = fields[0].GetUInt32();
                 record.guildId = fields[1].GetUInt32();
                 record.giverGuidLow = fields[2].GetUInt32();
-                ParseType(fields[3].GetCppString(), record.type);
-                record.itemId = fields[4].GetUInt32();
-                record.amount = fields[5].GetUInt32();
-                record.hours = fields[6].GetUInt32();
-                record.delivered = fields[7].GetUInt32();
-                ParseState(fields[8].GetCppString(), record.state);
-                ParseReason(fields[9].GetCppString(), record.reason);
-                record.farmZoneId = fields[10].GetUInt32();
-                record.farmChance = static_cast<uint8_t>(fields[11].GetUInt32());
-                record.farmItemId = fields[12].GetUInt32();
-                record.zoneIndex = fields[13].GetUInt32();
-                record.deathsInZone = fields[14].GetUInt32();
-                record.workedSinceNewItemSec = fields[15].GetUInt32();
-                record.workedTotalSec = fields[16].GetUInt32();
-                record.workedNoGainSec = fields[17].GetUInt32();
-                record.reportedHave = fields[18].GetUInt32();
-                record.farmRest = fields[19].GetUInt32() != 0;
-                record.keep = fields[20].GetUInt32() != 0;
-                record.stockTarget = fields[21].GetUInt32();
-                record.lastBankCheckMs = fields[22].GetUInt32();
-                record.createdAt = fields[23].GetUInt64();
-                record.updatedAt = fields[24].GetUInt64();
-                record.goldCap = fields[25].GetUInt32();
-                record.hasGoldCap = fields[26].GetUInt32() != 0;
-                record.guildGoldWithdrawn = fields[27].GetUInt32();
-                record.guildGoldHeld = fields[28].GetUInt32();
-                record.cancelled = fields[29].GetUInt32() != 0;
-                ParseSupplyStep(fields[30].GetCppString(), record.supplyStep);
-                ParseSupplyStep(fields[31].GetCppString(), record.supplyReturnStep);
-                record.supplyItemId = fields[32].GetUInt32();
-                record.supplyCount = fields[33].GetUInt32();
-                record.supplyGoldCount = fields[34].GetUInt32();
-                record.needItems = ParseNeedItems(fields[35].GetCppString());
-                record.needWhispered = fields[36].GetUInt32() != 0;
-                record.lastNeedWhisper = fields[37].GetCppString();
-                record.needBankDenied = fields[38].GetUInt32() != 0;
-
+                record.parentBotGuidLow = fields[3].GetUInt32();
+                record.rootGiverGuidLow = fields[4].GetUInt32();
+                ParseType(fields[5].GetCppString(), record.type);
+                record.itemId = fields[6].GetUInt32();
+                record.amount = fields[7].GetUInt32();
+                record.hours = fields[8].GetUInt32();
+                record.delivered = fields[9].GetUInt32();
+                ParseState(fields[10].GetCppString(), record.state);
+                ParseReason(fields[11].GetCppString(), record.reason);
+                record.farmZoneId = fields[12].GetUInt32();
+                record.farmChance = static_cast<uint8_t>(fields[13].GetUInt32());
+                record.farmItemId = fields[14].GetUInt32();
+                record.zoneIndex = fields[15].GetUInt32();
+                record.deathsInZone = fields[16].GetUInt32();
+                record.workedSinceNewItemSec = fields[17].GetUInt32();
+                record.workedTotalSec = fields[18].GetUInt32();
+                record.workedNoGainSec = fields[19].GetUInt32();
+                record.reportedHave = fields[20].GetUInt32();
+                record.farmRest = fields[21].GetUInt32() != 0;
+                record.keep = fields[22].GetUInt32() != 0;
+                record.goldCap = fields[23].GetUInt32();
+                record.hasGoldCap = fields[24].GetUInt32() != 0;
+                record.guildGoldWithdrawn = fields[25].GetUInt32();
+                record.guildGoldHeld = fields[26].GetUInt32();
+                record.cancelled = fields[27].GetUInt32() != 0;
+                ParseSupplyStep(fields[28].GetCppString(), record.supplyStep);
+                ParseSupplyStep(fields[29].GetCppString(), record.supplyReturnStep);
+                record.supplyItemId = fields[30].GetUInt32();
+                record.supplyCount = fields[31].GetUInt32();
+                record.supplyGoldCount = fields[32].GetUInt32();
+                record.needItems = ParseNeedItems(fields[33].GetCppString());
+                record.needWhispered = fields[34].GetUInt32() != 0;
+                record.lastNeedWhisper = fields[35].GetCppString();
+                record.needBankDenied = fields[36].GetUInt32() != 0;
+                record.stockTarget = fields[37].GetUInt32();
+                record.lastBankCheckMs = fields[38].GetUInt32();
+                record.createdAt = fields[39].GetUInt64();
+                record.updatedAt = fields[40].GetUInt64();
                 if (record.hours != kUnlimitedOrderHours &&
                     (record.hours < kMinOrderHours || record.hours > kMaxOrderHours))
                     record.hours = kDefaultOrderHours;
+                if (!record.rootGiverGuidLow && !record.parentBotGuidLow)
+                    record.rootGiverGuidLow = record.giverGuidLow;
                 if (record.botGuidLow && record.itemId && record.amount)
                     m_orders[record.botGuidLow] = Stored{record};
             } while (result->NextRow());
@@ -209,16 +222,17 @@ public:
         }
         if (!CharacterDatabase.DirectPExecute(
                 "REPLACE INTO `tortoise_bots_guild_order` "
-                "(`bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
+                "(`bot_guid`, `guild_id`, `giver_guid`, `parent_bot`, `root_giver`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
                 "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
                 "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
                 "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
                 "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
                 "`created_at`, `updated_at`) "
-                "VALUES ('%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
+                "VALUES ('%u', '%u', '%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
                 "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%s', '%u', '%s', '%u', '%u', '%u', "
                 "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
-                record.botGuidLow, record.guildId, record.giverGuidLow, TypeToken(record.type),
+                record.botGuidLow, record.guildId, record.giverGuidLow, record.parentBotGuidLow,
+                record.rootGiverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
                 ReasonToken(record.reason), record.farmZoneId, record.farmChance, record.farmItemId,
                 record.zoneIndex, record.deathsInZone, record.workedSinceNewItemSec,
@@ -261,7 +275,6 @@ public:
                 ++it;
         }
     }
-
     bool Cancel(uint32_t botGuidLow)
     {
         if (!botGuidLow)
@@ -294,12 +307,102 @@ public:
             }
             else
                 m_orders.erase(it);
+            ClearQueuedSubOrdersLocked(botGuidLow);
         }
         if (park)
             return true;
         CharacterDatabase.DirectPExecute(
             "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", botGuidLow);
         return true;
+    }
+
+    // Map-thread requests keyed by parent and item: one parent can hold
+    // several sub-order requests in parallel (different items, on different
+    // bots). RequestSupply only records them under the lock; Update drains
+    // and places them with live players and the planner.
+    struct QueuedSubOrder
+    {
+        uint32_t parentBotGuidLow = 0;
+        uint32_t itemId = 0;
+        uint32_t count = 0;
+        uint32_t nextTryMs = 0; // world uptime ms before this request retries
+    };
+
+    struct QueuedSubOrderKey
+    {
+        uint32_t parentBotGuidLow = 0;
+        uint32_t itemId = 0;
+        bool operator==(QueuedSubOrderKey const& other) const
+        {
+            return parentBotGuidLow == other.parentBotGuidLow && itemId == other.itemId;
+        }
+    };
+    struct QueuedSubOrderKeyHash
+    {
+        size_t operator()(QueuedSubOrderKey const& key) const
+        {
+            return static_cast<size_t>(key.parentBotGuidLow) * 31u + key.itemId;
+        }
+    };
+
+    bool QueueSubOrder(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_orders.find(parentBotGuidLow) == m_orders.end() || !itemId || !count)
+            return false;
+        QueuedSubOrderKey key{ parentBotGuidLow, itemId };
+        auto queued = m_queued.find(key);
+        // Same item, higher count: keep the larger need, never shrink a
+        // request another pass already sized.
+        if (queued != m_queued.end())
+        {
+            if (count > queued->second.count)
+                queued->second.count = count;
+            return true;
+        }
+        m_queued.emplace(key, QueuedSubOrder{ parentBotGuidLow, itemId, count });
+        return true;
+    }
+
+    std::vector<QueuedSubOrder> TakeDueQueuedSubOrders(uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<QueuedSubOrder> out;
+        for (auto const& [key, queued] : m_queued)
+        {
+            int32_t until = int32_t(queued.nextTryMs - nowMs);
+            if (until <= 0)
+                out.push_back(queued);
+        }
+        for (QueuedSubOrder const& due : out)
+            m_queued.erase(QueuedSubOrderKey{ due.parentBotGuidLow, due.itemId });
+        return out;
+    }
+
+    void RetryQueuedSubOrder(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count, uint32_t nextTryMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_orders.find(parentBotGuidLow) == m_orders.end() || !itemId || !count)
+            return;
+        QueuedSubOrderKey key{ parentBotGuidLow, itemId };
+        QueuedSubOrder& queued = m_queued[key];
+        queued.parentBotGuidLow = parentBotGuidLow;
+        queued.itemId = itemId;
+        if (count > queued.count)
+            queued.count = count;
+        queued.nextTryMs = nextTryMs;
+    }
+
+    void ClearQueuedSubOrders(uint32_t parentBotGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        ClearQueuedSubOrdersLocked(parentBotGuidLow);
+    }
+
+    void ClearQueuedSubOrdersLocked(uint32_t parentBotGuidLow)
+    {
+        for (auto it = m_queued.begin(); it != m_queued.end();)
+            it = it->second.parentBotGuidLow == parentBotGuidLow ? m_queued.erase(it) : std::next(it);
     }
 
     void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t zoneIndex, uint32_t farmItemId)
@@ -434,15 +537,26 @@ public:
     void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        auto it = m_orders.find(botGuidLow);
-        if (it == m_orders.end() || !amount)
+        if (!amount)
             return;
-        OrderRecord& record = it->second.record;
-        record.guildGoldWithdrawn = amount > UINT32_MAX - record.guildGoldWithdrawn ?
-            UINT32_MAX : record.guildGoldWithdrawn + amount;
-        record.guildGoldHeld = amount > UINT32_MAX - record.guildGoldHeld ?
-            UINT32_MAX : record.guildGoldHeld + amount;
-        MarkDirtyLocked(it->second);
+        // A child's withdrawal counts against every ancestor's cap up to
+        // the root: each row carries the inherited cap value, so charging
+        // the whole branch keeps one shared budget.
+        uint32_t current = botGuidLow;
+        for (size_t guard = 0; current && guard < 64; ++guard)
+        {
+            auto it = m_orders.find(current);
+            if (it == m_orders.end())
+                break;
+            OrderRecord& record = it->second.record;
+            record.guildGoldWithdrawn = amount > UINT32_MAX - record.guildGoldWithdrawn ?
+                UINT32_MAX : record.guildGoldWithdrawn + amount;
+            if (current == botGuidLow)
+                record.guildGoldHeld = amount > UINT32_MAX - record.guildGoldHeld ?
+                    UINT32_MAX : record.guildGoldHeld + amount;
+            MarkDirtyLocked(it->second);
+            current = record.parentBotGuidLow;
+        }
     }
 
     void ConsumeGuildGoldHeld(uint32_t botGuidLow, uint32_t amount)
@@ -670,9 +784,82 @@ public:
         std::lock_guard<std::mutex> lock(m_mutex);
         std::vector<uint32_t> out;
         for (auto const& [guid, stored] : m_orders)
-            if (stored.record.guildId == guildId)
+            if (stored.record.guildId == guildId && !stored.record.cancelled)
                 out.push_back(guid);
         return out;
+    }
+
+    std::vector<uint32_t> BranchBots(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<uint32_t> out;
+        auto root = m_orders.find(botGuidLow);
+        if (root == m_orders.end() || root->second.record.cancelled)
+            return out;
+        out.push_back(botGuidLow);
+        for (size_t i = 0; i < out.size(); ++i)
+            for (auto const& [guid, stored] : m_orders)
+                if (!stored.record.cancelled && stored.record.parentBotGuidLow == out[i])
+                    out.push_back(guid);
+        return out;
+    }
+
+    void NoteSubOrderFailed(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto parent = m_orders.find(parentBotGuidLow);
+        if (parent == m_orders.end() || IsFinished(parent->second.record.state) || !itemId || !count)
+            return;
+        // The failed sub-order leaves its item on the parent's need list:
+        // merge with the items already waiting so parallel sub-orders that
+        // fail together each keep their row. A return through the need state
+        // replaces whatever wait the parent entered first, so every dead
+        // end funnels through this one entry.
+        OrderRecord& record = parent->second.record;
+        bool merged = false;
+        for (NeedItem& need : record.needItems)
+        {
+            if (need.itemId != itemId)
+                continue;
+            if (count > need.count)
+                need.count = count;
+            merged = true;
+        }
+        if (!merged)
+            record.needItems.push_back(NeedItem{ itemId, count });
+        record.state = OrderState::Waiting;
+        record.reason = OrderReason::NeedItems;
+        record.supplyStep = SupplyStep::Need;
+        record.supplyReturnStep = SupplyStep::None;
+        record.supplyGoldCount = 0;
+        record.needWhispered = record.lastNeedWhisper == NeedItemsToken(record.needItems);
+        MarkDirtyLocked(parent->second);
+    }
+
+    bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, OrderType type)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto sub = m_orders.find(subOrderBotGuidLow);
+        auto target = m_orders.find(newBotGuidLow);
+        if (sub == m_orders.end() || target != m_orders.end())
+            return false;
+        if (!sub->second.record.parentBotGuidLow)
+            return false;
+        OrderRecord moved = sub->second.record;
+        m_orders.erase(sub);
+        ClearQueuedSubOrdersLocked(subOrderBotGuidLow);
+        moved.botGuidLow = newBotGuidLow;
+        moved.type = type;
+        moved.delivered = 0;
+        moved.state = OrderState::Working;
+        moved.reason = OrderReason::None;
+        moved.farmZoneId = 0;
+        moved.farmChance = 0;
+        moved.zoneIndex = 0;
+        moved.reportedHave = 0;
+        m_orders[newBotGuidLow] = Stored{moved};
+        MarkDirtyLocked(m_orders[newBotGuidLow]);
+        return true;
     }
 
     // One locked read-modify-write per Update pass: take the row, fold the
@@ -1112,6 +1299,7 @@ private:
 
     std::mutex m_mutex;
     std::unordered_map<uint32_t, Stored> m_orders;
+    std::unordered_map<QueuedSubOrderKey, QueuedSubOrder, QueuedSubOrderKeyHash> m_queued;
     bool m_initialized = false;
 };
 
@@ -1185,9 +1373,172 @@ uint32_t BankItemCount(uint32_t guildId, uint32_t itemId)
     return fields ? fields[0].GetUInt32() : 0;
 }
 
+// Depth of the bot's branch: top-level orders count 1, each parent link adds
+// one. Queued requests are not rows yet, so the branch is only placed rows.
+size_t BranchDepth(uint32_t botGuidLow)
+{
+    size_t depth = 0;
+    uint32_t current = botGuidLow;
+    for (size_t guard = 0; guard < 64 && current; ++guard)
+    {
+        std::optional<OrderRecord> row = Find(current);
+        if (!row)
+            break;
+        ++depth;
+        current = row->parentBotGuidLow;
+    }
+    return depth;
+}
+
+// Items already on the branch from the root to the parent, for the loop
+// guard: the same item never appears twice in one branch.
+std::vector<uint32_t> BranchItems(uint32_t parentBotGuidLow)
+{
+    std::vector<uint32_t> items;
+    uint32_t current = parentBotGuidLow;
+    for (size_t guard = 0; guard < 64 && current; ++guard)
+    {
+        std::optional<OrderRecord> row = Find(current);
+        if (!row)
+            break;
+        items.push_back(row->itemId);
+        current = row->parentBotGuidLow;
+    }
+    return items;
+}
+// Busy-only requests retry on the shared policy timer instead of every
+// tick: one member query per queued request per retry interval.
+// Durable module bots only: claimed into a guild, or on a random-pool
+// account. Never autonomous alts, never hired bots (they belong to a
+// player), never real players' own characters. Same-guild membership is a
+// separate live check at each call site (member rows plus GetGuildId()).
+bool IsDurableOrderBot(uint32_t guidLow)
+{
+    if (!guidLow)
+        return false;
+    ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
+    if (!BotManager::Instance().IsBot(guid))
+        return false;
+    if (AltBotService::Instance().IsAutonomous(guidLow))
+        return false;
+    if (HireLifecycle::Instance().IsHired(guid))
+        return false;
+    if (ClaimLifecycle::Instance().IsClaimed(guidLow))
+        return true;
+    uint32_t accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid);
+    return accountId && RandomBotAccountRegistry::Instance().IsRegistered(accountId);
+}
+
+void SendOrderLine(OrderRecord const& order, uint32_t have);
+// One drained queue entry: pick a durable guild bot that can make the item,
+// or farm it when no maker is free. A member-list query runs once per due
+// request per retry interval, never every tick: busy-only candidates
+// re-queue with a 45 s timer, and depth/loop/no-candidate failures report
+// through the single failure entry instead of retrying.
+bool PlaceSubOrders(uint32_t nowMs)
+{
+    if (!sPlayerbotAIConfig.guildOrderSubOrders)
+        return false;
+    uint32_t maxDepth = sPlayerbotAIConfig.guildOrderSubOrderDepth;
+    if (maxDepth < 1 || maxDepth > 16)
+        maxDepth = kSubOrderDefaultDepth;
+    std::vector<OrderStore::QueuedSubOrder> queued = OrderStore::Instance().TakeDueQueuedSubOrders(nowMs);
+    if (queued.empty())
+        return false;
+    bool placedAny = false;
+    for (OrderStore::QueuedSubOrder const& request : queued)
+    {
+        if (!request.itemId || !request.count)
+            continue;
+        std::optional<OrderRecord> parent = Find(request.parentBotGuidLow);
+        if (!parent || IsFinished(parent->state))
+            continue;
+        // Every terminal path below reports through the failure entry: the
+        // parent never waits on a request that cannot become a running row.
+        if (!SubOrderDepthAllows(BranchDepth(parent->botGuidLow), maxDepth))
+        {
+            NoteSubOrderFailed(parent->botGuidLow, request.itemId, request.count);
+            continue;
+        }
+        std::vector<uint32_t> branch = BranchItems(parent->botGuidLow);
+        if (!SubOrderLoopFree(request.itemId, branch.data(), branch.size()))
+        {
+            NoteSubOrderFailed(parent->botGuidLow, request.itemId, request.count);
+            continue;
+        }
+        std::vector<SubOrderCandidate> candidates;
+        std::unique_ptr<QueryResult> members(CharacterDatabase.PQuery(
+            "SELECT `guid` FROM `guild_member` WHERE `guildid` = '%u'", parent->guildId));
+        if (members)
+        {
+            do
+            {
+                Field* fields = members->Fetch();
+                uint32_t guidLow = fields[0].GetUInt32();
+                if (!guidLow || guidLow == parent->botGuidLow)
+                    continue;
+                ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
+                Player* bot = sObjectAccessor.FindPlayer(guid);
+                if (!bot || !bot->IsInWorld() || bot->GetGuildId() != parent->guildId)
+                    continue;
+                if (!IsDurableOrderBot(guidLow))
+                    continue;
+                SubOrderCandidate candidate;
+                candidate.botGuidLow = guidLow;
+                candidate.online = true;
+                std::optional<OrderRecord> existing = Find(guidLow);
+                candidate.hasOrder = existing.has_value() && !existing->cancelled;
+                if (candidate.hasOrder)
+                {
+                    bool make = false, farm = false;
+                    if (SubOrderCandidateUsable(bot, request.itemId, make, farm))
+                        candidate.queuedBusy = true;
+                    else
+                        continue;
+                    candidates.push_back(candidate);
+                }
+                else if (!SubOrderCandidateUsable(bot, request.itemId, candidate.canMake, candidate.canFarm))
+                    continue;
+                else
+                    candidates.push_back(candidate);
+            } while (members->NextRow());
+        }
+        bool queuedOut = false;
+        size_t picked = PickSubOrderCandidate(candidates.data(), candidates.size(), queuedOut);
+        SubOrderPick pick = ClassifySubOrderPick(picked, candidates.size(), queuedOut);
+        if (pick == SubOrderPick::Take)
+        {
+            OrderRecord record;
+            record.botGuidLow = candidates[picked].botGuidLow;
+            record.guildId = parent->guildId;
+            record.giverGuidLow = parent->botGuidLow;
+            record.parentBotGuidLow = parent->botGuidLow;
+            record.rootGiverGuidLow = parent->rootGiverGuidLow ? parent->rootGiverGuidLow : parent->giverGuidLow;
+            record.goldCap = parent->goldCap;
+            record.hasGoldCap = parent->hasGoldCap;
+            if (!Give(record))
+            {
+                OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
+                    request.count, nowMs + kSubOrderRetryMs);
+                continue;
+            }
+            placedAny = true;
+            if (std::optional<OrderRecord> placed = Find(record.botGuidLow))
+                SendOrderLine(*placed, 0);
+        }
+        else if (pick == SubOrderPick::Queued)
+            OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
+                request.count, nowMs + kSubOrderRetryMs);
+        else
+            NoteSubOrderFailed(parent->botGuidLow, request.itemId, request.count);
+    }
+    return placedAny;
+}
+
 void SendOrderLine(OrderRecord const& order, uint32_t have)
 {
-    Player* giver = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.giverGuidLow));
+    uint32_t giverLow = order.rootGiverGuidLow ? order.rootGiverGuidLow : order.giverGuidLow;
+    Player* giver = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, giverLow));
     if (!giver || !giver->IsInWorld())
         return;
     giver->SendAddonMessage("TBM", FormatOrderLine(order.guildId, order, have));
@@ -1217,6 +1568,22 @@ void SendNeedWhisper(OrderRecord const& order)
 }
 
 } // namespace
+
+bool SubOrderCandidateUsable(Player* bot, uint32_t itemId, bool& canMake, bool& canFarm)
+{
+    canMake = false;
+    canFarm = false;
+    if (!bot || !bot->IsInWorld() || !itemId)
+        return false;
+    if (FindCraftSpellFor(bot, itemId))
+    {
+        canMake = true;
+        return true;
+    }
+    SourcePlan plan = ai::PlanGuildOrderSources(bot, itemId, OrderType::Farm);
+    canFarm = plan.verdict == OrderReason::None && !plan.zones.empty();
+    return canFarm;
+}
 
 bool IsAvailable()
 {
@@ -1251,14 +1618,83 @@ bool Give(OrderRecord record)
 
 bool Cancel(uint32_t botGuidLow)
 {
+    std::optional<OrderRecord> doomed = Find(botGuidLow);
+    uint32_t parent = doomed ? doomed->parentBotGuidLow : 0;
+    uint32_t itemId = doomed ? doomed->itemId : 0;
+    uint32_t amount = doomed ? doomed->amount : 0;
+    std::vector<uint32_t> branch = OrderStore::Instance().BranchBots(botGuidLow);
     bool gone = OrderStore::Instance().Cancel(botGuidLow);
     if (gone)
     {
         OnDeliveryOrderGone(botGuidLow);
         OnSupplyOrderGone(botGuidLow);
         ExpireGuildOrderTarget(botGuidLow);
+        for (uint32_t child : branch)
+        {
+            if (child == botGuidLow)
+                continue;
+            OrderStore::Instance().Cancel(child);
+            OnDeliveryOrderGone(child);
+            ExpireGuildOrderTarget(child);
+        }
+        if (parent)
+            NoteSubOrderFailed(parent, itemId, amount);
     }
     return gone;
+}
+
+bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
+{
+    if (!sPlayerbotAIConfig.guildOrderSubOrders || !itemId || !count)
+        return false;
+    std::optional<OrderRecord> parent = Find(parentBotGuidLow);
+    if (!parent)
+        return false;
+    std::optional<OrderRecord> existing;
+    // Parked refund stubs are invisible here: BranchBots skips them, and a
+    // stub never counts as a running row for the busy check either.
+    for (uint32_t child : OrderStore::Instance().BranchBots(parentBotGuidLow))
+    {
+        if (child == parentBotGuidLow)
+            continue;
+        std::optional<OrderRecord> row = Find(child);
+        if (row && row->itemId == itemId && !IsFinished(row->state))
+            existing = row;
+    }
+    if (existing)
+        return true;
+    return OrderStore::Instance().QueueSubOrder(parentBotGuidLow, itemId, count);
+}
+
+void NoteSubOrderFailed(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
+{
+    OrderStore::Instance().NoteSubOrderFailed(parentBotGuidLow, itemId, count);
+}
+
+bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, OrderType type)
+{
+    bool moved = OrderStore::Instance().ReassignSubOrder(subOrderBotGuidLow, newBotGuidLow, type);
+    if (!moved)
+        return false;
+    CharacterDatabase.DirectPExecute(
+        "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", subOrderBotGuidLow);
+    std::optional<OrderRecord> row = Find(newBotGuidLow);
+    if (!row)
+        return false;
+    OrderRecord record = *row;
+    if (!OrderStore::Instance().Give(record))
+    {
+        NoteSubOrderFailed(record.parentBotGuidLow, record.itemId, record.amount);
+        OrderStore::Instance().Cancel(newBotGuidLow);
+        return false;
+    }
+    SendOrderLine(record, row->reportedHave);
+    return true;
+}
+
+std::vector<uint32_t> BranchBots(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().BranchBots(botGuidLow);
 }
 
 void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t zoneIndex, uint32_t farmItemId)
@@ -1390,7 +1826,8 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
            BotCommands::ProtocolSafe(itemName) + "|" + std::to_string(have) + "|" +
            std::to_string(order.amount) + "|" + StateToken(order.state) + "|" +
            ReasonToken(order.reason) + "|" + BotCommands::ProtocolSafe(zone) + "|" + difficulty +
-           "|" + HoursToken(order.hours) + "|" + KeepToken(order.keep) + "|-|" +
+           "|" + HoursToken(order.hours) + "|" + KeepToken(order.keep) + "|" +
+           BotCommands::ProtocolSafe(order.parentBotGuidLow ? BotName(order.parentBotGuidLow) : "-") + "|" +
            (order.hasGoldCap ? std::to_string(order.goldCap) : "-") + "|" +
            SupplyStepToken(order.supplyStep) + "|" + NeedItemsToken(order.needItems);
 }
@@ -1400,12 +1837,33 @@ void Initialize()
     OrderStore::Instance().Initialize();
 }
 
+// A finished child deposited into the guild bank: clear the parent's
+// empty-bank memory for that item so the parent's next ladder pass retries
+// the bank step instead of skipping it for the cooldown. Cheap: one scan
+// over finished child rows per Update, no bank reads here.
+void WakeParentsOfDeliveredChildren()
+{
+    for (OrderRecord const& snapshot : OrderStore::Instance().All())
+    {
+        if (!snapshot.parentBotGuidLow || snapshot.cancelled)
+            continue;
+        if (snapshot.state != OrderState::Done && snapshot.state != OrderState::Stocked)
+            continue;
+        std::optional<OrderRecord> parent = Find(snapshot.parentBotGuidLow);
+        if (!parent || parent->cancelled || parent->state == OrderState::Waiting)
+            continue;
+        if (parent->bankEmptyItemId == snapshot.itemId && snapshot.itemId)
+            OrderStore::Instance().ClearBankEmpty(parent->botGuidLow);
+    }
+}
+
 void Update(uint32_t diff)
 {
     // Give-up and progress ticks run per order, not per bot tick: orders are
     // few, bots are many. The only place that looks up players and sends
     // live updates; map-thread mutators only mark rows dirty.
     uint32_t now = WorldTimer::getMSTime();
+    PlaceSubOrders(now);
     for (OrderRecord const& snapshot : OrderStore::Instance().All())
     {
         uint32_t guidLow = snapshot.botGuidLow;
@@ -1474,6 +1932,21 @@ void Update(uint32_t diff)
         if (out.legChanged)
             ExpireGuildOrderTarget(guidLow);
     }
+    for (OrderRecord const& snapshot : OrderStore::Instance().All())
+    {
+        if (!snapshot.parentBotGuidLow || snapshot.state != OrderState::Cant)
+            continue;
+        std::optional<OrderRecord> parent = Find(snapshot.parentBotGuidLow);
+        if (!parent || parent->state == OrderState::Cant)
+        {
+            OrderStore::Instance().Cancel(snapshot.botGuidLow);
+            continue;
+        }
+        if (parent->state == OrderState::Waiting)
+            NoteSubOrderFailed(snapshot.parentBotGuidLow, snapshot.itemId, snapshot.amount);
+        OrderStore::Instance().Cancel(snapshot.botGuidLow);
+    }
+    WakeParentsOfDeliveredChildren();
     UpdateDeliveries();
     UpdateSupplyWithdrawals();
     UpdateGoldRefunds();

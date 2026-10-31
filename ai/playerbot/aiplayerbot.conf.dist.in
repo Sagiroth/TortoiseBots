@@ -659,6 +659,13 @@ AiPlayerbot.GuildOrderBankWithdraw = 1
 # Guild orders may use guild bank money for auction house purchases after the bot's own gold.
 # Default 1. Guild bank access is still limited by the core's rank rules.
 AiPlayerbot.GuildOrderBankGold = 1
+# Let working orders ask another guild bot to make or farm a missing reagent (a sub-order).
+# Default 1. Each part of the supply chain has its own switch.
+AiPlayerbot.GuildOrderSubOrders = 1
+
+# How deep sub-orders may nest (ore, then bars, then armor): the same item never
+# appears twice in one branch. Out of range values fall back to 3.
+AiPlayerbot.GuildOrderSubOrderDepth = 3
 
 # Limit combat activity for slight performance boost.
 #AiPlayerbot.LimitCombatActivity = 0

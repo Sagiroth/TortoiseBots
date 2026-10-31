@@ -195,7 +195,7 @@ nodes:
   - id: server-settings-guild-orders
     path: server/settings/guild-orders.md
     category: server
-    summary: Configuration switches for guild bank supplies and guild bank gold used by bot orders.
+    summary: Configuration switches for guild bank supplies, guild bank gold and sub-orders between guild bots.
   - id: server-settings-queues
     path: server/settings/queues.md
     category: server
@@ -241,7 +241,7 @@ nodes:
   - id: developers-guild-supply
     path: developers/guild-supply.md
     category: developers
-    summary: Supply ladder, persisted order progress, bank withdrawals and needitems recovery.
+    summary: Supply ladder, persisted order progress, bank withdrawals, needitems recovery, and sub-orders between guild bots.
   - id: developers-strategy-engine
     path: developers/strategy-engine.md
     category: developers
