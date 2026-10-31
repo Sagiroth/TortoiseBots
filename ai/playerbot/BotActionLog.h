@@ -44,6 +44,9 @@ public:
     // Guid-keyed close for logout/shutdown, where the Player object is
     // already gone but the low guid was recorded at login.
     static void Close(uint32 botGuidLow);
+    // Next login for this guid: allow Open again after the logout tombstone.
+    // World thread, before the AI is published to storage.
+    static void NoteLogin(uint32 botGuidLow);
 
     // Get the open handle for this bot, or null if not open. Cheap.
     static std::FILE* GetHandle(PlayerbotAI* ai);
@@ -110,6 +113,9 @@ private:
     };
     static std::unordered_map<uint32, ScopeState> sScope;
     static std::unordered_set<uint32> sTraced;
+    // Guids whose AI is gone. A map-thread hook may still hold the dead AI
+    // pointer; refusing its reopen keeps logout from leaking a fresh fd.
+    static std::unordered_set<uint32> sRetired;
 
     static bool ScopeAllowedLocked(uint32 guid);
     static void AppendLine(PlayerbotAI* ai, const char* line, size_t len);
