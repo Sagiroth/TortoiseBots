@@ -681,8 +681,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 148)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 705)
+        self.assertEqual(len(doc["bosses"]), 184)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 806)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -1437,6 +1437,8 @@ SPELL_SOURCE_COLUMNS = {
     "entry", "attributes", "attributesEx", "preventionType", "interruptFlags",
     "channelInterruptFlags", "castingTimeIndex",
     "effect1", "effect2", "effect3",
+    "effectImplicitTargetA1", "effectImplicitTargetA2", "effectImplicitTargetA3",
+    "effectImplicitTargetB1", "effectImplicitTargetB2", "effectImplicitTargetB3",
     "effectApplyAuraName1", "effectApplyAuraName2", "effectApplyAuraName3",
 }
 SPELL_MOD_COLUMNS = {
@@ -2720,6 +2722,268 @@ class DungeonTrollValueTest(unittest.TestCase):
                     self.assertEqual(boss["phases"], [], boss["name"])
                 for ability in boss["abilities"]:
                     self.assertEqual(ability["castMs"], 0, ability["name"])
+
+
+class DungeonCustomEarlyValueTest(unittest.TestCase):
+    """Pins every Frostmane Hollow, Crescent Grove, Windhorn Canyon, Dragonmaw
+    Retreat and Gilneas City row read off the core sources.
+
+    The fixture is written from the world dumps and scripts, not generated from
+    the CSV: creature_spells timers are seconds and stay 0 in the columns, EventAI
+    and script timers are ms and stay in the columns. Only Celia and Mortimer
+    have phases: their 50% display change really stops the human kit.
+    """
+
+    MAPS = (
+        "frostmane_hollow",
+        "crescent_grove",
+        "windhorn_canyon",
+        "dragonmaw_retreat",
+        "gilneas_city",
+    )
+
+    # creature_spells CF_TRIGGERED (ScriptMgr.h:1192) makes the cast instant, so
+    # there is no cast bar to kick: 201060 and 201061 cast 11922, 12471 and 12468
+    # with castFlags 6, and Oboka 63132 casts Healing Wave 8005 with castFlags 2.
+    TRIGGERED_CASTS = {11922, 12471, 12468, 8005}
+
+    ABILITIES = {
+        (63131, 28131): ("0", "0", "0", "t=self;self;hp25;ok.purge=nopurge"),
+        (63129, 6141): ("0", "0", "0", "t=aoe;ground;aura;int"),
+        (63129, 837): ("0", "0", "0", "t=victim;aura;int"),
+        (63133, 3143): ("0", "0", "0", "t=aoe;aura;int;ok.interrupt=nokick"),
+        (63133, 19134): ("0", "0", "0", "t=aoe;aura;hp50"),
+        (63130, 16803): ("0", "0", "0", "t=aoe;aura"),
+        (63130, 8406): ("0", "0", "0", "t=victim;aura;int"),
+        (63130, 41592): ("0", "0", "0", "t=self;self"),
+        (63132, 8005): ("0", "0", "0", "t=ally;ok=heal"),
+        (92107, 12057): ("0", "0", "0", "t=victim;ok=tank"),
+        (92107, 10101): ("0", "0", "0", "t=victim;ok=tank"),
+        (92107, 9839): ("0", "0", "0", "t=ally;self"),
+        (92109, 6780): ("0", "0", "0", "t=victim;int"),
+        (92109, 11922): ("0", "0", "0", "t=victim;aura"),
+        (92109, 8941): ("0", "0", "0", "t=self;self;int"),
+        (92108, 23380): ("0", "0", "0", "t=victim;aura"),
+        (92108, 25298): ("0", "0", "0", "t=victim;int"),
+        (92111, 7357): ("0", "0", "0", "t=victim;aura"),
+        (92111, 15667): ("0", "0", "0", "t=victim;ok=tank"),
+        (92111, 13877): ("0", "0", "0", "t=self;self;ok.purge=nopurge"),
+        (92110, 15579): ("0", "0", "0", "t=victim;ok=tank"),
+        (92110, 12471): ("0", "0", "0", "t=victim;ok=tank"),
+        (92110, 12468): ("0", "0", "0", "t=aoe;ground;aura"),
+        (62784, 16044): ("0", "0", "0", "t=victim;ok=tank"),
+        (62784, 16727): ("0", "0", "0", "t=aoe;aura"),
+        (62784, 28131): ("0", "0", "0", "t=self;self;hp15;ok.purge=nopurge"),
+        (62783, 22355): ("0", "0", "0", "t=random;ok=heal"),
+        (62783, 6982): ("0", "0", "0", "t=aoe;aura;int"),
+        (62783, 36578): ("0", "0", "0", "t=aoe;aura;self;hp50;ok.purge=nopurge;ok.dispel=nodispel"),
+        (62780, 11445): ("0", "14000", "31000", "t=self;self"),
+        (62780, 57747): ("0", "17000", "22000", "t=aoe;ground;aura;int"),
+        (62780, 42004): ("0", "0", "0", "t=self;summon=61410;hp50;int;ok.interrupt=nokick"),
+        (62781, 11672): ("0", "0", "0", "t=random;aura;int"),
+        (62781, 11712): ("0", "0", "0", "t=random;aura"),
+        (62781, 57748): ("0", "0", "0", "t=aoe;ok=heal"),
+        (62779, 6266): ("0", "0", "0", "t=aoe;aura"),
+        (62779, 14030): ("0", "0", "0", "t=random;aura;int;ok.interrupt=nokick"),
+        (62779, 11554): ("0", "0", "0", "t=aoe;aura"),
+        (62782, 19471): ("0", "0", "0", "t=random;ok=heal"),
+        (62782, 41121): ("0", "0", "0", "t=aoe;aura;int"),
+        (62778, 23105): ("0", "0", "0", "t=aoe;ground;aura"),
+        (62778, 945): ("0", "0", "0", "t=self;self"),
+        (62778, 12882): ("0", "0", "0", "t=aoe;cone"),
+        (62056, 22415): ("0", "12000", "15000", "t=random;aura;int"),
+        (62056, 19513): ("0", "18000", "24000", "t=aoe;ground;aura"),
+        (62056, 10395): ("0", "8000", "11000", "t=ally;int"),
+        (62057, 8715): ("0", "0", "0", "t=aoe;aura;hp50"),
+        (62072, 8401): ("0", "18000", "23000", "t=random;aura;int"),
+        (62072, 16396): ("0", "28000", "36000", "t=aoe;cone;int"),
+        (62072, 12882): ("0", "15000", "18000", "t=aoe;cone"),
+        (62072, 52249): ("0", "0", "0", "t=self;self;ok.purge=nopurge"),
+        (62069, 11711): ("0", "14000", "18000", "t=random;aura"),
+        (62069, 17311): ("0", "10000", "14000", "t=random;aura;int"),
+        (62069, 22884): ("0", "0", "0", "t=aoe;aura;hp50"),
+        (62037, 52042): ("0", "14000", "18000", "t=random;aura;int;ok.interrupt=nokick"),
+        (62037, 52044): ("0", "0", "0", "t=self;self;hp50;ok.purge=nopurge"),
+        (62037, 52045): ("0", "0", "0", "t=aoe;aura"),
+        (62037, 52046): ("0", "0", "0", "t=self;self"),
+        (62066, 13884): ("0", "0", "0", "t=random;aura"),
+        (62066, 22595): ("0", "0", "0", "t=aoe;ok=heal"),
+        (62068, 6864): ("0", "0", "0", "t=self;self"),
+        (62068, 12734): ("0", "0", "0", "t=aoe;aura"),
+        (62068, 3574): ("0", "0", "0", "t=self;self"),
+        (62070, 13444): ("0", "0", "0", "t=victim;aura;ok.dispel=nodispel"),
+        (62070, 15588): ("0", "0", "0", "t=aoe;aura"),
+        (62070, 16095): ("0", "0", "0", "t=random;aura;ok.dispel=nodispel"),
+        (62071, 18958): ("0", "0", "0", "t=random;aura"),
+        (62071, 10452): ("0", "0", "0", "t=random;aura;int"),
+        (62071, 6725): ("0", "0", "0", "t=aoe;ground;aura;int"),
+        (62038, 15038): ("0", "0", "0", "t=self;summon=9637"),
+        (62038, 15786): ("0", "0", "0", "t=self;summon=2630"),
+        (62038, 930): ("0", "0", "0", "t=random;int"),
+        (62038, 8264): ("0", "0", "0", "t=self;summon=6017"),
+        (62038, 6041): ("0", "0", "0", "t=random;int"),
+        (61419, 2643): ("0", "13000", "13000", "t=random;ok=heal"),
+        (61419, 13608): ("0", "0", "0", "t=victim;aura;int;ok.interrupt=nokick"),
+        (61419, 8413): ("0", "0", "0", "t=victim;ok=tank"),
+        (61420, 5484): ("0", "0", "0", "t=aoe;aura;int"),
+        (61420, 11660): ("0", "0", "0", "t=victim;int"),
+        (61421, 6060): ("0", "0", "0", "t=victim;int"),
+        (61421, 13019): ("0", "0", "0", "t=aoe;aura"),
+        (61421, 10945): ("0", "0", "0", "t=victim;int"),
+        (61421, 8402): ("0", "0", "0", "t=victim;aura;int"),
+        (61422, 15583): ("0", "0", "0", "t=victim;aura;ok.dispel=nodispel"),
+        (61422, 11574): ("0", "0", "0", "t=victim;aura;ok.dispel=nodispel"),
+        (61422, 12540): ("0", "29000", "31000", "t=victim;aura"),
+        (61422, 5277): ("0", "0", "0", "t=self;self;ok.purge=nopurge"),
+        (61423, 8380): ("0", "0", "0", "t=victim;aura;ok.dispel=nodispel"),
+        (61423, 11605): ("0", "0", "0", "t=victim;int;ok.interrupt=nokick"),
+        (61423, 17142): ("0", "0", "0", "t=random;aura;int"),
+        (61263, 25309): ("8000", "8000", "8000", "p=human;t=random;aura;int"),
+        (61263, 2767): ("11000", "11000", "11000", "p=human;t=random;aura"),
+        (61263, 11671): ("6000", "6000", "6000", "p=human;t=random;aura;int"),
+        (61263, 13021): ("0", "25000", "25000", "p=dragonkin;t=aoe;aura"),
+        (61264, 2495): ("9000", "9000", "9000", "p=human;t=random;ok=tank"),
+        (61264, 20924): ("12000", "12000", "12000", "p=human;t=aoe;ground;aura"),
+        (61264, 13021): ("0", "25000", "25000", "p=dragonkin;t=aoe;aura"),
+        (61418, 17620): ("4000", "20000", "25000", "t=victim;aura;int"),
+        (61418, 21551): ("2000", "17000", "20000", "t=victim;aura;ok.dispel=nodispel"),
+        (61418, 11711): ("1000", "10000", "15000", "t=random;aura"),
+        (61418, 22678): ("0", "0", "0", "t=random;aura;int;hp50"),
+    }
+
+    PHASES = {
+        61263: [("dragonkin", "hp<50", 1), ("human", "start", 2)],
+        61264: [("dragonkin", "hp<50", 1), ("human", "start", 2)],
+    }
+
+    ADDS = {
+        63130: [(36519, "linked", 1)],
+        62780: [(61410, "summon", 1), (62785, "linked", 0)],
+        62782: [(62771, "summon", 1)],
+        62072: [(62453, "linked", 0)],
+        62038: [(9637, "totem", 1), (2630, "totem", 1), (6017, "totem", 1)],
+        61264: [(61263, "linked", 1)],
+    }
+
+    EXPECTED_BOSSES = {
+        "frostmane_hollow": {63131, 63129, 63133, 63130, 63132},
+        "crescent_grove": {92107, 92109, 92108, 92111, 92110},
+        "windhorn_canyon": {62784, 62783, 62780, 62781, 62779, 62782, 62778},
+        "dragonmaw_retreat": {62056, 62057, 62072, 62069, 62037, 62066, 62067, 62068,
+                              62070, 62071, 62038},
+        "gilneas_city": {61419, 61420, 61421, 61422, 61423, 61263, 61264, 61418},
+    }
+
+    def rows(self):
+        return [r for r in boss_data.read_rows(boss_data.DEFAULT_CSV)
+                if r["map"] in self.MAPS]
+
+    def test_ability_values(self):
+        got = {}
+        for row in self.rows():
+            if row["row"] == "ability":
+                got[(int(row["boss"]), int(row["key"]))] = (
+                    row["a"], row["b"], row["c"], row["d"])
+        self.assertEqual(got, self.ABILITIES)
+
+    def test_phases_and_adds(self):
+        phases, adds = {}, {}
+        for row in self.rows():
+            if row["row"] == "phase":
+                phases.setdefault(int(row["boss"]), []).append(
+                    (row["key"], row["a"], int(row["b"])))
+            elif row["row"] == "add":
+                adds.setdefault(int(row["boss"]), []).append(
+                    (int(row["key"]), row["a"], int(row["b"])))
+        self.assertEqual(phases, self.PHASES)
+        self.assertEqual(adds, self.ADDS)
+
+    def test_expected_boss_entries_per_map(self):
+        for map_key, expected in self.EXPECTED_BOSSES.items():
+            got = {int(row["boss"]) for row in self.rows() if row["map"] == map_key}
+            self.assertEqual(got, expected, map_key)
+
+    def test_only_the_two_gilneas_transforms_are_phases(self):
+        phased = {int(row["boss"]) for row in self.rows() if row["row"] == "phase"}
+        self.assertEqual(phased, set(self.PHASES))
+        # The below-50 spells are the only ones in the transform phase and the
+        # human kit really stops there; every other boss has no phase tag.
+        for row in self.rows():
+            if row["row"] != "ability":
+                continue
+            flags = boss_data.parse_flags(row["d"])
+            if int(row["boss"]) in self.PHASES:
+                self.assertIn(flags["phase"], ("human", "dragonkin"), row["_line"])
+            else:
+                self.assertEqual(flags["phase"], "", row["_line"])
+
+    @unittest.skipUnless(CORE_SPELL_SQL.is_file(), "set TORTOISE_CORE_DIR=<tortoise-wow checkout>: no %s" % CORE_SPELL_SQL)
+    def test_semantic_flags_against_the_core(self):
+        spells = _read_spells(CORE_DIR)
+        if not spells:
+            self.skipTest("no core checkout at %s" % CORE_DIR)
+        for row in self.rows():
+            if row["row"] != "ability":
+                continue
+            spell = spells.get(int(row["key"]))
+            self.assertIsNotNone(spell, row["key"])
+            flags = boss_data.parse_flags(row["d"])
+            if flags["int"]:
+                channeled = bool(spell["attributesEx"] & SPELL_ATTR_EX_CHANNELED)
+                self.assertTrue(channeled or spell["castingTimeIndex"] > 1, row["_line"])
+                kickable = _kickable(spell)
+                if flags["okNeeds"].get("interrupt") == "nokick":
+                    self.assertFalse(kickable, row["_line"])
+                else:
+                    self.assertTrue(kickable, row["_line"])
+            if flags["self"]:
+                self.assertTrue(_applies_aura(spell), row["_line"])
+            if flags["ground"]:
+                self.assertIn(27, (spell["effect1"], spell["effect2"], spell["effect3"]),
+                              row["_line"])
+            if flags["cone"]:
+                self.assertTrue(
+                    any(spell.get("effectImplicitTargetA%d" % i) == 24
+                        or spell.get("effectImplicitTargetB%d" % i) == 24 for i in (1, 2, 3)),
+                    row["_line"])
+
+    @unittest.skipUnless(CORE_SPELL_SQL.is_file(), "set TORTOISE_CORE_DIR=<tortoise-wow checkout>: no %s" % CORE_SPELL_SQL)
+    def test_every_kickable_cast_is_marked_interruptible(self):
+        # The other direction of test_semantic_flags_against_the_core: a cast the
+        # core's kick can stop must carry `int`, unless creature_spells triggers it.
+        spells = _read_spells(CORE_DIR)
+        if not spells:
+            self.skipTest("no core checkout at %s" % CORE_DIR)
+        for row in self.rows():
+            if row["row"] != "ability":
+                continue
+            spell_id = int(row["key"])
+            if spell_id in self.TRIGGERED_CASTS:
+                continue
+            spell = spells[spell_id]
+            has_cast_time = (bool(spell["attributesEx"] & SPELL_ATTR_EX_CHANNELED)
+                             or spell["castingTimeIndex"] > 1)
+            if has_cast_time and _kickable(spell):
+                flags = boss_data.parse_flags(row["d"])
+                self.assertTrue(flags["int"], row["_line"])
+
+    def test_creature_spell_rows_have_no_columns_timer(self):
+        # creature_spells timers are seconds in a one-line dump, so these rows
+        # keep 0 in a/b/c and the note carries the values.
+        for row in self.rows():
+            if row["row"] != "ability":
+                continue
+            if int(row["key"]) in (6141, 837, 3143, 16803, 8406, 12057, 10101, 9839,
+                                   23380, 25298, 6780, 11922, 8941, 15579, 12471,
+                                   12468, 7357, 15667, 13877, 16044, 16727, 22355,
+                                   6982, 19471, 41121, 23105, 945, 13884, 8005,
+                                   22595, 6864, 12734, 3574, 13444, 15588, 16095,
+                                   18958, 10452, 6725, 15038, 15786, 930, 8264,
+                                   6041, 13608, 8413, 5484, 11660, 6060,
+                                   13019, 10945, 8402, 15583, 11574, 5277, 8380,
+                                   17142):
+                self.assertEqual((row["a"], row["b"], row["c"]), ("0", "0", "0"),
+                                 row["_line"])
 
 
 class UbrsValueTest(unittest.TestCase):
