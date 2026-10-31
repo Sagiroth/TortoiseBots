@@ -87,6 +87,7 @@
 - Fixed: in a raid trash fight the main tank no longer stands idle while an off-tank holds the pack; it joins in (no taunt).
 
 ### Dashboard
+- New: the boss panel knows the ten Blackrock Depths and seven Lower Blackrock Spire bosses: their abilities with cast windows and targets, the cones and areas they hit, every add each one brings, and a note where the fight has a trick the panel cannot show.
 - The Commanders cards now update live: positions and fight events stream to the open tab and the bots glide between reports instead of jumping.
 - The Fight debugger now tracks many raids at once: an All raids tab with a small card for each group (its plan and step, what it is doing, its dead, the last fight's result and a small map) and one tab per group that opens that raid's full debugger, with the open tab kept in the address, the arrow keys switching tabs, a red dot for a new fight that needs a look, and a greyed tab for five minutes after a raid ends.
 - Fixed: a fight that goes on after `.bot run stop` is now recorded and listed.

@@ -56,8 +56,28 @@
       "name": "Teleport",
       "castMs": 0
     },
+    "8258": {
+      "name": "Devotion Aura",
+      "castMs": 0
+    },
     "8269": {
       "name": "Enrage",
+      "castMs": 0
+    },
+    "10887": {
+      "name": "Crowd Pummel",
+      "castMs": 0
+    },
+    "10966": {
+      "name": "Uppercut",
+      "castMs": 0
+    },
+    "11130": {
+      "name": "Knock Away",
+      "castMs": 0
+    },
+    "12040": {
+      "name": "Shadow Shield",
       "castMs": 0
     },
     "12097": {
@@ -68,28 +88,148 @@
       "name": "Gouge",
       "castMs": 0
     },
+    "13704": {
+      "name": "Psychic Scream",
+      "castMs": 0
+    },
+    "13730": {
+      "name": "Demoralizing Shout",
+      "castMs": 0
+    },
     "13736": {
       "name": "Whirlwind",
+      "castMs": 0
+    },
+    "13895": {
+      "name": "Summon Spawn of Bael'Gar",
+      "castMs": 0
+    },
+    "13900": {
+      "name": "Fiery Burst",
+      "castMs": 0
+    },
+    "13953": {
+      "name": "Holy Strike",
+      "castMs": 0
+    },
+    "14032": {
+      "name": "Shadow Word: Pain",
+      "castMs": 0
+    },
+    "14033": {
+      "name": "Mana Burn",
+      "castMs": 0
+    },
+    "14099": {
+      "name": "Mighty Blow",
+      "castMs": 0
+    },
+    "14744": {
+      "name": "Burning Spirit",
+      "castMs": 0
+    },
+    "15284": {
+      "name": "Cleave",
+      "castMs": 0
+    },
+    "15305": {
+      "name": "Chain Lightning",
+      "castMs": 0
+    },
+    "15346": {
+      "name": "Seal of Reckoning",
+      "castMs": 0
+    },
+    "15493": {
+      "name": "Holy Light",
+      "castMs": 0
+    },
+    "15507": {
+      "name": "Lightning Shield",
+      "castMs": 0
+    },
+    "15572": {
+      "name": "Sunder Armor",
       "castMs": 0
     },
     "15582": {
       "name": "Backstab",
       "castMs": 0
     },
+    "15586": {
+      "name": "Heal",
+      "castMs": 0
+    },
     "15589": {
       "name": "Whirlwind",
+      "castMs": 0
+    },
+    "15605": {
+      "name": "Shock",
+      "castMs": 0
+    },
+    "15615": {
+      "name": "Pummel",
+      "castMs": 0
+    },
+    "15618": {
+      "name": "Snap Kick",
+      "castMs": 0
+    },
+    "15636": {
+      "name": "Avatar of Flame",
+      "castMs": 0
+    },
+    "15642": {
+      "name": "Ironfoe",
+      "castMs": 0
+    },
+    "15708": {
+      "name": "Mortal Strike",
       "castMs": 0
     },
     "15847": {
       "name": "Tail Sweep",
       "castMs": 0
     },
+    "16075": {
+      "name": "Throw Axe",
+      "castMs": 0
+    },
+    "16076": {
+      "name": "War Master Voone Unarmed Passive",
+      "castMs": 0
+    },
     "16098": {
       "name": "Curse of Blood",
       "castMs": 2000
     },
+    "16103": {
+      "name": "Summon Spire Spiderling",
+      "castMs": 0
+    },
+    "16104": {
+      "name": "Crystallize",
+      "castMs": 0
+    },
     "16245": {
       "name": "Freeze Anim",
+      "castMs": 0
+    },
+    "16468": {
+      "name": "Mother's Milk",
+      "castMs": 0
+    },
+    "16496": {
+      "name": "Shoot",
+      "castMs": 0
+    },
+    "16497": {
+      "name": "Stun Bomb",
+      "castMs": 0
+    },
+    "16708": {
+      "name": "Hex",
       "castMs": 0
     },
     "16856": {
@@ -98,6 +238,18 @@
     },
     "17172": {
       "name": "Hex",
+      "castMs": 0
+    },
+    "17492": {
+      "name": "Hand of Thaurissan",
+      "castMs": 0
+    },
+    "18106": {
+      "name": "Rend",
+      "castMs": 0
+    },
+    "18368": {
+      "name": "Strike",
       "castMs": 0
     },
     "18392": {
@@ -136,6 +288,22 @@
       "name": "Teleport",
       "castMs": 0
     },
+    "20686": {
+      "name": "Knock Away",
+      "castMs": 0
+    },
+    "20691": {
+      "name": "Cleave",
+      "castMs": 0
+    },
+    "21049": {
+      "name": "Bloodlust",
+      "castMs": 0
+    },
+    "22356": {
+      "name": "Slow",
+      "castMs": 0
+    },
     "22666": {
       "name": "Silence",
       "castMs": 0
@@ -146,6 +314,10 @@
     },
     "22911": {
       "name": "Charge",
+      "castMs": 0
+    },
+    "23511": {
+      "name": "Demoralizing Shout",
       "castMs": 0
     },
     "23849": {
@@ -292,6 +464,10 @@
       "name": "Charge",
       "castMs": 0
     },
+    "24317": {
+      "name": "Sunder Armor",
+      "castMs": 0
+    },
     "24318": {
       "name": "Enrage",
       "castMs": 0
@@ -308,12 +484,20 @@
       "name": "Corrupted Blood",
       "castMs": 0
     },
+    "24375": {
+      "name": "War Stomp",
+      "castMs": 0
+    },
     "24408": {
       "name": "Charge",
       "castMs": 0
     },
     "24466": {
       "name": "Banish",
+      "castMs": 0
+    },
+    "24673": {
+      "name": "Curse of Blood",
       "castMs": 0
     },
     "24686": {
@@ -418,8 +602,92 @@
     }
   },
   "creatures": {
+    "8894": {
+      "name": "Anvilrage Medic"
+    },
+    "8901": {
+      "name": "Anvilrage Reservist"
+    },
+    "8906": {
+      "name": "Ragereaver Golem"
+    },
+    "8907": {
+      "name": "Wrath Hammer Construct"
+    },
+    "8929": {
+      "name": "Princess Moira Bronzebeard"
+    },
+    "8983": {
+      "name": "Golem Lord Argelmach"
+    },
+    "9016": {
+      "name": "Bael'Gar"
+    },
+    "9017": {
+      "name": "Lord Incendius"
+    },
+    "9018": {
+      "name": "High Interrogator Gerstahn"
+    },
+    "9019": {
+      "name": "Emperor Dagran Thaurissan"
+    },
+    "9033": {
+      "name": "General Angerforge"
+    },
+    "9056": {
+      "name": "Fineous Darkvire"
+    },
+    "9156": {
+      "name": "Ambassador Flamelash"
+    },
+    "9178": {
+      "name": "Burning Spirit"
+    },
+    "9196": {
+      "name": "Highlord Omokk"
+    },
+    "9216": {
+      "name": "Spirestone Warlord"
+    },
+    "9236": {
+      "name": "Shadow Hunter Vosh'gajin"
+    },
+    "9237": {
+      "name": "War Master Voone"
+    },
+    "9268": {
+      "name": "Smolderthorn Berserker"
+    },
+    "9319": {
+      "name": "Houndmaster Grebmar"
+    },
+    "9436": {
+      "name": "Spawn of Bael'Gar"
+    },
+    "9568": {
+      "name": "Overlord Wyrmthalak"
+    },
+    "9736": {
+      "name": "Quartermaster Zigris"
+    },
+    "9938": {
+      "name": "Magmus"
+    },
     "10184": {
       "name": "Onyxia"
+    },
+    "10220": {
+      "name": "Halycon"
+    },
+    "10268": {
+      "name": "Gizrul the Slavener"
+    },
+    "10375": {
+      "name": "Spire Spiderling"
+    },
+    "10596": {
+      "name": "Mother Smolderweb"
     },
     "11262": {
       "name": "Onyxian Whelp"

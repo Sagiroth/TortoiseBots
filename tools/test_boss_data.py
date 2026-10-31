@@ -578,8 +578,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 17)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 112)
+        self.assertEqual(len(doc["bosses"]), 34)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 157)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -591,6 +591,156 @@ class BossDataTest(unittest.TestCase):
                 self.assertTrue(entry["name"], entry)
             for phase in boss["phases"]:
                 self.assertIn(phase["rule"]["kind"], ("hp", "aura", "flag", "start"))
+
+
+# ---- Blackrock dungeons (BRD 230, LBRS 229) ---------------------------------------------------------------------------
+# Read off the core scripts, not off the CSV: every ability with its timer window, target and flags, every phase rule and
+# every add. A row that changes silently (or loses a flag) fails here even though counts and the JSON still agree.
+BLACKROCK_ABILITIES = {
+    # boss, spell: (a, b, c, target, phase, flags)
+    (9018, 14032): (4000, 7000, 7000, "random", "", {"aura"}),
+    (9018, 14033): (14000, 10000, 10000, "random", "", {"int"}),
+    (9018, 13704): (32000, 30000, 30000, "aoe", "", {"aura", "dispel-nodispel"}),
+    (9018, 12040): (8000, 25000, 25000, "self", "", {"self"}),
+    (9319, 21049): (0, 0, 0, "self", "", {"self"}),
+    (9319, 13730): (0, 0, 0, "aoe", "", {"aura", "dispel-nodispel"}),
+    (9319, 15615): (0, 0, 0, "victim", "", {"tank"}),
+    (9016, 13895): (0, 0, 0, "random", "", {"int", "interrupt-nokick", "summon=9436"}),
+    (9033, 15572): (0, 5000, 15000, "victim", "", {"aura", "dispel-nodispel"}),
+    (8983, 15507): (0, 0, 0, "self", "", {"self"}),
+    (8983, 15305): (5000, 14000, 14000, "victim", "", {"int"}),
+    (8983, 15605): (2000, 6000, 6000, "victim", "", {"tank"}),
+    (9056, 8258): (1000, 240000, 240000, "self", "", {"self", "purge-nopurge"}),
+    (9056, 13953): (0, 6000, 8500, "victim", "", {"tank"}),
+    (9056, 15493): (0, 0, 0, "self", "", {"int", "hp60"}),
+    (9056, 15346): (0, 0, 0, "self", "", {"self", "hp20"}),
+    (9156, 14744): (0, 0, 0, "self", "", {"self", "purge-nopurge"}),
+    (9938, 13900): (5000, 6000, 6000, "aoe", "", {"int"}),
+    (9938, 24375): (0, 8000, 8000, "aoe", "stomp", {"aura", "dispel-nodispel"}),
+    (9019, 17492): (0, 10000, 15000, "victim", "", {"aura", "dispel-nodispel"}),
+    (9019, 15636): (18000, 18000, 18000, "self", "", {"self", "purge-nopurge"}),
+    (9196, 24375): (15000, 14000, 14000, "aoe", "", {"aura", "dispel-nodispel"}),
+    (9196, 18368): (10000, 10000, 10000, "victim", "", {"tank"}),
+    (9196, 18106): (14000, 18000, 18000, "victim", "", {"aura", "dispel-nodispel"}),
+    (9196, 24317): (2000, 25000, 25000, "victim", "", {"aura", "dispel-nodispel"}),
+    (9196, 20686): (18000, 12000, 12000, "aoe", "", set()),
+    (9196, 22356): (24000, 18000, 18000, "aoe", "", {"aura"}),
+    (9236, 24673): (2000, 45000, 45000, "aoe", "", {"aura"}),
+    (9236, 16708): (8000, 15000, 15000, "random", "", {"aura"}),
+    (9236, 20691): (14000, 7000, 7000, "victim", "", {"tank"}),
+    (9237, 15618): (8000, 6000, 6000, "victim", "", {"aura", "dispel-nodispel"}),
+    (9237, 15284): (14000, 12000, 12000, "victim", "", {"tank"}),
+    (9237, 10966): (20000, 14000, 14000, "victim", "", {"tank"}),
+    (9237, 15708): (12000, 10000, 10000, "victim", "", {"aura", "dispel-nodispel"}),
+    (9237, 15615): (32000, 16000, 16000, "victim", "", {"tank"}),
+    (9237, 16075): (0, 5000, 15000, "victim", "",
+                    {"int", "interrupt-nokick", "aura", "dispel-nodispel"}),
+    (10596, 16468): (0, 7000, 15000, "random", "", {"aura"}),
+    (9736, 16496): (1000, 1750, 1750, "victim", "", {"tank"}),
+    (9736, 16497): (16000, 14000, 14000, "aoe", "",
+                    {"int", "interrupt-nokick", "aura", "dispel-nodispel"}),
+    (10220, 10887): (8000, 14000, 14000, "aoe", "", set()),
+    (10220, 14099): (14000, 10000, 10000, "victim", "", {"tank"}),
+    (9568, 11130): (20000, 20000, 20000, "aoe", "", set()),
+    (9568, 23511): (2000, 10000, 10000, "aoe", "", {"aura", "dispel-nodispel"}),
+    (9568, 20691): (6000, 7000, 7000, "victim", "", {"tank"}),
+    (9568, 20686): (12000, 14000, 14000, "aoe", "", set()),
+}
+
+BLACKROCK_PHASES = {
+    9938: [("stomp", "hp", 51, 1), ("fight", "start", None, 2)],
+}
+
+BLACKROCK_ADDS = {
+    9016: [(9436, "summon", 1)],
+    9033: [(8894, "summon", 1), (8901, "summon", 2)],
+    8983: [(8906, "linked", 0), (8907, "linked", 0)],
+    9156: [(9178, "summon", 1)],
+    9019: [(8929, "linked", 0)],
+    10220: [(10268, "summon", 1)],
+    9568: [(9216, "summon", 1), (9268, "summon", 2)],
+}
+BLACKROCK_MAPS = ("blackrock_depths", "upper_blackrock_spire")
+
+
+def _flag_set(ability):
+    """The semantic flags of a built ability, in the fixture's spelling."""
+    flags = set()
+    for name in ("aura", "self", "int", "mark", "ground", "cone", "tail"):
+        if ability[name]:
+            flags.add(name)
+    if ability["summon"]:
+        flags.add("summon=%d" % ability["summon"])
+    if ability["hp"]:
+        flags.add("hp%d" % ability["hp"])
+    if ability["ok"]:
+        flags.add(ability["ok"])
+    for need, reason in ability["okNeeds"].items():
+        flags.add("%s-%s" % (need, reason))
+    return flags
+
+
+class DungeonBlackrockValueTest(unittest.TestCase):
+    """Every BRD and LBRS value the panel draws, pinned to what the core source says."""
+
+    @classmethod
+    def setUpClass(cls):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        cls.doc = boss_data.build_document(rows, names)
+        cls.by_boss = cls.doc["bosses"]
+
+    def test_ability_values(self):
+        seen = set()
+        for key, (a, b, c, target, phase, flags) in BLACKROCK_ABILITIES.items():
+            boss, sid = key
+            abilities = {x["sid"]: x for x in self.by_boss[str(boss)]["abilities"]}
+            self.assertIn(sid, abilities, "boss %d lost spell %d" % (boss, sid))
+            ability = abilities[sid]
+            self.assertEqual((ability["a"], ability["b"], ability["c"]), (a, b, c), key)
+            self.assertEqual(ability["target"], target, key)
+            self.assertEqual(ability["phase"], phase, key)
+            self.assertEqual(ability["castMs"], 0, key)
+            self.assertEqual(_flag_set(ability), flags, key)
+            seen.add(key)
+        built = {
+            (int(entry), ability["sid"])
+            for entry, boss in self.by_boss.items()
+            for ability in boss["abilities"]
+            if boss["map"] in BLACKROCK_MAPS
+        }
+        self.assertEqual(built, seen, "the two Blackrock maps carry exactly the pinned abilities")
+
+    def test_phase_rules(self):
+        for entry, expected in BLACKROCK_PHASES.items():
+            phases = self.by_boss[str(entry)]["phases"]
+            got = []
+            for phase in phases:
+                rule = phase["rule"]
+                got.append((phase["name"], rule["kind"], rule.get("hp"), phase["order"]))
+            self.assertEqual(got, expected, entry)
+
+    def test_adds(self):
+        for entry, expected in BLACKROCK_ADDS.items():
+            got = [(a["entry"], a["role"], a["priority"]) for a in self.by_boss[str(entry)]["adds"]]
+            self.assertEqual(got, expected, entry)
+
+    def test_no_abilities_where_the_core_has_none(self):
+        # Incendius has no AI at all: a block with no rows would still show a name, an empty list is the truth.
+        self.assertEqual(self.by_boss["9017"]["abilities"], [])
+        self.assertEqual(self.by_boss["9017"]["adds"], [])
+        # Mother Smolderweb's C++ script is not assigned: only the EventAI cast of 16468 remains.
+        self.assertEqual([a["sid"] for a in self.by_boss["10596"]["abilities"]], [16468])
+        self.assertEqual(self.by_boss["10596"]["adds"], [])
+
+    def test_magmus_war_stomp_only_in_the_stomp_phase(self):
+        magmus = self.by_boss["9938"]
+        stomp = next(a for a in magmus["abilities"] if a["sid"] == 24375)
+        burst = next(a for a in magmus["abilities"] if a["sid"] == 13900)
+        self.assertEqual(stomp["phase"], "stomp")
+        self.assertEqual(burst["phase"], "")
+        self.assertEqual([p["rule"] for p in magmus["phases"]],
+                         [{"kind": "hp", "hp": 51}, {"kind": "start"}])
 
 
 if __name__ == "__main__":
