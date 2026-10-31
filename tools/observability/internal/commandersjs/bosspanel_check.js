@@ -509,4 +509,18 @@ const ktFight = B.model(REAL, { entry: 15990, hp: 80, au: [], uf: "" }, [], 0, 0
 assert.strictEqual(ktFight.phase, "fight");
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 28478).inPhase, true);
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 29423).inPhase, false);
+// Dungeon batch 9: Cobrahn's serpent form is an aura phase that outranks the
+// start phase; the druid-form abilities hide while it is up and the poison
+// only shows in serpent form.
+const cobrahn = (REAL.byEntry || REAL.bosses || REAL)["3669"];
+assert.deepStrictEqual(cobrahn.phases.map((x) => x.rule), ["aura=7965", "start"]);
+assert.strictEqual(B.phaseOf(cobrahn, { hp: 100, au: [] }).phase, "druid");
+assert.strictEqual(B.phaseOf(cobrahn, { hp: 20, au: [{ id: 7965 }] }).phase, "serpent");
+const cobrahnDruid = B.model(REAL, { entry: 3669, hp: 100, au: [] }, [], 0, 0);
+assert.strictEqual(cobrahnDruid.abilities.find((a) => a.sid === 8040).inPhase, true, "Druid's Slumber is druid-form");
+assert.strictEqual(cobrahnDruid.abilities.find((a) => a.sid === 17330).inPhase, false, "Poison is serpent-only");
+const cobrahnSerpent = B.model(REAL, { entry: 3669, hp: 20, au: [{ id: 7965 }] }, [], 0, 0);
+assert.strictEqual(cobrahnSerpent.abilities.find((a) => a.sid === 17330).inPhase, true, "Poison shows in serpent form");
+assert.strictEqual(cobrahnSerpent.abilities.find((a) => a.sid === 8040).inPhase, false, "the druid form's kit is hidden");
+assert.strictEqual(cobrahnSerpent.abilities.find((a) => a.sid === 7965).inPhase, true, "the transform marker always shows");
 console.log("boss panel ok");
