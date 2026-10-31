@@ -112,6 +112,10 @@
       "name": "Holy Smite",
       "castMs": 0
     },
+    "10101": {
+      "name": "Knock Away",
+      "castMs": 0
+    },
     "10413": {
       "name": "Earth Shock",
       "castMs": 0
@@ -352,6 +356,14 @@
       "name": "Mighty Blow",
       "castMs": 0
     },
+    "14100": {
+      "name": "Terrifying Roar",
+      "castMs": 0
+    },
+    "14144": {
+      "name": "Remorseless Attacks",
+      "castMs": 0
+    },
     "14744": {
       "name": "Burning Spirit",
       "castMs": 0
@@ -380,6 +392,10 @@
       "name": "Cleave",
       "castMs": 0
     },
+    "15506": {
+      "name": "Immolate",
+      "castMs": 0
+    },
     "15507": {
       "name": "Lightning Shield",
       "castMs": 0
@@ -402,6 +418,10 @@
     },
     "15586": {
       "name": "Heal",
+      "castMs": 0
+    },
+    "15588": {
+      "name": "Thunderclap",
       "castMs": 0
     },
     "15589": {
@@ -430,6 +450,10 @@
     },
     "15708": {
       "name": "Mortal Strike",
+      "castMs": 0
+    },
+    "15754": {
+      "name": "Cleave",
       "castMs": 0
     },
     "15847": {
@@ -468,6 +492,22 @@
       "name": "Freeze Anim",
       "castMs": 0
     },
+    "16350": {
+      "name": "Freeze",
+      "castMs": 0
+    },
+    "16359": {
+      "name": "Corrosive Acid Breath",
+      "castMs": 0
+    },
+    "16390": {
+      "name": "Flame Breath",
+      "castMs": 0
+    },
+    "16419": {
+      "name": "Flamestrike",
+      "castMs": 0
+    },
     "16468": {
       "name": "Mother's Milk",
       "castMs": 0
@@ -484,8 +524,28 @@
       "name": "Stun Bomb",
       "castMs": 0
     },
+    "16636": {
+      "name": "Berserker Charge",
+      "castMs": 0
+    },
     "16708": {
       "name": "Hex",
+      "castMs": 0
+    },
+    "16785": {
+      "name": "Flamebreak",
+      "castMs": 0
+    },
+    "16788": {
+      "name": "Fireball",
+      "castMs": 0
+    },
+    "16789": {
+      "name": "Rage",
+      "castMs": 0
+    },
+    "16805": {
+      "name": "Conflagration",
       "castMs": 0
     },
     "16856": {
@@ -1458,6 +1518,18 @@
     },
     "26977": {
       "name": "Curse of the Elemental Lord",
+      "castMs": 0
+    },
+    "27249": {
+      "name": "Summon Spectral Assassin",
+      "castMs": 0
+    },
+    "27286": {
+      "name": "Shadow Wrath",
+      "castMs": 0
+    },
+    "27382": {
+      "name": "Shadow Bolt Volley",
       "castMs": 0
     },
     "27564": {
@@ -2626,6 +2698,9 @@
     "9736": {
       "name": "Quartermaster Zigris"
     },
+    "9816": {
+      "name": "Pyroguard Emberseer"
+    },
     "9938": {
       "name": "Magmus"
     },
@@ -2641,8 +2716,23 @@
     "10268": {
       "name": "Gizrul the Slavener"
     },
+    "10316": {
+      "name": "Blackhand Incarcerator"
+    },
+    "10339": {
+      "name": "Gyth"
+    },
+    "10363": {
+      "name": "General Drakkisath"
+    },
     "10375": {
       "name": "Spire Spiderling"
+    },
+    "10429": {
+      "name": "Warchief Rend Blackhand"
+    },
+    "10430": {
+      "name": "The Beast"
     },
     "10596": {
       "name": "Mother Smolderweb"
@@ -3031,6 +3121,9 @@
     "16028": {
       "name": "Patchwerk"
     },
+    "16042": {
+      "name": "Lord Valthalak"
+    },
     "16060": {
       "name": "Gothik the Harvester"
     },
@@ -3048,6 +3141,12 @@
     },
     "16065": {
       "name": "Lady Blaumeux"
+    },
+    "16066": {
+      "name": "Spectral Assassin"
+    },
+    "16073": {
+      "name": "Spirit of Lord Valthalak"
     },
     "16124": {
       "name": "Unrelenting Trainee"
