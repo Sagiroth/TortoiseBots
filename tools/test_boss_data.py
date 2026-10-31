@@ -681,8 +681,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 148)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 705)
+        self.assertEqual(len(doc["bosses"]), 174)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 771)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -1438,6 +1438,10 @@ SPELL_SOURCE_COLUMNS = {
     "channelInterruptFlags", "castingTimeIndex",
     "effect1", "effect2", "effect3",
     "effectApplyAuraName1", "effectApplyAuraName2", "effectApplyAuraName3",
+    "effectImplicitTargetA1", "effectImplicitTargetA2", "effectImplicitTargetA3",
+    "effectImplicitTargetB1", "effectImplicitTargetB2", "effectImplicitTargetB3",
+    "effectTriggerSpell1", "effectTriggerSpell2", "effectTriggerSpell3",
+    "effectMiscValue1", "effectMiscValue2", "effectMiscValue3",
 }
 SPELL_MOD_COLUMNS = {
     "Id", "Attributes", "AttributesEx", "CastingTimeIndex", "InterruptFlags",
@@ -1651,6 +1655,75 @@ def _applies_aura(spell):
     )
 
 
+# TARGET_UNIT_CASTER: an aura aimed at it never reaches a player. TARGET_UNIT_CONE_ENEMY
+# (24) is the only cone target the DB check accepts.
+TARGET_UNIT_CASTER = 1
+TARGET_UNIT_CONE_ENEMY = 24
+
+
+def _aura_reaches_players(spell, spells, depth=1):
+    """True when an aura effect targets something other than the caster, or a trigger does."""
+    for index in (1, 2, 3):
+        if spell.get("effect%d" % index) not in AURA_EFFECTS:
+            continue
+        if not spell.get("effectApplyAuraName%d" % index):
+            continue
+        target_a = spell.get("effectImplicitTargetA%d" % index)
+        target_b = spell.get("effectImplicitTargetB%d" % index)
+        if target_a != TARGET_UNIT_CASTER or target_b not in (0, None):
+            return True
+    if depth:
+        for index in (1, 2, 3):
+            trigger = spells.get(spell.get("effectTriggerSpell%d" % index))
+            if trigger and _aura_reaches_players(trigger, spells, depth - 1):
+                return True
+    return False
+
+
+SUMMON_EFFECTS = (41, 42)  # SPELL_EFFECT_SUMMON_WILD, SPELL_EFFECT_SUMMON_GUARDIAN
+
+
+def _summon_entries(spell, spells):
+    """The creature entries a spell summons.
+
+    Its own 41/42 effects count, and so do those of its trigger spells one level
+    down: Landslide 21808 is a periodic-trigger aura 23 whose trigger 21809 is the
+    effect that actually summons the shardling, so looking at 21808 alone misses it.
+    """
+    entries = []
+    for index in (1, 2, 3):
+        if spell.get("effect%d" % index) in SUMMON_EFFECTS:
+            entries.append(spell.get("effectMiscValue%d" % index))
+    for index in (1, 2, 3):
+        trigger = spells.get(spell.get("effectTriggerSpell%d" % index))
+        if trigger is None:
+            continue
+        for trigger_index in (1, 2, 3):
+            if trigger.get("effect%d" % trigger_index) in SUMMON_EFFECTS:
+                entries.append(trigger.get("effectMiscValue%d" % trigger_index))
+    return [entry for entry in entries if entry]
+
+
+def summon_row_problems(rows, spells):
+    """Ability rows whose summon= misses the summoned creature or its add row."""
+    adds = {(int(row["boss"]), int(row["key"])) for row in rows if row["row"] == "add"}
+    problems = []
+    for row in rows:
+        if row["row"] != "ability" or int(row["key"]) not in spells:
+            continue
+        entries = _summon_entries(spells[int(row["key"])], spells)
+        if not entries:
+            continue
+        summon = boss_data.parse_flags(row["d"])["summon"]
+        if summon not in entries:
+            problems.append("%s (spell %s) summons %s, not summon=%s"
+                            % (row["_line"], row["key"], entries, summon))
+        elif (int(row["boss"]), summon) not in adds:
+            problems.append("%s (spell %s) summons %s with no add row"
+                            % (row["_line"], row["key"], summon))
+    return problems
+
+
 def _kickable(spell):
     """Spell::EffectInterruptCast: the prevention type gates both slots, and a
     channel is stopped by its channel flags, not by InterruptFlags."""
@@ -1753,6 +1826,55 @@ class InterruptRuleTest(unittest.TestCase):
         spell = _interrupt_fixture(prevention=2, channel=CHANNEL_FLAG_INTERRUPT,
                                    attributes_ex=SPELL_ATTR_EX_CHANNELED)
         self.assertFalse(_kickable(spell))
+
+
+def _summon_row(kind, boss, key, d=""):
+    return {"row": kind, "boss": str(boss), "key": str(key), "d": d, "_line": "fixture"}
+
+
+class SummonRowRuleTest(unittest.TestCase):
+    """summon_row_problems compares the row's summon= with the effect's creature.
+
+    The fixture copies the effect shape of the two real rows: Landslide 21808 is a
+    periodic-trigger aura 23 whose 21809 trigger summons 11783 (a direct-effect-only
+    check misses it), Celebras 21968 is a direct 42 summoning 13743.
+    """
+
+    SPELLS = {
+        21808: {"effect1": 6, "effect2": 6, "effectApplyAuraName1": 23,
+                "effectTriggerSpell1": 21809},
+        21809: {"effect1": 41, "effectMiscValue1": 11783},
+        21968: {"effect1": 42, "effectMiscValue1": 13743},
+    }
+
+    def problems(self, ability_d, add=None):
+        rows = [_summon_row("ability", 12203, 21808, ability_d)]
+        if add is not None:
+            rows.append(_summon_row("add", 12203, add))
+        return summon_row_problems(rows, self.SPELLS)
+
+    def test_a_periodic_trigger_summon_passes_with_its_entry_and_add(self):
+        self.assertEqual([], self.problems("t=self;hp50;summon=11783", add=11783))
+
+    def test_a_periodic_trigger_summon_without_summon_fails(self):
+        self.assertTrue(self.problems("t=self;hp50"))
+
+    def test_a_periodic_trigger_summon_with_another_entry_fails(self):
+        self.assertTrue(self.problems("t=self;hp50;summon=11784", add=11784))
+
+    def test_a_direct_summon_passes_with_its_entry_and_add(self):
+        rows = [_summon_row("ability", 12225, 21968, "t=self;summon=13743"),
+                _summon_row("add", 12225, 13743)]
+        self.assertEqual([], summon_row_problems(rows, self.SPELLS))
+
+    def test_a_direct_summon_with_another_entry_fails(self):
+        rows = [_summon_row("ability", 12225, 21968, "t=self;summon=13744"),
+                _summon_row("add", 12225, 13744)]
+        self.assertTrue(summon_row_problems(rows, self.SPELLS))
+
+    def test_a_named_summon_without_an_add_row_fails(self):
+        rows = [_summon_row("ability", 12225, 21968, "t=self;summon=13743")]
+        self.assertTrue(summon_row_problems(rows, self.SPELLS))
 
 
 @unittest.skipUnless(
@@ -2720,6 +2842,205 @@ class DungeonTrollValueTest(unittest.TestCase):
                     self.assertEqual(boss["phases"], [], boss["name"])
                 for ability in boss["abilities"]:
                     self.assertEqual(ability["castMs"], 0, ability["name"])
+
+
+class DungeonUldamanMaraudonValueTest(unittest.TestCase):
+    """Every Uldaman and Maraudon value the panel draws, read off the core sources.
+
+    creature_spells and EventAI store their timers in a single dump line, so those
+    columns are 0 and the cadence lives in the notes; the C++ script timers are
+    literals and stay in the columns. The Lost Dwarves, the four-keeper event,
+    Archaedas's four minion kinds and Meshlok each have their own block because
+    the panel looks a unit up by exact entry.
+    """
+
+    ABILITIES = {
+        (6906, 14516): ("0", "0", "0", "victim", "", {"tank"}),
+        (6906, 15620): ("0", "0", "0", "victim", "", {"tank"}),
+        (6907, 6268): ("0", "0", "0", "self", "", {"self", "script"}),
+        (6908, 8242): ("0", "0", "0", "victim", "", {"tank"}),
+        (6910, 16006): ("0", "0", "0", "victim", "", {"int"}),
+        (6910, 15801): ("0", "0", "0", "victim", "", {"int"}),
+        (7228, 8374): ("0", "13000", "13000", "victim", "", {"cone"}),
+        (7228, 10101): ("0", "0", "0", "victim", "", {"hp50", "tank"}),
+        (7228, 11876): ("0", "0", "0", "aoe", "", {"aura", "hp25", "dispel-nodispel"}),
+        (7023, 10061): ("0", "0", "0", "self", "", {"summon=7209"}),
+        (7023, 10072): ("0", "0", "0", "self", "", {"self", "script"}),
+        (7023, 9941): ("0", "0", "0", "self", "", {"self", "purge-nopurge"}),
+        (7206, 10132): ("0", "0", "0", "aoe", "", {"heal", "summon=7226"}),
+        (7291, 3356): ("0", "0", "0", "victim", "", {"aura", "int"}),
+        (7291, 8053): ("0", "0", "0", "victim", "", {"aura"}),
+        (7291, 11969): ("0", "0", "0", "aoe", "", {"heal"}),
+        (7291, 9482): ("0", "0", "0", "victim", "", {"aura", "int"}),
+        (4854, 11892): ("0", "0", "0", "aoe", "", {"aura", "int"}),
+        (4854, 8292): ("0", "0", "0", "victim", "", {"tank"}),
+        (4854, 8143): ("0", "0", "0", "self", "", {"script", "summon=5913"}),
+        (4854, 9532): ("0", "0", "0", "victim", "", {"int"}),
+        (4854, 6742): ("0", "0", "0", "self", "", {"self", "hp30"}),
+        (4857, 5568): ("0", "0", "0", "aoe", "", {"heal"}),
+        (4857, 9874): ("0", "0", "0", "aoe", "", {"heal"}),
+        (2748, 6524): ("60000", "45000", "45000", "aoe", "", {"aura", "dispel-nodispel"}),
+        (2748, 10252): ("0", "0", "0", "self", "", {"hp66", "phase"}),
+        (2748, 10258): ("0", "0", "0", "self", "", {"hp33", "phase"}),
+        (7076, 10254): ("0", "0", "0", "self", "", {"script"}),
+        (7077, 10254): ("0", "0", "0", "self", "", {"script"}),
+        (7309, 10254): ("0", "0", "0", "self", "", {"script"}),
+        (7309, 10260): ("0", "10000", "10000", "ally", "", {"int"}),
+        (10120, 5568): ("0", "10000", "10000", "aoe", "", {"heal"}),
+        (10120, 10254): ("0", "0", "0", "self", "", {"script"}),
+        (12236, 7964): ("0", "0", "0", "aoe", "", {"aura"}),
+        (12236, 21655): ("0", "0", "0", "self", "", {"script"}),
+        (12236, 21390): ("0", "0", "0", "aoe", "", {"heal"}),
+        (12236, 16100): ("0", "0", "0", "victim", "", {"tank"}),
+        (12225, 21807): ("8000", "8000", "8000", "random", "", {"int", "heal"}),
+        (12225, 12747): ("2000", "20000", "20000", "victim", "", {"aura", "int"}),
+        (12225, 21968): ("30000", "20000", "20000", "self", "", {"summon=13743"}),
+        (13282, 21687): ("7000", "0", "0", "aoe", "", {"aura"}),
+        (13282, 22916): ("16000", "0", "0", "victim", "", {"tank"}),
+        (12258, 3391): ("0", "0", "0", "victim", "", {"tank"}),
+        (12258, 15976): ("0", "0", "0", "victim", "", {"aura", "dispel-nodispel"}),
+        (12258, 15584): ("0", "0", "0", "victim", "", {"tank"}),
+        (12203, 18670): ("8000", "15000", "15000", "victim", "", {"tank"}),
+        (12203, 5568): ("2000", "8000", "8000", "aoe", "", {"heal"}),
+        (12203, 21808): ("0", "60000", "60000", "self", "", {"hp50", "summon=11783"}),
+        (13601, 29419): ("0", "0", "0", "aoe", "", {"aura", "dispel-nodispel"}),
+        (13601, 21833): ("0", "0", "0", "aoe", "", {"heal"}),
+        (13601, 9143): ("0", "0", "0", "aoe", "", {"heal"}),
+        (13601, 16100): ("0", "0", "0", "victim", "", {"tank"}),
+        (13596, 16495): ("0", "0", "0", "victim", "", {"tank"}),
+        (13596, 15976): ("0", "0", "0", "victim", "", {"aura", "dispel-nodispel"}),
+        (12201, 21909): ("8000", "14000", "14000", "aoe", "", {"heal"}),
+        (12201, 21832): ("2000", "10000", "10000", "random", "", {"aura", "dispel-nodispel"}),
+        (12201, 21869): ("23000", "20000", "20000", "aoe", "", {"aura", "dispel-nodispel"}),
+        (12201, 3391): ("5000", "18000", "18000", "victim", "", {"tank"}),
+        (12237, 13446): ("0", "0", "0", "victim", "", {"tank"}),
+        (12237, 15593): ("0", "0", "0", "aoe", "", {"aura", "dispel-nodispel"}),
+        (13739, 6533): ("0", "0", "0", "victim", "", {"aura"}),
+        (13739, 15667): ("0", "0", "0", "victim", "", {"tank"}),
+        (13739, 15795): ("0", "0", "0", "victim", "", {"tank"}),
+        (13738, 14030): ("0", "0", "0", "victim", "", {"aura"}),
+        (13738, 18651): ("0", "0", "0", "aoe", "", {"heal"}),
+        (13738, 15620): ("0", "0", "0", "victim", "", {"tank"}),
+    }
+
+    ADDS = {
+        6906: [(6907, "linked", 2), (6908, "linked", 3)],
+        7023: [(7209, "summon", 1)],
+        2748: [(7076, "linked", 0), (7077, "linked", 0),
+               (7309, "linked", 1), (10120, "linked", 0)],
+        12225: [(13743, "summon", 0)],
+        13282: [(13456, "summon", 0)],
+        12203: [(11783, "summon", 1)],
+        7206: [(7226, "trigger", 0)],
+        4854: [(5913, "totem", 1)],
+    }
+
+    BOSSES = {
+        "uldaman": {6906, 6907, 6908, 6910, 7228, 7023, 7206, 7291, 4854, 4857,
+                    2748, 7076, 7077, 7309, 10120},
+        "maraudon": {12236, 12225, 13282, 12258, 12203, 13601, 13596, 12201, 12237,
+                     13738, 13739},
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        cls.doc = boss_data.build_document(rows, names)
+
+    def test_boss_entries_per_key(self):
+        got = {
+            raid["key"]: set(raid["bosses"])
+            for raid in self.doc["maps"]
+            if raid["key"] in self.BOSSES
+        }
+        self.assertEqual(got, self.BOSSES)
+
+    def test_ability_values(self):
+        seen = set()
+        for key, (a, b, c, target, phase, flags) in self.ABILITIES.items():
+            boss, sid = key
+            abilities = {x["sid"]: x for x in self.doc["bosses"][str(boss)]["abilities"]}
+            self.assertIn(sid, abilities, "boss %d lost spell %d" % (boss, sid))
+            ability = abilities[sid]
+            self.assertEqual((ability["a"], ability["b"], ability["c"]), (int(a), int(b), int(c)), key)
+            self.assertEqual(ability["target"], target, key)
+            self.assertEqual(ability["phase"], phase, key)
+            self.assertEqual(ability["castMs"], 0, key)
+            self.assertEqual(_flag_set(ability), flags, key)
+            seen.add(key)
+        built = {
+            (int(entry), ability["sid"])
+            for entry, boss in self.doc["bosses"].items()
+            for ability in boss["abilities"]
+            if boss["map"] in self.BOSSES
+        }
+        self.assertEqual(built, seen, "the two dungeon keys carry exactly the pinned abilities")
+
+    def test_adds_and_no_phase_rules(self):
+        for entry, boss in self.doc["bosses"].items():
+            if boss["map"] not in self.BOSSES:
+                continue
+            got = [(a["entry"], a["role"], a["priority"]) for a in boss["adds"]]
+            self.assertEqual(got, self.ADDS.get(int(entry), []), entry)
+            self.assertEqual(boss["phases"], [], boss["name"])
+
+
+@unittest.skipUnless(
+    CORE_SPELL_SQL.is_file(),
+    "set TORTOISE_CORE_DIR=<tortoise-wow checkout>: no %s" % CORE_SPELL_SQL,
+)
+class DungeonUldamanMaraudonSourceTest(unittest.TestCase):
+    """The Uldaman and Maraudon rows the core's own spell data can settle.
+
+    `int` must be the core's kick rule, `aura` must reach a player (directly or via
+    the trigger the row's note names), a cone must be a target-24 cone, and a
+    summoning effect must name its creature and an add row.
+    """
+
+    MAPS = ("uldaman", "maraudon")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.spells = _read_spells()
+        cls.rows = [row for row in boss_data.read_rows(boss_data.DEFAULT_CSV)
+                    if row["map"] in cls.MAPS]
+
+    def abilities(self):
+        for row in self.rows:
+            if row["row"] != "ability":
+                continue
+            spell = self.spells.get(int(row["key"]))
+            self.assertIsNotNone(spell, "spell %s has no spell_template row" % row["key"])
+            yield row, boss_data.parse_flags(row["d"]), spell
+
+    def test_every_kickable_cast_is_marked_int(self):
+        missing = [row["_line"] for row, flags, spell in self.abilities()
+                   if _kickable(spell) and not flags["int"]]
+        self.assertEqual([], missing,
+                         "these rows cast a spell the core can kick but do not carry int")
+
+    def test_aura_only_reaches_players(self):
+        wrong = [row["_line"] for row, flags, spell in self.abilities()
+                 if flags["aura"] and not _aura_reaches_players(spell, self.spells)]
+        self.assertEqual([], wrong,
+                         "these rows say aura, but neither the spell nor its trigger applies "
+                         "an aura to anything but the caster")
+
+    def test_every_cone_is_a_target_24_cone(self):
+        wrong = [row["_line"] for row, flags, spell in self.abilities()
+                 if flags["cone"] and TARGET_UNIT_CONE_ENEMY not in {
+                     spell.get("effectImplicitTargetA%d" % index)
+                     for index in (1, 2, 3)
+                 } | {
+                     spell.get("effectImplicitTargetB%d" % index)
+                     for index in (1, 2, 3)
+                 }]
+        self.assertEqual([], wrong, "these rows draw a cone but the spell has no target-24 cone")
+
+    def test_every_summoning_cast_names_its_add(self):
+        self.assertEqual([], summon_row_problems(self.rows, self.spells),
+                         "these rows summon a creature without summon=<entry> and its add row")
 
 
 class UbrsValueTest(unittest.TestCase):
