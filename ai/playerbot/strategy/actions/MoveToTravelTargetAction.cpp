@@ -826,17 +826,6 @@ bool MoveToTravelTargetAction::TryUndercityLift(WorldPosition const& location)
     return true;
 }
 
-// The buy action's gate, without the combat/order wrapper: an auctioneer
-// the bot can use right now.
-static bool GuildOrderAuctioneerInReach(PlayerbotAI* ai, Player* bot)
-{
-    std::list<ObjectGuid> npcs =
-        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest npcs")->Get();
-    for (ObjectGuid& guid : npcs)
-        if (bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_AUCTIONEER))
-            return true;
-    return false;
-}
 
 // One arrived guild-order trip on the auction leg: an auctioneer in reach
 // hands the leg to the buy action (the streak clears), any other arrival
@@ -847,7 +836,7 @@ static void CountGuildOrderAuctionArrival(PlayerbotAI* ai, Player* bot)
     std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
     if (!record || record->state != OrderState::Working || record->supplyStep != SupplyStep::AuctionHouse)
         return;
-    switch (ClassifyAuctionArrival(GuildOrderAuctioneerInReach(ai, bot), record->arrivedAuctionVisits,
+    switch (ClassifyAuctionArrival(GuildOrderAuctioneerNear(ai, bot) != nullptr, record->arrivedAuctionVisits,
         sPlayerbotAIConfig.guildOrderAuctionVisits))
     {
         case AuctionArrival::Reset:

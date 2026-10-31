@@ -54,6 +54,7 @@ struct SubOrderCandidate
     bool queuedBusy = false;   // a sub-order already queued for this bot waits
     bool canMake = false;      // knows the recipe and meets the skill
     bool canFarm = false;      // the source finder names a usable farm plan
+    bool gathers = false;      // farms it by its own gathering skill (skin, herb, ore, fish)
 };
 
 enum class SubOrderPick : uint8_t
@@ -93,12 +94,16 @@ inline bool SubOrderLoopFree(uint32_t itemId, uint32_t const* branchItems, size_
     return true;
 }
 
-// Rank the free candidates: makers beat farmers, and the first listed of
+// Rank the free candidates: gatherers beat makers, makers beat farmers, and the first listed of
 // equal kind wins so the pick is stable across retries.
 inline int SubOrderCandidateRank(SubOrderCandidate const& candidate)
 {
     if (!candidate.online || candidate.hasOrder || candidate.queuedBusy)
         return -1;
+    // A gatherer beats a maker: crafting a raw material walks the recipe
+    // chain under it (Thick Leather from Heavy from Medium from scraps).
+    if (candidate.canFarm && candidate.gathers)
+        return 3;
     if (candidate.canMake)
         return 2;
     if (candidate.canFarm)

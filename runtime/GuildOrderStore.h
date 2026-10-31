@@ -63,7 +63,7 @@ bool IsDurableOrderBot(uint32_t guidLow);
 // Whether a live bot can take a sub-order for the item: knows the recipe or
 // has a usable farm plan. Reads only the passed player; the world-thread
 // drain and the reassign path share it.
-bool SubOrderCandidateUsable(Player* bot, uint32_t itemId, bool& canMake, bool& canFarm);
+bool SubOrderCandidateUsable(Player* bot, uint32_t itemId, bool& canMake, bool& canFarm, bool& gathers);
 // Remember the zone the bot farms in (0 = re-plan next time), with its
 // position in the current farm plan and the item actually farmed there (the
 // order item, or the reagent of the current craft leg; 0 = the order item).

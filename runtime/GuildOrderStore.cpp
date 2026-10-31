@@ -1645,14 +1645,15 @@ bool PlaceSubOrders(uint32_t nowMs)
                     (!IsFinished(existing->state) || existing->state == OrderState::Stocked);
                 if (candidate.hasOrder)
                 {
-                    bool make = false, farm = false;
-                    if (SubOrderCandidateUsable(bot, request.itemId, make, farm))
+                    bool make = false, farm = false, gathers = false;
+                    if (SubOrderCandidateUsable(bot, request.itemId, make, farm, gathers))
                         candidate.queuedBusy = true;
                     else
                         continue;
                     candidates.push_back(candidate);
                 }
-                else if (!SubOrderCandidateUsable(bot, request.itemId, candidate.canMake, candidate.canFarm))
+                else if (!SubOrderCandidateUsable(bot, request.itemId, candidate.canMake, candidate.canFarm,
+                    candidate.gathers))
                     continue;
                 else
                     candidates.push_back(candidate);
@@ -1748,25 +1749,33 @@ bool IsDurableOrderBot(uint32_t guidLow)
     return accountId && RandomBotAccountRegistry::Instance().IsRegistered(accountId);
 }
 
-bool SubOrderCandidateUsable(Player* bot, uint32_t itemId, bool& canMake, bool& canFarm)
+bool SubOrderCandidateUsable(Player* bot, uint32_t itemId, bool& canMake, bool& canFarm, bool& gathers)
 {
     canMake = false;
     canFarm = false;
+    gathers = false;
     if (!bot || !bot->IsInWorld() || !itemId)
         return false;
-    SourcePlan plan = ai::PlanGuildOrderSources(bot, itemId, OrderType::Farm);
-    bool const farmable = plan.verdict == OrderReason::None && !plan.zones.empty();
-    // A raw material the bot gathers itself (skin, herb, ore, fish) is
-    // farmed, not crafted: the recipe chain under it (Thick Leather from
-    // Heavy from Medium from scraps) multiplies into hundreds of reagents.
-    bool const gathered = farmable &&
-        (plan.sources & (SourceSkin | SourceHerb | SourceOre | SourceFish)) != 0;
-    if (!gathered && FindCraftSpellFor(bot, itemId))
+    bool const maker = FindCraftSpellFor(bot, itemId) != 0;
+    // The planner walks every spawn slice: a maker without a gathering skill
+    // skips it, since only a gatherer may outrank its recipe.
+    if (maker && !bot->HasSkill(SKILL_SKINNING) && !bot->HasSkill(SKILL_HERBALISM) &&
+        !bot->HasSkill(SKILL_MINING) && !bot->HasSkill(SKILL_FISHING))
     {
         canMake = true;
         return true;
     }
-    canFarm = farmable;
+    SourcePlan plan = ai::PlanGuildOrderSources(bot, itemId, OrderType::Farm);
+    canFarm = plan.verdict == OrderReason::None && !plan.zones.empty();
+    // A raw material the bot gathers itself is farmed, not crafted: the
+    // recipe chain under it multiplies into hundreds of reagents.
+    gathers = canFarm && (plan.sources & (SourceSkin | SourceHerb | SourceOre | SourceFish)) != 0;
+    if (maker && !gathers)
+    {
+        canMake = true;
+        canFarm = false;
+        return true;
+    }
     return canFarm;
 }
 

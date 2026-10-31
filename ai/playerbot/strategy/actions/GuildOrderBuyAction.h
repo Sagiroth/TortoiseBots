@@ -1,5 +1,6 @@
 
 #include "playerbot/strategy/Action.h"
+#include "MovementActions.h"
 #include "playerbot/strategy/values/GuildValues.h"
 
 namespace TortoiseBots::GuildOrders { struct OrderRecord; }
@@ -12,14 +13,20 @@ namespace ai
 // travel pick when the auctioneer search itself comes back empty.
 void AdvanceGuildOrderAfterAuction(PlayerbotAI* ai, Player* bot,
     TortoiseBots::GuildOrders::OrderRecord const& order);
+
+// A usable auctioneer near the bot, out to the service-trip arrival radius
+// plus a margin: a trip counts as arrived at 10 yd while interaction needs
+// 5 yd, so the buy action walks the last steps itself.
+inline constexpr float kGuildOrderAuctioneerNearYd = 15.0f;
+Unit* GuildOrderAuctioneerNear(PlayerbotAI* ai, Player* bot);
 } // namespace ai
 
 namespace ai
 {
-    class GuildOrderBuyAction : public Action
+    class GuildOrderBuyAction : public MovementAction
     {
     public:
-        GuildOrderBuyAction(PlayerbotAI* ai) : Action(ai, "guild order buy") {}
+        GuildOrderBuyAction(PlayerbotAI* ai) : MovementAction(ai, "guild order buy") {}
 
         bool Execute(Event& event) override;
         bool isUseful() override;

@@ -74,7 +74,22 @@ bool GuildOrderBuyAction::isUseful()
         return false;
     // No bag-space gate here: with nothing listed the leg must still move
     // down the ladder; a listing that does not fit is skipped in Execute.
-    return FindNearbyAuctioneer() != nullptr;
+    return GuildOrderAuctioneerNear(ai, bot) != nullptr;
+}
+
+Unit* ai::GuildOrderAuctioneerNear(PlayerbotAI* ai, Player* bot)
+{
+    std::list<ObjectGuid> npcs =
+        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest npcs")->Get();
+    for (ObjectGuid& guid : npcs)
+    {
+        Creature* npc = ai->GetCreature(guid);
+        if (!npc || !npc->IsAlive() || !npc->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_AUCTIONEER) ||
+            npc->IsHostileTo(bot) || bot->GetDistance(npc) > kGuildOrderAuctioneerNearYd)
+            continue;
+        return npc;
+    }
+    return nullptr;
 }
 
 Unit* GuildOrderBuyAction::FindNearbyAuctioneer()
@@ -100,7 +115,10 @@ bool GuildOrderBuyAction::Execute(Event& event)
 
     Unit* auctioneer = FindNearbyAuctioneer();
     if (!auctioneer)
-        return false;
+    {
+        Unit* near = GuildOrderAuctioneerNear(ai, bot);
+        return near && MoveNear(near, INTERACTION_DISTANCE - 1.0f);
+    }
 
     uint32_t itemId = stored->supplyItemId;
     // The leg's count is already what is still missing after bags and

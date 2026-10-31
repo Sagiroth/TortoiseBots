@@ -87,6 +87,16 @@ int main()
         CHECK(PickSubOrderCandidate(both, 2, queuedOut) == 0);
         CHECK(!queuedOut);
     }
+    // A gatherer beats a maker for a raw material.
+    {
+        SubOrderCandidate gatherer = farmer;
+        gatherer.botGuidLow = 8;
+        gatherer.gathers = true;
+        CHECK(SubOrderCandidateRank(gatherer) == 3);
+        SubOrderCandidate both[] = { maker, gatherer };
+        bool queuedOut = false;
+        CHECK(PickSubOrderCandidate(both, 2, queuedOut) == 1);
+    }
     // Offline and unable candidates are invisible: no candidate at all.
     {
         SubOrderCandidate none[] = { offline, useless };
