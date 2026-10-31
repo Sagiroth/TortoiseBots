@@ -675,6 +675,49 @@ class BossDataTest(unittest.TestCase):
                 entry,
             )
 
+    def test_flag_v_phase_rule_parses(self):
+        self.assertEqual(
+            boss_data.parse_phase_rule("flag=v"), {"kind": "flag", "flag": "v"}
+        )
+
+    def test_flag_v_needs_visibility_off_citation(self):
+        rows = [dict(r) for r in BASE_ROWS]
+        rows[2] = phase("gone", "flag=v", 1, source="vanish.cpp:1")
+        fx = self.make(rows)
+        vanish = fx.dir / "core" / "vanish.cpp"
+        vanish.write_text("void UpdateAI() { m_creature->SetVisibility(VISIBILITY_ON); }\n")
+        fx.rebuild()
+        errors, _ = fx.validate()
+        self.assertTrue(
+            any("cited lines do not mention VISIBILITY_OFF" in e for e in errors), errors
+        )
+        vanish.write_text(
+            "void UpdateAI() { m_creature->SetVisibility(VISIBILITY_OFF); }\n"
+        )
+        errors, _ = fx.validate()
+        self.assertEqual(errors, [])
+
+    def test_committed_vanish_phases(self):
+        doc = json.loads(boss_data.DEFAULT_JSON.read_text(encoding="utf-8"))
+        for entry, name in (("11502", "submerged"), ("15517", "submerged"), ("15299", "split")):
+            phases = doc["bosses"][entry]["phases"]
+            vanish = [
+                p for p in phases
+                if p["name"] == name and p["rule"] == {"kind": "flag", "flag": "v"}
+            ]
+            self.assertEqual(len(vanish), 1, entry)
+            starts = [p for p in phases if p["rule"] == {"kind": "start"}]
+            self.assertEqual(len(starts), 1, entry)
+            self.assertEqual(starts[0]["order"], max(p["order"] for p in phases), entry)
+
+    def test_jindo_lists_no_dead_add(self):
+        doc = json.loads(boss_data.DEFAULT_JSON.read_text(encoding="utf-8"))
+        self.assertNotIn(14826, [a["entry"] for a in doc["bosses"]["11380"]["adds"]])
+        self.assertTrue(
+            any("14826" in note and "world spawns" in note for note in doc["bosses"]["11380"]["notes"]),
+            "the panel still explains the pit trolls",
+        )
+
     def test_committed_data_builds_to_committed_json(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
@@ -1281,7 +1324,7 @@ AQ40_REST = {
         19128: (0, 15000, 20000, "t=victim", 0),
         25790: (0, 0, 0, "t=self;self;ok.purge=nopurge", 0),
     }, []),
-    15299: (["aura=25937", "start"], {
+    15299: (["aura=25937", "flag=v", "start"], {
         25993: (0, 7000, 12000, "p=fight;t=aoe;cone", 0),
         25991: (0, 10000, 15000, "p=fight;t=aoe;aura", 0),
         25989: (0, 0, 0, "t=aoe;ground", 0),
@@ -1289,7 +1332,7 @@ AQ40_REST = {
         25937: (0, 0, 0, "t=self;self;ok=phase", 0),
         25938: (0, 0, 0, "t=self;ok=script", 0),
     }, [(15667, "summon", 1), (15922, "trigger", 0)]),
-    15517: (["aura=26615", "start"], {
+    15517: (["aura=26615", "flag=v", "start"], {
         26103: (0, 15000, 15000, "t=aoe;int;ok.interrupt=nokick", 1500),
         26102: (0, 12000, 17000, "t=aoe;int;ok.interrupt=nokick", 2000),
         26616: (0, 0, 0, "p=enraged;t=random;int;ok.interrupt=nokick", 2000),
@@ -1373,12 +1416,16 @@ class Aq40RestValueTest(unittest.TestCase):
         for entry in (15511, 15543, 15544):
             self.assertEqual(self.boss(entry)["phases"], [])
 
-    def test_viscidus_freeze_is_the_only_visible_phase(self):
+    def test_viscidus_freeze_and_split_phases(self):
         boss = self.boss(15299)
-        self.assertEqual(len(boss["phases"]), 2)
+        self.assertEqual(len(boss["phases"]), 3)
         self.assertEqual(boss["phases"][0]["rule"], {"kind": "aura", "aura": 25937})
-        # The exploded state is SPAWNING + feign death + invisible, none of it in uf: a note, not a rule.
-        self.assertFalse(any(p["rule"]["kind"] == "flag" for p in boss["phases"]))
+        # The exploded state is SPAWNING + feign death + invisible; only the invisibility reaches the panel.
+        self.assertEqual(
+            boss["phases"][1],
+            {"name": "split", "order": 2, "rule": {"kind": "flag", "flag": "v"}},
+        )
+        self.assertEqual(boss["phases"][2]["rule"], {"kind": "start"})
         self.assertTrue(any("shatter" in note for note in boss["notes"]))
         self.assertTrue(all(a["phase"] == "" for a in boss["abilities"] if a["sid"] == 25938))
         self.assertTrue(all(a["phase"] == "fight" for a in boss["abilities"] if a["sid"] in (25993, 25991)))
@@ -1386,18 +1433,18 @@ class Aq40RestValueTest(unittest.TestCase):
         self.assertTrue(abilities[25993]["cone"], "Poison Shock is a front cone")
         self.assertFalse(abilities[25991]["cone"], "Poison Bolt Volley is a circle, not a cone")
 
-    def test_ouro_enrage_is_the_only_visible_phase(self):
+    def test_ouro_enrage_and_vanish_phases(self):
         boss = self.boss(15517)
-        self.assertEqual([_phase_text(p) for p in boss["phases"]], ["aura=26615", "start"])
+        self.assertEqual([_phase_text(p) for p in boss["phases"]], ["aura=26615", "flag=v", "start"])
         abilities = {a["sid"]: a for a in boss["abilities"]}
         self.assertEqual(abilities[26616]["phase"], "enraged")
         self.assertEqual(abilities[26617]["phase"], "enraged")
         self.assertEqual(abilities[26058]["summon"], 15712)
-        # The submerge aura reaches telemetry only as Ouro turns invisible, so a phase row would vanish
-        # with him; the row stays as a self aura and the panel note carries the 30 s.
+        # The submerge visual stays a self aura, not a phase-bound ability; the flag rule covers the
+        # boss while the reports leave him out and the panel note carries the 30 s.
         self.assertEqual(abilities[26063]["phase"], "")
         self.assertEqual(abilities[26063]["okNeeds"], {"purge": "nopurge"})
-        self.assertTrue(any("leaves the panel" in note for note in boss["notes"]))
+        self.assertTrue(any("stays on the panel" in note for note in boss["notes"]))
         # Sweep, Sand Blast and Boulder are casts the core's kick cannot stop: PreventionType is SILENCE
         # for Sand Blast but its interruptFlags lack 0x02, and the other two are not SILENCE at all. The
         # cone flag stays off Sand Blast because the table's DB contract only accepts implicit target 24
