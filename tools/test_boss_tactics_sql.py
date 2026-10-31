@@ -18,7 +18,7 @@ import re
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-KINDS = {"interrupt", "kill_first", "behind"}
+KINDS = {"interrupt", "kill_first", "behind", "avoid_cast"}
 ROW = re.compile(r"^\((\d+), (\d+), '(\w+)', (\d+), (\d+), (\d+), (-?[\d.]+), '(?:[^']|'')*'\)[,;]$")
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
@@ -102,6 +102,9 @@ class BossTacticsSql(unittest.TestCase):
                 self.assertGreater(int(spell), 0, where)
             if kind == "behind":
                 self.assertGreater(float(param), 0.0, where)
+            if kind == "avoid_cast":
+                self.assertGreater(int(spell), 0, where)
+                self.assertGreater(float(param), 0.0, where)
 
     def test_primary_keys_are_unique(self):
         seen = set()
@@ -159,6 +162,17 @@ class BossTacticsSql(unittest.TestCase):
                 have,
                 "missing ai_boss_tactic interrupt row map %s boss %s spell %s" % (map_id, boss, spell),
             )
+
+    def test_bat_rider_explosion_row(self):
+        # The Gurubashi Bat Rider (14750) casts Unstable Concoction 24024 on itself below
+        # 40 % health (core boss_jeklik.cpp npc_guru_bat_riderAI): a 3 s cast, fire damage to
+        # every enemy within 10 yd (radius index 13). A kick cannot stop it (preventionType 0,
+        # interruptFlags 9) and the template is stun-immune, so the row is avoid_cast and its
+        # radius is the blast's 10 yd plus 3.
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])): float(row[7]) for row in effective_rows()}
+        self.assertIn((309, 14750, "avoid_cast", 0, 24024), live)
+        self.assertGreaterEqual(live[(309, 14750, "avoid_cast", 0, 24024)], 13.0)
+        self.assertNotIn((309, 14750, "interrupt", 0, 24024), live)
 
 
 def _sql_statements(text):
@@ -424,6 +438,20 @@ class BossTacticsCoreData(unittest.TestCase):
                 problems.append("%s: interruptFlags 0x%x lacks SPELL_INTERRUPT_FLAG_DAMAGE 0x2"
                                 % (where, info["interruptFlags"]))
         self.assertEqual([], problems, "the core cannot interrupt these rows:\n" + "\n".join(problems))
+
+    def test_avoid_cast_spells_are_casts(self):
+        # The avoid_cast scan reads the caster's current generic spell, which an instant
+        # spell never stays in long enough to be seen: a cast time is required.
+        rows = sorted((int(row[1]), int(row[2]), int(row[5])) for row in effective_rows() if row[3] == "avoid_cast")
+        problems = []
+        for map_id, boss, spell in rows:
+            info = self.spells.get(spell)
+            if info is None:
+                problems.append("map %s boss %s spell %s: no spell_template row" % (map_id, boss, spell))
+            elif info["castingTimeIndex"] <= 1:
+                problems.append("map %s boss %s spell %s: castingTimeIndex %s, the cast is instant"
+                                % (map_id, boss, spell, info["castingTimeIndex"]))
+        self.assertEqual([], problems, "avoid_cast rows the scan cannot see:\n" + "\n".join(problems))
 
     def test_boss_and_target_entries_exist(self):
         for row in effective_rows():

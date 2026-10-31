@@ -43,6 +43,23 @@ namespace ai
     // The boss whose front this bot should leave, or null.
     Unit* FindBossFrontDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
+    // A creature in the fight casting a spell an avoid_cast row lists, and the radius to keep from it.
+    struct BossCastDanger
+    {
+        Unit* caster = nullptr;
+        float radius = 0.0f;
+    };
+
+    // The radius `unit` must be kept at right now (its current cast is listed), or 0.
+    float CastDangerOf(const BossTacticsFight& fight, Unit* unit);
+
+    // The listed casts in progress as zones, leaving out those of the casters `bot` holds (a tank the caster is on);
+    // `bot` null: all of them.
+    std::vector<CastDangerZone> CastDangerZones(const BossTacticsFight& fight, Player* bot);
+
+    // The nearest listed cast this bot stands inside and has to leave (never a tank), or no caster.
+    BossCastDanger FindBossCastDanger(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
     class BossTacticsInterruptAction : public Action
     {
     public:
@@ -64,6 +81,29 @@ namespace ai
     public:
         BossTacticsHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics hold") {}
         float GetValue(Action* action) override;
+    };
+
+    // While a listed cast runs, a move whose destination lies in its blast (a reach or chase to a unit standing in it,
+    // a heal walk, a follow, a stay spot) would walk the bot back into it: such a move is held (CastHoldsMove).
+    // Registered on the combat and non-combat engines: a held bot out of combat itself walks back to its stay there.
+    class BossTacticsCastHoldMultiplier : public Multiplier
+    {
+    public:
+        BossTacticsCastHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics cast hold") {}
+        float GetValue(Action* action) override;
+    };
+
+    class BossTacticsAvoidCastAction : public MovementAction
+    {
+    public:
+        BossTacticsAvoidCastAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics avoid cast") {}
+        bool isUseful() override;
+        bool isPossible() override;
+        bool Execute(Event& event) override;
+        // As a reaction the engine would break the bot's cast and stop its walk before Execute runs; Execute does both
+        // itself, and only once a walk out is under way.
+        bool ShouldReactionInterruptCast() const override { return false; }
+        bool ShouldReactionInterruptMovement() const override { return false; }
     };
 
     class BossTacticsStepBehindAction : public MovementAction

@@ -45,6 +45,16 @@ static TacticCandidate Cand(std::uint32_t entry, float distance, bool pickable =
     return c;
 }
 
+static CastDangerZone Zone(float x, float y, float z, float radius)
+{
+    CastDangerZone zone;
+    zone.x = x;
+    zone.y = y;
+    zone.z = z;
+    zone.radius = radius;
+    return zone;
+}
+
 int main()
 {
     std::cout << "Starting TortoiseBots boss tactics policy tests...\n";
@@ -185,6 +195,193 @@ int main()
         BossFlankDestination(0, 0, 0.0f, 0.5f, 0.0f, 3.0f, x, y);  // inside the minimum: pushed out to it
         CHECK(std::fabs(std::sqrt(x * x + y * y) - 3.0f) < 0.01f);
         CHECK(!InsideBossFront(0, 0, 0.0f, x, y, 20));
+    }
+
+    // avoid_cast: the text form, and a row needs the spell and a radius.
+    {
+        CHECK(ParseBossTacticKind("avoid_cast") == BossTacticKind::AvoidCast);
+        BossTacticTable table;
+        CHECK(!table.Add(Row(309, 14750, BossTacticKind::AvoidCast, 0, 0, 0, 13.0f)));      // no spell
+        CHECK(!table.Add(Row(309, 14750, BossTacticKind::AvoidCast, 0, 24024, 0, 0.0f)));   // no radius
+        CHECK(!table.Add(Row(309, 14750, BossTacticKind::AvoidCast, 0, 24024, 0, -1.0f)));
+        CHECK(table.Add(Row(309, 14750, BossTacticKind::AvoidCast, 0, 24024, 0, 13.0f)));
+        CHECK(!table.Add(Row(309, 14750, BossTacticKind::AvoidCast, 0, 24024, 0, 15.0f)));  // same key
+        table.Seal();
+        CHECK(table.HasMap(309));
+    }
+
+    // avoid_cast radius: only the listed spell of the listed caster; the widest row wins.
+    {
+        const std::vector<BossTacticRow> rows = {
+            Row(309, 14750, BossTacticKind::AvoidCast, 0, 24024, 0, 13.0f),
+            Row(309, 14750, BossTacticKind::Interrupt, 0, 16006),
+            Row(309, 14517, BossTacticKind::AvoidCast, 14965, 23970, 0, 8.0f),
+            Row(309, 14518, BossTacticKind::AvoidCast, 14965, 23970, 0, 11.0f),
+        };
+        const ActiveBossRows active = Active(rows);
+        CHECK(AvoidCastRadius(active, 14750, 24024) == 13.0f);
+        CHECK(AvoidCastRadius(active, 14750, 23511) == 0.0f);   // another spell of the same caster
+        CHECK(AvoidCastRadius(active, 14751, 24024) == 0.0f);   // the same spell from another caster
+        CHECK(AvoidCastRadius(active, 14750, 16006) == 0.0f);   // an interrupt row is not an avoid row
+        CHECK(AvoidCastRadius(active, 14965, 23970) == 11.0f);  // the add named by two rows: the wider one
+        CHECK(AvoidCastRadius(ActiveBossRows(), 14750, 24024) == 0.0f);
+    }
+
+    // Who leaves: everyone inside the radius except a tank.
+    {
+        CHECK(MustLeaveCast(false, 13.0f, 2.0f));
+        CHECK(MustLeaveCast(false, 13.0f, 12.9f));
+        CHECK(!MustLeaveCast(false, 13.0f, 13.0f));   // on the edge is out
+        CHECK(!MustLeaveCast(false, 13.0f, 20.0f));
+        CHECK(!MustLeaveCast(true, 13.0f, 2.0f));     // the tank holding the caster
+        CHECK(!MustLeaveCast(false, 0.0f, 2.0f));     // no row
+    }
+
+    // Escape points: on a circle a step past the radius around the caster, the bot's own bearing first,
+    // then alternating sides; every point is outside the radius.
+    {
+        AvoidCastPoint points[kAvoidCastPoints];
+        const int n = AvoidCastDestinations(10.0f, 20.0f, 14.0f, 20.0f, 13.0f, 0.0f, points);
+        CHECK(n == kAvoidCastPoints);
+        const float ring = 13.0f + kAvoidCastStepOut;
+        CHECK(std::fabs(points[0].x - (10.0f + ring)) < 0.01f);   // straight away from the caster (+x)
+        CHECK(std::fabs(points[0].y - 20.0f) < 0.01f);
+        for (int i = 0; i < n; ++i)
+        {
+            const float dx = points[i].x - 10.0f;
+            const float dy = points[i].y - 20.0f;
+            CHECK(std::fabs(std::sqrt(dx * dx + dy * dy) - ring) < 0.01f);
+            CHECK(!MustLeaveCast(false, 13.0f, std::sqrt(dx * dx + dy * dy)));
+        }
+        CHECK(points[1].y > 20.0f && points[2].y < 20.0f);        // 45 degrees to one side, then the other
+        CHECK(std::fabs(points[1].y - 20.0f + (points[2].y - 20.0f)) < 0.01f);
+        // A bot on top of the caster has no bearing: the fallback angle is used.
+        AvoidCastDestinations(10.0f, 20.0f, 10.0f, 20.0f, 13.0f, 3.14159265f, points);
+        CHECK(points[0].x < 10.0f - ring + 0.01f);
+        CHECK(std::fabs(points[0].y - 20.0f) < 0.01f);
+    }
+
+    // One log line per bot per cast: the first walk-out of a cast is new, the ticks that follow within the gap are
+    // not, and another caster, another spell or a long silence start a new cast.
+    {
+        AvoidCastLogState state;
+        CHECK(AvoidCastIsNewCast(state, 0x1111, 24024, 100, 1000));                    // first sight
+        CHECK(!AvoidCastIsNewCast(state, 0x1111, 24024, 100, 1500));                   // the next tick of the cast
+        CHECK(!AvoidCastIsNewCast(state, 0x1111, 24024, 100, 3400));                   // a 3 s blast kept alive tick by tick
+        CHECK(AvoidCastIsNewCast(state, 0x2222, 24024, 100, 3500));                    // another caster, same spell
+        CHECK(AvoidCastIsNewCast(state, 0x2222, 23511, 100, 3600));                    // same caster, another spell
+        CHECK(AvoidCastIsNewCast(state, 0x2222, 23511, 100, 3600 + kAvoidCastLogGapMs));  // the cast ended, a new one
+        CHECK(!AvoidCastIsNewCast(state, 0x2222, 23511, 100, 3600 + kAvoidCastLogGapMs + 10));
+        // Same caster and spell but a new Spell object (a recast inside the gap) is a new cast.
+        CHECK(AvoidCastIsNewCast(state, 0x2222, 23511, 200, 3600 + kAvoidCastLogGapMs + 20));
+        // Two casters at once, the nearest one alternating between ticks: one row each.
+        AvoidCastLogState two;
+        CHECK(AvoidCastIsNewCast(two, 0xA, 24024, 1, 10000));
+        CHECK(AvoidCastIsNewCast(two, 0xB, 24024, 2, 10100));
+        CHECK(!AvoidCastIsNewCast(two, 0xA, 24024, 1, 10200));
+        CHECK(!AvoidCastIsNewCast(two, 0xB, 24024, 2, 10300));
+        CHECK(!AvoidCastIsNewCast(two, 0xA, 24024, 1, 10400));
+        // More live casts than slots evicts the one seen longest ago.
+        AvoidCastLogState many;
+        for (std::uint64_t g = 1; g <= kAvoidCastLogCasts; ++g)
+            CHECK(AvoidCastIsNewCast(many, g, 24024, g, 20000 + 10 * static_cast<std::uint32_t>(g)));
+        CHECK(AvoidCastIsNewCast(many, 99, 24024, 99, 20100));
+        CHECK(AvoidCastIsNewCast(many, 1, 24024, 1, 20110));   // caster 1 was the evicted one
+        // The millisecond clock wraps: 4294967000 -> 100 is 396 ms, still the same cast.
+        AvoidCastLogState wrap;
+        CHECK(AvoidCastIsNewCast(wrap, 7, 1, 100, 4294967000u));
+        CHECK(!AvoidCastIsNewCast(wrap, 7, 1, 100, 100u));
+    }
+
+    // Who holds a caster: only a tank the caster is on. A caster on nobody keeps nobody in, and a healer it turned to
+    // leaves.
+    {
+        CHECK(HoldsCaster(true, true));
+        CHECK(!HoldsCaster(true, false));    // an off-tank, or a tank before the caster picked anyone
+        CHECK(!HoldsCaster(false, true));    // a healer the caster is on
+        CHECK(!HoldsCaster(false, false));
+    }
+
+    // The avoid_cast map flag: only a map with an avoid_cast row, and only after the seal.
+    {
+        BossTacticTable flags;
+        CHECK(flags.Add(Row(70, 6910, BossTacticKind::Interrupt, 0, 8292, 0, 0.0f)));
+        CHECK(flags.Add(Row(309, 14750, BossTacticKind::AvoidCast, 0, 24024, 0, 13.0f)));
+        CHECK(!flags.HasAvoidCastMap(309));   // not before the seal
+        flags.Seal();
+        CHECK(flags.HasAvoidCastMap(309));
+        CHECK(!flags.HasAvoidCastMap(70));    // rows, but no avoid_cast row
+        CHECK(flags.HasMap(70));
+        CHECK(!flags.HasAvoidCastMap(1));
+    }
+
+    // Zones: 3D, centre to centre, the edge is out.
+    {
+        std::vector<CastDangerZone> zones = {Zone(0.0f, 0.0f, 0.0f, 13.0f)};
+        CHECK(InsideAnyCastZone(zones, 12.9f, 0.0f, 0.0f));
+        CHECK(!InsideAnyCastZone(zones, 13.0f, 0.0f, 0.0f));
+        CHECK(!InsideAnyCastZone(zones, 5.0f, 0.0f, 12.5f));   // 13.5 yd in 3D: a ledge above is out
+        CHECK(!InsideAnyCastZone(std::vector<CastDangerZone>(), 0.0f, 0.0f, 0.0f));
+    }
+
+    // The walk-out's straight line: never deeper into its own blast, never through another one.
+    {
+        std::vector<CastDangerZone> one = {Zone(0.0f, 0.0f, 0.0f, 13.0f)};
+        // A bot 10 yd east: straight out, 45 and 90 degrees are clear; 135 degrees would cross the caster.
+        AvoidCastPoint ring[kAvoidCastPoints];
+        AvoidCastDestinations(0.0f, 0.0f, 10.0f, 0.0f, 13.0f, 0.0f, ring);
+        CHECK(AvoidCastChordClear(10.0f, 0.0f, ring[0].x, ring[0].y, one));
+        CHECK(AvoidCastChordClear(10.0f, 0.0f, ring[1].x, ring[1].y, one));
+        CHECK(AvoidCastChordClear(10.0f, 0.0f, ring[3].x, ring[3].y, one) ==
+              (SegmentPointDistance2D(10.0f, 0.0f, ring[3].x, ring[3].y, 0.0f, 0.0f) >= 10.0f - kAvoidCastChordSlack));
+        CHECK(!AvoidCastChordClear(10.0f, 0.0f, ring[5].x, ring[5].y, one));
+        CHECK(!AvoidCastChordClear(10.0f, 0.0f, ring[6].x, ring[6].y, one));
+        // A second rider 25 yd east of the first: straight out (east) runs through its blast.
+        std::vector<CastDangerZone> two = {Zone(0.0f, 0.0f, 0.0f, 13.0f), Zone(25.0f, 0.0f, 0.0f, 13.0f)};
+        CHECK(!AvoidCastChordClear(10.0f, 0.0f, ring[0].x, ring[0].y, two));
+    }
+
+    // The escapes: only clear chords, shortest walk first.
+    {
+        std::vector<CastDangerZone> one = {Zone(0.0f, 0.0f, 0.0f, 13.0f)};
+        AvoidCastPoint out[kAvoidCastPoints];
+        const int n = AvoidCastEscapes(0.0f, 0.0f, 10.0f, 0.0f, 13.0f, 0.0f, one, out);
+        CHECK(n >= 3 && n < kAvoidCastPoints);
+        CHECK(std::fabs(out[0].x - (13.0f + kAvoidCastStepOut)) < 0.01f && std::fabs(out[0].y) < 0.01f);
+        float last = 0.0f;
+        for (int i = 0; i < n; ++i)
+        {
+            const float d = std::sqrt((out[i].x - 10.0f) * (out[i].x - 10.0f) + out[i].y * out[i].y);
+            CHECK(d + 0.001f >= last);
+            last = d;
+            CHECK(out[i].x > -0.01f);   // nothing on the far side of the caster
+        }
+        // Boxed in by a second blast on the straight-out side: straight out is gone, the turns stay.
+        std::vector<CastDangerZone> two = {Zone(0.0f, 0.0f, 0.0f, 13.0f), Zone(25.0f, 0.0f, 0.0f, 13.0f)};
+        const int m = AvoidCastEscapes(0.0f, 0.0f, 10.0f, 0.0f, 13.0f, 0.0f, two, out);
+        CHECK(m > 0 && m < n);
+        for (int i = 0; i < m; ++i)
+            CHECK(std::fabs(out[i].y) > 1.0f);
+    }
+
+    // The cast hold: a move whose destination stands in a blast is held; not the walk-out, not a move to the bot
+    // itself, not a move with no destination, not one outside every blast.
+    {
+        std::vector<CastDangerZone> zones = {Zone(0.0f, 0.0f, 0.0f, 13.0f)};
+        CHECK(CastHoldsMove(false, false, true, 3.0f, 0.0f, 0.0f, zones));       // a reach to the caster or beside it
+        CHECK(CastHoldsMove(false, false, true, 0.0f, 12.0f, 0.0f, zones));      // a heal walk to the tank, a stay spot
+        CHECK(!CastHoldsMove(false, false, true, 0.0f, 20.0f, 0.0f, zones));     // a follow to a master outside
+        CHECK(!CastHoldsMove(true, false, true, 3.0f, 0.0f, 0.0f, zones));       // the walk-out itself
+        CHECK(!CastHoldsMove(false, true, true, 3.0f, 0.0f, 0.0f, zones));       // a move to the bot itself
+        CHECK(!CastHoldsMove(false, false, false, 3.0f, 0.0f, 0.0f, zones));
+        CHECK(!CastHoldsMove(false, false, true, 3.0f, 0.0f, 0.0f, std::vector<CastDangerZone>()));  // the tank's held caster
+    }
+
+    // The walk names in the log row.
+    {
+        CHECK(std::string(AvoidCastWalkName(AvoidCastWalk::Started)) == "started");
+        CHECK(std::string(AvoidCastWalkName(AvoidCastWalk::Deferred)) == "deferred");
+        CHECK(std::string(AvoidCastWalkName(AvoidCastWalk::None)) == "none");
     }
 
     std::cout << "All boss tactics policy tests passed.\n";

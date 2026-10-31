@@ -41,14 +41,14 @@ Why the commander binding counts: those runs are the ones that exist to clear a 
 | :--- | :--- |
 | `map` | Map id (Uldaman is 70). |
 | `boss_entry` | Creature entry whose presence among the bots' attackers activates the row. |
-| `kind` | `interrupt`, `kill_first` or `behind` (below). |
+| `kind` | `interrupt`, `kill_first`, `behind` or `avoid_cast` (below). |
 | `target_entry` | The creature the row is about; `0` means the boss itself. |
-| `spell_id` | `interrupt`: the spell to interrupt. |
+| `spell_id` | `interrupt`: the spell to interrupt; `avoid_cast`: the cast to walk out of. |
 | `priority` | `kill_first`: lower is killed first. |
-| `param` | `behind`: yards around the boss in which its front is kept clear. |
+| `param` | `behind`: yards around the boss in which its front is kept clear; `avoid_cast`: yards around the caster bots leave (the blast radius plus a margin). |
 | `comment` | Free text; where the row came from. |
 
-The primary key is `(map, boss_entry, kind, target_entry, spell_id)`. The loader skips a row it cannot use (unknown kind, an `interrupt` without a spell, a `behind` without a radius, a duplicate key) and logs how many it skipped; `tools/test_boss_tactics_sql.py` rejects the same rows at commit time. With `TORTOISE_CORE=~/tortoise-wow` set, the same test also checks every live `interrupt` row against the core's data: that the spell exists and the core's interrupt rule can stop it, that the boss and target templates exist, and that the boss spawns on its map; without the variable those checks are skipped.
+The primary key is `(map, boss_entry, kind, target_entry, spell_id)`. The loader skips a row it cannot use (unknown kind, an `interrupt` without a spell, a `behind` without a radius, an `avoid_cast` without a spell or a radius, a duplicate key) and logs how many it skipped; `tools/test_boss_tactics_sql.py` rejects the same rows at commit time. With `TORTOISE_CORE=~/tortoise-wow` set, the same test also checks every live `interrupt` row against the core's data: that the spell exists and the core's interrupt rule can stop it, that the boss and target templates exist, and that the boss spawns on its map; without the variable those checks are skipped.
 
 ### Kinds
 
@@ -57,8 +57,9 @@ The primary key is `(map, boss_entry, kind, target_entry, spell_id)`. The loader
 | `interrupt` | While a creature in the fight (`target_entry`, or the boss) casts `spell_id`, a bot that knows an interrupt and has it ready in range uses it: *Pummel*, *Shield Bash*, *Kick*, *Counterspell* or *Earth Shock*, first castable wins. The class interrupts that already fire on the bot's current target are unchanged. | any bot with an interrupt |
 | `kill_first` | Takes the listed creature as its target before anything else; among several listed creatures the lowest `priority` goes first, the nearer one breaks a tie, nothing further than 40 yd is picked. While on that target the generic assist and AoE rows do not pull it back to the boss. | DPS only; never tanks or healers; an explicit `attack` order from a player wins |
 | `behind` | A bot that stands within `param` yd of the boss, in its front half, steps to a point 120 degrees off its facing at the same distance (the same geometry as the generic rear flank). | everyone except the bot the boss is attacking |
+| `avoid_cast` | While a creature in the fight (`target_entry`, or the row's entry itself, trash included) casts `spell_id`, a bot whose centre is within `param` yd of it (3D) walks to a point 2 yd past that radius. The points lie on that ring, straight out and 45, 90 and 135 degrees to either side; a point whose straight line from the bot would take it closer to the caster than it stands, or through another listed cast, is dropped, and the rest are tried shortest walk first, skipping one whose ground lies in a listed cast or that the bot cannot see. The walk runs on the reaction engine (which acts while the bot is mid-cast) and on the combat and non-combat engines, also for a bot the run holds on a stay or in a pull's join window, and for a held bot out of combat itself while its group has attackers. A bot with no usable point does nothing and keeps its cast; otherwise its own cast is broken once the walk is under way. Until the cast ends or the caster dies, every move whose destination stands in a listed cast (a reach, a chase, a heal walk or a follow to a unit in it, a walk back to a stay spot in it) is held, so a bot does not walk straight back in; then the normal moves take it back. It outranks the generic step out of a ground effect. With `bot_events.csv` in `AiPlayerbot.AllowedLogFiles` (the default) each bot writes one `BossTacticsAvoidCast` row per cast: `caster=<entry>:<guid low>,spell=<id>` and `dist=<yd to the caster before the move>,radius=<yd>,dest=<yd of the point taken, or none>,stopped=<1 if it broke its own cast>,walk=<started, deferred (the mover took the point but no walk started), or none>`. Pair it with an `interrupt` row when a kick can stop the spell. | everyone except a tank the caster is on (an off-tank, and any bot when the caster is on nobody, leaves) |
 
-Not in the table yet, and why: tank swap and re-grab (Ironaya's *Knock Away*), dispel priorities, spread and ground-effect avoidance. The generic raid hazard, spread and dispel code already covers part of it, and each of these needs a live fight to tune before it gets a kind. Adding one means a new `BossTacticKind`, a scan function and an action next to the existing three.
+Not in the table yet, and why: tank swap and re-grab (Ironaya's *Knock Away*), dispel priorities, spread and ground-effect avoidance. The generic raid hazard, spread and dispel code already covers part of it, and each of these needs a live fight to tune before it gets a kind. Adding one means a new `BossTacticKind`, a scan function and an action next to the existing four.
 
 ## Uldaman rows (map 70)
 
@@ -203,6 +204,16 @@ Rows added 2026-10-24 (`data/sql/world/20261024153900_world.sql`), read from `to
 Kill order reason: the whole-party shadow damage of Marduk (Volley plus aura, hitting even the 4.1k hp priest) runs longer if Vectus dies first. No CC on either (both undead, immune masks; the plan's `cc_priority` never applies to a boss row).
 
 What needs a live check: that Marduk dies first with Vectus on the tank, that Flamestrike is kicked in time.
+
+## Zul'Gurub trash rows (map 309)
+
+Row added 2026-10-30 (`data/sql/world/20261030160000_world.sql`), read from `tortoise-wow` 5d79486; the boss rows of map 309 come from the run plan migrations.
+
+| Creature (entry) | Row | Data behind it |
+| :--- | :--- | :--- |
+| Gurubashi Bat Rider (14750) | `avoid_cast` Unstable Concoction 24024, 13 yd | `npc_guru_bat_riderAI` (`boss_jeklik.cpp`) casts it on itself once, below 40 % health, after turning fear-immune: a 3 s cast (castingTimeIndex 14), 4375-5625 fire damage to every enemy within 10 yd (radius index 13), then it kills itself. The core hits a player whose centre is within 10 yd in 3D, so the row keeps 10 + 3. No `interrupt` row: preventionType 0 and interruptFlags 9 (no damage bit), and the template is immune to stun, knockout and silence (mechanic_immune_mask 1019952979), so nothing a bot has stops the cast. Two live walks lost 6-11 of 19 tier-1 bots within 5 s of a rider dropping to 30-45 %. |
+
+What needs a live check: that the melee and healers leave the 13 yd before the 3 s cast ends, that the blast hits nobody but the tank, and that the melee come back to their target after it.
 
 ## Adding a boss
 

@@ -22,4 +22,13 @@ inline bool ReactionPassForced(bool hasRealPlayerMaster, std::size_t queuedChatC
     return hasRealPlayerMaster || queuedChatCommands > 0;
 }
 
+// True when a bot whose boss tactics are armed on a map with an avoid_cast row needs the pass: the reaction trigger (the
+// walk out of a listed blast, BossTacticsStrategy) reads the group's attackers, so a bot in combat, or one out of combat
+// itself while its group has attackers (a held healer or ranged bot idle at full health with no victim and nobody on
+// it), can still stand in the blast.
+inline bool BossTacticsReactionPass(bool inCombat, bool groupAttackers)
+{
+    return inCombat || groupAttackers;
+}
+
 } // namespace TortoiseBots

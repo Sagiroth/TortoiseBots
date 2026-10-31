@@ -189,7 +189,8 @@ float WaitForAttackMultiplier::GetValue(Action* action)
         (actionName != "pull start") &&
         (actionName != "pull action") &&
         (actionName != "pull end") &&
-        (actionName != "release pull hold"))
+        (actionName != "release pull hold") &&
+        (actionName != "boss tactics avoid cast"))
     {
         return WaitForAttackStrategy::ShouldWait(ai) ? 0.0f : 1.0f;
     }
