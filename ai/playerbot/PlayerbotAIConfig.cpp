@@ -937,6 +937,7 @@ bool PlayerbotAIConfig::Initialize()
     limitCombatActivity = config.GetBoolDefault("AiPlayerbot.LimitCombatActivity", false);
     guildOrderAlwaysActive = config.GetBoolDefault("AiPlayerbot.GuildOrderAlwaysActive", true);
     guildOrderBankWithdraw = config.GetBoolDefault("AiPlayerbot.GuildOrderBankWithdraw", true);
+    craftToolsAlways = config.GetBoolDefault("AiPlayerbot.CraftToolsAlways", true);
     guildOrderBankGold = config.GetBoolDefault("AiPlayerbot.GuildOrderBankGold", true);
     guildOrderSubOrders = config.GetBoolDefault("AiPlayerbot.GuildOrderSubOrders", true);
     uint32_t depth = static_cast<uint32_t>(config.GetIntDefault("AiPlayerbot.GuildOrderSubOrderDepth", 3));

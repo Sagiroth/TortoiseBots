@@ -73,9 +73,6 @@ void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint3
         uint32_t reagentId = uint32_t(spell->Reagent[i]);
         CollectMissingReagents(ai, bot, reagentId, spell->ReagentCount[i] * casts, out);
     }
-    for (uint32_t totem : spell->Totem)
-        if (totem && !ai->GetInventoryItemsCountWithId(totem) && !ai::OrderMailboxItems(bot, totem))
-            out.push_back(NeedItem{ totem, 1 });
 }
 
 bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t count,
@@ -105,19 +102,12 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
     path.push_back(itemId);
     uint32_t casts = ai::CraftCastsForRemaining(spellId, itemId, count);
     std::vector<NeedItem> missingAll;
-    // The recipe's tools (one each, never consumed) go down the same ladder
-    // as its reagents: a bot that sold its spanner cannot craft.
-    std::vector<NeedItem> materials;
     for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
-        if (spell->ReagentCount[i] && spell->Reagent[i] > 0)
-            materials.push_back(NeedItem{ uint32_t(spell->Reagent[i]), spell->ReagentCount[i] * casts });
-    for (uint32_t totem : spell->Totem)
-        if (totem)
-            materials.push_back(NeedItem{ totem, 1 });
-    for (NeedItem const& material : materials)
     {
-        uint32_t reagentId = material.itemId;
-        uint32_t required = material.count;
+        if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+            continue;
+        uint32_t reagentId = uint32_t(spell->Reagent[i]);
+        uint32_t required = spell->ReagentCount[i] * casts;
         uint32_t inBags = ai->GetInventoryItemsCountWithId(reagentId);
         // A mailbox no search could reach is not a source: the ladder treats
         // the reagent as bag-only and moves down instead of queueing mail.

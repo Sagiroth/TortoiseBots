@@ -661,6 +661,11 @@ AiPlayerbot.DisableActivityPriorities = 1
 # Default 1. Guild rank and bank tab permissions still apply.
 AiPlayerbot.GuildOrderBankWithdraw = 1
 
+# Bots always have the tools their recipes need (Arclight Spanner, Blacksmith Hammer...):
+# a missing tool is added to the bags when the bot crafts, and bots never sell or auction tools.
+# Default 1. 0 = only the item cheat adds tools, and bots may sell them.
+AiPlayerbot.CraftToolsAlways = 1
+
 # Guild orders may use guild bank money for auction house purchases after the bot's own gold.
 # Default 1. Guild bank access is still limited by the core's rank rules.
 AiPlayerbot.GuildOrderBankGold = 1

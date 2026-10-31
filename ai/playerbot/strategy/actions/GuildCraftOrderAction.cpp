@@ -128,13 +128,10 @@ bool GuildCraftOrderAction::Execute(Event& event)
     for (uint8 i = 0; i < MAX_SPELL_TOTEMS; ++i)
     {
         uint32 totem = pSpellInfo->Totem[i];
-        if (totem && !bot->HasItemCount(totem, 1))
-        {
-            if (ai->HasCheat(BotCheatMask::item))
-                ai->EnsureCheatItem(totem, 1);
-            if (!bot->HasItemCount(totem, 1))
-                return false;
-        }
+        // Recipe tools are always at hand (CraftToolsAlways): a missing one
+        // is minted, cheat or not, so no order stalls on a spanner or hammer.
+        if (totem && !ai->EnsureCheatItem(totem, 1, !sPlayerbotAIConfig.craftToolsAlways))
+            return false;
     }
 
     // Affordable casts first: what the bags hold right now decides whether

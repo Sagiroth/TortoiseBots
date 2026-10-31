@@ -23,6 +23,7 @@ These settings control how orders use the guild bank and sub-orders between guil
 | [`AiPlayerbot.GuildOrderSubOrderDepth`](#aiplayerbotguildordersuborderdepth) | `3` | How deep sub-orders may nest. |
 | [`AiPlayerbot.GuildOrderAuctionVisits`](#aiplayerbotguildorderauctionvisits) | `3` | How many arrived auction-house visits without reaching an auctioneer move the order leg on. |
 | [`AiPlayerbot.GuildOrderBotRank`](#aiplayerbotguildorderbotrank) | `1` | Whether bots in a guild with a real player share one rank for guild bank access. |
+| [`AiPlayerbot.CraftToolsAlways`](#aiplayerbotcrafttoolsalways) | `1` | Bots always have the tools their recipes need and never sell them. |
 
 ### `AiPlayerbot.GuildOrderBankWithdraw`
 
@@ -61,3 +62,10 @@ The same item never appears twice in one branch, whatever the depth.
 
 Whether bots in a guild with a real player share one bank rank so the master can open tabs to one rank. See [bot rank and bank access](../../play/guild-orders.md#guild-bank-access).
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+### `AiPlayerbot.CraftToolsAlways`
+
+Bots always have the tools their recipes need (Arclight Spanner, Blacksmith Hammer and the like).
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+When on, a missing tool is added to the bot's bags when it crafts, and bots never sell or auction a recipe tool. When off, only the item cheat adds tools, and tools sell like other items.

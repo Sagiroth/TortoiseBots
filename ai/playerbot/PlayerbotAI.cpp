@@ -1418,7 +1418,7 @@ void PlayerbotAI::RefillPoolRations()
     }
 }
 
-bool PlayerbotAI::EnsureCheatItem(uint32 itemId, uint32 count)
+bool PlayerbotAI::EnsureCheatItem(uint32 itemId, uint32 count, bool requireCheat)
 {
     // Generic cheat-gated mint the KIT_TASK brief asks for: #578's sand use
     // (and any future behaviour item) calls this instead of reimplementing
@@ -1428,7 +1428,7 @@ bool PlayerbotAI::EnsureCheatItem(uint32 itemId, uint32 count)
         return false;
     if (bot->HasItemCount(itemId, count))
         return true;
-    if (!HasCheat(BotCheatMask::item))
+    if (requireCheat && !HasCheat(BotCheatMask::item))
         return false;
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
     if (!proto)

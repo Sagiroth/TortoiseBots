@@ -673,6 +673,7 @@ public:
     bool limitCombatActivity;
     bool guildOrderAlwaysActive;
     bool guildOrderBankWithdraw;
+    bool craftToolsAlways;
     bool guildOrderBankGold;
     bool guildOrderSubOrders;
     uint32_t guildOrderSubOrderDepth;

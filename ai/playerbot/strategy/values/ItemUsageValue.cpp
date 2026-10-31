@@ -147,7 +147,7 @@ ItemUsage ItemUsageValue::Calculate()
     // A tool a recipe requires (Arclight Spanner, Gyromatic Micro-Adjustor,
     // Blacksmith Hammer) stays in the bags: selling or posting it leaves the
     // bot unable to craft that recipe.
-    if (IsCraftingTool(itemId))
+    if (sPlayerbotAIConfig.craftToolsAlways && IsCraftingTool(itemId))
         return ItemUsage::ITEM_USAGE_KEEP;
 
     //FORCE
