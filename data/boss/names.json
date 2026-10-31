@@ -68,12 +68,24 @@
       "name": "Crowd Pummel",
       "castMs": 0
     },
+    "10947": {
+      "name": "Mind Blast",
+      "castMs": 0
+    },
+    "10961": {
+      "name": "Prayer of Healing",
+      "castMs": 0
+    },
     "10966": {
       "name": "Uppercut",
       "castMs": 0
     },
     "11130": {
       "name": "Knock Away",
+      "castMs": 0
+    },
+    "11978": {
+      "name": "Kick",
       "castMs": 0
     },
     "12040": {
@@ -88,6 +100,10 @@
       "name": "Gouge",
       "castMs": 0
     },
+    "13446": {
+      "name": "Strike",
+      "castMs": 0
+    },
     "13704": {
       "name": "Psychic Scream",
       "castMs": 0
@@ -100,8 +116,16 @@
       "name": "Whirlwind",
       "castMs": 0
     },
+    "13880": {
+      "name": "Magma Splash",
+      "castMs": 0
+    },
     "13895": {
       "name": "Summon Spawn of Bael'Gar",
+      "castMs": 0
+    },
+    "13899": {
+      "name": "Fire Storm",
       "castMs": 0
     },
     "13900": {
@@ -212,12 +236,24 @@
       "name": "Crystallize",
       "castMs": 0
     },
+    "16128": {
+      "name": "Infected Bite",
+      "castMs": 0
+    },
+    "16171": {
+      "name": "Empower Will",
+      "castMs": 0
+    },
     "16245": {
       "name": "Freeze Anim",
       "castMs": 0
     },
     "16468": {
       "name": "Mother's Milk",
+      "castMs": 0
+    },
+    "16495": {
+      "name": "Fatal Bite",
       "castMs": 0
     },
     "16496": {
@@ -242,6 +278,10 @@
     },
     "17492": {
       "name": "Hand of Thaurissan",
+      "castMs": 0
+    },
+    "17547": {
+      "name": "Mortal Strike",
       "castMs": 0
     },
     "18106": {
@@ -594,6 +634,10 @@
     },
     "26662": {
       "name": "Berserk",
+      "castMs": 0
+    },
+    "26977": {
+      "name": "Curse of the Elemental Lord",
       "castMs": 0
     },
     "27680": {
