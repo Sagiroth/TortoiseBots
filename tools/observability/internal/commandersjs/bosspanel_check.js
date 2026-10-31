@@ -86,6 +86,17 @@ assert.strictEqual(B.phaseOf(jeklik, { hp: 40, au: [{ id: 23966 }] }).phase, "ba
 const auraFirst = { phases: [{ name: "air", rule: "flag=h", order: 0 }, { name: "p1", rule: "hp<100", order: 1 }] };
 assert.strictEqual(B.phaseOf(auraFirst, { hp: 60, uf: "h" }).phase, "air");
 assert.strictEqual(B.phaseOf(auraFirst, { hp: 60, uf: "" }).phase, "p1");
+const ladder = { phases: [
+  { name: "rune4", rule: "hp<25", order: 0 },
+  { name: "rune3", rule: "hp<50", order: 1 },
+  { name: "rune2", rule: "hp<75", order: 2 },
+  { name: "fight", rule: "start", order: 3 },
+] };
+assert.strictEqual(B.phaseOf(ladder, { hp: 80 }).phase, "fight", "above the top threshold is the start phase");
+assert.strictEqual(B.phaseOf(ladder, { hp: 70 }).phase, "rune2", "the 75 percent rung");
+assert.strictEqual(B.phaseOf(ladder, { hp: 40 }).phase, "rune3", "the 50 percent rung");
+assert.strictEqual(B.phaseOf(ladder, { hp: 20 }).phase, "rune4", "the 25 percent rung listed first wins");
+assert.strictEqual(B.phaseOf(ladder, { hp: 60 }, "rune3").phase, "rune3", "a rung latches after a heal");
 
 // ---- auras, flags, adds and the current cast ----------------------------------------------------------------
 p = B.model(T, Object.assign({}, mob, {
@@ -156,6 +167,280 @@ assert.strictEqual(B.phaseOf(eye, { hp: 90, au: [{ id: 16245 }] }).phase, "glare
 const sartura = (REAL.byEntry || REAL.bosses || REAL)["15516"];
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }] }).phase, "enraged");
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }, { id: 27680 }] }).phase, "berserk");
+const chromaggus = (REAL.byEntry || REAL.bosses || REAL)["14020"];
+assert.strictEqual(B.phaseOf(chromaggus, { hp: 15, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(chromaggus, { hp: 15, au: [{ id: 28747 }] }).phase, "enraged");
+const nefarian = (REAL.byEntry || REAL.bosses || REAL)["11583"];
+assert.strictEqual(B.phaseOf(nefarian, { hp: 90, au: [{ id: 17131 }] }).phase, "air");
+assert.strictEqual(B.phaseOf(nefarian, { hp: 90, au: [] }).phase, "grounded");
+// The Bone Construct spawn below 20 percent is a note, not a phase: an hp<20 phase row would win the exclusive phase
+// and hide every p=grounded ability, though the core keeps casting them all.
+const nefLow = B.model(REAL, { entry: 11583, hp: 15, au: [] }, [], 0, 0);
+assert.strictEqual(nefLow.phase, "grounded");
+assert.strictEqual(nefLow.abilities.filter((a) => a.flags.phase === "grounded" && !a.inPhase).length, 0,
+  "no ground ability is hidden at 15 percent");
+
+// AQ20: every phase rule at a value inside it, and which abilities it folds.
+const aq20 = REAL.byEntry || REAL.bosses || REAL;
+const moam = aq20["15340"];
+assert.deepStrictEqual(moam.phases.map((x) => x.rule), ["aura=25685", "start"]);
+assert.strictEqual(B.phaseOf(moam, { hp: 90, au: [{ id: 25685 }] }).phase, "stone");
+assert.strictEqual(B.phaseOf(moam, { hp: 90, au: [] }).phase, "fight");
+const moamStone = B.model(REAL, { entry: 15340, hp: 90, au: [{ id: 25685 }] }, [], 0, 0, "fight");
+assert.strictEqual(moamStone.phase, "stone");
+assert.strictEqual(moamStone.abilities.find((a) => a.sid === 15550).inPhase, false, "Trample stops in stone form");
+assert.strictEqual(moamStone.abilities.find((a) => a.sid === 25676).inPhase, false, "Drain Mana stops in stone form");
+assert.strictEqual(moamStone.abilities.find((a) => a.sid === 25685).inPhase, true, "Energize is the stone form");
+const buru = aq20["15370"];
+assert.deepStrictEqual(buru.phases.map((x) => x.rule), ["hp<20", "start"]);
+assert.strictEqual(B.phaseOf(buru, { hp: 19, au: [] }).phase, "phase2");
+assert.strictEqual(B.phaseOf(buru, { hp: 50, au: [] }).phase, "phase1");
+const buruTwo = B.model(REAL, { entry: 15370, hp: 19, au: [] }, [], 0, 0, "phase1");
+assert.strictEqual(buruTwo.abilities.find((a) => a.sid === 96).inPhase, false, "Dismember is phase 1");
+assert.strictEqual(buruTwo.abilities.find((a) => a.sid === 25640).inPhase, false, "Thorns is phase 1");
+assert.strictEqual(buruTwo.abilities.find((a) => a.sid === 20512).inPhase, true, "Creeping Plague is phase 2");
+// Its first-cast timer starts at the phase change, not at the pull: 200 s in, an unseen plague is "—", never "(late)".
+const buruLate = B.model(REAL, { entry: 15370, hp: 19, au: [] }, [], 0, 200000, "phase1");
+const plague = buruLate.abilities.find((a) => a.sid === 20512);
+assert.strictEqual(plague.inPhase, true);
+assert.strictEqual(plague.next, null, "a phase-2 timer has no window counted from the pull");
+const plagueRow = B.render(REAL, buruLate, {}).split("<li").find((row) => row.includes("Creeping Plague"));
+assert.ok(plagueRow && !plagueRow.includes("(late)"), plagueRow);
+const ayamiss = aq20["15369"];
+assert.deepStrictEqual(ayamiss.phases.map((x) => x.rule), ["hp<70", "start"]);
+assert.strictEqual(B.phaseOf(ayamiss, { hp: 60, au: [] }).phase, "p2");
+assert.strictEqual(B.phaseOf(ayamiss, { hp: 80, au: [] }).phase, "p1");
+const ayamissGround = B.model(REAL, { entry: 15369, hp: 60, au: [] }, [], 0, 0, "p1");
+assert.strictEqual(ayamissGround.phase, "p2");
+assert.strictEqual(ayamissGround.abilities.find((a) => a.sid === 25748).inPhase, false, "Poison Stinger is the flying phase");
+assert.strictEqual(ayamissGround.abilities.find((a) => a.sid === 25852).inPhase, true, "Lash is the ground phase");
+assert.strictEqual(ayamissGround.abilities.find((a) => a.sid === 25749).inPhase, true, "Stinger Spray runs in both");
+const ossirian = aq20["15339"];
+assert.deepStrictEqual(ossirian.phases.map((x) => x.rule), ["aura=25176", "start"]);
+assert.strictEqual(B.phaseOf(ossirian, { hp: 90, au: [{ id: 25176 }] }).phase, "strength");
+assert.strictEqual(B.phaseOf(ossirian, { hp: 90, au: [] }).phase, "vulnerable");
+for (const phase of ["strength", "vulnerable"]) {
+  const o = B.model(REAL, { entry: 15339, hp: 90, au: phase === "strength" ? [{ id: 25176 }] : [] }, [], 0, 0);
+  assert.strictEqual(o.phase, phase);
+  assert.ok(o.abilities.every((a) => a.inPhase), "every Ossirian ability runs in both states");
+}
+
+// AQ40's last three: Viscidus freezes on aura 25937 (the normal spells stop, the trigger's cloud does not),
+// Ouro is enraged on aura 26615 (Boulder is enraged-only, the ground spells keep going) and his submerge aura
+// 26063 is no phase rule: it arrives as he turns invisible, so he leaves the panel and the mounds are the signal.
+// The Bug Trio has no phase rows at all.
+const viscidus = (REAL.byEntry || REAL.bosses || REAL)["15299"];
+assert.deepStrictEqual(viscidus.phases.map((x) => x.rule), ["aura=25937", "start"]);
+assert.strictEqual(B.phaseOf(viscidus, { hp: 90, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(viscidus, { hp: 90, au: [{ id: 25937 }] }).phase, "frozen");
+const frozenV = B.model(REAL, { entry: 15299, hp: 90, au: [{ id: 25937 }] }, [], 0, 0);
+assert.strictEqual(frozenV.abilities.find((a) => a.sid === 25993).inPhase, false, "Poison Shock is normal-phase");
+assert.strictEqual(frozenV.abilities.find((a) => a.sid === 25989).inPhase, true, "the trigger's Toxin Cloud is not phase-bound");
+const normalV = B.model(REAL, { entry: 15299, hp: 90, au: [] }, [], 0, 0);
+assert.strictEqual(normalV.abilities.find((a) => a.sid === 25993).inPhase, true);
+assert.strictEqual(normalV.abilities.find((a) => a.sid === 25937).inPhase, true);
+
+const ouro = (REAL.byEntry || REAL.bosses || REAL)["15517"];
+assert.deepStrictEqual(ouro.phases.map((x) => x.rule), ["aura=26615", "start"]);
+assert.ok(!ouro.phases.some((x) => x.name === "submerged"), "the submerge aura is no phase rule");
+assert.strictEqual(B.phaseOf(ouro, { hp: 15, au: [{ id: 26615 }] }).phase, "enraged");
+assert.strictEqual(B.phaseOf(ouro, { hp: 90, au: [{ id: 26063 }] }).phase, "fight", "the submerge aura matches no phase");
+assert.strictEqual(B.phaseOf(ouro, { hp: 90, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(ouro, { hp: 15, au: [{ id: 26615 }, { id: 26063 }] }).phase, "enraged", "the first rule wins");
+const enragedO = B.model(REAL, { entry: 15517, hp: 15, au: [{ id: 26615 }] }, [], 0, 0);
+assert.strictEqual(enragedO.abilities.find((a) => a.sid === 26616).inPhase, true, "Boulder is enraged-only");
+assert.strictEqual(enragedO.abilities.find((a) => a.sid === 26617).inPhase, true, "the enrage mound is enraged-only");
+assert.strictEqual(enragedO.abilities.find((a) => a.sid === 26102).inPhase, true, "ground spells keep running through the enrage");
+const submergedO = B.model(REAL, { entry: 15517, hp: 90, au: [{ id: 26063 }] }, [], 0, 0);
+assert.strictEqual(submergedO.abilities.find((a) => a.sid === 26616).inPhase, false, "Boulder stays hidden outside the enrage");
+assert.strictEqual(submergedO.abilities.find((a) => a.sid === 26058).inPhase, true, "the mound summon is not phase-bound");
+const fightO = B.model(REAL, { entry: 15517, hp: 90, au: [] }, [], 0, 0);
+assert.strictEqual(fightO.abilities.find((a) => a.sid === 26616).inPhase, false);
+
+const kri = (REAL.byEntry || REAL.bosses || REAL)["15511"];
+assert.deepStrictEqual(kri.phases, []);
+assert.strictEqual(B.phaseOf(kri, { hp: 90, au: [] }).phase, null);
+const trio = B.model(REAL, { entry: 15511, hp: 90, au: [] }, [], 0, 0);
+assert.ok(trio.abilities.length > 0 && trio.abilities.every((a) => a.inPhase), "no phase row means every row stays visible");
+
+// Lower Karazhan: Howlfang's frenzy is the Bloodfrenzy aura, Moroes' below-50 abilities appear only under 50 percent.
+const howlfang = (REAL.byEntry || REAL.bosses || REAL)["61223"];
+assert.deepStrictEqual(howlfang.phases.map((x) => x.rule), ["aura=57082", "start"]);
+assert.strictEqual(B.phaseOf(howlfang, { hp: 31, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(howlfang, { hp: 31, au: [{ id: 57082 }] }).phase, "frenzy");
+const howlfangFrenzy = B.model(REAL, { entry: 61223, hp: 20, au: [{ id: 57082 }] }, [], 0, 0);
+assert.strictEqual(howlfangFrenzy.phase, "frenzy");
+assert.strictEqual(howlfangFrenzy.abilities.find((a) => a.sid === 57076).inPhase, true,
+  "an untagged ability still shows in the frenzy phase");
+const moroes = (REAL.byEntry || REAL.bosses || REAL)["61225"];
+assert.deepStrictEqual(moroes.phases.map((x) => x.rule), ["hp<50", "start"]);
+assert.strictEqual(B.phaseOf(moroes, { hp: 60, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(moroes, { hp: 49, au: [] }).phase, "below");
+assert.strictEqual(B.phaseOf(moroes, { hp: 40 }, "below").phase, "below", "the hp<50 rule latches");
+const moroesAbove = B.model(REAL, { entry: 61225, hp: 60, au: [] }, [], 0, 0);
+assert.strictEqual(moroesAbove.abilities.find((a) => a.sid === 57095).inPhase, true,
+  "an untagged ability is in every phase");
+assert.strictEqual(moroesAbove.abilities.find((a) => a.sid === 57099).inPhase, false,
+  "Shadow Blast is below-50 only");
+const moroesBelow = B.model(REAL, { entry: 61225, hp: 49, au: [] }, [], 0, 0);
+assert.strictEqual(moroesBelow.phase, "below");
+assert.strictEqual(moroesBelow.abilities.find((a) => a.sid === 57099).inPhase, true);
+assert.strictEqual(moroesBelow.abilities.find((a) => a.sid === 57100).inPhase, true);
+assert.strictEqual(moroesBelow.abilities.find((a) => a.sid === 27564).inPhase, true);
+assert.strictEqual(moroesBelow.abilities.find((a) => a.sid === 57097).inPhase, true,
+  "Shuffle Kick runs in both phases");
+
+// Upper Karazhan Halls: an aura phase outranks the health rule, Sanv's four health phases step down, and no Kara
+// ability is p-tagged (its phases change timers, not the ability set), so every row stays listed.
+const KARA = REAL.byEntry || REAL.bosses || REAL;
+const gnarl = KARA["61939"];
+assert.deepStrictEqual(gnarl.phases.map((x) => x.rule), ["aura=51096", "start"]);
+assert.strictEqual(B.phaseOf(gnarl, { hp: 50, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(gnarl, { hp: 50, au: [{ id: 51096 }] }).phase, "intermission");
+const incant = KARA["61946"];
+assert.deepStrictEqual(incant.phases.map((x) => x.rule), ["aura=51176", "hp<40", "start"]);
+assert.strictEqual(B.phaseOf(incant, { hp: 90, au: [{ id: 51176 }] }).phase, "charged");
+assert.strictEqual(B.phaseOf(incant, { hp: 90, au: [] }).phase, "exposed");
+assert.strictEqual(B.phaseOf(incant, { hp: 35, au: [] }).phase, "devouring");
+assert.strictEqual(B.model(REAL, { entry: 61946, hp: 90, au: [] }, [], 0, 0).abilities.find((a) => a.sid === 51180).inPhase,
+  true, "Blizzard is listed once the seekers are gone");
+const echo = KARA["61958"];
+assert.deepStrictEqual(echo.phases.map((x) => x.rule), ["aura=8269", "aura=51125", "start"]);
+assert.strictEqual(B.phaseOf(echo, { hp: 60, au: [{ id: 51125 }] }).phase, "shadow");
+assert.strictEqual(B.phaseOf(echo, { hp: 15, au: [{ id: 51125 }, { id: 8269 }] }).phase, "enraged");
+const chess = KARA["59967"];
+assert.deepStrictEqual(chess.phases.map((x) => x.rule), ["aura=51228", "start"]);
+assert.strictEqual(B.phaseOf(chess, { hp: 100, au: [{ id: 51228 }] }).phase, "shielded");
+assert.strictEqual(B.phaseOf(chess, { hp: 100, au: [] }).phase, "fight");
+// The chess pieces are their own boss entries: the panel looks a boss up by the exact engaged entry, so a King-only
+// block left Bishop/Rook/Knight with no abilities. Each piece must render its own list, with names.
+for (const [entry, name, spells] of [
+  ["59971", "Bishop", [51212, 51213, 51214, 51215, 51216, 51217, 51218]],
+  ["59970", "Rook", [51218, 51219, 51220, 51221, 51223]],
+  ["59968", "Knight", [51218, 51224, 51225, 51226, 51227]],
+]) {
+  const block = KARA[entry];
+  assert.strictEqual(block.name, name, entry + " block name");
+  assert.deepStrictEqual(block.abilities.map((a) => a.sid).sort((a, b) => a - b), spells, entry + " abilities");
+  const piece = B.model(REAL, { entry: Number(entry), hp: 100, au: [] }, [], 0, 0);
+  assert.strictEqual(piece.boss.name, name);
+  assert.strictEqual(piece.abilities.length, spells.length, entry + " model abilities");
+  assert.ok(piece.abilities.every((a) => a.inPhase), entry + " lists every ability");
+  assert.ok(piece.abilities.every((a) => a.name && !/^spell /.test(a.name)), entry + " names every ability");
+}
+const kingModel = B.model(REAL, { entry: 59967, hp: 100, au: [] }, [], 0, 0);
+assert.ok(kingModel.abilities.some((a) => a.sid === 51229), "the King keeps Kings Fury");
+assert.ok(!kingModel.abilities.some((a) => a.sid === 51214), "the King does not carry the Bishop's spells");
+const sanv = KARA["59981"];
+assert.deepStrictEqual(sanv.phases.map((x) => x.rule), ["hp<20", "hp<50", "hp<80", "start"]);
+assert.strictEqual(B.phaseOf(sanv, { hp: 90 }).phase, "fight");
+assert.strictEqual(B.phaseOf(sanv, { hp: 60 }).phase, "portals");
+assert.strictEqual(B.phaseOf(sanv, { hp: 40 }).phase, "rift");
+assert.strictEqual(B.phaseOf(sanv, { hp: 15 }).phase, "enraged");
+assert.strictEqual(B.phaseOf(sanv, { hp: 40 }, "enraged").phase, "enraged", "the 20% rule latches");
+const kruul = KARA["59991"];
+assert.deepStrictEqual(kruul.phases.map((x) => x.rule), ["aura=51173", "start"]);
+assert.strictEqual(B.phaseOf(kruul, { hp: 20, au: [{ id: 51173 }] }).phase, "enraged");
+for (const entry of ["61939", "61946", "61958", "59967", "59981", "59991"]) {
+  const m = B.model(REAL, { entry: Number(entry), hp: 40, au: [] }, [], 0, 0);
+  assert.ok(m.abilities.length > 0 && m.abilities.every((a) => a.inPhase), entry + " keeps every ability listed");
+}
+
+// Timbermaw: the core has no script, so every boss carries only a start label; that label must hide no ability,
+// and a boss whose only rows are a phase and a note still opens a panel.
+const loktanag = (REAL.byEntry || REAL.bosses || REAL)["2139"];
+assert.deepStrictEqual(loktanag.phases.map((x) => x.rule), ["start"]);
+const lokModel = B.model(REAL, { entry: 2139, hp: 50, au: [] }, [], 0, 0);
+assert.strictEqual(lokModel.phase, "fight");
+assert.ok(lokModel.abilities.length === 4 && lokModel.abilities.every((a) => a.inPhase), "a start-only boss hides nothing");
+const karrsh = (REAL.byEntry || REAL.bosses || REAL)["62934"];
+assert.strictEqual(karrsh.abilities.length, 0);
+assert.strictEqual(B.model(REAL, { entry: 62934, hp: 50, au: [] }, [], 0, 0).phase, "fight");
+assert.ok(B.render(REAL, B.model(REAL, { entry: 62934, hp: 50, au: [] }, [], 0, 0), {}).includes("Karrsh the Sentinel"));
+// Kodiak is Rotgrowl's add with its own spawn and the Dreamform is a separate entry: both have a start label and a
+// note but no ability, and each opens a panel under its own entry.
+const kodiak = (REAL.byEntry || REAL.bosses || REAL)["62937"];
+assert.deepStrictEqual(kodiak.phases.map((x) => x.rule), ["start"]);
+assert.strictEqual(kodiak.abilities.length, 0);
+assert.strictEqual(B.model(REAL, { entry: 62937, hp: 50, au: [] }, [], 0, 0).phase, "fight");
+assert.ok(B.render(REAL, B.model(REAL, { entry: 62937, hp: 50, au: [] }, [], 0, 0), {}).includes("Kodiak"));
+const dreamform = (REAL.byEntry || REAL.bosses || REAL)["60699"];
+assert.deepStrictEqual(dreamform.phases.map((x) => x.rule), ["start"]);
+assert.strictEqual(dreamform.abilities.length, 0);
+assert.strictEqual(B.model(REAL, { entry: 60699, hp: 50, au: [] }, [], 0, 0).phase, "fight");
+assert.ok(B.render(REAL, B.model(REAL, { entry: 60699, hp: 50, au: [] }, [], 0, 0), {}).includes("Dreamform of Kronn"));
+
+// Emerald Sanctum: Solnius has no sleep phase. Aura 25148 is sleep inside phase 2, the transform latches p2, and
+// the phase-1 casts hide in p2 while Acid Breath and the gimmicks stay in it through the sleep.
+const solnius = (REAL.byEntry || REAL.bosses || REAL)["60748"];
+assert.deepStrictEqual(solnius.phases.map((x) => x.rule), ["hp<90", "start"]);
+assert.strictEqual(B.phaseOf(solnius, { hp: 100, au: [] }).phase, "p1");
+assert.strictEqual(B.phaseOf(solnius, { hp: 85, au: [] }).phase, "p2");
+assert.strictEqual(B.phaseOf(solnius, { hp: 50, au: [{ id: 25148 }] }).phase, "p2", "sleep stays in p2");
+const solP2 = B.model(REAL, { entry: 60748, hp: 85, au: [] }, [], 0, 0);
+assert.strictEqual(solP2.abilities.find((a) => a.sid === 56507).inPhase, false, "Corrosive Bolt is a p1 cast");
+assert.strictEqual(solP2.abilities.find((a) => a.sid === 24839).inPhase, true, "Acid Breath is a p2 cast");
+const solSleep = B.model(REAL, { entry: 60748, hp: 50, au: [{ id: 25148 }] }, [], 0, 0);
+assert.strictEqual(solSleep.phase, "p2", "the sleep aura does not make a phase");
+assert.strictEqual(solSleep.abilities.find((a) => a.sid === 24839).inPhase, true, "Acid Breath still runs asleep");
+assert.strictEqual(solSleep.abilities.find((a) => a.sid === 56510).inPhase, true, "the gimmicks still run asleep");
+
+// Emerald Sanctum portal adds: each has its own boss block (the panel looks a boss up by exact entry), with the
+// timers, targets and flags from its AI; the Sanctum Wyrm stays ordinary trash.
+const addBlock = (entry) => (REAL.byEntry || REAL.bosses || REAL)[entry];
+const dreamer = addBlock("60742");
+assert.deepStrictEqual(dreamer.abilities.map((a) => [a.sid, a.first, a.repeatMin, a.repeatMax, a.flags.target]),
+  [[56500, 10000, 10000, 10000, "random"]], "Dreamer casts Dreamstate every 10 s at a random player");
+assert.strictEqual(dreamer.abilities[0].flags.aura, true);
+assert.strictEqual(B.model(REAL, { entry: 60742, hp: 100, au: [] }, [], 0, 0).abilities[0].inPhase, true);
+const dragonkin = addBlock("60743");
+assert.deepStrictEqual(dragonkin.abilities.map((a) => [a.sid, a.first, a.repeatMin, a.repeatMax, a.flags.target, a.flags.self]),
+  [[27564, 10000, 10000, 10000, "self", true]], "Dragonkin reflects on itself every 10 s");
+const wyrmkin = addBlock("60745");
+assert.deepStrictEqual(wyrmkin.abilities.map((a) => [a.sid, a.first, a.repeatMin, a.repeatMax, a.flags.target]),
+  [[26050, 7000, 7000, 7000, "victim"], [56503, 25000, 21000, 21000, "aoe"]], "Wyrmkin: Acid Spit 7 s, Venom 25 s then 21 s");
+assert.strictEqual(wyrmkin.abilities.find((a) => a.sid === 56503).flags.aura, true);
+const scalebane = addBlock("60746");
+assert.deepStrictEqual(scalebane.abilities.map((a) => [a.sid, a.first, a.repeatMin, a.repeatMax, a.flags.target]),
+  [[19983, 6000, 6000, 6000, "victim"], [56504, 25000, 25000, 25000, "aoe"]], "Scalebane: Cleave 6 s, Intimidation 25 s");
+assert.strictEqual(scalebane.abilities.find((a) => a.sid === 56504).flags.aura, true);
+const suppressor = addBlock("61212");
+assert.deepStrictEqual(suppressor.abilities.map((a) => [a.sid, a.first, a.repeatMin, a.repeatMax, a.flags.target]),
+  [[56501, 15000, 14000, 14000, "random"]], "Suppressor: Emerald Supression 15 s then every 14 s");
+assert.strictEqual(suppressor.abilities[0].flags.aura, true);
+assert.strictEqual(addBlock("60744"), undefined, "Sanctum Wyrm has no boss block");
+
+// BRD: Magmus gains War Stomp only in the hp<51 stomp phase; Fiery Burst stays in every phase.
+const magmus = (REAL.byEntry || REAL.bosses || REAL)["9938"];
+assert.deepStrictEqual(magmus.phases.map((x) => x.rule), ["hp<51", "start"]);
+assert.strictEqual(B.phaseOf(magmus, { hp: 60, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(magmus, { hp: 40, au: [] }).phase, "stomp");
+const at60 = B.model(REAL, { entry: 9938, hp: 60, au: [] }, [], 0, 1000);
+assert.strictEqual(at60.abilities.find((a) => a.sid === 24375).inPhase, false);
+assert.strictEqual(at60.abilities.find((a) => a.sid === 13900).inPhase, true);
+const at40 = B.model(REAL, { entry: 9938, hp: 40, au: [] }, [], 0, 1000);
+assert.strictEqual(at40.abilities.find((a) => a.sid === 24375).inPhase, true);
+
+// UBRS: Valthalak's three EventAI phases are HP thresholds; phase 3 outranks phase 2, summoning and
+// Shadow Wrath stop in phase 2, and Shadow Bolt Volley only exists in phase 3.
+const valthalak = (REAL.byEntry || REAL.bosses || REAL)["16042"];
+assert.deepStrictEqual(valthalak.phases.map((x) => x.rule), ["hp<15", "hp<40", "start"]);
+assert.strictEqual(B.phaseOf(valthalak, { hp: 10, au: [] }).phase, "phase3");
+assert.strictEqual(B.phaseOf(valthalak, { hp: 30, au: [] }).phase, "phase2");
+assert.strictEqual(B.phaseOf(valthalak, { hp: 90, au: [] }).phase, "phase1");
+const p3 = B.model(REAL, { entry: 16042, hp: 10, au: [] }, [], 0, 1000);
+assert.strictEqual(p3.phase, "phase3");
+assert.strictEqual(p3.abilities.find((a) => a.sid === 27382).inPhase, true, "volley is a phase-3 ability");
+assert.strictEqual(p3.abilities.find((a) => a.sid === 27249).inPhase, false, "summoning stopped in phase 2");
+assert.strictEqual(p3.abilities.find((a) => a.sid === 27286).inPhase, false, "Shadow Wrath stopped in phase 2");
+const p2 = B.model(REAL, { entry: 16042, hp: 30, au: [] }, [], 0, 1000);
+assert.strictEqual(p2.abilities.find((a) => a.sid === 27249).inPhase, false);
+assert.strictEqual(p2.abilities.find((a) => a.sid === 27286).inPhase, false, "Shadow Wrath is phase 1 only");
+assert.strictEqual(p2.abilities.find((a) => a.sid === 27382).inPhase, false);
+const p1 = B.model(REAL, { entry: 16042, hp: 90, au: [] }, [], 0, 1000);
+assert.strictEqual(p1.abilities.find((a) => a.sid === 27249).inPhase, true);
+assert.strictEqual(p1.abilities.find((a) => a.sid === 27286).inPhase, true, "Shadow Wrath is phase 1");
+assert.strictEqual(p1.abilities.find((a) => a.sid === 27382).inPhase, false);
 
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];
@@ -183,4 +468,45 @@ assert.ok(!B.render(T, p, { open: true, coverage: cov }).includes("fd-boss-cov")
 const venReal = B.model(REAL, { entry: 14507, hp: 60, au: [] }, [], 0, 0);
 assert.ok(B.render(REAL, venReal, { open: true, coverage: cov }).includes('href="#/coverage/zulgurub?boss=14507"'),
   "the head links to the raid's coverage card");
+
+// ---- Naxxramas phases: Noth and Gothik have no aura phase (29230 is passive and never sent), so every
+// ---- ability shows; Thaddius, Sapphiron and Kel'Thuzad still hide the other side's abilities.
+const noth = B.model(REAL, { entry: 15954, hp: 80, au: [] }, [], 0, 0);
+assert.strictEqual(noth.phase, "ground");
+assert.ok(noth.abilities.every((a) => a.inPhase), "no Noth aura phase: every ability shows");
+assert.strictEqual(noth.abilities.find((a) => a.sid === 29213).inPhase, true, "Curse shows");
+assert.strictEqual(noth.abilities.find((a) => a.sid === 29217).inPhase, true, "a champion summon shows");
+
+const gothik = B.model(REAL, { entry: 16060, hp: 80, au: [] }, [], 0, 0);
+assert.strictEqual(gothik.phase, "ground");
+assert.ok(gothik.abilities.every((a) => a.inPhase), "no Gothik aura phase: every ability shows");
+assert.strictEqual(gothik.abilities.find((a) => a.sid === 29317).inPhase, true, "Shadow Bolt shows");
+assert.strictEqual(gothik.abilities.find((a) => a.sid === 28679).inPhase, true, "Harvest Soul shows");
+
+const thaddAdds = B.model(REAL, { entry: 15928, hp: 100, au: [{ id: 28160 }] }, [], 0, 0);
+assert.strictEqual(thaddAdds.phase, "adds");
+assert.strictEqual(thaddAdds.abilities.find((a) => a.sid === 28125).inPhase, true, "War Stomp is an add-phase ability");
+assert.strictEqual(thaddAdds.abilities.find((a) => a.sid === 28089).inPhase, false, "Polarity Shift waits for Thaddius");
+const thaddFight = B.model(REAL, { entry: 15928, hp: 100, au: [] }, [], 0, 0);
+assert.strictEqual(thaddFight.phase, "fight");
+assert.strictEqual(thaddFight.abilities.find((a) => a.sid === 28089).inPhase, true);
+assert.strictEqual(thaddFight.abilities.find((a) => a.sid === 28125).inPhase, false);
+
+const sappAir = B.model(REAL, { entry: 15989, hp: 80, au: [], uf: "h" }, [], 0, 0);
+assert.strictEqual(sappAir.phase, "air");
+assert.strictEqual(sappAir.abilities.find((a) => a.sid === 28522).inPhase, true, "Icebolt is an air-phase ability");
+assert.strictEqual(sappAir.abilities.find((a) => a.sid === 19983).inPhase, false, "Cleave is ground-only");
+const sappGround = B.model(REAL, { entry: 15989, hp: 80, au: [], uf: "" }, [], 0, 0);
+assert.strictEqual(sappGround.phase, "ground");
+assert.strictEqual(sappGround.abilities.find((a) => a.sid === 19983).inPhase, true);
+assert.strictEqual(sappGround.abilities.find((a) => a.sid === 28522).inPhase, false);
+
+const ktAdds = B.model(REAL, { entry: 15990, hp: 100, au: [], uf: "i" }, [], 0, 0);
+assert.strictEqual(ktAdds.phase, "adds");
+assert.strictEqual(ktAdds.abilities.find((a) => a.sid === 29423).inPhase, true, "the channel is a phase-one ability");
+assert.strictEqual(ktAdds.abilities.find((a) => a.sid === 28478).inPhase, false, "Frostbolt waits for phase two");
+const ktFight = B.model(REAL, { entry: 15990, hp: 80, au: [], uf: "" }, [], 0, 0);
+assert.strictEqual(ktFight.phase, "fight");
+assert.strictEqual(ktFight.abilities.find((a) => a.sid === 28478).inPhase, true);
+assert.strictEqual(ktFight.abilities.find((a) => a.sid === 29423).inPhase, false);
 console.log("boss panel ok");

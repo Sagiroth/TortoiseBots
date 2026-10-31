@@ -568,6 +568,9 @@ public:
     bool dungeonSelfClear;
     // Raid bindings for the run leader (`.bot commander bind <LeadBot> raid`); read with dungeonSelfClear.
     bool dungeonRunRaid = false;
+    // A raid binding's boss fight: a 1200 s ceiling, deaths that do not pause it while it loses hp, and the adds
+    // sent to the off-tanks instead of the main tank (default off: the party rules).
+    bool dungeonRunRaidBossRules = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party

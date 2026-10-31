@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Configuration
+- New `AiPlayerbot.DungeonRunRaidBossRules` (default `0`): a raid's boss fight may run 20 minutes, a death does not stop it while the boss still loses health, and the off-tanks take the adds so the main tank stays on the boss.
 - `RandomBotShowHelmet` / `RandomBotShowCloak` (default `1`) now take effect: `0` makes pool bots show up without their helmet and/or cloak from their next login. Hired companions and a player's own bots keep the display flags the character already has.
 - Removed 32 configuration keys that were read but did nothing (an old `aiplayerbot.conf` that still sets one keeps loading without issue). The config file template now explains up front what a commented `#Key = value` line means, and the documentation no longer lists a "settings with no effect" table. Only helmet and cloak display remained, so nothing changes for existing setups.
 
@@ -37,6 +38,7 @@
 - New `.autogear` command gears a real player the way a spawned bot gets geared: items picked for the level and spec from the same gear pool the bots use, upgrades only, replaced items to the bags or the mailbox. GameMasters can gear any player; `AiPlayerbot.PlayerAutogearForAll` (default `0`) lets every player gear themselves.
 - Fixed: `.bot sell` and the "Sell junk" button sold nothing. Bots now sell their grey junk to a vendor in reach, and a sell order that sells nothing says why. Autonomous alts still never sell soulbound or equipped items, whatever ordered the sale.
 - `.bot hire raid` accepts `level=<n>` like `.bot hire` (the whole roster arrives at that level), and its `onyxia` preset now hires tier 3 gear to match the `onyxia` gear preset.
+- Fixed: the bots of a raid hire that were still on their way when the raid was bound no longer leave the raid and get deleted.
 
 ### Items & Loot
 - New `AiPlayerbot.HireLoot` (default `1`): set it to `0` and hired companions stop looting and pass on every roll, so the party keeps all the loot. Hired companions no longer take part in any quest, including orders from a player.
@@ -50,6 +52,8 @@
 - Debug loot now says why a corpse is not the bot's to loot.
 
 ### Dungeons & Maps
+- New boss tactic kind `avoid_cast`: bots other than the tank the caster is on walk out of a listed self-centred blast while it is cast (first row: Zul'Gurub's Gurubashi Bat Rider, Unstable Concoction), and each walk-out writes a `BossTacticsAvoidCast` row to `bot_events.csv`.
+- A run leader pull row with the stand_pull flag (8192) now waits at its stand for a patrolling pack to come into the tank's shot while no other patrol is near, and sees the pack's patrol up to 60 yd out instead of calling it cleared.
 - The run leader no longer counts a pull as cleared while part of its pack is still alive: a pull step waits for any unit of its mobs left within 10 yards of the pack (on the ground, same floor), for mobs that spawned in the pack wherever their patrol has walked, and for followers of a patrolling leader. Leftover mobs are pulled, three tries at most, then the run pauses and names them. `AiPlayerbot.DungeonRunPackClearMarginYd` (default 10, 0 turns it off) and `AiPlayerbot.DungeonRunPackClearRepulls` (default 3).
 - Raids stop after repeated near wipes instead of walking into the next one: two near wipes or wipes within 10 minutes of running time pause the run once the fight is over, with the steps, the time between them and the run's counts in the status line. `.bot run resume` regroups and starts a fresh count. `AiPlayerbot.DungeonRunNearWipeStop` (default 2), `AiPlayerbot.DungeonRunNearWipeStopMinutes` (default 10), and `AiPlayerbot.DungeonRunNearWipeStopParty` (default 0: parties keep regrouping by themselves).
 - New `AiPlayerbot.RaidEntryByCommander` (default `1`): a commanded raid can enter a raid whose entrance asks for something only a player has (Onyxia's Lair and its Drakefire Amulet) when the commander is a real player of the same raid and meets the requirement himself; the entrance's other checks are unchanged, and a five-player dungeon's or a scripted entrance's condition is never waived.
@@ -85,8 +89,26 @@
 - Raids: in trash fights the run leader now sends a loose mob to an off-tank instead of the main tank, turn by turn; the main tank keeps its stand, and a mob an off-tank already holds is left to it.
 - Raids: a bot left far behind the lead (for example after a teleport) is now summoned to it after about 8 seconds instead of the run's waits taking turns for a minute and a half, at most twice per step.
 - Fixed: in a raid trash fight the main tank no longer stands idle while an off-tank holds the pack; it joins in (no taunt).
+- Fixed: in a raid's walk, the main tank now joins a fight that broke out behind it (up to 55 yd) instead of standing parked.
 
 ### Dashboard
+- Fixed: a priest who dies at the end of Spirit of Redemption is no longer named as his own killer (the enemy that hit him last is), and the Fight debugger's checks now list the deaths within 5 s of a named enemy cast, such as a Bat Rider's Unstable Concoction.
+- Fixed: the raid frames keep one size: a boss debuff no longer makes a tile taller, and its chips no longer cover the bot's name.
+- Changed: in the Fight debugger a raid fight's problem verdict now means a real problem: the main tank's Sunder rate fails only under 0.4 per 10 seconds in a fight of 30 seconds or more (0.4-0.8, or any rate in a shorter fight, is a check), one or two deaths outside the tanks are a check until there are three or the fight ended in a wipe, a per-bot server warning on a pull shorter than 30 seconds is a check marked as a short pull, and a raid without a saved layout names the tank that took the most damage as the main tank instead of the first tank in the list.
+- New: the Fight debugger flags a main tank that barely acted — fewer than 0.15 casts a second over a fight of 20 seconds or more — as a problem, naming the tank and the top three spells it did cast, except in a fight the commander drives by hand.
+- New: the run controls (pause, resume, skip, stop, status, start, revive, gear) also show in the Fight debugger, under the raid frames.
+- Fixed: in the Fight debugger the live events list now sits under the map, the checks and the timeline instead of leaving a tall blank band beside the raid frames and the map.
+- Fixed: the live events list is readable: the time in its own column, the text wrapping instead of being cut off, deaths and wipes red and boss casts yellow, a scroll box that keeps your place when new events arrive.
+- Fixed: while a fight is live the Fight debugger no longer scrolls the page back up by itself after you clicked a raid frame, a fight card or a commander tab.
+- New: the boss panel now has Molten Core's 13 bosses, with their abilities, timers, phases, adds and notes.
+- New: boss data for Blackwing Lair: eight bosses plus Lord Victor Nefarius's first phase, with their timers, phases, adds and spell areas.
+- New: boss data for Naxxramas: fifteen bosses, the Four Horsemen as four entries, with their timers, phases, adds and spell areas.
+- New: boss data for the rest of Temple of Ahn'Qiraj — the Bug Trio (Lord Kri, Princess Yauj, Vem), Viscidus and Ouro — on the boss panel, raid map and coverage tab.
+- New: Lower Karazhan Halls boss data: the five entries' abilities, timers, phases and adds (Brood Queen Araxxna, Lord Blackwald II, Grizikil, Clawlord Howlfang and Moroes).
+- New: the dashboard's boss data now covers Timbermaw Hold (map 819), with its eight bosses, what each one casts or summons, its notes and its adds. The core has no Timbermaw script, so every timer is blank and the notes say where each spell comes from.
+- New: the boss panel knows the ten Blackrock Depths and seven Lower Blackrock Spire bosses: their abilities with cast windows and targets, the cones and areas they hit, every add each one brings, and a note where the fight has a trick the panel cannot show.
+- New: the boss panel now knows Zul'Farrak and Sunken Temple, all 15 bosses with their abilities, timers, adds and notes.
+- New: the boss panel now knows Upper Blackrock Spire's bosses — Emberseer, Rend, Gyth with his own breaths and knock-away, the Beast, Drakkisath and Lord Valthalak — with their timers, phases and adds.
 - The Commanders cards now update live: positions and fight events stream to the open tab and the bots glide between reports instead of jumping.
 - The Fight debugger now tracks many raids at once: an All raids tab with a small card for each group (its plan and step, what it is doing, its dead, the last fight's result and a small map) and one tab per group that opens that raid's full debugger, with the open tab kept in the address, the arrow keys switching tabs, a red dot for a new fight that needs a look, and a greyed tab for five minutes after a raid ends.
 - Fixed: a fight that goes on after `.bot run stop` is now recorded and listed.
@@ -109,6 +131,9 @@
 - Onyxia's Deep Breath now shows on the raid map while she breathes: the lane, a casting bar and its 5 s countdown (the breath is cast without a cast bar, so it was not shown before).
 - Every raid map now draws its plan under the party as its own layers, and a Layers button on the map opens the presets panel where Pathing, Trash pull, Healing, Boss and All switch them.
 - A finished fight in the Fight debugger now plays on the map, with Play, speed and a scrub bar that move the raid and a cursor along the timeline, and one lane per enemy under it; on a raid map with several floor pictures only the plan and the deaths of the floor on screen are drawn.
+- New: Ruins of Ahn'Qiraj's bosses reach the boss ability panel: Kurinnaxx, Moam, Buru the Gorger, Ayamiss the Hunter and Ossirian the Unscarred show their timers, the stone form and the two health phases, their adds, and a plain note where a number is not fixed in the script.
+- New: Upper Karazhan Halls boss data for the dashboard — Keeper Gnarlmoon, Ley-Watcher Incantagos, Anomalus, Echo of Medivh, the chess event's King, Bishop, Rook and Knight, Sanv Tas'dal, Rupturan the Broken and Kruul — with their abilities, timers, phases and adds.
+- New: the boss panel covers Emerald Sanctum: Erennius and Solnius with their casts, Solnius's transform and 45 s sleep, and the portal adds the panel can list.
 
 ## v1.14.0 (2026-10-28)
 

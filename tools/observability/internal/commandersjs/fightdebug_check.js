@@ -15,7 +15,9 @@ const LAYOUT = { mt: "Ragemeister", ot: ["Brun", "Irelanthe"] };
 assert.deepStrictEqual(F.DEBUFF_CHECKS.map((d) => d.key), ["faerie_fire", "coe", "expose_armor"]);
 assert.deepStrictEqual(F.DEBUFF_CHECKS.map((d) => d.name), ["Faerie Fire", "Curse of the Elements", "Expose Armor"]);
 assert.deepStrictEqual(F.TAUNTS, ["Taunt", "Growl", "Hand of Reckoning", "Mocking Blow", "Challenging Shout", "Challenging Roar"]);
-assert.deepStrictEqual(F.LIMITS, { sunderOk: 1.5, sunderWarn: 0.8, takenShare: 0.15, overheal: 0.45, debuffOk: 0.6, minFightMs: 10000 });
+assert.deepStrictEqual(F.LIMITS, { sunderOk: 1.5, sunderWarn: 0.8, sunderFail: 0.4, sunderFailMinMs: 30000,
+  idleCastsPerSec: 0.15, idleMinMs: 20000, takenShare: 0.15, overheal: 0.45, debuffOk: 0.6, minFightMs: 10000,
+  shortPullMs: 30000 });
 assert.strictEqual(F.fmtInt(175083), "175,083");
 assert.strictEqual(F.fmtInt(0), "0");
 assert.strictEqual(F.fmtInt(999), "999");
@@ -37,6 +39,16 @@ const noLayoutFight = {
 };
 assert.strictEqual(F.mainTank(noLayoutFight, null).name, "TB");
 assert.deepStrictEqual(F.offTanks(noLayoutFight, null).map((b) => b.name), ["TA"]);
+// No layout: the tank the mobs hit most is the main tank, not the first in the list. A layout MT still wins.
+const takenFight = {
+  bots: [
+    { name: "TA", role: "tank", taken: 100 },
+    { name: "TB", role: "tank", taken: 900 },
+    { name: "D", role: "dps", taken: 5000 },
+  ],
+};
+assert.strictEqual(F.mainTank(takenFight, null).name, "TB");
+assert.strictEqual(F.mainTank(takenFight, { mt: "TA", ot: [] }).name, "TA");
 
 // ---- the checks of fight 5-4 --------------------------------------------------------------------------------------
 const c54 = F.checks(byId("5-4"), LAYOUT, []);
@@ -375,13 +387,53 @@ const warriorMT = (n, dur) => fight({
 });
 const MTLAYOUT = { mt: "T", ot: [] };
 const sunderOf = (f) => F.checks(f, MTLAYOUT, []).find((c) => c.id === "mt_sunder");
-assert.strictEqual(sunderOf(warriorMT(2, 30000)).lvl, "fail");
+// Below 0.4 per 10 s is a problem only in a fight of 30 s or more; 0.4-0.8 is a warn at any length.
+assert.strictEqual(sunderOf(warriorMT(1, 30000)).lvl, "fail");
+assert.strictEqual(sunderOf(warriorMT(1, 30000)).num, "0.3/10 s");
+assert.strictEqual(sunderOf(warriorMT(3, 100000)).lvl, "fail"); // exactly 0.3/10 s
+assert.strictEqual(sunderOf(warriorMT(2, 30000)).lvl, "warn");
+assert.strictEqual(sunderOf(warriorMT(4, 100000)).lvl, "warn"); // exactly 0.4/10 s is not under the fail limit
 assert.strictEqual(sunderOf(warriorMT(2, 30000)).num, "0.7/10 s");
 assert.strictEqual(sunderOf(warriorMT(3, 30000)).lvl, "warn");
 assert.strictEqual(sunderOf(warriorMT(3, 30000)).num, "1.0/10 s");
+assert.strictEqual(sunderOf(warriorMT(0, 25000)).lvl, "warn"); // a 25 s pull cannot reach 0.4
+assert.strictEqual(sunderOf(warriorMT(0, 30000)).lvl, "fail");
 assert.strictEqual(sunderOf(warriorMT(2, 9000)), undefined);
 assert.strictEqual(sunderOf(fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "tank", class: "druid" })] })), undefined);
 assert.strictEqual(sunderOf(fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "dps", class: "warrior" })] })), undefined);
+
+// A wipe fails even when the telemetry recorded no death.
+const wipeNoDeaths = fight({ dur_ms: 30000, outcome: "wipe", deaths: [], bots: [bot({ name: "T", role: "tank", taken: 100, casts: 20 })] });
+assert.strictEqual(F.verdict(wipeNoDeaths, MTLAYOUT, []), "fail");
+assert.strictEqual(F.checks(wipeNoDeaths, MTLAYOUT, []).find((c) => c.id === "wipe").lvl, "fail");
+assert.strictEqual(F.checks(fight({ dur_ms: 30000, outcome: "end", deaths: [], bots: [] }), null, []).find((c) => c.id === "wipe"), undefined);
+
+// The main tank's own activity: under 0.15 casts per second over 20 s or more is a problem, whatever it cast.
+const idleT = (casts, dur) => fight({ dur_ms: dur, bots: [bot({
+  name: "T", role: "tank", taken: 100, casts,
+  spells: casts === 2 ? [{ n: "Sunder Armor", c: 1 }, { n: "Taunt", c: 1 }] : [{ n: "Sunder Armor", c: casts }],
+})]});
+const idleOf = (f) => F.checks(f, MTLAYOUT, []).find((c) => c.id === "mt_idle");
+const idle30 = idleOf(idleT(2, 30000));
+assert.strictEqual(idle30.lvl, "fail");
+assert.strictEqual(idle30.title, "Main tank barely acted");
+assert.strictEqual(idle30.num, "2 casts in 30 s");
+assert.strictEqual(idle30.ev, "T cast 2× in 30 s; top spells: Sunder Armor 1, Taunt 1.");
+assert.strictEqual(idle30.bot, "T");
+assert.strictEqual(idleOf(idleT(4, 30000)).lvl, "fail"); // 0.13/s
+assert.strictEqual(idleOf(idleT(5, 30000)), undefined); // 0.17/s
+assert.strictEqual(idleOf(idleT(6, 40000)), undefined); // exactly 0.15/s is not under the limit
+assert.strictEqual(idleOf(idleT(15, 30000)), undefined);
+assert.strictEqual(idleOf(idleT(0, 15000)), undefined); // too short to judge
+assert.strictEqual(idleOf(idleT(0, 20000)).lvl, "fail");
+assert.strictEqual(idleOf(idleT(0, 20000)).ev, "T cast 0× in 20 s; top spells: none.");
+assert.strictEqual(idleOf(Object.assign(idleT(2, 30000), { kind: "commander" })), undefined);
+assert.strictEqual(idleOf(Object.assign(idleT(2, 30000), { kind: "move" })).lvl, "fail");
+assert.strictEqual(idleOf(fight({ dur_ms: 30000, bots: [bot({ name: "D", role: "dps", spells: [{ n: "Fireball", c: 1 }] })] })), undefined);
+// A big fight's payload cuts the spell rows to a few (or none); the bot's casts total is what counts.
+const trimmedT = (spells) => fight({ dur_ms: 30000, bots: [bot({ name: "T", role: "tank", taken: 100, casts: 20, spells })] });
+assert.strictEqual(idleOf(trimmedT([])), undefined);
+assert.strictEqual(idleOf(trimmedT([{ n: "Sunder Armor", c: 1 }, { n: "Revenge", c: 1 }, { n: "Taunt", c: 1 }])), undefined);
 
 const outside = fight({ bots: [bot({ name: "T", role: "tank", taken: 100 }), bot({ name: "D", role: "dps", taken: 25 })] });
 const outsideCheck = F.checks(outside, { mt: "T", ot: [] }, []).find((c) => c.id === "taken_outside");
@@ -413,9 +465,17 @@ const deathFight = fight({
   deaths: [{ name: "D", t_ms: 4000, killer: "mob", x: 1, y: 2, hits: [] }],
 });
 const otherDeath = F.checks(deathFight, { mt: "T", ot: [] }, []).find((c) => c.id === "other_death");
-assert.strictEqual(otherDeath.lvl, "fail");
+assert.strictEqual(otherDeath.lvl, "warn"); // one death in a clean fight
 assert.strictEqual(otherDeath.num, 1);
 assert.strictEqual(otherDeath.death, 0);
+const deathsOf = (list, outcome) => F.checks(fight({ outcome, bots: [bot({ name: "T", role: "tank" })],
+  deaths: list }), { mt: "T", ot: [] }, []).find((c) => c.id === "other_death");
+const twoDeaths = [{ name: "A", t_ms: 1000, hits: [] }, { name: "B", t_ms: 2000, hits: [] }];
+const threeDeaths = twoDeaths.concat([{ name: "C", t_ms: 3000, hits: [] }]);
+assert.strictEqual(deathsOf(twoDeaths).lvl, "warn");
+assert.strictEqual(deathsOf(threeDeaths).lvl, "fail");
+assert.strictEqual(deathsOf(twoDeaths, "wipe").lvl, "fail"); // a wipe fails at any death count
+assert.strictEqual(deathsOf(twoDeaths, "end").lvl, "warn");
 
 const ruled = F.checks(byId("5-4"), LAYOUT,
   [{ rule: "healer_no_heals", level: "red", bot: "X", text: "X (healer) cast no heals" }]);
@@ -424,6 +484,15 @@ assert.strictEqual(ruleCheck.lvl, "fail");
 assert.strictEqual(ruleCheck.bot, "X");
 assert.strictEqual(ruleCheck.title, "X (healer) cast no heals");
 assert.strictEqual(ruleCheck.ev, "Server rule healer_no_heals");
+assert.strictEqual(ruleCheck.num, "");
+// A red rule on a pull under 30 s is a warn: the bot barely had a global to act in.
+const shortRule = (dur, level) => F.checks(fight({ dur_ms: dur, bots: [bot({ name: "T", role: "tank" })] }), { mt: "T", ot: [] },
+  [{ rule: "dps_no_damage", level, bot: "X", text: "X did nothing" }]).find((c) => c.id === "rule:dps_no_damage:X");
+assert.strictEqual(shortRule(20000, "red").lvl, "warn");
+assert.strictEqual(shortRule(20000, "red").num, "(short pull)");
+assert.strictEqual(shortRule(30000, "red").lvl, "fail");
+assert.strictEqual(shortRule(20000, "yellow").lvl, "warn");
+assert.strictEqual(shortRule(20000, "yellow").num, "");
 
 // ---- no HTML in data: names come back verbatim, the renderer escapes them -------------------------------------------
 const markupFight = fight({
@@ -544,5 +613,44 @@ assert.strictEqual(mcRow.ev, "step 43 is 10.0 yd from Core Hound (ring 30 yd, sc
 // A fight without a plan (R1's pocket fights) has no ring row: no strays are passed.
 assert.strictEqual(F.checks(mcFight, null, [], { lanes: null, strays: null, packI: P.fightPack(mcPlan, mcFight), prevPackI: 42 })
   .some((c) => c.id === "plan_strays"), false);
+
+// ---- deaths after a named enemy cast (ZG walks 6-9 counted these by hand) -------------------------------------------
+{
+  const blast = (t) => ({ k: "cast", t, e: 14750, n: "Gurubashi Bat Rider", s: "Unstable Concoction", r: "e", sid: 24024 });
+  const zg = {
+    id: "2-8", dur_ms: 93000,
+    bots: [{ name: "Joric", role: "dps", class: "rogue" }, { name: "Vex", role: "dps", class: "rogue" }, { name: "Thor", role: "dps", class: "warlock" }],
+    log: [blast(18000), blast(30000), blast(46000), { k: "cast", t: 45000, n: "Hakkari Witch Doctor", s: "Shrink", r: "e" }, { k: "taunt", t: 46500, n: "Shandrin" }],
+    deaths: [
+      { name: "Thor", t_ms: 10000, killer: "Bloodseeker Bat", hits: [] },   // before any cast: no row
+      { name: "Joric", t_ms: 33500, killer: "Gurubashi Bat Rider", hits: [] },
+      { name: "Vex", t_ms: 47000, killer: "Gurubashi Bat Rider", hits: [] },
+      { name: "Thor", t_ms: 36000, killer: "Bloodseeker Bat", hits: [] },   // 6 s after the 30 s blast: outside 5 s
+    ],
+  };
+  const rows = F.castDeaths(zg);
+  assert.deepStrictEqual(rows.map((r) => [r.caster, r.spell, r.casts, r.deaths.map((d) => [d.name, d.i, d.after_ms])]), [
+    ["Gurubashi Bat Rider", "Unstable Concoction", 3, [["Joric", 1, 3500], ["Vex", 2, 1000]]],
+    ["Hakkari Witch Doctor", "Shrink", 1, [["Vex", 2, 2000]]],
+  ]);
+  assert.strictEqual(F.castDeaths(zg, 1000).length, 1);   // only Vex, 1 s after the third blast
+  assert.deepStrictEqual(F.castDeaths({ deaths: zg.deaths }), []);   // no cast log: nothing to pair
+  const row = F.checks(zg, null, []).find((c) => c.id === "cast_deaths:Gurubashi Bat Rider:Unstable Concoction");
+  assert.ok(row);
+  assert.strictEqual(row.lvl, "warn");
+  assert.strictEqual(row.title, "2 death(s) within 5 s of Gurubashi Bat Rider's Unstable Concoction");
+  assert.strictEqual(row.num, "2/3");
+  assert.strictEqual(row.ev, "Joric at 33.5 s (3.5 s after the cast) · Vex at 47.0 s (1.0 s after the cast); Unstable Concoction was cast 3× in the fight.");
+  assert.strictEqual(row.bot, "Joric");
+  assert.strictEqual(row.death, 1);
+  assert.strictEqual(F.castDeaths(zg)[0].partial, false);
+  // A fight that dropped older log events at its cap: the first blast is gone, so the counts are only a floor.
+  const cut = Object.assign({}, zg, { log_dropped: 40, log: zg.log.slice(1) });
+  const cutRows = F.castDeaths(cut);
+  assert.deepStrictEqual(cutRows.map((r) => [r.spell, r.casts, r.partial]), [["Unstable Concoction", 2, true], ["Shrink", 1, true]]);
+  const cutRow = F.checks(cut, null, []).find((c) => c.id === "cast_deaths:Gurubashi Bat Rider:Unstable Concoction");
+  assert.strictEqual(cutRow.num, "2/≥2");
+  assert.ok(cutRow.ev.endsWith("Unstable Concoction was cast at least 2× (the fight dropped 40 older log events, so earlier casts and the deaths after them are missing)."));
+}
 
 console.log("fightdebug_check: ok");

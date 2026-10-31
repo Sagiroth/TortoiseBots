@@ -36,6 +36,7 @@ inline char const* const kSpellShapeCsv = R"(
 24839,cone,120,20,0,0,0,0,0,spell_template 24839 Acid Breath: target 24 x2; radius 9 = 20 yd; front 120
 25814,cone,120,10,0,0,0,0,0,spell_template 25814 Wide Slash: target 24; radius 13 = 10 yd; front 120
 26102,cone,90,40,0,0,0,0,0,spell_template 26102 Sand Blast: target 54 x2 (90 degree arc); radius 23 = 40 yd; front
+16390,cone,120,20,0,0,0,0,0,spell_template 16390 Flame Breath (Gyth): target 24; radius 9 = 20 yd; spellVisual 1483 = default front 120
 26029,cone,15,100,0,0,0,0,0,spell_template 26029 Dark Glare: target 24; spellVisual 7441 = PUSH_IN_FRONT_15 (Spell.cpp:2760-2761, HasInArc pi/12 at Spell.cpp:8276-8277) = front 15; radius 12 = 100 yd
 17086,line,0,0,60,20.730539,-215.237610,-130.788300,-213.424026,spell_target_position 17086 chain (north to south, 20 links, first point 17086 to last 21139 in the tunnel; 151.53 yd); radius 10 = 30 yd each side
 18351,line,0,0,60,-68.834236,-215.036163,20.730539,-215.237610,spell_target_position 18351 chain (south to north, 11 links; 89.57 yd); radius 10 = 30 yd each side
@@ -45,6 +46,10 @@ inline char const* const kSpellShapeCsv = R"(
 18584,line,0,0,60,6.016711,-181.305771,-56.559654,-241.223923,spell_target_position 18584 chain (north-west to south-east, 12 links; 86.64 yd); radius 10 = 30 yd each side
 18596,line,0,0,60,-58.250900,-189.020004,12.120926,-243.439407,spell_target_position 18596 chain (south-west to north-east, 12 links; 88.96 yd); radius 10 = 30 yd each side
 18617,line,0,0,60,12.120926,-243.439407,-58.250900,-189.020004,spell_target_position 18617 chain (north-east to south-west, 12 links; 88.96 yd); radius 10 = 30 yd each side
+22539,cone,120,45,0,0,0,0,0,spell_template 22539 Shadow Flame: target 24 x2; spellVisual 6559 = front 120 (Spell.cpp:2751-2768); radius 11 = 45 yd
+23339,cone,120,20,0,0,0,0,0,spell_template 23339 Wing Buffet: target 24 x2; visual 0 = front 120 (Spell.cpp:2751-2768); radius 9 = 20 yd
+23023,cone,120,30,0,0,0,0,0,spell_template 23023 Conflagration: target 24 x3; visual 4326 = front 120 (Spell.cpp:2751-2768); radius 10 = 30 yd; max 4 targets
+23364,back-cone,75,20,0,0,0,0,0,spell_template 23364 Tail Lash: target 24 x3; spellVisual 3879 = back 75 (Spell.cpp:2753-2754, 8276-8277); radius 9 = 20 yd for the stun and the damage (spell_effect_mod 23364 "Tail Lash : dist fix à 20 yd"); the Dropped Weapon trigger 23365 reads radius index 10 = 30 yd in spell_template
 )";
 
 } // namespace TortoiseBots

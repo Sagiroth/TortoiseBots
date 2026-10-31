@@ -17,6 +17,12 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics kill first",
         NextAction::array(0, new NextAction("boss tactics kill first", ACTION_HIGH + 1), NULL)));
 
+    // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
+    // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
+    triggers.push_back(new TriggerNode(
+        "boss tactics avoid cast",
+        NextAction::array(0, new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6), NULL)));
+
     triggers.push_back(new TriggerNode(
         "boss tactics front",
         NextAction::array(0, new NextAction("boss tactics step behind", ACTION_HIGH), NULL)));
@@ -29,12 +35,35 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void BossTacticsStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // A held bot out of combat itself, beside a group attacker's blast, runs the non-combat engine.
+    triggers.push_back(new TriggerNode(
+        "boss tactics avoid cast",
+        NextAction::array(0, new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6), NULL)));
+
     triggers.push_back(new TriggerNode(
         "leave boss tactics",
         NextAction::array(0, new NextAction("disable boss tactics strategy", 100.0f), NULL)));
 }
 
+// The combat engine sleeps through the bot's own cast (PlayerbotAI::UpdateAI), and a heal or a bolt outlasts the
+// warning of a 3 s blast. The reaction engine runs every update; the walk-out breaks the bot's cast itself once a walk
+// is under way (BossTacticsAvoidCastAction).
+void BossTacticsStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "boss tactics avoid cast",
+        NextAction::array(0, new NextAction("boss tactics avoid cast", ACTION_EMERGENCY + 6), NULL)));
+}
+
 void BossTacticsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
     multipliers.push_back(new BossTacticsHoldMultiplier(ai));
+    multipliers.push_back(new BossTacticsCastHoldMultiplier(ai));
+}
+
+// The cast hold on the non-combat engine too: a held bot out of combat itself would walk back to its stay spot in the
+// blast it just left.
+void BossTacticsStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new BossTacticsCastHoldMultiplier(ai));
 }

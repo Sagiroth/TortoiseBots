@@ -74,7 +74,7 @@ Lane const kLanes[] = {
 void TestCommittedTable()
 {
     std::vector<Row> const& table = Table();
-    Check(table.size() == 17, "the committed table has every row");
+    Check(table.size() == 22, "the committed table has every row");
     std::unordered_set<uint32_t> ids;
     for (Row const& row : table)
     {
@@ -109,6 +109,25 @@ void TestKnownShapes()
     Shape const* glare = For(26029);
     Check(glare && glare->kind == Kind::Cone && glare->angle == 15 && Near(glare->length, 100.0f) && glare->width == 0.0f,
         "Dark Glare is the core's 15 degree front cone of 100 yd (spellVisual 7441)");
+    Shape const* shadowFlame = For(22539);
+    Check(shadowFlame && shadowFlame->kind == Kind::Cone && shadowFlame->angle == 120 && Near(shadowFlame->length, 45.0f),
+        "BWL Shadow Flame is a 120 degree front cone of 45 yd");
+    Shape const* wing = For(23339);
+    Check(wing && wing->kind == Kind::Cone && wing->angle == 120 && Near(wing->length, 20.0f),
+        "BWL Wing Buffet is a 120 degree front cone of 20 yd");
+    Shape const* conflagration = For(23023);
+    Check(conflagration && conflagration->kind == Kind::Cone && conflagration->angle == 120
+            && Near(conflagration->length, 30.0f),
+        "Razorgore's Conflagration is a 120 degree front cone of 30 yd");
+    Shape const* lash = For(23364);
+    Check(lash && lash->kind == Kind::BackCone && lash->angle == 75 && Near(lash->length, 20.0f),
+        "Nefarian's Tail Lash is a 75 degree back cone of 20 yd");
+    Shape const* sand = For(26102);
+    Check(sand && sand->kind == Kind::Cone && sand->angle == 90 && Near(sand->length, 40.0f) && sand->width == 0.0f,
+        "Ouro's Sand Blast is the core's 90 degree target-54 cone of 40 yd (radius 23)");
+    Shape const* gyth = For(16390);
+    Check(gyth && gyth->kind == Kind::Cone && gyth->angle == 120 && Near(gyth->length, 20.0f) && gyth->width == 0.0f,
+        "Gyth's Flame Breath is a cast-time target-24 cone of 20 yd (radius 9, default front 120)");
 }
 
 // Every Deep Breath row is the complete damaging footprint of its chain: a line from the first to the last damage point,

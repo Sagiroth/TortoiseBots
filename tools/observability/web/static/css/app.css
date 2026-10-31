@@ -3223,8 +3223,14 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
   grid-template-areas:
     "run run run"
     "frames frames frames"
+    "controls controls controls"
     "bosses bosses bosses"
-    "rail centre roles";
+    "rail centre roles"
+    "rail live roles"
+    "rail . roles";
+  /* The last row is the flexible one: the rail and the roles column span rows 5-7, and a taller column spreads its extra height
+     over the tracks it spans. With the closing 1fr row taking it, the live events stay at the foot of the centre column. */
+  grid-template-rows: auto auto auto auto auto auto 1fr;
   gap: 16px;
   align-items: start;
 }
@@ -3232,6 +3238,10 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
    with the rail and the roles column, and a taller roles table stretched those rows (its height is spread over the rows
    it spans), leaving a blank band under every centred panel. */
 .fd-centre { display: contents; }
+/* The live events strip sits at the foot of the centre column, under the map, the checks and the timeline (its own row), not in an auto-placed row of the rail column. */
+.cmd-card.fd-on .cmd-live { grid-area: live; margin-top: 0; min-width: 0; }
+/* The run controls move here on the debug paint, full width under the raid frames; on the Live paint they sit back in .cmd-panels. */
+.cmd-card.fd-on .cmd-controls { grid-area: controls; margin-top: 0; min-width: 0; }
 .cmd-card.fd-on .fd-centre { grid-area: centre; display: grid; gap: 16px; align-content: start; min-width: 0; }
 /* The debugger's empty states: one centred line instead of blank panels (no raid bound in the All raids grid, no fight yet in
    an open card). The card's line takes the centre column the hidden fight panels would fill. */
@@ -3329,14 +3339,14 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 /* One group spans the row and lays its own tiles out; a raid's five bots fill five columns instead of one. */
 .fd-grp { grid-column: 1 / -1; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 8px; align-content: start; }
 .fd-gl { grid-column: 1 / -1; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
-.fd-tile { position: relative; height: 34px; width: 100%; min-width: 0; padding: 0 7px; overflow: hidden; text-align: left; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.76rem; cursor: pointer; }
+.fd-tile { position: relative; display: flex; flex-direction: column; justify-content: flex-start; height: 46px; width: 100%; min-width: 0; padding: 0 7px; overflow: hidden; text-align: left; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); color: var(--text-main); font: inherit; font-size: 0.76rem; cursor: pointer; }
 .fd-tile:hover { border-color: var(--border-strong); }
 .fd-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: color-mix(in srgb, var(--role-other) 35%, transparent); pointer-events: none; }
 .fd-tile.r-tank .fd-fill { background: color-mix(in srgb, var(--role-tank) 35%, transparent); }
 .fd-tile.r-healer .fd-fill { background: color-mix(in srgb, var(--role-healer) 35%, transparent); }
 .fd-tile.r-dps .fd-fill { background: color-mix(in srgb, var(--role-dps) 35%, transparent); }
 .fd-tile.r-other .fd-fill { background: color-mix(in srgb, var(--role-other) 35%, transparent); }
-.fd-nm { position: relative; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; line-height: 26px; }
+.fd-nm { position: relative; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; line-height: 24px; }
 .fd-tile .fd-pw { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: color-mix(in srgb, var(--text-dim) 35%, transparent); }
 .fd-pw i { display: block; height: 100%; background: var(--text-muted); }
 .fd-pw.p-rage i { background: var(--accent-red); }
@@ -3434,7 +3444,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-map .fdring { fill: none; stroke: var(--accent-yellow); stroke-width: 2; vector-effect: non-scaling-stroke; }
 
 @media (max-width: 760px) {
-  .cmd-card.fd-on .cmd-body { grid-template-columns: 1fr; grid-template-areas: "run" "frames" "bosses" "rail" "centre" "roles"; }
+  .cmd-card.fd-on .cmd-body { grid-template-columns: 1fr; grid-template-areas: "run" "frames" "controls" "bosses" "rail" "centre" "live" "roles"; grid-template-rows: none; }
   .fd-frames { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fd-rail { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 4px; min-width: 0; }
   .fd-rail .fd-fight { min-width: 190px; }
@@ -3527,10 +3537,10 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-bosscast.bc-7 { background: var(--grp-7); }
 .fd-likely { margin-left: 4px; padding: 0 5px; border: 1px dashed var(--accent-yellow); border-radius: 999px; color: var(--accent-yellow); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; }
 
-/* Raid frames: up to four boss-debuff chips, the dispel colour as the tile's thin border and a red MC tag. */
-.fd-tile.hasdispel, .fd-tile.mc { height: 64px; }
-.fd-tile.hasdispel .fd-nm, .fd-tile.mc .fd-nm { line-height: 18px; }
-.fd-tile .fd-dbs { position: absolute; left: 3px; right: 3px; bottom: 5px; display: flex; flex-wrap: wrap; gap: 2px; max-height: 30px; overflow: hidden; pointer-events: none; }
+/* Raid frames: up to four boss-debuff chips, the dispel colour as the tile's thin border and a red MC tag. Every tile keeps
+   one height and one chip row under the name, so a debuff never resizes the frames or covers the name; the chips that do
+   not fit are named in the tile's aria label. */
+.fd-tile .fd-dbs { position: absolute; left: 3px; right: 3px; bottom: 5px; display: flex; flex-wrap: nowrap; gap: 2px; height: 14px; overflow: hidden; pointer-events: none; }
 .fd-tile .fd-db { max-width: 48%; overflow: hidden; padding: 0 3px; border-radius: 2px; font-size: 0.56rem; line-height: 12px; text-overflow: ellipsis; white-space: nowrap; background: var(--bg-app); }
 .fd-tile .fd-db.dt-magic { color: var(--accent-blue-bright); border: 1px solid color-mix(in srgb, var(--accent-blue-bright) 55%, transparent); }
 .fd-tile .fd-db.dt-curse { color: var(--grp-3); border: 1px solid color-mix(in srgb, var(--grp-3) 55%, transparent); }
@@ -3703,8 +3713,15 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 /* ---------- Live stream: the card's live events strip ---------- */
 .cmd-live { margin-top: 12px; }
 .cmd-live-sub { margin-left: 6px; font-size: 0.78rem; font-weight: 400; color: var(--text-muted); }
-.cmd-live-events { display: grid; gap: 2px; max-height: 180px; overflow-y: auto; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
-.cmd-live-row { overflow: hidden; color: var(--text-muted); white-space: nowrap; text-overflow: ellipsis; }
+/* One row per event: the time in its own tabular column, the text wrapping beside it (the card's event feed pattern), coloured by kind
+   (death and wipe red, a boss cast yellow, a pull and a taunt in the page colour, a cast muted). Newest first; the box scrolls itself. */
+.cmd-live-events { display: grid; gap: 2px; max-height: 260px; overflow-y: auto; overflow-anchor: none; font-size: 0.82rem; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.cmd-live-row { display: grid; grid-template-columns: 4.6em minmax(0, 1fr); gap: 6px; color: var(--text-muted); }
+.cmd-live-row b { color: var(--text-dim); font-weight: 500; font-variant-numeric: tabular-nums; }
+.cmd-live-row span { overflow-wrap: anywhere; }
+.cmd-live-row.lv-pull, .cmd-live-row.lv-taunt, .cmd-live-row.lv-start { color: var(--text-main); }
+.cmd-live-row.lv-death span, .cmd-live-row.lv-wipe span { color: var(--accent-red); }
+.cmd-live-row.lv-boss span { color: #facc15; font-weight: 600; }
 
 /* ---------- Boss overlay (facing, casts, spell areas) ---------- */
 /* A boss or elite's facing arrow, the area of the spell it casts (drawn under its dot), the cast's progress ring and its label.
