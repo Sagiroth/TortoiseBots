@@ -681,8 +681,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 67)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 412)
+        self.assertEqual(len(doc["bosses"]), 72)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 432)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -694,6 +694,133 @@ class BossDataTest(unittest.TestCase):
                 self.assertTrue(entry["name"], entry)
             for phase in boss["phases"]:
                 self.assertIn(phase["rule"]["kind"], ("hp", "aura", "flag", "start"))
+
+    # The Lower Karazhan expected values are read off the core scripts and
+    # spell_template, not generated from the CSV (src/scripts/dungeons/
+    # lower_karazhan_halls/boss_*.cpp; tw_world spell_template rows):
+    # (a, b, c, target, aura, self, ground, cone, tail, int, summon, hp,
+    #  phase, ok, okNeeds, castMs)
+    KARA_LOWER_ABILITIES = {
+        61221: {
+            57063: (0, 9000, 12000, "aoe", True, False, False, False, False, False,
+                    0, 0, "", "", {}, 0),
+            57056: (11000, 12000, 15000, "random", True, False, False, False, False,
+                    False, 0, 0, "", "", {}, 0),
+        },
+        61222: {
+            57066: (0, 6000, 12000, "aoe", False, False, False, False, False, False,
+                    0, 0, "", "heal", {}, 0),
+            57073: (20000, 22000, 22000, "random", True, False, False, False, False,
+                    False, 0, 0, "", "", {}, 0),
+            57074: (0, 0, 0, "self", False, True, False, False, False, False,
+                    0, 0, "", "", {"purge": "nopurge"}, 0),
+            57075: (0, 26000, 42000, "random", True, False, False, False, False,
+                    False, 0, 0, "", "", {"dispel": "nodispel"}, 0),
+        },
+        61224: {
+            57094: (2000, 4000, 6000, "victim", True, False, False, False, False,
+                    False, 0, 0, "", "tank", {}, 0),
+            57093: (15000, 11000, 14000, "random", False, False, True, False, False,
+                    True, 0, 0, "", "", {}, 0),
+            57091: (30000, 25000, 34000, "self", False, True, False, False, False,
+                    False, 0, 0, "", "", {"purge": "nopurge"}, 0),
+        },
+        61223: {
+            57083: (2000, 1000, 1000, "aoe", True, False, False, False, False, False,
+                    0, 0, "", "", {"dispel": "nodispel"}, 0),
+            57076: (0, 8000, 11000, "random", True, False, False, False, False,
+                    False, 0, 0, "", "", {"dispel": "nodispel"}, 0),
+            57084: (50000, 48000, 48000, "aoe", True, False, False, False, False,
+                    False, 0, 0, "", "", {}, 0),
+            57082: (0, 0, 0, "self", False, True, False, False, False, False,
+                    0, 30, "", "", {}, 0),
+        },
+        61225: {
+            57095: (0, 20000, 26000, "victim", True, False, False, False, False,
+                    False, 0, 0, "", "", {"dispel": "nodispel"}, 0),
+            57096: (0, 15000, 18000, "aoe", True, False, False, False, False,
+                    False, 0, 0, "", "", {}, 0),
+            57097: (0, 0, 0, "random", True, False, False, False, False, False,
+                    0, 0, "", "", {"dispel": "nodispel"}, 0),
+            57098: (0, 0, 0, "random", True, False, False, False, False, False,
+                    0, 0, "", "", {"dispel": "nodispel"}, 0),
+            57099: (0, 8000, 15000, "random", False, False, False, False, False,
+                    False, 0, 0, "below", "heal", {}, 0),
+            57100: (0, 43000, 49000, "aoe", True, False, False, False, False,
+                    False, 0, 0, "below", "", {}, 0),
+            27564: (0, 33000, 45000, "self", False, True, False, False, False,
+                    False, 0, 0, "below", "", {}, 0),
+        },
+    }
+    KARA_LOWER_PHASES = {
+        61221: [],
+        61222: [],
+        61224: [],
+        61223: [
+            ("frenzy", 1, {"kind": "aura", "aura": 57082}),
+            ("fight", 2, {"kind": "start"}),
+        ],
+        61225: [
+            ("below", 1, {"kind": "hp", "hp": 50}),
+            ("fight", 2, {"kind": "start"}),
+        ],
+    }
+
+    def kara_lower_doc(self):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        return boss_data.build_document(rows, names)
+
+    def test_lower_karazhan_ability_values(self):
+        doc = self.kara_lower_doc()
+        for entry, expected in self.KARA_LOWER_ABILITIES.items():
+            boss = doc["bosses"][str(entry)]
+            actual = {
+                ability["sid"]: (
+                    ability["a"], ability["b"], ability["c"], ability["target"],
+                    ability["aura"], ability["self"], ability["ground"],
+                    ability["cone"], ability["tail"], ability["int"],
+                    ability["summon"], ability["hp"], ability["phase"],
+                    ability["ok"], ability["okNeeds"], ability["castMs"],
+                )
+                for ability in boss["abilities"]
+            }
+            self.assertEqual(actual, expected, boss["name"])
+
+    def test_lower_karazhan_phase_rules(self):
+        doc = self.kara_lower_doc()
+        for entry, expected in self.KARA_LOWER_PHASES.items():
+            actual = [
+                (phase["name"], phase["order"], phase["rule"])
+                for phase in doc["bosses"][str(entry)]["phases"]
+            ]
+            self.assertEqual(actual, expected, str(entry))
+
+        # A random first timer and every shared or frozen timer stay out of the
+        # columns; the rows whose first cast depends on a later event have a=0.
+        boss = doc["bosses"]["61225"]
+        by_sid = {a["sid"]: a for a in boss["abilities"]}
+        self.assertEqual(by_sid[57097]["a"], 0)  # two re-arm windows
+        self.assertEqual(by_sid[57098]["a"], 0)  # triggered by 57097
+        self.assertEqual(by_sid[57099]["phase"], "below")
+        self.assertEqual(by_sid[57097]["phase"], "")
+
+        # Instant or unpreventable spells are not kickable, however the plan's
+        # tactic table reads.
+        self.assertFalse(by_sid[57099]["int"])
+        grizikil = {a["sid"]: a for a in doc["bosses"]["61224"]["abilities"]}
+        self.assertFalse(grizikil[57094]["int"])
+        self.assertTrue(grizikil[57093]["int"])
+        self.assertTrue(grizikil[57093]["ground"])
+
+        # The summon add rows and their kill priorities.
+        adds = {a["entry"]: (a["role"], a["priority"]) for a in doc["bosses"]["61221"]["adds"]}
+        self.assertEqual(adds[30008], ("summon", 0))
+        self.assertEqual(adds[61206], ("summon", 2))
+        self.assertEqual(
+            {a["entry"] for a in doc["bosses"]["61224"]["adds"]},
+            {61195, 61196, 61197},
+        )
 
 
 # Blackwing Lair values, read from the core scripts and spell rows (below each boss), not generated from the

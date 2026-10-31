@@ -121,6 +121,18 @@
         15989,
         15990
       ]
+    },
+    {
+      "key": "lower_karazhan_halls",
+      "mapId": 532,
+      "name": "Lower Karazhan Halls",
+      "bosses": [
+        61221,
+        61222,
+        61224,
+        61223,
+        61225
+      ]
     }
   ],
   "bosses": {
@@ -11310,6 +11322,614 @@
         "Sand Blast is a 90 degree front cone of 40 yd.",
         "Sand Blast is aimed at the top-aggro player and every player it hits loses 100 percent of their threat.",
         "The first Sweep comes 30-40 s after the pull and the first Sand Blast 30-45 s; after every emerge Sweep re-arms at 15 s and Sand Blast at 12-17 s."
+      ]
+    },
+    "61221": {
+      "entry": 61221,
+      "name": "Brood Queen Araxxna",
+      "map": "lower_karazhan_halls",
+      "order": 68,
+      "abilities": [
+        {
+          "sid": 57063,
+          "name": "Brood Venom Volley",
+          "castMs": 0,
+          "a": 0,
+          "b": 9000,
+          "c": 12000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 57056,
+          "name": "Leeching Bite",
+          "castMs": 0,
+          "a": 11000,
+          "b": 12000,
+          "c": 15000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 30008,
+          "name": "Skitterweb Egg",
+          "role": "summon",
+          "priority": 0
+        },
+        {
+          "entry": 61206,
+          "name": "Skitterweb Crawler",
+          "role": "summon",
+          "priority": 2
+        },
+        {
+          "entry": 61207,
+          "name": "Skitterweb Darkfang",
+          "role": "summon",
+          "priority": 2
+        },
+        {
+          "entry": 61209,
+          "name": "Skitterweb Leaper",
+          "role": "summon",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "Brood Venom Volley comes first at 9-11 s and then every 9-12 s. Eggs come 30 s after the pull and then every 28-34 s; each egg kills itself after 20 s and leaves one random spider (61206, 61207 or 61209)."
+      ]
+    },
+    "61222": {
+      "entry": 61222,
+      "name": "Lord Blackwald II",
+      "map": "lower_karazhan_halls",
+      "order": 69,
+      "abilities": [
+        {
+          "sid": 57066,
+          "name": "Reaver Storm",
+          "castMs": 0,
+          "a": 0,
+          "b": 6000,
+          "c": 12000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 57073,
+          "name": "Blackwalds Boon",
+          "castMs": 0,
+          "a": 20000,
+          "b": 22000,
+          "c": 22000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 57074,
+          "name": "Blackwalds Blessing",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 57075,
+          "name": "Empowered Soul",
+          "castMs": 0,
+          "a": 0,
+          "b": 26000,
+          "c": 42000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 61192,
+          "name": "Shadowbane Darkcaster",
+          "role": "summon",
+          "priority": 2
+        },
+        {
+          "entry": 61193,
+          "name": "Shadowbane Ambusher",
+          "role": "summon",
+          "priority": 2
+        },
+        {
+          "entry": 61194,
+          "name": "Shadowbane Ragefang",
+          "role": "summon",
+          "priority": 2
+        },
+        {
+          "entry": 61211,
+          "name": "Shadowbane Glutton",
+          "role": "summon",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "Reaver Storm comes first at 6-11 s and then every 6-12 s. Blackwalds Boon comes 20 s after the pull and every 22 s, but only when both the boon and the triggered Blackwalds Blessing land; the Blessing shares that timer. Call for Help comes 31 s after the pull and then every 44-51 s, spawning one random guard.",
+        "The boss is summoned in the entrance hall when the Dark Rider Champion (61204) dies; the champion's two apprentices (61203) belong to that trash pull, not to his fight."
+      ]
+    },
+    "61224": {
+      "entry": 61224,
+      "name": "Grizikil",
+      "map": "lower_karazhan_halls",
+      "order": 70,
+      "abilities": [
+        {
+          "sid": 57094,
+          "name": "Grellkin Fireball",
+          "castMs": 0,
+          "a": 2000,
+          "b": 4000,
+          "c": 6000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 57093,
+          "name": "Grellkin Rain of Fire",
+          "castMs": 0,
+          "a": 15000,
+          "b": 11000,
+          "c": 14000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": true,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 57091,
+          "name": "Flamewave",
+          "castMs": 0,
+          "a": 30000,
+          "b": 25000,
+          "c": 34000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 61195,
+          "name": "Grellkin Shadow Weaver",
+          "role": "linked",
+          "priority": 2
+        },
+        {
+          "entry": 61196,
+          "name": "Grellkin Primalist",
+          "role": "linked",
+          "priority": 2
+        },
+        {
+          "entry": 61197,
+          "name": "Grellkin Channeler",
+          "role": "linked",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "Grellkin Fireball comes first 2 s after the pull and then every 4-6 s; spell_template gives it preventionType 0, so it cannot be kicked. Rain of Fire comes 15 s after the pull and then every 11-14 s; it is a 20 yd ground area. Every Grellkin within 190 yd joins at the pull, with no cast or timer.",
+        "At 50 percent he only yells; no ability changes."
+      ]
+    },
+    "61223": {
+      "entry": 61223,
+      "name": "Clawlord Howlfang",
+      "map": "lower_karazhan_halls",
+      "order": 71,
+      "abilities": [
+        {
+          "sid": 57083,
+          "name": "Terrifying Presence",
+          "castMs": 0,
+          "a": 2000,
+          "b": 1000,
+          "c": 1000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 57076,
+          "name": "Slavering Bite",
+          "castMs": 0,
+          "a": 0,
+          "b": 8000,
+          "c": 11000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 57084,
+          "name": "Shadowbane Curse",
+          "castMs": 0,
+          "a": 50000,
+          "b": 48000,
+          "c": 48000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 57082,
+          "name": "Bloodfrenzy",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 30,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "frenzy",
+          "order": 1,
+          "rule": {
+            "kind": "aura",
+            "aura": 57082
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": [
+        "Terrifying Presence is re-applied every second. Slavering Bite comes first at 8-10 s and then every 8-11 s, only on a player in melee range. At 50 percent he only yells; at 30 percent he frenzies once."
+      ]
+    },
+    "61225": {
+      "entry": 61225,
+      "name": "Moroes",
+      "map": "lower_karazhan_halls",
+      "order": 72,
+      "abilities": [
+        {
+          "sid": 57095,
+          "name": "Glittering Dust",
+          "castMs": 0,
+          "a": 0,
+          "b": 20000,
+          "c": 26000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 57096,
+          "name": "Smoke Bomb",
+          "castMs": 0,
+          "a": 0,
+          "b": 15000,
+          "c": 18000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 57097,
+          "name": "Shuffle Kick",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 57098,
+          "name": "Agonizing Concussion",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 57099,
+          "name": "Shadow Blast",
+          "castMs": 0,
+          "a": 0,
+          "b": 8000,
+          "c": 15000,
+          "phase": "below",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 57100,
+          "name": "Moroes Curse",
+          "castMs": 0,
+          "a": 0,
+          "b": 43000,
+          "c": 49000,
+          "phase": "below",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 27564,
+          "name": "Reflection",
+          "castMs": 0,
+          "a": 0,
+          "b": 33000,
+          "c": 45000,
+          "phase": "below",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "below",
+          "order": 1,
+          "rule": {
+            "kind": "hp",
+            "hp": 50
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": [
+        "Glittering Dust drops 100 percent of the tank's threat and moves him to the second-highest player: the tank swap is the real mechanic. It comes first at 20-26 s and then every 20-26 s.",
+        "Shuffle Kick comes first at 7-13 s and then every 7-13 s above 50 percent; below 50 percent it re-arms at 9-15 s. The same timer and target also get Agonizing Concussion, and the kick knocks the target back.",
+        "Below 50 percent Shadow Blast, Moroes Curse and Reflection turn on; their first timers (10-16, 35-48 and 25 s) count from the drop below 50 percent because they do not tick above it. Shadow Blast is instant, so it cannot be kicked. Smoke Bomb comes first at 15-18 s and then every 15-18 s.",
+        "Smoke Bomb lands on a random player and silences everyone within its area around that player (implicit target 28, an area at the destination): spread out.",
+        "The director's-cut branch (teleport 12980, a second interlude and a 10 percent heal) is compiled out; the rows above are the health-based fight. Ghost Visual 9617 is applied directly every tick, with no cast event."
       ]
     }
   },
