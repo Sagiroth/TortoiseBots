@@ -77,8 +77,10 @@ void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason);
 void SetSupply(uint32_t botGuidLow, SupplyStep step, uint32_t itemId, uint32_t count,
     SupplyStep returnStep = SupplyStep::None, OrderReason reason = OrderReason::None, uint32_t goldCount = 0);
 void SetNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& items, bool bankDenied = false);
-void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount);
-void ConsumeGuildGoldHeld(uint32_t botGuidLow, uint32_t amount);
+// Guild gold still spendable anywhere on the order's branch: the smallest
+// cap remaining over the row and every ancestor up to the root. Map thread
+// only (the buy action reads it before bidding).
+uint32_t BranchGoldCapRemaining(uint32_t botGuidLow);
 // A refund pass moved `deposited` copper of held guild gold back into the
 // bank. Order-caused inflow per item for the leftover cap. World thread
 // only (the drains).
@@ -95,6 +97,9 @@ void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId);
 void ClearBankEmpty(uint32_t botGuidLow);
 // Drop parked refund stubs whose gold is back. World thread only (Update).
 void FinishRepaid();
+// Drop a parked refund stub so an idle bot can take new work. World thread
+// only (the `.bot order` command). Returns false when no stub is parked.
+bool ClearParkedStub(uint32_t botGuidLow);
 // A keep round landed in the bank: the order watches it from now on. Sets
 // the stocked state, the stock target back as the round's quota, and the
 // last bank look to now so the first re-check waits a full interval.

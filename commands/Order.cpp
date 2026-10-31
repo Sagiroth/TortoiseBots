@@ -404,12 +404,15 @@ bool HandleOrderReassign(ChatHandler* handler, Player* requester, std::string co
         return true;
     }
     std::optional<GuildOrders::OrderRecord> newBotOrder = GuildOrders::Find(newGuid.GetCounter());
-    if (newBotOrder && !newBotOrder->cancelled &&
-        (!GuildOrders::IsFinished(newBotOrder->state) || newBotOrder->state == GuildOrders::OrderState::Stocked))
+    bool newBotBusy = newBotOrder && !newBotOrder->cancelled &&
+        (!GuildOrders::IsFinished(newBotOrder->state) || newBotOrder->state == GuildOrders::OrderState::Stocked);
+    if (newBotBusy)
     {
         OrderError(handler, "invalid", "The new bot already has an order.");
         return true;
     }
+    if (newBotOrder && newBotOrder->cancelled)
+        GuildOrders::ClearParkedStub(newGuid.GetCounter());
     Player* live = sObjectAccessor.FindPlayer(newGuid);
     if (!live || !live->IsInWorld() || live->GetGuildId() != sub->guildId)
     {

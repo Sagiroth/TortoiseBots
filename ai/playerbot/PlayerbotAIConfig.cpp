@@ -936,7 +936,8 @@ bool PlayerbotAIConfig::Initialize()
     guildOrderBankWithdraw = config.GetBoolDefault("AiPlayerbot.GuildOrderBankWithdraw", true);
     guildOrderBankGold = config.GetBoolDefault("AiPlayerbot.GuildOrderBankGold", true);
     guildOrderSubOrders = config.GetBoolDefault("AiPlayerbot.GuildOrderSubOrders", true);
-    guildOrderSubOrderDepth = static_cast<uint32_t>(config.GetIntDefault("AiPlayerbot.GuildOrderSubOrderDepth", 3));
+    uint32_t depth = static_cast<uint32_t>(config.GetIntDefault("AiPlayerbot.GuildOrderSubOrderDepth", 3));
+    guildOrderSubOrderDepth = (depth < 1 || depth > 16) ? 3 : depth;
     guildOrderBotRank = config.GetBoolDefault("AiPlayerbot.GuildOrderBotRank", true);
     botActiveAlone = config.GetIntDefault("AiPlayerbot.botActiveAlone", 10);
     RandombotsWalkingRPG = config.GetBoolDefault("AiPlayerbot.RandombotsWalkingRPG", false);

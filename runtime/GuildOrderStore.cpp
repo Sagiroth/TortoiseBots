@@ -276,6 +276,19 @@ public:
                 ++it;
         }
     }
+
+    // Lock-held stub clear (member Cancel and ReassignSubOrder run under
+    // the lock): an idle bot still owed a gold repayment can take new work.
+    bool ClearParkedStub(uint32_t botGuidLow)
+    {
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !it->second.record.cancelled)
+            return false;
+        m_orders.erase(it);
+        CharacterDatabase.DirectPExecute(
+            "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", botGuidLow);
+        return true;
+    }
     bool Cancel(uint32_t botGuidLow)
     {
         if (!botGuidLow)
@@ -794,13 +807,14 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         std::vector<uint32_t> out;
-        auto root = m_orders.find(botGuidLow);
-        if (root == m_orders.end() || root->second.record.cancelled)
+        if (m_orders.find(botGuidLow) == m_orders.end())
             return out;
         out.push_back(botGuidLow);
+        // Walk through parked refund stubs: a cancelled row in the middle
+        // must not orphan live grandchildren below it on cancel.
         for (size_t i = 0; i < out.size(); ++i)
             for (auto const& [guid, stored] : m_orders)
-                if (!stored.record.cancelled && stored.record.parentBotGuidLow == out[i])
+                if (stored.record.parentBotGuidLow == out[i])
                     out.push_back(guid);
         return out;
     }
@@ -860,6 +874,14 @@ public:
         moved.reportedHave = 0;
         m_orders[newBotGuidLow] = Stored{moved};
         MarkDirtyLocked(m_orders[newBotGuidLow]);
+        // Grandchildren follow the moved row: re-point their parent link to
+        // the new bot so completion and failure still resolve a parent.
+        for (auto& [guid, stored] : m_orders)
+            if (stored.record.parentBotGuidLow == subOrderBotGuidLow)
+            {
+                stored.record.parentBotGuidLow = newBotGuidLow;
+                MarkDirtyLocked(stored);
+            }
         return true;
     }
 
@@ -1497,8 +1519,9 @@ bool PlaceSubOrders(uint32_t nowMs)
             record.giverGuidLow = parent->botGuidLow;
             record.parentBotGuidLow = parent->botGuidLow;
             record.rootGiverGuidLow = parent->rootGiverGuidLow ? parent->rootGiverGuidLow : parent->giverGuidLow;
-            record.goldCap = parent->goldCap;
-            record.hasGoldCap = parent->hasGoldCap;
+            record.type = candidates[picked].canMake ? OrderType::Craft : OrderType::Farm;
+            record.itemId = request.itemId;
+            record.amount = request.count;
             if (!Give(record))
             {
                 OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
@@ -1639,6 +1662,7 @@ bool Cancel(uint32_t botGuidLow)
                 continue;
             OrderStore::Instance().Cancel(child);
             OnDeliveryOrderGone(child);
+            OnSupplyOrderGone(child);
             ExpireGuildOrderTarget(child);
         }
         if (parent)
@@ -1668,6 +1692,27 @@ bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
     if (existing)
         return true;
     return OrderStore::Instance().QueueSubOrder(parentBotGuidLow, itemId, count);
+}
+uint32_t BranchGoldCapRemaining(uint32_t botGuidLow)
+{
+    uint32_t remaining = UINT32_MAX;
+    bool capped = false;
+    uint32_t current = botGuidLow;
+    for (size_t guard = 0; current && guard < 64; ++guard)
+    {
+        std::optional<OrderRecord> row = Find(current);
+        if (!row)
+            break;
+        if (row->hasGoldCap)
+        {
+            capped = true;
+            uint32_t left = row->guildGoldWithdrawn >= row->goldCap ? 0 : row->goldCap - row->guildGoldWithdrawn;
+            if (left < remaining)
+                remaining = left;
+        }
+        current = row->parentBotGuidLow;
+    }
+    return capped ? remaining : UINT32_MAX;
 }
 
 void NoteSubOrderFailed(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
@@ -1760,6 +1805,11 @@ void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId)
 void ClearBankEmpty(uint32_t botGuidLow)
 {
     OrderStore::Instance().ClearBankEmpty(botGuidLow);
+}
+
+bool ClearParkedStub(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().ClearParkedStub(botGuidLow);
 }
 
 void StartKeepWatch(uint32_t botGuidLow)
@@ -1941,13 +1991,12 @@ void Update(uint32_t diff)
         if (!snapshot.parentBotGuidLow || snapshot.state != OrderState::Cant)
             continue;
         std::optional<OrderRecord> parent = Find(snapshot.parentBotGuidLow);
-        if (!parent || parent->state == OrderState::Cant)
+        if (!parent || IsFinished(parent->state))
         {
             OrderStore::Instance().Cancel(snapshot.botGuidLow);
             continue;
         }
-        if (parent->state == OrderState::Waiting)
-            NoteSubOrderFailed(snapshot.parentBotGuidLow, snapshot.itemId, snapshot.amount);
+        NoteSubOrderFailed(snapshot.parentBotGuidLow, snapshot.itemId, snapshot.amount);
         OrderStore::Instance().Cancel(snapshot.botGuidLow);
     }
     WakeParentsOfDeliveredChildren();

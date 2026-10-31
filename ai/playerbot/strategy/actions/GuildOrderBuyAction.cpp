@@ -130,8 +130,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
     uint32_t cash = bot->GetMoney();
     uint32_t heldGuildGold = std::min(stored->guildGoldHeld, cash);
     uint32_t ownedGold = cash - heldGuildGold;
-    uint32_t capRemaining = GuildGoldCapRemaining(
-        stored->goldCap, stored->hasGoldCap, stored->guildGoldWithdrawn);
+    uint32_t capRemaining = BranchGoldCapRemaining(stored->botGuidLow);
     uint64_t maxAffordableWide = uint64_t(cash) + capRemaining;
     uint32_t maxAffordable = static_cast<uint32_t>(std::min<uint64_t>(maxAffordableWide, UINT32_MAX));
 

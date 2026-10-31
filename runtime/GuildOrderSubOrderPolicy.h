@@ -20,6 +20,30 @@ inline constexpr uint32_t kSubOrderDefaultDepth = 3;
 // Busy-only queued requests retry on this interval, not every world tick.
 inline constexpr uint32_t kSubOrderRetryMs = 45000;
 
+// Remaining spend for one ancestor pair (the store walks the whole branch):
+// the smallest cap remainder wins, uncapped rows do not bind.
+inline uint32_t BranchGoldRemaining(uint32_t cap, bool hasCap, uint32_t withdrawn,
+    uint32_t parentCap, bool parentHasCap, uint32_t parentWithdrawn)
+{
+    uint32_t remaining = UINT32_MAX;
+    bool capped = false;
+    if (hasCap)
+    {
+        capped = true;
+        uint32_t left = withdrawn >= cap ? 0 : cap - withdrawn;
+        if (left < remaining)
+            remaining = left;
+    }
+    if (parentHasCap)
+    {
+        capped = true;
+        uint32_t left = parentWithdrawn >= parentCap ? 0 : parentCap - parentWithdrawn;
+        if (left < remaining)
+            remaining = left;
+    }
+    return capped ? remaining : UINT32_MAX;
+}
+
 // One guild bot that could take the sub-order: what the parent asks each
 // candidate, and what the candidate answers about itself.
 struct SubOrderCandidate

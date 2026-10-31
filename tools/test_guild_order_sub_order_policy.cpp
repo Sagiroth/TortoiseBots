@@ -13,6 +13,12 @@ int main()
 {
     CHECK(kSubOrderDefaultDepth == 3);
     CHECK(kSubOrderRetryMs == 45000);
+    // Branch gold caps nest: the spendable budget is the smallest remaining
+    // cap over the row and every ancestor, uncapped only when no row caps.
+    CHECK(BranchGoldRemaining(500, true, 200, 500, true, 0) == 300);
+    CHECK(BranchGoldRemaining(500, true, 500, 500, true, 0) == 0);
+    CHECK(BranchGoldRemaining(0, false, 0, 500, true, 100) == 400);
+    CHECK(BranchGoldRemaining(0, false, 0, 0, false, 0) == UINT32_MAX);
 
     CHECK(SubOrderBranchDepth(1) == 2);
     CHECK(SubOrderBranchDepth(2) == 3);

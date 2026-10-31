@@ -21,8 +21,7 @@ These settings control how orders use the guild bank and sub-orders between guil
 | [`AiPlayerbot.GuildOrderBankGold`](#aiplayerbotguildorderbankgold) | `1` | Lets orders withdraw the shortfall from guild bank money after using the bot's own gold. |
 | [`AiPlayerbot.GuildOrderSubOrders`](#aiplayerbotguildordersuborders) | `1` | Lets orders ask another guild bot to make or farm a missing item. |
 | [`AiPlayerbot.GuildOrderSubOrderDepth`](#aiplayerbotguildordersuborderdepth) | `3` | How deep sub-orders may nest. |
-
-## Settings
+| [`AiPlayerbot.GuildOrderBotRank`](#aiplayerbotguildorderbotrank) | `1` | Whether bots in a guild with a real player share one rank for guild bank access. |
 
 ### `AiPlayerbot.GuildOrderBankWithdraw`
 
@@ -51,3 +50,8 @@ How many levels a sub-order branch may hold, counting the top-level order as 1.
 **Default:** `3` · **Values:** `1`-`16` (out of range falls back to `3`) · **Restart:** needed
 
 The same item never appears twice in one branch, whatever the depth.
+
+### `AiPlayerbot.GuildOrderBotRank`
+
+Whether bots in a guild with a real player share one bank rank so the master can open tabs to one rank. See [bot rank and bank access](../guild-orders.md#guild-bank-access).
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
