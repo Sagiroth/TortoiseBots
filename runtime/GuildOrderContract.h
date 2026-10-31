@@ -262,6 +262,7 @@ struct OrderRecord
     bool farmRest = false;     // buy order whose AH attempt is over: farm what is missing
     uint32_t deathsInZone = 0; // deaths in the current farm zone
     uint32_t searchFailsInZone = 0; // consecutive rejected/empty order-leg searches in farmZoneId
+    uint32_t searchZoneMoves = 0; // farm-zone moves forced by failed searches since the last landed pick
     uint32_t workedSinceNewItemSec = 0;
     uint32_t committedAuctionZoneId = 0; // the city the bot committed to for the AH leg (0 = pick one)
     uint32_t arrivedAuctionVisits = 0; // arrived trips with no auctioneer in reach on the AH leg

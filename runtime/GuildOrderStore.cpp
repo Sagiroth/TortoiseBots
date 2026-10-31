@@ -515,6 +515,8 @@ public:
             record.committedAuctionZoneId = 0;
             record.arrivedAuctionVisits = 0;
         }
+        if (step != record.supplyStep || itemId != record.supplyItemId)
+            record.searchZoneMoves = 0;
         record.supplyStep = step;
         record.supplyItemId = itemId;
         record.supplyCount = count;
@@ -812,9 +814,10 @@ public:
         // restarts on a leg or item change instead: the search layer
         // re-picks between cities while the bot walks the auction leg, and
         // clearing per pick would never let three failures accumulate.
-        if (it->second.record.searchFailsInZone == 0)
+        if (it->second.record.searchFailsInZone == 0 && it->second.record.searchZoneMoves == 0)
             return;
         it->second.record.searchFailsInZone = 0;
+        it->second.record.searchZoneMoves = 0;
         MarkDirtyLocked(it->second);
     }
 
@@ -1003,6 +1006,7 @@ public:
         moved.workedNoGainSec = 0;
         moved.deathsInZone = 0;
         moved.searchFailsInZone = 0;
+        moved.searchZoneMoves = 0;
         moved.bankEmptyItemId = 0;
         moved.bankEmptyMs = 0;
         moved.mailEmptyItemId = 0;
@@ -1110,6 +1114,7 @@ public:
                 record.farmRest = false;
                 record.deathsInZone = 0;
                 record.searchFailsInZone = 0;
+                record.searchZoneMoves = 0;
                 record.workedSinceNewItemSec = 0;
                 record.workedTotalSec = 0;
                 record.workedNoGainSec = 0;
@@ -1412,6 +1417,7 @@ private:
         if (record.state != OrderState::Working)
             return false;
         ++record.zoneIndex;
+        ++record.searchZoneMoves;
         record.farmZoneId = 0;
         record.farmChance = 0;
         record.searchFailsInZone = 0;

@@ -66,6 +66,14 @@ inline size_t NextZonePick(bool listed, size_t listedIndex, uint32_t zoneIndex, 
 inline constexpr uint32_t kSearchFailZoneMove = 3;
 inline constexpr uint32_t kOrderLegParkSeconds = 15;
 
+// Failed searches moved the farm leg through every zone of the plan without
+// one landed pick: the bot cannot farm the item itself, so the ladder moves
+// on (sub-order or need list) instead of cycling the same zones forever.
+inline bool SearchZoneMovesExhaustPlan(uint32_t zoneMoves, size_t planZones)
+{
+    return zoneMoves > 0 && zoneMoves >= (planZones > 0 ? planZones : 1);
+}
+
 // Whether the failed-search count moves the zone. Counts only consecutive
 // failures in one zone: a landed search resets it.
 inline bool SearchFailsMoveZone(uint32_t searchFailsInZone)

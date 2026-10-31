@@ -148,8 +148,12 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
         WorldTimer::getMSTime(), order.bankEmptyMs);
     bool sameItem = order.supplyItemId == candidate.itemId;
     SupplyStep current = sameItem ? order.supplyStep : SupplyStep::None;
-    bool canFarm = IsUnlimitedVendorItem(candidate.itemId) && order.reason != OrderReason::NoSource;
-    if (!canFarm)
+    bool const vendorItem = IsUnlimitedVendorItem(candidate.itemId);
+    bool canFarm = vendorItem && order.reason != OrderReason::NoSource;
+    // The farm leg gave up on this item (no zone of the plan yielded a spot):
+    // the plan still lists zones, so only the recorded verdict stops a retry.
+    bool const farmGaveUp = !vendorItem && current == SupplyStep::Farm && order.reason == OrderReason::NoSource;
+    if (!canFarm && !farmGaveUp)
     {
         TortoiseBots::GuildOrders::SourcePlan farm = ai::PlanGuildOrderSources(bot, candidate.itemId, OrderType::Farm);
         canFarm = farm.verdict == OrderReason::None && !farm.zones.empty();

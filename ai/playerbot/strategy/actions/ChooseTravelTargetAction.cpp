@@ -2682,6 +2682,19 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             // A zone across the sea (the bot changed continent) is unreachable
             // for pool travel: move to one on this map when the plan has one.
             bool const acrossSea = listed && !listedOnBotMap && !plan.zones.empty() && plan.zones[0].onBotMap;
+            if (TortoiseBots::GuildOrders::SearchZoneMovesExhaustPlan(record->searchZoneMoves, plan.zones.size()))
+            {
+                sPlayerbotAIConfig.logEvent(ai, "GuildOrderFarmGiveUp", std::to_string(itemId),
+                    std::to_string(record->searchZoneMoves) + "/" + std::to_string(plan.zones.size()));
+                if (record->supplyItemId && itemId == record->supplyItemId)
+                    TortoiseBots::GuildOrders::SetSupply(bot->GetGUIDLow(), TortoiseBots::GuildOrders::SupplyStep::Farm,
+                        record->supplyItemId, record->supplyCount, TortoiseBots::GuildOrders::SupplyStep::None,
+                        OrderReason::NoSource);
+                else
+                    SetState(bot->GetGUIDLow(), TortoiseBots::GuildOrders::StateForReason(OrderReason::NoSource),
+                        OrderReason::NoSource);
+                return false;
+            }
             if (farmZoneId == 0 || !listed || acrossSea)
             {
                 size_t pick = TortoiseBots::GuildOrders::NextZonePick(listed, listedIndex, record->zoneIndex,
@@ -2781,7 +2794,12 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                     gatherEntries.push_back(source.entry);
             }
             if (gatherEntries.empty() && mobEntries.empty() && !orderFishes)
+            {
+                // Nothing in the planned zone passes the travel gates: a
+                // failed search like an empty one, or the leg never moves on.
+                TortoiseBots::GuildOrders::NoteSearchFailed(bot->GetGUIDLow(), farmZoneId);
                 return false;
+            }
 
             *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, farmZoneId, gatherEntries, mobEntries, fallbackEntries, orderFishes, partitions = travelPartitions]()
                 {

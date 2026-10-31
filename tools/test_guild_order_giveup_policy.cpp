@@ -52,6 +52,13 @@ int main()
     CHECK(SearchFailsMoveZone(3));
     CHECK(SearchFailsMoveZone(4));
 
+    // Search-forced zone moves through the whole plan end self-farming.
+    CHECK(!SearchZoneMovesExhaustPlan(0, 1));
+    CHECK(SearchZoneMovesExhaustPlan(1, 1));
+    CHECK(!SearchZoneMovesExhaustPlan(2, 3));
+    CHECK(SearchZoneMovesExhaustPlan(3, 3));
+    CHECK(SearchZoneMovesExhaustPlan(1, 0));
+
     // Arrived auction visits without an auctioneer in reach move the leg
     // down at the configured limit: the search layer keeps offering the
     // next city, so the count lives on the leg, not the pick streak.
