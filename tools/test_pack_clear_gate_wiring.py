@@ -28,7 +28,7 @@ class PackClearGateWiringTest(unittest.TestCase):
     def test_pull_step_is_classified_in_the_existing_grid_loop(self):
         facts = body(COMMANDS, "void ReadRunFacts(", "\n}\n")
         pull = body(facts, "case ai::PlanStepKind::Pull:", "case ai::PlanStepKind::Move:")
-        self.assertIn("ClassifyPullRead(read, step->radius, f.packClearMarginYd)", pull)
+        self.assertIn("ClassifyPullRead(read, step->radius, f.packClearMarginYd, patrolSeeYd)", pull)
         # One grid search per listed entry, as before: the classification reads the creatures it found.
         self.assertEqual(pull.count("GetCreatureListWithEntryInGrid("), 1)
 

@@ -62,8 +62,8 @@ class UnattackableFightWiringTest(unittest.TestCase):
     def test_every_picked_unit_carries_attackable(self):
         facts = body(CODE, "void ReadRunFacts(DungeonRunSlot const& slot, Player* lead,")
         self.assertIn("Player* const judge = RunJudge(lead, bots);", facts)
-        # The step's units (pull/boss, and a hold's), and the hop units.
-        self.assertEqual(facts.count("unit.attackable = GroupCanAttack(judge, creature);"), 2)
+        # The step's units (pull/boss, and a hold's), the hop units, and a stand-pull pull row's patrollers.
+        self.assertEqual(facts.count("unit.attackable = GroupCanAttack(judge, creature);"), 3)
         self.assertIn("fact.attackable = GroupCanAttack(judge, unit);\n                if (f.pullStand)", facts)
         guard = body(CODE, "void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots,")
         self.assertIn("fact.attackable = GroupCanAttack(lead, nearestHit);", guard)

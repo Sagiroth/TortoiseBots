@@ -150,14 +150,17 @@ namespace ai
     // otherwise deferred when nothing later in the plan needs it gone (runtime/DungeonRunPolicy.h PullMayBeDeferred,
     // DeferUnreachablePack); with this flag it pauses the run as before. Any other kind with this flag is refused (BadParam).
     constexpr std::uint32_t kPlanFlagNoDefer = 1024;
-    // open_proof only: the proof entry is a creature (alive). The next free bit: 16384 (8192 is kPlanFlagStandPull, a boss only).
+    // open_proof only: the proof entry is a creature (alive). The next free bit: 16384 (8192 is kPlanFlagStandPull, a boss or a pull).
     constexpr std::uint32_t kPlanFlagProofCreature = 2048;
     // boss only: the boss may stand out of the party's reach by design (Stormwrought Ruins' Eldermaw 62661 swims a
     // pool whose bed is the only navmesh, cut off from the shore; specs/sw-eldermaw.md). Where the step would pause on
     // him ALIVE (the instance search finds him away from his spot, or he stands by his spot and the pulls drew no
     // fight), it ends "not cleared" with a note instead. Any other kind with this flag is refused (BadParam).
     constexpr std::uint32_t kPlanFlagSkipUnreachable = 4096;
-    // boss only: pulled from the stand, the move row right before it, once in the tank's shot; no firing stand search; specs/sw-eldermaw.md Spec B.
+    // boss or pull: pulled from the stand, the move row right before it, once in the tank's shot; no firing stand search;
+    // specs/sw-eldermaw.md Spec B. On a pull row (a patrolling pack) also only while no other patrol stands within
+    // `param` yd of the lead bot (0: the run leader's default, at most kPlanMaxStandPullClear), and its patrollers are
+    // seen farther out (runtime/DungeonRunPolicy.h PatrolStandPullGate).
     constexpr std::uint32_t kPlanFlagStandPull = 8192;
     constexpr std::uint32_t kPlanEncounterNotStarted = 0;
     constexpr std::uint32_t kPlanEncounterFail = 2;
@@ -173,6 +176,8 @@ namespace ai
     constexpr std::uint32_t kPlanDefaultTimeoutS = 60;
     constexpr std::uint32_t kPlanMaxTimeoutS = 600;
     constexpr std::size_t kPlanMaxEntries = 16;
+    // A stand-pull pull row's clearance (`param` in yd): past this the row is refused (BadParam).
+    constexpr std::uint32_t kPlanMaxStandPullClear = 60;
     // A step row's comment as the dashboard shows it: the row's `comment`, clipped at this many bytes.
     constexpr std::size_t kPlanMaxLabel = 80;
     // gossip: `param` is the option the way `.bot cmd gossip` takes it, counted from 1 at the top of the NPC's
@@ -403,6 +408,7 @@ namespace ai
                           // flag without the data flag or a state above 4, an object state above 2;
                           // the exact flag on a step that is not a move; gossip with an option
                           // outside 1-15 or with any flag; use_on with any flag or param;
+                          // a stand_pull pull with param above kPlanMaxStandPullClear;
                           // an open_proof whose proof equals its entry (no 2048), with param, a flag but 2048,
                           // or 2048 on any row that is not open_proof
         BadPoint,         // not a finite point; a use_on or an open_proof without a point (0,0,0)
@@ -451,7 +457,9 @@ namespace ai
             return PlanStepRefusal::BadParam;
         if ((step.flags & kPlanFlagSkipUnreachable) && step.kind != PlanStepKind::Boss)
             return PlanStepRefusal::BadParam;
-        if ((step.flags & kPlanFlagStandPull) && step.kind != PlanStepKind::Boss)
+        if ((step.flags & kPlanFlagStandPull) && step.kind != PlanStepKind::Boss && step.kind != PlanStepKind::Pull)
+            return PlanStepRefusal::BadParam;
+        if ((step.flags & kPlanFlagStandPull) && step.kind == PlanStepKind::Pull && step.param > kPlanMaxStandPullClear)
             return PlanStepRefusal::BadParam;
         if (step.exactLaunch && step.kind != PlanStepKind::MoveDirect)
             return PlanStepRefusal::BadParam;
