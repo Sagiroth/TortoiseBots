@@ -167,6 +167,18 @@ assert.strictEqual(B.phaseOf(eye, { hp: 90, au: [{ id: 16245 }] }).phase, "glare
 const sartura = (REAL.byEntry || REAL.bosses || REAL)["15516"];
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }] }).phase, "enraged");
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }, { id: 27680 }] }).phase, "berserk");
+const chromaggus = (REAL.byEntry || REAL.bosses || REAL)["14020"];
+assert.strictEqual(B.phaseOf(chromaggus, { hp: 15, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(chromaggus, { hp: 15, au: [{ id: 28747 }] }).phase, "enraged");
+const nefarian = (REAL.byEntry || REAL.bosses || REAL)["11583"];
+assert.strictEqual(B.phaseOf(nefarian, { hp: 90, au: [{ id: 17131 }] }).phase, "air");
+assert.strictEqual(B.phaseOf(nefarian, { hp: 90, au: [] }).phase, "grounded");
+// The Bone Construct spawn below 20 percent is a note, not a phase: an hp<20 phase row would win the exclusive phase
+// and hide every p=grounded ability, though the core keeps casting them all.
+const nefLow = B.model(REAL, { entry: 11583, hp: 15, au: [] }, [], 0, 0);
+assert.strictEqual(nefLow.phase, "grounded");
+assert.strictEqual(nefLow.abilities.filter((a) => a.flags.phase === "grounded" && !a.inPhase).length, 0,
+  "no ground ability is hidden at 15 percent");
 
 // AQ20: every phase rule at a value inside it, and which abilities it folds.
 const aq20 = REAL.byEntry || REAL.bosses || REAL;
