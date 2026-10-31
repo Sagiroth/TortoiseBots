@@ -15,6 +15,17 @@ float TravelActionMultiplier::GetValue(Action* action)
     bool hasTarget = AI_VALUE(bool, "travel target active");
     std::string name = action->GetName();
 
+    // Orders and meetings pass both vetoes below (a held trip, a starved
+    // grind pick). The purpose is the qualifier: the action name never
+    // carries it, so matching the name kept them behind a leisure trip.
+    if (RequestTravelTargetAction* request = dynamic_cast<RequestTravelTargetAction*>(action))
+    {
+        std::string const purpose = request->getQualifier();
+        if (purpose == "guild meeting" || purpose == "order vendor" ||
+            purpose == "order focus" || purpose == "guild order")
+            return 1.0f;
+    }
+
     if (hasTarget && name.find("request") == 0)
     {
         // A bag-pressure vendor errand may start while the bot is merely parked
@@ -25,12 +36,6 @@ float TravelActionMultiplier::GetValue(Action* action)
         // valve is open - every other request keeps the churn guard.
         if (RequestTravelTargetAction* request = dynamic_cast<RequestTravelTargetAction*>(action))
         {
-            // The purpose is the qualifier: the action name never carries it,
-            // so matching the name kept orders and meetings behind a leisure trip.
-            std::string const purpose = request->getQualifier();
-            if (purpose == "guild meeting" || purpose == "order vendor" ||
-                purpose == "order focus" || purpose == "guild order")
-                return 1.0f;
             if (VendorErrandWhileParked(ai, request->getQualifier()))
                 return 1.0f;
         }
