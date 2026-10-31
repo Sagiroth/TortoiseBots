@@ -1183,6 +1183,13 @@ AiPlayerbot.AvoidCreatureAuras = 1
 # 1 - bots may fly the repaired paths (needs the core repair)
 AiPlayerbot.AllowRepairedTaxiPaths = 0
 
+# Test shortcut, off by default. A bot that boards a taxi arrives at the
+# destination flight-master node at once instead of flying the route, so
+# travel-heavy tests do not wait on flight time. Real players always fly.
+# 0 - bots fly the route (Default)
+# 1 - boarded bots land at the destination node right away
+AiPlayerbot.BotInstantFlight = 0
+
 # Bots and npcs turn to eachother during an rpg interaction
 AiPlayerbot.TurnInRpg = 0
 

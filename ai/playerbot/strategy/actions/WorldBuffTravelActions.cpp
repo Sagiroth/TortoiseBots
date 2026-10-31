@@ -229,9 +229,10 @@ bool WorldBuffTravelApplyAction::TakeFlightFromMaster(uint32 npcEntry, uint32 de
 
         bool didFly = ai::BotTaxiRouteAllowed({ srcNode, destTaxiNode }) && bot->ActivateTaxiPathTo({ srcNode, destTaxiNode }, flightMaster, 0);
 
-        bot->SetMoney(savedMoney);
+        if (didFly)
+            ai::BotInstantFlightFinish(bot, { srcNode, destTaxiNode });
 
-        return didFly;
+        bot->SetMoney(savedMoney);
     }
 
     return false;

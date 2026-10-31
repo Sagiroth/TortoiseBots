@@ -73,6 +73,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotNamesFile`](#aiplayerbotrandombotnamesfile) | `(empty)` | Optional external text file defining custom names and name patterns. |
 | [`AiPlayerbot.RandomBotStartZoneWeights`](#aiplayerbotrandombotstartzoneweights) | `(empty)` | Custom weighting per starting zone for newly generated characters. |
 | [`AiPlayerbot.AllowRepairedTaxiPaths`](#aiplayerbotallowrepairedtaxipaths) | `0` | Disables broken client flight paths (paths 274 and 355) unless core repairs. |
+| [`AiPlayerbot.BotInstantFlight`](#aiplayerbotbotinstantflight) | `0` | Lands a bot that boards a taxi at the destination node at once (testing shortcut). |
 | [`AiPlayerbot.AmmoStacksNonHunter`](#aiplayerbotammostacksnonhunter) | `2` | Number of ammo stacks stocked for ranged warriors and rogues. |
 | [`AiPlayerbot.UseWanderAsDefaultFollowStrategy`](#aiplayerbotusewanderasdefaultfollowstrategy) | `1` | Sets masterless bots to wander freely instead of tightly following. |
 | [`AiPlayerbot.WanderMinDistance`](#aiplayerbotwandermindistance) | `5.0` (built in) | Minimum yard radius bots roam from anchor while running wander strategy. |
@@ -824,6 +825,17 @@ Enables or disables flight paths known to have missing waypoint data in client d
 Certain taxi paths in game data (such as path 355 from Shimmerstar Lake to Valormok, and path 274) have missing nodes that crash world servers if flown by bots without node reconstruction.
 
 Leaving this at `0` prevents bots from taking these routes while leaving all standard flight paths active. Set to `1` only if running a core build that rebuilds missing nodes on startup.
+
+</details>
+
+### `AiPlayerbot.BotInstantFlight`
+Testing shortcut: a bot that boards a taxi lands on the destination flight-master node at once instead of flying the route.
+**Default:** `0` · **Values:** `0` fly the route, `1` land at once · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+The bot still boards normally (fare paid, `TaxiFlight` logged as today), then skips the flight and appears at the destination node, continuing its errand from there. Real players always fly. Leave at `0` outside testing.
 
 </details>
 

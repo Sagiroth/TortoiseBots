@@ -629,6 +629,9 @@ public:
     bool avoidCreatureAuras;
     // Bots may fly the taxi paths a core repair fixes (TaxiPathPolicy.h).
     bool allowRepairedTaxiPaths;
+    // Test shortcut: a bot that boards a taxi arrives at the destination
+    // node at once instead of flying the route (BotInstantFlightPolicy.h).
+    bool botInstantFlight;
     bool turnInRpg;
     bool globalSoundEffects;
     bool shareTargets;

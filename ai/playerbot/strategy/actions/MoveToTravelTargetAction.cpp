@@ -707,6 +707,7 @@ static bool TryBoardFlightToTarget(PlayerbotAI* ai, Player* bot, TravelTarget* t
         ClearFlightPlan(ai);
         return false;
     }
+    ai::BotInstantFlightFinish(bot, { fromNode, toNode });
 
     sPlayerbotAIConfig.logEvent(ai, "TaxiFlight", fromEntry->name[LOCALE_enUS], toEntry->name[LOCALE_enUS]);
     ClearFlightPlan(ai);
