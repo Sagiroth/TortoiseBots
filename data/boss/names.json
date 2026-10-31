@@ -48,9 +48,15 @@
       "name": "Thrash",
       "castMs": 0
     },
+    "3393": {
+      "name": "Consume Flesh"
+    },
     "4801": {
       "name": "Teleport",
       "castMs": 0
+    },
+    "5703": {
+      "name": "Stunning Strike"
     },
     "6524": {
       "name": "Ground Tremor",
@@ -59,6 +65,12 @@
     "6605": {
       "name": "Terrifying Screech",
       "castMs": 0
+    },
+    "6789": {
+      "name": "Death Coil"
+    },
+    "6907": {
+      "name": "Diseased Slime"
     },
     "7155": {
       "name": "CreatureSpecial",
@@ -80,6 +92,9 @@
       "name": "Heal Brother",
       "castMs": 0
     },
+    "7713": {
+      "name": "Wailing Dead"
+    },
     "8195": {
       "name": "Teleport",
       "castMs": 0
@@ -100,9 +115,21 @@
       "name": "Earthgrab Totem",
       "castMs": 0
     },
+    "8406": {
+      "name": "Frostbolt"
+    },
+    "8423": {
+      "name": "Flamestrike"
+    },
     "8600": {
       "name": "Fevered Plague",
       "castMs": 0
+    },
+    "8734": {
+      "name": "Blackfathom Channeling"
+    },
+    "9573": {
+      "name": "Flame Breath"
     },
     "9613": {
       "name": "Shadow Bolt",
@@ -115,6 +142,9 @@
     "10101": {
       "name": "Knock Away",
       "castMs": 0
+    },
+    "10159": {
+      "name": "Cone of Cold"
     },
     "10413": {
       "name": "Earth Shock",
@@ -172,6 +202,9 @@
       "name": "Fire Nova Totem",
       "castMs": 0
     },
+    "11433": {
+      "name": "Death & Decay"
+    },
     "11639": {
       "name": "Shadow Word: Pain",
       "castMs": 0
@@ -183,6 +216,18 @@
     "11642": {
       "name": "Heal",
       "castMs": 0
+    },
+    "11660": {
+      "name": "Shadow Bolt"
+    },
+    "11668": {
+      "name": "Immolate"
+    },
+    "11712": {
+      "name": "Curse of Agony"
+    },
+    "11829": {
+      "name": "Flamestrike"
     },
     "11836": {
       "name": "Freeze Solid",
@@ -248,6 +293,9 @@
       "name": "Revenge",
       "castMs": 0
     },
+    "12380": {
+      "name": "Shadow Channeling"
+    },
     "12468": {
       "name": "Flamestrike",
       "castMs": 0
@@ -303,6 +351,9 @@
     "12890": {
       "name": "Deep Slumber",
       "castMs": 0
+    },
+    "13375": {
+      "name": "Fireball"
     },
     "13446": {
       "name": "Strike",
@@ -460,6 +511,9 @@
       "name": "Tail Sweep",
       "castMs": 0
     },
+    "15859": {
+      "name": "Dominate Mind"
+    },
     "16075": {
       "name": "Throw Axe",
       "castMs": 0
@@ -568,9 +622,15 @@
       "name": "Mortal Strike",
       "castMs": 0
     },
+    "17631": {
+      "name": "Wail of Souls"
+    },
     "18106": {
       "name": "Rend",
       "castMs": 0
+    },
+    "18270": {
+      "name": "Dark Plague"
     },
     "18368": {
       "name": "Strike",
@@ -760,6 +820,9 @@
       "name": "Blast Wave",
       "castMs": 0
     },
+    "20299": {
+      "name": "Forked Lightning"
+    },
     "20449": {
       "name": "Teleport",
       "castMs": 0
@@ -828,6 +891,9 @@
       "name": "Bloodlust",
       "castMs": 0
     },
+    "21070": {
+      "name": "Noxious Cloud"
+    },
     "21075": {
       "name": "Damage Shield",
       "castMs": 0
@@ -843,6 +909,9 @@
     "21387": {
       "name": "Melt Weapon",
       "castMs": 0
+    },
+    "21971": {
+      "name": "Poison Bolt"
     },
     "22277": {
       "name": "Elemental Shield",
@@ -875,6 +944,9 @@
     "22539": {
       "name": "Shadow Flame",
       "castMs": 0
+    },
+    "22574": {
+      "name": "Dark Strike"
     },
     "22663": {
       "name": "Nefarians Barrier",
@@ -1536,6 +1608,18 @@
       "name": "Reflection",
       "castMs": 0
     },
+    "27579": {
+      "name": "Demoralizing Shout"
+    },
+    "27580": {
+      "name": "Mortal Strike"
+    },
+    "27641": {
+      "name": "Fear"
+    },
+    "27646": {
+      "name": "Shadow Bolt Volley"
+    },
     "27680": {
       "name": "Berserk",
       "castMs": 0
@@ -1643,6 +1727,9 @@
     "28408": {
       "name": "Chains of KelThuzad",
       "castMs": 0
+    },
+    "28438": {
+      "name": "Knockback"
     },
     "28457": {
       "name": "Dark Blast",
@@ -1920,6 +2007,9 @@
       "name": "Decrepit Fever",
       "castMs": 0
     },
+    "30093": {
+      "name": "Blizzard"
+    },
     "30101": {
       "name": "Frost Breath",
       "castMs": 0
@@ -1980,6 +2070,33 @@
       "name": "Molten Bite",
       "castMs": 0
     },
+    "44041": {
+      "name": "Tail Slap"
+    },
+    "44042": {
+      "name": "Primordial Regeneration"
+    },
+    "44043": {
+      "name": "Call of the Primordial"
+    },
+    "44048": {
+      "name": "Volatile Fungus"
+    },
+    "44050": {
+      "name": "Decaying Mold"
+    },
+    "44051": {
+      "name": "Dark Seduction"
+    },
+    "44052": {
+      "name": "Drazare's Embrace"
+    },
+    "44053": {
+      "name": "Drazare's Embrace"
+    },
+    "44100": {
+      "name": "Summon Theodorus Elemental"
+    },
     "46079": {
       "name": "Call of Nightmare",
       "castMs": 0
@@ -2007,6 +2124,9 @@
     "47375": {
       "name": "Molten Bulwark",
       "castMs": 0
+    },
+    "47386": {
+      "name": "Mind Flay"
     },
     "49027": {
       "name": "Tremors of Ormanos",
@@ -2299,6 +2419,9 @@
     "51231": {
       "name": "Kings Curse",
       "castMs": 0
+    },
+    "52422": {
+      "name": "Lightning Strike"
     },
     "52722": {
       "name": "Arcane Rupture",
@@ -3382,6 +3505,24 @@
     "60699": {
       "name": "Dreamform of Kronn"
     },
+    "60715": {
+      "name": "'Broody'"
+    },
+    "60734": {
+      "name": "Hatereaver Annihilator"
+    },
+    "60735": {
+      "name": "High Foreman Bargul Blackhammer"
+    },
+    "60736": {
+      "name": "Engineer Figgles"
+    },
+    "60737": {
+      "name": "Har'gesh Doomcaller"
+    },
+    "60738": {
+      "name": "Faceless Terror"
+    },
     "60742": {
       "name": "Sanctum Dreamer"
     },
@@ -3402,6 +3543,9 @@
     },
     "60748": {
       "name": "Solnius"
+    },
+    "60829": {
+      "name": "Corrosis"
     },
     "61192": {
       "name": "Shadowbane Darkcaster"
@@ -3462,6 +3606,57 @@
     },
     "61958": {
       "name": "Echo of Medivh"
+    },
+    "62547": {
+      "name": "Dagar the Glutton"
+    },
+    "62548": {
+      "name": "Oronok Torn-Heart"
+    },
+    "62549": {
+      "name": "Duke Balor the IV"
+    },
+    "62550": {
+      "name": "Deathlord Tidebane"
+    },
+    "62551": {
+      "name": "Chieftain Stormsong"
+    },
+    "62552": {
+      "name": "Librarian Theodorus"
+    },
+    "62652": {
+      "name": "Subjugator Halthas Shadecrest"
+    },
+    "62661": {
+      "name": "Eldermaw the Primordial"
+    },
+    "62664": {
+      "name": "Mycellakos"
+    },
+    "62665": {
+      "name": "Lady Drazare"
+    },
+    "62670": {
+      "name": "Remains of the Innocent"
+    },
+    "62671": {
+      "name": "Ighal'for"
+    },
+    "62672": {
+      "name": "Rifttorn Nether Imp"
+    },
+    "62673": {
+      "name": "Mergothid"
+    },
+    "62674": {
+      "name": "Eldermaw Crocolisk"
+    },
+    "62675": {
+      "name": "Growth of Mycellekos"
+    },
+    "62742": {
+      "name": "Enraged Sea Elemental"
     },
     "62886": {
       "name": "Totem of Corruption"

@@ -74,7 +74,7 @@ Lane const kLanes[] = {
 void TestCommittedTable()
 {
     std::vector<Row> const& table = Table();
-    Check(table.size() == 22, "the committed table has every row");
+    Check(table.size() == 24, "the committed table has every row");
     std::unordered_set<uint32_t> ids;
     for (Row const& row : table)
     {
@@ -128,6 +128,13 @@ void TestKnownShapes()
     Shape const* gyth = For(16390);
     Check(gyth && gyth->kind == Kind::Cone && gyth->angle == 120 && Near(gyth->length, 20.0f) && gyth->width == 0.0f,
         "Gyth's Flame Breath is a cast-time target-24 cone of 20 yd (radius 9, default front 120)");
+    Shape const* broody = For(9573);
+    Check(broody && broody->kind == Kind::Cone && broody->angle == 120 && Near(broody->length, 8.0f),
+        "Broody's Flame Breath is a cast-time target-24 cone of 8 yd (radius index 14, default front 120)");
+    Shape const* forked = For(20299);
+    Check(forked && forked->kind == Kind::Cone && forked->angle == 120 && Near(forked->length, 30.0f)
+            && forked->width == 0.0f,
+        "Stormsong's Forked Lightning is a cast-time target-24 cone of 30 yd (spellVisual 944, default front 120)");
 }
 
 // Every Deep Breath row is the complete damaging footprint of its chain: a line from the first to the last damage point,

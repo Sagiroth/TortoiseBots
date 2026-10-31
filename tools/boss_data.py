@@ -39,11 +39,14 @@ Rows (columns map,boss,row,key,a,b,c,d,source):
     add      key=creature   a=summon|linked|ward|totem|trigger   b=kill priority (0 none)
     note     a=text         a mechanic the dashboard cannot see
 
-`source` is one or more `path:line[-line]` citations separated by ';'. Script
-paths are relative to the core checkout (--core-dir, default $TORTOISE_CORE_DIR
-or ~/tortoise-wow); a path starting `data/` is relative to this repository (its
-SQL migrations are not in the core). A knowledge-base citation is `kb:<file>#<heading-slug>` under
---kb-dir (default $TURTLE_KB_DIR or ~/TortoiseBots-audit/turtle-kb).
+`source` is one or more `path:line[-line]` citations separated by ';'. A `+` lists
+derived timer lines (`path:22+68`): an ability timer may equal the sum of the
+numbers on those lines, each holding exactly one number (a spawn timer plus its
+detonate delay). Script paths are relative to the core checkout (--core-dir,
+default $TORTOISE_CORE_DIR or ~/tortoise-wow); a path starting `data/` is
+relative to this repository (its SQL migrations are not in the core). A
+knowledge-base citation is `kb:<file>#<heading-slug>` under --kb-dir (default
+$TURTLE_KB_DIR or ~/TortoiseBots-audit/turtle-kb).
 
 `ok` reasons are a closed list (see data/boss/README.md): tank, heal, phase,
 script, and the DB-verified nokick/nodispel/nopurge, which are only valid on
@@ -55,7 +58,7 @@ world table (the JSON `codeAnswers[]`).
 
 Checks:
     1. Every ability row cites the line that defines its spell (id or constant)
-       and every timer value; phase hp/aura/flag rules and add entries likewise.
+       and every timer value (or the sum of its `+` derived timer lines); phase hp/aura/flag rules and add entries likewise.
        A value of N is also accepted as N//1000 on a line using IN_MILLISECONDS.
     2. Ability spell ids, summon= entries and add entries are unique per boss;
        every summon= entry has an add row; every p= phase exists; every map slug
@@ -127,7 +130,9 @@ FLAG_LETTERS = {
 }
 PHASE_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 MAP_RE = re.compile(r"^[a-z0-9_]+$")
-CITATION_RE = re.compile(r"^(?P<path>[^:]+):(?P<start>\d+)(?:-(?P<end>\d+))?$")
+CITATION_RE = re.compile(
+    r"^(?P<path>[^:]+):(?P<start>\d+)(?:-(?P<end>\d+))?(?:\+(?P<sums>\d+(?:\+\d+)*))?$"
+)
 CONST_RE = re.compile(
     r"#define\s+([A-Z][A-Z0-9_]{2,})\s+(\d+)\b"
     r"|([A-Z][A-Z0-9_]{2,})\s*(?:=\s*|\{\s*)(\d+)\b"
@@ -564,7 +569,7 @@ def constant_values(lines):
 
 
 def parse_source(row):
-    """Return a list of (kind, path, start, end) citations; 'kind' is 'core' or 'kb'."""
+    """Return (kind, path, start, end, derived) citations; 'kind' is 'core' or 'kb'."""
     text = row["source"]
     if not text:
         raise DataError(f"{_row_id(row)}: empty source")
@@ -580,16 +585,20 @@ def parse_source(row):
             name, anchor = rest.split("#", 1)
             if not name or not anchor:
                 raise DataError(f"{_row_id(row)}: bad kb citation {part!r}")
-            citations.append(("kb", name, anchor, 0))
+            citations.append(("kb", name, anchor, 0, ()))
             continue
         match = CITATION_RE.match(part)
         if not match:
-            raise DataError(f"{_row_id(row)}: bad citation {part!r}; expected path:line[-line]")
+            raise DataError(
+                f"{_row_id(row)}: bad citation {part!r}; expected path:line[-line][+line...]"
+            )
         start = int(match.group("start"))
         end = int(match.group("end") or start)
         if end < start:
             raise DataError(f"{_row_id(row)}: citation range {part!r} is reversed")
-        citations.append(("core", match.group("path"), start, end))
+        sums = [int(n) for n in (match.group("sums") or "").split("+") if n]
+        derived = tuple([start, *sums]) if sums else ()
+        citations.append(("core", match.group("path"), start, end, derived))
     return citations
 
 
@@ -630,7 +639,8 @@ def _has_id(lines, ident, consts):
 def check_citations(row, citations, core, kb, cache):
     """Yield error messages for one row's citations."""
     resolved = []  # (os path, [(lineno, text)])
-    for kind, path, start, end in citations:
+    derived_sums = []  # (sum, label) for `path:22+68` citations
+    for kind, path, start, end, derived in citations:
         if kind == "kb":
             if not kb.is_dir():
                 continue
@@ -650,6 +660,24 @@ def check_citations(row, citations, core, kb, cache):
             yield f"{_row_id(row)}: {path}:{start}-{end} is past end of file ({len(lines)})"
             continue
         resolved.append((core_path, list(enumerate(lines[start - 1 : end], start=start))))
+        if derived:
+            numbers = []
+            for line_no in derived:
+                if line_no > len(lines):
+                    yield f"{_row_id(row)}: {path}:{line_no} is past end of file ({len(lines)})"
+                    numbers = []
+                    break
+                found = re.findall(r"(?<!\d)\d+(?!\d)", lines[line_no - 1])
+                if len(found) != 1:
+                    yield (
+                        f"{_row_id(row)}: {path}:{line_no} is a derived timer line, so it must "
+                        f"hold exactly one number"
+                    )
+                    numbers = []
+                    break
+                numbers.append(int(found[0]))
+            if numbers:
+                derived_sums.append((sum(numbers), path))
 
     if not resolved:
         return
@@ -666,7 +694,9 @@ def check_citations(row, citations, core, kb, cache):
             yield f"{_row_id(row)}: cited lines do not define spell {sid} (id or constant name)"
         for field in ("a", "b", "c"):
             value = int(row[field])
-            if value and not _has_number(flat, value):
+            if value and not (
+                _has_number(flat, value) or any(value == total for total, _ in derived_sums)
+            ):
                 yield f"{_row_id(row)}: cited lines do not contain {field}={value}"
     elif kind == "phase":
         rule = parse_phase_rule(row["a"])

@@ -318,6 +318,32 @@ class BossDataTest(unittest.TestCase):
         errors, _ = fx.validate()
         self.assertTrue(any("a=14000" in e for e in errors), errors)
 
+    def test_derived_sum_timer_cites_its_addend_lines(self):
+        # A first cast that is a spawn timer plus a delay may cite `path:22+68`; the value is their sum.
+        rows = [ability(a="29884", b="0", c="0", source="boss.cpp:1;boss.cpp:2+3"), add(),
+                phase("p1", "start", 1, source="boss.cpp:3")]
+        fx = self.make(rows)
+        fx.rebuild()
+        errors, _ = fx.validate()
+        self.assertEqual(errors, [])
+
+    def test_derived_sum_timer_must_be_the_sum(self):
+        rows = [ability(a="29885", b="0", c="0", source="boss.cpp:1;boss.cpp:2+3"), add(),
+                phase("p1", "start", 1, source="boss.cpp:3")]
+        fx = self.make(rows)
+        fx.rebuild()
+        errors, _ = fx.validate()
+        self.assertTrue(any("a=29885" in e for e in errors), errors)
+
+    def test_derived_timer_line_must_hold_one_number(self):
+        # boss.cpp:4 is `... urand(14000, 16000)`.
+        rows = [ability(a="29884", b="0", c="0", source="boss.cpp:1;boss.cpp:3+4"), add(),
+                phase("p1", "start", 1, source="boss.cpp:3")]
+        fx = self.make(rows)
+        fx.rebuild()
+        errors, _ = fx.validate()
+        self.assertTrue(any("exactly one number" in e for e in errors), errors)
+
     def test_spell_id_must_be_cited(self):
         rows = [ability(source="boss.cpp:3;boss.cpp:4"), add(),
                 phase("p1", "start", 1, source="boss.cpp:3")]
@@ -681,8 +707,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 148)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 705)
+        self.assertEqual(len(doc["bosses"]), 168)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 756)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -2905,6 +2931,237 @@ class UbrsValueTest(unittest.TestCase):
         drak_notes = " ".join(self.boss("10363")["notes"])
         self.assertIn("8-40", drak_notes)
         self.assertIn("10-30", drak_notes)
+
+
+# Hateforge Quarry and Stormwrought Ruins values, read off the core sources (the script timers and cast lines cited in
+# the CSV; tw_world.spell_template for the effects and interrupt flags). Key: (boss entry, spell id). Value: (a, b, c,
+# target, phase, flags), where flags are the semantic ones _flag_set spells. Written from the source, not generated
+# from the CSV, so a wrong timer, target, flag or phase fails here even when the CSV and the JSON agree. Paused timers
+# (Har'gesh's adds, Ighal'for's channel) carry 0/0 because the panel cannot time a cast that waits for the phase.
+HATEFORGE_STORMWROUGHT_ABILITIES = {
+    # creature_spells 180021, run by EventAI (ai_name 'EventAI'); Broody is Figgles' minion at the same spot (timers
+    # are seconds, so the columns stay 0).
+    (60715, 9573): (0, 0, 0, "victim", "", {"cone", "int"}),
+    (60715, 13375): (0, 0, 0, "victim", "", {"int"}),
+    # boss_bargul_blackhammer.cpp: 5703 11/32/51-57; 27580 12/33/66-72; 27579 13/34/81-87.
+    (60735, 5703): (25000, 25000, 25000, "victim", "", {"aura", "dispel-nodispel"}),
+    (60735, 27580): (35000, 35000, 35000, "victim", "", {"aura", "dispel-nodispel"}),
+    (60735, 27579): (40000, 40000, 40000, "aoe", "", {"aura", "dispel-nodispel"}),
+    # boss_engineer_figgles.cpp: 24111 7/23/36-47, cast once (b=c=0).
+    (60736, 24111): (10000, 0, 0, "victim", "", {"aura"}),
+    # boss_hatereaver_annhilator.cpp: 28438 8/26/41-54; 19983 9/27/56-69; 11876 10/28/71-84.
+    (60734, 28438): (30000, 30000, 30000, "victim", "", {"cone"}),
+    (60734, 19983): (40000, 40000, 40000, "victim", "", {"tank"}),
+    (60734, 11876): (45000, 45000, 45000, "aoe", "", {"aura", "dispel-nodispel"}),
+    # boss_hargesh_doomcaller.cpp: 11668 19/57/91-104; 27646 20/58/106-119 (repeat 90); 12739 21/59/121-134;
+    # 29230 22 at 60 %; 12380 23 is the channel aura. All three pause while the adds live and the volley's 60 s
+    # timer is cut short by the phase, so only the first casts stay.
+    (60737, 11668): (30000, 0, 0, "victim", "fight", {"aura", "int"}),
+    (60737, 27646): (0, 0, 0, "aoe", "fight", {"heal"}),
+    (60737, 12739): (10000, 0, 0, "victim", "fight", {"int"}),
+    (60737, 29230): (0, 0, 0, "self", "adds", {"self", "hp60", "phase"}),
+    (60737, 12380): (0, 0, 0, "self", "adds", {"self", "phase"}),
+    # creature_spells 180036, run by EventAI (tw_world_creature_spells.sql:127): timers are seconds, so the
+    # columns stay 0.
+    (60829, 24099): (0, 0, 0, "aoe", "", {"aura"}),
+    (60829, 21971): (0, 0, 0, "victim", "", {"aura", "int"}),
+    # boss_dagar_the_glutton.cpp: 3393 61/15/33-36.
+    (62547, 3393): (0, 12000, 16000, "victim", "", {"tank"}),
+    # boss_oronok_torn_heart.cpp: 10101 68/17/37-40; 11433 66/18/45-48; 11660 67/19/53-58.
+    (62548, 10101): (0, 16000, 22000, "victim", "", {"tank"}),
+    (62548, 11433): (1000, 22000, 30000, "victim", "", {"ground", "int"}),
+    (62548, 11660): (0, 7000, 10000, "random", "", {"int"}),
+    # boss_librarian_theodorus.cpp: 10159 62/18/48-51; 8406 63/19/56-61; 30093 64/20/67-72; 44100 65 at 50 %.
+    (62552, 10159): (1000, 15000, 22000, "victim", "", {"aura", "cone"}),
+    (62552, 8406): (0, 6000, 9000, "random", "", {"aura", "int"}),
+    (62552, 30093): (0, 16000, 22000, "random", "", {"ground", "int"}),
+    (62552, 44100): (0, 0, 0, "self", "", {"summon=62742", "hp50"}),
+    # boss_duke_balor_iv.cpp: 47386 59/18/39-42; 13704 49/19/47-50; 7713 60/20/55-58; 22574 58/21/63-66.
+    (62549, 47386): (5000, 25000, 30000, "victim", "", {"aura", "int", "dispel-nodispel"}),
+    (62549, 13704): (0, 15000, 20000, "aoe", "", {"aura", "dispel-nodispel"}),
+    (62549, 7713): (0, 10000, 15000, "aoe", "", {"aura"}),
+    (62549, 22574): (0, 16000, 22000, "victim", "", {"tank"}),
+    # boss_chieftain_stormsong.cpp: 20299 55/18/45-48 (target 24, interrupt flags 9 = no kick);
+    # 16497 56/19/53-58 (prevention type 0 = no kick); 52422 57/20/64-68.
+    (62551, 20299): (0, 11000, 15000, "victim", "", {"cone", "int", "interrupt-nokick"}),
+    (62551, 16497): (0, 25000, 30000, "random", "", {"aura", "int", "interrupt-nokick", "dispel-nodispel"}),
+    (62551, 52422): (0, 14000, 20000, "victim", "", {"tank"}),
+    # boss_deathlord_tidebane.cpp: 11990 52/17/42-48; 18270 53/18/53-59; 17631 54/19/64-70.
+    (62550, 11990): (0, 18000, 24000, "random", "", {"ground", "int"}),
+    (62550, 18270): (0, 10000, 14000, "random", "", {"aura"}),
+    (62550, 17631): (0, 22000, 30000, "aoe", "", {"heal"}),
+    # boss_subjugator_halthas_shadecrest.cpp: 15859 48/17/37-43 (interrupt flags 13 = no kick);
+    # 11829 51/18/48-51 (timer 0, first on the pull); 27641 50/19/56-59.
+    (62652, 15859): (0, 26000, 34000, "victim", "", {"aura", "int", "interrupt-nokick"}),
+    (62652, 11829): (0, 12000, 16000, "victim", "", {"ground", "int"}),
+    (62652, 27641): (0, 24000, 32000, "aoe", "", {"aura", "int"}),
+    # boss_mycellakos.cpp: 44048 45/22+68/59-69 (the fungus at 8 s, its triggered explosion 3 s later);
+    # 44050 47/24/74-77.
+    (62664, 44048): (11000, 15000, 20000, "aoe", "", {"ground"}),
+    (62664, 44050): (0, 25000, 30000, "aoe", "", {"aura"}),
+    # boss_eldermaw_the_primordial.cpp: 44041 42/16/42-52; 44043 44 and 44042 43 at 50 %.
+    (62661, 44041): (0, 10000, 12000, "random", "", {"heal"}),
+    (62661, 44043): (0, 0, 0, "self", "", {"summon=62674", "hp50"}),
+    (62661, 44042): (0, 0, 0, "self", "", {"self", "hp50", "purge-nopurge"}),
+    # boss_lady_drazare.cpp: 44051 39/42/69-75; 44053 41/43/80-84; 44052 40/24-25 (the aura's expiry explosion).
+    (62665, 44051): (0, 39000, 58000, "random", "", {"aura"}),
+    (62665, 44053): (0, 12000, 24000, "random", "", {"aura"}),
+    (62665, 44052): (0, 0, 0, "aoe", "", {"heal"}),
+    # boss_ighalfor.cpp: 6789 35/87/141-149; 8423 36/88/155-163; 11712 37/89/169-177; 8734 38 is the channel.
+    # They pause during the channel, so the repeats stay out of the columns.
+    (62671, 6789): (12000, 0, 0, "random", "fight", {"aura"}),
+    (62671, 8423): (7000, 0, 0, "random", "fight", {"ground", "int"}),
+    (62671, 11712): (18000, 0, 0, "random", "fight", {"aura"}),
+    (62671, 8734): (0, 0, 0, "self", "channel", {"self", "phase"}),
+    # creature_spells 62670 (20260602180159_world.sql:1728-1735) under the default AggressorAI: seconds, so 0/0/0.
+    # 21070 Noxious Cloud is cast on himself (effect 27); 6907 Diseased Slime picks a random player and is a kickable
+    # disease cast.
+    (62670, 21070): (0, 0, 0, "self", "", {"ground"}),
+    (62670, 6907): (0, 0, 0, "random", "", {"aura", "int"}),
+}
+
+HATEFORGE_STORMWROUGHT_PHASES = {
+    60737: [("adds", 1, {"kind": "aura", "aura": 12380}), ("fight", 2, {"kind": "start"})],
+    62671: [("channel", 1, {"kind": "aura", "aura": 8734}), ("fight", 2, {"kind": "start"})],
+}
+
+HATEFORGE_STORMWROUGHT_ADDS = {
+    60737: [(60738, "summon", 1)],
+    62552: [(62742, "summon", 1)],
+    62664: [(62675, "summon", 0)],
+    62661: [(62674, "summon", 1)],
+    62671: [(62672, "summon", 0), (62673, "summon", 1)],
+}
+
+HATEFORGE_BOSSES = {60715, 60734, 60735, 60736, 60737, 60738, 60829}
+STORMWROUGHT_BOSSES = {62547, 62548, 62549, 62550, 62551, 62552, 62652, 62661, 62664, 62665, 62670, 62671, 62673}
+HATEFORGE_STORMWROUGHT_MAPS = ("hateforge_quarry", "stormwrought_ruins")
+
+
+class DungeonHateforgeStormwroughtValueTest(unittest.TestCase):
+    """Every Hateforge Quarry and Stormwrought Ruins row the panel draws, pinned to the source."""
+
+    @classmethod
+    def setUpClass(cls):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        cls.doc = boss_data.build_document(rows, names)
+        cls.by_boss = cls.doc["bosses"]
+
+    def test_ability_values(self):
+        seen = set()
+        for key, (a, b, c, target, phase, flags) in HATEFORGE_STORMWROUGHT_ABILITIES.items():
+            boss, sid = key
+            abilities = {x["sid"]: x for x in self.by_boss[str(boss)]["abilities"]}
+            self.assertIn(sid, abilities, "boss %d lost spell %d" % (boss, sid))
+            ability = abilities[sid]
+            self.assertEqual((ability["a"], ability["b"], ability["c"]), (a, b, c), key)
+            self.assertEqual(ability["target"], target, key)
+            self.assertEqual(ability["phase"], phase, key)
+            self.assertEqual(ability["castMs"], 0, key)
+            self.assertEqual(_flag_set(ability), flags, key)
+            seen.add(key)
+        built = {
+            (int(entry), ability["sid"])
+            for entry, boss in self.by_boss.items()
+            for ability in boss["abilities"]
+            if boss["map"] in HATEFORGE_STORMWROUGHT_MAPS
+        }
+        self.assertEqual(built, seen, "the two maps carry exactly the pinned abilities")
+
+    def test_boss_sets(self):
+        got = {
+            map_: {int(entry) for entry, boss in self.by_boss.items() if boss["map"] == map_}
+            for map_ in HATEFORGE_STORMWROUGHT_MAPS
+        }
+        self.assertEqual(got["hateforge_quarry"], HATEFORGE_BOSSES)
+        self.assertEqual(got["stormwrought_ruins"], STORMWROUGHT_BOSSES)
+
+    def test_phase_rules(self):
+        for entry, expected in HATEFORGE_STORMWROUGHT_PHASES.items():
+            got = [(p["name"], p["order"], p["rule"]) for p in self.by_boss[str(entry)]["phases"]]
+            self.assertEqual(got, expected, entry)
+        for entry, boss in self.by_boss.items():
+            if boss["map"] in HATEFORGE_STORMWROUGHT_MAPS and int(entry) not in HATEFORGE_STORMWROUGHT_PHASES:
+                self.assertEqual(boss["phases"], [], boss["name"])
+
+    def test_adds(self):
+        for entry, expected in HATEFORGE_STORMWROUGHT_ADDS.items():
+            got = [(a["entry"], a["role"], a["priority"]) for a in self.by_boss[str(entry)]["adds"]]
+            self.assertEqual(got, expected, entry)
+
+    def test_notes_cover_what_the_columns_cannot(self):
+        # Corrosis's creature_spells cadence is in the note because the SQL stores seconds.
+        corrosis = {a["sid"]: a for a in self.by_boss["60829"]["abilities"]}
+        self.assertEqual((corrosis[21971]["a"], corrosis[21971]["b"]), (0, 0))
+        corrosis_notes = " ".join(self.by_boss["60829"]["notes"])
+        self.assertIn("3-5 s", corrosis_notes)
+        self.assertIn("every 120 s", corrosis_notes)
+        # Har'gesh's phase signal is the channel aura; 29230 is passive and cannot be a phase rule.
+        hargesh_notes = " ".join(self.by_boss["60737"]["notes"])
+        self.assertIn("passive", hargesh_notes)
+        self.assertIn("60738", hargesh_notes)
+        # Round 2: the next cast after a pause, the first explosion, and the four crocolisks are notes.
+        self.assertIn("next cast comes when the adds end", hargesh_notes)
+        self.assertIn("EventAI", corrosis_notes)
+        eldermaw_notes = " ".join(self.by_boss["62661"]["notes"])
+        self.assertIn("four in total", eldermaw_notes)
+        remains_notes = " ".join(self.by_boss["62670"]["notes"])
+        self.assertIn("18-20 s", remains_notes)
+        self.assertIn("33 s", remains_notes)
+        # Mycellakos's fungus is a game object, not a creature, so the Growth is the only add row.
+        mycel_notes = " ".join(self.by_boss["62664"]["notes"])
+        self.assertIn("300420", mycel_notes)
+        self.assertIn("first explosion at 11 s", mycel_notes)
+        self.assertEqual([a["entry"] for a in self.by_boss["62664"]["adds"]], [62675])
+        # Ighal'for's channel length and add waves are notes, not phase rules.
+        ighal_notes = " ".join(self.by_boss["62671"]["notes"])
+        self.assertIn("48 s", ighal_notes)
+        self.assertIn("62672", ighal_notes)
+        self.assertIn("62673", ighal_notes)
+
+
+@unittest.skipUnless(
+    CORE_SPELL_SQL.is_file(),
+    "set TORTOISE_CORE_DIR=<tortoise-wow checkout>: no %s" % CORE_SPELL_SQL,
+)
+class DungeonHateforgeStormwroughtSourceTest(unittest.TestCase):
+    """The kick flags of the two maps against the core's own interrupt gate."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.spells = _read_spells()
+        cls.rows = [
+            row for row in boss_data.read_rows(boss_data.DEFAULT_CSV)
+            if row["map"] in HATEFORGE_STORMWROUGHT_MAPS and row["row"] == "ability"
+        ]
+
+    def test_every_kickable_cast_carries_int(self):
+        for row in self.rows:
+            sid = int(row["key"])
+            spell = self.spells[sid]
+            flags = boss_data.parse_flags(row["d"])
+            channeled = bool(spell["attributesEx"] & 0x44)
+            instant = spell["castingTimeIndex"] <= 1 and not channeled
+            kickable = _kickable(spell)
+            where = "%s %s" % (row["boss"], sid)
+            if flags["int"]:
+                self.assertFalse(instant, where + ": an instant cannot be kicked")
+                if not kickable:
+                    self.assertEqual(flags["okNeeds"].get("interrupt"), "nokick", where)
+            else:
+                self.assertFalse(
+                    kickable and not instant,
+                    where + ": a kickable cast or channel must carry int",
+                )
+
+    def test_triggered_self_casts_are_not_casts(self):
+        # The script casts these with CF_TRIGGERED or through CastSpell(true): no cast bar, no kick, no shape.
+        for sid in (29230, 12380, 8734, 44042, 44100, 44043):
+            row = next(r for r in self.rows if int(r["key"]) == sid)
+            flags = boss_data.parse_flags(row["d"])
+            self.assertFalse(flags["int"], sid)
+        self.assertEqual(_shape_spell_ids(ROOT / "runtime" / "SpellShapeData.h").count(20299), 1)
 
 
 if __name__ == "__main__":
