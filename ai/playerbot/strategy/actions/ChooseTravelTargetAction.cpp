@@ -146,6 +146,7 @@ static bool IsGuildOrderTravelName(std::string const& name)
 static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const& purposeKey)
 {
     using namespace TortoiseBots::GuildOrders;
+    AiObjectContext* context = ai->GetAiObjectContext();
     std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
     if (!record || record->state != OrderState::Working)
         return false;
