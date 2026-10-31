@@ -1662,10 +1662,10 @@ std::vector<uint32_t> BranchItems(uint32_t parentBotGuidLow)
 // tick: one member query per queued request per retry interval.
 void SendOrderLine(OrderRecord const& order, uint32_t have);
 // One drained queue entry: pick a durable guild bot that can make the item,
-// or farm it when no maker is free. A member-list query runs once per due
-// request per retry interval, never every tick: busy-only candidates
-// re-queue with a 45 s timer, and depth/loop/no-candidate failures report
-// through the single failure entry instead of retrying.
+// or farm it when no maker is free. One guild_member query per guild per
+// tick shared across due requests; planner evaluations share a per-tick
+// budget (the rest requeue on the retry timer); depth and loop checks read
+// one All snapshot instead of per-request Find chains.
 bool PlaceSubOrders(uint32_t nowMs)
 {
     if (!sPlayerbotAIConfig.guildOrderSubOrders)
@@ -1676,6 +1676,54 @@ bool PlaceSubOrders(uint32_t nowMs)
     std::vector<OrderStore::QueuedSubOrder> queued = OrderStore::Instance().TakeDueQueuedSubOrders(nowMs);
     if (queued.empty())
         return false;
+    std::vector<OrderRecord> rows;
+    std::unordered_map<uint32_t, OrderRecord const*> byBot;
+    auto refreshBranches = [&]()
+    {
+        rows = OrderStore::Instance().All();
+        byBot.clear();
+        byBot.reserve(rows.size());
+        for (OrderRecord const& row : rows)
+            byBot.emplace(row.botGuidLow, &row);
+    };
+    refreshBranches();
+    auto depthOf = [&](uint32_t botGuidLow)
+    {
+        size_t depth = 0;
+        uint32_t current = botGuidLow;
+        for (size_t guard = 0; guard < 64 && current; ++guard)
+        {
+            auto found = byBot.find(current);
+            if (found == byBot.end())
+                break;
+            ++depth;
+            current = found->second->parentBotGuidLow;
+        }
+        return depth;
+    };
+    auto branchHas = [&](uint32_t parentBotGuidLow, uint32_t itemId)
+    {
+        uint32_t current = parentBotGuidLow;
+        for (size_t guard = 0; guard < 64 && current; ++guard)
+        {
+            auto found = byBot.find(current);
+            if (found == byBot.end())
+                break;
+            if (found->second->itemId == itemId)
+                return true;
+            current = found->second->parentBotGuidLow;
+        }
+        return false;
+    };
+    std::unordered_map<uint32_t, std::vector<uint32_t>> membersByGuild;
+    size_t plannerEvals = 0;
+    auto evalUsable = [&](Player* bot, uint32_t itemId, bool& canMake, bool& canFarm, bool& gathers)
+    {
+        if (plannerEvals >= kSubOrderPlannerEvalsPerTick)
+            return false;
+        ++plannerEvals;
+        return SubOrderCandidateUsable(bot, itemId, canMake, canFarm, gathers);
+    };
     bool placedAny = false;
     for (OrderStore::QueuedSubOrder const& request : queued)
     {
@@ -1686,57 +1734,82 @@ bool PlaceSubOrders(uint32_t nowMs)
             continue;
         // Every terminal path below reports through the failure entry: the
         // parent never waits on a request that cannot become a running row.
-        if (!SubOrderDepthAllows(BranchDepth(parent->botGuidLow), maxDepth))
+        // An exhausted planner budget requeues instead of failing: the
+        // request is still placeable, just not this tick.
+        if (!SubOrderDepthAllows(depthOf(parent->botGuidLow), maxDepth))
         {
             NoteSubOrderFailed(parent->botGuidLow, request.itemId, request.count);
             continue;
         }
-        std::vector<uint32_t> branch = BranchItems(parent->botGuidLow);
-        if (!SubOrderLoopFree(request.itemId, branch.data(), branch.size()))
+        if (branchHas(parent->botGuidLow, request.itemId))
         {
             NoteSubOrderFailed(parent->botGuidLow, request.itemId, request.count);
             continue;
         }
-        std::vector<SubOrderCandidate> candidates;
-        std::unique_ptr<QueryResult> members(CharacterDatabase.PQuery(
-            "SELECT `guid` FROM `guild_member` WHERE `guildid` = '%u'", parent->guildId));
-        if (members)
+        auto cached = membersByGuild.find(parent->guildId);
+        if (cached == membersByGuild.end())
         {
-            do
+            std::vector<uint32_t> members;
+            std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
+                "SELECT `guid` FROM `guild_member` WHERE `guildid` = '%u'", parent->guildId));
+            if (result)
             {
-                Field* fields = members->Fetch();
-                uint32_t guidLow = fields[0].GetUInt32();
-                if (!guidLow || guidLow == parent->botGuidLow)
-                    continue;
-                ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
-                Player* bot = sObjectAccessor.FindPlayer(guid);
-                if (!bot || !bot->IsInWorld() || bot->GetGuildId() != parent->guildId)
-                    continue;
-                if (!IsDurableOrderBot(guidLow))
-                    continue;
-                SubOrderCandidate candidate;
-                candidate.botGuidLow = guidLow;
-                candidate.online = true;
-                std::optional<OrderRecord> existing = Find(guidLow);
-                // A finished order only lingers in the list; a keep order still
-                // watches the bank, so only that one keeps the bot busy.
-                candidate.hasOrder = existing.has_value() && !existing->cancelled &&
-                    (!IsFinished(existing->state) || existing->state == OrderState::Stocked);
-                if (candidate.hasOrder)
+                do
                 {
-                    bool make = false, farm = false, gathers = false;
-                    if (SubOrderCandidateUsable(bot, request.itemId, make, farm, gathers))
-                        candidate.queuedBusy = true;
-                    else
-                        continue;
-                    candidates.push_back(candidate);
-                }
-                else if (!SubOrderCandidateUsable(bot, request.itemId, candidate.canMake, candidate.canFarm,
-                    candidate.gathers))
-                    continue;
+                    Field* fields = result->Fetch();
+                    uint32_t guidLow = fields[0].GetUInt32();
+                    if (guidLow && guidLow != parent->botGuidLow)
+                        members.push_back(guidLow);
+                } while (result->NextRow());
+            }
+            cached = membersByGuild.emplace(parent->guildId, std::move(members)).first;
+        }
+        bool stoppedEarly = false;
+        std::vector<SubOrderCandidate> candidates;
+        for (uint32_t guidLow : cached->second)
+        {
+            if (plannerEvals >= kSubOrderPlannerEvalsPerTick)
+            {
+                stoppedEarly = true;
+                break;
+            }
+            ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
+            Player* bot = sObjectAccessor.FindPlayer(guid);
+            if (!bot || !bot->IsInWorld() || bot->GetGuildId() != parent->guildId)
+                continue;
+            if (!IsDurableOrderBot(guidLow))
+                continue;
+            SubOrderCandidate candidate;
+            candidate.botGuidLow = guidLow;
+            candidate.online = true;
+            std::optional<OrderRecord> existing = Find(guidLow);
+            // A finished order only lingers in the list; a keep order still
+            // watches the bank, so only that one keeps the bot busy.
+            candidate.hasOrder = existing.has_value() && !existing->cancelled &&
+                (!IsFinished(existing->state) || existing->state == OrderState::Stocked);
+            if (candidate.hasOrder)
+            {
+                bool make = false, farm = false, gathers = false;
+                if (evalUsable(bot, request.itemId, make, farm, gathers))
+                    candidate.queuedBusy = true;
                 else
-                    candidates.push_back(candidate);
-            } while (members->NextRow());
+                    continue;
+                candidates.push_back(candidate);
+            }
+            else if (!evalUsable(bot, request.itemId, candidate.canMake, candidate.canFarm,
+                candidate.gathers))
+                continue;
+            else
+                candidates.push_back(candidate);
+        }
+        // The planner budget ran out mid-guild: unevaluated members may still
+        // take the request, so requeue instead of failing it. A request that
+        // evaluated every member and found nobody still fails below.
+        if (stoppedEarly)
+        {
+            OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
+                request.count, nowMs + kSubOrderRetryMs);
+            continue;
         }
         bool queuedOut = false;
         size_t picked = PickSubOrderCandidate(candidates.data(), candidates.size(), queuedOut);
@@ -1761,6 +1834,9 @@ bool PlaceSubOrders(uint32_t nowMs)
                 continue;
             }
             placedAny = true;
+            // A new row joins the branch: later same-tick requests see its
+            // depth and item instead of the pre-tick snapshot.
+            refreshBranches();
             if (std::optional<OrderRecord> placed = Find(record.botGuidLow))
                 SendOrderLine(*placed, 0);
         }
