@@ -72,11 +72,9 @@ bool GuildOrderBuyAction::isUseful()
     if (!order || order->guildId != bot->GetGuildId() || order->state != OrderState::Working ||
         order->supplyStep != SupplyStep::AuctionHouse || !order->supplyItemId || !order->supplyCount)
         return false;
-    if (!FindNearbyAuctioneer())
-        return false;
-    if (AI_VALUE(uint8, "bag space") > 90)
-        return false;
-    return true;
+    // No bag-space gate here: with nothing listed the leg must still move
+    // down the ladder; a listing that does not fit is skipped in Execute.
+    return FindNearbyAuctioneer() != nullptr;
 }
 
 Unit* GuildOrderBuyAction::FindNearbyAuctioneer()
