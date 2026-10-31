@@ -403,6 +403,9 @@ bool HandleOrderReassign(ChatHandler* handler, Player* requester, std::string co
         OrderError(handler, "not-guild", "The new bot is not in the order's guild.");
         return true;
     }
+    // A parked refund stub never makes a bot busy: giving or reassigning to
+    // that bot keeps the debt on the new row (Give carries held gold in),
+    // so the refund drain still repays it. Stubs never count as running.
     std::optional<GuildOrders::OrderRecord> newBotOrder = GuildOrders::Find(newGuid.GetCounter());
     bool newBotBusy = newBotOrder && !newBotOrder->cancelled &&
         (!GuildOrders::IsFinished(newBotOrder->state) || newBotOrder->state == GuildOrders::OrderState::Stocked);
@@ -411,8 +414,6 @@ bool HandleOrderReassign(ChatHandler* handler, Player* requester, std::string co
         OrderError(handler, "invalid", "The new bot already has an order.");
         return true;
     }
-    if (newBotOrder && newBotOrder->cancelled)
-        GuildOrders::ClearParkedStub(newGuid.GetCounter());
     Player* live = sObjectAccessor.FindPlayer(newGuid);
     if (!live || !live->IsInWorld() || live->GetGuildId() != sub->guildId)
     {

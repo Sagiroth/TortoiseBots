@@ -276,19 +276,6 @@ public:
                 ++it;
         }
     }
-
-    // Lock-held stub clear (member Cancel and ReassignSubOrder run under
-    // the lock): an idle bot still owed a gold repayment can take new work.
-    bool ClearParkedStub(uint32_t botGuidLow)
-    {
-        auto it = m_orders.find(botGuidLow);
-        if (it == m_orders.end() || !it->second.record.cancelled)
-            return false;
-        m_orders.erase(it);
-        CharacterDatabase.DirectPExecute(
-            "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", botGuidLow);
-        return true;
-    }
     bool Cancel(uint32_t botGuidLow)
     {
         if (!botGuidLow)
@@ -855,14 +842,37 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto sub = m_orders.find(subOrderBotGuidLow);
-        auto target = m_orders.find(newBotGuidLow);
-        if (sub == m_orders.end() || target != m_orders.end())
+        if (sub == m_orders.end())
             return false;
-        if (!sub->second.record.parentBotGuidLow)
+        // Same busy rule as placement: only running rows and stocked keep
+        // orders block; finished rows and parked stubs do not.
+        auto target = m_orders.find(newBotGuidLow);
+        if (target != m_orders.end() && !target->second.record.cancelled &&
+            (!IsFinished(target->second.record.state) || target->second.record.state == OrderState::Stocked))
             return false;
         OrderRecord moved = sub->second.record;
-        m_orders.erase(sub);
-        ClearQueuedSubOrdersLocked(subOrderBotGuidLow);
+        // The old bot's unspent guild gold stays parked on the old bot
+        // (same as cancel): mark the source row a refund stub instead of
+        // erasing it, so the refund drain collects it at the next visit.
+        if (sub->second.record.guildGoldHeld > 0)
+        {
+            OrderRecord stub = sub->second.record;
+            stub.cancelled = true;
+            stub.state = OrderState::Working;
+            stub.reason = OrderReason::None;
+            stub.supplyStep = SupplyStep::None;
+            stub.supplyItemId = 0;
+            stub.supplyCount = 0;
+            stub.supplyGoldCount = 0;
+            stub.supplyReturnStep = SupplyStep::None;
+            stub.needItems.clear();
+            stub.needWhispered = false;
+            stub.reportedHave = 0;
+            m_orders[subOrderBotGuidLow] = Stored{stub};
+            MarkDirtyLocked(m_orders[subOrderBotGuidLow]);
+        }
+        else
+            m_orders.erase(sub);
         moved.botGuidLow = newBotGuidLow;
         moved.type = type;
         moved.delivered = 0;
@@ -1297,16 +1307,16 @@ private:
         OrderRecord& record = stored.record;
         record.updatedAt = static_cast<uint64_t>(std::time(nullptr));
         CharacterDatabase.PExecute(
-            "UPDATE `tortoise_bots_guild_order` SET `amount` = '%u', `hours` = '%u', `delivered` = '%u', "
+            "UPDATE `tortoise_bots_guild_order` SET `giver_guid` = '%u', `parent_bot` = '%u', `root_giver` = '%u', `amount` = '%u', `hours` = '%u', `delivered` = '%u', "
             "`state` = '%s', `reason` = '%s', "
             "`farm_zone` = '%u', `farm_chance` = '%u', `farm_item` = '%u', `zone_index` = '%u', "
             "`deaths_in_zone` = '%u', `worked_sec` = '%u', `worked_total` = '%u', `worked_nogain` = '%u', `reported` = '%u', "
             "`farm_rest` = '%u', `keep` = '%u', `gold_cap` = '%u', `gold_cap_set` = '%u', "
             "`guild_gold_withdrawn` = '%u', `guild_gold_held` = '%u', `cancelled` = '%u', `supply_step` = '%s', "
             "`supply_return_step` = '%s', `supply_item` = '%u', `supply_count` = '%u', `supply_gold_count` = '%u', "
-            "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', "
-            "`updated_at` = FROM_UNIXTIME('%u') "
+            "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', `updated_at` = FROM_UNIXTIME('%u') "
             "WHERE `bot_guid` = '%u'",
+            record.giverGuidLow, record.parentBotGuidLow, record.rootGiverGuidLow,
             record.amount, record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
             record.farmZoneId, record.farmChance, record.farmItemId, record.zoneIndex, record.deathsInZone,
             record.workedSinceNewItemSec, record.workedTotalSec, record.workedNoGainSec, record.reportedHave,
@@ -1730,6 +1740,9 @@ bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, Order
     std::optional<OrderRecord> row = Find(newBotGuidLow);
     if (!row)
         return false;
+    // The old bot's unspent guild gold stays a parked stub on the old bot
+    // (same as cancel): the refund drain collects it at the next banker
+    // visit instead of the debt dying with the row.
     OrderRecord record = *row;
     if (!OrderStore::Instance().Give(record))
     {
@@ -1805,11 +1818,6 @@ void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId)
 void ClearBankEmpty(uint32_t botGuidLow)
 {
     OrderStore::Instance().ClearBankEmpty(botGuidLow);
-}
-
-bool ClearParkedStub(uint32_t botGuidLow)
-{
-    return OrderStore::Instance().ClearParkedStub(botGuidLow);
 }
 
 void StartKeepWatch(uint32_t botGuidLow)
