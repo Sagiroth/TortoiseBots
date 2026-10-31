@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/policy/combat/BandageSafetyPolicy.h"
+#include "playerbot/policy/combat/HealerItemPolicy.h"
 #include "GenericActions.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/RandomItemMgr.h"
@@ -354,7 +355,7 @@ namespace ai
     {
     public:
         UseGoblinSapperChargeAction(PlayerbotAI* ai) : UseItemIdAction(ai, "goblin sapper") {}
-        virtual bool isUseful() override { return UseItemIdAction::isUseful() && bot->GetSkillValue(202) >= 205 && bot->GetHealth() > 1000; }
+        virtual bool isUseful() override { return DamageItemAllowed(ai->IsHeal(bot)) && UseItemIdAction::isUseful() && bot->GetSkillValue(202) >= 205 && bot->GetHealth() > 1000; }
 
         virtual uint32 GetItemId() override
         {
@@ -369,6 +370,8 @@ namespace ai
         UseOilOfImmolationAction(PlayerbotAI* ai) : UseItemIdAction(ai, "oil of immolation") {}
         virtual bool isUseful() override
         {
+            if (!DamageItemAllowed(ai->IsHeal(bot)))
+                return false;
             if (!UseItemIdAction::isUseful() || bot->GetLevel() < 31 || ai->HasAura(11350, bot))
                 return false;
             // The oil burns every mob near the user for its whole duration:
@@ -542,6 +545,7 @@ namespace ai
 
         virtual bool isUseful() override
         {
+            if (!DamageItemAllowed(ai->IsHeal(bot))) return false;
 
             Unit* target = GetTarget();
             if (!target)
