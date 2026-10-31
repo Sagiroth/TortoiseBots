@@ -269,9 +269,11 @@ void BotHostAdapter::OnShutdown()
     BotCommandQueue::Instance().Clear();
     BotCommands::ClearRemoteCommanders();
     BotPacketAdapter::ClearDeferredPackets();
-    ai::botdiag::BotActionLog::CloseAll();
+    // After the bots are gone: aura-strip/cast hooks during session teardown
+    // reopen nothing once nothing is left to log.
     BotManager::Instance().Shutdown();
     RandomBotService::Instance().Shutdown();
+    ai::botdiag::BotActionLog::CloseAll();
     BotActivityLeaseManager::Instance().Clear();
     TB_LOG_BASIC("TortoiseBots: native module shutting down after %u world ticks", m_ticks);
 }
