@@ -92,6 +92,7 @@
 - Fixed: in a raid's walk, the main tank now joins a fight that broke out behind it (up to 55 yd) instead of standing parked.
 
 ### Dashboard
+- New: the boss panel and the raid coverage card know the Scarlet Monastery bosses: all four wings of map 189, their abilities, Whitemane's pause and resurrection (her spell list returns after the revive) and the rare elites Ironspine, Azshir and the Fallen Champion.
 - Fixed: a priest who dies at the end of Spirit of Redemption is no longer named as his own killer (the enemy that hit him last is), and the Fight debugger's checks now list the deaths within 5 s of a named enemy cast, such as a Bat Rider's Unstable Concoction.
 - Fixed: the raid frames keep one size: a boss debuff no longer makes a tile taller, and its chips no longer cover the bot's name.
 - Changed: in the Fight debugger a raid fight's problem verdict now means a real problem: the main tank's Sunder rate fails only under 0.4 per 10 seconds in a fight of 30 seconds or more (0.4-0.8, or any rate in a shorter fight, is a check), one or two deaths outside the tanks are a check until there are three or the fight ended in a wipe, a per-bot server warning on a pull shorter than 30 seconds is a check marked as a short pull, and a raid without a saved layout names the tank that took the most damage as the main tank instead of the first tank in the list.
