@@ -18,6 +18,9 @@
 #include "playerbot/policy/travel/UndercityLiftPolicy.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
+#include "GuildOrderBuyAction.h"
+#include "runtime/GuildOrderGiveUpPolicy.h"
+#include "runtime/GuildOrderStore.h"
 #include "runtime/HireLifecycle.h"
 #include "runtime/AltBotService.h"
 #include <cstdlib>
@@ -983,7 +986,11 @@ bool MoveToTravelTargetAction::Execute(Event& event)
     // point below sits inside geometry. Runs before the jitter so the
     // arrival verdict never depends on the re-rolled point.
     if (!hasFlightPlan && CheckServiceArrival(target, purpose))
+    {
+        if (purpose == "guild order")
+            TortoiseBots::GuildOrders::NoteArrivedAuctionVisit(bot->GetGUIDLow(), true);
         return true;
+    }
 
     // With a flight plan the bot walks to the master (x/y/z/mapId staged
     // above), so the arrival jitter below must not re-aim at the final
@@ -1201,6 +1208,18 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             // ClearValues on the pick path); only this purpose stands down.
             // A dropped workshop leg re-picks after a minute: the order makes
             // no progress while parked, so the next forge must come soon.
+            uint32_t arrivedNoAuctioneer =
+                TortoiseBots::GuildOrders::NoteArrivedAuctionVisit(bot->GetGUIDLow(), false);
+            if (purpose == "guild order" &&
+                TortoiseBots::GuildOrders::AuctionVisitsMoveLadder(arrivedNoAuctioneer,
+                    sPlayerbotAIConfig.guildOrderAuctionVisits))
+            {
+                std::optional<TortoiseBots::GuildOrders::OrderRecord> stuckRecord =
+                    TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+                if (stuckRecord && stuckRecord->supplyStep ==
+                    TortoiseBots::GuildOrders::SupplyStep::AuctionHouse)
+                    AdvanceGuildOrderAfterAuction(ai, bot, *stuckRecord);
+            }
             std::string const parkKey = TravelPurposeParkKey(purpose);
             SET_AI_VALUE2(bool, "no active travel destinations", parkKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey,

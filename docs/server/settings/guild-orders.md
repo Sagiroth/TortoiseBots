@@ -21,6 +21,7 @@ These settings control how orders use the guild bank and sub-orders between guil
 | [`AiPlayerbot.GuildOrderBankGold`](#aiplayerbotguildorderbankgold) | `1` | Lets orders withdraw the shortfall from guild bank money after using the bot's own gold. |
 | [`AiPlayerbot.GuildOrderSubOrders`](#aiplayerbotguildordersuborders) | `1` | Lets orders ask another guild bot to make or farm a missing item. |
 | [`AiPlayerbot.GuildOrderSubOrderDepth`](#aiplayerbotguildordersuborderdepth) | `3` | How deep sub-orders may nest. |
+| [`AiPlayerbot.GuildOrderAuctionVisits`](#aiplayerbotguildorderauctionvisits) | `3` | How many arrived auction-house visits without reaching an auctioneer move the order leg on. |
 | [`AiPlayerbot.GuildOrderBotRank`](#aiplayerbotguildorderbotrank) | `1` | Whether bots in a guild with a real player share one rank for guild bank access. |
 
 ### `AiPlayerbot.GuildOrderBankWithdraw`
@@ -43,6 +44,11 @@ Allows working orders to place sub-orders on other guild bots when the ordering 
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 When off, the supply step reports no candidate and the item lands on the parent's need list instead.
+
+### `AiPlayerbot.GuildOrderAuctionVisits`
+
+How many arrived trips at the order's auction house end the buying step when no auctioneer comes into interact range. The bot first commits to one auction house instead of wandering between cities; after this many visits with nobody to buy from, the order moves to gathering, farming or asking another guild bot, the same as when the auction house has no listing. `0` disables the exit (the leg keeps waiting for a seller).
+**Default:** `3` · **Values:** `0` disables, `1` and up move on after that many visits · **Restart:** needed
 
 ### `AiPlayerbot.GuildOrderSubOrderDepth`
 

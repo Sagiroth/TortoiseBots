@@ -546,6 +546,7 @@ bool PlayerbotAIConfig::Initialize()
     unstuckHearthLevelFit = config.GetBoolDefault("AiPlayerbot.UnstuckHearthLevelFit", true);
     unstuckHearthMinDistance = config.GetFloatDefault("AiPlayerbot.UnstuckHearthMinDistance", 300.0f);
     stuckTravelTeleport = config.GetBoolDefault("AiPlayerbot.StuckTravelTeleport", true);
+    guildOrderAuctionVisits = static_cast<uint32_t>(config.GetIntDefault("AiPlayerbot.GuildOrderAuctionVisits", 3));
     botQuestLogUpkeep = config.GetBoolDefault("AiPlayerbot.BotQuestLogUpkeep", true);
     leaveOutgrownZones = config.GetBoolDefault("AiPlayerbot.LeaveOutgrownZones", true);
     vendorBatchMinCount = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.VendorBatchMinCount", 8));

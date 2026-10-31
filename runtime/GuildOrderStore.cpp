@@ -505,6 +505,16 @@ public:
             record.supplyCount == count && record.supplyGoldCount == goldCount &&
             record.supplyReturnStep == returnStep && record.reason == reason)
             return;
+        // The streak counts one leg's searches: a leg or item change restarts
+        // it, and the committed city and the arrived-visit count belong to
+        // the auction leg alone. A landed pick no longer clears it (the
+        // search layer re-picks between cities while the bot walks, so a
+        // clear per pick would never let three failures accumulate).
+        if (step != SupplyStep::AuctionHouse || itemId != record.supplyItemId)
+        {
+            record.committedAuctionZoneId = 0;
+            record.arrivedAuctionVisits = 0;
+        }
         record.supplyStep = step;
         record.supplyItemId = itemId;
         record.supplyCount = count;
@@ -797,11 +807,51 @@ public:
         auto it = m_orders.find(botGuidLow);
         if (it == m_orders.end())
             return;
-        if (it->second.record.searchFailsInZone == 0 && it->second.supplySearch.fails == 0)
+        // Only the farm-zone streak resets here: a landed zone pick serves
+        // the zone, so the next rejection counts from zero. The leg streak
+        // restarts on a leg or item change instead: the search layer
+        // re-picks between cities while the bot walks the auction leg, and
+        // clearing per pick would never let three failures accumulate.
+        if (it->second.record.searchFailsInZone == 0)
             return;
         it->second.record.searchFailsInZone = 0;
-        it->second.supplySearch = SupplySearchStreak{};
         MarkDirtyLocked(it->second);
+    }
+
+    // The auction leg commits to one city: the first pick stores its zone,
+    // later picks reuse the stored one. A city change commits nothing: the
+    // count below still runs, so flapping searches cannot dodge the exit.
+    void CommitAuctionZone(uint32_t botGuidLow, uint32_t zoneId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !zoneId ||
+            it->second.record.state != OrderState::Working ||
+            it->second.record.supplyStep != SupplyStep::AuctionHouse)
+            return;
+        if (it->second.record.committedAuctionZoneId == zoneId)
+            return;
+        if (it->second.record.committedAuctionZoneId != 0)
+            return;
+        it->second.record.committedAuctionZoneId = zoneId;
+        MarkDirtyLocked(it->second);
+    }
+
+    // An arrived auction-leg trip ended with no auctioneer in reach. Counts
+    // on the leg, not the pick, so re-picks between cities never reset it.
+    // An auctioneer in reach clears it: the buy action owns the ladder from
+    // there. Returns the consecutive count for the caller.
+    uint32_t NoteArrivedAuctionVisit(uint32_t botGuidLow, bool auctioneerInReach)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || it->second.record.state != OrderState::Working ||
+            it->second.record.supplyStep != SupplyStep::AuctionHouse)
+            return 0;
+        OrderRecord& record = it->second.record;
+        record.arrivedAuctionVisits = auctioneerInReach ? 0 : record.arrivedAuctionVisits + 1;
+        MarkDirtyLocked(it->second);
+        return record.arrivedAuctionVisits;
     }
 
     void NoteBagsFull(uint32_t botGuidLow)
@@ -1946,6 +1996,16 @@ void NoteSearchFailed(uint32_t botGuidLow, uint32_t zoneId)
 void NoteSearchLanded(uint32_t botGuidLow)
 {
     OrderStore::Instance().NoteSearchLanded(botGuidLow);
+}
+
+void CommitAuctionZone(uint32_t botGuidLow, uint32_t zoneId)
+{
+    OrderStore::Instance().CommitAuctionZone(botGuidLow, zoneId);
+}
+
+uint32_t NoteArrivedAuctionVisit(uint32_t botGuidLow, bool auctioneerInReach)
+{
+    return OrderStore::Instance().NoteArrivedAuctionVisit(botGuidLow, auctioneerInReach);
 }
 
 void NoteBagsFull(uint32_t botGuidLow)

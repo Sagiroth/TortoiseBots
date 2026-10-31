@@ -274,6 +274,11 @@ AiPlayerbot.UnstuckHearthMinDistance = 300
 # old behaviour). Default 1.
 AiPlayerbot.StuckTravelTeleport = 1
 
+# Guild-order auction leg: an arrived trip at a committed auction house with no
+# auctioneer in interact range moves the leg down the ladder after this many
+# visits (0 disables the exit, the leg keeps waiting for a seller). Default 3.
+AiPlayerbot.GuildOrderAuctionVisits = 3
+
 # Quest-log upkeep for random bots without a player master: drop finished
 # quests that can no longer be rewarded (except transient money blockers),
 # drop grey incomplete deliver quests whose items are gone, refuse grey

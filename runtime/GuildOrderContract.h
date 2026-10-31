@@ -263,6 +263,8 @@ struct OrderRecord
     uint32_t deathsInZone = 0; // deaths in the current farm zone
     uint32_t searchFailsInZone = 0; // consecutive rejected/empty order-leg searches in farmZoneId
     uint32_t workedSinceNewItemSec = 0;
+    uint32_t committedAuctionZoneId = 0; // the city the bot committed to for the AH leg (0 = pick one)
+    uint32_t arrivedAuctionVisits = 0; // arrived trips with no auctioneer in reach on the AH leg
     uint32_t workedTotalSec = 0; // worked time over the whole order, ends it at hours
     uint32_t workedNoGainSec = 0; // worked time since the bot last gained an order item (the progress watchdog)
     uint32_t reportedHave = 0;   // last reported progress; reported have never drops below this
