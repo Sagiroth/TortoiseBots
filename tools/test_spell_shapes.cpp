@@ -122,6 +122,9 @@ void TestKnownShapes()
     Shape const* lash = For(23364);
     Check(lash && lash->kind == Kind::BackCone && lash->angle == 75 && Near(lash->length, 20.0f),
         "Nefarian's Tail Lash is a 75 degree back cone of 20 yd");
+    Shape const* sand = For(26102);
+    Check(sand && sand->kind == Kind::Cone && sand->angle == 90 && Near(sand->length, 40.0f) && sand->width == 0.0f,
+        "Ouro's Sand Blast is the core's 90 degree target-54 cone of 40 yd (radius 23)");
 }
 
 // Every Deep Breath row is the complete damaging footprint of its chain: a line from the first to the last damage point,
