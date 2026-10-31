@@ -20560,8 +20560,8 @@ static void TestStandPullAuthJoinerRestThenOtherUnitHolds()
 // "not cleared", the run finishes the rest of the plan, and the done note
 // names him. (Stormwrought Ruins leg 9: Eldermaw swims out of reach; the run
 // goes on to legs 10-11 while he stays alive.)
-// specs/rl-patrol-timed-pull.md: a stand-pull PULL row (Zul'Gurub leg 0, the F6 bat formation's row on its south
-// turn, radius 4; its stand the move row right before it). Kill_first 14750 (the Bat Rider) as the ZG plan row.
+// A stand-pull PULL row: radius 4, its stand the move row right before it; kill_first 14750 (the Bat Rider).
+static constexpr float kPatrolPullFloorZ = 130.9f;
 static DungeonPlan PatrolPullPlan(std::uint32_t param = 0)
 {
     DungeonPlan plan;
@@ -20571,19 +20571,20 @@ static DungeonPlan PatrolPullPlan(std::uint32_t param = 0)
     PlanStep pull = PullStep(-12259.0f, {11368, 14750}, ai::kPlanFlagStandPull);
     pull.leg = 0;
     pull.y = -1487.0f;
-    pull.z = 130.9f;
+    pull.z = kPatrolPullFloorZ;
     pull.radius = 4.0f;
     pull.param = param;
     plan.steps = {stand, pull, Step(PlanStepKind::Move, 60)};
     return plan;
 }
 
-// A formation unit: hostile, in sight of the tank, in formation `formation`.
+// A formation unit: hostile, in sight of the tank, on the row's floor.
 static UnitFact PatrolUnit(std::uint64_t guid, std::uint32_t entry, float dist, std::uint64_t formation, bool los = true)
 {
     UnitFact u = Unit(guid, entry, dist);
     u.hostile = true;
     u.losLead = los;
+    u.z = kPatrolPullFloorZ;
     u.formation = formation;
     return u;
 }
@@ -20622,8 +20623,8 @@ static void TestPatrolStandPullWaitsForTheOtherPatrol()
     CHECK(Tick(r, f) == "pullback 9");
 }
 
-// specs/rl-patrol-timed-pull.md, walk 9 step 22: another formation 41.9 yd from the lead bot (past the 40 yd clearance)
-// but 21.9 yd from the pulled unit holds the pull: it would come with it. 46 yd from the pull's way, the pull goes out.
+// Another formation 41.9 yd from the lead bot (past the 40 yd clearance) but 21.9 yd from the pulled unit holds the
+// pull: it would come with it. 46 yd from the pull's way, the pull goes out.
 static void TestPatrolStandPullWaitsForAPatrolNearThePullsWay()
 {
     DungeonPlan plan = PatrolPullPlan();
@@ -20643,9 +20644,31 @@ static void TestPatrolStandPullWaitsForAPatrolNearThePullsWay()
     CHECK(Tick(r, f) == "pullback 9");
 }
 
-// Walk 10 step 31: the pack's unit in the residue band (just outside the radius), out of shot: the gate holds at the
-// stand. (Before: PackResidueTick pulled it as a plain pull and the party walked off to a firing stand.) In shot and
-// clear, the pull goes out on it.
+// Another formation within the 40 yd clearance, or near the pull's way past it, but on another floor (its z beyond the
+// residue band off the row's) is no part of this pull's fight: the pull goes out.
+static void TestPatrolStandPullIgnoresAnotherFloor()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(22.0f);
+    f.standPatrols.push_back(PatrolUnit(20, 11368, 20.0f, 200));
+    f.standPatrols.back().z += kPackResidueZYd + 1.0f;
+    CHECK(Tick(r, f) == "pullback 9");
+    Run near = Start(&plan, 1);
+    Facts g = PatrolPullFacts(22.0f);
+    g.units.front().x = -12228.0f;
+    g.units.front().y = -1497.5f;
+    UnitFact offFloor = PatrolUnit(20, 11368, 41.9f, 200);
+    offFloor.x = -12210.0f;
+    offFloor.y = -1510.0f;
+    offFloor.z -= kPackResidueZYd + 1.0f;
+    g.standPatrols.push_back(offFloor);
+    CHECK(Tick(near, g) == "pullback 9");
+}
+
+// The pack's unit in the residue band (just outside the radius), out of shot: the gate holds at the stand. (Before:
+// PackResidueTick pulled it as a plain pull and the party walked off to a firing stand.) In shot and clear, the pull
+// goes out on it.
 static void TestPatrolStandPullHoldsForAResidueUnit()
 {
     DungeonPlan plan = PatrolPullPlan();
@@ -20824,6 +20847,34 @@ static void TestStandPullPackInShotGatesThePatrolRead()
     CHECK(StandPullPackInShot(in));
     in.leadShotYd = 0.0f;
     CHECK(!StandPullPackInShot(in));
+    // The residue band counts too: a residue unit in shot is what the gate would pull.
+    Facts residue = PatrolPullFacts(80.0f);
+    residue.units.clear();
+    residue.packResidue = {PatrolUnit(9, 14750, 22.0f, 100)};
+    CHECK(StandPullPackInShot(residue));
+    residue.packResidue.front().losLead = false;
+    CHECK(!StandPullPackInShot(residue));
+}
+
+// A pack whose only unit in shot is in the residue band: the glue reads the other patrols (StandPullPackInShot), so
+// another formation 20 yd from the lead bot holds the pull. Without that read the gate pulled at once.
+static void TestPatrolStandPullResidueInShotReadsTheOtherPatrols()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Run r = Start(&plan, 1);
+    Facts f = PatrolPullFacts(80.0f);
+    f.packClearMarginYd = 10.0f;
+    f.packResidue = {PatrolUnit(9, 14750, 22.0f, 100)};
+    f.units.clear();
+    f.standPatrols.clear();
+    // The glue's read, on this tick's facts: only a tick the pull could go out lists the other patrols.
+    if (StandPullPackInShot(f))
+        f.standPatrols.push_back(PatrolUnit(20, 11368, 20.0f, 200));
+    CHECK(Tick(r, f).empty());
+    CHECK(r.state == State::Running && r.step == 1);
+    CHECK(r.standPullMs == kTickMs);
+    CHECK(r.note == "patrol pull: 14750 0x0000000000000009 is in shot (22.0 yd), waiting for 11368 0x0000000000000014 of another patrol, 20.0 yd "
+        "from the lead bot, to walk off (clear at 40.0 yd, 30.0 yd from the way)");
 }
 
 // A stand-pull pull row's pack is the formations with a unit spawned in its radius: units, residue and patrollers of
@@ -20907,8 +20958,37 @@ static void TestStandPullWaitsForItsFormationOutOfSight()
     CHECK(dead.step == 2);
 }
 
+// The out-of-sight formation wait pauses once: after a resume it does not pause again, and with the pack in sight the
+// row pulls as a plain pull.
+static void TestStandPullAwayWaitPausesOnce()
+{
+    DungeonPlan plan = PatrolPullPlan();
+    Facts away = PatrolPullFacts(22.0f);
+    away.units.clear();
+    away.standPatrols.clear();
+    away.standPullOwnAlive = {100};
+    auto paused = [&]()
+    {
+        Run r = Start(&plan, 1);
+        for (std::uint32_t i = 0; i < kStandPullWaitMs / kTickMs && r.state == State::Running; ++i)
+            Tick(r, away);
+        CHECK(r.state == State::Paused && r.step == 1);
+        CHECK(Resume(r));
+        return r;
+    };
+    Run stillAway = paused();
+    Tick(stillAway, away); // still out of sight: the wait is spent, no second pause
+    CHECK(stillAway.state == State::Running && stillAway.step == 2);
+    Run inSight = paused();
+    Facts came = PatrolPullFacts(22.0f);
+    came.standPullOwnAlive = {100};
+    CHECK(Tick(inSight, came).empty()); // the plain pull: its firing stand read, no patrol wait
+    CHECK(inSight.state == State::Running && inSight.shotStandFor == 9 && inSight.note.find("patrol pull") == std::string::npos);
+}
+
 // The stand-pull pull row's see range: a waypoint patroller (or a follower of one) 44 yd from a 4 yd radius is
-// Left at kPatrolSeeYd (walk 7 step 32's "pack cleared") and a Patroller at kStandPullSeeYd, gate on or off.
+// Left at kPatrolSeeYd (a "pack cleared" with the nearest one just outside) and a Patroller at kStandPullSeeYd, gate
+// on or off.
 static void TestClassifyPullReadStandPullSeesFarther()
 {
     PullReadIn in;
@@ -25561,6 +25641,7 @@ int main()
     TestStandPullAuthJoinerRestThenOtherUnitHolds();
     TestPatrolStandPullWaitsForTheOtherPatrol();
     TestPatrolStandPullWaitsForAPatrolNearThePullsWay();
+    TestPatrolStandPullIgnoresAnotherFloor();
     TestPatrolStandPullHoldsForAResidueUnit();
     TestPatrolStandPullShootsAPatrollerInShot();
     TestPatrolStandPullSameFormationDoesNotBlock();
@@ -25575,8 +25656,10 @@ int main()
     TestPlainPullIgnoresOtherPatrols();
     TestClassifyPullReadStandPullSeesFarther();
     TestStandPullPackInShotGatesThePatrolRead();
+    TestPatrolStandPullResidueInShotReadsTheOtherPatrols();
     TestScopeStandPullFactsKeepsThePacksFormations();
     TestStandPullWaitsForItsFormationOutOfSight();
+    TestStandPullAwayWaitPausesOnce();
     TestSkippedBossNamedInDoneNoteAliveElsewhere();
     TestSkippedBossNamedInDoneNotePassedBySpot();
     TestDoneNoteUnchangedWithNoSkippedBoss();

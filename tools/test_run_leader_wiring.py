@@ -640,8 +640,8 @@ class RunLeaderWiringTest(unittest.TestCase):
 
 
     def test_stand_pull_pull_row_reads_its_patrols(self):
-        # specs/rl-patrol-timed-pull.md: a stand-pull PULL row (DungeonRun::PatrolStandPullGate) gets its patrollers
-        # out to kStandPullSeeYd with sight and formation, and the other patrols near the lead bot, out of combat only.
+        # A stand-pull PULL row (DungeonRun::PatrolStandPullGate) gets its patrollers out to kStandPullSeeYd with sight
+        # and formation, and the other patrols near the lead bot, out of combat only.
         stand = body(COMMANDS, "inline bool StandThisStep(DungeonRunSlot const& slot)", "\n}\n")
         self.assertIn("(s.kind != ai::PlanStepKind::Boss && s.kind != ai::PlanStepKind::Pull)", stand)
         read = body(COMMANDS, "void ReadRunFacts(DungeonRunSlot const& slot,", "\n}\n")

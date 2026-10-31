@@ -682,8 +682,17 @@ static void TestStandPullFlagOnBossAndPull()
     PlanStep pull = Step(0, 31, PlanStepKind::Pull);
     pull.entries = {62648};
     pull.flags = kPlanFlagStandPull;
-    pull.param = 35; // the clearance in yd (specs/rl-patrol-timed-pull.md)
+    pull.param = 0; // the run leader's own clearance
+    CHECK(NormalizePlanStep(pull) == PlanStepRefusal::None && pull.param == 0);
+    pull.param = kPlanMaxStandPullClear; // 60: the ceiling itself is accepted
+    CHECK(NormalizePlanStep(pull) == PlanStepRefusal::None && pull.param == kPlanMaxStandPullClear);
+    pull.param = kPlanMaxStandPullClear + 1;
+    CHECK(NormalizePlanStep(pull) == PlanStepRefusal::BadParam);
+    pull.param = 35; // the clearance in yd
     CHECK(NormalizePlanStep(pull) == PlanStepRefusal::None && (pull.flags & kPlanFlagStandPull) && pull.param == 35);
+    // A boss row's param is not read: unchanged by the pull row's bound.
+    boss.param = kPlanMaxStandPullClear + 1;
+    CHECK(NormalizePlanStep(boss) == PlanStepRefusal::None);
     PlanStep move = Step(0, 32, PlanStepKind::Move, 1.0f, 2.0f, 3.0f);
     move.flags = kPlanFlagStandPull;
     CHECK(NormalizePlanStep(move) == PlanStepRefusal::BadParam);

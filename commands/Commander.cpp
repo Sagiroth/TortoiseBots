@@ -8664,8 +8664,8 @@ void ReadRezRoster(Player* lead, std::vector<Player*> const& bots, TortoiseBots:
 // one request is read once) the firing stand on its navmesh path to that unit (DungeonRun::ShotStandOnPath:
 // the path walked back from the unit end to the first point within range less kShotMarginYd that sees it).
 // One path and a few sight rays, for that one unit, on that one tick.
-// For a stand-pull boss or pull step (kPlanFlagStandPull, specs/sw-eldermaw.md Spec B, specs/rl-patrol-timed-pull.md)
-// the key is off: the glue reads leadShotYd and losLead whatever the key says (the key governs ordinary pulls only).
+// For a stand-pull boss or pull step (kPlanFlagStandPull, specs/sw-eldermaw.md Spec B) the key is off: the glue reads
+// leadShotYd and losLead whatever the key says (the key governs ordinary pulls only).
 // StandThisStep: the current step is such a boss or pull with its stand (the move row right before it in the same leg).
 inline bool StandThisStep(DungeonRunSlot const& slot)
 {

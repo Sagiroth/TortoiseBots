@@ -314,14 +314,12 @@ inline std::uint32_t BossAwayWaitMs(const PlanStep& s)
 }
 constexpr std::uint32_t kStandPullWaitMs = 600000;
 constexpr float kStandPullMarginYd = 1.0f;
-// A stand-pull PULL row (kPlanFlagStandPull on a pull; specs/rl-patrol-timed-pull.md, Zul'Gurub walks 6-7): the
-// pack is pulled from the stand once one of its units is in the tank's shot and no other patrol is near the lead bot.
+// A stand-pull PULL row (kPlanFlagStandPull on a pull): the pack is pulled from the stand once one of its units is in
+// the tank's shot and no other patrol is near the lead bot.
 constexpr float kStandPullClearYd = 40.0f;    // ... no other patrol this close (the row's `param` in yd; 0: this)
-constexpr float kStandPullClearMaxYd = 60.0f; // ... the clearance's ceiling; the glue lists patrols this far, or the shot + kStandPullPathClearYd
-// ... and no other patrol this close (2D) to the pulled unit or to the line it runs along to the lead bot. Zul'Gurub walk
-// 9 step 22: the Headhunter formation was pulled with the bat formation F3 45-51 yd from the lead bot (past the 40 yd
-// clearance) but 19-24 yd from the pulled Witch Doctor; F3 came with it 3-5 s later (no bot had moved toward it), and F4
-// after: 8 bats, 3 riders, 6 dead. Walk 8's same row took F3 the same way.
+constexpr float kStandPullClearMaxYd = static_cast<float>(ai::kPlanMaxStandPullClear); // ... the clearance's ceiling (the loader refuses a row past it); the glue lists patrols this far, or the shot + kStandPullPathClearYd
+// ... and no other patrol this close (2D) to the pulled unit or to the line it runs along to the lead bot: a formation
+// 19-24 yd off that line came with the pulled pack 3-5 s later although it stood past the clearance.
 constexpr float kStandPullPathClearYd = 30.0f;
 // A unit a party member has as its victim that stays at 1 hp (or at 1 % or less, unchanged) this long cannot die
 // now (HpHeldTick; Scarlet Cathedral r23 slot 5: Whitemane sat at 1 hp of 5284 under her script's invincibility,
@@ -343,8 +341,8 @@ constexpr float kPackResidueZYd = 10.0f;          // the band's height around th
 constexpr float kSpawnOwnTolYd = 1.0f;            // a DB spawn this close to the radius still belongs to the step
 constexpr float kSpawnPatrolSeeYd = 60.0f;        // ... and a spawn-owned patroller is listed this far out (any movement type)
 // A stand-pull pull row lists its waypoint patrollers this far outside its radius (kPatrolSeeYd otherwise): a
-// formation's loop reaches farther than 30 yd from the turn its row sits on (Zul'Gurub walk 7 step 32: the F6 row
-// said "pack cleared" with its nearest bat 44.1 yd from a 4 yd radius, and F6 walked into the next stand).
+// formation's loop reaches farther than 30 yd from the turn its row sits on (a row said "pack cleared" with its
+// nearest bat 44.1 yd from a 4 yd radius, and the formation walked into the next stand).
 constexpr float kStandPullSeeYd = kSpawnPatrolSeeYd;
 constexpr float kPackClearMarginMaxYd = kPatrolSeeYd; // the margin's ceiling (the key clamps to it)
 // A big pack's firing stand walk (BigPackWalkGate; Uldaman r10-19z29 step 79):
@@ -10297,13 +10295,14 @@ inline void StandPullGiveUp(Run& r, const PlanStep& s, const std::string& why)
 }
 
 // A stand-pull pull row's pack has a unit in the tank's shot and sight this tick (the glue reads
-// Facts::standPatrols only then: the clearance matters only when the pull could go out).
+// Facts::standPatrols only then: the clearance matters only when the pull could go out). The residue band counts
+// too: the gate pulls a residue unit in shot like one of the row's own.
 inline bool StandPullPackInShot(const Facts& f)
 {
     if (f.leadShotYd <= kShotMarginYd)
         return false;
     float const inShot = f.leadShotYd - kStandPullMarginYd;
-    for (const std::vector<UnitFact>* list : {&f.units, &f.patrollers})
+    for (const std::vector<UnitFact>* list : {&f.units, &f.packResidue, &f.patrollers})
         for (const UnitFact& u : *list)
             if (u.hostile && u.losLead && u.distLead <= inShot)
                 return true;
@@ -10357,10 +10356,11 @@ inline void ScopeStandPullFacts(Run& r, Facts& f)
 
 // A stand-pull pull row whose pack has a formation alive on the map (Facts::standPullOwnAlive) that nothing in the read
 // lists (out on the far side of its loop, beyond the grid read): the row is not cleared, it waits at the stand for the
-// formation to come round, on the stand pull's own 600 s (then it pauses). True: this tick waits.
+// formation to come round, on the stand pull's own 600 s (then it pauses once; after a resume the row is a plain pull).
+// True: this tick waits.
 inline bool StandPullAwayWait(Run& r, const Facts& f, std::uint32_t dt)
 {
-    if (!StandPullPullRow(r) || f.anyInCombat)
+    if (!StandPullPullRow(r) || f.anyInCombat || r.standPullMs >= kStandPullWaitMs)
         return false;
     for (std::uint64_t formation : f.standPullOwnAlive)
     {
@@ -10390,12 +10390,12 @@ inline float StandPullClearYd(const PlanStep& s)
     return s.param ? std::min(static_cast<float>(s.param), kStandPullClearMaxYd) : kStandPullClearYd;
 }
 
-// A stand-pull PULL row (kPlanFlagStandPull on a pull, specs/rl-patrol-timed-pull.md). Zul'Gurub walks 6-7: the
-// plateau's bat formations walk 35-100 s loops, two share a lane and three turn at one spot, and a pack pulled (or
-// met) while its neighbour walked by came with it (8-10 bats and 3-4 riders, 9-18 dead). The party holds at the
-// stand (the move row right before the row, same leg) and the pull goes out only when a unit of the pack, among
-// the row's units and the patrollers it waits for (PatrollerToWaitFor), is in the tank's shot and in sight, and no
-// other patrol (Facts::standPatrols: another formation, not passed) stands within the clearance
+// A stand-pull PULL row (kPlanFlagStandPull on a pull). A patrolling pack's formations walk long loops, neighbours
+// share a lane or turn at one spot, and a pack pulled (or met) while its neighbour walked by came with it (8-10 bats
+// and 3-4 riders, 9-18 dead). The party holds at the stand (the move row right before the row, same leg) and the
+// pull goes out only when a unit of the pack, among the row's units and the patrollers it waits for
+// (PatrollerToWaitFor), is in the tank's shot and in sight, and no other patrol (Facts::standPatrols: another
+// formation, not passed, on the row's floor) stands within the clearance
 // (StandPullClearYd) of the lead bot. The pick: one in shot first, then the plan's kill_first rank, then the nearest.
 // Out of combat only, with a ranged pull (otherwise the row pulls as before), and until the wait has run
 // kStandPullWaitMs (cumulative per step): then the run pauses once, and after a resume the row pulls as before.
@@ -10445,7 +10445,7 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
     for (const UnitFact& u : f.units)
         consider(u);
     // The residue band too (units of the pack just outside the radius) when they patrol, or stand in shot: otherwise
-    // PackResidueTick pulls a patrolling one as a plain pull (Zul'Gurub walk 10 step 31: the party walked off the stand
+    // PackResidueTick pulls a patrolling one as a plain pull (a residue unit pulled from the stand walked the party off
     // to a firing stand into the formations' ring). Static residue out of shot is left to PackResidueTick as before
     // (it never comes to the stand).
     for (const UnitFact& u : f.packResidue)
@@ -10485,6 +10485,8 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
     {
         if (!u.hostile || u.guid == pick->guid || r.passed.count(u.guid))
             continue;
+        if (std::fabs(u.z - s.z) > kPackResidueZYd)
+            continue; // another floor: not in this pull's fight, however near it stands in x/y
         if (pick->formation && u.formation == pick->formation)
             continue; // its own formation comes with it anyway
         float const py = pathYd(u);
