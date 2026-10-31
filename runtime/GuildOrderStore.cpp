@@ -9,6 +9,7 @@
 #include "../host/ModuleLog.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/GuildOrderSources.h"
+#include "../ai/playerbot/GuildOrderCraft.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "../runtime/BotManager.h"
 #include "PlayerbotAIStorage.h"
@@ -41,6 +42,8 @@ namespace GuildOrders
 {
 namespace
 {
+using ::ai::FindCraftSpellFor;
+using ::ai::PlanGuildOrderSources;
 
 // Progress lines at most every 5 s per order; state changes always go out.
 inline constexpr uint32_t kProgressReportMs = 5000;
@@ -898,6 +901,7 @@ std::vector<uint32_t> BranchItems(uint32_t parentBotGuidLow)
     return items;
 }
 
+void SendOrderLine(OrderRecord const& order, uint32_t have);
 // One drained queue entry: pick a free guild bot that can make the item, or
 // farm it when no maker is free. Only busy candidates keep the request
 // queued for the next Update; no candidate at all returns false so the
@@ -1006,7 +1010,7 @@ bool SubOrderCandidateUsable(Player* bot, uint32_t itemId, bool& canMake, bool& 
     canFarm = false;
     if (!bot || !bot->IsInWorld() || !itemId)
         return false;
-    if (ai::FindCraftSpellFor(bot, itemId))
+    if (FindCraftSpellFor(bot, itemId))
     {
         canMake = true;
         return true;
