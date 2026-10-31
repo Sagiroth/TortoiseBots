@@ -60,15 +60,18 @@ int main()
     tabsDenied.clear();
     CHECK(FormatTabList(tabsDenied) == "-");
 
-    // Only ranks 0 and 1 may withdraw bank gold.
-    CHECK(BotRankMayWithdrawGold(0));
-    CHECK(BotRankMayWithdrawGold(1));
-    CHECK(!BotRankMayWithdrawGold(2));
+    // Only ranks 0 and 1 may withdraw bank gold, and only from an unlocked bank.
+    CHECK(BotRankMayWithdrawGold(0, true));
+    CHECK(BotRankMayWithdrawGold(1, true));
+    CHECK(!BotRankMayWithdrawGold(2, true));
+    CHECK(!BotRankMayWithdrawGold(0, false));
+    CHECK(!BotRankMayWithdrawGold(1, false));
 
-    // The red header shows when neither tabs nor gold are reachable.
-    CHECK(BotRankHasNoAccess({}, false));
-    CHECK(!BotRankHasNoAccess({1}, false));
-    CHECK(!BotRankHasNoAccess({}, true));
+    // The red header shows when anything is missing: any denied tab, or no gold.
+    CHECK(BotRankHasNoAccess({}, {}, false));
+    CHECK(BotRankHasNoAccess({1}, {2}, true));
+    CHECK(BotRankHasNoAccess({1, 2}, {}, false));
+    CHECK(!BotRankHasNoAccess({1, 2}, {}, true));
 
     if (failures == 0)
         std::printf("test_guild_order_access_policy ok\n");

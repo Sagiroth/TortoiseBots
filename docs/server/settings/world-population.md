@@ -63,7 +63,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.UnstuckHearthMinDistance`](#aiplayerbotunstuckhearthmindistance) | `300` | Minimum distance from bind point before an unstuck bot casts hearthstone. |
 | [`AiPlayerbot.BotQuestLogUpkeep`](#aiplayerbotbotquestlogupkeep) | `1` | Enables autonomous quest log pruning, turn-in prioritization, and cleanup. |
 | [`AiPlayerbot.AutoDoQuests`](#aiplayerbotautodoquests) | `1` | Pool bots quest and travel on their own; off also disables guild orders. |
-| [`AiPlayerbot.GuildOrderBotRank`](#aiplayerbotguildorderbotrank) | `1` | Rank every bot in a guild holds for guild bank access; `0` leaves ranks alone. |
+| [`AiPlayerbot.GuildOrderBotRank`](#aiplayerbotguildorderbotrank) | `1` | Whether bots in a guild with a real player share one rank for guild bank access. |
 | [`AiPlayerbot.LeaveOutgrownZones`](#aiplayerbotleaveoutgrownzones) | `1` | Forces bots to travel to level-appropriate zones when outleveling an area. |
 | [`AiPlayerbot.AllowIsolatedCustomStartingZones`](#aiplayerbotallowisolatedcustomstartingzones) | `0` | Normalizes bots created in isolated custom islands to mainland start zones. |
 | [`AiPlayerbot.EnableRandomTeleports`](#aiplayerbotenablerandomteleports) | `1` | Scatters newly seeded bots to level-appropriate overworld destinations. |
@@ -698,13 +698,13 @@ With this off, pool bots get no quest travel data and never pick the travel, fis
 </details>
 
 ### `AiPlayerbot.GuildOrderBotRank`
-The rank every bot in a guild holds for guild bank access.
-**Default:** `1` · **Values:** `0` leaves ranks alone, otherwise a rank index · **Restart:** needed
+Whether bots share one guild rank for guild bank access.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-Every bot in a guild holds the guild's bot rank, so the guild master can open bank tabs to one rank for all bots. New bots join at that rank at once and bots already in the guild are moved there once when the server starts; the stored choice (`.bot order rank`) wins over this default, and `0` (or clearing the choice) disables the feature. Your own characters are never moved. See [Guild Orders](../../play/guild-orders.md#guild-bank-access).
+When on, every bot in a guild with a real player member holds the guild's bot rank (by default the rank below the guild master, or the rank picked with `.bot order rank`), so the guild master can open bank tabs to one rank for all bots. New bots join at that rank at once and bots already in the guild are moved there once when the server starts; all-bot guilds keep their own ranks. When off, ranks stay as they are and `.bot order access` answers `TBM:ORDER_ACCESS|-|-|-|-|0|0` (the addon shows that the server does not manage bot ranks). Your own characters are never moved. See [Guild Orders](../../play/guild-orders.md#guild-bank-access).
 
 </details>
 

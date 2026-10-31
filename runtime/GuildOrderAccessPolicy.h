@@ -100,16 +100,19 @@ inline std::string FormatTabList(std::vector<uint32_t> const& tabs)
 }
 
 // Only the guild master rank may withdraw bank gold: the core money rule
-// lets ranks 0 and 1 through.
-inline bool BotRankMayWithdrawGold(uint32_t botRank)
+// lets ranks 0 and 1 through, and only when the guild bank is unlocked (a
+// guild_bank_tabs row exists).
+inline bool BotRankMayWithdrawGold(uint32_t botRank, bool bankUnlocked)
 {
-    return botRank <= 1;
+    return bankUnlocked && botRank <= 1;
 }
 
-// The red header shows when the bot rank reaches no bank tab at all.
-inline bool BotRankHasNoAccess(std::vector<uint32_t> const& tabsOk, bool goldOk)
+// The red header shows when anything is missing: any denied bank tab, or no
+// gold access.
+inline bool BotRankHasNoAccess(std::vector<uint32_t> const& tabsOk, std::vector<uint32_t> const& tabsDenied, bool goldOk)
 {
-    return tabsOk.empty() && !goldOk;
+    (void)tabsOk;
+    return !tabsDenied.empty() || !goldOk;
 }
 
 } // namespace GuildOrders

@@ -1,7 +1,8 @@
 -- Guild orders: per-guild bot rank for guild bank access. `bot_rank` is the
 -- rank every bot in the guild is moved to (default 1, the highest rank below
--- the guild master); 0 means the feature is off for that guild and ranks
--- stay as they are. One row per guild, written when the master picks a rank.
+-- the guild master); it always holds a real rank (1 to the lowest rank), one
+-- row per guild written when the master picks a rank. The on/off switch is
+-- `AiPlayerbot.GuildOrderBotRank`, not this table.
 -- Never edit this file once applied.
 
 CREATE TABLE IF NOT EXISTS `tortoise_bots_guild_bot_rank` (

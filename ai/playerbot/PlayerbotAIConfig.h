@@ -659,10 +659,10 @@ public:
     bool forceActiveWhenNearPlayer;
     bool limitCombatActivity;
     bool guildOrderAlwaysActive;
-    // Guild bank access for guild bots: the guild master picks one rank for
-    // all bots (`.bot order rank`), defaulting to the rank below the master.
-    // 0 leaves ranks alone; the bank step then depends on each bot's rank.
-    uint32_t guildOrderBotRank;
+    // Guild bank access for guild bots: every bot in a guild with a real
+    // player member holds one shared rank (`.bot order rank` picks it,
+    // defaulting to the rank below the master).
+    bool guildOrderBotRank;
     uint32 botActiveAlone;
     uint32 minEnchantingBotLevel;
     // Ordered pull: DPS hold after the tank's pull lands (pull) or after the

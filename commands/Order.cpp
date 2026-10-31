@@ -444,9 +444,9 @@ bool HandleOrderRank(ChatHandler* handler, Player* requester, std::string const&
         return true;
     }
     GuildOrders::ApplyBotRankToGuild(guildId);
+    SendActionAck(handler, "order", "rank:" + std::to_string(wanted), 1, "rank");
     handler->PSendSysMessage("%s",
         GuildOrders::FormatAccessLine(guildId, requester->GetGUIDLow()).c_str());
-    SendActionAck(handler, "order", "rank:" + std::to_string(wanted), 1, "rank");
     return true;
 }
 

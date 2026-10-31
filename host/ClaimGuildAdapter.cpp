@@ -19,8 +19,11 @@ void ClaimGuildAdapter::OnAddMember(Guild* guild, Player* player, uint8& rank)
         return;
 
     // The core inserts the member with this rank right after the hook, so a
-    // bot joins at the guild's bot rank at once. Anyone else keeps the rank
-    // the core assigned.
+    // bot joins at the guild's bot rank at once. An incoming rank 0 is the
+    // founding guild master (guild creation): never rewrite it. Anyone else
+    // who is not a bot keeps the rank the core assigned.
+    if (rank == GR_GUILDMASTER)
+        return;
     if (std::optional<uint32_t> botRank = GuildOrders::JoinBotRank(guild->GetId(), player->GetGUIDLow()))
         rank = static_cast<uint8>(*botRank);
 }
@@ -33,7 +36,7 @@ void ClaimGuildAdapter::OnRemoveMember(Guild* guild, Player* player, bool /*isDi
     ClaimLifecycle::Instance().OnGuildDelMember(player->GetGUIDLow());
     GuildOrders::OnGuildDelMember(player->GetGUIDLow());
     if (guild)
-        GuildOrders::MarkBotRankGuildStale(guild->GetId());
+        GuildOrders::RefreshBotRankManagement(guild->GetId(), player->GetGUIDLow());
 }
 
 void ClaimGuildAdapter::OnDisband(Guild* guild)

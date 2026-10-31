@@ -652,10 +652,11 @@ AiPlayerbot.DisableActivityPriorities = 1
 # Force bots to become active when guild orders are enabled
 #AiPlayerbot.GuildOrderAlwaysActive = 1
 
-# Guild bank access for guild bots: the rank every bot in a guild holds, so
-# the guild master can open bank tabs to one rank. 1 is the rank below the
-# guild master; 0 leaves ranks alone. The master may still pick another rank
-# with `.bot order rank`.
+# Guild bank access for guild bots: every bot in a guild with a real player
+# holds one shared rank (by default the rank below the guild master, or the
+# rank picked with `.bot order rank`), so the master can open bank tabs to
+# one rank. 1 is on, 0 is off (ranks stay as they are and the addon shows no
+# bot rank).
 #AiPlayerbot.GuildOrderBotRank = 1
 
 # Limit combat activity for slight performance boost.
