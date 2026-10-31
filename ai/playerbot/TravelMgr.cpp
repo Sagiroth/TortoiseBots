@@ -586,6 +586,13 @@ bool RpgTravelDestination::IsPossible(const PlayerTravelInfo& info) const
         if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
             return false;
 
+        // A guild-order mailbox has no faction to judge, and a camp of
+        // higher-level hostiles around one is a death loop: the errand is
+        // never worth it, so its zone may not sit above the bot's level.
+        if (GetPurpose() == TravelDestinationPurpose::Mail && info.IsOrderMailbox() &&
+            destAreaLevel > (int32)info.GetLevel())
+            return false;
+
         // Outgrown services: skip NPCs in zones the bot outlevels by 10+, unless
         // the destination zone is a capital (class trainers, AH and bank live
         // there). A guild-order mailbox is exempt: a bought reagent waits in the
