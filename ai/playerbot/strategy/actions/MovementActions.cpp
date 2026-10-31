@@ -289,7 +289,9 @@ bool MovementAction::UseTaxi(PlayerbotAI* ai, uint32 entry, bool needNpc)
 
     bool goTaxi = ai::BotTaxiRouteAllowed({ tEntry->from, tEntry->to }) && bot->ActivateTaxiPathTo({tEntry->from, tEntry->to}, unit, 1);
 
-    if (!goTaxi)
+    if (goTaxi)
+        ai::BotInstantFlightFinish(bot, {tEntry->from, tEntry->to});
+    else
         bot->SetMoney(botMoney);
 
     return goTaxi;

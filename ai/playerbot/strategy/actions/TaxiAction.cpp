@@ -70,6 +70,8 @@ bool TaxiAction::Execute(Event& event)
             TaxiPathEntry const* entry = sTaxiPathStore.LookupEntry(path);
             if (!entry) return false;
             bool didTaxi = ai::BotTaxiRouteAllowed({ entry->from, entry->to }) && bot->ActivateTaxiPathTo({ entry->from, entry->to }, npc, 0);
+            if (didTaxi)
+                ai::BotInstantFlightFinish(bot, { entry->from, entry->to });
             return didTaxi;
         }
         if (!movement.taxiNodes.empty() && (!ai::BotTaxiRouteAllowed(movement.taxiNodes) || !bot->ActivateTaxiPathTo(movement.taxiNodes, npc)))
@@ -81,6 +83,8 @@ bool TaxiAction::Execute(Event& event)
             return false;
         }
 
+        if (!movement.taxiNodes.empty())
+            ai::BotInstantFlightFinish(bot, movement.taxiNodes);
 
         return true;
     }
