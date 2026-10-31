@@ -1,6 +1,7 @@
 #include "AhMarketService.h"
 #include "runtime/policy/ah/AhBuyerPolicy.h"
 #include "runtime/policy/ah/AhSellerTeleportPolicy.h"
+#include "runtime/policy/ah/AhSellPolicy.h"
 #include "runtime/policy/ah/AhSyntheticMarketPolicy.h"
 #include "BotActivityLease.h"
 #include "runtime/policy/ah/TradingLeasePolicy.h"
@@ -484,6 +485,8 @@ bool AhMarketService::IsSyntheticItem(uint32_t itemGuidLow) const
 
 bool AhMarketService::IsItemBlacklisted(uint32_t itemId) const
 {
+    if (ai::AhItemSellBlacklisted(itemId, sPlayerbotAIConfig.ahSellBlacklist))
+        return true;
     auto it = m_overrides.find(itemId);
     if (it != m_overrides.end())
         return ai::AhItemBlacklisted(it->second.value, it->second.add_chance);
@@ -716,8 +719,7 @@ bool AhMarketService::IsItemEligible(ItemPrototype const* proto, bool forced) co
         proto->RequiredLevel, m_maxRequiredLevel,
         proto->ItemLevel, m_maxItemLevel,
         uint32_t(proto->Bonding), proto->Flags,
-        ai::ItemUsageValue::IsItemSoldByAnyVendor(proto) &&
-            !ai::ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(proto));
+        ai::ItemUsageValue::IsItemSoldByAnyVendorWithoutLimit(proto));
 }
 
 uint32_t AhMarketService::CalculatePrice(ItemPrototype const* proto) const

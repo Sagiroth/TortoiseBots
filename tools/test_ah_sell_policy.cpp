@@ -14,9 +14,9 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <list>
 #include <sstream>
 #include <string>
-#include <unordered_set>
 
 static int checks = 0;
 #define CHECK(cond) do { \
@@ -70,16 +70,16 @@ static std::string CodeDefault()
 int main()
 {
     // Blacklist membership is exact: listed ids are blocked, others pass.
-    std::unordered_set<uint32_t> blacklist = { ai::kAhSellBlacklistDefault };
+    std::list<uint32_t> blacklist = { ai::kAhSellBlacklistDefault };
     CHECK(ai::AhItemSellBlacklisted(18256, blacklist));
     CHECK(!ai::AhItemSellBlacklisted(18257, blacklist));
-    CHECK(!ai::AhItemSellBlacklisted(18256, std::unordered_set<uint32_t>()));
+    CHECK(!ai::AhItemSellBlacklisted(18256, std::list<uint32_t>()));
 
-    // Unlimited vendor stock: sold by a vendor with no limited maxcount.
-    CHECK(ai::AhUnlimitedVendorStock(true, false));
-    CHECK(!ai::AhUnlimitedVendorStock(true, true));
-    CHECK(!ai::AhUnlimitedVendorStock(false, false));
-    CHECK(!ai::AhUnlimitedVendorStock(false, true));
+    // Unlimited vendor stock: any vendor selling without a limit blocks the
+    // item, even when other vendors limit it (Imbued Vial: 60 unlimited
+    // rows alongside 14 limited ones still counts as unlimited).
+    CHECK(ai::AhUnlimitedVendorStock(true));
+    CHECK(!ai::AhUnlimitedVendorStock(false));
 
     // Synthetic supply rejects unlimited vendor stock even when eligible.
     CHECK(!ai::AhItemEligible(false, false, true, 1, 4, 0, 60, 55, 60, 0, 0, true));

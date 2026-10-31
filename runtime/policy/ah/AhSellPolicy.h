@@ -1,19 +1,26 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
-#include <unordered_set>
 
 namespace ai
 {
     inline uint32_t const kAhSellBlacklistDefault = 18256;
 
-    inline bool AhItemSellBlacklisted(uint32_t itemId, std::unordered_set<uint32_t> const& blacklist)
+    // Owner-editable blocklist (AiPlayerbot.AhSellBlacklist): exact id match.
+    // Works on any id container so bot inventory, vendor-flip and synthetic
+    // supply checks share this one rule.
+    template <typename Container>
+    inline bool AhItemSellBlacklisted(uint32_t itemId, Container const& blacklist)
     {
-        return blacklist.count(itemId) > 0;
+        return std::find(blacklist.begin(), blacklist.end(), itemId) != blacklist.end();
     }
 
-    inline bool AhUnlimitedVendorStock(bool soldByAnyVendor, bool limitedMaxCount)
+    // Owner rule: an item has unlimited vendor stock when ANY vendor sells it
+    // without a stock limit, even if other vendors limit it (Imbued Vial:
+    // 60 unlimited rows alongside 14 limited ones still counts).
+    inline bool AhUnlimitedVendorStock(bool soldByAnyVendorWithoutLimit)
     {
-        return soldByAnyVendor && !limitedMaxCount;
+        return soldByAnyVendorWithoutLimit;
     }
 } // namespace ai
