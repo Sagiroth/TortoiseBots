@@ -24426,6 +24426,54 @@ static void TestRaidWalkJoinLeavesInsideFortyToTheOffTank()
     CHECK(!r.guardReturn);
 }
 
+// The join's band is the MOB's own distance from the main tank, (kGuardYd, kRaidWalkJoinYd]: the 40 yd pickers need the
+// mob within kGuardYd, so a mob at 30 yd in the list (the glue never puts one there) is never picked, one at 45 is,
+// and one at 56 is not. (Round 3 of #1368: the read used to decide by the victim's distance.)
+static void TestRaidWalkJoinPicksByMobDistance()
+{
+    struct Case { float yd; bool joins; };
+    for (Case c : {Case{30.0f, false}, Case{kGuardYd, false}, Case{kGuardYd + 0.1f, true}, Case{45.0f, true},
+                   Case{56.0f, false}})
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 0), Step(PlanStepKind::Move, 100)};
+        Facts f = RaidTrashFacts(false);
+        Run r = Start(&plan);
+        Tick(r, f);
+        CHECK(r.step == 1);
+        CHECK(Tick(r, f) == "move 100.0 0.0 0.0");
+        f.anyInCombat = true;
+        f.raid.walkAttackers = {Hitter(41, 11350, c.yd)};
+        for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+            CHECK(Tick(r, f).empty());
+        if (c.joins)
+        {
+            CHECK(Tick(r, f) == "attack 41 Tanky");
+            CHECK(r.raidWalkJoined);
+        }
+        else
+        {
+            CHECK(Tick(r, f).empty());
+            CHECK(!r.raidWalkJoined);
+            CHECK(r.note.find("joins the raid's fight") == std::string::npos);
+        }
+    }
+    // The nearest in-band mob wins over a nearer one the list should not hold: 30 yd is skipped, 45 is picked.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 0), Step(PlanStepKind::Move, 100)};
+        Facts f = RaidTrashFacts(false);
+        Run r = Start(&plan);
+        Tick(r, f);
+        Tick(r, f);
+        f.anyInCombat = true;
+        f.raid.walkAttackers = {Hitter(42, 11350, 30.0f), Hitter(41, 11350, 45.0f)};
+        for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+            CHECK(Tick(r, f).empty());
+        CHECK(Tick(r, f) == "attack 41 Tanky");
+    }
+}
+
 // The engage-on-arrival order keeps priority: a healer's attacker within kGuardYd goes first, and the tank's stay is over.
 static void TestRaidWalkJoinYieldsToEngageOnArrival()
 {
@@ -25440,6 +25488,7 @@ int main()
     TestRaidWalkJoinNotInPartyRuns();
     TestRaidWalkJoinStaysInSight();
     TestRaidWalkJoinLeavesInsideFortyToTheOffTank();
+    TestRaidWalkJoinPicksByMobDistance();
     TestRaidWalkJoinYieldsToEngageOnArrival();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;

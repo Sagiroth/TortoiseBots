@@ -770,9 +770,9 @@ struct RaidFacts
     // Living tanks other than the lead bot, on its map within kGuardYd of it and out of a commander task, in the
     // layout's order: the raid trash fights send a loose mob to them (RaidTrashFight, CheckGuard).
     std::vector<std::string> offTanksAlive;
-    // Raid trash fights on a move step only: mobs hitting a raid member whose victim is farther than kGuardYd from the
-    // lead bot and within kRaidWalkJoinYd, the band the guard's pick cannot reach (partyAttackers keeps the kGuardYd
-    // read; RaidWalkJoin reads this list alone). distLead, hitting, hostile, attackable, evading, polymorphed,
+    // Raid trash fights on a move step only: mobs hitting a raid member (a pet too, at any distance up to
+    // kRaidWalkJoinYd) whose own distLead is farther than kGuardYd and within kRaidWalkJoinYd, the band the guard's pick
+    // cannot reach (partyAttackers keeps the kGuardYd read; RaidWalkJoin reads this list alone). distLead, hitting, hostile, attackable, evading, polymorphed,
     // castingAtRange and campIdle are set as for partyAttackers.
     std::vector<UnitFact> walkAttackers;
 };
@@ -12441,8 +12441,9 @@ inline const UnitFact* RaidAssistTarget(const Run& r, const Facts& f)
 // behind it, and every lift stops at kGuardYd, so it fights nothing at all (ZG walks 7/9/11, six step-6 fights: 35-55 yd
 // from the hurt mobs, 0 damage dealt). A move step's stay is the walk's end, not a stand chosen for the pack, so the main
 // tank joins the fight: the nearest mob hitting a raid member (any of them, a pet too) in the band the guard's kGuardYd
-// pick cannot reach, up to kRaidWalkJoinYd (Facts::raid.walkAttackers alone; mobs inside kGuardYd stay with
-// GuardTarget). The mob picked already (raidWalkJoinGuid) stays the pick while it is still eligible. Null otherwise.
+// pick cannot reach: the mob's own distance from the tank is in (kGuardYd, kRaidWalkJoinYd], whatever the distance of the
+// raid member it hits (Facts::raid.walkAttackers alone; mobs inside kGuardYd stay with GuardTarget). The mob picked
+// already (raidWalkJoinGuid) stays the pick while it is still eligible. Null otherwise.
 inline const UnitFact* RaidWalkJoinTarget(const Run& r, const Facts& f)
 {
     if (!RaidTrashFight(r, f) || !Current(r) || Current(r)->kind != PlanStepKind::Move || !f.leadAlive || !f.leadIsTank ||
@@ -12450,8 +12451,8 @@ inline const UnitFact* RaidWalkJoinTarget(const Run& r, const Facts& f)
         return nullptr;
     auto const eligible = [&r](const UnitFact& u)
     {
-        return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting && u.distLead <= kRaidWalkJoinYd &&
-            !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
+        return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting &&
+            u.distLead > kGuardYd && u.distLead <= kRaidWalkJoinYd && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
     };
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.raid.walkAttackers)

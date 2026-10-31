@@ -154,6 +154,30 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("fact.polymorphed = RunCcHeld(nearestHit);", guard)
         self.assertIn("fact.polymorphed = RunCcHeld(attacker);", guard)
 
+    def test_raid_walk_read_partitions_by_the_mobs_own_distance(self):
+        # #1368 round 3: the 40 yd pickers need the MOB within kGuardYd of the lead bot, so the raid walk list holds a
+        # mob by its own distance from the lead bot (kGuardYd to kRaidWalkJoinYd), whatever the distance of the bot or
+        # pet it hits, and never a mob inside kGuardYd.
+        guard = strip_comments(body(COMMANDS, "void ReadGuardFacts(", "\n}\n"))
+        add = body(guard, "auto const addAttackers = [&]", "\n    };\n")
+        self.assertIn("float const mobYd = lead->GetDistance(attacker);", add)
+        self.assertIn("bool const inWalk = toWalk && mobYd > TortoiseBots::DungeonRun::kGuardYd &&", add)
+        self.assertIn("mobYd <= TortoiseBots::DungeonRun::kRaidWalkJoinYd &&", add)
+        self.assertIn("seenWalk.insert(attacker->GetObjectGuid().GetRawValue()).second", add)
+        self.assertIn("fact.distLead = mobYd;", add)
+        self.assertIn("f.raid.walkAttackers.push_back(fact);", add)
+        self.assertIn("f.partyAttackers.push_back(fact);", add)
+        # A victim up to kRaidWalkJoinYd away feeds both loops' bots and pets; partyAttackers only from within kGuardYd.
+        self.assertIn("float const victimYd = walkOn ? TortoiseBots::DungeonRun::kRaidWalkJoinYd : kGuardYd;", guard)
+        self.assertIn("bool const toParty = botYd <= kGuardYd;", guard)
+        self.assertIn("PlayerbotAI::IsTank(bot), toParty, walkOn);", guard)
+        self.assertIn("addAttackers(pet, false, true, false, toParty, walkOn);", guard)
+        # The old split by the victim's distance (the walk list as an output of a second bot loop) is gone.
+        self.assertNotIn("PlayerbotAI::IsTank(bot), f.raid.walkAttackers", guard)
+        self.assertNotIn("yd > TortoiseBots::DungeonRun::kGuardYd && yd <=", guard)
+        # The read gate stays: the lead bot on stay, the run not joined this fight.
+        self.assertIn("bool const walkOn = raidWalk && f.leadStaying;", guard)
+
     def test_focus_skull_and_camp_casters_are_wired(self):
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
         tick = body(COMMANDS, "void TickDungeonRun(uint64 commanderRaw, uint32 dt)", "\n}\n")

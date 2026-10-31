@@ -8086,22 +8086,37 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
         fact.attackable = GroupCanAttack(lead, nearestHit); // never engaged when it cannot be attacked
         f.leadHasAttacker = true;
     }
+    // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
+    // every kGuardYd pick, which needs the MOB within kGuardYd of the lead bot. Each mob goes in f.raid.walkAttackers
+    // by its own distance from the lead bot (kGuardYd to kRaidWalkJoinYd), whatever the distance of the bot or pet it
+    // hits (up to kRaidWalkJoinYd); a mob within kGuardYd never does (DungeonRun::RaidWalkJoin reads that list alone,
+    // and only for the tank on stay that has not joined this fight).
+    bool const walkOn = raidWalk && f.leadStaying;
+    // One entry per mob in each list: a mob has one victim, the sets keep a repeat of it out.
     std::unordered_set<uint64> seen;
+    std::unordered_set<uint64> seenWalk;
     // The mobs that have `victim` (a bot or a pet) as their victim, each once.
-    // `tankVictim`: the victim is a tank (an off-tank holding the mob).
-    auto const addAttackers = [&](Unit* victim, bool healer, bool petVictim, bool tankVictim,
-        std::vector<UnitFact>& out)
+    // `tankVictim`: the victim is a tank (an off-tank holding the mob). `toParty`: the victim is within kGuardYd of the
+    // lead bot (the mobs go in f.partyAttackers, as on dev); `toWalk`: the walk read is on (the mobs in the band go in
+    // f.raid.walkAttackers).
+    auto const addAttackers = [&](Unit* victim, bool healer, bool petVictim, bool tankVictim, bool toParty, bool toWalk)
     {
         for (Unit* attacker : victim->GetAttackers())
         {
             if (!attacker || !attacker->IsAlive() || attacker->GetVictim() != victim ||
-                !seen.insert(attacker->GetObjectGuid().GetRawValue()).second ||
                 sServerFacade.IsFriendlyTo(attacker, lead))
+                continue;
+            float const mobYd = lead->GetDistance(attacker);
+            bool const inParty = toParty && seen.insert(attacker->GetObjectGuid().GetRawValue()).second;
+            bool const inWalk = toWalk && mobYd > TortoiseBots::DungeonRun::kGuardYd &&
+                mobYd <= TortoiseBots::DungeonRun::kRaidWalkJoinYd &&
+                seenWalk.insert(attacker->GetObjectGuid().GetRawValue()).second;
+            if (!inParty && !inWalk)
                 continue;
             UnitFact fact;
             fact.guid = attacker->GetObjectGuid().GetRawValue();
             fact.entry = attacker->GetEntry();
-            fact.distLead = lead->GetDistance(attacker);
+            fact.distLead = mobYd;
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
             fact.engaged = true;
@@ -8116,41 +8131,31 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.attackable = GroupCanAttack(lead, attacker); // never picked up when it cannot be attacked
             if (hold)
                 fact.distSpot = DistanceTo(attacker, hold->x, hold->y, hold->z);
-            out.push_back(fact);
+            if (inParty)
+                f.partyAttackers.push_back(fact);
+            if (inWalk)
+                f.raid.walkAttackers.push_back(fact);
         }
     };
+    // The bots (and their pets) the mobs hit: within kGuardYd of the lead bot for partyAttackers, up to
+    // kRaidWalkJoinYd for the walk read.
+    float const victimYd = walkOn ? TortoiseBots::DungeonRun::kRaidWalkJoinYd : kGuardYd;
     for (Player* bot : bots)
     {
-        if (!bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != lead->GetMap() ||
-            (bot != lead && bot->GetDistance(lead) > kGuardYd))
+        if (!bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != lead->GetMap())
             continue;
-        // The lead bot's own mobs are leadHit / leadAttacker, not partyAttackers.
+        float const botYd = bot == lead ? 0.0f : bot->GetDistance(lead);
+        if (botYd > victimYd)
+            continue;
+        bool const toParty = botYd <= kGuardYd;
+        // The lead bot's own mobs are leadHit / leadAttacker, not partyAttackers (nor walkAttackers).
         if (bot != lead)
-            addAttackers(bot, PlayerbotAI::IsHeal(bot), false, PlayerbotAI::IsTank(bot), f.partyAttackers);
+            addAttackers(bot, PlayerbotAI::IsHeal(bot), false, PlayerbotAI::IsTank(bot), toParty, walkOn);
         // A living pet in the world (a hunter's or warlock's, the lead's too):
         // the mobs on it come last in GuardPick, after every mob on a bot.
         Unit* pet = bot->GetPet();
         if (pet && pet->IsAlive() && pet->IsInWorld())
-            addAttackers(pet, false, true, false, f.partyAttackers);
-    }
-    if (raidWalk && f.leadStaying)
-    {
-        // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
-        // every kGuardYd lift. The mobs on the bots between kGuardYd and kRaidWalkJoinYd go in their own list
-        // (DungeonRun::RaidWalkJoin reads it alone, and only for the tank on stay); the seen set keeps a mob in one list
-        // only.
-        for (Player* bot : bots)
-        {
-            if (!bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != lead->GetMap() || bot == lead)
-                continue;
-            float const yd = bot->GetDistance(lead);
-            if (!(yd > TortoiseBots::DungeonRun::kGuardYd && yd <= TortoiseBots::DungeonRun::kRaidWalkJoinYd))
-                continue;
-            addAttackers(bot, PlayerbotAI::IsHeal(bot), false, PlayerbotAI::IsTank(bot), f.raid.walkAttackers);
-            Unit* pet = bot->GetPet();
-            if (pet && pet->IsAlive() && pet->IsInWorld())
-                addAttackers(pet, false, true, false, f.raid.walkAttackers);
-        }
+            addAttackers(pet, false, true, false, toParty, walkOn);
     }
 }
 
