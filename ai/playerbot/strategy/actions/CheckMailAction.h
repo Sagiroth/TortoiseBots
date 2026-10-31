@@ -27,6 +27,6 @@ namespace ai
 
     private:
         void ProcessMail(Mail* mail, Player* owner);
-        static Player* GetProcessableOwner(Mail* mail);
+        static Player* GetProcessableOwner(Mail* mail, Player* bot);
     };
 }

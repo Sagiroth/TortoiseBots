@@ -30,7 +30,7 @@ bool CheckMailAction::Execute(Event& event)
         if (!mail || mail->state == MAIL_STATE_DELETED)
             continue;
 
-        Player* owner = GetProcessableOwner(mail);
+        Player* owner = GetProcessableOwner(mail, bot);
         if (!owner)
             continue;
 
@@ -60,14 +60,14 @@ bool CheckMailAction::isUseful()
     // offline-sender mail is never removed and would otherwise re-trigger this action forever.
     for (PlayerMails::iterator i = master->GetMailBegin(); i != master->GetMailEnd(); ++i)
     {
-        if (GetProcessableOwner(*i))
+        if (GetProcessableOwner(*i, bot))
             return true;
     }
 
     return false;
 }
 
-Player* CheckMailAction::GetProcessableOwner(Mail* mail)
+Player* CheckMailAction::GetProcessableOwner(Mail* mail, Player* bot)
 {
     if (!mail || mail->state == MAIL_STATE_DELETED)
         return nullptr;
