@@ -2484,7 +2484,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             uint32(AI_VALUE2(int32, "manual int", "guild order no banker")));
         if (mailLeg)
         {
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]() mutable
                 {
                     // The search runs on its own snapshot: flag the order
                     // mailbox so the outgrown veto keeps the destination.
@@ -2602,7 +2602,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         if (mailRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Bags &&
             OrderMailboxItems(bot, mailItemId) > 0)
         {
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]() mutable
                 {
                     // The search runs on its own snapshot: flag the order
                     // mailbox so the outgrown veto keeps the destination.
@@ -2617,7 +2617,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 ai->GetInventoryItemsCountWithId(order.itemId), mailRecord->delivered,
                 OrderMailboxItems(bot, order.itemId), order.amount, false, false))
         {
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]() mutable
                 {
                     travelInfo.SetOrderMailbox();
                     return sTravelMgr.GetPartitions(center, partitions, travelInfo,
