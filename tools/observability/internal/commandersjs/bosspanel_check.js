@@ -184,23 +184,19 @@ const venReal = B.model(REAL, { entry: 14507, hp: 60, au: [] }, [], 0, 0);
 assert.ok(B.render(REAL, venReal, { open: true, coverage: cov }).includes('href="#/coverage/zulgurub?boss=14507"'),
   "the head links to the raid's coverage card");
 
-// ---- Naxxramas phases: balcony, wave, add and air phases hide the other side's abilities --------------------------
-const nothGround = B.model(REAL, { entry: 15954, hp: 80, au: [] }, [], 0, 0);
-assert.strictEqual(nothGround.phase, "ground");
-assert.strictEqual(nothGround.abilities.find((a) => a.sid === 29213).inPhase, true, "Curse is a ground-phase ability");
-assert.strictEqual(nothGround.abilities.find((a) => a.sid === 29217).inPhase, false, "a champion summon is a balcony ability");
-const nothBalcony = B.model(REAL, { entry: 15954, hp: 80, au: [{ id: 29230 }] }, [], 0, 0);
-assert.strictEqual(nothBalcony.phase, "balcony");
-assert.strictEqual(nothBalcony.abilities.find((a) => a.sid === 29217).inPhase, true);
-assert.strictEqual(nothBalcony.abilities.find((a) => a.sid === 29213).inPhase, false);
+// ---- Naxxramas phases: Noth and Gothik have no aura phase (29230 is passive and never sent), so every
+// ---- ability shows; Thaddius, Sapphiron and Kel'Thuzad still hide the other side's abilities.
+const noth = B.model(REAL, { entry: 15954, hp: 80, au: [] }, [], 0, 0);
+assert.strictEqual(noth.phase, "ground");
+assert.ok(noth.abilities.every((a) => a.inPhase), "no Noth aura phase: every ability shows");
+assert.strictEqual(noth.abilities.find((a) => a.sid === 29213).inPhase, true, "Curse shows");
+assert.strictEqual(noth.abilities.find((a) => a.sid === 29217).inPhase, true, "a champion summon shows");
 
-const gothikGround = B.model(REAL, { entry: 16060, hp: 80, au: [] }, [], 0, 0);
-assert.strictEqual(gothikGround.phase, "ground");
-assert.strictEqual(gothikGround.abilities.find((a) => a.sid === 29317).inPhase, true);
-const gothikWaves = B.model(REAL, { entry: 16060, hp: 80, au: [{ id: 29230 }] }, [], 0, 0);
-assert.strictEqual(gothikWaves.phase, "waves");
-assert.strictEqual(gothikWaves.abilities.find((a) => a.sid === 29317).inPhase, false, "Shadow Bolt is ground-only");
-assert.strictEqual(gothikWaves.abilities.find((a) => a.sid === 29230).inPhase, true, "the immunity aura shows in both phases");
+const gothik = B.model(REAL, { entry: 16060, hp: 80, au: [] }, [], 0, 0);
+assert.strictEqual(gothik.phase, "ground");
+assert.ok(gothik.abilities.every((a) => a.inPhase), "no Gothik aura phase: every ability shows");
+assert.strictEqual(gothik.abilities.find((a) => a.sid === 29317).inPhase, true, "Shadow Bolt shows");
+assert.strictEqual(gothik.abilities.find((a) => a.sid === 28679).inPhase, true, "Harvest Soul shows");
 
 const thaddAdds = B.model(REAL, { entry: 15928, hp: 100, au: [{ id: 28160 }] }, [], 0, 0);
 assert.strictEqual(thaddAdds.phase, "adds");

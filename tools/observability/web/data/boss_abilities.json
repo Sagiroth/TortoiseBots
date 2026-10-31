@@ -3418,7 +3418,7 @@
           "a": 0,
           "b": 0,
           "c": 0,
-          "phase": "ground",
+          "phase": "",
           "target": "victim",
           "aura": true,
           "self": false,
@@ -3439,7 +3439,7 @@
           "a": 0,
           "b": 0,
           "c": 0,
-          "phase": "ground",
+          "phase": "",
           "target": "aoe",
           "aura": true,
           "self": false,
@@ -3460,7 +3460,7 @@
           "a": 0,
           "b": 0,
           "c": 0,
-          "phase": "ground",
+          "phase": "",
           "target": "self",
           "aura": false,
           "self": false,
@@ -3481,7 +3481,7 @@
           "a": 0,
           "b": 0,
           "c": 0,
-          "phase": "ground",
+          "phase": "",
           "target": "self",
           "aura": false,
           "self": false,
@@ -3502,7 +3502,7 @@
           "a": 0,
           "b": 0,
           "c": 0,
-          "phase": "ground",
+          "phase": "",
           "target": "self",
           "aura": false,
           "self": false,
@@ -3523,7 +3523,7 @@
           "a": 0,
           "b": 0,
           "c": 0,
-          "phase": "ground",
+          "phase": "",
           "target": "self",
           "aura": false,
           "self": false,
@@ -3544,7 +3544,7 @@
           "a": 0,
           "b": 0,
           "c": 0,
-          "phase": "ground",
+          "phase": "",
           "target": "self",
           "aura": false,
           "self": false,
@@ -3565,7 +3565,7 @@
           "a": 0,
           "b": 0,
           "c": 0,
-          "phase": "balcony",
+          "phase": "",
           "target": "self",
           "aura": false,
           "self": false,
@@ -3586,7 +3586,7 @@
           "a": 0,
           "b": 0,
           "c": 0,
-          "phase": "ground",
+          "phase": "",
           "target": "self",
           "aura": false,
           "self": false,
@@ -3607,7 +3607,7 @@
           "a": 0,
           "b": 0,
           "c": 0,
-          "phase": "balcony",
+          "phase": "",
           "target": "self",
           "aura": false,
           "self": false,
@@ -3628,7 +3628,7 @@
           "a": 0,
           "b": 0,
           "c": 0,
-          "phase": "balcony",
+          "phase": "",
           "target": "self",
           "aura": false,
           "self": false,
@@ -3641,41 +3641,12 @@
           "hp": 0,
           "ok": "",
           "okNeeds": {}
-        },
-        {
-          "sid": 29230,
-          "name": "Immune All",
-          "castMs": 0,
-          "a": 0,
-          "b": 0,
-          "c": 0,
-          "phase": "",
-          "target": "self",
-          "aura": false,
-          "self": true,
-          "mark": false,
-          "ground": false,
-          "cone": false,
-          "tail": false,
-          "int": false,
-          "summon": 0,
-          "hp": 0,
-          "ok": "phase",
-          "okNeeds": {}
         }
       ],
       "phases": [
         {
-          "name": "balcony",
-          "order": 1,
-          "rule": {
-            "kind": "aura",
-            "aura": 29230
-          }
-        },
-        {
           "name": "ground",
-          "order": 2,
+          "order": 1,
           "rule": {
             "kind": "start"
           }
@@ -3709,7 +3680,7 @@
       ],
       "notes": [
         "Blink picks one of 29208-29211 at random every 30-40 s and casts Cripple on players at the old spot.",
-        "Balcony: first teleport at 90 s; later ones 110 s after the first ground phase and 180 s after the second. A balcony lasts 70, 95 then 120 s. On it he is immune and stops Curse, Blink and warrior summons.",
+        "Balcony: first teleport at 90 s; later ones 110 s after the first ground phase and 180 s after the second. A balcony lasts 70, 95 then 120 s; adds spawn 5-7 s in and once more 25, 44 then 57 s later. On it he is immune and stops Curse, Blink and warrior summons. The panel cannot see the phase change: 29230 is a passive aura the module does not send; a module change (send passive auras that have a duration) would enable a phase row.",
         "Curse of the Plaguebringer first at 8-12 s then every 50-60 s; it also hits the 20 closest players to the victim. It is a curse and dispellable.",
         "Warrior summon 29247 is one of 29247/29248/29249 cast together at 10 s then every 30 s; each summons one warrior at a different point. Champion and guardian spells are ten and four location variants led by 29217 and 29226."
       ]
@@ -3843,7 +3814,7 @@
       ],
       "notes": [
         "Decrepit Fever first at 30 s then every 20-25 s; it is re-armed 5 s after a dance ends.",
-        "Dance starts 90 s after the pull and 90 s after the previous dance ends; it lasts 45 s. He stops melee and his ground abilities and the room erupts.",
+        "Dance starts 90 s after the pull and 90 s after the previous dance ends; it lasts 45 s. He stops melee and his ground abilities and the room erupts. Plague Clouds (533002) spawn at the dance start, cast 29350 and live 45 s.",
         "Eruption is cast by summoned fissures: first at 15 s then every 10 s on the ground; first at 4 s then every 3 s in the dance.",
         "Mana Burn repeats every 3 s while a mana user is within 28 yd and retries every 1 s otherwise.",
         "Teleport Self 30211 is also sent for player ports with the player as caster: 40 s after the pull then 18 s and 48 s after a dance ends."
@@ -3884,7 +3855,7 @@
           "b": 0,
           "c": 0,
           "phase": "",
-          "target": "random",
+          "target": "aoe",
           "aura": true,
           "self": false,
           "mark": false,
@@ -3907,7 +3878,7 @@
           "b": 0,
           "c": 0,
           "phase": "",
-          "target": "random",
+          "target": "aoe",
           "aura": true,
           "self": false,
           "mark": false,
@@ -3930,7 +3901,7 @@
           "b": 0,
           "c": 0,
           "phase": "",
-          "target": "random",
+          "target": "aoe",
           "aura": true,
           "self": false,
           "mark": false,
@@ -4051,7 +4022,7 @@
       ],
       "notes": [
         "Poison Aura first at 5 s then every 12 s; Remove Curse first at 5 s then every 30 s.",
-        "Corrupted Mind first at 5 s then every 10 s. It triggers a class debuff: 29194 for priest and druid, 29196 for paladin and 29198 for shaman; 29185 is named in the comment but not cast by the script.",
+        "Corrupted Mind first at 5 s then every 10 s. It triggers one per-class debuff: 29194 for priest and druid, 29196 for paladin and 29198 for shaman; 29185 is named in the comment but not cast by the script.",
         "Inevitable Doom first at 2 min then every 30 s; after the seventh it is every 15 s.",
         "Spores spawn every 13 s and apply Fungal Bloom 29232 to nearby players (EventAI row 1628601); the raid gathers on a spore for the buff.",
         "Eye Stalks use 20 positions around the room: up 15-20 s then down 1-5 s; a killed stalk waits 1-5 s plus 20 s. They cast Mind Flay within 35 yd."
@@ -4180,7 +4151,7 @@
           "a": 1000,
           "b": 1600,
           "c": 2000,
-          "phase": "ground",
+          "phase": "",
           "target": "random",
           "aura": false,
           "self": false,
@@ -4201,7 +4172,7 @@
           "a": 1000,
           "b": 20000,
           "c": 20000,
-          "phase": "ground",
+          "phase": "",
           "target": "aoe",
           "aura": true,
           "self": false,
@@ -4219,10 +4190,10 @@
           "sid": 28025,
           "name": "Teleport Left",
           "castMs": 0,
-          "a": 0,
-          "b": 0,
-          "c": 0,
-          "phase": "ground",
+          "a": 15000,
+          "b": 15000,
+          "c": 20000,
+          "phase": "",
           "target": "self",
           "aura": false,
           "self": false,
@@ -4240,10 +4211,10 @@
           "sid": 28026,
           "name": "Teleport Right",
           "castMs": 0,
-          "a": 0,
-          "b": 0,
-          "c": 0,
-          "phase": "ground",
+          "a": 15000,
+          "b": 15000,
+          "c": 20000,
+          "phase": "",
           "target": "self",
           "aura": false,
           "self": false,
@@ -4256,41 +4227,12 @@
           "hp": 0,
           "ok": "script",
           "okNeeds": {}
-        },
-        {
-          "sid": 29230,
-          "name": "Immune All",
-          "castMs": 0,
-          "a": 0,
-          "b": 0,
-          "c": 0,
-          "phase": "",
-          "target": "self",
-          "aura": false,
-          "self": true,
-          "mark": false,
-          "ground": false,
-          "cone": false,
-          "tail": false,
-          "int": false,
-          "summon": 0,
-          "hp": 0,
-          "ok": "phase",
-          "okNeeds": {}
         }
       ],
       "phases": [
         {
-          "name": "waves",
-          "order": 1,
-          "rule": {
-            "kind": "aura",
-            "aura": 29230
-          }
-        },
-        {
           "name": "ground",
-          "order": 2,
+          "order": 1,
           "rule": {
             "kind": "start"
           }
@@ -4347,7 +4289,7 @@
         }
       ],
       "notes": [
-        "Wave table: 18 waves with 5-20 s between them; the 50 s last gap runs before he teleports down. Each wave summons four trainees, two deathknights or one rider on the living side.",
+        "Wave table: 18 waves with 5-20 s between them; the 50 s last gap runs before he teleports down. Each wave summons four trainees, two deathknights or one rider on the living side. The panel cannot see the phase change: 29230 is a passive aura the module does not send; a module change (send passive auras that have a duration) would enable a phase row.",
         "Each dead living-side add sends a spectral version to the other side through the anchor triggers; gates open at 30% or after four teleports or when one side has one player left.",
         "Shadow Bolt and Harvest Soul are ground-phase only; teleporting stops once the gates open."
       ]
@@ -4839,7 +4781,7 @@
           "b": 1200,
           "c": 1200,
           "phase": "",
-          "target": "victim",
+          "target": "random",
           "aura": false,
           "self": false,
           "mark": false,
@@ -4923,7 +4865,7 @@
       "phases": [],
       "adds": [],
       "notes": [
-        "Hateful Strike every 1.2 s hits the highest-health player among the top four threat in melee, not the main tank; each hit adds 500 threat to those four. After three failed strikes he summons a soaker closer.",
+        "Hateful Strike every 1.2 s targets the highest-health player among the top four threat in melee; the current tank is skipped while other players are in melee and is used only when nobody else is eligible. Each hit adds 500 threat to every player it considered. After three failed strikes he summons a soaker closer.",
         "Berserk at 7 min; Slime Bolt starts 30 s later and repeats every 5 s to stop kiting."
       ]
     },
@@ -4961,8 +4903,8 @@
           "name": "Mutating Injection",
           "castMs": 0,
           "a": 12000,
-          "b": 0,
-          "c": 0,
+          "b": 7000,
+          "c": 13000,
           "phase": "",
           "target": "random",
           "aura": true,
@@ -5358,8 +5300,8 @@
           "name": "Polarity Shift",
           "castMs": 0,
           "a": 0,
-          "b": 0,
-          "c": 0,
+          "b": 30000,
+          "c": 30000,
           "phase": "fight",
           "target": "self",
           "aura": false,
@@ -5382,7 +5324,7 @@
           "b": 0,
           "c": 0,
           "phase": "fight",
-          "target": "random",
+          "target": "aoe",
           "aura": true,
           "self": false,
           "mark": false,
@@ -5405,7 +5347,7 @@
           "b": 0,
           "c": 0,
           "phase": "fight",
-          "target": "random",
+          "target": "aoe",
           "aura": true,
           "self": false,
           "mark": false,
@@ -5526,7 +5468,7 @@
       "notes": [
         "Phase 1 is Stalagg and Feugen. Each fakes death at 0 and revives after 5 s unless both are dead; both dead starts a 15 s transition to Thaddius.",
         "War Stomp 15-20 s on both; Static Field every 6 s (Feugen); Power Surge every 25-30 s (Stalagg); Magnetic Pull every 20.5 s swaps tanks and threat.",
-        "Polarity Shift first at 10 s then every 30 s; 3 s later half the raid gets Positive Charge and half Negative Charge, each player casting it on itself. Same-charge players within 13 yd buff each other through 29659 and 29660 applied by the aura script.",
+        "Polarity Shift first at 10 s then every 30 s; 3 s later every living player is split into halves and casts Positive Charge 28059 or Negative Charge 28084 on itself. Same-charge players within 13 yd buff each other through 29659 and 29660 applied by the aura script.",
         "Ball Lightning only while the tank is out of melee: first 1 s then every 1.5 s. Chain Lightning every 5-7 s. Berserk 5 min after phase 2 starts."
       ]
     },
@@ -5564,7 +5506,7 @@
           "a": 0,
           "b": 0,
           "c": 0,
-          "phase": "ground",
+          "phase": "",
           "target": "aoe",
           "aura": false,
           "self": false,
@@ -5806,7 +5748,7 @@
       "notes": [
         "Ground phase: Life Drain first at 12 s then every 24 s; Cleave first at 5 s then every 5-10 s; Tail Sweep first at 12 s then every 7-10 s. After a landing Life Drain is 3 s and Blizzard 1 s.",
         "Air phase: five icebolts 3.5 s apart after the first at 6 s; then Frost Breath (1.5 s dummy + 0.5 s) and a 7 s cast; he lands 7 s after the breath.",
-        "Icebolt freezes the target in an ice block (game object 181247) for 30 s. Blizzard is a summoned creature whose 28534 aura triggers 28547 every 3 s; a new one is placed every 20 s.",
+        "Icebolt freezes the target in an ice block (game object 181247) for 30 s. Blizzard is a summoned creature whose 28534 aura triggers 28547 every 3 s; each creature lives 30 s and keeps ticking into the air phase, and a new one is placed every 20 s.",
         "Life Drain drains 7-10 random players and heals Sapphiron; Frost Aura is re-applied whenever missing."
       ]
     },

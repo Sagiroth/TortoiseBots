@@ -496,8 +496,8 @@ def _check_ok(flags, text):
                 f"ok.{need}={reason} is only valid as ok.{owner}={reason} in {text!r}"
             )
     reasons = [ok, *ok_needs.values()]
-    if "tank" in reasons and flags["target"] != "victim":
-        raise DataError(f"ok reason tank needs a t=victim row in {text!r}")
+    if "tank" in reasons and flags["target"] not in ("victim", "random"):
+        raise DataError(f"ok reason tank needs a t=victim or t=random row in {text!r}")
 
 
 def parse_phase_rule(text):

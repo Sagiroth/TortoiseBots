@@ -317,12 +317,14 @@ class BossDataTest(unittest.TestCase):
         errors, _ = fx.validate()
         self.assertTrue(any("only valid as ok.interrupt" in e for e in errors), errors)
 
-    def test_tank_needs_victim_target(self):
-        rows = [ability(d="t=random;ok=tank"), add(),
+    def test_tank_needs_victim_or_random_target(self):
+        # Patchwerk's Hateful Strike picks the highest-HP of the top four in melee: t=random is the
+        # closest flag, and the note has to name that set. A self or aoe row cannot claim tank.
+        rows = [ability(d="t=self;ok=tank"), add(),
                 phase("p1", "start", 1, source="boss.cpp:3")]
         fx = self.make(rows)
         errors, _ = fx.validate()
-        self.assertTrue(any("needs a t=victim row" in e for e in errors), errors)
+        self.assertTrue(any("needs a t=victim or t=random row" in e for e in errors), errors)
 
     def test_phase_reason_needs_phase_aura_or_hp(self):
         rows = [ability(d="t=random;ok=phase"), add(),
@@ -579,7 +581,7 @@ class BossDataTest(unittest.TestCase):
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
         self.assertEqual(len(doc["bosses"]), 35)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 225)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 223)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -614,18 +616,17 @@ NAXX_ABILITIES = {
         (28747, 0, 0, 0, "self", "", {"self", "hp30", "ok.purge=nopurge"}, 0),
     ],
     15954: [
-        (29213, 0, 0, 0, "victim", "ground", {"aura"}, 0),
-        (29212, 0, 0, 0, "aoe", "ground", {"aura"}, 0),
-        (29208, 0, 0, 0, "self", "ground", {"ok=script"}, 0),
-        (29209, 0, 0, 0, "self", "ground", {"ok=script"}, 0),
-        (29210, 0, 0, 0, "self", "ground", {"ok=script"}, 0),
-        (29211, 0, 0, 0, "self", "ground", {"ok=script"}, 0),
-        (29216, 0, 0, 0, "self", "ground", {"ok=script"}, 0),
-        (29231, 0, 0, 0, "self", "balcony", {"ok=script"}, 0),
-        (29247, 0, 0, 0, "self", "ground", {"summon=16984"}, 0),
-        (29217, 0, 0, 0, "self", "balcony", {"summon=16983"}, 0),
-        (29226, 0, 0, 0, "self", "balcony", {"summon=16981"}, 0),
-        (29230, 0, 0, 0, "self", "", {"self", "ok=phase"}, 0),
+        (29213, 0, 0, 0, "victim", "", {"aura"}, 0),
+        (29212, 0, 0, 0, "aoe", "", {"aura"}, 0),
+        (29208, 0, 0, 0, "self", "", {"ok=script"}, 0),
+        (29209, 0, 0, 0, "self", "", {"ok=script"}, 0),
+        (29210, 0, 0, 0, "self", "", {"ok=script"}, 0),
+        (29211, 0, 0, 0, "self", "", {"ok=script"}, 0),
+        (29216, 0, 0, 0, "self", "", {"ok=script"}, 0),
+        (29231, 0, 0, 0, "self", "", {"ok=script"}, 0),
+        (29247, 0, 0, 0, "self", "", {"summon=16984"}, 0),
+        (29217, 0, 0, 0, "self", "", {"summon=16983"}, 0),
+        (29226, 0, 0, 0, "self", "", {"summon=16981"}, 0),
     ],
     15936: [
         (29998, 0, 0, 0, "aoe", "", {"aura"}, 0),
@@ -636,9 +637,9 @@ NAXX_ABILITIES = {
     ],
     16011: [
         (29201, 0, 0, 0, "aoe", "", set(), 0),
-        (29194, 0, 0, 0, "random", "", {"aura", "ok.dispel=nodispel"}, 0),
-        (29196, 0, 0, 0, "random", "", {"aura", "ok.dispel=nodispel"}, 0),
-        (29198, 0, 0, 0, "random", "", {"aura", "ok.dispel=nodispel"}, 0),
+        (29194, 0, 0, 0, "aoe", "", {"aura", "ok.dispel=nodispel"}, 0),
+        (29196, 0, 0, 0, "aoe", "", {"aura", "ok.dispel=nodispel"}, 0),
+        (29198, 0, 0, 0, "aoe", "", {"aura", "ok.dispel=nodispel"}, 0),
         (29865, 0, 0, 0, "aoe", "", {"aura"}, 0),
         (29204, 0, 0, 0, "aoe", "", {"aura", "ok.dispel=nodispel"}, 0),
         (30281, 0, 0, 0, "self", "", {"ok=script"}, 0),
@@ -651,11 +652,10 @@ NAXX_ABILITIES = {
         (29051, 0, 0, 0, "self", "", {"aura", "ok.dispel=nodispel"}, 0),
     ],
     16060: [
-        (29317, 1000, 1600, 2000, "random", "ground", {"ok=heal"}, 0),
-        (28679, 1000, 20000, 20000, "aoe", "ground", {"aura"}, 0),
-        (28025, 0, 0, 0, "self", "ground", {"ok=script"}, 0),
-        (28026, 0, 0, 0, "self", "ground", {"ok=script"}, 0),
-        (29230, 0, 0, 0, "self", "", {"self", "ok=phase"}, 0),
+        (29317, 1000, 1600, 2000, "random", "", {"ok=heal"}, 0),
+        (28679, 1000, 20000, 20000, "aoe", "", {"aura"}, 0),
+        (28025, 15000, 15000, 20000, "self", "", {"ok=script"}, 0),
+        (28026, 15000, 15000, 20000, "self", "", {"ok=script"}, 0),
     ],
     16065: [
         (28833, 20000, 12000, 12000, "aoe", "", {"aura", "ok.dispel=nodispel"}, 0),
@@ -683,14 +683,14 @@ NAXX_ABILITIES = {
         (28934, 0, 0, 0, "self", "", {"ok=script"}, 0),
     ],
     16028: [
-        (28308, 1200, 1200, 1200, "victim", "", {"ok=tank"}, 0),
+        (28308, 1200, 1200, 1200, "random", "", {"ok=tank"}, 0),
         (28131, 0, 0, 0, "self", "", {"self", "hp5", "ok.purge=nopurge"}, 0),
         (27680, 0, 0, 0, "self", "", {"self", "ok.purge=nopurge"}, 0),
         (32309, 0, 5000, 5000, "aoe", "", {"aura"}, 0),
     ],
     15931: [
         (28137, 3000, 1500, 1500, "victim", "", {"aura", "ok.dispel=nodispel"}, 0),
-        (28169, 12000, 0, 0, "random", "", {"aura"}, 0),
+        (28169, 12000, 7000, 13000, "random", "", {"aura"}, 0),
         (28157, 20000, 30000, 35000, "victim", "", {"cone"}, 0),
         (28240, 16000, 16000, 16000, "self", "", {"ok=script"}, 0),
         (26662, 0, 0, 0, "self", "", {"self", "ok.purge=nopurge"}, 0),
@@ -710,16 +710,16 @@ NAXX_ABILITIES = {
         (28134, 25000, 25000, 30000, "self", "adds", {"self", "ok.purge=nopurge"}, 0),
         (28337, 20500, 20500, 20500, "victim", "adds", set(), 0),
         (28160, 0, 0, 0, "self", "", {"self", "ok=phase"}, 0),
-        (28089, 0, 0, 0, "self", "fight", set(), 0),
-        (28059, 0, 0, 0, "random", "fight", {"aura", "ok.dispel=nodispel"}, 0),
-        (28084, 0, 0, 0, "random", "fight", {"aura", "ok.dispel=nodispel"}, 0),
+        (28089, 0, 30000, 30000, "self", "fight", set(), 0),
+        (28059, 0, 0, 0, "aoe", "fight", {"aura", "ok.dispel=nodispel"}, 0),
+        (28084, 0, 0, 0, "aoe", "fight", {"aura", "ok.dispel=nodispel"}, 0),
         (28167, 5000, 5000, 7000, "random", "fight", {"ok=heal"}, 0),
         (28299, 1000, 1500, 1500, "victim", "fight", {"ok=heal"}, 0),
         (27680, 0, 0, 0, "self", "fight", {"self", "ok.purge=nopurge"}, 0),
     ],
     15989: [
         (28542, 0, 0, 0, "aoe", "ground", {"aura"}, 0),
-        (28547, 0, 0, 0, "aoe", "ground", {"ground"}, 0),
+        (28547, 0, 0, 0, "aoe", "", {"ground"}, 0),
         (19983, 0, 0, 0, "victim", "ground", {"ok=tank"}, 0),
         (15847, 0, 0, 0, "aoe", "ground", {"tail"}, 0),
         (26662, 900000, 300000, 300000, "self", "", {"self", "ok.purge=nopurge"}, 0),
@@ -749,8 +749,8 @@ NAXX_ABILITIES = {
 
 # (name, rule kind, rule value, order)
 NAXX_PHASES = {
-    15954: [("balcony", "aura", 29230, 1), ("ground", "start", 0, 2)],
-    16060: [("waves", "aura", 29230, 1), ("ground", "start", 0, 2)],
+    15954: [("ground", "start", 0, 1)],
+    16060: [("ground", "start", 0, 1)],
     15928: [("adds", "aura", 28160, 1), ("fight", "start", 0, 2)],
     15989: [("air", "flag", "h", 1), ("ground", "start", 0, 2)],
     15990: [("adds", "flag", "i", 1), ("fight", "start", 0, 2)],
@@ -793,6 +793,40 @@ class NaxxValueTest(unittest.TestCase):
                 self.assertEqual(ability["phase"], phase, where)
                 self.assertEqual(ability["castMs"], cast_ms, where)
                 self.assertEqual(_ability_flag_tokens(ability), flags, where)
+
+    def test_raid_wide_abilities_are_aoe(self):
+        # Corrupted Mind is one boss cast whose spell script picks the class debuff; the charges are
+        # one cast per living player on itself. Neither is a single random target.
+        raid_wide = {16011: (29201, 29194, 29196, 29198), 15928: (28059, 28084)}
+        for entry, sids in raid_wide.items():
+            boss = self.doc["bosses"][str(entry)]
+            abilities = {a["sid"]: a for a in boss["abilities"]}
+            for sid in sids:
+                self.assertEqual(abilities[sid]["target"], "aoe", f"{boss['name']} {sid}")
+
+    def test_no_naxx_phase_uses_passive_aura(self):
+        # 29230 Immune All is passive, so the module never sends it and such a phase can never fire.
+        for boss in self.doc["bosses"].values():
+            if boss["map"] != "naxxramas":
+                continue
+            for phase in boss["phases"]:
+                self.assertNotEqual(
+                    phase["rule"].get("aura"), 29230, f"{boss['name']} phase {phase['name']}"
+                )
+
+    def test_instant_naxx_spells_have_no_shape_row(self):
+        # Poison Shock, Impale and Slime Spray are instant (castingTimeIndex 1), so a cone overlay never draws.
+        shapes = (ROOT / "runtime" / "SpellShapeData.h").read_text(encoding="utf-8")
+        ids = {
+            int(line.split(",", 1)[0])
+            for line in shapes.splitlines()
+            if line[:1].isdigit()
+        }
+        self.assertFalse(ids & {28741, 28783, 28157})
+
+    def test_mutating_injection_repeat_window(self):
+        ability = {a["sid"]: a for a in self.doc["bosses"]["15931"]["abilities"]}[28169]
+        self.assertEqual((ability["b"], ability["c"]), (7000, 13000))
 
     def test_phase_values(self):
         naxx = [b for b in self.doc["bosses"].values() if b["map"] == "naxxramas"]
