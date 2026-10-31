@@ -43,6 +43,21 @@
         15589,
         15727
       ]
+    },
+    {
+      "key": "upper_karazhan_halls",
+      "mapId": 814,
+      "name": "Upper Karazhan Halls",
+      "bosses": [
+        61939,
+        61946,
+        61951,
+        61958,
+        59967,
+        59981,
+        59961,
+        59991
+      ]
     }
   ],
   "bosses": {
@@ -3054,6 +3069,1593 @@
       ],
       "notes": [
         "Phase 2: the first stomach grab comes 18 s minus the 3.25 s grab after he emerges, then every 10 s; killing both Flesh Tentacles in the stomach weakens him for 45 s."
+      ]
+    },
+    "61939": {
+      "entry": 61939,
+      "name": "Keeper Gnarlmoon",
+      "map": "upper_karazhan_halls",
+      "order": 18,
+      "abilities": [
+        {
+          "sid": 51080,
+          "name": "Blue Moon",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 51081,
+          "name": "Red Moon",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 51082,
+          "name": "Blood Boil",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51083,
+          "name": "Flock of Ravens",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 59999,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51084,
+          "name": "Blood Siphon",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51085,
+          "name": "Lunar Shift",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51086,
+          "name": "Lunar Shift",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51096,
+          "name": "Worgen Dimension",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "phase",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "intermission",
+          "order": 1,
+          "rule": {
+            "kind": "aura",
+            "aura": 51096
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 59999,
+          "name": "Blood Raven",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 59998,
+          "name": "Blue Owl",
+          "role": "summon",
+          "priority": 2
+        },
+        {
+          "entry": 59997,
+          "name": "Red Owl",
+          "role": "summon",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "Blood Boil 10 s, Flock of Ravens 15 s then 33 s, Blood Siphon 6-8 s and Lunar Shift 25 s come from creature_spells 619390, a one-line tw_world dump.",
+        "Ravens take damage only from players with Blue Moon (51080); half the raid gets Blue Moon at the pull and the rest Red Moon, and Lunar Shift swaps the two and resets 100% threat.",
+        "66.6 and 33.3 percent: Worgen Dimension (51096) and two Blue plus two Red Owls at fixed points; the intermission ends when all four owls die, and each lives at most 60 s.",
+        "51087 Owl Gaze is bound to an aura script but no tw_world creature or spell list casts it."
+      ]
+    },
+    "61946": {
+      "entry": 61946,
+      "name": "Ley-Watcher Incantagos",
+      "map": "upper_karazhan_halls",
+      "order": 19,
+      "abilities": [
+        {
+          "sid": 51176,
+          "name": "Draconic Ley Charge",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "phase",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51178,
+          "name": "Summon Manascale Ley-Seeker",
+          "castMs": 0,
+          "a": 0,
+          "b": 45000,
+          "c": 55000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 59989,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51179,
+          "name": "Summon Manascale Whelps",
+          "castMs": 0,
+          "a": 0,
+          "b": 30000,
+          "c": 35000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 59955,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51185,
+          "name": "Ley-Line Disturbance",
+          "castMs": 0,
+          "a": 0,
+          "b": 30000,
+          "c": 30000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 59987,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51180,
+          "name": "Blizzard",
+          "castMs": 0,
+          "a": 0,
+          "b": 14000,
+          "c": 17000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": true,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51181,
+          "name": "Gaze of Incantagos",
+          "castMs": 0,
+          "a": 7000,
+          "b": 30000,
+          "c": 35000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51182,
+          "name": "Guided Ley-Beam",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": true,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51184,
+          "name": "Arcane Missiles",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51186,
+          "name": "Curse of Manascale",
+          "castMs": 0,
+          "a": 0,
+          "b": 13000,
+          "c": 13000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 26662,
+          "name": "Berserk",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        }
+      ],
+      "phases": [
+        {
+          "name": "charged",
+          "order": 1,
+          "rule": {
+            "kind": "aura",
+            "aura": 51176
+          }
+        },
+        {
+          "name": "devouring",
+          "order": 2,
+          "rule": {
+            "kind": "hp",
+            "hp": 40
+          }
+        },
+        {
+          "name": "exposed",
+          "order": 3,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 59989,
+          "name": "Manascale Ley-Seeker",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 59987,
+          "name": "Crystal Affinity",
+          "role": "summon",
+          "priority": 3
+        },
+        {
+          "entry": 59986,
+          "name": "Red Affinity",
+          "role": "summon",
+          "priority": 3
+        },
+        {
+          "entry": 59985,
+          "name": "Green Affinity",
+          "role": "summon",
+          "priority": 3
+        },
+        {
+          "entry": 59984,
+          "name": "Blue Affinity",
+          "role": "summon",
+          "priority": 3
+        },
+        {
+          "entry": 59983,
+          "name": "Black Affinity",
+          "role": "summon",
+          "priority": 3
+        },
+        {
+          "entry": 59982,
+          "name": "Mana Affinity",
+          "role": "summon",
+          "priority": 3
+        },
+        {
+          "entry": 59955,
+          "name": "Manascale Whelp",
+          "role": "summon",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "Summon Ley-Seeker (45-55 s), Summon Whelps (30-35 s), Ley-Line Disturbance (30 s) and Blizzard (14-17 s) start only after all four Ley-Seekers die; Gaze runs from the pull (7 s then 30-35 s), and Arcane Missiles and Guided Ley-Beam share one 8-12 s timer.",
+        "Every Ley-Line Disturbance summons one random Affinity; it dies 15 s later, and one still alive Berserks the boss (26662) first. Affinities are immune to every school but their own.",
+        "Below 40 percent Curse of Manascale is added every 13 s; the other abilities keep running.",
+        "Manascale Whelp 59955 is not in the current creature dump (the template has 59988 Manascale Whelp); the Ley-Seeker's own spells are 51175 Surge of Mana and 51177 Arcane Explosion.",
+        "While a Ley-Seeker lives it channels 51187 on the boss; each summoned Affinity channels it too."
+      ]
+    },
+    "61951": {
+      "entry": 61951,
+      "name": "Anomalus",
+      "map": "upper_karazhan_halls",
+      "order": 20,
+      "abilities": [
+        {
+          "sid": 51100,
+          "name": "Arcane Overload",
+          "castMs": 0,
+          "a": 7500,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 51102,
+          "name": "Unstable Magic",
+          "castMs": 0,
+          "a": 14000,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 59996,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51107,
+          "name": "Arcane Prison",
+          "castMs": 0,
+          "a": 3000,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 59996,
+          "name": "Unstable Magic Zone",
+          "role": "summon",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "Repeats are 15 s, 24 s and 9 s times max(30, health percent)/100, so they shorten as he dies (4.5, 7.2 and 2.7 s at 30 percent).",
+        "Overload, Unstable Magic and Prison only go to a random player who is not the victim and has none of 51100, 51101 or 51107.",
+        "On overload expiry the player casts 51099 Arcane Bomb and 51101 Arcane Dampening on itself with Anomalus as the original caster.",
+        "Manabound Strikes 51105 is applied by the passive aura 51106 and 51098 pulses 51097 around the boss; neither has a cast event.",
+        "The Unstable Magic Zone lives 8 s, cannot be damaged, and on death hits the nearest player within 8 yd or else every player within 200 yd for 51104."
+      ]
+    },
+    "61958": {
+      "entry": 61958,
+      "name": "Echo of Medivh",
+      "map": "upper_karazhan_halls",
+      "order": 21,
+      "abilities": [
+        {
+          "sid": 51111,
+          "name": "Gaze of the Guardian",
+          "castMs": 0,
+          "a": 0,
+          "b": 20000,
+          "c": 25000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 51112,
+          "name": "Pyroblast",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 51113,
+          "name": "Flamestrike",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": true,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51114,
+          "name": "Frost Nova",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51116,
+          "name": "Arcane Blast",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51118,
+          "name": "Frostbolt",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51120,
+          "name": "Arcane Bolt",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51121,
+          "name": "Shadebolt",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51122,
+          "name": "Shadow Bolt",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 59994,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51125,
+          "name": "Shadowform",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "phase",
+          "okNeeds": {}
+        },
+        {
+          "sid": 8269,
+          "name": "Enrage",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 20,
+          "ok": "phase",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51110,
+          "name": "Medivhs Fury",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 51109,
+          "name": "Guardians Ire",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        }
+      ],
+      "phases": [
+        {
+          "name": "enraged",
+          "order": 1,
+          "rule": {
+            "kind": "aura",
+            "aura": 8269
+          }
+        },
+        {
+          "name": "shadow",
+          "order": 2,
+          "rule": {
+            "kind": "aura",
+            "aura": 51125
+          }
+        },
+        {
+          "name": "fight",
+          "order": 3,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 59994,
+          "name": "Shade of Medivh",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 59995,
+          "name": "Unstoppable Infernal",
+          "role": "summon",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "Six spells are picked at random (plus Shadow Bolt in shadowform, Shadebolt otherwise) and cast whenever the boss is not already casting; there is no timer.",
+        "Gaze of the Guardian is first cast 20-25 s after the pull, then every 20-25 s.",
+        "Interrupting any cast adds a Guardians Ire stack; at 4 stacks the boss casts Medivhs Fury.",
+        "At 80, 50 and 20 percent one Unstoppable Infernal is summoned; 50 percent adds Shadowform; 20 percent adds Enrage and Medivhs Fury.",
+        "While shadowformed a Shade of Medivh is summoned every 10 s; Shadow Bolt 51122 also summons one through its spell effect.",
+        "The Shade casts 24668 Shadow Bolt; the Infernal casts 51124 Charge of Flame then 51123 Pulse of Fire (creature_spells 599940 and 599950, one-line dumps)."
+      ]
+    },
+    "59967": {
+      "entry": 59967,
+      "name": "King",
+      "map": "upper_karazhan_halls",
+      "order": 22,
+      "abilities": [
+        {
+          "sid": 28863,
+          "name": "Void Zone",
+          "castMs": 0,
+          "a": 20000,
+          "b": 20000,
+          "c": 20000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51230,
+          "name": "Summon Pawn",
+          "castMs": 0,
+          "a": 0,
+          "b": 8000,
+          "c": 14000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 59972,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51231,
+          "name": "Kings Curse",
+          "castMs": 0,
+          "a": 0,
+          "b": 40000,
+          "c": 50000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51228,
+          "name": "Invulnerability",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "phase",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51229,
+          "name": "King’s Fury",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        }
+      ],
+      "phases": [
+        {
+          "name": "shielded",
+          "order": 1,
+          "rule": {
+            "kind": "aura",
+            "aura": 51228
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 59972,
+          "name": "Pawn",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 59971,
+          "name": "Bishop",
+          "role": "linked",
+          "priority": 0
+        },
+        {
+          "entry": 59970,
+          "name": "Rook",
+          "role": "linked",
+          "priority": 0
+        },
+        {
+          "entry": 59968,
+          "name": "Knight",
+          "role": "linked",
+          "priority": 0
+        },
+        {
+          "entry": 59969,
+          "name": "Ghastly Horseman",
+          "role": "summon",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "Bishop 59971: Heal 51214 (12 s), Shadow Bolt Volley 51215 (15 s), Redemption 51216 (30 s, only while the Knight lives), Silence 51217 (14 s, only while the Rook lives) and Shadow Bolt 51212 or 51213 by distance.",
+        "Rook 59970: Shield Bash 51219 (11 s, 5.5 s alone), Advance 51220 (20 s, 10 s alone), Fortify 51221 (35 s, while the Bishop lives) and Siege Equipment 51223 (25 s, 12.5 s alone).",
+        "Knight 59968: Glorious Cleave 51225 (1.3 s), Trample 51226 (11 s, while the Rook lives) and Summon Ghastly Horseman 51227 (20-30 s, 10-15 s alone, three at once when alone).",
+        "Every piece gains Episcopacy 51218 when it is the only one left; each dying Bishop, Rook or Knight casts Kings Fury 51229 on the King, and the King removes Invulnerability 51228 when alone.",
+        "Pawns Advance (51210, aura script) recalculates each pawns weapon damage from the number of nearby pawns every second.",
+        "Void Zone 28863 summons a persistent object (spell effect 41), a damaging area the schema cannot flag as ground.",
+        "The Kings creature template carries aura 51228 and spell list 599670.",
+        "Summon Pawn is first cast 8-14 s after the pull and Kings Curse 40-50 s; both keep their random window afterward."
+      ]
+    },
+    "59981": {
+      "entry": 59981,
+      "name": "Sanv Tas'dal",
+      "map": "upper_karazhan_halls",
+      "order": 23,
+      "abilities": [
+        {
+          "sid": 51194,
+          "name": "Rift Entanglement",
+          "castMs": 0,
+          "a": 5000,
+          "b": 13000,
+          "c": 13000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51195,
+          "name": "Nether Banishment",
+          "castMs": 0,
+          "a": 3000,
+          "b": 11000,
+          "c": 11000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51196,
+          "name": "Curse of the Rift",
+          "castMs": 0,
+          "a": 7000,
+          "b": 15000,
+          "c": 15000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51198,
+          "name": "Netherbolt",
+          "castMs": 0,
+          "a": 1500,
+          "b": 5500,
+          "c": 5500,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51204,
+          "name": "Overflowing Hatred",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 51205,
+          "name": "Rift Feedback",
+          "castMs": 0,
+          "a": 0,
+          "b": 45000,
+          "c": 45000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51209,
+          "name": "Opening the Rift",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 50,
+          "ok": "phase",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51206,
+          "name": "Enrage",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 20,
+          "ok": "phase",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51207,
+          "name": "Leader of the Tribe",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 20,
+          "ok": "phase",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "enraged",
+          "order": 1,
+          "rule": {
+            "kind": "hp",
+            "hp": 20
+          }
+        },
+        {
+          "name": "rift",
+          "order": 2,
+          "rule": {
+            "kind": "hp",
+            "hp": 50
+          }
+        },
+        {
+          "name": "portals",
+          "order": 3,
+          "rule": {
+            "kind": "hp",
+            "hp": 80
+          }
+        },
+        {
+          "name": "fight",
+          "order": 4,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 59973,
+          "name": "Rift Portal",
+          "role": "summon",
+          "priority": 0
+        },
+        {
+          "entry": 59975,
+          "name": "Rift-Lost Draenei",
+          "role": "summon",
+          "priority": 0
+        },
+        {
+          "entry": 59979,
+          "name": "Shadow-Lost Draenei",
+          "role": "summon",
+          "priority": 0
+        },
+        {
+          "entry": 59978,
+          "name": "Draenei Netherwalker",
+          "role": "summon",
+          "priority": 0
+        },
+        {
+          "entry": 59977,
+          "name": "Draenei Riftwalker",
+          "role": "summon",
+          "priority": 0
+        },
+        {
+          "entry": 59976,
+          "name": "Draenei Riftstalker",
+          "role": "summon",
+          "priority": 0
+        },
+        {
+          "entry": 59974,
+          "name": "Rift Elemental",
+          "role": "summon",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "The four normal abilities pause between 80 and 50 percent: only Overflowing Hatred and the portals run, and they resume at 50 percent.",
+        "Overflowing Hatred: first 6 s after 80 percent, every 8.5 s until 50 percent, then every 30-37 s; Rift Feedback: first 60 s after 50 percent, then every 45 s.",
+        "51204 leaves the aura that triggers 51203; each tick deals 6000 fire to players around the targets and Rift Feedback deals 12000 arcane.",
+        "Opening the Rift also summons a Rift-Lost Draenei every second through 51208 (misc 59975).",
+        "The three portals are script summons at fixed points; each summons Rift-Lost, Shadow-Lost or Netherwalker every 7 s and a Riftwalker or Riftstalker every 30-50 s.",
+        "A Draenei Riftwalker casts 51199 on a friendly, turning it into a Rift Elemental 59974 and killing both."
+      ]
+    },
+    "59961": {
+      "entry": 59961,
+      "name": "Rupturan The Broken",
+      "map": "upper_karazhan_halls",
+      "order": 24,
+      "abilities": [],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "No script, no spell list and no EventAI: this core gives him only health and melee (1,230,919 health, 7811-9201 damage), so his fight is not implemented in this checkout."
+      ]
+    },
+    "59991": {
+      "entry": 59991,
+      "name": "Kruul",
+      "map": "upper_karazhan_halls",
+      "order": 25,
+      "abilities": [
+        {
+          "sid": 51164,
+          "name": "Remorseless Strikes",
+          "castMs": 0,
+          "a": 2000,
+          "b": 4000,
+          "c": 4000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51166,
+          "name": "Mark of the Highlord",
+          "castMs": 0,
+          "a": 30000,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51170,
+          "name": "Call from the Twisting Nether",
+          "castMs": 0,
+          "a": 25000,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 59990,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51172,
+          "name": "Wings of Oblivion",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 25,
+          "ok": "phase",
+          "okNeeds": {}
+        },
+        {
+          "sid": 51173,
+          "name": "Wrath of the Highlord",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 51174,
+          "name": "Void Bolt Volley",
+          "castMs": 0,
+          "a": 0,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "enraged",
+          "order": 1,
+          "rule": {
+            "kind": "aura",
+            "aura": 51173
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 59990,
+          "name": "Infernal",
+          "role": "summon",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "Mark of the Highlord goes to up to 3 random mana users; each tick casts 51165 Shadow Nova from the player with Kruul as the original caster.",
+        "Before 25 percent Mark repeats every 30 s and Call goes on the victim every 25 s; after 25 percent Mark is 15 s, Call 15 s on a random player and Void Bolt Volley 10 s.",
+        "Wings of Oblivion knocks players back and applies Wrath of the Highlord 51173; Remorseless Strikes replaces his melee swing.",
+        "The summoned Infernal is rooted (22707) and gets Inferno Effect 51167; its Hellfire Aura 51169 burns nearby players."
       ]
     }
   },

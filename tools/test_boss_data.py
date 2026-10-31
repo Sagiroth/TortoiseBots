@@ -578,8 +578,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 17)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 112)
+        self.assertEqual(len(doc["bosses"]), 25)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 166)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -591,6 +591,214 @@ class BossDataTest(unittest.TestCase):
                 self.assertTrue(entry["name"], entry)
             for phase in boss["phases"]:
                 self.assertIn(phase["rule"]["kind"], ("hp", "aura", "flag", "start"))
+
+
+# Upper Karazhan Halls, read off the Turtle core sources (src/scripts/dungeons/upper_karazhan_halls and the
+# tw_world spell/creature/spell-list rows), NOT generated from the CSV. Every field a row can set is pinned:
+# timers, target, each flag, the ok reason, castMs, and the phase rules.
+KARA_DEFAULTS = {
+    "a": 0,
+    "b": 0,
+    "c": 0,
+    "target": "",
+    "phase": "",
+    "aura": False,
+    "self": False,
+    "mark": False,
+    "ground": False,
+    "cone": False,
+    "tail": False,
+    "int": False,
+    "summon": 0,
+    "hp": 0,
+    "ok": "",
+    "okNeeds": {},
+    "castMs": 0,
+}
+
+
+def kara_ability(**fields):
+    row = dict(KARA_DEFAULTS)
+    row.update(fields)
+    return row
+
+
+# entry -> {spell id: expected ability fields}
+KARA_ABILITIES = {
+    61939: {  # Keeper Gnarlmoon, boss_keeper_gnarlmoon.cpp + creature_spells 619390
+        51080: kara_ability(target="aoe", aura=True, okNeeds={"dispel": "nodispel"}),
+        51081: kara_ability(target="aoe", aura=True, okNeeds={"dispel": "nodispel"}),
+        51082: kara_ability(target="aoe", ok="heal"),
+        51083: kara_ability(target="self", summon=59999),
+        51084: kara_ability(target="random", aura=True),
+        51085: kara_ability(target="aoe", ok="heal"),
+        51086: kara_ability(target="aoe"),
+        51096: kara_ability(target="self", self=True, ok="phase"),
+    },
+    61946: {  # Ley-Watcher Incantagos
+        51176: kara_ability(target="self", self=True, ok="phase"),
+        51178: kara_ability(b=45000, c=55000, target="self", summon=59989),
+        51179: kara_ability(b=30000, c=35000, target="self", summon=59955),
+        51185: kara_ability(b=30000, c=30000, target="self", summon=59987),
+        51180: kara_ability(b=14000, c=17000, target="random", ground=True),
+        51181: kara_ability(a=7000, b=30000, c=35000, target="random", aura=True, int=True),
+        51182: kara_ability(target="victim", ground=True),
+        51184: kara_ability(target="victim", int=True),
+        51186: kara_ability(b=13000, c=13000, target="aoe", aura=True),
+        26662: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
+    },
+    61951: {  # Anomalus
+        51100: kara_ability(a=7500, target="random", aura=True, okNeeds={"dispel": "nodispel"}),
+        51102: kara_ability(a=14000, target="random", summon=59996),
+        51107: kara_ability(a=3000, target="random", aura=True),
+    },
+    61958: {  # Echo of Medivh
+        51111: kara_ability(b=20000, c=25000, target="aoe", aura=True, okNeeds={"dispel": "nodispel"}),
+        51112: kara_ability(target="random", aura=True, int=True, okNeeds={"dispel": "nodispel"}),
+        51113: kara_ability(target="random", ground=True, int=True),
+        51114: kara_ability(target="aoe", aura=True, int=True),
+        51116: kara_ability(target="random", aura=True, int=True),
+        51118: kara_ability(target="random", aura=True, int=True),
+        51120: kara_ability(target="random", int=True),
+        51121: kara_ability(target="random", int=True),
+        51122: kara_ability(target="random", int=True, summon=59994),
+        51125: kara_ability(target="self", self=True, ok="phase"),
+        8269: kara_ability(target="self", self=True, hp=20, ok="phase"),
+        51110: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
+        51109: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
+    },
+    59967: {  # King, the chess event
+        28863: kara_ability(a=20000, b=20000, c=20000, target="random"),
+        51230: kara_ability(b=8000, c=14000, target="self", summon=59972),
+        51231: kara_ability(b=40000, c=50000, target="aoe", aura=True),
+        51228: kara_ability(target="self", self=True, ok="phase"),
+        51229: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
+    },
+    59981: {  # Sanv Tas'dal
+        51194: kara_ability(a=5000, b=13000, c=13000, target="random", aura=True),
+        51195: kara_ability(a=3000, b=11000, c=11000, target="random", aura=True),
+        51196: kara_ability(a=7000, b=15000, c=15000, target="aoe", aura=True),
+        51198: kara_ability(a=1500, b=5500, c=5500, target="random", aura=True, int=True),
+        51204: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
+        51205: kara_ability(b=45000, c=45000, target="aoe", ok="heal"),
+        51209: kara_ability(target="self", hp=50, ok="phase"),
+        51206: kara_ability(target="self", self=True, hp=20, ok="phase"),
+        51207: kara_ability(target="self", self=True, hp=20, ok="phase"),
+    },
+    59991: {  # Kruul
+        51164: kara_ability(a=2000, b=4000, c=4000, target="victim", ok="tank"),
+        51166: kara_ability(a=30000, target="aoe", aura=True),
+        51170: kara_ability(a=25000, target="random", summon=59990),
+        51172: kara_ability(target="aoe", hp=25, ok="phase"),
+        51173: kara_ability(target="self", self=True, okNeeds={"purge": "nopurge"}),
+        51174: kara_ability(b=10000, c=10000, target="aoe", ok="heal"),
+    },
+    59961: {},  # Rupturan the Broken: no script, no spells in this core
+}
+
+# entry -> [(name, rule, order)]
+KARA_PHASES = {
+    61939: [("intermission", {"kind": "aura", "aura": 51096}, 1), ("fight", {"kind": "start"}, 2)],
+    61946: [
+        ("charged", {"kind": "aura", "aura": 51176}, 1),
+        ("devouring", {"kind": "hp", "hp": 40}, 2),
+        ("exposed", {"kind": "start"}, 3),
+    ],
+    61958: [
+        ("enraged", {"kind": "aura", "aura": 8269}, 1),
+        ("shadow", {"kind": "aura", "aura": 51125}, 2),
+        ("fight", {"kind": "start"}, 3),
+    ],
+    59967: [("shielded", {"kind": "aura", "aura": 51228}, 1), ("fight", {"kind": "start"}, 2)],
+    59981: [
+        ("enraged", {"kind": "hp", "hp": 20}, 1),
+        ("rift", {"kind": "hp", "hp": 50}, 2),
+        ("portals", {"kind": "hp", "hp": 80}, 3),
+        ("fight", {"kind": "start"}, 4),
+    ],
+    59991: [("enraged", {"kind": "aura", "aura": 51173}, 1), ("fight", {"kind": "start"}, 2)],
+}
+
+
+class KaraUpperValueTest(unittest.TestCase):
+    """Every Upper Karazhan ability and phase rule against the core, field by field."""
+
+    @classmethod
+    def setUpClass(cls):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        cls.map_doc, cls.bosses = boss_data.make_bosses(rows, names)
+
+    def test_every_ability_value(self):
+        for entry, expected in KARA_ABILITIES.items():
+            boss = self.bosses[entry]
+            self.assertEqual(boss["map"], "upper_karazhan_halls")
+            got = {ability["sid"]: ability for ability in boss["abilities"]}
+            self.assertEqual(set(got), set(expected), f"boss {entry} spell set")
+            for sid, fields in expected.items():
+                for key, value in fields.items():
+                    self.assertEqual(
+                        got[sid][key], value, f"boss {entry} spell {sid} field {key}"
+                    )
+
+    def test_every_phase_rule(self):
+        for entry in KARA_ABILITIES:
+            got = [
+                (phase["name"], phase["rule"], phase["order"])
+                for phase in self.bosses[entry]["phases"]
+            ]
+            self.assertEqual(got, KARA_PHASES.get(entry, []), f"boss {entry} phases")
+
+    def test_phases_label_but_do_not_hide_abilities(self):
+        # Kara's phases do not stop the whole ability set for the rest of the fight (Sanv resumes at 50%,
+        # Echo keeps the random list in every phase), so no ability carries p=<phase>.
+        for entry in KARA_ABILITIES:
+            for ability in self.bosses[entry]["abilities"]:
+                self.assertEqual(ability["phase"], "", f"boss {entry} spell {ability['sid']}")
+
+    def test_semantic_choices_from_the_core(self):
+        def ability(entry, sid):
+            return next(a for a in self.bosses[entry]["abilities"] if a["sid"] == sid)
+
+        # Creature-spell-list timers are 0 (one-line dump); the two Shared random picks are 0 too.
+        for sid in (51082, 51083, 51084, 51086):
+            self.assertEqual(
+                (ability(61939, sid)["a"], ability(61939, sid)["b"], ability(61939, sid)["c"]),
+                (0, 0, 0),
+                f"Gnarlmoon {sid}",
+            )
+        for sid in (51182, 51184):
+            row = ability(61946, sid)
+            self.assertEqual((row["a"], row["b"], row["c"]), (0, 0, 0), f"Incantagos {sid}")
+        # Anomalus's repeats scale with health: no repeat in the columns.
+        for sid in (51100, 51102, 51107):
+            row = ability(61951, sid)
+            self.assertEqual((row["b"], row["c"]), (0, 0), f"Anomalus {sid}")
+        # Echo's random cast list has no timer at all.
+        for sid in range(51112, 51123):
+            if sid in (51115, 51117, 51119):
+                continue
+            row = ability(61958, sid)
+            self.assertEqual((row["a"], row["b"], row["c"]), (0, 0, 0), f"Echo {sid}")
+        # Sanv's Overflowing Hatred starts after 80% and has two windows; Kruul's Mark changes at 25%.
+        row = ability(59981, 51204)
+        self.assertEqual((row["a"], row["b"], row["c"]), (0, 0, 0))
+        row = ability(59981, 51205)
+        self.assertEqual((row["a"], row["b"], row["c"]), (0, 45000, 45000))
+        self.assertEqual(ability(59991, 51166)["b"], 0)
+        # Ground is only the effect-27 spells; Void Zone is a summon and stays unflagged.
+        for entry, sid in ((61958, 51113), (61946, 51180), (61946, 51182)):
+            self.assertTrue(ability(entry, sid)["ground"], f"{entry} {sid} ground")
+        self.assertFalse(ability(59967, 28863)["ground"])
+        # Instant spells are not `int`; channels and real casts are.
+        self.assertFalse(ability(59967, 28863)["int"])
+        self.assertFalse(ability(61958, 51111)["int"])
+        self.assertTrue(ability(61946, 51184)["int"])  # channelInterruptFlags & 4
+        self.assertTrue(ability(61958, 51112)["int"])  # castingTimeIndex 130, preventionType 1
+        # The boss aura phase rules are visible auras, not passives.
+        for entry, sid in ((61939, 51096), (61946, 51176), (61958, 51125), (59967, 51228),
+                           (59991, 51173)):
+            self.assertTrue(ability(entry, sid)["self"], f"{entry} {sid}")
 
 
 if __name__ == "__main__":
