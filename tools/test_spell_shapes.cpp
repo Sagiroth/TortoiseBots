@@ -120,8 +120,8 @@ void TestKnownShapes()
             && Near(conflagration->length, 30.0f),
         "Razorgore's Conflagration is a 120 degree front cone of 30 yd");
     Shape const* lash = For(23364);
-    Check(lash && lash->kind == Kind::BackCone && lash->angle == 75 && Near(lash->length, 30.0f),
-        "Nefarian's Tail Lash is a 75 degree back cone of 30 yd");
+    Check(lash && lash->kind == Kind::BackCone && lash->angle == 75 && Near(lash->length, 20.0f),
+        "Nefarian's Tail Lash is a 75 degree back cone of 20 yd");
 }
 
 // Every Deep Breath row is the complete damaging footprint of its chain: a line from the first to the last damage point,

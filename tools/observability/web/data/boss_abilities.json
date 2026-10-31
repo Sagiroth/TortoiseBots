@@ -3417,6 +3417,7 @@
       "adds": [],
       "notes": [
         "Burning Adrenaline has two independent timers: one every 15 s on a random living mana user and one every 45 s on the current tank; the player casts it on themself so the cast has a player as its caster; it cannot be dispelled.",
+        "The Burning Adrenaline explosion 23478 and its instakill 23644 are declared in the script but never cast in this core; only 23620 is applied.",
         "Essence of the Red is cast when the fight starts and lasts 3 minutes: 500 mana, 50 energy and 20 rage per second.",
         "The intro is a gossip event: Nefarius banishes Vael with 16404 and applies Corruption 23642 for 24 s before Vael turns hostile.",
         "Vael starts the fight at 30 percent health."
@@ -3820,6 +3821,27 @@
           "okNeeds": {}
         },
         {
+          "sid": 23462,
+          "name": "Fire Nova",
+          "castMs": 0,
+          "a": 0,
+          "b": 2000,
+          "c": 2000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
           "sid": 3391,
           "name": "Thrash",
           "castMs": 0,
@@ -4199,6 +4221,27 @@
           "okNeeds": {}
         },
         {
+          "sid": 23174,
+          "name": "Chromatic Mutation",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
           "sid": 23128,
           "name": "Frenzy",
           "castMs": 0,
@@ -4406,7 +4449,7 @@
           "sid": 22664,
           "name": "Shadowblink",
           "castMs": 0,
-          "a": 0,
+          "a": 1000,
           "b": 20000,
           "c": 25000,
           "phase": "",
@@ -4481,7 +4524,7 @@
       ],
       "notes": [
         "The event starts from gossip: two yells 7 s and 4 s apart; then he casts Nefarius's Barrier and turns hostile.",
-        "Two drakonid types are chosen for the lockout; two spawn every 6-7 s and a chromatic pair comes at 7-9 s then every 35 s until 40 drakes are dead.",
+        "Two drakonid types are chosen for the lockout; two spawn every 6-7 s and a chromatic pair comes at 7-9 s then every 35 s until 42 drakes are dead.",
         "Shadowblink smokes for 1 s and then teleports next to a random target; the next blink is 20-25 s later and resets the shadow bolt timer to 3-6 s.",
         "The add waves are direct SummonCreature calls; no summon spell exists for them.",
         "Mind control restores the victim's threat when the aura ends.",
@@ -4651,7 +4694,7 @@
           "b": 0,
           "c": 0,
           "phase": "grounded",
-          "target": "random",
+          "target": "self",
           "aura": true,
           "self": false,
           "mark": false,
@@ -4674,7 +4717,7 @@
           "b": 0,
           "c": 0,
           "phase": "grounded",
-          "target": "random",
+          "target": "self",
           "aura": true,
           "self": false,
           "mark": false,
@@ -4697,7 +4740,7 @@
           "b": 0,
           "c": 0,
           "phase": "grounded",
-          "target": "random",
+          "target": "self",
           "aura": true,
           "self": false,
           "mark": false,
@@ -4720,7 +4763,7 @@
           "b": 0,
           "c": 0,
           "phase": "grounded",
-          "target": "random",
+          "target": "self",
           "aura": true,
           "self": false,
           "mark": false,
@@ -4743,7 +4786,7 @@
           "b": 0,
           "c": 0,
           "phase": "grounded",
-          "target": "random",
+          "target": "self",
           "aura": true,
           "self": false,
           "mark": false,
@@ -4766,7 +4809,7 @@
           "b": 0,
           "c": 0,
           "phase": "grounded",
-          "target": "random",
+          "target": "self",
           "aura": true,
           "self": false,
           "mark": false,
@@ -4789,8 +4832,8 @@
           "b": 0,
           "c": 0,
           "phase": "grounded",
-          "target": "random",
-          "aura": false,
+          "target": "self",
+          "aura": true,
           "self": false,
           "mark": false,
           "ground": false,
@@ -4800,7 +4843,9 @@
           "summon": 14668,
           "hp": 0,
           "ok": "",
-          "okNeeds": {}
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
         },
         {
           "sid": 23436,
@@ -4810,7 +4855,7 @@
           "b": 0,
           "c": 0,
           "phase": "grounded",
-          "target": "random",
+          "target": "self",
           "aura": false,
           "self": false,
           "mark": false,
@@ -4831,7 +4876,7 @@
           "b": 0,
           "c": 0,
           "phase": "grounded",
-          "target": "random",
+          "target": "self",
           "aura": true,
           "self": false,
           "mark": false,
@@ -4962,8 +5007,16 @@
           }
         },
         {
-          "name": "grounded",
+          "name": "bones",
           "order": 2,
+          "rule": {
+            "kind": "hp",
+            "hp": 20
+          }
+        },
+        {
+          "name": "grounded",
+          "order": 3,
           "rule": {
             "kind": "start"
           }
@@ -5008,13 +5061,15 @@
         }
       ],
       "notes": [
-        "Nefarian is summoned when 40 drakonids are dead; he lands 10 s later and then fights on the ground.",
+        "Nefarian is summoned when 40 drakonids are dead; he starts flying and there is no 10 s landing timer: a 100 ms transition tick starts the flight, then he lands and pauses for 1000 ms before he fights on the ground.",
         "Paralyze teleports the called rogue to Nefarian and roots them.",
         "One random class is called every 25-35 s including the first; a class with no living player is dropped and retried on the next tick.",
+        "The class calls are class-wide: every living player of the called class receives the effect and casts it on themself; only Wild Polymorph picks a random secondary target.",
         "The first Shadow Flame is 18-25 s; the first Bellowing Roar is 25-30 s; the first Cleave is 7-10 s; those first values are random and stay out of the timer columns.",
         "The mage call makes each mage polymorph a random unit within 60 yd every 5 s; the mage is the caster.",
-        "Bone Constructs rise from every Drakonid Bones game object when he drops below 20 percent.",
-        "The initial Shadow Flame 22992 is a self aura cast once as he lands; the 18-25 s Shadow Flame timer only starts after that."
+        "The corrupted totems' own effects are cast by the totem adds, not by Nefarian: Stoneskin 10405, Healing Stream 10461, Windfury Totem Passive 10612 and Fire Nova 11311 triggering 11307. The schema has no add-caster row, so they are listed here; the shaman's Corrupted Totems 23425 picks one of the four totems at random.",
+        "Bone Constructs rise from every Drakonid Bones game object (179804) within 200 yd when he drops below 20 percent.",
+        "The initial Shadow Flame 22992 is a self aura cast in transition stage 0 when he starts flying; the 18-25 s Shadow Flame timer only starts once he has landed."
       ]
     }
   },
