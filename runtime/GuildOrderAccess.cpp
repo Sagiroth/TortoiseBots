@@ -29,8 +29,6 @@
 #include <sstream>
 #include <unordered_map>
 
-extern PlayerbotAIConfig sPlayerbotAIConfig;
-
 namespace TortoiseBots
 {
 namespace GuildOrders
@@ -165,7 +163,7 @@ void MoveMemberToRank(Guild* guild, ObjectGuid guid, uint32_t rank)
 {
     if (!guild)
         return;
-    Guild::MemberSlot* slot = guild->GetMemberSlot(guid);
+    MemberSlot* slot = guild->GetMemberSlot(guid);
     if (!slot || slot->RankId == rank)
         return;
     slot->ChangeRank(rank);
@@ -310,7 +308,7 @@ std::string FormatAccessLine(uint32_t guildId, uint32_t askerGuidLow)
     int32_t askerRank = -1;
     if (askerPlayer && askerPlayer->GetGuildId() == guildId)
         askerRank = static_cast<int32_t>(askerPlayer->GetRank());
-    else if (Guild::MemberSlot* slot = guild->GetMemberSlot(asker))
+    else if (MemberSlot* slot = guild->GetMemberSlot(asker))
         askerRank = static_cast<int32_t>(slot->RankId);
     bool canSetRank = askerRank >= 0 &&
         guild->HasRankRight(static_cast<uint32_t>(askerRank), GR_RIGHT_PROMOTE) &&
