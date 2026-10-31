@@ -245,18 +245,6 @@ class BossDataTest(unittest.TestCase):
         errors, _ = fx.validate()
         self.assertTrue(any("a=14000" in e for e in errors), errors)
 
-    def test_a_creature_spells_row_gives_its_timers_in_seconds(self):
-        # The loader multiplies the four timer columns by IN_MILLISECONDS, so a
-        # 14000 ms row cites the line that stores 14.
-        fx = self.make([ability(a="14000", b="14000", c="14000", source="spells.sql:1"), add(),
-                        phase("p1", "start", 1, source="boss.cpp:3")])
-        (fx.dir / "core" / "spells.sql").write_text(
-            "INSERT INTO `creature_spells` VALUES (9,'Boss',24328,100,1,0,0,0,14,14,14,14,0);\n"
-        )
-        fx.rebuild()
-        errors, _ = fx.validate()
-        self.assertEqual(errors, [])
-
     def test_spell_id_must_be_cited(self):
         rows = [ability(source="boss.cpp:3;boss.cpp:4"), add(),
                 phase("p1", "start", 1, source="boss.cpp:3")]
@@ -610,9 +598,8 @@ class UbrsValueTest(unittest.TestCase):
 
     The fixture is transcribed from the cited source, not generated from the CSV:
     timers, target, flags, phase and cast ms for every ability, plus every phase
-    rule and add. A creature_spells row stores seconds; Gyth's four timers are
-    the stored values x1000, while Rend's and Drakkisath's stay 0 with their
-    cadence in the notes.
+    rule and add. A creature_spells row stores seconds on one SQL line, so Rend's,
+    Gyth's and Drakkisath's columns stay 0 and their cadence is in the notes.
     """
 
     EXPECTED = {
@@ -640,10 +627,10 @@ class UbrsValueTest(unittest.TestCase):
         "10339": {
             "name": "Gyth",
             "abilities": {
-                16359: (8000, 7000, 7000, "aoe", "", ("aura", "cone")),
-                16350: (11000, 16000, 16000, "aoe", "", ("aura", "cone")),
-                16390: (4000, 10000, 10000, "aoe", "", ("cone", "int")),
-                10101: (23000, 23000, 23000, "victim", "", ()),
+                16359: (0, 0, 0, "aoe", "", ("aura", "cone")),
+                16350: (0, 0, 0, "aoe", "", ("aura", "cone")),
+                16390: (0, 0, 0, "aoe", "", ("cone", "int")),
+                10101: (0, 0, 0, "victim", "", ()),
             },
             "phases": [],
             "adds": {},
@@ -771,14 +758,17 @@ class UbrsValueTest(unittest.TestCase):
         self.assertIn("6 s after he is freed", emberseer_notes)
         self.assertIn("Flame Buffet 3 s", emberseer_notes)
         self.assertIn("Pyro Blast 14 s", emberseer_notes)
-        # Gyth's own block takes the creature_spells timers in ms.
+        # Gyth's own block has no verifiable ms timers: the row stores seconds,
+        # so the columns are 0 and the cadence is in the note.
         gyth = {a["sid"]: a for a in self.boss("10339")["abilities"]}
-        self.assertEqual((gyth[16359]["a"], gyth[16359]["b"]), (8000, 7000))
-        self.assertEqual((gyth[16350]["a"], gyth[16350]["b"]), (11000, 16000))
-        self.assertEqual((gyth[16390]["a"], gyth[16390]["b"]), (4000, 10000))
-        self.assertEqual((gyth[10101]["a"], gyth[10101]["b"]), (23000, 23000))
+        self.assertTrue(all((a["a"], a["b"], a["c"]) == (0, 0, 0) for a in gyth.values()))
         self.assertTrue(gyth[16390]["int"] and gyth[16390]["cone"])
-        self.assertIn("Nefarius", " ".join(self.boss("10339")["notes"]))
+        gyth_notes = " ".join(self.boss("10339")["notes"])
+        self.assertIn("first 8 s then every 7 s", gyth_notes)
+        self.assertIn("first 11 s then every 16 s", gyth_notes)
+        self.assertIn("first 4 s then every 10 s", gyth_notes)
+        self.assertIn("first and every 23 s", gyth_notes)
+        self.assertIn("Nefarius", gyth_notes)
         # The creature_spells cadences are in the notes because the columns are 0.
         rend_notes = " ".join(self.boss("10429")["notes"])
         self.assertIn("20/18", rend_notes)

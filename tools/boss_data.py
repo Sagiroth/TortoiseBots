@@ -55,9 +55,7 @@ world table (the JSON `codeAnswers[]`).
 Checks:
     1. Every ability row cites the line that defines its spell (id or constant)
        and every timer value; phase hp/aura/flag rules and add entries likewise.
-       A value of N is also accepted as N//1000 on a line using IN_MILLISECONDS,
-       and on a `creature_spells` row, whose timer columns the loader multiplies
-       by IN_MILLISECONDS.
+       A value of N is also accepted as N//1000 on a line using IN_MILLISECONDS.
     2. Ability spell ids, summon= entries and add entries are unique per boss;
        every summon= entry has an add row; every p= phase exists; every map slug
        has a raids.csv row and every raids.csv row has a boss.
@@ -606,21 +604,12 @@ def heading_slugs(text):
     return slugs
 
 
-def _stores_seconds(text):
-    """The line's timer values are seconds and the loader multiplies them by IN_MILLISECONDS.
-
-    Code does it inline (`* IN_MILLISECONDS`); a `creature_spells` row stores its
-    four timer columns in seconds and ObjectMgr converts them on load.
-    """
-    return "IN_MILLISECONDS" in text or text.lstrip().startswith("INSERT INTO `creature_spells`")
-
-
 def _has_number(lines, number):
     token = re.compile(rf"(?<!\d){number}(?!\d)")
     for _, text in lines:
         if token.search(text):
             return True
-        if number % 1000 == 0 and _stores_seconds(text):
+        if number % 1000 == 0 and "IN_MILLISECONDS" in text:
             if re.search(rf"(?<!\d){number // 1000}(?!\d)", text):
                 return True
     return False

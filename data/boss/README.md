@@ -130,10 +130,8 @@ relative to the core checkout (`--core-dir`, default `$TORTOISE_CORE_DIR` or
 `~/tortoise-wow`). A timer or spell id must appear inside one of the cited
 ranges; a constant name (`SPELL_X`) counts when its definition in the same file
 holds the id. A value `N` is also accepted as `N//1000` on a line using
-`IN_MILLISECONDS`, and on a `creature_spells` row, whose four timer columns the
-loader multiplies by `IN_MILLISECONDS` (`src/game/ObjectMgr.cpp`).
-Knowledge-base notes use `kb:<file>#<heading-slug>` under `--kb-dir` (default
-`$TURTLE_KB_DIR` or `~/TortoiseBots-audit/turtle-kb`).
+`IN_MILLISECONDS`. Knowledge-base notes use `kb:<file>#<heading-slug>` under
+`--kb-dir` (default `$TURTLE_KB_DIR` or `~/TortoiseBots-audit/turtle-kb`).
 
 CI has no core checkout and no KB: `check` prints `core source check skipped` /
 `kb check skipped` and still validates structure, uniqueness, the code answers
