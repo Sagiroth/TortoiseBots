@@ -8977,7 +8977,7 @@
     // the replay to that cast; the marker carries the caster, the spell and its target in words.
     const bossTable = typeof cmdBossTable === 'function' ? cmdBossTable() : (typeof BossPanel !== 'undefined' && BossPanel.data ? BossPanel.data() : null);
     (tl.bossCasts || []).forEach(c => {
-      const slot = bossTable && typeof BossPanel !== 'undefined' && BossPanel.abilityBySpell ? BossPanel.abilityBySpell(bossTable, c.sid) : null;
+      const slot = bossTable && typeof BossPanel !== 'undefined' && BossPanel.abilityBySpell ? BossPanel.abilityBySpell(bossTable, c.sid, c.e) : null;
       const ci = slot ? slot.index % 8 : 0;
       const label = c.n + ': ' + (c.s || 'a spell') + (c.target ? ' → ' + c.target : '');
       html += `<button type="button" class="fd-bosscast bc-${ci}" data-fd-bosscast="${c.t_ms}" style="left:${c.pct.toFixed(2)}%" title="${esc(label + ' at ' + (c.t_ms / 1000).toFixed(1) + ' s')}" aria-label="${esc(label)}"></button>`;
