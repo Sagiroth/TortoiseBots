@@ -578,8 +578,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 17)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 112)
+        self.assertEqual(len(doc["bosses"]), 22)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 138)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -591,6 +591,155 @@ class BossDataTest(unittest.TestCase):
                 self.assertTrue(entry["name"], entry)
             for phase in boss["phases"]:
                 self.assertIn(phase["rule"]["kind"], ("hp", "aura", "flag", "start"))
+
+
+# AQ40's last three encounters, written off the cited core lines (not from the CSV):
+# boss -> (phases, {spell: (a, b, c, flags, castMs)}, adds)
+AQ40_REST = {
+    15511: ([], {
+        3391: (0, 2000, 8000, "t=self;self;ok.purge=nopurge", 0),
+        19983: (0, 5000, 12000, "t=victim", 0),
+        25812: (0, 8000, 14000, "t=aoe;aura", 0),
+        25786: (0, 0, 0, "t=self;ground", 0),
+    }, []),
+    15543: ([], {
+        19408: (0, 20000, 20000, "t=aoe;aura", 0),
+        25807: (0, 12000, 12000, "t=ally;int", 2000),
+        24213: (0, 12000, 20000, "t=victim;ok=tank", 0),
+    }, [(15621, "summon", 1)]),
+    15544: ([], {
+        26561: (0, 15000, 20000, "t=random", 0),
+        18813: (0, 10000, 14000, "t=victim", 0),
+        19128: (0, 15000, 20000, "t=victim", 0),
+        25790: (0, 0, 0, "t=self;self;ok.purge=nopurge", 0),
+    }, []),
+    15299: (["aura=25937", "start"], {
+        25993: (0, 7000, 12000, "p=fight;t=aoe;cone", 0),
+        25991: (0, 10000, 15000, "p=fight;t=aoe;aura", 0),
+        25989: (0, 0, 0, "t=aoe;ground", 0),
+        25994: (0, 0, 0, "t=self;self;ok.purge=nopurge", 0),
+        25937: (0, 0, 0, "t=self;self;ok=phase", 0),
+        25938: (0, 0, 0, "t=self;ok=script", 0),
+    }, [(15667, "summon", 1), (15922, "trigger", 0)]),
+    15517: (["aura=26615", "aura=26063", "start"], {
+        26103: (0, 15000, 15000, "t=aoe;int", 1500),
+        26102: (0, 12000, 17000, "t=aoe;int", 2000),
+        26616: (0, 0, 0, "p=enraged;t=random;int", 2000),
+        26615: (0, 0, 0, "t=self;self;hp20;ok=phase", 0),
+        26063: (0, 0, 0, "t=self;self;ok=phase", 1500),
+        26058: (0, 0, 0, "t=self;summon=15712", 0),
+        26617: (0, 10000, 10000, "p=enraged;t=self", 0),
+        26100: (0, 0, 0, "t=aoe", 0),
+        26262: (0, 0, 0, "t=self;ok=script", 250),
+    }, [(15712, "summon", 1), (15717, "trigger", 0), (15718, "summon", 2)]),
+}
+
+
+def _ability_flag_text(ability):
+    """The CSV flag spelling of a built ability, so a fixture can pin every flag."""
+    parts = []
+    if ability["phase"]:
+        parts.append("p=" + ability["phase"])
+    if ability["target"]:
+        parts.append("t=" + ability["target"])
+    for name in ("aura", "self", "mark", "ground", "cone", "tail", "int"):
+        if ability[name]:
+            parts.append(name)
+    if ability["summon"]:
+        parts.append("summon=%d" % ability["summon"])
+    if ability["hp"]:
+        parts.append("hp%d" % ability["hp"])
+    if ability["ok"]:
+        parts.append("ok=" + ability["ok"])
+    for need, reason in ability["okNeeds"].items():
+        parts.append("ok.%s=%s" % (need, reason))
+    return ";".join(parts)
+
+
+def _phase_text(phase):
+    rule = phase["rule"]
+    if rule["kind"] == "start":
+        return "start"
+    if rule["kind"] == "aura":
+        return "aura=%d" % rule["aura"]
+    if rule["kind"] == "hp":
+        return "hp<%d" % rule["hp"]
+    return "flag=%s" % rule["flag"]
+
+
+class Aq40RestValueTest(unittest.TestCase):
+    """The Bug Trio, Viscidus and Ouro rows, pinned to the numbers read in the core scripts."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.doc = boss_data.build_document(
+            boss_data.read_rows(boss_data.DEFAULT_CSV),
+            boss_data.read_names(boss_data.DEFAULT_NAMES),
+        )
+
+    def boss(self, entry):
+        self.assertIn(str(entry), self.doc["bosses"], "boss %d is missing" % entry)
+        return self.doc["bosses"][str(entry)]
+
+    def test_every_ability_phase_and_add(self):
+        for entry, (phases, abilities, adds) in AQ40_REST.items():
+            boss = self.boss(entry)
+            self.assertEqual([_phase_text(p) for p in boss["phases"]], phases, entry)
+            got = {a["sid"]: a for a in boss["abilities"]}
+            self.assertEqual(set(got), set(abilities), "ability set of %d" % entry)
+            for sid, (a, b, c, flags, cast_ms) in abilities.items():
+                ability = got[sid]
+                self.assertEqual(
+                    (ability["a"], ability["b"], ability["c"]), (a, b, c),
+                    "%d/%d timers" % (entry, sid),
+                )
+                self.assertEqual(ability["castMs"], cast_ms, "%d/%d cast ms" % (entry, sid))
+                self.assertEqual(_ability_flag_text(ability), flags, "%d/%d flags" % (entry, sid))
+            self.assertEqual(
+                [(x["entry"], x["role"], x["priority"]) for x in boss["adds"]], adds,
+                "adds of %d" % entry,
+            )
+
+    def test_the_trio_has_no_phase_rows(self):
+        # No aura or flag carries a trio state, so a phase row would be a guess the panel then latches.
+        for entry in (15511, 15543, 15544):
+            self.assertEqual(self.boss(entry)["phases"], [])
+
+    def test_viscidus_freeze_is_the_only_visible_phase(self):
+        boss = self.boss(15299)
+        self.assertEqual(len(boss["phases"]), 2)
+        self.assertEqual(boss["phases"][0]["rule"], {"kind": "aura", "aura": 25937})
+        # The exploded state is SPAWNING + feign death + invisible, none of it in uf: a note, not a rule.
+        self.assertFalse(any(p["rule"]["kind"] == "flag" for p in boss["phases"]))
+        self.assertTrue(any("shatter" in note for note in boss["notes"]))
+        self.assertTrue(all(a["phase"] == "" for a in boss["abilities"] if a["sid"] == 25938))
+        self.assertTrue(all(a["phase"] == "fight" for a in boss["abilities"] if a["sid"] in (25993, 25991)))
+        abilities = {a["sid"]: a for a in boss["abilities"]}
+        self.assertTrue(abilities[25993]["cone"], "Poison Shock is a front cone")
+        self.assertFalse(abilities[25991]["cone"], "Poison Bolt Volley is a circle, not a cone")
+
+    def test_ouro_enrage_and_submerge_are_aura_phases(self):
+        boss = self.boss(15517)
+        self.assertEqual([_phase_text(p) for p in boss["phases"]], ["aura=26615", "aura=26063", "start"])
+        abilities = {a["sid"]: a for a in boss["abilities"]}
+        self.assertEqual(abilities[26616]["phase"], "enraged")
+        self.assertEqual(abilities[26617]["phase"], "enraged")
+        self.assertEqual(abilities[26058]["summon"], 15712)
+        self.assertEqual(abilities[26063]["ok"], "phase")
+        # Sweep and Sand Blast are the interruptible casts; the cone flag stays off Sand Blast because the
+        # table's DB contract only accepts implicit target 24 and this one is a target-54 cone (its shape
+        # row is pinned by tools/test_spell_shapes.cpp).
+        self.assertTrue(abilities[26103]["int"] and not abilities[26103]["cone"])
+        self.assertTrue(abilities[26102]["int"] and not abilities[26102]["cone"])
+
+    def test_trio_and_ouro_adds_are_named(self):
+        self.assertEqual([a["name"] for a in self.boss(15543)["adds"]], ["Yauj Brood"])
+        self.assertEqual(
+            [a["name"] for a in self.boss(15517)["adds"]],
+            ["Dirt Mound", "Ouro Trigger", "Ouro Scarab"],
+        )
+        for entry in (15511, 15543, 15544):
+            self.assertTrue(any("devour" in note for note in self.boss(entry)["notes"]), entry)
 
 
 if __name__ == "__main__":

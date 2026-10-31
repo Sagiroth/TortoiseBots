@@ -116,12 +116,24 @@
       "name": "Wing Buffet",
       "castMs": 0
     },
+    "18813": {
+      "name": "Knock Away",
+      "castMs": 0
+    },
     "18943": {
       "name": "Double Attack",
       "castMs": 0
     },
+    "19128": {
+      "name": "Knockdown",
+      "castMs": 0
+    },
     "19134": {
       "name": "Intimidating Shout",
+      "castMs": 0
+    },
+    "19408": {
+      "name": "Panic",
       "castMs": 0
     },
     "19633": {
@@ -344,6 +356,46 @@
       "name": "Mortal Wound",
       "castMs": 0
     },
+    "25786": {
+      "name": "Toxic Vapors",
+      "castMs": 0
+    },
+    "25790": {
+      "name": "Vengeance",
+      "castMs": 0
+    },
+    "25807": {
+      "name": "Great Heal",
+      "castMs": 2000
+    },
+    "25812": {
+      "name": "Toxic Volley",
+      "castMs": 0
+    },
+    "25937": {
+      "name": "Viscidus Freeze",
+      "castMs": 0
+    },
+    "25938": {
+      "name": "Viscidus Explode Trigger",
+      "castMs": 0
+    },
+    "25989": {
+      "name": "Toxin",
+      "castMs": 0
+    },
+    "25991": {
+      "name": "Poison Bolt Volley",
+      "castMs": 0
+    },
+    "25993": {
+      "name": "Poison Shock",
+      "castMs": 0
+    },
+    "25994": {
+      "name": "Membrane of Viscidus",
+      "castMs": 0
+    },
     "26006": {
       "name": "Shadow Bolt",
       "castMs": 0
@@ -364,6 +416,14 @@
       "name": "Noxious Poison",
       "castMs": 0
     },
+    "26058": {
+      "name": "Summon Ouro Mounds",
+      "castMs": 0
+    },
+    "26063": {
+      "name": "Ouro Submerge Visual",
+      "castMs": 1500
+    },
     "26068": {
       "name": "Berserk",
       "castMs": 0
@@ -371,6 +431,18 @@
     "26083": {
       "name": "Whirlwind",
       "castMs": 0
+    },
+    "26100": {
+      "name": "Ground Rupture",
+      "castMs": 0
+    },
+    "26102": {
+      "name": "Sand Blast",
+      "castMs": 2000
+    },
+    "26103": {
+      "name": "Sweep",
+      "castMs": 1500
     },
     "26134": {
       "name": "Eye Beam",
@@ -400,12 +472,32 @@
       "name": "Cthun Vulnerable",
       "castMs": 0
     },
+    "26262": {
+      "name": "Birth",
+      "castMs": 250
+    },
     "26332": {
       "name": "Summon Mouth Tentacle",
       "castMs": 0
     },
+    "26561": {
+      "name": "Berserker Charge",
+      "castMs": 0
+    },
     "26607": {
       "name": "Blizzard",
+      "castMs": 0
+    },
+    "26615": {
+      "name": "Berserk",
+      "castMs": 0
+    },
+    "26616": {
+      "name": "Boulder",
+      "castMs": 2000
+    },
+    "26617": {
+      "name": "Summon Ouro Mound",
       "castMs": 0
     },
     "26662": {
@@ -505,6 +597,9 @@
     "15276": {
       "name": "Emperor Vek'lor"
     },
+    "15299": {
+      "name": "Viscidus"
+    },
     "15316": {
       "name": "Qiraji Scarab"
     },
@@ -520,14 +615,41 @@
     "15510": {
       "name": "Fankriss the Unyielding"
     },
+    "15511": {
+      "name": "Lord Kri"
+    },
     "15516": {
       "name": "Battleguard Sartura"
+    },
+    "15517": {
+      "name": "Ouro"
+    },
+    "15543": {
+      "name": "Princess Yauj"
+    },
+    "15544": {
+      "name": "Vem"
     },
     "15589": {
       "name": "Eye of C'Thun"
     },
+    "15621": {
+      "name": "Yauj Brood"
+    },
     "15630": {
       "name": "Spawn of Fankriss"
+    },
+    "15667": {
+      "name": "Glob of Viscidus"
+    },
+    "15712": {
+      "name": "Dirt Mound"
+    },
+    "15717": {
+      "name": "Ouro Trigger"
+    },
+    "15718": {
+      "name": "Ouro Scarab"
     },
     "15725": {
       "name": "Claw Tentacle"
@@ -543,6 +665,9 @@
     },
     "15802": {
       "name": "Flesh Tentacle"
+    },
+    "15922": {
+      "name": "Viscidus Trigger"
     },
     "15962": {
       "name": "Vekniss Hatchling"

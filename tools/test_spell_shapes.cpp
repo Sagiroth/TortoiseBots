@@ -109,6 +109,9 @@ void TestKnownShapes()
     Shape const* glare = For(26029);
     Check(glare && glare->kind == Kind::Cone && glare->angle == 15 && Near(glare->length, 100.0f) && glare->width == 0.0f,
         "Dark Glare is the core's 15 degree front cone of 100 yd (spellVisual 7441)");
+    Shape const* sand = For(26102);
+    Check(sand && sand->kind == Kind::Cone && sand->angle == 90 && Near(sand->length, 40.0f) && sand->width == 0.0f,
+        "Ouro's Sand Blast is the core's 90 degree target-54 cone of 40 yd (radius 23)");
 }
 
 // Every Deep Breath row is the complete damaging footprint of its chain: a line from the first to the last damage point,
