@@ -17,15 +17,6 @@ float TravelActionMultiplier::GetValue(Action* action)
 
     if (hasTarget && name.find("request") == 0)
     {
-        if (name.find("guild meeting") != std::string::npos)
-            return 1.0f;
-        if (name.find("order vendor") != std::string::npos)
-            return 1.0f;
-        if (name.find("order focus") != std::string::npos)
-            return 1.0f;
-        if (name.find("guild order") != std::string::npos)
-            return 1.0f;
-
         // A bag-pressure vendor errand may start while the bot is merely parked
         // at its destination (arrived, working it, or in cooldown): the bags are
         // at the pressure line and there is no vendor within walking distance, so
@@ -34,6 +25,12 @@ float TravelActionMultiplier::GetValue(Action* action)
         // valve is open - every other request keeps the churn guard.
         if (RequestTravelTargetAction* request = dynamic_cast<RequestTravelTargetAction*>(action))
         {
+            // The purpose is the qualifier: the action name never carries it,
+            // so matching the name kept orders and meetings behind a leisure trip.
+            std::string const purpose = request->getQualifier();
+            if (purpose == "guild meeting" || purpose == "order vendor" ||
+                purpose == "order focus" || purpose == "guild order")
+                return 1.0f;
             if (VendorErrandWhileParked(ai, request->getQualifier()))
                 return 1.0f;
         }
