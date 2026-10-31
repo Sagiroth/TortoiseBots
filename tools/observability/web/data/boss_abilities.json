@@ -4030,9 +4030,9 @@
           "sid": 20619,
           "name": "Magic Reflection",
           "castMs": 0,
-          "a": 30000,
-          "b": 30000,
-          "c": 30000,
+          "a": 0,
+          "b": 0,
+          "c": 0,
           "phase": "",
           "target": "self",
           "aura": false,
@@ -4053,9 +4053,9 @@
           "sid": 21075,
           "name": "Damage Shield",
           "castMs": 0,
-          "a": 30000,
-          "b": 30000,
-          "c": 30000,
+          "a": 0,
+          "b": 0,
+          "c": 0,
           "phase": "",
           "target": "self",
           "aura": false,
@@ -4118,7 +4118,7 @@
           "sid": 20618,
           "name": "Teleport",
           "castMs": 0,
-          "a": 10000,
+          "a": 0,
           "b": 0,
           "c": 0,
           "phase": "",
@@ -4210,7 +4210,7 @@
         }
       ],
       "notes": [
-        "The reflection is randomly Magic Reflection 20619 or Damage Reflection 21075 every 30 s; the teleport's first window is 10000 + rand() % 20000 and its repeat 20000 + rand() % 10000; the Ragnaros event spells 19774 / 20568 / 19773 are gossip-event casts."
+        "One shared 30 s timer casts Magic Reflection 20619 or Damage Reflection 21075 at random (`rand() % 2`); the teleport's first window is 10000 + rand() % 20000 and its repeat 20000 + rand() % 10000; the Ragnaros event spells 19774 / 20568 / 19773 are gossip-event casts."
       ]
     },
     "11502": {
@@ -4245,8 +4245,8 @@
           "name": "Magma Blast",
           "castMs": 0,
           "a": 2000,
-          "b": 0,
-          "c": 0,
+          "b": 2500,
+          "c": 2500,
           "phase": "",
           "target": "random",
           "aura": false,
@@ -4734,9 +4734,9 @@
           "sid": 52725,
           "name": "Rune of Detonation",
           "castMs": 0,
-          "a": 20000,
-          "b": 20000,
-          "c": 20000,
+          "a": 0,
+          "b": 0,
+          "c": 0,
           "phase": "",
           "target": "aoe",
           "aura": false,
@@ -4755,9 +4755,9 @@
           "sid": 52726,
           "name": "Rune of Combustion",
           "castMs": 0,
-          "a": 20000,
-          "b": 20000,
-          "c": 20000,
+          "a": 0,
+          "b": 0,
+          "c": 0,
           "phase": "",
           "target": "aoe",
           "aura": false,
@@ -4815,7 +4815,7 @@
         }
       ],
       "notes": [
-        "Rune of Detonation 52725 and Rune of Combustion 52726 alternate every 20 s; Rune of Power 52724/52729 is recast at 75, 50 and 25 percent and its zones are refreshed every 2 s for 7 s; the image casts Arcane Rupture and Arcane Barrage itself."
+        "Rune of Detonation and Rune of Combustion alternate on one shared 20 s timer, Detonation first (boss_thane.cpp:86, 205-223); Rune of Power 52724/52729 is recast at 75, 50 and 25 percent and its zones are refreshed every 2 s for 7 s; the image casts Arcane Rupture and Arcane Barrage itself."
       ]
     }
   },
