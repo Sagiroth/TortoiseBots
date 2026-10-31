@@ -216,6 +216,8 @@ assert.strictEqual(tl.hits.length, 6);
 assert.strictEqual(tl.hits[5].d, 3091);
 assert.strictEqual(tl.hits[5].h, 44);
 assert.ok(tl.hits.every((h) => h.pct >= 0 && h.pct <= 100));
+assert.strictEqual(F.timeline({ dur_ms: 10000, log: [{ k: "cast", t: 1000, e: 5, n: "Erennius", s: "Call of Nightmare", sid: 46079 }] }).bossCasts[0].e, 5);
+
 
 // ---- role tables ----------------------------------------------------------------------------------------------------
 const rt = F.roleTables(byId("5-4"), LAYOUT);

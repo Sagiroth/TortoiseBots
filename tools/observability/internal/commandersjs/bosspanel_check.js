@@ -509,4 +509,43 @@ const ktFight = B.model(REAL, { entry: 15990, hp: 80, au: [], uf: "" }, [], 0, 0
 assert.strictEqual(ktFight.phase, "fight");
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 28478).inPhase, true);
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 29423).inPhase, false);
+// ---- a spell two bosses list counts for the boss that cast it (Four Horsemen marks, Twin Emperors berserk) -----------
+const SHARED = B.normalize({ bosses: [
+  { entry: 1, name: "Erennius", map: 309, order: 0,
+    abilities: [{ spell: 46079, name: "Call of Nightmare", first: 0, repeatMin: 7000, repeatMax: 7000, flags: "" }],
+    phases: [], adds: [], notes: [] },
+  { entry: 2, name: "Solnius", map: 309, order: 1,
+    abilities: [
+      { spell: 46079, name: "Call of Nightmare", first: 0, repeatMin: 7000, repeatMax: 7000, flags: "" },
+      { spell: 99, name: "Solitary", first: 0, repeatMin: 7000, repeatMax: 7000, flags: "" },
+    ],
+    phases: [], adds: [], notes: [] },
+] });
+assert.strictEqual(SHARED.bySpellAll[46079].length, 2, "both slots list the shared spell");
+const castByA = [{ k: "cast", sid: 46079, t: 5000, e: 1, n: "Erennius" }];
+const rowB = B.model(SHARED, { entry: 2, hp: 100, au: [] }, castByA, 0, 10000).abilities.find((a) => a.sid === 46079);
+assert.strictEqual(rowB.seen, false, "A's cast is not B's sighting");
+assert.strictEqual(rowB.next, null, "unseen with no first window: no next");
+const rowA = B.model(SHARED, { entry: 1, hp: 100, au: [] }, castByA, 0, 10000).abilities.find((a) => a.sid === 46079);
+assert.strictEqual(rowA.seen, true);
+assert.deepStrictEqual({ lo: rowA.next.lo, hi: rowA.next.hi }, { lo: 12000, hi: 12000 });
+const noEntryB = B.model(SHARED, { entry: 2, hp: 100, au: [] }, [{ k: "cast", sid: 46079, t: 5000 }], 0, 10000).abilities;
+assert.strictEqual(noEntryB.find((a) => a.sid === 46079).seen, true, "an old event without an entry counts everywhere");
+assert.strictEqual(B.model(SHARED, { entry: 1, hp: 100, au: [] }, [{ k: "cast", sid: 46079, t: 5000 }], 0, 10000).abilities.find((a) => a.sid === 46079).seen, true);
+const foreignCast = [{ k: "cast", sid: 46079, t: 5000, e: 777 }];
+assert.strictEqual(B.model(SHARED, { entry: 1, hp: 100, au: [] }, foreignCast, 0, 10000).abilities.find((a) => a.sid === 46079).seen, true, "a cast by a non-boss counts on A");
+assert.strictEqual(B.model(SHARED, { entry: 2, hp: 100, au: [] }, foreignCast, 0, 10000).abilities.find((a) => a.sid === 46079).seen, true, "a cast by a non-boss counts on B");
+const addCast = [{ k: "cast", sid: 46079, t: 5000, e: 16428 }];
+assert.strictEqual(B.model(SHARED, { entry: 1, hp: 100, au: [] }, addCast, 0, 10000).abilities.find((a) => a.sid === 46079).seen, true, "an add's cast of a shared spell counts on A (Kel'Thuzad Mortal Wound)");
+assert.strictEqual(B.model(SHARED, { entry: 2, hp: 100, au: [] }, addCast, 0, 10000).abilities.find((a) => a.sid === 46079).seen, true, "an add's cast of a shared spell counts on B");
+const lone = B.model(SHARED, { entry: 2, hp: 100, au: [] }, [{ k: "cast", sid: 99, t: 1000, e: 777 }], 0, 5000).abilities.find((a) => a.sid === 99);
+assert.strictEqual(lone.seen, true, "an unshared spell is never filtered");
+const duel = [{ k: "cast", sid: 46079, t: 5000, e: 1, tn: "Tank" }, { k: "cast", sid: 46079, t: 6000, e: 2, tn: "Healer" }];
+const castMob = (entry) => ({ entry: entry, hp: 100, au: [], cid: 46079, cleft: 500, ctot: 1000 });
+assert.strictEqual(B.model(SHARED, castMob(2), duel, 0, 6500).abilities.find((a) => a.sid === 46079).casting.target, "Healer");
+assert.strictEqual(B.model(SHARED, castMob(1), duel, 0, 6500).abilities.find((a) => a.sid === 46079).casting.target, "Tank");
+assert.strictEqual(B.abilityBySpell(SHARED, 46079, 2).boss.entry, 2);
+assert.strictEqual(B.abilityBySpell(SHARED, 46079).boss.entry, 1);
+assert.strictEqual(B.abilityBySpell(SHARED, 46079, 999).boss.entry, 1);
+
 console.log("boss panel ok");
