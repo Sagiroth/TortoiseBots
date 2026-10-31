@@ -214,6 +214,20 @@ int main()
         CHECK(!ActionLogSweepDue(true, 60, 99999 * kActionLogMB, 0));   // no size limit, no early sweep
     }
 
+    // Shutdown transitions: disabling the log or narrowing the scope to
+    // none must release every open descriptor, or the process keeps one
+    // fd per logged-out bot until the fd table fills.
+    {
+        CHECK(ActionLogNeedsCloseAll(true, false, ActionLogScope::All, ActionLogScope::All, true));
+        CHECK(ActionLogNeedsCloseAll(true, false, ActionLogScope::Commanded, ActionLogScope::None, true));
+        CHECK(ActionLogNeedsCloseAll(true, true, ActionLogScope::All, ActionLogScope::None, true));
+        CHECK(!ActionLogNeedsCloseAll(true, true, ActionLogScope::Commanded, ActionLogScope::None, false));
+        CHECK(!ActionLogNeedsCloseAll(true, true, ActionLogScope::None, ActionLogScope::None, true));
+        CHECK(!ActionLogNeedsCloseAll(true, true, ActionLogScope::All, ActionLogScope::Commanded, true));
+        CHECK(!ActionLogNeedsCloseAll(false, false, ActionLogScope::All, ActionLogScope::All, true));
+        CHECK(!ActionLogNeedsCloseAll(false, true, ActionLogScope::Commanded, ActionLogScope::Commanded, false));
+    }
+
     if (g_failed)
     {
         std::fprintf(stderr, "%d check(s) failed\n", g_failed);

@@ -3,6 +3,7 @@
 #include "BotManager.h"
 #include "PlayerbotAIStorage.h"
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/BotActionLog.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "ByteBuffer.h"
@@ -13,7 +14,11 @@
 
 namespace TortoiseBots {
 
-PlayerbotAIAdapter::PlayerbotAIAdapter(Player* bot, Player* master) : bot_(bot), master_(master) {}
+PlayerbotAIAdapter::PlayerbotAIAdapter(Player* bot, Player* master) : bot_(bot), master_(master)
+{
+    if (bot_)
+        botGuidLow_ = bot_->GetObjectGuid().GetCounter(); // pi-lens-ignore: clang:all
+}
 
 PlayerbotAIAdapter::~PlayerbotAIAdapter()
 {
@@ -43,6 +48,7 @@ bool PlayerbotAIAdapter::Initialize()
         ai_ = nullptr;
         return false;
     }
+    ai::botdiag::BotActionLog::NoteLogin(bot_->GetObjectGuid().GetCounter()); // pi-lens-ignore: clang:all
     PlayerbotAIStorage::Instance().SetAI(bot_, ai_); // pi-lens-ignore: clang:all
     initialized_ = true;
     TB_LOG_DETAIL("TortoiseBots: PlayerbotAI attached for %s (%s) master %s", // pi-lens-ignore: clang:all
@@ -121,7 +127,12 @@ void PlayerbotAIAdapter::DetachMaster()
 
 void PlayerbotAIAdapter::Shutdown()
 {
+    // RemoveAI first: map-thread hooks resolve the AI through storage, so
+    // once this returns no new hook can reach ai_. Close then swaps the
+    // tombstone in: a hook holding the old pointer still fails its reopen.
     if (bot_) PlayerbotAIStorage::Instance().RemoveAI(bot_); // pi-lens-ignore: clang:all
+    if (botGuidLow_)
+        ai::botdiag::BotActionLog::Close(botGuidLow_);
     delete ai_; ai_ = nullptr; // pi-lens-ignore: clang:all
     initialized_ = false;
 }

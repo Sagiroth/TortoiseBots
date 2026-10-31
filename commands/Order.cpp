@@ -3,6 +3,7 @@
 
 #include "../runtime/BotManager.h"
 #include "../runtime/ClaimLifecycle.h"
+#include "../runtime/GuildOrderAccess.h"
 #include "../runtime/GuildOrderCategoryPolicy.h"
 #include "../runtime/GuildOrderGiveUpPolicy.h"
 #include "../runtime/GuildOrderStore.h"
@@ -156,12 +157,12 @@ bool ParseHours(std::string const& token, uint32_t& hours)
 
 bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const& rest)
 {
-    // order <bot> <farm|buy|craft> <itemId or item link> <amount> [hours|inf] [keep]
+    // order <bot> <farm|buy|craft> <itemId or item link> <amount> [hours|inf] [keep] [gold=<copper>]
     std::istringstream in(rest);
     std::string botName, typeToken;
     if (!(in >> botName >> typeToken))
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours|inf] [keep].");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours|inf] [keep] [gold=<copper>].");
         return true;
     }
     OrderType type;
@@ -184,6 +185,22 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
             itemPart += " ";
         itemPart += token;
     }
+    bool hasGoldCap = false;
+    uint32_t goldCap = 0;
+    size_t goldSpace = itemPart.rfind(' ');
+    std::string maybeGold = goldSpace == std::string::npos ? itemPart : itemPart.substr(goldSpace + 1);
+    std::string lowerGold = maybeGold;
+    std::transform(lowerGold.begin(), lowerGold.end(), lowerGold.begin(), ::tolower);
+    if (lowerGold.rfind("gold=", 0) == 0)
+    {
+        if (!ParseUintToken(maybeGold.substr(5), goldCap))
+        {
+            OrderError(handler, "invalid", "Guild gold cap must be copper from 0 to 4294967295.");
+            return true;
+        }
+        hasGoldCap = true;
+        itemPart = goldSpace == std::string::npos ? std::string() : itemPart.substr(0, goldSpace);
+    }
     // A trailing `keep` word marks a keep-in-stock order; hours still sit
     // between the amount and keep.
     bool keep = false;
@@ -204,7 +221,7 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     size_t lastSpace = itemPart.rfind(' ');
     if (lastSpace == std::string::npos)
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours|inf] [keep].");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours|inf] [keep] [gold=<copper>].");
         return true;
     }
     // A trailing 1-24 or `inf` is hours only when what is left still reads
@@ -306,12 +323,15 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     record.botGuidLow = guid.GetCounter();
     record.guildId = guildId;
     record.giverGuidLow = requester->GetGUIDLow();
+    record.rootGiverGuidLow = requester->GetGUIDLow();
     record.type = type;
     record.itemId = itemId;
     record.amount = amount;
     record.hours = hours;
     record.keep = keep;
     record.stockTarget = keep ? amount : 0;
+    record.goldCap = goldCap;
+    record.hasGoldCap = hasGoldCap;
 
     if (type == OrderType::Craft && !bot)
     {
@@ -323,21 +343,15 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     if (bot)
     {
         GuildOrders::SourcePlan plan = ai::PlanGuildOrderSources(bot, itemId, type);
-        if (plan.verdict != OrderReason::None)
+        if (type == OrderType::Craft && plan.verdict != OrderReason::None)
         {
-            if (type == OrderType::Craft && plan.verdict == OrderReason::NoRecipe)
+            if (plan.verdict == OrderReason::NoRecipe)
             {
                 // Refuse at give, like search does: storing Cant would still
                 // ACK the giver and start the reporting round-trip.
                 OrderError(handler, "norecipe", "The bot does not know that recipe.");
                 return true;
             }
-            record.state = GuildOrders::StateForReason(plan.verdict);
-            record.reason = plan.verdict;
-            // An order that starts noskill/cant never works a round: a keep
-            // flag on it would watch a bank for a dead order.
-            record.keep = false;
-            record.stockTarget = 0;
         }
         else if (!plan.zones.empty())
         {
@@ -357,6 +371,73 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     // The next world-thread Update reports the new row to the giver.
 
     SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, typeToken);
+    return true;
+}
+bool HandleOrderReassign(ChatHandler* handler, Player* requester, std::string const& subBotName,
+    std::string const& newBotName)
+{
+    Player* subBot = nullptr;
+    ObjectGuid subGuid;
+    if (!ResolveOrderBot(subBotName, subBot, subGuid) || !IsOrderBot(subBot, subGuid))
+    {
+        OrderError(handler, "no-bot", "No such sub-order bot.");
+        return true;
+    }
+    Player* newBot = nullptr;
+    ObjectGuid newGuid;
+    if (!ResolveOrderBot(newBotName, newBot, newGuid) || !IsOrderBot(newBot, newGuid))
+    {
+        OrderError(handler, "no-bot", "No such bot.");
+        return true;
+    }
+    if (!CheckGiver(handler, requester, GuildOf(subBot, subGuid)))
+        return true;
+    std::optional<OrderRecord> sub = GuildOrders::Find(subGuid.GetCounter());
+    if (!sub || !sub->parentBotGuidLow)
+    {
+        OrderError(handler, "invalid", "That bot has no sub-order.");
+        return true;
+    }
+    if (GuildOf(newBot, newGuid) != sub->guildId)
+    {
+        OrderError(handler, "not-guild", "The new bot is not in the order's guild.");
+        return true;
+    }
+    // A parked refund stub never makes a bot busy: giving or reassigning to
+    // that bot keeps the debt on the new row (Give carries held gold in),
+    // so the refund drain still repays it. Stubs never count as running.
+    std::optional<GuildOrders::OrderRecord> newBotOrder = GuildOrders::Find(newGuid.GetCounter());
+    bool newBotBusy = newBotOrder && !newBotOrder->cancelled &&
+        (!GuildOrders::IsFinished(newBotOrder->state) || newBotOrder->state == GuildOrders::OrderState::Stocked);
+    if (newBotBusy)
+    {
+        OrderError(handler, "invalid", "The new bot already has an order.");
+        return true;
+    }
+    Player* live = sObjectAccessor.FindPlayer(newGuid);
+    if (!live || !live->IsInWorld() || live->GetGuildId() != sub->guildId)
+    {
+        OrderError(handler, "no-bot", "The new bot is offline or not in the order's guild.");
+        return true;
+    }
+    if (!GuildOrders::IsDurableOrderBot(newGuid.GetCounter()))
+    {
+        OrderError(handler, "no-bot", "Only guild bots take sub-orders: never alts or hires.");
+        return true;
+    }
+    bool canMake = false, canFarm = false;
+    if (!GuildOrders::SubOrderCandidateUsable(live, sub->itemId, canMake, canFarm))
+    {
+        OrderError(handler, "noskill", "The new bot can neither make nor farm that item.");
+        return true;
+    }
+    if (!GuildOrders::ReassignSubOrder(subGuid.GetCounter(), newGuid.GetCounter(),
+        canMake ? GuildOrders::OrderType::Craft : GuildOrders::OrderType::Farm))
+    {
+        OrderError(handler, "invalid", "The sub-order could not be moved.");
+        return true;
+    }
+    SendActionAck(handler, "order", "bot:" + (subBot ? subBot->GetName() : subBotName), 1, "reassign");
     return true;
 }
 
@@ -388,6 +469,67 @@ bool HandleOrderCancel(ChatHandler* handler, Player* requester, std::string cons
     return true;
 }
 
+bool HandleOrderAccess(ChatHandler* handler, Player* requester)
+{
+    if (!requester || !requester->GetGuildId())
+    {
+        OrderError(handler, "not-guild", "You are not in a guild.");
+        return true;
+    }
+    handler->PSendSysMessage("%s",
+        GuildOrders::FormatAccessLine(requester->GetGuildId(), requester->GetGUIDLow()).c_str());
+    return true;
+}
+
+bool HandleOrderRank(ChatHandler* handler, Player* requester, std::string const& rankToken)
+{
+    if (!requester || !requester->GetSession() || !requester->GetSession()->HasNetworkTransport())
+    {
+        OrderError(handler, "forbidden", "Only a real player can change the bots' rank.");
+        return true;
+    }
+    uint32_t guildId = requester->GetGuildId();
+    if (!guildId)
+    {
+        OrderError(handler, "not-guild", "You are not in a guild.");
+        return true;
+    }
+    Guild* guild = sGuildMgr.GetGuildById(guildId);
+    if (!guild)
+    {
+        OrderError(handler, "not-guild", "You are not in a guild.");
+        return true;
+    }
+    if (!guild->HasRankRight(requester->GetRank(), GR_RIGHT_PROMOTE) ||
+        !guild->HasRankRight(requester->GetRank(), GR_RIGHT_DEMOTE))
+    {
+        OrderError(handler, "forbidden", "Your guild rank may not change ranks.");
+        return true;
+    }
+    uint32_t wanted = 0;
+    if (!ParseUintToken(rankToken, wanted))
+    {
+        OrderError(handler, "invalid", "Usage: order rank <rankIndex>.");
+        return true;
+    }
+    uint32_t rankCount = guild->GetRanksSize();
+    if (rankCount < 2 || wanted < 1 || wanted >= rankCount)
+    {
+        OrderError(handler, "invalid", "Rank must be between 1 and the lowest rank.");
+        return true;
+    }
+    if (!GuildOrders::StoreBotRank(guildId, wanted))
+    {
+        OrderError(handler, "invalid", "The rank could not be stored.");
+        return true;
+    }
+    GuildOrders::ApplyBotRankToGuild(guildId);
+    SendActionAck(handler, "order", "rank:" + std::to_string(wanted), 1, "rank");
+    handler->PSendSysMessage("%s",
+        GuildOrders::FormatAccessLine(guildId, requester->GetGUIDLow()).c_str());
+    return true;
+}
+
 bool HandleOrderList(ChatHandler* handler, Player* requester)
 {
     if (!requester || !requester->GetGuildId())
@@ -397,6 +539,7 @@ bool HandleOrderList(ChatHandler* handler, Player* requester)
     }
     std::vector<OrderRecord> orders = GuildOrders::ListForGuild(requester->GetGuildId());
     handler->PSendSysMessage("TBM:ORDER_BEGIN|%u", static_cast<uint32_t>(orders.size()));
+    handler->PSendSysMessage("%s", GuildOrders::FormatAccessLine(requester->GetGuildId(), requester->GetGUIDLow()).c_str());
     for (OrderRecord const& order : orders)
     {
         Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.botGuidLow));
@@ -444,6 +587,18 @@ bool HandleOrder(ChatHandler* handler, char const* args)
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
     if (lower == "list")
         return HandleOrderList(handler, requester);
+    if (lower == "access")
+        return HandleOrderAccess(handler, requester);
+    if (lower == "rank")
+    {
+        std::string rankToken;
+        if (!(in >> rankToken))
+        {
+            OrderError(handler, "invalid", "Usage: order rank <rankIndex>.");
+            return true;
+        }
+        return HandleOrderRank(handler, requester, rankToken);
+    }
 
     if (lower == "search")
     {
@@ -496,7 +651,18 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         return HandleOrderSearch(handler, requester, bot, typeToken, text);
     }
 
-    // order <bot> cancel | order <bot> <type> <item> <amount> [hours] [keep]
+    // order reassign <subOrderBot> <newBot> | order <bot> cancel | order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
+    if (lower == "reassign")
+    {
+        std::string subBotName, newBotName;
+        if (!(in >> subBotName >> newBotName))
+        {
+            OrderError(handler, "invalid", "Usage: order reassign <subOrderBot> <newBot>.");
+            return true;
+        }
+        return HandleOrderReassign(handler, requester, subBotName, newBotName);
+    }
+    // order <bot> cancel | order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
     std::string second;
     if (!(in >> second))
     {
@@ -507,6 +673,7 @@ bool HandleOrder(ChatHandler* handler, char const* args)
     std::transform(lowerSecond.begin(), lowerSecond.end(), lowerSecond.begin(), ::tolower);
     if (lowerSecond == "cancel")
         return HandleOrderCancel(handler, requester, first);
+
 
     return HandleOrderGive(handler, requester, rest);
 }

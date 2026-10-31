@@ -16,6 +16,8 @@ enum class OrderType : uint8_t { Farm, Buy, Craft };
 
 enum class OrderState : uint8_t { Working, Waiting, Delivering, Done, Mailed, NoSkill, Cant, Stocked };
 
+enum class SupplyStep : uint8_t { None, Bags, Bank, AuctionHouse, Farm, Craft, Sub, Need, Deliver };
+
 enum class OrderReason : uint8_t
 {
     None,
@@ -32,7 +34,53 @@ enum class OrderReason : uint8_t
     Elite,
     Timeout,
     NoProgress,
+    NeedItems,
+    BankDenied,
 };
+
+struct NeedItem
+{
+    uint32_t itemId = 0;
+    uint32_t count = 0;
+};
+
+inline char const* SupplyStepToken(SupplyStep step)
+{
+    switch (step)
+    {
+        case SupplyStep::None:        return "-";
+        case SupplyStep::Bags:        return "bags";
+        case SupplyStep::Bank:        return "bank";
+        case SupplyStep::AuctionHouse:return "ah";
+        case SupplyStep::Farm:        return "farm";
+        case SupplyStep::Craft:       return "craft";
+        case SupplyStep::Sub:         return "sub";
+        case SupplyStep::Need:        return "need";
+        case SupplyStep::Deliver:     return "deliver";
+    }
+    return "-";
+}
+
+inline bool ParseSupplyStep(std::string const& token, SupplyStep& out)
+{
+    for (uint8_t i = 0; i <= uint8_t(SupplyStep::Deliver); ++i)
+        if (token == SupplyStepToken(SupplyStep(i))) { out = SupplyStep(i); return true; }
+    return false;
+}
+
+inline std::string NeedItemsToken(std::vector<NeedItem> const& items)
+{
+    std::string out;
+    for (NeedItem const& item : items)
+    {
+        if (!item.itemId || !item.count)
+            continue;
+        if (!out.empty())
+            out += ';';
+        out += std::to_string(item.itemId) + ':' + std::to_string(item.count);
+    }
+    return out.empty() ? "-" : out;
+}
 
 inline char const* TypeToken(OrderType type)
 {
@@ -94,13 +142,15 @@ inline char const* ReasonToken(OrderReason reason)
         case OrderReason::Elite:    return "elite";
         case OrderReason::Timeout:  return "timeout";
         case OrderReason::NoProgress: return "noprogress";
+        case OrderReason::NeedItems: return "needitems";
+        case OrderReason::BankDenied: return "bankdenied";
     }
     return "-";
 }
 
 inline bool ParseReason(std::string const& token, OrderReason& out)
 {
-    for (uint8_t i = 0; i <= uint8_t(OrderReason::NoProgress); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderReason::BankDenied); ++i)
         if (token == ReasonToken(OrderReason(i))) { out = OrderReason(i); return true; }
     return false;
 }
@@ -111,6 +161,8 @@ inline OrderState StateForReason(OrderReason reason)
     switch (reason)
     {
         case OrderReason::Grouped:  return OrderState::Waiting;
+        case OrderReason::NeedItems:return OrderState::Waiting;
+        case OrderReason::BankDenied:return OrderState::Working;
         case OrderReason::NoSkill:
         case OrderReason::LowSkill: return OrderState::NoSkill;
         case OrderReason::LowLevel:
@@ -172,11 +224,32 @@ struct OrderRecord
     uint32_t botGuidLow = 0;
     uint32_t guildId = 0;
     uint32_t giverGuidLow = 0;
+    uint32_t parentBotGuidLow = 0; // order needing this item: 0 = top level
+    uint32_t rootGiverGuidLow = 0; // player who gave the root order (live rows go here)
     OrderType type = OrderType::Farm;
     uint32_t itemId = 0;
     uint32_t amount = 0;       // current round quota; re-armed per round for keep orders
     uint32_t hours = 0;        // player-chosen farm time per round: whole hours 1-24, 0 = no time limit (the default)
     bool keep = false;         // keep the stock target filled: new rounds while the bank holds less
+    uint32_t goldCap = 0;      // maximum guild copper this order may withdraw
+    bool hasGoldCap = false;
+    uint32_t guildGoldWithdrawn = 0;
+    uint32_t guildGoldHeld = 0;
+    bool cancelled = false; // cancel kept the row: unspent guild gold is still owed to the bank
+    std::vector<NeedItem> supplyGains; // order-caused inflow per item (bank, AH, mail, vendor, farm)
+    uint32_t bankEmptyItemId = 0; // item the bank had none of (skip until the cooldown)
+    uint32_t bankEmptyMs = 0; // when the empty visit happened, in server uptime ms
+    uint32_t mailEmptyItemId = 0; // item with no reachable mailbox (skip until the cooldown)
+    uint32_t mailEmptyMs = 0; // when the failed mailbox searches happened, in server uptime ms
+    SupplyStep supplyStep = SupplyStep::None;
+    SupplyStep supplyReturnStep = SupplyStep::None;
+    uint32_t supplyItemId = 0;
+    uint32_t supplyCount = 0;
+    uint32_t supplyGoldCount = 0;
+    std::vector<NeedItem> needItems;
+    bool needWhispered = false;
+    std::string lastNeedWhisper;
+    bool needBankDenied = false;
     uint32_t stockTarget = 0;  // keep level in the bank (the ordered amount)
     uint32_t lastBankCheckMs = 0; // last keep bank look, in server uptime ms
     uint32_t delivered = 0;
@@ -190,6 +263,8 @@ struct OrderRecord
     uint32_t deathsInZone = 0; // deaths in the current farm zone
     uint32_t searchFailsInZone = 0; // consecutive rejected/empty order-leg searches in farmZoneId
     uint32_t workedSinceNewItemSec = 0;
+    uint32_t committedAuctionZoneId = 0; // the city the bot committed to for the AH leg (0 = pick one)
+    uint32_t arrivedAuctionVisits = 0; // arrived trips with no auctioneer in reach on the AH leg
     uint32_t workedTotalSec = 0; // worked time over the whole order, ends it at hours
     uint32_t workedNoGainSec = 0; // worked time since the bot last gained an order item (the progress watchdog)
     uint32_t reportedHave = 0;   // last reported progress; reported have never drops below this

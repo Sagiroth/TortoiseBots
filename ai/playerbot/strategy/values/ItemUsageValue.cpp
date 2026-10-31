@@ -13,6 +13,7 @@
 #include "playerbot/policy/quest/QuestLogPolicy.h"
 #include "../../../../runtime/policy/provision/ClassConsumablePolicy.h"
 #include "../../../../runtime/policy/ah/AhReadModelPolicy.h"
+#include "../../../../runtime/policy/ah/AhSellPolicy.h"
 
 using namespace ai;
 
@@ -63,6 +64,7 @@ std::unordered_map<uint32, std::vector<std::pair<uint32, uint32>>> ItemUsageValu
 
 std::unordered_set<uint32> ItemUsageValue::m_allItemIdsSoldByAnyVendors;
 std::unordered_set<uint32> ItemUsageValue::m_itemIdsSoldByAnyVendorsWithLimitedMaxCount;
+std::unordered_set<uint32> ItemUsageValue::m_itemIdsSoldByAnyVendorsWithoutLimit;
 
 ItemQualifier::ItemQualifier(std::string qualifier) : itemId(0), enchantId(0), randomPropertyId(0), proto(nullptr) {
     std::vector<std::string> numbers = Qualified::getMultiQualifiers(qualifier, ":");
@@ -1817,7 +1819,7 @@ void ItemUsageValue::PopulateReagentItemIdsForCraftableItemIds()
 
 void ItemUsageValue::PopulateSoldByVendorItemIds()
 {
-    if (auto result = WorldDatabase.PQuery("%s", "SELECT distinct item FROM npc_vendor"))
+    if (auto result = WorldDatabase.PQuery("%s", "SELECT distinct item FROM npc_vendor UNION SELECT distinct item FROM npc_vendor_template"))
     {
         BarGoLink bar(result->GetRowCount());
         do
@@ -1835,7 +1837,7 @@ void ItemUsageValue::PopulateSoldByVendorItemIds()
         } while (result->NextRow());
     }
 
-    if (auto result = WorldDatabase.PQuery("%s", "SELECT distinct item FROM npc_vendor WHERE maxcount > 0"))
+    if (auto result = WorldDatabase.PQuery("%s", "SELECT distinct item FROM npc_vendor WHERE maxcount > 0 UNION SELECT distinct item FROM npc_vendor_template WHERE maxcount > 0"))
     {
         BarGoLink bar(result->GetRowCount());
         do
@@ -1850,6 +1852,24 @@ void ItemUsageValue::PopulateSoldByVendorItemIds()
                 continue;
 
             m_itemIdsSoldByAnyVendorsWithLimitedMaxCount.insert(fields[0].GetUInt32());
+        } while (result->NextRow());
+    }
+
+    if (auto result = WorldDatabase.PQuery("%s", "SELECT distinct item FROM npc_vendor WHERE maxcount = 0 UNION SELECT distinct item FROM npc_vendor_template WHERE maxcount = 0"))
+    {
+        BarGoLink bar(result->GetRowCount());
+        do
+        {
+            bar.step();
+            Field* fields = result->Fetch();
+            uint32 entry = fields[0].GetUInt32();
+            if (!entry)
+                continue;
+
+            if (!sObjectMgr.GetItemPrototype(entry))
+                continue;
+
+            m_itemIdsSoldByAnyVendorsWithoutLimit.insert(fields[0].GetUInt32());
         } while (result->NextRow());
     }
 }
@@ -1877,6 +1897,11 @@ bool ItemUsageValue::IsItemSoldByAnyVendor(ItemPrototype const* proto)
 bool ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(ItemPrototype const* proto)
 {
     return m_itemIdsSoldByAnyVendorsWithLimitedMaxCount.count(proto->ItemId) > 0;
+}
+
+bool ItemUsageValue::IsItemSoldByAnyVendorWithoutLimit(ItemPrototype const* proto)
+{
+    return m_itemIdsSoldByAnyVendorsWithoutLimit.count(proto->ItemId) > 0;
 }
 
 bool ItemUsageValue::IsItemUsedBySkill(ItemPrototype const* proto, SkillType skillType)
@@ -1948,7 +1973,7 @@ bool ItemUsageValue::IsMoreProfitableToSellToAHThanToVendor(ItemPrototype const*
         return false;
     }
 
-    if (AreCurrentAHListingsTooCheap(proto))
+    if (AhItemSellBlacklisted(proto->ItemId, sPlayerbotAIConfig.ahSellBlacklist))
     {
         return false;
     }
@@ -1967,6 +1992,16 @@ bool ItemUsageValue::IsMoreProfitableToSellToAHThanToVendor(ItemPrototype const*
         {
             return false;
         }
+    }
+
+    if (AhUnlimitedVendorStock(IsItemSoldByAnyVendorWithoutLimit(proto)))
+    {
+        return false;
+    }
+
+    if (AreCurrentAHListingsTooCheap(proto))
+    {
+        return false;
     }
 
     //exceptions
@@ -2069,6 +2104,21 @@ bool ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(ItemPrototype const* pr
         return false;
     }
 
+    if (AhItemSellBlacklisted(proto->ItemId, sPlayerbotAIConfig.ahSellBlacklist))
+    {
+        return false;
+    }
+
+    if (AhUnlimitedVendorStock(IsItemSoldByAnyVendorWithoutLimit(proto)))
+    {
+        return false;
+    }
+
+    if (!isLimitedSupply)
+    {
+        return false;
+    }
+
     if (AreCurrentAHListingsTooCheap(proto))
     {
         return false;
@@ -2108,7 +2158,7 @@ bool ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(ItemPrototype const* pr
         return true;
     }
 
-    if (isLimitedSupply && !(proto->Class == ItemClass::ITEM_CLASS_CONSUMABLE && proto->SubClass == ItemSubclassConsumable::ITEM_SUBCLASS_SCROLL))
+    if (!(proto->Class == ItemClass::ITEM_CLASS_CONSUMABLE && proto->SubClass == ItemSubclassConsumable::ITEM_SUBCLASS_SCROLL))
     {
         return true;
     }
@@ -2157,6 +2207,16 @@ bool ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(ItemPrototype const* pr
 
 bool ItemUsageValue::IsWorthBuyingFromAhToResellAtAH(ItemPrototype const* proto, uint32 totalCost, uint32 itemCount)
 {
+    if (AhItemSellBlacklisted(proto->ItemId, sPlayerbotAIConfig.ahSellBlacklist))
+    {
+        return false;
+    }
+
+    if (AhUnlimitedVendorStock(IsItemSoldByAnyVendorWithoutLimit(proto)))
+    {
+        return false;
+    }
+
     uint32 pricePerItem = totalCost / itemCount;
 
     //bottom half is probably always worth buying? That should reduce oversupply

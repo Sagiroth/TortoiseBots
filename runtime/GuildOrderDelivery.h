@@ -11,6 +11,12 @@ namespace GuildOrders
 // world-thread order update, after the store tick.
 void UpdateDeliveries();
 
+void UpdateSupplyWithdrawals();
+void OnSupplyOrderGone(uint32_t botGuidLow);
+// Refund queued unspent guild gold on the world thread. Runs after
+// UpdateSupplyWithdrawals from the order update.
+void UpdateGoldRefunds();
+
 // Forget a bot's empty-pass count when its order is gone (cancel, guild
 // left, character deleted).
 void OnDeliveryOrderGone(uint32_t botGuidLow);

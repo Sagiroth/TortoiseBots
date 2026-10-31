@@ -26,8 +26,10 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <list>
 #include <vector>
 
+#include "../runtime/policy/ah/AhSellPolicy.h"
 #include "../runtime/policy/ah/AhSyntheticMarketPolicy.h"
 
 static int checks = 0;
@@ -204,6 +206,7 @@ struct MockConfig
     uint32 ahMarketVariance = 10;
     uint32 ahMarketBidMin = 75;
     uint32 ahMarketBidMax = 90;
+    std::list<uint32> ahSellBlacklist;
 };
 
 struct ItemOverride
@@ -271,6 +274,8 @@ struct MockAhMarketService
 
     bool IsItemBlacklisted(uint32 itemId) const
     {
+        if (ai::AhItemSellBlacklisted(itemId, config.ahSellBlacklist))
+            return true;
         auto it = overrides.find(itemId);
         if (it != overrides.end())
             return ai::AhItemBlacklisted(it->second.value, it->second.add_chance);
@@ -313,7 +318,7 @@ struct MockAhMarketService
             proto->Quality, config.ahMarketMaxQuality,
             proto->RequiredLevel, maxRequiredLevel,
             proto->ItemLevel, maxItemLevel,
-            proto->Bonding, proto->Flags);
+            proto->Bonding, proto->Flags, false);
     }
 
     uint32 CalculatePrice(ItemPrototype const* proto) const
@@ -638,6 +643,13 @@ int main()
         service.ResetItemOverride(protoLinen.ItemId);
         CHECK(!service.IsItemBlacklisted(protoLinen.ItemId));
         CHECK(service.IsItemEligible(&protoLinen));
+
+        // Owner blocklist (AiPlayerbot.AhSellBlacklist) also blocks supply.
+        service.config.ahSellBlacklist = { protoSword.ItemId };
+        CHECK(service.IsItemBlacklisted(protoSword.ItemId));
+        CHECK(!service.IsItemEligible(&protoSword));
+        service.config.ahSellBlacklist.clear();
+        CHECK(service.IsItemEligible(&protoSword));
     }
 
     // -------------------------------------------------------------

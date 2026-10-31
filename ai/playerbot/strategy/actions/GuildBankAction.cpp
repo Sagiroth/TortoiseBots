@@ -1,4 +1,3 @@
-
 #include "playerbot/playerbot.h"
 #include "GuildBankAction.h"
 
@@ -6,6 +5,8 @@
 #include "playerbot/strategy/values/GuildValues.h"
 #include "runtime/GuildOrderDeliveryPolicy.h"
 #include "runtime/GuildOrderDeliveryQueue.h"
+#include "runtime/GuildOrderRefundQueue.h"
+#include "runtime/GuildOrderSupplyQueue.h"
 #include "runtime/GuildOrderStore.h"
 
 using namespace ai;
@@ -67,6 +68,15 @@ bool GuildBankAction::isUseful()
     std::optional<OrderRecord> stored = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
     if (!stored || stored->guildId != bot->GetGuildId())
         return false;
+    // A cancelled stub with unspent guild gold still uses the banker: the
+    // travel leg sees no order, so the action itself must stay useful.
+    if (stored->cancelled)
+        return stored->guildGoldHeld > 0 && FindNearbyGuildBanker() != nullptr;
+    bool bankSupplyEnabled = stored->supplyGoldCount ? sPlayerbotAIConfig.guildOrderBankGold :
+        sPlayerbotAIConfig.guildOrderBankWithdraw;
+    if (stored->state == OrderState::Working && stored->supplyStep == SupplyStep::Bank &&
+        stored->supplyCount && bankSupplyEnabled)
+        return FindNearbyGuildBanker() != nullptr;
     if (stored->state != OrderState::Delivering || !stored->itemId)
         return false;
     if (bot->GetItemCount(stored->itemId) == 0)
@@ -103,7 +113,18 @@ bool GuildBankAction::Execute(Event& event)
 {
     (void)event;
     std::optional<OrderRecord> stored = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
-    if (!stored || stored->guildId != bot->GetGuildId() || stored->state != OrderState::Delivering)
+    if (!stored || stored->guildId != bot->GetGuildId())
+        return false;
+    // Unspent guild gold goes back first: a live order and a cancelled stub
+    // both repay at any banker visit, before supply or delivery runs.
+    if (stored->guildGoldHeld > 0 && bot->GetMoney() > 0 && FindNearbyGuildBanker())
+        TortoiseBots::GuildOrders::RefundQueue::Instance().Enqueue(bot->GetGUIDLow());
+    bool bankSupplyEnabled = stored->supplyGoldCount ? sPlayerbotAIConfig.guildOrderBankGold :
+        sPlayerbotAIConfig.guildOrderBankWithdraw;
+    if (stored->state == OrderState::Working && stored->supplyStep == SupplyStep::Bank &&
+        stored->supplyCount && bankSupplyEnabled && FindNearbyGuildBanker())
+        return TortoiseBots::GuildOrders::SupplyQueue::Instance().Enqueue(bot->GetGUIDLow());
+    if (stored->state != OrderState::Delivering)
         return false;
     if (!stored->itemId || bot->GetItemCount(stored->itemId) == 0)
         return false;

@@ -171,6 +171,7 @@ public:
     bool shouldQueryAHListingsOutsideOfAH;
     std::list<uint32> ahOverVendorItemIds;
     std::list<uint32> vendorOverAHItemIds;
+    std::list<uint32> ahSellBlacklist;
     bool botCheckAllAuctionListings;
     bool botsSaveEpics;
     uint32 auctionPriceRefreshInterval = 60; // seconds between price mirror refreshes
@@ -316,6 +317,12 @@ public:
     // instead (same map, unwatched, once per 10 min). Owned/hired bots and bots
     // with a real master never teleport. Default off.
     bool stuckTravelTeleport = true;
+    // Auction-house visit budget for the guild-order auction leg: an arrived
+    // trip with no auctioneer in interact range moves the leg down the ladder
+    // after this many visits. No config gate by design: it ends no order, it
+    // only moves the leg on after 3 visits like the pick streak does. Tests
+    // pin the constant (see tools/test_guild_order_giveup_policy.cpp).
+    uint32_t guildOrderAuctionVisits = 3;
     // Quest-log upkeep for masterless random bots: drop finished quests that
     // can no longer be rewarded, refuse grey quests unless the reward is an
     // equip upgrade, and prefer turn-in travel once 2 quests are finished.
@@ -632,6 +639,9 @@ public:
     bool avoidCreatureAuras;
     // Bots may fly the taxi paths a core repair fixes (TaxiPathPolicy.h).
     bool allowRepairedTaxiPaths;
+    // Test shortcut: a bot that boards a taxi arrives at the destination
+    // node at once instead of flying the route (BotInstantFlightPolicy.h).
+    bool botInstantFlight;
     bool turnInRpg;
     bool globalSoundEffects;
     bool shareTargets;
@@ -662,6 +672,14 @@ public:
     bool forceActiveWhenNearPlayer;
     bool limitCombatActivity;
     bool guildOrderAlwaysActive;
+    bool guildOrderBankWithdraw;
+    bool guildOrderBankGold;
+    bool guildOrderSubOrders;
+    uint32_t guildOrderSubOrderDepth;
+    // Guild bank access for guild bots: every bot in a guild with a real
+    // player member holds one shared rank (`.bot order rank` picks it,
+    // defaulting to the rank below the master).
+    bool guildOrderBotRank;
     uint32 botActiveAlone;
     uint32 minEnchantingBotLevel;
     // Ordered pull: DPS hold after the tank's pull lands (pull) or after the

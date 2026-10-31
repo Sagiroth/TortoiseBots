@@ -39,6 +39,7 @@ For player trading permissions with open-world bots, see [`AiPlayerbot.PoolBotTr
 | [`AiPlayerbot.AhMarketBidMin` / `AhMarketBidMax`](#aiplayerbotahmarketbidmin--ahmarketbidmax) | `75` / `90` (BidMax built in) | Percentage range of buyout price used for opening auction bids. |
 | [`AiPlayerbot.AhMarketTimeMin` / `AhMarketTimeMax`](#aiplayerbotahmarkettimemin--ahmarkettimemax) | `8` / `24` (TimeMin built in) | Duration range in hours for posted synthetic auction listings. |
 | [`AiPlayerbot.AuctionPriceRefreshInterval`](#aiplayerbotauctionpricerefreshinterval) | `60` (built in; the key is not in the template — add it to `aiplayerbot.conf` to change it) | Seconds between market price evaluation sweeps. |
+| [`AiPlayerbot.AhSellBlacklist`](#aiplayerbotahsellblacklist) | `18256` | Item ids bots never post to the auction house. |
 | [`AiPlayerbot.VendorBatchMinCount` / `VendorBatchMinBagSpace`](#aiplayerbotvendorbatchmincount--vendorbatchminbagspace) | `8` / `60` | Inventory thresholds that trigger vendor selling trips for level 5+ bots. |
 | [`AiPlayerbot.LowLevelVendorBatchMinCount` / `LowLevelVendorBatchMinBagSpace`](#aiplayerbotlowlevelvendorbatchmincount--lowlevelvendorbatchminbagspace) | `3` / `25` | Inventory thresholds that trigger vendor selling trips for sub-level 5 bots. |
 | [`AiPlayerbot.LowLevelVendorMaxDistance`](#aiplayerbotlowlevelvendormaxdistance) | `600` | Maximum yard radius sub-level 5 bots travel to reach camp vendors. |
@@ -259,6 +260,17 @@ Interval in seconds between background auction price and market valuation update
 <summary>How it works in detail</summary>
 
 Controls how frequently the auction price mirror reloads active listings used for market price averages and item valuations.
+
+</details>
+
+### `AiPlayerbot.AhSellBlacklist`
+Item ids bots never post to the auction house.
+**Default:** `18256` (Imbued Vial) · **Values:** comma-separated item ids · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Bots also never post items any vendor sells without a stock limit, even if other vendors limit the same item: any player can buy those at the vendor buy price, so no auction listing can be fair. Vendor-buy-to-flip uses the same rule, refusing the item whenever the visited vendor's own stock is unlimited. The blacklist covers anything else odd the owner finds and also blocks synthetic market supply.
 
 </details>
 

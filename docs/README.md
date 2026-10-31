@@ -108,6 +108,7 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | [Combat settings](server/settings/combat.md) | Health and mana percentage thresholds, ranges, global cooldown (GCD) delays, and pull pacing. |
 | [World population settings](server/settings/world-population.md) | Bot population limits, level ladder rotation, wandering, greetings, and trading. |
 | [Economy settings](server/settings/economy.md) | Auction house market pacing, synthetic supply, and vendor batch sizes. |
+| [Guild order settings](server/settings/guild-orders.md) | Guild bank material withdrawals, guild bank gold, and sub-orders between guild bots. |
 | [Queue settings](server/settings/queues.md) | Dungeon finder backfill intervals and battleground queue parameters. |
 | [Performance settings](server/settings/performance.md) | AI tick time budgets, activity throttling, and core server optimizations. |
 | [Chat settings](server/settings/chat.md) | Automated public broadcasts, frequency throttles, and masterless say chat. |
@@ -120,6 +121,7 @@ Welcome to the TortoiseBots documentation catalog for Tortoise WoW 1.18.1. This 
 | :--- | :--- |
 | [Developer index](developers/README.md) | Contributor workflows, coding standards, tools, and testing commands. |
 | [Architecture invariants](developers/architecture.md) | Decoupled C++ modularity, headless session lifecycle, and zero core coupling. |
+| [Guild supply chain](developers/guild-supply.md) | Supply ladder, guild bank withdrawals, and waiting for missing materials. |
 | [Strategy engine](developers/strategy-engine.md) | AI update loop, action baskets, triggers, multipliers, and failure backoffs. |
 | [Bot mechanics and quirks](developers/bot-mechanics.md) | Targeting and interrupt logic, movement physics, gear evaluation, and technical quirks. |
 | [Donor hierarchy](developers/donor-hierarchy.md) | Provenance precedence across shyalya, mod-playerbots, and upstream core. |

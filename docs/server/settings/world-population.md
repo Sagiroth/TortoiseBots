@@ -63,6 +63,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.UnstuckHearthMinDistance`](#aiplayerbotunstuckhearthmindistance) | `300` | Minimum distance from bind point before an unstuck bot casts hearthstone. |
 | [`AiPlayerbot.BotQuestLogUpkeep`](#aiplayerbotbotquestlogupkeep) | `1` | Enables autonomous quest log pruning, turn-in prioritization, and cleanup. |
 | [`AiPlayerbot.AutoDoQuests`](#aiplayerbotautodoquests) | `1` | Pool bots quest and travel on their own; off also disables guild orders. |
+| [`AiPlayerbot.GuildOrderBotRank`](#aiplayerbotguildorderbotrank) | `1` | Whether bots in a guild with a real player share one rank for guild bank access. |
 | [`AiPlayerbot.LeaveOutgrownZones`](#aiplayerbotleaveoutgrownzones) | `1` | Forces bots to travel to level-appropriate zones when outleveling an area. |
 | [`AiPlayerbot.AllowIsolatedCustomStartingZones`](#aiplayerbotallowisolatedcustomstartingzones) | `0` | Normalizes bots created in isolated custom islands to mainland start zones. |
 | [`AiPlayerbot.EnableRandomTeleports`](#aiplayerbotenablerandomteleports) | `1` | Scatters newly seeded bots to level-appropriate overworld destinations. |
@@ -72,6 +73,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomBotNamesFile`](#aiplayerbotrandombotnamesfile) | `(empty)` | Optional external text file defining custom names and name patterns. |
 | [`AiPlayerbot.RandomBotStartZoneWeights`](#aiplayerbotrandombotstartzoneweights) | `(empty)` | Custom weighting per starting zone for newly generated characters. |
 | [`AiPlayerbot.AllowRepairedTaxiPaths`](#aiplayerbotallowrepairedtaxipaths) | `0` | Disables broken client flight paths (paths 274 and 355) unless core repairs. |
+| [`AiPlayerbot.BotInstantFlight`](#aiplayerbotbotinstantflight) | `0` | Lands a bot that boards a taxi at the destination node at once (testing shortcut). |
 | [`AiPlayerbot.AmmoStacksNonHunter`](#aiplayerbotammostacksnonhunter) | `2` | Number of ammo stacks stocked for ranged warriors and rogues. |
 | [`AiPlayerbot.UseWanderAsDefaultFollowStrategy`](#aiplayerbotusewanderasdefaultfollowstrategy) | `1` | Sets masterless bots to wander freely instead of tightly following. |
 | [`AiPlayerbot.WanderMinDistance`](#aiplayerbotwandermindistance) | `5.0` (built in) | Minimum yard radius bots roam from anchor while running wander strategy. |
@@ -696,6 +698,17 @@ With this off, pool bots get no quest travel data and never pick the travel, fis
 
 </details>
 
+### `AiPlayerbot.GuildOrderBotRank`
+Whether bots share one guild rank for guild bank access.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+When on, every bot in a guild with a real player member holds the guild's bot rank (by default the rank below the guild master, or the rank picked with `.bot order rank`), so the guild master can open bank tabs to one rank for all bots. New bots join at that rank at once and bots already in the guild are moved there once when the server starts; all-bot guilds keep their own ranks. When off, ranks stay as they are and `.bot order access` answers `TBM:ORDER_ACCESS|-|-|-|-|0|0` (the addon shows that the server does not manage bot ranks). Your own characters are never moved. See [Guild Orders](../../play/guild-orders.md#guild-bank-access).
+
+</details>
+
 ### `AiPlayerbot.LeaveOutgrownZones`
 Directs leveling bots to migrate out of low-level zones into level-appropriate areas.
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
@@ -812,6 +825,17 @@ Enables or disables flight paths known to have missing waypoint data in client d
 Certain taxi paths in game data (such as path 355 from Shimmerstar Lake to Valormok, and path 274) have missing nodes that crash world servers if flown by bots without node reconstruction.
 
 Leaving this at `0` prevents bots from taking these routes while leaving all standard flight paths active. Set to `1` only if running a core build that rebuilds missing nodes on startup.
+
+</details>
+
+### `AiPlayerbot.BotInstantFlight`
+Testing shortcut: a bot that boards a taxi lands on the destination flight-master node at once instead of flying the route.
+**Default:** `0` · **Values:** `0` fly the route, `1` land at once · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+The bot still boards normally (fare paid, `TaxiFlight` logged as today), then skips the flight and appears at the destination node, continuing its errand from there. Real players always fly. Leave at `0` outside testing.
 
 </details>
 

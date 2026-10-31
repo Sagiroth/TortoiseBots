@@ -2,6 +2,7 @@
 #include "playerbot/PlayerbotAI.h"
 #include "GenericActions.h"
 #include "Guild/GuildMgr.h"
+#include "../../../../runtime/GuildOrderAccess.h"
 
 namespace ai
 {
@@ -28,7 +29,7 @@ namespace ai
     {
     public:
         GuildInviteAction(PlayerbotAI* ai, std::string name = "guild invite", uint16 opcode = CMSG_GUILD_INVITE) : GuidManageAction(ai, name, opcode) {}
-        virtual bool isUseful() override { return bot->GetGuildId() && sGuildMgr.GetGuildById(bot->GetGuildId())->HasRankRight(bot->GetRank(), GR_RIGHT_INVITE) && !GuildIsFull(bot->GetGuildId()); }
+        virtual bool isUseful() override { return bot->GetGuildId() && !TortoiseBots::GuildOrders::BotRankBlocksManagement(bot->GetGuildId()) && sGuildMgr.GetGuildById(bot->GetGuildId())->HasRankRight(bot->GetRank(), GR_RIGHT_INVITE) && !GuildIsFull(bot->GetGuildId()); }
 
     protected:
         virtual void SendPacket(WorldPacket data, Event event) override { bot->GetSession()->HandleGuildInviteOpcode(data); };
@@ -51,7 +52,7 @@ namespace ai
     {
     public:
         GuildPromoteAction(PlayerbotAI* ai, std::string name = "guild promote", uint16 opcode = CMSG_GUILD_PROMOTE) : GuidManageAction(ai, name, opcode) {}
-        virtual bool isUseful() override { return bot->GetGuildId() && sGuildMgr.GetGuildById(bot->GetGuildId())->HasRankRight(bot->GetRank(), GR_RIGHT_PROMOTE); }
+        virtual bool isUseful() override { return bot->GetGuildId() && !TortoiseBots::GuildOrders::BotRankBlocksManagement(bot->GetGuildId()) && sGuildMgr.GetGuildById(bot->GetGuildId())->HasRankRight(bot->GetRank(), GR_RIGHT_PROMOTE); }
 
     protected:
         virtual void SendPacket(WorldPacket data, Event event) override { bot->GetSession()->HandleGuildPromoteOpcode(data); };
@@ -62,7 +63,7 @@ namespace ai
     {
     public:
         GuildDemoteAction(PlayerbotAI* ai, std::string name = "guild demote", uint16 opcode = CMSG_GUILD_DEMOTE) : GuidManageAction(ai, name, opcode) {}
-        virtual bool isUseful() override { return bot->GetGuildId() && sGuildMgr.GetGuildById(bot->GetGuildId())->HasRankRight(bot->GetRank(), GR_RIGHT_DEMOTE); }
+        virtual bool isUseful() override { return bot->GetGuildId() && !TortoiseBots::GuildOrders::BotRankBlocksManagement(bot->GetGuildId()) && sGuildMgr.GetGuildById(bot->GetGuildId())->HasRankRight(bot->GetRank(), GR_RIGHT_DEMOTE); }
 
     protected:
         virtual void SendPacket(WorldPacket data, Event event) override { bot->GetSession()->HandleGuildDemoteOpcode(data); };
@@ -84,7 +85,7 @@ namespace ai
     {
     public:
         GuildRemoveAction(PlayerbotAI* ai, std::string name = "guild remove", uint16 opcode = CMSG_GUILD_REMOVE) : GuidManageAction(ai, name, opcode) {}
-        virtual bool isUseful() override { return bot->GetGuildId() && sGuildMgr.GetGuildById(bot->GetGuildId())->HasRankRight(bot->GetRank(), GR_RIGHT_REMOVE); }
+        virtual bool isUseful() override { return bot->GetGuildId() && !TortoiseBots::GuildOrders::BotRankBlocksManagement(bot->GetGuildId()) && sGuildMgr.GetGuildById(bot->GetGuildId())->HasRankRight(bot->GetRank(), GR_RIGHT_REMOVE); }
 
     protected:
         virtual void SendPacket(WorldPacket data, Event event) override { bot->GetSession()->HandleGuildRemoveOpcode(data); };

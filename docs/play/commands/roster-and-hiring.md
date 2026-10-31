@@ -271,12 +271,15 @@ Opens a direct trading window with your targeted companion bot. Also available a
 Gives a guild bot an order to fetch items for real: it farms, buys or crafts them and brings them to the guild bank. One order per bot; a new order replaces the old one. Orders survive restarts, and an order on an offline bot runs when it comes back online (craft orders need the bot online: its recipes cannot be checked while it is offline, so those are refused with `norecipe`). Full guide: [Guild Orders](../guild-orders.md).
 
 ```text
-.bot order <BotName> farm <shift-clicked item link> <amount> [hours|inf] [keep]
-.bot order <BotName> buy <item id> <amount> [hours|inf] [keep]
-.bot order <BotName> craft <item id> <amount> [hours|inf] [keep]
-.bot order <BotName> cancel
+.bot order <BotName> farm <shift-clicked item link> <amount> [hours|inf] [keep] [gold=<copper>]
+.bot order <BotName> buy <item id> <amount> [hours|inf] [keep] [gold=<copper>]
+.bot order <BotName> craft <item id> <amount> [hours|inf] [keep] [gold=<copper>]
+.bot order <BotName> cancel (cancelling a parent cancels its whole sub-order branch)
 .bot order list
 .bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text>
+.bot order reassign <SubOrderBot> <NewBot>
+.bot order rank <rankIndex>
+.bot order access
 ```
 
 - **Who may give orders:** you must be a real player in the bot's guild, and your guild rank must be allowed to edit officer notes. Anyone else gets an error.
@@ -284,10 +287,12 @@ Gives a guild bot an order to fetch items for real: it farms, buys or crafts the
 - **Hours:** optional whole hours 1-24; no hours given (or `inf`) means no time limit: the bot farms until it has the amount, however long it takes. A capped order farms that long in total per round before ending as `cant` with reason `timeout`, after delivering what it holds.
 - **No progress:** every order, capped or not, ends when the bot worked 3 hours without gaining a single order item (a craft order watches its current reagent): the bot still brings what it holds and the order ends as `cant` with reason `noprogress`. Any new item resets the 3 hours.
 - **Keep:** trailing `keep` keeps the ordered amount in stock: after delivery the order watches the bank and restocks what drops below it. Each round gets the full hours again; a round that ends mailed, `cant` or `noskill` ends the keep.
-- **Progress:** `.bot order list` shows every order in your guild with have/want counts and the farm zone; the order giver also gets live updates while it runs.
-- **States:** `working` (farming, buying or crafting), `waiting` (the bot is grouped with a player; the order resumes when it leaves), `delivering` (amount reached or bags full, on the way to the guild bank), `done`, `stocked` (keep order watching a filled bank), `mailed`, `noskill` (missing profession skill) and `cant` (no source, no recipe, farm time ran out, no new item in 3 worked hours, or stuck while crafting or delivering).
+- **Guild gold:** trailing `gold=<copper>` caps this order's guild bank money for auction house purchases; the bot's own gold is spent first. Omit it for no cap.
+- **Progress:** `.bot order list` shows every order in your guild with have/want counts, the current supply step and any missing items; the order giver also gets live updates when those change.
+- **States:** `working` (supplying or crafting), `waiting` (the bot is grouped with a player, or reason `needitems` lists materials the giver must bring), `delivering` (amount reached or bags full, on the way to the guild bank), `done`, `stocked` (keep order watching a filled bank), `mailed`, `noskill` (missing profession skill) and `cant` (no source, no recipe, farm time ran out, no new item in 3 worked hours, or stuck while crafting or delivering).
 - **Needs travel data:** guild orders only work while `AiPlayerbot.AutoDoQuests = 1` (the default). With quest travel off, the source index stays empty, `guild-orders` disappears from `TBM:CAPS`, and `.bot order` answers `disabled`.
-- **Guild bank:** the guild needs an unlocked bank with at least one tab the bots' rank may deposit into; otherwise the bot mails the items to the guild master instead (`mailed`). Bots usually have the lowest rank, so open a tab to that rank if you want bank deposits.
+- **Guild bank:** the core checks the bot's rank for each deposit or withdrawal and logs withdrawals. If the bank refuses a supply withdrawal, the bot continues to the auction house or farming. Finished items it cannot deposit are mailed to the guild master instead (`mailed`). Bots in a guild with a real player hold the guild's bot rank (by default the rank below the guild master), so open a tab to that rank if you want bank access; all-bot guilds keep their own ranks. `.bot order rank <rankIndex>` moves every bot to another rank (only a player whose rank may promote and demote members); `.bot order access` shows what the bots can reach.
+- **Sub-orders:** when the ordering bot cannot get a material itself, it asks another guild bot to make or farm it (up to 3 levels deep; the same item never appears twice in one branch). Sub-orders deliver into the guild bank, show indented under the parent in the addon, and go live to the player who gave the root order. A failed sub-order puts its item on the parent's need list instead of failing the parent. Move one with `.bot order reassign` (same permission as giving orders); only bots without an order of their own qualify.
 
 ---
 

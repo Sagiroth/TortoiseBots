@@ -440,6 +440,7 @@ bool PlayerbotAIConfig::Initialize()
     shouldQueryAHListingsOutsideOfAH = config.GetBoolDefault("AiPlayerbot.ShouldQueryAHListingsOutsideOfAH", true);
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.AhOverVendorItemIds", ""), ahOverVendorItemIds);
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.VendorOverAHItemIds", ""), vendorOverAHItemIds);
+    LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.AhSellBlacklist", "18256"), ahSellBlacklist);
     botCheckAllAuctionListings = config.GetBoolDefault("AiPlayerbot.BotCheckAllAuctionListings", false);
     botsSaveEpics = config.GetBoolDefault("AiPlayerbot.BotsSaveEpics", true);
     auctionPriceRefreshInterval = (uint32)config.GetIntDefault("AiPlayerbot.AuctionPriceRefreshInterval", 60);
@@ -545,6 +546,7 @@ bool PlayerbotAIConfig::Initialize()
     unstuckHearthLevelFit = config.GetBoolDefault("AiPlayerbot.UnstuckHearthLevelFit", true);
     unstuckHearthMinDistance = config.GetFloatDefault("AiPlayerbot.UnstuckHearthMinDistance", 300.0f);
     stuckTravelTeleport = config.GetBoolDefault("AiPlayerbot.StuckTravelTeleport", true);
+    guildOrderAuctionVisits = static_cast<uint32_t>(config.GetIntDefault("AiPlayerbot.GuildOrderAuctionVisits", 3));
     botQuestLogUpkeep = config.GetBoolDefault("AiPlayerbot.BotQuestLogUpkeep", true);
     leaveOutgrownZones = config.GetBoolDefault("AiPlayerbot.LeaveOutgrownZones", true);
     vendorBatchMinCount = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.VendorBatchMinCount", 8));
@@ -934,6 +936,12 @@ bool PlayerbotAIConfig::Initialize()
     forceActiveWhenNearPlayer = config.GetBoolDefault("AiPlayerbot.ForceActiveWhenNearPlayer", false);
     limitCombatActivity = config.GetBoolDefault("AiPlayerbot.LimitCombatActivity", false);
     guildOrderAlwaysActive = config.GetBoolDefault("AiPlayerbot.GuildOrderAlwaysActive", true);
+    guildOrderBankWithdraw = config.GetBoolDefault("AiPlayerbot.GuildOrderBankWithdraw", true);
+    guildOrderBankGold = config.GetBoolDefault("AiPlayerbot.GuildOrderBankGold", true);
+    guildOrderSubOrders = config.GetBoolDefault("AiPlayerbot.GuildOrderSubOrders", true);
+    uint32_t depth = static_cast<uint32_t>(config.GetIntDefault("AiPlayerbot.GuildOrderSubOrderDepth", 3));
+    guildOrderSubOrderDepth = (depth < 1 || depth > 16) ? 3 : depth;
+    guildOrderBotRank = config.GetBoolDefault("AiPlayerbot.GuildOrderBotRank", true);
     botActiveAlone = config.GetIntDefault("AiPlayerbot.botActiveAlone", 10);
     RandombotsWalkingRPG = config.GetBoolDefault("AiPlayerbot.RandombotsWalkingRPG", false);
     minEnchantingBotLevel = config.GetIntDefault("AiPlayerbot.minEnchantingBotLevel", 10);
@@ -1070,6 +1078,7 @@ bool PlayerbotAIConfig::Initialize()
     LoadDungeonRunKeys();
     avoidCreatureAuras = config.GetBoolDefault("AiPlayerbot.AvoidCreatureAuras", true);
     allowRepairedTaxiPaths = config.GetBoolDefault("AiPlayerbot.AllowRepairedTaxiPaths", false);
+    botInstantFlight = config.GetBoolDefault("AiPlayerbot.BotInstantFlight", false);
     turnInRpg = config.GetBoolDefault("AiPlayerbot.TurnInRpg", false);
     shareTargets = config.GetBoolDefault("AiPlayerbot.ShareTargets", true);
     globalSoundEffects = config.GetBoolDefault("AiPlayerbot.GlobalSoundEffects", false);

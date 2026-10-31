@@ -5,6 +5,7 @@
 #include "../runtime/BotManager.h"
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/ClaimLifecycle.h"
+#include "../runtime/GuildOrderAccess.h"
 #include "../runtime/GuildOrderStore.h"
 #include "../runtime/HireProvisionService.h"
 #include "../runtime/HireGearCache.h"
@@ -22,6 +23,7 @@
 #include "../commands/BotCommands.h"
 #include "../commands/BotCommandHandlers.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
+#include "../ai/playerbot/BotActionLog.h"
 #include "Config/Config.h"
 #include "ObjectMgr.h"
 #include "Log.h"
@@ -120,6 +122,7 @@ void BotHostAdapter::OnStartup()
     BattlegroundQueueService::Instance().Initialize();
     ClaimLifecycle::Instance().Initialize();
     GuildOrders::Initialize();
+    GuildOrders::ApplyBotRanksAtStartup();
     // Run trace: mark the summaries of runs the last server never finalised.
     RunTraceService::Instance().Initialize();
 
@@ -266,8 +269,11 @@ void BotHostAdapter::OnShutdown()
     BotCommandQueue::Instance().Clear();
     BotCommands::ClearRemoteCommanders();
     BotPacketAdapter::ClearDeferredPackets();
+    // After the bots are gone: aura-strip/cast hooks during session teardown
+    // reopen nothing once nothing is left to log.
     BotManager::Instance().Shutdown();
     RandomBotService::Instance().Shutdown();
+    ai::botdiag::BotActionLog::CloseAll();
     BotActivityLeaseManager::Instance().Clear();
     TB_LOG_BASIC("TortoiseBots: native module shutting down after %u world ticks", m_ticks);
 }
