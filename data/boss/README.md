@@ -54,7 +54,8 @@ Ability flags, `;`-joined: `p=<phase>` (must be a phase row), `t=victim|random|s
 icon), `ground` (persistent area, checked against spell effect 27 with `--db`),
 `cone` (frontal cone, checked against implicit target 24 with `--db`),
 `tail` (rear cone or tail sweep; no DB column, it is the script's choice),
-`int` (cast time/channel, interruptible), `summon=<entry>` (needs an add row),
+`int` (a cast with a cast time or a channel; add `ok.interrupt=nokick` when the
+core cannot stop it), `summon=<entry>` (needs an add row),
 `hp<N>` (one-shot below N percent), `ok=<reason>` (the whole ability needs no
 answer) and `ok.<need>=<reason>` (that one need needs no answer).
 
@@ -88,6 +89,27 @@ fails `check`). The reasons are closed:
 A reason is justified by the row's own `source` citation (the line that defines
 the spell), plus a `kb:` citation when the reason comes from the knowledge base.
 Never add `ok` to make the count look better.
+
+## Source check
+
+`tools/test_boss_data.py`'s `BossSpellSourceTest` reads the core's
+`sql/base/tw_world_spell_template.sql` (and the `sql/base/tw_world_spell_mod.sql`
+overrides to `attributes`, `castingTimeIndex` and `interruptFlags`) and checks
+every raid in the CSV:
+
+- a phase `aura=` spell is not passive (`attributes` & 0x40), or it never reaches
+  the panel;
+- every spell in `runtime/SpellShapeData.h` has a cast (`castingTimeIndex` > 1);
+- every `int` row without `ok.interrupt=nokick` is kickable (`preventionType` 1
+  and `interruptFlags` & 0x02), and every `ok.interrupt=nokick` row is not;
+- every `self` row applies an aura (effect 6, 27, 35, 119, 128, 129, 132, 133 or
+  134 with an aura name).
+
+It skips without a core checkout (`TORTOISE_CORE_DIR`, default
+`~/tortoise-wow`) and fails with the exact row and spell otherwise. Rows that
+predate the check and are not this pass's to change live in the test's
+`EXPECTED_SOURCE_PROBLEMS` allow-list with a reason each; a stale entry fails the
+test so the list cannot rot.
 
 ## `code_answers.csv`
 

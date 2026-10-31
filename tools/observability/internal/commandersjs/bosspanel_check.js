@@ -158,8 +158,9 @@ assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }] }).phase, "en
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }, { id: 27680 }] }).phase, "berserk");
 
 // AQ40's last three: Viscidus freezes on aura 25937 (the normal spells stop, the trigger's cloud does not),
-// Ouro is enraged on aura 26615 and submerged on aura 26063 (Boulder is enraged-only, the ground spells keep going),
-// and the Bug Trio has no phase rows at all.
+// Ouro is enraged on aura 26615 (Boulder is enraged-only, the ground spells keep going) and his submerge aura
+// 26063 is no phase rule: it arrives as he turns invisible, so he leaves the panel and the mounds are the signal.
+// The Bug Trio has no phase rows at all.
 const viscidus = (REAL.byEntry || REAL.bosses || REAL)["15299"];
 assert.deepStrictEqual(viscidus.phases.map((x) => x.rule), ["aura=25937", "start"]);
 assert.strictEqual(B.phaseOf(viscidus, { hp: 90, au: [] }).phase, "fight");
@@ -172,9 +173,10 @@ assert.strictEqual(normalV.abilities.find((a) => a.sid === 25993).inPhase, true)
 assert.strictEqual(normalV.abilities.find((a) => a.sid === 25937).inPhase, true);
 
 const ouro = (REAL.byEntry || REAL.bosses || REAL)["15517"];
-assert.deepStrictEqual(ouro.phases.map((x) => x.rule), ["aura=26615", "aura=26063", "start"]);
+assert.deepStrictEqual(ouro.phases.map((x) => x.rule), ["aura=26615", "start"]);
+assert.ok(!ouro.phases.some((x) => x.name === "submerged"), "the submerge aura is no phase rule");
 assert.strictEqual(B.phaseOf(ouro, { hp: 15, au: [{ id: 26615 }] }).phase, "enraged");
-assert.strictEqual(B.phaseOf(ouro, { hp: 90, au: [{ id: 26063 }] }).phase, "submerged");
+assert.strictEqual(B.phaseOf(ouro, { hp: 90, au: [{ id: 26063 }] }).phase, "fight", "the submerge aura matches no phase");
 assert.strictEqual(B.phaseOf(ouro, { hp: 90, au: [] }).phase, "fight");
 assert.strictEqual(B.phaseOf(ouro, { hp: 15, au: [{ id: 26615 }, { id: 26063 }] }).phase, "enraged", "the first rule wins");
 const enragedO = B.model(REAL, { entry: 15517, hp: 15, au: [{ id: 26615 }] }, [], 0, 0);
@@ -182,7 +184,7 @@ assert.strictEqual(enragedO.abilities.find((a) => a.sid === 26616).inPhase, true
 assert.strictEqual(enragedO.abilities.find((a) => a.sid === 26617).inPhase, true, "the enrage mound is enraged-only");
 assert.strictEqual(enragedO.abilities.find((a) => a.sid === 26102).inPhase, true, "ground spells keep running through the enrage");
 const submergedO = B.model(REAL, { entry: 15517, hp: 90, au: [{ id: 26063 }] }, [], 0, 0);
-assert.strictEqual(submergedO.abilities.find((a) => a.sid === 26616).inPhase, false);
+assert.strictEqual(submergedO.abilities.find((a) => a.sid === 26616).inPhase, false, "Boulder stays hidden outside the enrage");
 assert.strictEqual(submergedO.abilities.find((a) => a.sid === 26058).inPhase, true, "the mound summon is not phase-bound");
 const fightO = B.model(REAL, { entry: 15517, hp: 90, au: [] }, [], 0, 0);
 assert.strictEqual(fightO.abilities.find((a) => a.sid === 26616).inPhase, false);

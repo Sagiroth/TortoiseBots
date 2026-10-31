@@ -9,6 +9,8 @@ are tiny fake C++ files so the citation checks run without a core checkout.
 import argparse
 import csv
 import json
+import os
+import re
 import sys
 import tempfile
 import unittest
@@ -597,10 +599,10 @@ class BossDataTest(unittest.TestCase):
 # boss -> (phases, {spell: (a, b, c, flags, castMs)}, adds)
 AQ40_REST = {
     15511: ([], {
-        3391: (0, 2000, 8000, "t=self;self;ok.purge=nopurge", 0),
+        3391: (0, 2000, 8000, "t=victim;ok=tank", 0),
         19983: (0, 5000, 12000, "t=victim", 0),
         25812: (0, 8000, 14000, "t=aoe;aura", 0),
-        25786: (0, 0, 0, "t=self;ground", 0),
+        25786: (0, 0, 0, "t=aoe;ground", 0),
     }, []),
     15543: ([], {
         19408: (0, 20000, 20000, "t=aoe;aura", 0),
@@ -621,12 +623,12 @@ AQ40_REST = {
         25937: (0, 0, 0, "t=self;self;ok=phase", 0),
         25938: (0, 0, 0, "t=self;ok=script", 0),
     }, [(15667, "summon", 1), (15922, "trigger", 0)]),
-    15517: (["aura=26615", "aura=26063", "start"], {
-        26103: (0, 15000, 15000, "t=aoe;int", 1500),
-        26102: (0, 12000, 17000, "t=aoe;int", 2000),
-        26616: (0, 0, 0, "p=enraged;t=random;int", 2000),
+    15517: (["aura=26615", "start"], {
+        26103: (0, 15000, 15000, "t=aoe;int;ok.interrupt=nokick", 1500),
+        26102: (0, 12000, 17000, "t=aoe;int;ok.interrupt=nokick", 2000),
+        26616: (0, 0, 0, "p=enraged;t=random;int;ok.interrupt=nokick", 2000),
         26615: (0, 0, 0, "t=self;self;hp20;ok=phase", 0),
-        26063: (0, 0, 0, "t=self;self;ok=phase", 1500),
+        26063: (0, 0, 0, "t=self;self;ok.purge=nopurge", 1500),
         26058: (0, 0, 0, "t=self;summon=15712", 0),
         26617: (0, 10000, 10000, "p=enraged;t=self", 0),
         26100: (0, 0, 0, "t=aoe", 0),
@@ -718,19 +720,30 @@ class Aq40RestValueTest(unittest.TestCase):
         self.assertTrue(abilities[25993]["cone"], "Poison Shock is a front cone")
         self.assertFalse(abilities[25991]["cone"], "Poison Bolt Volley is a circle, not a cone")
 
-    def test_ouro_enrage_and_submerge_are_aura_phases(self):
+    def test_ouro_enrage_is_the_only_visible_phase(self):
         boss = self.boss(15517)
-        self.assertEqual([_phase_text(p) for p in boss["phases"]], ["aura=26615", "aura=26063", "start"])
+        self.assertEqual([_phase_text(p) for p in boss["phases"]], ["aura=26615", "start"])
         abilities = {a["sid"]: a for a in boss["abilities"]}
         self.assertEqual(abilities[26616]["phase"], "enraged")
         self.assertEqual(abilities[26617]["phase"], "enraged")
         self.assertEqual(abilities[26058]["summon"], 15712)
-        self.assertEqual(abilities[26063]["ok"], "phase")
-        # Sweep and Sand Blast are the interruptible casts; the cone flag stays off Sand Blast because the
-        # table's DB contract only accepts implicit target 24 and this one is a target-54 cone (its shape
-        # row is pinned by tools/test_spell_shapes.cpp).
+        # The submerge aura reaches telemetry only as Ouro turns invisible, so a phase row would vanish
+        # with him; the row stays as a self aura and the panel note carries the 30 s.
+        self.assertEqual(abilities[26063]["phase"], "")
+        self.assertEqual(abilities[26063]["okNeeds"], {"purge": "nopurge"})
+        self.assertTrue(any("leaves the panel" in note for note in boss["notes"]))
+        # Sweep, Sand Blast and Boulder are casts the core's kick cannot stop: PreventionType is SILENCE
+        # for Sand Blast but its interruptFlags lack 0x02, and the other two are not SILENCE at all. The
+        # cone flag stays off Sand Blast because the table's DB contract only accepts implicit target 24
+        # and this one is a target-54 cone (its shape row is pinned by tools/test_spell_shapes.cpp).
+        for sid in (26103, 26102, 26616):
+            self.assertTrue(abilities[sid]["int"], sid)
+            self.assertEqual(abilities[sid]["okNeeds"], {"interrupt": "nokick"}, sid)
         self.assertTrue(abilities[26103]["int"] and not abilities[26103]["cone"])
         self.assertTrue(abilities[26102]["int"] and not abilities[26102]["cone"])
+        # Yauj's Great Heal is the one Ouro-era great heal that stays a real interrupt.
+        yauj = {a["sid"]: a for a in self.boss(15543)["abilities"]}
+        self.assertEqual(yauj[25807]["okNeeds"], {})
 
     def test_trio_and_ouro_adds_are_named(self):
         self.assertEqual([a["name"] for a in self.boss(15543)["adds"]], ["Yauj Brood"])
@@ -740,6 +753,353 @@ class Aq40RestValueTest(unittest.TestCase):
         )
         for entry in (15511, 15543, 15544):
             self.assertTrue(any("devour" in note for note in self.boss(entry)["notes"]), entry)
+
+
+# ---------------------------------------------------------------------------
+# Every raid against the core's spell data.
+#
+# The CSV is the panel's source; the core's spell_template is the game's. These
+# checks read the same rows and ask the data the questions the code relies on:
+# a phase aura must reach telemetry, a spell the panel draws a shape for must be
+# a cast, `int` must mean the core's own kick rule, and `self` must be an aura.
+# Without a core checkout the class skips; the checks above still run.
+
+CORE_DIR = Path(os.environ.get("TORTOISE_CORE_DIR", Path.home() / "tortoise-wow"))
+CORE_SPELL_SQL = CORE_DIR / "sql" / "base" / "tw_world_spell_template.sql"
+
+SPELL_SOURCE_COLUMNS = {
+    "entry", "attributes", "preventionType", "interruptFlags", "castingTimeIndex",
+    "effect1", "effect2", "effect3",
+    "effectApplyAuraName1", "effectApplyAuraName2", "effectApplyAuraName3",
+}
+SPELL_MOD_COLUMNS = {"Id", "Attributes", "CastingTimeIndex", "InterruptFlags"}
+
+# The core's SpellEntry::IsEffectAppliesAura set (6, 35, 119, 128, 129, 132, 133,
+# 134) plus PERSISTENT_AREA_AURA 27, which boss_data.py's ground check already
+# treats as an aura. Effect 65 does not exist in this core's SpellDefines.h.
+AURA_EFFECTS = {6, 27, 35, 119, 128, 129, 132, 133, 134}
+
+# Rows that predate the source check: they are not AQ40's to change here. Each
+# entry is a known disagreement between the CSV and the core data, kept visible
+# so the check still passes and a later data pass can clear it. The value is the
+# reason, printed when the entry stops reproducing so it cannot rot silently.
+EXPECTED_SOURCE_PROBLEMS = {
+    # Shape rows whose spells are instant: the panel draws the area from
+    # runtime/SpellShapeData.h but cannot time a cast bar, which the shape test
+    # predates. Not changed by the AQ40 data PR.
+    ("shape-instant", 15847): "Onyxia Tail Sweep, an instant back cone",
+    ("shape-instant", 19272): "AQ40 Lava Breath, an instant target-54 cone",
+    ("shape-instant", 24839): "Acid Breath, an instant target-24 cone",
+    ("shape-instant", 25814): "AQ40 Wide Slash, an instant target-24 cone",
+    ("shape-instant", 26029): "AQ40 Dark Glare, an instant 15 degree cone",
+    # Zul'Gurub rows marked nokick although preventionType/InterruptFlags look
+    # kickable: both are instant channels (castingTimeIndex 1), so the core's
+    # generic-cast branch never sees a cast, but their channel flags may still
+    # let a kick through. Pre-existing ZG data, worth a separate fix.
+    ("nokick-kickable", 23953): "Jeklik Mind Flay, instant channel",
+    ("nokick-kickable", 24300): "Mar'li Drain Life, instant channel",
+    # Jeklik's self Great Heal is cast on himself but applies no aura: the
+    # `self` flag overstates it. Pre-existing ZG data.
+    ("self-no-aura", 23954): "Jeklik Great Heal heals himself, no aura",
+}
+
+
+def _sql_statements(text):
+    """Split a dump into statements; quotes, escapes and comments respected."""
+    statements, buffer = [], []
+    quote = None
+    escaped = False
+    i, size = 0, len(text)
+    while i < size:
+        char = text[i]
+        if quote:
+            buffer.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            i += 1
+            continue
+        if char == "-" and text.startswith("--", i):
+            end = text.find("\n", i)
+            i = size if end < 0 else end + 1
+            continue
+        if char == "/" and text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            i = size if end < 0 else end + 2
+            continue
+        if char in "'\"":
+            quote = char
+            buffer.append(char)
+        elif char == ";":
+            statement = "".join(buffer).strip()
+            if statement:
+                statements.append(statement)
+            buffer = []
+        else:
+            buffer.append(char)
+        i += 1
+    statement = "".join(buffer).strip()
+    if statement:
+        statements.append(statement)
+    return statements
+
+
+def _create_columns(text, table, path):
+    start = text.find("CREATE TABLE `%s`" % table)
+    if start < 0:
+        raise AssertionError("no CREATE TABLE for %s in %s" % (table, path))
+    ends = [end for end in (text.find("PRIMARY KEY", start), text.find("ROW_FORMAT", start))
+            if end > start]
+    end = min(ends) if ends else len(text)
+    return re.findall(r"^\s*`([A-Za-z_0-9]+)`", text[start:end], re.M)
+
+
+def _dump_tuples(values):
+    """Yield each tuple's fields of a VALUES list, strings left quoted."""
+    i, size = 0, len(values)
+    while i < size:
+        while i < size and values[i] != "(":
+            i += 1
+        if i >= size:
+            return
+        i += 1
+        fields, current = [], []
+        quote = None
+        escaped = False
+        while i < size:
+            char = values[i]
+            if quote:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    if i + 1 < size and values[i + 1] == quote:
+                        i += 2
+                        continue
+                    quote = None
+                i += 1
+                continue
+            if char in "'\"":
+                quote = char
+            elif char == ",":
+                fields.append("".join(current).strip())
+                current = []
+            elif char == ")":
+                fields.append("".join(current).strip())
+                i += 1
+                break
+            else:
+                current.append(char)
+            i += 1
+        yield fields
+
+
+def _dump_value(text):
+    text = text.strip()
+    if text == "NULL" or not text:
+        return None
+    if text.startswith("'"):
+        return text[1:-1]
+    try:
+        return int(text)
+    except ValueError:
+        return text
+
+
+def _read_dump_table(path, table, wanted):
+    """The rows of one table in a base dump, as dicts of the wanted columns."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    create_columns = _create_columns(text, table, path)
+    pattern = re.compile(
+        r"(?:INSERT|REPLACE)\s+INTO\s+`%s`\s*(?:\(([^)]*)\))?\s*VALUES\s*(.*)"
+        % re.escape(table), re.IGNORECASE | re.S)
+    rows = []
+    for statement in _sql_statements(text):
+        match = pattern.match(statement)
+        if not match:
+            continue
+        columns = ([column.strip().strip("`") for column in match.group(1).split(",")]
+                   if match.group(1) else create_columns)
+        indexes = {name: index for index, name in enumerate(columns) if name in wanted}
+        for fields in _dump_tuples(match.group(2)):
+            row = {}
+            for name, index in indexes.items():
+                if index < len(fields):
+                    row[name] = _dump_value(fields[index])
+            if row:
+                rows.append(row)
+    return rows
+
+
+def _read_spells(core=CORE_DIR):
+    """spell_template keyed by entry, with the spell_mod overrides a/b/c read."""
+    table = core / "sql" / "base" / "tw_world_spell_template.sql"
+    spells = {}
+    for row in _read_dump_table(table, "spell_template", SPELL_SOURCE_COLUMNS):
+        entry = row.get("entry")
+        if entry is not None:
+            spells[entry] = {name: value for name, value in row.items() if name != "entry"}
+    mod = core / "sql" / "base" / "tw_world_spell_mod.sql"
+    if mod.is_file():
+        for row in _read_dump_table(mod, "spell_mod", SPELL_MOD_COLUMNS):
+            spell = spells.get(row.get("Id"))
+            if spell is None:
+                continue
+            for column, field in (("Attributes", "attributes"),
+                                  ("CastingTimeIndex", "castingTimeIndex"),
+                                  ("InterruptFlags", "interruptFlags")):
+                value = row.get(column, -1)
+                if value != -1:
+                    spell[field] = value
+    return spells
+
+
+def _shape_spell_ids(path):
+    return [int(match.group(1)) for match in
+            (re.match(r"^(\d+),", line.strip()) for line in path.read_text().splitlines())
+            if match]
+
+
+def _applies_aura(spell):
+    return any(
+        spell.get("effect%d" % index) in AURA_EFFECTS
+        and spell.get("effectApplyAuraName%d" % index)
+        for index in (1, 2, 3)
+    )
+
+
+def source_spell_problems(rows, spells, shape_ids):
+    """Every disagreement between the CSV rows and the core's spell data."""
+    problems = []
+
+    def add(check, spell, where, detail):
+        problems.append({"check": check, "spell": spell, "where": where, "detail": detail})
+
+    for row in rows:
+        where = "line %s (%s, boss %s)" % (row["_line"], row["map"], row["boss"])
+        if row["row"] == "phase" and row["a"].startswith("aura="):
+            spell_id = int(row["a"][5:])
+            spell = spells.get(spell_id)
+            if spell is None:
+                add("phase-aura-missing", spell_id, where, "no spell_template row")
+            elif spell["attributes"] & 0x40:
+                add("phase-aura-passive", spell_id, where,
+                    "attributes 0x%x has 0x40 (passive), so the aura never reaches the panel"
+                    % spell["attributes"])
+            continue
+        if row["row"] != "ability":
+            continue
+        spell_id = int(row["key"])
+        flags = boss_data.parse_flags(row["d"])
+        spell = spells.get(spell_id)
+        if spell is None:
+            add("ability-missing", spell_id, where, "no spell_template row")
+            continue
+        kickable = spell["preventionType"] == 1 and spell["interruptFlags"] & 0x02
+        nokick = flags["okNeeds"].get("interrupt") == "nokick"
+        if flags["int"] and not nokick and not kickable:
+            add("int-not-kickable", spell_id, where,
+                "preventionType %s, interruptFlags 0x%x; the core's kick cannot stop it"
+                % (spell["preventionType"], spell["interruptFlags"]))
+        if nokick and kickable:
+            add("nokick-kickable", spell_id, where,
+                "preventionType %s, interruptFlags 0x%x; the core's kick can stop it"
+                % (spell["preventionType"], spell["interruptFlags"]))
+        if flags["self"] and not _applies_aura(spell):
+            add("self-no-aura", spell_id, where,
+                "effects %s/%s/%s apply no aura"
+                % (spell.get("effect1", 0), spell.get("effect2", 0), spell.get("effect3", 0)))
+    for spell_id in shape_ids:
+        spell = spells.get(spell_id)
+        where = "runtime/SpellShapeData.h"
+        if spell is None:
+            add("shape-missing", spell_id, where, "no spell_template row")
+        elif spell["castingTimeIndex"] <= 1:
+            add("shape-instant", spell_id, where,
+                "castingTimeIndex %s, the spell is instant" % spell["castingTimeIndex"])
+    return sorted(problems, key=lambda p: (p["check"], p["spell"], p["where"]))
+
+
+@unittest.skipUnless(
+    CORE_SPELL_SQL.is_file(),
+    "set TORTOISE_CORE_DIR=<tortoise-wow checkout>: no %s" % CORE_SPELL_SQL,
+)
+class BossSpellSourceTest(unittest.TestCase):
+    """Every raid's rows against the core's spell_template (skipped without a core)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.spells = _read_spells()
+        cls.rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        cls.shapes = _shape_spell_ids(ROOT / "runtime" / "SpellShapeData.h")
+
+    def source_problems(self):
+        return source_spell_problems(self.rows, self.spells, self.shapes)
+
+    def test_the_core_source_backs_every_row(self):
+        unexpected = [
+            problem for problem in self.source_problems()
+            if (problem["check"], problem["spell"]) not in EXPECTED_SOURCE_PROBLEMS
+        ]
+        self.assertEqual(
+            [], unexpected,
+            "the core data disagrees with these rows; fix the row, or add a reason to "
+            "EXPECTED_SOURCE_PROBLEMS when the row is right and the check is not:\n"
+            + "\n".join("%s %s at %s: %s" % (p["check"], p["spell"], p["where"], p["detail"])
+                        for p in unexpected),
+        )
+
+    def test_the_allow_list_still_reproduces(self):
+        got = {(problem["check"], problem["spell"]) for problem in self.source_problems()}
+        stale = sorted(set(EXPECTED_SOURCE_PROBLEMS) - got)
+        self.assertEqual(
+            [], stale,
+            "these EXPECTED_SOURCE_PROBLEMS entries no longer reproduce; drop them and their "
+            "comment: %s" % ", ".join("%s %s" % key for key in stale),
+        )
+
+    def test_the_check_catches_a_broken_aq40_row(self):
+        spells = {sid: dict(values) for sid, values in self.spells.items()}
+        rows = [dict(row) for row in self.rows]
+        shapes = list(self.shapes)
+
+        def broken_keys():
+            return {(problem["check"], problem["spell"])
+                    for problem in source_spell_problems(rows, spells, shapes)}
+
+        # a: Ouro's enrage aura turned passive would never reach the panel.
+        attributes = spells[26615]["attributes"]
+        spells[26615]["attributes"] = attributes | 0x40
+        self.assertIn(("phase-aura-passive", 26615), broken_keys())
+        spells[26615]["attributes"] = attributes
+        self.assertNotIn(("phase-aura-passive", 26615), broken_keys())
+
+        # b: Sand Blast made instant while keeping its shape row.
+        cast_index = spells[26102]["castingTimeIndex"]
+        spells[26102]["castingTimeIndex"] = 1
+        self.assertIn(("shape-instant", 26102), broken_keys())
+        spells[26102]["castingTimeIndex"] = cast_index
+        self.assertNotIn(("shape-instant", 26102), broken_keys())
+
+        # c: Sweep says `int` with no nokick while the core cannot kick it.
+        sweep = next(row for row in rows if row["map"] == "aq40" and row["key"] == "26103")
+        sweep_flags = sweep["d"]
+        sweep["d"] = "t=aoe;int"
+        self.assertIn(("int-not-kickable", 26103), broken_keys())
+        sweep["d"] = sweep_flags
+        self.assertNotIn(("int-not-kickable", 26103), broken_keys())
+
+        # d: Boulder claiming `self` although it only deals damage.
+        boulder = next(row for row in rows if row["map"] == "aq40" and row["key"] == "26616")
+        boulder_flags = boulder["d"]
+        boulder["d"] = boulder_flags + ";self"
+        self.assertIn(("self-no-aura", 26616), broken_keys())
+        boulder["d"] = boulder_flags
+        self.assertNotIn(("self-no-aura", 26616), broken_keys())
 
 
 if __name__ == "__main__":

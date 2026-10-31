@@ -3075,9 +3075,9 @@
           "b": 2000,
           "c": 8000,
           "phase": "",
-          "target": "self",
+          "target": "victim",
           "aura": false,
-          "self": true,
+          "self": false,
           "mark": false,
           "ground": false,
           "cone": false,
@@ -3085,10 +3085,8 @@
           "int": false,
           "summon": 0,
           "hp": 0,
-          "ok": "",
-          "okNeeds": {
-            "purge": "nopurge"
-          }
+          "ok": "tank",
+          "okNeeds": {}
         },
         {
           "sid": 19983,
@@ -3140,7 +3138,7 @@
           "b": 0,
           "c": 0,
           "phase": "",
-          "target": "self",
+          "target": "aoe",
           "aura": false,
           "self": false,
           "mark": false,
@@ -3555,7 +3553,9 @@
           "summon": 0,
           "hp": 0,
           "ok": "",
-          "okNeeds": {}
+          "okNeeds": {
+            "interrupt": "nokick"
+          }
         },
         {
           "sid": 26102,
@@ -3576,7 +3576,9 @@
           "summon": 0,
           "hp": 0,
           "ok": "",
-          "okNeeds": {}
+          "okNeeds": {
+            "interrupt": "nokick"
+          }
         },
         {
           "sid": 26616,
@@ -3597,7 +3599,9 @@
           "summon": 0,
           "hp": 0,
           "ok": "",
-          "okNeeds": {}
+          "okNeeds": {
+            "interrupt": "nokick"
+          }
         },
         {
           "sid": 26615,
@@ -3638,8 +3642,10 @@
           "int": false,
           "summon": 0,
           "hp": 0,
-          "ok": "phase",
-          "okNeeds": {}
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
         },
         {
           "sid": 26058,
@@ -3736,16 +3742,8 @@
           }
         },
         {
-          "name": "submerged",
-          "order": 2,
-          "rule": {
-            "kind": "aura",
-            "aura": 26063
-          }
-        },
-        {
           "name": "fight",
-          "order": 3,
+          "order": 2,
           "rule": {
             "kind": "start"
           }
@@ -3773,6 +3771,7 @@
       ],
       "notes": [
         "Ouro submerges 90 s after the pull and after every emerge; if he is busy casting he retries, and he also submerges after 3 s with no melee target (10 s grace after emerging). He stays under 30 s.",
+        "While submerged (30 s) Ouro is invisible and leaves the panel for the whole time; the dirt mounds and the scarabs they release are the signal.",
         "While submerged he summons five dirt mounds and one trigger that follows a random player; Sweep and Sand Blast stop until he emerges; on emerge he teleports to the trigger, casts Birth and Ground Rupture hits every threat-list unit within 20 yd.",
         "A dirt mound lives 30 s, then casts Summon Ouro Scarabs and despawns; a scarab despawns after 45 s.",
         "At 20 percent Ouro enrages: the 10 s mound timer starts then, he keeps summoning one mound every 10 s and throws Boulder at random targets while the tank is out of melee reach, and he stops submerging.",
