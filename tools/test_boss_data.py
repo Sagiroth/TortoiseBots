@@ -578,8 +578,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 25)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 137)
+        self.assertEqual(len(doc["bosses"]), 27)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 136)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -620,7 +620,6 @@ TIMBERMAW_ABILITIES = {
     34722: (62946, 0, 0, 0, "aoe", False, False, False, False, False, False, 0, "", {}, "", 0, "Icicle Crash"),
     34723: (62946, 0, 0, 0, "random", True, False, False, False, False, False, 0, "", {"dispel": "nodispel"}, "", 0, "Frozen Spit"),
     34767: (62938, 0, 0, 0, "random", True, False, False, False, False, False, 0, "", {"dispel": "nodispel"}, "", 0, "Intruder of the Dream"),
-    58117: (62938, 0, 0, 0, "self", False, True, False, False, False, False, 0, "", {"purge": "nopurge"}, "", 0, "Emerald Dream Welcome"),
     34741: (62941, 0, 0, 0, "self", False, True, False, False, False, False, 0, "", {"purge": "nopurge"}, "", 0, "Chieftain of Withermaw"),
     34742: (62941, 0, 0, 0, "self", False, False, False, False, False, False, 62943, "", {}, "", 0, "Withermaw Ritual"),
     34748: (62941, 0, 0, 0, "self", False, True, False, False, False, False, 0, "", {"purge": "nopurge"}, "", 0, "Shade of the Withermaw"),
@@ -633,11 +632,13 @@ TIMBERMAW_ABILITIES = {
 TIMBERMAW_BOSSES = {
     62934: ((), (("fight", 1, {"kind": "start"}),)),
     62936: (((62937, "linked", 1),), (("fight", 1, {"kind": "start"}),)),
+    62937: ((), (("fight", 1, {"kind": "start"}),)),
     2139: ((), (("fight", 1, {"kind": "start"}),)),
     62935: (((51608, "summon", 0),), (("fight", 1, {"kind": "start"}),)),
     62940: (((62945, "summon", 0),), (("fight", 1, {"kind": "start"}),)),
     62946: ((), (("fight", 1, {"kind": "start"}),)),
     62938: ((), (("fight", 1, {"kind": "start"}),)),
+    60699: ((), (("fight", 1, {"kind": "start"}),)),
     62941: (((62943, "summon", 0), (62886, "totem", 0)), (("fight", 1, {"kind": "start"}),)),
 }
 
@@ -717,12 +718,15 @@ class TimbermawValueTest(unittest.TestCase):
         self.assertEqual(interrupt, {49030, 52790})
         self.assertFalse(any(v[8] or v[9] for v in TIMBERMAW_ABILITIES.values()))
 
-    def test_every_timbermaw_citation_is_a_tw_world_row(self):
+    def test_every_timbermaw_citation_resolves(self):
         for row in self.rows:
             if row["map"] != "timbermaw_hold":
                 continue
             for part in row["source"].split(";"):
                 if part.startswith("kb:"):
+                    continue
+                if part.startswith("data/"):
+                    self.assertTrue((ROOT / part.split(":")[0]).is_file(), (row["_line"], part))
                     continue
                 self.assertTrue(part.startswith("sql/"), (row["_line"], part))
                 self.assertNotIn("src/scripts", part)

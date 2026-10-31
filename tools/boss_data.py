@@ -41,7 +41,8 @@ Rows (columns map,boss,row,key,a,b,c,d,source):
 
 `source` is one or more `path:line[-line]` citations separated by ';'. Script
 paths are relative to the core checkout (--core-dir, default $TORTOISE_CORE_DIR
-or ~/tortoise-wow). A knowledge-base citation is `kb:<file>#<heading-slug>` under
+or ~/tortoise-wow); a path starting `data/` is relative to this repository (its
+SQL migrations are not in the core). A knowledge-base citation is `kb:<file>#<heading-slug>` under
 --kb-dir (default $TURTLE_KB_DIR or ~/TortoiseBots-audit/turtle-kb).
 
 `ok` reasons are a closed list (see data/boss/README.md): tank, heal, phase,
@@ -641,7 +642,7 @@ def check_citations(row, citations, core, kb, cache):
             if start not in heading_slugs("\n".join(lines)):
                 yield f"{_row_id(row)}: {kb_path} has no heading #{start}"
             continue
-        core_path = core / path
+        core_path = ROOT / path if path.startswith("data/") else core / path
         lines = read_lines(core_path, cache)
         if lines is None:
             continue

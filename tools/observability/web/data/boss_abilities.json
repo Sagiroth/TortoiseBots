@@ -51,11 +51,13 @@
       "bosses": [
         62934,
         62936,
+        62937,
         2139,
         62935,
         62940,
         62946,
         62938,
+        60699,
         62941
       ]
     }
@@ -3163,14 +3165,34 @@
       ],
       "notes": [
         "Spirit Bond and Broken Bond are self auras whose text names Kodiak; no EventAI or spell list links either spell to Rotgrowl or Kodiak and which unit carries the aura is not in the data. There is no creature_linking row. Both are instant with no timer.",
-        "Spirit Bond reduces damage taken by 91 percent while Kodiak lives; Broken Bond raises damage taken by 29 percent while Kodiak is dead. No cast site exists so the panel can only show the rows."
+        "Spirit Bond reduces damage taken by 90 percent while Kodiak lives; Broken Bond raises damage taken by 30 percent while Kodiak is dead. No cast site exists so the panel can only show the rows."
+      ]
+    },
+    "62937": {
+      "entry": 62937,
+      "name": "Kodiak",
+      "map": "timbermaw_hold",
+      "order": 20,
+      "abilities": [],
+      "phases": [
+        {
+          "name": "fight",
+          "order": 1,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": [
+        "Kodiak 62937 is rank 3 and has its own spawn about 5 yd from Rotgrowl; the run plan pulls both in one step and kills Kodiak first. Its template has no spell ids and it has no EventAI row so no ability is known."
       ]
     },
     "2139": {
       "entry": 2139,
       "name": "Loktanag the Vile",
       "map": "timbermaw_hold",
-      "order": 20,
+      "order": 21,
       "abilities": [
         {
           "sid": 52806,
@@ -3278,7 +3300,7 @@
       "entry": 62935,
       "name": "Ormanos the Cracked",
       "map": "timbermaw_hold",
-      "order": 21,
+      "order": 22,
       "abilities": [
         {
           "sid": 49027,
@@ -3405,14 +3427,14 @@
       ],
       "notes": [
         "The five spells are name and description matches only; 49030 says Ormanos prepares to charge and 49029 says the damage depends on the charge. No EventAI row or spell list links them to the creature and no timer exists.",
-        "Tremors is a 199 nature per 2 s ground zone at a dynamic object; Rampaging Earth knocks the charge target back and the charge length scales the damage. The guide's stomp and soak have no spell id."
+        "Tremors is a 200 nature per 2 s ground zone at a dynamic object; Rampaging Earth knocks the charge target back and the charge length scales the damage. The guide's stomp and soak have no spell id."
       ]
     },
     "62940": {
       "entry": 62940,
       "name": "Selenaxx Foulheart",
       "map": "timbermaw_hold",
-      "order": 22,
+      "order": 23,
       "abilities": [
         {
           "sid": 52770,
@@ -3504,7 +3526,7 @@
       "entry": 62946,
       "name": "Trioch the Devourer",
       "map": "timbermaw_hold",
-      "order": 23,
+      "order": 24,
       "abilities": [
         {
           "sid": 34720,
@@ -3614,7 +3636,7 @@
       "entry": 62938,
       "name": "Archdruid Kronn",
       "map": "timbermaw_hold",
-      "order": 24,
+      "order": 25,
       "abilities": [
         {
           "sid": 34767,
@@ -3638,29 +3660,6 @@
           "okNeeds": {
             "dispel": "nodispel"
           }
-        },
-        {
-          "sid": 58117,
-          "name": "Emerald Dream Welcome",
-          "castMs": 0,
-          "a": 0,
-          "b": 0,
-          "c": 0,
-          "phase": "",
-          "target": "self",
-          "aura": false,
-          "self": true,
-          "mark": false,
-          "ground": false,
-          "cone": false,
-          "tail": false,
-          "int": false,
-          "summon": 0,
-          "hp": 0,
-          "ok": "",
-          "okNeeds": {
-            "purge": "nopurge"
-          }
         }
       ],
       "phases": [
@@ -3675,15 +3674,34 @@
       "adds": [],
       "notes": [
         "Ultimate Sacrifice 34779 heals Kronn but its caster is an ally; Reform Body 34780 and Return to Body 34781 are the form swap. No EventAI rows and no timers exist.",
-        "Dreamform of Kronn 60699 is a second creature entry with 210000 hp; the panel looks a boss up by entry and has no entry-based phase rule so the form swap is invisible.",
-        "Intruder of the Dream is a 99 nature per 3 s aura with no dispel; Emerald Dream Welcome grants immunity to it. The spells are name matches only."
+        "Intruder of the Dream is a 100 nature per 3 s aura with no dispel. Emerald Dream Welcome 58117 is a player buff whose text says the target is no longer considered an intruder of the Emerald Dream; it is passive and hidden (attributes 0x40|0x80) and leaves no boss aura so it is a note and not an ability row."
+      ]
+    },
+    "60699": {
+      "entry": 60699,
+      "name": "Dreamform of Kronn",
+      "map": "timbermaw_hold",
+      "order": 26,
+      "abilities": [],
+      "phases": [
+        {
+          "name": "fight",
+          "order": 1,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": [
+        "Dreamform of Kronn 60699 is a creature template only: rank 3 and 210000 hp with EventAI and no spell ids. The creature table has no spawn row for it and no script or creature_ai_events row exists so the form Kronn swaps into is never created by the core."
       ]
     },
     "62941": {
       "entry": 62941,
       "name": "Chieftain Partath",
       "map": "timbermaw_hold",
-      "order": 25,
+      "order": 27,
       "abilities": [
         {
           "sid": 34741,
