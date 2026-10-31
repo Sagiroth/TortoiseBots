@@ -46,6 +46,14 @@ inline bool BankLegSkipped(uint32_t itemId, uint32_t emptyItemId, uint32_t nowMs
 {
     return itemId != 0 && itemId == emptyItemId && nowMs - emptyMs < kBankEmptyCooldownMs;
 }
+// An unreachable mailbox waits out the same cooldown per item: the ladder
+// moves on, and the mail leg retries once the cooldown elapses.
+inline constexpr uint32_t kMailEmptyCooldownMs = 10 * 60 * 1000;
+
+inline bool MailLegSkipped(uint32_t itemId, uint32_t emptyItemId, uint32_t nowMs, uint32_t emptyMs)
+{
+    return itemId != 0 && itemId == emptyItemId && nowMs - emptyMs < kMailEmptyCooldownMs;
+}
 
 // Leftover delivery deposits only order-caused stock: what the order gained
 // (bank, AH, mail, vendor, farm) caps what may leave the bags, so the bot's

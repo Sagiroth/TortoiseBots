@@ -1,5 +1,7 @@
 // Standalone test for the guild-order supply ladder and guild gold budget.
 #include "../runtime/GuildOrderSupplyPolicy.h"
+// (SupplyMailItemId and NextSupplySearchStreak need the give-up limit.)
+#include "../runtime/GuildOrderGiveUpPolicy.h"
 
 #include <cstdio>
 
@@ -24,6 +26,23 @@ int main()
     CHECK(NextSupplyStep(options) == SupplyStep::Sub);
     options.subAttempted = true;
     CHECK(NextSupplyStep(options) == SupplyStep::Need);
+    // The mailbox leg walks for the supply item, never the order item.
+    CHECK(SupplyMailItemId(SupplyStep::Bags, 123, 456) == 123);
+    CHECK(SupplyMailItemId(SupplyStep::Bank, 123, 456) == 456);
+    CHECK(SupplyMailItemId(SupplyStep::Bags, 0, 456) == 456);
+    CHECK(SupplyMailItemId(SupplyStep::None, 123, 456) == 456);
+
+    // The streak counts one leg: a repeat fails up, anything else restarts.
+    SupplySearchStreak streak;
+    streak = NextSupplySearchStreak(streak, SupplyStep::Bags, 7);
+    CHECK(streak.fails == 1);
+    streak = NextSupplySearchStreak(streak, SupplyStep::Bags, 7);
+    CHECK(streak.fails == 2);
+    streak = NextSupplySearchStreak(streak, SupplyStep::Bank, 7);
+    CHECK(streak.fails == 1 && streak.step == SupplyStep::Bank);
+    streak = NextSupplySearchStreak(streak, SupplyStep::Bank, 9);
+    CHECK(streak.fails == 1 && streak.itemId == 9);
+    CHECK(SearchFailsMoveZone(streak.fails + 2));
 
     options = SupplyOptions{};
     options.bankEnabled = false;

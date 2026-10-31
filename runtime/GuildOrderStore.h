@@ -97,6 +97,16 @@ void NoteSupplyProgress(uint32_t botGuidLow);
 // cooldown. A move clears the marker. World thread only (the drains).
 void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId);
 void ClearBankEmpty(uint32_t botGuidLow);
+// A mailbox search came back empty for the item: skip its mail leg until
+// the cooldown. Map thread only (the travel pick); Update reports.
+void NoteMailEmpty(uint32_t botGuidLow, uint32_t itemId);
+void ClearMailEmpty(uint32_t botGuidLow);
+
+// An order-leg travel search came back empty or rejected for a service leg
+// (bags mailbox, bank, AH, vendor). Returns the consecutive count for that
+// leg; the caller moves the ladder down once it reaches the farm-zone
+// limit. A landed order search clears it. Map thread only (travel pick).
+uint32_t NoteSupplySearchFailed(uint32_t botGuidLow, SupplyStep step, uint32_t itemId);
 // Drop parked refund stubs whose gold is back. World thread only (Update).
 void FinishRepaid();
 // A keep round landed in the bank: the order watches it from now on. Sets

@@ -33,6 +33,11 @@ int main()
     CHECK(!BankLegSkipped(5, 5, kBankEmptyCooldownMs + 1, 0));
     CHECK(!BankLegSkipped(5, 6, 1000, 900));
     CHECK(!BankLegSkipped(0, 0, 1000, 900));
+    // An unreachable mailbox waits out the same cooldown per item.
+    CHECK(MailLegSkipped(5, 5, 1000, 900));
+    CHECK(!MailLegSkipped(5, 5, kMailEmptyCooldownMs + 1, 0));
+    CHECK(!MailLegSkipped(5, 6, 1000, 900));
+    CHECK(!MailLegSkipped(0, 0, 1000, 900));
 
     // Leftover delivery caps at order-caused gains.
     CHECK(SupplyLeftoverAllowed(10, 4) == 4);

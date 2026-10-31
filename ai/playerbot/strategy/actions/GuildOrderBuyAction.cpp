@@ -27,7 +27,9 @@ bool IsUnlimitedVendorItem(uint32_t itemId)
         !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(proto);
 }
 
-void AdvanceAfterAuction(PlayerbotAI* ai, Player* bot, OrderRecord const& order)
+} // namespace
+
+void ai::AdvanceGuildOrderAfterAuction(PlayerbotAI* ai, Player* bot, OrderRecord const& order)
 {
     if (order.type == OrderType::Buy && !order.farmRest)
         NoteFarmRest(bot->GetGUIDLow());
@@ -60,8 +62,6 @@ void AdvanceAfterAuction(PlayerbotAI* ai, Player* bot, OrderRecord const& order)
     SetSupply(order.botGuidLow, next, order.supplyItemId, order.supplyCount,
         SupplyStep::None, order.reason);
 }
-
-} // namespace
 
 bool GuildOrderBuyAction::isUseful()
 {
@@ -105,8 +105,10 @@ bool GuildOrderBuyAction::Execute(Event& event)
         return false;
 
     uint32_t itemId = stored->supplyItemId;
-    uint32_t have = ai->GetInventoryItemsCountWithId(itemId) + OrderMailboxItems(bot, itemId);
-    uint32_t missing = have >= stored->supplyCount ? 0 : stored->supplyCount - have;
+    // Mailbox counts as owned: an AH purchase still in the mail covers the
+    // leg, so the bot never buys the same reagent twice.
+    uint32_t missing = BuyStillMissing(stored->supplyCount,
+        BuyOwnedCount(0, ai->GetInventoryItemsCountWithId(itemId), OrderMailboxItems(bot, itemId)));
     if (!missing)
     {
         SetSupply(botGuidLow, SupplyStep::None, 0, 0);
@@ -160,7 +162,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
     if (!best.auctionId)
     {
         ahLock.unlock();
-        AdvanceAfterAuction(ai, bot, *stored);
+        AdvanceGuildOrderAfterAuction(ai, bot, *stored);
         RESET_AI_VALUE(bool, "travel target active");
         return false;
     }
@@ -186,7 +188,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
             return false;
         }
         ahLock.unlock();
-        AdvanceAfterAuction(ai, bot, *stored);
+        AdvanceGuildOrderAfterAuction(ai, bot, *stored);
         RESET_AI_VALUE(bool, "travel target active");
         return false;
     }
@@ -212,7 +214,7 @@ bool GuildOrderBuyAction::Execute(Event& event)
     else
     {
         SET_AI_VALUE2(int, "manual int", "order buy failed bid", int(best.auctionId));
-        AdvanceAfterAuction(ai, bot, *stored);
+        AdvanceGuildOrderAfterAuction(ai, bot, *stored);
     }
 
     std::ostringstream out;
@@ -231,7 +233,8 @@ bool GuildOrderTakeMailAction::isUseful()
     std::optional<OrderRecord> stored = Find(bot->GetGUIDLow());
     if (!stored || stored->state != OrderState::Working || stored->supplyStep != SupplyStep::Bags)
         return false;
-    uint32_t itemId = stored->supplyItemId ? stored->supplyItemId : stored->itemId;
+    uint32_t itemId = TortoiseBots::GuildOrders::SupplyMailItemId(stored->supplyStep,
+        stored->supplyItemId, stored->itemId);
     if (!itemId || !OrderMailboxItems(bot, itemId) || AI_VALUE(uint8, "bag space") > 95)
         return false;
     return !MailProcessor::FindMailbox(ai).IsEmpty();
@@ -243,7 +246,8 @@ bool GuildOrderTakeMailAction::Execute(Event& event)
     std::optional<OrderRecord> stored = Find(bot->GetGUIDLow());
     if (!stored || stored->state != OrderState::Working || stored->supplyStep != SupplyStep::Bags)
         return false;
-    uint32_t itemId = stored->supplyItemId ? stored->supplyItemId : stored->itemId;
+    uint32_t itemId = TortoiseBots::GuildOrders::SupplyMailItemId(stored->supplyStep,
+        stored->supplyItemId, stored->itemId);
     uint32_t before = itemId ? ai->GetInventoryItemsCountWithId(itemId) : 0;
     Event take("rpg action", "take");
     bool result = ai->DoSpecificAction("mail", take, true);
@@ -258,6 +262,7 @@ bool GuildOrderTakeMailAction::Execute(Event& event)
     }
     if (!OrderMailboxItems(bot, itemId))
     {
+        ClearMailEmpty(bot->GetGUIDLow());
         SupplyStep next = stored->supplyReturnStep;
         SetSupply(bot->GetGUIDLow(), next, next == SupplyStep::None ? 0 : itemId, 0,
             SupplyStep::None, stored->reason);
