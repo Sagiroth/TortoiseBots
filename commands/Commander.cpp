@@ -8133,11 +8133,12 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
         if (pet && pet->IsAlive() && pet->IsInWorld())
             addAttackers(pet, false, true, false, f.partyAttackers);
     }
-    if (raidWalk)
+    if (raidWalk && f.leadStaying)
     {
         // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
         // every kGuardYd lift. The mobs on the bots between kGuardYd and kRaidWalkJoinYd go in their own list
-        // (DungeonRun::RaidWalkJoin reads it and partyAttackers); the seen set keeps a mob in one list only.
+        // (DungeonRun::RaidWalkJoin reads it alone, and only for the tank on stay); the seen set keeps a mob in one list
+        // only.
         for (Player* bot : bots)
         {
             if (!bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != lead->GetMap() || bot == lead)
@@ -9074,8 +9075,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         // In a hold: the attackers' distance from its spot (DungeonRun::HoldGuardTarget).
         ai::PlanStep const* current = FactStep(slot.run);
         // A raid's walk fight (#1368): a move step of a raid trash fight reads the mobs behind the parked main tank into
-        // Facts::raid.walkAttackers too (DungeonRun::RaidWalkJoin).
-        bool const raidWalk = current && current->kind == ai::PlanStepKind::Move &&
+        // Facts::raid.walkAttackers too (DungeonRun::RaidWalkJoin). Only until the run joins the fight: the join and its
+        // pick are once per fight.
+        bool const raidWalk = current && current->kind == ai::PlanStepKind::Move && !slot.run.raidWalkJoined &&
             TortoiseBots::DungeonRun::RaidTrashFight(slot.run, f);
         ReadGuardFacts(lead, bots, f,
             current && current->kind == ai::PlanStepKind::Hold ? current : nullptr, raidWalk);

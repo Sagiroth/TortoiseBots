@@ -771,8 +771,9 @@ struct RaidFacts
     // layout's order: the raid trash fights send a loose mob to them (RaidTrashFight, CheckGuard).
     std::vector<std::string> offTanksAlive;
     // Raid trash fights on a move step only: mobs hitting a raid member whose victim is farther than kGuardYd from the
-    // lead bot and within kRaidWalkJoinYd (partyAttackers keeps the kGuardYd read; RaidWalkJoin reads both). distLead,
-    // hitting, hostile, attackable, evading, polymorphed, castingAtRange and campIdle are set as for partyAttackers.
+    // lead bot and within kRaidWalkJoinYd, the band the guard's pick cannot reach (partyAttackers keeps the kGuardYd
+    // read; RaidWalkJoin reads this list alone). distLead, hitting, hostile, attackable, evading, polymorphed,
+    // castingAtRange and campIdle are set as for partyAttackers.
     std::vector<UnitFact> walkAttackers;
 };
 
@@ -12439,8 +12440,9 @@ inline const UnitFact* RaidAssistTarget(const Run& r, const Facts& f)
 // A raid's walk fight (#1368): on a move step the main tank stands at the walk's end point while the pack breaks out
 // behind it, and every lift stops at kGuardYd, so it fights nothing at all (ZG walks 7/9/11, six step-6 fights: 35-55 yd
 // from the hurt mobs, 0 damage dealt). A move step's stay is the walk's end, not a stand chosen for the pack, so the main
-// tank joins the fight: the nearest mob hitting a raid member (any of them, a pet too) within kRaidWalkJoinYd of it. The
-// mob picked already (raidWalkJoinGuid) stays the pick while it is still eligible. Null otherwise.
+// tank joins the fight: the nearest mob hitting a raid member (any of them, a pet too) in the band the guard's kGuardYd
+// pick cannot reach, up to kRaidWalkJoinYd (Facts::raid.walkAttackers alone; mobs inside kGuardYd stay with
+// GuardTarget). The mob picked already (raidWalkJoinGuid) stays the pick while it is still eligible. Null otherwise.
 inline const UnitFact* RaidWalkJoinTarget(const Run& r, const Facts& f)
 {
     if (!RaidTrashFight(r, f) || !Current(r) || Current(r)->kind != PlanStepKind::Move || !f.leadAlive || !f.leadIsTank ||
@@ -12452,18 +12454,14 @@ inline const UnitFact* RaidWalkJoinTarget(const Run& r, const Facts& f)
             !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
     };
     const UnitFact* best = nullptr;
-    for (int pass = 0; pass < 2; ++pass)
+    for (const UnitFact& u : f.raid.walkAttackers)
     {
-        const std::vector<UnitFact>& list = pass == 0 ? f.partyAttackers : f.raid.walkAttackers;
-        for (const UnitFact& u : list)
-        {
-            if (!eligible(u))
-                continue;
-            if (u.guid == r.raidWalkJoinGuid)
-                return &u;
-            if (!best || u.distLead < best->distLead)
-                best = &u;
-        }
+        if (!eligible(u))
+            continue;
+        if (u.guid == r.raidWalkJoinGuid)
+            return &u;
+        if (!best || u.distLead < best->distLead)
+            best = &u;
     }
     return best;
 }
