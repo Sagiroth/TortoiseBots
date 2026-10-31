@@ -86,6 +86,17 @@ assert.strictEqual(B.phaseOf(jeklik, { hp: 40, au: [{ id: 23966 }] }).phase, "ba
 const auraFirst = { phases: [{ name: "air", rule: "flag=h", order: 0 }, { name: "p1", rule: "hp<100", order: 1 }] };
 assert.strictEqual(B.phaseOf(auraFirst, { hp: 60, uf: "h" }).phase, "air");
 assert.strictEqual(B.phaseOf(auraFirst, { hp: 60, uf: "" }).phase, "p1");
+const ladder = { phases: [
+  { name: "rune4", rule: "hp<25", order: 0 },
+  { name: "rune3", rule: "hp<50", order: 1 },
+  { name: "rune2", rule: "hp<75", order: 2 },
+  { name: "fight", rule: "start", order: 3 },
+] };
+assert.strictEqual(B.phaseOf(ladder, { hp: 80 }).phase, "fight", "above the top threshold is the start phase");
+assert.strictEqual(B.phaseOf(ladder, { hp: 70 }).phase, "rune2", "the 75 percent rung");
+assert.strictEqual(B.phaseOf(ladder, { hp: 40 }).phase, "rune3", "the 50 percent rung");
+assert.strictEqual(B.phaseOf(ladder, { hp: 20 }).phase, "rune4", "the 25 percent rung listed first wins");
+assert.strictEqual(B.phaseOf(ladder, { hp: 60 }, "rune3").phase, "rune3", "a rung latches after a heal");
 
 // ---- auras, flags, adds and the current cast ----------------------------------------------------------------
 p = B.model(T, Object.assign({}, mob, {

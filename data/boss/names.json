@@ -415,6 +415,262 @@
     "27680": {
       "name": "Berserk",
       "castMs": 0
+    },
+    "19702": {
+      "name": "Impending Doom",
+      "castMs": 0
+    },
+    "19703": {
+      "name": "Lucifron's Curse",
+      "castMs": 0
+    },
+    "19460": {
+      "name": "Shadow Shock",
+      "castMs": 0
+    },
+    "19272": {
+      "name": "Lava Breath",
+      "castMs": 0
+    },
+    "19451": {
+      "name": "Frenzy",
+      "castMs": 0
+    },
+    "19449": {
+      "name": "Magma Spit",
+      "castMs": 0
+    },
+    "19408": {
+      "name": "Panic",
+      "castMs": 0
+    },
+    "19411": {
+      "name": "Lava Bomb",
+      "castMs": 0
+    },
+    "20474": {
+      "name": "Lava Bomb",
+      "castMs": 0
+    },
+    "19716": {
+      "name": "Gehennas' Curse",
+      "castMs": 0
+    },
+    "19717": {
+      "name": "Rain of Fire",
+      "castMs": 0
+    },
+    "19728": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "19729": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "19492": {
+      "name": "Antimagic Pulse",
+      "castMs": 0
+    },
+    "19496": {
+      "name": "Magma Shackles",
+      "castMs": 0
+    },
+    "19516": {
+      "name": "Enrage",
+      "castMs": 0
+    },
+    "20482": {
+      "name": "Firesworn Eruption Trigger",
+      "castMs": 0
+    },
+    "19712": {
+      "name": "Arcane Explosion",
+      "castMs": 0
+    },
+    "19713": {
+      "name": "Shazzrah's Curse",
+      "castMs": 0
+    },
+    "19714": {
+      "name": "Deaden Magic",
+      "castMs": 0
+    },
+    "19715": {
+      "name": "Counterspell",
+      "castMs": 0
+    },
+    "23138": {
+      "name": "Gate of Shazzrah",
+      "castMs": 0
+    },
+    "19659": {
+      "name": "Ignite Mana",
+      "castMs": 0
+    },
+    "20475": {
+      "name": "Living Bomb",
+      "castMs": 0
+    },
+    "19695": {
+      "name": "Inferno",
+      "castMs": 0
+    },
+    "19698": {
+      "name": "Inferno",
+      "castMs": 0
+    },
+    "20478": {
+      "name": "Armageddon",
+      "castMs": 0
+    },
+    "19777": {
+      "name": "Dark Strike",
+      "castMs": 0
+    },
+    "19778": {
+      "name": "Demoralizing Shout",
+      "castMs": 0
+    },
+    "19779": {
+      "name": "Inspire",
+      "castMs": 0
+    },
+    "19780": {
+      "name": "Hand of Ragnaros",
+      "castMs": 0
+    },
+    "19781": {
+      "name": "Flame Spear",
+      "castMs": 0
+    },
+    "20228": {
+      "name": "Pyroblast",
+      "castMs": 0
+    },
+    "20553": {
+      "name": "Golemagg's Trust",
+      "castMs": 0
+    },
+    "19953": {
+      "name": "Enrage",
+      "castMs": 0
+    },
+    "19798": {
+      "name": "Earthquake",
+      "castMs": 0
+    },
+    "20619": {
+      "name": "Magic Reflection",
+      "castMs": 0
+    },
+    "21075": {
+      "name": "Damage Shield",
+      "castMs": 0
+    },
+    "20229": {
+      "name": "Blast Wave",
+      "castMs": 0
+    },
+    "20620": {
+      "name": "Aegis of Ragnaros",
+      "castMs": 0
+    },
+    "20618": {
+      "name": "Teleport",
+      "castMs": 0
+    },
+    "19774": {
+      "name": "Summon Ragnaros",
+      "castMs": 0
+    },
+    "19484": {
+      "name": "Majordomo Teleport Visual",
+      "castMs": 0
+    },
+    "20566": {
+      "name": "Wrath of Ragnaros",
+      "castMs": 0
+    },
+    "20565": {
+      "name": "Magma Blast",
+      "castMs": 0
+    },
+    "21154": {
+      "name": "Might of Ragnaros",
+      "castMs": 0
+    },
+    "20563": {
+      "name": "Elemental Fire",
+      "castMs": 0
+    },
+    "21387": {
+      "name": "Melt Weapon",
+      "castMs": 0
+    },
+    "26234": {
+      "name": "Submerge Visual",
+      "castMs": 0
+    },
+    "21107": {
+      "name": "Ragnaros Submerge Fade",
+      "castMs": 0
+    },
+    "20568": {
+      "name": "Ragnaros Emerge",
+      "castMs": 0
+    },
+    "47375": {
+      "name": "Molten Bulwark",
+      "castMs": 0
+    },
+    "47373": {
+      "name": "Wide Backhand",
+      "castMs": 0
+    },
+    "47374": {
+      "name": "Crushing Slam",
+      "castMs": 0
+    },
+    "42036": {
+      "name": "Quaking Stomp",
+      "castMs": 0
+    },
+    "42037": {
+      "name": "Fire Nova",
+      "castMs": 0
+    },
+    "42040": {
+      "name": "Molten Bite",
+      "castMs": 0
+    },
+    "52722": {
+      "name": "Arcane Rupture",
+      "castMs": 0
+    },
+    "52723": {
+      "name": "Arcane Barrage",
+      "castMs": 0
+    },
+    "52727": {
+      "name": "Mirror Image",
+      "castMs": 0
+    },
+    "52724": {
+      "name": "Rune of Power",
+      "castMs": 0
+    },
+    "52729": {
+      "name": "Rune of Power",
+      "castMs": 0
+    },
+    "52725": {
+      "name": "Rune of Detonation",
+      "castMs": 0
+    },
+    "52726": {
+      "name": "Rune of Combustion",
+      "castMs": 0
     }
   },
   "creatures": {
@@ -549,6 +805,90 @@
     },
     "15984": {
       "name": "Sartura's Royal Guard"
+    },
+    "12118": {
+      "name": "Lucifron"
+    },
+    "11982": {
+      "name": "Magmadar"
+    },
+    "12259": {
+      "name": "Gehennas"
+    },
+    "12057": {
+      "name": "Garr"
+    },
+    "12264": {
+      "name": "Shazzrah"
+    },
+    "12056": {
+      "name": "Baron Geddon"
+    },
+    "12098": {
+      "name": "Sulfuron Harbinger"
+    },
+    "11988": {
+      "name": "Golemagg the Incinerator"
+    },
+    "65020": {
+      "name": "Basalthar"
+    },
+    "52145": {
+      "name": "Incindis"
+    },
+    "12018": {
+      "name": "Majordomo Executus"
+    },
+    "11502": {
+      "name": "Ragnaros"
+    },
+    "57642": {
+      "name": "Sorcerer-Thane Thaurissan"
+    },
+    "11671": {
+      "name": "Core Hound"
+    },
+    "11673": {
+      "name": "Ancient Core Hound"
+    },
+    "12119": {
+      "name": "Flamewaker Protector"
+    },
+    "11661": {
+      "name": "Flamewaker"
+    },
+    "12099": {
+      "name": "Firesworn"
+    },
+    "11662": {
+      "name": "Flamewaker Priest"
+    },
+    "11672": {
+      "name": "Core Rager"
+    },
+    "11663": {
+      "name": "Flamewaker Healer"
+    },
+    "11664": {
+      "name": "Flamewaker Elite"
+    },
+    "12143": {
+      "name": "Son of Flame"
+    },
+    "13148": {
+      "name": "Flame of Ragnaros"
+    },
+    "65021": {
+      "name": "Smoldaris"
+    },
+    "52146": {
+      "name": "Small Incendic Egg"
+    },
+    "52147": {
+      "name": "Large Incendic Egg"
+    },
+    "57643": {
+      "name": "Image of Sorcerer-Thane Thaurissan"
     }
   }
 }
