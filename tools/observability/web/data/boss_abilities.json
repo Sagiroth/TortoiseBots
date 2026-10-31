@@ -3222,8 +3222,8 @@
           "name": "Energize",
           "castMs": 0,
           "a": 90000,
-          "b": 90000,
-          "c": 90000,
+          "b": 0,
+          "c": 0,
           "phase": "",
           "target": "self",
           "aura": false,
@@ -3286,7 +3286,7 @@
         }
       ],
       "notes": [
-        "Arcane Eruption has no timer: it is cast when his mana reaches 100% and at the end of a stone form, and knocks players back. The three mana fiends are summoned by the script when Energize starts (90 s after the pull and every 90 s) and despawn 10 s out of combat."
+        "Arcane Eruption has no timer: it is cast when his mana reaches 100% and at the end of a stone form, and knocks players back. Energize first comes 90 s after the pull; while the aura is up the timer does not tick, so the next Energize is 90 s after stone form ends. The three mana fiends are summoned by the script when Energize starts and despawn 10 s out of combat."
       ]
     },
     "15370": {
@@ -3410,7 +3410,7 @@
           "sid": 20512,
           "name": "Creeping Plague",
           "castMs": 0,
-          "a": 6000,
+          "a": 0,
           "b": 6000,
           "c": 6000,
           "phase": "phase2",
@@ -3463,7 +3463,7 @@
       ],
       "notes": [
         "Breaking an egg within 5 yd of Buru stops him, casts Creature Special and picks a new random target with a full threat reset; the six eggs respawn 120 s after they die and the remaining ones are killed when he transforms.",
-        "At 20% he roots for 6 s, transforms (aura 24721) and removes Thorns; the first Creeping Plague comes 6 s after the transform completes, then every 6 s. His run speed starts at 50% and Gathering Speed stacks every 9 s in phase 1."
+        "At 20% he roots for 6 s, transforms (aura 24721) and removes Thorns; the first Creeping Plague comes 12 s after phase 2 starts (6 s after the 6 s transform completes), then every 6 s. His run speed starts at 50% and Gathering Speed stacks every 9 s in phase 1."
       ]
     },
     "15369": {
@@ -3500,9 +3500,9 @@
           "sid": 25749,
           "name": "Stinger Spray",
           "castMs": 0,
-          "a": 0,
-          "b": 0,
-          "c": 0,
+          "a": 10000,
+          "b": 6000,
+          "c": 20000,
           "phase": "",
           "target": "aoe",
           "aura": false,
@@ -3544,7 +3544,7 @@
           "sid": 25852,
           "name": "Lash",
           "castMs": 0,
-          "a": 15000,
+          "a": 0,
           "b": 8000,
           "c": 15000,
           "phase": "p2",
@@ -3567,7 +3567,7 @@
           "sid": 3391,
           "name": "Thrash",
           "castMs": 0,
-          "a": 10000,
+          "a": 0,
           "b": 5000,
           "c": 7000,
           "phase": "p2",
@@ -3646,8 +3646,8 @@
         }
       ],
       "notes": [
-        "At 70% or less she lands, melees and wipes every player's threat; she starts 20 yd above her spawn. Twenty swarmers spawn every 60 s.",
-        "Stinger Spray has one timer with two windows: first at 10 s, then every 15-20 s in phase 1 and every 6-12 s in phase 2. Paralyze stuns a random player and the larva drags them to the altar; if it feeds, a hornet spawns and the player dies. The victim's threat is restored 10 s after the teleport unless phase 2 began first."
+        "At 70% or less she lands, melees and wipes every player's threat; she starts on the ground and rises 20 yd 5 s after the pull. Twenty swarmers spawn every 60 s.",
+        "Stinger Spray has one timer with two windows: first at 10 s, then every 15-20 s in phase 1 and every 6-12 s in phase 2. Lash first comes 15 s and Thrash 10 s after phase 2 starts. Paralyze stuns a random player and the larva drags them to the altar; if it feeds, a hornet spawns and the player dies. The victim's threat is restored 10 s after the teleport unless phase 2 began first."
       ]
     },
     "15339": {
@@ -3763,14 +3763,14 @@
       "adds": [
         {
           "entry": 15428,
-          "name": "Tornado",
+          "name": "Sand Vortex",
           "role": "summon",
           "priority": 0
         }
       ],
       "notes": [
         "Strength of Ossirian is up at the pull; a crystal weakness removes it and he recasts it 45 s after the hit. Five weakness auras (25177/25178/25180/25181/25183) are cast by the crystal trigger, not by him.",
-        "Enveloping Winds clears the target's threat while the aura lasts and puts it back when it ends; his run speed ramps from 100% to 200% over the first 10 s. Tornadoes are unselectable and cast Sandstorm on themselves."
+        "Enveloping Winds clears the target's threat while the aura lasts and puts it back when it ends; his run speed ramps from 100% to 200% over the first 10 s. Sand Vortexes are unselectable and cast Sandstorm on themselves."
       ]
     }
   },

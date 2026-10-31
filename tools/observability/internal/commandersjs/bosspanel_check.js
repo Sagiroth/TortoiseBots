@@ -176,6 +176,13 @@ const buruTwo = B.model(REAL, { entry: 15370, hp: 19, au: [] }, [], 0, 0, "phase
 assert.strictEqual(buruTwo.abilities.find((a) => a.sid === 96).inPhase, false, "Dismember is phase 1");
 assert.strictEqual(buruTwo.abilities.find((a) => a.sid === 25640).inPhase, false, "Thorns is phase 1");
 assert.strictEqual(buruTwo.abilities.find((a) => a.sid === 20512).inPhase, true, "Creeping Plague is phase 2");
+// Its first-cast timer starts at the phase change, not at the pull: 200 s in, an unseen plague is "—", never "(late)".
+const buruLate = B.model(REAL, { entry: 15370, hp: 19, au: [] }, [], 0, 200000, "phase1");
+const plague = buruLate.abilities.find((a) => a.sid === 20512);
+assert.strictEqual(plague.inPhase, true);
+assert.strictEqual(plague.next, null, "a phase-2 timer has no window counted from the pull");
+const plagueRow = B.render(REAL, buruLate, {}).split("<li").find((row) => row.includes("Creeping Plague"));
+assert.ok(plagueRow && !plagueRow.includes("(late)"), plagueRow);
 const ayamiss = aq20["15369"];
 assert.deepStrictEqual(ayamiss.phases.map((x) => x.rule), ["hp<70", "start"]);
 assert.strictEqual(B.phaseOf(ayamiss, { hp: 60, au: [] }).phase, "p2");

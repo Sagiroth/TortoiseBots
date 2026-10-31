@@ -37,8 +37,9 @@ RAID_HEADER = ["key", "map_id", "name"]
 CODE_HEADER = ["map", "boss", "key", "need", "level", "name", "text", "source"]
 
 # Written from the AQ20 scripts (src/scripts/dungeons/ruins_of_ahnqiraj), not from the CSV: first ms after the pull
-# (0 when the script rolls urand for it, with the window in the note), repeat window ms, target, phase, flags, one-shot
-# hp, whole-row ok reason, per-need ok reasons. castMs is pinned to 0 (unknown) for every new spell.
+# (0 when the script rolls urand for it or the timer only runs inside a later phase, with the window in the note),
+# repeat window ms, target, phase, flags, one-shot hp, whole-row ok reason, per-need ok reasons. castMs is pinned to 0
+# (unknown) for every new spell.
 AQ20_ABILITIES = {
     15348: [  # boss_kurinnaxx.cpp
         (25646, 0, 8000, 10000, "victim", "", ("aura",), 0, "", {"dispel": "nodispel"}),
@@ -49,7 +50,7 @@ AQ20_ABILITIES = {
     15340: [  # boss_moam.cpp
         (15550, 6000, 15000, 15000, "aoe", "fight", (), 0, "heal", {}),
         (25672, 0, 0, 0, "aoe", "", (), 0, "heal", {}),
-        (25685, 90000, 90000, 90000, "self", "", ("self",), 0, "phase", {}),
+        (25685, 90000, 0, 0, "self", "", ("self",), 0, "phase", {}),
         (25676, 5000, 7000, 7000, "aoe", "fight", (), 0, "", {}),
     ],
     15370: [  # boss_buru.cpp
@@ -58,15 +59,15 @@ AQ20_ABILITIES = {
         (25640, 0, 0, 0, "self", "phase1", ("self",), 0, "", {"purge": "nopurge"}),
         (7155, 0, 0, 0, "self", "phase1", (), 0, "script", {}),
         (24721, 0, 0, 0, "self", "phase2", ("self",), 20, "phase", {}),
-        (20512, 6000, 6000, 6000, "aoe", "phase2", ("aura",), 0, "", {"dispel": "nodispel"}),
+        (20512, 0, 6000, 6000, "aoe", "phase2", ("aura",), 0, "", {"dispel": "nodispel"}),
     ],
     15369: [  # boss_ayamiss.cpp
         (25748, 5000, 2000, 3000, "victim", "p1", ("aura", "int"), 0, "",
          {"interrupt": "nokick", "dispel": "nodispel"}),
-        (25749, 0, 0, 0, "aoe", "", (), 0, "heal", {}),
+        (25749, 10000, 6000, 20000, "aoe", "", (), 0, "heal", {}),
         (25725, 10000, 15000, 15000, "random", "", ("aura",), 0, "", {"dispel": "nodispel"}),
-        (25852, 15000, 8000, 15000, "victim", "p2", ("aura",), 0, "", {"dispel": "nodispel"}),
-        (3391, 10000, 5000, 7000, "victim", "p2", (), 0, "tank", {}),
+        (25852, 0, 8000, 15000, "victim", "p2", ("aura",), 0, "", {"dispel": "nodispel"}),
+        (3391, 0, 5000, 7000, "victim", "p2", (), 0, "tank", {}),
         (8269, 0, 0, 0, "self", "", ("self",), 20, "", {"purge": "nopurge"}),
     ],
     15339: [  # boss_ossirian.cpp
