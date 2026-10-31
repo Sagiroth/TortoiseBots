@@ -182,6 +182,41 @@
         60746,
         61212
       ]
+    },
+    {
+      "key": "blackrock_depths",
+      "mapId": 230,
+      "name": "Blackrock Depths",
+      "bosses": [
+        9018,
+        9319,
+        9016,
+        9033,
+        8894,
+        8983,
+        9017,
+        9056,
+        9156,
+        9938,
+        9019
+      ]
+    },
+    {
+      "key": "upper_blackrock_spire",
+      "mapId": 229,
+      "name": "Blackrock Spire",
+      "bosses": [
+        9196,
+        9236,
+        9237,
+        10596,
+        9736,
+        10220,
+        10268,
+        9568,
+        9216,
+        9268
+      ]
     }
   ],
   "bosses": {
@@ -15397,6 +15432,1714 @@
       "phases": [],
       "adds": [],
       "notes": []
+    },
+    "9018": {
+      "entry": 9018,
+      "name": "High Interrogator Gerstahn",
+      "map": "blackrock_depths",
+      "order": 101,
+      "abilities": [
+        {
+          "sid": 14032,
+          "name": "Shadow Word: Pain",
+          "castMs": 0,
+          "a": 4000,
+          "b": 7000,
+          "c": 7000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 14033,
+          "name": "Mana Burn",
+          "castMs": 0,
+          "a": 14000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 13704,
+          "name": "Psychic Scream",
+          "castMs": 0,
+          "a": 32000,
+          "b": 30000,
+          "c": 30000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 12040,
+          "name": "Shadow Shield",
+          "castMs": 0,
+          "a": 8000,
+          "b": 25000,
+          "c": 25000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Shadow Word: Pain and Mana Burn both go to a random attacker, not the tank."
+      ]
+    },
+    "9319": {
+      "entry": 9319,
+      "name": "Houndmaster Grebmar",
+      "map": "blackrock_depths",
+      "order": 102,
+      "abilities": [
+        {
+          "sid": 21049,
+          "name": "Bloodlust",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 13730,
+          "name": "Demoralizing Shout",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 15615,
+          "name": "Pummel",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Houndmaster Grebmar has no boss script: generic_spell_ai casts the three spells in his creature_template slots on a 10-20 s repeat with a first cast at the pull, skips a spell while its aura is up and retries a failed cast in 0.5 s, so the panel gets no script timer from them."
+      ]
+    },
+    "9016": {
+      "entry": 9016,
+      "name": "Bael'Gar",
+      "map": "blackrock_depths",
+      "order": 103,
+      "abilities": [
+        {
+          "sid": 13895,
+          "name": "Summon Spawn of Bael'Gar",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 9436,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "interrupt": "nokick"
+          }
+        },
+        {
+          "sid": 13880,
+          "name": "Magma Splash",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 9436,
+          "name": "Spawn of Bael'Gar",
+          "role": "summon",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "Bael'Gar has no boss script: EventAI runs four HP events that cast 13895 at 82, 62, 42 and 22 percent, each a cast-time spell at a random attacker that summons one Spawn of Bael'Gar where that player stands, plus his creature_spells list 90160, Magma Splash 13880 at his current victim every 10-14 s (first 8-12). The 13895 cast is not kickable (preventionType 0) and its timer columns are 0 because the events are HP thresholds."
+      ]
+    },
+    "9033": {
+      "entry": 9033,
+      "name": "General Angerforge",
+      "map": "blackrock_depths",
+      "order": 104,
+      "abilities": [
+        {
+          "sid": 15572,
+          "name": "Sunder Armor",
+          "castMs": 0,
+          "a": 0,
+          "b": 5000,
+          "c": 15000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 8894,
+          "name": "Anvilrage Medic",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 8901,
+          "name": "Anvilrage Reservist",
+          "role": "summon",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "The first Sunder is 5-10 s after the pull; the alarm fires as soon as he drops below 30 percent and again every 3 minutes while he stays below it, summoning eight Anvilrage Reservists and two Anvilrage Medics at the m_aAddspawnLocs points for 30 s."
+      ]
+    },
+    "8894": {
+      "entry": 8894,
+      "name": "Anvilrage Medic",
+      "map": "blackrock_depths",
+      "order": 105,
+      "abilities": [
+        {
+          "sid": 15586,
+          "name": "Heal",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 10961,
+          "name": "Prayer of Healing",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 10947,
+          "name": "Mind Blast",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "The Anvilrage Medic is an elite add with creature_spells list 88940: Heal 15586 on the most injured ally every 4-6 s (first at the pull), Prayer of Healing 10961 on that ally every 6-9 s (first 7-11) and Mind Blast 10947 at the current victim every 2-3 s (first at the pull); all three are kickable casts."
+      ]
+    },
+    "8983": {
+      "entry": 8983,
+      "name": "Golem Lord Argelmach",
+      "map": "blackrock_depths",
+      "order": 106,
+      "abilities": [
+        {
+          "sid": 15507,
+          "name": "Lightning Shield",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 15305,
+          "name": "Chain Lightning",
+          "castMs": 0,
+          "a": 5000,
+          "b": 14000,
+          "c": 14000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 15605,
+          "name": "Shock",
+          "castMs": 0,
+          "a": 2000,
+          "b": 6000,
+          "c": 6000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 8906,
+          "name": "Ragereaver Golem",
+          "role": "linked",
+          "priority": 0
+        },
+        {
+          "entry": 8907,
+          "name": "Wrath Hammer Construct",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "Lightning Shield is re-applied whenever it is missing; its 15 s timer only limits the retry after the aura drops, and his ai_name EventAI never runs because the script_name npc_golem_lord_argelmach wins.",
+        "On aggro he walks to 846.801, 16.281, -53.640 and pulls the living Ragereaver Golems and Wrath Hammer Constructs within 80 yd onto his current victim."
+      ]
+    },
+    "9017": {
+      "entry": 9017,
+      "name": "Lord Incendius",
+      "map": "blackrock_depths",
+      "order": 107,
+      "abilities": [
+        {
+          "sid": 26977,
+          "name": "Curse of the Elemental Lord",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 13900,
+          "name": "Fiery Burst",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 14099,
+          "name": "Mighty Blow",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 13899,
+          "name": "Fire Storm",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": true,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Lord Incendius has no ai_name, script_name or EventAI row, but his creature_spells list 90170 runs under the default AggressorAI: Curse of the Elemental Lord 26977 on the raid every 20-28 s (first 1-5), Fiery Burst 13900 at his current victim every 9-16 s (first 6-11), Mighty Blow 14099 at a random attacker every 18-24 s (first 9-17) and Fire Storm 13899 at a random attacker every 11-14 s (first 12-16)."
+      ]
+    },
+    "9056": {
+      "entry": 9056,
+      "name": "Fineous Darkvire",
+      "map": "blackrock_depths",
+      "order": 108,
+      "abilities": [
+        {
+          "sid": 8258,
+          "name": "Devotion Aura",
+          "castMs": 0,
+          "a": 1000,
+          "b": 240000,
+          "c": 240000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 13953,
+          "name": "Holy Strike",
+          "castMs": 0,
+          "a": 0,
+          "b": 6000,
+          "c": 8500,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 15493,
+          "name": "Holy Light",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 60,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 15346,
+          "name": "Seal of Reckoning",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 20,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 11978,
+          "name": "Kick",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Fineous Darkvire has no boss script: EventAI casts Devotion Aura on himself after 1 s and every 4 minutes, Holy Strike at his current target every 6-8.5 s while it is within 5 yd (first at the pull), Holy Light on himself at 60 and again at 40 percent, and Seal of Reckoning at 20 percent; his creature_spells list 90560 casts Kick 11978 at his current victim every 11-15 s (first at the pull), which interrupts that player's cast. Holy Light is the only kickable cast."
+      ]
+    },
+    "9156": {
+      "entry": 9156,
+      "name": "Ambassador Flamelash",
+      "map": "blackrock_depths",
+      "order": 109,
+      "abilities": [
+        {
+          "sid": 14744,
+          "name": "Burning Spirit",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 9178,
+          "name": "Burning Spirit",
+          "role": "summon",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "Ambassador Flamelash has no boss script: his EventAI only switches the instance encounter, and the instance opens the seven dwarf runes and summons a Burning Spirit at each one every 15-30 s (5 s for the first), up to 30, which follow him. He casts 14744 on himself whenever a spirit's 13489 hits him."
+      ]
+    },
+    "9938": {
+      "entry": 9938,
+      "name": "Magmus",
+      "map": "blackrock_depths",
+      "order": 110,
+      "abilities": [
+        {
+          "sid": 13900,
+          "name": "Fiery Burst",
+          "castMs": 0,
+          "a": 5000,
+          "b": 6000,
+          "c": 6000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 24375,
+          "name": "War Stomp",
+          "castMs": 0,
+          "a": 0,
+          "b": 8000,
+          "c": 8000,
+          "phase": "stomp",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [
+        {
+          "name": "stomp",
+          "order": 1,
+          "rule": {
+            "kind": "hp",
+            "hp": 51
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": [
+        "War Stomp starts below 51 percent with a timer of 0, so the first one lands on the next update; Fiery Burst is a 10 yd area at his current victim."
+      ]
+    },
+    "9019": {
+      "entry": 9019,
+      "name": "Emperor Dagran Thaurissan",
+      "map": "blackrock_depths",
+      "order": 111,
+      "abilities": [
+        {
+          "sid": 17492,
+          "name": "Hand of Thaurissan",
+          "castMs": 0,
+          "a": 0,
+          "b": 10000,
+          "c": 15000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 15636,
+          "name": "Avatar of Flame",
+          "castMs": 0,
+          "a": 18000,
+          "b": 18000,
+          "c": 18000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 8929,
+          "name": "Princess Moira Bronzebeard",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "Hand of Thaurissan is cast only while a player other than the top threat is alive; its first window is 5-7.5 s and a failed cast leaves the timer at 0 and retries every update.",
+        "Princess Moira Bronzebeard 8929 fights with him, heals him with 15586 whenever he is not at full health and turns friendly when he dies; she is an add row here, not a block of this table.",
+        "Ironfoe 15642 is defined in his script but never cast."
+      ]
+    },
+    "9196": {
+      "entry": 9196,
+      "name": "Highlord Omokk",
+      "map": "upper_blackrock_spire",
+      "order": 112,
+      "abilities": [
+        {
+          "sid": 24375,
+          "name": "War Stomp",
+          "castMs": 0,
+          "a": 15000,
+          "b": 14000,
+          "c": 14000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 18368,
+          "name": "Strike",
+          "castMs": 0,
+          "a": 10000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 18106,
+          "name": "Rend",
+          "castMs": 0,
+          "a": 14000,
+          "b": 18000,
+          "c": 18000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 24317,
+          "name": "Sunder Armor",
+          "castMs": 0,
+          "a": 2000,
+          "b": 25000,
+          "c": 25000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 20686,
+          "name": "Knock Away",
+          "castMs": 0,
+          "a": 18000,
+          "b": 12000,
+          "c": 12000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 22356,
+          "name": "Slow",
+          "castMs": 0,
+          "a": 24000,
+          "b": 18000,
+          "c": 18000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "He evades when pulled by a pet or when his z leaves 25 to 50; the enrage his comment asks about is not cast."
+      ]
+    },
+    "9236": {
+      "entry": 9236,
+      "name": "Shadow Hunter Vosh'gajin",
+      "map": "upper_blackrock_spire",
+      "order": 113,
+      "abilities": [
+        {
+          "sid": 24673,
+          "name": "Curse of Blood",
+          "castMs": 0,
+          "a": 2000,
+          "b": 45000,
+          "c": 45000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 16708,
+          "name": "Hex",
+          "castMs": 0,
+          "a": 8000,
+          "b": 15000,
+          "c": 15000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 20691,
+          "name": "Cleave",
+          "castMs": 0,
+          "a": 14000,
+          "b": 7000,
+          "c": 7000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Hex adds 15 s to its own timer after a successful cast instead of resetting it; he evades when pulled by a pet or when his z leaves 0 to 30."
+      ]
+    },
+    "9237": {
+      "entry": 9237,
+      "name": "War Master Voone",
+      "map": "upper_blackrock_spire",
+      "order": 114,
+      "abilities": [
+        {
+          "sid": 15618,
+          "name": "Snap Kick",
+          "castMs": 0,
+          "a": 8000,
+          "b": 6000,
+          "c": 6000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 15284,
+          "name": "Cleave",
+          "castMs": 0,
+          "a": 14000,
+          "b": 12000,
+          "c": 12000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 10966,
+          "name": "Uppercut",
+          "castMs": 0,
+          "a": 20000,
+          "b": 14000,
+          "c": 14000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 15708,
+          "name": "Mortal Strike",
+          "castMs": 0,
+          "a": 12000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 15615,
+          "name": "Pummel",
+          "castMs": 0,
+          "a": 32000,
+          "b": 16000,
+          "c": 16000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 16075,
+          "name": "Throw Axe",
+          "castMs": 0,
+          "a": 0,
+          "b": 5000,
+          "c": 15000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "interrupt": "nokick",
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Throw Axe stops after the second hit: the second applies the passive 16076 and the loop ends; the first throw is 10-30 s after the pull and repeats are 5-15 s."
+      ]
+    },
+    "10596": {
+      "entry": 10596,
+      "name": "Mother Smolderweb",
+      "map": "upper_blackrock_spire",
+      "order": 115,
+      "abilities": [
+        {
+          "sid": 16468,
+          "name": "Mother's Milk",
+          "castMs": 0,
+          "a": 0,
+          "b": 7000,
+          "c": 15000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 16104,
+          "name": "Crystallize",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 16103,
+          "name": "Summon Spire Spiderling",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 10375,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 10375,
+          "name": "Spire Spiderling",
+          "role": "summon",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "Mother Smolderweb's creature_template ai_name is EventAI and its script_name is empty, so boss_mother_smolderweb.cpp never runs, but EventAI still runs her creature_spells list 105960 beside its own event: Crystallize 16104 hits a 120-degree cone in front of her every 10-17 s (first 7-15) for a magic-dispellable stun, Summon Spire Spiderling 16103 summons one Spire Spiderling 10375 every 15-20 s (first 5-15), and EventAI 1059603 casts Mother's Milk 16468 every 7-15 s while the current victim lacks it, picking a random attacker so the aura lands around her."
+      ]
+    },
+    "9736": {
+      "entry": 9736,
+      "name": "Quartermaster Zigris",
+      "map": "upper_blackrock_spire",
+      "order": 116,
+      "abilities": [
+        {
+          "sid": 16496,
+          "name": "Shoot",
+          "castMs": 0,
+          "a": 1000,
+          "b": 1750,
+          "c": 1750,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 16497,
+          "name": "Stun Bomb",
+          "castMs": 0,
+          "a": 16000,
+          "b": 14000,
+          "c": 14000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "interrupt": "nokick",
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "She evades when pulled by a pet or when her z is below 50; Hooked Net 15609 and the Healing Potion 15504 are declared in the script but never cast."
+      ]
+    },
+    "10220": {
+      "entry": 10220,
+      "name": "Halycon",
+      "map": "upper_blackrock_spire",
+      "order": 117,
+      "abilities": [
+        {
+          "sid": 10887,
+          "name": "Crowd Pummel",
+          "castMs": 0,
+          "a": 8000,
+          "b": 14000,
+          "c": 14000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 14099,
+          "name": "Mighty Blow",
+          "castMs": 0,
+          "a": 14000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 10268,
+          "name": "Gizrul the Slavener",
+          "role": "summon",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "Gizrul the Slavener spawns when she dies through a direct SummonCreature at -167.58, -382.41, 64.401 and sets his home to -172.633, -324.253, 64.401; no spell is involved."
+      ]
+    },
+    "10268": {
+      "entry": 10268,
+      "name": "Gizrul the Slavener",
+      "map": "upper_blackrock_spire",
+      "order": 118,
+      "abilities": [
+        {
+          "sid": 16495,
+          "name": "Fatal Bite",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 16128,
+          "name": "Infected Bite",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 8269,
+          "name": "Enrage",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 20,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Gizrul the Slavener spawns when Halycon dies and fights with creature_spells list 102680: Fatal Bite 16495 at his current victim every 7-15 s (first 7-15) and Infected Bite 16128 every 10-20 s (first 15-20), a disease that also raises the physical damage its target takes; EventAI 1026801 casts Enrage 8269 below 20 percent and repeats it every 30 s while he stays below."
+      ]
+    },
+    "9568": {
+      "entry": 9568,
+      "name": "Overlord Wyrmthalak",
+      "map": "upper_blackrock_spire",
+      "order": 119,
+      "abilities": [
+        {
+          "sid": 11130,
+          "name": "Knock Away",
+          "castMs": 0,
+          "a": 20000,
+          "b": 20000,
+          "c": 20000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 23511,
+          "name": "Demoralizing Shout",
+          "castMs": 0,
+          "a": 2000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 20691,
+          "name": "Cleave",
+          "castMs": 0,
+          "a": 6000,
+          "b": 7000,
+          "c": 7000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 20686,
+          "name": "Knock Away",
+          "castMs": 0,
+          "a": 12000,
+          "b": 14000,
+          "c": 14000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 9216,
+          "name": "Spirestone Warlord",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 9268,
+          "name": "Smolderthorn Berserker",
+          "role": "summon",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "Below 51 percent he summons one Spirestone Warlord and one Smoldertooth Berserker once, at the two afLocations points; he evades when pulled by a pet or when his z leaves 72 to 100."
+      ]
+    },
+    "9216": {
+      "entry": 9216,
+      "name": "Spirestone Warlord",
+      "map": "upper_blackrock_spire",
+      "order": 120,
+      "abilities": [
+        {
+          "sid": 16171,
+          "name": "Empower Will",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "script",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "The Spirestone Warlord is summoned by Wyrmthalak below 51 percent; his creature_spells list 92160 casts Empower Will 16171 on himself every 20 s from the pull, dispelling polymorph, charm and knockout from nearby allies. His EventAI 921602 is named Frenzy at 30 percent but its only action is a text line."
+      ]
+    },
+    "9268": {
+      "entry": 9268,
+      "name": "Smolderthorn Berserker",
+      "map": "upper_blackrock_spire",
+      "order": 121,
+      "abilities": [
+        {
+          "sid": 13446,
+          "name": "Strike",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 17547,
+          "name": "Mortal Strike",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "The Smolderthorn Berserker is summoned by Wyrmthalak below 51 percent; his creature_spells list 92680 casts Strike 13446 at his current victim every 4-6 s (first 5-7) and Mortal Strike 17547 every 6-10 s (first 5), which cuts the victim's healing taken for 28 s and cannot be dispelled. His EventAI 926801 is named Frenzy at 30 percent but its only action is a text line."
+      ]
     }
   },
   "codeAnswers": [

@@ -410,6 +410,17 @@ assert.deepStrictEqual(suppressor.abilities.map((a) => [a.sid, a.first, a.repeat
 assert.strictEqual(suppressor.abilities[0].flags.aura, true);
 assert.strictEqual(addBlock("60744"), undefined, "Sanctum Wyrm has no boss block");
 
+// BRD: Magmus gains War Stomp only in the hp<51 stomp phase; Fiery Burst stays in every phase.
+const magmus = (REAL.byEntry || REAL.bosses || REAL)["9938"];
+assert.deepStrictEqual(magmus.phases.map((x) => x.rule), ["hp<51", "start"]);
+assert.strictEqual(B.phaseOf(magmus, { hp: 60, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(magmus, { hp: 40, au: [] }).phase, "stomp");
+const at60 = B.model(REAL, { entry: 9938, hp: 60, au: [] }, [], 0, 1000);
+assert.strictEqual(at60.abilities.find((a) => a.sid === 24375).inPhase, false);
+assert.strictEqual(at60.abilities.find((a) => a.sid === 13900).inPhase, true);
+const at40 = B.model(REAL, { entry: 9938, hp: 40, au: [] }, [], 0, 1000);
+assert.strictEqual(at40.abilities.find((a) => a.sid === 24375).inPhase, true);
+
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];
 assert.strictEqual(jeklikReal.abilities.find((a) => a.sid === 23919).flags.phase, "bat");
