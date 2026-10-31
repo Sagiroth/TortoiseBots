@@ -34,6 +34,7 @@
 - Fixed: resto shaman now hold Spirit Link until the tank drops to half health instead of linking on the pull.
 - Changed: resto shaman now hold Ancestral Swiftness for a dying target instead of popping it on the first quiet tick.
 - Healers no longer throw grenades, sapper charges or Oil of Immolation in a fight; damage dealers and tanks still use them.
+- Bots in a dungeon or raid run no longer sit down to eat or drink while any member of the run is still fighting, wherever they stand, and a seated bot stands up when the run's fight starts.
 
 ### Commands
 - New `.autogear` command gears a real player the way a spawned bot gets geared: items picked for the level and spec from the same gear pool the bots use, upgrades only, replaced items to the bags or the mailbox. GameMasters can gear any player; `AiPlayerbot.PlayerAutogearForAll` (default `0`) lets every player gear themselves.

@@ -2,6 +2,7 @@
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/policy/combat/BandageSafetyPolicy.h"
 #include "playerbot/policy/combat/HealerItemPolicy.h"
+#include "playerbot/policy/combat/MealGatePolicy.h"
 #include "GenericActions.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/RandomItemMgr.h"
@@ -661,12 +662,17 @@ namespace ai
     // meal, so the bot missed the pull and any CC order. "has attackers" is
     // the cached value the combat-start trigger reads anyway; the member
     // check catches the first seconds of a pull before that cache refreshes,
-    // and it is the same test that wakes an eating bot (PlayerbotAI::UpdateAI),
-    // so a woken bot does not sit straight back down.
+    // and the run's own mark holds the gate through the ticks between kills
+    // and far from the fight, where the member test sees nobody. The wake
+    // check reads the same two terms (PlayerbotAI::UpdateAI), so a woken bot
+    // does not sit straight back down.
     inline bool GroupIsFighting(PlayerbotAI* ai)
     {
-        return ai->GetAiObjectContext()->GetValue<bool>("has attackers")->Get() ||
-            ai->IsGroupMemberNearInCombat();
+        return MealBlocked(
+            ai->GetAiObjectContext()->GetValue<bool>("has attackers")->Get(),
+            ai->IsGroupMemberNearInCombat(),
+            (uint32)ai->GetAiObjectContext()->GetValue<int32>("manual int", "run fight until ms")->Get(),
+            WorldTimer::getMSTime());
     }
 
     class DrinkAction : public UseAction
