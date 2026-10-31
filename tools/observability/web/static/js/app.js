@@ -6253,13 +6253,17 @@
     return fdFights;
   }
   let cmdControlOn = null;   // null: not asked yet; the page asks once per load
+  let cmdControlAsking = null; // the one control fetch in flight; later paints chain on it
 
   function cmdControlAsk(cb) {
     if (cmdControlOn !== null) { cb(cmdControlOn); return; }
-    fetch('/api/v1/control').then(jsonOrThrow).then(v => {
-      cmdControlOn = !!(v && v.enabled);
-      cb(cmdControlOn);
-    }).catch(() => { cmdControlOn = false; cb(false); });
+    if (!cmdControlAsking) {
+      cmdControlAsking = fetch('/api/v1/control').then(jsonOrThrow).then(
+        v => { cmdControlOn = !!(v && v.enabled); },
+        () => { cmdControlOn = false; },
+      ).then(() => { cmdControlAsking = null; });
+    }
+    cmdControlAsking.then(() => cb(cmdControlOn));
   }
   function cmdRaidFights(bind, cb) {
     fdFightsFeed().list(bind.commander, list => {
@@ -7963,7 +7967,9 @@
     // the raid frames. The fetch runs once per page load; the place runs here too, so a card whose answer has not arrived
     // yet still moves (hidden) and never flashes in the wrong parent once the answer lands.
     cmdPlaceControls(card, debug && raid && cmdControlOn);
+    const ctlGen = card._ctlGen = (card._ctlGen || 0) + 1;
     cmdControlAsk(on => {
+      if (card._ctlGen !== ctlGen) return;
       const ctl = card.querySelector('.cmd-controls');
       if (ctl) ctl.hidden = !on || !raid;
       if (on && raid) { setHtml(card.querySelector('.cmd-controls-row'), cmdControlsHtml(bind)); cmdControlsBind(card, bind); }

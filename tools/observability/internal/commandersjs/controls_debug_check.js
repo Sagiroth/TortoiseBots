@@ -4,7 +4,8 @@
 //    the notes/threat/deaths panels stay hidden in debug mode, as before;
 //  - on the Live paint it is back inside .cmd-panels;
 //  - a non-raid bind keeps it hidden in both views;
-//  - the debug grid carries the controls row under the raid frames, with one track per area row.
+//  - a late control answer only applies to the newest paint (debug then Live while the fetch is in flight: one fetch,
+//    the Live parent, the Live bind);
 const assert = require("assert");
 const fs = require("fs");
 const vm = require("vm");
@@ -76,5 +77,58 @@ assert.ok(/if \(panels\) panels\.hidden = !raid \|\| debug;/.test(src),
   "the rest of .cmd-panels (notes, threat, deaths) stays hidden in debug mode");
 assert.ok(/if \(on && raid\) \{ setHtml\(card\.querySelector\('\.cmd-controls-row'\), cmdControlsHtml\(bind\)\); cmdControlsBind\(card, bind\); \}/
   .test(src), "the debug paint fills the same buttons, binding and answer note as Live");
+
+// ---- the race: a late control answer only touches the newest paint
+// The debugger paints, then the Live paint, while the one control fetch is still in flight; the answer lands after.
+// Exactly one fetch happens, the controls end in the Live parent (.cmd-panels), and the buttons carry the Live
+// paint's bind, bound once.
+assert.ok(/const ctlGen = card\._ctlGen = \(card\._ctlGen \|\| 0\) \+ 1;/.test(src),
+  "the paint stamps the card before asking, so a late answer knows its paint");
+assert.ok(/cmdControlAsk\(on => \{\n\s*if \(card\._ctlGen !== ctlGen\) return;/.test(src),
+  "a control answer older than the newest paint yields");
+const askSrc = grab("cmdControlAsk");
+assert.ok(askSrc.includes("cmdControlAsking"), "paints while unanswered share the one pending control fetch");
+const cbSrc = src.match(/cmdControlAsk\(on => \{\n([\s\S]*?)\n    \}\);/);
+assert.ok(cbSrc, "the paint's control callback is found");
+const paintCtl = new Function("card", "bind", "debug", "raid", "on", "ctlGen",
+  "setHtml", "cmdControlsHtml", "cmdControlsBind", "cmdPlaceControls", cbSrc[1]);
+(async () => {
+  let fetchCalls = 0, resolveControl = null;
+  const box = {
+    fetch: (url) => {
+      assert.strictEqual(url, "/api/v1/control", "the shared fetch asks the control flag");
+      fetchCalls++;
+      return new Promise((res) => { resolveControl = res; });
+    },
+    jsonOrThrow: (r) => r,
+  };
+  vm.createContext(box);
+  vm.runInContext("let cmdControlOn = null;\nlet cmdControlAsking = null;\n" + askSrc, box);
+  vm.runInContext("function __ctlFlush() { return cmdControlAsking; }", box);
+  const acard = node("cmd-card"), abody = node("cmd-body", acard),
+    apanels = node("cmd-panels", abody), actl = node("cmd-controls", apanels);
+  node("cmd-controls-row", actl);
+  node("fd-bosses", abody);
+  actl.hidden = true;
+  const boundBinds = [], places = [];
+  const stubs = [
+    (el, html) => { el._html = html; },
+    (bind) => "row:" + bind.commander,
+    (card, bind) => { boundBinds.push(bind); },
+    (card, inDebug) => { places.push(inDebug); mctx.cmdPlaceControls(card, inDebug); },
+  ];
+  const bindDebug = { commander: "debug-raid" }, bindLive = { commander: "live-raid" };
+  const genDebug = acard._ctlGen = (acard._ctlGen || 0) + 1; // the debugger paint
+  box.cmdControlAsk((on) => paintCtl(acard, bindDebug, true, true, on, genDebug, ...stubs));
+  const genLive = acard._ctlGen = (acard._ctlGen || 0) + 1; // the Live paint, before the answer lands
+  box.cmdControlAsk((on) => paintCtl(acard, bindLive, false, true, on, genLive, ...stubs));
+  assert.strictEqual(fetchCalls, 1, "the debug and Live paints share the one control fetch");
+  resolveControl({ enabled: true });
+  await box.__ctlFlush();
+  assert.strictEqual(actl.parentElement, apanels, "the late answer leaves the controls in the Live parent");
+  assert.deepStrictEqual(places, [false], "only the Live paint places the panel");
+  assert.deepStrictEqual(boundBinds, [bindLive], "the buttons carry the Live paint's bind, bound once");
+  console.log("controls late-answer race ok");
+})().catch((e) => { console.error(e); process.exit(1); });
 
 console.log("controls in debugger ok");
