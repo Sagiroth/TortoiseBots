@@ -1293,12 +1293,17 @@ def report_text(result, all_lines=False, boss=0):
 
 
 def _load_table(args):
+    # A raids.csv row whose map only the trash table uses (Scholomance here) has no boss to report on; the trash CSV
+    # names those maps, so the build accepts them instead of failing the report.
     return boss_data.build_document(
         boss_data.read_rows(Path(args.csv)),
         boss_data.read_names(Path(args.names)),
         boss_data.read_raids(Path(args.raids)),
         boss_data.read_code_answers(Path(args.code_answers)),
         args.repo_root,
+        extra_maps=boss_data.trash_map_keys(
+            Path(args.trash_csv) if getattr(args, "trash_csv", None) else None
+        ),
     )
 
 

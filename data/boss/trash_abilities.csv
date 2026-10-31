@@ -1,0 +1,51 @@
+map,entry,row,key,a,b,c,d,source
+zulgurub,15111,mob,,3,caster;summoner,3,,sql/base/tw_world_creature_template.sql:118
+zulgurub,15111,ability,24611,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:19245;sql/base/tw_world_creature_spells.sql:127;sql/base/tw_world_spell_mod.sql:75
+zulgurub,15111,ability,24612,0,0,0,t=aoe;ground;int,sql/base/tw_world_spell_template.sql:19246;sql/base/tw_world_creature_spells.sql:127;sql/base/tw_world_spell_mod.sql:75
+zulgurub,15111,ability,24621,0,0,0,summon=15141,sql/base/tw_world_spell_template.sql:19254;sql/base/tw_world_creature_ai_scripts.sql:58
+zulgurub,15111,note,,"ZG walks 15-17: the Servant packs at steps 88-97 ended 4 of the 6 raids that reached them, 19-23 dead at the pull; killing a Servant opens its Portal of Madness (24621) on death, and that portal (15141) is where the Voidwalkers come from.",,,,
+zulgurub,15146,mob,,3,aoe,2,,sql/base/tw_world_creature_template.sql:118
+zulgurub,15146,ability,24614,0,0,0,t=self;self;int;r=5;ok.purge=nopurge,sql/base/tw_world_spell_template.sql:19247;sql/base/tw_world_spell_template.sql:19248;sql/base/tw_world_creature_ai_scripts.sql:58
+zulgurub,15146,ability,24616,0,0,0,t=aoe;r=15,sql/base/tw_world_spell_template.sql:19249;sql/base/tw_world_creature_ai_scripts.sql:58
+zulgurub,15146,note,,"Shadow Shock is an instant 15 yd pulse around it that no kick stops; the Voidwalkers arrive through a Servant's Portal of Madness.",,,,
+zulgurub,11368,mob,,2,patrol,1,,sql/base/tw_world_creature_template.sql:118
+zulgurub,11368,ability,24023,0,0,0,t=victim;ok=tank,sql/base/tw_world_spell_template.sql:18691;sql/base/tw_world_creature_ai_scripts.sql:58
+zulgurub,11368,note,,"Charges in on aggro; it is also Jeklik's summon add, and the Bat and Bat Rider packs cost about 155 deaths over ZG walks 12-17.",,,,
+zulgurub,14750,mob,,3,aoe,3,,sql/base/tw_world_creature_template.sql:118
+zulgurub,14750,ability,5115,0,0,0,t=ally;self;r=10,sql/base/tw_world_spell_template.sql:4287;sql/base/tw_world_creature_spells.sql:127
+zulgurub,14750,ability,3391,0,0,0,t=victim;ok=tank,sql/base/tw_world_spell_template.sql:2741;sql/base/tw_world_creature_spells.sql:127
+zulgurub,14750,ability,23511,0,0,0,t=aoe;aura;r=10,sql/base/tw_world_spell_template.sql:18273;sql/base/tw_world_creature_ai_scripts.sql:58
+zulgurub,14750,ability,16128,0,0,0,t=victim;aura,sql/base/tw_world_spell_template.sql:12435;sql/base/tw_world_creature_ai_scripts.sql:58
+zulgurub,14750,ability,24024,0,0,0,t=aoe;r=10,sql/base/tw_world_spell_template.sql:18692;sql/base/tw_world_creature_ai_scripts.sql:58
+zulgurub,14750,ability,23968,0,0,0,t=self;self;ok.purge=nopurge,sql/base/tw_world_spell_template.sql:18651;sql/base/tw_world_creature_ai_scripts.sql:58
+zulgurub,14750,note,,"ZG walks 12-17: 2 wipes and about 6 near wipes. Unstable Concoction is the rider's own bomb: at 50 % hp it blows itself up, 10 yd around it, 3 s cast, cannot be kicked.",,,,
+scholomance,10470,mob,,3,caster,2,,sql/base/tw_world_creature_template.sql:118
+scholomance,10470,ability,17165,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:13363;sql/base/tw_world_creature_spells.sql:127
+scholomance,10470,ability,12739,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:9982;sql/base/tw_world_creature_spells.sql:127
+scholomance,10470,note,,"Scholomance leg 0-2: the caster packs caused about 95 wipes over 10 runs and stopped 3 runs; both listed casts are kickable. Fear 12542 sits in its template spell slots but is never cast.",,,,
+scholomance,10471,mob,,3,healer;caster,3,,sql/base/tw_world_creature_template.sql:118
+scholomance,10471,ability,16592,0,0,0,t=self;self;ok.purge=nopurge,sql/base/tw_world_spell_template.sql:12823;sql/base/tw_world_creature_ai_scripts.sql:58
+scholomance,10471,ability,17613,0,0,0,t=ally;int,sql/base/tw_world_spell_template.sql:13735;sql/base/tw_world_creature_ai_scripts.sql:58
+scholomance,10471,ability,17615,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:13736;sql/base/tw_world_creature_spells.sql:127
+scholomance,10471,ability,17165,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:13363;sql/base/tw_world_creature_spells.sql:127
+scholomance,10471,ability,11443,0,0,0,t=victim;int;aura,sql/base/tw_world_spell_template.sql:9073;sql/base/tw_world_creature_spells.sql:127
+scholomance,10471,note,,"Dark Mending is a kickable heal, so the Acolyte dies first; it also mana burns and opens with Shadowform.",,,,
+scholomance,10499,mob,,3,caster;aoe,2,,sql/base/tw_world_creature_template.sql:118
+scholomance,10499,ability,17630,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:13751;sql/base/tw_world_creature_ai_scripts.sql:58
+scholomance,10499,ability,17631,0,0,0,t=aoe;r=30,sql/base/tw_world_spell_template.sql:13752;sql/base/tw_world_creature_spells.sql:127
+scholomance,10499,note,,"Wail of Souls is an instant 30 yd AoE with a knockback and a mana drain, so no kick stops it.",,,,
+scholomance,10469,mob,,3,caster;aoe;runner,2,,sql/base/tw_world_creature_template.sql:118
+scholomance,10469,ability,15043,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:11666;sql/base/tw_world_creature_spells.sql:127
+scholomance,10469,ability,15499,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:11942;sql/base/tw_world_creature_spells.sql:127
+scholomance,10469,ability,15244,0,0,0,t=victim;cone,sql/base/tw_world_spell_template.sql:11750;sql/base/tw_world_creature_spells.sql:127;sql/base/tw_world_spell_mod.sql:75
+scholomance,10469,note,,"Cone of Cold is a 10 yd frontal cone on a 10 s cooldown; the Adept flees at 15% hp.",,,,
+scholomance,10477,mob,,3,caster;runner,3,,sql/base/tw_world_creature_template.sql:118
+scholomance,10477,ability,14887,0,0,0,t=aoe;int;r=30,sql/base/tw_world_spell_template.sql:11525;sql/base/tw_world_creature_spells.sql:127
+scholomance,10477,ability,17616,0,0,0,t=aoe,sql/base/tw_world_spell_template.sql:13737;sql/base/tw_world_creature_ai_scripts.sql:58
+scholomance,10477,ability,12020,0,0,0,t=aoe;aura;r=5,sql/base/tw_world_spell_template.sql:9486;sql/base/tw_world_creature_ai_scripts.sql:58
+scholomance,10477,note,,"Shadow Bolt Volley is a kickable 30 yd AoE; Corpse Explosion comes on a kill and Call of the Grave at 30% hp.",,,,
+scholomance,10476,mob,,2,caster,1,,sql/base/tw_world_creature_template.sql:118
+scholomance,10476,ability,17151,0,0,0,t=ally;self,sql/base/tw_world_spell_template.sql:13349;sql/base/tw_world_creature_spells.sql:127
+scholomance,10476,ability,12739,0,0,0,t=victim;int,sql/base/tw_world_spell_template.sql:9982;sql/base/tw_world_creature_spells.sql:127
+scholomance,10476,ability,17234,0,0,0,t=victim,sql/base/tw_world_spell_template.sql:13431;sql/base/tw_world_creature_spells.sql:127
+scholomance,10476,note,,"Shadow Barrier shields a friend; the Necrolyte is the pack's other caster.",,,,

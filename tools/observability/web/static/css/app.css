@@ -3476,6 +3476,9 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-railbosses .fd-boss-aura, .fd-railbosses .fd-boss-add { font-size: 0.66rem; }
 .fd-railbosses .fd-boss-other > summary { font-size: 0.66rem; }
 .fd-bosslist { display: grid; gap: 8px; min-width: 0; }
+/* The Live card's "Dangerous here" block, drawn in the boss section's place when no engaged boss owns it. */
+.fd-trashlist { grid-column: 1 / -1; display: grid; gap: 4px; margin: 0; padding: 0 0 0 1.1em; font-size: 0.76rem; color: var(--text-muted); }
+.fd-trashlist li { min-width: 0; }
 .fd-boss-panel { border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); }
 .fd-boss-panel > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 10px; cursor: pointer; list-style: none; }
 .fd-boss-panel > summary::-webkit-details-marker { display: none; }
@@ -3732,6 +3735,10 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-map .mobshape.s-line { stroke-dasharray: 4 3; }
 .cmd-map .castring { fill: none; stroke: var(--accent-yellow); stroke-width: 2px; pointer-events: none; }
 .cmd-map .mobcast { fill: var(--text-main); font-weight: 600; paint-order: stroke; stroke: var(--bg-app); stroke-linejoin: round; text-anchor: middle; pointer-events: none; }
+/* The trash word before an elite's cast (kick or area) and the danger-3 glyph in the corner of its body. */
+.cmd-map .mobcast.kick { fill: var(--accent-red); }
+.cmd-map .mobcast.aoe { fill: var(--accent-yellow); }
+.cmd-map .mobdanger { fill: var(--accent-red); stroke: var(--bg-app); stroke-width: 1px; pointer-events: none; }
 .cmd-legend i.facing { display: inline-block; width: 0; height: 0; margin-right: 4px; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 8px solid var(--accent-red); vertical-align: middle; }
 .cmd-legend i.larea { display: inline-block; width: 10px; height: 8px; margin-right: 4px; border: 1px solid var(--accent-red); background: color-mix(in srgb, var(--accent-red) 22%, transparent); vertical-align: middle; }
 

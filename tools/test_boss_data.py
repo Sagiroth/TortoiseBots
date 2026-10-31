@@ -24,6 +24,10 @@ import boss_data  # noqa: E402
 # The committed table; BOSS_DATA_CSV points the value tests at another revision's table.
 BOSS_CSV = Path(os.environ.get("BOSS_DATA_CSV", ROOT / "data" / "boss" / "boss_abilities.csv"))
 
+# The maps only the trash table has a mob in: raids.csv lists them with no boss of their own, so every boss build
+# here hands them to make_bosses, which never reads the trash CSV by itself.
+TRASH_MAPS = boss_data.trash_map_keys()
+
 CORE = [
     "#define SPELL_A 24328",
     "#define NPC_ADD 14884",
@@ -31,6 +35,7 @@ CORE = [
     "void UpdateAI() { A_Timer = urand(14000, 16000); }",
     "SummonCreature(NPC_ADD, x);",
     "if (GetHealthPercent() < 50) m_bPhaseTwo = true;",
+    "#define NPC_TRASH 14750",
 ]
 
 NAMES = {
@@ -39,6 +44,7 @@ NAMES = {
 }
 
 HEADER = ["map", "boss", "row", "key", "a", "b", "c", "d", "source"]
+TRASH_HEADER = ["map", "entry", "row", "key", "a", "b", "c", "d", "source"]
 RAID_HEADER = ["key", "map_id", "name"]
 CODE_HEADER = ["map", "boss", "key", "need", "level", "name", "text", "source"]
 
@@ -163,6 +169,71 @@ BASE_ROWS = [
     phase("p1", "start", 2, source="boss.cpp:3"),
 ]
 
+# The trash table: one `mob` row per creature entry, its `ability` rows (spell id, no timers, the boss flags plus
+# `r=`), then `note` rows (prose, no citation to give).
+TRASH_NAMES = {
+    "spells": {
+        "24328": {"name": "Corrupted Blood", "castMs": 0},
+        "14884": {"name": "Parasitic Serpent", "castMs": 0},
+    },
+    "creatures": {
+        "14517": {"name": "High Priestess Jeklik"},
+        "14884": {"name": "Parasitic Serpent"},
+        "14750": {"name": "Gurubashi Bat Rider"},
+    },
+}
+
+
+def trash_mob(entry="14750", danger="3", roles="aoe", kill="3", **kw):
+    row = {
+        "map": "zulgurub",
+        "entry": entry,
+        "row": "mob",
+        "key": "",
+        "a": danger,
+        "b": roles,
+        "c": kill,
+        "d": "",
+        "source": "boss.cpp:7",
+    }
+    row.update(kw)
+    return row
+
+
+def trash_ability(entry="14750", key="24328", flags="t=aoe;r=10", **kw):
+    row = {
+        "map": "zulgurub",
+        "entry": entry,
+        "row": "ability",
+        "key": key,
+        "a": "0",
+        "b": "0",
+        "c": "0",
+        "d": flags,
+        "source": "boss.cpp:1",
+    }
+    row.update(kw)
+    return row
+
+
+def trash_note(entry="14750", text="two wipes at the pull", source="", **kw):
+    row = {
+        "map": "zulgurub",
+        "entry": entry,
+        "row": "note",
+        "key": "",
+        "a": text,
+        "b": "",
+        "c": "",
+        "d": "",
+        "source": source,
+    }
+    row.update(kw)
+    return row
+
+
+BASE_TRASH = [trash_mob(), trash_ability(), trash_note()]
+
 
 def answer(**kw):
     row = {
@@ -180,11 +251,13 @@ def answer(**kw):
 
 
 class Fixture:
-    def __init__(self, rows=None, names=None, raids=None, answers=None):
+    def __init__(self, rows=None, names=None, raids=None, answers=None, trash=None):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
         self.csv = self.dir / "boss_abilities.csv"
         self.json = self.dir / "boss_abilities.json"
+        self.trash_csv = self.dir / "trash_abilities.csv"
+        self.trash_json = self.dir / "trash_abilities.json"
         self.names = self.dir / "names.json"
         self.raids = self.dir / "raids.csv"
         self.answers = self.dir / "code_answers.csv"
@@ -194,6 +267,7 @@ class Fixture:
                    names if names is not None else NAMES)
         self.write_raids(raids if raids is not None else [["zulgurub", "309", "Zul'Gurub"]])
         self.write_answers(answers if answers is not None else [])
+        self.write_trash(trash if trash is not None else [])
 
     def repo_file(self, path, text):
         """A file the code answers can cite, under the fixture's repo root."""
@@ -227,20 +301,38 @@ class Fixture:
         self.names.write_text(json.dumps(names or NAMES))
         self.rows = rows
 
+    def write_trash(self, rows):
+        with open(self.trash_csv, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            writer.writerow(TRASH_HEADER)
+            for row in rows:
+                writer.writerow([row[c] for c in TRASH_HEADER])
+        self.trash_rows = rows
+
     def rebuild(self):
+        raids = boss_data.read_raids(self.raids)
+        names = boss_data.read_names(self.names)
+        bosses, _ = boss_data.boss_entry_sets(boss_data.read_rows(self.csv))
+        trash_doc = boss_data.build_trash_document(
+            boss_data.read_trash_rows(self.trash_csv), names, raids, bosses
+        )
         doc = boss_data.build_document(
             boss_data.read_rows(self.csv),
-            boss_data.read_names(self.names),
-            boss_data.read_raids(self.raids),
+            names,
+            raids,
             boss_data.read_code_answers(self.answers),
             self.dir,
+            extra_maps=[m["key"] for m in trash_doc["maps"]],
         )
         self.json.write_text(boss_data.dump_json(doc))
+        self.trash_json.write_text(boss_data.dump_trash_json(trash_doc))
 
     def args(self, db=False):
         return argparse.Namespace(
             csv=str(self.csv),
             json=str(self.json),
+            trash_csv=str(self.trash_csv),
+            trash_json=str(self.trash_json),
             names=str(self.names),
             raids=str(self.raids),
             code_answers=str(self.answers),
@@ -507,7 +599,7 @@ class BossDataTest(unittest.TestCase):
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
         answers = boss_data.read_code_answers(boss_data.DEFAULT_CODE_ANSWERS)
         map_doc, bosses = boss_data.make_bosses(
-            rows, names, boss_data.read_raids(boss_data.DEFAULT_RAIDS)
+            rows, names, boss_data.read_raids(boss_data.DEFAULT_RAIDS), extra_maps=TRASH_MAPS
         )
         errors = list(boss_data.check_code_answers(answers, map_doc, bosses, boss_data.ROOT))
         self.assertEqual(errors, [])
@@ -534,6 +626,13 @@ class BossDataTest(unittest.TestCase):
         fx.rebuild()
         errors, _ = fx.validate()
         self.assertTrue(any("past end of file" in e for e in errors), errors)
+
+    def test_an_empty_source_fails(self):
+        rows = [dict(r) for r in BASE_ROWS]
+        rows.append({"map": "zulgurub", "boss": "14517", "row": "note", "key": "", "a": "a note",
+                     "b": "", "c": "", "d": "", "source": ""})
+        errors, _ = self.make(rows).validate()
+        self.assertTrue(any("empty source" in e for e in errors), errors)
 
     def test_db_check_reports_missing_ids(self):
         # Spec failing case 4: with --db every id must exist in the world DB.
@@ -652,7 +751,7 @@ class BossDataTest(unittest.TestCase):
         # when the CSV, the JSON and the citation gate agree with each other.
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
-        doc = boss_data.build_document(rows, names)
+        doc = boss_data.build_document(rows, names, extra_maps=TRASH_MAPS)
         for entry, expected in AQ20_ABILITIES.items():
             boss = doc["bosses"][str(entry)]
             self.assertEqual(boss["map"], "aq20")
@@ -678,7 +777,7 @@ class BossDataTest(unittest.TestCase):
     def test_committed_data_builds_to_committed_json(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
-        doc = boss_data.build_document(rows, names)
+        doc = boss_data.build_document(rows, names, extra_maps=TRASH_MAPS)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
         self.assertEqual(len(doc["bosses"]), 148)
@@ -687,7 +786,7 @@ class BossDataTest(unittest.TestCase):
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
-        doc = boss_data.build_document(rows, names)
+        doc = boss_data.build_document(rows, names, extra_maps=TRASH_MAPS)
         for boss in doc["bosses"].values():
             self.assertTrue(boss["name"])
             for entry in boss["abilities"] + boss["adds"]:
@@ -769,7 +868,7 @@ class BossDataTest(unittest.TestCase):
     def kara_lower_doc(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
-        return boss_data.build_document(rows, names)
+        return boss_data.build_document(rows, names, extra_maps=TRASH_MAPS)
 
     def test_lower_karazhan_ability_values(self):
         doc = self.kara_lower_doc()
@@ -821,6 +920,229 @@ class BossDataTest(unittest.TestCase):
             {a["entry"] for a in doc["bosses"]["61224"]["adds"]},
             {61195, 61196, 61197},
         )
+
+
+class TrashDataTest(unittest.TestCase):
+    """The trash table's own rules: one `mob` row per entry, the boss flag grammar plus `r=`, the closed role set,
+    no timer columns, the shared-entry rule against the boss table and the committed JSON's freshness."""
+
+    def make(self, trash=None, names=None, raids=None, rebuild=True):
+        rows = [dict(r) for r in BASE_TRASH] if trash is None else trash
+        fx = Fixture(None, names or TRASH_NAMES, raids, None, rows)
+        self.addCleanup(fx.tmp.cleanup)
+        if rebuild:
+            fx.rebuild()
+        return fx
+
+    def errors(self, trash=None, names=None, raids=None):
+        """The validate() errors of a table that is deliberately wrong: a table that cannot be built is left
+        unbuilt, so validate() reports the build error instead of a stale JSON."""
+        fx = self.make(trash, names, raids, rebuild=False)
+        try:
+            fx.rebuild()
+        except boss_data.DataError:
+            pass
+        return fx.validate()[0]
+
+    def test_valid_fixture_passes(self):
+        self.assertEqual([], self.errors())
+
+    def test_danger_out_of_range_fails(self):
+        errors = self.errors([trash_mob(danger="4"), trash_ability(), trash_note()])
+        self.assertTrue(any("danger 4" in e for e in errors), errors)
+
+    def test_kill_out_of_range_fails(self):
+        errors = self.errors([trash_mob(kill="4"), trash_ability(), trash_note()])
+        self.assertTrue(any("kill 4" in e for e in errors), errors)
+
+    def test_a_role_outside_the_closed_set_fails(self):
+        errors = self.errors([trash_mob(roles="aoe;tank"), trash_ability(), trash_note()])
+        self.assertTrue(any("role 'tank'" in e for e in errors), errors)
+
+    def test_a_duplicate_role_fails(self):
+        errors = self.errors([trash_mob(roles="aoe;aoe"), trash_ability(), trash_note()])
+        self.assertTrue(any("duplicate role" in e for e in errors), errors)
+
+    def test_a_mob_with_no_role_fails(self):
+        errors = self.errors([trash_mob(roles=""), trash_ability(), trash_note()])
+        self.assertTrue(any("at least one role" in e for e in errors), errors)
+
+    def test_a_timer_column_fails(self):
+        errors = self.errors([trash_mob(), trash_ability(a="8000"), trash_note()])
+        self.assertTrue(any("is a timer" in e for e in errors), errors)
+
+    def test_a_radius_out_of_range_fails(self):
+        errors = self.errors([trash_mob(), trash_ability(flags="t=aoe;r=61"), trash_note()])
+        self.assertTrue(any("r=61" in e for e in errors), errors)
+
+    def test_a_zero_radius_fails(self):
+        # The spec's radius is 1-60 yards: a row that says r=0 says nothing, so it is refused rather than read as "no radius".
+        errors = self.errors([trash_mob(), trash_ability(flags="t=aoe;r=0"), trash_note()])
+        self.assertTrue(any("r=0" in e and "outside 1-60" in e for e in errors), errors)
+
+    def test_a_radius_is_no_boss_flag(self):
+        with self.assertRaises(boss_data.DataError):
+            boss_data.parse_flags("t=aoe;r=10")
+
+    def test_the_db_check_reads_a_trash_radius_row(self):
+        # The fixture's trash ability carries r=10, and the DB check parses every ability row of both tables: a trash
+        # row must not stop it (the flag parser used to read r= as an unknown flag and throw on the first one).
+        fx = self.make()
+        original = boss_data.db_connect
+        boss_data.db_connect = lambda args: FakeConn(spells={24328}, creatures={14884, 14750})
+        try:
+            errors, _ = fx.validate(db=True)
+        finally:
+            boss_data.db_connect = original
+        self.assertEqual([], errors)
+
+    def test_a_duplicate_ability_fails(self):
+        errors = self.errors([trash_mob(), trash_ability(), trash_ability(), trash_note()])
+        self.assertTrue(any("duplicate ability" in e for e in errors), errors)
+
+    def test_an_ability_before_its_mob_row_fails(self):
+        errors = self.errors([trash_ability(), trash_mob(), trash_note()])
+        self.assertTrue(any("must follow its mob row" in e for e in errors), errors)
+
+    def test_an_ability_under_another_entry_fails(self):
+        errors = self.errors([trash_mob(), trash_ability(entry="14751"), trash_note()])
+        self.assertTrue(any("must follow its mob row" in e for e in errors), errors)
+
+    def test_an_unknown_row_kind_fails(self):
+        errors = self.errors([trash_mob(), trash_ability(), trash_note(), trash_note(text="x") | {"row": "phase"}])
+        self.assertTrue(any("unknown trash row kind" in e for e in errors), errors)
+
+    def test_a_boss_entry_fails(self):
+        errors = self.errors([trash_mob(entry="14517"), trash_ability(entry="14517")])
+        self.assertTrue(any("is a boss of the boss table" in e for e in errors), errors)
+
+    def test_a_boss_add_is_allowed(self):
+        # 14884 is Jeklik's summon add in the boss table; its own abilities are the trash block's job.
+        errors = self.errors(
+            [
+                trash_mob(entry="14884", source="boss.cpp:2"),
+                trash_ability(entry="14884"),
+                trash_note(entry="14884"),
+            ]
+        )
+        self.assertEqual([], errors)
+
+    def test_a_map_without_a_raids_row_fails(self):
+        errors = self.errors([trash_mob(map="scholomance"), trash_ability(map="scholomance"), trash_note(map="scholomance")])
+        self.assertTrue(any("no row in raids.csv" in e for e in errors), errors)
+
+    def test_a_map_that_only_the_trash_table_uses_is_allowed(self):
+        errors = self.errors(
+            [trash_mob(map="scholomance"), trash_ability(map="scholomance"), trash_note(map="scholomance")],
+            raids=[["zulgurub", "309", "Zul'Gurub"], ["scholomance", "289", "Scholomance"]],
+        )
+        self.assertEqual([], errors)
+
+    def test_a_missing_creature_name_fails(self):
+        names = json.loads(json.dumps(TRASH_NAMES))
+        del names["creatures"]["14750"]
+        errors = self.errors([trash_mob(), trash_ability(), trash_note()], names=names)
+        self.assertTrue(any("no creature name for 14750" in e for e in errors), errors)
+
+    def test_a_missing_spell_name_fails(self):
+        names = json.loads(json.dumps(TRASH_NAMES))
+        del names["spells"]["24328"]
+        errors = self.errors([trash_mob(), trash_ability(), trash_note()], names=names)
+        self.assertTrue(any("no spell name for 24328" in e for e in errors), errors)
+
+    def test_a_summon_needs_a_name(self):
+        errors = self.errors([trash_mob(), trash_ability(flags="summon=15141"), trash_note()])
+        self.assertTrue(any("no creature name for summon 15141" in e for e in errors), errors)
+
+    def test_a_note_column_fails(self):
+        errors = self.errors([trash_mob(), trash_ability(), trash_note(text="x") | {"b": "1"}])
+        self.assertTrue(any("a note row uses only a and source" in e for e in errors), errors)
+
+    def test_an_empty_note_fails(self):
+        errors = self.errors([trash_mob(), trash_ability(), trash_note(text="")])
+        self.assertTrue(any("note text is empty" in e for e in errors), errors)
+
+    def test_a_mob_row_with_a_key_fails(self):
+        errors = self.errors([trash_mob(key="24328"), trash_ability(), trash_note()])
+        self.assertTrue(any("a mob row has no key" in e for e in errors), errors)
+
+    def test_a_note_row_with_a_key_fails(self):
+        errors = self.errors([trash_mob(), trash_ability(), trash_note() | {"key": "24328"}])
+        self.assertTrue(any("a note row has no key" in e for e in errors), errors)
+
+    def test_an_empty_source_on_an_ability_fails(self):
+        errors = self.errors([trash_mob(), trash_ability(source=""), trash_note()])
+        self.assertTrue(any("empty source" in e for e in errors), errors)
+
+    def test_a_second_mob_row_for_an_entry_fails(self):
+        errors = self.errors([trash_mob(), trash_ability(), trash_note(), trash_mob(kill="1")])
+        self.assertTrue(any("already has a mob row" in e for e in errors), errors)
+
+    def test_a_second_mob_row_on_another_map_fails(self):
+        errors = self.errors(
+            [trash_mob(), trash_ability(), trash_note(), trash_mob(map="scholomance")],
+            raids=[["zulgurub", "309", "Zul'Gurub"], ["scholomance", "289", "Scholomance"]],
+        )
+        self.assertTrue(any("already has a mob row on map 'zulgurub'" in e for e in errors), errors)
+
+    def test_an_identical_second_mob_row_is_tolerated(self):
+        errors = self.errors([trash_mob(), trash_ability(), trash_note(), trash_mob()])
+        self.assertEqual([], errors)
+
+    def test_an_identical_second_mob_row_keeps_its_entry_current(self):
+        # The tolerated repeat is still that mob's own row: the rows that follow it belong to that entry, not to the
+        # one whose block came between.
+        errors = self.errors(
+            [
+                trash_mob(), trash_ability(), trash_note(),
+                trash_mob(entry="14884", source="boss.cpp:2"), trash_ability(entry="14884"),
+                trash_mob(), trash_note(),
+            ]
+        )
+        self.assertEqual([], errors)
+
+    def test_a_citation_that_names_no_spell_fails(self):
+        errors = self.errors([trash_mob(), trash_ability(source="boss.cpp:4"), trash_note()])
+        self.assertTrue(any("do not define spell 24328" in e for e in errors), errors)
+
+    def test_a_citation_that_names_no_creature_fails(self):
+        errors = self.errors([trash_mob(source="boss.cpp:6"), trash_ability(), trash_note()])
+        self.assertTrue(any("do not define creature 14750" in e for e in errors), errors)
+
+    def test_a_note_row_needs_no_citation(self):
+        fx = self.make()
+        self.assertEqual("", fx.trash_rows[-1]["source"])
+        self.assertEqual([], fx.validate()[0])
+
+    def test_a_stale_trash_json_fails(self):
+        fx = self.make()
+        fx.write_trash([trash_mob(kill="1"), trash_ability(), trash_note()])
+        errors = fx.validate()[0]
+        self.assertTrue(any("differs from a fresh build" in e and "trash" in e for e in errors), errors)
+
+    def test_a_missing_trash_json_fails(self):
+        fx = self.make()
+        fx.trash_json.unlink()
+        errors = fx.validate()[0]
+        self.assertTrue(any("committed JSON not found" in e and "trash" in e for e in errors), errors)
+
+    def test_the_built_document_carries_the_mob_and_its_flags(self):
+        fx = self.make()
+        doc = json.loads(fx.trash_json.read_text())
+        self.assertEqual([{"key": "zulgurub", "mapId": 309}], doc["maps"])
+        mob = doc["mobs"]["14750"]
+        self.assertEqual(("Gurubashi Bat Rider", "zulgurub", 3, ["aoe"], 3),
+                         (mob["name"], mob["map"], mob["danger"], mob["roles"], mob["kill"]))
+        ability = mob["abilities"][0]
+        self.assertEqual({"sid": 24328, "name": "Corrupted Blood", "int": False, "t": "aoe", "aoe": True,
+                          "ground": False, "cone": False, "r": 10, "ok": ""}, ability)
+        self.assertEqual(["two wipes at the pull"], mob["notes"])
+
+    def test_the_trash_json_is_minified(self):
+        fx = self.make()
+        text = fx.trash_json.read_text()
+        self.assertNotIn("\n  ", text)
+        self.assertEqual(text, boss_data.dump_trash_json(json.loads(text)))
 
 
 # Blackwing Lair values, read from the core scripts and spell rows (below each boss), not generated from the
@@ -954,7 +1276,7 @@ class BwlValueTest(unittest.TestCase):
         rows = boss_data.read_rows(BOSS_CSV)
         names = boss_data.read_names(ROOT / "data" / "boss" / "names.json")
         raids = boss_data.read_raids(ROOT / "data" / "boss" / "raids.csv")
-        _, bosses = boss_data.make_bosses(rows, names, raids)
+        _, bosses = boss_data.make_bosses(rows, names, raids, extra_maps=TRASH_MAPS)
         cls.bwl = {entry: boss for entry, boss in bosses.items() if boss["map"] == "bwl"}
 
     def test_bwl_ability_values(self):
@@ -1189,7 +1511,7 @@ class NaxxValueTest(unittest.TestCase):
     def setUp(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
-        self.doc = boss_data.build_document(rows, names)
+        self.doc = boss_data.build_document(rows, names, extra_maps=TRASH_MAPS)
 
     def test_ability_values(self):
         for entry, expected in NAXX_ABILITIES.items():
@@ -1343,6 +1665,7 @@ class Aq40RestValueTest(unittest.TestCase):
         cls.doc = boss_data.build_document(
             boss_data.read_rows(boss_data.DEFAULT_CSV),
             boss_data.read_names(boss_data.DEFAULT_NAMES),
+            extra_maps=TRASH_MAPS,
         )
 
     def boss(self, entry):
@@ -1438,6 +1761,10 @@ SPELL_SOURCE_COLUMNS = {
     "channelInterruptFlags", "castingTimeIndex",
     "effect1", "effect2", "effect3",
     "effectApplyAuraName1", "effectApplyAuraName2", "effectApplyAuraName3",
+    "effectImplicitTargetA1", "effectImplicitTargetA2", "effectImplicitTargetA3",
+    "effectImplicitTargetB1", "effectImplicitTargetB2", "effectImplicitTargetB3",
+    "effectRadiusIndex1", "effectRadiusIndex2", "effectRadiusIndex3",
+    "effectTriggerSpell1", "effectTriggerSpell2", "effectTriggerSpell3",
 }
 SPELL_MOD_COLUMNS = {
     "Id", "Attributes", "AttributesEx", "CastingTimeIndex", "InterruptFlags",
@@ -1450,6 +1777,8 @@ SPELL_PREVENTION_TYPE_SILENCE = 1
 SPELL_INTERRUPT_FLAG_DAMAGE = 0x02
 CHANNEL_FLAG_INTERRUPT = 0x04
 SPELL_ATTR_EX_CHANNELED = 0x04 | 0x40
+# ScriptMgr.h CastFlags: a triggered cast has no cast time (Creature.cpp:3715), so it cannot be interrupted.
+CF_TRIGGERED = 0x002
 
 # The core's SpellEntry::IsEffectAppliesAura set (6, 35, 119, 128, 129, 132, 133,
 # 134) plus PERSISTENT_AREA_AURA 27, which boss_data.py's ground check already
@@ -1637,10 +1966,75 @@ def _read_spells(core=CORE_DIR):
     return spells
 
 
+CREATURE_SPELLS_COLUMNS = {"entry", "castFlags_1", "castFlags_2", "castFlags_3", "castFlags_4",
+                           "castFlags_5", "castFlags_6", "castFlags_7", "castFlags_8"} | {
+    "spellId_%d" % index for index in range(1, 9)}
+EVENTAI_EVENT_COLUMNS = {"creature_id", "action1_script", "action2_script", "action3_script"}
+EVENTAI_SCRIPT_COLUMNS = {"id", "command", "datalong", "datalong2"}
+
+
+def _read_trash_casts(entries, core=CORE_DIR):
+    """{(creature entry, spell id): cast flags} for `entries`, from the creature_spells list a mob's
+    `spell_list_id` names and from its EventAI cast commands (command 15: datalong spell, datalong2 flags)."""
+    base = core / "sql" / "base"
+    casts = {}
+    lists = {}
+    template = base / "tw_world_creature_template.sql"
+    if template.is_file():
+        for row in _read_dump_table(template, "creature_template", {"entry", "spell_list_id"}):
+            if row.get("entry") in entries and row.get("spell_list_id"):
+                lists.setdefault(row["spell_list_id"], set()).add(row["entry"])
+    table = base / "tw_world_creature_spells.sql"
+    if table.is_file() and lists:
+        for row in _read_dump_table(table, "creature_spells", CREATURE_SPELLS_COLUMNS):
+            list_id = row.get("entry")
+            if list_id not in lists:
+                continue
+            for index in range(1, 9):
+                spell = row.get("spellId_%d" % index)
+                if not spell:
+                    continue
+                flags = row.get("castFlags_%d" % index) or 0
+                for entry in lists[list_id]:
+                    casts[(entry, spell)] = flags
+    events = base / "tw_world_creature_ai_events.sql"
+    scripts = base / "tw_world_creature_ai_scripts.sql"
+    if events.is_file() and scripts.is_file():
+        wanted = set()
+        for row in _read_dump_table(events, "creature_ai_events", EVENTAI_EVENT_COLUMNS):
+            if row.get("creature_id") not in entries:
+                continue
+            for column in ("action1_script", "action2_script", "action3_script"):
+                if row.get(column):
+                    wanted.add(row[column])
+        by_script = {}
+        for row in _read_dump_table(scripts, "creature_ai_scripts", EVENTAI_SCRIPT_COLUMNS):
+            if row.get("id") in wanted and row.get("command") == 15:
+                by_script.setdefault(row["id"], []).append((row.get("datalong"), row.get("datalong2") or 0))
+        for row in _read_dump_table(events, "creature_ai_events", EVENTAI_EVENT_COLUMNS):
+            entry = row.get("creature_id")
+            if entry not in entries:
+                continue
+            for column in ("action1_script", "action2_script", "action3_script"):
+                for spell, flags in by_script.get(row.get(column), ()):
+                    if spell:
+                        casts[(entry, spell)] = flags
+    return casts
+
+
 def _shape_spell_ids(path):
     return [int(match.group(1)) for match in
             (re.match(r"^(\d+),", line.strip()) for line in path.read_text().splitlines())
             if match]
+
+
+def _spell_radii_yards(spell):
+    """The yards of a spell's own radius indexes (SpellRadius.dbc, see TRASH_RADIUS_YARDS)."""
+    return {
+        TRASH_RADIUS_YARDS[spell["effectRadiusIndex%d" % n]]
+        for n in (1, 2, 3)
+        if spell.get("effectRadiusIndex%d" % n) in TRASH_RADIUS_YARDS
+    }
 
 
 def _applies_aura(spell):
@@ -1651,13 +2045,17 @@ def _applies_aura(spell):
     )
 
 
-def _kickable(spell):
+def _kickable(spell, strict=False):
     """Spell::EffectInterruptCast: the prevention type gates both slots, and a
-    channel is stopped by its channel flags, not by InterruptFlags."""
+    channel is stopped by its channel flags, not by InterruptFlags. `strict` also
+    applies the instant-spell guard (`!spell->GetCastTime()`, castingTimeIndex 1),
+    which the boss rows predate."""
     if spell["preventionType"] != SPELL_PREVENTION_TYPE_SILENCE:
         return False
     if spell["attributesEx"] & SPELL_ATTR_EX_CHANNELED:
         return bool(spell["channelInterruptFlags"] & CHANNEL_FLAG_INTERRUPT)
+    if strict and spell["castingTimeIndex"] <= 1:
+        return False
     return bool(spell["interruptFlags"] & SPELL_INTERRUPT_FLAG_DAMAGE)
 
 
@@ -1670,15 +2068,23 @@ def _interrupt_data(spell):
             % (spell["preventionType"], spell["interruptFlags"]))
 
 
-def source_spell_problems(rows, spells, shape_ids):
-    """Every disagreement between the CSV rows and the core's spell data."""
+def _row_where(row):
+    owner = row["key"] or row.get("boss") or row.get("entry") or ""
+    return "line %s (%s, %s)" % (row["_line"], row["map"], owner)
+
+
+def source_spell_problems(rows, spells, shape_ids, casts=None, strict=False):
+    """Every disagreement between the CSV rows and the core's spell data. `casts` maps (creature entry, spell id)
+    to the cast flags its AI uses (`creature_spells.castFlags_*` or an EventAI command 15's `datalong2`), so a row
+    marked `int` on a cast the core makes with CF_TRIGGERED (no cast time) is caught; `strict` applies the
+    instant-spell guard to the generic branch (the trash rows' rule, the boss rows predate it)."""
     problems = []
 
     def add(check, spell, where, detail):
         problems.append({"check": check, "spell": spell, "where": where, "detail": detail})
 
     for row in rows:
-        where = "line %s (%s, boss %s)" % (row["_line"], row["map"], row["boss"])
+        where = _row_where(row)
         if row["row"] == "phase" and row["a"].startswith("aura="):
             spell_id = int(row["a"][5:])
             spell = spells.get(spell_id)
@@ -1692,12 +2098,16 @@ def source_spell_problems(rows, spells, shape_ids):
         if row["row"] != "ability":
             continue
         spell_id = int(row["key"])
-        flags = boss_data.parse_flags(row["d"])
+        flags = boss_data.parse_flags(row["d"], allow_radius=True)
         spell = spells.get(spell_id)
         if spell is None:
             add("ability-missing", spell_id, where, "no spell_template row")
             continue
-        kickable = _kickable(spell)
+        kickable = _kickable(spell, strict=strict)
+        cast_flags = (casts or {}).get((int(row.get("entry") or 0), spell_id), 0)
+        if flags["int"] and cast_flags & CF_TRIGGERED:
+            add("int-triggered-cast", spell_id, where,
+                "the AI casts it with CF_TRIGGERED (flags 0x%x): no cast time to interrupt" % cast_flags)
         nokick = flags["okNeeds"].get("interrupt") == "nokick"
         if flags["int"] and not nokick and not kickable:
             add("int-not-kickable", spell_id, where,
@@ -2004,7 +2414,7 @@ class KaraUpperValueTest(unittest.TestCase):
     def setUpClass(cls):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
-        cls.map_doc, cls.bosses = boss_data.make_bosses(rows, names)
+        cls.map_doc, cls.bosses = boss_data.make_bosses(rows, names, extra_maps=TRASH_MAPS)
 
     def test_every_ability_value(self):
         for entry, expected in KARA_ABILITIES.items():
@@ -2147,7 +2557,7 @@ class TimbermawValueTest(unittest.TestCase):
     def setUp(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
-        doc = boss_data.build_document(rows, names)
+        doc = boss_data.build_document(rows, names, extra_maps=TRASH_MAPS)
         self.bosses = {
             boss["entry"]: boss
             for boss in doc["bosses"].values()
@@ -2298,7 +2708,7 @@ class EmeraldSanctumValueTest(unittest.TestCase):
     def setUpClass(cls):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
-        cls.doc = boss_data.build_document(rows, names)
+        cls.doc = boss_data.build_document(rows, names, extra_maps=TRASH_MAPS)
 
     def boss(self, entry):
         boss = self.doc["bosses"].get(str(entry))
@@ -2512,7 +2922,7 @@ class DungeonBlackrockValueTest(unittest.TestCase):
     def setUpClass(cls):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
-        cls.doc = boss_data.build_document(rows, names)
+        cls.doc = boss_data.build_document(rows, names, extra_maps=TRASH_MAPS)
         cls.by_boss = cls.doc["bosses"]
 
     def test_ability_values(self):
@@ -2708,7 +3118,7 @@ class DungeonTrollValueTest(unittest.TestCase):
     def test_document_carries_only_theka_phase(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
-        doc = boss_data.build_document(rows, names)
+        doc = boss_data.build_document(rows, names, extra_maps=TRASH_MAPS)
         for boss in doc["bosses"].values():
             if boss["map"] in self.MAPS:
                 if boss["entry"] == 7272:
@@ -2811,7 +3221,7 @@ class UbrsValueTest(unittest.TestCase):
     def setUpClass(cls):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
-        cls.doc = boss_data.build_document(rows, names)
+        cls.doc = boss_data.build_document(rows, names, extra_maps=TRASH_MAPS)
 
     def boss(self, entry):
         return self.doc["bosses"][entry]
@@ -2905,6 +3315,297 @@ class UbrsValueTest(unittest.TestCase):
         drak_notes = " ".join(self.boss("10363")["notes"])
         self.assertIn("8-40", drak_notes)
         self.assertIn("10-30", drak_notes)
+
+
+# ---- the trash table against the core --------------------------------------------------------------------------
+
+# SpellRadius.dbc, index -> yards: 8 -> 5, 10 -> 30, 13 -> 10, 18 -> 15. The index is in spell_template, the yards in
+# the client's DBC, so the mapping is pinned here and the test reads the index from the core row.
+TRASH_RADIUS_YARDS = {8: 5, 10: 30, 13: 10, 18: 15}
+
+# The effect-1 target pairs that put a spell's area on the caster itself (SpellDefines.h): the caster's source or
+# destination location with an enemy or friendly area at it. A spell like that reaches its radius in yards around the
+# caster, so its row must carry r=. 46/16 (TARGET_LOCATION_SCRIPT_NEAR_CASTER with the area at the destination) is a
+# script target's position near the caster, not the caster's own, so it is no caster-centred area.
+CASTER_CENTRED_TARGETS = {(22, 15), (22, 30), (18, 16)}
+
+# The trash rows' values, read from the core lines named in the comments (sql/base of the core checkout), not
+# generated from the CSV: (interruptible, target, aoe, ground, cone, radius in yards). A changed CSV field fails.
+TRASH_ABILITY_VALUES = {
+    # spell_template 19245/19246/19254, creature_spells:127, creature_ai_scripts:58
+    (15111, 24611): (True, "victim", False, False, False, 0),
+    (15111, 24612): (True, "aoe", True, True, False, 0),
+    (15111, 24621): (False, "", False, False, False, 0),
+    # 19247/19248/19249, creature_ai_scripts:58: 24614 channels and applies 24615 on itself, whose pulse is the 5 yd
+    # area (radius index 8) around the Voidwalker
+    (15146, 24614): (True, "self", False, False, False, 5),
+    (15146, 24616): (False, "aoe", True, False, False, 15),
+    # 18691, creature_ai_scripts:58
+    (11368, 24023): (False, "victim", False, False, False, 0),
+    # 4287/2741/18273/12435/18692/18651
+    (14750, 5115): (False, "ally", False, False, False, 10),
+    (14750, 3391): (False, "victim", False, False, False, 0),
+    (14750, 23511): (False, "aoe", True, False, False, 10),
+    (14750, 16128): (False, "victim", False, False, False, 0),
+    (14750, 24024): (False, "aoe", True, False, False, 10),
+    (14750, 23968): (False, "self", False, False, False, 0),
+    # 13363/9982
+    (10470, 17165): (True, "victim", False, False, False, 0),
+    (10470, 12739): (True, "victim", False, False, False, 0),
+    # 12823/13735/13736/9073
+    (10471, 16592): (False, "self", False, False, False, 0),
+    (10471, 17613): (True, "ally", False, False, False, 0),
+    (10471, 17615): (False, "victim", False, False, False, 0),
+    (10471, 17165): (True, "victim", False, False, False, 0),
+    (10471, 11443): (True, "victim", False, False, False, 0),
+    # 13751/13752
+    (10499, 17630): (False, "victim", False, False, False, 0),
+    (10499, 17631): (False, "aoe", True, False, False, 30),
+    # 11666/11942/11750
+    (10469, 15043): (True, "victim", False, False, False, 0),
+    (10469, 15499): (False, "victim", False, False, False, 0),
+    (10469, 15244): (False, "victim", False, False, True, 0),
+    # 11525/13737/9486
+    (10477, 14887): (True, "aoe", True, False, False, 30),
+    (10477, 17616): (False, "aoe", True, False, False, 0),
+    (10477, 12020): (False, "aoe", True, False, False, 5),
+    # 13349/13431
+    (10476, 17151): (False, "ally", False, False, False, 0),
+    (10476, 12739): (True, "victim", False, False, False, 0),
+    (10476, 17234): (False, "victim", False, False, False, 0),
+}
+
+# The mob rows, from creature_template.sql:118 and the run notes quoted in the CSV's own note rows.
+TRASH_MOB_VALUES = {
+    15111: ("Mad Servant", "zulgurub", 3, ["caster", "summoner"], 3),
+    15146: ("Mad Voidwalker", "zulgurub", 3, ["aoe"], 2),
+    11368: ("Bloodseeker Bat", "zulgurub", 2, ["patrol"], 1),
+    14750: ("Gurubashi Bat Rider", "zulgurub", 3, ["aoe"], 3),
+    10470: ("Scholomance Neophyte", "scholomance", 3, ["caster"], 2),
+    10471: ("Scholomance Acolyte", "scholomance", 3, ["healer", "caster"], 3),
+    10499: ("Spectral Researcher", "scholomance", 3, ["caster", "aoe"], 2),
+    10469: ("Scholomance Adept", "scholomance", 3, ["caster", "aoe", "runner"], 2),
+    10477: ("Scholomance Necromancer", "scholomance", 3, ["caster", "runner"], 3),
+    10476: ("Scholomance Necrolyte", "scholomance", 2, ["caster"], 1),
+}
+
+
+@unittest.skipUnless(
+    CORE_SPELL_SQL.is_file(),
+    "set TORTOISE_CORE_DIR=<tortoise-wow checkout>: no %s" % CORE_SPELL_SQL,
+)
+class TrashValueTest(unittest.TestCase):
+    """Every trash row's values, read off the cited core lines and not generated from the CSV."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.rows = boss_data.read_trash_rows(ROOT / "data" / "boss" / "trash_abilities.csv")
+        cls.names = boss_data.read_names(ROOT / "data" / "boss" / "names.json")
+        cls.raids = boss_data.read_raids(ROOT / "data" / "boss" / "raids.csv")
+        cls.spells = _read_spells()
+        cls.boss_entries, cls.add_entries = boss_data.boss_entry_sets(
+            boss_data.read_rows(ROOT / "data" / "boss" / "boss_abilities.csv")
+        )
+        cls.maps, cls.mobs = boss_data.make_trash(
+            cls.rows, cls.names, cls.raids, cls.boss_entries
+        )
+
+    def ability(self, entry, spell):
+        return next(a for a in self.mobs[entry]["abilities"] if a["sid"] == spell)
+
+    def test_the_fixture_covers_every_row(self):
+        rows = {(int(r["entry"]), int(r["key"])) for r in self.rows if r["row"] == "ability"}
+        self.assertEqual(set(TRASH_ABILITY_VALUES), rows)
+
+    def test_mob_values(self):
+        self.assertEqual(set(TRASH_MOB_VALUES), set(self.mobs))
+        for entry, want in sorted(TRASH_MOB_VALUES.items()):
+            mob = self.mobs[entry]
+            self.assertEqual(
+                want, (mob["name"], mob["map"], mob["danger"], mob["roles"], mob["kill"]), entry
+            )
+
+    def test_ability_values(self):
+        for (entry, spell), want in sorted(TRASH_ABILITY_VALUES.items()):
+            ability = self.ability(entry, spell)
+            got = (ability["int"], ability["t"], ability["aoe"], ability["ground"], ability["cone"],
+                   ability["r"])
+            self.assertEqual(want, got, "%s %s" % (entry, spell))
+
+    def test_an_int_row_is_kickable_by_the_core(self):
+        for (entry, spell), want in sorted(TRASH_ABILITY_VALUES.items()):
+            if want[0]:
+                self.assertTrue(_kickable(self.spells[spell], strict=True), "%s %s" % (entry, spell))
+
+    def test_a_cone_row_has_a_cone_target(self):
+        for (entry, spell), want in sorted(TRASH_ABILITY_VALUES.items()):
+            if not want[4]:
+                continue
+            row = self.spells[spell]
+            targets = {row.get("effectImplicitTargetA%d" % n, 0) for n in (1, 2, 3)}
+            targets |= {row.get("effectImplicitTargetB%d" % n, 0) for n in (1, 2, 3)}
+            self.assertIn(24, targets, "%s %s" % (entry, spell))
+
+    def test_a_ground_row_has_a_persistent_area_effect(self):
+        for (entry, spell), want in sorted(TRASH_ABILITY_VALUES.items()):
+            if not want[3]:
+                continue
+            row = self.spells[spell]
+            self.assertIn(27, (row.get("effect1"), row.get("effect2"), row.get("effect3")),
+                          "%s %s" % (entry, spell))
+
+    def test_a_radius_row_matches_the_spell_row(self):
+        # The radius is the spell's own, or the one of the spell its aura triggers: Consuming Shadows (24614) channels
+        # the 5 yd pulse (24615) around the Voidwalker.
+        for (entry, spell), want in sorted(TRASH_ABILITY_VALUES.items()):
+            if not want[5]:
+                continue
+            row = self.spells[spell]
+            yards = _spell_radii_yards(row)
+            for n in (1, 2, 3):
+                triggered = row.get("effectTriggerSpell%d" % n)
+                if triggered in self.spells:
+                    yards |= _spell_radii_yards(self.spells[triggered])
+            self.assertIn(want[5], yards, "%s %s r=%s, spell radii %s" % (entry, spell, want[5], yards))
+
+    def test_a_caster_centred_area_carries_a_radius(self):
+        found = set()
+        for row in self.rows:
+            if row["row"] != "ability":
+                continue
+            spell = self.spells[int(row["key"])]
+            pair = (spell.get("effectImplicitTargetA1"), spell.get("effectImplicitTargetB1"))
+            if pair not in CASTER_CENTRED_TARGETS:
+                continue
+            key = (int(row["entry"]), int(row["key"]))
+            found.add(key)
+            self.assertTrue(
+                self.ability(*key)["r"], "%s %s is a caster-centred area with no r=" % key
+            )
+        self.assertEqual(
+            {(15146, 24616), (14750, 5115), (14750, 23511), (14750, 24024), (10499, 17631),
+             (10477, 14887), (10477, 12020)},
+            found,
+        )
+
+    def test_a_self_row_applies_an_aura(self):
+        for (entry, spell), want in sorted(TRASH_ABILITY_VALUES.items()):
+            if want[1] != "self":
+                continue
+            self.assertTrue(_applies_aura(self.spells[spell]), "%s %s" % (entry, spell))
+
+    def test_no_trash_entry_is_a_boss(self):
+        self.assertEqual(set(), set(self.mobs) & self.boss_entries)
+        # 11368 is Jeklik's summon add: the trash block is the one place its own casts live.
+        self.assertIn(11368, self.add_entries)
+
+    def test_the_seed_set_is_the_brief_s_ten(self):
+        self.assertEqual({15111, 15146, 11368, 14750, 10470, 10471, 10499, 10469, 10477, 10476},
+                         set(self.mobs))
+        self.assertEqual([{"key": "zulgurub", "mapId": 309}, {"key": "scholomance", "mapId": 289}],
+                         self.maps)
+
+    def test_the_committed_json_matches_the_csv(self):
+        doc = boss_data.build_trash_document(
+            self.rows, self.names, self.raids, self.boss_entries
+        )
+        committed = (ROOT / "tools" / "observability" / "web" / "data" / "trash_abilities.json")
+        self.assertEqual(boss_data.dump_trash_json(doc), committed.read_text(encoding="utf-8"))
+
+
+# Rows that deliberately stay without `int` although the core can kick them and the AI casts them untriggered: the
+# value is the reason. There is none today; an entry here is a decision, not an oversight, and it fails the test once
+# the spell stops being kickable, so the list cannot rot.
+TRASH_INT_OMISSIONS = {}
+
+
+@unittest.skipUnless(
+    CORE_SPELL_SQL.is_file(),
+    "set TORTOISE_CORE_DIR=<tortoise-wow checkout>: no %s" % CORE_SPELL_SQL,
+)
+class TrashSpellSourceTest(unittest.TestCase):
+    """The trash rows against the core's spell data, through the same helper as the boss rows: the kick rule with
+    the instant-spell guard and CF_TRIGGERED, and the self/aura rule."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.spells = _read_spells()
+        cls.rows = boss_data.read_trash_rows(ROOT / "data" / "boss" / "trash_abilities.csv")
+        cls.casts = _read_trash_casts({int(r["entry"]) for r in cls.rows})
+
+    def source_problems(self, rows=None, casts=None):
+        return source_spell_problems(
+            self.rows if rows is None else rows,
+            self.spells,
+            [],
+            casts=self.casts if casts is None else casts,
+            strict=True,
+        )
+
+    def test_the_core_source_backs_every_row(self):
+        self.assertEqual([], self.source_problems())
+
+    def test_the_cast_flags_are_read_from_the_core(self):
+        # 24621 Portal of Madness is the EventAI cast with CF_TRIGGERED (creature_ai_scripts:58, datalong2 2).
+        self.assertTrue(self.casts[(15111, 24621)] & CF_TRIGGERED)
+        # 12739 Shadow Bolt comes from the creature_spells list with castFlags 8 (CF_MAIN_RANGED_SPELL).
+        self.assertFalse(self.casts[(10470, 12739)] & CF_TRIGGERED)
+        self.assertTrue(self.casts[(10470, 12739)] & 0x008)
+
+    def test_a_triggered_cast_is_no_interrupt(self):
+        rows = [dict(r) for r in self.rows]
+        for row in rows:
+            if row["row"] == "ability" and int(row["key"]) == 24621:
+                row["d"] = "summon=15141;int"
+        problems = self.source_problems(rows)
+        self.assertIn(("int-triggered-cast", 24621), {(p["check"], p["spell"]) for p in problems})
+
+    def test_an_instant_generic_cast_is_no_interrupt(self):
+        # 24611 Fireball is kickable as it stands; the instant-spell guard is what the boss rule lacks.
+        spell = dict(self.spells[24611])
+        self.assertTrue(_kickable(spell, strict=True))
+        spell["castingTimeIndex"] = 1
+        self.assertFalse(_kickable(spell, strict=True))
+        self.assertTrue(_kickable(spell), "the boss rule still calls it kickable")
+        row = {"_line": 1, "map": "zulgurub", "entry": "15111", "row": "ability", "key": "24611",
+               "d": "t=victim;int"}
+        problems = source_spell_problems([row], {24611: spell}, [], strict=True)
+        self.assertIn(("int-not-kickable", 24611), {(p["check"], p["spell"]) for p in problems})
+
+    def test_a_broken_row_is_caught(self):
+        rows = [dict(r) for r in self.rows]
+        for row in rows:
+            if row["row"] == "ability" and int(row["key"]) == 24024:
+                row["d"] = "t=aoe;int"  # preventionType 0: the core cannot kick it
+        problems = self.source_problems(rows)
+        self.assertIn(("int-not-kickable", 24024), {(p["check"], p["spell"]) for p in problems})
+
+    def test_a_kickable_cast_carries_int(self):
+        """The reverse of the kick rule: a spell the core can stop, cast without CF_TRIGGERED, is an interrupt the page
+        must label KICK, so its row carries `int`."""
+        for row in self.rows:
+            if row["row"] != "ability":
+                continue
+            entry, spell = int(row["entry"]), int(row["key"])
+            if (entry, spell) in TRASH_INT_OMISSIONS:
+                continue
+            if not _kickable(self.spells[spell], strict=True):
+                continue
+            if self.casts.get((entry, spell), 0) & CF_TRIGGERED:
+                continue
+            self.assertTrue(
+                boss_data.parse_flags(row["d"], allow_radius=True)["int"],
+                "%s %s is kickable and cast untriggered, so the row needs int" % (entry, spell),
+            )
+
+    def test_the_int_omission_list_still_reproduces(self):
+        for (entry, spell), reason in TRASH_INT_OMISSIONS.items():
+            self.assertTrue(reason, "%s %s is listed with no reason" % (entry, spell))
+            self.assertTrue(_kickable(self.spells[spell], strict=True), "%s %s" % (entry, spell))
+            self.assertFalse(
+                self.casts.get((entry, spell), 0) & CF_TRIGGERED,
+                "%s %s is cast with CF_TRIGGERED, so it is no deliberate omission" % (entry, spell),
+            )
 
 
 if __name__ == "__main__":

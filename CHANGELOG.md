@@ -134,6 +134,7 @@
 - New: Ruins of Ahn'Qiraj's bosses reach the boss ability panel: Kurinnaxx, Moam, Buru the Gorger, Ayamiss the Hunter and Ossirian the Unscarred show their timers, the stone form and the two health phases, their adds, and a plain note where a number is not fixed in the script.
 - New: Upper Karazhan Halls boss data for the dashboard — Keeper Gnarlmoon, Ley-Watcher Incantagos, Anomalus, Echo of Medivh, the chess event's King, Bishop, Rook and Knight, Sanv Tas'dal, Rupturan the Broken and Kruul — with their abilities, timers, phases and adds.
 - New: the boss panel covers Emerald Sanctum: Erennius and Solnius with their casts, Solnius's transform and 45 s sleep, and the portal adds the panel can list.
+- New: the dashboard now knows the trash that wipes runs. On the map an elite's cast says KICK when the group can interrupt it and AoE when it hits an area, the worst enemies carry a small danger badge, and the Live card lists what is dangerous in the pull — one line per kind of enemy, most dangerous first, at most five — whenever no boss panel is open. First data: Zul'Gurub's Mad Servants, Mad Voidwalkers, Bloodseeker Bats and Gurubashi Bat Riders, and Scholomance's caster packs.
 
 ## v1.14.0 (2026-10-28)
 

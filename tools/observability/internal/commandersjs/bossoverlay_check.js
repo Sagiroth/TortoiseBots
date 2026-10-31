@@ -24,7 +24,7 @@ vm.createContext(ctx);
 });
 assert.ok(ctx.CmdView && typeof ctx.CmdView.shapePath === "function", "commanders.js loads as CmdView");
 assert.ok(ctx.FightReplay && typeof ctx.FightReplay.mobsAt === "function", "fightreplay.js loads as FightReplay");
-vm.runInContext([grab("esc"), grab("cmdMobOverlaySvg"), grab("fdReplayBind")].join("\n"), ctx);
+vm.runInContext([grab("esc"), grab("cmdTrashWord"), grab("cmdMobOverlaySvg"), grab("fdReplayBind")].join("\n"), ctx);
 const V = ctx.CmdView;
 
 // ---- the live overlay of one row

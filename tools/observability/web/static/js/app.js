@@ -6551,15 +6551,26 @@
     return (panels || []).map(p => BossPanel.render(table, p, { open: true, esc: esc, coverage: covForBoss(p.boss.entry) })).join('');
   }
   // The debugger shows the panels in its rail, the Live card under the map; one panel, painted where the view puts it.
-  function cmdPaintBosses(card, panels) {
+  // A card with no panel takes the fallback instead (the Live card's trash list), decided here so the one box is
+  // written once per report: two paints would empty and refill it and lose the hover.
+  function cmdPaintBosses(card, panels, fallbackHtml) {
     if (!card) return;
     const debug = card.classList.contains('fd-on');
     const section = card.querySelector(debug ? '.fd-railbosses' : '.fd-bosses');
     const list = card.querySelector(debug ? '.fd-railbosses' : '.fd-bosslist');
     if (!section || !list) return;
-    section.hidden = !(panels && panels.length);
-    const html = panels && panels.length ? cmdBossPanelsHtml(panels) : '';
+    const html = panels && panels.length ? cmdBossPanelsHtml(panels) : (fallbackHtml || '');
+    section.hidden = !html;
     if (list._k !== html) { list._k = html; setHtml(list, html); }
+  }
+  // The "Dangerous here" list the Live card shows in the boss section's place when no engaged boss owns it: the trash the
+  // bind's live mob rows hold, one line each. The boss panel wins whenever there is one.
+  function cmdTrashBlockHtml(bind) {
+    if (typeof TrashInfo === 'undefined' || !TrashInfo.block) return '';
+    const rows = TrashInfo.block(bind && bind.mobs);
+    if (!rows || !rows.length) return '';
+    return '<h3 class="cmd-h">Dangerous here</h3><ol class="fd-trashlist">'
+      + rows.map((r) => '<li>' + esc(r.text) + '</li>').join('') + '</ol>';
   }
   function cmdLiveBossPanels(bind) {
     const now = Date.now();
@@ -6797,6 +6808,15 @@
     return g;
   }
 
+  // The word the page writes before an elite's cast when the trash table knows the spell: KICK when the core can kick it, AoE
+  // when it is an area effect. Bosses are the boss table's business, so only elites are asked. "" with no table or no row.
+  function cmdTrashWord(m) {
+    if (typeof TrashInfo === 'undefined' || !TrashInfo.castWord || !m || m.rank !== 'e') return '';
+    const word = TrashInfo.castWord(m.entry, m.cid);
+    if (!word) return '';
+    return { word: word, cls: word === 'KICK' ? 'kick' : 'aoe' };
+  }
+
   // The boss overlay of one mob row: the area of the spell it casts (under its dot, so the dot stays readable), then where it
   // looks, the cast's progress ring and its label. Bosses and elites only, each part under its own layer. nowLeftMs is the time
   // left at this moment: the report's own time counted down for a live map, the frame's time for a replay. A cast whose time has
@@ -6822,9 +6842,10 @@
     if (o.mobcast && casting) {
       const r = (m.rank === 'b' ? 14 : 7) * k, circ = 2 * Math.PI * r, frac = CmdView.castFrac(m, nowLeftMs);
       const target = m.ctg && botsById && botsById[m.ctg] ? botsById[m.ctg].name : '';
-      const label = (m.cast || 'a spell') + ' ' + (nowLeftMs / 1000).toFixed(1) + ' s' + (target ? ' → ' + target : '');
+      const tw = cmdTrashWord(m);
+      const label = (tw ? tw.word + ' ' : '') + (m.cast || 'a spell') + ' ' + (nowLeftMs / 1000).toFixed(1) + ' s' + (target ? ' → ' + target : '');
       over += `<circle class="castring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}" stroke-dasharray="${f(frac * circ)} ${f(circ)}" transform="rotate(-90 ${f(p.x)} ${f(p.y)})"/>`
-        + `<text class="mobcast" x="${f(p.x)}" y="${f(p.y - r - 8 * k)}" style="font-size:${f(10 * k)}px;stroke-width:${f(3 * k)}px" text-anchor="middle">${esc(label)}</text>`;
+        + `<text class="mobcast${tw ? ' ' + tw.cls : ''}" x="${f(p.x)}" y="${f(p.y - r - 8 * k)}" style="font-size:${f(10 * k)}px;stroke-width:${f(3 * k)}px" text-anchor="middle">${esc(label)}</text>`;
     }
     return { under, over };
   }
@@ -6834,7 +6855,8 @@
   function cmdMobLook(m, bossmark) {
     const rank = m && m.rank, cls = CmdView.mobClass(m);
     const boss = !!bossmark && rank === 'b', elite = !!bossmark && rank === 'e';
-    return { boss: boss, elite: elite, r: boss ? 14 : elite ? 7 : cls === 'critter' ? 3 : 5 };
+    const danger = elite && typeof TrashInfo !== 'undefined' && TrashInfo.danger && TrashInfo.danger(m.entry) === 3 ? 3 : 0;
+    return { boss: boss, elite: elite, r: boss ? 14 : elite ? 7 : cls === 'critter' ? 3 : 5, danger: danger };
   }
 
   // One enemy as a map group: the threat rings, its body (a boss in its own colour with a pulsing gold ring, the crown above
@@ -6859,7 +6881,10 @@
       g += `<circle class="bossring" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 6 * k)}"/>`
         + `<circle class="bossring2" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r + 10 * k)}"/>`;
     }
-    g += `<circle class="body" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/>${ov.over}`;
+    g += `<circle class="body" cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}"/>`;
+    // A danger-3 trash mob gets one glyph in the empty corner of its body, only while the boss-mark layer is on.
+    if (look.danger === 3) g += `<circle class="mobdanger" cx="${f(p.x + r * 0.75)}" cy="${f(p.y - r * 0.75)}" r="${f(2.6 * k)}"/>`;
+    g += ov.over;
     if (look.boss) g += cmdMapIcon('crown', p.x, p.y - r - 11 * k, 16 * k);
     // a boss's health bar sits above the crown (r + 16*k), so the crown is not drawn over it
     g += d.overlay(m, 'mob', p, look.boss ? r + 16 * k : r);
@@ -7992,7 +8017,12 @@
     // A structural redraw: at once when the map is on screen (the layer panel reads what it worked out), else when it is back.
     if (cmdSched.shown(key)) drawCmdMap(key); else cmdSched.mark(key);
     if (debug) { renderFightDebug(card, bind); fdLoad(card, bind); }
-    else { mountFightPanel(card, bind); cmdPaintBosses(card, cmdLiveBossPanels(bind)); }
+    else {
+      mountFightPanel(card, bind);
+      // The engaged bosses, or — with none — the trash the bind's live mobs hold: one paint decides which of the two
+      // the boss section shows.
+      cmdPaintBosses(card, cmdLiveBossPanels(bind), cmdTrashBlockHtml(bind));
+    }
   }
 
   // The debugger page moves the one layer panel into its map; take it back to the page before any card that may hold it leaves,
@@ -10081,6 +10111,10 @@
     covCompute();
     if (state.activeTab === 'commanders') renderCommanders();
     else if (state.activeTab === 'coverage') renderCoverage();
+  });
+  // The trash table is one static file too (a missing one leaves the block and its map marks away, never an error).
+  if (typeof TrashInfo !== 'undefined' && TrashInfo.load) TrashInfo.load().then(() => {
+    if (state.activeTab === 'commanders') renderCommanders();
   });
   setInterval(fetchCommanders, 30000); // goes through the refresh gate like the stream's reports
   setInterval(refreshGate.guard(expireCommanders), 3000); // a paused page keeps what it froze
