@@ -971,12 +971,17 @@ bool IsDurableOrderBot(uint32_t guidLow, uint32_t guildId)
         return false;
     if (HireLifecycle::Instance().IsHired(guid))
         return false;
+    // Owner rule: pool-account or claimed is the "module bot" test, same
+    // guild is the "may work for this guild" test; both are required.
+    if (Player::GetGuildIdFromDB(guid) != guildId)
+        return false;
     if (ClaimLifecycle::Instance().IsClaimed(guidLow))
         return true;
     uint32_t accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid);
     return accountId && RandomBotAccountRegistry::Instance().IsRegistered(accountId);
 }
 
+void SendOrderLine(OrderRecord const& order, uint32_t have);
 // One drained queue entry: pick a durable guild bot that can make the item,
 // or farm it when no maker is free. A member-list query runs once per due
 // request per retry interval, never every tick: busy-only candidates

@@ -56,6 +56,9 @@ void NoteSubOrderFailed(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t cou
 bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, OrderType type);
 // Bot guids of a branch (the bot itself plus every sub-order below it).
 std::vector<uint32_t> BranchBots(uint32_t botGuidLow);
+// Durable module bots only for sub-order work: pool-account or claimed, in
+// the order's guild, never autonomous alts or hires. World thread only.
+bool IsDurableOrderBot(uint32_t guidLow, uint32_t guildId);
 // Whether a live bot can take a sub-order for the item: knows the recipe or
 // has a usable farm plan. Reads only the passed player; the world-thread
 // drain and the reassign path share it.

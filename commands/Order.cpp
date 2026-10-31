@@ -395,6 +395,11 @@ bool HandleOrderReassign(ChatHandler* handler, Player* requester, std::string co
         OrderError(handler, "invalid", "The new bot already has an order.");
         return true;
     }
+    if (!GuildOrders::IsDurableOrderBot(newGuid.GetCounter(), sub->guildId))
+    {
+        OrderError(handler, "no-bot", "Only guild bots take sub-orders: never alts, hires or other guilds' bots.");
+        return true;
+    }
     Player* live = sObjectAccessor.FindPlayer(newGuid);
     if (!live || !live->IsInWorld())
     {
