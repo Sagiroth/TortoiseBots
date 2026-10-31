@@ -157,16 +157,20 @@ const sartura = (REAL.byEntry || REAL.bosses || REAL)["15516"];
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }] }).phase, "enraged");
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }, { id: 27680 }] }).phase, "berserk");
 
-// Emerald Sanctum: Solnius sleeps on aura 25148 (listed before the hp rule), the transform latches p2, and the
-// phase-1 casts hide in p2 while Acid Breath appears in it.
+// Emerald Sanctum: Solnius has no sleep phase. Aura 25148 is sleep inside phase 2, the transform latches p2, and
+// the phase-1 casts hide in p2 while Acid Breath and the gimmicks stay in it through the sleep.
 const solnius = (REAL.byEntry || REAL.bosses || REAL)["60748"];
-assert.deepStrictEqual(solnius.phases.map((x) => x.rule), ["aura=25148", "hp<90", "start"]);
+assert.deepStrictEqual(solnius.phases.map((x) => x.rule), ["hp<90", "start"]);
 assert.strictEqual(B.phaseOf(solnius, { hp: 100, au: [] }).phase, "p1");
 assert.strictEqual(B.phaseOf(solnius, { hp: 85, au: [] }).phase, "p2");
-assert.strictEqual(B.phaseOf(solnius, { hp: 50, au: [{ id: 25148 }] }).phase, "sleep");
+assert.strictEqual(B.phaseOf(solnius, { hp: 50, au: [{ id: 25148 }] }).phase, "p2", "sleep stays in p2");
 const solP2 = B.model(REAL, { entry: 60748, hp: 85, au: [] }, [], 0, 0);
 assert.strictEqual(solP2.abilities.find((a) => a.sid === 56507).inPhase, false, "Corrosive Bolt is a p1 cast");
 assert.strictEqual(solP2.abilities.find((a) => a.sid === 24839).inPhase, true, "Acid Breath is a p2 cast");
+const solSleep = B.model(REAL, { entry: 60748, hp: 50, au: [{ id: 25148 }] }, [], 0, 0);
+assert.strictEqual(solSleep.phase, "p2", "the sleep aura does not make a phase");
+assert.strictEqual(solSleep.abilities.find((a) => a.sid === 24839).inPhase, true, "Acid Breath still runs asleep");
+assert.strictEqual(solSleep.abilities.find((a) => a.sid === 56510).inPhase, true, "the gimmicks still run asleep");
 
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];

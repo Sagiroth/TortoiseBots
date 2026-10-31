@@ -606,39 +606,38 @@ class EmeraldSanctumValueTest(unittest.TestCase):
                         flags={"aura": True, "okNeeds": {"dispel": "nodispel"}}),
             46079: dict(a=7000, b=7000, c=7000, target="random", phase="", castMs=0,
                         flags={"aura": True, "okNeeds": {"dispel": "nodispel"}}),
-            46080: dict(a=35000, b=35000, c=35000, target="aoe", phase="", castMs=0,
+            46080: dict(a=0, b=35000, c=35000, target="aoe", phase="", castMs=0,
                         flags={"aura": True, "int": True}),
-            46082: dict(a=70000, b=70000, c=70000, target="ally", phase="", castMs=0, flags={"ok": "script"}),
+            46082: dict(a=0, b=70000, c=70000, target="ally", phase="", castMs=0, flags={"ok": "script"}),
             56505: dict(a=0, b=0, c=0, target="victim", phase="", castMs=0, flags={"aura": True, "hp": 50}),
         },
         60748: {  # Solnius
             56507: dict(a=6000, b=6000, c=6000, target="victim", phase="p1", castMs=0, flags={"aura": True}),
-            56508: dict(a=0, b=0, c=0, target="random", phase="", castMs=0, flags={"aura": True}),
+            56508: dict(a=0, b=0, c=0, target="aoe", phase="", castMs=0, flags={"aura": True}),
             24839: dict(a=0, b=15000, c=15000, target="victim", phase="p2", castMs=0, flags={"cone": True}),
-            56510: dict(a=0, b=0, c=0, target="random", phase="p2", castMs=0, flags={"aura": True}),
-            56512: dict(a=0, b=0, c=0, target="random", phase="p2", castMs=0, flags={"aura": True}),
-            56514: dict(a=0, b=0, c=0, target="random", phase="p2", castMs=0, flags={"aura": True}),
-            56516: dict(a=0, b=0, c=0, target="random", phase="p2", castMs=0, flags={"aura": True}),
+            56510: dict(a=0, b=27000, c=27000, target="aoe", phase="p2", castMs=0, flags={"aura": True}),
+            56512: dict(a=0, b=27000, c=27000, target="random", phase="p2", castMs=0, flags={"aura": True}),
+            56514: dict(a=0, b=27000, c=27000, target="random", phase="p2", castMs=0, flags={"aura": True}),
+            56516: dict(a=0, b=27000, c=27000, target="random", phase="p2", castMs=0, flags={"aura": True}),
             46079: dict(a=6000, b=6000, c=6000, target="random", phase="", castMs=0,
                         flags={"aura": True, "okNeeds": {"dispel": "nodispel"}}),
             46081: dict(a=17000, b=17000, c=17000, target="aoe", phase="", castMs=0, flags={}),
-            25148: dict(a=0, b=0, c=0, target="self", phase="", castMs=0, flags={"self": True, "ok": "phase"}),
+            25148: dict(a=0, b=0, c=0, target="self", phase="", castMs=0, flags={"self": True, "ok": "script"}),
         },
     }
 
     PHASES = {
         60747: [],
         60748: [
-            ("sleep", {"kind": "aura", "aura": 25148}, 1),
-            ("p2", {"kind": "hp", "hp": 90}, 2),
-            ("p1", {"kind": "start"}, 3),
+            ("p2", {"kind": "hp", "hp": 90}, 1),
+            ("p1", {"kind": "start"}, 2),
         ],
     }
 
     ADDS = {
         60747: {},
-        60748: {60742: ("summon", 1), 60743: ("summon", 2), 60745: ("summon", 2),
-                60746: ("summon", 2), 61212: ("summon", 1)},
+        60748: {60742: ("summon", 1), 60743: ("summon", 2), 60744: ("linked", 2),
+                60745: ("summon", 2), 60746: ("summon", 2), 61212: ("summon", 1)},
     }
 
     @classmethod
@@ -682,14 +681,22 @@ class EmeraldSanctumValueTest(unittest.TestCase):
         solnius = self.boss(60748)
         abilities = {ability["sid"]: ability for ability in solnius["abilities"]}
         erennius = {ability["sid"]: ability for ability in self.boss(60747)["abilities"]}
-        # The sleep state is a real, non-passive aura (spell_template attributes = 0), so the panel can see it,
-        # and its rule is listed before the hp rule: during sleep the boss casts nothing.
-        self.assertEqual(solnius["phases"][0]["rule"], {"kind": "aura", "aura": 25148})
-        self.assertTrue(abilities[25148]["ok"] == "phase")
+        # The sleep is an aura (25148) inside phase 2, not a phase: the threat list survives GoSleep and the
+        # phase-2 casts keep running, so no phase row matches the aura and no ability is tagged to a sleep phase.
+        self.assertEqual(solnius["phases"][0]["rule"], {"kind": "hp", "hp": 90})
+        self.assertNotIn("sleep", [phase["name"] for phase in solnius["phases"]])
+        self.assertEqual(abilities[25148]["ok"], "script")
+        self.assertFalse([a["phase"] for a in abilities.values() if a["phase"] not in ("", "p1", "p2")],
+                         "no ability is tagged to a sleep phase")
         # Emerald Rot runs in both phases (15 s in p1, 30 s below 40% in p2) and shares the timer with the wake
-        # reset, so it carries no phase tag and no column timer.
+        # reset, so it carries no phase tag and no column timer. It is an area around Solnius, not a player debuff.
         self.assertEqual(abilities[56508]["phase"], "")
         self.assertEqual((abilities[56508]["a"], abilities[56508]["b"], abilities[56508]["c"]), (0, 0, 0))
+        self.assertEqual(abilities[56508]["target"], "aoe")
+        # Bane of Eranikus is the other area spell; the three player debuffs share its literal 27 s timer.
+        self.assertEqual(abilities[56510]["target"], "aoe")
+        self.assertEqual((abilities[56510]["b"], abilities[56510]["c"]), (27000, 27000))
+        self.assertEqual({abilities[sid]["b"] for sid in (56512, 56514, 56516)}, {27000})
         # Acid Breath counts only from the transform: first column 0, 15 s repeats.
         self.assertEqual(abilities[24839]["a"], 0)
         # Only Wail of Erennius is kickable: preventionType 1 and interruptFlags 0x02 with castingTimeIndex 171.

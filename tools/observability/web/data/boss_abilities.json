@@ -3142,7 +3142,7 @@
           "sid": 46080,
           "name": "Wail of Erennius",
           "castMs": 0,
-          "a": 35000,
+          "a": 0,
           "b": 35000,
           "c": 35000,
           "phase": "",
@@ -3163,7 +3163,7 @@
           "sid": 46082,
           "name": "Green Dragon Binding",
           "castMs": 0,
-          "a": 70000,
+          "a": 0,
           "b": 70000,
           "c": 70000,
           "phase": "",
@@ -3205,7 +3205,7 @@
       "phases": [],
       "adds": [],
       "notes": [
-        "Wall of Erennius (the client name is Wail of Erennius) and Green Dragon Binding only tick while Solnius is alive and in combat; the Binding is cast on Solnius, not on a player.",
+        "Wall of Erennius (the client name is Wail of Erennius) and Green Dragon Binding only tick while Solnius is alive and in combat, so in the normal order Erennius is fought alone while Solnius is neutral and casts neither; both start once Solnius is pulled with Erennius alive. The Binding is cast on Solnius, not on a player.",
         "Curse of Erennius is cast once; 81-92 s after Erennius drops below 50 percent; on his current victim.",
         "Poison Bolt Volley's first cast comes at 9-13 s and repeats every 9-13 s; Howl repeats every 30-33 s.",
         "Erennius joins the pull when Solnius is engaged; if Solnius dies first while Erennius is in combat, Erennius drops the fight, goes passive and despawns after 20 s."
@@ -3246,7 +3246,7 @@
           "b": 0,
           "c": 0,
           "phase": "",
-          "target": "random",
+          "target": "aoe",
           "aura": true,
           "self": false,
           "mark": false,
@@ -3285,10 +3285,10 @@
           "name": "Bane of Eranikus",
           "castMs": 0,
           "a": 0,
-          "b": 0,
-          "c": 0,
+          "b": 27000,
+          "c": 27000,
           "phase": "p2",
-          "target": "random",
+          "target": "aoe",
           "aura": true,
           "self": false,
           "mark": false,
@@ -3306,8 +3306,8 @@
           "name": "Sanctum Mind Decay",
           "castMs": 0,
           "a": 0,
-          "b": 0,
-          "c": 0,
+          "b": 27000,
+          "c": 27000,
           "phase": "p2",
           "target": "random",
           "aura": true,
@@ -3327,8 +3327,8 @@
           "name": "Dreamfever",
           "castMs": 0,
           "a": 0,
-          "b": 0,
-          "c": 0,
+          "b": 27000,
+          "c": 27000,
           "phase": "p2",
           "target": "random",
           "aura": true,
@@ -3348,8 +3348,8 @@
           "name": "Emerald Instability",
           "castMs": 0,
           "a": 0,
-          "b": 0,
-          "c": 0,
+          "b": 27000,
+          "c": 27000,
           "phase": "p2",
           "target": "random",
           "aura": true,
@@ -3426,22 +3426,14 @@
           "int": false,
           "summon": 0,
           "hp": 0,
-          "ok": "phase",
+          "ok": "script",
           "okNeeds": {}
         }
       ],
       "phases": [
         {
-          "name": "sleep",
-          "order": 1,
-          "rule": {
-            "kind": "aura",
-            "aura": 25148
-          }
-        },
-        {
           "name": "p2",
-          "order": 2,
+          "order": 1,
           "rule": {
             "kind": "hp",
             "hp": 90
@@ -3449,7 +3441,7 @@
         },
         {
           "name": "p1",
-          "order": 3,
+          "order": 2,
           "rule": {
             "kind": "start"
           }
@@ -3485,18 +3477,25 @@
           "name": "Sanctum Supressor",
           "role": "summon",
           "priority": 1
+        },
+        {
+          "entry": 60744,
+          "name": "Sanctum Wyrm",
+          "role": "linked",
+          "priority": 2
         }
       ],
       "notes": [
-        "Emerald Rot: one timer; 15 s to 8 random players in phase 1; it freezes in phase 2 above 40 percent and then runs every 30 s to 4 random players; it is reset to 30 s when Solnius wakes.",
-        "The four gimmick debuffs share one 27 s timer and land on 2 random players each; they are triggered casts with no cast time; phase 2 only.",
-        "Solnius transforms once at the first check at least 12 s after the pull while below 90 percent; the threat list is wiped; a random player gets 10 threat; taunt and attack-me become immune; he never returns to phase 1.",
-        "Solnius sleeps once; 12 s after the transform and only below 60 percent; untargetable and passive for 45 s; the Emerald Rot timer restarts at 30 s on waking; more than 50 yd from home he is teleported home first.",
+        "Emerald Rot: one timer; 15 s to 8 random players in phase 1; it freezes in phase 2 above 40 percent and then runs every 30 s to 4 random players; it is reset to 30 s when Solnius wakes. It is an area effect: every enemy within 20 yd of Solnius gets it (targets 22/15, radius 9); the named players are only the cast targets.",
+        "The four gimmick debuffs share one 27 s timer and are triggered casts with no cast time; phase 2 only. Bane of Eranikus is an area at Solnius (targets 18/16, triggered so the destination is the caster), so it hits every enemy within 20 yd of him; the two random players are only its cast targets. Sanctum Mind Decay, Dreamfever and Emerald Instability land on their chosen players (implicit target A=6), 2 random players each.",
+        "Solnius transforms once at the first check at least 12 s after the pull while below 90 percent; until then he stays in phase 1 whatever the damage, so a burst below 90 percent inside the first 12 s shows phase 2 at the 12 s mark. The threat list is wiped; a random player gets 10 threat; taunt and attack-me become immune; he never returns to phase 1.",
+        "Solnius sleeps once; 12 s after the transform and only below 60 percent; 45 s sleep. He is untargetable and passive, but the phase stays phase 2 and the threat list is kept, so by the code he can keep casting Acid Breath and the gimmicks during it (not seen live); the Emerald Rot timer restarts at 30 s on waking; more than 50 yd from home he is teleported home first.",
         "Portals open 5 s after the sleep: three fixed portals; each spawns a random major (Dragonkin, Wyrmkin, Scalebane or Suppressor) and a Dreamer; two more Dreamers every 30 s at portals 1 and 3 while a major lives; the portals close when all majors are dead.",
         "Hard mode: Solnius pulls Erennius when he is engaged while Erennius lives, and only then does Expulsion of Corruption run; Solnius's pull also sends every trash creature the instance registered at the player who pulled him.",
         "Solnius cannot be attacked until a player picks the gossip option (menu 92950); that clears the untargetable flag and sets faction 14.",
         "When Solnius dies while Erennius is alive and in combat; Erennius resets threat, goes passive and despawns after 20 s, and a chest appears at 3276.2, 3043.9.",
-        "The portal majors and Dreamers cast from their own scripts (Reflection 10 s; Acid Spit 7 s; Wyrmkin's Venom 21 s within 5 yd; Cleave 6 s; Scalebane Intimidation 25 s within 30 yd; Dreamstate 10 s); the table has no add-level ability key."
+        "The portal majors and Dreamers cast from their own scripts (Reflection 10 s; Acid Spit 7 s; Wyrmkin's Venom 21 s within 5 yd; Cleave 6 s; Scalebane Intimidation 25 s within 30 yd; Suppressor Emerald Suppression 56501 first at 15 s then every 14 s; Dreamstate 10 s); the table has no add-level ability key.",
+        "The Sanctum Wyrm 60744 is ordinary trash, and Solnius's pull sends it at the player who pulled him along with every other trash creature the instance still has registered."
       ]
     }
   },
@@ -3674,22 +3673,6 @@
       "source": [
         "ai/playerbot/strategy/generic/EmeraldSanctumDungeonStrategies.cpp",
         "ai/playerbot/strategy/generic/ReactionStrategy.cpp",
-        "ai/playerbot/strategy/triggers/EmeraldSanctumDungeonTriggers.h"
-      ]
-    },
-    {
-      "map": "emerald_sanctum",
-      "boss": 60748,
-      "key": "56508",
-      "spell": 56508,
-      "add": 0,
-      "flag": "",
-      "need": "dispel",
-      "level": "partly",
-      "name": "solnius emerald rot",
-      "text": "the carrier runs 30 yd clear of the raid; healers still dispel the disease",
-      "source": [
-        "ai/playerbot/strategy/generic/EmeraldSanctumDungeonStrategies.cpp",
         "ai/playerbot/strategy/triggers/EmeraldSanctumDungeonTriggers.h"
       ]
     },
