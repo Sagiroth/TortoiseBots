@@ -40,6 +40,9 @@ bool BotRankBlocksManagement(uint32_t guildId);
 // paths above (a member left). The next query recomputes it.
 void MarkBotRankGuildStale(uint32_t guildId);
 
+// Forget the stored choice when the guild is gone.
+void OnBotRankDisband(uint32_t guildId);
+
 // ORDER_ACCESS computation for one asker: the bot rank of the guild, the
 // bank tabs it reaches, whether it may withdraw gold, and whether the
 // asker may change the rank. World thread only.
