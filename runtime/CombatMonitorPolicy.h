@@ -26,6 +26,7 @@ constexpr uint32_t kMaxEngagedPerFight = 500; // distinct engaged creature guids
 constexpr size_t kMaxEnemyDeathsPerFight = kMaxEngagedPerFight; // enemy entries remembered for the sampler's later boss pick
 constexpr size_t kMaxDroppedTracked = 4096;   // distinct guids past that cap counted as dropped; the count stops here
 constexpr size_t kLastHits = 5;               // death recap
+constexpr uint32_t kSelfKillLookbackMs = 30000; // a self-kill names the newest other attacker this recent (spirit lasts 15 s)
 constexpr size_t kMaxSpellsPerBot = 12;
 constexpr size_t kMaxFightsKept = 5;          // finished fights waiting to be sent, per book
 constexpr size_t kPayloadByteBudget = 60000;
@@ -541,6 +542,25 @@ public:
         PruneBefore(m.heals, nowMs);
     }
 
+    // The killer a death is reported with. A Spirit of Redemption expiry is a core self-kill (spell 27965), so the hook
+    // names the dead priest; a death with no killer unit names nobody. Either way the newest hit by someone else in the
+    // last kSelfKillLookbackMs is the real killing blow (the same rule as PlayerbotAI::SetLastKiller for deaths.csv);
+    // with none the killer stays blank, never the victim.
+    static std::string ResolveKiller(std::string const& victim, std::deque<Hit> const& hits, std::string const& killer,
+                                     uint32_t atMs)
+    {
+        if (!killer.empty() && killer != victim)
+            return killer;
+        for (auto it = hits.rbegin(); it != hits.rend(); ++it)
+        {
+            if (it->atMs > atMs || atMs - it->atMs > kSelfKillLookbackMs)
+                continue;
+            if (!it->attacker.empty() && it->attacker != victim)
+                return it->attacker;
+        }
+        return std::string();
+    }
+
     void OnDeath(uint32_t member, std::string const& killer, float x, float y, float z, uint32_t nowMs)
     {
         if (!inFight_ || member == 0 || !IsMember(member))
@@ -553,7 +573,7 @@ public:
         d.x = x;
         d.y = y;
         d.z = z;
-        d.killer = killer;
+        d.killer = ResolveKiller(m.info.name, m.recentHits, killer, d.atMs);
         d.hits.assign(m.recentHits.begin(), m.recentHits.end());
         deaths_.push_back(d);
         while (deaths_.size() > kMaxDeathsPerFight)
@@ -564,7 +584,7 @@ public:
         ev.atMs = nowMs;
         ev.guid = member;
         ev.name = m.info.name;
-        ev.by = killer;
+        ev.by = d.killer;
         ev.x = x;
         ev.y = y;
         Push(std::move(ev));

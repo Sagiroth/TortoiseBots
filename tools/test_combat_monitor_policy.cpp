@@ -528,6 +528,40 @@ static void TestCloseOnFullWipe()
     CHECK(events.back().kept == false);   // 1.5 s: shorter than kMinFightMs
 }
 
+// A Spirit of Redemption expiry is a core self-kill: the death hook names the priest as its own killer. The recap and
+// the live death event name the newest other attacker of the last 30 s instead (ZG walk 9: Grimcaller "killed by
+// Grimcaller" 11 s after Jeklik's last hit); with nobody else in that window the killer is left blank, never the victim.
+static void TestSelfKillNamesLastAttacker()
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, BossCtx(), 1);
+    b.OnDamage(0, 2, 1280, "High Priestess Jeklik", 14517, 777, "High Priestess Jeklik", 24135);
+    b.OnDamage(0, 2, 1678, "Bloodseeker Bat", 11368, 778, "Bloodseeker Bat", 30172);
+    b.OnDeath(2, "Healy", 1.0f, 2.0f, 3.0f, 41178);            // spirit expiry: the core names the priest
+    b.OnDamage(0, 3, 300, "Bloodseeker Bat", 11368, 778, "Bloodseeker Bat", 1000);
+    b.OnDeath(3, "Magey", 1.0f, 2.0f, 3.0f, 45000);            // its only hit is 44 s old
+    b.OnDeath(1, "", 1.0f, 2.0f, 3.0f, 46000);                 // no killer and no hits at all
+    std::vector<LiveEvent> events;
+    uint32_t dropped = 0;
+    b.TakeEvents(events, dropped);
+    std::vector<std::string> by;
+    for (LiveEvent const& e : events)
+        if (e.kind == EventKind::Death)
+            by.push_back(e.by);
+    CHECK(by.size() == 3);
+    CHECK(by[0] == "Bloodseeker Bat");
+    CHECK(by[1].empty());
+    CHECK(by[2].empty());
+
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    CHECK(Count(p[0], "\"killer\":\"Bloodseeker Bat\"") == 1);
+    CHECK(!Contains(p[0], "\"killer\":\"Healy\""));
+    CHECK(!Contains(p[0], "\"killer\":\"Magey\""));
+}
+
 // The sampler's boss is set once per fight and only while one runs; a run's
 // own boss is never replaced.
 static void TestNoteBossSetsOnce()
@@ -850,6 +884,7 @@ int main()
     TestEventsJsonBoundsHugeNames();
     TestEnemyCastCarriesSpellAndTarget();
     TestEventsRequeueKeepsOrder();
+    TestSelfKillNamesLastAttacker();
     std::printf("combat monitor policy: %d checks passed\n", checks);
     return 0;
 }

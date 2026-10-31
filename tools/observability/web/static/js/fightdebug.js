@@ -13,6 +13,9 @@
   const TAUNTS = ["Taunt", "Growl", "Hand of Reckoning", "Mocking Blow", "Challenging Shout", "Challenging Roar"];
   // First guesses from walk 2; tune after raid nights (see the spec's backlog).
   const LIMITS = { sunderOk: 1.5, sunderWarn: 0.8, takenShare: 0.15, overheal: 0.45, debuffOk: 0.6, minFightMs: 10000 };
+  // A death this soon after an enemy's cast is put next to that cast (the ZG walks counted deaths 5 s after each Bat
+  // Rider blast by hand).
+  const CAST_DEATH_MS = 5000;
 
   const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
   const round1 = (v) => Math.round(v * 10) / 10;
@@ -54,6 +57,40 @@
   }
 
   const LEVEL = { fail: 0, warn: 1, ok: 2 };
+
+  // Deaths right after an enemy's cast, from a finished fight's log: one row per caster name and spell, with how often it
+  // was cast and every death in the windowMs after one of those casts (each death once per row, measured from the newest
+  // such cast before it). Rows with the most deaths first; a fight without a cast log has none. When the fight dropped
+  // older log events at its cap (log_dropped) every row is partial: casts counts only the kept casts, and a death after a
+  // dropped cast is not matched.
+  function castDeaths(fight, windowMs) {
+    fight = fight || {};
+    const win = num(windowMs) === null ? CAST_DEATH_MS : windowMs;
+    const partial = (num(fight.log_dropped) || 0) > 0;
+    const rows = [];
+    const byKey = {};
+    (Array.isArray(fight.log) ? fight.log : []).forEach((e) => {
+      if (!e || (e.k !== "cast" && e.k !== "ab") || num(e.t) === null || !e.s) return;
+      const caster = e.n ? String(e.n) : "enemy";
+      const key = caster + "\u0000" + e.s;
+      if (!byKey[key]) { byKey[key] = { caster, spell: String(e.s), casts: 0, partial, times: [], deaths: [] }; rows.push(byKey[key]); }
+      byKey[key].casts++;
+      byKey[key].times.push(e.t);
+    });
+    const deaths = Array.isArray(fight.deaths) ? fight.deaths : [];
+    rows.forEach((r) => {
+      deaths.forEach((d, i) => {
+        if (!d || num(d.t_ms) === null) return;
+        let cast = null;
+        r.times.forEach((t) => { if (t <= d.t_ms && d.t_ms - t <= win && (cast === null || t > cast)) cast = t; });
+        if (cast !== null) r.deaths.push({ i, name: String(d.name || ""), t_ms: d.t_ms, after_ms: d.t_ms - cast });
+      });
+      delete r.times;
+    });
+    return rows.filter((r) => r.deaths.length)
+      .sort((a, b) => (b.deaths.length - a.deaths.length) || (a.caster < b.caster ? -1 : a.caster > b.caster ? 1 : 0)
+        || (a.spell < b.spell ? -1 : a.spell > b.spell ? 1 : 0));
+  }
 
   function checks(fight, layout, warnings, extra) {
     fight = fight || {};
@@ -121,6 +158,22 @@
         death: otherDeaths[0].i,
       });
     }
+
+    // Deaths just after a named enemy cast: the cast that most likely killed them, with how often it was cast.
+    castDeaths(fight).forEach((r) => {
+      out.push({
+        id: "cast_deaths:" + r.caster + ":" + r.spell,
+        lvl: "warn",
+        title: r.deaths.length + " death(s) within " + CAST_DEATH_MS / 1000 + " s of " + r.caster + "'s " + r.spell,
+        num: r.deaths.length + "/" + (r.partial ? "≥" : "") + r.casts,
+        ev: r.deaths.map((d) => d.name + " at " + (d.t_ms / 1000).toFixed(1) + " s (" + (d.after_ms / 1000).toFixed(1)
+          + " s after the cast)").join(" · ") + "; " + r.spell + (r.partial
+          ? " was cast at least " + r.casts + "× (the fight dropped " + fight.log_dropped + " older log events, so earlier casts and the deaths after them are missing)."
+          : " was cast " + r.casts + "× in the fight."),
+        bot: r.deaths[0].name,
+        death: r.deaths[0].i,
+      });
+    });
 
     // Damage taken outside the tanks: a non-tank eating a sixth of it means threat was lost.
     const nonTanks = bots.filter((b) => roleOf(b) !== "tank");
@@ -691,8 +744,8 @@
   }
 
   const api = {
-    LIMITS, TAUNTS, DEBUFF_CHECKS,
-    roleOf, spellCount, fmtInt, mainTank, offTanks, checks, verdict, worstIndex, killerOf, packNumbers,
+    LIMITS, TAUNTS, DEBUFF_CHECKS, CAST_DEATH_MS,
+    roleOf, spellCount, fmtInt, mainTank, offTanks, castDeaths, checks, verdict, worstIndex, killerOf, packNumbers,
     spellForHit, deathRecaps, timeline, raidFrames, roleTables, botPanel, railCards, liveEngaged, liveSummary, liveChecks, liveTables,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightDebug = api;
