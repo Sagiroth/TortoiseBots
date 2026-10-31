@@ -150,14 +150,17 @@ namespace ai
     // otherwise deferred when nothing later in the plan needs it gone (runtime/DungeonRunPolicy.h PullMayBeDeferred,
     // DeferUnreachablePack); with this flag it pauses the run as before. Any other kind with this flag is refused (BadParam).
     constexpr std::uint32_t kPlanFlagNoDefer = 1024;
-    // open_proof only: the proof entry is a creature (alive). The next free bit: 16384 (8192 is kPlanFlagStandPull, a boss only).
+    // open_proof only: the proof entry is a creature (alive). The next free bit: 16384 (8192 is kPlanFlagStandPull, a boss or a pull).
     constexpr std::uint32_t kPlanFlagProofCreature = 2048;
     // boss only: the boss may stand out of the party's reach by design (Stormwrought Ruins' Eldermaw 62661 swims a
     // pool whose bed is the only navmesh, cut off from the shore; specs/sw-eldermaw.md). Where the step would pause on
     // him ALIVE (the instance search finds him away from his spot, or he stands by his spot and the pulls drew no
     // fight), it ends "not cleared" with a note instead. Any other kind with this flag is refused (BadParam).
     constexpr std::uint32_t kPlanFlagSkipUnreachable = 4096;
-    // boss only: pulled from the stand, the move row right before it, once in the tank's shot; no firing stand search; specs/sw-eldermaw.md Spec B.
+    // boss or pull: pulled from the stand, the move row right before it, once in the tank's shot; no firing stand search;
+    // specs/sw-eldermaw.md Spec B. On a pull row (a patrolling pack, specs/rl-patrol-timed-pull.md) also only while no
+    // other patrol stands within `param` yd of the lead bot (0: the run leader's default), and its patrollers are seen
+    // farther out (runtime/DungeonRunPolicy.h PatrolStandPullGate).
     constexpr std::uint32_t kPlanFlagStandPull = 8192;
     constexpr std::uint32_t kPlanEncounterNotStarted = 0;
     constexpr std::uint32_t kPlanEncounterFail = 2;
@@ -451,7 +454,7 @@ namespace ai
             return PlanStepRefusal::BadParam;
         if ((step.flags & kPlanFlagSkipUnreachable) && step.kind != PlanStepKind::Boss)
             return PlanStepRefusal::BadParam;
-        if ((step.flags & kPlanFlagStandPull) && step.kind != PlanStepKind::Boss)
+        if ((step.flags & kPlanFlagStandPull) && step.kind != PlanStepKind::Boss && step.kind != PlanStepKind::Pull)
             return PlanStepRefusal::BadParam;
         if (step.exactLaunch && step.kind != PlanStepKind::MoveDirect)
             return PlanStepRefusal::BadParam;

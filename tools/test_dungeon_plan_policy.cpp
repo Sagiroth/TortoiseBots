@@ -672,7 +672,7 @@ static void TestProofCreatureFlagOnlyOnOpenProof()
     CHECK(NormalizePlanStep(keepPull) == PlanStepRefusal::None);
 }
 
-static void TestStandPullFlagOnlyOnBoss()
+static void TestStandPullFlagOnBossAndPull()
 {
     CHECK(kPlanFlagStandPull == 8192);
     PlanStep boss = Step(0, 30, PlanStepKind::Boss);
@@ -682,7 +682,8 @@ static void TestStandPullFlagOnlyOnBoss()
     PlanStep pull = Step(0, 31, PlanStepKind::Pull);
     pull.entries = {62648};
     pull.flags = kPlanFlagStandPull;
-    CHECK(NormalizePlanStep(pull) == PlanStepRefusal::BadParam);
+    pull.param = 35; // the clearance in yd (specs/rl-patrol-timed-pull.md)
+    CHECK(NormalizePlanStep(pull) == PlanStepRefusal::None && (pull.flags & kPlanFlagStandPull) && pull.param == 35);
     PlanStep move = Step(0, 32, PlanStepKind::Move, 1.0f, 2.0f, 3.0f);
     move.flags = kPlanFlagStandPull;
     CHECK(NormalizePlanStep(move) == PlanStepRefusal::BadParam);
@@ -789,7 +790,7 @@ int main()
     TestOpenProofNormalize();
     TestProofCreatureFlagOnlyOnOpenProof();
     TestPlainOpenUnchanged();
-    TestStandPullFlagOnlyOnBoss();
+    TestStandPullFlagOnBossAndPull();
     TestBossStepsJoinTheirTacticSubjects();
     TestPlanUnits();
     TestKinds();

@@ -639,6 +639,40 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("horizontal > refusedYd", direct)
 
 
+    def test_stand_pull_pull_row_reads_its_patrols(self):
+        # specs/rl-patrol-timed-pull.md: a stand-pull PULL row (DungeonRun::PatrolStandPullGate) gets its patrollers
+        # out to kStandPullSeeYd with sight and formation, and the other patrols near the lead bot, out of combat only.
+        stand = body(COMMANDS, "inline bool StandThisStep(DungeonRunSlot const& slot)", "\n}\n")
+        self.assertIn("(s.kind != ai::PlanStepKind::Boss && s.kind != ai::PlanStepKind::Pull)", stand)
+        read = body(COMMANDS, "void ReadRunFacts(DungeonRunSlot const& slot,", "\n}\n")
+        self.assertIn("bool const standPull = pullStep && StandThisStep(slot) && step == &slot.run.plan->steps[slot.run.step];", read)
+        self.assertIn("float const patrolSeeYd = standPull ? kStandPullSeeYd : kPatrolSeeYd;", read)
+        self.assertIn("step->kind == ai::PlanStepKind::Pull && TortoiseBots::DungeonRun::StandPullPackInShot(f))\n"
+                      "        ReadStandPatrols(lead, f);", read)
+        self.assertLess(read.index("ReadPullStand(slot, lead, f);"), read.index("ReadStandPatrols(lead, f);"))
+        # The pack is its own formations (DungeonRun::ScopeStandPullFacts), scoped on the tick's facts right after the read,
+        # with the corpses of its spawn-owned members.
+        self.assertIn("ReadRunFacts(slot, lead, bots, facts, binding->raid);\n"
+                      "    // A stand-pull pull row: only its own formations' units (DungeonRun::ScopeStandPullFacts).\n"
+                      "    TortoiseBots::DungeonRun::ScopeStandPullFacts(slot.run, facts);", COMMANDS)
+        self.assertIn("for (uint32 low : BossSpawnLowGuids(lead->GetMapId(), entry))", read)
+        self.assertIn("if (member->GetEntry() != entry)\n                                        continue;", read)
+        self.assertIn("f.standPullOwnRead.push_back(spawned.back().first);", read)
+        self.assertIn("f.standPullOwnAlive.push_back(formation);", read)
+        self.assertIn("unit.x = creature->GetPositionX(); // the pull's way (DungeonRun::PatrolStandPullGate)", read)
+        self.assertEqual(read.count("unit.patrols = RunWalksPatrol(creature);"), 2)
+        self.assertIn("bool const spawnOwned = (f.packClearMarginYd > 0.0f || standPull) && SpawnOwned(read, step->radius);", read)
+        self.assertIn("unit.spawnOwned = SpawnOwned(read, step->radius); // the pack's formations (ScopeStandPullFacts)", read)
+        add = read[read.index("auto addPatroller"):read.index("f.patrollers.push_back(unit);")]
+        self.assertIn("if (standPull)\n                {\n                    unit.losLead = lead->IsWithinLOSInMap(creature);\n"
+                      "                    unit.formation = RunFormationOf(creature);", add)
+        patrols = body(COMMANDS, "void ReadStandPatrols(Player* lead, TortoiseBots::DungeonRun::Facts& f)", "\n}\n")
+        self.assertIn("HostileCreaturesAround(lead, std::max(kStandPullClearMaxYd, f.leadShotYd + kStandPullPathClearYd), found);", patrols)
+        self.assertIn("if (!c || !c->IsAlive() || c->IsInCombat() || !RunWalksPatrol(c))", patrols)
+        self.assertIn("f.standPatrols.push_back(u);", patrols)
+        formation = body(COMMANDS, "uint64 RunFormationOf(Creature* creature)", "\n}\n")
+        self.assertIn("return group->GetOriginalLeaderGuid().GetRawValue();", formation)
+
     def test_pull_step_patrollers_reach_the_policy(self):
         # DungeonRun::ClassifyPullRead and WaitForPatroller: the policy decides the radius, the residue band and the
         # movement (a waypoint mover, a follower of one, a spawn-owned unit of any movement); the glue lists what it
@@ -651,7 +685,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("ai::OwnedByLaterStep(*slot.run.plan, slot.run.step, creature->GetEntry(),", add)
         self.assertIn("unit.spawnOwned = spawnOwned;", add)
         self.assertIn("pullStep ? packRange : range", read)
-        self.assertIn("ClassifyPullRead(read, step->radius, f.packClearMarginYd)", read)
+        self.assertIn("ClassifyPullRead(read, step->radius, f.packClearMarginYd, patrolSeeYd)", read)
         self.assertIn("unit.z = creature->GetPositionZ();", add)
         self.assertIn("unit.distSpot = fromPoint;", add)
         # Only living ones: the corpse branch lists none (the policy never sees a dead patroller).
@@ -694,7 +728,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         read = body(COMMANDS, "void ReadRunFacts(DungeonRunSlot const& slot,", "\n}\n")
         self.assertIn("f.pullStand = sPlayerbotAIConfig.dungeonRunPullStand;", read)
         # The step units (pull/boss) and the residue units carry losLead, from the lead bot's own sight test.
-        self.assertIn("if (f.pullStand || StandThisBoss(slot))\n                        unit.losLead = lead->IsWithinLOSInMap(creature);", read)
+        self.assertIn("if (f.pullStand || StandThisStep(slot))\n                        unit.losLead = lead->IsWithinLOSInMap(creature);", read)
         self.assertIn("if (residue)\n                    {\n                        unit.x = creature->GetPositionX();\n"
                       "                        unit.y = creature->GetPositionY();\n"
                       "                        unit.distSpot = read.fromPoint2d;", read)
