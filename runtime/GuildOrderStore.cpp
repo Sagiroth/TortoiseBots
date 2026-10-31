@@ -4,6 +4,7 @@
 #include "GuildOrderGiveUpPolicy.h"
 #include "GuildOrderKeepPolicy.h"
 #include "GuildOrderSourcesPolicy.h"
+#include "GuildOrderSupplyPolicy.h"
 #include "GuildOrderSubOrderPolicy.h"
 #include "../commands/CommandShared.h"
 #include "../host/ModuleLog.h"
@@ -516,6 +517,7 @@ public:
             record.needWhispered = false;
         }
         MarkDirtyLocked(it->second);
+        it->second.supplySearch = SupplySearchStreak{};
     }
 
     void SetNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& items, bool bankDenied)
@@ -645,6 +647,48 @@ public:
         it->second.record.bankEmptyMs = 0;
         MarkDirtyLocked(it->second);
     }
+    void NoteMailEmpty(uint32_t botGuidLow, uint32_t itemId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !itemId)
+            return;
+        it->second.record.mailEmptyItemId = itemId;
+        it->second.record.mailEmptyMs = WorldTimer::getMSTime();
+        MarkDirtyLocked(it->second);
+    }
+
+    void ClearMailEmpty(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !it->second.record.mailEmptyItemId)
+            return;
+        it->second.record.mailEmptyItemId = 0;
+        it->second.record.mailEmptyMs = 0;
+        MarkDirtyLocked(it->second);
+    }
+
+    // Consecutive empty service-leg searches for the current leg. A leg or
+    // item change restarts it; the caller advances the ladder at the limit.
+    uint32_t NoteSupplySearchFailed(uint32_t botGuidLow, SupplyStep step, uint32_t itemId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || it->second.record.state != OrderState::Working ||
+            it->second.record.supplyStep != step || !itemId)
+            return 0;
+        // The caller keys the streak on the leg's item: the mail item for
+        // Bags (the supply item, or the order item when the leg collects
+        // it), the supply item otherwise. Any other change restarts it.
+        uint32_t legItem = (step == SupplyStep::Bags && !it->second.record.supplyItemId) ?
+            it->second.record.itemId : it->second.record.supplyItemId;
+        if (legItem != itemId)
+            return 0;
+        it->second.supplySearch = NextSupplySearchStreak(it->second.supplySearch, step, itemId);
+        MarkDirtyLocked(it->second);
+        return it->second.supplySearch.fails;
+    }
 
     void NoteSupplyProgress(uint32_t botGuidLow)
     {
@@ -753,9 +797,10 @@ public:
         auto it = m_orders.find(botGuidLow);
         if (it == m_orders.end())
             return;
-        if (it->second.record.searchFailsInZone == 0)
+        if (it->second.record.searchFailsInZone == 0 && it->second.supplySearch.fails == 0)
             return;
         it->second.record.searchFailsInZone = 0;
+        it->second.supplySearch = SupplySearchStreak{};
         MarkDirtyLocked(it->second);
     }
 
@@ -1275,6 +1320,7 @@ private:
         uint32_t lastFarmItemId = 0;
         uint32_t lastFarmCount = 0;
         bool zoneMovePending = false; // NoteDeath moved zone off the world thread: expire the target next Tick
+        SupplySearchStreak supplySearch; // empty service-leg searches for the current leg
         bool sawOnline = false;
         bool reportSeen = false;
         OrderState reportState = OrderState::Working;
@@ -1854,6 +1900,20 @@ void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId)
 void ClearBankEmpty(uint32_t botGuidLow)
 {
     OrderStore::Instance().ClearBankEmpty(botGuidLow);
+}
+void NoteMailEmpty(uint32_t botGuidLow, uint32_t itemId)
+{
+    OrderStore::Instance().NoteMailEmpty(botGuidLow, itemId);
+}
+
+void ClearMailEmpty(uint32_t botGuidLow)
+{
+    OrderStore::Instance().ClearMailEmpty(botGuidLow);
+}
+
+uint32_t NoteSupplySearchFailed(uint32_t botGuidLow, SupplyStep step, uint32_t itemId)
+{
+    return OrderStore::Instance().NoteSupplySearchFailed(botGuidLow, step, itemId);
 }
 
 void StartKeepWatch(uint32_t botGuidLow)

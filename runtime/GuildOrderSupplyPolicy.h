@@ -31,6 +31,36 @@ inline SupplyStep NextSupplyStep(SupplyOptions const& options)
         return SupplyStep::Sub;
     return SupplyStep::Need;
 }
+// The mailbox leg walks for the supply item (a reagent bought at the AH),
+// not the order item: one source for the travel branch, the take-mail
+// action and the travel-target expiry, so they never disagree on what waits.
+inline uint32_t SupplyMailItemId(SupplyStep step, uint32_t supplyItemId, uint32_t orderItemId)
+{
+    return (step == SupplyStep::Bags && supplyItemId) ? supplyItemId : orderItemId;
+}
+
+// Consecutive empty or rejected travel searches for one supply leg. A new
+// leg (or item) restarts the count; a landed search clears it in the store.
+struct SupplySearchStreak
+{
+    SupplyStep step = SupplyStep::None;
+    uint32_t itemId = 0;
+    uint32_t fails = 0;
+};
+
+inline SupplySearchStreak NextSupplySearchStreak(SupplySearchStreak current, SupplyStep step,
+    uint32_t itemId)
+{
+    if (step == current.step && itemId == current.itemId)
+    {
+        ++current.fails;
+        return current;
+    }
+    current.step = step;
+    current.itemId = itemId;
+    current.fails = 1;
+    return current;
+}
 
 inline uint32_t GuildGoldCapRemaining(uint32_t cap, bool hasCap, uint32_t withdrawn)
 {

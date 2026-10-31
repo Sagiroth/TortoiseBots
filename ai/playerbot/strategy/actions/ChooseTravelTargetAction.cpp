@@ -29,6 +29,8 @@
 #include "runtime/GuildOrderFishingPolicy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "playerbot/GuildOrderCraft.h"
+#include "GuildOrderBuyAction.h"
+#include "runtime/GuildOrderSupplyPolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "runtime/GuildOrderStore.h"
 #include "playerbot/RandomBotFacade.h"
@@ -135,6 +137,81 @@ static bool IsGuildOrderTravelCondition(std::string const& condition)
 static bool IsGuildOrderTravelName(std::string const& name)
 {
     return name == "guild order" || name == "order focus" || name == "order vendor";
+}
+// An order-leg search came back empty or fully rejected: count it and move
+// the ladder down once the streak hits the farm-zone limit, so no service
+// leg (mailbox, bank, auctioneer, vendor) parks the order forever. Returns
+// true when the leg changed and the new leg must travel at once. The farm
+// leg keeps its zone move; focus has no ladder exit and only parks.
+static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const& purposeKey)
+{
+    using namespace TortoiseBots::GuildOrders;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
+    if (!record || record->state != OrderState::Working)
+        return false;
+    std::string const detail =
+        AI_VALUE2(std::string, "manual string", "future travel detail");
+    bool const bankerSearch = purposeKey == "guild order" && detail == "guild banker";
+    if (bankerSearch)
+        // The banker search offered nothing usable: after repeated empty
+        // searches the delivery walks to a mailbox instead.
+        SET_AI_VALUE2(int32, "manual int", "guild order no banker",
+            AI_VALUE2(int32, "manual int", "guild order no banker") + 1);
+    if (purposeKey == "order focus")
+        return false;
+    auto atLimit = [&](SupplyStep step, uint32_t itemId)
+    {
+        return SearchFailsMoveZone(NoteSupplySearchFailed(bot->GetGUIDLow(), step, itemId));
+    };
+    if (record->supplyStep == SupplyStep::Bank && bankerSearch)
+    {
+        if (!atLimit(SupplyStep::Bank, record->supplyItemId))
+            return false;
+        NoteBankEmpty(bot->GetGUIDLow(), record->supplyItemId);
+        SetSupply(bot->GetGUIDLow(), SupplyStep::AuctionHouse,
+            record->supplyItemId, record->supplyCount, SupplyStep::Farm,
+            OrderReason::BankDenied);
+        return true;
+    }
+    if (record->supplyStep == SupplyStep::AuctionHouse && purposeKey == "guild order" &&
+        !bankerSearch)
+    {
+        if (!atLimit(SupplyStep::AuctionHouse, record->supplyItemId))
+            return false;
+        AdvanceGuildOrderAfterAuction(ai, bot, *record);
+        return true;
+    }
+    if (record->supplyStep == SupplyStep::Bags && purposeKey == "guild order" && !bankerSearch)
+    {
+        uint32_t mailItemId = SupplyMailItemId(record->supplyStep, record->supplyItemId,
+            record->itemId);
+        if (!mailItemId || !OrderMailboxItems(bot, mailItemId))
+            return false;
+        if (!atLimit(SupplyStep::Bags, mailItemId))
+            return false;
+        NoteMailEmpty(bot->GetGUIDLow(), mailItemId);
+        SupplyStep next = record->supplyReturnStep;
+        SetSupply(bot->GetGUIDLow(), next, next == SupplyStep::None ? 0 : mailItemId, 0,
+            SupplyStep::None, record->reason);
+        return true;
+    }
+    if (record->supplyStep == SupplyStep::Farm && purposeKey == "order vendor")
+    {
+        if (!record->supplyItemId || !atLimit(SupplyStep::Farm, record->supplyItemId))
+            return false;
+        SetSupply(bot->GetGUIDLow(), SupplyStep::Farm, record->supplyItemId,
+            record->supplyCount, SupplyStep::None, OrderReason::NoSource);
+        return true;
+    }
+    if (record->supplyStep == SupplyStep::Farm && purposeKey == "guild order" && !bankerSearch)
+    {
+        // Three consecutive rejected or empty searches in one zone move the
+        // order to the next plan zone, so a bad zone costs about a minute,
+        // not the hour the death rules would take.
+        NoteSearchFailed(bot->GetGUIDLow(), record->farmZoneId);
+    }
+    return false;
 }
 
 static bool HasGuildOrderBankSupply(uint32_t botGuidLow)
@@ -593,37 +670,13 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         bool const orderLeg = IsGuildOrderTravelName(purposeKey);
         if (orderLeg)
         {
-            uint32_t orderZoneForSearch = 0;
-            if (std::optional<TortoiseBots::GuildOrders::OrderRecord> orderRecord =
-                TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
-                orderZoneForSearch = orderRecord->farmZoneId;
-            TortoiseBots::GuildOrders::NoteSearchFailed(bot->GetGUIDLow(), orderZoneForSearch);
-            bool orderLegSwitched = false;
-            if (purposeKey == "guild order" &&
-                AI_VALUE2(std::string, "manual string", "future travel detail") == "guild banker")
-            {
-                if (std::optional<TortoiseBots::GuildOrders::OrderRecord> orderRecord =
-                    TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
-                    if (orderRecord->state == TortoiseBots::GuildOrders::OrderState::Working &&
-                        orderRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Bank)
-                    {
-                        TortoiseBots::GuildOrders::SetSupply(bot->GetGUIDLow(),
-                            TortoiseBots::GuildOrders::SupplyStep::AuctionHouse,
-                            orderRecord->supplyItemId, orderRecord->supplyCount,
-                            TortoiseBots::GuildOrders::SupplyStep::Farm,
-                            TortoiseBots::GuildOrders::OrderReason::BankDenied);
-                        orderLegSwitched = true;
-                    }
-                // The banker search offered nothing usable: after repeated
-                // empty searches the delivery walks to a mailbox instead.
-                SET_AI_VALUE2(int32, "manual int", "guild order no banker",
-                    AI_VALUE2(int32, "manual int", "guild order no banker") + 1);
-            }
+            bool orderLegSwitched = OrderLegSearchEmpty(ai, bot, purposeKey);
             if (orderLegSwitched)
             {
-                // The order moved to a new leg (AH): parking "guild order"
-                // would idle the bot for the park window on a leg that was
-                // never searched. The new leg travels on the next tick.
+                // The order moved to a new leg (bank, AH, farm, sub, need):
+                // parking "guild order" would idle the bot for the park
+                // window on a leg that was never searched. The new leg
+                // travels on the next tick.
                 SET_AI_VALUE2(time_t, "manual time", ai::RpgMixerUntilKey(), time_t(0));
                 return false;
             }
@@ -2541,8 +2594,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         // A buy whose auction visit is still open keeps buying first while
         // an auctioneer is in reach, one listing per tick.
         bool mailboxLeg = false;
-        uint32_t mailItemId = mailRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Bags &&
-            mailRecord->supplyItemId ? mailRecord->supplyItemId : order.itemId;
+        uint32_t mailItemId = TortoiseBots::GuildOrders::SupplyMailItemId(
+            mailRecord->supplyStep, mailRecord->supplyItemId, order.itemId);
         if (mailRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Bags &&
             OrderMailboxItems(bot, mailItemId) > 0)
         {

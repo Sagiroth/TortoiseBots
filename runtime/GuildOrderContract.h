@@ -239,6 +239,8 @@ struct OrderRecord
     std::vector<NeedItem> supplyGains; // order-caused inflow per item (bank, AH, mail, vendor, farm)
     uint32_t bankEmptyItemId = 0; // item the bank had none of (skip until the cooldown)
     uint32_t bankEmptyMs = 0; // when the empty visit happened, in server uptime ms
+    uint32_t mailEmptyItemId = 0; // item with no reachable mailbox (skip until the cooldown)
+    uint32_t mailEmptyMs = 0; // when the failed mailbox searches happened, in server uptime ms
     SupplyStep supplyStep = SupplyStep::None;
     SupplyStep supplyReturnStep = SupplyStep::None;
     uint32_t supplyItemId = 0;

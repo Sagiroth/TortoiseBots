@@ -28,6 +28,8 @@ using TortoiseBots::GuildOrders::OrderReason;
 using TortoiseBots::GuildOrders::OrderType;
 using TortoiseBots::GuildOrders::SupplyOptions;
 using TortoiseBots::GuildOrders::SupplyStep;
+using TortoiseBots::GuildOrders::MailLegSkipped;
+using TortoiseBots::GuildOrders::SupplyMailItemId;
 
 struct SupplyCandidate
 {
@@ -74,7 +76,7 @@ void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint3
 }
 
 bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t count,
-    std::vector<uint32_t>& path, uint32_t depth, SupplyCandidate& out)
+    std::vector<uint32_t>& path, uint32_t depth, SupplyCandidate& out, OrderRecord const* order = nullptr)
 {
     if (!ai || !bot || !itemId || !count)
         return false;
@@ -107,7 +109,12 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
         uint32_t reagentId = uint32_t(spell->Reagent[i]);
         uint32_t required = spell->ReagentCount[i] * casts;
         uint32_t inBags = ai->GetInventoryItemsCountWithId(reagentId);
+        // A mailbox no search could reach is not a source: the ladder treats
+        // the reagent as bag-only and moves down instead of queueing mail.
         uint32_t inMail = ai::OrderMailboxItems(bot, reagentId);
+        if (order && MailLegSkipped(reagentId, order->mailEmptyItemId, WorldTimer::getMSTime(),
+            order->mailEmptyMs))
+            inMail = 0;
         if (inMail && inBags < required)
         {
             path.pop_back();
@@ -118,7 +125,8 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
         if (owned >= required)
             continue;
         SupplyCandidate nested;
-        if (FindSupplyCandidate(ai, bot, reagentId, required - owned, path, depth + 1, nested) && !nested.craft)
+        if (FindSupplyCandidate(ai, bot, reagentId, required - owned, path, depth + 1, nested, order) &&
+            !nested.craft)
             missingAll.push_back(NeedItem{ nested.itemId, nested.count });
     }
     path.pop_back();
@@ -233,7 +241,8 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
     {
         uint32_t have = order.delivered + carried + mailed;
         uint32_t missing = have >= order.amount ? 0 : order.amount - have;
-        if (mailed && order.delivered + carried < order.amount)
+        if (mailed && order.delivered + carried < order.amount &&
+            !MailLegSkipped(order.itemId, order.mailEmptyItemId, WorldTimer::getMSTime(), order.mailEmptyMs))
         {
             SupplyCandidate candidate{ order.itemId, missing, false, true };
             SupplyStep afterMail = MailReturnStep(bot, order, candidate);
@@ -250,7 +259,8 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
             return;
         }
         SupplyCandidate candidate{ order.itemId, missing, false };
-        if (mailed)
+        if (mailed && !MailLegSkipped(order.itemId, order.mailEmptyItemId, WorldTimer::getMSTime(),
+            order.mailEmptyMs))
         {
             SupplyStep afterMail = MailReturnStep(bot, order, candidate);
             if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != order.itemId)
@@ -277,7 +287,8 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
 
     uint32_t outputHave = order.delivered + carried + mailed;
     uint32_t outputMissing = outputHave >= order.amount ? 0 : order.amount - outputHave;
-    if (mailed && order.delivered + carried < order.amount)
+    if (mailed && order.delivered + carried < order.amount &&
+        !MailLegSkipped(order.itemId, order.mailEmptyItemId, WorldTimer::getMSTime(), order.mailEmptyMs))
     {
         SupplyCandidate candidate{ order.itemId, outputMissing, false, true };
         SupplyStep afterMail = MailReturnStep(bot, order, candidate);
@@ -288,7 +299,9 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
     }
     if (!outputMissing)
     {
-        if (mailed && order.delivered + carried < order.amount)
+        if (mailed && order.delivered + carried < order.amount &&
+            !MailLegSkipped(order.itemId, order.mailEmptyItemId, WorldTimer::getMSTime(),
+                order.mailEmptyMs))
             TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
                 order.itemId, 0, SupplyStep::None, order.reason);
         else if (order.delivered + carried >= order.amount)
@@ -299,7 +312,7 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
 
     SupplyCandidate candidate;
     std::vector<uint32_t> path;
-    if (!FindSupplyCandidate(ai, bot, order.itemId, outputMissing, path, 0, candidate))
+    if (!FindSupplyCandidate(ai, bot, order.itemId, outputMissing, path, 0, candidate, &order))
     {
         TortoiseBots::GuildOrders::SetState(order.botGuidLow,
             TortoiseBots::GuildOrders::OrderState::Cant, OrderReason::NoRecipe);
@@ -310,7 +323,9 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
         SetSupplyStage(ai, bot, order, candidate, SupplyStep::Craft);
         return;
     }
-    if (ai::OrderMailboxItems(bot, candidate.itemId) > 0)
+    if (ai::OrderMailboxItems(bot, candidate.itemId) > 0 &&
+        !MailLegSkipped(candidate.itemId, order.mailEmptyItemId, WorldTimer::getMSTime(),
+            order.mailEmptyMs))
     {
         SupplyStep afterMail = MailReturnStep(bot, order, candidate);
         if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != candidate.itemId)
