@@ -768,11 +768,22 @@ CORE_DIR = Path(os.environ.get("TORTOISE_CORE_DIR", Path.home() / "tortoise-wow"
 CORE_SPELL_SQL = CORE_DIR / "sql" / "base" / "tw_world_spell_template.sql"
 
 SPELL_SOURCE_COLUMNS = {
-    "entry", "attributes", "preventionType", "interruptFlags", "castingTimeIndex",
+    "entry", "attributes", "attributesEx", "preventionType", "interruptFlags",
+    "channelInterruptFlags", "castingTimeIndex",
     "effect1", "effect2", "effect3",
     "effectApplyAuraName1", "effectApplyAuraName2", "effectApplyAuraName3",
 }
-SPELL_MOD_COLUMNS = {"Id", "Attributes", "CastingTimeIndex", "InterruptFlags"}
+SPELL_MOD_COLUMNS = {
+    "Id", "Attributes", "AttributesEx", "CastingTimeIndex", "InterruptFlags",
+    "ChannelInterruptFlags",
+}
+
+# SpellDefines.h: SPELL_PREVENTION_TYPE_SILENCE (130), SPELL_INTERRUPT_FLAG_DAMAGE
+# (439), CHANNEL_FLAG_INTERRUPT (449), SPELL_ATTR_EX_CHANNELED_1/_2 (767, 771).
+SPELL_PREVENTION_TYPE_SILENCE = 1
+SPELL_INTERRUPT_FLAG_DAMAGE = 0x02
+CHANNEL_FLAG_INTERRUPT = 0x04
+SPELL_ATTR_EX_CHANNELED = 0x04 | 0x40
 
 # The core's SpellEntry::IsEffectAppliesAura set (6, 35, 119, 128, 129, 132, 133,
 # 134) plus PERSISTENT_AREA_AURA 27, which boss_data.py's ground check already
@@ -792,12 +803,12 @@ EXPECTED_SOURCE_PROBLEMS = {
     ("shape-instant", 24839): "Acid Breath, an instant target-24 cone",
     ("shape-instant", 25814): "AQ40 Wide Slash, an instant target-24 cone",
     ("shape-instant", 26029): "AQ40 Dark Glare, an instant 15 degree cone",
-    # Zul'Gurub rows marked nokick although preventionType/InterruptFlags look
-    # kickable: both are instant channels (castingTimeIndex 1), so the core's
-    # generic-cast branch never sees a cast, but their channel flags may still
-    # let a kick through. Pre-existing ZG data, worth a separate fix.
-    ("nokick-kickable", 23953): "Jeklik Mind Flay, instant channel",
-    ("nokick-kickable", 24300): "Mar'li Drain Life, instant channel",
+    # Zul'Gurub rows marked nokick although the core's channel branch can stop
+    # them: both are channels (attributesEx 0x4004) with CHANNEL_FLAG_INTERRUPT
+    # (0x04) set (0x7c2c, 0x100c), so a kick ends the channel. The row, not the
+    # check, is wrong. Pre-existing ZG data, worth a separate fix.
+    ("nokick-kickable", 23953): "Jeklik Mind Flay, an interruptible channel",
+    ("nokick-kickable", 24300): "Mar'li Drain Life, an interruptible channel",
     # Jeklik's self Great Heal is cast on himself but applies no aura: the
     # `self` flag overstates it. Pre-existing ZG data.
     ("self-no-aura", 23954): "Jeklik Great Heal heals himself, no aura",
@@ -950,8 +961,10 @@ def _read_spells(core=CORE_DIR):
             if spell is None:
                 continue
             for column, field in (("Attributes", "attributes"),
+                                  ("AttributesEx", "attributesEx"),
                                   ("CastingTimeIndex", "castingTimeIndex"),
-                                  ("InterruptFlags", "interruptFlags")):
+                                  ("InterruptFlags", "interruptFlags"),
+                                  ("ChannelInterruptFlags", "channelInterruptFlags")):
                 value = row.get(column, -1)
                 if value != -1:
                     spell[field] = value
@@ -970,6 +983,25 @@ def _applies_aura(spell):
         and spell.get("effectApplyAuraName%d" % index)
         for index in (1, 2, 3)
     )
+
+
+def _kickable(spell):
+    """Spell::EffectInterruptCast: the prevention type gates both slots, and a
+    channel is stopped by its channel flags, not by InterruptFlags."""
+    if spell["preventionType"] != SPELL_PREVENTION_TYPE_SILENCE:
+        return False
+    if spell["attributesEx"] & SPELL_ATTR_EX_CHANNELED:
+        return bool(spell["channelInterruptFlags"] & CHANNEL_FLAG_INTERRUPT)
+    return bool(spell["interruptFlags"] & SPELL_INTERRUPT_FLAG_DAMAGE)
+
+
+def _interrupt_data(spell):
+    if spell["attributesEx"] & SPELL_ATTR_EX_CHANNELED:
+        return ("channeled (attributesEx 0x%x), preventionType %s, channelInterruptFlags 0x%x"
+                % (spell["attributesEx"], spell["preventionType"],
+                   spell["channelInterruptFlags"]))
+    return ("generic, preventionType %s, interruptFlags 0x%x"
+            % (spell["preventionType"], spell["interruptFlags"]))
 
 
 def source_spell_problems(rows, spells, shape_ids):
@@ -999,16 +1031,14 @@ def source_spell_problems(rows, spells, shape_ids):
         if spell is None:
             add("ability-missing", spell_id, where, "no spell_template row")
             continue
-        kickable = spell["preventionType"] == 1 and spell["interruptFlags"] & 0x02
+        kickable = _kickable(spell)
         nokick = flags["okNeeds"].get("interrupt") == "nokick"
         if flags["int"] and not nokick and not kickable:
             add("int-not-kickable", spell_id, where,
-                "preventionType %s, interruptFlags 0x%x; the core's kick cannot stop it"
-                % (spell["preventionType"], spell["interruptFlags"]))
+                "%s; the core's kick cannot stop it" % _interrupt_data(spell))
         if nokick and kickable:
             add("nokick-kickable", spell_id, where,
-                "preventionType %s, interruptFlags 0x%x; the core's kick can stop it"
-                % (spell["preventionType"], spell["interruptFlags"]))
+                "%s; the core's kick can stop it" % _interrupt_data(spell))
         if flags["self"] and not _applies_aura(spell):
             add("self-no-aura", spell_id, where,
                 "effects %s/%s/%s apply no aura"
@@ -1022,6 +1052,41 @@ def source_spell_problems(rows, spells, shape_ids):
             add("shape-instant", spell_id, where,
                 "castingTimeIndex %s, the spell is instant" % spell["castingTimeIndex"])
     return sorted(problems, key=lambda p: (p["check"], p["spell"], p["where"]))
+
+
+def _interrupt_fixture(prevention=SPELL_PREVENTION_TYPE_SILENCE, interrupt=0,
+                       channel=0, attributes_ex=0):
+    return {
+        "preventionType": prevention,
+        "interruptFlags": interrupt,
+        "channelInterruptFlags": channel,
+        "attributesEx": attributes_ex,
+    }
+
+
+class InterruptRuleTest(unittest.TestCase):
+    """Spell::EffectInterruptCast (SpellEffects.cpp:3408-3412) branch by slot."""
+
+    def test_a_generic_cast_with_the_damage_flag_is_kickable(self):
+        self.assertTrue(_kickable(_interrupt_fixture(interrupt=SPELL_INTERRUPT_FLAG_DAMAGE)))
+
+    def test_a_generic_cast_without_the_damage_flag_is_not_kickable(self):
+        self.assertFalse(_kickable(_interrupt_fixture(interrupt=0x0d)))
+
+    def test_a_channel_is_kickable_by_its_channel_flags(self):
+        spell = _interrupt_fixture(interrupt=0x0d, channel=CHANNEL_FLAG_INTERRUPT,
+                                   attributes_ex=SPELL_ATTR_EX_CHANNELED)
+        self.assertTrue(_kickable(spell))
+
+    def test_a_channel_ignores_interrupt_flags(self):
+        spell = _interrupt_fixture(interrupt=SPELL_INTERRUPT_FLAG_DAMAGE,
+                                   attributes_ex=SPELL_ATTR_EX_CHANNELED)
+        self.assertFalse(_kickable(spell))
+
+    def test_the_prevention_type_gates_the_channel_branch_too(self):
+        spell = _interrupt_fixture(prevention=2, channel=CHANNEL_FLAG_INTERRUPT,
+                                   attributes_ex=SPELL_ATTR_EX_CHANNELED)
+        self.assertFalse(_kickable(spell))
 
 
 @unittest.skipUnless(
@@ -1100,6 +1165,17 @@ class BossSpellSourceTest(unittest.TestCase):
         self.assertIn(("self-no-aura", 26616), broken_keys())
         boulder["d"] = boulder_flags
         self.assertNotIn(("self-no-aura", 26616), broken_keys())
+
+        # e: Great Heal `int` while the spell becomes a channel with no channel
+        # interrupt flag: the core's channel branch cannot stop it.
+        heal = spells[25807]
+        heal_flags = dict(heal)
+        heal["attributesEx"] = SPELL_ATTR_EX_CHANNELED
+        heal["channelInterruptFlags"] = 0
+        self.assertIn(("int-not-kickable", 25807), broken_keys())
+        heal.clear()
+        heal.update(heal_flags)
+        self.assertNotIn(("int-not-kickable", 25807), broken_keys())
 
 
 if __name__ == "__main__":
