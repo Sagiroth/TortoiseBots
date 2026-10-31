@@ -1754,13 +1754,19 @@ bool SubOrderCandidateUsable(Player* bot, uint32_t itemId, bool& canMake, bool& 
     canFarm = false;
     if (!bot || !bot->IsInWorld() || !itemId)
         return false;
-    if (FindCraftSpellFor(bot, itemId))
+    SourcePlan plan = ai::PlanGuildOrderSources(bot, itemId, OrderType::Farm);
+    bool const farmable = plan.verdict == OrderReason::None && !plan.zones.empty();
+    // A raw material the bot gathers itself (skin, herb, ore, fish) is
+    // farmed, not crafted: the recipe chain under it (Thick Leather from
+    // Heavy from Medium from scraps) multiplies into hundreds of reagents.
+    bool const gathered = farmable &&
+        (plan.sources & (SourceSkin | SourceHerb | SourceOre | SourceFish)) != 0;
+    if (!gathered && FindCraftSpellFor(bot, itemId))
     {
         canMake = true;
         return true;
     }
-    SourcePlan plan = ai::PlanGuildOrderSources(bot, itemId, OrderType::Farm);
-    canFarm = plan.verdict == OrderReason::None && !plan.zones.empty();
+    canFarm = farmable;
     return canFarm;
 }
 
