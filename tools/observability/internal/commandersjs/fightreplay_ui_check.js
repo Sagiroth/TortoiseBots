@@ -28,7 +28,7 @@ function grabConst(name) {
 
 const ctx = { console };
 vm.createContext(ctx);
-["commanders.js", "fightdebug.js", "fightreplay.js", "aggrolanes.js"].forEach((f) => {
+["commanders.js", "fightdebug.js", "fightreplay.js", "aggrolanes.js", "bosspanel.js"].forEach((f) => {
   vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f });
 });
 assert.ok(ctx.CmdView && typeof ctx.CmdView.project === "function", "commanders.js loads as CmdView");
@@ -36,7 +36,7 @@ assert.ok(ctx.FightReplay && typeof ctx.FightReplay.botsAt === "function", "figh
 assert.ok(ctx.AggroLanes && typeof ctx.AggroLanes.lanes === "function", "aggrolanes.js loads as AggroLanes");
 vm.runInContext([grab("esc"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grabConst("cmdPt"), grab("cmdPlanSvg"),
   grab("cmdFloors"), grab("cmdFloorZs"), grabConst("CMD_FLOOR_GAP_YD"), grabConst("FD_REPLAY_OFF"), grab("fdPlayHtml"),
-  grab("fdLanesHtml"), grab("fdReplayBind")].join("\n"), ctx);
+  grab("fdLanesHtml"), grab("cmdBossTable"), grab("fdReplayBind")].join("\n"), ctx);
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const f = (n) => n.toFixed(2);
@@ -80,6 +80,27 @@ const evilLane = JSON.parse(JSON.stringify(lanesRes));
 evilLane.lanes[0].label = '<img src=x onerror=alert(1)>"&';
 const evilOut = ctx.fdLanesHtml(evilLane, 10000);
 assert.ok(!/<img/.test(evilOut), "a lane label is escaped");
+
+// ---- the boss lane: the rank the table gives on the fight's map, not the mob's raw rk ----------------------------------------
+// A rank-3 add the table lists on the fight's map is drawn as an elite everywhere else, so it is not the boss lane's tie-break.
+const bossDoc = { maps: [{ key: "mc", mapId: 409 }, { key: "tmh", mapId: 819 }], bosses: [
+  { entry: 57642, name: "Sorcerer-Thane Thaurissan", map: "mc",
+    adds: [{ entry: 57643, name: "Image of Sorcerer-Thane Thaurissan", role: "summon" }] },
+] };
+const imgFrame = (mapId) => ({ t: 1000, map: mapId, step: 0, fight: true, bots: [],
+  mobs: [{ id: "img", e: 57643, x: 0, y: 0, hp: 90, v: 1, rk: "b" }] });
+const imgLanes = (mapId) => ({ commander: "G", frames: [imgFrame(mapId)] });
+ctx.bossDoc = bossDoc;
+ctx.imgDocMc = imgLanes(409); ctx.imgDocTmh = imgLanes(819);
+ctx.imgFightMc = { start: 1000, dur_ms: 2000, map: 409, bots: fight.bots };
+ctx.imgFightTmh = { start: 1000, dur_ms: 2000, map: 819, bots: fight.bots };
+const realBossData = ctx.BossPanel.data;
+ctx.BossPanel.data = () => ctx.BossPanel.normalize(bossDoc);
+const imgMc = run("AggroLanes.lanes(imgDocMc, imgFightMc, [])");
+const imgTmh = run("AggroLanes.lanes(imgDocTmh, imgFightTmh, [])");
+ctx.BossPanel.data = realBossData;
+assert.strictEqual(imgMc.lanes[0].boss, false, "the Image is an add on Molten Core, not the boss lane");
+assert.strictEqual(imgTmh.lanes[0].boss, true, "the same report on another map keeps its raw boss rank");
 
 // ---- the replayed binding: the walk 2 report replaced by the kept positions at one moment -----------------------------------
 const bind = walking.commanders[0];

@@ -140,6 +140,28 @@ assert.strictEqual(links.find((l) => l.from.id === "7").to.id, "5", "the data's 
 assert.strictEqual(links.find((l) => l.from.id === "8").to.id, "5", "the summoner guid links an unknown add by itself");
 assert.strictEqual(links.find((l) => l.from.id === "7").priority, 0);
 
+// ---- rank: a boss-rank unit the table lists only as an add of a boss on the same map draws as an elite ------------
+const RDOC = {
+  maps: [{ key: "mc", mapId: 409, bosses: [57642] }, { key: "tmh", mapId: 819, bosses: [62936, 62937] }],
+  bosses: [
+    { entry: 57642, name: "Sorcerer-Thane Thaurissan", map: "mc", adds: [{ entry: 57643, name: "Image of Sorcerer-Thane Thaurissan", role: "summon" }] },
+    { entry: 62936, name: "Rotgrowl", map: "tmh", adds: [{ entry: 62937, name: "Kodiak", role: "summon" }] },
+    { entry: 62937, name: "Kodiak", map: "tmh", abilities: [{ spell: 1, name: "Swipe" }] },
+  ],
+};
+const R = B.normalize(RDOC);
+assert.strictEqual(B.rankFor(R, 409, { entry: 57643, rank: "b" }), "e", "an add of a boss on this map is an elite");
+assert.strictEqual(B.rankFor(R, 819, { entry: 62937, rank: "b" }), "b", "a table boss stays a boss even as another's add");
+assert.strictEqual(B.rankFor(R, 819, { entry: 57643, rank: "b" }), "b", "an add listed on another map keeps its rank");
+assert.strictEqual(B.rankFor(R, 409, { entry: 99999, rank: "b" }), "b", "an entry the table does not know keeps the boss rank");
+assert.strictEqual(B.rankFor(R, 409, { entry: 57643, rank: "e" }), "e");
+assert.strictEqual(B.rankFor(null, 409, { entry: 57643, rank: "b" }), "b");
+assert.strictEqual(B.rankFor(R, null, { entry: 57643, rank: "b" }), "b");
+assert.strictEqual(B.rankFor(R, 409, null), "");
+const mc = R.bosses.find((b) => b.entry === 57642);
+assert.strictEqual(mc.mapId, 409, "the document's maps resolve a boss's map slug to its id");
+assert.strictEqual(mc.map, null, "the slug stays the map field the sort reads");
+
 // ---- marked: from a mark flag in the table, never a spell id in the page --------------------------------------
 const markTable = B.normalize({ bosses: [{ entry: 1, abilities: [{ spell: 24314, name: "Threatening Gaze", flags: "aura;mark" }] }] });
 assert.deepStrictEqual(B.markIds(markTable), { 24314: "Threatening Gaze" });

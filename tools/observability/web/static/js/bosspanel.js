@@ -150,11 +150,24 @@
       else rows = Object.keys(data).map((k) => (data[k] && typeof data[k] === "object" && num(data[k].entry) === null ? Object.assign({ entry: k }, data[k]) : data[k]));
     }
     const bosses = rows.map(boss).filter(Boolean).sort((a, b) => (a.map || 0) - (b.map || 0) || (a.order - b.order) || a.entry - b.entry);
+    // The document's maps name each map once; a boss row carries the slug, the map the report sends is the number.
+    const mapIdByKey = {};
+    if (data && typeof data === "object" && Array.isArray(data.maps)) {
+      data.maps.forEach((m) => { if (m && m.key != null && num(m.mapId) !== null) mapIdByKey[str(m.key)] = num(m.mapId); });
+    }
+    bosses.forEach((b) => {
+      b.mapId = typeof b.map === "number" ? b.map : (b.mapKey && mapIdByKey[b.mapKey] != null ? mapIdByKey[b.mapKey] : null);
+    });
     const byEntry = {};
     bosses.forEach((b) => { if (!byEntry[b.entry]) byEntry[b.entry] = b; });
     const bySpell = {};
     bosses.forEach((b) => b.abilities.forEach((a, i) => { if (!(a.sid in bySpell)) bySpell[a.sid] = { boss: b, ability: a, index: i }; }));
-    return { bosses: bosses, byEntry: byEntry, bySpell: bySpell };
+    const addsByMap = {};
+    bosses.forEach((b) => b.adds.forEach((a) => {
+      if (b.mapId === null) return;
+      (addsByMap[b.mapId] || (addsByMap[b.mapId] = {}))[a.entry] = true;
+    }));
+    return { bosses: bosses, byEntry: byEntry, bySpell: bySpell, addsByMap: addsByMap };
   }
 
   let cache = null, loading = null, loaded = null, rawDoc = null;
@@ -178,6 +191,16 @@
     if (!t) return null;
     const e = num(entry);
     return e === null ? null : t.byEntry[e] || null;
+  }
+  // The rank the map should draw: a boss-rank (b) unit the table lists only as an add of a boss on this map is an elite.
+  function rankFor(table, mapId, mob) {
+    if (!mob) return "";
+    if (mob.rank !== "b" || !table) return mob.rank;
+    const mid = num(mapId), entry = num(mob.entry);
+    if (mid === null || entry === null) return mob.rank;
+    const adds = table.addsByMap && table.addsByMap[mid];
+    if (!adds || !adds[entry]) return mob.rank;
+    return table.byEntry && table.byEntry[entry] ? mob.rank : "e";
   }
   function abilityBySpell(table, sid) {
     const t = table === undefined ? cache : table;
@@ -509,7 +532,7 @@
   }
 
   const api = {
-    normalize, load, data, raw, bossFor, abilityBySpell, phaseOf, markIds, hpTicks,
+    normalize, load, data, raw, bossFor, rankFor, abilityBySpell, phaseOf, markIds, hpTicks,
     model, render, flagsText, addLinks, debuffColor, markedBy,
     FLAG_WORD, _esc: esc,
   };
