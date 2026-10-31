@@ -26,10 +26,6 @@ bool GuildOrderVendorAction::isUseful()
     uint32 reagentId = AI_VALUE(uint32, "guild order vendor reagent");
     if (!reagentId)
         return false;
-    record = TortoiseBots::GuildOrders::Find(botGuidLow);
-    if (!record || record->state != OrderState::Working || record->supplyStep != SupplyStep::Farm ||
-        record->supplyItemId != reagentId || !record->supplyCount)
-        return false;
 
     std::list<ObjectGuid> vendors = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
     for (ObjectGuid vendorguid : vendors)
@@ -63,6 +59,10 @@ bool GuildOrderVendorAction::Execute(Event& event)
 
     uint32 reagentId = AI_VALUE(uint32, "guild order vendor reagent");
     if (!reagentId)
+        return false;
+    record = TortoiseBots::GuildOrders::Find(botGuidLow);
+    if (!record || record->state != OrderState::Working || record->supplyStep != SupplyStep::Farm ||
+        record->supplyItemId != reagentId || !record->supplyCount)
         return false;
 
     ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
