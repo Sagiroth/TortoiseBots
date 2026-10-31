@@ -20,6 +20,31 @@ namespace
 // on the target right now (range, cooldown, stance and mana are CanCastSpell's).
 const char* const kInterruptSpells[] = { "pummel", "shield bash", "kick", "counterspell", "earth shock" };
 
+// The caster's current generic and channelled cast ids, each 0 when that slot is empty. A channel runs in its own
+// slot (CURRENT_CHANNELED_SPELL), so a row for a channelled blast never shows up in the generic one.
+void CurrentCastIds(Unit* unit, uint32& genericId, uint32& channeledId)
+{
+    Spell* generic = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    Spell* channeled = unit->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+    genericId = generic && generic->m_spellInfo ? generic->m_spellInfo->Id : 0;
+    channeledId = channeled && channeled->m_spellInfo ? channeled->m_spellInfo->Id : 0;
+}
+
+// The caster's cast slot a row matched: the same pick as ListedCastRadius, so the logged spell is the one whose radius
+// the walk-out used (ties go to the generic slot). nullptr when neither slot is listed, which only a race can reach (the
+// cast ended between FindBossCastDanger and here).
+Spell* ListedCastSpell(const ActiveBossRows& active, Unit* caster)
+{
+    uint32 genericId = 0;
+    uint32 channeledId = 0;
+    CurrentCastIds(caster, genericId, channeledId);
+    float const generic = AvoidCastRadius(active, caster->GetEntry(), genericId);
+    float const channeled = AvoidCastRadius(active, caster->GetEntry(), channeledId);
+    if (generic >= channeled && generic > 0.0f)
+        return caster->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    return channeled > 0.0f ? caster->GetCurrentSpell(CURRENT_CHANNELED_SPELL) : nullptr;
+}
+
 // A bot on tank or healer duty keeps it; an explicit player order wins.
 bool IsFreeDps(PlayerbotAI* ai, Player* bot)
 {
@@ -129,10 +154,10 @@ float ai::CastDangerOf(const BossTacticsFight& fight, Unit* unit)
 {
     if (!unit)
         return 0.0f;
-    Spell* spell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-    if (!spell || !spell->m_spellInfo)
-        return 0.0f;
-    return AvoidCastRadius(fight.rows, unit->GetEntry(), spell->m_spellInfo->Id);
+    uint32 genericId = 0;
+    uint32 channeledId = 0;
+    CurrentCastIds(unit, genericId, channeledId);
+    return ListedCastRadius(fight.rows, unit->GetEntry(), genericId, channeledId);
 }
 
 namespace
@@ -424,7 +449,8 @@ bool BossTacticsAvoidCastAction::Execute(Event& event)
     }
     if (logIt)
     {
-        Spell* spell = caster->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+        // The slot the row matched, the same pick the walk-out's radius used (ListedCastRadius).
+        Spell* const spell = ListedCastSpell(fight.rows, caster);
         LogAvoidCast(ai, bot, caster, spell, spell && spell->m_spellInfo ? spell->m_spellInfo->Id : 0, danger.radius,
                      distBefore, destDistance, stopped, walk);
     }

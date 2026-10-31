@@ -227,6 +227,25 @@ int main()
         CHECK(AvoidCastRadius(ActiveBossRows(), 14750, 24024) == 0.0f);
     }
 
+    // avoid_cast through either cast slot: the Zul'Gurub Mad Voidwalker (15146) channels Consuming Shadows 24614, which
+    // never shows up in the generic slot, so the channel has to be read too; with both slots listed the wider wins.
+    {
+        const std::vector<BossTacticRow> rows = {
+            Row(309, 15146, BossTacticKind::AvoidCast, 0, 24614, 0, 8.0f),
+            Row(309, 15146, BossTacticKind::AvoidCast, 0, 24616, 0, 3.0f),
+            Row(309, 15111, BossTacticKind::AvoidCast, 0, 24612, 0, 6.0f),
+        };
+        const ActiveBossRows active = Active(rows);
+        CHECK(ListedCastRadius(active, 15146, 0, 24614) == 8.0f);        // the channel alone
+        CHECK(ListedCastRadius(active, 15146, 24611, 24614) == 8.0f);    // an unlisted generic does not hide the channel
+        CHECK(ListedCastRadius(active, 15146, 24614, 0) == 8.0f);        // the generic alone
+        CHECK(ListedCastRadius(active, 15146, 24616, 24614) == 8.0f);    // both listed: the wider radius wins
+        CHECK(ListedCastRadius(active, 15146, 0, 24615) == 0.0f);        // the tick, not a listed cast
+        CHECK(ListedCastRadius(active, 15146, 0, 0) == 0.0f);            // both slots empty
+        CHECK(ListedCastRadius(active, 15111, 0, 24614) == 0.0f);        // another caster
+        CHECK(ListedCastRadius(ActiveBossRows(), 15146, 0, 24614) == 0.0f);
+    }
+
     // Who leaves: everyone inside the radius except a tank.
     {
         CHECK(MustLeaveCast(false, 13.0f, 2.0f));

@@ -8,8 +8,8 @@ MustLeaveCast, AvoidCastEscapes, CastHoldsMove, HasAvoidCastMap; their behaviour
 tested in tools/test_boss_tactics_policy.cpp). These pins only prove the live code
 calls them:
 
- - the scan reads the caster's current generic spell (a cast with a cast time),
-   the same slot the interrupt scan reads;
+ - the scan reads the caster's current generic spell and its channel (a channel
+   runs in its own slot, CURRENT_CHANNELED_SPELL), through the policy's ListedCastRadius;
  - the trigger is registered, armed only for a bot whose tactics are on, and its
    action outranks the generic ground-effect step (avoid aoe, ACTION_EMERGENCY + 5);
  - while the cast runs, a move whose destination stands in a blast is held (on the
@@ -56,9 +56,16 @@ def node(text, trigger_name):
 
 class AvoidCastWiring(unittest.TestCase):
     def test_scan_reads_the_generic_cast_and_the_policy(self):
+        # Both cast slots as plain ids: a channel runs in its own slot, so a row that names a channelled blast
+        # (the Zul'Gurub Mad Voidwalker's Consuming Shadows) is only seen when the channel is read too.
+        ids = body(ACTIONS, "void CurrentCastIds(")
+        # Each slot into its own variable, in this order: the ids cross the argument list below, so a swap here
+        # would hide the channel behind the generic slot (or the reverse) while still looking right.
+        self.assertIn("Spell* generic = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);", ids)
+        self.assertIn("Spell* channeled = unit->GetCurrentSpell(CURRENT_CHANNELED_SPELL);", ids)
         danger = body(ACTIONS, "float ai::CastDangerOf(")
-        self.assertIn("GetCurrentSpell(CURRENT_GENERIC_SPELL)", danger)
-        self.assertIn("AvoidCastRadius(fight.rows", danger)
+        self.assertIn("CurrentCastIds(unit, genericId, channeledId)", danger)
+        self.assertIn("ListedCastRadius(fight.rows, unit->GetEntry(), genericId, channeledId)", danger)
         fn = body(ACTIONS, "BossCastDanger ai::FindBossCastDanger(")
         self.assertIn("CastDangerOf(fight, unit)", fn)
         self.assertIn("MustLeaveCast(BotHoldsCaster(bot, unit)", fn)
@@ -140,6 +147,9 @@ class AvoidCastIsLogged(unittest.TestCase):
     def test_the_walk_out_emits_a_gated_row(self):
         fn = body(ACTIONS, "bool BossTacticsAvoidCastAction::Execute(")
         self.assertIn('sPlayerbotAIConfig.hasLog("bot_events.csv")', fn)
+        # The logged spell is the slot the radius came from, by the same pick (ListedCastSpell), not a second,
+        # inline scan that can drift from it.
+        self.assertIn("ListedCastSpell(fight.rows, caster)", fn)
         self.assertIn("LogAvoidCast(ai, bot, caster,", fn)
         # The distance before the move is read before the own cast is stopped and before MoveTo.
         self.assertLess(fn.index("distBefore ="), fn.index("CastStop()"))

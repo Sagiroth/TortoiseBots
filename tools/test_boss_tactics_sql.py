@@ -174,6 +174,21 @@ class BossTacticsSql(unittest.TestCase):
         self.assertGreaterEqual(live[(309, 14750, "avoid_cast", 0, 24024)], 13.0)
         self.assertNotIn((309, 14750, "interrupt", 0, 24024), live)
 
+    def test_venoxis_mad_servant_and_voidwalker_rows(self):
+        # Zul'Gurub (309), the High Priest Venoxis leg's Mad Servant / Mad Voidwalker wall. A dying Mad
+        # Servant 15111 leaves a Portal of Madness that summons two Mad Voidwalkers 15146, which channel
+        # Consuming Shadows 24614 (radius index 8 = 5 yd, 400 shadow a second). The row is avoid_cast at
+        # 5 + 3 yd: the scan reads the channel slot, and a kick does stop the channel. Flamestrike 24612 is
+        # the Servant's kickable cast (castingTimeIndex 5, interruptFlags 15); Fireball 24611 gets no row
+        # (a 0.5 s cast the first-castable-wins scan would spend the Flamestrike kicks on).
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])): float(row[7]) for row in effective_rows()}
+        self.assertIn((309, 15146, "avoid_cast", 0, 24614), live)
+        self.assertEqual(8.0, live[(309, 15146, "avoid_cast", 0, 24614)])
+        self.assertIn((309, 15111, "interrupt", 0, 24612), live)
+        self.assertNotIn((309, 15146, "interrupt", 0, 24614), live)
+        self.assertNotIn((309, 15111, "interrupt", 0, 24611), live)
+        self.assertFalse([key for key in live if key[:2] == (309, 15146) and key[2] == "kill_first"])
+
 
 def _sql_statements(text):
     """Split a dump into statements: comments dropped, quotes and escapes respected."""
@@ -395,6 +410,9 @@ class BossTacticsCoreData(unittest.TestCase):
               "(SummonAttacker in the Disciple of Naralex event)",
         7273: "sql/base/tw_world_event_scripts.sql:58, event 2488 (the eventId of the "
               "Gong of Zul'Farrak 141832, tw_world_gameobject_template.sql:72) summons him",
+        15146: "sql/base/tw_world_creature_ai_events.sql:52, event 1514101 (creature 15141, the Portal of Madness "
+               "a dying Mad Servant 15111 leaves behind with 24621) casts 24620 every 30 s, whose 24622 summons "
+               "2 Mad Voidwalkers",
     }
 
     @classmethod
@@ -440,17 +458,18 @@ class BossTacticsCoreData(unittest.TestCase):
         self.assertEqual([], problems, "the core cannot interrupt these rows:\n" + "\n".join(problems))
 
     def test_avoid_cast_spells_are_casts(self):
-        # The avoid_cast scan reads the caster's current generic spell, which an instant
-        # spell never stays in long enough to be seen: a cast time is required.
+        # The avoid_cast scan reads the caster's current generic spell and its channel, so a row is good when the
+        # spell is a cast (a cast time) or a channel (attributesEx 0x44): an instant spell never stays in either slot
+        # long enough to be seen.
         rows = sorted((int(row[1]), int(row[2]), int(row[5])) for row in effective_rows() if row[3] == "avoid_cast")
         problems = []
         for map_id, boss, spell in rows:
             info = self.spells.get(spell)
             if info is None:
                 problems.append("map %s boss %s spell %s: no spell_template row" % (map_id, boss, spell))
-            elif info["castingTimeIndex"] <= 1:
-                problems.append("map %s boss %s spell %s: castingTimeIndex %s, the cast is instant"
-                                % (map_id, boss, spell, info["castingTimeIndex"]))
+            elif info["castingTimeIndex"] <= 1 and not info["attributesEx"] & 0x44:
+                problems.append("map %s boss %s spell %s: castingTimeIndex %s and attributesEx 0x%x, neither a cast "
+                                "nor a channel" % (map_id, boss, spell, info["castingTimeIndex"], info["attributesEx"]))
         self.assertEqual([], problems, "avoid_cast rows the scan cannot see:\n" + "\n".join(problems))
 
     def test_boss_and_target_entries_exist(self):
