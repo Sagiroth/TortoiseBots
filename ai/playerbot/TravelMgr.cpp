@@ -82,6 +82,13 @@ PlayerTravelInfo::PlayerTravelInfo(Player* player)
         auto [farmItem, farmZone] = ai::GuildOrderFarmItemFor(player);
         if (farmItem && farmZone)
             SetOrderMode(farmItem, farmZone);
+        // A mail destination stays reachable while the order's supply item
+        // waits in the mailbox: the outgrown veto in RpgTravelDestination
+        // has no capital exemption for game objects, so it would drop every
+        // mailbox in an outleveled zone. The Gates read this through
+        // IsOrderMailbox, same snapshot discipline as the farm item above.
+        if (ai::GuildOrderMailWaiting(player))
+            SetOrderMailbox();
     }
 }
 
@@ -581,10 +588,14 @@ bool RpgTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
         // Outgrown services: skip NPCs in zones the bot outlevels by 10+, unless
         // the destination zone is a capital (class trainers, AH and bank live
-        // there). Autonomous masterless random bots only: an owned/hired bot
+        // there). A guild-order mailbox is exempt: a bought reagent waits in the
+        // mail wherever the auction delivered it, and capitals hold no monopoly
+        // on mailboxes, so the capital carve-out never covers this errand.
+        // Autonomous masterless random bots only: an owned/hired bot
         // with its player must still vendor/repair anywhere. Unknown area ids
         // fail closed (keep the destination).
-        if (info.IsMasterlessRandom() && sPlayerbotAIConfig.leaveOutgrownZones &&
+        bool const orderMailbox = GetPurpose() == TravelDestinationPurpose::Mail && info.IsOrderMailbox();
+        if (!orderMailbox && info.IsMasterlessRandom() && sPlayerbotAIConfig.leaveOutgrownZones &&
             destAreaLevel > 0 && destAreaLevel + 10 < (int32)info.GetLevel())
         {
             uint32 destZoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;

@@ -31,12 +31,25 @@ inline SupplyStep NextSupplyStep(SupplyOptions const& options)
         return SupplyStep::Sub;
     return SupplyStep::Need;
 }
+
 // The mailbox leg walks for the supply item (a reagent bought at the AH),
 // not the order item: one source for the travel branch, the take-mail
 // action and the travel-target expiry, so they never disagree on what waits.
 inline uint32_t SupplyMailItemId(SupplyStep step, uint32_t supplyItemId, uint32_t orderItemId)
 {
     return (step == SupplyStep::Bags && supplyItemId) ? supplyItemId : orderItemId;
+}
+
+// A full bag blocks the take: the bot cannot lift the waiting mail until it
+// sells down, so the order leg yields to the vendor trip instead of walking
+// to a mailbox it cannot use. Plain fill percent in, like the "bag space"
+// value the take gate reads. Threshold mirrors that gate: above 95 the take
+// is refused, so at 95 the leg already detours.
+inline constexpr uint8_t kMailTakeBagYieldPercent = 95;
+
+inline bool OrderMailYieldsToVendor(uint8_t bagSpacePercent, bool mailWaiting)
+{
+    return mailWaiting && bagSpacePercent >= kMailTakeBagYieldPercent;
 }
 
 // Consecutive empty or rejected travel searches for one supply leg. A new

@@ -71,6 +71,16 @@ namespace ai
 		bool HasFocusQuest() const {return !focusList.empty();}
 		bool IsFocusQuest(uint32 questId) const { return focusList.find(questId) != focusList.end(); }
 
+		// A mail destination stays reachable while the order's supply item waits
+		// in the mailbox: the outgrown service veto below has no capital
+		// exemption for game objects, so an outleveled-zone mailbox (Brill for a
+		// level 51) would vanish from the search even though the bot must walk
+		// there to collect the mail. Plain snapshot bool like the farm
+		// item/zone above, kept separate so neither leg's gates leak into the
+		// other's search.
+		bool IsOrderMailbox() const { return orderMailbox; }
+		void SetOrderMailbox() { orderMailbox = true; }
+
 		// Order mode: the bot farms a guild order item in its planned zone.
 		// Destination gates skip leisure rules for order sources of that item.
 		bool IsOrderMode() const { return orderItemId != 0; }
@@ -92,6 +102,7 @@ namespace ai
 		uint32 identitySeed = 0;
 		uint32 orderItemId = 0;
 		uint32 orderZoneId = 0;
+		bool orderMailbox = false;
 		uint16 currentSkill[MAX_SKILL_TYPE] = {0};
 		uint16 skillMax[MAX_SKILL_TYPE] = { 0 };
 		uint8 groupSize = 0;

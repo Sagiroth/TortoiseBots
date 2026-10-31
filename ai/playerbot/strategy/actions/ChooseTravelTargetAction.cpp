@@ -2486,6 +2486,9 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         {
             *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
                 {
+                    // The search runs on its own snapshot: flag the order
+                    // mailbox so the outgrown veto keeps the destination.
+                    travelInfo.SetOrderMailbox();
                     return sTravelMgr.GetPartitions(center, partitions, travelInfo,
                         (uint32)TravelDestinationPurpose::Mail, {}, true, 0.0f);
                 });
@@ -2601,6 +2604,9 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         {
             *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
                 {
+                    // The search runs on its own snapshot: flag the order
+                    // mailbox so the outgrown veto keeps the destination.
+                    travelInfo.SetOrderMailbox();
                     return sTravelMgr.GetPartitions(center, partitions, travelInfo,
                         (uint32)TravelDestinationPurpose::Mail, {}, true, 0.0f);
                 });
@@ -2613,6 +2619,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         {
             *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
                 {
+                    travelInfo.SetOrderMailbox();
                     return sTravelMgr.GetPartitions(center, partitions, travelInfo,
                         (uint32)TravelDestinationPurpose::Mail, {}, true, 0.0f);
                 });
