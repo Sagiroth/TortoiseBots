@@ -17,6 +17,8 @@ namespace GuildOrders
 
 // Sub-orders on by default; workers B (bank) and the ladder share the shape.
 inline constexpr uint32_t kSubOrderDefaultDepth = 3;
+// Busy-only queued requests retry on this interval, not every world tick.
+inline constexpr uint32_t kSubOrderRetryMs = 45000;
 
 // One guild bot that could take the sub-order: what the parent asks each
 // candidate, and what the candidate answers about itself.

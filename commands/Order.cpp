@@ -395,16 +395,20 @@ bool HandleOrderReassign(ChatHandler* handler, Player* requester, std::string co
         OrderError(handler, "invalid", "The new bot already has an order.");
         return true;
     }
-    if (Player* live = sObjectAccessor.FindPlayer(newGuid))
+    Player* live = sObjectAccessor.FindPlayer(newGuid);
+    if (!live || !live->IsInWorld())
     {
-        bool canMake = false, canFarm = false;
-        if (live->IsInWorld() && !GuildOrders::SubOrderCandidateUsable(live, sub->itemId, canMake, canFarm))
-        {
-            OrderError(handler, "noskill", "The new bot can neither make nor farm that item.");
-            return true;
-        }
+        OrderError(handler, "no-bot", "The new bot is offline: its recipes cannot be checked.");
+        return true;
     }
-    if (!GuildOrders::ReassignSubOrder(subGuid.GetCounter(), newGuid.GetCounter()))
+    bool canMake = false, canFarm = false;
+    if (!GuildOrders::SubOrderCandidateUsable(live, sub->itemId, canMake, canFarm))
+    {
+        OrderError(handler, "noskill", "The new bot can neither make nor farm that item.");
+        return true;
+    }
+    if (!GuildOrders::ReassignSubOrder(subGuid.GetCounter(), newGuid.GetCounter(),
+        canMake ? GuildOrders::OrderType::Craft : GuildOrders::OrderType::Farm))
     {
         OrderError(handler, "invalid", "The sub-order could not be moved.");
         return true;

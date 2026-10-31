@@ -12,6 +12,7 @@ static int failures = 0;
 int main()
 {
     CHECK(kSubOrderDefaultDepth == 3);
+    CHECK(kSubOrderRetryMs == 45000);
 
     CHECK(SubOrderBranchDepth(1) == 2);
     CHECK(SubOrderBranchDepth(2) == 3);

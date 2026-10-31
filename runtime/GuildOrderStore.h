@@ -50,9 +50,10 @@ bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count);
 // A working sub-order (or its whole branch, recursively) ended in cant or
 // was cancelled: the parent gets the item on its need list. World thread only.
 void NoteSubOrderFailed(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count);
-// Move a sub-order to another guild bot (`.bot order reassign`). World
-// thread only (the `.bot order` command).
-bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow);
+// Move a sub-order to another guild bot (`.bot order reassign`), recomputing
+// the order type for the new bot (craft when it knows the recipe, else
+// farm). World thread only (the `.bot order` command).
+bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, OrderType type);
 // Bot guids of a branch (the bot itself plus every sub-order below it).
 std::vector<uint32_t> BranchBots(uint32_t botGuidLow);
 // Whether a live bot can take a sub-order for the item: knows the recipe or
