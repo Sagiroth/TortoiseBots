@@ -681,8 +681,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 148)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 705)
+        self.assertEqual(len(doc["bosses"]), 163)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 757)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -2720,6 +2720,170 @@ class DungeonTrollValueTest(unittest.TestCase):
                     self.assertEqual(boss["phases"], [], boss["name"])
                 for ability in boss["abilities"]:
                     self.assertEqual(ability["castMs"], 0, ability["name"])
+
+
+class DungeonScarletValueTest(unittest.TestCase):
+    """Every Scarlet Monastery value the panel draws, read off the core sources.
+
+    One map key covers the four wings. The fixture is transcribed from the scripts,
+    creature_spells lists and EventAI rows, not generated from the CSV: timers from
+    C++ are ms, creature_spells timers stay 0 (seconds on one SQL line) and their
+    cadence is in the notes. No Scarlet boss has a phase row.
+    """
+
+    ABILITIES = {
+        (3983, 2767): (5000, 5000, 15000, "victim", "", ("aura",)),
+        (61972, 17925): (0, 0, 0, "random", "", ("aura",)),
+        (61972, 22574): (0, 0, 0, "victim", "", ("tank",)),
+        (61972, 17228): (0, 0, 0, "aoe", "", ("heal",)),
+        (14693, 28873): (45000, 45000, 45000, "victim", "", ("tank",)),
+        (14693, 22643): (30000, 20000, 20000, "aoe", "", ("aura", "int")),
+        (14693, 17313): (30000, 20000, 20000, "victim", "", ("aura", "dispel-nodispel", "int")),
+        (14693, 29849): (30000, 15000, 15000, "aoe", "", ("aura",)),
+        (4543, 8053): (10000, 10000, 15000, "victim", "", ("aura",)),
+        (4543, 1106): (2000, 2000, 2000, "victim", "", ("int",)),
+        (4543, 8814): (8000, 30000, 30000, "aoe", "", ("ground", "int")),
+        (4543, 16079): (40000, 40000, 40000, "aoe", "", ("heal",)),
+        (3974, 6742): (20000, 20000, 20000, "self", "", ("self",)),
+        (61983, 8402): (0, 0, 0, "random", "", ("aura", "dispel-nodispel", "int")),
+        (61983, 15618): (0, 0, 0, "random", "", ("aura", "dispel-nodispel")),
+        (61983, 22916): (0, 0, 0, "random", "", ("heal",)),
+        (6487, 13323): (20000, 20000, 20000, "random", "", ("aura", "int")),
+        (6487, 8988): (15000, 15000, 20000, "aoe", "", ("aura", "int")),
+        (6487, 9433): (3000, 8000, 8000, "aoe", "", ("heal",)),
+        (6487, 9438): (0, 0, 0, "self", "", ("hp50", "self", "purge-nopurge")),
+        (6487, 9435): (0, 0, 0, "aoe", "", ("heal", "hp50")),
+        (61982, 15588): (0, 0, 0, "aoe", "", ("aura",)),
+        (61982, 28810): (0, 0, 0, "self", "", ("self",)),
+        (61982, 8380): (0, 0, 0, "victim", "", ("aura", "dispel-nodispel")),
+        (3975, 8260): (0, 4500, 4500, "self", "", ("self", "purge-nopurge")),
+        (3975, 15496): (12000, 12000, 12000, "victim", "", ("tank",)),
+        (3975, 8989): (0, 20000, 30000, "self", "", ("self", "purge-nopurge")),
+        (3975, 8269): (0, 0, 0, "self", "", ("hp50", "self", "purge-nopurge")),
+        (4542, 8282): (10000, 25000, 25000, "victim", "", ("aura", "int")),
+        (4542, 15090): (0, 0, 0, "random", "", ("script",)),
+        (4542, 12096): (40000, 40000, 40000, "random", "", ("aura", "int")),
+        (4542, 12039): (0, 0, 0, "self", "", ("int",)),
+        (4542, 11647): (0, 0, 0, "self", "", ("hp25", "self", "purge-nopurge")),
+        (4542, 8399): (30000, 30000, 30000, "aoe", "", ("aura", "int")),
+        (3976, 14518): (0, 0, 0, "victim", "", ("aura",)),
+        (3976, 5589): (0, 0, 0, "victim", "", ("aura",)),
+        (3976, 8990): (0, 0, 0, "self", "", ("self", "purge-nopurge")),
+        (3976, 1020): (0, 0, 0, "self", "", ("self", "purge-nopurge")),
+        (3977, 14515): (0, 0, 0, "random", "", ("aura",)),
+        (3977, 12039): (0, 0, 0, "ally", "", ("int",)),
+        (3977, 22187): (0, 0, 0, "ally", "", ("self",)),
+        (3977, 9481): (0, 0, 0, "victim", "", ("int",)),
+        (3977, 9256): (0, 0, 0, "aoe", "", ("aura", "dispel-nodispel")),
+        (3977, 9232): (0, 0, 0, "ally", "", ("script",)),
+        (6489, 21007): (0, 0, 0, "aoe", "", ("aura",)),
+        (6489, 3815): (0, 0, 0, "aoe", "", ("aura", "int")),
+        (6490, 5137): (0, 0, 0, "random", "", ("aura",)),
+        (6490, 7399): (0, 0, 0, "victim", "", ("aura",)),
+        (6490, 9373): (0, 0, 0, "random", "", ("aura", "int")),
+        (6488, 15496): (0, 7000, 11000, "victim", "", ("tank",)),
+        (6488, 7160): (0, 30000, 35000, "victim", "", ("tank",)),
+        (6488, 7366): (0, 0, 0, "self", "", ("self", "script")),
+    }
+
+    PHASES = {}
+
+    ADDS = {
+        3974: [(10979, "summon", 0)],
+        3975: [(4295, "summon", 0), (6575, "summon", 0)],
+    }
+
+    BOSSES = {
+        3983, 61972, 14693, 4543,
+        3974, 61983, 6487,
+        61982, 3975,
+        4542, 3976, 3977,
+        6489, 6490, 6488,
+    }
+
+    MAP = "scarlet_monastery"
+
+    @classmethod
+    def setUpClass(cls):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        cls.doc = boss_data.build_document(rows, names)
+
+    def scarlet(self):
+        return {
+            int(entry): boss
+            for entry, boss in self.doc["bosses"].items()
+            if boss["map"] == self.MAP
+        }
+
+    def test_expected_boss_set(self):
+        # The plan's twelve boss steps plus the three rare elites with their own
+        # creature_spells/EventAI kit. A dropped block fails here.
+        self.assertEqual(set(self.scarlet()), self.BOSSES)
+
+    def test_ability_values(self):
+        seen = set()
+        for key, expected in self.ABILITIES.items():
+            entry, sid = key
+            boss = self.scarlet()[entry]
+            abilities = {a["sid"]: a for a in boss["abilities"]}
+            self.assertIn(sid, abilities, "boss %d lost spell %d" % key)
+            a, b, c, target, phase, flags = expected
+            ability = abilities[sid]
+            self.assertEqual((ability["a"], ability["b"], ability["c"]), (a, b, c), key)
+            self.assertEqual(ability["target"], target, key)
+            self.assertEqual(ability["phase"], phase, key)
+            self.assertEqual(_flag_set(ability), set(flags), key)
+            self.assertEqual(ability["castMs"], 0, key)
+            seen.add(key)
+        built = {
+            (int(entry), ability["sid"])
+            for entry, boss in self.scarlet().items()
+            for ability in boss["abilities"]
+        }
+        self.assertEqual(built, seen, "the map carries exactly the pinned abilities")
+
+    def test_phase_and_adds(self):
+        for entry, expected in self.PHASES.items():
+            got = [
+                (p["name"], p["rule"]["kind"], p["rule"].get("hp"), p["order"])
+                for p in self.scarlet()[entry]["phases"]
+            ]
+            self.assertEqual(got, expected, entry)
+        for entry in self.BOSSES:
+            if entry not in self.PHASES:
+                self.assertEqual(self.scarlet()[entry]["phases"], [], entry)
+        for entry, expected in self.ADDS.items():
+            got = [
+                (a["entry"], a["role"], a["priority"])
+                for a in self.scarlet()[entry]["adds"]
+            ]
+            self.assertEqual(got, expected, entry)
+        for entry in self.BOSSES:
+            if entry not in self.ADDS:
+                self.assertEqual(self.scarlet()[entry]["adds"], [], entry)
+
+    def test_choices_the_panel_depends_on(self):
+        whitemane = self.scarlet()[3977]
+        # The revive restores her spell list, and no hp or aura the panel can read
+        # separates the stages, so she carries no phase row and every spell shows.
+        self.assertEqual(whitemane["phases"], [])
+        self.assertEqual(
+            {a["sid"] for a in whitemane["abilities"]},
+            {14515, 12039, 22187, 9481, 9256, 9232},
+        )
+        self.assertEqual({a["phase"] for a in whitemane["abilities"]}, {""})
+        # creature_spells timers are seconds, so every such row has no timer.
+        duke = {a["sid"]: a for a in self.scarlet()[61972]["abilities"]}
+        self.assertTrue(all((a["a"], a["b"], a["c"]) == (0, 0, 0) for a in duke.values()))
+        # Mograine has no phase row: the revive returns him to full health.
+        self.assertEqual(self.scarlet()[3976]["phases"], [])
+        # Azshir's unassigned C++ script must not add its spells.
+        azshir = {a["sid"] for a in self.scarlet()[6490]["abilities"]}
+        self.assertEqual(azshir, {5137, 7399, 9373})
+        # Herod's add blocks are separate units, not abilities.
+        herod = {a["sid"] for a in self.scarlet()[3975]["abilities"]}
+        self.assertEqual(herod, {8260, 15496, 8989, 8269})
 
 
 class UbrsValueTest(unittest.TestCase):

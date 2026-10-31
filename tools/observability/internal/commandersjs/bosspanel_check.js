@@ -509,4 +509,14 @@ const ktFight = B.model(REAL, { entry: 15990, hp: 80, au: [], uf: "" }, [], 0, 0
 assert.strictEqual(ktFight.phase, "fight");
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 28478).inPhase, true);
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 29423).inPhase, false);
+// Scarlet Monastery: the revive restores Whitemane's spell list and no hp or aura the panel can read
+// separates the stages, so she has no phase row and all six spells stay visible at any health.
+const white = (REAL.byEntry || REAL.bosses || REAL)["3977"];
+assert.deepStrictEqual(white.phases.map((x) => x.rule), []);
+const whiteBelow = B.model(REAL, { entry: 3977, hp: 40, au: [] }, [], 0, 0);
+for (const sid of [14515, 12039, 22187, 9481, 9256, 9232]) {
+  assert.strictEqual(whiteBelow.abilities.find((a) => a.sid === sid).inPhase, true,
+    `spell ${sid} is visible at 40%`);
+}
+
 console.log("boss panel ok");

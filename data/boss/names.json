@@ -2491,6 +2491,178 @@
     "58117": {
       "name": "Emerald Dream Welcome",
       "castMs": 0
+    },
+    "2767": {
+      "name": "Shadow Word: Pain",
+      "castMs": 0
+    },
+    "17925": {
+      "name": "Death Coil",
+      "castMs": 0
+    },
+    "22574": {
+      "name": "Dark Strike",
+      "castMs": 0
+    },
+    "17228": {
+      "name": "Shadow Bolt Volley",
+      "castMs": 0
+    },
+    "28873": {
+      "name": "Lich Slap",
+      "castMs": 0
+    },
+    "22643": {
+      "name": "Frostbolt Volley",
+      "castMs": 0
+    },
+    "17313": {
+      "name": "Mind Flay",
+      "castMs": 0
+    },
+    "29849": {
+      "name": "Frost Nova",
+      "castMs": 0
+    },
+    "8053": {
+      "name": "Flame Shock",
+      "castMs": 0
+    },
+    "1106": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "8814": {
+      "name": "Flame Spike",
+      "castMs": 0
+    },
+    "16079": {
+      "name": "Fire Nova",
+      "castMs": 0
+    },
+    "6742": {
+      "name": "Bloodlust",
+      "castMs": 0
+    },
+    "8402": {
+      "name": "Fireball",
+      "castMs": 0
+    },
+    "22916": {
+      "name": "Uppercut",
+      "castMs": 0
+    },
+    "13323": {
+      "name": "Polymorph",
+      "castMs": 0
+    },
+    "8988": {
+      "name": "Silence",
+      "castMs": 0
+    },
+    "9433": {
+      "name": "Arcane Explosion",
+      "castMs": 0
+    },
+    "9435": {
+      "name": "Detonation",
+      "castMs": 0
+    },
+    "9438": {
+      "name": "Arcane Bubble",
+      "castMs": 0
+    },
+    "28810": {
+      "name": "Armor of Faith",
+      "castMs": 0
+    },
+    "8380": {
+      "name": "Sunder Armor",
+      "castMs": 0
+    },
+    "8260": {
+      "name": "Rushing Charge",
+      "castMs": 0
+    },
+    "8989": {
+      "name": "Whirlwind",
+      "castMs": 0
+    },
+    "8282": {
+      "name": "Curse of Blood",
+      "castMs": 0
+    },
+    "15090": {
+      "name": "Dispel Magic",
+      "castMs": 0
+    },
+    "12096": {
+      "name": "Fear",
+      "castMs": 0
+    },
+    "11647": {
+      "name": "Power Word: Shield",
+      "castMs": 0
+    },
+    "8399": {
+      "name": "Sleep",
+      "castMs": 0
+    },
+    "14518": {
+      "name": "Crusader Strike",
+      "castMs": 0
+    },
+    "5589": {
+      "name": "Hammer of Justice",
+      "castMs": 0
+    },
+    "8990": {
+      "name": "Retribution Aura",
+      "castMs": 0
+    },
+    "1020": {
+      "name": "Divine Shield",
+      "castMs": 0
+    },
+    "14515": {
+      "name": "Dominate Mind",
+      "castMs": 0
+    },
+    "22187": {
+      "name": "Power Word: Shield",
+      "castMs": 0
+    },
+    "9481": {
+      "name": "Holy Smite",
+      "castMs": 0
+    },
+    "9256": {
+      "name": "Deep Sleep",
+      "castMs": 0
+    },
+    "9232": {
+      "name": "Scarlet Resurrection",
+      "castMs": 0
+    },
+    "21007": {
+      "name": "Curse of Weakness",
+      "castMs": 0
+    },
+    "3815": {
+      "name": "Poison Cloud",
+      "castMs": 0
+    },
+    "5137": {
+      "name": "Call of the Grave",
+      "castMs": 0
+    },
+    "7399": {
+      "name": "Terrify",
+      "castMs": 0
+    },
+    "9373": {
+      "name": "Soul Siphon",
+      "castMs": 0
     }
   },
   "creatures": {
@@ -3507,6 +3679,60 @@
     },
     "533002": {
       "name": "Plague Cloud"
+    },
+    "3983": {
+      "name": "Interrogator Vishas"
+    },
+    "61972": {
+      "name": "Duke Dreadmoore"
+    },
+    "14693": {
+      "name": "Scorn"
+    },
+    "4543": {
+      "name": "Bloodmage Thalnos"
+    },
+    "3974": {
+      "name": "Houndmaster Loksey"
+    },
+    "61983": {
+      "name": "Brother Wystan"
+    },
+    "6487": {
+      "name": "Arcanist Doan"
+    },
+    "61982": {
+      "name": "Armory Quartermaster Daghelm"
+    },
+    "3975": {
+      "name": "Herod"
+    },
+    "4542": {
+      "name": "High Inquisitor Fairbanks"
+    },
+    "3976": {
+      "name": "Scarlet Commander Mograine"
+    },
+    "3977": {
+      "name": "High Inquisitor Whitemane"
+    },
+    "6489": {
+      "name": "Ironspine"
+    },
+    "6490": {
+      "name": "Azshir the Sleepless"
+    },
+    "6488": {
+      "name": "Fallen Champion"
+    },
+    "10979": {
+      "name": "Scarlet Hound"
+    },
+    "4295": {
+      "name": "Scarlet Myrmidon"
+    },
+    "6575": {
+      "name": "Scarlet Trainee"
     }
   }
 }
