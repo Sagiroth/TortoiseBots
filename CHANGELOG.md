@@ -134,6 +134,7 @@
 - New: Ruins of Ahn'Qiraj's bosses reach the boss ability panel: Kurinnaxx, Moam, Buru the Gorger, Ayamiss the Hunter and Ossirian the Unscarred show their timers, the stone form and the two health phases, their adds, and a plain note where a number is not fixed in the script.
 - New: Upper Karazhan Halls boss data for the dashboard — Keeper Gnarlmoon, Ley-Watcher Incantagos, Anomalus, Echo of Medivh, the chess event's King, Bishop, Rook and Knight, Sanv Tas'dal, Rupturan the Broken and Kruul — with their abilities, timers, phases and adds.
 - New: the boss panel covers Emerald Sanctum: Erennius and Solnius with their casts, Solnius's transform and 45 s sleep, and the portal adds the panel can list.
+- Fixed: in a raid fight with many adds (Ayamiss's swarm, Majordomo's guards, Ragnaros's Sons) the boss can no longer drop off the dashboard map because 24 adds took every mob row first.
 
 ## v1.14.0 (2026-10-28)
 
