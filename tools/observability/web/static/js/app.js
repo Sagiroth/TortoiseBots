@@ -6252,18 +6252,23 @@
     }
     return fdFights;
   }
-  let cmdControlOn = null;   // null: not asked yet; the page asks once per load
+  let cmdControlOn = null;   // null: not asked yet (or the last ask failed); a confirmed false stays cached
   let cmdControlAsking = null; // the one control fetch in flight; later paints chain on it
+  let cmdControlRetryAt = 0; // a failed ask waits this long before fetching again
 
   function cmdControlAsk(cb) {
     if (cmdControlOn !== null) { cb(cmdControlOn); return; }
+    if (Date.now() < cmdControlRetryAt) { cb(false); return; }
     if (!cmdControlAsking) {
       cmdControlAsking = fetch('/api/v1/control').then(jsonOrThrow).then(
-        v => { cmdControlOn = !!(v && v.enabled); },
-        () => { cmdControlOn = false; },
+        v => {
+          if (!v || typeof v.enabled === 'undefined') throw new Error('bad control answer');
+          cmdControlOn = !!v.enabled;
+        },
+        () => { cmdControlRetryAt = Date.now() + 30000; },
       ).then(() => { cmdControlAsking = null; });
     }
-    cmdControlAsking.then(() => cb(cmdControlOn));
+    cmdControlAsking.then(() => cb(cmdControlOn === true));
   }
   function cmdRaidFights(bind, cb) {
     fdFightsFeed().list(bind.commander, list => {
@@ -6325,11 +6330,14 @@
 
   function cmdControlsBind(card, bind) {
     const row = card.querySelector('.cmd-controls-row');
-    if (!row || row._bound) return;
+    if (!row) return;
+    row._bind = bind;
+    if (row._bound) return;
     row._bound = true;
     row.addEventListener('click', e => {
       const btn = e.target.closest && e.target.closest('[data-cl]');
       if (!btn || btn.disabled || btn.tagName === 'SELECT' || btn.tagName === 'INPUT') return;
+      const bind = row._bind;
       const lines = CmdView.controlLines(bind);
       const act = btn.dataset.cl;
       if (act === 'pause') cmdControlPost(card, lines.pause);
@@ -7964,8 +7972,8 @@
       if (!bind.demo && !debug) cmdRaidFights(bind, () => setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind)));
     }
     // The run controls live in .cmd-panels on the Live page; in the debugger they move to the card body, full width under
-    // the raid frames. The fetch runs once per page load; the place runs here too, so a card whose answer has not arrived
-    // yet still moves (hidden) and never flashes in the wrong parent once the answer lands.
+    // the raid frames. The fetch runs once per page load; the place runs here too, so while the answer is unknown the panel
+    // stays where it is and moves when the answer lands, never flashing in the wrong parent.
     cmdPlaceControls(card, debug && raid && cmdControlOn);
     const ctlGen = card._ctlGen = (card._ctlGen || 0) + 1;
     cmdControlAsk(on => {

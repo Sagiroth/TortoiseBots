@@ -103,7 +103,7 @@ const paintCtl = new Function("card", "bind", "debug", "raid", "on", "ctlGen",
     jsonOrThrow: (r) => r,
   };
   vm.createContext(box);
-  vm.runInContext("let cmdControlOn = null;\nlet cmdControlAsking = null;\n" + askSrc, box);
+  vm.runInContext("let cmdControlOn = null;\nlet cmdControlAsking = null;\nlet cmdControlRetryAt = 0;\n" + askSrc, box);
   vm.runInContext("function __ctlFlush() { return cmdControlAsking; }", box);
   const acard = node("cmd-card"), abody = node("cmd-body", acard),
     apanels = node("cmd-panels", abody), actl = node("cmd-controls", apanels);
@@ -129,6 +129,103 @@ const paintCtl = new Function("card", "bind", "debug", "raid", "on", "ctlGen",
   assert.deepStrictEqual(places, [false], "only the Live paint places the panel");
   assert.deepStrictEqual(boundBinds, [bindLive], "the buttons carry the Live paint's bind, bound once");
   console.log("controls late-answer race ok");
+})().catch((e) => { console.error(e); process.exit(1); });
+
+// ---- the repaint: re-binding the same row with a new bind moves the buttons onto it
+// Two paints of one card — bind A (dead bot X) then bind B (dead bot Y, another run) — then Revive and Stop.
+// Both buttons must post the lines of B only. grab() pulls the real cmdControlsBind out of app.js.
+const bindTest = grab("cmdControlsBind");
+{
+  const tcard = node("cmd-card");
+  const tctl = node("cmd-controls", tcard);
+  const trow = node("cmd-controls-row", tctl);
+  trow.addEventListener = function (ev, fn) { this._click = fn; };
+  const posted = [];
+  const tctx = {
+    CmdView: require(require("path").resolve(process.argv[3].replace(/\/app\.js$/, "/commanders.js"))),
+    confirm: () => true,
+    cmdControlPost: (card, lines) => { posted.push(Array.isArray(lines) ? lines.slice() : [lines]); },
+  };
+  tctx.card = tcard;
+  vm.createContext(tctx);
+  vm.runInContext(bindTest + "\nthis.__bind = cmdControlsBind;", tctx);
+  const bindA = { commander: "run-a", bots: [
+    { name: "AliveA", alive: true }, { name: "DeadX", alive: false },
+    { name: "c3", alive: true }, { name: "c4", alive: true }, { name: "c5", alive: true }, { name: "c6", alive: true }, { name: "c7", alive: true },
+  ] };
+  const bindB = { commander: "run-b", bots: [
+    { name: "AliveB", alive: true }, { name: "DeadY", alive: false },
+    { name: "d3", alive: true }, { name: "d4", alive: true }, { name: "d5", alive: true }, { name: "d6", alive: true }, { name: "d7", alive: true },
+  ] };
+  const cardStub = { querySelector: (sel) => (sel === ".cmd-controls-row" ? trow : null) };
+  tctx.__bind(cardStub, bindA); // first paint: installs the one listener
+  assert.ok(trow._bound, "the first bind installs the one listener");
+  tctx.__bind(cardStub, bindB); // the repaint: same row, a new run
+  const clickBtn = (cl) => {
+    const btn = { dataset: { cl }, disabled: false, tagName: "BUTTON", closest: () => btn };
+    trow._click({ target: btn });
+  };
+  clickBtn("revive");
+  assert.deepStrictEqual(posted, [[".revive DeadY"]], "Revive posts the repaint's dead bot only");
+  clickBtn("stop");
+  assert.deepStrictEqual(posted[1], [".bot run for run-b stop"], "Stop confirms and posts the repaint's run only");
+  assert.ok(!posted.flat().some((l) => l.includes("run-a") || l.includes("DeadX")),
+    "nothing posted names the old run or its dead bot");
+  console.log("controls rebind ok");
+}
+
+// ---- the retry: a failed control check hides for this paint and fetches again after 30 s
+// GET fails once -> the paint's callback hides the panel, and asks inside 30 s reuse no fetch;
+// past 30 s the next ask fetches again, and success shows the panel. A confirmed
+// {enabled:false} still caches false with no further fetch.
+(async () => {
+  let fetchCalls = 0, failNext = true;
+  const rbox = {
+    fetch: (url) => {
+      assert.strictEqual(url, "/api/v1/control", "the retry fetch asks the control flag");
+      fetchCalls++;
+      return failNext ? Promise.reject(new Error("down")) : Promise.resolve({ enabled: true });
+    },
+    jsonOrThrow: (r) => r,
+    Date,
+  };
+  vm.createContext(rbox);
+  vm.runInContext("let cmdControlOn = null;\nlet cmdControlAsking = null;\nlet cmdControlRetryAt = 0;\n" + askSrc, rbox);
+  vm.runInContext("function __retryFlush() { return cmdControlAsking; }", rbox);
+  const seen = [];
+  await new Promise((res) => rbox.cmdControlAsk((on) => { seen.push(on); res(); }));
+  assert.deepStrictEqual(seen, [false], "a failed check hides the panel for that paint");
+  const realNow = Date.now;
+  try {
+    Date.now = () => realNow() + 10000; // 10 s later: still inside the wait
+    await new Promise((res) => rbox.cmdControlAsk((on) => { seen.push(on); res(); }));
+    assert.strictEqual(fetchCalls, 1, "no refetch inside 30 s of the failure");
+    assert.deepStrictEqual(seen, [false, false], "the panel stays hidden while the answer is unknown");
+    Date.now = () => realNow() + 31000; // past the wait: fetch again
+    await new Promise((res) => { failNext = false; rbox.cmdControlAsk((on) => { seen.push(on); res(); }); });
+    assert.strictEqual(fetchCalls, 2, "the next ask past 30 s fetches again");
+    assert.deepStrictEqual(seen, [false, false, true], "success after the retry shows the panel");
+    await new Promise((res) => rbox.cmdControlAsk((on) => { seen.push(on); res(); }));
+    assert.strictEqual(fetchCalls, 2, "a confirmed answer caches: no further fetch");
+    assert.deepStrictEqual(seen, [false, false, true, true], "the cached answer replays");
+  } finally {
+    Date.now = realNow;
+  }
+  // A confirmed {enabled:false} still caches false with no further fetch.
+  const nbox = {
+    fetch: () => { fetchCalls++; return Promise.resolve({ enabled: false }); },
+    jsonOrThrow: (r) => r,
+    Date,
+  };
+  fetchCalls = 0;
+  vm.createContext(nbox);
+  vm.runInContext("let cmdControlOn = null;\nlet cmdControlAsking = null;\nlet cmdControlRetryAt = 0;\n" + askSrc, nbox);
+  const nseen = [];
+  await new Promise((res) => nbox.cmdControlAsk((on) => { nseen.push(on); res(); }));
+  await new Promise((res) => nbox.cmdControlAsk((on) => { nseen.push(on); res(); }));
+  assert.deepStrictEqual(nseen, [false, false], "a confirmed off stays off");
+  assert.strictEqual(fetchCalls, 1, "a confirmed off fetches once");
+  console.log("controls retry ok");
 })().catch((e) => { console.error(e); process.exit(1); });
 
 console.log("controls in debugger ok");
