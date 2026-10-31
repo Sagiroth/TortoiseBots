@@ -512,6 +512,15 @@ namespace ai
         virtual std::string GetTargetName() override { return "current target"; }
         std::string GetSpellName() const { return spellName; }
 
+        // The distance from the target at which the walk stops: Execute's own
+        // chase distance (75% of the range less the contact distance; 0 for
+        // melee, where the combat reaches are the stop). The trap hold judges
+        // the move at that point, not at the target's centre.
+        float GetStopRange() const
+        {
+            return range > 0.0f ? std::max(range * 0.75f - sPlayerbotAIConfig.contactDistance, 0.0f) : 0.0f;
+        }
+
         virtual Unit* GetTarget() override
         {
             // Get the target from the qualifiers
