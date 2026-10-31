@@ -19,12 +19,12 @@ function grab(name) {
 
 const ctx = { console };
 vm.createContext(ctx);
-["commanders.js", "fightreplay.js"].forEach((f) => {
+["commanders.js", "fightreplay.js", "bosspanel.js"].forEach((f) => {
   vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f });
 });
 assert.ok(ctx.CmdView && typeof ctx.CmdView.shapePath === "function", "commanders.js loads as CmdView");
 assert.ok(ctx.FightReplay && typeof ctx.FightReplay.mobsAt === "function", "fightreplay.js loads as FightReplay");
-vm.runInContext([grab("esc"), grab("cmdMobOverlaySvg"), grab("fdReplayBind")].join("\n"), ctx);
+vm.runInContext([grab("esc"), grab("cmdMobOverlaySvg"), grab("cmdBossTable"), grab("fdReplayBind")].join("\n"), ctx);
 const V = ctx.CmdView;
 
 // ---- the live overlay of one row

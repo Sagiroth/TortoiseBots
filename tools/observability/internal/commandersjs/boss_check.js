@@ -26,11 +26,12 @@ function grabConst(name) {
 
 const ctx = { console };
 vm.createContext(ctx);
-["commanders.js", "unitinfo.js", "fightreplay.js"].forEach((f) => {
+["commanders.js", "unitinfo.js", "fightreplay.js", "bosspanel.js"].forEach((f) => {
   vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx, { filename: f });
 });
 vm.runInContext([grab("esc"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grab("cmdMobOverlaySvg"), grab("cmdMobLook"),
-  grab("cmdMobSvg"), grab("cmdBossPoint"), grab("cmdLegendHtml"), grab("fdReplayBind")].join("\n"), ctx);
+  grab("cmdMobSvg"), grab("cmdBossPoint"), grab("cmdLegendHtml"), grab("cmdBossTable"), grab("cmdApplyBossRanks"),
+  grab("cmdBossTableLoaded"), grab("fdReplayBind")].join("\n"), ctx);
 
 // ---- the look: a boss is 14 screen px across at any zoom, an elite a step up, a normal unit unchanged
 {
@@ -124,6 +125,63 @@ assert.ok(legend.includes("Boss: purple, gold ring, crowned, health shown"), leg
 assert.ok(legend.includes('class="lelite"') && legend.includes("Elite"), "the elite has its own entry");
 assert.ok(!ctx.cmdLegendHtml({}).includes("Boss: purple"), "no boss layer, no entry");
 
+// ---- the rank the map draws: a rank-3 add the table lists on this map is an elite, its boss keeps the crown ----
+{
+  const RDOC = {
+    maps: [{ key: "mc", mapId: 409, bosses: [57642] }, { key: "tmh", mapId: 819, bosses: [62936, 62937] }],
+    bosses: [
+      { entry: 57642, name: "Sorcerer-Thane Thaurissan", map: "mc", adds: [{ entry: 57643, name: "Image of Sorcerer-Thane Thaurissan", role: "summon" }] },
+      { entry: 62936, name: "Rotgrowl", map: "tmh", adds: [{ entry: 62937, name: "Kodiak", role: "summon" }] },
+      { entry: 62937, name: "Kodiak", map: "tmh", abilities: [{ spell: 1, name: "Swipe" }] },
+    ],
+  };
+  const noTable = { mobs_map: 819, mobs: [{ entry: 62937, rank: "b" }] };
+  ctx.cmdApplyBossRanks(noTable);
+  assert.deepStrictEqual(noTable.mobs.map((m) => m.rank), ["b"], "no table loaded: nothing is demoted");
+  const data = ctx.BossPanel.data;
+  ctx.BossPanel.data = () => ctx.BossPanel.normalize(RDOC);
+  const bind = { mobs_map: 409, mobs: [{ entry: 57643, rank: "b" }, { entry: 57642, rank: "b" }] };
+  ctx.cmdApplyBossRanks(bind);
+  assert.deepStrictEqual(bind.mobs.map((m) => m.rank), ["e", "b"], "the Image is drawn as an elite, its summoner as a boss");
+  ctx.BossPanel.data = data;
+}
+
+// ---- the table arrives after a report: the report already on the page is ranked when it loads, before the rerender --------
+{
+  const DOC = { maps: [{ key: "mc", mapId: 409 }], bosses: [
+    { entry: 57642, name: "Sorcerer-Thane Thaurissan", map: "mc",
+      adds: [{ entry: 57643, name: "Image of Sorcerer-Thane Thaurissan", role: "summon" }] },
+  ] };
+  const stored = { commander: "c", mobs_map: 409, mobs: [{ entry: 57643, rank: "b" }, { entry: 57642, rank: "b" }] };
+  ctx.state = { activeTab: "commanders", commanders: { list: [stored] } };
+  let painted = null;
+  ctx.covCompute = () => {};
+  ctx.renderCoverage = () => {};
+  ctx.renderCommanders = () => { painted = stored.mobs.map((m) => m.rank); };
+  const data = ctx.BossPanel.data;
+  ctx.BossPanel.data = () => null; // the first report lands while the static table is still loading
+  ctx.cmdApplyBossRanks(stored);
+  assert.deepStrictEqual(stored.mobs.map((m) => m.rank), ["b", "b"], "no table yet: the report's own rank stands");
+  ctx.BossPanel.data = () => ctx.BossPanel.normalize(DOC);
+  ctx.cmdBossTableLoaded();
+  ctx.BossPanel.data = data;
+  assert.deepStrictEqual(stored.mobs.map((m) => m.rank), ["e", "b"], "the load ranks the stored report: the Image is an elite");
+  assert.deepStrictEqual(painted, ["e", "b"], "and the rerender already sees it");
+}
+
+// ---- the ranks are set at both ingestion points: every fresh report and every replayed frame ------------------
+{
+  const at = src.indexOf("  function applyCommanders(");
+  assert.ok(at > 0);
+  const body = src.slice(at, src.indexOf("\n  }\n", at));
+  const apply = body.indexOf("cmdApplyBossRanks(bind)"), noteTimes = body.indexOf("cmdNoteMobTimes(bind");
+  assert.ok(apply > 0 && noteTimes > apply, "a fresh report is ranked before its mob times are noted");
+  const rp = src.indexOf("  function fdReplayBind(");
+  assert.ok(rp > 0);
+  const rpBody = src.slice(rp, src.indexOf("\n  }\n", rp));
+  assert.ok(rpBody.includes("BossPanel.rankFor("), "the replay ranks its mobs with the same table");
+}
+
 // ---- the replay keeps the rank (a boss in the fight debugger is the same boss on the map)
 {
   const track = { raw: null, prep: ctx.FightReplay.prep({ commander: "c", frames: [
@@ -133,6 +191,26 @@ assert.ok(!ctx.cmdLegendHtml({}).includes("Boss: purple"), "no boss layer, no en
   const rp = ctx.fdReplayBind(live, { start: 1000, dur_ms: 2000, bots: [{ name: "Tankie", guid: 7 }] }, track, 1000);
   assert.strictEqual(rp.mobs[0].rank, "b", "the replay row keeps the boss rank");
   assert.ok(/<g class="mob hostile boss"/.test(draw(rp.mobs[0])), "and draws as a boss");
+}
+
+// ---- the replay ranks with the frame's map: a demoted add on its own map, the same report a boss on another
+{
+  const DOC = { maps: [{ key: "mc", mapId: 409 }, { key: "tmh", mapId: 819 }], bosses: [
+    { entry: 57642, name: "Sorcerer-Thane Thaurissan", map: "mc",
+      adds: [{ entry: 57643, name: "Image of Sorcerer-Thane Thaurissan", role: "summon" }] },
+  ] };
+  const track = (mapId) => ({ raw: null, prep: ctx.FightReplay.prep({ commander: "c", frames: [
+    { t: 1000, map: mapId, bots: [[7, 0, 0, 100, 1, mapId]], mobs: [{ id: "9", e: 57643, x: 0, y: 0, hp: 63, rk: "b" }] },
+  ] }) });
+  const live = { commander: "c", bots: [{ name: "Tankie", guid: 7, max_hp: 100, map: 409 }], mobs: [] };
+  const fight = { start: 1000, dur_ms: 2000, bots: [{ name: "Tankie", guid: 7 }] };
+  const data = ctx.BossPanel.data;
+  ctx.BossPanel.data = () => ctx.BossPanel.normalize(DOC);
+  const onMc = ctx.fdReplayBind(live, fight, track(409), 1000);
+  const onTmh = ctx.fdReplayBind(live, fight, track(819), 1000);
+  ctx.BossPanel.data = data;
+  assert.strictEqual(onMc.mobs[0].rank, "e", "the replayed Image on its map is an elite");
+  assert.strictEqual(onTmh.mobs[0].rank, "b", "the same report on another map keeps its boss rank");
 }
 
 // ---- the CSS: the colours, the pulse and its reduced-motion form, the marker and the legend swatches

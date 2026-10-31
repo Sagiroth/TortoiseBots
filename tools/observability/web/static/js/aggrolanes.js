@@ -58,6 +58,17 @@
     return Math.hypot(bx - mob.x, by - mob.y) <= LANE.reachYd;
   }
 
+  // A boss-rank report, ranked by the page's boss table once it is loaded: an add the table lists on the fight's map is an
+  // elite there (BossPanel.rankFor), the rule the map, the replay and the boss panel draw with. No table (the node checks,
+  // an older daemon): the raw rk stands.
+  function reportedBoss(mob, mapId) {
+    if (mob.rk !== "b") return false;
+    if (typeof BossPanel === "undefined" || !BossPanel || typeof BossPanel.data !== "function" || typeof BossPanel.rankFor !== "function") return true;
+    const table = BossPanel.data();
+    if (!table) return true;
+    return BossPanel.rankFor(table, mapId, { entry: mob.e, rank: "b" }) === "b";
+  }
+
   // The worst lane of the strip: the longest held stint; ties go to the boss lane, then the larger held total, then the
   // lower id.
   function ntWorse(a, b) {
@@ -115,7 +126,7 @@
           lane = { id, e: mob.e, boss: false, segs: [] };
           byId.set(id, lane);
         }
-        if (mob.rk === "b") lane.boss = true;
+        if (reportedBoss(mob, fight.map)) lane.boss = true;
         const fromMs = Math.max(0, (f.t - startS) * 1000);
         const endT = nextT == null ? f.t + 2 : Math.min(nextT, f.t + HOLD_S);
         const toMs = Math.min(durMs, (endT - startS) * 1000);
