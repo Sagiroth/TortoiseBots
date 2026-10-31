@@ -399,3 +399,14 @@ func TestCoverageTruncatedJS(t *testing.T) {
 func TestCoverageCSS(t *testing.T) {
 	runCheck(t, "coverage_css_check.js", "../../web/static/css/app.css", "../../web/static/js/coverage.js")
 }
+
+// TestLiveLayoutScrollJS runs live_layout_scroll_check.js: the live events strip's grid area, rows, colours and kept scroll, and
+// the repaint focus restores that must not scroll the page (the auto scroll-up while a fight is live).
+func TestLiveLayoutScrollJS(t *testing.T) {
+	runCheck(t, "live_layout_scroll_check.js", "../../web/static/css/app.css", "../../web/static/js/app.js")
+}
+// TestControlsDebugJS runs controls_debug_check.js: the run controls (pause, resume, skip, stop, status, start, revive, gear)
+// also show in the Fight debugger, under the raid frames, with the same buttons, binding and answer note.
+func TestControlsDebugJS(t *testing.T) {
+	runCheck(t, "controls_debug_check.js", "../../web/static/css/app.css", "../../web/static/js/app.js")
+}

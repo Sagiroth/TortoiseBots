@@ -8049,8 +8049,10 @@ Player* RaidGuardAnchor(Player* lead, std::vector<Player*> const& bots, Tortoise
 // attackers within kRaidBossGuardYd count, each with its victim's name, and with the lead bot dead (or no tank) the
 // raid's attackers are still read, around a living anchor (DungeonRun::GuardReadMode), so an off-tank takes the boss
 // off a non-tank (DungeonRun::RaidGuardTick).
+// `raidWalk`: a raid's walk fight (#1368): a move step of a raid trash fight reads the mobs behind the parked main
+// tank into Facts::raid.walkAttackers too (DungeonRun::RaidWalkJoin). Only until the run joins the fight.
 void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts& f,
-    ai::PlanStep const* hold, bool raidBoss)
+    ai::PlanStep const* hold, bool raidBoss, bool raidWalk = false)
 {
     using namespace TortoiseBots::DungeonRun;
     PlayerbotAI* leadAi = PlayerbotAIStorage::Instance().GetAI(lead);
@@ -8122,21 +8124,37 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             f.leadHasAttacker = true;
         }
     }
+    // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
+    // every kGuardYd pick, which needs the MOB within kGuardYd of the lead bot. Each mob goes in f.raid.walkAttackers
+    // by its own distance from the lead bot (kGuardYd to kRaidWalkJoinYd), whatever the distance of the bot or pet it
+    // hits (up to kRaidWalkJoinYd); a mob within kGuardYd never does (DungeonRun::RaidWalkJoin reads that list alone,
+    // and only for the tank on stay that has not joined this fight).
+    bool const walkOn = raidWalk && f.leadStaying;
+    // One entry per mob in each list: a mob has one victim, the sets keep a repeat of it out.
     std::unordered_set<uint64> seen;
+    std::unordered_set<uint64> seenWalk;
     // The mobs that have `victim` (a bot or a pet) as their victim, each once.
-    // `tankVictim`: the victim is a tank (an off-tank holding the mob).
-    auto const addAttackers = [&](Unit* victim, bool healer, bool petVictim, bool tankVictim)
+    // `tankVictim`: the victim is a tank (an off-tank holding the mob). `toParty`: the victim is within kGuardYd of the
+    // lead bot (the mobs go in f.partyAttackers, as on dev); `toWalk`: the walk read is on (the mobs in the band go in
+    // f.raid.walkAttackers).
+    auto const addAttackers = [&](Unit* victim, bool healer, bool petVictim, bool tankVictim, bool toParty, bool toWalk)
     {
         for (Unit* attacker : victim->GetAttackers())
         {
             if (!attacker || !attacker->IsAlive() || attacker->GetVictim() != victim ||
-                !seen.insert(attacker->GetObjectGuid().GetRawValue()).second ||
                 sServerFacade.IsFriendlyTo(attacker, anchor))
+                continue;
+            float const mobYd = anchor->GetDistance(attacker);
+            bool const inParty = toParty && seen.insert(attacker->GetObjectGuid().GetRawValue()).second;
+            bool const inWalk = toWalk && mobYd > TortoiseBots::DungeonRun::kGuardYd &&
+                mobYd <= TortoiseBots::DungeonRun::kRaidWalkJoinYd &&
+                seenWalk.insert(attacker->GetObjectGuid().GetRawValue()).second;
+            if (!inParty && !inWalk)
                 continue;
             UnitFact fact;
             fact.guid = attacker->GetObjectGuid().GetRawValue();
             fact.entry = attacker->GetEntry();
-            fact.distLead = anchor->GetDistance(attacker);
+            fact.distLead = mobYd;
             fact.evading = attacker->IsCreature() && static_cast<Creature*>(attacker)->IsInEvadeMode();
             fact.polymorphed = RunCcHeld(attacker);
             fact.engaged = true;
@@ -8153,23 +8171,34 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.attackable = GroupCanAttack(anchor, attacker); // never picked up when it cannot be attacked
             if (hold)
                 fact.distSpot = DistanceTo(attacker, hold->x, hold->y, hold->z);
-            f.partyAttackers.push_back(fact);
+            if (inParty)
+                f.partyAttackers.push_back(fact);
+            if (inWalk)
+                f.raid.walkAttackers.push_back(fact);
         }
     };
+    // The bots (and their pets) the mobs hit, read around the anchor (a raid's boss fight: the lead bot may be dead):
+    // within range for partyAttackers, up to kRaidWalkJoinYd for the walk read.
+    float const victimYd = raidBoss ? range : walkOn ? TortoiseBots::DungeonRun::kRaidWalkJoinYd : kGuardYd;
     for (Player* bot : bots)
     {
-        if (!bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != lead->GetMap() ||
-            (bot != anchor && bot->GetDistance(anchor) > range))
+        if (!bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != lead->GetMap())
             continue;
-        // The lead bot's own mobs are leadHit / leadAttacker, not partyAttackers; a living lead bot that is no tank
-        // (GuardRead::RaidAnchor) is one of the raid an off-tank takes its mobs off.
+        // The toParty / toWalk split is by each victim's own distance from the anchor: within range for
+        // partyAttackers, up to kRaidWalkJoinYd for the walk read.
+        float const botYd = bot == anchor ? 0.0f : bot->GetDistance(anchor);
+        if (botYd > victimYd)
+            continue;
+        bool const toParty = botYd <= range;
+        // The lead bot's own mobs are leadHit / leadAttacker, not partyAttackers (nor walkAttackers); a living lead bot
+        // that is no tank (GuardRead::RaidAnchor) is one of the raid an off-tank takes its mobs off.
         if (bot != lead || mode == GuardRead::RaidAnchor)
-            addAttackers(bot, PlayerbotAI::IsHeal(bot), false, bot != lead && PlayerbotAI::IsTank(bot));
+            addAttackers(bot, PlayerbotAI::IsHeal(bot), false, bot != lead && PlayerbotAI::IsTank(bot), toParty, walkOn);
         // A living pet in the world (a hunter's or warlock's, the lead's too):
         // the mobs on it come last in GuardPick, after every mob on a bot.
         Unit* pet = bot->GetPet();
         if (pet && pet->IsAlive() && pet->IsInWorld())
-            addAttackers(pet, false, true, false);
+            addAttackers(pet, false, true, false, toParty, walkOn);
     }
 }
 
@@ -8703,17 +8732,18 @@ void ReadRezRoster(Player* lead, std::vector<Player*> const& bots, TortoiseBots:
 // one request is read once) the firing stand on its navmesh path to that unit (DungeonRun::ShotStandOnPath:
 // the path walked back from the unit end to the first point within range less kShotMarginYd that sees it).
 // One path and a few sight rays, for that one unit, on that one tick.
-// For a stand-pull boss step (kPlanFlagStandPull, specs/sw-eldermaw.md Spec B) the key is off: the glue reads
-// leadShotYd and losLead whatever the key says (the key governs ordinary pulls only). StandThisBoss: the current
-// step is such a boss with its stand (the move row right before it in the same leg).
-inline bool StandThisBoss(DungeonRunSlot const& slot)
+// For a stand-pull boss or pull step (kPlanFlagStandPull, specs/sw-eldermaw.md Spec B) the key is off: the glue reads
+// leadShotYd and losLead whatever the key says (the key governs ordinary pulls only).
+// StandThisStep: the current step is such a boss or pull with its stand (the move row right before it in the same leg).
+inline bool StandThisStep(DungeonRunSlot const& slot)
 {
     using namespace TortoiseBots::DungeonRun;
     const ai::DungeonPlan* plan = slot.run.plan;
     if (!plan || slot.run.step >= plan->steps.size())
         return false;
     const ai::PlanStep& s = plan->steps[slot.run.step];
-    if (!(s.flags & ai::kPlanFlagStandPull) || s.kind != ai::PlanStepKind::Boss || slot.run.step == 0)
+    if (!(s.flags & ai::kPlanFlagStandPull) || slot.run.step == 0 ||
+        (s.kind != ai::PlanStepKind::Boss && s.kind != ai::PlanStepKind::Pull))
         return false;
     const ai::PlanStep& prev = plan->steps[slot.run.step - 1];
     return prev.kind == ai::PlanStepKind::Move && prev.leg == s.leg;
@@ -8722,7 +8752,7 @@ inline bool StandThisBoss(DungeonRunSlot const& slot)
 void ReadPullStand(DungeonRunSlot const& slot, Player* lead, TortoiseBots::DungeonRun::Facts& f)
 {
     using namespace TortoiseBots::DungeonRun;
-    bool const standStep = StandThisBoss(slot);
+    bool const standStep = StandThisStep(slot);
     if ((!f.pullStand && !standStep) || !lead->IsAlive() || !lead->IsInWorld())
         return;
     PlayerbotAI* const leadAi = PlayerbotAIStorage::Instance().GetAI(lead);
@@ -8810,6 +8840,55 @@ std::vector<TortoiseBots::DungeonRun::DoorFact> const& InstanceDoors(uint32 mapI
 // Item-leg skip (spec D8): the current leg's Optional holders + first Door
 // need's object state, defined after ReadRunFacts (it needs FindEntryTarget).
 static void ReadRunNeedFacts(DungeonRunSlot const& slot, Player* lead, TortoiseBots::DungeonRun::Facts& f);
+
+// The formation a creature walks in (DungeonRun::UnitFact::formation): its creature group's original leader, else
+// the creature itself.
+uint64 RunFormationOf(Creature* creature)
+{
+    if (CreatureGroup* group = creature->GetCreatureGroup())
+        return group->GetOriginalLeaderGuid().GetRawValue();
+    return creature->GetObjectGuid().GetRawValue();
+}
+
+// A creature walks a patrol: its own default movement is WAYPOINT, or it is a formation member whose living leader's is.
+bool RunWalksPatrol(Creature* creature)
+{
+    if (creature->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE)
+        return true;
+    if (CreatureGroup* group = creature->GetCreatureGroup())
+        if (group->IsFormation() && group->GetLeaderGuid() != creature->GetObjectGuid())
+            if (Creature* leader = creature->GetMap()->GetCreature(group->GetLeaderGuid()))
+                return leader->IsAlive() && leader->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
+    return false;
+}
+
+// A stand-pull pull row's other patrols (DungeonRun::Facts::standPatrols, PatrolStandPullGate): living hostile
+// creatures out of combat within kStandPullClearMaxYd of the lead bot that walk a patrol, any entry. One grid
+// search, on such a row out of combat only.
+void ReadStandPatrols(Player* lead, TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    std::list<Unit*> found;
+    // Far enough for both rules: the clearance around the lead bot, and the 30 yd around the pull's way, whose far end
+    // (the pulled unit) is at most the tank's shot from the lead bot.
+    HostileCreaturesAround(lead, std::max(kStandPullClearMaxYd, f.leadShotYd + kStandPullPathClearYd), found);
+    for (Unit* unit : found)
+    {
+        Creature* c = unit->ToCreature();
+        if (!c || !c->IsAlive() || c->IsInCombat() || !RunWalksPatrol(c))
+            continue;
+        UnitFact u;
+        u.guid = c->GetObjectGuid().GetRawValue();
+        u.entry = c->GetEntry();
+        u.distLead = lead->GetDistance(c);
+        u.x = c->GetPositionX();
+        u.y = c->GetPositionY();
+        u.z = c->GetPositionZ();
+        u.hostile = true;
+        u.formation = RunFormationOf(c);
+        f.standPatrols.push_back(u);
+    }
+}
 
 void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f, bool raid)
@@ -9105,9 +9184,14 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         // In a hold: the attackers' distance from its spot (DungeonRun::HoldGuardTarget).
         ai::PlanStep const* current = FactStep(slot.run);
         // A raid's boss fight under AiPlayerbot.DungeonRunRaidBossRules (after ReadEngagedUnits: EngagedPlanBoss).
+        // A raid's walk fight (#1368): a move step of a raid trash fight reads the mobs behind the parked main tank into
+        // Facts::raid.walkAttackers too (DungeonRun::RaidWalkJoin). Only until the run joins the fight: the join and its
+        // pick are once per fight.
+        bool const raidWalk = current && current->kind == ai::PlanStepKind::Move && !slot.run.raidWalkJoined &&
+            TortoiseBots::DungeonRun::RaidTrashFight(slot.run, f);
         ReadGuardFacts(lead, bots, f,
             current && current->kind == ai::PlanStepKind::Hold ? current : nullptr,
-            TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f));
+            TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f), raidWalk);
     }
 
     // A hold's done condition on every tick, its spot in sight or not
@@ -9157,12 +9241,17 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             // spawn ownership and the waypoint followers; the glue only measures. The grid search reaches as far as
             // a spawn-owned patroller may be listed, and only while the gate is on.
             bool const pullStep = step->kind == ai::PlanStepKind::Pull;
+            // A stand-pull pull row (the run's own step, not a walk back's replayed point): its patrollers are seen
+            // out to kStandPullSeeYd, with sight and formation, and the other patrols near the lead bot are read
+            // (DungeonRun::PatrolStandPullGate; ReadStandPatrols after ReadPullStand).
+            bool const standPull = pullStep && StandThisStep(slot) && step == &slot.run.plan->steps[slot.run.step];
+            float const patrolSeeYd = standPull ? kStandPullSeeYd : kPatrolSeeYd;
             float const packRange = std::min(toPoint + step->radius +
-                (f.packClearMarginYd > 0.0f ? kSpawnPatrolSeeYd : kPatrolSeeYd), 2.0f * kSeeYd);
+                (f.packClearMarginYd > 0.0f || standPull ? kSpawnPatrolSeeYd : kPatrolSeeYd), 2.0f * kSeeYd);
             float packNearestYd = -1.0f; // the nearest unit listed nowhere this tick (Facts::packNearestLeft)
             auto addPatroller = [&](Creature* creature, float fromPoint, PullReadIn const& read)
             {
-                bool const spawnOwned = f.packClearMarginYd > 0.0f && SpawnOwned(read, step->radius);
+                bool const spawnOwned = (f.packClearMarginYd > 0.0f || standPull) && SpawnOwned(read, step->radius);
                 if (!spawnOwned && ai::OwnedByLaterStep(*slot.run.plan, slot.run.step, creature->GetEntry(),
                         creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(), f.team))
                     return;
@@ -9181,6 +9270,14 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 unit.evading = creature->IsInEvadeMode();
                 unit.spawnOwned = spawnOwned;
                 unit.spawnYd = read.spawnYd;
+                if (standPull)
+                {
+                    unit.losLead = lead->IsWithinLOSInMap(creature);
+                    unit.formation = RunFormationOf(creature);
+                    unit.patrols = RunWalksPatrol(creature);
+                    unit.attackable = GroupCanAttack(judge, creature);
+                    unit.stealthed = IsStealthed(creature);
+                }
                 f.patrollers.push_back(unit);
             };
             for (uint32 entry : entries)
@@ -9246,7 +9343,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                                 std::fabs(read.dz) + kPackResidueZYd + 2.0f);
                             read.airborneSameFloor = SameFloorUnder(ground > INVALID_HEIGHT, ground, step->z);
                         }
-                        switch (ClassifyPullRead(read, step->radius, f.packClearMarginYd))
+                        switch (ClassifyPullRead(read, step->radius, f.packClearMarginYd, patrolSeeYd))
                         {
                             case PullRead::Patroller:
                                 addPatroller(creature, fromPoint, read);
@@ -9296,9 +9393,17 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.ccImmune = RunCcImmune(creature);
                     unit.attackable = GroupCanAttack(judge, creature); // never pulled when it cannot be attacked
                     // The pull stand: can the tank shoot it from where it stands (one ray, key on only, or any
-                    // stand-pull boss step whatever the key says).
-                    if (f.pullStand || StandThisBoss(slot))
+                    // stand-pull boss or pull step whatever the key says).
+                    if (f.pullStand || StandThisStep(slot))
                         unit.losLead = lead->IsWithinLOSInMap(creature);
+                    if (standPull)
+                    {
+                        unit.x = creature->GetPositionX(); // the pull's way (DungeonRun::PatrolStandPullGate)
+                        unit.y = creature->GetPositionY();
+                        unit.formation = RunFormationOf(creature);
+                        unit.patrols = RunWalksPatrol(creature);
+                        unit.spawnOwned = SpawnOwned(read, step->radius); // the pack's formations (ScopeStandPullFacts)
+                    }
                     if (residue)
                     {
                         unit.x = creature->GetPositionX();
@@ -9314,6 +9419,31 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     f.units.push_back(unit);
                 }
             }
+            // A stand-pull pull row's pack: the formations of its entries' DB spawns in the radius, found by guid on the
+            // map alive or dead, wherever their loop is; then a formation of the pack is alive when any creature of the
+            // entries spawned anywhere, found by guid, alive and of that formation is (DungeonRun::ScopeStandPullFacts,
+            // StandPullAwayWait; the spawn lists are cached). A row's creature may spawn as another entry: checked.
+            if (standPull)
+                if (Map* const map = lead->GetMap())
+                {
+                    std::vector<std::pair<uint64, bool>> spawned; // formation, alive: every spawn of the entries on the map
+                    for (uint32 entry : step->entries)
+                        for (uint32 low : BossSpawnLowGuids(lead->GetMapId(), entry))
+                            if (CreatureData const* data = sObjectMgr.GetCreatureData(low))
+                                if (Creature* member = map->GetCreature(data->GetObjectGuid(low)))
+                                {
+                                    if (member->GetEntry() != entry)
+                                        continue;
+                                    spawned.emplace_back(RunFormationOf(member), member->IsAlive());
+                                    if (ai::PlanDistance(data->position.x, data->position.y, data->position.z, step->x,
+                                            step->y, step->z) <= step->radius + kSpawnOwnTolYd)
+                                        f.standPullOwnRead.push_back(spawned.back().first);
+                                }
+                    for (auto const& [formation, alive] : spawned)
+                        if (alive && std::find(f.standPullOwnRead.begin(), f.standPullOwnRead.end(), formation) !=
+                                f.standPullOwnRead.end())
+                            f.standPullOwnAlive.push_back(formation);
+                }
             if (step->kind == ai::PlanStepKind::Pull)
                 ReadPullJoiners(lead, bots, *step, toPoint, f.joinerCeiling, slot.run.joinerHeld, f);
             break;
@@ -9642,6 +9772,11 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         f.goodSpotCut = GoodSpotCutOff(lead, slot.run);
     ReadTimeSinkWays(slot, lead, f);
     ReadPullStand(slot, lead, f);
+    // A stand-pull pull row: the other patrols near the lead bot, read only on a tick its pull could go out (a unit of
+    // the pack in the tank's shot), not on every tick of the wait.
+    if (!f.anyInCombat && StandThisStep(slot) && step == &slot.run.plan->steps[slot.run.step] &&
+        step->kind == ai::PlanStepKind::Pull && TortoiseBots::DungeonRun::StandPullPackInShot(f))
+        ReadStandPatrols(lead, f);
     ReadRunNeedFacts(slot, lead, f);
 }
 // Item-leg skip (spec C2/C2b/C2c, review round 2 Opus 1/2/3): the current leg's need facts, read every tick: the
@@ -10425,6 +10560,7 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
             TortoiseBots::DungeonRun::Facts holdFacts;
             std::vector<Player*> const holdBots = CommandedBots(holdLead->GetGroup(), holdLead);
             ReadRunFacts(slot, holdLead, holdBots, holdFacts, binding->raid);
+            TortoiseBots::DungeonRun::ScopeStandPullFacts(slot.run, holdFacts);
             ReadRunPlayers(slot, commanderRaw, holdLead, holdLead->GetGroup(), holdBots, holdFacts);
             TortoiseBots::DungeonRun::ApplyPlayerFacts(holdFacts);
             if (TortoiseBots::DungeonRun::PlayerHoldBackWhilePaused(slot.run, holdFacts, dt))
@@ -10494,6 +10630,8 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
     RetireLostCarrier(slot, lead, bots);
     TortoiseBots::DungeonRun::Facts facts;
     ReadRunFacts(slot, lead, bots, facts, binding->raid);
+    // A stand-pull pull row: only its own formations' units (DungeonRun::ScopeStandPullFacts).
+    TortoiseBots::DungeonRun::ScopeStandPullFacts(slot.run, facts);
     // The tactic rows the server reads now (a reload may have swapped them under this run's old plan): the deferral
     // gate reads them beside the plan's own (DungeonRun::PullMayBeDeferred), in the tick and in the stand's answer below.
     slot.run.liveTactics = &ai::GetBossTactics();

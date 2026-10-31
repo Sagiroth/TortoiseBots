@@ -5433,7 +5433,7 @@
     setHtml(el, fdTabsHtml(tabs, fdPage.open));
     if (focusKey == null) return;
     const back = Array.from(el.querySelectorAll('[role="tab"]')).find(b => (focusKey === 'all' ? b.dataset.fdtabAll != null : b.dataset.fdtab === focusKey));
-    if (back) back.focus();
+    if (back) back.focus({ preventScroll: true }); // as in fdSet: the repaint must not scroll the page
   }
 
   // The All raids grid's fight summaries: one request per commander, cached 10 s by the shared feed.
@@ -5953,19 +5953,36 @@
     refreshGate.submit('cmd-fights', renderCommanders);
   }
 
+  // The words of one live event, without its time.
   function cmdLiveEventText(e) {
     const ev = (e && e.ev) || {};
-    const at = e && e.at ? cmdClock(e.at) + ' ' : '';
     switch (ev.k) {
-      case 'start': return at + 'fight start';
-      case 'engage': return at + 'pull ' + (ev.n || 'unit') + (ev.c ? ' ×' + ev.c : '');
-      case 'death': return at + 'death ' + (ev.n || 'bot') + (ev.by ? ' by ' + ev.by : '');
-      case 'taunt': return at + 'taunt ' + (ev.n || 'bot') + (ev.tn ? ' -> ' + ev.tn : '');
-      case 'interrupt': return at + 'interrupt ' + (ev.n || 'bot') + (ev.tn ? ' -> ' + ev.tn : '');
-      case 'cast': return at + 'cast ' + (ev.n || 'unit') + (ev.s ? ': ' + ev.s : '');
-      case 'end': return at + 'fight ' + (ev.o || 'end') + (ev.dur ? ' after ' + Math.round(ev.dur / 1000) + ' s' : '');
-      default: return at + (ev.k || 'event');
+      case 'start': return 'fight start';
+      case 'engage': return 'pull ' + (ev.n || 'unit') + (ev.c ? ' ×' + ev.c : '');
+      case 'death': return 'death ' + (ev.n || 'bot') + (ev.by ? ' by ' + ev.by : '');
+      case 'taunt': return 'taunt ' + (ev.n || 'bot') + (ev.tn ? ' -> ' + ev.tn : '');
+      case 'interrupt': return 'interrupt ' + (ev.n || 'bot') + (ev.tn ? ' -> ' + ev.tn : '');
+      case 'cast': return 'cast ' + (ev.n || 'unit') + (ev.s ? ': ' + ev.s : '');
+      case 'end': return 'fight ' + (ev.o || 'end') + (ev.dur ? ' after ' + Math.round(ev.dur / 1000) + ' s' : '');
+      default: return ev.k || 'event';
     }
+  }
+
+  // The colour class of one live event, from the event's own fields: k (the kind), o (an end's outcome: wipe) and r (a cast's
+  // rank: 'b' = a boss's cast). Death and a wipe are red, a boss cast yellow, a pull and a taunt the page colour, the rest muted.
+  function cmdLiveEventClass(e) {
+    const ev = (e && e.ev) || {};
+    if (ev.k === 'death') return 'lv-death';
+    if (ev.k === 'end' && ev.o === 'wipe') return 'lv-wipe';
+    if (ev.k === 'cast' && ev.r === 'b') return 'lv-boss';
+    if (ev.k === 'engage') return 'lv-pull';
+    if (ev.k === 'taunt') return 'lv-taunt';
+    if (ev.k === 'start') return 'lv-start';
+    return 'lv-other';
+  }
+
+  function cmdLiveRowHtml(e) {
+    return `<div class="cmd-live-row ${cmdLiveEventClass(e)}"><b>${e && e.at ? esc(cmdClock(e.at)) : ''}</b><span>${esc(cmdLiveEventText(e))}</span></div>`;
   }
 
   // The card's "Live events" strip: the newest 12 events, newest first.
@@ -5974,7 +5991,27 @@
     if (!card) return;
     const ring = cmdLiveEvents[commander] || [];
     const box = card.querySelector('.cmd-live-events');
-    if (box) setHtml(box, ring.slice().reverse().map(e => `<div class="cmd-live-row">${esc(cmdLiveEventText(e))}</div>`).join(''));
+    if (box) {
+      // Newest first: a new row pushes the older ones down (and the 12-event cap drops the oldest, so the box's total height can
+      // stay the same while every row moves). A reader who scrolled down keeps the row they were on: remember the topmost visible
+      // row and its offset, repaint, and scroll by however far that same event moved. At the top the box keeps showing the newest.
+      const list = ring.slice().reverse();
+      let anchor = null;
+      if (box.scrollTop > 0 && box._rows && box.children) {
+        const br = box.getBoundingClientRect();
+        for (let i = 0; i < box.children.length && !anchor; i++) {
+          const r = box.children[i].getBoundingClientRect();
+          if (r.bottom > br.top + 1) anchor = { ev: box._rows[i], off: r.top - br.top };
+        }
+      }
+      setHtml(box, list.map(cmdLiveRowHtml).join(''));
+      box._rows = list;
+      const j = anchor ? list.indexOf(anchor.ev) : -1;
+      if (j >= 0) {
+        const delta = (box.children[j].getBoundingClientRect().top - box.getBoundingClientRect().top) - anchor.off;
+        if (delta) box.scrollTop += delta;
+      }
+    }
     const wrap = card.querySelector('.cmd-live');
     if (wrap) wrap.hidden = !ring.length;
   }
@@ -6215,14 +6252,22 @@
     }
     return fdFights;
   }
-  let cmdControlOn = null;   // null: not asked yet; the page asks once per load
+  let cmdControlOn = null;   // null: not asked yet (or the last ask failed); a confirmed false stays cached
+  let cmdControlAsking = null; // the one control fetch in flight; later paints chain on it
+  let cmdControlRetryAt = 0; // a failed ask waits this long before fetching again
 
   function cmdControlAsk(cb) {
     if (cmdControlOn !== null) { cb(cmdControlOn); return; }
-    fetch('/api/v1/control').then(jsonOrThrow).then(v => {
-      cmdControlOn = !!(v && v.enabled);
-      cb(cmdControlOn);
-    }).catch(() => { cmdControlOn = false; cb(false); });
+    if (Date.now() < cmdControlRetryAt) { cb(false); return; }
+    if (!cmdControlAsking) {
+      // A failed fetch and a malformed answer both leave the answer unknown and retry after 30 s.
+      cmdControlAsking = fetch('/api/v1/control').then(jsonOrThrow).then(v => {
+        if (!v || typeof v.enabled === 'undefined') throw new Error('bad control answer');
+        cmdControlOn = !!v.enabled;
+      }).catch(() => { cmdControlRetryAt = Date.now() + 30000; })
+        .then(() => { cmdControlAsking = null; });
+    }
+    cmdControlAsking.then(() => cb(cmdControlOn === true));
   }
   function cmdRaidFights(bind, cb) {
     fdFightsFeed().list(bind.commander, list => {
@@ -6284,11 +6329,14 @@
 
   function cmdControlsBind(card, bind) {
     const row = card.querySelector('.cmd-controls-row');
-    if (!row || row._bound) return;
+    if (!row) return;
+    row._bind = bind;
+    if (row._bound) return;
     row._bound = true;
     row.addEventListener('click', e => {
       const btn = e.target.closest && e.target.closest('[data-cl]');
       if (!btn || btn.disabled || btn.tagName === 'SELECT' || btn.tagName === 'INPUT') return;
+      const bind = row._bind;
       const lines = CmdView.controlLines(bind);
       const act = btn.dataset.cl;
       if (act === 'pause') cmdControlPost(card, lines.pause);
@@ -7921,17 +7969,25 @@
       setHtml(card.querySelector('.cmd-threat'), cmdThreatHtml(bind));
       setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind));
       if (!bind.demo && !debug) cmdRaidFights(bind, () => setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind)));
-      cmdControlAsk(on => {
-        const ctl = card.querySelector('.cmd-controls');
-        if (ctl) ctl.hidden = !on;
-        if (on) { setHtml(card.querySelector('.cmd-controls-row'), cmdControlsHtml(bind)); cmdControlsBind(card, bind); }
-      });
     }
+    // The run controls live in .cmd-panels on the Live page; in the debugger they move to the card body, full width under
+    // the raid frames. The fetch runs once per page load; the place runs here too, so while the answer is unknown the panel
+    // stays where it is and moves when the answer lands, never flashing in the wrong parent.
+    cmdPlaceControls(card, debug && raid && cmdControlOn);
+    const ctlGen = card._ctlGen = (card._ctlGen || 0) + 1;
+    cmdControlAsk(on => {
+      if (card._ctlGen !== ctlGen) return;
+      const ctl = card.querySelector('.cmd-controls');
+      if (ctl) ctl.hidden = !on || !raid;
+      if (on && raid) { setHtml(card.querySelector('.cmd-controls-row'), cmdControlsHtml(bind)); cmdControlsBind(card, bind); }
+      cmdPlaceControls(card, debug && raid && on);
+    });
     const left = card.querySelector('.cmd-left');
     if (left) left.hidden = debug;
     const fightsEl = card.querySelector('.cmd-fights');
     if (fightsEl) fightsEl.hidden = debug;
     card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = !debug; });
+    cmdPlaceLiveStrip(card, debug);
     cmdLivePaintEvents(key);
     // A structural redraw: at once when the map is on screen (the layer panel reads what it worked out), else when it is back.
     if (cmdSched.shown(key)) drawCmdMap(key); else cmdSched.mark(key);
@@ -7990,6 +8046,25 @@
     }).catch(() => { card.dataset.fightState = 'idle'; });
   }
 
+  // Where the live events strip sits. In the debugger it is a grid item of .cmd-body (grid-area: live, the foot of the centre column), but a card
+  // first drawn on the Live page had the strip moved out to the card's end by ensureFightMount, so the debugger takes it back into
+  // the body. On the Live page it stays under the fights panel, as before.
+  function cmdPlaceLiveStrip(card, debug) {
+    const live = card.querySelector('.cmd-live'), body = card.querySelector('.cmd-body');
+    if (!live || !body) return;
+    if (debug) { if (live.parentElement !== body) body.appendChild(live); }
+    else if (card.querySelector('.cmd-fights')) ensureFightMount(card);
+  }
+  // Where the run controls sit. In the debugger they are a grid item of .cmd-body (grid-area: controls, full width under the
+  // raid frames); on the Live page they sit back in .cmd-panels with the notes, threat and deaths.
+  function cmdPlaceControls(card, inDebug) {
+    const ctl = card.querySelector('.cmd-controls'), body = card.querySelector('.cmd-body');
+    if (!ctl || !body) return;
+    const home = card.querySelector('.cmd-panels');
+    if (inDebug) { if (ctl.parentElement !== body) body.insertBefore(ctl, card.querySelector('.fd-bosses')); }
+    else if (home && ctl.parentElement !== home) home.appendChild(ctl);
+  }
+
   function ensureFightMount(card) {
     let el = card.querySelector('.cmd-fights');
     if (!el) {
@@ -8046,7 +8121,9 @@
     setHtml(node, html);
     if (!attr) return;
     const back = Array.from(node.querySelectorAll('[' + attr + ']')).find(el => el.getAttribute(attr) === val);
-    if (back) back.focus();
+    // preventScroll: a plain focus() scrolls the control into view, so every 2 s repaint of a section the reader had clicked in would
+    // drag a page scrolled elsewhere back up to that control.
+    if (back) back.focus({ preventScroll: true });
   }
 
   function fdRender(key) {
