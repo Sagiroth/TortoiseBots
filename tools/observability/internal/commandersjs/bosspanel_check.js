@@ -370,6 +370,46 @@ assert.strictEqual(dreamform.abilities.length, 0);
 assert.strictEqual(B.model(REAL, { entry: 60699, hp: 50, au: [] }, [], 0, 0).phase, "fight");
 assert.ok(B.render(REAL, B.model(REAL, { entry: 60699, hp: 50, au: [] }, [], 0, 0), {}).includes("Dreamform of Kronn"));
 
+// Emerald Sanctum: Solnius has no sleep phase. Aura 25148 is sleep inside phase 2, the transform latches p2, and
+// the phase-1 casts hide in p2 while Acid Breath and the gimmicks stay in it through the sleep.
+const solnius = (REAL.byEntry || REAL.bosses || REAL)["60748"];
+assert.deepStrictEqual(solnius.phases.map((x) => x.rule), ["hp<90", "start"]);
+assert.strictEqual(B.phaseOf(solnius, { hp: 100, au: [] }).phase, "p1");
+assert.strictEqual(B.phaseOf(solnius, { hp: 85, au: [] }).phase, "p2");
+assert.strictEqual(B.phaseOf(solnius, { hp: 50, au: [{ id: 25148 }] }).phase, "p2", "sleep stays in p2");
+const solP2 = B.model(REAL, { entry: 60748, hp: 85, au: [] }, [], 0, 0);
+assert.strictEqual(solP2.abilities.find((a) => a.sid === 56507).inPhase, false, "Corrosive Bolt is a p1 cast");
+assert.strictEqual(solP2.abilities.find((a) => a.sid === 24839).inPhase, true, "Acid Breath is a p2 cast");
+const solSleep = B.model(REAL, { entry: 60748, hp: 50, au: [{ id: 25148 }] }, [], 0, 0);
+assert.strictEqual(solSleep.phase, "p2", "the sleep aura does not make a phase");
+assert.strictEqual(solSleep.abilities.find((a) => a.sid === 24839).inPhase, true, "Acid Breath still runs asleep");
+assert.strictEqual(solSleep.abilities.find((a) => a.sid === 56510).inPhase, true, "the gimmicks still run asleep");
+
+// Emerald Sanctum portal adds: each has its own boss block (the panel looks a boss up by exact entry), with the
+// timers, targets and flags from its AI; the Sanctum Wyrm stays ordinary trash.
+const addBlock = (entry) => (REAL.byEntry || REAL.bosses || REAL)[entry];
+const dreamer = addBlock("60742");
+assert.deepStrictEqual(dreamer.abilities.map((a) => [a.sid, a.first, a.repeatMin, a.repeatMax, a.flags.target]),
+  [[56500, 10000, 10000, 10000, "random"]], "Dreamer casts Dreamstate every 10 s at a random player");
+assert.strictEqual(dreamer.abilities[0].flags.aura, true);
+assert.strictEqual(B.model(REAL, { entry: 60742, hp: 100, au: [] }, [], 0, 0).abilities[0].inPhase, true);
+const dragonkin = addBlock("60743");
+assert.deepStrictEqual(dragonkin.abilities.map((a) => [a.sid, a.first, a.repeatMin, a.repeatMax, a.flags.target, a.flags.self]),
+  [[27564, 10000, 10000, 10000, "self", true]], "Dragonkin reflects on itself every 10 s");
+const wyrmkin = addBlock("60745");
+assert.deepStrictEqual(wyrmkin.abilities.map((a) => [a.sid, a.first, a.repeatMin, a.repeatMax, a.flags.target]),
+  [[26050, 7000, 7000, 7000, "victim"], [56503, 25000, 21000, 21000, "aoe"]], "Wyrmkin: Acid Spit 7 s, Venom 25 s then 21 s");
+assert.strictEqual(wyrmkin.abilities.find((a) => a.sid === 56503).flags.aura, true);
+const scalebane = addBlock("60746");
+assert.deepStrictEqual(scalebane.abilities.map((a) => [a.sid, a.first, a.repeatMin, a.repeatMax, a.flags.target]),
+  [[19983, 6000, 6000, 6000, "victim"], [56504, 25000, 25000, 25000, "aoe"]], "Scalebane: Cleave 6 s, Intimidation 25 s");
+assert.strictEqual(scalebane.abilities.find((a) => a.sid === 56504).flags.aura, true);
+const suppressor = addBlock("61212");
+assert.deepStrictEqual(suppressor.abilities.map((a) => [a.sid, a.first, a.repeatMin, a.repeatMax, a.flags.target]),
+  [[56501, 15000, 14000, 14000, "random"]], "Suppressor: Emerald Supression 15 s then every 14 s");
+assert.strictEqual(suppressor.abilities[0].flags.aura, true);
+assert.strictEqual(addBlock("60744"), undefined, "Sanctum Wyrm has no boss block");
+
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];
 assert.strictEqual(jeklikReal.abilities.find((a) => a.sid === 23919).flags.phase, "bat");

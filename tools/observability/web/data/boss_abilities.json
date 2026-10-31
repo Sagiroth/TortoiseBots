@@ -168,6 +168,20 @@
         60699,
         62941
       ]
+    },
+    {
+      "key": "emerald_sanctum",
+      "mapId": 807,
+      "name": "Emerald Sanctum",
+      "bosses": [
+        60747,
+        60748,
+        60742,
+        60743,
+        60745,
+        60746,
+        61212
+      ]
     }
   ],
   "bosses": {
@@ -14744,6 +14758,645 @@
         "Name matches only; no EventAI rows and no timers. 52789 is an add's shield and 52800 with 52799 is the totem's pulse and its Seeping Mass summon; their caster is not Partath so they are kept out of the ability rows.",
         "The core template is faction 370 (friendly to players); the plan says 915 is needed and the guide says a guild killed him. Adds did not respawn after a reset in the guide."
       ]
+    },
+    "60747": {
+      "entry": 60747,
+      "name": "Erennius",
+      "map": "emerald_sanctum",
+      "order": 94,
+      "abilities": [
+        {
+          "sid": 24099,
+          "name": "Poison Bolt Volley",
+          "castMs": 0,
+          "a": 0,
+          "b": 9000,
+          "c": 13000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 56506,
+          "name": "Howl of Erennius",
+          "castMs": 0,
+          "a": 37000,
+          "b": 30000,
+          "c": 33000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 46079,
+          "name": "Call of Nightmare",
+          "castMs": 0,
+          "a": 7000,
+          "b": 7000,
+          "c": 7000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 46080,
+          "name": "Wail of Erennius",
+          "castMs": 0,
+          "a": 0,
+          "b": 35000,
+          "c": 35000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 46082,
+          "name": "Green Dragon Binding",
+          "castMs": 0,
+          "a": 0,
+          "b": 70000,
+          "c": 70000,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "script",
+          "okNeeds": {}
+        },
+        {
+          "sid": 56505,
+          "name": "Curse of Erennius",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 50,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Wall of Erennius (the client name is Wail of Erennius) and Green Dragon Binding only tick while Solnius is alive and in combat, so in the normal order Erennius is fought alone while Solnius is neutral and casts neither; both start once Solnius is pulled with Erennius alive. The Binding is cast on Solnius, not on a player.",
+        "Curse of Erennius is cast once; 81-92 s after Erennius drops below 50 percent; on his current victim.",
+        "Poison Bolt Volley's first cast comes at 9-13 s and repeats every 9-13 s; Howl repeats every 30-33 s.",
+        "Erennius joins the pull when Solnius is engaged; if Solnius dies first while Erennius is in combat, Erennius drops the fight, goes passive and despawns after 20 s."
+      ]
+    },
+    "60748": {
+      "entry": 60748,
+      "name": "Solnius",
+      "map": "emerald_sanctum",
+      "order": 95,
+      "abilities": [
+        {
+          "sid": 56507,
+          "name": "Corrosive Bolt",
+          "castMs": 0,
+          "a": 6000,
+          "b": 6000,
+          "c": 6000,
+          "phase": "p1",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 56508,
+          "name": "Emerald Rot",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 24839,
+          "name": "Acid Breath",
+          "castMs": 0,
+          "a": 0,
+          "b": 15000,
+          "c": 15000,
+          "phase": "p2",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": true,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 56510,
+          "name": "Bane of Eranikus",
+          "castMs": 0,
+          "a": 0,
+          "b": 27000,
+          "c": 27000,
+          "phase": "p2",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 56512,
+          "name": "Sanctum Mind Decay",
+          "castMs": 0,
+          "a": 0,
+          "b": 27000,
+          "c": 27000,
+          "phase": "p2",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 56514,
+          "name": "Dreamfever",
+          "castMs": 0,
+          "a": 0,
+          "b": 27000,
+          "c": 27000,
+          "phase": "p2",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 56516,
+          "name": "Emerald Instability",
+          "castMs": 0,
+          "a": 0,
+          "b": 27000,
+          "c": 27000,
+          "phase": "p2",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 46079,
+          "name": "Call of Nightmare",
+          "castMs": 0,
+          "a": 6000,
+          "b": 6000,
+          "c": 6000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 46081,
+          "name": "Expulsion of Corruption",
+          "castMs": 0,
+          "a": 17000,
+          "b": 17000,
+          "c": 17000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 25148,
+          "name": "Sleep Visual DND",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "script",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "p2",
+          "order": 1,
+          "rule": {
+            "kind": "hp",
+            "hp": 90
+          }
+        },
+        {
+          "name": "p1",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 60742,
+          "name": "Sanctum Dreamer",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 60743,
+          "name": "Sanctum Dragonkin",
+          "role": "summon",
+          "priority": 2
+        },
+        {
+          "entry": 60745,
+          "name": "Sanctum Wyrmkin",
+          "role": "summon",
+          "priority": 2
+        },
+        {
+          "entry": 60746,
+          "name": "Sanctum Scalebane",
+          "role": "summon",
+          "priority": 2
+        },
+        {
+          "entry": 61212,
+          "name": "Sanctum Supressor",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 60744,
+          "name": "Sanctum Wyrm",
+          "role": "linked",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "Emerald Rot: one timer; 15 s to 8 random players in phase 1; it freezes in phase 2 above 40 percent and then runs every 30 s to 4 random players; it is reset to 30 s when Solnius wakes. It is an area effect: every enemy within 20 yd of Solnius gets it (targets 22/15, radius 9); the named players are only the cast targets.",
+        "The four gimmick debuffs share one 27 s timer and are triggered casts with no cast time; phase 2 only. Bane of Eranikus is an area at Solnius (targets 18/16, triggered so the destination is the caster), so it hits every enemy within 20 yd of him; the two random players are only its cast targets. Sanctum Mind Decay, Dreamfever and Emerald Instability land on their chosen players (implicit target A=6), 2 random players each.",
+        "Solnius transforms once at the first check at least 12 s after the pull while below 90 percent; until then he stays in phase 1 whatever the damage, so a burst below 90 percent inside the first 12 s shows phase 2 at the 12 s mark. The threat list is wiped; a random player gets 10 threat; taunt and attack-me become immune; he never returns to phase 1.",
+        "Solnius sleeps once; 12 s after the transform and only below 60 percent; 45 s sleep. He is untargetable and passive, but the phase stays phase 2 and the threat list is kept, so by the code he can keep casting Acid Breath and the gimmicks during it (not seen live); the Emerald Rot timer restarts at 30 s on waking; more than 50 yd from home he is teleported home first.",
+        "Portals open 5 s after the sleep: three fixed portals; each spawns a random major (Dragonkin, Wyrmkin, Scalebane or Suppressor) and a Dreamer; two more Dreamers every 30 s at portals 1 and 3 while a major lives; the portals close when all majors are dead.",
+        "Hard mode: Solnius pulls Erennius when he is engaged while Erennius lives, and only then does Expulsion of Corruption run; Solnius's pull also sends every trash creature the instance registered at the player who pulled him.",
+        "Solnius cannot be attacked until a player picks the gossip option (menu 92950); that clears the untargetable flag and sets faction 14.",
+        "When Solnius dies while Erennius is alive and in combat; Erennius resets threat, goes passive and despawns after 20 s, and a chest appears at 3276.2, 3043.9.",
+        "The portal majors and Dreamers each have their own boss block in this table (60742, 60743, 60745, 60746, 61212) with the timers from their scripts; they stay Solnius's adds, so kill priority stays on the add rows here.",
+        "The Sanctum Wyrm 60744 is ordinary trash, and Solnius's pull sends it at the player who pulled him along with every other trash creature the instance still has registered."
+      ]
+    },
+    "60742": {
+      "entry": 60742,
+      "name": "Sanctum Dreamer",
+      "map": "emerald_sanctum",
+      "order": 96,
+      "abilities": [
+        {
+          "sid": 56500,
+          "name": "Dreamstate",
+          "castMs": 0,
+          "a": 10000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": []
+    },
+    "60743": {
+      "entry": 60743,
+      "name": "Sanctum Dragonkin",
+      "map": "emerald_sanctum",
+      "order": 97,
+      "abilities": [
+        {
+          "sid": 27564,
+          "name": "Reflection",
+          "castMs": 0,
+          "a": 10000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": []
+    },
+    "60745": {
+      "entry": 60745,
+      "name": "Sanctum Wyrmkin",
+      "map": "emerald_sanctum",
+      "order": 98,
+      "abilities": [
+        {
+          "sid": 26050,
+          "name": "Acid Spit",
+          "castMs": 0,
+          "a": 7000,
+          "b": 7000,
+          "c": 7000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 56503,
+          "name": "Wyrmkins Venom",
+          "castMs": 0,
+          "a": 25000,
+          "b": 21000,
+          "c": 21000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Wyrmkin's Venom is cast on every player within 5 yd of the wyrmkin; the 5 yd is the script's gate, not a spell radius, so the map cannot draw it."
+      ]
+    },
+    "60746": {
+      "entry": 60746,
+      "name": "Sanctum Scalebane",
+      "map": "emerald_sanctum",
+      "order": 99,
+      "abilities": [
+        {
+          "sid": 19983,
+          "name": "Cleave",
+          "castMs": 0,
+          "a": 6000,
+          "b": 6000,
+          "c": 6000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 56504,
+          "name": "Scalebane Intimidation",
+          "castMs": 0,
+          "a": 25000,
+          "b": 25000,
+          "c": 25000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Scalebane Intimidation is an area at the scalebane (implicit targets 22, radius 10 = 30 yd); Cleave is a melee strike on the current victim."
+      ]
+    },
+    "61212": {
+      "entry": 61212,
+      "name": "Sanctum Supressor",
+      "map": "emerald_sanctum",
+      "order": 100,
+      "abilities": [
+        {
+          "sid": 56501,
+          "name": "Emerald Supression",
+          "castMs": 0,
+          "a": 15000,
+          "b": 14000,
+          "c": 14000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": []
     }
   },
   "codeAnswers": [
@@ -14904,6 +15557,87 @@
       "source": [
         "ai/playerbot/strategy/hunter/GenericHunterStrategy.cpp",
         "ai/playerbot/strategy/shaman/ShamanStrategy.cpp"
+      ]
+    },
+    {
+      "map": "emerald_sanctum",
+      "boss": 60748,
+      "key": "24839",
+      "spell": 24839,
+      "add": 0,
+      "flag": "",
+      "need": "front",
+      "level": "full",
+      "name": "dragon flank",
+      "text": "the tank holds the head away and everyone else works the flanks",
+      "source": [
+        "ai/playerbot/strategy/generic/EmeraldSanctumDungeonStrategies.cpp",
+        "ai/playerbot/strategy/generic/ReactionStrategy.cpp",
+        "ai/playerbot/strategy/triggers/EmeraldSanctumDungeonTriggers.h"
+      ]
+    },
+    {
+      "map": "emerald_sanctum",
+      "boss": 60748,
+      "key": "add=61212",
+      "spell": 0,
+      "add": 61212,
+      "flag": "",
+      "need": "kill",
+      "level": "partly",
+      "name": "solnius adds",
+      "text": "the raid switches to the portal adds when one is in reach",
+      "source": [
+        "ai/playerbot/strategy/generic/EmeraldSanctumDungeonStrategies.cpp",
+        "ai/playerbot/strategy/triggers/EmeraldSanctumDungeonTriggers.h"
+      ]
+    },
+    {
+      "map": "emerald_sanctum",
+      "boss": 60748,
+      "key": "add=60743",
+      "spell": 0,
+      "add": 60743,
+      "flag": "",
+      "need": "kill",
+      "level": "partly",
+      "name": "solnius adds",
+      "text": "the raid switches to the portal adds when one is in reach",
+      "source": [
+        "ai/playerbot/strategy/generic/EmeraldSanctumDungeonStrategies.cpp",
+        "ai/playerbot/strategy/triggers/EmeraldSanctumDungeonTriggers.h"
+      ]
+    },
+    {
+      "map": "emerald_sanctum",
+      "boss": 60748,
+      "key": "add=60745",
+      "spell": 0,
+      "add": 60745,
+      "flag": "",
+      "need": "kill",
+      "level": "partly",
+      "name": "solnius adds",
+      "text": "the raid switches to the portal adds when one is in reach",
+      "source": [
+        "ai/playerbot/strategy/generic/EmeraldSanctumDungeonStrategies.cpp",
+        "ai/playerbot/strategy/triggers/EmeraldSanctumDungeonTriggers.h"
+      ]
+    },
+    {
+      "map": "emerald_sanctum",
+      "boss": 60748,
+      "key": "add=60746",
+      "spell": 0,
+      "add": 60746,
+      "flag": "",
+      "need": "kill",
+      "level": "partly",
+      "name": "solnius adds",
+      "text": "the raid switches to the portal adds when one is in reach",
+      "source": [
+        "ai/playerbot/strategy/generic/EmeraldSanctumDungeonStrategies.cpp",
+        "ai/playerbot/strategy/triggers/EmeraldSanctumDungeonTriggers.h"
       ]
     }
   ]

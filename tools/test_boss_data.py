@@ -681,8 +681,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 93)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 527)
+        self.assertEqual(len(doc["bosses"]), 100)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 550)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -2228,6 +2228,145 @@ class TimbermawValueTest(unittest.TestCase):
                     continue
                 self.assertTrue(part.startswith("sql/"), (row["_line"], part))
                 self.assertNotIn("src/scripts", part)
+
+
+class EmeraldSanctumValueTest(unittest.TestCase):
+    """Every Emerald Sanctum number and flag, read off the core scripts (not the CSV).
+
+    Source: src/scripts/dungeons/emerald_sanctum/{boss_solnius.cpp,instance_emerald_sanctum.cpp}.
+    """
+
+    ABILITIES = {
+        60747: {  # Erennius
+            24099: dict(a=0, b=9000, c=13000, target="aoe", phase="", castMs=0, flags={"aura": True}),
+            56506: dict(a=37000, b=30000, c=33000, target="aoe", phase="", castMs=0,
+                        flags={"aura": True, "okNeeds": {"dispel": "nodispel"}}),
+            46079: dict(a=7000, b=7000, c=7000, target="random", phase="", castMs=0,
+                        flags={"aura": True, "okNeeds": {"dispel": "nodispel"}}),
+            46080: dict(a=0, b=35000, c=35000, target="aoe", phase="", castMs=0,
+                        flags={"aura": True, "int": True}),
+            46082: dict(a=0, b=70000, c=70000, target="ally", phase="", castMs=0, flags={"ok": "script"}),
+            56505: dict(a=0, b=0, c=0, target="victim", phase="", castMs=0, flags={"aura": True, "hp": 50}),
+        },
+        60748: {  # Solnius
+            56507: dict(a=6000, b=6000, c=6000, target="victim", phase="p1", castMs=0, flags={"aura": True}),
+            56508: dict(a=0, b=0, c=0, target="aoe", phase="", castMs=0, flags={"aura": True}),
+            24839: dict(a=0, b=15000, c=15000, target="victim", phase="p2", castMs=0, flags={"cone": True}),
+            56510: dict(a=0, b=27000, c=27000, target="aoe", phase="p2", castMs=0, flags={"aura": True}),
+            56512: dict(a=0, b=27000, c=27000, target="random", phase="p2", castMs=0, flags={"aura": True}),
+            56514: dict(a=0, b=27000, c=27000, target="random", phase="p2", castMs=0, flags={"aura": True}),
+            56516: dict(a=0, b=27000, c=27000, target="random", phase="p2", castMs=0, flags={"aura": True}),
+            46079: dict(a=6000, b=6000, c=6000, target="random", phase="", castMs=0,
+                        flags={"aura": True, "okNeeds": {"dispel": "nodispel"}}),
+            46081: dict(a=17000, b=17000, c=17000, target="aoe", phase="", castMs=0, flags={}),
+            25148: dict(a=0, b=0, c=0, target="self", phase="", castMs=0, flags={"self": True, "ok": "script"}),
+        },
+        60742: {  # Sanctum Dreamer
+            56500: dict(a=10000, b=10000, c=10000, target="random", phase="", castMs=0, flags={"aura": True}),
+        },
+        60743: {  # Sanctum Dragonkin
+            27564: dict(a=10000, b=10000, c=10000, target="self", phase="", castMs=0, flags={"self": True}),
+        },
+        60745: {  # Sanctum Wyrmkin
+            26050: dict(a=7000, b=7000, c=7000, target="victim", phase="", castMs=0, flags={"aura": True}),
+            56503: dict(a=25000, b=21000, c=21000, target="aoe", phase="", castMs=0, flags={"aura": True}),
+        },
+        60746: {  # Sanctum Scalebane
+            19983: dict(a=6000, b=6000, c=6000, target="victim", phase="", castMs=0, flags={}),
+            56504: dict(a=25000, b=25000, c=25000, target="aoe", phase="", castMs=0, flags={"aura": True}),
+        },
+        61212: {  # Sanctum Supressor
+            56501: dict(a=15000, b=14000, c=14000, target="random", phase="", castMs=0, flags={"aura": True}),
+        },
+    }
+
+    PHASES = {
+        60747: [],
+        60748: [
+            ("p2", {"kind": "hp", "hp": 90}, 1),
+            ("p1", {"kind": "start"}, 2),
+        ],
+    }
+
+    ADDS = {
+        60747: {},
+        60748: {60742: ("summon", 1), 60743: ("summon", 2), 60744: ("linked", 2),
+                60745: ("summon", 2), 60746: ("summon", 2), 61212: ("summon", 1)},
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        cls.doc = boss_data.build_document(rows, names)
+
+    def boss(self, entry):
+        boss = self.doc["bosses"].get(str(entry))
+        self.assertIsNotNone(boss, f"boss {entry} is missing from the table")
+        return boss
+
+    def test_ability_values(self):
+        for entry, expected in self.ABILITIES.items():
+            got = {ability["sid"]: ability for ability in self.boss(entry)["abilities"]}
+            self.assertEqual(sorted(got), sorted(expected), f"boss {entry} ability set")
+            for sid, want in expected.items():
+                ability = got[sid]
+                label = f"boss {entry} spell {sid} ({ability['name']})"
+                self.assertEqual((ability["a"], ability["b"], ability["c"]),
+                                 (want["a"], want["b"], want["c"]), label + " timers")
+                self.assertEqual(ability["target"], want["target"], label + " target")
+                self.assertEqual(ability["phase"], want["phase"], label + " phase")
+                self.assertEqual(ability["castMs"], want["castMs"], label + " castMs")
+                for flag, value in want["flags"].items():
+                    self.assertEqual(ability[flag], value, f"{label} flag {flag}")
+
+    def test_phase_rules(self):
+        for entry, expected in self.PHASES.items():
+            got = [(phase["name"], phase["rule"], phase["order"])
+                   for phase in self.boss(entry)["phases"]]
+            self.assertEqual(got, expected, f"boss {entry} phases")
+
+    def test_adds(self):
+        for entry, expected in self.ADDS.items():
+            got = {add["entry"]: (add["role"], add["priority"]) for add in self.boss(entry)["adds"]}
+            self.assertEqual(got, expected, f"boss {entry} adds")
+
+    def test_portal_add_blocks(self):
+        for entry in (60742, 60743, 60745, 60746, 61212):
+            boss = self.boss(entry)
+            self.assertEqual(boss["map"], "emerald_sanctum")
+            self.assertTrue(boss["abilities"], f"portal add {entry} has no ability block")
+        self.assertNotIn("60744", self.doc["bosses"], "Sanctum Wyrm stays trash, not a boss block")
+
+    def test_solid_semantics(self):
+        solnius = self.boss(60748)
+        abilities = {ability["sid"]: ability for ability in solnius["abilities"]}
+        erennius = {ability["sid"]: ability for ability in self.boss(60747)["abilities"]}
+        # The sleep is an aura (25148) inside phase 2, not a phase: the threat list survives GoSleep and the
+        # phase-2 casts keep running, so no phase row matches the aura and no ability is tagged to a sleep phase.
+        self.assertEqual(solnius["phases"][0]["rule"], {"kind": "hp", "hp": 90})
+        self.assertNotIn("sleep", [phase["name"] for phase in solnius["phases"]])
+        self.assertEqual(abilities[25148]["ok"], "script")
+        self.assertFalse([a["phase"] for a in abilities.values() if a["phase"] not in ("", "p1", "p2")],
+                         "no ability is tagged to a sleep phase")
+        # Emerald Rot runs in both phases (15 s in p1, 30 s below 40% in p2) and shares the timer with the wake
+        # reset, so it carries no phase tag and no column timer. It is an area around Solnius, not a player debuff.
+        self.assertEqual(abilities[56508]["phase"], "")
+        self.assertEqual((abilities[56508]["a"], abilities[56508]["b"], abilities[56508]["c"]), (0, 0, 0))
+        self.assertEqual(abilities[56508]["target"], "aoe")
+        # Bane of Eranikus is the other area spell; the three player debuffs share its literal 27 s timer.
+        self.assertEqual(abilities[56510]["target"], "aoe")
+        self.assertEqual((abilities[56510]["b"], abilities[56510]["c"]), (27000, 27000))
+        self.assertEqual({abilities[sid]["b"] for sid in (56512, 56514, 56516)}, {27000})
+        # Acid Breath counts only from the transform: first column 0, 15 s repeats.
+        self.assertEqual(abilities[24839]["a"], 0)
+        # Only Wail of Erennius is kickable: preventionType 1 and interruptFlags 0x02 with castingTimeIndex 171.
+        self.assertTrue(erennius[46080]["int"])
+        self.assertFalse({aid for aid, a in erennius.items() if a["int"]} - {46080})
+        self.assertFalse({aid for aid, a in abilities.items() if a["int"]}, "no Solnius cast is kickable")
+        # Call of Nightmare is one spell id on both bosses, with its own timer on each.
+        self.assertEqual((erennius[46079]["a"], erennius[46079]["b"]), (7000, 7000))
+        self.assertEqual((abilities[46079]["a"], abilities[46079]["b"]), (6000, 6000))
 
 
 if __name__ == "__main__":

@@ -816,6 +816,14 @@
       "name": "Summon Player",
       "castMs": 0
     },
+    "24839": {
+      "name": "Acid Breath",
+      "castMs": 0
+    },
+    "25148": {
+      "name": "Sleep Visual DND",
+      "castMs": 0
+    },
     "25174": {
       "name": "Sundering Cleave",
       "castMs": 0
@@ -1480,6 +1488,22 @@
       "name": "Molten Bite",
       "castMs": 0
     },
+    "46079": {
+      "name": "Call of Nightmare",
+      "castMs": 0
+    },
+    "46080": {
+      "name": "Wail of Erennius",
+      "castMs": 0
+    },
+    "46081": {
+      "name": "Expulsion of Corruption",
+      "castMs": 0
+    },
+    "46082": {
+      "name": "Green Dragon Binding",
+      "castMs": 0
+    },
     "47373": {
       "name": "Wide Backhand",
       "castMs": 0
@@ -1846,6 +1870,54 @@
     },
     "52813": {
       "name": "Infected Secretion",
+      "castMs": 0
+    },
+    "56500": {
+      "name": "Dreamstate",
+      "castMs": 0
+    },
+    "56501": {
+      "name": "Emerald Supression",
+      "castMs": 0
+    },
+    "56503": {
+      "name": "Wyrmkins Venom",
+      "castMs": 0
+    },
+    "56504": {
+      "name": "Scalebane Intimidation",
+      "castMs": 0
+    },
+    "56505": {
+      "name": "Curse of Erennius",
+      "castMs": 0
+    },
+    "56506": {
+      "name": "Howl of Erennius",
+      "castMs": 0
+    },
+    "56507": {
+      "name": "Corrosive Bolt",
+      "castMs": 0
+    },
+    "56508": {
+      "name": "Emerald Rot",
+      "castMs": 0
+    },
+    "56510": {
+      "name": "Bane of Eranikus",
+      "castMs": 0
+    },
+    "56512": {
+      "name": "Sanctum Mind Decay",
+      "castMs": 0
+    },
+    "56514": {
+      "name": "Dreamfever",
+      "castMs": 0
+    },
+    "56516": {
+      "name": "Emerald Instability",
       "castMs": 0
     },
     "57056": {
@@ -2575,6 +2647,27 @@
     "60699": {
       "name": "Dreamform of Kronn"
     },
+    "60742": {
+      "name": "Sanctum Dreamer"
+    },
+    "60743": {
+      "name": "Sanctum Dragonkin"
+    },
+    "60744": {
+      "name": "Sanctum Wyrm"
+    },
+    "60745": {
+      "name": "Sanctum Wyrmkin"
+    },
+    "60746": {
+      "name": "Sanctum Scalebane"
+    },
+    "60747": {
+      "name": "Erennius"
+    },
+    "60748": {
+      "name": "Solnius"
+    },
     "61192": {
       "name": "Shadowbane Darkcaster"
     },
@@ -2604,6 +2697,9 @@
     },
     "61211": {
       "name": "Shadowbane Glutton"
+    },
+    "61212": {
+      "name": "Sanctum Supressor"
     },
     "61221": {
       "name": "Brood Queen Araxxna"
