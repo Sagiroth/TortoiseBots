@@ -32,7 +32,6 @@
 #include "GuildOrderBuyAction.h"
 #include "runtime/GuildOrderSupplyPolicy.h"
 #include "playerbot/ServerFacade.h"
-#include "runtime/GuildOrderStore.h"
 #include "playerbot/RandomBotFacade.h"
 #include "runtime/HireLifecycle.h"
 #include "Guild/GuildMgr.h"
@@ -779,7 +778,10 @@ bool ChooseTravelTargetAction::Execute(Event& event)
             AreaTableEntry const* area = newTarget.getPosition()->GetArea();
             uint32 zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
             if (zoneId)
+            {
                 TortoiseBots::GuildOrders::SetFarmZone(bot->GetGUIDLow(), zoneId, 0, 0, 0);
+                TortoiseBots::GuildOrders::CommitAuctionZone(bot->GetGUIDLow(), zoneId);
+            }
         }
     }
 
@@ -2836,22 +2838,53 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 
         else if (ahSupply)
         {
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, entries = AuctioneerEntries()]()
+            Team team = bot->GetTeam();
+            uint32 botFaction = bot->GetFactionTemplateId();
+            uint32 botGuidLow = bot->GetGUIDLow();
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, botFaction, botGuidLow, entries = AuctioneerEntries()]()
                 {
                     PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg, entries, true, 0.0f);
 
+                    // The leg commits to one city: the first pick stores its
+                    // zone, later picks reuse it, so the bot stops flapping
+                    // between capitals while it walks.
+                    std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
+                        TortoiseBots::GuildOrders::Find(botGuidLow);
+                    uint32_t committed = (record && record->supplyStep ==
+                        TortoiseBots::GuildOrders::SupplyStep::AuctionHouse) ?
+                        record->committedAuctionZoneId : 0;
                     for (auto& [partition, travelPoints] : list)
                     {
-                        travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), [](TravelPoint point)
+                        travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(),
+                            [team, botFaction, committed](TravelPoint point)
                             {
                                 EntryTravelDestination* dest = (EntryTravelDestination*)std::get<TravelDestination*>(point);
                                 if (!dest->GetCreatureInfo())
                                     return true;
 
-                                if (dest->GetCreatureInfo()->npc_flags & UNIT_NPC_FLAG_AUCTIONEER)
+                                if (!(dest->GetCreatureInfo()->npc_flags & UNIT_NPC_FLAG_AUCTIONEER))
+                                    return true;
+                                WorldPosition* position = std::get<WorldPosition*>(point);
+                                if (!position)
+                                    return true;
+                                if (committed)
+                                {
+                                    AreaTableEntry const* area = position->GetArea();
+                                    uint32_t zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
+                                    if (zoneId != committed)
+                                        return true;
                                     return false;
-
-                                return true;
+                                }
+                                if (position->IsEnemyHomeZoneFor(team))
+                                    return true;
+                                FactionTemplateEntry const* auctioneerFaction =
+                                    sObjectMgr.GetFactionTemplateEntry(dest->GetCreatureInfo()->faction);
+                                FactionTemplateEntry const* botTemplate =
+                                    sObjectMgr.GetFactionTemplateEntry(botFaction);
+                                if (auctioneerFaction && botTemplate &&
+                                    PlayerbotAI::GetFactionReaction(botTemplate, auctioneerFaction) < REP_NEUTRAL)
+                                    return true;
+                                return false;
                             }), travelPoints.end());
                     }
                     return list;

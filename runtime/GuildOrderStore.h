@@ -105,8 +105,19 @@ void ClearMailEmpty(uint32_t botGuidLow);
 // An order-leg travel search came back empty or rejected for a service leg
 // (bags mailbox, bank, AH, vendor). Returns the consecutive count for that
 // leg; the caller moves the ladder down once it reaches the farm-zone
-// limit. A landed order search clears it. Map thread only (travel pick).
+// limit. A leg or item change restarts it, never a landed pick: the search
+// layer re-picks between cities while the bot walks. Map thread only
+// (travel pick).
 uint32_t NoteSupplySearchFailed(uint32_t botGuidLow, SupplyStep step, uint32_t itemId);
+// The auction leg commits to one city: the first pick stores its zone, later
+// picks reuse it. A city change commits nothing, so flapping searches cannot
+// dodge the visit count below. Map thread only (travel pick).
+void CommitAuctionZone(uint32_t botGuidLow, uint32_t zoneId);
+// An arrived auction-leg trip ended: with an auctioneer in reach the buy
+// action owns the ladder and the count clears, otherwise it grows. Returns
+// the consecutive count; the caller moves the ladder down at the visit
+// limit. Map thread only (arrival).
+uint32_t NoteArrivedAuctionVisit(uint32_t botGuidLow, bool auctioneerInReach);
 // Drop parked refund stubs whose gold is back. World thread only (Update).
 void FinishRepaid();
 // A keep round landed in the bank: the order watches it from now on. Sets
@@ -131,8 +142,9 @@ void NoteDeath(uint32_t botGuidLow);
 // plan zone through the zone-move path. World thread only (travel pick).
 void NoteSearchFailed(uint32_t botGuidLow, uint32_t zoneId);
 
-// An order-leg search landed: the consecutive-failure count for the zone
-// resets. World thread only (travel pick).
+// An order-leg zone search landed: the consecutive-failure count for the
+// zone resets. Farm only; the leg streak restarts on a leg change instead.
+// World thread only (travel pick).
 void NoteSearchLanded(uint32_t botGuidLow);
 
 // The bags filled up before the amount was reached: partial delivery.

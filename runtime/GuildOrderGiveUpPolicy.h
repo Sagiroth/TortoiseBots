@@ -73,6 +73,22 @@ inline bool SearchFailsMoveZone(uint32_t searchFailsInZone)
     return searchFailsInZone >= kSearchFailZoneMove;
 }
 
+// Auction-house visits that never reach an auctioneer. The search layer
+// keeps offering the next city while the bot stands where it landed, so the
+// count lives on the leg, not the pick streak: after this many arrived visits
+// the leg moves down the ladder by itself, whether or not the pick streak
+// survived the re-picks in between. The live value rides
+// `AiPlayerbot.GuildOrderAuctionVisits` (0 disables the exit); this constant
+// is its default and the unit-test pin.
+inline constexpr uint32_t kAuctionVisitsWithoutAuctioneer = 3;
+
+// Whether the arrived-visit count ends the auction leg at the configured
+// limit. Zero disables the exit.
+inline bool AuctionVisitsMoveLadder(uint32_t arrivedVisits, uint32_t limit)
+{
+    return limit > 0 && arrivedVisits >= limit;
+}
+
 // The order ends once the bot has worked its chosen hours in total without
 // reaching the amount. An unlimited order (hours 0) never times out; the
 // other out-of-range hours fall back to the default (no limit).

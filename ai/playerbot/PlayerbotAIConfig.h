@@ -317,6 +317,12 @@ public:
     // instead (same map, unwatched, once per 10 min). Owned/hired bots and bots
     // with a real master never teleport. Default off.
     bool stuckTravelTeleport = true;
+    // Auction-house visit budget for the guild-order auction leg: an arrived
+    // trip with no auctioneer in interact range moves the leg down the ladder
+    // after this many visits. No config gate by design: it ends no order, it
+    // only moves the leg on after 3 visits like the pick streak does. Tests
+    // pin the constant (see tools/test_guild_order_giveup_policy.cpp).
+    uint32_t guildOrderAuctionVisits = 3;
     // Quest-log upkeep for masterless random bots: drop finished quests that
     // can no longer be rewarded, refuse grey quests unless the reward is an
     // equip upgrade, and prefer turn-in travel once 2 quests are finished.
