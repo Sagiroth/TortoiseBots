@@ -274,9 +274,10 @@ Gives a guild bot an order to fetch items for real: it farms, buys or crafts the
 .bot order <BotName> farm <shift-clicked item link> <amount> [hours|inf] [keep]
 .bot order <BotName> buy <item id> <amount> [hours|inf] [keep]
 .bot order <BotName> craft <item id> <amount> [hours|inf] [keep]
-.bot order <BotName> cancel
+.bot order <BotName> cancel (cancelling a parent cancels its whole sub-order branch)
 .bot order list
 .bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text>
+.bot order reassign <SubOrderBot> <NewBot>
 ```
 
 - **Who may give orders:** you must be a real player in the bot's guild, and your guild rank must be allowed to edit officer notes. Anyone else gets an error.
@@ -288,6 +289,7 @@ Gives a guild bot an order to fetch items for real: it farms, buys or crafts the
 - **States:** `working` (farming, buying or crafting), `waiting` (the bot is grouped with a player; the order resumes when it leaves), `delivering` (amount reached or bags full, on the way to the guild bank), `done`, `stocked` (keep order watching a filled bank), `mailed`, `noskill` (missing profession skill) and `cant` (no source, no recipe, farm time ran out, no new item in 3 worked hours, or stuck while crafting or delivering).
 - **Needs travel data:** guild orders only work while `AiPlayerbot.AutoDoQuests = 1` (the default). With quest travel off, the source index stays empty, `guild-orders` disappears from `TBM:CAPS`, and `.bot order` answers `disabled`.
 - **Guild bank:** the guild needs an unlocked bank with at least one tab the bots' rank may deposit into; otherwise the bot mails the items to the guild master instead (`mailed`). Bots usually have the lowest rank, so open a tab to that rank if you want bank deposits.
+- **Sub-orders:** when the ordering bot cannot get a material itself, it asks another guild bot to make or farm it (up to 3 levels deep; the same item never appears twice in one branch). Sub-orders deliver into the guild bank, show indented under the parent in the addon, and go live to the player who gave the root order. A failed sub-order puts its item on the parent's need list instead of failing the parent. Move one with `.bot order reassign` (same permission as giving orders); only bots without an order of their own qualify.
 
 ---
 

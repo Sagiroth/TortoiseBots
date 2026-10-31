@@ -172,6 +172,8 @@ struct OrderRecord
     uint32_t botGuidLow = 0;
     uint32_t guildId = 0;
     uint32_t giverGuidLow = 0;
+    uint32_t parentBotGuidLow = 0; // order needing this item: 0 = top level
+    uint32_t rootGiverGuidLow = 0; // player who gave the root order (live rows go here)
     OrderType type = OrderType::Farm;
     uint32_t itemId = 0;
     uint32_t amount = 0;       // current round quota; re-armed per round for keep orders
