@@ -52,6 +52,10 @@
       "name": "Terrifying Screech",
       "castMs": 0
     },
+    "7159": {
+      "name": "Backstab",
+      "castMs": 0
+    },
     "7160": {
       "name": "Execute",
       "castMs": 0
@@ -84,6 +88,14 @@
       "name": "Fevered Plague",
       "castMs": 0
     },
+    "9613": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "9734": {
+      "name": "Holy Smite",
+      "castMs": 0
+    },
     "10413": {
       "name": "Earth Shock",
       "castMs": 0
@@ -94,6 +106,10 @@
     },
     "10915": {
       "name": "Flash Heal",
+      "castMs": 0
+    },
+    "11020": {
+      "name": "Petrify",
       "castMs": 0
     },
     "11086": {
@@ -114,6 +130,18 @@
     },
     "11314": {
       "name": "Fire Nova Totem",
+      "castMs": 0
+    },
+    "11639": {
+      "name": "Shadow Word: Pain",
+      "castMs": 0
+    },
+    "11640": {
+      "name": "Renew",
+      "castMs": 0
+    },
+    "11642": {
+      "name": "Heal",
       "castMs": 0
     },
     "11836": {
@@ -144,8 +172,20 @@
       "name": "Gahz'rilla Slam",
       "castMs": 0
     },
+    "11962": {
+      "name": "Immolate",
+      "castMs": 0
+    },
     "11972": {
       "name": "Shield Bash",
+      "castMs": 0
+    },
+    "11974": {
+      "name": "Power Word: Shield",
+      "castMs": 0
+    },
+    "11990": {
+      "name": "Rain of Fire",
       "castMs": 0
     },
     "12039": {
@@ -164,7 +204,15 @@
       "name": "Flamestrike",
       "castMs": 0
     },
+    "12471": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
     "12479": {
+      "name": "Hex of Jammal'an",
+      "castMs": 0
+    },
+    "12480": {
       "name": "Hex of Jammal'an",
       "castMs": 0
     },
@@ -176,12 +224,20 @@
       "name": "Healing Wave",
       "castMs": 0
     },
+    "12493": {
+      "name": "Curse of Weakness",
+      "castMs": 0
+    },
     "12540": {
       "name": "Gouge",
       "castMs": 0
     },
     "12739": {
       "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "12741": {
+      "name": "Curse of Weakness",
       "castMs": 0
     },
     "12882": {

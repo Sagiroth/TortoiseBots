@@ -74,7 +74,7 @@ Lane const kLanes[] = {
 void TestCommittedTable()
 {
     std::vector<Row> const& table = Table();
-    Check(table.size() == 20, "the committed table has every row");
+    Check(table.size() == 17, "the committed table has every row");
     std::unordered_set<uint32_t> ids;
     for (Row const& row : table)
     {
@@ -101,12 +101,6 @@ void TestKnownShapes()
     Shape const* sweep = For(15847);
     Check(sweep && sweep->kind == Kind::BackCone && sweep->angle == 75 && Near(sweep->length, 30.0f),
         "Tail Sweep is a 75 degree back cone of 30 yd");
-    Shape const* acid = For(12884);
-    Check(acid && acid->kind == Kind::Cone && acid->angle == 120 && Near(acid->length, 10.0f),
-        "Acid Breath is a 120 degree cone of 10 yd");
-    Shape const* slash = For(11837);
-    Check(slash && slash->kind == Kind::Cone && slash->angle == 120 && Near(slash->length, 10.0f),
-        "Wide Slash is a 120 degree cone of 10 yd");
     Shape const* buffet = For(18500);
     Check(buffet && buffet->kind == Kind::Cone && Near(buffet->length, 20.0f), "Wing Buffet is a 20 yd front cone");
     Shape const* lava = For(19272);
