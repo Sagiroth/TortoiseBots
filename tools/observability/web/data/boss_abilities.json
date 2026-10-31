@@ -43,6 +43,18 @@
         15589,
         15727
       ]
+    },
+    {
+      "key": "upper_blackrock_spire",
+      "mapId": 229,
+      "name": "Upper Blackrock Spire",
+      "bosses": [
+        9816,
+        10429,
+        10430,
+        10363,
+        16042
+      ]
     }
   ],
   "bosses": {
@@ -3054,6 +3066,632 @@
       ],
       "notes": [
         "Phase 2: the first stomach grab comes 18 s minus the 3.25 s grab after he emerges, then every 10 s; killing both Flesh Tentacles in the stomach weakens him for 45 s."
+      ]
+    },
+    "9816": {
+      "entry": 9816,
+      "name": "Pyroguard Emberseer",
+      "map": "upper_blackrock_spire",
+      "order": 18,
+      "abilities": [
+        {
+          "sid": 23462,
+          "name": "Fire Nova",
+          "castMs": 0,
+          "a": 6000,
+          "b": 6000,
+          "c": 6000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 23341,
+          "name": "Flame Buffet",
+          "castMs": 0,
+          "a": 3000,
+          "b": 14000,
+          "c": 14000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 20228,
+          "name": "Pyroblast",
+          "castMs": 0,
+          "a": 14000,
+          "b": 15000,
+          "c": 15000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 10316,
+          "name": "Blackhand Incarcerator",
+          "role": "ward",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "The cage is the first phase: Emberseer is unselectable and immune until every Blackhand Incarcerator within 35 yd is dead, then he removes the cage and casts 16047 and 16048. His three timers start counting at that liberation, not at the pull.",
+        "Pyro Blast's timer adds 15 s to whatever was left, so a late cast shortens the next gap; it retries until a random target exists.",
+        "The Incarcerators cast 16045 Encage on a random player in line of sight and then Strike; those are add casts, not Emberseer's."
+      ]
+    },
+    "10429": {
+      "entry": 10429,
+      "name": "Warchief Rend Blackhand",
+      "map": "upper_blackrock_spire",
+      "order": 19,
+      "abilities": [
+        {
+          "sid": 13736,
+          "name": "Whirlwind",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 15708,
+          "name": "Mortal Strike",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 15754,
+          "name": "Cleave",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 8269,
+          "name": "Enrage",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 20,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 10339,
+          "name": "Gyth",
+          "role": "linked",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "Gyth is summoned by the instance and his EventAI summons Rend below 20% HP; Rend's timers start at that summon. creature_spells stores 20/18, 9/16 and 5/10 s and the list casts at most one due spell per 1.2 s update.",
+        "Enrage 8269 is a passive self aura, so the panel sees the HP crossing and no cast event.",
+        "Gyth's Flame Breath 16390 is a 2 s cast and a 120-degree 20 yd front cone in the shape table; Corrosive Acid Breath 16359 and Freeze 16350 are instant and draw no shape.",
+        "Gyth casts Corrosive Acid Breath 16359, Freeze 16350, Flame Breath 16390 and Knock Away 10101 from its own list and Chromatic Chaos 16337 below 50%; the panel sees Gyth only as an add."
+      ]
+    },
+    "10430": {
+      "entry": 10430,
+      "name": "The Beast",
+      "map": "upper_blackrock_spire",
+      "order": 20,
+      "abilities": [
+        {
+          "sid": 16785,
+          "name": "Flamebreak",
+          "castMs": 0,
+          "a": 0,
+          "b": 14000,
+          "c": 20000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 14100,
+          "name": "Terrifying Roar",
+          "castMs": 0,
+          "a": 13000,
+          "b": 16000,
+          "c": 18000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 16636,
+          "name": "Berserker Charge",
+          "castMs": 0,
+          "a": 0,
+          "b": 15000,
+          "c": 20000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 16788,
+          "name": "Fireball",
+          "castMs": 0,
+          "a": 10000,
+          "b": 10000,
+          "c": 12000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "interrupt": "nokick"
+          }
+        },
+        {
+          "sid": 14144,
+          "name": "Remorseless Attacks",
+          "castMs": 0,
+          "a": 0,
+          "b": 14000,
+          "c": 20000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 15506,
+          "name": "Immolate",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Flamebreak damages and knocks back everything within 10 yd; Berserker Charge knocks its target back. Flamebreak's first window is 8-12 s and Fire Blast's 8-11 s; afterward both are 14-20 s. The first Berserker Charge is immediate on the current victim; later ones pick a random target that is not the tank.",
+        "Immolate 15506 is re-applied whenever it is missing and is passive, so it has no cast event.",
+        "The script's Fire Blast constant is 14144, but spell_template 14144 is Remorseless Attacks and its only effect applies the aura to the caster; it arms a proc on the Beast, not fire damage on the target.",
+        "He evades when pulled by a pet or when he leaves z 75 to 125; skinning him casts 16710 and summons Finkle Einhorn 10776, which is not a combat add."
+      ]
+    },
+    "10363": {
+      "entry": 10363,
+      "name": "General Drakkisath",
+      "map": "upper_blackrock_spire",
+      "order": 21,
+      "abilities": [
+        {
+          "sid": 12097,
+          "name": "Pierce Armor",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 15588,
+          "name": "Thunderclap",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 15754,
+          "name": "Cleave",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 16419,
+          "name": "Flamestrike",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": true,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 16789,
+          "name": "Rage",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 16805,
+          "name": "Conflagration",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "There is no boss script: the default AggressorAI uses creature_spells 103630. First casts are the stored random windows (8-40, 7-20, 7-40, 9-20, 0-5 and 8-20 s), repeats 10-30, 14-25, 8-35, 10-35, 30-60 and 15-45 s, and only one due spell is cast per 1.2 s update.",
+        "Flamestrike is the only cast-time spell (index 20, interrupt flags 15); the other five are instant. Rage 16789 is a passive self aura with no cast event. Conflagration confuses and burns the current victim; Flamestrike leaves a ground area."
+      ]
+    },
+    "16042": {
+      "entry": 16042,
+      "name": "Lord Valthalak",
+      "map": "upper_blackrock_spire",
+      "order": 22,
+      "abilities": [
+        {
+          "sid": 27286,
+          "name": "Shadow Wrath",
+          "castMs": 0,
+          "a": 0,
+          "b": 8000,
+          "c": 12000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 27249,
+          "name": "Summon Spectral Assassin",
+          "castMs": 0,
+          "a": 10000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "phase1",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 16066,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 27382,
+          "name": "Shadow Bolt Volley",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "phase3",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 8269,
+          "name": "Enrage",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 40,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "phase3",
+          "order": 1,
+          "rule": {
+            "kind": "hp",
+            "hp": 15
+          }
+        },
+        {
+          "name": "phase2",
+          "order": 2,
+          "rule": {
+            "kind": "hp",
+            "hp": 40
+          }
+        },
+        {
+          "name": "phase1",
+          "order": 3,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 16066,
+          "name": "Spectral Assassin",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 16073,
+          "name": "Spirit of Lord Valthalak",
+          "role": "trigger",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "Shadow Wrath's first cast is 8-12 s after the pull and then every 8-12 s in every phase.",
+        "EventAI phases: 1 on aggro, 2 below 40% (casts Enrage 8269) and 3 below 15%. Summon Spectral Assassin stops in phase 2; the phase-3 loops cast Shadow Bolt Volley and Enrage only while those auras are missing.",
+        "Enrage 8269 is passive, so it cannot signal a phase; the phase rows are HP thresholds and phase 3 outranks phase 2.",
+        "Shadow Bolt Volley 27382 is a self aura that pulses 27383 at nearby players every 2 s; the cast is instant and has no cast bar.",
+        "Spirit of Lord Valthalak 16073 is summoned on death at 44.71/-536/110, not during the fight."
       ]
     }
   },

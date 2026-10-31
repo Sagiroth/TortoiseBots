@@ -72,12 +72,36 @@
       "name": "Whirlwind",
       "castMs": 0
     },
+    "14100": {
+      "name": "Terrifying Roar",
+      "castMs": 0
+    },
+    "14144": {
+      "name": "Remorseless Attacks",
+      "castMs": 0
+    },
+    "15506": {
+      "name": "Immolate",
+      "castMs": 0
+    },
     "15582": {
       "name": "Backstab",
       "castMs": 0
     },
+    "15588": {
+      "name": "Thunderclap",
+      "castMs": 0
+    },
     "15589": {
       "name": "Whirlwind",
+      "castMs": 0
+    },
+    "15708": {
+      "name": "Mortal Strike",
+      "castMs": 0
+    },
+    "15754": {
+      "name": "Cleave",
       "castMs": 0
     },
     "15847": {
@@ -90,6 +114,30 @@
     },
     "16245": {
       "name": "Freeze Anim",
+      "castMs": 0
+    },
+    "16419": {
+      "name": "Flamestrike",
+      "castMs": 0
+    },
+    "16636": {
+      "name": "Berserker Charge",
+      "castMs": 0
+    },
+    "16785": {
+      "name": "Flamebreak",
+      "castMs": 0
+    },
+    "16788": {
+      "name": "Fireball",
+      "castMs": 0
+    },
+    "16789": {
+      "name": "Rage",
+      "castMs": 0
+    },
+    "16805": {
+      "name": "Conflagration",
       "castMs": 0
     },
     "16856": {
@@ -132,6 +180,10 @@
       "name": "Cleave",
       "castMs": 0
     },
+    "20228": {
+      "name": "Pyroblast",
+      "castMs": 0
+    },
     "20449": {
       "name": "Teleport",
       "castMs": 0
@@ -146,6 +198,14 @@
     },
     "22911": {
       "name": "Charge",
+      "castMs": 0
+    },
+    "23341": {
+      "name": "Flame Buffet",
+      "castMs": 0
+    },
+    "23462": {
+      "name": "Fire Nova",
       "castMs": 0
     },
     "23849": {
@@ -412,14 +472,44 @@
       "name": "Berserk",
       "castMs": 0
     },
+    "27249": {
+      "name": "Summon Spectral Assassin",
+      "castMs": 0
+    },
+    "27286": {
+      "name": "Shadow Wrath",
+      "castMs": 0
+    },
+    "27382": {
+      "name": "Shadow Bolt Volley",
+      "castMs": 0
+    },
     "27680": {
       "name": "Berserk",
       "castMs": 0
     }
   },
   "creatures": {
+    "9816": {
+      "name": "Pyroguard Emberseer"
+    },
     "10184": {
       "name": "Onyxia"
+    },
+    "10316": {
+      "name": "Blackhand Incarcerator"
+    },
+    "10339": {
+      "name": "Gyth"
+    },
+    "10363": {
+      "name": "General Drakkisath"
+    },
+    "10429": {
+      "name": "Warchief Rend Blackhand"
+    },
+    "10430": {
+      "name": "The Beast"
     },
     "11262": {
       "name": "Onyxian Whelp"
@@ -549,6 +639,15 @@
     },
     "15984": {
       "name": "Sartura's Royal Guard"
+    },
+    "16042": {
+      "name": "Lord Valthalak"
+    },
+    "16066": {
+      "name": "Spectral Assassin"
+    },
+    "16073": {
+      "name": "Spirit of Lord Valthalak"
     }
   }
 }

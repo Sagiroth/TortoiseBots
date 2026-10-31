@@ -74,7 +74,7 @@ Lane const kLanes[] = {
 void TestCommittedTable()
 {
     std::vector<Row> const& table = Table();
-    Check(table.size() == 17, "the committed table has every row");
+    Check(table.size() == 18, "the committed table has every row");
     std::unordered_set<uint32_t> ids;
     for (Row const& row : table)
     {
@@ -109,6 +109,9 @@ void TestKnownShapes()
     Shape const* glare = For(26029);
     Check(glare && glare->kind == Kind::Cone && glare->angle == 15 && Near(glare->length, 100.0f) && glare->width == 0.0f,
         "Dark Glare is the core's 15 degree front cone of 100 yd (spellVisual 7441)");
+    Shape const* gyth = For(16390);
+    Check(gyth && gyth->kind == Kind::Cone && gyth->angle == 120 && Near(gyth->length, 20.0f) && gyth->width == 0.0f,
+        "Gyth's Flame Breath is a cast-time target-24 cone of 20 yd (radius 9, default front 120)");
 }
 
 // Every Deep Breath row is the complete damaging footprint of its chain: a line from the first to the last damage point,

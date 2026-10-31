@@ -578,8 +578,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 17)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 112)
+        self.assertEqual(len(doc["bosses"]), 22)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 135)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -591,6 +591,157 @@ class BossDataTest(unittest.TestCase):
                 self.assertTrue(entry["name"], entry)
             for phase in boss["phases"]:
                 self.assertIn(phase["rule"]["kind"], ("hp", "aura", "flag", "start"))
+
+
+class UbrsValueTest(unittest.TestCase):
+    """The UBRS rows, pinned to values read off the core scripts and tw_world rows.
+
+    The fixture is transcribed from the cited source, not generated from the CSV:
+    timers, target, flags, phase and cast ms for every ability, plus every phase
+    rule and add. The creature_spells lists store seconds, so Rend's and
+    Drakkisath's columns are 0 and the note carries the cadence (ObjectMgr.cpp
+    multiplies by IN_MILLISECONDS).
+    """
+
+    EXPECTED = {
+        "9816": {
+            "name": "Pyroguard Emberseer",
+            "abilities": {
+                23462: (6000, 6000, 6000, "aoe", "", ()),
+                23341: (3000, 14000, 14000, "aoe", "", ("aura", "ok.dispel=nodispel")),
+                20228: (14000, 15000, 15000, "random", "", ("aura", "ok.dispel=nodispel")),
+            },
+            "phases": [],
+            "adds": {10316: ("ward", 1)},
+        },
+        "10429": {
+            "name": "Warchief Rend Blackhand",
+            "abilities": {
+                13736: (0, 0, 0, "aoe", "", ("int",)),
+                15708: (0, 0, 0, "victim", "", ("aura", "ok.dispel=nodispel")),
+                15754: (0, 0, 0, "victim", "", ()),
+                8269: (0, 0, 0, "self", "", ("self", "hp20")),
+            },
+            "phases": [],
+            "adds": {10339: ("linked", 1)},
+        },
+        "10430": {
+            "name": "The Beast",
+            "abilities": {
+                16785: (0, 14000, 20000, "aoe", "", ()),
+                14100: (13000, 16000, 18000, "aoe", "", ("aura", "ok.dispel=nodispel")),
+                16636: (0, 15000, 20000, "random", "", ()),
+                16788: (10000, 10000, 12000, "random", "", ("int", "ok.interrupt=nokick")),
+                14144: (0, 14000, 20000, "self", "", ("self",)),
+                15506: (0, 0, 0, "self", "", ("self",)),
+            },
+            "phases": [],
+            "adds": {},
+        },
+        "10363": {
+            "name": "General Drakkisath",
+            "abilities": {
+                12097: (0, 0, 0, "victim", "", ("aura", "ok.dispel=nodispel")),
+                15588: (0, 0, 0, "aoe", "", ("aura",)),
+                15754: (0, 0, 0, "victim", "", ()),
+                16419: (0, 0, 0, "random", "", ("ground", "int")),
+                16789: (0, 0, 0, "self", "", ("self",)),
+                16805: (0, 0, 0, "victim", "", ("aura", "ok.dispel=nodispel")),
+            },
+            "phases": [],
+            "adds": {},
+        },
+        "16042": {
+            "name": "Lord Valthalak",
+            "abilities": {
+                27286: (0, 8000, 12000, "victim", "", ()),
+                27249: (10000, 10000, 10000, "self", "phase1", ("summon=16066",)),
+                27382: (0, 0, 0, "self", "phase3", ("self",)),
+                8269: (0, 0, 0, "self", "", ("self", "hp40")),
+            },
+            "phases": [
+                ("phase3", "hp", 15, 1),
+                ("phase2", "hp", 40, 2),
+                ("phase1", "start", None, 3),
+            ],
+            "adds": {16066: ("summon", 1), 16073: ("trigger", 0)},
+        },
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        cls.doc = boss_data.build_document(rows, names)
+
+    def boss(self, entry):
+        return self.doc["bosses"][entry]
+
+    @staticmethod
+    def flag_set(ability):
+        flags = {
+            name
+            for name in ("aura", "self", "mark", "ground", "cone", "tail", "int")
+            if ability[name]
+        }
+        if ability["hp"]:
+            flags.add(f"hp{ability['hp']}")
+        if ability["summon"]:
+            flags.add(f"summon={ability['summon']}")
+        if ability["ok"]:
+            flags.add(f"ok={ability['ok']}")
+        for need, reason in ability["okNeeds"].items():
+            flags.add(f"ok.{need}={reason}")
+        return flags
+
+    def test_abilities_match_the_source(self):
+        for entry, expected in self.EXPECTED.items():
+            boss = self.boss(entry)
+            self.assertEqual(boss["name"], expected["name"])
+            self.assertEqual(boss["map"], "upper_blackrock_spire")
+            got = {
+                a["sid"]: (a["a"], a["b"], a["c"], a["target"], a["phase"], self.flag_set(a))
+                for a in boss["abilities"]
+            }
+            want = {
+                sid: (a, b, c, target, phase, set(flags))
+                for sid, (a, b, c, target, phase, flags) in expected["abilities"].items()
+            }
+            self.assertEqual(got, want, entry)
+            self.assertTrue(all(a["castMs"] == 0 for a in boss["abilities"]), entry)
+
+    def test_phases_and_adds_match_the_source(self):
+        for entry, expected in self.EXPECTED.items():
+            boss = self.boss(entry)
+            got = [
+                (p["name"], p["rule"]["kind"], p["rule"].get("hp"), p["order"])
+                for p in boss["phases"]
+            ]
+            self.assertEqual(got, expected["phases"], entry)
+            got_adds = {a["entry"]: (a["role"], a["priority"]) for a in boss["adds"]}
+            self.assertEqual(got_adds, expected["adds"], entry)
+
+    def test_choices_that_the_panel_depends_on(self):
+        val = self.boss("16042")
+        self.assertEqual([p["name"] for p in val["phases"]], ["phase3", "phase2", "phase1"])
+        self.assertEqual(val["phases"][0]["rule"], {"kind": "hp", "hp": 15})
+        volley = next(a for a in val["abilities"] if a["sid"] == 27382)
+        self.assertEqual(volley["phase"], "phase3")
+        self.assertEqual(volley["target"], "self")
+        # The Beast's script-pointed 14144 is a self aura in spell_template, not a hit on the victim.
+        beast = next(a for a in self.boss("10430")["abilities"] if a["sid"] == 14144)
+        self.assertEqual(beast["target"], "self")
+        self.assertTrue(beast["self"])
+        # Fireball has a cast time but interruptFlags 0: the core cannot kick it.
+        fireball = next(a for a in self.boss("10430")["abilities"] if a["sid"] == 16788)
+        self.assertEqual(fireball["okNeeds"], {"interrupt": "nokick"})
+        # The creature_spells cadences are in the notes because the columns are 0.
+        rend_notes = " ".join(self.boss("10429")["notes"])
+        self.assertIn("20/18", rend_notes)
+        self.assertIn("9/16", rend_notes)
+        drak_notes = " ".join(self.boss("10363")["notes"])
+        self.assertIn("8-40", drak_notes)
+        self.assertIn("10-30", drak_notes)
 
 
 if __name__ == "__main__":

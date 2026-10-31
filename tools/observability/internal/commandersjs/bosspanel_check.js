@@ -157,6 +157,25 @@ const sartura = (REAL.byEntry || REAL.bosses || REAL)["15516"];
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }] }).phase, "enraged");
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }, { id: 27680 }] }).phase, "berserk");
 
+// UBRS: Valthalak's three EventAI phases are HP thresholds; phase 3 outranks phase 2, summoning stops in
+// phase 2 and Shadow Bolt Volley only exists in phase 3.
+const valthalak = (REAL.byEntry || REAL.bosses || REAL)["16042"];
+assert.deepStrictEqual(valthalak.phases.map((x) => x.rule), ["hp<15", "hp<40", "start"]);
+assert.strictEqual(B.phaseOf(valthalak, { hp: 10, au: [] }).phase, "phase3");
+assert.strictEqual(B.phaseOf(valthalak, { hp: 30, au: [] }).phase, "phase2");
+assert.strictEqual(B.phaseOf(valthalak, { hp: 90, au: [] }).phase, "phase1");
+const p3 = B.model(REAL, { entry: 16042, hp: 10, au: [] }, [], 0, 1000);
+assert.strictEqual(p3.phase, "phase3");
+assert.strictEqual(p3.abilities.find((a) => a.sid === 27382).inPhase, true, "volley is a phase-3 ability");
+assert.strictEqual(p3.abilities.find((a) => a.sid === 27249).inPhase, false, "summoning stopped in phase 2");
+assert.strictEqual(p3.abilities.find((a) => a.sid === 27286).inPhase, true, "Shadow Wrath is in every phase");
+const p2 = B.model(REAL, { entry: 16042, hp: 30, au: [] }, [], 0, 1000);
+assert.strictEqual(p2.abilities.find((a) => a.sid === 27249).inPhase, false);
+assert.strictEqual(p2.abilities.find((a) => a.sid === 27382).inPhase, false);
+const p1 = B.model(REAL, { entry: 16042, hp: 90, au: [] }, [], 0, 1000);
+assert.strictEqual(p1.abilities.find((a) => a.sid === 27249).inPhase, true);
+assert.strictEqual(p1.abilities.find((a) => a.sid === 27382).inPhase, false);
+
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];
 assert.strictEqual(jeklikReal.abilities.find((a) => a.sid === 23919).flags.phase, "bat");
