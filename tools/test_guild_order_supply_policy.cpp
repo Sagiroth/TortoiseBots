@@ -31,7 +31,20 @@ int main()
     CHECK(SupplyMailItemId(SupplyStep::Bank, 123, 456) == 456);
     CHECK(SupplyMailItemId(SupplyStep::Bags, 0, 456) == 456);
     CHECK(SupplyMailItemId(SupplyStep::None, 123, 456) == 456);
-
+    // The farm item is the supply leg's item on bank/AH/farm/bags legs, 0
+    // anywhere else. A craft order short on a vendor-only reagent (bought,
+    // never farmed) travels for nothing unless the leg gave up on it.
+    CHECK(SupplyFarmItemFor(SupplyStep::Farm, 123, OrderType::Farm, OrderReason::None, false) == 123);
+    CHECK(SupplyFarmItemFor(SupplyStep::Bank, 123, OrderType::Farm, OrderReason::None, false) == 123);
+    CHECK(SupplyFarmItemFor(SupplyStep::AuctionHouse, 123, OrderType::Craft, OrderReason::None, false) == 123);
+    CHECK(SupplyFarmItemFor(SupplyStep::Bags, 123, OrderType::Craft, OrderReason::None, false) == 123);
+    CHECK(SupplyFarmItemFor(SupplyStep::None, 123, OrderType::Farm, OrderReason::None, false) == 0);
+    CHECK(SupplyFarmItemFor(SupplyStep::Deliver, 123, OrderType::Farm, OrderReason::None, false) == 0);
+    CHECK(SupplyFarmItemFor(SupplyStep::Sub, 123, OrderType::Craft, OrderReason::None, false) == 0);
+    CHECK(SupplyFarmItemFor(SupplyStep::Need, 123, OrderType::Craft, OrderReason::None, false) == 0);
+    CHECK(SupplyFarmItemFor(SupplyStep::Farm, 123, OrderType::Craft, OrderReason::None, true) == 0);
+    CHECK(SupplyFarmItemFor(SupplyStep::Farm, 123, OrderType::Craft, OrderReason::NoSource, true) == 123);
+    CHECK(SupplyFarmItemFor(SupplyStep::Farm, 0, OrderType::Farm, OrderReason::None, false) == 0);
     // The streak counts one leg: a repeat fails up, anything else restarts.
     SupplySearchStreak streak;
     streak = NextSupplySearchStreak(streak, SupplyStep::Bags, 7);
