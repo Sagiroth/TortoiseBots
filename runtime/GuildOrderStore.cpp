@@ -105,6 +105,7 @@ public:
             "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
             "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
             "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
+            "`created_at`, `updated_at` "
             "FROM `tortoise_bots_guild_order`"));
         if (result)
         {
