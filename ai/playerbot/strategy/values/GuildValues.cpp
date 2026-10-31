@@ -136,9 +136,9 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
     if (candidate.craft)
         return SupplyStep::Craft;
     // A banker visit that found none of this item skips the bank leg until
-    // the cooldown, so the ladder moves down instead of walking back.
     bool bankSkipped = BankLegSkipped(candidate.itemId, order.bankEmptyItemId,
         WorldTimer::getMSTime(), order.bankEmptyMs);
+    bool sameItem = order.supplyItemId == candidate.itemId;
     SupplyStep current = sameItem ? order.supplyStep : SupplyStep::None;
     bool canFarm = IsUnlimitedVendorItem(candidate.itemId) && order.reason != OrderReason::NoSource;
     if (!canFarm)
