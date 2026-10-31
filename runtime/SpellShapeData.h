@@ -45,6 +45,10 @@ inline char const* const kSpellShapeCsv = R"(
 18584,line,0,0,60,6.016711,-181.305771,-56.559654,-241.223923,spell_target_position 18584 chain (north-west to south-east, 12 links; 86.64 yd); radius 10 = 30 yd each side
 18596,line,0,0,60,-58.250900,-189.020004,12.120926,-243.439407,spell_target_position 18596 chain (south-west to north-east, 12 links; 88.96 yd); radius 10 = 30 yd each side
 18617,line,0,0,60,12.120926,-243.439407,-58.250900,-189.020004,spell_target_position 18617 chain (north-east to south-west, 12 links; 88.96 yd); radius 10 = 30 yd each side
+22539,cone,120,45,0,0,0,0,0,spell_template 22539 Shadow Flame: target 24 x2; spellVisual 6559 = front 120 (Spell.cpp:2751-2768); radius 11 = 45 yd
+23339,cone,120,20,0,0,0,0,0,spell_template 23339 Wing Buffet: target 24 x2; visual 0 = front 120 (Spell.cpp:2751-2768); radius 9 = 20 yd
+23023,cone,120,30,0,0,0,0,0,spell_template 23023 Conflagration: target 24 x3; visual 4326 = front 120 (Spell.cpp:2751-2768); radius 10 = 30 yd; max 4 targets
+23364,back-cone,75,30,0,0,0,0,0,spell_template 23364 Tail Lash: target 24 x3; spellVisual 3879 = back 75 (Spell.cpp:2753-2754, 8276-8277); radius 10 = 30 yd
 )";
 
 } // namespace TortoiseBots

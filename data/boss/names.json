@@ -72,6 +72,10 @@
       "name": "Whirlwind",
       "castMs": 0
     },
+    "15284": {
+      "name": "Cleave",
+      "castMs": 0
+    },
     "15582": {
       "name": "Backstab",
       "castMs": 0
@@ -96,6 +100,10 @@
       "name": "Mortal Strike",
       "castMs": 0
     },
+    "17131": {
+      "name": "Hover",
+      "castMs": 0
+    },
     "17172": {
       "name": "Hex",
       "castMs": 0
@@ -116,6 +124,10 @@
       "name": "Wing Buffet",
       "castMs": 0
     },
+    "18670": {
+      "name": "Knock Away",
+      "castMs": 0
+    },
     "18943": {
       "name": "Double Attack",
       "castMs": 0
@@ -124,8 +136,16 @@
       "name": "Intimidating Shout",
       "castMs": 0
     },
+    "19632": {
+      "name": "Cleave",
+      "castMs": 0
+    },
     "19633": {
       "name": "Knock Away",
+      "castMs": 0
+    },
+    "19832": {
+      "name": "Possess",
       "castMs": 0
     },
     "19983": {
@@ -136,8 +156,72 @@
       "name": "Teleport",
       "castMs": 0
     },
+    "20691": {
+      "name": "Cleave",
+      "castMs": 0
+    },
+    "22277": {
+      "name": "Elemental Shield",
+      "castMs": 0
+    },
+    "22278": {
+      "name": "Elemental Shield",
+      "castMs": 0
+    },
+    "22279": {
+      "name": "Elemental Shield",
+      "castMs": 0
+    },
+    "22280": {
+      "name": "Elemental Shield",
+      "castMs": 0
+    },
+    "22281": {
+      "name": "Elemental Shield",
+      "castMs": 0
+    },
+    "22425": {
+      "name": "Fireball Volley",
+      "castMs": 0
+    },
+    "22539": {
+      "name": "Shadow Flame",
+      "castMs": 0
+    },
+    "22663": {
+      "name": "Nefarians Barrier",
+      "castMs": 0
+    },
+    "22664": {
+      "name": "Shadowblink",
+      "castMs": 0
+    },
+    "22665": {
+      "name": "Shadow Bolt Volley",
+      "castMs": 0
+    },
     "22666": {
       "name": "Silence",
+      "castMs": 0
+    },
+    "22667": {
+      "name": "Shadow Command",
+      "castMs": 0
+    },
+    "22677": {
+      "name": "Shadow Bolt",
+      "castMs": 0
+    },
+    "22678": {
+      "name": "Fear",
+      "castMs": 0
+    },
+    "22686": {
+      "name": "Bellowing Roar",
+      "castMs": 0
+    },
+    "22687": {
+      "name": "Veil of Shadow",
       "castMs": 0
     },
     "22859": {
@@ -146,6 +230,154 @@
     },
     "22911": {
       "name": "Charge",
+      "castMs": 0
+    },
+    "22992": {
+      "name": "Shadow Flame",
+      "castMs": 0
+    },
+    "23023": {
+      "name": "Conflagration",
+      "castMs": 0
+    },
+    "23128": {
+      "name": "Frenzy",
+      "castMs": 0
+    },
+    "23153": {
+      "name": "Brood Affliction: Blue",
+      "castMs": 0
+    },
+    "23154": {
+      "name": "Brood Affliction: Black",
+      "castMs": 0
+    },
+    "23155": {
+      "name": "Brood Affliction: Red",
+      "castMs": 0
+    },
+    "23169": {
+      "name": "Brood Affliction: Green",
+      "castMs": 0
+    },
+    "23170": {
+      "name": "Brood Affliction: Bronze",
+      "castMs": 0
+    },
+    "23187": {
+      "name": "Frost Burn",
+      "castMs": 0
+    },
+    "23308": {
+      "name": "Incinerate",
+      "castMs": 0
+    },
+    "23310": {
+      "name": "Time Lapse",
+      "castMs": 0
+    },
+    "23313": {
+      "name": "Corrosive Acid",
+      "castMs": 0
+    },
+    "23315": {
+      "name": "Ignite Flesh",
+      "castMs": 0
+    },
+    "23331": {
+      "name": "Blast Wave",
+      "castMs": 0
+    },
+    "23339": {
+      "name": "Wing Buffet",
+      "castMs": 0
+    },
+    "23340": {
+      "name": "Shadow of Ebonroc",
+      "castMs": 0
+    },
+    "23341": {
+      "name": "Flame Buffet",
+      "castMs": 0
+    },
+    "23342": {
+      "name": "Frenzy",
+      "castMs": 0
+    },
+    "23364": {
+      "name": "Tail Lash",
+      "castMs": 0
+    },
+    "23397": {
+      "name": "Berserk",
+      "castMs": 0
+    },
+    "23398": {
+      "name": "Involuntary Transformation",
+      "castMs": 0
+    },
+    "23401": {
+      "name": "Corrupted Healing",
+      "castMs": 0
+    },
+    "23410": {
+      "name": "Wild Magic",
+      "castMs": 0
+    },
+    "23414": {
+      "name": "Paralyze",
+      "castMs": 0
+    },
+    "23418": {
+      "name": "Siphon Blessing",
+      "castMs": 0
+    },
+    "23419": {
+      "name": "Corrupted Fire Nova Totem",
+      "castMs": 0
+    },
+    "23420": {
+      "name": "Corrupted Stoneskin Totem",
+      "castMs": 0
+    },
+    "23422": {
+      "name": "Corrupted Healing Stream Totem",
+      "castMs": 0
+    },
+    "23423": {
+      "name": "Corrupted Windfury Totem",
+      "castMs": 0
+    },
+    "23425": {
+      "name": "Corrupted Totems",
+      "castMs": 0
+    },
+    "23427": {
+      "name": "Summon Infernals",
+      "castMs": 0
+    },
+    "23436": {
+      "name": "Corrupt Weapon",
+      "castMs": 0
+    },
+    "23461": {
+      "name": "Flame Breath",
+      "castMs": 0
+    },
+    "23462": {
+      "name": "Fire Nova",
+      "castMs": 0
+    },
+    "23513": {
+      "name": "Essence of the Red",
+      "castMs": 0
+    },
+    "23603": {
+      "name": "Wild Polymorph",
+      "castMs": 0
+    },
+    "23620": {
+      "name": "Burning Adrenaline",
       "castMs": 0
     },
     "23849": {
@@ -308,12 +540,20 @@
       "name": "Corrupted Blood",
       "castMs": 0
     },
+    "24375": {
+      "name": "War Stomp",
+      "castMs": 0
+    },
     "24408": {
       "name": "Charge",
       "castMs": 0
     },
     "24466": {
       "name": "Banish",
+      "castMs": 0
+    },
+    "24573": {
+      "name": "Mortal Strike",
       "castMs": 0
     },
     "24686": {
@@ -334,6 +574,10 @@
     },
     "24690": {
       "name": "Aspect of Arlokk",
+      "castMs": 0
+    },
+    "24776": {
+      "name": "Summon Player",
       "castMs": 0
     },
     "25174": {
@@ -415,9 +659,16 @@
     "27680": {
       "name": "Berserk",
       "castMs": 0
+    },
+    "28747": {
+      "name": "Enrage",
+      "castMs": 0
     }
   },
   "creatures": {
+    "10162": {
+      "name": "Lord Victor Nefarius"
+    },
     "10184": {
       "name": "Onyxia"
     },
@@ -442,8 +693,65 @@
     "11382": {
       "name": "Bloodlord Mandokir"
     },
+    "11583": {
+      "name": "Nefarian"
+    },
+    "11981": {
+      "name": "Flamegor"
+    },
+    "11983": {
+      "name": "Firemaw"
+    },
+    "12017": {
+      "name": "Broodlord Lashlayer"
+    },
     "12129": {
       "name": "Onyxian Warder"
+    },
+    "12416": {
+      "name": "Blackwing Legionnaire"
+    },
+    "12420": {
+      "name": "Blackwing Mage"
+    },
+    "12422": {
+      "name": "Death Talon Dragonspawn"
+    },
+    "12435": {
+      "name": "Razorgore the Untamed"
+    },
+    "12557": {
+      "name": "Grethok the Controller"
+    },
+    "13020": {
+      "name": "Vaelastrasz the Corrupt"
+    },
+    "14020": {
+      "name": "Chromaggus"
+    },
+    "14261": {
+      "name": "Blue Drakonid"
+    },
+    "14262": {
+      "name": "Green Drakonid"
+    },
+    "14263": {
+      "name": "Bronze Drakonid"
+    },
+    "14264": {
+      "name": "Red Drakonid"
+    },
+    "14265": {
+      "name": "Black Drakonid"
+    },
+    "14302": {
+      "name": "Chromatic Drakonid"
+    },
+    "14453": {
+      "name": "Orb of Domination"
+    },
+    "14456": {
+      "name": "Blackwing Guardsman"
     },
     "14507": {
       "name": "High Priest Venoxis"
@@ -459,6 +767,27 @@
     },
     "14599": {
       "name": "High Priest Thekal"
+    },
+    "14601": {
+      "name": "Ebonroc"
+    },
+    "14605": {
+      "name": "Bone Construct"
+    },
+    "14662": {
+      "name": "Corrupted Fire Nova Totem V"
+    },
+    "14663": {
+      "name": "Corrupted Stoneskin Totem VI"
+    },
+    "14664": {
+      "name": "Corrupted Healing Stream Totem V"
+    },
+    "14666": {
+      "name": "Corrupted Windfury Totem III"
+    },
+    "14668": {
+      "name": "Corrupted Infernal"
     },
     "14826": {
       "name": "Sacrificed Troll"

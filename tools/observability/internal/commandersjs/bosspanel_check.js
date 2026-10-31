@@ -156,6 +156,12 @@ assert.strictEqual(B.phaseOf(eye, { hp: 90, au: [{ id: 16245 }] }).phase, "glare
 const sartura = (REAL.byEntry || REAL.bosses || REAL)["15516"];
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }] }).phase, "enraged");
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }, { id: 27680 }] }).phase, "berserk");
+const chromaggus = (REAL.byEntry || REAL.bosses || REAL)["14020"];
+assert.strictEqual(B.phaseOf(chromaggus, { hp: 15, au: [] }).phase, "fight");
+assert.strictEqual(B.phaseOf(chromaggus, { hp: 15, au: [{ id: 28747 }] }).phase, "enraged");
+const nefarian = (REAL.byEntry || REAL.bosses || REAL)["11583"];
+assert.strictEqual(B.phaseOf(nefarian, { hp: 90, au: [{ id: 17131 }] }).phase, "air");
+assert.strictEqual(B.phaseOf(nefarian, { hp: 90, au: [] }).phase, "grounded");
 
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];
