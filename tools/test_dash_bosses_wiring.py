@@ -107,6 +107,12 @@ class BossListWiring(unittest.TestCase):
         self.assertIn("info.bossesMap = ref.bossesMap;", EMIT)
         self.assertIn("info.bosses = ref.bosses;", EMIT)
 
+    def test_full_school_immunity_reads_as_i(self):
+        fn = body(CMD, "static void FillMobState(")
+        self.assertIn("SPELL_AURA_SCHOOL_IMMUNITY", fn)
+        self.assertIn("uint32 const immuneMask = CommanderTelemetry::FoldImmuneSchools(immuneMasks);", fn)
+        self.assertIn("|| CommanderTelemetry::ImmuneToAllSchools(immuneMask),", fn)
+
 
 if __name__ == "__main__":
     unittest.main()

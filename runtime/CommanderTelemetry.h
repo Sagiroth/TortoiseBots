@@ -27,8 +27,8 @@
 // Boss state (additive, same rule; owner request 2026-10-29 "improve the dashboard with bosses spells and such"): an
 // overlay row also carries the unit's own auras (`au`: up to kMaxMobAuras, passive and deleted holders skipped, its positive
 // auras before the negative ones so debuffs cannot hide a phase buff; id, name, stacks past one, time left while it runs out)
-// and a short flag string (`uf`: n not selectable, i not attackable or
-// immune to players, h hovering or flying, d stand state dead, e evading), so the dashboard can label the phase and the
+// and a short flag string (`uf`: n not selectable, i not attackable, immune to players or immune to every school, h
+// hovering or flying, d stand state dead, e evading), so the dashboard can label the phase and the
 // forms. Each bound bot row carries the boss debuffs it holds (`db`: up to kMaxBotDebuffs negative auras cast by a creature
 // or by a player outside its own group, bots and humans alike, dispellable first, then the one that runs out last; id, name,
 // stacks, time left, dispel letter) and `mc` when it is charmed, so the raid frames and the map can show what a healer has
@@ -240,8 +240,8 @@ inline bool IsBossDebuff(bool negative, bool casterCreature, uint32_t casterLow,
     return casterCreature || memberLow.find(casterLow) == memberLow.end();
 }
 
-// The short flag string of a boss or elite's state, letters in this fixed order: n not selectable, i not attackable or
-// immune to players, h hovering or flying, d stand state dead, e evading. Empty when none of them holds.
+// The short flag string of a boss or elite's state, letters in this fixed order: n not selectable, i not attackable, immune
+// to players, or immune to every school, h hovering or flying, d stand state dead, e evading. Empty when none of them holds.
 inline std::string UnitFlags(bool notSelectable, bool unattackable, bool flying, bool dead, bool evading)
 {
     std::string out;
@@ -256,6 +256,26 @@ inline std::string UnitFlags(bool notSelectable, bool unattackable, bool flying,
     if (evading)
         out += 'e';
     return out;
+}
+
+// The union of the school masks (aura misc values) a unit's SPELL_AURA_SCHOOL_IMMUNITY auras carry, 0x7F when every school is
+// covered. Only that aura type is read: an immunity a script applies directly (ApplySpellImmune), SPELL_AURA_DAMAGE_IMMUNITY
+// (aura 40) and a creature's school_immune_mask are not.
+template <typename SchoolMasks>
+inline uint32_t FoldImmuneSchools(SchoolMasks const& schoolMasks)
+{
+    uint32_t mask = 0;
+    for (auto const& value : schoolMasks)
+        mask |= static_cast<uint32_t>(value);
+    return mask;
+}
+
+// Whether that union covers every school: physical and the six magic schools. One school alone (Withermaw Blessing is physical
+// only) is not "cannot be hurt".
+constexpr uint32_t kAllSchoolsMask = 0x7F;
+inline bool ImmuneToAllSchools(uint32_t schoolMask)
+{
+    return (schoolMask & kAllSchoolsMask) == kAllSchoolsMask;
 }
 
 // A UTF-8-safe clip: never cuts inside a multi-byte sequence.

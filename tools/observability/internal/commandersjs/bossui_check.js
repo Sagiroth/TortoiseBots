@@ -139,6 +139,15 @@ assert.ok(/>Venoxis 48% snake<\/text>/.test(svg), "the phase word after the heal
 const flying = run("cmdMobSvg(c, m, d)", { c: c, m: { id: "5", name: "Onyxia", hp: 60, x: 0, y: 0, reaction: "h", rank: "b", uf: "h" },
   d: { on: on, marks: { tank: {}, pull: {} }, onMap: [], botsById: {}, overlay: () => "", leftMs: 0 } });
 assert.ok(/boss ghost/.test(flying), "a flying boss is hollow too");
+const solnius = run("cmdMobSvg(c, m, d)", { c: c, m: { id: "6", name: "Solnius", hp: 80, x: 0, y: 0, reaction: "h", rank: "b", uf: "i" },
+  d: { on: on, marks: { tank: {}, pull: {} }, onMap: [], botsById: {}, overlay: () => "", leftMs: 0 } });
+assert.ok(/boss ghost/.test(solnius), "a boss that cannot be attacked is hollow: " + solnius.slice(0, 120));
+const evading = run("cmdMobSvg(c, m, d)", { c: c, m: { id: "7", name: "Broodlord", hp: 90, x: 0, y: 0, reaction: "h", rank: "b", uf: "e" },
+  d: { on: on, marks: { tank: {}, pull: {} }, onMap: [], botsById: {}, overlay: () => "", leftMs: 0 } });
+assert.ok(!/ghost/.test(evading), "an evading boss is not hollow");
+const elite = run("cmdMobSvg(c, m, d)", { c: c, m: { id: "8", name: "Acolyte", hp: 100, x: 0, y: 0, reaction: "h", rank: "e", uf: "i" },
+  d: { on: on, marks: { tank: {}, pull: {} }, onMap: [], botsById: {}, overlay: () => "", leftMs: 0 } });
+assert.ok(!/ghost/.test(elite), "the hollow body stays boss-only");
 
 // ---- a bot on the map: its first debuff as one coloured dot, the MC ring, the mark eye -------------------------------
 const p = { x: 10, y: 20 };
