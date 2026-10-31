@@ -2923,6 +2923,28 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                                 return false;
                             }), travelPoints.end());
                     }
+                    if (committed)
+                        return list;
+                    // The faction house comes first: a neutral (goblin) house
+                    // is only offered when no friendly one is in the search.
+                    FactionTemplateEntry const* botTemplate = sObjectMgr.GetFactionTemplateEntry(botFaction);
+                    auto neutralHouse = [botTemplate](TravelPoint const& point)
+                    {
+                        EntryTravelDestination* dest = (EntryTravelDestination*)std::get<TravelDestination*>(point);
+                        FactionTemplateEntry const* auctioneerFaction =
+                            sObjectMgr.GetFactionTemplateEntry(dest->GetCreatureInfo()->faction);
+                        return auctioneerFaction && botTemplate &&
+                            PlayerbotAI::GetFactionReaction(botTemplate, auctioneerFaction) < REP_FRIENDLY;
+                    };
+                    bool friendlyHouse = false;
+                    for (auto& [partition, travelPoints] : list)
+                        for (TravelPoint const& point : travelPoints)
+                            if (!neutralHouse(point))
+                                friendlyHouse = true;
+                    if (friendlyHouse)
+                        for (auto& [partition, travelPoints] : list)
+                            travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(), neutralHouse),
+                                travelPoints.end());
                     return list;
                 });
         }
