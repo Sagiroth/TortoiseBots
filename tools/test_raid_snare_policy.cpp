@@ -29,6 +29,28 @@ int main()
     CHECK(!SnareAllowedInRaid(true, true, false));
     std::cout << "  [PASS] raid snares only non-tank victims\n";
 
+    // Piercing Howl: the trigger picks any mob within spell range (30 yd),
+    // but the Howl is a 10-yd AoE around the warrior cast at the melee
+    // target. A unit it cannot reach must not arm it (walk-15: a mob
+    // chasing a healer 25 yd out made the warrior Howl the tank's mob).
+    CHECK(!PiercingHowlAllowed(true, 25, true, false));
+    // Raid: only a fleeing runner beside us is a Howl target; a mob chasing
+    // a healer inside the radius is the off-tank's job.
+    CHECK(!PiercingHowlAllowed(true, 6, true, false));
+    CHECK(PiercingHowlAllowed(true, 6, true, true));
+    CHECK(!PiercingHowlAllowed(true, 12, true, true));
+    // Dungeon/party: a non-fleeing snare inside the radius is allowed.
+    CHECK(PiercingHowlAllowed(true, 6, false, false));
+    CHECK(!PiercingHowlAllowed(true, 15, false, false));
+    CHECK(!PiercingHowlAllowed(false, 0, false, false));
+    CHECK(!PiercingHowlAllowed(false, 0, true, true));
+    // Boundary: the radius is inclusive (10.0 allowed, 10.1 refused).
+    CHECK(PiercingHowlAllowed(true, PIERCING_HOWL_RADIUS_YD, false, false));
+    CHECK(PiercingHowlAllowed(true, 10.0f, false, false));
+    CHECK(!PiercingHowlAllowed(true, 10.1f, false, false));
+    CHECK(PIERCING_HOWL_RADIUS_YD == 10.0f);
+    std::cout << "  [PASS] piercing howl only fires on a snare unit it can reach\n";
+
     std::cout << "All TortoiseBots raid snare policy tests passed.\n";
     return 0;
 }

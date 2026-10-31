@@ -40,6 +40,19 @@ int main()
     CHECK(!ShouldBattleShout(9));    // below the rage cost
     CHECK(!ShouldBattleShout(0));
     std::cout << "  [PASS] battle shout gates on rage\n";
+    // Rend is a 10-rage builder that must not eat the main strike's bar:
+    // with Mortal Strike/Bloodthirst learned, only re-apply Rend when the
+    // 30-rage main strike stays affordable afterwards.
+    CHECK(!ShouldRendForDps(true, 39));
+    CHECK(ShouldRendForDps(true, 40));
+    CHECK(ShouldRendForDps(true, 100));
+    CHECK(!ShouldRendForDps(true, 0));
+    // Without a main strike the old unconditional row stands.
+    CHECK(ShouldRendForDps(false, 0));
+    CHECK(ShouldRendForDps(false, 10));
+    CHECK(WARRIOR_REND_RAGE_COST == 10);
+    CHECK(WARRIOR_MAIN_STRIKE_RAGE_COST == 30);
+    std::cout << "  [PASS] rend holds the main strike's rage pool\n";
     // Mocking Blow: the second taunt when Taunt is down and the mob left.
     CHECK(ShouldMockingBlow(true, true, false, true, true, 10));
     CHECK(ShouldMockingBlow(true, true, false, true, true, 100));

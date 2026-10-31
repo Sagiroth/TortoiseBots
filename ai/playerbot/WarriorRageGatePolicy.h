@@ -65,6 +65,20 @@ namespace ai
     {
         return rage >= WARRIOR_BATTLE_SHOUT_RAGE_COST;
     }
+
+    constexpr uint32_t WARRIOR_REND_RAGE_COST = 10;
+    constexpr uint32_t WARRIOR_MAIN_STRIKE_RAGE_COST = 30; // Mortal Strike / Bloodthirst
+
+    // Rend (10 rage) re-applied on every new target kept the bar below the
+    // main strike's 30 for the whole fight (walk 15: Mortal Strike 0-3
+    // casts a run while Rend fired 41 times). A dps warrior that knows the
+    // main strike only re-applies Rend when the strike stays affordable
+    // after it. No cooldown-remaining read exists here, so the pool is the
+    // only gate.
+    inline bool ShouldRendForDps(bool knowsMainStrike, uint32_t rage)
+    {
+        return !knowsMainStrike || rage >= WARRIOR_MAIN_STRIKE_RAGE_COST + WARRIOR_REND_RAGE_COST;
+    }
     // Taunt is on cooldown (or resisted) and the current target left the tank:
     // Mocking Blow (Battle Stance, 2 min) is the second taunt. `rage` is the
     // rage paid in Battle Stance (RageAfterStanceSwap): the swap keeps only

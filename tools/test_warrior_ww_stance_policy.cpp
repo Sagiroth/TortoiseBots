@@ -19,10 +19,10 @@ int main()
     std::cout << "Starting TortoiseBots warrior whirlwind-stance policy tests...\n";
 
     // Already in Berserker Stance the bar is untouched: current rage gates.
-    CHECK(ShouldWhirlwindStanceDance(true, true, 25, 0));
-    CHECK(ShouldWhirlwindStanceDance(true, true, 100, 0));
-    CHECK(!ShouldWhirlwindStanceDance(true, true, 24, 0));
-    CHECK(!ShouldWhirlwindStanceDance(false, true, 100, 5)); // on cooldown: no dance
+    CHECK(ShouldWhirlwindStanceDance(true, true, 25, 0, false, true));
+    CHECK(ShouldWhirlwindStanceDance(true, true, 100, 0, false, true));
+    CHECK(!ShouldWhirlwindStanceDance(true, true, 24, 0, false, true));
+    CHECK(!ShouldWhirlwindStanceDance(false, true, 100, 5, false, true)); // on cooldown: no dance
     std::cout << "  [PASS] whirlwind in-stance gates on current rage and cooldown\n";
 
     // Outside Berserker Stance only the Tactical Mastery retention survives
@@ -30,15 +30,27 @@ int main()
     // rank 5 no pre-swap bar can pay for it after the swap: even 100 rage
     // must not arm the dance (the round-1 hole: it gated on current rage).
     for (unsigned rank = 0; rank <= 4; ++rank)
-        CHECK(!ShouldWhirlwindStanceDance(true, false, 100, rank));
+        CHECK(!ShouldWhirlwindStanceDance(true, false, 100, rank, false, true));
     std::cout << "  [PASS] whirlwind outside-stance never dances below rank 5, however full the bar\n";
 
     // Rank 5 keeps 25: rage just above/below the cost decides.
-    CHECK(ShouldWhirlwindStanceDance(true, false, 25, 5));
-    CHECK(ShouldWhirlwindStanceDance(true, false, 100, 5));
-    CHECK(!ShouldWhirlwindStanceDance(true, false, 24, 5));
-    CHECK(!ShouldWhirlwindStanceDance(false, false, 100, 5)); // on cooldown: no dance
+    CHECK(ShouldWhirlwindStanceDance(true, false, 25, 5, false, true));
+    CHECK(ShouldWhirlwindStanceDance(true, false, 100, 5, false, true));
+    CHECK(!ShouldWhirlwindStanceDance(true, false, 24, 5, false, true));
+    CHECK(!ShouldWhirlwindStanceDance(false, false, 100, 5, false, true)); // on cooldown: no dance
     std::cout << "  [PASS] whirlwind outside-stance gates on post-swap rage at rank 5\n";
+
+    // Raid: a single-target Whirlwind is no better than Mortal Strike from
+    // Battle Stance, and the round trip costs two casts. Only dance when
+    // two or more mobs are in melee; already in Berserker Stance the cast
+    // costs no swap and stays allowed.
+    CHECK(!ShouldWhirlwindStanceDance(true, false, 100, 5, true, false)); // raid, single target, Battle
+    CHECK(ShouldWhirlwindStanceDance(true, false, 100, 5, true, true));   // raid, 2+ in melee
+    CHECK(ShouldWhirlwindStanceDance(true, true, 25, 0, true, false));    // raid, single, already Berserker
+    CHECK(!ShouldWhirlwindStanceDance(true, true, 24, 0, true, false));   // still needs the rage
+    CHECK(!ShouldWhirlwindStanceDance(false, true, 100, 0, true, false)); // on cooldown
+    CHECK(ShouldWhirlwindStanceDance(true, false, 100, 5, false, false)); // dungeon single: unchanged
+    std::cout << "  [PASS] raid whirlwind does not dance on a single target\n";
 
     // Pummel in stance: current rage against the 10 cost, plus a live cast.
     CHECK(ShouldPummelStanceDance(true, true, 10, 0, true));

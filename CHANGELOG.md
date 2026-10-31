@@ -35,6 +35,9 @@
 - Fixed: in a raid, warriors no longer spend the snare on mobs the tank already holds — Piercing Howl and Hamstring go only on mobs attacking someone who is not a tank (any tank the group identifies, or the raid's flagged Main Tank), including called adds running at the group. Dungeon behaviour is unchanged.
 - Fixed: in a raid, hunters no longer drop combat with Feign Death at medium threat on a mob the tank holds — the feign waits until a mob is on the hunter or threat is near-max. Dungeon behaviour is unchanged.
 - Changed: resto shaman now hold Ancestral Swiftness for a dying target instead of popping it on the first quiet tick.
+- Fixed: warriors no longer Piercing Howl a mob out of its 10 yd reach — they use Hamstring (Arms: Mocking Blow) on it instead.
+- Fixed: arms warriors cast Mortal Strike on cooldown and pool rage for it.
+- Fixed: warriors in raids no longer dance to Berserker Stance for a single-target Whirlwind.
 
 ### Commands
 - New `.autogear` command gears a real player the way a spawned bot gets geared: items picked for the level and spec from the same gear pool the bots use, upgrades only, replaced items to the bags or the mailbox. GameMasters can gear any player; `AiPlayerbot.PlayerAutogearForAll` (default `0`) lets every player gear themselves.

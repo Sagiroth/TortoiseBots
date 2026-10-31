@@ -4,6 +4,7 @@
 #include "playerbot/RetaliationPolicy.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "playerbot/WarriorWwStancePolicy.h"
+#include "playerbot/policy/combat/RaidSnarePolicy.h"
 
 namespace ai
 {
@@ -43,9 +44,12 @@ namespace ai
             unsigned tmRank = TacticalMasteryRank(bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_1),
                 bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_2), bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_3),
                 bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_4), bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_5));
+            Group* group = bot->GetGroup();
             return ShouldWhirlwindStanceDance(whirlwind && sServerFacade.IsSpellReady(bot, whirlwind),
                 ai->HasAura("berserker stance", bot),
-                AI_VALUE2(uint8, "rage", "self target"), tmRank);
+                AI_VALUE2(uint8, "rage", "self target"), tmRank,
+                group && group->isRaidGroup(),
+                AI_VALUE2(bool, "trigger active", "melee light aoe"));
         }
 
     protected:
@@ -105,7 +109,22 @@ namespace ai
     // arms
     MELEE_ACTION(CastHeroicStrikeAction, "heroic strike");
     REACH_ACTION(CastChargeAction, "charge", 8.0f);
-    MELEE_DEBUFF_ACTION(CastRendAction, "rend");
+    // Rend (10 rage) re-applied on every new target starved the 30-rage main
+    // strike: Mortal Strike fired 0-3 times a run while Rend fired 41. Dps
+    // warriors hold the strike's bar (ShouldRendForDps); tanks keep the old
+    // unconditional row.
+    class CastRendAction : public CastMeleeDebuffSpellAction
+    {
+    public:
+        CastRendAction(PlayerbotAI* ai) : CastMeleeDebuffSpellAction(ai, "rend") {}
+
+        bool isUseful() override
+        {
+            return CastMeleeDebuffSpellAction::isUseful() &&
+                (ai->IsTank(bot) || ShouldRendForDps(ai->HasSpell("mortal strike") || ai->HasSpell("bloodthirst"),
+                    AI_VALUE2(uint8, "rage", "self target")));
+        }
+    };
     MELEE_DEBUFF_ENEMY_ACTION(CastRendOnAttackerAction, "rend");
     MELEE_DEBUFF_ACTION_R(CastThunderClapAction, "thunder clap", 8.0f);
     SNARE_ACTION(CastThunderClapSnareAction, "thunder clap");
@@ -196,7 +215,39 @@ namespace ai
     // fury talents
     BUFF_ACTION(CastDeathWishAction, "death wish");
     MELEE_ACTION(CastBloodthirstAction, "bloodthirst");
-    MELEE_DEBUFF_ACTION_R(CastPiercingHowlAction, "piercing howl", 8.0f);
+    // Piercing Howl is a 10-yd AoE around the warrior, but its row is armed
+    // by the "hamstring" snare unit, which the value returns anywhere in
+    // spell range (30 yd): a runner or a healer-chaser out there armed the
+    // row while the cast went to the melee target, already controlled and
+    // never inside the Howl. Only fire on a unit the AoE can reach; in a
+    // raid only a fleeing runner beside us (PiercingHowlAllowed).
+    //
+    // The gate belongs in isPossible, not isUseful: the engine pushes a
+    // node's alternatives (Hamstring, Arms Mocking Blow) only after an
+    // impossible or failed action, never after a useless one, so a held-back
+    // Howl must fail as impossible for the fallback to run. A warrior
+    // without the talent fails the base isPossible on the same path.
+    class CastPiercingHowlAction : public CastMeleeDebuffSpellAction
+    {
+    public:
+        CastPiercingHowlAction(PlayerbotAI* ai) : CastMeleeDebuffSpellAction(ai, "piercing howl")
+        {
+            range = 8.0f;
+        }
+
+        bool isPossible() override
+        {
+            if (!CastMeleeDebuffSpellAction::isPossible())
+                return false;
+
+            Unit* snare = AI_VALUE2(Unit*, "snare target", "hamstring");
+            Group* group = bot->GetGroup();
+            bool fleeing = snare && (snare->GetMotionMaster()->GetCurrentMovementGeneratorType() == FLEEING_MOTION_TYPE ||
+                snare->GetMotionMaster()->GetCurrentMovementGeneratorType() == TIMED_FLEEING_MOTION_TYPE);
+            return PiercingHowlAllowed(snare != nullptr, snare ? sServerFacade.GetDistance2d(bot, snare) : 0.0f,
+                                       group && group->isRaidGroup(), fleeing);
+        }
+    };
 
     // protection
     MELEE_ACTION_U(CastTauntAction, "taunt", GetTarget() && GetTarget()->GetVictim() && GetTarget()->GetVictim() != bot);

@@ -25,10 +25,17 @@ namespace ai
     constexpr uint32_t WARRIOR_PUMMEL_RAGE_COST = 10;
 
     // True when the stance swap is worth it: the spell is off cooldown and
-    // the post-swap bar holds its rage cost.
+    // the post-swap bar holds its rage cost. In a raid group a single-target
+    // Whirlwind (25 rage) is no better than Mortal Strike from Battle Stance
+    // and the round trip costs two casts, so the swap needs two or more mobs
+    // in melee; already in Berserker Stance no swap is paid and the cast
+    // stays allowed.
     inline bool ShouldWhirlwindStanceDance(bool spellReady, bool inBerserkerStance,
-                                           uint32_t rage, unsigned tmRank)
+                                           uint32_t rage, unsigned tmRank,
+                                           bool inRaidGroup, bool twoOrMoreInMelee)
     {
+        if (inRaidGroup && !twoOrMoreInMelee && !inBerserkerStance)
+            return false;
         return spellReady &&
             RageAfterStanceSwap(inBerserkerStance, rage, tmRank) >= WARRIOR_WHIRLWIND_RAGE_COST;
     }

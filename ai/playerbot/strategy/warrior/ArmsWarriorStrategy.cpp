@@ -433,6 +433,7 @@ public:
         // Disable Berserker Stance
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
+            actionName == "berserker stance for whirlwind" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||
@@ -468,6 +469,7 @@ public:
         // Disable Berserker Stance
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
+            actionName == "berserker stance for whirlwind" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||
@@ -503,6 +505,7 @@ public:
         // Disable Berserker Stance
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
+            actionName == "berserker stance for whirlwind" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||

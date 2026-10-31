@@ -39,7 +39,15 @@ namespace ai
         }
     };
     DEBUFF_TRIGGER(DemoralizingShoutDebuffTrigger, "demoralizing shout");
-    DEBUFF_TRIGGER(MortalStrikeDebuffTrigger, "mortal strike");
+    // The debuff lasts 10 s and the cooldown is 6 s, and any caster's
+    // debuff blocks a DebuffTrigger: that capped Mortal Strike at one cast
+    // per 10 s and let another warrior's debuff silence it. Core CanCastSpell
+    // already enforces rage and cooldown, so fire it on cooldown.
+    class MortalStrikeTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        MortalStrikeTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "mortal strike") {}
+    };
     DEBUFF_ENEMY_TRIGGER(RendDebuffOnAttackerTrigger, "rend");
     CAN_CAST_TRIGGER(RevengeAvailableTrigger, "revenge");
     CAN_CAST_TRIGGER(OverpowerAvailableTrigger, "overpower");

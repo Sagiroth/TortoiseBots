@@ -148,7 +148,7 @@ namespace ai
                 creators["overpower"] = [](PlayerbotAI* ai) { return new OverpowerAvailableTrigger(ai); };
                 creators["mocking blow"] = [](PlayerbotAI* ai) { return new MockingBlowTrigger(ai); };
                 creators["mocking blow taunt"] = [](PlayerbotAI* ai) { return new MockingBlowTauntTrigger(ai); };
-                creators["mortal strike"] = [](PlayerbotAI* ai) { return new MortalStrikeDebuffTrigger(ai); };
+                creators["mortal strike"] = [](PlayerbotAI* ai) { return new MortalStrikeTrigger(ai); };
                 creators["thunder clap on snare target"] = [](PlayerbotAI* ai) { return new ThunderClapSnareTrigger(ai); };
                 creators["thunder clap"] = [](PlayerbotAI* ai) { return new ThunderClapTrigger(ai); };
                 creators["bloodthirst"] = [](PlayerbotAI* ai) { return new BloodthirstTrigger(ai); };
