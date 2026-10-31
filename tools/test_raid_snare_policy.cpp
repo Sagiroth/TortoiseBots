@@ -51,6 +51,19 @@ int main()
     CHECK(PIERCING_HOWL_RADIUS_YD == 10.0f);
     std::cout << "  [PASS] piercing howl only fires on a snare unit it can reach\n";
 
+    // Howl gate: a refused Howl has no useful alternative in a raid (Arms
+    // and Fury fall back to Hamstring, a 10-rage snare walk up to 30 yd off
+    // the melee target), so it must be useless there and push nothing. In a
+    // dungeon the Hamstring fallback stays.
+    CHECK(PiercingHowlGate(true, 25, true, false) == HowlGate::Skip);
+    CHECK(PiercingHowlGate(true, 6, true, true) == HowlGate::Cast);
+    CHECK(PiercingHowlGate(true, 6, true, false) == HowlGate::Skip);
+    CHECK(PiercingHowlGate(true, 15, false, false) == HowlGate::FallBack);
+    CHECK(PiercingHowlGate(false, 0, false, false) == HowlGate::FallBack);
+    CHECK(PiercingHowlGate(false, 0, true, false) == HowlGate::Skip);
+    CHECK(PiercingHowlGate(true, 10.0f, false, false) == HowlGate::Cast);
+    std::cout << "  [PASS] a refused howl skips the raid fallback\n";
+
     std::cout << "All TortoiseBots raid snare policy tests passed.\n";
     return 0;
 }

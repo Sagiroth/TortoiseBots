@@ -48,4 +48,19 @@ namespace ai
             return false;
         return true;
     }
+
+    // A refused Howl has no fallback worth running in a raid: Arms and Fury
+    // both fall back to Hamstring, a snare action that walks up to 30 yd off
+    // the melee target for 10 rage, ahead of the 30-rage main strike. So the
+    // refusal must reach the engine as useless there (no alternatives run).
+    // In a dungeon the Hamstring fallback on a runner or a healer-chaser is
+    // still correct, so the refusal stays impossible and falls through.
+    enum class HowlGate { Cast, FallBack, Skip };
+
+    inline HowlGate PiercingHowlGate(bool hasSnareTarget, float snareDistYd, bool inRaidGroup, bool snareFleeing)
+    {
+        if (PiercingHowlAllowed(hasSnareTarget, snareDistYd, inRaidGroup, snareFleeing))
+            return HowlGate::Cast;
+        return inRaidGroup ? HowlGate::Skip : HowlGate::FallBack;
+    }
 } // namespace ai

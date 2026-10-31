@@ -222,11 +222,12 @@ namespace ai
     // never inside the Howl. Only fire on a unit the AoE can reach; in a
     // raid only a fleeing runner beside us (PiercingHowlAllowed).
     //
-    // The gate belongs in isPossible, not isUseful: the engine pushes a
-    // node's alternatives (Hamstring, Arms Mocking Blow) only after an
-    // impossible or failed action, never after a useless one, so a held-back
-    // Howl must fail as impossible for the fallback to run. A warrior
-    // without the talent fails the base isPossible on the same path.
+    // A refused Howl is useless in a raid (HowlGate::Skip): the engine
+    // pushes a node's alternatives (Hamstring in both dps specs) only after
+    // an impossible or failed action, never after a useless one.
+    // In a dungeon the refusal stays impossible (HowlGate::FallBack) so the
+    // Hamstring fallback runs. A warrior without the talent fails the base
+    // isPossible on the same path.
     class CastPiercingHowlAction : public CastMeleeDebuffSpellAction
     {
     public:
@@ -235,17 +236,25 @@ namespace ai
             range = 8.0f;
         }
 
+        bool isUseful() override
+        {
+            return CastMeleeDebuffSpellAction::isUseful() && Gate() != HowlGate::Skip;
+        }
+
         bool isPossible() override
         {
-            if (!CastMeleeDebuffSpellAction::isPossible())
-                return false;
+            return CastMeleeDebuffSpellAction::isPossible() && Gate() == HowlGate::Cast;
+        }
 
+    private:
+        HowlGate Gate()
+        {
             Unit* snare = AI_VALUE2(Unit*, "snare target", "hamstring");
             Group* group = bot->GetGroup();
             bool fleeing = snare && (snare->GetMotionMaster()->GetCurrentMovementGeneratorType() == FLEEING_MOTION_TYPE ||
                 snare->GetMotionMaster()->GetCurrentMovementGeneratorType() == TIMED_FLEEING_MOTION_TYPE);
-            return PiercingHowlAllowed(snare != nullptr, snare ? sServerFacade.GetDistance2d(bot, snare) : 0.0f,
-                                       group && group->isRaidGroup(), fleeing);
+            return PiercingHowlGate(snare != nullptr, snare ? sServerFacade.GetDistance2d(bot, snare) : 0.0f,
+                                    group && group->isRaidGroup(), fleeing);
         }
     };
 

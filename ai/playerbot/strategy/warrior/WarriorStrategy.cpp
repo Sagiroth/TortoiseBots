@@ -350,6 +350,13 @@ void WarriorBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigger
         "battle stance",
         NextAction::array(0, new NextAction("battle stance", ACTION_NORMAL), NULL)));
 
+    InitNonCombatSharedTriggers(triggers);
+}
+
+// Rows every warrior spec runs outside combat. Fury rests in Berserker
+// Stance instead of the Battle Stance row above (a swap per fight).
+void WarriorBuffStrategy::InitNonCombatSharedTriggers(std::list<TriggerNode*>& triggers)
+{
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("apply stone", ACTION_NORMAL), NULL)));

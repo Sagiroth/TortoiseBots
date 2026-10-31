@@ -2,15 +2,18 @@
 
 Piercing Howl was armed by any snare unit in spell range but cast on the
 melee target, so a runner 25 yd out made the warrior Howl the tank's mob.
-The reach gate sits in isPossible, not isUseful: the engine pushes the
-node's alternatives (Hamstring, Arms: Mocking Blow) only after an
-impossible or failed action, so a Howl held back by reach or the raid rule
-- and a warrior without the talent - must fail as impossible to fall
-through. Mortal Strike was a debuff trigger (one cast per 10 s
-debuff, blocked by another warrior). Rend (10 rage) re-applied on every
-trash target starved the 30-rage main strike. The raid Whirlwind
-prerequisite danced into Berserker Stance for a single target, and the
-Sweeping Strikes multipliers still matched the old prerequisite name.
+The snare rule splits in two: a Howl refused in a raid is useless (the
+engine pushes alternatives only after an impossible or failed action, and
+the Arms and Fury alternative is a 30-yd Hamstring walk), while a refusal
+in a dungeon stays impossible so the Hamstring fallback runs.
+Mortal Strike was a debuff trigger (one cast per 10 s debuff, blocked by
+another warrior). Rend (10 rage) re-applied on every trash target starved
+the 30-rage main strike. The raid Whirlwind prerequisite danced into
+Berserker Stance for a single target, and the Sweeping Strikes
+multipliers still matched the old prerequisite name. Fury inherited the
+Battle Stance out-of-combat row, costing a Battle/Berserker swap per
+fight; Fury now rests in Berserker Stance and only the shared gear-stone
+row comes from the base strategy.
 
 The behaviour lives in WarriorRageGatePolicy.h / RaidSnarePolicy.h /
 WarriorWwStancePolicy.h (pinned by the standalone policy tests); this pins
@@ -31,37 +34,38 @@ def class_body(text, start):
     return text[i:end]
 
 
+def function_body(text, signature):
+    i = text.index(signature)
+    end = text.index("\n}", i)
+    return text[i:end]
+
+
 class PiercingHowlWiringTest(unittest.TestCase):
     def setUp(self):
         self.actions = (WARRIOR / "WarriorActions.h").read_text()
 
-    def test_gate_lives_in_is_possible(self):
+    def test_gate_splits_useful_from_possible(self):
         self.assertNotIn("MELEE_DEBUFF_ACTION_R(CastPiercingHowlAction", self.actions)
         self.assertIn("class CastPiercingHowlAction : public CastMeleeDebuffSpellAction", self.actions)
         body = class_body(self.actions, "class CastPiercingHowlAction")
+        useful = body.index("bool isUseful() override")
         possible = body.index("bool isPossible() override")
-        gate = body.index("PiercingHowlAllowed(")
-        # A false isPossible pushes the node's alternatives (Hamstring,
-        # Arms: Mocking Blow) in the engine; a false isUseful pushes none,
-        # so the gate must sit after the possibility check, not before.
-        self.assertGreater(gate, possible)
-        # The base judgement runs first: an unknown spell or an out-of-reach
-        # target is already impossible and never reads the snare rule.
-        base = body.index("CastMeleeDebuffSpellAction::isPossible()")
-        self.assertLess(base, gate)
-        self.assertIn('"snare target", "hamstring"', body[:gate])
-        # Every gate input is read from the live unit, not only passed on.
-        self.assertIn("GetDistance2d(bot, snare)", body)
+        # A raid refusal must be useless: the engine pushes the node's
+        # alternatives (Hamstring) only after an impossible or failed
+        # action. A dungeon refusal stays impossible so its Hamstring
+        # fallback runs.
+        self.assertIn("CastMeleeDebuffSpellAction::isUseful() && Gate() != HowlGate::Skip",
+                      body[useful:possible])
+        self.assertIn("CastMeleeDebuffSpellAction::isPossible() && Gate() == HowlGate::Cast",
+                      body[possible:])
+        # The snare unit is read once, in the helper both overrides share.
+        gate = body.index("HowlGate Gate()")
+        self.assertEqual(body.count('"snare target", "hamstring"'), 1)
+        self.assertIn('"snare target", "hamstring"', body[gate:])
+        self.assertIn("GetDistance2d(bot, snare)", body[gate:])
         # "||" keeps TIMED_FLEEING_MOTION_TYPE from satisfying this alone.
-        self.assertIn("GetCurrentMovementGeneratorType() == FLEEING_MOTION_TYPE ||", body)
-        self.assertIn("isRaidGroup()", body)
-
-    def test_usefulness_is_the_base_judgement(self):
-        # No isUseful override: a known Howl held back by the reach or raid
-        # rule must stay useful so the engine reaches isPossible and takes
-        # the fallback instead of spending the tick on nothing.
-        body = class_body(self.actions, "class CastPiercingHowlAction")
-        self.assertNotIn("isUseful", body)
+        self.assertIn("GetCurrentMovementGeneratorType() == FLEEING_MOTION_TYPE ||", body[gate:])
+        self.assertIn("isRaidGroup()", body[gate:])
 
     def test_action_is_registered(self):
         ctx = (WARRIOR / "WarriorAiObjectContext.cpp").read_text()
@@ -104,6 +108,41 @@ class WhirlwindRaidDanceWiringTest(unittest.TestCase):
 
     def test_sweeping_strikes_multipliers_name_the_new_prereq(self):
         self.assertEqual(self.arms.count('actionName == "berserker stance for whirlwind"'), 3)
+
+
+class ArmsHowlFallbackWiringTest(unittest.TestCase):
+    def test_howl_falls_back_to_hamstring_not_a_taunt(self):
+        arms = (WARRIOR / "ArmsWarriorStrategy.cpp").read_text()
+        self.assertIn('ACTION_NODE_A(piercing_howl, "piercing howl", "hamstring")', arms)
+        self.assertNotIn('"piercing howl", "mocking blow"', arms)
+
+
+class FuryRestStanceWiringTest(unittest.TestCase):
+    def setUp(self):
+        self.fury = (WARRIOR / "FuryWarriorStrategy.cpp").read_text()
+        self.warrior = (WARRIOR / "WarriorStrategy.cpp").read_text()
+
+    def test_fury_noncombat_rests_in_berserker(self):
+        # The shared warrior non-combat row put every warrior in Battle
+        # Stance, so a Fury warrior paid a Battle/Berserker swap per fight
+        # (walk 16: Wink 14 + 14 over 11 fights). Fury rests in Berserker.
+        body = function_body(self.fury,
+            "void FuryWarriorBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)")
+        self.assertNotIn("WarriorBuffStrategy::InitNonCombatTriggers(triggers)", body)
+        self.assertIn("BuffStrategy::InitNonCombatTriggers(triggers)", body)
+        self.assertIn("InitNonCombatSharedTriggers(triggers)", body)
+        self.assertIn('"berserker stance"', body)
+
+    def test_warrior_noncombat_keeps_battle_stance_and_shared_rows(self):
+        # Arms and Protection keep the base row (battle stance plus the
+        # gear stone); only the stance row moved out of the shared helper.
+        body = function_body(self.warrior,
+            "void WarriorBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)")
+        self.assertIn('"battle stance"', body)
+        self.assertIn("InitNonCombatSharedTriggers(triggers)", body)
+        shared = function_body(self.warrior,
+            "void WarriorBuffStrategy::InitNonCombatSharedTriggers(std::list<TriggerNode*>& triggers)")
+        self.assertIn('"apply stone"', shared)
 
 
 if __name__ == "__main__":
