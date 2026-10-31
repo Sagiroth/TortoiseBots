@@ -24304,6 +24304,109 @@ static void TestRaidAssistIsRaidTrashOnly()
     CHECK(r.fightOrders == 0);
 }
 
+// Raid walk fight (#1368): ZG walk 11 step 6, the main tank parks at the walk's end while the pack breaks out 40-52 yd
+// behind it, and every former lift stops at kGuardYd, so it stands there for the whole fight. On a move step the main
+// tank joins the raid's fight on the nearest mob hitting a raid member within kRaidWalkJoinYd, after
+// kRaidAssistWaitMs, once per fight.
+static void TestRaidWalkFightMainTankJoins()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), Step(PlanStepKind::Move, 100)};
+    Facts f = RaidTrashFacts(false); // no off-tank in reach, as in the ZG walks
+    Run r = Start(&plan);
+    Tick(r, f);
+    CHECK(r.step == 1);
+    CHECK(Tick(r, f) == "move 100.0 0.0 0.0");
+    f.anyInCombat = true;
+    f.raid.walkAttackers = {Hitter(41, 11350, 48.0f)}; // the Gurubashi Axe Thrower 48 yd behind the parked tank
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "attack 41 Tanky");
+    CHECK(r.note == "fighting: the main tank joins the raid's fight on 11350 (48.0 yd)");
+    CHECK(r.raidWalkJoined);
+    CHECK(r.guardOrders == 0);
+    // The order ends its stay: its own AI fights the pack from there.
+    f.leadStaying = false;
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    // Once per fight, even back on stay past its wait.
+    f.leadStaying = true;
+    for (std::uint32_t ms = 0; ms < 5000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+}
+
+// A pull step keeps today's rule: its stand was chosen for the pack, so the main tank does not leave it for the fight.
+static void TestRaidWalkJoinNotOnPullSteps()
+{
+    DungeonPlan plan;
+    Facts f = RaidTrashFacts();
+    Run r = StartRaidTrashFight(plan, f);
+    f.raid.walkAttackers = {Hitter(41, 11350, 48.0f)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.note.find("joins the raid's fight") == std::string::npos);
+}
+
+// A party run (raid.on false) keeps its rules: no joins order, whatever the list holds.
+static void TestRaidWalkJoinNotInPartyRuns()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), Step(PlanStepKind::Move, 100)};
+    Facts f = Party(0);
+    f.leadIsTank = true;
+    f.leadStaying = true;
+    Run r = Start(&plan);
+    Tick(r, f);
+    CHECK(r.step == 1);
+    CHECK(Tick(r, f) == "move 100.0 0.0 0.0");
+    f.anyInCombat = true;
+    f.raid.walkAttackers = {Hitter(41, 11350, 48.0f)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.note.find("joins the raid's fight") == std::string::npos);
+}
+
+// The read stops under the sight distance (AiPlayerbot.SightDistance, 60 yd): a mob at 56 yd is not joined.
+static void TestRaidWalkJoinStaysInSight()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), Step(PlanStepKind::Move, 100)};
+    Facts f = RaidTrashFacts(false);
+    Run r = Start(&plan);
+    Tick(r, f);
+    CHECK(r.step == 1);
+    CHECK(Tick(r, f) == "move 100.0 0.0 0.0");
+    f.anyInCombat = true;
+    f.raid.walkAttackers = {Hitter(41, 11350, 56.0f)};
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.note.find("joins the raid's fight") == std::string::npos);
+}
+
+// The engage-on-arrival order keeps priority: a healer's attacker within kGuardYd goes first, and the tank's stay is over.
+static void TestRaidWalkJoinYieldsToEngageOnArrival()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), Step(PlanStepKind::Move, 100)};
+    Facts f = RaidTrashFacts(false);
+    Run r = Start(&plan);
+    Tick(r, f);
+    CHECK(r.step == 1);
+    CHECK(Tick(r, f) == "move 100.0 0.0 0.0");
+    f.anyInCombat = true;
+    f.raid.walkAttackers = {Hitter(41, 11350, 48.0f)};
+    for (std::uint32_t ms = kTickMs; ms < kRaidAssistWaitMs; ms += kTickMs)
+        CHECK(Tick(r, f).empty());
+    // The healer's attacker shows up as the walk join's wait is met: the engage-on-arrival order has priority.
+    f.partyAttackers = {Hitter(51, 12130, 10.0f, true)};
+    CHECK(Tick(r, f) == "attack 51 Tanky");
+    CHECK(r.note == "fighting: the tank engages 12130 on arrival (10.0 yd)");
+    f.leadStaying = false;
+    for (std::uint32_t ms = 0; ms < 10000; ms += kTickMs)
+        CHECK(Tick(r, f).find("joins the raid's fight") == std::string::npos);
+    CHECK(!r.raidWalkJoined);
+}
+
 // Task F3: a raid's trash fight hands the mobs to the off-tanks; on a boss step
 // (or a boss's fight) and in a party run the guard's order is the main tank's.
 static void TestRaidTrashFightGate()
@@ -25288,6 +25391,12 @@ int main()
     TestRaidMainTankOnABossStepIgnoresAHeldMob();
     TestRaidAssistNeverInAHold();
     TestRaidAssistIsRaidTrashOnly();
+    // item 3 raid walk join
+    TestRaidWalkFightMainTankJoins();
+    TestRaidWalkJoinNotOnPullSteps();
+    TestRaidWalkJoinNotInPartyRuns();
+    TestRaidWalkJoinStaysInSight();
+    TestRaidWalkJoinYieldsToEngageOnArrival();
     std::cout << "test_dungeon_run_policy: ok\n";
     return 0;
 }

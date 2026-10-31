@@ -8029,7 +8029,7 @@ void ReadReachFacts(Player* lead, PlayerbotAI* leadAi, std::vector<Player*> cons
 // healer, and during a hold (`hold` not null) each one's distance from the
 // hold spot. Read off each bot's own attacker set: no grid or world scan.
 void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts& f,
-    ai::PlanStep const* hold)
+    ai::PlanStep const* hold, bool raidWalk = false)
 {
     using namespace TortoiseBots::DungeonRun;
     PlayerbotAI* leadAi = PlayerbotAIStorage::Instance().GetAI(lead);
@@ -8089,7 +8089,8 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
     std::unordered_set<uint64> seen;
     // The mobs that have `victim` (a bot or a pet) as their victim, each once.
     // `tankVictim`: the victim is a tank (an off-tank holding the mob).
-    auto const addAttackers = [&](Unit* victim, bool healer, bool petVictim, bool tankVictim)
+    auto const addAttackers = [&](Unit* victim, bool healer, bool petVictim, bool tankVictim,
+        std::vector<UnitFact>& out)
     {
         for (Unit* attacker : victim->GetAttackers())
         {
@@ -8115,7 +8116,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.attackable = GroupCanAttack(lead, attacker); // never picked up when it cannot be attacked
             if (hold)
                 fact.distSpot = DistanceTo(attacker, hold->x, hold->y, hold->z);
-            f.partyAttackers.push_back(fact);
+            out.push_back(fact);
         }
     };
     for (Player* bot : bots)
@@ -8125,12 +8126,30 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             continue;
         // The lead bot's own mobs are leadHit / leadAttacker, not partyAttackers.
         if (bot != lead)
-            addAttackers(bot, PlayerbotAI::IsHeal(bot), false, PlayerbotAI::IsTank(bot));
+            addAttackers(bot, PlayerbotAI::IsHeal(bot), false, PlayerbotAI::IsTank(bot), f.partyAttackers);
         // A living pet in the world (a hunter's or warlock's, the lead's too):
         // the mobs on it come last in GuardPick, after every mob on a bot.
         Unit* pet = bot->GetPet();
         if (pet && pet->IsAlive() && pet->IsInWorld())
-            addAttackers(pet, false, true, false);
+            addAttackers(pet, false, true, false, f.partyAttackers);
+    }
+    if (raidWalk)
+    {
+        // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
+        // every kGuardYd lift. The mobs on the bots between kGuardYd and kRaidWalkJoinYd go in their own list
+        // (DungeonRun::RaidWalkJoin reads it and partyAttackers); the seen set keeps a mob in one list only.
+        for (Player* bot : bots)
+        {
+            if (!bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != lead->GetMap() || bot == lead)
+                continue;
+            float const yd = bot->GetDistance(lead);
+            if (!(yd > TortoiseBots::DungeonRun::kGuardYd && yd <= TortoiseBots::DungeonRun::kRaidWalkJoinYd))
+                continue;
+            addAttackers(bot, PlayerbotAI::IsHeal(bot), false, PlayerbotAI::IsTank(bot), f.raid.walkAttackers);
+            Unit* pet = bot->GetPet();
+            if (pet && pet->IsAlive() && pet->IsInWorld())
+                addAttackers(pet, false, true, false, f.raid.walkAttackers);
+        }
     }
 }
 
@@ -9054,8 +9073,12 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     {
         // In a hold: the attackers' distance from its spot (DungeonRun::HoldGuardTarget).
         ai::PlanStep const* current = FactStep(slot.run);
+        // A raid's walk fight (#1368): a move step of a raid trash fight reads the mobs behind the parked main tank into
+        // Facts::raid.walkAttackers too (DungeonRun::RaidWalkJoin).
+        bool const raidWalk = current && current->kind == ai::PlanStepKind::Move &&
+            TortoiseBots::DungeonRun::RaidTrashFight(slot.run, f);
         ReadGuardFacts(lead, bots, f,
-            current && current->kind == ai::PlanStepKind::Hold ? current : nullptr);
+            current && current->kind == ai::PlanStepKind::Hold ? current : nullptr, raidWalk);
     }
 
     // A hold's done condition on every tick, its spot in sight or not

@@ -383,6 +383,10 @@ constexpr std::uint32_t kGuardRepeatMs = 2000;    // a further pick-up no sooner
 constexpr std::uint32_t kGuardOrdersPerFight = 3; // pick-up orders one fight may send (per budget: see below)
 constexpr std::uint32_t kRaidAssistWaitMs = 3000; // a main tank on stay with no mob of its own
                                                   // helps on an off-tank's mob after this (the off-tank takes it first)
+// ... and in a raid's walk (#1368): the main tank parks at the walk's end and a pack that breaks out behind it is out of
+// every lift's reach. ZG walk 11 step 6: the tank at -11917,-1442, the hurt mobs 38-52 yd behind it, 25 s with no order.
+// SightDistance (60 yd) bounds `attack`, so the read stops at 55 (3D vs 2D distance to spare).
+constexpr float kRaidWalkJoinYd = 55.0f;
 // A mob hitting the party only by a spell from where it stands (UnitFact::castingAtRange), with a living hostile out of
 // combat within kGuardCampYd of it (UnitFact::campIdle: its own camp, a pack not pulled yet), is not picked up or engaged
 // when the tank would walk more than kGuardNoWalkYd to it (GuardLeavesCampAlone). Scholomance r30 slot C step 16
@@ -766,6 +770,10 @@ struct RaidFacts
     // Living tanks other than the lead bot, on its map within kGuardYd of it and out of a commander task, in the
     // layout's order: the raid trash fights send a loose mob to them (RaidTrashFight, CheckGuard).
     std::vector<std::string> offTanksAlive;
+    // Raid trash fights on a move step only: mobs hitting a raid member whose victim is farther than kGuardYd from the
+    // lead bot and within kRaidWalkJoinYd (partyAttackers keeps the kGuardYd read; RaidWalkJoin reads both). distLead,
+    // hitting, hostile, attackable, evading, polymorphed, castingAtRange and campIdle are set as for partyAttackers.
+    std::vector<UnitFact> walkAttackers;
 };
 
 // The pack-cleared gate's read of one living creature of a pull step's entries (the glue calls this inside the
@@ -1918,6 +1926,11 @@ struct Run
     std::uint32_t raidAssistMs = 0;
     std::uint64_t raidAssistGuid = 0;
     std::unordered_set<std::uint64_t> raidAssisted;
+    // A raid's walk fight (#1368): the mob the main tank on stay was found on (RaidWalkJoin) and how long it waited, and
+    // once per fight, after the one join.
+    std::uint32_t raidWalkJoinMs = 0;
+    std::uint64_t raidWalkJoinGuid = 0;
+    bool raidWalkJoined = false;
     // The tank's reach for a pull is cut off once a mob has aggro (CheckReach):
     // `stopReachDue` asks the glue to end the lead bot's pull, once per pull.
     bool stopReachDue = false;
@@ -2412,6 +2425,9 @@ inline void ResetStep(Run& r)
     r.raidAssistMs = 0;
     r.raidAssistGuid = 0;
     r.raidAssisted.clear();
+    r.raidWalkJoinMs = 0;
+    r.raidWalkJoinGuid = 0;
+    r.raidWalkJoined = false;
     r.stopReachDue = false;
     r.reachStopped = false;
     r.guardEventDown = 0;
@@ -12420,6 +12436,38 @@ inline const UnitFact* RaidAssistTarget(const Run& r, const Facts& f)
     return best;
 }
 
+// A raid's walk fight (#1368): on a move step the main tank stands at the walk's end point while the pack breaks out
+// behind it, and every lift stops at kGuardYd, so it fights nothing at all (ZG walks 7/9/11, six step-6 fights: 35-55 yd
+// from the hurt mobs, 0 damage dealt). A move step's stay is the walk's end, not a stand chosen for the pack, so the main
+// tank joins the fight: the nearest mob hitting a raid member (any of them, a pet too) within kRaidWalkJoinYd of it. The
+// mob picked already (raidWalkJoinGuid) stays the pick while it is still eligible. Null otherwise.
+inline const UnitFact* RaidWalkJoinTarget(const Run& r, const Facts& f)
+{
+    if (!RaidTrashFight(r, f) || !Current(r) || Current(r)->kind != PlanStepKind::Move || !f.leadAlive || !f.leadIsTank ||
+        !f.leadStaying || f.leadHasAttacker || f.carrier.empty() || r.raidWalkJoined)
+        return nullptr;
+    auto const eligible = [&r](const UnitFact& u)
+    {
+        return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting && u.distLead <= kRaidWalkJoinYd &&
+            !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
+    };
+    const UnitFact* best = nullptr;
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        const std::vector<UnitFact>& list = pass == 0 ? f.partyAttackers : f.raid.walkAttackers;
+        for (const UnitFact& u : list)
+        {
+            if (!eligible(u))
+                continue;
+            if (u.guid == r.raidWalkJoinGuid)
+                return &u;
+            if (!best || u.distLead < best->distLead)
+                best = &u;
+        }
+    }
+    return best;
+}
+
 // The guard inside a hold (Uldaman Keepers, 19z12 attempt 1: the tank held
 // "stay" on the hold spot at 102 270 while a Stone Keeper killed the priest
 // at 119 266, 17 yd away, and the mage fled at 16 %). The same rules as
@@ -12611,6 +12659,44 @@ inline bool RaidAssist(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     return true;
 }
 
+// A raid's walk fight's main tank goes once at the nearest mob hitting a raid member behind it, after kRaidAssistWaitMs
+// (the same wait the off-tank gets): `attack <guid> <carrier>` ends its stay and its own tank AI takes the pack. Once per
+// fight, and the spacing and the fight cap hold as for RaidAssist. Not a pick-up: guardOrders and guardUnitOrders are
+// untouched.
+inline bool RaidWalkJoin(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    const UnitFact* u = RaidWalkJoinTarget(r, f);
+    if (!u)
+    {
+        r.raidWalkJoinMs = 0;
+        r.raidWalkJoinGuid = 0;
+        return false;
+    }
+    if (u->guid != r.raidWalkJoinGuid)
+    {
+        r.raidWalkJoinGuid = u->guid;
+        r.raidWalkJoinMs = 0;
+    }
+    r.raidWalkJoinMs += dt;
+    if (r.raidWalkJoinMs < kRaidAssistWaitMs || r.fightOrders >= kGuardOrdersFightCap ||
+        (r.fightOrders > 0 && r.guardSinceOrderMs < kGuardRepeatMs))
+        return false;
+    r.raidWalkJoinMs = 0;
+    r.raidWalkJoined = true;
+    ++r.fightOrders;
+    r.guardSinceOrderMs = 0;
+    if (!r.guardReturn)
+    {
+        r.guardReturn = true; // it leaves its stand, as at a pick-up
+        r.guardX = f.leadStayKnown ? f.leadStayX : f.leadX;
+        r.guardY = f.leadStayKnown ? f.leadStayY : f.leadY;
+        r.guardZ = f.leadStayKnown ? f.leadStayZ : f.leadZ;
+    }
+    r.note = "fighting: the main tank joins the raid's fight on " + std::to_string(u->entry) + " (" + Num(u->distLead) + " yd)";
+    order = "attack " + std::to_string(u->guid) + " " + f.carrier;
+    return true;
+}
+
 // One fight tick of the guard: mobs hitting the party for kGuardWaitMs (a
 // healer: at once) send the pick-up, at most kGuardOrdersPerFight a fight and
 // kGuardRepeatMs apart. In a hold the tank on stay is sent at the event's
@@ -12683,6 +12769,8 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
             order = "attack " + std::to_string(arrival->guid) + " " + f.carrier;
             return true;
         }
+        if (RaidWalkJoin(r, f, dt, order))
+            return true;
     }
     const UnitFact* u = hold ? HoldGuardTarget(r, f) : GuardTarget(r, f);
     const UnitFact* engage = hold && !u ? HoldEngageTarget(r, f) : nullptr;
@@ -15321,6 +15409,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.raidAssistMs = 0;
         r.raidAssistGuid = 0;
         r.raidAssisted.clear();
+        r.raidWalkJoinMs = 0;
+        r.raidWalkJoinGuid = 0;
+        r.raidWalkJoined = false;
         r.reachStopped = false;
         // A fight may have moved the lead bot: an exact point's tighten starts
         // over and its proof is taken again before a direct step goes out.
