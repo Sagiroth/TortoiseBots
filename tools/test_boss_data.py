@@ -578,8 +578,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 17)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 112)
+        self.assertEqual(len(doc["bosses"]), 25)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 137)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -591,6 +591,141 @@ class BossDataTest(unittest.TestCase):
                 self.assertTrue(entry["name"], entry)
             for phase in boss["phases"]:
                 self.assertIn(phase["rule"]["kind"], ("hp", "aura", "flag", "start"))
+
+
+# Every value below is read off the core row named after it, not copied from the
+# CSV: spell_template in sql/base (or the later write in
+# sql/database_updates/world/20260512224739_world.sql) and creature_template in
+# sql/database_updates/world/20260510092659_world.sql. No Timbermaw creature has
+# an EventAI event or a script, so every a/b/c is 0.
+# key: (boss, a, b, c, t, aura, self, ground, cone, tail, int, summon, ok, okNeeds,
+#       phase, castMs, name)
+TIMBERMAW_ABILITIES = {
+    49039: (62936, 0, 0, 0, "self", False, True, False, False, False, False, 0, "", {"purge": "nopurge"}, "", 0, "Spirit Bond"),
+    49040: (62936, 0, 0, 0, "self", False, True, False, False, False, False, 0, "", {"purge": "nopurge"}, "", 0, "Broken Bond"),
+    52806: (2139, 0, 0, 0, "random", True, False, False, False, False, False, 0, "", {}, "", 0, "Venomous Vines"),
+    52808: (2139, 0, 0, 0, "aoe", True, False, False, False, False, False, 0, "", {"dispel": "nodispel"}, "", 0, "Aura of Infection"),
+    52812: (2139, 0, 0, 0, "aoe", True, False, False, False, False, False, 0, "", {}, "", 0, "Spores of Corruption"),
+    52813: (2139, 0, 0, 0, "random", False, False, True, False, False, False, 0, "", {}, "", 0, "Infected Secretion"),
+    49027: (62935, 0, 0, 0, "aoe", False, False, True, False, False, False, 0, "", {}, "", 0, "Tremors of Ormanos"),
+    49028: (62935, 0, 0, 0, "self", False, False, False, False, False, False, 51608, "", {}, "", 0, "Spawn Tremor of Ormanos"),
+    49029: (62935, 0, 0, 0, "victim", False, False, False, False, False, False, 0, "", {}, "", 0, "Rampaging Earth"),
+    49030: (62935, 0, 0, 0, "victim", False, False, False, False, False, True, 0, "", {}, "", 0, "Rampaging Earth"),
+    49031: (62935, 0, 0, 0, "victim", False, False, False, False, False, False, 0, "", {}, "", 0, "Rampaging Earth"),
+    52770: (62940, 0, 0, 0, "random", True, False, False, False, False, False, 0, "", {}, "", 0, "Foulheart Siphon"),
+    52763: (62940, 0, 0, 0, "aoe", True, False, False, False, False, False, 0, "", {}, "", 0, "Curse of Foulheart"),
+    52790: (62940, 0, 0, 0, "self", False, False, False, False, False, True, 62945, "", {}, "", 0, "Summon Foulheart Imp"),
+    34720: (62946, 0, 0, 0, "random", True, False, False, False, False, False, 0, "", {"dispel": "nodispel"}, "", 0, "Corrosive Spit"),
+    34721: (62946, 0, 0, 0, "aoe", False, False, False, False, False, False, 0, "", {}, "", 0, "Icicle Crash"),
+    34722: (62946, 0, 0, 0, "aoe", False, False, False, False, False, False, 0, "", {}, "", 0, "Icicle Crash"),
+    34723: (62946, 0, 0, 0, "random", True, False, False, False, False, False, 0, "", {"dispel": "nodispel"}, "", 0, "Frozen Spit"),
+    34767: (62938, 0, 0, 0, "random", True, False, False, False, False, False, 0, "", {"dispel": "nodispel"}, "", 0, "Intruder of the Dream"),
+    58117: (62938, 0, 0, 0, "self", False, True, False, False, False, False, 0, "", {"purge": "nopurge"}, "", 0, "Emerald Dream Welcome"),
+    34741: (62941, 0, 0, 0, "self", False, True, False, False, False, False, 0, "", {"purge": "nopurge"}, "", 0, "Chieftain of Withermaw"),
+    34742: (62941, 0, 0, 0, "self", False, False, False, False, False, False, 62943, "", {}, "", 0, "Withermaw Ritual"),
+    34748: (62941, 0, 0, 0, "self", False, True, False, False, False, False, 0, "", {"purge": "nopurge"}, "", 0, "Shade of the Withermaw"),
+    52788: (62941, 0, 0, 0, "aoe", True, False, False, False, False, False, 0, "", {}, "", 0, "Curse of the Withermaw"),
+    52798: (62941, 0, 0, 0, "self", False, False, False, False, False, False, 62886, "", {}, "", 0, "Totem of Corruption"),
+}
+
+# boss entry: (adds, phases) read off the same core rows.
+# An add is (entry, role, priority); a phase is (name, order, rule).
+TIMBERMAW_BOSSES = {
+    62934: ((), (("fight", 1, {"kind": "start"}),)),
+    62936: (((62937, "linked", 1),), (("fight", 1, {"kind": "start"}),)),
+    2139: ((), (("fight", 1, {"kind": "start"}),)),
+    62935: (((51608, "summon", 0),), (("fight", 1, {"kind": "start"}),)),
+    62940: (((62945, "summon", 0),), (("fight", 1, {"kind": "start"}),)),
+    62946: ((), (("fight", 1, {"kind": "start"}),)),
+    62938: ((), (("fight", 1, {"kind": "start"}),)),
+    62941: (((62943, "summon", 0), (62886, "totem", 0)), (("fight", 1, {"kind": "start"}),)),
+}
+
+
+class TimbermawValueTest(unittest.TestCase):
+    """Pin every Timbermaw ability, add and phase rule to its core row."""
+
+    def setUp(self):
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        doc = boss_data.build_document(rows, names)
+        self.bosses = {
+            boss["entry"]: boss
+            for boss in doc["bosses"].values()
+            if boss["map"] == "timbermaw_hold"
+        }
+        self.rows = rows
+
+    def test_boss_set(self):
+        self.assertEqual(set(self.bosses), set(TIMBERMAW_BOSSES))
+
+    def test_every_ability_against_its_source(self):
+        built = {}
+        for boss in self.bosses.values():
+            for ability in boss["abilities"]:
+                built[ability["sid"]] = (
+                    boss["entry"],
+                    ability["a"],
+                    ability["b"],
+                    ability["c"],
+                    ability["target"],
+                    ability["aura"],
+                    ability["self"],
+                    ability["ground"],
+                    ability["cone"],
+                    ability["tail"],
+                    ability["int"],
+                    ability["summon"],
+                    ability["ok"],
+                    ability["okNeeds"],
+                    ability["phase"],
+                    ability["castMs"],
+                    ability["name"],
+                )
+        self.assertEqual(built, TIMBERMAW_ABILITIES)
+
+    def test_adds_and_phases(self):
+        for entry, (adds, phases) in TIMBERMAW_BOSSES.items():
+            boss = self.bosses[entry]
+            self.assertEqual(
+                [(add["entry"], add["role"], add["priority"]) for add in boss["adds"]],
+                list(adds),
+                entry,
+            )
+            self.assertEqual(
+                [(phase["name"], phase["order"], phase["rule"]) for phase in boss["phases"]],
+                list(phases),
+                entry,
+            )
+
+    def test_no_timer_or_later_phase_is_invented(self):
+        for boss in self.bosses.values():
+            for ability in boss["abilities"]:
+                self.assertEqual((ability["a"], ability["b"], ability["c"]), (0, 0, 0), ability)
+                self.assertEqual(ability["phase"], "", ability)
+        for boss in self.bosses.values():
+            self.assertEqual(
+                [phase["rule"]["kind"] for phase in boss["phases"]],
+                ["start"],
+                boss["entry"],
+            )
+
+    def test_area_and_interrupt_choices(self):
+        ground = {sid for sid, v in TIMBERMAW_ABILITIES.items() if v[7]}
+        self.assertEqual(ground, {49027, 52813})
+        interrupt = {sid for sid, v in TIMBERMAW_ABILITIES.items() if v[10]}
+        self.assertEqual(interrupt, {49030, 52790})
+        self.assertFalse(any(v[8] or v[9] for v in TIMBERMAW_ABILITIES.values()))
+
+    def test_every_timbermaw_citation_is_a_tw_world_row(self):
+        for row in self.rows:
+            if row["map"] != "timbermaw_hold":
+                continue
+            for part in row["source"].split(";"):
+                if part.startswith("kb:"):
+                    continue
+                self.assertTrue(part.startswith("sql/"), (row["_line"], part))
+                self.assertNotIn("src/scripts", part)
 
 
 if __name__ == "__main__":

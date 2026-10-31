@@ -157,6 +157,18 @@ const sartura = (REAL.byEntry || REAL.bosses || REAL)["15516"];
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }] }).phase, "enraged");
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }, { id: 27680 }] }).phase, "berserk");
 
+// Timbermaw: the core has no script, so every boss carries only a start label; that label must hide no ability,
+// and a boss whose only rows are a phase and a note still opens a panel.
+const loktanag = (REAL.byEntry || REAL.bosses || REAL)["2139"];
+assert.deepStrictEqual(loktanag.phases.map((x) => x.rule), ["start"]);
+const lokModel = B.model(REAL, { entry: 2139, hp: 50, au: [] }, [], 0, 0);
+assert.strictEqual(lokModel.phase, "fight");
+assert.ok(lokModel.abilities.length === 4 && lokModel.abilities.every((a) => a.inPhase), "a start-only boss hides nothing");
+const karrsh = (REAL.byEntry || REAL.bosses || REAL)["62934"];
+assert.strictEqual(karrsh.abilities.length, 0);
+assert.strictEqual(B.model(REAL, { entry: 62934, hp: 50, au: [] }, [], 0, 0).phase, "fight");
+assert.ok(B.render(REAL, B.model(REAL, { entry: 62934, hp: 50, au: [] }, [], 0, 0), {}).includes("Karrsh the Sentinel"));
+
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];
 assert.strictEqual(jeklikReal.abilities.find((a) => a.sid === 23919).flags.phase, "bat");
