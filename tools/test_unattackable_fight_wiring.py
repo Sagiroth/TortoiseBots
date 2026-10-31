@@ -67,7 +67,9 @@ class UnattackableFightWiringTest(unittest.TestCase):
         self.assertIn("fact.attackable = GroupCanAttack(judge, unit);\n                if (f.pullStand)", facts)
         guard = body(CODE, "void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots,")
         self.assertIn("fact.attackable = GroupCanAttack(lead, nearestHit);", guard)
-        self.assertIn("fact.attackable = GroupCanAttack(lead, attacker);", guard)
+        # The anchor is the lead bot, or with it dead in a raid's boss fight a living bot (DungeonRun::GuardReadMode).
+        self.assertIn("fact.attackable = GroupCanAttack(anchor, attacker);", guard)
+        self.assertIn("Player* const anchor = RaidGuardAnchor(lead, bots, f);", guard)
         kill = body(CODE, "void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead,")
         self.assertIn("fact.attackable = GroupCanAttack(judge, unit);", kill)
 

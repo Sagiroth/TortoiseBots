@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Configuration
+- New `AiPlayerbot.DungeonRunRaidBossRules` (default `0`): a raid's boss fight may run 20 minutes, a death does not stop it while the boss still loses health, and the off-tanks take the adds so the main tank stays on the boss.
 - `RandomBotShowHelmet` / `RandomBotShowCloak` (default `1`) now take effect: `0` makes pool bots show up without their helmet and/or cloak from their next login. Hired companions and a player's own bots keep the display flags the character already has.
 - Removed 32 configuration keys that were read but did nothing (an old `aiplayerbot.conf` that still sets one keeps loading without issue). The config file template now explains up front what a commented `#Key = value` line means, and the documentation no longer lists a "settings with no effect" table. Only helmet and cloak display remained, so nothing changes for existing setups.
 
