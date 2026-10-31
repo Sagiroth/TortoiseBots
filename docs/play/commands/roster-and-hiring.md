@@ -277,6 +277,8 @@ Gives a guild bot an order to fetch items for real: it farms, buys or crafts the
 .bot order <BotName> cancel
 .bot order list
 .bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text>
+.bot order rank <rankIndex>
+.bot order access
 ```
 
 - **Who may give orders:** you must be a real player in the bot's guild, and your guild rank must be allowed to edit officer notes. Anyone else gets an error.
@@ -287,7 +289,7 @@ Gives a guild bot an order to fetch items for real: it farms, buys or crafts the
 - **Progress:** `.bot order list` shows every order in your guild with have/want counts and the farm zone; the order giver also gets live updates while it runs.
 - **States:** `working` (farming, buying or crafting), `waiting` (the bot is grouped with a player; the order resumes when it leaves), `delivering` (amount reached or bags full, on the way to the guild bank), `done`, `stocked` (keep order watching a filled bank), `mailed`, `noskill` (missing profession skill) and `cant` (no source, no recipe, farm time ran out, no new item in 3 worked hours, or stuck while crafting or delivering).
 - **Needs travel data:** guild orders only work while `AiPlayerbot.AutoDoQuests = 1` (the default). With quest travel off, the source index stays empty, `guild-orders` disappears from `TBM:CAPS`, and `.bot order` answers `disabled`.
-- **Guild bank:** the guild needs an unlocked bank with at least one tab the bots' rank may deposit into; otherwise the bot mails the items to the guild master instead (`mailed`). Bots usually have the lowest rank, so open a tab to that rank if you want bank deposits.
+- **Guild bank:** the guild needs an unlocked bank with at least one tab the bots' rank may deposit into; otherwise the bot mails the items to the guild master instead (`mailed`). Bots hold the guild's bot rank (by default the rank below the guild master), so open a tab to that rank if you want bank deposits. `.bot order rank <rankIndex>` moves every bot to another rank (only a player whose rank may promote and demote members); `.bot order access` shows what the bots can reach.
 
 ---
 

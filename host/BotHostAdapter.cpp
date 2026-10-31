@@ -5,6 +5,7 @@
 #include "../runtime/BotManager.h"
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/ClaimLifecycle.h"
+#include "../runtime/GuildOrderAccess.h"
 #include "../runtime/GuildOrderStore.h"
 #include "../runtime/HireProvisionService.h"
 #include "../runtime/HireGearCache.h"
@@ -120,6 +121,7 @@ void BotHostAdapter::OnStartup()
     BattlegroundQueueService::Instance().Initialize();
     ClaimLifecycle::Instance().Initialize();
     GuildOrders::Initialize();
+    GuildOrders::ApplyBotRanksAtStartup();
     // Run trace: mark the summaries of runs the last server never finalised.
     RunTraceService::Instance().Initialize();
 

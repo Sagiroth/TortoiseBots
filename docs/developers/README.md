@@ -20,7 +20,7 @@ Technical documentation, architecture invariants, strategy engine details, host 
 | [Donor Hierarchy & Lineage](donor-hierarchy.md) | Codebase lineage, porting priorities, and behavior harvesting principles. |
 | [Host API & Integration Boundary](host-api.md) | Host seam contracts, headless sessions, lifecycle hooks, and packet bridge. |
 | [Licensing Audit & Provenance](licensing-audit.md) | Donor licensing verification, GPL compatibility, and release gates. |
-| [Developer Reference Data](data/README.md) | Reference data tables for capabilities, donors, spells, and talent progression. |
+| [Guild Supply Chain](guild-supply.md) | How guild orders use the guild bank as the crafting store. |
 
 ## Contribution Guidelines & Tools
 

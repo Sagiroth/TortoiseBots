@@ -254,6 +254,10 @@ nodes:
     path: developers/licensing-audit.md
     category: developers
     summary: Audit record of donor source licenses, compatibility with core AGPL-3.0, and release gates.
+  - id: developers-guild-supply
+    path: developers/guild-supply.md
+    category: developers
+    summary: How guild orders use the guild bank as the crafting store, including the bot rank and bank access rule.
   - id: developers-data
     path: developers/data/README.md
     category: developers

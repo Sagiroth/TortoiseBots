@@ -3,6 +3,7 @@
 
 #include "../runtime/BotManager.h"
 #include "../runtime/ClaimLifecycle.h"
+#include "../runtime/GuildOrderAccess.h"
 #include "../runtime/GuildOrderCategoryPolicy.h"
 #include "../runtime/GuildOrderGiveUpPolicy.h"
 #include "../runtime/GuildOrderStore.h"
@@ -388,6 +389,67 @@ bool HandleOrderCancel(ChatHandler* handler, Player* requester, std::string cons
     return true;
 }
 
+bool HandleOrderAccess(ChatHandler* handler, Player* requester)
+{
+    if (!requester || !requester->GetGuildId())
+    {
+        OrderError(handler, "not-guild", "You are not in a guild.");
+        return true;
+    }
+    handler->PSendSysMessage("%s",
+        GuildOrders::FormatAccessLine(requester->GetGuildId(), requester->GetGUIDLow()).c_str());
+    return true;
+}
+
+bool HandleOrderRank(ChatHandler* handler, Player* requester, std::string const& rankToken)
+{
+    if (!requester || !requester->GetSession() || !requester->GetSession()->HasNetworkTransport())
+    {
+        OrderError(handler, "forbidden", "Only a real player can change the bots' rank.");
+        return true;
+    }
+    uint32_t guildId = requester->GetGuildId();
+    if (!guildId)
+    {
+        OrderError(handler, "not-guild", "You are not in a guild.");
+        return true;
+    }
+    Guild* guild = sGuildMgr.GetGuildById(guildId);
+    if (!guild)
+    {
+        OrderError(handler, "not-guild", "You are not in a guild.");
+        return true;
+    }
+    if (!guild->HasRankRight(requester->GetRank(), GR_RIGHT_PROMOTE) ||
+        !guild->HasRankRight(requester->GetRank(), GR_RIGHT_DEMOTE))
+    {
+        OrderError(handler, "forbidden", "Your guild rank may not change ranks.");
+        return true;
+    }
+    uint32_t wanted = 0;
+    if (!ParseUintToken(rankToken, wanted))
+    {
+        OrderError(handler, "invalid", "Usage: order rank <rankIndex>.");
+        return true;
+    }
+    uint32_t rankCount = guild->GetRanksSize();
+    if (rankCount < 2 || wanted < 1 || wanted >= rankCount)
+    {
+        OrderError(handler, "invalid", "Rank must be between 1 and the lowest rank.");
+        return true;
+    }
+    if (!GuildOrders::StoreBotRank(guildId, wanted))
+    {
+        OrderError(handler, "invalid", "The rank could not be stored.");
+        return true;
+    }
+    GuildOrders::ApplyBotRankToGuild(guildId);
+    handler->PSendSysMessage("%s",
+        GuildOrders::FormatAccessLine(guildId, requester->GetGUIDLow()).c_str());
+    SendActionAck(handler, "order", "rank:" + std::to_string(wanted), 1, "rank");
+    return true;
+}
+
 bool HandleOrderList(ChatHandler* handler, Player* requester)
 {
     if (!requester || !requester->GetGuildId())
@@ -397,6 +459,7 @@ bool HandleOrderList(ChatHandler* handler, Player* requester)
     }
     std::vector<OrderRecord> orders = GuildOrders::ListForGuild(requester->GetGuildId());
     handler->PSendSysMessage("TBM:ORDER_BEGIN|%u", static_cast<uint32_t>(orders.size()));
+    handler->PSendSysMessage("%s", GuildOrders::FormatAccessLine(requester->GetGuildId(), requester->GetGUIDLow()).c_str());
     for (OrderRecord const& order : orders)
     {
         Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.botGuidLow));
@@ -444,6 +507,18 @@ bool HandleOrder(ChatHandler* handler, char const* args)
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
     if (lower == "list")
         return HandleOrderList(handler, requester);
+    if (lower == "access")
+        return HandleOrderAccess(handler, requester);
+    if (lower == "rank")
+    {
+        std::string rankToken;
+        if (!(in >> rankToken))
+        {
+            OrderError(handler, "invalid", "Usage: order rank <rankIndex>.");
+            return true;
+        }
+        return HandleOrderRank(handler, requester, rankToken);
+    }
 
     if (lower == "search")
     {
