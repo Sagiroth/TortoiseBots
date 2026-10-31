@@ -97,6 +97,7 @@
 - Fixed: in the Fight debugger the live events list now sits under the map, the checks and the timeline instead of leaving a tall blank band beside the raid frames and the map.
 - Fixed: the live events list is readable: the time in its own column, the text wrapping instead of being cut off, deaths and wipes red and boss casts yellow, a scroll box that keeps your place when new events arrive.
 - Fixed: while a fight is live the Fight debugger no longer scrolls the page back up by itself after you clicked a raid frame, a fight card or a commander tab.
+- New: the boss panel now has Molten Core's 13 bosses, with their abilities, timers, phases, adds and notes.
 - The Commanders cards now update live: positions and fight events stream to the open tab and the bots glide between reports instead of jumping.
 - The Fight debugger now tracks many raids at once: an All raids tab with a small card for each group (its plan and step, what it is doing, its dead, the last fight's result and a small map) and one tab per group that opens that raid's full debugger, with the open tab kept in the address, the arrow keys switching tabs, a red dot for a new fight that needs a look, and a greyed tab for five minutes after a raid ends.
 - Fixed: a fight that goes on after `.bot run stop` is now recorded and listed.

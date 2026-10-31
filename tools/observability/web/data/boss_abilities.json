@@ -55,6 +55,26 @@
         15369,
         15339
       ]
+    },
+    {
+      "key": "molten_core",
+      "mapId": 409,
+      "name": "Molten Core",
+      "bosses": [
+        12118,
+        11982,
+        12259,
+        12057,
+        12264,
+        12056,
+        12098,
+        11988,
+        12018,
+        11502,
+        65020,
+        52145,
+        57642
+      ]
     }
   ],
   "bosses": {
@@ -3771,6 +3791,1748 @@
       "notes": [
         "Strength of Ossirian is up at the pull; a crystal weakness removes it and he recasts it 45 s after the hit. Five weakness auras (25177/25178/25180/25181/25183) are cast by the crystal trigger, not by him.",
         "Enveloping Winds clears the target's threat while the aura lasts and puts it back when it ends; his run speed ramps from 100% to 200% over the first 10 s. Sand Vortexes are unselectable and cast Sandstorm on themselves."
+      ]
+    },
+    "12118": {
+      "entry": 12118,
+      "name": "Lucifron",
+      "map": "molten_core",
+      "order": 23,
+      "abilities": [
+        {
+          "sid": 19702,
+          "name": "Impending Doom",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19703,
+          "name": "Lucifron's Curse",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19460,
+          "name": "Shadow Shock",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 12119,
+          "name": "Flamewaker Protector",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "The first casts and the repeats are Seconds(10), Seconds(20), Seconds(6), Seconds(20), Seconds(15) and Seconds(6), which are not millisecond literals; the timer columns are 0."
+      ]
+    },
+    "11982": {
+      "entry": 11982,
+      "name": "Magmadar",
+      "map": "molten_core",
+      "order": 24,
+      "abilities": [
+        {
+          "sid": 19449,
+          "name": "Magma Spit",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 19451,
+          "name": "Frenzy",
+          "castMs": 0,
+          "a": 15000,
+          "b": 15000,
+          "c": 20000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19272,
+          "name": "Lava Breath",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19408,
+          "name": "Panic",
+          "castMs": 0,
+          "a": 10000,
+          "b": 30000,
+          "c": 35000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19411,
+          "name": "Lava Bomb",
+          "castMs": 0,
+          "a": 12000,
+          "b": 12000,
+          "c": 15000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 20474,
+          "name": "Lava Bomb",
+          "castMs": 0,
+          "a": 18000,
+          "b": 12000,
+          "c": 15000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 11671,
+          "name": "Core Hound",
+          "role": "linked",
+          "priority": 0
+        },
+        {
+          "entry": 11673,
+          "name": "Ancient Core Hound",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "Lava Bomb 19411 and 20474 only spawn game object 177704 through dummy spells 20494/20495; the patch is a game object, not a spell."
+      ]
+    },
+    "12259": {
+      "entry": 12259,
+      "name": "Gehennas",
+      "map": "molten_core",
+      "order": 25,
+      "abilities": [
+        {
+          "sid": 19716,
+          "name": "Gehennas' Curse",
+          "castMs": 0,
+          "a": 5000,
+          "b": 25000,
+          "c": 30000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19717,
+          "name": "Rain of Fire",
+          "castMs": 0,
+          "a": 6000,
+          "b": 6000,
+          "c": 12000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": true,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19728,
+          "name": "Shadow Bolt",
+          "castMs": 0,
+          "a": 3000,
+          "b": 3000,
+          "c": 6000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19729,
+          "name": "Shadow Bolt",
+          "castMs": 0,
+          "a": 3000,
+          "b": 3000,
+          "c": 6000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 11661,
+          "name": "Flamewaker",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
+      "notes": []
+    },
+    "12057": {
+      "entry": 12057,
+      "name": "Garr",
+      "map": "molten_core",
+      "order": 26,
+      "abilities": [
+        {
+          "sid": 19492,
+          "name": "Antimagic Pulse",
+          "castMs": 0,
+          "a": 15000,
+          "b": 20000,
+          "c": 20000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19496,
+          "name": "Magma Shackles",
+          "castMs": 0,
+          "a": 10000,
+          "b": 15000,
+          "c": 15000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19516,
+          "name": "Enrage",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 20482,
+          "name": "Firesworn Eruption Trigger",
+          "castMs": 0,
+          "a": 360000,
+          "b": 20000,
+          "c": 20000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "script",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 12099,
+          "name": "Firesworn",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "The Firesworn cast Immolate 15733, Thrash 8876 and Separation Anxiety 23492 themselves; on death they explode for 19497, or 20483 when Garr's 20482 forces the explosion."
+      ]
+    },
+    "12264": {
+      "entry": 12264,
+      "name": "Shazzrah",
+      "map": "molten_core",
+      "order": 27,
+      "abilities": [
+        {
+          "sid": 19712,
+          "name": "Arcane Explosion",
+          "castMs": 0,
+          "a": 2000,
+          "b": 3000,
+          "c": 5000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19713,
+          "name": "Shazzrah's Curse",
+          "castMs": 0,
+          "a": 10000,
+          "b": 20000,
+          "c": 20000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19714,
+          "name": "Deaden Magic",
+          "castMs": 0,
+          "a": 5000,
+          "b": 7000,
+          "c": 14000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19715,
+          "name": "Counterspell",
+          "castMs": 0,
+          "a": 15000,
+          "b": 16000,
+          "c": 18000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 23138,
+          "name": "Gate of Shazzrah",
+          "castMs": 0,
+          "a": 25000,
+          "b": 25000,
+          "c": 35000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "script",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": []
+    },
+    "12056": {
+      "entry": 12056,
+      "name": "Baron Geddon",
+      "map": "molten_core",
+      "order": 28,
+      "abilities": [
+        {
+          "sid": 19659,
+          "name": "Ignite Mana",
+          "castMs": 0,
+          "a": 10000,
+          "b": 20000,
+          "c": 30000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 20475,
+          "name": "Living Bomb",
+          "castMs": 0,
+          "a": 15000,
+          "b": 12000,
+          "c": 15000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        },
+        {
+          "sid": 19695,
+          "name": "Inferno",
+          "castMs": 0,
+          "a": 18000,
+          "b": 18000,
+          "c": 24000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 19698,
+          "name": "Inferno",
+          "castMs": 0,
+          "a": 1000,
+          "b": 1000,
+          "c": 1000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "script",
+          "okNeeds": {}
+        },
+        {
+          "sid": 20478,
+          "name": "Armageddon",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 5,
+          "ok": "phase",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "armageddon",
+          "order": 1,
+          "rule": {
+            "kind": "hp",
+            "hp": 5
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [],
+      "notes": [
+        "Inferno roots him and ticks 19698 every second for nine ticks, 500 damage rising to 2500; below 5 percent Armageddon stops the fight AI."
+      ]
+    },
+    "12098": {
+      "entry": 12098,
+      "name": "Sulfuron Harbinger",
+      "map": "molten_core",
+      "order": 29,
+      "abilities": [
+        {
+          "sid": 19777,
+          "name": "Dark Strike",
+          "castMs": 0,
+          "a": 10000,
+          "b": 15000,
+          "c": 18000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19778,
+          "name": "Demoralizing Shout",
+          "castMs": 0,
+          "a": 15000,
+          "b": 15000,
+          "c": 20000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19779,
+          "name": "Inspire",
+          "castMs": 0,
+          "a": 13000,
+          "b": 20000,
+          "c": 26000,
+          "phase": "",
+          "target": "ally",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "script",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19780,
+          "name": "Hand of Ragnaros",
+          "castMs": 0,
+          "a": 6000,
+          "b": 12000,
+          "c": 15000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19781,
+          "name": "Flame Spear",
+          "castMs": 0,
+          "a": 2000,
+          "b": 12000,
+          "c": 16000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 11662,
+          "name": "Flamewaker Priest",
+          "role": "linked",
+          "priority": 1
+        }
+      ],
+      "notes": []
+    },
+    "11988": {
+      "entry": 11988,
+      "name": "Golemagg the Incinerator",
+      "map": "molten_core",
+      "order": 30,
+      "abilities": [
+        {
+          "sid": 20228,
+          "name": "Pyroblast",
+          "castMs": 0,
+          "a": 7000,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 20553,
+          "name": "Golemagg's Trust",
+          "castMs": 0,
+          "a": 10000,
+          "b": 2000,
+          "c": 2000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 19953,
+          "name": "Enrage",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 10,
+          "ok": "phase",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19798,
+          "name": "Earthquake",
+          "castMs": 0,
+          "a": 3000,
+          "b": 3000,
+          "c": 3000,
+          "phase": "enraged",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "enraged",
+          "order": 1,
+          "rule": {
+            "kind": "hp",
+            "hp": 10
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 11672,
+          "name": "Core Rager",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "Pyroblast's repeat is (3 + rand() % 4) seconds, not a literal; the Core Ragers cannot be killed while Golemagg lives and cast Mangle 19820 and Thrash 3391 themselves."
+      ]
+    },
+    "12018": {
+      "entry": 12018,
+      "name": "Majordomo Executus",
+      "map": "molten_core",
+      "order": 31,
+      "abilities": [
+        {
+          "sid": 20619,
+          "name": "Magic Reflection",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 21075,
+          "name": "Damage Shield",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 20229,
+          "name": "Blast Wave",
+          "castMs": 0,
+          "a": 10000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 20620,
+          "name": "Aegis of Ragnaros",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 50,
+          "ok": "phase",
+          "okNeeds": {}
+        },
+        {
+          "sid": 20618,
+          "name": "Teleport",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19774,
+          "name": "Summon Ragnaros",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "script",
+          "okNeeds": {}
+        },
+        {
+          "sid": 19484,
+          "name": "Majordomo Teleport Visual",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "script",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "shielded",
+          "order": 1,
+          "rule": {
+            "kind": "hp",
+            "hp": 50
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 11663,
+          "name": "Flamewaker Healer",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 11664,
+          "name": "Flamewaker Elite",
+          "role": "summon",
+          "priority": 2
+        }
+      ],
+      "notes": [
+        "One shared 30 s timer casts Magic Reflection 20619 or Damage Reflection 21075 at random (`rand() % 2`); Teleport 20618 runs on two independent timers (one on his current victim and one on a random other attacker); each fires first at 10000 + rand() % 20000 and then every 20000 + rand() % 10000; every teleport resets his threat (DoResetThreat); the Ragnaros event spells 19774 / 20568 / 19773 are gossip-event casts."
+      ]
+    },
+    "11502": {
+      "entry": 11502,
+      "name": "Ragnaros",
+      "map": "molten_core",
+      "order": 32,
+      "abilities": [
+        {
+          "sid": 20566,
+          "name": "Wrath of Ragnaros",
+          "castMs": 0,
+          "a": 25000,
+          "b": 25000,
+          "c": 30000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 20565,
+          "name": "Magma Blast",
+          "castMs": 0,
+          "a": 2000,
+          "b": 2500,
+          "c": 2500,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 21154,
+          "name": "Might of Ragnaros",
+          "castMs": 0,
+          "a": 10000,
+          "b": 9000,
+          "c": 14000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 13148,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 20563,
+          "name": "Elemental Fire",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 21387,
+          "name": "Melt Weapon",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 26234,
+          "name": "Submerge Visual",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "script",
+          "okNeeds": {}
+        },
+        {
+          "sid": 21107,
+          "name": "Ragnaros Submerge Fade",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "phase",
+          "okNeeds": {}
+        },
+        {
+          "sid": 20568,
+          "name": "Ragnaros Emerge",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "script",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "submerged",
+          "order": 1,
+          "rule": {
+            "kind": "aura",
+            "aura": 21107
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 12143,
+          "name": "Son of Flame",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 13148,
+          "name": "Flame of Ragnaros",
+          "role": "trigger",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "Submerge starts 3*MINUTE after the pull and lasts 1.5*MINUTE; Lava Bursts are game objects 178088 and the Sons are summoned without a spell; Lava Shield 21857 comes from creature_template_addon; Intense Heat 21155 is cast by the Flame of Ragnaros trigger."
+      ]
+    },
+    "65020": {
+      "entry": 65020,
+      "name": "Basalthar",
+      "map": "molten_core",
+      "order": 33,
+      "abilities": [
+        {
+          "sid": 47375,
+          "name": "Molten Bulwark",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "purge": "nopurge"
+          }
+        },
+        {
+          "sid": 47373,
+          "name": "Wide Backhand",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        },
+        {
+          "sid": 47374,
+          "name": "Crushing Slam",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "tank",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [
+        {
+          "entry": 65021,
+          "name": "Smoldaris",
+          "role": "linked",
+          "priority": 0
+        }
+      ],
+      "notes": [
+        "Its script has no cast; creature_spells 165020 lists Molten Bulwark 47375 every 30 s, Wide Backhand 47373 every 14 s and Crushing Slam 47374 every 16 s (seconds in that table, so the timer columns are 0). The twins share damage and healing and die together."
+      ]
+    },
+    "52145": {
+      "entry": 52145,
+      "name": "Incindis",
+      "map": "molten_core",
+      "order": 34,
+      "abilities": [
+        {
+          "sid": 42036,
+          "name": "Quaking Stomp",
+          "castMs": 0,
+          "a": 24000,
+          "b": 24000,
+          "c": 30000,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 42037,
+          "name": "Fire Nova",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 42040,
+          "name": "Molten Bite",
+          "castMs": 0,
+          "a": 6000,
+          "b": 6000,
+          "c": 6000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {
+            "dispel": "nodispel"
+          }
+        }
+      ],
+      "phases": [
+        {
+          "name": "eggs",
+          "order": 1,
+          "rule": {
+            "kind": "hp",
+            "hp": 50
+          }
+        },
+        {
+          "name": "fight",
+          "order": 2,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 52146,
+          "name": "Small Incendic Egg",
+          "role": "summon",
+          "priority": 1
+        },
+        {
+          "entry": 52147,
+          "name": "Large Incendic Egg",
+          "role": "summon",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "Fire Nova 42037 is cast 1 s after each Quaking Stomp, not on a pull timer; the eggs hatch through their own AI (42042/42044) and Quaking Stomp is capped to one target by the spell script."
+      ]
+    },
+    "57642": {
+      "entry": 57642,
+      "name": "Sorcerer-Thane Thaurissan",
+      "map": "molten_core",
+      "order": 35,
+      "abilities": [
+        {
+          "sid": 52722,
+          "name": "Arcane Rupture",
+          "castMs": 0,
+          "a": 5000,
+          "b": 6000,
+          "c": 6000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": true,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 52723,
+          "name": "Arcane Barrage",
+          "castMs": 0,
+          "a": 10000,
+          "b": 16000,
+          "c": 16000,
+          "phase": "",
+          "target": "random",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "heal",
+          "okNeeds": {}
+        },
+        {
+          "sid": 52727,
+          "name": "Mirror Image",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 57643,
+          "hp": 50,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 52724,
+          "name": "Rune of Power",
+          "castMs": 0,
+          "a": 5000,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": true,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 52729,
+          "name": "Rune of Power",
+          "castMs": 0,
+          "a": 5000,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": true,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 52725,
+          "name": "Rune of Detonation",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 52726,
+          "name": "Rune of Combustion",
+          "castMs": 0,
+          "a": 0,
+          "b": 0,
+          "c": 0,
+          "phase": "",
+          "target": "aoe",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [
+        {
+          "name": "rune4",
+          "order": 1,
+          "rule": {
+            "kind": "hp",
+            "hp": 25
+          }
+        },
+        {
+          "name": "rune3",
+          "order": 2,
+          "rule": {
+            "kind": "hp",
+            "hp": 50
+          }
+        },
+        {
+          "name": "rune2",
+          "order": 3,
+          "rule": {
+            "kind": "hp",
+            "hp": 75
+          }
+        },
+        {
+          "name": "fight",
+          "order": 4,
+          "rule": {
+            "kind": "start"
+          }
+        }
+      ],
+      "adds": [
+        {
+          "entry": 57643,
+          "name": "Image of Sorcerer-Thane Thaurissan",
+          "role": "summon",
+          "priority": 1
+        }
+      ],
+      "notes": [
+        "Rune of Detonation and Rune of Combustion alternate on one shared 20 s timer, Detonation first (boss_thane.cpp:86, 205-223); Rune of Power 52724/52729 is recast at 75, 50 and 25 percent and its zones are first extended 7 s after the cast and then every 2 s for as long as the fight lasts (DynamicObject::Delay); the image casts Arcane Rupture and Arcane Barrage itself."
       ]
     }
   },
