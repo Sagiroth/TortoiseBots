@@ -53,5 +53,5 @@ The same item never appears twice in one branch, whatever the depth.
 
 ### `AiPlayerbot.GuildOrderBotRank`
 
-Whether bots in a guild with a real player share one bank rank so the master can open tabs to one rank. See [bot rank and bank access](../guild-orders.md#guild-bank-access).
+Whether bots in a guild with a real player share one bank rank so the master can open tabs to one rank. See [bot rank and bank access](../play/guild-orders.md#guild-bank-access).
 **Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
