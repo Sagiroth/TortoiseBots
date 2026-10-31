@@ -420,6 +420,10 @@
       "name": "Berserk",
       "castMs": 0
     },
+    "27564": {
+      "name": "Reflection",
+      "castMs": 0
+    },
     "27680": {
       "name": "Berserk",
       "castMs": 0
@@ -438,6 +442,22 @@
     },
     "46082": {
       "name": "Green Dragon Binding",
+      "castMs": 0
+    },
+    "56500": {
+      "name": "Dreamstate",
+      "castMs": 0
+    },
+    "56501": {
+      "name": "Emerald Supression",
+      "castMs": 0
+    },
+    "56503": {
+      "name": "Wyrmkins Venom",
+      "castMs": 0
+    },
+    "56504": {
+      "name": "Scalebane Intimidation",
       "castMs": 0
     },
     "56505": {

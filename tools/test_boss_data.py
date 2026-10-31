@@ -578,8 +578,8 @@ class BossDataTest(unittest.TestCase):
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 19)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 128)
+        self.assertEqual(len(doc["bosses"]), 24)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 135)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
@@ -623,6 +623,23 @@ class EmeraldSanctumValueTest(unittest.TestCase):
                         flags={"aura": True, "okNeeds": {"dispel": "nodispel"}}),
             46081: dict(a=17000, b=17000, c=17000, target="aoe", phase="", castMs=0, flags={}),
             25148: dict(a=0, b=0, c=0, target="self", phase="", castMs=0, flags={"self": True, "ok": "script"}),
+        },
+        60742: {  # Sanctum Dreamer
+            56500: dict(a=10000, b=10000, c=10000, target="random", phase="", castMs=0, flags={"aura": True}),
+        },
+        60743: {  # Sanctum Dragonkin
+            27564: dict(a=10000, b=10000, c=10000, target="self", phase="", castMs=0, flags={"self": True}),
+        },
+        60745: {  # Sanctum Wyrmkin
+            26050: dict(a=7000, b=7000, c=7000, target="victim", phase="", castMs=0, flags={"aura": True}),
+            56503: dict(a=25000, b=21000, c=21000, target="aoe", phase="", castMs=0, flags={"aura": True}),
+        },
+        60746: {  # Sanctum Scalebane
+            19983: dict(a=6000, b=6000, c=6000, target="victim", phase="", castMs=0, flags={}),
+            56504: dict(a=25000, b=25000, c=25000, target="aoe", phase="", castMs=0, flags={"aura": True}),
+        },
+        61212: {  # Sanctum Supressor
+            56501: dict(a=15000, b=14000, c=14000, target="random", phase="", castMs=0, flags={"aura": True}),
         },
     }
 
@@ -676,6 +693,13 @@ class EmeraldSanctumValueTest(unittest.TestCase):
         for entry, expected in self.ADDS.items():
             got = {add["entry"]: (add["role"], add["priority"]) for add in self.boss(entry)["adds"]}
             self.assertEqual(got, expected, f"boss {entry} adds")
+
+    def test_portal_add_blocks(self):
+        for entry in (60742, 60743, 60745, 60746, 61212):
+            boss = self.boss(entry)
+            self.assertEqual(boss["map"], "emerald_sanctum")
+            self.assertTrue(boss["abilities"], f"portal add {entry} has no ability block")
+        self.assertNotIn("60744", self.doc["bosses"], "Sanctum Wyrm stays trash, not a boss block")
 
     def test_solid_semantics(self):
         solnius = self.boss(60748)

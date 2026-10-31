@@ -50,7 +50,12 @@
       "name": "Emerald Sanctum",
       "bosses": [
         60747,
-        60748
+        60748,
+        60742,
+        60743,
+        60745,
+        60746,
+        61212
       ]
     }
   ],
@@ -3494,9 +3499,215 @@
         "Hard mode: Solnius pulls Erennius when he is engaged while Erennius lives, and only then does Expulsion of Corruption run; Solnius's pull also sends every trash creature the instance registered at the player who pulled him.",
         "Solnius cannot be attacked until a player picks the gossip option (menu 92950); that clears the untargetable flag and sets faction 14.",
         "When Solnius dies while Erennius is alive and in combat; Erennius resets threat, goes passive and despawns after 20 s, and a chest appears at 3276.2, 3043.9.",
-        "The portal majors and Dreamers cast from their own scripts (Reflection 10 s; Acid Spit 7 s; Wyrmkin's Venom 21 s within 5 yd; Cleave 6 s; Scalebane Intimidation 25 s within 30 yd; Suppressor Emerald Suppression 56501 first at 15 s then every 14 s; Dreamstate 10 s); the table has no add-level ability key.",
+        "The portal majors and Dreamers each have their own boss block in this table (60742, 60743, 60745, 60746, 61212) with the timers from their scripts; they stay Solnius's adds, so kill priority stays on the add rows here.",
         "The Sanctum Wyrm 60744 is ordinary trash, and Solnius's pull sends it at the player who pulled him along with every other trash creature the instance still has registered."
       ]
+    },
+    "60742": {
+      "entry": 60742,
+      "name": "Sanctum Dreamer",
+      "map": "emerald_sanctum",
+      "order": 20,
+      "abilities": [
+        {
+          "sid": 56500,
+          "name": "Dreamstate",
+          "castMs": 0,
+          "a": 10000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": []
+    },
+    "60743": {
+      "entry": 60743,
+      "name": "Sanctum Dragonkin",
+      "map": "emerald_sanctum",
+      "order": 21,
+      "abilities": [
+        {
+          "sid": 27564,
+          "name": "Reflection",
+          "castMs": 0,
+          "a": 10000,
+          "b": 10000,
+          "c": 10000,
+          "phase": "",
+          "target": "self",
+          "aura": false,
+          "self": true,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": []
+    },
+    "60745": {
+      "entry": 60745,
+      "name": "Sanctum Wyrmkin",
+      "map": "emerald_sanctum",
+      "order": 22,
+      "abilities": [
+        {
+          "sid": 26050,
+          "name": "Acid Spit",
+          "castMs": 0,
+          "a": 7000,
+          "b": 7000,
+          "c": 7000,
+          "phase": "",
+          "target": "victim",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 56503,
+          "name": "Wyrmkins Venom",
+          "castMs": 0,
+          "a": 25000,
+          "b": 21000,
+          "c": 21000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Wyrmkin's Venom is cast on every player within 5 yd of the wyrmkin; the 5 yd is the script's gate, not a spell radius, so the map cannot draw it."
+      ]
+    },
+    "60746": {
+      "entry": 60746,
+      "name": "Sanctum Scalebane",
+      "map": "emerald_sanctum",
+      "order": 23,
+      "abilities": [
+        {
+          "sid": 19983,
+          "name": "Cleave",
+          "castMs": 0,
+          "a": 6000,
+          "b": 6000,
+          "c": 6000,
+          "phase": "",
+          "target": "victim",
+          "aura": false,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        },
+        {
+          "sid": 56504,
+          "name": "Scalebane Intimidation",
+          "castMs": 0,
+          "a": 25000,
+          "b": 25000,
+          "c": 25000,
+          "phase": "",
+          "target": "aoe",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": [
+        "Scalebane Intimidation is an area at the scalebane (implicit targets 22, radius 10 = 30 yd); Cleave is a melee strike on the current victim."
+      ]
+    },
+    "61212": {
+      "entry": 61212,
+      "name": "Sanctum Supressor",
+      "map": "emerald_sanctum",
+      "order": 24,
+      "abilities": [
+        {
+          "sid": 56501,
+          "name": "Emerald Supression",
+          "castMs": 0,
+          "a": 15000,
+          "b": 14000,
+          "c": 14000,
+          "phase": "",
+          "target": "random",
+          "aura": true,
+          "self": false,
+          "mark": false,
+          "ground": false,
+          "cone": false,
+          "tail": false,
+          "int": false,
+          "summon": 0,
+          "hp": 0,
+          "ok": "",
+          "okNeeds": {}
+        }
+      ],
+      "phases": [],
+      "adds": [],
+      "notes": []
     }
   },
   "codeAnswers": [
