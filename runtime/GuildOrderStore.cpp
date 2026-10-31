@@ -196,52 +196,81 @@ public:
             std::lock_guard<std::mutex> lock(m_mutex);
             if (m_orders.erase(botGuidLow) == 0)
                 return false;
-            m_queued.erase(botGuidLow);
+            ClearQueuedSubOrdersLocked(botGuidLow);
         }
         CharacterDatabase.DirectPExecute(
             "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", botGuidLow);
         return true;
     }
 
-
-    // A caller on a bot's map thread holds these facts until the world
-    // thread places the row: RequestSupply only records them under the
-    // lock, Update evaluates candidates with live players and the planner.
+    // Map-thread requests keyed by parent and item: one parent can hold
+    // several sub-order requests in parallel (different items, on different
+    // bots). RequestSupply only records them under the lock; Update drains
+    // and places them with live players and the planner.
     struct QueuedSubOrder
     {
+        uint32_t parentBotGuidLow = 0;
         uint32_t itemId = 0;
         uint32_t count = 0;
+    };
+
+    struct QueuedSubOrderKey
+    {
+        uint32_t parentBotGuidLow = 0;
+        uint32_t itemId = 0;
+        bool operator==(QueuedSubOrderKey const& other) const
+        {
+            return parentBotGuidLow == other.parentBotGuidLow && itemId == other.itemId;
+        }
+    };
+    struct QueuedSubOrderKeyHash
+    {
+        size_t operator()(QueuedSubOrderKey const& key) const
+        {
+            return static_cast<size_t>(key.parentBotGuidLow) * 31u + key.itemId;
+        }
     };
 
     bool QueueSubOrder(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        auto parent = m_orders.find(parentBotGuidLow);
-        if (parent == m_orders.end() || !itemId || !count)
+        if (m_orders.find(parentBotGuidLow) == m_orders.end() || !itemId || !count)
             return false;
-        QueuedSubOrder& queued = m_queued[parentBotGuidLow];
-        if (queued.itemId == itemId)
+        QueuedSubOrderKey key{ parentBotGuidLow, itemId };
+        auto queued = m_queued.find(key);
+        // Same item, higher count: keep the larger need, never shrink a
+        // request another pass already sized.
+        if (queued != m_queued.end())
+        {
+            if (count > queued->second.count)
+                queued->second.count = count;
             return true;
-        queued.itemId = itemId;
-        queued.count = count;
+        }
+        m_queued.emplace(key, QueuedSubOrder{ parentBotGuidLow, itemId, count });
         return true;
     }
 
-    bool TakeQueuedSubOrder(uint32_t parentBotGuidLow, QueuedSubOrder& out)
+    std::vector<QueuedSubOrder> TakeQueuedSubOrders()
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        auto queued = m_queued.find(parentBotGuidLow);
-        if (queued == m_queued.end())
-            return false;
-        out = queued->second;
-        m_queued.erase(queued);
-        return true;
+        std::vector<QueuedSubOrder> out;
+        out.reserve(m_queued.size());
+        for (auto const& [key, queued] : m_queued)
+            out.push_back(queued);
+        m_queued.clear();
+        return out;
     }
 
-    void ClearQueuedSubOrder(uint32_t parentBotGuidLow)
+    void ClearQueuedSubOrders(uint32_t parentBotGuidLow)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_queued.erase(parentBotGuidLow);
+        ClearQueuedSubOrdersLocked(parentBotGuidLow);
+    }
+
+    void ClearQueuedSubOrdersLocked(uint32_t parentBotGuidLow)
+    {
+        for (auto it = m_queued.begin(); it != m_queued.end();)
+            it = it->second.parentBotGuidLow == parentBotGuidLow ? m_queued.erase(it) : std::next(it);
     }
 
     void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t zoneIndex, uint32_t farmItemId)
@@ -435,7 +464,7 @@ public:
             return false;
         OrderRecord moved = sub->second.record;
         m_orders.erase(sub);
-        m_queued.erase(subOrderBotGuidLow);
+        ClearQueuedSubOrdersLocked(subOrderBotGuidLow);
         moved.botGuidLow = newBotGuidLow;
         moved.delivered = 0;
         moved.state = OrderState::Working;
@@ -793,7 +822,7 @@ private:
 
     std::mutex m_mutex;
     std::unordered_map<uint32_t, Stored> m_orders;
-    std::unordered_map<uint32_t, QueuedSubOrder> m_queued; // map-thread request per parent, drained on the world thread
+    std::unordered_map<QueuedSubOrderKey, QueuedSubOrder, QueuedSubOrderKeyHash> m_queued;
     bool m_initialized = false;
 };
 
@@ -913,21 +942,21 @@ bool PlaceSubOrders()
     uint32_t maxDepth = sPlayerbotAIConfig.guildOrderSubOrderDepth;
     if (maxDepth < 1 || maxDepth > 16)
         maxDepth = kSubOrderDefaultDepth;
+    std::vector<OrderStore::QueuedSubOrder> queued = OrderStore::Instance().TakeQueuedSubOrders();
+    if (queued.empty())
+        return false;
     bool placedAny = false;
-    for (OrderRecord const& snapshot : OrderStore::Instance().All())
+    for (OrderStore::QueuedSubOrder const& request : queued)
     {
-        OrderStore::QueuedSubOrder queued;
-        if (!OrderStore::Instance().TakeQueuedSubOrder(snapshot.botGuidLow, queued))
+        if (!request.itemId || !request.count)
             continue;
-        if (!queued.itemId || !queued.count)
-            continue;
-        std::optional<OrderRecord> parent = Find(snapshot.botGuidLow);
+        std::optional<OrderRecord> parent = Find(request.parentBotGuidLow);
         if (!parent || parent->state == OrderState::Cant)
             continue;
         if (!SubOrderDepthAllows(BranchDepth(parent->botGuidLow), maxDepth))
             continue;
         std::vector<uint32_t> branch = BranchItems(parent->botGuidLow);
-        if (!SubOrderLoopFree(queued.itemId, branch.data(), branch.size()))
+        if (!SubOrderLoopFree(request.itemId, branch.data(), branch.size()))
             continue;
         std::vector<SubOrderCandidate> candidates;
         std::unique_ptr<QueryResult> members(CharacterDatabase.PQuery(
@@ -954,13 +983,13 @@ bool PlaceSubOrders()
                 if (candidate.hasOrder)
                 {
                     bool make = false, farm = false;
-                    if (SubOrderCandidateUsable(bot, queued.itemId, make, farm))
+                    if (SubOrderCandidateUsable(bot, request.itemId, make, farm))
                         candidate.queuedBusy = true;
                     else
                         continue;
                     candidates.push_back(candidate);
                 }
-                else if (!SubOrderCandidateUsable(bot, queued.itemId, candidate.canMake, candidate.canFarm))
+                else if (!SubOrderCandidateUsable(bot, request.itemId, candidate.canMake, candidate.canFarm))
                     continue;
                 else
                     candidates.push_back(candidate);
@@ -977,18 +1006,18 @@ bool PlaceSubOrders()
             record.parentBotGuidLow = parent->botGuidLow;
             record.rootGiverGuidLow = parent->rootGiverGuidLow ? parent->rootGiverGuidLow : parent->giverGuidLow;
             record.type = candidates[picked].canMake ? OrderType::Craft : OrderType::Farm;
-            record.itemId = queued.itemId;
-            record.amount = queued.count;
+            record.itemId = request.itemId;
+            record.amount = request.count;
             if (!Give(record))
             {
-                OrderStore::Instance().QueueSubOrder(parent->botGuidLow, queued.itemId, queued.count);
+                OrderStore::Instance().QueueSubOrder(parent->botGuidLow, request.itemId, request.count);
                 continue;
             }
             placedAny = true;
             SendOrderLine(*Find(record.botGuidLow), 0);
         }
         else if (queuedOut)
-            OrderStore::Instance().QueueSubOrder(parent->botGuidLow, queued.itemId, queued.count);
+            OrderStore::Instance().QueueSubOrder(parent->botGuidLow, request.itemId, request.count);
     }
     return placedAny;
 }

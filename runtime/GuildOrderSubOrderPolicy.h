@@ -53,7 +53,10 @@ inline bool SubOrderDepthAllows(size_t parentDepth, uint32_t maxDepth)
 }
 
 // Whether the item may be requested below the parent: never twice in one
-// branch, or the branch would farm its own reagents forever.
+// branch, or the branch would farm its own reagents forever. Sibling rows
+// for other items do not block each other: one parent can run several
+// sub-orders in parallel, so only the item's own row or queued request
+// counts as a duplicate.
 inline bool SubOrderLoopFree(uint32_t itemId, uint32_t const* branchItems, size_t branchCount)
 {
     if (!itemId || !branchItems)

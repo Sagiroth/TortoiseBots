@@ -29,6 +29,10 @@ int main()
     CHECK(SubOrderLoopFree(200, branch, 1));
     CHECK(!SubOrderLoopFree(0, branch, 3));
     CHECK(SubOrderLoopFree(400, nullptr, 0));
+    // Parallel siblings only guard their own item: requesting another item
+    // under the same parent is free, re-requesting the same one is not.
+    CHECK(SubOrderLoopFree(500, branch, 3));
+    CHECK(!SubOrderLoopFree(100, branch, 3));
 
     SubOrderCandidate maker{};
     maker.botGuidLow = 1;
