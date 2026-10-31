@@ -105,10 +105,11 @@ bool GuildOrderBuyAction::Execute(Event& event)
         return false;
 
     uint32_t itemId = stored->supplyItemId;
-    // Mailbox counts as owned: an AH purchase still in the mail covers the
-    // leg, so the bot never buys the same reagent twice.
-    uint32_t missing = BuyStillMissing(stored->supplyCount,
-        BuyOwnedCount(0, ai->GetInventoryItemsCountWithId(itemId), OrderMailboxItems(bot, itemId)));
+    // The leg's count is already what is still missing after bags and
+    // mailbox (the ladder refresh nets both), and a purchase moves the leg
+    // to the mailbox at once, so counting the bags again here would cancel
+    // a leg that still needs items.
+    uint32_t missing = stored->supplyCount;
     if (!missing)
     {
         SetSupply(botGuidLow, SupplyStep::None, 0, 0);
