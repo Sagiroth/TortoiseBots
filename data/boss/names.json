@@ -1,5 +1,9 @@
 {
   "spells": {
+    "96": {
+      "name": "Dismember",
+      "castMs": 0
+    },
     "568": {
       "name": "Arcane Burst",
       "castMs": 0
@@ -36,6 +40,10 @@
       "name": "Entangle",
       "castMs": 0
     },
+    "1834": {
+      "name": "Gathering Speed",
+      "castMs": 0
+    },
     "3391": {
       "name": "Thrash",
       "castMs": 0
@@ -46,6 +54,10 @@
     },
     "6605": {
       "name": "Terrifying Screech",
+      "castMs": 0
+    },
+    "7155": {
+      "name": "CreatureSpecial",
       "castMs": 0
     },
     "7393": {
@@ -70,6 +82,10 @@
     },
     "13736": {
       "name": "Whirlwind",
+      "castMs": 0
+    },
+    "15550": {
+      "name": "Trample",
       "castMs": 0
     },
     "15582": {
@@ -134,6 +150,10 @@
     },
     "20449": {
       "name": "Teleport",
+      "castMs": 0
+    },
+    "20512": {
+      "name": "Creeping Plague",
       "castMs": 0
     },
     "22666": {
@@ -336,12 +356,68 @@
       "name": "Aspect of Arlokk",
       "castMs": 0
     },
+    "24721": {
+      "name": "Buru Transform",
+      "castMs": 0
+    },
     "25174": {
       "name": "Sundering Cleave",
       "castMs": 0
     },
+    "25176": {
+      "name": "Strength of Ossirian",
+      "castMs": 0
+    },
+    "25188": {
+      "name": "War Stomp",
+      "castMs": 0
+    },
+    "25189": {
+      "name": "Enveloping Winds",
+      "castMs": 0
+    },
+    "25195": {
+      "name": "Curse of Tongues",
+      "castMs": 0
+    },
+    "25640": {
+      "name": "Thorns",
+      "castMs": 0
+    },
     "25646": {
       "name": "Mortal Wound",
+      "castMs": 0
+    },
+    "25672": {
+      "name": "Arcane Eruption",
+      "castMs": 0
+    },
+    "25676": {
+      "name": "Drain Mana",
+      "castMs": 0
+    },
+    "25685": {
+      "name": "Energize",
+      "castMs": 0
+    },
+    "25725": {
+      "name": "Paralyze",
+      "castMs": 0
+    },
+    "25748": {
+      "name": "Poison Stinger",
+      "castMs": 0
+    },
+    "25749": {
+      "name": "Stinger Spray",
+      "castMs": 0
+    },
+    "25814": {
+      "name": "Wide Slash",
+      "castMs": 0
+    },
+    "25852": {
+      "name": "Lash",
       "castMs": 0
     },
     "26006": {
@@ -514,14 +590,47 @@
     "15334": {
       "name": "Giant Eye Tentacle"
     },
+    "15339": {
+      "name": "Ossirian the Unscarred"
+    },
+    "15340": {
+      "name": "Moam"
+    },
+    "15348": {
+      "name": "Kurinnaxx"
+    },
+    "15369": {
+      "name": "Ayamiss the Hunter"
+    },
+    "15370": {
+      "name": "Buru the Gorger"
+    },
+    "15428": {
+      "name": "Tornado"
+    },
     "15509": {
       "name": "Princess Huhuran"
     },
     "15510": {
       "name": "Fankriss the Unyielding"
     },
+    "15514": {
+      "name": "Buru Egg"
+    },
     "15516": {
       "name": "Battleguard Sartura"
+    },
+    "15521": {
+      "name": "Hive'Zara Hatchling"
+    },
+    "15527": {
+      "name": "Mana Fiend"
+    },
+    "15546": {
+      "name": "Hive'Zara Swarmer"
+    },
+    "15555": {
+      "name": "Hive'Zara Larva"
     },
     "15589": {
       "name": "Eye of C'Thun"
@@ -543,6 +652,9 @@
     },
     "15802": {
       "name": "Flesh Tentacle"
+    },
+    "15934": {
+      "name": "Hive'Zara Hornet"
     },
     "15962": {
       "name": "Vekniss Hatchling"

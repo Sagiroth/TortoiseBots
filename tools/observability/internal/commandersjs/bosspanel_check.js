@@ -157,6 +157,44 @@ const sartura = (REAL.byEntry || REAL.bosses || REAL)["15516"];
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }] }).phase, "enraged");
 assert.strictEqual(B.phaseOf(sartura, { hp: 15, au: [{ id: 8269 }, { id: 27680 }] }).phase, "berserk");
 
+// AQ20: every phase rule at a value inside it, and which abilities it folds.
+const aq20 = REAL.byEntry || REAL.bosses || REAL;
+const moam = aq20["15340"];
+assert.deepStrictEqual(moam.phases.map((x) => x.rule), ["aura=25685", "start"]);
+assert.strictEqual(B.phaseOf(moam, { hp: 90, au: [{ id: 25685 }] }).phase, "stone");
+assert.strictEqual(B.phaseOf(moam, { hp: 90, au: [] }).phase, "fight");
+const moamStone = B.model(REAL, { entry: 15340, hp: 90, au: [{ id: 25685 }] }, [], 0, 0, "fight");
+assert.strictEqual(moamStone.phase, "stone");
+assert.strictEqual(moamStone.abilities.find((a) => a.sid === 15550).inPhase, false, "Trample stops in stone form");
+assert.strictEqual(moamStone.abilities.find((a) => a.sid === 25676).inPhase, false, "Drain Mana stops in stone form");
+assert.strictEqual(moamStone.abilities.find((a) => a.sid === 25685).inPhase, true, "Energize is the stone form");
+const buru = aq20["15370"];
+assert.deepStrictEqual(buru.phases.map((x) => x.rule), ["hp<20", "start"]);
+assert.strictEqual(B.phaseOf(buru, { hp: 19, au: [] }).phase, "phase2");
+assert.strictEqual(B.phaseOf(buru, { hp: 50, au: [] }).phase, "phase1");
+const buruTwo = B.model(REAL, { entry: 15370, hp: 19, au: [] }, [], 0, 0, "phase1");
+assert.strictEqual(buruTwo.abilities.find((a) => a.sid === 96).inPhase, false, "Dismember is phase 1");
+assert.strictEqual(buruTwo.abilities.find((a) => a.sid === 25640).inPhase, false, "Thorns is phase 1");
+assert.strictEqual(buruTwo.abilities.find((a) => a.sid === 20512).inPhase, true, "Creeping Plague is phase 2");
+const ayamiss = aq20["15369"];
+assert.deepStrictEqual(ayamiss.phases.map((x) => x.rule), ["hp<70", "start"]);
+assert.strictEqual(B.phaseOf(ayamiss, { hp: 60, au: [] }).phase, "p2");
+assert.strictEqual(B.phaseOf(ayamiss, { hp: 80, au: [] }).phase, "p1");
+const ayamissGround = B.model(REAL, { entry: 15369, hp: 60, au: [] }, [], 0, 0, "p1");
+assert.strictEqual(ayamissGround.phase, "p2");
+assert.strictEqual(ayamissGround.abilities.find((a) => a.sid === 25748).inPhase, false, "Poison Stinger is the flying phase");
+assert.strictEqual(ayamissGround.abilities.find((a) => a.sid === 25852).inPhase, true, "Lash is the ground phase");
+assert.strictEqual(ayamissGround.abilities.find((a) => a.sid === 25749).inPhase, true, "Stinger Spray runs in both");
+const ossirian = aq20["15339"];
+assert.deepStrictEqual(ossirian.phases.map((x) => x.rule), ["aura=25176", "start"]);
+assert.strictEqual(B.phaseOf(ossirian, { hp: 90, au: [{ id: 25176 }] }).phase, "strength");
+assert.strictEqual(B.phaseOf(ossirian, { hp: 90, au: [] }).phase, "vulnerable");
+for (const phase of ["strength", "vulnerable"]) {
+  const o = B.model(REAL, { entry: 15339, hp: 90, au: phase === "strength" ? [{ id: 25176 }] : [] }, [], 0, 0);
+  assert.strictEqual(o.phase, phase);
+  assert.ok(o.abilities.every((a) => a.inPhase), "every Ossirian ability runs in both states");
+}
+
 // The committed table names one field per flag instead of a flags string: the panel must read those too.
 const jeklikReal = (REAL.byEntry || REAL.bosses || REAL)["14517"];
 assert.strictEqual(jeklikReal.abilities.find((a) => a.sid === 23919).flags.phase, "bat");

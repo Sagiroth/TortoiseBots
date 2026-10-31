@@ -36,6 +36,72 @@ HEADER = ["map", "boss", "row", "key", "a", "b", "c", "d", "source"]
 RAID_HEADER = ["key", "map_id", "name"]
 CODE_HEADER = ["map", "boss", "key", "need", "level", "name", "text", "source"]
 
+# Written from the AQ20 scripts (src/scripts/dungeons/ruins_of_ahnqiraj), not from the CSV: first ms after the pull
+# (0 when the script rolls urand for it, with the window in the note), repeat window ms, target, phase, flags, one-shot
+# hp, whole-row ok reason, per-need ok reasons. castMs is pinned to 0 (unknown) for every new spell.
+AQ20_ABILITIES = {
+    15348: [  # boss_kurinnaxx.cpp
+        (25646, 0, 8000, 10000, "victim", "", ("aura",), 0, "", {"dispel": "nodispel"}),
+        (25814, 0, 12000, 15000, "victim", "", ("cone",), 0, "", {}),
+        (3391, 0, 12000, 17000, "victim", "", (), 0, "tank", {}),
+        (8269, 0, 0, 0, "self", "", ("self",), 30, "", {"purge": "nopurge"}),
+    ],
+    15340: [  # boss_moam.cpp
+        (15550, 6000, 15000, 15000, "aoe", "fight", (), 0, "heal", {}),
+        (25672, 0, 0, 0, "aoe", "", (), 0, "heal", {}),
+        (25685, 90000, 90000, 90000, "self", "", ("self",), 0, "phase", {}),
+        (25676, 5000, 7000, 7000, "aoe", "fight", (), 0, "", {}),
+    ],
+    15370: [  # boss_buru.cpp
+        (96, 1000, 6000, 6000, "victim", "phase1", ("aura",), 0, "", {"dispel": "nodispel"}),
+        (1834, 9000, 9000, 9000, "self", "phase1", ("self",), 0, "", {"purge": "nopurge"}),
+        (25640, 0, 0, 0, "self", "phase1", ("self",), 0, "", {"purge": "nopurge"}),
+        (7155, 0, 0, 0, "self", "phase1", (), 0, "script", {}),
+        (24721, 0, 0, 0, "self", "phase2", ("self",), 20, "phase", {}),
+        (20512, 6000, 6000, 6000, "aoe", "phase2", ("aura",), 0, "", {"dispel": "nodispel"}),
+    ],
+    15369: [  # boss_ayamiss.cpp
+        (25748, 5000, 2000, 3000, "victim", "p1", ("aura", "int"), 0, "",
+         {"interrupt": "nokick", "dispel": "nodispel"}),
+        (25749, 0, 0, 0, "aoe", "", (), 0, "heal", {}),
+        (25725, 10000, 15000, 15000, "random", "", ("aura",), 0, "", {"dispel": "nodispel"}),
+        (25852, 15000, 8000, 15000, "victim", "p2", ("aura",), 0, "", {"dispel": "nodispel"}),
+        (3391, 10000, 5000, 7000, "victim", "p2", (), 0, "tank", {}),
+        (8269, 0, 0, 0, "self", "", ("self",), 20, "", {"purge": "nopurge"}),
+    ],
+    15339: [  # boss_ossirian.cpp
+        (25195, 30000, 20000, 30000, "aoe", "", ("aura",), 0, "", {}),
+        (25176, 0, 45000, 45000, "self", "", ("self",), 0, "phase", {}),
+        (25188, 25000, 30000, 30000, "aoe", "", (), 0, "heal", {}),
+        (25189, 20000, 20000, 20000, "victim", "", ("aura",), 0, "", {"dispel": "nodispel"}),
+    ],
+}
+
+AQ20_PHASES = {
+    15348: [],
+    15340: [("stone", 1, "aura=25685"), ("fight", 2, "start")],
+    15370: [("phase2", 1, "hp<20"), ("phase1", 2, "start")],
+    15369: [("p2", 1, "hp<70"), ("p1", 2, "start")],
+    15339: [("strength", 1, "aura=25176"), ("vulnerable", 2, "start")],
+}
+
+AQ20_ADDS = {
+    15340: [(15527, "summon", 1)],
+    15370: [(15514, "summon", 0), (15521, "summon", 1)],
+    15369: [(15546, "summon", 1), (15555, "summon", 1), (15934, "summon", 0)],
+    15339: [(15428, "summon", 0)],
+}
+
+
+def rule_text(rule):
+    if rule["kind"] == "start":
+        return "start"
+    if rule["kind"] == "hp":
+        return "hp<%d" % rule["hp"]
+    if rule["kind"] == "aura":
+        return "aura=%d" % rule["aura"]
+    return "%s=%s" % (rule["kind"], rule["flag"])
+
 
 def ability(**kw):
     row = {
@@ -572,14 +638,42 @@ class BossDataTest(unittest.TestCase):
             boss_data.db_connect = original
         self.assertFalse(any("cone target" in e for e in errors), errors)
 
+    def test_aq20_values_match_the_source(self):
+        # The fixture above is read off the scripts: a wrong timer, target, flag, phase, hp or cast time fails here even
+        # when the CSV, the JSON and the citation gate agree with each other.
+        rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
+        names = boss_data.read_names(boss_data.DEFAULT_NAMES)
+        doc = boss_data.build_document(rows, names)
+        for entry, expected in AQ20_ABILITIES.items():
+            boss = doc["bosses"][str(entry)]
+            self.assertEqual(boss["map"], "aq20")
+            got = []
+            for a in boss["abilities"]:
+                self.assertEqual(a["castMs"], 0, a["name"])
+                flags = tuple(
+                    k for k in ("aura", "self", "mark", "ground", "cone", "tail", "int") if a[k]
+                )
+                got.append(
+                    (a["sid"], a["a"], a["b"], a["c"], a["target"], a["phase"], flags,
+                     a["hp"], a["ok"], a["okNeeds"])
+                )
+            self.assertEqual(got, expected, entry)
+            phases = [(p["name"], p["order"], rule_text(p["rule"])) for p in boss["phases"]]
+            self.assertEqual(phases, AQ20_PHASES[entry], entry)
+            self.assertEqual(
+                [(x["entry"], x["role"], x["priority"]) for x in boss["adds"]],
+                AQ20_ADDS.get(entry, []),
+                entry,
+            )
+
     def test_committed_data_builds_to_committed_json(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
         names = boss_data.read_names(boss_data.DEFAULT_NAMES)
         doc = boss_data.build_document(rows, names)
         committed = boss_data.DEFAULT_JSON.read_text(encoding="utf-8")
         self.assertEqual(committed, boss_data.dump_json(doc))
-        self.assertEqual(len(doc["bosses"]), 17)
-        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 112)
+        self.assertEqual(len(doc["bosses"]), 22)
+        self.assertEqual(sum(len(b["abilities"]) for b in doc["bosses"].values()), 136)
 
     def test_every_panel_name_is_present(self):
         rows = boss_data.read_rows(boss_data.DEFAULT_CSV)
