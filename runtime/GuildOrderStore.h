@@ -77,6 +77,8 @@ void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason);
 void SetSupply(uint32_t botGuidLow, SupplyStep step, uint32_t itemId, uint32_t count,
     SupplyStep returnStep = SupplyStep::None, OrderReason reason = OrderReason::None, uint32_t goldCount = 0);
 void SetNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& items, bool bankDenied = false);
+void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount);
+void ConsumeGuildGoldHeld(uint32_t botGuidLow, uint32_t amount);
 // Guild gold still spendable anywhere on the order's branch: the smallest
 // cap remaining over the row and every ancestor up to the root. Map thread
 // only (the buy action reads it before bidding).
