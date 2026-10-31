@@ -6252,14 +6252,22 @@
     }
     return fdFights;
   }
-  let cmdControlOn = null;   // null: not asked yet; the page asks once per load
+  let cmdControlOn = null;   // null: not asked yet (or the last ask failed); a confirmed false stays cached
+  let cmdControlAsking = null; // the one control fetch in flight; later paints chain on it
+  let cmdControlRetryAt = 0; // a failed ask waits this long before fetching again
 
   function cmdControlAsk(cb) {
     if (cmdControlOn !== null) { cb(cmdControlOn); return; }
-    fetch('/api/v1/control').then(jsonOrThrow).then(v => {
-      cmdControlOn = !!(v && v.enabled);
-      cb(cmdControlOn);
-    }).catch(() => { cmdControlOn = false; cb(false); });
+    if (Date.now() < cmdControlRetryAt) { cb(false); return; }
+    if (!cmdControlAsking) {
+      // A failed fetch and a malformed answer both leave the answer unknown and retry after 30 s.
+      cmdControlAsking = fetch('/api/v1/control').then(jsonOrThrow).then(v => {
+        if (!v || typeof v.enabled === 'undefined') throw new Error('bad control answer');
+        cmdControlOn = !!v.enabled;
+      }).catch(() => { cmdControlRetryAt = Date.now() + 30000; })
+        .then(() => { cmdControlAsking = null; });
+    }
+    cmdControlAsking.then(() => cb(cmdControlOn === true));
   }
   function cmdRaidFights(bind, cb) {
     fdFightsFeed().list(bind.commander, list => {
@@ -6321,11 +6329,14 @@
 
   function cmdControlsBind(card, bind) {
     const row = card.querySelector('.cmd-controls-row');
-    if (!row || row._bound) return;
+    if (!row) return;
+    row._bind = bind;
+    if (row._bound) return;
     row._bound = true;
     row.addEventListener('click', e => {
       const btn = e.target.closest && e.target.closest('[data-cl]');
       if (!btn || btn.disabled || btn.tagName === 'SELECT' || btn.tagName === 'INPUT') return;
+      const bind = row._bind;
       const lines = CmdView.controlLines(bind);
       const act = btn.dataset.cl;
       if (act === 'pause') cmdControlPost(card, lines.pause);
@@ -7958,12 +7969,19 @@
       setHtml(card.querySelector('.cmd-threat'), cmdThreatHtml(bind));
       setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind));
       if (!bind.demo && !debug) cmdRaidFights(bind, () => setHtml(card.querySelector('.cmd-deaths'), cmdDeathsHtml(bind)));
-      cmdControlAsk(on => {
-        const ctl = card.querySelector('.cmd-controls');
-        if (ctl) ctl.hidden = !on;
-        if (on) { setHtml(card.querySelector('.cmd-controls-row'), cmdControlsHtml(bind)); cmdControlsBind(card, bind); }
-      });
     }
+    // The run controls live in .cmd-panels on the Live page; in the debugger they move to the card body, full width under
+    // the raid frames. The fetch runs once per page load; the place runs here too, so while the answer is unknown the panel
+    // stays where it is and moves when the answer lands, never flashing in the wrong parent.
+    cmdPlaceControls(card, debug && raid && cmdControlOn);
+    const ctlGen = card._ctlGen = (card._ctlGen || 0) + 1;
+    cmdControlAsk(on => {
+      if (card._ctlGen !== ctlGen) return;
+      const ctl = card.querySelector('.cmd-controls');
+      if (ctl) ctl.hidden = !on || !raid;
+      if (on && raid) { setHtml(card.querySelector('.cmd-controls-row'), cmdControlsHtml(bind)); cmdControlsBind(card, bind); }
+      cmdPlaceControls(card, debug && raid && on);
+    });
     const left = card.querySelector('.cmd-left');
     if (left) left.hidden = debug;
     const fightsEl = card.querySelector('.cmd-fights');
@@ -8036,6 +8054,15 @@
     if (!live || !body) return;
     if (debug) { if (live.parentElement !== body) body.appendChild(live); }
     else if (card.querySelector('.cmd-fights')) ensureFightMount(card);
+  }
+  // Where the run controls sit. In the debugger they are a grid item of .cmd-body (grid-area: controls, full width under the
+  // raid frames); on the Live page they sit back in .cmd-panels with the notes, threat and deaths.
+  function cmdPlaceControls(card, inDebug) {
+    const ctl = card.querySelector('.cmd-controls'), body = card.querySelector('.cmd-body');
+    if (!ctl || !body) return;
+    const home = card.querySelector('.cmd-panels');
+    if (inDebug) { if (ctl.parentElement !== body) body.insertBefore(ctl, card.querySelector('.fd-bosses')); }
+    else if (home && ctl.parentElement !== home) home.appendChild(ctl);
   }
 
   function ensureFightMount(card) {
