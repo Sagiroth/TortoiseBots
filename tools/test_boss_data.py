@@ -599,8 +599,8 @@ class BossDataTest(unittest.TestCase):
 # (spell, first, repeatMin, repeatMax, target, phase, extra flags, castMs)
 NAXX_ABILITIES = {
     15956: [
-        (28783, 12000, 12000, 18000, "random", "", {"cone"}, 0),
-        (28785, 80000, 90000, 110000, "self", "", {"self", "summon=16573", "ok.purge=nopurge"}, 0),
+        (28783, 0, 12000, 18000, "random", "", {"cone"}, 0),
+        (28785, 0, 90000, 110000, "self", "", {"self", "summon=16573", "ok.purge=nopurge"}, 0),
     ],
     15953: [
         (28796, 8000, 10000, 12000, "aoe", "", {"aura"}, 0),

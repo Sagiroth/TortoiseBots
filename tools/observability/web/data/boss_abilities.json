@@ -3091,7 +3091,7 @@
           "sid": 28783,
           "name": "Impale",
           "castMs": 0,
-          "a": 12000,
+          "a": 0,
           "b": 12000,
           "c": 18000,
           "phase": "",
@@ -3112,7 +3112,7 @@
           "sid": 28785,
           "name": "Locust Swarm",
           "castMs": 0,
-          "a": 80000,
+          "a": 0,
           "b": 90000,
           "c": 110000,
           "phase": "",
@@ -3148,7 +3148,7 @@
         }
       ],
       "notes": [
-        "Impale and Locust Swarm timers are random ranges; Impale pauses while Locust Swarm is up or he is casting. Impale is a 15 degree front cone of 45 yd.",
+        "Impale and Locust Swarm timers are random ranges: Impale first at 12-18 s then every 12-18 s; Locust Swarm first at 80-120 s then every 90-110 s. Impale pauses while Locust Swarm is up or he is casting. Impale is a 15 degree front cone of 45 yd.",
         "Each Locust Swarm summons one Crypt Guard at the third spawn point. A dead guard explodes into 10 Corpse Scarabs 20-80 s after it dies; every player death adds 5 more from the instance script.",
         "Crypt Guards: Web every 12 s and reset threat; Cleave every 6 s; Acid Spit every 5 s; Enrage at 50%."
       ]
