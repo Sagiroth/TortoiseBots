@@ -46,5 +46,14 @@ void ApplyBotRanksAtStartup();
 // the database; unknown means not blocked.
 bool BotRankBlocksManagement(uint32_t guildId);
 
+// Forget the stored choice when the guild is gone.
+void OnBotRankDisband(uint32_t guildId);
+
+// ORDER_ACCESS computation for one asker: the bot rank of the guild, the
+// bank tabs it reaches, whether it may withdraw gold, and whether the
+// asker may change the rank. When the switch is off the line carries no
+// rank information (`TBM:ORDER_ACCESS|-|-|-|-|0|0`). World thread only.
+std::string FormatAccessLine(uint32_t guildId, uint32_t askerGuidLow);
+
 } // namespace GuildOrders
 } // namespace TortoiseBots
