@@ -57,7 +57,11 @@ icon), `ground` (persistent area, checked against spell effect 27 with `--db`),
 `int` (a cast with a cast time or a channel; add `ok.interrupt=nokick` when the
 core cannot stop it), `summon=<entry>` (needs an add row),
 `hp<N>` (one-shot below N percent), `ok=<reason>` (the whole ability needs no
-answer) and `ok.<need>=<reason>` (that one need needs no answer).
+answer), `ok.<need>=<reason>` (that one need needs no answer), `dur=<ms>` (the
+ability lasts this long; the repeat window counts from its end; cite the line
+that sets the duration) and `from=<phase>` (the first timer counts from when the
+boss first entered that phase this fight, which must be a phase row; it needs a
+timer in `a`, and the panel shows no first window until it has seen that phase).
 
 Phase rules: first match in order wins; `hp<` rules latch; `start` always matches
 and must be the last rule (it is the phase at pull, so a boss whose script has no
@@ -104,6 +108,9 @@ every raid in the CSV:
   and `interruptFlags` & 0x02), and every `ok.interrupt=nokick` row is not;
 - every `self` row applies an aura (effect 6, 27, 35, 119, 128, 129, 132, 133 or
   134 with an aura name).
+
+A timer may be written as a product of literals: `1000 * 60 * 5` counts as
+300000. A named constant (`MINUTE`) is not accepted.
 
 It skips without a core checkout (`TORTOISE_CORE_DIR`, default
 `~/tortoise-wow`) and fails with the exact row and spell otherwise. Rows that

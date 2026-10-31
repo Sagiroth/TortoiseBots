@@ -52,6 +52,8 @@
       else if (k === "ground") flags.ground = true;
       else if (k === "mark") flags.mark = true;
       else if (k === "int") flags.interruptible = true;
+      else if (k === "dur") flags.dur = num(v) || 0;
+      else if (k === "from") flags.from = v;
     });
     // The converter's JSON names one field per flag instead of a flags string; those fields win when both name a flag.
     const fieldPhase = str(row.phase).trim();
@@ -67,6 +69,10 @@
     if (fieldSummon) flags.summon = fieldSummon;
     const fieldHp = num(row.hp);
     if (fieldHp) flags.hpBelow = fieldHp;
+    const fieldDur = num(row.dur);
+    if (fieldDur > 0) flags.dur = fieldDur;
+    const fieldFrom = str(row.from).trim();
+    if (fieldFrom) flags.from = fieldFrom;
     return {
       sid: spell,
       name: str(first(row.name, row.n, row.spellName, row.spell_name, "spell " + spell)),
@@ -266,20 +272,32 @@
     }));
   }
 
-  function model(table, mob, events, fightStartMs, nowMs, priorPhase) {
+  // opts carries what the caller remembers between reports of one fight: priorPhase (the phase this fight last showed) and
+  // phaseAt (the phase-start map, only while it belongs to the same fight).
+  function model(table, mob, events, fightStartMs, nowMs, opts) {
     const t = table === undefined ? cache : table;
     if (!t || !mob) return null;
     const b = bossFor(t, mob.entry);
     if (!b) return null;
+    const priorPhase = opts ? opts.priorPhase : null;
     const evs = eventList(events);
     const start = num(fightStartMs) || 0, now = num(nowMs) == null ? start : num(nowMs);
     const elapsed = Math.max(0, now - start);
     const ph = phaseOf(b, mob, priorPhase);
-    const seenAt = {};
+    // The first fight-relative moment each phase was seen. A caller that keeps the map across reports gets the phase's
+    // start; the first report that showed the phase records it, so a from= window starts up to one report late. A ghost
+    // row (a boss the reports no longer carry) says nothing about the phase and records no start.
+    let phaseTimes = opts && opts.phaseAt && typeof opts.phaseAt === "object" ? opts.phaseAt : null;
+    if (phaseTimes && !mob.ghost && ph.phase && !Object.prototype.hasOwnProperty.call(phaseTimes, ph.phase)) {
+      phaseTimes = Object.assign({}, phaseTimes);
+      phaseTimes[ph.phase] = elapsed;
+    }
+    const seenAt = {}, castAt = {};
     evs.forEach((e) => {
       if (e.sid === null || e.t === null) return;
       if (e.k !== "cast" && e.k !== "ab" && e.k !== "da" && e.k !== "dr") return;
       if (!(e.sid in seenAt) || e.t > seenAt[e.sid]) seenAt[e.sid] = e.t;
+      if (e.k === "cast" && (!(e.sid in castAt) || e.t > castAt[e.sid])) castAt[e.sid] = e.t;
     });
     const currentSid = num(mob.cid);
     const left = num(mob.cleft);
@@ -301,7 +319,17 @@
       let next = null;
       if (!flags.hpBelow) {
         if (seen) {
-          if (a.repeatMax > 0) next = { lo: at + a.repeatMin, hi: at + a.repeatMax, at: elapsed };
+          if (a.repeatMax > 0) {
+            // A dur= row's aura ends with the cast, so the window counts from the latest cast; a later ab/da/dr
+            // sighting is a fade or refresh, not a new cast. Without any cast event the sighting is the best anchor.
+            const dur = flags.dur || 0;
+            const anchor = dur && a.sid in castAt ? castAt[a.sid] : at;
+            next = { lo: anchor + dur + a.repeatMin, hi: anchor + dur + a.repeatMax, at: elapsed };
+          }
+        } else if (flags.from) {
+          next = phaseTimes && Object.prototype.hasOwnProperty.call(phaseTimes, flags.from) && a.first > 0
+            ? { lo: phaseTimes[flags.from] + a.first, hi: phaseTimes[flags.from] + a.first, at: elapsed }
+            : null;
         } else if (a.first > 0) next = { lo: a.first, hi: a.first, at: elapsed };
       }
       let casting = null;
@@ -335,6 +363,7 @@
       boss: { entry: b.entry, name: b.name, map: b.map, mapKey: b.mapKey, order: b.order },
       phase: ph.phase,
       phaseLatched: !!ph.latched,
+      phaseAt: phaseTimes,
       auras: auraList(mob),
       flags: str(mob.uf),
       flagWords: flagText(mob.uf),

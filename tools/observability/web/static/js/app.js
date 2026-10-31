@@ -6513,6 +6513,8 @@
   // The committed boss table is one file for every raid; its phase latch is remembered per fight, so a boss that healed back
   // over an hp< threshold keeps the phase the group saw. Missing file or an older daemon: no panel and no map changes.
   const cmdBossPhase = {};
+  // phaseKey -> {start: the live fight's start ms, times: {phase name: ms since it when first seen}}
+  const cmdBossPhaseAt = {};
   const cmdBossSeen = {}; // commander -> entry -> {name, seenAt}: a boss the fight had and the reports now leave out
   function cmdBossTable() {
     return typeof BossPanel !== 'undefined' && BossPanel.data ? BossPanel.data() : null;
@@ -6528,7 +6530,7 @@
       rows = Object.keys(seen).map(e => ({ entry: Number(e), name: seen[e], hp: null, au: [], uf: '' }));
     } else {
       if (!bind.combat || !FightDebug.liveEngaged(bind)) return [];
-      rows = (mobs || []).filter(m => m && m.rank === 'b');
+      rows = (mobs || []).filter(m => m && (m.rank === 'b' || m.ghost));
     }
     const out = [];
     rows.forEach(m => {
@@ -6538,9 +6540,14 @@
       const adds = live ? (mobs || []).filter(x => x && x !== m && ((x.sum && String(x.sum) === String(m.id))
         || b.adds.some(a => a.entry === x.entry))) : [];
       const phaseKey = bind.commander + '|' + (fight ? fight.id : 'live') + '|' + m.entry;
-      const model = panel.model(table, Object.assign({}, m, { adds: adds }), events || [], startMs, nowMs, cmdBossPhase[phaseKey] || null);
+      const kept = fight ? null : cmdBossPhaseAt[phaseKey];
+      // A kept phase-start map belongs to the fight that recorded it: a new pull starts more than 5 s from it.
+      const phaseAt = fight ? null : kept && Math.abs(kept.start - startMs) > 5000 ? {} : (kept && kept.times) || {};
+      const model = panel.model(table, Object.assign({}, m, { adds: adds }), events || [], startMs, nowMs,
+        { priorPhase: cmdBossPhase[phaseKey] || null, phaseAt: phaseAt });
       if (!model) return;
       if (model.phase) cmdBossPhase[phaseKey] = model.phase;
+      if (!fight) cmdBossPhaseAt[phaseKey] = { start: startMs, times: model.phaseAt || {} };
       out.push(model);
     });
     return out.sort((a, b) => (a.boss.order - b.boss.order) || (a.boss.entry - b.boss.entry));
@@ -6563,7 +6570,14 @@
   }
   function cmdLiveBossPanels(bind) {
     const now = Date.now();
-    if (!bind || !bind.combat) { if (bind) delete cmdBossSeen[bind.commander]; return []; }
+    if (!bind || !bind.combat) {
+      if (bind) {
+        delete cmdBossSeen[bind.commander];
+        const prefix = bind.commander + '|live|';
+        Object.keys(cmdBossPhaseAt).forEach(k => { if (k.indexOf(prefix) === 0) delete cmdBossPhaseAt[k]; });
+      }
+      return [];
+    }
     const mobs = bind.mobs || [];
     const mem = cmdBossSeen[bind.commander] || (cmdBossSeen[bind.commander] = {});
     const present = {};
@@ -6574,7 +6588,7 @@
     });
     // A boss the fight had and the module no longer reports (Arlokk vanished) is shown as not visible after two 2 s reports.
     const vanished = Object.keys(mem).filter(e => !present[e] && now - mem[e].seenAt >= 4000)
-      .map(e => ({ entry: Number(e), name: mem[e].name, hp: null, au: [], uf: 'v' }));
+      .map(e => ({ entry: Number(e), name: mem[e].name, hp: null, au: [], uf: 'v', ghost: true }));
     const byId = {};
     (bind.bots || []).forEach(b => { if (b && (b.id != null || b.guid != null)) byId[String(b.id != null ? b.id : b.guid)] = b.name; });
     const named = mobs.map(m => (m && m.ctg && byId[String(m.ctg)] ? Object.assign({}, m, { ctargetName: byId[String(m.ctg)] }) : m));

@@ -102,7 +102,7 @@ assert.strictEqual(B.phaseOf(ladder, { hp: 60 }, "rune3").phase, "rune3", "a run
 p = B.model(T, Object.assign({}, mob, {
   hp: 48, uf: "nh", au: [{ id: 24169, n: "Tiger Form", st: 2, l: 12000 }, { id: 1234, n: "Passive", l: null }],
   cid: 23861, cleft: 1500, ctot: 3000, add: [{ entry: 14884, hp: 55 }],
-}), ev, 0, 50000, "snake");
+}), ev, 0, 50000, { priorPhase: "snake" });
 assert.deepStrictEqual(p.auras, [{ id: 24169, name: "Tiger Form", stacks: 2, leftMs: 12000 }, { id: 1234, name: "Passive", stacks: 1, leftMs: null }]);
 assert.deepStrictEqual(p.flagWords, ["untargetable", "flying"]);
 assert.strictEqual(p.adds[0].entry, 14884);
@@ -110,10 +110,10 @@ assert.strictEqual(p.adds[0].alive, true);
 assert.strictEqual(p.abilities.find((a) => a.sid === 23861).seen, true);
 assert.strictEqual(p.abilities.find((a) => a.sid === 23861).lastMs, 20000);
 assert.strictEqual(p.abilities.find((a) => a.sid === 23861).casting.frac, 0.5);
-const freshCast = B.model(T, Object.assign({}, mob, { cid: 23861, cleft: 1500, ctot: 3000 }), [], 0, 50000, "snake");
+const freshCast = B.model(T, Object.assign({}, mob, { cid: 23861, cleft: 1500, ctot: 3000 }), [], 0, 50000, { priorPhase: "snake" });
 assert.strictEqual(freshCast.abilities.find((a) => a.sid === 23861).seen, true, "a cast the report carries is a sighting");
 assert.strictEqual(freshCast.abilities.find((a) => a.sid === 23861).lastMs, 0);
-assert.strictEqual(B.model(T, Object.assign({}, mob, { cid: 23861, cleft: 1500, ctot: 3000, ctargetName: "Healbot" }), [], 0, 50000, "snake").abilities.find((a) => a.sid === 23861).casting.target, "Healbot", "the cast names its target");
+assert.strictEqual(B.model(T, Object.assign({}, mob, { cid: 23861, cleft: 1500, ctot: 3000, ctargetName: "Healbot" }), [], 0, 50000, { priorPhase: "snake" }).abilities.find((a) => a.sid === 23861).casting.target, "Healbot", "the cast names its target");
 assert.deepStrictEqual([freshCast.abilities.find((a) => a.sid === 23861).next.lo, freshCast.abilities.find((a) => a.sid === 23861).next.hi], [65000, 70000]);
 assert.strictEqual(p.abilities.find((a) => a.sid === 23861).casting.leftMs, 1500);
 
@@ -186,7 +186,7 @@ const moam = aq20["15340"];
 assert.deepStrictEqual(moam.phases.map((x) => x.rule), ["aura=25685", "start"]);
 assert.strictEqual(B.phaseOf(moam, { hp: 90, au: [{ id: 25685 }] }).phase, "stone");
 assert.strictEqual(B.phaseOf(moam, { hp: 90, au: [] }).phase, "fight");
-const moamStone = B.model(REAL, { entry: 15340, hp: 90, au: [{ id: 25685 }] }, [], 0, 0, "fight");
+const moamStone = B.model(REAL, { entry: 15340, hp: 90, au: [{ id: 25685 }] }, [], 0, 0, { priorPhase: "fight" });
 assert.strictEqual(moamStone.phase, "stone");
 assert.strictEqual(moamStone.abilities.find((a) => a.sid === 15550).inPhase, false, "Trample stops in stone form");
 assert.strictEqual(moamStone.abilities.find((a) => a.sid === 25676).inPhase, false, "Drain Mana stops in stone form");
@@ -195,12 +195,12 @@ const buru = aq20["15370"];
 assert.deepStrictEqual(buru.phases.map((x) => x.rule), ["hp<20", "start"]);
 assert.strictEqual(B.phaseOf(buru, { hp: 19, au: [] }).phase, "phase2");
 assert.strictEqual(B.phaseOf(buru, { hp: 50, au: [] }).phase, "phase1");
-const buruTwo = B.model(REAL, { entry: 15370, hp: 19, au: [] }, [], 0, 0, "phase1");
+const buruTwo = B.model(REAL, { entry: 15370, hp: 19, au: [] }, [], 0, 0, { priorPhase: "phase1" });
 assert.strictEqual(buruTwo.abilities.find((a) => a.sid === 96).inPhase, false, "Dismember is phase 1");
 assert.strictEqual(buruTwo.abilities.find((a) => a.sid === 25640).inPhase, false, "Thorns is phase 1");
 assert.strictEqual(buruTwo.abilities.find((a) => a.sid === 20512).inPhase, true, "Creeping Plague is phase 2");
 // Its first-cast timer starts at the phase change, not at the pull: 200 s in, an unseen plague is "—", never "(late)".
-const buruLate = B.model(REAL, { entry: 15370, hp: 19, au: [] }, [], 0, 200000, "phase1");
+const buruLate = B.model(REAL, { entry: 15370, hp: 19, au: [] }, [], 0, 200000, { priorPhase: "phase1" });
 const plague = buruLate.abilities.find((a) => a.sid === 20512);
 assert.strictEqual(plague.inPhase, true);
 assert.strictEqual(plague.next, null, "a phase-2 timer has no window counted from the pull");
@@ -210,7 +210,7 @@ const ayamiss = aq20["15369"];
 assert.deepStrictEqual(ayamiss.phases.map((x) => x.rule), ["hp<70", "start"]);
 assert.strictEqual(B.phaseOf(ayamiss, { hp: 60, au: [] }).phase, "p2");
 assert.strictEqual(B.phaseOf(ayamiss, { hp: 80, au: [] }).phase, "p1");
-const ayamissGround = B.model(REAL, { entry: 15369, hp: 60, au: [] }, [], 0, 0, "p1");
+const ayamissGround = B.model(REAL, { entry: 15369, hp: 60, au: [] }, [], 0, 0, { priorPhase: "p1" });
 assert.strictEqual(ayamissGround.phase, "p2");
 assert.strictEqual(ayamissGround.abilities.find((a) => a.sid === 25748).inPhase, false, "Poison Stinger is the flying phase");
 assert.strictEqual(ayamissGround.abilities.find((a) => a.sid === 25852).inPhase, true, "Lash is the ground phase");
@@ -509,4 +509,61 @@ const ktFight = B.model(REAL, { entry: 15990, hp: 80, au: [], uf: "" }, [], 0, 0
 assert.strictEqual(ktFight.phase, "fight");
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 28478).inPhase, true);
 assert.strictEqual(ktFight.abilities.find((a) => a.sid === 29423).inPhase, false);
+// ---- anchored timers: dur= shifts the repeat window, from= counts the first window from a phase start --------------
+const ANCHOR_TABLE = B.normalize({ bosses: [
+  { entry: 9001, name: "Phase Boss", map: 309, order: 0,
+    abilities: [{ key: "9", a: 10000, b: 30000, c: 30000, d: "p=fight;from=fight" }],
+    phases: [{ key: "adds", a: "aura=1", b: 1 }, { key: "fight", a: "start", b: 2 }], adds: [], notes: [] },
+  { entry: 9002, name: "Dur Boss", map: 309, order: 1,
+    abilities: [{ key: "7", a: 8000, b: 5000, c: 10000, d: "dur=15000" }],
+    phases: [], adds: [], notes: [] },
+  { entry: 9003, name: "Plain Boss", map: 309, order: 2,
+    abilities: [{ key: "8", a: 12000, b: 6000, c: 9000, d: "" }],
+    phases: [], adds: [], notes: [] },
+]});
+const phaseRow = (m) => m.abilities.find((a) => a.sid === 9);
+const seenPhase = B.model(ANCHOR_TABLE, { entry: 9001, au: [] }, [], 0, 60000, { phaseAt: { fight: 50000 } });
+assert.deepStrictEqual([phaseRow(seenPhase).next.lo, phaseRow(seenPhase).next.hi], [60000, 60000],
+  "from= counts the first window from the phase start");
+
+const anchored = {};
+const firstSight = B.model(ANCHOR_TABLE, { entry: 9001, au: [] }, [], 0, 60000, { phaseAt: anchored });
+assert.strictEqual(firstSight.phase, "fight");
+assert.strictEqual(firstSight.phaseAt.fight, 60000, "the phase is first seen now");
+assert.strictEqual(firstSight.phaseAt !== anchored, true, "the caller's map is not written");
+assert.strictEqual(phaseRow(firstSight).next.lo, 70000, "the first window counts from that moment");
+
+const noPhase = B.model(ANCHOR_TABLE, { entry: 9001, au: [] }, [], 0, 60000, { phaseAt: null });
+assert.strictEqual(phaseRow(noPhase).next, null, "an unseen from= phase has no first window");
+assert.strictEqual(noPhase.phaseAt, null);
+
+// A vanished boss row is a ghost: it still draws (as not visible) but never records a phase start of its own.
+const ghostSeen = B.model(ANCHOR_TABLE, { entry: 9001, au: [], uf: "v", ghost: true }, [], 0, 60000, { phaseAt: {} });
+assert.deepStrictEqual(ghostSeen.phaseAt, {}, "a ghost row adds no phase start");
+
+const durCast = [{ k: "cast", t: 8000, sid: 7, n: "Dur Boss" }];
+const durSeen = B.model(ANCHOR_TABLE, { entry: 9002, au: [] }, durCast, 0, 20000).abilities.find((a) => a.sid === 7);
+assert.deepStrictEqual([durSeen.next.lo, durSeen.next.hi], [28000, 33000], "dur= shifts the repeat window");
+const durUnseen = B.model(ANCHOR_TABLE, { entry: 9002, au: [] }, [], 0, 20000).abilities.find((a) => a.sid === 7);
+assert.deepStrictEqual([durUnseen.next.lo, durUnseen.next.hi], [8000, 8000], "dur= never moves the first window");
+const durFaded = B.model(ANCHOR_TABLE, { entry: 9002, au: [] }, [
+  { k: "cast", t: 8000, sid: 7 }, { k: "ab", t: 12000, sid: 7 }, { k: "da", t: 15000, sid: 7 }, { k: "dr", t: 18000, sid: 7 },
+], 0, 24000).abilities.find((a) => a.sid === 7);
+assert.deepStrictEqual([durFaded.next.lo, durFaded.next.hi], [28000, 33000],
+  "a later fade or refresh does not move a dur= window");
+const durFadeOnly = B.model(ANCHOR_TABLE, { entry: 9002, au: [] }, [{ k: "da", t: 20000, sid: 7 }], 0, 24000)
+  .abilities.find((a) => a.sid === 7);
+assert.deepStrictEqual([durFadeOnly.next.lo, durFadeOnly.next.hi], [40000, 45000],
+  "with no cast event the fade is the only sighting left");
+
+const plainUnseen = B.model(ANCHOR_TABLE, { entry: 9003, au: [] }, [], 0, 0).abilities.find((a) => a.sid === 8);
+assert.deepStrictEqual([plainUnseen.next.lo, plainUnseen.next.hi], [12000, 12000], "no flag: the pull-relative first window");
+const plainSeen = B.model(ANCHOR_TABLE, { entry: 9003, au: [] }, [{ k: "cast", t: 20000, sid: 8 }], 0, 40000)
+  .abilities.find((a) => a.sid === 8);
+assert.deepStrictEqual([plainSeen.next.lo, plainSeen.next.hi], [26000, 29000], "no flag: the repeat window is unchanged");
+
+const jsonFlags = B.normalize({ bosses: [{ entry: 9004, abilities: [
+  { key: "7", a: 0, b: 0, c: 0, d: "", dur: 15000, from: "fight" }], phases: [] }] });
+assert.deepStrictEqual(B.bossFor(jsonFlags, 9004).abilities[0].flags, { dur: 15000, from: "fight" },
+  "the converter's dur/from fields reach the flags");
 console.log("boss panel ok");
