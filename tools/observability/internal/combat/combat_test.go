@@ -211,7 +211,7 @@ func TestStoreCap(t *testing.T) {
 // The store reads the exact bytes the module writes (A8a BuildFightJson):
 // spell counts as [{"n","c"}], death hits as {"a","d","t_ms"}.
 func TestStoreReadsModuleBytes(t *testing.T) {
-	raw := `{"fight":{"id":"7-2","commander":"Cmdr","commander_guid":3,"group":7,"map":409,"plan":"mc","leg":"l1","step":1,"kind":"boss","start":9,"dur_ms":25000,"outcome":"end","boss":1,"boss_name":"B","planned":[1],"engaged":[{"e":1,"n":"B","c":1}],"bots":[{"name":"T","guid":1,"class":"warrior","role":"tank","sub":-1,"dmg":5,"heal":0,"over":0,"taken":1,"casts":2,"heal_casts":0,"deaths":0,"spells":[{"n":"Sunder Armor","c":2}]}],"debuffs":{"sampled_s":3,"up_s":{"sunder":3}},"deaths":[{"name":"H","t_ms":9000,"x":1.5,"y":2.5,"z":3.5,"killer":"B","hits":[{"a":"B","d":400,"t_ms":8000}]}]}}`
+	raw := `{"fight":{"id":"7-2","commander":"Cmdr","commander_guid":3,"group":7,"map":409,"plan":"mc","leg":"l1","step":1,"kind":"boss","start":9,"dur_ms":25000,"outcome":"end","boss":1,"boss_name":"B","planned":[1],"engaged":[{"e":1,"n":"B","c":1}],"bots":[{"name":"T","guid":1,"class":"warrior","role":"tank","sub":-1,"dmg":5,"heal":0,"over":0,"taken":1,"casts":2,"heal_casts":0,"deaths":0,"spells":[{"n":"Sunder Armor","c":2}],"tail_spells":[{"n":"Drink","c":1}]}],"debuffs":{"sampled_s":3,"up_s":{"sunder":3}},"deaths":[{"name":"H","t_ms":9000,"x":1.5,"y":2.5,"z":3.5,"killer":"B","hits":[{"a":"B","d":400,"t_ms":8000}]}]}}`
 	var dg struct {
 		Fight Fight `json:"fight"`
 	}
@@ -227,5 +227,8 @@ func TestStoreReadsModuleBytes(t *testing.T) {
 	}
 	if f.Debuffs.UpS["sunder"] != 3 || f.Debuffs.SampledS != 3 {
 		t.Fatalf("debuffs: %+v", f.Debuffs)
+	}
+	if len(f.Bots[0].TailSpells) != 1 || f.Bots[0].TailSpells[0].N != "Drink" || f.Bots[0].TailSpells[0].C != 1 {
+		t.Fatalf("tail spells: %+v", f.Bots[0].TailSpells)
 	}
 }

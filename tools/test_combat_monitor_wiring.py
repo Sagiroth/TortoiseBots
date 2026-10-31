@@ -8,6 +8,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ADAPTER = (ROOT / "host" / "CombatMonitorAdapter.cpp").read_text()
 ADAPTER_H = (ROOT / "host" / "CombatMonitorAdapter.h").read_text()
+POLICY = (ROOT / "runtime" / "CombatMonitorPolicy.h").read_text()
 SERVICE = (ROOT / "runtime" / "CombatMonitorService.cpp").read_text()
 SERVICE_H = (ROOT / "runtime" / "CombatMonitorService.h").read_text()
 MODULE = (ROOT / "host" / "Module.cpp").read_text()
@@ -203,6 +204,25 @@ class CombatMonitorWiringTest(unittest.TestCase):
             self.assertIn(constant, cast, constant)
         self.assertIn("getUnitTargetGuid()", cast)
         self.assertLess(cast.index("SPELL_EFFECT_ATTACK_ME"), cast.index("OnCast("), "classification first")
+
+    def test_cast_hook_keeps_after_combat_casts_apart(self):
+        # The run clears its meal mark on the first quiet tick and the fight stays open
+        # 3 s longer: a cast in that gap waits as pending, so a re-engage folds it into
+        # the fight and only a cast still pending at the end is a tail cast.
+        code = strip_comments(POLICY)
+        cast = body(code, "void OnCast(", "\n    }\n")
+        self.assertIn("outOfCombat_", cast)
+        self.assertIn("pending", cast)
+        self.assertIn("overflow", cast)
+        self.assertLess(cast.index("outOfCombat_"), cast.index("ApplyCast("),
+                        "the grace check runs before the fight counters")
+        reengage = body(code, "void SetInCombat(", "\n    }\n")
+        self.assertIn("FlushPending(", reengage)
+        end = body(code, "void EndFight(", "\n    }\n")
+        self.assertIn("tailSpells", end)
+        self.assertIn("pending", end)
+        self.assertIn("overflow", end)
+        self.assertIn("SpellListByCount", POLICY)
 
     def test_event_drain_runs_before_the_snapshot_gate(self):
         code = strip_comments(EMITTER)

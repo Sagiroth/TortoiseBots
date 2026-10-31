@@ -263,6 +263,12 @@ assert.strictEqual(bp.casts, 16);
 assert.deepStrictEqual(bp.spells.map((s) => s.n),
   ["Sunder Armor", "Shield Slam", "Bloodrage", "Food", "Heroic Strike", "Taunt"]);
 assert.strictEqual(F.botPanel(byId("5-4"), "Nobody"), null);
+// After-combat casts ride their own list, ordered by count, and never enter the fight's spells.
+const bt = F.botPanel({ bots: [{ name: "B", spells: [{ n: "Fireball", c: 2 }],
+  tail_spells: [{ n: "Drink", c: 1 }, { n: "Food", c: 3 }] }] }, "B");
+assert.deepStrictEqual(bt.spells, [{ n: "Fireball", c: 2 }]);
+assert.deepStrictEqual(bt.tailSpells, [{ n: "Food", c: 3 }, { n: "Drink", c: 1 }]);
+assert.deepStrictEqual(F.botPanel({ bots: [{ name: "B", spells: [] }] }, "B").tailSpells, []);
 
 // ---- the fight rail -------------------------------------------------------------------------------------------------
 const list = [

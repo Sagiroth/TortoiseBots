@@ -9053,10 +9053,13 @@
     if (!panel) return '';
     const grp = typeof panel.sub === 'number' && panel.sub >= 0 ? ' · group ' + (panel.sub + 1) : '';
     const spells = (panel.spells || []).map(s => `<tr><td>${esc(s.n)}</td><td class="n">${s.c}</td></tr>`).join('');
+    const tail = (panel.tailSpells || []).map(s => `<tr><td>${esc(s.n)}</td><td class="n">${s.c}</td></tr>`).join('');
     return `<h4 class="fd-both">${esc(panel.name)} · ${esc(panel.cls)}${grp}</h4>`
       + `<p class="fd-botl mono">${FightDebug.fmtInt(panel.dmg)} dmg · ${FightDebug.fmtInt(panel.heal)} heal · ${FightDebug.fmtInt(panel.taken)} taken · ${panel.casts} casts</p>`
       + `<table class="data-table fd-table"><caption>Casts</caption><thead><tr><th>Spell</th><th class="n">Casts</th></tr></thead>`
       + `<tbody>${spells || '<tr><td colspan="2" class="empty-hint">No casts recorded.</td></tr>'}</tbody></table>`
+      + (tail ? `<table class="data-table fd-table"><caption>After combat</caption><thead><tr><th>Spell</th><th class="n">Casts</th></tr></thead>`
+        + `<tbody>${tail}</tbody></table>` : '')
       + (panel.guid != null ? `<p class="fd-open"><button type="button" class="fd-link" data-fd-profile="${esc(panel.guid)}">Gear &amp; profile →</button></p>` : '');
   }
 
