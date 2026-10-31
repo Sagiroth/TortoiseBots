@@ -652,6 +652,14 @@ AiPlayerbot.DisableActivityPriorities = 1
 # Force bots to become active when guild orders are enabled
 #AiPlayerbot.GuildOrderAlwaysActive = 1
 
+# Guild orders may take missing reagents from the guild bank before shopping or farming.
+# Default 1. Guild rank and bank tab permissions still apply.
+AiPlayerbot.GuildOrderBankWithdraw = 1
+
+# Guild orders may use guild bank money for auction house purchases after the bot's own gold.
+# Default 1. Guild bank access is still limited by the core's rank rules.
+AiPlayerbot.GuildOrderBankGold = 1
+
 # Limit combat activity for slight performance boost.
 #AiPlayerbot.LimitCombatActivity = 0
 

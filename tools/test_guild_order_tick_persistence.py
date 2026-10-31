@@ -24,19 +24,19 @@ class GuildOrderTickPersistenceTest(unittest.TestCase):
     def test_timeout_marks_dirty(self):
         body = tick_body()
         idx = body.index("record.reason = OrderReason::Timeout;")
-        window = body[idx:idx + 600]
+        window = body[idx:idx + 1200]
         self.assertIn("MarkDirtyLocked(stored);", window)
 
     def test_noprogress_marks_dirty(self):
         body = tick_body()
         idx = body.index("record.reason = OrderReason::NoProgress;")
-        window = body[idx:idx + 600]
+        window = body[idx:idx + 1200]
         self.assertIn("MarkDirtyLocked(stored);", window)
 
     def test_quota_delivery_marks_dirty(self):
         body = tick_body()
-        idx = body.index("record.reason = OrderReason::None;\n            out.legChanged = true;")
-        window = body[idx:idx + 200]
+        idx = body.index("record.reason = OrderReason::None;\n            record.supplyStep = SupplyStep::Deliver;")
+        window = body[idx:idx + 400]
         self.assertIn("MarkDirtyLocked(stored);", window)
 
     def test_group_gate_marks_dirty(self):

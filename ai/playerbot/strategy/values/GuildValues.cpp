@@ -9,6 +9,7 @@
 #include "playerbot/GuildOrderCraft.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
+#include "runtime/GuildOrderSupplyPolicy.h"
 #include "runtime/policy/provision/CraftOrderPolicy.h"
 #include "runtime/AltBotService.h"
 #include "Guild/GuildMgr.h"
@@ -16,6 +17,279 @@
 #include "MapNodes/MasterPlayer.h"
 
 using namespace ai;
+
+namespace
+{
+
+using TortoiseBots::GuildOrders::NeedItem;
+using TortoiseBots::GuildOrders::OrderRecord;
+using TortoiseBots::GuildOrders::OrderReason;
+using TortoiseBots::GuildOrders::OrderType;
+using TortoiseBots::GuildOrders::SupplyOptions;
+using TortoiseBots::GuildOrders::SupplyStep;
+
+struct SupplyCandidate
+{
+    uint32_t itemId = 0;
+    uint32_t count = 0;
+    bool craft = false;
+    bool takeMail = false;
+};
+
+bool IsUnlimitedVendorItem(uint32_t itemId)
+{
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+    return proto && ItemUsageValue::IsItemSoldByAnyVendor(proto) &&
+        !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(proto);
+}
+
+bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t count,
+    std::vector<uint32_t>& path, uint32_t depth, SupplyCandidate& out)
+{
+    if (!ai || !bot || !itemId || !count)
+        return false;
+    if (depth >= 8 || std::find(path.begin(), path.end(), itemId) != path.end())
+    {
+        out = { itemId, count, false };
+        return true;
+    }
+
+    uint32_t spellId = ai::FindCraftSpellFor(bot, itemId);
+    if (!spellId || IsUnlimitedVendorItem(itemId))
+    {
+        out = { itemId, count, false };
+        return true;
+    }
+    SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+    if (!spell)
+    {
+        out = { itemId, count, false };
+        return true;
+    }
+
+    path.push_back(itemId);
+    uint32_t casts = ai::CraftCastsForRemaining(spellId, itemId, count);
+    for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+            continue;
+        uint32_t reagentId = uint32_t(spell->Reagent[i]);
+        uint32_t required = spell->ReagentCount[i] * casts;
+        uint32_t inBags = ai->GetInventoryItemsCountWithId(reagentId);
+        uint32_t inMail = ai::OrderMailboxItems(bot, reagentId);
+        if (inMail && inBags < required)
+        {
+            path.pop_back();
+            out = { reagentId, required - inBags, false, true };
+            return true;
+        }
+        uint32_t owned = inBags + inMail;
+        if (owned >= required)
+            continue;
+        SupplyCandidate nested;
+        if (FindSupplyCandidate(ai, bot, reagentId, required - owned, path, depth + 1, nested))
+        {
+            path.pop_back();
+            out = nested;
+            return true;
+        }
+    }
+    path.pop_back();
+    out = { itemId, count, true };
+    return true;
+}
+
+SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate)
+{
+    if (candidate.craft)
+        return SupplyStep::Craft;
+
+    bool sameItem = order.supplyItemId == candidate.itemId;
+    SupplyStep current = sameItem ? order.supplyStep : SupplyStep::None;
+    bool canFarm = IsUnlimitedVendorItem(candidate.itemId) && order.reason != OrderReason::NoSource;
+    if (!canFarm)
+    {
+        TortoiseBots::GuildOrders::SourcePlan farm = ai::PlanGuildOrderSources(bot, candidate.itemId, OrderType::Farm);
+        canFarm = farm.verdict == OrderReason::None && !farm.zones.empty();
+    }
+    if (sameItem)
+    {
+        if (current == SupplyStep::AuctionHouse || current == SupplyStep::Sub || current == SupplyStep::Need)
+            return current;
+        if (current == SupplyStep::Farm && canFarm)
+            return current;
+        if (current == SupplyStep::Craft && candidate.craft)
+            return current;
+        if (current == SupplyStep::Bags && ai::OrderMailboxItems(bot, candidate.itemId) > 0)
+            return current;
+        if (current == SupplyStep::Bags && order.supplyReturnStep != SupplyStep::None)
+            return order.supplyReturnStep;
+        if (current == SupplyStep::Bank && sPlayerbotAIConfig.guildOrderBankWithdraw)
+            return current;
+    }
+
+    SupplyOptions options;
+    options.bankEnabled = sPlayerbotAIConfig.guildOrderBankWithdraw;
+    options.bankAttempted = sameItem && (current == SupplyStep::AuctionHouse || current == SupplyStep::Farm ||
+        current == SupplyStep::Craft || current == SupplyStep::Sub || current == SupplyStep::Need);
+    options.auctionHouseAttempted = sameItem && (current == SupplyStep::Farm || current == SupplyStep::Craft ||
+        current == SupplyStep::Sub || current == SupplyStep::Need);
+    options.selfCanCraft = candidate.craft;
+    options.selfCanFarm = canFarm;
+    options.subAttempted = sameItem && current == SupplyStep::Need;
+    return TortoiseBots::GuildOrders::NextSupplyStep(options);
+}
+
+SupplyStep MailReturnStep(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate)
+{
+    if (order.supplyItemId == candidate.itemId)
+    {
+        if (order.supplyStep == SupplyStep::Bags)
+            return order.supplyReturnStep == SupplyStep::None ? SupplyStep::Bank : order.supplyReturnStep;
+        if (order.supplyStep == SupplyStep::Bank || order.supplyStep == SupplyStep::AuctionHouse ||
+            order.supplyStep == SupplyStep::Farm || order.supplyStep == SupplyStep::Craft ||
+            order.supplyStep == SupplyStep::Sub)
+            return order.supplyStep;
+    }
+    return ChooseSourceStep(bot, order, candidate);
+}
+
+void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
+    SupplyStep step, SupplyStep returnStep = SupplyStep::None)
+{
+    if (step == SupplyStep::Sub)
+    {
+        if (TortoiseBots::GuildOrders::RequestSupply(order.botGuidLow, candidate.itemId, candidate.count))
+        {
+            TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Sub,
+                candidate.itemId, candidate.count, SupplyStep::None, order.reason);
+            return;
+        }
+        TortoiseBots::GuildOrders::SetNeedItems(order.botGuidLow,
+            { NeedItem{ candidate.itemId, candidate.count } }, order.reason == OrderReason::BankDenied);
+        return;
+    }
+    if (step == SupplyStep::Need)
+    {
+        TortoiseBots::GuildOrders::SetNeedItems(order.botGuidLow,
+            { NeedItem{ candidate.itemId, candidate.count } }, order.reason == OrderReason::BankDenied);
+        return;
+    }
+    (void)ai;
+    (void)bot;
+    TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, step, candidate.itemId,
+        candidate.count, returnStep, order.reason);
+}
+
+void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& order)
+{
+    if (!ai || !bot || order.state != TortoiseBots::GuildOrders::OrderState::Working)
+        return;
+
+    uint32_t carried = ai->GetInventoryItemsCountWithId(order.itemId);
+    uint32_t mailed = ai::OrderMailboxItems(bot, order.itemId);
+    if (order.type != OrderType::Craft)
+    {
+        uint32_t have = order.delivered + carried + mailed;
+        uint32_t missing = have >= order.amount ? 0 : order.amount - have;
+        if (mailed && order.delivered + carried < order.amount)
+        {
+            SupplyCandidate candidate{ order.itemId, missing, false, true };
+            SupplyStep afterMail = MailReturnStep(bot, order, candidate);
+            if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != order.itemId)
+                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                    order.itemId, missing, afterMail, order.reason);
+            return;
+        }
+        if (!missing)
+        {
+            if (carried + order.delivered >= order.amount)
+                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Deliver,
+                    order.itemId, 0, SupplyStep::None, order.reason);
+            return;
+        }
+        SupplyCandidate candidate{ order.itemId, missing, false };
+        if (mailed)
+        {
+            SupplyStep afterMail = MailReturnStep(bot, order, candidate);
+            if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != order.itemId)
+                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                    order.itemId, missing, afterMail, order.reason);
+            return;
+        }
+        SupplyStep step = ChooseSourceStep(bot, order, candidate);
+        SupplyStep fallback = step == SupplyStep::Bank ? SupplyStep::AuctionHouse :
+            step == SupplyStep::AuctionHouse ? TortoiseBots::GuildOrders::NextSupplyStep(
+                SupplyOptions{ false, true, true, false,
+                    IsUnlimitedVendorItem(order.itemId) ||
+                        (ai::PlanGuildOrderSources(bot, order.itemId, OrderType::Farm).verdict == OrderReason::None &&
+                         !ai::PlanGuildOrderSources(bot, order.itemId, OrderType::Farm).zones.empty()), false }) :
+                SupplyStep::None;
+        SetSupplyStage(ai, bot, order, candidate, step, fallback);
+        return;
+    }
+
+    uint32_t outputHave = order.delivered + carried + mailed;
+    uint32_t outputMissing = outputHave >= order.amount ? 0 : order.amount - outputHave;
+    if (mailed && order.delivered + carried < order.amount)
+    {
+        SupplyCandidate candidate{ order.itemId, outputMissing, false, true };
+        SupplyStep afterMail = MailReturnStep(bot, order, candidate);
+        if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != order.itemId)
+            TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                order.itemId, outputMissing, afterMail, order.reason);
+        return;
+    }
+    if (!outputMissing)
+    {
+        if (mailed && order.delivered + carried < order.amount)
+            TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                order.itemId, 0, SupplyStep::None, order.reason);
+        else if (order.delivered + carried >= order.amount)
+            TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Deliver,
+                order.itemId, 0, SupplyStep::None, order.reason);
+        return;
+    }
+
+    SupplyCandidate candidate;
+    std::vector<uint32_t> path;
+    if (!FindSupplyCandidate(ai, bot, order.itemId, outputMissing, path, 0, candidate))
+    {
+        TortoiseBots::GuildOrders::SetState(order.botGuidLow,
+            TortoiseBots::GuildOrders::OrderState::Cant, OrderReason::NoRecipe);
+        return;
+    }
+    if (candidate.craft)
+    {
+        SetSupplyStage(ai, bot, order, candidate, SupplyStep::Craft);
+        return;
+    }
+    if (ai::OrderMailboxItems(bot, candidate.itemId) > 0)
+    {
+        SupplyStep afterMail = MailReturnStep(bot, order, candidate);
+        if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != candidate.itemId)
+            TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                candidate.itemId, candidate.count, afterMail, order.reason);
+        return;
+    }
+    SupplyStep step = ChooseSourceStep(bot, order, candidate);
+    SupplyOptions fallbackOptions;
+    fallbackOptions.bankEnabled = false;
+    fallbackOptions.bankAttempted = true;
+    fallbackOptions.auctionHouseAttempted = true;
+    fallbackOptions.selfCanCraft = candidate.craft;
+    fallbackOptions.selfCanFarm = IsUnlimitedVendorItem(candidate.itemId);
+    if (!fallbackOptions.selfCanFarm)
+    {
+        TortoiseBots::GuildOrders::SourcePlan farm = ai::PlanGuildOrderSources(bot,
+            candidate.itemId, OrderType::Farm);
+        fallbackOptions.selfCanFarm = farm.verdict == OrderReason::None && !farm.zones.empty();
+    }
+    SupplyStep fallback = TortoiseBots::GuildOrders::NextSupplyStep(fallbackOptions);
+    SetSupplyStage(ai, bot, order, candidate, step, fallback);
+}
+
+} // namespace
 
 GuildOrder GuildOrderValue::Calculate()
 {
@@ -113,6 +387,13 @@ bool HasGuildTravelOrderValue::Calculate()
         return false;
 
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    if (std::optional<OrderRecord> stored = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
+        RefreshGuildOrderSupply(ai, bot, *stored);
+    std::optional<OrderRecord> current = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!current || current->state != TortoiseBots::GuildOrders::OrderState::Working ||
+        (current->supplyStep != SupplyStep::Bank && current->supplyStep != SupplyStep::AuctionHouse &&
+         current->supplyStep != SupplyStep::Farm && current->supplyStep != SupplyStep::Bags))
+        return false;
     // A craft order short on a farmable reagent travels like a farm order.
     if (order.IsCraftOrder())
         return AI_VALUE(uint32, "guild order farm item") != 0;
@@ -138,63 +419,14 @@ uint32 GuildOrderVendorReagentValue::Calculate()
         TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
     if (record && record->state != TortoiseBots::GuildOrders::OrderState::Working)
         return 0;
-
-    uint32 itemId = order.itemId;
-    uint32 orderAmount = order.amount;
-    if (!itemId || !orderAmount)
+    if (!record)
         return 0;
-
-    uint32 delivered = record ? std::min(record->delivered, record->amount) : 0;
-    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + delivered;
-    if (currentCount >= orderAmount)
+    RefreshGuildOrderSupply(ai, bot, *record);
+    record = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!record || record->supplyStep != SupplyStep::Farm || !record->supplyItemId ||
+        record->reason == OrderReason::NoSource || !IsUnlimitedVendorItem(record->supplyItemId))
         return 0;
-
-    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
-    if (!craftSpellId)
-        return 0;
-
-    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
-    if (!pSpellInfo)
-        return 0;
-
-    uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, orderAmount - currentCount);
-
-    // Affordable casts first: when the bags already hold a cast but cannot
-    // take more of a short reagent, craft instead of asking for more.
-    uint32 affordable = casts;
-    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
-    {
-        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
-            continue;
-
-        uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
-        affordable = std::min(affordable,
-            TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]));
-    }
-
-    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
-    {
-        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
-            continue;
-
-        uint32 reagentId = pSpellInfo->Reagent[i];
-        ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
-        if (!reagentProto || !ItemUsageValue::IsItemSoldByAnyVendor(reagentProto) ||
-            ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(reagentProto))
-            continue;
-
-        uint32 have = ai->GetInventoryItemsCountWithId(reagentId);
-        if (TortoiseBots::CraftOrderPolicy::ReagentShortfall(
-                pSpellInfo->ReagentCount[i], casts, have) == 0)
-            continue;
-
-        if (affordable >= 1 && AI_VALUE2(uint32, "stack space for item", reagentId) == 0)
-            return 0;
-
-        return reagentId;
-    }
-
-    return 0;
+    return record->supplyItemId;
 }
 
 bool GuildOrderNeedsFocusValue::Calculate()
@@ -344,20 +576,23 @@ double ai::GuildOrderCraftHardestReagentKills(PlayerbotAI* ai, Player* bot, uint
 
 uint32 GuildOrderFarmItemValue::Calculate()
 {
-    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-    if (order.type == GuildOrderType::Farm)
-        return order.itemId;
-
-    if (!order.IsCraftOrder())
-        return 0;
-
     std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
         TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
-    if (record && record->state != TortoiseBots::GuildOrders::OrderState::Working)
+    if (!record || record->state != TortoiseBots::GuildOrders::OrderState::Working)
         return 0;
-
-    uint32 delivered = record ? record->delivered : 0;
-    return ai::GuildOrderCraftReagentFor(ai, bot, order.itemId, order.amount, delivered);
+    RefreshGuildOrderSupply(ai, bot, *record);
+    record = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!record)
+        return 0;
+    if (record->supplyStep != TortoiseBots::GuildOrders::SupplyStep::Bank &&
+        record->supplyStep != TortoiseBots::GuildOrders::SupplyStep::AuctionHouse &&
+        record->supplyStep != TortoiseBots::GuildOrders::SupplyStep::Farm &&
+        record->supplyStep != TortoiseBots::GuildOrders::SupplyStep::Bags)
+        return 0;
+    if (record->type == TortoiseBots::GuildOrders::OrderType::Craft &&
+        IsUnlimitedVendorItem(record->supplyItemId) && record->reason != OrderReason::NoSource)
+        return 0;
+    return record->supplyItemId;
 }
 
 bool ai::OrderNeedsDelivery(Player* bot)

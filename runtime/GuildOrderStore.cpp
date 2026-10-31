@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <ctime>
 #include <mutex>
+#include <sstream>
 #include <unordered_map>
 
 namespace TortoiseBots
@@ -43,6 +44,33 @@ namespace
 inline constexpr uint32_t kProgressReportMs = 5000;
 // Worked seconds live in memory; the database sees them at most this often.
 inline constexpr uint32_t kWorkedFlushMs = 60000;
+inline constexpr uint32_t kNeedBankCheckMs = 10000;
+
+std::vector<NeedItem> ParseNeedItems(std::string const& token)
+{
+    std::vector<NeedItem> out;
+    if (token.empty() || token == "-")
+        return out;
+    std::istringstream entries(token);
+    std::string entry;
+    while (std::getline(entries, entry, ';'))
+    {
+        size_t colon = entry.find(':');
+        if (colon == std::string::npos)
+            continue;
+        try
+        {
+            unsigned long itemId = std::stoul(entry.substr(0, colon));
+            unsigned long count = std::stoul(entry.substr(colon + 1));
+            if (itemId && count && itemId <= UINT32_MAX && count <= UINT32_MAX)
+                out.push_back(NeedItem{ static_cast<uint32_t>(itemId), static_cast<uint32_t>(count) });
+        }
+        catch (...)
+        {
+        }
+    }
+    return out;
+}
 
 class OrderStore
 {
@@ -65,7 +93,8 @@ public:
             "SELECT `bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
             "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
             "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `stock_target`, `last_bank_check`, "
-            "`created_at`, `updated_at` "
+            "`created_at`, `updated_at`, `gold_cap`, `gold_cap_set`, `guild_gold_withdrawn`, `guild_gold_held`, "
+            "`supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, `need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied` "
             "FROM `tortoise_bots_guild_order`"));
 
         if (result)
@@ -99,6 +128,19 @@ public:
                 record.lastBankCheckMs = fields[22].GetUInt32();
                 record.createdAt = fields[23].GetUInt64();
                 record.updatedAt = fields[24].GetUInt64();
+                record.goldCap = fields[25].GetUInt32();
+                record.hasGoldCap = fields[26].GetUInt32() != 0;
+                record.guildGoldWithdrawn = fields[27].GetUInt32();
+                record.guildGoldHeld = fields[28].GetUInt32();
+                ParseSupplyStep(fields[29].GetCppString(), record.supplyStep);
+                ParseSupplyStep(fields[30].GetCppString(), record.supplyReturnStep);
+                record.supplyItemId = fields[31].GetUInt32();
+                record.supplyCount = fields[32].GetUInt32();
+                record.supplyGoldCount = fields[33].GetUInt32();
+                record.needItems = ParseNeedItems(fields[34].GetCppString());
+                record.needWhispered = fields[35].GetUInt32() != 0;
+                record.lastNeedWhisper = fields[36].GetCppString();
+                record.needBankDenied = fields[37].GetUInt32() != 0;
 
                 if (record.hours != kUnlimitedOrderHours &&
                     (record.hours < kMinOrderHours || record.hours > kMaxOrderHours))
@@ -157,16 +199,24 @@ public:
                 "REPLACE INTO `tortoise_bots_guild_order` "
                 "(`bot_guid`, `guild_id`, `giver_guid`, `type`, `item_id`, `amount`, `hours`, `delivered`, "
                 "`state`, `reason`, `farm_zone`, `farm_chance`, `farm_item`, `zone_index`, `deaths_in_zone`, "
-                "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `stock_target`, `last_bank_check`, "
+                "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
+                "`guild_gold_withdrawn`, `guild_gold_held`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
+                "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
                 "`created_at`, `updated_at`) "
                 "VALUES ('%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
-                "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
+                "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%s', '%u', '%s', '%u', '%u', '%u', "
+                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'))",
                 record.botGuidLow, record.guildId, record.giverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
                 ReasonToken(record.reason), record.farmZoneId, record.farmChance, record.farmItemId,
                 record.zoneIndex, record.deathsInZone, record.workedSinceNewItemSec,
                 record.workedTotalSec, record.workedNoGainSec, record.reportedHave, record.farmRest ? 1u : 0u,
-                record.keep ? 1u : 0u, record.stockTarget, record.lastBankCheckMs,
+                record.keep ? 1u : 0u, record.goldCap, record.hasGoldCap ? 1u : 0u,
+                record.guildGoldWithdrawn, record.guildGoldHeld, SupplyStepToken(record.supplyStep),
+                SupplyStepToken(record.supplyReturnStep), record.supplyItemId, record.supplyCount, record.supplyGoldCount,
+                NeedItemsToken(record.needItems).c_str(), record.needWhispered ? 1u : 0u,
+                record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
+                record.stockTarget, record.lastBankCheckMs,
                 static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt)))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
@@ -217,6 +267,33 @@ public:
             return;
         it->second.record.state = state;
         it->second.record.reason = reason;
+        if (state == OrderState::Delivering)
+        {
+            it->second.record.supplyStep = SupplyStep::Deliver;
+            it->second.record.supplyItemId = it->second.record.itemId;
+            it->second.record.supplyCount = 0;
+            it->second.record.supplyGoldCount = 0;
+            it->second.record.supplyReturnStep = SupplyStep::None;
+        }
+        else if (state == OrderState::Working && it->second.record.supplyStep == SupplyStep::Deliver)
+        {
+            it->second.record.supplyStep = SupplyStep::None;
+            it->second.record.supplyItemId = 0;
+            it->second.record.supplyCount = 0;
+            it->second.record.supplyGoldCount = 0;
+            it->second.record.supplyReturnStep = SupplyStep::None;
+        }
+        else if (IsFinished(state))
+        {
+            it->second.record.supplyStep = SupplyStep::None;
+            it->second.record.supplyItemId = 0;
+            it->second.record.supplyCount = 0;
+            it->second.record.supplyGoldCount = 0;
+            it->second.record.supplyReturnStep = SupplyStep::None;
+            it->second.record.needItems.clear();
+            it->second.record.needWhispered = false;
+            it->second.record.needBankDenied = false;
+        }
         // A round that ends cant or noskill ends the keep with it; mailed is
         // dropped by the delivery drain with the same rule. Keep survives on
         // working, waiting, delivering and stocked.
@@ -226,6 +303,109 @@ public:
             it->second.record.stockTarget = 0;
         }
         MarkDirtyLocked(it->second);
+    }
+
+    void SetSupply(uint32_t botGuidLow, SupplyStep step, uint32_t itemId, uint32_t count,
+        SupplyStep returnStep, OrderReason reason, uint32_t goldCount)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        OrderRecord& record = it->second.record;
+        if (reason == OrderReason::None && record.supplyItemId == itemId &&
+            (record.reason == OrderReason::BankDenied || record.reason == OrderReason::NoSource))
+            reason = record.reason;
+        if (record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems && step != SupplyStep::Need)
+        {
+            record.state = OrderState::Working;
+            record.reason = OrderReason::None;
+            record.needItems.clear();
+            record.needWhispered = false;
+        }
+        if (record.supplyStep == step && record.supplyItemId == itemId &&
+            record.supplyCount == count && record.supplyGoldCount == goldCount &&
+            record.supplyReturnStep == returnStep && record.reason == reason)
+            return;
+        record.supplyStep = step;
+        record.supplyItemId = itemId;
+        record.supplyCount = count;
+        record.supplyReturnStep = returnStep;
+        record.supplyGoldCount = goldCount;
+        record.reason = reason;
+        if (step != SupplyStep::Need)
+        {
+            record.needItems.clear();
+            record.needWhispered = false;
+        }
+        MarkDirtyLocked(it->second);
+    }
+
+    void SetNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& items, bool bankDenied)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        OrderRecord& record = it->second.record;
+        bool same = record.needItems.size() == items.size();
+        for (size_t i = 0; same && i < items.size(); ++i)
+            same = record.needItems[i].itemId == items[i].itemId && record.needItems[i].count == items[i].count;
+        if (same && record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems)
+            return;
+        record.needItems = items;
+        record.state = OrderState::Waiting;
+        record.reason = OrderReason::NeedItems;
+        record.supplyStep = SupplyStep::Need;
+        record.supplyReturnStep = SupplyStep::None;
+        record.supplyGoldCount = 0;
+        record.needWhispered = record.lastNeedWhisper == NeedItemsToken(items);
+        record.needBankDenied = bankDenied;
+        MarkDirtyLocked(it->second);
+    }
+
+    void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !amount)
+            return;
+        OrderRecord& record = it->second.record;
+        record.guildGoldWithdrawn = amount > UINT32_MAX - record.guildGoldWithdrawn ?
+            UINT32_MAX : record.guildGoldWithdrawn + amount;
+        record.guildGoldHeld = amount > UINT32_MAX - record.guildGoldHeld ?
+            UINT32_MAX : record.guildGoldHeld + amount;
+        MarkDirtyLocked(it->second);
+    }
+
+    void ConsumeGuildGoldHeld(uint32_t botGuidLow, uint32_t amount)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !amount)
+            return;
+        it->second.record.guildGoldHeld = amount >= it->second.record.guildGoldHeld ? 0 :
+            it->second.record.guildGoldHeld - amount;
+        MarkDirtyLocked(it->second);
+    }
+
+    bool ShouldCheckNeedBank(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() ||
+            !((it->second.record.state == OrderState::Waiting && it->second.record.reason == OrderReason::NeedItems) ||
+              (it->second.record.state == OrderState::Working && it->second.record.supplyStep == SupplyStep::Sub)))
+            return false;
+        return nowMs - it->second.lastNeedBankCheckMs >= kNeedBankCheckMs;
+    }
+
+    void MarkNeedBankChecked(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it != m_orders.end())
+            it->second.lastNeedBankCheckMs = nowMs;
     }
 
     void StartKeepWatch(uint32_t botGuidLow, uint32_t nowMs)
@@ -321,6 +501,10 @@ public:
             return;
         it->second.record.state = OrderState::Delivering;
         it->second.record.reason = OrderReason::BagsFull;
+        it->second.record.supplyStep = SupplyStep::Deliver;
+        it->second.record.supplyItemId = it->second.record.itemId;
+        it->second.record.supplyCount = 0;
+        it->second.record.supplyGoldCount = 0;
         MarkDirtyLocked(it->second);
     }
 
@@ -358,6 +542,8 @@ public:
         uint32_t farmBagCount = 0;   // farm-leg item in bags (no-progress clock)
         uint32_t bankCount = 0;      // guild bank stock, valid when bankChecked
         bool bankChecked = false;    // a fresh bank look came with this tick
+        bool needItemAvailable = false;
+        bool needItemInBank = false;
         uint32_t workedMs = 0;
         uint32_t nowMs = 0;
     };
@@ -369,6 +555,7 @@ public:
         bool sendLine = false;
         bool finishedEdge = false;
         bool legChanged = false;
+        bool needWhisper = false;
     };
 
     TickOut Tick(uint32_t botGuidLow, TickIn const& in)
@@ -384,6 +571,19 @@ public:
 
         bool wasFinished = IsFinished(record.state);
         bool wasStocked = record.state == OrderState::Stocked;
+
+        if (record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems &&
+            in.needItemAvailable)
+        {
+            record.state = OrderState::Working;
+            record.reason = OrderReason::None;
+            record.supplyStep = in.needItemInBank ? SupplyStep::Bank : SupplyStep::Bags;
+            record.needItems.clear();
+            record.needWhispered = false;
+            record.needBankDenied = false;
+            MarkDirtyLocked(stored);
+            out.legChanged = true;
+        }
 
         // Keep watch: a fresh bank look below the stock target re-arms the
         // round (new quota, reset clocks, fresh plan) whether the bot is on
@@ -443,9 +643,9 @@ public:
             }
         }
 
-        // The worked clock only runs while the bot actually works.
+        // A parent parked on a sub-order is waiting, even while its row stays working.
         if (!wasFinished && in.botOnline && in.botAlive && !in.grouped &&
-            record.state == OrderState::Working)
+            record.state == OrderState::Working && record.supplyStep != SupplyStep::Sub)
         {
             stored.workedCarryMs += in.workedMs;
             if (stored.workedCarryMs >= 1000)
@@ -477,6 +677,10 @@ public:
                     {
                         record.state = OrderState::Delivering;
                         record.reason = OrderReason::Timeout;
+                        record.supplyStep = SupplyStep::Deliver;
+                        record.supplyItemId = record.itemId;
+                        record.supplyCount = 0;
+                        record.supplyGoldCount = 0;
                     }
                     else
                     {
@@ -499,6 +703,10 @@ public:
                     {
                         record.state = OrderState::Delivering;
                         record.reason = OrderReason::NoProgress;
+                        record.supplyStep = SupplyStep::Deliver;
+                        record.supplyItemId = record.itemId;
+                        record.supplyCount = 0;
+                        record.supplyGoldCount = 0;
                     }
                     else
                     {
@@ -563,12 +771,24 @@ public:
         {
             record.state = OrderState::Delivering;
             record.reason = OrderReason::None;
+            record.supplyStep = SupplyStep::Deliver;
+            record.supplyItemId = record.itemId;
+            record.supplyCount = 0;
+            record.supplyGoldCount = 0;
             out.legChanged = true;
             MarkDirtyLocked(stored);
         }
 
         out.record = record;
         out.finishedEdge = !wasFinished && IsFinished(record.state);
+        if (record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems &&
+            !record.needWhispered)
+        {
+            out.needWhisper = true;
+            record.needWhispered = true;
+            record.lastNeedWhisper = NeedItemsToken(record.needItems);
+            MarkDirtyLocked(stored);
+        }
 
         // Reported progress never drops: offline (or not yet re-seen) bots
         // keep max(delivered, last reported). A stocked order reports the
@@ -577,8 +797,12 @@ public:
         if (record.state == OrderState::Stocked && in.bankChecked)
             out.reportedHave = in.bankCount > record.stockTarget ? record.stockTarget : in.bankCount;
 
+        std::string needToken = NeedItemsToken(record.needItems);
         bool stateChanged = !stored.reportSeen || stored.reportState != record.state ||
-                            stored.reportReason != record.reason;
+                            stored.reportReason != record.reason || stored.reportStep != record.supplyStep ||
+                            stored.reportNeed != needToken;
+        if (!stored.reportSeen || stored.reportStep != record.supplyStep)
+            out.legChanged = true;
         bool progressDue = out.reportedHave != record.reportedHave &&
                            (!stored.reportSeen || in.nowMs - stored.reportMs >= kProgressReportMs);
         out.sendLine = stateChanged || progressDue || out.finishedEdge;
@@ -587,6 +811,8 @@ public:
             stored.reportSeen = true;
             stored.reportState = record.state;
             stored.reportReason = record.reason;
+            stored.reportStep = record.supplyStep;
+            stored.reportNeed = needToken;
             if (out.reportedHave != record.reportedHave)
             {
                 record.reportedHave = out.reportedHave;
@@ -616,6 +842,9 @@ private:
         OrderState reportState = OrderState::Working;
         OrderReason reportReason = OrderReason::None;
         uint32_t reportMs = 0;
+        uint32_t lastNeedBankCheckMs = 0;
+        SupplyStep reportStep = SupplyStep::None;
+        std::string reportNeed;
     };
 
     // A zone move advances to the next zone of the plan (the wrap-around is
@@ -676,13 +905,21 @@ private:
             "`state` = '%s', `reason` = '%s', "
             "`farm_zone` = '%u', `farm_chance` = '%u', `farm_item` = '%u', `zone_index` = '%u', "
             "`deaths_in_zone` = '%u', `worked_sec` = '%u', `worked_total` = '%u', `worked_nogain` = '%u', `reported` = '%u', "
-            "`farm_rest` = '%u', `keep` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', "
+            "`farm_rest` = '%u', `keep` = '%u', `gold_cap` = '%u', `gold_cap_set` = '%u', "
+            "`guild_gold_withdrawn` = '%u', `guild_gold_held` = '%u', `supply_step` = '%s', "
+            "`supply_return_step` = '%s', `supply_item` = '%u', `supply_count` = '%u', `supply_gold_count` = '%u', "
+            "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', "
             "`updated_at` = FROM_UNIXTIME('%u') "
             "WHERE `bot_guid` = '%u'",
             record.amount, record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
             record.farmZoneId, record.farmChance, record.farmItemId, record.zoneIndex, record.deathsInZone,
             record.workedSinceNewItemSec, record.workedTotalSec, record.workedNoGainSec, record.reportedHave,
-            record.farmRest ? 1u : 0u, record.keep ? 1u : 0u, record.stockTarget, record.lastBankCheckMs,
+            record.farmRest ? 1u : 0u, record.keep ? 1u : 0u, record.goldCap, record.hasGoldCap ? 1u : 0u,
+            record.guildGoldWithdrawn, record.guildGoldHeld, SupplyStepToken(record.supplyStep),
+            SupplyStepToken(record.supplyReturnStep), record.supplyItemId, record.supplyCount, record.supplyGoldCount,
+            NeedItemsToken(record.needItems).c_str(), record.needWhispered ? 1u : 0u,
+            record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
+            record.stockTarget, record.lastBankCheckMs,
             static_cast<uint32_t>(record.updatedAt), record.botGuidLow);
     }
 
@@ -769,6 +1006,29 @@ void SendOrderLine(OrderRecord const& order, uint32_t have)
     giver->SendAddonMessage("TBM", FormatOrderLine(order.guildId, order, have));
 }
 
+void SendNeedWhisper(OrderRecord const& order)
+{
+    Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.botGuidLow));
+    Player* giver = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.giverGuidLow));
+    if (!bot || !bot->IsInWorld() || !giver || !giver->IsInWorld())
+        return;
+    PlayerbotAI* botAi = ::PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!botAi)
+        return;
+
+    ItemPrototype const* output = sObjectMgr.GetItemPrototype(order.itemId);
+    std::string message = "To make " + (output ? output->Name1 : std::to_string(order.itemId)) + " I still need ";
+    for (NeedItem const& need : order.needItems)
+    {
+        if (message.back() != ' ')
+            message += ", ";
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(need.itemId);
+        message += std::to_string(need.count) + " " + (proto ? proto->Name1 : std::to_string(need.itemId));
+    }
+    message += "; trade it, mail it or put it in the guild bank";
+    botAi->TellPlayerNoFacing(giver, message, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
+}
+
 } // namespace
 
 bool IsAvailable()
@@ -808,6 +1068,7 @@ bool Cancel(uint32_t botGuidLow)
     if (gone)
     {
         OnDeliveryOrderGone(botGuidLow);
+        OnSupplyOrderGone(botGuidLow);
         ExpireGuildOrderTarget(botGuidLow);
     }
     return gone;
@@ -821,6 +1082,27 @@ void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t 
 void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason)
 {
     OrderStore::Instance().SetState(botGuidLow, state, reason);
+}
+
+void SetSupply(uint32_t botGuidLow, SupplyStep step, uint32_t itemId, uint32_t count,
+    SupplyStep returnStep, OrderReason reason, uint32_t goldCount)
+{
+    OrderStore::Instance().SetSupply(botGuidLow, step, itemId, count, returnStep, reason, goldCount);
+}
+
+void SetNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& items, bool bankDenied)
+{
+    OrderStore::Instance().SetNeedItems(botGuidLow, items, bankDenied);
+}
+
+void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount)
+{
+    OrderStore::Instance().RecordGuildGoldWithdrawal(botGuidLow, amount);
+}
+
+void ConsumeGuildGoldHeld(uint32_t botGuidLow, uint32_t amount)
+{
+    OrderStore::Instance().ConsumeGuildGoldHeld(botGuidLow, amount);
 }
 
 void StartKeepWatch(uint32_t botGuidLow)
@@ -891,7 +1173,9 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
            BotCommands::ProtocolSafe(itemName) + "|" + std::to_string(have) + "|" +
            std::to_string(order.amount) + "|" + StateToken(order.state) + "|" +
            ReasonToken(order.reason) + "|" + BotCommands::ProtocolSafe(zone) + "|" + difficulty +
-           "|" + HoursToken(order.hours) + "|" + KeepToken(order.keep);
+           "|" + HoursToken(order.hours) + "|" + KeepToken(order.keep) + "|-|" +
+           (order.hasGoldCap ? std::to_string(order.goldCap) : "-") + "|" +
+           SupplyStepToken(order.supplyStep) + "|" + NeedItemsToken(order.needItems);
 }
 
 void Initialize()
@@ -924,6 +1208,36 @@ void Update(uint32_t diff)
         in.farmBagCount = online && in.farmItemId ? bot->GetItemCount(in.farmItemId) : in.bagCount;
         in.workedMs = diff;
         in.nowMs = now;
+        if (snapshot.state == OrderState::Waiting && snapshot.reason == OrderReason::NeedItems)
+        {
+            for (NeedItem const& need : snapshot.needItems)
+            {
+                if (online && bot->GetItemCount(need.itemId) + MailboxItems(bot, need.itemId) >= need.count)
+                {
+                    in.needItemAvailable = true;
+                    break;
+                }
+            }
+            if (OrderStore::Instance().ShouldCheckNeedBank(guidLow, now))
+            {
+                OrderStore::Instance().MarkNeedBankChecked(guidLow, now);
+                for (NeedItem const& need : snapshot.needItems)
+                    if (!snapshot.needBankDenied && BankItemCount(snapshot.guildId, need.itemId) >= need.count)
+                    {
+                        in.needItemAvailable = true;
+                        in.needItemInBank = true;
+                        break;
+                    }
+            }
+        }
+        else if (snapshot.state == OrderState::Working && snapshot.supplyStep == SupplyStep::Sub &&
+            OrderStore::Instance().ShouldCheckNeedBank(guidLow, now))
+        {
+            OrderStore::Instance().MarkNeedBankChecked(guidLow, now);
+            if (snapshot.supplyItemId && BankItemCount(snapshot.guildId, snapshot.supplyItemId) > 0)
+                SetSupply(guidLow, SupplyStep::Bank, snapshot.supplyItemId, snapshot.supplyCount,
+                    SupplyStep::AuctionHouse);
+        }
         // Keep watch, due at most every 10 min per stocked order: one summed
         // bank read on the world thread, never per bot tick, bot online or not.
         if (snapshot.state == OrderState::Stocked && snapshot.keep &&
@@ -938,10 +1252,13 @@ void Update(uint32_t diff)
             continue;
         if (out.sendLine)
             SendOrderLine(out.record, out.reportedHave);
+        if (out.needWhisper)
+            SendNeedWhisper(out.record);
         if (out.legChanged)
             ExpireGuildOrderTarget(guidLow);
     }
     UpdateDeliveries();
+    UpdateSupplyWithdrawals();
 }
 
 void OnGuildDelMember(uint32_t botGuidLow)

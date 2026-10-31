@@ -659,6 +659,8 @@ public:
     bool forceActiveWhenNearPlayer;
     bool limitCombatActivity;
     bool guildOrderAlwaysActive;
+    bool guildOrderBankWithdraw;
+    bool guildOrderBankGold;
     uint32 botActiveAlone;
     uint32 minEnchantingBotLevel;
     // Ordered pull: DPS hold after the tank's pull lands (pull) or after the

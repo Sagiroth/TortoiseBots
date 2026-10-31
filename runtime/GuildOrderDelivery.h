@@ -11,6 +11,10 @@ namespace GuildOrders
 // world-thread order update, after the store tick.
 void UpdateDeliveries();
 
+// Drain queued guild-bank reagent and money withdrawals on the world thread.
+void UpdateSupplyWithdrawals();
+void OnSupplyOrderGone(uint32_t botGuidLow);
+
 // Forget a bot's empty-pass count when its order is gone (cancel, guild
 // left, character deleted).
 void OnDeliveryOrderGone(uint32_t botGuidLow);

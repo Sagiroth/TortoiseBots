@@ -137,6 +137,14 @@ static bool IsGuildOrderTravelName(std::string const& name)
     return name == "guild order" || name == "order focus" || name == "order vendor";
 }
 
+static bool HasGuildOrderBankSupply(uint32_t botGuidLow)
+{
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+        TortoiseBots::GuildOrders::Find(botGuidLow);
+    return order && order->state == TortoiseBots::GuildOrders::OrderState::Working &&
+        order->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Bank;
+}
+
 inline std::string GetTravelPurposeName(std::string purpose)
 {
     if (Qualified::isValidNumberString(purpose) && TravelDestinationPurposeName.find(TravelDestinationPurpose(stoi(purpose))) != TravelDestinationPurposeName.end())
@@ -593,6 +601,15 @@ bool ChooseTravelTargetAction::Execute(Event& event)
             if (purposeKey == "guild order" &&
                 AI_VALUE2(std::string, "manual string", "future travel detail") == "guild banker")
             {
+                if (std::optional<TortoiseBots::GuildOrders::OrderRecord> orderRecord =
+                    TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
+                    if (orderRecord->state == TortoiseBots::GuildOrders::OrderState::Working &&
+                        orderRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Bank)
+                        TortoiseBots::GuildOrders::SetSupply(bot->GetGUIDLow(),
+                            TortoiseBots::GuildOrders::SupplyStep::AuctionHouse,
+                            orderRecord->supplyItemId, orderRecord->supplyCount,
+                            TortoiseBots::GuildOrders::SupplyStep::Farm,
+                            TortoiseBots::GuildOrders::OrderReason::BankDenied);
                 // The banker search offered nothing usable: after repeated
                 // empty searches the delivery walks to a mailbox instead.
                 SET_AI_VALUE2(int32, "manual int", "guild order no banker",
@@ -2446,19 +2463,60 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             SET_AI_VALUE2(std::string, "manual string", "future travel detail", "guild banker");
         }
     }
+    else if (travelName == "guild order" && HasGuildOrderBankSupply(bot->GetGUIDLow()))
+    {
+        Team team = bot->GetTeam();
+        uint32 botFaction = bot->GetFactionTemplateId();
+        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, team, botFaction, entries = GuildBankerEntries()]()
+            {
+                PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                    (uint32)TravelDestinationPurpose::GenericRpg, entries, true, 0.0f);
+                for (auto& [partition, travelPoints] : list)
+                {
+                    travelPoints.erase(std::remove_if(travelPoints.begin(), travelPoints.end(),
+                        [team, botFaction](TravelPoint point)
+                        {
+                            EntryTravelDestination* dest = (EntryTravelDestination*)std::get<TravelDestination*>(point);
+                            if (!dest->GetCreatureInfo() || !IsGuildBankerDestination(dest))
+                                return true;
+                            WorldPosition* position = std::get<WorldPosition*>(point);
+                            if (!position || !position->HasAreaFlag(AREA_FLAG_CAPITAL) ||
+                                position->IsEnemyHomeZoneFor(team))
+                                return true;
+                            FactionTemplateEntry const* bankerFaction =
+                                sObjectMgr.GetFactionTemplateEntry(dest->GetCreatureInfo()->faction);
+                            FactionTemplateEntry const* botTemplate = sObjectMgr.GetFactionTemplateEntry(botFaction);
+                            return bankerFaction && botTemplate &&
+                                PlayerbotAI::GetFactionReaction(botTemplate, bankerFaction) < REP_NEUTRAL;
+                        }), travelPoints.end());
+                }
+                return list;
+            });
+        SET_AI_VALUE2(std::string, "manual string", "future travel detail", "guild banker");
+    }
     else if (travelName == "guild order")
     {
         GuildOrder order = AI_VALUE(GuildOrder, "guild order");
         uint32 orderFarmItem = AI_VALUE(uint32, "guild order farm item");
+        std::optional<TortoiseBots::GuildOrders::OrderRecord> mailRecord =
+            TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+        if (!mailRecord || mailRecord->state != TortoiseBots::GuildOrders::OrderState::Working)
+            return false;
+        bool ahSupply = mailRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::AuctionHouse;
 
-        if (!order.IsTravelOrder() && !(order.IsCraftOrder() && orderFarmItem))
+        if (!order.IsTravelOrder() && !(order.IsCraftOrder() && orderFarmItem) && !ahSupply)
         {
             ai->TellDebug(ai->GetMaster(), "No valid guild travel order found", "debug travel");
             return false;
         }
 
         std::string orderTarget = order.target;
-        if (order.IsCraftOrder() && orderFarmItem)
+        if (mailRecord->supplyItemId)
+        {
+            if (ItemPrototype const* supplyProto = sObjectMgr.GetItemPrototype(mailRecord->supplyItemId))
+                orderTarget = supplyProto->Name1;
+        }
+        else if (order.IsCraftOrder() && orderFarmItem)
         {
             if (ItemPrototype const* farmProto = sObjectMgr.GetItemPrototype(orderFarmItem))
                 orderTarget = farmProto->Name1;
@@ -2471,27 +2529,10 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         // A buy whose auction visit is still open keeps buying first while
         // an auctioneer is in reach, one listing per tick.
         bool mailboxLeg = false;
-        using TortoiseBots::GuildOrders::Find;
-        std::optional<TortoiseBots::GuildOrders::OrderRecord> mailRecord = Find(bot->GetGUIDLow());
-        if (!mailRecord || mailRecord->itemId != order.itemId)
-            return false;
-        bool auctionVisitOpen =
-            mailRecord->type == TortoiseBots::GuildOrders::OrderType::Buy && !mailRecord->farmRest;
-        bool auctioneerNearby = false;
-        if (auctionVisitOpen)
-        {
-            std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
-            for (ObjectGuid const& guid : npcs)
-                if (bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_AUCTIONEER))
-                {
-                    auctioneerNearby = true;
-                    break;
-                }
-        }
-        if (TortoiseBots::GuildOrders::CollectOrderMailFirst(
-                ai->GetInventoryItemsCountWithId(order.itemId), mailRecord->delivered,
-                OrderMailboxItems(bot, order.itemId), order.amount,
-                auctionVisitOpen, auctioneerNearby))
+        uint32_t mailItemId = mailRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Bags &&
+            mailRecord->supplyItemId ? mailRecord->supplyItemId : order.itemId;
+        if (mailRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Bags &&
+            OrderMailboxItems(bot, mailItemId) > 0)
         {
             *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
                 {
@@ -2500,8 +2541,21 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 });
             mailboxLeg = true;
         }
-        else if (order.type == GuildOrderType::Farm ||
-            (order.IsCraftOrder() && orderFarmItem))
+        else if (!mailRecord->supplyItemId &&
+            TortoiseBots::GuildOrders::CollectOrderMailFirst(
+                ai->GetInventoryItemsCountWithId(order.itemId), mailRecord->delivered,
+                OrderMailboxItems(bot, order.itemId), order.amount, false, false))
+        {
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+                {
+                    return sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                        (uint32)TravelDestinationPurpose::Mail, {}, true, 0.0f);
+                });
+            mailboxLeg = true;
+        }
+        else if (mailRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::Farm &&
+            !ahSupply && (order.type == GuildOrderType::Farm ||
+            (order.IsCraftOrder() && orderFarmItem)))
         {
             using TortoiseBots::GuildOrders::Find;
             using TortoiseBots::GuildOrders::OrderReason;
@@ -2708,7 +2762,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             );
         }
 
-        else if (order.type == GuildOrderType::AuctionHouse)
+        else if (ahSupply)
         {
             *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, entries = AuctioneerEntries()]()
                 {

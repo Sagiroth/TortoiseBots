@@ -192,6 +192,10 @@ nodes:
     path: server/settings/economy.md
     category: server
     summary: Configuration settings for the simulated auction house market, vendor trips, and bot economy.
+  - id: server-settings-guild-orders
+    path: server/settings/guild-orders.md
+    category: server
+    summary: Configuration switches for guild bank supplies and guild bank gold used by bot orders.
   - id: server-settings-queues
     path: server/settings/queues.md
     category: server
@@ -234,6 +238,10 @@ nodes:
     path: developers/architecture.md
     category: developers
     summary: Non-negotiable architectural rules governing TortoiseBots modularity, headless sessions, and zero-core-coupling.
+  - id: developers-guild-supply
+    path: developers/guild-supply.md
+    category: developers
+    summary: Supply ladder, persisted order progress, bank withdrawals and needitems recovery.
   - id: developers-strategy-engine
     path: developers/strategy-engine.md
     category: developers

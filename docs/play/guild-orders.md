@@ -2,12 +2,13 @@
 id: play-guild-orders
 title: Guild Orders
 category: play
-summary: How to send guild bots to farm, buy or craft items for the guild bank, and what each order state means.
+summary: How to send guild bots to fetch, buy or craft items, use guild supplies, and follow order progress.
 tags: [guild, orders, farm, craft, auction-house, guild-bank]
 relates_to:
   - play-commands-roster-and-hiring
   - play-commands-addon
   - play-getting-started
+  - server-settings-guild-orders
 ---
 
 # Guild Orders
@@ -19,9 +20,9 @@ In your own guild you can send a bot to fetch items for real: it farms, buys or 
 Open the TBM addon (`/tbm`), go to the **Guild** tab, press **Order** next to a bot, search for an item, choose Farm, Buy or Craft and an amount. Without the addon, the same orders work from chat:
 
 ```text
-.bot order <BotName> farm <item link or id> <amount> [hours|inf] [keep]
-.bot order <BotName> buy <item link or id> <amount> [hours|inf] [keep]
-.bot order <BotName> craft <item link or id> <amount> [hours|inf] [keep]
+.bot order <BotName> farm <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
+.bot order <BotName> buy <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
+.bot order <BotName> craft <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> cancel
 .bot order list
 .bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text>
@@ -31,6 +32,7 @@ Open the TBM addon (`/tbm`), go to the **Guild** tab, press **Order** next to a 
 - **Hours:** optional whole hours 1-24; no hours given (or `inf`: `... 20 inf`, or `... 20 inf keep` with keep) means no time limit: the bot farms until it has the amount, however long it takes. A capped order farms that long in total per round (worked time only, like today's clock); when the time runs out without reaching the amount, the bot still brings what it has to the guild bank (or mails it to the guild master) and the order ends as `cant` with reason `timeout`. Bots farm like players: large amounts or rare drops can take very long or fail, so give reasonable orders.
 - **No progress:** every order, capped or not, ends when the bot worked 3 hours without gaining a single order item (a craft order watches its current reagent): the bot still brings what it holds to the guild bank (or mails it to the guild master) and the order ends as `cant` with reason `noprogress`. Any new item resets the 3 hours; a zone move does not.
 - **Keep:** add the word `keep` at the end (`... 20 keep`, or `... 20 3 keep` with hours) and the order does not end after delivery: it watches the guild bank and, when the bank holds fewer than the ordered amount, the bot brings the missing amount again. Each new round gets the full hours again. Keep needs a working bank: if a round ends mailed (the bank refused), `cant` or `noskill`, the keep ends with it.
+- **Guild gold cap:** add `gold=<copper>` after the other options to limit how much guild bank money this order may use on auction house purchases. The bot spends its own gold first. Omit it for no cap; `gold=0` prevents guild gold use.
 - **Search:** shows at most 30 matches, each with where that bot would farm it, its rough chance there, and a difficulty estimate for one item: easy (about 30 kills or gathers), medium (about 200), hard (more than that). Order rows show the same estimate for the full amount; craft orders use the hardest material still missing, and buy orders show none. Every word of the query must match somewhere in the name in any order, and the best name matches come first. `.bot order search <BotName> <farm|buy|craft> cat=<kind>` (herb, ore, leather, fish, cloth) browses a whole kind with no text; the big kinds (drop, other) and a search without a kind need at least 3 characters of text. Each row shows the item's kind and drop rate, so a rare drop that may take many hours is visible before you order.
 - **The search needs the bot online;** giving an order does not. An order on an offline bot is kept and runs when it comes back online. Craft orders are the exception: the bot's recipes can only be checked while it is online, so a craft order on an offline bot is refused (`norecipe`).
 
@@ -43,8 +45,14 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 | Order | What the bot does |
 | :--- | :--- |
 | Farm | Gathers (herbs, ore, skinning, fish) or kills mobs that drop the item, in one planned zone. |
-| Buy | Buys with its own gold on the auction house first, collecting bought items from the mailbox (they arrive by mail); whatever is still missing it farms. |
-| Craft | Crafts from materials in its bags; missing materials are farmed first. |
+| Buy | Checks its bags and mailbox, takes what it can from the guild bank, then buys with its own gold first on the auction house. Guild bank money covers the shortfall within the order's cap. Items bought at auction arrive by mail. Anything still missing is farmed. |
+| Craft | Checks bags and mailbox for each missing material, then the guild bank and auction house. It farms, gathers or crafts intermediate materials when it can, then asks a guild bot with a matching profession for a sub-order. |
+
+For every missing item, the supply ladder is bags and mailbox, guild bank, auction house, then the bot's own gathering, farming or crafting. A bank withdrawal only takes the remaining amount the order needs. The core applies the bot's guild rank and bank tab permissions; if it refuses a withdrawal, the bot skips the bank step and keeps that reason in the order status.
+
+If the bot and other guild bots cannot get an item, the order waits with `needitems`. The status shows the item IDs and counts to bring, and the bot whispers the giver once for that list. Trade the items to the bot, mail them, or put them in the guild bank. The order resumes when enough appears in the bot's bags or mailbox, or in an accessible guild bank. This wait does not count toward the order's time or no-progress limit.
+
+The addon status shows the current step (`bags`, `bank`, `ah`, `farm`, `craft`, `sub`, `need` or `deliver`), the optional guild gold cap, and any missing item list. Extra materials left after crafting are sent to the guild bank with the finished item.
 
 - **Fishing orders:** an order on a fish sends the bot to a fishing spot in the planned zone, on its own continent. It fishes there until the amount is reached, counting its pole and lure: the bot is granted the cheapest pole that still reaches the zone's skill and a stack of lures, and reapplies the lure while fishing. When even the best pole and lure cannot reach the zone, the search answers `lowskill` (or names a lower zone with the same fish).
 
@@ -60,6 +68,7 @@ When the amount is reached, the bot walks to a guild banker in a capital city an
 | :--- | :--- |
 | `working` | Working on the order, with progress (have / want). |
 | `waiting` | The bot is in a player's group; the order resumes when it leaves. |
+| `waiting` with reason `needitems` | The bot needs the listed materials from the giver. It resumes when they appear in its bags, mailbox or accessible guild bank. |
 | `delivering` | Amount reached (or bags full), on the way to the guild banker. |
 | `done` | Deposited in the guild bank. |
 | `stocked` | Keep order: delivered, the bank holds the ordered amount, watching it (checks about every 10 minutes). |
@@ -69,5 +78,6 @@ When the amount is reached, the bot walks to a guild banker in a capital city an
 
 ## Requirements
 
-- The guild needs an unlocked guild bank and a tab the bots' rank may deposit into (otherwise items come by mail to the guild master). Bots usually have the lowest rank, so open a tab to that rank if you want bank deposits.
+- The guild needs an unlocked guild bank and a tab the bots' rank may access. Deposits or withdrawals refused by the rank rules are skipped; finished items that cannot be deposited are mailed to the guild master.
 - Guild orders only work while `AiPlayerbot.AutoDoQuests = 1` (the default). With quest travel off, `.bot order` answers `disabled`.
+- Guild bank item withdrawals and guild bank gold use are controlled by [`AiPlayerbot.GuildOrderBankWithdraw`](../server/settings/guild-orders.md#aiplayerbotguildorderbankwithdraw) and [`AiPlayerbot.GuildOrderBankGold`](../server/settings/guild-orders.md#aiplayerbotguildorderbankgold); both default to `1`.

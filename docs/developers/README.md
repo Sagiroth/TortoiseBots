@@ -15,6 +15,7 @@ Technical documentation, architecture invariants, strategy engine details, host 
 | Document | Topic |
 | :--- | :--- |
 | [Architecture & Invariants](architecture.md) | Module boundaries, core isolation invariants, and design rules. |
+| [Guild Supply Chain](guild-supply.md) | Supply ladder, guild bank withdrawals, and needitems recovery. |
 | [Strategy Engine](strategy-engine.md) | Autonomous decision loop, triggers, actions, multipliers, and tick scheduling. |
 | [Bot Mechanics & Internals](bot-mechanics.md) | Deep bot mechanics, targeting rules, threat handling, and internal technical edge cases. |
 | [Donor Hierarchy & Lineage](donor-hierarchy.md) | Codebase lineage, porting priorities, and behavior harvesting principles. |

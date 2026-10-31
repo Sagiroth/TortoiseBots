@@ -156,12 +156,12 @@ bool ParseHours(std::string const& token, uint32_t& hours)
 
 bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const& rest)
 {
-    // order <bot> <farm|buy|craft> <itemId or item link> <amount> [hours|inf] [keep]
+    // order <bot> <farm|buy|craft> <itemId or item link> <amount> [hours|inf] [keep] [gold=<copper>]
     std::istringstream in(rest);
     std::string botName, typeToken;
     if (!(in >> botName >> typeToken))
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours|inf] [keep].");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours|inf] [keep] [gold=<copper>].");
         return true;
     }
     OrderType type;
@@ -184,6 +184,22 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
             itemPart += " ";
         itemPart += token;
     }
+    bool hasGoldCap = false;
+    uint32_t goldCap = 0;
+    size_t goldSpace = itemPart.rfind(' ');
+    std::string maybeGold = goldSpace == std::string::npos ? itemPart : itemPart.substr(goldSpace + 1);
+    std::string lowerGold = maybeGold;
+    std::transform(lowerGold.begin(), lowerGold.end(), lowerGold.begin(), ::tolower);
+    if (lowerGold.rfind("gold=", 0) == 0)
+    {
+        if (!ParseUintToken(maybeGold.substr(5), goldCap))
+        {
+            OrderError(handler, "invalid", "Guild gold cap must be copper from 0 to 4294967295.");
+            return true;
+        }
+        hasGoldCap = true;
+        itemPart = goldSpace == std::string::npos ? std::string() : itemPart.substr(0, goldSpace);
+    }
     // A trailing `keep` word marks a keep-in-stock order; hours still sit
     // between the amount and keep.
     bool keep = false;
@@ -204,7 +220,7 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     size_t lastSpace = itemPart.rfind(' ');
     if (lastSpace == std::string::npos)
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours|inf] [keep].");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours|inf] [keep] [gold=<copper>].");
         return true;
     }
     // A trailing 1-24 or `inf` is hours only when what is left still reads
@@ -312,6 +328,8 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     record.hours = hours;
     record.keep = keep;
     record.stockTarget = keep ? amount : 0;
+    record.goldCap = goldCap;
+    record.hasGoldCap = hasGoldCap;
 
     if (type == OrderType::Craft && !bot)
     {
@@ -323,21 +341,15 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     if (bot)
     {
         GuildOrders::SourcePlan plan = ai::PlanGuildOrderSources(bot, itemId, type);
-        if (plan.verdict != OrderReason::None)
+        if (type == OrderType::Craft && plan.verdict != OrderReason::None)
         {
-            if (type == OrderType::Craft && plan.verdict == OrderReason::NoRecipe)
+            if (plan.verdict == OrderReason::NoRecipe)
             {
                 // Refuse at give, like search does: storing Cant would still
                 // ACK the giver and start the reporting round-trip.
                 OrderError(handler, "norecipe", "The bot does not know that recipe.");
                 return true;
             }
-            record.state = GuildOrders::StateForReason(plan.verdict);
-            record.reason = plan.verdict;
-            // An order that starts noskill/cant never works a round: a keep
-            // flag on it would watch a bank for a dead order.
-            record.keep = false;
-            record.stockTarget = 0;
         }
         else if (!plan.zones.empty())
         {
@@ -496,7 +508,7 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         return HandleOrderSearch(handler, requester, bot, typeToken, text);
     }
 
-    // order <bot> cancel | order <bot> <type> <item> <amount> [hours] [keep]
+    // order <bot> cancel | order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
     std::string second;
     if (!(in >> second))
     {

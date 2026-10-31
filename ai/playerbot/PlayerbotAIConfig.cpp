@@ -933,6 +933,8 @@ bool PlayerbotAIConfig::Initialize()
     forceActiveWhenNearPlayer = config.GetBoolDefault("AiPlayerbot.ForceActiveWhenNearPlayer", false);
     limitCombatActivity = config.GetBoolDefault("AiPlayerbot.LimitCombatActivity", false);
     guildOrderAlwaysActive = config.GetBoolDefault("AiPlayerbot.GuildOrderAlwaysActive", true);
+    guildOrderBankWithdraw = config.GetBoolDefault("AiPlayerbot.GuildOrderBankWithdraw", true);
+    guildOrderBankGold = config.GetBoolDefault("AiPlayerbot.GuildOrderBankGold", true);
     botActiveAlone = config.GetIntDefault("AiPlayerbot.botActiveAlone", 10);
     RandombotsWalkingRPG = config.GetBoolDefault("AiPlayerbot.RandombotsWalkingRPG", false);
     minEnchantingBotLevel = config.GetIntDefault("AiPlayerbot.minEnchantingBotLevel", 10);

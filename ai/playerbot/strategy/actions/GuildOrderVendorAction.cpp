@@ -26,6 +26,10 @@ bool GuildOrderVendorAction::isUseful()
     uint32 reagentId = AI_VALUE(uint32, "guild order vendor reagent");
     if (!reagentId)
         return false;
+    record = TortoiseBots::GuildOrders::Find(botGuidLow);
+    if (!record || record->state != OrderState::Working || record->supplyStep != SupplyStep::Farm ||
+        record->supplyItemId != reagentId || !record->supplyCount)
+        return false;
 
     std::list<ObjectGuid> vendors = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
     for (ObjectGuid vendorguid : vendors)
@@ -47,9 +51,10 @@ bool GuildOrderVendorAction::isUseful()
 
 bool GuildOrderVendorAction::Execute(Event& event)
 {
+    (void)event;
     uint32 botGuidLow = bot->GetGUIDLow();
     std::optional<OrderRecord> record = TortoiseBots::GuildOrders::Find(botGuidLow);
-    if (record && record->state != OrderState::Working)
+    if (!record || record->state != OrderState::Working || record->supplyStep != SupplyStep::Farm)
         return false;
 
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
@@ -63,37 +68,11 @@ bool GuildOrderVendorAction::Execute(Event& event)
     ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
     if (!reagentProto)
         return false;
+    if (record->supplyItemId != reagentId || !record->supplyCount)
+        return false;
 
+    uint32 shortfall = record->supplyCount;
     uint32 itemId = order.itemId;
-    uint32 orderAmount = order.amount;
-    if (!itemId || !orderAmount)
-        return false;
-
-    uint32 delivered = record ? std::min(record->delivered, record->amount) : 0;
-    uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + delivered;
-    if (currentCount >= orderAmount)
-        return false;
-
-    uint32 craftSpellId = ai::FindCraftSpellFor(bot, itemId);
-    if (!craftSpellId)
-        return false;
-
-    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
-    if (!pSpellInfo)
-        return false;
-
-    uint32 perCast = 0;
-    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
-    {
-        if (pSpellInfo->Reagent[i] == (int32)reagentId)
-            perCast = std::max(perCast, pSpellInfo->ReagentCount[i]);
-    }
-    if (!perCast)
-        return false;
-
-    uint32 casts = ai::CraftCastsForRemaining(craftSpellId, itemId, orderAmount - currentCount);
-    uint32 have = ai->GetInventoryItemsCountWithId(reagentId);
-    uint32 shortfall = TortoiseBots::CraftOrderPolicy::ReagentShortfall(perCast, casts, have);
     if (!shortfall)
         return false;
 
@@ -113,19 +92,15 @@ bool GuildOrderVendorAction::Execute(Event& event)
 
         sServerFacade.SetFacingTo(bot, pCreature);
 
-        // Total cost up front: never spend gold on a partial buy that fails
-        // the order on the next tick. One cast's worth is the minimum.
-        // Real gold only: orders never cheat.
+        // Buy the current missing batch in one stop; orders use real gold only.
         uint32 buyCount = reagentProto->BuyCount ? reagentProto->BuyCount : 1;
         uint32 price = uint32(floor(reagentProto->BuyPrice * bot->GetReputationPriceDiscount(pCreature)));
-        uint32 oneCast = TortoiseBots::CraftOrderPolicy::ReagentShortfall(perCast, 1, have);
-        uint32 minBundles = TortoiseBots::CraftOrderPolicy::BundlesForShortfall(oneCast, buyCount);
         uint32 money = bot->GetMoney();
-        if (uint64_t(minBundles) * price > money)
+        uint32 bundles = TortoiseBots::CraftOrderPolicy::BundlesForShortfall(shortfall, buyCount);
+        if (uint64_t(bundles) * price > money)
         {
-            if (record)
-                TortoiseBots::GuildOrders::SetState(botGuidLow,
-                    StateForReason(OrderReason::NoSource), OrderReason::NoSource);
+            TortoiseBots::GuildOrders::SetSupply(botGuidLow, SupplyStep::Farm, reagentId,
+                shortfall, SupplyStep::None, OrderReason::NoSource);
             return false;
         }
 
@@ -150,9 +125,7 @@ bool GuildOrderVendorAction::Execute(Event& event)
         }
 
         uint32 capped = std::min(shortfall, room);
-        uint32 bundles = TortoiseBots::CraftOrderPolicy::BundlesForShortfall(capped, buyCount);
-        while (bundles > minBundles && uint64_t(bundles) * price > money)
-            --bundles;
+        bundles = TortoiseBots::CraftOrderPolicy::BundlesForShortfall(capped, buyCount);
 
         uint32 bought = 0;
         for (uint32 b = 0; b < bundles; ++b)
@@ -169,19 +142,19 @@ bool GuildOrderVendorAction::Execute(Event& event)
         // retrying the same vendor tick after tick never pays.
         if (bought == 0 && bundles > 0 && room > 0)
         {
-            if (record)
-                TortoiseBots::GuildOrders::SetState(botGuidLow,
-                    StateForReason(OrderReason::NoSource), OrderReason::NoSource);
+            TortoiseBots::GuildOrders::SetSupply(botGuidLow, SupplyStep::Farm, reagentId,
+                shortfall, SupplyStep::None, OrderReason::NoSource);
             return false;
         }
 
         RESET_AI_VALUE(uint32, "guild order vendor reagent");
+        TortoiseBots::GuildOrders::SetSupply(botGuidLow, SupplyStep::Farm, reagentId,
+            shortfall > bought ? shortfall - bought : 0, SupplyStep::None);
         ai->TellDebug(ai->GetMaster(), "Guild order: bought " + std::to_string(bought) + "x " + reagentProto->Name1 + " from vendor", "debug travel");
         return bought > 0;
     }
 
-    if (record)
-        TortoiseBots::GuildOrders::SetState(botGuidLow,
-            StateForReason(OrderReason::NoSource), OrderReason::NoSource);
+    TortoiseBots::GuildOrders::SetSupply(botGuidLow, SupplyStep::Farm, reagentId,
+        shortfall, SupplyStep::None, OrderReason::NoSource);
     return false;
 }

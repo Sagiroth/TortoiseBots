@@ -82,14 +82,15 @@ bool GuildCraftOrderAction::Execute(Event& event)
     if (!order.IsCraftOrder())
         return false;
 
+    AI_VALUE(uint32, "guild order farm item");
     uint32 botGuidLow = bot->GetGUIDLow();
     std::optional<OrderRecord> record = TortoiseBots::GuildOrders::Find(botGuidLow);
-    if (record && record->state != OrderState::Working)
+    if (!record || record->state != OrderState::Working || record->supplyStep != SupplyStep::Craft)
         return false;
 
-    uint32 itemId = order.itemId;
-    uint32 orderAmount = order.amount;
-    uint32 delivered = record ? std::min(record->delivered, record->amount) : 0;
+    uint32 itemId = record->supplyItemId;
+    uint32 delivered = itemId == record->itemId ? std::min(record->delivered, record->amount) : 0;
+    uint32 orderAmount = ai->GetInventoryItemsCountWithId(itemId) + delivered + record->supplyCount;
     if (!itemId || !orderAmount)
         return false;
 
@@ -107,8 +108,10 @@ bool GuildCraftOrderAction::Execute(Event& event)
     uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId) + delivered;
     if (currentCount >= orderAmount)
     {
-        if (record)
+        if (itemId == record->itemId)
             TortoiseBots::GuildOrders::SetState(botGuidLow, OrderState::Delivering, OrderReason::None);
+        else
+            TortoiseBots::GuildOrders::SetSupply(botGuidLow, SupplyStep::None, 0, 0);
         return true;
     }
 
@@ -146,33 +149,6 @@ bool GuildCraftOrderAction::Execute(Event& event)
         uint32 have = ai->GetInventoryItemsCountWithId(pSpellInfo->Reagent[i]);
         affordable = std::min(affordable,
             TortoiseBots::CraftOrderPolicy::CastsAffordable(have, pSpellInfo->ReagentCount[i]));
-    }
-
-    // Fail early, before spending anything: every farm reagent's verdict
-    // first, so a dead reagent stops the order before vendor gold is spent.
-    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
-    {
-        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
-            continue;
-
-        uint32 reagentId = pSpellInfo->Reagent[i];
-        ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
-        if (reagentProto && ItemUsageValue::IsItemSoldByAnyVendor(reagentProto) &&
-            !ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(reagentProto))
-            continue;
-
-        uint32 have = ai->GetInventoryItemsCountWithId(reagentId);
-        if (!TortoiseBots::CraftOrderPolicy::ReagentShortfall(pSpellInfo->ReagentCount[i], casts, have))
-            continue;
-
-        SourcePlan plan = ai::PlanGuildOrderSources(bot, reagentId, OrderType::Farm);
-        if (plan.verdict != OrderReason::None)
-        {
-            ai->TellDebug(ai->GetMaster(), "Guild craft order: cannot source reagent " + std::to_string(reagentId), "debug travel");
-            if (record)
-                TortoiseBots::GuildOrders::SetState(botGuidLow, StateForReason(plan.verdict), plan.verdict);
-            return false;
-        }
     }
 
     // Vendor reagents: only what the bot can fully afford for at least one
@@ -337,13 +313,14 @@ bool GuildCraftOrderAction::isUseful()
     if (!order.IsCraftOrder())
         return false;
 
+    AI_VALUE(uint32, "guild order farm item");
     uint32 botGuidLow = bot->GetGUIDLow();
     std::optional<OrderRecord> record = TortoiseBots::GuildOrders::Find(botGuidLow);
-    if (record && record->state != OrderState::Working)
+    if (!record || record->state != OrderState::Working || record->supplyStep != SupplyStep::Craft)
         return false;
 
-    uint32 itemId = order.itemId;
-    uint32 orderAmount = order.amount;
+    uint32 itemId = record->supplyItemId;
+    uint32 orderAmount = record->supplyCount;
     if (!itemId || !orderAmount)
         return false;
 

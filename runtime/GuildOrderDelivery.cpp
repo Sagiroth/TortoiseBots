@@ -3,8 +3,10 @@
 #include "GuildOrderDeliveryPolicy.h"
 #include "GuildOrderDeliveryQueue.h"
 #include "GuildOrderKeepPolicy.h"
+#include "GuildOrderSupplyQueue.h"
 #include "GuildOrderStore.h"
 #include "../ai/playerbot/PlayerbotAI.h"
+#include "../ai/playerbot/GuildOrderCraft.h"
 #include "../ai/playerbot/TravelMgr.h"
 #include "PlayerbotAIStorage.h"
 
@@ -13,6 +15,8 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "GuildBank/GuildBank.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "Database/DatabaseEnv.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Mail/Mail.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectAccessor.h"
@@ -20,9 +24,13 @@
 #include "ObjectMgr.h"
 
 #include <list>
+#include <algorithm>
+#include <climits>
+#include <cstdint>
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace TortoiseBots
 {
@@ -102,6 +110,25 @@ bool ClientBagSlot(Item* item, uint8_t& bag, uint8_t& slot)
 {
     uint8_t serverBag = item->GetBagSlot();
     uint8_t serverSlot = item->GetSlot();
+    if (serverBag == INVENTORY_SLOT_BAG_0)
+    {
+        if (serverSlot < INVENTORY_SLOT_ITEM_START || serverSlot >= INVENTORY_SLOT_ITEM_END)
+            return false;
+        bag = 0;
+        slot = uint8_t(serverSlot - INVENTORY_SLOT_ITEM_START + 1);
+        return true;
+    }
+    if (serverBag < INVENTORY_SLOT_BAG_START || serverBag >= INVENTORY_SLOT_BAG_END)
+        return false;
+    bag = uint8_t(serverBag - INVENTORY_SLOT_BAG_START + 1);
+    slot = uint8_t(serverSlot + 1);
+    return true;
+}
+
+bool ClientInventorySlot(uint16_t pos, uint8_t& bag, uint8_t& slot)
+{
+    uint8_t serverBag = uint8_t(pos >> 8);
+    uint8_t serverSlot = uint8_t(pos & 0xFF);
     if (serverBag == INVENTORY_SLOT_BAG_0)
     {
         if (serverSlot < INVENTORY_SLOT_ITEM_START || serverSlot >= INVENTORY_SLOT_ITEM_END)
@@ -259,6 +286,55 @@ uint32_t MailStacks(Player* bot, uint32_t itemId, ObjectGuid receiverGuid,
     return mailed;
 }
 
+void CollectCraftReagents(Player* bot, uint32_t itemId, uint32_t depth,
+    std::unordered_set<uint32_t>& visited, std::unordered_set<uint32_t>& reagents)
+{
+    if (!bot || !itemId || depth >= 8 || !visited.insert(itemId).second)
+        return;
+    uint32_t spellId = ai::FindCraftSpellFor(bot, itemId);
+    SpellEntry const* spell = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
+    if (!spell)
+        return;
+    for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+            continue;
+        uint32_t reagentId = uint32_t(spell->Reagent[i]);
+        reagents.insert(reagentId);
+        CollectCraftReagents(bot, reagentId, depth + 1, visited, reagents);
+    }
+}
+
+void DeliverCraftLeftovers(Player* bot, Guild* guild, Unit* banker, OrderRecord const& order)
+{
+    if (!bot || !guild || order.type != OrderType::Craft || !order.itemId)
+        return;
+    std::unordered_set<uint32_t> visited;
+    std::unordered_set<uint32_t> reagents;
+    CollectCraftReagents(bot, order.itemId, 0, visited, reagents);
+    for (uint32_t itemId : reagents)
+    {
+        if (itemId == order.itemId)
+            continue;
+        for (uint32_t pass = 0; pass < 200; ++pass)
+        {
+            uint32_t count = bot->GetItemCount(itemId);
+            if (!count)
+                break;
+            uint32_t moved = banker ? DepositPass(bot, guild, banker, itemId, 0, count) : 0;
+            if (moved)
+                continue;
+            ObjectGuid receiver = MailReceiverGuid(order, bot->getObjectGuid());
+            if (receiver)
+            {
+                bool mailed = false;
+                MailStacks(bot, itemId, receiver, 0, count, mailed);
+            }
+            break;
+        }
+    }
+}
+
 class DeliveryDrain
 {
 public:
@@ -382,6 +458,7 @@ private:
         switch (outcome)
         {
             case DeliveryOutcome::Done:
+                DeliverCraftLeftovers(bot, guild, banker, *stored);
                 // A keep order that landed in the bank watches it from now on
                 // instead of ending: the store re-arms the next round when
                 // the bank drops below the stock target.
@@ -391,6 +468,7 @@ private:
                     SetState(request.botGuidLow, OrderState::Done, OrderReason::None);
                 break;
             case DeliveryOutcome::Mailed:
+                DeliverCraftLeftovers(bot, guild, banker, *stored);
                 // Mailed means no usable bank: the keep is dropped with the order.
                 SetState(request.botGuidLow, OrderState::Mailed, OrderReason::NoBank);
                 DropKeep(request.botGuidLow);
@@ -406,6 +484,143 @@ private:
     }
 };
 
+class SupplyDrain
+{
+public:
+    static SupplyDrain& Instance()
+    {
+        static SupplyDrain instance;
+        return instance;
+    }
+
+    void Update()
+    {
+        for (PendingSupply const& request : SupplyQueue::Instance().TakeAll())
+            RunOne(request);
+    }
+
+private:
+    void RunOne(PendingSupply const& request)
+    {
+        std::optional<OrderRecord> order = Find(request.botGuidLow);
+        if (!order || order->state != OrderState::Working || order->supplyStep != SupplyStep::Bank ||
+            !order->supplyCount)
+            return;
+        Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, request.botGuidLow));
+        if (!bot || !bot->IsInWorld() || bot->GetGuildId() != order->guildId ||
+            !bot->IsAlive() || bot->IsInCombat())
+            return;
+        ::PlayerbotAI* ai = ::PlayerbotAIStorage::Instance().GetAI(bot);
+        Unit* banker = FindNearbyGuildBanker(bot, ai);
+        Guild* guild = sGuildMgr.GetGuildById(order->guildId);
+        if (!banker || !guild || !guild->_Bank)
+            return;
+
+        ObjectGuid oldSelection = bot->GetSelectionGuid();
+        bot->SetSelectionGuid(banker->getObjectGuid());
+        if (order->supplyGoldCount)
+        {
+            std::unique_ptr<QueryResult> bankMoney(CharacterDatabase.PQuery(
+                "SELECT `money` FROM `guild_bank_money` WHERE `guildid` = '%u' AND `isInferno` = '0'",
+                order->guildId));
+            Field* moneyFields = bankMoney ? bankMoney->Fetch() : nullptr;
+            uint32_t bankAvailable = moneyFields && moneyFields[0].GetInt32() > 0 ?
+                uint32_t(moneyFields[0].GetInt32()) : 0;
+            uint32_t before = bot->GetMoney();
+            uint32_t take = std::min(order->supplyGoldCount,
+                std::min(bankAvailable, uint32_t(INT32_MAX) - before));
+            if (!take)
+            {
+                SetSupply(request.botGuidLow, order->supplyReturnStep, order->supplyItemId,
+                    order->supplyCount);
+                bot->SetSelectionGuid(oldSelection);
+                return;
+            }
+            std::ostringstream message;
+            message << "WithdrawMoney:" << take;
+            guild->_Bank->HandleAddonMessages(message.str(), bot);
+            uint32_t after = bot->GetMoney();
+            if (after > before)
+            {
+                uint32_t withdrawn = after - before;
+                RecordGuildGoldWithdrawal(request.botGuidLow, withdrawn);
+                SetSupply(request.botGuidLow, order->supplyReturnStep, order->supplyItemId,
+                    order->supplyCount);
+            }
+            else
+                SetSupply(request.botGuidLow, order->supplyReturnStep, order->supplyItemId,
+                    order->supplyCount, SupplyStep::None, OrderReason::BankDenied);
+            bot->SetSelectionGuid(oldSelection);
+            return;
+        }
+
+        uint32_t moved = 0;
+        uint32_t remaining = order->supplyCount;
+        bool bankHasItem = false;
+        bool withdrawAttempted = false;
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(order->supplyItemId);
+        uint32_t stackSize = proto ? proto->GetMaxStackSize() : 0;
+        if (stackSize)
+        {
+            for (uint32_t attempt = 0; attempt < 20 && remaining; ++attempt)
+            {
+                std::unique_ptr<QueryResult> bankItems(CharacterDatabase.PQuery(
+                    "SELECT `tab`, `slot`, `count` FROM `guild_bank` WHERE `guildid` = '%u' AND "
+                    "`isInferno` = '0' AND `item_template` = '%u' ORDER BY `tab`, `slot`",
+                    order->guildId, order->supplyItemId));
+                if (!bankItems)
+                    break;
+                Field* fields = bankItems->Fetch();
+                if (!fields)
+                    break;
+                uint32_t tab = fields[0].GetUInt32();
+                uint32_t slot = fields[1].GetUInt32();
+                uint32_t bankCount = fields[2].GetUInt32();
+                bankHasItem = bankCount > 0;
+                uint32_t count = std::min(remaining, std::min(bankCount, stackSize));
+                if (!count)
+                    break;
+
+                ItemPosCountVec destination;
+                if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, destination, order->supplyItemId, count) != EQUIP_ERR_OK ||
+                    destination.empty())
+                    break;
+                uint8_t playerBag = 0, playerSlot = 0;
+                if (!ClientInventorySlot(destination.front().pos, playerBag, playerSlot))
+                    break;
+
+                uint32_t before = bot->GetItemCount(order->supplyItemId);
+                std::ostringstream message;
+                message << "WithdrawItem:" << tab << ':' << slot << ':' << uint32_t(playerBag) << ':'
+                        << uint32_t(playerSlot) << ':' << count;
+                withdrawAttempted = true;
+                guild->_Bank->HandleAddonMessages(message.str(), bot);
+                uint32_t after = bot->GetItemCount(order->supplyItemId);
+                if (after <= before)
+                    break;
+                uint32_t got = after - before;
+                moved += got;
+                remaining = got >= remaining ? 0 : remaining - got;
+            }
+        }
+        bot->SetSelectionGuid(oldSelection);
+        if (moved > 0)
+        {
+            SupplyStep nextStep = remaining ? order->supplyReturnStep : SupplyStep::Bags;
+            SetSupply(request.botGuidLow, nextStep, order->supplyItemId, remaining);
+        }
+        else if (bankHasItem && withdrawAttempted)
+            SetSupply(request.botGuidLow, order->supplyReturnStep, order->supplyItemId,
+                order->supplyCount, SupplyStep::None, OrderReason::BankDenied);
+        else if (bankHasItem)
+            SetSupply(request.botGuidLow, order->supplyReturnStep, order->supplyItemId,
+                order->supplyCount, SupplyStep::None, OrderReason::NoSource);
+        else
+            SetSupply(request.botGuidLow, order->supplyReturnStep, order->supplyItemId,
+                order->supplyCount);
+    }
+};
+
 } // namespace
 
 void UpdateDeliveries()
@@ -413,9 +628,19 @@ void UpdateDeliveries()
     DeliveryDrain::Instance().Update();
 }
 
+void UpdateSupplyWithdrawals()
+{
+    SupplyDrain::Instance().Update();
+}
+
 void OnDeliveryOrderGone(uint32_t botGuidLow)
 {
     DeliveryDrain::Instance().OnOrderGone(botGuidLow);
+}
+
+void OnSupplyOrderGone(uint32_t botGuidLow)
+{
+    SupplyQueue::Instance().Remove(botGuidLow);
 }
 
 void ExpireGuildOrderTarget(uint32_t botGuidLow)

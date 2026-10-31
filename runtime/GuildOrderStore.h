@@ -48,6 +48,18 @@ void SetFarmZone(uint32_t botGuidLow, uint32_t zoneId, uint8_t chance, uint32_t 
 // Change state and reason (the next Update reports it to the giver).
 void SetState(uint32_t botGuidLow, OrderState state, OrderReason reason);
 
+// Current supply-ladder leg and item. Mutators may be called from a bot's
+// map-thread action; Update reports the change on the world thread.
+void SetSupply(uint32_t botGuidLow, SupplyStep step, uint32_t itemId, uint32_t count,
+    SupplyStep returnStep = SupplyStep::None, OrderReason reason = OrderReason::None, uint32_t goldCount = 0);
+void SetNeedItems(uint32_t botGuidLow, std::vector<NeedItem> const& items, bool bankDenied = false);
+void RecordGuildGoldWithdrawal(uint32_t botGuidLow, uint32_t amount);
+void ConsumeGuildGoldHeld(uint32_t botGuidLow, uint32_t amount);
+
+// A sub-order was placed or already exists. Worker C replaces the separate
+// false stub with the hierarchy-aware store implementation when merging.
+bool RequestSupply(uint32_t parentBotGuidLow, uint32_t itemId, uint32_t count);
+
 // A keep round landed in the bank: the order watches it from now on. Sets
 // the stocked state, the stock target back as the round's quota, and the
 // last bank look to now so the first re-check waits a full interval.
