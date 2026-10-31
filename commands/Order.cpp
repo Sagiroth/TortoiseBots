@@ -403,7 +403,9 @@ bool HandleOrderReassign(ChatHandler* handler, Player* requester, std::string co
         OrderError(handler, "not-guild", "The new bot is not in the order's guild.");
         return true;
     }
-    if (GuildOrders::Find(newGuid.GetCounter()))
+    std::optional<GuildOrders::OrderRecord> newBotOrder = GuildOrders::Find(newGuid.GetCounter());
+    if (newBotOrder && !newBotOrder->cancelled &&
+        (!GuildOrders::IsFinished(newBotOrder->state) || newBotOrder->state == GuildOrders::OrderState::Stocked))
     {
         OrderError(handler, "invalid", "The new bot already has an order.");
         return true;

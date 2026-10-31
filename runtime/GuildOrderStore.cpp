@@ -1467,7 +1467,10 @@ bool PlaceSubOrders(uint32_t nowMs)
                 candidate.botGuidLow = guidLow;
                 candidate.online = true;
                 std::optional<OrderRecord> existing = Find(guidLow);
-                candidate.hasOrder = existing.has_value() && !existing->cancelled;
+                // A finished order only lingers in the list; a keep order still
+                // watches the bank, so only that one keeps the bot busy.
+                candidate.hasOrder = existing.has_value() && !existing->cancelled &&
+                    (!IsFinished(existing->state) || existing->state == OrderState::Stocked);
                 if (candidate.hasOrder)
                 {
                     bool make = false, farm = false;
