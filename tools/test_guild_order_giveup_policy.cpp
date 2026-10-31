@@ -62,7 +62,17 @@ int main()
     CHECK(AuctionVisitsMoveLadder(3, 3));
     CHECK(AuctionVisitsMoveLadder(9, 3));
     CHECK(!AuctionVisitsMoveLadder(99, 0));
-    // The order ends once the bot worked its chosen hours in total.
+    CHECK(ClassifyAuctionArrival(true, 0, 3) == AuctionArrival::Reset);
+    CHECK(ClassifyAuctionArrival(true, 9, 3) == AuctionArrival::Reset);
+    CHECK(ClassifyAuctionArrival(true, 0, 0) == AuctionArrival::Reset);
+    // Any other arrival counts, exiting once the count would hit the limit.
+    CHECK(ClassifyAuctionArrival(false, 0, 3) == AuctionArrival::Count);
+    CHECK(ClassifyAuctionArrival(false, 1, 3) == AuctionArrival::Count);
+    CHECK(ClassifyAuctionArrival(false, 2, 3) == AuctionArrival::CountAndExit);
+    CHECK(ClassifyAuctionArrival(false, 9, 3) == AuctionArrival::CountAndExit);
+    // Zero disables the exit: arrivals keep counting, never exiting.
+    CHECK(ClassifyAuctionArrival(false, 0, 0) == AuctionArrival::Count);
+    CHECK(ClassifyAuctionArrival(false, 99, 0) == AuctionArrival::Count);
     CHECK(!IsOrderTimeout(3599, 1));
     CHECK(IsOrderTimeout(3600, 1));
     CHECK(!IsOrderTimeout(3600, 2));

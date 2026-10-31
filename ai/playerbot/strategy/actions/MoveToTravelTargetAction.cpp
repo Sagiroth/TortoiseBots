@@ -826,6 +826,43 @@ bool MoveToTravelTargetAction::TryUndercityLift(WorldPosition const& location)
     return true;
 }
 
+// The buy action's gate, without the combat/order wrapper: an auctioneer
+// the bot can use right now.
+static bool GuildOrderAuctioneerInReach(PlayerbotAI* ai, Player* bot)
+{
+    std::list<ObjectGuid> npcs =
+        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest npcs")->Get();
+    for (ObjectGuid& guid : npcs)
+        if (bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_AUCTIONEER))
+            return true;
+    return false;
+}
+
+// One arrived guild-order trip on the auction leg: an auctioneer in reach
+// hands the leg to the buy action (the streak clears), any other arrival
+// counts, and the leg moves down the ladder at the visit limit.
+static void CountGuildOrderAuctionArrival(PlayerbotAI* ai, Player* bot)
+{
+    using namespace TortoiseBots::GuildOrders;
+    std::optional<OrderRecord> record = Find(bot->GetGUIDLow());
+    if (!record || record->state != OrderState::Working || record->supplyStep != SupplyStep::AuctionHouse)
+        return;
+    switch (ClassifyAuctionArrival(GuildOrderAuctioneerInReach(ai, bot), record->arrivedAuctionVisits,
+        sPlayerbotAIConfig.guildOrderAuctionVisits))
+    {
+        case AuctionArrival::Reset:
+            NoteArrivedAuctionVisit(bot->GetGUIDLow(), true);
+            break;
+        case AuctionArrival::Count:
+            NoteArrivedAuctionVisit(bot->GetGUIDLow(), false);
+            break;
+        case AuctionArrival::CountAndExit:
+            NoteArrivedAuctionVisit(bot->GetGUIDLow(), false);
+            AdvanceGuildOrderAfterAuction(ai, bot, *record);
+            break;
+    }
+}
+
 bool MoveToTravelTargetAction::Execute(Event& event)
 {
     TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
@@ -836,7 +873,16 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         target->SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
     }
 
+    TravelStatus const statusBeforeCheck = target->GetStatus();
     target->CheckStatus();
+    // A guild-order trip the walk itself finished (the destination radius
+    // beat the NPC lookup: the auctioneer is out of arrival range,
+    // despawned or behind geometry) still counts as an arrival. Once per
+    // trip: only the tick that flips it to WORK counts.
+    if (statusBeforeCheck == TravelStatus::TRAVEL_STATUS_TRAVEL &&
+        target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK &&
+        AI_VALUE2(std::string, "manual string", "future travel purpose") == "guild order")
+        CountGuildOrderAuctionArrival(ai, bot);
 
     if (target->GetStatus() != TravelStatus::TRAVEL_STATUS_TRAVEL)
         return true;
@@ -984,11 +1030,13 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
     // A service NPC already in reach counts as arrived, even when the walk
     // point below sits inside geometry. Runs before the jitter so the
-    // arrival verdict never depends on the re-rolled point.
+    // arrival verdict never depends on the re-rolled point. A guild-order
+    // arrival counts on the auction leg unless an auctioneer is in reach:
+    // reaching the point is not reaching the auctioneer.
     if (!hasFlightPlan && CheckServiceArrival(target, purpose))
     {
         if (purpose == "guild order")
-            TortoiseBots::GuildOrders::NoteArrivedAuctionVisit(bot->GetGUIDLow(), true);
+            CountGuildOrderAuctionArrival(ai, bot);
         return true;
     }
 
@@ -1208,18 +1256,9 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             // ClearValues on the pick path); only this purpose stands down.
             // A dropped workshop leg re-picks after a minute: the order makes
             // no progress while parked, so the next forge must come soon.
-            uint32_t arrivedNoAuctioneer =
-                TortoiseBots::GuildOrders::NoteArrivedAuctionVisit(bot->GetGUIDLow(), false);
-            if (purpose == "guild order" &&
-                TortoiseBots::GuildOrders::AuctionVisitsMoveLadder(arrivedNoAuctioneer,
-                    sPlayerbotAIConfig.guildOrderAuctionVisits))
-            {
-                std::optional<TortoiseBots::GuildOrders::OrderRecord> stuckRecord =
-                    TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
-                if (stuckRecord && stuckRecord->supplyStep ==
-                    TortoiseBots::GuildOrders::SupplyStep::AuctionHouse)
-                    AdvanceGuildOrderAfterAuction(ai, bot, *stuckRecord);
-            }
+            // A stuck drop is not an arrival: the bot never reached the
+            // destination, so the auction-leg visit count stays untouched.
+            // Real arrivals count (and exit) in CountGuildOrderAuctionArrival.
             std::string const parkKey = TravelPurposeParkKey(purpose);
             SET_AI_VALUE2(bool, "no active travel destinations", parkKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey,

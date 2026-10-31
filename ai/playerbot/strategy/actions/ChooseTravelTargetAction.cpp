@@ -772,16 +772,19 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
     if (AI_VALUE2(std::string, "manual string", "future travel condition") == "has guild travel order")
     {
-        GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-        if (order.type == GuildOrderType::AuctionHouse && newTarget.getPosition())
+        // The auction leg belongs to the supply step, not the order type: a
+        // craft order buying a reagent never reports AuctionHouse, while a
+        // buy order past its auction attempt reports Farm.
+        std::optional<TortoiseBots::GuildOrders::OrderRecord> auctionRecord =
+            TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+        if (auctionRecord && auctionRecord->state == TortoiseBots::GuildOrders::OrderState::Working &&
+            auctionRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::AuctionHouse &&
+            newTarget.getPosition())
         {
             AreaTableEntry const* area = newTarget.getPosition()->GetArea();
             uint32 zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
             if (zoneId)
-            {
-                TortoiseBots::GuildOrders::SetFarmZone(bot->GetGUIDLow(), zoneId, 0, 0, 0);
                 TortoiseBots::GuildOrders::CommitAuctionZone(bot->GetGUIDLow(), zoneId);
-            }
         }
     }
 
