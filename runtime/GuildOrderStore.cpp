@@ -851,6 +851,10 @@ public:
             (!IsFinished(target->second.record.state) || target->second.record.state == OrderState::Stocked))
             return false;
         OrderRecord moved = sub->second.record;
+        // The debt stays with the bot that holds the gold: the moved row
+        // starts with the new bot's own unrepaid gold, never the old bot's.
+        moved.guildGoldHeld = target != m_orders.end() ? target->second.record.guildGoldHeld : 0;
+        ClearQueuedSubOrdersLocked(subOrderBotGuidLow);
         // The old bot's unspent guild gold stays parked on the old bot
         // (same as cancel): mark the source row a refund stub instead of
         // erasing it, so the refund drain collects it at the next visit.
@@ -1532,6 +1536,8 @@ bool PlaceSubOrders(uint32_t nowMs)
             record.type = candidates[picked].canMake ? OrderType::Craft : OrderType::Farm;
             record.itemId = request.itemId;
             record.amount = request.count;
+            record.goldCap = parent->goldCap;
+            record.hasGoldCap = parent->hasGoldCap;
             if (!Give(record))
             {
                 OrderStore::Instance().RetryQueuedSubOrder(parent->botGuidLow, request.itemId,
@@ -1735,8 +1741,10 @@ bool ReassignSubOrder(uint32_t subOrderBotGuidLow, uint32_t newBotGuidLow, Order
     bool moved = OrderStore::Instance().ReassignSubOrder(subOrderBotGuidLow, newBotGuidLow, type);
     if (!moved)
         return false;
-    CharacterDatabase.DirectPExecute(
-        "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", subOrderBotGuidLow);
+    // A parked refund stub keeps its row; only a fully moved row is deleted.
+    if (!Find(subOrderBotGuidLow))
+        CharacterDatabase.DirectPExecute(
+            "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", subOrderBotGuidLow);
     std::optional<OrderRecord> row = Find(newBotGuidLow);
     if (!row)
         return false;
